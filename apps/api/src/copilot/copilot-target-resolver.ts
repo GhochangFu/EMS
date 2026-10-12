@@ -148,7 +148,7 @@ export class CopilotTargetResolver implements CopilotTargets {
       if (found !== null && !(await this.safely(() => this.mayManage(of, parentId, found as Found, user, body)))) found = null;
     } else if (target.kind === "user" || target.kind === "userGrantAdd" || target.kind === "userGrant") {
       // `F3.86` PR 4: the users services' own checks; a 403 or 404 from them is the one refusal.
-      found = await this.findUserTarget(target, params, body, user).catch(() => null);
+      found = await this.findUserTarget(target, params, body, user, allowedOrganizationIds).catch(() => null);
       if (found !== null && !allowedOrganizationIds.includes(found.organizationId)) found = null;
     } else if (target.kind === "fleet" || target.kind === "pointKey") {
       // Ruling Q1: a row with no organization lives in the conversation's bound organization.
@@ -203,12 +203,16 @@ export class CopilotTargetResolver implements CopilotTargets {
     params: Readonly<Record<string, string>>,
     body: Readonly<Record<string, unknown>>,
     user: JwtPayload,
+    allowedOrganizationIds: readonly string[],
   ): Promise<Found | null> {
     const manager = await this.users.requireManager(user);
     const userId = params[target.kind === "userGrant" ? target.userParam : target.param];
     if (userId === undefined) return null;
     const row = await this.users.requireManageableTarget(manager, userId);
     if (row.organizationId === null) return null;
+    // Decision 10: the user's name reaches the model, so the user's own organization must be in the
+    // turn's scope too — for a grant as well, whose change lives in the grant target's organization.
+    if (!allowedOrganizationIds.includes(row.organizationId)) return null;
     const name = row.displayName;
     if (target.kind === "user") return { organizationId: row.organizationId, name };
     if (target.kind === "userGrantAdd") {

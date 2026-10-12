@@ -217,7 +217,8 @@ export function GrantsDrawer({
               const nextKind = userGrantKindSchema.safeParse(values.kind);
               if (nextKind.success && nextKind.data !== kind) {
                 setKind(nextKind.data);
-                setTargetId("");
+                // A new kind clears the old target — unless the same change names a new one (a copilot fill).
+                setTargetId(typeof values.targetId === "string" && values.targetId !== targetId ? values.targetId : "");
               } else if (typeof values.targetId === "string") {
                 setTargetId(values.targetId);
               }

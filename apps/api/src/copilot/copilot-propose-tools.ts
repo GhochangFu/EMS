@@ -19,6 +19,8 @@ import { LOCAL_MODE_READ_ONLY } from "../admin/users/users.service";
 import { jsonSchemaOf, type ToolRegistry } from "../llm/tool-registry";
 import { issuesOf } from "../llm/tool-result";
 import { bodyHash } from "./body-hash";
+import { COPILOT_NEVER_GLOBAL_ADMIN_MESSAGE } from "@bms/shared";
+
 import { PROPOSE_ACCESS_NOT_ASKED_ERROR } from "./copilot-access-intent";
 import { bodyDefinitionOf, describeBody } from "./copilot-change-schema";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
@@ -87,6 +89,14 @@ export const DESCRIBE_BUDGET_ERROR =
 export interface CopilotProposeTools extends CopilotReadTools {
   readonly registryWithoutAccess: ToolRegistry<string>;
 }
+
+/**
+ * `F3.86` PR 4, ruling Q3 (security review): any tool that names an access
+ * entry — a propose tool, `fill_step`, `describe_change` — works only in a
+ * user turn whose own message asked. A tool result can neither pre-fill an
+ * access wizard nor read its shape.
+ */
+const accessAsked = (ctx: CopilotToolContext): boolean => ctx.turnKind === "user" && ctx.accessIntent === true;
 
 /** `F3.86` ruling Q8: the user-account entries a local sign-in deployment refuses (grants are database-only and stay). */
 const isUserAccountEntry = (entry: CatalogEntry): boolean => entry.id.startsWith("user.");
@@ -217,7 +227,7 @@ export function createCopilotProposeTools(
     // Decision 4.7: a follow-up turn may propose the next write, never an access change.
     if (entry.risk === "access" && ctx.turnKind === "follow_up") return { ok: false, error: PROPOSE_ACCESS_ON_FOLLOW_UP_ERROR };
     // Ruling Q3: only when the user's own message asked (the turn also withholds the tool; this is the second guard).
-    if (entry.risk === "access" && ctx.accessIntent !== true) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
+    if (entry.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
     // Ruling Q8: in local sign-in every user-account write answers 409, so no card is offered for one.
     if (isUserAccountEntry(entry) && resolveAuthMode(env) === "local") return { ok: false, error: LOCAL_MODE_READ_ONLY };
     const params: Record<string, string> = {};
@@ -309,10 +319,16 @@ export function createCopilotProposeTools(
       if (name === FILL_STEP_TOOL) {
         const target = byId.get(args.catalogId as string);
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
+        if (target.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
         const step = target.steps.find((candidate) => candidate.id === args.stepId);
         if (step === undefined) return { ok: false, error: UNKNOWN_STEP_ERROR };
         const values = stepValuesSchema(target.body, step.fields).safeParse(args.values);
         if (!values.success) return { ok: false, error: `Invalid values: ${issuesOf(values.error)}` };
+        // The step check reads field shapes only; the model body's rule that the copilot never names
+        // the global admin role (decision 3) is a refinement, so it is held here on the server too.
+        if (target.risk === "access" && (args.values as Record<string, unknown>).role === "admin") {
+          return { ok: false, error: `Invalid values: role: ${COPILOT_NEVER_GLOBAL_ADMIN_MESSAGE}` };
+        }
         return {
           ok: true,
           result: { filled: step.id },
@@ -326,6 +342,7 @@ export function createCopilotProposeTools(
         if (reads > DESCRIBE_CHANGE_BUDGET) return { ok: false, error: DESCRIBE_BUDGET_ERROR };
         const target = byId.get(args.catalogId as string);
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
+        if (target.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
         // The model's body (`F3.86` PR 2): a `clientOnly` field is never described to the model.
         const described = describeBody(modelBodySchema(target), (args.path as string[] | undefined) ?? []);
         if (!described.ok) return { ok: false, error: UNKNOWN_PATH_ERROR };

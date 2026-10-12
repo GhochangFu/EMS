@@ -284,7 +284,10 @@ export function refKindOfReadsTheKindField(): void {
 // --- F3.86 PR 4: the user targets, through the users services (called, never copied) ---
 
 /** Recording fakes of `UsersService` and `UserGrantsService`'s checks; `throws` names the ones that refuse. */
-function userServices(ctx: ResolverCtx, over: { throws?: string[]; homeOrganization?: string | null; managerRole?: string; writable?: string[] | null } = {}) {
+function userServices(
+  ctx: ResolverCtx,
+  over: { throws?: string[]; homeOrganization?: string | null; managerRole?: string; writable?: string[] | null; grantOrganization?: string } = {},
+) {
   const calls: Call[] = [];
   const step = <T>(name: string, value: T, ...args: unknown[]): Promise<T> => {
     calls.push([name, ...args]);
@@ -298,7 +301,7 @@ function userServices(ctx: ResolverCtx, over: { throws?: string[]; homeOrganizat
   };
   const grants = {
     assertGrantAddable: (_j: unknown, _m: unknown, _u: unknown, body: unknown) =>
-      step("assertGrantAddable", { organizationId: ctx.orgA, targetId: "t", targetName: RESOLVER_NAMES.locationA }, body),
+      step("assertGrantAddable", { organizationId: over.grantOrganization ?? ctx.orgA, targetId: "t", targetName: RESOLVER_NAMES.locationA }, body),
     assertGrantRemovable: (_j: unknown, _m: unknown, _u: unknown, kind: string, grantId: string) =>
       step("assertGrantRemovable", { organizationId: ctx.orgA, targetId: "t", targetName: RESOLVER_NAMES.groupA }, kind, grantId),
   };
@@ -343,6 +346,9 @@ export async function aGrantTargetUsesTheGrantsServicesChecks(ctx: ResolverCtx):
   const params = { id: "user-1", kind: "asset_group", grantId: "grant-9" };
   expect(await withUsers(ctx, removing).resolve(remove, params, {}, [ctx.orgA], JWT)).toMatchObject({ refName: RESOLVER_NAMES.groupA });
   expect(removing.calls).toContainEqual(["assertGrantRemovable", "asset_group", "grant-9"]);
+  // The user is looked up by the user parameter, never by the grant id (code review).
+  expect(removing.calls).toContainEqual(["requireManageableTarget", "user-1"]);
+  expect(removing.calls).not.toContainEqual(["requireManageableTarget", "grant-9"]);
   expect(await withUsers(ctx, userServices(ctx, { throws: ["assertGrantRemovable"] })).resolve(remove, params, {}, [ctx.orgA], JWT)).toBeNull();
   expect(await withUsers(ctx, userServices(ctx)).resolve(remove, { ...params, kind: "site" }, {}, [ctx.orgA], JWT)).toBeNull();
 }
@@ -356,4 +362,20 @@ export async function aUserCreateRunsTheRoutesManagerChecks(ctx: ResolverCtx): P
   expect(await withUsers(ctx, orgAdmin([ctx.orgA])).resolve(entry, {}, body("admin"), [ctx.orgA], JWT)).toBeNull();
   expect(await withUsers(ctx, orgAdmin([ctx.orgB])).resolve(entry, {}, body("viewer"), [ctx.orgA], JWT)).toBeNull();
   expect(await withUsers(ctx, userServices(ctx, { throws: ["requireManager"] })).resolve(entry, {}, body("viewer"), [ctx.orgA], JWT)).toBeNull();
+}
+
+/**
+ * A cross-organization grant (code review): the change lives in the grant
+ * target's organization, not the user's home; and the user's home must be in
+ * the turn's scope too (decision 10 — the user's name reaches the model).
+ */
+export async function aGrantLivesInItsTargetsOrganizationAndNeedsTheUsersHomeInScope(ctx: ResolverCtx): Promise<void> {
+  const add = fixture({ kind: "userGrantAdd", param: "id" });
+  const body = { kind: "location", targetId: ctx.locationB };
+  const crossing = () => userServices(ctx, { grantOrganization: ctx.orgB });
+  expect(await withUsers(ctx, crossing()).resolve(add, { id: "user-1" }, body, [ctx.orgA, ctx.orgB], JWT)).toMatchObject({
+    organizationId: ctx.orgB,
+  });
+  // The user's home (A) outside the turn's scope: refused, though the grant target (B) is in it.
+  expect(await withUsers(ctx, crossing()).resolve(add, { id: "user-1" }, body, [ctx.orgB], JWT)).toBeNull();
 }

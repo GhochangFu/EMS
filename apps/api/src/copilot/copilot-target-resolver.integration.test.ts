@@ -8,6 +8,7 @@ import { asRole } from "../testing/role-urls";
 import {
   aCreateUnderAParentTakesTheParentsOrganization,
   aFleetRowLivesInTheBoundOrganization,
+  aGrantLivesInItsTargetsOrganizationAndNeedsTheUsersHomeInScope,
   aGrantTargetUsesTheGrantsServicesChecks,
   aUserCreateRunsTheRoutesManagerChecks,
   aUserTargetUsesTheUsersServicesChecks,
@@ -178,4 +179,6 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("resolves a user target through the users service (PR 4)", () => aUserTargetUsesTheUsersServicesChecks(ctx));
   it("resolves a grant through the grants service (PR 4)", () => aGrantTargetUsesTheGrantsServicesChecks(ctx));
   it("runs the route's manager checks for a user create (PR 4)", () => aUserCreateRunsTheRoutesManagerChecks(ctx));
+  it("puts a grant in its target's organization and needs the user's home in scope", () =>
+    aGrantLivesInItsTargetsOrganizationAndNeedsTheUsersHomeInScope(ctx));
 });

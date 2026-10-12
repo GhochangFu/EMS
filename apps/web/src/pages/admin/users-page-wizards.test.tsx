@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aFillOfANewKindKeepsItsTarget,
   theCreateRequestBodyIsTheWizardValuesAndThePassword,
   theCreateRequestCarriesTheTypedPassword,
   theCreateWizardValuesHoldNoPassword,
@@ -106,4 +107,8 @@ describe("F3.86 users page and grants drawer wizards", () => {
   it("the reactivate wizard's POST carries no X-Copilot-Change header", async () => {
     await theReactivateRequestCarriesNoCopilotHeader();
   });
+
+  it("keeps the target of a copilot fill that changes the kind", async () => {
+    await aFillOfANewKindKeepsItsTarget();
+  }, 15_000);
 });

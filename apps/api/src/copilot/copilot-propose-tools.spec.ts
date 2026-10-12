@@ -662,3 +662,33 @@ export async function aFleetChangeNeedsABoundConversation(): Promise<void> {
     expect(h.resolved[0]?.bound, target.kind).toBe(ORG_X);
   }
 }
+
+/**
+ * `F3.86` PR 4, ruling Q3 (security review) — a tool result cannot pre-fill
+ * an access wizard nor read its shape: `fill_step` and `describe_change` on
+ * an access entry need the user's own ask, as the propose tool does; with
+ * the ask, a fill still never names the global admin role. Mutation: drop
+ * the `accessAsked` check in `fill_step` → the first reddens.
+ */
+export async function aFillOrDescribeOfAnAccessEntryNeedsTheUsersOwnAsk(): Promise<void> {
+  const update = catalogEntry("user.update") as CatalogEntry;
+  const grant = catalogEntry("userGrant.add") as CatalogEntry;
+  const h = proposeHarness({ catalog: [update, grant] });
+  const fill = { catalogId: "userGrant.add", stepId: "grant", values: { kind: "location", targetId: ROW } };
+  for (const over of [{ accessIntent: false }, { accessIntent: true, turnKind: "follow_up" as const }]) {
+    expect(await h.tools.dispatch(FILL_STEP_TOOL, fill, h.ctx(over)), JSON.stringify(over)).toEqual({
+      ok: false,
+      error: PROPOSE_ACCESS_NOT_ASKED_ERROR,
+    });
+    expect(await h.tools.dispatch(DESCRIBE_CHANGE_TOOL, { catalogId: "userGrant.add" }, h.ctx(over))).toEqual({
+      ok: false,
+      error: PROPOSE_ACCESS_NOT_ASKED_ERROR,
+    });
+  }
+  const asked = h.ctx({ accessIntent: true });
+  expect((await h.tools.dispatch(FILL_STEP_TOOL, fill, asked)).ok).toBe(true);
+  expect((await h.tools.dispatch(DESCRIBE_CHANGE_TOOL, { catalogId: "userGrant.add" }, asked)).ok).toBe(true);
+  const admin = await h.tools.dispatch(FILL_STEP_TOOL, { catalogId: "user.update", stepId: "role", values: { role: "admin" } }, asked);
+  expect(admin.ok).toBe(false);
+  expect((await h.tools.dispatch(FILL_STEP_TOOL, { catalogId: "user.update", stepId: "role", values: { role: "viewer" } }, asked)).ok).toBe(true);
+}

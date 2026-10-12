@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect } from "vitest";
 
 import { createUserValues } from "../../components/admin/user-wizards";
+import { useWizardStore } from "../../stores/wizard-store";
 import {
   type Call,
   DEACTIVATED_ID,
@@ -299,4 +300,31 @@ export async function theReactivateRequestCarriesNoCopilotHeader(): Promise<void
   const headers = await statusWriteHeaders("Reactivate", "Dev Deactivated", `/api/v1/admin/users/${DEACTIVATED_ID}/reactivate`);
   expect(headers).toBeDefined();
   expect(headers?.has("X-Copilot-Change")).toBe(false);
+}
+
+/**
+ * `F3.86` PR 4 (code review) — a copilot fill that names a new kind and its
+ * target keeps the target: the drawer opens on its default kind, the fill
+ * changes both, and Submit sends the filled pair. Mutation: clear the target
+ * on every kind change → the body assertion reddens.
+ */
+export async function aFillOfANewKindKeepsItsTarget(): Promise<void> {
+  stubOidc();
+  const calls = stubFetch({
+    [`POST /api/v1/admin/users/${LINKED_ID}/grants`]: { status: 201, body: GRANTS },
+  });
+  renderPage();
+  const drawer = await openGrants();
+  useWizardStore.getState().receiveFill({
+    catalogId: "userGrant.add",
+    stepId: "grant",
+    values: { kind: "organization", targetId: ORG_ID },
+  });
+  await userEvent.click(await within(drawer).findByRole("button", { name: "Next" }));
+  await userEvent.click(await within(drawer).findByRole("button", { name: "Submit" }));
+  await waitFor(() => {
+    expect(writes(calls)).toEqual([
+      { path: `/api/v1/admin/users/${LINKED_ID}/grants`, method: "POST", body: { kind: "organization", targetId: ORG_ID } },
+    ]);
+  });
 }

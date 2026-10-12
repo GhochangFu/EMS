@@ -39,6 +39,7 @@ const ACCESS_WORDS = [
 
 const ACCESS_WORD = new RegExp(`(?:^|[^a-z0-9-])(?:${ACCESS_WORDS.join("|")})(?![a-z0-9-])`, "i");
 
+/** Whether the user's own message names an access word (whole words, any case): the turn then offers the access tools. */
 export function accessIntentOf(message: string): boolean {
   return ACCESS_WORD.test(message);
 }
