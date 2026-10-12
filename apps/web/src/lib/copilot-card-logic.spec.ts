@@ -42,6 +42,13 @@ export function everyEntryHasInvalidations(): void {
   expect(invalidationKeysFor("location.controlRoomView.set")).toEqual([["admin", "locations"], ["control-room", "site-view"]]);
   expect(invalidationKeysFor("location.siteLayout.make")).toContainEqual(["control-room", "site-view"]);
   expect(invalidationKeysFor("location.siteLayout.make")).toContainEqual(["dashboards"]);
+  // `F3.86` PR 3a: the pages' own keys (`locations-page.tsx`, `rtus-page.tsx`, `admin-breadcrumb.tsx`).
+  for (const id of ["location.create", "location.update", "location.deactivate", "location.reactivate"]) {
+    expect(invalidationKeysFor(id), id).toEqual([["admin", "locations"], ["admin", "location-summary"]]);
+  }
+  for (const id of ["rtu.create", "rtu.update", "rtu.deactivate", "rtu.reactivate"]) {
+    expect(invalidationKeysFor(id), id).toEqual([["admin", "rtus"], ["admin", "rtu-summary"]]);
+  }
 }
 
 /**

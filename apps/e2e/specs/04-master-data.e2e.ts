@@ -39,6 +39,24 @@ function modal(page: Page, heading: string) {
   return page.getByRole("heading", { level: 2, name: heading, exact: true }).locator("xpath=..");
 }
 
+/**
+ * `F3.86` PR 3a — a wizard the page opened (ADR 0099 decision 6): the dialog
+ * the frame names after its heading (`components/admin/location-wizards.tsx`
+ * `AdminWizardFrame`, `role="dialog"` with that `aria-label`). The location
+ * and RTU forms are wizards; the asset and mapping forms are still modals.
+ */
+function wizard(page: Page, heading: string) {
+  return page.getByRole("dialog", { name: heading, exact: true });
+}
+
+/** A wizard's Next, then its Review step's Submit: one Next per step after the open one. */
+async function nextThenSubmit(dialog: ReturnType<typeof wizard>, nexts: number): Promise<void> {
+  for (let step = 0; step < nexts; step += 1) {
+    await dialog.getByRole("button", { name: "Next", exact: true }).click();
+  }
+  await dialog.getByRole("button", { name: "Submit", exact: true }).click();
+}
+
 /** The table row whose Code cell is exactly `code`. */
 function rowByCode(page: Page, code: string) {
   return page.locator("tbody tr").filter({ has: page.getByRole("cell", { name: code, exact: true }) });
@@ -66,15 +84,19 @@ test.describe("path 4 — master data", () => {
       await expect(page.getByRole("heading", { level: 1, name: "Locations" })).toBeVisible();
       await page.getByRole("button", { name: "Add location", exact: true }).click();
 
-      const form = modal(page, "Add location");
+      // Basics → Place → Metadata → Review (`location.create`).
+      const form = wizard(page, "Add location");
       await form.getByRole("combobox", { name: "Organization", exact: true }).selectOption(eskomOrganizationId);
       await expect(form.getByRole("combobox", { name: "Parent", exact: true })).toHaveValue("");
+      // The wizard reads the location types when it opens; until they load, the body has no type.
+      await expect(form.getByRole("combobox", { name: "Type", exact: true })).not.toHaveValue("");
       await form.getByLabel("code", { exact: true }).fill(LOCATION_CODE);
       await form.getByLabel("slug", { exact: true }).fill(LOCATION_SLUG);
       await form.getByLabel("name", { exact: true }).fill(LOCATION_NAME);
+      await form.getByRole("button", { name: "Next", exact: true }).click();
       await form.getByLabel("Latitude", { exact: true }).fill("-26.2");
       await form.getByLabel("Longitude", { exact: true }).fill("28.0");
-      await form.getByRole("button", { name: "Save", exact: true }).click();
+      await nextThenSubmit(form, 2);
       await expect(form).toHaveCount(0);
 
       await page.getByPlaceholder("Search").fill(LOCATION_CODE);
@@ -88,12 +110,13 @@ test.describe("path 4 — master data", () => {
     await test.step("add an RTU at the location", async () => {
       await page.getByRole("button", { name: "Add RTU", exact: true }).click();
 
-      const form = modal(page, "Add RTU");
+      // Basics → Source → Metadata → Review (`rtu.create`).
+      const form = wizard(page, "Add RTU");
       await expect(form.getByRole("combobox", { name: "Location", exact: true })).toHaveValue(locationId);
       await form.getByLabel("Code", { exact: true }).fill(RTU_CODE);
       await form.getByLabel("Display name", { exact: true }).fill(RTU_NAME);
       await form.getByRole("combobox", { name: "Source type", exact: true }).selectOption("simulator");
-      await form.getByRole("button", { name: "Save", exact: true }).click();
+      await nextThenSubmit(form, 3);
       await expect(form).toHaveCount(0);
 
       await expect(rowByCode(page, RTU_CODE)).toHaveCount(1);

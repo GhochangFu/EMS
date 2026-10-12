@@ -141,11 +141,12 @@ export class CopilotTargetResolver implements CopilotTargets {
       if (found !== null && !(await this.safely(() => this.mayCreate(target.manage, organizationId, body, user)))) found = null;
     } else if (target.kind === "parent") {
       // A create under a row the body names: the row's organization, and the route's check on that row.
+      // The create's body is not the parent's: no parent check reads it (a create's `parentId` is no move).
       const parentId = body[target.field];
       if (typeof parentId !== "string") return null;
       const of = target.of;
       found = await this.findRow(of, parentId, allowedOrganizationIds);
-      if (found !== null && !(await this.safely(() => this.mayManage(of, parentId, found as Found, user, body)))) found = null;
+      if (found !== null && !(await this.safely(() => this.mayManage(of, parentId, found as Found, user, {})))) found = null;
     } else if (target.kind === "user" || target.kind === "userGrantAdd" || target.kind === "userGrant") {
       // `F3.86` PR 4: the users services' own checks; a 403 or 404 from them is the one refusal.
       found = await this.findUserTarget(target, params, body, user, allowedOrganizationIds).catch(() => null);
@@ -472,9 +473,13 @@ export class CopilotTargetResolver implements CopilotTargets {
   ): Promise<boolean> {
     switch (kind) {
       // The location, RTU and asset-group routes: a master-data user who manages the site.
+      // `F3.86` PR 3a: `LocationsAdminService.update` — a body that names `parentId` (any value,
+      // `null` included) is a move, which only an organization-level administrator makes.
       case "location":
         await this.access.requireMasterDataUser(user);
-        return this.access.canManageLocation(user, id);
+        if (!(await this.access.canManageLocation(user, id))) return false;
+        if (body.parentId === undefined) return true;
+        return this.access.isOrganizationLevelAdmin(user, found.organizationId);
       case "rtu":
       case "assetGroup":
       case "assetGroupMember":

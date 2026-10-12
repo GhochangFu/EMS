@@ -13,6 +13,7 @@ import {
   aUserCreateRunsTheRoutesManagerChecks,
   aUserTargetUsesTheUsersServicesChecks,
   aLocationCreateRefusesALocationAdmin,
+  aLocationMoveNeedsAnOrganizationLevelAdmin,
   aLocationResolvesWithItsSiteCheck,
   anAssetRowIsCheckedOnItsAsset,
   aSiteLayoutNeedsTheDashboardCheckToo,
@@ -168,6 +169,8 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   });
 
   it("resolves a location with its site check", () => aLocationResolvesWithItsSiteCheck(ctx));
+  it("asks for an organization-level admin when a location update names parentId (PR 3a)", () =>
+    aLocationMoveNeedsAnOrganizationLevelAdmin(ctx));
   it("checks an RTU, a group and a member on their own site", () => aSiteRowIsCheckedOnItsOwnSite(ctx));
   it("checks an asset point on its asset, and an asset by :id", () => anAssetRowIsCheckedOnItsAsset(ctx));
   it("gives a create under a parent the parent's organization", () => aCreateUnderAParentTakesTheParentsOrganization(ctx));

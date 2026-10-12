@@ -201,14 +201,15 @@ export async function addModalHasNoControlRoomViewField(): Promise<void> {
   renderPage("admin");
   await screen.findByText("RSMOC-like site", undefined, FAIL_FAST);
   await userEvent.click(screen.getByRole("button", { name: "Add location" }));
-  const form = (await screen.findByRole("heading", { name: "Add location" }, FAIL_FAST)).closest("form")!;
+  await screen.findByRole("heading", { name: "Add location" }, FAIL_FAST);
+  const form = screen.getByRole("dialog", { name: "Add location" });
   // Data-produced: the organization option exists only once the organizations read answered.
   // Scoped to the form (the filter bar lists the same organization), and a text query, not a
   // role query: the form holds the ~400-option timezone datalist.
   await within(form).findByText("PHEWB · PHE West Bengal", undefined, FAIL_FAST);
 
-  // Positive control beside the absence: a neighbouring field of the same form is there.
-  expect(screen.getByLabelText("Timezone (IANA)")).toBeInTheDocument();
+  // Positive control beside the absence: a neighbouring field of the same step is there.
+  expect(screen.getByLabelText("code")).toBeInTheDocument();
   expect(screen.queryByLabelText("Control Room view")).toBeNull();
   expect(api.fetchSiteControlRoomView).not.toHaveBeenCalled();
 }
@@ -221,7 +222,15 @@ export async function editModalHasNoControlRoomViewField(): Promise<void> {
   // Data-produced: the type option exists once the location-types read answered.
   await within(screen.getByLabelText("Type")).findByText("RSMOC", undefined, FAIL_FAST);
 
-  expect(screen.getByLabelText("Timezone (IANA)")).toBeInTheDocument();
+  // `F3.86` PR 3a: the form is a wizard, so every step is checked, each beside a field it holds.
+  for (const [step, neighbour] of [["Basics", "code"], ["Place", "Timezone (IANA)"]] as const) {
+    if (step !== "Basics") await userEvent.click(screen.getByRole("button", { name: "Next" }));
+    await screen.findByRole("region", { name: step }, FAIL_FAST);
+    expect(screen.getByLabelText(neighbour), step).toBeInTheDocument();
+    expect(screen.queryByLabelText("Control Room view"), step).toBeNull();
+  }
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect((await screen.findByRole("region", { name: "Metadata" }, FAIL_FAST)).textContent).toContain("metadata");
   expect(screen.queryByLabelText("Control Room view")).toBeNull();
   expect(api.fetchSiteControlRoomView).not.toHaveBeenCalled();
 }
@@ -234,7 +243,10 @@ export async function editSaveSendsNoViewPut(): Promise<void> {
   const name = screen.getByLabelText("name") as HTMLInputElement;
   await userEvent.clear(name);
   await userEvent.type(name, "Renamed site");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  for (let step = 0; step < 5 && !screen.queryByRole("button", { name: "Submit" }); step += 1) {
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  }
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
 
   await waitFor(() => {
     expect(screen.queryByRole("heading", { name: "Edit location" })).toBeNull();

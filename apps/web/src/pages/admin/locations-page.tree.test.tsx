@@ -25,6 +25,9 @@ import {
   theParentColumnNamesTheParent,
 } from "./locations-page.tree.spec";
 
+/** `F3.86` PR 3a: the form is a wizard, and a walk through its steps takes seconds under jsdom. */
+const WIZARD_WALK_MS = 20_000;
+
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). The jsdom docblock is
  * on THIS file because Vitest reads it from the file it collects (ADR 0042 decision 2).
@@ -112,4 +115,4 @@ describe("F2.10 locations page — the tree", () => {
   it("P18 under Status = Inactive a hidden parent reads '(not in this list)', not '—'", async () => {
     await aParentTheFilterHidesIsNotCalledARoot();
   });
-});
+}, WIZARD_WALK_MS);

@@ -8,11 +8,13 @@ import {
 import type {
   AdminLocationDto,
   AdminLocationSummaryDto,
+  CreateLocationBody,
   LocationsListResponse,
   LocationTypesListResponse,
   MasterDataActiveFilter,
   PutSiteControlRoomViewBody,
   SiteControlRoomViewSettingDto,
+  UpdateLocationBody,
 } from "@bms/shared";
 
 import { adminFetch } from "./client";
@@ -42,22 +44,8 @@ export async function fetchAdminLocationSummary(
   return adminFetch(`/admin/locations/${id}`, adminLocationSummaryDtoSchema);
 }
 
-export async function createAdminLocation(input: {
-  organizationId: string;
-  code: string;
-  slug: string;
-  name: string;
-  type: string;
-  province?: string | null;
-  capital?: string | null;
-  /** E4.1b: IANA zone name; the server validates it against pg_timezone_names. */
-  timezone?: string | null;
-  latitude: number;
-  longitude: number;
-  meta?: Record<string, unknown>;
-  /** `F2.10` (ADR 0098): the parent node; `null` or absent makes a root. */
-  parentId?: string | null;
-}): Promise<AdminLocationDto> {
+/** `POST /admin/locations`. `F3.86` PR 3a: the body is the route's own (`@bms/shared`, ADR 0030). */
+export async function createAdminLocation(input: CreateLocationBody): Promise<AdminLocationDto> {
   return adminFetch("/admin/locations", adminLocationDtoSchema, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -65,25 +53,12 @@ export async function createAdminLocation(input: {
   });
 }
 
-export async function updateAdminLocation(
-  id: string,
-  input: Partial<{
-    code: string;
-    slug: string;
-    name: string;
-    type: string;
-    province: string | null;
-    capital: string | null;
-    timezone: string | null;
-    latitude: number;
-    longitude: number;
-    /**
-     * `F2.10` (ADR 0098 decision 12) — a move. Send the key only when the parent changed and the
-     * role may move: any body that names it is a 403 below the organization level.
-     */
-    parentId: string | null;
-  }>,
-): Promise<AdminLocationDto> {
+/**
+ * `PATCH /admin/locations/:id`. `F2.10` (ADR 0098 decision 12) — `parentId` is a move: send the
+ * key only when the parent changed and the role may move, since any body that names it is a 403
+ * below the organization level.
+ */
+export async function updateAdminLocation(id: string, input: UpdateLocationBody): Promise<AdminLocationDto> {
   return adminFetch(`/admin/locations/${id}`, adminLocationDtoSchema, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },

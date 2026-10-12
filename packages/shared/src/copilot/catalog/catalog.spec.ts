@@ -108,6 +108,23 @@ export const FIXTURES: Readonly<
   "pointKey.update": { body: { name: "Renamed", headlineRank: 3 }, params: { id: ROW }, names: TARGET_NAME },
   "pointKey.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
   "pointKey.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  // `F3.86` PR 3a: locations and RTUs.
+  "location.create": {
+    body: { organizationId: ORG, code: "PUNE-1", slug: "pune-1", name: "Pune Works", type: "rsmoc", latitude: 18.5, longitude: 73.8 },
+    params: {},
+    names: "Pune Works",
+  },
+  "location.update": { body: { name: "Renamed", parentId: ROW }, params: { id: ROW }, names: TARGET_NAME },
+  "location.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "location.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "rtu.create": {
+    body: { locationId: ROW, code: "RTU-7", displayName: "Gateway Seven", sourceType: "mqtt", mqttTopic: "site/rtu7" },
+    params: {},
+    names: "Gateway Seven",
+  },
+  "rtu.update": { body: { displayName: "Renamed" }, params: { id: ROW }, names: TARGET_NAME },
+  "rtu.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "rtu.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
 };
 
 const summaryOf = (entry: CatalogEntry) => {

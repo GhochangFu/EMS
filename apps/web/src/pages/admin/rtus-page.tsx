@@ -1,10 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { AdminRtuDto, MasterDataActiveFilter } from "@bms/shared";
+import type { AdminRtuDto, CreateRtuBody, MasterDataActiveFilter, UpdateRtuBody } from "@bms/shared";
 
-import { fetchAdminLocationSummary, fetchAdminLocations } from "../../api/admin/locations";
+import { fetchAdminLocationSummary } from "../../api/admin/locations";
 import {
   createAdminRtu,
   deactivateAdminRtu,
@@ -18,6 +17,7 @@ import {
   type HierarchySelection,
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { RtuStatusWizard, RtuWizard } from "../../components/admin/rtu-wizards";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
@@ -26,7 +26,14 @@ import type { AuthUser } from "../../stores/auth-store";
 
 type RtusAdminPageProps = { user: AuthUser };
 
-/** Admin screen for RTU master data with location drill-down. */
+/**
+ * Admin screen for RTU master data with location drill-down.
+ *
+ * `F3.86` PR 3a (ADR 0099 decision 6) — Add and Edit are the `rtu.create`
+ * and `rtu.update` wizards, and Deactivate and Reactivate are Review-only
+ * wizards (ruling Q9); all four live in `components/admin/rtu-wizards.tsx`.
+ * This page sends what Review parsed, with no `X-Copilot-Change` header.
+ */
 export function RtusAdminPage({ user }: RtusAdminPageProps) {
   const { locationId } = useParams();
   const navigate = useNavigate();
@@ -36,27 +43,14 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<AdminRtuDto | null>(null);
-  const [form, setForm] = useState({
-    locationId: locationId ?? "",
-    code: "",
-    displayName: "",
-    sourceType: "catalog" as AdminRtuDto["sourceType"],
-    domain: "",
-    rtuCode: "",
-    ingestEnabled: false,
-  });
   const [error, setError] = useState<string | null>(null);
+  /** `F3.86` PR 3a — the RTU whose deactivate or reactivate wizard is open. */
+  const [statusTarget, setStatusTarget] = useState<AdminRtuDto | null>(null);
 
   const locationSummaryQ = useQuery({
     queryKey: ["admin", "location-summary", locationId],
     queryFn: () => fetchAdminLocationSummary(locationId ?? ""),
     enabled: Boolean(locationId),
-  });
-
-  const formLocationsQ = useQuery({
-    queryKey: ["admin", "locations", "true", selection.organizationId],
-    queryFn: () => fetchAdminLocations("true", selection.organizationId),
-    enabled: modalOpen && !editing,
   });
 
   useEffect(() => {
@@ -65,7 +59,6 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
         organizationId: locationSummaryQ.data?.organizationId,
         locationId,
       });
-      setForm((current) => ({ ...current, locationId }));
     }
   }, [locationId, locationSummaryQ.data?.organizationId]);
 
@@ -86,32 +79,10 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
   }, [listQ.data?.items, search]);
 
   const saveMutation = useMutation({
-    mutationFn: async () => {
-      // `rtus.rtu_code` is the device key the ingest host matches each MQTT
-      // payload's `dev_id` against (ADR 0016 §3), so a pasted space would
-      // route nothing, silently. `F4.182`: an edit sends it only when it
-      // changed, because `""` clears the column and a restated blank would
-      // turn a seeded NULL into `""` (`F4.143`).
-      const rtuCode = form.rtuCode.trim();
-      if (editing) {
-        return updateAdminRtu(editing.id, {
-          code: form.code,
-          displayName: form.displayName,
-          sourceType: form.sourceType,
-          domain: form.domain || undefined,
-          ...(rtuCode === (editing.rtuCode ?? "").trim() ? {} : { rtuCode }),
-          ingestEnabled: form.ingestEnabled,
-        });
-      }
-      return createAdminRtu({
-        locationId: form.locationId,
-        code: form.code,
-        displayName: form.displayName,
-        sourceType: form.sourceType,
-        domain: form.domain || undefined,
-        ...(rtuCode === "" ? {} : { rtuCode }),
-        ingestEnabled: form.ingestEnabled,
-      });
+    // The body the wizard's Review parsed: what Review showed is what is sent.
+    mutationFn: async (body: Record<string, unknown>) => {
+      if (editing) return updateAdminRtu(editing.id, body as UpdateRtuBody);
+      return createAdminRtu(body as CreateRtuBody);
     },
     onSuccess: async () => {
       setModalOpen(false);
@@ -142,15 +113,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
             className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
             onClick={() => {
               setEditing(null);
-              setForm({
-                locationId: locationId ?? selection.locationId ?? "",
-                code: "",
-                displayName: "",
-                sourceType: "catalog",
-                domain: "",
-                rtuCode: "",
-                ingestEnabled: false,
-              });
+              setError(null);
               setModalOpen(true);
             }}
           >
@@ -213,15 +176,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                       className="text-xs font-semibold text-accent-strong"
                       onClick={() => {
                         setEditing(item);
-                        setForm({
-                          locationId: item.locationId,
-                          code: item.code,
-                          displayName: item.displayName,
-                          sourceType: item.sourceType,
-                          domain: item.domain ?? "",
-                          rtuCode: item.rtuCode ?? "",
-                          ingestEnabled: item.ingestEnabled,
-                        });
+                        setError(null);
                         setModalOpen(true);
                       }}
                     >
@@ -230,7 +185,7 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                     <button
                       type="button"
                       className="text-xs font-semibold text-ink-muted"
-                      onClick={() => toggleMutation.mutate(item)}
+                      onClick={() => setStatusTarget(item)}
                     >
                       {item.active ? "Deactivate" : "Reactivate"}
                     </button>
@@ -243,121 +198,27 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
       </SectionCard>
 
       {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
-          <form
-            className="w-full max-w-lg surface-dialog p-4"
-            onSubmit={(event: FormEvent) => {
-              event.preventDefault();
-              saveMutation.mutate();
-            }}
-          >
-            <h2 className="font-condensed text-lg font-bold">
-              {editing ? "Edit RTU" : "Add RTU"}
-            </h2>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {!editing ? (
-                <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
-                  Location
-                  <select
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                    value={form.locationId}
-                    required
-                    onChange={(event) =>
-                      setForm({ ...form, locationId: event.target.value })
-                    }
-                  >
-                    <option value="">Select location</option>
-                    {(formLocationsQ.data?.items ?? []).map((loc) => (
-                      <option key={loc.id} value={loc.id}>
-                        {loc.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              <label className="block text-xs font-semibold text-ink-muted">
-                Code
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.code}
-                  required
-                  onChange={(event) => setForm({ ...form, code: event.target.value })}
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Display name
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.displayName}
-                  required
-                  onChange={(event) => setForm({ ...form, displayName: event.target.value })}
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Source type
-                <select
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.sourceType}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      sourceType: event.target.value as AdminRtuDto["sourceType"],
-                    })
-                  }
-                >
-                  <option value="catalog">catalog</option>
-                  <option value="mqtt">mqtt</option>
-                  <option value="simulator">simulator</option>
-                </select>
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Domain
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.domain}
-                  onChange={(event) => setForm({ ...form, domain: event.target.value })}
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
-                Device ID (dev_id)
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 font-mono text-sm"
-                  value={form.rtuCode}
-                  maxLength={64}
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(event) => setForm({ ...form, rtuCode: event.target.value })}
-                />
-              </label>
-              <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted sm:col-span-2">
-                <input
-                  type="checkbox"
-                  checked={form.ingestEnabled}
-                  onChange={(event) =>
-                    setForm({ ...form, ingestEnabled: event.target.checked })
-                  }
-                />
-                Ingest enabled
-              </label>
-            </div>
-            {error ? <div className="mt-2 text-xs text-critical-ink">{error}</div> : null}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                className="surface-button px-3 py-2"
-                onClick={() => setModalOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
-              >
-                Save
-              </button>
-            </div>
-          </form>
-        </div>
+        <RtuWizard
+          key={editing?.id ?? "create"}
+          editing={editing}
+          locationId={locationId ?? selection.locationId ?? ""}
+          organizationId={selection.organizationId}
+          pending={saveMutation.isPending}
+          error={error}
+          onSubmit={(body) => saveMutation.mutate(body)}
+          onCancel={() => setModalOpen(false)}
+        />
+      ) : null}
+
+      {statusTarget ? (
+        <RtuStatusWizard
+          target={statusTarget}
+          onCancel={() => setStatusTarget(null)}
+          onSubmit={() => {
+            setStatusTarget(null);
+            toggleMutation.mutate(statusTarget);
+          }}
+        />
       ) : null}
     </MasterDataLayout>
   );

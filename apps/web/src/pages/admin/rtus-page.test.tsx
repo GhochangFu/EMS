@@ -12,6 +12,9 @@ import {
   listShowsTheDeviceIdAndADashWhenUnset,
 } from "./rtus-page.spec";
 
+/** `F3.86` PR 3a: the form is a wizard, and a walk through its steps takes seconds under jsdom. */
+const WIZARD_WALK_MS = 20_000;
+
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and
  * the jsdom docblock is here because this is the file Vitest collects
@@ -50,4 +53,4 @@ describe("F4.182 RTUs admin page — device ID (rtu_code)", () => {
   it("R7 a taken device ID shows the API sentence, not the JSON envelope", async () => {
     await aTakenDeviceIdShowsTheApiSentence();
   });
-});
+}, WIZARD_WALK_MS);

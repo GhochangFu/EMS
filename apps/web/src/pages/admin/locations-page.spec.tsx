@@ -143,11 +143,30 @@ async function fillRequired(): Promise<void> {
   await userEvent.type(screen.getByLabelText("name"), "New station");
 }
 
+/**
+ * `F3.86` PR 3a — the form is the `location.create` / `location.update` wizard: Next through
+ * the steps (each checks its own fields), then Submit on Review.
+ */
+export async function submitWizard(): Promise<void> {
+  for (let step = 0; step < 5 && !screen.queryByRole("button", { name: "Submit" }); step += 1) {
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  }
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+}
+
+/** From Basics to the Place step (Province, Capital, Latitude, Longitude, Timezone). */
+export async function toPlaceStep(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("region", { name: "Place" });
+}
+
 /** W1 — the form has a Timezone input bound to a datalist with at least one option. */
 export async function formHasATimezoneInputWithADatalist(): Promise<void> {
   stubApi();
   renderPage();
   await openCreateForm();
+  await fillRequired();
+  await toPlaceStep();
 
   const input = screen.getByLabelText("Timezone (IANA)") as HTMLInputElement;
   expect(input.getAttribute("list")).toBe("tz-list");
@@ -163,7 +182,7 @@ export async function emptyTimezoneSubmitsNull(): Promise<void> {
   await openCreateForm();
   await fillRequired();
 
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 
   await waitFor(() => {
     expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
@@ -178,10 +197,11 @@ export async function typedTimezoneIsSubmitted(): Promise<void> {
   renderPage();
   await openCreateForm();
   await fillRequired();
+  await toPlaceStep();
   await userEvent.type(screen.getByLabelText("Province"), "West Bengal");
   await userEvent.type(screen.getByLabelText("Timezone (IANA)"), "Asia/Kolkata");
 
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 
   await waitFor(() => {
     expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
@@ -200,6 +220,7 @@ export async function editPrefillsTheTimezone(): Promise<void> {
   const row = (await screen.findByText("Johannesburg station")).closest("tr")!;
   await userEvent.click(within(row).getByRole("button", { name: "Edit" }));
   await screen.findByRole("heading", { name: "Edit location" });
+  await toPlaceStep();
 
   expect((screen.getByLabelText("Timezone (IANA)") as HTMLInputElement).value).toBe(
     "Africa/Johannesburg",
@@ -252,7 +273,7 @@ export async function untouchedCreatePostsTheMumbaiCoordinates(): Promise<void> 
   await openCreateForm();
   await fillRequired();
 
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 
   await waitFor(() => {
     expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
@@ -272,7 +293,7 @@ export async function untouchedCreatePostsTheFirstListedType(): Promise<void> {
   await openCreateForm();
   await fillRequired();
 
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 
   await waitFor(() => {
     expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
@@ -375,7 +396,7 @@ export async function editingARetiredTypeShowsItSelectedAsRetired(): Promise<voi
 export async function savingARetiredTypeUntouchedOmitsType(): Promise<void> {
   await openEditOnRetiredRow();
 
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 
   await waitFor(() => {
     expect(api.updateAdminLocation).toHaveBeenCalledTimes(1);
@@ -390,7 +411,7 @@ export async function pickingANewTypeThenSavingSendsIt(): Promise<void> {
   await openEditOnRetiredRow();
 
   await userEvent.selectOptions(screen.getByLabelText("Type"), "pump_station");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 
   await waitFor(() => {
     expect(api.updateAdminLocation).toHaveBeenCalledTimes(1);
@@ -407,7 +428,7 @@ export async function createStillSendsType(): Promise<void> {
   await openCreateForm();
   await fillRequired();
 
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 
   await waitFor(() => {
     expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
@@ -430,7 +451,7 @@ export async function noSpecCallReachesTheNetwork(): Promise<void> {
   renderPage();
   await openCreateForm();
   await fillRequired();
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 
   await waitFor(() => {
     expect(api.createAdminLocation).toHaveBeenCalledTimes(1);
@@ -479,7 +500,7 @@ export async function aRefusedSaveShowsTheSentence(): Promise<void> {
   renderPage();
   await openCreateForm();
   await fillRequired();
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   const banner = await screen.findByText(/A location with that slug already exists/);
   expect(banner.textContent).not.toContain('{"');
 }

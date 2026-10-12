@@ -14,10 +14,12 @@ import { rejectCopilotChange } from "../../api/copilot";
 import { confirmCopilotChange } from "../../api/copilot-confirm";
 import { fetchCopilotCurrent } from "../../api/copilot-current";
 import { ambiguousTabsOfError } from "../../api/control-room";
+import { refreshScope } from "../../api/login";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { changeRows, fieldLabel } from "../../lib/copilot-diff";
 import { invalidationKeysFor } from "../../lib/copilot-invalidations";
+import { useAuthStore } from "../../stores/auth-store";
 import { ChangeCard } from "./change-card";
 
 /** What a 409 means on a card: the change was applied, rejected, expired or claimed elsewhere. */
@@ -68,6 +70,16 @@ export function confirmFailureKind(err: unknown): "gone" | "route" | "retry" {
   if (err.status === 401 || err.status === 413 || err.status >= 500) return "retry";
   if (err.status === 403 && message === COPILOT_UNAVAILABLE_MESSAGE) return "retry";
   return "route";
+}
+
+/**
+ * `F2.10` (ADR 0098 B8), the locations page's `createdOrMoved` rule: a
+ * location created or moved changes the tree, so the stored access scope
+ * every picker reads is stale. A rename or any other edit leaves it as is.
+ */
+function changesTheScope(change: CopilotPendingChangeDto): boolean {
+  if (change.catalogId === "location.create") return true;
+  return change.catalogId === "location.update" && "parentId" in change.body;
 }
 
 /** A Zod schema, named through the shared helper (`apps/web` does not depend on `zod` itself). */
@@ -166,6 +178,11 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
       setError(null);
       typed.current = {};
       await Promise.all(invalidationKeysFor(change.catalogId).map((queryKey) => queryClient.invalidateQueries({ queryKey })));
+      // A failed refresh never fails the applied change; the next app load refreshes it (B9).
+      const accessToken = useAuthStore.getState().accessToken;
+      if (accessToken && changesTheScope(change)) {
+        await refreshScope(accessToken).catch(() => undefined);
+      }
       onApplied(change);
     },
     onError: failConfirm,
