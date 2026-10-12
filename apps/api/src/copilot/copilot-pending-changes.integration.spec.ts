@@ -15,6 +15,7 @@ import {
 } from "./copilot-pending-changes.service";
 import { createCopilotProposeTools, PROPOSE_TARGET_ERROR } from "./copilot-propose-tools";
 import type { CopilotToolContext } from "./copilot-read-tools";
+import { NO_GRANTS, NO_USERS } from "../testing/copilot-user-checks";
 import { CopilotTargetResolver } from "./copilot-target-resolver";
 
 /**
@@ -346,7 +347,7 @@ const entry = (id: string) => {
  * row the caller may not manage are the same `null`.
  */
 export async function theResolverReadsATargetOnlyInTheAllowedSet(ctx: ProposeCtx): Promise<void> {
-  const resolver = new CopilotTargetResolver(ctx.tenantDb, always(true));
+  const resolver = new CopilotTargetResolver(ctx.tenantDb, always(true), NO_USERS, NO_GRANTS);
   const archive = entry("dashboardTemplate.archive");
   const jwt = { sub: ctx.userA } as JwtPayload;
   const inA = await resolver.resolve(archive, { id: ctx.templateA }, {}, [ctx.orgA], jwt);
@@ -358,13 +359,13 @@ export async function theResolverReadsATargetOnlyInTheAllowedSet(ctx: ProposeCtx
   });
   const missing = "99999999-9999-4999-8999-999999999999";
   expect(await resolver.resolve(archive, { id: missing }, {}, [ctx.orgA, ctx.orgB], jwt)).toBeNull();
-  const denied = new CopilotTargetResolver(ctx.tenantDb, always(false));
+  const denied = new CopilotTargetResolver(ctx.tenantDb, always(false), NO_USERS, NO_GRANTS);
   expect(await denied.resolve(archive, { id: ctx.templateA }, {}, [ctx.orgA], jwt)).toBeNull();
 }
 
 /** A create's organization must be allowed, and every id its body names must be a row of that organization. */
 export async function theResolverChecksACreatesOrganizationAndRefs(ctx: ProposeCtx): Promise<void> {
-  const resolver = new CopilotTargetResolver(ctx.tenantDb, always(true));
+  const resolver = new CopilotTargetResolver(ctx.tenantDb, always(true), NO_USERS, NO_GRANTS);
   const create = entry("dashboard.create");
   const jwt = { sub: ctx.userA } as JwtPayload;
   const body = (locationId: string) => ({ organizationId: ctx.orgA, slug: "x", name: "X", locationId });
@@ -377,7 +378,7 @@ export async function theResolverChecksACreatesOrganizationAndRefs(ctx: ProposeC
   // A create in an organization outside the allowed set, with no ref to catch it (mutation M15).
   expect(await resolver.resolve(create, {}, { organizationId: ctx.orgB, slug: "x", name: "X" }, [ctx.orgA], jwt)).toBeNull();
   // A create the caller may not make is refused like a missing row (review L2).
-  const denied = new CopilotTargetResolver(ctx.tenantDb, always(false));
+  const denied = new CopilotTargetResolver(ctx.tenantDb, always(false), NO_USERS, NO_GRANTS);
   expect(await denied.resolve(create, {}, body(ctx.locationA), [ctx.orgA], jwt)).toBeNull();
 }
 
@@ -391,7 +392,7 @@ export async function aThrowingManageCheckIsTheSameRefusal(ctx: ProposeCtx): Pro
       throw new Error("403");
     },
   } as never;
-  const resolver = new CopilotTargetResolver(ctx.tenantDb, throwing);
+  const resolver = new CopilotTargetResolver(ctx.tenantDb, throwing, NO_USERS, NO_GRANTS);
   const jwt = { sub: ctx.userA } as JwtPayload;
   expect(await resolver.resolve(entry("dashboardTemplate.archive"), { id: ctx.templateA }, {}, [ctx.orgA], jwt)).toBeNull();
   const create = { organizationId: ctx.orgA, code: "x", name: "X", section: "electrical" };
@@ -413,7 +414,7 @@ const MISSING_ID = "99999999-9999-4999-8999-999999999999";
 /** The propose tools over the real resolver (with `access` standing in for `AccessControlService`) and the real service. */
 function proposeTools(ctx: AssetTemplateCtx, access: never) {
   return createCopilotProposeTools({
-    targets: new CopilotTargetResolver(ctx.tenantDb, access),
+    targets: new CopilotTargetResolver(ctx.tenantDb, access, NO_USERS, NO_GRANTS),
     pending: service(ctx),
   });
 }
@@ -445,7 +446,7 @@ const PUBLISH = "assetTemplate.publish";
 
 /** Case 1: an asset template of an allowed organization resolves, with that row's organization and name. */
 export async function anAssetTemplateResolvesInAnAllowedOrganization(ctx: AssetTemplateCtx): Promise<void> {
-  const resolver = new CopilotTargetResolver(ctx.tenantDb, always(true));
+  const resolver = new CopilotTargetResolver(ctx.tenantDb, always(true), NO_USERS, NO_GRANTS);
   const jwt = { sub: ctx.userA } as JwtPayload;
   expect(await resolver.resolve(entry(UPDATE), { id: ctx.assetTemplateB }, {}, [ctx.orgA, ctx.orgB], jwt)).toMatchObject({
     organizationId: ctx.orgB,
@@ -456,7 +457,7 @@ export async function anAssetTemplateResolvesInAnAllowedOrganization(ctx: AssetT
 
 /** Case 2, the resolver's own guard: the same id outside the allowed set is `null` (the propose tool's later checks would mask a resolver mutation). */
 export async function theResolverDoesNotFindAnAssetTemplateOutsideTheAllowedSet(ctx: AssetTemplateCtx): Promise<void> {
-  const resolver = new CopilotTargetResolver(ctx.tenantDb, always(true));
+  const resolver = new CopilotTargetResolver(ctx.tenantDb, always(true), NO_USERS, NO_GRANTS);
   const jwt = { sub: ctx.userA } as JwtPayload;
   expect(await resolver.resolve(entry(UPDATE), { id: ctx.assetTemplateA }, {}, [ctx.orgB], jwt)).toBeNull();
 }

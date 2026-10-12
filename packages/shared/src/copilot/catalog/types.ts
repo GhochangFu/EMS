@@ -51,10 +51,25 @@ export type CatalogMethod = "POST" | "PUT" | "PATCH" | "DELETE";
  * - `siteControlRoomView`, `siteLayout`: the location the path parameter
  *   names, with the two Control Room routes' own checks (ruling Q7(b)).
  *
- * `user` and `userGrant` are `F3.86` PR 4's; `onboardingSession` is PR 5's.
+ * `F3.86` PR 4 (`risk: "access"`, ADR 0089's checks called through
+ * `UsersService` and `UserGrantsService`):
+ *
+ * - `organization` with `manage: "user"`: a user create, the body's
+ *   `organizationId`;
+ * - `user`: the user the path parameter names, in the user's home
+ *   organization (a global admin is never a target);
+ * - `userGrantAdd`: the user the path names, in the organization of the
+ *   grant target the body names (the audit row's);
+ * - `userGrant`: one grant of the user `userParam` names, by `param` and
+ *   `kindParam`, in its target's organization.
+ *
+ * `onboardingSession` is PR 5's.
  */
 export type CatalogTarget =
-  | { readonly kind: "organization"; readonly manage: "dashboard" | "template" | "calcParameter" | "location" }
+  | {
+      readonly kind: "organization";
+      readonly manage: "dashboard" | "template" | "calcParameter" | "location" | "user";
+    }
   | { readonly kind: "dashboard" | "dashboardTemplate" | "calcParameter" | "assetTemplate"; readonly param: "id" }
   | { readonly kind: "asset"; readonly param: "assetId" | "id" }
   | {
@@ -70,7 +85,9 @@ export type CatalogTarget =
       readonly param: string;
     }
   | { readonly kind: "parent"; readonly field: "locationId" | "assetId"; readonly of: "location" | "asset" }
-  | { readonly kind: "fleet" };
+  | { readonly kind: "fleet" }
+  | { readonly kind: "user" | "userGrantAdd"; readonly param: "id" }
+  | { readonly kind: "userGrant"; readonly param: "grantId"; readonly kindParam: "kind"; readonly userParam: "id" };
 
 /** The row kinds a body field may hold the id of. */
 export type CatalogRefKind = "location" | "assetGroup" | "asset" | "rtu" | "organization" | "dashboard" | "dashboardTemplate";
@@ -116,6 +133,8 @@ export type CatalogSummaryInput = {
   readonly organizationName: string;
   /** `dashboard.widgets.replace` only: the ids of the dashboard's widgets now (decision 4.9). */
   readonly currentWidgetIds?: readonly string[];
+  /** `F3.86` PR 4: the name of the row a change names beside its target (a grant's organization, site or group). */
+  readonly refName?: string;
 };
 
 export interface CatalogEntry {

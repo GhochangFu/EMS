@@ -19,6 +19,8 @@ const ASSET_GROUPS: QueryKey = ["admin", "asset-groups"];
 // The pair `asset-template-detail-page.tsx`'s own `afterChange` invalidates.
 const ASSET_TEMPLATES: QueryKey = ["admin", "asset-templates"];
 const ASSET_TEMPLATE: QueryKey = ["admin", "asset-template"];
+// `F3.86` PR 4: the users list, and by prefix each user's grants (`api/admin/users.ts`).
+const USERS: QueryKey = ["admin", "users"];
 
 const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "dashboard.create": [DASHBOARDS],
@@ -38,6 +40,12 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "calcOverride.set": [ASSET_CALC_POINTS],
   "assetTemplate.update": [ASSET_TEMPLATES, ASSET_TEMPLATE],
   "assetTemplate.publish": [ASSET_TEMPLATES, ASSET_TEMPLATE],
+  "user.create": [USERS],
+  "user.update": [USERS],
+  "user.deactivate": [USERS],
+  "user.reactivate": [USERS],
+  "userGrant.add": [USERS],
+  "userGrant.remove": [USERS],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

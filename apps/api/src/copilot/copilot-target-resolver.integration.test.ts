@@ -8,6 +8,9 @@ import { asRole } from "../testing/role-urls";
 import {
   aCreateUnderAParentTakesTheParentsOrganization,
   aFleetRowLivesInTheBoundOrganization,
+  aGrantTargetUsesTheGrantsServicesChecks,
+  aUserCreateRunsTheRoutesManagerChecks,
+  aUserTargetUsesTheUsersServicesChecks,
   aLocationCreateRefusesALocationAdmin,
   aLocationResolvesWithItsSiteCheck,
   anAssetRowIsCheckedOnItsAsset,
@@ -172,4 +175,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("needs the dashboard check for a site layout (ruling Q7(b))", () => aSiteLayoutNeedsTheDashboardCheckToo(ctx));
   it("refuses a location create by a location admin", () => aLocationCreateRefusesALocationAdmin(ctx));
   it("keeps the new ref kinds inside the organization", () => theNewRefKindsBelongToTheOrganization(ctx));
+  it("resolves a user target through the users service (PR 4)", () => aUserTargetUsesTheUsersServicesChecks(ctx));
+  it("resolves a grant through the grants service (PR 4)", () => aGrantTargetUsesTheGrantsServicesChecks(ctx));
+  it("runs the route's manager checks for a user create (PR 4)", () => aUserCreateRunsTheRoutesManagerChecks(ctx));
 });

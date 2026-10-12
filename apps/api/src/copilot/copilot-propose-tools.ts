@@ -14,9 +14,12 @@ import {
   stepValuesSchema,
 } from "@bms/shared/copilot";
 
+import { resolveAuthMode } from "../auth/auth-mode";
+import { LOCAL_MODE_READ_ONLY } from "../admin/users/users.service";
 import { jsonSchemaOf, type ToolRegistry } from "../llm/tool-registry";
 import { issuesOf } from "../llm/tool-result";
 import { bodyHash } from "./body-hash";
+import { PROPOSE_ACCESS_NOT_ASKED_ERROR } from "./copilot-access-intent";
 import { bodyDefinitionOf, describeBody } from "./copilot-change-schema";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import type { CopilotReadTools, CopilotToolContext, CopilotToolResult } from "./copilot-read-tools";
@@ -75,6 +78,18 @@ const isCalcDialect = (value: unknown): value is CalcDialect => (CALC_DIALECTS a
 export const DESCRIBE_CHANGE_BUDGET = 3;
 export const DESCRIBE_BUDGET_ERROR =
   "You have read enough of the shape this turn. Propose the change with what you read, or tell the user what is missing.";
+
+/**
+ * `F3.86` PR 4 — the propose tools, with a second registry that holds no
+ * access entry: the turn sends it when the user's own message did not ask
+ * for an access change (ruling Q3).
+ */
+export interface CopilotProposeTools extends CopilotReadTools {
+  readonly registryWithoutAccess: ToolRegistry<string>;
+}
+
+/** `F3.86` ruling Q8: the user-account entries a local sign-in deployment refuses (grants are database-only and stay). */
+const isUserAccountEntry = (entry: CatalogEntry): boolean => entry.id.startsWith("user.");
 
 /** What the propose tools need; specs pass fakes with call counters. */
 export interface CopilotProposeServices {
@@ -140,7 +155,8 @@ function proposeDescription(entry: CatalogEntry): string {
 export function createCopilotProposeTools(
   services: CopilotProposeServices,
   catalog: readonly CatalogEntry[] = COPILOT_CATALOG,
-): CopilotReadTools {
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): CopilotProposeTools {
   // `F3.86` PR 2: an entry the server proposes itself (the onboarding commit) has no propose tool.
   const byTool = new Map(catalog.filter((entry) => entry.proposer !== "server").map((entry) => [proposeToolName(entry), entry]));
   const byId = new Map(catalog.map((entry) => [entry.id, entry]));
@@ -183,6 +199,15 @@ export function createCopilotProposeTools(
     schemas,
     isToolName: (name: string): name is string => Object.prototype.hasOwnProperty.call(schemas, name),
   };
+  // The same tools without the access entries (ruling Q3): an access tool is not even named to the model.
+  const accessTools = new Set([...byTool].filter(([, entry]) => entry.risk === "access").map(([name]) => name));
+  const schemasWithoutAccess: Record<string, ZodTypeAny> = {};
+  for (const [name, schema] of Object.entries(schemas)) if (!accessTools.has(name)) schemasWithoutAccess[name] = schema;
+  const registryWithoutAccess: ToolRegistry<string> = {
+    definitions: definitions.filter((definition) => !accessTools.has(definition.name)),
+    schemas: schemasWithoutAccess,
+    isToolName: (name: string): name is string => Object.prototype.hasOwnProperty.call(schemasWithoutAccess, name),
+  };
 
   const propose = async (
     entry: CatalogEntry,
@@ -191,6 +216,10 @@ export function createCopilotProposeTools(
   ): Promise<CopilotToolResult> => {
     // Decision 4.7: a follow-up turn may propose the next write, never an access change.
     if (entry.risk === "access" && ctx.turnKind === "follow_up") return { ok: false, error: PROPOSE_ACCESS_ON_FOLLOW_UP_ERROR };
+    // Ruling Q3: only when the user's own message asked (the turn also withholds the tool; this is the second guard).
+    if (entry.risk === "access" && ctx.accessIntent !== true) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
+    // Ruling Q8: in local sign-in every user-account write answers 409, so no card is offered for one.
+    if (isUserAccountEntry(entry) && resolveAuthMode(env) === "local") return { ok: false, error: LOCAL_MODE_READ_ONLY };
     const params: Record<string, string> = {};
     for (const name of Object.keys(entry.params)) params[name] = args[name] as string;
     const raw = entry.bodyName === null ? {} : (args.body as Record<string, unknown>);
@@ -248,6 +277,7 @@ export function createCopilotProposeTools(
       targetName: target.targetName,
       organizationName: target.organizationName,
       ...(target.currentWidgetIds ? { currentWidgetIds: target.currentWidgetIds } : {}),
+      ...(target.refName !== undefined ? { refName: target.refName } : {}),
     });
     const change = await services.pending.propose(ctx.identity.id, {
       conversationId: ctx.conversationId,
@@ -272,6 +302,7 @@ export function createCopilotProposeTools(
 
   return {
     registry,
+    registryWithoutAccess,
     dispatch: async (name, args, ctx): Promise<CopilotToolResult> => {
       const entry = byTool.get(name);
       if (entry !== undefined) return propose(entry, args, ctx);
@@ -320,8 +351,8 @@ export const COPILOT_PROPOSE_TOOLS = Symbol("COPILOT_PROPOSE_TOOLS");
 
 /** `F3.85` PR 8 — the propose tools as the Nest provider behind `COPILOT_PROPOSE_TOOLS`. */
 @Injectable()
-export class CopilotProposeToolSet implements CopilotReadTools {
-  private readonly tools: CopilotReadTools;
+export class CopilotProposeToolSet implements CopilotProposeTools {
+  private readonly tools: CopilotProposeTools;
 
   constructor(
     @Inject(COPILOT_TARGETS) targets: CopilotTargets,
@@ -332,6 +363,10 @@ export class CopilotProposeToolSet implements CopilotReadTools {
 
   get registry(): ToolRegistry<string> {
     return this.tools.registry;
+  }
+
+  get registryWithoutAccess(): ToolRegistry<string> {
+    return this.tools.registryWithoutAccess;
   }
 
   dispatch(name: string, args: Record<string, unknown>, ctx: CopilotToolContext): Promise<CopilotToolResult> {

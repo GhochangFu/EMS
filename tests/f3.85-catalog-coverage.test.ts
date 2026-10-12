@@ -176,7 +176,32 @@ const SERVICE_PARSERS: ReadonlyArray<{
   service: string;
   serviceField: string;
   method: string;
-}> = [];
+}> = [
+  {
+    entryId: "user.create",
+    bodyName: "createUserBodySchema",
+    controller: "apps/api/src/admin/users/users.controller.ts",
+    service: "apps/api/src/admin/users/users.service.ts",
+    serviceField: "service",
+    method: "create",
+  },
+  {
+    entryId: "user.update",
+    bodyName: "updateUserBodySchema",
+    controller: "apps/api/src/admin/users/users.controller.ts",
+    service: "apps/api/src/admin/users/users.service.ts",
+    serviceField: "service",
+    method: "update",
+  },
+  {
+    entryId: "userGrant.add",
+    bodyName: "addUserGrantBodySchema",
+    controller: "apps/api/src/admin/users/user-grants.controller.ts",
+    service: "apps/api/src/admin/users/user-grants.service.ts",
+    serviceField: "service",
+    method: "add",
+  },
+];
 
 /** The source of one method of a class file: from its signature to the next method at the same indent. */
 function methodSource(file: string, method: string): string | null {
@@ -197,7 +222,8 @@ function viaServiceParser(entry: Entry, route: Walked, parsers: typeof SERVICE_P
   return (
     body !== null &&
     sharedImports(parser.service).has(parser.bodyName) &&
-    new RegExp(`\\b${parser.bodyName}\\.(?:safeParse|parse)\\(`).test(body)
+    // `schema.safeParse(` / `.parse(`, or the users service's `parseBody(schema, …)` (a safeParse that throws the 400).
+    new RegExp(`\\b${parser.bodyName}\\.(?:safeParse|parse)\\(|\\bparseBody\\(\\s*${parser.bodyName}\\b`).test(body)
   );
 }
 
@@ -255,10 +281,12 @@ describe("F3.85 PR 8 — the copilot action catalog covers the write routes (ADR
       if (!route) throw new Error(`${entry.id}: no route`);
       if (entry.bodyName === null) {
         expect(route.handler, entry.id).not.toMatch(/@Body\(/);
+      } else if (viaServiceParser(entry, route)) {
+        // The controller passes the body raw and its service parses the shared export (`SERVICE_PARSERS`).
+        expect(route.handler, entry.id).toMatch(/@Body\(\)/);
       } else {
         expect(route.handler, entry.id).toMatch(new RegExp(`\\b${entry.bodyName}\\b`));
-        const shared =
-          sharedImports(route.file).has(entry.bodyName) || viaLocalWrapper(entry, route.file) || viaServiceParser(entry, route);
+        const shared = sharedImports(route.file).has(entry.bodyName) || viaLocalWrapper(entry, route.file);
         expect(shared, `${entry.id}: ${entry.bodyName} from @bms/shared`).toBe(true);
       }
     }
@@ -291,5 +319,11 @@ describe("F3.85 PR 8 — the copilot action catalog covers the write routes (ADR
     // The method reader is not vacuous: it finds a real method and not a missing one.
     expect(methodSource(row.service, "create")).not.toBeNull();
     expect(methodSource(row.service, "noSuchMethod")).toBeNull();
+    // The three real rows each match their own entry (F3.86 PR 4).
+    const matched = COPILOT_CATALOG.filter((e) => {
+      const r = byKey.get(key(e));
+      return r !== undefined && viaServiceParser(e, r);
+    }).map((e) => e.id);
+    expect(matched.sort()).toEqual(["user.create", "user.update", "userGrant.add"]);
   });
 });
