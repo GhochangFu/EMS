@@ -185,7 +185,8 @@ describe("F3.78 users page", () => {
 
   it("adding a grant sends its kind and target", async () => {
     await addingAGrantSendsItsKindAndTarget();
-  });
+    // Longer than `asyncUtilTimeout` (5 s): a wrong body reddens at the body assertion, not a timeout.
+  }, 15_000);
 
   it("does not offer the admin role to an organization_admin", async () => {
     await anOrganizationAdminIsNotOfferedAdmin();

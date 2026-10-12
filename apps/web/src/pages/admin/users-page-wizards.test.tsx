@@ -19,6 +19,8 @@ import {
   theGrantAddCarriesNoCopilotHeader,
   reactivateSubmitSendsOneRequest,
   theCreateWizardNeverOffersAdminToAGlobalAdmin,
+  theDeactivateRequestCarriesNoCopilotHeader,
+  theReactivateRequestCarriesNoCopilotHeader,
 } from "./users-page-wizards.spec";
 
 /**
@@ -35,11 +37,11 @@ describe("F3.86 users page and grants drawer wizards", () => {
 
   it("the create request body is the wizard's four fields and the typed password", async () => {
     await theCreateRequestBodyIsTheWizardValuesAndThePassword();
-  });
+  }, 15_000);
 
   it("the create request carries the typed password", async () => {
     await theCreateRequestCarriesTheTypedPassword();
-  });
+  }, 15_000);
 
   it("the create wizard's Review card holds no password row and the markup no secret", async () => {
     await theCreateWizardValuesHoldNoPassword();
@@ -51,7 +53,7 @@ describe("F3.86 users page and grants drawer wizards", () => {
 
   it("the create request carries no X-Copilot-Change header", async () => {
     await theCreateRequestCarriesNoCopilotHeader();
-  });
+  }, 15_000);
 
   it("the edit wizard sends only the changed field, with no X-Copilot-Change header", async () => {
     await theEditRequestCarriesNoCopilotHeader();
@@ -95,5 +97,13 @@ describe("F3.86 users page and grants drawer wizards", () => {
 
   it("ruling Q9: Reactivate is a Review wizard; one Submit sends one request (replaces F4.202's 'sends at once')", async () => {
     await reactivateSubmitSendsOneRequest();
+  });
+
+  it("the deactivate wizard's POST carries no X-Copilot-Change header", async () => {
+    await theDeactivateRequestCarriesNoCopilotHeader();
+  });
+
+  it("the reactivate wizard's POST carries no X-Copilot-Change header", async () => {
+    await theReactivateRequestCarriesNoCopilotHeader();
   });
 });

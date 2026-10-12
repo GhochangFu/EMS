@@ -42,7 +42,11 @@ import {
 
 const CREATE_SECRET = "Typed-Secret-42!";
 
-/** Create through the wizard with `CREATE_SECRET`, answered 201; returns the call log. */
+/**
+ * Create through the wizard with `CREATE_SECRET`, answered 201; returns the call log at Submit.
+ * Each case waits on its own assertion: `asyncUtilTimeout` equals the 5 s test timeout, so its
+ * `it()` sets a longer one and a mutation reddens at that assertion, not at a timeout.
+ */
 async function createThroughTheWizard(): Promise<Call[]> {
   stubOidc();
   const calls = stubFetch({
@@ -52,14 +56,13 @@ async function createThroughTheWizard(): Promise<Call[]> {
   const dialog = await openCreateModal();
   await fillCreate(dialog, CREATE_SECRET);
   await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
-  await waitFor(() => expect(writes(calls)).toHaveLength(1));
   return calls;
 }
 
 /** The request is the wizard's four fields and the typed password — the route's whole body. */
 export async function theCreateRequestBodyIsTheWizardValuesAndThePassword(): Promise<void> {
   const calls = await createThroughTheWizard();
-  expect(writes(calls)).toEqual([
+  await waitFor(() => expect(writes(calls)).toEqual([
     {
       path: "/api/v1/admin/users",
       method: "POST",
@@ -71,12 +74,13 @@ export async function theCreateRequestBodyIsTheWizardValuesAndThePassword(): Pro
         temporaryPassword: CREATE_SECRET,
       },
     },
-  ]);
+  ]));
 }
 
 /** The typed password reaches the request: the ref is merged on Submit. */
 export async function theCreateRequestCarriesTheTypedPassword(): Promise<void> {
   const calls = await createThroughTheWizard();
+  await waitFor(() => expect(writes(calls)).toHaveLength(1));
   const body = writes(calls)[0]?.body as Record<string, unknown>;
   expect(body.temporaryPassword).toBe(CREATE_SECRET);
 }
@@ -105,7 +109,8 @@ export async function theCreateValuesBuilderHasNoPasswordKey(): Promise<void> {
 
 /** A wizard request is the plain route: no `X-Copilot-Change`, beside the JSON header it does carry. */
 export async function theCreateRequestCarriesNoCopilotHeader(): Promise<void> {
-  await createThroughTheWizard();
+  const calls = await createThroughTheWizard();
+  await waitFor(() => expect(writes(calls)).toHaveLength(1));
   const post = headersSent().find((sent) => sent.method === "POST" && sent.path === "/api/v1/admin/users");
   expect(post?.headers.get("Content-Type")).toBe("application/json");
   expect(post?.headers.has("X-Copilot-Change")).toBe(false);
@@ -266,4 +271,32 @@ export async function reactivateSubmitSendsOneRequest(): Promise<void> {
     expect(writes(calls)).toEqual([{ path: `/api/v1/admin/users/${DEACTIVATED_ID}/reactivate`, method: "POST", body: undefined }]);
   });
   expect(screen.queryByRole("dialog")).toBeNull();
+}
+
+/** The status wizards are plain too: one POST on the route, no `X-Copilot-Change`. */
+async function statusWriteHeaders(
+  action: "Deactivate" | "Reactivate",
+  name: string,
+  path: string,
+): Promise<Headers | undefined> {
+  stubOidc();
+  const calls = stubFetch({ [`POST ${path}`]: { status: 200, body: written(USERS.items[0] as Record<string, unknown>) } });
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: `${action} ${name}` }));
+  const dialog = await screen.findByRole("dialog", { name: `${action} ${name}` });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(writes(calls)).toEqual([{ path, method: "POST", body: undefined }]));
+  return headersSent().find((one) => one.method === "POST")?.headers;
+}
+
+export async function theDeactivateRequestCarriesNoCopilotHeader(): Promise<void> {
+  const headers = await statusWriteHeaders("Deactivate", "Ada Linked", `/api/v1/admin/users/${LINKED_ID}/deactivate`);
+  expect(headers).toBeDefined();
+  expect(headers?.has("X-Copilot-Change")).toBe(false);
+}
+
+export async function theReactivateRequestCarriesNoCopilotHeader(): Promise<void> {
+  const headers = await statusWriteHeaders("Reactivate", "Dev Deactivated", `/api/v1/admin/users/${DEACTIVATED_ID}/reactivate`);
+  expect(headers).toBeDefined();
+  expect(headers?.has("X-Copilot-Change")).toBe(false);
 }
