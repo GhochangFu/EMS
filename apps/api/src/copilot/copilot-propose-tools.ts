@@ -295,7 +295,8 @@ export function createCopilotProposeTools(
         if (reads > DESCRIBE_CHANGE_BUDGET) return { ok: false, error: DESCRIBE_BUDGET_ERROR };
         const target = byId.get(args.catalogId as string);
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
-        const described = describeBody(target.body, (args.path as string[] | undefined) ?? []);
+        // The model's body (`F3.86` PR 2): a `clientOnly` field is never described to the model.
+        const described = describeBody(modelBodySchema(target), (args.path as string[] | undefined) ?? []);
         if (!described.ok) return { ok: false, error: UNKNOWN_PATH_ERROR };
         return {
           ok: true,

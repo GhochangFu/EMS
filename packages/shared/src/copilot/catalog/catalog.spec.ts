@@ -198,6 +198,12 @@ export function noClientOnlyFieldReachesTheModelBody(): void {
     expect(modelBodyProblems(entry), entry.id).toEqual([]);
     const fields = bodyFieldsOf(modelBodyOf(entry));
     for (const field of entry.clientOnly) expect(fields, entry.id).not.toContain(field);
+    // A clientOnly key the model sends anyway must fail the parse (security review L1).
+    if (entry.clientOnly.length > 0) {
+      let object: ZodTypeAny = modelBodyOf(entry);
+      while (object instanceof z.ZodEffects) object = object._def.schema as ZodTypeAny;
+      expect((object as z.AnyZodObject)._def.unknownKeys, entry.id).toBe("strict");
+    }
   }
   const fixture = passwordEntry(PASSWORD_MODEL_BODY);
   expect(modelBodyProblems(fixture)).toEqual([]);
@@ -217,6 +223,10 @@ export function aModelBodyThatKeepsAClientOnlyFieldIsRefused(): void {
 export function modelBodyOfOmitsOrRefuses(): void {
   const plain = { id: "fixture.plain", body: PASSWORD_OBJECT, clientOnly: ["temporaryPassword"] as const };
   expect(bodyFieldsOf(modelBodyOf(plain))).toEqual(["email"]);
+  // A body in strip mode still gives a strict model body: the key is refused, not stripped and stored.
+  const stripping = { id: "fixture.strip", body: PASSWORD_OBJECT.strip(), clientOnly: ["temporaryPassword"] as const };
+  expect(modelBodyOf(stripping).safeParse({ email: "a@b.co", temporaryPassword: "x".repeat(12) }).success).toBe(false);
+  expect(modelBodyOf(stripping).safeParse({ email: "a@b.co" }).success).toBe(true);
   expect(() => modelBodyOf(passwordEntry(undefined))).toThrow(/needs a modelBody/);
   const none = catalogEntry("dashboard.create");
   if (!none) throw new Error("dashboard.create");

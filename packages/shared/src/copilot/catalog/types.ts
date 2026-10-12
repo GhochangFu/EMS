@@ -141,11 +141,14 @@ export interface CatalogEntry {
   /**
    * `F3.86` PR 2: the schema the model proposes with, when it differs from
    * `body` — an entry with `clientOnly` fields whose body is not a plain
-   * object, or whose proposal rule is narrower than the route's. Absent: the
-   * body, without its `clientOnly` fields (`modelBodyOf`).
+   * object, or whose proposal rule is narrower than the route's (a user
+   * create that never names the global `admin` role, PR 4). Absent: the body,
+   * without its `clientOnly` fields (`modelBodyOf`). It binds the model
+   * only: a human wizard's Review step checks the route's own body
+   * (`bodyProblems`).
    */
   readonly modelBody?: ZodTypeAny;
-  /** The export name of `modelBody` in `@bms/shared`, when there is one. */
+  /** The export name of `modelBody` in `@bms/shared`, when there is one (PR 4 gates it with the first such entry). */
   readonly modelBodyName?: string;
   /**
    * `F3.86` PR 2: who makes a pending change for this entry. `model` (the

@@ -7,6 +7,7 @@ import { resetCopilotStore } from "../../stores/copilot-store";
 import { resetWizardStore } from "../../stores/wizard-store";
 import {
   aClientOnlyFieldIsTypedOnTheCard,
+  a5xxKeepsTheCardOpen,
   anAmbiguous409ListsTheCandidates,
   anUnavailableCopilotKeepsTheCardOpen,
   aRoutesOwn409ShowsItsSentence,
@@ -68,6 +69,7 @@ describe("F3.85 PR 8 copilot Confirm card — Confirm, Reject and the record now
   it("shows a route's error on the card and closes it", () => anErrorShowsOnTheCard());
   it("shows a route's own 409 sentence, not 'gone'", () => aRoutesOwn409ShowsItsSentence());
   it("keeps the card open when the copilot is unavailable", () => anUnavailableCopilotKeepsTheCardOpen());
+  it("keeps the card open on a 5xx", () => a5xxKeepsTheCardOpen(), 10_000);
   it("lists the candidates of an ambiguous site layout", () => anAmbiguous409ListsTheCandidates());
   it("takes a clientOnly value in a password box and sends it only", () => aClientOnlyFieldIsTypedOnTheCard());
   it("calls only the reject route on Reject", () => rejectCallsTheRejectRouteOnly());

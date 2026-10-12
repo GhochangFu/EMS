@@ -12,6 +12,10 @@ import type { CatalogEntry } from "./types";
  * Without a `modelBody`, an entry with `clientOnly` fields must have a plain
  * object body: `.omit` on a refined body would drop its refinement, so such an
  * entry declares a `modelBody` instead. Anything else is a load error.
+ *
+ * The derived body is `.strict()` whatever the body's own mode (security
+ * review L1): a `clientOnly` key the model sends anyway must fail the parse,
+ * not be stripped from the parse result while the raw body is stored.
  */
 export function modelBodyOf(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "modelBody">): ZodTypeAny {
   if (entry.modelBody !== undefined) return entry.modelBody;
@@ -20,5 +24,5 @@ export function modelBodyOf(entry: Pick<CatalogEntry, "id" | "body" | "clientOnl
     throw new Error(`F3.86: ${entry.id} has clientOnly fields and a body that is not a plain object, so it needs a modelBody`);
   }
   const mask = Object.fromEntries(entry.clientOnly.map((field) => [field, true as const]));
-  return entry.body.omit(mask);
+  return entry.body.omit(mask).strict();
 }

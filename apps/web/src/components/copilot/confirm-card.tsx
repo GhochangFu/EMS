@@ -33,8 +33,14 @@ type ConfirmCardProps = {
   onApplied: (change: CopilotPendingChangeDto) => void;
   /** The change was rejected; `messages` is the stored `Rejected: …` line. */
   onRejected: (change: CopilotPendingChangeDto, messages: CopilotMessageDto[]) => void;
-  /** The change is finished without applying (gone, or the route refused it): the dock reloads the conversation. */
+  /** The interceptor refused the change (gone): the dock reloads the conversation. */
   onGone: (change: CopilotPendingChangeDto) => void;
+  /**
+   * `F3.86` PR 2: the route refused the confirmed change, which the server
+   * recorded `failed`. The dock keeps this card mounted (the reload no longer
+   * lists it) and waits for the follow-up turn.
+   */
+  onRouteFailed: (change: CopilotPendingChangeDto) => void;
 };
 
 /**
@@ -46,8 +52,11 @@ type ConfirmCardProps = {
  * - `route`: the change passed the interceptor and the route itself answered
  *   an error; the server recorded the change `failed`, so a second Confirm
  *   could only be refused. The card shows the route's sentence and closes.
- * - `retry`: nothing was claimed — the copilot is not available now (the row
- *   stays pending), the session ended, or the request never reached the API.
+ * - `retry`: nothing is known to be claimed — the copilot is not available
+ *   now (the row stays pending), the session ended, the request never reached
+ *   the API, a gateway or body-parser refusal (413), or any 5xx (a refusal
+ *   before the claim looks the same as a route's 500). Retrying fails closed:
+ *   if the route did record `failed`, the next Confirm reads as `gone`.
  *
  * Before `F3.86` every 409 read as `gone`, which hid a route's own 409 (a
  * site layout's ambiguous groups) behind "no longer available".
@@ -56,7 +65,8 @@ export function confirmFailureKind(err: unknown): "gone" | "route" | "retry" {
   if (!(err instanceof ApiError)) return "retry";
   const message = apiErrorMessage(err);
   if (err.status === 409 && message === COPILOT_CHANGE_REFUSED_MESSAGE) return "gone";
-  if (err.status === 401 || (err.status === 403 && message === COPILOT_UNAVAILABLE_MESSAGE)) return "retry";
+  if (err.status === 401 || err.status === 413 || err.status >= 500) return "retry";
+  if (err.status === 403 && message === COPILOT_UNAVAILABLE_MESSAGE) return "retry";
   return "route";
 }
 
@@ -90,7 +100,7 @@ function clientOnlySchema(body: Schema, field: string): Schema | undefined {
  * stored change — and Confirm waits until each one parses with its field's
  * own schema.
  */
-export function ConfirmCard({ change, onApplied, onRejected, onGone }: ConfirmCardProps) {
+export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFailed }: ConfirmCardProps) {
   const queryClient = useQueryClient();
   const entry = catalogEntry(change.catalogId);
   const isEdit = entry !== undefined && entry.risk === "edit" && entry.bodyName !== null;
@@ -132,7 +142,7 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone }: ConfirmCa
     if (kind === "route") {
       setFinished(true);
       if (err instanceof ApiError && err.status === 409) setAmbiguous(ambiguousTabsOf(err.message));
-      onGone(change);
+      onRouteFailed(change);
     }
   };
   // Reject's own refusal (a change no longer waiting) is a 409 too: the change is gone.

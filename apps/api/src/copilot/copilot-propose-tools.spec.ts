@@ -357,6 +357,11 @@ export async function aRefinedBodyProposesWithItsModelBody(): Promise<void> {
   expect((await h.call(proposeToolName(REFINED_CLIENT_ONLY_ENTRY), { body: { userId: "u1" } })).ok).toBe(true);
   expect(h.stored[0]?.body).toEqual({ userId: "u1" });
   expect(h.stored[0]?.bodyHash).toBe(bodyHash({ userId: "u1", temporaryPassword: "typed-on-the-card" }, ["temporaryPassword"]));
+  // `describe_change` reads the model's body too (code review #3): the field is never described.
+  const described = await h.tools.dispatch(DESCRIBE_CHANGE_TOOL, { catalogId: REFINED_CLIENT_ONLY_ENTRY.id }, h.ctx());
+  expect(described.ok).toBe(true);
+  expect(JSON.stringify(described)).toContain("userId");
+  expect(JSON.stringify(described)).not.toContain("temporaryPassword");
 }
 
 /** `F3.86` PR 2: an entry the server proposes itself has no propose tool; `describe_change` still knows it. */

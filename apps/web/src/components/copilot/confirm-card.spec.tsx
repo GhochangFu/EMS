@@ -176,12 +176,17 @@ export async function anErrorShowsOnTheCard(): Promise<void> {
   vi.spyOn(confirmApi, "confirmCopilotChange").mockRejectedValue(
     new ApiError(JSON.stringify({ message: "A template with no widgets cannot be published", statusCode: 400 }), 400),
   );
-  vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue(EMPTY_CONVERSATION);
+  const reload = vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue(EMPTY_CONVERSATION);
   await proposed(change());
   const card = await screen.findByRole("region", { name: "Publish a dashboard template" });
   fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
   expect(await within(card).findByText("A template with no widgets cannot be published")).toBeTruthy();
   expect(within(card).queryByRole("button", { name: "Confirm" })).toBeNull();
+  // After the reload, which no longer lists the change, the card is still on screen (code review #1, #5).
+  await waitFor(() => expect(reload).toHaveBeenCalled(), { timeout: 4_000 });
+  const after = await screen.findByRole("region", { name: "Publish a dashboard template" });
+  expect(within(after).getByText("A template with no widgets cannot be published")).toBeTruthy();
+  expect(screen.getByText("Not applied. Waiting for the copilot…")).toBeTruthy();
 }
 
 /**
@@ -201,7 +206,28 @@ export async function aRoutesOwn409ShowsItsSentence(): Promise<void> {
   expect(await within(card).findByText("This site has no active assets to lay out")).toBeTruthy();
   expect(within(card).queryByText(CHANGE_GONE_SENTENCE)).toBeNull();
   expect(within(card).queryByRole("button", { name: "Confirm" })).toBeNull();
-  await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+  // The dock waits for the follow-up turn and keeps the card past the reload (code review #1, #5).
+  await waitFor(() => expect(reload).toHaveBeenCalled(), { timeout: 4_000 });
+  const after = await screen.findByRole("region", { name: "Publish a dashboard template" });
+  expect(within(after).getByText("This site has no active assets to lay out")).toBeTruthy();
+  expect(within(after).queryByText(CHANGE_GONE_SENTENCE)).toBeNull();
+}
+
+/**
+ * A 5xx (here the interceptor's own 500) may come before the claim, so the card stays
+ * open with Confirm and Reject (code review #2). Mutation: treat a 5xx as a
+ * route answer → Confirm disappears and this reddens.
+ */
+export async function a5xxKeepsTheCardOpen(): Promise<void> {
+  vi.spyOn(confirmApi, "confirmCopilotChange").mockRejectedValue(
+    new ApiError(JSON.stringify({ message: "The copilot request context is missing", statusCode: 500 }), 500),
+  );
+  await proposed(change());
+  const card = await screen.findByRole("region", { name: "Publish a dashboard template" });
+  fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+  expect(await within(card).findByText("The copilot request context is missing")).toBeTruthy();
+  expect(within(card).getByRole("button", { name: "Confirm" })).toBeTruthy();
+  expect(within(card).getByRole("button", { name: "Reject" })).toBeTruthy();
 }
 
 /** The copilot is not available now: nothing was claimed, so the card stays open with its sentence. */
@@ -251,11 +277,15 @@ export async function anAmbiguous409ListsTheCandidates(): Promise<void> {
   );
   const card = await screen.findByRole("region", { name: "Make the site layout" });
   fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
-  const groups = await screen.findByRole("region", { name: "Groups to choose" });
+  await screen.findByRole("region", { name: "Groups to choose" });
+  // Read after the reload has run, so the list is the one still mounted (code review #5).
+  await waitFor(() => expect(copilotApi.fetchCopilotConversation).toHaveBeenCalled(), { timeout: 4_000 });
+  await settle();
+  const groups = screen.getByRole("region", { name: "Groups to choose" });
   expect(within(groups).getByText(/LV Board A, LV Board B/)).toBeTruthy();
   const link = within(groups).getByRole("link", { name: "Choose the groups on the site page" });
   expect(link.getAttribute("href")).toBe(`/control-room/site/${SITE}`);
-  expect(within(card).queryByText(CHANGE_GONE_SENTENCE)).toBeNull();
+  expect(screen.queryByText(CHANGE_GONE_SENTENCE)).toBeNull();
 }
 
 const PASSWORD = "typed-on-the-card-9";
