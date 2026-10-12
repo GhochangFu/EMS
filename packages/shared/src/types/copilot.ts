@@ -25,3 +25,5 @@ export type CopilotTurnOutcome = z.infer<typeof C.copilotTurnOutcomeSchema>;
 export type CopilotTurnResponseDto = z.infer<typeof C.copilotTurnResponseDtoSchema>;
 export type CopilotFillStepDto = z.infer<typeof C.copilotFillStepDtoSchema>;
 export type CopilotRejectResponseDto = z.infer<typeof C.copilotRejectResponseDtoSchema>;
+export type CopilotSkillStateDto = z.infer<typeof C.copilotSkillStateDtoSchema>;
+export type CopilotStartOnboardingSkillBody = z.infer<typeof C.copilotStartOnboardingSkillBodySchema>;

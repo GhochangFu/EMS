@@ -693,6 +693,8 @@ export type OnboardingValidateResponseDto = z.infer<
 export type OnboardingCommitResponseDto = z.infer<
   typeof Ob.onboardingCommitResponseDtoSchema
 >;
+/** F3.86 PR 5: the commit route body; `draftHash` binds the commit to that draft. */
+export type CommitOnboardingBody = z.infer<typeof Ob.commitOnboardingBodySchema>;
 
 // ---------------------------------------------------------------------------
 // AI assistant settings (F3.21, ADR 0090 Amendment 1)

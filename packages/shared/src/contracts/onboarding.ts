@@ -675,3 +675,16 @@ export const onboardingCommitResponseDtoSchema = z.object({
   seededRuleCount: z.number(),
   dashboardCount: z.number(),
 });
+
+/**
+ * `POST /admin/onboarding/sessions/:id/commit` (`F3.86` PR 5, ADR 0099
+ * decision 7). Empty — the page's Commit button, and every client before PR 5
+ * — commits the stored draft. With `draftHash` the commit is bound to the
+ * draft that hash names (`commitProposed`): a draft changed since then is a
+ * 400 and nothing is written. The copilot's Confirm card sends it.
+ */
+export const commitOnboardingBodySchema = z
+  .object({
+    draftHash: z.string().length(64).optional(),
+  })
+  .strict();

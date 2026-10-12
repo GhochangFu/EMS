@@ -9,6 +9,8 @@
  */
 import { z } from "zod";
 
+import { onboardingChatResponseDtoSchema, onboardingSessionDtoSchema } from "./onboarding";
+
 /**
  * Why the copilot is not available to this user here (ADR 0099 decision 5;
  * the `F3.85` plan §5.2 and its Q2 ruling).
@@ -129,6 +131,26 @@ export const copilotMessageDtoSchema = z
   })
   .strict();
 
+/**
+ * `F3.86` PR 5 / ADR 0099 decision 7 — the onboarding skill's state, as the
+ * dock renders it: the bound draft session and the members of the onboarding
+ * chat answer the page renders today (chips, validation, preview). The
+ * members are the onboarding contract's own, so the dock and the page read one
+ * shape. A plain object: `skill` is `null` on a conversation with no skill.
+ */
+export const copilotSkillStateDtoSchema = z
+  .object({
+    kind: z.literal("onboarding"),
+    sessionId: z.string(),
+    session: onboardingSessionDtoSchema,
+    suggestedReplies: onboardingChatResponseDtoSchema.shape.suggestedReplies,
+    validationErrors: onboardingChatResponseDtoSchema.shape.validationErrors,
+    readyToCommit: onboardingChatResponseDtoSchema.shape.readyToCommit,
+    autoOpenPreview: onboardingChatResponseDtoSchema.shape.autoOpenPreview,
+    autoOpenReason: onboardingChatResponseDtoSchema.shape.autoOpenReason,
+  })
+  .strict();
+
 /** `GET /api/v1/copilot/conversations/:id` — the conversation and its messages, oldest first. */
 export const copilotConversationDetailDtoSchema = z
   .object({
@@ -140,6 +162,19 @@ export const copilotConversationDetailDtoSchema = z
     messages: z.array(copilotMessageDtoSchema),
     /** `F3.85` PR 8: the conversation's changes still waiting for a Confirm (pending and unexpired), oldest first. */
     pendingChanges: z.array(copilotPendingChangeDtoSchema),
+    /** `F3.86` PR 5: the skill the conversation runs, or `null` (absent before PR 5). */
+    skill: copilotSkillStateDtoSchema.nullable().optional(),
+  })
+  .strict();
+
+/**
+ * `POST /api/v1/copilot/conversations/:id/skills/onboarding` (`F3.86` PR 5).
+ * The organization must be the one the conversation is bound to: the route
+ * refuses a cross-organization conversation and any other organization.
+ */
+export const copilotStartOnboardingSkillBodySchema = z
+  .object({
+    organizationId: z.string().uuid(),
   })
   .strict();
 
@@ -214,6 +249,8 @@ export const copilotTurnResponseDtoSchema = z
     pendingChanges: z.array(copilotPendingChangeDtoSchema),
     /** `F3.85` PR 8: values a `fill_step` tool gave an open wizard step, or `null`. It writes nothing. */
     fillStep: copilotFillStepDtoSchema.nullable(),
+    /** `F3.86` PR 5: a skill turn's state (decision 7), or `null`; absent on a plain turn. */
+    skill: copilotSkillStateDtoSchema.nullable().optional(),
   })
   .strict();
 
