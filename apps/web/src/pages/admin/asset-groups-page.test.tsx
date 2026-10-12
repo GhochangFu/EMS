@@ -29,6 +29,7 @@ import {
   theRowBeingRemovedAnnouncesIt,
   aFillFillsTheNamedStepOnly,
   aLocationPickedFirstStays,
+  aNameOnlyEditLeavesTheStoredDomain,
   aRolePickWaitsForTheReview,
   anUnpickedAssetHoldsTheMemberStep,
   anUnpickedLocationHoldsTheBasicsStep,
@@ -187,6 +188,10 @@ describe("F3.86 PR 3c asset groups page — the catalog wizards (ADR 0099 decisi
 
   it("the edit Review shows the stored domain as Now, and re-picking it is no change", async () => {
     await theEditReviewShowsTheStoredDomain();
+  });
+
+  it("a name-only edit of a classified group neither shows nor sends a domain change", async () => {
+    await aNameOnlyEditLeavesTheStoredDomain();
   });
 
   it("a role pick sends nothing until the role wizard's Submit", async () => {

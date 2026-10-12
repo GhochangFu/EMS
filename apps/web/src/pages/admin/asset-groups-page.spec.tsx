@@ -942,19 +942,9 @@ export async function theEditReviewShowsNowBesideAfter(): Promise<void> {
   expect(within(row).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["Electrical train", "Renamed train"]);
 }
 
-/**
- * Review fix: the list carries the stored domain, so the edit's Review shows it as Now, and
- * re-picking the same domain is not marked as a change.
- */
+/** Review fix: the edit Review shows the stored domain as Now; re-picking it is no change. */
 export async function theEditReviewShowsTheStoredDomain(): Promise<void> {
-  stubApi();
-  vi.spyOn(api, "fetchAdminAssetGroups").mockResolvedValue({
-    items: [{ ...GROUPS.items[0], domain: "f386-spec-domain" }],
-  } as never);
-  renderPage();
-  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
-  await userEvent.click(await screen.findByRole("button", { name: "Edit group" }));
-  const dialog = await screen.findByRole("dialog", { name: "Edit asset group" });
+  const dialog = await openEditOfAClassifiedGroup();
   await next();
   const domain = within(dialog).getByRole("combobox", { name: "Domain" });
   await waitFor(() => expect(within(domain).getAllByRole("option").length).toBe(2));
@@ -962,11 +952,36 @@ export async function theEditReviewShowsTheStoredDomain(): Promise<void> {
   await next();
   const card = await within(dialog).findByRole("region", { name: "Edit an asset group" });
   const row = within(card).getByRole("row", { name: /^Domain/ });
-  expect(within(row).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
-    "f386-spec-domain",
-    "f386-spec-domain",
-  ]);
-  expect(row).toHaveAttribute("data-changed", "false");
+  expect(row).toHaveAttribute("data-changed", "false"); // first, so a lost Now reddens THIS line
+  const cells = within(row).getAllByRole("cell").map((cell) => cell.textContent);
+  expect(cells).toEqual(["f386-spec-domain", "f386-spec-domain"]);
+}
+
+/** Edit of the group whose stored domain is `f386-spec-domain`, open at Basics. */
+async function openEditOfAClassifiedGroup(): Promise<HTMLElement> {
+  stubApi();
+  vi.spyOn(api, "fetchAdminAssetGroups").mockResolvedValue({
+    items: [{ ...GROUPS.items[0], domain: "f386-spec-domain" }],
+  } as never);
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
+  await userEvent.click(await screen.findByRole("button", { name: "Edit group" }));
+  return screen.findByRole("dialog", { name: "Edit asset group" });
+}
+
+/** Review fix: a name-only edit of a classified group neither shows nor sends a domain change. */
+export async function aNameOnlyEditLeavesTheStoredDomain(): Promise<void> {
+  const dialog = await openEditOfAClassifiedGroup();
+  fireEvent.change(within(dialog).getByLabelText("Name"), { target: { value: "Renamed train" } });
+  await next();
+  await next();
+  const card = await within(dialog).findByRole("region", { name: "Edit an asset group" });
+  expect(within(card).getByRole("row", { name: /^Name/ })).toHaveAttribute("data-changed", "true");
+  expect(within(card).queryByRole("row", { name: /^Domain/ })).toBeNull();
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(api.updateAdminAssetGroup).toHaveBeenCalledTimes(1));
+  const [, body] = vi.mocked(api.updateAdminAssetGroup).mock.calls[0] as [string, object];
+  expect(Object.keys(body).sort()).toEqual(["description", "name"]);
 }
 
 /** A role with no write gate sees the groups and none of the write controls. */
