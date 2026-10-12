@@ -5,13 +5,19 @@ import { cleanup } from "@testing-library/react";
 import { useAuthStore } from "../../stores/auth-store";
 import { resetWizardStore } from "../../stores/wizard-store";
 import {
+  aCleanPageReportsNoChangeAfterARefetch,
+  aCleanPageShowsARefetchedName,
+  aCleanWidgetsHalfShowsARefetchedTile,
   aFillWaitingForTheLoadIsNotOverwrittenByTheSeed,
   aLocationFillOnAGroupDashboardChoosesTheLocation,
   aMoveOffTheGroupIsJudgedAgainstTheSavedMimic,
   aMoveOffTheGroupWithTheSavedMimicSendsNoPatch,
   cancellingClickOnlyWidgetWorkAsksFirst,
   discardingClickOnlyWidgetWorkClearsIt,
+  aTypedNameSurvivesARefetch,
+  theCleanHalfFollowsWhileTheOtherIsEdited,
   theDetailsReviewShowsTheStoredNameBesideTheNewOne,
+  theEditedHalfKeepsItsEditThroughARefetch,
   theWidgetsWizardRefusesWhileTheScopeIsUnsaved,
   theWidgetsWizardSendsNoPutWhileTheScopeIsUnsaved,
 } from "./dashboard-builder-edit-page-wizards.spec";
@@ -63,5 +69,38 @@ describe("F3.85 PR 9 dashboard builder edit page — wizards", () => {
 
   it("Discard and leave clears the click-only widget work (review C4)", async () => {
     await discardingClickOnlyWidgetWorkClearsIt();
+  });
+});
+
+describe("F3.85 dashboard builder edit page — a refetch after a dock Confirm (post-merge finding F2)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    useAuthStore.setState({ scope: null });
+    resetWizardStore();
+  });
+
+  it("a clean page shows the refetched name", async () => {
+    await aCleanPageShowsARefetchedName();
+  });
+
+  it("a clean page reports no change after the refetch", async () => {
+    await aCleanPageReportsNoChangeAfterARefetch();
+  });
+
+  it("a name the user typed survives the refetch", async () => {
+    await aTypedNameSurvivesARefetch();
+  });
+
+  it("the clean fields half follows the refetch while the widgets half holds an edit", async () => {
+    await theCleanHalfFollowsWhileTheOtherIsEdited();
+  });
+
+  it("the edited widgets half keeps its edit through the refetch", async () => {
+    await theEditedHalfKeepsItsEditThroughARefetch();
+  });
+
+  it("a clean widgets half shows a refetched tile", async () => {
+    await aCleanWidgetsHalfShowsARefetchedTile();
   });
 });

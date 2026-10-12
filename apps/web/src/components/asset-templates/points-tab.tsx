@@ -45,6 +45,7 @@ import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { useFollowStoredWhenClean } from "../../lib/use-follow-stored-when-clean";
 import { fetchAdminPointKeys } from "../../api/admin/point-keys";
 import {
   MAX_TEMPLATE_POINTS,
@@ -79,6 +80,16 @@ export function PointsTab({ template, editable, onSaved, onDirtyChange }: Points
     setRows(pointRowsFrom(template));
     setError(null);
   }, [template.id, template.status]);
+
+  // A refetch under the same id and status (a dock Confirm of
+  // `assetTemplate.update`) is followed only while the tab is clean
+  // (`useFollowStoredWhenClean`).
+  useFollowStoredWhenClean(
+    template.id,
+    template.points,
+    (previous) => !pointsHaveChanged(rows, { ...template, points: previous }),
+    (next) => setRows(pointRowsFrom({ ...template, points: next })),
+  );
 
   const catalogQ = useQuery({
     // `F3.39`: the catalog is fleet-wide, so it is neither fetched nor cached

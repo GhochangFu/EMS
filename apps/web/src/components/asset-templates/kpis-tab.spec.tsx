@@ -508,3 +508,141 @@ export async function aRefetchKeepsAnEditInProgress(): Promise<void> {
   expect(screen.queryByRole("combobox", { name: "Grammar for extra" })).toBeNull();
   expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 }
+
+/**
+ * Case 13's arrangement — post-merge finding F1. A Save whose content a copilot
+ * `fill_step` replaced answers with the filled list; the page's refetch then
+ * hands the tab that saved template.
+ */
+async function saveAFilledContentThenRefetch(onDirtyChange: (dirty: boolean) => void): Promise<void> {
+  const saved = fixtureWith({ kpis: [FILLED] });
+  vi.spyOn(templateApi, "updateAdminAssetTemplate").mockResolvedValue(saved);
+  const refetch = renderRefetchable(fixture(), onDirtyChange);
+  await renameDouble();
+  await userEvent.click(screen.getByRole("button", { name: SAVE }));
+  act(() => {
+    useWizardStore.getState().receiveFill({
+      catalogId: "assetTemplate.update",
+      stepId: "content",
+      values: { content: { kpis: [FILLED] } },
+    });
+  });
+  for (let step = 0; step < 3; step += 1) {
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  }
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await screen.findByRole("button", { name: SAVE });
+
+  refetch(saved);
+}
+
+/**
+ * Case 13a — the tab shows the server's rows: the filled KPI, and not the
+ * renamed row the wizard opened on.
+ */
+export async function aSaveAnsweredWithFilledContentShowsTheSavedRows(): Promise<void> {
+  resetWizardStore();
+  try {
+    await saveAFilledContentThenRefetch(vi.fn());
+
+    expect(await screen.findByRole("combobox", { name: "Grammar for filled" })).toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Grammar for double" })).toBeNull();
+  } finally {
+    resetWizardStore();
+  }
+}
+
+/** Case 13b — after that save and refetch the tab reports clean. */
+export async function aSaveAnsweredWithFilledContentReportsClean(): Promise<void> {
+  resetWizardStore();
+  const onDirtyChange = vi.fn();
+  try {
+    await saveAFilledContentThenRefetch(onDirtyChange);
+
+    await screen.findByRole("combobox", { name: "Grammar for filled" });
+    expect(onDirtyChange).toHaveBeenLastCalledWith(false);
+  } finally {
+    resetWizardStore();
+  }
+}
+
+/**
+ * The KPI a failed Validate is pressed on: `"unvalidated"`, and an expression
+ * the `v1` parser refuses at the same `@` as case 3 (`V1_REFUSES_AT`).
+ */
+const AGGREGATE: TemplateKpi = { ...DOUBLE, code: "aggregate", name: "Aggregate", expression: "sum({kw} @site)" };
+
+/**
+ * Case 14 — post-merge review finding R1. A failed Validate leaves the rows
+ * unchanged, so the tab is clean; a refetch then replaces the list. The old
+ * row's error is keyed by row position, and it must not reappear under the new
+ * KPI at that position. The positive: the new row is on screen.
+ */
+export async function aRefetchDropsAStaleValidationError(): Promise<void> {
+  const refetch = renderRefetchable(fixtureWith({ kpis: [AGGREGATE] }), vi.fn());
+  await userEvent.click(within(rowOf("aggregate")).getByRole("button", { name: VALIDATE }));
+  expect(within(rowOf("aggregate")).getByText(V1_REFUSES_AT)).toBeInTheDocument();
+
+  refetch(fixtureWith({ kpis: [EXTRA] }));
+
+  const extra = rowOf("extra");
+  expect(within(extra).getByRole("button", { name: VALIDATE })).toBeInTheDocument();
+  expect(within(extra).queryByText(V1_REFUSES_AT)).toBeNull();
+}
+
+/**
+ * Case 15 — the other position-keyed map. A Grammar picked on an unvalidated
+ * row (not yet applied) leaves the rows unchanged; after a refetch the new
+ * unvalidated KPI at that position reads the default grammar, not the old
+ * row's choice.
+ */
+export async function aRefetchDropsAStaleValidateTarget(): Promise<void> {
+  const refetch = renderRefetchable(fixture(), vi.fn());
+  await userEvent.selectOptions(grammarFor("double"), V2);
+
+  refetch(fixtureWith({ kpis: [SITE_LOAD, EXTRA] }));
+
+  expect(grammarFor("extra").value).toBe(V1);
+}
+
+/**
+ * Case 16 — compliance review finding R1. The wizard's Cancel stays live while
+ * Submit is pending; the user can leave, edit a KPI, and only then does the
+ * save answer. The answer must not overwrite that edit. The positive control
+ * that the answer did land is `onSaved`'s call.
+ */
+export async function aSaveAnsweredAfterACancelKeepsTheNewEdit(): Promise<void> {
+  resetWizardStore();
+  let answer: (dto: AdminAssetTemplateDto) => void = () => undefined;
+  vi.spyOn(templateApi, "updateAdminAssetTemplate").mockReturnValue(
+    new Promise<AdminAssetTemplateDto>((resolve) => {
+      answer = resolve;
+    }),
+  );
+  const onSaved = vi.fn();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <KpisTab template={fixture()} editable onSaved={onSaved} onDirtyChange={vi.fn()} />
+    </QueryClientProvider>,
+  );
+  try {
+    await renameDouble();
+    await submitThroughTheWizard();
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    const leave = screen.queryByRole("button", { name: "Discard and leave" });
+    if (leave !== null) await userEvent.click(leave);
+    await userEvent.type(within(rowOf("double")).getByRole("textbox", { name: "Name" }), " y");
+
+    await act(async () => {
+      answer(fixtureWith({ kpis: [SITE_LOAD, { ...DOUBLE, name: "Double x" }] }));
+    });
+
+    await waitFor(() => {
+      expect(onSaved).toHaveBeenCalledTimes(1);
+    });
+    expect(within(rowOf("double")).getByRole("textbox", { name: "Name" })).toHaveValue("Double x y");
+  } finally {
+    resetWizardStore();
+  }
+}

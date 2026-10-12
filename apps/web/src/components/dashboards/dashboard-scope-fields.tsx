@@ -95,6 +95,26 @@ function assetGroupLabel(group: ScopeAssetGroupOption): string {
 }
 
 /**
+ * `DashboardScopeFields`' clamp (below), as a pure function: the value a role not offered `value.kind` is moved to (its
+ * first offered kind, unchosen), or `null` when the role is offered the kind. `F3.85` PR 9: the
+ * edit page's wizard shows these fields on its Scope step only, so the page applies the same clamp
+ * to its prefill rather than wait for the step to mount.
+ */
+export function clampScopeToRole(role: UserRole, value: DashboardScopeValue): ChosenScopeValue | null {
+  const canLocation = canChooseLocationDashboardScope(role);
+  const kindNotOffered =
+    (!canCreateOrganizationWideDashboard(role) && value.kind === "organization") ||
+    (!canLocation && value.kind === "location") ||
+    (!canChooseAssetGroupDashboardScope(role) && value.kind === "assetGroup");
+  if (!kindNotOffered) {
+    return null;
+  }
+  return canLocation
+    ? { kind: "location", organizationId: value.organizationId, locationId: "" }
+    : { kind: "assetGroup", organizationId: value.organizationId, assetGroupId: "" };
+}
+
+/**
  * The org-wide / location / asset-group choice (ADR 0038 decision 10, plan §6.2;
  * ADR 0047 Amendment 5 for the third kind).
  *
@@ -134,26 +154,6 @@ function assetGroupLabel(group: ScopeAssetGroupOption): string {
  * asset from `assets`, falling back to the id. It is never clamped for any role;
  * the edit page's `scopePatch` omits both scope columns for it.
  */
-/**
- * The clamp below, as a pure function: the value a role not offered `value.kind` is moved to (its
- * first offered kind, unchosen), or `null` when the role is offered the kind. `F3.85` PR 9: the
- * edit page's wizard shows these fields on its Scope step only, so the page applies the same clamp
- * to its prefill rather than wait for the step to mount.
- */
-export function clampScopeToRole(role: UserRole, value: DashboardScopeValue): ChosenScopeValue | null {
-  const canLocation = canChooseLocationDashboardScope(role);
-  const kindNotOffered =
-    (!canCreateOrganizationWideDashboard(role) && value.kind === "organization") ||
-    (!canLocation && value.kind === "location") ||
-    (!canChooseAssetGroupDashboardScope(role) && value.kind === "assetGroup");
-  if (!kindNotOffered) {
-    return null;
-  }
-  return canLocation
-    ? { kind: "location", organizationId: value.organizationId, locationId: "" }
-    : { kind: "assetGroup", organizationId: value.organizationId, assetGroupId: "" };
-}
-
 export function DashboardScopeFields({
   role,
   value,

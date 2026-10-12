@@ -5,6 +5,11 @@ import { cleanup } from "@testing-library/react";
 import {
   aCopilotContentFillKeepsEveryOtherStoredSection,
   aFrozenVersionDisablesEveryControl,
+  aRefetchDropsAStaleValidateTarget,
+  aRefetchDropsAStaleValidationError,
+  aSaveAnsweredAfterACancelKeepsTheNewEdit,
+  aSaveAnsweredWithFilledContentReportsClean,
+  aSaveAnsweredWithFilledContentShowsTheSavedRows,
   aRefetchedKpiSectionReseedsACleanTab,
   aRefetchKeepsAnEditInProgress,
   aRefusedGrammarChangeLeavesTheRowAlone,
@@ -92,5 +97,39 @@ describe("F3.85 PR 11a KPIs tab — a refetched KPI section (review finding C2)"
 
   it("keeps an edit in progress when the stored KPI section changes", async () => {
     await aRefetchKeepsAnEditInProgress();
+  });
+});
+
+describe("F3.85 KPIs tab — a save answered with copilot-filled content (post-merge finding F1)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("shows the saved KPI section, not the rows the wizard opened on", async () => {
+    await aSaveAnsweredWithFilledContentShowsTheSavedRows();
+  });
+
+  it("reports clean after that save and refetch", async () => {
+    await aSaveAnsweredWithFilledContentReportsClean();
+  });
+});
+
+describe("F3.85 KPIs tab — row-keyed state across a reseed (post-merge review findings R1)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("drops a failed Validate's error when a refetch replaces the rows", async () => {
+    await aRefetchDropsAStaleValidationError();
+  });
+
+  it("drops a picked but unapplied grammar when a refetch replaces the rows", async () => {
+    await aRefetchDropsAStaleValidateTarget();
+  });
+
+  it("keeps an edit made after a Cancel while the save was pending", async () => {
+    await aSaveAnsweredAfterACancelKeepsTheNewEdit();
   });
 });

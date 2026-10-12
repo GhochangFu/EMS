@@ -47,6 +47,7 @@ import type { AdminAssetTemplateDto, TemplateMaintenancePlan } from "@bms/shared
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { useFollowStoredWhenClean } from "../../lib/use-follow-stored-when-clean";
 import {
   MAINTENANCE_CATEGORY_LABELS,
   MAINTENANCE_GENERATION_MODE_LABELS,
@@ -92,6 +93,16 @@ export function MaintenanceTab({ template, editable, onSaved, onDirtyChange }: M
     setRows(maintenanceRowsFrom(storedMaintenance(template)));
     setError(null);
   }, [template.id, template.status]);
+
+  // A refetch under the same id and status (a dock Confirm of
+  // `assetTemplate.update`) is followed only while the tab is clean
+  // (`useFollowStoredWhenClean`).
+  useFollowStoredWhenClean(
+    template.id,
+    storedMaintenance(template),
+    (previous) => !maintenanceHaveChanged(rows, previous),
+    (next) => setRows(maintenanceRowsFrom(next)),
+  );
 
   const blockedKeys = unwritableContentKeys(template.content);
   const changed = maintenanceHaveChanged(rows, storedMaintenance(template));

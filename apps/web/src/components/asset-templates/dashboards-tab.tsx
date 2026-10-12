@@ -31,6 +31,7 @@ import type { AdminAssetTemplateDto } from "@bms/shared";
 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { useFollowStoredWhenClean } from "../../lib/use-follow-stored-when-clean";
 import { mergeTemplateContent, unwritableContentKeys } from "../../lib/template-content-merge";
 import {
   MAX_DASHBOARD_VIEWS,
@@ -76,6 +77,23 @@ export function DashboardsTab({ template, editable, onSaved, onDirtyChange }: Da
     setNewViewName("");
     setActiveIndex(next.length > 0 ? 0 : null);
   }, [template.id, template.status]);
+
+  // A refetch under the same id and status (a dock Confirm of
+  // `assetTemplate.update`) is followed only while the tab is clean
+  // (`useFollowStoredWhenClean`).
+  useFollowStoredWhenClean(
+    template.id,
+    storedDashboards(template),
+    (previous) => !dashboardsHaveChanged(rows, previous),
+    (next) => {
+      const nextRows = dashboardRowsFrom(next);
+      setRows(nextRows);
+      // The open view stays open while it still exists; a removed one falls back to the last.
+      setActiveIndex((current) =>
+        nextRows.length === 0 ? null : current === null ? 0 : Math.min(current, nextRows.length - 1),
+      );
+    },
+  );
 
   const declaredPointKeys = template.points.map((point) => point.pointKey);
   const problems = dashboardFormErrors(rows, declaredPointKeys);

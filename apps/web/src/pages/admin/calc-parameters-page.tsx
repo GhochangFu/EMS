@@ -671,9 +671,10 @@ function CalcParameterForm({
 
   // Every step's elements are built above, in this render, and `renderStep`
   // only picks one. Built inside `renderStep`, they would be new elements on
-  // every shell render — and the shell re-renders on the `input` event that
-  // comes before a `<select>`'s `change` (its `dirty` flag), which re-commits
-  // the controlled value and loses the first pick in a clean wizard.
+  // every shell render, and a new element on a render between a `<select>`'s
+  // events re-commits the controlled value and can lose the first pick in a
+  // clean wizard. (The shell marks itself dirty on the bubbled `onChange`
+  // since `F3.85` PR 9, not on `input`; stable elements keep that safe.)
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
       <div

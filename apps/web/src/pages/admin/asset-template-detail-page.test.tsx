@@ -3,6 +3,8 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aRefusedPublishShowsTheSentenceOnTheCard,
+  aRefusedPublishShowsTheSentenceOnce,
   aRunningBackfillDisablesTheLifecycleActions,
   archiveAnnouncesArchiving,
   editThisVersionKeepsItsNameWhileArchivePends,
@@ -101,5 +103,13 @@ describe("F3.85 PR 11a Publish is the assetTemplate.publish wizard (ADR 0099 dec
 
   it("sends the publish with no X-Copilot-Change header", async () => {
     await thePublishWizardSendsNoCopilotHeader();
+  });
+
+  it("shows a refused Publish's sentence on the wizard card (post-merge finding N3)", async () => {
+    await aRefusedPublishShowsTheSentenceOnTheCard();
+  });
+
+  it("shows a refused Publish's sentence once, not again in the page banner (N3)", async () => {
+    await aRefusedPublishShowsTheSentenceOnce();
   });
 });

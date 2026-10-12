@@ -319,7 +319,8 @@ async function waitForAssetPrefill(): Promise<void> {
   await screen.findByText(/Scoped to asset Chiller 1\./);
 }
 
-export function renderPage(user: AuthUser): void {
+/** Renders the page; returns its client, so a case can hand the page a refetched dto. */
+export function renderPage(user: AuthUser): QueryClient {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
@@ -331,6 +332,7 @@ export function renderPage(user: AuthUser): void {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 /**

@@ -214,7 +214,9 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
       setPublishOpen(false);
       afterChange(next);
     },
-    onError: onActionError,
+    // No `onActionError`: the refusal shows on the wizard card (`submitError`
+    // below), and the page banner behind the dialog's scrim repeated it
+    // (post-merge finding N3).
   });
   const archiveM = useMutation({
     mutationFn: () => archiveAdminAssetTemplate(templateId ?? ""),
