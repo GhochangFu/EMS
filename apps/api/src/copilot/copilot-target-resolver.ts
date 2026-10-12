@@ -313,11 +313,12 @@ export class CopilotTargetResolver implements CopilotTargets {
       }
       case "assetPoint": {
         const [row] = await tx
-          .select({ pointKey: assetPoints.pointKey, assetId: assetPoints.assetId })
+          .select({ pointKey: assetPoints.pointKey, assetId: assetPoints.assetId, assetCode: assets.code })
           .from(assetPoints)
+          .innerJoin(assets, eq(assets.id, assetPoints.assetId))
           .where(and(eq(assetPoints.id, id), eq(assetPoints.organizationId, organizationId)))
           .limit(1);
-        return row ? { organizationId, name: row.pointKey, assetId: row.assetId } : null;
+        return row ? { organizationId, name: `${row.assetCode} ${row.pointKey}`, assetId: row.assetId } : null;
       }
       case "pointKey":
         // Never read per organization: `resolve` reads a point key on the fleet path.

@@ -31,6 +31,8 @@ export type ResolverCtx = {
   locationB: string;
   rtuA: string;
   assetA: string;
+  /** The asset's code: an asset-point card names `<code> <pointKey>`. */
+  assetCodeA: string;
   groupA: string;
   memberA: string;
   assetPointA: string;
@@ -177,7 +179,7 @@ export async function anAssetRowIsCheckedOnItsAsset(ctx: ResolverCtx): Promise<v
   const allowed = recorder();
   expect(await resolverWith(ctx, allowed.access).resolve(point, { id: ctx.assetPointA }, {}, [ctx.orgA], JWT)).toMatchObject({
     organizationId: ctx.orgA,
-    targetName: ctx.pointKeyCode,
+    targetName: `${ctx.assetCodeA} ${ctx.pointKeyCode}`,
   });
   expect(allowed.calls).toEqual([["canManageAsset", ctx.assetA]]);
   expect(await resolverWith(ctx, recorder({ canManageAsset: false }).access).resolve(point, { id: ctx.assetPointA }, {}, [ctx.orgA], JWT)).toBeNull();

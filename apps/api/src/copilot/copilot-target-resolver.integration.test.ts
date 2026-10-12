@@ -154,6 +154,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       locationB,
       rtuA,
       assetA,
+      assetCodeA: `${FAMILY}-ASSET`,
       groupA,
       memberA,
       assetPointA,
