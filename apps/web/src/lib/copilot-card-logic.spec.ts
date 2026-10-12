@@ -117,3 +117,18 @@ export function leavingADirtyWizardAsks(): void {
     expect(decision.confirmLabel).toBe("Discard and leave");
   }
 }
+
+/**
+ * `F3.86` PR 2 — the Review step parses the model's body, so a `clientOnly`
+ * field (which no step shows) is not asked for there; the page that owns the
+ * wizard adds it on submit. A fixture: `calcOverride.set` with one required
+ * field made `clientOnly`. Mutation: parse `entry.body` → the first reddens.
+ */
+export function theReviewStepDoesNotAskForAClientOnlyField(): void {
+  const base = entry("calcOverride.set");
+  const withClientOnly = { ...base, clientOnly: ["maxInputAgeSeconds"] };
+  const body = { formula: null, formulaDialect: null, calcTrigger: null, calcIntervalSeconds: null };
+  expect(bodyProblems(withClientOnly, body)).toEqual([]);
+  // The positive control: the same body without the clientOnly rule misses the field.
+  expect(bodyProblems(base, body).length).toBeGreaterThan(0);
+}

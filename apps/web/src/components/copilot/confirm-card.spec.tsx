@@ -3,11 +3,13 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
 import type { CopilotPendingChangeDto } from "@bms/shared";
+import { COPILOT_CHANGE_REFUSED_MESSAGE, COPILOT_UNAVAILABLE_MESSAGE } from "@bms/shared/copilot";
 
 import * as templatesApi from "../../api/admin/dashboard-templates";
 import * as copilotApi from "../../api/copilot";
 import * as confirmApi from "../../api/copilot-confirm";
 import { ApiError } from "../../lib/api-error";
+import { useCopilotStore } from "../../stores/copilot-store";
 import { useWizardStore } from "../../stores/wizard-store";
 import { answered, CONVERSATION_ID, message, openPanel, renderDock, send, settle, stub } from "./copilot-dock.spec";
 import { CHANGE_GONE_SENTENCE } from "./confirm-card";
@@ -135,7 +137,10 @@ export async function thePollStopsOnTheFollowUpsOutcome(): Promise<void> {
 
 /** A 409 says the change is gone, closes the card and reloads the conversation. */
 export async function a409SaysTheChangeIsGone(): Promise<void> {
-  vi.spyOn(confirmApi, "confirmCopilotChange").mockRejectedValue(new ApiError("conflict", 409));
+  // `F3.86` PR 2: the interceptor's own refusal, by its sentence.
+  vi.spyOn(confirmApi, "confirmCopilotChange").mockRejectedValue(
+    new ApiError(JSON.stringify({ message: COPILOT_CHANGE_REFUSED_MESSAGE, statusCode: 409 }), 409),
+  );
   const reload = vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue({
     id: CONVERSATION_ID,
     organizationId: null,
@@ -152,16 +157,146 @@ export async function a409SaysTheChangeIsGone(): Promise<void> {
   await waitFor(() => expect(reload).toHaveBeenCalled());
 }
 
-/** Another error shows on the card and keeps it open. */
+const EMPTY_CONVERSATION = {
+  id: CONVERSATION_ID,
+  organizationId: null,
+  title: null,
+  createdAt: "2026-10-11T10:00:00.000Z",
+  lastTurnAt: "2026-10-11T10:00:00.000Z",
+  messages: [],
+  pendingChanges: [],
+};
+
+/**
+ * A route's own error shows on the card with the route's sentence, and the
+ * card closes: the server recorded the change `failed`, so a second Confirm
+ * could only be refused (`F3.86` PR 2; release 1 left Confirm offered).
+ */
 export async function anErrorShowsOnTheCard(): Promise<void> {
   vi.spyOn(confirmApi, "confirmCopilotChange").mockRejectedValue(
     new ApiError(JSON.stringify({ message: "A template with no widgets cannot be published", statusCode: 400 }), 400),
   );
+  vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue(EMPTY_CONVERSATION);
   await proposed(change());
   const card = await screen.findByRole("region", { name: "Publish a dashboard template" });
   fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
   expect(await within(card).findByText("A template with no widgets cannot be published")).toBeTruthy();
-  expect(within(card).getByRole("button", { name: "Confirm" })).toBeTruthy();
+  expect(within(card).queryByRole("button", { name: "Confirm" })).toBeNull();
+}
+
+/**
+ * `F3.86` PR 2 — a route's own 409 is the route's answer, not "gone": its
+ * sentence shows, the gone sentence does not, Confirm is no longer offered,
+ * and the dock reloads the conversation once. Mutation: restore
+ * `err.status === 409` alone as "gone" → this reddens.
+ */
+export async function aRoutesOwn409ShowsItsSentence(): Promise<void> {
+  vi.spyOn(confirmApi, "confirmCopilotChange").mockRejectedValue(
+    new ApiError(JSON.stringify({ message: "This site has no active assets to lay out", statusCode: 409 }), 409),
+  );
+  const reload = vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue(EMPTY_CONVERSATION);
+  await proposed(change());
+  const card = await screen.findByRole("region", { name: "Publish a dashboard template" });
+  fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+  expect(await within(card).findByText("This site has no active assets to lay out")).toBeTruthy();
+  expect(within(card).queryByText(CHANGE_GONE_SENTENCE)).toBeNull();
+  expect(within(card).queryByRole("button", { name: "Confirm" })).toBeNull();
+  await waitFor(() => expect(reload).toHaveBeenCalledTimes(1));
+}
+
+/** The copilot is not available now: nothing was claimed, so the card stays open with its sentence. */
+export async function anUnavailableCopilotKeepsTheCardOpen(): Promise<void> {
+  vi.spyOn(confirmApi, "confirmCopilotChange").mockRejectedValue(
+    new ApiError(JSON.stringify({ message: COPILOT_UNAVAILABLE_MESSAGE, statusCode: 403 }), 403),
+  );
+  await proposed(change());
+  const card = await screen.findByRole("region", { name: "Publish a dashboard template" });
+  fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+  expect(await within(card).findByText(COPILOT_UNAVAILABLE_MESSAGE)).toBeTruthy();
+  // An edit is not red: the control beside the access card's red Confirm.
+  expect(within(card).getByRole("button", { name: "Confirm" }).className).not.toContain("text-critical-ink");
+}
+
+const SITE = "66666666-6666-4666-8666-666666666666";
+
+/**
+ * `F3.86` PR 2, ruling Q7(b) — a confirmed site layout that answers the
+ * ambiguous 409 lists the candidate groups and links to the site page, where
+ * the wizard asks for them. (`location.siteLayout.make` is mocked into the
+ * catalog by the `.test.tsx` until PR 3d adds it.)
+ */
+export async function anAmbiguous409ListsTheCandidates(): Promise<void> {
+  const ambiguous = {
+    message: "Choose a group for each tab",
+    ambiguous: [
+      {
+        tabKey: "sld",
+        domain: "electrical",
+        candidates: [
+          { id: "77777777-7777-4777-8777-777777777777", code: "lv-a", name: "LV Board A" },
+          { id: "88888888-8888-4888-8888-888888888888", code: "lv-b", name: "LV Board B" },
+        ],
+      },
+    ],
+  };
+  vi.spyOn(confirmApi, "confirmCopilotChange").mockRejectedValue(new ApiError(JSON.stringify(ambiguous), 409));
+  vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue(EMPTY_CONVERSATION);
+  await proposed(
+    change({
+      catalogId: "location.siteLayout.make",
+      path: `/api/v1/admin/locations/${SITE}/site-layout`,
+      risk: "create",
+      summary: "Make the site layout of Site 6.",
+    }),
+  );
+  const card = await screen.findByRole("region", { name: "Make the site layout" });
+  fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+  const groups = await screen.findByRole("region", { name: "Groups to choose" });
+  expect(within(groups).getByText(/LV Board A, LV Board B/)).toBeTruthy();
+  const link = within(groups).getByRole("link", { name: "Choose the groups on the site page" });
+  expect(link.getAttribute("href")).toBe(`/control-room/site/${SITE}`);
+  expect(within(card).queryByText(CHANGE_GONE_SENTENCE)).toBeNull();
+}
+
+const PASSWORD = "typed-on-the-card-9";
+
+/**
+ * `F3.86` PR 2 / ADR 0099 decision 3 — a `clientOnly` field is a password box
+ * on the card. Confirm waits until the value parses with the field's own
+ * schema; the value goes to the executor beside the stored body and never
+ * into the stored change or the dock's store. (`fixture.user.create` is
+ * mocked into the catalog by the `.test.tsx` until PR 4 adds `user.create`.)
+ */
+export async function aClientOnlyFieldIsTypedOnTheCard(): Promise<void> {
+  const sent = vi.spyOn(confirmApi, "confirmCopilotChange").mockResolvedValue({ id: "user-1" });
+  const pending = change({
+    catalogId: "fixture.user.create",
+    path: "/api/v1/admin/users",
+    body: { email: "new@example.test", displayName: "New", role: "viewer", organizationId: "99999999-9999-4999-8999-999999999999" },
+    risk: "access",
+    summary: "Create the user new@example.test.",
+  });
+  const stored = JSON.parse(JSON.stringify(pending.body)) as unknown;
+  await proposed(pending);
+  const card = await screen.findByRole("region", { name: "Create a user" });
+  const confirm = within(card).getByRole("button", { name: "Confirm" }) as HTMLButtonElement;
+  // An access change is red (decision 3), like a deactivation.
+  expect(card.getAttribute("data-risk")).toBe("access");
+  expect(confirm.className).toContain("text-critical-ink");
+  expect(confirm.disabled).toBe(true);
+  const box = within(card).getByLabelText("Temporary password") as HTMLInputElement;
+  expect(box.type).toBe("password");
+  fireEvent.change(box, { target: { value: "short" } });
+  expect(confirm.disabled).toBe(true);
+  expect(within(card).getByText(/at least 12/i)).toBeTruthy();
+  fireEvent.change(box, { target: { value: PASSWORD } });
+  expect(confirm.disabled).toBe(false);
+  fireEvent.click(confirm);
+  await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
+  expect(sent.mock.calls[0]?.[1]).toEqual({ temporaryPassword: PASSWORD });
+  expect(sent.mock.calls[0]?.[0].body).toEqual(stored);
+  expect(JSON.stringify(useCopilotStore.getState())).not.toContain(PASSWORD);
+  expect(JSON.stringify({ ...window.localStorage })).not.toContain(PASSWORD);
 }
 
 /** Reject calls the reject route, never the change's own route, and shows the stored line. */

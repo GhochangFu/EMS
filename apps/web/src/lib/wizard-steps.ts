@@ -1,5 +1,5 @@
 import type { CopilotFillStepDto } from "@bms/shared";
-import { type CatalogEntry, stepValuesSchema } from "@bms/shared/copilot";
+import { type CatalogEntry, modelBodyOf, stepValuesSchema } from "@bms/shared/copilot";
 
 /**
  * `F3.85` PR 8 / ADR 0099 decision 6 (plan §10.3, ruling Q6) — the pure logic
@@ -54,9 +54,17 @@ export function stepProblems(
   return parsed.success ? [] : parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
 }
 
-/** The problems with the whole body; empty when it is the request the route takes. */
-export function bodyProblems(entry: Pick<CatalogEntry, "body">, body: Readonly<Record<string, unknown>>): string[] {
-  const parsed = entry.body.safeParse(body);
+/**
+ * The problems with the whole body; empty when it is the request the route
+ * takes. `F3.86` PR 2: it parses the model's body (`modelBodyOf`), so a
+ * `clientOnly` field — which no step shows — is not asked for here; the page
+ * that owns the wizard adds it on submit.
+ */
+export function bodyProblems(
+  entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "modelBody">,
+  body: Readonly<Record<string, unknown>>,
+): string[] {
+  const parsed = modelBodyOf(entry).safeParse(body);
   return parsed.success ? [] : parsed.error.issues.map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`);
 }
 

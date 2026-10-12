@@ -22,18 +22,26 @@ const API_PATH = /^\/api\/v1\/[^/\\@][^\\@]*$/;
  * The path must be an `/api/v1/` path: the executor joins it to the API base
  * and sends the bearer token, so anything else is refused before `fetch`.
  *
+ * `F3.86` PR 2 / ADR 0099 decision 3: `clientOnly` holds the values the user
+ * typed on the card (a temporary password). They are added to the sent body
+ * only — never to `change.body`, the store or any log — and the server's
+ * hash leaves them out.
+ *
  * Returns the parsed response, or `null` for a `204`. The response shape
  * belongs to the catalog entry, so it stays `unknown` here; the caller that
  * knows the entry parses it.
  */
-export async function confirmCopilotChange(change: CopilotPendingChangeDto): Promise<unknown> {
+export async function confirmCopilotChange(
+  change: CopilotPendingChangeDto,
+  clientOnly: Readonly<Record<string, string>> = {},
+): Promise<unknown> {
   if (!API_PATH.test(change.path)) {
     throw new ApiError(`copilot change path is not an API path`, 400);
   }
   const sent = withAuth({
     method: change.method,
     headers: { "Content-Type": "application/json", [COPILOT_CHANGE_HEADER]: change.id },
-    body: JSON.stringify(change.body),
+    body: JSON.stringify({ ...change.body, ...clientOnly }),
   });
   const res = await fetch(`${base}${change.path}`, sent);
   if (!res.ok) {

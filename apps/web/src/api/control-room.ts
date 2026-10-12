@@ -96,8 +96,12 @@ export async function makeSiteLayout(locationId: string, body: MakeSiteLayoutBod
   };
 }
 
-/** The 409 body's ambiguous tabs, or null when the body is not the ambiguous answer. */
-function ambiguousTabsOf(text: string): SiteLayoutAmbiguousDto["ambiguous"] | null {
+/**
+ * The 409 body's ambiguous tabs, or null when the body is not the ambiguous answer. Exported
+ * since `F3.86` PR 2: the copilot's Confirm card reads the same body after a confirmed
+ * site-layout change answers 409.
+ */
+export function ambiguousTabsOf(text: string): SiteLayoutAmbiguousDto["ambiguous"] | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
