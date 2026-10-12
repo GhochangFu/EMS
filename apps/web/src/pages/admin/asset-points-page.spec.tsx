@@ -706,3 +706,35 @@ export async function addWithNoLocationDisablesTheRtuSelect(): Promise<void> {
   expect(rtuSelect().disabled).toBe(true);
   expect(screen.getByText("Choose a location to pick an RTU")).toBeTruthy();
 }
+
+/**
+ * `F3.86` PR 3b — the unrouted, unfiltered Add mapping picks its asset in the
+ * wizard: the RTU list follows the picked asset's location, and picking another
+ * asset clears the RTU choice. Both RTUs are served for every location, so the
+ * chosen id stays an option and only the reset can blank the select.
+ */
+export async function pickingAnAssetFollowsItsLocationAndResetsTheRtu(): Promise<void> {
+  const SITE_1 = "f3860000-0000-4000-8000-0000000000b1";
+  const SITE_2 = "f3860000-0000-4000-8000-0000000000b2";
+  stubApi();
+  const fetchRtus = stubRtus();
+  vi.mocked(assetsAdminApi.fetchAdminAssets).mockResolvedValue({
+    items: [
+      { id: "f3860000-0000-4000-8000-0000000000a1", code: "PMP-1", name: "Pump one", locationId: SITE_1 },
+      { id: "f3860000-0000-4000-8000-0000000000a2", code: "PMP-2", name: "Pump two", locationId: SITE_2 },
+    ],
+  } as never);
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: "Add mapping" }));
+  const asset = screen.getByLabelText("Asset");
+  await within(asset).findByText("PMP-2 · Pump two");
+  expect(rtuSelect().disabled).toBe(true);
+  await userEvent.selectOptions(asset, "f3860000-0000-4000-8000-0000000000a1");
+  await vi.waitFor(() => expect(fetchRtus).toHaveBeenCalledWith("all", SITE_1));
+  await within(rtuSelect()).findByRole("option", { name: /RTU-A/ });
+  await userEvent.selectOptions(rtuSelect(), RTU_A);
+  expect(rtuSelect().value).toBe(RTU_A);
+  await userEvent.selectOptions(asset, "f3860000-0000-4000-8000-0000000000a2");
+  await vi.waitFor(() => expect(fetchRtus).toHaveBeenCalledWith("all", SITE_2));
+  expect(rtuSelect().value).toBe("");
+}
