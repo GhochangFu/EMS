@@ -13,8 +13,9 @@ type Entry = Route & { id: string; bodyName: string | null };
 
 /** `@bms/shared/copilot` through `createRequire` (it reads `packages/shared/dist`; rebuild it after a catalog edit). */
 const require_ = createRequire(import.meta.url);
-const { COPILOT_CATALOG, EXCLUDED_ROUTES } = require_("@bms/shared/copilot") as {
+const { COPILOT_CATALOG, DELETE_ALLOWANCE, EXCLUDED_ROUTES } = require_("@bms/shared/copilot") as {
   COPILOT_CATALOG: readonly Entry[];
+  DELETE_ALLOWANCE: readonly Route[];
   EXCLUDED_ROUTES: readonly Route[];
 };
 
@@ -26,7 +27,9 @@ const { COPILOT_CATALOG, EXCLUDED_ROUTES } = require_("@bms/shared/copilot") as 
  *   controller is a catalog entry or on the exclusion list.
  * - Both lists name routes that exist (a renamed route turns this red rather
  *   than leaving a dead entry).
- * - No entry is a `DELETE`.
+ * - A `DELETE` entry is one of the two removals on `DELETE_ALLOWANCE`
+ *   (`F3.86` PR 2, decision 3 ruling 19); every other walked `DELETE` is
+ *   excluded.
  * - Each entry's handler parses the very export the catalog holds
  *   (`bodyName`, imported from `@bms/shared`); a bodyless entry's handler
  *   takes no `@Body()`. `catalog.spec.ts` checks the catalog side by identity.
@@ -50,8 +53,16 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/copilot/copilot-access.controller.ts", full: true },
   { file: "apps/api/src/copilot/copilot-conversations.controller.ts", full: true },
   { file: "apps/api/src/copilot/copilot-changes.controller.ts", full: true },
-  // Only its temporary-password route is excluded; its other writes are `F3.86`.
-  { file: "apps/api/src/admin/users/users.controller.ts", full: false },
+  // `F3.86` PR 2: the release-2 controllers, every write route an entry or excluded (plan §4.5, §4.6).
+  { file: "apps/api/src/admin/locations/locations.controller.ts", full: true },
+  { file: "apps/api/src/admin/rtus/rtus.controller.ts", full: true },
+  { file: "apps/api/src/admin/assets/assets.controller.ts", full: true },
+  { file: "apps/api/src/admin/asset-groups/asset-groups.controller.ts", full: true },
+  { file: "apps/api/src/admin/point-keys/point-keys.controller.ts", full: true },
+  { file: "apps/api/src/admin/asset-points/asset-points.controller.ts", full: true },
+  { file: "apps/api/src/admin/users/users.controller.ts", full: true },
+  { file: "apps/api/src/admin/users/user-grants.controller.ts", full: true },
+  { file: "apps/api/src/admin/onboarding/onboarding.controller.ts", full: true },
 ];
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;
@@ -61,18 +72,29 @@ const ANY_ROUTE = /^\s*@(Get|Post|Put|Patch|Delete)\(/;
 
 type Walked = Route & { file: string; handler: string };
 
-/** The write routes of one controller, each with its handler's source (decorator to the next route). */
+/**
+ * The write routes of one controller file, each with its handler's source
+ * (decorator to the next route). A file may hold two controllers
+ * (`asset-groups.controller.ts`: `admin/asset-groups` and
+ * `admin/asset-group-members`), so the prefix is the last `@Controller` above
+ * each route, not the file's first (`F3.86` PR 2).
+ */
 function walk(file: string): Walked[] {
   const lines = read(file).split("\n");
-  const prefix = lines.filter((line) => !COMMENT.test(line)).map((line) => CONTROLLER.exec(line)?.[1]).find(Boolean);
-  if (prefix === undefined) throw new Error(`${file}: no @Controller`);
+  let prefix: string | undefined;
   const out: Walked[] = [];
   lines.forEach((line, index) => {
     if (COMMENT.test(line)) return;
+    const controller = CONTROLLER.exec(line);
+    if (controller) {
+      prefix = controller[1];
+      return;
+    }
     const match = WRITE.exec(line);
     if (!match) return;
     let end = index + 1;
     while (end < lines.length && !(ANY_ROUTE.test(lines[end] as string) && !COMMENT.test(lines[end] as string))) end++;
+    if (prefix === undefined) throw new Error(`${file}:${index + 1}: a route above any @Controller`);
     const sub = match[2] ?? "";
     out.push({
       file,
@@ -81,6 +103,7 @@ function walk(file: string): Walked[] {
       handler: lines.slice(index, end).filter((l) => !COMMENT.test(l)).join("\n"),
     });
   });
+  if (prefix === undefined) throw new Error(`${file}: no @Controller`);
   return out;
 }
 
@@ -139,6 +162,45 @@ function viaLocalWrapper(entry: Entry, file: string): boolean {
   );
 }
 
+/**
+ * `F3.86` PR 2 (plan §4.6) — entries whose controller passes the body raw and
+ * whose service parses it, after its own manager check (`users`, `user-grants`:
+ * a non-manager gets 403 before any 400). The allowance is exact: the handler
+ * calls this service method, and the service imports the body from
+ * `@bms/shared` and parses it inside that method. PR 4 fills the list.
+ */
+const SERVICE_PARSERS: ReadonlyArray<{
+  entryId: string;
+  bodyName: string;
+  controller: string;
+  service: string;
+  serviceField: string;
+  method: string;
+}> = [];
+
+/** The source of one method of a class file: from its signature to the next method at the same indent. */
+function methodSource(file: string, method: string): string | null {
+  const lines = read(file).split("\n");
+  const start = lines.findIndex((line) => new RegExp(`^  (?:async )?${method}\\(`).test(line));
+  if (start === -1) return null;
+  let end = start + 1;
+  while (end < lines.length && !/^  (?:private |public |protected )?(?:async )?[A-Za-z]+\(/.test(lines[end] as string) && !/^}/.test(lines[end] as string)) end++;
+  return lines.slice(start, end).join("\n");
+}
+
+/** Whether an entry's handler reaches its body through a declared service parse. */
+function viaServiceParser(entry: Entry, route: Walked, parsers: typeof SERVICE_PARSERS = SERVICE_PARSERS): boolean {
+  const parser = parsers.find((p) => p.entryId === entry.id && p.bodyName === entry.bodyName && p.controller === route.file);
+  if (!parser) return false;
+  if (!route.handler.includes(`this.${parser.serviceField}.${parser.method}(`)) return false;
+  const body = methodSource(parser.service, parser.method);
+  return (
+    body !== null &&
+    sharedImports(parser.service).has(parser.bodyName) &&
+    new RegExp(`\\b${parser.bodyName}\\.(?:safeParse|parse)\\(`).test(body)
+  );
+}
+
 const key = (route: Route) => `${route.method} ${route.path}`;
 const walked = CONTROLLERS.flatMap((controller) => walk(controller.file));
 const byKey = new Map(walked.map((route) => [key(route), route]));
@@ -151,6 +213,13 @@ describe("F3.85 PR 8 — the copilot action catalog covers the write routes (ADR
     expect(byKey.has("PUT /dashboards/:id/widgets")).toBe(true);
     expect(byKey.has("POST /admin/dashboard-templates/:id/:verb/:x")).toBe(false);
     expect(read(CONTROLLERS[1]?.file as string)).toContain('@Post(":id/:verb/:x")');
+  });
+
+  it("takes each route's prefix from the controller above it, in a file with two (positive control)", () => {
+    expect(byKey.has("DELETE /admin/asset-group-members/:id")).toBe(true);
+    expect(byKey.has("PATCH /admin/asset-group-members/:id")).toBe(true);
+    expect(byKey.has("DELETE /admin/asset-groups/:id")).toBe(false);
+    expect(byKey.has("POST /admin/asset-groups/:id/members")).toBe(true);
   });
 
   it("puts every write route of a covered controller in the catalog or on the exclusion list", () => {
@@ -167,11 +236,17 @@ describe("F3.85 PR 8 — the copilot action catalog covers the write routes (ADR
     expect([...excludedKeys].filter((k) => !byKey.has(k))).toEqual([]);
   });
 
-  it("holds no DELETE entry, and every DELETE walked is excluded", () => {
-    expect(COPILOT_CATALOG.filter((entry) => entry.method === "DELETE")).toEqual([]);
+  it("allows a DELETE entry only on the allowance, and excludes every other DELETE walked", () => {
+    const allowed = new Set(DELETE_ALLOWANCE.map(key));
+    expect([...allowed].sort()).toEqual(["DELETE /admin/asset-group-members/:id", "DELETE /admin/users/:id/grants/:kind/:grantId"]);
+    // The allowance names routes that exist.
+    for (const k of allowed) expect(byKey.has(k), k).toBe(true);
+    const deleteEntries = COPILOT_CATALOG.filter((entry) => entry.method === "DELETE").map(key);
+    for (const k of deleteEntries) expect(allowed.has(k), k).toBe(true);
     const deletes = walked.filter((route) => route.method === "DELETE").map(key);
     expect(deletes.length).toBeGreaterThan(5);
-    for (const k of deletes) expect(excludedKeys.has(k), k).toBe(true);
+    for (const k of deletes) expect(entryKeys.has(k) || excludedKeys.has(k), k).toBe(true);
+    for (const k of deletes.filter((d) => !allowed.has(d))) expect(entryKeys.has(k), k).toBe(false);
   });
 
   it("parses each entry's body with the shared export the catalog holds", () => {
@@ -182,7 +257,8 @@ describe("F3.85 PR 8 — the copilot action catalog covers the write routes (ADR
         expect(route.handler, entry.id).not.toMatch(/@Body\(/);
       } else {
         expect(route.handler, entry.id).toMatch(new RegExp(`\\b${entry.bodyName}\\b`));
-        const shared = sharedImports(route.file).has(entry.bodyName) || viaLocalWrapper(entry, route.file);
+        const shared =
+          sharedImports(route.file).has(entry.bodyName) || viaLocalWrapper(entry, route.file) || viaServiceParser(entry, route);
         expect(shared, `${entry.id}: ${entry.bodyName} from @bms/shared`).toBe(true);
       }
     }
@@ -196,5 +272,24 @@ describe("F3.85 PR 8 — the copilot action catalog covers the write routes (ADR
     expect(matched).toEqual(["assetTemplate.update"]);
     const other = COPILOT_CATALOG.find((entry) => entry.id === "dashboardTemplate.update") as Entry;
     expect(viaLocalWrapper({ ...other, bodyName: "updateAssetTemplateBodySchema" }, LOCAL_WRAPPERS[0]?.controller as string)).toBe(false);
+  });
+
+  it("matches a service-parse allowance only when the handler calls the method and the method parses the body (fixture)", () => {
+    const entry = COPILOT_CATALOG.find((e) => e.id === "dashboard.create") as Entry;
+    const route = byKey.get(key(entry)) as Walked;
+    const row = {
+      entryId: entry.id,
+      bodyName: entry.bodyName as string,
+      controller: route.file,
+      service: "apps/api/src/dashboard-builder/dashboards.service.ts",
+      serviceField: "dashboards",
+      method: "create",
+    };
+    // The dashboard controller parses the body itself; its service does not, so the row matches nothing.
+    expect(viaServiceParser(entry, route, [row])).toBe(false);
+    expect(viaServiceParser(entry, route, [])).toBe(false);
+    // The method reader is not vacuous: it finds a real method and not a missing one.
+    expect(methodSource(row.service, "create")).not.toBeNull();
+    expect(methodSource(row.service, "noSuchMethod")).toBeNull();
   });
 });

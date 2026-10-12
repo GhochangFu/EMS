@@ -14,7 +14,7 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  * `MasterDataAuditService` adds `via: "copilot"` and the change id. A catalog
  * write that inserted into `bms.audit_log` itself would lose the mark.
  *
- * So: every release-1 catalog write service audits through
+ * So: every catalog write service (release 1, and release 2 since `F3.86` PR 2) audits through
  * `MasterDataAuditService` (a positive control — a renamed or moved file turns
  * this red rather than passing by absence), no file in a catalog directory
  * inserts into the audit log directly, and both of the service's inserts
@@ -37,6 +37,17 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/calc-parameters/calc-parameters.service.ts",
   "apps/api/src/admin/asset-points/asset-point-calc-override.service.ts",
   "apps/api/src/control-room/site-layout.service.ts",
+  // `F3.86` PR 2 (plan §4.7): every service a release-2 entry's handler reaches.
+  "apps/api/src/admin/locations/locations.service.ts",
+  "apps/api/src/admin/rtus/rtus.service.ts",
+  "apps/api/src/admin/assets/assets.service.ts",
+  "apps/api/src/admin/asset-groups/asset-groups.service.ts",
+  "apps/api/src/admin/point-keys/point-keys.service.ts",
+  "apps/api/src/admin/asset-points/asset-points.service.ts",
+  "apps/api/src/admin/users/users.service.ts",
+  "apps/api/src/admin/users/user-grants.service.ts",
+  "apps/api/src/admin/onboarding/onboarding-commit.service.ts",
+  "apps/api/src/control-room/site-control-room-view.service.ts",
 ] as const;
 
 /** Directories whose write routes the release-1 catalog covers; no file in them may insert into the audit log itself. */
@@ -48,6 +59,13 @@ const CATALOG_DIRS = [
   "admin/asset-points",
   "calc",
   "control-room",
+  "admin/locations",
+  "admin/rtus",
+  "admin/assets",
+  "admin/asset-groups",
+  "admin/point-keys",
+  "admin/users",
+  "admin/onboarding",
 ] as const;
 
 /** The drizzle form and the raw-SQL form. */
