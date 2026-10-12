@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi, type Mock } from "vitest";
 
@@ -19,6 +19,7 @@ import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ApiError } from "../../lib/api-error";
 import { siteViewNoticeText } from "../../lib/site-view-notice";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
+import { resetWizardStore, useWizardStore } from "../../stores/wizard-store";
 import { ORG_A, site, USER } from "./organizations-page.spec";
 import { ControlRoomSitePage } from "./site-page";
 import * as copilotApi from "../../api/copilot";
@@ -266,6 +267,23 @@ export async function anAmbiguousAnswerReopensGroups(): Promise<void> {
   expect(make.mock.calls).toEqual([[LOCATION_ID, {}]]);
 }
 
+const TEMPLATE_ID = "55555555-5555-4555-8555-555555555555";
+
+/** W3 — a copilot `fill_step` for Groups shows the filled template, and Submit sends it. */
+export async function aFillStepFillsTheTemplate(): Promise<void> {
+  const { make } = stubReads([generatedWith("no_site_layout")], [MADE]);
+  renderPage();
+  const dialog = await openTheWizard();
+  act(() => {
+    useWizardStore.getState().receiveFill({ catalogId: "location.siteLayout.make", stepId: "groups", values: { templateId: TEMPLATE_ID } });
+  });
+
+  expect((await within(dialog).findByText(/filled by the copilot/)).textContent).toContain(TEMPLATE_ID);
+  await submitFromGroups(dialog);
+  await waitFor(() => expect(make).toHaveBeenCalledTimes(1));
+  expect(make.mock.calls[0]).toEqual([LOCATION_ID, { templateId: TEMPLATE_ID }]);
+}
+
 /** M6 — a 409 `ambiguous` opens the picker: one select per tab, listing the candidates' names. */
 export async function anAmbiguousAnswerOpensThePicker(): Promise<void> {
   const { picker } = await openThePicker();
@@ -329,5 +347,6 @@ export function cleanupSiteLayout(): void {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   useAuthStore.setState({ scope: null });
+  resetWizardStore();
   expect(networkCalls, "a read reached the network").toEqual([]);
 }

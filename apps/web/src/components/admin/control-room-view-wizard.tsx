@@ -9,6 +9,7 @@ import { fetchDashboards } from "../../api/dashboards";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import {
   isEligibleSiteViewDashboard,
+  siteViewDraftChanged,
   siteViewDraftFromSetting,
   siteViewPayloadFromDraft,
   type SiteViewDraft,
@@ -58,7 +59,9 @@ type ControlRoomViewWizardProps = {
  *
  * A non-admin over a stored built-in view sees it read-only and is offered no
  * Submit: the route answers 403 to any body from that role (OQ3). Submit sends
- * the plain `PUT`, with no `X-Copilot-Change` header.
+ * the plain `PUT`, with no `X-Copilot-Change` header — and only for a changed
+ * view: an unchanged one (untouched, or changed back) closes the wizard with no
+ * request, as the Edit form's Save did.
  */
 export function ControlRoomViewWizard({ location, canSetBuiltin, onClose }: ControlRoomViewWizardProps) {
   const queryClient = useQueryClient();
@@ -151,7 +154,15 @@ export function ControlRoomViewWizard({ location, canSetBuiltin, onClose }: Cont
             setDraft(next);
           }, storedView)
         }
-        onSubmit={(body) => putM.mutate(body)}
+        onSubmit={(body) => {
+          // An unchanged view is not put: a `generated` PUT stores a view row, and any row makes
+          // the site's "Make site layout" answer 409 (`site-layout.service.ts`, `has_view`).
+          if (!siteViewDraftChanged(storedView, draft ?? storedView)) {
+            onClose();
+            return;
+          }
+          putM.mutate(body);
+        }}
         onCancel={onClose}
         submitting={putM.isPending}
         submitError={error}

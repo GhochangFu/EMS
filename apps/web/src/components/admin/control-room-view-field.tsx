@@ -10,9 +10,9 @@ type ControlRoomViewFieldProps = {
   /** Whether the reads that decide `dashboards` have answered — until then an unlisted stored
    * dashboard is "loading", not "no longer available". */
   dashboardsLoaded: boolean;
-  /** Whether the user has changed the field in this Edit session. Review C1: only then is the
+  /** Whether the user has changed the field in this wizard. Review C1: only then is the
    * dashboard picker `required` — an untouched field over a deleted or re-scoped stored
-   * dashboard must not block a Save that changed only the location. */
+   * dashboard is shown as it is, not as a choice the user failed to make. */
   touched: boolean;
   /** The site's stored setting as a draft — what the field shows before it is touched. */
   stored: SiteViewDraft;
@@ -23,10 +23,11 @@ type ControlRoomViewFieldProps = {
 };
 
 /**
- * `F3.67` U5 / ADR 0076 decision 3 — a site's "Control Room view" on the
- * location Edit form: the generated view, one of the site's dashboards, or
- * (global admin only) the built-in SMOC view. Presentational: the page owns
- * the reads, the draft and the `PUT`.
+ * `F3.67` U5 / ADR 0076 decision 3 — a site's "Control Room view": the
+ * generated view, one of the site's dashboards, or (global admin only) the
+ * built-in SMOC view. Since `F3.86` PR 3d it is the View step of
+ * `ControlRoomViewWizard` (it left the location Edit form). Presentational:
+ * the wizard owns the reads, the draft and the `PUT`.
  */
 export function ControlRoomViewField({
   value,

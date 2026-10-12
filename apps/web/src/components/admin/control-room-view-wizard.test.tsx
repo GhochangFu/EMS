@@ -9,10 +9,12 @@ import {
   aFillStepFillsTheView,
   anAdminOverABuiltinGetsAnEnabledField,
   anAdminsBuiltinSendsTheBuiltinBody,
+  anUnchangedViewIsNotPut,
   aNonAdminOverABuiltinIsOfferedNoSubmit,
   aRefusedPutShowsItsSentence,
   aRemovedStoredDashboardIsNoLongerAvailable,
   aRescopedStoredDashboardIsNoLongerAvailable,
+  aViewChangedBackIsNotPut,
   builtinIsOfferedToTheGlobalAdmin,
   builtinIsOfferedToTheGlobalAdminOnly,
   generatedSendsTheExactBody,
@@ -54,5 +56,7 @@ describe("F3.86 PR 3d — the Control Room view wizard", () => {
   it("shows a re-scoped stored dashboard as no longer available", () => aRescopedStoredDashboardIsNoLongerAvailable(), WAIT_BUDGET_MS);
   it("requires the dashboard picker only once touched", () => onlyATouchedPickerIsRequired(), WAIT_BUDGET_MS);
   it("shows a refused PUT's sentence and stays open", () => aRefusedPutShowsItsSentence(), WAIT_BUDGET_MS);
+  it("W5 does not put an unchanged view", () => anUnchangedViewIsNotPut(), WAIT_BUDGET_MS);
+  it("W5b does not put a view changed and changed back", () => aViewChangedBackIsNotPut(), WAIT_BUDGET_MS);
   it("takes a copilot fill for the View step", () => aFillStepFillsTheView(), WAIT_BUDGET_MS);
 });

@@ -349,3 +349,36 @@ export async function aFillStepFillsTheView(): Promise<void> {
   useWizardStore.getState().receiveFill({ catalogId: "location.controlRoomView.set", stepId: "view", values: { kind: "generated" } });
   await waitForStoredKind("generated");
 }
+
+/**
+ * W5 — an untouched view is not put: Submit closes the wizard with no request. A `generated` PUT
+ * would store a row, and any row makes "Make site layout" answer 409. Mutation: put unconditionally.
+ */
+export async function anUnchangedViewIsNotPut(): Promise<void> {
+  const { calls, onClose } = stub(setting());
+  renderWizard(true, onClose);
+  await waitForStoredKind("generated");
+  await next();
+  await submit();
+
+  // Positive control beside the absence: the Submit was taken, and closed the wizard.
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1), FAIL_FAST);
+  expect(puts(calls)).toEqual([]);
+}
+
+/** W5b — a view changed and changed back is not put either (the changed-predicate deciding). */
+export async function aViewChangedBackIsNotPut(): Promise<void> {
+  const { calls, onClose } = stub(setting({ kind: "dashboard", dashboardId: SITE_DASHBOARD_ID }));
+  renderWizard(true, onClose);
+  await waitForStoredKind("dashboard");
+  await userEvent.selectOptions(viewSelect(), "generated");
+  await userEvent.selectOptions(viewSelect(), "dashboard");
+  const picker = (await screen.findByLabelText("Control Room dashboard", undefined, FAIL_FAST)) as HTMLSelectElement;
+  await within(picker).findByRole("option", { name: "Site dashboard" }, FAIL_FAST);
+  await userEvent.selectOptions(picker, SITE_DASHBOARD_ID);
+  await next();
+  await submit();
+
+  await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1), FAIL_FAST);
+  expect(puts(calls)).toEqual([]);
+}

@@ -2,6 +2,7 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aFillStepFillsTheTemplate,
   aMadeCopyRereadsTheResolveRead,
   anAmbiguousAnswerOpensThePicker,
   anAmbiguousAnswerReopensGroups,
@@ -58,6 +59,10 @@ describe("F3.73 / F3.86 PR 3d Make site layout on the site page's notice", () =>
   it("M6 opens the picker with the 409 body's candidates", async () => {
     await anAmbiguousAnswerOpensThePicker();
   });
+
+  it("W3 takes a copilot fill for the template", async () => {
+    await aFillStepFillsTheTemplate();
+  }, 20_000);
 
   it("W2 re-opens the Groups step on an ambiguous answer", async () => {
     await anAmbiguousAnswerReopensGroups();
