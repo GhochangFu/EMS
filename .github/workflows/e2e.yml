@@ -1,0 +1,136 @@
+name: E2E
+
+# ADR 0100 (F4.7). The Playwright suite runs only when a pull request gets the
+# `e2e` label, or by hand. It never runs on a plain push, so it costs no
+# Actions minutes unless someone asks for it. No secret is read: the database
+# and Redis are job services with the dev passwords ci.yml also uses.
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: Playwright end-to-end suite
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'e2e'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        # Same image as ci.yml and docker-compose.yml (ADR 0023 decision 4).
+        image: timescale/timescaledb:2.29.1-pg16
+        env:
+          POSTGRES_DB: bms
+          POSTGRES_USER: bms_app
+          POSTGRES_PASSWORD: bms_app_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U bms_app -d bms"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://bms_owner:bms_owner_dev@127.0.0.1:5432/bms
+      DATABASE_URL_SUPERUSER: postgres://bms_app:bms_app_dev@127.0.0.1:5432/bms
+      DATABASE_URL_AUTH: postgres://bms_auth:bms_auth_dev@127.0.0.1:5432/bms
+      DATABASE_URL_TENANT: postgres://bms_tenant:bms_tenant_dev@127.0.0.1:5432/bms
+      DATABASE_URL_FLEET: postgres://bms_fleet:bms_fleet_dev@127.0.0.1:5432/bms
+      BMS_OWNER_PASSWORD: bms_owner_dev
+      BMS_AUTH_PASSWORD: bms_auth_dev
+      BMS_TENANT_PASSWORD: bms_tenant_dev
+      BMS_FLEET_PASSWORD: bms_fleet_dev
+      REDIS_URL: redis://127.0.0.1:6379
+      AUTH_MODE: local
+      VITE_AUTH_MODE: local
+      VITE_API_URL: http://127.0.0.1:4000
+      VITE_WS_URL: ws://127.0.0.1:4000
+      E2E_BASE_URL: http://127.0.0.1:5173
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@9.15.0 --activate
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The browser cache is keyed on the pinned Playwright version, so a
+      # version bump downloads Chromium again and nothing else does.
+      - name: Read the Playwright version
+        run: echo "PW_VERSION=$(node -p "require('./apps/e2e/package.json').devDependencies['@playwright/test']")" >> "$GITHUB_ENV"
+
+      - name: Cache the Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: pw-${{ runner.os }}-${{ env.PW_VERSION }}
+
+      - name: Install Chromium
+        run: pnpm --filter e2e exec playwright install --with-deps chromium
+
+      - name: Build
+        run: pnpm build
+
+      - name: Initialise database schemas
+        run: |
+          docker exec "${{ job.services.postgres.id }}" \
+            psql -U bms_app -d bms \
+            -c "CREATE EXTENSION IF NOT EXISTS timescaledb; CREATE SCHEMA IF NOT EXISTS bms AUTHORIZATION bms_app; CREATE SCHEMA IF NOT EXISTS telemetry AUTHORIZATION bms_app;"
+
+      - name: Provision database roles
+        run: pnpm --filter @bms/db roles
+
+      - name: Migrate
+        run: pnpm db:migrate
+
+      - name: Seed
+        run: pnpm db:seed
+
+      # A fresh throwaway per run, masked before it reaches the environment.
+      - name: Make a JWT secret
+        run: |
+          secret="$(openssl rand -hex 32)"
+          echo "::add-mask::${secret}"
+          echo "JWT_SECRET=${secret}" >> "$GITHUB_ENV"
+
+      - name: Run the end-to-end suite
+        run: pnpm test:e2e
+
+      - name: Upload the report and traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            apps/e2e/playwright-report
+            apps/e2e/test-results
+          retention-days: 3

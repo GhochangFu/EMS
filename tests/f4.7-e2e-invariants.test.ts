@@ -106,7 +106,7 @@ describe("F4.7 — the e2e suite shape (ADR 0100)", () => {
  * not turn this into `runIf(existsSync(...))`: a missing workflow would then
  * pass silently.
  */
-describe.skip("F4.7 — I4 the e2e workflow (T9 removes .skip)", () => {
+describe("F4.7 — I4 the e2e workflow", () => {
   it("I4 runs on the e2e label or by hand, with no secret, on ci.yml's images", () => {
     const wf = read(".github", "workflows", "e2e.yml");
     const ci = read(".github", "workflows", "ci.yml");
