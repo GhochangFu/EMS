@@ -144,7 +144,7 @@ describe("F4.157 — bms.location_types schema (migration 0085)", () => {
 
   it("no file that reads the location-type vocabulary keeps the closed three-code list literal", () => {
     const CLEANED_FILES = [
-      "apps/api/src/admin/locations/locations.schema.ts",
+      "packages/shared/src/contracts/location-writes.ts",
       "apps/api/src/admin/onboarding/onboarding.schema.ts",
       "apps/api/src/dashboard/dashboard.service.ts",
       "apps/api/src/map/map.service.ts",

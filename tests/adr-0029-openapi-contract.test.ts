@@ -8,8 +8,8 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
 /**
  * The request-body schemas. The `*.schema.ts` files under `apps/api/src` are the controllers' own;
- * the four `contracts/*-writes.ts` files are the release-1 write bodies that moved
- * to `@bms/shared` (`F3.85` PR 1). A wider root that kept only `.schema.ts` would
+ * the `contracts/*-writes.ts` files below are the write bodies that moved
+ * to `@bms/shared` (`F3.85` PR 1 the first four, `F3.86` PR 1 the other seven). A wider root that kept only `.schema.ts` would
  * scan none of them and their refinement sites would leave this gate silently.
  * The second walk keeps `-writes.ts` only, not every `contracts/*.ts`: four older
  * refinements there have no `.describe()` yet.
@@ -19,6 +19,13 @@ const MOVED_WRITE_BODIES = [
   "packages/shared/src/contracts/dashboard-template-writes.ts",
   "packages/shared/src/contracts/calc-parameter-writes.ts",
   "packages/shared/src/contracts/calc-override-writes.ts",
+  "packages/shared/src/contracts/location-writes.ts",
+  "packages/shared/src/contracts/rtu-writes.ts",
+  "packages/shared/src/contracts/asset-writes.ts",
+  "packages/shared/src/contracts/point-key-writes.ts",
+  "packages/shared/src/contracts/asset-point-writes.ts",
+  "packages/shared/src/contracts/site-control-room-view-writes.ts",
+  "packages/shared/src/contracts/site-layout-writes.ts",
 ];
 
 function schemaFiles(): string[] {
@@ -143,7 +150,7 @@ describe("ADR 0029 decision 10 — refinements explain themselves", () => {
     ).toEqual([]);
   });
 
-  it("scans the four write-body schemas that moved to contracts (positive control)", () => {
+  it("scans the write-body schemas that moved to contracts (positive control)", () => {
     const scanned = schemaFiles().map((file) => relative(repoRoot, file).replace(/\\/g, "/"));
     for (const moved of MOVED_WRITE_BODIES) {
       expect(scanned, `${moved} left the refinement scan`).toContain(moved);

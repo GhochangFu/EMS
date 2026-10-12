@@ -52,7 +52,7 @@ const SEED_REL = "packages/db/src/point-keys-seed.ts";
 const UNITS_REL = "packages/db/src/point-key-units.ts";
 // `F3.68` moved `adminPointKeyDtoSchema` out of `admin.ts` (§4.5 line cap).
 const CONTRACT_REL = "packages/shared/src/contracts/point-keys.ts";
-const BODY_SCHEMA_REL = "apps/api/src/admin/point-keys/point-keys.schema.ts";
+const BODY_SCHEMA_REL = "packages/shared/src/contracts/point-key-writes.ts";
 const SERVICE_REL = "apps/api/src/admin/point-keys/point-keys.service.ts";
 const CONTROLLER_REL = "apps/api/src/admin/point-keys/point-keys.controller.ts";
 const RESOLVER_REL = "apps/api/src/admin/asset-points/resolve-catalog-point-key.ts";
