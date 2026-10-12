@@ -648,6 +648,36 @@ schedule's `report_files.delivery_status` if the channel or SMTP host is
 missing. Restore the compose worker afterward with
 `docker compose up -d worker`.
 
+### Run the end-to-end suite (F4.7, ADR 0100)
+
+The Playwright suite (`apps/e2e`, five specs on Chromium) starts the API from
+source, `vite preview` and the simulator itself, with
+`reuseExistingServer: false`. Compose owns `:4000` and `:5173` in OIDC mode, so
+stop those containers first, or the run fails with "port in use" instead of
+testing the OIDC bundle. Run one heavy job at a time.
+
+```bash
+docker compose stop web api sim
+# Compose Postgres is on 127.0.0.1:5433, Redis on 127.0.0.1:6379. Dev default
+# passwords only (the same as .github/workflows/ci.yml).
+export DATABASE_URL="postgres://bms_owner:bms_owner_dev@127.0.0.1:5433/bms"
+export DATABASE_URL_SUPERUSER="postgres://bms_app:bms_app_dev@127.0.0.1:5433/bms"
+export DATABASE_URL_AUTH="postgres://bms_auth:bms_auth_dev@127.0.0.1:5433/bms"
+export DATABASE_URL_TENANT="postgres://bms_tenant:bms_tenant_dev@127.0.0.1:5433/bms"
+export DATABASE_URL_FLEET="postgres://bms_fleet:bms_fleet_dev@127.0.0.1:5433/bms"
+export REDIS_URL="redis://127.0.0.1:6379"
+export AUTH_MODE=local OIDC_ISSUER=
+export VITE_AUTH_MODE=local VITE_OIDC_ISSUER= VITE_OIDC_CLIENT_ID=
+export E2E_BASE_URL="http://127.0.0.1:5173"
+pnpm build                  # the web bundle must be built with this env
+pnpm --filter e2e exec playwright install chromium   # first run only
+pnpm test:e2e
+docker compose up -d web api sim
+```
+
+In CI the suite runs only when a pull request gets the `e2e` label, or by
+manual dispatch (`.github/workflows/e2e.yml`).
+
 ---
 
 ## 12. Cursor IDE on WSL

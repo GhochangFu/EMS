@@ -678,6 +678,20 @@ Process (`AGENTS.md` §10).
 - **Owed:** ~~a `chore(agents):` commit adding a testing section to `AGENTS.md`
   and correcting its §2 CI/CD row~~ — **done**, AGENTS.md §4.6.
 
+
+### End-to-end browser suite (F4.7) — built, awaiting CI
+- **Status:** built on `feat/f4-7-playwright-e2e`; the labeled CI run is the
+  remaining gate (ADR 0100).
+- **Goal:** a browser layer that runs on demand. Five Playwright specs on
+  Chromium (local login, live simulator value, alarm acknowledge, master-data
+  chain, location scope) against the built web bundle, the API from source and
+  the simulator.
+- **Delivered:** private package `apps/e2e` (`@playwright/test` 1.63.0), the
+  `pnpm test:e2e` script, repo invariants in `tests/f4.7-e2e-invariants.test.ts`,
+  and `.github/workflows/e2e.yml`, which runs on the `e2e` label or by manual
+  dispatch only. `pnpm test` and `test:coverage` never collect it. Local run
+  steps: `docs/local-setup.md`.
+
 ### Access control hardening (F4.11, F4.12) — done
 - **Status:** done (ADR 0017, PR #2)
 - **Delivered:** the operations write matrix. Sixteen mutating endpoints across

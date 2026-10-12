@@ -158,6 +158,9 @@ Full stack table and rationale: [`AGENTS.md`](./AGENTS.md) §2.
    [`docs/adr/`](./docs/adr).
 4. Anything from `AGENTS.md` §6 (Out of Scope) requires a Promotion PR
    per `AGENTS.md` §10 before it can land.
+5. The Playwright end-to-end suite is not part of `pnpm test`; run it with
+   `pnpm test:e2e` (steps in [`docs/local-setup.md`](./docs/local-setup.md),
+   ADR 0100).
 
 ## Status
 
