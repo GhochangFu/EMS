@@ -54,10 +54,22 @@ export function stepProblems(
   return parsed.success ? [] : parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
 }
 
-/** The problems with the whole body; empty when it is the request the route takes. */
-export function bodyProblems(entry: Pick<CatalogEntry, "body">, body: Readonly<Record<string, unknown>>): string[] {
+/**
+ * The problems with the whole body; empty when it is the request the route
+ * takes. `F3.86` PR 2: it parses the route's own body (refinements included),
+ * and drops the issues on a `clientOnly` field — which no step shows; the
+ * page that owns the wizard adds it on submit. Not the model's body: a
+ * `modelBody` may be narrower than what a person may send (PR 4).
+ */
+export function bodyProblems(
+  entry: Pick<CatalogEntry, "body" | "clientOnly">,
+  body: Readonly<Record<string, unknown>>,
+): string[] {
   const parsed = entry.body.safeParse(body);
-  return parsed.success ? [] : parsed.error.issues.map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`);
+  if (parsed.success) return [];
+  return parsed.error.issues
+    .filter((issue) => !entry.clientOnly.includes(String(issue.path[0])))
+    .map((issue) => `${issue.path.join(".") || "body"}: ${issue.message}`);
 }
 
 /**

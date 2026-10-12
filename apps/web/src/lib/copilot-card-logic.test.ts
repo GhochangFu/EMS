@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  theReviewStepDoesNotAskForAClientOnlyField,
   aCreateHasNoBeforeValues,
   aFillIsTakenOnlyForItsStepsFields,
   anEditShowsBeforeAndAfter,
@@ -21,4 +22,5 @@ describe("F3.85 PR 8 — Confirm card and wizard logic (ADR 0099 decisions 4, 6)
   it("checks a step alone and the body at Review", () => aStepIsCheckedAloneAndTheBodyAtReview());
   it("takes a fill only for its step's fields", () => aFillIsTakenOnlyForItsStepsFields());
   it("asks before leaving a dirty wizard", () => leavingADirtyWizardAsks());
+  it("does not ask the Review step for a clientOnly field (F3.86 PR 2)", () => theReviewStepDoesNotAskForAClientOnlyField());
 });

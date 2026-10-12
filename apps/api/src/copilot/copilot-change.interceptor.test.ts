@@ -1,6 +1,8 @@
-import { describe, it } from "vitest";
+import { describe, it, vi } from "vitest";
 
 import {
+  aClientOnlyValueBesideTheStoredBodyMatches,
+  aRoutesOwnConflictKeepsItsSentence,
   aFailedChangeStartsAFollowUpToo,
   anAppliedChangeStartsOneFollowUpAfterTheRecord,
   aRefusedChangeStartsNoFollowUp,
@@ -29,6 +31,17 @@ import {
   noHeaderPassesThroughUntouched,
 } from "./copilot-change.interceptor.spec";
 
+// `F3.86` PR 2: no catalog entry has a `clientOnly` field until PR 4, so one fixture id has one;
+// every other id reads the real catalog. (The id is `CLIENT_ONLY_FIXTURE_ID` in the spec; a
+// hoisted factory cannot import it.)
+vi.mock("./copilot-client-only", async (importOriginal) => {
+  const real = await importOriginal<typeof import("./copilot-client-only")>();
+  return {
+    clientOnlyKeysFor: (catalogId: string): readonly string[] =>
+      catalogId === "fixture.user.create" ? ["temporaryPassword"] : real.clientOnlyKeysFor(catalogId),
+  };
+});
+
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.85 — the X-Copilot-Change interceptor (ADR 0099 decision 4.5)", () => {
   it("passes a request with no header through untouched", () => noHeaderPassesThroughUntouched());
@@ -52,6 +65,8 @@ describe("F3.85 — the X-Copilot-Change interceptor (ADR 0099 decision 4.5)", (
   it("records the outcome before the response leaves", () => theOutcomeIsRecordedBeforeTheResponse());
   it("records a handler error as failed and rethrows it", () => aHandlerErrorIsRecordedAndRethrown());
   it("records a ZodError as 400", () => aZodErrorIsRecordedAs400());
+  it("passes a route's own 409 on with its sentence", () => aRoutesOwnConflictKeepsItsSentence());
+  it("applies a change with a clientOnly value typed beside the stored body", () => aClientOnlyValueBesideTheStoredBodyMatches());
   it("fails closed without the request store", () => aMissingStoreFailsClosed());
   it("keeps the response when the record fails", () => aFailedRecordDoesNotChangeTheResponse());
   it("starts one follow-up turn after recording an applied change", () => anAppliedChangeStartsOneFollowUpAfterTheRecord());

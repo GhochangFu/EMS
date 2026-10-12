@@ -10,7 +10,11 @@ import {
   everyFixtureBodyAndPathParses,
   everySummaryNamesItsTarget,
   idsAndToolNamesAreUniqueAndProviderSafe,
-  noEntryIsADelete,
+  theOnlyDeleteEntriesAreTheTwoRemovals,
+  aDeleteOutsideTheAllowanceIsRefused,
+  noClientOnlyFieldReachesTheModelBody,
+  aModelBodyThatKeepsAClientOnlyFieldIsRefused,
+  modelBodyOfOmitsOrRefuses,
   noRouteIsBothAnEntryAndExcluded,
   objectShapeUnwrapsEffectsAndUnions,
   pathParamsAndTheirSchemasAgree,
@@ -36,7 +40,7 @@ describe("F3.85 PR 8 — the copilot action catalog (ADR 0099 decisions 2, 3, 6)
   it("parses every fixture body and path parameter", () => everyFixtureBodyAndPathParses());
   it("names the target in every summary", () => everySummaryNamesItsTarget());
   it("has unique ids and provider-safe tool names", () => idsAndToolNamesAreUniqueAndProviderSafe());
-  it("holds no DELETE", () => noEntryIsADelete());
+  it("allows a DELETE only for the two removals", () => theOnlyDeleteEntriesAreTheTwoRemovals());
   it("declares one schema per path parameter", () => pathParamsAndTheirSchemasAgree());
   it("puts every body field in exactly one step", () => everyBodyFieldIsInExactlyOneStep());
   it("names body fields in refs and formulas", () => refsAndFormulasNameBodyFields());
@@ -47,6 +51,13 @@ describe("F3.85 PR 8 — the copilot action catalog (ADR 0099 decisions 2, 3, 6)
   it("counts the widgets a widget save removes", () => theWidgetSummaryCountsRemovedWidgets());
   it("holds strict body objects only", () => everyBodyObjectIsStrict());
   it("refuses a dot segment as a point key", () => aDotSegmentIsNotAPointKey());
+});
+
+describe("F3.86 PR 2 — the DELETE allowance and the model's body (ADR 0099 decision 3)", () => {
+  it("refuses a DELETE outside the allowance (positive control)", () => aDeleteOutsideTheAllowanceIsRefused());
+  it("keeps every clientOnly field out of the model's body", () => noClientOnlyFieldReachesTheModelBody());
+  it("refuses a modelBody that keeps a clientOnly field", () => aModelBodyThatKeepsAClientOnlyFieldIsRefused());
+  it("omits clientOnly from a plain body and refuses a refined one without a modelBody", () => modelBodyOfOmitsOrRefuses());
 });
 
 describe("F3.85 PR 11a — formula paths into array items (plan §11.3 Unit 2)", () => {

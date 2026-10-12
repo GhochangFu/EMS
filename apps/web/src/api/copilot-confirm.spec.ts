@@ -95,3 +95,23 @@ export async function aRefusalIsAnApiError(): Promise<void> {
   expect((caught as ApiError).status).toBe(409);
   expect((caught as ApiError).message).toContain("This copilot change cannot be applied");
 }
+
+/**
+ * `F3.86` PR 2 / ADR 0099 decision 3 — a `clientOnly` value typed on the card
+ * is in the sent body and nowhere else: the stored change is unchanged, and
+ * what is sent hashes, without that key, to the stored body's hash. Mutation:
+ * send `change.body` alone → the "contains" assertion reddens.
+ */
+export async function aClientOnlyValueIsSentBesideTheStoredBody(): Promise<void> {
+  const seen = capture(() => new Response(JSON.stringify({ id: "user-1" }), { status: 201 }));
+  const before = JSON.parse(JSON.stringify(CHANGE.body)) as unknown;
+  await confirmCopilotChange(CHANGE, { temporaryPassword: "typed-on-the-card-7" });
+  const sent = JSON.parse(seen().init.body as string) as Record<string, unknown>;
+  expect(sent.temporaryPassword).toBe("typed-on-the-card-7");
+  expect(new Headers(seen().init.headers).get("X-Copilot-Change")).toBe(CHANGE.id);
+  // The stored change is not touched (the positive beside the absence).
+  expect(CHANGE.body).toEqual(before);
+  expect(JSON.stringify(CHANGE)).not.toContain("typed-on-the-card-7");
+  const { temporaryPassword: _typed, ...rest } = sent;
+  expect(await bodyHashHex(rest)).toBe(VECTOR_SHA256);
+}

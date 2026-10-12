@@ -7,12 +7,14 @@ import {
   catalogParamsOf,
   catalogPath,
   COPILOT_CATALOG,
+  DELETE_ALLOWANCE,
   EXCLUDED_ROUTES,
   formulaRefsOf,
   formulaSitesOf,
   pathParamsOf,
   proposeToolName,
 } from "./index";
+import { modelBodyOf } from "./model-body";
 import { bodyFieldsOf, objectShapeOf, stepValuesSchema } from "./object-shape";
 import { emptyBody } from "./summary-text";
 import type { CatalogEntry, CatalogFormula } from "./types";
@@ -133,15 +135,109 @@ export function idsAndToolNamesAreUniqueAndProviderSafe(): void {
   expect(catalogEntry("dashboard.delete")).toBeUndefined();
 }
 
-/** Decision 3: release 1 holds no hard delete. */
-export function noEntryIsADelete(): void {
-  for (const entry of COPILOT_CATALOG) expect(entry.method as string, entry.id).not.toBe("DELETE");
+/** The `DELETE` entries whose route is not on {@link DELETE_ALLOWANCE}. */
+function deletesOutsideTheAllowance(entries: readonly Pick<CatalogEntry, "id" | "method" | "path">[]): string[] {
+  return entries
+    .filter((entry) => entry.method === "DELETE")
+    .filter((entry) => !DELETE_ALLOWANCE.some((allowed) => allowed.path === entry.path))
+    .map((entry) => entry.id);
+}
+
+/**
+ * Decision 3, ruling 19 (`F3.86` PR 2): the allowance names exactly the two
+ * removals; no `DELETE` entry is outside it. PRs 3c and 4 add the two
+ * entries; until then the catalog holds no `DELETE` at all.
+ */
+export function theOnlyDeleteEntriesAreTheTwoRemovals(): void {
+  expect(DELETE_ALLOWANCE.map((route) => route.path).sort()).toEqual([
+    "/admin/asset-group-members/:id",
+    "/admin/users/:id/grants/:kind/:grantId",
+  ]);
+  expect(deletesOutsideTheAllowance(COPILOT_CATALOG)).toEqual([]);
+  expect(COPILOT_CATALOG.filter((entry) => entry.method === "DELETE").map((entry) => entry.id)).toEqual([]);
+}
+
+/** The rule is not vacuous: an allowed removal passes it and any other `DELETE` does not. */
+export function aDeleteOutsideTheAllowanceIsRefused(): void {
+  expect(deletesOutsideTheAllowance([{ id: "userGrant.remove", method: "DELETE", path: "/admin/users/:id/grants/:kind/:grantId" }])).toEqual([]);
+  expect(deletesOutsideTheAllowance([{ id: "assetGroup.member.remove", method: "DELETE", path: "/admin/asset-group-members/:id" }])).toEqual([]);
+  expect(deletesOutsideTheAllowance([{ id: "dashboard.delete", method: "DELETE", path: "/dashboards/:id" }])).toEqual(["dashboard.delete"]);
+}
+
+/** A `clientOnly` fixture: a refined body (`ZodEffects`), which `.omit` cannot narrow, and the `modelBody` it needs. */
+const PASSWORD_OBJECT = z.object({ email: z.string().email(), temporaryPassword: z.string().min(12) }).strict();
+const PASSWORD_BODY = PASSWORD_OBJECT.superRefine(() => undefined);
+const PASSWORD_MODEL_BODY = z.object({ email: z.string().email() }).strict();
+const passwordEntry = (modelBody: ZodTypeAny | undefined) => ({
+  id: "fixture.user.create",
+  body: PASSWORD_BODY,
+  clientOnly: ["temporaryPassword"] as const,
+  ...(modelBody ? { modelBody } : {}),
+});
+
+/** Every `modelBody` is strict and holds exactly the body's fields without the `clientOnly` ones. */
+function modelBodyProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "modelBody">): string[] {
+  if (entry.modelBody === undefined) return [];
+  const problems: string[] = [];
+  let object: ZodTypeAny = entry.modelBody;
+  while (object instanceof z.ZodEffects) object = object._def.schema as ZodTypeAny;
+  if ((object as z.AnyZodObject)._def.unknownKeys !== "strict") problems.push(`${entry.id}: modelBody is not strict`);
+  const expected = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field)).sort();
+  if (JSON.stringify(bodyFieldsOf(entry.modelBody).sort()) !== JSON.stringify(expected)) {
+    problems.push(`${entry.id}: modelBody fields differ from the body's without clientOnly`);
+  }
+  return problems;
+}
+
+/**
+ * `F3.86` PR 2: the model never sees a `clientOnly` field — for every entry,
+ * and for the fixture whose refined body needs a `modelBody`.
+ */
+export function noClientOnlyFieldReachesTheModelBody(): void {
+  for (const entry of COPILOT_CATALOG) {
+    expect(modelBodyProblems(entry), entry.id).toEqual([]);
+    const fields = bodyFieldsOf(modelBodyOf(entry));
+    for (const field of entry.clientOnly) expect(fields, entry.id).not.toContain(field);
+    // A clientOnly key the model sends anyway must fail the parse (security review L1).
+    if (entry.clientOnly.length > 0) {
+      let object: ZodTypeAny = modelBodyOf(entry);
+      while (object instanceof z.ZodEffects) object = object._def.schema as ZodTypeAny;
+      expect((object as z.AnyZodObject)._def.unknownKeys, entry.id).toBe("strict");
+    }
+  }
+  const fixture = passwordEntry(PASSWORD_MODEL_BODY);
+  expect(modelBodyProblems(fixture)).toEqual([]);
+  expect(bodyFieldsOf(modelBodyOf(fixture))).toEqual(["email"]);
+  expect(modelBodyOf(fixture).safeParse({ email: "a@b.co", temporaryPassword: "x".repeat(12) }).success).toBe(false);
+}
+
+/** The `modelBody` rule is not vacuous: a `modelBody` that keeps the password is refused. */
+export function aModelBodyThatKeepsAClientOnlyFieldIsRefused(): void {
+  expect(modelBodyProblems(passwordEntry(PASSWORD_OBJECT))).toEqual([
+    "fixture.user.create: modelBody fields differ from the body's without clientOnly",
+  ]);
+  expect(modelBodyProblems(passwordEntry(PASSWORD_MODEL_BODY.passthrough()))).toEqual(["fixture.user.create: modelBody is not strict"]);
+}
+
+/** Without a `modelBody`, a plain object body loses its `clientOnly` fields, and a refined one is a load error. */
+export function modelBodyOfOmitsOrRefuses(): void {
+  const plain = { id: "fixture.plain", body: PASSWORD_OBJECT, clientOnly: ["temporaryPassword"] as const };
+  expect(bodyFieldsOf(modelBodyOf(plain))).toEqual(["email"]);
+  // A body in strip mode still gives a strict model body: the key is refused, not stripped and stored.
+  const stripping = { id: "fixture.strip", body: PASSWORD_OBJECT.strip(), clientOnly: ["temporaryPassword"] as const };
+  expect(modelBodyOf(stripping).safeParse({ email: "a@b.co", temporaryPassword: "x".repeat(12) }).success).toBe(false);
+  expect(modelBodyOf(stripping).safeParse({ email: "a@b.co" }).success).toBe(true);
+  expect(() => modelBodyOf(passwordEntry(undefined))).toThrow(/needs a modelBody/);
+  const none = catalogEntry("dashboard.create");
+  if (!none) throw new Error("dashboard.create");
+  expect(modelBodyOf(none)).toBe(none.body);
 }
 
 export function pathParamsAndTheirSchemasAgree(): void {
   for (const entry of COPILOT_CATALOG) {
     expect(Object.keys(entry.params).sort(), entry.id).toEqual(pathParamsOf(entry.path).sort());
-    if (entry.target.kind !== "organization") {
+    // A target named by a path parameter (not a create's organization, parent or fleet row) names one of the route's.
+    if ("param" in entry.target) {
       expect(Object.keys(entry.params), entry.id).toContain(entry.target.param);
     }
   }

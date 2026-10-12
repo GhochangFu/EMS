@@ -96,8 +96,21 @@ export async function makeSiteLayout(locationId: string, body: MakeSiteLayoutBod
   };
 }
 
-/** The 409 body's ambiguous tabs, or null when the body is not the ambiguous answer. */
-function ambiguousTabsOf(text: string): SiteLayoutAmbiguousDto["ambiguous"] | null {
+/**
+ * `F3.86` PR 2 — the ambiguous tabs a refused request carries: a 409 `ApiError` whose body is the
+ * ambiguous answer, else `null`. Here, in `api/`, so a render site never reads an error's raw
+ * message (`tests/f4.204-raw-error-message-render`).
+ */
+export function ambiguousTabsOfError(err: unknown): SiteLayoutAmbiguousDto["ambiguous"] | null {
+  return err instanceof ApiError && err.status === 409 ? ambiguousTabsOf(err.message) : null;
+}
+
+/**
+ * The 409 body's ambiguous tabs, or null when the body is not the ambiguous answer. Exported
+ * since `F3.86` PR 2: the copilot's Confirm card reads the same body after a confirmed
+ * site-layout change answers 409.
+ */
+export function ambiguousTabsOf(text: string): SiteLayoutAmbiguousDto["ambiguous"] | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);

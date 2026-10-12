@@ -17,6 +17,7 @@ import {
   FILL_STEP_TOOL,
   modelBodySchema,
   PROPOSE_ACCESS_ON_FOLLOW_UP_ERROR,
+  PROPOSE_FLEET_UNBOUND_ERROR,
   PROPOSE_OPEN_CHANGE_ERROR,
   PROPOSE_STORED_CONTENT_ERROR,
   PROPOSE_TARGET_ERROR,
@@ -82,14 +83,14 @@ type Options = {
 
 export function proposeHarness(options: Options = {}) {
   const stored: NewPendingChange[] = [];
-  const resolved: Array<{ id: string; params: Record<string, string>; allowed: readonly string[] }> = [];
+  const resolved: Array<{ id: string; params: Record<string, string>; allowed: readonly string[]; bound?: string | null }> = [];
   const target: ResolvedTarget | null =
     options.target === undefined ? { organizationId: ORG_X, organizationName: "Org X", targetName: "Template T" } : options.target;
   const tools = createCopilotProposeTools(
     {
       targets: {
-        resolve: async (entry, params, _body, allowed) => {
-          resolved.push({ id: entry.id, params: { ...params }, allowed });
+        resolve: async (entry, params, _body, allowed, _user, bound) => {
+          resolved.push({ id: entry.id, params: { ...params }, allowed, bound });
           return target;
         },
       },
@@ -309,8 +310,70 @@ export async function aClientOnlyFieldNeverReachesTheModel(): Promise<void> {
   expect((await h.call(proposeToolName(CLIENT_ONLY_ENTRY), { body: { userId: "u1" } })).ok).toBe(true);
   expect(h.stored[0]?.body).toEqual({ userId: "u1" });
   expect(() => modelBodySchema(fixtureEntry({ clientOnly: ["a"], body: z.object({ a: z.string() }).refine(() => true) }))).toThrow(
-    /plain object/,
+    /needs a modelBody/,
   );
+}
+
+/**
+ * `F3.86` PR 2: a `clientOnly` key the model sends anyway is refused, and
+ * nothing is stored — the strict model body is the gate (parsing with
+ * `entry.body` instead would store the password). The turn's credential
+ * guard refuses this key name first (`aCredentialInAProposeArgumentIsRefused`),
+ * so this calls `dispatch` past the guards: the body rule must hold alone.
+ */
+export async function aClientOnlyKeyInAProposedBodyIsRefused(): Promise<void> {
+  const h = proposeHarness({ catalog: [CLIENT_ONLY_ENTRY] });
+  const refused = await h.tools.dispatch(
+    proposeToolName(CLIENT_ONLY_ENTRY),
+    { body: { userId: "u1", temporaryPassword: "x".repeat(12) } },
+    h.ctx(),
+  );
+  expect(refused.ok).toBe(false);
+  expect(refused.ok ? "" : refused.error).toMatch(/^Invalid body: /);
+  expect(h.stored).toEqual([]);
+  // The positive beside it: the same body without the key is stored.
+  expect((await h.call(proposeToolName(CLIENT_ONLY_ENTRY), { body: { userId: "u1" } })).ok).toBe(true);
+  expect(h.stored).toHaveLength(1);
+}
+
+/** A refined body cannot be narrowed by `.omit`, so its entry declares the `modelBody` the model proposes with. */
+const REFINED_CLIENT_ONLY_ENTRY = fixtureEntry({
+  id: "fixture.refined.password",
+  body: z
+    .object({ userId: z.string(), temporaryPassword: z.string().min(12) })
+    .strict()
+    .superRefine(() => undefined),
+  modelBody: z.object({ userId: z.string() }).strict(),
+  clientOnly: ["temporaryPassword"],
+  steps: [{ id: "user", title: "User", fields: ["userId"] }],
+});
+
+/** `F3.86` PR 2: a refined body with a `modelBody` proposes without the `clientOnly` field. */
+export async function aRefinedBodyProposesWithItsModelBody(): Promise<void> {
+  const h = proposeHarness({ catalog: [REFINED_CLIENT_ONLY_ENTRY] });
+  const definition = h.tools.registry.definitions.find((d) => d.name === proposeToolName(REFINED_CLIENT_ONLY_ENTRY));
+  expect(JSON.stringify(definition)).toContain("userId");
+  expect(JSON.stringify(definition)).not.toContain("temporaryPassword");
+  expect((await h.call(proposeToolName(REFINED_CLIENT_ONLY_ENTRY), { body: { userId: "u1" } })).ok).toBe(true);
+  expect(h.stored[0]?.body).toEqual({ userId: "u1" });
+  expect(h.stored[0]?.bodyHash).toBe(bodyHash({ userId: "u1", temporaryPassword: "typed-on-the-card" }, ["temporaryPassword"]));
+  // `describe_change` reads the model's body too (code review #3): the field is never described.
+  const described = await h.tools.dispatch(DESCRIBE_CHANGE_TOOL, { catalogId: REFINED_CLIENT_ONLY_ENTRY.id }, h.ctx());
+  expect(described.ok).toBe(true);
+  expect(JSON.stringify(described)).toContain("userId");
+  expect(JSON.stringify(described)).not.toContain("temporaryPassword");
+}
+
+/** `F3.86` PR 2: an entry the server proposes itself has no propose tool; `describe_change` still knows it. */
+export async function aServerProposedEntryHasNoProposeTool(): Promise<void> {
+  const server = fixtureEntry({ id: "fixture.server", proposer: "server" });
+  const h = proposeHarness({ catalog: [VECTOR_ENTRY, server] });
+  const names = h.tools.registry.definitions.map((d) => d.name);
+  expect(names).toContain(proposeToolName(VECTOR_ENTRY));
+  expect(names).not.toContain(proposeToolName(server));
+  expect((await h.call(proposeToolName(server), { body: VECTOR })).ok).toBe(false);
+  expect(h.stored).toEqual([]);
+  expect((await h.call(DESCRIBE_CHANGE_TOOL, { catalogId: server.id })).ok).toBe(true);
 }
 
 /** Every catalog entry has one propose tool; the definitions stay small enough to send on every turn. */
@@ -500,4 +563,28 @@ export async function aTemplatePublishStoresTheEmptyObject(): Promise<void> {
     method: "POST",
     path: `/api/v1/admin/asset-templates/${ROW}/publish`,
   });
+}
+
+/**
+ * `F3.86` PR 2, ruling Q1: a point-key change lives in the conversation's
+ * bound organization. A cross-organization conversation is refused with the
+ * ruling's sentence before the resolver is asked; a bound one passes the bound
+ * organization to it. Mutation: drop the null check → the refusal reddens.
+ */
+export async function aFleetChangeNeedsABoundConversation(): Promise<void> {
+  for (const target of [{ kind: "fleet" }, { kind: "pointKey", param: "id" }] as const) {
+    const entry = fixtureEntry({
+      id: `fixture.${target.kind}`,
+      target,
+      params: target.kind === "pointKey" ? { id: z.string().uuid() } : {},
+    });
+    const args = target.kind === "pointKey" ? { id: ROW, body: VECTOR } : { body: VECTOR };
+    const h = proposeHarness({ catalog: [entry] });
+    const refused = await h.call(proposeToolName(entry), args, { conversationOrganizationId: null, allowedOrganizationIds: [ORG_X, ORG_Y] });
+    expect(refused.error, target.kind).toBe(PROPOSE_FLEET_UNBOUND_ERROR);
+    expect(h.resolved, target.kind).toEqual([]);
+    expect(h.stored, target.kind).toEqual([]);
+    expect((await h.call(proposeToolName(entry), args)).ok, target.kind).toBe(true);
+    expect(h.resolved[0]?.bound, target.kind).toBe(ORG_X);
+  }
 }

@@ -200,7 +200,12 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
   // The turn writes its messages into this cache entry, so it is fresh for the
   // tab; the server load is the fallback for an entry evicted while unmounted.
   // After a Confirm: when the wait began, and how many messages there were then.
-  const [followUp, setFollowUp] = useState<{ since: number; baseline: number } | null>(null);
+  // `failed` (`F3.86` PR 2): the route refused the confirmed change; the follow-up turn still runs.
+  const [followUp, setFollowUp] = useState<{ since: number; baseline: number; failed?: boolean } | null>(null);
+  // `F3.86` PR 2: cards whose route refused the change. The server no longer lists them (the row is
+  // `failed`), but the card keeps the route's sentence — and a site layout's candidates — on screen
+  // until the next message.
+  const [kept, setKept] = useState<CopilotPendingChangeDto[]>([]);
   const thread = useQuery({
     queryKey: copilotConversationKey(conversationId),
     queryFn: () => fetchCopilotConversation(conversationId as string),
@@ -212,6 +217,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
   });
   const messages = conversationId === null ? [] : (thread.data?.messages ?? []);
   const pendingChanges = conversationId === null ? [] : (thread.data?.pendingChanges ?? []);
+  const cards = [...pendingChanges, ...kept.filter((k) => !pendingChanges.some((c) => c.id === k.id))];
   const receiveFill = useWizardStore((s) => s.receiveFill);
   const [input, setInput] = useState("");
   const [banner, setBanner] = useState<string | null>(null);
@@ -247,7 +253,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     if (thread) {
       thread.scrollTop = thread.scrollHeight;
     }
-  }, [messages, pendingChanges.length, banner]);
+  }, [messages, cards.length, banner]);
 
   // The follow-up's outcome line arrived, or the wait ran out: stop polling. Not "the thread
   // grew": the follow-up stores its outcome and its reply in one write, and nothing else may write
@@ -291,6 +297,18 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
   function gone(): void {
     if (conversationId !== null) void queryClient.invalidateQueries({ queryKey: copilotConversationKey(conversationId) });
   }
+
+  /** The route refused the confirmed change: keep its card, and wait for the follow-up as after an apply. */
+  function routeFailed(change: CopilotPendingChangeDto): void {
+    setKept((prev) => (prev.some((k) => k.id === change.id) ? prev : [...prev, change]));
+    updateThread((prev) => withoutChange(prev, change.id));
+    setFollowUp({ since: Date.now(), baseline: messages.length, failed: true });
+  }
+
+  // A new conversation starts with no kept cards.
+  useEffect(() => {
+    setKept([]);
+  }, [conversationId]);
 
   const turn = useMutation({
     mutationFn: async (message: string): Promise<CopilotTurnResponseDto> => {
@@ -366,6 +384,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
       return;
     }
     setInput("");
+    setKept([]);
     turn.mutate(text);
   }
 
@@ -474,12 +493,21 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
                 </div>
               </div>
             ))}
-            {pendingChanges.map((change) => (
-              <ConfirmCard key={change.id} change={change} onApplied={applied} onRejected={rejected} onGone={gone} />
+            {cards.map((change) => (
+              <ConfirmCard
+                key={change.id}
+                change={change}
+                onApplied={applied}
+                onRejected={rejected}
+                onGone={gone}
+                onRouteFailed={routeFailed}
+              />
             ))}
             {turn.isPending && <div className="text-xs text-ink-muted">Copilot is thinking…</div>}
             {followUp !== null && !turn.isPending && (
-              <div className="text-xs text-ink-muted">Applied. Waiting for the copilot…</div>
+              <div className="text-xs text-ink-muted">
+                {followUp.failed ? "Not applied. Waiting for the copilot…" : "Applied. Waiting for the copilot…"}
+              </div>
             )}
           </div>
 

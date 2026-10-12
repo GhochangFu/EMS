@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { CopilotChangeRisk } from "@bms/shared";
 
 import { type ChangeRow, fieldLabel } from "../../lib/copilot-diff";
@@ -28,6 +29,10 @@ type ChangeCardProps = {
   onSecondary?: () => void;
   /** No action is possible any more (the change was applied, rejected or is gone). */
   closed?: boolean;
+  /** `F3.86` PR 2: what the card asks before Confirm (the `clientOnly` inputs); shown above the buttons. */
+  children?: ReactNode;
+  /** `F3.86` PR 2: Confirm waits for `children` to be complete. */
+  confirmDisabled?: boolean;
 };
 
 const RED_RISKS: ReadonlySet<CopilotChangeRisk> = new Set(["deactivate", "access"]);
@@ -74,6 +79,7 @@ export function ChangeCard(props: ChangeCardProps) {
         </table>
       )}
       {props.note && <p className="mt-2 text-[11px] text-ink-muted">{props.note}</p>}
+      {!props.closed && props.children}
       {props.error && (
         <p role="alert" className="mt-2 rounded border border-critical-line bg-critical-wash px-2 py-1 text-critical-ink">
           {props.error}
@@ -94,7 +100,7 @@ export function ChangeCard(props: ChangeCardProps) {
           <button
             type="button"
             onClick={props.onConfirm}
-            disabled={props.busy}
+            disabled={props.busy || props.confirmDisabled === true}
             aria-busy={props.busy}
             className={
               red

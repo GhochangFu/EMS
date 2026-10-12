@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 
 import {
+  assetGroupMembers,
   assetGroups,
   assetPoints,
   assets,
@@ -13,10 +14,13 @@ import {
   dashboardWidgets,
   locations,
   organizations,
+  pointKeys,
+  rtus,
+  siteControlRoomViews,
   templatePoints,
 } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
-import type { CatalogEntry, CatalogRef } from "@bms/shared/copilot";
+import type { CatalogEntry, CatalogRef, CatalogRefKind } from "@bms/shared/copilot";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
@@ -44,6 +48,12 @@ export interface CopilotTargets {
     body: Readonly<Record<string, unknown>>,
     allowedOrganizationIds: readonly string[],
     user: JwtPayload,
+    /**
+     * `F3.86` PR 2: the conversation's bound organization, or `null` for a
+     * cross-organization conversation. A `fleet` or `pointKey` target lives
+     * in it, and is refused without one (ruling Q1).
+     */
+    boundOrganizationId?: string | null,
   ): Promise<ResolvedTarget | null>;
 }
 
@@ -53,11 +63,18 @@ type Found = {
   organizationId: string;
   name: string;
   scope?: Scope;
+  /** `rtu`, `assetGroup`, `assetGroupMember`: the site the row is at. */
+  locationId?: string;
+  /** `assetPoint`: the asset the point maps. */
+  assetId?: string;
+  /** `siteControlRoomView`: the stored view's `kind`, or `null` when the site has none. */
+  storedKind?: string | null;
   currentWidgetIds?: string[];
   pointKeys?: string[];
   currentContent?: Record<string, unknown>;
 };
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
+type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet">;
 
 /**
  * `F3.85` PR 8 / ADR 0099 decision 10 (plan §10.2) — the organization and
@@ -90,6 +107,7 @@ export class CopilotTargetResolver implements CopilotTargets {
     body: Readonly<Record<string, unknown>>,
     allowedOrganizationIds: readonly string[],
     user: JwtPayload,
+    boundOrganizationId: string | null = null,
   ): Promise<ResolvedTarget | null> {
     const target = entry.target;
     let found: Found | null;
@@ -99,17 +117,40 @@ export class CopilotTargetResolver implements CopilotTargets {
       const name = await this.organizationName(organizationId);
       found = name === null ? null : { organizationId, name };
       if (found !== null && !(await this.safely(() => this.mayCreate(target.manage, organizationId, body, user)))) found = null;
+    } else if (target.kind === "parent") {
+      // A create under a row the body names: the row's organization, and the route's check on that row.
+      const parentId = body[target.field];
+      if (typeof parentId !== "string") return null;
+      const of = target.of;
+      found = await this.findRow(of, parentId, allowedOrganizationIds);
+      if (found !== null && !(await this.safely(() => this.mayManage(of, parentId, found as Found, user, body)))) found = null;
+    } else if (target.kind === "fleet" || target.kind === "pointKey") {
+      // Ruling Q1: a row with no organization lives in the conversation's bound organization.
+      if (boundOrganizationId === null || !allowedOrganizationIds.includes(boundOrganizationId)) return null;
+      const organizationName = await this.organizationName(boundOrganizationId);
+      if (organizationName === null) return null;
+      if (target.kind === "fleet") {
+        found = { organizationId: boundOrganizationId, name: organizationName };
+      } else {
+        const id = params[target.param];
+        if (id === undefined) return null;
+        const code = await this.pointKeyCode(id);
+        found = code === null ? null : { organizationId: boundOrganizationId, name: code };
+      }
+      if (found !== null && !(await this.safely(() => this.mayManageFleet(user)))) found = null;
     } else {
       const id = params[target.param];
       if (id === undefined) return null;
-      found = await this.findRow(target.kind, id, allowedOrganizationIds);
-      if (found !== null && !(await this.safely(() => this.mayManage(target.kind, id, found as Found, user)))) found = null;
+      const kind = target.kind;
+      found = await this.findRow(kind, id, allowedOrganizationIds);
+      if (found !== null && !(await this.safely(() => this.mayManage(kind, id, found as Found, user, body)))) found = null;
     }
     if (found === null) return null;
     for (const ref of entry.refs) {
       const value = body[ref.field];
       if (value === undefined || value === null) continue;
-      if (typeof value !== "string" || !(await this.refBelongs(ref, value, found.organizationId))) return null;
+      const kind = refKindOf(ref, body);
+      if (kind === null || typeof value !== "string" || !(await this.refBelongs(kind, value, found.organizationId))) return null;
     }
     const organizationName =
       target.kind === "organization" ? found.name : ((await this.organizationName(found.organizationId)) ?? "");
@@ -133,8 +174,14 @@ export class CopilotTargetResolver implements CopilotTargets {
     return row?.name ?? null;
   }
 
+  /** A point key's code (`bms.point_keys` is fleet-wide and carries no row-level security, migration 0057). */
+  private async pointKeyCode(id: string): Promise<string | null> {
+    const [row] = await this.tenantDb.select({ code: pointKeys.code }).from(pointKeys).where(eq(pointKeys.id, id)).limit(1);
+    return row?.code ?? null;
+  }
+
   private async findRow(
-    kind: Exclude<CatalogEntry["target"]["kind"], "organization">,
+    kind: RowKind,
     id: string,
     allowed: readonly string[],
   ): Promise<Found | null> {
@@ -145,13 +192,70 @@ export class CopilotTargetResolver implements CopilotTargets {
     return null;
   }
 
-  private async readRow(
-    tx: BmsTx,
-    kind: Exclude<CatalogEntry["target"]["kind"], "organization">,
-    id: string,
-    organizationId: string,
-  ): Promise<Found | null> {
+  private async readRow(tx: BmsTx, kind: RowKind, id: string, organizationId: string): Promise<Found | null> {
     switch (kind) {
+      case "location":
+      case "siteLayout": {
+        const [row] = await tx
+          .select({ name: locations.name })
+          .from(locations)
+          .where(and(eq(locations.id, id), eq(locations.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.name } : null;
+      }
+      case "siteControlRoomView": {
+        const [row] = await tx
+          .select({ name: locations.name })
+          .from(locations)
+          .where(and(eq(locations.id, id), eq(locations.organizationId, organizationId)))
+          .limit(1);
+        if (!row) return null;
+        // The route's `storedKind` read (`site-control-room-view.service.ts`), here under the tenant.
+        const [view] = await tx
+          .select({ kind: siteControlRoomViews.kind })
+          .from(siteControlRoomViews)
+          .where(and(eq(siteControlRoomViews.locationId, id), eq(siteControlRoomViews.organizationId, organizationId)))
+          .limit(1);
+        return { organizationId, name: row.name, storedKind: view?.kind ?? null };
+      }
+      case "rtu": {
+        const [row] = await tx
+          .select({ name: rtus.displayName, locationId: rtus.locationId })
+          .from(rtus)
+          .where(and(eq(rtus.id, id), eq(rtus.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.name, locationId: row.locationId } : null;
+      }
+      case "assetGroup": {
+        const [row] = await tx
+          .select({ name: assetGroups.name, locationId: assetGroups.locationId })
+          .from(assetGroups)
+          .where(and(eq(assetGroups.id, id), eq(assetGroups.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.name, locationId: row.locationId } : null;
+      }
+      case "assetGroupMember": {
+        // A membership has no organization column; its group's is the row's.
+        const [row] = await tx
+          .select({ group: assetGroups.name, asset: assets.name, locationId: assetGroups.locationId })
+          .from(assetGroupMembers)
+          .innerJoin(assetGroups, eq(assetGroups.id, assetGroupMembers.assetGroupId))
+          .innerJoin(assets, eq(assets.id, assetGroupMembers.assetId))
+          .where(and(eq(assetGroupMembers.id, id), eq(assetGroups.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: `${row.asset} in ${row.group}`, locationId: row.locationId } : null;
+      }
+      case "assetPoint": {
+        const [row] = await tx
+          .select({ pointKey: assetPoints.pointKey, assetId: assetPoints.assetId })
+          .from(assetPoints)
+          .where(and(eq(assetPoints.id, id), eq(assetPoints.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.pointKey, assetId: row.assetId } : null;
+      }
+      case "pointKey":
+        // Never read per organization: `resolve` reads a point key on the fleet path.
+        return null;
       case "dashboard": {
         const [row] = await tx
           .select({
@@ -243,6 +347,12 @@ export class CopilotTargetResolver implements CopilotTargets {
     }
   }
 
+  /** The point-key routes' check (`point-keys.service.ts` `requireGlobalAdmin`): a master-data user who is a global admin. */
+  private async mayManageFleet(user: JwtPayload): Promise<boolean> {
+    await this.access.requireMasterDataUser(user);
+    return this.access.isGlobalAdmin(user);
+  }
+
   /** A create's authority: the route's own check, on the body's organization and scope. */
   private async mayCreate(
     manage: Extract<CatalogEntry["target"], { kind: "organization" }>["manage"],
@@ -267,17 +377,54 @@ export class CopilotTargetResolver implements CopilotTargets {
         if (locationId !== null) return this.access.canManageLocation(user, locationId);
         return this.access.canManageOrganization(user, organizationId);
       }
+      // `locations.service.ts` `create`: a master-data user, never a `location_admin`, who manages the organization.
+      case "location": {
+        const dbUser = await this.access.requireMasterDataUser(user);
+        if (dbUser.role === "location_admin") return false;
+        return this.access.canManageOrganization(user, organizationId);
+      }
     }
   }
 
-  /** The same authority the route checks, so a card the caller could never apply is not offered. */
+  /**
+   * The same authority the route checks, so a card the caller could never
+   * apply is not offered. Each `F3.86` case names the route it mirrors; the
+   * route checks again on Confirm.
+   */
   private async mayManage(
-    kind: Exclude<CatalogEntry["target"]["kind"], "organization">,
+    kind: RowKind,
     id: string,
     found: Found,
     user: JwtPayload,
+    body: Readonly<Record<string, unknown>> = {},
   ): Promise<boolean> {
     switch (kind) {
+      // The location, RTU and asset-group routes: a master-data user who manages the site.
+      case "location":
+        await this.access.requireMasterDataUser(user);
+        return this.access.canManageLocation(user, id);
+      case "rtu":
+      case "assetGroup":
+      case "assetGroupMember":
+        await this.access.requireMasterDataUser(user);
+        return this.access.canManageLocation(user, found.locationId as string);
+      // `asset-points.service.ts`: the asset the point maps.
+      case "assetPoint":
+        return this.access.canManageAsset(user, found.assetId as string);
+      case "pointKey":
+        return this.mayManageFleet(user);
+      // `SiteControlRoomViewService.putSetting`: the site, then a built-in view is the global admin's only.
+      case "siteControlRoomView": {
+        const dbUser = await this.access.requireMasterDataUser(user);
+        if (!(await this.access.canManageLocation(user, id))) return false;
+        if (body.kind === "builtin" && dbUser.role !== "admin") return false;
+        return dbUser.role === "admin" || found.storedKind !== "builtin";
+      }
+      // `SiteLayoutService.makeForSite`: the site, then a dashboard on the site's scope.
+      case "siteLayout":
+        await this.access.requireMasterDataUser(user);
+        if (!(await this.access.canManageLocation(user, id))) return false;
+        return this.access.canManageDashboard(user, found.organizationId, { locationId: id, assetGroupId: null, assetId: null });
       case "dashboard":
         return this.access.canManageDashboard(user, found.organizationId, found.scope as Scope);
       case "dashboardTemplate":
@@ -297,8 +444,16 @@ export class CopilotTargetResolver implements CopilotTargets {
     }
   }
 
-  private async refBelongs(ref: CatalogRef, id: string, organizationId: string): Promise<boolean> {
-    const table = { location: locations, assetGroup: assetGroups, asset: assets }[ref.kind];
+  private async refBelongs(kind: CatalogRefKind, id: string, organizationId: string): Promise<boolean> {
+    if (kind === "organization") return id === organizationId;
+    const table = {
+      location: locations,
+      assetGroup: assetGroups,
+      asset: assets,
+      rtu: rtus,
+      dashboard: dashboards,
+      dashboardTemplate: dashboardTemplates,
+    }[kind];
     const rows = await withTenant(this.tenantDb, organizationId, (tx) =>
       tx
         .select({ id: table.id })
@@ -308,4 +463,16 @@ export class CopilotTargetResolver implements CopilotTargets {
     );
     return rows.length === 1;
   }
+}
+
+/**
+ * `F3.86` PR 2 — the row kind a ref names: its own, or, for a field whose kind
+ * depends on another field (a grant's `targetId` and `kind`), the one the map
+ * gives that field's value. `null` when the map does not name the value: the
+ * proposal is refused.
+ */
+export function refKindOf(ref: CatalogRef, body: Readonly<Record<string, unknown>>): CatalogRefKind | null {
+  if ("kind" in ref) return ref.kind;
+  const value = body[ref.kindField];
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(ref.kinds, value) ? (ref.kinds[value] ?? null) : null;
 }

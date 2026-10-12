@@ -2,6 +2,7 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aBodylessChangeSendsBraces,
+  aClientOnlyValueIsSentBesideTheStoredBody,
   aNonApiPathIsRefusedBeforeFetch,
   aRefusalIsAnApiError,
   itSendsTheStoredRequestWithTheHeader,
@@ -20,4 +21,5 @@ describe("F3.85 — the copilot Confirm executor (ADR 0099 decision 4.5)", () =>
   it("sends {} for a bodyless change", () => aBodylessChangeSendsBraces());
   it("refuses a non-API path before fetch", () => aNonApiPathIsRefusedBeforeFetch());
   it("turns a refusal into an ApiError", () => aRefusalIsAnApiError());
+  it("sends a clientOnly value beside the stored body, and only there", () => aClientOnlyValueIsSentBesideTheStoredBody());
 });
