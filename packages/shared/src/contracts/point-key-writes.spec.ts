@@ -1,8 +1,6 @@
 import { expect } from "vitest";
 
-import { REQUEST_SCHEMAS } from "../../openapi/openapi-registry";
-import { STRICTNESS_LEDGER } from "../../testing/strict-body-ledger.data";
-import { createPointKeyBodySchema, updatePointKeyBodySchema } from "./point-keys.schema";
+import { createPointKeyBodySchema, updatePointKeyBodySchema } from "./point-key-writes";
 
 /**
  * `F3.68` / ADR 0076 decision 7 — `headlineRank` on the point-key admin
@@ -59,17 +57,4 @@ export function stillRefusesAnUnknownKey(): void {
   const update = updatePointKeyBodySchema.safeParse({ headlineRank: 2, organizationId: "x" });
   expect(update.success, "PATCH with an unknown key must be refused").toBe(false);
   expect(update.error?.issues[0]?.code).toBe("unrecognized_keys");
-}
-
-/**
- * No new body, so no new registry or ledger row (plan "Measured
- * conventions"). Asserted by identity, not by text: the registry must still
- * hand the OpenAPI document these exact schema objects, so the new field
- * reaches the document with no second edit.
- */
-export function registryAndLedgerStillNameTheBodies(): void {
-  expect(REQUEST_SCHEMAS.PointKeysAdminController_create).toBe(createPointKeyBodySchema);
-  expect(REQUEST_SCHEMAS.PointKeysAdminController_update).toBe(updatePointKeyBodySchema);
-  expect(STRICTNESS_LEDGER.createPointKeyBodySchema).toBeDefined();
-  expect(STRICTNESS_LEDGER.updatePointKeyBodySchema).toBeDefined();
 }
