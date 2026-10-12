@@ -1,10 +1,9 @@
 import type {
   DashboardSummaryDto,
+  PutSiteControlRoomViewBody,
   SiteControlRoomViewKind,
   SiteControlRoomViewSettingDto,
 } from "@bms/shared";
-
-import type { PutSiteControlRoomViewPayload } from "../api/admin/locations";
 
 /**
  * `F3.67` U5 / ADR 0076 decision 5, plan D6 — whether the location admin page
@@ -60,7 +59,7 @@ export function siteViewDraftChanged(stored: SiteViewDraft, draft: SiteViewDraft
  * accepts. A `dashboard` draft with no dashboard chosen throws, and the page's error line
  * shows the message (once the user touches the field the picker is `required`, so a browser
  * submit does not reach this; an untouched field is never `PUT`). */
-export function siteViewPayloadFromDraft(draft: SiteViewDraft): PutSiteControlRoomViewPayload {
+export function siteViewPayloadFromDraft(draft: SiteViewDraft): PutSiteControlRoomViewBody {
   if (draft.kind === "dashboard") {
     if (!draft.dashboardId) {
       throw new Error("Choose a dashboard for the Control Room view");

@@ -3,6 +3,11 @@ import { siteLayoutBodySchema } from "../../contracts/site-layout-writes";
 import { plural, quoted, text, uuidParam } from "./summary-text";
 import type { CatalogEntry, ExcludedRoute } from "./types";
 
+/** " in <organization>", or nothing when a wizard has no organization name to give. */
+function inOrganization(organizationName: string): string {
+  return organizationName === "" ? "" : ` in ${organizationName}`;
+}
+
 /** What a view body sets the site to, as the card reads it. */
 function viewTarget(body: Readonly<Record<string, unknown>>): string {
   if (body.kind === "dashboard") return `dashboard ${text(body, "dashboardId")}`;
@@ -47,7 +52,7 @@ export const SITE_VIEW_ENTRIES: readonly CatalogEntry[] = [
     formulas: [],
     steps: [{ id: "view", title: "View", fields: ["kind", "dashboardId", "builtinKey"] }],
     summary: ({ body, targetName, organizationName }) =>
-      `Set the Control Room view of ${quoted(targetName)} in ${organizationName} to ${viewTarget(body)}.`,
+      `Set the Control Room view of ${quoted(targetName)}${inOrganization(organizationName)} to ${viewTarget(body)}.`,
   },
   {
     id: "location.siteLayout.make",
@@ -69,7 +74,7 @@ export const SITE_VIEW_ENTRIES: readonly CatalogEntry[] = [
         tabGroups !== null && typeof tabGroups === "object"
           ? `, with the chosen groups for ${plural(Object.keys(tabGroups).length, "tab")}`
           : "";
-      return `Make the site layout for ${quoted(targetName)} in ${organizationName} from ${layoutSource(body)}${tabs}.`;
+      return `Make the site layout for ${quoted(targetName)}${inOrganization(organizationName)} from ${layoutSource(body)}${tabs}.`;
     },
   },
 ];
