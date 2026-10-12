@@ -6,7 +6,7 @@ import {
   assertTheIdListIsCappedAtTheSharedMaximum,
   assertTheThreeSpellingsOfEachPatchFieldParse,
   assertTheWithinRowRulesReportUnderPatch,
-} from "./asset-points.schema.spec";
+} from "./asset-point-writes.spec";
 
 /** `F2.7` Unit I — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
 describe("F2.7 — the asset-point bulk-update body", () => {
