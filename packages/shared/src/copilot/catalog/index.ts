@@ -1,20 +1,53 @@
+import { ASSET_GROUP_ENTRIES, ASSET_GROUP_PENDING } from "./asset-groups";
+import { ASSET_POINT_ENTRIES, ASSET_POINT_PENDING } from "./asset-points";
+import { ASSET_ENTRIES, ASSET_PENDING } from "./assets";
 import { DASHBOARD_TEMPLATE_ENTRIES } from "./dashboard-templates";
 import { DASHBOARD_ENTRIES } from "./dashboards";
 import { KPI_ENTRIES } from "./kpis";
+import { LOCATION_ENTRIES, LOCATION_PENDING } from "./locations";
+import { ONBOARDING_ENTRIES, ONBOARDING_PENDING } from "./onboarding";
+import { POINT_KEY_ENTRIES, POINT_KEY_PENDING } from "./point-keys";
+import { RTU_ENTRIES, RTU_PENDING } from "./rtus";
+import { SITE_VIEW_ENTRIES, SITE_VIEW_PENDING } from "./site-views";
 import type { CatalogEntry, CatalogFormula, ExcludedRoute } from "./types";
+import { USER_ENTRIES, USER_PENDING } from "./users";
 
 /**
  * `F3.85` PR 8 / ADR 0099 decision 2 — the action catalog: every write route
- * the copilot may propose in release 1. One file per area, so PRs 9, 10 and 11
- * never edit the same file (plan §2).
+ * the copilot may propose. One file per area, so PRs 9, 10 and 11 (release 1)
+ * and the `F3.86` wizard PRs (release 2, plan §4.5) never edit the same file.
  *
  * `tests/f3.85-catalog-coverage.test.ts` walks the in-release controllers and
  * requires every write route to be here or in {@link EXCLUDED_ROUTES}, and
  * each of both lists to name a route that exists.
  */
-export const COPILOT_CATALOG: readonly CatalogEntry[] = [...DASHBOARD_ENTRIES, ...DASHBOARD_TEMPLATE_ENTRIES, ...KPI_ENTRIES];
+export const COPILOT_CATALOG: readonly CatalogEntry[] = [
+  ...DASHBOARD_ENTRIES,
+  ...DASHBOARD_TEMPLATE_ENTRIES,
+  ...KPI_ENTRIES,
+  ...LOCATION_ENTRIES,
+  ...SITE_VIEW_ENTRIES,
+  ...RTU_ENTRIES,
+  ...ASSET_ENTRIES,
+  ...ASSET_POINT_ENTRIES,
+  ...ASSET_GROUP_ENTRIES,
+  ...POINT_KEY_ENTRIES,
+  ...USER_ENTRIES,
+  ...ONBOARDING_ENTRIES,
+];
 
-const F3_86 = "not a release-1 write; F3.86";
+/**
+ * `F3.86` PR 2 / ADR 0099 decision 3, ruling 19 — the only `DELETE` routes a
+ * catalog entry may name: revoking a grant and removing an asset-group member,
+ * each with its own red Confirm. Every other `DELETE` stays manual.
+ */
+export const DELETE_ALLOWANCE: readonly { readonly method: "DELETE"; readonly path: string }[] = [
+  { method: "DELETE", path: "/admin/users/:id/grants/:kind/:grantId" },
+  { method: "DELETE", path: "/admin/asset-group-members/:id" },
+];
+
+/** Ruling Q2 (`F3.86` plan §0): the asset-template lifecycle routes are not in release 2. */
+const LATER_ROW = "not a release-2 write; a later row";
 const NO_DELETE = "a hard DELETE is never in the catalog (decision 3)";
 const COPILOT_OWN = "the copilot's own route: a proposal must never change the copilot itself";
 
@@ -38,17 +71,27 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   { method: "DELETE", path: "/admin/calc-parameters/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/assets/:assetId/calc-points/:pointKey", reason: NO_DELETE },
   // The asset-template routes that are not KPI writes.
-  { method: "POST", path: "/admin/asset-templates", reason: F3_86 },
-  { method: "POST", path: "/admin/asset-templates/:id/archive", reason: F3_86 },
-  { method: "POST", path: "/admin/asset-templates/:id/draft", reason: F3_86 },
-  { method: "POST", path: "/admin/asset-templates/stock/:code/import", reason: F3_86 },
-  { method: "POST", path: "/admin/asset-templates/:id/instantiate", reason: F3_86 },
-  { method: "POST", path: "/admin/asset-templates/:id/seeded-rules/reapply", reason: F3_86 },
-  { method: "POST", path: "/admin/asset-templates/:id/default-dashboards", reason: F3_86 },
-  { method: "POST", path: "/admin/asset-templates/:id/migration-preview", reason: F3_86 },
-  { method: "POST", path: "/admin/asset-templates/:id/migrate", reason: F3_86 },
+  { method: "POST", path: "/admin/asset-templates", reason: LATER_ROW },
+  { method: "POST", path: "/admin/asset-templates/:id/archive", reason: LATER_ROW },
+  { method: "POST", path: "/admin/asset-templates/:id/draft", reason: LATER_ROW },
+  { method: "POST", path: "/admin/asset-templates/stock/:code/import", reason: LATER_ROW },
+  { method: "POST", path: "/admin/asset-templates/:id/instantiate", reason: LATER_ROW },
+  { method: "POST", path: "/admin/asset-templates/:id/seeded-rules/reapply", reason: LATER_ROW },
+  { method: "POST", path: "/admin/asset-templates/:id/default-dashboards", reason: LATER_ROW },
+  { method: "POST", path: "/admin/asset-templates/:id/migration-preview", reason: LATER_ROW },
+  { method: "POST", path: "/admin/asset-templates/:id/migrate", reason: LATER_ROW },
   // `PATCH /admin/asset-templates/:id` and `POST /admin/asset-templates/:id/publish`
   // are catalog entries since PR 11a (`kpis.ts`, plan §10.1).
+  // `F3.86`: each area's routes that are not (yet) entries.
+  ...LOCATION_PENDING,
+  ...SITE_VIEW_PENDING,
+  ...RTU_PENDING,
+  ...ASSET_PENDING,
+  ...ASSET_POINT_PENDING,
+  ...ASSET_GROUP_PENDING,
+  ...POINT_KEY_PENDING,
+  ...USER_PENDING,
+  ...ONBOARDING_PENDING,
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */

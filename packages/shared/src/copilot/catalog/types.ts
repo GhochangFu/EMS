@@ -14,7 +14,13 @@ import type { ZodTypeAny } from "zod";
 /** How much a change can do; the Confirm card styles it, and `copilot_pending_changes_risk_check` holds the same four. */
 export type CatalogRisk = "create" | "edit" | "deactivate" | "access";
 
-export type CatalogMethod = "POST" | "PUT" | "PATCH";
+/**
+ * `F3.86` PR 2: `DELETE` is a method a catalog entry may have, but only the
+ * two removals of ADR 0099 decision 3 (ruling 19) are allowed one — the rule
+ * is in the gates (`DELETE_ALLOWANCE`, `catalog.spec.ts`,
+ * `tests/f3.85-catalog-coverage`), not in this type.
+ */
+export type CatalogMethod = "POST" | "PUT" | "PATCH" | "DELETE";
 
 /**
  * Where a change's organization comes from. Every target row is
@@ -26,15 +32,58 @@ export type CatalogMethod = "POST" | "PUT" | "PATCH";
  * - `dashboard`, `dashboardTemplate`, `calcParameter`, `assetTemplate`: the
  *   row the path parameter `id` names (`assetTemplate` since `F3.85` PR 11a;
  *   the resolver also reads its stored content and point keys);
- * - `asset`: the asset the path parameter `assetId` names.
+ * - `asset`: the asset the path parameter `assetId` (or `id`) names.
+ *
+ * `F3.86` PR 2 (release 2):
+ *
+ * - `organization` with `manage: "location"`: a location create, the body's
+ *   `organizationId`;
+ * - `location`, `rtu`, `assetGroup`, `assetGroupMember`, `assetPoint`: the
+ *   row the path parameter names;
+ * - `pointKey`: a point-key row (no organization); like `fleet`, the change
+ *   lives in the conversation's bound organization;
+ * - `parent`: a create whose organization is the row a body field names (an
+ *   RTU, asset or asset group create names its `locationId`; an asset-point
+ *   create its `assetId`), with the route's own manage check on that row;
+ * - `fleet`: a row with no organization (the point-key catalog); the change
+ *   lives in the conversation's bound organization, and a conversation bound
+ *   to none is refused (ruling Q1);
+ * - `siteControlRoomView`, `siteLayout`: the location the path parameter
+ *   names, with the two Control Room routes' own checks (ruling Q7(b)).
+ *
+ * `user` and `userGrant` are `F3.86` PR 4's; `onboardingSession` is PR 5's.
  */
 export type CatalogTarget =
-  | { readonly kind: "organization"; readonly manage: "dashboard" | "template" | "calcParameter" }
+  | { readonly kind: "organization"; readonly manage: "dashboard" | "template" | "calcParameter" | "location" }
   | { readonly kind: "dashboard" | "dashboardTemplate" | "calcParameter" | "assetTemplate"; readonly param: "id" }
-  | { readonly kind: "asset"; readonly param: "assetId" };
+  | { readonly kind: "asset"; readonly param: "assetId" | "id" }
+  | {
+      readonly kind:
+        | "location"
+        | "rtu"
+        | "assetGroup"
+        | "assetGroupMember"
+        | "assetPoint"
+        | "pointKey"
+        | "siteControlRoomView"
+        | "siteLayout";
+      readonly param: string;
+    }
+  | { readonly kind: "parent"; readonly field: "locationId" | "assetId"; readonly of: "location" | "asset" }
+  | { readonly kind: "fleet" };
 
-/** A body field holding the id of a row that must belong to the change's organization. */
-export type CatalogRef = { readonly field: string; readonly kind: "location" | "assetGroup" | "asset" };
+/** The row kinds a body field may hold the id of. */
+export type CatalogRefKind = "location" | "assetGroup" | "asset" | "rtu" | "organization" | "dashboard" | "dashboardTemplate";
+
+/**
+ * A body field holding the id of a row that must belong to the change's
+ * organization; or, for a field whose row kind depends on another field (a
+ * grant's `targetId` and its `kind`), the map from that field's value to a
+ * row kind. A value the map does not name is refused.
+ */
+export type CatalogRef =
+  | { readonly field: string; readonly kind: CatalogRefKind }
+  | { readonly field: string; readonly kindField: string; readonly kinds: Readonly<Record<string, CatalogRefKind>> };
 
 /**
  * A body field holding a formula, and the field holding its dialect.
@@ -89,6 +138,22 @@ export interface CatalogEntry {
   readonly bodyName: string | null;
   /** Body keys the user types on the Confirm card and the model never sees (none in release 1). */
   readonly clientOnly: readonly string[];
+  /**
+   * `F3.86` PR 2: the schema the model proposes with, when it differs from
+   * `body` — an entry with `clientOnly` fields whose body is not a plain
+   * object, or whose proposal rule is narrower than the route's. Absent: the
+   * body, without its `clientOnly` fields (`modelBodyOf`).
+   */
+  readonly modelBody?: ZodTypeAny;
+  /** The export name of `modelBody` in `@bms/shared`, when there is one. */
+  readonly modelBodyName?: string;
+  /**
+   * `F3.86` PR 2: who makes a pending change for this entry. `model` (the
+   * default): the model, through a `propose_*` tool. `server`: the server
+   * itself, after a skill step (the onboarding commit, decision 7) — no
+   * propose tool is made for it.
+   */
+  readonly proposer?: "model" | "server";
   readonly risk: CatalogRisk;
   readonly target: CatalogTarget;
   readonly refs: readonly CatalogRef[];
