@@ -176,7 +176,8 @@ describe("F4.45 rule vocabularies", () => {
         source: "ruleCategories.map(",
       },
       {
-        path: join(repoRoot, "apps", "web", "src", "pages", "admin", "assets-page.tsx"),
+        // `F3.86` PR 3b: the asset form moved from `assets-page.tsx` into the asset wizard.
+        path: join(repoRoot, "apps", "web", "src", "components", "admin", "asset-wizard.tsx"),
         source: "assetDomains.map(",
       },
     ];
