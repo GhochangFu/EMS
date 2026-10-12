@@ -320,6 +320,41 @@ export async function aHandlerErrorIsRecordedAndRethrown(): Promise<void> {
   expect(h.pending.record).toHaveBeenCalledWith(expect.any(String), CHANGE_ID, "failed", 400, null);
 }
 
+/**
+ * `F3.86` PR 2: a route's own 409 after the claim is the route's answer, not
+ * the interceptor's refusal — recorded `failed` 409 and passed on with its own
+ * sentence. The Confirm card tells the two apart by that sentence. Mutation:
+ * map every handler error to `CHANGE_REFUSED` → red.
+ */
+export async function aRoutesOwnConflictKeepsItsSentence(): Promise<void> {
+  const error = new ConflictException("This site has no active assets to lay out");
+  const h = harness({ handlerResult: async () => Promise.reject(error) });
+  const err = await refused(h);
+  expect(err).toBe(error);
+  expect((err as Error).message).toBe("This site has no active assets to lay out");
+  expect((err as Error).message).not.toBe(CHANGE_REFUSED);
+  expect(h.pending.record).toHaveBeenCalledWith(expect.any(String), CHANGE_ID, "failed", 409, null);
+}
+
+/** `clientOnlyKeysFor` answers this fixture id from the `.test.ts` wrapper's mock: one `clientOnly` field. */
+export const CLIENT_ONLY_FIXTURE_ID = "fixture.user.create";
+
+/**
+ * `F3.86` PR 2 / ADR 0099 decision 3 — the value the user types on the Confirm
+ * card (`temporaryPassword`) is sent beside the stored body; the hash leaves it
+ * out, so the change applies. For an entry without that `clientOnly` field
+ * the same request is a changed body, 409. Mutation: `stripKeys` returns the
+ * body unchanged → the first reddens.
+ */
+export async function aClientOnlyValueBesideTheStoredBodyMatches(): Promise<void> {
+  const typed = { ...BODY, temporaryPassword: "typed-on-the-card-1" };
+  const applied = harness({ body: typed, stored: { catalogId: CLIENT_ONLY_FIXTURE_ID } });
+  await run(applied);
+  expect(applied.handler).toHaveBeenCalledTimes(1);
+  expect(applied.pending.release).not.toHaveBeenCalled();
+  await expectReleased(harness({ body: typed, stored: { catalogId: "dashboards.create" } }));
+}
+
 /** The global filter answers a bare `ZodError` with 400, so the row records 400, not 500. */
 export async function aZodErrorIsRecordedAs400(): Promise<void> {
   const parsed = z.object({ id: z.string().uuid() }).safeParse({ id: "x" });

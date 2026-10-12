@@ -4,6 +4,10 @@ import {
   aBadPathParameterStoresNothing,
   aBodylessEntryStoresTheEmptyObject,
   aClientOnlyFieldNeverReachesTheModel,
+  aClientOnlyKeyInAProposedBodyIsRefused,
+  aRefinedBodyProposesWithItsModelBody,
+  aServerProposedEntryHasNoProposeTool,
+  aFleetChangeNeedsABoundConversation,
   aCredentialInAProposeArgumentIsRefused,
   aCrossOrganizationProposalUsesTheAllowedSet,
   aMissingTargetStoresNothing,
@@ -49,6 +53,10 @@ describe("F3.85 PR 8 — the copilot propose tools (ADR 0099 decisions 2, 3, 4, 
   it("stores the path encoded", () => aPathParameterIsStoredEncoded());
   it("refuses an access change on a follow-up turn", () => anAccessChangeIsRefusedOnAFollowUp());
   it("never shows a clientOnly field to the model", () => aClientOnlyFieldNeverReachesTheModel());
+  it("refuses a clientOnly key in a proposed body", () => aClientOnlyKeyInAProposedBodyIsRefused());
+  it("proposes a refined body with its modelBody", () => aRefinedBodyProposesWithItsModelBody());
+  it("makes no propose tool for a server-proposed entry", () => aServerProposedEntryHasNoProposeTool());
+  it("refuses a point-key change outside a bound conversation (ruling Q1)", () => aFleetChangeNeedsABoundConversation());
   it("has one slim propose tool per entry", () => everyEntryHasOneSlimProposeTool());
   it("describes a part of a large body on demand", () => describeChangeReadsAPartOfTheBody());
   it("limits describe_change per turn", () => describeChangeHasAPerTurnBudget());

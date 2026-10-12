@@ -9,6 +9,7 @@ import {
   COPILOT_CATALOG,
   formulaRefsOf,
   formulaSitesOf,
+  modelBodyOf,
   proposeToolName,
   stepValuesSchema,
 } from "@bms/shared/copilot";
@@ -32,6 +33,8 @@ export const PROPOSE_TARGET_ERROR =
 export const PROPOSE_ACCESS_ON_FOLLOW_UP_ERROR =
   "An access change can be proposed only when the user's own message asks for it, never after a confirmed change.";
 export const UNKNOWN_CHANGE_ERROR = "There is no such change in the catalog.";
+/** `F3.86` ruling Q1: a point-key change lives in the conversation's bound organization. */
+export const PROPOSE_FLEET_UNBOUND_ERROR = "Pick an organization in the dock to change the point-key catalog.";
 export const UNKNOWN_STEP_ERROR = "That wizard has no such step.";
 export const UNKNOWN_PATH_ERROR = "That path is not in the body's shape.";
 export const PROPOSE_STORED_CONTENT_ERROR =
@@ -80,18 +83,13 @@ export interface CopilotProposeServices {
 }
 
 /**
- * The body the model writes: the entry's schema without its `clientOnly`
- * fields, which the user types on the Confirm card and the model never sees.
- * An entry with `clientOnly` fields must have a plain object body (none does
- * in release 1); anything else is a load error.
+ * The body the model writes: the entry's `modelBody`, or its schema without
+ * its `clientOnly` fields, which the user types on the Confirm card and the
+ * model never sees. One rule for the API and the web since `F3.86` PR 2
+ * (`modelBodyOf` in `@bms/shared/copilot`); this name stays for its callers.
  */
 export function modelBodySchema(entry: CatalogEntry): ZodTypeAny {
-  if (entry.clientOnly.length === 0) return entry.body;
-  if (!(entry.body instanceof z.ZodObject)) {
-    throw new Error(`F3.85: ${entry.id} has clientOnly fields, so its body must be a plain object`);
-  }
-  const mask = Object.fromEntries(entry.clientOnly.map((field) => [field, true as const]));
-  return entry.body.omit(mask);
+  return modelBodyOf(entry);
 }
 
 function proposeArguments(entry: CatalogEntry): ZodTypeAny {
@@ -143,13 +141,14 @@ export function createCopilotProposeTools(
   services: CopilotProposeServices,
   catalog: readonly CatalogEntry[] = COPILOT_CATALOG,
 ): CopilotReadTools {
-  const byTool = new Map(catalog.map((entry) => [proposeToolName(entry), entry]));
+  // `F3.86` PR 2: an entry the server proposes itself (the onboarding commit) has no propose tool.
+  const byTool = new Map(catalog.filter((entry) => entry.proposer !== "server").map((entry) => [proposeToolName(entry), entry]));
   const byId = new Map(catalog.map((entry) => [entry.id, entry]));
   const ids = catalog.map((entry) => entry.id) as [string, ...string[]];
 
   const schemas: Record<string, ZodTypeAny> = {};
   const definitions: Array<{ name: string; description: string; parameters: Record<string, unknown> }> = [];
-  for (const entry of catalog) {
+  for (const entry of byTool.values()) {
     const name = proposeToolName(entry);
     schemas[name] = proposeArguments(entry);
     definitions.push({ name, description: proposeDescription(entry), parameters: proposeDefinition(entry) });
@@ -197,13 +196,24 @@ export function createCopilotProposeTools(
     const raw = entry.bodyName === null ? {} : (args.body as Record<string, unknown>);
     const parsed = modelBodySchema(entry).safeParse(raw);
     if (!parsed.success) return { ok: false, error: `Invalid body: ${issuesOf(parsed.error)}` };
-    // The JSON image is what is stored, hashed and sent: one object on all three sides.
+    // The JSON image is what is stored, hashed and sent: one object on all three sides. It is the
+    // raw body, not `parsed.data` (a transform or default would change what the route parses); it
+    // never holds a `clientOnly` key, because the strict model body refused one above (`F3.86` PR 2).
     let body = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
 
     if (await services.pending.hasOpen(ctx.identity.id, ctx.conversationId)) {
       return { ok: false, error: PROPOSE_OPEN_CHANGE_ERROR };
     }
-    const target = await services.targets.resolve(entry, params, body, ctx.allowedOrganizationIds, ctx.user);
+    const fleetRow = entry.target.kind === "fleet" || entry.target.kind === "pointKey";
+    if (fleetRow && ctx.conversationOrganizationId === null) return { ok: false, error: PROPOSE_FLEET_UNBOUND_ERROR };
+    const target = await services.targets.resolve(
+      entry,
+      params,
+      body,
+      ctx.allowedOrganizationIds,
+      ctx.user,
+      ctx.conversationOrganizationId,
+    );
     if (
       target === null ||
       !ctx.allowedOrganizationIds.includes(target.organizationId) ||

@@ -15,6 +15,7 @@ import { catchError, concatMap, from, type Observable, throwError } from "rxjs";
 import { ZodError } from "zod";
 
 import type { JwtPayload } from "@bms/shared";
+import { COPILOT_CHANGE_REFUSED_MESSAGE, COPILOT_UNAVAILABLE_MESSAGE } from "@bms/shared/copilot";
 
 import { recalledIdentity } from "../auth/identity-resolver";
 import { bodyHash } from "./body-hash";
@@ -29,9 +30,13 @@ import { CopilotTurnService } from "./copilot-turn.service";
 const HEADER = "x-copilot-change";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** One message for every refusal that could otherwise tell a caller which check failed. */
-export const CHANGE_REFUSED = "This copilot change cannot be applied";
-export const COPILOT_UNAVAILABLE = "The copilot is not available here";
+/**
+ * One message for every refusal that could otherwise tell a caller which check
+ * failed. Shared since `F3.86` PR 2: the Confirm card tells it from a route's
+ * own 409 by this exact sentence.
+ */
+export const CHANGE_REFUSED = COPILOT_CHANGE_REFUSED_MESSAGE;
+export const COPILOT_UNAVAILABLE = COPILOT_UNAVAILABLE_MESSAGE;
 
 type CopilotRequest = {
   method: string;
