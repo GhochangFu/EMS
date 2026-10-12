@@ -41,7 +41,7 @@ const temporaryPasswordSchema = z.string().min(12).max(128);
  * this route does not take (a grant list, say) would otherwise be silently
  * ignored while the account is created.
  */
-export const createUserBodySchema = z
+const createUserBodyObject = z
   .object({
     email: z
       .string()
@@ -54,16 +54,31 @@ export const createUserBodySchema = z
     organizationId: z.string().uuid().nullable(),
     temporaryPassword: temporaryPasswordSchema,
   })
-  .strict()
-  .superRefine((body, ctx) => {
-    if ((body.role === "admin") !== (body.organizationId === null)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["organizationId"],
-        message: "an admin has organizationId null and every other role names an organization",
-      });
-    }
-  })
+  .strict();
+
+/** The admin/organization boundary of a create (the `users_role_organization_check` CHECK). */
+function userOrganizationBoundary(body: { role: string; organizationId: string | null }, ctx: z.RefinementCtx): void {
+  if ((body.role === "admin") !== (body.organizationId === null)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["organizationId"],
+      message: "an admin has organizationId null and every other role names an organization",
+    });
+  }
+}
+
+/** `F3.86` PR 4 / ADR 0099 decision 3: the copilot never proposes the global `admin` role. */
+export const COPILOT_NEVER_GLOBAL_ADMIN_MESSAGE =
+  "the copilot never proposes the global admin role — the Users page keeps it (ADR 0099 decision 3)";
+
+function neverGlobalAdmin(body: { role?: string }, ctx: z.RefinementCtx): void {
+  if (body.role === "admin") {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["role"], message: COPILOT_NEVER_GLOBAL_ADMIN_MESSAGE });
+  }
+}
+
+export const createUserBodySchema = createUserBodyObject
+  .superRefine(userOrganizationBoundary)
   .describe(
     "role admin requires organizationId null, and every other role requires an organization " +
       "(ADR 0089 decision 2, the users_role_organization_check CHECK).",
@@ -75,43 +90,75 @@ export const createUserBodySchema = z
  * need the target's current role (it must cross the `admin` boundary, and a
  * demotion from `admin` must name an organization) are the service's.
  */
-export const updateUserBodySchema = z
+const updateUserBodyObject = z
   .object({
     displayName: z.string().trim().min(1).max(255).optional(),
     role: userRoleSchema.optional(),
     organizationId: z.string().uuid().nullable().optional(),
   })
-  .strict()
-  .superRefine((body, ctx) => {
-    if (body.displayName === undefined && body.role === undefined && body.organizationId === undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "the body changes nothing" });
-    }
-    if (body.organizationId !== undefined && body.role === undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["organizationId"],
-        message: "organizationId is accepted only with a role that crosses the admin boundary",
-      });
-    }
-    if (body.role === "admin" && body.organizationId !== undefined && body.organizationId !== null) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["organizationId"],
-        message: "an admin has organizationId null",
-      });
-    }
-    if (body.role !== undefined && body.role !== "admin" && body.organizationId === null) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["organizationId"],
-        message: "every role other than admin names an organization",
-      });
-    }
-  })
+  .strict();
+
+/** The update's own rules: something changes, and the admin boundary holds. */
+function updateUserRules(
+  body: { displayName?: string; role?: string; organizationId?: string | null },
+  ctx: z.RefinementCtx,
+): void {
+  if (body.displayName === undefined && body.role === undefined && body.organizationId === undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "the body changes nothing" });
+  }
+  if (body.organizationId !== undefined && body.role === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["organizationId"],
+      message: "organizationId is accepted only with a role that crosses the admin boundary",
+    });
+  }
+  if (body.role === "admin" && body.organizationId !== undefined && body.organizationId !== null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["organizationId"],
+      message: "an admin has organizationId null",
+    });
+  }
+  if (body.role !== undefined && body.role !== "admin" && body.organizationId === null) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["organizationId"],
+      message: "every role other than admin names an organization",
+    });
+  }
+}
+
+export const updateUserBodySchema = updateUserBodyObject
+  .superRefine(updateUserRules)
   .describe(
     "at least one field; organizationId only with role; role admin with organizationId null; " +
       "a non-admin role never with organizationId null (ADR 0089 decisions 1 and 2).",
   );
+
+/**
+ * `F3.86` PR 4 / ADR 0099 decision 3 — the body the copilot proposes a user
+ * create with (the catalog entry's `modelBody`): the route's own object and
+ * boundary, **without `temporaryPassword`** (a `clientOnly` field the admin
+ * types on the Confirm card, never the model) and **never the global
+ * `admin` role** (the Users page keeps promotion).
+ */
+export const copilotCreateUserBodySchema = createUserBodyObject
+  .omit({ temporaryPassword: true })
+  .strict()
+  .superRefine(userOrganizationBoundary)
+  .superRefine(neverGlobalAdmin)
+  .describe(
+    "the create-user body without temporaryPassword (typed on the Confirm card), never role admin " +
+      "(ADR 0099 decision 3); every other role names an organization.",
+  );
+
+/** `F3.86` PR 4 — the update the copilot proposes: the route's rules, and never the global `admin` role. */
+export const copilotUpdateUserBodySchema = updateUserBodyObject
+  .strict()
+  .superRefine(updateUserRules)
+  .superRefine(neverGlobalAdmin)
+  .describe("the update-user body, never role admin (ADR 0099 decision 3).");
 
 /** `POST /admin/users/:id/temporary-password`. */
 export const temporaryPasswordBodySchema = z

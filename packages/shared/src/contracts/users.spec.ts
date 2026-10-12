@@ -2,6 +2,9 @@ import { expect } from "vitest";
 
 import {
   adminUsersListResponseSchema,
+  COPILOT_NEVER_GLOBAL_ADMIN_MESSAGE,
+  copilotCreateUserBodySchema,
+  copilotUpdateUserBodySchema,
   createUserBodySchema,
   temporaryPasswordBodySchema,
   updateUserBodySchema,
@@ -114,4 +117,52 @@ export function assertWriteResponseAcceptsANullFollowUp(): void {
 export function assertListResponseRefusesARowWithoutLinked(): void {
   const { linked: _linked, ...withoutLinked } = USER;
   expect(adminUsersListResponseSchema.safeParse({ items: [withoutLinked] }).success).toBe(false);
+}
+
+// --- F3.86 PR 4 / ADR 0099 decision 3: the copilot's user bodies ---------------
+
+/** The copilot's create body refuses a temporary password: the admin types it on the Confirm card. */
+export function assertCopilotCreateRefusesAPassword(): void {
+  const result = copilotCreateUserBodySchema.safeParse(createBody());
+  expect(result.success).toBe(false);
+  const { temporaryPassword: _typed, ...withoutPassword } = createBody();
+  expect(copilotCreateUserBodySchema.safeParse(withoutPassword).success).toBe(true);
+}
+
+/** The copilot never proposes the global admin role, even with the null organization the route takes. */
+export function assertCopilotCreateNeverProposesTheGlobalAdmin(): void {
+  const { temporaryPassword: _typed, ...body } = createBody({ role: "admin", organizationId: null });
+  const result = copilotCreateUserBodySchema.safeParse(body);
+  expect(result.success).toBe(false);
+  expect(result.success ? [] : result.error.issues.map((issue) => [issue.path.join("."), issue.message])).toContainEqual([
+    "role",
+    COPILOT_NEVER_GLOBAL_ADMIN_MESSAGE,
+  ]);
+  // The route takes it (positive control): the copilot rule is narrower than the route's.
+  expect(createUserBodySchema.safeParse(createBody({ role: "admin", organizationId: null })).success).toBe(true);
+}
+
+/** Every other input: the copilot body answers what the route body answers, without the password. */
+export function assertCopilotCreateAgreesWithTheRouteOtherwise(): void {
+  const inputs = [
+    {},
+    { role: "viewer", organizationId: null },
+    { role: "organization_admin" },
+    { email: "not-an-email" },
+    { displayName: "" },
+  ];
+  for (const overrides of inputs) {
+    const { temporaryPassword: _typed, ...body } = createBody(overrides);
+    expect(copilotCreateUserBodySchema.safeParse(body).success, JSON.stringify(overrides)).toBe(
+      createUserBodySchema.safeParse(createBody(overrides)).success,
+    );
+  }
+}
+
+/** The copilot's update keeps the route's rules and refuses a promotion to the global admin. */
+export function assertCopilotUpdateNeverProposesTheGlobalAdmin(): void {
+  expect(copilotUpdateUserBodySchema.safeParse({ role: "admin", organizationId: null }).success).toBe(false);
+  expect(updateUserBodySchema.safeParse({ role: "admin", organizationId: null }).success).toBe(true);
+  expect(copilotUpdateUserBodySchema.safeParse({ displayName: "Renamed" }).success).toBe(true);
+  expect(copilotUpdateUserBodySchema.safeParse({}).success).toBe(false);
 }
