@@ -246,6 +246,8 @@ export const adminAssetGroupDtoSchema = z.object({
   organizationId: z.string(),
   memberCount: z.number(),
   createdAt: z.string(),
+  /** F3.73 (migration 0095): the asset domain code the group belongs to; `null` when nobody classified it. */
+  domain: z.string().nullable(),
 });
 
 export const adminAssetGroupListResponseSchema = z.object({

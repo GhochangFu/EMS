@@ -21,6 +21,7 @@ import {
   assertCreateAtAnotherSiteIsRefused,
   assertCreateAuditRollsBackWithTheWrite,
   assertCreateRejectsAnUnknownDomain,
+  assertResponsesCarryTheDomain,
   assertCreateWritesAnAuditRow,
   assertDuplicateGroupCodeIs409,
   assertDuplicateMemberIs409,
@@ -437,6 +438,10 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
 
   it("create rejects an unknown domain with a 400", async () => {
     await assertCreateRejectsAnUnknownDomain(ctx, adminJwt);
+  });
+
+  it("create, list and update answer with the stored domain; an unclassified group reads null", async () => {
+    await assertResponsesCarryTheDomain(ctx, adminJwt);
   });
 
   it("a member from another location is a 400 that names no asset", async () => {

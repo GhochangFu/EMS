@@ -60,6 +60,7 @@ const GROUPS = {
       organizationId: "33333333-3333-3333-3333-333333333333",
       memberCount: 3,
       createdAt: new Date(0).toISOString(),
+      domain: null,
     },
   ],
 };
@@ -731,6 +732,22 @@ export async function addSendsTheAssetId(): Promise<void> {
   });
 }
 
+/** Review fix: the add Review's sentence names the role picked beside the asset. */
+export async function theAddReviewNamesThePickedRole(): Promise<void> {
+  stubApi();
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
+  const picker = await openAddMember();
+  await userEvent.selectOptions(picker, ASSET_4);
+  const dialog = await screen.findByRole("dialog", { name: "Add an asset to Electrical train" });
+  const role = within(dialog).getByRole("combobox", { name: "Role" });
+  await waitFor(() => expect(within(role).getAllByRole("option").length).toBe(3));
+  await userEvent.selectOptions(role, "f337-spec-beta");
+  await next();
+  expect(dialog).toHaveTextContent("Add the asset Transformer 4 to the asset group");
+  expect(dialog).toHaveTextContent(/with the role Spec Beta Role\./);
+}
+
 /** An unpicked asset holds the Member step. */
 export async function anUnpickedAssetHoldsTheMemberStep(): Promise<void> {
   stubApi();
@@ -881,8 +898,8 @@ export async function changingTheFilterClosesTheMemberRemoveDialog(): Promise<vo
 
 /**
  * Edit sends name and description for the group, and never a `code` key — nor
- * a `domain` the author did not pick: the list does not carry the stored one,
- * so sending a value would overwrite it.
+ * a `domain` the author did not pick: "Keep the current domain" sends no key,
+ * so the stored one stays as it is.
  */
 export async function editNeverSendsCode(): Promise<void> {
   stubApi();
@@ -923,6 +940,33 @@ export async function theEditReviewShowsNowBesideAfter(): Promise<void> {
   const card = await within(dialog).findByRole("region", { name: "Edit an asset group" });
   const row = within(card).getByRole("row", { name: /^Name/ });
   expect(within(row).getAllByRole("cell").map((cell) => cell.textContent)).toEqual(["Electrical train", "Renamed train"]);
+}
+
+/**
+ * Review fix: the list carries the stored domain, so the edit's Review shows it as Now, and
+ * re-picking the same domain is not marked as a change.
+ */
+export async function theEditReviewShowsTheStoredDomain(): Promise<void> {
+  stubApi();
+  vi.spyOn(api, "fetchAdminAssetGroups").mockResolvedValue({
+    items: [{ ...GROUPS.items[0], domain: "f386-spec-domain" }],
+  } as never);
+  renderPage();
+  await userEvent.click(await screen.findByRole("button", { name: /Electrical train/ }));
+  await userEvent.click(await screen.findByRole("button", { name: "Edit group" }));
+  const dialog = await screen.findByRole("dialog", { name: "Edit asset group" });
+  await next();
+  const domain = within(dialog).getByRole("combobox", { name: "Domain" });
+  await waitFor(() => expect(within(domain).getAllByRole("option").length).toBe(2));
+  await userEvent.selectOptions(domain, "f386-spec-domain");
+  await next();
+  const card = await within(dialog).findByRole("region", { name: "Edit an asset group" });
+  const row = within(card).getByRole("row", { name: /^Domain/ });
+  expect(within(row).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+    "f386-spec-domain",
+    "f386-spec-domain",
+  ]);
+  expect(row).toHaveAttribute("data-changed", "false");
 }
 
 /** A role with no write gate sees the groups and none of the write controls. */

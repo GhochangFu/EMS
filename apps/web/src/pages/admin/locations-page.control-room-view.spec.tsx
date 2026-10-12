@@ -151,6 +151,7 @@ const GROUPS: AdminAssetGroupListResponse = {
       organizationId: ORG_ID,
       memberCount: 0,
       createdAt: new Date(0).toISOString(),
+      domain: null,
     },
   ],
 };

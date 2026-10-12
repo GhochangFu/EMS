@@ -32,7 +32,7 @@ import type { AuthUser } from "../../stores/auth-store";
 
 type AssetGroupsAdminPageProps = { user: AuthUser };
 
-/** The group wizards' text. `domain` `""` is "not picked": never sent (the list does not carry the stored one). */
+/** The group wizards' text. `domain` `""` is "not picked": never sent, so an edit keeps the stored one. */
 type GroupForm = { locationId: string; code: string; name: string; description: string; domain: string };
 const EMPTY_FORM: GroupForm = { locationId: "", code: "", name: "", description: "", domain: "" };
 
@@ -626,7 +626,10 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                   submitting={addMember.isPending}
                   submitError={error}
                   summary={wizardEntry("assetGroup.member.add").summary({
-                    body: { assetId: pickable.find((a) => a.id === memberWizard.assetId)?.name ?? memberWizard.assetId },
+                    body: {
+                      assetId: pickable.find((a) => a.id === memberWizard.assetId)?.name ?? memberWizard.assetId,
+                      role: roles.find((r) => r.code === memberWizard.role)?.label ?? memberWizard.role,
+                    },
                     params: { id: selectedGroup.id },
                     targetName: selectedGroup.name,
                     organizationName: "",
@@ -721,7 +724,11 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                   entry={wizardEntry("assetGroup.update")}
                   values={updateValues(form)}
                   {...groupWizardProps}
-                  current={{ name: selectedGroup.name, description: selectedGroup.description }}
+                  current={{
+                    name: selectedGroup.name,
+                    description: selectedGroup.description,
+                    domain: selectedGroup.domain,
+                  }}
                 />
               ) : null}
             </div>

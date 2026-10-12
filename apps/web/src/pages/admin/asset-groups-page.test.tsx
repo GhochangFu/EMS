@@ -33,7 +33,9 @@ import {
   anUnpickedAssetHoldsTheMemberStep,
   anUnpickedLocationHoldsTheBasicsStep,
   createStepsAreBasicsDetailsReview,
+  theAddReviewNamesThePickedRole,
   theEditReviewShowsNowBesideAfter,
+  theEditReviewShowsTheStoredDomain,
   theRemoveReviewIsTheRedCard,
   theWizardsSendNoCopilotHeader,
 } from "./asset-groups-page.spec";
@@ -93,6 +95,10 @@ describe("F3.37 asset groups page", () => {
 
   it("adds the picked asset to the group", async () => {
     await addSendsTheAssetId();
+  });
+
+  it("the add Review's sentence names the picked role", async () => {
+    await theAddReviewNamesThePickedRole();
   });
 
   it("re-reads the members after a removal", async () => {
@@ -177,6 +183,10 @@ describe("F3.86 PR 3c asset groups page — the catalog wizards (ADR 0099 decisi
 
   it("an edit's Review shows Now beside After", async () => {
     await theEditReviewShowsNowBesideAfter();
+  });
+
+  it("the edit Review shows the stored domain as Now, and re-picking it is no change", async () => {
+    await theEditReviewShowsTheStoredDomain();
   });
 
   it("a role pick sends nothing until the role wizard's Submit", async () => {

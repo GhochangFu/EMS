@@ -94,6 +94,7 @@ const ASSET_GROUP = {
   organizationId: ORG_1,
   memberCount: 3,
   createdAt: new Date(0).toISOString(),
+  domain: null,
 };
 
 /** The dashboard the create answers — group-scoped unless a case says otherwise. */
