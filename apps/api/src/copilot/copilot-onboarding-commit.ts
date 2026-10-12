@@ -75,6 +75,28 @@ export function deadOnboardingCommitCards(
 }
 
 /**
+ * `F3.86` PR 6 review — the one point every conversation read passes: of the
+ * open changes, rejects the dead `onboarding.commit` cards (no draft skill
+ * behind them, so their Confirm can only answer 400, and the one open change
+ * they hold blocks every later proposal) and returns the live ones.
+ */
+export async function liveOpenChanges(
+  pending: Pick<CopilotPendingChangesService, "discard">,
+  userId: string,
+  open: readonly CopilotPendingChangeDto[],
+  draftRunning: boolean,
+): Promise<CopilotPendingChangeDto[]> {
+  const dead = deadOnboardingCommitCards(open, draftRunning);
+  if (dead.length > 0) {
+    await pending.discard(
+      userId,
+      dead.map((c) => c.id),
+    );
+  }
+  return open.filter((c) => !dead.includes(c));
+}
+
+/**
  * `F3.86` PR 6 review — rejects the conversation's open `onboarding.commit`
  * cards. A card outlives the draft it commits when the skill ends or the
  * session is committed another way (the drawer's wizard, the onboarding page):

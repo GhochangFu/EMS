@@ -31,7 +31,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { COPILOT_UNAVAILABLE_MESSAGE, CopilotAccessGuard, CopilotIdentity } from "./copilot-access.guard";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotConversationsService } from "./copilot-conversations.service";
-import { deadOnboardingCommitCards } from "./copilot-onboarding-commit";
+import { liveOpenChanges } from "./copilot-onboarding-commit";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import { CopilotSkillService } from "./copilot-skill.service";
 import { CopilotTurnService } from "./copilot-turn.service";
@@ -152,17 +152,8 @@ export class CopilotConversationsController {
     const skill = await skillOf(onboardingSessionId ?? null);
     // F3.85 PR 8: the cards still waiting, so a remount or the poll after a Confirm shows a follow-up's proposal.
     const open = await this.pendingChanges.listOpen(identity.id, conversationId);
-    // F3.86 PR 6 review: the one point every read passes. A commit card with no draft skill behind it (the
-    // session was committed by the drawer's wizard or the page, or the skill ended) can only answer 400, and
-    // the one open change it holds blocks every later proposal here: it is rejected, and not shown.
-    const dead = deadOnboardingCommitCards(open, skill?.session.status === "draft");
-    if (dead.length > 0) {
-      await this.pendingChanges.discard(
-        identity.id,
-        dead.map((c) => c.id),
-      );
-    }
-    const pendingChanges = open.filter((c) => !dead.includes(c));
+    // F3.86 PR 6 review: a commit card with no draft skill behind it is rejected, and not shown.
+    const pendingChanges = await liveOpenChanges(this.pendingChanges, identity.id, open, skill?.session.status === "draft");
     return { ...conversation, pendingChanges, ...(skill !== undefined ? { skill } : {}) };
   }
 
