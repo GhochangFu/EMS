@@ -7,7 +7,7 @@ import { fetchDashboard } from "../../api/dashboards";
 import { fetchLocationKpis } from "../../api/locations";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
 import { GeneratedSiteView } from "../../components/control-room/generated-site-view";
-import { MakeSiteLayoutButton } from "../../components/control-room/make-site-layout-button";
+import { SiteLayoutWizard } from "../../components/control-room/site-layout-wizard";
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
 import { SiteAssetsView } from "../../components/control-room/site-assets-view";
 import { SiteDashboardView } from "../../components/control-room/site-dashboard-view";
@@ -85,7 +85,7 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * redirect: `SiteDashboardView` owns its `:tab` decision (the dashboard's own tabs) and is
  * handed the raw segment. A `dashboard` row with no slug renders the generated view and still
  * redirects. The `no_site_layout` and `dashboard_removed` notices carry **Make site layout**
- * for `isMasterDataAdmin` roles (`MakeSiteLayoutButton`), beside the notice text, never in it.
+ * for `isMasterDataAdmin` roles (`SiteLayoutWizard`, `F3.86` PR 3d), beside the notice text, never in it.
  *
  * `F3.77` (ADR 0087 Amendment 3 ruling 7, plan D8) — **wall mode.** `?wall=1&every=<s>` on a
  * `dashboard` view that renders (the tab stays the route's `:tab` segment, owner ruling OQ2)
@@ -306,7 +306,7 @@ function SiteViewBody({ view, site, scope, tab, tabParam, role }: SiteViewBodyPr
           <div role="status" data-testid="site-view-notice" className="max-w-prose">
             {notice}
           </div>
-          {offersSiteLayout ? <MakeSiteLayoutButton locationId={site.id} /> : null}
+          {offersSiteLayout ? <SiteLayoutWizard locationId={site.id} siteName={site.name} /> : null}
         </div>
       ) : null}
       {view.kind === "builtin" && isSmocSite(site) ? (

@@ -26,11 +26,13 @@ import * as copilotApi from "../../api/copilot";
 /**
  * `F3.73` plan Task 5.1 (D10, ruling Q5) — the **Make site layout** action on the site page's
  * `no_site_layout` and `dashboard_removed` notices: who sees it, what it POSTs, the resolve read
- * it invalidates, and the 409 `ambiguous` picker fed from the 409 body's candidates.
+ * it invalidates, and the 409 `ambiguous` picker fed from the 409 body's candidates. Since
+ * `F3.86` PR 3d (plan §5.5) the action opens the `location.siteLayout.make` wizard: Groups,
+ * then Review, whose **Submit** sends; an `ambiguous` answer re-opens Groups with the picker.
  *
  * Kept out of `site-page.spec.tsx` (870 lines before this row) for the 1000-line cap, the
  * `site-page-dashboard-retry.spec.tsx` precedent. The real page and the real
- * `MakeSiteLayoutButton` render; `makeSiteLayout` is a spy, so the wire shape and the 409 parse
+ * `SiteLayoutWizard` render; `makeSiteLayout` is a spy, so the wire shape and the 409 parse
  * are `api/control-room.spec.ts`'s A4–A6. `GeneratedSiteView` and `ScopedDashboardsList` are
  * mocked (their own suites). `fetch` itself is a spy and `cleanupSiteLayout` fails the case if
  * anything reached it.
@@ -200,28 +202,68 @@ export async function anOutOfScopeNoticeHasNoButton(): Promise<void> {
   expect(screen.queryByRole("button", BUTTON)).toBeNull();
 }
 
+/** Opens the wizard from the notice's button and returns its dialog. */
+async function openTheWizard(): Promise<HTMLElement> {
+  fireEvent.click(await screen.findByRole("button", BUTTON));
+  return screen.findByRole("dialog", { name: "Make a site layout: Lotapata" });
+}
+
+/** Next on the Groups step, then Submit on Review. */
+async function submitFromGroups(dialog: HTMLElement): Promise<void> {
+  fireEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  fireEvent.click(await within(dialog).findByRole("button", { name: "Submit" }));
+}
+
+/** W1 — the button opens the wizard on its Groups step, and sends nothing yet. */
+export async function theButtonOpensTheWizardOnGroups(): Promise<void> {
+  const { make } = stubReads([generatedWith("no_site_layout")]);
+  renderPage();
+  const dialog = await openTheWizard();
+
+  const current = within(within(dialog).getByRole("list", { name: "Steps" })).getAllByRole("listitem");
+  expect(current.map((step) => [step.textContent, step.getAttribute("aria-current")])).toEqual([
+    ["1. Groups", "step"],
+    ["2. Review", null],
+  ]);
+  expect(within(dialog).getByText(/the organization's newest published site template/)).toBeInTheDocument();
+  expect(make).not.toHaveBeenCalled();
+}
+
 /**
- * M5 — the click POSTs for the page's site with no choice, and a made copy invalidates the
- * page's resolve read: it is read a second time, and its new answer drops the notice.
+ * M5 — Submit POSTs for the page's site with no choice; the made copy's summary shows, and Close
+ * invalidates the page's resolve read: it is read a second time, and its new answer drops the
+ * notice.
  */
 export async function aMadeCopyRereadsTheResolveRead(): Promise<void> {
   const { resolve, make } = stubReads([generatedWith("no_site_layout"), generatedWith(null)], [MADE]);
   renderPage();
+  const dialog = await openTheWizard();
+  await submitFromGroups(dialog);
 
-  fireEvent.click(await screen.findByRole("button", BUTTON));
+  expect((await within(dialog).findByText(/Made — 0 tabs/)).textContent).toContain("site-layout-lotapata");
+  expect(make.mock.calls).toEqual([[LOCATION_ID, {}]]);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
 
   await waitFor(() => expect(resolve).toHaveBeenCalledTimes(2));
   await waitFor(() => expect(screen.queryByTestId("site-view-notice")).toBeNull());
-  expect(make.mock.calls).toEqual([[LOCATION_ID, {}]]);
 }
 
-/** Clicks the button on a `no_site_layout` site whose first answer is the 409 `ambiguous`. */
-async function openThePicker(): Promise<{ make: Mock; picker: HTMLElement }> {
+/** Submits once from a `no_site_layout` site whose first answer is the 409 `ambiguous`. */
+async function openThePicker(): Promise<{ make: Mock; dialog: HTMLElement; picker: HTMLElement }> {
   const { make } = stubReads([generatedWith("no_site_layout")], [AMBIGUOUS, MADE]);
   renderPage();
-  fireEvent.click(await screen.findByRole("button", BUTTON));
-  const picker = await screen.findByRole("group", { name: "Choose an asset group per tab" });
-  return { make, picker };
+  const dialog = await openTheWizard();
+  await submitFromGroups(dialog);
+  const picker = await within(dialog).findByRole("group", { name: "Choose an asset group per tab" });
+  return { make, dialog, picker };
+}
+
+/** An ambiguous answer re-opens the Groups step (the shell re-mounted), after one request. */
+export async function anAmbiguousAnswerReopensGroups(): Promise<void> {
+  const { make, dialog } = await openThePicker();
+  const groups = within(within(dialog).getByRole("list", { name: "Steps" })).getByText("1. Groups");
+  expect(groups.getAttribute("aria-current")).toBe("step");
+  expect(make.mock.calls).toEqual([[LOCATION_ID, {}]]);
 }
 
 /** M6 — a 409 `ambiguous` opens the picker: one select per tab, listing the candidates' names. */
@@ -241,25 +283,25 @@ export async function anAmbiguousAnswerOpensThePicker(): Promise<void> {
   ]);
 }
 
-/** M7 — the retry waits for a choice on every ambiguous tab (disabled until then). */
-export async function theRetryWaitsForAChoice(): Promise<void> {
-  const { picker } = await openThePicker();
+/** M7 — a Submit before every ambiguous tab has a choice sends nothing and says why. */
+export async function aSubmitWithoutAChoiceSendsNothing(): Promise<void> {
+  const { make, dialog } = await openThePicker();
 
-  const retry = within(picker).getByRole("button", { name: "Make site layout with these groups" });
-  expect((retry as HTMLButtonElement).disabled).toBe(true);
-  fireEvent.change(within(picker).getByRole("combobox"), { target: { value: GROUP_B } });
-  expect((retry as HTMLButtonElement).disabled).toBe(false);
+  await submitFromGroups(dialog);
+
+  expect((await within(dialog).findByRole("alert")).textContent).toBe("Choose a group for every tab");
+  expect(make).toHaveBeenCalledTimes(1);
 }
 
 /**
- * M8 — the retry carries the CHOSEN group in `tabGroups`. The test chooses the SECOND candidate,
- * so a retry that sent the first candidate unchosen goes red.
+ * M8 — the second Submit carries the CHOSEN group in `tabGroups`. The test chooses the SECOND
+ * candidate, so a request that sent the first candidate unchosen goes red.
  */
 export async function theRetryCarriesTheChosenGroup(): Promise<void> {
-  const { make, picker } = await openThePicker();
+  const { make, dialog, picker } = await openThePicker();
 
   fireEvent.change(within(picker).getByRole("combobox"), { target: { value: GROUP_B } });
-  fireEvent.click(within(picker).getByRole("button", { name: "Make site layout with these groups" }));
+  await submitFromGroups(dialog);
 
   await waitFor(() => expect(make).toHaveBeenCalledTimes(2));
   expect(make.mock.calls[1]).toEqual([LOCATION_ID, { tabGroups: { sld: GROUP_B } }]);
@@ -273,8 +315,7 @@ export async function aRefusalShowsTheApiMessage(): Promise<void> {
   );
   stubReads([generatedWith("no_site_layout")], [refusal]);
   renderPage();
-
-  fireEvent.click(await screen.findByRole("button", BUTTON));
+  await submitFromGroups(await openTheWizard());
 
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toBe("This site already has a Control Room view");

@@ -1,4 +1,9 @@
-import type { ResolvedSiteControlRoomViewDto, SiteLayoutAmbiguousDto, SiteLayoutResultDto } from "@bms/shared";
+import type {
+  ResolvedSiteControlRoomViewDto,
+  SiteLayoutAmbiguousDto,
+  SiteLayoutBody,
+  SiteLayoutResultDto,
+} from "@bms/shared";
 import {
   resolvedSiteControlRoomViewDtoSchema,
   siteLayoutAmbiguousDtoSchema,
@@ -42,12 +47,6 @@ export async function fetchResolvedSiteControlRoomView(
   );
 }
 
-/** The body of `POST /admin/locations/:id/site-layout` (`siteLayoutBodySchema`, `site-layout-writes.ts`). */
-export type MakeSiteLayoutBody = {
-  /** Template tab key → asset group id, for the tabs the last answer called ambiguous. */
-  tabGroups?: Record<string, string>;
-};
-
 /**
  * What "Make site layout" answers: the copy, or the tabs an administrator must choose a group for.
  * The ambiguous arm is a value, not a throw — it is the one 409 the caller acts on rather than
@@ -69,7 +68,7 @@ export type MakeSiteLayoutAnswer =
  * `apiErrorMessage` turns into the API's sentence (the `adminFetch` rule). A 401 clears the
  * session, as `adminFetch` does.
  */
-export async function makeSiteLayout(locationId: string, body: MakeSiteLayoutBody): Promise<MakeSiteLayoutAnswer> {
+export async function makeSiteLayout(locationId: string, body: SiteLayoutBody): Promise<MakeSiteLayoutAnswer> {
   const sent = withAuth({
     method: "POST",
     headers: { "Content-Type": "application/json" },
