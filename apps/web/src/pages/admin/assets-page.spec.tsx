@@ -172,9 +172,28 @@ export async function closeRemovesThePanelAndLeavesTheRow(): Promise<void> {
 // per exported function; the options come from the vocabulary stub above.
 // ---------------------------------------------------------------------------
 
-/** The role <select>, found by its label once the vocabulary's options have rendered. */
+/**
+ * `F3.86` PR 3b — the form is the `asset.create` / `asset.update` wizard: the role,
+ * rating and trip cause are on the Classification step, after Basics; Next through
+ * the steps, then Submit on Review.
+ */
+async function toClassificationStep(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("region", { name: "Classification" });
+}
+
+async function submitWizard(): Promise<void> {
+  for (let step = 0; step < 5 && !screen.queryByRole("button", { name: "Submit" }); step += 1) {
+    await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  }
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+}
+
+/** Add, the Basics a create needs, then the role <select> once the vocabulary's options have rendered. */
 async function openAddAndFindRoleSelect(): Promise<HTMLSelectElement> {
   await userEvent.click(await screen.findByRole("button", { name: "Add asset" }));
+  await fillRequiredFields();
+  await toClassificationStep();
   const select = screen.getByRole("combobox", { name: /Water balance role/ }) as HTMLSelectElement;
   // Wait on what the vocabulary produces: the select itself renders before the fetch resolves,
   // holding only the empty option.
@@ -182,7 +201,7 @@ async function openAddAndFindRoleSelect(): Promise<HTMLSelectElement> {
   return select;
 }
 
-/** Fills the three required text fields and the location, so the form can submit. */
+/** Fills the three required text fields and the location (Basics), so the wizard can submit. */
 async function fillRequiredFields(): Promise<void> {
   await userEvent.type(screen.getByRole("textbox", { name: "Code" }), "WTR-01");
   await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Water 1");
@@ -217,9 +236,8 @@ export async function savingWithARoleSendsIt(): Promise<void> {
   renderPage();
 
   const select = await openAddAndFindRoleSelect();
-  await fillRequiredFields();
   await userEvent.selectOptions(select, "reuse");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 
   await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   expect(create.mock.calls[0]?.[0]).toMatchObject({ waterBalanceRole: "reuse" });
@@ -232,8 +250,7 @@ export async function savingWithNoRoleSendsNull(): Promise<void> {
   renderPage();
 
   await openAddAndFindRoleSelect();
-  await fillRequiredFields();
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 
   await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   expect(create.mock.calls[0]?.[0]).toMatchObject({ waterBalanceRole: null });
@@ -246,6 +263,7 @@ export async function editPrefillsTheStoredRole(): Promise<void> {
 
   const edits = await screen.findAllByRole("button", { name: "Edit" });
   await userEvent.click(edits[1] as HTMLElement);
+  await toClassificationStep();
   const select = screen.getByRole("combobox", { name: /Water balance role/ }) as HTMLSelectElement;
   await within(select).findByRole("option", { name: "Intake" });
 
@@ -271,6 +289,7 @@ const RETIRED = asset({
 async function editTheOnlyRowAndFindRoleSelect(): Promise<HTMLSelectElement> {
   const edit = await screen.findByRole("button", { name: "Edit" });
   await userEvent.click(edit);
+  await toClassificationStep();
   const select = screen.getByRole("combobox", { name: /Water balance role/ }) as HTMLSelectElement;
   await within(select).findByRole("option", { name: "Intake" });
   return select;
@@ -321,10 +340,9 @@ export async function ratingAndTripCauseInputsSubmit(): Promise<void> {
   renderPage();
 
   await openAddAndFindRoleSelect();
-  await fillRequiredFields();
   await userEvent.type(screen.getByRole("textbox", { name: "Rating" }), "630A");
   await userEvent.type(screen.getByRole("textbox", { name: "Last trip cause" }), "overload");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 
   await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   expect(create.mock.calls[0]?.[0]).toMatchObject({ rating: "630A", tripCause: "overload" });
@@ -337,8 +355,7 @@ export async function emptyRatingAndTripCauseSendNull(): Promise<void> {
   renderPage();
 
   await openAddAndFindRoleSelect();
-  await fillRequiredFields();
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
 
   await vi.waitFor(() => expect(create).toHaveBeenCalledTimes(1));
   expect(create.mock.calls[0]?.[0]).toMatchObject({ rating: null, tripCause: null });
@@ -363,8 +380,7 @@ export async function aRefusedSaveShowsTheSentence(): Promise<void> {
   );
   renderPage();
   await openAddAndFindRoleSelect();
-  await fillRequiredFields();
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await submitWizard();
   const banner = await screen.findByText(/An asset with that code already exists at this location/);
   expect(banner.textContent).not.toContain('{"');
 }

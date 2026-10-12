@@ -1,5 +1,4 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import type { AdminAssetDto, MasterDataActiveFilter } from "@bms/shared";
@@ -11,11 +10,13 @@ import {
   reactivateAdminAsset,
   updateAdminAsset,
 } from "../../api/admin/assets";
-import { fetchAdminLocationSummary, fetchAdminLocations } from "../../api/admin/locations";
-import { fetchAdminRtuSummary, fetchAdminRtus } from "../../api/admin/rtus";
+import { fetchAdminLocationSummary } from "../../api/admin/locations";
+import { fetchAdminRtuSummary } from "../../api/admin/rtus";
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import { defaultDomainCode } from "../../lib/vocabulary";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
+import { AssetStatusWizard } from "../../components/admin/asset-status-wizard";
+import { AssetWizard, emptyAssetForm, type AssetForm } from "../../components/admin/asset-wizard";
 import {
   HierarchyFilterBar,
   type HierarchySelection,
@@ -30,7 +31,15 @@ import type { AuthUser } from "../../stores/auth-store";
 
 type AssetsAdminPageProps = { user: AuthUser };
 
-/** Admin screen for asset master data with RTU drill-down. */
+/**
+ * Admin screen for asset master data with RTU drill-down.
+ *
+ * `F3.86` PR 3b (ADR 0099 decision 6) — Add and Edit are the `asset.create`
+ * and `asset.update` wizards (`components/admin/asset-wizard.tsx`), and
+ * Deactivate and Reactivate are Review-only wizards (ruling Q9,
+ * `asset-status-wizard.tsx`). This page sends what Review parsed, with no
+ * `X-Copilot-Change` header. The images panel stays beside them.
+ */
 export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
   const { locationId, rtuId } = useParams();
   const navigate = useNavigate();
@@ -38,49 +47,23 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
   const [activeFilter, setActiveFilter] = useState<MasterDataActiveFilter>("all");
   const [selection, setSelection] = useState<HierarchySelection>({ locationId, rtuId });
   const [search, setSearch] = useState("");
-  const [modalOpen, setModalOpen] = useState(false);
+  /** The form a create opens with, or `null` while no create or edit is open. */
+  const [opened, setOpened] = useState<AssetForm | null>(null);
   const [editing, setEditing] = useState<AdminAssetDto | null>(null);
   // `F3.4` (owner ruling Q-0): the asset whose image panel is docked open, or
   // `null`. One at a time — the panel is the right-hand dock, not a per-row
   // expansion, and the asset it names is the one whose action was pressed.
   const [imagesFor, setImagesFor] = useState<AdminAssetDto | null>(null);
-  const [form, setForm] = useState({
-    code: "",
-    name: "",
-    siteName: "",
-    locationId: locationId ?? "",
-    rtuId: rtuId ?? "",
-    // A literal here and only here: this initializer runs before `vocabQ`
-    // exists. The value is replaced by `defaultDomainCode` in the "Add asset"
-    // handler below, which is what actually opens the form.
-    domain: "electrical",
-    // ADR 0073 decision 1 (E4.3): "" is "not in the balance" and is sent as `null`.
-    waterBalanceRole: "",
-    // F3.74 / ADR 0088: "" is "none" and is sent as `null`.
-    rating: "",
-    tripCause: "",
-  });
+  /** `F3.86` PR 3b — the asset whose deactivate or reactivate wizard is open. */
+  const [statusTarget, setStatusTarget] = useState<AdminAssetDto | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // ADR 0031 Amendment 1 — the plant vocabulary is data, so the form's options
-  // are fetched. Same query key as the rules page: one nine-row payload, one
-  // cache entry, and no chance of two screens offering different domains.
+  // ADR 0031 Amendment 1 — the plant vocabulary is data; a create opens on its first domain.
   const vocabQ = useQuery({
     queryKey: vocabulariesQueryKey,
     queryFn: fetchVocabularies,
     staleTime: 5 * 60 * 1000,
   });
-  const assetDomains = vocabQ.data?.assetDomains ?? [];
-  const waterBalanceRoles = vocabQ.data?.waterBalanceRoles ?? [];
-  // Post-merge sweep L1 — the editing asset's STORED role when the loaded vocabulary no longer
-  // carries it. Keyed on the stored code, not the form state, so the option stays after the
-  // author picks a live role and they can pick it back; and only once the vocabulary has loaded,
-  // so no live code shows as retired while the fetch is in flight.
-  const storedRole = editing?.waterBalanceRole ?? null;
-  const retiredStoredRole =
-    storedRole !== null && vocabQ.isSuccess && !waterBalanceRoles.some((role) => role.code === storedRole)
-      ? storedRole
-      : null;
 
   const locationSummaryQ = useQuery({
     queryKey: ["admin", "location-summary", locationId],
@@ -101,11 +84,6 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
       locationId: locationId ?? rtuSummaryQ.data?.locationId,
       rtuId,
     });
-    setForm((current) => ({
-      ...current,
-      locationId: locationId ?? current.locationId,
-      rtuId: rtuId ?? current.rtuId,
-    }));
   }, [
     locationId,
     rtuId,
@@ -113,18 +91,6 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
     rtuSummaryQ.data?.locationId,
     rtuSummaryQ.data?.organizationId,
   ]);
-
-  const formLocationsQ = useQuery({
-    queryKey: ["admin", "locations", "true", selection.organizationId],
-    queryFn: () => fetchAdminLocations("true", selection.organizationId),
-    enabled: modalOpen,
-  });
-
-  const formRtusQ = useQuery({
-    queryKey: ["admin", "rtus", "true", form.locationId],
-    queryFn: () => fetchAdminRtus("true", form.locationId || undefined),
-    enabled: modalOpen && Boolean(form.locationId),
-  });
 
   const listQ = useQuery({
     queryKey: ["admin", "assets", activeFilter, locationId, rtuId],
@@ -145,28 +111,20 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
     );
   }, [listQ.data?.items, search]);
 
+  function close(): void {
+    setOpened(null);
+    setEditing(null);
+    setError(null);
+  }
+
   const saveMutation = useMutation({
-    mutationFn: async () => {
-      // ADR 0018: an empty select means "no gateway", not an empty uuid. The
-      // API validates rtuId as `uuid().nullish()`, so "" is a 400.
-      // ADR 0073 decision 1: the empty option is "not in the balance", which the API spells
-      // `null` — the same translation as the gateway, and on update it clears a stored role.
-      const payload = {
-        ...form,
-        rtuId: form.rtuId || null,
-        waterBalanceRole: form.waterBalanceRole || null,
-        rating: form.rating.trim() || null,
-        tripCause: form.tripCause.trim() || null,
-      };
-      if (editing) {
-        return updateAdminAsset(editing.id, payload);
-      }
-      return createAdminAsset(payload);
+    // The body the wizard's Review parsed: what Review showed is what is sent.
+    mutationFn: async (body: Record<string, unknown>) => {
+      if (editing) return updateAdminAsset(editing.id, body as Parameters<typeof updateAdminAsset>[1]);
+      return createAdminAsset(body as Parameters<typeof createAdminAsset>[0]);
     },
     onSuccess: async () => {
-      setModalOpen(false);
-      setEditing(null);
-      setError(null);
+      close();
       await queryClient.invalidateQueries({ queryKey: ["admin", "assets"] });
     },
     onError: (err: unknown) => setError(apiErrorMessage(err)),
@@ -192,18 +150,14 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
             className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
             onClick={() => {
               setEditing(null);
-              setForm({
-                code: "",
-                name: "",
-                siteName: "",
-                locationId: locationId ?? selection.locationId ?? "",
-                rtuId: rtuId ?? selection.rtuId ?? "",
-                domain: defaultDomainCode(vocabQ.data?.assetDomains),
-                waterBalanceRole: "",
-                rating: "",
-                tripCause: "",
-              });
-              setModalOpen(true);
+              setError(null);
+              setOpened(
+                emptyAssetForm(
+                  locationId ?? selection.locationId ?? "",
+                  rtuId ?? selection.rtuId ?? "",
+                  defaultDomainCode(vocabQ.data?.assetDomains),
+                ),
+              );
             }}
           >
             Add asset
@@ -265,20 +219,8 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                       className="text-xs font-semibold text-accent-strong"
                       onClick={() => {
                         setEditing(item);
-                        setForm({
-                          code: item.code,
-                          name: item.name,
-                          siteName: item.siteName,
-                          locationId: item.locationId ?? "",
-                          // ADR 0018: gateway is optional — an empty select
-                          // means "no gateway", not "not yet loaded".
-                          rtuId: item.rtuId ?? "",
-                          domain: item.domain,
-                          waterBalanceRole: item.waterBalanceRole ?? "",
-                          rating: item.rating ?? "",
-                          tripCause: item.tripCause ?? "",
-                        });
-                        setModalOpen(true);
+                        setError(null);
+                        setOpened(null);
                       }}
                     >
                       Edit
@@ -298,7 +240,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                     <button
                       type="button"
                       className="text-xs font-semibold text-ink-muted"
-                      onClick={() => toggleMutation.mutate(item)}
+                      onClick={() => setStatusTarget(item)}
                     >
                       {item.active ? "Deactivate" : "Reactivate"}
                     </button>
@@ -314,170 +256,28 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
         <AssetImagesPanel asset={imagesFor} onClose={() => setImagesFor(null)} />
       ) : null}
 
-      {modalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
-          <form
-            className="w-full max-w-lg surface-dialog p-4"
-            onSubmit={(event: FormEvent) => {
-              event.preventDefault();
-              saveMutation.mutate();
-            }}
-          >
-            <h2 className="font-condensed text-lg font-bold">
-              {editing ? "Edit asset" : "Add asset"}
-            </h2>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="block text-xs font-semibold text-ink-muted">
-                Code
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.code}
-                  required
-                  onChange={(event) => setForm({ ...form, code: event.target.value })}
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Name
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.name}
-                  required
-                  onChange={(event) => setForm({ ...form, name: event.target.value })}
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
-                Site name
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.siteName}
-                  required
-                  onChange={(event) => setForm({ ...form, siteName: event.target.value })}
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
-                Location
-                <select
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.locationId}
-                  required
-                  onChange={(event) =>
-                    setForm({ ...form, locationId: event.target.value, rtuId: "" })
-                  }
-                >
-                  <option value="">Select location</option>
-                  {(formLocationsQ.data?.items ?? []).map((loc) => (
-                    <option key={loc.id} value={loc.id}>
-                      {loc.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
-                RTU
-                <select
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.rtuId}
-                  onChange={(event) => setForm({ ...form, rtuId: event.target.value })}
-                >
-                  {/* ADR 0018: optional. An asset read off a dial or imported
-                      from a workbook has no gateway, and `required` here made
-                      that unrepresentable through the UI. */}
-                  <option value="">No gateway — readings entered or imported</option>
-                  {(formRtusQ.data?.items ?? []).map((rtu) => (
-                    <option key={rtu.id} value={rtu.id}>
-                      {rtu.displayName}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
-                Domain
-                {/*
-                  A <select> over the live vocabulary, not free text (ADR 0031).
-                  `assets_domain_fk` closed this set in migration 0029, so a
-                  typed value could only ever come back as a rejection — and the
-                  field gave no hint what the valid codes were. Options are
-                  fetched, never restated, for the same reason the rule
-                  builder's are (§4.8): a hand-kept list that falls behind does
-                  not render as broken, it renders as the wrong value.
-                */}
-                <select
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.domain}
-                  required
-                  onChange={(event) => setForm({ ...form, domain: event.target.value })}
-                >
-                  {assetDomains.map((domain) => (
-                    <option key={domain.code} value={domain.code}>
-                      {domain.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted sm:col-span-2">
-                Water balance role
-                {/*
-                  ADR 0073 decision 1 (E4.3): the asset's place in its site's
-                  water balance. Options come from `bms.water_balance_roles`
-                  through the vocabulary fetch, never spelled here (the F4.43
-                  rule `tests/e4.3-water-balance-roles-schema.test.ts` gates):
-                  the only literal is the empty "not in the balance" option,
-                  which the save handler sends as null.
-                */}
-                <select
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.waterBalanceRole}
-                  onChange={(event) => setForm({ ...form, waterBalanceRole: event.target.value })}
-                >
-                  <option value="">Not in the balance</option>
-                  {waterBalanceRoles.map((role) => (
-                    <option key={role.code} value={role.code}>
-                      {role.label}
-                    </option>
-                  ))}
-                  {retiredStoredRole !== null ? (
-                    <option value={retiredStoredRole}>{retiredStoredRole} (retired)</option>
-                  ) : null}
-                </select>
-              </label>
-              {/* F3.74 / ADR 0088: shown on the breaker's mimic readout. Both optional. */}
-              <label className="block text-xs font-semibold text-ink-muted">
-                Rating
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.rating}
-                  maxLength={32}
-                  onChange={(event) => setForm({ ...form, rating: event.target.value })}
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Last trip cause
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.tripCause}
-                  maxLength={128}
-                  onChange={(event) => setForm({ ...form, tripCause: event.target.value })}
-                />
-              </label>
-            </div>
-            {error ? <div className="mt-2 text-xs text-critical-ink">{error}</div> : null}
-            <div className="mt-4 flex justify-end gap-2">
-              <button
-                type="button"
-                className="surface-button px-3 py-2"
-                onClick={() => setModalOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
-              >
-                Save
-              </button>
-            </div>
-          </form>
-        </div>
+      {editing !== null || opened !== null ? (
+        <AssetWizard
+          key={editing?.id ?? "create"}
+          editing={editing}
+          initial={opened ?? emptyAssetForm("", "", "")}
+          organizationId={selection.organizationId}
+          pending={saveMutation.isPending}
+          error={error}
+          onSubmit={(body) => saveMutation.mutate(body)}
+          onCancel={close}
+        />
+      ) : null}
+
+      {statusTarget ? (
+        <AssetStatusWizard
+          target={statusTarget}
+          onCancel={() => setStatusTarget(null)}
+          onSubmit={() => {
+            setStatusTarget(null);
+            toggleMutation.mutate(statusTarget);
+          }}
+        />
       ) : null}
     </MasterDataLayout>
   );
