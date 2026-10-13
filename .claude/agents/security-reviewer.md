@@ -63,7 +63,15 @@ report findings with evidence.
    and after `assertCanAuthor`; the publish route is its other caller.
    `onboarding-template-catalog.service.ts` reads `asset_templates` and
    `template_points` on `fleetDb` (BYPASSRLS), so each read must keep its own
-   `organizationId` filter.
+   `organizationId` filter. By-id onboarding session reads answer an
+   out-of-scope id with the same 404 as a missing one, after a role gate that
+   runs before the read (`F4.256`); only `createSession` and the draft list,
+   where the caller names the organization, answer an out-of-scope
+   organization with 403.
+   `GET /admin/onboarding/sessions` (`F4.255`) must never select `draft`, so
+   `_secrets` never leave the query, and the `copilot-purge` tick deletes an
+   untouched draft session, with its `_secrets` and checkpoints, after 30
+   days. A committed session keeps `draft._secrets` (`F4.258`).
 8. **User administration and the Keycloak admin client (ADR 0089).**
    `KeycloakIdentityAdminClient` (`apps/api/src/identity/`, and the `identity/provision/` CLI, which has its own `fetch`) holds a secret equivalent to
    global admin: it must never be logged, returned, audited or put in an error,
