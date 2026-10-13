@@ -7693,3 +7693,22 @@ Each PR ran its touched suites, `pnpm typecheck` and `pnpm typecheck:tests` befo
 Not met, and owed: the browser flow "the agent proposes the commit, the dock shows the card, Confirm commits" (PR 6; needs an LLM key); done since — the OIDC compose run that plan §6.6 (ii) names for PR 4 ran 2026-10-13 against the compose stack rebuilt from `c191e1b8` (`AUTH_MODE=oidc`, migration `0107` applied): a `user.create` card (inserted in the shape a turn stores; no LLM key) in the global admin's dock showed the password box, Confirm with a typed temporary password answered 201 (card `applied`), the pending body has no `temporaryPassword` key, no copilot message or audit row holds the value, `master.user.create` carries `via: copilot` and the change id, and the new user's first Keycloak sign-in forced a new password (#835); the AWS demo's switches checked (ESKOM on, PHEWB turned on at the owner's word); the ADR 0099 path erratum (#835); the `chore(agents):` sweep (#834).
 
 Raised: `F4.254` (the excluded asset-template lifecycle routes and the asset-point bulk update), `F4.255` (resume an onboarding draft).
+
+### `F4.256` — an out-of-scope onboarding session id answers the uniform 404 ✅ 2026-10-13
+
+One PR, squash-merged 2026-10-13; no migration, no contract change, no new dependency.
+
+- **#836** (`95d22d47`) — `commitWith` and `loadSession` (the seven other by-id onboarding routes) answer a missing session and one outside the caller's scope with the same 404 `Onboarding session not found` (AGENTS.md §4.7, the `F4.64` rule); the role gate runs before the read; `createSession` keeps its 403.
+
+Owner ruling 2026-10-13: the uniform 404 over a uniform 403 or a reorder only. Verified: the onboarding and copilot directories on a scratch database (94 files / 1,219 tests, none skipped); five mutations red; the branch API answered byte-identical 404s for a foreign and a random id. Raised: none.
+
+### `F4.255` — resume an onboarding draft; erase one untouched for 30 days ✅ 2026-10-14
+
+Four PRs, squash-merged 2026-10-13 to 2026-10-14; no migration, no new dependency.
+
+- **#837** (`d00ead32`) — ADR 0099 Amendment 2 (owner-approved as drafted) and the plan.
+- **#840** (`49785d5c`) — the organization's draft list route, the resume through the skill start, `created_by`.
+- **#839** (`3f01ca8c`) — the `copilot-purge` tick deletes drafts with no update for 30 days, with their encrypted credentials.
+- **#842** (`300578c9`) — the dock's draft picker; with no organization id the list answers for a scoped caller's home organization.
+
+Owner rulings 2026-10-13: resume and expire; a list in the dock; delete after 30 days. Verified: the database suites on scratch databases, the branch API and this branch's worker (one 31-day draft deleted, a 29-day one kept), the production bundle; `e2e` green on #842. **Owed:** the dock list in a browser (the owner's sign-in); an ADR note for the home-organization default. Raised: none.
