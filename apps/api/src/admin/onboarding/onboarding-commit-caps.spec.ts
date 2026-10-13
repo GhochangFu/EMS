@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 
 import { MAX_ONBOARDING_ASSETS } from "@bms/shared";
 import type { JwtPayload, OnboardingDraft } from "@bms/shared";
@@ -249,7 +249,7 @@ export async function assertOverCapDraftIsRefusedBeforeValidate(): Promise<void>
 /**
  * `F4.103` — the count check sits **below** the two access gates, so an
  * over-cap draft outside the caller's scope is still answered by the scope
- * refusal.
+ * refusal — since `F4.256` the uniform 404 a missing id gets.
  *
  * Placed above them, the count sentence would confirm to an out-of-scope caller
  * that the session exists and roughly how large its estate is.
@@ -262,13 +262,13 @@ export async function assertOverCapDraftStillLosesToTheAccessGate(): Promise<voi
   });
   const error = await rejectionOf(service.commit(JWT, "s-1"));
   assert(
-    error instanceof ForbiddenException,
+    error instanceof NotFoundException,
     `an out-of-scope organization is refused before its draft is counted, got ${String(error)}`,
   );
   const message = messageOf(error);
   assert(
-    message.includes("outside your access scope"),
-    `the scope refusal is the answer, got "${message}"`,
+    message === "Onboarding session not found",
+    `the scope refusal (F4.256: the missing-id 404) is the answer, got "${message}"`,
   );
   assert(
     !message.includes("one onboarding session may commit"),

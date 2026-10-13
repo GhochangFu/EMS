@@ -77,8 +77,8 @@ export { SESSION_NO_LONGER_DRAFT, DRAFT_CHANGED_DURING_TURN, DRAFT_TOO_DEEP_FOR_
  * SECURITY` (migration `0040`). `loadSession`'s initial by-id read runs on
  * `fleetDb`: the organization is not yet known at that point (it comes FROM
  * the row), so there is no id to scope a tenant transaction to until after
- * this read — `assertOnboardingAccess` authorizes the caller against it
- * immediately afterward, same as before. Every write below runs inside
+ * this read — the role gate runs before it and the organization-scope check
+ * immediately afterward (`F4.256`: out of scope answers the missing-id 404). Every write below runs inside
  * `withTenant(tenantDb, session.organizationId, …)` once that id is known.
  * `organizations` carries no policy and stays on `tenantDb` throughout.
  */
@@ -674,28 +674,36 @@ export class OnboardingService {
    * the writes weaker than the read they expose. `uploadExcel` is the sharp
    * case: it writes credentials parsed from the workbook, so a `location_admin`
    * refused by `POST :id/credentials` could still write credentials via Excel.
+   *
+   * `F4.256` (AGENTS.md §4.7, the F4.64 rule): the role gate runs before the
+   * read, so its 403 does not depend on whether the id exists, and a session
+   * outside the caller's organization scope is the same 404 as a missing one.
    */
   private async loadSession(jwt: JwtPayload, sessionId: string) {
-    await this.accessControl.requireMasterDataUser(jwt);
+    await this.assertOnboardingRole(jwt);
     const [session] = await this.fleetDb
       .select()
       .from(onboardingSessions)
       .where(eq(onboardingSessions.id, sessionId))
       .limit(1);
-    if (!session) {
+    if (!session || !(await this.accessControl.canManageOrganization(jwt, session.organizationId))) {
       throw new NotFoundException("Onboarding session not found");
     }
-    await this.assertOnboardingAccess(jwt, session.organizationId);
     return session;
   }
 
+  /** `createSession`'s gate: the caller names the organization, so out of scope is a 403 there. */
   private async assertOnboardingAccess(jwt: JwtPayload, organizationId: string) {
+    await this.assertOnboardingRole(jwt);
+    if (!(await this.accessControl.canManageOrganization(jwt, organizationId))) {
+      throw new ForbiddenException("Organization is outside your access scope");
+    }
+  }
+
+  private async assertOnboardingRole(jwt: JwtPayload) {
     const user = await this.accessControl.requireMasterDataUser(jwt);
     if (user.role !== "admin" && user.role !== "organization_admin") {
       throw new ForbiddenException("Onboarding requires admin or organization_admin role");
-    }
-    if (!(await this.accessControl.canManageOrganization(jwt, organizationId))) {
-      throw new ForbiddenException("Organization is outside your access scope");
     }
   }
 

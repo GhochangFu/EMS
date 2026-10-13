@@ -175,14 +175,14 @@ export class OnboardingCommitService {
       .from(onboardingSessions)
       .where(eq(onboardingSessions.id, sessionId))
       .limit(1);
-    if (!session) {
+    // F4.256 (AGENTS.md §4.7, the F4.64 rule): a session outside the caller's
+    // scope is the same 404 as a missing one, and the scope check runs before
+    // the status check — a 400 "already committed" would confirm the id exists.
+    if (!session || !(await this.accessControl.canManageOrganization(jwt, session.organizationId))) {
       throw new NotFoundException("Onboarding session not found");
     }
     if (session.status === "committed") {
       throw new BadRequestException("Session already committed");
-    }
-    if (!(await this.accessControl.canManageOrganization(jwt, session.organizationId))) {
-      throw new ForbiddenException("Organization is outside your access scope");
     }
 
     const draft = session.draft as OnboardingDraft;
