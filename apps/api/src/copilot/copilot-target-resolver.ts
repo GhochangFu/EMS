@@ -382,7 +382,9 @@ export class CopilotTargetResolver implements CopilotTargets {
           .where(and(eq(assetPoints.assetId, id), eq(assetPoints.organizationId, organizationId)));
         return { organizationId, name: row.name, pointKeys: points.map((point) => point.pointKey) };
       }
-      case "assetTemplate": {
+      // `F4.254` PR 3: the deploy kind reads the same row; only its authority differs (`mayManage`).
+      case "assetTemplate":
+      case "assetTemplateDeploy": {
         const [row] = await tx
           .select({ name: assetTemplates.name, content: assetTemplates.content })
           .from(assetTemplates)
@@ -516,6 +518,23 @@ export class CopilotTargetResolver implements CopilotTargets {
       // check, which is already false for a `location_admin`; a throw is the same refusal (`safely`).
       case "assetTemplate":
         return this.access.canManageTemplate(user, found.organizationId);
+      // `F4.254` PR 3: the instantiate route's deploy authority (ADR 0015 §7,
+      // `AssetTemplateInstantiationService.instantiate` then `instantiateTemplateCore`): a master-data
+      // user who manages the template's organization, then the target site — the body's `locationId`,
+      // or the site of its `rtuId` (read on the template's organization). `canManageTemplate` is never
+      // asked: it is false for a `location_admin`, the one role §7 lets deploy. The refs loop in
+      // `resolve` then proves both ids are of the organization (the route's cross-organization 400).
+      case "assetTemplateDeploy": {
+        await this.access.requireMasterDataUser(user);
+        if (!(await this.access.canManageOrganization(user, found.organizationId))) return false;
+        const locationId =
+          typeof body.locationId === "string"
+            ? body.locationId
+            : typeof body.rtuId === "string"
+              ? await this.rtuLocationId(body.rtuId, found.organizationId)
+              : null;
+        return locationId !== null && this.access.canManageLocation(user, locationId);
+      }
       case "calcParameter": {
         const scope = found.scope as Scope;
         if (scope.assetId !== null) return this.access.canManageAsset(user, scope.assetId);
@@ -530,6 +549,12 @@ export class CopilotTargetResolver implements CopilotTargets {
         if (!body.locationId) return true;
         return this.access.canManageLocation(user, body.locationId as string);
     }
+  }
+
+  /** The site of an RTU of `organizationId` (the `rtu` row read, under that tenant), or `null`. */
+  private async rtuLocationId(rtuId: string, organizationId: string): Promise<string | null> {
+    const rtu = await this.findRow("rtu", rtuId, [organizationId]);
+    return rtu?.locationId ?? null;
   }
 
   private async refBelongs(kind: CatalogRefKind, id: string, organizationId: string): Promise<boolean> {

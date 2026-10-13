@@ -9,13 +9,14 @@
 import {
   NO_TARGET_MESSAGE,
   buildInstantiatePayload,
-  hasTarget,
   type InstantiateRow,
   missingVariables,
-  namedCount,
+  missingVariablesMessage,
   namedRows,
   patternsCarryingVariables,
   resolveTarget,
+  rowsOfAssets,
+  targetOf,
   templateVariables,
 } from "./template-instantiate-form";
 
@@ -97,7 +98,6 @@ export function runNoTargetTests(): void {
   // cannot receive, and would push a trim into the hot path to satisfy it.
   for (const target of [{}, { locationId: "" }, { rtuId: "" }, { locationId: "", rtuId: "" }]) {
     assert(resolveTarget(target) === null, `${JSON.stringify(target)} must resolve to no target`);
-    assert(!hasTarget(target), `${JSON.stringify(target)} must not count as a target`);
 
     const payload = buildInstantiatePayload(target, [row("A", "")]);
     assert(!payload.ok, `${JSON.stringify(target)} must refuse`);
@@ -118,7 +118,6 @@ export function runBlankRowTests(): void {
   ];
   const built = namedRows(rows);
   assert(built.length === 2, `expected 2 named rows, got ${built.length}`);
-  assert(namedCount(rows) === 2, "namedCount must agree with namedRows");
   assert(
     built.map((row) => row.code).join(",") === "AHU-1,AHU-2",
     `wrong rows survived: ${built.map((row) => row.code).join(",")}`,
@@ -127,10 +126,10 @@ export function runBlankRowTests(): void {
   // A row that is only whitespace in `code` must not be rescued by a non-empty
   // `name` — the code is what identifies the asset.
   assert(
-    namedCount([row("   ", "Has a name")]) === 0,
+    namedRows([row("   ", "Has a name")]).length === 0,
     "a whitespace code must not build an asset",
   );
-  assert(namedCount([]) === 0, "no rows means no assets");
+  assert(namedRows([]).length === 0, "no rows means no assets");
 }
 
 /** Codes and names are trimmed, and an unnamed asset falls back to its code. */
@@ -153,31 +152,6 @@ export function runTrimAndFallbackTests(): void {
     );
     assert(built[index].name.trim() !== "", "a name must never be sent blank");
   }
-}
-
-/**
- * The payload carries the rows the count promised.
- *
- * The button reads `namedCount` and says "Build 2 assets". If the payload
- * builder filtered differently, the author would be told one number and get
- * another — with no error, because both are valid requests.
- */
-export function runCountMatchesPayloadTests(): void {
-  const rows = [
-    row("A", ""),
-    row("", "orphan"),
-    row("B", "Bee"),
-    row("   ", ""),
-  ];
-  const payload = buildInstantiatePayload({ rtuId: "rtu-1" }, rows);
-  assert(payload.ok, "must build");
-  if (!payload.ok) {
-    return;
-  }
-  assert(
-    payload.input.assets.length === namedCount(rows),
-    `the button promises ${namedCount(rows)} but the body carries ${payload.input.assets.length}`,
-  );
 }
 
 /** A minimal template point for `templateVariables` — only the two fields it reads. */
@@ -291,4 +265,48 @@ export function runMissingVariablesTests(): void {
   assert(missing[0].variable === "unit", `must name the unit variable, got ${JSON.stringify(missing[0])}`);
 
   assert(missingVariables(rows, []).length === 0, "no required variables means no gaps");
+}
+
+/** `F4.254` PR 3 — `targetOf`: the RTU alone when both ids are set (the wizard's rule source). */
+export function runTargetOfRtuWinsTests(): void {
+  const chosen = targetOf({ locationId: "loc-1", rtuId: "rtu-1" });
+  assert(JSON.stringify(chosen) === JSON.stringify({ rtuId: "rtu-1" }), `RTU must win alone, got ${JSON.stringify(chosen)}`);
+}
+
+/** `targetOf`: a location alone is the location; nothing chosen is `null`. */
+export function runTargetOfLocationAndNoneTests(): void {
+  const chosen = targetOf({ locationId: "loc-1" });
+  assert(JSON.stringify(chosen) === JSON.stringify({ locationId: "loc-1" }), `got ${JSON.stringify(chosen)}`);
+  assert(targetOf({}) === null, "nothing chosen must be null");
+  assert(targetOf({ locationId: "", rtuId: "" }) === null, "empty ids must be null");
+}
+
+/** `rowsOfAssets` is the inverse of `namedRows` for a filled body: code, name and vars come back. */
+export function runRowsOfAssetsTests(): void {
+  const rows = rowsOfAssets([{ code: "CH-1", name: "Chiller 1", sourceDataKeyVars: { unit: "01" } }, { code: "CH-2" }]);
+  assert(
+    JSON.stringify(rows) ===
+      JSON.stringify([row("CH-1", "Chiller 1", { unit: "01" }), row("CH-2", "")]),
+    `got ${JSON.stringify(rows)}`,
+  );
+  assert(JSON.stringify(rowsOfAssets(undefined)) === JSON.stringify([row("", "")]), "no assets must give one blank row");
+  assert(JSON.stringify(rowsOfAssets("x")) === JSON.stringify([row("", "")]), "a non-array must give one blank row");
+}
+
+/** `missingVariablesMessage` names each row and variable, and is `null` when nothing is missing. */
+export function runMissingVariablesMessageTests(): void {
+  assert(missingVariablesMessage([]) === null, "nothing missing must be null");
+  const message = missingVariablesMessage([
+    { row: 1, variable: "unit" },
+    { row: 2, variable: "bay" },
+  ]);
+  assert(message === "Asset 1 needs a value for unit. Asset 2 needs a value for bay.", `got ${message}`);
+}
+
+/** `F4.254` PR 3 — a row's non-blank `siteName` survives `rowsOfAssets` and is sent, trimmed, by `namedRows`. */
+export function runSiteNameRoundTripTests(): void {
+  const rows = rowsOfAssets([{ code: "CH-1", siteName: " Plant A " }, { code: "CH-2", siteName: "" }]);
+  const built = namedRows(rows);
+  assert(built[0]?.siteName === "Plant A", `the filled siteName must be sent, got ${JSON.stringify(built[0])}`);
+  assert(!("siteName" in (built[1] ?? {})), "a blank siteName must not be sent");
 }

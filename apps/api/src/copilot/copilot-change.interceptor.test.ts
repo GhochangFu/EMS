@@ -29,6 +29,8 @@ import {
   theOutcomeIsRecordedBeforeTheResponse,
   theRoutesHttpCodeIsRecorded,
   noHeaderPassesThroughUntouched,
+  aRootTransformBodyIsHashedRaw,
+  theInstantiateBodyIsChangedByItsOwnParse,
 } from "./copilot-change.interceptor.spec";
 
 // `F3.86` PR 2: no catalog entry has a `clientOnly` field until PR 4, so one fixture id has one;
@@ -72,4 +74,6 @@ describe("F3.85 — the X-Copilot-Change interceptor (ADR 0099 decision 4.5)", (
   it("starts one follow-up turn after recording an applied change", () => anAppliedChangeStartsOneFollowUpAfterTheRecord());
   it("starts a follow-up turn after recording a failed change", () => aFailedChangeStartsAFollowUpToo());
   it("starts no follow-up for a refused change", () => aRefusedChangeStartsNoFollowUp());
+  it("uses an instantiate body whose own parse changes it (F4.254 PR 3)", () => theInstantiateBodyIsChangedByItsOwnParse());
+  it("hashes a root-transform body raw, so it applies (F4.254 PR 3)", () => aRootTransformBodyIsHashedRaw());
 });

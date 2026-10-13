@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload, UserRole } from "@bms/shared";
-import type { CatalogEntry, CatalogRef, CatalogTarget } from "@bms/shared/copilot";
+import { type CatalogEntry, type CatalogRef, type CatalogTarget, catalogEntry } from "@bms/shared/copilot";
 
 import { NO_GRANTS, NO_USERS } from "../testing/copilot-user-checks";
 import { CopilotTargetResolver, refKindOf } from "./copilot-target-resolver";
@@ -30,6 +30,8 @@ export type ResolverCtx = {
   locationA2: string;
   locationB: string;
   rtuA: string;
+  /** `F4.254` PR 3: an RTU of B, on `locationB`. */
+  rtuB: string;
   assetA: string;
   /** The asset's code: an asset-point card names `<code> <pointKey>`. */
   assetCodeA: string;
@@ -41,6 +43,8 @@ export type ResolverCtx = {
   pointKeyCode: string;
   dashboardA: string;
   dashboardTemplateA: string;
+  /** `F4.254` PR 3: a published asset template of A (the instantiate route's template). */
+  assetTemplateA: string;
 };
 
 /** `locationA` carries a stored `builtin` view (`site_control_room_views`); `locationA2` carries none. */
@@ -50,6 +54,7 @@ export const RESOLVER_NAMES = {
   rtuA: "F3.86 RTU A",
   assetA: "F3.86 asset A",
   groupA: "F3.86 group A",
+  assetTemplateA: "F4.254 asset template A",
 } as const;
 
 type Call = [string, ...unknown[]];
@@ -446,4 +451,118 @@ export async function aGrantLivesInItsTargetsOrganizationAndNeedsTheUsersHomeInS
   });
   // The user's home (A) outside the turn's scope: refused, though the grant target (B) is in it.
   expect(await withUsers(ctx, crossing()).resolve(add, { id: "user-1" }, body, [ctx.orgB], JWT)).toBeNull();
+}
+
+/**
+ * `F4.254` PR 3 (plan §5.4) — the instantiate route's deploy authority
+ * (`AssetTemplateInstantiationService.instantiate`, then
+ * `instantiateTemplateCore`): a master-data user, `canManageOrganization` on
+ * the template's organization, then `canManageLocation` on the target site.
+ * That admits a `location_admin` on a site it manages; the authoring check
+ * (`canManageTemplate`) the `assetTemplate` kind mirrors never does.
+ */
+const ASSETS = [{ code: "p1", name: "P1" }];
+
+/**
+ * The SHIPPED entry, not a hand-built fixture (precedent:
+ * `copilot-target-resolver.spec.ts`'s `catalogEntry("onboarding.commit")`), so
+ * the cases below hold the catalog's own target and refs: a target of
+ * `assetTemplate` turns (a) red, and a dropped `locationId` ref turns (f) red.
+ */
+const deploy = (
+  ctx: ResolverCtx,
+  r: ReturnType<typeof recorder>,
+  body: Record<string, unknown>,
+  allowed: readonly string[] = [ctx.orgA],
+) => resolverWith(ctx, r.access).resolve(catalogEntry("assetTemplate.instantiate")!, { id: ctx.assetTemplateA }, body, allowed, JWT);
+
+/** (a) A `location_admin` on its site: the route's three checks, each on its own row, in order. */
+export async function anInstantiateTargetAdmitsALocationAdminOnItsSite(ctx: ResolverCtx): Promise<void> {
+  const r = recorder({}, "location_admin");
+  expect(await deploy(ctx, r, { locationId: ctx.locationA, assets: ASSETS })).toMatchObject({
+    organizationId: ctx.orgA,
+    organizationName: RESOLVER_NAMES.orgA,
+    targetName: RESOLVER_NAMES.assetTemplateA,
+  });
+  expect(r.calls).toEqual([
+    ["requireMasterDataUser"],
+    ["canManageOrganization", ctx.orgA],
+    ["canManageLocation", ctx.locationA],
+  ]);
+}
+
+/** (b) The site check is the one that refuses: a caller who manages the organization but not the site. */
+export async function anInstantiateTargetNeedsTheSite(ctx: ResolverCtx): Promise<void> {
+  const r = recorder({ canManageLocation: false }, "location_admin");
+  expect(await deploy(ctx, r, { locationId: ctx.locationA, assets: ASSETS })).toBeNull();
+  expect(r.calls).toContainEqual(["canManageLocation", ctx.locationA]);
+}
+
+/** (c) The RTU arm checks the RTU's own site, read from the RTU row (not the organization, not the body). */
+export async function anInstantiateUnderAnRtuChecksTheRtusSite(ctx: ResolverCtx): Promise<void> {
+  const r = recorder({}, "location_admin");
+  expect(await deploy(ctx, r, { rtuId: ctx.rtuA, assets: ASSETS })).toMatchObject({ organizationId: ctx.orgA });
+  expect(r.calls).toEqual([
+    ["requireMasterDataUser"],
+    ["canManageOrganization", ctx.orgA],
+    ["canManageLocation", ctx.locationA],
+  ]);
+}
+
+/** (d) The organization check refuses before the site is asked. */
+export async function anInstantiateTargetNeedsTheOrganization(ctx: ResolverCtx): Promise<void> {
+  const r = recorder({ canManageOrganization: false });
+  expect(await deploy(ctx, r, { locationId: ctx.locationA, assets: ASSETS })).toBeNull();
+  expect(r.calls).toContainEqual(["canManageOrganization", ctx.orgA]);
+  expect(r.calls.map(([name]) => name)).not.toContain("canManageLocation");
+}
+
+/** (e1) The deploy kind never asks the authoring check — else a `location_admin` is never offered the card. */
+export async function theDeployKindNeverAsksTheAuthoringCheck(ctx: ResolverCtx): Promise<void> {
+  const r = recorder({}, "location_admin");
+  expect(await deploy(ctx, r, { locationId: ctx.locationA, assets: ASSETS })).not.toBeNull();
+  expect(r.calls.map(([name]) => name)).not.toContain("canManageTemplate");
+}
+
+/** (e2) …and the authoring kind on the same template asks `canManageTemplate` alone, never the deploy checks. */
+export async function theAuthoringKindAsksOnlyTheAuthoringCheck(ctx: ResolverCtx): Promise<void> {
+  const r = recorder();
+  const entry = fixture({ kind: "assetTemplate", param: "id" });
+  expect(await resolverWith(ctx, r.access).resolve(entry, { id: ctx.assetTemplateA }, {}, [ctx.orgA], JWT)).toMatchObject({
+    organizationId: ctx.orgA,
+    targetName: RESOLVER_NAMES.assetTemplateA,
+  });
+  expect(r.calls).toEqual([["canManageTemplate", ctx.orgA]]);
+}
+
+/**
+ * (f) A target site of another organization is refused by the ref loop: the
+ * recorder answers `true`, so the site check passed (its call is the proof),
+ * and only the `locationId` ref of organization B is left to refuse it.
+ */
+export async function anInstantiateTargetOfAnotherOrganizationIsRefused(ctx: ResolverCtx): Promise<void> {
+  const r = recorder();
+  expect(await deploy(ctx, r, { locationId: ctx.locationB, assets: ASSETS })).toBeNull();
+  expect(r.calls).toContainEqual(["canManageLocation", ctx.locationB]);
+}
+
+/** A body that names neither target (the route's refinement refuses it) has no site to check. */
+export async function anInstantiateWithNoTargetIsRefused(ctx: ResolverCtx): Promise<void> {
+  const r = recorder();
+  expect(await deploy(ctx, r, { assets: ASSETS })).toBeNull();
+  expect(r.calls.map(([name]) => name)).not.toContain("canManageLocation");
+}
+
+/**
+ * Review L1 — an `rtuId` of another organization, with both organizations in
+ * the turn's scope: the RTU's site is read on the template's organization
+ * only, so it is not found, the site check is never asked (the RTU's site in
+ * B never reaches `canManageLocation`), and the target is refused. The
+ * positive twin is (c), the RTU of A.
+ */
+export async function anInstantiateUnderAnRtuOfAnotherOrganizationIsRefused(ctx: ResolverCtx): Promise<void> {
+  const r = recorder();
+  expect(await deploy(ctx, r, { rtuId: ctx.rtuB, assets: ASSETS }, [ctx.orgA, ctx.orgB])).toBeNull();
+  expect(r.calls).toContainEqual(["canManageOrganization", ctx.orgA]);
+  expect(r.calls.map(([name]) => name)).not.toContain("canManageLocation");
 }

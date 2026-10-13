@@ -32,7 +32,6 @@ import {
   theBackfillReportNamesASlugConflictRow,
   theBackfillReportRendersASummaryAndARowPerAsset,
   theBackfillSummaryNamesTheSlugCollision,
-  theInstantiateDialogStaysOpenAndShowsTheSummary,
 } from "./asset-template-detail-page.spec";
 
 /**
@@ -76,10 +75,6 @@ describe("F3.2 asset template detail page", () => {
 
   it("disables the lifecycle actions while the backfill runs", async () => {
     await aRunningBackfillDisablesTheLifecycleActions();
-  });
-
-  it("keeps the instantiate dialog open on success, with the summary and Close", async () => {
-    await theInstantiateDialogStaysOpenAndShowsTheSummary();
   });
 
   it("B6 Archive announces Archiving… with aria-busy while archiveM is pending", async () => {

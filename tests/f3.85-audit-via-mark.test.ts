@@ -38,6 +38,8 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/asset-templates/asset-templates.service.ts",
   "apps/api/src/admin/asset-templates/asset-templates-write-core.ts",
   "apps/api/src/admin/asset-templates/asset-templates-instantiate-core.ts",
+  // `F4.254` PR 3: `assetTemplate.instantiate`'s handler reaches the core through this service.
+  "apps/api/src/admin/asset-templates/asset-templates-instantiate.service.ts",
   "apps/api/src/admin/calc-parameters/calc-parameters.service.ts",
   "apps/api/src/admin/asset-points/asset-point-calc-override.service.ts",
   "apps/api/src/control-room/site-layout.service.ts",

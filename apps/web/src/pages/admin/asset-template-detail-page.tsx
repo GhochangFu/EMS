@@ -64,19 +64,11 @@ import {
   createDraftFromAdminAssetTemplate,
   deleteAdminAssetTemplateDraft,
   fetchAdminAssetTemplate,
-  instantiateFromAdminAssetTemplate,
   publishAdminAssetTemplate,
 } from "../../api/admin/asset-templates";
-import {
-  HierarchyFilterBar,
-  type HierarchySelection,
-} from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import {
-  backfillSummary,
-  instantiationSummary,
-} from "../../lib/default-dashboards-report";
+import { backfillSummary } from "../../lib/default-dashboards-report";
 import { TemplateTabBody } from "../../components/asset-templates/template-tab-body";
 import { TemplateTabStrip } from "../../components/asset-templates/template-tab-strip";
 import { PageHeader } from "../../components/page-header";
@@ -86,16 +78,8 @@ import {
   AssetTemplateLifecycleWizard,
   type AssetTemplateLifecycleWizardAction,
 } from "../../components/asset-templates/lifecycle-wizards";
+import { InstantiateWizard } from "../../components/asset-templates/instantiate-wizard";
 import { unwritableContentKeys } from "../../lib/template-content-merge";
-import {
-  buildInstantiatePayload,
-  hasTarget,
-  type InstantiateRow,
-  missingVariables,
-  namedCount,
-  patternsCarryingVariables,
-  templateVariables,
-} from "../../lib/template-instantiate-form";
 import { guardLifecycleAction, guardTabSwitch } from "../../lib/template-tab-guard";
 import { resolveTemplateTab, type TemplateTabId } from "../../lib/template-tabs";
 import {
@@ -133,7 +117,8 @@ function actionLabel(action: TemplateLifecycleAction, status: string): string {
 /**
  * `F4.168` — what each action's button says while its own mutation runs.
  * `instantiate` never pends here: `runners.instantiate` only opens the
- * dialog, and the dialog's own button (`instantiateM`) carries its own label.
+ * instantiate wizard (`components/asset-templates/instantiate-wizard.tsx`,
+ * `F4.254` PR 3), whose own Submit carries its own label.
  */
 function pendingActionLabel(action: TemplateLifecycleAction, status: string): string {
   if (action === "createDraft") {
@@ -704,231 +689,12 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
       ) : null}
 
       {instantiateOpen ? (
-        <InstantiateDialog
+        <InstantiateWizard
           user={user}
           template={template}
           onClose={() => setInstantiateOpen(false)}
         />
       ) : null}
     </MasterDataLayout>
-  );
-}
-
-/**
- * Builds assets from this published version.
- *
- * The target is a location **or** an RTU, never both — `InstantiateAssetsInput`
- * is a union for that reason, and the server rejects both-or-neither in a
- * `superRefine`. `HierarchyFilterBar` supplies both pickers, seeded with the
- * template's own organization so the cascade cannot offer a target from
- * another one (which the server refuses: a template may not cross an org
- * boundary, because its point keys resolve against its own catalog).
- *
- * Instantiation is all-or-nothing. `skippedPoints` in the result names the
- * optional measured points whose `sourceDataKeyPattern` did not resolve —
- * surfaced because "12 points in, 10 rows out" is otherwise indistinguishable
- * from a defect.
- */
-function InstantiateDialog({
-  user,
-  template,
-  onClose,
-}: {
-  user: AuthUser;
-  template: AdminAssetTemplateDto;
-  onClose: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const [selection, setSelection] = useState<HierarchySelection>({
-    organizationId: template.organizationId,
-  });
-  const [rows, setRows] = useState<InstantiateRow[]>([{ code: "", name: "", vars: {} }]);
-  const [error, setError] = useState<string | null>(null);
-  // `F4.56` (ADR 0056 decision 10) — the distinct `{token}`s this template's
-  // measured points ask for, minus the reserved `asset_code`. Read once per
-  // render off the pinned version, since a template's points cannot change
-  // while this dialog is open.
-  const variables = templateVariables(template);
-  const missing = missingVariables(rows, variables);
-  const patternsWithVariables = patternsCarryingVariables(template);
-
-  const instantiateM = useMutation({
-    mutationFn: () => {
-      // Every rule — RTU-wins-over-location, dropping blank rows, and the
-      // name-falls-back-to-code fallback — lives in
-      // `lib/template-instantiate-form.ts` under test. Getting RTU-wins
-      // backwards builds assets under the wrong parent with no error at all,
-      // which is why it is not left inline here where nothing can reach it.
-      const payload = buildInstantiatePayload(selection, rows);
-      if (!payload.ok) {
-        return Promise.reject(new Error(payload.message));
-      }
-      return instantiateFromAdminAssetTemplate(template.id, payload.input);
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ["admin", "assets"] });
-      // **`onClose()` used to be here** — ADR 0067 Q5 moves it to the Close
-      // button below, so the counts the server returned survive long enough to
-      // be read. `ruleCount` (ADR 0058 decision 10) had never reached a screen
-      // before this, and `dashboardCount` is new in this row.
-    },
-    onError: (cause: Error) => setError(apiErrorMessage(cause)),
-  });
-
-  // Both read the same helpers the payload uses, so the button cannot promise
-  // a count the body does not carry, and cannot enable itself for a target the
-  // builder would refuse.
-  const targetChosen = hasTarget(selection);
-  const named = namedCount(rows);
-
-  /**
-   * The result state (ADR 0067 Q5). A whole separate render rather than a
-   * banner above the form, and deliberately: the batch has already been built,
-   * so leaving the Build button on screen beside the result would offer a
-   * second click that builds a **second** batch of assets — an affordance that
-   * did not exist while the dialog closed on success. The form is gone; Close
-   * is the only way out, exactly as the ruling describes.
-   */
-  if (instantiateM.data) {
-    return (
-      <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
-        <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
-          <h2 className="font-condensed text-base font-bold text-ink">
-            Instantiate {template.code} v{template.version}
-          </h2>
-          <p className="rounded border border-accent/20 bg-ok-wash p-3 text-sm text-ok-ink">
-            {instantiationSummary(instantiateM.data)}
-          </p>
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent"
-            >
-              Close
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
-      <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
-        <h2 className="font-condensed text-base font-bold text-ink">
-          Instantiate {template.code} v{template.version}
-        </h2>
-        <p className="text-[11px] text-ink-muted">
-          Each asset below is built with all {template.points.length} of this template&apos;s
-          points. The whole batch succeeds or none of it does.
-        </p>
-
-        <HierarchyFilterBar
-          user={user}
-          levels={["location", "rtu"]}
-          selection={selection}
-          onNavigate={(next) => setSelection({ ...next, organizationId: template.organizationId })}
-          syncRoutes={false}
-        />
-
-        {patternsWithVariables.length > 0 ? (
-          <p className="text-[11px] text-ink-muted">
-            Pattern{patternsWithVariables.length > 1 ? "s" : ""}{" "}
-            {patternsWithVariables.join(", ")} carry a variable — fill one value per asset below.
-          </p>
-        ) : null}
-
-        <div className="space-y-2">
-          {rows.map((row, index) => (
-            <div key={index} className="flex flex-wrap gap-2">
-              <input
-                value={row.code}
-                onChange={(event) =>
-                  setRows((current) =>
-                    current.map((item, position) =>
-                      position === index ? { ...item, code: event.target.value } : item,
-                    ),
-                  )
-                }
-                placeholder="Asset code"
-                aria-label={`Asset ${index + 1} code`}
-                className="w-1/3 surface-field px-2 py-1 text-xs"
-              />
-              <input
-                value={row.name}
-                onChange={(event) =>
-                  setRows((current) =>
-                    current.map((item, position) =>
-                      position === index ? { ...item, name: event.target.value } : item,
-                    ),
-                  )
-                }
-                placeholder="Asset name (defaults to the code)"
-                aria-label={`Asset ${index + 1} name`}
-                className="flex-1 surface-field px-2 py-1 text-xs"
-              />
-              {variables.map((variable) => (
-                <input
-                  key={variable}
-                  value={row.vars[variable] ?? ""}
-                  onChange={(event) =>
-                    setRows((current) =>
-                      current.map((item, position) =>
-                        position === index
-                          ? { ...item, vars: { ...item.vars, [variable]: event.target.value } }
-                          : item,
-                      ),
-                    )
-                  }
-                  placeholder={variable}
-                  aria-label={`Asset ${index + 1} ${variable}`}
-                  className="w-24 surface-field px-2 py-1 text-xs"
-                />
-              ))}
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={() =>
-              setRows((current) => [...current, { code: "", name: "", vars: {} }])
-            }
-            className="text-xs font-semibold text-accent-strong hover:underline"
-          >
-            Add another asset
-          </button>
-        </div>
-
-        {error ? (
-          <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
-            {error}
-          </p>
-        ) : null}
-
-        <div className="flex justify-end gap-2">
-          <button
-            type="button"
-            onClick={onClose}
-            className="surface-button px-3 py-1.5"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            disabled={
-              !targetChosen || named === 0 || missing.length > 0 || instantiateM.isPending
-            }
-            aria-busy={instantiateM.isPending}
-            onClick={() => {
-              setError(null);
-              instantiateM.mutate();
-            }}
-            className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
-          >
-            {instantiateM.isPending ? "Building…" : `Build ${named} asset${named === 1 ? "" : "s"}`}
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
