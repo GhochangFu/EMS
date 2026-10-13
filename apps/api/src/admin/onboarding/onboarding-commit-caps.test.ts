@@ -20,7 +20,7 @@ describe("onboarding commit count caps (F4.103)", () => {
     await assertOverCapDraftIsRefusedBeforeValidate();
   });
 
-  it("still answers an out-of-scope caller with the access refusal", async () => {
+  it("still answers an out-of-scope caller with the access refusal (the F4.256 404)", async () => {
     await assertOverCapDraftStillLosesToTheAccessGate();
   });
 

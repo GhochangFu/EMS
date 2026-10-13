@@ -170,7 +170,8 @@ export async function runOnboardingCredentialsAsyncTests(): Promise<void> {
       assert(onRead.includes("Forbidden"), `${role} is refused on read too, got: ${onRead}`);
     }
 
-    // An in-role user outside the organization's scope is still refused.
+    // An in-role user outside the organization's scope is still refused — with
+    // the missing-id 404 since F4.256, so the refusal does not confirm the id.
     const outOfScope = await rejects(
       () =>
         buildService({ role: "organization_admin", canManage: false }).service.setCredentials(
@@ -180,7 +181,10 @@ export async function runOnboardingCredentialsAsyncTests(): Promise<void> {
         ),
       "an out-of-scope organization must be refused",
     );
-    assert(outOfScope.includes("Forbidden"), `out-of-scope is refused, got: ${outOfScope}`);
+    assert(
+      outOfScope === "NotFoundException: Onboarding session not found",
+      `out-of-scope is the missing-id 404, got: ${outOfScope}`,
+    );
 
     // --- decision 1: refuse rather than report a success that stored nothing -
     // E8.4's false-success is that `credentialsSet: true` is set without
