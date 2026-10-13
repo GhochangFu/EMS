@@ -180,7 +180,8 @@ page-by-page role walkthrough before it can be called complete. Phase 2
 real ingestion is **live for the single PHE MQTT pilot RTU** (ADR 0007) and
 paused for everything else — no EMQX, and every other protocol still needs its
 own ADR; Phase 6 Three.js visuals remain later and
-AI Copilot remains deferred. See [`docs/roadmap.md`](./docs/roadmap.md)
+a general AI copilot remains deferred for operators and viewers (ADR 0099
+promotes a site-wide copilot for the four administrator roles). See [`docs/roadmap.md`](./docs/roadmap.md)
 for the full phase breakdown.
 
 ## License

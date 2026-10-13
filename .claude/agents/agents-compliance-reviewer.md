@@ -34,7 +34,7 @@ Review the diff against these AGENTS.md sections, in priority order:
   routes, their audit rows and the two image surfaces, `F3.4`), two-way
   commanding, audit
   hash-chaining, Three.js
-  3D, general site-wide AI copilot, multi-tenancy/RLS, etc.). Cross-check
+  3D, general site-wide AI copilot for operators and viewers (ADR 0099 promotes one for the four administrator roles), multi-tenancy/RLS, etc.). Cross-check
   against ADRs before flagging — the PHE MQTT pilot (ADR 0007), the scoped
   onboarding wizard (ADR 0011), and the master-data admin (ADR 0008–0010) are
   promoted and in scope.
