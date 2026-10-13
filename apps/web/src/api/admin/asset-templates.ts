@@ -159,9 +159,11 @@ export interface InstantiateAssetInput {
  * guaranteed to 400. `never` on the unused arm moves that failure to compile
  * time.
  *
- * Note that `apps/api`'s `InstantiateAssetsBody` is **not** this shape: that
+ * Note that `InstantiateAssetsBody` (`@bms/shared`,
+ * `contracts/asset-template-instantiate-writes.ts`) is **not** this shape: that
  * schema ends in a `.transform()`, so its inferred type is the post-parse
- * `{ target: { kind, … } }`. This is the wire shape.
+ * `{ target: { kind, … } }` — never use it as a request type. This is the
+ * wire shape.
  */
 export type InstantiateAssetsInput =
   | { rtuId: string; locationId?: never; assets: InstantiateAssetInput[] }

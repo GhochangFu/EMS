@@ -67,6 +67,7 @@ export * from "./site-control-room-view-writes";
 export * from "./site-layout-writes";
 export * from "./asset-template-content-writes";
 export * from "./asset-template-writes";
+export * from "./asset-template-instantiate-writes";
 export * from "./calc-override-writes";
 export * from "./calc-parameter-writes";
 export * from "./dashboard-template-writes";

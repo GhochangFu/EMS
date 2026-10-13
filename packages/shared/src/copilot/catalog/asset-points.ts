@@ -15,7 +15,8 @@ const INSTRUMENT = { id: "instrument", title: "Instrument", fields: POINT_METADA
  * A create lives on the asset its body's `assetId` names, with the route's
  * own check on that asset (`parent`); every other write is checked on the
  * point's own asset. The bulk update and the mapping-sheet uploads stay out
- * (ruling Q6; multipart).
+ * (F4.254 ruling 3: the bulk update is a multi-target write, page-only for good;
+ * the mapping-sheet uploads are multipart).
  */
 export const ASSET_POINT_ENTRIES: readonly CatalogEntry[] = [
   {
@@ -92,7 +93,8 @@ export const ASSET_POINT_ENTRIES: readonly CatalogEntry[] = [
 ];
 
 const MULTIPART = "a multipart upload; the interceptor refuses multipart";
-const MULTI_TARGET = "a multi-target write; one card names one target — a later row (ruling Q6)";
+const MULTI_TARGET =
+  "a multi-target write: one card names one target (an entry's target is one row); the page's bulk panel is the door (F4.254 ruling 3)";
 
 /** The area's write routes that are not entries: each excluded for good (with the reason). */
 export const ASSET_POINT_PENDING: readonly ExcludedRoute[] = [
