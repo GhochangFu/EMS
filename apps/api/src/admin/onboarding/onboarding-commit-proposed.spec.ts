@@ -111,9 +111,9 @@ export async function assertAnUnchangedDraftProceedsPastTheLock(): Promise<void>
   assert(JSON.stringify(events) === '["transaction","lock:update","insert"]', `in that order: ${JSON.stringify(events)}`);
 }
 
-export async function assertTheButtonPathTakesNoLock(): Promise<void> {
+export async function assertTheUnboundSpecPathTakesNoLock(): Promise<void> {
   const { service, events } = harness(draft("Lotapata"), draft("Changed"));
   const error = await settle(service.commit(JWT, "s-1"));
-  assert(error === INSERT_REACHED, "the Commit button commits the stored draft as before");
+  assert(error === INSERT_REACHED, "the spec-only unbound commit() commits the stored draft (no route reaches it since F3.86)");
   assert(!events.some((event) => event.startsWith("lock:")), "and takes no proposal lock");
 }

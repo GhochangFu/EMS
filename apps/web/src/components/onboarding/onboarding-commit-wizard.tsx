@@ -49,7 +49,8 @@ type OnboardingCommitWizardProps = {
  * the fresh read shows a new hash or a session no longer a draft, the sentence
  * is the wizard's own, not the route's (which speaks of a proposal this wizard
  * did not make). A session with no hash (a draft too deep to hash) offers no
- * Submit, because an empty body is the unbound commit.
+ * Submit, because the route requires `draftHash` and answers 400 to an empty
+ * body (`F3.86` post-closure fix).
  */
 export function OnboardingCommitWizard({ session, onCommitted, onSessionRefreshed, onClose }: OnboardingCommitWizardProps) {
   const [error, setError] = useState<string | null>(null);
