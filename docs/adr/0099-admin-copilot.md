@@ -552,3 +552,21 @@ not change.
 Release 1 closed 2026-10-12 (`F3.85`): the per-PR record is in
 `docs/plans/f3.85-admin-copilot-release-1.md` §10.5, §11.1a, §11.2a, §11.2b,
 §11.3a and §11.3b.
+
+## Erratum (2026-10-13, after the `F3.86` closure)
+
+One path string in the text above was wrong when written; the decisions do
+not change.
+
+- **Context** ("It runs only inside `/admin/onboarding`") and **decision 7**
+  ("`/admin/onboarding` retires") name the onboarding page by a path it never
+  had. The page's route was `/admin/organizations/:orgId/onboarding`
+  (`apps/web/src/app.tsx`, opened by "Onboard with AI" on the organizations
+  list); its API routes are under `/api/v1/admin/onboarding/sessions`. `F3.86`
+  PR 7 (#831) retired that page route and `POST …/sessions/:id/chat`; the
+  other session routes stay, because the skill uses them.
+
+Release 2 closed 2026-10-13 (`F3.86`, #822–#831, closure #832; the commit
+route requires the draft hash since #833): the per-PR record is in
+`docs/plans/f3.86-admin-copilot-release-2.md` §4.9, §5.4, §5.6, §6.7, §7.3,
+§8.4 and §9.1.
