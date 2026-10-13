@@ -260,8 +260,8 @@ export class OnboardingService {
     const expectedHash = draftHash(session.draft);
 
     // ADR 0022 decision 2. Checked before ANY side effect: the turn is not
-    // stored in `messages` and never reaches the model (`F3.21`: nor the
-    // confirm check, which runs after this). Returning a
+    // stored in `messages` and never reaches the model (nor the undo
+    // match, which runs after this). Returning a
     // normal chat response rather than a 400 keeps the wizard usable — the
     // user is told where the credentials field is instead of hitting an error.
     if (looksLikeCredential(message)) {

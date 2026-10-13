@@ -49,7 +49,7 @@ export function assertTurnStillBound(
   }
 }
 
-/** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (every in-draft session write; the commit service takes its own `FOR UPDATE`: `chat`, `undoLastStep`, `restoreTo`, `confirmCommit`, `setCredentials`, `uploadExcel`, `patchDraft`). */
+/** `SELECT ... FOR UPDATE` of the columns a locked write compares and builds on (every in-draft session write; the commit service takes its own `FOR UPDATE`: `chat`, `undoLastStep`, `restoreTo`, `setCredentials`, `uploadExcel`, `patchDraft`). */
 export function lockSession(tx: Parameters<Parameters<typeof withTenant>[2]>[0], sessionId: string) {
   return tx
     .select({

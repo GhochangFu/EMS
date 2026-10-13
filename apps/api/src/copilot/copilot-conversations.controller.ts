@@ -122,7 +122,7 @@ export class CopilotConversationsController {
     return this.detail(identity, parsed.data, () => skill);
   }
 
-  /** `F3.86` PR 5 — ends the skill here; the draft stays for the onboarding page. 200 with the conversation. */
+  /** `F3.86` PR 5 — ends the skill here; the draft stays (no surface resumes it since `F3.86` PR 7 retired the onboarding page). 200 with the conversation. */
   @Delete(":id/skills/onboarding")
   @HttpCode(200)
   async endOnboarding(

@@ -99,7 +99,7 @@ export async function liveOpenChanges(
 /**
  * `F3.86` PR 6 review — rejects the conversation's open `onboarding.commit`
  * cards. A card outlives the draft it commits when the skill ends or the
- * session is committed another way (the drawer's wizard, the onboarding page):
+ * session is committed another way (the drawer's wizard):
  * its Confirm can only answer 400, and because a conversation holds one open
  * change (`propose`), it would block every later proposal there until it
  * expired. Any other open change is left alone.

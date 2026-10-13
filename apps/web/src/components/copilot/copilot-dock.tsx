@@ -44,8 +44,7 @@ import { OnboardingSkillPanel } from "./onboarding-skill-panel";
  * **Who sees it.** A copilot role (`canAuthorDashboards` — the four roles of
  * the server's `COPILOT_ROLES`) whose `GET /copilot/status` says `available`.
  * The role check runs before any hook, so an operator never asks (the route
- * would answer 403). `available: false` renders nothing (plan Q7). The
-
+ * would answer 403). `available: false` renders nothing (plan Q7).
  *
  * **Layering.** `z-50`, below `ConfirmDialog`'s `z-[60]`, so a Confirm card
  * always covers the panel.

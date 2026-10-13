@@ -503,7 +503,7 @@ export class CopilotTurnService {
     if (!usage.ok) throw usageLimitException(usage);
 
     const answer = await this.onboarding.chat(user, sessionId, message);
-    // The rows this turn added. Another writer (the page) can add rows at the same time, so the action
+    // The rows this turn added. Another writer (the skill panel's draft, upload or undo routes) can add rows at the same time, so the action
     // lines are taken only when the first new row is this turn's own message; otherwise none are.
     const added = answer.session.messages.slice(before.messages.length);
     const own = added[0]?.role === "user" && added[0].content === message;
