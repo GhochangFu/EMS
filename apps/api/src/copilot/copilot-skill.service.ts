@@ -32,7 +32,7 @@ import { CopilotPendingChangesService } from "./copilot-pending-changes.service"
  *
  * **The start's order, so a refused start leaves no draft session behind** (one
  * exception: two starts racing — the loser's session is created before its bind
- * fails, and stays a draft the onboarding page can resume):
+ * fails, and stays a draft that no surface resumes since the onboarding page retired, `F3.86` PR 7):
  * the conversation is the caller's (404) and bound to the body's organization
  * (400; a cross-organization conversation never runs it) → the copilot is
  * available there (403, ruling Q4) → no skill is bound yet (409) →
@@ -77,7 +77,7 @@ export class CopilotSkillService {
   }
 
   /**
-   * Ends the skill; the session stays a draft the onboarding page can resume. Idempotent.
+   * Ends the skill; the session stays a draft (no surface resumes it since the onboarding page retired, `F3.86` PR 7). Idempotent.
    * `F3.86` PR 6 review: an open `onboarding.commit` card goes with it — it commits a skill that no longer
    * runs here, and the one open change it holds would block every later proposal in the conversation.
    */

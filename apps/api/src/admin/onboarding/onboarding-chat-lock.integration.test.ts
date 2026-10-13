@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { eq, sql } from "drizzle-orm";
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
@@ -20,7 +19,6 @@ import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import {
   APPEND_TURN,
-  CONFIRM_TURN,
   UNDO_TURN,
   assertAChangedDraftAnswers409,
   assertACredentialKeepsAMessageCommittedUnderTheLock,
@@ -35,12 +33,7 @@ import {
   assertTheUploadWaitedOnTheCommittingHolder,
   assertTheUploadWaitedOnTheHolder,
   CREDENTIAL_RTU_CODE,
-  assertACommittingConfirmAppendsToTheCommittedRow,
-  assertACommittingConfirmKeepsAMessageCommittedUnderTheLock,
-  assertAConfirmWithNoProposalKeepsAMessageCommittedUnderTheLock,
   assertAMessageCommittedUnderTheLockSurvivesTheUndo,
-  assertAStaleConfirmKeepsAMessageCommittedUnderTheLock,
-  assertAStaleConfirmOverAChangedDraftAnswers409,
   assertAnUnchangedDraftLetsTheTurnWrite,
   assertAnUndoOverAChangedDraftAnswers409,
   assertTheChangedUndoWaitedOnTheHolder,
@@ -48,10 +41,8 @@ import {
   assertTheTurnWaitedOnTheHolder,
   assertTheUndoWaitedOnTheHolder,
   raceTheChatWrite,
-  runTheChatTurn,
   type ChatLockCtx,
 } from "./onboarding-chat-lock.integration.spec";
-import { attachCommitProposal, draftHash } from "./onboarding-commit-proposal";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import { OnboardingService } from "./onboarding.service";
@@ -61,8 +52,9 @@ import { OnboardingService } from "./onboarding.service";
  * (ADR 0014); this file owns the database lifecycle. Every race runs once in
  * `beforeAll`, one after the other, each on its own session row; every row is
  * committed, so `afterAll` deletes them by id. `F4.231` adds races 3 to 8 and
- * case 9 (the empty-ring `undo` and the typed confirm); `F4.235` adds 14 and 15
- * (the PATCH draft).
+ * (the empty-ring `undo`); `F4.235` adds 14 and 15 (the PATCH draft). `F3.86` PR 7
+ * retired the typed confirm, so races 5 to 8 and case 9 are gone; the numbers
+ * of the others are kept.
  */
 const connectionString = requireIntegrationDb({
   item: "F4.227",
@@ -173,42 +165,13 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
       { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
       { listExisting: async () => ({ rows: [], total: 0 }) } as never,
     );
-    // F4.231: the typed confirm's commit service. In a race it must not touch
-    // the row (the holder holds it); in case 9 it marks the row committed, as
-    // `commitWith`'s own transaction does, before the confirm writes.
-    const commitStub = {
-      mode: "touch-nothing" as "touch-nothing" | "mark-committed",
-      commitProposed: async (_jwt: unknown, sessionId: string) => {
-        if (commitStub.mode === "mark-committed") {
-          await withTenant(tenantDb, organizationId, (tx) =>
-            tx
-              .update(onboardingSessions)
-              .set({ status: "committed", committedAt: sql`now()`, checkpoints: null })
-              .where(eq(onboardingSessions.id, sessionId)),
-          );
-        }
-        return {
-          sessionId,
-          locationId: "x",
-          rtuIds: [],
-          assetIds: [],
-          pointKeyIds: [],
-          assetPointIds: [],
-          templateIds: [],
-          templatedAssetCount: 0,
-          templatedAssetPointCount: 0,
-          seededRuleCount: 0,
-          dashboardCount: 0,
-        };
-      },
-    };
     const service = new OnboardingService(
       fleetDb,
       tenantDb,
       new AccessControlService(authDb, fleetDb),
       chat,
       new OnboardingValidateService(),
-      commitStub as never,
+      {} as never, // the commit service: no race here reaches it (the typed confirm is retired, F3.86 PR 7)
       EXCEL_STUB as never,
       CATALOG_STUB as never,
       vocabularies as never,
@@ -250,9 +213,6 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
       );
       return res.rowCount;
     };
-    const withProposal = (suffix: string, hash: string) =>
-      attachCommitProposal(seededDraft(suffix), { draftHash: hash, summary: "proposed", proposedAt: new Date().toISOString() });
-    const staleHash = "0".repeat(64);
 
     const changedId = await seedSession("CHG");
     ctx.changed = await raceTheChatWrite(ctx, changedId, "race 1 (draft changed)", changeTheName(changedId));
@@ -277,51 +237,6 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
       changeTheName(undoChangedId),
       UNDO_TURN,
     );
-
-    const noProposalId = await seedSession("CNP");
-    ctx.confirmNoProposal = await raceTheChatWrite(
-      ctx,
-      noProposalId,
-      "race 5 (confirm, no proposal, message committed under the lock)",
-      appendAMessage(noProposalId),
-      CONFIRM_TURN,
-    );
-
-    const staleChangedId = await seedSession("CSC", withProposal("CSC", staleHash));
-    ctx.confirmStaleChanged = await raceTheChatWrite(
-      ctx,
-      staleChangedId,
-      "race 6 (confirm, stale proposal, draft changed)",
-      changeTheName(staleChangedId),
-      CONFIRM_TURN,
-    );
-
-    const staleKeptId = await seedSession("CSK", withProposal("CSK", staleHash));
-    ctx.confirmStaleKept = await raceTheChatWrite(
-      ctx,
-      staleKeptId,
-      "race 7 (confirm, stale proposal, message committed under the lock)",
-      appendAMessage(staleKeptId),
-      CONFIRM_TURN,
-    );
-
-    const commitKeptId = await seedSession("CCK", withProposal("CCK", draftHash(seededDraft("CCK"))!));
-    commitStub.mode = "touch-nothing";
-    ctx.confirmCommitKept = await raceTheChatWrite(
-      ctx,
-      commitKeptId,
-      "race 8 (committing confirm, message committed under the lock)",
-      appendAMessage(commitKeptId),
-      CONFIRM_TURN,
-    );
-
-    const committedId = await seedSession("CCM", withProposal("CCM", draftHash(seededDraft("CCM"))!));
-    commitStub.mode = "mark-committed";
-    try {
-      ctx.confirmCommitted = await runTheChatTurn(ctx, committedId, CONFIRM_TURN);
-    } finally {
-      commitStub.mode = "touch-nothing";
-    }
 
     const uploadKeptId = await seedSession("UPK");
     ctx.uploadKept = await raceTheChatWrite(
@@ -442,22 +357,6 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
     assertAnUndoOverAChangedDraftAnswers409(ctx);
   });
 
-  it("race 5 — a confirm with no proposal keeps a message committed under the lock", () => {
-    assertAConfirmWithNoProposalKeepsAMessageCommittedUnderTheLock(ctx);
-  });
-
-  it("race 6 — a stale confirm over a draft changed under the lock answers 409; the newer draft and its proposal stand", () => {
-    assertAStaleConfirmOverAChangedDraftAnswers409(ctx);
-  });
-
-  it("race 7 — a stale confirm keeps a message committed under the lock and clears the proposal", () => {
-    assertAStaleConfirmKeepsAMessageCommittedUnderTheLock(ctx);
-  });
-
-  it("race 8 — a committing confirm keeps a message committed under the lock", () => {
-    assertACommittingConfirmKeepsAMessageCommittedUnderTheLock(ctx);
-  });
-
   it("race 10 control — the upload blocked on the holder's FOR UPDATE until it committed", () => {
     assertTheUploadWaitedOnTheHolder(ctx);
   });
@@ -498,7 +397,4 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
     assertAPatchOverAChangedDraftStillWrites(ctx);
   });
 
-  it("case 9 — a committing confirm appends its messages to the row its own commit marked committed", () => {
-    assertACommittingConfirmAppendsToTheCommittedRow(ctx);
-  });
 });

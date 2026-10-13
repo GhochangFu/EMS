@@ -37,7 +37,6 @@ export const COPILOT_APP_ROUTE_TEMPLATES: readonly string[] = [
   "/cr-env",
   "/admin",
   "/admin/organizations",
-  "/admin/organizations/:orgId/onboarding",
   "/admin/organizations/:orgId/ai-assistant",
   "/admin/organizations/:orgId/locations",
   "/admin/locations",

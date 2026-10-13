@@ -1,58 +1,23 @@
 import { describe, it } from "vitest";
 
 import {
-  assertACommitRefusalIsAReplyNotAThrow,
-  assertACoreConflictIsAReplyNotAThrow,
-  assertAMatchingProposalCommitsOnce,
-  assertConfirmCommitWithAFullStopDoesNotCommit,
+  assertTheTypedPhraseIsAnOrdinaryTurn,
   assertANonProposingTurnClearsTheProposal,
   assertAProposingTurnStoresAHashOfTheStoredDraft,
   assertAProposingTurnOffersOnlyViewDraft,
   assertTheCredentialRefusalOffersOnlyViewDraft,
-  assertAStaleProposalIsClearedAndNotCommitted,
   assertActionLinesAreStoredBetweenUserAndAssistant,
-  assertConfirmWithNoProposalRepliesWithoutAModelCall,
   assertPatchDraftClearsTheProposal,
   assertScrubMessagesKeepsTheActionRole,
   assertSetCredentialsClearsTheProposal,
-  assertTheConfirmLineNamesTheTemplateCounts,
   assertTheCredentialRefusalStillAnswersFirst,
   assertHistoryAndActionLinesAreScrubbed,
-  assertThePhraseInTheSkillCommitsNothing,
 } from "./onboarding-chat-confirm.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
 describe("OnboardingService.chat — the confirm path and action messages (F3.21, ADR 0090 decisions 5, 6)", () => {
-  it("replies without a model call when no commit is proposed", async () => {
-    await assertConfirmWithNoProposalRepliesWithoutAModelCall();
-  });
-
-  it("clears a stale proposal and does not commit", async () => {
-    await assertAStaleProposalIsClearedAndNotCommitted();
-  });
-
-  it("commits once on a matching proposal", async () => {
-    await assertAMatchingProposalCommitsOnce();
-  });
-
-  it("F4.199: does not commit on confirm commit. with a full stop", async () => {
-    await assertConfirmCommitWithAFullStopDoesNotCommit();
-  });
-
-  it("F3.86: commits nothing on the phrase in the copilot's skill (commitByPhrase: false)", async () => {
-    await assertThePhraseInTheSkillCommitsNothing();
-  });
-
-  it("names the template counts in the confirm line (F3.22, ADR 0091 d4)", async () => {
-    await assertTheConfirmLineNamesTheTemplateCounts();
-  });
-
-  it("answers a commit refusal as a reply", async () => {
-    await assertACommitRefusalIsAReplyNotAThrow();
-  });
-
-  it("answers a template core's 409 as a reply (F3.22)", async () => {
-    await assertACoreConflictIsAReplyNotAThrow();
+  it("F3.86 PR 7: the typed phrase is an ordinary turn and commits nothing", async () => {
+    await assertTheTypedPhraseIsAnOrdinaryTurn();
   });
 
   it("still answers a credential-looking message with the refusal", async () => {

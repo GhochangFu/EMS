@@ -1,5 +1,5 @@
 import { ForbiddenException, HttpException, NotFoundException } from "@nestjs/common";
-import { expect } from "vitest";
+import { expect, vi } from "vitest";
 
 import type { JwtPayload, OnboardingChatMessage, OnboardingChatResponseDto, OnboardingSessionDto } from "@bms/shared";
 
@@ -73,8 +73,8 @@ export function fakeOnboarding(options: FakeOptions = {}) {
       calls.getSession.push(args);
       return sessionDto(options.status ?? "draft", [OPENING]);
     },
-    chat: async (jwt: JwtPayload, id: string, message: string, chatOptions) => {
-      calls.chat.push([jwt, id, message, chatOptions]);
+    chat: async (jwt: JwtPayload, id: string, message: string) => {
+      calls.chat.push([jwt, id, message]);
       const response: OnboardingChatResponseDto = {
         assistantMessage: "Added RTU-1.",
         session: sessionDto("draft", [OPENING, ...added(message)]),
@@ -94,11 +94,11 @@ function skillHarness(fake = fakeOnboarding(), options: Parameters<typeof harnes
   return { ...h, llm, fake, turn };
 }
 
-/** A skill turn is the onboarding's: `chat` once with `commitByPhrase: false`, the copilot's model never. */
+/** A skill turn is the onboarding's: `chat` once with the message as typed, the copilot's model never. */
 export async function aSkillTurnRunsTheOnboardingChatOnce(): Promise<void> {
   const h = skillHarness();
   const response = await h.turn("Add an MQTT RTU named RTU-1");
-  expect(h.fake.calls.chat).toEqual([[JWT, SESSION, "Add an MQTT RTU named RTU-1", { commitByPhrase: false }]]);
+  expect(h.fake.calls.chat).toEqual([[JWT, SESSION, "Add an MQTT RTU named RTU-1"]]);
   expect(h.llm.calls).toBe(0);
   expect(response.outcome).toBe("answered");
   expect(response.reply).toBe("Added RTU-1.");
@@ -140,11 +140,23 @@ export async function aSkillTurnIsCountedOnce(): Promise<void> {
   expect(h.counts.consumeTurn.map((c) => c.organizationId)).toEqual([ORG_X]);
 }
 
-/** The typed phrase goes to `chat` with `commitByPhrase: false` (the onboarding spec pins that it commits nothing). */
-export async function theCommitPhraseInASkillTurnIsNotACommit(): Promise<void> {
-  const h = skillHarness();
-  await h.turn("confirm commit");
-  expect(h.fake.calls.chat[0]?.[3]).toEqual({ commitByPhrase: false });
+/**
+ * `F3.86` PR 7 (ruling Q5): the typed phrase is retired. A skill turn of "confirm commit" is an ordinary
+ * turn — it goes through `chat()` as typed, and nothing commits and no card is proposed. The seam has no
+ * commit method; a spy under both names a caller could reach proves none runs (the adjacent positive:
+ * `chat` ran once with the phrase, and the turn answered).
+ */
+export async function theTypedCommitPhraseInASkillTurnCommitsNothing(): Promise<void> {
+  const fake = fakeOnboarding();
+  const commit = vi.fn();
+  Object.assign(fake.skill, { commit, commitProposed: commit });
+  const h = skillHarness(fake);
+  const response = await h.turn("confirm commit");
+  expect(h.fake.calls.chat).toEqual([[JWT, SESSION, "confirm commit"]]);
+  expect(response.outcome).toBe("answered");
+  expect(commit).not.toHaveBeenCalled();
+  expect(h.proposed).toEqual([]);
+  expect(response.pendingChanges).toEqual([]);
 }
 
 /** The stored turn: the user message, this turn's action lines, the reply — with the organization's provenance. */

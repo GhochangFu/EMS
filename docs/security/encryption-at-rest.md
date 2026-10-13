@@ -72,7 +72,7 @@ and keys) are encrypted before they reach the database.
   version, `security/credential-rotation.service.ts` decrypts each row it
   rotates so it can re-encrypt it (both since ADR 0062), and
   `llm/llm-resolver.ts` `decryptKey` (moved from onboarding by `F3.85`) decrypts the
-  organization LLM key on every onboarding chat turn and for the AI-assistant
+  organization LLM key on every onboarding turn (the copilot dock's onboarding skill since `F3.86` PR 7; the old chat route is gone) and for the AI-assistant
   Test button (ADR 0090 Amendment 1). Onboarding commit still only moves
   ciphertext and IV across tables — it does not decrypt.
 - **Client exposure — read this before concluding secrets are contained.** The
@@ -85,7 +85,7 @@ and keys) are encrypted before they reach the database.
   importantly, `GET /admin/onboarding/sessions/:id` returns `messages`
   **verbatim** (`onboarding.service.ts:339`), and the wizard actively asks the
   admin to paste credentials into that transcript. So a credential typed into
-  onboarding chat **is** served back in cleartext to any holder of a valid JWT
+  onboarding skill's chat **is** served back in cleartext to any holder of a valid JWT
   — the controller carries `@UseGuards(JwtAuthGuard)` and no role or org check
   (`onboarding.controller.ts:33`). See §5.1.
 

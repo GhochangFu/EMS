@@ -44,7 +44,6 @@ import { OrganizationsAdminPage } from "./pages/admin/organizations-page";
 import { EscalationProfilesPage } from "./pages/admin/escalation-profiles-page";
 import { NotificationChannelsPage } from "./pages/admin/notification-channels-page";
 import { NotificationDeliveriesPage } from "./pages/admin/notification-deliveries-page";
-import { OnboardingChatPage } from "./pages/admin/onboarding-chat-page";
 import { AiAssistantPage } from "./pages/admin/ai-assistant-page";
 import { AssetGroupsAdminPage } from "./pages/admin/asset-groups-page";
 import { UsersAdminPage } from "./pages/admin/users-page";
@@ -463,18 +462,6 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <OrganizationsAdminPage user={user} />
-            </AdminRoute>
-          ) : (
-            <Navigate to="/login" replace />
-          )
-        }
-      />
-      <Route
-        path="/admin/organizations/:orgId/onboarding"
-        element={
-          accessToken && user ? (
-            <AdminRoute user={user}>
-              <OnboardingChatPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

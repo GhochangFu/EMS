@@ -5,7 +5,6 @@ import {
   attachCommitProposal,
   commitSummary,
   draftHash,
-  isConfirmCommitPhrase,
   readCommitProposal,
   withoutCommitProposal,
 } from "./onboarding-commit-proposal";
@@ -42,15 +41,6 @@ function readyDraft(): OnboardingDraft {
     assets: [{ rtuIndex: 0, code: "BERHAMPUR-ASSET-1", name: "Meter", siteName: "Berhampur", domain: "electrical" }],
     assetPoints: [{ assetIndex: 0, pointKey: "kw", sourceDataKey: "s01", unit: "kW" }],
   } as OnboardingDraft;
-}
-
-/** The phrase is matched exactly, after trim and case-folding, and nothing else. */
-export function assertConfirmPhraseIsExact(): void {
-  assert(isConfirmCommitPhrase("confirm commit"), "the bare phrase confirms");
-  assert(isConfirmCommitPhrase("  Confirm Commit \n"), "surrounding space and case do not matter");
-  for (const near of ["confirm commit please", "yes", "commit", "**confirm commit**", "confirm  commit", "please confirm commit"]) {
-    assert(!isConfirmCommitPhrase(near), `"${near}" is not the confirm phrase`);
-  }
 }
 
 /** jsonb does not keep key order, so the hash must not depend on it. */

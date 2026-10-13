@@ -34,15 +34,8 @@ import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.
 import { OnboardingExcelService } from "./onboarding-excel.service";
 import { looksLikeCredential, scrubMessages } from "./onboarding-credential-detect";
 import {
-  CONFIRM_CARD_COMMIT_REPLY,
-  NO_PROPOSAL_REPLY,
-  STALE_PROPOSAL_REPLY,
   attachCommitProposal,
-  countOf,
   draftHash,
-  isConfirmCommitPhrase,
-  readCommitProposal,
-  withoutCommitProposal,
 } from "./onboarding-commit-proposal";
 import {
   NOTHING_TO_UNDO_REPLY,
@@ -249,14 +242,14 @@ export class OnboardingService {
   }
 
   /**
-   * Processes a user chat message. `commitByPhrase: false` is the copilot's
-   * onboarding skill (`F3.86` PR 5): the typed phrase commits nothing there.
+   * Processes a user chat message. Called by the copilot's onboarding skill
+   * (`F3.86`); the route that took a typed message is retired (ruling Q5), and
+   * no phrase commits: only the commit route or the Confirm card does.
    */
   async chat(
     jwt: JwtPayload,
     sessionId: string,
     message: string,
-    options: { readonly commitByPhrase?: boolean } = {},
   ): Promise<OnboardingChatResponseDto> {
     const session = await this.loadSession(jwt, sessionId);
     if (session.status !== "draft") {
@@ -267,8 +260,8 @@ export class OnboardingService {
     const expectedHash = draftHash(session.draft);
 
     // ADR 0022 decision 2. Checked before ANY side effect: the turn is not
-    // stored in `messages` and never reaches the model (`F3.21`: nor the
-    // confirm check, which runs after this). Returning a
+    // stored in `messages` and never reaches the model (nor the undo
+    // match, which runs after this). Returning a
     // normal chat response rather than a 400 keeps the wizard usable — the
     // user is told where the credentials field is instead of hitting an error.
     if (looksLikeCredential(message)) {
@@ -289,17 +282,6 @@ export class OnboardingService {
         autoOpenPreview: false,
         autoOpenReason: undefined,
       };
-    }
-
-    // F3.21 (ADR 0090 decision 5): the confirm phrase is matched by code,
-    // after the credential refusal and before any model call. The model is
-    // not on the commit path at all.
-    if (isConfirmCommitPhrase(message)) {
-      if (options.commitByPhrase === false) {
-        // Stores and changes nothing: in the skill the Confirm card is the one way to commit.
-        return { assistantMessage: CONFIRM_CARD_COMMIT_REPLY, session: await this.mapSessionWithOrg(session), suggestedReplies: [] };
-      }
-      return this.confirmCommit(jwt, session, message);
     }
 
     // F3.25 (ADR 0094 decision 6): the undo phrase is matched by code too —
@@ -716,121 +698,6 @@ export class OnboardingService {
     if (!(await this.accessControl.canManageOrganization(jwt, organizationId))) {
       throw new ForbiddenException("Organization is outside your access scope");
     }
-  }
-
-  /**
-   * The typed confirm (ADR 0090 decision 5). No proposal: say so and change
-   * nothing. A proposal whose hash no longer matches the stored draft: clear it
-   * and do not commit. A match: the existing commit service commits, with its
-   * own access checks, caps, transaction and audit rows. A refusal from it is a
-   * reply, not a 400 (plan ruling 5); access errors still propagate.
-   *
-   * Every branch writes under `FOR UPDATE` and builds `messages` on the locked
-   * row; the non-commit branches are hash-bound as `chat` is (`F4.231`); the
-   * commit branch takes its lock after the commit service's own transaction
-   * has committed, so it checks only that the row exists.
-   */
-  private async confirmCommit(
-    jwt: JwtPayload,
-    session: typeof onboardingSessions.$inferSelect,
-    message: string,
-  ): Promise<OnboardingChatResponseDto> {
-    // Taken before any collaborator runs, as in `chat`.
-    const expectedHash = draftHash(session.draft);
-    const proposal = readCommitProposal(session.draft);
-    const stale = proposal !== null && expectedHash !== proposal.draftHash;
-    let reply: string;
-    let actionLine: string | null = null;
-    let committed = false;
-    // The stale and refused branches clear the proposal, from the locked row.
-    let clearProposal = false;
-    if (proposal === null) {
-      reply = NO_PROPOSAL_REPLY;
-    } else if (stale) {
-      reply = STALE_PROPOSAL_REPLY;
-      clearProposal = true;
-    } else {
-      try {
-        const result = await this.commitService.commitProposed(jwt, session.id, proposal.draftHash);
-        committed = true;
-        const name = (session.draft as OnboardingDraft).location?.name ?? "";
-        // F3.22 (ADR 0091 decision 4): the template part of the result too.
-        // `assetIds` holds every asset, so "(N from templates)" says how many
-        // of them the instantiate core built; "dashboards" counts the views it
-        // wrote, as `dashboardCount` does.
-        actionLine =
-          `Committed: location ${name}, ${countOf(result.rtuIds.length, "RTU")}, ` +
-          `${countOf(result.pointKeyIds.length, "point key")}, ${countOf(result.templateIds.length, "template")} published, ` +
-          `${countOf(result.assetIds.length, "asset")} (${result.templatedAssetCount} from templates), ` +
-          `${countOf(result.assetPointIds.length, "mapping")}, ${countOf(result.seededRuleCount, "seeded rule")}, ` +
-          countOf(result.dashboardCount, "dashboard");
-        reply = "Committed. The location, RTUs, assets and mappings are created.";
-      } catch (error) {
-        // F3.22 (ADR 0091 decision 4): the template cores refuse with a 409 — a
-        // taken asset or rule code, an open draft — and that is a refusal the
-        // operator can act on, so it is a reply too. Anything else still throws.
-        if (!(error instanceof BadRequestException || error instanceof ConflictException)) {
-          throw error;
-        }
-        reply = `Commit refused: ${error.message}`;
-        clearProposal = true;
-      }
-    }
-    const added = [
-      this.chatService.createMessage("user", message),
-      ...(actionLine ? [this.chatService.createMessage("action", actionLine)] : []),
-      this.chatService.createMessage("assistant", reply),
-    ];
-    const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
-      // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
-      const locked = await lockSession(tx, session.id);
-      if (committed) {
-        // The row is `committed` by this very call: a draft-status guard here
-        // would refuse its own commit, and a `status = 'draft'` predicate
-        // would match nothing. Only "the row exists".
-        if (!locked) {
-          throw new NotFoundException("Onboarding session not found");
-        }
-      } else {
-        // No proposal, stale, refused: the same re-checks as `chat`. A stale
-        // proposal is not re-evaluated on the locked row (ADR 0090 decision 5).
-        assertTurnStillBound(locked, expectedHash);
-      }
-      const messages = [...(locked.messages as OnboardingChatMessage[]), ...added];
-      const [row] = await tx
-        .update(onboardingSessions)
-        .set({
-          ...(clearProposal ? { draft: withoutCommitProposal(locked.draft) } : {}),
-          messages,
-          updatedAt: sql`now()`,
-        })
-        .where(
-          committed
-            ? eq(onboardingSessions.id, session.id)
-            : and(eq(onboardingSessions.id, session.id), eq(onboardingSessions.status, "draft")),
-        )
-        .returning();
-      return row;
-    });
-    if (!updated) {
-      throw committed
-        ? new NotFoundException("Onboarding session not found")
-        : new ConflictException(SESSION_NO_LONGER_DRAFT);
-    }
-    const [org] = await this.tenantDb
-      .select({ code: organizations.code, name: organizations.name })
-      .from(organizations)
-      .where(eq(organizations.id, session.organizationId))
-      .limit(1);
-    return {
-      assistantMessage: reply,
-      session: this.mapSession(updated, org?.code ?? "", org?.name ?? ""),
-      suggestedReplies: committed ? [] : ["View draft"],
-      validationErrors: [],
-      readyToCommit: false,
-      autoOpenPreview: false,
-      autoOpenReason: undefined,
-    };
   }
 
   /**

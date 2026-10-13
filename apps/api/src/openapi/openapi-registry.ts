@@ -67,7 +67,6 @@ import {
   updateMimicOrgSymbolLibraryBodySchema,
 } from "../mimic-symbol-libraries/mimic-symbol-libraries.schema";
 import {
-  chatBodySchema,
   createSessionBodySchema,
   patchDraftBodySchema,
   rollbackBodySchema,
@@ -342,7 +341,6 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   CalcParametersAdminController_create: createCalcParameterBodySchema,
   CalcParametersAdminController_list: listCalcParametersQuerySchema,
   CalcParametersAdminController_update: updateCalcParameterBodySchema,
-  OnboardingController_chat: chatBodySchema,
   OnboardingController_createSession: createSessionBodySchema,
   OnboardingController_patchDraft: patchDraftBodySchema,
   OnboardingController_rollback: rollbackBodySchema,

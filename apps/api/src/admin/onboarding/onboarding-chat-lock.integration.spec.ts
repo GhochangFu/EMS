@@ -4,7 +4,6 @@ import { expect } from "vitest";
 
 import type { OnboardingDraft } from "@bms/shared";
 
-import { COMMIT_PROPOSAL_KEY } from "./onboarding-commit-proposal";
 import { DRAFT_CHANGED_DURING_TURN, SESSION_NO_LONGER_DRAFT, type OnboardingService } from "./onboarding.service";
 
 /**
@@ -19,11 +18,10 @@ import { DRAFT_CHANGED_DURING_TURN, SESSION_NO_LONGER_DRAFT, type OnboardingServ
  * polled until it waits on the holder, and the holder then commits — with a
  * draft change (`race 1`) or without one (`race 2`, the adjacent positive).
  *
- * `F4.231` races the empty-ring `undo` (races 3, 4) and the typed confirm
- * (races 5 to 8) the same way: a holder that appends a message shows the write
- * is built on the locked row; a holder that changes the draft shows the hash
- * re-check. Case 9 is not a race: the commit branch writes to the row its own
- * commit just marked `committed`.
+ * `F4.231` races the empty-ring `undo` (races 3, 4) the same way: a holder that
+ * appends a message shows the write is built on the locked row; a holder that
+ * changes the draft shows the hash re-check. (`F3.86` PR 7 retired the typed
+ * confirm, so its races 5 to 8 and case 9 are gone; the others keep their numbers.)
  *
  * `F4.233` races the Excel upload (10, 11) and the credential route (12, 13)
  * the same way. Race 11 is gated by the `status = 'draft'` predicate AND the
@@ -46,8 +44,6 @@ export const APPEND_TURN = "Add another RTU";
  */
 const BLOCK_WAIT_MS = 15_000;
 
-/** The typed confirm (ADR 0090 decision 5): `F4.231` races it as it races the turn. */
-export const CONFIRM_TURN = "confirm commit";
 
 /** The empty-ring `undo` (ADR 0094 decision 6). */
 export const UNDO_TURN = "undo";
@@ -93,16 +89,6 @@ export type ChatLockCtx = {
   undoKept: RaceOutcome;
   /** Race 4: an empty-ring `undo`; the holder changes the draft. */
   undoChanged: RaceOutcome;
-  /** Race 5: a confirm with no proposal; the holder appends a message. */
-  confirmNoProposal: RaceOutcome;
-  /** Race 6: a confirm over a stale proposal; the holder changes the draft. */
-  confirmStaleChanged: RaceOutcome;
-  /** Race 7: a confirm over a stale proposal; the holder appends a message. */
-  confirmStaleKept: RaceOutcome;
-  /** Race 8: a committing confirm (the commit stub touches nothing); the holder appends a message. */
-  confirmCommitKept: RaceOutcome;
-  /** Case 9, no race: a committing confirm whose commit stub marks the row committed. */
-  confirmCommitted: RaceOutcome;
   /** Race 10: an Excel upload; the holder appends a message. */
   uploadKept: RaceOutcome;
   /** Race 11: an Excel upload; the holder marks the row committed. */
@@ -298,12 +284,7 @@ export function assertAnUnchangedDraftLetsTheTurnWrite(ctx: ChatLockCtx): void {
   expect(stored.draft.location?.name).toBe(ctx.seededName);
 }
 
-/** The roles of the stored messages, comma-joined. */
-function rolesOf(stored: StoredSession): string {
-  return stored.messages.map((m) => m.role).join(",");
-}
-
-/** Races 3, 5, 7, 8 share the claim: the turn waited, then wrote on top of the holder's message. */
+/** Race 3 holds the claim: the turn waited, then wrote on top of the holder's message. */
 function expectTheHolderMessageKept(ctx: ChatLockCtx, outcome: RaceOutcome, appended: number): void {
   const { error, resolved, stored } = outcome;
   expect(error, "the turn refused an unchanged draft").toBeUndefined();
@@ -341,62 +322,6 @@ export function assertAnUndoOverAChangedDraftAnswers409(ctx: ChatLockCtx): void 
   expect((error as ConflictException).message).toBe(DRAFT_CHANGED_DURING_TURN);
   expect(stored.messageCount, "no message was appended").toBe(0);
   expect(stored.draft.location?.name, "the holder's committed name").toBe(ctx.holderName);
-}
-
-/** Race 5: a confirm with no proposal waited on the holder and kept its message. */
-export function assertAConfirmWithNoProposalKeepsAMessageCommittedUnderTheLock(ctx: ChatLockCtx): void {
-  const outcome = ctx.confirmNoProposal;
-  expect(outcome.hit, "control: the holder's UPDATE hit the session row").toBe(1);
-  expect(outcome.blocked, "control: a backend waited on the holder in a FOR UPDATE").toBeGreaterThan(0);
-  expect(outcome.settledBeforeCommit, "the confirm settled while the holder still held the lock").toBe(false);
-  expectTheHolderMessageKept(ctx, outcome, 2);
-  expect(COMMIT_PROPOSAL_KEY in (outcome.stored.draft as object), "no proposal was stored").toBe(false);
-  expect(outcome.stored.status).toBe("draft");
-}
-
-/** Race 6: a stale confirm over a draft changed under the lock answers 409; the newer draft and its proposal stand. */
-export function assertAStaleConfirmOverAChangedDraftAnswers409(ctx: ChatLockCtx): void {
-  const { blocked, error, hit, resolved, settledBeforeCommit, stored } = ctx.confirmStaleChanged;
-  expect(hit, "control: the holder's UPDATE hit the session row").toBe(1);
-  expect(blocked, "control: a backend waited on the holder in a FOR UPDATE").toBeGreaterThan(0);
-  expect(settledBeforeCommit, "the stale confirm settled while the holder still held the lock").toBe(false);
-  expect(resolved, "the stale confirm wrote over the holder's draft instead of refusing").toBe(false);
-  expect(error).toBeInstanceOf(ConflictException);
-  expect((error as ConflictException).getStatus()).toBe(409);
-  expect((error as ConflictException).message).toBe(DRAFT_CHANGED_DURING_TURN);
-  expect(stored.draft.location?.name, "the holder's committed name").toBe(ctx.holderName);
-  expect(COMMIT_PROPOSAL_KEY in (stored.draft as object), "the stored proposal was not cleared").toBe(true);
-  expect(stored.messageCount, "no message was appended").toBe(0);
-}
-
-/** Race 7: a stale confirm waited on the holder, kept its message and cleared the proposal. */
-export function assertAStaleConfirmKeepsAMessageCommittedUnderTheLock(ctx: ChatLockCtx): void {
-  const outcome = ctx.confirmStaleKept;
-  expect(outcome.hit, "control: the holder's UPDATE hit the session row").toBe(1);
-  expect(outcome.blocked, "control: a backend waited on the holder in a FOR UPDATE").toBeGreaterThan(0);
-  expect(outcome.settledBeforeCommit, "the stale confirm settled while the holder still held the lock").toBe(false);
-  expectTheHolderMessageKept(ctx, outcome, 2);
-  expect(COMMIT_PROPOSAL_KEY in (outcome.stored.draft as object), "the stale proposal was cleared").toBe(false);
-  expect(outcome.stored.draft.location?.name).toBe(ctx.seededName);
-}
-
-/** Race 8: a committing confirm takes its lock after the commit and keeps a message committed under it. */
-export function assertACommittingConfirmKeepsAMessageCommittedUnderTheLock(ctx: ChatLockCtx): void {
-  const outcome = ctx.confirmCommitKept;
-  expect(outcome.blocked, "control: a backend waited on the holder in a FOR UPDATE").toBeGreaterThan(0);
-  expect(outcome.settledBeforeCommit, "the confirm settled while the holder still held the lock").toBe(false);
-  expectTheHolderMessageKept(ctx, outcome, 3);
-  expect(rolesOf(outcome.stored).endsWith("user,action,assistant"), rolesOf(outcome.stored)).toBe(true);
-}
-
-/** Case 9: a committing confirm appends to the row its own commit marked `committed`. */
-export function assertACommittingConfirmAppendsToTheCommittedRow(ctx: ChatLockCtx): void {
-  const { error, resolved, stored } = ctx.confirmCommitted;
-  expect(error, "the confirm refused its own commit").toBeUndefined();
-  expect(resolved).toBe(true);
-  expect(stored.status).toBe("committed");
-  expect(stored.messageCount, "user, action and assistant messages were appended").toBe(3);
-  expect(rolesOf(stored)).toBe("user,action,assistant");
 }
 
 function expectA409(outcome: RaceOutcome, sentence: string): void {

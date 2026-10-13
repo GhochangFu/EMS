@@ -17,7 +17,8 @@ import {
 /**
  * The commit proposal (`F3.21`, ADR 0090 decision 5): **the model cannot
  * commit.** `propose_commit` records a proposal; server code commits only when
- * the next user turn is the confirm phrase (or the Commit button), and only when
+ * the administrator uses the Commit button of the draft preview or the Confirm
+ * card of the copilot (`F3.86`; the typed phrase retired in PR 7), and only when
  * the stored draft still hashes to the value the proposal was bound to.
  *
  * The proposal lives at the top level of `onboarding_sessions.draft`, beside
@@ -29,26 +30,10 @@ import {
  * change clears it.
  */
 
-export const CONFIRM_COMMIT_PHRASE = "confirm commit";
-
-/** `F3.86` PR 5 (ADR 0099 decision 7): the phrase's answer in the copilot's skill, where only the Confirm card commits. */
-export const CONFIRM_CARD_COMMIT_REPLY = "Use the Confirm card to commit.";
-
 export const COMMIT_PROPOSAL_KEY = "_commitProposal";
 
 /** Bounds the stored summary; `commitSummary` stays far below it. */
 export const MAX_COMMIT_SUMMARY_CHARS = 4_000;
-
-/**
- * True in both modes (code review): in the guided mode, the default, nothing
- * can propose, so the reply points at the Commit button first.
- */
-export const NO_PROPOSAL_REPLY =
-  "Nothing has been proposed for commit. Open the preview and use the **Commit** button to commit the draft. " +
-  "When the AI assistant is on, it can also propose the commit for you to confirm here.";
-
-export const STALE_PROPOSAL_REPLY =
-  "The draft changed after the commit was proposed, so I have not committed it. Ask me to propose the commit again.";
 
 export const commitProposalSchema = z
   .object({
@@ -59,15 +44,6 @@ export const commitProposalSchema = z
   .strict();
 
 export type CommitProposal = z.infer<typeof commitProposalSchema>;
-
-/**
- * Exact, after trim and case-folding. No prefix, no markdown stripping, no
- * regex: a near-miss is an ordinary turn and goes to the model, which cannot
- * commit.
- */
-export function isConfirmCommitPhrase(message: string): boolean {
-  return message.trim().toLowerCase() === CONFIRM_COMMIT_PHRASE;
-}
 
 /** A shallow copy of `draft` without the proposal key. */
 export function withoutCommitProposal<T>(draft: T): T {

@@ -58,7 +58,7 @@ report findings with evidence.
    `CREDENTIAL_CHECKED_TOOLS`, so every label, source-key pattern and variable
    value is walked by `looksLikeCredential`, and `patternGrammarProblem` runs
    at the tool and again in the validate service. No tool publishes: within
-   the onboarding chat only a commit (the Commit button or `confirm commit`)
+   the onboarding skill only a commit (the Commit button of the draft preview, or Confirm on the copilot's commit card; the typed `confirm commit` is retired, `F3.86` PR 7)
    reaches `publishInTransaction`, through `onboarding-commit-templates.ts`
    and after `assertCanAuthor`; the publish route is its other caller.
    `onboarding-template-catalog.service.ts` reads `asset_templates` and

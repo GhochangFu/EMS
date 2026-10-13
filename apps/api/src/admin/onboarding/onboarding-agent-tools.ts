@@ -284,7 +284,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
     "Sets whether the draft uses the existing point-key catalog instead of declaring new keys. `true` is refused when the catalog holds no active `kw`.",
   validate_draft: "Validates the draft and returns the errors and whether it is ready to commit.",
   propose_commit:
-    "Proposes the commit of a ready draft. You cannot commit: the user confirms with the Commit button or by typing `confirm commit`.",
+    "Proposes the commit of a ready draft. You cannot commit: the user uses Commit in the draft preview, or Confirm on the copilot's commit card.",
   suggest_replies:
     "Offers up to 4 short replies the user can click to answer your question. Use it when you ask the user to choose. It changes nothing in the draft.",
 };
@@ -651,7 +651,7 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       const summary = commitSummary(draft, ctx.templates);
       state.pendingProposal = { summary };
       return succeed(
-        { proposed: true, summary, next: "Tell the user to type `confirm commit` or use the Commit button. You cannot commit." },
+        { proposed: true, summary, next: "Tell the user to use Commit in the draft preview, or Confirm on the copilot's commit card. You cannot commit." },
         `Proposed commit: ${summary}`,
       );
     }

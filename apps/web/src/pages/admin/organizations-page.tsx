@@ -11,6 +11,7 @@ import {
   reactivateAdminOrganization,
   updateAdminOrganization,
 } from "../../api/admin/organizations";
+import { fetchCopilotStatus } from "../../api/copilot";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
 import { CopilotOrgSwitch } from "../../components/admin/copilot-org-switch";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
@@ -25,6 +26,7 @@ import {
 } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
+import { useCopilotStore } from "../../stores/copilot-store";
 
 type OrganizationsAdminPageProps = {
   user: AuthUser;
@@ -55,11 +57,24 @@ function organizationTimezoneOptions(): string[] {
 /** Organization master data list with drill-down to locations. */
 export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const navigate = useNavigate();
+  // `F3.86` PR 7: "Onboard with AI" asks the copilot dock to start the onboarding skill; it no longer navigates.
+  const requestOnboarding = useCopilotStore((s) => s.requestOnboarding);
   const queryClient = useQueryClient();
   const canWrite = canWriteOrganizations(user.role);
   const canOnboard = canAccessOnboarding(user.role);
   const canManageAi = canManageAiAssistant(user.role);
   const canSwitchCopilot = isGlobalAdmin(user.role);
+  // `F3.86` PR 7 (ruling Q4): below the global administrator the dock mounts only when its home
+  // status is available (`copilot-dock.tsx` `AvailableDock`, the same query key), so the button
+  // shows only then — otherwise no dock would take the request. The global administrator's
+  // cross-organization status is always available; the dock answers an organization that is off.
+  const homeCopilot = useQuery({
+    queryKey: ["copilot", "status", "home"],
+    queryFn: () => fetchCopilotStatus(),
+    staleTime: 60_000,
+    enabled: canOnboard && !isGlobalAdmin(user.role),
+  });
+  const onboardReachable = isGlobalAdmin(user.role) || homeCopilot.data?.available === true;
   const [activeFilter, setActiveFilter] = useState<MasterDataActiveFilter>("all");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -217,13 +232,11 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                       </td>
                       <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
                         <div className="flex gap-2">
-                          {canOnboard && item.active ? (
+                          {canOnboard && onboardReachable && item.active ? (
                             <button
                               type="button"
                               className="text-xs font-semibold text-accent-strong"
-                              onClick={() =>
-                                navigate(`/admin/organizations/${item.id}/onboarding`)
-                              }
+                              onClick={() => requestOnboarding(user.id, item.id)}
                             >
                               Onboard with AI
                             </button>

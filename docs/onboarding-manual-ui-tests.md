@@ -12,11 +12,12 @@ Run on branch `feature/ai-onboarding-wizard` after `pnpm db:migrate` and setting
 
 ### A — Access
 
-- [ ] Org admin: Organizations → **Onboard with AI** opens full-screen chat
-- [ ] Location admin: direct URL returns redirect/403
-- [ ] **Back** returns to org locations
+- [ ] Org admin: Organizations → **Onboard with AI** opens the copilot dock with the onboarding skill started for that organization (no page change; the old `/admin/organizations/:orgId/onboarding` page is retired, `F3.86` PR 7)
+- [ ] Org admin: the dock's **Onboard a site** starts the same skill
+- [ ] Location admin: no **Onboard with AI** and no **Onboard a site**
+- [ ] Organization with the copilot switch off: the dock says the copilot is off and starts nothing
 
-### B — Chat flow
+### B — Chat flow (in the dock's onboarding skill)
 
 - [ ] Bot greets; drawer closed during Q&A
 - [ ] Natural-language replies advance phases
@@ -32,7 +33,7 @@ Run on branch `feature/ai-onboarding-wizard` after `pnpm db:migrate` and setting
 ### D — Commit
 
 - [ ] **Validate** shows errors in drawer
-- [ ] **Commit** or "create it" in chat creates records in admin CRUD
+- [ ] **Commit** in the draft preview, or **Confirm** on the copilot's commit card, creates records in admin CRUD (typing "confirm commit" commits nothing)
 - [ ] MQTT ingest picks up new RTU (if ingest running)
 
 ## Sign-off

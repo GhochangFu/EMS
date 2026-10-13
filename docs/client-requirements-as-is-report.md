@@ -334,7 +334,7 @@ EMQX broker, Kubernetes manifests, multi-protocol edge agents (beyond pilot MQTT
 | Org-scoped system tag catalog (`point_keys`) | Migration 0018; `/admin/point-keys` |
 | Per-asset tag mapping (`asset_points`) | `/admin/assets/:id/points` |
 | Master-data admin CRUD | `apps/api/src/admin/*`, web admin pages |
-| AI/rule-based onboarding wizard | ADR 0011; `/admin/.../onboarding` |
+| AI/rule-based onboarding wizard | ADR 0011; the copilot dock's onboarding skill ("Onboard with AI" on the organizations page, or "Onboard a site" in the dock; ADR 0099 decision 7) — the `/admin/.../onboarding` page is retired |
 | Excel template for site setup | ADR 0013; `GET template.xlsx`, upload to session |
 | Protocol catalog + RTU connection config | Migration 0020; encrypted credentials ADR 0012 |
 | MQTT TLS ingest (pilot) | `apps/ingest` |

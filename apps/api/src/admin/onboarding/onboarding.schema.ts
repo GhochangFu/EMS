@@ -494,12 +494,6 @@ export const createSessionBodySchema = z
   })
   .strict();
 
-export const chatBodySchema = z
-  .object({
-    message: z.string().min(1).max(8000),
-  })
-  .strict();
-
 /**
  * The longest credential value this system accepts, on either route that
  * supplies one.

@@ -581,7 +581,7 @@ function hashSuffixParts(value: string): { prefix: string; suffix: string } | un
  * cannot see it. `assertRuleBasedTurnBoundsMqttTopic` holds it.
  */
 export async function assertRuleBasedTurnBoundsDerivedDraftStrings(): Promise<void> {
-  // --- the location branch: an 8,000-character name is what `chatBodySchema`
+  // --- the location branch: an 8,000-character name is what `copilotTurnBodySchema`
   // --- allows, and the whole message becomes `location.name` -----------------
   const longMessage = "b".repeat(600);
   assert(
@@ -925,7 +925,7 @@ export async function assertRuleBasedTurnCutsWholeCharacters(): Promise<void> {
 /**
  * The fifth string the rule-based branch derives from the message —
  * `defaultConfig`'s `topic`, which takes `\S+` out of a message
- * `chatBodySchema` allows 8,000 characters of.
+ * `copilotTurnBodySchema` allows 8,000 characters of.
  *
  * **Its oracle cannot be the draft schema, and that is a property of the schema
  * rather than of this test.** `config` is `z.record(z.unknown())` in both

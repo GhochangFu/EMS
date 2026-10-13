@@ -1,4 +1,3 @@
-import { BadRequestException, ConflictException } from "@nestjs/common";
 import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
 
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
@@ -7,9 +6,6 @@ import { OnboardingChatService } from "./onboarding-chat.service";
 import { fakeDb, type Recorder } from "./onboarding-chat-caps.spec";
 import {
   COMMIT_PROPOSAL_KEY,
-  CONFIRM_CARD_COMMIT_REPLY,
-  NO_PROPOSAL_REPLY,
-  STALE_PROPOSAL_REPLY,
   attachCommitProposal,
   draftHash,
 } from "./onboarding-commit-proposal";
@@ -131,140 +127,20 @@ function proposed(draft: OnboardingDraft, hashOf: unknown = draft) {
   });
 }
 
-export async function assertConfirmWithNoProposalRepliesWithoutAModelCall(): Promise<void> {
-  const session = sessionRow(readyDraft());
-  const { service, record, llm, commit } = build({ results: [[session], [session], ORG] });
-  const response = await service.chat(JWT, "s-1", "confirm commit");
-  assert(llm.calls === 0, "no model call on the confirm path");
-  assert(commit.calls.length === 0, "nothing is committed");
-  assert(response.assistantMessage === NO_PROPOSAL_REPLY, "the no-proposal reply");
-  const write = record.updates[0] ?? {};
-  assert(!("draft" in write), "the draft is not written");
-  assert((write.messages as unknown[]).length === 2, "the user turn and the reply are stored");
-}
-
 /**
- * F4.199 second review (owner ruling 2026-10-05): the chat normalises a typed
- * label, but the commit phrase stays exact. "confirm commit." with a matching
- * proposal is an ordinary turn and commits nothing.
+ * `F3.86` PR 7 (ruling Q5): the typed phrase is retired. "confirm commit", with
+ * or without a full stop, and with a matching proposal, is an ordinary turn: it
+ * commits nothing and goes on to the model. Only the commit route (the Commit
+ * button, the wizard) and the copilot's Confirm card commit.
  */
-export async function assertConfirmCommitWithAFullStopDoesNotCommit(): Promise<void> {
-  const session = sessionRow(proposed(readyDraft()));
-  const { service, commit, llm } = build({ results: [[session], ORG, [session], ORG] });
-  await service.chat(JWT, "s-1", "confirm commit.");
-  assert(commit.calls.length === 0, `nothing is committed, got ${commit.calls.length}`);
-  assert(llm.calls === 1, `positive control: it went on as an ordinary turn, got ${llm.calls} model calls`);
-}
-
-/**
- * `F3.86` PR 5 (ADR 0099 decision 7): in the copilot's skill the typed phrase
- * commits nothing, even with a matching proposal — it answers the fixed reply,
- * writes nothing and calls no model; the same session commits by the phrase
- * on the page (the positive control, `assertAMatchingProposalCommitsOnce`).
- */
-export async function assertThePhraseInTheSkillCommitsNothing(): Promise<void> {
-  const session = sessionRow(proposed(readyDraft()));
-  const { service, record, commit, llm } = build({ results: [[session], ORG] });
-  const response = await service.chat(JWT, "s-1", "confirm commit", { commitByPhrase: false });
-  assert(commit.calls.length === 0, `nothing is committed, got ${commit.calls.length}`);
-  assert(response.assistantMessage === CONFIRM_CARD_COMMIT_REPLY, `the fixed reply, got ${response.assistantMessage}`);
-  assert(record.updates.length === 0, `nothing is written, got ${record.updates.length} updates`);
-  assert(llm.calls === 0, `no model call, got ${llm.calls}`);
-  assert(response.session.id === "s-1", "the session as loaded");
-}
-
-export async function assertAStaleProposalIsClearedAndNotCommitted(): Promise<void> {
-  const before = readyDraft();
-  const after = { ...before, pointKeys: [...(before.pointKeys ?? []), { code: "kvar", name: "Reactive" }] } as OnboardingDraft;
-  const session = sessionRow(proposed(after, before));
-  const { service, record, commit } = build({ results: [[session], [session], ORG] });
-  const response = await service.chat(JWT, "s-1", "confirm commit");
-  assert(commit.calls.length === 0, "a stale proposal does not commit");
-  assert(response.assistantMessage === STALE_PROPOSAL_REPLY, "the stale reply");
-  const written = record.updates[0]?.draft as Record<string, unknown> | undefined;
-  assert(written !== undefined && !(COMMIT_PROPOSAL_KEY in written), "the stale proposal is cleared");
-}
-
-export async function assertAMatchingProposalCommitsOnce(): Promise<void> {
-  const session = sessionRow(proposed(readyDraft()));
-  const { service, record, commit } = build({ results: [[session], [session], ORG] });
-  const response = await service.chat(JWT, "s-1", "  Confirm Commit ");
-  assert(commit.calls.length === 1, `one commit, got ${commit.calls.length}`);
-  assert(commit.calls[0]?.[0] === JWT && commit.calls[0]?.[1] === "s-1", "as the caller, for this session");
-  assert(commit.calls[0]?.[2] === draftHash(readyDraft()), "with the proposal's hash, which the commit checks again under a lock");
-  const roles = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[]).map((m) => m.role).join(",");
-  assert(roles === "user,action,assistant", `user, action, assistant, got ${roles}`);
-  const action = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[])[1]?.content ?? "";
-  assert(
-    action ===
-      "Committed: location Berhampur, 1 RTU, 1 point key, 0 templates published, 1 asset (0 from templates), 1 mapping, " +
-        "0 seeded rules, 0 dashboards",
-    `the action line is code-written: ${action}`,
-  );
-  assert(response.readyToCommit === false, "nothing is left to commit");
-}
-
-/**
- * F3.22 (ADR 0091 decision 4) — the confirm line reads the template part of
- * the result: templates published, assets built from them, seeded rules and
- * dashboards. Every number differs, so a swapped field reddens by name.
- */
-export async function assertTheConfirmLineNamesTheTemplateCounts(): Promise<void> {
-  const session = sessionRow(proposed(readyDraft()));
-  const commit = commitService(
-    "ok",
-    {
-      templateIds: ["t1", "t2"],
-      templatedAssetCount: 3,
-      templatedAssetPointCount: 12,
-      seededRuleCount: 7,
-      dashboardCount: 5,
-    },
-    ["a1", "a2", "a3", "a4"],
-  );
-  const { service, record } = build({ results: [[session], [session], ORG], commit });
-  await service.chat(JWT, "s-1", "confirm commit");
-  assert(commit.calls.length === 1, `one commit, got ${commit.calls.length}`);
-  const action = ((record.updates[0]?.messages ?? []) as OnboardingChatMessage[])[1]?.content ?? "";
-  assert(
-    action ===
-      "Committed: location Berhampur, 1 RTU, 1 point key, 2 templates published, 4 assets (3 from templates), 1 mapping, " +
-        "7 seeded rules, 5 dashboards",
-    `the action line names the template counts: ${action}`,
-  );
-}
-
-export async function assertACommitRefusalIsAReplyNotAThrow(): Promise<void> {
-  const session = sessionRow(proposed(readyDraft()));
-  const { service, record } = build({
-    results: [[session], [session], ORG],
-    commit: commitService(new BadRequestException("Draft is not ready to commit")),
-  });
-  const response = await service.chat(JWT, "s-1", "confirm commit");
-  assert(response.assistantMessage === "Commit refused: Draft is not ready to commit", `got ${response.assistantMessage}`);
-  const written = record.updates[0]?.draft as Record<string, unknown> | undefined;
-  assert(written !== undefined && !(COMMIT_PROPOSAL_KEY in written), "the proposal is cleared");
-}
-
-/**
- * F3.22 (ADR 0091 decision 4) — the template cores refuse with a 409 (a taken
- * asset code, a taken rule code, an open draft). On the typed confirm that is
- * still a reply in the thread, as a 400 is, never an HTTP error that stores
- * nothing.
- */
-export async function assertACoreConflictIsAReplyNotAThrow(): Promise<void> {
-  const session = sessionRow(proposed(readyDraft()));
-  const { service, record } = build({
-    results: [[session], [session], ORG],
-    commit: commitService(new ConflictException("Cannot create these assets — already exist: P-1.")),
-  });
-  const response = await service.chat(JWT, "s-1", "confirm commit");
-  assert(
-    response.assistantMessage === "Commit refused: Cannot create these assets — already exist: P-1.",
-    `got ${response.assistantMessage}`,
-  );
-  const written = record.updates[0]?.draft as Record<string, unknown> | undefined;
-  assert(written !== undefined && !(COMMIT_PROPOSAL_KEY in written), "the proposal is cleared");
+export async function assertTheTypedPhraseIsAnOrdinaryTurn(): Promise<void> {
+  for (const typed of ["confirm commit", "confirm commit."]) {
+    const session = sessionRow(proposed(readyDraft()));
+    const { service, commit, llm } = build({ results: [[session], ORG, [session], ORG] });
+    await service.chat(JWT, "s-1", typed);
+    assert(commit.calls.length === 0, `"${typed}" commits nothing, got ${commit.calls.length}`);
+    assert(llm.calls === 1, `positive control: "${typed}" went on as an ordinary turn, got ${llm.calls} model calls`);
+  }
 }
 
 export async function assertTheCredentialRefusalStillAnswersFirst(): Promise<void> {
@@ -297,7 +173,7 @@ export async function assertAProposingTurnStoresAHashOfTheStoredDraft(): Promise
   assert(stored?.draftHash !== draftHash(session.draft), "not to the draft the turn started from");
 }
 
-/** F4.199 — a proposing turn offers "View draft" only: the client never sends `confirm commit` for the user. */
+/** F4.199 — a proposing turn offers "View draft" only: no chip commits. */
 export async function assertAProposingTurnOffersOnlyViewDraft(): Promise<void> {
   const session = sessionRow(readyDraft());
   const llm = new FakeLlmProvider([calls(toolCall("propose_commit", {})), { kind: "final", text: "Ready." }]);

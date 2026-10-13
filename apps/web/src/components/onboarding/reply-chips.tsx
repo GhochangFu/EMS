@@ -1,5 +1,5 @@
 type ReplyChipsProps = {
-  /** The replies to offer, already filtered (`offeredReplies`): never "confirm commit" or "undo". */
+  /** The replies to offer, already filtered (`offeredReplies`): never "undo". */
   replies: readonly string[];
   /** Sends one reply's text as a turn, as if typed. */
   onPick: (reply: string) => void;

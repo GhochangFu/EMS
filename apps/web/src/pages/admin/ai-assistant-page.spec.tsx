@@ -19,7 +19,7 @@ import * as copilotDockApi from "../../api/copilot";
  * (ADR 0042). Assertions live here; `ai-assistant-page.test.tsx` is the Vitest
  * entry point and carries the `@vitest-environment jsdom` docblock.
  *
- * The harness is `onboarding-chat-page.spec.tsx`'s: the real component on its
+ * The harness is the retired onboarding page spec's: the real component on its
  * real route (a bare `MemoryRouter` leaves `useParams().orgId` undefined), real
  * TanStack Query, `vi.spyOn` on the API module.
  */
@@ -105,7 +105,7 @@ function keyInput(): HTMLInputElement {
 }
 
 /**
- * The F4.106 rule, as `onboarding-chat-page.spec.tsx` states it: reverting the
+ * The F4.106 rule, as the retired onboarding page spec stated it: reverting the
  * page to `err.message` renders the whole JSON, which still *contains* the
  * sentence, so a presence-only assertion gates nothing. Copied, not imported —
  * that helper is private to its spec.

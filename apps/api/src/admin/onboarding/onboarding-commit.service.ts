@@ -144,8 +144,8 @@ export class OnboardingCommitService {
 
   /**
    * Commits only the draft a proposal was bound to (`F3.21`, ADR 0090 decision
-   * 5 and its dated note under decision 8). The typed `confirm commit` checks
-   * the hash on the session it loaded; a `PATCH`, an upload or a credential save
+   * 5 and its dated note under decision 8). The copilot's Confirm card (and the
+   * wizard) check the hash on the session they loaded; a `PATCH`, an upload or a credential save
    * could land before this method reads the session again. So the hash is
    * checked twice more: on this method's own read, and inside the transaction
    * on the session row locked `FOR UPDATE`, which holds every later writer

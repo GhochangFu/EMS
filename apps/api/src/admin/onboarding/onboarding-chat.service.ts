@@ -379,8 +379,8 @@ export class OnboardingChatService {
       ...result,
       // F3.25 (ADR 0094 decision 9): the model's offer, filtered by code, then
       // the step label of the phase the turn ends at and "View draft". Never
-      // "confirm commit" or "undo": the client sends a chip's text as a turn,
-      // and those phrases are the user's own typed acts (ADR 0090 decision 5).
+      // "undo": the client sends a chip's text as a turn, and that phrase is the
+      // user's own typed act (ADR 0094 decision 6).
       suggestedReplies: agentReplies(agent.suggestedReplies, result.currentPhase),
       actionLines: [...agent.actionLines],
       ...(agent.commitProposal ? { commitProposal: { summary: agent.commitProposal.summary } } : {}),

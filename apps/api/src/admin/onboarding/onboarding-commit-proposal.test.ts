@@ -4,7 +4,6 @@ import {
   assertCommitSummaryIsBoundedAndCodeWritten,
   assertSummaryCountsADuplicatedNewKeyOnce,
   assertSummaryNamesTheKeysNewToTheCatalog,
-  assertConfirmPhraseIsExact,
   assertDraftHashChangesWithSecrets,
   assertDraftHashExcludesTheProposalItself,
   assertDraftHashIgnoresKeyOrder,
@@ -17,10 +16,6 @@ import {
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
 describe("onboarding commit proposal (F3.21, ADR 0090 decision 5)", () => {
-  it("matches the confirm phrase exactly", () => {
-    assertConfirmPhraseIsExact();
-  });
-
   it("hashes a draft independently of key order", () => {
     assertDraftHashIgnoresKeyOrder();
   });

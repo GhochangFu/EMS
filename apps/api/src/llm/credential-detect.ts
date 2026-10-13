@@ -22,7 +22,7 @@
  *   stayed `(\S+)` and fed a quadratic trim, and the `MAX_SCAN` slice ran
  *   *before* NFKC, which expands. Measured 110 ms (ASCII) and 3,083 ms (one
  *   expanding character, repeated) per turn from an input inside
- *   `chatBodySchema`'s own 8,000 cap — worse than the 74 ms it replaced. Node is
+ *   `copilotTurnBodySchema`'s own 8,000 cap — worse than the 74 ms it replaced. Node is
  *   single-threaded, so that was an API-wide stall per request.
  *
  * **Known misses, recorded rather than implied.** Three causes: only `\s*` may
@@ -122,7 +122,7 @@ const HOMOGLYPHS: Record<string, string> = {
 };
 
 /**
- * Longest input scanned. `chatBodySchema` already caps a turn at 8,000, but
+ * Longest input scanned. `copilotTurnBodySchema` already caps a turn at 8,000, but
  * stored transcripts are unbounded and `scrubMessages` walks all of them on
  * every read — so the cap is enforced here rather than trusted upstream.
  */
@@ -131,7 +131,7 @@ const MAX_SCAN = 8_000;
 /**
  * Slice, normalise, **then slice again**. NFKC expands: `U+3316` (㌖) becomes
  * six characters with no whitespace, so 7,912 input characters — inside
- * `chatBodySchema`'s own cap — normalised to 47,412 and the "cap" bounded
+ * `copilotTurnBodySchema`'s own cap — normalised to 47,412 and the "cap" bounded
  * nothing. The first slice bounds the work `normalize` itself does on an
  * unbounded stored transcript; the second bounds what expansion produced.
  */
