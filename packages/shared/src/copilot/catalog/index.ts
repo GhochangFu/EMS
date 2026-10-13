@@ -1,5 +1,6 @@
 import { ASSET_GROUP_ENTRIES, ASSET_GROUP_PENDING } from "./asset-groups";
 import { ASSET_POINT_ENTRIES, ASSET_POINT_PENDING } from "./asset-points";
+import { ASSET_TEMPLATE_ENTRIES, ASSET_TEMPLATE_PENDING } from "./asset-templates";
 import { ASSET_ENTRIES, ASSET_PENDING } from "./assets";
 import { DASHBOARD_TEMPLATE_ENTRIES } from "./dashboard-templates";
 import { DASHBOARD_ENTRIES } from "./dashboards";
@@ -25,6 +26,7 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...DASHBOARD_ENTRIES,
   ...DASHBOARD_TEMPLATE_ENTRIES,
   ...KPI_ENTRIES,
+  ...ASSET_TEMPLATE_ENTRIES,
   ...LOCATION_ENTRIES,
   ...SITE_VIEW_ENTRIES,
   ...RTU_ENTRIES,
@@ -46,8 +48,6 @@ export const DELETE_ALLOWANCE: readonly { readonly method: "DELETE"; readonly pa
   { method: "DELETE", path: "/admin/asset-group-members/:id" },
 ];
 
-/** Ruling Q2 (`F3.86` plan §0): the asset-template lifecycle routes are not in release 2. */
-const LATER_ROW = "not a release-2 write; a later row";
 const NO_DELETE = "a hard DELETE is never in the catalog (decision 3)";
 const COPILOT_OWN = "the copilot's own route: a proposal must never change the copilot itself";
 
@@ -73,19 +73,8 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   { method: "DELETE", path: "/admin/asset-templates/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/calc-parameters/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/assets/:assetId/calc-points/:pointKey", reason: NO_DELETE },
-  // The asset-template routes that are not KPI writes.
-  { method: "POST", path: "/admin/asset-templates", reason: LATER_ROW },
-  { method: "POST", path: "/admin/asset-templates/:id/archive", reason: LATER_ROW },
-  { method: "POST", path: "/admin/asset-templates/:id/draft", reason: LATER_ROW },
-  { method: "POST", path: "/admin/asset-templates/stock/:code/import", reason: LATER_ROW },
-  { method: "POST", path: "/admin/asset-templates/:id/instantiate", reason: LATER_ROW },
-  { method: "POST", path: "/admin/asset-templates/:id/seeded-rules/reapply", reason: LATER_ROW },
-  { method: "POST", path: "/admin/asset-templates/:id/default-dashboards", reason: LATER_ROW },
-  { method: "POST", path: "/admin/asset-templates/:id/migration-preview", reason: LATER_ROW },
-  { method: "POST", path: "/admin/asset-templates/:id/migrate", reason: LATER_ROW },
-  // `PATCH /admin/asset-templates/:id` and `POST /admin/asset-templates/:id/publish`
-  // are catalog entries since PR 11a (`kpis.ts`, plan §10.1).
   // `F3.86`: each area's routes that are not (yet) entries.
+  ...ASSET_TEMPLATE_PENDING,
   ...LOCATION_PENDING,
   ...SITE_VIEW_PENDING,
   ...RTU_PENDING,

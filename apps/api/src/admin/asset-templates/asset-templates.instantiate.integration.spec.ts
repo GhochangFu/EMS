@@ -13,7 +13,8 @@ import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
  * `F2.2` — template instantiation against a real database (ADR 0015 §6/§7 as
  * amended 2026-08-05).
  *
- * The Zod contract is proven by `asset-templates.schema.spec.ts`. Everything
+ * The Zod contract is proven by
+ * `packages/shared/src/contracts/asset-template-instantiate-writes.spec.ts`. Everything
  * here is a *database* outcome that no pure function can express: which rows
  * exist afterwards, what `source_kind` they carry, and — the ones that matter
  * most — which rows do **not** exist after a failure. Partial instantiation is

@@ -21,10 +21,9 @@ import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema, stockCodeParamSchema } from "../admin.schema";
 // Reused by identity, not moved: `tests/adr-0029-openapi-contract.test.ts`
 // forbids DECLARING a body schema in a controller, not importing one.
-import { importStockTemplateBodySchema } from "@bms/shared";
+import { importStockTemplateBodySchema, instantiateAssetsBodySchema } from "@bms/shared";
 import {
   createAssetTemplateBodySchema,
-  instantiateAssetsBodySchema,
   reapplySeededRulesBodySchema,
   templateStatusQuerySchema,
   updateAssetTemplateBodySchema,
