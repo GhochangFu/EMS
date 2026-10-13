@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, ne, sql } from "drizzle-orm";
 
 import { type BmsDb, copilotConversations, copilotMessages, organizations } from "@bms/db";
 import type { CopilotConversationDetailDto, CopilotConversationDto, CopilotMessageDto } from "@bms/shared";
@@ -166,7 +166,7 @@ export class CopilotConversationsService {
     return rows.length === 1;
   }
 
-  /** `F3.86` PR 5 — ends the skill in the caller's conversation; the session stays a draft the page can resume. */
+  /** `F3.86` PR 5 — ends the skill in the caller's conversation; the session stays a draft the dock lists and can resume (`F4.255`). */
   async unbindOnboardingSession(userId: string, conversationId: string): Promise<void> {
     await withUser(this.tenantDb, userId, (tx) =>
       tx
@@ -174,6 +174,31 @@ export class CopilotConversationsService {
         .set({ onboardingSessionId: null })
         .where(and(eq(copilotConversations.id, conversationId), eq(copilotConversations.userId, userId))),
     );
+  }
+
+  /**
+   * `F4.255` (ADR 0099 Amendment 2 A1) — a resume frees the caller's **other**
+   * conversations from `sessionId`, keeping `keepConversationId`; answers the
+   * ids it freed, so the resume can discard each one's open `onboarding.commit`
+   * card as `end` does. Another user's binding is invisible here
+   * (`user_isolation`), so it stays: two administrators may hold one draft (no
+   * unique index, ruling 3).
+   */
+  async unbindSessionElsewhere(userId: string, sessionId: string, keepConversationId: string): Promise<string[]> {
+    const rows = await withUser(this.tenantDb, userId, (tx) =>
+      tx
+        .update(copilotConversations)
+        .set({ onboardingSessionId: null })
+        .where(
+          and(
+            eq(copilotConversations.userId, userId),
+            eq(copilotConversations.onboardingSessionId, sessionId),
+            ne(copilotConversations.id, keepConversationId),
+          ),
+        )
+        .returning({ id: copilotConversations.id }),
+    );
+    return rows.map((row) => row.id);
   }
 
   /** The conversation's last `limit` messages, oldest first. */

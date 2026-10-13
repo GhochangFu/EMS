@@ -1,4 +1,12 @@
-import type { CopilotSkillStateDto, JwtPayload, OnboardingChatResponseDto, OnboardingSessionDto } from "@bms/shared";
+import type {
+  CopilotSkillStateDto,
+  JwtPayload,
+  OnboardingChatResponseDto,
+  OnboardingPhase,
+  OnboardingSessionDto,
+} from "@bms/shared";
+
+import { STEP_NAMES } from "../admin/onboarding/onboarding-chat-rule-based";
 
 /**
  * `F3.86` PR 5 / ADR 0099 decision 7 — the onboarding skill's seam: the three
@@ -30,6 +38,13 @@ export const COPILOT_SKILL_SESSION_LOST_REPLY =
 
 /** A second start on a conversation that already runs the skill (409). */
 export const COPILOT_SKILL_ALREADY_BOUND = "This conversation already runs an onboarding.";
+
+/** `F4.255` (ADR 0099 Amendment 2 A1): a resume names a session that is no longer a draft (409). */
+export const COPILOT_SKILL_DRAFT_CLOSED = "That onboarding is no longer a draft.";
+
+/** `F4.255`: the action line a resume stores, as a start stores the opening line; the phase by its display name. */
+export const COPILOT_SKILL_RESUMED_LINE = (phase: OnboardingPhase): string =>
+  `Resumed an onboarding draft at the ${STEP_NAMES[phase]} step.`;
 
 /** The start route's organization must be the conversation's own (400). */
 export const COPILOT_SKILL_ORGANIZATION_MISMATCH =

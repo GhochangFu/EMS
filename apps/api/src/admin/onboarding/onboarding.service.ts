@@ -8,21 +8,25 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 
-import { onboardingSessions, organizations } from "@bms/db";
+import { onboardingSessions, organizations, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import { ONBOARDING_DRAFT_LIST_LIMIT, onboardingDraftListDtoSchema } from "@bms/shared";
 import type {
   JwtPayload,
   OnboardingChatMessage,
   OnboardingChatResponseDto,
   OnboardingDraft,
+  OnboardingDraftListDto,
   OnboardingPhase,
   OnboardingSessionDto,
   OnboardingValidateResponseDto,
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { resolveActorId } from "../../auth/identity-resolver";
+import { parseStoredContract } from "../../common/parse-stored-contract";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
@@ -117,12 +121,16 @@ export class OnboardingService {
 
     const opening = this.chatService.openingMessage(org.name);
     const assistantMsg = this.chatService.createMessage("assistant", opening.assistantMessage);
+    // F4.255 (ADR 0099 Amendment 2 A1): the draft list says who started a draft. On a request path the guard
+    // memoised the identity, so this is no query; `null` when the token names no row.
+    const createdBy = await resolveActorId(this.fleetDb, jwt);
 
     const session = await withTenant(this.tenantDb, organizationId, (tx) =>
       tx
         .insert(onboardingSessions)
         .values({
           organizationId,
+          createdBy,
           status: "draft",
           currentPhase: opening.currentPhase,
           draft: {},
@@ -138,6 +146,67 @@ export class OnboardingService {
       suggestedReplies: opening.suggestedReplies,
       autoOpenPreview: false,
     };
+  }
+
+  /**
+   * `F4.255` (ADR 0099 Amendment 2 A1) — the organization's open drafts, newest
+   * update first, for the copilot dock's resume list. The access is
+   * `createSession`'s (`assertOnboardingAccess`) on the organization the caller
+   * names, so a scoped administrator naming another organization is a 403 —
+   * the id is the caller's own input; `F4.256`'s uniform 404 governs the by-id
+   * reads, where the organization comes from the row. The read runs on
+   * `fleetDb` as `loadSession`'s does, behind that gate, and **never selects
+   * `draft`**: one JSON path takes the location's name, so the draft's
+   * `_secrets` never leave the query. The answer is parsed through
+   * `onboardingDraftListDtoSchema` on the way out through `parseStoredContract`
+   * (ADR 0060 ruling 2), so its `.strict()` runs on the server: an extra key or
+   * a stored phase outside the enum is a 500 with no row in it, never a
+   * response.
+   */
+  async listDrafts(jwt: JwtPayload, organizationId: string): Promise<OnboardingDraftListDto> {
+    await this.assertOnboardingAccess(jwt, organizationId);
+
+    const [org] = await this.tenantDb
+      .select()
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+    if (!org) {
+      throw new NotFoundException("Organization not found");
+    }
+
+    const rows = await this.fleetDb
+      .select({
+        id: onboardingSessions.id,
+        organizationId: onboardingSessions.organizationId,
+        currentPhase: onboardingSessions.currentPhase,
+        createdAt: onboardingSessions.createdAt,
+        updatedAt: onboardingSessions.updatedAt,
+        locationName: sql<string | null>`${onboardingSessions.draft}->'location'->>'name'`,
+        createdById: users.id,
+        createdByName: users.displayName,
+      })
+      .from(onboardingSessions)
+      .leftJoin(users, eq(users.id, onboardingSessions.createdBy))
+      .where(and(eq(onboardingSessions.organizationId, organizationId), eq(onboardingSessions.status, "draft")))
+      .orderBy(desc(onboardingSessions.updatedAt))
+      .limit(ONBOARDING_DRAFT_LIST_LIMIT);
+
+    return parseStoredContract(
+      onboardingDraftListDtoSchema,
+      {
+        items: rows.map((row) => ({
+          id: row.id,
+          organizationId: row.organizationId,
+          currentPhase: row.currentPhase,
+          locationName: row.locationName,
+          createdAt: row.createdAt.toISOString(),
+          updatedAt: row.updatedAt.toISOString(),
+          createdBy: row.createdById ? { id: row.createdById, displayName: row.createdByName } : null,
+        })),
+      },
+      "onboarding.list_drafts.dto",
+    );
   }
 
   /** Returns one session with redacted draft. */

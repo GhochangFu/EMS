@@ -79,14 +79,32 @@ export function theTurnAndTheDetailCarryTheSkill(): void {
   expect(copilotConversationDetailDtoSchema.parse(detail).skill).toBeUndefined();
 }
 
-/** The start body names one organization by uuid and nothing else. */
+/** The start body names one organization by uuid. */
 export function theStartBodyNamesOneOrganization(): void {
   expect(copilotStartOnboardingSkillBodySchema.parse({ organizationId: SESSION.organizationId })).toEqual({
     organizationId: SESSION.organizationId,
   });
   expect(copilotStartOnboardingSkillBodySchema.safeParse({ organizationId: "ORG" }).success).toBe(false);
   expect(copilotStartOnboardingSkillBodySchema.safeParse({ organizationId: null }).success).toBe(false);
+}
+
+/** `F4.255` (ADR 0099 Amendment 2 A1): a resume body names the draft too, and the parse keeps it. */
+export function theStartBodyMayNameADraftToResume(): void {
   expect(
-    copilotStartOnboardingSkillBodySchema.safeParse({ organizationId: SESSION.organizationId, sessionId: SESSION.id }).success,
+    copilotStartOnboardingSkillBodySchema.parse({ organizationId: SESSION.organizationId, sessionId: SESSION.id }),
+  ).toEqual({ organizationId: SESSION.organizationId, sessionId: SESSION.id });
+}
+
+/** `F4.255`: the draft is named by uuid; anything else is refused, so the loosening stays gated. */
+export function theStartBodyRefusesANonUuidSessionId(): void {
+  expect(
+    copilotStartOnboardingSkillBodySchema.safeParse({ organizationId: SESSION.organizationId, sessionId: "x" }).success,
+  ).toBe(false);
+}
+
+/** `F4.255`: the body stays strict — an unknown key is refused beside the new optional one. */
+export function theStartBodyStaysStrict(): void {
+  expect(
+    copilotStartOnboardingSkillBodySchema.safeParse({ organizationId: SESSION.organizationId, draft: {} }).success,
   ).toBe(false);
 }

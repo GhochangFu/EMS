@@ -7,6 +7,9 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   aBindHoldsOnlyWhileNoneIsBound,
+  aResumeFreesTheCallersOtherConversation,
+  aResumeKeepsTheResumedConversation,
+  aResumeLeavesAnotherUsersBinding,
   anotherUsersConversationIs404,
   type ConversationsCtx,
   createRecordsTheBinding,
@@ -81,6 +84,7 @@ describe.skipIf(!connectionString)("F3.85 — the copilot conversation routes (m
       userA: await user("a"),
       userB: await user("b"),
       sessions: [await session(), await session()],
+      resumeSessions: [await session(), await session(), await session()],
     };
   });
 
@@ -105,5 +109,14 @@ describe.skipIf(!connectionString)("F3.85 — the copilot conversation routes (m
   });
   it("F3.86 PR 5: a bind holds only while none is bound", async () => {
     await aBindHoldsOnlyWhileNoneIsBound(ctx);
+  });
+  it("F4.255: a resume frees the caller's other conversation", async () => {
+    await aResumeFreesTheCallersOtherConversation(ctx);
+  });
+  it("F4.255: a resume keeps the resumed conversation bound", async () => {
+    await aResumeKeepsTheResumedConversation(ctx);
+  });
+  it("F4.255: a resume leaves another user's binding", async () => {
+    await aResumeLeavesAnotherUsersBinding(ctx);
   });
 });

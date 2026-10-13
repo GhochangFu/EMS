@@ -1,7 +1,22 @@
 import { describe, it } from "vitest";
 
 import {
+  aBoundConversationRefusesAResumeBeforeTheRead,
   aBoundConversationRefusesASecondStart,
+  aCommittedSessionCannotBeResumed,
+  aLostBindOnAResumeIsA409,
+  anUnavailableCopilotRefusesAResumeBeforeTheRead,
+  anUnreadableSessionPropagatesItsAnswer,
+  aResumeBindsTheNamedDraft,
+  aResumeRecordsTheResumedLine,
+  aLostBindOnAResumeDiscardsNothing,
+  aLostBindOnAResumeFreesNothing,
+  aResumeDiscardsTheFreedConversationsCommitCard,
+  aResumeReadsTheFreedConversationsCards,
+  aResumeUnbindsElsewhereAfterItBinds,
+  aResumeUnbindsTheCallersOtherConversations,
+  aSessionOfAnotherOrganizationIsRefused,
+  aStartWithoutASessionIdUnbindsNothingElsewhere,
   aCrossOrganizationConversationIsRefused,
   aLocationAdminIsRefusedByTheOnboardingGate,
   aLostBindRaceIsA409,
@@ -28,4 +43,23 @@ describe("F3.86 PR 5 — starting, ending and reading the onboarding skill (ADR 
   it("unbinds on an end and leaves the session", () => anEndUnbinds());
   it("discards the open onboarding commit card on an end, and only it", () => anEndDiscardsTheOpenCommitCardOnly());
   it("reads the skill, tolerating a session the caller can no longer read", () => aReadOfTheSkillToleratesALostSession());
+});
+
+describe("F4.255 — a start with sessionId resumes a draft (ADR 0099 Amendment 2 A1)", () => {
+  it("R1a reads, binds and answers the named draft, creating nothing", () => aResumeBindsTheNamedDraft());
+  it("R1b unbinds the caller's other conversations from the session", () => aResumeUnbindsTheCallersOtherConversations());
+  it("R1c stores the resumed action line", () => aResumeRecordsTheResumedLine());
+  it("R2a refuses a resume where the copilot is off, before the read", () => anUnavailableCopilotRefusesAResumeBeforeTheRead());
+  it("R2b refuses a resume on a bound conversation, before the read", () => aBoundConversationRefusesAResumeBeforeTheRead());
+  it("R3 propagates the read's 404 and touches nothing", () => anUnreadableSessionPropagatesItsAnswer());
+  it("R4 refuses a session of another organization", () => aSessionOfAnotherOrganizationIsRefused());
+  it("R5 refuses a session that is no longer a draft", () => aCommittedSessionCannotBeResumed());
+  it("R6 answers 409 for a lost bind on a resume, storing nothing", () => aLostBindOnAResumeIsA409());
+  it("R7 unbinds elsewhere only after it binds", () => aResumeUnbindsElsewhereAfterItBinds());
+  it("R7b frees no other conversation when it loses its bind", () => aLostBindOnAResumeFreesNothing());
+  it("R7c reads and discards no card when it loses its bind", () => aLostBindOnAResumeDiscardsNothing());
+  it("R8a discards the freed conversation's open commit card at resume time", () =>
+    aResumeDiscardsTheFreedConversationsCommitCard());
+  it("R8b reads the freed conversation's cards, not the resumed one's", () => aResumeReadsTheFreedConversationsCards());
+  it("control: a plain start creates and unbinds nothing elsewhere", () => aStartWithoutASessionIdUnbindsNothingElsewhere());
 });
