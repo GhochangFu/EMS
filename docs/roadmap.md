@@ -7669,3 +7669,26 @@ Live 2026-10-12: `bms-migrate-1`, `bms-api-1`, `bms-worker-1` and `bms-web-1` re
 Raised: `F4.244` (the dock resumes a follow-up after a reload), `F4.245` (a fill names its record; a layout fill reaches the canvas), `F4.246` (formulas in full on the card, the asset template now, a draft check at propose), `F4.247` (`If-Match` for list PUTs), `F4.248` (describe four refinements, widen the ADR 0029 scan), `F4.249` (prompt caching), `F4.250` (the template page follows a new draft to its id — an older defect PR 10b's browser run found), `F4.251` (retire the unmounted override panel and the removed confirm labels), `F4.252` (instantiate wizard messages). A `chore(agents):` sweep is owed in its own PR: AGENTS.md still says the copilot is not built.
 
 Post-merge (2026-10-12): a code and a security review of the five wizard PRs together. Security: nothing new (its one Low item is `F4.247`). Code: three Medium defects — a wizard page or tab kept its local rows when a dock Confirm refetched the record, reported changes the user never made, and its next Submit could revert the copilot's write (the dashboard edit page a regression from PR 9; the six other asset-template tabs; the KPIs tab after a fill-changed save). **#818** fixes them with one hook (`useFollowStoredWhenClean`): a clean page or tab follows the refetch, an edited one keeps the user's edits (Details field by field). Browser, against the fix's API with the platform key: a real dock rename on a clean edit page is followed ("No changes yet." stays); with a typed description the second rename leaves the edit in place; both audit rows carry `via: copilot`.
+
+### `F3.86` — the site-wide administrator copilot, release 2 ✅ 2026-10-13
+
+Ten PRs, squash-merged 2026-10-12 to 2026-10-13, after `F3.85`. One migration (`0107`), no new dependency, no ADR amendment (the owner's nine plan-gate rulings of 2026-10-12 are in the plan's §0). Plan: `docs/plans/f3.86-admin-copilot-release-2.md`.
+
+- **#822** (`e3f537c7`) — PR 1: the seven master-data write bodies move to `packages/shared/src/contracts/`; the plan.
+- **#823** (`99a2702f`) — PR 2 ⭐: `DELETE` with an exact two-route allowance, the new target and ref kinds, `modelBody`, the `clientOnly` password box on the Confirm card, the card's split of a route's own 409 from the interceptor's, the per-area catalog files.
+- **#824** (`e863c5b4`) — PR 4 ⭐: users and grants as `access` entries, the access-intent gate, the local sign-in refusal, ADR 0089's checks called and not copied.
+- **#825** (`7f29ca87`) — PR 3d: the Control Room view and site-layout entries and wizards (ruling Q7(b)); `e2e` run green.
+- **#826** (`ba3ac9af`) — PR 3c: asset groups, members (the red member removal) and point keys; the tool-definition size gate in two claims.
+- **#827** (`72a9e5e4`) — PR 5 ⭐: migration `0107_copilot_skill`, the skill routes and turn, the hash-bound commit route.
+- **#828** (`2197a4b3`) — PR 3a: locations and RTUs; `e2e` run green.
+- **#829** (`8fb535f1`) — PR 3b: assets and asset points; `e2e` run green.
+- **#830** (`5e121568`) — PR 6: the onboarding skill in the dock and the server-made `onboarding.commit` card; `e2e` run green.
+- **#831** (`3204324a`) — PR 7: the onboarding page, its chat route and the typed phrase retire (ruling Q5); `e2e` run green.
+
+The catalog holds 50 write routes (16 from release 1, 34 from release 2), every one a stepper. **Behaviour change (ruling Q4):** onboarding is now a copilot skill. An organization whose copilot switch is off (the default for a new organization, ADR 0099 ruling 15) has no onboarding until a global administrator turns the switch on; every onboarding turn counts against the organization's daily copilot limit (decision 11). The seed turns the demo organization on.
+
+Each PR ran its touched suites, `pnpm typecheck` and `pnpm typecheck:tests` before its push, CI was green before every merge (the Playwright suite on the five `e2e`-labelled PRs), and the step-6 checks ran against each PR's own API (local auth): in #825, #826, #828 and #829 a wizard used alone audited no `via`, a Confirm audited `via: copilot` with the change id, and a tampered body answered 409; #824 ran the Confirm, tampered-409 and replay checks for grants (API only); #830 ran the hash-bound Confirm (a stale `draftHash` → 400, a fresh one → 200). No LLM key was in use, so each copilot Confirm used a pending row inserted in the shape a turn stores.
+
+Not met, and owed: the browser flow "the agent proposes the commit, the dock shows the card, Confirm commits" (PR 6; needs an LLM key); the OIDC compose run that plan §6.6 (ii) names for PR 4 (the PR records the API run in local auth only); the owner's check of the AWS demo's copilot switches; a doc-only erratum on ADR 0099 for the "`/admin/onboarding`" path string (the owner's nod); a `chore(agents):` sweep in its own PR.
+
+Raised: `F4.254` (the excluded asset-template lifecycle routes and the asset-point bulk update), `F4.255` (resume an onboarding draft).
