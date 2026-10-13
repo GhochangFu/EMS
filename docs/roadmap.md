@@ -7684,6 +7684,7 @@ Ten PRs, squash-merged 2026-10-12 to 2026-10-13, after `F3.85`. One migration (`
 - **#829** (`8fb535f1`) — PR 3b: assets and asset points; `e2e` run green.
 - **#830** (`5e121568`) — PR 6: the onboarding skill in the dock and the server-made `onboarding.commit` card; `e2e` run green.
 - **#831** (`3204324a`) — PR 7: the onboarding page, its chat route and the typed phrase retire (ruling Q5); `e2e` run green.
+- A post-closure fix (#TBD) made the onboarding commit route require the draft hash (`{}` answers 400); the empty body existed only for the retired page.
 
 The catalog holds 50 write routes (16 from release 1, 34 from release 2), every one a stepper. **Behaviour change (ruling Q4):** onboarding is now a copilot skill. An organization whose copilot switch is off (the default for a new organization, ADR 0099 ruling 15) has no onboarding until a global administrator turns the switch on; every onboarding turn counts against the organization's daily copilot limit (decision 11). The seed turns the demo organization on.
 
