@@ -25,7 +25,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { resolveActorId } from "../../auth/identity-resolver";
+import { recalledIdentity, resolveActorId } from "../../auth/identity-resolver";
 import { parseStoredContract } from "../../common/parse-stored-contract";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
@@ -73,6 +73,11 @@ import {
 } from "./onboarding-locked-writes";
 
 export { SESSION_NO_LONGER_DRAFT, DRAFT_CHANGED_DURING_TURN, DRAFT_TOO_DEEP_FOR_TURN } from "./onboarding-locked-writes";
+
+/** `F4.255`: the global administrator's draft list names no organization — it has no home organization to fall back to. */
+export const ONBOARDING_DRAFTS_GLOBAL_NEEDS_ORGANIZATION = "A global administrator must name the organization whose drafts to list";
+/** `F4.255`: a scoped caller whose account has no home organization names none either. */
+export const ONBOARDING_DRAFTS_NO_HOME_ORGANIZATION = "Your account has no home organization; name the organization whose drafts to list";
 
 /**
  * Orchestrates onboarding session lifecycle.
@@ -162,8 +167,27 @@ export class OnboardingService {
    * (ADR 0060 ruling 2), so its `.strict()` runs on the server: an extra key or
    * a stored phase outside the enum is a 500 with no row in it, never a
    * response.
+   *
+   * With no `organizationId` the list is the caller's **home** organization —
+   * the one a scoped administrator's copilot conversation is bound to (`users.organization_id`
+   * of the identity `resolveIdentity` resolved, which `requireMasterDataUser`
+   * memoised on this payload). The role gate runs first; then the global
+   * administrator, who has no home to fall back to, must name one (400), and a
+   * caller with no home organization is a 400 too. The home organization then
+   * passes the same scope check as a named one.
    */
-  async listDrafts(jwt: JwtPayload, organizationId: string): Promise<OnboardingDraftListDto> {
+  async listDrafts(jwt: JwtPayload, requested: string | undefined): Promise<OnboardingDraftListDto> {
+    const caller = await this.assertOnboardingRole(jwt);
+    let organizationId: string;
+    if (requested !== undefined) {
+      organizationId = requested;
+    } else if (caller.role === "admin") {
+      throw new BadRequestException(ONBOARDING_DRAFTS_GLOBAL_NEEDS_ORGANIZATION);
+    } else {
+      const home = recalledIdentity(jwt)?.organizationId ?? null;
+      if (home === null) throw new BadRequestException(ONBOARDING_DRAFTS_NO_HOME_ORGANIZATION);
+      organizationId = home;
+    }
     await this.assertOnboardingAccess(jwt, organizationId);
 
     const [org] = await this.tenantDb
@@ -774,6 +798,7 @@ export class OnboardingService {
     if (user.role !== "admin" && user.role !== "organization_admin") {
       throw new ForbiddenException("Onboarding requires admin or organization_admin role");
     }
+    return user;
   }
 
   /**

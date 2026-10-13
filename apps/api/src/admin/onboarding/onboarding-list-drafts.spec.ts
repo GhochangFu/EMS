@@ -1,4 +1,4 @@
-import { ForbiddenException, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { Column, getTableName, is, type SQL } from "drizzle-orm";
 import { expect } from "vitest";
@@ -6,7 +6,12 @@ import { expect } from "vitest";
 import { onboardingSessions, users } from "@bms/db";
 import { ONBOARDING_DRAFT_LIST_LIMIT } from "@bms/shared";
 
-import { OnboardingService } from "./onboarding.service";
+import { rememberIdentity } from "../../auth/identity-resolver";
+import {
+  ONBOARDING_DRAFTS_GLOBAL_NEEDS_ORGANIZATION,
+  ONBOARDING_DRAFTS_NO_HOME_ORGANIZATION,
+  OnboardingService,
+} from "./onboarding.service";
 
 /**
  * `F4.255` (ADR 0099 Amendment 2 A1) — `OnboardingService.listDrafts`, the
@@ -18,12 +23,17 @@ import { OnboardingService } from "./onboarding.service";
  * organization read's 404. The list reads on `fleetDb` and never selects the
  * `draft` column — it takes one JSON path, so `_secrets` never leave the
  * query. Vitest entry point: the sibling `.test.ts` (ADR 0014).
+ *
+ * With no organization (H1–H5) the list is the caller's home organization —
+ * the identity `requireMasterDataUser` memoised on the payload. Each H case
+ * seeds that memo on its own payload object, so no case leaks into another.
  */
 
 type Role = "admin" | "organization_admin" | "location_admin" | "asset_group_admin";
 
 const JWT = { sub: "kc-1" } as never;
 const ORG = "22222222-2222-4222-8222-222222222222";
+const HOME = "55555555-5555-4555-8555-555555555555";
 const dialect = new PgDialect();
 
 type DraftRow = {
@@ -102,9 +112,13 @@ function serviceAs(role: Role, options: { canManage?: boolean; orgExists?: boole
       return listChain;
     },
   };
+  const managed: string[] = [];
   const accessControl = {
     requireMasterDataUser: () => Promise.resolve({ id: "u-1", role }),
-    canManageOrganization: () => Promise.resolve(options.canManage ?? true),
+    canManageOrganization: (_jwt: unknown, organizationId: string) => {
+      managed.push(organizationId);
+      return Promise.resolve(options.canManage ?? true);
+    },
   };
   const none = {} as never;
   const service = new OnboardingService(
@@ -119,7 +133,22 @@ function serviceAs(role: Role, options: { canManage?: boolean; orgExists?: boole
     none,
     none,
   );
-  return { service, reads, recorded };
+  return { service, reads, recorded, managed };
+}
+
+/** A fresh payload whose memoised identity has `role` and the home organization `home`. */
+function payloadAt(role: Role, home: string | null): never {
+  const jwt = { sub: `kc-${role}-${home ?? "none"}` };
+  rememberIdentity(jwt as never, {
+    id: "u-1",
+    email: "u@bms.local",
+    displayName: "U",
+    role,
+    organizationId: home,
+    oidcSubject: null,
+    disabledAt: null,
+  } as never);
+  return jwt as never;
 }
 
 function rendered(condition: SQL | undefined) {
@@ -274,4 +303,60 @@ export async function theListAnswersTheSummary(): Promise<void> {
       },
     ],
   });
+}
+
+/** H1 — a scoped administrator naming no organization lists its home organization: the condition binds it. */
+export async function aScopedAdminWithNoOrganizationListsItsHome(): Promise<void> {
+  const { service, recorded } = serviceAs("organization_admin");
+  await service.listDrafts(payloadAt("organization_admin", HOME), undefined);
+  const query = rendered(recorded.where);
+  expect(query.params).toContain(HOME);
+  expect(query.params).not.toContain(ORG);
+}
+
+/** H2 — the home organization passes the same scope check as a named one. */
+export async function theHomeOrganizationIsScopeChecked(): Promise<void> {
+  const { service, managed } = serviceAs("organization_admin");
+  await service.listDrafts(payloadAt("organization_admin", HOME), undefined);
+  expect(managed).toEqual([HOME]);
+}
+
+/** H3 — a home organization outside the caller's scope is the 403 scope sentence, before any read. */
+export async function aHomeOutsideTheScopeIsA403(): Promise<void> {
+  const { service, reads } = serviceAs("organization_admin", { canManage: false });
+  await expect(service.listDrafts(payloadAt("organization_admin", HOME), undefined)).rejects.toThrow(
+    new ForbiddenException("Organization is outside your access scope"),
+  );
+  expect(reads.select).toBe(0);
+}
+
+/**
+ * H4 — the global administrator naming no organization is the 400 that names it, before any read
+ * or scope check — even with a home organization on its account, which it must not fall back to.
+ */
+export async function aGlobalAdminWithNoOrganizationIsA400(): Promise<void> {
+  const { service, reads, managed } = serviceAs("admin");
+  await expect(service.listDrafts(payloadAt("admin", HOME), undefined)).rejects.toThrow(
+    new BadRequestException(ONBOARDING_DRAFTS_GLOBAL_NEEDS_ORGANIZATION),
+  );
+  expect(reads.select).toBe(0);
+  expect(managed).toEqual([]);
+}
+
+/** H5 — a scoped caller with no home organization naming none is the other 400, before any read. */
+export async function aCallerWithNoHomeIsA400(): Promise<void> {
+  const { service, reads } = serviceAs("organization_admin");
+  await expect(service.listDrafts(payloadAt("organization_admin", null), undefined)).rejects.toThrow(
+    new BadRequestException(ONBOARDING_DRAFTS_NO_HOME_ORGANIZATION),
+  );
+  expect(reads.select).toBe(0);
+}
+
+/** H6 — the role gate runs first: a location administrator naming no organization gets the role 403, not a 400. */
+export async function aLocationAdminWithNoOrganizationIsTheRole403(): Promise<void> {
+  const { service, reads } = serviceAs("location_admin");
+  await expect(service.listDrafts(payloadAt("location_admin", HOME), undefined)).rejects.toThrow(
+    new ForbiddenException("Onboarding requires admin or organization_admin role"),
+  );
+  expect(reads.select).toBe(0);
 }

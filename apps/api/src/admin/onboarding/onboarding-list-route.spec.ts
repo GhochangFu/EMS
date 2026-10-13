@@ -10,8 +10,9 @@ import type { OnboardingService } from "./onboarding.service";
 
 /**
  * `F4.255` (ADR 0099 Amendment 2 A1) — `GET /admin/onboarding/sessions?organizationId=…`:
- * the controller parses the organization id as a uuid (a 400 otherwise, and a
- * missing one too) and hands the caller and the id to `listDrafts`. Vitest
+ * the controller parses the organization id as a uuid (a 400 otherwise, an
+ * empty one too) and hands the caller and the id to `listDrafts`; an absent id
+ * reaches `listDrafts` as `undefined` (the caller's home organization). Vitest
  * entry point: the sibling `.test.ts` (ADR 0014).
  */
 
@@ -67,9 +68,17 @@ export function theOrganizationComesFromTheOrganizationIdQueryKey(): void {
   expect(queries).toEqual([{ index: 0, data: "organizationId" }]);
 }
 
-/** A missing organization id is a 400 before the service. */
-export async function aMissingOrganizationIsA400(): Promise<void> {
+/** An absent organization id reaches `listDrafts(user, undefined)`: the service answers for the home organization. */
+export async function aMissingOrganizationReachesTheListAsUndefined(): Promise<void> {
   const h = route();
-  await expect(h.controller.listDrafts(undefined, USER)).rejects.toBeInstanceOf(BadRequestException);
+  expect(await h.controller.listDrafts(undefined, USER)).toBe(LIST);
+  expect(h.calls).toEqual([[USER, undefined]]);
+  expect(h.calls[0]).toHaveLength(2);
+}
+
+/** An empty `?organizationId=` is not an absent one: it is a 400 before the service. */
+export async function anEmptyOrganizationIsA400(): Promise<void> {
+  const h = route();
+  await expect(h.controller.listDrafts("", USER)).rejects.toBeInstanceOf(BadRequestException);
   expect(h.calls).toEqual([]);
 }

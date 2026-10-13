@@ -73,26 +73,34 @@ export async function sendCopilotTurn(conversationId: string, message: string): 
  * ADR 0099 decision 7) — starts the onboarding skill in this conversation. The
  * organization must be the conversation's own; the answer is the conversation
  * with the new session's state in `skill`. A role that may not onboard is 403.
+ *
+ * With `sessionId` (`F4.255`, ADR 0099 Amendment 2 A1) the route resumes that
+ * draft instead of creating one, after the same checks as a start; a draft
+ * that is no longer a draft is 409, one the caller may not read is 404. A
+ * start sends no `sessionId` key at all.
  */
 export async function startCopilotOnboardingSkill(
   conversationId: string,
   organizationId: string,
+  sessionId?: string,
 ): Promise<CopilotConversationDetailDto> {
+  const body = sessionId === undefined ? { organizationId } : { organizationId, sessionId };
   return adminFetch(
     `/copilot/conversations/${encodeURIComponent(conversationId)}/skills/onboarding`,
     copilotConversationDetailDtoSchema,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ organizationId }),
+      body: JSON.stringify(body),
     },
   );
 }
 
 /**
  * `DELETE /api/v1/copilot/conversations/:id/skills/onboarding` (`F3.86` PR 5)
- * — ends the skill here; the draft stays a session the onboarding page can
- * resume. The answer is the conversation with `skill: null`.
+ * — ends the skill here; the draft stays a session the dock lists and can
+ * resume (`F4.255`, ADR 0099 Amendment 2 A1). The answer is the conversation
+ * with `skill: null`.
  */
 export async function endCopilotOnboardingSkill(conversationId: string): Promise<CopilotConversationDetailDto> {
   return adminFetch(

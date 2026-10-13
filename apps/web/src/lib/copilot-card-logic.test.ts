@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  anOnboardingCommitInvalidatesTheDraftList,
   theReviewStepDoesNotAskForAClientOnlyField,
   aCreateHasNoBeforeValues,
   aFillIsTakenOnlyForItsStepsFields,
@@ -16,6 +17,7 @@ import {
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.85 PR 8 — Confirm card and wizard logic (ADR 0099 decisions 4, 6)", () => {
   it("invalidates queries for every catalog entry", () => everyEntryHasInvalidations());
+  it("an onboarding commit invalidates the dock's draft list (F4.255)", () => anOnboardingCommitInvalidatesTheDraftList());
   it("shows no before values for a create", () => aCreateHasNoBeforeValues());
   it("shows before and after for an edit", () => anEditShowsBeforeAndAfter());
   it("shortens long and structured values", () => longAndStructuredValuesAreShortened());

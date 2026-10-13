@@ -1,12 +1,14 @@
 import {
   onboardingChatResponseDtoSchema,
   onboardingCommitResponseDtoSchema,
+  onboardingDraftListDtoSchema,
   onboardingSessionDtoSchema,
   onboardingValidateResponseDtoSchema,
 } from "@bms/shared/contracts";
 import type {
   OnboardingChatResponseDto,
   OnboardingCommitResponseDto,
+  OnboardingDraftListDto,
   OnboardingSessionDto,
   OnboardingValidateResponseDto,
 } from "@bms/shared";
@@ -28,6 +30,21 @@ export async function createOnboardingSession(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ organizationId }),
   });
+}
+
+/**
+ * `F4.255` (ADR 0099 Amendment 2 A1): the organization's open drafts, newest
+ * update first. Each item names the draft's location, phase and author, never
+ * the draft itself. The copilot dock lists them beside "Onboard a site".
+ *
+ * With no `organizationId` the request carries no query string, and the server
+ * answers for the caller's home organization — the one a scoped
+ * administrator's copilot conversation is bound to. A global administrator
+ * must name one (400).
+ */
+export async function fetchOnboardingDrafts(organizationId?: string): Promise<OnboardingDraftListDto> {
+  const query = organizationId === undefined ? "" : `?organizationId=${encodeURIComponent(organizationId)}`;
+  return adminFetch(`/admin/onboarding/sessions${query}`, onboardingDraftListDtoSchema);
 }
 
 /** Loads an onboarding session. */

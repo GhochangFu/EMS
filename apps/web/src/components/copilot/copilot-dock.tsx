@@ -8,6 +8,7 @@ import type {
   CopilotPendingChangeDto,
   CopilotSkillStateDto,
   CopilotTurnResponseDto,
+  OnboardingDraftListDto,
 } from "@bms/shared";
 import { COPILOT_TURN_MESSAGE_MAX } from "@bms/shared/contracts";
 
@@ -24,6 +25,7 @@ import {
 } from "../../api/copilot";
 import { canAccessOnboarding, canAuthorDashboards } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { ONBOARDING_DRAFTS, onboardingDraftsKey } from "../../lib/copilot-invalidations";
 import type { AuthUser } from "../../stores/auth-store";
 import {
   COPILOT_ALL_ORGANIZATIONS,
@@ -34,6 +36,7 @@ import {
 import { useWizardStore } from "../../stores/wizard-store";
 import { AssistantText } from "./assistant-text";
 import { ConfirmCard } from "./confirm-card";
+import { OnboardingDraftPicker, type OnboardingDraftsOf } from "./onboarding-draft-picker";
 import { OnboardingSkillPanel } from "./onboarding-skill-panel";
 
 /**
@@ -78,6 +81,17 @@ import { OnboardingSkillPanel } from "./onboarding-skill-panel";
  * input stays open even with no AI key (the onboarding's guided mode answers).
  * A turn's `skill` key replaces the state (`null` ends the skill); a turn
  * with no such key (a credential refusal) keeps the last state.
+ *
+ * **Drafts** (`F4.255`, ADR 0099 Amendment 2 A1). Beside the start,
+ * `OnboardingDraftPicker` lists the organization's open drafts with Resume —
+ * the same `startSkill` mutation, with the draft's id. The organization is the
+ * one the skill would start in: the global administrator's pick (none on "All
+ * organizations": nothing is read and Start is disabled); a scoped
+ * administrator's conversation's, or — before there is a conversation — the
+ * home organization the server binds one to (the list names none and the
+ * server answers for it). A start, a resume, a refused resume, an End and a
+ * turn that ends the skill make every list stale; a refused resume (409
+ * closed, 404) is the banner's start error.
  *
  * **"Onboard with AI"** (`F3.86` PR 7, ruling Q5) files a one-shot request in
  * `useCopilotStore`; the dock consumes it once, opens, picks the organization
@@ -355,6 +369,17 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     setKept([]);
   }, [conversationId]);
 
+  // `F4.255`: a scoped administrator's first conversation moves the draft list's key from "home" to the
+  // organization the server bound it to — the same organization — so the list carries over instead of
+  // blanking while it reloads (a pending Resume keeps its row).
+  function carryHomeDrafts(bound: string | null): void {
+    if (isGlobalAdmin || bound === null) return;
+    const home = queryClient.getQueryData<OnboardingDraftListDto>(onboardingDraftsKey());
+    if (home !== undefined && queryClient.getQueryData(onboardingDraftsKey(bound)) === undefined) {
+      queryClient.setQueryData(onboardingDraftsKey(bound), home);
+    }
+  }
+
   const turn = useMutation({
     mutationFn: async (message: string): Promise<CopilotTurnResponseDto> => {
       let id = conversationId;
@@ -367,6 +392,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
           messages: [],
           pendingChanges: [],
         });
+        carryHomeDrafts(created.organizationId);
         setConversation(user.id, id);
       }
       return sendCopilotTurn(id, message);
@@ -374,6 +400,11 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     onSuccess: (data) => {
       // Before any early return: a skill state answers even when nothing was stored (a closed or lost session).
       if (data.skill !== undefined) setSkill(data.conversationId, data.skill);
+      // `F4.255`: the skill ended (lost or done: `null`) or its session is no longer a draft (the closed reply):
+      // its draft may be listed again, or gone. A plain turn carries no `skill` key and reads nothing.
+      if (data.skill === null || (data.skill !== undefined && data.skill.session.status !== "draft")) {
+        void queryClient.invalidateQueries({ queryKey: ONBOARDING_DRAFTS });
+      }
       if (data.outcome === "not_configured") {
         setTurnNotConfigured(true);
         setBanner(null);
@@ -418,8 +449,9 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
   });
 
   // `F3.86` PR 6: the onboarding skill starts in the conversation, which is made first when there is none.
+  // `F4.255`: with a draft's id it resumes that draft; a new start passes no third argument at all.
   const startSkill = useMutation({
-    mutationFn: async (): Promise<CopilotConversationDetailDto> => {
+    mutationFn: async (sessionId?: string): Promise<CopilotConversationDetailDto> => {
       let id = conversationId;
       let organization = thread.data?.organizationId ?? null;
       if (id === null) {
@@ -431,16 +463,25 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
           messages: [],
           pendingChanges: [],
         });
+        carryHomeDrafts(created.organizationId);
         setConversation(user.id, id);
       }
       if (organization === null) throw new Error(ONBOARD_PICK_SENTENCE);
-      return startCopilotOnboardingSkill(id, organization);
+      return sessionId === undefined
+        ? startCopilotOnboardingSkill(id, organization)
+        : startCopilotOnboardingSkill(id, organization, sessionId);
     },
     onSuccess: (detail) => {
       setBanner(null);
       putConversation(detail);
+      // The prefix: a scoped start from no conversation listed its drafts under "home", not the organization's id.
+      void queryClient.invalidateQueries({ queryKey: ONBOARDING_DRAFTS });
     },
-    onError: (err: Error) => setBanner(apiErrorMessage(err)),
+    onError: (err: Error, sessionId) => {
+      setBanner(apiErrorMessage(err));
+      // `F4.255`: a refused resume (409 closed, 404) means the listed row is dead: read the list again.
+      if (sessionId !== undefined) void queryClient.invalidateQueries({ queryKey: ONBOARDING_DRAFTS });
+    },
   });
 
   const endSkill = useMutation({
@@ -449,6 +490,8 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
       setBanner(null);
       putConversation(detail);
       dropCommitCards(detail.id);
+      // The ended draft is a draft still (ruling 3): the list shows it again.
+      void queryClient.invalidateQueries({ queryKey: ONBOARDING_DRAFTS });
     },
     onError: (err: Error) => setBanner(apiErrorMessage(err)),
   });
@@ -459,6 +502,18 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
   // A global admin onboards in the organization picked above; "All organizations" names none.
   const canOnboard = canAccessOnboarding(user.role) && !scopeOff;
   const onboardBlocked = isGlobalAdmin && !picked;
+  // `F4.255`: the drafts of the organization a start would use. A scoped administrator's conversation is
+  // bound to its home organization, so before there is one the list names none ("home").
+  const threadOrganization = thread.data?.organizationId ?? null;
+  const draftsOf: OnboardingDraftsOf = isGlobalAdmin
+    ? picked
+      ? { organizationId }
+      : null
+    : conversationId === null
+      ? "home"
+      : threadOrganization === null
+        ? null
+        : { organizationId: threadOrganization };
 
   // `F3.86` PR 7: "Onboard with AI" files a one-shot request. `onboardRequest` (the store) wakes this
   // effect; `consumeOnboardRequest` takes it out of the store, so a re-render, a second effect run
@@ -500,7 +555,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     setOnboardFor(null);
     // The copilot is off there (ruling Q4): the dock's off sentence shows; a bound skill is never started twice.
     if (scope.available === false || thread.data?.skill != null || startSkill.isPending) return;
-    startSkill.mutate();
+    startSkill.mutate(undefined);
   }, [onboardFor, organizationId, isGlobalAdmin, scope, scopedStatus.isError, conversationId, thread.data, thread.isError, startSkill]);
 
   function toggle(): void {
@@ -626,15 +681,16 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
 
           {canOnboard && skill === null && (
             <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2 text-xs">
-              <button
-                type="button"
-                onClick={() => startSkill.mutate()}
-                disabled={onboardBlocked || startSkill.isPending || turn.isPending}
-                aria-busy={startSkill.isPending}
-                className="surface-button px-3 py-1 disabled:opacity-50"
-              >
-                {startSkill.isPending ? "Starting…" : "Onboard a site"}
-              </button>
+              <OnboardingDraftPicker
+                draftsOf={draftsOf}
+                currentUserId={user.id}
+                startLabel="Onboard a site"
+                disabled={onboardBlocked || turn.isPending}
+                starting={startSkill.isPending && startSkill.variables === undefined}
+                resuming={startSkill.isPending ? (startSkill.variables ?? null) : null}
+                onStartNew={() => startSkill.mutate(undefined)}
+                onResume={(id) => startSkill.mutate(id)}
+              />
               {onboardBlocked && <span className="text-ink-muted">{ONBOARD_PICK_SENTENCE}</span>}
             </div>
           )}
