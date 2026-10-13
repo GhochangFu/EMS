@@ -95,6 +95,15 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "pointKey.update": [POINT_KEYS],
   "pointKey.deactivate": [POINT_KEYS],
   "pointKey.reactivate": [POINT_KEYS],
+  // `F3.86` PR 6 — an onboarding commit creates the site, its RTUs, assets, mappings, groups and templates.
+  "onboarding.commit": [
+    LOCATIONS,
+    ["admin", "rtus"],
+    ["admin", "assets"],
+    ["admin", "asset-points"],
+    ASSET_GROUPS,
+    ASSET_TEMPLATES,
+  ],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

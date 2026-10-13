@@ -13,6 +13,7 @@ import type { ResolvedIdentity } from "../auth/identity-resolver";
 import { COPILOT_UNAVAILABLE_MESSAGE } from "./copilot-access.guard";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotConversationsService } from "./copilot-conversations.service";
+import { discardOnboardingCommitCards } from "./copilot-onboarding-commit";
 import {
   COPILOT_ONBOARDING_SKILL,
   COPILOT_SKILL_ALREADY_BOUND,
@@ -21,6 +22,7 @@ import {
   skillStateOf,
   skillStateOfSession,
 } from "./copilot-onboarding-skill";
+import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 
 /**
  * `F3.86` PR 5 / ADR 0099 decision 7 — starting, ending and reading the
@@ -44,6 +46,7 @@ export class CopilotSkillService {
     private readonly conversations: CopilotConversationsService,
     private readonly availability: CopilotAvailabilityService,
     @Inject(COPILOT_ONBOARDING_SKILL) private readonly onboarding: CopilotOnboardingSkill,
+    private readonly pending: CopilotPendingChangesService,
   ) {}
 
   async start(
@@ -73,11 +76,16 @@ export class CopilotSkillService {
     return skillStateOf(opening.session.id, opening);
   }
 
-  /** Ends the skill; the session stays a draft the onboarding page can resume. Idempotent. */
+  /**
+   * Ends the skill; the session stays a draft the onboarding page can resume. Idempotent.
+   * `F3.86` PR 6 review: an open `onboarding.commit` card goes with it — it commits a skill that no longer
+   * runs here, and the one open change it holds would block every later proposal in the conversation.
+   */
   async end(identity: ResolvedIdentity, conversationId: string): Promise<void> {
     const conversation = await this.conversations.findConversation(identity.id, conversationId);
     if (!conversation) throw new NotFoundException("Conversation not found");
     await this.conversations.unbindOnboardingSession(identity.id, conversationId);
+    await discardOnboardingCommitCards(this.pending, identity.id, conversationId);
   }
 
   /**

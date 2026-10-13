@@ -33,6 +33,7 @@ import {
   aDialectOutsideTheFormulasItemIsAnError,
   theMemberRemovalIsARedBodylessDelete,
   thePointKeyEntriesAreFleetTargets,
+  theOnboardingCommitIsAServerEntry,
 } from "./catalog.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -67,6 +68,10 @@ describe("F3.86 PR 2 — the DELETE allowance and the model's body (ADR 0099 dec
 describe("F3.86 PR 3c — asset groups and point keys (ADR 0099 decision 3, ruling Q1)", () => {
   it("makes the member removal a red, bodyless DELETE", () => theMemberRemovalIsARedBodylessDelete());
   it("targets the point-key entries at the fleet", () => thePointKeyEntriesAreFleetTargets());
+});
+
+describe("F3.86 PR 6 — the onboarding commit (ADR 0099 decision 7)", () => {
+  it("makes the onboarding commit a server entry on the session", () => theOnboardingCommitIsAServerEntry());
 });
 
 describe("F3.85 PR 11a — formula paths into array items (plan §11.3 Unit 2)", () => {

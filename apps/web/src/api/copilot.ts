@@ -69,6 +69,40 @@ export async function sendCopilotTurn(conversationId: string, message: string): 
 }
 
 /**
+ * `POST /api/v1/copilot/conversations/:id/skills/onboarding` (`F3.86` PR 5,
+ * ADR 0099 decision 7) — starts the onboarding skill in this conversation. The
+ * organization must be the conversation's own; the answer is the conversation
+ * with the new session's state in `skill`. A role that may not onboard is 403.
+ */
+export async function startCopilotOnboardingSkill(
+  conversationId: string,
+  organizationId: string,
+): Promise<CopilotConversationDetailDto> {
+  return adminFetch(
+    `/copilot/conversations/${encodeURIComponent(conversationId)}/skills/onboarding`,
+    copilotConversationDetailDtoSchema,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ organizationId }),
+    },
+  );
+}
+
+/**
+ * `DELETE /api/v1/copilot/conversations/:id/skills/onboarding` (`F3.86` PR 5)
+ * — ends the skill here; the draft stays a session the onboarding page can
+ * resume. The answer is the conversation with `skill: null`.
+ */
+export async function endCopilotOnboardingSkill(conversationId: string): Promise<CopilotConversationDetailDto> {
+  return adminFetch(
+    `/copilot/conversations/${encodeURIComponent(conversationId)}/skills/onboarding`,
+    copilotConversationDetailDtoSchema,
+    { method: "DELETE" },
+  );
+}
+
+/**
  * `POST /api/v1/copilot/changes/:id/reject` (`F3.85` PR 8, decision 4) — the
  * Confirm card's Reject. The change is never applied after this; `messages`
  * holds the `Rejected: …` line stored in its conversation. A change that is

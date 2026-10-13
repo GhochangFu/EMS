@@ -14,7 +14,7 @@ import { CopilotPendingChangesService } from "./copilot-pending-changes.service"
 import { EMPTY_COPILOT_READ_TOOLS } from "./copilot-read-tools";
 import { CopilotTurnService } from "./copilot-turn.service";
 import { CopilotUsageService } from "./copilot-usage.service";
-import { UNUSED_ONBOARDING_SKILL, UNUSED_SKILL_SERVICE } from "../testing/copilot-onboarding-fakes";
+import { UNUSED_COMMIT_READER, UNUSED_ONBOARDING_SKILL, UNUSED_SKILL_SERVICE } from "../testing/copilot-onboarding-fakes";
 
 /**
  * `F3.85` PR 7 / ADR 0099 decision 8 — the messages a turn writes, on a real
@@ -164,6 +164,7 @@ export async function aBodyNamingAnotherOrganizationNeverCountsIt(ctx: HistoryCt
     EMPTY_COPILOT_READ_TOOLS,
     new CopilotPendingChangesService(ctx.tenantDb),
     UNUSED_ONBOARDING_SKILL,
+    UNUSED_COMMIT_READER as never,
   );
   const controller = new CopilotConversationsController(
     store,
@@ -212,6 +213,7 @@ function turnService(ctx: HistoryCtx, llm: FakeLlmProvider, counted: Array<strin
     EMPTY_COPILOT_READ_TOOLS,
     new CopilotPendingChangesService(ctx.tenantDb),
     UNUSED_ONBOARDING_SKILL,
+    UNUSED_COMMIT_READER as never,
   );
 }
 

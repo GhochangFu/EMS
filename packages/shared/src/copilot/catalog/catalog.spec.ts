@@ -15,6 +15,7 @@ import {
   proposeToolName,
 } from "./index";
 import { modelBodyOf } from "./model-body";
+import { onboardingCommitCounts, onboardingCommitSiteName } from "./onboarding";
 import { bodyFieldsOf, objectShapeOf, stepValuesSchema } from "./object-shape";
 import { emptyBody } from "./summary-text";
 import type { CatalogEntry, CatalogFormula } from "./types";
@@ -142,7 +143,43 @@ export const FIXTURES: Readonly<
   "assetPoint.update": { body: { unit: "kW", engMax: 500 }, params: { id: ROW }, names: TARGET_NAME },
   "assetPoint.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
   "assetPoint.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  // `F3.86` PR 6 — the server-made onboarding commit (decision 7): the hash of the draft the turn stored.
+  "onboarding.commit": { body: { draftHash: "a".repeat(64) }, params: { id: ROW }, names: TARGET_NAME },
 };
+
+/**
+ * `F3.86` PR 6 (plan §8.2, decision 7): the onboarding commit is made by the
+ * server, never proposed by the model; its target is the session, and the
+ * summary helpers count what the draft creates.
+ */
+export function theOnboardingCommitIsAServerEntry(): void {
+  const entry = catalogEntry("onboarding.commit");
+  if (!entry) throw new Error("onboarding.commit");
+  expect({
+    method: entry.method,
+    path: entry.path,
+    proposer: entry.proposer,
+    risk: entry.risk,
+    target: entry.target,
+    bodyName: entry.bodyName,
+    steps: entry.steps,
+  }).toEqual({
+    method: "POST",
+    path: "/admin/onboarding/sessions/:id/commit",
+    proposer: "server",
+    risk: "create",
+    target: { kind: "onboardingSession", param: "id" },
+    bodyName: "commitOnboardingBodySchema",
+    steps: [{ id: "draft", title: "Draft", fields: ["draftHash"] }],
+  });
+  expect(EXCLUDED_ROUTES.some((route) => route.path === entry.path)).toBe(false);
+  expect(EXCLUDED_ROUTES.some((route) => route.path === "/admin/onboarding/sessions/:id/draft")).toBe(true);
+  expect(onboardingCommitCounts({ rtus: [1], assets: [1, 2], assetPoints: [] })).toBe(
+    "It creates 1 RTU, 2 assets and 0 mappings.",
+  );
+  expect(onboardingCommitSiteName({ location: { name: "Plant 4" } })).toBe("Plant 4");
+  expect(onboardingCommitSiteName({})).toBe("(no name yet)");
+}
 
 const summaryOf = (entry: CatalogEntry) => {
   const fixture = FIXTURES[entry.id];

@@ -26,6 +26,7 @@ import { COPILOT_USAGE_LIMITS, readCopilotUsageLimits } from "./copilot-config";
 import { CopilotContextMiddleware } from "./copilot-context.middleware";
 import { CopilotConversationsController } from "./copilot-conversations.controller";
 import { CopilotConversationsService } from "./copilot-conversations.service";
+import { CopilotOnboardingCommitReader } from "./copilot-onboarding-commit";
 import { COPILOT_ONBOARDING_SKILL } from "./copilot-onboarding-skill";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import { CopilotSkillService } from "./copilot-skill.service";
@@ -135,6 +136,8 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     CopilotProposeToolSet,
     { provide: COPILOT_PROPOSE_TOOLS, useExisting: CopilotProposeToolSet },
     { provide: COPILOT_ONBOARDING_SKILL, useExisting: OnboardingService },
+    // `F3.86` PR 6: reads the stored commit proposal for the server-made `onboarding.commit` card.
+    CopilotOnboardingCommitReader,
     CopilotSkillService,
     { provide: COPILOT_USAGE_LIMITS, useFactory: () => readCopilotUsageLimits(process.env) },
     MasterDataAuditService,

@@ -5,6 +5,7 @@ import {
   aCrossOrganizationConversationIsRefused,
   aLocationAdminIsRefusedByTheOnboardingGate,
   aLostBindRaceIsA409,
+  anEndDiscardsTheOpenCommitCardOnly,
   anEndUnbinds,
   anotherOrganizationIsRefused,
   anotherUsersConversationIsA404,
@@ -25,5 +26,6 @@ describe("F3.86 PR 5 — starting, ending and reading the onboarding skill (ADR 
   it("answers 409 when another start wins the bind", () => aLostBindRaceIsA409());
   it("answers 404 for another user's conversation", () => anotherUsersConversationIsA404());
   it("unbinds on an end and leaves the session", () => anEndUnbinds());
+  it("discards the open onboarding commit card on an end, and only it", () => anEndDiscardsTheOpenCommitCardOnly());
   it("reads the skill, tolerating a session the caller can no longer read", () => aReadOfTheSkillToleratesALostSession());
 });

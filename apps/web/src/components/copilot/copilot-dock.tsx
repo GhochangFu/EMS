@@ -6,6 +6,7 @@ import type {
   CopilotConversationDetailDto,
   CopilotMessageDto,
   CopilotPendingChangeDto,
+  CopilotSkillStateDto,
   CopilotTurnResponseDto,
 } from "@bms/shared";
 import { COPILOT_TURN_MESSAGE_MAX } from "@bms/shared/contracts";
@@ -14,12 +15,14 @@ import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import {
   copilotLimitOf,
   createCopilotConversation,
+  endCopilotOnboardingSkill,
   fetchCopilotConversation,
   fetchCopilotStatus,
   sendCopilotTurn,
+  startCopilotOnboardingSkill,
   type CopilotLimit,
 } from "../../api/copilot";
-import { canAuthorDashboards } from "../../lib/admin-access";
+import { canAccessOnboarding, canAuthorDashboards } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
 import {
@@ -31,6 +34,7 @@ import {
 import { useWizardStore } from "../../stores/wizard-store";
 import { AssistantText } from "./assistant-text";
 import { ConfirmCard } from "./confirm-card";
+import { OnboardingSkillPanel } from "./onboarding-skill-panel";
 
 /**
  * `F3.85` PR 7 (ADR 0099 decisions 1, 5, 10; plan §9.2) — the administrator
@@ -66,6 +70,15 @@ import { ConfirmCard } from "./confirm-card";
  * {@link FOLLOW_UP_POLL_MS} ms, for at most {@link FOLLOW_UP_WAIT_MS} ms, until
  * the follow-up turn's messages arrive (decision 4.7) — with any next card. A
  * turn's `fillStep` goes to `useWizardStore` for an open wizard.
+ *
+ * **The onboarding skill** (`F3.86` PR 6, decision 7). "Onboard a site"
+ * starts it in the conversation (a role that may onboard, an organization the
+ * conversation is bound to, the dock available there — ruling Q4). While the
+ * conversation's `skill` is set, `OnboardingSkillPanel` renders the
+ * onboarding session's thread, its controls and the Confirm cards, and the
+ * input stays open even with no AI key (the onboarding's guided mode answers).
+ * A turn's `skill` key replaces the state (`null` ends the skill); a turn
+ * with no such key (a credential refusal) keeps the last state.
  *
  * **The session survives a route change.** Each page renders its own
  * `AppShell`, so a navigation — `open_page`'s own included — unmounts the
@@ -105,6 +118,12 @@ const NOT_CONFIGURED_SENTENCE =
 
 /** The sentence a picked organization whose copilot is off shows instead of the input. */
 const SCOPE_OFF_SENTENCE = "The copilot is off for this organization.";
+
+/** The server-made onboarding commit's catalog id: a conversation shows one such card at a time. */
+const ONBOARDING_COMMIT = "onboarding.commit";
+
+/** "Onboard a site" needs an organization: the global administrator's cross-organization scope names none. */
+const ONBOARD_PICK_SENTENCE = "Pick an organization to onboard a site.";
 
 /**
  * An app route as the server's `open_page` allow-list emits it: one leading
@@ -218,8 +237,12 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
   const messages = conversationId === null ? [] : (thread.data?.messages ?? []);
   const pendingChanges = conversationId === null ? [] : (thread.data?.pendingChanges ?? []);
   const cards = [...pendingChanges, ...kept.filter((k) => !pendingChanges.some((c) => c.id === k.id))];
+  const skill = conversationId === null ? null : (thread.data?.skill ?? null);
   const receiveFill = useWizardStore((s) => s.receiveFill);
   const [input, setInput] = useState("");
+  // `F3.86` PR 6 review: the skill panel's undo is a write too (F3.25, one write at a time): Send waits for it.
+  const [skillUndoing, setSkillUndoing] = useState(false);
+
   const [banner, setBanner] = useState<string | null>(null);
   const [turnNotConfigured, setTurnNotConfigured] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
@@ -285,6 +308,29 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     return { ...prev, pendingChanges: prev.pendingChanges.filter((c) => c.id !== id) };
   }
 
+  /** A turn's or an onboarding answer's skill state, into the thread's cache entry (`null` ends the skill). */
+  function setSkill(id: string, next: CopilotSkillStateDto | null): void {
+    queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(id), (prev) =>
+      prev ? { ...prev, skill: next } : prev,
+    );
+    // `F3.86` PR 6 review: a skill no longer on a draft (committed by the drawer's wizard or elsewhere,
+    // or ended) leaves no live commit card; the server rejects it at the next read too.
+    if (next === null || next.session.status !== "draft") dropCommitCards(id);
+  }
+
+  /** Drops the `onboarding.commit` cards, cached and kept: their Confirm could only answer 400 now. */
+  function dropCommitCards(id: string): void {
+    queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(id), (prev) =>
+      prev ? { ...prev, pendingChanges: prev.pendingChanges.filter((c) => c.catalogId !== ONBOARDING_COMMIT) } : prev,
+    );
+    setKept((prev) => prev.filter((c) => c.catalogId !== ONBOARDING_COMMIT));
+  }
+
+  /** The conversation the skill route answered, in the cache: its messages, open changes and skill. */
+  function putConversation(detail: CopilotConversationDetailDto): void {
+    queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(detail.id), detail);
+  }
+
   function applied(change: CopilotPendingChangeDto): void {
     updateThread((prev) => withoutChange(prev, change.id));
     setFollowUp({ since: Date.now(), baseline: messages.length });
@@ -327,6 +373,8 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
       return sendCopilotTurn(id, message);
     },
     onSuccess: (data) => {
+      // Before any early return: a skill state answers even when nothing was stored (a closed or lost session).
+      if (data.skill !== undefined) setSkill(data.conversationId, data.skill);
       if (data.outcome === "not_configured") {
         setTurnNotConfigured(true);
         setBanner(null);
@@ -346,7 +394,12 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
               ...prev,
               messages: [...prev.messages, ...data.messages],
               pendingChanges: [
-                ...prev.pendingChanges.filter((c) => !data.pendingChanges.some((n) => n.id === c.id)),
+                ...prev.pendingChanges.filter(
+                  (c) =>
+                    !data.pendingChanges.some((n) => n.id === c.id) &&
+                    // `F3.86` PR 6: a new onboarding commit card replaces the old one (the server discarded it).
+                    !(c.catalogId === ONBOARDING_COMMIT && data.pendingChanges.some((n) => n.catalogId === ONBOARDING_COMMIT)),
+                ),
                 ...data.pendingChanges,
               ],
             }
@@ -365,6 +418,49 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     },
   });
 
+  // `F3.86` PR 6: the onboarding skill starts in the conversation, which is made first when there is none.
+  const startSkill = useMutation({
+    mutationFn: async (): Promise<CopilotConversationDetailDto> => {
+      let id = conversationId;
+      let organization = thread.data?.organizationId ?? null;
+      if (id === null) {
+        const created = await createCopilotConversation(isGlobalAdmin && picked ? organizationId : null);
+        id = created.id;
+        organization = created.organizationId;
+        queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(id), {
+          ...created,
+          messages: [],
+          pendingChanges: [],
+        });
+        setConversation(user.id, id);
+      }
+      if (organization === null) throw new Error(ONBOARD_PICK_SENTENCE);
+      return startCopilotOnboardingSkill(id, organization);
+    },
+    onSuccess: (detail) => {
+      setBanner(null);
+      putConversation(detail);
+    },
+    onError: (err: Error) => setBanner(apiErrorMessage(err)),
+  });
+
+  const endSkill = useMutation({
+    mutationFn: () => endCopilotOnboardingSkill(conversationId as string),
+    onSuccess: (detail) => {
+      setBanner(null);
+      putConversation(detail);
+      dropCommitCards(detail.id);
+    },
+    onError: (err: Error) => setBanner(apiErrorMessage(err)),
+  });
+
+  // A turn, a follow-up or the skill panel's undo is in flight: Send waits.
+  const busy = turn.isPending || followUp !== null || skillUndoing;
+
+  // A global admin onboards in the organization picked above; "All organizations" names none.
+  const canOnboard = canAccessOnboarding(user.role) && !scopeOff;
+  const onboardBlocked = isGlobalAdmin && !picked;
+
   function toggle(): void {
     setOpen((was) => {
       writeOpen(!was);
@@ -378,14 +474,21 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     setTurnNotConfigured(false);
   }
 
-  function submit(): void {
-    const text = input.trim();
-    if (!text || turn.isPending || followUp !== null) {
+  function sendText(raw: string): void {
+    const text = raw.trim();
+    if (!text || busy) {
       return;
     }
-    setInput("");
     setKept([]);
     turn.mutate(text);
+  }
+
+  function submit(): void {
+    if (!input.trim() || busy) {
+      return;
+    }
+    sendText(input);
+    setInput("");
   }
 
   function onSubmit(e: FormEvent): void {
@@ -399,6 +502,27 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
       submit();
     }
   }
+
+  const cardList = cards.map((change) => (
+    <ConfirmCard
+      key={change.id}
+      change={change}
+      onApplied={applied}
+      onRejected={rejected}
+      onGone={gone}
+      onRouteFailed={routeFailed}
+    />
+  ));
+  const progress = (
+    <>
+      {turn.isPending && <div className="text-xs text-ink-muted">Copilot is thinking…</div>}
+      {followUp !== null && !turn.isPending && (
+        <div className="text-xs text-ink-muted">
+          {followUp.failed ? "Not applied. Waiting for the copilot…" : "Applied. Waiting for the copilot…"}
+        </div>
+      )}
+    </>
+  );
 
   return (
     <>
@@ -458,58 +582,75 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
             </div>
           )}
 
-          <div
-            ref={threadRef}
-            role="log"
-            aria-label="Copilot conversation"
-            aria-live="polite"
-            className="flex-1 space-y-3 overflow-y-auto bg-canvas px-4 py-3"
-          >
-            {messages.length === 0 && !turn.isPending && (
-              <p className="text-xs text-ink-muted">
-                Ask about alarms, assets, KPIs, locations, dashboards or health, or ask for a change to a dashboard,
-                a dashboard template or a KPI setting. A change is applied only when you confirm its card.
-              </p>
-            )}
-            {messages.map((m) => (
-              <div key={m.id} className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
-                <span
-                  className={`mb-0.5 px-1 text-[10px] font-semibold uppercase tracking-wide ${
-                    m.role === "user" ? "text-accent" : "text-ink-muted"
-                  }`}
-                >
-                  {m.role === "user" ? (user.displayName ?? user.email) : m.role === "action" ? "Action" : "Copilot"}
-                </span>
-                <div
-                  className={`max-w-[85%] whitespace-pre-wrap rounded px-3 py-2 text-sm ${
-                    m.role === "user"
-                      ? "bg-accent text-on-accent"
-                      : m.role === "action"
-                        ? "border border-line text-xs text-ink-muted"
-                        : "surface-raised-sm text-ink"
-                  }`}
-                >
-                  {m.role === "user" ? m.content : <AssistantText text={m.content} />}
+          {canOnboard && skill === null && (
+            <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2 text-xs">
+              <button
+                type="button"
+                onClick={() => startSkill.mutate()}
+                disabled={onboardBlocked || startSkill.isPending || turn.isPending}
+                aria-busy={startSkill.isPending}
+                className="surface-button px-3 py-1 disabled:opacity-50"
+              >
+                {startSkill.isPending ? "Starting…" : "Onboard a site"}
+              </button>
+              {onboardBlocked && <span className="text-ink-muted">{ONBOARD_PICK_SENTENCE}</span>}
+            </div>
+          )}
+
+          {skill !== null ? (
+            <OnboardingSkillPanel
+              user={user}
+              skill={skill}
+              cards={cardList}
+              status={progress}
+              sending={turn.isPending || followUp !== null}
+              onSend={sendText}
+              onSkillChange={(next) => conversationId !== null && setSkill(conversationId, next)}
+              onError={setBanner}
+              onEnd={() => endSkill.mutate()}
+              ending={endSkill.isPending}
+              onUndoingChange={setSkillUndoing}
+            />
+          ) : (
+            <div
+              ref={threadRef}
+              role="log"
+              aria-label="Copilot conversation"
+              aria-live="polite"
+              className="flex-1 space-y-3 overflow-y-auto bg-canvas px-4 py-3"
+            >
+              {messages.length === 0 && !turn.isPending && (
+                <p className="text-xs text-ink-muted">
+                  Ask about alarms, assets, KPIs, locations, dashboards or health, or ask for a change to a dashboard,
+                  a dashboard template or a KPI setting. A change is applied only when you confirm its card.
+                </p>
+              )}
+              {messages.map((m) => (
+                <div key={m.id} className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
+                  <span
+                    className={`mb-0.5 px-1 text-[10px] font-semibold uppercase tracking-wide ${
+                      m.role === "user" ? "text-accent" : "text-ink-muted"
+                    }`}
+                  >
+                    {m.role === "user" ? (user.displayName ?? user.email) : m.role === "action" ? "Action" : "Copilot"}
+                  </span>
+                  <div
+                    className={`max-w-[85%] whitespace-pre-wrap rounded px-3 py-2 text-sm ${
+                      m.role === "user"
+                        ? "bg-accent text-on-accent"
+                        : m.role === "action"
+                          ? "border border-line text-xs text-ink-muted"
+                          : "surface-raised-sm text-ink"
+                    }`}
+                  >
+                    {m.role === "user" ? m.content : <AssistantText text={m.content} />}
+                  </div>
                 </div>
-              </div>
-            ))}
-            {cards.map((change) => (
-              <ConfirmCard
-                key={change.id}
-                change={change}
-                onApplied={applied}
-                onRejected={rejected}
-                onGone={gone}
-                onRouteFailed={routeFailed}
-              />
-            ))}
-            {turn.isPending && <div className="text-xs text-ink-muted">Copilot is thinking…</div>}
-            {followUp !== null && !turn.isPending && (
-              <div className="text-xs text-ink-muted">
-                {followUp.failed ? "Not applied. Waiting for the copilot…" : "Applied. Waiting for the copilot…"}
-              </div>
-            )}
-          </div>
+              ))}
+              {cardList}
+              {progress}
+            </div>
+          )}
 
           {banner && (
             <div
@@ -522,9 +663,9 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
 
           {scopeOff ? (
             <p className="border-t border-line p-3 text-xs text-ink-muted">{SCOPE_OFF_SENTENCE}</p>
-          ) : configured === undefined ? (
+          ) : skill === null && configured === undefined ? (
             <p className="border-t border-line p-3 text-xs text-ink-muted">Checking this organization…</p>
-          ) : configured ? (
+          ) : skill !== null || configured ? (
             <form onSubmit={onSubmit} className="border-t border-line p-3">
               <div className="flex items-end gap-2">
                 <textarea
@@ -539,8 +680,9 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
                 />
                 <button
                   type="submit"
-                  disabled={turn.isPending || followUp !== null || input.trim() === ""}
-                  aria-busy={turn.isPending || followUp !== null}
+                  disabled={busy || input.trim() === ""}
+                  // F4.164: name the label's own flag; `busy` is turn.isPending, a follow-up or a skill undo.
+                  aria-busy={turn.isPending || followUp !== null || skillUndoing}
                   className="surface-button px-3 py-1 text-xs disabled:opacity-50"
                 >
                   {turn.isPending ? "Sending…" : followUp !== null ? "Waiting…" : "Send"}
