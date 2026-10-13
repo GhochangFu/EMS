@@ -28,6 +28,11 @@ rulings Q2, Q3 and Q8): the usage counters, the day boundary, and the reading
 of "access only narrows". Where Amendment 1 conflicts with the text above, it
 wins.
 
+**Amended 2026-10-13 — Amendment 2** (owner-approved; the `F4.255` plan
+gate): a draft onboarding session can be resumed from the dock, and one
+untouched for 30 days is erased by the purge tick. Where Amendment 2
+conflicts with decisions 7 and 8 above, it wins.
+
 | # | Question | Options put | Ruled | Decision |
 | --- | --- | --- | --- | --- |
 | 1 | Copilot or narrow assistant | narrow admin assistant; general copilot; no change | **general copilot** (owner's own choice) | 1 |
@@ -570,3 +575,68 @@ Release 2 closed 2026-10-13 (`F3.86`, #822–#831, closure #832; the commit
 route requires the draft hash since #833): the per-PR record is in
 `docs/plans/f3.86-admin-copilot-release-2.md` §4.9, §5.4, §5.6, §6.7, §7.3,
 §8.4 and §9.1.
+
+## Amendment 2 — resuming an onboarding draft, and its 30-day erase (owner, 2026-10-13)
+
+`F3.86` PR 7 retired the onboarding page and left decision 7 with no way back
+into a draft: `DELETE …/skills/onboarding` unbinds the session and leaves it a
+`draft` row (`copilot-skill.service.ts:84-89`), a reload or an organization
+pick drops the conversation that bound it, the decision 8 purge deletes that
+conversation after 30 days, and a start that loses its bind race leaves the
+loser's session behind. Such a draft can hold encrypted RTU credentials
+(`_secrets`, ADR 0022 decision 2) with no end date, and no ADR gave
+`bms.onboarding_sessions` a lifetime. The `F4.255` plan asked the owner, who
+ruled on 2026-10-13 (the plan's §0) and approved this amendment the same day.
+Each item names the decision or choice whose text it changes.
+
+- **A1 — Decision 7: a draft can be resumed; a resume is a skill start.**
+  The dock, while the conversation runs no skill, lists the organization's
+  open drafts (its location's name, the phase, the last update, who started
+  it) from a new organization-scoped list route, `GET
+  /api/v1/admin/onboarding/sessions?organizationId=…`, whose contract lives in
+  `packages/shared/src/contracts/onboarding.ts` (ADR 0030). The list's access
+  is `loadSession`'s own (`assertOnboardingAccess`: `admin`, or an
+  `organization_admin` who may manage the organization), applied to the
+  organization the caller names, so a scoped administrator naming another
+  organization is refused 403 as `createSession` refuses it; the by-id reads
+  keep `F4.256`'s uniform 404. `POST …/skills/onboarding` takes an optional
+  `sessionId`: with it, the route binds that draft instead of creating one,
+  after the same checks as a start — the conversation is the caller's and
+  bound to the body's organization, the organization's copilot switch is on
+  (ruling Q4), no skill is bound yet, and the session is readable by the
+  caller, in that organization, and still a draft. The daily limit applies to
+  its turns as to any skill turn. A resume first unbinds the caller's **own**
+  other conversations from that session (the per-user policy of decision 8
+  shows no one else's), and binds no unique index: two administrators may
+  open one draft, and the `FOR UPDATE` re-checks of ADR 0094 decision 6 and
+  the hash-bound commit decide who writes. End onboarding keeps the draft.
+  `createSession` writes `created_by` from this row on; earlier rows keep
+  `NULL` and are listed as started by an unknown user.
+
+- **A2 — Decision 8 and drafter choice 8: the 30-day erase reaches
+  `bms.onboarding_sessions`.** The same `copilot-purge` tick, per organization
+  inside `withTenant` as `bms_tenant` under the table's `tenant_isolation`
+  policy, deletes every session whose `status` is `draft` and whose
+  `updated_at` is older than 30 days. The delete removes the draft's
+  encrypted RTU `_secrets` and its checkpoints with the row; a conversation
+  bound to it becomes a plain conversation (`0107`: `ON DELETE SET NULL`),
+  and its open `onboarding.commit` card is rejected on the conversation's
+  next read, as a card with no draft skill behind it already is. Committed
+  sessions are never erased by this tick: `result` is the commit's record.
+  No audit row is written — an uncommitted draft wrote no master data, as a
+  purged conversation wrote none. Decision 8's table list gains
+  `bms.onboarding_sessions (status = 'draft')`.
+
+- **A3 — Drafter choice: the lost bind race leaves an empty draft, not a
+  refusal with a side effect to undo.** `CopilotSkillService.start` creates
+  the session before the bind; when two starts race, the loser's session is an
+  empty draft (phase `location`, no content, no secrets). It is listed by A1 —
+  started by the caller, a moment ago — so the caller can resume or ignore it,
+  and A2 erases it with every other untouched draft. Deleting it at once would
+  add a delete path to the skill seam for a case the dock already prevents
+  (the button is disabled while a start is pending).
+
+- **Amends and relates to.** ADR 0022 (the credential ciphertext now has a
+  lifetime: 30 days without a write, or the commit); ADR 0094 (checkpoints go
+  with the row); ADR 0030 (the list DTO is a shared contract); this record's
+  decision 7 (resume) and decision 8 (the table list).
