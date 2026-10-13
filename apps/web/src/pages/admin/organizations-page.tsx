@@ -25,6 +25,7 @@ import {
 } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
+import { useCopilotStore } from "../../stores/copilot-store";
 
 type OrganizationsAdminPageProps = {
   user: AuthUser;
@@ -55,6 +56,8 @@ function organizationTimezoneOptions(): string[] {
 /** Organization master data list with drill-down to locations. */
 export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const navigate = useNavigate();
+  // `F3.86` PR 7: "Onboard with AI" asks the copilot dock to start the onboarding skill; it no longer navigates.
+  const requestOnboarding = useCopilotStore((s) => s.requestOnboarding);
   const queryClient = useQueryClient();
   const canWrite = canWriteOrganizations(user.role);
   const canOnboard = canAccessOnboarding(user.role);
@@ -221,9 +224,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                             <button
                               type="button"
                               className="text-xs font-semibold text-accent-strong"
-                              onClick={() =>
-                                navigate(`/admin/organizations/${item.id}/onboarding`)
-                              }
+                              onClick={() => requestOnboarding(user.id, item.id)}
                             >
                               Onboard with AI
                             </button>

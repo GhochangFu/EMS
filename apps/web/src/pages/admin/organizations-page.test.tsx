@@ -2,6 +2,8 @@
 import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
+import { resetCopilotStore } from "../../stores/copilot-store";
+
 import {
   editPrefillsTheCurrencyAndSendsIt,
   formHasACurrencyInputWithADatalist,
@@ -17,6 +19,7 @@ import {
   theAiAssistantActionNavigatesToTheSubPage,
   typedCurrencyIsUppercasedAndSubmitted,
   aRefusedRowSwitchShowsTheSentence,
+  onboardWithAiFilesTheDocksRequestAndDoesNotNavigate,
   aRefusedSaveShowsTheSentence,
   theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin,
   theGlobalAdminSwitchesARowsCopilotOn,
@@ -33,6 +36,7 @@ describe("E4.1c organizations page — the Currency field", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    resetCopilotStore();
   });
 
   it("O1 the form has a Currency input bound to a datalist with at least one option", async () => {
@@ -101,5 +105,9 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("F3.85 a refused row switch shows the server sentence", async () => {
     await aRefusedRowSwitchShowsTheSentence();
+  });
+
+  it("F3.86 PR 7 Onboard with AI files the dock's request and does not navigate", async () => {
+    await onboardWithAiFilesTheDocksRequestAndDoesNotNavigate();
   });
 });

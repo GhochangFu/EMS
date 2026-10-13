@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { FormEvent, KeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
-import { matchPath, useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import type {
   CopilotConversationDetailDto,
   CopilotMessageDto,
@@ -45,7 +45,7 @@ import { OnboardingSkillPanel } from "./onboarding-skill-panel";
  * the server's `COPILOT_ROLES`) whose `GET /copilot/status` says `available`.
  * The role check runs before any hook, so an operator never asks (the route
  * would answer 403). `available: false` renders nothing (plan Q7). The
- * onboarding chat has its own assistant, so the dock hides there.
+
  *
  * **Layering.** `z-50`, below `ConfirmDialog`'s `z-[60]`, so a Confirm card
  * always covers the panel.
@@ -59,7 +59,7 @@ import { OnboardingSkillPanel } from "./onboarding-skill-panel";
  *
  * **A refusal stores nothing** (ADR 0022): a turn whose `messages` is empty
  * puts its `reply` in the banner. The input is not restored — for a
- * credential the whole string can be the secret (see `onboarding-chat-page`).
+ * credential the whole string can be the secret (the skill panel's input does the same).
  *
  * **`open_page` navigates through the router only**, never `window.location`.
  *
@@ -79,6 +79,13 @@ import { OnboardingSkillPanel } from "./onboarding-skill-panel";
  * input stays open even with no AI key (the onboarding's guided mode answers).
  * A turn's `skill` key replaces the state (`null` ends the skill); a turn
  * with no such key (a credential refusal) keeps the last state.
+ *
+ * **"Onboard with AI"** (`F3.86` PR 7, ruling Q5) files a one-shot request in
+ * `useCopilotStore`; the dock consumes it once, opens, picks the organization
+ * (the global administrator) and starts the skill through the same
+ * `startSkill` mutation as "Onboard a site" — only when the conversation has no
+ * skill (the server's bind refuses a second) and the organization's copilot is
+ * on (otherwise the off sentence shows and nothing starts, ruling Q4).
  *
  * **The session survives a route change.** Each page renders its own
  * `AppShell`, so a navigation — `open_page`'s own included — unmounts the
@@ -108,9 +115,6 @@ export const COPILOT_OPEN_KEY = "bms-copilot-open";
 /** The picker value for the global administrator's cross-organization scope. */
 const ALL_ORGANIZATIONS = COPILOT_ALL_ORGANIZATIONS;
 const ALL_ORGANIZATIONS_LABEL = "All organizations (platform key)";
-
-/** The route that has its own assistant; the dock hides there. */
-const ONBOARDING_ROUTE = "/admin/organizations/:orgId/onboarding";
 
 /** The sentence a scope with no AI key shows instead of the input (decision 10). */
 const NOT_CONFIGURED_SENTENCE =
@@ -185,11 +189,7 @@ function BotIcon({ size }: { size: number }) {
 type CopilotDockProps = { user: AuthUser };
 
 export function CopilotDock({ user }: CopilotDockProps) {
-  const location = useLocation();
   if (!canAuthorDashboards(user.role)) {
-    return null;
-  }
-  if (matchPath(ONBOARDING_ROUTE, location.pathname)) {
     return null;
   }
   return <AvailableDock user={user} />;
@@ -460,6 +460,49 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
   // A global admin onboards in the organization picked above; "All organizations" names none.
   const canOnboard = canAccessOnboarding(user.role) && !scopeOff;
   const onboardBlocked = isGlobalAdmin && !picked;
+
+  // `F3.86` PR 7: "Onboard with AI" files a one-shot request. `onboardRequest` (the store) wakes this
+  // effect; `consumeOnboardRequest` takes it out of the store, so a re-render, a second effect run
+  // (StrictMode) or a remount finds none and starts nothing twice. `onboardFor` is the organization
+  // the start now waits on (its scope status, the thread's skill).
+  const onboardRequest = useCopilotStore((s) => s.onboardRequest);
+  const consumeOnboardRequest = useCopilotStore((s) => s.consumeOnboardRequest);
+  const [onboardFor, setOnboardFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (onboardRequest === null) return;
+    const request = consumeOnboardRequest(user.id);
+    if (request === null || !canAccessOnboarding(user.role)) return;
+    setOpen(true);
+    writeOpen(true);
+    setBanner(null);
+    // Keep the conversation when it is already in that organization: a pick would drop it (and its skill).
+    if (isGlobalAdmin && organizationId !== request.organizationId) {
+      pickInStore(user.id, request.organizationId);
+      setTurnNotConfigured(false);
+    }
+    setOnboardFor(request.organizationId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the request alone: it is consumed once
+  }, [onboardRequest]);
+  useEffect(() => {
+    if (onboardFor === null) return;
+    // The pick has not landed yet (the global administrator's store write re-renders this component).
+    if (isGlobalAdmin && organizationId !== onboardFor) return;
+    if (isGlobalAdmin && scopedStatus.isError) {
+      setOnboardFor(null);
+      return;
+    }
+    // The picked organization's status, or the existing conversation's thread, is still loading.
+    if (scope === undefined) return;
+    if (conversationId !== null && thread.isError) {
+      setOnboardFor(null);
+      return;
+    }
+    if (conversationId !== null && thread.data === undefined) return;
+    setOnboardFor(null);
+    // The copilot is off there (ruling Q4): the dock's off sentence shows; a bound skill is never started twice.
+    if (scope.available === false || thread.data?.skill != null || startSkill.isPending) return;
+    startSkill.mutate();
+  }, [onboardFor, organizationId, isGlobalAdmin, scope, scopedStatus.isError, conversationId, thread.data, thread.isError, startSkill]);
 
   function toggle(): void {
     setOpen((was) => {
