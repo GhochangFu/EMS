@@ -173,7 +173,7 @@ export async function validateOnboardingSession(
  * `F3.86` PR 6 — commits only the draft `draftHash` names: the `onboarding.commit`
  * wizard's Submit. The route commits through `commitProposed`, so a draft that
  * changed since the hash was read answers 400 `PROPOSED_DRAFT_CHANGED` and
- * writes nothing. The hash is required: an empty body is the unbound commit.
+ * writes nothing. The hash is required: the route answers 400 to an empty body.
  * No `X-Copilot-Change` header — a wizard is not a copilot change.
  */
 export async function commitOnboardingDraft(
@@ -184,14 +184,5 @@ export async function commitOnboardingDraft(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ draftHash }),
-  });
-}
-
-/** Commits the onboarding draft to master data. */
-export async function commitOnboardingSession(
-  sessionId: string,
-): Promise<OnboardingCommitResponseDto> {
-  return adminFetch(`/admin/onboarding/sessions/${sessionId}/commit`, onboardingCommitResponseDtoSchema, {
-    method: "POST",
   });
 }

@@ -465,8 +465,8 @@ export class VocabulariesService {
     //   fourth route.
     // - **A schema re-applied to a row already stored**, which is not a request
     //   schema and is not on the request at all. `onboarding-commit.service.ts`
-    //   `:181` is reached from `POST sessions/:id/commit`, a route that takes no
-    //   `@Body()`: what bounds `domain` is `onboardingDraftSchema`, run over the
+    //   `:181` is reached from `POST sessions/:id/commit`, whose only body field is
+    //   `draftHash` (it never reaches this method): what bounds `domain` is `onboardingDraftSchema`, run over the
     //   *stored* draft by `OnboardingValidateService.validate` three statements
     //   earlier, whose `readyToCommit` is false for an over-long code so the
     //   call is never made. (`F4.104` added a second, earlier guard at the

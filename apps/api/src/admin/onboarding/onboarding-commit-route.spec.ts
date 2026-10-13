@@ -6,11 +6,11 @@ import { OnboardingService } from "./onboarding.service";
 
 /**
  * `F3.86` PR 5 / ADR 0099 decision 7 — `POST /admin/onboarding/sessions/:id/commit`
- * takes an optional `draftHash`. An empty body (the page's Commit button, and
- * every client before PR 5) commits the stored draft; a hash binds the commit
- * to that draft through `commitProposed`, whose two hash checks answer 400
- * `PROPOSED_DRAFT_CHANGED` (`onboarding-commit-proposed.spec.ts`). Vitest entry
- * point: the sibling `.test.ts` (ADR 0014).
+ * requires `draftHash` (the post-closure fix; PR 5 had made it optional for the
+ * retired page's empty POST). The hash binds the commit to that draft through
+ * `commitProposed`, whose two hash checks answer 400 `PROPOSED_DRAFT_CHANGED`
+ * (`onboarding-commit-proposed.spec.ts`). An empty or missing body is a 400 and
+ * reaches no commit. Vitest entry point: the sibling `.test.ts` (ADR 0014).
  */
 
 const JWT = { sub: "kc-1" } as never;
@@ -42,31 +42,26 @@ function controllerWithRecordingService() {
   return { controller: new OnboardingController(service as never), calls };
 }
 
-/** Without a hash the service commits the stored draft; never `commitProposed`. */
-export async function anEmptyCommitIsTheStoredDraft(): Promise<void> {
-  const { service, calls } = serviceWithRecordingCommit();
-  await service.commit(JWT, SESSION_ID);
-  expect(calls).toEqual([{ method: "commit", args: [JWT, SESSION_ID] }]);
-}
-
-/** With a hash the service commits only that draft, through `commitProposed`. */
+/** The service commits only the draft the hash names, through `commitProposed`, never `commit`. */
 export async function aHashedCommitIsBoundToThatDraft(): Promise<void> {
   const { service, calls } = serviceWithRecordingCommit();
   await service.commit(JWT, SESSION_ID, HASH);
   expect(calls).toEqual([{ method: "commitProposed", args: [JWT, SESSION_ID, HASH] }]);
 }
 
-/** The route hands the body's hash to the service, and nothing for `{}` or a missing body. */
+/** The route hands the body's hash to the service. */
 export async function theRoutePassesTheHashThrough(): Promise<void> {
   const { controller, calls } = controllerWithRecordingService();
-  await controller.commit(SESSION_ID, {}, JWT);
-  await controller.commit(SESSION_ID, undefined, JWT);
   await controller.commit(SESSION_ID, { draftHash: HASH }, JWT);
-  expect(calls).toEqual([
-    [JWT, SESSION_ID, undefined],
-    [JWT, SESSION_ID, undefined],
-    [JWT, SESSION_ID, HASH],
-  ]);
+  expect(calls).toEqual([[JWT, SESSION_ID, HASH]]);
+}
+
+/** `{}` and a missing body are a 400, and the service's commit is never called. */
+export async function anEmptyOrMissingBodyIsA400(): Promise<void> {
+  const { controller, calls } = controllerWithRecordingService();
+  await expect(controller.commit(SESSION_ID, {}, JWT)).rejects.toBeInstanceOf(BadRequestException);
+  await expect(controller.commit(SESSION_ID, undefined, JWT)).rejects.toBeInstanceOf(BadRequestException);
+  expect(calls).toEqual([]);
 }
 
 /** A short hash or an unknown key is a 400 and reaches no commit. */

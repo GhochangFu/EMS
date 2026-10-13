@@ -167,14 +167,15 @@ export class OnboardingController {
   }
 
   /**
-   * `F3.86` PR 5 (ADR 0099 decision 7): an empty body is the page's Commit; a
-   * `draftHash` binds the commit to that draft (400 when it has changed).
+   * `F3.86` PR 5 (ADR 0099 decision 7): `draftHash` is required and binds the
+   * commit to that draft (400 when it has changed). An empty or missing body is
+   * a 400: the empty body existed only for the retired page.
    */
   @Post("sessions/:id/commit")
   @HttpCode(HttpStatus.OK)
   async commit(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
     try {
-      const { draftHash } = commitOnboardingBodySchema.parse(body ?? {});
+      const { draftHash } = commitOnboardingBodySchema.parse(body);
       return await this.service.commit(user, idParamSchema.parse(id), draftHash);
     } catch (err) {
       if (err instanceof ZodError) {

@@ -298,7 +298,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.86` PR 5. Strict: a session id sent with the organization must be a 400 — the
   // route creates the session; it never binds one the caller names.
   copilotStartOnboardingSkillBodySchema,
-  // `F3.86` PR 5. Strict: a key beside `draftHash` must be a 400, never a silent page commit.
+  // `F3.86` PR 5. Strict: a key beside `draftHash` must be a 400, and `draftHash` is required.
   commitOnboardingBodySchema,
   createRtuBodySchema,
   createSessionBodySchema,

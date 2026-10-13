@@ -4,7 +4,7 @@ import {
   assertADraftChangedAfterTheReadIsRefusedUnderTheLock,
   assertADraftChangedBeforeTheReadIsRefusedWithoutATransaction,
   assertAnUnchangedDraftProceedsPastTheLock,
-  assertTheButtonPathTakesNoLock,
+  assertTheUnboundSpecPathTakesNoLock,
 } from "./onboarding-commit-proposed.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -21,7 +21,7 @@ describe("OnboardingCommitService.commitProposed — the proposal survives to th
     await assertAnUnchangedDraftProceedsPastTheLock();
   });
 
-  it("takes no lock on the Commit button path", async () => {
-    await assertTheButtonPathTakesNoLock();
+  it("takes no lock on the spec-only unbound commit()", async () => {
+    await assertTheUnboundSpecPathTakesNoLock();
   });
 });

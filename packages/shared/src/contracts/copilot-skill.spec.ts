@@ -11,7 +11,7 @@ import { commitOnboardingBodySchema } from "./onboarding";
 /**
  * `F3.86` PR 5 / ADR 0099 decision 7 — the onboarding skill's contracts: the
  * skill state the dock reads, the route body that starts it, and the commit
- * route's optional `draftHash`. Vitest entry point: the sibling `.test.ts`
+ * route's required `draftHash`. Vitest entry point: the sibling `.test.ts`
  * (ADR 0014).
  */
 
@@ -34,9 +34,9 @@ const SESSION = {
 
 const SKILL = { kind: "onboarding", sessionId: SESSION.id, session: SESSION, suggestedReplies: ["View draft"] };
 
-/** An empty body is the page's Commit; a 64-character hash binds it; anything else is refused. */
-export function theCommitBodyTakesAnOptionalHash(): void {
-  expect(commitOnboardingBodySchema.parse({})).toEqual({});
+/** A 64-character hash binds the commit; an empty body, a short hash or another key is refused. */
+export function theCommitBodyRequiresTheHash(): void {
+  expect(commitOnboardingBodySchema.safeParse({}).success).toBe(false);
   expect(commitOnboardingBodySchema.parse({ draftHash: "a".repeat(64) })).toEqual({ draftHash: "a".repeat(64) });
   expect(commitOnboardingBodySchema.safeParse({ draftHash: "a".repeat(63) }).success).toBe(false);
   expect(commitOnboardingBodySchema.safeParse({ draftHash: "a".repeat(64), force: true }).success).toBe(false);
