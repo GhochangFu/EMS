@@ -39,7 +39,10 @@ import * as copilotApi from "../../api/copilot";
  * point (ADR 0014). Queries go by role and text (ADR 0042 decision 5).
  */
 
-const admin: AuthUser = {
+/** `F4.254` PR 2: the import wizard parses the route's body, whose `organizationId` is a uuid. */
+export const ORG_UUID = "33333333-3333-4333-8333-333333333333";
+
+export const admin: AuthUser = {
   id: "u1",
   email: "admin@bms.local",
   displayName: "Admin",
@@ -56,7 +59,7 @@ const locationAdmin: AuthUser = {
 
 const DRAFT_ID = "22222222-2222-4222-8222-222222222222";
 
-const STOCK = {
+export const STOCK = {
   items: [
     {
       code: "electrical-feeder",
@@ -73,7 +76,7 @@ const STOCK = {
 
 const IMPORTED_DRAFT = {
   id: DRAFT_ID,
-  organizationId: "org-1",
+  organizationId: ORG_UUID,
   organizationCode: "IX",
   organizationName: "Ion Exchange",
   code: "electrical-feeder",
@@ -94,7 +97,7 @@ const IMPORTED_DRAFT = {
 };
 
 const ORGS = {
-  items: [{ id: "org-1", code: "IX", name: "Ion Exchange" }],
+  items: [{ id: ORG_UUID, code: "IX", name: "Ion Exchange" }],
 };
 
 const VOCABULARIES = {
@@ -150,7 +153,7 @@ const UNKNOWN_DOMAIN_STOCK = {
   ],
 };
 
-const GROUPED_VOCABULARIES = {
+export const GROUPED_VOCABULARIES = {
   ...VOCABULARIES,
   assetDomains: [
     { code: "electrical", label: "Electrical plant", sortOrder: 1, active: true },
@@ -230,7 +233,12 @@ const FILTER_VOCABULARIES = {
   ],
 };
 
-function stubApi(
+/**
+ * Spies the four reads and the import write this page makes (shared by
+ * `asset-templates-page-wizards.spec.tsx`). Defaults: the one-entry stock
+ * catalog, the plain vocabularies and an empty template list.
+ */
+export function stubApi(
   stock: unknown = STOCK,
   vocabularies: unknown = VOCABULARIES,
   templates: unknown = { items: [] },
@@ -270,9 +278,14 @@ function SearchProbe() {
  * about the thing it was written for, and it exercises the `?tab=` resolver on
  * every one of them rather than only in the tab test.
  */
-const STOCK_TAB = "/admin/asset-templates?tab=stock";
+export const STOCK_TAB = "/admin/asset-templates?tab=stock";
 
-function renderPage(user: AuthUser = admin, entry = "/admin/asset-templates"): void {
+/**
+ * Renders the list page for `user` at `entry` under a router that also
+ * answers the draft landing route and shows the search string; the copilot
+ * status is spied as unavailable. Pair it with `stubApi`.
+ */
+export function renderPage(user: AuthUser = admin, entry = "/admin/asset-templates"): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
@@ -295,12 +308,23 @@ function renderPage(user: AuthUser = admin, entry = "/admin/asset-templates"): v
   );
 }
 
-const IMPORT_BUTTON = "Import Feeder / incomer — multifunction energy meter";
+export const IMPORT_BUTTON = "Import Feeder / incomer — multifunction energy meter";
 
 /**
- * The card renders the entry, Import stays disabled until an organization is
- * chosen, and the click calls the API with (code, organizationId) and lands on
- * the returned draft.
+ * `F4.254` PR 2 — a stock row's Import opens the `assetTemplate.importStock`
+ * wizard: choose the organization on its first step, Next, then Submit on the
+ * Review. Resolves once Submit is clicked.
+ */
+async function importThroughTheWizard(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: IMPORT_BUTTON }));
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Organization" }), ORG_UUID);
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+}
+
+/**
+ * The card renders the entry; Import opens the wizard, whose Submit calls the
+ * API with (code, organizationId) and lands on the returned draft.
  */
 export async function importsAStockEntryIntoTheChosenOrganization(): Promise<void> {
   stubApi();
@@ -308,16 +332,9 @@ export async function importsAStockEntryIntoTheChosenOrganization(): Promise<voi
 
   expect(await screen.findByText("electrical-feeder · electrical · stock v1")).toBeInTheDocument();
 
-  const importButton = screen.getByRole("button", { name: IMPORT_BUTTON });
-  expect(importButton).toBeDisabled();
-
-  const orgSelect = screen.getByRole("combobox", { name: "Import into organization" });
-  await userEvent.selectOptions(orgSelect, "org-1");
-  expect(importButton).not.toBeDisabled();
-
-  await userEvent.click(importButton);
+  await importThroughTheWizard();
   await waitFor(() => {
-    expect(api.importAdminStockAssetTemplate).toHaveBeenCalledWith("electrical-feeder", "org-1");
+    expect(api.importAdminStockAssetTemplate).toHaveBeenCalledWith("electrical-feeder", ORG_UUID);
   });
   expect(await screen.findByText(`landed on draft ${DRAFT_ID}`)).toBeInTheDocument();
 }
@@ -339,11 +356,7 @@ export async function failedImportRendersThroughApiErrorMessage(): Promise<void>
   renderPage(admin, STOCK_TAB);
 
   await screen.findByText("electrical-feeder · electrical · stock v1");
-  await userEvent.selectOptions(
-    screen.getByRole("combobox", { name: "Import into organization" }),
-    "org-1",
-  );
-  await userEvent.click(screen.getByRole("button", { name: IMPORT_BUTTON }));
+  await importThroughTheWizard();
 
   expect(await screen.findByText("Organization is outside your access scope")).toBeInTheDocument();
   expect(screen.queryByText(raw)).toBeNull();
@@ -355,9 +368,9 @@ export async function failedImportRendersThroughApiErrorMessage(): Promise<void>
  *
  * The card is a summary; the row's only affordance used to be "import it and
  * find out". The link is what lets an administrator read the whole entry —
- * 33 points and 11 alarms on the live feeder — before taking it. Import is
- * unchanged and still gated on an organization, which is what this case
- * re-checks alongside the link.
+ * 33 points and 11 alarms on the live feeder — before taking it. `F4.254`
+ * PR 2: Import opens the wizard, whose Organization step is the gate now, so
+ * this case re-checks that Import opens it alongside the link.
  */
 export async function eachStockRowLinksToTheReadOnlyViewer(): Promise<void> {
   stubApi();
@@ -371,13 +384,8 @@ export async function eachStockRowLinksToTheReadOnlyViewer(): Promise<void> {
     "the View link does not point at the viewer route registered in app.tsx.",
   ).toBe("/admin/asset-templates/stock/electrical-feeder");
 
-  const importButton = screen.getByRole("button", { name: IMPORT_BUTTON });
-  expect(importButton).toBeDisabled();
-  await userEvent.selectOptions(
-    screen.getByRole("combobox", { name: "Import into organization" }),
-    "org-1",
-  );
-  expect(importButton).not.toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: IMPORT_BUTTON }));
+  expect(screen.getByRole("heading", { name: `Import ${STOCK.items[0]?.name}` })).toBeInTheDocument();
 }
 
 /**
@@ -408,7 +416,7 @@ export async function cardIsAbsentForARoleThatCannotAuthor(): Promise<void> {
     "aria-selected",
     "true",
   );
-  expect(screen.queryByRole("combobox", { name: "Import into organization" })).toBeNull();
+  expect(screen.queryByRole("button", { name: IMPORT_BUTTON })).toBeNull();
   expect(api.fetchAdminStockAssetTemplates).not.toHaveBeenCalled();
   // `F2.17` asserted here that `fetchVocabularies` is NOT called for this role.
   // **`F2.21` reverses that deliberately, and the old assertion was load-bearing
@@ -484,9 +492,10 @@ export async function anEntryWhoseDomainIsNotInTheVocabularyRendersUnderAFallbac
 }
 
 /**
- * `F2.17` — collapsing unmounts that group's rows and nothing else. The card,
- * its organization picker and every other group survive, which is the whole
- * difference between an accordion and a filter.
+ * `F2.17` — collapsing unmounts that group's rows and nothing else. The card
+ * and every other group, with its rows' Import, survive, which is the whole
+ * difference between an accordion and a filter. (`F4.254` PR 2 moved the
+ * card's organization picker into the Import wizard.)
  */
 export async function aCollapsedGroupHidesItsRowsWithoutUnmountingTheCard(): Promise<void> {
   stubApi(GROUPED_STOCK, GROUPED_VOCABULARIES);
@@ -506,9 +515,7 @@ export async function aCollapsedGroupHidesItsRowsWithoutUnmountingTheCard(): Pro
   // words "Stock catalog" as well, so a bare text query now matches two nodes.
   // The card's own heading is what "not unmounted" means here.
   expect(screen.getByRole("heading", { name: "Stock catalog" })).toBeInTheDocument();
-  expect(
-    screen.getByRole("combobox", { name: "Import into organization" }),
-  ).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /^Import Clarifier/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: WATER_HEADING })).toHaveAttribute(
     "aria-expanded",
     "true",

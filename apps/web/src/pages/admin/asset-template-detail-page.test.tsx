@@ -5,6 +5,18 @@ import { cleanup } from "@testing-library/react";
 import {
   aRefusedPublishShowsTheSentenceOnTheCard,
   aRefusedPublishShowsTheSentenceOnce,
+  aRefusedArchiveShowsTheSentenceOnce,
+  aSubmittedDraftClosesItsReview,
+  aSubmittedArchiveClosesItsReview,
+  aRefusalAfterCancellingShowsOnThePageBanner,
+  theDraftWizardSendsNoCopilotHeader,
+  archiveOpensTheReviewAndSendsNothing,
+  archiveSubmitSendsTheArchive,
+  draftOpensTheReviewAndSendsNothing,
+  draftSubmitSendsTheDraft,
+  reviveIsTheDraftWizardOnAnArchivedVersion,
+  theArchiveReviewIsRed,
+  theArchiveWizardSendsNoCopilotHeader,
   aRunningBackfillDisablesTheLifecycleActions,
   archiveAnnouncesArchiving,
   editThisVersionKeepsItsNameWhileArchivePends,
@@ -111,5 +123,60 @@ describe("F3.85 PR 11a Publish is the assetTemplate.publish wizard (ADR 0099 dec
 
   it("shows a refused Publish's sentence once, not again in the page banner (N3)", async () => {
     await aRefusedPublishShowsTheSentenceOnce();
+  });
+});
+
+describe("F4.254 PR 2 Archive and the new draft are Review-only wizards (ADR 0099 decision 6)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("opens the Review on Archive and sends nothing yet", async () => {
+    await archiveOpensTheReviewAndSendsNothing();
+  });
+
+  it("sends the archive for this template on Submit", async () => {
+    await archiveSubmitSendsTheArchive();
+  });
+
+  it("shows the archive Review red (deactivate)", async () => {
+    await theArchiveReviewIsRed();
+  });
+
+  it("sends the archive with no X-Copilot-Change header", async () => {
+    await theArchiveWizardSendsNoCopilotHeader();
+  });
+
+  it("shows a refused Archive's sentence once, on the card", async () => {
+    await aRefusedArchiveShowsTheSentenceOnce();
+  });
+
+  it("opens the Review on Edit this version and sends nothing yet", async () => {
+    await draftOpensTheReviewAndSendsNothing();
+  });
+
+  it("sends the draft for this template on Submit", async () => {
+    await draftSubmitSendsTheDraft();
+  });
+
+  it("closes the draft Review once the new draft is open", async () => {
+    await aSubmittedDraftClosesItsReview();
+  });
+
+  it("closes the archive Review once the archive went through", async () => {
+    await aSubmittedArchiveClosesItsReview();
+  });
+
+  it("shows a refusal that arrives after Cancel on the page banner, once", async () => {
+    await aRefusalAfterCancellingShowsOnThePageBanner();
+  });
+
+  it("sends the draft with no X-Copilot-Change header", async () => {
+    await theDraftWizardSendsNoCopilotHeader();
+  });
+
+  it("names the draft Review Revive as a new draft on an archived version", async () => {
+    await reviveIsTheDraftWizardOnAnArchivedVersion();
   });
 });

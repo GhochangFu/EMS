@@ -55,8 +55,13 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "calcParameter.create": [CALC_PARAMETERS],
   "calcParameter.update": [CALC_PARAMETERS],
   "calcOverride.set": [ASSET_CALC_POINTS],
+  "assetTemplate.create": [ASSET_TEMPLATES],
   "assetTemplate.update": [ASSET_TEMPLATES, ASSET_TEMPLATE],
   "assetTemplate.publish": [ASSET_TEMPLATES, ASSET_TEMPLATE],
+  "assetTemplate.archive": [ASSET_TEMPLATES, ASSET_TEMPLATE],
+  "assetTemplate.draft": [ASSET_TEMPLATES, ASSET_TEMPLATE],
+  // `F4.254` PR 2: the stock list is keyed under ASSET_TEMPLATES too (`["admin", "asset-templates", "stock"]`).
+  "assetTemplate.importStock": [ASSET_TEMPLATES],
   "user.create": [USERS],
   "user.update": [USERS],
   "user.deactivate": [USERS],

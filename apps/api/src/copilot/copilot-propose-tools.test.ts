@@ -41,6 +41,14 @@ import {
   aStoredUnsafeKeyIsNotCarried,
   storedContentThatCannotBeWrittenBackStoresNothing,
   aTemplatePublishStoresTheEmptyObject,
+  aCreateWithAnInvalidPointFormulaStoresNothing,
+  aCreateWithAValidPointFormulaStores,
+  aCreateKpiNamingAnUndeclaredPointStoresNothing,
+  aCreateKpiNamingADeclaredPointStores,
+  aCyclicCreateStoresAtPropose,
+  aCyclicCreateIsRefusedByTheRouteBody,
+  aStockImportStoresOnItsCodePath,
+  aTemplateArchiveStoresTheEmptyObjectAsDeactivate,
 } from "./copilot-propose-tools.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -88,4 +96,14 @@ describe("F3.85 PR 11a — the asset-template propose tools (plan §11.3 Unit 2,
   it("does not carry a stored unsafe key", () => aStoredUnsafeKeyIsNotCarried());
   it("stores nothing when stored content cannot be written back", () => storedContentThatCannotBeWrittenBackStoresNothing());
   it("stores {} for a template publish", () => aTemplatePublishStoresTheEmptyObject());
+  it("F4.254 stores nothing for a create whose points[0].formula names an undeclared point", () =>
+    aCreateWithAnInvalidPointFormulaStoresNothing());
+  it("F4.254 stores a create whose point formula names a declared point", () => aCreateWithAValidPointFormulaStores());
+  it("F4.254 stores nothing for a create whose KPI names a point the body lacks", () =>
+    aCreateKpiNamingAnUndeclaredPointStoresNothing());
+  it("F4.254 stores a create whose KPI names a declared point", () => aCreateKpiNamingADeclaredPointStores());
+  it("F4.254 stores a cyclic create at propose (the cycle check is the route's)", () => aCyclicCreateStoresAtPropose());
+  it("F4.254 the route's create body refuses the same cyclic body", () => aCyclicCreateIsRefusedByTheRouteBody());
+  it("F4.254 stores a stock import on its code path", () => aStockImportStoresOnItsCodePath());
+  it("F4.254 stores {} for a template archive, as deactivate", () => aTemplateArchiveStoresTheEmptyObjectAsDeactivate());
 });

@@ -31,6 +31,10 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/dashboard-templates/dashboard-templates.service.ts",
   "apps/api/src/admin/dashboard-templates/dashboard-templates-instantiate.service.ts",
   "apps/api/src/admin/dashboard-templates/dashboard-templates-stock.service.ts",
+  // `F4.254` PR 2: `assetTemplate.create`, `.archive`, `.draft` and `.importStock` write through
+  // these two. `asset-templates-stock.service.ts` is deliberately NOT listed: it holds no
+  // `MasterDataAuditService` import (the import writes through `AssetTemplatesAdminService.create`),
+  // so the per-file check below would turn red on it.
   "apps/api/src/admin/asset-templates/asset-templates.service.ts",
   "apps/api/src/admin/asset-templates/asset-templates-write-core.ts",
   "apps/api/src/admin/asset-templates/asset-templates-instantiate-core.ts",

@@ -78,6 +78,15 @@ export const FIXTURES: Readonly<
     names: TARGET_NAME,
   },
   "assetTemplate.publish": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  // `F4.254` PR 2: the four authoring entries. `points` defaults to `[]` on create.
+  "assetTemplate.create": {
+    body: { organizationId: ORG, code: "feeder-1", name: "Feeder Meter", assetType: "feeder", domain: "electrical", points: [] },
+    params: {},
+    names: "Feeder Meter",
+  },
+  "assetTemplate.archive": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "assetTemplate.draft": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "assetTemplate.importStock": { body: { organizationId: ORG }, params: { code: "feeder" }, names: ORG_NAME },
   // `F3.86` PR 4: what the model proposes (`modelBodyOf`) — a create has no password.
   "user.create": {
     body: { email: "priya@example.test", displayName: "Priya Rao", role: "viewer", organizationId: ORG },

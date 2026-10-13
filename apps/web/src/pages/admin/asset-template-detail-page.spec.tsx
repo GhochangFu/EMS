@@ -437,8 +437,9 @@ export async function aRunningBackfillDisablesTheLifecycleActions(): Promise<voi
 }
 
 /**
- * `F4.168` B6 arrange — a published template; Archive is clicked and
- * `archiveM` held pending. Resolves with the button once "Archiving…" shows.
+ * `F4.168` B6 arrange — a published template; Archive is clicked, its Review
+ * submitted (`F4.254` PR 2: Archive opens the `assetTemplate.archive` wizard)
+ * and `archiveM` held pending. Resolves with the button once "Archiving…" shows.
  */
 async function archiveHeldPending(): Promise<HTMLElement> {
   stubApi({
@@ -448,6 +449,7 @@ async function archiveHeldPending(): Promise<HTMLElement> {
   renderPage(admin);
 
   await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
   return screen.findByRole("button", { name: "Archiving…" });
 }
 
@@ -588,4 +590,255 @@ export async function aRefusedPublishShowsTheSentenceOnce(): Promise<void> {
   const dialog = screen.getByRole("dialog", { name: "Publish this version" });
   await within(dialog).findByText(PUBLISH_REFUSED);
   expect(screen.getAllByText(PUBLISH_REFUSED)).toHaveLength(1);
+}
+
+/* ---------- F4.254 PR 2 — Archive and the new draft are Review-only wizards (plan §4.4, §4.5) ---------- */
+
+function archivedTemplate(): AdminAssetTemplateDto {
+  return {
+    ...publishedTemplate(),
+    status: "archived",
+    archivedAt: new Date(0).toISOString(),
+  } as unknown as AdminAssetTemplateDto;
+}
+
+/** The next draft the draft route answers: a different row at a higher version. */
+const NEXT_DRAFT_ID = "55555555-5555-4555-8555-555555555555";
+function nextDraft(): AdminAssetTemplateDto {
+  return { ...draftTemplate(), id: NEXT_DRAFT_ID, version: 2 } as unknown as AdminAssetTemplateDto;
+}
+
+/** Archive opens the `assetTemplate.archive` Review (Submit on screen) and sends nothing yet. */
+export async function archiveOpensTheReviewAndSendsNothing(): Promise<void> {
+  const archive = vi.fn(() => Promise.resolve(archivedTemplate()));
+  stubApi({ fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()), archiveAdminAssetTemplate: archive });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
+
+  const dialog = screen.getByRole("dialog", { name: "Archive this version" });
+  expect(within(dialog).getByRole("button", { name: "Submit" })).toBeInTheDocument();
+  expect(archive).not.toHaveBeenCalled();
+}
+
+/** Submit on the archive Review sends the archive for this template, once. */
+export async function archiveSubmitSendsTheArchive(): Promise<void> {
+  const archive = vi.fn(() => Promise.resolve(archivedTemplate()));
+  stubApi({ fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()), archiveAdminAssetTemplate: archive });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  await waitFor(() => {
+    expect(archive).toHaveBeenCalledTimes(1);
+  });
+  expect(archive).toHaveBeenCalledWith(TEMPLATE_ID);
+}
+
+/**
+ * The archive Review is red: its card carries the entry's `deactivate` risk
+ * (`asset-status-wizard`'s rule, asserted as `point-keys-page.spec.tsx` does).
+ * Mutation: `risk: "edit"` on `assetTemplate.archive` → red.
+ */
+export async function theArchiveReviewIsRed(): Promise<void> {
+  stubApi({ fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()) });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
+
+  expect(screen.getByRole("region", { name: "Archive an asset template" })).toHaveAttribute("data-risk", "deactivate");
+}
+
+/**
+ * The archive wizard alone sends **no** `X-Copilot-Change` header. The API
+ * function is left unspied and `fetch` stubbed, because the header is only
+ * observable on the request. The positive comes first: the `POST …/archive` fired.
+ */
+export async function theArchiveWizardSendsNoCopilotHeader(): Promise<void> {
+  stubApi({ fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()) });
+  const seen: { url: string; init: RequestInit }[] = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    seen.push({ url, init });
+    return new Response(JSON.stringify(archivedTemplate()), { status: 200 });
+  });
+  try {
+    renderPage(admin);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
+    await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+    await waitFor(() => {
+      expect(seen.map((request) => request.url).filter((url) => url.endsWith("/archive"))).toHaveLength(1);
+    });
+
+    const request = seen.find((candidate) => candidate.url.endsWith("/archive"));
+    expect(request?.url).toMatch(new RegExp(`/api/v1/admin/asset-templates/${TEMPLATE_ID}/archive$`));
+    expect(request?.init.method).toBe("POST");
+    const headers = new Headers(request?.init.headers);
+    expect([...headers.keys()].filter((name) => name.toLowerCase() === "x-copilot-change")).toEqual([]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
+}
+
+const ARCHIVE_REFUSED = "Template is outside your access scope";
+
+/** A refused archive shows its sentence on the card and nowhere else (N3, as publish does). */
+export async function aRefusedArchiveShowsTheSentenceOnce(): Promise<void> {
+  stubApi({
+    fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()),
+    archiveAdminAssetTemplate: () => Promise.reject(new Error(ARCHIVE_REFUSED)),
+  });
+  renderPage(admin);
+  await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  const dialog = screen.getByRole("dialog", { name: "Archive this version" });
+  await within(dialog).findByText(ARCHIVE_REFUSED);
+  expect(screen.getAllByText(ARCHIVE_REFUSED)).toHaveLength(1);
+}
+
+/** "Edit this version" opens the `assetTemplate.draft` Review and sends nothing yet. */
+export async function draftOpensTheReviewAndSendsNothing(): Promise<void> {
+  const draft = vi.fn(() => Promise.resolve(nextDraft()));
+  stubApi({ fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()), createDraftFromAdminAssetTemplate: draft });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Edit this version" }));
+
+  const dialog = screen.getByRole("dialog", { name: "Edit this version" });
+  expect(within(dialog).getByRole("region", { name: "Start a new draft of an asset template" })).toBeInTheDocument();
+  expect(draft).not.toHaveBeenCalled();
+}
+
+/** Submit on the draft Review sends the draft for this template, once. */
+export async function draftSubmitSendsTheDraft(): Promise<void> {
+  const draft = vi.fn(() => Promise.resolve(nextDraft()));
+  stubApi({ fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()), createDraftFromAdminAssetTemplate: draft });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Edit this version" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  await waitFor(() => {
+    expect(draft).toHaveBeenCalledTimes(1);
+  });
+  expect(draft).toHaveBeenCalledWith(TEMPLATE_ID);
+}
+
+/**
+ * A draft that succeeds closes its Review. The page moves to the new row on
+ * the same route element, so an open flag left set would reopen the Review
+ * there. The positive first: the move happened (the new row was read and rendered).
+ */
+export async function aSubmittedDraftClosesItsReview(): Promise<void> {
+  const read = vi.fn((id: string) => Promise.resolve(id === NEXT_DRAFT_ID ? nextDraft() : publishedTemplate()));
+  stubApi({
+    fetchAdminAssetTemplate: read,
+    createDraftFromAdminAssetTemplate: () => Promise.resolve(nextDraft()),
+  });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Edit this version" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  await waitFor(() => {
+    expect(read).toHaveBeenCalledWith(NEXT_DRAFT_ID);
+  });
+  // The new row has rendered — not the loading branch, which renders no dialog either way.
+  expect(await screen.findByText("Feeder · v2")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: "Edit this version" })).toBeNull();
+}
+
+/** On an archived version the same draft Review is "Revive as a new draft". */
+export async function reviveIsTheDraftWizardOnAnArchivedVersion(): Promise<void> {
+  stubApi({ fetchAdminAssetTemplate: () => Promise.resolve(archivedTemplate()) });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Revive as a new draft" }));
+
+  const dialog = screen.getByRole("dialog", { name: "Revive as a new draft" });
+  expect(within(dialog).getByRole("region", { name: "Start a new draft of an asset template" })).toBeInTheDocument();
+}
+
+/**
+ * A submitted archive closes its Review. The positive first: the page now
+ * reads the archived version (the read answers `archived` once the archive
+ * went through), so the close is not the loading branch rendering no dialog.
+ * Mutation: `archiveM` `onSuccess` back to `afterChange` → the dialog stays → red.
+ */
+export async function aSubmittedArchiveClosesItsReview(): Promise<void> {
+  let archived = false;
+  stubApi({
+    fetchAdminAssetTemplate: () => Promise.resolve(archived ? archivedTemplate() : publishedTemplate()),
+    archiveAdminAssetTemplate: () => {
+      archived = true;
+      return Promise.resolve(archivedTemplate());
+    },
+  });
+  renderPage(admin);
+
+  await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  expect(await screen.findByText("archived")).toBeInTheDocument();
+  expect(screen.queryByRole("dialog", { name: "Archive this version" })).toBeNull();
+}
+
+/**
+ * C1 — a refusal that arrives after the user cancelled the dialog has no card
+ * to show it, so the page banner does, once. The archive is held until the
+ * dialog is cancelled, then refused.
+ * Mutation: drop `archiveM`'s `onError` → no message anywhere → red.
+ */
+export async function aRefusalAfterCancellingShowsOnThePageBanner(): Promise<void> {
+  let refuse: (() => void) | undefined;
+  stubApi({
+    fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()),
+    archiveAdminAssetTemplate: () =>
+      new Promise((_, reject) => {
+        refuse = () => reject(new Error(ARCHIVE_REFUSED));
+      }),
+  });
+  renderPage(admin);
+  await userEvent.click(await screen.findByRole("button", { name: "Archive" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.queryByRole("dialog", { name: "Archive this version" })).toBeNull();
+
+  refuse?.();
+
+  expect(await screen.findByText(ARCHIVE_REFUSED)).toBeInTheDocument();
+  expect(screen.getAllByText(ARCHIVE_REFUSED)).toHaveLength(1);
+}
+
+/**
+ * The draft wizard alone sends **no** `X-Copilot-Change` header, as the
+ * archive and publish wizards do. Positive first: the `POST …/draft` fired.
+ * Mutation: add the header to the draft request → red.
+ */
+export async function theDraftWizardSendsNoCopilotHeader(): Promise<void> {
+  stubApi({ fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()) });
+  const seen: { url: string; init: RequestInit }[] = [];
+  vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    seen.push({ url, init });
+    return new Response(JSON.stringify(nextDraft()), { status: 200 });
+  });
+  try {
+    renderPage(admin);
+
+    await userEvent.click(await screen.findByRole("button", { name: "Edit this version" }));
+    await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+    await waitFor(() => {
+      expect(seen.filter((request) => request.url.endsWith("/draft"))).toHaveLength(1);
+    });
+
+    const request = seen.find((candidate) => candidate.url.endsWith("/draft"));
+    expect(request?.url).toMatch(new RegExp(`/api/v1/admin/asset-templates/${TEMPLATE_ID}/draft$`));
+    expect(request?.init.method).toBe("POST");
+    const headers = new Headers(request?.init.headers);
+    expect([...headers.keys()].filter((name) => name.toLowerCase() === "x-copilot-change")).toEqual([]);
+  } finally {
+    vi.unstubAllGlobals();
+  }
 }

@@ -54,10 +54,9 @@
  * rather than from a 400 listing a key they never typed.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type { AdminAssetTemplateDto } from "@bms/shared";
-import { catalogEntry } from "@bms/shared/copilot";
 
 import {
   archiveAdminAssetTemplate,
@@ -83,7 +82,10 @@ import { TemplateTabStrip } from "../../components/asset-templates/template-tab-
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
-import { WizardShell } from "../../components/wizard/wizard-shell";
+import {
+  AssetTemplateLifecycleWizard,
+  type AssetTemplateLifecycleWizardAction,
+} from "../../components/asset-templates/lifecycle-wizards";
 import { unwritableContentKeys } from "../../lib/template-content-merge";
 import {
   buildInstantiatePayload,
@@ -151,8 +153,16 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
   const [searchParams, setSearchParams] = useSearchParams();
   const [actionError, setActionError] = useState<string | null>(null);
   const [instantiateOpen, setInstantiateOpen] = useState(false);
-  // `F3.85` PR 11a — Publish opens its Review; only the Review's Submit sends.
-  const [publishOpen, setPublishOpen] = useState(false);
+  // `F3.85` PR 11a / `F4.254` PR 2 — Publish, Archive and the new draft each
+  // open their Review (`lifecycle-wizards.tsx`); only the Review's Submit sends.
+  const [lifecycleOpen, setLifecycleState] = useState<AssetTemplateLifecycleWizardAction | null>(null);
+  // The open action, read by a mutation's `onError` that fires after the user
+  // cancelled: a closure over `lifecycleOpen` would be the value at submit time.
+  const lifecycleOpenRef = useRef<AssetTemplateLifecycleWizardAction | null>(null);
+  function setLifecycleOpen(action: AssetTemplateLifecycleWizardAction | null) {
+    lifecycleOpenRef.current = action;
+    setLifecycleState(action);
+  }
 
   const templateQ = useQuery({
     queryKey: ["admin", "asset-template", templateId],
@@ -207,26 +217,38 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
 
   const onActionError = (cause: Error) => setActionError(apiErrorMessage(cause));
 
+  // A lifecycle wizard stays open while its call pends and closes on success.
+  // Closed **before** `afterChange` navigates: a new draft is the same route
+  // element, so an open flag would survive the move and reopen on the new row.
+  function afterLifecycle(next: AdminAssetTemplateDto) {
+    setLifecycleOpen(null);
+    afterChange(next);
+  }
+
+  // A refusal shows on the wizard card while its dialog is open. Once the user
+  // cancelled the dialog nothing shows it, so the page banner is the fallback.
+  const onLifecycleError = (action: AssetTemplateLifecycleWizardAction) => (cause: Error) => {
+    if (lifecycleOpenRef.current !== action) setActionError(apiErrorMessage(cause));
+  };
+
   const publishM = useMutation({
     // A plain request — no `X-Copilot-Change` header (plan §10.5 as built).
     mutationFn: () => publishAdminAssetTemplate(templateId ?? ""),
-    onSuccess: (next: AdminAssetTemplateDto) => {
-      setPublishOpen(false);
-      afterChange(next);
-    },
-    // No `onActionError`: the refusal shows on the wizard card (`submitError`
-    // below), and the page banner behind the dialog's scrim repeated it
-    // (post-merge finding N3).
+    onSuccess: afterLifecycle,
+    // Not the page banner while the dialog is open: the refusal shows on the
+    // wizard card (`submitError` below), and the banner behind the scrim
+    // repeated it (post-merge finding N3). Archive and the new draft follow it.
+    onError: onLifecycleError("publish"),
   });
   const archiveM = useMutation({
     mutationFn: () => archiveAdminAssetTemplate(templateId ?? ""),
-    onSuccess: afterChange,
-    onError: onActionError,
+    onSuccess: afterLifecycle,
+    onError: onLifecycleError("archive"),
   });
   const draftM = useMutation({
     mutationFn: () => createDraftFromAdminAssetTemplate(templateId ?? ""),
-    onSuccess: afterChange,
-    onError: onActionError,
+    onSuccess: afterLifecycle,
+    onError: onLifecycleError("createDraft"),
   });
   /**
    * `F3.2` / ADR 0067 decisions 4 and 7 — the backfill.
@@ -315,15 +337,19 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
   const mayInstantiate = canInstantiateTemplates(user.role);
   const blockedKeys = unwritableContentKeys(template.content);
 
+  function openLifecycle(action: AssetTemplateLifecycleWizardAction, mutation: { reset: () => void }) {
+    setActionError(null);
+    mutation.reset();
+    setLifecycleOpen(action);
+  }
+
+  const lifecycleMutations = { publish: publishM, archive: archiveM, createDraft: draftM };
+
   const runners: Record<TemplateLifecycleAction, () => void> = {
-    // Opens the Review and sends nothing; `runAction`'s guard still runs first.
-    publish: () => {
-      setActionError(null);
-      publishM.reset();
-      setPublishOpen(true);
-    },
-    archive: () => archiveM.mutate(),
-    createDraft: () => draftM.mutate(),
+    // Each opens its Review and sends nothing; `runAction`'s guard still runs first.
+    publish: () => openLifecycle("publish", publishM),
+    archive: () => openLifecycle("archive", archiveM),
+    createDraft: () => openLifecycle("createDraft", draftM),
     delete: () => deleteM.mutate(),
     instantiate: () => setInstantiateOpen(true),
   };
@@ -662,28 +688,19 @@ export function AssetTemplateDetailPage({ user }: AssetTemplateDetailPageProps) 
         </div>
       ) : null}
 
-      {publishOpen ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Publish this version"
-            className="w-full max-w-md surface-dialog p-4"
-          >
-            <WizardShell
-              entry={catalogEntry("assetTemplate.publish")!}
-              values={{}}
-              onChange={() => undefined}
-              renderStep={() => null}
-              onSubmit={() => publishM.mutate()}
-              onCancel={() => setPublishOpen(false)}
-              submitting={publishM.isPending}
-              submitError={publishM.error ? apiErrorMessage(publishM.error) : null}
-              current={null}
-              summary={`Publish ${template.name} v${template.version}. A published version is frozen; editing it again makes a new draft.`}
-            />
-          </div>
-        </div>
+      {lifecycleOpen !== null ? (
+        <AssetTemplateLifecycleWizard
+          action={lifecycleOpen}
+          template={template}
+          submitting={lifecycleMutations[lifecycleOpen].isPending}
+          submitError={
+            lifecycleMutations[lifecycleOpen].error
+              ? apiErrorMessage(lifecycleMutations[lifecycleOpen].error)
+              : null
+          }
+          onSubmit={() => lifecycleMutations[lifecycleOpen].mutate()}
+          onCancel={() => setLifecycleOpen(null)}
+        />
       ) : null}
 
       {instantiateOpen ? (
