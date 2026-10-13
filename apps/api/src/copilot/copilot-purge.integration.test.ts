@@ -7,12 +7,20 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   anOldPendingChangeInALiveConversationSurvives,
+  type DraftFixture,
   type PurgeCtx,
   type PurgeFixture,
   runThePurge,
   seedCounterFixture,
+  seedDraftFixture,
   seedPurgeFixture,
   theAppliedChangeSurvivesWithANullConversation,
+  theBoundConversationStaysWithANullSession,
+  theDraftCreatedLongAgoButUpdatedRecentlyStays,
+  theDraftsAreSeededAndBound,
+  theOldDraftIsGone,
+  theOwnerWithNoOrganizationDeletesNoDraft,
+  theYoungDraftAndTheOldCommittedSessionStay,
   theCountersAreSeeded,
   theOldOrgCounterIsGoneAndTheYoungOneStays,
   theOldUserCounterIsGoneAndTheYoungOneStays,
@@ -45,13 +53,14 @@ const superuserConnectionString = requireIntegrationDb({
 const FAMILY = `F385-PURGE-${Date.now()}`;
 const FAMILY_PATTERN = "F385-PURGE-%";
 
-describe.skipIf(!connectionString)("F3.85 — the copilot history purge (migrations 0105, 0106)", () => {
+describe.skipIf(!connectionString)("F3.85 — the copilot history purge (migrations 0105, 0106, 0107)", () => {
   let ownerPool: pg.Pool;
   let tenantPool: pg.Pool;
   let fleetPool: pg.Pool;
   let superPool: pg.Pool;
   let ctx: PurgeCtx;
   let fixture: PurgeFixture;
+  let drafts: DraftFixture;
   let orgId: string | undefined;
 
   beforeAll(async () => {
@@ -67,7 +76,9 @@ describe.skipIf(!connectionString)("F3.85 — the copilot history purge (migrati
     );
     superPool = await openIntegrationPool(superuserConnectionString as string, "F3.85");
     // A run killed before afterAll leaves its organization; its users and their copilot rows go with it.
+    // Its onboarding sessions do not cascade (0019), so they go first (F4.255).
     const stale = `SELECT id FROM bms.organizations WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`;
+    await superPool.query(`DELETE FROM bms.onboarding_sessions WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
     await superPool.query(`DELETE FROM bms.users WHERE organization_id IN (${stale})`, [FAMILY_PATTERN]);
     await superPool.query(`DELETE FROM bms.organizations WHERE id IN (${stale})`, [FAMILY_PATTERN]);
     const org = await superPool.query<{ id: string }>(
@@ -96,10 +107,13 @@ describe.skipIf(!connectionString)("F3.85 — the copilot history purge (migrati
     };
     fixture = await seedPurgeFixture(ctx);
     await seedCounterFixture(ctx);
+    drafts = await seedDraftFixture(ctx);
   });
 
   afterAll(async () => {
     if (orgId) {
+      // F4.255: the suite's surviving sessions reference the organization with no cascade (0019).
+      await superPool.query("DELETE FROM bms.onboarding_sessions WHERE organization_id = $1", [orgId]);
       await superPool.query("DELETE FROM bms.users WHERE organization_id = $1", [orgId]);
       await superPool.query("DELETE FROM bms.organizations WHERE id = $1", [orgId]);
     }
@@ -111,6 +125,12 @@ describe.skipIf(!connectionString)("F3.85 — the copilot history purge (migrati
   });
   it("before the purge, the user and organization counters at 31, 30 and 29 days are there", async () => {
     await theCountersAreSeeded(ctx);
+  });
+  it("before the purge, the four onboarding sessions are there and the conversation is bound to the old draft", async () => {
+    await theDraftsAreSeededAndBound(ctx, drafts);
+  });
+  it("the owner with no app.current_organization deletes no onboarding session (FORCE)", async () => {
+    await theOwnerWithNoOrganizationDeletesNoDraft(ctx, drafts);
   });
 
   describe("after one purge", () => {
@@ -147,6 +167,18 @@ describe.skipIf(!connectionString)("F3.85 — the copilot history purge (migrati
     });
     it("the organization's 31-day usage counter is gone under withTenant; the 30- and 29-day ones stay (A1)", async () => {
       await theOldOrgCounterIsGoneAndTheYoungOneStays(ctx);
+    });
+    it("the onboarding draft untouched for 31 days is gone, with its _secrets and checkpoints (Amendment 2 A2)", async () => {
+      await theOldDraftIsGone(ctx, drafts);
+    });
+    it("the 29-day draft and the 31-day committed session stay", async () => {
+      await theYoungDraftAndTheOldCommittedSessionStay(ctx, drafts);
+    });
+    it("a draft created 31 days ago but updated 29 days ago stays (the age is updated_at, not created_at)", async () => {
+      await theDraftCreatedLongAgoButUpdatedRecentlyStays(ctx, drafts);
+    });
+    it("the conversation bound to the erased draft stays, with onboarding_session_id null (0107 SET NULL)", async () => {
+      await theBoundConversationStaysWithANullSession(ctx, drafts);
     });
   });
 });

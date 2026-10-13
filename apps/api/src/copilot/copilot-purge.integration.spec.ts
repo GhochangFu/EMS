@@ -14,6 +14,9 @@ import { CopilotPurgeService } from "./copilot-purge.service";
  * CASCADE` to messages and the real `SET NULL` on pending changes, and the
  * owner bound by FORCE. Since PR 6, also the two `0106` usage counters:
  * the user's under `withUser`, the organization's under `withTenant`.
+ * Since `F4.255` (ADR 0099 Amendment 2 A2), also the onboarding drafts
+ * untouched for 30 days, deleted under `withTenant` with their `_secrets`
+ * and checkpoints, and the real `0107` `SET NULL` on a bound conversation.
  * Vitest entry point: the sibling `.test.ts` (ADR
  * 0014).
  *
@@ -272,4 +275,141 @@ export async function theOldApplyingClaimIsFailedAndTheYoungOneStays(ctx: PurgeC
 export async function theSecondUsersOldConversationIsGone(ctx: PurgeCtx, f: PurgeFixture): Promise<void> {
   const rows = await readAs(ctx, ctx.userB, sql`SELECT id FROM bms.copilot_conversations WHERE id = ${f.convBOld}`);
   expect(rows).toEqual([]);
+}
+
+/**
+ * `F4.255` / ADR 0099 Amendment 2 A2 — the onboarding sessions of organization
+ * A: a draft untouched for 31 days holding an RTU `_secrets` entry and a
+ * checkpoint ring, a 29-day draft, a draft created 31 days ago but updated
+ * 29 days ago (the row that tells `updated_at` from `created_at`), and a
+ * 31-day committed session; and a
+ * young (one-hour) conversation of user A bound to the old draft, so the purge's
+ * step 1 leaves it and only the session delete can null its binding. Inserted
+ * as the superuser; `created_by` stays NULL, and the rows are deleted by the
+ * suite's organization id before the organization (no cascade, `0019`).
+ */
+export type DraftFixture = {
+  draftOld: string;
+  draftYoung: string;
+  draftCreatedOldUpdatedYoung: string;
+  committedOld: string;
+  convBoundToOld: string;
+};
+
+/** `created` and `updated` are the two ages, apart so a test can tell the columns apart. */
+async function insertSession(
+  ctx: PurgeCtx,
+  status: string,
+  ages: { created: string; updated: string },
+  draft: object,
+): Promise<string> {
+  const { rows } = await ctx.superPool.query<{ id: string }>(
+    `INSERT INTO bms.onboarding_sessions (organization_id, status, draft, checkpoints, created_at, updated_at)
+     VALUES ($1, $2, $3::jsonb, $4::jsonb, now() - $5::interval, now() - $6::interval)
+     RETURNING id`,
+    [
+      ctx.orgA,
+      status,
+      JSON.stringify(draft),
+      JSON.stringify([{ draft: {}, at: "F4.255 purge probe" }]),
+      ages.created,
+      ages.updated,
+    ],
+  );
+  const id = rows[0]?.id;
+  if (!id) throw new Error("F4.255: purge onboarding session was not created");
+  return id;
+}
+
+export async function seedDraftFixture(ctx: PurgeCtx): Promise<DraftFixture> {
+  const old = { created: "31 days", updated: "31 days" };
+  const draftOld = await insertSession(ctx, "draft", old, {
+    _secrets: { "rtu-probe": { ciphertext: "F4.255-probe", iv: "F4.255-probe" } },
+  });
+  const draftYoung = await insertSession(ctx, "draft", { created: "29 days", updated: "29 days" }, {});
+  const draftCreatedOldUpdatedYoung = await insertSession(ctx, "draft", { created: "31 days", updated: "29 days" }, {});
+  const committedOld = await insertSession(ctx, "committed", old, {});
+  const { rows } = await withUser(ctx.tenantDb, ctx.userA, (tx) =>
+    tx.execute<{ id: string }>(sql`
+      INSERT INTO bms.copilot_conversations (user_id, organization_id, title, onboarding_session_id, created_at, last_turn_at)
+      VALUES (${ctx.userA}, ${ctx.orgA}, 'F4.255 purge probe', ${draftOld}, now() - interval '1 hour', now() - interval '1 hour')
+      RETURNING id`),
+  );
+  const convBoundToOld = rows[0]?.id;
+  if (!convBoundToOld) throw new Error("F4.255: bound purge conversation was not created");
+  return { draftOld, draftYoung, draftCreatedOldUpdatedYoung, committedOld, convBoundToOld };
+}
+
+/** The suite's own sessions, by its organization id — never a count across the shared database. */
+async function sessionIds(ctx: PurgeCtx): Promise<string[]> {
+  const { rows } = await ctx.superPool.query<{ id: string }>(
+    "SELECT id FROM bms.onboarding_sessions WHERE organization_id = $1 ORDER BY id",
+    [ctx.orgA],
+  );
+  return rows.map((r) => r.id);
+}
+
+async function boundSession(ctx: PurgeCtx, d: DraftFixture): Promise<Record<string, unknown>[]> {
+  return readAs(
+    ctx,
+    ctx.userA,
+    sql`SELECT onboarding_session_id FROM bms.copilot_conversations WHERE id = ${d.convBoundToOld}`,
+  );
+}
+
+/**
+ * Positive control, before the purge: all four sessions are there, the
+ * conversation is bound to the old draft, and the two-age draft's columns
+ * really differ (31 days created, 29 days updated).
+ */
+export async function theDraftsAreSeededAndBound(ctx: PurgeCtx, d: DraftFixture): Promise<void> {
+  const { rows } = await ctx.superPool.query<{ created_old: boolean; updated_young: boolean }>(
+    `SELECT created_at < now() - interval '30 days' AS created_old,
+            updated_at > now() - interval '30 days' AS updated_young
+       FROM bms.onboarding_sessions WHERE id = $1`,
+    [d.draftCreatedOldUpdatedYoung],
+  );
+  expect({ sessions: await sessionIds(ctx), bound: await boundSession(ctx, d), twoAges: rows }).toEqual({
+    sessions: [d.draftOld, d.draftYoung, d.draftCreatedOldUpdatedYoung, d.committedOld].sort(),
+    bound: [{ onboarding_session_id: d.draftOld }],
+    twoAges: [{ created_old: true, updated_young: true }],
+  });
+}
+
+/**
+ * The owner, with no `app.current_organization`, deletes no onboarding
+ * session — FORCE binds it. Positive control in the same transaction: with
+ * the setting, the same DELETE removes the row (then ROLLBACK).
+ */
+export async function theOwnerWithNoOrganizationDeletesNoDraft(ctx: PurgeCtx, d: DraftFixture): Promise<void> {
+  const client = await ctx.ownerPool.connect();
+  try {
+    await client.query("BEGIN");
+    const unset = await client.query("DELETE FROM bms.onboarding_sessions WHERE id = $1", [d.draftOld]);
+    await client.query("SELECT set_config('app.current_organization', $1, true)", [ctx.orgA]);
+    const set = await client.query("DELETE FROM bms.onboarding_sessions WHERE id = $1", [d.draftOld]);
+    await client.query("ROLLBACK");
+    expect({ unset: unset.rowCount, set: set.rowCount }).toEqual({ unset: 0, set: 1 });
+  } finally {
+    client.release();
+  }
+}
+
+/** The row is the only store of the draft's `_secrets` and checkpoints, so the row gone by id is both gone. */
+export async function theOldDraftIsGone(ctx: PurgeCtx, d: DraftFixture): Promise<void> {
+  expect(await sessionIds(ctx)).not.toContain(d.draftOld);
+}
+
+/** Exactly the three young-by-update or committed sessions are left in organization A: nothing else stays, nothing else goes. */
+export async function theYoungDraftAndTheOldCommittedSessionStay(ctx: PurgeCtx, d: DraftFixture): Promise<void> {
+  expect(await sessionIds(ctx)).toEqual([d.draftYoung, d.committedOld, d.draftCreatedOldUpdatedYoung].sort());
+}
+
+/** The age is the last update: a draft created 31 days ago but updated 29 days ago stays. */
+export async function theDraftCreatedLongAgoButUpdatedRecentlyStays(ctx: PurgeCtx, d: DraftFixture): Promise<void> {
+  expect(await sessionIds(ctx)).toContain(d.draftCreatedOldUpdatedYoung);
+}
+
+export async function theBoundConversationStaysWithANullSession(ctx: PurgeCtx, d: DraftFixture): Promise<void> {
+  expect(await boundSession(ctx, d)).toEqual([{ onboarding_session_id: null }]);
 }

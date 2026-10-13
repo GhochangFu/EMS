@@ -265,7 +265,10 @@ LOG_LEVEL=info
 # WORKER_PORT=4100
 # RULE_SWEEP_INTERVAL_MS=60000
 # F3.85 (ADR 0099 decision 8): how often the worker's copilot-purge queue
-# deletes copilot history untouched for 30 days. Default 86400000 (one day);
+# deletes copilot history untouched for 30 days, the copilot usage counters
+# older than 30 days (Amendment 1), and onboarding drafts with no update for
+# 30 days, with their encrypted RTU credentials (F4.255, Amendment 2).
+# Default 86400000 (one day);
 # blank, 0, negative or not a number falls back to the default. Shorten it
 # to see a hand-aged conversation go during a local check.
 # COPILOT_PURGE_INTERVAL_MS=86400000
