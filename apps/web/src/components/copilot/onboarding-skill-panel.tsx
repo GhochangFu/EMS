@@ -76,7 +76,7 @@ type OnboardingSkillPanelProps = {
  * — credentials are typed in the drawer's own field and posted to
  * `…/credentials`, never sent as a turn (ADR 0022). The drawer's Commit opens
  * the `onboarding.commit` wizard; the agent's proposed commit arrives as the
- * dock's Confirm card. The typed "confirm commit" phrase commits nothing here.
+ * dock's Confirm card; no typed phrase commits.
  */
 export function OnboardingSkillPanel({
   user,

@@ -26,7 +26,8 @@ import { AssetImageGallery } from "./asset-image-gallery";
  * ## Shape
  *
  * A right-docked `<aside>`, ruled in Q-2 over the page's centred modal. The
- * classes come from the `onboarding-chat-page.tsx:377` precedent with **one
+ * classes come from the onboarding page's aside (retired in `F3.86` PR 7; the
+ * copilot dock's `<aside>` keeps the family) with **one
  * deliberate change: `fixed`, not `absolute`.** That aside is `absolute`
  * because it sits inside a positioned chat container; the assets page has no
  * positioned ancestor, so `absolute` would dock this panel to whatever the

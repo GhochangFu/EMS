@@ -61,7 +61,7 @@ function skillState(overrides: Partial<CopilotSkillStateDto> = {}): CopilotSkill
     kind: "onboarding",
     sessionId: SESSION,
     session: session(),
-    suggestedReplies: ["Add an RTU", "confirm commit", "View draft"],
+    suggestedReplies: ["Add an RTU", "undo", "View draft"],
     validationErrors: [],
     ...overrides,
   };
@@ -139,7 +139,7 @@ async function openSkill(
   return { ...stubs, load };
 }
 
-/** The chips are the server's `suggestedReplies` (minus "confirm commit"), and the generic empty state never shows. */
+/** The chips are the server's `suggestedReplies` (minus "undo", which has its own control), and the generic empty state never shows. */
 export async function aSkillConversationRendersTheChips(): Promise<void> {
   await openSkill();
   const chips = screen.getByRole("group", { name: "Suggested replies" });

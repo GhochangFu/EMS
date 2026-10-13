@@ -186,15 +186,6 @@ export async function showsNoButtonWhenTheStatusIsUnavailable(): Promise<void> {
   expect(screen.queryByRole("button", OPEN_BUTTON)).not.toBeInTheDocument();
 }
 
-export async function showsNoButtonOnTheOnboardingChat(): Promise<void> {
-  const stubs = stub(READY);
-  renderDock("admin", `/admin/organizations/${ORG_ID}/onboarding`);
-  await settle();
-  expect(screen.getByTestId("router-path")).toHaveTextContent(`/admin/organizations/${ORG_ID}/onboarding`);
-  expect(screen.queryByRole("button", OPEN_BUTTON)).not.toBeInTheDocument();
-  expect(stubs.status).not.toHaveBeenCalled();
-}
-
 export async function showsTheButtonOnAnotherOrganizationPage(): Promise<void> {
   stub(READY);
   renderDock("admin", `/admin/organizations/${ORG_ID}/ai-assistant`);

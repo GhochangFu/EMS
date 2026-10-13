@@ -61,7 +61,7 @@ export function AiAssistantPage({ user }: AiAssistantPageProps) {
         <PageHeader
           eyebrow="Administration"
           title="AI assistant"
-          subtitle="The provider, model and API key the onboarding agent uses for this organization"
+          subtitle="The provider, model and API key the onboarding skill uses for this organization"
         />
         {settingsQ.isLoading ? (
           <div className="text-sm text-ink-muted">Loading...</div>

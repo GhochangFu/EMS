@@ -19,7 +19,6 @@ import {
   remembersTheOpenState,
   rendersTheResetTimeOnA429,
   sendsTheTypedTextAndRendersTheReply,
-  showsNoButtonOnTheOnboardingChat,
   showsNoButtonToAnOperator,
   showsNoButtonWhenTheStatusIsUnavailable,
   showsTheButtonOnAnotherOrganizationPage,
@@ -42,7 +41,6 @@ describe("F3.85 PR 7 copilot dock — who sees the button", () => {
   it("shows the mockup's bot mark on the button", showsTheMockupsBotMarkOnTheButton);
   it("shows no button to an operator, and never asks for the status", showsNoButtonToAnOperator);
   it("shows no button when the status is unavailable", showsNoButtonWhenTheStatusIsUnavailable);
-  it("shows no button on the onboarding chat", showsNoButtonOnTheOnboardingChat);
   it("shows the button on another organization page", showsTheButtonOnAnotherOrganizationPage);
   it("is mounted by the real AppShell", mountsTheDockInTheAppShell);
 });

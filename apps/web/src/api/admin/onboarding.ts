@@ -37,18 +37,6 @@ export async function fetchOnboardingSession(
   return adminFetch(`/admin/onboarding/sessions/${sessionId}`, onboardingSessionDtoSchema);
 }
 
-/** Sends a chat message to the onboarding bot. */
-export async function sendOnboardingChat(
-  sessionId: string,
-  message: string,
-): Promise<OnboardingChatResponseDto> {
-  return adminFetch(`/admin/onboarding/sessions/${sessionId}/chat`, onboardingChatResponseDtoSchema, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
-  });
-}
-
 /**
  * F3.25 (ADR 0094 decision 6): rolls the draft back to a checkpoint. Bound to the
  * checkpoint id and the draft hash this client last saw; a stale hash is a 409.

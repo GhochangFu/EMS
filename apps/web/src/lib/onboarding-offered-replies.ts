@@ -1,8 +1,9 @@
 /**
- * `F4.199`: the phrases the client never offers as a button — "confirm commit"
- * (ADR 0090 decision 5) and "undo" (ADR 0094 decision 9: undo has its own control).
+ * `F4.199`: the phrase the client never offers as a button — "undo" (ADR 0094
+ * decision 9: undo has its own control). `F3.86` PR 7 retired "confirm commit":
+ * only the Commit button and the Confirm card commit.
  */
-const NEVER_OFFERED_REPLIES: readonly string[] = ["confirm commit", "undo"];
+const NEVER_OFFERED_REPLIES: readonly string[] = ["undo"];
 
 /**
  * The replies to render: the server's list, minus the acting phrases (trim,
