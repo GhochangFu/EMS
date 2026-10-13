@@ -7042,7 +7042,7 @@ Effort 5–7 days.
   at most 8 tool calls and 45 s per turn, 20 history messages. The model
   cannot commit. `propose_commit` binds a proposal to a hash of the draft, and
   only the user's `confirm commit` or the Commit button commits it, after a
-  `FOR UPDATE` re-check of that hash.
+  `FOR UPDATE` re-check of that hash. Since `F3.86` (2026-10-13) the typed `confirm commit` is retired; the Commit button or the copilot's `onboarding.commit` Confirm card commits.
 - Three providers behind one port: OpenAI, OpenRouter and Anthropic. `.env`
   sets the platform default (`LLM_PROVIDER`). An organization can store its
   own key on a new admin page, `/admin/organizations/:orgId/ai-assistant`, in
