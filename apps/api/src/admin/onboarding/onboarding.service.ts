@@ -556,10 +556,9 @@ export class OnboardingService {
     };
   }
 
-  /** Commits the session through the commit service. With `draftHash`, commits only the draft that hash names (`F3.86` PR 5); without, the stored draft. */
-  commit(jwt: JwtPayload, sessionId: string, expectedDraftHash?: string) {
-    if (expectedDraftHash !== undefined) return this.commitService.commitProposed(jwt, sessionId, expectedDraftHash);
-    return this.commitService.commit(jwt, sessionId);
+  /** Commits the session through the commit service, only the draft that `expectedDraftHash` names (`F3.86` PR 5; required since the post-closure fix). */
+  commit(jwt: JwtPayload, sessionId: string, expectedDraftHash: string) {
+    return this.commitService.commitProposed(jwt, sessionId, expectedDraftHash);
   }
 
   /** Returns an Excel template buffer for bulk onboarding. */

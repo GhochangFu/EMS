@@ -344,7 +344,7 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   OnboardingController_createSession: createSessionBodySchema,
   OnboardingController_patchDraft: patchDraftBodySchema,
   OnboardingController_rollback: rollbackBodySchema,
-  // `F3.86` PR 5 (ADR 0099 decision 7): `{}` is the page's Commit; `draftHash` binds it to that draft.
+  // `F3.86` PR 5 (ADR 0099 decision 7): `draftHash` is required and binds the commit to that draft.
   OnboardingController_commit: commitOnboardingBodySchema,
   OnboardingController_setCredentials: setCredentialsBodySchema,
   OrganizationsAdminController_create: createOrganizationBodySchema,

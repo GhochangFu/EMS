@@ -137,7 +137,12 @@ export class OnboardingCommitService {
     return { templates: this.templates, instantiation: this.instantiation, stock: this.stock };
   }
 
-  /** Commits a draft session when validation passes. The Commit button's path. */
+  /**
+   * Commits a draft session when validation passes, with no hash check. No
+   * route reaches it since `F3.86` (the commit route requires `draftHash` and
+   * calls `commitProposed`); only specs call it, to drive the shared commit
+   * path without hashing a draft.
+   */
   commit(jwt: JwtPayload, sessionId: string): Promise<OnboardingCommitResponseDto> {
     return this.commitWith(jwt, sessionId, null);
   }
