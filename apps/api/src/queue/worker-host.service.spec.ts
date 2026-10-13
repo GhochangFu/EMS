@@ -126,6 +126,7 @@ export const PURGE_SUMMARY: CopilotPurgeSummary = {
   claimsFailed: 1,
   usageRowsDeleted: 5,
   orgUsageRowsDeleted: 6,
+  onboardingDraftsDeleted: 7,
   durationMs: 78,
 };
 

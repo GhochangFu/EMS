@@ -14,13 +14,17 @@ import { defineQueue } from "./queue-registry";
  * messages cascade; their pending changes keep the row with
  * `conversation_id` set to NULL), deletes the orphaned `pending` and
  * `rejected` changes older than 30 days, and fails the `applying` claims
- * older than 30 days. This file holds only the declaration.
+ * older than 30 days, and deletes the user's usage counters older than 30
+ * days; then, per organization inside `withTenant`, deletes the
+ * organization's usage counters older than 30 days and the onboarding drafts
+ * with no update for 30 days (`F4.255`, ADR 0099 Amendment 2 A2 — their
+ * `_secrets` go with the row). This file holds only the declaration.
  *
  * **Fleet, not tenant.** The tick is not scoped to one organization; the
- * fleet handle only lists `users.id` (`0105` revokes the copilot tables from
- * `bms_fleet`), and every write runs on the tenant pool under the
- * `user_isolation` policy. The payload is `z.object({}).strict()` — the
- * scheduler is the identity.
+ * fleet handle only lists `users.id` and `organizations.id` (`0105`
+ * revokes the copilot tables from `bms_fleet`), and every write runs on the
+ * tenant pool under the `user_isolation` or `tenant_isolation` policy. The
+ * payload is `z.object({}).strict()` — the scheduler is the identity.
  *
  * **Retry policy: `RETRY_DEFAULTS`.** Every statement is idempotent (a
  * second run finds nothing older than the cut-off), so a retried tick is

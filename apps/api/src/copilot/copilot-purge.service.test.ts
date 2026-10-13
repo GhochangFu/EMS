@@ -2,6 +2,15 @@ import { beforeAll, describe, it } from "vitest";
 
 import type { CopilotPurgeSummary } from "./copilot-purge.service";
 import {
+  assertADraftCreatedLongAgoButUpdatedRecentlySurvives,
+  assertADraftPastTheCutoffInstantIsDeleted,
+  assertAnOldCommittedSessionSurvives,
+  assertAnOldDraftIsDeleted,
+  assertAnUnlistedOrgsDraftSurvives,
+  assertAYoungDraftSurvives,
+  assertTheDraftDeleteBindsTheCutoffInstant,
+  assertTheSecondOrgsOldDraftIsDeletedInItsOwnTransaction,
+  assertTheSummaryCountsTheDraftsDeleted,
   assertAnOldApplyingClaimBecomesFailed,
   assertAnOldOrgCounterIsDeleted,
   assertAnOldUserCounterIsDeleted,
@@ -35,7 +44,7 @@ import {
  * history purge against fake pools. Assertions live in the sibling `.spec`
  * (ADR 0014).
  */
-describe("F3.85 — CopilotPurgeService purges 30-day-old copilot history and usage counters", () => {
+describe("F3.85 — CopilotPurgeService purges 30-day-old copilot history, usage counters and onboarding drafts", () => {
   let h: PurgeHarness;
   let summary: CopilotPurgeSummary;
 
@@ -111,6 +120,35 @@ describe("F3.85 — CopilotPurgeService purges 30-day-old copilot history and us
   });
   it("returns counts of the counters it purged", () => {
     assertTheSummaryCountsTheCountersPurged(summary);
+  });
+
+  // F4.255 / ADR 0099 Amendment 2 A2: the 30-day erase also removes untouched onboarding drafts.
+  it("deletes an organization's onboarding draft untouched for 31 days", () => {
+    assertAnOldDraftIsDeleted(h);
+  });
+  it("keeps an onboarding draft untouched for 29 days", () => {
+    assertAYoungDraftSurvives(h);
+  });
+  it("keeps a draft created 31 days ago but updated 29 days ago (the age is updated_at)", () => {
+    assertADraftCreatedLongAgoButUpdatedRecentlySurvives(h);
+  });
+  it("keeps a committed onboarding session untouched for 31 days", () => {
+    assertAnOldCommittedSessionSurvives(h);
+  });
+  it("deletes the second listed organization's old draft in that organization's own transaction", () => {
+    assertTheSecondOrgsOldDraftIsDeletedInItsOwnTransaction(h);
+  });
+  it("never reaches the draft of an organization the fleet list did not name", () => {
+    assertAnUnlistedOrgsDraftSurvives(h);
+  });
+  it("returns the count of the onboarding drafts it deleted", () => {
+    assertTheSummaryCountsTheDraftsDeleted(summary);
+  });
+  it("deletes a draft untouched for 30 days and one hour (the cut-off is an instant)", () => {
+    assertADraftPastTheCutoffInstantIsDeleted(h);
+  });
+  it("binds the cut-off instant, not the cut-off day, in each organization's draft delete", () => {
+    assertTheDraftDeleteBindsTheCutoffInstant(h);
   });
 
   it("an empty user list opens no per-user transaction", async () => {

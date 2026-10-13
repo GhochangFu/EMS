@@ -7,7 +7,11 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { withUser } from "../database/user-context";
 
-/** ADR 0099 decision 8: copilot history is kept for 30 days after its last use. */
+/**
+ * ADR 0099 decision 8: copilot history is kept for 30 days after its last
+ * use — and an untouched onboarding draft for 30 days after its last write
+ * (Amendment 2 A2).
+ */
 export const COPILOT_RETENTION_DAYS = 30;
 
 const DAY_MS = 86_400_000;
@@ -22,13 +26,16 @@ export type CopilotPurgeSummary = {
   readonly usageRowsDeleted: number;
   /** `bms.copilot_org_usage` rows dated before the cut-off day (A1). */
   readonly orgUsageRowsDeleted: number;
+  /** `bms.onboarding_sessions` drafts with no update for 30 days (ADR 0099 Amendment 2 A2). */
+  readonly onboardingDraftsDeleted: number;
   readonly durationMs: number;
 };
 
 /**
  * `F3.85` PR 5 / ADR 0099 decision 8 — the `copilot-purge` tick's body: the
- * copilot history's 30-day retention, and since PR 6 the usage counters'
- * (ADR 0099 Amendment 1 A1).
+ * copilot history's 30-day retention, since PR 6 the usage counters'
+ * (ADR 0099 Amendment 1 A1), and since `F4.255` the onboarding drafts'
+ * (Amendment 2 A2).
  *
  * **Two pools, injected here.** The fleet pool lists `users.id` and
  * `organizations.id` and nothing else — `0105` revokes the three copilot
@@ -37,7 +44,8 @@ export type CopilotPurgeSummary = {
  * pool: the per-user steps inside `withUser(tenantDb, id)`, one transaction
  * per user, because the `user_isolation` policy compares `user_id` with
  * `app.current_user` and there is no fleet path through it; the
- * organization counters inside `withTenant` (below). A transaction
+ * organization counters and the onboarding-draft delete inside `withTenant`
+ * (below). A transaction
  * with no setting deletes nothing (`copilot-purge.integration.spec.ts`
  * proves it for the owner too, bound by FORCE).
  *
@@ -57,10 +65,20 @@ export type CopilotPurgeSummary = {
  *    (`F3.85` PR 6, ADR 0099 Amendment 1 A1) — the same `user_isolation`.
  *
  * Then, per organization listed on the fleet pool, one `withTenant`
- * transaction deletes its `copilot_org_usage` counters dated before the
- * cut-off day: that table's policy is `tenant_isolation` on
- * `app.current_organization`, so a per-user transaction reaches none of it.
- * The cut-off day is the UTC calendar date of the cut-off instant.
+ * transaction:
+ *
+ * 1. deletes its `copilot_org_usage` counters dated before the cut-off day;
+ * 2. deletes its `onboarding_sessions` whose `status` is `draft` and whose
+ *    `updated_at` is before the cut-off instant (`F4.255`, ADR 0099
+ *    Amendment 2 A2). The delete takes the draft's `_secrets` and
+ *    checkpoints with the row; a bound conversation's
+ *    `onboarding_session_id` goes to NULL (`0107`). Every in-draft write in
+ *    the onboarding services sets `updated_at`, so it is the draft's
+ *    liveness signal. A committed session is never deleted here.
+ *
+ * Both tables' policy is `tenant_isolation` on `app.current_organization`,
+ * so a per-user transaction reaches none of them. The cut-off day is the UTC
+ * calendar date of the cut-off instant.
  *
  * Every statement is idempotent, so a retried tick finds nothing more. The
  * cut-off is computed from `now` and bound as a parameter, never
@@ -120,13 +138,21 @@ export class CopilotPurgeService {
     }
     const orgs = await this.fleetDb.execute<{ id: string }>(sql`SELECT id FROM bms.organizations ORDER BY id`);
     let orgUsageRowsDeleted = 0;
+    let onboardingDraftsDeleted = 0;
     for (const { id } of orgs.rows) {
-      const deleted = await withTenant(this.tenantDb, id, (tx) =>
-        tx.execute(sql`
+      const counts = await withTenant(this.tenantDb, id, async (tx) => {
+        const orgUsage = await tx.execute(sql`
           DELETE FROM bms.copilot_org_usage
-           WHERE day < ${cutoffDay}::date`),
-      );
-      orgUsageRowsDeleted += deleted.rowCount ?? 0;
+           WHERE day < ${cutoffDay}::date`);
+        // `updated_at` is an instant: bind the cut-off instant, not the day.
+        const drafts = await tx.execute(sql`
+          DELETE FROM bms.onboarding_sessions
+           WHERE status = 'draft'
+             AND updated_at < ${cutoff}::timestamptz`);
+        return { orgUsage: orgUsage.rowCount ?? 0, drafts: drafts.rowCount ?? 0 };
+      });
+      orgUsageRowsDeleted += counts.orgUsage;
+      onboardingDraftsDeleted += counts.drafts;
     }
     return {
       users: rows.length,
@@ -135,6 +161,7 @@ export class CopilotPurgeService {
       claimsFailed,
       usageRowsDeleted,
       orgUsageRowsDeleted,
+      onboardingDraftsDeleted,
       durationMs: Date.now() - started,
     };
   }

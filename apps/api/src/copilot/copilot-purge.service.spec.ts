@@ -30,6 +30,13 @@ import { CopilotPurgeService, type CopilotPurgeSummary } from "./copilot-purge.s
  * DELETE acts only on rows of the organization set there. Their cut-off is
  * a calendar date, the statement's bound parameter.
  *
+ * **And the onboarding drafts (`F4.255`, ADR 0099 Amendment 2 A2).**
+ * `onboarding_sessions` is modelled under the same `tenant_isolation`: a
+ * DELETE acts only on rows of the organization set in its transaction. The
+ * fake reads the status predicate from the statement's text rather than
+ * restating it, so a delete that drops `status = 'draft'` reaches the old
+ * committed session here; its cut-off is the bound instant.
+ *
  * What the fake cannot see — the exact predicates against the real schema,
  * the real cascade and `SET NULL`, the owner bound by FORCE — is
  * `copilot-purge.integration.spec.ts`'s.
@@ -61,6 +68,7 @@ const dayAgo = (days: number): string => daysAgo(days).toISOString().slice(0, 10
 
 type FakeUsage = { id: string; userId: string; day: string };
 type FakeOrgUsage = { id: string; organizationId: string; day: string };
+type FakeDraft = { id: string; organizationId: string; status: string; createdAt: Date; updatedAt: Date };
 /** One tenant transaction's two settings (null: that one was not set). */
 type FakeTx = { user: string | null; org: string | null };
 
@@ -83,6 +91,9 @@ export type PurgeHarness = {
   readonly changes: FakeChange[];
   readonly usage: FakeUsage[];
   readonly orgUsage: FakeOrgUsage[];
+  readonly sessions: FakeDraft[];
+  /** The bound parameters of every `onboarding_sessions` DELETE, in order. */
+  readonly sessionDeleteParams: unknown[][];
   /** The two settings of every tenant transaction, in order. */
   readonly transactions: FakeTx[];
   /** Statements the tenant pool ran outside a transaction. */
@@ -113,6 +124,11 @@ function head(text: string): string {
  *   days (deleted in B's own transaction);
  * - organization counters: A's at 31 days (deleted) and exactly 30 days (kept, the boundary), the
  *   unlisted organization's at 31 days (kept). B is listed with no counter.
+ * - onboarding sessions (Amendment 2 A2): A's drafts at 31 days (deleted), 30 days plus one hour
+ *   (deleted — past the cut-off instant, though after the cut-off day's midnight) and 29 days
+ *   (kept), A's draft created 31 days ago but updated 29 days ago (kept — the age is the last
+ *   update), A's 31-day `committed` session (kept), B's 31-day draft (deleted in B's own
+ *   transaction), the unlisted organization's 31-day draft (kept).
  */
 export function makeHarness(
   listedUsers: readonly string[] = [USER_A, USER_B],
@@ -164,6 +180,25 @@ export function makeHarness(
     { id: "org-usage-a-30", organizationId: ORG_A, day: dayAgo(30) },
     { id: "org-usage-unlisted-31", organizationId: ORG_UNLISTED, day: dayAgo(31) },
   ];
+  const draftAgo = (days: number, hours = 0): Date => new Date(daysAgo(days).getTime() - hours * 3_600_000);
+  // created_at and updated_at are equal except on draft-a-c31-u29, the row that tells them apart.
+  const session = (id: string, organizationId: string, status: string, updatedAt: Date, createdAt = updatedAt): FakeDraft => ({
+    id,
+    organizationId,
+    status,
+    createdAt,
+    updatedAt,
+  });
+  const sessions: FakeDraft[] = [
+    session("draft-a-31", ORG_A, "draft", draftAgo(31)),
+    session("draft-a-30h1", ORG_A, "draft", draftAgo(30, 1)),
+    session("draft-a-29", ORG_A, "draft", draftAgo(29)),
+    session("draft-a-c31-u29", ORG_A, "draft", draftAgo(29), draftAgo(31)),
+    session("committed-a-31", ORG_A, "committed", draftAgo(31)),
+    session("draft-b-31", ORG_B, "draft", draftAgo(31)),
+    session("draft-unlisted-31", ORG_UNLISTED, "draft", draftAgo(31)),
+  ];
+  const sessionDeleteParams: unknown[][] = [];
   const transactions: FakeTx[] = [];
   const tenantOutsideTx: string[] = [];
   const fleetStatements: string[] = [];
@@ -194,6 +229,20 @@ export function makeHarness(
     if (text.startsWith("delete from bms.copilot_org_usage")) {
       const doomed = orgUsage.filter((u) => org !== null && u.organizationId === org && u.day < cutoffDay());
       for (const u of doomed) orgUsage.splice(orgUsage.indexOf(u), 1);
+      return { rows: [], rowCount: doomed.length };
+    }
+    if (text.startsWith("delete from bms.onboarding_sessions")) {
+      sessionDeleteParams.push([...rendered.params]);
+      // Read from the statement, not restated: a delete without the predicate reaches every status.
+      const draftOnly = text.includes("status = 'draft'");
+      // The age column too: the statement names it, so a delete on created_at reaches draft-a-c31-u29.
+      const column = /\b(updated_at|created_at) </.exec(text)?.[1];
+      if (!column) throw new Error(`fake tenant tx: no age column in ${rendered.sql}`);
+      const age = (d: FakeDraft): Date => (column === "updated_at" ? d.updatedAt : d.createdAt);
+      const doomed = sessions.filter(
+        (d) => org !== null && d.organizationId === org && (!draftOnly || d.status === "draft") && age(d) < cutoff(),
+      );
+      for (const d of doomed) sessions.splice(sessions.indexOf(d), 1);
       return { rows: [], rowCount: doomed.length };
     }
     if (text.startsWith("delete from bms.copilot_conversations")) {
@@ -270,6 +319,8 @@ export function makeHarness(
     changes,
     usage,
     orgUsage,
+    sessions,
+    sessionDeleteParams,
     transactions,
     tenantOutsideTx,
     fleetStatements,
@@ -465,5 +516,71 @@ export function assertNoListedUserMeansNoTransaction(h: PurgeHarness, summary: C
   assert(
     userTransactions(h).length === 0 && summary.users === 0 && summary.conversationsDeleted === 0,
     `expected an empty user list to open no per-user transaction and purge nothing; transactions=${JSON.stringify(h.transactions)} summary=${JSON.stringify(summary)}`,
+  );
+}
+
+// F4.255 / ADR 0099 Amendment 2 A2 — the 30-day erase of onboarding drafts.
+
+const sessionIds = (h: PurgeHarness): string => ids(h.sessions);
+const hasSession = (h: PurgeHarness, id: string): boolean => h.sessions.some((d) => d.id === id);
+
+export function assertAnOldDraftIsDeleted(h: PurgeHarness): void {
+  assert(!hasSession(h, "draft-a-31"), `expected organization A's 31-day draft deleted; sessions left: ${sessionIds(h)}`);
+}
+
+export function assertAYoungDraftSurvives(h: PurgeHarness): void {
+  assert(hasSession(h, "draft-a-29"), `expected organization A's 29-day draft kept; sessions left: ${sessionIds(h)}`);
+}
+
+export function assertADraftCreatedLongAgoButUpdatedRecentlySurvives(h: PurgeHarness): void {
+  assert(
+    hasSession(h, "draft-a-c31-u29"),
+    `expected organization A's draft created 31 days ago but updated 29 days ago kept — the age is updated_at, not created_at; sessions left: ${sessionIds(h)}`,
+  );
+}
+
+export function assertAnOldCommittedSessionSurvives(h: PurgeHarness): void {
+  assert(
+    hasSession(h, "committed-a-31"),
+    `expected organization A's 31-day committed session kept — only a draft expires; sessions left: ${sessionIds(h)}`,
+  );
+}
+
+export function assertTheSecondOrgsOldDraftIsDeletedInItsOwnTransaction(h: PurgeHarness): void {
+  assert(
+    !hasSession(h, "draft-b-31"),
+    `expected organization B's 31-day draft deleted under B's own tenant setting; sessions left: ${sessionIds(h)}`,
+  );
+}
+
+export function assertAnUnlistedOrgsDraftSurvives(h: PurgeHarness): void {
+  assert(
+    hasSession(h, "draft-unlisted-31"),
+    `expected the unlisted organization's 31-day draft kept — the purge reached an organization the fleet list did not name; sessions left: ${sessionIds(h)}`,
+  );
+}
+
+export function assertTheSummaryCountsTheDraftsDeleted(summary: CopilotPurgeSummary): void {
+  // draft-a-31, draft-a-30h1, draft-b-31.
+  assert(
+    summary.onboardingDraftsDeleted === 3,
+    `expected the summary to count 3 onboarding drafts deleted; got ${String(summary.onboardingDraftsDeleted)}`,
+  );
+}
+
+/** A draft 30 days and one hour old is past the cut-off instant but after the cut-off day's midnight. */
+export function assertADraftPastTheCutoffInstantIsDeleted(h: PurgeHarness): void {
+  assert(
+    !hasSession(h, "draft-a-30h1"),
+    `expected the draft untouched for 30 days and one hour deleted — the cut-off is the instant, not the calendar day; sessions left: ${sessionIds(h)}`,
+  );
+}
+
+export function assertTheDraftDeleteBindsTheCutoffInstant(h: PurgeHarness): void {
+  const expected = daysAgo(30).toISOString();
+  const bound = h.sessionDeleteParams.map((p) => p[0]);
+  assert(
+    bound.length === 2 && bound.every((b) => b === expected),
+    `expected each organization's draft delete to bind the cut-off instant ${expected}; got ${JSON.stringify(h.sessionDeleteParams)}`,
   );
 }
