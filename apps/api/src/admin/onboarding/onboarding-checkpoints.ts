@@ -50,7 +50,7 @@ export const NOTHING_TO_UNDO_REPLY =
   "and a manual edit or a workbook upload clears the undo history.";
 
 /**
- * Exact, after trim and case-folding — as `isConfirmCommitPhrase`. `undo.` and
+ * Exact, after trim and case-folding. `undo.` and
  * `undo last` are ordinary turns.
  */
 export function isUndoPhrase(message: string): boolean {

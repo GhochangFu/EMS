@@ -24,7 +24,6 @@ import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema } from "../admin.schema";
 import { MAX_IMPORT_FILE_BYTES } from "../telemetry-import/telemetry-import.schema";
 import {
-  chatBodySchema,
   createSessionBodySchema,
   patchDraftBodySchema,
   rollbackBodySchema,
@@ -67,24 +66,6 @@ export class OnboardingController {
   @Get("sessions/:id")
   async getSession(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
     return this.service.getSession(user, idParamSchema.parse(id));
-  }
-
-  @Post("sessions/:id/chat")
-  @HttpCode(HttpStatus.OK)
-  async chat(
-    @Param("id") id: string,
-    @Body() body: unknown,
-    @CurrentUser() user: JwtPayload,
-  ) {
-    try {
-      const parsed = chatBodySchema.parse(body);
-      return this.service.chat(user, idParamSchema.parse(id), parsed.message);
-    } catch (err) {
-      if (err instanceof ZodError) {
-        throw new BadRequestException(err.flatten());
-      }
-      throw err;
-    }
   }
 
   @Post("sessions/:id/upload")

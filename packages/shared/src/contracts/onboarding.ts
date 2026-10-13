@@ -585,7 +585,7 @@ export const MAX_ONBOARDING_ASSET_POINTS = 5_000;
  *    letting an empty vocabulary code through to the commit instead.
  *
  * 2. **A lone surrogate is still possible, and it is a 500 rather than a schema
- *    failure.** `JSON.parse` accepts the `"\ud83d"` escape and `chatBodySchema`
+ *    failure.** `JSON.parse` accepts the `"\ud83d"` escape and `copilotTurnBodySchema`
  *    has no well-formedness check, so a caller can put an unpaired half of a
  *    surrogate pair into a chat message. `z.string().max()` counts it happily,
  *    but `JSON.stringify` re-emits the escape and Postgres refuses it in `jsonb`

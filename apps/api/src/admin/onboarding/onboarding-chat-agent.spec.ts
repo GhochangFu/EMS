@@ -188,17 +188,17 @@ export async function assertAStepLabelOnTheAgentPathNeverReachesTheModel(): Prom
 
 /**
  * F3.25 (ADR 0094 decision 9): the chips of an agent reply are the model's
- * offer, filtered, then the step label and View draft. The commit phrase the
+ * offer, filtered, then the step label and View draft. The undo phrase the
  * model offered is gone; the protocol it offered stays.
  */
 export async function assertAnAgentReplysChipsAreTheFilteredOfferPlusTheStepLabel(): Promise<void> {
   const llm = new FakeLlmProvider([
-    calls(toolCall("suggest_replies", { replies: ["MQTT", "confirm commit"] })),
+    calls(toolCall("suggest_replies", { replies: ["MQTT", "undo"] })),
     { kind: "final", text: "Which protocol will RTU 1 use?" },
   ]);
   const result = await service(ready(llm)).chat.handleTurn("add an RTU", AT_RTU, "rtu", "Ion Exchange", "org-7", CONTEXT);
   const chips = result.suggestedReplies ?? [];
   assert(chips.includes("MQTT"), `the offered protocol stays, got ${JSON.stringify(chips)}`);
-  assert(!chips.some((chip) => chip.toLowerCase() === "confirm commit"), `the commit phrase is dropped, got ${JSON.stringify(chips)}`);
+  assert(!chips.some((chip) => chip.toLowerCase() === "undo"), `the undo phrase is dropped, got ${JSON.stringify(chips)}`);
   assert(JSON.stringify(chips) === '["MQTT","confirm rtu","View draft"]', `the full list, got ${JSON.stringify(chips)}`);
 }

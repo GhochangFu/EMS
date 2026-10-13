@@ -69,7 +69,6 @@ import {
   updateMimicOrgSymbolLibraryBodySchema,
 } from "../mimic-symbol-libraries/mimic-symbol-libraries.schema";
 import {
-  chatBodySchema,
   createSessionBodySchema,
   patchDraftBodySchema,
   rollbackBodySchema,
@@ -239,7 +238,6 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   alarmEnrichmentUpsertBodySchema,
   assetPointBulkUpdateBodySchema,
   assetPointCalcOverrideBodySchema,
-  chatBodySchema,
   closeWorkOrderBodySchema,
   convertMaintenanceBodySchema,
   createAssetBodySchema,

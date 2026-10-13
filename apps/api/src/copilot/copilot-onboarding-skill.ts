@@ -15,7 +15,6 @@ export interface CopilotOnboardingSkill {
     jwt: JwtPayload,
     sessionId: string,
     message: string,
-    options: { readonly commitByPhrase?: boolean },
   ): Promise<OnboardingChatResponseDto>;
 }
 

@@ -148,7 +148,7 @@ export function runLooksLikeCredentialTests(): void {
   // Amendment 2's assertion used "a".repeat(200000) and measured 0 ms: a uniform
   // run of word characters never enters the trim's backtracking path, so it
   // passed while the detector was quadratic. These two inputs DO enter it, and
-  // both sit inside chatBodySchema's own 8,000-char cap.
+  // both sit inside copilotTurnBodySchema's own 8,000-char cap.
   //
   // U+3316 expands 1 -> 6 under NFKC with no whitespace, which is how an input
   // "within the cap" produced a 47,412-character scan.

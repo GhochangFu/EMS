@@ -2,7 +2,6 @@ import type { OnboardingPhase } from "@bms/shared";
 
 import { normaliseReply, stepLabelFor } from "./onboarding-chat-rule-based";
 import { UNDO_PHRASE } from "./onboarding-checkpoints";
-import { CONFIRM_COMMIT_PHRASE } from "./onboarding-commit-proposal";
 import { looksLikeCredential } from "./onboarding-credential-detect";
 import { MAX_MODEL_REPLIES, MAX_SUGGESTED_REPLY_CHARS } from "./onboarding-tool-outcome";
 
@@ -11,9 +10,8 @@ import { MAX_MODEL_REPLIES, MAX_SUGGESTED_REPLY_CHARS } from "./onboarding-tool-
  *
  * The model offers chips through the `suggest_replies` tool; code decides what
  * reaches the client. The web sends a chip's text as a turn, so a chip that
- * names an acting phrase would act on one click: the commit phrase and the
- * undo phrase are the user's own typed acts (ADR 0090 decision 5, ADR 0094
- * decision 6), and are never offered.
+ * names an acting phrase would act on one click: the undo phrase is the
+ * user's own typed act (ADR 0094 decision 6), and is never offered.
  */
 
 // The two bounds live in `onboarding-tool-outcome.ts`, which the registry reads.
@@ -22,7 +20,7 @@ export { MAX_MODEL_REPLIES, MAX_SUGGESTED_REPLY_CHARS };
 export const VIEW_DRAFT_REPLY = "View draft";
 
 /** The phrases that act on the draft; a chip never offers them, in any case, spacing or trailing stop. */
-export const ACTING_PHRASES: readonly string[] = [CONFIRM_COMMIT_PHRASE, UNDO_PHRASE];
+export const ACTING_PHRASES: readonly string[] = [UNDO_PHRASE];
 
 const ACTING = new Set(ACTING_PHRASES.map(normaliseReply));
 

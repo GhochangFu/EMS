@@ -469,8 +469,8 @@ export class CopilotTurnService {
 
   /**
    * `F3.86` PR 5 / ADR 0099 decision 7 — one turn of the onboarding skill. The
-   * onboarding service answers it (its agent, or its guided mode with no key),
-   * with `commitByPhrase: false`: in the dock only the Confirm card commits.
+   * onboarding service answers it (its agent, or its guided mode with no key);
+   * in the dock only the Confirm card commits (no typed phrase does).
    * A session that is no longer a draft answers a fixed reply, uncounted. The
    * turn is counted before `chat` (ruling Q4). It stores the user message, the
    * onboarding action lines this turn added, and the reply, each scrubbed — the
@@ -502,7 +502,7 @@ export class CopilotTurnService {
     const usage = await this.usage.consumeTurn(identity, organizationId, this.clock());
     if (!usage.ok) throw usageLimitException(usage);
 
-    const answer = await this.onboarding.chat(user, sessionId, message, { commitByPhrase: false });
+    const answer = await this.onboarding.chat(user, sessionId, message);
     // The rows this turn added. Another writer (the page) can add rows at the same time, so the action
     // lines are taken only when the first new row is this turn's own message; otherwise none are.
     const added = answer.session.messages.slice(before.messages.length);

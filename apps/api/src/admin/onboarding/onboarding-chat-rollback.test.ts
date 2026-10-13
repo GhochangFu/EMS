@@ -12,19 +12,9 @@ import {
   assertAnUndoOverAnOverDeepDraftRefusesByName,
   assertAnEmptyRingUndoBuildsOnTheLockedRow,
   assertAnEmptyRingUndoOverAnOverDeepDraftRefusesByName,
-  assertAConfirmWithNoProposalOverAnOverDeepDraftRefusesByName,
   assertAnEmptyRingUndoOverACommitIsAConflict,
   assertAnEmptyRingUndoRacedByACommitIsAConflict,
   assertAnEmptyRingUndoRacedByADraftChangeIsAConflict,
-  assertACommittingConfirmBuildsItsMessagesOnTheLockedRow,
-  assertACommittingConfirmWritesToTheCommittedRow,
-  assertAConfirmWithNoProposalBuildsOnTheLockedRow,
-  assertAConfirmWithNoProposalRacedByACommitIsAConflict,
-  assertAConfirmWithNoProposalRacedByADraftChangeIsAConflict,
-  assertAConfirmWriteOverACommitIsAConflict,
-  assertARefusedCommitRacedByADraftChangeIsAConflict,
-  assertAStaleConfirmKeepsAMessageWrittenInBetween,
-  assertAStaleConfirmRacedByADraftChangeIsAConflict,
   assertARollbackBuildsOnTheLockedRow,
   assertARollbackRacedByACommitIsForbidden,
   assertARollbackRacedByAChatTurnIsAConflict,
@@ -152,9 +142,6 @@ describe("onboarding chat — the fail-closed null-hash guard (F4.230)", () => {
     await assertAnEmptyRingUndoOverAnOverDeepDraftRefusesByName();
   });
 
-  it("answers 409 DRAFT_TOO_DEEP_FOR_TURN and writes nothing on a typed confirm with no proposal over a draft past the depth bound", async () => {
-    await assertAConfirmWithNoProposalOverAnOverDeepDraftRefusesByName();
-  });
 });
 
 describe("onboarding chat — the empty-ring undo under the row lock (F4.231)", () => {
@@ -172,43 +159,5 @@ describe("onboarding chat — the empty-ring undo under the row lock (F4.231)", 
 
   it("answers 409 when its write matches no draft row", async () => {
     await assertAnEmptyRingUndoOverACommitIsAConflict();
-  });
-});
-
-describe("onboarding chat — the typed confirm under the row lock (F4.231)", () => {
-  it("with no proposal builds its two messages on the locked row", async () => {
-    await assertAConfirmWithNoProposalBuildsOnTheLockedRow();
-  });
-
-  it("with no proposal answers 409 DRAFT_CHANGED_DURING_TURN and writes nothing when the draft moved under the lock", async () => {
-    await assertAConfirmWithNoProposalRacedByADraftChangeIsAConflict();
-  });
-
-  it("with no proposal answers 409 SESSION_NO_LONGER_DRAFT and writes nothing when a commit landed before the lock", async () => {
-    await assertAConfirmWithNoProposalRacedByACommitIsAConflict();
-  });
-
-  it("with a stale proposal keeps a message written in between and clears the locked row's proposal without committing", async () => {
-    await assertAStaleConfirmKeepsAMessageWrittenInBetween();
-  });
-
-  it("with a stale proposal answers 409 and writes nothing when the draft moved under the lock", async () => {
-    await assertAStaleConfirmRacedByADraftChangeIsAConflict();
-  });
-
-  it("with a refused commit answers 409 and stores nothing when the draft moved under the lock", async () => {
-    await assertARefusedCommitRacedByADraftChangeIsAConflict();
-  });
-
-  it("that commits builds its three messages on the locked row", async () => {
-    await assertACommittingConfirmBuildsItsMessagesOnTheLockedRow();
-  });
-
-  it("that commits writes its messages to the row its own commit marked committed", async () => {
-    await assertACommittingConfirmWritesToTheCommittedRow();
-  });
-
-  it("answers 409 when its write matches no draft row", async () => {
-    await assertAConfirmWriteOverACommitIsAConflict();
   });
 });

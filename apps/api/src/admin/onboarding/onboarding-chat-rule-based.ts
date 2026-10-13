@@ -239,8 +239,8 @@ export async function handleRuleBasedTurn(
   const lower = message.toLowerCase().trim();
   const patch: OnboardingDraftInput = {};
   // F4.199 (owner ruling 2026-10-05, "normalise, then no-op"): a typed label
-  // works as its button — one space, no trailing `.!?`. The commit phrase in
-  // `OnboardingService.chat` stays exact, so "confirm commit." commits nothing.
+  // works as its button — one space, no trailing `.!?`. The undo phrase in
+  // `OnboardingService.chat` stays exact (`isUndoPhrase`); no typed phrase commits.
   const intent = normaliseReply(message);
   const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code));
   // F3.27 (ADR 0090 Amendment 2 B4, B5): every draft write below runs through
@@ -281,7 +281,8 @@ export async function handleRuleBasedTurn(
   // took the "confirm rtu", "confirm point keys", "confirm assets" and
   // "confirm mappings" reply buttons, so they answered with the commit line
   // and their step never ran. It commits nothing either way: only the typed
-  // `confirm commit` phrase or the Commit button commits (ADR 0090 decision 5).
+  // Commit button of the draft preview or the copilot's Confirm card commits
+  // (ADR 0090 decision 5; `F3.86` PR 7 retired the typed phrase).
   // F3.27 (B3): the review reply only when the draft is in review; before it,
   // "yes" (the answer to an old "... next?" prompt) gets the step prompt.
   if (/^(yes|create|create it|commit|confirm)$/.test(intent)) {
@@ -345,7 +346,7 @@ export async function handleRuleBasedTurn(
     // over-long cell because a workbook amplifies: one 5 MiB upload declares
     // thousands of 32,767-character cells, and a silently shortened asset code
     // commits plant under a name nobody chose. A chat turn amplifies nothing —
-    // `chatBodySchema` caps `message` at 8,000 characters and one turn yields
+    // `copilotTurnBodySchema` caps `message` at 8,000 characters and one turn yields
     // one string — so length here is not the denial-of-service axis, and a 400
     // would replace today's graceful per-field validation error with a dead
     // end in the middle of a conversation. What makes the cut safe is that the
@@ -754,7 +755,7 @@ function defaultConfig(protocol: OnboardingProtocol, message: string): Record<st
     return {
       // `host` and `port` are environment or literal and `tls` is a constant;
       // `topic` is the only field of this record the chat message supplies,
-      // and `\S+` will take all 8,000 characters `chatBodySchema` allows.
+      // and `\S+` will take all 8,000 characters `copilotTurnBodySchema` allows.
       //
       // F4.104 — cut, where the same value on the *upload* is refused
       // (`parseRtus`) and where `mqttSetupTemplate` falls back to the

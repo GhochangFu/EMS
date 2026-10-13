@@ -39,7 +39,7 @@ const HIGH_SURROGATE_LAST = 0xdbff;
  * **What this does not promise.** It makes the cut no worse than its input; it
  * does not make an arbitrary string safe for `jsonb`. A lone *low* surrogate
  * that arrived in the request body — `JSON.parse` accepts the `\udc00` escape
- * and `chatBodySchema` has no well-formedness check — passes through untouched
+ * and `copilotTurnBodySchema` has no well-formedness check — passes through untouched
  * and still fails the write. That is older than this function and is recorded as
  * a residual on `packages/shared/src/contracts/onboarding.ts`; do not read this
  * docblock as saying it is closed.

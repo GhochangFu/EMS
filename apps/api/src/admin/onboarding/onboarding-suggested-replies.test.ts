@@ -8,15 +8,11 @@ import {
   assertAStepLabelIsKept,
   assertDuplicatesKeepTheFirst,
   assertLocationAndReviewHaveNoStepLabel,
-  assertTheCommitPhraseIsDropped,
   assertTheUndoPhraseIsDropped,
 } from "./onboarding-suggested-replies.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
 describe("the agent path's reply list (F3.25, ADR 0094 decision 9)", () => {
-  it("drops the commit phrase", () => {
-    assertTheCommitPhraseIsDropped();
-  });
   it("drops the undo phrase", () => {
     assertTheUndoPhraseIsDropped();
   });

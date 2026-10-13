@@ -15,11 +15,6 @@ function same(actual: readonly string[], expected: readonly string[], label: str
   assert(JSON.stringify(actual) === JSON.stringify(expected), `${label}: expected ${JSON.stringify(expected)}, got ${JSON.stringify(actual)}`);
 }
 
-/** The commit phrase acts: a chip is sent as a turn, so it never offers it, in any case or spacing. */
-export function assertTheCommitPhraseIsDropped(): void {
-  same(filterSuggestedReplies(["Confirm Commit ", "Yes"]), ["Yes"], "confirm commit");
-}
-
 /** The undo phrase acts too; `Undo.` normalises to it. */
 export function assertTheUndoPhraseIsDropped(): void {
   same(filterSuggestedReplies(["undo", "Undo.", "Yes"]), ["Yes"], "undo");

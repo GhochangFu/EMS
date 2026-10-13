@@ -11,7 +11,7 @@ import {
   aSkillTurnObeysTheDailyLimit,
   aSkillTurnRunsTheOnboardingChatOnce,
   aSkillTurnStoresItsOwnRows,
-  theCommitPhraseInASkillTurnIsNotACommit,
+  theTypedCommitPhraseInASkillTurnCommitsNothing,
   theCredentialRefusalComesBeforeTheSkill,
   aSessionTheCallerLostEndsTheSkill,
   aLostSessionDiscardsItsCommitCardOnly,
@@ -24,7 +24,7 @@ describe("F3.86 PR 5 — a turn of the onboarding skill (ADR 0099 decision 7, ru
   it("obeys the organization's copilot switch", () => aSkillTurnObeysTheCopilotSwitch());
   it("obeys the daily limit", () => aSkillTurnObeysTheDailyLimit());
   it("is counted once against the conversation's organization", () => aSkillTurnIsCountedOnce());
-  it("hands the commit phrase to chat with commitByPhrase false", () => theCommitPhraseInASkillTurnIsNotACommit());
+  it("commits nothing on the typed phrase: it is an ordinary turn", () => theTypedCommitPhraseInASkillTurnCommitsNothing());
   it("stores the user message, this turn's action lines and the reply", () => aSkillTurnStoresItsOwnRows());
   it("takes no action line it cannot own", () => aSkillTurnDropsActionLinesItCannotOwn());
   it("answers a fixed reply, uncounted, for a closed session", () => aClosedSessionAnswersAFixedReply());

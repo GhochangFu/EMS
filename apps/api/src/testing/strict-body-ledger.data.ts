@@ -213,7 +213,6 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
       "means inherit (ADR 0039 decisions 6-7). A key outside the five columns is a caller " +
       "error by construction: there is no sixth thing to override.",
   ),
-  chatBodySchema: STRICT(CALLER_ERROR),
   closeWorkOrderBodySchema: STRICT(CALLER_ERROR),
   convertMaintenanceBodySchema: STRICT(CALLER_ERROR),
   createAssetBodySchema: STRICT(CALLER_ERROR),

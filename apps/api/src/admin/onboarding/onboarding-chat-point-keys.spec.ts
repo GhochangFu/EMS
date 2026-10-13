@@ -456,7 +456,7 @@ export async function assertCreateTheLocationIsNotALocationName(): Promise<void>
   assert(result.draftPatch.location === undefined, `no location is set, got ${JSON.stringify(result.draftPatch.location)}`);
 }
 
-/** "confirm commit." is not the commit phrase upstream, and here it changes nothing. */
+/** "confirm commit." is an ordinary turn (the typed phrase is retired, F3.86 PR 7); here it changes nothing. */
 export async function assertConfirmCommitWithAFullStopChangesNothing(): Promise<void> {
   const result = await ruleBasedTurn("confirm commit.", { location: PLACE, rtus: [mqttRtu(false)] }, "rtu");
   assert(result.assistantMessage.startsWith(NO_CHANGE), turnSummary(result));
