@@ -20,6 +20,8 @@ import {
   typedCurrencyIsUppercasedAndSubmitted,
   aRefusedRowSwitchShowsTheSentence,
   onboardWithAiFilesTheDocksRequestAndDoesNotNavigate,
+  onboardWithAiIsAbsentForAnOrganizationAdminWhoseCopilotIsOff,
+  onboardWithAiShowsForAnOrganizationAdminWhoseCopilotIsOn,
   aRefusedSaveShowsTheSentence,
   theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin,
   theGlobalAdminSwitchesARowsCopilotOn,
@@ -109,5 +111,13 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("F3.86 PR 7 Onboard with AI files the dock's request and does not navigate", async () => {
     await onboardWithAiFilesTheDocksRequestAndDoesNotNavigate();
+  });
+
+  it("F3.86 PR 7 Onboard with AI is absent for an organization_admin whose copilot is off", async () => {
+    await onboardWithAiIsAbsentForAnOrganizationAdminWhoseCopilotIsOff();
+  });
+
+  it("F3.86 PR 7 Onboard with AI shows for an organization_admin whose copilot is on", async () => {
+    await onboardWithAiShowsForAnOrganizationAdminWhoseCopilotIsOn();
   });
 });

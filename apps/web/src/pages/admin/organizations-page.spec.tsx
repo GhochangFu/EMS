@@ -292,9 +292,9 @@ function AiAssistantRouteProbe() {
 }
 
 /** Renders the list as `role`, beside a probe on the AI assistant sub-page route. */
-function renderPageAs(role: UserRole): void {
+function renderPageAs(role: UserRole, copilotAvailable = false): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  vi.spyOn(copilotDockApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
+  vi.spyOn(copilotDockApi, "fetchCopilotStatus").mockResolvedValue({ available: copilotAvailable, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={["/admin/organizations"]}>
@@ -354,6 +354,30 @@ export async function onboardWithAiFilesTheDocksRequestAndDoesNotNavigate(): Pro
   });
   expect(screen.queryByTestId("retired-onboarding-route-probe")).toBeNull();
   expect(screen.getByText("Rupee organization")).toBeInTheDocument();
+}
+
+/**
+ * `F3.86` PR 7 (ruling Q4, review) — below the global administrator the dock mounts only when the
+ * home copilot status is available, so with it off "Onboard with AI" is absent (it would file a
+ * request no dock takes). The row's "AI assistant" action is the control that the row rendered.
+ */
+export async function onboardWithAiIsAbsentForAnOrganizationAdminWhoseCopilotIsOff(): Promise<void> {
+  stubApi();
+  renderPageAs("organization_admin");
+  const row = (await screen.findByText("Rupee organization")).closest("tr")!;
+  await waitFor(() => expect(copilotDockApi.fetchCopilotStatus).toHaveBeenCalledWith());
+
+  expect(within(row).getByRole("button", { name: "AI assistant" })).toBeInTheDocument();
+  expect(within(row).queryByRole("button", { name: "Onboard with AI" })).toBeNull();
+}
+
+/** The positive control of the case above: the home copilot on, the button shows for the organization_admin. */
+export async function onboardWithAiShowsForAnOrganizationAdminWhoseCopilotIsOn(): Promise<void> {
+  stubApi();
+  renderPageAs("organization_admin", true);
+  const row = (await screen.findByText("Rupee organization")).closest("tr")!;
+
+  expect(await within(row).findByRole("button", { name: "Onboard with AI" })).toBeInTheDocument();
 }
 
 /**

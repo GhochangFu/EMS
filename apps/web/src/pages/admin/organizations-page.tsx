@@ -11,6 +11,7 @@ import {
   reactivateAdminOrganization,
   updateAdminOrganization,
 } from "../../api/admin/organizations";
+import { fetchCopilotStatus } from "../../api/copilot";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
 import { CopilotOrgSwitch } from "../../components/admin/copilot-org-switch";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
@@ -63,6 +64,17 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const canOnboard = canAccessOnboarding(user.role);
   const canManageAi = canManageAiAssistant(user.role);
   const canSwitchCopilot = isGlobalAdmin(user.role);
+  // `F3.86` PR 7 (ruling Q4): below the global administrator the dock mounts only when its home
+  // status is available (`copilot-dock.tsx` `AvailableDock`, the same query key), so the button
+  // shows only then — otherwise no dock would take the request. The global administrator's
+  // cross-organization status is always available; the dock answers an organization that is off.
+  const homeCopilot = useQuery({
+    queryKey: ["copilot", "status", "home"],
+    queryFn: () => fetchCopilotStatus(),
+    staleTime: 60_000,
+    enabled: canOnboard && !isGlobalAdmin(user.role),
+  });
+  const onboardReachable = isGlobalAdmin(user.role) || homeCopilot.data?.available === true;
   const [activeFilter, setActiveFilter] = useState<MasterDataActiveFilter>("all");
   const [search, setSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
@@ -220,7 +232,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                       </td>
                       <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
                         <div className="flex gap-2">
-                          {canOnboard && item.active ? (
+                          {canOnboard && onboardReachable && item.active ? (
                             <button
                               type="button"
                               className="text-xs font-semibold text-accent-strong"
