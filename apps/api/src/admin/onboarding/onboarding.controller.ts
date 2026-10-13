@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Res,
   UploadedFile,
   UseGuards,
@@ -61,6 +62,26 @@ export class OnboardingController {
       }
       throw err;
     }
+  }
+
+  /**
+   * `F4.255` (ADR 0099 Amendment 2 A1) — the organization's open drafts, for
+   * the copilot dock's resume list. Declared above `sessions/:id` so the
+   * reading order matches Nest's matching order. A missing or non-uuid
+   * `organizationId` is a 400.
+   */
+  @Get("sessions")
+  async listDrafts(@Query("organizationId") organizationId: unknown, @CurrentUser() user: JwtPayload) {
+    let parsed: string;
+    try {
+      parsed = idParamSchema.parse(organizationId);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+    return this.service.listDrafts(user, parsed);
   }
 
   @Get("sessions/:id")

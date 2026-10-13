@@ -109,7 +109,8 @@ export type StoredContractContext =
   | "copilot_tools.list_alarms.page"
   | "copilot_tools.list_assets.rows"
   | "copilot_tools.list_dashboards.page"
-  | "copilot_tools.list_locations.page";
+  | "copilot_tools.list_locations.page"
+  | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");
 

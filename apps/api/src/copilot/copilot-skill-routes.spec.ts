@@ -89,7 +89,8 @@ export async function aPlainConversationReadCarriesNoSkill(): Promise<void> {
 export async function theStartRouteAnswersTheConversationWithTheSkill(): Promise<void> {
   const h = routes(null);
   const detail = await h.controller.startOnboarding(CONVERSATION, { organizationId: ORG_X }, ORG_ADMIN, JWT);
-  expect(h.record.start).toEqual([[ORG_ADMIN, JWT, CONVERSATION, ORG_X]]);
+  // F4.255: a plain start passes no sessionId, so the fifth argument is undefined.
+  expect(h.record.start).toEqual([[ORG_ADMIN, JWT, CONVERSATION, ORG_X, undefined]]);
   expect(detail.skill).toEqual(STATE);
 }
 
@@ -142,4 +143,20 @@ export async function aPlainReadDropsALeftCommitCard(): Promise<void> {
   const detail = await h.controller.get(CONVERSATION, ORG_ADMIN, JWT);
   expect(h.record.discarded).toEqual([[OPEN_COMMIT_ID]]);
   expect(detail.pendingChanges).toEqual([OPEN_OTHER_CARD]);
+}
+
+/** `F4.255` (ADR 0099 Amendment 2 A1): a resume body's `sessionId` reaches the start as its fifth argument. */
+export async function theStartRouteHandsTheSessionIdToTheResume(): Promise<void> {
+  const h = routes(null);
+  await h.controller.startOnboarding(CONVERSATION, { organizationId: ORG_X, sessionId: SESSION }, ORG_ADMIN, JWT);
+  expect(h.record.start).toEqual([[ORG_ADMIN, JWT, CONVERSATION, ORG_X, SESSION]]);
+}
+
+/** `F4.255`: a non-uuid `sessionId` is a 400 before the start. */
+export async function theStartRouteRefusesANonUuidSessionId(): Promise<void> {
+  const h = routes(null);
+  await expect(
+    h.controller.startOnboarding(CONVERSATION, { organizationId: ORG_X, sessionId: "x" }, ORG_ADMIN, JWT),
+  ).rejects.toBeInstanceOf(BadRequestException);
+  expect(h.record.start).toEqual([]);
 }

@@ -639,6 +639,31 @@ export const onboardingSessionDtoSchema = z.object({
   draftHash: z.string().nullable(),
 });
 
+/** `F4.255` (ADR 0099 Amendment 2 A1): the draft list answers at most this many drafts, newest update first. */
+export const ONBOARDING_DRAFT_LIST_LIMIT = 50;
+
+/**
+ * `GET /api/v1/admin/onboarding/sessions?organizationId=…` (`F4.255`, ADR 0099
+ * Amendment 2 A1): one open draft of the organization. `.strict()` so a row
+ * that leaks the draft itself — which may hold `_secrets` — fails the parse.
+ */
+export const onboardingDraftSummaryDtoSchema = z
+  .object({
+    id: z.string(),
+    organizationId: z.string(),
+    currentPhase: onboardingPhaseSchema,
+    /** `draft.location.name`, or null before the location step. Never the draft itself: it may hold `_secrets`. */
+    locationName: z.string().nullable(),
+    createdAt: z.string(),
+    updatedAt: z.string(),
+    /** `created_by` joined to `users`; null on rows from before `F4.255`. */
+    createdBy: z.object({ id: z.string(), displayName: z.string().nullable() }).strict().nullable(),
+  })
+  .strict();
+
+/** The draft list's answer (`F4.255`). */
+export const onboardingDraftListDtoSchema = z.object({ items: z.array(onboardingDraftSummaryDtoSchema) }).strict();
+
 export const onboardingChatResponseDtoSchema = z.object({
   assistantMessage: z.string(),
   session: onboardingSessionDtoSchema,

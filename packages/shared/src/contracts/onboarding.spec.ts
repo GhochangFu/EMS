@@ -20,7 +20,9 @@ import {
   onboardingDraftPointKeySchema,
   onboardingDraftRtuSchema,
   onboardingDraftSchema,
+  onboardingDraftListDtoSchema,
   onboardingDraftStockTemplateSchema,
+  onboardingDraftSummaryDtoSchema,
   onboardingDraftTemplatePointSchema,
   onboardingSessionDtoSchema,
 } from "./onboarding";
@@ -824,4 +826,54 @@ export function assertSessionDtoRequiresTheCheckpointFields(): void {
       `a session DTO without \`${key}\` must be refused at \`${key}\`: ${JSON.stringify(issue)}`,
     );
   }
+}
+
+/**
+ * `F4.255` (ADR 0099 Amendment 2 A1) — one row of the organization's draft
+ * list. A sample summary: a location name, a known starter.
+ */
+const DRAFT_SUMMARY = {
+  id: "11111111-1111-4111-8111-111111111111",
+  organizationId: "22222222-2222-4222-8222-222222222222",
+  currentPhase: "rtu",
+  locationName: "Berhampur",
+  createdAt: "2026-10-13T00:00:00.000Z",
+  updatedAt: "2026-10-13T00:05:00.000Z",
+  createdBy: { id: "33333333-3333-4333-8333-333333333333", displayName: "Asha" },
+};
+
+/** The sample summary parses and keeps its location name and starter. */
+export function assertDraftSummaryParses(): void {
+  const parsed = onboardingDraftSummaryDtoSchema.safeParse(DRAFT_SUMMARY);
+  assert(
+    parsed.success && parsed.data.locationName === "Berhampur" && parsed.data.createdBy?.displayName === "Asha",
+    "the sample draft summary must parse: " + (parsed.success ? JSON.stringify(parsed.data) : JSON.stringify(parsed.error.issues)),
+  );
+}
+
+/** A summary from before `created_by`, with no location yet, parses (null starter, null name). */
+export function assertLegacyDraftSummaryParses(): void {
+  const legacy = onboardingDraftSummaryDtoSchema.safeParse({ ...DRAFT_SUMMARY, locationName: null, createdBy: null });
+  assert(legacy.success, "a summary with no location and no starter must parse");
+}
+
+/**
+ * A summary carrying the `draft` itself is refused: `.strict()` is what keeps
+ * the draft's `_secrets` out of the list DTO at the client edge. The adjacent
+ * positive is `assertDraftSummaryParses`.
+ */
+export function assertDraftSummaryRefusesTheDraftKey(): void {
+  const issue = issueAt(onboardingDraftSummaryDtoSchema.safeParse({ ...DRAFT_SUMMARY, draft: {} }), "");
+  assert(
+    typeof issue !== "string" && issue.code === "unrecognized_keys",
+    `a draft summary carrying \`draft\` must be refused as an unrecognized key: ${JSON.stringify(issue)}`,
+  );
+}
+
+/** The list wraps the summaries in `items`, and refuses a summary carrying the draft there too. */
+export function assertDraftListCarriesSummaries(): void {
+  const parsed = onboardingDraftListDtoSchema.safeParse({ items: [DRAFT_SUMMARY] });
+  assert(parsed.success && parsed.data.items[0]?.id === DRAFT_SUMMARY.id, "a list of one summary must parse");
+  const leaked = onboardingDraftListDtoSchema.safeParse({ items: [{ ...DRAFT_SUMMARY, draft: {} }] });
+  assert(!leaked.success, "a list whose summary carries `draft` must be refused");
 }

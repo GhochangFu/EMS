@@ -11,6 +11,10 @@ import {
   assertTemplatePointCountIsCapped,
   assertTemplateVarCountIsCapped,
   assertDraftArrayCapsAreEnforced,
+  assertDraftListCarriesSummaries,
+  assertDraftSummaryParses,
+  assertDraftSummaryRefusesTheDraftKey,
+  assertLegacyDraftSummaryParses,
   assertDraftLocationMetaDescribesTheSeedKey,
   assertDraftLocationParsesWithoutType,
   assertDraftStringBoundsAreDeclaredOnce,
@@ -117,5 +121,23 @@ describe("F3.25 — checkpoint summaries and the draft hash on the session DTO (
 
   it("refuses a session missing checkpoints or draftHash", () => {
     assertSessionDtoRequiresTheCheckpointFields();
+  });
+});
+
+describe("F4.255 — the organization's onboarding draft list (ADR 0099 Amendment 2 A1)", () => {
+  it("parses a draft summary", () => {
+    assertDraftSummaryParses();
+  });
+
+  it("parses a summary with no location and no starter", () => {
+    assertLegacyDraftSummaryParses();
+  });
+
+  it("refuses a summary that carries the draft (strict keeps _secrets out)", () => {
+    assertDraftSummaryRefusesTheDraftKey();
+  });
+
+  it("wraps summaries in items and refuses a leaked draft there", () => {
+    assertDraftListCarriesSummaries();
   });
 });

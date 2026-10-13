@@ -170,11 +170,14 @@ export const copilotConversationDetailDtoSchema = z
 /**
  * `POST /api/v1/copilot/conversations/:id/skills/onboarding` (`F3.86` PR 5).
  * The organization must be the one the conversation is bound to: the route
- * refuses a cross-organization conversation and any other organization.
+ * refuses a cross-organization conversation and any other organization. With
+ * `sessionId`, the route resumes that draft instead of creating one (`F4.255`,
+ * ADR 0099 Amendment 2 A1).
  */
 export const copilotStartOnboardingSkillBodySchema = z
   .object({
     organizationId: z.string().uuid(),
+    sessionId: z.string().uuid().optional(),
   })
   .strict();
 

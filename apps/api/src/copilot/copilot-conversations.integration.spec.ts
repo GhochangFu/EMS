@@ -26,6 +26,8 @@ export type ConversationsCtx = {
   userB: string;
   /** `F3.86` PR 5: two draft onboarding sessions of `orgA`, for the conditional bind. */
   sessions: readonly [string, string];
+  /** `F4.255`: one draft session per resume case, so no case sees another's bindings. */
+  resumeSessions: readonly [string, string, string];
 };
 
 const available = { decide: async () => ({ available: true }) } as unknown as CopilotAvailabilityService;
@@ -127,4 +129,48 @@ export async function aBindHoldsOnlyWhileNoneIsBound(ctx: ConversationsCtx): Pro
   expect((await store.findConversation(ctx.userA, conversation.id))?.onboardingSessionId).toBeNull();
   expect(await store.bindOnboardingSession(ctx.userA, conversation.id, second)).toBe(true);
   expect((await store.findConversation(ctx.userA, conversation.id))?.onboardingSessionId).toBe(second);
+}
+
+/*
+ * `F4.255` (ADR 0099 Amendment 2 A1) — `unbindSessionElsewhere`, as
+ * `bms_tenant` in `withUser`: a resume frees the caller's other conversations
+ * from the session and keeps the one it binds. Two conversations may hold one
+ * session (the `0107` index is not unique). **Another user's binding stays
+ * because `user_isolation` hides their row, not because of the `userId`
+ * predicate** — dropping `eq(userId)` stays green by the policy, so that
+ * predicate is not gated here; the `ne(id, keep)` predicate is.
+ */
+async function bindTwoOfMine(ctx: ConversationsCtx, sessionId: string) {
+  const store = new CopilotConversationsService(ctx.tenantDb);
+  const older = await store.create(ctx.userA, ctx.orgA);
+  const resumed = await store.create(ctx.userA, ctx.orgA);
+  expect(await store.bindOnboardingSession(ctx.userA, older.id, sessionId)).toBe(true);
+  expect(await store.bindOnboardingSession(ctx.userA, resumed.id, sessionId)).toBe(true);
+  return { store, older, resumed };
+}
+
+/** The caller's other conversation is freed, and the answer names it (the resume discards its commit card). */
+export async function aResumeFreesTheCallersOtherConversation(ctx: ConversationsCtx): Promise<void> {
+  const session = ctx.resumeSessions[0];
+  const { store, older, resumed } = await bindTwoOfMine(ctx, session);
+  expect(await store.unbindSessionElsewhere(ctx.userA, session, resumed.id)).toEqual([older.id]);
+  expect((await store.findConversation(ctx.userA, older.id))?.onboardingSessionId).toBeNull();
+}
+
+/** The conversation the resume binds keeps the session. */
+export async function aResumeKeepsTheResumedConversation(ctx: ConversationsCtx): Promise<void> {
+  const session = ctx.resumeSessions[1];
+  const { store, resumed } = await bindTwoOfMine(ctx, session);
+  await store.unbindSessionElsewhere(ctx.userA, session, resumed.id);
+  expect((await store.findConversation(ctx.userA, resumed.id))?.onboardingSessionId).toBe(session);
+}
+
+/** Another user's conversation bound to the session keeps it (read as that user). */
+export async function aResumeLeavesAnotherUsersBinding(ctx: ConversationsCtx): Promise<void> {
+  const session = ctx.resumeSessions[2];
+  const { store, resumed } = await bindTwoOfMine(ctx, session);
+  const theirs = await store.create(ctx.userB, ctx.orgA);
+  expect(await store.bindOnboardingSession(ctx.userB, theirs.id, session)).toBe(true);
+  await store.unbindSessionElsewhere(ctx.userA, session, resumed.id);
+  expect((await store.findConversation(ctx.userB, theirs.id))?.onboardingSessionId).toBe(session);
 }

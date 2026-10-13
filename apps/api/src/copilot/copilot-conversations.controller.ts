@@ -18,6 +18,7 @@ import {
   type CopilotConversationDto,
   copilotCreateConversationBodySchema,
   type CopilotSkillStateDto,
+  type CopilotStartOnboardingSkillBody,
   copilotStartOnboardingSkillBodySchema,
   copilotTurnBodySchema,
   type CopilotTurnResponseDto,
@@ -98,7 +99,8 @@ export class CopilotConversationsController {
   /**
    * `F3.86` PR 5 / ADR 0099 decision 7 — starts the onboarding skill in this
    * conversation (`CopilotSkillService.start` holds the order). 201 with the
-   * conversation, its opening line and the new session's state.
+   * conversation, its opening line and the new session's state. With
+   * `sessionId` it resumes that draft (`F4.255`, ADR 0099 Amendment 2 A1).
    */
   @Post(":id/skills/onboarding")
   @HttpCode(201)
@@ -111,18 +113,18 @@ export class CopilotConversationsController {
     await this.pendingChanges.sweepStuck(identity.id);
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) throw new NotFoundException("Conversation not found");
-    let organizationId: string;
+    let start: CopilotStartOnboardingSkillBody;
     try {
-      organizationId = copilotStartOnboardingSkillBodySchema.parse(body).organizationId;
+      start = copilotStartOnboardingSkillBodySchema.parse(body);
     } catch (err) {
       if (err instanceof ZodError) throw new BadRequestException(err.flatten());
       throw err;
     }
-    const skill = await this.skills.start(identity, user, parsed.data, organizationId);
+    const skill = await this.skills.start(identity, user, parsed.data, start.organizationId, start.sessionId);
     return this.detail(identity, parsed.data, () => skill);
   }
 
-  /** `F3.86` PR 5 — ends the skill here; the draft stays (no surface resumes it since `F3.86` PR 7 retired the onboarding page). 200 with the conversation. */
+  /** `F3.86` PR 5 — ends the skill here; the draft stays, and the dock lists it for a resume (`F4.255`). 200 with the conversation. */
   @Delete(":id/skills/onboarding")
   @HttpCode(200)
   async endOnboarding(

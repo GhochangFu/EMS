@@ -155,7 +155,8 @@ export function stepLabelFor(phase: OnboardingPhase): string | undefined {
   return undefined;
 }
 
-const STEP_NAMES: Readonly<Record<OnboardingPhase, string>> = {
+/** Each phase's display name; `F4.255`'s resumed line in the copilot reads it too. */
+export const STEP_NAMES: Readonly<Record<OnboardingPhase, string>> = {
   location: "location",
   rtu: "RTU",
   point_keys: "point keys",
