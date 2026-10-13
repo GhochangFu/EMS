@@ -919,6 +919,7 @@
 > `PROPOSED_DRAFT_CHANGED`. **Since `F3.86` (2026-10-13) the typed phrase is
 > retired:** `confirm commit` is an ordinary message, and a commit happens
 > only through the hash-bound `POST /api/v1/admin/onboarding/sessions/:id/commit`
+> (`draftHash` required since #833)
 > — the drawer's commit wizard (the Commit button) or the copilot's
 > `onboarding.commit` Confirm card. Each draft change the agent makes writes an
 > `action` message, a fourth `role` in `onboardingChatMessageSchema`. Three
@@ -1615,7 +1616,7 @@ bms/
 │   │                            and components/map-subtree-filter.tsx is the
 │   │                            parent filter both maps share.
 │   │                            F3.85 (ADR 0099): components/copilot/ is the
-│   │                            dock (copilot-dock.tsx, 529 lines, mounted in
+│   │                            dock (copilot-dock.tsx, 741 lines, mounted in
 │   │                            layouts/app-shell.tsx) and its Confirm card,
 │   │                            over api/copilot.ts, copilot-confirm.ts and
 │   │                            copilot-current.ts, with lib/copilot-diff.ts,
