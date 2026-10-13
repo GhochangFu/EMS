@@ -217,6 +217,7 @@
     "tests/f3.22-template-cores.test.ts",
     "tests/f4.204-raw-error-message-render.test.ts",
     "tests/f4.7-e2e-invariants.test.ts",
-    "tests/f3.86-copilot-skill-schema.test.ts"
+    "tests/f3.86-copilot-skill-schema.test.ts",
+    "tests/f3.86-onboarding-retired.test.ts"
   ]
 }
