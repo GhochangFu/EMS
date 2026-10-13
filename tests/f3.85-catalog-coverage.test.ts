@@ -126,9 +126,17 @@ function sharedImports(file: string): Set<string> {
  * `apps/api`). The allowance is exact: this controller imports this name from
  * this wrapper, and the wrapper imports the shared export under this alias.
  * `asset-templates.schema-move.spec.ts` proves `_def.schema` is the shared
- * export by identity.
+ * export by identity. `F4.254` PR 2: `assetTemplate.create` is the second
+ * row, for the same reason — the create body carries the same cycle check.
  */
 const LOCAL_WRAPPERS: ReadonlyArray<{ entryId: string; bodyName: string; controller: string; wrapper: string; alias: string }> = [
+  {
+    entryId: "assetTemplate.create",
+    bodyName: "createAssetTemplateBodySchema",
+    controller: "apps/api/src/admin/asset-templates/asset-templates.controller.ts",
+    wrapper: "apps/api/src/admin/asset-templates/asset-templates.schema.ts",
+    alias: "sharedCreateAssetTemplateBodySchema",
+  },
   {
     entryId: "assetTemplate.update",
     bodyName: "updateAssetTemplateBodySchema",
@@ -292,12 +300,12 @@ describe("F3.85 PR 8 — the copilot action catalog covers the write routes (ADR
     }
   });
 
-  it("matches the local-wrapper allowance exactly once, and only for its own entry (positive control)", () => {
+  it("matches the local-wrapper allowance once per row, and only for its own entries (positive control)", () => {
     const matched = COPILOT_CATALOG.filter((entry) => {
       const route = byKey.get(key(entry));
       return route !== undefined && viaLocalWrapper(entry, route.file);
     }).map((entry) => entry.id);
-    expect(matched).toEqual(["assetTemplate.update"]);
+    expect(matched).toEqual(["assetTemplate.create", "assetTemplate.update"]);
     const other = COPILOT_CATALOG.find((entry) => entry.id === "dashboardTemplate.update") as Entry;
     expect(viaLocalWrapper({ ...other, bodyName: "updateAssetTemplateBodySchema" }, LOCAL_WRAPPERS[0]?.controller as string)).toBe(false);
   });

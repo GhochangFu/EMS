@@ -7,6 +7,7 @@ import { type CatalogEntry, catalogEntry, COPILOT_CATALOG, proposeToolName } fro
 import type { ResolvedIdentity } from "../auth/identity-resolver";
 import { jsonSchemaOf, runToolCall } from "../llm/tool-registry";
 import type { ToolOutcome } from "../llm/tool-result";
+import { createAssetTemplateBodySchema as apiCreateAssetTemplateBodySchema } from "../admin/asset-templates/asset-templates.schema";
 import { LOCAL_MODE_READ_ONLY } from "../admin/users/users.service";
 import { bodyHash } from "./body-hash";
 import { PROPOSE_ACCESS_NOT_ASKED_ERROR } from "./copilot-access-intent";
@@ -475,10 +476,15 @@ export function noToolDefinitionCarriesALargeBody(): void {
  * 24,218, of which 20,851 without the access tools. The 16 entries of PRs 3a
  * and 3b bring the estimate to about 36,000 (about 9k tokens); the cap is that
  * plus headroom, not room to grow into.
+ *
+ * Owner ruling 2026-10-13 (`F4.254` ruling 4): 48,000, for the five
+ * asset-template lifecycle tools (the plan estimated about 730 characters
+ * each). Measured at `F4.254` PR 2: 37,492 over 51 definitions before, 39,682
+ * over 55 after (the four authoring tools add 2,190). PR 3 records its own figure.
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();
-  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(40_000);
+  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(48_000);
 }
 
 /** Every catalog entry has one propose tool; a large body is read on demand. */
@@ -669,6 +675,99 @@ export async function aTemplatePublishStoresTheEmptyObject(): Promise<void> {
     bodyHash: EMPTY_SHA256,
     method: "POST",
     path: `/api/v1/admin/asset-templates/${ROW}/publish`,
+  });
+}
+
+/* ---------- F4.254 PR 2 — the asset-template authoring entries (plan §4.1, §4.5) ---------- */
+
+/** An organization target: a create names no template, so it has no stored points. */
+const orgTarget = (): ResolvedTarget => ({ organizationId: ORG_X, organizationName: "Org X", targetName: "Org X" });
+const createBody = (over: Record<string, unknown>) => ({
+  organizationId: ORG_X,
+  code: "pump",
+  name: "Pump",
+  assetType: "pump",
+  domain: "water",
+  ...over,
+});
+
+/** A create whose `points[0].formula` names an undeclared point is refused by the shared body at its path. */
+export async function aCreateWithAnInvalidPointFormulaStoresNothing(): Promise<void> {
+  const h = proposeHarness({ target: orgTarget() });
+  const refused = await h.call("propose_assetTemplate_create", { body: createBody({ points: [derived("{kw} / {missing}"), KW] }) });
+  expect(refused.error).toMatch(/^Invalid body: .*points\.0\.formula/);
+  expect(h.stored).toEqual([]);
+}
+
+/** The same create with a formula over a declared point stores (the positive beside the refusal). */
+export async function aCreateWithAValidPointFormulaStores(): Promise<void> {
+  const h = proposeHarness({ target: orgTarget() });
+  expect((await h.call("propose_assetTemplate_create", { body: createBody({ points: [derived("{kw} * 2"), KW] }) })).ok).toBe(true);
+  expect(h.stored).toHaveLength(1);
+}
+
+/**
+ * A create whose KPI names a point the body does not declare is refused with
+ * the formula sentence. This is the one check the entry's `formulas` makes
+ * that the body schema cannot (the route's `assertContentRefsResolve`).
+ * Mutation: drop `formulas` from `assetTemplate.create` → red.
+ */
+export async function aCreateKpiNamingAnUndeclaredPointStoresNothing(): Promise<void> {
+  const h = proposeHarness({ target: orgTarget() });
+  const body = createBody({ points: [KW], content: { kpis: [kpi(["ghost"], "{ghost}")] } });
+  const refused = await h.call("propose_assetTemplate_create", { body });
+  expect(refused.error).toMatch(/^The formula in content\.kpis\.0\.expression is not valid/);
+  expect(h.stored).toEqual([]);
+}
+
+/** A create whose KPI names a point the body declares stores. */
+export async function aCreateKpiNamingADeclaredPointStores(): Promise<void> {
+  const h = proposeHarness({ target: orgTarget() });
+  const body = createBody({ points: [KW], content: { kpis: [kpi(["kw"], "{kw}")] } });
+  expect((await h.call("propose_assetTemplate_create", { body })).ok).toBe(true);
+  expect(h.stored).toHaveLength(1);
+}
+
+/** Two bms-calc-v2 points on a cycle: the shared body admits it. */
+const CYCLE = [
+  { pointKey: "D", kind: "derived", formula: "{E}", formulaDialect: "bms-calc-v2", calcTrigger: "scheduled", calcIntervalSeconds: 60 },
+  { pointKey: "E", kind: "derived", formula: "{D}", formulaDialect: "bms-calc-v2", calcTrigger: "scheduled", calcIntervalSeconds: 60 },
+];
+
+/** The cycle check is api-local (`calc-graph.ts`): a cyclic create is accepted at propose. */
+export async function aCyclicCreateStoresAtPropose(): Promise<void> {
+  const h = proposeHarness({ target: orgTarget() });
+  expect((await h.call("propose_assetTemplate_create", { body: createBody({ points: CYCLE }) })).ok).toBe(true);
+  expect(h.stored).toHaveLength(1);
+}
+
+/** …and refused at Confirm: the controller's wrapper refuses the same body (the route answers 400). */
+export function aCyclicCreateIsRefusedByTheRouteBody(): void {
+  const result = apiCreateAssetTemplateBodySchema.safeParse(createBody({ points: CYCLE }));
+  expect(result.success).toBe(false);
+  expect(JSON.stringify(result.error?.issues)).toContain("dependency cycle");
+}
+
+/** A stock import stores `{ organizationId }` on the code's own path. */
+export async function aStockImportStoresOnItsCodePath(): Promise<void> {
+  const h = proposeHarness({ target: orgTarget() });
+  expect((await h.call("propose_assetTemplate_importStock", { code: "feeder", body: { organizationId: ORG_X } })).ok).toBe(true);
+  expect(h.stored[0]).toMatchObject({
+    body: { organizationId: ORG_X },
+    method: "POST",
+    path: "/api/v1/admin/asset-templates/stock/feeder/import",
+  });
+}
+
+/** Archiving a template is bodyless and red: `{}` on its own path, risk `deactivate`. */
+export async function aTemplateArchiveStoresTheEmptyObjectAsDeactivate(): Promise<void> {
+  const h = proposeHarness({ target: templateTarget() });
+  expect((await h.call("propose_assetTemplate_archive", { id: ROW })).ok).toBe(true);
+  expect(h.stored[0]).toMatchObject({
+    body: {},
+    bodyHash: EMPTY_SHA256,
+    path: `/api/v1/admin/asset-templates/${ROW}/archive`,
+    risk: "deactivate",
   });
 }
 

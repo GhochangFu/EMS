@@ -15,8 +15,10 @@
  * **Nothing here writes to the catalog, and nothing can.** ADR 0052 decision 1
  * makes the catalog repository data; every save control in all seven tabs sits
  * behind `{editable ? … : null}`, and this page passes the literal `false`. The
- * one writable control on the screen is the header's organization picker, which
- * feeds Import — and Import creates a *new* row rather than changing the entry.
+ * one write on the screen is the header's Import, which opens the
+ * `ImportStockWizard` (`F4.254` PR 2: the organization is its first step, and
+ * only Review's Submit imports) — and Import creates a *new* row rather than
+ * changing the entry.
  *
  * **No dirty guard, deliberately.** The detail page carries `guardTabSwitch`
  * and a confirmation dialog because a tab there holds unsaved edits. Nothing on
@@ -39,17 +41,14 @@
  * one renders the not-found panel. **The load-bearing rule is the other one:
  * Import sends the resolved `entry.code`, never the raw URL parameter.**
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import type { AdminAssetTemplateDto } from "@bms/shared";
 
-import {
-  fetchAdminStockAssetTemplates,
-  importAdminStockAssetTemplate,
-} from "../../api/admin/asset-templates";
-import { fetchAdminOrganizations } from "../../api/admin/organizations";
+import { fetchAdminStockAssetTemplates } from "../../api/admin/asset-templates";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { ImportStockWizard } from "../../components/asset-templates/import-stock-wizard";
 import { TemplateTabBody } from "../../components/asset-templates/template-tab-body";
 import { TemplateTabStrip } from "../../components/asset-templates/template-tab-strip";
 import { PageHeader } from "../../components/page-header";
@@ -78,11 +77,10 @@ const NO_DIRTY: (dirty: boolean) => void = () => {};
 /** Read-only view of one stock asset-template catalog entry. */
 export function AssetTemplateStockViewPage({ user }: AssetTemplateStockViewPageProps) {
   const { code } = useParams();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [importOrgId, setImportOrgId] = useState("");
-  const [importError, setImportError] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  // A refusal that arrived after the wizard was cancelled (nothing else shows it).
+  const [closedError, setClosedError] = useState<string | null>(null);
 
   const mayAuthor = canAuthorTemplates(user.role);
   const tab = resolveTemplateTab(searchParams.get("tab"));
@@ -96,27 +94,9 @@ export function AssetTemplateStockViewPage({ user }: AssetTemplateStockViewPageP
     queryFn: fetchAdminStockAssetTemplates,
     enabled: mayAuthor,
   });
-  const orgsQ = useQuery({
-    queryKey: ["admin", "organizations", "true"],
-    queryFn: () => fetchAdminOrganizations("true"),
-    enabled: mayAuthor,
-  });
 
   const entry = findStockEntry(stockQ.data?.items ?? [], code ?? "");
   const view = useMemo(() => (entry ? stockEntryAsTemplate(entry) : null), [entry]);
-
-  const importM = useMutation({
-    mutationFn: (entryCode: string) => importAdminStockAssetTemplate(entryCode, importOrgId),
-    onSuccess: (created) => {
-      setImportError(null);
-      void queryClient.invalidateQueries({ queryKey: ["admin", "asset-templates"] });
-      // ADR 0052 decision 10 — "landing on the new draft", exactly as the card
-      // does. A reader who decides to take the entry does not go back to the
-      // list to find it.
-      navigate(`/admin/asset-templates/${created.id}`);
-    },
-    onError: (cause: Error) => setImportError(apiErrorMessage(cause)),
-  });
 
   function openTab(next: TemplateTabId) {
     setSearchParams({ tab: next }, { replace: true });
@@ -200,47 +180,35 @@ export function AssetTemplateStockViewPage({ user }: AssetTemplateStockViewPageP
             >
               Back to all templates
             </Link>
-            <select
-              aria-label="Import into organization"
-              value={importOrgId}
-              onChange={(event) => setImportOrgId(event.target.value)}
-              className="surface-field px-2 py-1 text-xs"
-            >
-              <option value="">Select an organization…</option>
-              {(orgsQ.data?.items ?? []).map((org) => (
-                <option key={org.id} value={org.id}>
-                  {org.code} — {org.name}
-                </option>
-              ))}
-            </select>
+            {/* `F4.254` PR 2 — opens the Import wizard. It is handed the
+                **resolved entry**, so the request names `entry.code`, never
+                `code` from the URL; it lands on the new draft (ADR 0052
+                decision 10), exactly as the card's Import does. */}
             <button
               type="button"
-              aria-label={importM.isPending ? `Importing ${entry.name}…` : `Import ${entry.name}`}
-              disabled={importOrgId === "" || importM.isPending}
-              aria-busy={importM.isPending}
+              aria-label={`Import ${entry.name}`}
               onClick={() => {
-                setImportError(null);
-                // The **resolved entry's** code, never `code` from the URL.
-                importM.mutate(entry.code);
+                setClosedError(null);
+                setImportOpen(true);
               }}
-              className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+              className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent"
             >
-              {importM.isPending ? "Importing…" : "Import"}
+              Import
             </button>
           </div>
         }
       />
 
+      {closedError ? (
+        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
+          {closedError}
+        </p>
+      ) : null}
+
       <p className="rounded border border-info-line bg-info-wash p-3 text-xs text-info-ink">
         This is repository data (ADR 0052). It cannot be edited here — import it into an
         organization to author a draft of your own.
       </p>
-
-      {importError ? (
-        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
-          {importError}
-        </p>
-      ) : null}
 
       <SectionCard>
         <TemplateTabStrip active={tab} onSelect={openTab} />
@@ -254,6 +222,14 @@ export function AssetTemplateStockViewPage({ user }: AssetTemplateStockViewPageP
           />
         </div>
       </SectionCard>
+
+      {importOpen ? (
+        <ImportStockWizard
+          entry={{ code: entry.code, name: entry.name }}
+          onClose={() => setImportOpen(false)}
+          onClosedError={setClosedError}
+        />
+      ) : null}
     </MasterDataLayout>
   );
 }

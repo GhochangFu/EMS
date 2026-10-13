@@ -9,7 +9,7 @@ import {
   everyAlarmRendersDisabledWithNoSavePath,
   everyMaintenancePlanRendersDisabledWithNoSavePath,
   everyPointRendersAndNoFieldAcceptsInput,
-  importIsDisabledUntilAnOrganizationIsChosen,
+  importIsRefusedUntilAnOrganizationIsChosen,
   importLandsOnTheNewDraft,
 } from "./asset-template-stock-view-page.spec";
 
@@ -44,8 +44,8 @@ describe("F2.14 the read-only viewer for a stock catalog entry", () => {
     await importLandsOnTheNewDraft();
   });
 
-  it("keeps Import disabled until an organization is chosen", async () => {
-    await importIsDisabledUntilAnOrganizationIsChosen();
+  it("refuses the import until an organization is chosen (the wizard Review, F4.254)", async () => {
+    await importIsRefusedUntilAnOrganizationIsChosen();
   });
 
   it("renders the not-found panel for a code the catalog does not carry", async () => {

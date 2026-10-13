@@ -226,9 +226,12 @@ const WITH_FORMULA: StockAssetTemplateDto = stockAssetTemplateDtoSchema.parse({
   ],
 });
 
+/** `F4.254` PR 2: the import wizard parses the route's body, whose `organizationId` is a uuid. */
+const ORG_UUID = "33333333-3333-4333-8333-333333333333";
+
 const IMPORTED_DRAFT = {
   id: DRAFT_ID,
-  organizationId: "org-1",
+  organizationId: ORG_UUID,
   organizationCode: "IX",
   organizationName: "Ion Exchange",
   code: FEEDER_CODE,
@@ -248,7 +251,7 @@ const IMPORTED_DRAFT = {
   points: [],
 };
 
-const ORGS = { items: [{ id: "org-1", code: "IX", name: "Ion Exchange" }] };
+const ORGS = { items: [{ id: ORG_UUID, code: "IX", name: "Ion Exchange" }] };
 
 const VOCABULARIES = {
   ruleCategories: [{ code: "operations", label: "Operations", sortOrder: 10, active: true }],
@@ -301,19 +304,15 @@ function renderViewer(path: string, user: AuthUser = admin): HTMLElement {
   return container;
 }
 
-const IMPORT_ORG_LABEL = "Import into organization";
-
 /**
- * Every writable-looking control on the page, except the one control that is
- * genuinely writable — the header's organization picker.
- *
- * Scoping by exclusion rather than by a tab-panel test id makes the stronger
- * claim: the picker is the *only* field on the whole screen that accepts input.
+ * Every writable-looking control on the page. The name is kept from when the
+ * header carried an organization picker, which this excluded; `F4.254` PR 2
+ * moved that picker into the Import wizard, which is closed in every case that
+ * reads this, so now the whole container is swept and the claim is stronger:
+ * no field on the screen accepts input.
  */
 function fieldsOutsideTheImportPicker(container: HTMLElement): HTMLElement[] {
-  return [...container.querySelectorAll<HTMLElement>("input, select, textarea")].filter(
-    (field) => field.getAttribute("aria-label") !== IMPORT_ORG_LABEL,
-  );
+  return [...container.querySelectorAll<HTMLElement>("input, select, textarea")];
 }
 
 function enabledFieldNames(container: HTMLElement): string[] {
@@ -478,39 +477,41 @@ export async function bothFormulaEditorsRenderReadOnly(): Promise<void> {
 
 /**
  * Case 4 — Import lands on the new draft, exactly as the card's does. The code
- * sent is the **resolved entry's**, never the raw URL parameter.
+ * sent is the **resolved entry's**, never the raw URL parameter. `F4.254` PR 2:
+ * through the Import wizard — Organization, Next, Submit.
  */
 export async function importLandsOnTheNewDraft(): Promise<void> {
   stubApi();
   renderViewer(`/admin/asset-templates/stock/${FEEDER_CODE}`);
 
   await screen.findByText(FEEDER_NAME);
-  await userEvent.selectOptions(
-    screen.getByRole("combobox", { name: IMPORT_ORG_LABEL }),
-    "org-1",
-  );
   await userEvent.click(screen.getByRole("button", { name: `Import ${FEEDER_NAME}` }));
+  await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Organization" }), ORG_UUID);
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
 
   await waitFor(() => {
-    expect(api.importAdminStockAssetTemplate).toHaveBeenCalledWith(FEEDER_CODE, "org-1");
+    expect(api.importAdminStockAssetTemplate).toHaveBeenCalledWith(FEEDER_CODE, ORG_UUID);
   });
   expect(await screen.findByText(`landed on draft ${DRAFT_ID}`)).toBeInTheDocument();
 }
 
-/** Case 5 — the card's rule, restated because this is a different component. */
-export async function importIsDisabledUntilAnOrganizationIsChosen(): Promise<void> {
+/**
+ * Case 5 — the card's rule, restated because this is a different component.
+ * `F4.254` PR 2: the wizard's Review names the missing `organizationId` and
+ * its Submit sends nothing (the positive first: the problem shows).
+ */
+export async function importIsRefusedUntilAnOrganizationIsChosen(): Promise<void> {
   stubApi();
   renderViewer(`/admin/asset-templates/stock/${FEEDER_CODE}`);
 
   await screen.findByText(FEEDER_NAME);
-  const importButton = screen.getByRole("button", { name: `Import ${FEEDER_NAME}` });
-  expect(importButton).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: `Import ${FEEDER_NAME}` }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
 
-  await userEvent.selectOptions(
-    screen.getByRole("combobox", { name: IMPORT_ORG_LABEL }),
-    "org-1",
-  );
-  expect(importButton).not.toBeDisabled();
+  expect(await screen.findByRole("alert")).toHaveTextContent(/organizationId/);
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  expect(api.importAdminStockAssetTemplate).not.toHaveBeenCalled();
 }
 
 /**

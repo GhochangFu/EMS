@@ -22,31 +22,33 @@
  *
  * ## The stock catalog card (`F2.13`, ADR 0052 decision 10)
  *
- * The same import control `dashboard-templates-page.tsx` has: the repository's
- * entries from `GET stock`, one organization picker, one click to import into
- * it — and, unlike the dashboard page, the click **lands on the new draft**,
- * because that is where the author's next action is. Gated on
- * `canAuthorTemplates`, as the dashboard card is: an import is an authoring
- * act (ADR 0015 §7 excludes `location_admin`), and the catalog is master data
- * the server refuses to list to anyone else anyway.
+ * The repository's entries from `GET stock`, each with an Import that opens
+ * the `ImportStockWizard` (`F4.254` PR 2): an Organization step, then Review,
+ * and only Review's Submit imports — and, unlike the dashboard page, the import
+ * **lands on the new draft**, because that is where the author's next action
+ * is. The organization picker that sat in the card's header is that step now.
+ * Gated on `canAuthorTemplates`, as the dashboard card is: an import is an
+ * authoring act (ADR 0015 §7 excludes `location_admin`), and the catalog is
+ * master data the server refuses to list to anyone else anyway.
+ *
+ * ## New template (`F4.254` PR 2)
+ *
+ * The `CreateTemplateWizard`: the `assetTemplate.create` stepper on the shared
+ * `WizardShell`, the modal's six inputs on one step, then Review. A wizard
+ * used alone sends the plain request, never `X-Copilot-Change`.
  */
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import type { FormEvent } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import type { AssetTemplateStatus } from "@bms/shared";
 
-import {
-  createAdminAssetTemplate,
-  fetchAdminAssetTemplates,
-  fetchAdminStockAssetTemplates,
-  importAdminStockAssetTemplate,
-} from "../../api/admin/asset-templates";
-import { fetchAdminOrganizations } from "../../api/admin/organizations";
+import { fetchAdminAssetTemplates, fetchAdminStockAssetTemplates } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { AssetTemplatesPageTabStrip } from "../../components/admin/asset-templates-page-tab-strip";
+import { CreateTemplateWizard } from "../../components/asset-templates/create-template-wizard";
+import { ImportStockWizard } from "../../components/asset-templates/import-stock-wizard";
 import { StockCatalogAccordion } from "../../components/asset-templates/stock-catalog-accordion";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
@@ -81,19 +83,8 @@ const STATUS_FILTERS: readonly { value: StatusFilter; label: string }[] = [
   { value: "archived", label: "Archived" },
 ];
 
-const emptyForm = {
-  organizationId: "",
-  code: "",
-  name: "",
-  assetType: "",
-  domain: "",
-  description: "",
-};
-
 /** Admin screen listing asset template versions, grouped by code. */
 export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) {
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const mayAuthor = canAuthorTemplates(user.role);
 
   // `F2.21` — the active list lives in the URL, not in component state, so
@@ -119,10 +110,10 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
   const [orgFilter, setOrgFilter] = useState("");
   const [domainFilter, setDomainFilter] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState(emptyForm);
-  const [error, setError] = useState<string | null>(null);
-  const [importOrgId, setImportOrgId] = useState("");
-  const [importError, setImportError] = useState<string | null>(null);
+  // `F4.254` PR 2 — the stock entry whose Import wizard is open.
+  // A refusal that arrived after its wizard was cancelled (nothing else shows it).
+  const [closedError, setClosedError] = useState<string | null>(null);
+  const [importing, setImporting] = useState<{ code: string; name: string } | null>(null);
 
   const listQ = useQuery({
     queryKey: ["admin", "asset-templates", status],
@@ -138,13 +129,6 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
     enabled: mayAuthor,
   });
 
-  // Organizations feed the create form AND the stock card's picker, so they
-  // are fetched for any author rather than only once the modal opens.
-  const orgsQ = useQuery({
-    queryKey: ["admin", "organizations", "true"],
-    queryFn: () => fetchAdminOrganizations("true"),
-    enabled: mayAuthor,
-  });
   // ADR 0031 Amendment 1 made `domain` a vocabulary row rather than an enum.
   // `vocabulariesQueryKey` is shared on purpose — this must not become a fourth
   // fetch of the same nine-row payload.
@@ -211,40 +195,6 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
     [groups, filters],
   );
 
-  const createM = useMutation({
-    mutationFn: () =>
-      createAdminAssetTemplate({
-        organizationId: form.organizationId,
-        code: form.code.trim(),
-        name: form.name.trim(),
-        assetType: form.assetType.trim(),
-        domain: form.domain,
-        description: form.description.trim() === "" ? null : form.description.trim(),
-      }),
-    onSuccess: () => {
-      setModalOpen(false);
-      setForm(emptyForm);
-      setError(null);
-      void queryClient.invalidateQueries({ queryKey: ["admin", "asset-templates"] });
-    },
-    // `adminFetch` throws the raw response body. ADR 0038 decision 10's
-    // residual case — right role, wrong organization — arrives here as
-    // "Organization is outside your access scope", and that message is the
-    // whole answer. Replacing it with "Could not create template" would hide it.
-    onError: (cause: Error) => setError(apiErrorMessage(cause)),
-  });
-
-  const importM = useMutation({
-    mutationFn: (code: string) => importAdminStockAssetTemplate(code, importOrgId),
-    onSuccess: (created) => {
-      setImportError(null);
-      void queryClient.invalidateQueries({ queryKey: ["admin", "asset-templates"] });
-      // ADR 0052 decision 10 — "landing on the new draft". The draft is a new
-      // row; staying here would leave the author hunting for it in the list.
-      navigate(`/admin/asset-templates/${created.id}`);
-    },
-    onError: (cause: Error) => setImportError(apiErrorMessage(cause)),
-  });
 
   const stockRows = stockQ.data?.items ?? [];
 
@@ -257,12 +207,6 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
     [stockRows, vocabQ.data],
   );
 
-  function submit(event: FormEvent) {
-    event.preventDefault();
-    setError(null);
-    createM.mutate();
-  }
-
   return (
     <MasterDataLayout user={user}>
       <PageHeader
@@ -273,7 +217,10 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
           mayAuthor ? (
             <button
               type="button"
-              onClick={() => setModalOpen(true)}
+              onClick={() => {
+                setClosedError(null);
+                setModalOpen(true);
+              }}
               className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent"
             >
               New template
@@ -294,6 +241,12 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
           stock: stockQ.data ? stockRows.length : undefined,
         }}
       />
+
+      {closedError ? (
+        <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
+          {closedError}
+        </p>
+      ) : null}
 
       {tab === "templates" ? (
       <SectionCard
@@ -442,27 +395,7 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
         <SectionCard
           title="Stock catalog"
           subtitle="Repository class templates every organization can import (ADR 0052)"
-          actions={
-            <select
-              aria-label="Import into organization"
-              value={importOrgId}
-              onChange={(event) => setImportOrgId(event.target.value)}
-              className="surface-field px-2 py-1 text-xs"
-            >
-              <option value="">Select an organization…</option>
-              {(orgsQ.data?.items ?? []).map((org) => (
-                <option key={org.id} value={org.id}>
-                  {org.code} — {org.name}
-                </option>
-              ))}
-            </select>
-          }
         >
-          {importError ? (
-            <p className="mb-2 rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
-              {importError}
-            </p>
-          ) : null}
           {stockQ.isPending ? <p className="text-sm text-ink-muted">Loading the stock catalog…</p> : null}
           {stockQ.isError ? (
             <p className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">
@@ -480,7 +413,6 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
           <StockCatalogAccordion
             groups={stockGroups}
             renderEntry={(entry) => {
-              const importingThis = importM.isPending && importM.variables === entry.code;
               return (
                 <li className="flex flex-wrap items-center justify-between gap-2 py-2">
                   <div>
@@ -511,18 +443,17 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
                     >
                       View
                     </Link>
+                    {/* `F4.254` PR 2 — opens the Import wizard; its Organization step is the picker. */}
                     <button
                       type="button"
-                      aria-label={importingThis ? `Importing ${entry.name}…` : `Import ${entry.name}`}
-                      disabled={importOrgId === "" || importM.isPending}
-                      aria-busy={importingThis}
+                      aria-label={`Import ${entry.name}`}
                       onClick={() => {
-                        setImportError(null);
-                        importM.mutate(entry.code);
+                        setClosedError(null);
+                        setImporting({ code: entry.code, name: entry.name });
                       }}
-                      className="surface-button px-3 py-1.5 disabled:opacity-60"
+                      className="surface-button px-3 py-1.5"
                     >
-                      {importingThis ? "Importing…" : "Import"}
+                      Import
                     </button>
                   </div>
                 </li>
@@ -534,133 +465,18 @@ export function AssetTemplatesAdminPage({ user }: AssetTemplatesAdminPageProps) 
       ) : null}
 
       {modalOpen && mayAuthor ? (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
-          <form
-            onSubmit={submit}
-            className="w-full max-w-lg space-y-3 surface-dialog p-4"
-          >
-            <h2 className="font-condensed text-base font-bold text-ink">New template</h2>
-            <p className="text-[11px] text-ink-muted">
-              A template is created as a draft at version 1. Points, calculations, KPIs and
-              alarms are added on the next screen.
-            </p>
+        <CreateTemplateWizard
+          onClose={() => setModalOpen(false)}
+          onClosedError={setClosedError}
+        />
+      ) : null}
 
-            <label className="block text-xs font-semibold text-ink">
-              Organization
-              <select
-                required
-                value={form.organizationId}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, organizationId: event.target.value }))
-                }
-                className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
-              >
-                <option value="">Select an organization…</option>
-                {(orgsQ.data?.items ?? []).map((org) => (
-                  <option key={org.id} value={org.id}>
-                    {org.code} — {org.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="block text-xs font-semibold text-ink">
-                Code
-                <input
-                  required
-                  value={form.code}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, code: event.target.value }))
-                  }
-                  placeholder="CHILLER"
-                  className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink">
-                Name
-                <input
-                  required
-                  value={form.name}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, name: event.target.value }))
-                  }
-                  placeholder="Water-cooled chiller"
-                  className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink">
-                Asset type
-                <input
-                  required
-                  value={form.assetType}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, assetType: event.target.value }))
-                  }
-                  placeholder="chiller"
-                  className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
-                />
-              </label>
-              <label className="block text-xs font-semibold text-ink">
-                Domain
-                <select
-                  required
-                  value={form.domain}
-                  onChange={(event) =>
-                    setForm((current) => ({ ...current, domain: event.target.value }))
-                  }
-                  className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
-                >
-                  <option value="">Select a domain…</option>
-                  {(vocabQ.data?.assetDomains ?? []).map((domain) => (
-                    <option key={domain.code} value={domain.code}>
-                      {domain.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <label className="block text-xs font-semibold text-ink">
-              Description
-              <textarea
-                value={form.description}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, description: event.target.value }))
-                }
-                rows={2}
-                className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"
-              />
-            </label>
-
-            {error ? (
-              <p className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink-strong">
-                {error}
-              </p>
-            ) : null}
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setModalOpen(false);
-                  setError(null);
-                }}
-                className="surface-button px-3 py-1.5"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={createM.isPending}
-                aria-busy={createM.isPending}
-                className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
-              >
-                {createM.isPending ? "Creating…" : "Create draft"}
-              </button>
-            </div>
-          </form>
-        </div>
+      {importing !== null && mayAuthor ? (
+        <ImportStockWizard
+          entry={importing}
+          onClose={() => setImporting(null)}
+          onClosedError={setClosedError}
+        />
       ) : null}
     </MasterDataLayout>
   );
