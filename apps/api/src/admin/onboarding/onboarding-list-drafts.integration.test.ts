@@ -12,6 +12,7 @@ import {
 import { asRole } from "../../testing/role-urls";
 import { jwtFor, primeSeededSubjects, SEEDED } from "../../testing/seeded-subjects";
 import {
+  aScopedAdminWithNoOrganizationListsItsHome,
   eachLocationNameComesFromTheDraft,
   noItemCarriesTheDraft,
   theListHoldsTheOrganizationsDraftsNewestFirst,
@@ -137,6 +138,24 @@ describe.skipIf(!connectionString)("F4.255 — the draft list on real Postgres",
       none,
     );
     ctx.list = await service.listDrafts(jwtFor(SEEDED.globalAdmin, "admin"), orgA);
+
+    // The home fallback: the seeded organization administrator names no organization.
+    const home = await superPool.query<{ organization_id: string | null }>(
+      "SELECT organization_id FROM bms.users WHERE email = $1",
+      [SEEDED.organizationAdmin],
+    );
+    const homeOrganization = home.rows[0]?.organization_id ?? null;
+    if (homeOrganization === null) {
+      throw new Error(`F4.255: ${SEEDED.organizationAdmin} is missing or has no home organization — run pnpm db:seed.`);
+    }
+    ctx.homeOrganization = homeOrganization;
+    ctx.homeDraft = await session(homeOrganization, {
+      status: "draft",
+      locationName: `F4.255 Home ${RUN}`,
+      updatedAt: "2026-10-13T08:00:00Z",
+      createdBy: null,
+    });
+    ctx.homeList = await service.listDrafts(jwtFor(SEEDED.organizationAdmin, "organization_admin"), undefined);
   }, 60_000);
 
   afterAll(async () => {
@@ -163,5 +182,9 @@ describe.skipIf(!connectionString)("F4.255 — the draft list on real Postgres",
 
   it("carries the summary keys and never the draft", () => {
     noItemCarriesTheDraft(ctx);
+  });
+
+  it("lists a scoped administrator's home organization when none is named", () => {
+    aScopedAdminWithNoOrganizationListsItsHome(ctx);
   });
 });

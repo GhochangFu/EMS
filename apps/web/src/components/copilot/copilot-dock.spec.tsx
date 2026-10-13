@@ -11,6 +11,7 @@ import type {
   UserRole,
 } from "@bms/shared";
 
+import * as onboardingApi from "../../api/admin/onboarding";
 import * as organizationsApi from "../../api/admin/organizations";
 import * as copilotApi from "../../api/copilot";
 import * as systemStatusApi from "../../api/system-status";
@@ -81,6 +82,8 @@ type Stubs = {
   create: ReturnType<typeof vi.spyOn>;
   turn: ReturnType<typeof vi.spyOn>;
   organizations: ReturnType<typeof vi.spyOn>;
+  /** `F4.255` PR 3: the dock's draft list, empty unless a case says otherwise. */
+  drafts: ReturnType<typeof vi.spyOn>;
 };
 
 export function stub(status: CopilotStatusDto = READY): Stubs {
@@ -107,6 +110,7 @@ export function stub(status: CopilotStatusDto = READY): Stubs {
         },
       ],
     } as never),
+    drafts: vi.spyOn(onboardingApi, "fetchOnboardingDrafts").mockResolvedValue({ items: [] }),
   };
 }
 

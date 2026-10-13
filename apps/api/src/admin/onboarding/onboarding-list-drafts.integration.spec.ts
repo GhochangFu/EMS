@@ -21,6 +21,12 @@ export type ListDraftsCtx = {
   newerLocationName: string;
   olderLocationName: string;
   starter: { id: string; displayName: string };
+  /** The seeded organization administrator's `users.organization_id`. */
+  homeOrganization: string;
+  /** A draft the suite put in that home organization. */
+  homeDraft: string;
+  /** The list the organization administrator read naming no organization. */
+  homeList: OnboardingDraftListDto;
 };
 
 /** Exactly A's two drafts, newest update first: not A's committed session, not B's draft. */
@@ -44,4 +50,14 @@ export function noItemCarriesTheDraft(ctx: ListDraftsCtx): void {
     ["createdAt", "createdBy", "currentPhase", "id", "locationName", "organizationId", "updatedAt"],
     ["createdAt", "createdBy", "currentPhase", "id", "locationName", "organizationId", "updatedAt"],
   ]);
+}
+
+/**
+ * A scoped administrator naming no organization lists its home organization: the real
+ * `requireMasterDataUser` memoises the identity the fallback reads. Every item is in that
+ * organization, and the suite's own draft there is listed (the positive beside the filter).
+ */
+export function aScopedAdminWithNoOrganizationListsItsHome(ctx: ListDraftsCtx): void {
+  expect(ctx.homeList.items.map((item) => item.id)).toContain(ctx.homeDraft);
+  expect(new Set(ctx.homeList.items.map((item) => item.organizationId))).toEqual(new Set([ctx.homeOrganization]));
 }

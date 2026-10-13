@@ -38,6 +38,17 @@ const RTU_SUMMARY: QueryKey = ["admin", "rtu-summary"];
 const ASSETS: QueryKey = ["admin", "assets"];
 const ASSET_SUMMARY: QueryKey = ["admin", "asset-summary"];
 const ASSET_POINTS: QueryKey = ["admin", "asset-points"];
+// `F4.255` PR 3: the copilot dock's list of an organization's open onboarding drafts.
+export const ONBOARDING_DRAFTS: QueryKey = ["admin", "onboarding", "drafts"];
+
+/**
+ * `F4.255` (ADR 0099 Amendment 2 A1): the dock's draft list of one organization, or — with no
+ * id — of the caller's home organization (the `"home"` segment). {@link ONBOARDING_DRAFTS} is the
+ * prefix of both, so one invalidation reaches every list.
+ */
+export function onboardingDraftsKey(organizationId?: string): QueryKey {
+  return [...ONBOARDING_DRAFTS, organizationId ?? "home"];
+}
 
 const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "dashboard.create": [DASHBOARDS],
@@ -108,6 +119,8 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
     ["admin", "asset-points"],
     ASSET_GROUPS,
     ASSET_TEMPLATES,
+    // `F4.255`: the committed session is no longer a draft, so it leaves the dock's list.
+    ONBOARDING_DRAFTS,
   ],
 };
 

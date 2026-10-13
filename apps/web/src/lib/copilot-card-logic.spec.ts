@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import { COPILOT_CATALOG, catalogEntry } from "@bms/shared/copilot";
 
 import { CHANGE_VALUE_MAX, changeRows, fieldLabel, formatChangeValue } from "./copilot-diff";
-import { INVALIDATED_ENTRIES, invalidationKeysFor } from "./copilot-invalidations";
+import { INVALIDATED_ENTRIES, invalidationKeysFor, onboardingDraftsKey } from "./copilot-invalidations";
 import {
   applyFill,
   bodyProblems,
@@ -180,4 +180,14 @@ export function theReviewStepDoesNotAskForAClientOnlyField(): void {
   expect(bodyProblems(withClientOnly, body)).toEqual([]);
   // The positive control: the same body without the clientOnly rule misses the field.
   expect(bodyProblems(base, body).length).toBeGreaterThan(0);
+}
+
+/**
+ * `F4.255` PR 3 (plan §6.2): a committed onboarding leaves the dock's draft list. The row's key is
+ * a prefix of every organization's list key, so one entry reaches them all.
+ */
+export function anOnboardingCommitInvalidatesTheDraftList(): void {
+  const keys = invalidationKeysFor("onboarding.commit");
+  expect(keys).toContainEqual(["admin", "onboarding", "drafts"]);
+  expect(onboardingDraftsKey(ORG)).toEqual(["admin", "onboarding", "drafts", ORG]);
 }

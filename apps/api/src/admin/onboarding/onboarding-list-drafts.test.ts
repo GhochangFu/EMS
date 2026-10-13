@@ -1,6 +1,12 @@
 import { describe, it } from "vitest";
 
 import {
+  aCallerWithNoHomeIsA400,
+  aGlobalAdminWithNoOrganizationIsA400,
+  aHomeOutsideTheScopeIsA403,
+  aLocationAdminWithNoOrganizationIsTheRole403,
+  aScopedAdminWithNoOrganizationListsItsHome,
+  theHomeOrganizationIsScopeChecked,
   aLocationAdminCannotListDrafts,
   anUnknownPhaseFailsTheServerParse,
   eachProjectedColumnIsTheIntendedOne,
@@ -33,4 +39,13 @@ describe("F4.255 — the organization's onboarding draft list (ADR 0099 Amendmen
   it("is newest update first", () => theListIsNewestUpdateFirst());
   it("is bounded by the shared limit", () => theListIsBoundedByTheSharedLimit());
   it("answers the summary DTO", () => theListAnswersTheSummary());
+});
+
+describe("F4.255 — the draft list with no organization named: the caller's home organization", () => {
+  it("lists a scoped administrator's home organization", () => aScopedAdminWithNoOrganizationListsItsHome());
+  it("scope-checks the home organization", () => theHomeOrganizationIsScopeChecked());
+  it("refuses a home organization outside the scope with a 403 before any read", () => aHomeOutsideTheScopeIsA403());
+  it("answers 400 to a global administrator who names none, before any read", () => aGlobalAdminWithNoOrganizationIsA400());
+  it("answers 400 to a caller with no home organization, before any read", () => aCallerWithNoHomeIsA400());
+  it("runs the role gate first", () => aLocationAdminWithNoOrganizationIsTheRole403());
 });

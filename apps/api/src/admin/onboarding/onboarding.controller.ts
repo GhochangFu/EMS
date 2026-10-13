@@ -67,11 +67,13 @@ export class OnboardingController {
   /**
    * `F4.255` (ADR 0099 Amendment 2 A1) — the organization's open drafts, for
    * the copilot dock's resume list. Declared above `sessions/:id` so the
-   * reading order matches Nest's matching order. A missing or non-uuid
-   * `organizationId` is a 400.
+   * reading order matches Nest's matching order. A non-uuid `organizationId`
+   * (an empty `?organizationId=` too) is a 400; an absent one reaches the
+   * service as `undefined`, which lists the caller's home organization.
    */
   @Get("sessions")
   async listDrafts(@Query("organizationId") organizationId: unknown, @CurrentUser() user: JwtPayload) {
+    if (organizationId === undefined) return this.service.listDrafts(user, undefined);
     let parsed: string;
     try {
       parsed = idParamSchema.parse(organizationId);
