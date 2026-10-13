@@ -28,21 +28,22 @@ import * as copilotApi from "../../api/copilot";
  * sentences is `lib/default-dashboards-report.spec.ts`'s, and the badge is
  * `dashboards-page.spec.tsx`'s. What is only provable by rendering this page
  * is the **gate on the button** — published AND a role that may author — and
- * that the instantiate dialog stops closing on success. Plan §9 listed both as
+ * that the instantiate wizard (`F4.254` PR 3; the dialog before it) stops
+ * closing on success. Plan §9 listed both as
  * browser-only claims; they are not, and this file is the cheaper gate the
  * browser pass may now skip.
  */
 
-const TEMPLATE_ID = "11111111-1111-4111-8111-111111111111";
-const ORG_ID = "22222222-2222-4222-8222-222222222222";
-const LOCATION_ID = "33333333-3333-4333-8333-333333333333";
+export const TEMPLATE_ID = "11111111-1111-4111-8111-111111111111";
+export const ORG_ID = "22222222-2222-4222-8222-222222222222";
+export const LOCATION_ID = "33333333-3333-4333-8333-333333333333";
 
 function asUser(role: string, email: string): AuthUser {
   return { id: "u1", email, displayName: role, role } as unknown as AuthUser;
 }
 
 /** `canAuthorTemplates` admits `admin`; ADR 0038 decision 10 refuses `location_admin`. */
-const admin = asUser("admin", "admin@bms.local");
+export const admin = asUser("admin", "admin@bms.local");
 const locationAdmin = asUser("location_admin", "wc-admin@bms.local");
 
 function draftTemplate(): AdminAssetTemplateDto {
@@ -69,7 +70,7 @@ function draftTemplate(): AdminAssetTemplateDto {
   } as unknown as AdminAssetTemplateDto;
 }
 
-function publishedTemplate(): AdminAssetTemplateDto {
+export function publishedTemplate(): AdminAssetTemplateDto {
   return {
     ...draftTemplate(),
     status: "published",
@@ -90,10 +91,10 @@ const VOCABULARIES = {
 /**
  * Everything the chrome and the default (Details) tab fetch. The page opens on
  * `details` — `resolveTemplateTab(null)` — so `fetchVocabularies` is reached on
- * every render here, and the instantiate dialog's `HierarchyFilterBar` reaches
+ * every render here, and the instantiate wizard's `HierarchyFilterBar` reaches
  * the other three.
  */
-function stubApi(overrides: Partial<Record<string, unknown>> = {}): void {
+export function stubApi(overrides: Partial<Record<string, unknown>> = {}): void {
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES as never);
   vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue({
     items: [{ id: ORG_ID, code: "IX", name: "Ion Exchange", active: true }],
@@ -107,7 +108,7 @@ function stubApi(overrides: Partial<Record<string, unknown>> = {}): void {
   }
 }
 
-function renderPage(user: AuthUser): void {
+export function renderPage(user: AuthUser): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
@@ -342,54 +343,6 @@ export async function aTruncatedViewNamesItsOmittedCount(): Promise<void> {
 
   expect(await screen.findByText(/tx-01-overview/)).toHaveTextContent("10 omitted");
   expect(screen.getByText(/tx-01-trends/)).not.toHaveTextContent("omitted");
-}
-
-/**
- * ADR 0067 Q5 — the dialog stays open on success, prints the four counts, and
- * offers Close.
- *
- * The three assertions after the sentence are the ones that make this more than
- * a wording check: **Build is gone**, so the result state cannot be clicked
- * into a second batch of assets (the affordance that did not exist while the
- * dialog closed on success), and Close is present, so the dialog is escapable.
- */
-export async function theInstantiateDialogStaysOpenAndShowsTheSummary(): Promise<void> {
-  stubApi({
-    fetchAdminAssetTemplate: () => Promise.resolve(publishedTemplate()),
-    instantiateFromAdminAssetTemplate: () =>
-      Promise.resolve({
-        templateId: TEMPLATE_ID,
-        templateCode: "electrical-feeder",
-        templateVersion: 1,
-        locationId: LOCATION_ID,
-        rtuId: null,
-        sourceKind: "unmapped",
-        assets: [],
-        assetCount: 2,
-        pointCount: 8,
-        ruleCount: 3,
-        disabledRuleCount: 1,
-        dashboardCount: 2,
-      }),
-  });
-  renderPage(admin);
-
-  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
-
-  // `HierarchyFilterBar` renders its selects unlabelled, and the Details tab
-  // behind the dialog renders comboboxes of its own — taking "the first
-  // combobox" found the domain picker instead. The location select is the one
-  // holding the location's own option, so it is reached through that.
-  const locationOption = await screen.findByRole("option", { name: "West Campus" });
-  await userEvent.selectOptions(locationOption.closest("select")!, LOCATION_ID);
-  await userEvent.type(screen.getByLabelText("Asset 1 code"), "TX-01");
-  await userEvent.click(screen.getByRole("button", { name: /^Build 1 asset$/ }));
-
-  expect(
-    await screen.findByText("Built 2 assets · 8 points · 3 rules · 2 dashboards"),
-  ).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Close" })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: /^Build/ })).not.toBeInTheDocument();
 }
 
 /**

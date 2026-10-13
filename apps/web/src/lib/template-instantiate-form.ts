@@ -7,7 +7,10 @@ import type {
 } from "../api/admin/asset-templates";
 
 /**
- * The Instantiate dialog's payload rules (`F2.5`, ADR 0038).
+ * The Instantiate dialog's payload rules (`F2.5`, ADR 0038). Since `F4.254`
+ * PR 3 the dialog is the `assetTemplate.instantiate` wizard
+ * (`components/asset-templates/instantiate-wizard.tsx`), whose values come
+ * from `targetOf` and `namedRows` below.
  *
  * ## Why this was extracted
  *
@@ -50,6 +53,12 @@ export type InstantiateRow = {
   code: string;
   name: string;
   vars: Record<string, string>;
+  /**
+   * `F4.254` PR 3 — the asset's optional site name. The row editor has no
+   * input for it; a copilot `fill_step` may carry one, and the row keeps it so
+   * the body sends it. Absent, the server falls back to the target location's name.
+   */
+  siteName?: string;
 };
 
 /**
@@ -153,18 +162,12 @@ export function namedRows(rows: readonly InstantiateRow[]): InstantiateAssetInpu
       if (Object.keys(trimmedVars).length > 0) {
         asset.sourceDataKeyVars = trimmedVars;
       }
+      const siteName = row.siteName?.trim() ?? "";
+      if (siteName !== "") {
+        asset.siteName = siteName;
+      }
       return asset;
     });
-}
-
-/** How many assets the button offers to build. */
-export function namedCount(rows: readonly InstantiateRow[]): number {
-  return namedRows(rows).length;
-}
-
-/** Whether a target has been chosen at all. */
-export function hasTarget(target: InstantiateTarget): boolean {
-  return Boolean(resolveTarget(target));
 }
 
 /**
@@ -192,15 +195,20 @@ export function resolveTarget(
 /**
  * The message shown when the author has chosen no target.
  *
- * The button is disabled in this state, so this is unreachable through the UI.
- * It is a real refusal rather than a `locationId: ?? ""` that would build a
- * request guaranteed to 400 — the author would then read a message about a
- * location that does not exist instead of the one thing they have to do.
+ * Not expected through the UI: since `F4.254` PR 3 the instantiate wizard's
+ * Review refuses a body with no target with the body's own refinement before
+ * Submit is offered. The wizard's Submit still shows it if
+ * `buildInstantiatePayload` refuses. It is a real refusal rather than a
+ * `locationId: ?? ""` that would build a request guaranteed to 400 — the
+ * author would then read a message about a location that does not exist
+ * instead of the one thing they have to do.
  */
 export const NO_TARGET_MESSAGE = "Choose a location or an RTU to build these assets in.";
 
 /**
- * Builds the request body, or returns the refusal.
+ * Builds the request body, or returns the refusal. The instantiate wizard's
+ * Submit sends this typed body, built from `targetOf` and `namedRows` — the
+ * same two rules its values (and so its Review card) are derived from.
  *
  * A discriminated result rather than a throw, so the caller cannot forget to
  * handle the empty-target case and the message cannot be lost.
@@ -209,13 +217,67 @@ export function buildInstantiatePayload(
   target: InstantiateTarget,
   rows: readonly InstantiateRow[],
 ): { ok: true; input: InstantiateAssetsInput } | { ok: false; message: string } {
-  const resolved = resolveTarget(target);
-  if (!resolved) {
+  const chosen = targetOf(target);
+  if (!chosen) {
     return { ok: false, message: NO_TARGET_MESSAGE };
   }
-  const assets = namedRows(rows);
-  if (resolved.kind === "rtu") {
-    return { ok: true, input: { rtuId: resolved.id, assets } };
+  return { ok: true, input: { ...chosen, assets: namedRows(rows) } };
+}
+
+/**
+ * `F4.254` PR 3 — the body's target keys for a picker selection: `{ rtuId }`
+ * or `{ locationId }`, never both (`resolveTarget`'s RTU-wins rule), or `null`
+ * when neither is chosen. The instantiate wizard derives its values from this
+ * and `namedRows`, the same two rules `buildInstantiatePayload` sends, so the
+ * Review card shows the body the Submit sends.
+ */
+export function targetOf(target: InstantiateTarget): { rtuId: string } | { locationId: string } | null {
+  const resolved = resolveTarget(target);
+  if (!resolved) {
+    return null;
   }
-  return { ok: true, input: { locationId: resolved.id, assets } };
+  return resolved.kind === "rtu" ? { rtuId: resolved.id } : { locationId: resolved.id };
+}
+
+/**
+ * `F4.254` PR 3 — the editor's rows for a body's `assets`, the inverse of
+ * `namedRows`: a copilot `fill_step` hands the wizard a body, and the wizard
+ * edits rows. A value that is not an array of objects gives one blank row
+ * (the editor always shows one); a missing name or code is `""`; a non-blank
+ * `siteName` is kept on the row so `namedRows` sends it.
+ */
+export function rowsOfAssets(assets: unknown): InstantiateRow[] {
+  if (!Array.isArray(assets) || assets.length === 0) {
+    return [{ code: "", name: "", vars: {} }];
+  }
+  return assets.map((asset) => {
+    const item = typeof asset === "object" && asset !== null ? (asset as Record<string, unknown>) : {};
+    const vars = item.sourceDataKeyVars;
+    const row: InstantiateRow = {
+      code: typeof item.code === "string" ? item.code : "",
+      name: typeof item.name === "string" ? item.name : "",
+      vars:
+        typeof vars === "object" && vars !== null && !Array.isArray(vars)
+          ? Object.fromEntries(Object.entries(vars).filter(([, value]) => typeof value === "string"))
+          : {},
+    };
+    if (typeof item.siteName === "string" && item.siteName !== "") {
+      row.siteName = item.siteName;
+    }
+    return row;
+  });
+}
+
+/**
+ * `F4.254` PR 3 — the wizard's refusal when a named row lacks a required
+ * variable, naming each row and variable (`Asset 2 needs a value for unit.`).
+ * `null` when nothing is missing. The server would refuse the same body with
+ * its "unresolved" message; this says it before the wire, as the dialog's
+ * disabled Build button did.
+ */
+export function missingVariablesMessage(missing: readonly { row: number; variable: string }[]): string | null {
+  if (missing.length === 0) {
+    return null;
+  }
+  return missing.map(({ row, variable }) => `Asset ${row} needs a value for ${variable}.`).join(" ");
 }

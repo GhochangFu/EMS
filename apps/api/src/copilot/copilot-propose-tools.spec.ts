@@ -480,7 +480,8 @@ export function noToolDefinitionCarriesALargeBody(): void {
  * Owner ruling 2026-10-13 (`F4.254` ruling 4): 48,000, for the five
  * asset-template lifecycle tools (the plan estimated about 730 characters
  * each). Measured at `F4.254` PR 2: 37,492 over 51 definitions before, 39,682
- * over 55 after (the four authoring tools add 2,190). PR 3 records its own figure.
+ * over 55 after (the four authoring tools add 2,190). Measured at PR 3: 41,001
+ * over 56 (the instantiate tool adds 1,319).
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();
@@ -769,6 +770,44 @@ export async function aTemplateArchiveStoresTheEmptyObjectAsDeactivate(): Promis
     path: `/api/v1/admin/asset-templates/${ROW}/archive`,
     risk: "deactivate",
   });
+}
+
+const SITE = "66666666-6666-4666-8666-666666666666";
+const RTU = "77777777-7777-4777-8777-777777777777";
+const INSTANTIATE_RAW = { locationId: SITE, assets: [{ code: "P-1", name: "Pump 1" }] };
+
+/**
+ * `F4.254` PR 3 (plan §5.4) — the instantiate body ends in a root `.transform`
+ * (`{ target, assets }`). What is stored, hashed and sent is the raw body the
+ * model gave: it equals that object, and holds no `target` key (the positive
+ * first). Mutation: store `parsed.data` → the equality reddens.
+ */
+export async function aTemplateInstantiateStoresTheRawBody(): Promise<void> {
+  const h = proposeHarness({ target: templateTarget() });
+  expect((await h.call("propose_assetTemplate_instantiate", { id: ROW, body: INSTANTIATE_RAW })).ok).toBe(true);
+  expect(h.stored[0]).toMatchObject({
+    body: INSTANTIATE_RAW,
+    bodyHash: bodyHash(INSTANTIATE_RAW),
+    path: `/api/v1/admin/asset-templates/${ROW}/instantiate`,
+    risk: "create",
+  });
+  expect(h.stored[0]?.body).toEqual(INSTANTIATE_RAW);
+  expect(h.stored[0]?.body).not.toHaveProperty("target");
+}
+
+/** A body that names both arms is refused with the refinement's own sentence, and nothing is stored. */
+export async function aTemplateInstantiateWithBothTargetsStoresNothing(): Promise<void> {
+  const h = proposeHarness({ target: templateTarget() });
+  const refused = await h.call("propose_assetTemplate_instantiate", { id: ROW, body: { ...INSTANTIATE_RAW, rtuId: RTU } });
+  expect(refused.error).toMatch(/^Invalid body: .*Supply rtuId or locationId, not both/);
+  expect(h.stored).toEqual([]);
+}
+
+/** The summary counts the assets and names the template, the site by id, and the organization. */
+export async function aTemplateInstantiateSummaryNamesTheCountAndTheSite(): Promise<void> {
+  const h = proposeHarness({ target: templateTarget() });
+  await h.call("propose_assetTemplate_instantiate", { id: ROW, body: INSTANTIATE_RAW });
+  expect(h.stored[0]?.summary).toBe(`Build 1 asset from the asset template "Pump template" at the location ${SITE} in Org X.`);
 }
 
 /**

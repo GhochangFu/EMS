@@ -49,6 +49,9 @@ import {
   aCyclicCreateIsRefusedByTheRouteBody,
   aStockImportStoresOnItsCodePath,
   aTemplateArchiveStoresTheEmptyObjectAsDeactivate,
+  aTemplateInstantiateStoresTheRawBody,
+  aTemplateInstantiateSummaryNamesTheCountAndTheSite,
+  aTemplateInstantiateWithBothTargetsStoresNothing,
 } from "./copilot-propose-tools.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -106,4 +109,8 @@ describe("F3.85 PR 11a — the asset-template propose tools (plan §11.3 Unit 2,
   it("F4.254 the route's create body refuses the same cyclic body", () => aCyclicCreateIsRefusedByTheRouteBody());
   it("F4.254 stores a stock import on its code path", () => aStockImportStoresOnItsCodePath());
   it("F4.254 stores {} for a template archive, as deactivate", () => aTemplateArchiveStoresTheEmptyObjectAsDeactivate());
+  it("F4.254 stores an instantiate body raw, with no transformed target", () => aTemplateInstantiateStoresTheRawBody());
+  it("F4.254 refuses an instantiate naming both targets with the refinement", () =>
+    aTemplateInstantiateWithBothTargetsStoresNothing());
+  it("F4.254 summarises an instantiate with its count and site", () => aTemplateInstantiateSummaryNamesTheCountAndTheSite());
 });

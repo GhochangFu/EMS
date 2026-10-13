@@ -20,6 +20,15 @@ import {
   aSiteLayoutNeedsTheDashboardCheckToo,
   aSiteRowIsCheckedOnItsOwnSite,
   aSiteViewKeepsTheBuiltinRule,
+  anInstantiateTargetAdmitsALocationAdminOnItsSite,
+  anInstantiateTargetNeedsTheOrganization,
+  anInstantiateTargetNeedsTheSite,
+  anInstantiateTargetOfAnotherOrganizationIsRefused,
+  anInstantiateUnderAnRtuChecksTheRtusSite,
+  anInstantiateUnderAnRtuOfAnotherOrganizationIsRefused,
+  anInstantiateWithNoTargetIsRefused,
+  theAuthoringKindAsksOnlyTheAuthoringCheck,
+  theDeployKindNeverAsksTheAuthoringCheck,
   refKindOfReadsTheKindField,
   RESOLVER_NAMES,
   type ResolverCtx,
@@ -54,6 +63,8 @@ const CLEANUP = [
   "DELETE FROM bms.rtus WHERE organization_id = ANY($1)",
   "DELETE FROM bms.dashboards WHERE organization_id = ANY($1)",
   "DELETE FROM bms.dashboard_templates WHERE organization_id = ANY($1)",
+  "DELETE FROM bms.template_points WHERE organization_id = ANY($1)",
+  "DELETE FROM bms.asset_templates WHERE organization_id = ANY($1)",
   "DELETE FROM bms.locations WHERE organization_id = ANY($1)",
   "DELETE FROM bms.organizations WHERE id = ANY($1)",
 ];
@@ -111,6 +122,10 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       "INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type) VALUES ($1, $2, $3, $4, 'simulator') RETURNING id",
       [orgA, locationA, `${FAMILY}-RTU`, RESOLVER_NAMES.rtuA],
     );
+    const rtuB = await one(
+      "INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type) VALUES ($1, $2, $3, $4, 'simulator') RETURNING id",
+      [orgB, locationB, `${FAMILY}-RTU-B`, "F3.86 RTU B"],
+    );
     const assetA = await one(
       "INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain) VALUES ($1, $2, $3, $4, $5, 'electrical') RETURNING id",
       [orgA, `${FAMILY}-ASSET`, RESOLVER_NAMES.assetA, RESOLVER_NAMES.locationA, locationA],
@@ -145,6 +160,10 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       "INSERT INTO bms.dashboard_templates (organization_id, code, name, section) VALUES ($1, $2, $3, 'electrical') RETURNING id",
       [orgA, "f386-resolver-t", "F3.86 template A"],
     );
+    const assetTemplateA = await one(
+      "INSERT INTO bms.asset_templates (organization_id, code, name, asset_type, domain, status) VALUES ($1, $2, $3, 'pump', 'electrical', 'published') RETURNING id",
+      [orgA, "f4254-resolver-t", RESOLVER_NAMES.assetTemplateA],
+    );
     ctx = {
       tenantDb: createDb(tenantPool),
       orgA,
@@ -153,6 +172,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       locationA2,
       locationB,
       rtuA,
+      rtuB,
       assetA,
       assetCodeA: `${FAMILY}-ASSET`,
       groupA,
@@ -162,6 +182,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       pointKeyCode: key.code,
       dashboardA,
       dashboardTemplateA,
+      assetTemplateA,
     };
   });
 
@@ -187,4 +208,17 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("runs the route's manager checks for a user create (PR 4)", () => aUserCreateRunsTheRoutesManagerChecks(ctx));
   it("puts a grant in its target's organization and needs the user's home in scope", () =>
     aGrantLivesInItsTargetsOrganizationAndNeedsTheUsersHomeInScope(ctx));
+  // `F4.254` PR 3 (plan §5.4): the instantiate route's deploy authority.
+  it("admits a location admin to instantiate on its own site", () => anInstantiateTargetAdmitsALocationAdminOnItsSite(ctx));
+  it("refuses an instantiate on a site the caller does not manage", () => anInstantiateTargetNeedsTheSite(ctx));
+  it("checks the RTU's own site for an instantiate under an RTU", () => anInstantiateUnderAnRtuChecksTheRtusSite(ctx));
+  it("refuses an instantiate outside the caller's organizations", () => anInstantiateTargetNeedsTheOrganization(ctx));
+  it("never asks the authoring check for an instantiate", () => theDeployKindNeverAsksTheAuthoringCheck(ctx));
+  it("asks only the authoring check for an authoring entry on the same template", () =>
+    theAuthoringKindAsksOnlyTheAuthoringCheck(ctx));
+  it("refuses an instantiate whose site is of another organization", () =>
+    anInstantiateTargetOfAnotherOrganizationIsRefused(ctx));
+  it("refuses an instantiate that names no target", () => anInstantiateWithNoTargetIsRefused(ctx));
+  it("refuses an instantiate under an RTU of another organization without asking its site", () =>
+    anInstantiateUnderAnRtuOfAnotherOrganizationIsRefused(ctx));
 });

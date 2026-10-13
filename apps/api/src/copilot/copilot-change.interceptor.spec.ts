@@ -6,7 +6,7 @@ import { defer, from, lastValueFrom } from "rxjs";
 import { expect, vi } from "vitest";
 import { z } from "zod";
 
-import type { JwtPayload, UserRole } from "@bms/shared";
+import { instantiateAssetsBodySchema, type JwtPayload, type UserRole } from "@bms/shared";
 
 import { type ResolvedIdentity, rememberIdentity } from "../auth/identity-resolver";
 import { bodyHash } from "./body-hash";
@@ -414,4 +414,31 @@ export async function aRefusedChangeStartsNoFollowUp(): Promise<void> {
   expect(await refused(h)).toBeInstanceOf(ConflictException);
   await settle();
   expect(h.followUp).not.toHaveBeenCalled();
+}
+
+/**
+ * `F4.254` PR 3 (plan §5.4) — `assetTemplate.instantiate`'s body ends in a root
+ * `.transform` whose output (`{ target, assets }`) is not its input. The
+ * propose tool stored the hash of the **raw** body, and the interceptor hashes
+ * `req.body` as Nest parsed the JSON — before the handler's own parse — so the
+ * raw body matches and the handler runs. Mutation: hash
+ * `entry.body.parse(req.body)` → the hashes differ → 409 → red.
+ */
+const INSTANTIATE_PATH = "/api/v1/admin/asset-templates/66666666-6666-4666-8666-666666666666/instantiate";
+const INSTANTIATE_RAW = { locationId: "77777777-7777-4777-8777-777777777777", assets: [{ code: "P-1", name: "Pump 1" }] };
+
+/** The positive control: the fixture really is a body whose parse changes it. */
+export function theInstantiateBodyIsChangedByItsOwnParse(): void {
+  expect(bodyHash(instantiateAssetsBodySchema.parse(INSTANTIATE_RAW))).not.toBe(bodyHash(INSTANTIATE_RAW));
+}
+
+export async function aRootTransformBodyIsHashedRaw(): Promise<void> {
+  const h = harness({
+    path: INSTANTIATE_PATH,
+    body: INSTANTIATE_RAW,
+    stored: { path: INSTANTIATE_PATH, bodyHash: bodyHash(INSTANTIATE_RAW), catalogId: "assetTemplate.instantiate" },
+  });
+  await run(h);
+  expect(h.handler).toHaveBeenCalledTimes(1);
+  expect(h.pending.release).not.toHaveBeenCalled();
 }

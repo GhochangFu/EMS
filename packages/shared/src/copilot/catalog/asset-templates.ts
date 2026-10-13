@@ -1,7 +1,8 @@
+import { instantiateAssetsBodySchema } from "../../contracts/asset-template-instantiate-writes";
 import { createAssetTemplateBodySchema, updateAssetTemplateBodySchema } from "../../contracts/asset-template-writes";
 import { importStockTemplateBodySchema } from "../../contracts/dashboard-template-writes";
 import { stockCodeParam } from "./dashboard-templates";
-import { emptyBody, fieldList, quoted, text, uuidParam } from "./summary-text";
+import { emptyBody, fieldList, plural, quoted, text, uuidParam } from "./summary-text";
 import type { CatalogEntry, CatalogTarget, ExcludedRoute } from "./types";
 
 const ASSET_TEMPLATE: CatalogTarget = { kind: "assetTemplate", param: "id" };
@@ -48,7 +49,15 @@ const TEMPLATE_FORMULAS = [
  * parses the same shared body the dashboard import does and reuses its
  * `stockCodeParam`. Both organization-scoped entries ask the route's
  * `assertCanAuthor` (`canManageTemplate`), so a `location_admin` is never
- * offered one. The instantiate route is `F4.254` PR 3.
+ * offered one.
+ *
+ * `F4.254` PR 3 — `assetTemplate.instantiate`. Its body is the shared
+ * instantiate body by identity (one refined object ending in a `.transform`):
+ * the propose tool stores and hashes the raw body and the interceptor hashes
+ * `req.body`, so the transform's `{ target }` reaches neither. Its target is
+ * `assetTemplateDeploy` — the route's deploy authority, which admits a
+ * `location_admin` on a site it manages. The summary names the target by id:
+ * `CatalogSummaryInput` carries names for the template and organization only.
  */
 export const ASSET_TEMPLATE_ENTRIES: readonly CatalogEntry[] = [
   {
@@ -160,6 +169,33 @@ export const ASSET_TEMPLATE_ENTRIES: readonly CatalogEntry[] = [
     summary: ({ params, organizationName }) =>
       `Import the stock asset template ${quoted(params.code ?? "")} into ${organizationName}.`,
   },
+  {
+    id: "assetTemplate.instantiate",
+    title: "Build assets from an asset template",
+    method: "POST",
+    path: "/admin/asset-templates/:id/instantiate",
+    params: { id: uuidParam },
+    body: instantiateAssetsBodySchema,
+    bodyName: "instantiateAssetsBodySchema",
+    clientOnly: [],
+    risk: "create",
+    target: { kind: "assetTemplateDeploy", param: "id" },
+    refs: [
+      { field: "rtuId", kind: "rtu" },
+      { field: "locationId", kind: "location" },
+    ],
+    formulas: [],
+    steps: [
+      { id: "target", title: "Target", fields: ["rtuId", "locationId"] },
+      { id: "assets", title: "Assets", fields: ["assets"] },
+    ],
+    summary: ({ body, targetName, organizationName }) => {
+      const count = Array.isArray(body.assets) ? body.assets.length : 0;
+      const rtuId = text(body, "rtuId");
+      const where = rtuId !== "" ? `under the RTU ${rtuId}` : `at the location ${text(body, "locationId")}`;
+      return `Build ${plural(count, "asset")} from the asset template ${quoted(targetName)} ${where} in ${organizationName}.`;
+    },
+  },
 ];
 
 const MANY_LIVE_ROWS =
@@ -172,16 +208,13 @@ const WRITES_NOTHING =
   "a read through POST: it writes nothing (ADR 0039 decision 2); precedent: onboarding /validate";
 
 /**
- * The area's write routes that are not entries. Four stay manual for good
- * (`F4.254` rulings 2 and 3); the instantiate route carries the PR that makes
- * it an entry as the reason (the release-2 trick, `F3.86` plan §4.5), which
- * keeps `tests/f3.85-catalog-coverage` green between PRs. The four authoring
- * routes left this list in `F4.254` PR 2.
+ * The area's write routes that are not entries: four stay manual for good
+ * (`F4.254` rulings 2 and 3). The four authoring routes left this list in
+ * `F4.254` PR 2, and the instantiate route in PR 3.
  */
 export const ASSET_TEMPLATE_PENDING: readonly ExcludedRoute[] = [
   { method: "POST", path: "/admin/asset-templates/:id/migrate", reason: MANY_LIVE_ROWS },
   { method: "POST", path: "/admin/asset-templates/:id/seeded-rules/reapply", reason: OVERWRITES_TUNED },
   { method: "POST", path: "/admin/asset-templates/:id/default-dashboards", reason: PARTIAL_COMMIT },
   { method: "POST", path: "/admin/asset-templates/:id/migration-preview", reason: WRITES_NOTHING },
-  { method: "POST", path: "/admin/asset-templates/:id/instantiate", reason: "F4.254 PR 3" },
 ];

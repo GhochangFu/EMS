@@ -87,6 +87,12 @@ export const FIXTURES: Readonly<
   "assetTemplate.archive": { body: {}, params: { id: ROW }, names: TARGET_NAME },
   "assetTemplate.draft": { body: {}, params: { id: ROW }, names: TARGET_NAME },
   "assetTemplate.importStock": { body: { organizationId: ORG }, params: { code: "feeder" }, names: ORG_NAME },
+  // `F4.254` PR 3: the raw body the route parses (its `.transform` output is never stored or sent).
+  "assetTemplate.instantiate": {
+    body: { locationId: ROW, assets: [{ code: "P-1", name: "Pump 1" }] },
+    params: { id: ROW },
+    names: TARGET_NAME,
+  },
   // `F3.86` PR 4: what the model proposes (`modelBodyOf`) — a create has no password.
   "user.create": {
     body: { email: "priya@example.test", displayName: "Priya Rao", role: "viewer", organizationId: ORG },

@@ -73,6 +73,8 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "assetTemplate.draft": [ASSET_TEMPLATES, ASSET_TEMPLATE],
   // `F4.254` PR 2: the stock list is keyed under ASSET_TEMPLATES too (`["admin", "asset-templates", "stock"]`).
   "assetTemplate.importStock": [ASSET_TEMPLATES],
+  // `F4.254` PR 3: instantiating builds assets and their default dashboards (ADR 0067).
+  "assetTemplate.instantiate": [ASSETS, ASSET_SUMMARY, DASHBOARDS],
   "user.create": [USERS],
   "user.update": [USERS],
   "user.deactivate": [USERS],
