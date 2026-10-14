@@ -71,7 +71,9 @@ report findings with evidence.
    `GET /admin/onboarding/sessions` (`F4.255`) must never select `draft`, so
    `_secrets` never leave the query, and the `copilot-purge` tick deletes an
    untouched draft session, with its `_secrets` and checkpoints, after 30
-   days. A committed session keeps `draft._secrets` (`F4.258`).
+   days. A committed session holds no `draft._secrets` (`F4.258`): the
+   commit strips it after copying each blob, and refuses 503 when a blob
+   exists and no key is loaded, so the strip never erases an uncopied blob.
 8. **User administration and the Keycloak admin client (ADR 0089).**
    `KeycloakIdentityAdminClient` (`apps/api/src/identity/`, and the `identity/provision/` CLI, which has its own `fetch`) holds a secret equivalent to
    global admin: it must never be logged, returned, audited or put in an error,
