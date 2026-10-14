@@ -203,6 +203,12 @@ export const mimicLayoutNodeSchema = z.object({
    */
   fanOut: z.boolean(),
   isSource: z.boolean(),
+  /**
+   * `F3.80` / ADR 0101 — a unit that gates the energised walk whatever its symbol (the symbols in
+   * `MIMIC_SWITCHING_SYMBOLS` gate it already). Always `false` on a panel or label: migration
+   * `0109`'s `mimic_layout_nodes_switching_units_check`.
+   */
+  isSwitching: z.boolean(),
 });
 
 /** A pipe between two units, by key (plan D5, D7). */

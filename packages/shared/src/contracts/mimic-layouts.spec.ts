@@ -11,6 +11,7 @@ import {
   mimicCoreSymbolSchema,
   mimicLayoutDtoSchema,
   mimicLayoutGeometrySchema,
+  mimicLayoutNodeSchema,
   mimicPanelToneSchema,
   mimicSymbolLibraryCodeSchema,
   mimicStaticSymbolSchema,
@@ -53,6 +54,7 @@ const unitNode = {
   z: 1,
   fanOut: false,
   isSource: false,
+  isSwitching: false,
 };
 
 const panelNode = {
@@ -69,6 +71,7 @@ const panelNode = {
   z: 0,
   fanOut: false,
   isSource: false,
+  isSwitching: false,
 };
 
 const geometry = {
@@ -318,4 +321,17 @@ export function symbolLibrariesAcceptsOrgPlant(): void {
   assert(parsed.success, `symbolLibraries ["core","org.plant"] refused: ${issuesOf(parsed)}`);
   const symbolKey = mimicLayoutDtoSchema.safeParse({ ...storedLayout, symbolLibraries: ["core", "org.plant:inlet"] });
   assert(!symbolKey.success, "a symbol key parsed as a library selection");
+}
+
+/** `F3.80` / migration 0109 — `isSwitching` is required on the node contract: a node without it is refused at that key. */
+export function aNodeWithoutIsSwitchingIsRefused(): void {
+  const parsed = mimicLayoutNodeSchema.safeParse(unitNode);
+  assert(parsed.success, `a unit with isSwitching refused: ${issuesOf(parsed)}`);
+  const { isSwitching: _omitted, ...without } = unitNode;
+  const refused = mimicLayoutNodeSchema.safeParse(without);
+  assert(!refused.success, "a node without isSwitching parsed");
+  assert(
+    !refused.success && refused.error.issues.every((issue) => issue.path[0] === "isSwitching"),
+    "the node must be refused at isSwitching only",
+  );
 }

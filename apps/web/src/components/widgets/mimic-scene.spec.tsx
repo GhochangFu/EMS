@@ -380,6 +380,7 @@ function renderOrgScene(): void {
     z: 0,
     fanOut: false,
     isSource: false,
+    isSwitching: false,
   });
   const geometry = layoutGeometry({
     name: "Org plant",

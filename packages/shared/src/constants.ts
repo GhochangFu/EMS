@@ -762,6 +762,8 @@ export const WATER_CLASS_POINT_KEYS = [
   "filter_press_status",
   "transfer_pump_status",
   "guard_pond_level_pct",
+  // F3.80 / ADR 0101: a valve unit's position, 1 = open, 0 = shut (mapped by the seed, not a migration).
+  "valve_open",
 ] as const;
 
 export type WaterClassPointKey = (typeof WATER_CLASS_POINT_KEYS)[number];
@@ -969,6 +971,8 @@ export const HVAC_CLASS_POINT_KEYS = [
   "return_air_co2_ppm", "fire_trip_state",
   "sat_deviation_c", // E5.2: derived, formula in hvac-ahu.ts
   "coil_delta_t_c", // E5.2: derived, formula in hvac-ahu.ts
+  // F3.80 / ADR 0101: a damper unit's position, 1 = open, 0 = shut.
+  "damper_open",
 ] as const;
 
 export type HvacClassPointKey = (typeof HVAC_CLASS_POINT_KEYS)[number];

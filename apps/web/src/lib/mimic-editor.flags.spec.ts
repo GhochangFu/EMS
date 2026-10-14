@@ -6,7 +6,7 @@ import { editorReducer, emptyEditorLayout, fromPreset, initialEditorState, toWri
  * save clears. Claims live here, not in the 894-line `mimic-editor.spec.ts`.
  */
 
-function layoutWithOneUnit(flags: { fanOut: boolean; isSource: boolean }): EditorLayout {
+function layoutWithOneUnit(flags: { fanOut: boolean; isSource: boolean; isSwitching?: boolean }): EditorLayout {
   const base = emptyEditorLayout();
   return {
     ...base,
@@ -23,6 +23,7 @@ function layoutWithOneUnit(flags: { fanOut: boolean; isSource: boolean }): Edito
         w: 12,
         h: 8,
         z: 0,
+        isSwitching: false,
         ...flags,
       },
     ],
@@ -107,4 +108,18 @@ export function runStartedLayoutWritesItsFlags(): void {
   const main = nodes.find((n) => n.key === "main_breaker");
   const incoming = nodes.find((n) => n.key === "incoming");
   if (main?.fanOut !== true || incoming?.isSource !== true) throw new Error("flags must reach the write body");
+}
+
+/** F3.80 PR1 — a new unit is not a switching unit (the toggle is PR2). */
+export function runANewUnitHasIsSwitchingFalse(): void {
+  const next = editorReducer(initialEditorState(emptyEditorLayout()), { type: "add-unit", symbol: "breaker", label: "B" });
+  if (next.layout.nodes[0]?.isSwitching !== false) throw new Error("a new unit must have isSwitching false");
+}
+
+/** F3.80 PR1 — a started preset marks no node isSwitching (symbol decides, until PR2). */
+export function runFromPresetMarksNoNodeIsSwitching(): void {
+  const breakers = SLD.nodes.filter((n) => n.kind === "unit" && n.symbol === "breaker");
+  if (breakers.length < 5) throw new Error(`anti-vacuity: expected at least 5 breaker units, got ${breakers.length}`);
+  const marked = SLD.nodes.filter((n) => n.isSwitching !== false).map((n) => n.key);
+  if (marked.length > 0) throw new Error(`every node must carry isSwitching false, got ${marked.join()}`);
 }
