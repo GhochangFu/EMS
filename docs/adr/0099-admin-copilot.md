@@ -31,7 +31,8 @@ wins.
 **Amended 2026-10-13 — Amendment 2** (owner-approved; the `F4.255` plan
 gate): a draft onboarding session can be resumed from the dock, and one
 untouched for 30 days is erased by the purge tick. Where Amendment 2
-conflicts with decisions 7 and 8 above, it wins.
+conflicts with decisions 7 and 8 above, it wins. A note of
+2026-10-14 (owner) adds the draft list's home-organization default.
 
 | # | Question | Options put | Ruled | Decision |
 | --- | --- | --- | --- | --- |
@@ -640,3 +641,24 @@ Each item names the decision or choice whose text it changes.
   lifetime: 30 days without a write, or the commit); ADR 0094 (checkpoints go
   with the row); ADR 0030 (the list DTO is a shared contract); this record's
   decision 7 (resume) and decision 8 (the table list).
+
+## Amendment 2, A1 note — the draft list's home-organization default (owner, 2026-10-14)
+
+A1 names the list route as `GET /api/v1/admin/onboarding/sessions?organizationId=…`,
+applied to "the organization the caller names". `F4.255` PR 3 (#842,
+`300578c9`) made `organizationId` optional. The owner kept it on 2026-10-14.
+
+- **With no `organizationId`**, an `organization_admin` gets the drafts of its
+  **home** organization (`recalledIdentity(jwt).organizationId`). A new copilot
+  conversation binds to that organization, so the dock's list and its resume
+  always name the same organization. The role gate and `canManageOrganization`
+  run first, as for a named organization. A caller with no home organization
+  gets 400.
+- **A global administrator must name an organization.** With none, it gets 400.
+- **An empty or non-uuid value** is still 400. A named organization keeps A1's
+  403 (out of scope) and 404 (unknown, global administrator).
+
+The reason: the dock first took a scoped administrator's organization from the
+organizations list. That list holds the user's direct organization grants, not
+the home organization, so a resume could list one organization's drafts and
+bind in another, and answer 400 for the mismatch.
