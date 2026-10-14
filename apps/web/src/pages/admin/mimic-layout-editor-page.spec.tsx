@@ -158,6 +158,21 @@ export async function aStartedSldLayoutPostsItsFlags(): Promise<void> {
   expect(body?.nodes.find((n: MimicLayoutWriteNode) => n.key === "main_bus")?.fanOut).toBeUndefined();
 }
 
+/** F3.80 PR2 — a stored unit's isSwitching reaches the PUT body; an unset one is omitted. */
+export async function aStoredSwitchingUnitPutsItsFlag(): Promise<void> {
+  const { fetchOne, replace } = stubAll(ORGS);
+  const dto = storedDto(4);
+  fetchOne.mockResolvedValue({ ...dto, nodes: dto.nodes.map((n) => (n.key === "wtp" ? { ...n, isSwitching: true } : n)) });
+  mount(newClient(), `/admin/mimic-layouts/${LAYOUT_ID}`, user("organization_admin"));
+  await save();
+  await waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
+  const body = replace.mock.calls[0]?.[1] as MimicLayoutWriteBody | undefined;
+  expect(body?.nodes.find((n: MimicLayoutWriteNode) => n.key === "wtp")?.isSwitching).toBe(true);
+  const other = body?.nodes.find((n: MimicLayoutWriteNode) => n.key === "discharge");
+  expect(other).toBeDefined();
+  expect(other?.isSwitching).toBeUndefined();
+}
+
 /** E1b — `?preset=compressed_air` POSTs that preset's copy (ADR 0082 decision 5, plan D9). */
 export async function aDomainPresetLayoutPostsItsCopy(): Promise<void> {
   const { create } = renderAt("/admin/mimic-layouts/new?preset=compressed_air");

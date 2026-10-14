@@ -46,6 +46,8 @@ export type MimicLayoutWriteNode = {
   fanOut?: boolean;
   /** `F3.74` (OQ3b) — a unit the energy walk starts from. A unit only; absent is `false`. */
   isSource?: boolean;
+  /** `F3.80` (ADR 0101 d4) — a unit that gates the flow whatever its symbol. A unit only; absent is `false`. */
+  isSwitching?: boolean;
 };
 
 /** One pipe in a write body: two unit keys (plan D7). */

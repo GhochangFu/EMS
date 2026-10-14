@@ -51,6 +51,23 @@ export function runToWriteBodyOmitsUnsetFlags(): void {
   }
 }
 
+/** F3.80 PR2 — isSwitching true reaches the save body. */
+export function runToWriteBodyCarriesASetSwitchingFlag(): void {
+  const node = toWriteBody(layoutWithOneUnit({ fanOut: false, isSource: false, isSwitching: true })).nodes[0];
+  if (node?.isSwitching !== true) {
+    throw new Error(`isSwitching true must reach the save body, got ${String(node?.isSwitching)}`);
+  }
+}
+
+/** F3.80 PR2 — isSwitching false is omitted from the save body, never sent as false. */
+export function runToWriteBodyOmitsAnUnsetSwitchingFlag(): void {
+  const node = toWriteBody(layoutWithOneUnit({ fanOut: false, isSource: false, isSwitching: false })).nodes[0];
+  if (node === undefined) throw new Error("the save body must carry the unit");
+  if ("isSwitching" in node) {
+    throw new Error("isSwitching false must be omitted from the save body");
+  }
+}
+
 const SLD = fromPreset("lv_single_line");
 
 function flagsOf(key: string): { fanOut: boolean; isSource: boolean; roleCode: string | null } {
@@ -75,7 +92,11 @@ export function runFromPresetMarksIncomingAsTheOnlySource(): void {
   }
 }
 
-function patched(key: string, patch: { fanOut?: boolean; isSource?: boolean }, base: EditorLayout): EditorLayout {
+function patched(
+  key: string,
+  patch: { label?: string; fanOut?: boolean; isSource?: boolean; isSwitching?: boolean },
+  base: EditorLayout,
+): EditorLayout {
   return editorReducer(initialEditorState(base), { type: "update-node", key, patch }).layout;
 }
 
@@ -93,6 +114,24 @@ export function runPatchNodeIgnoresFlagsOnAPanel(): void {
   if (panel === undefined) throw new Error("lv_single_line has a panel");
   const out = patched(panel.key, { fanOut: true, isSource: true }, SLD).nodes.find((n) => n.key === panel.key);
   if (out?.fanOut !== false || out.isSource !== false) throw new Error("a panel must stay without flags");
+}
+
+/** F3.80 PR2 — patchNode sets and clears isSwitching on a unit, and a patch without it keeps it. */
+export function runPatchNodeSetsIsSwitchingOnAUnit(): void {
+  const on = patched("incoming", { isSwitching: true }, SLD);
+  if (on.nodes.find((n) => n.key === "incoming")?.isSwitching !== true) throw new Error("a unit takes isSwitching true");
+  const back = patched("incoming", { isSwitching: false }, on).nodes.find((n) => n.key === "incoming");
+  if (back?.isSwitching !== false) throw new Error("isSwitching false clears the flag");
+  const kept = patched("incoming", { label: "Grid" }, on).nodes.find((n) => n.key === "incoming");
+  if (kept?.isSwitching !== true) throw new Error("a patch without isSwitching must keep the flag");
+}
+
+/** F3.80 PR2 — a panel patched with isSwitching stays false. */
+export function runPatchNodeIgnoresIsSwitchingOnAPanel(): void {
+  const panel = SLD.nodes.find((n) => n.kind === "panel");
+  if (panel === undefined) throw new Error("lv_single_line has a panel");
+  const out = patched(panel.key, { isSwitching: true }, SLD).nodes.find((n) => n.key === panel.key);
+  if (out?.isSwitching !== false) throw new Error("a panel must stay isSwitching false");
 }
 
 /** A new unit defaults both flags to false. */
