@@ -3,12 +3,14 @@ import { useEffect, useState } from "react";
 import { io, type Socket } from "socket.io-client";
 
 import { fetchMapSites } from "../api/map";
+import { LiveStatusStrip } from "../components/control-room/live-status-strip";
+import { MapPinLegend } from "../components/map-pin-legend";
 import { MapSubtreeFilter } from "../components/map-subtree-filter";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 import { WorldMap } from "../components/world-map";
 import { AppShell } from "../layouts/app-shell";
-import { estateSiteLink } from "../lib/map-site";
+import { estateSiteLink, mapLiveCounts } from "../lib/map-site";
 import { socketBaseUrl } from "../lib/socket-url";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 
@@ -29,6 +31,9 @@ export function MapPage({ user }: MapPageProps) {
     queryFn: () => fetchMapSites(rootId ?? undefined),
     refetchInterval: 8000,
   });
+
+  // `F4.262` — the strip counts the same read the pins are drawn from.
+  const liveCounts = mapLiveCounts(q.data ?? []);
 
   useEffect(() => {
     const base = socketBaseUrl();
@@ -86,17 +91,24 @@ export function MapPage({ user }: MapPageProps) {
             <code className="surface-pressed-sm px-1 text-xs">pnpm db:seed</code>.
           </p>
         ) : (
-          <SectionCard bodyClassName="p-0">
-            {/* Keyed by the filter: the map fits its box once per mount (`FitToSites`), so a new
-                parent mounts a map that fits the subtree. */}
-            <WorldMap
-              key={rootId ?? "all"}
-              sites={q.data}
-              siteLink={estateSiteLink}
-              heightClassName="h-[min(70vh,560px)]"
-              scrollWheelZoom
-            />
-          </SectionCard>
+          <>
+            {/* `F4.262` — counted from the same read the pins are drawn from, so the two agree. */}
+            {liveCounts.live + liveCounts.notLive > 0 ? (
+              <LiveStatusStrip liveCount={liveCounts.live} notLiveCount={liveCounts.notLive} />
+            ) : null}
+            <MapPinLegend />
+            <SectionCard bodyClassName="p-0">
+              {/* Keyed by the filter: the map fits its box once per mount (`FitToSites`), so a new
+                  parent mounts a map that fits the subtree. */}
+              <WorldMap
+                key={rootId ?? "all"}
+                sites={q.data}
+                siteLink={estateSiteLink}
+                heightClassName="h-[min(70vh,560px)]"
+                scrollWheelZoom
+              />
+            </SectionCard>
+          </>
         )}
       </div>
     </AppShell>

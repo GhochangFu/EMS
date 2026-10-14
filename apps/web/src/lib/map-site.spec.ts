@@ -1,6 +1,7 @@
 import type { MapSiteDto } from "@bms/shared";
 
 import {
+  mapLiveCounts,
   controlRoomSiteLink,
   estateSiteLink,
   isOperationalSite,
@@ -196,4 +197,28 @@ export function runOrganizationNodesKeepsOnlyThisOrganizationTest(): void {
     JSON.stringify(kept) === JSON.stringify(["loc-a1"]),
     `expected only org A's node, got ${JSON.stringify(kept)}`,
   );
+}
+
+/**
+ * `F4.262` M1 — the /map strip counts only pins that join a location: live with one fresh asset
+ * (alarms do not matter), not live with none. A reference station is in neither count.
+ */
+export function runMapLiveCountsTest(): void {
+  const joined = (id: string, assetsFresh: number, status: MapSiteDto["live"]["status"]) =>
+    site({
+      id,
+      canonicalLocationId: id,
+      kind: "site",
+      live: { status, openAlarms: 0, criticalAlarms: status === "critical" ? 1 : 0, assetsTotal: 4, assetsFresh },
+    });
+  const counts = mapLiveCounts([
+    joined("l1", 2, "healthy"),
+    joined("l2", 1, "critical"),
+    joined("n1", 0, "offline"),
+    joined("n2", 0, "critical"),
+    site({ id: "ref", live: { status: "nominal", openAlarms: 0, criticalAlarms: 0, assetsTotal: 0, assetsFresh: 0 } }),
+  ]);
+  if (counts.live !== 2 || counts.notLive !== 2) {
+    throw new Error(`expected { live: 2, notLive: 2 }, got ${JSON.stringify(counts)}`);
+  }
 }

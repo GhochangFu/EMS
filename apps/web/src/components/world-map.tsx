@@ -6,7 +6,7 @@ import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from "react-leaf
 import "leaflet/dist/leaflet.css";
 
 import type { RoleName } from "../lib/theme";
-import { isOperationalSite, MAP_TILE, siteBounds, type MapSiteLink } from "../lib/map-site";
+import { isOperationalSite, MAP_PIN_ROLES, MAP_TILE, siteBounds, type MapSiteLink } from "../lib/map-site";
 import { useThemeRoles } from "../stores/theme-store";
 
 /**
@@ -31,26 +31,9 @@ function FitToSites({ sites }: { sites: MapSiteDto[] }) {
   return null;
 }
 
-/**
- * `F3.65c` — the marker fill role, not a hex (ADR 0078 decision 5, plan D4).
- * `nominal` reads `accent-strong` per OQ5, the same call the electrical-SLD
- * flow dashes make for the mockup's second, brighter green.
- */
+/** `F3.65c` — the marker fill role; the table is `MAP_PIN_ROLES` (`F4.262`, shared with the legend). */
 function markerRole(site: MapSiteDto): RoleName {
-  switch (site.live.status) {
-    case "healthy":
-      return "accent";
-    case "warning":
-      return "warning";
-    case "critical":
-      return "critical";
-    case "offline":
-      return "ink-faint";
-    case "nominal":
-      return "accent-strong";
-    default:
-      return "ink-muted";
-  }
+  return MAP_PIN_ROLES[site.live.status];
 }
 
 /**

@@ -73,6 +73,15 @@ export function splitByLiveTelemetry(locations: readonly LocationKpiSummary[]): 
   };
 }
 
+/**
+ * `F4.261` — the live share of `live + notLive` sites, rounded to a whole percent; 0 with no
+ * site. The status strip and the chips both read it.
+ */
+export function livePercent(live: number, notLive: number): number {
+  const total = live + notLive;
+  return total > 0 ? Math.round((live / total) * 100) : 0;
+}
+
 /** Aggregates section-level KPIs for an accordion header. */
 export function orgSectionSummary(locations: LocationKpiSummary[]): {
   locationCount: number;

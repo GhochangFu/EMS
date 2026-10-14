@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  runMapLiveCountsTest,
   runControlRoomSiteLinkOpensTheSiteLevelTest,
   runEstateSiteLinkOpensTheAssetsTabTest,
   runMapTileAttributionTest,
@@ -63,5 +64,9 @@ describe("map-site", () => {
 
   it("keeps only this organization's scope nodes for the org map filter (F2.10 S1)", () => {
     runOrganizationNodesKeepsOnlyThisOrganizationTest();
+  });
+
+  it("counts joined pins live on one fresh asset and leaves reference stations out (F4.262 M1)", () => {
+    runMapLiveCountsTest();
   });
 });

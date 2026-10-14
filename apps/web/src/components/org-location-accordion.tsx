@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { LiveCountChips } from "./control-room/live-count-chips";
 import { LocationKpiCard } from "./location-kpi-card";
 import {
   orgSectionSummary,
@@ -10,7 +11,10 @@ type OrgLocationAccordionProps = {
   groups: OrganizationLocationGroup[];
 };
 
-/** Accordion grouping of location KPI cards by organization. */
+/**
+ * Accordion grouping of location KPI cards by organization. `F4.261` — each header shows the
+ * organization's live and not-live chips (`LiveCountChips`) instead of a small "N live".
+ */
 export function OrgLocationAccordion({ groups }: OrgLocationAccordionProps) {
   const [expandedOrgIds, setExpandedOrgIds] = useState<Set<string>>(
     () => new Set(groups.map((group) => group.organization.id)),
@@ -65,7 +69,13 @@ export function OrgLocationAccordion({ groups }: OrgLocationAccordionProps) {
                 </div>
                 <div className="mt-1 text-xs text-ink-muted">
                   {summary.locationCount} locations · {summary.totalKw.toFixed(1)} kW ·{" "}
-                  {summary.openAlarms} alarms · {summary.freshLocationCount} live
+                  {summary.openAlarms} alarms
+                </div>
+                <div className="mt-2 max-w-xs">
+                  <LiveCountChips
+                    live={summary.freshLocationCount}
+                    notLive={summary.locationCount - summary.freshLocationCount}
+                  />
                 </div>
               </div>
               <span

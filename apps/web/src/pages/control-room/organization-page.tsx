@@ -6,6 +6,7 @@ import { fetchLocationKpis } from "../../api/locations";
 import { HealthSummarySection } from "../../components/asset-health/health-summary-section";
 import { ActiveAlarmsRail } from "../../components/control-room/active-alarms-rail";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
+import { LiveStatusStrip } from "../../components/control-room/live-status-strip";
 import { OrganizationLoadTrend } from "../../components/control-room/organization-load-trend";
 import { OrganizationSiteMap } from "../../components/control-room/organization-site-map";
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
@@ -156,75 +157,6 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
       <OrganizationLoadTrend organizationId={organizationId} />
       <ScopedDashboardsList organizationId={organizationId} />
     </>
-  );
-}
-
-type LiveStatusStripProps = {
-  liveCount: number;
-  notLiveCount: number;
-};
-
-/**
- * `F4.259` — the organization's live and not-live site counts, large, under the header. They
- * replace the subtitle's small "N online". The not-live percent is the remainder of the live
- * one, so the two always add up to 100.
- */
-function LiveStatusStrip({ liveCount, notLiveCount }: LiveStatusStripProps) {
-  const total = liveCount + notLiveCount;
-  const livePercent = total > 0 ? Math.round((liveCount / total) * 100) : 0;
-
-  return (
-    <div data-testid="live-status-strip" className="grid gap-3 sm:grid-cols-2">
-      <StatusTile
-        live
-        label="Live sites"
-        count={liveCount}
-        countTestId="live-site-count"
-        detail={`of ${total} · ${livePercent}% reporting fresh telemetry`}
-      />
-      <StatusTile
-        live={false}
-        label="Not live"
-        count={notLiveCount}
-        countTestId="not-live-site-count"
-        detail={`of ${total} · ${total > 0 ? 100 - livePercent : 0}% with no fresh telemetry`}
-      />
-    </div>
-  );
-}
-
-type StatusTileProps = {
-  live: boolean;
-  label: string;
-  count: number;
-  countTestId: string;
-  detail: string;
-};
-
-function StatusTile({ live, label, count, countTestId, detail }: StatusTileProps) {
-  return (
-    <div
-      className={`surface-raised flex items-center gap-4 border-l-4 px-4 py-3 ${
-        live ? "border-l-accent" : "border-l-warning"
-      }`}
-    >
-      <span
-        aria-hidden
-        className={`inline-flex h-3 w-3 shrink-0 rounded-full ${
-          live ? "bg-accent" : "border-2 border-warning"
-        }`}
-      />
-      <span
-        data-testid={countTestId}
-        className={`font-condensed text-3xl font-bold ${live ? "text-ok-ink" : "text-warning-ink"}`}
-      >
-        {count}
-      </span>
-      <span className="min-w-0">
-        <span className="block text-sm font-bold uppercase tracking-wide text-ink">{label}</span>
-        <span className="block text-xs text-ink-muted">{detail}</span>
-      </span>
-    </div>
   );
 }
 

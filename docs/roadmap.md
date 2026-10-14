@@ -7757,3 +7757,12 @@ One PR; ADR 0075 Amendment 2; no migration, no new dependency.
 - A map pin is green when at least one asset is fresh, the card's rule; the organization map re-reads with the site cards instead of on its own timer.
 
 Owner report and rulings 2026-10-14. Verified: the integration suites on the dev database; 12 mutations; 159 s of card and map reads in the browser with no disagreement. Raised: none.
+
+### `F4.261` + `F4.262` — live and not-live counts on the estate and the Sites map ✅ 2026-10-14
+
+One PR, web only; no API, no migration, no new dependency.
+
+- F4.261: the estate's organization cards and location accordion headers lead with green live and amber not-live chips and a live-share bar.
+- F4.262: the Sites map gets the live strip, counted from the pins it draws, and a pin-colour legend built from the pins' own role table.
+
+Owner request and design approval 2026-10-14. Verified: the web project; 14 mutations; the rebuilt web image in the browser as the global admin. Raised: none.

@@ -1,5 +1,7 @@
 import type { AccessLocation, MapSiteDto } from "@bms/shared";
 
+import type { RoleName } from "./theme";
+
 import { siteAssetsPath } from "./smoc-pages";
 
 /**
@@ -108,3 +110,29 @@ export function controlRoomSiteLink(site: MapSiteDto): MapSiteLink {
     label: "Open site",
   };
 }
+
+/**
+ * `F4.262` — the Sites map's live strip, counted from the pins it draws: a pin that joins a
+ * location is live with one fresh asset (the `F4.260` rule, ADR 0075 Amendment 2 — alarms only
+ * colour the pin), not live with none. A reference station joins no location and is in neither.
+ */
+export function mapLiveCounts(sites: readonly MapSiteDto[]): { live: number; notLive: number } {
+  const operational = sites.filter(isOperationalSite);
+  const live = operational.filter((site) => site.live.assetsFresh > 0).length;
+  return { live, notLive: operational.length - live };
+}
+
+/**
+ * `F3.65c` — a map pin's fill role by its live status, not a hex (ADR 0078 decision 5, plan D4).
+ * `nominal` reads `accent-strong` per OQ5. `F4.262` — moved here from `world-map.tsx`'s
+ * `markerRole` so the Sites map's legend is built from the same table the pins are drawn from.
+ * A `Record` over the contract's enum: a new status fails the type check until it has a role.
+ */
+export const MAP_PIN_ROLES: Readonly<Record<MapSiteDto["live"]["status"], RoleName>> = {
+  healthy: "accent",
+  warning: "warning",
+  critical: "critical",
+  offline: "ink-faint",
+  nominal: "accent-strong",
+  unknown: "ink-muted",
+};
