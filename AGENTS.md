@@ -603,7 +603,8 @@
 > `locationKpis`' and `locationDashboard`'s RTU rows' `fresh_asset_count`,
 > `kpis.sites_online` (20 s → 25 s) and the map's comm status — moved to the
 > ADR 0074 any-point rule through one shared `LIVE_ASSETS_CTE_SQL` built from
-> `LIVE_TELEMETRY_MAX_AGE_SECONDS` (25 s); `total_kw` did not change. The
+> `LIVE_TELEMETRY_MAX_AGE_SECONDS` (25 s) in `F3.30` (Amendment 2 below moves
+> them on again); `total_kw` did not change. The
 > status read uses **Amendment 1**'s `REPORTING_WINDOW_SECONDS` (150 s,
 > `REPORTING_ASSETS_CTE_SQL`), because the real MQTT devices report every
 > 60 s and under 25 s a healthy feed read 4–12 of 20 fresh: it asks "is data
@@ -616,7 +617,15 @@
 > site page can count an asset fresh in its tile while its own row reads Stale.
 > `tests/f3.28-offline-bound-single-source.test.ts` pins every freshness bound
 > to its constant, forbids the status service and the two site-count services
-> from reading the live one, and holds `SITE_REPORTING_MS` to the API's. The web side is a `SystemStatusIndicator` beside
+> from reading the live one, and holds `SITE_REPORTING_MS` to the API's. **The
+> live rule is drawn the same way everywhere a site appears**: the Control Room
+> organization page (`F4.259`: `LiveStatusStrip`, a Live / Not live badge and a
+> green or amber left edge on `LocationKpiCard`, live and not-live groups), the
+> estate's organization cards and accordion headers (`F4.261`: `LiveCountChips`)
+> and the Sites map (`F4.262`: the strip, counted by `mapLiveCounts` from the
+> pins it draws, and `MapPinLegend`, built from `MAP_PIN_ROLES` — the one
+> status-to-role table `world-map.tsx` reads). Amber, not red, for not live: red
+> is for alarms, and an alarm colours a pin before its telemetry does. The web side is a `SystemStatusIndicator` beside
 > `StatusBarClock` in `app-shell.tsx`'s footer — the bottom status bar, not
 > the sidebar, so it stays clear of the open §5 *Domain-first navigation IA*
 > decision — polled every 30 s with a 10 s request timeout and **exactly one
