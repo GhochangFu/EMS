@@ -12,10 +12,12 @@ import { z } from "zod";
  */
 
 /**
- * The tones a state row may carry. Restated by `0097`'s `point_key_states_tone_check`;
- * `tests/f3.74-point-key-states-schema.test.ts` holds the two equal, so keep this on one line.
+ * The tones a state row may carry: a breaker's `closed | open | tripped` (`F3.74`) and a valve's or
+ * damper's `flowing | shut` (`F3.80`, ADR 0101 d10). Restated by `point_key_states_tone_check`,
+ * which `0109` widened from `0097`'s three; `tests/f3.80-network-mimics-migration.test.ts` holds
+ * the two equal, so keep this on one line.
  */
-export const pointKeyStateToneSchema = z.enum(["closed", "open", "tripped"]);
+export const pointKeyStateToneSchema = z.enum(["closed", "open", "tripped", "flowing", "shut"]);
 
 /** One row: a value of the point key, its label (`CLOSED`, `TRIPPED`) and its tone. */
 export const pointKeyStateSchema = z.object({

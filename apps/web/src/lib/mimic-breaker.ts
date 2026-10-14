@@ -103,12 +103,17 @@ export type BreakerLook = "offline" | "tripped" | "open" | MimicAlarmTone | "clo
 /**
  * The frame precedence (ADR 0088 decision 5): offline → tripped → open → the worst alarm's tone →
  * closed. A state with no knowable position (`unknown`) takes the alarm tone too, else its own.
+ * The flow tones (`F3.80`, ADR 0101 d10) map onto the breaker looks, so `BreakerLook` gains no key:
+ * `shut` draws as `open`, `flowing` as `closed`.
  */
 export function breakerLook(state: BreakerState, alarmTone: MimicAlarmTone | null): BreakerLook {
-  if (state === "offline" || state === "tripped" || state === "open") {
+  if (state === "offline" || state === "tripped") {
     return state;
   }
-  return alarmTone ?? state;
+  if (state === "open" || state === "shut") {
+    return "open";
+  }
+  return alarmTone ?? (state === "flowing" ? "closed" : state);
 }
 
 /**
@@ -141,13 +146,18 @@ export const ENERGY_PIPE_CLASSES: Readonly<Record<Energy, { readonly stroke: str
   unknown: { stroke: "stroke-ink-hint", dashed: true },
 };
 
-/** The pill's text per state. */
+/**
+ * The pill's text per state. A flowing valve or damper reads OPEN (the plant word for a passing
+ * valve) and a shut one SHUT (`F3.80`, ADR 0101 d10); the breaker pills are `F3.74`'s.
+ */
 export const BREAKER_PILL: Readonly<Record<BreakerState, string>> = {
   closed: "CLOSED",
   open: "OPEN",
   tripped: "TRIPPED",
   offline: "OFFLINE",
   unknown: "—",
+  flowing: "OPEN",
+  shut: "SHUT",
 };
 
 /** The member band of a fan-out unit, in unit-slot units: below the frame, to the slot's foot. */

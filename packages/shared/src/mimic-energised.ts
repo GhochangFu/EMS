@@ -3,9 +3,10 @@
  * worst state among a node's downstream switches.
  *
  * One walk for both mimic arms (Amendment 1, OQ3b): the web builds the graph from either arm's
- * geometry — a preset's `sources`, or the layout units with `isSource` — and a node switches iff
- * its symbol does (`isSwitchingSymbol`). The walk reads member switch states the caller derived
- * with `deriveBreakerState`; it never reads telemetry.
+ * geometry — a preset's `sources`, or the layout units with `isSource` — and a node switches when
+ * its `is_switching` flag is set or its symbol switches (`isSwitchingSymbol`; `F3.80`, ADR 0101
+ * d4). The walk reads member switch states the caller derived with `deriveBreakerState`; it never
+ * reads telemetry.
  */
 
 /** A pipe's (and a node's outbound) energy. */
@@ -13,9 +14,10 @@ export type Energy = "energised" | "de-energised" | "unknown";
 
 /**
  * One member's switch state, as the walk sees it. A `BreakerState` of `offline` maps to `unknown`
- * here (stale is not knowable); the caller does that mapping.
+ * here (stale is not knowable); the caller does that mapping. `flowing` and `shut` are a valve's
+ * or damper's (`F3.80`, ADR 0101 d10).
  */
-export type SwitchState = "closed" | "open" | "tripped" | "unknown";
+export type SwitchState = "closed" | "flowing" | "open" | "shut" | "tripped" | "unknown";
 
 /**
  * One node. `switching` is the symbol rule; `fanOut` says the node stands for several members —
@@ -61,15 +63,15 @@ function higher(a: Energy, b: Energy): Energy {
 }
 
 /**
- * What a switching node lets through (OQ4, OR over members): any member `closed` passes energy;
- * otherwise any `unknown` member, or no member at all, is `unknown`; otherwise (every member open
- * or tripped) it stops energy.
+ * What a switching node lets through (OQ4, OR over members). A member `closed` or `flowing`
+ * passes energy; otherwise any `unknown` member, or no member at all, is `unknown`; otherwise
+ * (every member open, shut or tripped) it stops energy.
  */
 function gate(members: readonly SwitchState[] | undefined): Energy {
   if (members === undefined || members.length === 0) {
     return "unknown";
   }
-  if (members.some((m) => m === "closed")) {
+  if (members.some((m) => m === "closed" || m === "flowing")) {
     return "energised";
   }
   return members.some((m) => m === "unknown") ? "unknown" : "de-energised";
@@ -147,8 +149,11 @@ export function energiseGraph(
   return { nodes, pipes };
 }
 
-/** The frame order of the passive-bus rule (D6): tripped > open > unknown > closed. */
-const SWITCH_RANK: Readonly<Record<SwitchState, number>> = { closed: 0, unknown: 1, open: 2, tripped: 3 };
+/**
+ * The frame order of the passive-bus rule (D6; `F3.80` ADR 0101 d11): tripped > shut > open >
+ * unknown > flowing > closed.
+ */
+const SWITCH_RANK: Readonly<Record<SwitchState, number>> = { closed: 0, flowing: 1, unknown: 2, open: 3, shut: 4, tripped: 5 };
 
 /**
  * The worst member state over the switching nodes directly downstream of `key` (one pipe away), or

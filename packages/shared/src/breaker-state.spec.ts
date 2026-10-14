@@ -25,7 +25,10 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-/** The seed's three rows (`point-key-states-seed.ts`), plus a third key with a tripped row. */
+/**
+ * The seed's breaker and valve rows (`point-key-states-seed.ts`; `valve_open` is `F3.80`'s flow
+ * pair), plus a third key with a tripped row.
+ */
 const MAPS: readonly PointKeyStateMapDto[] = [
   {
     pointKey: "breaker_main",
@@ -36,6 +39,13 @@ const MAPS: readonly PointKeyStateMapDto[] = [
   },
   { pointKey: "breaker_trip", states: [{ value: 1, label: "TRIPPED", tone: "tripped" }] },
   { pointKey: "relay_state", states: [{ value: 2, label: "LOCKOUT", tone: "tripped" }] },
+  {
+    pointKey: "valve_open",
+    states: [
+      { value: 0, label: "SHUT", tone: "shut" },
+      { value: 1, label: "OPEN", tone: "flowing" },
+    ],
+  },
 ];
 
 function point(pointKey: string, value: number | null): BreakerStatePoint {
@@ -97,6 +107,51 @@ export function aThirdKeysTrippedRowWins(): void {
     MAPS,
   );
   assert(state === "tripped", `breaker_main 1 + relay_state 2 — expected tripped, got ${state}`);
+}
+
+/** `F3.80` — `valve_open` 1 alone is `flowing` (the flow twin of CLOSED). */
+export function valveOneDerivesFlowing(): void {
+  const state = deriveBreakerState({ stale: false, points: [point("valve_open", 1)] }, MAPS);
+  assert(state === "flowing", `valve_open 1 — expected flowing, got ${state}`);
+}
+
+/** `F3.80` — `valve_open` 0 alone is `shut` (the flow twin of OPEN). */
+export function valveZeroDerivesShut(): void {
+  const state = deriveBreakerState({ stale: false, points: [point("valve_open", 0)] }, MAPS);
+  assert(state === "shut", `valve_open 0 — expected shut, got ${state}`);
+}
+
+/** `F3.80` d11 — `shut` outranks `flowing` (the flowing point is listed first). */
+export function shutOutranksFlowing(): void {
+  const state = deriveBreakerState(
+    { stale: false, points: [point("valve_open", 1), point("valve_open", 0)] },
+    MAPS,
+  );
+  assert(state === "shut", `valve_open 1 + valve_open 0 — expected shut, got ${state}`);
+}
+
+/** `F3.80` d11 — `tripped` outranks `shut` (the shut point is listed first). */
+export function trippedOutranksShut(): void {
+  const state = deriveBreakerState(
+    { stale: false, points: [point("valve_open", 0), point("breaker_trip", 1)] },
+    MAPS,
+  );
+  assert(state === "tripped", `valve_open 0 + breaker_trip 1 — expected tripped, got ${state}`);
+}
+
+/** `F3.80` d11 — `open` outranks `flowing` (the flowing point is listed first). */
+export function openOutranksFlowing(): void {
+  const state = deriveBreakerState(
+    { stale: false, points: [point("valve_open", 1), point("breaker_main", 0)] },
+    MAPS,
+  );
+  assert(state === "open", `valve_open 1 + breaker_main 0 — expected open, got ${state}`);
+}
+
+/** `F3.80` — a stale asset is `offline` even when its latest value maps to `flowing`. */
+export function staleBeatsFlowing(): void {
+  const state = deriveBreakerState({ stale: true, points: [point("valve_open", 1)] }, MAPS);
+  assert(state === "offline", `stale + valve_open 1 — expected offline, got ${state}`);
 }
 
 /** The core `breaker` glyph switches. */

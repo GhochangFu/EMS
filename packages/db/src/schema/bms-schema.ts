@@ -516,10 +516,12 @@ export const pointKeys = bmsSchema.table("point_keys", {
 
 /**
  * `F3.74` / ADR 0088 (migration `0097`) — what one value of one point key means:
- * a label and a tone (`closed | open | tripped`). Global master data beside
- * `point_keys` — no `organization_id`, no policy; `bms_tenant` may only read it.
- * The rows are seed-owned (`point-key-states-seed.ts`). The tone list is restated
- * by `point_key_states_tone_check`; `pointKeyStateToneSchema` is its twin.
+ * a label and a tone (`closed | open | tripped | flowing | shut`; `F3.80` added the
+ * two flow tones). Global master data beside `point_keys` — no `organization_id`,
+ * no policy; `bms_tenant` may only read it. The rows are seed-owned
+ * (`point-key-states-seed.ts`). The tone list is restated by
+ * `point_key_states_tone_check` (five tones since `0109`);
+ * `pointKeyStateToneSchema` is its twin.
  */
 export const pointKeyStates = bmsSchema.table(
   "point_key_states",

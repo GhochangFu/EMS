@@ -10,6 +10,7 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 const MIGRATION_REL = "packages/db/drizzle/0109_network_mimics_switching_units.sql";
 const MIGRATION_FILE = "0109_network_mimics_switching_units.sql";
 const TAG = "0109_network_mimics_switching_units";
+const CONTRACT_REL = "packages/shared/src/contracts/point-key-states.ts";
 const DRIZZLE_DIR = join(repoRoot, "packages/db/drizzle");
 
 /** Strip `--` comment lines before a scan — a raw scan is satisfied by a comment
@@ -107,6 +108,19 @@ describe("F3.80 — migration 0109: is_switching, position roles, five-tone CHEC
     expect(check, "0109 must carry the tone CHECK").not.toBeNull();
     const values = [...(check?.[1] ?? "").matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
     expect(values).toEqual(["closed", "open", "tripped", "flowing", "shut"]);
+  });
+
+  it("0109's tone CHECK equals pointKeyStateToneSchema's options", () => {
+    const check = /CHECK \(tone IN \(([^)]*)\)\)/.exec(sqlOnly(read(MIGRATION_REL)));
+    expect(check, "0109 must carry the tone CHECK").not.toBeNull();
+    const sqlValues = [...(check?.[1] ?? "").matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+    // The declaration stays on one line (the contract's docblock says so), or this regex misses it.
+    const decl = /pointKeyStateToneSchema\s*=\s*z\.enum\(\[([^\]]*)\]/.exec(read(CONTRACT_REL));
+    expect(decl, `${CONTRACT_REL} must declare pointKeyStateToneSchema = z.enum([...])`).not.toBeNull();
+    const enumValues = [...(decl?.[1] ?? "").matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
+    // Anti-vacuity: an empty match on both sides would be equal.
+    expect(enumValues.length).toBe(5);
+    expect(sqlValues).toEqual(enumValues);
   });
 
   it("drops the old tone CHECK before adding it", () => {

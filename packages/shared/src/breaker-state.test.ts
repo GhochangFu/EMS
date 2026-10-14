@@ -11,9 +11,15 @@ import {
   mainOneIsClosed,
   mainZeroIsOpen,
   openBeatsClosed,
+  openOutranksFlowing,
+  shutOutranksFlowing,
   staleBeatsAClosedValue,
+  staleBeatsFlowing,
   switchboardDoesNotSwitch,
   tripBeatsClosed,
+  trippedOutranksShut,
+  valveOneDerivesFlowing,
+  valveZeroDerivesShut,
 } from "./breaker-state.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -48,6 +54,32 @@ describe("F3.74 — deriveBreakerState (ADR 0088, plan D3)", () => {
 
   it("lets a third key's tripped row win", () => {
     aThirdKeysTrippedRowWins();
+  });
+});
+
+describe("F3.80 — deriveBreakerState over the flow tones (ADR 0101 d10, d11)", () => {
+  it("answers flowing for valve_open 1", () => {
+    valveOneDerivesFlowing();
+  });
+
+  it("answers shut for valve_open 0", () => {
+    valveZeroDerivesShut();
+  });
+
+  it("ranks shut above flowing", () => {
+    shutOutranksFlowing();
+  });
+
+  it("ranks tripped above shut", () => {
+    trippedOutranksShut();
+  });
+
+  it("ranks open above flowing", () => {
+    openOutranksFlowing();
+  });
+
+  it("answers offline for a stale asset whose value maps to flowing", () => {
+    staleBeatsFlowing();
   });
 });
 

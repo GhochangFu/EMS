@@ -5,8 +5,9 @@ import type { PointKeyStateMapDto, PointKeyStateTone } from "./index";
  *
  * The API answers a node's state points (the latest sample of every active point whose key has a
  * row in `bms.point_key_states`) and the maps for the keys it saw; it never answers a derived
- * state. `deriveBreakerState` turns the two into one of five states, over the DTO plus the socket
- * overlay. The type-only import from `./index` is erased at emit, so there is no runtime cycle.
+ * state. `deriveBreakerState` turns the two into one of seven states, over the DTO plus the socket
+ * overlay — a breaker's and, since `F3.80` (ADR 0101 d10), a valve's or damper's (`flowing`,
+ * `shut`). The type-only import from `./index` is erased at emit, so there is no runtime cycle.
  */
 
 /**
@@ -46,9 +47,10 @@ export function isSwitchingSymbol(symbol: string | null | undefined): boolean {
 
 /**
  * `offline`: the asset is stale. `unknown`: fresh, but no state point's latest value matches a
- * map row (no sample, an unmapped value, or no state point at all).
+ * map row (no sample, an unmapped value, or no state point at all). `flowing` and `shut` are the
+ * flow tones (`F3.80`, ADR 0101 d10): a valve or damper passing, or stopping, the flow.
  */
-export type BreakerState = "offline" | "tripped" | "open" | "closed" | "unknown";
+export type BreakerState = "offline" | "tripped" | "shut" | "open" | "flowing" | "closed" | "unknown";
 
 /**
  * The part of a state point the derivation reads — structurally a `GeneratedSitePointDto`, so a
@@ -64,8 +66,11 @@ export type BreakerStateInput = {
   readonly points: readonly BreakerStatePoint[];
 };
 
-/** The tone order among matched points: a `tripped` row wins, then `open`, then `closed`. */
-const TONE_RANK: Readonly<Record<PointKeyStateTone, number>> = { closed: 1, open: 2, tripped: 3 };
+/**
+ * The tone order among matched points (ADR 0101 d11): a `tripped` row wins, then `shut`, then
+ * `open`, then `flowing`, then `closed`.
+ */
+const TONE_RANK: Readonly<Record<PointKeyStateTone, number>> = { closed: 1, flowing: 2, open: 3, shut: 4, tripped: 5 };
 
 /**
  * A breaker's state. Stale wins over every value (ADR 0088 decision 5's frame precedence starts at

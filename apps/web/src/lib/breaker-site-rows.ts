@@ -39,22 +39,31 @@ export function breakerViewFor(data: SiteWidgetsResponse | undefined, widgetId: 
 /**
  * The visual status of a derived state. The state decides first (`offline`, `tripped`, `open`
  * outrank every alarm, ADR 0088 decision 5); a CLOSED breaker takes a critical or warning alarm's
- * tone; `unknown` stays `unknown` whatever the alarm, since an alarm names no position.
+ * tone; `unknown` stays `unknown` whatever the alarm, since an alarm names no position. The flow
+ * tones (`F3.80`, ADR 0101 d10) take the breaker paths, so `BreakerVisualStatus` gains no key:
+ * `flowing` is read as `closed`, `shut` as `open`.
  */
 function visualStatus(state: BreakerState, row: BreakerRow): BreakerVisualStatus {
-  if (state === "closed" && row.topAlarm !== null) {
+  const passing = state === "closed" || state === "flowing";
+  if (passing && row.topAlarm !== null) {
     const tone = mimicAlarmTone(row.topAlarm.tone);
     return tone === "critical" || tone === "warning" ? tone : "normal";
   }
-  return state === "closed" ? "normal" : state;
+  if (passing) {
+    return "normal";
+  }
+  return state === "shut" ? "open" : state;
 }
 
-/** The Trip Cause cell (plan D8): `—` stale, the stored cause when TRIPPED or OPEN, else the alarm's label. */
+/**
+ * The Trip Cause cell (plan D8): `—` stale, the stored cause when TRIPPED, OPEN or SHUT, else the
+ * alarm's label.
+ */
 function tripCauseOf(state: BreakerState, row: BreakerRow): string {
   if (state === "offline") {
     return STALE_VALUE;
   }
-  if (state === "tripped" || state === "open") {
+  if (state === "tripped" || state === "open" || state === "shut") {
     return row.tripCause ?? "-";
   }
   return row.topAlarm?.label ?? "-";

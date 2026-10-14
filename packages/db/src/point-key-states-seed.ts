@@ -1,22 +1,33 @@
+import type { PointKeyStateTone } from "@bms/shared";
 import type pg from "pg";
 
 /**
  * One row of `bms.point_key_states` (migration `0097`, `F3.74` D1): what one value of one point
- * key means. `tone` is `closed | open | tripped` — the CHECK in `0097`, which
- * `tests/f3.74-point-key-states-schema.test.ts` compares with `pointKeyStateToneSchema`.
+ * key means. `tone` is a `PointKeyStateTone` — the contract enum, whose five tones `0109`'s CHECK
+ * restates (`tests/f3.80-network-mimics-migration.test.ts` holds the two equal).
  */
 export interface PointKeyStateSeedEntry {
   readonly pointKeyCode: string;
   readonly value: number;
   readonly label: string;
-  readonly tone: "closed" | "open" | "tripped";
+  readonly tone: PointKeyStateTone;
 }
 
-/** D1 — `breaker_main` 0 is OPEN, 1 is CLOSED; `breaker_trip` 1 is TRIPPED. */
+/**
+ * D1 — `breaker_main` 0 is OPEN, 1 is CLOSED; `breaker_trip` 1 is TRIPPED.
+ *
+ * `F3.80` (ADR 0101 d10; owner ruling OQ2 (b): the seed, not `0109`, owns these rows) — a valve's
+ * `valve_open` and a damper's `damper_open` read 1 OPEN (`flowing`) and 0 SHUT (`shut`). The
+ * `dg_on_load` key has no row: it is telemetry only and never gates the walk.
+ */
 export const POINT_KEY_STATE_SEED: readonly PointKeyStateSeedEntry[] = [
   { pointKeyCode: "breaker_main", value: 0, label: "OPEN", tone: "open" },
   { pointKeyCode: "breaker_main", value: 1, label: "CLOSED", tone: "closed" },
   { pointKeyCode: "breaker_trip", value: 1, label: "TRIPPED", tone: "tripped" },
+  { pointKeyCode: "valve_open", value: 1, label: "OPEN", tone: "flowing" },
+  { pointKeyCode: "valve_open", value: 0, label: "SHUT", tone: "shut" },
+  { pointKeyCode: "damper_open", value: 1, label: "OPEN", tone: "flowing" },
+  { pointKeyCode: "damper_open", value: 0, label: "SHUT", tone: "shut" },
 ];
 
 /**
@@ -26,7 +37,8 @@ export const POINT_KEY_STATE_SEED: readonly PointKeyStateSeedEntry[] = [
  * that never landed (a missing `bms.point_keys` parent fails on the foreign key, but a future
  * change to the conflict clause could skip silently) is an error, not a quiet success.
  *
- * Call it after `seedPointKeyCatalog` (the foreign key needs `breaker_main` and `breaker_trip`),
+ * Call it after `seedPointKeyCatalog` (the foreign key needs `breaker_main`, `breaker_trip`,
+ * `valve_open` and `damper_open`),
  * with no tenant context: the table is global vocabulary with no policy.
  *
  * @param pool anything with `pg`'s `query` — the seed's pool, or one client inside a transaction.

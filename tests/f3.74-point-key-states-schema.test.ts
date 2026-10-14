@@ -9,7 +9,6 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
 const MIGRATION_REL = "packages/db/drizzle/0097_point_key_states_breaker_roles_asset_rating_and_layout_flags.sql";
 const TAG = "0097_point_key_states_breaker_roles_asset_rating_and_layout_flags";
-const CONTRACT_REL = "packages/shared/src/contracts/point-key-states.ts";
 const DRIZZLE_DIR = join(repoRoot, "packages/db/drizzle");
 
 /** Strip `--` comment lines before a scan — a raw scan is satisfied by a comment
@@ -67,20 +66,13 @@ describe("F3.74 — migration 0097: point key states, breaker roles, asset field
     expect(sql).not.toMatch(/point_key_states[^;]*ENABLE ROW LEVEL SECURITY/);
   });
 
-  it("restates the tone CHECK equal to pointKeyStateToneSchema's options", () => {
+  it("restates the tone CHECK as the three F3.74 tones", () => {
     const check = /CHECK \(tone IN \(([^)]*)\)\)/.exec(sqlOnly(read(MIGRATION_REL)));
     expect(check, "0097 must carry the tone CHECK").not.toBeNull();
     const sqlValues = [...(check?.[1] ?? "").matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
-    // Anti-vacuity: the list is the three ruled tones whatever the contract says.
+    // 0097 is frozen at the three; `F3.80`'s 0109 restates the CHECK as five, and
+    // `tests/f3.80-network-mimics-migration.test.ts` holds 0109 equal to the contract.
     expect(sqlValues).toEqual(["closed", "open", "tripped"]);
-
-    // The contract file lands with Task 1.4; once it exists the two must agree.
-    if (existsSync(join(repoRoot, CONTRACT_REL))) {
-      const decl = /pointKeyStateToneSchema\s*=\s*z\.enum\(\[([^\]]*)\]/.exec(read(CONTRACT_REL));
-      expect(decl, `${CONTRACT_REL} must declare pointKeyStateToneSchema = z.enum([...])`).not.toBeNull();
-      const enumValues = [...(decl?.[1] ?? "").matchAll(/"([a-z_]+)"/g)].map((m) => m[1]);
-      expect(sqlValues).toEqual(enumValues);
-    }
   });
 
   it("declares the UNIQUE on (point_key_code, value) and the FK to point_keys(code)", () => {
