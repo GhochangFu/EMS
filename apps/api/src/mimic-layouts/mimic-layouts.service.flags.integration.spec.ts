@@ -71,16 +71,18 @@ const create = async (ctx: FlagsCtx, suffix: string): Promise<MimicLayoutDto> =>
   return dto;
 };
 
-const flagsOf = (dto: MimicLayoutDto, key: string): { fanOut: boolean; isSource: boolean } | undefined => {
+type Flags = { fanOut: boolean; isSource: boolean; isSwitching: boolean };
+
+const flagsOf = (dto: MimicLayoutDto, key: string): Flags | undefined => {
   const node = dto.nodes.find((n) => n.key === key);
-  return node ? { fanOut: node.fanOut, isSource: node.isSource } : undefined;
+  return node ? { fanOut: node.fanOut, isSource: node.isSource, isSwitching: node.isSwitching } : undefined;
 };
 
 /** The stored columns, read behind the service's back. */
 const storedFlags = async (ctx: FlagsCtx, layoutId: string, key: string): Promise<unknown> =>
   (
     await ctx.ownerPool.query(
-      `SELECT fan_out, is_source FROM bms.mimic_layout_nodes WHERE layout_id = $1 AND key = $2`,
+      `SELECT fan_out, is_source, is_switching FROM bms.mimic_layout_nodes WHERE layout_id = $1 AND key = $2`,
       [layoutId, key],
     )
   ).rows[0];
@@ -105,32 +107,32 @@ export async function assertAPutRoundTripsBothFlags(ctx: FlagsCtx): Promise<void
   await ctx.service.replace(ctx.globalAdmin, dto.id, { ...putOf(body, 1), nodes });
 
   const read = mimicLayoutDtoSchema.parse(await ctx.service.get(ctx.globalAdmin, dto.id));
-  expect(flagsOf(read, "main")).toEqual({ fanOut: true, isSource: true });
-  expect(flagsOf(read, "incoming")).toEqual({ fanOut: false, isSource: false });
-  expect(flagsOf(read, "zone")).toEqual({ fanOut: false, isSource: false });
-  expect(flagsOf(read, "title")).toEqual({ fanOut: false, isSource: false });
-  expect(await storedFlags(ctx, dto.id, "main")).toEqual({ fan_out: true, is_source: true });
+  expect(flagsOf(read, "main")).toEqual({ fanOut: true, isSource: true, isSwitching: false });
+  expect(flagsOf(read, "incoming")).toEqual({ fanOut: false, isSource: false, isSwitching: false });
+  expect(flagsOf(read, "zone")).toEqual({ fanOut: false, isSource: false, isSwitching: false });
+  expect(flagsOf(read, "title")).toEqual({ fanOut: false, isSource: false, isSwitching: false });
+  expect(await storedFlags(ctx, dto.id, "main")).toEqual({ fan_out: true, is_source: true, is_switching: false });
 }
 
 /** FL2 — a create answers the flags it stored. */
 export async function assertACreateAnswersTheFlags(ctx: FlagsCtx): Promise<void> {
   const dto = await create(ctx, "fl2");
-  expect(flagsOf(dto, "incoming")).toEqual({ fanOut: true, isSource: true });
-  expect(flagsOf(dto, "main")).toEqual({ fanOut: false, isSource: false });
-  expect(await storedFlags(ctx, dto.id, "incoming")).toEqual({ fan_out: true, is_source: true });
+  expect(flagsOf(dto, "incoming")).toEqual({ fanOut: true, isSource: true, isSwitching: false });
+  expect(flagsOf(dto, "main")).toEqual({ fanOut: false, isSource: false, isSwitching: false });
+  expect(await storedFlags(ctx, dto.id, "incoming")).toEqual({ fan_out: true, is_source: true, is_switching: false });
 }
 
 /** FL3 — the replace-all rule: a PUT that omits the flags resets a stored `true` to `false`. */
 export async function assertAPutOmittingTheFlagsResetsThem(ctx: FlagsCtx): Promise<void> {
   const dto = await create(ctx, "fl3");
   // Positive control: the stored row holds `true` before the PUT.
-  expect(await storedFlags(ctx, dto.id, "incoming")).toEqual({ fan_out: true, is_source: true });
+  expect(await storedFlags(ctx, dto.id, "incoming")).toEqual({ fan_out: true, is_source: true, is_switching: false });
   const body = flagsBody(ctx.eskomOrgId, dto.slug);
   const nodes = body.nodes.map(({ fanOut: _f, isSource: _s, ...rest }) => rest);
   const saved = await ctx.service.replace(ctx.globalAdmin, dto.id, { ...putOf(body, 1), nodes });
 
-  expect(flagsOf(saved, "incoming")).toEqual({ fanOut: false, isSource: false });
-  expect(await storedFlags(ctx, dto.id, "incoming")).toEqual({ fan_out: false, is_source: false });
+  expect(flagsOf(saved, "incoming")).toEqual({ fanOut: false, isSource: false, isSwitching: false });
+  expect(await storedFlags(ctx, dto.id, "incoming")).toEqual({ fan_out: false, is_source: false, is_switching: false });
 }
 
 /**
@@ -188,7 +190,93 @@ export async function assertAServiceWriteOfAFlaggedPanelIs400(ctx: FlagsCtx): Pr
 export async function assertAFlaggedLayoutOfAnotherOrganizationIs404(ctx: FlagsCtx): Promise<void> {
   const dto = await create(ctx, "fl6");
   // Positive control: the global admin reads it, flags included.
-  expect(flagsOf(await ctx.service.get(ctx.globalAdmin, dto.id), "incoming")).toEqual({ fanOut: true, isSource: true });
+  expect(flagsOf(await ctx.service.get(ctx.globalAdmin, dto.id), "incoming")).toEqual({ fanOut: true, isSource: true, isSwitching: false });
   const err = await rejection(ctx.service.get(ctx.phewbOrgAdmin, dto.id));
   expect(err).toBeInstanceOf(NotFoundException);
+}
+
+// `F3.80` Task 1.4 (ADR 0101, migration `0109`) — the switching flag `isSwitching`.
+
+/** FL7 — a PUT with `isSwitching` true on a unit answers true and stores true; the other units stay false. */
+export async function assertAPutWithASwitchingUnitAnswersAndStoresIt(ctx: FlagsCtx): Promise<void> {
+  const dto = await create(ctx, "fl7");
+  // Positive control: the create stored no switching unit.
+  expect(await storedFlags(ctx, dto.id, "main")).toEqual({ fan_out: false, is_source: false, is_switching: false });
+  const body = flagsBody(ctx.eskomOrgId, dto.slug);
+  const nodes = body.nodes.map((n) => (n.key === "main" ? { ...n, isSwitching: true } : n));
+  const saved = await ctx.service.replace(ctx.globalAdmin, dto.id, { ...putOf(body, 1), nodes });
+
+  expect(flagsOf(saved, "main")).toEqual({ fanOut: false, isSource: false, isSwitching: true });
+  expect(flagsOf(saved, "incoming")).toEqual({ fanOut: true, isSource: true, isSwitching: false });
+  const read = mimicLayoutDtoSchema.parse(await ctx.service.get(ctx.globalAdmin, dto.id));
+  expect(flagsOf(read, "main")).toEqual({ fanOut: false, isSource: false, isSwitching: true });
+  expect(await storedFlags(ctx, dto.id, "main")).toEqual({ fan_out: false, is_source: false, is_switching: true });
+}
+
+/** FL8 — the replace-all rule for the switching flag: a PUT body without it clears a stored `true`. */
+export async function assertAPutOmittingTheSwitchingFlagClearsIt(ctx: FlagsCtx): Promise<void> {
+  const body = flagsBody(ctx.eskomOrgId, ctx.slug("fl8"));
+  body.nodes = body.nodes.map((n) => (n.key === "main" ? { ...n, isSwitching: true } : n));
+  const dto = await ctx.service.create(ctx.globalAdmin, body);
+  ctx.track(dto.id);
+  // Positive control: the stored row holds `true` before the PUT.
+  expect(await storedFlags(ctx, dto.id, "main")).toEqual({ fan_out: false, is_source: false, is_switching: true });
+  const nodes = body.nodes.map(({ isSwitching: _w, ...rest }) => rest);
+  const saved = await ctx.service.replace(ctx.globalAdmin, dto.id, { ...putOf(body, 1), nodes });
+
+  expect(flagsOf(saved, "main")).toEqual({ fanOut: false, isSource: false, isSwitching: false });
+  expect(await storedFlags(ctx, dto.id, "main")).toEqual({ fan_out: false, is_source: false, is_switching: false });
+}
+
+/**
+ * FL4′ — the second database backstop. A panel with `is_switching = true`, inserted as
+ * `bms_tenant` under the layout's own organization GUC (row security admits the row; only the
+ * CHECK can refuse it), is refused by `0109`'s `mimic_layout_nodes_switching_units_check`, not
+ * by `0097`'s flags CHECK; the translation answers 400 naming neither the layout, the node nor
+ * the constraint.
+ */
+export async function assertADirectSwitchingPanelInsertIs400WithoutAnId(ctx: FlagsCtx): Promise<void> {
+  const dto = await create(ctx, "fl4s");
+  const key = "fl4s_panel";
+  const client = await ctx.tenantPool.connect();
+  let caught: unknown;
+  try {
+    await client.query("BEGIN");
+    await client.query(`SELECT set_config('app.current_organization', $1, true)`, [ctx.eskomOrgId]);
+    try {
+      await client.query(
+        `INSERT INTO bms.mimic_layout_nodes
+           (organization_id, layout_id, key, kind, label, tone, x, y, w, h, is_switching)
+         VALUES ($1, $2, $3, 'panel', 'Backstop', 'info', 0, 0, 10, 10, true)`,
+        [ctx.eskomOrgId, dto.id, key],
+      );
+    } catch (err) {
+      caught = err;
+    }
+  } finally {
+    await client.query("ROLLBACK");
+    client.release();
+  }
+  expect((caught as { constraint?: string } | undefined)?.constraint).toBe("mimic_layout_nodes_switching_units_check");
+  const translated = MimicLayoutsService.translateWriteError(caught, dto.slug);
+  expect(translated).toBeInstanceOf(BadRequestException);
+  expect((translated as Error).message).toBe(MIMIC_LAYOUT_FLAGS_MESSAGE);
+  const response = JSON.stringify((translated as BadRequestException).getResponse());
+  expect(response).not.toContain(dto.id);
+  expect(response).not.toContain(key);
+  expect(response).not.toContain("switching_units_check");
+}
+
+/** FL5′ — the same refusal through the service: a switching panel that skips the parse answers 400 and writes nothing. */
+export async function assertAServiceWriteOfASwitchingPanelIs400(ctx: FlagsCtx): Promise<void> {
+  const body = flagsBody(ctx.eskomOrgId, ctx.slug("fl5s"));
+  body.nodes = body.nodes.map((n) => (n.key === "zone" ? { ...n, isSwitching: true } : n));
+  const err = await rejection(ctx.service.create(ctx.globalAdmin, body));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect((err as Error).message).toBe(MIMIC_LAYOUT_FLAGS_MESSAGE);
+  const none = await ctx.ownerPool.query<{ id: string }>(`SELECT id FROM bms.mimic_layouts WHERE slug = $1`, [
+    body.slug,
+  ]);
+  for (const row of none.rows) ctx.track(row.id);
+  expect(none.rows).toEqual([]);
 }

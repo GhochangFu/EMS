@@ -10,8 +10,10 @@ import type { PointKeyStateMapDto, PointKeyStateTone } from "./index";
  */
 
 /**
- * The five breaker roles migration `0097` inserts (D10), in their `asset_roles.sort_order`
- * (151–155). A role is a breaker role by membership in this list; nothing in the database says so.
+ * The ten breaker roles, in their `asset_roles.sort_order`: the five migration `0097` inserts (D10,
+ * 151-155) and the five electrical position roles migration `0109` adds (`F3.80`, 161-165). A role
+ * is a breaker role by membership in this list; nothing in the database says so. The flow roles
+ * `0109` also adds (`isolation-valve`, `control-valve`, `damper`) are deliberately not here.
  */
 export const BREAKER_ROLE_CODES = [
   "main-breaker",
@@ -19,6 +21,11 @@ export const BREAKER_ROLE_CODES = [
   "ups-output-breaker",
   "load-feeder-breaker",
   "mains-feeder-breaker",
+  "ht-incomer-breaker",
+  "ht-outgoing-breaker",
+  "bus-coupler",
+  "isolator",
+  "dg-breaker",
 ] as const;
 
 export type BreakerRoleCode = (typeof BREAKER_ROLE_CODES)[number];

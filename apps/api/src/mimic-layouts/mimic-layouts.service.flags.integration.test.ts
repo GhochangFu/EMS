@@ -121,4 +121,20 @@ describe.skipIf(!connectionString)("F3.74 — MimicLayoutsService flags against 
   it("FL6 a flagged layout of another organization is a 404", async () => {
     await spec.assertAFlaggedLayoutOfAnotherOrganizationIs404(ctx);
   }, 60_000);
+
+  it("FL7 a PUT with a switching unit answers and stores isSwitching true", async () => {
+    await spec.assertAPutWithASwitchingUnitAnswersAndStoresIt(ctx);
+  }, 60_000);
+
+  it("FL8 a PUT that omits isSwitching clears a stored true", async () => {
+    await spec.assertAPutOmittingTheSwitchingFlagClearsIt(ctx);
+  }, 60_000);
+
+  it("FL4' a direct switching panel insert is refused by the 0109 CHECK and translates to a 400 without an id", async () => {
+    await spec.assertADirectSwitchingPanelInsertIs400WithoutAnId(ctx);
+  }, 60_000);
+
+  it("FL5' a service write of a switching panel is a 400 and writes nothing", async () => {
+    await spec.assertAServiceWriteOfASwitchingPanelIs400(ctx);
+  }, 60_000);
 });

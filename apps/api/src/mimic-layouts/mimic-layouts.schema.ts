@@ -38,8 +38,11 @@ export { MIMIC_LAYOUT_STALE_MESSAGE };
 export const MIMIC_LAYOUT_IN_USE_MESSAGE = (n: number): string =>
   `${n} dashboard widget(s) still use this layout`;
 
-/** `F3.74` (plan D3b) — the database refused a fan-out or source flag on a panel or label. Names no node. */
-export const MIMIC_LAYOUT_FLAGS_MESSAGE = "Only a unit carries a fan-out or source flag";
+/**
+ * `F3.74` (plan D3b) / `F3.80` (ADR 0101) — the database refused a fan-out, source or switching
+ * flag on a panel or label. Names no node, no layout and no constraint.
+ */
+export const MIMIC_LAYOUT_FLAGS_MESSAGE = "Only a unit carries a fan-out, source or switching flag";
 
 const { canvasW, canvasH, z: zBounds, maxNodes, maxPipes } = MIMIC_LAYOUT_BOUNDS;
 
@@ -69,6 +72,12 @@ export const mimicLayoutWriteNodeSchema = z
      */
     fanOut: z.boolean().optional(),
     isSource: z.boolean().optional(),
+    /**
+     * `F3.80` (ADR 0101) — a unit that gates the energised walk. Absent is `false` on the same
+     * replace-all rule. Migration `0109`'s `mimic_layout_nodes_switching_units_check` restates
+     * the units-only rule.
+     */
+    isSwitching: z.boolean().optional(),
   })
   .strict()
   .superRefine((node, ctx) => {
@@ -78,6 +87,7 @@ export const mimicLayoutWriteNodeSchema = z
     if (node.kind !== "unit") {
       if (node.fanOut === true) refuse("fanOut", `A ${node.kind} carries no fan-out flag`);
       if (node.isSource === true) refuse("isSource", `A ${node.kind} carries no source flag`);
+      if (node.isSwitching === true) refuse("isSwitching", `A ${node.kind} carries no switching flag`);
     }
     if (node.kind === "unit") {
       if (node.symbol == null) refuse("symbol", "A unit needs a symbol");
@@ -91,7 +101,7 @@ export const mimicLayoutWriteNodeSchema = z
   })
   .describe(
     "A unit needs a symbol and carries no tone; a panel needs a tone and carries no symbol " +
-      "or role; a label carries none of the three. Only a unit may set fanOut or isSource.",
+      "or role; a label carries none of the three. Only a unit may set fanOut, isSource or isSwitching.",
   );
 
 /** One pipe, between two unit keys of the same body. */

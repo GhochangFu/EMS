@@ -129,7 +129,7 @@ function readingsOf(values: Readonly<Record<string, number>>, stale: ReadonlySet
 }
 
 function layoutNode(key: string, x: number, y: number, extra: Partial<MimicLayoutNodeDto>): MimicLayoutNodeDto {
-  return { key, kind: "unit", symbol: "unit", label: key, roleCode: null, tone: null, x, y, w: 20, h: 25, z: 0, fanOut: false, isSource: false, ...extra };
+  return { key, kind: "unit", symbol: "unit", label: key, roleCode: null, tone: null, x, y, w: 20, h: 25, z: 0, fanOut: false, isSource: false, isSwitching: false, ...extra };
 }
 
 /**

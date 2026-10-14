@@ -121,17 +121,30 @@ export function libraryBreakersSwitchAndExist(): void {
   }
 }
 
-/** The five breaker roles of migration `0097` (D10), in sort order. */
-export function breakerRoleCodesAreTheFive(): void {
+/** The ten breaker roles: `0097`'s five (sort order 151-155), then `0109`'s five electrical position roles (161-165). */
+export function breakerRoleCodesAreTheTen(): void {
   const expected = [
     "main-breaker",
     "ups-input-breaker",
     "ups-output-breaker",
     "load-feeder-breaker",
     "mains-feeder-breaker",
+    "ht-incomer-breaker",
+    "ht-outgoing-breaker",
+    "bus-coupler",
+    "isolator",
+    "dg-breaker",
   ];
   assert(
     JSON.stringify([...BREAKER_ROLE_CODES]) === JSON.stringify(expected),
     `expected ${JSON.stringify(expected)}, got ${JSON.stringify(BREAKER_ROLE_CODES)}`,
   );
+}
+
+/** D8's negative half: a flow role is never a breaker role. */
+export function noFlowRoleIsABreakerRole(): void {
+  const roles: readonly string[] = BREAKER_ROLE_CODES;
+  for (const flow of ["isolation-valve", "control-valve", "damper"]) {
+    assert(!roles.includes(flow), `"${flow}" must not be a breaker role`);
+  }
 }

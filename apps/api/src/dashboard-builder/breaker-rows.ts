@@ -79,7 +79,7 @@ const EMPTY: BreakerRowsResult = { breakers: [], stateMaps: [] };
  * (`asset_group_members`, reached through its organization-filtered group and asset;
  * `telemetry.point_values`, reached through the organization-filtered asset ids).
  *
- * 1. The members of the five breaker roles (`BREAKER_ROLE_CODES`) in the group ∩ `assetIds`, by
+ * 1. The members of the ten breaker roles (`BREAKER_ROLE_CODES`: `0097`'s five and `0109`'s five) in the group ∩ `assetIds`, by
  *    `asset_roles.sort_order` then asset code, each with its role's label, its `rating` and
  *    `trip_cause`, its open-alarm count (`cleared_at IS NULL`, ADR 0057 decision 1) and its most
  *    severe open alarm (`mimic-nodes.service.ts`' lateral: rank, then newest, then id). At most

@@ -104,6 +104,8 @@ export const UNIT_BY_KEY: Record<string, string> = {
   voltage_unbalance_pct: "%",
   current_unbalance_pct: "%",
   breaker_trip: "",
+  valve_open: "",
+  damper_open: "",
   breaker_spring_charged: "",
   relay_trip_code: "",
   earth_fault_state: "",

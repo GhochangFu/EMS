@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  aNodeWithoutIsSwitchingIsRefused,
   everyLibraryKeyNamesItsLibraryAndFitsSixtyFour,
   groupCodesAreTheEight,
   layoutDtoParsesOrgSymbols,
@@ -98,5 +99,9 @@ describe("F3.32c — the mimic layout contracts (ADR 0081)", () => {
 
   it("accepts org.plant in symbolLibraries, and not a symbol key (F3.32f slice 3)", () => {
     symbolLibrariesAcceptsOrgPlant();
+  });
+
+  it("a node without isSwitching is refused by mimicLayoutNodeSchema (F3.80)", () => {
+    aNodeWithoutIsSwitchingIsRefused();
   });
 });

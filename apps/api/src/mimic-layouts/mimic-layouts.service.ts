@@ -582,6 +582,7 @@ export class MimicLayoutsService {
           // `F3.74` (plan D3b): replace-all — an absent flag is `false`, never the stored value.
           fanOut: node.fanOut ?? false,
           isSource: node.isSource ?? false,
+          isSwitching: node.isSwitching ?? false,
         })),
       )
       .returning({ id: mimicLayoutNodes.id, key: mimicLayoutNodes.key });
@@ -672,6 +673,7 @@ export class MimicLayoutsService {
           z: node.z,
           fanOut: node.fanOut,
           isSource: node.isSource,
+          isSwitching: node.isSwitching,
         }),
       ),
       pipes: pipes.map((pipe): MimicLayoutPipeDto => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),
@@ -706,6 +708,11 @@ export class MimicLayoutsService {
     }
     if (constraint === "mimic_layout_nodes_flags_units_check") {
       // `F3.74` migration `0097`: the backstop behind the body's per-kind refusal. No echo of the node.
+      return new BadRequestException(MIMIC_LAYOUT_FLAGS_MESSAGE);
+    }
+    if (constraint === "mimic_layout_nodes_switching_units_check") {
+      // `F3.80` migration `0109`: the switching flag's backstop, the same class of refusal as the
+      // flags CHECK above. No echo of the node, the layout or the constraint.
       return new BadRequestException(MIMIC_LAYOUT_FLAGS_MESSAGE);
     }
     return err;

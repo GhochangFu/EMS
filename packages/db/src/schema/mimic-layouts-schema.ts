@@ -222,6 +222,9 @@ export const mimicLayoutNodes = bmsSchema.table(
     // `mimic_layout_nodes_flags_units_check` lets only a `unit` carry either.
     fanOut: boolean("fan_out").notNull().default(false),
     isSource: boolean("is_source").notNull().default(false),
+    // `F3.80` / ADR 0101 (migration `0109`) — a drawn unit that gates the energised walk;
+    // `mimic_layout_nodes_switching_units_check` lets only a `unit` carry it.
+    isSwitching: boolean("is_switching").notNull().default(false),
   },
   (t) => ({
     layoutKeyUnique: unique("mimic_layout_nodes_layout_key_key").on(t.layoutId, t.key),

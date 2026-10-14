@@ -7,6 +7,8 @@ import type { BmsDb } from "@bms/db";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertBreakerRowsAreCapped,
+  assertBusCouplerMemberIsABreakerRow,
+  assertIsolationValveMemberIsNotABreakerRow,
   assertDashboardReadHasNoBreakers,
   assertGrantedGroupHasItsBreaker,
   assertGroupDashboardWithNoTabHasBreakers,
@@ -71,5 +73,7 @@ describe.skipIf(!connectionString)("F3.74 — SiteWidgetsService breakers (real 
   it("B8b a location dashboard's Overview still has no breakers", () => assertLocationOverviewStillHasNoBreakers(db), 60_000);
   it("B2c a reader with no grant on the tab's group gets no breakers", () => assertUngrantedGroupHasNoBreakers(db), 60_000);
   it("B2d control: a grant on the tab's group gets its breaker", () => assertGrantedGroupHasItsBreaker(db), 60_000);
+  it("B10a a bus-coupler member is a breaker row", () => assertBusCouplerMemberIsABreakerRow(db), 60_000);
+  it("B10b an isolation-valve member is not a breaker row", () => assertIsolationValveMemberIsNotABreakerRow(db), 60_000);
   it("B9 the breaker rows are capped at MAX_SITE_BREAKER_ROWS", () => assertBreakerRowsAreCapped(db), 60_000);
 });

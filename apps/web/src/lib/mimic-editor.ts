@@ -223,6 +223,7 @@ function newNode(
     // `F3.74` (OQ3b): a new node neither fans out nor is a source.
     fanOut: false,
     isSource: false,
+    isSwitching: false,
     ...fields,
     ...NEW_NODE_AT,
     ...MIMIC_EDITOR_DEFAULT_BOX[kind],
@@ -550,6 +551,7 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       // started layout resolves and energises like the preset it came from.
       fanOut: node.fanOut === true,
       isSource: sources.has(node.key),
+      isSwitching: false,
     };
   });
 
@@ -570,6 +572,7 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       z: MIMIC_EDITOR_Z.unit,
       fanOut: false,
       isSource: false,
+      isSwitching: false,
     });
   }
 
@@ -590,6 +593,7 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       z: MIMIC_EDITOR_Z.panel,
       fanOut: false,
       isSource: false,
+      isSwitching: false,
     };
   });
 
