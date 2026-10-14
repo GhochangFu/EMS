@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 import { eq, sql } from "drizzle-orm";
 
@@ -288,6 +289,21 @@ export class OnboardingCommitService {
     // stays a 500 (plan D11): this check is what keeps it unreachable.
     const locationType = draft.location?.type ?? "";
     await this.vocabularies.assertLocationType(locationType);
+
+    // `F4.258` — fail closed, as `setCredentials` does. The commit strips
+    // `_secrets` from the session, so a blob it cannot copy into
+    // `rtu_connection_configs` (no key loaded: the RTU loop writes a NULL
+    // ciphertext) would be erased with no copy left. Refuse before the
+    // transaction opens, and the draft keeps its blobs for a retry.
+    const rtuCount = Array.isArray(draft.rtus) ? draft.rtus.length : 0;
+    for (let i = 0; i < rtuCount; i++) {
+      if (readEncryptedCredentials(session.draft, i) && !CredentialCryptoService.isConfigured()) {
+        throw new ServiceUnavailableException(
+          "CREDENTIAL_ENCRYPTION_KEY is not configured, so the draft's RTU credentials cannot be stored. " +
+            "Refusing rather than committing without them.",
+        );
+      }
+    }
 
     // `F4.109` — the six inserts below carry **no** `onConflict`, by owner
     // ruling 1: a duplicate is refused, never merged into an existing row. What
@@ -595,6 +611,18 @@ export class OnboardingCommitService {
           result,
           // F3.25 (plan Q8): no rollback after commit, so the ring goes.
           checkpoints: null,
+          // F4.258 (ADR 0099 Amendment 2, owner option A): the RTU credential
+          // ciphertext leaves the draft in the same statement that commits it.
+          // The RTU loop above has already copied each blob into its
+          // `rtu_connection_configs` row in this transaction — the 503 before
+          // the transaction refuses a draft with a blob when no key is loaded,
+          // so no blob is dropped uncopied — and nothing after this update
+          // reads `_secrets`, so a committed row holds none. The
+          // ciphertext on a session now lives until 30 days without a write
+          // (the F4.255 purge of `draft` rows) or the commit, whichever is
+          // first. `jsonb - text` on the stored column, not a rewrite from
+          // `session.draft`: the rest of the draft stays as stored.
+          draft: sql`${onboardingSessions.draft} - '_secrets'`,
         })
         .where(eq(onboardingSessions.id, sessionId));
 
