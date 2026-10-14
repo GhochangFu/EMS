@@ -447,3 +447,17 @@ export async function failsClosedForALocationAdmin(): Promise<void> {
   expect(await screen.findByRole("status")).toHaveTextContent("Mimic layouts are drawn by");
   expect(fetchOne).not.toHaveBeenCalled();
 }
+
+/** F3.80 PR2 (ADR 0101 d14) — a switching unit with no source warns under role=status, and Save stays enabled. */
+export async function aLayoutWithASwitchingUnitWarnsAndStillSaves(): Promise<void> {
+  const { fetchOne } = stubAll(ORGS);
+  const dto = storedDto(4);
+  fetchOne.mockResolvedValue({
+    ...dto,
+    nodes: dto.nodes.map((n) => (n.key === "wtp" ? { ...n, isSwitching: true, isSource: false } : { ...n, isSource: false })),
+  });
+  mount(newClient(), `/admin/mimic-layouts/${LAYOUT_ID}`, user("organization_admin"));
+  const warnings = await screen.findByRole("status", { name: "Layout warnings" });
+  expect(warnings.textContent).toContain("No unit is marked as an energy source");
+  expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+}
