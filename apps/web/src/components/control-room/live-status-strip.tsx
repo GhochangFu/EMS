@@ -1,3 +1,5 @@
+import { livePercent as liveShare } from "../../lib/location-kpi-groups";
+
 type LiveStatusStripProps = {
   liveCount: number;
   notLiveCount: number;
@@ -11,7 +13,7 @@ type LiveStatusStripProps = {
  */
 export function LiveStatusStrip({ liveCount, notLiveCount }: LiveStatusStripProps) {
   const total = liveCount + notLiveCount;
-  const livePercent = total > 0 ? Math.round((liveCount / total) * 100) : 0;
+  const livePercent = liveShare(liveCount, notLiveCount);
 
   return (
     <div data-testid="live-status-strip" className="grid gap-3 sm:grid-cols-2">

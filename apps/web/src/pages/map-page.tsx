@@ -92,18 +92,21 @@ export function MapPage({ user }: MapPageProps) {
           </p>
         ) : (
           <>
-            <LiveStatusStrip liveCount={liveCounts.live} notLiveCount={liveCounts.notLive} />
+            {/* `F4.262` — counted from the same read the pins are drawn from, so the two agree. */}
+            {liveCounts.live + liveCounts.notLive > 0 ? (
+              <LiveStatusStrip liveCount={liveCounts.live} notLiveCount={liveCounts.notLive} />
+            ) : null}
             <MapPinLegend />
             <SectionCard bodyClassName="p-0">
-            {/* Keyed by the filter: the map fits its box once per mount (`FitToSites`), so a new
-                parent mounts a map that fits the subtree. */}
-            <WorldMap
-              key={rootId ?? "all"}
-              sites={q.data}
-              siteLink={estateSiteLink}
-              heightClassName="h-[min(70vh,560px)]"
-              scrollWheelZoom
-            />
+              {/* Keyed by the filter: the map fits its box once per mount (`FitToSites`), so a new
+                  parent mounts a map that fits the subtree. */}
+              <WorldMap
+                key={rootId ?? "all"}
+                sites={q.data}
+                siteLink={estateSiteLink}
+                heightClassName="h-[min(70vh,560px)]"
+                scrollWheelZoom
+              />
             </SectionCard>
           </>
         )}

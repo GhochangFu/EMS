@@ -54,7 +54,7 @@ export function eachOrganizationCardLinksToItsLevel(): void {
 }
 
 /** O2 — the A card reads its site count, sites online and alarms. */
-export function theCardReadsSitesOnlineAndAlarms(): void {
+export function theCardReadsSitesAndAlarms(): void {
   renderGrid(TWO_ORGS);
 
   const card = orgCardLink("org-a");

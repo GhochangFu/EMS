@@ -7,7 +7,7 @@ import { expect, vi } from "vitest";
 import type { AccessLocation, AccessibleScope, MapSiteDto } from "@bms/shared";
 
 import * as mapApi from "../api/map";
-import { siteBounds } from "../lib/map-site";
+import { MAP_PIN_ROLES, siteBounds } from "../lib/map-site";
 import { mapSite } from "../lib/map-site.spec";
 import { useAuthStore } from "../stores/auth-store";
 import { MapPage } from "./map-page";
@@ -109,9 +109,40 @@ export async function theMapStripCountsThePinsItDraws(): Promise<void> {
   expect(within(strip).getByTestId("live-site-count").textContent).toBe("2");
   expect(within(strip).getByTestId("not-live-site-count").textContent).toBe("1");
   const legend = screen.getByTestId("map-pin-legend");
-  expect(
-    within(legend).getAllByRole("listitem").map((item) => item.textContent),
-  ).toEqual(["Live", "Warning alarm", "Critical alarm", "Not live", "Reference station"]);
+  const items = within(legend).getAllByRole("listitem");
+  expect(items.map((item) => item.textContent)).toEqual([
+    "Live",
+    "Warning alarm",
+    "Critical alarm",
+    "Not live",
+    "No assets or status",
+    "Reference station",
+  ]);
+  // Every pin status has a line, and each swatch is the role the pins are drawn with.
+  expect(items.map((item) => item.dataset.status).sort()).toEqual(Object.keys(MAP_PIN_ROLES).sort());
+  for (const item of items) {
+    const role = MAP_PIN_ROLES[item.dataset.status as keyof typeof MAP_PIN_ROLES];
+    expect(item.querySelector("span")?.className.split(" "), `${item.dataset.status} swatch`).toContain(`bg-${role}`);
+  }
+}
+
+/** M3 — `F4.262`: a read with no site pin (reference stations only) shows no strip, only the map. */
+export async function aReadWithNoSitePinShowsNoStrip(): Promise<void> {
+  vi.stubGlobal("fetch", () => Promise.reject(new Error("map-page spec: an unstubbed read reached fetch")));
+  vi.spyOn(mapApi, "fetchMapSites").mockResolvedValue([mapSite({ id: "m-ref", name: "Reference Station" })]);
+  useAuthStore.setState({ scope: { kind: "global", locations: [], assetGroups: [], assetIds: [] } });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <MapPage user={USER} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  await screen.findByTestId("leaflet-map");
+  expect(screen.queryByTestId("live-status-strip")).toBeNull();
+  expect(screen.getByTestId("map-pin-legend")).toBeInTheDocument();
 }
 
 export function cleanupMapPage(): void {

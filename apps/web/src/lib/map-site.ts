@@ -1,5 +1,7 @@
 import type { AccessLocation, MapSiteDto } from "@bms/shared";
 
+import type { RoleName } from "./theme";
+
 import { siteAssetsPath } from "./smoc-pages";
 
 /**
@@ -119,3 +121,18 @@ export function mapLiveCounts(sites: readonly MapSiteDto[]): { live: number; not
   const live = operational.filter((site) => site.live.assetsFresh > 0).length;
   return { live, notLive: operational.length - live };
 }
+
+/**
+ * `F3.65c` — a map pin's fill role by its live status, not a hex (ADR 0078 decision 5, plan D4).
+ * `nominal` reads `accent-strong` per OQ5. `F4.262` — moved here from `world-map.tsx`'s
+ * `markerRole` so the Sites map's legend is built from the same table the pins are drawn from.
+ * A `Record` over the contract's enum: a new status fails the type check until it has a role.
+ */
+export const MAP_PIN_ROLES: Readonly<Record<MapSiteDto["live"]["status"], RoleName>> = {
+  healthy: "accent",
+  warning: "warning",
+  critical: "critical",
+  offline: "ink-faint",
+  nominal: "accent-strong",
+  unknown: "ink-muted",
+};

@@ -2,6 +2,7 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aReadWithNoSitePinShowsNoStrip,
   theMapStripCountsThePinsItDraws,
   aFlatScopeHasNoFilter,
   allSitesReadsWithNoParent,
@@ -53,5 +54,9 @@ describe("F2.10 MapPage parent filter (ADR 0098 decision 11)", () => {
 
   it("M2 counts the pins it draws in the live strip and shows the pin legend (F4.262)", async () => {
     await theMapStripCountsThePinsItDraws();
+  });
+
+  it("M3 shows no strip for a read with no site pin (F4.262)", async () => {
+    await aReadWithNoSitePinShowsNoStrip();
   });
 });

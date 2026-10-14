@@ -1,3 +1,5 @@
+import { livePercent } from "../../lib/location-kpi-groups";
+
 type LiveCountChipsProps = {
   live: number;
   notLive: number;
@@ -10,8 +12,7 @@ type LiveCountChipsProps = {
  * not red, because red is for alarms. The dots are decoration; the words carry the state.
  */
 export function LiveCountChips({ live, notLive }: LiveCountChipsProps) {
-  const total = live + notLive;
-  const share = total > 0 ? Math.round((live / total) * 100) : 0;
+  const share = livePercent(live, notLive);
 
   return (
     <span className="block min-w-0">
