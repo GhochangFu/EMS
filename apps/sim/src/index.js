@@ -190,6 +190,50 @@ function crProfile(code) {
   return profiles[code] ?? null;
 }
 
+/**
+ * F3.80 (OQ4) — the ESKOM network demo's held breaker states. The bus coupler and
+ * the DG breaker are held OPEN (bus B is dead), `NW-LT-A-F2` is TRIPPED, the rest
+ * are closed. `NW-TR-A`, `NW-LT-A` and `NW-FL-PUMP` are passive: no profile here,
+ * they fall through to their domain step.
+ */
+const NETWORK_BREAKER_PROFILES = {
+  "NW-HT-GRID-CB": { kw: 52, current: 85, breaker: 1, trip: 0 },
+  "NW-HT-COUPLER": { kw: 0, current: 0, breaker: 0, trip: 0 },
+  "NW-HT-DG-CB": { kw: 0, current: 0, breaker: 0, trip: 0 },
+  "NW-HT-OUT-CB": { kw: 48, current: 78, breaker: 1, trip: 0 },
+  "NW-LT-A-F1": { kw: 22, current: 34, breaker: 1, trip: 0 },
+  "NW-LT-A-F2": { kw: 0, current: 0, breaker: 0, trip: 1 },
+  "NW-HT-ISO-B": { kw: 0.4, current: 1.2, breaker: 1, trip: 0 },
+  "NW-LT-B-F1": { kw: 0.2, current: 0.6, breaker: 1, trip: 0 },
+};
+
+/** One held point per code: `dgOnLoad` (dg_on_load), `valve` (valve_open) or `damper` (damper_open). */
+const NETWORK_FLOW_PROFILES = {
+  "NW-DG-1": { dgOnLoad: 0 },
+  "NW-FL-ISO-V1": { valve: 0 },
+  "NW-FL-CV": { valve: 1 },
+  "NW-FL-DAMPER": { damper: 1 },
+};
+
+function networkProfile(code) {
+  return NETWORK_BREAKER_PROFILES[code] ?? null;
+}
+
+function stepNetworkFlow(assetId, code) {
+  const profile = NETWORK_FLOW_PROFILES[code];
+  const t = new Date();
+  if (!profile) {
+    return [];
+  }
+  if (profile.valve !== undefined) {
+    return [{ assetId, pointKey: "valve_open", value: profile.valve, unit: null, time: t }];
+  }
+  if (profile.damper !== undefined) {
+    return [{ assetId, pointKey: "damper_open", value: profile.damper, unit: null, time: t }];
+  }
+  return [{ assetId, pointKey: "dg_on_load", value: profile.dgOnLoad, unit: null, time: t }];
+}
+
 function ensureHvacState(assetId) {
   let s = hvacState.get(assetId);
   if (!s) {
@@ -365,7 +409,7 @@ function stepWater(assetId, code) {
 
 function stepElectrical(assetId, code = "") {
   const s = ensureElecState(assetId);
-  const profile = crProfile(code);
+  const profile = crProfile(code) ?? networkProfile(code);
   s.v = rndWalk(profile ? 230 : s.v, 0.4, 220, 240);
   s.i = profile
     ? rndWalk(profile.current, 0.3, Math.max(0, profile.current - 1.5), profile.current + 1.5)
@@ -578,8 +622,9 @@ async function tick(rows) {
     const outRows = [];
     const readings = [];
     for (const row of rows) {
-      const batch =
-        row.domain === "it"
+      const batch = NETWORK_FLOW_PROFILES[row.code]
+        ? stepNetworkFlow(row.id, row.code)
+        : row.domain === "it"
           ? stepIt(row.id, row.code)
           : row.domain === "hvac"
             ? stepHvac(row.id)
