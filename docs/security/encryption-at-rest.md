@@ -111,6 +111,24 @@ Drain or discard in-flight drafts before unsetting
 `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` — a clean rotation report does not prove
 one is not still open.
 
+**A committed session holds no `_secrets` (`F4.258`, ADR 0099 Amendment 2).**
+The commit's own update — the one that sets `status = 'committed'` — rewrites
+`draft` as `draft - '_secrets'` in the same transaction that copies each blob
+into `rtu_connection_configs`, so the ciphertext leaves the session row when it
+is committed. The copy needs a loaded key, so a commit whose draft holds a blob
+while `CREDENTIAL_ENCRYPTION_KEY` is unset is refused with 503 before the
+transaction opens, and the draft keeps its blobs for a retry — the strip never
+erases a blob it did not copy. Migration `0108` removed `_secrets` from every
+session that was already committed when it ran, **except** one whose RTU has a
+blob but no stored ciphertext (a commit made with no key loaded, before
+`F4.258`): there the blob is the only copy, so `0108` keeps it and its
+`NOTICE` counts such rows for an operator. With that exception, the
+ciphertext on a draft or committed session lives until the commit, or until
+the `F4.255` purge deletes a draft after 30 days without a write, whichever is
+first. The drain advice above applies to **open drafts** and to any row
+`0108` reported keeping. A committed row's old ciphertext also stays in dead
+row versions until `VACUUM`, and in backups until they rotate out.
+
 **The `_secrets` blob** — and only that blob — is stripped from client and LLM
 payloads. The raw chat turn is not. `handleOpenAiTurn` scrubs the *draft* it
 puts in the system prompt but forwards the user's message unmodified as
@@ -326,7 +344,9 @@ version neither key holds is a loud, named error, not a silent skip.
    verbatim rather than re-encrypting, so a draft started before the
    rotation and committed after it can still land at the old version once the
    walk has already reported clean. Drain or discard open drafts with
-   credentials before unsetting the previous key.
+   credentials before unsetting the previous key. A committed session holds
+   no `_secrets` since `F4.258` (§2.2), so only open drafts — and any row
+   migration `0108` reported keeping — need this.
 6. **Finish one rotation before starting the next.** Moving straight from
    version *N* to *N+2* without completing the *N*→*N+1* rotation first
    abandons rows still at *N-1*, which no longer has a loaded key.
@@ -460,8 +480,8 @@ chat"*.
 
 Consequence: an administrator who types an MQTT password into the wizard has
 that password persisted **in the clear** in a JSONB column, even though the
-same credential is correctly encrypted in `draft._secrets` and in
-`rtu_connection_configs`.
+same credential is correctly encrypted in `draft._secrets` (until the commit
+strips it, §2.2) and in `rtu_connection_configs`.
 
 **At-rest storage is only the first of three vectors.** The same unredacted
 transcript also travels:
@@ -542,8 +562,9 @@ deliberately stays out of that lane. When E8.2 lands it **must** satisfy:
    radius.
 3. **A backup remains restorable after `CREDENTIAL_ENCRYPTION_KEY` rotates.**
    Dumps contain AES-GCM ciphertext in `rtu_connection_configs`,
-   `notification_channels`, `organization_llm_settings` and onboarding drafts'
-   `_secrets`; restoring an
+   `notification_channels`, `organization_llm_settings` and open onboarding
+   drafts' `_secrets` (a dump taken before migration `0108` also holds them on
+   committed sessions, §2.2); restoring an
    old dump under a new key requires the key that dump's rows were still at
    the version of — `decrypt` refuses any other. Retain the retiring key as
    `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` for at least the backup retention

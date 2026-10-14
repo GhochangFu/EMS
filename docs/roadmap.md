@@ -7722,3 +7722,12 @@ Three PRs, squash-merged 2026-10-13 to 2026-10-14; no ADR amendment, no migratio
 - **#843** (`181c4172`) — instantiate as an entry with the `assetTemplateDeploy` target kind; the instantiate wizard.
 
 Owner rulings 2026-10-13 are in the plan's §0. Verified: the database suites on scratch databases; each entry applied through the real interceptor with a `via: copilot` audit row; a location administrator's instantiate on a site outside its grants refused 403; the wizards in a browser (#841); `e2e` green on #841 and #843. The instantiate wizard was checked in a browser on 2026-10-14. Raised: `F4.257` (the audit-mark ledger has no completeness gate).
+
+### `F4.258` — a committed onboarding session keeps no encrypted RTU credentials ✅ 2026-10-14
+
+One PR; one data migration (`0108`), no ADR amendment, no new dependency.
+
+- The commit's own update strips `draft._secrets` after the RTU loop copies each blob into `rtu_connection_configs`; a draft with a credential and no loaded key is refused 503 before the transaction.
+- Migration `0108` strips committed rows, except one whose blob is the only copy of a credential (kept, counted by a `NOTICE`).
+
+Owner decision 2026-10-14: option A. Verified: a cold-started scratch database; the onboarding, copilot, security and migration suites; mutations of the strip, the 503 and the guard; the real commit route with and without the key. Raised: none.

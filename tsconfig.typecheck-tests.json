@@ -178,6 +178,8 @@
     "tests/f3.71-surface-card-ratchet.test.ts",
     "tests/f3.32f-carried-fixes.test.ts",
     "tests/f3.32f-carried-fixes.integration.test.ts",
+    "tests/f4.258-committed-secrets-strip.test.ts",
+    "tests/f4.258-committed-secrets-strip.integration.test.ts",
     "tests/f3.32f-mimic-symbol-converters.test.ts",
     "tests/f3.32f-mimic-symbol-box.test.ts",
     "tests/f3.32f-org-symbol-libraries.test.ts",
