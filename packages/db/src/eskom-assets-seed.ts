@@ -6,6 +6,7 @@ import { type MapLocationSeedRow, provinceCode } from "./eskom-locations-seed";
 import { mapLocationRowsForInsert } from "./map-locations-seed";
 import { resolveEskomSimRtuId } from "./hierarchy-seed";
 import { assets } from "./schema/bms-schema";
+import { NETWORK_DEMO_ASSETS } from "./network-demo-seed";
 import { DEMO_WATER_PLANT_ASSETS } from "./water-plant-demo-seed";
 
 /**
@@ -351,6 +352,8 @@ export function buildEskomAssetCatalog(
     // `E4.3` U11 — the demo water plant at CSMOC Gauteng (ADR 0073 decision
     // 6). LAST, after the RSMOC block, so the order above is untouched.
     ...DEMO_WATER_PLANT_ASSETS,
+    // `F3.80` PR3 — the NW- network demo assets at RSMOC-WC, after the water plant.
+    ...NETWORK_DEMO_ASSETS,
   ];
 }
 

@@ -8,6 +8,7 @@ import {
   demoGroupName,
   demoRoleForAsset,
 } from "./asset-groups-seed";
+import { NETWORK_DEMO_ASSETS } from "./network-demo-seed";
 import { assetCode, deviceDomain, loadPheCatalog } from "./phe-pilot-seed";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
@@ -380,4 +381,16 @@ export function assertTheGroupUpsertFillsOnlyANullDomain(): void {
   expect(sql, "the domain must be a live asset_domains code").toContain(
     "(SELECT d.code FROM bms.asset_domains d WHERE d.code = $6)",
   );
+}
+
+/**
+ * `F3.80` Task 3.1 — the NW- demo assets carry no role from `demoRoleForAsset`. Their roles are
+ * written by `seedNetworkDemo` per group (OQ1), so a code that matched a substring branch here
+ * would also move `eskomSmocRoledCodes`. The list is non-empty first, so a vacuum cannot pass.
+ */
+export function assertEveryNetworkDemoCodeTakesNoRole(): void {
+  expect(NETWORK_DEMO_ASSETS.length).toBe(15);
+  for (const a of NETWORK_DEMO_ASSETS) {
+    expect(demoRoleForAsset(a.code, a.domain), `${a.code} must take no role`).toBeNull();
+  }
 }
