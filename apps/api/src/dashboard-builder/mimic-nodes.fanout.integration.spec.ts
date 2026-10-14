@@ -458,10 +458,12 @@ interface FlagNode {
   readonly roleCode: string | null;
   readonly fanOut: boolean;
   readonly isSource: boolean;
+  /** `F3.80` (migration `0109`) — the stored `is_switching`. */
+  readonly isSwitching: boolean;
   readonly x: number;
 }
 
-/** One layout of units only, each with its stored `fan_out` / `is_source`; answers its id. */
+/** One layout of units only, each with its stored `fan_out` / `is_source` / `is_switching`; answers its id. */
 async function seedFlagLayout(client: pg.PoolClient, site: Site, nodes: readonly FlagNode[]): Promise<string> {
   const layout = await one<{ id: string }>(
     client,
@@ -473,18 +475,19 @@ async function seedFlagLayout(client: pg.PoolClient, site: Site, nodes: readonly
   for (const node of nodes) {
     await client.query(
       `INSERT INTO bms.mimic_layout_nodes
-         (organization_id, layout_id, key, kind, symbol, label, role_code, tone, x, y, w, h, z, fan_out, is_source)
-       VALUES ($1, $2, $3, 'unit', $4, $3, $5, NULL, $6, 10, 6, 6, 1, $7, $8)`,
-      [site.organizationId, layout.id, node.key, node.symbol, node.roleCode, node.x, node.fanOut, node.isSource],
+         (organization_id, layout_id, key, kind, symbol, label, role_code, tone, x, y, w, h, z, fan_out, is_source, is_switching)
+       VALUES ($1, $2, $3, 'unit', $4, $3, $5, NULL, $6, 10, 6, 6, 1, $7, $8, $9)`,
+      [site.organizationId, layout.id, node.key, node.symbol, node.roleCode, node.x, node.fanOut, node.isSource, node.isSwitching],
     );
   }
   return layout.id;
 }
 
 const SLD_UNITS: readonly FlagNode[] = [
-  { key: "src", symbol: "transformer", roleCode: "incoming-supply", fanOut: false, isSource: true, x: 2 },
-  { key: "qf", symbol: "breaker", roleCode: "main-breaker", fanOut: true, isSource: false, x: 20 },
-  { key: "qs", symbol: "breaker", roleCode: "main-breaker", fanOut: false, isSource: false, x: 40 },
+  { key: "src", symbol: "transformer", roleCode: "incoming-supply", fanOut: false, isSource: true, isSwitching: false, x: 2 },
+  { key: "qf", symbol: "breaker", roleCode: "main-breaker", fanOut: true, isSource: false, isSwitching: false, x: 20 },
+  // `F3.80`: a stored `is_switching = true`, so F13's triple can only pass if the resolver reads the column.
+  { key: "qs", symbol: "breaker", roleCode: "main-breaker", fanOut: false, isSource: false, isSwitching: true, x: 40 },
 ];
 
 async function readLayoutWidget(client: pg.PoolClient): Promise<{ widget: MimicLayoutWidgetNodesDto; mainBreakers: string[] }> {
@@ -511,11 +514,11 @@ export async function assertLayoutFanOutUnitAnswersEveryMember(client: pg.PoolCl
   expect(layoutNode(widget, "qf").members.map((member) => member.asset.id)).toEqual(mainBreakers);
 }
 
-/** F13 — the layout geometry in the response carries each node's stored `fanOut` and `isSource`. */
+/** F13 — the layout geometry in the response carries each node's stored `fanOut`, `isSource` and `isSwitching`. */
 export async function assertLayoutGeometryCarriesTheStoredFlags(client: pg.PoolClient): Promise<void> {
   const { widget } = await readLayoutWidget(client);
-  expect(widget.layout.nodes.map((node) => [node.key, node.fanOut, node.isSource])).toEqual(
-    SLD_UNITS.map((node) => [node.key, node.fanOut, node.isSource]),
+  expect(widget.layout.nodes.map((node) => [node.key, node.fanOut, node.isSource, node.isSwitching])).toEqual(
+    SLD_UNITS.map((node) => [node.key, node.fanOut, node.isSource, node.isSwitching]),
   );
 }
 

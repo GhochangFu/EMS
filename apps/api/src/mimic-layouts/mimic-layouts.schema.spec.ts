@@ -321,3 +321,26 @@ export function leavesAbsentFlagsAbsent(): void {
 export function refusesAFlagThatIsNotABoolean(): void {
   refusedAt(withNode(0, { fanOut: "yes" }), ["nodes.0.fanOut"]);
 }
+
+// `F3.80` Task 1.4 (ADR 0101, migration `0109`) — the switching flag `isSwitching`.
+
+export function acceptsAUnitThatIsSwitching(): void {
+  const node = parsedNode(withNode(0, { isSwitching: true }), 0);
+  expect(node.isSwitching).toBe(true);
+}
+
+export function refusesAPanelThatIsSwitching(): void {
+  refusedAt(withNode(3, { isSwitching: true }), ["nodes.3.isSwitching"]);
+}
+
+export function refusesALabelThatIsSwitching(): void {
+  refusedAt(withNode(4, { isSwitching: true }), ["nodes.4.isSwitching"]);
+}
+
+/** An absent switching flag stays absent: the service, not the parse, decides the stored `false`. */
+export function leavesAnAbsentSwitchingFlagAbsent(): void {
+  const node = parsedNode(validCreateBody(), 0);
+  expect(Object.keys(node)).not.toContain("isSwitching");
+  // Positive control: the same read sees a key the body does carry.
+  expect(Object.keys(node)).toContain("roleCode");
+}

@@ -55,4 +55,8 @@ describe("F3.32c — the mimic layout write bodies", () => {
   it("F3.74 accepts a panel with both flags false", () => spec.acceptsAPanelWithFalseFlags());
   it("F3.74 leaves absent flags absent", () => spec.leavesAbsentFlagsAbsent());
   it("F3.74 refuses a flag that is not a boolean", () => spec.refusesAFlagThatIsNotABoolean());
+  it("F3.80 accepts a unit that is switching", () => spec.acceptsAUnitThatIsSwitching());
+  it("F3.80 refuses a panel that is switching", () => spec.refusesAPanelThatIsSwitching());
+  it("F3.80 refuses a label that is switching", () => spec.refusesALabelThatIsSwitching());
+  it("F3.80 leaves an absent switching flag absent", () => spec.leavesAnAbsentSwitchingFlagAbsent());
 });

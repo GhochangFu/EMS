@@ -67,6 +67,7 @@ interface LayoutNodeRow {
   /** `F3.74` (0097): `NOT NULL DEFAULT false`, `null` only on a node-less layout's row. */
   fan_out: boolean | null;
   is_source: boolean | null;
+  is_switching: boolean | null;
 }
 
 /** Statement (1d)'s row (`F3.32f` slice 3): one organization symbol a layout's units draw. */
@@ -609,7 +610,7 @@ export class MimicNodesService {
       `
       SELECT l.id AS layout_id, l.name, l.canvas_w, l.canvas_h,
              n.key, n.kind, n.symbol, n.org_symbol_key, n.label, n.role_code, n.tone, n.x, n.y, n.w, n.h, n.z,
-             n.fan_out, n.is_source
+             n.fan_out, n.is_source, n.is_switching
       FROM bms.mimic_layouts l
       LEFT JOIN bms.mimic_layout_nodes n
         ON n.layout_id = l.id
@@ -772,6 +773,7 @@ function layoutNodeOf(row: LayoutNodeRow): MimicLayoutNodeDto | null {
     // out the all-`null` row of a node-less layout.
     fanOut: row.fan_out === true,
     isSource: row.is_source === true,
+    isSwitching: row.is_switching === true,
   };
 }
 
