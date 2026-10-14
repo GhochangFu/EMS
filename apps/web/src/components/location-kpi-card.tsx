@@ -27,7 +27,7 @@ export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
     <Link
       to={to ?? `/control-room/site/${location.id}`}
       data-live={live ? "true" : "false"}
-      className={`relative z-0 block w-full min-w-0 surface-raised border-l-4 p-3 transition hover:z-10 hover:ring-2 hover:ring-accent/40 ${
+      className={`relative z-0 block w-full min-w-0 surface-raised border-l-4 p-3 transition hover:z-10 hover:outline hover:outline-2 hover:outline-accent/40 ${
         live ? "border-l-accent" : "border-l-warning"
       }`}
     >

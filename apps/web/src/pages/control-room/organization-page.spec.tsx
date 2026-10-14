@@ -527,6 +527,37 @@ export async function noLiveSiteRendersNoLiveGroup(): Promise<void> {
   expect(screen.getByTestId("live-site-count").textContent).toBe("0");
 }
 
+/**
+ * L4 — `F4.259`: with every site live there is no empty not-live group; the live group is the
+ * positive control.
+ */
+export async function everySiteLiveRendersNoNotLiveGroup(): Promise<void> {
+  stubReads([
+    site({ id: "a1", name: "Alpha One", organization: ORG_A, freshAssetCount: 1 }),
+    site({ id: "a2", name: "Alpha Two", organization: ORG_A, freshAssetCount: 2 }),
+  ]);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  expect(screen.queryByTestId("control-room-sites-not-live")).toBeNull();
+  expect(cardHrefs(screen.getByTestId("control-room-sites-live"))).toHaveLength(2);
+  expect(screen.getByTestId("not-live-site-count").textContent).toBe("0");
+}
+
+/** L5 — `F4.259`: the two percents add up to 100 (1 of 8 is 13 and 87, not 13 and 88). */
+export async function theStripPercentsAddUpTo100(): Promise<void> {
+  stubReads([
+    site({ id: "a1", name: "Alpha One", organization: ORG_A, freshAssetCount: 1 }),
+    ...[2, 3, 4, 5, 6, 7, 8].map((n) => site({ id: `a${n}`, name: `Alpha ${n}`, organization: ORG_A })),
+  ]);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  const strip = screen.getByTestId("live-status-strip");
+  expect(within(strip).getByText("of 8 · 13% reporting fresh telemetry")).toBeInTheDocument();
+  expect(within(strip).getByText("of 8 · 87% with no fresh telemetry")).toBeInTheDocument();
+}
+
 export function cleanupPage(): void {
   cleanup();
   vi.restoreAllMocks();

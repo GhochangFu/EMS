@@ -130,7 +130,7 @@ function OrganizationOverview({ items, organizationId }: OrganizationOverviewPro
       <PageHeader
         eyebrow="Control Room"
         title={card.organization.name}
-        subtitle={`${card.organization.code} · ${card.siteCount} sites · ${card.sitesOnline} online · ${card.openAlarms} alarms`}
+        subtitle={`${card.organization.code} · ${card.siteCount} sites · ${card.openAlarms} alarms`}
       />
       <LiveStatusStrip liveCount={live.length} notLiveCount={notLive.length} />
       <OrganizationSiteMap
@@ -162,12 +162,13 @@ type LiveStatusStripProps = {
 };
 
 /**
- * `F4.259` — the organization's live and not-live site counts, large, under the header. The
- * header subtitle keeps its small "N online" for the other levels' shape.
+ * `F4.259` — the organization's live and not-live site counts, large, under the header. They
+ * replace the subtitle's small "N online". The not-live percent is the remainder of the live
+ * one, so the two always add up to 100.
  */
 function LiveStatusStrip({ liveCount, notLiveCount }: LiveStatusStripProps) {
   const total = liveCount + notLiveCount;
-  const percent = (count: number) => (total > 0 ? Math.round((count / total) * 100) : 0);
+  const livePercent = total > 0 ? Math.round((liveCount / total) * 100) : 0;
 
   return (
     <div data-testid="live-status-strip" className="grid gap-3 sm:grid-cols-2">
@@ -176,14 +177,14 @@ function LiveStatusStrip({ liveCount, notLiveCount }: LiveStatusStripProps) {
         label="Live sites"
         count={liveCount}
         countTestId="live-site-count"
-        detail={`of ${total} · ${percent(liveCount)}% reporting fresh telemetry`}
+        detail={`of ${total} · ${livePercent}% reporting fresh telemetry`}
       />
       <StatusTile
         live={false}
         label="Not live"
         count={notLiveCount}
         countTestId="not-live-site-count"
-        detail={`of ${total} · ${percent(notLiveCount)}% with no fresh telemetry`}
+        detail={`of ${total} · ${total > 0 ? 100 - livePercent : 0}% with no fresh telemetry`}
       />
     </div>
   );

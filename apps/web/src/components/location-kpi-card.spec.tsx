@@ -103,6 +103,13 @@ export function aLiveCardShowsTheLiveBadgeAndTheGreenEdge(): void {
   expect(within(card).getByTestId("site-live-badge").textContent).toBe("Live");
   expect(card.className).toContain("border-l-accent");
   expect(card.className).not.toContain("border-l-warning");
+  // The badge leads the card: it comes before the site name.
+  expect(
+    within(card).getByTestId("site-live-badge").compareDocumentPosition(screen.getByText("Western Cape Campus")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    "the name must follow the badge",
+  ).toBeTruthy();
+  expect(within(card).getByText("12.5").className).not.toContain("text-ink-muted");
 }
 
 /** K6 (`F4.259`) — a site with no fresh asset: the NOT LIVE badge and the amber left edge. */
@@ -112,6 +119,9 @@ export function aNotLiveCardShowsTheNotLiveBadgeAndTheAmberEdge(): void {
   expect(within(card).getByTestId("site-live-badge").textContent).toBe("Not live");
   expect(card.className).toContain("border-l-warning");
   expect(card.className).not.toContain("border-l-accent");
+  // The kW figure is muted and the fresh count is amber.
+  expect(within(card).getByText("12.5").className).toContain("text-ink-muted");
+  expect(within(card).getByText("0/4").className).toContain("text-warning-ink");
 }
 
 export function cleanupCard(): void {
