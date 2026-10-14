@@ -4,7 +4,8 @@ import {
   aNullLatestIsUnknown,
   aThirdKeysTrippedRowWins,
   anUnmappedValueIsUnknown,
-  breakerRoleCodesAreTheFive,
+  breakerRoleCodesAreTheTen,
+  noFlowRoleIsABreakerRole,
   breakerSymbolSwitches,
   libraryBreakersSwitchAndExist,
   mainOneIsClosed,
@@ -63,7 +64,11 @@ describe("F3.74 — the switching symbols and the breaker roles (ADR 0088, plan 
     libraryBreakersSwitchAndExist();
   });
 
-  it("lists the five breaker roles in sort order", () => {
-    breakerRoleCodesAreTheFive();
+  it("lists the ten breaker roles in sort order", () => {
+    breakerRoleCodesAreTheTen();
+  });
+
+  it("lists no flow role as a breaker role", () => {
+    noFlowRoleIsABreakerRole();
   });
 });

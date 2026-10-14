@@ -437,3 +437,46 @@ export async function assertRowCarriesItsAlarms(db: BmsDb): Promise<void> {
     });
   }, db);
 }
+
+/**
+ * F3.80 B10a — a `bus-coupler` member (migration `0109`'s electrical position role) is a breaker
+ * row, with its role label from `bms.asset_roles`. Mutation: leave `bus-coupler` out of
+ * `BREAKER_ROLE_CODES` => red.
+ */
+export async function assertBusCouplerMemberIsABreakerRow(db: BmsDb): Promise<void> {
+  await inSite(async (site) => {
+    const bc = await addMember(site, "BC-1", "bus-coupler");
+    const row = rowOf(await readAs(site, "sld", null), bc);
+    expect([row.roleCode, row.roleLabel]).toEqual(["bus-coupler", "Bus Couplers"]);
+  }, db);
+}
+
+/**
+ * F3.80 B10b — an `isolation-valve` member of the same group is not a breaker row (D8: a flow role
+ * is never a breaker). Same fixture as B10a, so the pair proves the role list and not the group.
+ */
+export async function assertIsolationValveMemberIsNotABreakerRow(db: BmsDb): Promise<void> {
+  await inSite(async (site) => {
+    const bc = await addMember(site, "BC-1", "bus-coupler");
+    const iv = await addMember(site, "IV-1", "isolation-valve");
+    const ids = (await readAs(site, "sld", null)).breakers.map((row) => row.asset.id);
+    expect(ids).toContain(bc);
+    expect(ids).not.toContain(iv);
+  }, db);
+}
+
+/** One more member of group `G` in `role`. */
+async function addMember(site: Site, code: string, role: string): Promise<string> {
+  const domain = site.domainCode;
+  const result = await site.txDb.execute<{ id: string }>(sql`
+    INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain)
+    VALUES (${site.organizationId}, ${`${code}-${site.tag}`}, ${`F3.80 ${code}`}, ${`${site.tag} site`}, ${site.locationId}, ${domain})
+    RETURNING id
+  `);
+  const row = result.rows[0];
+  if (!row) throw new Error(`F3.80 breaker-rows fixture: failed to insert ${code}`);
+  await site.txDb.execute(
+    sql`INSERT INTO bms.asset_group_members (asset_group_id, asset_id, role) VALUES (${site.groupId}, ${row.id}, ${role})`,
+  );
+  return row.id;
+}
