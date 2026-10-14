@@ -46,8 +46,10 @@ export type MimicBox = { readonly x: number; readonly y: number; readonly w: num
  * names that panel, so the scene groups the unit under it.
  *
  * `F3.74` plan D3/D6: `fanOut` stands the unit for every member of its role; `isSource` marks
- * where `energiseGraph` starts; `switching` is `isSwitchingSymbol(symbol)` — the unit draws a
- * breaker switch per member. The three are flags of the drawing, not of the data.
+ * where `energiseGraph` starts; `switching` — the unit draws a switch per member and gates the
+ * walk — is, for a layout unit, its stored `isSwitching` flag OR `isSwitchingSymbol(symbol)`
+ * (`F3.80`, ADR 0101 d4), and for a preset node `isSwitchingSymbol(symbol)` alone (a preset has no
+ * flag). The three are flags of the drawing, not of the data.
  */
 export type MimicGeometryUnit = {
   readonly key: string;
@@ -331,7 +333,7 @@ export function layoutGeometry(layout: MimicLayoutGeometryDto): MimicGeometry {
         panelKey: panel?.key ?? null,
         fanOut: n.fanOut,
         isSource: n.isSource,
-        switching: isSwitchingSymbol(symbol),
+        switching: n.isSwitching || isSwitchingSymbol(symbol),
       };
     });
 

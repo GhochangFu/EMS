@@ -326,3 +326,28 @@ export function layoutUnitsCarryFlagsAndSwitchingFollowsTheSymbol(): void {
   expect([by.get("fan")?.fanOut, by.get("fan")?.switching]).toEqual([true, false]);
   expect(by.get("lib")?.switching).toBe(true);
 }
+
+/** `F3.80` / ADR 0101 d4 — one layout unit's `switching`, drawn with `symbol` and `isSwitching`. */
+function switchingOf(symbol: MimicLayoutNodeDto["symbol"], isSwitching: boolean): boolean | undefined {
+  const g = layoutGeometry({
+    ...LAYOUT,
+    nodes: [layoutNode("u", "unit", [3, 5, 10, 25], { symbol, roleCode: "isolation-valve", isSwitching })],
+    pipes: [],
+  });
+  return g.units.find((u) => u.key === "u")?.switching;
+}
+
+/** G23 — a valve-symbol unit with `isSwitching` true switches (the flag half of d4). */
+export function aFlaggedValveSwitches(): void {
+  expect(switchingOf("valve", true)).toBe(true);
+}
+
+/** G24 — the same unit with `isSwitching` false does not: a valve symbol alone never switches. */
+export function anUnflaggedValveDoesNotSwitch(): void {
+  expect(switchingOf("valve", false)).toBe(false);
+}
+
+/** G25 — the breaker symbol switches whatever the flag (the symbol half of d4). */
+export function theBreakerSymbolSwitchesWhateverTheFlag(): void {
+  expect([switchingOf("breaker", false), switchingOf("breaker", true)]).toEqual([true, true]);
+}

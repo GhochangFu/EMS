@@ -162,6 +162,21 @@ export function aFlowingBreakerSymbolValveDrawsOpen(): void {
   expectAFlowingValve();
 }
 
+/**
+ * V4 — a unit drawn with the `valve` symbol, which switches only by its `isSwitching` flag
+ * (`layoutGeometry`'s d4 rule), reporting `valve_open` 0 draws SHUT.
+ */
+export function aShutValveSymbolUnitDrawsShut(): void {
+  renderValve("valve", 0);
+  expectAShutValve();
+}
+
+/** V5 — the same `valve`-symbol unit reporting `valve_open` 1 draws OPEN. */
+export function aFlowingValveSymbolUnitDrawsOpen(): void {
+  renderValve("valve", 1);
+  expectAFlowingValve();
+}
+
 /** V3 — the accessible name says the valve is shut (the switch itself is `aria-hidden`). */
 export function aShutValvesStateIsInTheAccessibleName(): void {
   renderValve("breaker", 0);
