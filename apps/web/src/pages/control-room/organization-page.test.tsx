@@ -13,6 +13,11 @@ import {
   aPendingKpiReadShowsOnlyTheLoadingLine,
   anUnreadableOrganizationShowsTheEmptyCard,
   cleanupPage,
+  everySiteLiveRendersNoNotLiveGroup,
+  liveSitesComeFirstInTheirOwnGroup,
+  theStripPercentsAddUpTo100,
+  noLiveSiteRendersNoLiveGroup,
+  theStatusStripCountsLiveAndNotLiveSites,
   oneOrganizationRendersNoBreadcrumb,
   oneSiteSkipsToTheSite,
   siteCardsLinkToTheSiteLevel,
@@ -113,5 +118,25 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
 
   it("P8 mounts a new site map for another organization (F3.79)", async () => {
     await anotherOrganizationMountsANewSiteMap();
+  });
+
+  it("L1 counts this organization's live and not-live sites in the status strip (F4.259)", async () => {
+    await theStatusStripCountsLiveAndNotLiveSites();
+  });
+
+  it("L2 shows the live sites first, in their own group (F4.259)", async () => {
+    await liveSitesComeFirstInTheirOwnGroup();
+  });
+
+  it("L3 renders no live group when no site is live (F4.259)", async () => {
+    await noLiveSiteRendersNoLiveGroup();
+  });
+
+  it("L4 renders no not-live group when every site is live (F4.259)", async () => {
+    await everySiteLiveRendersNoNotLiveGroup();
+  });
+
+  it("L5 keeps the strip's two percents at a sum of 100 (F4.259)", async () => {
+    await theStripPercentsAddUpTo100();
   });
 });

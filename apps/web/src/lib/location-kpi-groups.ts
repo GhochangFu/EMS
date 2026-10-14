@@ -53,6 +53,26 @@ export function groupByOrganization(
     }));
 }
 
+/**
+ * `F4.259` — a site is live when at least one of its assets reports fresh telemetry. The one
+ * rule behind the card's Live badge, the Control Room's live and not-live groups and
+ * `freshLocationCount`.
+ */
+export function hasLiveTelemetry(location: LocationKpiSummary): boolean {
+  return location.freshAssetCount > 0;
+}
+
+/** `F4.259` — the sites split into live and not live, each list keeping the input order. */
+export function splitByLiveTelemetry(locations: readonly LocationKpiSummary[]): {
+  live: LocationKpiSummary[];
+  notLive: LocationKpiSummary[];
+} {
+  return {
+    live: locations.filter(hasLiveTelemetry),
+    notLive: locations.filter((location) => !hasLiveTelemetry(location)),
+  };
+}
+
 /** Aggregates section-level KPIs for an accordion header. */
 export function orgSectionSummary(locations: LocationKpiSummary[]): {
   locationCount: number;
@@ -64,7 +84,6 @@ export function orgSectionSummary(locations: LocationKpiSummary[]): {
     locationCount: locations.length,
     totalKw: locations.reduce((sum, location) => sum + location.totalKw, 0),
     openAlarms: locations.reduce((sum, location) => sum + location.openAlarms, 0),
-    freshLocationCount: locations.filter((location) => location.freshAssetCount > 0)
-      .length,
+    freshLocationCount: locations.filter(hasLiveTelemetry).length,
   };
 }

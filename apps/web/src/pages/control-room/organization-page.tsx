@@ -18,7 +18,7 @@ import {
   organizationCards,
   organizationEntryTarget,
 } from "../../lib/control-room-levels";
-import { groupByOrganization } from "../../lib/location-kpi-groups";
+import { groupByOrganization, splitByLiveTelemetry } from "../../lib/location-kpi-groups";
 import { organizationNodes } from "../../lib/map-site";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 
@@ -50,6 +50,9 @@ type ControlRoomOrganizationPageProps = {
  *
  * `F3.79` — above the site grid: the site map, this organization's pins only. It is keyed by
  * `organizationId`, so a move to another organization mounts a new map that fits its sites.
+ *
+ * `F4.259` — under the header: a strip with the live and not-live site counts. The site cards
+ * sit in two groups, live first; a group with no site is not rendered.
  */
 export function ControlRoomOrganizationPage({
   user,
@@ -118,6 +121,8 @@ function OrganizationOverview({ items, organizationId }: OrganizationOverviewPro
     items.filter((item) => item.organization.id === organizationId),
   )[0].locations;
   const card = organizationCards(sites)[0];
+  // `F4.259` — each group keeps the name order.
+  const { live, notLive } = splitByLiveTelemetry(sites);
 
   return (
     <>
@@ -125,18 +130,22 @@ function OrganizationOverview({ items, organizationId }: OrganizationOverviewPro
       <PageHeader
         eyebrow="Control Room"
         title={card.organization.name}
-        subtitle={`${card.organization.code} · ${card.siteCount} sites · ${card.sitesOnline} online · ${card.openAlarms} alarms`}
+        subtitle={`${card.organization.code} · ${card.siteCount} sites · ${card.openAlarms} alarms`}
       />
+      <LiveStatusStrip liveCount={live.length} notLiveCount={notLive.length} />
       <OrganizationSiteMap
         key={organizationId}
         organizationId={organizationId}
         nodes={organizationNodes(scopeLocations, items, organizationId)}
       />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <div data-testid="control-room-sites" className="grid content-start gap-3 md:grid-cols-2">
-          {sites.map((location) => (
-            <LocationKpiCard key={location.id} location={location} />
-          ))}
+        <div data-testid="control-room-sites" className="min-w-0 space-y-4">
+          {live.length > 0 ? (
+            <SiteGroup testId="control-room-sites-live" title="Live sites" live sites={live} />
+          ) : null}
+          {notLive.length > 0 ? (
+            <SiteGroup testId="control-room-sites-not-live" title="Not live" live={false} sites={notLive} />
+          ) : null}
         </div>
         <ActiveAlarmsRail organizationId={organizationId} />
       </div>
@@ -144,5 +153,105 @@ function OrganizationOverview({ items, organizationId }: OrganizationOverviewPro
       <OrganizationLoadTrend organizationId={organizationId} />
       <ScopedDashboardsList organizationId={organizationId} />
     </>
+  );
+}
+
+type LiveStatusStripProps = {
+  liveCount: number;
+  notLiveCount: number;
+};
+
+/**
+ * `F4.259` — the organization's live and not-live site counts, large, under the header. They
+ * replace the subtitle's small "N online". The not-live percent is the remainder of the live
+ * one, so the two always add up to 100.
+ */
+function LiveStatusStrip({ liveCount, notLiveCount }: LiveStatusStripProps) {
+  const total = liveCount + notLiveCount;
+  const livePercent = total > 0 ? Math.round((liveCount / total) * 100) : 0;
+
+  return (
+    <div data-testid="live-status-strip" className="grid gap-3 sm:grid-cols-2">
+      <StatusTile
+        live
+        label="Live sites"
+        count={liveCount}
+        countTestId="live-site-count"
+        detail={`of ${total} · ${livePercent}% reporting fresh telemetry`}
+      />
+      <StatusTile
+        live={false}
+        label="Not live"
+        count={notLiveCount}
+        countTestId="not-live-site-count"
+        detail={`of ${total} · ${total > 0 ? 100 - livePercent : 0}% with no fresh telemetry`}
+      />
+    </div>
+  );
+}
+
+type StatusTileProps = {
+  live: boolean;
+  label: string;
+  count: number;
+  countTestId: string;
+  detail: string;
+};
+
+function StatusTile({ live, label, count, countTestId, detail }: StatusTileProps) {
+  return (
+    <div
+      className={`surface-raised flex items-center gap-4 border-l-4 px-4 py-3 ${
+        live ? "border-l-accent" : "border-l-warning"
+      }`}
+    >
+      <span
+        aria-hidden
+        className={`inline-flex h-3 w-3 shrink-0 rounded-full ${
+          live ? "bg-accent" : "border-2 border-warning"
+        }`}
+      />
+      <span
+        data-testid={countTestId}
+        className={`font-condensed text-3xl font-bold ${live ? "text-ok-ink" : "text-warning-ink"}`}
+      >
+        {count}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-sm font-bold uppercase tracking-wide text-ink">{label}</span>
+        <span className="block text-xs text-ink-muted">{detail}</span>
+      </span>
+    </div>
+  );
+}
+
+type SiteGroupProps = {
+  testId: string;
+  title: string;
+  live: boolean;
+  sites: readonly LocationKpiSummary[];
+};
+
+/** `F4.259` — one group of site cards under a heading that carries its count. */
+function SiteGroup({ testId, title, live, sites }: SiteGroupProps) {
+  return (
+    <section data-testid={testId} className="space-y-2">
+      <h2
+        className={`flex items-center gap-2 text-sm font-bold uppercase tracking-wide ${
+          live ? "text-ok-ink" : "text-warning-ink"
+        }`}
+      >
+        <span
+          aria-hidden
+          className={`inline-flex h-2.5 w-2.5 rounded-full ${live ? "bg-accent" : "border-2 border-warning"}`}
+        />
+        {`${title} (${sites.length})`}
+      </h2>
+      <div className="grid content-start gap-3 md:grid-cols-2">
+        {sites.map((location) => (
+          <LocationKpiCard key={location.id} location={location} />
+        ))}
+      </div>
+    </section>
   );
 }

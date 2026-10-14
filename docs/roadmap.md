@@ -7739,3 +7739,12 @@ One PR, test only; no production code, no migration, no new dependency.
 - `tests/f3.85-audit-via-mark.test.ts` gets `NOT_CATALOG_WRITERS`: each audit-service file in a catalog directory is in exactly one list, each NOT row is tied to its excluded route's handler and to the methods that hold its audit calls, and every controller that serves a catalog entry must lie in a scanned directory.
 
 Owner ruling 2026-10-14: the two-list ledger. Verified: `tests/f3.85` and the `tests/` project; mutations of every new case, including a catalog writer relabelled into the NOT list; two code reviews, security and compliance. Raised: none.
+
+### `F4.259` — the Control Room shows which sites are live ✅ 2026-10-14
+
+One PR, web only; no API, no migration, no new dependency.
+
+- The organization Control Room page gets a live / not-live status strip under the header, and its site cards sit in two groups, live first.
+- `LocationKpiCard` leads with a Live badge and a green left edge, or a Not live badge and an amber one (amber, so red stays for alarms); the dashboard and the estate accordion share it.
+
+Owner request and design approval 2026-10-14. Verified: the web project; 15 mutations; the rebuilt web image in the browser as the PHE organization admin. Raised: none.

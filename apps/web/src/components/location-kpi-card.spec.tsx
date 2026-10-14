@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect } from "vitest";
 
@@ -82,6 +82,46 @@ export function fallsBackToTheTypeLabelNotTheRawCode(): void {
   ) as HTMLElement;
   expect(subtitle.textContent).toContain("Pump station");
   expect(subtitle.textContent).not.toContain("pump_station");
+}
+
+function renderCard(freshAssetCount: number): HTMLElement {
+  render(
+    <MemoryRouter>
+      <LocationKpiCard location={locationKpiSummarySchema.parse({ ...LOCATION, freshAssetCount })} />
+    </MemoryRouter>,
+  );
+  return cardLink();
+}
+
+/**
+ * K5 (`F4.259`) — a live site's card carries the LIVE badge and the green left edge. The badge
+ * is read by its test id and exact text, so a card that still shows the old small tag fails.
+ */
+export function aLiveCardShowsTheLiveBadgeAndTheGreenEdge(): void {
+  const card = renderCard(2);
+  expect(card.dataset.live).toBe("true");
+  expect(within(card).getByTestId("site-live-badge").textContent).toBe("Live");
+  expect(card.className).toContain("border-l-accent");
+  expect(card.className).not.toContain("border-l-warning");
+  // The badge leads the card: it comes before the site name.
+  expect(
+    within(card).getByTestId("site-live-badge").compareDocumentPosition(screen.getByText("Western Cape Campus")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    "the name must follow the badge",
+  ).toBeTruthy();
+  expect(within(card).getByText("12.5").className).not.toContain("text-ink-muted");
+}
+
+/** K6 (`F4.259`) — a site with no fresh asset: the NOT LIVE badge and the amber left edge. */
+export function aNotLiveCardShowsTheNotLiveBadgeAndTheAmberEdge(): void {
+  const card = renderCard(0);
+  expect(card.dataset.live).toBe("false");
+  expect(within(card).getByTestId("site-live-badge").textContent).toBe("Not live");
+  expect(card.className).toContain("border-l-warning");
+  expect(card.className).not.toContain("border-l-accent");
+  // The kW figure is muted and the fresh count is amber.
+  expect(within(card).getByText("12.5").className).toContain("text-ink-muted");
+  expect(within(card).getByText("0/4").className).toContain("text-warning-ink");
 }
 
 export function cleanupCard(): void {

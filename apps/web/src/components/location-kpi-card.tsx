@@ -1,6 +1,8 @@
 import type { LocationKpiSummary } from "@bms/shared";
 import { Link } from "react-router-dom";
 
+import { hasLiveTelemetry } from "../lib/location-kpi-groups";
+
 type LocationKpiCardProps = {
   location: LocationKpiSummary;
   /**
@@ -11,18 +13,26 @@ type LocationKpiCardProps = {
   to?: string;
 };
 
-/** Clickable location KPI card for the executive dashboard and the Control Room. */
+/**
+ * Clickable location KPI card for the executive dashboard and the Control Room.
+ *
+ * `F4.259` — whether the site is live is the first thing the card shows: a green left edge and
+ * a Live badge with a pulsing dot, or an amber edge and a Not live badge with a hollow dot (amber,
+ * not red: red stays for alarms). A card that is not live mutes its kW figure.
+ */
 export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
-  const hasLiveTelemetry = location.freshAssetCount > 0;
+  const live = hasLiveTelemetry(location);
 
   return (
     <Link
       to={to ?? `/control-room/site/${location.id}`}
-      className={`relative z-0 block w-full min-w-0 surface-raised p-3 transition hover:z-10 hover:border-accent ${
-        hasLiveTelemetry ? "border-accent/20" : ""
+      data-live={live ? "true" : "false"}
+      className={`relative z-0 block w-full min-w-0 surface-raised border-l-4 p-3 transition hover:z-10 hover:outline hover:outline-2 hover:outline-accent/40 ${
+        live ? "border-l-accent" : "border-l-warning"
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
+      <LiveBadge live={live} />
+      <div className="mt-2 flex items-start justify-between gap-3">
         <div>
           <div className="font-condensed text-base font-bold text-ink">
             {location.name}
@@ -39,20 +49,13 @@ export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
           <span className="rounded bg-ok-wash px-2 py-1 text-xs font-semibold text-ok-ink">
             {location.rtuCount} RTUs · {location.assetCount} assets
           </span>
-          <span
-            className={`rounded-full surface-pill px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-              hasLiveTelemetry
-                ? "bg-ok-wash text-ok-ink"
-                : "bg-well-deep text-ink-muted"
-            }`}
-          >
-            {hasLiveTelemetry ? "Live telemetry" : "No live telemetry"}
-          </span>
         </div>
       </div>
       <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
         <div>
-          <div className="font-mono text-sm font-semibold text-ink">
+          <div
+            className={`font-mono text-sm font-semibold ${live ? "text-ink" : "text-ink-muted"}`}
+          >
             {location.totalKw.toFixed(1)}
           </div>
           <div className="text-ink-muted">kW</div>
@@ -60,7 +63,7 @@ export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
         <div>
           <div
             className={`font-mono text-sm font-semibold ${
-              hasLiveTelemetry ? "text-ok-ink" : "text-ink"
+              live ? "text-ok-ink" : "text-warning-ink"
             }`}
           >
             {location.freshAssetCount}/{location.assetCount}
@@ -75,5 +78,27 @@ export function LocationKpiCard({ location, to }: LocationKpiCardProps) {
         </div>
       </div>
     </Link>
+  );
+}
+
+/** `F4.259` — the card's status badge. The dots are decoration; the word carries the state. */
+function LiveBadge({ live }: { live: boolean }) {
+  return (
+    <span
+      data-testid="site-live-badge"
+      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${
+        live ? "bg-ok-wash text-ok-ink" : "bg-warning-wash text-warning-ink"
+      }`}
+    >
+      {live ? (
+        <span aria-hidden className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full rounded-full bg-accent opacity-75 motion-safe:animate-ping" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+        </span>
+      ) : (
+        <span aria-hidden className="inline-flex h-2 w-2 rounded-full border-2 border-warning" />
+      )}
+      {live ? "Live" : "Not live"}
+    </span>
   );
 }
