@@ -28,6 +28,7 @@ import {
 import { seedRuledPointCatalog } from "./ruled-point-catalog-seed";
 import { seedAssetTemplateHealth } from "./asset-template-health-seed";
 import { seedBreakerDemo } from "./breaker-demo-seed";
+import { seedNetworkDemo } from "./network-demo-seed";
 import { seedPueDemo, seedPueDemoRackKwPoints } from "./pue-demo-seed";
 import { seedWaterMimicDemo } from "./water-mimic-demo-seed";
 import { seedWaterPlantDemo } from "./water-plant-demo-seed";
@@ -287,6 +288,12 @@ async function main(): Promise<void> {
       // `BASELINE-ELECTRICAL` declares `breaker_trip` on the first boot as on every later one.
       // (On a cold database only the unroled electrical assets stay on `BASELINE-ELECTRICAL`; roled ones move to their role template.)
       await seedBreakerDemo(pool, eskomOrgId, westernCapeId);
+      // `F3.80` PR3 (ADR 0101 d15, d16) — the HT/LT and flow network demos at RSMOC-WC: two groups,
+      // fifteen roled memberships, the state points, two layouts and two dashboards. After
+      // `seedEskomAssets` (the `NW-` assets) and `seedPointKeyCatalog` (the keys), and before
+      // `seedAssetTemplateHealth`, so each new role template declares its state points on the first
+      // boot as on every later one.
+      await seedNetworkDemo(pool, eskomOrgId, westernCapeId);
       // `F2.8`, first half — the fourteen `rack_kw` catalog rows, and NOTHING
       // ELSE. It sits here, between the ruled-point catalog and the health
       // baselines, and both sides of that are load-bearing. After the catalog,
