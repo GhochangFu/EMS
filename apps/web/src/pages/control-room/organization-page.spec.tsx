@@ -102,11 +102,19 @@ const siteMapMounts = vi.hoisted(() => ({ count: 0 }));
 
 vi.mock("../../components/control-room/organization-site-map", () => ({
   // `F2.10` — the real map also takes `nodes` (its parent filter); the stand-in ignores it.
-  OrganizationSiteMap: ({ organizationId }: { organizationId: string; nodes: readonly unknown[] }) => {
+  // `F4.260` — it also prints `syncedAt`, the site read's `dataUpdatedAt` it re-reads on.
+  OrganizationSiteMap: ({
+    organizationId,
+    syncedAt,
+  }: {
+    organizationId: string;
+    nodes: readonly unknown[];
+    syncedAt: number;
+  }) => {
     useEffect(() => {
       siteMapMounts.count += 1;
     }, []);
-    return <div data-testid="site-map-panel" data-organization-id={organizationId} />;
+    return <div data-testid="site-map-panel" data-organization-id={organizationId} data-synced-at={syncedAt} />;
   },
 }));
 
@@ -128,7 +136,7 @@ function LandedOnSite() {
   return <p>landed on site {locationId}</p>;
 }
 
-function renderAt(organizationId: string): void {
+function renderAt(organizationId: string): QueryClient {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
@@ -144,6 +152,7 @@ function renderAt(organizationId: string): void {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 /** Two organizations; A holds two sites. */
@@ -556,6 +565,20 @@ export async function theStripPercentsAddUpTo100(): Promise<void> {
   const strip = screen.getByTestId("live-status-strip");
   expect(within(strip).getByText("of 8 · 13% reporting fresh telemetry")).toBeInTheDocument();
   expect(within(strip).getByText("of 8 · 87% with no fresh telemetry")).toBeInTheDocument();
+}
+
+/**
+ * P9 — `F4.260`: the page hands the map the site read's `dataUpdatedAt`, so the map re-reads
+ * when the cards do. Compared with the query cache's own value, not just "a number".
+ */
+export async function theMapIsSyncedToTheSiteRead(): Promise<void> {
+  stubReads(TWO_ORGS);
+  const queryClient = renderAt(ORG_A.id);
+
+  await siteGrid();
+  const updatedAt = queryClient.getQueryState(["dashboard", "locations"])?.dataUpdatedAt;
+  expect(updatedAt, "control: the site read landed").toBeGreaterThan(0);
+  expect(screen.getByTestId("site-map-panel").dataset.syncedAt).toBe(String(updatedAt));
 }
 
 export function cleanupPage(): void {

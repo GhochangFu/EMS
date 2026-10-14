@@ -200,15 +200,16 @@ export async function aMeasuredPueTileStillCarriesTheStaleRing(): Promise<void> 
 }
 
 /**
- * `F3.30` (ADR 0075 decision 2) — the Sites online hint states the freshness
- * window from `FRESH_MS`, not a hardcoded `~20s`.
+ * `F3.30` (ADR 0075 decision 2) — the Sites online hint states the window the count uses,
+ * not a hardcoded number. `F4.260` (ADR 0075 Amendment 2): that is the 150 s site window
+ * (`SITE_REPORTING_MS`), no longer the 25 s reading window.
  */
 export async function sitesOnlineHintReadsTheFreshnessWindow(): Promise<void> {
   stubDashboard(1.42);
   renderPage();
 
   const tile = tileLabelled("Sites online");
-  expect(await within(tile).findByText("Sites with fresh telemetry (~25s)")).toBeInTheDocument();
+  expect(await within(tile).findByText("Sites reporting telemetry (~150s)")).toBeInTheDocument();
 }
 
 // ---------------------------------------------------------------------------

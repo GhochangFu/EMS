@@ -89,15 +89,19 @@ function stubFetch(): void {
   );
 }
 
-function renderMap(organizationId: string, nodes: readonly AccessLocation[] = []): QueryClient {
-  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  render(
+function mapTree(queryClient: QueryClient, organizationId: string, nodes: readonly AccessLocation[], syncedAt: number) {
+  return (
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <OrganizationSiteMap organizationId={organizationId} nodes={nodes} />
+        <OrganizationSiteMap organizationId={organizationId} nodes={nodes} syncedAt={syncedAt} />
       </MemoryRouter>
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+}
+
+function renderMap(organizationId: string, nodes: readonly AccessLocation[] = []): QueryClient {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(mapTree(queryClient, organizationId, nodes, 1));
   return queryClient;
 }
 
@@ -254,4 +258,31 @@ export async function theOrgMapFilterReadsTheSubtree(): Promise<void> {
     select.dispatchEvent(new Event("change", { bubbles: true }));
   });
   await waitFor(() => expect(read).toHaveBeenLastCalledWith("loc-a"));
+}
+
+/**
+ * S9 — `F4.260`: the map re-reads when the page's site read lands (`syncedAt` changes), so the
+ * pins and the site cards change together. The first render is the control: one read, not two.
+ */
+export async function theMapReReadsWithTheSiteRead(): Promise<void> {
+  stubFetch();
+  const read = vi.spyOn(mapApi, "fetchMapSites").mockResolvedValue(PINS);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(mapTree(queryClient, ORG_A.id, [], 1));
+  await pins();
+  expect(read, "the mount reads once").toHaveBeenCalledTimes(1);
+
+  view.rerender(mapTree(queryClient, ORG_A.id, [], 2));
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+}
+
+/** S10 — `F4.260`: the map has no timer of its own; the page's site read paces it. */
+export async function theMapHasNoTimerOfItsOwn(): Promise<void> {
+  stubFetch();
+  vi.spyOn(mapApi, "fetchMapSites").mockResolvedValue(PINS);
+  const queryClient = renderMap(ORG_A.id);
+  await pins();
+  const observer = queryClient.getQueryCache().find({ queryKey: ["map", "sites", null] })?.observers[0];
+  expect(observer, "control: the map observes its read").toBeDefined();
+  expect(observer?.options.refetchInterval).toBe(false);
 }

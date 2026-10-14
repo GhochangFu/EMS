@@ -13,6 +13,7 @@ import {
   aPendingKpiReadShowsOnlyTheLoadingLine,
   anUnreadableOrganizationShowsTheEmptyCard,
   cleanupPage,
+  theMapIsSyncedToTheSiteRead,
   everySiteLiveRendersNoNotLiveGroup,
   liveSitesComeFirstInTheirOwnGroup,
   theStripPercentsAddUpTo100,
@@ -138,5 +139,9 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
 
   it("L5 keeps the strip's two percents at a sum of 100 (F4.259)", async () => {
     await theStripPercentsAddUpTo100();
+  });
+
+  it("P9 hands the map the site read's dataUpdatedAt (F4.260)", async () => {
+    await theMapIsSyncedToTheSiteRead();
   });
 });
