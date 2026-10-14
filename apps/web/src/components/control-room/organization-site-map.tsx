@@ -46,11 +46,12 @@ export function OrganizationSiteMap({ organizationId, nodes, syncedAt }: Organiz
     queryFn: () => fetchMapSites(rootId ?? undefined),
     refetchInterval: false,
   });
-  // `F4.260` — re-read on each new site read. On mount this call joins the first read rather
-  // than starting a second (S9 counts one).
+  // `F4.260` — re-read on each new site read. `cancelRefetch: false` joins a read already in
+  // flight (the mount's own, or a focus re-read) instead of cancelling and repeating it, so each
+  // trigger costs one request (S9 with an empty cache, S11 with a cached one).
   const { refetch } = query;
   useEffect(() => {
-    void refetch();
+    void refetch({ cancelRefetch: false });
   }, [syncedAt, refetch]);
   const pins = query.data ? organizationPins(query.data, organizationId) : [];
 

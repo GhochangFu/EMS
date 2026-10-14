@@ -2,6 +2,7 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aCachedMapMountsWithOneRead,
   theMapHasNoTimerOfItsOwn,
   theMapReReadsWithTheSiteRead,
   aFailedPollKeepsTheMap,
@@ -67,5 +68,9 @@ describe("F3.79 OrganizationSiteMap", () => {
 
   it("S10 has no timer of its own (F4.260)", async () => {
     await theMapHasNoTimerOfItsOwn();
+  });
+
+  it("S11 mounts a cached map with one read (F4.260)", async () => {
+    await aCachedMapMountsWithOneRead();
   });
 });

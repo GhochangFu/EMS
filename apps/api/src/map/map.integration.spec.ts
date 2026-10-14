@@ -16,8 +16,8 @@ const INSIDE_SITE_WINDOW_S = REPORTING_WINDOW_SECONDS - 10;
 
 /**
  * `F3.30` (ADR 0075 decision 2) — `sitesLive`'s comm-status counts move to
- * the any-point rule through the shared `live` CTE, the same as
- * `dashboard.service.ts` (`F3.30` U2). A second fixture asset (no alarms of
+ * the any-point rule through a shared CTE, the same as `dashboard.service.ts`
+ * (`F3.30` U2) — since `F4.260` the 150 s `reporting` one. A second fixture asset (no alarms of
  * its own) carries a non-`kw` sample; scoping `assetIds` to only that asset
  * keeps `insertFixture`'s alarmed asset out of both the alarm and comm counts,
  * so `assetsTotal` and `status` read off this asset alone.

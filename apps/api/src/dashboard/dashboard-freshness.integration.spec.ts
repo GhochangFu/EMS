@@ -15,8 +15,9 @@ const INSIDE_SITE_WINDOW_S = REPORTING_WINDOW_SECONDS - 10;
 
 /**
  * `F3.30` (ADR 0075 decision 2) — the dashboard's three freshness counts use
- * the any-point rule of ADR 0074 OQ1 through the shared `live` CTE, and
- * `total_kw` does not change. Assertions live here; the sibling
+ * the any-point rule of ADR 0074 OQ1 through a shared CTE, and `total_kw`
+ * does not change. `F4.260` (ADR 0075 Amendment 2): that CTE is now
+ * `reporting`, the 150 s site window, no longer the 25 s `live` one. Assertions live here; the sibling
  * `.integration.test` owns the pool (ADR 0014).
  *
  * **Every case runs in one transaction on one client and rolls it back.**
@@ -26,7 +27,7 @@ const INSIDE_SITE_WINDOW_S = REPORTING_WINDOW_SECONDS - 10;
  * rows and nobody else does. Every read is scoped to the fixture's location
  * or asset ids, so the fleet's own telemetry cannot move a number.
  *
- * **Two clocks.** SQL `now()` is frozen at `BEGIN`, and the `live` CTE
+ * **Two clocks.** SQL `now()` is frozen at `BEGIN`, and the `reporting` CTE
  * compares against it, so every sample the SQL judges is stamped in SQL
  * relative to that same `now()` — its age is exact however long the seeding
  * takes. `telemetryFreshness` judges in JS against `Date.now()`, so the one
@@ -225,7 +226,7 @@ export async function assertTotalKwSumsStaleKw(client: pg.PoolClient): Promise<v
  * Case 3 — `locationDashboard`'s RTU row counts a non-`kw` fresh asset, and
  * only that one: a second in-scope asset on the same RTU whose only sample is
  * past the site window is counted in `assetCount` and not in `freshAssetCount` — the
- * stale control the `FILTER (WHERE live.asset_id IS NOT NULL)` answers for
+ * stale control the `FILTER (WHERE reporting.asset_id IS NOT NULL)` answers for
  * (code review 3).
  */
 export async function assertRtuRowsCountNonKwFresh(client: pg.PoolClient): Promise<void> {

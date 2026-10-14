@@ -290,3 +290,27 @@ export async function theMapHasNoTimerOfItsOwn(): Promise<void> {
   expect(observer, "control: the map observes its read").toBeDefined();
   expect(observer?.options.refetchInterval).toBe(false);
 }
+
+/**
+ * S11 — `F4.260` code review: with the read already cached (back from a site, or from `/map`),
+ * the mount still sends one read, not two. Default `refetch()` cancels the observer's own
+ * mount read and repeats it; `cancelRefetch: false` joins it.
+ */
+export async function aCachedMapMountsWithOneRead(): Promise<void> {
+  stubFetch();
+  let release: () => void = () => undefined;
+  const read = vi.spyOn(mapApi, "fetchMapSites").mockImplementation(
+    () => new Promise<MapSiteDto[]>((resolve) => { release = () => resolve(PINS); }),
+  );
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  queryClient.setQueryData(["map", "sites", null], PINS);
+  render(mapTree(queryClient, ORG_A.id, [], 1));
+  await pins();
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+  expect(read, "one read for the mount, joined by the sync").toHaveBeenCalledTimes(1);
+  await act(async () => {
+    release();
+  });
+}

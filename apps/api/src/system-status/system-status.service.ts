@@ -59,9 +59,10 @@ const EMPTY_COUNTS: StatusCountsRow = {
  * number and never a bound parameter, which would plan every `point_values`
  * chunk. The one window drives both `dataQuality` and `field_data`, and is
  * returned as `windowSeconds`. It is wider than the 25 s live window the
- * location cards, the map and the class strip use, because the real MQTT
- * devices report every 60 s: this read asks "is data arriving?", not "is this
- * reading live?". `tests/f3.28-offline-bound-single-source.test.ts` pins this
+ * class strip and the widgets use, because the real MQTT devices report every
+ * 60 s: this read asks "is data arriving?", not "is this reading live?". Since
+ * `F4.260` (ADR 0075 Amendment 2) the location cards, `/` Sites online and the
+ * map read this same window. `tests/f3.28-offline-bound-single-source.test.ts` pins this
  * file to the reporting CTE and forbids the live one. The SQL is unaliased so
  * Drizzle's `inArray(assets.id, …)` renders against `bms.assets`.
  *

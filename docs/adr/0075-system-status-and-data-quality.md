@@ -366,3 +366,13 @@ requests, so they can differ for the time one request takes. The Sites map
 page (`/map`) keeps its own 8 s poll; its pins follow the same rule and
 window. The per-device expected interval of Amendment 1's consequences would
 replace the fixed 150 s here too; it is still not raised as a row.
+
+Two more consequences, found at review. **A site page now shows both windows:**
+the "Assets fresh" tile and the RTU rows count on 150 s, while each asset
+row's Live/Stale pill keeps 25 s, so a 60 s device 40 s after its last report
+counts as fresh in the tile and reads Stale in its own row. They answer the
+two questions of Amendment 1 and are not reconciled here. **The organization
+map follows the site read:** while that read fails, the map does not re-read
+either, so the pins and the cards stay at the same moment. The wider window
+costs little: the map's count query took 2.1 ms at 150 s against 1.9 ms at
+25 s on the dev database (`EXPLAIN ANALYZE`, 2026-10-14).
