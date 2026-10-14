@@ -20,7 +20,8 @@ export type Energy = "energised" | "de-energised" | "unknown";
 export type SwitchState = "closed" | "flowing" | "open" | "shut" | "tripped" | "unknown";
 
 /**
- * One node. `switching` is the symbol rule; `fanOut` says the node stands for several members —
+ * One node. `switching` is the d4 rule (flag or symbol), computed by the caller; `fanOut` says the
+ * node stands for several members —
  * the walk treats every switching node's member list the same way, so it is carried for the
  * caller, not read here.
  */

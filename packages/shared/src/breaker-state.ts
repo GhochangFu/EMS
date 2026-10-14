@@ -32,9 +32,10 @@ export const BREAKER_ROLE_CODES = [
 export type BreakerRoleCode = (typeof BREAKER_ROLE_CODES)[number];
 
 /**
- * The symbols that switch (D1b, owner ruling N1): a unit switches iff its symbol is one of these —
- * the core `breaker` glyph and the two library breakers. A layout carries no switching column; a
- * preset node switches through its `breaker` glyph in the web's `MIMIC_NODE_GLYPHS`.
+ * The symbols that switch (D1b, owner ruling N1) — the core `breaker` glyph and the two library
+ * breakers. This is the symbol half of ADR 0101 d4: a layout unit switches when its `is_switching`
+ * flag is set or its symbol is one of these; a preset node switches through its `breaker` glyph
+ * alone, in the web's `MIMIC_NODE_GLYPHS`.
  */
 export const MIMIC_SWITCHING_SYMBOLS = ["breaker", "wmpid:breaker", "drawio:circuit-breaker"] as const;
 

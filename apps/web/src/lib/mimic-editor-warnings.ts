@@ -10,18 +10,27 @@ import type { EditorLayout } from "./mimic-editor";
  * unit with no role (node order); each switching unit no source reaches (node order). A pipe
  * carries the walk from `fromKey` to `toKey` only, so a pipe the wrong way round does not reach.
  * With no source every switching unit is unreached, so that case is the first warning alone.
+ *
+ * Each warning carries a `key` unique within the list (the kind plus the node key): two units may
+ * share a label — the palette names a new unit after its symbol — so the text is not a key.
  */
-export function layoutWarnings(layout: Pick<EditorLayout, "nodes" | "pipes">): readonly string[] {
+export type LayoutWarning = { readonly key: string; readonly text: string };
+
+export function layoutWarnings(layout: Pick<EditorLayout, "nodes" | "pipes">): readonly LayoutWarning[] {
   const units = layout.nodes.filter((n) => n.kind === "unit");
   const switching = units.filter((n) => n.isSwitching || (n.symbol !== null && isSwitchingSymbol(n.symbol)));
   if (switching.length === 0) return [];
 
-  const warnings: string[] = [];
+  const warnings: LayoutWarning[] = [];
   const sources = units.filter((n) => n.isSource);
-  if (sources.length === 0) warnings.push("No unit is marked as an energy source, so nothing is energised.");
+  if (sources.length === 0) {
+    warnings.push({ key: "no-source", text: "No unit is marked as an energy source, so nothing is energised." });
+  }
 
   for (const n of switching) {
-    if (n.roleCode === null) warnings.push(`"${n.label}" switches but has no role, so it shows no state.`);
+    if (n.roleCode === null) {
+      warnings.push({ key: `no-role:${n.key}`, text: `"${n.label}" switches but has no role, so it shows no state.` });
+    }
   }
 
   if (sources.length > 0) {
@@ -36,7 +45,10 @@ export function layoutWarnings(layout: Pick<EditorLayout, "nodes" | "pipes">): r
       }
     }
     for (const n of switching) {
-      if (!reached.has(n.key)) warnings.push(`"${n.label}" switches but no source reaches it along the pipes.`);
+      if (!reached.has(n.key)) {
+        const text = `"${n.label}" switches but no source reaches it along the pipes.`;
+        warnings.push({ key: `unreached:${n.key}`, text });
+      }
     }
   }
   return warnings;

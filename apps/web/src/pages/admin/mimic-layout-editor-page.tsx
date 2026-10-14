@@ -336,7 +336,7 @@ function LayoutEditor({
         {warnings.length > 0 ? (
           <ul role="status" aria-label="Layout warnings" className="list-disc space-y-1 pl-4 text-xs text-warning-ink">
             {warnings.map((w) => (
-              <li key={w}>{w}</li>
+              <li key={w.key}>{w.text}</li>
             ))}
           </ul>
         ) : null}

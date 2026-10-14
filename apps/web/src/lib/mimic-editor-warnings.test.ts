@@ -6,6 +6,7 @@ import {
   noRoleWarns,
   noSourceWarns,
   noSwitchingUnitNoWarning,
+  sameLabelUnitsGetDistinctKeys,
   unreachedWarns,
 } from "./mimic-editor-warnings.spec";
 
@@ -33,5 +34,9 @@ describe("F3.80 — editor warnings (ADR 0101 d14)", () => {
 
   it("a pipe in the wrong direction does not count as reached", () => {
     aPipeTheWrongWayDoesNotReach();
+  });
+
+  it("two units that share a label get distinct warning keys", () => {
+    sameLabelUnitsGetDistinctKeys();
   });
 });
