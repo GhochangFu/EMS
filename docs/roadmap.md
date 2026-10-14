@@ -7711,7 +7711,7 @@ Four PRs, squash-merged 2026-10-13 to 2026-10-14; no migration, no new dependenc
 - **#839** (`3f01ca8c`) — the `copilot-purge` tick deletes drafts with no update for 30 days, with their encrypted credentials.
 - **#842** (`300578c9`) — the dock's draft picker; with no organization id the list answers for a scoped caller's home organization.
 
-Owner rulings 2026-10-13: resume and expire; a list in the dock; delete after 30 days. Verified: the database suites on scratch databases, the branch API and this branch's worker (one 31-day draft deleted, a 29-day one kept), the production bundle; `e2e` green on #842. **Owed:** the dock list in a browser (the owner's sign-in). The owner kept the home-organization default on 2026-10-14, and ADR 0099 gained a note on A1. Raised: none.
+Owner rulings 2026-10-13: resume and expire; a list in the dock; delete after 30 days. Verified: the database suites on scratch databases, the branch API and this branch's worker (one 31-day draft deleted, a 29-day one kept), the production bundle; `e2e` green on #842. The dock list was checked in a browser on 2026-10-14 (list, Resume, End). The owner kept the home-organization default on 2026-10-14, and ADR 0099 gained a note on A1. Raised: none.
 
 ### `F4.254` — the copilot catalog takes the asset-template lifecycle ✅ 2026-10-14
 
@@ -7721,4 +7721,4 @@ Three PRs, squash-merged 2026-10-13 to 2026-10-14; no ADR amendment, no migratio
 - **#841** (`63cd7450`) — create, draft, archive and stock import as entries with wizards; the tool-definition cap 48,000.
 - **#843** (`181c4172`) — instantiate as an entry with the `assetTemplateDeploy` target kind; the instantiate wizard.
 
-Owner rulings 2026-10-13 are in the plan's §0. Verified: the database suites on scratch databases; each entry applied through the real interceptor with a `via: copilot` audit row; a location administrator's instantiate on a site outside its grants refused 403; the wizards in a browser (#841); `e2e` green on #841 and #843. **Owed:** the instantiate wizard in a browser (the owner's sign-in). Raised: `F4.257` (the audit-mark ledger has no completeness gate).
+Owner rulings 2026-10-13 are in the plan's §0. Verified: the database suites on scratch databases; each entry applied through the real interceptor with a `via: copilot` audit row; a location administrator's instantiate on a site outside its grants refused 403; the wizards in a browser (#841); `e2e` green on #841 and #843. The instantiate wizard was checked in a browser on 2026-10-14. Raised: `F4.257` (the audit-mark ledger has no completeness gate).
