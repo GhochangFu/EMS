@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AccessLocation } from "@bms/shared";
 
 import { fetchMapSites } from "../../api/map";
@@ -46,12 +46,10 @@ export function OrganizationSiteMap({ organizationId, nodes, syncedAt }: Organiz
     queryFn: () => fetchMapSites(rootId ?? undefined),
     refetchInterval: false,
   });
-  // `F4.260` — re-read on each new site read; the mount's own read is the first.
+  // `F4.260` — re-read on each new site read. On mount this call joins the first read rather
+  // than starting a second (S9 counts one).
   const { refetch } = query;
-  const lastSynced = useRef(syncedAt);
   useEffect(() => {
-    if (lastSynced.current === syncedAt) return;
-    lastSynced.current = syncedAt;
     void refetch();
   }, [syncedAt, refetch]);
   const pins = query.data ? organizationPins(query.data, organizationId) : [];

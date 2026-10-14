@@ -270,6 +270,10 @@ export async function theMapReReadsWithTheSiteRead(): Promise<void> {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const view = render(mapTree(queryClient, ORG_A.id, [], 1));
   await pins();
+  // A tick for any read the mount's effects start late.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
   expect(read, "the mount reads once").toHaveBeenCalledTimes(1);
 
   view.rerender(mapTree(queryClient, ORG_A.id, [], 2));
