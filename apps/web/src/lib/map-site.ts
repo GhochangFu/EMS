@@ -108,3 +108,14 @@ export function controlRoomSiteLink(site: MapSiteDto): MapSiteLink {
     label: "Open site",
   };
 }
+
+/**
+ * `F4.262` — the Sites map's live strip, counted from the pins it draws: a pin that joins a
+ * location is live with one fresh asset (the `F4.260` rule, ADR 0075 Amendment 2 — alarms only
+ * colour the pin), not live with none. A reference station joins no location and is in neither.
+ */
+export function mapLiveCounts(sites: readonly MapSiteDto[]): { live: number; notLive: number } {
+  const operational = sites.filter(isOperationalSite);
+  const live = operational.filter((site) => site.live.assetsFresh > 0).length;
+  return { live, notLive: operational.length - live };
+}

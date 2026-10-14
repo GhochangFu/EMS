@@ -2,6 +2,7 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  theCardShowsLiveAndNotLiveChips,
   cleanupGrid,
   eachOrganizationCardLinksToItsLevel,
   theCardReadsSitesOnlineAndAlarms,
@@ -21,7 +22,11 @@ describe("F3.72 U1 OrganizationCardGrid", () => {
     eachOrganizationCardLinksToItsLevel();
   });
 
-  it("O2 reads '2 sites · 1 online · 3 alarms' on the A card", () => {
+  it("O2 reads '2 sites · 3 alarms' on the A card", () => {
     theCardReadsSitesOnlineAndAlarms();
+  });
+
+  it("O3 shows each organization's live and not-live chips and its live share (F4.261)", () => {
+    theCardShowsLiveAndNotLiveChips();
   });
 });

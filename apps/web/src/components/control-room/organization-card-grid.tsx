@@ -2,6 +2,7 @@ import type { LocationKpiSummary } from "@bms/shared";
 import { Link } from "react-router-dom";
 
 import { organizationCards } from "../../lib/control-room-levels";
+import { LiveCountChips } from "./live-count-chips";
 
 type OrganizationCardGridProps = {
   /** The KPI list (`["dashboard","locations"]`); the grid groups it by organization. */
@@ -13,6 +14,9 @@ type OrganizationCardGridProps = {
  * organization, each linking to its Control Room organization level. Moved verbatim from
  * `pages/control-room/organizations-page.tsx` so the estate can hold the same grid; the
  * `data-testid` is kept, and the level-skip decision stays with the page that renders it.
+ *
+ * `F4.261` — the card leads with its live and not-live chips (`LiveCountChips`) instead of a
+ * small "N online"; the line under them keeps the site and alarm counts.
  */
 export function OrganizationCardGrid({ items }: OrganizationCardGridProps) {
   return (
@@ -34,8 +38,11 @@ export function OrganizationCardGrid({ items }: OrganizationCardGridProps) {
               {card.organization.code}
             </span>
           </div>
+          <div className="mt-3">
+            <LiveCountChips live={card.sitesOnline} notLive={card.siteCount - card.sitesOnline} />
+          </div>
           <div className="mt-2 text-xs text-ink-muted">
-            {`${card.siteCount} sites · ${card.sitesOnline} online · ${card.openAlarms} alarms`}
+            {`${card.siteCount} sites · ${card.openAlarms} alarms`}
           </div>
         </Link>
       ))}

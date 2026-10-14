@@ -73,6 +73,47 @@ export async function theSitesMapPopupOpensTheAssetsTab(): Promise<void> {
   expect(screen.getByTestId("leaflet-map").dataset.class?.split(" ")).toContain("h-[min(70vh,560px)]");
 }
 
+/**
+ * M2 — `F4.262`: the live strip counts the same pins the map draws — joined pins only, live with
+ * one fresh asset — and the legend names each pin colour. The reference station is the control.
+ */
+export async function theMapStripCountsThePinsItDraws(): Promise<void> {
+  vi.stubGlobal("fetch", () => Promise.reject(new Error("map-page spec: an unstubbed read reached fetch")));
+  const live = (id: string, fresh: number) =>
+    mapSite({
+      id: `m-${id}`,
+      canonicalLocationId: id,
+      name: `Site ${id}`,
+      kind: "site",
+      kindLabel: "Site",
+      live: { status: fresh > 0 ? "healthy" : "offline", openAlarms: 0, criticalAlarms: 0, assetsTotal: 2, assetsFresh: fresh },
+    });
+  vi.spyOn(mapApi, "fetchMapSites").mockResolvedValue([
+    live("a", 1),
+    live("b", 2),
+    live("c", 0),
+    mapSite({ id: "m-ref", name: "Reference Station" }),
+  ]);
+  useAuthStore.setState({ scope: { kind: "global", locations: [], assetGroups: [], assetIds: [] } });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <MapPage user={USER} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+
+  await screen.findByTestId("leaflet-map");
+  const strip = screen.getByTestId("live-status-strip");
+  expect(within(strip).getByTestId("live-site-count").textContent).toBe("2");
+  expect(within(strip).getByTestId("not-live-site-count").textContent).toBe("1");
+  const legend = screen.getByTestId("map-pin-legend");
+  expect(
+    within(legend).getAllByRole("listitem").map((item) => item.textContent),
+  ).toEqual(["Live", "Warning alarm", "Critical alarm", "Not live", "Reference station"]);
+}
+
 export function cleanupMapPage(): void {
   cleanup();
   fitBounds.mockReset();

@@ -58,7 +58,24 @@ export function theCardReadsSitesOnlineAndAlarms(): void {
   renderGrid(TWO_ORGS);
 
   const card = orgCardLink("org-a");
-  expect(within(card).getByText("2 sites · 1 online · 3 alarms")).toBeInTheDocument();
+  expect(within(card).getByText("2 sites · 3 alarms")).toBeInTheDocument();
+}
+
+/**
+ * O3 — `F4.261`: each organization card shows its live and not-live chips and the live share
+ * bar. Org B (none live) is the control that the counts are per organization.
+ */
+export function theCardShowsLiveAndNotLiveChips(): void {
+  renderGrid(TWO_ORGS);
+
+  const a = orgCardLink("org-a");
+  expect(within(a).getByTestId("live-chip").textContent).toBe("1 live");
+  expect(within(a).getByTestId("not-live-chip").textContent).toBe("1 not live");
+  expect(within(a).getByTestId("live-share-bar").style.width).toBe("50%");
+  const b = orgCardLink("org-b");
+  expect(within(b).getByTestId("live-chip").textContent).toBe("0 live");
+  expect(within(b).getByTestId("not-live-chip").textContent).toBe("1 not live");
+  expect(within(b).getByTestId("live-share-bar").style.width).toBe("0%");
 }
 
 export function cleanupGrid(): void {
