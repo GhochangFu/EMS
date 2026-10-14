@@ -7748,3 +7748,12 @@ One PR, web only; no API, no migration, no new dependency.
 - `LocationKpiCard` leads with a Live badge and a green left edge, or a Not live badge and an amber one (amber, so red stays for alarms); the dashboard and the estate accordion share it.
 
 Owner request and design approval 2026-10-14. Verified: the web project; 15 mutations; the rebuilt web image in the browser as the PHE organization admin. Raised: none.
+
+### `F4.260` — the map pins and the site cards agree on which sites are live ✅ 2026-10-14
+
+One PR; ADR 0075 Amendment 2; no migration, no new dependency.
+
+- A site is live on the 150 s reporting window (the cards, the RTU rows, `/` Sites online and the map), so a site of 60 s devices no longer flickers; a reading's own freshness keeps 25 s.
+- A map pin is green when at least one asset is fresh, the card's rule; the organization map re-reads with the site cards instead of on its own timer.
+
+Owner report and rulings 2026-10-14. Verified: the integration suites on the dev database; 12 mutations; 159 s of card and map reads in the browser with no disagreement. Raised: none.
