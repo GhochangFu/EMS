@@ -1207,7 +1207,10 @@
 > `tests/f3.85-copilot-interceptor-wiring.test.ts` (the `X-Copilot-Change`
 > seam: no global pipe, the global interceptor, the middleware on every route,
 > CORS for the header, the `./copilot` subpath);
-> `tests/f3.85-audit-via-mark.test.ts` (the `via: "copilot"` audit mark);
+> `tests/f3.85-audit-via-mark.test.ts` (the `via: "copilot"` audit mark, and
+> since `F4.257` a complete ledger: every audit-service file under the
+> catalog directories is a `CATALOG_WRITERS` or a `NOT_CATALOG_WRITERS` row,
+> each NOT row tied to the excluded route that alone reaches its audit call);
 > `tests/f3.85-catalog-coverage.test.ts` (the catalog against the controllers
 > it covers); and `tests/f3.85-stepper-coverage.test.ts` (every catalog entry
 > is the `entry` of a `WizardShell`).
