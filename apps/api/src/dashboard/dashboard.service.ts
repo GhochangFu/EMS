@@ -14,7 +14,7 @@ import {
 } from "../telemetry/point-aggregates";
 import { CalcParametersService } from "../calc/calc-parameters.service";
 import { latestPueRatio } from "../telemetry/pue-ratio";
-import { LIVE_ASSETS_CTE_SQL, telemetryFreshnessAt } from "../telemetry/telemetry-freshness";
+import { REPORTING_ASSETS_CTE_SQL, telemetryFreshnessAt } from "../telemetry/telemetry-freshness";
 import * as energyCentre from "./energy-centre";
 import { emptyKpiPrior, priorInstant, readKpiPrior, type KpiPrior } from "./kpi-prior";
 
@@ -83,7 +83,8 @@ export class DashboardService {
         WHERE ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
         GROUP BY a.location_id
       ),
-      ${LIVE_ASSETS_CTE_SQL}
+      -- F4.260 (ADR 0075 Amendment 2): a site is live on the 150 s reporting window.
+      ${REPORTING_ASSETS_CTE_SQL}
       SELECT
         l.id,
         l.name,
@@ -96,7 +97,7 @@ export class DashboardService {
         o.name AS org_name,
         COUNT(DISTINCT r.id)::int AS rtu_count,
         COUNT(DISTINCT a.id)::int AS asset_count,
-        COUNT(DISTINCT a.id) FILTER (WHERE live.asset_id IS NOT NULL)::int AS fresh_asset_count,
+        COUNT(DISTINCT a.id) FILTER (WHERE reporting.asset_id IS NOT NULL)::int AS fresh_asset_count,
         -- One kw_by_location row per location, so MAX is that row's sum.
         COALESCE(MAX(kl.total_kw), 0)::float8 AS total_kw,
         -- ADR 0057 decision 1: open/active = cleared_at IS NULL (since migration 0066).
@@ -121,7 +122,7 @@ export class DashboardService {
         ON a.location_id = l.id
        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
       LEFT JOIN kw_by_location kl ON kl.location_id = l.id
-      LEFT JOIN live ON live.asset_id = a.id
+      LEFT JOIN reporting ON reporting.asset_id = a.id
       LEFT JOIN bms.alarms al ON al.asset_id = a.id
       WHERE l.active = true
         AND ($1::uuid[] IS NULL OR l.id = ANY($1::uuid[]))
@@ -189,7 +190,7 @@ export class DashboardService {
       fresh_asset_count: string;
     }>(
       `
-      WITH ${LIVE_ASSETS_CTE_SQL}
+      WITH ${REPORTING_ASSETS_CTE_SQL}
       SELECT
         r.id,
         r.code,
@@ -198,12 +199,12 @@ export class DashboardService {
         r.domain,
         r.ingest_enabled,
         COUNT(DISTINCT a.id)::int AS asset_count,
-        COUNT(DISTINCT a.id) FILTER (WHERE live.asset_id IS NOT NULL)::int AS fresh_asset_count
+        COUNT(DISTINCT a.id) FILTER (WHERE reporting.asset_id IS NOT NULL)::int AS fresh_asset_count
       FROM bms.rtus r
       LEFT JOIN bms.assets a
         ON a.rtu_id = r.id
        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
-      LEFT JOIN live ON live.asset_id = a.id
+      LEFT JOIN reporting ON reporting.asset_id = a.id
       WHERE r.location_id = $1
       GROUP BY r.id, r.code, r.display_name, r.source_type, r.domain, r.ingest_enabled
       ORDER BY r.display_name
@@ -498,7 +499,7 @@ export class DashboardService {
         WHERE point_key = 'kw' AND ($1::uuid[] IS NULL OR asset_id = ANY($1::uuid[]))
         ORDER BY asset_id, time DESC
       ),
-      ${LIVE_ASSETS_CTE_SQL},
+      ${REPORTING_ASSETS_CTE_SQL},
       asset_sites AS (
         SELECT id, site_name FROM bms.assets
         WHERE ($1::uuid[] IS NULL OR id = ANY($1::uuid[]))
@@ -507,7 +508,7 @@ export class DashboardService {
         -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
         (SELECT COALESCE(SUM(k.kw), 0) FROM kw_latest k
           INNER JOIN bms.assets a ON a.id = k.asset_id)::float8 AS total_kw,
-        (SELECT COUNT(DISTINCT s.site_name)::int FROM live k
+        (SELECT COUNT(DISTINCT s.site_name)::int FROM reporting k
           JOIN asset_sites s ON s.id = k.asset_id) AS sites_online,
         (SELECT COUNT(DISTINCT site_name)::int FROM asset_sites) AS sites_total,
         -- ADR 0057 decision 1: open/active = cleared_at IS NULL (since migration 0066).

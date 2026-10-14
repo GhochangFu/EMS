@@ -16,7 +16,9 @@
  * `kpis.sites_online` and the map's `fresh_count`, all in
  * `dashboard.service.ts` and `map.service.ts` — now read this same any-point
  * window through {@link LIVE_ASSETS_CTE_SQL}. `total_kw` is unaffected; it
- * keeps its own unbounded `kw` read.
+ * keeps its own unbounded `kw` read. `F4.260` (ADR 0075 Amendment 2) moves
+ * those four counts on to {@link REPORTING_ASSETS_CTE_SQL}: whether a site is
+ * live is now judged on the reporting window below.
  */
 export const LIVE_TELEMETRY_MAX_AGE_SECONDS = 25;
 
@@ -34,11 +36,13 @@ if (!Number.isInteger(LIVE_TELEMETRY_MAX_AGE_SECONDS) || LIVE_TELEMETRY_MAX_AGE_
  * this module's own constant, checked above to be a positive integer, and
  * never request input (§4.4).
  *
- * Every SQL site that tests fleet liveness interpolates this string (or
- * wraps it in `sql.raw` for a Drizzle query) rather than restating the
- * number; `tests/f3.28-offline-bound-single-source.test.ts` holds that for
- * every listed site. The status read is the one exception: it reads
- * {@link REPORTING_WINDOW_INTERVAL_SQL} instead (ADR 0075 Amendment 1).
+ * Every SQL site that tests whether a reading is live interpolates this
+ * string (or wraps it in `sql.raw` for a Drizzle query) rather than restating
+ * the number; `tests/f3.28-offline-bound-single-source.test.ts` holds that for
+ * every listed site — today the role summary, `metric-catalog.service.ts` and
+ * `site-widgets.service.ts`. The status read (ADR 0075 Amendment 1) and the
+ * site counts (Amendment 2, `F4.260`) read
+ * {@link REPORTING_WINDOW_INTERVAL_SQL} instead.
  */
 export const LIVE_WINDOW_INTERVAL_SQL = `interval '${LIVE_TELEMETRY_MAX_AGE_SECONDS} seconds'`;
 
@@ -62,11 +66,17 @@ export const LIVE_ASSETS_CTE_SQL = `live AS (SELECT DISTINCT asset_id FROM telem
  * so Data Quality read 20–60 % and jumped between polls. 150 s is 2.5× the
  * measured cadence: one missed report still counts, two do not.
  *
- * It does not replace {@link LIVE_TELEMETRY_MAX_AGE_SECONDS}: the location
- * cards, `/` Sites online, the map, the F3.28 class strip and the web
- * `FRESH_MS` keep the 25 s window. The two answer different questions — "is
- * data arriving?" against "is this reading live?" — and may differ on the
- * same fleet at the same moment.
+ * It does not replace {@link LIVE_TELEMETRY_MAX_AGE_SECONDS}: the F3.28 class
+ * strip, the dashboard widgets' offline counts and the web `FRESH_MS` keep the
+ * 25 s window. The two answer different questions — "is data arriving?"
+ * against "is this reading live?" — and may differ on the same fleet at the
+ * same moment.
+ *
+ * `F4.260` (ADR 0075 Amendment 2, owner ruling 2026-10-14) — whether a **site**
+ * is live is the first question: the location cards, the RTU rows, `/` Sites
+ * online and the map pins read this window too, so a site of 60 s devices no
+ * longer flickers live and not live each minute. The web's
+ * `SITE_REPORTING_MS` is the same number.
  */
 export const REPORTING_WINDOW_SECONDS = 150;
 
@@ -86,9 +96,10 @@ export const REPORTING_WINDOW_INTERVAL_SQL = `interval '${REPORTING_WINDOW_SECON
  * The `reporting` CTE: the asset ids with a sample of any point key newer than
  * the reporting window. The same shape as {@link LIVE_ASSETS_CTE_SQL} —
  * fleet-wide, unscoped, `DISTINCT` so a join cannot fan out a row — under its
- * own name so the status service cannot read the live window by mistake.
- * `tests/f3.28-offline-bound-single-source.test.ts` pins the status service to
- * this CTE and forbids the live one.
+ * own name so its readers cannot take the live window by mistake.
+ * `tests/f3.28-offline-bound-single-source.test.ts` pins its readers to it and
+ * forbids the live one: the status service, and since `F4.260` the site counts
+ * in `dashboard.service.ts` and `map.service.ts`.
  */
 export const REPORTING_ASSETS_CTE_SQL = `reporting AS (SELECT DISTINCT asset_id FROM telemetry.point_values WHERE time > now() - ${REPORTING_WINDOW_INTERVAL_SQL})`;
 

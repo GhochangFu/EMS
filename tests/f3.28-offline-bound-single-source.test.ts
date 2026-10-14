@@ -29,6 +29,12 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
  * own 150 s `REPORTING_WINDOW_SECONDS` through `REPORTING_ASSETS_CTE_SQL`.
  * The status-service rows below pin it to the reporting CTE and forbid the
  * live one, so the two windows cannot be swapped silently.
+ *
+ * `F4.260` (ADR 0075 Amendment 2) moves decision 2's four fleet counts — the
+ * location cards, the RTU rows, `/` Sites online and the map pins — to the
+ * reporting window too: `SITE_LIVENESS_SITES` pins each to
+ * `REPORTING_ASSETS_CTE_SQL` and forbids the live CTE, so a site's liveness
+ * cannot fall back to the 25 s reading window that a 60 s device leaves.
  */
 
 const FRESHNESS = join(repoRoot, "apps/api/src/telemetry/telemetry-freshness.ts");
@@ -51,10 +57,6 @@ function numericExport(file: string, name: string): number {
  * apply to every unit").
  */
 const FRESHNESS_SITES: ReadonlyArray<{ readonly file: string; readonly count: number }> = [
-  // `locationKpis`, `locationDashboard`'s RTU rows, `kpis.sites_online`.
-  { file: "apps/api/src/dashboard/dashboard.service.ts", count: 3 },
-  // `sitesLive`'s comm-status count.
-  { file: "apps/api/src/map/map.service.ts", count: 1 },
   // `F3.73` — `assets.offline.count` and `assets.list`, through one shared helper.
   { file: "apps/api/src/dashboard-builder/metric-catalog.service.ts", count: 1 },
   // `F3.73` (plan D9, ruling Q6a) — the site-widgets read's per-tab offline count.
@@ -66,6 +68,14 @@ describe("F3.28 — the offline bound has one source (ADR 0074, OQ1)", () => {
     const seconds = numericExport(FRESHNESS, "LIVE_TELEMETRY_MAX_AGE_SECONDS");
     const freshMs = numericExport(WEB_TELEMETRY, "FRESH_MS");
     expect(seconds * 1000).toBe(freshMs);
+  });
+});
+
+describe("F4.260 — the site window has one source on each side of the wire (ADR 0075 Amendment 2)", () => {
+  it("REPORTING_WINDOW_SECONDS × 1000 equals the web SITE_REPORTING_MS", () => {
+    const seconds = numericExport(FRESHNESS, "REPORTING_WINDOW_SECONDS");
+    const siteMs = numericExport(WEB_TELEMETRY, "SITE_REPORTING_MS");
+    expect(seconds * 1000).toBe(siteMs);
   });
 });
 
@@ -167,6 +177,38 @@ describe("F3.30 — the role-summary service reads the shared constant (ADR 0075
   it("the live CTE compares against the window built from the constant", () => {
     const source = readFileSync(SERVICE, "utf8");
     expect(source).toMatch(/pv\.time > now\(\) - \$\{LIVE_WINDOW\}/);
+  });
+});
+
+/**
+ * `F4.260` (ADR 0075 Amendment 2) — every file that decides whether a **site** is live, and how
+ * many times it must read the reporting CTE. Each must read the live CTE 0 times.
+ */
+const SITE_LIVENESS_SITES: ReadonlyArray<{ readonly file: string; readonly count: number }> = [
+  // `locationKpis`, `locationDashboard`'s RTU rows, `kpis.sites_online`.
+  { file: "apps/api/src/dashboard/dashboard.service.ts", count: 3 },
+  // `sitesLive`'s comm-status count, which colours the pin.
+  { file: "apps/api/src/map/map.service.ts", count: 1 },
+];
+
+describe.each(SITE_LIVENESS_SITES)("F4.260 — $file decides site liveness on the reporting window", ({ file, count }) => {
+  const path = join(repoRoot, file);
+
+  it(`restates no interval 'N seconds' literal`, () => {
+    const source = readFileSync(path, "utf8");
+    expect(source.match(/interval\s+'\d+\s+seconds?'/gi) ?? []).toEqual([]);
+  });
+
+  it(`interpolates REPORTING_ASSETS_CTE_SQL exactly ${count} time(s)`, () => {
+    const source = readFileSync(path, "utf8");
+    const matches = source.match(/\$\{(sql\.raw\()?REPORTING_ASSETS_CTE_SQL\)?\}/g) ?? [];
+    expect(matches.length).toBe(count);
+  });
+
+  it("interpolates LIVE_ASSETS_CTE_SQL 0 times", () => {
+    const source = readFileSync(path, "utf8");
+    const matches = source.match(/\$\{(sql\.raw\()?LIVE_ASSETS_CTE_SQL\)?\}/g) ?? [];
+    expect(matches).toEqual([]);
   });
 });
 

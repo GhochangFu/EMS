@@ -6,7 +6,7 @@ import type { MapSiteDto, MapSiteLive } from "@bms/shared";
 
 import { expandLocationSubtrees } from "../auth/location-tree";
 import { FLEET_DRIZZLE, FLEET_POOL } from "../database/database.tokens";
-import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
+import { REPORTING_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
 
 /**
  * `F2.10` / ADR 0098 decision 11 — a location is a pin when it has no active child node or holds
@@ -169,12 +169,13 @@ export class MapService {
       asset_count: string;
       fresh_count: string;
     }>(
-      `WITH ${LIVE_ASSETS_CTE_SQL}
+      // F4.260 (ADR 0075 Amendment 2): the same 150 s site window as the location cards.
+      `WITH ${REPORTING_ASSETS_CTE_SQL}
        SELECT a.location_id,
               COUNT(a.id)::int AS asset_count,
               COUNT(l.asset_id)::int AS fresh_count
        FROM bms.assets a
-       LEFT JOIN live l ON l.asset_id = a.id
+       LEFT JOIN reporting l ON l.asset_id = a.id
        WHERE a.location_id IS NOT NULL
          AND ($1::uuid[] IS NULL OR a.id = ANY($1::uuid[]))
        GROUP BY a.location_id`,
@@ -265,11 +266,15 @@ export class MapService {
     });
   }
 
+  /**
+   * `F4.260` (ADR 0075 Amendment 2, owner ruling) — the pin's colour: alarms first, then
+   * `healthy` (green) when at least one asset is fresh, the rule of the location card's Live
+   * badge (`hasLiveTelemetry`). Before, a pin was green only when every asset was fresh.
+   */
   private campusLive(
     a: { open: number; critical: number },
     c: { total: number; fresh: number },
   ): MapSiteLive {
-    const ratio = c.total === 0 ? 1 : c.fresh / c.total;
     let status: MapSiteLive["status"] = "healthy";
     if (c.total === 0) {
       status = "unknown";
@@ -277,7 +282,7 @@ export class MapService {
       status = "critical";
     } else if (a.open > 0) {
       status = "warning";
-    } else if (ratio < 1) {
+    } else if (c.fresh === 0) {
       status = "offline";
     }
     return {

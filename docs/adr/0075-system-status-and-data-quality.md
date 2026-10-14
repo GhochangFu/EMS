@@ -310,3 +310,69 @@ everywhere. **Ruled as recommended: a separate window for the status read.**
 Data Quality count, against 25 s on the cards. A per-device expected
 reporting interval — the input gap coverage needed at Q1 — would replace the
 fixed 150 s; it is not raised as a row by this amendment.
+
+## Amendment 2 (2026-10-14) — a site is live on the reporting window, and a map pin uses the card's rule (`F4.260`)
+
+**Found by the owner on the Control Room after `F4.259`, and ruled the same
+day.** The organization page's map pins and its site cards disagreed about
+which PHE sites were live, and the pins "turned green late". Measured on the
+dev stack (PHE, sampled every 15 s): Bilsi read 4/8 fresh, then 0/8, then 4/8
+again within 45 s; Lotapata reached 8/8 for one sample only. Three causes:
+
+1. **Two rules.** The card's Live badge (`hasLiveTelemetry`, `F4.259`) needs
+   one fresh asset. `map.service.ts`'s `campusLive` made a pin `healthy`
+   (green) only when **every** asset was fresh (`ratio < 1` → `offline`), so a
+   site with four silent assets of eight could never be green, and a fully
+   reporting site was green only while all its 60 s devices happened to sit
+   inside the same 25 s.
+2. **The 25 s window against a 60 s cadence.** Amendment 1 measured the
+   cadence and kept decision 2's four counts on 25 s. Each site was therefore
+   live for about 25 s of every minute, and with `F4.259`'s groups a card
+   moved between "Live" and "Not live" each minute.
+3. **Two timers.** The map and the cards polled on separate 8 s timers.
+
+**Rulings (owner, 2026-10-14, each as recommended).**
+
+1. *When is a pin green?* — **The card's rule.** `healthy` when at least one
+   asset is fresh; alarms still colour the pin first (`critical`, `warning`);
+   `offline` only when no asset is fresh; `unknown` with no asset.
+2. *Which window decides that a site is live?* — **The 150 s reporting
+   window of Amendment 1.**
+3. *Delivery* — this amendment and `F4.260` in one PR.
+
+**Decision.**
+
+1. Decision 2's four fleet counts — `locationKpis.fresh_asset_count`,
+   `locationDashboard`'s RTU `fresh_asset_count`, `kpis.sites_online` and
+   `map.service.ts`'s `fresh_count` — read `REPORTING_ASSETS_CTE_SQL`.
+   Amendment 1 decision 3 is superseded for these four: they now ask "is data
+   arriving?", as the status bar does.
+2. A reading's own freshness keeps 25 s: `LIVE_TELEMETRY_MAX_AGE_SECONDS`,
+   the web `FRESH_MS`, the F3.28 class strip, the dashboard widgets' offline
+   counts (`metric-catalog.service.ts`, `site-widgets.service.ts`) and the
+   asset rows' `telemetryFreshnessAt`.
+3. The web states the site window as `SITE_REPORTING_MS = 150_000`
+   (`schematic-telemetry.ts`); the `/` Sites online hint reads it.
+4. `campusLive` colours a pin by ruling 1.
+5. The organization map re-reads when the page's site read lands (its
+   `dataUpdatedAt`) and has no timer of its own.
+6. `tests/f3.28-offline-bound-single-source.test.ts` pins the four counts to
+   the reporting CTE, forbids the live one in those two files, and holds
+   `SITE_REPORTING_MS` equal to `REPORTING_WINDOW_SECONDS × 1000`.
+
+**Consequences.** A site whose devices stop takes up to 150 s to leave
+"Live", against 25 s before. The map and the cards still read through two
+requests, so they can differ for the time one request takes. The Sites map
+page (`/map`) keeps its own 8 s poll; its pins follow the same rule and
+window. The per-device expected interval of Amendment 1's consequences would
+replace the fixed 150 s here too; it is still not raised as a row.
+
+Two more consequences, found at review. **A site page now shows both windows:**
+the "Assets fresh" tile and the RTU rows count on 150 s, while each asset
+row's Live/Stale pill keeps 25 s, so a 60 s device 40 s after its last report
+counts as fresh in the tile and reads Stale in its own row. They answer the
+two questions of Amendment 1 and are not reconciled here. **The organization
+map follows the site read:** while that read fails, the map does not re-read
+either, so the pins and the cards stay at the same moment. The wider window
+costs little: the map's count query took 2.1 ms at 150 s against 1.9 ms at
+25 s on the dev database (`EXPLAIN ANALYZE`, 2026-10-14).

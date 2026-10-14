@@ -105,7 +105,7 @@ describe("F3.30 Sites online hint reads the freshness window (ADR 0075 decision 
     vi.restoreAllMocks();
   });
 
-  it("reads 'Sites with fresh telemetry (~25s)'", async () => {
+  it("reads 'Sites reporting telemetry (~150s)' (F4.260)", async () => {
     await sitesOnlineHintReadsTheFreshnessWindow();
   });
 });

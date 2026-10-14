@@ -11,7 +11,9 @@ import {
   assertOutOfScopeFreshAssetIsNotCounted,
   assertRtuRowsCountNonKwFresh,
   assertSitesOnlineUsesAnyPoint,
-  assertSitesOnlineWindowIs25s,
+  assertLocationCardsUseTheReportingWindow,
+  assertRtuRowsUseTheReportingWindow,
+  assertSitesOnlineWindowIsTheReportingWindow,
   assertTelemetryFreshnessReadsConstant,
   assertTelemetryFreshnessStaleBeyondWindow,
   assertThreeSamplesDoNotFanOutTotalKw,
@@ -37,7 +39,7 @@ const connectionString = requireIntegrationDb({
   item: "F3.30",
   label: "dashboard freshness counts",
   because:
-    "the any-point `live` CTE, its 25 s window and the per-location `total_kw` sum (F4.158) are all SQL, " +
+    "the any-point `reporting` CTE, its 150 s site window and the per-location `total_kw` sum (F4.158) are all SQL, " +
     "so a green run without a database asserts nothing about any of them.",
 });
 
@@ -59,11 +61,15 @@ describe.skipIf(!connectionString)("F3.30 — dashboard freshness counts use the
 
   it("locationKpis still sums a stale kw into totalKw and does not count it fresh", run(assertTotalKwSumsStaleKw), 60_000);
 
-  it("locationDashboard's RTU row counts a non-kw fresh asset and not a 60 s one", run(assertRtuRowsCountNonKwFresh), 60_000);
+  it("locationDashboard's RTU row counts a non-kw fresh asset and not one past the site window", run(assertRtuRowsCountNonKwFresh), 60_000);
 
   it("kpis.sitesOnline counts a site whose fresh sample is not kw", run(assertSitesOnlineUsesAnyPoint), 60_000);
 
-  it("kpis.sitesOnline counts a 21 s sample and not a 30 s one", run(assertSitesOnlineWindowIs25s), 60_000);
+  it("F4.260 — kpis.sitesOnline counts a 140 s sample and not a 160 s one", run(assertSitesOnlineWindowIsTheReportingWindow), 60_000);
+
+  it("F4.260 — locationKpis counts a 140 s sample fresh and not a 160 s one", run(assertLocationCardsUseTheReportingWindow), 60_000);
+
+  it("F4.260 — the RTU row counts a 140 s sample fresh and not a 160 s one", run(assertRtuRowsUseTheReportingWindow), 60_000);
 
   it("kpis.totalKw still sums a stale kw with no site online", run(assertKpisTotalKwUnchanged), 60_000);
 

@@ -3,12 +3,21 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { vi } from "vitest";
 
+import { REPORTING_WINDOW_SECONDS } from "../telemetry/telemetry-freshness";
 import { DashboardService } from "./dashboard.service";
 
 /**
+ * `F4.260` (ADR 0075 Amendment 2) — a sample just outside the 150 s site window, and one just
+ * inside it but outside the 25 s reading window: the age a 60 s device reaches between reports.
+ */
+const PAST_SITE_WINDOW_S = REPORTING_WINDOW_SECONDS + 10;
+const INSIDE_SITE_WINDOW_S = REPORTING_WINDOW_SECONDS - 10;
+
+/**
  * `F3.30` (ADR 0075 decision 2) — the dashboard's three freshness counts use
- * the any-point rule of ADR 0074 OQ1 through the shared `live` CTE, and
- * `total_kw` does not change. Assertions live here; the sibling
+ * the any-point rule of ADR 0074 OQ1 through a shared CTE, and `total_kw`
+ * does not change. `F4.260` (ADR 0075 Amendment 2): that CTE is now
+ * `reporting`, the 150 s site window, no longer the 25 s `live` one. Assertions live here; the sibling
  * `.integration.test` owns the pool (ADR 0014).
  *
  * **Every case runs in one transaction on one client and rolls it back.**
@@ -18,7 +27,7 @@ import { DashboardService } from "./dashboard.service";
  * rows and nobody else does. Every read is scoped to the fixture's location
  * or asset ids, so the fleet's own telemetry cannot move a number.
  *
- * **Two clocks.** SQL `now()` is frozen at `BEGIN`, and the `live` CTE
+ * **Two clocks.** SQL `now()` is frozen at `BEGIN`, and the `reporting` CTE
  * compares against it, so every sample the SQL judges is stamped in SQL
  * relative to that same `now()` — its age is exact however long the seeding
  * takes. `telemetryFreshness` judges in JS against `Date.now()`, so the one
@@ -200,11 +209,11 @@ export async function assertNonKwSampleCountsAsFresh(client: pg.PoolClient): Pro
   assert(got === 1, `expected freshAssetCount 1 for a non-kw sample 5 s old, got ${JSON.stringify(got)}`);
 }
 
-/** Case 2 — a `kw` of 42 at 60 s old still sums into `totalKw`, and the asset is not fresh. */
+/** Case 2 — a `kw` of 42 past the site window still sums into `totalKw`, and the asset is not fresh. */
 export async function assertTotalKwSumsStaleKw(client: pg.PoolClient): Promise<void> {
   const site = await seedSite(client);
   const b = await seedAsset(client, site, "B");
-  await insertSampleBeforeNow(client, b, "kw", 42, 60);
+  await insertSampleBeforeNow(client, b, "kw", 42, PAST_SITE_WINDOW_S);
   const { items } = await service(client).locationKpis({ locationIds: [site.locationId], assetIds: [b] });
   const got = { totalKw: items[0]?.totalKw, freshAssetCount: items[0]?.freshAssetCount };
   assert(
@@ -216,15 +225,15 @@ export async function assertTotalKwSumsStaleKw(client: pg.PoolClient): Promise<v
 /**
  * Case 3 — `locationDashboard`'s RTU row counts a non-`kw` fresh asset, and
  * only that one: a second in-scope asset on the same RTU whose only sample is
- * 60 s old is counted in `assetCount` and not in `freshAssetCount` — the
- * stale control the `FILTER (WHERE live.asset_id IS NOT NULL)` answers for
+ * past the site window is counted in `assetCount` and not in `freshAssetCount` — the
+ * stale control the `FILTER (WHERE reporting.asset_id IS NOT NULL)` answers for
  * (code review 3).
  */
 export async function assertRtuRowsCountNonKwFresh(client: pg.PoolClient): Promise<void> {
   const site = await seedSite(client);
   const a = await seedAsset(client, site, "A");
   const stale = await seedAsset(client, site, "S");
-  await insertSampleBeforeNow(client, stale, "temp_c", 20, 60);
+  await insertSampleBeforeNow(client, stale, "temp_c", 20, PAST_SITE_WINDOW_S);
   await insertSampleBeforeNow(client, a, "temp_c", 21.5, 5);
   const dto = await service(client).locationDashboard(site.locationId, {
     locationIds: [site.locationId],
@@ -251,21 +260,22 @@ export async function assertSitesOnlineUsesAnyPoint(client: pg.PoolClient): Prom
 }
 
 /**
- * Case 5 — the `sites_online` window is 25 s: a `kw` sample 21 s old counts,
- * one 30 s old (another asset, its own site name) does not. Both are `kw`, so
- * the point-key change cannot turn this green; only the window can.
+ * Case 5 — `F4.260` (ADR 0075 Amendment 2): the `sites_online` window is the 150 s
+ * reporting window. A `kw` sample 140 s old counts, one 160 s old (another asset, its own site
+ * name) does not. Both are `kw`, so the point-key change cannot turn this green; only the
+ * window can.
  */
-export async function assertSitesOnlineWindowIs25s(client: pg.PoolClient): Promise<void> {
+export async function assertSitesOnlineWindowIsTheReportingWindow(client: pg.PoolClient): Promise<void> {
   const site = await seedSite(client);
   const inside = await seedAsset(client, site, "S1");
   const outside = await seedAsset(client, site, "S2");
-  await insertSampleBeforeNow(client, outside, "kw", 7, 30);
-  await insertSampleBeforeNow(client, inside, "kw", 5, 21);
+  await insertSampleBeforeNow(client, outside, "kw", 7, PAST_SITE_WINDOW_S);
+  await insertSampleBeforeNow(client, inside, "kw", 5, INSIDE_SITE_WINDOW_S);
   const kpis = await service(client).kpis([inside, outside]);
   const got = { sitesOnline: kpis.sitesOnline, sitesTotal: kpis.sitesTotal };
   assert(
     got.sitesOnline === 1 && got.sitesTotal === 2,
-    `expected { sitesOnline: 1, sitesTotal: 2 } (21 s counts, 30 s does not), got ${JSON.stringify(got)}`,
+    `expected { sitesOnline: 1, sitesTotal: 2 } (140 s counts, 160 s does not), got ${JSON.stringify(got)}`,
   );
 }
 
@@ -273,7 +283,7 @@ export async function assertSitesOnlineWindowIs25s(client: pg.PoolClient): Promi
 export async function assertKpisTotalKwUnchanged(client: pg.PoolClient): Promise<void> {
   const site = await seedSite(client);
   const b = await seedAsset(client, site, "B");
-  await insertSampleBeforeNow(client, b, "kw", 42, 60);
+  await insertSampleBeforeNow(client, b, "kw", 42, PAST_SITE_WINDOW_S);
   const kpis = await service(client).kpis([b]);
   const got = { totalKw: kpis.totalKw, sitesOnline: kpis.sitesOnline };
   assert(
@@ -480,5 +490,45 @@ export async function assertLocationDashboardCodeIsLocationsCode(client: pg.Pool
   assert(
     got === `${site.tag}-LOC`,
     `expected locationDashboard code ${site.tag}-LOC, got ${JSON.stringify(got)}`,
+  );
+}
+
+/**
+ * `F4.260` (ADR 0075 Amendment 2) — the location card counts an asset whose newest sample is
+ * 140 s old (inside the 150 s site window, outside the 25 s reading window) and not one 160 s
+ * old. A 60 s device is never older than about 60 s between reports, so its site stays live.
+ */
+export async function assertLocationCardsUseTheReportingWindow(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const inside = await seedAsset(client, site, "W1");
+  const outside = await seedAsset(client, site, "W2");
+  await insertSampleBeforeNow(client, inside, "temp_c", 21, INSIDE_SITE_WINDOW_S);
+  await insertSampleBeforeNow(client, outside, "temp_c", 22, PAST_SITE_WINDOW_S);
+  const { items } = await service(client).locationKpis({
+    locationIds: [site.locationId],
+    assetIds: [inside, outside],
+  });
+  const got = { fresh: items[0]?.freshAssetCount, total: items[0]?.assetCount };
+  assert(
+    got.fresh === 1 && got.total === 2,
+    `expected { fresh: 1, total: 2 } (140 s counts, 160 s does not), got ${JSON.stringify(got)}`,
+  );
+}
+
+/** `F4.260` — the site page's RTU row uses the same 150 s window as the location card. */
+export async function assertRtuRowsUseTheReportingWindow(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const inside = await seedAsset(client, site, "R1");
+  const outside = await seedAsset(client, site, "R2");
+  await insertSampleBeforeNow(client, inside, "temp_c", 21, INSIDE_SITE_WINDOW_S);
+  await insertSampleBeforeNow(client, outside, "temp_c", 22, PAST_SITE_WINDOW_S);
+  const dto = await service(client).locationDashboard(site.locationId, {
+    locationIds: [site.locationId],
+    assetIds: [inside, outside],
+  });
+  const rtu = dto?.rtus.find((r) => r.id === site.rtuId);
+  assert(
+    rtu?.freshAssetCount === 1 && rtu?.assetCount === 2,
+    `expected the fixture RTU at 1 fresh of 2 (140 s counts, 160 s does not), got ${JSON.stringify(rtu ?? null)}`,
   );
 }

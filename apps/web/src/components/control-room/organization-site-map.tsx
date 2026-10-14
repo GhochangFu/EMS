@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AccessLocation } from "@bms/shared";
 
 import { fetchMapSites } from "../../api/map";
@@ -12,14 +12,21 @@ type OrganizationSiteMapProps = {
   organizationId: string;
   /** `F2.10` (ADR 0098 B12) — this organization's readable nodes, for the parent filter. */
   nodes: readonly AccessLocation[];
+  /**
+   * `F4.260` — when the page's site read last landed (its `dataUpdatedAt`). The map re-reads
+   * each time it changes, so the pins and the site cards change together; it has no timer of
+   * its own.
+   */
+  syncedAt: number;
 };
 
 /**
  * `F3.79` — the Control Room organization level's site map: `GET /map/sites` narrowed to this
  * organization's pins (`organizationPins`), so the map opens on its sites and on no other
  * organization's. The closest mockup renderer is `R.wm` ("World Map (OpenStreetMap)",
- * `ESKOM_SMOC.html`). It shares the `["map","sites"]` read with the Sites map and re-reads every
- * 8 s, as that page does; it opens no socket, since the organization page already polls.
+ * `ESKOM_SMOC.html`). It shares the `["map","sites"]` read with the Sites map and opens no socket.
+ * `F4.260`: it re-reads when the page's site read lands (`syncedAt`), not on a timer of its own,
+ * so a pin and its site card do not sit out of step for up to one poll.
  *
  * A pin's popup opens the next drill-down level, the site's overview (`controlRoomSiteLink`).
  * Scroll-wheel zoom is off, so a page scroll over the card does not zoom the map. The map fits
@@ -31,14 +38,21 @@ type OrganizationSiteMapProps = {
  * `F2.10` (ADR 0098 decision 11, B12) — a parent filter zooms to a subtree: the server narrows
  * the pins, and the map is keyed by the filter so it fits the subtree's box.
  */
-export function OrganizationSiteMap({ organizationId, nodes }: OrganizationSiteMapProps) {
+export function OrganizationSiteMap({ organizationId, nodes, syncedAt }: OrganizationSiteMapProps) {
   const [rootId, setRootId] = useState<string | null>(null);
   const rootName = nodes.find((n) => n.id === rootId)?.name ?? null;
   const query = useQuery({
     queryKey: ["map", "sites", rootId],
     queryFn: () => fetchMapSites(rootId ?? undefined),
-    refetchInterval: 8000,
+    refetchInterval: false,
   });
+  // `F4.260` — re-read on each new site read. `cancelRefetch: false` joins a read already in
+  // flight (the mount's own, or a focus re-read) instead of cancelling and repeating it, so each
+  // trigger costs one request (S9 with an empty cache, S11 with a cached one).
+  const { refetch } = query;
+  useEffect(() => {
+    void refetch({ cancelRefetch: false });
+  }, [syncedAt, refetch]);
   const pins = query.data ? organizationPins(query.data, organizationId) : [];
 
   return (

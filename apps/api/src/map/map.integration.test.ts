@@ -30,6 +30,7 @@ import {
   assertNoF210MapFixtureRowsRemain,
   assertTheParentFilterDropsUnjoinedStationPins,
   assertTheParentFilterKeepsOnlyTheSubtreesPins,
+  assertThePinUsesTheReportingWindow,
   assertTheSeededArmFollowsThePinRule,
 } from "./map.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
@@ -72,8 +73,12 @@ describe.skipIf(!connectionString)("F3.10 — map site open-alarm counts follow 
     await assertCommStatusCountsNonKwFresh(pool);
   }, 60_000);
 
-  it("counts a 60 s sample in assetsTotal and not in assetsFresh (F3.30 code review 3)", async () => {
+  it("counts a sample past the site window in assetsTotal and not in assetsFresh, and one fresh of two is green (F3.30, F4.260)", async () => {
     await assertCommStatusLeavesAStaleAssetOut(pool);
+  }, 60_000);
+
+  it("F4.260 — a 140 s sample keeps a pin green and a 160 s one leaves it offline", async () => {
+    await assertThePinUsesTheReportingWindow(pool);
   }, 60_000);
 });
 

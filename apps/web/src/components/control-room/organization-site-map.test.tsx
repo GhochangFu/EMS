@@ -2,6 +2,9 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aCachedMapMountsWithOneRead,
+  theMapHasNoTimerOfItsOwn,
+  theMapReReadsWithTheSiteRead,
   aFailedPollKeepsTheMap,
   aFailedReadShowsTheErrorState,
   anOrganizationWithNoPinShowsTheEmptyState,
@@ -57,5 +60,17 @@ describe("F3.79 OrganizationSiteMap", () => {
 
   it("F6 the filter lists the nodes it is handed and reads the chosen subtree (F2.10)", async () => {
     await theOrgMapFilterReadsTheSubtree();
+  });
+
+  it("S9 re-reads when the page's site read lands (F4.260)", async () => {
+    await theMapReReadsWithTheSiteRead();
+  });
+
+  it("S10 has no timer of its own (F4.260)", async () => {
+    await theMapHasNoTimerOfItsOwn();
+  });
+
+  it("S11 mounts a cached map with one read (F4.260)", async () => {
+    await aCachedMapMountsWithOneRead();
   });
 });

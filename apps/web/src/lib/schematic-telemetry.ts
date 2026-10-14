@@ -37,6 +37,14 @@ import type { LiveSvgStatus } from "../components/live-svg/types";
 export const FRESH_MS = 25_000;
 
 /**
+ * `F4.260` (ADR 0075 Amendment 2) — the window that decides whether a **site** is live: the
+ * location cards, `/` Sites online and the map pins. The API's `REPORTING_WINDOW_SECONDS`;
+ * `tests/f3.28-offline-bound-single-source.test.ts` holds the two equal. A reading's own
+ * freshness keeps `FRESH_MS`.
+ */
+export const SITE_REPORTING_MS = 150_000;
+
+/**
  * How often the provider forces a re-evaluation of staleness.
  *
  * **This is what makes `isStale` reachable, and it is not decoration.** The

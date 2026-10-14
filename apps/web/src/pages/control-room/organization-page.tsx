@@ -92,7 +92,7 @@ export function ControlRoomOrganizationPage({
               </Link>
             </SectionCard>
           ) : (
-            <OrganizationOverview items={items} organizationId={organizationId} />
+            <OrganizationOverview items={items} organizationId={organizationId} syncedAt={locationQ.dataUpdatedAt} />
           )
         ) : locationQ.isError ? (
           <SectionCard title="Control Room unavailable" bodyClassName="p-4">
@@ -111,9 +111,11 @@ export function ControlRoomOrganizationPage({
 type OrganizationOverviewProps = {
   items: readonly LocationKpiSummary[];
   organizationId: string;
+  /** `F4.260` — when the site read last landed; the map re-reads on it. */
+  syncedAt: number;
 };
 
-function OrganizationOverview({ items, organizationId }: OrganizationOverviewProps) {
+function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationOverviewProps) {
   // `F2.10` (ADR 0098 B12) — the site map's parent filter offers this organization's nodes.
   const scopeLocations = useAuthStore((s) => s.scope)?.locations ?? [];
   // Sorted by name, as `/` sorts a section (`groupByOrganization`).
@@ -137,6 +139,7 @@ function OrganizationOverview({ items, organizationId }: OrganizationOverviewPro
         key={organizationId}
         organizationId={organizationId}
         nodes={organizationNodes(scopeLocations, items, organizationId)}
+        syncedAt={syncedAt}
       />
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div data-testid="control-room-sites" className="min-w-0 space-y-4">

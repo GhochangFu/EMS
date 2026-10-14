@@ -7,12 +7,17 @@ import { createDb } from "@bms/db";
 import type { MapSiteDto } from "@bms/shared";
 
 import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
+import { REPORTING_WINDOW_SECONDS } from "../telemetry/telemetry-freshness";
 import { MapService } from "./map.service";
+
+/** `F4.260` — ages just outside and just inside the 150 s site window (ADR 0075 Amendment 2). */
+const PAST_SITE_WINDOW_S = REPORTING_WINDOW_SECONDS + 10;
+const INSIDE_SITE_WINDOW_S = REPORTING_WINDOW_SECONDS - 10;
 
 /**
  * `F3.30` (ADR 0075 decision 2) — `sitesLive`'s comm-status counts move to
- * the any-point rule through the shared `live` CTE, the same as
- * `dashboard.service.ts` (`F3.30` U2). A second fixture asset (no alarms of
+ * the any-point rule through a shared CTE, the same as `dashboard.service.ts`
+ * (`F3.30` U2) — since `F4.260` the 150 s `reporting` one. A second fixture asset (no alarms of
  * its own) carries a non-`kw` sample; scoping `assetIds` to only that asset
  * keeps `insertFixture`'s alarmed asset out of both the alarm and comm counts,
  * so `assetsTotal` and `status` read off this asset alone.
@@ -171,9 +176,13 @@ export async function assertCommStatusCountsNonKwFresh(pool: pg.Pool): Promise<v
 
 /**
  * `sitesLive`'s comm-status counts only the fresh asset as fresh: a second
- * in-scope asset whose only sample is 60 s old counts in `assetsTotal` and
+ * in-scope asset whose only sample is past the site window counts in `assetsTotal` and
  * not in `assetsFresh` (`F3.30` code review 3). `COUNT(l.asset_id)` is what
  * tells them apart — `COUNT(a.id)` would read 2 of 2.
+ *
+ * `F4.260` (ADR 0075 Amendment 2, owner ruling) — and one fresh asset of two, with no alarm,
+ * makes the pin `healthy` (green), the same rule as the card's Live badge. Before, a pin was
+ * green only when every asset was fresh, so a partly reporting site read `offline`.
  */
 export async function assertCommStatusLeavesAStaleAssetOut(pool: pg.Pool): Promise<void> {
   await withRolledBackClient(pool, async (client) => {
@@ -188,9 +197,9 @@ export async function assertCommStatusLeavesAStaleAssetOut(pool: pg.Pool): Promi
     // SQL `now()` is frozen for the transaction, so both ages are exact.
     await client.query(
       `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
-       VALUES (now() - make_interval(secs => 60), $1, 'humidity_pct', 40, 'pct'),
+       VALUES (now() - make_interval(secs => $3), $1, 'humidity_pct', 40, 'pct'),
               (now() - make_interval(secs => 5), $2, 'humidity_pct', 42, 'pct')`,
-      [staleAssetId, freshAssetId],
+      [staleAssetId, freshAssetId, PAST_SITE_WINDOW_S],
     );
     const service = mapService(client);
 
@@ -199,8 +208,9 @@ export async function assertCommStatusLeavesAStaleAssetOut(pool: pg.Pool): Promi
     expect(site, "the fixture map location is listed").toBeDefined();
     expect(
       { fresh: site?.live.assetsFresh, total: site?.live.assetsTotal },
-      "one fresh asset of two in scope — the 60 s one is not fresh",
+      "one fresh asset of two in scope — the one past the site window is not fresh",
     ).toEqual({ fresh: 1, total: 2 });
+    expect(site?.live.status, "one fresh asset of two and no alarm: the pin is green").toBe("healthy");
   });
 }
 
@@ -785,4 +795,35 @@ export async function assertNoF210MapFixtureRowsRemain(pool: pg.Pool): Promise<v
     { locations: row?.locations, pins: row?.pins, organizations: row?.organizations },
     "no F210M fixture row remains",
   ).toEqual({ locations: 0, pins: 0, organizations: 0 });
+}
+
+/**
+ * `F4.260` (ADR 0075 Amendment 2) — a pin whose only asset's newest sample is 140 s old is
+ * `healthy`: inside the 150 s site window, though outside the 25 s reading window. A second
+ * site whose only asset is 160 s old is `offline`, the control that the window is not unbounded.
+ */
+export async function assertThePinUsesTheReportingWindow(pool: pg.Pool): Promise<void> {
+  await withRolledBackClient(pool, async (client) => {
+    const run = randomUUID().slice(0, 8);
+    const inside = await insertFixture(client, `${run}i`);
+    const outside = await insertFixture(client, `${run}o`);
+    const db = createDb(client as unknown as pg.Pool);
+    const [insideAsset] = await createFixtureAssets(db, 1, "F4260I", inside);
+    const [outsideAsset] = await createFixtureAssets(db, 1, "F4260O", outside);
+    if (!insideAsset || !outsideAsset) throw new Error("F4.260: no fixture assets");
+    await client.query(
+      `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit)
+       VALUES (now() - make_interval(secs => $3), $1, 'humidity_pct', 40, 'pct'),
+              (now() - make_interval(secs => $4), $2, 'humidity_pct', 41, 'pct')`,
+      [insideAsset, outsideAsset, INSIDE_SITE_WINDOW_S, PAST_SITE_WINDOW_S],
+    );
+    // Scoped to the two new, alarm-free assets: the fixtures' alarmed assets stay out.
+    const sites = await mapService(client).sitesLive({ assetIds: [insideAsset, outsideAsset] });
+    const got = (slug: string) => {
+      const site = sites.find((candidate) => candidate.slug === slug);
+      return { status: site?.live.status, fresh: site?.live.assetsFresh, total: site?.live.assetsTotal };
+    };
+    expect(got(inside.slug), "a 140 s sample keeps the pin green").toEqual({ status: "healthy", fresh: 1, total: 1 });
+    expect(got(outside.slug), "a 160 s sample leaves the pin offline").toEqual({ status: "offline", fresh: 0, total: 1 });
+  });
 }
