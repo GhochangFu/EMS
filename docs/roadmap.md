@@ -7731,3 +7731,11 @@ One PR; one data migration (`0108`), no ADR amendment, no new dependency.
 - Migration `0108` strips committed rows, except one whose blob is the only copy of a credential (kept, counted by a `NOTICE`).
 
 Owner decision 2026-10-14: option A. Verified: a cold-started scratch database; the onboarding, copilot, security and migration suites; mutations of the strip, the 503 and the guard; the real commit route with and without the key. Raised: none.
+
+### `F4.257` — the audit-mark ledger is complete by construction ✅ 2026-10-14
+
+One PR, test only; no production code, no migration, no new dependency.
+
+- `tests/f3.85-audit-via-mark.test.ts` gets `NOT_CATALOG_WRITERS`: each audit-service file in a catalog directory is in exactly one list, each NOT row is tied to its excluded route's handler and to the methods that hold its audit calls, and every controller that serves a catalog entry must lie in a scanned directory.
+
+Owner ruling 2026-10-14: the two-list ledger. Verified: `tests/f3.85` and the `tests/` project; mutations of every new case, including a catalog writer relabelled into the NOT list; two code reviews, security and compliance. Raised: none.
