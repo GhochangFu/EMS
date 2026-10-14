@@ -2,6 +2,8 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aLiveCardShowsTheLiveBadgeAndTheGreenEdge,
+  aNotLiveCardShowsTheNotLiveBadgeAndTheAmberEdge,
   cleanupCard,
   fallsBackToTheTypeLabelNotTheRawCode,
   theDefaultLinksToTheControlRoomSite,
@@ -28,5 +30,13 @@ describe("F3.66 U3 LocationKpiCard link target (D4)", () => {
 
   it("K4 falls back to typeLabel, not the raw type code, when province is null", () => {
     fallsBackToTheTypeLabelNotTheRawCode();
+  });
+
+  it("K5 a live site shows the Live badge and the green left edge (F4.259)", () => {
+    aLiveCardShowsTheLiveBadgeAndTheGreenEdge();
+  });
+
+  it("K6 a site that is not live shows the Not live badge and the amber left edge (F4.259)", () => {
+    aNotLiveCardShowsTheNotLiveBadgeAndTheAmberEdge();
   });
 });

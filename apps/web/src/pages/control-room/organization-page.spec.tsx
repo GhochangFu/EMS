@@ -469,6 +469,64 @@ export async function anotherOrganizationMountsANewSiteMap(): Promise<void> {
   expect(siteMapMounts.count, "org B must get a new map, not org A's").toBe(2);
 }
 
+/** One organization: one live site between two that are not live (by name). */
+const MIXED_LIVE: LocationKpiSummary[] = [
+  site({ id: "a3", name: "Alpha Three", organization: ORG_A }),
+  site({ id: "a2", name: "Alpha Two", organization: ORG_A, freshAssetCount: 4 }),
+  site({ id: "a1", name: "Alpha One", organization: ORG_A }),
+  site({ id: "b1", name: "Beta One", organization: ORG_B, freshAssetCount: 1 }),
+];
+
+/**
+ * L1 — `F4.259`: the status strip counts this organization's live and not-live sites. Org B's
+ * live site is the control that the strip counts one organization only.
+ */
+export async function theStatusStripCountsLiveAndNotLiveSites(): Promise<void> {
+  stubReads(MIXED_LIVE);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  const strip = screen.getByTestId("live-status-strip");
+  expect(within(strip).getByTestId("live-site-count").textContent).toBe("1");
+  expect(within(strip).getByTestId("not-live-site-count").textContent).toBe("2");
+}
+
+function cardHrefs(group: HTMLElement): (string | null)[] {
+  return Array.from(group.querySelectorAll("a")).map((a) => a.getAttribute("href"));
+}
+
+/**
+ * L2 — `F4.259`: the live group comes first and holds the live site only; the not-live group
+ * follows with the rest, by name. Each heading carries its count.
+ */
+export async function liveSitesComeFirstInTheirOwnGroup(): Promise<void> {
+  stubReads(MIXED_LIVE);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  const live = screen.getByTestId("control-room-sites-live");
+  const notLive = screen.getByTestId("control-room-sites-not-live");
+  expect(cardHrefs(live)).toEqual(["/control-room/site/a2"]);
+  expect(cardHrefs(notLive)).toEqual(["/control-room/site/a1", "/control-room/site/a3"]);
+  expect(
+    live.compareDocumentPosition(notLive) & Node.DOCUMENT_POSITION_FOLLOWING,
+    "the not-live group must follow the live group",
+  ).toBeTruthy();
+  expect(within(live).getByRole("heading").textContent).toBe("Live sites (1)");
+  expect(within(notLive).getByRole("heading").textContent).toBe("Not live (2)");
+}
+
+/** L3 — `F4.259`: with no live site there is no empty live group; the strip shows 0 live. */
+export async function noLiveSiteRendersNoLiveGroup(): Promise<void> {
+  stubReads(ONE_ORG);
+  renderAt(ORG_A.id);
+
+  await siteGrid();
+  expect(screen.queryByTestId("control-room-sites-live")).toBeNull();
+  expect(cardHrefs(screen.getByTestId("control-room-sites-not-live"))).toHaveLength(2);
+  expect(screen.getByTestId("live-site-count").textContent).toBe("0");
+}
+
 export function cleanupPage(): void {
   cleanup();
   vi.restoreAllMocks();
