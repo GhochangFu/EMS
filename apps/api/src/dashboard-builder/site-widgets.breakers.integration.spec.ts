@@ -439,7 +439,7 @@ export async function assertRowCarriesItsAlarms(db: BmsDb): Promise<void> {
 }
 
 /**
- * F3.80 B10a — a `bus-coupler` member (migration `0109`'s electrical position role) is a breaker
+ * F3.80 B10a â€” a `bus-coupler` member (migration `0109`'s electrical position role) is a breaker
  * row, with its role label from `bms.asset_roles`. Mutation: leave `bus-coupler` out of
  * `BREAKER_ROLE_CODES` => red.
  */
@@ -452,7 +452,7 @@ export async function assertBusCouplerMemberIsABreakerRow(db: BmsDb): Promise<vo
 }
 
 /**
- * F3.80 B10b — an `isolation-valve` member of the same group is not a breaker row (D8: a flow role
+ * F3.80 B10b â€” an `isolation-valve` member of the same group is not a breaker row (D8: a flow role
  * is never a breaker). Same fixture as B10a, so the pair proves the role list and not the group.
  */
 export async function assertIsolationValveMemberIsNotABreakerRow(db: BmsDb): Promise<void> {
