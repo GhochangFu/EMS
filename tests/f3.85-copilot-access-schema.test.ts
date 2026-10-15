@@ -159,6 +159,7 @@ describe("F3.85 migration 0104 — the copilot availability tables (ADR 0099 dec
     expect(columnsOf(drizzleBlock(schema, "copilotOrgSettings"))).toEqual([
       "organization_id",
       "enabled",
+      "attachments_enabled",
       "updated_by",
       "updated_at",
     ]);
