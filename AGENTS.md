@@ -898,27 +898,69 @@
 > breaker, and commands stay `F3.12`.** Migration `0097` adds the state map
 > `bms.point_key_states` (fleet-wide master data: a numeric value of a point
 > key to a label and a closed `tone`; seeded for `breaker_main` and
-> `breaker_trip` only), the five breaker roles (`main-breaker`,
-> `ups-input-breaker`, `ups-output-breaker`, `load-feeder-breaker`,
-> `mains-feeder-breaker`), the asset fields `rating` and `trip_cause`, and the
-> `fan_out` and `is_source` flags on `bms.mimic_layout_nodes`. Migration `0099`
-> widens the widget-type CHECK with `breaker_table`, so `widgetType` has
-> twelve values (journal idx 98 is empty: `F3.78`'s `0098_user_administration.sql` merged later as idx 100). The `lv_single_line` preset
-> draws the SMOC topology; a **fan-out node** draws every member of its role,
-> one breaker each in asset-code order. A mimic on a tab with no group may
-> name one tab of its dashboard (`tabKey`) and draws at a `compact` size. The
-> web runs `energiseGraph` (`packages/shared/src/mimic-energised.ts`) over the
-> directed pipes and the socket overlay: only a breaker switches, and a stale
-> or unknown breaker makes the path after it unknown. **The freshness dash
-> stays, and energy is a colour.** **Stock v4 of "SMOC standard"** adds the
-> electrical tab's `lv_single_line` mimic and `breaker_table`, and an Overview
-> mimic that names the electrical tab. By Amendment 2 a per-tab upgrade moves
-> the untouched seeded copies from v3 to v4 (`planOverviewV4Upgrade` and
-> `planElectricalV4Upgrade` in `site-layout-seed-upgrade-tabs.ts`, run by
-> `upgradeSeededSiteLayoutCopies`); an edited tab keeps its own content. The
-> seed adds the demo dashboard `sld-demo-rsmoc-wc` at `RSMOC-WC`, beside its
-> hand-written `builtin` view, and the simulator trips `CR-Q9`. Next under
-> ADR 0087: `F3.75` (`RSMOC-WC` onto the template after parity).
+> `breaker_trip` only, until `F3.80` added `valve_open` and `damper_open` and
+> widened the tone set from three to five, below), the five breaker roles
+> (`main-breaker`, `ups-input-breaker`, `ups-output-breaker`,
+> `load-feeder-breaker`, `mains-feeder-breaker`), the asset fields `rating`
+> and `trip_cause`, and the `fan_out` and `is_source` flags on
+> `bms.mimic_layout_nodes`. Migration `0099` widens the widget-type CHECK with
+> `breaker_table`, so `widgetType` has twelve values (journal idx 98 is empty:
+> `F3.78`'s `0098_user_administration.sql` merged later as idx 100). The
+> `lv_single_line` preset draws the SMOC topology; a **fan-out node** draws
+> every member of its role, one breaker each in asset-code order. A mimic on a
+> tab with no group may name one tab of its dashboard (`tabKey`) and draws at
+> a `compact` size. The web runs `energiseGraph`
+> (`packages/shared/src/mimic-energised.ts`) over the directed pipes and the
+> socket overlay: only a switching unit gates the walk (a breaker until
+> `F3.80`; the d4 rule below), and a stale or unknown one makes the path after
+> it unknown. **The freshness dash stays, and energy is a colour.** **Stock v4
+> of "SMOC standard"** adds the electrical tab's `lv_single_line` mimic and
+> `breaker_table`, and an Overview mimic that names the electrical tab. By
+> Amendment 2 a per-tab upgrade moves the untouched seeded copies from v3 to v4
+> (`planOverviewV4Upgrade` and `planElectricalV4Upgrade` in
+> `site-layout-seed-upgrade-tabs.ts`, run by `upgradeSeededSiteLayoutCopies`);
+> an edited tab keeps its own content. The seed adds the demo dashboard
+> `sld-demo-rsmoc-wc` at `RSMOC-WC`, beside its hand-written `builtin` view,
+> and the simulator trips `CR-Q9`. Next under ADR 0087: `F3.75` (`RSMOC-WC`
+> onto the template after parity).
+> And **network mimics** (**ADR 0101**; row `F3.80`, built 2026-10-15 in #860
+> `2eee765f`, #861 `ec9189d3` and #862 `1ebdc964`; the ADR in #859). It
+> amends ADR 0081 decision 10, ADR 0079 decision 8, ADR 0082 decisions 6 and
+> 7 and ADR 0088 decisions 2 and 5: **a network mimic is any drawn layout
+> whose switching units gate the walk**, electrical (LV, HT, ring, DG) or flow
+> (water, HVAC), so network mimics beyond `lv_single_line` are no longer out.
+> Still display only: no breaker or valve command (`F3.12`). Migration `0109`
+> adds `bms.mimic_layout_nodes.is_switching` (units only: a second named
+> `CHECK`, `mimic_layout_nodes_switching_units_check`, beside 0097's
+> `mimic_layout_nodes_flags_units_check`), the **eight position roles**
+> `ht-incomer-breaker`, `ht-outgoing-breaker`, `bus-coupler`, `isolator`,
+> `dg-breaker`, `isolation-valve`, `control-valve` and `damper`, and the
+> **five tones** `closed | open | tripped | flowing | shut` (the `z.enum` in
+> `contracts/point-key-states.ts` and `point_key_states_tone_check`, restated
+> together). It adds no point keys: `valve_open` and `damper_open` and their
+> four state rows (1 OPEN `flowing`, 0 SHUT `shut`) are seed-owned, not
+> migrated (owner ruling OQ2 (b)). **The d4 switching rule:** a layout unit
+> switches when `is_switching` is true **or** its symbol is in
+> `MIMIC_SWITCHING_SYMBOLS`, so a preset still switches by its glyph and an
+> old layout needs no data change.
+> `deriveBreakerState` ranks `tripped` > `shut` > `open` > `flowing` >
+> `closed` (stale still wins, `offline`); `energiseGraph` passes on any member
+> `closed` or `flowing`, gives unknown on none or any `unknown`, and blocks
+> otherwise. `flowing` takes the closed look and `shut` the open look, and the
+> pills read `OPEN` and `SHUT` for flow units. `BREAKER_ROLE_CODES` is ten
+> (the five breaker roles and five electrical position roles); valves and
+> dampers stay off the breaker table. The editor has the "Switches (gates the
+> flow)" toggle, locked on for a breaker symbol, and **warns, never refuses**:
+> no source, a switching unit with no role, a switching unit no source
+> reaches. The seed (ESKOM only) adds fifteen `ND-` demo assets at RSMOC
+> Western Cape (`ND-`, not `NW-`, which is the North West province prefix),
+> the HT/LT layout `network-demo-ht-lt` and the flow layout
+> `network-demo-flow`, each with a dashboard, and the simulator holds the bus
+> coupler and DG breaker open, feeder `ND-LT-A-F2` tripped and one valve shut.
+> The held-open demo breakers raise three standing `BREAKER_OPEN` critical
+> alarms at RSMOC-WC while the simulator runs; a skip list needs an ADR 0101
+> amendment. Still out: free shapes and lines, an API refusal of a bad graph,
+> and the tones `earthed` and `racked_out` until a device sends them.
 > And **the tool-calling onboarding agent loop** (**ADR 0090** with
 > **Amendment 1**; row `F3.21`, merged 2026-10-03 in #705, squash `9ff272e1`;
 > the ADR in #702 and the amendment in #703). It amends ADR 0011 decision 1:
