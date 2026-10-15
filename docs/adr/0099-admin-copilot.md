@@ -34,8 +34,8 @@ untouched for 30 days is erased by the purge tick. Where Amendment 2
 conflicts with decisions 7 and 8 above, it wins. A note of
 2026-10-14 (owner) adds the draft list's home-organization default.
 
-**Amended 2026-10-15 — Amendment 3, proposed** (owner rulings Q1–Q8 of
-2026-10-15; awaiting the owner's approval of this written text): release 3
+**Amended 2026-10-15 — Amendment 3** (owner-approved 2026-10-15, with its
+four drafter choices; owner rulings Q1–Q8 of the same day): release 3
 (`F3.87`) — the mimic catalog entries, drawing a layout by conversation, and
 building a mimic from an attached image or PDF. Where Amendment 3 conflicts
 with the decisions above or with Amendments 1 and 2, it wins.
@@ -669,7 +669,7 @@ organizations list. That list holds the user's direct organization grants, not
 the home organization, so a resume could list one organization's drafts and
 bind in another, and answer 400 for the mismatch.
 
-## Amendment 3 — release 3: mimics by conversation and from an image (owner, 2026-10-15, proposed)
+## Amendment 3 — release 3: mimics by conversation and from an image (owner, 2026-10-15)
 
 Decision 12 gave release 3 (`F3.87`) the plant and network mimics and the
 symbol libraries, and said that drawing a layout by conversation needs its own
@@ -855,7 +855,8 @@ Each item names the decision whose text it changes.
   card; the library, symbol-upload and role entries; the attachments (the
   port, the migration, the turn route).
 
-**Drafter choices (not asked; for the owner to confirm with this amendment).**
+**Drafter choices (not asked; confirmed by the owner with this amendment,
+2026-10-15).**
 
 1. New read tools: `list_mimic_layouts`, `get_mimic_layout` and
    `list_mimic_symbols` (the live libraries' symbol keys, labels and groups,
