@@ -16,7 +16,15 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 
-import { MAX_MIMIC_SYMBOL_SVG_BYTES } from "@bms/shared";
+import {
+  MAX_MIMIC_SYMBOL_SVG_BYTES,
+  createMimicOrgSymbolLibraryBodySchema,
+  mimicSymbolFilenameSchema,
+  mimicSymbolUploadFieldsSchema,
+  putMimicLibrarySettingBodySchema,
+  updateMimicOrgSymbolBodySchema,
+  updateMimicOrgSymbolLibraryBodySchema,
+} from "@bms/shared";
 import type {
   JwtPayload,
   MimicLibrarySettingDto,
@@ -29,17 +37,7 @@ import { idParamSchema } from "../admin/admin.schema";
 import { decodeMulterFilename } from "../assets/multer-filename";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import {
-  createMimicOrgSymbolLibraryBodySchema,
-  mimicLibraryCodeParamSchema,
-  mimicOrgSymbolParamsSchema,
-  mimicSymbolFilenameSchema,
-  mimicSymbolLibrariesQuerySchema,
-  mimicSymbolUploadFieldsSchema,
-  putMimicLibrarySettingBodySchema,
-  updateMimicOrgSymbolBodySchema,
-  updateMimicOrgSymbolLibraryBodySchema,
-} from "./mimic-symbol-libraries.schema";
+import { mimicLibraryCodeParamSchema, mimicOrgSymbolParamsSchema, mimicSymbolLibrariesQuerySchema } from "./mimic-symbol-libraries.schema";
 import { MimicSymbolLibrariesService } from "./mimic-symbol-libraries.service";
 
 /**

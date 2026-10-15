@@ -4,10 +4,10 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { createDb } from "@bms/db";
 
-import { AccessControlService } from "../../auth/access-control.service";
-import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
-import { VocabulariesService } from "../../vocabularies/vocabularies.service";
-import { MasterDataAuditService } from "../master-data-audit.service";
+import { AccessControlService } from "../../../auth/access-control.service";
+import { openIntegrationPool, requireIntegrationDb } from "../../../testing/integration-db-gate";
+import { VocabulariesService } from "../../../vocabularies/vocabularies.service";
+import { MasterDataAuditService } from "../../master-data-audit.service";
 import {
   assertADuplicateCodeIsAConflict,
   assertAnEmptyPatchIsRefused,
@@ -22,7 +22,7 @@ import {
   removeFixtures,
 } from "./asset-roles.service.integration.spec";
 import { AssetRolesAdminService } from "./asset-roles.service";
-import { primeSeededSubjects } from "../../testing/seeded-subjects";
+import { primeSeededSubjects } from "../../../testing/seeded-subjects";
 
 /**
  * `F3.40` (ADR 0051 decision 5) — Vitest entry point for the asset role write

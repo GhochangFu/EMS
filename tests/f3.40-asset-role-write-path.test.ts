@@ -18,7 +18,7 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  * **What is NOT here, and where it is instead.** Every behavioural claim — the
  * `admin`-only gate, the 409, the retirement, the org-less audit row, `0060`'s
  * two codes arriving as vocabulary entries — needs a database and lives in
- * `apps/api/src/admin/vocabularies/asset-roles.service.integration.spec.ts`.
+ * `apps/api/src/admin/vocabularies/asset-roles/asset-roles.service.integration.spec.ts`.
  * The body schemas need neither and are checked from that file's `.test`
  * outside the database gate.
  *
@@ -30,9 +30,11 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  */
 const MIGRATION_REL = "packages/db/drizzle/0060_asset_role_estate_shapes.sql";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
-const CONTROLLER_REL = "apps/api/src/admin/vocabularies/asset-roles.controller.ts";
-const SERVICE_REL = "apps/api/src/admin/vocabularies/asset-roles.service.ts";
-const SCHEMA_REL = "apps/api/src/admin/vocabularies/asset-roles.schema.ts";
+const CONTROLLER_REL = "apps/api/src/admin/vocabularies/asset-roles/asset-roles.controller.ts";
+const SERVICE_REL = "apps/api/src/admin/vocabularies/asset-roles/asset-roles.service.ts";
+const SCHEMA_REL = "apps/api/src/admin/vocabularies/asset-roles/asset-roles.schema.ts";
+/** `F3.87` PR 1 moved the create body here (ADR 0101 decision 17). */
+const WRITES_REL = "packages/shared/src/contracts/asset-role-writes.ts";
 const MODULE_REL = "apps/api/src/admin/admin.module.ts";
 
 /**
@@ -102,6 +104,7 @@ describe("F3.40 the write path is wired, gated, and keyed by code", () => {
   const controller = codeOnly(read(CONTROLLER_REL));
   const service = codeOnly(read(SERVICE_REL));
   const schema = codeOnly(read(SCHEMA_REL));
+  const writes = codeOnly(read(WRITES_REL));
   const adminModule = codeOnly(read(MODULE_REL));
 
   it("registers both the controller and the service in AdminModule", () => {
@@ -110,8 +113,8 @@ describe("F3.40 the write path is wired, gated, and keyed by code", () => {
     // green suite genuinely cannot catch.
     expect(adminModule).toContain("AssetRolesAdminController");
     expect(adminModule).toContain("AssetRolesAdminService");
-    expect(adminModule).toContain('from "./vocabularies/asset-roles.controller"');
-    expect(adminModule).toContain('from "./vocabularies/asset-roles.service"');
+    expect(adminModule).toContain('from "./vocabularies/asset-roles/asset-roles.controller"');
+    expect(adminModule).toContain('from "./vocabularies/asset-roles/asset-roles.service"');
   });
 
   it("mounts under admin/, with the two verbs ADR 0051 decision 5 names", () => {
@@ -181,7 +184,7 @@ describe("F3.40 the write path is wired, gated, and keyed by code", () => {
 
     // And the create body still declares it, or the assertion above passes
     // because the field was renamed out from under it.
-    expect(schema).toContain("code: assetRoleCodeParamSchema");
+    expect(writes).toContain("code: assetRoleCodeBound.regex(");
   });
 
   it("declares the code bound locally, and at the same width as the contract", () => {
@@ -191,7 +194,16 @@ describe("F3.40 the write path is wired, gated, and keyed by code", () => {
     // removes the cross-package `instanceof`, and the cost is that the bound is
     // now written twice — so this asserts the two agree.
     expect(schema).toContain("export const assetRoleCodeParamSchema = z.string().min(1).max(64)");
-    expect(schema).not.toContain('from "@bms/shared"');
+    // `F3.87` PR 1: the api schema now imports the create body from `@bms/shared`, so the old
+    // "no shared import" line is gone. The PARAM must still not be derived from the shared code
+    // schema - that parse is the cross-package `instanceof ZodError` hazard.
+    // `asset-roles.controller.spec.ts` holds the other half: a malformed create body, built by
+    // the shared schema, still answers 400 with `flatten()` through the controller's `catch`.
+    expect(schema).not.toContain("assetRoleCodeSchema");
+    expect(schema).toContain('import { createAssetRoleBodySchema } from "@bms/shared"');
+
+    // The moved create body states the same bound a third time, so all three must agree.
+    expect(writes).toContain("const assetRoleCodeBound = z.string().min(1).max(64)");
 
     const operations = codeOnly(read("packages/shared/src/contracts/operations.ts"));
     expect(

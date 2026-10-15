@@ -24,6 +24,13 @@ import {
   listDashboardsQuerySchema,
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
+  createAssetRoleBodySchema,
+  createMimicLayoutBodySchema,
+  createMimicOrgSymbolLibraryBodySchema,
+  putMimicLayoutBodySchema,
+  putMimicLibrarySettingBodySchema,
+  updateMimicOrgSymbolBodySchema,
+  updateMimicOrgSymbolLibraryBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -59,16 +66,6 @@ import {
 import { putSiteControlRoomViewBodySchema } from "../control-room/site-control-room-view.schema";
 import { siteLayoutBodySchema } from "../control-room/site-layout.schema";
 import {
-  createMimicLayoutBodySchema,
-  putMimicLayoutBodySchema,
-} from "../mimic-layouts/mimic-layouts.schema";
-import {
-  createMimicOrgSymbolLibraryBodySchema,
-  putMimicLibrarySettingBodySchema,
-  updateMimicOrgSymbolBodySchema,
-  updateMimicOrgSymbolLibraryBodySchema,
-} from "../mimic-symbol-libraries/mimic-symbol-libraries.schema";
-import {
   createSessionBodySchema,
   patchDraftBodySchema,
   rollbackBodySchema,
@@ -87,10 +84,7 @@ import {
   createPointKeyBodySchema,
   updatePointKeyBodySchema,
 } from "../admin/point-keys/point-keys.schema";
-import {
-  createAssetRoleBodySchema,
-  updateAssetRoleBodySchema,
-} from "../admin/vocabularies/asset-roles.schema";
+import { updateAssetRoleBodySchema } from "../admin/vocabularies/asset-roles/asset-roles.schema";
 import {
   createLocationTypeBodySchema,
   updateLocationTypeBodySchema,

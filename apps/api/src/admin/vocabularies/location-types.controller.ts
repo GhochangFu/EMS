@@ -36,7 +36,7 @@ import { LocationTypesVocabularyAdminService } from "./location-types.service";
  *
  * **`:code`, parsed by a locally declared schema, inside the `try`** on every
  * route, so a bad code is a 400 rather than a raw `ZodError` (the
- * `asset-roles.schema.ts` measurement).
+ * `asset-roles/asset-roles.schema.ts` measurement).
  */
 @Controller("admin/vocabularies/location-types")
 @UseGuards(JwtAuthGuard)

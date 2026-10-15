@@ -128,6 +128,18 @@ export async function assertCreateTurnsAZodErrorIntoABadRequest(): Promise<void>
     "the service was called with a body that did not parse — the guard runs after the write",
   );
 
+  // `F3.87` PR 1: the create body is now built by the SHARED schema, and the controller's
+  // `catch (err instanceof ZodError)` must still recognise its error (one `zod` instance in the
+  // workspace). A rethrown ZodError would be a 500; the 400 must carry `flatten()`'s envelope,
+  // naming the field - the same envelope the HTTP step 6 curl reads.
+  const response = (err as BadRequestException).getResponse() as {
+    fieldErrors?: Record<string, string[]>;
+  };
+  assert(
+    Array.isArray(response.fieldErrors?.code) && (response.fieldErrors?.code?.length ?? 0) > 0,
+    `the 400 must carry flatten()'s fieldErrors for \`code\`, got ${JSON.stringify(response)}`,
+  );
+
   // Anti-vacuity: the same call with a valid body reaches the service.
   await controller.create({ code: "cooling-tower", label: "Cooling Tower" }, JWT);
   assert(createCalls.length === 1, "a valid body must reach the service");

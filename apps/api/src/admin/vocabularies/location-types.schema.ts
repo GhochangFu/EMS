@@ -7,7 +7,7 @@ import { z } from "zod";
  * reuses.
  *
  * **Declared here with this package's own `z`, not imported from
- * `@bms/shared`.** `asset-roles.schema.ts`'s header records the measurement: a
+ * `@bms/shared`.** `asset-roles/asset-roles.schema.ts`'s header records the measurement: a
  * `ZodError` thrown by a shared schema failed `err instanceof ZodError` under
  * Vitest (ESM `zod` here, CJS `dist` there) and escaped the controller's 400
  * mapping. The bound is `locationTypeCodeSchema`'s — `min(1).max(32)`, the

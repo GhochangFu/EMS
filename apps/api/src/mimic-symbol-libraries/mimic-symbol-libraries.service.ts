@@ -20,6 +20,7 @@ import {
   MAX_MIMIC_SYMBOL_SVG_BYTES,
 } from "@bms/shared";
 import type {
+  CreateMimicOrgSymbolLibraryBody,
   JwtPayload,
   MimicGlobalLibraryStatusDto,
   MimicLibrarySettingDto,
@@ -28,6 +29,9 @@ import type {
   MimicSymbolGroupCode,
   MimicSymbolLibrariesResponse,
   MimicSymbolLibraryCode,
+  PutMimicLibrarySettingBody,
+  UpdateMimicOrgSymbolBody,
+  UpdateMimicOrgSymbolLibraryBody,
 } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
@@ -37,12 +41,6 @@ import { withTenant } from "../database/tenant-context";
 import type { BmsTx } from "../database/tenant-context";
 import { orgSymbolsOf } from "../mimic-layouts/mimic-org-symbols";
 import type { OrgSymbolRow } from "../mimic-layouts/mimic-org-symbols";
-import type {
-  CreateMimicOrgSymbolLibraryBody,
-  PutMimicLibrarySettingBody,
-  UpdateMimicOrgSymbolBody,
-  UpdateMimicOrgSymbolLibraryBody,
-} from "./mimic-symbol-libraries.schema";
 import { SvgSymbolRefusal, parseSvgSymbol } from "./svg-symbol-parser";
 
 type LibraryRow = typeof mimicOrgSymbolLibraries.$inferSelect;

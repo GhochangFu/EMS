@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import * as spec from "./mimic-layouts.schema.spec";
+import * as spec from "./mimic-layout-writes.spec";
 
 /** `F3.32c` U2 — Vitest entry point for the mimic layout write bodies. Assertions live in the
  * sibling `.spec` (ADR 0014); one `it()` per claim. */

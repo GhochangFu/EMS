@@ -6,13 +6,16 @@ import {
 } from "@bms/shared/contracts";
 import type { Contract, ContractSchema } from "@bms/shared/contracts";
 import type {
+  CreateMimicOrgSymbolLibraryBody,
   MimicLibrarySettingDto,
   MimicOrgSymbolDto,
   MimicOrgSymbolLibraryDto,
   MimicSymbolGroupCode,
   MimicSymbolLibrariesResponse,
   MimicSymbolLibraryCode,
-  MimicSymbolStyle,
+  PutMimicLibrarySettingBody,
+  UpdateMimicOrgSymbolBody,
+  UpdateMimicOrgSymbolLibraryBody,
 } from "@bms/shared";
 
 import { ApiError } from "../lib/api-error";
@@ -35,40 +38,22 @@ const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
  * the API could not split the parts.
  */
 
-export type CreateMimicOrgSymbolLibraryBody = {
-  organizationId: string;
-  code: string;
-  label: string;
-  style: MimicSymbolStyle;
-  licence: string;
-  attribution: string;
-  sourceUrl?: string | null;
-};
-
-export type UpdateMimicOrgSymbolLibraryBody = {
-  label?: string;
-  licence?: string;
-  attribution?: string;
-  sourceUrl?: string | null;
-  active?: boolean;
-};
+/**
+ * The four JSON write bodies are the shared contracts' `z.infer` types (`F3.87` PR 1, ADR 0030
+ * decision 5). `UploadMimicOrgSymbolInput` stays here: it carries a browser `File`, not a body.
+ */
+export type {
+  CreateMimicOrgSymbolLibraryBody,
+  PutMimicLibrarySettingBody,
+  UpdateMimicOrgSymbolBody,
+  UpdateMimicOrgSymbolLibraryBody,
+} from "@bms/shared";
 
 export type UploadMimicOrgSymbolInput = {
   file: File;
   name?: string;
   label?: string;
   group?: MimicSymbolGroupCode;
-};
-
-export type UpdateMimicOrgSymbolBody = {
-  label?: string;
-  group?: MimicSymbolGroupCode;
-  active?: boolean;
-};
-
-export type PutMimicLibrarySettingBody = {
-  organizationId: string;
-  enabled: boolean;
 };
 
 async function librariesFetch<S extends ContractSchema>(

@@ -1,8 +1,8 @@
 import { expect } from "vitest";
 
-import { MIMIC_LAYOUT_BOUNDS } from "@bms/shared";
+import { MIMIC_LAYOUT_BOUNDS } from "./mimic-layouts";
 
-import { createMimicLayoutBodySchema, putMimicLayoutBodySchema } from "./mimic-layouts.schema";
+import { createMimicLayoutBodySchema, putMimicLayoutBodySchema } from "./mimic-layout-writes";
 
 /**
  * `F3.32c` U2 — the mimic layout write bodies (plan U2 "Bodies"). One exported
