@@ -34,6 +34,12 @@ untouched for 30 days is erased by the purge tick. Where Amendment 2
 conflicts with decisions 7 and 8 above, it wins. A note of
 2026-10-14 (owner) adds the draft list's home-organization default.
 
+**Amended 2026-10-15 — Amendment 3, proposed** (owner rulings Q1–Q8 of
+2026-10-15; awaiting the owner's approval of this written text): release 3
+(`F3.87`) — the mimic catalog entries, drawing a layout by conversation, and
+building a mimic from an attached image or PDF. Where Amendment 3 conflicts
+with the decisions above or with Amendments 1 and 2, it wins.
+
 | # | Question | Options put | Ruled | Decision |
 | --- | --- | --- | --- | --- |
 | 1 | Copilot or narrow assistant | narrow admin assistant; general copilot; no change | **general copilot** (owner's own choice) | 1 |
@@ -662,3 +668,242 @@ The reason: the dock first took a scoped administrator's organization from the
 organizations list. That list holds the user's direct organization grants, not
 the home organization, so a resume could list one organization's drafts and
 bind in another, and answer 400 for the mismatch.
+
+## Amendment 3 — release 3: mimics by conversation and from an image (owner, 2026-10-15, proposed)
+
+Decision 12 gave release 3 (`F3.87`) the plant and network mimics and the
+symbol libraries, and said that drawing a layout by conversation needs its own
+amendment of this record before build; *Not in this ADR* kept it out. On
+2026-10-14 the owner added new scope: an administrator may attach an image of
+a plant and ask the copilot to build the mimic from it. `F3.80` (ADR 0101)
+closed on 2026-10-15 (#860–#864), so the layout seam is final: a write node
+carries `fanOut`, `isSource` and `isSwitching`; `PUT` replaces the whole
+layout and needs `version`; node keys stay stable; units bind by `roleCode`
+(ADR 0081, ADR 0088); ADR 0101 decision 17 moves the layout write schemas to
+`packages/shared` in this row. The owner ruled eight questions one at a time
+on 2026-10-15. Code citations are to `main` at `71b20634`.
+
+| # | Question | Options put | Ruled | Item |
+| --- | --- | --- | --- | --- |
+| Q1 | Which mimic writes enter the catalog | JSON writes, no upload; layouts only; all, with the SVG upload | **all, with the SVG upload** (not the recommendation) | A1 |
+| Q2 | How a layout is proposed | a card with a drawn preview; open the editor prefilled; both | **a card with a drawn preview** (recommended) | A2 |
+| Q3 | Where an attached image lives | not stored; object storage with a 30-day erase; `bytea` with a 30-day erase | **not stored** (recommended) | A4 |
+| Q4 | Attachment limits | PNG/JPEG/WebP, 5 MB, one per turn; add PDF, 10 MB, three per turn; 10 MB, one per turn | **PNG/JPEG/WebP and PDF, 10 MB each, three per turn** (not the recommendation) | A4 |
+| Q5 | Which model reads the file | the turn's own key and model; a separate vision model setting; rasterize PDFs on the server | **the turn's own key and model** (recommended) | A5 |
+| Q5a | Q4's "first page only" with no PDF library | the whole PDF under the 10 MB cap; single-page PDFs only; no PDF | **the whole PDF, the 10 MB cap only** (recommended) | A4 |
+| Q6 | How a copilot symbol upload works | the admin attaches the file; also let the model draw an SVG; the model draws only | **the admin attaches the file, and the model may also draw an SVG** (not the recommendation) | A3 |
+| Q7 | Binding the units of a layout built from an image | draw, then offer binding cards; draw only; build the whole plant | **draw, then offer binding cards** (recommended) | A6 |
+| Q8 | The risk of an unscrubbed file sent to the provider | a per-organization switch, default off; on wherever the copilot is on; global admin only | **a per-organization switch, default off** (recommended) | A7 |
+
+Each item names the decision whose text it changes.
+
+- **A1 — Decision 2 and decision 3: the release-3 catalog entries (Q1).**
+  - **Before the entries** (ADR 0101 decision 17; decision 2's rule): the
+    body schemas these entries use move from `apps/api` to
+    `packages/shared/src/contracts/`, and the controllers import them from
+    there — `createMimicLayoutBodySchema` and `putMimicLayoutBodySchema`
+    (`apps/api/src/mimic-layouts/mimic-layouts.schema.ts:227,237`); the
+    symbol-library bodies `createMimicOrgSymbolLibraryBodySchema`,
+    `updateMimicOrgSymbolLibraryBodySchema`, `putMimicLibrarySettingBodySchema`,
+    `updateMimicOrgSymbolBodySchema`, `mimicSymbolUploadFieldsSchema` and
+    `mimicSymbolFilenameSchema` (`mimic-symbol-libraries.schema.ts`); and
+    `createAssetRoleBodySchema` (`admin/vocabularies/asset-roles.schema.ts:42`).
+  - **Entries** (the plan confirms each route before it adds the entry):
+    `mimicLayout.create` (`POST /api/v1/mimic-layouts`), `mimicLayout.replace`
+    (`PUT /api/v1/mimic-layouts/:id`), `mimicLibrary.setting`
+    (`PUT /api/v1/mimic-symbol-libraries/settings/:libraryCode`),
+    `mimicLibrary.create` (`POST /api/v1/mimic-symbol-libraries`),
+    `mimicLibrary.update` (`PATCH /api/v1/mimic-symbol-libraries/:id`),
+    `mimicSymbol.upload` (`POST /api/v1/mimic-symbol-libraries/:id/symbols`,
+    multipart — A3), `mimicSymbol.update`
+    (`PATCH /api/v1/mimic-symbol-libraries/:id/symbols/:symbolId`) and
+    `assetRole.create` (`POST /api/v1/admin/vocabularies/asset-roles`, the
+    global `admin` only by its own check — A6).
+  - **Exclusion list** gains `DELETE /api/v1/mimic-layouts/:id` (no hard
+    delete, ruling 5) and `PATCH /api/v1/admin/vocabularies/asset-roles/:code`
+    (a vocabulary edit or retire stays on its page).
+  - The coverage spec (`tests/f3.85-catalog-coverage.test.ts`) gains the three
+    controllers, so every write route on them is an entry or excluded.
+  - **Who sees the tools.** The layout and library routes write for `admin` and
+    `organization_admin` only (`mimic-layouts.service.ts:71`, ADR 0081
+    decision 3; `mimic-symbol-libraries.service.ts:53`, ADR 0086). Their
+    propose tools are offered only to those two roles; `location_admin` and
+    `asset_group_admin` keep read-only answers about mimics. The controller
+    still decides on Confirm.
+
+- **A2 — Decision 4: a layout is proposed as one whole body on one card with a
+  drawn preview (Q2).** One layout save is one API write, so one Confirm
+  (rulings 3, 11).
+  - The model calls the `mimicLayout.create` or `mimicLayout.replace` propose
+    tool with the whole body. The server parses it with the shared schema
+    (the caps of ADR 0101 decision 2: 120 nodes, 160 pipes, fan-out 16) and
+    runs the service's own read-only checks before the card shows — the
+    libraries a unit's symbol uses are live for the organization
+    (`assertLibrariesLive`, `mimic-layouts.service.ts:168`). A failure goes
+    back to the model as the tool result.
+  - The card **draws the proposed layout** with the web's mimic renderer from
+    the body alone, with no live state. For a replace it lists the units and
+    pipes added, changed and removed by node key against the version the card
+    was built from, and it shows ADR 0101 decision 14's editor warnings (no
+    source; a switching unit with no role; a switching unit no source reaches).
+    The warnings do not block Confirm, as they do not block a save in the
+    editor.
+  - A replace carries `version`; a layout changed after the card was built is
+    refused 409 by the service, shown on the card and returned to the model
+    (decision 4.8). This narrows decision 4.9's stale-diff residual for
+    layouts.
+  - The model may write a new layout from a conversation, from an attached
+    image or PDF (A4), or as an edit of an existing layout it read.
+
+- **A3 — Decision 2 and decision 4: a copilot symbol upload (Q1, Q6).**
+  `mimicSymbol.upload` is the catalog's first multipart entry. The SVG comes
+  from either source:
+  - **An attached `.svg`** (up to `MAX_MIMIC_SYMBOL_SVG_BYTES`, 64 KB). The
+    model never sees its markup: it receives the filename, the size and the
+    result of the existing parser (`svg-symbol-parser.ts`), and proposes the
+    `name`, `label` and `group`.
+  - **An SVG the model writes** for a unit that no live library holds. It goes
+    through the same parser and the same 64 KB cap.
+
+  The server runs the parser at propose time; a refusal goes back to the model.
+  The pending-change row stores the SVG text (64 KB at most), and the hashed
+  canonical body is `{ name, label, group, filename, fileSha256 }`. The card
+  draws the symbol from that text as an image (an `<img>` from a blob URL, so
+  no script in the file runs) beside its fields. On Confirm the browser sends
+  the real multipart call built from the stored text, with
+  `X-Copilot-Change`; the interceptor hashes the uploaded file's bytes and
+  refuses 409 when `fileSha256` or a field differs (decision 4.5). The
+  controller's own checks run unchanged.
+
+  **An attached `.svg` is the one stored exception to A4.** Its text lives only
+  in the pending-change row, which expires after 15 minutes (drafter choice 1)
+  and is erased with the conversation (decision 8). It is an attachment for
+  A4's three-per-message limit and needs A7's switch. An SVG the model writes
+  needs neither.
+
+- **A4 — Decision 8 and decision 9: attachments on a copilot turn (Q3, Q4,
+  Q5a).**
+  - An administrator may attach **up to three files per message**: PNG, JPEG,
+    WebP or PDF, **10 MB each**, checked by magic bytes as asset images are.
+    A PDF goes whole; the 10 MB cap bounds it. An `.svg` is accepted only as a
+    symbol to upload (A3), never as an image to read.
+  - The turn route takes the files as multipart, with the limits written
+    inline in the interceptor's options (`tests/f4.102-file-interceptor-limits.test.ts`).
+  - **Nothing is stored.** The API holds the bytes in memory for that turn's
+    model calls only and drops them when the turn ends. The message row keeps
+    a placeholder (filename, type, size, SHA-256), never the bytes. The system
+    prompt tells the model to write its reading of the drawing (units, pipes,
+    labels, roles it can see) as text in its reply; that text is the history
+    later turns use. An automatic follow-up turn (decision 4.7) never has the
+    file. No new table, no object storage, and the 30-day erase of decision 8
+    has nothing new to erase.
+  - Attachments are taken on a plain copilot conversation only. A turn with a
+    skill bound (the onboarding skill, decision 7) refuses them with 400.
+
+- **A5 — Decision 10: the file goes to the turn's own key and model (Q5).**
+  The key and model come from decision 10's resolution, unchanged. The LLM
+  port (`apps/api/src/llm/llm-port.ts`, text-only `content` today) gains
+  content parts, and each provider sends the file in its native form: image
+  parts, and a PDF as a document or file part. No new npm package and no new
+  model setting. When the provider or model refuses the file, the panel says
+  that this model cannot read the file and the turn counts as a turn that
+  reached the model. In guided mode, or with no key resolved, the attach
+  button is absent and the route refuses attachments with 400.
+
+- **A6 — Decision 4.7: binding after a layout is drawn (Q7).** When a layout
+  change reaches `applied`, the follow-up turn offers the binding writes that
+  already exist in the catalog, one card each, in order:
+  `assetGroup.member.add` and `assetGroup.member.setRole` (`F3.86`), and, for
+  the global `admin` only, `assetRole.create` for a role code the vocabulary
+  lacks (scoped administrators choose among the existing roles, ADR 0101
+  decision 7's eight included). A unit the model cannot match to an asset
+  stays unbound; the editor warning lists it. The copilot never creates
+  assets or points from an image in this release (`F3.86`'s entries stay
+  available when the administrator asks for them in words).
+
+- **A7 — Decision 5 and decision 9: a switch for attachments, default off
+  (Q8).**
+  - `bms.copilot_org_settings` gains `attachments_enabled boolean NOT NULL
+    DEFAULT false`; existing and new organizations start off. It counts only
+    when the organization's copilot switch is on. Unlike `enabled`, which
+    stays global-admin only, this column is written by the global admin
+    (Organizations page) **and** by the organization admin (the *Copilot
+    access* section) — this amends decision 5's "written by the global admin
+    only" **for this column alone**. The organization admin's write never
+    creates a row or changes `enabled`: with no row the copilot is off
+    (ruling 15) and the write is refused. Schema change: one migration, frozen
+    ones untouched.
+  - The turn route checks the switch on the server for every attachment; a
+    hidden button is not the protection.
+  - The attach button says that the file goes to the organization's AI
+    provider as it is, unscrubbed.
+  - **Accepted residual risk:** the secret scrub and the ADR 0022 credential
+    refusal read text, so a secret printed in an image reaches the provider.
+    The scrub still runs on every reply.
+  - **Prompt injection by file:** text inside a file is data, as tenant free
+    text is (decision 9). A turn with an attachment **cannot propose an access
+    change** (ruling 20 treats the file like a tool result), and every write
+    still needs its Confirm.
+
+- **A8 — Decision 12: the release-3 row.** `F3.87` holds A1–A7. Decision 12's
+  "drawing by conversation gets its own amendment" is met by this amendment,
+  and *Not in this ADR*'s "Mimic drawing by conversation" item is withdrawn.
+  Decision 12's `F3.87` table row and its closing paragraph on `F3.80` are
+  read with this amendment.
+  The step-3 plan may shape the PRs; the drafter's suggested order is: the
+  schema move and the mimic read tools; the layout entries and the preview
+  card; the library, symbol-upload and role entries; the attachments (the
+  port, the migration, the turn route).
+
+**Drafter choices (not asked; for the owner to confirm with this amendment).**
+
+1. New read tools: `list_mimic_layouts`, `get_mimic_layout` and
+   `list_mimic_symbols` (the live libraries' symbol keys, labels and groups,
+   never the SVG bodies), through the user's read scope (decision 9).
+2. A turn with attachments counts as **one turn** against the daily limits
+   (decision 11, Amendment 1).
+3. The placeholder in the message row keeps the file's SHA-256 so the audit of
+   a conversation can name which file a layout came from; the bytes are gone.
+4. A layout built from an image is a draft proposal like any other: no
+   accuracy claim is made, and the card says the layout was read from a file.
+
+**Still out.** Storing attachments; attachments for operators and viewers;
+attachments in the onboarding skill; reading a DWG or other CAD file; creating
+assets and points from an image without the administrator's words; live state
+in the card's preview; the layout `DELETE` and the role-vocabulary edit by the
+copilot; a separate vision model setting.
+
+**Amends and relates to.** ADR 0101 decision 17 (the schema move, done here);
+ADR 0081 and ADR 0088 (binding by role, kept); ADR 0086 (library and upload
+rules, kept, the upload reached through the catalog); ADR 0022 (the credential
+refusal reads text — A7's residual); ADR 0090 decision 3 (caps apply to every
+attachment turn) and Amendment 1 (the key rule, kept); ADR 0030 (the moved
+schemas become shared contracts).
+
+**Promotion bookkeeping (after approval).** Nothing new leaves `AGENTS.md`
+§6 — the copilot is already promoted for administrators. Owed: the `F3.87`
+row in `docs/BACKLOG.md` (it still says the amendment is needed), and a
+`chore(agents):` sweep in its own PR (§9.10) for the `AGENTS.md` text that
+states ADR 0099's scope (the status-line paragraph and the §6 copilot item),
+which must name attachments and A7's residual.
+
+**Dependencies.** None. The providers' existing SDKs (`openai`,
+`@anthropic-ai/sdk`) carry image and PDF parts; no new npm package.
+
+**Verification owed (in addition to the record's list).**
+
+- Unit: the coverage spec with the three new controllers (the layout `DELETE`
+  and the role `PATCH` excluded); the multipart entry's hash over the fields
+  and `fileSha256`; the attachment limits (type by magic bytes, 10 MB, three
+  per message, `.svg` only for A3); the mimic propose tools offered only to
+  `admin` and `organization_admin`.
+- Loop: fake-provider specs for a layout proposed from an attachment; an
+  instruction written in an image that asks for an access change (refused); a
+  follow-up turn with no file.
+- Integration: the interceptor refuses a symbol upload whose bytes differ from
+  the proposal; a stale layout `version` gives 409 on the card; the
+  attachments switch is enforced on the server (off → 400 or 403 by the plan,
+  on → the turn runs); no image or PDF bytes reach any table.
+- Mutation runs on every new guard.
+- Live stack: a layout drawn from a photo of the ESKOM `ND-` demo network is
+  proposed, previewed, confirmed and audited with the copilot change id.
