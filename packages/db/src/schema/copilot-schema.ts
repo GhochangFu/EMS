@@ -48,12 +48,17 @@ import { bmsSchema, onboardingSessions, organizations, users } from "./bms-schem
  * migration owns both keys and `conversationId` below declares no reference.
  */
 
-/** One organization's switch. No row means off (ruling 15). */
+/**
+ * One organization's switch. No row means off (ruling 15). `attachmentsEnabled`
+ * (`F3.87`, migration `0110`, ADR 0099 Amendment 3 A7): files on a copilot turn,
+ * off by default, counting only while `enabled` is true.
+ */
 export const copilotOrgSettings = bmsSchema.table("copilot_org_settings", {
   organizationId: uuid("organization_id")
     .primaryKey()
     .references(() => organizations.id, { onDelete: "cascade" }),
   enabled: boolean("enabled").notNull().default(false),
+  attachmentsEnabled: boolean("attachments_enabled").notNull().default(false),
   updatedBy: uuid("updated_by").references(() => users.id),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
