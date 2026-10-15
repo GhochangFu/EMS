@@ -5,21 +5,19 @@ import { createAssetRoleBodySchema } from "@bms/shared";
 /**
  * The `:code` path parameter, and the bound every request body's `code` reuses.
  *
- * **DECLARED HERE WITH THIS PACKAGE'S OWN `z`, NOT IMPORTED FROM `@bms/shared`,
- * AND THAT IS A CORRECTNESS FIX RATHER THAN A PREFERENCE.** The first draft
- * parsed the param with `assetRoleCodeSchema` straight out of the contracts
- * package. Both packages resolve the same `zod` on disk, but they do not always
- * resolve the same MODULE INSTANCE — under Vitest `apps/api` loads zod as ESM
- * while `@bms/shared` arrives from its CJS `dist`, so the `ZodError` thrown by
- * a shared schema failed `err instanceof ZodError` in
- * `asset-roles.controller.ts` and escaped the 400 mapping as a 500. Measured:
- * `controller.update("", …)` threw a raw `ZodError`, not a
- * `BadRequestException`.
+ * **DECLARED HERE WITH THIS PACKAGE'S OWN `z`, NOT IMPORTED FROM `@bms/shared`.**
+ * History: at `F3.40` the param parsed with `assetRoleCodeSchema` from the contracts
+ * package, and under Vitest the `ZodError` it threw failed `err instanceof ZodError`
+ * in `asset-roles.controller.ts` (`apps/api` loaded zod as ESM, `@bms/shared` came from
+ * its CJS `dist`), so `controller.update("", ...)` escaped as a raw `ZodError`. Since
+ * `F3.85`/`F3.86` the workspace resolves one `zod`, and the controller parses the shared
+ * `createAssetRoleBodySchema` bare and maps its `ZodError` to 400;
+ * `asset-roles.controller.spec.ts` pins that. The param stays local for the recorded
+ * reason and because `contracts/point-key-writes.ts` does the same.
  *
- * A shared schema nested INSIDE a local `z.object` is safe — the outer object
- * builds the error — which is why only the bare param parse was affected and
- * why the body path returned 400 correctly over HTTP. Declaring the bound once
- * here removes the distinction rather than relying on it.
+ * `F3.40` / ADR 0051 decision 5 - the create body (`createAssetRoleBodySchema`) lives in
+ * `@bms/shared` since `F3.87` PR 1 (ADR 0101 decision 17); only the derived patch body
+ * stays here. The RESPONSE type is `assetRoleDtoSchema` in `@bms/shared` (ADR 0030).
  *
  * The bound is `min(1).max(64)`, the same as `assetRoleCodeSchema` and the same
  * as `code varchar(64)`. `contracts/point-key-writes.ts` declares its own bound locally
@@ -27,12 +25,6 @@ import { createAssetRoleBodySchema } from "@bms/shared";
  * `tests/f3.40-asset-role-write-path.test.ts` holds the two together.
  */
 export const assetRoleCodeParamSchema = z.string().min(1).max(64);
-
-/**
- * `F3.40` / ADR 0051 decision 5 - the create body (`createAssetRoleBodySchema`) lives in
- * `@bms/shared` since `F3.87` PR 1 (ADR 0101 decision 17); only the derived patch body stays here.
- * The RESPONSE type is `assetRoleDtoSchema` in `@bms/shared` (ADR 0030).
- */
 
 /**
  * `code` is absent, `active` is present, and both are deliberate.

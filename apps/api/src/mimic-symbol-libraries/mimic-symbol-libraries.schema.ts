@@ -5,10 +5,6 @@ import { z } from "zod";
  * `/api/v1/mimic-symbol-libraries`. The write bodies moved to
  * `packages/shared/src/contracts/mimic-symbol-library-writes.ts` in `F3.87` PR 1 (ADR 0101
  * decision 17); a param and a query are parsed with the api's own `zod`, so they stay here.
- *
- * The four JSON bodies are registered in `openapi-registry.ts`; the multipart upload's fields
- * (`mimicSymbolUploadFieldsSchema`) are not - the asset-images precedent, because the generator
- * hard-codes `application/json`.
  */
 
 /**
