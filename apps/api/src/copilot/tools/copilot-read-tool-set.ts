@@ -9,17 +9,28 @@ import { AssetsService } from "../../assets/assets.service";
 import { AccessControlService } from "../../auth/access-control.service";
 import { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import { defineToolRegistry, type ToolRegistry } from "../../llm/tool-registry";
+import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
+import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import type { CopilotReadTools, CopilotToolContext, CopilotToolResult } from "../copilot-read-tools";
 import type { CopilotReadServices, CopilotReadToolDefinition } from "./copilot-read-tool";
 import { getAssetKpisTool } from "./get-asset-kpis.tool";
 import { getHealthSummaryTool } from "./get-health-summary.tool";
+import { getMimicLayoutTool } from "./get-mimic-layout.tool";
 import { listAlarmsTool } from "./list-alarms.tool";
+import { listAssetRolesTool } from "./list-asset-roles.tool";
 import { listAssetsTool } from "./list-assets.tool";
 import { listDashboardsTool } from "./list-dashboards.tool";
 import { listLocationsTool } from "./list-locations.tool";
+import { listMimicLayoutsTool } from "./list-mimic-layouts.tool";
+import { listMimicSymbolsTool } from "./list-mimic-symbols.tool";
 import { openPageTool } from "./open-page.tool";
 
-/** Release 1's read tools, in the order the model sees them. No tool here writes. */
+/**
+ * The read tools, in the order the model sees them. No tool here writes.
+ * `F3.87` PR 2 adds the four mimic reads (ADR 0099 Amendment 3 drafter choice
+ * 1, plan D16) before `open_page`.
+ */
 export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[] = [
   listAlarmsTool,
   listAssetsTool,
@@ -27,6 +38,10 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   listLocationsTool,
   listDashboardsTool,
   getHealthSummaryTool,
+  listMimicLayoutsTool,
+  getMimicLayoutTool,
+  listMimicSymbolsTool,
+  listAssetRolesTool,
   openPageTool,
 ];
 
@@ -73,8 +88,22 @@ export class CopilotReadToolSet implements CopilotReadTools {
     @Inject(LocationsAdminService) locations: LocationsAdminService,
     @Inject(DashboardsService) dashboards: DashboardsService,
     @Inject(AssetHealthService) health: AssetHealthService,
+    @Inject(MimicLayoutsService) layouts: MimicLayoutsService,
+    @Inject(MimicSymbolLibrariesService) symbolLibraries: MimicSymbolLibrariesService,
+    @Inject(VocabulariesService) vocabularies: VocabulariesService,
   ) {
-    this.tools = createCopilotReadTools({ access, alarms, assets, kpis, locations, dashboards, health });
+    this.tools = createCopilotReadTools({
+      access,
+      alarms,
+      assets,
+      kpis,
+      locations,
+      dashboards,
+      health,
+      layouts,
+      symbolLibraries,
+      vocabularies,
+    });
   }
 
   get registry(): ToolRegistry<string> {

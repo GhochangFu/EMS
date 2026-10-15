@@ -7,6 +7,9 @@ import type { AssetKpisService } from "../../assets/asset-kpis.service";
 import type { AssetsService } from "../../assets/assets.service";
 import type { AccessControlService } from "../../auth/access-control.service";
 import type { DashboardsService } from "../../dashboard-builder/dashboards.service";
+import type { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
+import type { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
+import type { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import type { CopilotToolContext, CopilotToolResult } from "../copilot-read-tools";
 
 /**
@@ -21,6 +24,10 @@ export interface CopilotReadServices {
   readonly locations: Pick<LocationsAdminService, "list">;
   readonly dashboards: Pick<DashboardsService, "list">;
   readonly health: Pick<AssetHealthService, "summary">;
+  /** `F3.87` PR 2 (ADR 0099 Amendment 3 drafter choice 1): the mimic reads and the unit-role vocabulary. */
+  readonly layouts: Pick<MimicLayoutsService, "list" | "get">;
+  readonly symbolLibraries: Pick<MimicSymbolLibrariesService, "list">;
+  readonly vocabularies: Pick<VocabulariesService, "list">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */

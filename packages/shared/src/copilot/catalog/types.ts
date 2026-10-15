@@ -1,4 +1,7 @@
-import type { ZodTypeAny } from "zod";
+import type { z, ZodTypeAny } from "zod";
+import type { userRoleSchema } from "../../contracts/auth";
+
+type UserRole = z.infer<typeof userRoleSchema>;
 
 /**
  * `F3.85` PR 8 / ADR 0099 decisions 2, 3, 4 and 6 — the shape of one action
@@ -79,12 +82,23 @@ export type CatalogMethod = "POST" | "PUT" | "PATCH" | "DELETE";
  *   body's `locationId`, or the site of its `rtuId`. That admits a
  *   `location_admin` on a site it manages, which the authoring check
  *   `assetTemplate` mirrors (`canManageTemplate`) never does.
+ *
+ * `F3.87` PR 2 (ADR 0099 Amendment 3 A1):
+ *
+ * - `organization` with `manage: "mimic"`: a layout or library create, or a
+ *   built-in library setting — the body's `organizationId`, with the mimic
+ *   services' authoring check (`AUTHOR_ROLES`, then `canManageOrganization`);
+ * - `mimicLayout`, `mimicLibrary`: the layout or organization library row
+ *   the path parameter `id` names, with the same authoring check
+ *   (`mimicSymbol.update` names its library row; the route validates
+ *   `symbolId`).
  */
 export type CatalogTarget =
   | {
       readonly kind: "organization";
-      readonly manage: "dashboard" | "template" | "calcParameter" | "location" | "user";
+      readonly manage: "dashboard" | "template" | "calcParameter" | "location" | "user" | "mimic";
     }
+  | { readonly kind: "mimicLayout" | "mimicLibrary"; readonly param: "id" }
   | { readonly kind: "dashboard" | "dashboardTemplate" | "calcParameter" | "assetTemplate"; readonly param: "id" }
   | { readonly kind: "asset"; readonly param: "assetId" | "id" }
   | {
@@ -193,6 +207,30 @@ export interface CatalogEntry {
    * propose tool is made for it.
    */
   readonly proposer?: "model" | "server";
+  /**
+   * `F3.87` PR 2 (Amendment 3 A1): the roles whose propose registry names
+   * this entry's tool, and whom `propose()` admits for it. Absent: every
+   * copilot role. The route's own check still runs on Confirm.
+   */
+  readonly offeredTo?: readonly UserRole[];
+  /**
+   * `F3.87` PR 2 (Amendment 3 A3): the entry's route is multipart. The
+   * model sends the file as the `svg` text in its `modelBody`; the pending
+   * row keeps it under a `cardOnly` key, and on Confirm the browser sends it
+   * as the `fileField` part. The interceptor hashes the file's bytes.
+   */
+  readonly upload?: {
+    readonly fileField: "file";
+    readonly contentType: "image/svg+xml";
+    readonly maxBytes: number;
+  };
+  /**
+   * `F3.87` PR 2: keys the server stores in the pending row's body for the
+   * card alone (a layout's `baseline`, an upload's `svgText`). They are not
+   * body fields, the hash leaves them out, and the browser strips them
+   * before it sends the write.
+   */
+  readonly cardOnly?: readonly string[];
   readonly risk: CatalogRisk;
   readonly target: CatalogTarget;
   readonly refs: readonly CatalogRef[];

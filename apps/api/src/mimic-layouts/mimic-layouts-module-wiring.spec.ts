@@ -129,7 +129,8 @@ export function assertSymbolLibrariesModuleDeclaresItsMembers(): void {
     expect.arrayContaining([MimicSymbolLibrariesService, MasterDataAuditService]),
   );
   expect(moduleList(MimicSymbolLibrariesModule, "imports")).toEqual(expect.arrayContaining([DatabaseModule, AuthModule]));
-  expect(moduleList(MimicSymbolLibrariesModule, "exports")).toEqual([]);
+  // `F3.87` PR 2: exported for the copilot's `list_mimic_symbols` read tool, and nothing else.
+  expect(moduleList(MimicSymbolLibrariesModule, "exports")).toEqual([MimicSymbolLibrariesService]);
 }
 
 export function assertAppModuleImportsTheSymbolLibrariesModule(): void {

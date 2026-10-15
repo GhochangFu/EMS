@@ -64,6 +64,10 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/users/user-grants.service.ts",
   "apps/api/src/admin/onboarding/onboarding-commit.service.ts",
   "apps/api/src/control-room/site-control-room-view.service.ts",
+  // `F3.87` PR 2 (plan §4.7): every service a release-3 entry's handler reaches.
+  "apps/api/src/mimic-layouts/mimic-layouts.service.ts",
+  "apps/api/src/mimic-symbol-libraries/mimic-symbol-libraries.service.ts",
+  "apps/api/src/admin/vocabularies/asset-roles/asset-roles.service.ts",
 ] as const;
 
 /**
@@ -122,6 +126,10 @@ const CATALOG_DIRS = [
   "admin/point-keys",
   "admin/users",
   "admin/onboarding",
+  // `F3.87` PR 2: never `admin/vocabularies` itself — `location-types.service.ts` audits and is no entry (plan D7).
+  "mimic-layouts",
+  "mimic-symbol-libraries",
+  "admin/vocabularies/asset-roles",
 ] as const;
 
 /** The drizzle form and the raw-SQL form. */

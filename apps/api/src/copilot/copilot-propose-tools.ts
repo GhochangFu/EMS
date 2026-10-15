@@ -9,6 +9,7 @@ import {
   COPILOT_CATALOG,
   formulaRefsOf,
   formulaSitesOf,
+  hashExcludedKeysOf,
   modelBodyOf,
   proposeToolName,
   stepValuesSchema,
@@ -85,10 +86,23 @@ export const DESCRIBE_BUDGET_ERROR =
  * `F3.86` PR 4 — the propose tools, with a second registry that holds no
  * access entry: the turn sends it when the user's own message did not ask
  * for an access change (ruling Q3).
+ *
+ * `F3.87` PR 2 (ADR 0099 Amendment 3 A1): `registryFor` also drops every entry
+ * whose `offeredTo` does not name the caller's role, so a `location_admin` is
+ * never offered a layout tool. `registry` and `registryWithoutAccess` stay as
+ * the two global-admin registries for their existing callers.
  */
 export interface CopilotProposeTools extends CopilotReadTools {
   readonly registryWithoutAccess: ToolRegistry<string>;
+  registryFor(options: { readonly access: boolean; readonly role: string }): ToolRegistry<string>;
 }
+
+/** `F3.87` PR 2: the second guard behind the role-filtered registry (Amendment 3 A1). */
+export const PROPOSE_ROLE_ERROR = "This change is for an organization admin; ask one, or use the page.";
+
+/** `F3.87` PR 2: the entry is offered to this role (no `offeredTo` offers it to every copilot role). */
+const offeredToRole = (entry: CatalogEntry, role: string): boolean =>
+  entry.offeredTo === undefined || (entry.offeredTo as readonly string[]).includes(role);
 
 /**
  * `F3.86` PR 4, ruling Q3 (security review): any tool that names an access
@@ -204,20 +218,34 @@ export function createCopilotProposeTools(
   // One count per turn: the turn service builds a new context for each turn.
   const describeReads = new WeakMap<CopilotToolContext, number>();
 
-  const registry: ToolRegistry<string> = {
-    definitions,
-    schemas,
-    isToolName: (name: string): name is string => Object.prototype.hasOwnProperty.call(schemas, name),
+  /** The registry without the tools `dropped` names: a dropped tool is not even named to the model. */
+  const registryWithout = (dropped: ReadonlySet<string>): ToolRegistry<string> => {
+    const kept: Record<string, ZodTypeAny> = {};
+    for (const [name, schema] of Object.entries(schemas)) if (!dropped.has(name)) kept[name] = schema;
+    return {
+      definitions: definitions.filter((definition) => !dropped.has(definition.name)),
+      schemas: kept,
+      isToolName: (name: string): name is string => Object.prototype.hasOwnProperty.call(kept, name),
+    };
   };
-  // The same tools without the access entries (ruling Q3): an access tool is not even named to the model.
-  const accessTools = new Set([...byTool].filter(([, entry]) => entry.risk === "access").map(([name]) => name));
-  const schemasWithoutAccess: Record<string, ZodTypeAny> = {};
-  for (const [name, schema] of Object.entries(schemas)) if (!accessTools.has(name)) schemasWithoutAccess[name] = schema;
-  const registryWithoutAccess: ToolRegistry<string> = {
-    definitions: definitions.filter((definition) => !accessTools.has(definition.name)),
-    schemas: schemasWithoutAccess,
-    isToolName: (name: string): name is string => Object.prototype.hasOwnProperty.call(schemasWithoutAccess, name),
+  // Ruling Q3: the access entries are dropped unless the user's own message asked. `F3.87` PR 2: an
+  // entry whose `offeredTo` does not name the caller's role is dropped too. One registry per pair.
+  const accessTools = [...byTool].filter(([, entry]) => entry.risk === "access").map(([name]) => name);
+  const registries = new Map<string, ToolRegistry<string>>();
+  const registryFor = ({ access, role }: { readonly access: boolean; readonly role: string }): ToolRegistry<string> => {
+    const key = `${access ? "access" : "no-access"}:${role}`;
+    const known = registries.get(key);
+    if (known !== undefined) return known;
+    const dropped = new Set([
+      ...(access ? [] : accessTools),
+      ...[...byTool].filter(([, entry]) => !offeredToRole(entry, role)).map(([name]) => name),
+    ]);
+    const made = registryWithout(dropped);
+    registries.set(key, made);
+    return made;
   };
+  const registry = registryFor({ access: true, role: "admin" });
+  const registryWithoutAccess = registryFor({ access: false, role: "admin" });
 
   const propose = async (
     entry: CatalogEntry,
@@ -228,6 +256,8 @@ export function createCopilotProposeTools(
     if (entry.risk === "access" && ctx.turnKind === "follow_up") return { ok: false, error: PROPOSE_ACCESS_ON_FOLLOW_UP_ERROR };
     // Ruling Q3: only when the user's own message asked (the turn also withholds the tool; this is the second guard).
     if (entry.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
+    // `F3.87` PR 2 (Amendment 3 A1): the registry withholds the tool from another role; this is the second guard.
+    if (!offeredToRole(entry, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
     // Ruling Q8: in local sign-in every user-account write answers 409, so no card is offered for one.
     if (isUserAccountEntry(entry) && resolveAuthMode(env) === "local") return { ok: false, error: LOCAL_MODE_READ_ONLY };
     const params: Record<string, string> = {};
@@ -296,7 +326,8 @@ export function createCopilotProposeTools(
       method: entry.method,
       path: catalogPath(entry, params),
       body,
-      bodyHash: bodyHash(body, entry.clientOnly),
+      // `F3.87` PR 2: the interceptor's own exclusion rule (`hashExcludedKeysFor` calls the same helper).
+      bodyHash: bodyHash(body, hashExcludedKeysOf(entry)),
       summary,
       risk: entry.risk,
     });
@@ -313,6 +344,7 @@ export function createCopilotProposeTools(
   return {
     registry,
     registryWithoutAccess,
+    registryFor,
     dispatch: async (name, args, ctx): Promise<CopilotToolResult> => {
       const entry = byTool.get(name);
       if (entry !== undefined) return propose(entry, args, ctx);
@@ -320,6 +352,7 @@ export function createCopilotProposeTools(
         const target = byId.get(args.catalogId as string);
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
         if (target.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
+        if (!offeredToRole(target, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
         const step = target.steps.find((candidate) => candidate.id === args.stepId);
         if (step === undefined) return { ok: false, error: UNKNOWN_STEP_ERROR };
         const values = stepValuesSchema(target.body, step.fields).safeParse(args.values);
@@ -343,6 +376,7 @@ export function createCopilotProposeTools(
         const target = byId.get(args.catalogId as string);
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
         if (target.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
+        if (!offeredToRole(target, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
         // The model's body (`F3.86` PR 2): a `clientOnly` field is never described to the model.
         const described = describeBody(modelBodySchema(target), (args.path as string[] | undefined) ?? []);
         if (!described.ok) return { ok: false, error: UNKNOWN_PATH_ERROR };
@@ -384,6 +418,10 @@ export class CopilotProposeToolSet implements CopilotProposeTools {
 
   get registryWithoutAccess(): ToolRegistry<string> {
     return this.tools.registryWithoutAccess;
+  }
+
+  registryFor(options: { readonly access: boolean; readonly role: string }): ToolRegistry<string> {
+    return this.tools.registryFor(options);
   }
 
   dispatch(name: string, args: Record<string, unknown>, ctx: CopilotToolContext): Promise<CopilotToolResult> {

@@ -56,3 +56,80 @@ export async function noProposeToolProposesTheOnboardingCommit(): Promise<void> 
   expect(h.resolved).toEqual([]);
   expect(h.stored).toEqual([]);
 }
+
+/**
+ * `F3.87` PR 2 (ADR 0099 Amendment 3 A1) — the mimic targets. A fake database
+ * answers every row read with one named row; the access fake answers the
+ * role and the organization check. The mimic authoring check is the mimic
+ * services' `assertCanAuthor`: the role first (`canManageOrganization` alone
+ * admits a `location_admin`), then the organization.
+ */
+const LAYOUT = "33333333-3333-4333-8333-333333333333";
+
+/**
+ * A database whose every `select … limit` answers one row, holding only the
+ * columns that select named (an arm that reads a column it did not select gets
+ * `undefined`, as from the real database), and whose transaction runs the
+ * callback on itself.
+ */
+function oneRowDb(row: Record<string, unknown>): never {
+  let selected: string[] = [];
+  const chain = {
+    select: (columns: Record<string, unknown> = {}) => {
+      selected = Object.keys(columns);
+      return chain;
+    },
+    from: () => chain,
+    where: () => chain,
+    innerJoin: () => chain,
+    limit: async () => [Object.fromEntries(selected.map((key) => [key, row[key]]))],
+    execute: async () => undefined,
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(chain),
+  };
+  return chain as never;
+}
+
+function mimicAccess(role: string, managesOrganization: boolean): never {
+  return {
+    requireMasterDataUser: async () => ({ id: "u1", role }),
+    canManageOrganization: async () => managesOrganization,
+  } as never;
+}
+
+const fixtureEntry = (target: unknown) =>
+  ({ ...catalogEntry("dashboard.create")!, id: "fixture.mimic", target, refs: [] }) as never;
+
+async function resolveMimic(target: unknown, role: string, managesOrganization: boolean, params = {}, body = {}) {
+  const resolver = new CopilotTargetResolver(
+    oneRowDb({ name: "Plant A", label: "Plant A" }),
+    mimicAccess(role, managesOrganization),
+    {} as never,
+    {} as never,
+  );
+  return resolver.resolve(fixtureEntry(target), params, body, [ORG], JWT, ORG);
+}
+
+const LAYOUT_TARGET = { kind: "mimicLayout", param: "id" };
+const LIBRARY_TARGET = { kind: "mimicLibrary", param: "id" };
+const CREATE_TARGET = { kind: "organization", manage: "mimic" };
+
+/** An organization admin who manages the organization resolves each mimic target, with the row's name. */
+export async function anOrganizationAdminResolvesEveryMimicTarget(): Promise<void> {
+  expect((await resolveMimic(LAYOUT_TARGET, "organization_admin", true, { id: LAYOUT }))?.targetName).toBe("Plant A");
+  expect((await resolveMimic(LIBRARY_TARGET, "admin", true, { id: LAYOUT }))?.targetName).toBe("Plant A");
+  expect((await resolveMimic(CREATE_TARGET, "organization_admin", true, {}, { organizationId: ORG }))?.organizationId).toBe(ORG);
+}
+
+/** A `location_admin` who manages the organization is refused: the role check comes first. */
+export async function aLocationAdminIsRefusedEveryMimicTarget(): Promise<void> {
+  expect(await resolveMimic(LAYOUT_TARGET, "location_admin", true, { id: LAYOUT })).toBeNull();
+  expect(await resolveMimic(LIBRARY_TARGET, "location_admin", true, { id: LAYOUT })).toBeNull();
+  expect(await resolveMimic(CREATE_TARGET, "location_admin", true, {}, { organizationId: ORG })).toBeNull();
+}
+
+/** An organization admin of another organization is refused. */
+export async function anAdminOutsideTheOrganizationIsRefused(): Promise<void> {
+  expect(await resolveMimic(LAYOUT_TARGET, "organization_admin", false, { id: LAYOUT })).toBeNull();
+  expect(await resolveMimic(LIBRARY_TARGET, "organization_admin", false, { id: LAYOUT })).toBeNull();
+  expect(await resolveMimic(CREATE_TARGET, "organization_admin", false, {}, { organizationId: ORG })).toBeNull();
+}

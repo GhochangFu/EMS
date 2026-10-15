@@ -15,6 +15,8 @@ import { DashboardBuilderModule } from "../dashboard-builder/dashboard-builder.m
 import { DatabaseModule } from "../database/database.module";
 import { IdentityAdminModule } from "../identity/identity-admin.module";
 import { LlmModule } from "../llm/llm.module";
+import { MimicLayoutsModule } from "../mimic-layouts/mimic-layouts.module";
+import { MimicSymbolLibrariesModule } from "../mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { CopilotAccessController } from "./copilot-access.controller";
 import { CopilotAccessGuard } from "./copilot-access.guard";
@@ -103,9 +105,15 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * control room, identity, LLM) never reach this module, and the worker never
  * reaches either (`CopilotPurgeModule` is the worker's leaf), so the graph
  * stays acyclic. `CopilotSkillService` starts, ends and reads the skill.
+ *
+ * `F3.87` PR 2 (ADR 0099 Amendment 3): `MimicLayoutsModule` and
+ * `MimicSymbolLibrariesModule` export their services for the mimic read tools
+ * and the layout proposal check. Neither imports this module.
  */
 @Module({
   imports: [
+    MimicLayoutsModule,
+    MimicSymbolLibrariesModule,
     AdminModule,
     DatabaseModule,
     AuthModule,

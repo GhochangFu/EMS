@@ -8,6 +8,7 @@
  */
 export { canonicalJson } from "./canonical-json";
 export {
+  CANVAS_ENTRY_IDS,
   catalogEntry,
   catalogParamsOf,
   catalogPath,
@@ -18,6 +19,8 @@ export {
   formulaRefsOf,
   formulaSitesOf,
   type FormulaSite,
+  hashExcludedKeysFor,
+  hashExcludedKeysOf,
   pathParamsOf,
   proposeToolName,
 } from "./catalog";
@@ -28,6 +31,7 @@ export {
   onboardingCommitSiteName,
 } from "./catalog/onboarding";
 export { bodyFieldsOf, objectShapeOf, stepValuesSchema } from "./catalog/object-shape";
+export { writeNodeOfDto } from "./mimic-layout-write-node";
 export type {
   CatalogEntry,
   CatalogFormula,

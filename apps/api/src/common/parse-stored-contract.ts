@@ -110,6 +110,11 @@ export type StoredContractContext =
   | "copilot_tools.list_assets.rows"
   | "copilot_tools.list_dashboards.page"
   | "copilot_tools.list_locations.page"
+  // `F3.87` PR 2: the mimic read tools.
+  | "copilot_tools.list_mimic_layouts.page"
+  | "copilot_tools.get_mimic_layout.layout"
+  | "copilot_tools.list_mimic_symbols.page"
+  | "copilot_tools.list_asset_roles.page"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");

@@ -23,6 +23,7 @@ import {
   PROPOSE_ACCESS_ON_FOLLOW_UP_ERROR,
   PROPOSE_FLEET_UNBOUND_ERROR,
   PROPOSE_OPEN_CHANGE_ERROR,
+  PROPOSE_ROLE_ERROR,
   PROPOSE_STORED_CONTENT_ERROR,
   PROPOSE_TARGET_ERROR,
 } from "./copilot-propose-tools";
@@ -862,4 +863,83 @@ export async function aFillOrDescribeOfAnAccessEntryNeedsTheUsersOwnAsk(): Promi
   const admin = await h.tools.dispatch(FILL_STEP_TOOL, { catalogId: "user.update", stepId: "role", values: { role: "admin" } }, asked);
   expect(admin.ok).toBe(false);
   expect((await h.tools.dispatch(FILL_STEP_TOOL, { catalogId: "user.update", stepId: "role", values: { role: "viewer" } }, asked)).ok).toBe(true);
+}
+
+/**
+ * `F3.87` PR 2 (ADR 0099 Amendment 3 A1) — an entry offered to the
+ * organization-level admins only. The registry for any other role never
+ * names its tool, and the tool refuses that role if it is called anyway.
+ */
+const ORG_ADMIN_ENTRY = fixtureEntry({ id: "fixture.layout", offeredTo: ["admin", "organization_admin"] });
+const ROLE_CATALOG = [VECTOR_ENTRY, ACCESS_ENTRY, ORG_ADMIN_ENTRY];
+const roleCtx = (role: string) => ({ identity: { id: USER, role, organizationId: ORG_X } as ResolvedIdentity });
+
+/** A `location_admin`'s registry names no tool offered to the organization admins; every other tool is kept. */
+export function aRoleRegistryNamesNoToolOfferedToAnotherRole(): void {
+  const h = proposeHarness({ catalog: ROLE_CATALOG });
+  const name = proposeToolName(ORG_ADMIN_ENTRY);
+  for (const role of ["location_admin", "asset_group_admin"]) {
+    const registry = h.tools.registryFor({ access: true, role });
+    expect(registry.definitions.map((d) => d.name), role).not.toContain(name);
+    expect(registry.isToolName(name), role).toBe(false);
+    expect(registry.isToolName(proposeToolName(VECTOR_ENTRY)), role).toBe(true);
+  }
+  for (const role of ["admin", "organization_admin"]) {
+    expect(h.tools.registryFor({ access: true, role }).isToolName(name), role).toBe(true);
+  }
+}
+
+/** The access filter is unchanged by the role filter: the four combinations. */
+export function theAccessAndRoleFiltersCompose(): void {
+  const h = proposeHarness({ catalog: ROLE_CATALOG });
+  const access = proposeToolName(ACCESS_ENTRY);
+  const layout = proposeToolName(ORG_ADMIN_ENTRY);
+  const names = (access_: boolean, role: string) => h.tools.registryFor({ access: access_, role }).definitions.map((d) => d.name);
+  expect(names(true, "organization_admin")).toEqual(expect.arrayContaining([access, layout]));
+  expect(names(false, "organization_admin")).toEqual(expect.arrayContaining([layout]));
+  expect(names(false, "organization_admin")).not.toContain(access);
+  expect(names(true, "location_admin")).toContain(access);
+  expect(names(true, "location_admin")).not.toContain(layout);
+  expect(names(false, "location_admin")).not.toContain(access);
+  expect(names(false, "location_admin")).not.toContain(layout);
+  expect(h.tools.registryFor({ access: true, role: "admin" })).toBe(h.tools.registry);
+  expect(h.tools.registryFor({ access: false, role: "admin" })).toBe(h.tools.registryWithoutAccess);
+}
+
+/** Called anyway by a `location_admin`, the tool is refused by the second guard; nothing is resolved or stored. */
+export async function aToolOfferedToAnotherRoleRefusesTheCaller(): Promise<void> {
+  const h = proposeHarness({ catalog: ROLE_CATALOG });
+  const refused = await h.tools.dispatch(proposeToolName(ORG_ADMIN_ENTRY), { body: VECTOR }, h.ctx(roleCtx("location_admin")));
+  expect(refused).toEqual({ ok: false, error: PROPOSE_ROLE_ERROR });
+  expect(h.resolved).toEqual([]);
+  expect(h.stored).toEqual([]);
+  const allowed = await h.tools.dispatch(proposeToolName(ORG_ADMIN_ENTRY), { body: VECTOR }, h.ctx(roleCtx("organization_admin")));
+  expect(allowed.ok).toBe(true);
+}
+
+/** `fill_step` and `describe_change` refuse the same role for the same entry. */
+export async function theWizardToolsRefuseAnotherRoleToo(): Promise<void> {
+  const h = proposeHarness({ catalog: ROLE_CATALOG });
+  const ctx = h.ctx(roleCtx("location_admin"));
+  expect(await h.tools.dispatch(FILL_STEP_TOOL, { catalogId: "fixture.layout", stepId: "all", values: { a: "x" } }, ctx)).toEqual({
+    ok: false,
+    error: PROPOSE_ROLE_ERROR,
+  });
+  expect(await h.tools.dispatch(DESCRIBE_CHANGE_TOOL, { catalogId: "fixture.layout" }, ctx)).toEqual({
+    ok: false,
+    error: PROPOSE_ROLE_ERROR,
+  });
+}
+
+/**
+ * A `cardOnly` key in the stored body is left out of the stored hash, as the
+ * interceptor leaves it out on Confirm. The key is in the dispatched body, so
+ * a propose that hashed with `clientOnly` alone would store another hash.
+ */
+export async function theStoredHashLeavesOutCardOnlyKeys(): Promise<void> {
+  const entry = fixtureEntry({ id: "fixture.card", cardOnly: ["a"] });
+  const h = proposeHarness({ catalog: [entry] });
+  expect((await h.tools.dispatch(proposeToolName(entry), { body: VECTOR }, h.ctx())).ok).toBe(true);
+  expect(h.stored[0]?.bodyHash).toBe(bodyHash(VECTOR, ["a"]));
+  expect(h.stored[0]?.bodyHash).not.toBe(VECTOR_SHA256);
 }
