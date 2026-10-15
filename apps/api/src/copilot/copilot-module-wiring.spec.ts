@@ -8,6 +8,10 @@ import { UserGrantsService } from "../admin/users/user-grants.service";
 import { UsersService } from "../admin/users/users.service";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { IDENTITY_ADMIN, IdentityAdminModule } from "../identity/identity-admin.module";
+import { MimicLayoutsModule } from "../mimic-layouts/mimic-layouts.module";
+import { MimicLayoutsService } from "../mimic-layouts/mimic-layouts.service";
+import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
+import { CopilotProposeToolSet } from "./copilot-propose-tools";
 import { COPILOT_ONBOARDING_SKILL } from "./copilot-onboarding-skill";
 import { CopilotSkillService } from "./copilot-skill.service";
 import { CopilotTargetResolver } from "./copilot-target-resolver";
@@ -79,4 +83,18 @@ export function assertTheOnboardingSkillIsTheOnboardingService(): void {
 export function assertTheSkillSeamIsInjectedByToken(): void {
   expect([...injected(CopilotTurnService).values()]).toContain(COPILOT_ONBOARDING_SKILL);
   expect([...injected(CopilotSkillService).values()]).toContain(COPILOT_ONBOARDING_SKILL);
+}
+
+/**
+ * `F3.87` PR 5: the propose tool set injects `MimicLayoutsService` by
+ * `@Inject` (its third parameter), and `CopilotModule` imports the module that
+ * exports it. Without either, a layout proposal is refused at runtime while
+ * every spec built over fakes stays green.
+ */
+export function assertTheProposeToolsInjectTheLayoutsService(): void {
+  const deps = injected(CopilotProposeToolSet);
+  expect(deps.get(1)).toBe(CopilotPendingChangesService);
+  expect(deps.get(2)).toBe(MimicLayoutsService);
+  expect(moduleList(CopilotModule, "imports")).toContain(MimicLayoutsModule);
+  expect(moduleList(MimicLayoutsModule, "exports")).toContain(MimicLayoutsService);
 }

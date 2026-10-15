@@ -27,6 +27,7 @@ import {
   PROPOSE_STORED_CONTENT_ERROR,
   PROPOSE_TARGET_ERROR,
 } from "./copilot-propose-tools";
+import type { CopilotProposeServices } from "./copilot-propose-tools";
 import type { CopilotToolContext, CopilotToolResult } from "./copilot-read-tools";
 import type { ResolvedTarget } from "./copilot-target-resolver";
 import { COPILOT_TOOL_GUARDS } from "./copilot-turn.service";
@@ -86,6 +87,8 @@ type Options = {
   catalog?: readonly CatalogEntry[];
   /** `F3.86` PR 4: the environment the tools read the auth mode from (ruling Q8). */
   env?: Record<string, string | undefined>;
+  /** `F3.87` PR 5: the layout checks (absent: no layouts service, as every other spec builds the tools). */
+  layouts?: CopilotProposeServices["layouts"];
 };
 
 export function proposeHarness(options: Options = {}) {
@@ -101,6 +104,7 @@ export function proposeHarness(options: Options = {}) {
           return target;
         },
       },
+      ...(options.layouts ? { layouts: options.layouts } : {}),
       pending: {
         hasOpen: async () => options.open === true,
         propose: async (_userId, change): Promise<CopilotPendingChangeDto | null> => {

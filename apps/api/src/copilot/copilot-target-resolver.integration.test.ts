@@ -15,6 +15,7 @@ import {
   aLocationCreateRefusesALocationAdmin,
   aLocationMoveNeedsAnOrganizationLevelAdmin,
   aLocationResolvesWithItsSiteCheck,
+  aMimicLayoutResolvesForAnOrgAdminInItsOrganizationOnly,
   anAssetMoveNeedsTheNewSiteToo,
   anAssetRowIsCheckedOnItsAsset,
   aSiteLayoutNeedsTheDashboardCheckToo,
@@ -65,6 +66,7 @@ const CLEANUP = [
   "DELETE FROM bms.dashboard_templates WHERE organization_id = ANY($1)",
   "DELETE FROM bms.template_points WHERE organization_id = ANY($1)",
   "DELETE FROM bms.asset_templates WHERE organization_id = ANY($1)",
+  "DELETE FROM bms.mimic_layouts WHERE organization_id = ANY($1)",
   "DELETE FROM bms.locations WHERE organization_id = ANY($1)",
   "DELETE FROM bms.organizations WHERE id = ANY($1)",
 ];
@@ -164,6 +166,10 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       "INSERT INTO bms.asset_templates (organization_id, code, name, asset_type, domain, status) VALUES ($1, $2, $3, 'pump', 'electrical', 'published') RETURNING id",
       [orgA, "f4254-resolver-t", RESOLVER_NAMES.assetTemplateA],
     );
+    const mimicLayoutA = await one(
+      "INSERT INTO bms.mimic_layouts (organization_id, name, slug, canvas_w, canvas_h) VALUES ($1, $2, $3, 120, 80) RETURNING id",
+      [orgA, RESOLVER_NAMES.mimicLayoutA, "f387-resolver-layout"],
+    );
     ctx = {
       tenantDb: createDb(tenantPool),
       orgA,
@@ -183,6 +189,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       dashboardA,
       dashboardTemplateA,
       assetTemplateA,
+      mimicLayoutA,
     };
   });
 
@@ -221,4 +228,6 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("refuses an instantiate that names no target", () => anInstantiateWithNoTargetIsRefused(ctx));
   it("refuses an instantiate under an RTU of another organization without asking its site", () =>
     anInstantiateUnderAnRtuOfAnotherOrganizationIsRefused(ctx));
+  it("F3.87 PR 5: resolves a mimic layout for an org admin in its organization only", () =>
+    aMimicLayoutResolvesForAnOrgAdminInItsOrganizationOnly(ctx));
 });

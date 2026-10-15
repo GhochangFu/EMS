@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { HttpException, Inject, Injectable } from "@nestjs/common";
 import { z, type ZodTypeAny } from "zod";
 
 import { CALC_DIALECTS, type CalcDialect, formatCalcError, validateFormula } from "@bms/shared";
@@ -17,6 +17,7 @@ import {
 
 import { resolveAuthMode } from "../auth/auth-mode";
 import { LOCAL_MODE_READ_ONLY } from "../admin/users/users.service";
+import { MimicLayoutsService } from "../mimic-layouts/mimic-layouts.service";
 import { jsonSchemaOf, type ToolRegistry } from "../llm/tool-registry";
 import { issuesOf } from "../llm/tool-result";
 import { bodyHash } from "./body-hash";
@@ -115,10 +116,50 @@ const accessAsked = (ctx: CopilotToolContext): boolean => ctx.turnKind === "user
 /** `F3.86` ruling Q8: the user-account entries a local sign-in deployment refuses (grants are database-only and stay). */
 const isUserAccountEntry = (entry: CatalogEntry): boolean => entry.id.startsWith("user.");
 
+/**
+ * `F3.87` PR 5 / owner ruling Q4 — a layout whose units name a role the
+ * vocabulary lacks. A global admin is told to propose the role first (its
+ * registry names `assetRole.create`); any other role is told to say so in a
+ * sentence and to draw without it. The codes are the model's own words echoed
+ * back to it, never tenant text.
+ */
+export function PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(codes: readonly string[]): string {
+  return (
+    `The unit role codes ${codes.join(", ")} are not in the vocabulary. Propose assetRole.create for each one first — ` +
+    "one card per turn — and propose the layout again after they are applied."
+  );
+}
+
+export function PROPOSE_LAYOUT_ROLES_MISSING(codes: readonly string[]): string {
+  return (
+    `The unit role codes ${codes.join(", ")} are not in the vocabulary. Tell the user in one sentence which role is ` +
+    "missing and that a global administrator can add it; choose an existing role (list_asset_roles) or leave the " +
+    "unit's role empty, then propose the layout again."
+  );
+}
+
+/** `F3.87` PR 5: a tool set built without the layouts service (a spec's fakes) never stores a layout card. */
+export const PROPOSE_LAYOUT_UNAVAILABLE_ERROR = "A layout cannot be proposed here. Tell the user to use the layout editor page.";
+
+/** `F3.87` PR 5: the entries whose proposal runs the layout checks (Amendment 3 A2). */
+const LAYOUT_ENTRY_IDS: ReadonlySet<string> = new Set(["mimicLayout.create", "mimicLayout.replace"]);
+
+/** The distinct role codes a layout body's nodes name. */
+function roleCodesOf(nodes: ReadonlyArray<{ readonly roleCode?: string | null }>): string[] {
+  return [...new Set(nodes.flatMap((node) => (node.roleCode == null ? [] : [node.roleCode])))];
+}
+
 /** What the propose tools need; specs pass fakes with call counters. */
 export interface CopilotProposeServices {
   readonly targets: CopilotTargets;
   readonly pending: Pick<CopilotPendingChangesService, "propose" | "hasOpen">;
+  /**
+   * `F3.87` PR 5 (Amendment 3 A2, owner rulings Q4 and Q5): the layout checks
+   * a proposal runs read-only before its card is stored. Optional, so every
+   * spec that builds the tools for another entry passes no fake; a layout
+   * proposal without it is refused ({@link PROPOSE_LAYOUT_UNAVAILABLE_ERROR}).
+   */
+  readonly layouts?: Pick<MimicLayoutsService, "validateProposal" | "missingRoleCodes">;
 }
 
 /**
@@ -247,6 +288,54 @@ export function createCopilotProposeTools(
   const registry = registryFor({ access: true, role: "admin" });
   const registryWithoutAccess = registryFor({ access: false, role: "admin" });
 
+  /**
+   * `F3.87` PR 5 — a layout proposal's checks, in the order the owner ruled:
+   *
+   * 1. ruling Q4, the role card first: a role code the vocabulary lacks is
+   *    refused with a sentence for the caller's role, before any other check
+   *    could answer the route's bare "Unknown asset role code";
+   * 2. `validateProposal`, the route's own checks run read-only: a refusal is
+   *    the route's sentence, returned to the model (A2);
+   * 3. ruling Q5: a replace stores the layout it was built from under the
+   *    `cardOnly` key `baseline`, which the hash leaves out.
+   *
+   * A replace may keep a retired role its stored drawing already carries (the
+   * mapping-sheet rule, `assertReplaceLive`), so for a replace a missing code
+   * refuses only when the service refuses the body too.
+   */
+  const checkLayout = async (
+    entry: CatalogEntry,
+    params: Readonly<Record<string, string>>,
+    raw: Record<string, unknown>,
+    ctx: CopilotToolContext,
+  ): Promise<{ ok: true; body: Record<string, unknown> } | { ok: false; error: string }> => {
+    const layouts = services.layouts;
+    if (layouts === undefined) return { ok: false, error: PROPOSE_LAYOUT_UNAVAILABLE_ERROR };
+    // The route's own parse (its defaults applied) is what the service checks; the stored body stays raw.
+    const typed = entry.body.safeParse(raw);
+    if (!typed.success) return { ok: false, error: `Invalid body: ${issuesOf(typed.error)}` };
+    const missing = await layouts.missingRoleCodes(roleCodesOf(typed.data.nodes));
+    const roleRefusal = {
+      ok: false as const,
+      error: ctx.identity.role === "admin" ? PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(missing) : PROPOSE_LAYOUT_ROLES_MISSING(missing),
+    };
+    const replace = entry.id === "mimicLayout.replace";
+    if (missing.length > 0 && !replace) return roleRefusal;
+    let baseline: unknown;
+    try {
+      const checked = await layouts.validateProposal(
+        ctx.user,
+        replace ? { kind: "replace", id: params.id as string, body: typed.data } : { kind: "create", body: typed.data },
+      );
+      baseline = checked.baseline;
+    } catch (err) {
+      if (missing.length > 0) return roleRefusal;
+      if (err instanceof HttpException) return { ok: false, error: err.message };
+      throw err;
+    }
+    return { ok: true, body: replace ? { ...raw, baseline } : raw };
+  };
+
   const propose = async (
     entry: CatalogEntry,
     args: Record<string, unknown>,
@@ -289,6 +378,13 @@ export function createCopilotProposeTools(
       (ctx.conversationOrganizationId !== null && target.organizationId !== ctx.conversationOrganizationId)
     ) {
       return { ok: false, error: PROPOSE_TARGET_ERROR };
+    }
+    // `F3.87` PR 5: a layout card is stored only when it can apply (Amendment 3 A2), and a replace
+    // keeps the layout it was built from for the card's diff (ruling Q5).
+    if (LAYOUT_ENTRY_IDS.has(entry.id)) {
+      const checked = await checkLayout(entry, params, body, ctx);
+      if (!checked.ok) return checked;
+      body = checked.body;
     }
     // Ruling Q10: the card shows, and Confirm sends, the whole content the PATCH stores.
     const content = body.content;
@@ -408,8 +504,10 @@ export class CopilotProposeToolSet implements CopilotProposeTools {
   constructor(
     @Inject(COPILOT_TARGETS) targets: CopilotTargets,
     @Inject(CopilotPendingChangesService) pending: CopilotPendingChangesService,
+    // `F3.87` PR 5: the layout checks a layout proposal runs (`MimicLayoutsModule` exports it).
+    @Inject(MimicLayoutsService) layouts: MimicLayoutsService,
   ) {
-    this.tools = createCopilotProposeTools({ targets, pending });
+    this.tools = createCopilotProposeTools({ targets, pending, layouts });
   }
 
   get registry(): ToolRegistry<string> {
