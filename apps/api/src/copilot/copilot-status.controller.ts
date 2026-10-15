@@ -26,7 +26,9 @@ export const COPILOT_STATUS_ROLE_MESSAGE = "The copilot is offered to administra
  * global admin (a cross-organization conversation). `configured` (plan PR 7) is
  * whether a key resolves for that scope — the organization's rule, or the
  * platform key for a cross-organization one (decision 10); `false` whenever
- * the copilot is not available.
+ * the copilot is not available. `attachmentsEnabled` (`F3.87`, ADR 0099
+ * Amendment 3 A7) is true only when it is available and configured for one
+ * organization whose copilot and attachment switches are both on.
  */
 @Controller("copilot/status")
 @UseGuards(JwtAuthGuard)
@@ -54,8 +56,13 @@ export class CopilotStatusController {
     }
     const asked = organizationId ?? (identity.role === "admin" ? null : identity.organizationId);
     const decision = await this.availability.decide(identity, asked);
-    return decision.available
-      ? { available: true, configured: await this.turns.isConfigured(asked) }
-      : { available: false, reason: decision.reason, configured: false };
+    if (!decision.available) {
+      return { available: false, reason: decision.reason, configured: false, attachmentsEnabled: false };
+    }
+    const configured = await this.turns.isConfigured(asked);
+    // F3.87 / Amendment 3 A7: a file needs a key and one organization's switch;
+    // a cross-organization scope (`null`) never carries attachments (plan D2).
+    const attachmentsEnabled = configured && asked !== null && (await this.availability.attachmentsOn(asked));
+    return { available: true, configured, attachmentsEnabled };
   }
 }
