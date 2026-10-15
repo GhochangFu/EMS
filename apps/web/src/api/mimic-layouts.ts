@@ -5,13 +5,11 @@ import {
 } from "@bms/shared/contracts";
 import type { Contract, ContractSchema } from "@bms/shared/contracts";
 import type {
+  CreateMimicLayoutBody,
   MimicLayoutDeletedResponse,
   MimicLayoutDto,
-  MimicLayoutNodeKind,
   MimicLayoutsListResponse,
-  MimicPanelTone,
-  MimicSymbol,
-  MimicSymbolLibrarySelection,
+  PutMimicLayoutBody,
 } from "@bms/shared";
 
 import { ApiError } from "../lib/api-error";
@@ -29,50 +27,18 @@ const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
  * `adminFetch`: any authenticated role reads the library (owner ruling OQ4).
  */
 
-/** One node in a write body — by `key`, never by id (plan D5). The API's `.strict()` body. */
-export type MimicLayoutWriteNode = {
-  key: string;
-  kind: MimicLayoutNodeKind;
-  symbol?: MimicSymbol;
-  label: string;
-  roleCode?: string;
-  tone?: MimicPanelTone;
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  z?: number;
-  /** `F3.74` (OQ3b) — a unit that draws every member of its role. A unit only; absent is `false`. */
-  fanOut?: boolean;
-  /** `F3.74` (OQ3b) — a unit the energy walk starts from. A unit only; absent is `false`. */
-  isSource?: boolean;
-  /** `F3.80` (ADR 0101 d4) — a unit that gates the flow whatever its symbol. A unit only; absent is `false`. */
-  isSwitching?: boolean;
-};
-
-/** One pipe in a write body: two unit keys (plan D7). */
-export type MimicLayoutWritePipe = {
-  fromKey: string;
-  toKey: string;
-};
+/**
+ * The write bodies are the shared contracts' `z.infer` types (`F3.87` PR 1, ADR 0030 decision 5):
+ * `MimicLayoutWriteNode` and `MimicLayoutWritePipe` are re-exported, and the three body types are
+ * the create and put schemas' outputs, never restated.
+ */
+export type { CreateMimicLayoutBody, MimicLayoutWriteNode, MimicLayoutWritePipe } from "@bms/shared";
 
 /** What `PUT /mimic-layouts/:id` takes: the whole layout, replaced in one transaction. */
-export type MimicLayoutWriteBody = {
-  name: string;
-  slug: string;
-  canvasW: number;
-  canvasH: number;
-  nodes: MimicLayoutWriteNode[];
-  pipes: MimicLayoutWritePipe[];
-  /** The libraries the layout chooses (ADR 0084 decision 8); the API reads an absent list as `["core"]`. */
-  symbolLibraries: MimicSymbolLibrarySelection[];
-};
-
-/** What `POST /mimic-layouts` takes: the write body plus the owning organization (OQ3). */
-export type CreateMimicLayoutBody = MimicLayoutWriteBody & { organizationId: string };
+export type MimicLayoutWriteBody = Omit<PutMimicLayoutBody, "version">;
 
 /** What `PUT /mimic-layouts/:id` takes: the write body plus the version it was loaded at. */
-export type ReplaceMimicLayoutBody = MimicLayoutWriteBody & { version: number };
+export type ReplaceMimicLayoutBody = PutMimicLayoutBody;
 
 async function mimicLayoutsFetch<S extends ContractSchema>(
   path: string,
