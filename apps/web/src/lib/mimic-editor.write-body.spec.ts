@@ -132,7 +132,7 @@ export function anAbsentFieldReadsAsTheStoreWritesIt(): void {
     canvasW: 40,
     canvasH: 40,
     symbolLibraries: ["core"],
-    nodes: [{ key: "p", kind: "panel", label: "P", tone: "water", x: 0, y: 0, w: 10, h: 10 }],
+    nodes: [{ key: "p", kind: "panel", label: "P", tone: "info", x: 0, y: 0, w: 10, h: 10 }],
     pipes: [],
   });
   expect(layout.nodes[0]).toEqual({
@@ -141,7 +141,7 @@ export function anAbsentFieldReadsAsTheStoreWritesIt(): void {
     symbol: null,
     label: "P",
     roleCode: null,
-    tone: "water",
+    tone: "info",
     x: 0,
     y: 0,
     w: 10,
