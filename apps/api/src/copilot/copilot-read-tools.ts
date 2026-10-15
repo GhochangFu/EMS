@@ -77,9 +77,13 @@ export interface CopilotReadTools {
 export const COPILOT_READ_TOOLS = Symbol("COPILOT_READ_TOOLS");
 
 /** No tools: every call the model makes is an unknown name. For specs that need none; `CopilotModule` binds `CopilotReadToolSet`. */
-export const EMPTY_COPILOT_READ_TOOLS: CopilotReadTools & { readonly registryWithoutAccess: CopilotReadTools["registry"] } = {
+export const EMPTY_COPILOT_READ_TOOLS: CopilotReadTools & {
+  readonly registryWithoutAccess: CopilotReadTools["registry"];
+  registryFor(options: { readonly access: boolean; readonly role: string }): CopilotReadTools["registry"];
+} = {
   registry: defineToolRegistry<string>({}, {}),
-  // `F3.86` PR 4: also an empty propose tool set, which has the second registry.
+  // `F3.86` PR 4: also an empty propose tool set, which has the second registry (and, `F3.87` PR 2, one per role).
   registryWithoutAccess: defineToolRegistry<string>({}, {}),
+  registryFor: () => defineToolRegistry<string>({}, {}),
   dispatch: async () => ({ ok: false, error: "No such tool." }),
 };

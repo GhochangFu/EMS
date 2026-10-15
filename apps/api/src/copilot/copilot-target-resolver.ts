@@ -13,6 +13,8 @@ import {
   dashboardTemplates,
   dashboardWidgets,
   locations,
+  mimicLayouts,
+  mimicOrgSymbolLibraries,
   organizations,
   pointKeys,
   rtus,
@@ -328,6 +330,23 @@ export class CopilotTargetResolver implements CopilotTargets {
       case "pointKey":
         // Never read per organization: `resolve` reads a point key on the fleet path.
         return null;
+      // `F3.87` PR 2: a layout and an organization symbol library, each `organization_id NOT NULL`.
+      case "mimicLayout": {
+        const [row] = await tx
+          .select({ name: mimicLayouts.name })
+          .from(mimicLayouts)
+          .where(and(eq(mimicLayouts.id, id), eq(mimicLayouts.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.name } : null;
+      }
+      case "mimicLibrary": {
+        const [row] = await tx
+          .select({ label: mimicOrgSymbolLibraries.label })
+          .from(mimicOrgSymbolLibraries)
+          .where(and(eq(mimicOrgSymbolLibraries.id, id), eq(mimicOrgSymbolLibraries.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.label } : null;
+      }
       case "dashboard": {
         const [row] = await tx
           .select({
@@ -464,7 +483,24 @@ export class CopilotTargetResolver implements CopilotTargets {
         if (dbUser.role === "location_admin") return false;
         return this.access.canManageOrganization(user, organizationId);
       }
+      // `F3.87` PR 2: a layout or library create, or a built-in library setting — the mimic services'
+      // `assertCanAuthor` on the body's organization.
+      case "mimic":
+        return this.mayAuthorMimic(user, organizationId);
     }
+  }
+
+  /**
+   * `F3.87` PR 2 — the mimic services' `assertCanAuthor`
+   * (`mimic-layouts.service.ts`, `mimic-symbol-libraries.service.ts`): a
+   * master-data user of role `admin` or `organization_admin` (the role first:
+   * `canManageOrganization` alone admits a `location_admin`), managing the
+   * organization.
+   */
+  private async mayAuthorMimic(user: JwtPayload, organizationId: string): Promise<boolean> {
+    const dbUser = await this.access.requireMasterDataUser(user);
+    if (dbUser.role !== "admin" && dbUser.role !== "organization_admin") return false;
+    return this.access.canManageOrganization(user, organizationId);
   }
 
   /**
@@ -498,6 +534,10 @@ export class CopilotTargetResolver implements CopilotTargets {
         return this.access.canManageAsset(user, found.assetId as string);
       case "pointKey":
         return this.mayManageFleet(user);
+      // `F3.87` PR 2: the layout or library row's organization, with the mimic authoring check.
+      case "mimicLayout":
+      case "mimicLibrary":
+        return this.mayAuthorMimic(user, found.organizationId);
       // `SiteControlRoomViewService.putSetting`: the site, then a built-in view is the global admin's only.
       case "siteControlRoomView": {
         const dbUser = await this.access.requireMasterDataUser(user);

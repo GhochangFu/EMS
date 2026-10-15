@@ -1,4 +1,7 @@
 import { ASSET_GROUP_ENTRIES, ASSET_GROUP_PENDING } from "./asset-groups";
+import { ASSET_ROLE_ENTRIES, ASSET_ROLE_PENDING } from "./asset-roles";
+import { MIMIC_LAYOUT_ENTRIES, MIMIC_LAYOUT_PENDING } from "./mimic-layouts";
+import { MIMIC_SYMBOL_LIBRARY_ENTRIES, MIMIC_SYMBOL_LIBRARY_PENDING } from "./mimic-symbol-libraries";
 import { ASSET_POINT_ENTRIES, ASSET_POINT_PENDING } from "./asset-points";
 import { ASSET_TEMPLATE_ENTRIES, ASSET_TEMPLATE_PENDING } from "./asset-templates";
 import { ASSET_ENTRIES, ASSET_PENDING } from "./assets";
@@ -36,6 +39,9 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...POINT_KEY_ENTRIES,
   ...USER_ENTRIES,
   ...ONBOARDING_ENTRIES,
+  ...MIMIC_LAYOUT_ENTRIES,
+  ...MIMIC_SYMBOL_LIBRARY_ENTRIES,
+  ...ASSET_ROLE_ENTRIES,
 ];
 
 /**
@@ -73,6 +79,13 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   { method: "DELETE", path: "/admin/asset-templates/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/calc-parameters/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/assets/:assetId/calc-points/:pointKey", reason: NO_DELETE },
+  // `F3.87` (Amendment 3 A1): the layout DELETE, and the unit-role edit and retire.
+  { method: "DELETE", path: "/mimic-layouts/:id", reason: NO_DELETE },
+  {
+    method: "PATCH",
+    path: "/admin/vocabularies/asset-roles/:code",
+    reason: "a vocabulary edit or retire stays on its page (Amendment 3 A1)",
+  },
   // `F3.86`: each area's routes that are not (yet) entries.
   ...ASSET_TEMPLATE_PENDING,
   ...LOCATION_PENDING,
@@ -84,6 +97,10 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...POINT_KEY_PENDING,
   ...USER_PENDING,
   ...ONBOARDING_PENDING,
+  // `F3.87`: the mimic areas, each route pending until its PR.
+  ...MIMIC_LAYOUT_PENDING,
+  ...MIMIC_SYMBOL_LIBRARY_PENDING,
+  ...ASSET_ROLE_PENDING,
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */
@@ -95,6 +112,24 @@ const BY_ID: ReadonlyMap<string, CatalogEntry> = new Map(COPILOT_CATALOG.map((en
 export function catalogEntry(id: string): CatalogEntry | undefined {
   return BY_ID.get(id);
 }
+
+/**
+ * `F3.87` PR 2 — the body keys the change's hash leaves out: the entry's
+ * `clientOnly` keys (typed on the card) and its `cardOnly` keys (stored for
+ * the card alone). An unknown entry leaves out nothing, the strict direction.
+ */
+export function hashExcludedKeysFor(catalogId: string): readonly string[] {
+  const entry = BY_ID.get(catalogId);
+  return entry ? [...entry.clientOnly, ...(entry.cardOnly ?? [])] : [];
+}
+
+/**
+ * `F3.87` PR 2 / owner ruling Q1 (2026-10-15) — the entries whose web form is
+ * the layout editor's canvas, not a stepper: they have no steps, and
+ * `tests/f3.85-stepper-coverage` takes each from the editor page instead of a
+ * `WizardShell`.
+ */
+export const CANVAS_ENTRY_IDS = ["mimicLayout.create", "mimicLayout.replace"] as const;
 
 /** The propose tool's name: provider tool names allow `[A-Za-z0-9_-]` only, so the id's dots become underscores. */
 export function proposeToolName(entry: Pick<CatalogEntry, "id">): string {

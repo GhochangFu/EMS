@@ -746,3 +746,64 @@ export async function assertADroppedLibraryCodeIsLogged(ctx: Ctx): Promise<void>
     await restoreCore(ctx, dto.id);
   }
 }
+
+/**
+ * `F3.87` PR 2 (ADR 0099 Amendment 3 A2, owner rulings Q4 and Q5) — the
+ * copilot's read-only proposal check. C30–C34.
+ */
+const layoutRowCount = async (ctx: Ctx, slug: string): Promise<number> =>
+  (await ctx.ownerPool.query<{ n: number }>(`SELECT count(*)::int AS n FROM bms.mimic_layouts WHERE slug = $1`, [slug])).rows[0]?.n ?? -1;
+
+/** C30 — a valid create passes the proposal check, writes nothing, and has no baseline. */
+export async function assertAProposalCheckWritesNothing(ctx: Ctx): Promise<void> {
+  const body = layoutBody(ctx.eskomOrgId, ctx.slug("c30"));
+  const checked = await ctx.service.validateProposal(ctx.globalAdmin, { kind: "create", body });
+  expect(checked).toEqual({ baseline: null });
+  expect(await layoutRowCount(ctx, body.slug)).toBe(0);
+}
+
+/** C31 — the proposal check runs the live checks: a retired role is the save's own 400. */
+export async function assertAProposalCheckRunsTheLiveChecks(ctx: Ctx): Promise<void> {
+  const code = await ctx.plantRole("c31");
+  await setRoleActive(ctx, code, false);
+  const body = layoutBody(ctx.eskomOrgId, ctx.slug("c31"));
+  body.nodes = body.nodes.map((n) => (n.key === "pump" ? { ...n, roleCode: code } : n));
+  const err = await rejection(ctx.service.validateProposal(ctx.globalAdmin, { kind: "create", body }));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect((err as Error).message).toBe("Unknown asset role code");
+  const symbols = layoutBody(ctx.eskomOrgId, ctx.slug("c31s"));
+  symbols.nodes = symbols.nodes.map((n) => (n.key === "pump" ? { ...n, symbol: "f387-no-such-symbol" as never } : n));
+  expect(await rejection(ctx.service.validateProposal(ctx.globalAdmin, { kind: "create", body: symbols }))).toBeInstanceOf(
+    BadRequestException,
+  );
+}
+
+/** C32 — a location admin is refused by the proposal check, as by the save. */
+export async function assertAProposalCheckRefusesALocationAdmin(ctx: Ctx): Promise<void> {
+  const body = layoutBody(ctx.eskomOrgId, ctx.slug("c32"));
+  expect(await rejection(ctx.service.validateProposal(ctx.eskomLocationAdmin, { kind: "create", body }))).toBeInstanceOf(
+    ForbiddenException,
+  );
+}
+
+/** C33 — a replace returns the stored layout as the baseline; a stale version is the save's 409, and nothing changes. */
+export async function assertAReplaceProposalReturnsTheBaseline(ctx: Ctx): Promise<void> {
+  const dto = await create(ctx, "c33");
+  const body = putBody(layoutBody(ctx.eskomOrgId, dto.slug), 1);
+  const checked = await ctx.service.validateProposal(ctx.globalAdmin, { kind: "replace", id: dto.id, body });
+  expect(checked.baseline).toEqual({ version: 1, nodes: dto.nodes, pipes: dto.pipes });
+  const err = await rejection(ctx.service.validateProposal(ctx.globalAdmin, { kind: "replace", id: dto.id, body: { ...body, version: 7 } }));
+  expect(err).toBeInstanceOf(ConflictException);
+  expect((err as Error).message).toBe(MIMIC_LAYOUT_STALE_MESSAGE);
+  expect((await ctx.service.get(ctx.globalAdmin, dto.id)).version).toBe(1);
+}
+
+/** C34 — `missingRoleCodes` names the unknown and the retired codes, unique and sorted, and not a live one. */
+export async function assertMissingRoleCodesNamesUnknownAndRetired(ctx: Ctx): Promise<void> {
+  const retired = await ctx.plantRole("c34");
+  await setRoleActive(ctx, retired, false);
+  const unknown = `zz-f387-no-role-${ctx.slug("x").slice(-6)}`;
+  const missing = await ctx.service.missingRoleCodes([unknown, "pump", retired, unknown]);
+  expect(missing).toEqual([retired, unknown].sort());
+  expect(await ctx.service.missingRoleCodes([])).toEqual([]);
+}

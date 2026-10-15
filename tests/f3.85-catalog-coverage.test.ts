@@ -63,6 +63,10 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/admin/users/users.controller.ts", full: true },
   { file: "apps/api/src/admin/users/user-grants.controller.ts", full: true },
   { file: "apps/api/src/admin/onboarding/onboarding.controller.ts", full: true },
+  // `F3.87` PR 2 (ADR 0099 Amendment 3 A1): the release-3 controllers, every route pending until PRs 5 and 6.
+  { file: "apps/api/src/mimic-layouts/mimic-layouts.controller.ts", full: true },
+  { file: "apps/api/src/mimic-symbol-libraries/mimic-symbol-libraries.controller.ts", full: true },
+  { file: "apps/api/src/admin/vocabularies/asset-roles/asset-roles.controller.ts", full: true },
 ];
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;

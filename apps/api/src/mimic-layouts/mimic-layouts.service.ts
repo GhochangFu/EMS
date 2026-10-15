@@ -61,6 +61,13 @@ export const MIMIC_LAYOUT_IN_USE_MESSAGE = (n: number): string =>
 type LayoutRow = typeof mimicLayouts.$inferSelect;
 type Executor = BmsDb | BmsTx;
 
+/** `F3.87` PR 2 / owner ruling Q5 — the stored layout a replace card was built from, in the DTO shape `get` serves. */
+export type MimicLayoutBaseline = {
+  readonly version: number;
+  readonly nodes: readonly MimicLayoutNodeDto[];
+  readonly pipes: readonly MimicLayoutPipeDto[];
+};
+
 /** An unknown or retired role code: the class of error only, never the code. */
 const UNKNOWN_ROLE_MESSAGE = "Unknown asset role code";
 
@@ -206,22 +213,7 @@ export class MimicLayoutsService {
   async replace(jwt: JwtPayload, id: string, body: PutMimicLayoutBody): Promise<MimicLayoutDto> {
     const existing = await this.fetchReadable(jwt, id);
     await this.assertCanAuthor(jwt, existing.organizationId);
-    // A code the stored drawing already carries stays valid after it is retired, so a
-    // re-save of an unchanged layout never fails on it (the mapping-sheet retired-code rule).
-    await this.assertLibrariesLive(body.symbolLibraries, new Set(existing.symbolLibraries), existing.organizationId);
-    const stored = await this.fleetDb
-      .selectDistinct({
-        roleCode: mimicLayoutNodes.roleCode,
-        symbol: mimicLayoutNodes.symbol,
-        orgSymbolKey: mimicLayoutNodes.orgSymbolKey,
-      })
-      .from(mimicLayoutNodes)
-      .where(eq(mimicLayoutNodes.layoutId, existing.id));
-    const keptRoles = new Set(stored.flatMap((row) => (row.roleCode === null ? [] : [row.roleCode])));
-    // `F3.32f` slice 3: an organization unit stores its key in `org_symbol_key`, with `symbol` null.
-    const keptSymbols = new Set(stored.flatMap((row) => [row.symbol, row.orgSymbolKey].filter((key): key is string => key !== null)));
-    await this.assertRolesLive(body.nodes, keptRoles);
-    await this.assertSymbolsLive(body.nodes, keptSymbols, existing.organizationId);
+    await this.assertReplaceLive(existing, body);
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
       const [layout] = await tx
         .update(mimicLayouts)
@@ -246,6 +238,63 @@ export class MimicLayoutsService {
     }).catch((err: unknown) => {
       throw MimicLayoutsService.translateWriteError(err, body.slug);
     });
+  }
+
+  /**
+   * A replace's live checks: a code the stored drawing already carries stays valid after it is
+   * retired, so a re-save of an unchanged layout never fails on it (the mapping-sheet
+   * retired-code rule).
+   */
+  private async assertReplaceLive(
+    existing: LayoutRow,
+    body: Pick<PutMimicLayoutBody, "symbolLibraries" | "nodes">,
+  ): Promise<void> {
+    await this.assertLibrariesLive(body.symbolLibraries, new Set(existing.symbolLibraries), existing.organizationId);
+    const stored = await this.fleetDb
+      .selectDistinct({
+        roleCode: mimicLayoutNodes.roleCode,
+        symbol: mimicLayoutNodes.symbol,
+        orgSymbolKey: mimicLayoutNodes.orgSymbolKey,
+      })
+      .from(mimicLayoutNodes)
+      .where(eq(mimicLayoutNodes.layoutId, existing.id));
+    const keptRoles = new Set(stored.flatMap((row) => (row.roleCode === null ? [] : [row.roleCode])));
+    // `F3.32f` slice 3: an organization unit stores its key in `org_symbol_key`, with `symbol` null.
+    const keptSymbols = new Set(stored.flatMap((row) => [row.symbol, row.orgSymbolKey].filter((key): key is string => key !== null)));
+    await this.assertRolesLive(body.nodes, keptRoles);
+    await this.assertSymbolsLive(body.nodes, keptSymbols, existing.organizationId);
+  }
+
+  /**
+   * `F3.87` PR 2 (ADR 0099 Amendment 3 A2, owner ruling Q5) — the checks a
+   * create or a replace runs before its write, run read-only so the copilot
+   * stores only a card that can apply. No write, no transaction: the route
+   * runs every check again on Confirm (decision 4.5).
+   *
+   * A replace also compares the body's `version` with the stored one (a stale
+   * card is refused here, with the route's own 409 sentence) and returns the
+   * stored layout's nodes and pipes as the card's baseline — the version the
+   * card was built from, which its node diff reads.
+   */
+  async validateProposal(
+    jwt: JwtPayload,
+    input: { kind: "create"; body: CreateMimicLayoutBody } | { kind: "replace"; id: string; body: PutMimicLayoutBody },
+  ): Promise<{ baseline: MimicLayoutBaseline | null }> {
+    if (input.kind === "create") {
+      await this.assertCanAuthor(jwt, input.body.organizationId);
+      await this.assertLibrariesLive(input.body.symbolLibraries, new Set(), input.body.organizationId);
+      await this.assertRolesLive(input.body.nodes, new Set());
+      await this.assertSymbolsLive(input.body.nodes, new Set(), input.body.organizationId);
+      return { baseline: null };
+    }
+    const existing = await this.fetchReadable(jwt, input.id);
+    await this.assertCanAuthor(jwt, existing.organizationId);
+    if (existing.version !== input.body.version) {
+      throw new ConflictException(MIMIC_LAYOUT_STALE_MESSAGE);
+    }
+    await this.assertReplaceLive(existing, input.body);
+    const stored = await this.toDto(this.fleetDb, existing);
+    return { baseline: { version: stored.version, nodes: stored.nodes, pipes: stored.pipes } };
   }
 
   /**
@@ -332,17 +381,28 @@ export class MimicLayoutsService {
     nodes: Pick<CreateMimicLayoutBody, "nodes">["nodes"],
     kept: ReadonlySet<string>,
   ): Promise<void> {
-    const codes = [
-      ...new Set(nodes.flatMap((node) => (node.roleCode == null || kept.has(node.roleCode) ? [] : [node.roleCode]))),
-    ];
-    if (codes.length === 0) return;
+    const codes = nodes.flatMap((node) => (node.roleCode == null || kept.has(node.roleCode) ? [] : [node.roleCode]));
+    if ((await this.missingRoleCodes(codes)).length > 0) {
+      throw new BadRequestException(UNKNOWN_ROLE_MESSAGE);
+    }
+  }
+
+  /**
+   * `F3.87` PR 2 / owner ruling Q4 (2026-10-15) — the codes of `codes` that
+   * are not an **active** `bms.asset_roles` row, unique and sorted. The
+   * copilot asks before it proposes a layout, so a missing role is offered as
+   * `assetRole.create` first; `assertRolesLive` refuses a save on the same
+   * read. `bms_fleet` may read the vocabulary.
+   */
+  async missingRoleCodes(codes: readonly string[]): Promise<string[]> {
+    const unique = [...new Set(codes)];
+    if (unique.length === 0) return [];
     const live = await this.fleetDb
       .select({ code: assetRoles.code })
       .from(assetRoles)
-      .where(and(inArray(assetRoles.code, codes), eq(assetRoles.active, true)));
-    if (live.length !== codes.length) {
-      throw new BadRequestException(UNKNOWN_ROLE_MESSAGE);
-    }
+      .where(and(inArray(assetRoles.code, unique), eq(assetRoles.active, true)));
+    const found = new Set(live.map((row) => row.code));
+    return unique.filter((code) => !found.has(code)).sort();
   }
 
   /**

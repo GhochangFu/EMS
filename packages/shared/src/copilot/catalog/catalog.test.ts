@@ -34,6 +34,11 @@ import {
   theMemberRemovalIsARedBodylessDelete,
   thePointKeyEntriesAreFleetTargets,
   theOnboardingCommitIsAServerEntry,
+  anUploadModelBodyAddsTheSvgAndOnlyThere,
+  theReleaseThreeEntryFieldsAreWellFormed,
+  noCardOnlyKeyIsABodyField,
+  theHashLeavesOutClientOnlyAndCardOnlyKeys,
+  theCanvasExemptionIsExact,
 } from "./catalog.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -72,6 +77,14 @@ describe("F3.86 PR 3c — asset groups and point keys (ADR 0099 decision 3, ruli
 
 describe("F3.86 PR 6 — the onboarding commit (ADR 0099 decision 7)", () => {
   it("makes the onboarding commit a server entry on the session", () => theOnboardingCommitIsAServerEntry());
+});
+
+describe("F3.87 PR 2 — release-3 entry fields (ADR 0099 Amendment 3 A1, A3; owner ruling Q1)", () => {
+  it("adds svg to an upload modelBody, and only there", () => anUploadModelBodyAddsTheSvgAndOnlyThere());
+  it("makes an upload entry a POST with a modelBody, offered to copilot roles only", () => theReleaseThreeEntryFieldsAreWellFormed());
+  it("never makes a cardOnly key a body field", () => noCardOnlyKeyIsABodyField());
+  it("leaves clientOnly and cardOnly keys out of the hash", () => theHashLeavesOutClientOnlyAndCardOnlyKeys());
+  it("exempts exactly the canvas entries from the step rule", () => theCanvasExemptionIsExact());
 });
 
 describe("F3.85 PR 11a — formula paths into array items (plan §11.3 Unit 2)", () => {

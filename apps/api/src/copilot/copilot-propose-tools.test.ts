@@ -52,7 +52,20 @@ import {
   aTemplateInstantiateStoresTheRawBody,
   aTemplateInstantiateSummaryNamesTheCountAndTheSite,
   aTemplateInstantiateWithBothTargetsStoresNothing,
+  aRoleRegistryNamesNoToolOfferedToAnotherRole,
+  theAccessAndRoleFiltersCompose,
+  aToolOfferedToAnotherRoleRefusesTheCaller,
+  theWizardToolsRefuseAnotherRoleToo,
+  theStoredHashLeavesOutCardOnlyKeys,
 } from "./copilot-propose-tools.spec";
+
+describe("F3.87 PR 2 — the propose tools per role (ADR 0099 Amendment 3 A1)", () => {
+  it("names no tool offered to another role in a role's registry", () => aRoleRegistryNamesNoToolOfferedToAnotherRole());
+  it("composes the access filter with the role filter", () => theAccessAndRoleFiltersCompose());
+  it("refuses a tool offered to another role when it is called anyway", () => aToolOfferedToAnotherRoleRefusesTheCaller());
+  it("refuses fill_step and describe_change for another role", () => theWizardToolsRefuseAnotherRoleToo());
+  it("leaves cardOnly keys out of the stored hash", () => theStoredHashLeavesOutCardOnlyKeys());
+});
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.85 PR 8 — the copilot propose tools (ADR 0099 decisions 2, 3, 4, 10)", () => {

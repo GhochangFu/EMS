@@ -20,8 +20,13 @@ import { DashboardBuilderModule } from "../../dashboard-builder/dashboard-builde
 import { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import type { LlmMessage } from "../../llm/llm-port";
 import { runToolCall } from "../../llm/tool-registry";
+import { MimicLayoutsModule } from "../../mimic-layouts/mimic-layouts.module";
+import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
+import { MimicSymbolLibrariesModule } from "../../mimic-symbol-libraries/mimic-symbol-libraries.module";
+import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import { repoRoot } from "../../testing/repo-root";
 import { VocabulariesModule } from "../../vocabularies/vocabularies.module";
+import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { COPILOT_READ_TOOLS, type CopilotToolContext } from "../copilot-read-tools";
 import { COPILOT_BAD_ROUTE_TOOL_ERROR, COPILOT_TOOL_GUARDS } from "../copilot-turn.service";
 import { harness } from "../copilot-turn.service.spec";
@@ -376,7 +381,7 @@ export async function assertAnInjectedProposeCallFindsNoTool(): Promise<void> {
   expect(response.messages.filter((m) => m.role === "action")).toEqual([]);
 }
 
-/** The registry is the seven read tools, each with a strict argument schema. */
+/** The registry is the eleven read tools (`F3.87` PR 2 added the four mimic reads), each with a strict argument schema. */
 export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
   const { tools } = fakeServices();
   expect(tools.registry.definitions.map((d) => d.name)).toEqual([
@@ -386,6 +391,10 @@ export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
     "list_locations",
     "list_dashboards",
     "get_health_summary",
+    "list_mimic_layouts",
+    "get_mimic_layout",
+    "list_mimic_symbols",
+    "list_asset_roles",
     "open_page",
   ]);
   const extra = await runToolCall(
@@ -487,9 +496,21 @@ export function assertTheModuleWiresTheReadTools(): void {
     LocationsAdminService,
     DashboardsService,
     AssetHealthService,
+    // `F3.87` PR 2: the mimic reads and the unit-role vocabulary.
+    MimicLayoutsService,
+    MimicSymbolLibrariesService,
+    VocabulariesService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
-  for (const module of [AlarmsModule, AssetsModule, AssetHealthModule, DashboardBuilderModule, VocabulariesModule]) {
+  for (const module of [
+    AlarmsModule,
+    AssetsModule,
+    AssetHealthModule,
+    DashboardBuilderModule,
+    VocabulariesModule,
+    MimicLayoutsModule,
+    MimicSymbolLibrariesModule,
+  ]) {
     expect(imports).toContain(module);
   }
   const exportsOf = (module: unknown) => (Reflect.getMetadata("exports", module as object) ?? []) as unknown[];
@@ -497,5 +518,8 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(AssetsModule)).toEqual(expect.arrayContaining([AssetsService, AssetKpisService]));
   expect(exportsOf(DashboardBuilderModule)).toContain(DashboardsService);
   expect(exportsOf(AssetHealthModule)).toContain(AssetHealthService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(7);
+  expect(exportsOf(VocabulariesModule)).toContain(VocabulariesService);
+  expect(exportsOf(MimicLayoutsModule)).toContain(MimicLayoutsService);
+  expect(exportsOf(MimicSymbolLibrariesModule)).toContain(MimicSymbolLibrariesService);
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(11);
 }

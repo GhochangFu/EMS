@@ -3,6 +3,7 @@ import { z, type ZodTypeAny } from "zod";
 
 import * as contracts from "../../contracts";
 import {
+  CANVAS_ENTRY_IDS,
   catalogEntry,
   catalogParamsOf,
   catalogPath,
@@ -11,6 +12,7 @@ import {
   EXCLUDED_ROUTES,
   formulaRefsOf,
   formulaSitesOf,
+  hashExcludedKeysFor,
   pathParamsOf,
   proposeToolName,
 } from "./index";
@@ -323,18 +325,81 @@ const passwordEntry = (modelBody: ZodTypeAny | undefined) => ({
   ...(modelBody ? { modelBody } : {}),
 });
 
-/** Every `modelBody` is strict and holds exactly the body's fields without the `clientOnly` ones. */
-function modelBodyProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "modelBody">): string[] {
-  if (entry.modelBody === undefined) return [];
+/**
+ * Every `modelBody` is strict and holds exactly the body's fields without the
+ * `clientOnly` ones — plus `svg` for an `upload` entry (`F3.87` PR 2,
+ * Amendment 3 A3: the model sends the file as text), and never `svg` for any
+ * other entry. An `upload` entry must have a `modelBody`.
+ */
+function modelBodyProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "modelBody" | "upload">): string[] {
+  if (entry.modelBody === undefined) return entry.upload ? [`${entry.id}: an upload entry needs a modelBody`] : [];
   const problems: string[] = [];
   let object: ZodTypeAny = entry.modelBody;
   while (object instanceof z.ZodEffects) object = object._def.schema as ZodTypeAny;
   if ((object as z.AnyZodObject)._def.unknownKeys !== "strict") problems.push(`${entry.id}: modelBody is not strict`);
-  const expected = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field)).sort();
+  const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field));
+  const expected = (entry.upload ? [...fields, "svg"] : fields).sort();
   if (JSON.stringify(bodyFieldsOf(entry.modelBody).sort()) !== JSON.stringify(expected)) {
     problems.push(`${entry.id}: modelBody fields differ from the body's without clientOnly`);
   }
   return problems;
+}
+
+/** `F3.87` PR 2: an upload fixture — the multipart text fields, and the model's body that adds the file as `svg`. */
+const UPLOAD_FIELDS = z.object({ name: z.string(), label: z.string() }).strict();
+const UPLOAD_MODEL_BODY = z.object({ name: z.string(), label: z.string(), svg: z.string() }).strict();
+const UPLOAD_DESCRIPTOR = { fileField: "file", contentType: "image/svg+xml", maxBytes: 65_536 } as const;
+const uploadEntry = (modelBody: ZodTypeAny | undefined, upload: typeof UPLOAD_DESCRIPTOR | undefined) => ({
+  id: "fixture.symbol.upload",
+  body: UPLOAD_FIELDS,
+  clientOnly: [] as const,
+  ...(modelBody ? { modelBody } : {}),
+  ...(upload ? { upload } : {}),
+});
+
+/** `F3.87` PR 2: the upload `modelBody` rule — the body's fields plus `svg`, strict; and only for an upload entry. */
+export function anUploadModelBodyAddsTheSvgAndOnlyThere(): void {
+  expect(modelBodyProblems(uploadEntry(UPLOAD_MODEL_BODY, UPLOAD_DESCRIPTOR))).toEqual([]);
+  expect(modelBodyProblems(uploadEntry(UPLOAD_FIELDS, UPLOAD_DESCRIPTOR))).toEqual([
+    "fixture.symbol.upload: modelBody fields differ from the body's without clientOnly",
+  ]);
+  expect(modelBodyProblems(uploadEntry(UPLOAD_MODEL_BODY, undefined))).toEqual([
+    "fixture.symbol.upload: modelBody fields differ from the body's without clientOnly",
+  ]);
+  expect(modelBodyProblems(uploadEntry(undefined, UPLOAD_DESCRIPTOR))).toEqual(["fixture.symbol.upload: an upload entry needs a modelBody"]);
+}
+
+/** `F3.87` PR 2: every `upload` entry is a `POST` with a `modelBody`; `offeredTo` names copilot roles only. */
+export function theReleaseThreeEntryFieldsAreWellFormed(): void {
+  const copilotRoles: readonly string[] = ["admin", "organization_admin", "location_admin", "asset_group_admin"];
+  for (const entry of COPILOT_CATALOG) {
+    if (entry.upload) {
+      expect(entry.method, entry.id).toBe("POST");
+      expect(entry.modelBody, entry.id).toBeDefined();
+    }
+    for (const role of entry.offeredTo ?? []) expect(copilotRoles, entry.id).toContain(role);
+    if (entry.offeredTo) expect(entry.offeredTo.length, entry.id).toBeGreaterThan(0);
+  }
+}
+
+/** `F3.87` PR 2: a `cardOnly` key is never a body field nor a model-body field, and no fixture body holds one. */
+export function noCardOnlyKeyIsABodyField(): void {
+  for (const entry of COPILOT_CATALOG) {
+    const fixture = FIXTURES[entry.id];
+    for (const key of entry.cardOnly ?? []) {
+      expect(bodyFieldsOf(entry.body), entry.id).not.toContain(key);
+      expect(bodyFieldsOf(modelBodyOf(entry)), entry.id).not.toContain(key);
+      expect(fixture && Object.prototype.hasOwnProperty.call(fixture.body, key), entry.id).toBeFalsy();
+    }
+  }
+}
+
+/** `F3.87` PR 2: the hash leaves out `clientOnly` and `cardOnly`; an unknown entry leaves out nothing. */
+export function theHashLeavesOutClientOnlyAndCardOnlyKeys(): void {
+  for (const entry of COPILOT_CATALOG) {
+    expect([...hashExcludedKeysFor(entry.id)].sort(), entry.id).toEqual([...entry.clientOnly, ...(entry.cardOnly ?? [])].sort());
+  }
+  expect(hashExcludedKeysFor("no.such.entry")).toEqual([]);
 }
 
 /**
@@ -391,15 +456,35 @@ export function pathParamsAndTheirSchemasAgree(): void {
   }
 }
 
-/** Ruling Q6: each body field is in exactly one step, and no step names a field the body lacks. */
-export function everyBodyFieldIsInExactlyOneStep(): void {
-  for (const entry of COPILOT_CATALOG) {
-    const inSteps = entry.steps.flatMap((step) => step.fields);
-    expect(new Set(inSteps).size, `${entry.id}: a field in two steps`).toBe(inSteps.length);
-    const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field));
-    expect([...inSteps].sort(), entry.id).toEqual([...fields].sort());
-    for (const field of entry.clientOnly) expect(inSteps, entry.id).not.toContain(field);
+/**
+ * Ruling Q6: each body field is in exactly one step, and no step names a
+ * field the body lacks. `F3.87` owner ruling Q1: a canvas entry
+ * (`CANVAS_ENTRY_IDS`, the layout editor) has no steps at all.
+ */
+function stepProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "steps">): string[] {
+  const inSteps = entry.steps.flatMap((step) => step.fields);
+  if ((CANVAS_ENTRY_IDS as readonly string[]).includes(entry.id)) {
+    return inSteps.length === 0 && entry.steps.length === 0 ? [] : [`${entry.id}: a canvas entry has steps`];
   }
+  const problems: string[] = [];
+  if (new Set(inSteps).size !== inSteps.length) problems.push(`${entry.id}: a field in two steps`);
+  const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field));
+  if (JSON.stringify([...inSteps].sort()) !== JSON.stringify([...fields].sort())) problems.push(`${entry.id}: steps differ from the body's fields`);
+  if (entry.clientOnly.some((field) => inSteps.includes(field))) problems.push(`${entry.id}: a clientOnly field in a step`);
+  return problems;
+}
+
+export function everyBodyFieldIsInExactlyOneStep(): void {
+  for (const entry of COPILOT_CATALOG) expect(stepProblems(entry), entry.id).toEqual([]);
+}
+
+/** `F3.87` ruling Q1: the canvas exemption is exact — a canvas id with a step fails, and a stepper entry missing a field still fails. */
+export function theCanvasExemptionIsExact(): void {
+  const body = z.object({ name: z.string(), nodes: z.array(z.string()) }).strict();
+  const step = { id: "name", title: "Name", fields: ["name"] };
+  expect(stepProblems({ id: "mimicLayout.create", body, clientOnly: [], steps: [] })).toEqual([]);
+  expect(stepProblems({ id: "mimicLayout.replace", body, clientOnly: [], steps: [step] })).toEqual(["mimicLayout.replace: a canvas entry has steps"]);
+  expect(stepProblems({ id: "fixture.stepper", body, clientOnly: [], steps: [step] })).toEqual(["fixture.stepper: steps differ from the body's fields"]);
 }
 
 /** Through refinements, optionals, defaults and a pipeline's output, to the schema that holds the value. */

@@ -283,4 +283,24 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
   it("C29 F3.32f the dropped library code is logged once with the layout id", async () => {
     await spec.assertADroppedLibraryCodeIsLogged(ctx);
   }, 60_000);
+
+  it("C30 F3.87 a proposal check writes nothing", async () => {
+    await spec.assertAProposalCheckWritesNothing(ctx);
+  }, 60_000);
+
+  it("C31 F3.87 a proposal check runs the live checks", async () => {
+    await spec.assertAProposalCheckRunsTheLiveChecks(ctx);
+  }, 60_000);
+
+  it("C32 F3.87 a proposal check refuses a location admin", async () => {
+    await spec.assertAProposalCheckRefusesALocationAdmin(ctx);
+  }, 60_000);
+
+  it("C33 F3.87 a replace proposal returns the stored baseline, and a stale one is the 409", async () => {
+    await spec.assertAReplaceProposalReturnsTheBaseline(ctx);
+  }, 60_000);
+
+  it("C34 F3.87 missingRoleCodes names the unknown and retired codes", async () => {
+    await spec.assertMissingRoleCodesNamesUnknownAndRetired(ctx);
+  }, 60_000);
 });
