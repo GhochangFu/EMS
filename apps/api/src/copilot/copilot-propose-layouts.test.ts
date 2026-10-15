@@ -10,9 +10,12 @@ describe("F3.87 PR 5 — the layout proposals (Amendment 3 A2, owner rulings Q4 
   it("leaves the baseline out of the stored hash", () => L.aStoredReplaceHashLeavesOutTheBaseline());
   it("stores a create with no baseline", () => L.aStoredCreateHasNoBaseline());
   it("tells a global admin to propose a missing role first", () => L.anAdminsLayoutWithAMissingRoleIsToldToProposeTheRoleFirst());
+  it("gives a global admin the sentence form when the registry has no assetRole.create tool", () => L.anAdminWithoutTheRoleToolGetsTheSentenceForm());
   it("gives an organization admin the sentence form", () => L.anOrgAdminsLayoutWithAMissingRoleGetsTheSentenceForm());
   it("stores a replace that keeps a stored retired role", () => L.aReplaceKeepingAStoredRetiredRoleIsStored());
   it("gives a replace with a truly missing role the role sentence", () => L.aReplaceWithATrulyMissingRoleGetsTheRoleSentence());
+  it("gives a stale replace keeping a retired role the 409 sentence, not the role sentence", () => L.aStaleReplaceKeepingARetiredRoleGetsTheStaleSentence());
+  it("re-throws a non-HTTP error on a replace keeping a retired role", () => L.aReplaceKeepingARetiredRoleRethrowsADatabaseError());
   it("refuses a layout when the tool set has no layouts service", () => L.aLayoutWithoutTheServiceIsRefused());
   it("refuses a baseline the model sends itself", () => L.aModelSentBaselineIsRefused());
 });

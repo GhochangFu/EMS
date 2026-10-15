@@ -69,7 +69,7 @@ export type MimicLayoutBaseline = {
 };
 
 /** An unknown or retired role code: the class of error only, never the code. */
-const UNKNOWN_ROLE_MESSAGE = "Unknown asset role code";
+export const UNKNOWN_ROLE_MESSAGE = "Unknown asset role code";
 
 /** A library code with no active `bms.mimic_symbol_libraries` row (`F3.32e`, plan D7). */
 const UNKNOWN_LIBRARY_MESSAGE = "Unknown symbol library";

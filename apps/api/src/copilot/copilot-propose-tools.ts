@@ -1,4 +1,4 @@
-import { HttpException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, HttpException, Inject, Injectable } from "@nestjs/common";
 import { z, type ZodTypeAny } from "zod";
 
 import { CALC_DIALECTS, type CalcDialect, formatCalcError, validateFormula } from "@bms/shared";
@@ -17,7 +17,7 @@ import {
 
 import { resolveAuthMode } from "../auth/auth-mode";
 import { LOCAL_MODE_READ_ONLY } from "../admin/users/users.service";
-import { MimicLayoutsService } from "../mimic-layouts/mimic-layouts.service";
+import { MimicLayoutsService, UNKNOWN_ROLE_MESSAGE } from "../mimic-layouts/mimic-layouts.service";
 import { jsonSchemaOf, type ToolRegistry } from "../llm/tool-registry";
 import { issuesOf } from "../llm/tool-result";
 import { bodyHash } from "./body-hash";
@@ -115,6 +115,9 @@ const accessAsked = (ctx: CopilotToolContext): boolean => ctx.turnKind === "user
 
 /** `F3.86` ruling Q8: the user-account entries a local sign-in deployment refuses (grants are database-only and stay). */
 const isUserAccountEntry = (entry: CatalogEntry): boolean => entry.id.startsWith("user.");
+
+/** The propose tool the admin form of the role refusal names (`F3.87` PR 6 adds its entry). */
+const ROLE_CREATE_TOOL = proposeToolName({ id: "assetRole.create" });
 
 /**
  * `F3.87` PR 5 / owner ruling Q4 — a layout whose units name a role the
@@ -299,9 +302,15 @@ export function createCopilotProposeTools(
    * 3. ruling Q5: a replace stores the layout it was built from under the
    *    `cardOnly` key `baseline`, which the hash leaves out.
    *
-   * A replace may keep a retired role its stored drawing already carries (the
+ * A replace may keep a retired role its stored drawing already carries (the
    * mapping-sheet rule, `assertReplaceLive`), so for a replace a missing code
-   * refuses only when the service refuses the body too.
+   * refuses only when the service refuses the body for that reason — its
+   * unknown-role 400. Any other refusal (the stale 409, a dead library, a 404)
+   * is the route's own sentence; a non-HTTP error is re-thrown.
+   *
+   * The admin form names `assetRole.create`, so it is given only when this
+   * registry has that propose tool; without it a global admin gets the
+   * sentence form too.
    */
   const checkLayout = async (
     entry: CatalogEntry,
@@ -317,7 +326,10 @@ export function createCopilotProposeTools(
     const missing = await layouts.missingRoleCodes(roleCodesOf(typed.data.nodes));
     const roleRefusal = {
       ok: false as const,
-      error: ctx.identity.role === "admin" ? PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(missing) : PROPOSE_LAYOUT_ROLES_MISSING(missing),
+      error:
+        ctx.identity.role === "admin" && byTool.has(ROLE_CREATE_TOOL)
+          ? PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(missing)
+          : PROPOSE_LAYOUT_ROLES_MISSING(missing),
     };
     const replace = entry.id === "mimicLayout.replace";
     if (missing.length > 0 && !replace) return roleRefusal;
@@ -329,7 +341,8 @@ export function createCopilotProposeTools(
       );
       baseline = checked.baseline;
     } catch (err) {
-      if (missing.length > 0) return roleRefusal;
+      const unknownRole = err instanceof BadRequestException && err.message === UNKNOWN_ROLE_MESSAGE;
+      if (unknownRole && missing.length > 0) return roleRefusal;
       if (err instanceof HttpException) return { ok: false, error: err.message };
       throw err;
     }

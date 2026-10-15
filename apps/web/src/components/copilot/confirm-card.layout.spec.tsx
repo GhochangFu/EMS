@@ -74,13 +74,21 @@ function createChange(body: MimicLayoutWriteBody): CopilotPendingChangeDto {
 async function cardFor(pending: CopilotPendingChangeDto, current: Record<string, unknown> = { version: 2, organizationId: ORG_ID }) {
   const stubs = stub();
   const read = vi.spyOn(currentApi, "fetchCopilotCurrent").mockResolvedValue(current);
-  vi.spyOn(symbolLibrariesApi, "fetchMimicSymbolLibraries").mockResolvedValue({ global: [], organization: [] } as never);
+  const symbols = vi.spyOn(symbolLibrariesApi, "fetchMimicSymbolLibraries").mockResolvedValue({ global: [], organization: [] } as never);
   stubs.turn.mockResolvedValueOnce(answered("draw the flow network", "Confirm the card.", null, [pending]));
   renderDock("admin");
   await openPanel();
   await send("draw the flow network");
   const title = pending.catalogId === "mimicLayout.replace" ? "Replace a mimic layout" : "Create a mimic layout";
-  return { card: await screen.findByRole("region", { name: title }), read };
+  return { card: await screen.findByRole("region", { name: title }), read, symbols };
+}
+
+/**
+ * A replace's organization comes only from `current.data`, so the symbol read with that
+ * organization proves `current.data` reached the render — not just that its query started.
+ */
+async function currentRendered(symbols: { mock: { calls: unknown[][] } }): Promise<void> {
+  await vi.waitFor(() => expect(symbols.mock.calls.some(([organizationId]) => organizationId === ORG_ID)).toBe(true));
 }
 
 /** The card draws the proposed layout: one unit per body node. */
@@ -127,12 +135,12 @@ const graphRows = (card: HTMLElement) =>
  * an extra node changes no row.
  */
 export async function aReplaceCardDiffsAgainstTheBaselineNotTheLayoutNow(): Promise<void> {
-  const { card, read } = await cardFor(replaceChange(), {
+  const { card, symbols } = await cardFor(replaceChange(), {
     version: 2,
     organizationId: ORG_ID,
     nodes: [{ key: "intruder", kind: "unit", label: "Not in the baseline" }],
   });
-  await vi.waitFor(() => expect(read).toHaveBeenCalled());
+  await currentRendered(symbols);
   expect(graphRows(card)).toEqual([
     ["Node pump", "x 9", "x 10"],
     ["Node zone", "—", 'added: unit "Zone"'],
@@ -142,6 +150,23 @@ export async function aReplaceCardDiffsAgainstTheBaselineNotTheLayoutNow(): Prom
   ]);
   expect(within(card).queryByText(/intruder|Not in the baseline/)).toBeNull();
   expect(within(card).queryByText(/^Baseline$/)).toBeNull();
+}
+
+/**
+ * The scalar rows of a replace are not compared with the layout now: they say so rather than
+ * showing a dash that reads as "empty"; `version` is compared with the baseline's.
+ */
+export async function aReplaceCardsScalarRowsSayNotCompared(): Promise<void> {
+  const { card, symbols } = await cardFor(replaceChange());
+  await currentRendered(symbols);
+  const scalar = within(card)
+    .getAllByRole("row")
+    .map((row) => [...row.children].map((cell) => cell.textContent ?? ""))
+    .filter(([heading]) => heading === "Name" || heading === "Version");
+  expect(scalar).toEqual([
+    ["Version", "2", "2"],
+    ["Name", "not compared", FLOW_WRITE_BODY.name],
+  ]);
 }
 
 /** The live version moved past the card's: the card says Confirm will give 409. */
@@ -154,8 +179,8 @@ export async function aReplaceCardSaysConfirmWillGive409WhenTheVersionMoved(): P
 
 /** Positive control: the live version is the card's own, and no note shows. */
 export async function aReplaceCardAtTheLiveVersionHasNoNote(): Promise<void> {
-  const { card, read } = await cardFor(replaceChange());
-  await vi.waitFor(() => expect(read).toHaveBeenCalled());
+  const { card, symbols } = await cardFor(replaceChange());
+  await currentRendered(symbols);
   expect(within(card).getByTestId("copilot-layout-preview")).toBeTruthy();
   expect(within(card).queryByTestId("copilot-layout-version-note")).toBeNull();
 }

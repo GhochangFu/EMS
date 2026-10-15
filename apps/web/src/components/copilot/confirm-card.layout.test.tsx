@@ -13,6 +13,7 @@ import {
   aReplaceCardAtTheLiveVersionHasNoNote,
   aReplaceCardDiffsAgainstTheBaselineNotTheLayoutNow,
   aReplaceCardSaysConfirmWillGive409WhenTheVersionMoved,
+  aReplaceCardsScalarRowsSayNotCompared,
 } from "./confirm-card.layout.spec";
 
 afterEach(() => {
@@ -33,4 +34,5 @@ describe("F3.87 PR 5 — the layout Confirm card (Amendment 3 A2, rulings Q1, Q5
   it("diffs a replace against the baseline, not the layout now", () => aReplaceCardDiffsAgainstTheBaselineNotTheLayoutNow(), 15_000);
   it("says Confirm will give 409 when the live version moved", () => aReplaceCardSaysConfirmWillGive409WhenTheVersionMoved(), 15_000);
   it("shows no version note at the live version", () => aReplaceCardAtTheLiveVersionHasNoNote(), 15_000);
+  it("marks a replace's scalar rows as not compared", () => aReplaceCardsScalarRowsSayNotCompared(), 15_000);
 });

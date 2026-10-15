@@ -9,7 +9,7 @@ const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 const API_PATH = /^\/api\/v1\/[^/\\@][^\\@]*$/;
 
 /** `body` without `keys`: a filtered copy, so the stored change is never touched. */
-function withoutKeys(body: Readonly<Record<string, unknown>>, keys: readonly string[]): Record<string, unknown> {
+export function withoutKeys(body: Readonly<Record<string, unknown>>, keys: readonly string[]): Record<string, unknown> {
   return Object.fromEntries(Object.entries(body).filter(([key]) => !keys.includes(key)));
 }
 

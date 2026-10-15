@@ -5,6 +5,7 @@ import { MIMIC_LAYOUT_STALE_MESSAGE } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import type { ResolvedIdentity } from "../auth/identity-resolver";
+import { UNKNOWN_ROLE_MESSAGE } from "../mimic-layouts/mimic-layouts.service";
 import { bodyHash } from "./body-hash";
 import {
   type CopilotProposeServices,
@@ -62,6 +63,14 @@ const BASELINE = {
   pipes: [],
 };
 const layoutCatalog = (): CatalogEntry[] => [catalogEntry("mimicLayout.create")!, catalogEntry("mimicLayout.replace")!];
+/**
+ * The layout entries plus a stand-in `assetRole.create` (its real entry lands in `F3.87` PR 6): the
+ * admin form of the role refusal is given only when the registry has that propose tool.
+ */
+const layoutCatalogWithRoleTool = (): CatalogEntry[] => [
+  ...layoutCatalog(),
+  { ...catalogEntry("mimicLayout.create")!, id: "assetRole.create" } as CatalogEntry,
+];
 
 /** A fake `MimicLayoutsService`: what `missingRoleCodes` answers, what `validateProposal` throws, and each call. */
 function fakeLayouts(over: { missing?: string[]; refuse?: Error; baseline?: unknown } = {}) {
@@ -129,13 +138,22 @@ export async function aStoredCreateHasNoBaseline(): Promise<void> {
 /** Ruling Q4: a global admin's create naming a missing role is told to propose the role first; the service is not asked. */
 export async function anAdminsLayoutWithAMissingRoleIsToldToProposeTheRoleFirst(): Promise<void> {
   const { layouts, calls } = fakeLayouts({ missing: ["raw-water-pump"] });
-  const h = proposeHarness({ catalog: layoutCatalog(), layouts });
+  const h = proposeHarness({ catalog: layoutCatalogWithRoleTool(), layouts });
   const outcome = await h.call("propose_mimicLayout_create", { body: CREATE_LAYOUT });
   expect(outcome).toMatchObject({ ok: false, error: PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(["raw-water-pump"]) });
   expect(outcome.error).toContain("assetRole.create");
   expect(calls.missing).toEqual([["raw-water-pump"]]);
   expect(calls.validated).toEqual([]);
   expect(h.stored).toEqual([]);
+}
+
+/** A global admin whose registry has no `propose_assetRole_create` gets the sentence form: no tool it cannot call. */
+export async function anAdminWithoutTheRoleToolGetsTheSentenceForm(): Promise<void> {
+  const { layouts } = fakeLayouts({ missing: ["raw-water-pump"] });
+  const h = proposeHarness({ catalog: layoutCatalog(), layouts });
+  const outcome = await h.call("propose_mimicLayout_create", { body: CREATE_LAYOUT });
+  expect(outcome).toMatchObject({ ok: false, error: PROPOSE_LAYOUT_ROLES_MISSING(["raw-water-pump"]) });
+  expect(outcome.error).not.toContain("assetRole.create");
 }
 
 /** Ruling Q4: an organization admin gets the sentence form, which never offers assetRole.create. */
@@ -162,10 +180,32 @@ export async function aReplaceKeepingAStoredRetiredRoleIsStored(): Promise<void>
 
 /** The same replace, when the service refuses the body, gets the role sentence, not the route's bare one. */
 export async function aReplaceWithATrulyMissingRoleGetsTheRoleSentence(): Promise<void> {
-  const { layouts } = fakeLayouts({ missing: ["raw-water-pump"], refuse: new BadRequestException("Unknown asset role code") });
-  const h = proposeHarness({ catalog: layoutCatalog(), layouts });
+  const { layouts } = fakeLayouts({ missing: ["raw-water-pump"], refuse: new BadRequestException(UNKNOWN_ROLE_MESSAGE) });
+  const h = proposeHarness({ catalog: layoutCatalogWithRoleTool(), layouts });
   const outcome = await h.call("propose_mimicLayout_replace", { id: LAYOUT_ID, body: REPLACE_LAYOUT });
   expect(outcome).toMatchObject({ ok: false, error: PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(["raw-water-pump"]) });
+  expect(h.stored).toEqual([]);
+}
+
+/**
+ * A replace keeping a stored retired role, at a stale version: `missingRoleCodes` reports the kept
+ * code, and the refusal is still the route's 409 sentence, not the role sentence (Q4-d).
+ */
+export async function aStaleReplaceKeepingARetiredRoleGetsTheStaleSentence(): Promise<void> {
+  const { layouts } = fakeLayouts({ missing: ["raw-water-pump"], refuse: new ConflictException(MIMIC_LAYOUT_STALE_MESSAGE) });
+  const h = proposeHarness({ catalog: layoutCatalogWithRoleTool(), layouts });
+  const outcome = await h.call("propose_mimicLayout_replace", { id: LAYOUT_ID, body: REPLACE_LAYOUT });
+  expect(outcome).toMatchObject({ ok: false, error: MIMIC_LAYOUT_STALE_MESSAGE });
+  expect(h.stored).toEqual([]);
+}
+
+/** The same replace, when the service fails with a non-HTTP error, re-throws it rather than naming a role. */
+export async function aReplaceKeepingARetiredRoleRethrowsADatabaseError(): Promise<void> {
+  const { layouts } = fakeLayouts({ missing: ["raw-water-pump"], refuse: new Error("connection reset") });
+  const h = proposeHarness({ catalog: layoutCatalogWithRoleTool(), layouts });
+  // `runToolCall` turns a thrown dispatch into its generic failure: proof the error was thrown, not mapped.
+  const outcome = await h.call("propose_mimicLayout_replace", { id: LAYOUT_ID, body: REPLACE_LAYOUT });
+  expect(outcome).toMatchObject({ ok: false, error: "The tool failed. Try again or continue without it." });
   expect(h.stored).toEqual([]);
 }
 

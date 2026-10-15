@@ -123,14 +123,18 @@ export function hashExcludedKeysFor(catalogId: string): readonly string[] {
   return entry ? hashExcludedKeysOf(entry) : [];
 }
 
+const NO_CARD_ONLY_KEYS: readonly string[] = Object.freeze([]);
+
 /**
  * `F3.87` PR 5 — the body keys the server stored for the card alone (a
  * layout's `baseline`, PR 6's `svgText`): the browser strips them before it
  * sends the write, whose strict schema would refuse them. An unknown entry
  * strips nothing; its hash then leaves nothing out either, so the two agree.
+ * An entry with no `cardOnly` gets one frozen empty array, so a caller's memo
+ * keyed on the result stays stable across renders.
  */
 export function cardOnlyKeysFor(catalogId: string): readonly string[] {
-  return BY_ID.get(catalogId)?.cardOnly ?? [];
+  return BY_ID.get(catalogId)?.cardOnly ?? NO_CARD_ONLY_KEYS;
 }
 
 /** The same rule for an entry in hand: the propose tool hashes with it, so the two sides cannot drift. */

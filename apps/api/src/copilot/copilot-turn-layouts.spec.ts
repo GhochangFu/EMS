@@ -54,7 +54,13 @@ function layoutsOver(live: readonly string[], options: { stale?: boolean } = {})
   return { layouts, asked };
 }
 
-/** (Q4-a) As `admin`: a layout naming `pump-x` is refused with the sentence that names it, and no card is stored. */
+/**
+ * (Q4-a) As `admin`: a layout naming `pump-x` is refused with the sentence that names it, and no
+ * card is stored. The real catalog has no `assetRole.create` entry until `F3.87` PR 6, so the admin
+ * gets the sentence form here (never a tool it cannot call); the admin form, given only when the
+ * registry has `propose_assetRole_create`, is held by `copilot-propose-layouts.spec.ts`. PR 6 flips
+ * this assertion to `PROPOSE_LAYOUT_ROLES_MISSING_ADMIN`.
+ */
 export async function assertAnAdminsLayoutWithAMissingRoleIsRefusedNamingIt(): Promise<void> {
   const llm = new FakeLlmProvider([
     calls(toolCall("propose_mimicLayout_create", { body: layoutBody("pump-x") })),
@@ -64,7 +70,9 @@ export async function assertAnAdminsLayoutWithAMissingRoleIsRefusedNamingIt(): P
   const h = harness(llm, { layouts });
   await turn(h, "draw the raw water plant");
   expect(asked).toEqual([["pump-x"]]);
-  expect(sentText(llm)).toContain(JSON.stringify(PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(["pump-x"])).slice(1, -1));
+  const sent = sentText(llm);
+  expect(sent).toContain(JSON.stringify(PROPOSE_LAYOUT_ROLES_MISSING(["pump-x"])).slice(1, -1));
+  expect(sent).not.toContain(JSON.stringify(PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(["pump-x"])).slice(1, -1));
   expect(h.proposed).toEqual([]);
 }
 

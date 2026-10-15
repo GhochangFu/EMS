@@ -13,7 +13,7 @@ import {
 } from "@bms/shared/copilot";
 
 import { rejectCopilotChange } from "../../api/copilot";
-import { confirmCopilotChange } from "../../api/copilot-confirm";
+import { confirmCopilotChange, withoutKeys } from "../../api/copilot-confirm";
 import { fetchCopilotCurrent } from "../../api/copilot-current";
 import { ambiguousTabsOfError } from "../../api/control-room";
 import type { MimicLayoutWriteBody } from "../../api/mimic-layouts";
@@ -21,7 +21,7 @@ import { useMimicSymbolLibraries } from "../../hooks/use-mimic-symbol-libraries"
 import { refreshScope } from "../../api/login";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { changeRows, fieldLabel, type LayoutBaseline, layoutGraphRows } from "../../lib/copilot-diff";
+import { type ChangeRow, changeRows, fieldLabel, type LayoutBaseline, layoutGraphRows } from "../../lib/copilot-diff";
 import { invalidationKeysFor } from "../../lib/copilot-invalidations";
 import { editorLayoutFromWriteBody } from "../../lib/mimic-editor";
 import { layoutWarnings } from "../../lib/mimic-editor-warnings";
@@ -90,11 +90,6 @@ function changesTheScope(change: CopilotPendingChangeDto): boolean {
   return change.catalogId === "location.update" && "parentId" in change.body;
 }
 
-/** `body` without `keys` (the entry's `cardOnly` keys): what the request sends. */
-function withoutKeys(body: Readonly<Record<string, unknown>>, keys: readonly string[]): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(body).filter(([key]) => !keys.includes(key)));
-}
-
 /** `F3.87` PR 5: a stored `baseline` the card can diff against, or `null` (`validateProposal`'s DTO shape). */
 function baselineOf(value: unknown): LayoutBaseline | null {
   if (typeof value !== "object" || value === null) return null;
@@ -102,6 +97,18 @@ function baselineOf(value: unknown): LayoutBaseline | null {
   return typeof candidate.version === "number" && Array.isArray(candidate.nodes) && Array.isArray(candidate.pipes)
     ? (candidate as LayoutBaseline)
     : null;
+}
+
+/**
+ * `F3.87` PR 5: beside the baseline's graph rows, a replace's scalar rows get an explicit "Now":
+ * the baseline's `version`, and "not compared" for the rest (the baseline holds only the graph),
+ * never the dash that reads as "this field was empty". A create (no baseline) is unchanged.
+ */
+function scalarRowsOf(rows: readonly ChangeRow[], baseline: LayoutBaseline | null): ChangeRow[] {
+  if (baseline === null) return [...rows];
+  return rows.map((row) =>
+    row.field === "version" ? { ...row, before: String(baseline.version) } : { ...row, before: "not compared" },
+  );
 }
 
 /** A Zod schema, named through the shared helper (`apps/web` does not depend on `zod` itself). */
@@ -249,7 +256,7 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
   const rows =
     isLayout && layoutBody !== null
       ? [
-          ...changeRows(change.body, null, [...cardOnly, "nodes", "pipes"]),
+          ...scalarRowsOf(changeRows(change.body, null, [...cardOnly, "nodes", "pipes"]), baseline),
           ...(baseline !== null ? layoutGraphRows(layoutBody, baseline) : []),
         ]
       : changeRows(change.body, isEdit ? (current.data ?? null) : null, cardOnly);
