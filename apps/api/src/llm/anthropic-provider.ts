@@ -176,6 +176,7 @@ function toAnthropicBlock(part: LlmContentPart): BetaTextBlockParam | BetaImageB
       return {
         type: "document",
         source: { type: "base64", media_type: part.mediaType, data: part.data.toString("base64") },
+        title: part.filename,
       };
   }
 }

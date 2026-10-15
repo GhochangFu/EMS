@@ -186,9 +186,13 @@ export async function assertImageAndPdfPartsAreNativeBlocks(capture: AnthropicCa
       JSON.stringify([
         { type: "text", text: "draw the mimic" },
         { type: "image", source: { type: "base64", media_type: "image/png", data: BYTES_BASE64 } },
-        { type: "document", source: { type: "base64", media_type: "application/pdf", data: BYTES_BASE64 } },
+        {
+          type: "document",
+          source: { type: "base64", media_type: "application/pdf", data: BYTES_BASE64 },
+          title: "sld.pdf",
+        },
       ]),
-    "a text block, a base64 image block and a base64 PDF document block",
+    "a text block, a base64 image block and a base64 PDF document block titled with the filename",
   );
 }
 
