@@ -71,6 +71,7 @@ function renderPage(): void {
   vi.spyOn(copilotApi, "fetchCopilotAccess").mockResolvedValue({
     organizationId: ORG_ID,
     enabled: false,
+    attachmentsEnabled: false,
     roles: { location_admin: true, asset_group_admin: true },
     overrides: [],
   });
@@ -116,6 +117,20 @@ function expectNoEnvelopeLeak(banner: HTMLElement): void {
     expect(text, `the banner leaked "${leak}": ${text}`).not.toContain(leak);
   }
   expect(text.startsWith("{"), `the banner rendered a JSON body: ${text}`).toBe(false);
+}
+
+/**
+ * `F3.87` (ADR 0099 Amendment 3 A7) — the page's Copilot access card carries
+ * the attachment switch and says the file goes to the provider unscrubbed.
+ */
+export async function thePageCarriesTheAttachmentSwitch(): Promise<void> {
+  stubGet(PLATFORM_DTO);
+  renderPage();
+
+  expect(await screen.findByLabelText("Attachments on copilot turns")).toBeInTheDocument();
+  expect(
+    screen.getByText("A file attached to a turn goes to the organization's AI provider as it is, unscrubbed."),
+  ).toBeInTheDocument();
 }
 
 /** With no organization row, Platform default is chosen and the page says what it is. */

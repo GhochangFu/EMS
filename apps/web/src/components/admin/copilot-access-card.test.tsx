@@ -4,6 +4,9 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aRefusalShowsTheServersSentence,
+  anAttachmentConflictShowsTheServersSentence,
+  theAttachmentSwitchIsDisabledWhileTheCopilotIsOff,
+  theOrganizationAdminSetsTheAttachmentSwitch,
   aRoleSwitchSendsOnlyThatRole,
   aSavedPickResetsThePicker,
   anExceptionIsListedAndRemoved,
@@ -28,4 +31,10 @@ describe("F3.85 Copilot access card", () => {
   it("resets the picker once a pick is saved", () => aSavedPickResetsThePicker());
   it("lists an exception by name and removes it", () => anExceptionIsListedAndRemoved());
   it("shows the server's sentence on a refusal", () => aRefusalShowsTheServersSentence());
+  it("lets the organization admin set the attachment switch (F3.87)", () =>
+    theOrganizationAdminSetsTheAttachmentSwitch());
+  it("disables the attachment switch while the copilot is off (F3.87)", () =>
+    theAttachmentSwitchIsDisabledWhileTheCopilotIsOff());
+  it("shows the server's sentence on an attachment conflict (F3.87)", () =>
+    anAttachmentConflictShowsTheServersSentence());
 });

@@ -84,12 +84,14 @@ function stubApi(): void {
   vi.spyOn(copilotApi, "fetchCopilotAccess").mockImplementation(async (orgId) => ({
     organizationId: orgId,
     enabled: false,
+    attachmentsEnabled: false,
     roles: { location_admin: true, asset_group_admin: true },
     overrides: [],
   }));
   vi.spyOn(copilotApi, "putCopilotAccess").mockImplementation(async (orgId, body) => ({
     organizationId: orgId,
     enabled: body.enabled ?? false,
+    attachmentsEnabled: body.attachmentsEnabled ?? false,
     roles: { location_admin: true, asset_group_admin: true },
     overrides: [],
   }));
@@ -457,6 +459,7 @@ export async function theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin(): Pr
         : within(row).getByText("View only"),
     ).toBeInTheDocument();
     expect(within(row).queryByLabelText("Copilot for Rupee organization"), role).toBeNull();
+    expect(within(row).queryByLabelText("Copilot attachments for Rupee organization"), role).toBeNull();
     expect(copilotApi.fetchCopilotAccess, role).not.toHaveBeenCalled();
     cleanup();
     vi.restoreAllMocks();
@@ -478,6 +481,49 @@ export async function aRefusedRowSwitchShowsTheSentence(): Promise<void> {
   await waitFor(() => expect(toggle.disabled).toBe(false));
   await userEvent.click(toggle);
   const banner = await screen.findByText("Organization is outside your access scope");
+  expect(banner.textContent).not.toContain('{"');
+  expect(toggle.checked).toBe(false);
+}
+
+/**
+ * `F3.87` (ADR 0099 Amendment 3 A7, ruling Q3) — the global admin sets a row's
+ * attachment switch even while its copilot is off: the PUT names that row's
+ * organization and carries `{ attachmentsEnabled: true }` only, and the switch
+ * says the file goes to the provider unscrubbed.
+ */
+export async function theGlobalAdminSwitchesARowsAttachmentsOn(): Promise<void> {
+  stubApi();
+  renderPageAs("admin");
+  const toggle = (await screen.findByLabelText("Copilot attachments for Rupee organization")) as HTMLInputElement;
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  expect(toggle.checked).toBe(false);
+  expect(toggle.closest("label")?.getAttribute("title")).toBe(
+    "A file attached to a turn goes to the organization's AI provider as it is, unscrubbed.",
+  );
+
+  await userEvent.click(toggle);
+
+  await waitFor(() =>
+    expect(copilotApi.putCopilotAccess).toHaveBeenCalledWith("22222222-2222-2222-2222-222222222222", {
+      attachmentsEnabled: true,
+    }),
+  );
+  await waitFor(() => expect(toggle.checked).toBe(true));
+  // Adjacent: the copilot switch on the same row stays off (the server keeps `enabled` false).
+  expect((screen.getByLabelText("Copilot for Rupee organization") as HTMLInputElement).checked).toBe(false);
+}
+
+/** A refused attachment save shows the server's sentence on the row, as the copilot switch does. */
+export async function aRefusedAttachmentSwitchShowsTheSentence(): Promise<void> {
+  stubApi();
+  vi.mocked(copilotApi.putCopilotAccess).mockRejectedValue(
+    new ApiError('{"statusCode":409,"message":"Turn the copilot on for this organization first","error":"Conflict"}', 409),
+  );
+  renderPageAs("admin");
+  const toggle = (await screen.findByLabelText("Copilot attachments for Rupee organization")) as HTMLInputElement;
+  await waitFor(() => expect(toggle.disabled).toBe(false));
+  await userEvent.click(toggle);
+  const banner = await screen.findByText("Turn the copilot on for this organization first");
   expect(banner.textContent).not.toContain('{"');
   expect(toggle.checked).toBe(false);
 }

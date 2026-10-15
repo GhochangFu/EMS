@@ -12,6 +12,8 @@ import { adminFetch } from "./client";
 /** `PUT` body: any subset. `override.allow: null` removes the exception. */
 export type CopilotAccessPutBody = {
   enabled?: boolean;
+  /** `F3.87` / ADR 0099 Amendment 3 A7: both admin roles; an organization admin's write needs the row (409 without). */
+  attachmentsEnabled?: boolean;
   roles?: Partial<Record<CopilotSwitchableRole, boolean>>;
   override?: { userId: string; allow: boolean | null };
 };

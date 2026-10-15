@@ -23,6 +23,7 @@ const OTHER_ORG = "44444444-4444-4444-8444-444444444444";
 const ACCESS: CopilotAccessDto = {
   organizationId: ORG_ID,
   enabled: false,
+  attachmentsEnabled: false,
   roles: { location_admin: true, asset_group_admin: true },
   overrides: [],
 };
@@ -74,6 +75,7 @@ function renderCard(role: UserRole, access: CopilotAccessDto = ACCESS): void {
   vi.spyOn(copilotApi, "putCopilotAccess").mockImplementation(async (_orgId, body) => ({
     ...access,
     enabled: body.enabled ?? access.enabled,
+    attachmentsEnabled: body.attachmentsEnabled ?? access.attachmentsEnabled,
     roles: { ...access.roles, ...body.roles },
   }));
   vi.spyOn(usersApi, "fetchAdminUsers").mockResolvedValue(USERS);
@@ -176,6 +178,51 @@ export async function anExceptionIsListedAndRemoved(): Promise<void> {
       override: { userId: "aaaaaaaa-0000-4000-8000-000000000001", allow: null },
     }),
   );
+}
+
+const ATTACHMENTS_LABEL = "Attachments on copilot turns";
+
+/**
+ * `F3.87` / Amendment 3 A7: the organization admin may set the attachment
+ * switch once the copilot is on; the PUT carries `{ attachmentsEnabled }` and
+ * nothing else, and the card says the file goes to the provider unscrubbed.
+ */
+export async function theOrganizationAdminSetsTheAttachmentSwitch(): Promise<void> {
+  renderCard("organization_admin", { ...ACCESS, enabled: true });
+  const attachments = (await screen.findByLabelText(ATTACHMENTS_LABEL)) as HTMLInputElement;
+  expect(attachments.disabled).toBe(false);
+  expect(attachments.checked).toBe(false);
+  expect(
+    screen.getByText("A file attached to a turn goes to the organization's AI provider as it is, unscrubbed."),
+  ).toBeInTheDocument();
+
+  await userEvent.click(attachments);
+
+  await waitFor(() =>
+    expect(copilotApi.putCopilotAccess).toHaveBeenCalledWith(ORG_ID, { attachmentsEnabled: true }),
+  );
+  await waitFor(() => expect(attachments.checked).toBe(true));
+}
+
+/** With the copilot off the attachment switch is disabled, for the global admin too. */
+export async function theAttachmentSwitchIsDisabledWhileTheCopilotIsOff(): Promise<void> {
+  renderCard("admin");
+  const attachments = (await screen.findByLabelText(ATTACHMENTS_LABEL)) as HTMLInputElement;
+  expect(attachments.disabled).toBe(true);
+  // Adjacent positive: the organization switch is live for the same user.
+  expect((screen.getByLabelText("Copilot on for this organization") as HTMLInputElement).disabled).toBe(false);
+}
+
+/** Plan D3: an organization admin's write the server answers 409 shows that sentence. */
+export async function anAttachmentConflictShowsTheServersSentence(): Promise<void> {
+  renderCard("organization_admin", { ...ACCESS, enabled: true });
+  vi.mocked(copilotApi.putCopilotAccess).mockRejectedValue(
+    new ApiError(JSON.stringify({ message: "Turn the copilot on for this organization first", statusCode: 409 }), 409),
+  );
+  await userEvent.click(await screen.findByLabelText(ATTACHMENTS_LABEL));
+  const banner = await screen.findByRole("alert");
+  expect(banner).toHaveTextContent("Turn the copilot on for this organization first");
+  expect(banner.textContent).not.toContain("statusCode");
 }
 
 /** A refused PUT shows the server's sentence, not the JSON envelope. */
