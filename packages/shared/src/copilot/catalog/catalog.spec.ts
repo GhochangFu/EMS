@@ -4,6 +4,7 @@ import { z, type ZodTypeAny } from "zod";
 import * as contracts from "../../contracts";
 import {
   CANVAS_ENTRY_IDS,
+  cardOnlyKeysFor,
   catalogEntry,
   catalogParamsOf,
   catalogPath,
@@ -33,6 +34,20 @@ const ORG = "11111111-1111-4111-8111-111111111111";
 const ROW = "22222222-2222-4222-8222-222222222222";
 const TARGET_NAME = "Target Row 7";
 const ORG_NAME = "Org Seven";
+
+/** `F3.87` PR 5: a layout body's fields — two units on the core library and one pipe between them. */
+const LAYOUT_GRAPH = {
+  name: "Raw water",
+  slug: "raw-water",
+  canvasW: 120,
+  canvasH: 80,
+  nodes: [
+    { key: "pump_1", kind: "unit", symbol: "pump", label: "Pump 1", x: 0, y: 0, w: 20, h: 25, isSource: true },
+    { key: "tank_1", kind: "unit", symbol: "tank", label: "Tank 1", x: 40, y: 0, w: 20, h: 25 },
+  ],
+  pipes: [{ fromKey: "pump_1", toKey: "tank_1" }],
+  symbolLibraries: ["core"],
+};
 
 /** One valid body and path per entry, and the name its summary must contain. */
 export const FIXTURES: Readonly<
@@ -162,6 +177,9 @@ export const FIXTURES: Readonly<
   "assetPoint.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
   // `F3.86` PR 6 — the server-made onboarding commit (decision 7): the hash of the draft the turn stored.
   "onboarding.commit": { body: { draftHash: "a".repeat(64) }, params: { id: ROW }, names: TARGET_NAME },
+  // `F3.87` PR 5 — the canvas entries (owner ruling Q1): two units and one pipe; the replace at version 1.
+  "mimicLayout.create": { body: { organizationId: ORG, ...LAYOUT_GRAPH }, params: {}, names: "Raw water" },
+  "mimicLayout.replace": { body: { version: 1, ...LAYOUT_GRAPH }, params: { id: ROW }, names: TARGET_NAME },
 };
 
 /**
@@ -727,4 +745,40 @@ export function aGrantSummaryNamesItsTarget(): void {
     'Revoke the access of "Priya Rao" to the asset group "LV boards".',
   );
   expect(add.summary({ ...base, body: { kind: "organization", targetId: ROW }, params: { id: ROW } })).toContain(ROW);
+}
+
+/**
+ * `F3.87` PR 5 (ADR 0099 Amendment 3 A1, A2, owner rulings Q1 and Q5) — the
+ * two layout entries: canvas entries with no steps, for the authoring roles
+ * only, and a replace whose card-only `baseline` is left out of the hash.
+ */
+export function theLayoutEntriesAreCanvasEntriesForTheAuthors(): void {
+  for (const id of CANVAS_ENTRY_IDS) {
+    const entry = catalogEntry(id);
+    if (!entry) throw new Error(id);
+    expect(entry.steps, id).toEqual([]);
+    expect(entry.offeredTo, id).toEqual(["admin", "organization_admin"]);
+    expect(EXCLUDED_ROUTES.some((route) => route.path === entry.path && route.method === entry.method), id).toBe(false);
+  }
+  expect(catalogEntry("mimicLayout.create")?.target).toEqual({ kind: "organization", manage: "mimic" });
+  expect(catalogEntry("mimicLayout.replace")?.target).toEqual({ kind: "mimicLayout", param: "id" });
+  expect(catalogEntry("mimicLayout.create")?.cardOnly).toBeUndefined();
+  expect(hashExcludedKeysFor("mimicLayout.replace")).toEqual(["baseline"]);
+}
+
+/** The summaries count what the body draws, from the body alone. */
+export function theLayoutSummariesCountTheGraph(): void {
+  const create = catalogEntry("mimicLayout.create");
+  const replace = catalogEntry("mimicLayout.replace");
+  if (!create || !replace) throw new Error("layout entries");
+  expect(summaryOf(create)).toBe(`Create the layout "Raw water" in ${ORG_NAME}: 2 units, 0 panels, 1 pipe.`);
+  expect(summaryOf(replace)).toBe(`Replace the layout "${TARGET_NAME}" (version 1): 2 units, 0 panels, 1 pipe.`);
+}
+
+/** `cardOnlyKeysFor` names the keys the browser strips: the replace's `baseline`; nothing for any other or an unknown id. */
+export function cardOnlyKeysForNamesTheStrippedKeys(): void {
+  expect(cardOnlyKeysFor("mimicLayout.replace")).toEqual(["baseline"]);
+  expect(cardOnlyKeysFor("mimicLayout.create")).toEqual([]);
+  expect(cardOnlyKeysFor("no.such.entry")).toEqual([]);
+  for (const entry of COPILOT_CATALOG) expect(cardOnlyKeysFor(entry.id), entry.id).toEqual(entry.cardOnly ?? []);
 }

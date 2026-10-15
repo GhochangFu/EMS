@@ -123,6 +123,16 @@ export function hashExcludedKeysFor(catalogId: string): readonly string[] {
   return entry ? hashExcludedKeysOf(entry) : [];
 }
 
+/**
+ * `F3.87` PR 5 — the body keys the server stored for the card alone (a
+ * layout's `baseline`, PR 6's `svgText`): the browser strips them before it
+ * sends the write, whose strict schema would refuse them. An unknown entry
+ * strips nothing; its hash then leaves nothing out either, so the two agree.
+ */
+export function cardOnlyKeysFor(catalogId: string): readonly string[] {
+  return BY_ID.get(catalogId)?.cardOnly ?? [];
+}
+
 /** The same rule for an entry in hand: the propose tool hashes with it, so the two sides cannot drift. */
 export function hashExcludedKeysOf(entry: Pick<CatalogEntry, "clientOnly" | "cardOnly">): readonly string[] {
   return [...entry.clientOnly, ...(entry.cardOnly ?? [])];

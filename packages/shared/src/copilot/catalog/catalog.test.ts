@@ -39,6 +39,9 @@ import {
   noCardOnlyKeyIsABodyField,
   theHashLeavesOutClientOnlyAndCardOnlyKeys,
   theCanvasExemptionIsExact,
+  theLayoutEntriesAreCanvasEntriesForTheAuthors,
+  theLayoutSummariesCountTheGraph,
+  cardOnlyKeysForNamesTheStrippedKeys,
   aMalformedReleaseThreeEntryIsRefused,
   aCardOnlyKeyInTheBodyIsRefused,
 } from "./catalog.spec";
@@ -89,6 +92,9 @@ describe("F3.87 PR 2 — release-3 entry fields (ADR 0099 Amendment 3 A1, A3; ow
   it("refuses a cardOnly key in the body, the model body or a fixture (negative control)", () => aCardOnlyKeyInTheBodyIsRefused());
   it("leaves clientOnly and cardOnly keys out of the hash", () => theHashLeavesOutClientOnlyAndCardOnlyKeys());
   it("exempts exactly the canvas entries from the step rule", () => theCanvasExemptionIsExact());
+  it("F3.87 PR 5: the layout entries are canvas entries for the authoring roles", () => theLayoutEntriesAreCanvasEntriesForTheAuthors());
+  it("F3.87 PR 5: the layout summaries count the graph", () => theLayoutSummariesCountTheGraph());
+  it("F3.87 PR 5: cardOnlyKeysFor names the keys the browser strips", () => cardOnlyKeysForNamesTheStrippedKeys());
 });
 
 describe("F3.85 PR 11a — formula paths into array items (plan §11.3 Unit 2)", () => {
