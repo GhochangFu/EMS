@@ -57,6 +57,8 @@ import {
   aToolOfferedToAnotherRoleRefusesTheCaller,
   theWizardToolsRefuseAnotherRoleToo,
   theStoredHashLeavesOutCardOnlyKeys,
+  anUploadProposalStoresThePreparedBody,
+  aRefusedUploadStoresNothing,
 } from "./copilot-propose-tools.spec";
 
 describe("F3.87 PR 2 — the propose tools per role (ADR 0099 Amendment 3 A1)", () => {
@@ -126,4 +128,9 @@ describe("F3.85 PR 11a — the asset-template propose tools (plan §11.3 Unit 2,
   it("F4.254 refuses an instantiate naming both targets with the refinement", () =>
     aTemplateInstantiateWithBothTargetsStoresNothing());
   it("F4.254 summarises an instantiate with its count and site", () => aTemplateInstantiateSummaryNamesTheCountAndTheSite());
+});
+
+describe("F3.87 PR 6a — the upload proposal (ADR 0099 Amendment 3 A3)", () => {
+  it("stores the prepared body and hashes it without the SVG text", () => anUploadProposalStoresThePreparedBody());
+  it("stores nothing for a refused SVG", () => aRefusedUploadStoresNothing());
 });
