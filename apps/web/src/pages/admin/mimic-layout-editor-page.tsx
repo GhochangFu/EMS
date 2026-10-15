@@ -21,6 +21,7 @@ import { useOrganizationChoice } from "../../hooks/use-organization-choice";
 import { canManageMimicLayouts } from "../../lib/admin-access";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { layoutWarnings } from "../../lib/mimic-editor-warnings";
 import { catalogOrgSymbols } from "../../lib/mimic-symbols";
 import {
   editorReducer,
@@ -290,6 +291,7 @@ function LayoutEditor({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [state]);
 
+  const warnings = useMemo(() => layoutWarnings(state.layout), [state.layout]);
   const selected = state.selected === null ? null : (state.layout.nodes.find((n) => n.key === state.selected) ?? null);
 
   return (
@@ -330,6 +332,13 @@ function LayoutEditor({
           <p role="alert" className="text-xs text-critical-ink">
             {saveError}
           </p>
+        ) : null}
+        {warnings.length > 0 ? (
+          <ul role="status" aria-label="Layout warnings" className="list-disc space-y-1 pl-4 text-xs text-warning-ink">
+            {warnings.map((w) => (
+              <li key={w.key}>{w.text}</li>
+            ))}
+          </ul>
         ) : null}
         <MimicEditorCanvas state={state} dispatch={dispatch} pipeMode={pipeMode} orgSymbols={orgSymbols} />
       </SectionCard>

@@ -1,6 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  aFlaggedValveSwitches,
+  anUnflaggedValveDoesNotSwitch,
+  theBreakerSymbolSwitchesWhateverTheFlag,
   crossRowPipeRunsBetweenTheScaledSlots,
   domainPresetsAreNamedByTheirLabel,
   domainPresetsDrawEveryNode,
@@ -92,5 +95,14 @@ describe("F3.32c U4 — mimic geometry", () => {
   });
   it("G22 a layout carries its flags and switching follows the symbol", () => {
     layoutUnitsCarryFlagsAndSwitchingFollowsTheSymbol();
+  });
+  it("G23 a layout unit with isSwitching true and the valve symbol switches (F3.80)", () => {
+    aFlaggedValveSwitches();
+  });
+  it("G24 isSwitching false and the valve symbol does not switch", () => {
+    anUnflaggedValveDoesNotSwitch();
+  });
+  it("G25 the breaker symbol switches whatever the flag", () => {
+    theBreakerSymbolSwitchesWhateverTheFlag();
   });
 });

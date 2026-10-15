@@ -242,3 +242,102 @@ export function worstWithNoDownstreamSwitchIsNull(): void {
   const w = worstDownstreamSwitch(BUS, "meter", states({ b1: ["tripped"] }));
   assert(w === null, `meter — expected null, got ${w}`);
 }
+
+/*
+ * `F3.80` / ADR 0101 d10, d11 — the flow tones in the walk: `flowing` passes as `closed` does,
+ * `shut` stops as `open` does, and the frame order ranks `shut` above `flowing`.
+ */
+
+/** A flowing member passes energy, as a closed one does. */
+export function aFlowingMemberPasses(): void {
+  const result = walk(CHAIN, states({ breaker: ["flowing"] }));
+  pipeIs(result, "breaker", "bus", "energised", "flowing");
+  pipeIs(result, "bus", "load", "energised", "flowing");
+}
+
+/** Every member shut stops energy, as every member open does. */
+export function allMembersShutBlocks(): void {
+  const result = walk(CHAIN, states({ breaker: ["shut", "shut"] }));
+  pipeIs(result, "source", "breaker", "energised", "all shut");
+  pipeIs(result, "breaker", "bus", "de-energised", "all shut");
+}
+
+/** A shut member beside an unknown one, and none passing: unknown. */
+export function shutPlusUnknownIsUnknown(): void {
+  const result = walk(CHAIN, states({ breaker: ["shut", "unknown"] }));
+  pipeIs(result, "breaker", "bus", "unknown", "shut + unknown");
+}
+
+/**
+ * The ADR 0101 d16 HT/LT shape: the grid through `grid-cb` onto bus A, which feeds `out-a` and the
+ * `coupler` onto bus B; the DG through `dg-cb` onto bus B too. The DG's pipes come first, so a walk
+ * that settles bus B on its first arrival keeps the DG's answer.
+ */
+const TWO_SOURCES: EnergyGraph = {
+  nodes: [
+    { key: "dg", switching: false, fanOut: false },
+    { key: "dg-cb", switching: true, fanOut: false },
+    { key: "grid", switching: false, fanOut: false },
+    { key: "grid-cb", switching: true, fanOut: false },
+    { key: "bus-a", switching: false, fanOut: false },
+    { key: "out-a", switching: false, fanOut: false },
+    { key: "coupler", switching: true, fanOut: false },
+    { key: "bus-b", switching: false, fanOut: false },
+    { key: "out-b", switching: false, fanOut: false },
+  ],
+  pipes: [
+    { from: "dg", to: "dg-cb" },
+    { from: "dg-cb", to: "bus-b" },
+    { from: "grid", to: "grid-cb" },
+    { from: "grid-cb", to: "bus-a" },
+    { from: "bus-a", to: "out-a" },
+    { from: "bus-a", to: "coupler" },
+    { from: "coupler", to: "bus-b" },
+    { from: "bus-b", to: "out-b" },
+  ],
+  sources: ["dg", "grid"],
+};
+
+/** Two sources, the coupler and the DG breaker open: branch B is dead, the grid side is live. */
+export function twoSourcesCouplerOpenBranchBDeEnergised(): void {
+  const result = walk(TWO_SOURCES, states({ "dg-cb": ["open"], "grid-cb": ["closed"], coupler: ["open"] }));
+  pipeIs(result, "bus-b", "out-b", "de-energised", "coupler open");
+  pipeIs(result, "coupler", "bus-b", "de-energised", "coupler open");
+  // The grid side stays live, and the DG's own outbound pipe is a source's (ADR 0088).
+  pipeIs(result, "bus-a", "out-a", "energised", "coupler open");
+  pipeIs(result, "dg", "dg-cb", "energised", "coupler open");
+}
+
+/** The same with the coupler closed: bus B is fed from bus A, so branch B is live. */
+export function twoSourcesCouplerClosedBranchBEnergised(): void {
+  const result = walk(TWO_SOURCES, states({ "dg-cb": ["open"], "grid-cb": ["closed"], coupler: ["closed"] }));
+  pipeIs(result, "bus-b", "out-b", "energised", "coupler closed");
+  pipeIs(result, "dg-cb", "bus-b", "de-energised", "coupler closed");
+}
+
+/** pump → ISO (flowing) → CV (shut) → tank: live up to the shut valve, dead after it. */
+export function aValveLineStopsAtTheShutValve(): void {
+  const graph: EnergyGraph = {
+    nodes: [
+      { key: "pump", switching: false, fanOut: false },
+      { key: "iso", switching: true, fanOut: false },
+      { key: "cv", switching: true, fanOut: false },
+      { key: "tank", switching: false, fanOut: false },
+    ],
+    pipes: [
+      { from: "pump", to: "iso" },
+      { from: "iso", to: "cv" },
+      { from: "cv", to: "tank" },
+    ],
+    sources: ["pump"],
+  };
+  const result = walk(graph, states({ iso: ["flowing"], cv: ["shut"] }));
+  pipeIs(result, "iso", "cv", "energised", "iso flowing, cv shut");
+  pipeIs(result, "cv", "tank", "de-energised", "iso flowing, cv shut");
+}
+
+/** The frame order ranks shut above flowing (the flowing member listed first). */
+export function worstShutBeatsFlowing(): void {
+  const w = worst(["flowing"], ["flowing", "shut"]);
+  assert(w === "shut", `flowing + shut — expected shut, got ${w}`);
+}

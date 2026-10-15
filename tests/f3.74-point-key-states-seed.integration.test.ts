@@ -12,7 +12,8 @@ import {
  * `F3.74` D1 — what `seedPointKeyStates` guarantees against a real Postgres.
  * Model: `tests/f3.68-point-key-headline-ranks-seed.integration.test.ts`.
  *
- * - **I1** after a full `pnpm db:seed` the table holds exactly the three rows D1 names.
+ * - **I1** after a full `pnpm db:seed` the table holds exactly the seven rows: the three D1
+ *   names and `F3.80`'s four flow rows.
  * - **I2** a second run changes nothing: same rows, same ids.
  * - **I3** a hand-edited label or tone is restored by the next run (`DO UPDATE`, not
  *   `DO NOTHING` — the rows are seed-owned).
@@ -42,10 +43,15 @@ interface StateRow {
   tone: string;
 }
 
+// `F3.80` (ADR 0101 d10, OQ2 (b)) adds the four seed-owned flow rows; no `dg_on_load` row.
 const EXPECTED = [
   { point_key_code: "breaker_main", value: 0, label: "OPEN", tone: "open" },
   { point_key_code: "breaker_main", value: 1, label: "CLOSED", tone: "closed" },
   { point_key_code: "breaker_trip", value: 1, label: "TRIPPED", tone: "tripped" },
+  { point_key_code: "damper_open", value: 0, label: "SHUT", tone: "shut" },
+  { point_key_code: "damper_open", value: 1, label: "OPEN", tone: "flowing" },
+  { point_key_code: "valve_open", value: 0, label: "SHUT", tone: "shut" },
+  { point_key_code: "valve_open", value: 1, label: "OPEN", tone: "flowing" },
 ];
 
 async function readRows(client: IntegrationClient): Promise<StateRow[]> {
@@ -79,19 +85,19 @@ describe.skipIf(!ownerUrl)("F3.74 D1 — seedPointKeyStates", () => {
   }
 
   // I1
-  it("holds exactly the three D1 rows after pnpm db:seed", async () => {
+  it("holds exactly the seven seeded rows after pnpm db:seed", async () => {
     if (!pool) throw new Error("pool not initialised");
     const rows = await readRows(pool);
     expect(rows.map(({ id: _id, ...rest }) => rest)).toEqual(EXPECTED);
   });
 
   // I2
-  it("a second run changes nothing — same three rows, same ids", async () => {
+  it("a second run changes nothing — same seven rows, same ids", async () => {
     await inRolledBackTransaction(async (client) => {
       const before = await readRows(client);
-      expect(before).toHaveLength(3);
+      expect(before).toHaveLength(7);
       const count = await seedPointKeyStates(client);
-      expect(count).toBe(3);
+      expect(count).toBe(7);
       expect(await readRows(client)).toEqual(before);
     });
   });

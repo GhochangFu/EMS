@@ -28,6 +28,9 @@ type BreakerSwitchProps = {
  * contact faint and dashed — we cannot see it, which is not OPEN (ADR 0027 decision 5). UNKNOWN:
  * the unit's plain symbol, drawn as any other unit draws it.
  *
+ * `F3.80` (ADR 0101 d10) — a FLOWING valve or damper draws the CLOSED contact, a SHUT one the OPEN
+ * blade.
+ *
  * Colours are ADR 0078 role classes from `BREAKER_LOOK_CLASSES` only.
  */
 export function BreakerSwitch({ state, look, symbol, x, y, size, plainClass, orgSymbol = null }: BreakerSwitchProps) {
@@ -38,7 +41,7 @@ export function BreakerSwitch({ state, look, symbol, x, y, size, plainClass, org
       </g>
     );
   }
-  const blade = state === "closed" || state === "offline" ? BLADE_CLOSED : BLADE_OPEN;
+  const blade = state === "closed" || state === "flowing" || state === "offline" ? BLADE_CLOSED : BLADE_OPEN;
   return (
     <g
       data-testid="mimic-breaker-switch"

@@ -66,6 +66,8 @@ export type EditorNodePatch = {
   /** `F3.74` — units only: draw every member of the role / mark the unit an energy source. */
   readonly fanOut?: boolean;
   readonly isSource?: boolean;
+  /** `F3.80` (ADR 0101 d4) — units only: the unit gates the flow whatever its symbol. */
+  readonly isSwitching?: boolean;
   readonly x?: number;
   readonly y?: number;
   readonly w?: number;
@@ -290,6 +292,7 @@ function updateNode(state: EditorState, key: string, patch: EditorNodePatch): Ed
     tone: node.kind === "panel" ? (patch.tone ?? node.tone) : null,
     fanOut: node.kind === "unit" ? (patch.fanOut ?? node.fanOut === true) : false,
     isSource: node.kind === "unit" ? (patch.isSource ?? node.isSource === true) : false,
+    isSwitching: node.kind === "unit" ? (patch.isSwitching ?? node.isSwitching) : false,
     ...box,
   };
   return commit(state, withNode(state.layout, key, () => next));
@@ -465,6 +468,10 @@ export function toWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
       }
       if (node.isSource) {
         out.isSource = true;
+      }
+      // F3.80 (ADR 0101 d4): the same rule for the switching flag.
+      if (node.isSwitching) {
+        out.isSwitching = true;
       }
       return out;
     }),

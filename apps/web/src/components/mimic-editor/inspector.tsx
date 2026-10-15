@@ -4,6 +4,7 @@ import { mimicPanelToneSchema } from "@bms/shared/contracts";
 import {
   MIMIC_SYMBOL_LIBRARIES,
   isOrgLibraryKey,
+  isSwitchingSymbol,
   libraryOfSymbol,
   mimicSymbolLibrary,
   type MimicPanelTone,
@@ -437,6 +438,17 @@ function NodeFields({
             />
             Energy source
           </label>
+          {/* F3.80 (ADR 0101 d4): a breaker symbol always switches, so its toggle is locked on. */}
+          <label className="flex items-center gap-2 text-xs text-ink-muted">
+            <input
+              type="checkbox"
+              checked={node.isSwitching || isSwitchingSymbol(node.symbol)}
+              disabled={isSwitchingSymbol(node.symbol)}
+              onChange={(event) => change({ isSwitching: event.target.checked })}
+            />
+            Switches (gates the flow)
+          </label>
+          {isSwitchingSymbol(node.symbol) ? <p className="text-xs text-ink-muted">This symbol switches</p> : null}
         </>
       ) : null}
       {node.kind === "panel" ? (

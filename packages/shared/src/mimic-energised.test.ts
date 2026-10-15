@@ -18,6 +18,13 @@ import {
   worstTrippedBeatsOpen,
   worstUnknownBeatsClosed,
   worstWithNoDownstreamSwitchIsNull,
+  aFlowingMemberPasses,
+  allMembersShutBlocks,
+  shutPlusUnknownIsUnknown,
+  twoSourcesCouplerOpenBranchBDeEnergised,
+  twoSourcesCouplerClosedBranchBEnergised,
+  aValveLineStopsAtTheShutValve,
+  worstShutBeatsFlowing,
 } from "./mimic-energised.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -90,5 +97,35 @@ describe("F3.74 — worstDownstreamSwitch (ADR 0088, plan D3, D6)", () => {
 
   it("answers null for a node with no direct downstream switch", () => {
     worstWithNoDownstreamSwitchIsNull();
+  });
+});
+
+describe("F3.80 — the flow tones in the walk (ADR 0101 d10, d11, d16)", () => {
+  it("passes energy through a flowing member", () => {
+    aFlowingMemberPasses();
+  });
+
+  it("stops energy when every member is shut", () => {
+    allMembersShutBlocks();
+  });
+
+  it("answers unknown for shut plus unknown", () => {
+    shutPlusUnknownIsUnknown();
+  });
+
+  it("two sources, coupler open: branch B de-energised, the grid side energised", () => {
+    twoSourcesCouplerOpenBranchBDeEnergised();
+  });
+
+  it("two sources, coupler closed: branch B energised", () => {
+    twoSourcesCouplerClosedBranchBEnergised();
+  });
+
+  it("a valve line is energised before the shut valve and de-energised after it", () => {
+    aValveLineStopsAtTheShutValve();
+  });
+
+  it("worstDownstreamSwitch ranks shut above flowing", () => {
+    worstShutBeatsFlowing();
   });
 });

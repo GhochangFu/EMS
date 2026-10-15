@@ -487,3 +487,43 @@ export function aPanelShowsNeitherFlag(): void {
   expect(screen.queryByRole("checkbox", { name: /Fan out/ })).toBeNull();
   expect(screen.queryByRole("checkbox", { name: /Energy source/ })).toBeNull();
 }
+
+/** F3.80 PR2 — a non-breaker unit offers the Switches toggle; toggling it reports `{ isSwitching: true }`. */
+export async function switchesToggleReportsThePatch(): Promise<void> {
+  expect(nodeOf("wtp").symbol).not.toBe("breaker");
+  const props = renderInspector("wtp");
+  const box = screen.getByRole("checkbox", { name: /Switches \(gates the flow\)/ });
+  expect(box).toBeEnabled();
+  expect(box).not.toBeChecked();
+  expect(screen.queryByText("This symbol switches")).toBeNull();
+  await userEvent.click(box);
+  expect(props.onNodeChange).toHaveBeenCalledWith("wtp", { isSwitching: true });
+}
+
+/** F3.80 PR2 — a unit with isSwitching set shows the toggle checked and enabled. */
+export function aSwitchingUnitShowsTheToggleChecked(): void {
+  const selected = { ...nodeOf("wtp"), isSwitching: true };
+  renderInspector("wtp", { selected });
+  const box = screen.getByRole("checkbox", { name: /Switches \(gates the flow\)/ });
+  expect(box).toBeChecked();
+  expect(box).toBeEnabled();
+}
+
+/** F3.80 PR2 (ADR 0101 d4) — a breaker-symbol unit shows the toggle checked, disabled, with the note. */
+export function aBreakerSymbolUnitShowsTheToggleLocked(): void {
+  const selected: EditorNode = { ...nodeOf("wtp"), symbol: "breaker", isSwitching: false };
+  renderInspector("wtp", { selected });
+  const box = screen.getByRole("checkbox", { name: /Switches \(gates the flow\)/ });
+  expect(box).toBeChecked();
+  expect(box).toBeDisabled();
+  expect(screen.getByText("This symbol switches")).toBeInTheDocument();
+}
+
+/** F3.80 PR2 — a panel shows no Switches toggle. */
+export function aPanelShowsNoSwitchesToggle(): void {
+  const panel = layout.nodes.find((n) => n.kind === "panel");
+  if (panel === undefined) throw new Error("water_train has a panel");
+  renderInspector(null, { selected: panel });
+  expect(screen.getByRole("combobox", { name: "Tone" })).toBeInTheDocument();
+  expect(screen.queryByRole("checkbox", { name: /Switches/ })).toBeNull();
+}
