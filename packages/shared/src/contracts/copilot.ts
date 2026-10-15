@@ -56,12 +56,14 @@ export const copilotUserOverrideDtoSchema = z
 /**
  * `GET`/`PUT /api/v1/admin/organizations/:orgId/copilot-access`. `enabled` is
  * the organization switch (`false` when there is no row); each role switch is
- * `true` when it has no row (plan Q2).
+ * `true` when it has no row (plan Q2). `attachmentsEnabled` is the attachment switch (`F3.87`, ADR 0099
+ * Amendment 3 A7), `false` when there is no row; it counts only while `enabled` is true.
  */
 export const copilotAccessDtoSchema = z
   .object({
     organizationId: z.string(),
     enabled: z.boolean(),
+    attachmentsEnabled: z.boolean(),
     roles: z
       .object({
         location_admin: z.boolean(),

@@ -242,6 +242,43 @@ export async function theAccessServiceWritesAndReadsBack(ctx: CopilotAccessCtx):
 }
 
 /**
+ * 6b — `F3.87` / migration `0110` (ADR 0099 Amendment 3 A7): the attachment
+ * switch round-trips under RLS. After case 6, A's row has `enabled` false and
+ * B's has it true. The global admin's write on A updates the column and keeps
+ * `enabled` false; the organization admin's write on B is an UPDATE of the
+ * existing row. `attachmentsOn` reads both switches for real: A (copilot off)
+ * is off whatever its attachment column says, B is on.
+ */
+export async function theAttachmentSwitchRoundTrips(ctx: CopilotAccessCtx): Promise<void> {
+  const accessControl = {
+    requireMasterDataUser: async (token: JwtPayload) => ({ id: ctx.actorId, role: token.role }),
+    isOrganizationLevelAdmin: async () => true,
+  } as unknown as AccessControlService;
+  const audit = { write: async () => undefined } as unknown as MasterDataAuditService;
+  const service = new CopilotAccessService(ctx.tenantDb, ctx.tenantDb, accessControl, audit);
+  const admin = { sub: ctx.actorId, email: "f385-admin@example.test", role: "admin" } as JwtPayload;
+  const orgAdmin = { sub: ctx.actorId, email: "f387-org-admin@example.test", role: "organization_admin" } as JwtPayload;
+
+  const onA = await service.put(admin, ctx.orgA, { attachmentsEnabled: true });
+  expect(onA).toMatchObject({ enabled: false, attachmentsEnabled: true });
+  const onB = await service.put(orgAdmin, ctx.orgB, { attachmentsEnabled: true });
+  expect(onB).toMatchObject({ enabled: true, attachmentsEnabled: true });
+
+  const { rows } = await ctx.fleetPool.query<{ organization_id: string; enabled: boolean; attachments_enabled: boolean }>(
+    "SELECT organization_id, enabled, attachments_enabled FROM bms.copilot_org_settings WHERE organization_id = ANY($1) ORDER BY organization_id = $2 DESC",
+    [[ctx.orgA, ctx.orgB], ctx.orgA],
+  );
+  expect(rows).toEqual([
+    { organization_id: ctx.orgA, enabled: false, attachments_enabled: true },
+    { organization_id: ctx.orgB, enabled: true, attachments_enabled: true },
+  ]);
+
+  const availability = new CopilotAvailabilityService(ctx.tenantDb);
+  expect(await availability.attachmentsOn(ctx.orgA), "A's copilot is off").toBe(false);
+  expect(await availability.attachmentsOn(ctx.orgB)).toBe(true);
+}
+
+/**
  * 7 — deleting the organization removes its three kinds of row. The exception
  * names userB, whose home is B, so deleting A's users does not remove it; only
  * the organization cascade can. Each table holds a row before the delete.

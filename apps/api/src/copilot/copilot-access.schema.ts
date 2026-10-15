@@ -12,6 +12,7 @@ import { z } from "zod";
 export const putCopilotAccessBodySchema = z
   .object({
     enabled: z.boolean().optional(),
+    attachmentsEnabled: z.boolean().optional(),
     roles: z
       .object({
         location_admin: z.boolean().optional(),
@@ -31,13 +32,16 @@ export const putCopilotAccessBodySchema = z
   .refine(
     (body) =>
       body.enabled !== undefined ||
+      body.attachmentsEnabled !== undefined ||
       body.override !== undefined ||
       (body.roles !== undefined && Object.keys(body.roles).length > 0),
-    { message: "Send at least one setting: enabled, a role switch, or an override" },
+    { message: "Send at least one setting: enabled, attachmentsEnabled, a role switch, or an override" },
   )
   .describe(
-    "`enabled` is the organization switch (global admin only). `roles` sets the two role switches. " +
-      "`override.allow` sets a named-user exception; `null` removes it.",
+    "`enabled` is the organization switch (global admin only). `attachmentsEnabled` is the attachment " +
+      "switch (ADR 0099 Amendment 3 A7): the global admin's write creates a missing row with `enabled` false; " +
+      "an organization admin's write needs the row and answers 409 without it. `roles` sets the two role " +
+      "switches. `override.allow` sets a named-user exception; `null` removes it.",
   );
 
 export type PutCopilotAccessBody = z.infer<typeof putCopilotAccessBodySchema>;

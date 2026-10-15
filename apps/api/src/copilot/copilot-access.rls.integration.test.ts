@@ -13,6 +13,7 @@ import {
   deletingTheOrganizationCascades,
   noOtherSessionSeesAnOrganizationsRows,
   theAccessServiceWritesAndReadsBack,
+  theAttachmentSwitchRoundTrips,
   theAvailabilityServiceReadsTheRealSwitches,
 } from "./copilot-access.rls.integration.spec";
 
@@ -143,6 +144,9 @@ describe.skipIf(!connectionString)("F3.85 — the copilot availability tables (m
   });
   it("theAccessServiceWritesAndReadsBack", async () => {
     await theAccessServiceWritesAndReadsBack(ctx);
+  });
+  it("theAttachmentSwitchRoundTrips (F3.87, migration 0110)", async () => {
+    await theAttachmentSwitchRoundTrips(ctx);
   });
   it("deletingTheOrganizationCascades", async () => {
     await deletingTheOrganizationCascades(ctx);
