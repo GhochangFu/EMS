@@ -480,6 +480,42 @@ export function toWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
   };
 }
 
+/**
+ * `F3.87` PR 5 — the inverse of {@link toWriteBody}: a write body (a copilot layout card's) in
+ * the editor's shape, so the card draws it and warns on it as the editor does. The null-versus-
+ * absent trap runs the other way here: the write body types `symbol`, `roleCode` and `tone`
+ * optional (or `null`), the editor's node nullable; an absent `z` is the store's `0` and an
+ * absent flag is `false` (`MimicLayoutsService.writeGraph`).
+ */
+export function editorLayoutFromWriteBody(body: MimicLayoutWriteBody): EditorLayout {
+  return {
+    name: body.name,
+    slug: body.slug,
+    canvasW: body.canvasW,
+    canvasH: body.canvasH,
+    nodes: body.nodes.map(
+      (node): EditorNode => ({
+        key: node.key,
+        kind: node.kind,
+        symbol: node.symbol ?? null,
+        label: node.label,
+        roleCode: node.roleCode ?? null,
+        tone: node.tone ?? null,
+        x: node.x,
+        y: node.y,
+        w: node.w,
+        h: node.h,
+        z: node.z ?? 0,
+        fanOut: node.fanOut ?? false,
+        isSource: node.isSource ?? false,
+        isSwitching: node.isSwitching ?? false,
+      }),
+    ),
+    pipes: body.pipes.map((pipe) => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),
+    symbolLibraries: [...(body.symbolLibraries ?? ["core"])],
+  };
+}
+
 /** Pixels → cells, rounded (owner ruling OQ6: the copy is not pixel-identical to the preset). */
 function toCell(px: number): number {
   return Math.round(px / MIMIC_LAYOUT_BOUNDS.cell);

@@ -1,9 +1,9 @@
 import { MIMIC_PRESETS, isOrgLibraryKey, mimicSymbolLibrary, type MimicPreset } from "@bms/shared";
 import { useMemo } from "react";
 
-import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import { fromPreset } from "../../lib/mimic-editor";
 import { layoutGeometry } from "../../lib/mimic-geometry";
+import { NO_READINGS } from "../../lib/mimic-no-readings";
 import { MimicScene } from "../widgets/mimic-scene";
 
 /**
@@ -19,12 +19,6 @@ import { MimicScene } from "../widgets/mimic-scene";
  */
 
 export type PresetPreviewProps = { preset: MimicPreset };
-
-const NO_READINGS: SiteLiveReadings = {
-  nowMs: 0,
-  pointLatest: () => null,
-  assetLastSeenMs: () => null,
-};
 
 export function PresetPreview({ preset }: PresetPreviewProps) {
   const layout = useMemo(() => fromPreset(preset), [preset]);
