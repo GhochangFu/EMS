@@ -1,7 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  aFilenameThatMulterChangesIsRefused,
   aMissingSvgIsRefused,
+  aPreparedBodyRoundTripsThroughTheRouteStage,
   anAttachmentIsUsedOnlyWhenTheTurnCarriesIt,
   anOversizeSvgIsRefused,
   aRefusedSvgIsTheToolError,
@@ -15,4 +17,6 @@ describe("F3.87 PR 6a — the upload proposal (ADR 0099 Amendment 3 A3)", () => 
   it("refuses an SVG over the size limit", () => anOversizeSvgIsRefused());
   it("uses an attachment only when the turn carries it", () => anAttachmentIsUsedOnlyWhenTheTurnCarriesIt());
   it("refuses a body with no svg", () => aMissingSvgIsRefused());
+  it("round-trips a prepared body through the route stage's hash", () => aPreparedBodyRoundTripsThroughTheRouteStage());
+  it("refuses a filename multer would change", () => aFilenameThatMulterChangesIsRefused());
 });

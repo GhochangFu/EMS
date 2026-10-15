@@ -40,6 +40,9 @@ import {
   aMulterErrorBeforeTheCompareReleases,
   aHandlerErrorAfterTheCompareIsRecorded,
   theRouteStageFailsClosedWithoutAClaim,
+  aMarkedHandlerWithoutTheRouteStageIs409,
+  aJsonConfirmOfAnUploadEntryIs409BeforeTheClaim,
+  aChangedUploadGroupIs409AndReleased,
 } from "./copilot-change.interceptor.spec";
 
 // `F3.86` PR 2: no catalog entry has a `clientOnly` field until PR 4, so one fixture id has one;
@@ -110,4 +113,7 @@ describe("F3.87 PR 6a — the two-stage multipart Confirm (ADR 0099 Amendment 3 
   it("releases, and does not record, a multer error before the compare", () => aMulterErrorBeforeTheCompareReleases());
   it("records a handler error after the compare as failed", () => aHandlerErrorAfterTheCompareIsRecorded());
   it("fails closed in the route stage without a claim", () => theRouteStageFailsClosedWithoutAClaim());
+  it("refuses a marked handler without the route stage before the claim", () => aMarkedHandlerWithoutTheRouteStageIs409());
+  it("refuses a JSON Confirm of an upload entry before the claim", () => aJsonConfirmOfAnUploadEntryIs409BeforeTheClaim());
+  it("refuses and releases a changed group", () => aChangedUploadGroupIs409AndReleased());
 });

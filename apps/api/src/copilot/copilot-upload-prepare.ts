@@ -9,6 +9,7 @@ import { parseSvgSymbol, SvgSymbolRefusal } from "../mimic-symbol-libraries/svg-
 export const UPLOAD_NEEDS_ATTACHMENT_ERROR = "Attach the .svg file to your message, then propose the symbol again.";
 export const UPLOAD_TOO_LARGE_ERROR = "The SVG is larger than the symbol upload allows.";
 export const UPLOAD_NO_SVG_ERROR = "Give the symbol's SVG: the svg field is missing.";
+export const UPLOAD_BAD_FILENAME_ERROR = "Rename the SVG file without quotes or slashes, then attach it again.";
 
 /** One file a turn carries, as PR 7 will hand it to the propose step (an attached `.svg`, as text). */
 export type UploadAttachment = { readonly filename: string; readonly svgText: string };
@@ -61,7 +62,9 @@ export function prepareUpload(
   }
   const name = typeof modelBody.name === "string" && modelBody.name !== "" ? modelBody.name : null;
   const filename = mimicSymbolFilenameSchema.safeParse(attachedName ?? `${name ?? "symbol"}.svg`);
-  if (!filename.success) return { ok: false, error: "The SVG file's name cannot be stored." };
+  // A quote or a path separator does not survive the browser's multipart encoder and multer
+  // unchanged, so the Confirm would hash another name and could never apply.
+  if (!filename.success || /["/\\]/.test(filename.data)) return { ok: false, error: UPLOAD_BAD_FILENAME_ERROR };
   const body: Record<string, unknown> = {};
   for (const key of ["name", "label", "group"] as const) {
     if (typeof modelBody[key] === "string") body[key] = modelBody[key];

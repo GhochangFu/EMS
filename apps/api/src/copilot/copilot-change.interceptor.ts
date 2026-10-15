@@ -9,7 +9,7 @@ import {
   Logger,
   type NestInterceptor,
 } from "@nestjs/common";
-import { HTTP_CODE_METADATA } from "@nestjs/common/constants";
+import { HTTP_CODE_METADATA, INTERCEPTORS_METADATA } from "@nestjs/common/constants";
 import { Reflector } from "@nestjs/core";
 import { catchError, concatMap, from, type Observable, throwError } from "rxjs";
 import { ZodError } from "zod";
@@ -25,6 +25,7 @@ import { clientOnlyKeysFor } from "./copilot-client-only";
 import { CopilotPendingChangesService, type PendingChangeOutcome } from "./copilot-pending-changes.service";
 import { copilotContext, type CopilotUploadClaim } from "./copilot-request-context";
 import { CopilotTurnService } from "./copilot-turn.service";
+import { CopilotUploadChangeInterceptor } from "./copilot-upload-change.interceptor";
 import { COPILOT_UPLOAD_ROUTE } from "./copilot-upload-route";
 
 /** The header, lower-cased as Node delivers it. */
@@ -104,6 +105,13 @@ export class CopilotChangeInterceptor implements NestInterceptor {
     private readonly turns: CopilotTurnService,
   ) {}
 
+  /** `F3.87` PR 6a: the handler is marked `@CopilotUploadRoute()` and runs `CopilotUploadChangeInterceptor`. */
+  private isUploadTarget(context: ExecutionContext): boolean {
+    const handler = context.getHandler();
+    const interceptors = (Reflect.getMetadata(INTERCEPTORS_METADATA, handler) ?? []) as unknown[];
+    return this.reflector.get<boolean | undefined>(COPILOT_UPLOAD_ROUTE, handler) === true && interceptors.includes(CopilotUploadChangeInterceptor);
+  }
+
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
     if (context.getType() !== "http") return next.handle();
     const req = context.switchToHttp().getRequest<CopilotRequest>();
@@ -132,11 +140,10 @@ export class CopilotChangeInterceptor implements NestInterceptor {
     if (peeked === null) throw new ConflictException(CHANGE_REFUSED);
     // `F3.87` PR 6a (plan D12): a multipart body is an upload entry's, to a handler marked for it,
     // or it is refused here, before any claim. Multer runs after this interceptor.
-    if (
-      multipart &&
-      (catalogEntry(peeked.catalogId)?.upload === undefined ||
-        this.reflector.get<boolean | undefined>(COPILOT_UPLOAD_ROUTE, context.getHandler()) !== true)
-    ) {
+    // The handler must carry both the marker and the route stage that compares the hash: one checked
+    // fact, so a marked handler without the stage fails closed. An upload entry's Confirm is multipart.
+    const isUploadEntry = catalogEntry(peeked.catalogId)?.upload !== undefined;
+    if (multipart !== isUploadEntry || (multipart && !this.isUploadTarget(context))) {
       throw new ConflictException(CHANGE_REFUSED);
     }
     const decision = await this.availability.decide(identity, peeked.organizationId);
@@ -176,6 +183,11 @@ export class CopilotChangeInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       concatMap((body: unknown) => {
+        if (upload !== undefined && !upload.compared) {
+          // Never expected: the handler ran without the route stage's compare. Not `applied`.
+          this.logger.error(`copilot upload change ${changeId} reached its handler without a hash compare`);
+          return from(record("failed", 500, null).then(() => body));
+        }
         const id = body !== null && typeof body === "object" ? (body as { id?: unknown }).id : undefined;
         return from(record("applied", success, typeof id === "string" ? id : null).then(() => body));
       }),

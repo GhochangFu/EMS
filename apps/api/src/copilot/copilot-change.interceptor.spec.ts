@@ -8,7 +8,7 @@ import {
   PayloadTooLargeException,
 } from "@nestjs/common";
 import type { CallHandler, ExecutionContext } from "@nestjs/common";
-import { HTTP_CODE_METADATA } from "@nestjs/common/constants";
+import { HTTP_CODE_METADATA, INTERCEPTORS_METADATA } from "@nestjs/common/constants";
 import { Reflector } from "@nestjs/core";
 import { concatMap, defer, from, lastValueFrom, throwError } from "rxjs";
 import { expect, vi } from "vitest";
@@ -76,6 +76,8 @@ type Options = {
   contentType?: string;
   /** `F3.87` PR 6a: the handler carries `@CopilotUploadRoute()`. */
   uploadRoute?: boolean;
+  /** `F3.87` PR 6a: the handler declares `CopilotUploadChangeInterceptor` (default: with `uploadRoute`). */
+  routeStageDeclared?: boolean;
   /** `F3.87` PR 6a: what `next.handle()` is — the route stage over the handler (multer already ran), or a multer error. */
   routeStage?: "upload" | "multerError";
   /** `F3.87` PR 6a: the uploaded file multer would hand the route stage. */
@@ -102,6 +104,9 @@ function harness(options: Options = {}): Harness {
   const handlerFn = function create(): void {};
   if (options.httpCode !== undefined) Reflect.defineMetadata(HTTP_CODE_METADATA, options.httpCode, handlerFn);
   if (options.uploadRoute) Reflect.defineMetadata(COPILOT_UPLOAD_ROUTE, true, handlerFn);
+  if (options.routeStageDeclared ?? options.uploadRoute) {
+    Reflect.defineMetadata(INTERCEPTORS_METADATA, [class MulterMixin {}, CopilotUploadChangeInterceptor], handlerFn);
+  }
   const context = {
     getType: () => options.type ?? "http",
     switchToHttp: () => ({ getRequest: () => req }),
@@ -512,7 +517,8 @@ export async function aMatchingUploadIsAppliedAndMarked(): Promise<void> {
 
 /** A multipart Confirm to a handler without `@CopilotUploadRoute()` is refused before any claim. */
 export async function anUploadToAnUnmarkedHandlerIs409BeforeTheClaim(): Promise<void> {
-  const h = uploadHarness({ uploadRoute: false });
+  // The route stage is declared and only the marker is missing, so this case gates the marker check alone.
+  const h = uploadHarness({ uploadRoute: false, routeStageDeclared: true });
   expect(await refused(h)).toBeInstanceOf(ConflictException);
   expect(h.pending.claim).not.toHaveBeenCalled();
   expect(h.handler).not.toHaveBeenCalled();
@@ -572,4 +578,31 @@ export async function theRouteStageFailsClosedWithoutAClaim(): Promise<void> {
     await expect(stage.intercept(ctx({ "x-copilot-change": CHANGE_ID }), handle)).rejects.toBeInstanceOf(ConflictException);
   });
   expect(ran).toHaveBeenCalledTimes(1);
+}
+
+/** A handler with the marker but without the route stage: refused before any claim (review: fail closed). */
+export async function aMarkedHandlerWithoutTheRouteStageIs409(): Promise<void> {
+  const h = uploadHarness({ routeStageDeclared: false });
+  expect(await refused(h)).toBeInstanceOf(ConflictException);
+  expect(h.pending.claim).not.toHaveBeenCalled();
+  expect(h.handler).not.toHaveBeenCalled();
+}
+
+/** A JSON Confirm of an upload entry: refused before any claim, so the row stays confirmable. */
+export async function aJsonConfirmOfAnUploadEntryIs409BeforeTheClaim(): Promise<void> {
+  const h = uploadHarness({ contentType: "application/json", routeStage: undefined, body: STORED_UPLOAD });
+  expect(await refused(h)).toBeInstanceOf(ConflictException);
+  expect(h.pending.claim).not.toHaveBeenCalled();
+  expect(h.pending.record).not.toHaveBeenCalled();
+}
+
+/** A changed group field: released and refused. */
+export async function aChangedUploadGroupIs409AndReleased(): Promise<void> {
+  const stored = { ...STORED_UPLOAD, group: "electrical" };
+  await expectReleased(
+    uploadHarness({
+      body: { ...FIELDS, group: "water" },
+      stored: { path: LIBRARY_PATH, catalogId: UPLOAD_FIXTURE_ID, bodyHash: bodyHash(stored) },
+    }),
+  );
 }
