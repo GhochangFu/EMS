@@ -4,12 +4,11 @@ import { BadRequestException, ConflictException, ForbiddenException, Logger, Not
 import type pg from "pg";
 import { expect, vi } from "vitest";
 
-import { mimicLayoutDtoSchema, mimicLayoutsListResponseSchema } from "@bms/shared";
-import type { JwtPayload, MimicLayoutDto } from "@bms/shared";
+import { MIMIC_LAYOUT_STALE_MESSAGE, mimicLayoutDtoSchema, mimicLayoutsListResponseSchema } from "@bms/shared";
+import type { CreateMimicLayoutBody, JwtPayload, MimicLayoutDto, PutMimicLayoutBody } from "@bms/shared";
 
-import { MIMIC_LAYOUT_IN_USE_MESSAGE, MIMIC_LAYOUT_STALE_MESSAGE } from "./mimic-layouts.schema";
-import type { CreateMimicLayoutBody, PutMimicLayoutBody } from "./mimic-layouts.schema";
 import type { MimicLayoutsController } from "./mimic-layouts.controller";
+import { MIMIC_LAYOUT_IN_USE_MESSAGE } from "./mimic-layouts.service";
 import type { MimicLayoutsService } from "./mimic-layouts.service";
 
 /**

@@ -24,6 +24,7 @@ import {
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
+  CreateMimicLayoutBody,
   JwtPayload,
   MimicLayoutDeletedResponse,
   MimicLayoutDto,
@@ -35,22 +36,27 @@ import type {
   MimicSymbol,
   MimicSymbolLibrarySelection,
   MimicLayoutNodeKind,
+  PutMimicLayoutBody,
 } from "@bms/shared";
-import { isOrgLibraryKey, isOrgSymbolKey, libraryOfSymbol } from "@bms/shared";
+import {
+  MIMIC_LAYOUT_FLAGS_MESSAGE,
+  MIMIC_LAYOUT_STALE_MESSAGE,
+  isOrgLibraryKey,
+  isOrgSymbolKey,
+  libraryOfSymbol,
+} from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import type { BmsTx } from "../database/tenant-context";
-import {
-  MIMIC_LAYOUT_FLAGS_MESSAGE,
-  MIMIC_LAYOUT_IN_USE_MESSAGE,
-  MIMIC_LAYOUT_STALE_MESSAGE,
-} from "./mimic-layouts.schema";
-import type { CreateMimicLayoutBody, PutMimicLayoutBody } from "./mimic-layouts.schema";
 import { KNOWN_LIBRARY_CODES, splitLibraryCodes } from "./mimic-library-codes";
 import { orgSymbolsOf } from "./mimic-org-symbols";
+
+/** `DELETE` while a dashboard widget still names the layout (ADR 0081 decision 3). */
+export const MIMIC_LAYOUT_IN_USE_MESSAGE = (n: number): string =>
+  `${n} dashboard widget(s) still use this layout`;
 
 type LayoutRow = typeof mimicLayouts.$inferSelect;
 type Executor = BmsDb | BmsTx;

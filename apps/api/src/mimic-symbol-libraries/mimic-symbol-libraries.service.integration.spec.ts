@@ -11,10 +11,16 @@ import type pg from "pg";
 import { expect } from "vitest";
 
 import { mimicLayoutDtoSchema, mimicSymbolLibrariesResponseSchema } from "@bms/shared";
-import type { JwtPayload, MimicLayoutDto, MimicOrgSymbolDto, MimicOrgSymbolLibraryDto } from "@bms/shared";
+import type {
+  CreateMimicLayoutBody,
+  JwtPayload,
+  MimicLayoutDto,
+  MimicOrgSymbolDto,
+  MimicOrgSymbolLibraryDto,
+  PutMimicLayoutBody,
+} from "@bms/shared";
 
 import type { MimicNodesService } from "../dashboard-builder/mimic-nodes.service";
-import type { CreateMimicLayoutBody, PutMimicLayoutBody } from "../mimic-layouts/mimic-layouts.schema";
 import type { MimicLayoutsService } from "../mimic-layouts/mimic-layouts.service";
 import type { MimicSymbolLibrariesService } from "./mimic-symbol-libraries.service";
 import { parseSvgSymbol } from "./svg-symbol-parser";

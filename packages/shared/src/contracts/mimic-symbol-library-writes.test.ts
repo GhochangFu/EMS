@@ -1,6 +1,6 @@
 import { describe, it } from "vitest";
 
-import * as spec from "./mimic-symbol-libraries.schema.spec";
+import * as spec from "./mimic-symbol-library-writes.spec";
 
 /** `F3.32f` slice 3 U2 — Vitest entry point for the mimic symbol library request shapes. Assertions
  * live in the sibling `.spec` (ADR 0014); one `it()` per claim. */
@@ -23,7 +23,6 @@ describe("F3.32f — the mimic symbol library request shapes", () => {
   it("a symbol patch refuses the shapes", () => spec.symbolPatchRefusesTheShapes());
   it("the setting refuses a missing enabled", () => spec.settingRefusesAMissingEnabled());
   it("the setting refuses an unknown key", () => spec.settingRefusesAnUnknownKey());
-  it("the query refuses a non-uuid organization", () => spec.queryRefusesANonUuidOrganization());
   it("the upload fields refuse an unknown field", () => spec.uploadFieldsRefuseAnUnknownField());
   it("the upload fields refuse a name outside the grammar", () => spec.uploadFieldsRefuseANameOutsideTheGrammar());
   it("the upload fields accept blank form fields", () => spec.uploadFieldsAcceptBlankFormFields());

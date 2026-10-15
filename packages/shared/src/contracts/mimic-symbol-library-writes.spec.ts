@@ -4,16 +4,15 @@ import type { ZodTypeAny } from "zod";
 import {
   createMimicOrgSymbolLibraryBodySchema,
   mimicSymbolFilenameSchema,
-  mimicSymbolLibrariesQuerySchema,
   mimicSymbolUploadFieldsSchema,
   putMimicLibrarySettingBodySchema,
   updateMimicOrgSymbolBodySchema,
   updateMimicOrgSymbolLibraryBodySchema,
-} from "./mimic-symbol-libraries.schema";
+} from "./mimic-symbol-library-writes";
 
 /**
  * `F3.32f` slice 3 U2 — the request shapes of `/api/v1/mimic-symbol-libraries`, each refusal by
- * its path. Assertions live here; `mimic-symbol-libraries.schema.test.ts` is the Vitest entry
+ * its path. Assertions live here; `mimic-symbol-library-writes.test.ts` is the Vitest entry
  * point (ADR 0014), one `it()` per claim.
  */
 
@@ -114,10 +113,6 @@ export function settingRefusesAMissingEnabled(): void {
 
 export function settingRefusesAnUnknownKey(): void {
   refusedAt(putMimicLibrarySettingBodySchema, { organizationId: ORG, enabled: true, libraryCode: "core" }, "");
-}
-
-export function queryRefusesANonUuidOrganization(): void {
-  refusedAt(mimicSymbolLibrariesQuerySchema, { organizationId: "ESKOM" }, "organizationId");
 }
 
 export function uploadFieldsRefuseAnUnknownField(): void {

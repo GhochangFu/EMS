@@ -2,11 +2,9 @@ import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type pg from "pg";
 import { expect } from "vitest";
 
-import { mimicLayoutDtoSchema } from "@bms/shared";
-import type { JwtPayload, MimicLayoutDto } from "@bms/shared";
+import { MIMIC_LAYOUT_FLAGS_MESSAGE, mimicLayoutDtoSchema } from "@bms/shared";
+import type { CreateMimicLayoutBody, JwtPayload, MimicLayoutDto, PutMimicLayoutBody } from "@bms/shared";
 
-import { MIMIC_LAYOUT_FLAGS_MESSAGE } from "./mimic-layouts.schema";
-import type { CreateMimicLayoutBody, PutMimicLayoutBody } from "./mimic-layouts.schema";
 import { MimicLayoutsService } from "./mimic-layouts.service";
 
 /**

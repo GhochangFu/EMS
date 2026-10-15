@@ -11,12 +11,12 @@ import {
 } from "@nestjs/common";
 import { ZodError } from "zod";
 
+import { createMimicLayoutBodySchema, putMimicLayoutBodySchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { idParamSchema } from "../admin/admin.schema";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { createMimicLayoutBodySchema, putMimicLayoutBodySchema } from "./mimic-layouts.schema";
 import { MimicLayoutsService } from "./mimic-layouts.service";
 
 /** A body refused by Zod is the caller's 400, with the flattened issues. */

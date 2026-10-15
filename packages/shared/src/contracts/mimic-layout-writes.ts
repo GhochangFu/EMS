@@ -1,23 +1,23 @@
 import { z } from "zod";
 
+import { isOrgLibraryKey, libraryOfSymbol, mimicSymbolLibrary } from "../mimic-symbol-libraries";
 import {
   MIMIC_LAYOUT_BOUNDS,
   MIMIC_LAYOUT_NODE_KEY,
   MIMIC_LAYOUT_SLUG,
-  MIMIC_LAYOUT_STALE_MESSAGE,
-  isOrgLibraryKey,
   mimicLayoutNodeKindSchema,
-  libraryOfSymbol,
   mimicPanelToneSchema,
-  mimicSymbolLibrary,
   mimicSymbolLibrarySelectionSchema,
   mimicSymbolSchema,
-} from "@bms/shared";
+} from "./mimic-layouts";
 
 /**
  * `F3.32c` / ADR 0081 decisions 1–3 — the `POST` and `PUT
- * /api/v1/mimic-layouts` bodies (plan U2). The vocabularies and the bounds are
- * imported from `@bms/shared`, never restated (ADR 0030); migration `0088`'s
+ * /api/v1/mimic-layouts` bodies (plan U2). `F3.87` PR 1 (ADR 0101 decision 17,
+ * ADR 0030) moved them here from `apps/api/src/mimic-layouts/mimic-layouts.schema.ts`
+ * unchanged, so the web editor and the copilot catalog state a write body from
+ * the schema that enforces it. The vocabularies and the bounds are imported
+ * from `./mimic-layouts`, never restated; migration `0088`'s
  * CHECKs restate the same literals and `tests/f3.32c-mimic-layouts-schema.test.ts`
  * compares them.
  *
@@ -29,14 +29,6 @@ import {
  * before any row is written, so a bad body answers 400 with a path rather than
  * a constraint name.
  */
-
-/** A `PUT` names a version the layout no longer has (ADR 0081 decision 2). Defined in
- * `@bms/shared` because the web editor matches it; re-exported so API imports stay here. */
-export { MIMIC_LAYOUT_STALE_MESSAGE };
-
-/** `DELETE` while a dashboard widget still names the layout (ADR 0081 decision 3). */
-export const MIMIC_LAYOUT_IN_USE_MESSAGE = (n: number): string =>
-  `${n} dashboard widget(s) still use this layout`;
 
 /**
  * `F3.74` (plan D3b) / `F3.80` (ADR 0101) — the database refused a fan-out, source or switching
