@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type * as BreakerDemoSeed from "../packages/db/dist/breaker-demo-seed.js";
+import type * as NetworkDemoSeed from "../packages/db/dist/network-demo-seed.js";
 import type * as SeedTenant from "../packages/db/dist/seed-tenant.js";
 import {
   openIntegrationPool,
@@ -17,6 +18,9 @@ const require_ = createRequire(import.meta.url);
 const { BREAKER_DEMO_DASHBOARD_SLUG, seedBreakerDemo } = require_(
   "../packages/db/dist/breaker-demo-seed.js",
 ) as typeof BreakerDemoSeed;
+const { NETWORK_DEMO_ASSETS } = require_(
+  "../packages/db/dist/network-demo-seed.js",
+) as typeof NetworkDemoSeed;
 const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typeof SeedTenant;
 
 /**
@@ -213,8 +217,9 @@ describe.skipIf(!ownerUrl)("F3.74 D11 — the breaker demo seed at RSMOC-WC", { 
     const res = await probePool!.query<{ code: string }>(
       `SELECT a.code FROM bms.asset_points ap JOIN bms.assets a ON a.id = ap.asset_id
         WHERE a.location_id = $1 AND ap.point_key = 'breaker_trip' AND ap.active = true
+          AND NOT (a.code = ANY($2::varchar[]))
         ORDER BY a.code`,
-      [rsmocWcId],
+      [rsmocWcId, NETWORK_DEMO_ASSETS.map((asset) => asset.code)],
     );
     expect(res.rows.map((row) => row.code).sort()).toEqual([...BREAKERS].sort());
   });

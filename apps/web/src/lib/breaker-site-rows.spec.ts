@@ -91,14 +91,14 @@ function readingsOf(value: number): SiteLiveReadings {
 
 /** `valve_open` 1 with no alarm: the row is `normal`, as a CLOSED breaker's is. */
 export function aFlowingRowIsNormal(): void {
-  const [row] = breakerSiteRows(response([valveRow(1, "NW-FL-CV", null, null)]), readingsOf(1));
+  const [row] = breakerSiteRows(response([valveRow(1, "ND-FL-CV", null, null)]), readingsOf(1));
   expect(row?.status).toBe("normal");
 }
 
 /** `valve_open` 0: the row is `open` and its Trip Cause cell is the stored cause, not the alarm. */
 export function aShutRowIsOpenWithTheTripCause(): void {
   const [row] = breakerSiteRows(
-    response([valveRow(2, "NW-FL-ISO-V1", WARNING, "Isolated for maintenance")]),
+    response([valveRow(2, "ND-FL-ISO-V1", WARNING, "Isolated for maintenance")]),
     readingsOf(0),
   );
   expect(row?.status).toBe("open");

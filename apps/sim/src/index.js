@@ -190,6 +190,70 @@ function crProfile(code) {
   return profiles[code] ?? null;
 }
 
+/**
+ * F3.80 (OQ4) — the ESKOM network demo's held electrical states. The bus coupler and
+ * the DG breaker are held OPEN (bus B is dead), `ND-LT-A-F2` is TRIPPED, the rest
+ * are closed. Every electrical ND- asset is held here, none walks free: a free
+ * walk drifts past the ladder's 237 V / 239.5 V rules and opens `breaker_main`
+ * at random. The passive `ND-TR-A` and `ND-LT-A` are held closed with no `trip`
+ * key (they have no `breaker_trip` point). Bus B's `ND-HT-ISO-B` and
+ * `ND-LT-B-F1` are closed but carry no load (kw 0: the walk draws bus B dead).
+ *
+ * The kW is at the control-room scale (`CR-UTILITY-11KV` is 4.8 kW) and falls
+ * along branch A's series path, grid → outgoing → transformer → LT panel ≥ its
+ * feeders. The site total sums every asset's kW, so the series units count more
+ * than once: the demo adds about 11.4 kW to RSMOC Western Cape (2.4 + 2.35 +
+ * 2.3 + 2.2 + 2.1), beside the CR- profiles' ~40 kW.
+ */
+const NETWORK_BREAKER_PROFILES = {
+  "ND-HT-GRID-CB": { kw: 2.4, current: 7.5, breaker: 1, trip: 0 },
+  "ND-HT-COUPLER": { kw: 0, current: 0, breaker: 0, trip: 0 },
+  "ND-HT-DG-CB": { kw: 0, current: 0, breaker: 0, trip: 0 },
+  "ND-HT-OUT-CB": { kw: 2.35, current: 7.3, breaker: 1, trip: 0 },
+  "ND-TR-A": { kw: 2.3, current: 7.2, breaker: 1 },
+  "ND-LT-A": { kw: 2.2, current: 6.9, breaker: 1 },
+  "ND-LT-A-F1": { kw: 2.1, current: 6.6, breaker: 1, trip: 0 },
+  "ND-LT-A-F2": { kw: 0, current: 0, breaker: 0, trip: 1 },
+  "ND-HT-ISO-B": { kw: 0, current: 0, breaker: 1, trip: 0 },
+  "ND-LT-B-F1": { kw: 0, current: 0, breaker: 1, trip: 0 },
+};
+
+/**
+ * One held point per code: `dgOnLoad` (dg_on_load), `valve` (valve_open), `damper`
+ * (damper_open) or `pumpStatus` (pump_status — the flow layout's source unit, so it
+ * reads live; without it the pump fell through to `stepWater`, which emits nothing
+ * for a non-WTR- code).
+ */
+const NETWORK_FLOW_PROFILES = {
+  "ND-FL-PUMP": { pumpStatus: 1 },
+  "ND-DG-1": { dgOnLoad: 0 },
+  "ND-FL-ISO-V1": { valve: 0 },
+  "ND-FL-CV": { valve: 1 },
+  "ND-FL-DAMPER": { damper: 1 },
+};
+
+function networkProfile(code) {
+  return NETWORK_BREAKER_PROFILES[code] ?? null;
+}
+
+function stepNetworkFlow(assetId, code) {
+  const profile = NETWORK_FLOW_PROFILES[code];
+  const t = new Date();
+  if (!profile) {
+    return [];
+  }
+  if (profile.valve !== undefined) {
+    return [{ assetId, pointKey: "valve_open", value: profile.valve, unit: null, time: t }];
+  }
+  if (profile.damper !== undefined) {
+    return [{ assetId, pointKey: "damper_open", value: profile.damper, unit: null, time: t }];
+  }
+  if (profile.pumpStatus !== undefined) {
+    return [{ assetId, pointKey: "pump_status", value: profile.pumpStatus, unit: null, time: t }];
+  }
+  return [{ assetId, pointKey: "dg_on_load", value: profile.dgOnLoad, unit: null, time: t }];
+}
+
 function ensureHvacState(assetId) {
   let s = hvacState.get(assetId);
   if (!s) {
@@ -365,7 +429,7 @@ function stepWater(assetId, code) {
 
 function stepElectrical(assetId, code = "") {
   const s = ensureElecState(assetId);
-  const profile = crProfile(code);
+  const profile = crProfile(code) ?? networkProfile(code);
   s.v = rndWalk(profile ? 230 : s.v, 0.4, 220, 240);
   s.i = profile
     ? rndWalk(profile.current, 0.3, Math.max(0, profile.current - 1.5), profile.current + 1.5)
@@ -374,6 +438,11 @@ function stepElectrical(assetId, code = "") {
   s.kw = profile ? rndWalk(profile.kw, 0.05, Math.max(0, profile.kw - 0.3), profile.kw + 0.3) : (s.v * s.i * s.pf) / 1000;
   // A tripped or open breaker carries no load: exactly 0, not the walk's noise around 0 (F3.74).
   if (profile && (profile.trip === 1 || profile.breaker === 0)) {
+    s.kw = 0;
+    s.i = 0;
+  }
+  // So does a closed one held at kw 0 (F3.80: bus B is dead).
+  if (profile && profile.kw === 0) {
     s.kw = 0;
     s.i = 0;
   }
@@ -578,8 +647,9 @@ async function tick(rows) {
     const outRows = [];
     const readings = [];
     for (const row of rows) {
-      const batch =
-        row.domain === "it"
+      const batch = NETWORK_FLOW_PROFILES[row.code]
+        ? stepNetworkFlow(row.id, row.code)
+        : row.domain === "it"
           ? stepIt(row.id, row.code)
           : row.domain === "hvac"
             ? stepHvac(row.id)
