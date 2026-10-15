@@ -37,7 +37,7 @@ export const TELEMETRY_POINT_REF_SEP = "::";
  */
 export const CATALOG_CODE_PATTERN = /^[A-Za-z0-9_-]+$/;
 
-/** The one refusal sentence every site above shows, in the `asset-roles.schema.ts` style. */
+/** The one refusal sentence every site above shows, in the `asset-role-writes.ts` style. */
 export const CATALOG_CODE_MESSAGE = "letters, digits, '_' and '-' only — like TX_01 or kwh_total";
 
 /** Electrical domain point keys written by `apps/sim` (keep in sync with simulator). */
