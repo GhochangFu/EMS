@@ -232,9 +232,11 @@ function storeHarness(initial: OrgRow | null) {
     }),
     update: (table: unknown) => ({
       set: (values: Record<string, unknown>) => ({
-        where: () => ({
+        where: (predicate: unknown) => ({
           returning: async () => {
             if (!isOrg(table)) throw new Error("only the organization switch is updated here");
+            // An UPDATE with no predicate would reach every row the role can see.
+            if (predicate === undefined) throw new Error("the organization admin's UPDATE names its row");
             store.writes.push("update:org");
             if (!store.row) return [];
             store.row = { ...store.row, ...columnsOf(values) };

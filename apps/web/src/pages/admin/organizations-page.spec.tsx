@@ -513,17 +513,22 @@ export async function theGlobalAdminSwitchesARowsAttachmentsOn(): Promise<void> 
   expect((screen.getByLabelText("Copilot for Rupee organization") as HTMLInputElement).checked).toBe(false);
 }
 
-/** A refused attachment save shows the server's sentence on the row, as the copilot switch does. */
+/**
+ * A refused attachment save shows the server's sentence on the row, as the
+ * copilot switch does. This gates the error display only: the global admin's
+ * upsert never gets the organization admin's 409, so the stub uses a 403
+ * sentence the service does send (COPILOT_ACCESS_SCOPE_MESSAGE).
+ */
 export async function aRefusedAttachmentSwitchShowsTheSentence(): Promise<void> {
   stubApi();
   vi.mocked(copilotApi.putCopilotAccess).mockRejectedValue(
-    new ApiError('{"statusCode":409,"message":"Turn the copilot on for this organization first","error":"Conflict"}', 409),
+    new ApiError('{"statusCode":403,"message":"Organization is outside your access scope","error":"Forbidden"}', 403),
   );
   renderPageAs("admin");
   const toggle = (await screen.findByLabelText("Copilot attachments for Rupee organization")) as HTMLInputElement;
   await waitFor(() => expect(toggle.disabled).toBe(false));
   await userEvent.click(toggle);
-  const banner = await screen.findByText("Turn the copilot on for this organization first");
+  const banner = await screen.findByText("Organization is outside your access scope");
   expect(banner.textContent).not.toContain('{"');
   expect(toggle.checked).toBe(false);
 }

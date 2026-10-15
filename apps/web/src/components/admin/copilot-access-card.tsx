@@ -99,7 +99,10 @@ export function CopilotAccessCard({ orgId, user }: CopilotAccessCardProps) {
             <input
               type="checkbox"
               checked={access.attachmentsEnabled}
-              disabled={!access.enabled || busy}
+              // Off is always reachable: the global admin may turn attachments on
+              // while the copilot is off (ruling Q3), and the organization admin
+              // must still be able to turn them off before the copilot comes on.
+              disabled={busy || (!access.enabled && !access.attachmentsEnabled)}
               onChange={(event) => saveMutation.mutate({ attachmentsEnabled: event.target.checked })}
             />
             Attachments on copilot turns

@@ -213,6 +213,25 @@ export async function theAttachmentSwitchIsDisabledWhileTheCopilotIsOff(): Promi
   expect((screen.getByLabelText("Copilot on for this organization") as HTMLInputElement).disabled).toBe(false);
 }
 
+/**
+ * Ruling Q3 lets the global admin store attachments on while the copilot is
+ * off. The organization admin can still turn them off then; turning them on
+ * stays disabled.
+ */
+export async function anAttachmentSwitchLeftOnCanBeTurnedOffWhileTheCopilotIsOff(): Promise<void> {
+  renderCard("organization_admin", { ...ACCESS, enabled: false, attachmentsEnabled: true });
+  vi.mocked(copilotApi.putCopilotAccess).mockResolvedValue({ ...ACCESS, enabled: false, attachmentsEnabled: false });
+  const attachments = (await screen.findByLabelText(ATTACHMENTS_LABEL)) as HTMLInputElement;
+  expect(attachments.checked).toBe(true);
+  expect(attachments.disabled).toBe(false);
+  await userEvent.click(attachments);
+  await waitFor(() =>
+    expect(copilotApi.putCopilotAccess).toHaveBeenCalledWith(ORG_ID, { attachmentsEnabled: false }),
+  );
+  await waitFor(() => expect(attachments.checked).toBe(false));
+  await waitFor(() => expect(attachments.disabled).toBe(true));
+}
+
 /** Plan D3: an organization admin's write the server answers 409 shows that sentence. */
 export async function anAttachmentConflictShowsTheServersSentence(): Promise<void> {
   renderCard("organization_admin", { ...ACCESS, enabled: true });

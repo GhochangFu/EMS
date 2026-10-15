@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import {
   aRefusalShowsTheServersSentence,
   anAttachmentConflictShowsTheServersSentence,
+  anAttachmentSwitchLeftOnCanBeTurnedOffWhileTheCopilotIsOff,
   theAttachmentSwitchIsDisabledWhileTheCopilotIsOff,
   theOrganizationAdminSetsTheAttachmentSwitch,
   aRoleSwitchSendsOnlyThatRole,
@@ -35,6 +36,8 @@ describe("F3.85 Copilot access card", () => {
     theOrganizationAdminSetsTheAttachmentSwitch());
   it("disables the attachment switch while the copilot is off (F3.87)", () =>
     theAttachmentSwitchIsDisabledWhileTheCopilotIsOff());
+  it("lets a switch left on be turned off while the copilot is off (F3.87)", () =>
+    anAttachmentSwitchLeftOnCanBeTurnedOffWhileTheCopilotIsOff());
   it("shows the server's sentence on an attachment conflict (F3.87)", () =>
     anAttachmentConflictShowsTheServersSentence());
 });

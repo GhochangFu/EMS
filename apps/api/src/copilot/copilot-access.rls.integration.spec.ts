@@ -259,10 +259,19 @@ export async function theAttachmentSwitchRoundTrips(ctx: CopilotAccessCtx): Prom
   const admin = { sub: ctx.actorId, email: "f385-admin@example.test", role: "admin" } as JwtPayload;
   const orgAdmin = { sub: ctx.actorId, email: "f387-org-admin@example.test", role: "organization_admin" } as JwtPayload;
 
-  const onA = await service.put(admin, ctx.orgA, { attachmentsEnabled: true });
-  expect(onA).toMatchObject({ enabled: false, attachmentsEnabled: true });
+  // The organization admin writes B first, while A's switch is still off, so a
+  // write that reached past B's row would show on A. FORCE + the tenant policy
+  // also bound the UPDATE to B, so this is the second of two gates, not the only one.
   const onB = await service.put(orgAdmin, ctx.orgB, { attachmentsEnabled: true });
   expect(onB).toMatchObject({ enabled: true, attachmentsEnabled: true });
+  const { rows: afterB } = await ctx.fleetPool.query<{ attachments_enabled: boolean }>(
+    "SELECT attachments_enabled FROM bms.copilot_org_settings WHERE organization_id = $1",
+    [ctx.orgA],
+  );
+  expect(afterB, "B's write leaves A's switch off").toEqual([{ attachments_enabled: false }]);
+
+  const onA = await service.put(admin, ctx.orgA, { attachmentsEnabled: true });
+  expect(onA).toMatchObject({ enabled: false, attachmentsEnabled: true });
 
   const { rows } = await ctx.fleetPool.query<{ organization_id: string; enabled: boolean; attachments_enabled: boolean }>(
     "SELECT organization_id, enabled, attachments_enabled FROM bms.copilot_org_settings WHERE organization_id = ANY($1) ORDER BY organization_id = $2 DESC",
