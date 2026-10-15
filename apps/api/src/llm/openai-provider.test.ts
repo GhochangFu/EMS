@@ -24,7 +24,9 @@ vi.mock("openai", () => ({
 
 import {
   assertAMissingChoiceIsAProviderError,
+  assertAStringUserContentIsSentAsAString,
   assertFunctionToolCallsBecomeToolCalls,
+  assertImageAndPdfPartsAreNativeParts,
   assertNoToolCallsIsFinalText,
   assertOpenAiPinsItsBaseUrlAndNoOrgHeaders,
   assertOpenRouterUsesTheOpenRouterBaseUrlAndTheGivenKey,
@@ -70,5 +72,13 @@ describe("OpenAI-compatible provider (F3.21, ADR 0090 Amendment 1 A1)", () => {
 
   it("reads no environment variable", async () => {
     await assertTheAdapterReadsNoEnv(capture);
+  });
+
+  it("sends an image as an image_url part and a PDF as a file part (F3.87 A5)", async () => {
+    await assertImageAndPdfPartsAreNativeParts(capture);
+  });
+
+  it("sends a string user content as a string", async () => {
+    await assertAStringUserContentIsSentAsAString(capture);
   });
 });

@@ -1,10 +1,12 @@
 import type {
+  ChatCompletionContentPart,
   ChatCompletionFunctionTool,
   ChatCompletionMessageParam,
 } from "openai/resources/chat/completions";
 
 import {
   LlmProviderError,
+  type LlmContentPart,
   type LlmMessage,
   type LlmReply,
   type LlmToolDefinition,
@@ -98,5 +100,32 @@ function toOpenAiMessage(message: LlmMessage): ChatCompletionMessageParam {
       })),
     };
   }
+  if (message.role === "user") {
+    return {
+      role: "user",
+      content: typeof message.content === "string" ? message.content : message.content.map(toOpenAiPart),
+    };
+  }
   return { role: message.role, content: message.content };
+}
+
+/**
+ * ADR 0099 Amendment 3 A5: an image goes as an `image_url` part with a data
+ * URL, a PDF as the Chat Completions `file` part with `file_data` as a data
+ * URL. OpenRouter documents the same `file` shape for PDFs (live check owed,
+ * F3.87 plan §12).
+ */
+function toOpenAiPart(part: LlmContentPart): ChatCompletionContentPart {
+  switch (part.type) {
+    case "text":
+      return { type: "text", text: part.text };
+    case "image":
+      return { type: "image_url", image_url: { url: dataUrl(part.mediaType, part.data) } };
+    case "document":
+      return { type: "file", file: { filename: part.filename, file_data: dataUrl(part.mediaType, part.data) } };
+  }
+}
+
+function dataUrl(mediaType: string, data: Buffer): string {
+  return `data:${mediaType};base64,${data.toString("base64")}`;
 }

@@ -150,6 +150,47 @@ export async function assertOpenAiPinsItsBaseUrlAndNoOrgHeaders(capture: OpenAiC
   assert(options.organization === null && options.project === null, "no OPENAI_ORG_ID or OPENAI_PROJECT_ID header can ride along");
 }
 
+/** Three bytes whose base64 is fixed, so the data URL is asserted exactly. */
+const BYTES = Buffer.from([0x89, 0x50, 0x4e]);
+const BYTES_BASE64 = "iVBO";
+
+export async function assertImageAndPdfPartsAreNativeParts(capture: OpenAiCapture): Promise<void> {
+  reset(capture, finalReply);
+  await provider().complete({
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "draw the mimic" },
+          { type: "image", mediaType: "image/png", data: BYTES },
+          { type: "document", mediaType: "application/pdf", data: BYTES, filename: "sld.pdf" },
+        ],
+      },
+    ],
+    tools: [],
+    signal: new AbortController().signal,
+  });
+  assert(BYTES.toString("base64") === BYTES_BASE64, "the fixture's base64 is the pinned one");
+  const messages = capture.requests[0]?.body.messages as { role: string; content: unknown }[];
+  assert(messages.length === 1 && messages[0].role === "user", "the parts go in one user message");
+  assert(
+    JSON.stringify(messages[0].content) ===
+      JSON.stringify([
+        { type: "text", text: "draw the mimic" },
+        { type: "image_url", image_url: { url: `data:image/png;base64,${BYTES_BASE64}` } },
+        { type: "file", file: { filename: "sld.pdf", file_data: `data:application/pdf;base64,${BYTES_BASE64}` } },
+      ]),
+    "a text part, an image_url part with a PNG data URL, and a file part with a PDF data URL",
+  );
+}
+
+export async function assertAStringUserContentIsSentAsAString(capture: OpenAiCapture): Promise<void> {
+  reset(capture, finalReply);
+  await provider().complete({ messages: [{ role: "user", content: "hi" }], tools: [], signal: new AbortController().signal });
+  const messages = capture.requests[0]?.body.messages as { role: string; content: unknown }[];
+  assert(messages[0].role === "user" && messages[0].content === "hi", "a string content goes out as the same string");
+}
+
 export async function assertTheAdapterReadsNoEnv(capture: OpenAiCapture): Promise<void> {
   reset(capture, finalReply);
   const saved = { key: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL };

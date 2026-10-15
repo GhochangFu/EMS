@@ -1,13 +1,17 @@
 import type {
   BetaContentBlock,
   BetaContentBlockParam,
+  BetaImageBlockParam,
   BetaMessageParam,
+  BetaRequestDocumentBlock,
+  BetaTextBlockParam,
   BetaTool,
   BetaToolResultBlockParam,
 } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 
 import {
   LlmProviderError,
+  type LlmContentPart,
   type LlmMessage,
   type LlmReply,
   type LlmToolCall,
@@ -148,10 +152,32 @@ export function toAnthropicMessages(messages: readonly LlmMessage[]): BetaMessag
       out.push({ role: "assistant", content });
       continue;
     }
+    if (message.role === "user") {
+      out.push({
+        role: "user",
+        content: typeof message.content === "string" ? message.content : message.content.map(toAnthropicBlock),
+      });
+      continue;
+    }
     out.push({ role: message.role, content: message.content });
   }
   flush();
   return out;
+}
+
+/** ADR 0099 Amendment 3 A5: an image as a base64 `image` block, a PDF as a base64 `document` block. */
+function toAnthropicBlock(part: LlmContentPart): BetaTextBlockParam | BetaImageBlockParam | BetaRequestDocumentBlock {
+  switch (part.type) {
+    case "text":
+      return { type: "text", text: part.text };
+    case "image":
+      return { type: "image", source: { type: "base64", media_type: part.mediaType, data: part.data.toString("base64") } };
+    case "document":
+      return {
+        type: "document",
+        source: { type: "base64", media_type: part.mediaType, data: part.data.toString("base64") },
+      };
+  }
 }
 
 /** Only reached for a tool-call message that did not come from this adapter. */

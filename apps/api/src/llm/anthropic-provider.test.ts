@@ -24,7 +24,9 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 import {
   assertARefusalIsAProviderError,
+  assertAStringUserContentIsSentAsAString,
   assertConsecutiveToolResultsAreOneUserMessage,
+  assertImageAndPdfPartsAreNativeBlocks,
   assertMaxTokensIsAProviderError,
   assertProviderContentIsEchoedBackUnchanged,
   assertTextOnlyIsFinal,
@@ -60,5 +62,13 @@ describe("Anthropic provider (F3.21, ADR 0090 Amendment 1 A1)", () => {
 
   it("maps text only to a final reply", async () => {
     await assertTextOnlyIsFinal(capture);
+  });
+
+  it("sends an image as an image block and a PDF as a document block (F3.87 A5)", async () => {
+    await assertImageAndPdfPartsAreNativeBlocks(capture);
+  });
+
+  it("sends a string user content as a string", async () => {
+    await assertAStringUserContentIsSentAsAString(capture);
   });
 });
