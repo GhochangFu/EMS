@@ -191,24 +191,41 @@ function crProfile(code) {
 }
 
 /**
- * F3.80 (OQ4) — the ESKOM network demo's held breaker states. The bus coupler and
+ * F3.80 (OQ4) — the ESKOM network demo's held electrical states. The bus coupler and
  * the DG breaker are held OPEN (bus B is dead), `NW-LT-A-F2` is TRIPPED, the rest
- * are closed. `NW-TR-A`, `NW-LT-A` and `NW-FL-PUMP` are passive: no profile here,
- * they fall through to their domain step.
+ * are closed. Every electrical NW- asset is held here, none walks free: a free
+ * walk drifts past the ladder's 237 V / 239.5 V rules and opens `breaker_main`
+ * at random. The passive `NW-TR-A` and `NW-LT-A` are held closed with no `trip`
+ * key (they have no `breaker_trip` point). Bus B's `NW-HT-ISO-B` and
+ * `NW-LT-B-F1` are closed but carry no load (kw 0: the walk draws bus B dead).
+ *
+ * The kW is at the control-room scale (`CR-UTILITY-11KV` is 4.8 kW) and falls
+ * along branch A's series path, grid → outgoing → transformer → LT panel ≥ its
+ * feeders. The site total sums every asset's kW, so the series units count more
+ * than once: the demo adds about 11.4 kW to RSMOC Western Cape (2.4 + 2.35 +
+ * 2.3 + 2.2 + 2.1), beside the CR- profiles' ~40 kW.
  */
 const NETWORK_BREAKER_PROFILES = {
-  "NW-HT-GRID-CB": { kw: 52, current: 85, breaker: 1, trip: 0 },
+  "NW-HT-GRID-CB": { kw: 2.4, current: 7.5, breaker: 1, trip: 0 },
   "NW-HT-COUPLER": { kw: 0, current: 0, breaker: 0, trip: 0 },
   "NW-HT-DG-CB": { kw: 0, current: 0, breaker: 0, trip: 0 },
-  "NW-HT-OUT-CB": { kw: 48, current: 78, breaker: 1, trip: 0 },
-  "NW-LT-A-F1": { kw: 22, current: 34, breaker: 1, trip: 0 },
+  "NW-HT-OUT-CB": { kw: 2.35, current: 7.3, breaker: 1, trip: 0 },
+  "NW-TR-A": { kw: 2.3, current: 7.2, breaker: 1 },
+  "NW-LT-A": { kw: 2.2, current: 6.9, breaker: 1 },
+  "NW-LT-A-F1": { kw: 2.1, current: 6.6, breaker: 1, trip: 0 },
   "NW-LT-A-F2": { kw: 0, current: 0, breaker: 0, trip: 1 },
-  "NW-HT-ISO-B": { kw: 0.4, current: 1.2, breaker: 1, trip: 0 },
-  "NW-LT-B-F1": { kw: 0.2, current: 0.6, breaker: 1, trip: 0 },
+  "NW-HT-ISO-B": { kw: 0, current: 0, breaker: 1, trip: 0 },
+  "NW-LT-B-F1": { kw: 0, current: 0, breaker: 1, trip: 0 },
 };
 
-/** One held point per code: `dgOnLoad` (dg_on_load), `valve` (valve_open) or `damper` (damper_open). */
+/**
+ * One held point per code: `dgOnLoad` (dg_on_load), `valve` (valve_open), `damper`
+ * (damper_open) or `pumpStatus` (pump_status — the flow layout's source unit, so it
+ * reads live; without it the pump fell through to `stepWater`, which emits nothing
+ * for a non-WTR- code).
+ */
 const NETWORK_FLOW_PROFILES = {
+  "NW-FL-PUMP": { pumpStatus: 1 },
   "NW-DG-1": { dgOnLoad: 0 },
   "NW-FL-ISO-V1": { valve: 0 },
   "NW-FL-CV": { valve: 1 },
@@ -230,6 +247,9 @@ function stepNetworkFlow(assetId, code) {
   }
   if (profile.damper !== undefined) {
     return [{ assetId, pointKey: "damper_open", value: profile.damper, unit: null, time: t }];
+  }
+  if (profile.pumpStatus !== undefined) {
+    return [{ assetId, pointKey: "pump_status", value: profile.pumpStatus, unit: null, time: t }];
   }
   return [{ assetId, pointKey: "dg_on_load", value: profile.dgOnLoad, unit: null, time: t }];
 }
@@ -418,6 +438,11 @@ function stepElectrical(assetId, code = "") {
   s.kw = profile ? rndWalk(profile.kw, 0.05, Math.max(0, profile.kw - 0.3), profile.kw + 0.3) : (s.v * s.i * s.pf) / 1000;
   // A tripped or open breaker carries no load: exactly 0, not the walk's noise around 0 (F3.74).
   if (profile && (profile.trip === 1 || profile.breaker === 0)) {
+    s.kw = 0;
+    s.i = 0;
+  }
+  // So does a closed one held at kw 0 (F3.80: bus B is dead).
+  if (profile && profile.kw === 0) {
     s.kw = 0;
     s.i = 0;
   }

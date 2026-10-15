@@ -235,7 +235,11 @@ const NETWORK_DEMO_BREAKER_CODES = [
   "NW-LT-B-F1",
 ] as const;
 
-/** `[assetCode, pointKey]` — twenty state points, keyed by code. */
+/**
+ * `[assetCode, pointKey]` — twenty-one points, keyed by code. `dg_on_load` and `pump_status` have no
+ * state rows, so they are telemetry only; `pump_status` gives the flow layout's source unit a
+ * registered point the sim holds at 1.
+ */
 export const NETWORK_DEMO_STATE_POINTS: ReadonlyArray<readonly [string, string]> = [
   ...NETWORK_DEMO_BREAKER_CODES.flatMap((code) => [
     [code, "breaker_main"] as const,
@@ -245,6 +249,7 @@ export const NETWORK_DEMO_STATE_POINTS: ReadonlyArray<readonly [string, string]>
   ["NW-FL-ISO-V1", "valve_open"],
   ["NW-FL-CV", "valve_open"],
   ["NW-FL-DAMPER", "damper_open"],
+  ["NW-FL-PUMP", "pump_status"],
 ];
 
 /** The widget configs: `mimicLayoutConfigSchema` and the empty `breakerTableConfigSchema`. */

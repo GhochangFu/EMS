@@ -25,6 +25,7 @@ const EXPECTED_CODES: readonly string[] = [
   "NW-FL-DAMPER",
 ];
 
+/** The fifteen codes are unique, start with `NW-`, and are exactly {@link EXPECTED_CODES}. */
 export function assertEveryCodeIsUniqueAndStartsWithNw(): void {
   const codes = NETWORK_DEMO_ASSETS.map((a) => a.code);
   expect(codes).toHaveLength(15);
@@ -33,11 +34,13 @@ export function assertEveryCodeIsUniqueAndStartsWithNw(): void {
   expect(codes.filter((c) => !c.startsWith("NW-"))).toEqual([]);
 }
 
+/** Every demo asset sits at `CONTROL_ROOM_SITE_NAME` (RSMOC-WC, owner ruling OQ3 (a)). */
 export function assertEveryCodeSitsAtTheControlRoomSite(): void {
   expect(NETWORK_DEMO_ASSETS.length).toBeGreaterThan(0);
   expect(NETWORK_DEMO_ASSETS.filter((a) => a.siteName !== CONTROL_ROOM_SITE_NAME)).toEqual([]);
 }
 
+/** The flow units are water and HVAC; the other eleven are electrical. */
 export function assertTheDomainsAreElectricalWaterAndHvac(): void {
   const byCode = new Map(NETWORK_DEMO_ASSETS.map((a) => [a.code, a.domain]));
   expect(byCode.get("NW-FL-PUMP")).toBe("water");
@@ -48,6 +51,7 @@ export function assertTheDomainsAreElectricalWaterAndHvac(): void {
   expect(electrical).toHaveLength(11);
 }
 
+/** The ESKOM catalog ends with the network demo, right after the water plant. */
 export function assertTheCatalogCarriesThemAfterTheWaterPlant(): void {
   const catalog = eskomSeedAssetCatalog().map((a) => a.code);
   const lastWater = catalog.indexOf(DEMO_WATER_PLANT_ASSETS[DEMO_WATER_PLANT_ASSETS.length - 1].code);

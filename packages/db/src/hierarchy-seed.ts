@@ -336,8 +336,9 @@ export async function assignEskomAssetRtus(pool: pg.Pool): Promise<void> {
       -- being a fixture. Any hand-read asset is exempt, not just that one.
       AND COALESCE(a.meta->>'sourceKind', '') <> 'manual'
       -- E4.3 owner ruling R3: a water asset is wired only when its code starts
-      -- with WTR- (the demo plant, the only water codes apps/sim feeds). Any
-      -- other water asset keeps its rtu_id and its telemetrySource.
+      -- with WTR- (the demo plant). Any other water asset keeps its rtu_id and
+      -- its telemetrySource, including the F3.80 NW-FL- codes apps/sim also
+      -- feeds (it writes by asset id, not through an RTU).
       AND (a.domain <> 'water' OR a.code LIKE 'WTR-%')
   `);
 

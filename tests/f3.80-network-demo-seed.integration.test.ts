@@ -158,13 +158,14 @@ const BREAKERS = [
   "NW-LT-B-F1",
 ];
 
-/** `code=point_key`, sorted: eight breakers × two keys, then the DG, the two valves, the damper. */
+/** `code=point_key`, sorted: eight breakers × two keys, then the DG, the two valves, the damper, the pump. */
 const STATE_POINTS = [
   ...BREAKERS.flatMap((code) => [`${code}=breaker_main`, `${code}=breaker_trip`]),
   "NW-DG-1=dg_on_load",
   "NW-FL-ISO-V1=valve_open",
   "NW-FL-CV=valve_open",
   "NW-FL-DAMPER=damper_open",
+  "NW-FL-PUMP=pump_status",
 ].sort();
 
 /**
@@ -269,7 +270,7 @@ describe.skipIf(!ownerUrl)("F3.80 Task 3.2 — the network demo seed at RSMOC-WC
            WHERE g.location_id = $3 AND g.code IN ('demo-ht-lt-network', 'demo-flow-network')),
          (SELECT count(*) FROM bms.asset_points ap JOIN bms.assets a ON a.id = ap.asset_id
            WHERE a.location_id = $3 AND a.code = ANY($4::varchar[])
-             AND ap.point_key IN ('breaker_main', 'breaker_trip', 'dg_on_load', 'valve_open', 'damper_open')),
+             AND ap.point_key IN ('breaker_main', 'breaker_trip', 'dg_on_load', 'valve_open', 'damper_open', 'pump_status')),
          (SELECT count(*) FROM bms.dashboards WHERE organization_id = $1 AND slug = ANY($2::varchar[])),
          (SELECT count(*) FROM bms.dashboard_widgets w JOIN bms.dashboards d ON d.id = w.dashboard_id
            WHERE d.organization_id = $1 AND d.slug = ANY($2::varchar[]))) AS snap`,
@@ -374,7 +375,7 @@ describe.skipIf(!ownerUrl)("F3.80 Task 3.2 — the network demo seed at RSMOC-WC
       `SELECT a.code || '=' || ap.point_key AS pair
          FROM bms.asset_points ap JOIN bms.assets a ON a.id = ap.asset_id
         WHERE a.organization_id = $1 AND a.location_id = $2 AND a.code = ANY($3::varchar[])
-          AND ap.point_key IN ('breaker_main', 'breaker_trip', 'dg_on_load', 'valve_open', 'damper_open')
+          AND ap.point_key IN ('breaker_main', 'breaker_trip', 'dg_on_load', 'valve_open', 'damper_open', 'pump_status')
           AND ap.active = true AND ap.source_kind = 'unmapped' AND ap.rtu_id IS NULL`,
       [eskomOrgId, rsmocWcId, ALL_CODES],
     );
@@ -473,8 +474,8 @@ describe.skipIf(!ownerUrl)("F3.80 Task 3.2 — the network demo seed at RSMOC-WC
       await seedNetworkDemo(pool, eskomOrgId, rsmocWcId, silent);
       after = await counts(pool);
     });
-    // 23 state points: the seed's twenty and the three ruled `breaker_main` rows (RULED_BREAKER_MAIN).
-    expect({ before, after }).toEqual({ before: "2/22/22/15/23/2/3", after: "2/22/22/15/23/2/3" });
+    // 24 points: the seed's twenty-one and the three ruled `breaker_main` rows (RULED_BREAKER_MAIN).
+    expect({ before, after }).toEqual({ before: "2/22/22/15/24/2/3", after: "2/22/22/15/24/2/3" });
   });
 
   it("keeps an operator's node move and version bump over a re-seed", async () => {

@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 /**
  * `F3.80` Task 3.3 (plan §7, OQ4) — the simulator holds the ESKOM network demo:
  * the bus coupler and the DG breaker OPEN, `NW-LT-A-F2` TRIPPED, `NW-FL-ISO-V1`
- * SHUT, the control valve and the damper OPEN, `NW-DG-1` off load.
+ * SHUT, the control valve and the damper OPEN, `NW-DG-1` off load, the pump running. Bus B
+ * carries no load, and branch A's kW stays at the control-room scale (review finding).
  *
  * Reads `apps/sim/src/index.js` as text, on `tests/f3.74-sim-breaker-trip.test.ts`'s
  * precedent — `apps/sim` is not a Vitest project.
@@ -108,15 +109,50 @@ describe("F3.80 — simulator network demo", () => {
     expect(flow).toBeLessThan(body.indexOf("stepElectrical(row.id"));
   });
 
-  it("every code in NETWORK_DEMO_ASSETS has a breaker profile, a flow profile, or is in the fall-through list", () => {
+  it("the passive transformer and LT panel are held closed, with no trip key", () => {
+    for (const c of ["NW-TR-A", "NW-LT-A"]) {
+      const p = entryOf("NETWORK_BREAKER_PROFILES", c);
+      expect(p, c).toMatch(/\bbreaker:\s*1\b/);
+      expect(p, c).not.toMatch(/\btrip:/);
+    }
+  });
+
+  it("bus B carries no load: ISO-B and LT-B-F1 hold kw 0 and current 0, and stepElectrical zeroes a zero-kw profile", () => {
+    for (const c of ["NW-HT-ISO-B", "NW-LT-B-F1"]) {
+      const p = entryOf("NETWORK_BREAKER_PROFILES", c);
+      expect(p, c).toMatch(/\bkw:\s*0\b/);
+      expect(p, c).toMatch(/\bcurrent:\s*0\b/);
+      expect(p, c).toMatch(/\bbreaker:\s*1\b/);
+    }
+    expect(bodyOf("stepElectrical")).toMatch(/profile\.kw\s*===\s*0/);
+  });
+
+  it("branch A's kW falls along the series path and stays at the control-room scale", () => {
+    const kw = (c: string): number => {
+      const m = entryOf("NETWORK_BREAKER_PROFILES", c).match(/\bkw:\s*([\d.]+)/);
+      expect(m, c).not.toBeNull();
+      return Number(m![1]);
+    };
+    const chain = ["NW-HT-GRID-CB", "NW-HT-OUT-CB", "NW-TR-A", "NW-LT-A"].map(kw);
+    for (let i = 1; i < chain.length; i += 1) expect(chain[i], `step ${i}`).toBeLessThanOrEqual(chain[i - 1]);
+    expect(chain[3]).toBeGreaterThanOrEqual(kw("NW-LT-A-F1") + kw("NW-LT-A-F2"));
+    // CR-UTILITY-11KV, the site's own incomer, is held at 4.8 kW.
+    expect(chain[0]).toBeLessThanOrEqual(4.8);
+  });
+
+  it("the pump reports pump_status 1 through stepNetworkFlow", () => {
+    expect(entryOf("NETWORK_FLOW_PROFILES", "NW-FL-PUMP")).toMatch(/\bpumpStatus:\s*1\b/);
+    expect(bodyOf("stepNetworkFlow")).toMatch(/pointKey:\s*"pump_status",\s*value:\s*profile\.pumpStatus/);
+  });
+
+  it("every code in NETWORK_DEMO_ASSETS has a breaker profile or a flow profile (none falls through silent)", () => {
     const { NETWORK_DEMO_ASSETS } = require("../packages/db/dist/network-demo-seed.js") as {
       NETWORK_DEMO_ASSETS: readonly { code: string }[];
     };
-    const fallThrough = new Set(["NW-TR-A", "NW-LT-A", "NW-FL-PUMP"]);
     const breakerCodes = new Set([...constOf("NETWORK_BREAKER_PROFILES").matchAll(/"(NW-[\w-]+)":/g)].map((m) => m[1]));
     const flowCodes = new Set([...constOf("NETWORK_FLOW_PROFILES").matchAll(/"(NW-[\w-]+)":/g)].map((m) => m[1]));
     for (const a of NETWORK_DEMO_ASSETS) {
-      expect(breakerCodes.has(a.code) || flowCodes.has(a.code) || fallThrough.has(a.code), a.code).toBe(true);
+      expect(breakerCodes.has(a.code) || flowCodes.has(a.code), a.code).toBe(true);
     }
     for (const c of [...breakerCodes, ...flowCodes]) {
       expect(NETWORK_DEMO_ASSETS.some((a) => a.code === c), `${c} is a demo asset`).toBe(true);

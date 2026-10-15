@@ -44,7 +44,8 @@ import type { EskomAssetSpec } from "./eskom-assets-seed";
  * or not — and in this order it declares the distinct flow keys written here
  * (nine: the STP and the ETP both carry `influent_flow_klh`) and pins no
  * asset. The assets themselves come from `eskom-assets-seed.ts`
- * ({@link DEMO_WATER_PLANT_ASSETS}, last in the catalog), and their RTU from
+ * ({@link DEMO_WATER_PLANT_ASSETS}, just before the `F3.80` network demo at the
+ * catalog's end), and their RTU from
  * `DOMAIN_RTU_SUFFIX`'s `water: "WATER"` (ruling Q4), which
  * `assignEskomAssetRtus` applies to a water asset only when its code starts
  * with `WTR-` (ruling R3).

@@ -13,8 +13,8 @@ import { DEMO_WATER_PLANT_ASSETS } from "./water-plant-demo-seed";
  * The Eskom demo asset catalog and its upsert, split out of `seed.ts` to keep
  * it under the AGENTS.md §4.5 1000-line cap. Pure move — the catalog order is
  * load-bearing (the alarm seed keys off the first two inserted assets), so the
- * entries stay in their original sequence with the RSMOC block and then the
- * `E4.3` demo water plant last.
+ * entries stay in their original sequence with the RSMOC block, then the
+ * `E4.3` demo water plant, then the `F3.80` network demo last.
  */
 
 /** One catalog entry; `meta` defaults to the simulator marker when absent. */
