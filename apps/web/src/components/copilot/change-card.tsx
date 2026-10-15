@@ -69,7 +69,7 @@ export function ChangeCard(props: ChangeCardProps) {
             {props.rows.map((row) => (
               <tr key={row.field} data-changed={row.changed} className={row.changed ? "text-ink" : "text-ink-muted"}>
                 <th scope="row" className="truncate py-0.5 pr-2 text-left font-normal">
-                  {fieldLabel(row.field)}
+                  {row.label ?? fieldLabel(row.field)}
                 </th>
                 {hasBefore && <td className="break-words py-0.5 pr-2">{row.before ?? "—"}</td>}
                 <td className="break-words py-0.5">{row.after}</td>

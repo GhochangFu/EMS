@@ -191,3 +191,17 @@ export function anOnboardingCommitInvalidatesTheDraftList(): void {
   expect(keys).toContainEqual(["admin", "onboarding", "drafts"]);
   expect(onboardingDraftsKey(ORG)).toEqual(["admin", "onboarding", "drafts", ORG]);
 }
+
+/** `F3.87` PR 5: both layout entries re-read the layout library and, under its prefix, each layout. */
+export function theLayoutEntriesInvalidateTheLayouts(): void {
+  for (const id of ["mimicLayout.create", "mimicLayout.replace"]) {
+    expect(invalidationKeysFor(id), id).toEqual([["mimic-layouts"]]);
+  }
+}
+
+/** `F3.87` PR 5 (D14, D15): a skipped key (a `cardOnly` one) is no row; the others keep their order. */
+export function changeRowsSkipsTheNamedKeys(): void {
+  const rows = changeRows({ name: "L", baseline: { version: 1 }, slug: "l" }, null, ["baseline"]);
+  expect(rows.map((row) => row.field)).toEqual(["name", "slug"]);
+  expect(changeRows({ name: "L", baseline: 1 }, null).map((row) => row.field)).toEqual(["name", "baseline"]);
+}

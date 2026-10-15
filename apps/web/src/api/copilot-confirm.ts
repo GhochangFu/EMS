@@ -1,5 +1,5 @@
 import type { CopilotPendingChangeDto } from "@bms/shared";
-import { COPILOT_CHANGE_HEADER } from "@bms/shared/copilot";
+import { cardOnlyKeysFor, COPILOT_CHANGE_HEADER } from "@bms/shared/copilot";
 
 import { ApiError } from "../lib/api-error";
 import { clearSessionOnAuthFailure, withAuth } from "./http";
@@ -7,6 +7,11 @@ import { clearSessionOnAuthFailure, withAuth } from "./http";
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 /** An API path on the API's own origin: `/api/v1/` then no second slash, backslash or `@` that could move the host. */
 const API_PATH = /^\/api\/v1\/[^/\\@][^\\@]*$/;
+
+/** `body` without `keys`: a filtered copy, so the stored change is never touched. */
+function withoutKeys(body: Readonly<Record<string, unknown>>, keys: readonly string[]): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(body).filter(([key]) => !keys.includes(key)));
+}
 
 /**
  * `F3.85` PR 4 / ADR 0099 decision 4.5 — sends a confirmed copilot change as
@@ -27,6 +32,11 @@ const API_PATH = /^\/api\/v1\/[^/\\@][^\\@]*$/;
  * only — never to `change.body`, the store or any log — and the server's
  * hash leaves them out.
  *
+ * `F3.87` PR 5 (D15): the entry's `cardOnly` keys (a layout replace's
+ * `baseline`) were stored for the card alone; they are stripped before the
+ * send, because the route's strict body would refuse them, and the server's
+ * hash leaves them out too (`hashExcludedKeysFor`, one rule both sides).
+ *
  * Returns the parsed response, or `null` for a `204`. The response shape
  * belongs to the catalog entry, so it stays `unknown` here; the caller that
  * knows the entry parses it.
@@ -41,7 +51,7 @@ export async function confirmCopilotChange(
   const sent = withAuth({
     method: change.method,
     headers: { "Content-Type": "application/json", [COPILOT_CHANGE_HEADER]: change.id },
-    body: JSON.stringify({ ...change.body, ...clientOnly }),
+    body: JSON.stringify({ ...withoutKeys(change.body, cardOnlyKeysFor(change.catalogId)), ...clientOnly }),
   });
   const res = await fetch(`${base}${change.path}`, sent);
   if (!res.ok) {

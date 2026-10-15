@@ -115,3 +115,36 @@ export async function aClientOnlyValueIsSentBesideTheStoredBody(): Promise<void>
   const { temporaryPassword: _typed, ...rest } = sent;
   expect(await bodyHashHex(rest)).toBe(VECTOR_SHA256);
 }
+
+/**
+ * `F3.87` PR 5 (D15, owner ruling Q5) — a layout replace's stored `baseline` is for the card
+ * alone: the sent body is the stored body without it, every other key kept, and it hashes to the
+ * hash of that body. Mutation: send `change.body` whole → the absence assertion reddens.
+ */
+export async function aReplaceIsSentWithoutItsBaseline(): Promise<void> {
+  const seen = capture(() => new Response(JSON.stringify({ id: "layout-1" }), { status: 200 }));
+  const write = { version: 2, name: "Raw water", slug: "raw-water", canvasW: 120, canvasH: 80, nodes: [], pipes: [], symbolLibraries: ["core"] };
+  const change: CopilotPendingChangeDto = {
+    ...CHANGE,
+    catalogId: "mimicLayout.replace",
+    method: "PUT",
+    path: "/api/v1/mimic-layouts/55555555-5555-4555-8555-555555555555",
+    body: { ...write, baseline: { version: 2, nodes: [], pipes: [] } },
+    risk: "edit",
+  };
+  await confirmCopilotChange(change);
+  const sent = JSON.parse(seen().init.body as string) as Record<string, unknown>;
+  expect(Object.keys(sent)).not.toContain("baseline");
+  expect(sent).toEqual(write);
+  expect(await bodyHashHex(sent)).toBe(await bodyHashHex(write));
+  // The stored change keeps its baseline (the card reads it); the strip is a copy.
+  expect(change.body.baseline).toEqual({ version: 2, nodes: [], pipes: [] });
+}
+
+/** An entry with no `cardOnly` key sends its stored body unchanged (the strip names nothing for it). */
+export async function aChangeWithNoCardOnlyKeySendsItsBodyWhole(): Promise<void> {
+  const seen = capture(() => new Response(JSON.stringify({ id: "layout-2" }), { status: 201 }));
+  const change: CopilotPendingChangeDto = { ...CHANGE, catalogId: "mimicLayout.create", body: { baseline: "kept", a: "x" } };
+  await confirmCopilotChange(change);
+  expect(JSON.parse(seen().init.body as string)).toEqual({ baseline: "kept", a: "x" });
+}

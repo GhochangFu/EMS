@@ -12,6 +12,8 @@ import {
   leavingADirtyWizardAsks,
   longAndStructuredValuesAreShortened,
   theAssetGroupAndPointKeyEntriesInvalidateTheirPages,
+  theLayoutEntriesInvalidateTheLayouts,
+  changeRowsSkipsTheNamedKeys,
 } from "./copilot-card-logic.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -28,4 +30,6 @@ describe("F3.85 PR 8 — Confirm card and wizard logic (ADR 0099 decisions 4, 6)
   it("does not ask the Review step for a clientOnly field (F3.86 PR 2)", () => theReviewStepDoesNotAskForAClientOnlyField());
   it("re-reads the asset-group and point-key pages after their changes (F3.86 PR 3c)", () =>
     theAssetGroupAndPointKeyEntriesInvalidateTheirPages());
+  it("F3.87 PR 5: re-reads the layouts after a layout change", () => theLayoutEntriesInvalidateTheLayouts());
+  it("F3.87 PR 5: skips the named keys in the card's rows", () => changeRowsSkipsTheNamedKeys());
 });
