@@ -7,8 +7,8 @@ import {
   assertTheDomainsAreElectricalWaterAndHvac,
 } from "./network-demo-seed.spec";
 
-describe("F3.80 PR3 — the NW- demo assets", () => {
-  it("gives every code once, starting with NW-", () => {
+describe("F3.80 PR3 — the ND- demo assets", () => {
+  it("gives every code once, starting with ND-", () => {
     assertEveryCodeIsUniqueAndStartsWithNw();
   });
 

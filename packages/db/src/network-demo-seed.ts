@@ -7,7 +7,7 @@ import type { EskomAssetSpec } from "./eskom-assets-seed";
  * single-line network and a pump/valve/damper flow network, both at the RSMOC-WC control room
  * (owner ruling 2026-10-15, OQ3 (a)).
  *
- * Fifteen assets, each code prefixed `NW-` and avoiding every substring `demoRoleForAsset` matches,
+ * Fifteen assets, each code prefixed `ND-` and avoiding every substring `demoRoleForAsset` matches,
  * so none takes a role from the catalog and `eskomSmocRoledCodes` does not move. The roles are
  * written per group by `seedNetworkDemo` (Task 3.2). They sit in the ESKOM catalog, spread after
  * `DEMO_WATER_PLANT_ASSETS`, because `seedEskomAssets` precedes `seedEskomLadderRules`, which
@@ -29,22 +29,22 @@ function asset(code: string, name: string, domain: string): EskomAssetSpec {
 
 export const NETWORK_DEMO_ASSETS: readonly EskomAssetSpec[] = [
   // HT/LT network — branch A binds fully, branch B binds its two switching units only (OQ1 (a)).
-  asset("NW-HT-GRID-CB", "Network Demo HT Grid Incomer Breaker", "electrical"),
-  asset("NW-HT-COUPLER", "Network Demo HT Bus Coupler", "electrical"),
-  asset("NW-DG-1", "Network Demo Diesel Generator 1", "electrical"),
-  asset("NW-HT-DG-CB", "Network Demo HT DG Breaker", "electrical"),
-  asset("NW-HT-OUT-CB", "Network Demo HT Outgoing Breaker A", "electrical"),
-  asset("NW-TR-A", "Network Demo Transformer A", "electrical"),
-  asset("NW-LT-A", "Network Demo LT Panel A", "electrical"),
-  asset("NW-LT-A-F1", "Network Demo LT A Feeder 1", "electrical"),
-  asset("NW-LT-A-F2", "Network Demo LT A Feeder 2", "electrical"),
-  asset("NW-HT-ISO-B", "Network Demo HT Isolator B", "electrical"),
-  asset("NW-LT-B-F1", "Network Demo LT B Mains Feeder 1", "electrical"),
+  asset("ND-HT-GRID-CB", "Network Demo HT Grid Incomer Breaker", "electrical"),
+  asset("ND-HT-COUPLER", "Network Demo HT Bus Coupler", "electrical"),
+  asset("ND-DG-1", "Network Demo Diesel Generator 1", "electrical"),
+  asset("ND-HT-DG-CB", "Network Demo HT DG Breaker", "electrical"),
+  asset("ND-HT-OUT-CB", "Network Demo HT Outgoing Breaker A", "electrical"),
+  asset("ND-TR-A", "Network Demo Transformer A", "electrical"),
+  asset("ND-LT-A", "Network Demo LT Panel A", "electrical"),
+  asset("ND-LT-A-F1", "Network Demo LT A Feeder 1", "electrical"),
+  asset("ND-LT-A-F2", "Network Demo LT A Feeder 2", "electrical"),
+  asset("ND-HT-ISO-B", "Network Demo HT Isolator B", "electrical"),
+  asset("ND-LT-B-F1", "Network Demo LT B Mains Feeder 1", "electrical"),
   // Flow network — one drawing, water then air (OQ5 (a)); one roled isolation valve (OQ6 (a)).
-  asset("NW-FL-PUMP", "Network Demo Pump", "water"),
-  asset("NW-FL-ISO-V1", "Network Demo Isolation Valve 1", "water"),
-  asset("NW-FL-CV", "Network Demo Control Valve", "water"),
-  asset("NW-FL-DAMPER", "Network Demo Damper", "hvac"),
+  asset("ND-FL-PUMP", "Network Demo Pump", "water"),
+  asset("ND-FL-ISO-V1", "Network Demo Isolation Valve 1", "water"),
+  asset("ND-FL-CV", "Network Demo Control Valve", "water"),
+  asset("ND-FL-DAMPER", "Network Demo Damper", "hvac"),
 ];
 
 // ───────────────────────────────────────────────────────────────── seedNetworkDemo (Task 3.2)
@@ -139,17 +139,17 @@ export const NETWORK_DEMO_NETWORKS: readonly NetworkDemoNetwork[] = [
     canvasH: 160,
     symbolLibraries: ["core"],
     members: [
-      ["NW-HT-GRID-CB", "ht-incomer-breaker"],
-      ["NW-HT-COUPLER", "bus-coupler"],
-      ["NW-DG-1", "dg-set"],
-      ["NW-HT-DG-CB", "dg-breaker"],
-      ["NW-HT-OUT-CB", "ht-outgoing-breaker"],
-      ["NW-TR-A", "transformer"],
-      ["NW-LT-A", "lt-panel"],
-      ["NW-LT-A-F1", "load-feeder-breaker"],
-      ["NW-LT-A-F2", "load-feeder-breaker"],
-      ["NW-HT-ISO-B", "isolator"],
-      ["NW-LT-B-F1", "mains-feeder-breaker"],
+      ["ND-HT-GRID-CB", "ht-incomer-breaker"],
+      ["ND-HT-COUPLER", "bus-coupler"],
+      ["ND-DG-1", "dg-set"],
+      ["ND-HT-DG-CB", "dg-breaker"],
+      ["ND-HT-OUT-CB", "ht-outgoing-breaker"],
+      ["ND-TR-A", "transformer"],
+      ["ND-LT-A", "lt-panel"],
+      ["ND-LT-A-F1", "load-feeder-breaker"],
+      ["ND-LT-A-F2", "load-feeder-breaker"],
+      ["ND-HT-ISO-B", "isolator"],
+      ["ND-LT-B-F1", "mains-feeder-breaker"],
     ],
     nodes: [
       ["grid-cb", "breaker", "Grid incomer", "ht-incomer-breaker", T, F, F, 20, 0],
@@ -195,10 +195,10 @@ export const NETWORK_DEMO_NETWORKS: readonly NetworkDemoNetwork[] = [
     canvasH: 60,
     symbolLibraries: ["core", "qet"],
     members: [
-      ["NW-FL-PUMP", "pump"],
-      ["NW-FL-ISO-V1", "isolation-valve"],
-      ["NW-FL-CV", "control-valve"],
-      ["NW-FL-DAMPER", "damper"],
+      ["ND-FL-PUMP", "pump"],
+      ["ND-FL-ISO-V1", "isolation-valve"],
+      ["ND-FL-CV", "control-valve"],
+      ["ND-FL-DAMPER", "damper"],
     ],
     nodes: [
       ["pump", "pump", "Pump", "pump", T, F, F, 10, 0],
@@ -225,14 +225,14 @@ export const NETWORK_DEMO_NETWORKS: readonly NetworkDemoNetwork[] = [
 
 /** The eight breakers, by code: each carries `breaker_main` and `breaker_trip`. */
 const NETWORK_DEMO_BREAKER_CODES = [
-  "NW-HT-GRID-CB",
-  "NW-HT-COUPLER",
-  "NW-HT-DG-CB",
-  "NW-HT-OUT-CB",
-  "NW-LT-A-F1",
-  "NW-LT-A-F2",
-  "NW-HT-ISO-B",
-  "NW-LT-B-F1",
+  "ND-HT-GRID-CB",
+  "ND-HT-COUPLER",
+  "ND-HT-DG-CB",
+  "ND-HT-OUT-CB",
+  "ND-LT-A-F1",
+  "ND-LT-A-F2",
+  "ND-HT-ISO-B",
+  "ND-LT-B-F1",
 ] as const;
 
 /**
@@ -245,11 +245,11 @@ export const NETWORK_DEMO_STATE_POINTS: ReadonlyArray<readonly [string, string]>
     [code, "breaker_main"] as const,
     [code, "breaker_trip"] as const,
   ]),
-  ["NW-DG-1", "dg_on_load"],
-  ["NW-FL-ISO-V1", "valve_open"],
-  ["NW-FL-CV", "valve_open"],
-  ["NW-FL-DAMPER", "damper_open"],
-  ["NW-FL-PUMP", "pump_status"],
+  ["ND-DG-1", "dg_on_load"],
+  ["ND-FL-ISO-V1", "valve_open"],
+  ["ND-FL-CV", "valve_open"],
+  ["ND-FL-DAMPER", "damper_open"],
+  ["ND-FL-PUMP", "pump_status"],
 ];
 
 /** The widget configs: `mimicLayoutConfigSchema` and the empty `breakerTableConfigSchema`. */

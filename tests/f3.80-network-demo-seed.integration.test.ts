@@ -130,42 +130,42 @@ const FLOW_PIPES = [
 
 /** `group:code=role`. Fifteen memberships. */
 const MEMBERSHIPS = [
-  "demo-flow-network:NW-FL-CV=control-valve",
-  "demo-flow-network:NW-FL-DAMPER=damper",
-  "demo-flow-network:NW-FL-ISO-V1=isolation-valve",
-  "demo-flow-network:NW-FL-PUMP=pump",
-  "demo-ht-lt-network:NW-DG-1=dg-set",
-  "demo-ht-lt-network:NW-HT-COUPLER=bus-coupler",
-  "demo-ht-lt-network:NW-HT-DG-CB=dg-breaker",
-  "demo-ht-lt-network:NW-HT-GRID-CB=ht-incomer-breaker",
-  "demo-ht-lt-network:NW-HT-ISO-B=isolator",
-  "demo-ht-lt-network:NW-HT-OUT-CB=ht-outgoing-breaker",
-  "demo-ht-lt-network:NW-LT-A=lt-panel",
-  "demo-ht-lt-network:NW-LT-A-F1=load-feeder-breaker",
-  "demo-ht-lt-network:NW-LT-A-F2=load-feeder-breaker",
-  "demo-ht-lt-network:NW-LT-B-F1=mains-feeder-breaker",
-  "demo-ht-lt-network:NW-TR-A=transformer",
+  "demo-flow-network:ND-FL-CV=control-valve",
+  "demo-flow-network:ND-FL-DAMPER=damper",
+  "demo-flow-network:ND-FL-ISO-V1=isolation-valve",
+  "demo-flow-network:ND-FL-PUMP=pump",
+  "demo-ht-lt-network:ND-DG-1=dg-set",
+  "demo-ht-lt-network:ND-HT-COUPLER=bus-coupler",
+  "demo-ht-lt-network:ND-HT-DG-CB=dg-breaker",
+  "demo-ht-lt-network:ND-HT-GRID-CB=ht-incomer-breaker",
+  "demo-ht-lt-network:ND-HT-ISO-B=isolator",
+  "demo-ht-lt-network:ND-HT-OUT-CB=ht-outgoing-breaker",
+  "demo-ht-lt-network:ND-LT-A=lt-panel",
+  "demo-ht-lt-network:ND-LT-A-F1=load-feeder-breaker",
+  "demo-ht-lt-network:ND-LT-A-F2=load-feeder-breaker",
+  "demo-ht-lt-network:ND-LT-B-F1=mains-feeder-breaker",
+  "demo-ht-lt-network:ND-TR-A=transformer",
 ];
 
 const BREAKERS = [
-  "NW-HT-GRID-CB",
-  "NW-HT-COUPLER",
-  "NW-HT-DG-CB",
-  "NW-HT-OUT-CB",
-  "NW-LT-A-F1",
-  "NW-LT-A-F2",
-  "NW-HT-ISO-B",
-  "NW-LT-B-F1",
+  "ND-HT-GRID-CB",
+  "ND-HT-COUPLER",
+  "ND-HT-DG-CB",
+  "ND-HT-OUT-CB",
+  "ND-LT-A-F1",
+  "ND-LT-A-F2",
+  "ND-HT-ISO-B",
+  "ND-LT-B-F1",
 ];
 
 /** `code=point_key`, sorted: eight breakers × two keys, then the DG, the two valves, the damper, the pump. */
 const STATE_POINTS = [
   ...BREAKERS.flatMap((code) => [`${code}=breaker_main`, `${code}=breaker_trip`]),
-  "NW-DG-1=dg_on_load",
-  "NW-FL-ISO-V1=valve_open",
-  "NW-FL-CV=valve_open",
-  "NW-FL-DAMPER=damper_open",
-  "NW-FL-PUMP=pump_status",
+  "ND-DG-1=dg_on_load",
+  "ND-FL-ISO-V1=valve_open",
+  "ND-FL-CV=valve_open",
+  "ND-FL-DAMPER=damper_open",
+  "ND-FL-PUMP=pump_status",
 ].sort();
 
 /**
@@ -174,7 +174,7 @@ const STATE_POINTS = [
  * three switches (generator, transformer, switchboard symbols, `is_switching` false), so the walk
  * never reads it. Listed so the case below stays exact.
  */
-const RULED_BREAKER_MAIN = ["NW-DG-1=breaker_main", "NW-LT-A=breaker_main", "NW-TR-A=breaker_main"];
+const RULED_BREAKER_MAIN = ["ND-DG-1=breaker_main", "ND-LT-A=breaker_main", "ND-TR-A=breaker_main"];
 
 const ALL_CODES = [...new Set(MEMBERSHIPS.map((row) => row.split(":")[1]!.split("=")[0]!))];
 
@@ -546,7 +546,7 @@ describe.skipIf(!ownerUrl)("F3.80 Task 3.2 — the network demo seed at RSMOC-WC
         `UPDATE bms.asset_group_members agm SET role = 'mains-feeder-breaker'
            FROM bms.asset_groups g, bms.assets a
           WHERE g.id = agm.asset_group_id AND a.id = agm.asset_id
-            AND g.location_id = $1 AND g.code = 'demo-ht-lt-network' AND a.code = 'NW-LT-A-F2'`,
+            AND g.location_id = $1 AND g.code = 'demo-ht-lt-network' AND a.code = 'ND-LT-A-F2'`,
         [rsmocWcId],
       );
       if (changed.rowCount !== 1) throw new Error("precondition: the role was changed");
@@ -554,13 +554,13 @@ describe.skipIf(!ownerUrl)("F3.80 Task 3.2 — the network demo seed at RSMOC-WC
       const res = await pool.query<{ pair: string }>(
         `SELECT a.code || '=' || agm.role AS pair FROM bms.asset_group_members agm
            JOIN bms.asset_groups g ON g.id = agm.asset_group_id JOIN bms.assets a ON a.id = agm.asset_id
-          WHERE g.location_id = $1 AND g.code = 'demo-ht-lt-network' AND a.code IN ('NW-LT-A-F1', 'NW-LT-A-F2')
+          WHERE g.location_id = $1 AND g.code = 'demo-ht-lt-network' AND a.code IN ('ND-LT-A-F1', 'ND-LT-A-F2')
           ORDER BY 1`,
         [rsmocWcId],
       );
       pairs = res.rows.map((row) => row.pair);
     });
-    expect(pairs).toEqual(["NW-LT-A-F1=load-feeder-breaker", "NW-LT-A-F2=mains-feeder-breaker"]);
+    expect(pairs).toEqual(["ND-LT-A-F1=load-feeder-breaker", "ND-LT-A-F2=mains-feeder-breaker"]);
   });
 
   describe("when RSMOC-WC has no seed row", () => {

@@ -40,8 +40,8 @@ const FLOW_STATE_MAPS: readonly PointKeyStateMapDto[] = [
 
 const ISO_V1: GeneratedSiteAssetDto = {
   id: "00000000-0000-4000-8000-000000000300",
-  code: "NW-FL-ISO-V1",
-  name: "NW-FL-ISO-V1",
+  code: "ND-FL-ISO-V1",
+  name: "ND-FL-ISO-V1",
   domain: "water",
   latestTelemetryAt: null,
   freshness: "live",
@@ -180,5 +180,5 @@ export function aFlowingValveSymbolUnitDrawsOpen(): void {
 /** V3 — the accessible name says the valve is shut (the switch itself is `aria-hidden`). */
 export function aShutValvesStateIsInTheAccessibleName(): void {
   renderValve("breaker", 0);
-  expect(screen.getByRole("img").getAttribute("aria-label") ?? "").toContain("valve NW-FL-ISO-V1: shut");
+  expect(screen.getByRole("img").getAttribute("aria-label") ?? "").toContain("valve ND-FL-ISO-V1: shut");
 }

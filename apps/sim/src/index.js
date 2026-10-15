@@ -192,12 +192,12 @@ function crProfile(code) {
 
 /**
  * F3.80 (OQ4) — the ESKOM network demo's held electrical states. The bus coupler and
- * the DG breaker are held OPEN (bus B is dead), `NW-LT-A-F2` is TRIPPED, the rest
- * are closed. Every electrical NW- asset is held here, none walks free: a free
+ * the DG breaker are held OPEN (bus B is dead), `ND-LT-A-F2` is TRIPPED, the rest
+ * are closed. Every electrical ND- asset is held here, none walks free: a free
  * walk drifts past the ladder's 237 V / 239.5 V rules and opens `breaker_main`
- * at random. The passive `NW-TR-A` and `NW-LT-A` are held closed with no `trip`
- * key (they have no `breaker_trip` point). Bus B's `NW-HT-ISO-B` and
- * `NW-LT-B-F1` are closed but carry no load (kw 0: the walk draws bus B dead).
+ * at random. The passive `ND-TR-A` and `ND-LT-A` are held closed with no `trip`
+ * key (they have no `breaker_trip` point). Bus B's `ND-HT-ISO-B` and
+ * `ND-LT-B-F1` are closed but carry no load (kw 0: the walk draws bus B dead).
  *
  * The kW is at the control-room scale (`CR-UTILITY-11KV` is 4.8 kW) and falls
  * along branch A's series path, grid → outgoing → transformer → LT panel ≥ its
@@ -206,16 +206,16 @@ function crProfile(code) {
  * 2.3 + 2.2 + 2.1), beside the CR- profiles' ~40 kW.
  */
 const NETWORK_BREAKER_PROFILES = {
-  "NW-HT-GRID-CB": { kw: 2.4, current: 7.5, breaker: 1, trip: 0 },
-  "NW-HT-COUPLER": { kw: 0, current: 0, breaker: 0, trip: 0 },
-  "NW-HT-DG-CB": { kw: 0, current: 0, breaker: 0, trip: 0 },
-  "NW-HT-OUT-CB": { kw: 2.35, current: 7.3, breaker: 1, trip: 0 },
-  "NW-TR-A": { kw: 2.3, current: 7.2, breaker: 1 },
-  "NW-LT-A": { kw: 2.2, current: 6.9, breaker: 1 },
-  "NW-LT-A-F1": { kw: 2.1, current: 6.6, breaker: 1, trip: 0 },
-  "NW-LT-A-F2": { kw: 0, current: 0, breaker: 0, trip: 1 },
-  "NW-HT-ISO-B": { kw: 0, current: 0, breaker: 1, trip: 0 },
-  "NW-LT-B-F1": { kw: 0, current: 0, breaker: 1, trip: 0 },
+  "ND-HT-GRID-CB": { kw: 2.4, current: 7.5, breaker: 1, trip: 0 },
+  "ND-HT-COUPLER": { kw: 0, current: 0, breaker: 0, trip: 0 },
+  "ND-HT-DG-CB": { kw: 0, current: 0, breaker: 0, trip: 0 },
+  "ND-HT-OUT-CB": { kw: 2.35, current: 7.3, breaker: 1, trip: 0 },
+  "ND-TR-A": { kw: 2.3, current: 7.2, breaker: 1 },
+  "ND-LT-A": { kw: 2.2, current: 6.9, breaker: 1 },
+  "ND-LT-A-F1": { kw: 2.1, current: 6.6, breaker: 1, trip: 0 },
+  "ND-LT-A-F2": { kw: 0, current: 0, breaker: 0, trip: 1 },
+  "ND-HT-ISO-B": { kw: 0, current: 0, breaker: 1, trip: 0 },
+  "ND-LT-B-F1": { kw: 0, current: 0, breaker: 1, trip: 0 },
 };
 
 /**
@@ -225,11 +225,11 @@ const NETWORK_BREAKER_PROFILES = {
  * for a non-WTR- code).
  */
 const NETWORK_FLOW_PROFILES = {
-  "NW-FL-PUMP": { pumpStatus: 1 },
-  "NW-DG-1": { dgOnLoad: 0 },
-  "NW-FL-ISO-V1": { valve: 0 },
-  "NW-FL-CV": { valve: 1 },
-  "NW-FL-DAMPER": { damper: 1 },
+  "ND-FL-PUMP": { pumpStatus: 1 },
+  "ND-DG-1": { dgOnLoad: 0 },
+  "ND-FL-ISO-V1": { valve: 0 },
+  "ND-FL-CV": { valve: 1 },
+  "ND-FL-DAMPER": { damper: 1 },
 };
 
 function networkProfile(code) {
