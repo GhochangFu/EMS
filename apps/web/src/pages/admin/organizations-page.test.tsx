@@ -19,6 +19,8 @@ import {
   theAiAssistantActionNavigatesToTheSubPage,
   typedCurrencyIsUppercasedAndSubmitted,
   aRefusedRowSwitchShowsTheSentence,
+  aRefusedAttachmentSwitchShowsTheSentence,
+  theGlobalAdminSwitchesARowsAttachmentsOn,
   onboardWithAiFilesTheDocksRequestAndDoesNotNavigate,
   onboardWithAiIsAbsentForAnOrganizationAdminWhoseCopilotIsOff,
   onboardWithAiShowsForAnOrganizationAdminWhoseCopilotIsOn,
@@ -107,6 +109,14 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("F3.85 a refused row switch shows the server sentence", async () => {
     await aRefusedRowSwitchShowsTheSentence();
+  });
+
+  it("F3.87 the global admin switches a row's attachments on", async () => {
+    await theGlobalAdminSwitchesARowsAttachmentsOn();
+  });
+
+  it("F3.87 a refused attachment switch shows the server sentence", async () => {
+    await aRefusedAttachmentSwitchShowsTheSentence();
   });
 
   it("F3.86 PR 7 Onboard with AI files the dock's request and does not navigate", async () => {

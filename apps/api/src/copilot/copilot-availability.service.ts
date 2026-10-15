@@ -65,4 +65,19 @@ export class CopilotAvailabilityService {
   async organizationSwitchOn(organizationId: string): Promise<boolean> {
     return withTenant(this.tenantDb, organizationId, async (tx) => (await readsIn(tx, organizationId).orgEnabled()) === true);
   }
+
+  /**
+   * Whether files may ride a copilot turn in this organization (`F3.87`, ADR
+   * 0099 Amendment 3 A7): the attachment switch counts only while the
+   * organization's copilot switch is on, so both must be true. No row is off.
+   */
+  async attachmentsOn(organizationId: string): Promise<boolean> {
+    return withTenant(this.tenantDb, organizationId, async (tx) => {
+      const [row] = await tx
+        .select({ enabled: copilotOrgSettings.enabled, attachmentsEnabled: copilotOrgSettings.attachmentsEnabled })
+        .from(copilotOrgSettings)
+        .where(eq(copilotOrgSettings.organizationId, organizationId));
+      return row?.enabled === true && row.attachmentsEnabled === true;
+    });
+  }
 }

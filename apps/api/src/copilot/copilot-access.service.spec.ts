@@ -1,12 +1,18 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { expect } from "vitest";
 
+import { copilotOrgSettings } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
 import type { MasterDataAuditService } from "../admin/master-data-audit.service";
 import type { PutCopilotAccessBody } from "./copilot-access.schema";
-import { CopilotAccessService, type OverrideTarget } from "./copilot-access.service";
+import {
+  COPILOT_ATTACHMENTS_NEEDS_ORG_SWITCH_MESSAGE,
+  COPILOT_ORG_SWITCH_MESSAGE,
+  CopilotAccessService,
+  type OverrideTarget,
+} from "./copilot-access.service";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
 
@@ -180,4 +186,180 @@ export async function assertScopedAdministratorsCannotSetTheOrganizationSwitch()
     await refused(() => service.put(jwt(role), ORG_A, { enabled: true }));
     expect(calls, role).toEqual([]);
   }
+}
+
+/** The organization switch row as the fake store holds it; `null` is no row. */
+interface OrgRow {
+  enabled: boolean;
+  attachmentsEnabled: boolean;
+}
+
+/**
+ * A working tenant pool over one organization's `copilot_org_settings` row, for
+ * the A7 write rules. It records every write by kind (`insert:org`,
+ * `update:org`) and applies the column defaults a real insert would: a row
+ * inserted without `enabled` gets `false`, as `0104`'s DEFAULT does. The
+ * predicates are not evaluated — the store holds one organization only.
+ */
+function storeHarness(initial: OrgRow | null) {
+  const { service, calls } = harness();
+  const store: { row: OrgRow | null; writes: string[]; audits: unknown[] } = {
+    row: initial ? { ...initial } : null,
+    writes: [],
+    audits: [],
+  };
+  const isOrg = (table: unknown) => table === copilotOrgSettings;
+  const tx = {
+    execute: async () => undefined,
+    select: (fields: Record<string, unknown>) => ({
+      from: (table: unknown) => ({
+        where: () => {
+          const rows = isOrg(table) && store.row ? [pick(store.row, fields)] : [];
+          return Object.assign(Promise.resolve(rows), { orderBy: async () => rows });
+        },
+      }),
+    }),
+    insert: (table: unknown) => ({
+      values: (values: Record<string, unknown>) => ({
+        onConflictDoUpdate: async ({ set }: { set: Record<string, unknown> }) => {
+          if (!isOrg(table)) throw new Error("only the organization switch is written here");
+          store.writes.push("insert:org");
+          store.row = store.row
+            ? { ...store.row, ...columnsOf(set) }
+            : { enabled: false, attachmentsEnabled: false, ...columnsOf(values) };
+        },
+      }),
+    }),
+    update: (table: unknown) => ({
+      set: (values: Record<string, unknown>) => ({
+        where: (predicate: unknown) => ({
+          returning: async () => {
+            if (!isOrg(table)) throw new Error("only the organization switch is updated here");
+            // An UPDATE with no predicate would reach every row the role can see.
+            if (predicate === undefined) throw new Error("the organization admin's UPDATE names its row");
+            store.writes.push("update:org");
+            if (!store.row) return [];
+            store.row = { ...store.row, ...columnsOf(values) };
+            return [{ organizationId: ORG_A }];
+          },
+        }),
+      }),
+    }),
+  };
+  (service as unknown as { tenantDb: unknown }).tenantDb = {
+    transaction: async (fn: (t: typeof tx) => Promise<unknown>) => {
+      calls.push("transaction");
+      const before = store.row ? { ...store.row } : null;
+      const writes = store.writes.length;
+      try {
+        return await fn(tx);
+      } catch (error) {
+        store.row = before;
+        store.writes.length = writes;
+        throw error;
+      }
+    },
+  };
+  (service as unknown as { audit: unknown }).audit = {
+    write: async (entry: { payload: unknown }) => {
+      store.audits.push(entry.payload);
+    },
+  };
+  return { service, calls, store };
+}
+
+/** The switch columns of a write's values; the stamp is dropped. */
+function columnsOf(values: Record<string, unknown>): Partial<OrgRow> {
+  const out: Partial<OrgRow> = {};
+  if (typeof values.enabled === "boolean") out.enabled = values.enabled;
+  if (typeof values.attachmentsEnabled === "boolean") out.attachmentsEnabled = values.attachmentsEnabled;
+  return out;
+}
+
+function pick(row: OrgRow, fields: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.keys(fields).map((key) => [key, row[key as keyof OrgRow]]));
+}
+
+/**
+ * Plan D3 / ADR 0099 Amendment 3 A7: the organization admin's
+ * `attachmentsEnabled` write on an organization with **no** switch row is a
+ * 409 and writes nothing — it may never create the row, because a created row
+ * would carry an `enabled` the organization admin may not set.
+ * Mutation: replace the UPDATE by the upsert → no 409, a row → red.
+ */
+export async function assertAnOrganizationAdminsAttachmentWriteWithNoRowIs409(): Promise<void> {
+  const { service, store } = storeHarness(null);
+  let caught: unknown;
+  try {
+    await service.put(jwt("organization_admin"), ORG_A, { attachmentsEnabled: true });
+  } catch (error) {
+    caught = error;
+  }
+  expect(caught).toBeInstanceOf(ConflictException);
+  expect((caught as ConflictException).message).toBe(COPILOT_ATTACHMENTS_NEEDS_ORG_SWITCH_MESSAGE);
+  expect(store.row).toBeNull();
+  expect(store.writes).not.toContain("insert:org");
+  expect(store.audits).toEqual([]);
+}
+
+/**
+ * The organization admin's write on an existing row updates the attachment
+ * switch only: it is an UPDATE, never an insert, and `enabled` keeps its value.
+ */
+export async function assertAnOrganizationAdminSetsAttachmentsOnAnExistingRowOnly(): Promise<void> {
+  const { service, store } = storeHarness({ enabled: true, attachmentsEnabled: false });
+  const dto = await service.put(jwt("organization_admin"), ORG_A, { attachmentsEnabled: true });
+  expect(store.writes).toEqual(["update:org"]);
+  expect(store.row).toEqual({ enabled: true, attachmentsEnabled: true });
+  expect(dto.attachmentsEnabled).toBe(true);
+  expect(dto.enabled).toBe(true);
+}
+
+/** Sending `enabled` beside `attachmentsEnabled` is still the global admin's switch: 403, nothing written. */
+export async function assertAnOrganizationAdminCannotSendEnabledWithAttachments(): Promise<void> {
+  const { service, calls, store } = storeHarness({ enabled: true, attachmentsEnabled: false });
+  const error = await refused(() =>
+    service.put(jwt("organization_admin"), ORG_A, { enabled: false, attachmentsEnabled: true }),
+  );
+  expect(error.message).toBe(COPILOT_ORG_SWITCH_MESSAGE);
+  expect(calls).toEqual([]);
+  expect(store.row).toEqual({ enabled: true, attachmentsEnabled: false });
+}
+
+/**
+ * Ruling Q3(a): the global admin's write on an organization with no row
+ * creates it with `enabled` at its default **false** — attachments on, the
+ * copilot still off. Mutation: write `enabled: true` on the insert → red.
+ */
+export async function assertTheGlobalAdminsAttachmentWriteCreatesTheRowOff(): Promise<void> {
+  const { service, store } = storeHarness(null);
+  const dto = await service.put(jwt("admin"), ORG_A, { attachmentsEnabled: true });
+  expect(store.writes).toEqual(["insert:org"]);
+  expect(store.row).toEqual({ enabled: false, attachmentsEnabled: true });
+  expect(dto.enabled).toBe(false);
+  expect(dto.attachmentsEnabled).toBe(true);
+}
+
+/** The global admin's upsert on an existing row leaves `enabled` as it was. */
+export async function assertTheGlobalAdminsAttachmentWriteKeepsEnabled(): Promise<void> {
+  const { service, store } = storeHarness({ enabled: true, attachmentsEnabled: true });
+  await service.put(jwt("admin"), ORG_A, { attachmentsEnabled: false });
+  expect(store.row).toEqual({ enabled: true, attachmentsEnabled: false });
+}
+
+/** The audit row names the attachment switch the write set. */
+export async function assertTheAuditPayloadCarriesAttachmentsEnabled(): Promise<void> {
+  const { service, store } = storeHarness({ enabled: true, attachmentsEnabled: false });
+  await service.put(jwt("organization_admin"), ORG_A, { attachmentsEnabled: true });
+  expect(store.audits).toEqual([
+    expect.objectContaining({ attachmentsEnabled: true }),
+  ]);
+}
+
+/** No row reads as attachments off, as it reads as the copilot off. */
+export async function assertNoRowReadsAsAttachmentsOff(): Promise<void> {
+  const { service } = storeHarness(null);
+  const dto = await service.get(jwt("admin"), ORG_A);
+  expect(dto.enabled).toBe(false);
+  expect(dto.attachmentsEnabled).toBe(false);
 }

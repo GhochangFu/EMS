@@ -11,6 +11,7 @@ import {
   saveWithoutAKeyOmitsApiKey,
   testShowsTheStatusSentence,
   theKeyFieldIsWriteOnlyAndClearedAfterSave,
+  thePageCarriesTheAttachmentSwitch,
 } from "./ai-assistant-page.spec";
 
 /**
@@ -55,5 +56,9 @@ describe("F3.21 AI assistant page", () => {
 
   it("shows the server's sentence for a refused save, with no envelope", async () => {
     await aRefusedSaveShowsTheServersSentence();
+  });
+
+  it("F3.87 carries the attachment switch and its unscrubbed sentence", async () => {
+    await thePageCarriesTheAttachmentSwitch();
   });
 });

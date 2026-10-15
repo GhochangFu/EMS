@@ -31,6 +31,8 @@ export function copilotAccessQueryKey(orgId: string): readonly unknown[] {
  * ADR 0099 decision 5): the organization switch, the two role switches and the
  * named-user exceptions. The organization switch is the global admin's to set;
  * an organization admin sees its state. A refusal shows the server's sentence.
+ * `F3.87` (ADR 0099 Amendment 3 A7): the attachment switch is editable by both
+ * roles while the copilot is on for the organization.
  */
 export function CopilotAccessCard({ orgId, user }: CopilotAccessCardProps) {
   const queryClient = useQueryClient();
@@ -93,6 +95,21 @@ export function CopilotAccessCard({ orgId, user }: CopilotAccessCardProps) {
           {!isGlobalAdmin(user.role) ? (
             <p className="text-xs text-ink-muted">Only the global admin switches the copilot on or off for an organization.</p>
           ) : null}
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              checked={access.attachmentsEnabled}
+              // Off is always reachable: the global admin may turn attachments on
+              // while the copilot is off (ruling Q3), and the organization admin
+              // must still be able to turn them off before the copilot comes on.
+              disabled={busy || (!access.enabled && !access.attachmentsEnabled)}
+              onChange={(event) => saveMutation.mutate({ attachmentsEnabled: event.target.checked })}
+            />
+            Attachments on copilot turns
+          </label>
+          <p className="text-xs text-ink-muted">
+            A file attached to a turn goes to the organization&apos;s AI provider as it is, unscrubbed.
+          </p>
           <fieldset className="space-y-2">
             <legend className="text-xs font-semibold uppercase text-ink-muted">Roles</legend>
             {(Object.keys(ROLE_LABELS) as CopilotSwitchableRole[]).map((role) => (

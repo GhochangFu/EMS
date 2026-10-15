@@ -1,4 +1,4 @@
-import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 
 import { copilotOrgSettings, copilotRoleSettings, copilotUserOverrides, users } from "@bms/db";
@@ -23,6 +23,12 @@ const EXCEPTION_ROLES = ["organization_admin", "location_admin", "asset_group_ad
 export const COPILOT_ACCESS_ROLE_MESSAGE = "The copilot access settings require admin or organization_admin role";
 export const COPILOT_ACCESS_SCOPE_MESSAGE = "Organization is outside your access scope";
 export const COPILOT_ORG_SWITCH_MESSAGE = "Only the global admin switches the copilot on or off for an organization";
+/**
+ * `F3.87` plan D3: the organization admin's attachment write on an
+ * organization with no switch row. A state conflict (409), as
+ * `MIMIC_LAYOUT_STALE_MESSAGE` is — the row is the global admin's to create.
+ */
+export const COPILOT_ATTACHMENTS_NEEDS_ORG_SWITCH_MESSAGE = "Turn the copilot on for this organization first";
 /** One message for an unknown user, another organization's user and a non-administrator alike. */
 export const COPILOT_EXCEPTION_TARGET_MESSAGE =
   "A copilot exception can name only an administrator of this organization";
@@ -76,7 +82,7 @@ export class CopilotAccessService {
 
   private async readDto(tx: BmsTx, organizationId: string): Promise<CopilotAccessDto> {
     const [org] = await tx
-      .select({ enabled: copilotOrgSettings.enabled })
+      .select({ enabled: copilotOrgSettings.enabled, attachmentsEnabled: copilotOrgSettings.attachmentsEnabled })
       .from(copilotOrgSettings)
       .where(eq(copilotOrgSettings.organizationId, organizationId));
     const roles = await tx
@@ -92,6 +98,7 @@ export class CopilotAccessService {
     return {
       organizationId,
       enabled: org?.enabled ?? false,
+      attachmentsEnabled: org?.attachmentsEnabled ?? false,
       roles: { location_admin: roleSwitch("location_admin"), asset_group_admin: roleSwitch("asset_group_admin") },
       overrides,
     };
@@ -125,6 +132,28 @@ export class CopilotAccessService {
           .values({ organizationId, ...values })
           .onConflictDoUpdate({ target: copilotOrgSettings.organizationId, set: values });
       }
+      if (body.attachmentsEnabled !== undefined) {
+        // ADR 0099 Amendment 3 A7. The global admin upserts the switch; a new
+        // row takes `enabled` at its column default, false (ruling Q3(a)). The
+        // organization admin only UPDATEs an existing row: an insert would
+        // create the organization switch it may not set (plan D3).
+        const values = { attachmentsEnabled: body.attachmentsEnabled, ...stamp };
+        if (actor.role === "admin") {
+          await tx
+            .insert(copilotOrgSettings)
+            .values({ organizationId, ...values })
+            .onConflictDoUpdate({ target: copilotOrgSettings.organizationId, set: values });
+        } else {
+          const updated = await tx
+            .update(copilotOrgSettings)
+            .set(values)
+            .where(eq(copilotOrgSettings.organizationId, organizationId))
+            .returning({ organizationId: copilotOrgSettings.organizationId });
+          if (updated.length === 0) {
+            throw new ConflictException(COPILOT_ATTACHMENTS_NEEDS_ORG_SWITCH_MESSAGE);
+          }
+        }
+      }
       for (const [role, enabled] of Object.entries(body.roles ?? {})) {
         if (enabled === undefined) continue;
         const values = { enabled, ...stamp };
@@ -157,7 +186,12 @@ export class CopilotAccessService {
           entityType: "copilot_access",
           entityId: organizationId,
           organizationId,
-          payload: { enabled: body.enabled, roles: body.roles, override: body.override },
+          payload: {
+            enabled: body.enabled,
+            attachmentsEnabled: body.attachmentsEnabled,
+            roles: body.roles,
+            override: body.override,
+          },
         },
         tx,
       );

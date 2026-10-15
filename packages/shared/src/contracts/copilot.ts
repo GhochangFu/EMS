@@ -36,12 +36,19 @@ export const copilotAvailabilityReasonSchema = z.enum([
 /** The two roles that carry a role switch; `organization_admin`'s switch is the organization's. */
 export const copilotSwitchableRoleSchema = z.enum(["location_admin", "asset_group_admin"]);
 
-/** `GET /api/v1/copilot/status`. `configured`: a key resolves for the scope asked about (`F3.85` PR 7, decision 10). */
+/**
+ * `GET /api/v1/copilot/status`. `configured`: a key resolves for the scope asked about (`F3.85` PR 7, decision 10).
+ * `attachmentsEnabled` (`F3.87`, ADR 0099 Amendment 3 A7): true only when the copilot is available and
+ * configured for **one** organization whose copilot and attachment switches are both on; always false for a
+ * cross-organization scope. The server always sends it; it is optional in the schema only so the many web
+ * spec stubs of this DTO stay valid, and a reader takes an absent value as false (fail closed).
+ */
 export const copilotStatusDtoSchema = z
   .object({
     available: z.boolean(),
     reason: copilotAvailabilityReasonSchema.optional(),
     configured: z.boolean(),
+    attachmentsEnabled: z.boolean().optional(),
   })
   .strict();
 
@@ -56,12 +63,14 @@ export const copilotUserOverrideDtoSchema = z
 /**
  * `GET`/`PUT /api/v1/admin/organizations/:orgId/copilot-access`. `enabled` is
  * the organization switch (`false` when there is no row); each role switch is
- * `true` when it has no row (plan Q2).
+ * `true` when it has no row (plan Q2). `attachmentsEnabled` is the attachment switch (`F3.87`, ADR 0099
+ * Amendment 3 A7), `false` when there is no row; it counts only while `enabled` is true.
  */
 export const copilotAccessDtoSchema = z
   .object({
     organizationId: z.string(),
     enabled: z.boolean(),
+    attachmentsEnabled: z.boolean(),
     roles: z
       .object({
         location_admin: z.boolean(),
