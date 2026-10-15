@@ -7766,3 +7766,17 @@ One PR, web only; no API, no migration, no new dependency.
 - F4.262: the Sites map gets the live strip, counted from the pins it draws, and a pin-colour legend built from the pins' own role table.
 
 Owner request and design approval 2026-10-14. Verified: the web project; 14 mutations; the rebuilt web image in the browser as the global admin. Raised: none.
+
+### `F3.80` — network mimics with switching units ✅ 2026-10-15
+
+Three PRs, merged in order; ADR 0101 (#859, seven owner rulings); plan `docs/plans/f3.80-network-mimics.md` (owner rulings 2026-10-15: Move A, Move B, OQ1–OQ6).
+
+- **#860** (`2eee765f`) — db and API: migration `0109` (`is_switching` and the switching CHECK), the eight position roles, the five-tone SQL CHECK, `isSwitching` in the contract, API and resolver, `BREAKER_ROLE_CODES` ten.
+- **#861** (`ec9189d3`) — shared and web: flow tones `flowing` / `shut`, seed state rows for `valve_open` / `damper_open`, the layout switching rule, the inspector toggle, the editor warnings.
+- **#862** (`1ebdc964`) — db and sim: fifteen `ND-` demo assets at `RSMOC-WC` (eleven electrical, three water, one HVAC; `ND-`, not `NW-`, because `NW-` is the North West province prefix), `seedNetworkDemo` (ESKOM only) with the HT/LT and flow layouts and dashboards, held simulator profiles.
+
+Verified: build and `typecheck:tests`; full Vitest with coverage, 13380 passed and 3 failed, two suites that pass alone (24/24, 14/14), cross-suite contention on the shared local database, CI authoritative; the 19-case seed integration suite and `pnpm db:seed` twice; the stack rebuilt `--no-cache`; `GET /mimic-layouts/:flow`; the browser through `browser-verifier`, nine claims PASS. **Sim stopped past 150 s (checked 2026-10-15):** every switching pill OFFLINE, gated pipes unknown, source-outbound pipes energised (ADR 0088); no console errors on the editor page. Four reviews on #862 (code, security, migration, agents-compliance): one major and seven minors, fixed.
+
+**Cascade:** no row lists `F3.80` in *Depends*; `F3.87` names it in prose only (its *Depends* is `F3.85`).
+
+Owed to the owner: three standing `BREAKER_OPEN` critical alarms at `RSMOC-WC` from the held-open demo breakers (a skip list needs an ADR 0101 amendment); a read-only `asset_roles` check on the AWS demo and the PHE pilot before `0109` reaches an admin-used database (production reads were blocked for the agent); a `chore(agents):` sweep for AGENTS.md in its own PR.
