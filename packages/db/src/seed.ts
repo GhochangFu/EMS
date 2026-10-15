@@ -290,7 +290,7 @@ async function main(): Promise<void> {
       await seedBreakerDemo(pool, eskomOrgId, westernCapeId);
       // `F3.80` PR3 (ADR 0101 d15, d16) — the HT/LT and flow network demos at RSMOC-WC: two groups,
       // fifteen roled memberships, the state points, two layouts and two dashboards. After
-      // `seedEskomAssets` (the `NW-` assets) and `seedPointKeyCatalog` (the keys), and before
+      // `seedEskomAssets` (the `ND-` assets) and `seedPointKeyCatalog` (the keys), and before
       // `seedAssetTemplateHealth`, so each new role template declares its state points on the first
       // boot as on every later one.
       await seedNetworkDemo(pool, eskomOrgId, westernCapeId);

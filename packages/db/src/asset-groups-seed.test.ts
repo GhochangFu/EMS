@@ -113,7 +113,7 @@ describe("F4.169/F4.170 addendum 2 — ruling 14: the location backfill fills on
   });
 });
 
-describe("F3.80 Task 3.1 — the NW- demo assets stay out of the SMOC roles", () => {
+describe("F3.80 Task 3.1 — the ND- demo assets stay out of the SMOC roles", () => {
   it("gives every NETWORK_DEMO_ASSETS code a null role from demoRoleForAsset", () => {
     assertEveryNetworkDemoCodeTakesNoRole();
   });

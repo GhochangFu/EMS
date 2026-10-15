@@ -384,7 +384,7 @@ export function assertTheGroupUpsertFillsOnlyANullDomain(): void {
 }
 
 /**
- * `F3.80` Task 3.1 — the NW- demo assets carry no role from `demoRoleForAsset`. Their roles are
+ * `F3.80` Task 3.1 — the ND- demo assets carry no role from `demoRoleForAsset`. Their roles are
  * written by `seedNetworkDemo` per group (OQ1), so a code that matched a substring branch here
  * would also move `eskomSmocRoledCodes`. The list is non-empty first, so a vacuum cannot pass.
  */
