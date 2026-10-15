@@ -931,11 +931,15 @@ export async function theWizardToolsRefuseAnotherRoleToo(): Promise<void> {
   });
 }
 
-/** A `cardOnly` key is left out of the stored hash, as the interceptor leaves it out on Confirm. */
+/**
+ * A `cardOnly` key in the stored body is left out of the stored hash, as the
+ * interceptor leaves it out on Confirm. The key is in the dispatched body, so
+ * a propose that hashed with `clientOnly` alone would store another hash.
+ */
 export async function theStoredHashLeavesOutCardOnlyKeys(): Promise<void> {
-  const entry = fixtureEntry({ id: "fixture.card", cardOnly: ["baseline"] });
+  const entry = fixtureEntry({ id: "fixture.card", cardOnly: ["a"] });
   const h = proposeHarness({ catalog: [entry] });
   expect((await h.tools.dispatch(proposeToolName(entry), { body: VECTOR }, h.ctx())).ok).toBe(true);
-  expect(h.stored[0]?.bodyHash).toBe(bodyHash({ ...VECTOR, baseline: { nodes: [] } }, ["baseline"]));
-  expect(h.stored[0]?.bodyHash).toBe(VECTOR_SHA256);
+  expect(h.stored[0]?.bodyHash).toBe(bodyHash(VECTOR, ["a"]));
+  expect(h.stored[0]?.bodyHash).not.toBe(VECTOR_SHA256);
 }

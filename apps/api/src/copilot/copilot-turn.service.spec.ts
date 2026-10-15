@@ -3,6 +3,7 @@ import { expect } from "vitest";
 import { z } from "zod";
 
 import { type CopilotMessageDto, type CopilotPendingChangeDto, copilotTurnResponseDtoSchema, type JwtPayload } from "@bms/shared";
+import { type CatalogEntry, catalogEntry, proposeToolName } from "@bms/shared/copilot";
 
 import { calls, FakeLlmProvider, toolCall } from "../admin/onboarding/onboarding-agent-loop.spec";
 import type { ResolvedIdentity } from "../auth/identity-resolver";
@@ -94,6 +95,8 @@ type Options = {
   tools?: Record<string, ToolScript>;
   /** The real read tools over fake services (`tools/copilot-read-tools.spec.ts`); replaces `tools`. */
   readTools?: CopilotReadTools;
+  /** `F3.87` PR 2: the catalog the propose tools are built over (the real one by default). */
+  proposeCatalog?: readonly CatalogEntry[];
   stored?: CopilotMessageDto[];
   /** What the propose tools' fake resolver answers (PR 8); a template named "T" in X by default. */
   target?: ResolvedTarget | null;
@@ -202,7 +205,7 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
     },
     finished: async (_userId: string, id: string) => (id === CHANGE_ID ? (options.finished ?? null) : null),
   };
-  const proposeTools = createCopilotProposeTools({ targets: { resolve: async () => target }, pending });
+  const proposeTools = createCopilotProposeTools({ targets: { resolve: async () => target }, pending }, options.proposeCatalog);
   const service = new CopilotTurnService(
     conversations as never,
     availability as never,
@@ -876,6 +879,26 @@ export async function assertATurnThatAsksOffersTheAccessTools(): Promise<void> {
   expect(llm.offered[0]).toEqual(expect.arrayContaining(ACCESS_TOOLS));
   expect(h.proposed.map((change) => change.catalogId)).toEqual(["userGrant.add"]);
   expect(h.proposed[0]?.summary).toBe('Grant "Priya" access to the site "RSMOC-WC".');
+}
+
+/**
+ * `F3.87` PR 2 (ADR 0099 Amendment 3 A1): the turn builds its registry for the
+ * caller's own role. An entry offered to the organization admins is never
+ * named to a `location_admin`'s model, and is named to an organization admin's.
+ */
+export async function assertATurnOffersOnlyTheCallersRoleTools(): Promise<void> {
+  const base = catalogEntry("dashboard.create")!;
+  const layoutEntry: CatalogEntry = { ...base, id: "fixture.layout", offeredTo: ["admin", "organization_admin"] };
+  const name = proposeToolName(layoutEntry);
+  const offeredTo = async (role: ResolvedIdentity["role"]) => {
+    const llm = new ToolRecordingLlm([{ kind: "final", text: "done" }]);
+    const h = harness(llm, { proposeCatalog: [base, layoutEntry] });
+    await turn(h, "draw the plant", identity(role, ORG_X));
+    return llm.offered[0] ?? [];
+  };
+  expect(await offeredTo("location_admin")).not.toContain(name);
+  expect(await offeredTo("location_admin")).toContain(proposeToolName(base));
+  expect(await offeredTo("organization_admin")).toContain(name);
 }
 
 /** (5) A follow-up turn never offers an access tool, whatever the change was. */

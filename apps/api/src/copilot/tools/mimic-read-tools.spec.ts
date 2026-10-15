@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import { expect } from "vitest";
 
 import { type JwtPayload, type MimicLayoutWriteNode, putMimicLayoutBodySchema } from "@bms/shared";
@@ -157,11 +158,23 @@ export async function aLayoutOutsideTheTurnIsRefused(): Promise<void> {
   const missing = services({
     layouts: {
       get: async () => {
-        throw new Error("Mimic layout not found");
+        throw new NotFoundException("Mimic layout not found");
       },
     },
   });
   expect((await getMimicLayoutTool.run(missing, { id: LAYOUT }, ctx([ORG_X]))).ok).toBe(false);
+}
+
+/** Any other failure (a database error) is the tool's error, never "out of scope". */
+export async function aLayoutReadFailureIsNotOutOfScope(): Promise<void> {
+  const broken = services({
+    layouts: {
+      get: async () => {
+        throw new Error("connection reset");
+      },
+    },
+  });
+  await expect(getMimicLayoutTool.run(broken, { id: LAYOUT }, ctx([ORG_X]))).rejects.toThrow("connection reset");
 }
 
 /** The layout list keeps only the turn's organizations. */
@@ -272,4 +285,20 @@ export async function theRoleListHoldsActiveRolesOnly(): Promise<void> {
   });
   const result = await listAssetRolesTool.run(fake, {}, ctx([ORG_X]));
   expect(result).toEqual({ ok: true, result: { items: [{ code: "transformer", label: "Transformer" }] }, organizationIds: [] });
+}
+
+/** A 500-symbol library stays inside the budget: whole rows only, never cut, and `truncated` says more exist. */
+export async function aLargeSymbolListIsBoundedAndSaysSo(): Promise<void> {
+  const many = Array.from({ length: 500 }, (_, i) => SYMBOL(`org.plant:symbol-number-${i}`, true));
+  const fake = services({
+    symbolLibraries: { list: async () => ({ global: [], organization: [ORG_LIBRARY("plant", true, many)] }) },
+  });
+  const result = okResult(await listMimicSymbolsTool.run(fake, {}, ctx([ORG_X])));
+  expect(toolResultContent({ ok: true, result })).not.toContain(TOOL_RESULT_CUT_TAIL);
+  expect(result.truncated).toBe(true);
+  const listed = (result.organizations as Array<{ organization: Array<{ symbols: unknown[] }> }>)[0]?.organization[0]?.symbols ?? [];
+  expect(listed.length).toBeGreaterThan(10);
+  expect(listed.length).toBeLessThan(500);
+  const small = okResult(await listMimicSymbolsTool.run(librariesFake(), {}, ctx([ORG_X])));
+  expect(small.truncated).toBe(false);
 }

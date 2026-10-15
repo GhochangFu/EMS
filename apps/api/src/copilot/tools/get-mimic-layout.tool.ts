@@ -1,3 +1,5 @@
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
+
 import { mimicLayoutDtoSchema, type MimicLayoutWriteNode, type MimicLayoutWritePipe } from "@bms/shared";
 import { writeNodeOfDto } from "@bms/shared/copilot";
 import { z } from "zod";
@@ -55,12 +57,18 @@ export const getMimicLayoutTool = defineReadTool({
     "A large layout comes in pages: call again with page = nextPage until nextPage is null, and keep every node.",
   schema: z.object({ id: z.string().uuid(), page: z.number().int().min(0).max(1_000).optional() }).strict(),
   async run({ layouts }, args, ctx) {
-    let layout;
+    let stored;
     try {
-      layout = parseStoredContract(mimicLayoutDtoSchema, await layouts.get(ctx.user, args.id), "copilot_tools.get_mimic_layout.layout");
-    } catch {
-      return { ok: false, error: COPILOT_TOOL_RECORD_OUT_OF_SCOPE };
+      stored = await layouts.get(ctx.user, args.id);
+    } catch (error) {
+      // The service's own refusals (not readable, not found) are the one refusal; anything else
+      // (a database failure) is the tool's error, never "out of scope".
+      if (error instanceof NotFoundException || error instanceof ForbiddenException) {
+        return { ok: false, error: COPILOT_TOOL_RECORD_OUT_OF_SCOPE };
+      }
+      throw error;
     }
+    const layout = parseStoredContract(mimicLayoutDtoSchema, stored, "copilot_tools.get_mimic_layout.layout");
     if (!ctx.allowedOrganizationIds.includes(layout.organizationId)) return { ok: false, error: COPILOT_TOOL_RECORD_OUT_OF_SCOPE };
     const pages = mimicLayoutPages(layout.nodes.map(writeNodeOfDto), layout.pipes);
     const index = args.page ?? 0;

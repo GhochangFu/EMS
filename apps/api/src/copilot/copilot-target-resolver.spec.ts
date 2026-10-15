@@ -66,14 +66,23 @@ export async function noProposeToolProposesTheOnboardingCommit(): Promise<void> 
  */
 const LAYOUT = "33333333-3333-4333-8333-333333333333";
 
-/** A database whose every `select … limit` answers one row, and whose transaction runs the callback on itself. */
+/**
+ * A database whose every `select … limit` answers one row, holding only the
+ * columns that select named (an arm that reads a column it did not select gets
+ * `undefined`, as from the real database), and whose transaction runs the
+ * callback on itself.
+ */
 function oneRowDb(row: Record<string, unknown>): never {
+  let selected: string[] = [];
   const chain = {
-    select: () => chain,
+    select: (columns: Record<string, unknown> = {}) => {
+      selected = Object.keys(columns);
+      return chain;
+    },
     from: () => chain,
     where: () => chain,
     innerJoin: () => chain,
-    limit: async () => [row],
+    limit: async () => [Object.fromEntries(selected.map((key) => [key, row[key]]))],
     execute: async () => undefined,
     transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(chain),
   };

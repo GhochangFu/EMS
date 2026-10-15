@@ -42,7 +42,12 @@ import {
   assertAnInjectedAccessInstructionIsRefused,
   assertATurnThatAsksOffersTheAccessTools,
   assertAFollowUpOffersNoAccessTool,
+  assertATurnOffersOnlyTheCallersRoleTools,
 } from "./copilot-turn.service.spec";
+
+describe("F3.87 PR 2 — the turn's propose tools follow the caller's role (ADR 0099 Amendment 3 A1)", () => {
+  it("offers a location admin no tool for the organization admins", () => assertATurnOffersOnlyTheCallersRoleTools());
+});
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
 describe("F3.85 PR 7 — the copilot turn, in order (ADR 0099 decisions 1, 9, 10, 11)", () => {

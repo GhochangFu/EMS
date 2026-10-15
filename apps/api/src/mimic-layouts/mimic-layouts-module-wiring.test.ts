@@ -20,7 +20,7 @@ describe("F3.32c — MimicLayoutsModule wiring", () => {
     spec.assertServiceDepsResolve();
   });
 
-  it("F3.32f MimicSymbolLibrariesModule declares its members, imports Database and Auth, exports nothing", () => {
+  it("F3.32f MimicSymbolLibrariesModule declares its members, imports Database and Auth, exports only its service (F3.87)", () => {
     spec.assertSymbolLibrariesModuleDeclaresItsMembers();
   });
 

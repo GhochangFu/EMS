@@ -369,29 +369,70 @@ export function anUploadModelBodyAddsTheSvgAndOnlyThere(): void {
   expect(modelBodyProblems(uploadEntry(undefined, UPLOAD_DESCRIPTOR))).toEqual(["fixture.symbol.upload: an upload entry needs a modelBody"]);
 }
 
-/** `F3.87` PR 2: every `upload` entry is a `POST` with a `modelBody`; `offeredTo` names copilot roles only. */
+const COPILOT_ROLES: readonly string[] = ["admin", "organization_admin", "location_admin", "asset_group_admin"];
+
+/** `F3.87` PR 2: an `upload` entry is a `POST` with a `modelBody`; `offeredTo` names one or more copilot roles only. */
+function releaseThreeFieldProblems(entry: Pick<CatalogEntry, "id" | "method" | "modelBody" | "upload" | "offeredTo">): string[] {
+  const problems: string[] = [];
+  if (entry.upload && entry.method !== "POST") problems.push(`${entry.id}: an upload entry is not a POST`);
+  if (entry.upload && entry.modelBody === undefined) problems.push(`${entry.id}: an upload entry has no modelBody`);
+  if (entry.offeredTo && entry.offeredTo.length === 0) problems.push(`${entry.id}: offeredTo is empty`);
+  for (const role of entry.offeredTo ?? []) if (!COPILOT_ROLES.includes(role)) problems.push(`${entry.id}: offeredTo names ${role}`);
+  return problems;
+}
+
 export function theReleaseThreeEntryFieldsAreWellFormed(): void {
-  const copilotRoles: readonly string[] = ["admin", "organization_admin", "location_admin", "asset_group_admin"];
-  for (const entry of COPILOT_CATALOG) {
-    if (entry.upload) {
-      expect(entry.method, entry.id).toBe("POST");
-      expect(entry.modelBody, entry.id).toBeDefined();
-    }
-    for (const role of entry.offeredTo ?? []) expect(copilotRoles, entry.id).toContain(role);
-    if (entry.offeredTo) expect(entry.offeredTo.length, entry.id).toBeGreaterThan(0);
-  }
+  for (const entry of COPILOT_CATALOG) expect(releaseThreeFieldProblems(entry), entry.id).toEqual([]);
+}
+
+/** The rule is not vacuous: an upload on a PATCH, an upload with no modelBody, an empty or non-copilot `offeredTo`. */
+export function aMalformedReleaseThreeEntryIsRefused(): void {
+  const upload = UPLOAD_DESCRIPTOR;
+  expect(releaseThreeFieldProblems({ id: "f.a", method: "PATCH", modelBody: UPLOAD_MODEL_BODY, upload })).toEqual([
+    "f.a: an upload entry is not a POST",
+  ]);
+  expect(releaseThreeFieldProblems({ id: "f.b", method: "POST", upload })).toEqual(["f.b: an upload entry has no modelBody"]);
+  expect(releaseThreeFieldProblems({ id: "f.c", method: "POST", offeredTo: [] })).toEqual(["f.c: offeredTo is empty"]);
+  expect(releaseThreeFieldProblems({ id: "f.d", method: "POST", offeredTo: ["admin", "viewer"] })).toEqual([
+    "f.d: offeredTo names viewer",
+  ]);
+  expect(releaseThreeFieldProblems({ id: "f.e", method: "POST", modelBody: UPLOAD_MODEL_BODY, upload, offeredTo: ["admin"] })).toEqual([]);
 }
 
 /** `F3.87` PR 2: a `cardOnly` key is never a body field nor a model-body field, and no fixture body holds one. */
-export function noCardOnlyKeyIsABodyField(): void {
-  for (const entry of COPILOT_CATALOG) {
-    const fixture = FIXTURES[entry.id];
-    for (const key of entry.cardOnly ?? []) {
-      expect(bodyFieldsOf(entry.body), entry.id).not.toContain(key);
-      expect(bodyFieldsOf(modelBodyOf(entry)), entry.id).not.toContain(key);
-      expect(fixture && Object.prototype.hasOwnProperty.call(fixture.body, key), entry.id).toBeFalsy();
-    }
+function cardOnlyProblems(
+  entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "modelBody" | "cardOnly">,
+  fixtureBody: Record<string, unknown> | undefined,
+): string[] {
+  const problems: string[] = [];
+  for (const key of entry.cardOnly ?? []) {
+    if (bodyFieldsOf(entry.body).includes(key)) problems.push(`${entry.id}: cardOnly ${key} is a body field`);
+    else if (bodyFieldsOf(modelBodyOf(entry)).includes(key)) problems.push(`${entry.id}: cardOnly ${key} is a model-body field`);
+    if (fixtureBody && Object.prototype.hasOwnProperty.call(fixtureBody, key)) problems.push(`${entry.id}: a fixture holds ${key}`);
   }
+  return problems;
+}
+
+export function noCardOnlyKeyIsABodyField(): void {
+  for (const entry of COPILOT_CATALOG) expect(cardOnlyProblems(entry, FIXTURES[entry.id]?.body), entry.id).toEqual([]);
+}
+
+/** The rule is not vacuous: a `cardOnly` key that is a body field, one in the model body, one in a fixture body. */
+export function aCardOnlyKeyInTheBodyIsRefused(): void {
+  const body = z.object({ name: z.string(), baseline: z.string() }).strict();
+  expect(cardOnlyProblems({ id: "f.a", body, clientOnly: [], cardOnly: ["baseline"] }, undefined)).toEqual([
+    "f.a: cardOnly baseline is a body field",
+  ]);
+  const modelBody = z.object({ name: z.string(), svgText: z.string() }).strict();
+  expect(
+    cardOnlyProblems({ id: "f.b", body: z.object({ name: z.string() }).strict(), clientOnly: [], modelBody, cardOnly: ["svgText"] }, undefined),
+  ).toEqual(["f.b: cardOnly svgText is a model-body field"]);
+  expect(
+    cardOnlyProblems({ id: "f.c", body: z.object({ name: z.string() }).strict(), clientOnly: [], cardOnly: ["baseline"] }, { baseline: {} }),
+  ).toEqual(["f.c: a fixture holds baseline"]);
+  expect(cardOnlyProblems({ id: "f.d", body: z.object({ name: z.string() }).strict(), clientOnly: [], cardOnly: ["baseline"] }, { name: "x" })).toEqual(
+    [],
+  );
 }
 
 /** `F3.87` PR 2: the hash leaves out `clientOnly` and `cardOnly`; an unknown entry leaves out nothing. */

@@ -120,7 +120,12 @@ export function catalogEntry(id: string): CatalogEntry | undefined {
  */
 export function hashExcludedKeysFor(catalogId: string): readonly string[] {
   const entry = BY_ID.get(catalogId);
-  return entry ? [...entry.clientOnly, ...(entry.cardOnly ?? [])] : [];
+  return entry ? hashExcludedKeysOf(entry) : [];
+}
+
+/** The same rule for an entry in hand: the propose tool hashes with it, so the two sides cannot drift. */
+export function hashExcludedKeysOf(entry: Pick<CatalogEntry, "clientOnly" | "cardOnly">): readonly string[] {
+  return [...entry.clientOnly, ...(entry.cardOnly ?? [])];
 }
 
 /**

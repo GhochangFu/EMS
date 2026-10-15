@@ -9,6 +9,7 @@ import {
   COPILOT_CATALOG,
   formulaRefsOf,
   formulaSitesOf,
+  hashExcludedKeysOf,
   modelBodyOf,
   proposeToolName,
   stepValuesSchema,
@@ -325,8 +326,8 @@ export function createCopilotProposeTools(
       method: entry.method,
       path: catalogPath(entry, params),
       body,
-      // `F3.87` PR 2: the interceptor's own exclusion (`hashExcludedKeysFor`), for this entry.
-      bodyHash: bodyHash(body, [...entry.clientOnly, ...(entry.cardOnly ?? [])]),
+      // `F3.87` PR 2: the interceptor's own exclusion rule (`hashExcludedKeysFor` calls the same helper).
+      bodyHash: bodyHash(body, hashExcludedKeysOf(entry)),
       summary,
       risk: entry.risk,
     });
