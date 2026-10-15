@@ -37,6 +37,8 @@ import { idParamSchema } from "../admin/admin.schema";
 import { decodeMulterFilename } from "../assets/multer-filename";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { CopilotUploadChangeInterceptor } from "../copilot/copilot-upload-change.interceptor";
+import { CopilotUploadRoute } from "../copilot/copilot-upload-route";
 import { mimicLibraryCodeParamSchema, mimicOrgSymbolParamsSchema, mimicSymbolLibrariesQuerySchema } from "./mimic-symbol-libraries.schema";
 import { MimicSymbolLibrariesService } from "./mimic-symbol-libraries.service";
 
@@ -107,10 +109,14 @@ export class MimicSymbolLibrariesController {
 
   @Post(":id/symbols")
   @HttpCode(HttpStatus.CREATED)
+  // `F3.87` PR 6a (ADR 0099 Amendment 3 A3): the copilot's multipart Confirm target. Its body hash
+  // is compared after multer, by the stage that follows `FileInterceptor` in the same call.
+  @CopilotUploadRoute()
   @UseInterceptors(
     FileInterceptor("file", {
       limits: { fileSize: MAX_MIMIC_SYMBOL_SVG_BYTES, files: 1, fields: 3, fieldSize: 4096 },
     }),
+    CopilotUploadChangeInterceptor,
   )
   async uploadSymbol(
     @Param("id") id: string,

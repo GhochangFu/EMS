@@ -1,8 +1,16 @@
-import { BadRequestException, ConflictException, ForbiddenException, InternalServerErrorException } from "@nestjs/common";
+import { createHash } from "node:crypto";
+
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  InternalServerErrorException,
+  PayloadTooLargeException,
+} from "@nestjs/common";
 import type { CallHandler, ExecutionContext } from "@nestjs/common";
 import { HTTP_CODE_METADATA } from "@nestjs/common/constants";
 import { Reflector } from "@nestjs/core";
-import { defer, from, lastValueFrom } from "rxjs";
+import { concatMap, defer, from, lastValueFrom, throwError } from "rxjs";
 import { expect, vi } from "vitest";
 import { z } from "zod";
 
@@ -15,6 +23,8 @@ import { CHANGE_REFUSED, CopilotChangeInterceptor } from "./copilot-change.inter
 import type { ClaimedChange, CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import { copilotContext, currentCopilotChange } from "./copilot-request-context";
 import type { CopilotTurnService } from "./copilot-turn.service";
+import { CopilotUploadChangeInterceptor } from "./copilot-upload-change.interceptor";
+import { COPILOT_UPLOAD_ROUTE } from "./copilot-upload-route";
 
 /**
  * `F3.85` PR 4 / ADR 0099 decision 4.5 — the `X-Copilot-Change` interceptor,
@@ -64,6 +74,12 @@ type Options = {
   /** The route's `@HttpCode`, set on the handler as Nest's decorator sets it. */
   httpCode?: number;
   contentType?: string;
+  /** `F3.87` PR 6a: the handler carries `@CopilotUploadRoute()`. */
+  uploadRoute?: boolean;
+  /** `F3.87` PR 6a: what `next.handle()` is — the route stage over the handler (multer already ran), or a multer error. */
+  routeStage?: "upload" | "multerError";
+  /** `F3.87` PR 6a: the uploaded file multer would hand the route stage. */
+  file?: { originalname: string; buffer: Buffer };
 };
 
 function harness(options: Options = {}): Harness {
@@ -81,9 +97,11 @@ function harness(options: Options = {}): Harness {
     },
     body: "body" in options ? options.body : BODY,
     user: options.authenticated === false ? undefined : user,
+    ...(options.file ? { file: options.file } : {}),
   };
   const handlerFn = function create(): void {};
   if (options.httpCode !== undefined) Reflect.defineMetadata(HTTP_CODE_METADATA, options.httpCode, handlerFn);
+  if (options.uploadRoute) Reflect.defineMetadata(COPILOT_UPLOAD_ROUTE, true, handlerFn);
   const context = {
     getType: () => options.type ?? "http",
     switchToHttp: () => ({ getRequest: () => req }),
@@ -94,7 +112,15 @@ function harness(options: Options = {}): Harness {
     seen.push(currentCopilotChange());
     return options.handlerResult ? options.handlerResult() : { id: "dash-1", title: "Ops" };
   });
-  const next: CallHandler = { handle: () => defer(() => from(handler())) };
+  const inner: CallHandler = { handle: () => defer(() => from(handler())) };
+  // `F3.87` PR 6a: Nest runs the route's interceptors inside the global one's `next.handle()`.
+  const routeStage = new CopilotUploadChangeInterceptor();
+  const next: CallHandler =
+    options.routeStage === "upload"
+      ? { handle: () => defer(() => from(routeStage.intercept(context, inner))).pipe(concatMap((stage) => stage)) }
+      : options.routeStage === "multerError"
+        ? { handle: () => throwError(() => new PayloadTooLargeException("File too large")) }
+        : inner;
   const stored: ClaimedChange = {
     method: "POST",
     path: PATH,
@@ -104,7 +130,7 @@ function harness(options: Options = {}): Harness {
     ...options.stored,
   };
   const pending = {
-    peek: vi.fn(async () => ({ organizationId: stored.organizationId })),
+    peek: vi.fn(async () => ({ organizationId: stored.organizationId, catalogId: stored.catalogId })),
     claim: vi.fn(async () => stored),
     release: vi.fn(async () => undefined),
     record: vi.fn(async () => {
@@ -187,11 +213,14 @@ export async function aQueryStringIs409(): Promise<void> {
   expect(h.pending.claim).not.toHaveBeenCalled();
 }
 
-/** A multipart body is parsed after this interceptor, so its hash could not cover the upload: refused. */
+/**
+ * A multipart body for an entry with no `upload` is refused before any claim
+ * (`F3.87` PR 6a: the peek names the entry, so this is decided before the claim).
+ */
 export async function aMultipartRequestIs409(): Promise<void> {
-  const h = harness({ contentType: "multipart/form-data; boundary=x" });
+  const h = harness({ contentType: "multipart/form-data; boundary=x", uploadRoute: true });
   expect(await refused(h)).toBeInstanceOf(ConflictException);
-  expect(h.pending.peek).not.toHaveBeenCalled();
+  expect(h.pending.claim).not.toHaveBeenCalled();
   expect(h.handler).not.toHaveBeenCalled();
 }
 
@@ -441,4 +470,106 @@ export async function aRootTransformBodyIsHashedRaw(): Promise<void> {
   await run(h);
   expect(h.handler).toHaveBeenCalledTimes(1);
   expect(h.pending.release).not.toHaveBeenCalled();
+}
+
+/**
+ * `F3.87` PR 6a (ADR 0099 Amendment 3 A3, plan D12) — the multipart Confirm in
+ * two stages. `UPLOAD_FIXTURE_ID` is an `upload` entry in the `.test.ts`
+ * wrapper's mock of `catalogEntry` (no real entry has `upload` until PR 6b).
+ */
+export const UPLOAD_FIXTURE_ID = "fixture.symbol.upload";
+const LIBRARY_PATH = "/api/v1/mimic-symbol-libraries/66666666-6666-4666-8666-666666666666/symbols";
+const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M0 0h24"/></svg>');
+const FIELDS = { name: "pump", label: "Pump" };
+const STORED_UPLOAD = {
+  ...FIELDS,
+  filename: "pump.svg",
+  fileSha256: createHash("sha256").update(SVG).digest("hex"),
+};
+
+function uploadHarness(over: Options = {}): Harness {
+  return harness({
+    contentType: "multipart/form-data; boundary=x",
+    uploadRoute: true,
+    routeStage: "upload",
+    path: LIBRARY_PATH,
+    body: FIELDS,
+    file: { originalname: "pump.svg", buffer: SVG },
+    stored: { path: LIBRARY_PATH, catalogId: UPLOAD_FIXTURE_ID, bodyHash: bodyHash(STORED_UPLOAD) },
+    ...over,
+  });
+}
+
+/** A matching upload: claimed, the hash compared after multer, the handler marked, the outcome recorded. */
+export async function aMatchingUploadIsAppliedAndMarked(): Promise<void> {
+  const h = uploadHarness();
+  await run(h);
+  expect(h.handler).toHaveBeenCalledTimes(1);
+  expect(h.seen).toEqual([{ via: "copilot", changeId: CHANGE_ID }]);
+  expect(h.pending.release).not.toHaveBeenCalled();
+  expect(h.pending.record).toHaveBeenCalledWith(expect.any(String), CHANGE_ID, "applied", 201, "dash-1");
+}
+
+/** A multipart Confirm to a handler without `@CopilotUploadRoute()` is refused before any claim. */
+export async function anUploadToAnUnmarkedHandlerIs409BeforeTheClaim(): Promise<void> {
+  const h = uploadHarness({ uploadRoute: false });
+  expect(await refused(h)).toBeInstanceOf(ConflictException);
+  expect(h.pending.claim).not.toHaveBeenCalled();
+  expect(h.handler).not.toHaveBeenCalled();
+}
+
+/** An upload Confirmed against another library's path: 409 and released, the handler never runs (critique A6 item 8). */
+export async function anUploadToAnotherLibraryIs409AndReleased(): Promise<void> {
+  const other = "/api/v1/mimic-symbol-libraries/77777777-7777-4777-8777-777777777777/symbols";
+  await expectReleased(uploadHarness({ path: other }));
+}
+
+/** One changed byte of the file: the route stage releases and refuses; nothing is recorded. */
+export async function aChangedFileByteIs409AndReleased(): Promise<void> {
+  const changed = Buffer.from(SVG);
+  changed[changed.length - 2] = 0x20;
+  const h = uploadHarness({ file: { originalname: "pump.svg", buffer: changed } });
+  await expectReleased(h);
+  expect(h.pending.release).toHaveBeenCalledTimes(1);
+}
+
+/** A changed text field: the same refusal. */
+export async function aChangedUploadFieldIs409AndReleased(): Promise<void> {
+  await expectReleased(uploadHarness({ body: { ...FIELDS, label: "Pump 2" } }));
+}
+
+/** A changed filename: the same refusal. */
+export async function aChangedUploadFilenameIs409AndReleased(): Promise<void> {
+  await expectReleased(uploadHarness({ file: { originalname: "other.svg", buffer: SVG } }));
+}
+
+/** A multer limit error before the route stage compared anything: released, not recorded `failed` (critique A6 item 12). */
+export async function aMulterErrorBeforeTheCompareReleases(): Promise<void> {
+  const h = uploadHarness({ routeStage: "multerError" });
+  const err = await refused(h);
+  expect(err).toBeInstanceOf(PayloadTooLargeException);
+  expect(h.pending.release).toHaveBeenCalledTimes(1);
+  expect(h.pending.record).not.toHaveBeenCalled();
+}
+
+/** A handler error after the compare is recorded `failed`, as for any change. */
+export async function aHandlerErrorAfterTheCompareIsRecorded(): Promise<void> {
+  const h = uploadHarness({ handlerResult: async () => Promise.reject(new ConflictException("A symbol named pump exists")) });
+  expect(await refused(h)).toBeInstanceOf(ConflictException);
+  expect(h.pending.release).not.toHaveBeenCalled();
+  expect(h.pending.record).toHaveBeenCalledWith(expect.any(String), CHANGE_ID, "failed", 409, null);
+}
+
+/** The route stage alone: no header passes through; the header with no claim on the store fails closed. */
+export async function theRouteStageFailsClosedWithoutAClaim(): Promise<void> {
+  const stage = new CopilotUploadChangeInterceptor();
+  const ran = vi.fn(async () => "ok");
+  const ctx = (headers: Record<string, string>) =>
+    ({ switchToHttp: () => ({ getRequest: () => ({ headers, body: FIELDS }) }) }) as unknown as ExecutionContext;
+  const handle = { handle: () => defer(() => from(ran())) };
+  await copilotContext.run({ change: null }, async () => {
+    expect(await lastValueFrom(await stage.intercept(ctx({}), handle))).toBe("ok");
+    await expect(stage.intercept(ctx({ "x-copilot-change": CHANGE_ID }), handle)).rejects.toBeInstanceOf(ConflictException);
+  });
+  expect(ran).toHaveBeenCalledTimes(1);
 }
