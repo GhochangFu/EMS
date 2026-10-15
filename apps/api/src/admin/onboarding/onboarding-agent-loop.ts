@@ -77,10 +77,11 @@ export function buildHistory(messages: readonly OnboardingChatMessage[]): LlmMes
   const recent = messages
     .filter((message) => message.role !== "system")
     .slice(-MAX_HISTORY_MESSAGES)
-    .map((message): LlmMessage => ({
-      role: message.role === "user" ? "user" : "assistant",
-      content: cutToBound(message.content, MAX_HISTORY_MESSAGE_CHARS),
-    }));
+    .map((message): LlmMessage => {
+      // A stored row is text; the skill never carries content parts (ADR 0099 Amendment 3 A5).
+      const content = cutToBound(message.content, MAX_HISTORY_MESSAGE_CHARS);
+      return message.role === "user" ? { role: "user", content } : { role: "assistant", content };
+    });
   const firstUser = recent.findIndex((message) => message.role === "user");
   return firstUser < 0 ? [] : recent.slice(firstUser);
 }

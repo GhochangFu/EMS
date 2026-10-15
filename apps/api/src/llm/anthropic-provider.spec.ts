@@ -155,6 +155,54 @@ export async function assertMaxTokensIsAProviderError(capture: AnthropicCapture)
   assert((await rejects(capture, "max_tokens")) instanceof LlmProviderError, "a reply cut at max_tokens is a provider error");
 }
 
+/** Three bytes whose base64 is fixed, so the block's data is asserted exactly. */
+const BYTES = Buffer.from([0x89, 0x50, 0x4e]);
+const BYTES_BASE64 = "iVBO";
+
+export async function assertImageAndPdfPartsAreNativeBlocks(capture: AnthropicCapture): Promise<void> {
+  reset(capture, message([{ type: "text", text: "ok" }]));
+  await provider().complete({
+    messages: [
+      { role: "system", content: "You are the copilot." },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "draw the mimic" },
+          { type: "image", mediaType: "image/png", data: BYTES },
+          { type: "document", mediaType: "application/pdf", data: BYTES, filename: "sld.pdf" },
+        ],
+      },
+    ],
+    tools: [],
+    signal: signal(),
+  });
+  assert(BYTES.toString("base64") === BYTES_BASE64, "the fixture's base64 is the pinned one");
+  const body = capture.requests[0]?.body ?? {};
+  assert(body.system === "You are the copilot.", "the system message stays the system parameter");
+  const messages = body.messages as { role: string; content: unknown }[];
+  assert(messages.length === 1 && messages[0].role === "user", "the parts go in one user message");
+  assert(
+    JSON.stringify(messages[0].content) ===
+      JSON.stringify([
+        { type: "text", text: "draw the mimic" },
+        { type: "image", source: { type: "base64", media_type: "image/png", data: BYTES_BASE64 } },
+        {
+          type: "document",
+          source: { type: "base64", media_type: "application/pdf", data: BYTES_BASE64 },
+          title: "sld.pdf",
+        },
+      ]),
+    "a text block, a base64 image block and a base64 PDF document block titled with the filename",
+  );
+}
+
+export async function assertAStringUserContentIsSentAsAString(capture: AnthropicCapture): Promise<void> {
+  reset(capture, message([{ type: "text", text: "ok" }]));
+  await provider().complete({ messages: [{ role: "user", content: "hi" }], tools: [], signal: signal() });
+  const messages = capture.requests[0]?.body.messages as { role: string; content: unknown }[];
+  assert(messages[0].role === "user" && messages[0].content === "hi", "a string content goes out as the same string");
+}
+
 export async function assertTextOnlyIsFinal(capture: AnthropicCapture): Promise<void> {
   reset(capture, message([{ type: "text", text: "All set." }]));
   const reply = await provider().complete({ messages: [{ role: "user", content: "hi" }], tools: [], signal: signal() });

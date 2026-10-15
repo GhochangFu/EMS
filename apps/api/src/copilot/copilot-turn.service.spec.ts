@@ -6,7 +6,7 @@ import { type CopilotMessageDto, type CopilotPendingChangeDto, copilotTurnRespon
 
 import { calls, FakeLlmProvider, toolCall } from "../admin/onboarding/onboarding-agent-loop.spec";
 import type { ResolvedIdentity } from "../auth/identity-resolver";
-import type { LlmProvider } from "../llm/llm-port";
+import { textOfContent, type LlmProvider } from "../llm/llm-port";
 import { LlmModule } from "../llm/llm.module";
 import { LlmResolver, type ResolvedLlm, type ResolvedPlatformScope } from "../llm/llm-resolver";
 import { defineToolRegistry } from "../llm/tool-registry";
@@ -727,7 +727,7 @@ export async function assertAFollowUpTurnRunsOnTheChangesOutcome(): Promise<void
   const prompt = llm.seen[0] ?? [];
   const input = prompt.at(-1);
   expect(input?.role).toBe("user");
-  const content = input && "content" in input ? (input.content ?? "") : "";
+  const content = input?.role === "user" ? textOfContent(input.content) : "";
   expect(content.startsWith(COPILOT_FOLLOW_UP_PREFIX)).toBe(true);
   expect(content).toContain(APPLIED.resourceId as string);
   expect(content).toContain(CHANGE_ID);

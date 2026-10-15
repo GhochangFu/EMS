@@ -28,8 +28,30 @@ export type LlmToolCall = {
   readonly arguments: string;
 };
 
+/**
+ * One part of a user message (ADR 0099 Amendment 3 A5): text, or a file the
+ * administrator attached, sent to the turn's own provider as a native content
+ * part. The bytes are never stored — the message row keeps a placeholder.
+ */
+export type LlmContentPart =
+  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "image"; readonly mediaType: "image/png" | "image/jpeg" | "image/webp"; readonly data: Buffer }
+  | { readonly type: "document"; readonly mediaType: "application/pdf"; readonly data: Buffer; readonly filename: string };
+
+/** A user message's content: a string, or parts (Amendment 3 A5). */
+export type LlmUserContent = string | readonly LlmContentPart[];
+
+/** The text of a user message's content: a string as it is, or its text parts joined by a newline. */
+export function textOfContent(content: LlmUserContent): string {
+  if (typeof content === "string") {
+    return content;
+  }
+  return content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n");
+}
+
 export type LlmMessage =
-  | { readonly role: "system" | "user" | "assistant"; readonly content: string }
+  | { readonly role: "system" | "assistant"; readonly content: string }
+  | { readonly role: "user"; readonly content: LlmUserContent }
   | {
       readonly role: "assistant";
       readonly content: string | null;
