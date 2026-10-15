@@ -9,7 +9,7 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 /**
  * The request-body schemas. The `*.schema.ts` files under `apps/api/src` are the controllers' own;
  * the `contracts/*-writes.ts` files below are the write bodies that moved
- * to `@bms/shared` (`F3.85` PR 1 the first four, `F3.86` PR 1 the next seven, `F4.254` PR 1 the twelfth). A wider root that kept only `.schema.ts` would
+ * to `@bms/shared` (`F3.85` PR 1 the first four, `F3.86` PR 1 the next seven, `F4.254` PR 1 the twelfth, `F3.87` PR 1 the last three). A wider root that kept only `.schema.ts` would
  * scan none of them and their refinement sites would leave this gate silently.
  * The second walk keeps `-writes.ts` only, not every `contracts/*.ts`: four older
  * refinements there have no `.describe()` yet.
@@ -27,6 +27,9 @@ const MOVED_WRITE_BODIES = [
   "packages/shared/src/contracts/site-control-room-view-writes.ts",
   "packages/shared/src/contracts/site-layout-writes.ts",
   "packages/shared/src/contracts/asset-template-instantiate-writes.ts",
+  "packages/shared/src/contracts/mimic-layout-writes.ts",
+  "packages/shared/src/contracts/mimic-symbol-library-writes.ts",
+  "packages/shared/src/contracts/asset-role-writes.ts",
 ];
 
 function schemaFiles(): string[] {
