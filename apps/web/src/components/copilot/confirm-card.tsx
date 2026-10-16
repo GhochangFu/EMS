@@ -29,6 +29,7 @@ import { catalogOrgSymbols } from "../../lib/mimic-symbols";
 import { useAuthStore } from "../../stores/auth-store";
 import { ChangeCard } from "./change-card";
 import { MimicLayoutPreview } from "./mimic-layout-preview";
+import { SymbolUploadPreview } from "./symbol-upload-preview";
 
 /** What a 409 means on a card: the change was applied, rejected, expired or claimed elsewhere. */
 export const CHANGE_GONE_SENTENCE = "This change is no longer available.";
@@ -284,6 +285,12 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
         confirmDisabled={!allReady}
       >
         {layoutBody !== null && <MimicLayoutPreview body={layoutBody} orgSymbols={orgSymbols} />}
+        {entry?.upload !== undefined && typeof change.body.svgText === "string" && (
+          <SymbolUploadPreview
+            svgText={change.body.svgText}
+            label={typeof change.body.label === "string" && change.body.label !== "" ? change.body.label : String(change.body.name ?? "")}
+          />
+        )}
         {warnings.length > 0 && (
           <ul aria-label="Layout warnings" className="mt-2 list-disc pl-4 text-[11px] text-warning-ink">
             {warnings.map((warning) => (

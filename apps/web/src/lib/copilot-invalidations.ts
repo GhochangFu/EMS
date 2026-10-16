@@ -40,6 +40,10 @@ const ASSET_SUMMARY: QueryKey = ["admin", "asset-summary"];
 const ASSET_POINTS: QueryKey = ["admin", "asset-points"];
 // `F3.87` PR 5: the layout list and, under the same prefix, each layout the editor reads.
 const MIMIC_LAYOUTS: QueryKey = ["mimic-layouts"];
+// `F3.87` PR 6b: the symbol catalog of every organization (`use-mimic-symbol-libraries.ts`, a prefix), and
+// the vocabularies read (`api/vocabularies.ts`) the layout editor's role picker lists.
+const MIMIC_SYMBOL_LIBRARIES: QueryKey = ["mimic-symbol-libraries"];
+const VOCABULARIES: QueryKey = ["vocabularies"];
 // `F4.255` PR 3: the copilot dock's list of an organization's open onboarding drafts.
 export const ONBOARDING_DRAFTS: QueryKey = ["admin", "onboarding", "drafts"];
 
@@ -129,6 +133,13 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   // `F3.87` PR 5: the layout library (`use-mimic-layouts.ts`) and each layout (`mimic-layout-editor-page.tsx`).
   "mimicLayout.create": [MIMIC_LAYOUTS],
   "mimicLayout.replace": [MIMIC_LAYOUTS],
+  // `F3.87` PR 6b: the libraries page and every picker that lists an organization's symbols.
+  "mimicLibrary.setting": [MIMIC_SYMBOL_LIBRARIES],
+  "mimicLibrary.create": [MIMIC_SYMBOL_LIBRARIES],
+  "mimicLibrary.update": [MIMIC_SYMBOL_LIBRARIES],
+  "mimicSymbol.update": [MIMIC_SYMBOL_LIBRARIES],
+  "mimicSymbol.upload": [MIMIC_SYMBOL_LIBRARIES],
+  "assetRole.create": [VOCABULARIES],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */
