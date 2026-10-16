@@ -124,7 +124,12 @@ export const COPILOT_READ_FROM_FILE_NOTE = " (read from an attached file: check 
 /** `F3.86` ruling Q8: the user-account entries a local sign-in deployment refuses (grants are database-only and stay). */
 const isUserAccountEntry = (entry: CatalogEntry): boolean => entry.id.startsWith("user.");
 
-/** The propose tool the admin form of the role refusal names (`F3.87` PR 6 adds its entry). */
+/**
+ * The propose tool the admin form of the role refusal names. `F3.87` PR 6 made
+ * `assetRole.create` an entry with `offeredTo: ["admin"]`, so the global
+ * admin's registry has it and gets the admin form; a registry without it (a
+ * spec's catalog) still gets the sentence form.
+ */
 const ROLE_CREATE_TOOL = proposeToolName({ id: "assetRole.create" });
 
 /**

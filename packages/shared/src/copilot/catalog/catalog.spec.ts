@@ -49,6 +49,9 @@ const LAYOUT_GRAPH = {
   symbolLibraries: ["core"],
 };
 
+/** `F3.87` PR 6: an SVG the symbol parser takes — one circle on a 24 by 24 box. */
+const SYMBOL_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>';
+
 /** One valid body and path per entry, and the name its summary must contain. */
 export const FIXTURES: Readonly<
   Record<string, { body: Record<string, unknown>; params: Record<string, string>; names: string }>
@@ -180,6 +183,18 @@ export const FIXTURES: Readonly<
   // `F3.87` PR 5 — the canvas entries (owner ruling Q1): two units and one pipe; the replace at version 1.
   "mimicLayout.create": { body: { organizationId: ORG, ...LAYOUT_GRAPH }, params: {}, names: "Raw water" },
   "mimicLayout.replace": { body: { version: 1, ...LAYOUT_GRAPH }, params: { id: ROW }, names: TARGET_NAME },
+  // `F3.87` PR 6 — the symbol libraries (Amendment 3 A3); the upload fixture is the model's body, the SVG as text.
+  "mimicLibrary.setting": { body: { organizationId: ORG, enabled: false }, params: { libraryCode: "lucide" }, names: ORG_NAME },
+  "mimicLibrary.create": {
+    body: { organizationId: ORG, code: "plant", label: "Plant Symbols", style: "stroke", licence: "MIT" },
+    params: {},
+    names: "Plant Symbols",
+  },
+  "mimicLibrary.update": { body: { active: false }, params: { id: ROW }, names: TARGET_NAME },
+  "mimicSymbol.update": { body: { group: "water" }, params: { id: ROW, symbolId: ORG }, names: TARGET_NAME },
+  "mimicSymbol.upload": { body: { name: "pump-x", label: "Pump X", svg: { kind: "text", text: SYMBOL_SVG } }, params: { id: ROW }, names: TARGET_NAME },
+  // `F3.87` PR 6 — the unit-role vocabulary, for the global admin (Amendment 3 A1, A6; ruling Q4).
+  "assetRole.create": { body: { code: "pump-x", label: "Pump X" }, params: {}, names: "pump-x" },
 };
 
 /**
@@ -781,4 +796,106 @@ export function cardOnlyKeysForNamesTheStrippedKeys(): void {
   expect(cardOnlyKeysFor("mimicLayout.create")).toEqual([]);
   expect(cardOnlyKeysFor("no.such.entry")).toEqual([]);
   for (const entry of COPILOT_CATALOG) expect(cardOnlyKeysFor(entry.id), entry.id).toEqual(entry.cardOnly ?? []);
+}
+
+/** The ids `F3.87` PR 6 makes entries: the five library and symbol writes, then the role create. */
+const LIBRARY_ENTRY_IDS = ["mimicLibrary.setting", "mimicLibrary.create", "mimicLibrary.update", "mimicSymbol.update", "mimicSymbol.upload"] as const;
+
+/**
+ * `F3.87` PR 6 (ADR 0099 Amendment 3 A1, A3) — the five library and symbol
+ * entries are for the authoring roles; their targets are the organization a
+ * create or setting names, or the library row.
+ */
+export function theLibraryEntriesAreForTheAuthors(): void {
+  for (const id of LIBRARY_ENTRY_IDS) {
+    const entry = catalogEntry(id);
+    if (!entry) throw new Error(id);
+    expect(entry.offeredTo, id).toEqual(["admin", "organization_admin"]);
+    expect(EXCLUDED_ROUTES.some((route) => route.path === entry.path && route.method === entry.method), id).toBe(false);
+  }
+  expect(catalogEntry("mimicLibrary.setting")?.target).toEqual({ kind: "organization", manage: "mimic" });
+  expect(catalogEntry("mimicLibrary.create")?.target).toEqual({ kind: "organization", manage: "mimic" });
+  expect(catalogEntry("mimicLibrary.update")?.target).toEqual({ kind: "mimicLibrary", param: "id" });
+  expect(catalogEntry("mimicSymbol.update")?.target).toEqual({ kind: "mimicLibrary", param: "id" });
+  expect(catalogEntry("mimicSymbol.upload")?.target).toEqual({ kind: "mimicLibrary", param: "id" });
+}
+
+/**
+ * The symbol upload is the catalog's one multipart entry: the route's text
+ * fields as the body, the model's body adding `svg`, the SVG text stored for
+ * the card alone (`cardOnly`), and the step holding exactly the text fields
+ * (the file is never a field, D6).
+ */
+export function theSymbolUploadIsTheMultipartEntry(): void {
+  const entry = catalogEntry("mimicSymbol.upload");
+  if (!entry) throw new Error("mimicSymbol.upload");
+  const exports = contracts as unknown as Record<string, unknown>;
+  expect(entry.upload).toEqual({ fileField: "file", contentType: "image/svg+xml", maxBytes: contracts.MAX_MIMIC_SYMBOL_SVG_BYTES });
+  expect(entry.cardOnly).toEqual(["svgText"]);
+  expect(hashExcludedKeysFor(entry.id)).toEqual(["svgText"]);
+  expect(entry.bodyName).toBe("mimicSymbolUploadFieldsSchema");
+  expect(entry.modelBody).toBe(exports.copilotMimicSymbolUploadModelBodySchema);
+  expect(entry.modelBodyName).toBe("copilotMimicSymbolUploadModelBodySchema");
+  expect(entry.steps).toEqual([{ id: "symbol", title: "Symbol", fields: ["name", "label", "group"] }]);
+  expect(COPILOT_CATALOG.filter((candidate) => candidate.upload !== undefined).map((candidate) => candidate.id)).toEqual(["mimicSymbol.upload"]);
+}
+
+/** The model's upload body takes the SVG as text or as an attachment index, and nothing else. */
+export function theUploadModelBodyTakesTextOrAnAttachment(): void {
+  const schema = contracts.copilotMimicSymbolUploadModelBodySchema;
+  const base = { name: "pump-x", label: "Pump X" };
+  expect(schema.safeParse({ ...base, svg: { kind: "text", text: SYMBOL_SVG } }).success).toBe(true);
+  expect(schema.safeParse({ ...base, svg: { kind: "attachment", index: 1 } }).success).toBe(true);
+  expect(schema.safeParse({ ...base, svg: { kind: "attachment", index: 4 } }).success).toBe(false);
+  expect(schema.safeParse({ ...base, svg: { kind: "url", url: "https://x.test/a.svg" } }).success).toBe(false);
+  expect(schema.safeParse({ ...base, svg: { kind: "text", text: "x".repeat(65537) } }).success).toBe(false);
+  expect(schema.safeParse({ ...base, svg: { kind: "text", text: SYMBOL_SVG }, svgText: SYMBOL_SVG }).success).toBe(false);
+  expect(schema.safeParse({ label: "Pump X", svg: { kind: "text", text: SYMBOL_SVG } }).success).toBe(false);
+}
+
+/** Ruling Q4: `assetRole.create` is a fleet entry offered to the global admin alone. */
+export function theRoleCreateIsForTheGlobalAdminOnly(): void {
+  const entry = catalogEntry("assetRole.create");
+  if (!entry) throw new Error("assetRole.create");
+  expect({ method: entry.method, path: entry.path, target: entry.target, offeredTo: entry.offeredTo, risk: entry.risk }).toEqual({
+    method: "POST",
+    path: "/admin/vocabularies/asset-roles",
+    target: { kind: "fleet" },
+    offeredTo: ["admin"],
+    risk: "create",
+  });
+  expect(entry.steps).toEqual([{ id: "role", title: "Role", fields: ["code", "label", "sortOrder"] }]);
+}
+
+/** `F3.87` PR 6: every mimic and role write route is an entry or excluded for good; nothing waits on a later PR. */
+export function noMimicOrRoleRouteIsPending(): void {
+  expect(EXCLUDED_ROUTES.filter((route) => route.reason.startsWith("F3.87 PR"))).toEqual([]);
+}
+
+/** The summaries name the library, the organization or the role code. */
+export function theLibraryAndRoleSummariesNameTheirTarget(): void {
+  const summary = (id: string, body: Record<string, unknown>, params: Record<string, string> = {}) => {
+    const entry = catalogEntry(id);
+    if (!entry) throw new Error(id);
+    return entry.summary({ body, params, targetName: TARGET_NAME, organizationName: ORG_NAME });
+  };
+  expect(summary("mimicLibrary.setting", { organizationId: ORG, enabled: false }, { libraryCode: "lucide" })).toBe(
+    `Turn the built-in symbol library "lucide" off for ${ORG_NAME}.`,
+  );
+  expect(summary("mimicLibrary.setting", { organizationId: ORG, enabled: true }, { libraryCode: "lucide" })).toBe(
+    `Turn the built-in symbol library "lucide" on for ${ORG_NAME}.`,
+  );
+  expect(summary("mimicLibrary.create", { organizationId: ORG, code: "plant", label: "Plant Symbols" })).toBe(
+    `Create the symbol library "Plant Symbols" (org.plant) in ${ORG_NAME}.`,
+  );
+  expect(summary("mimicLibrary.update", { active: false })).toBe(`Retire the symbol library "${TARGET_NAME}".`);
+  expect(summary("mimicLibrary.update", { active: true })).toBe(`Reactivate the symbol library "${TARGET_NAME}".`);
+  expect(summary("mimicLibrary.update", { label: "New", licence: "MIT" })).toBe(`Change label and licence of the symbol library "${TARGET_NAME}".`);
+  expect(summary("mimicSymbol.update", { group: "water" })).toBe(`Change group of a symbol in the library "${TARGET_NAME}".`);
+  expect(summary("mimicSymbol.upload", { name: "pump-x", label: "Pump X", filename: "pump-x.svg" })).toBe(
+    `Upload the symbol "Pump X" (pump-x) to the library "${TARGET_NAME}".`,
+  );
+  expect(summary("assetRole.create", { code: "pump-x", label: "Pump X" })).toBe(
+    'Add the unit role "pump-x" (Pump X) to the fleet-wide role vocabulary.',
+  );
 }
