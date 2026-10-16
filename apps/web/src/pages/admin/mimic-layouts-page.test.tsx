@@ -3,6 +3,9 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aGlobalAdminSeesTheRoleAction,
+  anOrganizationAdminSeesNoRoleAction,
+  theRoleWizardCreatesTheRole,
   aRefusedDeleteShowsTheServersSentence,
   anEmptyLibraryPointsAtAnyPreset,
   confirmDeleteCallsTheApiWithTheId,
@@ -75,5 +78,17 @@ describe("F3.32c mimic layouts page", () => {
 
   it("L7 fails closed for a location_admin", async () => {
     await failsClosedForALocationAdmin();
+  });
+
+  it("F3.87 PR 6b L8: a global admin sees Add a unit role", async () => {
+    await aGlobalAdminSeesTheRoleAction();
+  });
+
+  it("F3.87 PR 6b L9: an organization admin sees no Add a unit role", async () => {
+    await anOrganizationAdminSeesNoRoleAction();
+  });
+
+  it("F3.87 PR 6b L10: the role wizard posts the role and says it was added", async () => {
+    await theRoleWizardCreatesTheRole();
   });
 });
