@@ -923,7 +923,8 @@ function DockPanel({
                       <span className="text-ink-muted">{sizeLabel(file.size)}</span>
                       <button
                         type="button"
-                        aria-label={`Remove ${file.name}`}
+                        aria-label={turn.isPending ? `Sending ${file.name}…` : `Remove ${file.name}`}
+                        aria-busy={turn.isPending}
                         onClick={() => removeFile(i)}
                         disabled={turn.isPending}
                         className="px-1 text-ink-muted hover:text-ink"
