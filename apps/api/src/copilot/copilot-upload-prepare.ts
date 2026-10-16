@@ -5,13 +5,13 @@ import type { CatalogEntry } from "@bms/shared/copilot";
 
 import { parseSvgSymbol, SvgSymbolRefusal } from "../mimic-symbol-libraries/svg-symbol-parser";
 
-/** `F3.87` PR 6a: the model named an attached file, and this turn carries none (attachments arrive in PR 7). */
+/** `F3.87` PR 6a/7: the model named an attached file, and this turn carries no SVG at that index. */
 export const UPLOAD_NEEDS_ATTACHMENT_ERROR = "Attach the .svg file to your message, then propose the symbol again.";
 export const UPLOAD_TOO_LARGE_ERROR = "The SVG is larger than the symbol upload allows.";
 export const UPLOAD_NO_SVG_ERROR = "Give the symbol's SVG: the svg field is missing.";
 export const UPLOAD_BAD_FILENAME_ERROR = "Rename the SVG file without quotes or slashes, then attach it again.";
 
-/** One file a turn carries, as PR 7 will hand it to the propose step (an attached `.svg`, as text). */
+/** One file a turn carries, as the propose step receives it (an attached `.svg`, as text). */
 export type UploadAttachment = { readonly filename: string; readonly svgText: string };
 
 export type PreparedUpload = { readonly ok: true; readonly body: Record<string, unknown> } | { readonly ok: false; readonly error: string };
@@ -36,7 +36,8 @@ export type PreparedUpload = { readonly ok: true; readonly body: Record<string, 
 export function prepareUpload(
   entry: Pick<CatalogEntry, "upload">,
   modelBody: Readonly<Record<string, unknown>>,
-  attachments: readonly UploadAttachment[] = [],
+  // `F3.87` PR 7: one slot per attached file, by position; `undefined` where the file is not an SVG.
+  attachments: readonly (UploadAttachment | undefined)[] = [],
 ): PreparedUpload {
   if (entry.upload === undefined) return { ok: false, error: UPLOAD_NO_SVG_ERROR };
   const svg = modelBody.svg as { kind?: unknown; text?: unknown; index?: unknown } | undefined;

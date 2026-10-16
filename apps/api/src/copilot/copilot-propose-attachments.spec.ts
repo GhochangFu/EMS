@@ -1,11 +1,13 @@
 import { expect } from "vitest";
+import { z } from "zod";
 
 import { catalogEntry, proposeToolName } from "@bms/shared/copilot";
 
 import { ASSET_CREATE_IDS, PROPOSE_ASSET_NOT_ASKED_ERROR } from "./copilot-asset-intent";
 import type { TurnAttachment } from "./copilot-attachments";
 import { COPILOT_READ_FROM_FILE_NOTE, type CopilotProposeServices } from "./copilot-propose-tools";
-import { proposeHarness } from "./copilot-propose-tools.spec";
+import { proposeHarness, UPLOAD_ENTRY } from "./copilot-propose-tools.spec";
+import { VALID_SVG } from "./copilot-upload-prepare.spec";
 
 /**
  * `F3.87` PR 7 (ADR 0099 Amendment 3, plan D8 and D11) — the two propose rules
@@ -92,6 +94,30 @@ export async function aLayoutWithoutAFileHasNoNote(): Promise<void> {
   const h = layoutHarness();
   expect((await h.call("propose_mimicLayout_create", { body: LAYOUT }, { historyHasAttachmentSinceLastLayout: false })).ok).toBe(true);
   expect(h.stored[0]?.summary).toBe('Create the layout "Raw water" in Org X: 1 unit, 0 panels, 0 pipes.');
+}
+
+/**
+ * A3: the SVG source can be a file this turn carries, named by its 1-based
+ * index. The stored body takes the file's name and text; an index on a file
+ * that is not an SVG is refused. Mutation: pass no attachments to
+ * `prepareUpload` → red.
+ */
+export async function anAttachedSvgIsTheUploadSource(): Promise<void> {
+  const entry = {
+    ...UPLOAD_ENTRY,
+    id: "fixture.symbol.upload.attached",
+    modelBody: z
+      .object({ name: z.string().optional(), svg: z.object({ kind: z.literal("attachment"), index: z.number().int() }).strict() })
+      .strict(),
+  };
+  const h = proposeHarness({ catalog: [entry] });
+  const svg: TurnAttachment = { ...PNG, index: 2, filename: "valve.svg", mediaType: "image/svg+xml", svgText: VALID_SVG };
+  const name = proposeToolName(entry);
+  const notSvg = await h.call(name, { body: { name: "v", svg: { kind: "attachment", index: 1 } } }, { attachments: [PNG, svg] });
+  expect(notSvg.ok).toBe(false);
+  const ok = await h.call(name, { body: { name: "v", svg: { kind: "attachment", index: 2 } } }, { attachments: [PNG, svg] });
+  expect(ok.ok).toBe(true);
+  expect(h.stored[0]?.body).toMatchObject({ name: "v", filename: "valve.svg", svgText: VALID_SVG });
 }
 
 /** The note is for a layout card only: another card proposed from a file has none. */

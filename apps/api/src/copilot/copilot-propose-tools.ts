@@ -435,7 +435,11 @@ export function createCopilotProposeTools(
     // `F3.87` PR 6a (Amendment 3 A3): an upload entry stores the text fields, the file's name and
     // SHA-256, and the SVG text under its `cardOnly` key, after the route's own parser passed it.
     if (entry.upload !== undefined) {
-      const prepared = prepareUpload(entry, body);
+      // `F3.87` PR 7: an attached file is the source by its 1-based index; a file that is not an SVG has no text.
+      const attached = (ctx.attachments ?? []).map((file) =>
+        file.svgText === undefined ? undefined : { filename: file.filename, svgText: file.svgText },
+      );
+      const prepared = prepareUpload(entry, body, attached);
       if (!prepared.ok) return { ok: false, error: prepared.error };
       body = prepared.body;
     }

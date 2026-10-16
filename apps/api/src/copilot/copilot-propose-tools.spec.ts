@@ -954,7 +954,7 @@ export async function theStoredHashLeavesOutCardOnlyKeys(): Promise<void> {
  * is the prepared one (fields, filename, SHA-256, `svgText`), and its hash
  * leaves the `cardOnly` text out, as the interceptor's route stage does.
  */
-const UPLOAD_ENTRY = fixtureEntry({
+export const UPLOAD_ENTRY = fixtureEntry({
   id: "fixture.symbol.upload",
   body: z.object({ name: z.string().optional(), label: z.string().optional() }).strict(),
   modelBody: z
