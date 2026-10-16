@@ -10,6 +10,9 @@ describe("F3.87 PR 7 — a turn that carries files (ADR 0099 Amendment 3 A4–A7
   it("(2c) D8: a file turn with asset words offers the creates", () => T.aFileTurnWithAssetWordsOffersTheCreates());
   it("(3b) D11: a turn after a file tells its tools the history has one", () => T.aTurnAfterAFileTellsItsToolsTheHistoryHasOne());
   it("D11: the history scan stops at the last layout outcome", () => T.theHistoryScanStopsAtTheLastLayoutOutcome());
+  it("a file turn hands its files to its tools", () => T.aFileTurnHandsItsFilesToItsTools());
+  it("D5: a provider error without a file keeps the plain reply", () => T.aProviderErrorWithoutAFileKeepsThePlainReply());
+  it("a message ending in a colon keeps its placeholder", () => T.aMessageEndingInAColonKeepsItsPlaceholder());
   it("(4) A6: a layout follow-up offers binding by ids", () => T.aLayoutFollowUpOffersBindingByIds());
   it("A6: another follow-up offers no binding", () => T.anotherFollowUpOffersNoBinding());
   it("(5) A4: a file in a skill is 400 and not counted", () => T.aFileInASkillIs400AndNotCounted());

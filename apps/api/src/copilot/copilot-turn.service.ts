@@ -298,14 +298,16 @@ export function userTurnContent(message: string, attachments: readonly TurnAttac
 
 /**
  * `F3.87` PR 7 (plan §9.3, D13): the user row a file turn stores — the text,
- * then one placeholder per file, never a byte of it. The whole row runs the
- * credential check, as the action lines do: a filename is the user's text too.
+ * then one placeholder per file, never a byte of it. The placeholders run the
+ * credential check, as the action lines do: a filename is the user's text too
+ * (inspection refused a credential-shaped name already; this is the second
+ * line). The message passed step 2 alone, and is not scanned joined to them: a
+ * message ending in "user:" would read "[Attachment" as its value (review #4).
  */
 export function storedUserRow(message: string, attachments: readonly TurnAttachment[]): string {
   if (attachments.length === 0) return message;
-  const placeholders = attachments.map((attachment) => attachmentPlaceholder(attachment, attachments.length));
-  const row = `${message}\n\n${placeholders.join("\n")}`;
-  return looksLikeCredential(row) ? COPILOT_REDACTED : row;
+  const placeholders = attachments.map((attachment) => attachmentPlaceholder(attachment, attachments.length)).join("\n");
+  return looksLikeCredential(placeholders) ? COPILOT_REDACTED : `${message}\n\n${placeholders}`;
 }
 
 /** A layout card's outcome line ("Applied: Create the layout …", `changeOutcomeLine` over the entry's summary). */
@@ -316,7 +318,10 @@ const LAYOUT_OUTCOME_LINE = /^(?:Applied|Failed)[^:]*: (?:Create|Replace) the la
  * conversation's last layout card. A proposal leaves no row of its own; its
  * record is the outcome line its Confirm stores, so the scan stops at the
  * newest such line. A rejected card leaves no line, so the scan reaches past
- * it: the note is then shown once more than needed, never once fewer.
+ * it and the note shows once more than needed. The scan reads the turn's
+ * history window (`COPILOT_HISTORY_LIMIT` rows), the rows the model sees: a
+ * file attached before that window gives no note, as the model has no record
+ * of it either.
  */
 export function historyHasAttachmentSinceLastLayout(messages: readonly CopilotMessageDto[]): boolean {
   for (let i = messages.length - 1; i >= 0; i -= 1) {

@@ -117,6 +117,31 @@ export async function aTurnAfterAFileTellsItsToolsTheHistoryHasOne(): Promise<vo
   expect(h.seenTools[0]?.ctx.attachments).toBeUndefined();
 }
 
+/** A file turn hands its inspected files to its tools (the propose step's `.svg` source and D11 read them). Review #1. */
+export async function aFileTurnHandsItsFilesToItsTools(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("list_assets", {})), { kind: "final", text: "ok" }]);
+  const h = harness(llm, { tools: { list_assets: () => ({ ok: true, result: { items: [] }, organizationIds: [ORG_X] }) } });
+  await fileTurn(h, "use this symbol", [{ buffer: Buffer.from(SYMBOL_SVG), originalname: "pump.svg" }]);
+  expect(h.seenTools[0]?.ctx.attachments?.map((file) => [file.index, file.filename, file.svgText])).toEqual([[1, "pump.svg", SYMBOL_SVG]]);
+}
+
+/** D5's other half: a provider error on a turn with no file keeps the plain reply. Review #2. */
+export async function aProviderErrorWithoutAFileKeepsThePlainReply(): Promise<void> {
+  const llm = new FakeLlmProvider(["reject"]);
+  const h = harness(llm);
+  const response = await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "any alarms?", "user");
+  expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_TURN_FAILED_REPLY });
+}
+
+/** Review #4: a message that ends in "user:" keeps its words and its placeholder (only the placeholders are scanned). */
+export async function aMessageEndingInAColonKeepsItsPlaceholder(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const h = harness(llm);
+  await fileTurn(h, "which user:", [PNG_FILE]);
+  const row = h.history.find((m) => m.role === "user")?.content ?? "";
+  expect(row.startsWith("which user:\n\n[Attachment 1 of 1:")).toBe(true);
+}
+
 /** D11's scan: a layout outcome line after the file ends it; a file after the line starts it again. */
 export function theHistoryScanStopsAtTheLastLayoutOutcome(): void {
   const row = (role: CopilotMessageDto["role"], content: string): CopilotMessageDto => ({

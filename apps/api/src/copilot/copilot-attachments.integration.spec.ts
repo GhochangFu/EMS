@@ -25,6 +25,13 @@ import { UNUSED_COMMIT_READER, UNUSED_ONBOARDING_SKILL, UNUSED_SKILL_SERVICE } f
  * on runs the turn and counts it once. The provider is the scripted fake; the
  * key resolver is a fake (its own suite). Vitest entry point: the sibling
  * `.test.ts` (ADR 0014).
+ *
+ * The scan's honest reach (review #3): this turn proposes nothing, so only
+ * `copilot_messages` is written by it — the row the placeholder positive
+ * control reads. The pending-change, audit and conversation scans guard those
+ * tables against a later write path, and every scan also refuses a Buffer
+ * serialised as JSON (`{"type":"Buffer","data":[…]}`), which neither the hex
+ * nor the base64 pattern would match.
  */
 
 function identity(id: string, role: ResolvedIdentity["role"], organizationId: string | null): ResolvedIdentity {
@@ -111,6 +118,8 @@ export async function noAttachmentByteReachesAnyTable(ctx: HistoryCtx): Promise<
   for (const [table, query] of scans) {
     const { rows } = await ctx.superPool.query<{ n: number }>(query, [`%${hex}%`, `%${b64}%`]);
     expect(rows[0]?.n, `${table} holds no byte of the file`).toBe(0);
+    const json = await ctx.superPool.query<{ n: number }>(query, ["%no-hex-match%", '%"type":"Buffer"%']);
+    expect(json.rows[0]?.n, `${table} holds no Buffer serialised as JSON`).toBe(0);
   }
   const { rows } = await ctx.superPool.query<{ content: string }>(
     "SELECT content FROM bms.copilot_messages WHERE conversation_id = $1 AND role = 'user'",

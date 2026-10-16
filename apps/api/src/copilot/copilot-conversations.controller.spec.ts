@@ -363,7 +363,8 @@ export async function assertAJsonTurnPassesNoFiles(): Promise<void> {
 export async function assertAMultipartTurnPassesTheFiles(): Promise<void> {
   const h = controllerWith("organization_admin");
   const files = [{ buffer: Buffer.from("x"), originalname: "a.png" }];
-  await h.controller.turn(CONVERSATION, { message: "read this" }, h.identity, tokenFor("organization_admin"), files);
+  // A stray field beside `message` would be a 400 on the JSON path (strict); the multipart path reads `message` only.
+  await h.controller.turn(CONVERSATION, { message: "read this", stray: "x" }, h.identity, tokenFor("organization_admin"), files);
   expect(h.turned.map((turn) => turn.message)).toEqual(["read this"]);
   expect(h.files).toEqual([files]);
 }

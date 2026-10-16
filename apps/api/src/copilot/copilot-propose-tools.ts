@@ -489,6 +489,8 @@ export function createCopilotProposeTools(
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
         if (target.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
         if (!offeredToRole(target, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
+        // `F3.87` PR 7, D8: a file turn cannot pre-fill an asset wizard with what it read from the file either.
+        if (ASSET_CREATE_IDS.has(target.id) && ctx.assetIntent === false) return { ok: false, error: PROPOSE_ASSET_NOT_ASKED_ERROR };
         const step = target.steps.find((candidate) => candidate.id === args.stepId);
         if (step === undefined) return { ok: false, error: UNKNOWN_STEP_ERROR };
         const values = stepValuesSchema(target.body, step.fields).safeParse(args.values);
@@ -513,6 +515,7 @@ export function createCopilotProposeTools(
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
         if (target.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
         if (!offeredToRole(target, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
+        if (ASSET_CREATE_IDS.has(target.id) && ctx.assetIntent === false) return { ok: false, error: PROPOSE_ASSET_NOT_ASKED_ERROR };
         // The model's body (`F3.86` PR 2): a `clientOnly` field is never described to the model.
         const described = describeBody(modelBodySchema(target), (args.path as string[] | undefined) ?? []);
         if (!described.ok) return { ok: false, error: UNKNOWN_PATH_ERROR };
