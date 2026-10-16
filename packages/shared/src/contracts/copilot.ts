@@ -205,6 +205,14 @@ export const copilotCreateConversationBodySchema = z
 export const COPILOT_TURN_MESSAGE_MAX = 8_000;
 
 /**
+ * `F3.87` PR 7 (ADR 0099 Amendment 3 A4): the most files one copilot turn may
+ * carry, and the most bytes an image or PDF may hold. An `.svg` is bounded by
+ * `MAX_MIMIC_SYMBOL_SVG_BYTES` instead — it is a symbol candidate.
+ */
+export const COPILOT_ATTACHMENTS_MAX = 3;
+export const MAX_COPILOT_ATTACHMENT_BYTES: number = 10 * 1024 * 1024;
+
+/**
  * `POST /api/v1/copilot/conversations/:id/turns` (`F3.85` PR 7, ADR 0099
  * decisions 1, 9, 10). The message only: the organization a turn reads and is
  * counted against is the conversation's own, read on the server (decision 10),
