@@ -1,6 +1,8 @@
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  anUploadIsSentAsFormData,
+  anUploadSendsNoCardOnlyOrHashField,
   aBodylessChangeSendsBraces,
   aChangeWithNoCardOnlyKeySendsItsBodyWhole,
   aClientOnlyValueIsSentBesideTheStoredBody,
@@ -26,4 +28,6 @@ describe("F3.85 — the copilot Confirm executor (ADR 0099 decision 4.5)", () =>
   it("sends a clientOnly value beside the stored body, and only there", () => aClientOnlyValueIsSentBesideTheStoredBody());
   it("F3.87 PR 5: sends a layout replace without its baseline", () => aReplaceIsSentWithoutItsBaseline());
   it("F3.87 PR 5: sends a body whole when its entry has no cardOnly key", () => aChangeWithNoCardOnlyKeySendsItsBodyWhole());
+  it("F3.87 PR 6b: sends an upload as FormData with the file part and no explicit Content-Type", () => anUploadIsSentAsFormData());
+  it("F3.87 PR 6b: sends no svgText, filename or hash field, and group only when stored", () => anUploadSendsNoCardOnlyOrHashField());
 });

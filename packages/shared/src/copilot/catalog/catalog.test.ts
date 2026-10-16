@@ -2,6 +2,12 @@ import { describe, it } from "vitest";
 
 import {
   aBodylessEntryTakesOnlyTheEmptyObject,
+  noMimicOrRoleRouteIsPending,
+  theLibraryAndRoleSummariesNameTheirTarget,
+  theLibraryEntriesAreForTheAuthors,
+  theRoleCreateIsForTheGlobalAdminOnly,
+  theSymbolUploadIsTheMultipartEntry,
+  theUploadModelBodyTakesTextOrAnAttachment,
   aStepSchemaIsPartialAndStrict,
   aStoredPathSurvivesTheBrowserUnchanged,
   everyBodyFieldIsInExactlyOneStep,
@@ -106,4 +112,13 @@ describe("F3.85 PR 11a — formula paths into array items (plan §11.3 Unit 2)",
   it("treats a top-level formula as one site", () => aTopLevelFormulaIsOneSite());
   it("has no refs for a formula without a refs path", () => aFormulaWithoutARefsPathHasNoRefs());
   it("refuses a dialect outside the formula's item", () => aDialectOutsideTheFormulasItemIsAnError());
+});
+
+describe("F3.87 PR 6 — the library, symbol and role entries (ADR 0099 Amendment 3 A1, A3; ruling Q4)", () => {
+  it("offers the five library and symbol entries to the authoring roles", () => theLibraryEntriesAreForTheAuthors());
+  it("makes the symbol upload the one multipart entry, svgText card-only", () => theSymbolUploadIsTheMultipartEntry());
+  it("takes the model's SVG as text or as an attachment index only", () => theUploadModelBodyTakesTextOrAnAttachment());
+  it("offers assetRole.create to the global admin only", () => theRoleCreateIsForTheGlobalAdminOnly());
+  it("leaves no mimic or role route pending", () => noMimicOrRoleRouteIsPending());
+  it("names the target in each library and role summary", () => theLibraryAndRoleSummariesNameTheirTarget());
 });

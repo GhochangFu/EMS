@@ -148,3 +148,52 @@ export async function aChangeWithNoCardOnlyKeySendsItsBodyWhole(): Promise<void>
   await confirmCopilotChange(change);
   expect(JSON.parse(seen().init.body as string)).toEqual({ baseline: "kept", a: "x" });
 }
+
+/** `F3.87` PR 6b: a symbol upload card as the turn stored it — the text fields, the file's name and hash, the SVG text. */
+const SVG_TEXT = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>';
+export const UPLOAD_CHANGE: CopilotPendingChangeDto = {
+  ...CHANGE,
+  catalogId: "mimicSymbol.upload",
+  path: "/api/v1/mimic-symbol-libraries/66666666-6666-4666-8666-666666666666/symbols",
+  body: { name: "pump-x", label: "Pump X", filename: "pump-x.svg", fileSha256: "a".repeat(64), svgText: SVG_TEXT },
+  summary: 'Upload the symbol "Pump X" (pump-x) to the library "Plant".',
+};
+
+/**
+ * `F3.87` PR 6b (ADR 0099 Amendment 3 A3, plan §8.4) — an upload entry's Confirm is the real
+ * multipart call: a `FormData` with the stored text fields and the SVG text as the `file` part
+ * under the stored filename, the header, and no explicit `Content-Type` (the browser writes the
+ * boundary).
+ */
+export async function anUploadIsSentAsFormData(): Promise<void> {
+  useAuthStore.setState({ accessToken: "token-1" });
+  const seen = capture(() => new Response(JSON.stringify({ id: "sym-1" }), { status: 201 }));
+  expect(await confirmCopilotChange(UPLOAD_CHANGE)).toEqual({ id: "sym-1" });
+  const { url, init } = seen();
+  expect(url).toBe(`${BASE}${UPLOAD_CHANGE.path}`);
+  expect(init.method).toBe("POST");
+  const headers = new Headers(init.headers);
+  expect(headers.get("X-Copilot-Change")).toBe(UPLOAD_CHANGE.id);
+  expect(headers.get("Authorization")).toBe("Bearer token-1");
+  expect(headers.get("Content-Type")).toBeNull();
+  expect(init.body).toBeInstanceOf(FormData);
+  const form = init.body as FormData;
+  expect([...form.keys()].sort()).toEqual(["file", "label", "name"]);
+  expect(form.get("name")).toBe("pump-x");
+  expect(form.get("label")).toBe("Pump X");
+  const file = form.get("file") as File;
+  expect(file.name).toBe("pump-x.svg");
+  expect(file.type).toBe("image/svg+xml");
+  expect(await file.text()).toBe(SVG_TEXT);
+}
+
+/** The SVG text, the filename and the hash are never form fields; `group` is sent only when the card holds it. */
+export async function anUploadSendsNoCardOnlyOrHashField(): Promise<void> {
+  const seen = capture(() => new Response(JSON.stringify({ id: "sym-1" }), { status: 201 }));
+  await confirmCopilotChange({ ...UPLOAD_CHANGE, body: { ...UPLOAD_CHANGE.body, group: "water" } });
+  const form = seen().init.body as FormData;
+  expect(form.has("svgText")).toBe(false);
+  expect(form.has("fileSha256")).toBe(false);
+  expect(form.has("filename")).toBe(false);
+  expect(form.get("group")).toBe("water");
+}

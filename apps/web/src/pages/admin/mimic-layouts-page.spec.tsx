@@ -6,12 +6,13 @@ import { expect, vi } from "vitest";
 
 import type { MimicLayoutsListResponse } from "@bms/shared";
 
+import * as assetRolesApi from "../../api/admin/asset-roles";
 import * as api from "../../api/mimic-layouts";
 import * as systemStatusApi from "../../api/system-status";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
-import { MimicLayoutsPage } from "./mimic-layouts-page";
+import { MimicLayoutsPage, UNIT_ROLE_ADDED } from "./mimic-layouts-page";
 import * as copilotApi from "../../api/copilot";
 
 /**
@@ -197,4 +198,40 @@ export async function failsClosedForALocationAdmin(): Promise<void> {
   const { list } = renderPage(user("location_admin"));
   expect(await screen.findByRole("status")).toHaveTextContent("Mimic layouts are drawn by");
   expect(list).not.toHaveBeenCalled();
+}
+
+// ---- `F3.87` PR 6b: the global administrator's "Add a unit role" action (owner ruling Q2(a)) ----
+
+/** L8 — a global administrator sees "Add a unit role". */
+export async function aGlobalAdminSeesTheRoleAction(): Promise<void> {
+  renderPage(user("admin"));
+  await row();
+  expect(screen.getByRole("button", { name: "Add a unit role" })).toBeInTheDocument();
+}
+
+/** L9 — an organization administrator (`wc-admin`'s role) does not; the list rendered (the positive half). */
+export async function anOrganizationAdminSeesNoRoleAction(): Promise<void> {
+  renderPage(user("organization_admin"));
+  await row();
+  expect(screen.queryByRole("button", { name: "Add a unit role" })).toBeNull();
+}
+
+/** L10 — the action opens the `assetRole.create` wizard; Submit posts the role and says it was added. */
+export async function theRoleWizardCreatesTheRole(): Promise<void> {
+  const create = vi.spyOn(assetRolesApi, "createAssetRole").mockResolvedValue({
+    code: "pump-x",
+    label: "Pump X",
+    sortOrder: 100,
+    active: true,
+  } as never);
+  renderPage(user("admin"));
+  await userEvent.click(await screen.findByRole("button", { name: "Add a unit role" }));
+  const dialog = await screen.findByRole("dialog", { name: "Add a unit role" });
+  await userEvent.type(within(dialog).getByRole("textbox", { name: "Code" }), "pump-x");
+  await userEvent.type(within(dialog).getByRole("textbox", { name: "Label" }), "Pump X");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(create).toHaveBeenCalledWith({ code: "pump-x", label: "Pump X" }));
+  expect(await screen.findByRole("status")).toHaveTextContent(UNIT_ROLE_ADDED);
+  expect(screen.queryByRole("dialog", { name: "Add a unit role" })).toBeNull();
 }

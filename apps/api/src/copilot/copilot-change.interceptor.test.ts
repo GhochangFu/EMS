@@ -56,7 +56,8 @@ vi.mock("./copilot-client-only", async (importOriginal) => {
   };
 });
 
-// `F3.87` PR 6a: no real entry has `upload` until PR 6b, so one fixture id is an upload entry
+// `F3.87` PR 6a: one fixture id is an upload entry, so these cases do not hang off the real
+// `mimicSymbol.upload` entry (PR 6b)
 // (`UPLOAD_FIXTURE_ID` in the spec); every other id reads the real catalog.
 vi.mock("@bms/shared/copilot", async (importOriginal) => {
   const real = await importOriginal<typeof import("@bms/shared/copilot")>();

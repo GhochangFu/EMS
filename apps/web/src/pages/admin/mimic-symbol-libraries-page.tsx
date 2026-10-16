@@ -1,5 +1,5 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import {
   MIMIC_SYMBOL_GROUP_CODES,
   type MimicGlobalLibraryStatusDto,
@@ -7,19 +7,11 @@ import {
   type MimicOrgSymbolLibraryDto,
   type MimicSymbolGroupCode,
   type MimicSymbolLibrariesResponse,
-  type MimicSymbolLibraryCode,
-  type MimicSymbolStyle,
 } from "@bms/shared";
 
-import {
-  createMimicOrgSymbolLibrary,
-  putMimicLibrarySetting,
-  updateMimicOrgSymbol,
-  updateMimicOrgSymbolLibrary,
-  uploadMimicOrgSymbol,
-  type UpdateMimicOrgSymbolBody,
-} from "../../api/mimic-symbol-libraries";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { LibraryCreateWizard, LibrarySettingWizard, LibraryUpdateWizard } from "../../components/admin/mimic-library-wizards";
+import { SymbolUpdateWizard, SymbolUploadWizard } from "../../components/admin/mimic-symbol-wizards";
 import { PageHeader } from "../../components/page-header";
 import { useOrganizationChoice } from "../../hooks/use-organization-choice";
 import { SectionCard } from "../../components/section-card";
@@ -59,6 +51,12 @@ function groupLabel(code: MimicSymbolGroupCode): string {
  * Nothing here is deleted (decision 7): `active = false` retires a library or a symbol, and a
  * stored drawing keeps drawing it. Every value is a text node; an uploaded symbol is drawn from
  * its parsed shapes through `MimicGlyph`, never from the file.
+ *
+ * **Every write is a wizard** (`F3.87` PR 6b, ADR 0099 decision 6, plan D6): the built-in
+ * library switch, the library create, edit, retire and reactivate, the symbol upload and the
+ * symbol edit each open their catalog entry's `WizardShell`
+ * (`components/admin/mimic-library-wizards.tsx`, `mimic-symbol-wizards.tsx`) — one write path per
+ * route, the same one the copilot's `fill_step` pre-fills.
  */
 export function MimicSymbolLibrariesPage({ user }: MimicSymbolLibrariesPageProps) {
   return (
@@ -120,7 +118,12 @@ function SymbolLibrariesAdmin({ globalAdmin }: { globalAdmin: boolean }) {
       ) : catalogQ.data === undefined ? (
         <p className="text-sm text-ink-muted">Loading the symbol libraries…</p>
       ) : (
-        <Catalog catalog={catalogQ.data} organizationId={organizationId} onChanged={refresh} />
+        <Catalog
+          catalog={catalogQ.data}
+          organizationId={organizationId}
+          organizationName={organizations.find((org) => org.id === organizationId)?.name ?? ""}
+          onChanged={refresh}
+        />
       )}
     </div>
   );
@@ -129,15 +132,30 @@ function SymbolLibrariesAdmin({ globalAdmin }: { globalAdmin: boolean }) {
 type CatalogProps = {
   catalog: MimicSymbolLibrariesResponse;
   organizationId: string;
+  organizationName: string;
   onChanged: () => Promise<void>;
 };
 
-function Catalog({ catalog, organizationId, onChanged }: CatalogProps) {
+function Catalog({ catalog, organizationId, organizationName, onChanged }: CatalogProps) {
+  const [creating, setCreating] = useState(false);
   return (
     <>
-      <GlobalLibraries libraries={catalog.global} organizationId={organizationId} onChanged={onChanged} />
+      <GlobalLibraries libraries={catalog.global} organizationId={organizationId} organizationName={organizationName} onChanged={onChanged} />
       <SectionCard title="Organization libraries" bodyClassName="p-3 space-y-4">
-        <CreateLibraryForm organizationId={organizationId} onChanged={onChanged} />
+        <button type="button" onClick={() => setCreating(true)} className={PRIMARY}>
+          New library
+        </button>
+        {creating ? (
+          <LibraryCreateWizard
+            organizationId={organizationId}
+            organizationName={organizationName}
+            onCancel={() => setCreating(false)}
+            onDone={async () => {
+              setCreating(false);
+              await onChanged();
+            }}
+          />
+        ) : null}
         {catalog.organization.length === 0 ? (
           <p className="text-xs text-ink-muted">No organization library yet.</p>
         ) : (
@@ -148,28 +166,39 @@ function Catalog({ catalog, organizationId, onChanged }: CatalogProps) {
   );
 }
 
-/** "Global libraries": the organization's switch per library. `core` is always on (decision 4). */
+/**
+ * "Global libraries": the organization's switch per library. `core` is always on (decision 4).
+ * A box shows the stored switch; changing it opens the `mimicLibrary.setting` wizard (`F3.87`
+ * PR 6b, plan D6), which saves it.
+ */
 function GlobalLibraries({
   libraries,
   organizationId,
+  organizationName,
   onChanged,
 }: {
   libraries: readonly MimicGlobalLibraryStatusDto[];
   organizationId: string;
+  organizationName: string;
   onChanged: () => Promise<void>;
 }) {
-  const settingM = useMutation({
-    mutationFn: (input: { code: MimicSymbolLibraryCode; enabled: boolean }) =>
-      putMimicLibrarySetting(input.code, { organizationId, enabled: input.enabled }),
-    onSuccess: onChanged,
-  });
+  const [toggling, setToggling] = useState<{ library: MimicGlobalLibraryStatusDto; enabled: boolean } | null>(null);
 
   return (
     <SectionCard title="Global libraries" bodyClassName="p-3 space-y-2">
-      {settingM.error ? (
-        <p role="alert" className="text-xs text-critical-ink">
-          {apiErrorMessage(settingM.error)}
-        </p>
+      {toggling !== null ? (
+        <LibrarySettingWizard
+          key={toggling.library.code}
+          library={toggling.library}
+          organizationId={organizationId}
+          organizationName={organizationName}
+          enabled={toggling.enabled}
+          onCancel={() => setToggling(null)}
+          onDone={async () => {
+            setToggling(null);
+            await onChanged();
+          }}
+        />
       ) : null}
       <table className="min-w-full text-sm">
         <thead>
@@ -182,7 +211,6 @@ function GlobalLibraries({
         </thead>
         <tbody>
           {libraries.map((library) => {
-            const pending = settingM.isPending && settingM.variables?.code === library.code;
             const core = library.code === "core";
             return (
               <tr key={library.code} className="border-b border-line">
@@ -195,9 +223,8 @@ function GlobalLibraries({
                     aria-label={`Enable ${library.label} for this organization`}
                     title={core ? "Core cannot be disabled" : undefined}
                     checked={library.enabled}
-                    disabled={core || pending}
-                    aria-busy={pending}
-                    onChange={(event) => settingM.mutate({ code: library.code, enabled: event.target.checked })}
+                    disabled={core}
+                    onChange={(event) => setToggling({ library, enabled: event.target.checked })}
                   />
                 </td>
               </tr>
@@ -209,134 +236,15 @@ function GlobalLibraries({
   );
 }
 
-const EMPTY_LIBRARY_FORM = {
-  code: "",
-  label: "",
-  style: "stroke" as MimicSymbolStyle,
-  licence: "",
-  attribution: "",
-  sourceUrl: "",
-};
-
-function CreateLibraryForm({ organizationId, onChanged }: { organizationId: string; onChanged: () => Promise<void> }) {
-  const [form, setForm] = useState(EMPTY_LIBRARY_FORM);
-  const createM = useMutation({
-    mutationFn: () =>
-      createMimicOrgSymbolLibrary({
-        organizationId,
-        code: form.code.trim(),
-        label: form.label.trim(),
-        style: form.style,
-        licence: form.licence.trim(),
-        attribution: form.attribution,
-        sourceUrl: form.sourceUrl.trim() === "" ? null : form.sourceUrl.trim(),
-      }),
-    onSuccess: async () => {
-      setForm(EMPTY_LIBRARY_FORM);
-      await onChanged();
-    },
-  });
-
-  function onSubmit(event: FormEvent): void {
-    event.preventDefault();
-    createM.mutate();
-  }
-
-  return (
-    <form aria-label="New organization library" onSubmit={onSubmit} className="surface-raised space-y-2 p-3">
-      <h3 className="text-sm font-semibold text-ink">New library</h3>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <label className={LABEL}>
-          Code
-          <input
-            aria-label="Code"
-            required
-            maxLength={27}
-            value={form.code}
-            onChange={(event) => setForm({ ...form, code: event.target.value })}
-            className={FIELD}
-          />
-        </label>
-        <label className={LABEL}>
-          Label
-          <input
-            aria-label="Label"
-            required
-            maxLength={64}
-            value={form.label}
-            onChange={(event) => setForm({ ...form, label: event.target.value })}
-            className={FIELD}
-          />
-        </label>
-        <label className={LABEL}>
-          Style
-          <select
-            aria-label="Style"
-            value={form.style}
-            onChange={(event) => setForm({ ...form, style: event.target.value as MimicSymbolStyle })}
-            className={FIELD}
-          >
-            <option value="stroke">stroke — outlines</option>
-            <option value="fill">fill — filled shapes</option>
-          </select>
-        </label>
-        <label className={LABEL}>
-          Licence
-          <input
-            aria-label="Licence"
-            required
-            maxLength={64}
-            value={form.licence}
-            onChange={(event) => setForm({ ...form, licence: event.target.value })}
-            className={FIELD}
-          />
-        </label>
-        <label className={`${LABEL} sm:col-span-2`}>
-          Source URL
-          <input
-            type="url"
-            aria-label="Source URL"
-            maxLength={255}
-            value={form.sourceUrl}
-            onChange={(event) => setForm({ ...form, sourceUrl: event.target.value })}
-            className={FIELD}
-          />
-        </label>
-        <label className={`${LABEL} sm:col-span-3`}>
-          Attribution
-          <textarea
-            aria-label="Attribution"
-            maxLength={2000}
-            rows={2}
-            value={form.attribution}
-            onChange={(event) => setForm({ ...form, attribution: event.target.value })}
-            className={FIELD}
-          />
-        </label>
-      </div>
-      <p className="text-xs text-ink-muted">
-        The code is lower-case letters and digits, starting with a letter — like plant. A layout names the library
-        org.&lt;code&gt;, and the code cannot change after it is saved.
-      </p>
-      {createM.error ? (
-        <p role="alert" className="text-xs text-critical-ink">
-          {apiErrorMessage(createM.error)}
-        </p>
-      ) : null}
-      <button type="submit" disabled={createM.isPending} aria-busy={createM.isPending} className={PRIMARY}>
-        {createM.isPending ? "Creating…" : "Create library"}
-      </button>
-    </form>
-  );
-}
-
-/** One organization library: its status, Retire/Reactivate, the upload form and its symbols. */
+/** One organization library: its status, Edit and Retire/Reactivate, Upload a symbol, and its symbols — each write a wizard. */
 function LibraryCard({ library, onChanged }: { library: MimicOrgSymbolLibraryDto; onChanged: () => Promise<void> }) {
   const headingId = `mimic-org-library-${library.id}`;
-  const activeM = useMutation({
-    mutationFn: () => updateMimicOrgSymbolLibrary(library.id, { active: !library.active }),
-    onSuccess: onChanged,
-  });
+  const [editing, setEditing] = useState<Record<string, unknown> | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const done = (close: () => void) => async () => {
+    close();
+    await onChanged();
+  };
 
   return (
     <section aria-labelledby={headingId} className="surface-raised space-y-3 p-3">
@@ -347,121 +255,40 @@ function LibraryCard({ library, onChanged }: { library: MimicOrgSymbolLibraryDto
         <span className="font-mono text-xs text-ink-muted">{library.key}</span>
         <StatusPill label={library.active ? "Active" : "Retired"} tone={library.active ? "ok" : "offline"} />
         <span className="text-xs text-ink-muted">{`${library.licence} · ${library.style} · ${library.symbolCount} symbols`}</span>
-        <button
-          type="button"
-          disabled={activeM.isPending}
-          aria-busy={activeM.isPending}
-          onClick={() => activeM.mutate()}
-          className={SECONDARY}
-        >
-          {activeM.isPending ? "Saving…" : library.active ? "Retire" : "Reactivate"}
+        <button type="button" onClick={() => setEditing({})} className={SECONDARY}>
+          Edit
+        </button>
+        <button type="button" onClick={() => setEditing({ active: !library.active })} className={SECONDARY}>
+          {library.active ? "Retire" : "Reactivate"}
+        </button>
+        <button type="button" onClick={() => setUploading(true)} className={SECONDARY}>
+          Upload a symbol
         </button>
       </div>
-      {activeM.error ? (
-        <p role="alert" className="text-xs text-critical-ink">
-          {apiErrorMessage(activeM.error)}
-        </p>
+      {editing !== null ? (
+        // Keyed on the start: Edit then Retire (or the reverse) remounts the wizard with the new values.
+        <LibraryUpdateWizard
+          key={JSON.stringify(editing)}
+          library={library}
+          start={editing}
+          onCancel={() => setEditing(null)}
+          onDone={done(() => setEditing(null))}
+        />
       ) : null}
-      <UploadSymbolForm library={library} onChanged={onChanged} />
+      {uploading ? (
+        <SymbolUploadWizard library={library} onCancel={() => setUploading(false)} onDone={done(() => setUploading(false))} />
+      ) : null}
       <OrgSymbolsTable library={library} onChanged={onChanged} />
     </section>
   );
 }
 
 /**
- * One SVG per symbol (decision 6): the API parses it into geometry and refuses anything else, and
- * its 400 names the element it refused. Name, label and group are optional — the API takes them
- * from the file name and files the symbol under General.
+ * The library's symbols, retired ones included: a preview, the key, the label, the group and the
+ * switch. A changed group or switch opens the `mimicSymbol.update` wizard with that change.
  */
-function UploadSymbolForm({ library, onChanged }: { library: MimicOrgSymbolLibraryDto; onChanged: () => Promise<void> }) {
-  const [file, setFile] = useState<File | null>(null);
-  const [name, setName] = useState("");
-  const [label, setLabel] = useState("");
-  const [group, setGroup] = useState<MimicSymbolGroupCode | "">("");
-  // Bumped after a success: a file input cannot be cleared through its value.
-  const [inputKey, setInputKey] = useState(0);
-
-  const uploadM = useMutation({
-    mutationFn: (chosen: File) =>
-      uploadMimicOrgSymbol(library.id, {
-        file: chosen,
-        name: name.trim(),
-        label: label.trim(),
-        group: group === "" ? undefined : group,
-      }),
-    onSuccess: async () => {
-      setFile(null);
-      setName("");
-      setLabel("");
-      setGroup("");
-      setInputKey((n) => n + 1);
-      await onChanged();
-    },
-  });
-
-  function onSubmit(event: FormEvent): void {
-    event.preventDefault();
-    if (file !== null) uploadM.mutate(file);
-  }
-
-  return (
-    <form aria-label={`Upload a symbol to ${library.label}`} onSubmit={onSubmit} className="space-y-2">
-      <div className="grid gap-2 sm:grid-cols-4">
-        <label className={LABEL}>
-          SVG file
-          <input
-            key={inputKey}
-            type="file"
-            accept="image/svg+xml"
-            aria-label="Symbol file"
-            onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-            className="mt-1 block w-full text-xs text-ink"
-          />
-        </label>
-        <label className={LABEL}>
-          Name
-          <input aria-label="Symbol name" value={name} onChange={(event) => setName(event.target.value)} className={FIELD} />
-        </label>
-        <label className={LABEL}>
-          Label
-          <input aria-label="Symbol label" value={label} onChange={(event) => setLabel(event.target.value)} className={FIELD} />
-        </label>
-        <label className={LABEL}>
-          Group
-          <select
-            aria-label="Symbol group"
-            value={group}
-            onChange={(event) => setGroup(event.target.value as MimicSymbolGroupCode | "")}
-            className={FIELD}
-          >
-            <option value="">General (default)</option>
-            {MIMIC_SYMBOL_GROUP_CODES.map((code) => (
-              <option key={code} value={code}>
-                {groupLabel(code)}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {uploadM.error ? (
-        <p role="alert" className="text-xs text-critical-ink">
-          {apiErrorMessage(uploadM.error)}
-        </p>
-      ) : null}
-      <button type="submit" disabled={uploadM.isPending || file === null} aria-busy={uploadM.isPending} className={PRIMARY}>
-        {uploadM.isPending ? "Uploading…" : "Upload"}
-      </button>
-    </form>
-  );
-}
-
-/** The library's symbols, retired ones included: a preview, the key, the label, the group and the switch. */
 function OrgSymbolsTable({ library, onChanged }: { library: MimicOrgSymbolLibraryDto; onChanged: () => Promise<void> }) {
-  const symbolM = useMutation({
-    mutationFn: (input: { symbol: MimicOrgSymbolDto; patch: UpdateMimicOrgSymbolBody }) =>
-      updateMimicOrgSymbol(library.id, input.symbol.id, input.patch),
-    onSuccess: onChanged,
-  });
+  const [editing, setEditing] = useState<{ symbol: MimicOrgSymbolDto; start: Record<string, unknown> } | null>(null);
 
   if (library.symbols.length === 0) {
     return <p className="text-xs text-ink-muted">No symbol uploaded yet.</p>;
@@ -469,10 +296,20 @@ function OrgSymbolsTable({ library, onChanged }: { library: MimicOrgSymbolLibrar
 
   return (
     <>
-      {symbolM.error ? (
-        <p role="alert" className="text-xs text-critical-ink">
-          {apiErrorMessage(symbolM.error)}
-        </p>
+      {editing !== null ? (
+        // Keyed on the symbol and its start: another row's control remounts the wizard, never PATCHes
+        // that row with the first row's values.
+        <SymbolUpdateWizard
+          key={`${editing.symbol.id}:${JSON.stringify(editing.start)}`}
+          library={library}
+          symbol={editing.symbol}
+          start={editing.start}
+          onCancel={() => setEditing(null)}
+          onDone={async () => {
+            setEditing(null);
+            await onChanged();
+          }}
+        />
       ) : null}
       <table className="min-w-full text-sm">
         <thead>
@@ -485,55 +322,46 @@ function OrgSymbolsTable({ library, onChanged }: { library: MimicOrgSymbolLibrar
           </tr>
         </thead>
         <tbody>
-          {library.symbols.map((symbol) => {
-            const pending = symbolM.isPending && symbolM.variables?.symbol.id === symbol.id;
-            return (
-              <tr key={symbol.id} className="border-b border-line">
-                <td className="px-2 py-2">
-                  <svg
-                    data-testid="mimic-org-symbol-preview"
-                    viewBox="0 0 24 24"
-                    width={24}
-                    height={24}
-                    className="h-6 w-6"
-                    aria-hidden="true"
-                  >
-                    <MimicGlyph kind={symbol.key} x={0} y={0} size={24} className="stroke-ink" orgSymbol={symbol} />
-                  </svg>
-                </td>
-                <td className="px-2 py-2 font-mono text-xs text-ink-muted">{symbol.key}</td>
-                <td className="px-2 py-2 text-ink">{symbol.label}</td>
-                <td className="px-2 py-2">
-                  <select
-                    aria-label={`Group of ${symbol.label}`}
-                    value={symbol.group}
-                    disabled={pending}
-                    aria-busy={pending}
-                    onChange={(event) =>
-                      symbolM.mutate({ symbol, patch: { group: event.target.value as MimicSymbolGroupCode } })
-                    }
-                    className="surface-field px-2 py-1 text-xs"
-                  >
-                    {MIMIC_SYMBOL_GROUP_CODES.map((code) => (
-                      <option key={code} value={code}>
-                        {groupLabel(code)}
-                      </option>
-                    ))}
-                  </select>
-                </td>
-                <td className="px-2 py-2">
-                  <input
-                    type="checkbox"
-                    aria-label={`Active ${symbol.label}`}
-                    checked={symbol.active}
-                    disabled={pending}
-                    aria-busy={pending}
-                    onChange={(event) => symbolM.mutate({ symbol, patch: { active: event.target.checked } })}
-                  />
-                </td>
-              </tr>
-            );
-          })}
+          {library.symbols.map((symbol) => (
+            <tr key={symbol.id} className="border-b border-line">
+              <td className="px-2 py-2">
+                <svg
+                  data-testid="mimic-org-symbol-preview"
+                  viewBox="0 0 24 24"
+                  width={24}
+                  height={24}
+                  className="h-6 w-6"
+                  aria-hidden="true"
+                >
+                  <MimicGlyph kind={symbol.key} x={0} y={0} size={24} className="stroke-ink" orgSymbol={symbol} />
+                </svg>
+              </td>
+              <td className="px-2 py-2 font-mono text-xs text-ink-muted">{symbol.key}</td>
+              <td className="px-2 py-2 text-ink">{symbol.label}</td>
+              <td className="px-2 py-2">
+                <select
+                  aria-label={`Group of ${symbol.label}`}
+                  value={symbol.group}
+                  onChange={(event) => setEditing({ symbol, start: { group: event.target.value as MimicSymbolGroupCode } })}
+                  className="surface-field px-2 py-1 text-xs"
+                >
+                  {MIMIC_SYMBOL_GROUP_CODES.map((code) => (
+                    <option key={code} value={code}>
+                      {groupLabel(code)}
+                    </option>
+                  ))}
+                </select>
+              </td>
+              <td className="px-2 py-2">
+                <input
+                  type="checkbox"
+                  aria-label={`Active ${symbol.label}`}
+                  checked={symbol.active}
+                  onChange={(event) => setEditing({ symbol, start: { active: event.target.checked } })}
+                />
+              </td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </>

@@ -480,7 +480,8 @@ export async function aRootTransformBodyIsHashedRaw(): Promise<void> {
 /**
  * `F3.87` PR 6a (ADR 0099 Amendment 3 A3, plan D12) — the multipart Confirm in
  * two stages. `UPLOAD_FIXTURE_ID` is an `upload` entry in the `.test.ts`
- * wrapper's mock of `catalogEntry` (no real entry has `upload` until PR 6b).
+ * wrapper's mock of `catalogEntry`, so these cases do not hang off the real
+ * `mimicSymbol.upload` entry (PR 6b) and its hash-excluded keys.
  */
 export const UPLOAD_FIXTURE_ID = "fixture.symbol.upload";
 const LIBRARY_PATH = "/api/v1/mimic-symbol-libraries/66666666-6666-4666-8666-666666666666/symbols";

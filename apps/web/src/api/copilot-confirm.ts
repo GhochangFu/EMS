@@ -1,5 +1,5 @@
 import type { CopilotPendingChangeDto } from "@bms/shared";
-import { cardOnlyKeysFor, COPILOT_CHANGE_HEADER } from "@bms/shared/copilot";
+import { bodyFieldsOf, cardOnlyKeysFor, catalogEntry, COPILOT_CHANGE_HEADER } from "@bms/shared/copilot";
 
 import { ApiError } from "../lib/api-error";
 import { clearSessionOnAuthFailure, withAuth } from "./http";
@@ -11,6 +11,30 @@ const API_PATH = /^\/api\/v1\/[^/\\@][^\\@]*$/;
 /** `body` without `keys`: a filtered copy, so the stored change is never touched. */
 export function withoutKeys(body: Readonly<Record<string, unknown>>, keys: readonly string[]): Record<string, unknown> {
   return Object.fromEntries(Object.entries(body).filter(([key]) => !keys.includes(key)));
+}
+
+/**
+ * `F3.87` PR 6b (ADR 0099 Amendment 3 A3, plan §8.4) — the multipart body of an
+ * `upload` entry's Confirm, from the card the turn stored: each of the
+ * route's text `fields` the card holds (a `group` the model left out is not
+ * sent), and the card-only SVG text as the `fileField` part under the stored
+ * `filename`. The text, the filename and the hash are never form fields —
+ * exactly what the interceptor's route stage hashes.
+ */
+export function uploadFormOf(
+  body: Readonly<Record<string, unknown>>,
+  fields: readonly string[],
+  upload: { readonly fileField: string; readonly contentType: string },
+): FormData {
+  const form = new FormData();
+  for (const field of fields) {
+    const value = body[field];
+    if (typeof value === "string") form.append(field, value);
+  }
+  const text = typeof body.svgText === "string" ? body.svgText : "";
+  const filename = typeof body.filename === "string" ? body.filename : "symbol.svg";
+  form.append(upload.fileField, new File([text], filename, { type: upload.contentType }));
+  return form;
 }
 
 /**
@@ -37,6 +61,10 @@ export function withoutKeys(body: Readonly<Record<string, unknown>>, keys: reado
  * send, because the route's strict body would refuse them, and the server's
  * hash leaves them out too (`hashExcludedKeysFor`, one rule both sides).
  *
+ * `F3.87` PR 6b (Amendment 3 A3, plan §8.4): an `upload` entry's Confirm is
+ * the real multipart call ({@link uploadFormOf}); the server's route stage
+ * hashes the fields it receives, the file's name and the SHA-256 of its bytes.
+ *
  * Returns the parsed response, or `null` for a `204`. The response shape
  * belongs to the catalog entry, so it stays `unknown` here; the caller that
  * knows the entry parses it.
@@ -48,11 +76,19 @@ export async function confirmCopilotChange(
   if (!API_PATH.test(change.path)) {
     throw new ApiError(`copilot change path is not an API path`, 400);
   }
-  const sent = withAuth({
-    method: change.method,
-    headers: { "Content-Type": "application/json", [COPILOT_CHANGE_HEADER]: change.id },
-    body: JSON.stringify({ ...withoutKeys(change.body, cardOnlyKeysFor(change.catalogId)), ...clientOnly }),
-  });
+  const entry = catalogEntry(change.catalogId);
+  const sent = entry?.upload
+    ? withAuth({
+        method: change.method,
+        // No `Content-Type`: the browser writes `multipart/form-data` with its boundary.
+        headers: { [COPILOT_CHANGE_HEADER]: change.id },
+        body: uploadFormOf(change.body, bodyFieldsOf(entry.body), entry.upload),
+      })
+    : withAuth({
+        method: change.method,
+        headers: { "Content-Type": "application/json", [COPILOT_CHANGE_HEADER]: change.id },
+        body: JSON.stringify({ ...withoutKeys(change.body, cardOnlyKeysFor(change.catalogId)), ...clientOnly }),
+      });
   const res = await fetch(`${base}${change.path}`, sent);
   if (!res.ok) {
     clearSessionOnAuthFailure(res, sent);

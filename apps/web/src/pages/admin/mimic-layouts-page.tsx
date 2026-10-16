@@ -5,11 +5,13 @@ import { MIMIC_PRESETS, type MimicLayoutSummaryDto, type MimicPreset } from "@bm
 import { mimicPresetSchema } from "@bms/shared/contracts";
 
 import { deleteMimicLayout, fetchMimicLayouts } from "../../api/mimic-layouts";
+import { vocabulariesQueryKey } from "../../api/vocabularies";
+import { AssetRoleWizard } from "../../components/admin/asset-role-wizard";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PresetPreview } from "../../components/mimic-editor/preset-preview";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
-import { canManageMimicLayouts } from "../../lib/admin-access";
+import { canManageMimicLayouts, isGlobalAdmin } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -38,6 +40,10 @@ export const MIMIC_LAYOUTS_QUERY_KEY = ["mimic-layouts"] as const;
  *
  * A Delete the server refuses (409 while a dashboard widget uses the layout) shows the server's
  * sentence, unwrapped by `apiErrorMessage`.
+ *
+ * **"Add a unit role"** (`F3.87` PR 6b, owner ruling Q2(a)) is the global administrator's alone:
+ * it opens the `assetRole.create` wizard (the unit-role vocabulary has no admin page, and its
+ * route is the global administrator's). Every other role never sees the action.
  */
 export function MimicLayoutsPage({ user }: MimicLayoutsPageProps) {
   return (
@@ -48,7 +54,7 @@ export function MimicLayoutsPage({ user }: MimicLayoutsPageProps) {
         subtitle="Plant drawings a dashboard's mimic widget can show"
       />
       {canManageMimicLayouts(user.role) ? (
-        <MimicLayoutLibrary />
+        <MimicLayoutLibrary globalAdmin={isGlobalAdmin(user.role)} />
       ) : (
         <p role="status" className="text-sm text-ink-muted">
           Mimic layouts are drawn by an administrator or an organization administrator.
@@ -58,8 +64,13 @@ export function MimicLayoutsPage({ user }: MimicLayoutsPageProps) {
   );
 }
 
-function MimicLayoutLibrary() {
+/** The status line after the role wizard applied. */
+export const UNIT_ROLE_ADDED = "Unit role added. Layouts can name it now.";
+
+function MimicLayoutLibrary({ globalAdmin }: { globalAdmin: boolean }) {
   const queryClient = useQueryClient();
+  const [addingRole, setAddingRole] = useState(false);
+  const [roleAdded, setRoleAdded] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [startFrom, setStartFrom] = useState<MimicPreset>(mimicPresetSchema.options[0]);
@@ -84,6 +95,18 @@ function MimicLayoutLibrary() {
   return (
     <SectionCard title="Layout library" bodyClassName="p-3 space-y-3">
       <div className="flex flex-wrap items-center justify-end gap-2">
+        {globalAdmin ? (
+          <button
+            type="button"
+            onClick={() => {
+              setRoleAdded(false);
+              setAddingRole(true);
+            }}
+            className="surface-button px-3 py-2 text-xs"
+          >
+            Add a unit role
+          </button>
+        ) : null}
         <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
           Start from
           <select
@@ -118,6 +141,21 @@ function MimicLayoutLibrary() {
         </Link>
       </div>
       <PresetPreview preset={startFrom} />
+      {addingRole ? (
+        <AssetRoleWizard
+          onCancel={() => setAddingRole(false)}
+          onDone={async () => {
+            setAddingRole(false);
+            setRoleAdded(true);
+            await queryClient.invalidateQueries({ queryKey: vocabulariesQueryKey });
+          }}
+        />
+      ) : null}
+      {roleAdded ? (
+        <p role="status" className="text-xs text-ink-muted">
+          {UNIT_ROLE_ADDED}
+        </p>
+      ) : null}
       {error !== null ? (
         <p role="alert" className="text-xs text-critical-ink">
           {error}

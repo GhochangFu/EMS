@@ -15,10 +15,10 @@ import { CHANGE_ID, harness, identity, ORG_X, sentText, turn } from "./copilot-t
  * `F3.87` PR 5 / owner ruling Q4 (2026-10-15) — the turn loop with
  * `FakeLlmProvider`: a layout naming a role the vocabulary lacks is refused
  * with the sentence for the caller's role, and no card is stored; a layout
- * whose roles are live stores one. One claim per `it()`. The
- * `assetRole.create` half (the role card, then the layout after its applied
- * follow-up) needs that entry, which PR 6 adds. Vitest entry point: the
- * sibling `.test.ts`.
+ * whose roles are live stores one. One claim per `it()`. `F3.87` PR 6 made
+ * `assetRole.create` an entry for the global admin: the admin is told to
+ * propose the role card first, and no other role's registry names it.
+ * Vitest entry point: the sibling `.test.ts`.
  */
 
 /** A layout body whose one unit names `roleCode`; two units and a pipe, on the core library. */
@@ -55,25 +55,25 @@ function layoutsOver(live: readonly string[], options: { stale?: boolean } = {})
 }
 
 /**
- * (Q4-a) As `admin`: a layout naming `pump-x` is refused with the sentence that names it, and no
- * card is stored. The real catalog has no `assetRole.create` entry until `F3.87` PR 6, so the admin
- * gets the sentence form here (never a tool it cannot call); the admin form, given only when the
- * registry has `propose_assetRole_create`, is held by `copilot-propose-layouts.spec.ts`. PR 6 flips
- * this assertion to `PROPOSE_LAYOUT_ROLES_MISSING_ADMIN`.
+ * (Q4-a) As `admin`: a layout naming `pump-x` is refused with the admin form, which names the
+ * code and tells the model to propose `assetRole.create` first, and no layout card is stored; the
+ * model then proposes the role and one `assetRole.create` card is stored (`F3.87` PR 6 made it an
+ * entry for the global admin, so the admin registry names `propose_assetRole_create`).
  */
-export async function assertAnAdminsLayoutWithAMissingRoleIsRefusedNamingIt(): Promise<void> {
+export async function assertAnAdminsLayoutWithAMissingRoleGetsTheRoleCardFirst(): Promise<void> {
   const llm = new FakeLlmProvider([
     calls(toolCall("propose_mimicLayout_create", { body: layoutBody("pump-x") })),
-    { kind: "final", text: "The role pump-x is missing." },
+    calls(toolCall("propose_assetRole_create", { body: { code: "pump-x", label: "Pump X" } })),
+    { kind: "final", text: "Confirm the role card first; then I will propose the layout." },
   ]);
   const { layouts, asked } = layoutsOver(["raw-water-pump"]);
   const h = harness(llm, { layouts });
   await turn(h, "draw the raw water plant");
   expect(asked).toEqual([["pump-x"]]);
   const sent = sentText(llm);
-  expect(sent).toContain(JSON.stringify(PROPOSE_LAYOUT_ROLES_MISSING(["pump-x"])).slice(1, -1));
-  expect(sent).not.toContain(JSON.stringify(PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(["pump-x"])).slice(1, -1));
-  expect(h.proposed).toEqual([]);
+  expect(sent).toContain(JSON.stringify(PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(["pump-x"])).slice(1, -1));
+  expect(sent).not.toContain(JSON.stringify(PROPOSE_LAYOUT_ROLES_MISSING(["pump-x"])).slice(1, -1));
+  expect(h.proposed.map((change) => [change.catalogId, change.body])).toEqual([["assetRole.create", { code: "pump-x", label: "Pump X" }]]);
 }
 
 /** (Q4-c) As `organization_admin`: the refusal is the sentence form, and no layout card with `pump-x` is stored. */
@@ -88,6 +88,22 @@ export async function assertAnOrgAdminsLayoutWithAMissingRoleGetsTheSentenceForm
   const sent = sentText(llm);
   expect(sent).toContain(JSON.stringify(PROPOSE_LAYOUT_ROLES_MISSING(["pump-x"])).slice(1, -1));
   expect(sent).not.toContain(JSON.stringify(PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(["pump-x"])).slice(1, -1));
+  expect(h.proposed).toEqual([]);
+}
+
+/**
+ * (Q4-c, the registry half) As `organization_admin`: `propose_assetRole_create` is not a tool of
+ * the turn, so a call to it is an unknown tool and no card is stored (`offeredTo: ["admin"]`).
+ */
+export async function assertAnOrgAdminCannotProposeTheRoleCard(): Promise<void> {
+  const llm = new FakeLlmProvider([
+    calls(toolCall("propose_assetRole_create", { body: { code: "pump-x", label: "Pump X" } })),
+    { kind: "final", text: "A global administrator can add the role pump-x." },
+  ]);
+  const { layouts } = layoutsOver(["raw-water-pump"]);
+  const h = harness(llm, { layouts });
+  await turn(h, "add the role pump-x", identity("organization_admin", ORG_X));
+  expect(sentText(llm)).toContain("Unknown tool 'propose_assetRole_create'.");
   expect(h.proposed).toEqual([]);
 }
 

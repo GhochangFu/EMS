@@ -101,8 +101,30 @@ export const mimicSymbolUploadFieldsSchema = z
 /** The uploaded file's name after `decodeMulterFilename` — the `assetImageFilenameSchema` twin. */
 export const mimicSymbolFilenameSchema = z.string().trim().min(1).max(255).regex(NO_CONTROL_CHARACTERS);
 
+/**
+ * `F3.87` PR 6 (ADR 0099 Amendment 3 A3, plan §8.1) — the body the copilot proposes a symbol
+ * upload with: the multipart text fields (`name` and `label` required here, so a card always
+ * names the symbol), plus the SVG source as `svg` — the model's own text, or the index of a file
+ * attached to the turn (PR 7). The propose step parses the SVG with the route's parser and stores
+ * the fields, the file's name and SHA-256, and the text under the `cardOnly` key `svgText`
+ * (`copilot-upload-prepare.ts`). `catalog.spec.ts` holds the rule: the upload body's fields plus
+ * `svg`, strict. It binds the model only; a person's wizard checks `mimicSymbolUploadFieldsSchema`.
+ */
+export const copilotMimicSymbolUploadModelBodySchema = z
+  .object({
+    name: z.string().max(64).regex(MIMIC_ORG_SYMBOL_NAME),
+    label,
+    group: z.enum(MIMIC_SYMBOL_GROUP_CODES).optional(),
+    svg: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("text"), text: z.string().max(65536) }).strict(),
+      z.object({ kind: z.literal("attachment"), index: z.number().int().min(1).max(3) }).strict(),
+    ]),
+  })
+  .strict();
+
 export type CreateMimicOrgSymbolLibraryBody = z.infer<typeof createMimicOrgSymbolLibraryBodySchema>;
 export type UpdateMimicOrgSymbolLibraryBody = z.infer<typeof updateMimicOrgSymbolLibraryBodySchema>;
 export type UpdateMimicOrgSymbolBody = z.infer<typeof updateMimicOrgSymbolBodySchema>;
 export type PutMimicLibrarySettingBody = z.infer<typeof putMimicLibrarySettingBodySchema>;
 export type MimicSymbolUploadFields = z.infer<typeof mimicSymbolUploadFieldsSchema>;
+export type CopilotMimicSymbolUploadModelBody = z.infer<typeof copilotMimicSymbolUploadModelBodySchema>;

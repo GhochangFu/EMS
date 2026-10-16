@@ -24,6 +24,9 @@ import * as copilotApi from "../../api/copilot";
  * `:4000`). The upload claim alone stubs the global `fetch` and lets the real
  * `uploadMimicOrgSymbol` run, so a JSON body built inside the API module reddens it.
  * `mimic-symbol-libraries-page.test.tsx` is the Vitest entry.
+ *
+ * `F3.87` PR 6b (plan D6): every write opens its catalog entry's wizard; {@link submitWizard}
+ * steps through it (Next until Submit) before the write is asserted.
  */
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
@@ -86,6 +89,16 @@ async function plantCard(): Promise<HTMLElement> {
   return screen.findByRole("region", { name: "Plant" });
 }
 
+/** `F3.87` PR 6b: the wizard dialog named `name`, stepped with Next until its Review step, then Submit. */
+async function submitWizard(name: string | RegExp): Promise<HTMLElement> {
+  const dialog = await screen.findByRole("dialog", { name });
+  while (within(dialog).queryByRole("button", { name: "Submit" }) === null) {
+    await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  }
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+  return dialog;
+}
+
 // ---- global libraries ------------------------------------------------------------------------
 
 /** L1 — one `Enable …` box per global library, in the catalog's order. */
@@ -131,51 +144,53 @@ export async function aBoxShowsTheSwitch(): Promise<void> {
   expect(screen.getByRole("checkbox", { name: "Enable Lucide for this organization" })).toBeChecked();
 }
 
-/** L6 — unchecking Lucide turns it off for the organization. */
+/** L6 — unchecking Lucide opens the setting wizard, whose Submit turns it off for the organization. */
 export async function uncheckingLucidePutsTheSetting(): Promise<void> {
   const { setting } = stubAll();
   mount();
   await userEvent.click(await screen.findByRole("checkbox", { name: "Enable Lucide for this organization" }));
+  expect(setting).not.toHaveBeenCalled();
+  await submitWizard("Turn Lucide off for this organization");
   await waitFor(() => expect(setting).toHaveBeenCalledWith("lucide", { organizationId: ORG_ID, enabled: false }));
 }
 
-/** L7 — the box is busy and disabled while the switch is saved; the other rows are not busy. */
+/** L7 — the wizard's Submit is busy while the switch is saved. */
 export async function theBoxIsBusyWhilePending(): Promise<void> {
   const { setting } = stubAll();
   setting.mockReturnValue(new Promise(() => undefined));
   mount();
   await userEvent.click(await screen.findByRole("checkbox", { name: "Enable Lucide for this organization" }));
-  const box = screen.getByRole("checkbox", { name: "Enable Lucide for this organization" });
-  await waitFor(() => expect(box).toHaveAttribute("aria-busy", "true"));
-  expect(box).toBeDisabled();
-  expect(screen.getByRole("checkbox", { name: "Enable Material Design Icons for this organization" })).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  const dialog = await submitWizard("Turn Lucide off for this organization");
+  const busy = await within(dialog).findByRole("button", { name: "Submitting…" });
+  expect(busy).toBeDisabled();
 }
 
-/** L8 — a saved switch re-reads the catalog. */
+/** L8 — a saved switch re-reads the catalog and closes the wizard. */
 export async function aSavedSwitchRereadsTheCatalog(): Promise<void> {
   const { catalog } = stubAll();
   mount();
   await userEvent.click(await screen.findByRole("checkbox", { name: "Enable Lucide for this organization" }));
+  await submitWizard("Turn Lucide off for this organization");
   await waitFor(() => expect(catalog).toHaveBeenCalledTimes(2));
+  expect(screen.queryByRole("dialog", { name: "Turn Lucide off for this organization" })).toBeNull();
 }
 
 // ---- organization libraries ------------------------------------------------------------------
 
-/** L9 — the create form posts the library's body. */
+/** L9 — the create wizard posts the library's body. */
 export async function theCreateFormPostsTheBody(): Promise<void> {
   const { create } = stubAll();
   mount();
-  const form = await screen.findByRole("form", { name: "New organization library" });
+  await userEvent.click(await screen.findByRole("button", { name: "New library" }));
+  const form = await screen.findByRole("dialog", { name: "New organization library" });
   await userEvent.type(within(form).getByRole("textbox", { name: "Code" }), "valves");
   await userEvent.type(within(form).getByRole("textbox", { name: "Label" }), "Valves");
   await userEvent.selectOptions(within(form).getByRole("combobox", { name: "Style" }), "fill");
+  await userEvent.click(within(form).getByRole("button", { name: "Next" }));
   await userEvent.type(within(form).getByRole("textbox", { name: "Licence" }), "CC0");
   await userEvent.type(within(form).getByRole("textbox", { name: "Attribution" }), "Our own");
   await userEvent.type(within(form).getByRole("textbox", { name: "Source URL" }), "https://example.com/valves");
-  await userEvent.click(within(form).getByRole("button", { name: "Create library" }));
+  await submitWizard("New organization library");
   await waitFor(() =>
     expect(create).toHaveBeenCalledWith({
       organizationId: ORG_ID,
@@ -203,6 +218,8 @@ export async function retireSendsActiveFalse(): Promise<void> {
   const { updateLibrary } = stubAll();
   mount();
   await userEvent.click(within(await plantCard()).getByRole("button", { name: "Retire" }));
+  expect(updateLibrary).not.toHaveBeenCalled();
+  await submitWizard("Retire Plant");
   await waitFor(() => expect(updateLibrary).toHaveBeenCalledWith(PLANT_ID, { active: false }));
 }
 
@@ -213,7 +230,16 @@ export async function reactivateSendsActiveTrue(): Promise<void> {
   const card = await screen.findByRole("region", { name: "Legacy" });
   expect(within(card).getByText("Retired", { selector: "span" })).toBeInTheDocument();
   await userEvent.click(within(card).getByRole("button", { name: "Reactivate" }));
+  await submitWizard("Reactivate Legacy");
   await waitFor(() => expect(updateLibrary).toHaveBeenCalledWith(LEGACY_ID, { active: true }));
+}
+
+const UPLOAD_DIALOG = "Upload a symbol to Plant";
+
+/** `F3.87` PR 6b: the Plant card's "Upload a symbol" action opens the upload wizard. */
+async function openUpload(): Promise<HTMLElement> {
+  await userEvent.click(within(await plantCard()).getByRole("button", { name: "Upload a symbol" }));
+  return screen.findByRole("dialog", { name: UPLOAD_DIALOG });
 }
 
 /** L13 — the upload sends a `FormData`, `file` first, with no `Content-Type` of its own. */
@@ -225,7 +251,7 @@ export async function theUploadSendsFormData(): Promise<void> {
   );
   vi.stubGlobal("fetch", fetchMock);
   mount();
-  const card = await plantCard();
+  const card = await openUpload();
   await userEvent.upload(
     within(card).getByLabelText("Symbol file"),
     new File(["<svg viewBox='0 0 24 24'><circle cx='12' cy='12' r='8'/></svg>"], "intake.svg", { type: "image/svg+xml" }),
@@ -233,7 +259,7 @@ export async function theUploadSendsFormData(): Promise<void> {
   await userEvent.type(within(card).getByRole("textbox", { name: "Symbol name" }), "intake");
   await userEvent.type(within(card).getByRole("textbox", { name: "Symbol label" }), "Intake");
   await userEvent.selectOptions(within(card).getByRole("combobox", { name: "Symbol group" }), "water");
-  await userEvent.click(within(card).getByRole("button", { name: "Upload" }));
+  await submitWizard(UPLOAD_DIALOG);
   await waitFor(() => expect(fetchMock).toHaveBeenCalled());
   const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
   expect(url).toMatch(new RegExp(`/api/v1/mimic-symbol-libraries/${PLANT_ID}/symbols$`));
@@ -250,22 +276,21 @@ export async function aRefusedUploadShowsTheMessage(): Promise<void> {
     new ApiError(JSON.stringify({ message: "Element <script> is not allowed in a symbol", statusCode: 400 }), 400),
   );
   mount();
-  const card = await plantCard();
+  const card = await openUpload();
   await userEvent.upload(within(card).getByLabelText("Symbol file"), new File(["<svg/>"], "bad.svg", { type: "image/svg+xml" }));
-  await userEvent.click(within(card).getByRole("button", { name: "Upload" }));
+  await submitWizard(UPLOAD_DIALOG);
   expect(await within(card).findByRole("alert")).toHaveTextContent("Element <script> is not allowed in a symbol");
 }
 
-/** L15 — the Upload button is busy and disabled while the file is sent. */
+/** L15 — the wizard's Submit is busy and disabled while the file is sent. */
 export async function theUploadButtonIsBusyWhilePending(): Promise<void> {
   const { upload } = stubAll();
   upload.mockReturnValue(new Promise(() => undefined));
   mount();
-  const card = await plantCard();
+  const card = await openUpload();
   await userEvent.upload(within(card).getByLabelText("Symbol file"), new File(["<svg/>"], "a.svg", { type: "image/svg+xml" }));
-  await userEvent.click(within(card).getByRole("button", { name: "Upload" }));
-  const button = await within(card).findByRole("button", { name: "Uploading…" });
-  expect(button).toHaveAttribute("aria-busy", "true");
+  await submitWizard(UPLOAD_DIALOG);
+  const button = await within(card).findByRole("button", { name: "Submitting…" });
   expect(button).toBeDisabled();
 }
 
@@ -273,7 +298,7 @@ export async function theUploadButtonIsBusyWhilePending(): Promise<void> {
 export async function theFileInputTakesSvgOnly(): Promise<void> {
   stubAll();
   mount();
-  expect(within(await plantCard()).getByLabelText("Symbol file")).toHaveAttribute("accept", "image/svg+xml");
+  expect(within(await openUpload()).getByLabelText("Symbol file")).toHaveAttribute("accept", "image/svg+xml");
 }
 
 // ---- the symbols table -----------------------------------------------------------------------
@@ -304,6 +329,8 @@ export async function uncheckingActiveRetiresTheSymbol(): Promise<void> {
   mount();
   const card = await plantCard();
   await userEvent.click(within(card).getByRole("checkbox", { name: "Active Inlet screen" }));
+  expect(updateSymbol).not.toHaveBeenCalled();
+  await submitWizard("Edit Inlet screen");
   const inlet = orgSymbolFixture("org.plant:inlet", "Inlet screen");
   await waitFor(() => expect(updateSymbol).toHaveBeenCalledWith(PLANT_ID, inlet.id, { active: false }));
 }
@@ -321,6 +348,7 @@ export async function changingTheGroupSendsIt(): Promise<void> {
   mount();
   const card = await plantCard();
   await userEvent.selectOptions(within(card).getByRole("combobox", { name: "Group of Inlet screen" }), "hvac");
+  await submitWizard("Edit Inlet screen");
   const inlet = orgSymbolFixture("org.plant:inlet", "Inlet screen");
   await waitFor(() => expect(updateSymbol).toHaveBeenCalledWith(PLANT_ID, inlet.id, { group: "hvac" }));
 }
@@ -362,4 +390,86 @@ export async function aLocationAdminIsRefused(): Promise<void> {
     "Symbol libraries are managed by an administrator or an organization administrator.",
   );
   expect(catalog).not.toHaveBeenCalled();
+}
+
+// ---- `F3.87` PR 6b: the upload wizard keeps the file outside its values (plan D6) -------------
+
+/** L26 — Submit with no file chosen names the missing file and sends nothing. */
+export async function anUploadWithoutAFileIsRefusedAtSubmit(): Promise<void> {
+  const { upload } = stubAll();
+  mount();
+  const card = await openUpload();
+  await submitWizard(UPLOAD_DIALOG);
+  expect(await within(card).findByRole("alert")).toHaveTextContent("Choose an SVG file to upload.");
+  expect(upload).not.toHaveBeenCalled();
+}
+
+/**
+ * L27 — with a file chosen, the Review step's body passes `bodyProblems` (no alert) and Submit
+ * sends the file and the fields: the `File` never entered the wizard's values, whose strict
+ * schema would refuse it.
+ */
+export async function theUploadReviewPassesWithAFileChosen(): Promise<void> {
+  const { upload } = stubAll();
+  mount();
+  const card = await openUpload();
+  const file = new File(["<svg/>"], "pump.svg", { type: "image/svg+xml" });
+  // The file is chosen last, so nothing typed after it could rebuild the values without it.
+  await userEvent.type(within(card).getByRole("textbox", { name: "Symbol label" }), "Pump");
+  await userEvent.upload(within(card).getByLabelText("Symbol file"), file);
+  await userEvent.click(within(card).getByRole("button", { name: "Next" }));
+  expect(within(card).queryByRole("alert")).toBeNull();
+  expect(within(card).getByRole("button", { name: "Submit" })).toBeEnabled();
+  await userEvent.click(within(card).getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(upload).toHaveBeenCalledWith(PLANT_ID, { file, name: undefined, label: "Pump", group: undefined }));
+}
+
+// ---- `F3.87` PR 6b: a second action while a wizard is open remounts it with the new start ------
+
+/**
+ * L28 — the group of one symbol, then another symbol's Active box: the open wizard takes the
+ * second symbol's change, and the first change goes nowhere. Mutation: drop the
+ * `SymbolUpdateWizard` `key` => red (it PATCHes the second symbol with the first's group).
+ */
+export async function aSecondSymbolActionReplacesTheOpenWizard(): Promise<void> {
+  const { updateSymbol } = stubAll();
+  mount();
+  const card = await plantCard();
+  await userEvent.selectOptions(within(card).getByRole("combobox", { name: "Group of Inlet screen" }), "hvac");
+  await screen.findByRole("dialog", { name: "Edit Inlet screen" });
+  await userEvent.click(within(card).getByRole("checkbox", { name: "Active Old pump" }));
+  await submitWizard("Edit Old pump");
+  const oldPump = orgSymbolFixture("org.plant:old-pump", "Old pump", false);
+  await waitFor(() => expect(updateSymbol).toHaveBeenCalledWith(PLANT_ID, oldPump.id, { active: true }));
+  expect(updateSymbol).toHaveBeenCalledTimes(1);
+}
+
+/**
+ * L29 — Edit, then Retire on the same card: the open wizard becomes the Retire wizard with
+ * `active: false` in it. Mutation: drop the `LibraryUpdateWizard` `key` => red (the values stay
+ * `{}`).
+ */
+export async function retireAfterEditReplacesTheOpenWizard(): Promise<void> {
+  const { updateLibrary } = stubAll();
+  mount();
+  const card = await plantCard();
+  await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
+  await screen.findByRole("dialog", { name: "Edit Plant" });
+  await userEvent.click(within(card).getByRole("button", { name: "Retire" }));
+  await submitWizard("Retire Plant");
+  await waitFor(() => expect(updateLibrary).toHaveBeenCalledWith(PLANT_ID, { active: false }));
+}
+
+/**
+ * L30 — a label typed with no file chosen still asks before Cancel leaves: the shell marks
+ * itself on the field's `change`, so the page's `dirty` need only cover the file input.
+ */
+export async function aTypedLabelWithoutAFileAsksBeforeCancel(): Promise<void> {
+  stubAll();
+  mount();
+  const card = await openUpload();
+  await userEvent.type(within(card).getByRole("textbox", { name: "Symbol label" }), "Pump");
+  await userEvent.click(within(card).getByRole("button", { name: "Cancel" }));
+  expect(await screen.findByRole("alertdialog", { name: "Leave the wizard" })).toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: UPLOAD_DIALOG })).toBeInTheDocument();
 }
