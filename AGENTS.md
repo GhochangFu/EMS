@@ -1230,7 +1230,7 @@
 > **ADR 0099 Amendment 1** (two usage counters, the organization's day
 > boundary) in #805 `eb85237e`; **Amendment 2** (a draft onboarding session is
 > resumed from the dock, and one untouched for 30 days is erased by the purge
-> tick; `F4.255`) in #837 `d00ead32`. **`F3.86`, release 2, is built (below); `F3.87` is scoped by Amendment 3 (below) and not built yet.**
+> tick; `F4.255`) in #837 `d00ead32`. **`F3.86`, release 2, and `F3.87`, release 3, are built (below).**
 > It promotes §6's general copilot item for `admin`, `organization_admin`,
 > `location_admin` and `asset_group_admin` only; operators and viewers get none. It answers
 > read-only questions within the user's own read scope and proposes admin
@@ -1250,6 +1250,8 @@
 > module is `apps/api/src/copilot/`; the release-1 write bodies moved to
 > `packages/shared/src/contracts/*-writes.ts` (#802, #813; `F3.86` added the seven master-data bodies `location`, `rtu`, `asset`,
 > `point-key`, `asset-point`, `site-control-room-view` and `site-layout`, #822;
+> `F3.87` added the nine `mimic-layout`, `mimic-symbol-library` and
+> `asset-role` bodies, #869;
 > `F4.254` moved the instantiate body to
 > `contracts/asset-template-instantiate-writes.ts`, #838); the schema is
 > migrations `0104` (the availability switches), `0105` (the history and
@@ -1310,15 +1312,22 @@
 > `draft` session with no update for 30 days (per organization, in
 > `withTenant`), together with its `_secrets` and checkpoints. A committed
 > session is never purged, and holds no `_secrets` since `F4.258`.
-> **`F3.87`, release 3, is scoped, not built** (**ADR 0099 Amendment 3**,
-> owner rulings Q1–Q8, #865 `e19aedd9`, 2026-10-15): catalog entries for mimic
-> layouts, symbol libraries and the multipart `mimicSymbol.upload` (the
+> **`F3.87`, release 3, is built** (**ADR 0099 Amendment 3**, owner rulings
+> Q1–Q8, #865 `e19aedd9`, 2026-10-15; nine PRs #868–#876, 2026-10-15 to
+> 2026-10-16, plan `docs/plans/f3.87-admin-copilot-release-3.md` §15 *As
+> built*): catalog entries for mimic layouts, symbol libraries, the multipart
+> `mimicSymbol.upload` (a two-stage Confirm: the global interceptor claims and
+> compares the path, a route-stage interceptor after multer hashes the fields
+> and the file's SHA-256) and `assetRole.create` (global admin only; the
 > layout `DELETE` and the asset-role `PATCH` stay excluded); a layout is
 > drawn by conversation as one whole body on one card with a drawn preview,
 > and a stale `version` gives 409; binding cards follow an applied layout.
-> **Attachments:** up to 3 files per message (PNG, JPEG, WebP or PDF, 10 MB
-> each, magic-byte checked) go to the turn's own key and model as native
-> content parts, on plain conversations only, and no image or PDF bytes are
+> **Attachments:** up to 3 files per message (PNG, JPEG, WebP or PDF, or an
+> `.svg` as a symbol candidate; magic-byte checked; **10 MB together**, owner
+> ruling 2026-10-16, so a turn fits the proxies' `client_max_body_size 10m`)
+> go to the turn's own key and model as native content parts (an `.svg` as
+> its parser's summary, never a part), on plain conversations bound to one
+> organization only, every refusal before the turn is counted, and no image or PDF bytes are
 > stored (the message row keeps a placeholder with the SHA-256; an attached
 > `.svg` for a symbol upload is the one stored exception, for 15 minutes).
 > They need the per-organization switch
@@ -1327,7 +1336,9 @@
 > (Amendment 3 A7):** the secret scrub and the ADR 0022 credential refusal
 > read text, so a secret printed in an image reaches the provider; the attach
 > button says so. Text inside a file is data, and a turn with an attachment
-> cannot propose an access change. No new npm package.
+> cannot propose an access change, nor an asset or point create its words
+> did not ask for. No new npm package. **The propose tool definitions are
+> capped at 52,000 characters** (owner ruling 2026-10-16; was 48,000).
 > EMQX and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
@@ -1408,7 +1419,7 @@ catalogued RTUs**, measured rather than chosen. These promotions are partial and
 and non-MQTT protocol adapters remain out of scope, and a site-wide AI copilot
 is promoted for the four administrator roles only (**ADR 0099**, rows
 `F3.85`–`F3.87`; `F3.85`, release 1, is built, #802–#815, `F3.86`,
-release 2, is built, #822–#832, and `F3.87` is not built yet).
+release 2, is built, #822–#832, and `F3.87`, release 3, is built, #868–#876).
 
 ---
 
@@ -4029,8 +4040,8 @@ These are intentionally deferred. Do not implement them yet:
   ADR 0099, 2026-10-10, a site-wide copilot is **promoted for the four
   administrator roles**, rows `F3.85`–`F3.87` — `F3.85`, release 1, built
   2026-10-10 to 2026-10-12, `F3.86`, release 2, built 2026-10-12 to
-  2026-10-13, `F3.87` scoped by ADR 0099 Amendment 3 on 2026-10-15 and not
-  built yet — mimics by conversation, and attached images or PDFs behind a
+  2026-10-13, `F3.87`, release 3 (ADR 0099 Amendment 3), built 2026-10-15
+  to 2026-10-16 — mimics by conversation, and attached images or PDFs behind a
   per-organization switch that is off by default, never stored, with the
   accepted residual that the secret scrub reads text, so a secret printed in
   an image reaches the provider; the **scoped admin
