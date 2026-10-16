@@ -13,7 +13,11 @@ import { LlmResolver, type ResolvedLlm, type ResolvedPlatformScope } from "../ll
 import { defineToolRegistry } from "../llm/tool-registry";
 import type { CopilotAvailability } from "./copilot-availability";
 import type { FinishedChange, NewPendingChange } from "./copilot-pending-changes.service";
-import { COPILOT_PROPOSE_TOOLS, createCopilotProposeTools } from "./copilot-propose-tools";
+import {
+  COPILOT_PROPOSE_TOOLS,
+  type CopilotProposeServices,
+  createCopilotProposeTools,
+} from "./copilot-propose-tools";
 import { COPILOT_READ_TOOLS, type CopilotReadTools, type CopilotToolContext, type CopilotToolResult } from "./copilot-read-tools";
 import type { ConsumeTurnResult, UsageIdentity } from "./copilot-usage.service";
 import { CopilotModule } from "./copilot.module";
@@ -97,6 +101,8 @@ type Options = {
   readTools?: CopilotReadTools;
   /** `F3.87` PR 2: the catalog the propose tools are built over (the real one by default). */
   proposeCatalog?: readonly CatalogEntry[];
+  /** `F3.87` PR 5: the layout checks a layout proposal runs (absent: a layout proposal is refused). */
+  layouts?: CopilotProposeServices["layouts"];
   stored?: CopilotMessageDto[];
   /** What the propose tools' fake resolver answers (PR 8); a template named "T" in X by default. */
   target?: ResolvedTarget | null;
@@ -205,7 +211,10 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
     },
     finished: async (_userId: string, id: string) => (id === CHANGE_ID ? (options.finished ?? null) : null),
   };
-  const proposeTools = createCopilotProposeTools({ targets: { resolve: async () => target }, pending }, options.proposeCatalog);
+  const proposeTools = createCopilotProposeTools(
+    { targets: { resolve: async () => target }, pending, ...(options.layouts ? { layouts: options.layouts } : {}) },
+    options.proposeCatalog,
+  );
   const service = new CopilotTurnService(
     conversations as never,
     availability as never,
@@ -221,7 +230,7 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
   return { service, counts, history, seenTools: seen, proposed, discarded, pendingAsked, setPlatform: (p: Options["platform"]) => (options.platform = p) };
 }
 
-function turn(h: ReturnType<typeof harness>, message: string, who: ResolvedIdentity = GLOBAL_ADMIN) {
+export function turn(h: ReturnType<typeof harness>, message: string, who: ResolvedIdentity = GLOBAL_ADMIN) {
   return h.service.turn({ identity: who, user: JWT }, CONVERSATION, message, "user");
 }
 
@@ -236,7 +245,7 @@ async function statusOf(run: () => Promise<unknown>): Promise<{ status: number; 
 }
 
 /** The text of every message the provider was sent, on every call. */
-function sentText(llm: FakeLlmProvider): string {
+export function sentText(llm: FakeLlmProvider): string {
   return JSON.stringify(llm.seen);
 }
 

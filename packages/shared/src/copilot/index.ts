@@ -9,6 +9,7 @@
 export { canonicalJson } from "./canonical-json";
 export {
   CANVAS_ENTRY_IDS,
+  cardOnlyKeysFor,
   catalogEntry,
   catalogParamsOf,
   catalogPath,

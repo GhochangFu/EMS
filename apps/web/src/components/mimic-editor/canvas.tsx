@@ -2,10 +2,10 @@ import { MIMIC_LAYOUT_BOUNDS } from "@bms/shared/contracts";
 import type { MimicOrgSymbolDto } from "@bms/shared";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
-import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import { dragBox, pointerToGrid } from "../../lib/mimic-editor-geometry";
 import type { Box, EditorAction, EditorNode, EditorState } from "../../lib/mimic-editor";
 import { layoutGeometry } from "../../lib/mimic-geometry";
+import { NO_READINGS } from "../../lib/mimic-no-readings";
 import { MimicScene } from "../widgets/mimic-scene";
 
 /**
@@ -39,13 +39,6 @@ export type MimicEditorCanvasProps = {
 };
 
 const NO_ORG_SYMBOLS: readonly MimicOrgSymbolDto[] = [];
-
-/** The editor draws no live data: every roled unit reads as "Not assigned". */
-const NO_READINGS: SiteLiveReadings = {
-  nowMs: 0,
-  pointLatest: () => null,
-  assetLastSeenMs: () => null,
-};
 
 /** The resize handle's side, in viewBox units. */
 const HANDLE = 14;

@@ -38,6 +38,8 @@ const RTU_SUMMARY: QueryKey = ["admin", "rtu-summary"];
 const ASSETS: QueryKey = ["admin", "assets"];
 const ASSET_SUMMARY: QueryKey = ["admin", "asset-summary"];
 const ASSET_POINTS: QueryKey = ["admin", "asset-points"];
+// `F3.87` PR 5: the layout list and, under the same prefix, each layout the editor reads.
+const MIMIC_LAYOUTS: QueryKey = ["mimic-layouts"];
 // `F4.255` PR 3: the copilot dock's list of an organization's open onboarding drafts.
 export const ONBOARDING_DRAFTS: QueryKey = ["admin", "onboarding", "drafts"];
 
@@ -124,6 +126,9 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
     // `F4.255`: the committed session is no longer a draft, so it leaves the dock's list.
     ONBOARDING_DRAFTS,
   ],
+  // `F3.87` PR 5: the layout library (`use-mimic-layouts.ts`) and each layout (`mimic-layout-editor-page.tsx`).
+  "mimicLayout.create": [MIMIC_LAYOUTS],
+  "mimicLayout.replace": [MIMIC_LAYOUTS],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

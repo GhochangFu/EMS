@@ -2,9 +2,11 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aBodylessChangeSendsBraces,
+  aChangeWithNoCardOnlyKeySendsItsBodyWhole,
   aClientOnlyValueIsSentBesideTheStoredBody,
   aNonApiPathIsRefusedBeforeFetch,
   aRefusalIsAnApiError,
+  aReplaceIsSentWithoutItsBaseline,
   itSendsTheStoredRequestWithTheHeader,
 } from "./copilot-confirm.spec";
 
@@ -22,4 +24,6 @@ describe("F3.85 — the copilot Confirm executor (ADR 0099 decision 4.5)", () =>
   it("refuses a non-API path before fetch", () => aNonApiPathIsRefusedBeforeFetch());
   it("turns a refusal into an ApiError", () => aRefusalIsAnApiError());
   it("sends a clientOnly value beside the stored body, and only there", () => aClientOnlyValueIsSentBesideTheStoredBody());
+  it("F3.87 PR 5: sends a layout replace without its baseline", () => aReplaceIsSentWithoutItsBaseline());
+  it("F3.87 PR 5: sends a body whole when its entry has no cardOnly key", () => aChangeWithNoCardOnlyKeySendsItsBodyWhole());
 });

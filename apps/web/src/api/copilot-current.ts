@@ -9,6 +9,7 @@ import { fetchAdminDashboardTemplate } from "./admin/dashboard-templates";
 import { fetchAdminLocations, fetchSiteControlRoomView } from "./admin/locations";
 import { fetchAdminRtus } from "./admin/rtus";
 import { fetchDashboards } from "./dashboards";
+import { fetchMimicLayout } from "./mimic-layouts";
 
 /**
  * `F3.85` PR 8 (plan §10.3, decision 4.9) — the record an edit card compares
@@ -131,6 +132,13 @@ export async function fetchCopilotCurrent(change: CopilotPendingChangeDto): Prom
             qualityPolicy: found.qualityPolicy,
           }
         : null;
+    }
+    // `F3.87` PR 5 / owner ruling Q5: the live version only, for the card's "Confirm will give 409"
+    // note, and the organization whose symbols the preview draws. The node diff never reads it: it
+    // reads the baseline the row stored at propose time.
+    case "mimicLayout.replace": {
+      const layout = await fetchMimicLayout(params.id as string);
+      return { version: layout.version, organizationId: layout.organizationId };
     }
     default:
       return null;

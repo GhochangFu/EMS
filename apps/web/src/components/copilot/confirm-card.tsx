@@ -1,8 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { CopilotMessageDto, CopilotPendingChangeDto, SiteLayoutAmbiguousDto } from "@bms/shared";
 import {
+  CANVAS_ENTRY_IDS,
+  cardOnlyKeysFor,
   catalogEntry,
   catalogParamsOf,
   COPILOT_CHANGE_REFUSED_MESSAGE,
@@ -11,16 +13,22 @@ import {
 } from "@bms/shared/copilot";
 
 import { rejectCopilotChange } from "../../api/copilot";
-import { confirmCopilotChange } from "../../api/copilot-confirm";
+import { confirmCopilotChange, withoutKeys } from "../../api/copilot-confirm";
 import { fetchCopilotCurrent } from "../../api/copilot-current";
 import { ambiguousTabsOfError } from "../../api/control-room";
+import type { MimicLayoutWriteBody } from "../../api/mimic-layouts";
+import { useMimicSymbolLibraries } from "../../hooks/use-mimic-symbol-libraries";
 import { refreshScope } from "../../api/login";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { changeRows, fieldLabel } from "../../lib/copilot-diff";
+import { type ChangeRow, changeRows, fieldLabel, type LayoutBaseline, layoutGraphRows } from "../../lib/copilot-diff";
 import { invalidationKeysFor } from "../../lib/copilot-invalidations";
+import { editorLayoutFromWriteBody } from "../../lib/mimic-editor";
+import { layoutWarnings } from "../../lib/mimic-editor-warnings";
+import { catalogOrgSymbols } from "../../lib/mimic-symbols";
 import { useAuthStore } from "../../stores/auth-store";
 import { ChangeCard } from "./change-card";
+import { MimicLayoutPreview } from "./mimic-layout-preview";
 
 /** What a 409 means on a card: the change was applied, rejected, expired or claimed elsewhere. */
 export const CHANGE_GONE_SENTENCE = "This change is no longer available.";
@@ -82,6 +90,27 @@ function changesTheScope(change: CopilotPendingChangeDto): boolean {
   return change.catalogId === "location.update" && "parentId" in change.body;
 }
 
+/** `F3.87` PR 5: a stored `baseline` the card can diff against, or `null` (`validateProposal`'s DTO shape). */
+function baselineOf(value: unknown): LayoutBaseline | null {
+  if (typeof value !== "object" || value === null) return null;
+  const candidate = value as Partial<LayoutBaseline>;
+  return typeof candidate.version === "number" && Array.isArray(candidate.nodes) && Array.isArray(candidate.pipes)
+    ? (candidate as LayoutBaseline)
+    : null;
+}
+
+/**
+ * `F3.87` PR 5: beside the baseline's graph rows, a replace's scalar rows get an explicit "Now":
+ * the baseline's `version`, and "not compared" for the rest (the baseline holds only the graph),
+ * never the dash that reads as "this field was empty". A create (no baseline) is unchanged.
+ */
+function scalarRowsOf(rows: readonly ChangeRow[], baseline: LayoutBaseline | null): ChangeRow[] {
+  if (baseline === null) return [...rows];
+  return rows.map((row) =>
+    row.field === "version" ? { ...row, before: String(baseline.version) } : { ...row, before: "not compared" },
+  );
+}
+
 /** A Zod schema, named through the shared helper (`apps/web` does not depend on `zod` itself). */
 type Schema = Parameters<typeof objectShapeOf>[0];
 
@@ -123,6 +152,32 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
     staleTime: Infinity,
     retry: false,
   });
+  // `F3.87` PR 5 (Amendment 3 A2, rulings Q1, Q5): a layout card draws the body, warns on it, and
+  // diffs a replace against the baseline the row stored at propose time — never the layout now.
+  const cardOnly = cardOnlyKeysFor(change.catalogId);
+  const isLayout = entry !== undefined && (CANVAS_ENTRY_IDS as readonly string[]).includes(entry.id);
+  const layoutBody = useMemo((): MimicLayoutWriteBody | null => {
+    if (!isLayout || entry === undefined) return null;
+    const parsed = entry.body.safeParse(withoutKeys(change.body, cardOnly));
+    return parsed.success ? (parsed.data as MimicLayoutWriteBody) : null;
+  }, [isLayout, entry, change.body, cardOnly]);
+  const bodyOrganizationId = change.body.organizationId;
+  const currentOrganizationId = current.data?.organizationId;
+  const layoutOrganizationId = !isLayout
+    ? undefined
+    : typeof bodyOrganizationId === "string"
+      ? bodyOrganizationId
+      : typeof currentOrganizationId === "string"
+        ? currentOrganizationId
+        : undefined;
+  const symbols = useMimicSymbolLibraries(layoutOrganizationId, { enabled: layoutOrganizationId !== undefined });
+  const orgSymbols = useMemo(() => catalogOrgSymbols(symbols.data ?? null), [symbols.data]);
+  const warnings = useMemo(() => (layoutBody ? layoutWarnings(editorLayoutFromWriteBody(layoutBody)) : []), [layoutBody]);
+  const liveVersion = current.data?.version;
+  const versionNote =
+    entry?.id === "mimicLayout.replace" && typeof liveVersion === "number" && liveVersion !== change.body.version
+      ? `Built against version ${String(change.body.version)}; the layout is now at version ${liveVersion} — Confirm will give 409.`
+      : null;
   const [error, setError] = useState<string | null>(null);
   const [finished, setFinished] = useState(false);
   const [ambiguous, setAmbiguous] = useState<SiteLayoutAmbiguousDto["ambiguous"] | null>(null);
@@ -197,7 +252,14 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
   });
 
   const busy = confirm.isPending || reject.isPending;
-  const rows = changeRows(change.body, isEdit ? (current.data ?? null) : null);
+  const baseline = baselineOf(change.body.baseline);
+  const rows =
+    isLayout && layoutBody !== null
+      ? [
+          ...scalarRowsOf(changeRows(change.body, null, [...cardOnly, "nodes", "pipes"]), baseline),
+          ...(baseline !== null ? layoutGraphRows(layoutBody, baseline) : []),
+        ]
+      : changeRows(change.body, isEdit ? (current.data ?? null) : null, cardOnly);
   const note = isEdit
     ? `Proposed at ${timeOf(change.proposedAt)}. The record can change before you confirm; the request sends the values shown. Expires at ${timeOf(change.expiresAt)}.`
     : `Proposed at ${timeOf(change.proposedAt)}. Expires at ${timeOf(change.expiresAt)}.`;
@@ -221,6 +283,19 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
         onSecondary={() => reject.mutate()}
         confirmDisabled={!allReady}
       >
+        {layoutBody !== null && <MimicLayoutPreview body={layoutBody} orgSymbols={orgSymbols} />}
+        {warnings.length > 0 && (
+          <ul aria-label="Layout warnings" className="mt-2 list-disc pl-4 text-[11px] text-warning-ink">
+            {warnings.map((warning) => (
+              <li key={warning.key}>{warning.text}</li>
+            ))}
+          </ul>
+        )}
+        {versionNote !== null && (
+          <p data-testid="copilot-layout-version-note" className="mt-2 text-[11px] text-warning-ink">
+            {versionNote}
+          </p>
+        )}
         {clientOnly.length > 0 && (
           <div className="mt-2 space-y-1">
             {clientOnly.map((field) => (

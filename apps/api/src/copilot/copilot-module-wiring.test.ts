@@ -5,6 +5,7 @@ import {
   assertTheOnboardingSkillIsTheOnboardingService,
   assertTheSkillSeamIsInjectedByToken,
   assertTheModuleProvidesTheUsersServices,
+  assertTheProposeToolsInjectTheLayoutsService,
   assertTheResolverInjectsTheUsersServices,
 } from "./copilot-module-wiring.spec";
 
@@ -15,4 +16,6 @@ describe("F3.86 PR 4 — CopilotModule wiring for the user targets", () => {
   it("the module imports IdentityAdminModule for IDENTITY_ADMIN", () => assertTheIdentityAdminTokenResolves());
   it("F3.86 PR 5: binds the onboarding skill to OnboardingService from AdminModule", () => assertTheOnboardingSkillIsTheOnboardingService());
   it("F3.86 PR 5: injects the skill seam by token", () => assertTheSkillSeamIsInjectedByToken());
+  it("F3.87 PR 5: the propose tools inject MimicLayoutsService from MimicLayoutsModule", () =>
+    assertTheProposeToolsInjectTheLayoutsService());
 });

@@ -10,7 +10,8 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
 /** `@bms/shared/copilot` through `createRequire` (it reads `packages/shared/dist`; rebuild it after a catalog edit). */
 const require_ = createRequire(import.meta.url);
-const { COPILOT_CATALOG } = require_("@bms/shared/copilot") as {
+const { CANVAS_ENTRY_IDS, COPILOT_CATALOG } = require_("@bms/shared/copilot") as {
+  CANVAS_ENTRY_IDS: readonly string[];
   COPILOT_CATALOG: readonly { id: string }[];
 };
 
@@ -33,6 +34,11 @@ const { COPILOT_CATALOG } = require_("@bms/shared/copilot") as {
  * braces included) is blanked first, across as many lines as it spans, and then every line that starts with `//` is dropped.
  * A commented-out wizard — on one line or on several — is not a wiring. The negative control
  * below holds both shapes. The blanking keeps the newlines, so the line split is unchanged.
+ *
+ * `F3.87` PR 5 / owner ruling Q1(a): a **canvas entry** (`CANVAS_ENTRY_IDS`) has no steps — its
+ * form is the layout editor's canvas. It counts as wired when it is a row of {@link CANVAS_ENTRIES}
+ * whose page exists and calls the row's write on a non-comment line (the same blanking as
+ * `wizardEntryIds`). The rows equal `CANVAS_ENTRY_IDS`, so the two lists cannot drift.
  *
  * The `NOT_YET` list PRs 9–11 kept while the wizards landed in parallel was emptied by PR 10b
  * (#815) and deleted with the closure (PR 12).
@@ -84,6 +90,26 @@ function wired(): Map<string, string[]> {
 
 const CATALOG_IDS = COPILOT_CATALOG.map((entry) => entry.id);
 
+/** `F3.87` PR 5 / ruling Q1(a): each canvas entry, the editor page that is its form, and the write that page calls. */
+const CANVAS_ENTRIES: readonly { id: string; page: string; write: string }[] = [
+  { id: "mimicLayout.create", page: "apps/web/src/pages/admin/mimic-layout-editor-page.tsx", write: "createMimicLayout(" },
+  { id: "mimicLayout.replace", page: "apps/web/src/pages/admin/mimic-layout-editor-page.tsx", write: "replaceMimicLayout(" },
+];
+
+/** The row's page holds the row's write call on a non-comment line; `false` when the page does not exist. */
+export function canvasRowResolves(row: { page: string; write: string }, readSource: (rel: string) => string = read): boolean {
+  let source: string;
+  try {
+    source = readSource(row.page);
+  } catch {
+    return false;
+  }
+  return withoutBlockComments(source)
+    .split(/\r?\n/)
+    .filter((line) => !LINE_COMMENT.test(line))
+    .some((line) => line.includes(row.write));
+}
+
 describe("F3.85 stepper coverage — every catalog entry has a WizardShell (plan §11.0)", () => {
   it("positive control: the scan finds PR 9's dashboard.create wiring on the create page", () => {
     expect(wired().get("dashboard.create")).toContain("apps/web/src/pages/admin/dashboard-builder-page.tsx");
@@ -121,10 +147,31 @@ describe("F3.85 stepper coverage — every catalog entry has a WizardShell (plan
     expect(CATALOG_IDS.length).toBeGreaterThan(0);
   });
 
-  it("every catalog id is wired as a WizardShell entry", () => {
+  it("every catalog id is wired as a WizardShell entry, or is a canvas row whose page calls its write", () => {
     const found = wired();
-    const missing = CATALOG_IDS.filter((id) => !found.has(id));
+    const canvas = new Set(CANVAS_ENTRIES.filter((row) => canvasRowResolves(row)).map((row) => row.id));
+    const missing = CATALOG_IDS.filter((id) => !found.has(id) && !canvas.has(id));
     expect(missing).toEqual([]);
+  });
+
+  it("F3.87 PR 5: the canvas rows are exactly CANVAS_ENTRY_IDS from packages/shared/dist", () => {
+    expect(CANVAS_ENTRIES.map((row) => row.id).sort()).toEqual([...CANVAS_ENTRY_IDS].sort());
+  });
+
+  it("F3.87 PR 5 positive control: both canvas rows resolve against the real editor page", () => {
+    expect(CANVAS_ENTRIES.map((row) => [row.id, canvasRowResolves(row)])).toEqual([
+      ["mimicLayout.create", true],
+      ["mimicLayout.replace", true],
+    ]);
+  });
+
+  it("F3.87 PR 5 negative control: a row naming a write the page does not call fails, as does a missing page", () => {
+    expect(canvasRowResolves({ page: CANVAS_ENTRIES[0]!.page, write: "deleteMimicLayout(" })).toBe(false);
+    expect(canvasRowResolves({ page: "apps/web/src/pages/admin/no-such-page.tsx", write: "createMimicLayout(" })).toBe(false);
+    const commented = ["// createMimicLayout(body)", "/* replaceMimicLayout(id, body) */"].join("\n");
+    expect(canvasRowResolves({ page: "fixture", write: "createMimicLayout(" }, () => commented)).toBe(false);
+    expect(canvasRowResolves({ page: "fixture", write: "replaceMimicLayout(" }, () => commented)).toBe(false);
+    expect(canvasRowResolves({ page: "fixture", write: "createMimicLayout(" }, () => "createMimicLayout(body);")).toBe(true);
   });
 
   it("every wired id is a catalog id (a typo in a page fails here, not at render)", () => {

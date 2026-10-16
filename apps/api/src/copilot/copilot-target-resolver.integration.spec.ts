@@ -45,6 +45,8 @@ export type ResolverCtx = {
   dashboardTemplateA: string;
   /** `F4.254` PR 3: a published asset template of A (the instantiate route's template). */
   assetTemplateA: string;
+  /** `F3.87` PR 5: a mimic layout of A (owed by PR 2: the `mimicLayout` kind on a real database). */
+  mimicLayoutA: string;
 };
 
 /** `locationA` carries a stored `builtin` view (`site_control_room_views`); `locationA2` carries none. */
@@ -55,6 +57,7 @@ export const RESOLVER_NAMES = {
   assetA: "F3.86 asset A",
   groupA: "F3.86 group A",
   assetTemplateA: "F4.254 asset template A",
+  mimicLayoutA: "F3.87 layout A",
 } as const;
 
 type Call = [string, ...unknown[]];
@@ -565,4 +568,27 @@ export async function anInstantiateUnderAnRtuOfAnotherOrganizationIsRefused(ctx:
   expect(await deploy(ctx, r, { rtuId: ctx.rtuB, assets: ASSETS }, [ctx.orgA, ctx.orgB])).toBeNull();
   expect(r.calls).toContainEqual(["canManageOrganization", ctx.orgA]);
   expect(r.calls.map(([name]) => name)).not.toContain("canManageLocation");
+}
+
+/**
+ * `F3.87` PR 5 (owed by PR 2, ADR 0099 Amendment 3 A1) — `mimicLayout`: the
+ * layout row is found for an organization admin inside its organization only,
+ * under the tenant policy, and the mimic authoring check runs on that
+ * organization. Across organizations (B allowed, the row in A) it is refused
+ * before any check; a `location_admin` is refused by the role.
+ */
+export async function aMimicLayoutResolvesForAnOrgAdminInItsOrganizationOnly(ctx: ResolverCtx): Promise<void> {
+  const entry = catalogEntry("mimicLayout.replace");
+  if (!entry) throw new Error("mimicLayout.replace");
+  const allowed = recorder({}, "organization_admin");
+  expect(await resolverWith(ctx, allowed.access).resolve(entry, { id: ctx.mimicLayoutA }, {}, [ctx.orgA], JWT)).toMatchObject({
+    organizationId: ctx.orgA,
+    targetName: RESOLVER_NAMES.mimicLayoutA,
+    organizationName: RESOLVER_NAMES.orgA,
+  });
+  expect(allowed.calls).toContainEqual(["canManageOrganization", ctx.orgA]);
+  const across = recorder({}, "organization_admin");
+  expect(await resolverWith(ctx, across.access).resolve(entry, { id: ctx.mimicLayoutA }, {}, [ctx.orgB], JWT)).toBeNull();
+  expect(across.calls.filter(([name]) => name === "canManageOrganization")).toEqual([]);
+  expect(await resolverWith(ctx, recorder({}, "location_admin").access).resolve(entry, { id: ctx.mimicLayoutA }, {}, [ctx.orgA], JWT)).toBeNull();
 }
