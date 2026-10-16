@@ -9,6 +9,7 @@ import {
 
 import { sniffImageContentType } from "../assets/image-signature";
 import { decodeMulterFilename } from "../assets/multer-filename";
+import { looksLikeCredential } from "../llm/credential-detect";
 import { parseSvgSymbol, SvgSymbolRefusal } from "../mimic-symbol-libraries/svg-symbol-parser";
 
 /**
@@ -47,6 +48,16 @@ export const COPILOT_ATTACHMENT_TYPE_MESSAGE = "Attach a PNG, JPEG, WebP, PDF or
 export const COPILOT_ATTACHMENT_TOO_LARGE_MESSAGE = "An image or PDF may be at most 10 MB.";
 export const COPILOT_ATTACHMENT_SVG_TOO_LARGE_MESSAGE = "An SVG may be at most 64 KB.";
 export const COPILOT_ATTACHMENT_FILENAME_MESSAGE = "Rename the file: its name is empty, too long or holds a control character.";
+export const COPILOT_ATTACHMENT_FILENAME_CREDENTIAL_MESSAGE =
+  "Rename the file: its name looks like it holds a credential, and credentials never go through the copilot.";
+
+/**
+ * Line and paragraph separators and format characters (bidi overrides among
+ * them): not `\p{Cc}`, so the filename rule lets them through, and
+ * `JSON.stringify` leaves them raw — a name could start a new visual line in
+ * the placeholder or reverse how its extension reads (security review L1).
+ */
+const INVISIBLE_BREAKS = /[\p{Zl}\p{Zp}\p{Cf}]/u;
 
 /** The first bytes that decide an SVG: text that opens with `<?xml` or `<svg` and holds an `<svg` element. */
 const SVG_SNIFF_BYTES = 1024;
@@ -96,7 +107,9 @@ export function inspectAttachments(files: readonly UploadedAttachment[]): Attach
       return refused(413, COPILOT_ATTACHMENT_TOO_LARGE_MESSAGE);
     }
     const filename = mimicSymbolFilenameSchema.safeParse(decodeMulterFilename(file.originalname));
-    if (!filename.success) return refused(400, COPILOT_ATTACHMENT_FILENAME_MESSAGE);
+    if (!filename.success || INVISIBLE_BREAKS.test(filename.data)) return refused(400, COPILOT_ATTACHMENT_FILENAME_MESSAGE);
+    // ADR 0022: a filename is the user's text, and it reaches the provider; the message check never reads it.
+    if (looksLikeCredential(filename.data)) return refused(400, COPILOT_ATTACHMENT_FILENAME_CREDENTIAL_MESSAGE);
     const base: TurnAttachment = {
       index: position + 1,
       filename: filename.data,

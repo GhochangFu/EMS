@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  aFilenameThatLooksLikeACredentialIsRefused,
+  aFilenameWithALineSeparatorOrBidiIsRefused,
   aFilenameWithANewlineIsRefused,
   aFourthFileIsRefused,
   aGifIsRefused,
@@ -23,6 +25,8 @@ describe("F3.87 PR 7 — a turn's attachments (ADR 0099 Amendment 3 A4, D13)", (
   it("reads a %PDF- header as a PDF", () => aPdfHeaderIsAPdf());
   it("refuses a filename with a newline", () => aFilenameWithANewlineIsRefused());
   it("gives each file its index, size and sha256", () => anAttachmentCarriesItsIndexSizeAndHash());
+  it("refuses a filename with a line separator or a bidi override", () => aFilenameWithALineSeparatorOrBidiIsRefused());
+  it("refuses a filename that looks like a credential", () => aFilenameThatLooksLikeACredentialIsRefused());
   it("makes a parsed SVG a symbol candidate", () => anSvgIsASymbolCandidate());
   it("carries the parser's refusal for a refused SVG", () => aRefusedSvgCarriesTheRefusal());
 });
