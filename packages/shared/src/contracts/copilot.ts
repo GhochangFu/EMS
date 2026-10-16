@@ -208,9 +208,16 @@ export const COPILOT_TURN_MESSAGE_MAX = 8_000;
  * `F3.87` PR 7 (ADR 0099 Amendment 3 A4): the most files one copilot turn may
  * carry, and the most bytes an image or PDF may hold. An `.svg` is bounded by
  * `MAX_MIMIC_SYMBOL_SVG_BYTES` instead — it is a symbol candidate.
+ *
+ * Owner ruling 2026-10-16 (`F3.87` PR 8): the files of one turn may hold at
+ * most 10 MB **together**, so a turn always fits the proxies' body limit
+ * (`client_max_body_size 10m` = 10 MiB in `deploy/aws/nginx.conf`) with room
+ * for the message and the multipart framing. 10 MB is decimal, 10,000,000
+ * bytes; one file can be that whole budget.
  */
 export const COPILOT_ATTACHMENTS_MAX = 3;
-export const MAX_COPILOT_ATTACHMENT_BYTES: number = 10 * 1024 * 1024;
+export const MAX_COPILOT_ATTACHMENT_BYTES: number = 10_000_000;
+export const MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES: number = 10_000_000;
 
 /**
  * `POST /api/v1/copilot/conversations/:id/turns` (`F3.85` PR 7, ADR 0099

@@ -41,6 +41,7 @@ import {
   refusesAFileTypeNotInTheList,
   refusesAFourthFile,
   refusesAnSvgOverSixtyFourKilobytes,
+  refusesFilesOverTenMegabytesTogether,
   removesAChip,
   rendersAFilenameWithMarkupAsPlainText,
   rendersAPlainUserRowWithNoRecord,
@@ -112,6 +113,7 @@ describe("F3.87 PR 8 copilot dock — the attach control is present", () => {
 describe("F3.87 PR 8 copilot dock — the picker's client checks and chips", () => {
   it("shows a chip per chosen file", showsAChipPerChosenFile);
   it("refuses a fourth file", refusesAFourthFile);
+  it("refuses files over 10 MB together (owner ruling 2026-10-16)", refusesFilesOverTenMegabytesTogether);
   it("refuses a file type not in the list", refusesAFileTypeNotInTheList);
   it("refuses a file over 10 MB", refusesAFileOverTenMegabytes);
   it("refuses an .svg over 64 KB", refusesAnSvgOverSixtyFourKilobytes);

@@ -689,6 +689,18 @@ export async function refusesAFourthFile(): Promise<void> {
   expect(screen.getByRole("alert")).toHaveTextContent("A message can carry at most 3 files.");
 }
 
+/** Owner ruling 2026-10-16: files that pass alone but exceed 10 MB together are refused. Mutation: drop the total check → red. */
+export async function refusesFilesOverTenMegabytesTogether(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  choose(aFile("a.png", 6_000_000), aFile("b.png", 4_000_000));
+  choose(aFile("c.png", 1));
+  expect(chips()).toEqual(["a.png", "b.png"]);
+  expect(screen.getByRole("alert")).toHaveTextContent("The files of one message may be at most 10 MB together.");
+}
+
 export async function refusesAFileTypeNotInTheList(): Promise<void> {
   stub(READY_WITH_FILES);
   renderDock("organization_admin");

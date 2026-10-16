@@ -14,6 +14,7 @@ import {
   COPILOT_ATTACHMENTS_MAX,
   COPILOT_TURN_MESSAGE_MAX,
   MAX_COPILOT_ATTACHMENT_BYTES,
+  MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES,
   MAX_MIMIC_SYMBOL_SVG_BYTES,
 } from "@bms/shared/contracts";
 
@@ -121,7 +122,8 @@ import { OnboardingSkillPanel } from "./onboarding-skill-panel";
  * and the conversation is bound to one organization. Its label and title say
  * the file goes to the organization's AI provider unscrubbed. The picker
  * refuses a type outside {@link ATTACHMENT_EXTENSIONS}, a file over 10 MB (an
- * `.svg` over 64 KB: it is a symbol candidate) and a fourth file; the server
+ * `.svg` over 64 KB: it is a symbol candidate), files over 10 MB together
+ * (owner ruling 2026-10-16) and a fourth file; the server
  * re-checks every one by the bytes. The stored user row's `[Attachment …; not
  * stored]` lines render under the text as a muted record.
  */
@@ -696,13 +698,21 @@ function DockPanel({
     const next = [...files];
     const problems: string[] = [];
     let overCount = false;
+    let overTotal = false;
+    let total = next.reduce((sum, file) => sum + file.size, 0);
     for (const file of chosen) {
       const problem = attachmentProblem(file);
       if (problem !== null) problems.push(problem);
       else if (next.length >= COPILOT_ATTACHMENTS_MAX) overCount = true;
-      else next.push(file);
+      // Owner ruling 2026-10-16: the files of one message together stay within 10 MB (the server checks too).
+      else if (total + file.size > MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES) overTotal = true;
+      else {
+        next.push(file);
+        total += file.size;
+      }
     }
     if (overCount) problems.push(`A message can carry at most ${COPILOT_ATTACHMENTS_MAX} files.`);
+    if (overTotal) problems.push(`The files of one message may be at most ${sizeLabel(MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES)} together.`);
     setFiles(next);
     setBanner(problems.length > 0 ? problems.join(" ") : null);
   }

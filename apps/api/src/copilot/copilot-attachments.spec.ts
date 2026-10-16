@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { MAX_COPILOT_ATTACHMENT_BYTES, MAX_MIMIC_SYMBOL_SVG_BYTES } from "@bms/shared";
+import { MAX_COPILOT_ATTACHMENT_BYTES, MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES, MAX_MIMIC_SYMBOL_SVG_BYTES } from "@bms/shared";
 import { expect } from "vitest";
 
 import {
@@ -10,6 +10,7 @@ import {
   COPILOT_ATTACHMENT_TOO_LARGE_MESSAGE,
   COPILOT_ATTACHMENT_TYPE_MESSAGE,
   COPILOT_ATTACHMENTS_TOO_MANY_MESSAGE,
+  COPILOT_ATTACHMENTS_TOTAL_TOO_LARGE_MESSAGE,
   inspectAttachments,
   sniffAttachmentType,
   type UploadedAttachment,
@@ -63,6 +64,16 @@ export function anImageOverTenMegabytesIsRefused(): void {
   expect(refusal([file(png(MAX_COPILOT_ATTACHMENT_BYTES + 1))])).toEqual({
     status: 413,
     message: COPILOT_ATTACHMENT_TOO_LARGE_MESSAGE,
+  });
+}
+
+/** Owner ruling 2026-10-16: files that pass alone but exceed 10 MB together are a 413. Mutation: drop the total check → red. */
+export function filesOverTenMegabytesTogetherAreRefused(): void {
+  const half = Math.floor(MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES / 2);
+  expect(inspectAttachments([file(png(half)), file(png(half))]).ok).toBe(true);
+  expect(refusal([file(png(half)), file(png(half + 1))])).toEqual({
+    status: 413,
+    message: COPILOT_ATTACHMENTS_TOTAL_TOO_LARGE_MESSAGE,
   });
 }
 
