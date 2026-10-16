@@ -31,6 +31,18 @@ import {
   noHeaderPassesThroughUntouched,
   aRootTransformBodyIsHashedRaw,
   theInstantiateBodyIsChangedByItsOwnParse,
+  aMatchingUploadIsAppliedAndMarked,
+  anUploadToAnUnmarkedHandlerIs409BeforeTheClaim,
+  anUploadToAnotherLibraryIs409AndReleased,
+  aChangedFileByteIs409AndReleased,
+  aChangedUploadFieldIs409AndReleased,
+  aChangedUploadFilenameIs409AndReleased,
+  aMulterErrorBeforeTheCompareReleases,
+  aHandlerErrorAfterTheCompareIsRecorded,
+  theRouteStageFailsClosedWithoutAClaim,
+  aMarkedHandlerWithoutTheRouteStageIs409,
+  aJsonConfirmOfAnUploadEntryIs409BeforeTheClaim,
+  aChangedUploadGroupIs409AndReleased,
 } from "./copilot-change.interceptor.spec";
 
 // `F3.86` PR 2: no catalog entry has a `clientOnly` field until PR 4, so one fixture id has one;
@@ -41,6 +53,19 @@ vi.mock("./copilot-client-only", async (importOriginal) => {
   return {
     clientOnlyKeysFor: (catalogId: string): readonly string[] =>
       catalogId === "fixture.user.create" ? ["temporaryPassword"] : real.clientOnlyKeysFor(catalogId),
+  };
+});
+
+// `F3.87` PR 6a: no real entry has `upload` until PR 6b, so one fixture id is an upload entry
+// (`UPLOAD_FIXTURE_ID` in the spec); every other id reads the real catalog.
+vi.mock("@bms/shared/copilot", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@bms/shared/copilot")>();
+  return {
+    ...real,
+    catalogEntry: (id: string) =>
+      id === "fixture.symbol.upload"
+        ? { id, upload: { fileField: "file", contentType: "image/svg+xml", maxBytes: 65_536 }, clientOnly: [], cardOnly: [] }
+        : real.catalogEntry(id),
   };
 });
 
@@ -76,4 +101,19 @@ describe("F3.85 — the X-Copilot-Change interceptor (ADR 0099 decision 4.5)", (
   it("starts no follow-up for a refused change", () => aRefusedChangeStartsNoFollowUp());
   it("uses an instantiate body whose own parse changes it (F4.254 PR 3)", () => theInstantiateBodyIsChangedByItsOwnParse());
   it("hashes a root-transform body raw, so it applies (F4.254 PR 3)", () => aRootTransformBodyIsHashedRaw());
+});
+
+describe("F3.87 PR 6a — the two-stage multipart Confirm (ADR 0099 Amendment 3 A3, plan D12)", () => {
+  it("applies and marks a matching upload", () => aMatchingUploadIsAppliedAndMarked());
+  it("refuses an upload to an unmarked handler before the claim", () => anUploadToAnUnmarkedHandlerIs409BeforeTheClaim());
+  it("refuses and releases an upload to another library", () => anUploadToAnotherLibraryIs409AndReleased());
+  it("refuses and releases a changed file byte", () => aChangedFileByteIs409AndReleased());
+  it("refuses and releases a changed field", () => aChangedUploadFieldIs409AndReleased());
+  it("refuses and releases a changed filename", () => aChangedUploadFilenameIs409AndReleased());
+  it("releases, and does not record, a multer error before the compare", () => aMulterErrorBeforeTheCompareReleases());
+  it("records a handler error after the compare as failed", () => aHandlerErrorAfterTheCompareIsRecorded());
+  it("fails closed in the route stage without a claim", () => theRouteStageFailsClosedWithoutAClaim());
+  it("refuses a marked handler without the route stage before the claim", () => aMarkedHandlerWithoutTheRouteStageIs409());
+  it("refuses a JSON Confirm of an upload entry before the claim", () => aJsonConfirmOfAnUploadEntryIs409BeforeTheClaim());
+  it("refuses and releases a changed group", () => aChangedUploadGroupIs409AndReleased());
 });

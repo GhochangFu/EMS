@@ -15,7 +15,23 @@ import { AsyncLocalStorage } from "node:async_hooks";
  */
 export type CopilotChangeMark = { via: "copilot"; changeId: string };
 
-export type CopilotRequestStore = { change: CopilotChangeMark | null };
+/**
+ * `F3.87` PR 6a (ADR 0099 Amendment 3 A3, plan D12) — a multipart Confirm,
+ * claimed by the global stage before multer has parsed the body. The route
+ * stage (`CopilotUploadChangeInterceptor`, after multer) compares the body
+ * hash and marks the store. `release` is a closure over the global stage's
+ * dependencies, so the route stage needs none of its own.
+ */
+export type CopilotUploadClaim = {
+  readonly changeId: string;
+  readonly catalogId: string;
+  readonly bodyHash: string;
+  compared: boolean;
+  released: boolean;
+  release(): Promise<void>;
+};
+
+export type CopilotRequestStore = { change: CopilotChangeMark | null; uploadClaim?: CopilotUploadClaim };
 
 export const copilotContext = new AsyncLocalStorage<CopilotRequestStore>();
 

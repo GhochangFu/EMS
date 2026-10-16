@@ -9,13 +9,13 @@ import {
   Logger,
   type NestInterceptor,
 } from "@nestjs/common";
-import { HTTP_CODE_METADATA } from "@nestjs/common/constants";
+import { HTTP_CODE_METADATA, INTERCEPTORS_METADATA } from "@nestjs/common/constants";
 import { Reflector } from "@nestjs/core";
 import { catchError, concatMap, from, type Observable, throwError } from "rxjs";
 import { ZodError } from "zod";
 
 import type { JwtPayload } from "@bms/shared";
-import { COPILOT_CHANGE_REFUSED_MESSAGE, COPILOT_UNAVAILABLE_MESSAGE } from "@bms/shared/copilot";
+import { catalogEntry, COPILOT_CHANGE_REFUSED_MESSAGE, COPILOT_UNAVAILABLE_MESSAGE } from "@bms/shared/copilot";
 
 import { recalledIdentity } from "../auth/identity-resolver";
 import { bodyHash } from "./body-hash";
@@ -23,8 +23,10 @@ import { COPILOT_ROLES } from "./copilot-availability";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { clientOnlyKeysFor } from "./copilot-client-only";
 import { CopilotPendingChangesService, type PendingChangeOutcome } from "./copilot-pending-changes.service";
-import { copilotContext } from "./copilot-request-context";
+import { copilotContext, type CopilotUploadClaim } from "./copilot-request-context";
 import { CopilotTurnService } from "./copilot-turn.service";
+import { CopilotUploadChangeInterceptor } from "./copilot-upload-change.interceptor";
+import { COPILOT_UPLOAD_ROUTE } from "./copilot-upload-route";
 
 /** The header, lower-cased as Node delivers it. */
 const HEADER = "x-copilot-change";
@@ -64,10 +66,15 @@ export function statusOf(err: unknown): number {
  * 1. The header is a uuid and the request is authenticated, else 409.
  * 2. The caller's role (read from the database this request, by the guard)
  *    is one of the four copilot roles, else 403.
- * 3. The request carries no query string (no release-1 catalog route reads
- *    one) and is not multipart, else 409. A multipart body is parsed by a
- *    route-level interceptor that runs after this global one, so its hash
- *    would cover `{}` and never the upload; no catalog entry is multipart.
+ * 3. The request carries no query string (no catalog route reads one), else
+ *    409. `F3.87` PR 6a (ADR 0099 Amendment 3 A3, plan D12): a multipart body
+ *    is parsed by multer, a route interceptor that runs after this global
+ *    one, so its hash cannot be compared here. A multipart Confirm is refused
+ *    (409, before any claim) unless the change's entry has `upload` and the
+ *    handler carries `@CopilotUploadRoute()`; then the method and the path
+ *    are compared here, and the hash by `CopilotUploadChangeInterceptor`
+ *    after multer, which also marks the store. A failure before that compare
+ *    releases the claim instead of recording `failed`.
  * 4. The change is this user's, pending and unexpired (a read), else 409.
  * 5. The copilot is available to the caller in the change's organization
  *    now, else 403 — the row stays `pending`.
@@ -98,6 +105,13 @@ export class CopilotChangeInterceptor implements NestInterceptor {
     private readonly turns: CopilotTurnService,
   ) {}
 
+  /** `F3.87` PR 6a: the handler is marked `@CopilotUploadRoute()` and runs `CopilotUploadChangeInterceptor`. */
+  private isUploadTarget(context: ExecutionContext): boolean {
+    const handler = context.getHandler();
+    const interceptors = (Reflect.getMetadata(INTERCEPTORS_METADATA, handler) ?? []) as unknown[];
+    return this.reflector.get<boolean | undefined>(COPILOT_UPLOAD_ROUTE, handler) === true && interceptors.includes(CopilotUploadChangeInterceptor);
+  }
+
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
     if (context.getType() !== "http") return next.handle();
     const req = context.switchToHttp().getRequest<CopilotRequest>();
@@ -114,9 +128,7 @@ export class CopilotChangeInterceptor implements NestInterceptor {
     }
     if (req.originalUrl.includes("?")) throw new ConflictException(CHANGE_REFUSED);
     const contentType = req.headers["content-type"];
-    if (typeof contentType === "string" && /^multipart\//i.test(contentType.trim())) {
-      throw new ConflictException(CHANGE_REFUSED);
-    }
+    const multipart = typeof contentType === "string" && /^multipart\//i.test(contentType.trim());
 
     const store = copilotContext.getStore();
     if (store === undefined) {
@@ -126,18 +138,33 @@ export class CopilotChangeInterceptor implements NestInterceptor {
 
     const peeked = await this.pending.peek(identity.id, changeId);
     if (peeked === null) throw new ConflictException(CHANGE_REFUSED);
+    // `F3.87` PR 6a (plan D12): a multipart body is an upload entry's, to a handler marked for it,
+    // or it is refused here, before any claim. Multer runs after this interceptor.
+    // The handler must carry both the marker and the route stage that compares the hash: one checked
+    // fact, so a marked handler without the stage fails closed. An upload entry's Confirm is multipart.
+    const isUploadEntry = catalogEntry(peeked.catalogId)?.upload !== undefined;
+    if (multipart !== isUploadEntry || (multipart && !this.isUploadTarget(context))) {
+      throw new ConflictException(CHANGE_REFUSED);
+    }
     const decision = await this.availability.decide(identity, peeked.organizationId);
     if (!decision.available) throw new ForbiddenException(COPILOT_UNAVAILABLE);
 
     const claimed = await this.pending.claim(identity.id, changeId);
     if (claimed === null) throw new ConflictException(CHANGE_REFUSED);
-    const hash = bodyHash(req.body ?? {}, clientOnlyKeysFor(claimed.catalogId));
-    if (req.method !== claimed.method || req.path !== claimed.path || hash !== claimed.bodyHash) {
-      await this.pending.release(identity.id, changeId);
+    const release = () => this.pending.release(identity.id, changeId);
+    // The method and the raw path are compared for every change; a multipart body's hash is compared by
+    // the route stage once multer has parsed it (`CopilotUploadChangeInterceptor`).
+    const hashMatches = multipart || bodyHash(req.body ?? {}, clientOnlyKeysFor(claimed.catalogId)) === claimed.bodyHash;
+    if (req.method !== claimed.method || req.path !== claimed.path || !hashMatches) {
+      await release();
       throw new ConflictException(CHANGE_REFUSED);
     }
 
-    store.change = { via: "copilot", changeId };
+    const upload: CopilotUploadClaim | undefined = multipart
+      ? { changeId, catalogId: claimed.catalogId, bodyHash: claimed.bodyHash, compared: false, released: false, release }
+      : undefined;
+    if (upload) store.uploadClaim = upload;
+    else store.change = { via: "copilot", changeId };
     const success =
       this.reflector.get<number | undefined>(HTTP_CODE_METADATA, context.getHandler()) ??
       (req.method === "POST" ? 201 : 200);
@@ -156,10 +183,23 @@ export class CopilotChangeInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       concatMap((body: unknown) => {
+        if (upload !== undefined && !upload.compared) {
+          // Never expected: the handler ran without the route stage's compare. Not `applied`.
+          this.logger.error(`copilot upload change ${changeId} reached its handler without a hash compare`);
+          return from(record("failed", 500, null).then(() => body));
+        }
         const id = body !== null && typeof body === "object" ? (body as { id?: unknown }).id : undefined;
         return from(record("applied", success, typeof id === "string" ? id : null).then(() => body));
       }),
-      catchError((err: unknown) => from(record("failed", statusOf(err), null)).pipe(concatMap(() => throwError(() => err)))),
+      catchError((err: unknown) => {
+        // `F3.87` PR 6a: an upload that failed before the route stage compared its hash (a multer limit,
+        // a hash mismatch, a missing file) never ran the handler: the row is `pending` again, not `failed`.
+        if (upload !== undefined && !upload.compared) {
+          const released = upload.released ? Promise.resolve() : ((upload.released = true), upload.release());
+          return from(released).pipe(concatMap(() => throwError(() => err)));
+        }
+        return from(record("failed", statusOf(err), null)).pipe(concatMap(() => throwError(() => err)));
+      }),
     );
   }
 }

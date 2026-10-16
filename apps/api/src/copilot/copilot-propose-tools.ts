@@ -26,6 +26,7 @@ import { COPILOT_NEVER_GLOBAL_ADMIN_MESSAGE } from "@bms/shared";
 import { PROPOSE_ACCESS_NOT_ASKED_ERROR } from "./copilot-access-intent";
 import { bodyDefinitionOf, describeBody } from "./copilot-change-schema";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
+import { prepareUpload } from "./copilot-upload-prepare";
 import type { CopilotReadTools, CopilotToolContext, CopilotToolResult } from "./copilot-read-tools";
 import { COPILOT_TARGETS, type CopilotTargets } from "./copilot-target-resolver";
 
@@ -418,6 +419,13 @@ export function createCopilotProposeTools(
           return { ok: false, error: `The formula in ${site.path} is not valid: ${first ? formatCalcError(first) : "unknown error"}` };
         }
       }
+    }
+    // `F3.87` PR 6a (Amendment 3 A3): an upload entry stores the text fields, the file's name and
+    // SHA-256, and the SVG text under its `cardOnly` key, after the route's own parser passed it.
+    if (entry.upload !== undefined) {
+      const prepared = prepareUpload(entry, body);
+      if (!prepared.ok) return { ok: false, error: prepared.error };
+      body = prepared.body;
     }
 
     const summary = entry.summary({

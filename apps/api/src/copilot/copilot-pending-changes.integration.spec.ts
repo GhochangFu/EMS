@@ -86,7 +86,7 @@ export async function anotherUserCannotPeekOrClaim(ctx: PendingCtx): Promise<voi
   expect(await service(ctx).peek(ctx.userB, id)).toBeNull();
   expect(await service(ctx).claim(ctx.userB, id)).toBeNull();
   expect(await statusOf(ctx, id)).toMatchObject({ status: "pending", claimed: false });
-  expect(await service(ctx).peek(ctx.userA, id)).toEqual({ organizationId: ctx.orgA });
+  expect(await service(ctx).peek(ctx.userA, id)).toEqual({ organizationId: ctx.orgA, catalogId: "dashboards.create" });
 }
 
 export async function anExpiredChangeCannotBePeekedOrClaimed(ctx: PendingCtx): Promise<void> {

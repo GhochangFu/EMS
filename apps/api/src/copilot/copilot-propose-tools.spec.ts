@@ -31,6 +31,7 @@ import type { CopilotProposeServices } from "./copilot-propose-tools";
 import type { CopilotToolContext, CopilotToolResult } from "./copilot-read-tools";
 import type { ResolvedTarget } from "./copilot-target-resolver";
 import { COPILOT_TOOL_GUARDS } from "./copilot-turn.service";
+import { VALID_SVG } from "./copilot-upload-prepare.spec";
 
 /**
  * `F3.85` PR 8 / ADR 0099 decisions 2, 3, 4, 10 (plan §10.2) — the propose
@@ -946,4 +947,48 @@ export async function theStoredHashLeavesOutCardOnlyKeys(): Promise<void> {
   expect((await h.tools.dispatch(proposeToolName(entry), { body: VECTOR }, h.ctx())).ok).toBe(true);
   expect(h.stored[0]?.bodyHash).toBe(bodyHash(VECTOR, ["a"]));
   expect(h.stored[0]?.bodyHash).not.toBe(VECTOR_SHA256);
+}
+
+/**
+ * `F3.87` PR 6a (ADR 0099 Amendment 3 A3) — an upload entry: the stored body
+ * is the prepared one (fields, filename, SHA-256, `svgText`), and its hash
+ * leaves the `cardOnly` text out, as the interceptor's route stage does.
+ */
+const UPLOAD_ENTRY = fixtureEntry({
+  id: "fixture.symbol.upload",
+  body: z.object({ name: z.string().optional(), label: z.string().optional() }).strict(),
+  modelBody: z
+    .object({ name: z.string().optional(), label: z.string().optional(), svg: z.object({ kind: z.literal("text"), text: z.string() }).strict() })
+    .strict(),
+  upload: { fileField: "file", contentType: "image/svg+xml", maxBytes: 65_536 },
+  cardOnly: ["svgText"],
+  steps: [{ id: "symbol", title: "Symbol", fields: ["name", "label"] }],
+});
+
+export async function anUploadProposalStoresThePreparedBody(): Promise<void> {
+  const h = proposeHarness({ catalog: [UPLOAD_ENTRY] });
+  const result = await h.tools.dispatch(
+    proposeToolName(UPLOAD_ENTRY),
+    { body: { name: "pump", label: "Pump", svg: { kind: "text", text: VALID_SVG } } },
+    h.ctx(),
+  );
+  expect(result.ok).toBe(true);
+  const stored = h.stored[0];
+  expect(stored?.body).toEqual({
+    name: "pump",
+    label: "Pump",
+    filename: "pump.svg",
+    fileSha256: expect.stringMatching(/^[0-9a-f]{64}$/),
+    svgText: VALID_SVG,
+  });
+  const { svgText: _text, ...hashed } = stored?.body as Record<string, unknown>;
+  expect(stored?.bodyHash).toBe(bodyHash(hashed));
+}
+
+/** A refused SVG stores nothing. */
+export async function aRefusedUploadStoresNothing(): Promise<void> {
+  const h = proposeHarness({ catalog: [UPLOAD_ENTRY] });
+  const result = await h.tools.dispatch(proposeToolName(UPLOAD_ENTRY), { body: { svg: { kind: "text", text: "<svg/>" } } }, h.ctx());
+  expect(result.ok).toBe(false);
+  expect(h.stored).toEqual([]);
 }

@@ -8,8 +8,12 @@ import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { withUser } from "../database/user-context";
 
-/** What the interceptor needs before it claims: the row's organization, for the availability check. */
-export type PendingChangePeek = { organizationId: string };
+/**
+ * What the interceptor needs before it claims: the row's organization, for the
+ * availability check, and (`F3.87` PR 6a) its catalog entry, so a multipart
+ * Confirm to a route that is not an upload entry's is refused before any claim.
+ */
+export type PendingChangePeek = { organizationId: string; catalogId: string };
 
 /** The stored request a claimed change must match. */
 export type ClaimedChange = {
@@ -87,12 +91,12 @@ export class CopilotPendingChangesService {
   /** The organization of a live pending change of this user, or `null`. Reads; changes nothing. */
   async peek(userId: string, id: string): Promise<PendingChangePeek | null> {
     const { rows } = await withUser(this.tenantDb, userId, (tx) =>
-      tx.execute<{ organization_id: string }>(sql`
-        SELECT organization_id FROM bms.copilot_pending_changes
+      tx.execute<{ organization_id: string; catalog_id: string }>(sql`
+        SELECT organization_id, catalog_id FROM bms.copilot_pending_changes
          WHERE id = ${id} AND user_id = ${userId} AND status = 'pending' AND expires_at > now()`),
     );
     const row = rows[0];
-    return row ? { organizationId: row.organization_id } : null;
+    return row ? { organizationId: row.organization_id, catalogId: row.catalog_id } : null;
   }
 
   /** `pending` → `applying` in one statement; `null` when the row is not this user's, not pending, or expired. */
