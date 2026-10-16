@@ -26,6 +26,26 @@ import {
   showsTheMockupsBotMarkOnTheButton,
   showsTheInputWhenConfigured,
   showsTheSentenceAndNoInputWhenNotConfigured,
+  clearsTheChipsAfterTheTurnIsAnswered,
+  namesThePickedOrganizationInTheSentence,
+  offersAttachInAConversationBoundToTheOrganization,
+  offersAttachWithTheUnscrubbedSentence,
+  offersNoAttachInACrossOrganizationConversation,
+  offersNoAttachInTheGuidedMode,
+  offersNoAttachOnThePlatformScope,
+  offersNoAttachWhileASkillIsActive,
+  offersNoAttachWithNoKey,
+  offersNoAttachWithTheSwitchOff,
+  refusesAFileOverTenMegabytes,
+  refusesAFileTypeNotInTheList,
+  refusesAFourthFile,
+  refusesAnSvgOverSixtyFourKilobytes,
+  removesAChip,
+  rendersAPlainUserRowWithNoRecord,
+  rendersThePlaceholderLinesAsAMutedRecord,
+  sendsAPlainTurnWithoutAFileList,
+  sendsTheChosenFilesAsFormData,
+  showsAChipPerChosenFile,
 } from "./copilot-dock.spec";
 
 afterEach(() => {
@@ -70,4 +90,40 @@ describe("F3.85 PR 7 copilot dock — open state and scope", () => {
 describe("F3.85 PR 7 copilot dock — the session survives a route change", () => {
   it("keeps the thread and the pick across an open_page navigation", keepsTheThreadAndThePickAcrossAnOpenPageNavigation);
   it("starts afresh for another user", startsAfreshForAnotherUser);
+});
+
+describe("F3.87 PR 8 copilot dock — the attach control is absent (Amendment 3 A4, A7; plan D2)", () => {
+  it("in the guided mode (a skill with no AI key)", offersNoAttachInTheGuidedMode);
+  it("with no AI key", offersNoAttachWithNoKey);
+  it("with the organization's attachment switch off", offersNoAttachWithTheSwitchOff);
+  it("while a skill is active", offersNoAttachWhileASkillIsActive);
+  it("in a cross-organization conversation", offersNoAttachInACrossOrganizationConversation);
+  it("on the global admin's platform scope", offersNoAttachOnThePlatformScope);
+});
+
+describe("F3.87 PR 8 copilot dock — the attach control is present", () => {
+  it("says the file goes to the organization's AI provider unscrubbed", offersAttachWithTheUnscrubbedSentence);
+  it("in a remembered conversation bound to the organization", offersAttachInAConversationBoundToTheOrganization);
+  it("names the global admin's picked organization", namesThePickedOrganizationInTheSentence);
+});
+
+describe("F3.87 PR 8 copilot dock — the picker's client checks and chips", () => {
+  it("shows a chip per chosen file", showsAChipPerChosenFile);
+  it("refuses a fourth file", refusesAFourthFile);
+  it("refuses a file type not in the list", refusesAFileTypeNotInTheList);
+  it("refuses a file over 10 MB", refusesAFileOverTenMegabytes);
+  it("refuses an .svg over 64 KB", refusesAnSvgOverSixtyFourKilobytes);
+  it("removes a chip", removesAChip);
+});
+
+describe("F3.87 PR 8 copilot dock — sending files and the record they leave", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("sends the chosen files as FormData through sendCopilotTurn", sendsTheChosenFilesAsFormData);
+  it("clears the chips after the turn is answered", clearsTheChipsAfterTheTurnIsAnswered);
+  it("sends a plain turn without a file list", sendsAPlainTurnWithoutAFileList);
+  it("renders the placeholder lines as a muted record", rendersThePlaceholderLinesAsAMutedRecord);
+  it("renders a plain user row with no record", rendersAPlainUserRowWithNoRecord);
 });

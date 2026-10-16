@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FormEvent, KeyboardEvent } from "react";
+import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import type {
@@ -10,7 +10,12 @@ import type {
   CopilotTurnResponseDto,
   OnboardingDraftListDto,
 } from "@bms/shared";
-import { COPILOT_TURN_MESSAGE_MAX } from "@bms/shared/contracts";
+import {
+  COPILOT_ATTACHMENTS_MAX,
+  COPILOT_TURN_MESSAGE_MAX,
+  MAX_COPILOT_ATTACHMENT_BYTES,
+  MAX_MIMIC_SYMBOL_SVG_BYTES,
+} from "@bms/shared/contracts";
 
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import {
@@ -107,6 +112,18 @@ import { OnboardingSkillPanel } from "./onboarding-skill-panel";
  * messages there, and a remount reads them back. `fetchCopilotConversation`
  * loads them only when that cache entry was evicted while the dock was
  * unmounted. A page reload empties both and starts a new conversation.
+ *
+ * **Files** (`F3.87` PR 8, ADR 0099 Amendment 3 A4, A7; plan §10, D2). The
+ * attach control beside the composer renders only when the scope's status says
+ * `attachmentsEnabled` (a key, and that one organization's copilot and
+ * attachment switches on — so never with no key, in the guided mode, or with
+ * the switch off), no skill is bound (the skill panel has its own composer),
+ * and the conversation is bound to one organization. Its label and title say
+ * the file goes to the organization's AI provider unscrubbed. The picker
+ * refuses a type outside {@link ATTACHMENT_EXTENSIONS}, a file over 10 MB (an
+ * `.svg` over 64 KB: it is a symbol candidate) and a fourth file; the server
+ * re-checks every one by the bytes. The stored user row's `[Attachment …; not
+ * stored]` lines render under the text as a muted record.
  */
 
 /**
@@ -148,6 +165,60 @@ const ONBOARD_PICK_SENTENCE = "Pick an organization to onboard a site.";
  * first; this is the client's own refusal of anything else.
  */
 const APP_ROUTE = /^\/(?!\/)[A-Za-z0-9_\-/]*$/;
+
+/** `F3.87` PR 8: the file types a turn may carry, by extension (the server decides by the bytes). */
+export const ATTACHMENT_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".pdf", ".svg"] as const;
+
+/** The sentence the attach control's label and title carry (Amendment 3 A7). */
+export function unscrubbedSentence(organization: string): string {
+  return `The file goes to ${organization}'s AI provider as it is, unscrubbed.`;
+}
+
+function sizeLabel(bytes: number): string {
+  return bytes >= 1024 * 1024 ? `${Math.round(bytes / (1024 * 1024))} MB` : `${Math.round(bytes / 1024)} KB`;
+}
+
+/** Why the picker refuses this file, or `null` when it may be attached. The count is the caller's check. */
+export function attachmentProblem(file: File): string | null {
+  const name = file.name.toLowerCase();
+  if (!ATTACHMENT_EXTENSIONS.some((ext) => name.endsWith(ext))) {
+    return `"${file.name}" is not a PNG, JPEG, WebP, PDF or SVG file.`;
+  }
+  const max = name.endsWith(".svg") ? MAX_MIMIC_SYMBOL_SVG_BYTES : MAX_COPILOT_ATTACHMENT_BYTES;
+  return file.size > max ? `"${file.name}" is larger than ${sizeLabel(max)}.` : null;
+}
+
+/** One stored placeholder line, as `attachmentPlaceholder` writes it on the server (`F3.87` PR 7). */
+const ATTACHMENT_RECORD = /^\[Attachment \d+ of \d+: .*; not stored\]$/;
+
+/**
+ * A stored user row split into the typed text and its placeholder lines: the
+ * lines after the last blank line, when every one of them is a placeholder.
+ * A row with none is all text.
+ */
+export function splitAttachmentRecords(content: string): { text: string; records: string[] } {
+  const cut = content.lastIndexOf("\n\n");
+  if (cut < 0) return { text: content, records: [] };
+  const lines = content.slice(cut + 2).split("\n");
+  if (!lines.every((line) => ATTACHMENT_RECORD.test(line))) return { text: content, records: [] };
+  return { text: content.slice(0, cut), records: lines };
+}
+
+/** A user bubble's content: the text, then the files it carried as a muted record. */
+function UserText({ content }: { content: string }) {
+  const { text, records } = splitAttachmentRecords(content);
+  if (records.length === 0) return <>{content}</>;
+  return (
+    <>
+      <span>{text}</span>
+      <ul aria-label="Attached files, not stored" className="mt-1 space-y-0.5 break-all text-[11px] text-on-accent/70">
+        {records.map((record, i) => (
+          <li key={i}>{record}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
 
 /** The reset time of a daily limit, in the user's locale. */
 export function formatCopilotReset(resetsAt: string): string {
@@ -218,10 +289,21 @@ function AvailableDock({ user }: CopilotDockProps) {
   if (status.data?.available !== true) {
     return null;
   }
-  return <DockPanel user={user} homeConfigured={status.data.configured} />;
+  return (
+    <DockPanel
+      user={user}
+      homeConfigured={status.data.configured}
+      // An absent flag is false (fail closed; the schema keeps it optional for older stubs).
+      homeAttachments={status.data.attachmentsEnabled === true}
+    />
+  );
 }
 
-function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured: boolean }) {
+function DockPanel({
+  user,
+  homeConfigured,
+  homeAttachments,
+}: CopilotDockProps & { homeConfigured: boolean; homeAttachments: boolean }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const isGlobalAdmin = user.role === "admin";
@@ -275,7 +357,9 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
   });
 
   // `undefined` while a picked organization's status loads: neither the input nor the sentence yet.
-  const scope = picked ? scopedStatus.data : { available: true, configured: homeConfigured };
+  const scope = picked
+    ? scopedStatus.data
+    : { available: true, configured: homeConfigured, attachmentsEnabled: homeAttachments };
   const scopeOff = scope?.available === false;
   const configured = scope === undefined ? undefined : scope.configured && !turnNotConfigured;
   const scopeLabel = isGlobalAdmin
@@ -283,6 +367,21 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
       ? (organizations.data?.items.find((o) => o.id === organizationId)?.name ?? "the selected organization")
       : ALL_ORGANIZATIONS_LABEL
     : "your organization";
+
+  // `F3.87` PR 8 (plan D2): a file needs a conversation bound to one organization. Before there is one,
+  // the global administrator's pick names it and a scoped administrator's home does; after, the row
+  // says (unknown while it loads: no control).
+  const boundToOneOrganization =
+    conversationId === null
+      ? !isGlobalAdmin || picked
+      : thread.data !== undefined && thread.data.organizationId !== null;
+  const attachAllowed =
+    skill === null && configured === true && scope?.attachmentsEnabled === true && boundToOneOrganization;
+  const [files, setFiles] = useState<File[]>([]);
+  // The scope moved away from one that takes files (a pick, a skill, a refused key): drop the chosen ones.
+  useEffect(() => {
+    if (!attachAllowed) setFiles([]);
+  }, [attachAllowed]);
 
   useEffect(() => {
     const thread = threadRef.current;
@@ -381,7 +480,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
   }
 
   const turn = useMutation({
-    mutationFn: async (message: string): Promise<CopilotTurnResponseDto> => {
+    mutationFn: async ({ message, files }: { message: string; files: readonly File[] }): Promise<CopilotTurnResponseDto> => {
       let id = conversationId;
       if (id === null) {
         const created = await createCopilotConversation(isGlobalAdmin && picked ? organizationId : null);
@@ -395,9 +494,12 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
         carryHomeDrafts(created.organizationId);
         setConversation(user.id, id);
       }
-      return sendCopilotTurn(id, message);
+      // A plain turn keeps the two-argument call; only a turn with files goes as FormData.
+      return files.length > 0 ? sendCopilotTurn(id, message, files) : sendCopilotTurn(id, message);
     },
-    onSuccess: (data) => {
+    onSuccess: (data, sent) => {
+      // The files went with the turn; a refused send (onError) keeps them for another try.
+      if (sent.files.length > 0) setFiles([]);
       // Before any early return: a skill state answers even when nothing was stored (a closed or lost session).
       if (data.skill !== undefined) setSkill(data.conversationId, data.skill);
       // `F4.255`: the skill ended (lost or done: `null`) or its session is no longer a draft (the closed reply):
@@ -571,20 +673,44 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
     setTurnNotConfigured(false);
   }
 
-  function sendText(raw: string): void {
+  function sendText(raw: string, withFiles = false): void {
     const text = raw.trim();
     if (!text || busy) {
       return;
     }
     setKept([]);
-    turn.mutate(text);
+    // The skill panel's sends carry no file; the composer's carry the chips while the scope takes them.
+    turn.mutate({ message: text, files: withFiles && attachAllowed ? files : [] });
+  }
+
+  /** The picker's client checks: the type by extension, the size, and at most three files a message. */
+  function onChooseFiles(e: ChangeEvent<HTMLInputElement>): void {
+    const chosen = Array.from(e.target.files ?? []);
+    // The same file chosen again after a removal must fire `change` again.
+    e.target.value = "";
+    const next = [...files];
+    const problems: string[] = [];
+    let overCount = false;
+    for (const file of chosen) {
+      const problem = attachmentProblem(file);
+      if (problem !== null) problems.push(problem);
+      else if (next.length >= COPILOT_ATTACHMENTS_MAX) overCount = true;
+      else next.push(file);
+    }
+    if (overCount) problems.push(`A message can carry at most ${COPILOT_ATTACHMENTS_MAX} files.`);
+    setFiles(next);
+    setBanner(problems.length > 0 ? problems.join(" ") : null);
+  }
+
+  function removeFile(index: number): void {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
   }
 
   function submit(): void {
     if (!input.trim() || busy) {
       return;
     }
-    sendText(input);
+    sendText(input, true);
     setInput("");
   }
 
@@ -702,7 +828,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
               cards={cardList}
               status={progress}
               sending={turn.isPending || followUp !== null}
-              onSend={sendText}
+              onSend={(text) => sendText(text)}
               onSkillChange={(next) => conversationId !== null && setSkill(conversationId, next)}
               onError={setBanner}
               onEnd={() => endSkill.mutate()}
@@ -741,7 +867,7 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
                           : "surface-raised-sm text-ink"
                     }`}
                   >
-                    {m.role === "user" ? m.content : <AssistantText text={m.content} />}
+                    {m.role === "user" ? <UserText content={m.content} /> : <AssistantText text={m.content} />}
                   </div>
                 </div>
               ))}
@@ -765,7 +891,47 @@ function DockPanel({ user, homeConfigured }: CopilotDockProps & { homeConfigured
             <p className="border-t border-line p-3 text-xs text-ink-muted">Checking this organization…</p>
           ) : skill !== null || configured ? (
             <form onSubmit={onSubmit} className="border-t border-line p-3">
+              {attachAllowed && files.length > 0 && (
+                <ul aria-label="Files to attach" className="mb-2 flex flex-wrap gap-1">
+                  {files.map((file, i) => (
+                    <li
+                      key={`${i}-${file.name}`}
+                      data-name={file.name}
+                      className="surface-pressed flex max-w-full items-center gap-1 rounded px-2 py-0.5 text-[11px] text-ink"
+                    >
+                      <span className="truncate">{file.name}</span>
+                      <span className="text-ink-muted">{sizeLabel(file.size)}</span>
+                      <button
+                        type="button"
+                        aria-label={`Remove ${file.name}`}
+                        onClick={() => removeFile(i)}
+                        disabled={turn.isPending}
+                        className="px-1 text-ink-muted hover:text-ink"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
               <div className="flex items-end gap-2">
+                {attachAllowed && (
+                  <label
+                    title={unscrubbedSentence(scopeLabel)}
+                    className="surface-button cursor-pointer px-2 py-1 text-xs focus-within:ring-2 focus-within:ring-accent"
+                  >
+                    Attach
+                    <input
+                      type="file"
+                      multiple
+                      accept={ATTACHMENT_EXTENSIONS.join(",")}
+                      aria-label={`Attach files. ${unscrubbedSentence(scopeLabel)}`}
+                      onChange={onChooseFiles}
+                      disabled={busy}
+                      className="sr-only"
+                    />
+                  </label>
+                )}
                 <textarea
                   aria-label="Message the copilot"
                   value={input}
