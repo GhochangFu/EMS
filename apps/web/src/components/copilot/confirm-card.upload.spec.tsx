@@ -1,4 +1,4 @@
-import { cleanup, screen, within } from "@testing-library/react";
+import { screen, within } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
 import type { CopilotPendingChangeDto } from "@bms/shared";
@@ -7,10 +7,11 @@ import { answered, openPanel, renderDock, send, stub } from "./copilot-dock.spec
 
 /**
  * `F3.87` PR 6b (ADR 0099 Amendment 3 A3, plan D14) — a symbol upload card in the dock: the
- * stored SVG text is drawn as an `<img>` from a blob URL, never as inline SVG, and is never a
- * row. jsdom has no `URL.createObjectURL`, so each case installs a recording stub
- * ({@link stubBlobUrls}). One claim per `it()`. Vitest entry point: the sibling `.test.tsx`
- * (jsdom).
+ * stored SVG text is drawn as an `<img>` from a `data:image/svg+xml,` URL, never as inline SVG
+ * and never from a `blob:` URL (a blob URL carries the app's origin, so "Open image in new tab"
+ * would run the SVG's handlers there), and is never a row. jsdom has no
+ * `URL.createObjectURL`, so each case installs a recording stub ({@link stubBlobUrls}) that proves
+ * none is made. One claim per `it()`. Vitest entry point: the sibling `.test.tsx` (jsdom).
  */
 
 const SVG_TEXT = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>';
@@ -28,7 +29,7 @@ export const UPLOAD_CARD: CopilotPendingChangeDto = {
   expiresAt: "2026-10-16T10:15:00.000Z",
 };
 
-/** Installs `URL.createObjectURL` / `revokeObjectURL` stubs that record the blobs made and the URLs revoked. */
+/** Installs `URL.createObjectURL` / `revokeObjectURL` stubs that record the blobs made and the URLs revoked — none, since the card uses a `data:` URL. */
 export function stubBlobUrls() {
   const made: Blob[] = [];
   const revoked: string[] = [];
@@ -53,15 +54,15 @@ async function uploadCard(): Promise<HTMLElement> {
   return screen.findByRole("region", { name: "Upload a symbol" });
 }
 
-/** The card shows the symbol as an `<img>` whose `src` is a blob URL of the stored text, typed SVG. */
-export async function anUploadCardDrawsTheSymbolFromABlobUrl(): Promise<void> {
-  const blobs = stubBlobUrls();
+/** The card shows the symbol as an `<img>` whose `src` is a `data:` URL of the stored text, typed SVG. */
+export async function anUploadCardDrawsTheSymbolFromADataUrl(): Promise<void> {
+  stubBlobUrls();
   const card = await uploadCard();
   const image = await within(card).findByRole("img", { name: "Pump X" });
-  expect(image.getAttribute("src")?.startsWith("blob:")).toBe(true);
-  expect(blobs.made).toHaveLength(1);
-  expect(blobs.made[0]?.type).toBe("image/svg+xml");
-  expect(await blobs.made[0]?.text()).toBe(SVG_TEXT);
+  const src = image.getAttribute("src") ?? "";
+  const prefix = "data:image/svg+xml,";
+  expect(src.startsWith(prefix)).toBe(true);
+  expect(decodeURIComponent(src.slice(prefix.length))).toBe(SVG_TEXT);
 }
 
 /** The stored SVG never reaches the document as markup: no `<circle>` from the body, no inline copy of it. */
@@ -83,12 +84,11 @@ export async function anUploadCardHasNoSvgTextRow(): Promise<void> {
   expect(headers).not.toContain("Svg text");
 }
 
-/** Unmounting the card revokes the blob URL it made. */
-export async function anUploadCardRevokesItsBlobUrl(): Promise<void> {
+/** The card makes no blob URL: one would carry the app's origin into a new tab. */
+export async function anUploadCardMakesNoBlobUrl(): Promise<void> {
   const blobs = stubBlobUrls();
   const card = await uploadCard();
   await within(card).findByRole("img", { name: "Pump X" });
-  expect(blobs.revoked).toEqual([]);
-  cleanup();
-  expect(blobs.revoked).toEqual([BLOB_URL]);
+  expect(blobs.made).toEqual([]);
+  expect(document.querySelector('img[src^="blob:"]')).toBeNull();
 }
