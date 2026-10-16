@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { INTERCEPTORS_METADATA } from "@nestjs/common/constants";
 import { expect } from "vitest";
 
 import type { JwtPayload } from "@bms/shared";
@@ -95,13 +96,21 @@ function conversationsFake(options: { organizations?: Array<{ id: string }> } = 
 /** A `CopilotTurnService` double: the turn's order is its own spec's; the route is tested for the HTTP rules only. */
 function turnsFake() {
   const turned: Array<{ identityId: string; user: JwtPayload; conversationId: string; message: string; kind: string }> = [];
+  const files: unknown[][] = [];
   const service = {
-    turn: async (caller: { identity: ResolvedIdentity; user: JwtPayload }, conversationId: string, message: string, kind: string) => {
+    turn: async (
+      caller: { identity: ResolvedIdentity; user: JwtPayload },
+      conversationId: string,
+      message: string,
+      kind: string,
+      attachments: unknown[],
+    ) => {
       turned.push({ identityId: caller.identity.id, user: caller.user, conversationId, message, kind });
+      files.push(attachments);
       return { conversationId, outcome: "answered", configured: true, reply: "ok", messages: [], navigateTo: null };
     },
   } as unknown as CopilotTurnService;
-  return { service, turned };
+  return { service, turned, files };
 }
 
 function controllerWith(
@@ -120,6 +129,7 @@ function controllerWith(
     asked: availability.asked,
     swept: sweep.swept,
     turned: turns.turned,
+    files: turns.files,
   };
 }
 
@@ -337,4 +347,29 @@ export async function assertTheDetailCarriesTheOpenChanges(): Promise<void> {
   const detail = await controller.get(conversationId, identityFor("admin", null), SPEC_JWT);
   expect(detail.pendingChanges).toEqual([card]);
   expect(asked).toEqual([[USER_ID, conversationId]]);
+}
+
+/** `F3.87` PR 7: a JSON turn hands the service no files. */
+export async function assertAJsonTurnPassesNoFiles(): Promise<void> {
+  const h = controllerWith("organization_admin");
+  await h.controller.turn(CONVERSATION, { message: "any alarms?" }, h.identity, tokenFor("organization_admin"));
+  expect(h.files).toEqual([[]]);
+}
+
+/**
+ * `F3.87` PR 7: a multipart turn parses only its `message` field and hands the
+ * files to the service as they arrived; the service decides every rule.
+ */
+export async function assertAMultipartTurnPassesTheFiles(): Promise<void> {
+  const h = controllerWith("organization_admin");
+  const files = [{ buffer: Buffer.from("x"), originalname: "a.png" }];
+  await h.controller.turn(CONVERSATION, { message: "read this" }, h.identity, tokenFor("organization_admin"), files);
+  expect(h.turned.map((turn) => turn.message)).toEqual(["read this"]);
+  expect(h.files).toEqual([files]);
+}
+
+/** `F3.87` PR 7: the turn route declares one upload interceptor (its limits are `tests/f4.102`'s). */
+export function assertTheTurnRouteDeclaresTheFilesInterceptor(): void {
+  const interceptors = Reflect.getMetadata(INTERCEPTORS_METADATA, CopilotConversationsController.prototype.turn) as unknown[];
+  expect(interceptors).toHaveLength(1);
 }

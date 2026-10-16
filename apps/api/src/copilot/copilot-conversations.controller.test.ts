@@ -5,6 +5,9 @@ import { describe, it } from "vitest";
 import {
   assertTheDetailCarriesTheOpenChanges,
   assertABadBodyIs400,
+  assertAJsonTurnPassesNoFiles,
+  assertAMultipartTurnPassesTheFiles,
+  assertTheTurnRouteDeclaresTheFilesInterceptor,
   assertANonUuidIdIs404,
   assertATurnBodyNamingAnOrganizationIs400,
   assertATurnOnANonUuidIdIs404,
@@ -43,6 +46,9 @@ describe("F3.85 — POST /copilot/conversations/:id/turns (ADR 0099 decisions 1,
     assertATurnBodyNamingAnOrganizationIs400());
   it("answers a non-uuid id with a 404", () => assertATurnOnANonUuidIdIs404());
   it("answers 200", () => assertTheTurnRouteAnswers200());
+  it("F3.87 PR 7: a JSON turn passes no files", () => assertAJsonTurnPassesNoFiles());
+  it("F3.87 PR 7: a multipart turn passes its message and files", () => assertAMultipartTurnPassesTheFiles());
+  it("F3.87 PR 7: the route declares the files interceptor", () => assertTheTurnRouteDeclaresTheFilesInterceptor());
   it("F3.85 PR 8: the detail carries the conversation's open changes", async () => {
     await assertTheDetailCarriesTheOpenChanges();
   });
