@@ -488,10 +488,14 @@ export function noToolDefinitionCarriesALargeBody(): void {
  * each). Measured at `F4.254` PR 2: 37,492 over 51 definitions before, 39,682
  * over 55 after (the four authoring tools add 2,190). Measured at PR 3: 41,001
  * over 56 (the instantiate tool adds 1,319).
+ *
+ * Owner ruling 2026-10-16 (`F3.87`): 52,000, for the six library, symbol and
+ * asset-role tools of PR 6b (5,138 characters together). Measured at PR 6b:
+ * 48,027. The headroom is for the next release's entries, not this one's.
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();
-  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(48_000);
+  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(52_000);
 }
 
 /** Every catalog entry has one propose tool; a large body is read on demand. */

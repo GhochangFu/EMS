@@ -165,7 +165,8 @@ export async function theStoredTextApplies(ctx: UploadConfirmCtx): Promise<void>
   const symbolId = answer.ok ? (answer.value as { id: string }).id : "";
   expect(await rowOf(ctx, changeId)).toEqual({ status: "applied", result_status: 201 });
   const symbol = await ctx.superPool.query<{ sha256: string; key: string }>("SELECT sha256, key FROM bms.mimic_org_symbols WHERE id = $1", [symbolId]);
-  expect(symbol.rows[0]).toEqual({ sha256: body.fileSha256, key: "applies" });
+  // The service stores an organization symbol's key as `org.<libraryCode>:<name>`.
+  expect(symbol.rows[0]).toEqual({ sha256: body.fileSha256, key: expect.stringMatching(/^org\.[^:]+:applies$/) });
   const audit = await ctx.superPool.query<{ via: string | null; change_id: string | null }>(
     "SELECT payload->>'via' AS via, payload->>'changeId' AS change_id FROM bms.audit_log WHERE entity_id = $1 AND action = 'master.mimic_org_symbol.create'",
     [symbolId],
