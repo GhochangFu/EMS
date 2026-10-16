@@ -2,6 +2,7 @@ import type { CopilotFillStepDto, CopilotPendingChangeDto, JwtPayload } from "@b
 
 import type { ResolvedIdentity } from "../auth/identity-resolver";
 import { defineToolRegistry, type ToolRegistry } from "../llm/tool-registry";
+import type { TurnAttachment } from "./copilot-attachments";
 
 /**
  * `F3.85` PR 7 / ADR 0099 decisions 1, 9, 10 — the seam between the turn
@@ -47,6 +48,23 @@ export interface CopilotToolContext {
    * `false`: an access propose tool refuses.
    */
   readonly accessIntent?: boolean;
+  /**
+   * `F3.87` PR 7 (ADR 0099 Amendment 3 A4): the files this user turn carries,
+   * inspected. A propose step reads an attached `.svg` from here; nothing
+   * stores them. Absent on a turn without files.
+   */
+  readonly attachments?: readonly TurnAttachment[];
+  /**
+   * `F3.87` PR 7, plan D8: `false` when the turn carries a file and the user's
+   * own message names no asset word — the asset and point creates then refuse.
+   * Absent is `true`.
+   */
+  readonly assetIntent?: boolean;
+  /**
+   * `F3.87` PR 7, plan D11: a file was attached in this conversation after its
+   * last layout proposal, so a layout card says it was read from a file.
+   */
+  readonly historyHasAttachmentSinceLastLayout?: boolean;
   readonly now: Date;
 }
 
@@ -73,13 +91,21 @@ export interface CopilotReadTools {
   dispatch(name: string, args: Record<string, unknown>, ctx: CopilotToolContext): Promise<CopilotToolResult>;
 }
 
+/**
+ * Which propose registry a turn gets (`F3.86` ruling Q3, `F3.87` Amendment 3
+ * A1 and plan D8): with or without the access entries, the entries offered to
+ * the caller's role, and with or without the asset and point creates (absent
+ * is `true`).
+ */
+export type RegistryOptions = { readonly access: boolean; readonly role: string; readonly assetCreate?: boolean };
+
 /** The Nest token the turn service injects its read tools by. */
 export const COPILOT_READ_TOOLS = Symbol("COPILOT_READ_TOOLS");
 
 /** No tools: every call the model makes is an unknown name. For specs that need none; `CopilotModule` binds `CopilotReadToolSet`. */
 export const EMPTY_COPILOT_READ_TOOLS: CopilotReadTools & {
   readonly registryWithoutAccess: CopilotReadTools["registry"];
-  registryFor(options: { readonly access: boolean; readonly role: string }): CopilotReadTools["registry"];
+  registryFor(options: RegistryOptions): CopilotReadTools["registry"];
 } = {
   registry: defineToolRegistry<string>({}, {}),
   // `F3.86` PR 4: also an empty propose tool set, which has the second registry (and, `F3.87` PR 2, one per role).

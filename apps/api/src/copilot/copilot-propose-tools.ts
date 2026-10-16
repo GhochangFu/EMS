@@ -24,10 +24,11 @@ import { bodyHash } from "./body-hash";
 import { COPILOT_NEVER_GLOBAL_ADMIN_MESSAGE } from "@bms/shared";
 
 import { PROPOSE_ACCESS_NOT_ASKED_ERROR } from "./copilot-access-intent";
+import { ASSET_CREATE_IDS, PROPOSE_ASSET_NOT_ASKED_ERROR } from "./copilot-asset-intent";
 import { bodyDefinitionOf, describeBody } from "./copilot-change-schema";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
+import type { CopilotReadTools, CopilotToolContext, CopilotToolResult, RegistryOptions } from "./copilot-read-tools";
 import { prepareUpload } from "./copilot-upload-prepare";
-import type { CopilotReadTools, CopilotToolContext, CopilotToolResult } from "./copilot-read-tools";
 import { COPILOT_TARGETS, type CopilotTargets } from "./copilot-target-resolver";
 
 export const FILL_STEP_TOOL = "fill_step";
@@ -96,7 +97,7 @@ export const DESCRIBE_BUDGET_ERROR =
  */
 export interface CopilotProposeTools extends CopilotReadTools {
   readonly registryWithoutAccess: ToolRegistry<string>;
-  registryFor(options: { readonly access: boolean; readonly role: string }): ToolRegistry<string>;
+  registryFor(options: RegistryOptions): ToolRegistry<string>;
 }
 
 /** `F3.87` PR 2: the second guard behind the role-filtered registry (Amendment 3 A1). */
@@ -113,6 +114,12 @@ const offeredToRole = (entry: CatalogEntry, role: string): boolean =>
  * access wizard nor read its shape.
  */
 const accessAsked = (ctx: CopilotToolContext): boolean => ctx.turnKind === "user" && ctx.accessIntent === true;
+
+/**
+ * `F3.87` PR 7, plan D11: a layout card proposed from a file says so, so the
+ * administrator checks the drawing against the original before Confirm.
+ */
+export const COPILOT_READ_FROM_FILE_NOTE = " (read from an attached file: check it against the drawing)";
 
 /** `F3.86` ruling Q8: the user-account entries a local sign-in deployment refuses (grants are database-only and stay). */
 const isUserAccountEntry = (entry: CatalogEntry): boolean => entry.id.startsWith("user.");
@@ -277,12 +284,15 @@ export function createCopilotProposeTools(
   // entry whose `offeredTo` does not name the caller's role is dropped too. One registry per pair.
   const accessTools = [...byTool].filter(([, entry]) => entry.risk === "access").map(([name]) => name);
   const registries = new Map<string, ToolRegistry<string>>();
-  const registryFor = ({ access, role }: { readonly access: boolean; readonly role: string }): ToolRegistry<string> => {
-    const key = `${access ? "access" : "no-access"}:${role}`;
+  // `F3.87` PR 7, plan D8: a turn with a file whose words name no asset drops the asset and point creates.
+  const assetCreateTools = [...byTool].filter(([, entry]) => ASSET_CREATE_IDS.has(entry.id)).map(([name]) => name);
+  const registryFor = ({ access, role, assetCreate = true }: RegistryOptions): ToolRegistry<string> => {
+    const key = `${access ? "access" : "no-access"}:${assetCreate ? "assets" : "no-assets"}:${role}`;
     const known = registries.get(key);
     if (known !== undefined) return known;
     const dropped = new Set([
       ...(access ? [] : accessTools),
+      ...(assetCreate ? [] : assetCreateTools),
       ...[...byTool].filter(([, entry]) => !offeredToRole(entry, role)).map(([name]) => name),
     ]);
     const made = registryWithout(dropped);
@@ -361,6 +371,8 @@ export function createCopilotProposeTools(
     if (entry.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
     // `F3.87` PR 2 (Amendment 3 A1): the registry withholds the tool from another role; this is the second guard.
     if (!offeredToRole(entry, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
+    // `F3.87` PR 7, plan D8: the registry withholds the creates on a file turn the words did not ask; the second guard.
+    if (ASSET_CREATE_IDS.has(entry.id) && ctx.assetIntent === false) return { ok: false, error: PROPOSE_ASSET_NOT_ASKED_ERROR };
     // Ruling Q8: in local sign-in every user-account write answers 409, so no card is offered for one.
     if (isUserAccountEntry(entry) && resolveAuthMode(env) === "local") return { ok: false, error: LOCAL_MODE_READ_ONLY };
     const params: Record<string, string> = {};
@@ -423,19 +435,26 @@ export function createCopilotProposeTools(
     // `F3.87` PR 6a (Amendment 3 A3): an upload entry stores the text fields, the file's name and
     // SHA-256, and the SVG text under its `cardOnly` key, after the route's own parser passed it.
     if (entry.upload !== undefined) {
-      const prepared = prepareUpload(entry, body);
+      // `F3.87` PR 7: an attached file is the source by its 1-based index; a file that is not an SVG has no text.
+      const attached = (ctx.attachments ?? []).map((file) =>
+        file.svgText === undefined ? undefined : { filename: file.filename, svgText: file.svgText },
+      );
+      const prepared = prepareUpload(entry, body, attached);
       if (!prepared.ok) return { ok: false, error: prepared.error };
       body = prepared.body;
     }
 
-    const summary = entry.summary({
-      body,
-      params,
-      targetName: target.targetName,
-      organizationName: target.organizationName,
-      ...(target.currentWidgetIds ? { currentWidgetIds: target.currentWidgetIds } : {}),
-      ...(target.refName !== undefined ? { refName: target.refName } : {}),
-    });
+    const fromFile =
+      LAYOUT_ENTRY_IDS.has(entry.id) && ((ctx.attachments?.length ?? 0) > 0 || ctx.historyHasAttachmentSinceLastLayout === true);
+    const summary =
+      entry.summary({
+        body,
+        params,
+        targetName: target.targetName,
+        organizationName: target.organizationName,
+        ...(target.currentWidgetIds ? { currentWidgetIds: target.currentWidgetIds } : {}),
+        ...(target.refName !== undefined ? { refName: target.refName } : {}),
+      }) + (fromFile ? COPILOT_READ_FROM_FILE_NOTE : "");
     const change = await services.pending.propose(ctx.identity.id, {
       conversationId: ctx.conversationId,
       organizationId: target.organizationId,
@@ -470,6 +489,8 @@ export function createCopilotProposeTools(
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
         if (target.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
         if (!offeredToRole(target, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
+        // `F3.87` PR 7, D8: a file turn cannot pre-fill an asset wizard with what it read from the file either.
+        if (ASSET_CREATE_IDS.has(target.id) && ctx.assetIntent === false) return { ok: false, error: PROPOSE_ASSET_NOT_ASKED_ERROR };
         const step = target.steps.find((candidate) => candidate.id === args.stepId);
         if (step === undefined) return { ok: false, error: UNKNOWN_STEP_ERROR };
         const values = stepValuesSchema(target.body, step.fields).safeParse(args.values);
@@ -494,6 +515,7 @@ export function createCopilotProposeTools(
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
         if (target.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
         if (!offeredToRole(target, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
+        if (ASSET_CREATE_IDS.has(target.id) && ctx.assetIntent === false) return { ok: false, error: PROPOSE_ASSET_NOT_ASKED_ERROR };
         // The model's body (`F3.86` PR 2): a `clientOnly` field is never described to the model.
         const described = describeBody(modelBodySchema(target), (args.path as string[] | undefined) ?? []);
         if (!described.ok) return { ok: false, error: UNKNOWN_PATH_ERROR };
@@ -539,7 +561,7 @@ export class CopilotProposeToolSet implements CopilotProposeTools {
     return this.tools.registryWithoutAccess;
   }
 
-  registryFor(options: { readonly access: boolean; readonly role: string }): ToolRegistry<string> {
+  registryFor(options: RegistryOptions): ToolRegistry<string> {
     return this.tools.registryFor(options);
   }
 

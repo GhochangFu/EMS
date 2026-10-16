@@ -9,11 +9,15 @@ import {
   NotFoundException,
   Param,
   Post,
+  UploadedFiles,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FilesInterceptor } from "@nestjs/platform-express";
 import { ZodError } from "zod";
 
 import {
+  COPILOT_ATTACHMENTS_MAX,
   type CopilotConversationDetailDto,
   type CopilotConversationDto,
   copilotCreateConversationBodySchema,
@@ -23,6 +27,7 @@ import {
   copilotTurnBodySchema,
   type CopilotTurnResponseDto,
   type JwtPayload,
+  MAX_COPILOT_ATTACHMENT_BYTES,
 } from "@bms/shared";
 
 import { idParamSchema } from "../admin/admin.schema";
@@ -30,6 +35,7 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import type { ResolvedIdentity } from "../auth/identity-resolver";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { COPILOT_UNAVAILABLE_MESSAGE, CopilotAccessGuard, CopilotIdentity } from "./copilot-access.guard";
+import type { UploadedAttachment } from "./copilot-attachments";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import { liveOpenChanges } from "./copilot-onboarding-commit";
@@ -165,25 +171,40 @@ export class CopilotConversationsController {
    * row (`CopilotTurnService`), so another user's id or a non-uuid is a 404.
    * 200, not Nest's POST default 201: a turn creates no resource the caller
    * addresses.
+   *
+   * `F3.87` PR 7 (ADR 0099 Amendment 3 A4): the same route takes a multipart
+   * body — the `message` field and up to three `files`. A JSON request passes
+   * multer untouched (`files` is undefined); a multipart one parses only its
+   * `message` field. The limits are written inline for `tests/f4.102`. The
+   * turn service decides every attachment rule, in its check order, before the
+   * turn is counted; multer buffers the files before that, the cost
+   * `asset-images-write.controller.ts` records.
    */
   @Post(":id/turns")
   @HttpCode(200)
+  @UseInterceptors(
+    FilesInterceptor("files", COPILOT_ATTACHMENTS_MAX, {
+      limits: { fileSize: MAX_COPILOT_ATTACHMENT_BYTES, files: COPILOT_ATTACHMENTS_MAX, fields: 1, fieldSize: 32768 },
+    }),
+  )
   async turn(
     @Param("id") id: string,
     @Body() body: unknown,
     @CopilotIdentity() identity: ResolvedIdentity,
     @CurrentUser() user: JwtPayload,
+    @UploadedFiles() files?: UploadedAttachment[],
   ): Promise<CopilotTurnResponseDto> {
     await this.pendingChanges.sweepStuck(identity.id);
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) throw new NotFoundException("Conversation not found");
     let message: string;
     try {
-      message = copilotTurnBodySchema.parse(body).message;
+      const fields = files === undefined ? body : { message: (body as { message?: unknown } | undefined)?.message };
+      message = copilotTurnBodySchema.parse(fields).message;
     } catch (err) {
       if (err instanceof ZodError) throw new BadRequestException(err.flatten());
       throw err;
     }
-    return this.turns.turn({ identity, user }, parsed.data, message, "user");
+    return this.turns.turn({ identity, user }, parsed.data, message, "user", files ?? []);
   }
 }
