@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   COPILOT_ATTACHMENTS_MAX,
   MAX_COPILOT_ATTACHMENT_BYTES,
+  MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES,
   MAX_MIMIC_SYMBOL_SVG_BYTES,
   mimicSymbolFilenameSchema,
 } from "@bms/shared";
@@ -46,6 +47,7 @@ export type AttachmentInspection =
 export const COPILOT_ATTACHMENTS_TOO_MANY_MESSAGE = `Attach at most ${COPILOT_ATTACHMENTS_MAX} files to one message.`;
 export const COPILOT_ATTACHMENT_TYPE_MESSAGE = "Attach a PNG, JPEG, WebP, PDF or SVG file. Other file types are not read.";
 export const COPILOT_ATTACHMENT_TOO_LARGE_MESSAGE = "An image or PDF may be at most 10 MB.";
+export const COPILOT_ATTACHMENTS_TOTAL_TOO_LARGE_MESSAGE = "The files of one message may be at most 10 MB together.";
 export const COPILOT_ATTACHMENT_SVG_TOO_LARGE_MESSAGE = "An SVG may be at most 64 KB.";
 export const COPILOT_ATTACHMENT_FILENAME_MESSAGE = "Rename the file: its name is empty, too long or holds a control character.";
 export const COPILOT_ATTACHMENT_FILENAME_CREDENTIAL_MESSAGE =
@@ -120,6 +122,9 @@ export function inspectAttachments(files: readonly UploadedAttachment[]): Attach
     };
     attachments.push(mediaType === "image/svg+xml" ? { ...base, ...svgFacts(file.buffer) } : base);
   }
+  // Owner ruling 2026-10-16: the files of one turn together fit the proxies' body limit (each file's own limit first).
+  const total = attachments.reduce((sum, attachment) => sum + attachment.byteSize, 0);
+  if (total > MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES) return refused(413, COPILOT_ATTACHMENTS_TOTAL_TOO_LARGE_MESSAGE);
   return { ok: true, attachments };
 }
 

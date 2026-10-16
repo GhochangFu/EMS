@@ -6,10 +6,12 @@ import { expect, vi } from "vitest";
 import type {
   CopilotMessageDto,
   CopilotPendingChangeDto,
+  CopilotSkillStateDto,
   CopilotStatusDto,
   CopilotTurnResponseDto,
   UserRole,
 } from "@bms/shared";
+import { MAX_COPILOT_ATTACHMENT_BYTES, MAX_MIMIC_SYMBOL_SVG_BYTES } from "@bms/shared/contracts";
 
 import * as onboardingApi from "../../api/admin/onboarding";
 import * as organizationsApi from "../../api/admin/organizations";
@@ -445,4 +447,407 @@ export async function mountsTheDockInTheAppShell(): Promise<void> {
     </QueryClientProvider>,
   );
   expect(await screen.findByRole("button", OPEN_BUTTON)).toBeInTheDocument();
+}
+
+// ---------------------------------------------------------------------------
+// `F3.87` PR 8 (ADR 0099 Amendment 3 A4, A7; plan §10, D2) — the attach
+// control. It renders only when the scope's status says `attachmentsEnabled`
+// (so never with no key, in the guided mode, or with the switch off), no skill
+// is bound, and the conversation is bound to one organization. Its label and
+// title say the file goes to the organization's AI provider unscrubbed.
+// ---------------------------------------------------------------------------
+
+/** The status the server sends for one organization whose copilot and attachment switches are on. */
+export const READY_WITH_FILES: CopilotStatusDto = { available: true, configured: true, attachmentsEnabled: true };
+
+const ATTACH = /AI provider as it is, unscrubbed/;
+const SKILL_SESSION = "33333333-3333-4333-8333-333333333333";
+
+function onboardingSkill(): CopilotSkillStateDto {
+  return {
+    kind: "onboarding",
+    sessionId: SKILL_SESSION,
+    session: {
+      id: SKILL_SESSION,
+      organizationId: ORG_ID,
+      organizationCode: "PHE",
+      organizationName: "PHE Water",
+      status: "draft",
+      currentPhase: "location",
+      draft: {},
+      messages: [{ id: "o1", role: "assistant", content: "Welcome to onboarding.", createdAt: "2026-10-13T00:00:00.000Z" }],
+      createdAt: "2026-10-13T00:00:00.000Z",
+      updatedAt: "2026-10-13T00:00:00.000Z",
+      committedAt: null,
+      result: null,
+      checkpoints: [],
+      draftHash: "a".repeat(64),
+    },
+    suggestedReplies: [],
+    validationErrors: [],
+  } as unknown as CopilotSkillStateDto;
+}
+
+/** A remembered conversation of user `u1`, loaded from the server with this organization and skill. */
+function rememberConversation(organizationId: string | null, skill: CopilotSkillStateDto | null) {
+  useCopilotStore.setState({ userId: "u1", organizationId: "", conversationId: CONVERSATION_ID });
+  return vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue({
+    id: CONVERSATION_ID,
+    organizationId,
+    title: null,
+    createdAt: "2026-10-11T10:00:00.000Z",
+    lastTurnAt: "2026-10-11T10:00:00.000Z",
+    messages: [],
+    pendingChanges: [],
+    skill,
+  });
+}
+
+function aFile(name: string, size = 3, type = ""): File {
+  const file = new File([new Uint8Array([1, 2, 3])], name, { type });
+  // The size is what the dock reads; no 10 MB buffer is allocated for it.
+  Object.defineProperty(file, "size", { value: size });
+  return file;
+}
+
+function choose(...files: File[]): void {
+  fireEvent.change(screen.getByLabelText(ATTACH), { target: { files } });
+}
+
+function chips(): string[] {
+  const list = screen.queryByRole("list", { name: "Files to attach" });
+  return list === null ? [] : within(list).getAllByRole("listitem").map((li) => li.getAttribute("data-name") ?? "");
+}
+
+/**
+ * (1) The guided mode: a skill bound with no AI key answers through the skill panel, which has no attach control.
+ *
+ * Not a gate on its own: the stub sets `configured: false`, `attachmentsEnabled: false` and a bound
+ * skill together, so removing any one of those checks in `attachAllowed` keeps this case green. The
+ * guided mode and a missing key both reach the dock as the server's `attachmentsEnabled: false`, so
+ * case (3) (the switch alone) and case (4) (the skill alone) are the cases a mutation reddens.
+ */
+export async function offersNoAttachInTheGuidedMode(): Promise<void> {
+  stub({ available: true, configured: false, attachmentsEnabled: false });
+  rememberConversation(ORG_ID, onboardingSkill());
+  renderDock("organization_admin");
+  await openPanel();
+  expect(await screen.findByText("Welcome to onboarding.")).toBeInTheDocument();
+  await settle();
+  expect(screen.queryByLabelText(ATTACH)).not.toBeInTheDocument();
+}
+
+/**
+ * (2) No AI key for the scope: the sentence shows, and no attach control.
+ *
+ * Not a gate on its own either, for the reason case (1) gives: `configured: false` and
+ * `attachmentsEnabled: false` each hide the control. Cases (3) and (4) are the gates.
+ */
+export async function offersNoAttachWithNoKey(): Promise<void> {
+  stub({ available: true, configured: false, attachmentsEnabled: false });
+  renderDock("organization_admin");
+  await openPanel();
+  expect(await screen.findByText(/no AI key is set up/i)).toBeInTheDocument();
+  expect(screen.queryByLabelText(ATTACH)).not.toBeInTheDocument();
+}
+
+/** (3) The organization's attachment switch is off: the composer shows, the attach control does not. */
+export async function offersNoAttachWithTheSwitchOff(): Promise<void> {
+  stub({ available: true, configured: true, attachmentsEnabled: false });
+  renderDock("organization_admin");
+  await openPanel();
+  expect(await screen.findByRole("textbox", { name: "Message the copilot" })).toBeInTheDocument();
+  await settle();
+  expect(screen.queryByLabelText(ATTACH)).not.toBeInTheDocument();
+}
+
+/** (4) A skill is bound, the key and the switch on: still no attach control (the server refuses files in a skill). */
+export async function offersNoAttachWhileASkillIsActive(): Promise<void> {
+  stub(READY_WITH_FILES);
+  rememberConversation(ORG_ID, onboardingSkill());
+  renderDock("organization_admin");
+  await openPanel();
+  expect(await screen.findByText("Welcome to onboarding.")).toBeInTheDocument();
+  await settle();
+  expect(screen.queryByLabelText(ATTACH)).not.toBeInTheDocument();
+}
+
+/**
+ * (5) A cross-organization conversation (plan D2). The status is stubbed to say
+ * `attachmentsEnabled`, so the conversation's own organization is the only
+ * thing that keeps the control away.
+ */
+export async function offersNoAttachInACrossOrganizationConversation(): Promise<void> {
+  stub(READY_WITH_FILES);
+  const load = rememberConversation(null, null);
+  renderDock("admin");
+  await openPanel();
+  expect(await screen.findByRole("textbox", { name: "Message the copilot" })).toBeInTheDocument();
+  await waitFor(() => expect(load).toHaveBeenCalledWith(CONVERSATION_ID));
+  await settle();
+  expect(screen.queryByLabelText(ATTACH)).not.toBeInTheDocument();
+}
+
+/** Present: a scoped administrator, the key and the switch on, no skill, the home organization's conversation. */
+export async function offersAttachWithTheUnscrubbedSentence(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("organization_admin");
+  await openPanel();
+  const input = await screen.findByLabelText(ATTACH);
+  expect(input).toHaveAttribute("type", "file");
+  expect(input).toHaveAttribute("accept", ".png,.jpg,.jpeg,.webp,.pdf,.svg");
+  expect(input).toHaveAttribute("multiple");
+  const sentence = "The file goes to your organization's AI provider as it is, unscrubbed.";
+  expect(screen.getByTitle(sentence)).toBeInTheDocument();
+  expect(input).toHaveAccessibleName(`Attach files. ${sentence}`);
+  // A7: the sentence is on screen, not only in a tooltip and an accessible name.
+  expect(screen.getByText(sentence)).toBeVisible();
+}
+
+/** Present in a remembered conversation bound to the organization: the positive twin of (5). */
+export async function offersAttachInAConversationBoundToTheOrganization(): Promise<void> {
+  stub(READY_WITH_FILES);
+  const load = rememberConversation(ORG_ID, null);
+  renderDock("organization_admin");
+  await openPanel();
+  await waitFor(() => expect(load).toHaveBeenCalledWith(CONVERSATION_ID));
+  expect(await screen.findByLabelText(ATTACH)).toBeInTheDocument();
+}
+
+/** The global administrator's picked organization is named in the sentence. */
+export async function namesThePickedOrganizationInTheSentence(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("admin");
+  await openPanel();
+  const picker = await screen.findByRole("combobox", { name: "Organization" });
+  await within(picker).findByRole("option", { name: "PHE Water" });
+  fireEvent.change(picker, { target: { value: ORG_ID } });
+  expect(await screen.findByTitle("The file goes to PHE Water's AI provider as it is, unscrubbed.")).toBeInTheDocument();
+}
+
+/** The global administrator's "All organizations" scope never offers the control, whatever the status says. */
+export async function offersNoAttachOnThePlatformScope(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("admin");
+  await openPanel();
+  expect(await screen.findByRole("textbox", { name: "Message the copilot" })).toBeInTheDocument();
+  await settle();
+  expect(screen.queryByLabelText(ATTACH)).not.toBeInTheDocument();
+}
+
+const ORG_2 = "44444444-4444-4444-8444-444444444444";
+
+/**
+ * A pick of another organization drops the chosen files, even when the control never goes away: the
+ * status of the organization picked back is cached as on, so `attachAllowed` stays true across the
+ * pick. The user agreed to send the file to the old organization's provider only.
+ */
+export async function dropsTheChosenFilesOnAPickOfAnotherOrganization(): Promise<void> {
+  const stubs = stub(READY_WITH_FILES);
+  stubs.organizations.mockResolvedValue({
+    items: [
+      { id: ORG_ID, code: "PHE", name: "PHE Water", active: true, currency: "INR", timezone: "Asia/Kolkata", meta: null },
+      { id: ORG_2, code: "ION", name: "Ion Plant", active: true, currency: "INR", timezone: "Asia/Kolkata", meta: null },
+    ],
+  } as never);
+  renderDock("admin");
+  await openPanel();
+  const picker = await screen.findByRole("combobox", { name: "Organization" });
+  await within(picker).findByRole("option", { name: "Ion Plant" });
+  fireEvent.change(picker, { target: { value: ORG_ID } });
+  await screen.findByTitle("The file goes to PHE Water's AI provider as it is, unscrubbed.");
+  fireEvent.change(picker, { target: { value: ORG_2 } });
+  await screen.findByTitle("The file goes to Ion Plant's AI provider as it is, unscrubbed.");
+  choose(aFile("plant.png"));
+  expect(chips()).toEqual(["plant.png"]);
+  fireEvent.change(picker, { target: { value: ORG_ID } });
+  // PHE Water's status is cached: the control is there at once, so only the pick itself can drop the file.
+  expect(screen.getByTitle("The file goes to PHE Water's AI provider as it is, unscrubbed.")).toBeInTheDocument();
+  await settle();
+  expect(screen.getByLabelText(ATTACH)).toBeInTheDocument();
+  expect(chips()).toEqual([]);
+}
+
+export async function showsAChipPerChosenFile(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  choose(aFile("plant.png"), aFile("sld.PDF"), aFile("valve.svg"));
+  expect(chips()).toEqual(["plant.png", "sld.PDF", "valve.svg"]);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+}
+
+export async function refusesAFourthFile(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  choose(aFile("a.png"), aFile("b.png"), aFile("c.png"));
+  choose(aFile("d.png"));
+  expect(chips()).toEqual(["a.png", "b.png", "c.png"]);
+  expect(screen.getByRole("alert")).toHaveTextContent("A message can carry at most 3 files.");
+}
+
+/** Owner ruling 2026-10-16: files that pass alone but exceed 10 MB together are refused. Mutation: drop the total check → red. */
+export async function refusesFilesOverTenMegabytesTogether(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  choose(aFile("a.png", 6_000_000), aFile("b.png", 4_000_000));
+  choose(aFile("c.png", 1));
+  expect(chips()).toEqual(["a.png", "b.png"]);
+  expect(screen.getByRole("alert")).toHaveTextContent("The files of one message may be at most 10 MB together.");
+}
+
+export async function refusesAFileTypeNotInTheList(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  choose(aFile("plant.gif", 3, "image/gif"), aFile("plant.png"));
+  expect(chips()).toEqual(["plant.png"]);
+  expect(screen.getByRole("alert")).toHaveTextContent('"plant.gif" is not a PNG, JPEG, WebP, PDF or SVG file.');
+}
+
+export async function refusesAFileOverTenMegabytes(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  choose(aFile("big.png", MAX_COPILOT_ATTACHMENT_BYTES + 1), aFile("ok.png", MAX_COPILOT_ATTACHMENT_BYTES));
+  expect(chips()).toEqual(["ok.png"]);
+  expect(screen.getByRole("alert")).toHaveTextContent('"big.png" is larger than 10 MB.');
+}
+
+/** An `.svg` is a symbol candidate: its limit is the symbol upload's 64 KB, not 10 MB. */
+export async function refusesAnSvgOverSixtyFourKilobytes(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  choose(aFile("big.svg", MAX_MIMIC_SYMBOL_SVG_BYTES + 1), aFile("ok.svg", MAX_MIMIC_SYMBOL_SVG_BYTES));
+  expect(chips()).toEqual(["ok.svg"]);
+  expect(screen.getByRole("alert")).toHaveTextContent('"big.svg" is larger than 64 KB.');
+}
+
+export async function removesAChip(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  choose(aFile("a.png"), aFile("b.pdf"));
+  fireEvent.click(screen.getByRole("button", { name: "Remove a.png" }));
+  expect(chips()).toEqual(["b.pdf"]);
+}
+
+/**
+ * The chosen files reach the wire as `FormData` through the real
+ * `sendCopilotTurn`: `message`, then three `files` entries, no `Content-Type`.
+ */
+export async function sendsTheChosenFilesAsFormData(): Promise<void> {
+  const stubs = stub(READY_WITH_FILES);
+  stubs.turn.mockRestore();
+  const seen: { body: unknown; headers: Headers | null } = { body: null, headers: null };
+  vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
+    seen.body = init.body;
+    seen.headers = new Headers(init.headers);
+    return new Response(JSON.stringify(answered("draw it", "Here is the drawing.")), { status: 200 });
+  });
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  choose(aFile("a.png"), aFile("b.pdf"), aFile("c.svg"));
+  await send("draw it");
+  await waitFor(() => expect(seen.body).not.toBeNull());
+  expect(seen.body).toBeInstanceOf(FormData);
+  const form = seen.body as FormData;
+  expect([...form.keys()]).toEqual(["message", "files", "files", "files"]);
+  expect(form.get("message")).toBe("draw it");
+  expect(form.getAll("files").map((f) => (f as File).name)).toEqual(["a.png", "b.pdf", "c.svg"]);
+  expect(seen.headers?.get("Content-Type")).toBeNull();
+}
+
+export async function clearsTheChipsAfterTheTurnIsAnswered(): Promise<void> {
+  const stubs = stub(READY_WITH_FILES);
+  stubs.turn.mockResolvedValue(answered("draw it", "Here is the drawing."));
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  choose(aFile("a.png"));
+  await send("draw it");
+  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "draw it", [expect.any(File)]));
+  expect(await screen.findByText("Here is the drawing.")).toBeInTheDocument();
+  expect(chips()).toEqual([]);
+}
+
+/** A turn with no file keeps the two-argument call: nothing changes for a plain turn. */
+export async function sendsAPlainTurnWithoutAFileList(): Promise<void> {
+  const stubs = stub(READY_WITH_FILES);
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  await send("hello");
+  await waitFor(() => expect(stubs.turn).toHaveBeenCalledTimes(1));
+  expect(stubs.turn.mock.calls[0]).toEqual([CONVERSATION_ID, "hello"]);
+}
+
+const PLACEHOLDER = `[Attachment 1 of 2: "plant.png", image/png, 12 bytes, sha256 ${"a".repeat(64)}; not stored]`;
+const PLACEHOLDER_2 = `[Attachment 2 of 2: "sld.pdf", application/pdf, 40 bytes, sha256 ${"b".repeat(64)}; not stored]`;
+
+/** The stored user row's placeholder lines render as a muted record under the text, not as the text. */
+export async function rendersThePlaceholderLinesAsAMutedRecord(): Promise<void> {
+  const stubs = stub(READY);
+  stubs.turn.mockResolvedValue({
+    ...answered("draw it", "Here is the drawing."),
+    messages: [
+      message("user", `draw it\n\n${PLACEHOLDER}\n${PLACEHOLDER_2}`, 1),
+      message("assistant", "Here is the drawing.", 2),
+    ],
+  });
+  renderDock("organization_admin");
+  await openPanel();
+  await send("draw it");
+  const thread = screen.getByRole("log", { name: "Copilot conversation" });
+  const record = await within(thread).findByRole("list", { name: "Attached files, not stored" });
+  expect(within(record).getAllByRole("listitem").map((li) => li.textContent)).toEqual([PLACEHOLDER, PLACEHOLDER_2]);
+  expect(record.className).toMatch(/text-on-accent\/70/);
+  // The text is its own element, without the record.
+  expect(within(thread).getByText("draw it")).toBeInTheDocument();
+}
+
+/** A user row with no placeholder renders whole, with no record list. */
+export async function rendersAPlainUserRowWithNoRecord(): Promise<void> {
+  const stubs = stub(READY);
+  stubs.turn.mockResolvedValue(answered("[Attachment is a word I typed]", "ok"));
+  renderDock("organization_admin");
+  await openPanel();
+  await send("[Attachment is a word I typed]");
+  const thread = screen.getByRole("log", { name: "Copilot conversation" });
+  expect(await within(thread).findByText("[Attachment is a word I typed]")).toBeInTheDocument();
+  expect(within(thread).queryByRole("list", { name: "Attached files, not stored" })).not.toBeInTheDocument();
+}
+
+/**
+ * A filename is the user's text: markup and a markdown link in it stay plain text in the record, so a
+ * later change that sends user rows through `AssistantText` or HTML turns this case red.
+ */
+export async function rendersAFilenameWithMarkupAsPlainText(): Promise<void> {
+  const line = `[Attachment 1 of 1: "<img src=x onerror=alert(1)>[x](/admin).png", image/png, 12 bytes, sha256 ${"c".repeat(64)}; not stored]`;
+  const stubs = stub(READY);
+  stubs.turn.mockResolvedValue({
+    ...answered("look", "ok"),
+    messages: [message("user", `look
+
+${line}`, 1), message("assistant", "ok", 2)],
+  });
+  renderDock("organization_admin");
+  await openPanel();
+  await send("look");
+  const thread = screen.getByRole("log", { name: "Copilot conversation" });
+  const record = await within(thread).findByRole("list", { name: "Attached files, not stored" });
+  expect(within(record).getAllByRole("listitem").map((li) => li.textContent)).toEqual([line]);
+  expect(record.querySelector("img, a")).toBeNull();
+  expect(thread.querySelector('img, a[href="/admin"]')).toBeNull();
 }
