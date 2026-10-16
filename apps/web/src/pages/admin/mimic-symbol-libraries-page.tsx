@@ -266,7 +266,14 @@ function LibraryCard({ library, onChanged }: { library: MimicOrgSymbolLibraryDto
         </button>
       </div>
       {editing !== null ? (
-        <LibraryUpdateWizard library={library} start={editing} onCancel={() => setEditing(null)} onDone={done(() => setEditing(null))} />
+        // Keyed on the start: Edit then Retire (or the reverse) remounts the wizard with the new values.
+        <LibraryUpdateWizard
+          key={JSON.stringify(editing)}
+          library={library}
+          start={editing}
+          onCancel={() => setEditing(null)}
+          onDone={done(() => setEditing(null))}
+        />
       ) : null}
       {uploading ? (
         <SymbolUploadWizard library={library} onCancel={() => setUploading(false)} onDone={done(() => setUploading(false))} />
@@ -290,7 +297,10 @@ function OrgSymbolsTable({ library, onChanged }: { library: MimicOrgSymbolLibrar
   return (
     <>
       {editing !== null ? (
+        // Keyed on the symbol and its start: another row's control remounts the wizard, never PATCHes
+        // that row with the first row's values.
         <SymbolUpdateWizard
+          key={`${editing.symbol.id}:${JSON.stringify(editing.start)}`}
           library={library}
           symbol={editing.symbol}
           start={editing.start}

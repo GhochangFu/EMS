@@ -423,3 +423,53 @@ export async function theUploadReviewPassesWithAFileChosen(): Promise<void> {
   await userEvent.click(within(card).getByRole("button", { name: "Submit" }));
   await waitFor(() => expect(upload).toHaveBeenCalledWith(PLANT_ID, { file, name: undefined, label: "Pump", group: undefined }));
 }
+
+// ---- `F3.87` PR 6b: a second action while a wizard is open remounts it with the new start ------
+
+/**
+ * L28 — the group of one symbol, then another symbol's Active box: the open wizard takes the
+ * second symbol's change, and the first change goes nowhere. Mutation: drop the
+ * `SymbolUpdateWizard` `key` => red (it PATCHes the second symbol with the first's group).
+ */
+export async function aSecondSymbolActionReplacesTheOpenWizard(): Promise<void> {
+  const { updateSymbol } = stubAll();
+  mount();
+  const card = await plantCard();
+  await userEvent.selectOptions(within(card).getByRole("combobox", { name: "Group of Inlet screen" }), "hvac");
+  await screen.findByRole("dialog", { name: "Edit Inlet screen" });
+  await userEvent.click(within(card).getByRole("checkbox", { name: "Active Old pump" }));
+  await submitWizard("Edit Old pump");
+  const oldPump = orgSymbolFixture("org.plant:old-pump", "Old pump", false);
+  await waitFor(() => expect(updateSymbol).toHaveBeenCalledWith(PLANT_ID, oldPump.id, { active: true }));
+  expect(updateSymbol).toHaveBeenCalledTimes(1);
+}
+
+/**
+ * L29 — Edit, then Retire on the same card: the open wizard becomes the Retire wizard with
+ * `active: false` in it. Mutation: drop the `LibraryUpdateWizard` `key` => red (the values stay
+ * `{}`).
+ */
+export async function retireAfterEditReplacesTheOpenWizard(): Promise<void> {
+  const { updateLibrary } = stubAll();
+  mount();
+  const card = await plantCard();
+  await userEvent.click(within(card).getByRole("button", { name: "Edit" }));
+  await screen.findByRole("dialog", { name: "Edit Plant" });
+  await userEvent.click(within(card).getByRole("button", { name: "Retire" }));
+  await submitWizard("Retire Plant");
+  await waitFor(() => expect(updateLibrary).toHaveBeenCalledWith(PLANT_ID, { active: false }));
+}
+
+/**
+ * L30 — a label typed with no file chosen still asks before Cancel leaves: the shell marks
+ * itself on the field's `change`, so the page's `dirty` need only cover the file input.
+ */
+export async function aTypedLabelWithoutAFileAsksBeforeCancel(): Promise<void> {
+  stubAll();
+  mount();
+  const card = await openUpload();
+  await userEvent.type(within(card).getByRole("textbox", { name: "Symbol label" }), "Pump");
+  await userEvent.click(within(card).getByRole("button", { name: "Cancel" }));
+  expect(await screen.findByRole("alertdialog", { name: "Leave the wizard" })).toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: UPLOAD_DIALOG })).toBeInTheDocument();
+}
