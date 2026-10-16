@@ -5074,8 +5074,8 @@ each row, as `F4.100`–`F4.102` did. No dependency, no DDL, no §6 promotion.
   navigate back to existing 2D screens.
 - **Explicit deferral:** AI Copilot / chatbot is not part of this Phase 6
   plan. *(Since 2026-10-10, ADR 0099 promotes a site-wide copilot for the
-  four administrator roles only, as rows `F3.85`–`F3.87`; operators and
-  viewers stay without one.)*
+  four administrator roles only, as rows `F3.85`–`F3.87`, all built by
+  2026-10-16; operators and viewers stay without one.)*
 
 #### Phase 6 Sprint A — 3D feasibility
 - **Status:** pending
@@ -7780,3 +7780,27 @@ Verified: build and `typecheck:tests`; full Vitest with coverage, 13380 passed a
 **Cascade:** no row lists `F3.80` in *Depends*; `F3.87` names it in prose only (its *Depends* is `F3.85`).
 
 Owed to the owner: three standing `BREAKER_OPEN` critical alarms at `RSMOC-WC` from the held-open demo breakers (a skip list needs an ADR 0101 amendment); a read-only `asset_roles` check on the AWS demo and the PHE pilot before `0109` reaches an admin-used database (production reads were blocked for the agent); a `chore(agents):` sweep for AGENTS.md in its own PR.
+
+### `F3.87` — the site-wide administrator copilot, release 3: plant and network mimics ✅ 2026-10-16
+
+Nine PRs, squash-merged 2026-10-15 to 2026-10-16, as ADR 0099 Amendment 3 (#865) decides. One migration (`0110`), no new dependency. Plan: `docs/plans/f3.87-admin-copilot-release-3.md` (owner rulings Q1–Q5, 2026-10-15).
+
+- **#869** (`48a33a42`) — PR 1: the nine mimic-layout, symbol-library and asset-role write bodies move to `packages/shared/src/contracts/`.
+- **#868** (`eb5dd2da`) — PR 4: `LlmContentPart` — the OpenAI/OpenRouter and Anthropic adapters send images and PDFs as native parts.
+- **#870** (`be922439`) — PR 3: migration `0110` `attachments_enabled` (default off), its access rules and the second switch.
+- **#871** (`4c023925`) — PR 2 ⭐: `offeredTo`, `upload`, `cardOnly`, the role-filtered propose registries and the four read tools.
+- **#873** (`49ee0095`) — PR 5: the layout entries, the role card first (ruling Q4), the baseline snapshot (Q5), the drawn card.
+- **#872** (`4499ef16`) — PR 6a ⭐: the upload proposal (the parser at propose time) and the two-stage multipart Confirm.
+- **#875** (`b82110e4`) — PR 6b: the six library, symbol and asset-role entries, the FormData Confirm, the symbol card, the wizards (ruling Q2).
+- **#874** (`c1a43c36`) — PR 7 ⭐: attachments on the turn — magic bytes, limits, every refusal before the turn is counted, content parts, the placeholder row, the access and asset intent cuts, the binding offer.
+- **#876** (`68ef02bc`) — PR 8: the dock's attach control, chips and the unscrubbed-file sentence; `e2e` run green.
+
+**Owner rulings 2026-10-16:** the propose tool-definitions cap rises from 48,000 to 52,000 characters; the files of one turn are at most 10 MB together (the proxies' `client_max_body_size 10m` is unchanged); a failed file turn's reply stays in the dock's error banner.
+
+**Deviations from the plan, recorded:** the symbol card draws from a `data:` URL, not a `blob:` URL (a blob URL carries the app's origin; security review); the read-from-file note reads the turn's history window (20 rows), not the whole conversation; a filename with a line separator, a bidi control or a credential shape is refused at inspection (security review).
+
+Verified: every PR's touched suites, `pnpm typecheck:tests` and CI before its merge; mutations on every guard; a merge-skew `repo` run after the 5 ∥ 6 pair and after PR 7. **Step 6 on `main` `68ef02bc`** (API and web from source, local auth; the laptop could not hold a `--no-cache` rebuild): the API booted; the upload Confirm 201 / changed byte 409 / another library 409 / 65 KB 413 / released row re-confirms 201 / manual upload 201; the no-key file-turn refusals; with ESKOM's key (OpenRouter `z-ai/glm-5.3`) a model-proposed `mimicSymbol.upload` card from an attached `.svg` applied with 201, the dock's attach control, three chips, the fourth-file refusal and the pick-clear, the `data:` symbol card and the dock's FormData Confirm, a drawn layout card applied from the dock and the binding offer after it. The model reads no images (OpenRouter 404), so a PNG turn gave the D5 reply; a successful image turn is unverified live (`F4.264`).
+
+**Cascade:** no row lists `F3.87` in *Depends* except its follow-up `F4.264`.
+
+Owed: `F4.263`, `F4.264`; a `chore(agents):` sweep for AGENTS.md in its own PR.
