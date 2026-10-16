@@ -382,6 +382,11 @@ function DockPanel({
   useEffect(() => {
     if (!attachAllowed) setFiles([]);
   }, [attachAllowed]);
+  // A pick of another organization drops them too, even when `attachAllowed` never goes false: the
+  // new organization's status can be cached as on, and the user agreed only to the old one's provider.
+  useEffect(() => {
+    setFiles([]);
+  }, [organizationId]);
 
   useEffect(() => {
     const thread = threadRef.current;
@@ -891,6 +896,11 @@ function DockPanel({
             <p className="border-t border-line p-3 text-xs text-ink-muted">Checking this organization…</p>
           ) : skill !== null || configured ? (
             <form onSubmit={onSubmit} className="border-t border-line p-3">
+              {attachAllowed && (
+                <p className="mb-2 text-[11px] text-ink-muted">
+                  {unscrubbedSentence(scopeLabel)}
+                </p>
+              )}
               {attachAllowed && files.length > 0 && (
                 <ul aria-label="Files to attach" className="mb-2 flex flex-wrap gap-1">
                   {files.map((file, i) => (

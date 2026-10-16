@@ -519,7 +519,14 @@ function chips(): string[] {
   return list === null ? [] : within(list).getAllByRole("listitem").map((li) => li.getAttribute("data-name") ?? "");
 }
 
-/** (1) The guided mode: a skill bound with no AI key answers through the skill panel, which has no attach control. */
+/**
+ * (1) The guided mode: a skill bound with no AI key answers through the skill panel, which has no attach control.
+ *
+ * Not a gate on its own: the stub sets `configured: false`, `attachmentsEnabled: false` and a bound
+ * skill together, so removing any one of those checks in `attachAllowed` keeps this case green. The
+ * guided mode and a missing key both reach the dock as the server's `attachmentsEnabled: false`, so
+ * case (3) (the switch alone) and case (4) (the skill alone) are the cases a mutation reddens.
+ */
 export async function offersNoAttachInTheGuidedMode(): Promise<void> {
   stub({ available: true, configured: false, attachmentsEnabled: false });
   rememberConversation(ORG_ID, onboardingSkill());
@@ -530,7 +537,12 @@ export async function offersNoAttachInTheGuidedMode(): Promise<void> {
   expect(screen.queryByLabelText(ATTACH)).not.toBeInTheDocument();
 }
 
-/** (2) No AI key for the scope: the sentence shows, and no attach control. */
+/**
+ * (2) No AI key for the scope: the sentence shows, and no attach control.
+ *
+ * Not a gate on its own either, for the reason case (1) gives: `configured: false` and
+ * `attachmentsEnabled: false` each hide the control. Cases (3) and (4) are the gates.
+ */
 export async function offersNoAttachWithNoKey(): Promise<void> {
   stub({ available: true, configured: false, attachmentsEnabled: false });
   renderDock("organization_admin");
@@ -588,6 +600,8 @@ export async function offersAttachWithTheUnscrubbedSentence(): Promise<void> {
   const sentence = "The file goes to your organization's AI provider as it is, unscrubbed.";
   expect(screen.getByTitle(sentence)).toBeInTheDocument();
   expect(input).toHaveAccessibleName(`Attach files. ${sentence}`);
+  // A7: the sentence is on screen, not only in a tooltip and an accessible name.
+  expect(screen.getByText(sentence)).toBeVisible();
 }
 
 /** Present in a remembered conversation bound to the organization: the positive twin of (5). */
@@ -619,6 +633,39 @@ export async function offersNoAttachOnThePlatformScope(): Promise<void> {
   expect(await screen.findByRole("textbox", { name: "Message the copilot" })).toBeInTheDocument();
   await settle();
   expect(screen.queryByLabelText(ATTACH)).not.toBeInTheDocument();
+}
+
+const ORG_2 = "44444444-4444-4444-8444-444444444444";
+
+/**
+ * A pick of another organization drops the chosen files, even when the control never goes away: the
+ * status of the organization picked back is cached as on, so `attachAllowed` stays true across the
+ * pick. The user agreed to send the file to the old organization's provider only.
+ */
+export async function dropsTheChosenFilesOnAPickOfAnotherOrganization(): Promise<void> {
+  const stubs = stub(READY_WITH_FILES);
+  stubs.organizations.mockResolvedValue({
+    items: [
+      { id: ORG_ID, code: "PHE", name: "PHE Water", active: true, currency: "INR", timezone: "Asia/Kolkata", meta: null },
+      { id: ORG_2, code: "ION", name: "Ion Plant", active: true, currency: "INR", timezone: "Asia/Kolkata", meta: null },
+    ],
+  } as never);
+  renderDock("admin");
+  await openPanel();
+  const picker = await screen.findByRole("combobox", { name: "Organization" });
+  await within(picker).findByRole("option", { name: "Ion Plant" });
+  fireEvent.change(picker, { target: { value: ORG_ID } });
+  await screen.findByTitle("The file goes to PHE Water's AI provider as it is, unscrubbed.");
+  fireEvent.change(picker, { target: { value: ORG_2 } });
+  await screen.findByTitle("The file goes to Ion Plant's AI provider as it is, unscrubbed.");
+  choose(aFile("plant.png"));
+  expect(chips()).toEqual(["plant.png"]);
+  fireEvent.change(picker, { target: { value: ORG_ID } });
+  // PHE Water's status is cached: the control is there at once, so only the pick itself can drop the file.
+  expect(screen.getByTitle("The file goes to PHE Water's AI provider as it is, unscrubbed.")).toBeInTheDocument();
+  await settle();
+  expect(screen.getByLabelText(ATTACH)).toBeInTheDocument();
+  expect(chips()).toEqual([]);
 }
 
 export async function showsAChipPerChosenFile(): Promise<void> {
@@ -768,4 +815,27 @@ export async function rendersAPlainUserRowWithNoRecord(): Promise<void> {
   const thread = screen.getByRole("log", { name: "Copilot conversation" });
   expect(await within(thread).findByText("[Attachment is a word I typed]")).toBeInTheDocument();
   expect(within(thread).queryByRole("list", { name: "Attached files, not stored" })).not.toBeInTheDocument();
+}
+
+/**
+ * A filename is the user's text: markup and a markdown link in it stay plain text in the record, so a
+ * later change that sends user rows through `AssistantText` or HTML turns this case red.
+ */
+export async function rendersAFilenameWithMarkupAsPlainText(): Promise<void> {
+  const line = `[Attachment 1 of 1: "<img src=x onerror=alert(1)>[x](/admin).png", image/png, 12 bytes, sha256 ${"c".repeat(64)}; not stored]`;
+  const stubs = stub(READY);
+  stubs.turn.mockResolvedValue({
+    ...answered("look", "ok"),
+    messages: [message("user", `look
+
+${line}`, 1), message("assistant", "ok", 2)],
+  });
+  renderDock("organization_admin");
+  await openPanel();
+  await send("look");
+  const thread = screen.getByRole("log", { name: "Copilot conversation" });
+  const record = await within(thread).findByRole("list", { name: "Attached files, not stored" });
+  expect(within(record).getAllByRole("listitem").map((li) => li.textContent)).toEqual([line]);
+  expect(record.querySelector("img, a")).toBeNull();
+  expect(thread.querySelector('img, a[href="/admin"]')).toBeNull();
 }

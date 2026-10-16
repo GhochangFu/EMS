@@ -27,6 +27,7 @@ import {
   showsTheInputWhenConfigured,
   showsTheSentenceAndNoInputWhenNotConfigured,
   clearsTheChipsAfterTheTurnIsAnswered,
+  dropsTheChosenFilesOnAPickOfAnotherOrganization,
   namesThePickedOrganizationInTheSentence,
   offersAttachInAConversationBoundToTheOrganization,
   offersAttachWithTheUnscrubbedSentence,
@@ -41,6 +42,7 @@ import {
   refusesAFourthFile,
   refusesAnSvgOverSixtyFourKilobytes,
   removesAChip,
+  rendersAFilenameWithMarkupAsPlainText,
   rendersAPlainUserRowWithNoRecord,
   rendersThePlaceholderLinesAsAMutedRecord,
   sendsAPlainTurnWithoutAFileList,
@@ -114,6 +116,7 @@ describe("F3.87 PR 8 copilot dock — the picker's client checks and chips", () 
   it("refuses a file over 10 MB", refusesAFileOverTenMegabytes);
   it("refuses an .svg over 64 KB", refusesAnSvgOverSixtyFourKilobytes);
   it("removes a chip", removesAChip);
+  it("drops the chosen files on a pick of another organization", dropsTheChosenFilesOnAPickOfAnotherOrganization);
 });
 
 describe("F3.87 PR 8 copilot dock — sending files and the record they leave", () => {
@@ -126,4 +129,5 @@ describe("F3.87 PR 8 copilot dock — sending files and the record they leave", 
   it("sends a plain turn without a file list", sendsAPlainTurnWithoutAFileList);
   it("renders the placeholder lines as a muted record", rendersThePlaceholderLinesAsAMutedRecord);
   it("renders a plain user row with no record", rendersAPlainUserRowWithNoRecord);
+  it("renders a filename with markup as plain text", rendersAFilenameWithMarkupAsPlainText);
 });
