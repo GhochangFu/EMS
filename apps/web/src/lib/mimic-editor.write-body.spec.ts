@@ -9,8 +9,8 @@ import { editorLayoutFromWriteBody, toWriteBody } from "./mimic-editor";
  * Vitest entry point: the sibling `.test.ts`.
  *
  * The fixtures are the `F3.80` demo networks (`packages/db/src/network-demo-seed.ts`), in the
- * write body's shape: the seed writes rows directly, so its hyphenated keys (`grid-cb`) are
- * spelled with an underscore here, as `MIMIC_LAYOUT_NODE_KEY` requires of a body.
+ * write body's shape. Their keys are spelled with an underscore (`grid_cb`), as in the seed
+ * since `F4.263`, because `MIMIC_LAYOUT_NODE_KEY` refuses a hyphen in a body.
  */
 
 type Tuple = [key: string, symbol: string, label: string, role: string | null, isSource: boolean, isSwitching: boolean, fanOut: boolean, x: number, y: number];

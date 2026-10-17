@@ -73,20 +73,20 @@ const FLOW = "network-demo-flow";
 
 /** `key symbol role is_source is_switching fan_out`, sorted by key. */
 const HT_LT_NODES = [
-  "bus-a switchboard - F F F",
-  "bus-b switchboard - F F F",
+  "bus_a switchboard - F F F",
+  "bus_b switchboard - F F F",
   "coupler breaker bus-coupler F F F",
   "dg generator dg-set T F F",
-  "dg-cb breaker dg-breaker F F F",
-  "fdr-a breaker load-feeder-breaker F F T",
-  "fdr-b breaker mains-feeder-breaker F F F",
-  "grid-cb breaker ht-incomer-breaker T F F",
-  "iso-b breaker isolator F F F",
-  "lt-a switchboard lt-panel F F F",
-  "lt-b switchboard - F F F",
-  "out-cb-a breaker ht-outgoing-breaker F F F",
-  "tr-a transformer transformer F F F",
-  "tr-b transformer - F F F",
+  "dg_cb breaker dg-breaker F F F",
+  "fdr_a breaker load-feeder-breaker F F T",
+  "fdr_b breaker mains-feeder-breaker F F F",
+  "grid_cb breaker ht-incomer-breaker T F F",
+  "iso_b breaker isolator F F F",
+  "lt_a switchboard lt-panel F F F",
+  "lt_b switchboard - F F F",
+  "out_cb_a breaker ht-outgoing-breaker F F F",
+  "tr_a transformer transformer F F F",
+  "tr_b transformer - F F F",
 ];
 
 const FLOW_NODES = [
@@ -94,34 +94,34 @@ const FLOW_NODES = [
   "cv valve control-valve F T F",
   "damper qet:air-damper damper F T F",
   "header tank - F F F",
-  "iso-v1 valve isolation-valve F T F",
+  "iso_v1 valve isolation-valve F T F",
   "pump pump pump T F F",
-  "tank-a tank - F F F",
+  "tank_a tank - F F F",
   "zone discharge - F F F",
 ];
 
 const HT_LT_PIPES = [
-  "grid-cb->bus-a",
-  "bus-a->coupler",
-  "coupler->bus-b",
-  "bus-b->coupler",
-  "coupler->bus-a",
-  "dg->dg-cb",
-  "dg-cb->bus-b",
-  "bus-a->out-cb-a",
-  "out-cb-a->tr-a",
-  "tr-a->lt-a",
-  "lt-a->fdr-a",
-  "bus-b->iso-b",
-  "iso-b->tr-b",
-  "tr-b->lt-b",
-  "lt-b->fdr-b",
+  "grid_cb->bus_a",
+  "bus_a->coupler",
+  "coupler->bus_b",
+  "bus_b->coupler",
+  "coupler->bus_a",
+  "dg->dg_cb",
+  "dg_cb->bus_b",
+  "bus_a->out_cb_a",
+  "out_cb_a->tr_a",
+  "tr_a->lt_a",
+  "lt_a->fdr_a",
+  "bus_b->iso_b",
+  "iso_b->tr_b",
+  "tr_b->lt_b",
+  "lt_b->fdr_b",
 ];
 
 const FLOW_PIPES = [
   "pump->header",
-  "header->iso-v1",
-  "iso-v1->tank-a",
+  "header->iso_v1",
+  "iso_v1->tank_a",
   "header->cv",
   "cv->ahu",
   "ahu->damper",
@@ -308,7 +308,7 @@ describe.skipIf(!ownerUrl)("F3.80 Task 3.2 — the network demo seed at RSMOC-WC
 
   /**
    * ADR 0101 d16 over the read-back graph: coupler open, DG breaker open (OQ4 (a)), every other
-   * breaker closed, LT-A-F2 tripped. `dg->dg-cb` stays energised: a source's outbound is never
+   * breaker closed, LT-A-F2 tripped. `dg->dg_cb` stays energised: a source's outbound is never
    * gated unless the source itself switches (ADR 0088) — asserted so nobody files it as a defect.
    */
   it("energiseGraph over the read-back HT/LT graph leaves branch A live and branch B dead", async () => {
@@ -319,8 +319,8 @@ describe.skipIf(!ownerUrl)("F3.80 Task 3.2 — the network demo seed at RSMOC-WC
     });
     const held: Readonly<Record<string, readonly SwitchState[]>> = {
       coupler: ["open"],
-      "dg-cb": ["open"],
-      "fdr-a": ["closed", "tripped"],
+      dg_cb: ["open"],
+      fdr_a: ["closed", "tripped"],
     };
     const switching = nodes.filter((node) => node.is_switching || isSwitchingSymbol(node.symbol));
     const states = new Map<string, readonly SwitchState[]>(
@@ -341,13 +341,13 @@ describe.skipIf(!ownerUrl)("F3.80 Task 3.2 — the network demo seed at RSMOC-WC
     const at = (from: string, to: string): string => walk?.pipes.get(mimicPipeKey(from, to)) ?? "absent";
     expect({
       switching: switching.length,
-      gridToBusA: at("grid-cb", "bus-a"),
-      busAToOutCb: at("bus-a", "out-cb-a"),
-      dgCbToBusB: at("dg-cb", "bus-b"),
-      isoBToTrB: at("iso-b", "tr-b"),
-      dgToDgCb: at("dg", "dg-cb"),
+      gridToBusA: at("grid_cb", "bus_a"),
+      busAToOutCb: at("bus_a", "out_cb_a"),
+      dgCbToBusB: at("dg_cb", "bus_b"),
+      isoBToTrB: at("iso_b", "tr_b"),
+      dgToDgCb: at("dg", "dg_cb"),
     }).toEqual({
-      // Seven switching nodes for eight breakers: LT-A-F1 and LT-A-F2 share the fan-out `fdr-a`.
+      // Seven switching nodes for eight breakers: LT-A-F1 and LT-A-F2 share the fan-out `fdr_a`.
       switching: 7,
       gridToBusA: "energised",
       busAToOutCb: "energised",
@@ -453,9 +453,9 @@ describe.skipIf(!ownerUrl)("F3.80 Task 3.2 — the network demo seed at RSMOC-WC
       }).toEqual({ widgets: ["layout"], points: ["breaker_main", "breaker_trip"] });
     });
 
-    it("answers iso-v1 with valve_open and the valve_open map with tones shut and flowing", async () => {
+    it("answers iso_v1 with valve_open and the valve_open map with tones shut and flowing", async () => {
       const answer = await readDashboard(FLOW);
-      const iso = answer.widgets[0]?.nodes.find((node) => node.key === "iso-v1");
+      const iso = answer.widgets[0]?.nodes.find((node) => node.key === "iso_v1");
       const map = answer.stateMaps.find((entry) => entry.pointKey === "valve_open");
       expect({
         points: iso?.statePoints.map((point) => point.pointKey),
@@ -483,7 +483,7 @@ describe.skipIf(!ownerUrl)("F3.80 Task 3.2 — the network demo seed at RSMOC-WC
     await inTransaction(async (pool) => {
       const moved = await pool.query(
         `UPDATE bms.mimic_layout_nodes n SET x = 3, y = 4 FROM bms.mimic_layouts l
-          WHERE l.id = n.layout_id AND l.organization_id = $1 AND l.slug = $2 AND n.key = 'grid-cb'`,
+          WHERE l.id = n.layout_id AND l.organization_id = $1 AND l.slug = $2 AND n.key = 'grid_cb'`,
         [eskomOrgId, HT_LT],
       );
       const bumped = await pool.query(
@@ -495,7 +495,7 @@ describe.skipIf(!ownerUrl)("F3.80 Task 3.2 — the network demo seed at RSMOC-WC
       const res = await pool.query<{ row: string }>(
         `SELECT n.x || ',' || n.y || ' v' || l.version AS row
            FROM bms.mimic_layout_nodes n JOIN bms.mimic_layouts l ON l.id = n.layout_id
-          WHERE l.organization_id = $1 AND l.slug = $2 AND n.key = 'grid-cb'`,
+          WHERE l.organization_id = $1 AND l.slug = $2 AND n.key = 'grid_cb'`,
         [eskomOrgId, HT_LT],
       );
       read = res.rows.map((row) => row.row).join(";");
@@ -503,20 +503,20 @@ describe.skipIf(!ownerUrl)("F3.80 Task 3.2 — the network demo seed at RSMOC-WC
     expect(read).toBe("3,4 v2");
   });
 
-  // Mutation: write nodes on every pass (`ON CONFLICT DO NOTHING` per node) → tr-b comes back → red.
+  // Mutation: write nodes on every pass (`ON CONFLICT DO NOTHING` per node) → tr_b comes back → red.
   it("does not put back a node an operator deleted", async () => {
     let keys: string[] = [];
     await inTransaction(async (pool) => {
       const gone = await pool.query(
         `DELETE FROM bms.mimic_layout_nodes n USING bms.mimic_layouts l
-          WHERE l.id = n.layout_id AND l.organization_id = $1 AND l.slug = $2 AND n.key = 'tr-b'`,
+          WHERE l.id = n.layout_id AND l.organization_id = $1 AND l.slug = $2 AND n.key = 'tr_b'`,
         [eskomOrgId, HT_LT],
       );
-      if (gone.rowCount !== 1) throw new Error("precondition: tr-b was deleted");
+      if (gone.rowCount !== 1) throw new Error("precondition: tr_b was deleted");
       await seedNetworkDemo(pool, eskomOrgId, rsmocWcId, silent);
       keys = (await nodesOf(pool, HT_LT)).map((node) => node.key);
     });
-    expect({ count: keys.length, hasTrB: keys.includes("tr-b"), hasTrA: keys.includes("tr-a") }).toEqual({
+    expect({ count: keys.length, hasTrB: keys.includes("tr_b"), hasTrA: keys.includes("tr_a") }).toEqual({
       count: 13,
       hasTrB: false,
       hasTrA: true,

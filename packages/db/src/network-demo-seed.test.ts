@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertEveryCodeIsUniqueAndStartsWithNw,
   assertEveryCodeSitsAtTheControlRoomSite,
+  assertEveryLayoutBodyParsesAsAPutBody,
   assertTheCatalogCarriesThemAfterTheWaterPlant,
   assertTheDomainsAreElectricalWaterAndHvac,
 } from "./network-demo-seed.spec";
@@ -22,5 +23,11 @@ describe("F3.80 PR3 — the ND- demo assets", () => {
 
   it("spreads them into the ESKOM catalog after the demo water plant", () => {
     assertTheCatalogCarriesThemAfterTheWaterPlant();
+  });
+});
+
+describe("F4.263 — the ND- demo layouts", () => {
+  it("writes two layouts the PUT body schema accepts", () => {
+    assertEveryLayoutBodyParsesAsAPutBody();
   });
 });
