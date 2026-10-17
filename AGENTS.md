@@ -989,6 +989,11 @@
 > no row, `LLM_PROVIDER` and its key and model in `.env` are the platform
 > default. With no provider the rule-based path answers with no notice; on a
 > provider error, or an incomplete organization row, it answers with a notice.
+> **Since `F4.267` (ADR 0090 Amendment 3, #880)** a setting may also name a
+> vision model (`vision_model`, migration `0111`; `LLM_VISION_MODEL` for the
+> platform default) on the same provider and key: the resolver uses it only
+> for a copilot turn that carries a PNG, JPEG or WebP — a PDF or an `.svg`
+> stays on the main model — and the Test button checks both models.
 > The setting has its own admin page and route group,
 > `/api/v1/admin/organizations/:orgId/ai-assistant` (§4.7's sixth gate). Next
 > under ADR 0090: `F3.22` is built under ADR 0091, and `F3.23`–`F3.27` (Track E)
