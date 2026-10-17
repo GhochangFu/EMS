@@ -22,6 +22,7 @@ import { ApiError } from "../../lib/api-error";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { useCopilotStore } from "../../stores/copilot-store";
 import { OPERATIONAL } from "../system-status-indicator.spec";
+import { PDF_DRAWING_NOTE } from "./copilot-attachment-note";
 import { COPILOT_OPEN_KEY, CopilotDock, formatCopilotReset } from "./copilot-dock";
 
 /**
@@ -740,6 +741,35 @@ export async function removesAChip(): Promise<void> {
   choose(aFile("a.png"), aFile("b.pdf"));
   fireEvent.click(screen.getByRole("button", { name: "Remove a.png" }));
   expect(chips()).toEqual(["b.pdf"]);
+}
+
+/**
+ * `F4.268` (ADR 0090 Amendment 3 ruling 6): a chosen PDF shows the note that a
+ * drawing in it is read as text only; removing it removes the note.
+ * Mutations: drop the render → the first half red; render it whatever the files → the removal half red.
+ */
+export async function showsThePdfNoteWhenAPdfIsChosen(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  choose(aFile("sld.PDF"));
+  expect(screen.getByText(PDF_DRAWING_NOTE)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Remove sld.PDF" }));
+  expect(chips()).toEqual([]);
+  expect(screen.queryByText(PDF_DRAWING_NOTE)).not.toBeInTheDocument();
+}
+
+/** No note before a file, nor for an image; the chip is the positive control. Mutation: show it for any file → red. */
+export async function showsNoPdfNoteForAnImage(): Promise<void> {
+  stub(READY_WITH_FILES);
+  renderDock("organization_admin");
+  await openPanel();
+  await screen.findByLabelText(ATTACH);
+  expect(screen.queryByText(PDF_DRAWING_NOTE)).not.toBeInTheDocument();
+  choose(aFile("plant.png"));
+  expect(chips()).toEqual(["plant.png"]);
+  expect(screen.queryByText(PDF_DRAWING_NOTE)).not.toBeInTheDocument();
 }
 
 /**
