@@ -229,6 +229,7 @@
     "tests/f3.86-onboarding-retired.test.ts",
     "tests/f3.87-copilot-attachments-schema.test.ts",
     "tests/f3.87-upload-entries-guarded.test.ts",
+    "tests/f4.130-nginx-cache-headers.test.ts",
     "tests/f4.267-vision-model-migration.test.ts"
   ]
 }
