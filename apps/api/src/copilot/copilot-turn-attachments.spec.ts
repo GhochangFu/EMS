@@ -478,6 +478,24 @@ export async function aDeadlineOnAPdfTurnAppendsThePdfNote(): Promise<void> {
 }
 
 /**
+ * `F4.268` review: the 45 s deadline on a text turn keeps the plain failed
+ * reply — the non-PDF negative of the `cap_time` arm. Mutation: drop the
+ * `pdfTextOnly` guard for `cap_time` → red.
+ */
+export async function aDeadlineOnATextTurnKeepsThePlainReply(): Promise<void> {
+  vi.useFakeTimers();
+  try {
+    const h = harness(new FakeLlmProvider(["hang"]));
+    const pending = h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "how many alarms?", "user");
+    await vi.advanceTimersByTimeAsync(TURN_DEADLINE_MS);
+    const response = await pending;
+    expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_TURN_FAILED_REPLY });
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+/**
  * The call cap (`cap_calls`) on a PDF-only turn keeps the plain reply: the
  * task names `cap_time` and a provider failure only. Mutation: append on every
  * non-final stop → red.

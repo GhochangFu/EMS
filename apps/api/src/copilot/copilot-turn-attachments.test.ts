@@ -44,6 +44,7 @@ describe("F4.268 — a drawing sent as a PDF (ADR 0090 Amendment 3 ruling 6)", (
   it("a text turn carries no clause", () => T.aTextTurnCarriesNoPdfClause());
   it("a provider error on a PDF-only turn appends the image rule", () => T.aProviderErrorOnAPdfTurnAppendsThePdfNote());
   it("the deadline on a PDF-only turn appends the image rule", () => T.aDeadlineOnAPdfTurnAppendsThePdfNote());
+  it("the deadline on a text turn keeps the plain reply", () => T.aDeadlineOnATextTurnKeepsThePlainReply());
   it("the call cap on a PDF-only turn keeps the plain reply", () => T.aCallCapOnAPdfTurnKeepsThePlainReply());
   it("a provider error on an image turn keeps the unreadable reply alone", () => T.aProviderErrorOnAnImageTurnKeepsTheUnreadableReplyAlone());
 });
