@@ -1344,6 +1344,13 @@
 > cannot propose an access change, nor an asset or point create its words
 > did not ask for. No new npm package. **The propose tool definitions are
 > capped at 52,000 characters** (owner ruling 2026-10-16; was 48,000).
+> **Every JSON Schema `pattern` they carry must compile as an ECMA-262 regex
+> without the `u` flag** — no `p{…}` escapes; state the ranges instead —
+> because OpenAI refuses the whole tool list otherwise (`F4.265`, #883; gated
+> by `apps/api/src/copilot/copilot-tool-definition-patterns.spec.ts`).
+> **A turn that carries a PDF and no image** is told the PDF reaches it as
+> text only and asks for a drawing as an image; the composer and a failed
+> reply say the same (`F4.268`, #885).
 > EMQX and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
