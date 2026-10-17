@@ -15,6 +15,7 @@ import {
   aPngNamedPdfIsAPng,
   aRefusedSvgCarriesTheRefusal,
   aPdfAloneIsNotAnImageTurn,
+  aPdfWithoutAnImageIsTextOnly,
   aPngBesideAPdfIsAnImageTurn,
   anSvgAloneIsNotAnImageTurn,
   eachRasterImageMakesAnImageTurn,
@@ -44,4 +45,8 @@ describe("F4.267 — which files make an image turn (ADR 0090 Amendment 3 C3)", 
   it("an SVG alone is not an image turn", () => anSvgAloneIsNotAnImageTurn());
   it("a PNG beside a PDF is an image turn", () => aPngBesideAPdfIsAnImageTurn());
   it("bytes of no known type are not an image turn", () => unknownBytesAreNotAnImageTurn());
+});
+
+describe("F4.268 — a PDF and no image is a text-only turn (ADR 0090 Amendment 3 ruling 6)", () => {
+  it("a PDF without an image is text only; an image beside it or no PDF is not", () => aPdfWithoutAnImageIsTextOnly());
 });
