@@ -20,6 +20,11 @@ writes go through the tool registry with action lines, and a coverage spec
 classifies every tool. It amends decisions 6 and 7, the *Consequences*, and
 ADR 0091 decision 11. It follows Amendment 1.
 
+**Amendment 3 (2026-10-17, before any implementation code)** records row
+`F4.267`: a second model per setting, used only for a copilot turn that
+carries an image, with the same provider and key. It amends A2–A6 of
+Amendment 1. It is at the end of this record.
+
 Implements row `F3.21` (Track E, Wave 2, ⭐). Amends
 [ADR 0011](./0011-ai-onboarding-chat.md) decision 1 (see *Amended records*).
 Keeps [ADR 0022](./0022-onboarding-credential-capture.md) unchanged. Promotes
@@ -816,3 +821,121 @@ Commit button or the typed `confirm commit` against an agent proposal
 commits. Amendment 1. The `F4.199` owner ruling (a label moves to `review`
 only). [ADR 0022](./0022-onboarding-credential-capture.md): its credential
 refusal still runs first, before either path.
+
+## Amendment 3 — a vision model for turns that carry an image (`F4.267`, 2026-10-17)
+
+### Status
+
+Accepted — the owner chose "Path B" on 2026-10-17 after the `F4.264` research
+(`docs/f4.264-copilot-model-research-2026-10-17.md`) and ruled six questions one at a
+time the same day, each as recommended except question 5. Drafted before any
+implementation code; the owner approves this written amendment before the
+build starts.
+
+**Why.** One setting holds one model, and the copilot sends every turn to it.
+The owner keeps `z-ai/glm-5.3` for the copilot's tool work — it is text only,
+so an attached drawing answers the "could not read the attached file" reply
+(ADR 0099 Amendment 3, plan D5). The `F4.264` live test found open-weight
+vision models that draw a layout from an image (`nvidia/nemotron-3.5-super-vl`
+first, `z-ai/glm-5.3-flash` second) but are weaker at general tool work. So a
+turn that carries an image goes to a second model, and every other turn stays
+on the first.
+
+**Supersedes nothing.** It adds one optional field to A2, A3, A5 and A6 and one
+rule to A4. Every other decision of Amendment 1 stands.
+
+### Gate questions
+
+1. **Which turns go to the vision model?** Options: a turn that carries an
+   image or a PDF; image turns only; the whole conversation once it carries a
+   file. **Ruled as recommended: a turn that carries an image or a PDF** —
+   then narrowed by question 6. A follow-up turn without a file stays on the
+   main model; history carries only the attachment placeholders (ADR 0099
+   Amendment 3), never the bytes.
+2. **How does the Test button check it?** Options: check both models; the
+   main model only. **Ruled as recommended: both.** The vision check sends one
+   tiny image with the trivial tool.
+3. **A platform default too?** Options: one optional `.env` variable;
+   organizations only. **Ruled as recommended: one optional variable.**
+4. **Fix `F4.266` in the same work?** Options: state the layout shape in the
+   two layout tools' field list; return the whole shape from
+   `describe_change`; keep it separate. **Ruled as recommended: state the
+   shape.** This is a copilot catalog change under ADR 0099; it is recorded
+   here because the vision model is of no use to a plain request without it.
+5. **Which vision model on ESKOM?** After 13 more live turns per model
+   (`F4.264` research, *Detailed test*): `nvidia/nemotron-3.5-super-vl`
+   passed 10 of 10 image turns and 0 of 3 PDF turns (its first reply took
+   44 s of the 45 s deadline); `z-ai/glm-5.3-flash` passed 9 of 10 and 2 of 3.
+   Options: GLM-5.3-Flash (recommended); Nemotron. **Ruled: Nemotron.**
+6. **Do PDF turns still go to the vision model?** Options: images only; keep
+   PDFs. **Ruled as recommended: images only.** A PDF stays on the main model,
+   which OpenRouter feeds the parsed text (ADR 0099 Amendment 3 A5), so a
+   text document works and a drawing in a PDF loses its pictures; the user
+   sends a drawing as an image.
+
+### Decisions
+
+C1. **Column.** The next free migration adds
+    `bms.organization_llm_settings.vision_model varchar(200)` — nullable, no
+    default. A `CHECK` refuses a vision model on an `off` row
+    (`provider <> 'off' OR vision_model IS NULL`). The provider and the key
+    stay one per row: the vision model uses them. No backfill; every existing
+    row reads `NULL`, which keeps today's behaviour.
+
+C2. **Platform default.** One optional variable, `LLM_VISION_MODEL`, in
+    `.env.example` and passed to the `api` service in `docker-compose.yml`. It
+    uses `LLM_PROVIDER` and that provider's key. Empty means none. A2's boot
+    warning does not change: an empty vision model is not a missing variable.
+
+C3. **Resolution.** A4 gains one input: whether the turn carries a file. The
+    resolver returns the vision model when the turn carries at least one
+    image (PNG, JPEG, WebP) **and** the setting that answers (the
+    organization's row, else the platform default) names a vision model;
+    otherwise the main model, exactly as today. A PDF does not count
+    (question 6); a turn with an image and a PDF goes to the vision model,
+    which then gets the PDF through OpenRouter's parser. An `.svg` symbol
+    candidate does not count either: the turn sends its parser's summary as text. The
+    cross-organization (platform scope) turn takes no attachments today and
+    is unchanged. The onboarding chat takes no attachments and is unchanged.
+    The turn's log line gains `vision: true|false` — never a key.
+
+C4. **API.** `GET` gains `visionModel` (string or null), and its `platform`
+    object gains `visionModel`. `PUT` takes an optional `visionModel`
+    (trimmed, 1–200 characters; refused on an `off` setting); omitted or
+    `null` stores `NULL`. `POST …/test` takes an optional `visionModel`; when
+    given, a second minimal billed call sends one 1 × 1 PNG with the trivial
+    tool, and the answer gains `visionStatus`: `ok` or one class of A5's set,
+    plus a new class `no_image_support` (the provider refuses an image input).
+    The platform-key rule of A5 holds for the vision model too: with no stored
+    key, the request must name the platform's own vision model. The audit row
+    gains the vision model — still never the key.
+
+C5. **Web.** The AI assistant page gains a "Model for images (optional)"
+    field under the model field, with the line "Used only for a copilot turn
+    that carries an image. Empty sends those turns to the model above." The Test result shows both checks. No new page.
+
+C6. **`F4.266` — the layout shape in the tool definition.** The field list of
+    `mimicLayout.create` and `mimicLayout.replace` names a node's keys and
+    which kind takes which, a pipe's `fromKey` and `toKey`, and the core
+    symbol names, so a model can propose without `describe_change`. The
+    propose tool definitions stay under the 52,000-character cap (`F3.87`
+    ruling R1). Gate: the plain `F4.264` request — no hint — makes a correct
+    card on the vision model in a live turn.
+
+### Dependencies
+
+None.
+
+### Consequences
+
+- **An organization pays two models on one key.** The test showed an image
+  turn on the vision model costs under one US cent.
+- **A wrong vision model fails only image turns.** The Test button reports it
+  (`no_image_support`), and the image turn still answers the D5 reply.
+- **A drawing in a PDF is read as text only.** Revisit question 6 if the
+  owner moves to a vision model that reads a PDF inside the deadline.
+- **The setting stays one provider.** A vision model from another provider,
+  or a third model for some other kind of turn, needs a new amendment.
+- **`F4.266` closes with this row** if C6's live gate passes.
+- One migration (`migration-reviewer`), one page change, one route-group
+  change; `security-reviewer` checks C4's test endpoint and the audit row.
