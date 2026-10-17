@@ -25,7 +25,8 @@ import {
   providerLabel,
   saveAction,
   testAvailable,
-  testStatusSentence,
+  testResultLines,
+  VISION_MODEL_HELP,
   type AiAssistantChoice,
 } from "../../lib/ai-assistant-form";
 import { apiErrorMessage } from "../../lib/api-error-message";
@@ -95,10 +96,14 @@ function SettingsForm({ orgId, settings }: SettingsFormProps) {
   const [model, setModel] = useState(() =>
     settings.source === "organization" ? (settings.model ?? "") : "",
   );
+  // `F4.267` (ADR 0090 Amendment 3 C5): the model for image turns, started like the model.
+  const [visionModel, setVisionModel] = useState(() =>
+    settings.source === "organization" ? (settings.visionModel ?? "") : "",
+  );
   const [apiKey, setApiKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [testResult, setTestResult] = useState<string | null>(null);
+  const [testResult, setTestResult] = useState<readonly string[] | null>(null);
 
   function saved(dto: AiAssistantSettingsDto, message: string): void {
     queryClient.setQueryData(["admin", "ai-assistant", orgId], dto);
@@ -114,7 +119,12 @@ function SettingsForm({ orgId, settings }: SettingsFormProps) {
         return deleteAiAssistantSettings(orgId);
       }
       // `saveAction` returned "put", so the choice is a stored provider.
-      const built = buildPutBody(choice === "platform" ? "off" : choice, model, apiKey);
+      const built = buildPutBody(
+        choice === "platform" ? "off" : choice,
+        model,
+        apiKey,
+        visionModel,
+      );
       if (!built.ok) {
         setNotice(null);
         setError(built.message);
@@ -138,6 +148,7 @@ function SettingsForm({ orgId, settings }: SettingsFormProps) {
     onSuccess: (dto) => {
       setChoice("platform");
       setModel("");
+      setVisionModel("");
       saved(dto, "Removed. The platform default applies.");
     },
     onError: (err: unknown) => {
@@ -147,16 +158,16 @@ function SettingsForm({ orgId, settings }: SettingsFormProps) {
   });
 
   const testMutation = useMutation({
-    mutationFn: async (): Promise<string> => {
-      const built = buildTestBody(choice, settings.platform, model, apiKey);
+    mutationFn: async (): Promise<readonly string[]> => {
+      const built = buildTestBody(choice, settings.platform, model, apiKey, visionModel);
       if (!built.ok) {
-        return built.message;
+        return [built.message];
       }
       const result = await testAiAssistant(orgId, built.body);
-      return testStatusSentence(result.status);
+      return testResultLines(result);
     },
-    onSuccess: (sentence) => setTestResult(sentence),
-    onError: (err: unknown) => setTestResult(apiErrorMessage(err)),
+    onSuccess: (lines) => setTestResult(lines),
+    onError: (err: unknown) => setTestResult([apiErrorMessage(err)]),
   });
 
   function handleSubmit(event: FormEvent): void {
@@ -195,6 +206,11 @@ function SettingsForm({ orgId, settings }: SettingsFormProps) {
                   ? (settings.model ?? "")
                   : "",
               );
+              setVisionModel(
+                settings.source === "organization" && next === settings.provider
+                  ? (settings.visionModel ?? "")
+                  : "",
+              );
               setApiKey("");
               setTestResult(null);
               setNotice(null);
@@ -223,6 +239,18 @@ function SettingsForm({ orgId, settings }: SettingsFormProps) {
             onChange={(event) => setModel(event.target.value)}
           />
         </label>
+        <div className="space-y-1">
+          <label className="block text-xs font-semibold text-ink-muted">
+            Model for images (optional)
+            <input
+              className="mt-1 w-full surface-field px-3 py-2 font-mono text-sm disabled:opacity-60"
+              value={visionModel}
+              disabled={!keyEnabled}
+              onChange={(event) => setVisionModel(event.target.value)}
+            />
+          </label>
+          <p className="text-xs text-ink-muted">{VISION_MODEL_HELP}</p>
+        </div>
         <label className="block text-xs font-semibold text-ink-muted">
           API key
           <input
@@ -279,7 +307,11 @@ function SettingsForm({ orgId, settings }: SettingsFormProps) {
         ) : null}
         {testResult ? (
           <p role="status" aria-label="Test result" className="text-sm text-ink">
-            {testResult}
+            {testResult.map((line) => (
+              <span key={line} className="block">
+                {line}
+              </span>
+            ))}
           </p>
         ) : null}
         <div className="flex justify-end gap-2">
