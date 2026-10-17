@@ -122,11 +122,16 @@ export type NetworkDemoNetwork = {
   readonly breakerTable: boolean;
 };
 
-/** A unit's box, in grid cells: the editor's default unit box (`MIMIC_EDITOR_DEFAULT_BOX`). */
-const UNIT_W = 20;
-const UNIT_H = 25;
-/** The editor's unit drawing order (`MIMIC_EDITOR_Z.unit`). */
-const UNIT_Z = 10;
+/**
+ * A unit's box, in grid cells: the editor's default unit box
+ * (`MIMIC_EDITOR_DEFAULT_BOX`), and `z` the editor's unit drawing order
+ * (`MIMIC_EDITOR_Z.unit`). Exported so the seed-parse spec sends the box the
+ * seed writes, not a copy of it.
+ */
+export const NETWORK_DEMO_UNIT_BOX = { w: 20, h: 25, z: 10 } as const;
+const UNIT_W = NETWORK_DEMO_UNIT_BOX.w;
+const UNIT_H = NETWORK_DEMO_UNIT_BOX.h;
+const UNIT_Z = NETWORK_DEMO_UNIT_BOX.z;
 
 const T = true;
 const F = false;

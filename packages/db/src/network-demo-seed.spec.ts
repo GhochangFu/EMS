@@ -2,7 +2,7 @@ import { putMimicLayoutBodySchema } from "@bms/shared";
 import { expect } from "vitest";
 
 import { CONTROL_ROOM_SITE_NAME, eskomSeedAssetCatalog } from "./eskom-assets-seed";
-import { NETWORK_DEMO_ASSETS, NETWORK_DEMO_NETWORKS } from "./network-demo-seed";
+import { NETWORK_DEMO_ASSETS, NETWORK_DEMO_NETWORKS, NETWORK_DEMO_UNIT_BOX } from "./network-demo-seed";
 import { DEMO_WATER_PLANT_ASSETS } from "./water-plant-demo-seed";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
@@ -83,9 +83,9 @@ export function assertEveryLayoutBodyParsesAsAPutBody(): void {
         ...(roleCode ? { roleCode } : {}),
         x,
         y,
-        w: 20,
-        h: 25,
-        z: 10,
+        w: NETWORK_DEMO_UNIT_BOX.w,
+        h: NETWORK_DEMO_UNIT_BOX.h,
+        z: NETWORK_DEMO_UNIT_BOX.z,
         ...(fanOut ? { fanOut: true } : {}),
         ...(isSource ? { isSource: true } : {}),
         ...(isSwitching ? { isSwitching: true } : {}),
