@@ -46,12 +46,13 @@ provide.
 | `CREDENTIAL_ENCRYPTION_KEY_PREVIOUS` | **Secret** — rotation only | unset (interpolated from compose `.env`) | 32-byte base64 key accepted for **decryption only**, during a rotation window (ADR 0062). Never encrypts. Refuses to boot if set while `CREDENTIAL_ENCRYPTION_KEY` is unset, or while `CREDENTIAL_ENCRYPTION_KEY_VERSION` is `1` (that would make it version 0, which no row can hold). Set on `api`, `api-replica` **and** `ingest`. See [`security/encryption-at-rest.md`](./security/encryption-at-rest.md) §3. |
 | `CREDENTIAL_ENCRYPTION_KEY_VERSION` | No | unset (default `1`) | The version `CREDENTIAL_ENCRYPTION_KEY` writes; a stored credential's `key_version` selects which of the two keys reads it. Must be a positive integer. Set on `api`, `api-replica` **and** `ingest`. See [`security/encryption-at-rest.md`](./security/encryption-at-rest.md) §3. |
 | `LLM_PROVIDER` | No | empty — the onboarding agent is off | `openai`, `openrouter` or `anthropic`: the onboarding agent's platform default (`F3.21`, ADR 0090 Amendment 1 A2). An organization's own setting on the AI assistant page wins. A selected provider without its key (or OpenRouter without a model) leaves the agent off and logs one boot warning naming the variable. Passed to `api` and `api-replica` in compose. |
-| `OPENAI_API_KEY` | **Secret** | unset | The `openai` provider's key for the platform default. Read only by `OnboardingLlmResolver`, never by an adapter. |
+| `OPENAI_API_KEY` | **Secret** | unset | The `openai` provider's key for the platform default. Read only by `LlmResolver`, never by an adapter. |
 | `OPENAI_MODEL` | No | `gpt-4o-mini` | The `openai` provider's model for the platform default. |
 | `OPENROUTER_API_KEY` | **Secret** | unset | The `openrouter` provider's key (the `openai` package at `https://openrouter.ai/api/v1`). |
 | `OPENROUTER_MODEL` | No | **none — required** when `LLM_PROVIDER=openrouter` | An OpenRouter model id that supports tool calling, for example `z-ai/glm-5.3-flash`. |
 | `ANTHROPIC_API_KEY` | **Secret** | unset | The `anthropic` provider's key (`@anthropic-ai/sdk`). |
 | `ANTHROPIC_MODEL` | No | `claude-sonnet-5-5` | The `anthropic` provider's model for the platform default. |
+| `LLM_VISION_MODEL` | No | empty — none | The platform default's model for a copilot turn that carries an image (`F4.267`, ADR 0090 Amendment 3 C2), on the same provider and key as `LLM_PROVIDER`. Used only for an image turn; empty sends image turns to the main model and is never a missing variable. An organization's own row names its own vision model. Passed to `api` and `api-replica` in compose. |
 
 ## Worker (apps/api/src/worker.ts)
 

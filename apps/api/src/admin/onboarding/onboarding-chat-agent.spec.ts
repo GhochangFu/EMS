@@ -37,7 +37,7 @@ function service(resolved: ResolvedLlm): { chat: OnboardingChatService; asked: s
 }
 
 function ready(llm: FakeLlmProvider): ResolvedLlm {
-  return { kind: "ready", provider: llm, source: "organization" };
+  return { kind: "ready", provider: llm, source: "organization", vision: false };
 }
 
 const CONTEXT = { sessionId: "s-42", history: [] };

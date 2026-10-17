@@ -36,6 +36,7 @@ const USER: AuthUser = {
 const PLATFORM: AiAssistantSettingsDto["platform"] = {
   provider: "openai",
   model: "gpt-4o-mini",
+  visionModel: null,
   keySet: true,
 };
 
@@ -44,6 +45,7 @@ const PLATFORM_DTO: AiAssistantSettingsDto = {
   source: "platform",
   provider: "openai",
   model: "gpt-4o-mini",
+  visionModel: null,
   keySet: true,
   keyLast4: null,
   updatedAt: null,
@@ -55,6 +57,7 @@ const ORG_DTO: AiAssistantSettingsDto = {
   source: "organization",
   provider: "openrouter",
   model: "z-ai/glm-5.3-flash",
+  visionModel: null,
   keySet: true,
   keyLast4: "9xyz",
   updatedAt: "2026-10-03T08:15:00.000Z",

@@ -31,11 +31,15 @@ export const aiAssistantTestStatusSchema = z.enum([
   "rate_limited",
   "unreachable",
   "provider_error",
+  /** F4.267 / ADR 0090 Amendment 3 C2: the model cannot read an image. */
+  "no_image_support",
 ]);
 
 export const aiAssistantTestResultDtoSchema = z
   .object({
     status: aiAssistantTestStatusSchema,
+    /** F4.267 / ADR 0090 Amendment 3 C4: the vision model's own check, present only when one was tested. */
+    visionStatus: aiAssistantTestStatusSchema.optional(),
   })
   .strict();
 
@@ -45,6 +49,8 @@ export const aiAssistantSettingsDtoSchema = z
     source: z.enum(["organization", "platform"]),
     provider: aiAssistantProviderChoiceSchema,
     model: z.string().nullable(),
+    /** F4.267 / ADR 0090 Amendment 3 C4: the model an image turn uses; null sends it to `model`. */
+    visionModel: z.string().nullable(),
     keySet: z.boolean(),
     keyLast4: z.string().length(4).nullable(),
     updatedAt: z.string().nullable(),
@@ -52,6 +58,8 @@ export const aiAssistantSettingsDtoSchema = z
       .object({
         provider: aiAssistantProviderChoiceSchema,
         model: z.string().nullable(),
+        /** `LLM_VISION_MODEL`, or null when it is empty. */
+        visionModel: z.string().nullable(),
         keySet: z.boolean(),
       })
       .strict(),

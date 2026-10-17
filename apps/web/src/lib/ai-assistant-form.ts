@@ -55,6 +55,7 @@ const TEST_STATUS_SENTENCES: Record<AiAssistantTestStatus, string> = {
   rate_limited: "The provider is limiting requests for this key. Try again later.",
   unreachable: "The provider did not answer in time. Try again later.",
   provider_error: "The provider answered with an error. Try again later.",
+  no_image_support: "This model cannot read an image. Choose a model that supports image input.",
 };
 
 /** A body, or the sentence that says why there is none. */

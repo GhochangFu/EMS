@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAnImageRefusalIsNoImageSupport,
   assertClassifyProviderErrorMapsTheTypedClasses,
   assertEachNameBuildsItsAdapter,
 } from "./llm-factory.spec";
@@ -13,5 +14,9 @@ describe("LLM provider factory (F3.21, ADR 0090 Amendment 1 A1/A5)", () => {
 
   it("maps provider errors to one test status", () => {
     assertClassifyProviderErrorMapsTheTypedClasses();
+  });
+
+  it("names a model that cannot read an image (F4.267)", () => {
+    assertAnImageRefusalIsNoImageSupport();
   });
 });

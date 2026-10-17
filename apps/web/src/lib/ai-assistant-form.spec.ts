@@ -31,6 +31,7 @@ function assertEqual(actual: unknown, expected: unknown, message: string): void 
 const PLATFORM_OPENAI: AiAssistantSettingsDto["platform"] = {
   provider: "openai",
   model: "gpt-4o-mini",
+  visionModel: null,
   keySet: true,
 };
 
@@ -89,9 +90,10 @@ export function testStatusSentences(): void {
     "rate_limited",
     "unreachable",
     "provider_error",
+    "no_image_support",
   ];
   const sentences = statuses.map((status) => testStatusSentence(status));
-  assertEqual(new Set(sentences).size, 7, "seven distinct sentences");
+  assertEqual(new Set(sentences).size, 8, "eight distinct sentences");
   for (const sentence of sentences) {
     assert(/^[A-Z].*\.$/.test(sentence), `a plain sentence: ${sentence}`);
     assert(!sentence.includes("_"), `no status code in the sentence: ${sentence}`);
@@ -135,7 +137,7 @@ export function testBodyRules(): void {
     "the platform default is tested exactly as configured, with no typed key",
   );
   assert(
-    !buildTestBody("platform", { provider: "openai", model: null, keySet: false }, "", "").ok,
+    !buildTestBody("platform", { provider: "openai", model: null, visionModel: null, keySet: false }, "", "").ok,
     "a platform default without a model cannot be tested",
   );
   assert(!buildTestBody("platform", { ...PLATFORM_OPENAI, provider: "off" }, "", "").ok, "an off platform");
@@ -169,12 +171,12 @@ export function choiceControlsAndLabels(): void {
     "platform summary",
   );
   assertEqual(
-    platformSummaryLine({ provider: "anthropic", model: null, keySet: false }),
+    platformSummaryLine({ provider: "anthropic", model: null, visionModel: null, keySet: false }),
     "The platform default is Anthropic, model not set, no key set.",
     "an incomplete platform",
   );
   assertEqual(
-    platformSummaryLine({ provider: "off", model: null, keySet: false }),
+    platformSummaryLine({ provider: "off", model: null, visionModel: null, keySet: false }),
     "The platform default is Off: the guided mode answers.",
     "an off platform",
   );

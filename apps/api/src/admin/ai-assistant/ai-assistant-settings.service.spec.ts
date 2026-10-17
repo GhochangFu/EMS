@@ -19,7 +19,7 @@ const PLATFORM_KEY = "sk-platform-key-0000";
 
 type Row = Parameters<LlmResolver["decryptKey"]>[0];
 
-const ENV_NAMES = ["LLM_PROVIDER", "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "CREDENTIAL_ENCRYPTION_KEY", "CREDENTIAL_ENCRYPTION_KEY_VERSION"];
+const ENV_NAMES = ["LLM_PROVIDER", "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "LLM_VISION_MODEL", "CREDENTIAL_ENCRYPTION_KEY", "CREDENTIAL_ENCRYPTION_KEY_VERSION"];
 
 /** The platform default is OpenRouter with a key and a model, and the credential key is set, unless `vars` says otherwise. */
 async function withEnv<T>(vars: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {

@@ -164,7 +164,7 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
       return options.attachmentsOn !== false;
     },
   };
-  const ready = (): ResolvedLlm => ({ kind: "ready", provider: llm as LlmProvider, source: "organization" });
+  const ready = (): ResolvedLlm => ({ kind: "ready", provider: llm as LlmProvider, source: "organization", vision: false });
   const resolver = {
     resolveForOrganization: async (id: string): Promise<ResolvedLlm> => {
       counts.resolveForOrganization.push(id);

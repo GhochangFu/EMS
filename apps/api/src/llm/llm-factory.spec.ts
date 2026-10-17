@@ -48,3 +48,23 @@ export function assertClassifyProviderErrorMapsTheTypedClasses(): void {
   aborted.abort();
   assert(classifyProviderError(apiError(500, "x"), aborted.signal) === "unreachable", "an aborted test call is unreachable");
 }
+
+/**
+ * `F4.267` / ADR 0090 Amendment 3 C2 — a model that cannot read an image is
+ * named as such, apart from one that cannot call a tool and from a model that
+ * does not exist. OpenRouter answers 404 "No endpoints found that support
+ * image input" for an image sent to a text-only model.
+ */
+export function assertAnImageRefusalIsNoImageSupport(): void {
+  const cases: [unknown, string][] = [
+    [apiError(404, "No endpoints found that support image input"), "no_image_support"],
+    [apiError(400, "This model does not support image input"), "no_image_support"],
+    [apiError(404, "No endpoints found that support tool use. Try disabling tools."), "no_tool_support"],
+    [apiError(404, "Not Found"), "unknown_model"],
+    [apiError(500, "image too large"), "provider_error"],
+  ];
+  for (const [err, expected] of cases) {
+    const got: string = classifyProviderError(err);
+    assert(got === expected, `${(err as Error).message} → ${expected}, got ${got}`);
+  }
+}

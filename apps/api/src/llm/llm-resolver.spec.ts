@@ -20,9 +20,10 @@ const LLM_VARS = [
   "OPENROUTER_MODEL",
   "ANTHROPIC_API_KEY",
   "ANTHROPIC_MODEL",
+  "LLM_VISION_MODEL",
 ] as const;
 
-/** Sets the seven A2 variables (unset unless given) and the credential key, then restores them. */
+/** Sets the seven A2 variables and LLM_VISION_MODEL (unset unless given) and the credential key, then restores them. */
 async function withEnv<T>(vars: Partial<Record<(typeof LLM_VARS)[number], string>>, fn: () => Promise<T> | T): Promise<T> {
   const names = [...LLM_VARS, "CREDENTIAL_ENCRYPTION_KEY", "CREDENTIAL_ENCRYPTION_KEY_VERSION"];
   const previous = Object.fromEntries(names.map((name) => [name, process.env[name]]));
@@ -298,5 +299,126 @@ export async function assertPlatformScopeIsGuidedWithoutThePlatformKey(): Promis
   await withEnv({}, async () => {
     const scope = await resolver(null).r.resolvePlatformScope(async () => true);
     assert(scope.kind === "guided" && scope.reason === "platform_off", "an off platform is the guided mode");
+  });
+}
+
+/**
+ * `F4.267` / ADR 0090 Amendment 3 C2/C3 — an image turn resolves the vision
+ * model when one is set: the organization row's `vision_model`, or with no row
+ * `LLM_VISION_MODEL`. Same provider and key; a text turn, or no vision model,
+ * keeps the main model.
+ */
+const VISION_ROW = { provider: "openrouter", model: "z-ai/glm-5.3-flash", visionModel: "qwen/qwen3-vl", apiKey: "org-key" } as const;
+
+export async function assertAnImageTurnBuildsTheRowsVisionModel(): Promise<void> {
+  await withEnv({}, async () => {
+    const { r, built } = resolver(orgRow(VISION_ROW));
+    const resolved = await r.resolveForOrganization("org-1", { image: true });
+    assert(resolved.kind === "ready" && resolved.vision, "an image turn with a vision model is a vision turn");
+    assert(
+      JSON.stringify(built) === JSON.stringify([{ name: "openrouter", apiKey: "org-key", model: "qwen/qwen3-vl" }]),
+      `the vision model on the same key, got ${JSON.stringify(built)}`,
+    );
+  });
+}
+
+export async function assertATextTurnKeepsTheMainModel(): Promise<void> {
+  await withEnv({}, async () => {
+    for (const options of [undefined, {}, { image: false }]) {
+      const { r, built } = resolver(orgRow(VISION_ROW));
+      const resolved = await r.resolveForOrganization("org-1", options);
+      assert(resolved.kind === "ready" && !resolved.vision, `a text turn is not a vision turn (${JSON.stringify(options)})`);
+      assert(
+        built.length === 1 && built[0]?.model === "z-ai/glm-5.3-flash",
+        `a text turn keeps the main model, got ${JSON.stringify(built)}`,
+      );
+    }
+  });
+}
+
+export async function assertAnImageTurnWithNoVisionModelKeepsTheMainModel(): Promise<void> {
+  await withEnv({}, async () => {
+    const { r, built } = resolver(orgRow({ ...VISION_ROW, visionModel: null }));
+    const resolved = await r.resolveForOrganization("org-1", { image: true });
+    assert(resolved.kind === "ready" && !resolved.vision, "no vision model: not a vision turn");
+    assert(
+      built.length === 1 && built[0]?.model === "z-ai/glm-5.3-flash",
+      `no vision model keeps the main model, got ${JSON.stringify(built)}`,
+    );
+  });
+}
+
+const PLATFORM_VISION = {
+  LLM_PROVIDER: "openrouter",
+  OPENROUTER_API_KEY: "plat-key",
+  OPENROUTER_MODEL: "z-ai/glm-5.3-flash",
+  LLM_VISION_MODEL: "qwen/qwen3-vl",
+} as const;
+
+export async function assertThePlatformVisionModelServesOnlyImageTurns(): Promise<void> {
+  await withEnv(PLATFORM_VISION, async () => {
+    const image = resolver(null);
+    const resolved = await image.r.resolveForOrganization("org-1", { image: true });
+    assert(resolved.kind === "ready" && resolved.source === "platform" && resolved.vision, "a platform image turn is a vision turn");
+    assert(
+      JSON.stringify(image.built) === JSON.stringify([{ name: "openrouter", apiKey: "plat-key", model: "qwen/qwen3-vl" }]),
+      `LLM_VISION_MODEL on the platform key, got ${JSON.stringify(image.built)}`,
+    );
+    const text = resolver(null);
+    const textResolved = await text.r.resolveForOrganization("org-1");
+    assert(textResolved.kind === "ready" && !textResolved.vision, "a platform text turn is not a vision turn");
+    assert(text.built[0]?.model === "z-ai/glm-5.3-flash", "a platform text turn keeps the main model");
+  });
+  const { LLM_VISION_MODEL: _unset, ...withoutVision } = PLATFORM_VISION;
+  await withEnv(withoutVision, async () => {
+    const { r, built } = resolver(null);
+    const resolved = await r.resolveForOrganization("org-1", { image: true });
+    assert(resolved.kind === "ready" && !resolved.vision, "LLM_VISION_MODEL unset: not a vision turn");
+    assert(built[0]?.model === "z-ai/glm-5.3-flash", "LLM_VISION_MODEL unset keeps the main model");
+  });
+}
+
+export async function assertAnEmptyVisionModelIsNotAMissingVariable(): Promise<void> {
+  const original = Logger.prototype.warn;
+  let warnings = 0;
+  Logger.prototype.warn = function () {
+    warnings += 1;
+  } as typeof Logger.prototype.warn;
+  try {
+    await withEnv({ LLM_PROVIDER: "openai", OPENAI_API_KEY: "oa-key", LLM_VISION_MODEL: "  " }, () => {
+      const { r } = resolver(null);
+      r.onModuleInit();
+      const platform = r.platformDefault();
+      assert(
+        platform.state === "ready" && platform.visionModel === null,
+        `an empty LLM_VISION_MODEL is ready with no vision model, got ${JSON.stringify(platform)}`,
+      );
+    });
+  } finally {
+    Logger.prototype.warn = original;
+  }
+  assert(warnings === 0, `an empty LLM_VISION_MODEL warns nothing, got ${warnings}`);
+}
+
+export async function assertAnOffRowIsGuidedForAnImageTurnToo(): Promise<void> {
+  await withEnv({ LLM_PROVIDER: "openai", OPENAI_API_KEY: "plat-key", LLM_VISION_MODEL: "gpt-4o" }, async () => {
+    const { r, built } = resolver(orgRow({ provider: "off", model: null }));
+    const resolved = await r.resolveForOrganization("org-1", { image: true });
+    assert(resolved.kind === "guided" && resolved.reason === "organization_off", "an off row is the guided mode on an image turn");
+    assert(built.length === 0, "nothing is built");
+  });
+}
+
+export async function assertThePlatformSummaryNamesTheVisionModelNeverAKey(): Promise<void> {
+  await withEnv({ ...PLATFORM_VISION, OPENROUTER_API_KEY: "plat-secret-key" }, () => {
+    const summary = resolver(null).r.platformSummary();
+    assert(summary.visionModel === "qwen/qwen3-vl", `the summary names the vision model, got ${JSON.stringify(summary)}`);
+    assert(!JSON.stringify(summary).includes("plat-secret-key"), "the summary carries no key");
+  });
+  await withEnv({ LLM_PROVIDER: "openrouter", OPENROUTER_API_KEY: "k", OPENROUTER_MODEL: "m" }, () => {
+    assert(resolver(null).r.platformSummary().visionModel === null, "no LLM_VISION_MODEL: the summary says null");
+  });
+  await withEnv({ LLM_VISION_MODEL: "qwen/qwen3-vl" }, () => {
+    assert(resolver(null).r.platformSummary().visionModel === null, "an off platform names no vision model");
   });
 }

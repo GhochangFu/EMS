@@ -69,6 +69,10 @@ export function classifyProviderError(err: unknown, signal?: AbortSignal): Exclu
   if (status === 429) {
     return "rate_limited";
   }
+  // F4.267 / ADR 0090 Amendment 3 C2: OpenRouter answers 404 "No endpoints found that support image input".
+  if ((status === 404 || status === 400) && /image/i.test(messageOf(err))) {
+    return "no_image_support";
+  }
   if ((status === 404 || status === 400) && /tool/i.test(messageOf(err))) {
     return "no_tool_support";
   }
