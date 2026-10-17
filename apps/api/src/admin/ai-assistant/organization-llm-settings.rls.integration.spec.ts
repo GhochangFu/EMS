@@ -83,15 +83,22 @@ async function fleetCount(ctx: LlmSettingsCtx, organizationId: string): Promise<
 const CIPHERTEXT = Buffer.from("not-a-real-ciphertext");
 const IV = Buffer.from("twelve-bytes");
 
-/** 1 — positive control: a tenant writes its own row, with all four key columns set. */
+/**
+ * 1 — positive control: a tenant writes its own row, with all four key columns
+ * set and a vision model (ADR 0090 Amendment 3 C1), and reads it back.
+ */
 export async function aTenantWritesItsOwnRow(ctx: LlmSettingsCtx): Promise<void> {
   await withTenant(ctx.tenantDb, ctx.orgA, (tx) =>
     tx.execute(sql`
       INSERT INTO bms.organization_llm_settings
-        (organization_id, provider, model, key_ciphertext, key_iv, key_version, key_last4)
-      VALUES (${ctx.orgA}, 'openai', 'gpt-4o-mini', ${CIPHERTEXT}, ${IV}, 1, 'xyz9')`),
+        (organization_id, provider, model, vision_model, key_ciphertext, key_iv, key_version, key_last4)
+      VALUES (${ctx.orgA}, 'openai', 'gpt-4o-mini', 'gpt-4o', ${CIPHERTEXT}, ${IV}, 1, 'xyz9')`),
   );
   expect(await fleetCount(ctx, ctx.orgA), "bms_fleet counts the row the tenant wrote").toBe(1);
+  const read = await withTenant(ctx.tenantDb, ctx.orgA, (tx) =>
+    tx.execute(sql`SELECT vision_model FROM bms.organization_llm_settings WHERE organization_id = ${ctx.orgA}`),
+  );
+  expect(read.rows, "the tenant reads its own vision model back").toEqual([{ vision_model: "gpt-4o" }]);
 }
 
 /**
@@ -218,6 +225,18 @@ export async function aHalfKeyIsRefused(ctx: LlmSettingsCtx): Promise<void> {
     "key_ciphertext without key_iv",
   );
   expectCheck(err, "organization_llm_settings_key_check");
+  expect(await fleetCount(ctx, ctx.orgB)).toBe(0);
+}
+
+/** 6b — ADR 0090 Amendment 3 C1: an off row stores no vision model. */
+export async function aVisionModelOnAnOffRowIsRefused(ctx: LlmSettingsCtx): Promise<void> {
+  const err = await refusedForB(
+    ctx,
+    sql`INSERT INTO bms.organization_llm_settings (organization_id, provider, vision_model)
+        VALUES (${ctx.orgB}, 'off', 'google/gemini-3-flash')`,
+    "provider 'off' with a vision model",
+  );
+  expectCheck(err, "organization_llm_settings_vision_model_check");
   expect(await fleetCount(ctx, ctx.orgB)).toBe(0);
 }
 
@@ -672,7 +691,7 @@ export async function aRemoveAuditsTheRowItDeletedNotTheRowItRead(ctx: LlmSettin
       entityId: ctx.orgA,
       organizationId: ctx.orgA,
       actor: { sub: "kc-f4187" },
-      payload: { provider: "anthropic", model: "claude-haiku-4-5", keyChanged: true },
+      payload: { provider: "anthropic", model: "claude-haiku-4-5", visionModel: null, keyChanged: true },
     },
   ]);
 }
@@ -742,7 +761,7 @@ export async function aRemoveWaitsForAPausedFirstSave(ctx: LlmSettingsCtx): Prom
       expect(
         remover.audits.map((a) => [a.action, a.payload]),
         "the audit describes save X's row",
-      ).toEqual([["master.organization.ai_assistant.delete", { provider: "openai", model: "gpt-4o-mini", keyChanged: true }]]);
+      ).toEqual([["master.organization.ai_assistant.delete", { provider: "openai", model: "gpt-4o-mini", visionModel: null, keyChanged: true }]]);
     } finally {
       x.release();
       await x.settled;
