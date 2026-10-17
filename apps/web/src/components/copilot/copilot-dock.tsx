@@ -40,6 +40,7 @@ import {
   useCopilotStore,
 } from "../../stores/copilot-store";
 import { useWizardStore } from "../../stores/wizard-store";
+import { hasPdfFile, PDF_DRAWING_NOTE } from "./copilot-attachment-note";
 import { AssistantText } from "./assistant-text";
 import { ConfirmCard } from "./confirm-card";
 import { OnboardingDraftPicker, type OnboardingDraftsOf } from "./onboarding-draft-picker";
@@ -935,6 +936,7 @@ function DockPanel({
                   ))}
                 </ul>
               )}
+              {attachAllowed && hasPdfFile(files) && <p className="mb-2 text-[11px] text-ink-muted">{PDF_DRAWING_NOTE}</p>}
               <div className="flex items-end gap-2">
                 {attachAllowed && (
                   <label
