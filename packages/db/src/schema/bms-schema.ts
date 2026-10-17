@@ -789,6 +789,7 @@ export const organizationLlmSettings = bmsSchema.table("organization_llm_setting
     .references(() => organizations.id, { onDelete: "cascade" }),
   provider: varchar("provider", { length: 16 }).notNull(),
   model: varchar("model", { length: 200 }),
+  visionModel: varchar("vision_model", { length: 200 }),
   keyCiphertext: bytea("key_ciphertext"),
   keyIv: bytea("key_iv"),
   keyVersion: integer("key_version"),

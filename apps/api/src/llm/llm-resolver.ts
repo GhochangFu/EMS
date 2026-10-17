@@ -37,10 +37,23 @@ function isProviderName(value: string): value is LlmProviderName {
 export type PlatformLlmDefault =
   | { readonly state: "off" }
   | { readonly state: "incomplete"; readonly provider: LlmProviderName | null; readonly missing: string }
-  | { readonly state: "ready"; readonly provider: LlmProviderName; readonly model: string; readonly apiKey: string };
+  | {
+      readonly state: "ready";
+      readonly provider: LlmProviderName;
+      readonly model: string;
+      readonly apiKey: string;
+      /** F4.267 / ADR 0090 Amendment 3 C2: `LLM_VISION_MODEL`, or `null` when it is empty. Never a missing variable. */
+      readonly visionModel: string | null;
+    };
 
 export type ResolvedLlm =
-  | { readonly kind: "ready"; readonly provider: LlmProvider; readonly source: "organization" | "platform" }
+  | {
+      readonly kind: "ready";
+      readonly provider: LlmProvider;
+      readonly source: "organization" | "platform";
+      /** F4.267 / ADR 0090 Amendment 3 C3: true when an image turn was given the vision model rather than the main one. */
+      readonly vision: boolean;
+    }
   | {
       readonly kind: "guided";
       /** `organization_incomplete` is the one reason the chat states to the user (plan ruling 13). */
@@ -116,21 +129,27 @@ export class LlmResolver implements OnModuleInit {
     if (!model) {
       return { state: "incomplete", provider: selected, missing: MODEL_VARIABLE[selected] };
     }
-    return { state: "ready", provider: selected, model, apiKey };
+    return { state: "ready", provider: selected, model, apiKey, visionModel: env("LLM_VISION_MODEL") || null };
   }
 
   /**
    * What the settings page shows of the platform default (A5): the provider,
-   * its model, and whether its key is set — never the key.
+   * its model, its vision model (F4.267), and whether its key is set — never the key.
    */
-  platformSummary(): { provider: LlmProviderName | "off"; model: string | null; keySet: boolean } {
+  platformSummary(): {
+    provider: LlmProviderName | "off";
+    model: string | null;
+    visionModel: string | null;
+    keySet: boolean;
+  } {
     const selected = env("LLM_PROVIDER");
     if (!isProviderName(selected)) {
-      return { provider: "off", model: null, keySet: false };
+      return { provider: "off", model: null, visionModel: null, keySet: false };
     }
     return {
       provider: selected,
       model: env(MODEL_VARIABLE[selected]) || DEFAULT_MODELS[selected],
+      visionModel: env("LLM_VISION_MODEL") || null,
       keySet: env(KEY_VARIABLE[selected]) !== "",
     };
   }
@@ -160,7 +179,16 @@ export class LlmResolver implements OnModuleInit {
     }
   }
 
-  async resolveForOrganization(organizationId: string): Promise<ResolvedLlm> {
+  /**
+   * `F4.267` / ADR 0090 Amendment 3 C3: `options.image` marks a turn that
+   * carries an image. It takes the vision model — the row's `vision_model`, or
+   * with no row `LLM_VISION_MODEL` — on the same provider and key, when one is
+   * set; otherwise the main model. Which way it went is `vision`.
+   */
+  async resolveForOrganization(
+    organizationId: string,
+    options: { readonly image?: boolean } = {},
+  ): Promise<ResolvedLlm> {
     const row = await this.readSetting(organizationId);
     if (row) {
       if (row.provider === "off") {
@@ -174,10 +202,13 @@ export class LlmResolver implements OnModuleInit {
         );
         return { kind: "guided", reason: "organization_incomplete" };
       }
+      const vision = options.image === true && row.visionModel !== null;
+      const model = vision && row.visionModel !== null ? row.visionModel : row.model;
       return {
         kind: "ready",
-        provider: this.buildProvider(row.provider, { apiKey, model: row.model }),
+        provider: this.buildProvider(row.provider, { apiKey, model }),
         source: "organization",
+        vision,
       };
     }
     const platform = this.platformDefault();
@@ -187,10 +218,13 @@ export class LlmResolver implements OnModuleInit {
     if (platform.state === "incomplete") {
       return { kind: "guided", reason: "platform_incomplete" };
     }
+    const vision = options.image === true && platform.visionModel !== null;
+    const model = vision && platform.visionModel !== null ? platform.visionModel : platform.model;
     return {
       kind: "ready",
-      provider: this.buildProvider(platform.provider, { apiKey: platform.apiKey, model: platform.model }),
+      provider: this.buildProvider(platform.provider, { apiKey: platform.apiKey, model }),
       source: "platform",
+      vision,
     };
   }
 

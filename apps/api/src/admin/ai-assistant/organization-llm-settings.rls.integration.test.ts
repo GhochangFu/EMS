@@ -18,6 +18,7 @@ import {
   aTenantCannotReadAnotherOrganizationsRow,
   aTenantCannotWriteAnotherOrganizationsRow,
   aTenantWritesItsOwnRow,
+  aVisionModelOnAnOffRowIsRefused,
   anUnknownProviderIsRefused,
   deletingTheOrganizationCascades,
   type LlmSettingsCtx,
@@ -136,6 +137,10 @@ describe.skipIf(!connectionString)("F3.21 — bms.organization_llm_settings (mig
 
   it("aHalfKeyIsRefused", async () => {
     await aHalfKeyIsRefused(ctx);
+  });
+
+  it("aVisionModelOnAnOffRowIsRefused", async () => {
+    await aVisionModelOnAnOffRowIsRefused(ctx);
   });
 
   it("deletingTheOrganizationCascades", async () => {

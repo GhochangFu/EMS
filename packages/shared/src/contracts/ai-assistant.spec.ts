@@ -1,5 +1,6 @@
 import {
   aiAssistantSettingsDtoSchema,
+  aiAssistantTestResultDtoSchema,
   aiAssistantTestStatusSchema,
 } from "./ai-assistant";
 
@@ -16,12 +17,13 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-const platform = { provider: "openai", model: "gpt-4o", keySet: true } as const;
+const platform = { provider: "openai", model: "gpt-4o", visionModel: null, keySet: true } as const;
 
 const organizationRow = {
   source: "organization",
   provider: "anthropic",
   model: "claude-sonnet-4",
+  visionModel: "claude-sonnet-4-vision",
   keySet: true,
   keyLast4: "a1b2",
   updatedAt: "2026-10-03T08:00:00.000Z",
@@ -68,7 +70,8 @@ export function assertSettingsDtoRefusesAKeyField(): void {
   assert(!nested.success, "a key field inside `platform` must fail the parse too");
 }
 
-export function assertTestStatusEnumIsTheSixPlusOk(): void {
+/** F4.267 / ADR 0090 Amendment 3 C2 appends `no_image_support` last. */
+export function assertTestStatusEnumIsTheSevenPlusOk(): void {
   const expected = [
     "ok",
     "invalid_key",
@@ -77,9 +80,40 @@ export function assertTestStatusEnumIsTheSixPlusOk(): void {
     "rate_limited",
     "unreachable",
     "provider_error",
+    "no_image_support",
   ];
   assert(
     JSON.stringify([...aiAssistantTestStatusSchema.options]) === JSON.stringify(expected),
     `test status options drifted: ${JSON.stringify(aiAssistantTestStatusSchema.options)}`,
+  );
+}
+
+/**
+ * F4.267 / ADR 0090 Amendment 3 C4 — the settings DTO always names the vision
+ * model (null for none), for the organization and for the platform default.
+ */
+export function assertSettingsDtoRequiresTheVisionModel(): void {
+  const { visionModel: _omitted, ...withoutVisionModel } = organizationRow;
+  assert(!aiAssistantSettingsDtoSchema.safeParse(withoutVisionModel).success, "a DTO without visionModel must fail the parse");
+  const { visionModel: _platformOmitted, ...platformWithout } = platform;
+  assert(
+    !aiAssistantSettingsDtoSchema.safeParse({ ...organizationRow, platform: platformWithout }).success,
+    "a platform without visionModel must fail the parse",
+  );
+  const named = aiAssistantSettingsDtoSchema.safeParse({ ...organizationRow, platform: { ...platform, visionModel: "qwen/qwen3-vl" } });
+  assert(named.success && named.data.platform.visionModel === "qwen/qwen3-vl", "a platform vision model parses and is kept");
+}
+
+/** F4.267 / ADR 0090 Amendment 3 C4 — the test result carries an optional second status for the vision model. */
+export function assertTestResultCarriesAnOptionalVisionStatus(): void {
+  const plain = aiAssistantTestResultDtoSchema.safeParse({ status: "ok" });
+  assert(plain.success && plain.data.visionStatus === undefined, "a result without visionStatus parses");
+  const both = aiAssistantTestResultDtoSchema.safeParse({ status: "ok", visionStatus: "no_image_support" });
+  assert(both.success && both.data.visionStatus === "no_image_support", "a result with visionStatus parses and keeps it");
+  assert(!aiAssistantTestResultDtoSchema.safeParse({ status: "ok", visionStatus: "maybe" }).success, "an unknown visionStatus fails");
+  const extra = aiAssistantTestResultDtoSchema.safeParse({ status: "ok", detail: "sk-secret" });
+  assert(
+    !extra.success && extra.error.issues.some((i) => i.code === "unrecognized_keys"),
+    "an unknown key in the test result must fail the parse",
   );
 }

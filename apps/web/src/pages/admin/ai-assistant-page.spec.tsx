@@ -36,6 +36,7 @@ const USER: AuthUser = {
 const PLATFORM: AiAssistantSettingsDto["platform"] = {
   provider: "openai",
   model: "gpt-4o-mini",
+  visionModel: null,
   keySet: true,
 };
 
@@ -44,6 +45,7 @@ const PLATFORM_DTO: AiAssistantSettingsDto = {
   source: "platform",
   provider: "openai",
   model: "gpt-4o-mini",
+  visionModel: null,
   keySet: true,
   keyLast4: null,
   updatedAt: null,
@@ -55,6 +57,7 @@ const ORG_DTO: AiAssistantSettingsDto = {
   source: "organization",
   provider: "openrouter",
   model: "z-ai/glm-5.3-flash",
+  visionModel: null,
   keySet: true,
   keyLast4: "9xyz",
   updatedAt: "2026-10-03T08:15:00.000Z",
@@ -100,6 +103,13 @@ function stubGet(dto: AiAssistantSettingsDto): void {
 async function providerSelect(): Promise<HTMLSelectElement> {
   return (await screen.findByLabelText("Provider")) as HTMLSelectElement;
 }
+
+function visionInput(): HTMLInputElement {
+  return screen.getByLabelText("Model for images (optional)") as HTMLInputElement;
+}
+
+/** ORG_DTO with a stored model for images. */
+const ORG_VISION_DTO: AiAssistantSettingsDto = { ...ORG_DTO, visionModel: "qwen/qwen3-vl" };
 
 function keyInput(): HTMLInputElement {
   return screen.getByLabelText("API key") as HTMLInputElement;
@@ -237,7 +247,7 @@ export async function testShowsTheStatusSentence(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Test" }));
 
   expect(
-    await screen.findByText("The provider refused the key. Check the key and try again."),
+    await screen.findByText("Model: The provider refused the key. Check the key and try again."),
   ).toBeInTheDocument();
   expect(test).toHaveBeenCalledWith(ORG_ID, {
     provider: "openrouter",
@@ -284,4 +294,90 @@ export async function aRefusedSaveShowsTheServersSentence(): Promise<void> {
   const banner = await screen.findByRole("alert");
   expect(banner).toHaveTextContent(NO_ENCRYPTION_KEY_MESSAGE);
   expectNoEnvelopeLeak(banner);
+}
+
+/**
+ * `F4.267` (ADR 0090 Amendment 3 C5) — the "Model for images" field starts
+ * from the stored vision model and carries its help line.
+ */
+export async function theVisionModelFieldShowsTheStoredValueAndHelp(): Promise<void> {
+  stubGet(ORG_VISION_DTO);
+  renderPage();
+  await providerSelect();
+
+  expect(visionInput().value).toBe("qwen/qwen3-vl");
+  expect(visionInput().disabled, "a provider takes a vision model").toBe(false);
+  expect(
+    screen.getByText(
+      "Used only for a copilot turn that carries an image. Empty sends those turns to the model above.",
+    ),
+  ).toBeInTheDocument();
+}
+
+/** Save resends the vision model in the field (D4: an omitted one is cleared server-side). */
+export async function saveSendsTheVisionModel(): Promise<void> {
+  stubGet(ORG_VISION_DTO);
+  const put = vi.spyOn(api, "putAiAssistantSettings").mockResolvedValue(ORG_VISION_DTO);
+  renderPage();
+  await providerSelect();
+
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+  expect(put.mock.calls[0]![1]).toEqual({
+    provider: "openrouter",
+    model: "z-ai/glm-5.3-flash",
+    visionModel: "qwen/qwen3-vl",
+  });
+}
+
+/** A cleared "Model for images" field omits visionModel, so the server stores none. */
+export async function aClearedVisionModelIsOmitted(): Promise<void> {
+  stubGet(ORG_VISION_DTO);
+  const put = vi.spyOn(api, "putAiAssistantSettings").mockResolvedValue(ORG_DTO);
+  renderPage();
+  await providerSelect();
+
+  await userEvent.clear(visionInput());
+  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(put).toHaveBeenCalledTimes(1));
+  expect(put.mock.calls[0]![1]).toEqual({ provider: "openrouter", model: "z-ai/glm-5.3-flash" });
+  expect(put.mock.calls[0]![1]).not.toHaveProperty("visionModel");
+}
+
+/** Test sends the vision model and shows both checks, one line each, in the Test result. */
+export async function testShowsBothChecks(): Promise<void> {
+  stubGet(ORG_VISION_DTO);
+  const test = vi
+    .spyOn(api, "testAiAssistant")
+    .mockResolvedValue({ status: "ok", visionStatus: "no_image_support" });
+  renderPage();
+  await providerSelect();
+
+  await userEvent.click(screen.getByRole("button", { name: "Test" }));
+
+  // Wait on the first line, which renders with the result, then read every line.
+  await screen.findByText("Model: The connection works: the provider answered and can call tools.");
+  const result = screen.getByRole("status", { name: "Test result" });
+  expect(Array.from(result.children, (line) => line.textContent)).toEqual([
+    "Model: The connection works: the provider answered and can call tools.",
+    "Model for images: This model cannot read an image. Choose a model that supports image input.",
+  ]);
+  expect(test).toHaveBeenCalledWith(ORG_ID, {
+    provider: "openrouter",
+    model: "z-ai/glm-5.3-flash",
+    visionModel: "qwen/qwen3-vl",
+  });
+  expect(document.body.textContent ?? "").not.toContain("no_image_support");
+}
+
+/** Off disables "Model for images", as it does the model and key fields. */
+export async function offDisablesTheVisionModelField(): Promise<void> {
+  stubGet(ORG_VISION_DTO);
+  renderPage();
+  const select = await providerSelect();
+
+  expect(visionInput().disabled, "control: a provider takes a vision model").toBe(false);
+  await userEvent.selectOptions(select, "off");
+  expect(visionInput().disabled).toBe(true);
+  expect(visionInput().value, "the field resets with the model on a provider change").toBe("");
 }

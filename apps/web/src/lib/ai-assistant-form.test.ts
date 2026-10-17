@@ -5,9 +5,14 @@ import {
   defaultModelPlaceholderPerProvider,
   keySetLineShowsLast4AndDate,
   platformChoiceSavesAsDelete,
+  platformSummaryNamesTheVisionModel,
+  putBodyCarriesTheVisionModel,
   putBodyRules,
+  testBodyCarriesTheVisionModel,
   testBodyRules,
+  testResultLinesOneOrTwo,
   testStatusSentences,
+  visionModelHelpText,
 } from "./ai-assistant-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -24,7 +29,7 @@ describe("ai-assistant-form (F3.21)", () => {
     platformChoiceSavesAsDelete();
   });
 
-  it("has one plain sentence for each of the seven test statuses", () => {
+  it("has one plain sentence for each of the eight test statuses", () => {
     testStatusSentences();
   });
 
@@ -38,5 +43,25 @@ describe("ai-assistant-form (F3.21)", () => {
 
   it("enables the key field and Test per choice, and words the platform default", () => {
     choiceControlsAndLabels();
+  });
+
+  it("F4.267 sends a typed vision model in the PUT body, omits an empty one, never with Off", () => {
+    putBodyCarriesTheVisionModel();
+  });
+
+  it("F4.267 tests the typed vision model, or the platform default's own", () => {
+    testBodyCarriesTheVisionModel();
+  });
+
+  it("F4.267 names the platform's model for images in the summary", () => {
+    platformSummaryNamesTheVisionModel();
+  });
+
+  it("F4.267 shows one Test line, or two when the vision model was checked", () => {
+    testResultLinesOneOrTwo();
+  });
+
+  it("F4.267 words the help line under Model for images", () => {
+    visionModelHelpText();
   });
 });

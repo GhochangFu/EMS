@@ -3,15 +3,20 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aClearedVisionModelIsOmitted,
   aRefusedSaveShowsTheServersSentence,
   offDisablesTheKeyField,
+  offDisablesTheVisionModelField,
   platformDefaultCallsDelete,
   rendersKeySetEndsInLast4,
   rendersThePlatformDefaultWhenNoRow,
+  saveSendsTheVisionModel,
   saveWithoutAKeyOmitsApiKey,
+  testShowsBothChecks,
   testShowsTheStatusSentence,
   theKeyFieldIsWriteOnlyAndClearedAfterSave,
   thePageCarriesTheAttachmentSwitch,
+  theVisionModelFieldShowsTheStoredValueAndHelp,
 } from "./ai-assistant-page.spec";
 
 /**
@@ -60,5 +65,25 @@ describe("F3.21 AI assistant page", () => {
 
   it("F3.87 carries the attachment switch and its unscrubbed sentence", async () => {
     await thePageCarriesTheAttachmentSwitch();
+  });
+
+  it("F4.267 shows Model for images from the stored value, with its help line", async () => {
+    await theVisionModelFieldShowsTheStoredValueAndHelp();
+  });
+
+  it("F4.267 resends the vision model on Save", async () => {
+    await saveSendsTheVisionModel();
+  });
+
+  it("F4.267 omits visionModel when the field is cleared", async () => {
+    await aClearedVisionModelIsOmitted();
+  });
+
+  it("F4.267 shows both Test checks, one line each", async () => {
+    await testShowsBothChecks();
+  });
+
+  it("F4.267 disables Model for images for Off", async () => {
+    await offDisablesTheVisionModelField();
   });
 });

@@ -14,6 +14,11 @@ import {
   aPdfHeaderIsAPdf,
   aPngNamedPdfIsAPng,
   aRefusedSvgCarriesTheRefusal,
+  aPdfAloneIsNotAnImageTurn,
+  aPngBesideAPdfIsAnImageTurn,
+  anSvgAloneIsNotAnImageTurn,
+  eachRasterImageMakesAnImageTurn,
+  unknownBytesAreNotAnImageTurn,
 } from "./copilot-attachments.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -31,4 +36,12 @@ describe("F3.87 PR 7 — a turn's attachments (ADR 0099 Amendment 3 A4, D13)", (
   it("refuses a filename that looks like a credential", () => aFilenameThatLooksLikeACredentialIsRefused());
   it("makes a parsed SVG a symbol candidate", () => anSvgIsASymbolCandidate());
   it("carries the parser's refusal for a refused SVG", () => aRefusedSvgCarriesTheRefusal());
+});
+
+describe("F4.267 — which files make an image turn (ADR 0090 Amendment 3 C3)", () => {
+  it("a PNG, a JPEG or a WebP makes an image turn", () => eachRasterImageMakesAnImageTurn());
+  it("a PDF alone is not an image turn", () => aPdfAloneIsNotAnImageTurn());
+  it("an SVG alone is not an image turn", () => anSvgAloneIsNotAnImageTurn());
+  it("a PNG beside a PDF is an image turn", () => aPngBesideAPdfIsAnImageTurn());
+  it("bytes of no known type are not an image turn", () => unknownBytesAreNotAnImageTurn());
 });

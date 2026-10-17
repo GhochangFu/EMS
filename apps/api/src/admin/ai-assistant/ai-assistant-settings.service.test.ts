@@ -23,6 +23,17 @@ import {
   assertTestWithNoStoredKeyIsRestrictedToThePlatformDefault,
   assertALocationAdminIsRefusedEvenInScope,
   assertAnOrganizationRowNeverTestsWithThePlatformKey,
+  assertPutStoresAndAuditsTheVisionModel,
+  assertPutWithoutAVisionModelClearsTheStoredOne,
+  assertPutOffStoresNoVisionModel,
+  assertGetReportsTheVisionModelAndThePlatformOne,
+  assertDeleteAuditsTheVisionModel,
+  assertTestWithAVisionModelMakesASecondCallWithOneImage,
+  assertTheVisionProbeIsARealPng,
+  assertTestWithoutAVisionModelMakesOneCallAndAnswersOnlyAStatus,
+  assertAVisionRefusalIsItsOwnStatus,
+  assertTheMainFailureDoesNotSkipTheVisionCall,
+  assertThePlatformKeyIsNeverSpentOnAnotherVisionModel,
 } from "./ai-assistant-settings.service.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -113,5 +124,49 @@ describe("AiAssistantSettingsService (F3.21, ADR 0090 Amendment 1 A5–A7)", () 
 
   it("never tests with the platform key for an organization with a row", async () => {
     await assertAnOrganizationRowNeverTestsWithThePlatformKey();
+  });
+
+  it("stores and audits the vision model, without key text (Amendment 3 C4)", async () => {
+    await assertPutStoresAndAuditsTheVisionModel();
+  });
+
+  it("clears a stored vision model when a PUT omits it or sends null (D4)", async () => {
+    await assertPutWithoutAVisionModelClearsTheStoredOne();
+  });
+
+  it("stores no vision model for off", async () => {
+    await assertPutOffStoresNoVisionModel();
+  });
+
+  it("reports the vision model and the platform's", async () => {
+    await assertGetReportsTheVisionModelAndThePlatformOne();
+  });
+
+  it("audits the deleted vision model", async () => {
+    await assertDeleteAuditsTheVisionModel();
+  });
+
+  it("tests the vision model with a second call carrying one PNG", async () => {
+    await assertTestWithAVisionModelMakesASecondCallWithOneImage();
+  });
+
+  it("sends a real 1x1 PNG as the vision probe", async () => {
+    await assertTheVisionProbeIsARealPng();
+  });
+
+  it("makes one call and answers only a status without a vision model", async () => {
+    await assertTestWithoutAVisionModelMakesOneCallAndAnswersOnlyAStatus();
+  });
+
+  it("reports a vision refusal as its own status (D2)", async () => {
+    await assertAVisionRefusalIsItsOwnStatus();
+  });
+
+  it("makes the vision call even when the main call failed (D2)", async () => {
+    await assertTheMainFailureDoesNotSkipTheVisionCall();
+  });
+
+  it("never spends the platform key on another vision model", async () => {
+    await assertThePlatformKeyIsNeverSpentOnAnotherVisionModel();
   });
 });

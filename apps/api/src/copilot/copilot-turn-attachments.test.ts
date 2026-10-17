@@ -26,3 +26,13 @@ describe("F3.87 PR 7 — a turn that carries files (ADR 0099 Amendment 3 A4–A7
   it("(11) D13: a hostile filename stays quoted on one line", () => T.aHostileFilenameStaysQuotedOnOneLine());
   it("(11b) D13: a filename with a newline is 400 at the turn", () => T.aFilenameWithANewlineIs400AtTheTurn());
 });
+
+describe("F4.267 — an image turn resolves the vision model (ADR 0090 Amendment 3 C3)", () => {
+  it("a PNG turn asks for the image model and that provider answers", () => T.anImageTurnResolvesTheVisionModel());
+  it("a PDF-only turn stays on the main model", () => T.aPdfOnlyTurnResolvesTheMainModel());
+  it("an SVG-only turn stays on the main model", () => T.anSvgOnlyTurnResolvesTheMainModel());
+  it("a PNG beside a PDF goes to the image model with the PDF part", () => T.aPngBesideAPdfGoesToTheVisionModelWithThePdf());
+  it("a text turn asks for no image", () => T.aTextTurnAsksForNoImage());
+  it("the turn log names the vision model and carries no key", () => T.theTurnLogNamesTheVisionModel());
+  it("no key is still 400 before the switch on an image turn", () => T.noKeyIsStill400BeforeTheSwitchOnAnImageTurn());
+});

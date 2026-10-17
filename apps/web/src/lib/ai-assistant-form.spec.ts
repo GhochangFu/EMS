@@ -11,7 +11,9 @@ import {
   providerLabel,
   saveAction,
   testAvailable,
+  testResultLines,
   testStatusSentence,
+  VISION_MODEL_HELP,
 } from "./ai-assistant-form";
 
 function assert(condition: boolean, message: string): void {
@@ -31,6 +33,7 @@ function assertEqual(actual: unknown, expected: unknown, message: string): void 
 const PLATFORM_OPENAI: AiAssistantSettingsDto["platform"] = {
   provider: "openai",
   model: "gpt-4o-mini",
+  visionModel: null,
   keySet: true,
 };
 
@@ -89,9 +92,10 @@ export function testStatusSentences(): void {
     "rate_limited",
     "unreachable",
     "provider_error",
+    "no_image_support",
   ];
   const sentences = statuses.map((status) => testStatusSentence(status));
-  assertEqual(new Set(sentences).size, 7, "seven distinct sentences");
+  assertEqual(new Set(sentences).size, 8, "eight distinct sentences");
   for (const sentence of sentences) {
     assert(/^[A-Z].*\.$/.test(sentence), `a plain sentence: ${sentence}`);
     assert(!sentence.includes("_"), `no status code in the sentence: ${sentence}`);
@@ -135,7 +139,7 @@ export function testBodyRules(): void {
     "the platform default is tested exactly as configured, with no typed key",
   );
   assert(
-    !buildTestBody("platform", { provider: "openai", model: null, keySet: false }, "", "").ok,
+    !buildTestBody("platform", { provider: "openai", model: null, visionModel: null, keySet: false }, "", "").ok,
     "a platform default without a model cannot be tested",
   );
   assert(!buildTestBody("platform", { ...PLATFORM_OPENAI, provider: "off" }, "", "").ok, "an off platform");
@@ -169,13 +173,98 @@ export function choiceControlsAndLabels(): void {
     "platform summary",
   );
   assertEqual(
-    platformSummaryLine({ provider: "anthropic", model: null, keySet: false }),
+    platformSummaryLine({ provider: "anthropic", model: null, visionModel: null, keySet: false }),
     "The platform default is Anthropic, model not set, no key set.",
     "an incomplete platform",
   );
   assertEqual(
-    platformSummaryLine({ provider: "off", model: null, keySet: false }),
+    platformSummaryLine({ provider: "off", model: null, visionModel: null, keySet: false }),
     "The platform default is Off: the guided mode answers.",
     "an off platform",
+  );
+}
+
+/**
+ * `F4.267` (ADR 0090 Amendment 3 C5) — the PUT body carries a typed vision
+ * model, trimmed; an empty field omits it (the server then stores none), and
+ * Off never carries one (D1: the server refuses Off with a vision model).
+ */
+export function putBodyCarriesTheVisionModel(): void {
+  assertEqual(
+    buildPutBody("openrouter", "z-ai/glm", "", " qwen/qwen3-vl "),
+    { ok: true, body: { provider: "openrouter", model: "z-ai/glm", visionModel: "qwen/qwen3-vl" } },
+    "a typed vision model is sent trimmed",
+  );
+  assertEqual(
+    buildPutBody("openrouter", "z-ai/glm", "", "   "),
+    { ok: true, body: { provider: "openrouter", model: "z-ai/glm" } },
+    "an empty vision model field is omitted",
+  );
+  assertEqual(
+    buildPutBody("off", "", "", "qwen/qwen3-vl"),
+    { ok: true, body: { provider: "off" } },
+    "off carries no vision model",
+  );
+}
+
+/**
+ * The Test body carries the typed vision model for a provider, and the
+ * platform default's own vision model when it has one.
+ */
+export function testBodyCarriesTheVisionModel(): void {
+  assertEqual(
+    buildTestBody("openrouter", PLATFORM_OPENAI, "z-ai/glm", "", " qwen/qwen3-vl "),
+    { ok: true, body: { provider: "openrouter", model: "z-ai/glm", visionModel: "qwen/qwen3-vl" } },
+    "a typed vision model is tested",
+  );
+  assertEqual(
+    buildTestBody("openrouter", PLATFORM_OPENAI, "z-ai/glm", "", ""),
+    { ok: true, body: { provider: "openrouter", model: "z-ai/glm" } },
+    "an empty vision model field is omitted",
+  );
+  assertEqual(
+    buildTestBody("platform", { ...PLATFORM_OPENAI, visionModel: "gpt-4o" }, "", "", "typed-ignored"),
+    { ok: true, body: { provider: "openai", model: "gpt-4o-mini", visionModel: "gpt-4o" } },
+    "the platform default's vision model is tested as configured, never a typed one",
+  );
+  assertEqual(
+    buildTestBody("platform", PLATFORM_OPENAI, "", "", "typed-ignored"),
+    { ok: true, body: { provider: "openai", model: "gpt-4o-mini" } },
+    "a platform default with no vision model sends none",
+  );
+}
+
+/** The platform summary names the model for images when the platform has one. */
+export function platformSummaryNamesTheVisionModel(): void {
+  assertEqual(
+    platformSummaryLine({ ...PLATFORM_OPENAI, visionModel: "gpt-4o" }),
+    "The platform default is OpenAI, model gpt-4o-mini, model for images gpt-4o, key set.",
+    "a platform vision model",
+  );
+}
+
+/** One line for a test without a vision model; a second line when the result carries one. */
+export function testResultLinesOneOrTwo(): void {
+  assertEqual(
+    testResultLines({ status: "ok" }),
+    ["Model: The connection works: the provider answered and can call tools."],
+    "one check",
+  );
+  assertEqual(
+    testResultLines({ status: "ok", visionStatus: "no_image_support" }),
+    [
+      "Model: The connection works: the provider answered and can call tools.",
+      "Model for images: This model cannot read an image. Choose a model that supports image input.",
+    ],
+    "two checks",
+  );
+}
+
+/** The help line under the field says when the vision model is used and what empty means. */
+export function visionModelHelpText(): void {
+  assertEqual(
+    VISION_MODEL_HELP,
+    "Used only for a copilot turn that carries an image. Empty sends those turns to the model above.",
+    "help line",
   );
 }

@@ -2,6 +2,13 @@ import { describe, it } from "vitest";
 
 import {
   assertACompleteRowBuildsThatProvider,
+  assertAnEmptyVisionModelIsNotAMissingVariable,
+  assertAnImageTurnBuildsTheRowsVisionModel,
+  assertAnImageTurnWithNoVisionModelKeepsTheMainModel,
+  assertAnOffRowIsGuidedForAnImageTurnToo,
+  assertATextTurnKeepsTheMainModel,
+  assertThePlatformSummaryNamesTheVisionModelNeverAKey,
+  assertThePlatformVisionModelServesOnlyImageTurns,
   assertAnEmptyLlmProviderIsOff,
   assertAnIncompleteRowNeverUsesThePlatformKey,
   assertAnOffRowIsGuidedMode,
@@ -85,5 +92,35 @@ describe("LLM resolver — the platform key scope of a cross-organization turn (
 
   it("is the guided mode when the platform key is off or incomplete", async () => {
     await assertPlatformScopeIsGuidedWithoutThePlatformKey();
+  });
+});
+
+describe("LLM resolver — the vision model of an image turn (F4.267, ADR 0090 Amendment 3 C2/C3)", () => {
+  it("builds the row's vision model on its own key for an image turn", async () => {
+    await assertAnImageTurnBuildsTheRowsVisionModel();
+  });
+
+  it("keeps the main model for a text turn", async () => {
+    await assertATextTurnKeepsTheMainModel();
+  });
+
+  it("keeps the main model for an image turn when the row has no vision model", async () => {
+    await assertAnImageTurnWithNoVisionModelKeepsTheMainModel();
+  });
+
+  it("uses LLM_VISION_MODEL only for a platform image turn, and the main model when it is unset", async () => {
+    await assertThePlatformVisionModelServesOnlyImageTurns();
+  });
+
+  it("treats an empty LLM_VISION_MODEL as no vision model, not a missing variable", async () => {
+    await assertAnEmptyVisionModelIsNotAMissingVariable();
+  });
+
+  it("answers an off row with the guided mode on an image turn too", async () => {
+    await assertAnOffRowIsGuidedForAnImageTurnToo();
+  });
+
+  it("names the platform vision model in the summary, never a key", async () => {
+    await assertThePlatformSummaryNamesTheVisionModelNeverAKey();
   });
 });

@@ -1,6 +1,7 @@
 import type {
   AiAssistantProviderChoice,
   AiAssistantSettingsDto,
+  AiAssistantTestResultDto,
   AiAssistantTestStatus,
 } from "@bms/shared";
 
@@ -55,7 +56,12 @@ const TEST_STATUS_SENTENCES: Record<AiAssistantTestStatus, string> = {
   rate_limited: "The provider is limiting requests for this key. Try again later.",
   unreachable: "The provider did not answer in time. Try again later.",
   provider_error: "The provider answered with an error. Try again later.",
+  no_image_support: "This model cannot read an image. Choose a model that supports image input.",
 };
+
+/** `F4.267` (ADR 0090 Amendment 3 C5): the help line under "Model for images". */
+export const VISION_MODEL_HELP =
+  "Used only for a copilot turn that carries an image. Empty sends those turns to the model above.";
 
 /** A body, or the sentence that says why there is none. */
 export type BodyResult<T> = { ok: true; body: T } | { ok: false; message: string };
@@ -108,6 +114,18 @@ export function testStatusSentence(status: AiAssistantTestStatus): string {
   return TEST_STATUS_SENTENCES[status];
 }
 
+/**
+ * The Test result, one line per check: the main model, and the model for
+ * images when the server checked one (`F4.267`, ADR 0090 Amendment 3 C4).
+ */
+export function testResultLines(result: AiAssistantTestResultDto): string[] {
+  const lines = [`Model: ${testStatusSentence(result.status)}`];
+  if (result.visionStatus !== undefined) {
+    lines.push(`Model for images: ${testStatusSentence(result.visionStatus)}`);
+  }
+  return lines;
+}
+
 /** Whether the key field takes input: never for Off (ruling 14) or the platform default. */
 export function keyFieldEnabled(choice: AiAssistantChoice): boolean {
   return isProvider(choice);
@@ -128,22 +146,42 @@ export function platformSummaryLine(platform: AiAssistantSettingsDto["platform"]
   }
   const model = platform.model ?? "not set";
   const key = platform.keySet ? "key set" : "no key set";
-  return `The platform default is ${providerLabel(platform.provider)}, model ${model}, ${key}.`;
+  const vision = platform.visionModel !== null ? `, model for images ${platform.visionModel}` : "";
+  return `The platform default is ${providerLabel(platform.provider)}, model ${model}${vision}, ${key}.`;
 }
 
 function missingModel(provider: LlmProvider): string {
   return `Enter a model: ${providerLabel(provider)} has no default model.`;
 }
 
+/** A provider body: the key and the vision model only when typed, both trimmed. */
+function providerBody(
+  provider: LlmProvider,
+  model: string,
+  typedKey: string,
+  typedVisionModel: string,
+): { provider: LlmProvider; model: string; visionModel?: string; apiKey?: string } {
+  const visionModel = typedVisionModel.trim();
+  const apiKey = typedKey.trim();
+  return {
+    provider,
+    model,
+    ...(visionModel !== "" ? { visionModel } : {}),
+    ...(apiKey !== "" ? { apiKey } : {}),
+  };
+}
+
 /**
  * The `PUT` body for a choice other than Platform default. Off carries the
  * provider alone (the server refuses a key with it); a blank key is omitted, so
- * the stored key for the same provider is kept.
+ * the stored key for the same provider is kept. A blank vision model is
+ * omitted too, which stores none (`F4.267` D4), and Off never carries one (D1).
  */
 export function buildPutBody(
   choice: AiAssistantProviderChoice,
   typedModel: string,
   typedKey: string,
+  typedVisionModel = "",
 ): BodyResult<AiAssistantPutBody> {
   if (choice === "off") {
     return { ok: true, body: { provider: "off" } };
@@ -152,26 +190,31 @@ export function buildPutBody(
   if (model === null) {
     return { ok: false, message: missingModel(choice) };
   }
-  const apiKey = typedKey.trim();
-  return { ok: true, body: apiKey !== "" ? { provider: choice, model, apiKey } : { provider: choice, model } };
+  return { ok: true, body: providerBody(choice, model, typedKey, typedVisionModel) };
 }
 
 /**
  * The `POST …/test` body. Platform default is tested exactly as configured —
  * the server answers 400 for any other provider or model without a key of the
- * organization's own — so it never carries a typed key or model.
+ * organization's own — so it never carries a typed key or model, and its
+ * vision model is the platform's own when it has one (`F4.267`).
  */
 export function buildTestBody(
   choice: AiAssistantChoice,
   platform: AiAssistantSettingsDto["platform"],
   typedModel: string,
   typedKey: string,
+  typedVisionModel = "",
 ): BodyResult<AiAssistantTestBody> {
   if (choice === "platform") {
     if (platform.provider === "off" || platform.model === null) {
       return { ok: false, message: "The platform default has no provider and model to test." };
     }
-    return { ok: true, body: { provider: platform.provider, model: platform.model } };
+    const body: AiAssistantTestBody = { provider: platform.provider, model: platform.model };
+    return {
+      ok: true,
+      body: platform.visionModel !== null ? { ...body, visionModel: platform.visionModel } : body,
+    };
   }
   if (choice === "off") {
     return { ok: false, message: "Off calls no provider, so there is nothing to test." };
@@ -180,6 +223,5 @@ export function buildTestBody(
   if (model === null) {
     return { ok: false, message: missingModel(choice) };
   }
-  const apiKey = typedKey.trim();
-  return { ok: true, body: apiKey !== "" ? { provider: choice, model, apiKey } : { provider: choice, model } };
+  return { ok: true, body: providerBody(choice, model, typedKey, typedVisionModel) };
 }

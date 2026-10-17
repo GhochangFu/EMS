@@ -21,6 +21,11 @@ import { adminFetch } from "./client";
 export type AiAssistantPutBody = {
   provider: AiAssistantProviderChoice;
   model?: string;
+  /**
+   * `F4.267` (ADR 0090 Amendment 3 C4): the model for image turns. Omitted
+   * stores none (D4), so the page always resends it when one is set.
+   */
+  visionModel?: string;
   apiKey?: string;
 };
 
@@ -28,6 +33,8 @@ export type AiAssistantPutBody = {
 export type AiAssistantTestBody = {
   provider: Exclude<AiAssistantProviderChoice, "off">;
   model: string;
+  /** `F4.267`: when given, the server makes a second call with a tiny image. */
+  visionModel?: string;
   apiKey?: string;
 };
 

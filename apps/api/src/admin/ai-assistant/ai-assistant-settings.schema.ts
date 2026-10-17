@@ -15,11 +15,14 @@ import { aiAssistantProviderChoiceSchema, llmProviderNameSchema } from "@bms/sha
 
 const model = z.string().trim().min(1).max(200);
 const apiKey = z.string().trim().min(8).max(512);
+/** ADR 0090 Amendment 3 C4: the model for a copilot turn that carries an image; null is none. */
+const visionModel = model.nullable();
 
 export const putAiAssistantSettingsBodySchema = z
   .object({
     provider: aiAssistantProviderChoiceSchema,
     model: model.optional(),
+    visionModel: visionModel.optional(),
     apiKey: apiKey.optional(),
   })
   .strict()
@@ -31,10 +34,15 @@ export const putAiAssistantSettingsBodySchema = z
     if (body.provider === "off" && body.apiKey !== undefined) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["apiKey"], message: "An off setting stores no key" });
     }
+    // Plan D1 (Amendment 3): an off setting has no model for images either; null is the absence of one.
+    if (body.provider === "off" && typeof body.visionModel === "string") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["visionModel"], message: "An off setting stores no model for images" });
+    }
   })
   .describe(
     "`model` is required unless `provider` is `off`, and `apiKey` is refused when it is. An omitted " +
-      "`apiKey` keeps the stored key for the same provider; a new provider without one clears it.",
+      "`apiKey` keeps the stored key for the same provider; a new provider without one clears it. " +
+      "`visionModel` (null or omitted stores none) is refused with `off`.",
   );
 
 export type PutAiAssistantSettingsBody = z.infer<typeof putAiAssistantSettingsBodySchema>;
@@ -43,6 +51,7 @@ export const testAiAssistantBodySchema = z
   .object({
     provider: llmProviderNameSchema,
     model,
+    visionModel: model.optional(),
     apiKey: apiKey.optional(),
   })
   .strict();

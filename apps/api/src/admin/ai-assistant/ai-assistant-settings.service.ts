@@ -3,7 +3,13 @@ import { eq, sql } from "drizzle-orm";
 
 import { organizationLlmSettings } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AiAssistantSettingsDto, AiAssistantTestResultDto, JwtPayload } from "@bms/shared";
+import type {
+  AiAssistantSettingsDto,
+  AiAssistantTestResultDto,
+  AiAssistantTestStatus,
+  JwtPayload,
+  LlmProviderName,
+} from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../../database/database.tokens";
@@ -11,11 +17,30 @@ import { type BmsTx, withTenant } from "../../database/tenant-context";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { classifyProviderError, createLlmProvider } from "../../llm/llm-factory";
+import type { LlmToolDefinition, LlmUserContent } from "../../llm/llm-port";
 import { LlmResolver } from "../../llm/llm-resolver";
 import type { PutAiAssistantSettingsBody, TestAiAssistantBody } from "./ai-assistant-settings.schema";
 
-/** The Test button's one call may take this long (A5). */
+/** Each of the Test button's calls may take this long (A5; Amendment 3 C4 gives the vision call its own). */
 export const TEST_CALL_DEADLINE_MS = 20_000;
+
+/**
+ * ADR 0090 Amendment 3 C4: the image the vision check sends — a real 1x1 PNG
+ * (gray and alpha, 68 bytes), so a model that cannot read an image refuses it
+ * the way it would refuse an administrator's attachment.
+ */
+export const VISION_PROBE_PNG: Buffer = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+  "base64",
+);
+
+const TEST_SYSTEM_PROMPT = "You are a connectivity check.";
+const TEST_USER_PROMPT = "Reply with the single word ok.";
+const PING_TOOL: LlmToolDefinition = {
+  name: "ping",
+  description: "Confirms tool support.",
+  parameters: { type: "object", properties: {}, additionalProperties: false },
+};
 
 export const NO_ENCRYPTION_KEY_MESSAGE =
   "CREDENTIAL_ENCRYPTION_KEY is not configured, so the key cannot be stored encrypted. Nothing was saved.";
@@ -82,6 +107,7 @@ export class AiAssistantSettingsService {
         source: "platform",
         provider: platform.provider,
         model: platform.model,
+        visionModel: platform.visionModel,
         keySet: platform.keySet,
         keyLast4: null,
         updatedAt: null,
@@ -92,6 +118,7 @@ export class AiAssistantSettingsService {
       source: "organization",
       provider: row.provider as AiAssistantSettingsDto["provider"],
       model: row.model,
+      visionModel: row.visionModel,
       keySet: row.keyCiphertext !== null,
       keyLast4: row.keyLast4,
       updatedAt: row.updatedAt.toISOString(),
@@ -157,6 +184,8 @@ export class AiAssistantSettingsService {
       const values = {
         provider: body.provider,
         model: body.provider === "off" ? null : (body.model ?? null),
+        // Amendment 3 C4 and plan D4: omitted or null stores NULL — never kept from the stored row.
+        visionModel: body.provider === "off" ? null : (body.visionModel ?? null),
         updatedBy: actorId,
         updatedAt: new Date(),
         ...key,
@@ -172,7 +201,7 @@ export class AiAssistantSettingsService {
           entityType: "organization_llm_settings",
           entityId: organizationId,
           organizationId,
-          payload: { provider: values.provider, model: values.model, keyChanged },
+          payload: { provider: values.provider, model: values.model, visionModel: values.visionModel, keyChanged },
         },
         tx,
       );
@@ -199,6 +228,7 @@ export class AiAssistantSettingsService {
         .returning({
           provider: organizationLlmSettings.provider,
           model: organizationLlmSettings.model,
+          visionModel: organizationLlmSettings.visionModel,
           keyCiphertext: organizationLlmSettings.keyCiphertext,
         });
       if (!deleted) return;
@@ -209,7 +239,12 @@ export class AiAssistantSettingsService {
           entityType: "organization_llm_settings",
           entityId: organizationId,
           organizationId,
-          payload: { provider: deleted.provider, model: deleted.model, keyChanged: deleted.keyCiphertext !== null },
+          payload: {
+            provider: deleted.provider,
+            model: deleted.model,
+            visionModel: deleted.visionModel,
+            keyChanged: deleted.keyCiphertext !== null,
+          },
         },
         tx,
       );
@@ -218,10 +253,13 @@ export class AiAssistantSettingsService {
   }
 
   /**
-   * One minimal billed call (A5). The key is the one given, else the
+   * One minimal billed call (A5), and a second one with a 1x1 PNG when a
+   * `visionModel` is given (Amendment 3 C4). The key is the one given, else the
    * organization's stored key for the same provider. With neither, only the
    * platform default exactly as configured may be tested — an org admin cannot
-   * spend the platform key on another provider or model.
+   * spend the platform key on another provider, model or vision model.
+   * Plan D2: the two calls are independent; the vision call is made even when
+   * the main one failed, and each answers its own status.
    */
   async test(jwt: JwtPayload, organizationId: string, body: TestAiAssistantBody): Promise<AiAssistantTestResultDto> {
     await this.gate(jwt, organizationId);
@@ -239,7 +277,12 @@ export class AiAssistantSettingsService {
     }
     if (apiKey === undefined) {
       const platform = this.resolver.platformDefault();
-      if (platform.state !== "ready" || platform.provider !== body.provider || platform.model !== body.model) {
+      if (
+        platform.state !== "ready" ||
+        platform.provider !== body.provider ||
+        platform.model !== body.model ||
+        (body.visionModel !== undefined && body.visionModel !== platform.visionModel)
+      ) {
         throw new BadRequestException(
           platform.state === "ready"
             ? `Without a stored key the test can only check the platform default: ${platform.provider} / ${platform.model}`
@@ -248,26 +291,38 @@ export class AiAssistantSettingsService {
       }
       apiKey = platform.apiKey;
     }
+    const status = await this.probe(body.provider, apiKey, body.model, TEST_USER_PROMPT);
+    if (body.visionModel === undefined) {
+      return { status };
+    }
+    const visionStatus = await this.probe(body.provider, apiKey, body.visionModel, [
+      { type: "text", text: TEST_USER_PROMPT },
+      { type: "image", mediaType: "image/png", data: VISION_PROBE_PNG },
+    ]);
+    return { status, visionStatus };
+  }
+
+  /** One billed call with its own deadline: `ok`, or the provider error's class — never its text. */
+  private async probe(
+    provider: LlmProviderName,
+    apiKey: string,
+    model: string,
+    content: LlmUserContent,
+  ): Promise<AiAssistantTestStatus> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TEST_CALL_DEADLINE_MS);
     try {
-      await this.buildProvider(body.provider, { apiKey, model: body.model }).complete({
+      await this.buildProvider(provider, { apiKey, model }).complete({
         messages: [
-          { role: "system", content: "You are a connectivity check." },
-          { role: "user", content: "Reply with the single word ok." },
+          { role: "system", content: TEST_SYSTEM_PROMPT },
+          { role: "user", content },
         ],
-        tools: [
-          {
-            name: "ping",
-            description: "Confirms tool support.",
-            parameters: { type: "object", properties: {}, additionalProperties: false },
-          },
-        ],
+        tools: [PING_TOOL],
         signal: controller.signal,
       });
-      return { status: "ok" };
+      return "ok";
     } catch (error) {
-      return { status: classifyProviderError(error, controller.signal) };
+      return classifyProviderError(error, controller.signal);
     } finally {
       clearTimeout(timer);
     }

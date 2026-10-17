@@ -1,9 +1,9 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
-import type { LlmToolDefinition, LlmProvider } from "../../llm/llm-port";
+import type { LlmMessage, LlmToolDefinition, LlmProvider } from "../../llm/llm-port";
 import { LlmResolver } from "../../llm/llm-resolver";
-import { AiAssistantSettingsService, NO_ENCRYPTION_KEY_MESSAGE } from "./ai-assistant-settings.service";
+import { AiAssistantSettingsService, NO_ENCRYPTION_KEY_MESSAGE, VISION_PROBE_PNG } from "./ai-assistant-settings.service";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -19,7 +19,7 @@ const PLATFORM_KEY = "sk-platform-key-0000";
 
 type Row = Parameters<LlmResolver["decryptKey"]>[0];
 
-const ENV_NAMES = ["LLM_PROVIDER", "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "CREDENTIAL_ENCRYPTION_KEY", "CREDENTIAL_ENCRYPTION_KEY_VERSION"];
+const ENV_NAMES = ["LLM_PROVIDER", "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "OPENAI_API_KEY", "OPENAI_MODEL", "ANTHROPIC_API_KEY", "ANTHROPIC_MODEL", "LLM_VISION_MODEL", "CREDENTIAL_ENCRYPTION_KEY", "CREDENTIAL_ENCRYPTION_KEY_VERSION"];
 
 /** The platform default is OpenRouter with a key and a model, and the credential key is set, unless `vars` says otherwise. */
 async function withEnv<T>(vars: Record<string, string | undefined>, fn: () => Promise<T>): Promise<T> {
@@ -46,14 +46,16 @@ async function withEnv<T>(vars: Record<string, string | undefined>, fn: () => Pr
   }
 }
 
-type Built = { name: string; apiKey: string; model: string; tools?: readonly LlmToolDefinition[] };
+type Built = { name: string; apiKey: string; model: string; tools?: readonly LlmToolDefinition[]; messages: readonly LlmMessage[] };
 
 /**
  * The service over an in-memory row (the RLS integration suite covers the real
  * table), a recording audit writer, the real crypto and resolver, and a
  * factory that records what the Test button would call.
  */
-function harness(opts: { row?: Row | null; inScope?: boolean; testError?: unknown; role?: string } = {}) {
+function harness(
+  opts: { row?: Row | null; inScope?: boolean; testError?: unknown; testErrorFor?: (model: string) => unknown; role?: string } = {},
+) {
   const store: { row: Row | null } = { row: opts.row ?? null };
   const writes: { kind: "upsert" | "delete"; values?: Record<string, unknown> }[] = [];
   const audits: Record<string, unknown>[] = [];
@@ -75,14 +77,15 @@ function harness(opts: { row?: Row | null; inScope?: boolean; testError?: unknow
         },
       }),
     }),
-    // remove()'s `delete … returning` inside its write transaction: the deleted row, projected.
+    // remove()'s `delete … returning` inside its write transaction: the deleted row, projected
+    // onto the columns the service asks for, so a column left out of RETURNING is missing here too.
     delete: () => ({
       where: () => ({
-        returning: async () => {
-          const deleted = store.row;
+        returning: async (projection: Record<string, unknown>) => {
+          const deleted = store.row as Record<string, unknown> | null;
           writes.push({ kind: "delete" });
           store.row = null;
-          return deleted ? [{ provider: deleted.provider, model: deleted.model, keyCiphertext: deleted.keyCiphertext }] : [];
+          return deleted ? [Object.fromEntries(Object.keys(projection).map((column) => [column, deleted[column]]))] : [];
         },
       }),
     }),
@@ -102,8 +105,10 @@ function harness(opts: { row?: Row | null; inScope?: boolean; testError?: unknow
     const provider: LlmProvider = {
       name,
       complete: async (input) => {
-        built.push({ name, ...options, tools: input.tools });
+        built.push({ name, ...options, tools: input.tools, messages: input.messages });
         if (opts.testError !== undefined) throw opts.testError;
+        const failure = opts.testErrorFor?.(options.model);
+        if (failure !== undefined) throw failure;
         return { kind: "final", text: "ok" };
       },
     };
@@ -125,6 +130,7 @@ function storedRow(provider = "openrouter", apiKey: string | null = ORG_KEY): Ro
     organizationId: ORG,
     provider,
     model: provider === "off" ? null : "moonshotai/kimi-k3",
+    visionModel: null,
     keyCiphertext: null,
     keyIv: null,
     keyVersion: null,
@@ -246,7 +252,7 @@ export async function assertPutAuditsProviderModelAndKeyChangedOnly(): Promise<v
     await service.put(JWT, ORG, { provider: "openai", model: "gpt-4o-mini", apiKey: "sk-openai-secret-5555" });
     const entry = audits[0] ?? {};
     assert(entry.action === "master.organization.ai_assistant.update" && entry.organizationId === ORG, "one update audit row");
-    assert(JSON.stringify(Object.keys(entry.payload as object)) === '["provider","model","keyChanged"]', "payload keys exactly");
+    assert(JSON.stringify(Object.keys(entry.payload as object)) === '["provider","model","visionModel","keyChanged"]', "payload keys exactly");
     const text = JSON.stringify(entry);
     assert(!text.includes("sk-openai-secret") && !text.includes("5555"), "neither the key nor its last four");
   });
@@ -261,7 +267,7 @@ export async function assertDeleteRemovesAndAudits(): Promise<void> {
     assert(store.row === null, "the row is removed");
     assert(audits.length === 1 && audits[0]?.action === "master.organization.ai_assistant.delete", "one delete audit row");
     assert(
-      JSON.stringify(audits[0]?.payload) === JSON.stringify({ provider: row.provider, model: row.model, keyChanged: true }),
+      JSON.stringify(audits[0]?.payload) === JSON.stringify({ provider: row.provider, model: row.model, visionModel: row.visionModel, keyChanged: true }),
       "the payload is the deleted row's provider, model and key state",
     );
     assert(dto.source === "platform", "the organization returns to the platform default");
@@ -277,7 +283,7 @@ export async function assertDeleteOfAKeylessRowAuditsNoKeyChange(): Promise<void
     await service.remove(JWT, ORG);
     assert(store.row === null && audits.length === 1, "control: the row is removed and one audit row written");
     assert(
-      JSON.stringify(audits[0]?.payload) === JSON.stringify({ provider: "openrouter", model: row.model, keyChanged: false }),
+      JSON.stringify(audits[0]?.payload) === JSON.stringify({ provider: "openrouter", model: row.model, visionModel: null, keyChanged: false }),
       "a keyless row's delete changes no key",
     );
   });
@@ -399,5 +405,158 @@ export async function assertAnOrganizationRowNeverTestsWithThePlatformKey(): Pro
     const { service, built } = harness({ row: storedRow("off", null) });
     const error = await rejection(service.test(JWT, ORG, { provider: "openrouter", model: "z-ai/glm-5.3-flash" }));
     assert(error instanceof BadRequestException && built.length === 0, "the platform pair is refused for an org with a row");
+  });
+}
+
+// ---- ADR 0090 Amendment 3 C4 (F4.267): the vision model through PUT, GET, DELETE and Test ----
+
+const VISION = "google/gemini-3-flash";
+
+export async function assertPutStoresAndAuditsTheVisionModel(): Promise<void> {
+  await withEnv({}, async () => {
+    const { service, store, audits } = harness();
+    const dto = await service.put(JWT, ORG, {
+      provider: "openrouter",
+      model: "z-ai/glm-5.3-flash",
+      visionModel: VISION,
+      apiKey: "sk-or-secret-key-4321",
+    });
+    assert(store.row?.visionModel === VISION, "the vision model is stored");
+    assert(dto.visionModel === VISION, "and reported");
+    const payload = audits[0]?.payload as Record<string, unknown>;
+    assert(
+      JSON.stringify(payload) ===
+        JSON.stringify({ provider: "openrouter", model: "z-ai/glm-5.3-flash", visionModel: VISION, keyChanged: true }),
+      `the audit names the vision model, got ${JSON.stringify(payload)}`,
+    );
+    const text = JSON.stringify(audits);
+    assert(!text.includes("sk-or-secret") && !text.includes("4321"), "no key text");
+  });
+}
+
+/** Plan D4: an omitted or null vision model stores NULL — a stored one is cleared, never kept. */
+export async function assertPutWithoutAVisionModelClearsTheStoredOne(): Promise<void> {
+  for (const visionModel of [undefined, null]) {
+    await withEnv({}, async () => {
+      const { service, store } = harness({ row: { ...storedRow(), visionModel: VISION } });
+      await service.put(JWT, ORG, {
+        provider: "openrouter",
+        model: "z-ai/glm-5.3-flash",
+        ...(visionModel === null ? { visionModel } : {}),
+      });
+      assert(store.row?.keyLast4 === "xyz9", "control: the stored key is kept, so the row was written over the old one");
+      assert(store.row?.visionModel === null, `${visionModel === null ? "a null" : "an omitted"} vision model clears the stored one`);
+    });
+  }
+}
+
+export async function assertPutOffStoresNoVisionModel(): Promise<void> {
+  await withEnv({}, async () => {
+    const { service, store } = harness({ row: { ...storedRow(), visionModel: VISION } });
+    await service.put(JWT, ORG, { provider: "off", visionModel: null });
+    assert(store.row?.provider === "off" && store.row?.visionModel === null, "off stores no vision model");
+  });
+}
+
+export async function assertGetReportsTheVisionModelAndThePlatformOne(): Promise<void> {
+  await withEnv({ LLM_VISION_MODEL: "qwen/qwen3-vl" }, async () => {
+    const own = await harness({ row: { ...storedRow(), visionModel: VISION } }).service.get(JWT, ORG);
+    assert(own.visionModel === VISION, "a row reports its vision model");
+    assert(own.platform.visionModel === "qwen/qwen3-vl", "and the platform block names the platform one");
+    const platform = await harness().service.get(JWT, ORG);
+    assert(platform.source === "platform" && platform.visionModel === "qwen/qwen3-vl", "no row reports the platform vision model");
+  });
+}
+
+export async function assertDeleteAuditsTheVisionModel(): Promise<void> {
+  await withEnv({}, async () => {
+    const { service, audits } = harness({ row: { ...storedRow(), visionModel: VISION } });
+    await service.remove(JWT, ORG);
+    assert((audits[0]?.payload as { visionModel?: unknown })?.visionModel === VISION, "the delete audit names the deleted vision model");
+  });
+}
+
+type ImagePart = { type: string; mediaType?: string; data?: Buffer };
+
+function imagePartsOf(call: Built | undefined): ImagePart[] {
+  const user = call?.messages.find((message) => message.role === "user");
+  if (!user || user.role !== "user" || typeof user.content === "string") return [];
+  return user.content.filter((part) => part.type === "image") as ImagePart[];
+}
+
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+export async function assertTestWithAVisionModelMakesASecondCallWithOneImage(): Promise<void> {
+  await withEnv({}, async () => {
+    const { service, built } = harness({ row: storedRow() });
+    const result = await service.test(JWT, ORG, { provider: "openrouter", model: "moonshotai/kimi-k3", visionModel: VISION });
+    assert(built.length === 2, `two billed calls, got ${built.length}`);
+    assert(built[0]?.model === "moonshotai/kimi-k3" && imagePartsOf(built[0]).length === 0, "call 1 is the main model, text only");
+    assert(built[1]?.model === VISION && built[1]?.apiKey === ORG_KEY, "call 2 is the vision model with the same key");
+    const images = imagePartsOf(built[1]);
+    assert(images.length === 1, `call 2 carries exactly one image part, got ${images.length}`);
+    const data = images[0]?.data;
+    assert(images[0]?.mediaType === "image/png", "the image is image/png");
+    assert(data instanceof Buffer && data.subarray(0, 8).equals(PNG_SIGNATURE), "it sniffs as a PNG");
+    assert(data instanceof Buffer && data.length < 200, `it is small, got ${data?.length}`);
+    assert(JSON.stringify((built[1]?.tools ?? []).map((tool) => tool.name)) === '["ping"]', "call 2 sends the one ping tool");
+    assert(JSON.stringify(result) === '{"status":"ok","visionStatus":"ok"}', `both checks answer, got ${JSON.stringify(result)}`);
+  });
+}
+
+export async function assertTheVisionProbeIsARealPng(): Promise<void> {
+  assert(VISION_PROBE_PNG.subarray(0, 8).equals(PNG_SIGNATURE), "the PNG signature");
+  assert(VISION_PROBE_PNG.subarray(12, 16).toString("ascii") === "IHDR", "the first chunk is IHDR");
+  assert(VISION_PROBE_PNG.readUInt32BE(16) === 1 && VISION_PROBE_PNG.readUInt32BE(20) === 1, "it is 1x1");
+  assert(VISION_PROBE_PNG.subarray(-8, -4).toString("ascii") === "IEND", "it ends with IEND");
+}
+
+export async function assertTestWithoutAVisionModelMakesOneCallAndAnswersOnlyAStatus(): Promise<void> {
+  await withEnv({}, async () => {
+    const { service, built } = harness({ row: storedRow() });
+    const result = await service.test(JWT, ORG, { provider: "openrouter", model: "moonshotai/kimi-k3" });
+    assert(built.length === 1, "one billed call");
+    assert(JSON.stringify(result) === '{"status":"ok"}', `no visionStatus key, got ${JSON.stringify(result)}`);
+  });
+}
+
+/** Plan D2: the two statuses are independent — a vision refusal does not change the main one. */
+export async function assertAVisionRefusalIsItsOwnStatus(): Promise<void> {
+  await withEnv({}, async () => {
+    const refusal = Object.assign(new Error(`404 No endpoints found that support image input ${ORG_KEY} openrouter.ai`), { status: 404 });
+    const { service, built } = harness({ row: storedRow(), testErrorFor: (model) => (model === VISION ? refusal : undefined) });
+    const result = await service.test(JWT, ORG, { provider: "openrouter", model: "moonshotai/kimi-k3", visionModel: VISION });
+    assert(built.length === 2, "both calls were made");
+    assert(JSON.stringify(result) === '{"status":"ok","visionStatus":"no_image_support"}', `got ${JSON.stringify(result)}`);
+    assert(!JSON.stringify(result).includes(ORG_KEY) && !JSON.stringify(result).includes("openrouter"), "no key or provider text");
+  });
+}
+
+/** Plan D2: the vision call is made even when the main call failed. */
+export async function assertTheMainFailureDoesNotSkipTheVisionCall(): Promise<void> {
+  await withEnv({}, async () => {
+    const main = Object.assign(new Error("429"), { status: 429 });
+    const { service, built } = harness({ row: storedRow(), testErrorFor: (model) => (model === VISION ? undefined : main) });
+    const result = await service.test(JWT, ORG, { provider: "openrouter", model: "moonshotai/kimi-k3", visionModel: VISION });
+    assert(built.length === 2, `the vision call is made after a failed main call, got ${built.length} calls`);
+    assert(JSON.stringify(result) === '{"status":"rate_limited","visionStatus":"ok"}', `got ${JSON.stringify(result)}`);
+  });
+}
+
+/** Without a stored key only the platform's own vision model may be tested with the platform key. */
+export async function assertThePlatformKeyIsNeverSpentOnAnotherVisionModel(): Promise<void> {
+  await withEnv({ LLM_VISION_MODEL: "qwen/qwen3-vl" }, async () => {
+    const other = harness();
+    const error = await rejection(other.service.test(JWT, ORG, { provider: "openrouter", model: "z-ai/glm-5.3-flash", visionModel: VISION }));
+    assert(error instanceof BadRequestException, "another vision model on the platform key is a 400");
+    assert(other.built.length === 0, "and nothing is called");
+    const same = harness();
+    await same.service.test(JWT, ORG, { provider: "openrouter", model: "z-ai/glm-5.3-flash", visionModel: "qwen/qwen3-vl" });
+    assert(same.built.length === 2 && same.built[1]?.apiKey === PLATFORM_KEY, "the platform's own vision model is tested");
+  });
+  await withEnv({}, async () => {
+    const unset = harness();
+    const error = await rejection(unset.service.test(JWT, ORG, { provider: "openrouter", model: "z-ai/glm-5.3-flash", visionModel: VISION }));
+    assert(error instanceof BadRequestException && unset.built.length === 0, "with no platform vision model, any vision model is a 400");
   });
 }

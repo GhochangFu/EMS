@@ -43,6 +43,9 @@ function messageOf(err: unknown): string {
   return err instanceof Error ? err.message : "";
 }
 
+/** An image-input refusal, not any message that merely names an image (or a model id containing "image"). */
+const IMAGE_REFUSAL = /(support|accept|handle|process)\w*\s+image|image\s+(input|content)/i;
+
 /**
  * One error class for the settings Test button (Amendment 1 A5). Both SDKs
  * attach the HTTP `status` to their API errors and name the connection error
@@ -68,6 +71,11 @@ export function classifyProviderError(err: unknown, signal?: AbortSignal): Exclu
   }
   if (status === 429) {
     return "rate_limited";
+  }
+  // F4.267 / ADR 0090 Amendment 3 C2: OpenRouter answers 404 "No endpoints found that support image input".
+  // Anchored to the refusal phrasing: a model id such as `gpt-image-1` in a 404 is still unknown_model.
+  if ((status === 404 || status === 400) && IMAGE_REFUSAL.test(messageOf(err))) {
+    return "no_image_support";
   }
   if ((status === 404 || status === 400) && /tool/i.test(messageOf(err))) {
     return "no_tool_support";

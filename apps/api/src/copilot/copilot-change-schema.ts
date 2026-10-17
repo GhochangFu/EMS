@@ -119,14 +119,20 @@ export function fieldHintsOf(schema: Node, fields: readonly string[]): string[] 
   });
 }
 
-/** The `body` property of a propose tool's definition: the schema itself when small, else a field guide. */
-export function bodyDefinitionOf(body: ZodTypeAny, catalogId: string, fields: readonly string[]): Node {
+/**
+ * The `body` property of a propose tool's definition: the schema itself when
+ * small, else a field guide. `F4.266` (ADR 0090 Amendment 3 C6): an entry's
+ * `bodyGuide` follows the field list, so a body whose shape fits in a few
+ * sentences (a mimic layout) is proposed without a `describe_change` call.
+ */
+export function bodyDefinitionOf(body: ZodTypeAny, catalogId: string, fields: readonly string[], guide?: string): Node {
   const schema = jsonSchemaOf(body);
   if (JSON.stringify(schema).length <= INLINE_BODY_SCHEMA_MAX_CHARS) return schema;
   return {
     type: "object",
     description:
       `The request body. Its full shape is large; read only the part you need with describe_change ` +
-      `(catalogId "${catalogId}" and a path), once, then propose. Fields — ${fieldHintsOf(schema, fields).join("; ")}.`,
+      `(catalogId "${catalogId}" and a path), once, then propose. Fields — ${fieldHintsOf(schema, fields).join("; ")}.` +
+      (guide !== undefined ? ` ${guide}` : ""),
   };
 }

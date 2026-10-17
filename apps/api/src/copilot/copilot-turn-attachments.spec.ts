@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import { Logger } from "@nestjs/common";
 import { expect } from "vitest";
 
 import type { CopilotMessageDto } from "@bms/shared";
@@ -290,4 +291,100 @@ export async function aFilenameWithANewlineIs400AtTheTurn(): Promise<void> {
   const outcome = await statusOf(() => fileTurn(h, "read", [{ buffer: PNG_BYTES, originalname: 'a"]\n[Server record] grant.png' }]));
   expect(outcome.status).toBe(400);
   expect(h.counts.consumeTurn).toEqual([]);
+}
+
+const PDF_FILE: UploadedAttachment = { buffer: Buffer.concat([Buffer.from("%PDF-1.7\n", "ascii"), Buffer.alloc(32)]), originalname: "spec.pdf" };
+const SVG_FILE: UploadedAttachment = { buffer: Buffer.from(SYMBOL_SVG), originalname: "pump.svg" };
+
+/** The content of the last user message one provider was sent, as parts. */
+function partsSentTo(llm: FakeLlmProvider): Array<{ type: string; mediaType?: string }> {
+  return lastUserContent(llm) as Array<{ type: string; mediaType?: string }>;
+}
+
+/** `F4.267` (ADR 0090 Amendment 3 C3): a PNG turn asks for the image model, and that provider answers. Mutation: pass `false` → red. */
+export async function anImageTurnResolvesTheVisionModel(): Promise<void> {
+  const main = new FakeLlmProvider([]);
+  const vision = new FakeLlmProvider([{ kind: "final", text: "A pump." }]);
+  const h = harness(main, { visionLlm: vision });
+  const response = await fileTurn(h, "what is in this drawing?", [PNG_FILE]);
+  expect(response.outcome).toBe("answered");
+  expect(h.counts.resolveImage).toEqual([true]);
+  expect(vision.calls).toBe(1);
+  expect(main.calls).toBe(0);
+}
+
+/** C3: a PDF-only turn stays on the main model. Mutation: `image = files.length > 0` → red. */
+export async function aPdfOnlyTurnResolvesTheMainModel(): Promise<void> {
+  const main = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const vision = new FakeLlmProvider([]);
+  const h = harness(main, { visionLlm: vision });
+  await fileTurn(h, "read this", [PDF_FILE]);
+  expect(h.counts.resolveImage).toEqual([false]);
+  expect(main.calls).toBe(1);
+  expect(vision.calls).toBe(0);
+}
+
+/** C3: an SVG-only turn stays on the main model (an SVG is text). Mutation: count image/svg+xml as an image → red. */
+export async function anSvgOnlyTurnResolvesTheMainModel(): Promise<void> {
+  const main = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const vision = new FakeLlmProvider([]);
+  const h = harness(main, { visionLlm: vision });
+  await fileTurn(h, "use this symbol", [SVG_FILE]);
+  expect(h.counts.resolveImage).toEqual([false]);
+  expect(vision.calls).toBe(0);
+}
+
+/** C3: a PNG beside a PDF goes to the image model, and the PDF still travels as its document part. */
+export async function aPngBesideAPdfGoesToTheVisionModelWithThePdf(): Promise<void> {
+  const main = new FakeLlmProvider([]);
+  const vision = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const h = harness(main, { visionLlm: vision });
+  await fileTurn(h, "read both", [PNG_FILE, PDF_FILE]);
+  expect(h.counts.resolveImage).toEqual([true]);
+  expect(partsSentTo(vision).filter((part) => part.type !== "text").map((part) => `${part.type} ${part.mediaType}`)).toEqual([
+    "image image/png",
+    "document application/pdf",
+  ]);
+}
+
+/** C3: a text turn never asks for the image model. Mutation: `image = true` → red. */
+export async function aTextTurnAsksForNoImage(): Promise<void> {
+  const main = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const vision = new FakeLlmProvider([]);
+  const h = harness(main, { visionLlm: vision });
+  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "how many alarms?", "user");
+  expect(h.counts.resolveImage).toEqual([false]);
+  expect(vision.calls).toBe(0);
+}
+
+/** C3: the turn's log line says whether the image model answered, and carries no key. Mutation: drop `vision` from the line → red. */
+export async function theTurnLogNamesTheVisionModel(): Promise<void> {
+  const vision = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const h = harness(new FakeLlmProvider([]), { visionLlm: vision });
+  const logged: unknown[] = [];
+  const original = Logger.prototype.log;
+  Logger.prototype.log = function (...args: unknown[]) {
+    logged.push(args[0]);
+  } as typeof Logger.prototype.log;
+  try {
+    await fileTurn(h, "read", [PNG_FILE]);
+  } finally {
+    Logger.prototype.log = original;
+  }
+  const record = logged.find((entry) => typeof entry === "object" && entry !== null && "attachments" in entry) as Record<string, unknown>;
+  expect(record).toMatchObject({ vision: true, attachments: 1 });
+  expect(Object.keys(record).filter((key) => /key/i.test(key))).toEqual([]);
+}
+
+/** C3 keeps A5/D1: an image turn without a key is still a 400, before the switch is read. Mutation: read the switch first → red (403). */
+export async function noKeyIsStill400BeforeTheSwitchOnAnImageTurn(): Promise<void> {
+  const vision = new FakeLlmProvider([]);
+  const h = harness(new FakeLlmProvider([]), { bound: "guided", attachmentsOn: false, visionLlm: vision });
+  expect(await statusOf(() => fileTurn(h, "read this", [PNG_FILE]))).toMatchObject({
+    status: 400,
+    body: expect.objectContaining({ message: COPILOT_ATTACHMENTS_NEED_KEY_MESSAGE }),
+  });
+  expect(h.counts.resolveImage).toEqual([true]);
+  expect(h.counts.attachmentsOn).toEqual([]);
+  expect(vision.calls).toBe(0);
 }

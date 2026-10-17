@@ -201,6 +201,13 @@ export interface CatalogEntry {
   /** The export name of `modelBody` in `@bms/shared`, when there is one (PR 4 gates it with the first such entry). */
   readonly modelBodyName?: string;
   /**
+   * `F4.266` (ADR 0090 Amendment 3 C6): a short statement of a large body's
+   * shape, appended to the propose tool's field list so the model can propose
+   * without reading the body with `describe_change`. Built from the body's own
+   * schemas, never restated by hand. Absent: the field list alone.
+   */
+  readonly bodyGuide?: string;
+  /**
    * `F3.86` PR 2: who makes a pending change for this entry. `model` (the
    * default): the model, through a `propose_*` tool. `server`: the server
    * itself, after a skill step (the onboarding commit, decision 7) — no

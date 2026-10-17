@@ -19,3 +19,7 @@ describe("F3.87 PR 5 — the layout proposals (Amendment 3 A2, owner rulings Q4 
   it("refuses a layout when the tool set has no layouts service", () => L.aLayoutWithoutTheServiceIsRefused());
   it("refuses a baseline the model sends itself", () => L.aModelSentBaselineIsRefused());
 });
+
+describe("F4.266 — the layout tools state the node and pipe shape (ADR 0090 Amendment 3 C6)", () => {
+  it("names the node kinds, the pipe ends, the flags and the core symbols in both layout tools", () => L.theLayoutToolsNameTheNodeAndPipeShape());
+});
