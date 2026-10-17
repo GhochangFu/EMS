@@ -61,7 +61,7 @@ export const NETWORK_DEMO_ASSETS: readonly EskomAssetSpec[] = [
  *     flow group holds water and HVAC members.
  *  2. **Fifteen memberships with roles**, `COALESCE(role, EXCLUDED.role)` (the `seedAssetGroups`
  *     idiom): a role an administrator set survives. Branch B of the HT/LT network binds only its
- *     two switching units (owner ruling OQ1 (a)); `tr-b` and `lt-b` are drawn passive.
+ *     two switching units (owner ruling OQ1 (a)); `tr_b` and `lt_b` are drawn passive.
  *  3. **The state points** of {@link NETWORK_DEMO_STATE_POINTS}, by asset code, in the row shape of
  *     `seedBreakerDemo`'s `breaker_trip` (`unmapped`, no RTU, `SIM_<KEY>`), `ON CONFLICT (asset_id,
  *     point_key) DO NOTHING`. A unit has state points only through such rows
@@ -71,7 +71,9 @@ export const NETWORK_DEMO_ASSETS: readonly EskomAssetSpec[] = [
  *     written **only when the layout row was inserted on this pass**: a node an operator moved,
  *     added or deleted, and the version the editor bumped, survive every re-seed. Every breaker
  *     switches by its symbol, so `is_switching` is false throughout the HT/LT layout; the flow
- *     layout's valves and damper carry the flag (ADR 0101 d4).
+ *     layout's valves and damper carry the flag (ADR 0101 d4). Every node key matches
+ *     `MIMIC_LAYOUT_NODE_KEY`, so the layout's own `PUT` body parses (`F4.263`); migration `0112`
+ *     renamed the hyphenated keys of layouts seeded before that.
  *  5. **Two dashboards**, each scoped to its group, with one `mimic` widget bound to its layout; the
  *     HT/LT dashboard also has a `breaker_table` (plan §3: the one place the tripped feeder is a
  *     row). Widgets are `NOT EXISTS`-guarded by type, and a dashboard holding the slug on another
@@ -120,11 +122,16 @@ export type NetworkDemoNetwork = {
   readonly breakerTable: boolean;
 };
 
-/** A unit's box, in grid cells: the editor's default unit box (`MIMIC_EDITOR_DEFAULT_BOX`). */
-const UNIT_W = 20;
-const UNIT_H = 25;
-/** The editor's unit drawing order (`MIMIC_EDITOR_Z.unit`). */
-const UNIT_Z = 10;
+/**
+ * A unit's box, in grid cells: the editor's default unit box
+ * (`MIMIC_EDITOR_DEFAULT_BOX`), and `z` the editor's unit drawing order
+ * (`MIMIC_EDITOR_Z.unit`). Exported so the seed-parse spec sends the box the
+ * seed writes, not a copy of it.
+ */
+export const NETWORK_DEMO_UNIT_BOX = { w: 20, h: 25, z: 10 } as const;
+const UNIT_W = NETWORK_DEMO_UNIT_BOX.w;
+const UNIT_H = NETWORK_DEMO_UNIT_BOX.h;
+const UNIT_Z = NETWORK_DEMO_UNIT_BOX.z;
 
 const T = true;
 const F = false;
@@ -152,37 +159,37 @@ export const NETWORK_DEMO_NETWORKS: readonly NetworkDemoNetwork[] = [
       ["ND-LT-B-F1", "mains-feeder-breaker"],
     ],
     nodes: [
-      ["grid-cb", "breaker", "Grid incomer", "ht-incomer-breaker", T, F, F, 20, 0],
-      ["dg-cb", "breaker", "DG breaker", "dg-breaker", F, F, F, 170, 0],
+      ["grid_cb", "breaker", "Grid incomer", "ht-incomer-breaker", T, F, F, 20, 0],
+      ["dg_cb", "breaker", "DG breaker", "dg-breaker", F, F, F, 170, 0],
       ["dg", "generator", "DG set", "dg-set", T, F, F, 210, 0],
-      ["bus-a", "switchboard", "HT bus A", null, F, F, F, 20, 27],
+      ["bus_a", "switchboard", "HT bus A", null, F, F, F, 20, 27],
       ["coupler", "breaker", "Bus coupler", "bus-coupler", F, F, F, 95, 27],
-      ["bus-b", "switchboard", "HT bus B", null, F, F, F, 170, 27],
-      ["out-cb-a", "breaker", "Outgoing A", "ht-outgoing-breaker", F, F, F, 20, 54],
-      ["iso-b", "breaker", "Isolator B", "isolator", F, F, F, 170, 54],
-      ["tr-a", "transformer", "Transformer A", "transformer", F, F, F, 20, 81],
-      ["tr-b", "transformer", "Transformer B", null, F, F, F, 170, 81],
-      ["lt-a", "switchboard", "LT panel A", "lt-panel", F, F, F, 20, 108],
-      ["lt-b", "switchboard", "LT panel B", null, F, F, F, 170, 108],
-      ["fdr-a", "breaker", "LT A feeders", "load-feeder-breaker", F, F, T, 20, 135],
-      ["fdr-b", "breaker", "LT B mains feeder", "mains-feeder-breaker", F, F, F, 170, 135],
+      ["bus_b", "switchboard", "HT bus B", null, F, F, F, 170, 27],
+      ["out_cb_a", "breaker", "Outgoing A", "ht-outgoing-breaker", F, F, F, 20, 54],
+      ["iso_b", "breaker", "Isolator B", "isolator", F, F, F, 170, 54],
+      ["tr_a", "transformer", "Transformer A", "transformer", F, F, F, 20, 81],
+      ["tr_b", "transformer", "Transformer B", null, F, F, F, 170, 81],
+      ["lt_a", "switchboard", "LT panel A", "lt-panel", F, F, F, 20, 108],
+      ["lt_b", "switchboard", "LT panel B", null, F, F, F, 170, 108],
+      ["fdr_a", "breaker", "LT A feeders", "load-feeder-breaker", F, F, T, 20, 135],
+      ["fdr_b", "breaker", "LT B mains feeder", "mains-feeder-breaker", F, F, F, 170, 135],
     ],
     pipes: [
-      ["grid-cb", "bus-a"],
-      ["bus-a", "coupler"],
-      ["coupler", "bus-b"],
-      ["bus-b", "coupler"],
-      ["coupler", "bus-a"],
-      ["dg", "dg-cb"],
-      ["dg-cb", "bus-b"],
-      ["bus-a", "out-cb-a"],
-      ["out-cb-a", "tr-a"],
-      ["tr-a", "lt-a"],
-      ["lt-a", "fdr-a"],
-      ["bus-b", "iso-b"],
-      ["iso-b", "tr-b"],
-      ["tr-b", "lt-b"],
-      ["lt-b", "fdr-b"],
+      ["grid_cb", "bus_a"],
+      ["bus_a", "coupler"],
+      ["coupler", "bus_b"],
+      ["bus_b", "coupler"],
+      ["coupler", "bus_a"],
+      ["dg", "dg_cb"],
+      ["dg_cb", "bus_b"],
+      ["bus_a", "out_cb_a"],
+      ["out_cb_a", "tr_a"],
+      ["tr_a", "lt_a"],
+      ["lt_a", "fdr_a"],
+      ["bus_b", "iso_b"],
+      ["iso_b", "tr_b"],
+      ["tr_b", "lt_b"],
+      ["lt_b", "fdr_b"],
     ],
     breakerTable: true,
   },
@@ -203,8 +210,8 @@ export const NETWORK_DEMO_NETWORKS: readonly NetworkDemoNetwork[] = [
     nodes: [
       ["pump", "pump", "Pump", "pump", T, F, F, 10, 0],
       ["header", "tank", "Header", null, F, F, F, 40, 0],
-      ["iso-v1", "valve", "Isolation valve", "isolation-valve", F, T, F, 70, 0],
-      ["tank-a", "tank", "Tank A", null, F, F, F, 100, 0],
+      ["iso_v1", "valve", "Isolation valve", "isolation-valve", F, T, F, 70, 0],
+      ["tank_a", "tank", "Tank A", null, F, F, F, 100, 0],
       ["cv", "valve", "Control valve", "control-valve", F, T, F, 70, 32],
       ["ahu", "ahu", "AHU", null, F, F, F, 100, 32],
       ["damper", "qet:air-damper", "Damper", "damper", F, T, F, 130, 32],
@@ -212,8 +219,8 @@ export const NETWORK_DEMO_NETWORKS: readonly NetworkDemoNetwork[] = [
     ],
     pipes: [
       ["pump", "header"],
-      ["header", "iso-v1"],
-      ["iso-v1", "tank-a"],
+      ["header", "iso_v1"],
+      ["iso_v1", "tank_a"],
       ["header", "cv"],
       ["cv", "ahu"],
       ["ahu", "damper"],
