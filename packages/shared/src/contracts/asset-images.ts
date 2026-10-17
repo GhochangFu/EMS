@@ -51,13 +51,22 @@ export const MAX_ASSET_IMAGE_CAPTION_CHARS: number = 1000;
  * threw `ERR_INVALID_CHAR` — the field was harmless until one header quoted
  * it. The gate belongs on the field, not on the current set of readers.
  *
- * `\p{Cc}` is the Unicode "Other, control" category: U+0000–U+001F and
- * U+007F–U+009F. Everything else — accents, CJK, emoji — is accepted, so a
- * legitimate name keeps parsing. The pattern is **exported and imported**
- * rather than restated in `apps/api/src/assets/asset-images.schema.ts`
- * (§4.8): two copies of a security pattern drift in silence.
+ * The two ranges are the Unicode "Other, control" category (`\p{Cc}`) spelled
+ * out: U+0000–U+001F and U+007F–U+009F. Everything else — accents, CJK, emoji
+ * — is accepted, so a legitimate name keeps parsing. The pattern is
+ * **exported and imported** rather than restated in
+ * `apps/api/src/assets/asset-images.schema.ts` (§4.8): two copies of a
+ * security pattern drift in silence.
+ *
+ * `F4.265`: the ranges are explicit, not `\p{Cc}`, because this pattern also
+ * reaches every LLM provider as a copilot tool schema's `pattern`, and
+ * `zod-to-json-schema` emits `regex.source` with no flags. OpenAI refuses a
+ * Unicode property escape there (`invalid_function_parameters`), which made
+ * every copilot turn on an OpenAI model fail. The escape form is `\x`, not
+ * `\u`: ECMA-262 and Python read both, RE2 reads only `\x`. The `u` flag stays;
+ * the meaning is the same with and without it.
  */
-export const NO_CONTROL_CHARACTERS = /^[^\p{Cc}]*$/u;
+export const NO_CONTROL_CHARACTERS = /^[^\x00-\x1F\x7F-\x9F]*$/u;
 
 /**
  * `F3.4` — the per-asset image cap (R-3, owner Q-3). Exceeding it is a state

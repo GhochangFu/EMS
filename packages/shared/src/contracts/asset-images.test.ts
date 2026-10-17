@@ -6,7 +6,9 @@ import {
   CONTROL_CHARACTER_ROWS,
   assertDtoRefusesObjectKey,
   assertMaxBytesIsTenMiB,
+  assertNoControlCharactersPatternIsPortable,
   assertPerAssetCapIsTwenty,
+  assertRowCarriesItsLabelledCodePoint,
   assertStorageSectionIsOptionalOnLiveness,
   assertStringAtTheBoundParses,
   assertStringBoundConstantIs,
@@ -44,11 +46,19 @@ describe("F3.3 — asset-image constants and contracts (ADR 0066)", () => {
     assertControlCharacterRow(row);
   });
 
+  it.each(CONTROL_CHARACTER_ROWS)("$label carries the code point its label names", (row) => {
+    assertRowCarriesItsLabelledCodePoint(row);
+  });
+
   it("makes storage optional on the liveness body, and still validates it when present", () => {
     assertStorageSectionIsOptionalOnLiveness();
   });
 
   it("caps an asset at 20 images (F3.4, R-3)", () => {
     assertPerAssetCapIsTwenty();
+  });
+
+  it("states the pattern without a Unicode property escape (F4.265)", () => {
+    assertNoControlCharactersPatternIsPortable();
   });
 });

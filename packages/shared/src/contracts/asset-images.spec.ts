@@ -4,6 +4,7 @@ import {
   MAX_ASSET_IMAGE_CAPTION_CHARS,
   MAX_ASSET_IMAGE_FILENAME_CHARS,
   MAX_ASSET_IMAGES_PER_ASSET,
+  NO_CONTROL_CHARACTERS,
   assetImageDtoSchema,
 } from "./asset-images";
 import { z } from "zod";
@@ -127,6 +128,21 @@ export const CONTROL_CHARACTER_ROWS = [
   { label: "originalFilename café.png", patch: { originalFilename: "café.png" }, accepted: true },
   // The emoji is written as an escape, not a literal glyph (§4.5's no-emoji rule).
   { label: "caption with an emoji", patch: { caption: "Pump room \u{1F6B0}" }, accepted: true },
+  // F4.265: the C0 and C1 edges, one row each, so a rewrite of the pattern
+  // that drops either range reddens its own row.
+  { label: "caption with U+0000 (C0 start)", patch: { caption: "a\u0000b" }, accepted: false },
+  { label: "caption with U+001F (C0 end)", patch: { caption: "a\u001Fb" }, accepted: false },
+  { label: "caption with U+007F (DEL, second range start)", patch: { caption: "a\u007Fb" }, accepted: false },
+  { label: "caption with U+009F (C1 end)", patch: { caption: "a\u009Fb" }, accepted: false },
+  { label: "caption with U+0085 (NEL, C1)", patch: { caption: "a\u0085b" }, accepted: false },
+  { label: "caption with a line feed", patch: { caption: "line\nbreak" }, accepted: false },
+  { label: "caption with a tab", patch: { caption: "tab\there" }, accepted: false },
+  { label: "caption with a plain space", patch: { caption: "a b" }, accepted: true },
+  { label: "caption in CJK", patch: { caption: "中文" }, accepted: true },
+  { label: "caption with U+00A0 (no-break space)", patch: { caption: "a\u00A0b" }, accepted: true },
+  // U+2028 is category Zl (line separator), not Cc: accepted today, and this
+  // row pins that the explicit ranges did not widen the refusal.
+  { label: "caption with U+2028 (line separator, not Cc)", patch: { caption: "a\u2028b" }, accepted: true },
 ] as const;
 
 export function assertControlCharacterRow(row: (typeof CONTROL_CHARACTER_ROWS)[number]): void {
@@ -137,6 +153,49 @@ export function assertControlCharacterRow(row: (typeof CONTROL_CHARACTER_ROWS)[n
       result.success === false ? result.error.issues : result.data,
     )}`,
   );
+}
+
+/**
+ * `F4.265` review — a row whose label names a code point (`U+00A0`) must carry
+ * that code point in its patch. The rows write it as a `\u` escape so a diff
+ * shows it; this pin catches the escape (or a literal) being turned into a
+ * plain space by an editor or a copy-paste, which would leave the row green as
+ * a silent copy of the "a b" row.
+ */
+export function assertRowCarriesItsLabelledCodePoint(row: (typeof CONTROL_CHARACTER_ROWS)[number]): void {
+  const named = /U\+([0-9A-F]{4})/.exec(row.label);
+  if (named === null) return;
+  const codePoint = Number.parseInt(named[1] ?? "", 16);
+  const values = Object.values(row.patch) as string[];
+  assert(
+    values.some((value) => [...value].some((char) => char.codePointAt(0) === codePoint)),
+    `${row.label} must carry U+${named[1]} in its patch, got ${JSON.stringify(values)}`,
+  );
+}
+
+/**
+ * `F4.265` — the pattern reaches every LLM provider as a tool schema's
+ * `pattern`: `zod-to-json-schema` emits `regex.source` and drops the flags.
+ * OpenAI refuses a Unicode property escape (`\p{Cc}`) with
+ * `invalid_function_parameters`, so the source must carry none, and its
+ * **no-flag** meaning is the one that matters. A compile check alone cannot
+ * catch `\p{Cc}`: V8 compiles it without `u` as an Annex-B identity escape.
+ * The text check is the load-bearing one; the refusals and the acceptance
+ * below prove the no-flag compile still means "no Cc".
+ */
+export function assertNoControlCharactersPatternIsPortable(): void {
+  const source = NO_CONTROL_CHARACTERS.source;
+  assert(
+    !source.includes("\\p{") && !source.includes("\\P{"),
+    `NO_CONTROL_CHARACTERS must not use a Unicode property escape, got ${source}`,
+  );
+  const plain = new RegExp(source);
+  const unicode = new RegExp(source, "u");
+  assert(!plain.test("\u0000"), `the no-flag compile of ${source} must refuse U+0000`);
+  assert(!plain.test("\u009F"), `the no-flag compile of ${source} must refuse U+009F`);
+  assert(plain.test("café"), `the no-flag compile of ${source} must accept "café"`);
+  assert(!unicode.test("\u009F"), `the u-flag compile of ${source} must refuse U+009F`);
+  assert(unicode.test("café"), `the u-flag compile of ${source} must accept "café"`);
 }
 
 /**
