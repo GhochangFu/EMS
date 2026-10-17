@@ -200,7 +200,7 @@ function proposeDefinition(entry: CatalogEntry): Record<string, unknown> {
   const required = Object.keys(entry.params);
   if (entry.bodyName !== null) {
     const body = modelBodySchema(entry);
-    properties.body = bodyDefinitionOf(body, entry.id, bodyFieldsOf(body));
+    properties.body = bodyDefinitionOf(body, entry.id, bodyFieldsOf(body), entry.bodyGuide);
     required.push("body");
   }
   return { type: "object", properties, required, additionalProperties: false };

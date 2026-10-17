@@ -227,3 +227,21 @@ export async function aModelSentBaselineIsRefused(): Promise<void> {
   expect(calls.validated).toEqual([]);
   expect(h.stored).toEqual([]);
 }
+
+/**
+ * `F4.266` (ADR 0090 Amendment 3 C6) — each layout tool's definition states
+ * the node and pipe shape, so the model proposes a layout without first
+ * reading it with `describe_change` (a live turn spent its calls there). The
+ * guide is built from the write schemas in `@bms/shared/copilot`, so a new
+ * flag or symbol reaches it without an edit here.
+ */
+export function theLayoutToolsNameTheNodeAndPipeShape(): void {
+  const h = proposeHarness();
+  for (const name of ["propose_mimicLayout_create", "propose_mimicLayout_replace"]) {
+    const definition = h.tools.registry.definitions.find((d) => d.name === name);
+    const json = JSON.stringify(definition ?? null);
+    for (const needle of ['\\"fromKey\\"', '\\"toKey\\"', "isSwitching", "tank", "lift", "unit, panel or label"]) {
+      expect(json.includes(needle), `${name} names ${needle}`).toBe(true);
+    }
+  }
+}

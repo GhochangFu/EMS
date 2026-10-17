@@ -1,6 +1,36 @@
 import { createMimicLayoutBodySchema, putMimicLayoutBodySchema } from "../../contracts/mimic-layout-writes";
+import {
+  MIMIC_LAYOUT_BOUNDS,
+  MIMIC_LAYOUT_NODE_KEY,
+  mimicCoreSymbolSchema,
+  mimicLayoutNodeKindSchema,
+  mimicPanelToneSchema,
+} from "../../contracts/mimic-layouts";
 import { plural, quoted, text, uuidParam } from "./summary-text";
 import type { CatalogEntry, ExcludedRoute } from "./types";
+
+/** "a, b or c" — a vocabulary as one phrase. */
+function orList(values: readonly string[]): string {
+  return values.length < 2 ? values.join("") : `${values.slice(0, -1).join(", ")} or ${values[values.length - 1]}`;
+}
+
+const { canvasW, canvasH } = MIMIC_LAYOUT_BOUNDS;
+
+/**
+ * `F4.266` (ADR 0090 Amendment 3 C6) — the node and pipe shape of a layout
+ * body, as the two layout tools state it after their field list. A live turn
+ * (2026-10-17) spent its tool calls reading this shape with `describe_change`
+ * and never proposed. Every vocabulary and bound comes from the write schemas'
+ * own sources, so a new kind, tone, symbol or bound reaches it
+ * without an edit here; the per-kind rule restates `mimicLayoutWriteNodeSchema`.
+ */
+export const MIMIC_LAYOUT_BODY_GUIDE =
+  `A node is {"key", "kind", "label", "x", "y", "w", "h"}; key matches ${MIMIC_LAYOUT_NODE_KEY.source} and is unique in the body; ` +
+  `kind is ${orList(mimicLayoutNodeKindSchema.options)}. A unit also takes symbol (required) and optionally roleCode, ` +
+  `fanOut, isSource and isSwitching (booleans); a panel takes tone (${orList(mimicPanelToneSchema.options)}) and no symbol; ` +
+  `a label takes neither. A pipe is {"fromKey", "toKey"}: two different unit keys of this body. x, y, w, h are whole grid ` +
+  `cells and each node lies inside canvasW x canvasH (canvasW ${canvasW.min}-${canvasW.max}, canvasH ${canvasH.min}-${canvasH.max}). ` +
+  `symbolLibraries defaults to ["core"]; core symbols: ${mimicCoreSymbolSchema.options.join(", ")}. Propose without describe_change.`;
 
 /** "N units, M panels, P pipes" — what a layout body draws, counted from the body alone. */
 function graphCounts(body: Readonly<Record<string, unknown>>): string {
@@ -34,6 +64,7 @@ export const MIMIC_LAYOUT_ENTRIES: readonly CatalogEntry[] = [
     params: {},
     body: createMimicLayoutBodySchema,
     bodyName: "createMimicLayoutBodySchema",
+    bodyGuide: MIMIC_LAYOUT_BODY_GUIDE,
     clientOnly: [],
     offeredTo: AUTHORS,
     risk: "create",
@@ -52,6 +83,7 @@ export const MIMIC_LAYOUT_ENTRIES: readonly CatalogEntry[] = [
     params: { id: uuidParam },
     body: putMimicLayoutBodySchema,
     bodyName: "putMimicLayoutBodySchema",
+    bodyGuide: MIMIC_LAYOUT_BODY_GUIDE,
     clientOnly: [],
     offeredTo: AUTHORS,
     cardOnly: ["baseline"],

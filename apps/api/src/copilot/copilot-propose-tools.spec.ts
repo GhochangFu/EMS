@@ -492,6 +492,7 @@ export function noToolDefinitionCarriesALargeBody(): void {
  * Owner ruling 2026-10-16 (`F3.87`): 52,000, for the six library, symbol and
  * asset-role tools of PR 6b (5,138 characters together). Measured at PR 6b:
  * 48,027. The headroom is for the next release's entries, not this one's.
+ * `F4.266` (C6): the layout body guide on both layout tools, 48,027 before, 49,745 after.
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();
