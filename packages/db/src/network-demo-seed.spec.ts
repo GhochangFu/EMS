@@ -1,7 +1,8 @@
+import { putMimicLayoutBodySchema } from "@bms/shared";
 import { expect } from "vitest";
 
 import { CONTROL_ROOM_SITE_NAME, eskomSeedAssetCatalog } from "./eskom-assets-seed";
-import { NETWORK_DEMO_ASSETS } from "./network-demo-seed";
+import { NETWORK_DEMO_ASSETS, NETWORK_DEMO_NETWORKS, NETWORK_DEMO_UNIT_BOX } from "./network-demo-seed";
 import { DEMO_WATER_PLANT_ASSETS } from "./water-plant-demo-seed";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
@@ -57,4 +58,41 @@ export function assertTheCatalogCarriesThemAfterTheWaterPlant(): void {
   const lastWater = catalog.indexOf(DEMO_WATER_PLANT_ASSETS[DEMO_WATER_PLANT_ASSETS.length - 1].code);
   expect(lastWater).toBeGreaterThan(-1);
   expect(catalog.slice(lastWater + 1)).toEqual(NETWORK_DEMO_ASSETS.map((a) => a.code));
+}
+
+/**
+ * `F4.263` — every layout the seed writes, rebuilt as the `PUT /mimic-layouts/:id` body the editor
+ * and a copilot `mimicLayout.replace` card send, parses with that body's own schema. A seeded key
+ * the key rule refuses (`grid-cb`) would make the layout unsavable.
+ */
+export function assertEveryLayoutBodyParsesAsAPutBody(): void {
+  expect(NETWORK_DEMO_NETWORKS).toHaveLength(2);
+  for (const network of NETWORK_DEMO_NETWORKS) {
+    const body = {
+      version: 1,
+      name: network.name,
+      slug: network.slug,
+      canvasW: network.canvasW,
+      canvasH: network.canvasH,
+      symbolLibraries: [...network.symbolLibraries],
+      nodes: network.nodes.map(([key, symbol, label, roleCode, isSource, isSwitching, fanOut, x, y]) => ({
+        key,
+        kind: "unit",
+        symbol,
+        label,
+        ...(roleCode ? { roleCode } : {}),
+        x,
+        y,
+        w: NETWORK_DEMO_UNIT_BOX.w,
+        h: NETWORK_DEMO_UNIT_BOX.h,
+        z: NETWORK_DEMO_UNIT_BOX.z,
+        ...(fanOut ? { fanOut: true } : {}),
+        ...(isSource ? { isSource: true } : {}),
+        ...(isSwitching ? { isSwitching: true } : {}),
+      })),
+      pipes: network.pipes.map(([fromKey, toKey]) => ({ fromKey, toKey })),
+    };
+    const result = putMimicLayoutBodySchema.safeParse(body);
+    expect(result.success, `${network.slug}: ${JSON.stringify(result.error?.issues)}`).toBe(true);
+  }
 }

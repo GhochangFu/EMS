@@ -197,6 +197,8 @@
     "tests/f3.80-network-mimics-migration.test.ts",
     "tests/f3.80-network-mimics-migration.integration.test.ts",
     "tests/f3.80-network-demo-seed.integration.test.ts",
+    "tests/f4.263-network-demo-node-keys-migration.test.ts",
+    "tests/f4.263-network-demo-node-keys-migration.integration.test.ts",
     "tests/f3.74-point-key-states-schema.integration.test.ts",
     "tests/f3.74-point-key-states-seed.integration.test.ts",
     "tests/f3.74-breaker-table-widget-type.test.ts",
