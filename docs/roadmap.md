@@ -7804,3 +7804,5 @@ Verified: every PR's touched suites, `pnpm typecheck:tests` and CI before its me
 **Cascade:** no row lists `F3.87` in *Depends* except its follow-up `F4.264`.
 
 Owed: `F4.263`, `F4.264`; a `chore(agents):` sweep for AGENTS.md in its own PR.
+
+**`F4.264` done 2026-10-17** (research report `docs/f4.264-copilot-model-research-2026-10-17.md`): the mimic builder runs on `anthropic/claude-haiku-5.5`; a successful image turn is verified live. It found `F4.265` (every OpenAI model refuses the copilot's tool list, since #875) and `F4.266` (no model builds a layout from a drawing within the 8-call cap without a hint).
