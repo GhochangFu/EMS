@@ -42,7 +42,7 @@ import { CopilotOnboardingCommitReader, discardOnboardingCommitCards, onboarding
 import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pending-changes.service";
 import { accessIntentOf } from "./copilot-access-intent";
 import { assetIntentOf } from "./copilot-asset-intent";
-import { hasImageAttachment, inspectAttachments, type TurnAttachment, type UploadedAttachment } from "./copilot-attachments";
+import { hasImageAttachment, hasPdfWithoutImage, inspectAttachments, type TurnAttachment, type UploadedAttachment } from "./copilot-attachments";
 import { COPILOT_PROPOSE_TOOLS, type CopilotProposeTools } from "./copilot-propose-tools";
 import { COPILOT_READ_TOOLS, type CopilotReadTools, type CopilotToolContext } from "./copilot-read-tools";
 import {
@@ -89,6 +89,9 @@ export const COPILOT_ATTACHMENTS_OFF_MESSAGE =
 /** Plan D5: the provider failed on a turn that carried a file (the recorded residual: any provider error). */
 export const COPILOT_ATTACHMENT_UNREADABLE_REPLY =
   "This model could not read the attached file. Describe the drawing in words, or try another model.";
+/** `F4.268` (ADR 0090 Amendment 3 ruling 6): appended when a PDF-only turn stops on the deadline or a provider error. */
+export const COPILOT_PDF_TEXT_ONLY_REPLY_NOTE =
+  "A drawing in a PDF reaches the assistant as text only. Send a drawing as an image (PNG, JPEG or WebP).";
 
 /** The two argument guards' refusals. */
 export const COPILOT_PROMPT_MARKER_TOOL_ERROR =
@@ -125,6 +128,16 @@ export const COPILOT_SYSTEM_PROMPT = [
   "When a tool returns no items, say there are none; do not call it again with other arguments to find some.",
   "Answer briefly. Use **bold** only for the name of a record.",
 ].join("\n");
+
+/**
+ * `F4.268` (ADR 0090 Amendment 3 ruling 6) — a third system message, on a turn
+ * whose files hold a PDF and no image only: the main model gets the PDF's text,
+ * so it must not draw a layout from pictures it never saw.
+ */
+export const COPILOT_PDF_TEXT_ONLY_PROMPT =
+  "This turn's attachment is a PDF and no image: the PDF reaches you as extracted text only, never as a picture. " +
+  "Never invent units, symbols or pipes that the text does not state. " +
+  "If the user asks you to draw or build a layout from a drawing in the PDF, answer that the drawing must be sent as an image (PNG, JPEG or WebP), and propose nothing from it.";
 
 /**
  * The second system message: the organization ids this turn may read (its key
@@ -503,6 +516,8 @@ export class CopilotTurnService {
       if (!inspected.ok) throw new HttpException({ statusCode: inspected.status, message: inspected.message }, inspected.status);
       attachments = inspected.attachments;
     }
+    // `F4.268`: a PDF and no image reaches the model as text only (a follow-up has no files).
+    const pdfTextOnly = hasPdfWithoutImage(attachments);
 
     // 4. Usage, against the conversation's organization, before any model call.
     const usage = await this.usage.consumeTurn(identity, organizationId, this.clock());
@@ -550,6 +565,7 @@ export class CopilotTurnService {
       messages: [
         { role: "system", content: COPILOT_SYSTEM_PROMPT },
         { role: "system", content: copilotScopeMessage(scope.allowed) },
+        ...(pdfTextOnly ? [{ role: "system" as const, content: COPILOT_PDF_TEXT_ONLY_PROMPT }] : []),
         ...history.messages,
         ...(input.kind === "user"
           ? [{ role: "user" as const, content: userTurnContent(input.message, attachments) }]
@@ -600,7 +616,10 @@ export class CopilotTurnService {
       if (input.kind === "follow_up") return storeOutcomeOnly("failed", COPILOT_TURN_FAILED_REPLY);
       // D5: a provider error on a file turn is most likely the model refusing the file; a cap keeps the plain reply.
       const unreadable = attachments.length > 0 && result.stopReason === "provider_error";
-      return respond(conversationId, "failed", unreadable ? COPILOT_ATTACHMENT_UNREADABLE_REPLY : COPILOT_TURN_FAILED_REPLY);
+      const base = unreadable ? COPILOT_ATTACHMENT_UNREADABLE_REPLY : COPILOT_TURN_FAILED_REPLY;
+      // `F4.268`: the deadline or a provider error on a PDF-only turn names the image rule; the call cap does not.
+      const pdfNote = pdfTextOnly && (result.stopReason === "cap_time" || result.stopReason === "provider_error");
+      return respond(conversationId, "failed", pdfNote ? `${base} ${COPILOT_PDF_TEXT_ONLY_REPLY_NOTE}` : base);
     }
 
     // 7. The secret scrub on everything the model wrote.

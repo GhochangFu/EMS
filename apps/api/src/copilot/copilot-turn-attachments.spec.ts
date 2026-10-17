@@ -1,11 +1,12 @@
 import { createHash } from "node:crypto";
 
 import { Logger } from "@nestjs/common";
-import { expect } from "vitest";
+import { expect, vi } from "vitest";
 
 import type { CopilotMessageDto } from "@bms/shared";
 
 import { calls, FakeLlmProvider, toolCall } from "../admin/onboarding/onboarding-agent-loop.spec";
+import { TURN_DEADLINE_MS } from "../llm/agent-loop";
 import { textOfContent } from "../llm/llm-port";
 import { png, SYMBOL_SVG } from "./copilot-attachments.spec";
 import type { UploadedAttachment } from "./copilot-attachments";
@@ -30,6 +31,9 @@ import {
   COPILOT_ATTACHMENTS_NEED_KEY_MESSAGE,
   COPILOT_ATTACHMENTS_OFF_MESSAGE,
   COPILOT_FOLLOW_UP_PREFIX,
+  COPILOT_PDF_TEXT_ONLY_PROMPT,
+  COPILOT_PDF_TEXT_ONLY_REPLY_NOTE,
+  COPILOT_SYSTEM_PROMPT,
   COPILOT_TURN_FAILED_REPLY,
   historyHasAttachmentSinceLastLayout,
 } from "./copilot-turn.service";
@@ -387,4 +391,110 @@ export async function noKeyIsStill400BeforeTheSwitchOnAnImageTurn(): Promise<voi
   expect(h.counts.resolveImage).toEqual([true]);
   expect(h.counts.attachmentsOn).toEqual([]);
   expect(vision.calls).toBe(0);
+}
+
+/** The system messages one provider was sent on its first call. */
+function systemTexts(llm: FakeLlmProvider): unknown[] {
+  return (llm.seen[0] ?? []).filter((m) => m.role === "system").map((m) => m.content);
+}
+
+/**
+ * `F4.268` (ADR 0090 Amendment 3 ruling 6): a PDF-only turn carries the
+ * text-only clause as a third system message; the prompt itself is unchanged.
+ * Mutation: delete the conditional spread → red.
+ */
+export async function aPdfOnlyTurnCarriesThePdfTextOnlyClause(): Promise<void> {
+  const main = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const h = harness(main);
+  await fileTurn(h, "draw the layout in this PDF", [PDF_FILE]);
+  const texts = systemTexts(main);
+  expect(texts[0]).toBe(COPILOT_SYSTEM_PROMPT);
+  expect(texts).toContain(COPILOT_PDF_TEXT_ONLY_PROMPT);
+}
+
+/**
+ * The adjacent negative: a PDF beside an image goes to the image model, which
+ * sees the drawing, so no clause. The two system messages are the positive
+ * control. Mutation: `pdfTextOnly = attachments.some(pdf)` → red.
+ */
+export async function aPdfBesideAnImageCarriesNoPdfClause(): Promise<void> {
+  const vision = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const h = harness(new FakeLlmProvider([]), { visionLlm: vision });
+  await fileTurn(h, "read both", [PNG_FILE, PDF_FILE]);
+  expect(systemTexts(vision)).toHaveLength(2);
+  expect(systemTexts(vision)).not.toContain(COPILOT_PDF_TEXT_ONLY_PROMPT);
+}
+
+/** An image turn carries no clause. Mutation: `pdfTextOnly = files.length > 0` → red. */
+export async function anImageTurnCarriesNoPdfClause(): Promise<void> {
+  const main = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const h = harness(main);
+  await fileTurn(h, "what is in this drawing?", [PNG_FILE]);
+  expect(systemTexts(main)).toHaveLength(2);
+  expect(systemTexts(main)).not.toContain(COPILOT_PDF_TEXT_ONLY_PROMPT);
+}
+
+/** A text turn carries no clause. Mutation: `pdfTextOnly = true` → red. */
+export async function aTextTurnCarriesNoPdfClause(): Promise<void> {
+  const main = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const h = harness(main);
+  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "how many alarms?", "user");
+  expect(systemTexts(main)).toHaveLength(2);
+  expect(systemTexts(main)).not.toContain(COPILOT_PDF_TEXT_ONLY_PROMPT);
+}
+
+/**
+ * `F4.268`: a provider error on a PDF-only turn appends the image rule to the
+ * unreadable reply. The PNG negative is (9), the text negative
+ * `aProviderErrorWithoutAFileKeepsThePlainReply` (both exact on the string).
+ * Mutation: drop the append → red.
+ */
+export async function aProviderErrorOnAPdfTurnAppendsThePdfNote(): Promise<void> {
+  const h = harness(new FakeLlmProvider(["reject"]));
+  const response = await fileTurn(h, "draw this", [PDF_FILE]);
+  expect(response).toMatchObject({
+    outcome: "failed",
+    reply: `${COPILOT_ATTACHMENT_UNREADABLE_REPLY} ${COPILOT_PDF_TEXT_ONLY_REPLY_NOTE}`,
+    messages: [],
+  });
+}
+
+/**
+ * `F4.268`: the 45 s deadline (`cap_time`) on a PDF-only turn appends the
+ * image rule to the plain failed reply — the live ESKOM symptom, driven with
+ * fake timers. Mutation: key the note on `unreadable` only → red.
+ */
+export async function aDeadlineOnAPdfTurnAppendsThePdfNote(): Promise<void> {
+  vi.useFakeTimers();
+  try {
+    const h = harness(new FakeLlmProvider(["hang"]));
+    const pending = fileTurn(h, "draw this", [PDF_FILE]);
+    await vi.advanceTimersByTimeAsync(TURN_DEADLINE_MS);
+    const response = await pending;
+    expect(response).toMatchObject({ outcome: "failed", reply: `${COPILOT_TURN_FAILED_REPLY} ${COPILOT_PDF_TEXT_ONLY_REPLY_NOTE}` });
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+/**
+ * The call cap (`cap_calls`) on a PDF-only turn keeps the plain reply: the
+ * task names `cap_time` and a provider failure only. Mutation: append on every
+ * non-final stop → red.
+ */
+export async function aCallCapOnAPdfTurnKeepsThePlainReply(): Promise<void> {
+  const nine = Array.from({ length: 9 }, () => toolCall("list_assets", {}));
+  const llm = new FakeLlmProvider([calls(...nine)]);
+  const h = harness(llm, { tools: { list_assets: () => ({ ok: true, result: { items: [] }, organizationIds: [ORG_X] }) } });
+  const response = await fileTurn(h, "draw this", [PDF_FILE]);
+  expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_TURN_FAILED_REPLY });
+}
+
+/** A provider error on a PDF beside an image keeps the unreadable reply alone. Mutation: key the note on `some(pdf)` → red. */
+export async function aProviderErrorOnAnImageTurnKeepsTheUnreadableReplyAlone(): Promise<void> {
+  const vision = new FakeLlmProvider(["reject"]);
+  const h = harness(new FakeLlmProvider([]), { visionLlm: vision });
+  const response = await fileTurn(h, "read both", [PNG_FILE, PDF_FILE]);
+  expect(vision.calls).toBe(1);
+  expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_ATTACHMENT_UNREADABLE_REPLY });
 }

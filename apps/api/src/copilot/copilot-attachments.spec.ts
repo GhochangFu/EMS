@@ -12,8 +12,10 @@ import {
   COPILOT_ATTACHMENTS_TOO_MANY_MESSAGE,
   COPILOT_ATTACHMENTS_TOTAL_TOO_LARGE_MESSAGE,
   hasImageAttachment,
+  hasPdfWithoutImage,
   inspectAttachments,
   sniffAttachmentType,
+  type AttachmentMediaType as TurnAttachmentType,
   type UploadedAttachment,
 } from "./copilot-attachments";
 
@@ -188,4 +190,19 @@ export function aPngBesideAPdfIsAnImageTurn(): void {
 export function unknownBytesAreNotAnImageTurn(): void {
   expect(hasImageAttachment([file(Buffer.alloc(64, 7), "photo.png")])).toBe(false);
   expect(hasImageAttachment([])).toBe(false);
+}
+
+/**
+ * `F4.268` (ADR 0090 Amendment 3 ruling 6): a PDF and no image is a text-only
+ * turn; an SVG is text, so it does not make the turn an image turn.
+ * Mutations: drop the `!some(image)` half → `[pdf, png]` red; `some(pdf)` →
+ * `every(pdf)` → `[pdf, svg]` red.
+ */
+export function aPdfWithoutAnImageIsTextOnly(): void {
+  const of = (...types: TurnAttachmentType[]) => types.map((mediaType) => ({ mediaType }));
+  expect(hasPdfWithoutImage(of("application/pdf")), "[pdf]").toBe(true);
+  expect(hasPdfWithoutImage(of("application/pdf", "image/png")), "[pdf, png]").toBe(false);
+  expect(hasPdfWithoutImage(of("image/png")), "[png]").toBe(false);
+  expect(hasPdfWithoutImage(of("image/svg+xml")), "[svg]").toBe(false);
+  expect(hasPdfWithoutImage(of("application/pdf", "image/svg+xml")), "[pdf, svg]").toBe(true);
 }

@@ -98,6 +98,15 @@ export function hasImageAttachment(files: readonly UploadedAttachment[]): boolea
   });
 }
 
+/**
+ * `F4.268` (ADR 0090 Amendment 3 ruling 6) — the turn's inspected files hold a
+ * PDF and no image: the turn stays on the main model, which gets the PDF's
+ * extracted text only. An SVG is text, so it never counts as the image.
+ */
+export function hasPdfWithoutImage(attachments: readonly Pick<TurnAttachment, "mediaType">[]): boolean {
+  return attachments.some((a) => a.mediaType === "application/pdf") && !attachments.some((a) => IMAGE_TYPES.has(a.mediaType));
+}
+
 function refused(status: 400 | 413, message: string): AttachmentInspection {
   return { ok: false, status, message };
 }
