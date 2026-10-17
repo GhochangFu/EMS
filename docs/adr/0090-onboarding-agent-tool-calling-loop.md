@@ -829,8 +829,8 @@ refusal still runs first, before either path.
 Accepted — the owner chose "Path B" on 2026-10-17 after the `F4.264` research
 (`docs/f4.264-copilot-model-research-2026-10-17.md`) and ruled six questions one at a
 time the same day, each as recommended except question 5. Drafted before any
-implementation code; the owner approves this written amendment before the
-build starts.
+implementation code. The owner approved this written amendment on
+2026-10-17.
 
 **Why.** One setting holds one model, and the copilot sends every turn to it.
 The owner keeps `z-ai/glm-5.3` for the copilot's tool work — it is text only,
