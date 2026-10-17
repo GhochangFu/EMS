@@ -1345,7 +1345,7 @@
 > did not ask for. No new npm package. **The propose tool definitions are
 > capped at 52,000 characters** (owner ruling 2026-10-16; was 48,000).
 > **Every JSON Schema `pattern` they carry must compile as an ECMA-262 regex
-> without the `u` flag** — no `p{…}` escapes; state the ranges instead —
+> without the `u` flag** — no `\p{…}` escapes; state the ranges instead —
 > because OpenAI refuses the whole tool list otherwise (`F4.265`, #883; gated
 > by `apps/api/src/copilot/copilot-tool-definition-patterns.spec.ts`).
 > **A turn that carries a PDF and no image** is told the PDF reaches it as
