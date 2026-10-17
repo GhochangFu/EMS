@@ -42,7 +42,7 @@ import { CopilotOnboardingCommitReader, discardOnboardingCommitCards, onboarding
 import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pending-changes.service";
 import { accessIntentOf } from "./copilot-access-intent";
 import { assetIntentOf } from "./copilot-asset-intent";
-import { inspectAttachments, type TurnAttachment, type UploadedAttachment } from "./copilot-attachments";
+import { hasImageAttachment, inspectAttachments, type TurnAttachment, type UploadedAttachment } from "./copilot-attachments";
 import { COPILOT_PROPOSE_TOOLS, type CopilotProposeTools } from "./copilot-propose-tools";
 import { COPILOT_READ_TOOLS, type CopilotReadTools, type CopilotToolContext } from "./copilot-read-tools";
 import {
@@ -145,8 +145,16 @@ export interface CopilotTurnCaller {
   readonly user: JwtPayload;
 }
 
-/** Turn context plus the tool context: what a turn may read, and with which key. */
-type TurnScope = { readonly provider: LlmProvider; readonly source: "organization" | "platform"; readonly allowed: readonly string[] };
+/**
+ * Turn context plus the tool context: what a turn may read, and with which key.
+ * `vision` (`F4.267`, ADR 0090 Amendment 3 C3): the provider is the organization's image model.
+ */
+type TurnScope = {
+  readonly provider: LlmProvider;
+  readonly source: "organization" | "platform";
+  readonly allowed: readonly string[];
+  readonly vision: boolean;
+};
 
 /** Every tool call's arguments pass both, on every tool, before the schema. */
 export const COPILOT_TOOL_GUARDS: readonly ToolGuard<string>[] = [
@@ -471,7 +479,9 @@ export class CopilotTurnService {
     }
 
     // 3. Key resolution (decision 10). No key: not configured, and not counted.
-    const scope = await this.resolveScope(organizationId);
+    // `F4.267` (ADR 0090 Amendment 3 C3): a turn whose files hold an image resolves the image model.
+    const image = files.length > 0 && hasImageAttachment(files);
+    const scope = await this.resolveScope(organizationId, image);
     // Step 5 (A5, D1): no key, or the guided mode, cannot read a file — a 400, before the switch is read.
     if (files.length > 0 && scope === null) throw new BadRequestException(COPILOT_ATTACHMENTS_NEED_KEY_MESSAGE);
     if (scope === null) {
@@ -574,6 +584,7 @@ export class CopilotTurnService {
         kind,
         provider: scope.provider.name,
         source: scope.source,
+        vision: scope.vision,
         proposed: proposed.length,
         attachments: attachments.length,
         ...result.record,
@@ -696,16 +707,16 @@ export class CopilotTurnService {
   }
 
   /** Decision 10: the key and the allowed set for the conversation's scope, or null when no key resolves. */
-  private async resolveScope(organizationId: string | null): Promise<TurnScope | null> {
+  private async resolveScope(organizationId: string | null, image = false): Promise<TurnScope | null> {
     if (organizationId !== null) {
-      const resolved = await this.resolver.resolveForOrganization(organizationId);
+      const resolved = await this.resolver.resolveForOrganization(organizationId, { image });
       return resolved.kind === "ready"
-        ? { provider: resolved.provider, source: resolved.source, allowed: [organizationId] }
+        ? { provider: resolved.provider, source: resolved.source, allowed: [organizationId], vision: resolved.vision }
         : null;
     }
     const resolved = await this.resolver.resolvePlatformScope((id) => this.availability.organizationSwitchOn(id));
     return resolved.kind === "ready"
-      ? { provider: resolved.provider, source: resolved.source, allowed: resolved.allowedOrganizationIds }
+      ? { provider: resolved.provider, source: resolved.source, allowed: resolved.allowedOrganizationIds, vision: false }
       : null;
   }
 }

@@ -11,6 +11,7 @@ import {
   COPILOT_ATTACHMENT_TYPE_MESSAGE,
   COPILOT_ATTACHMENTS_TOO_MANY_MESSAGE,
   COPILOT_ATTACHMENTS_TOTAL_TOO_LARGE_MESSAGE,
+  hasImageAttachment,
   inspectAttachments,
   sniffAttachmentType,
   type UploadedAttachment,
@@ -154,4 +155,37 @@ export function aRefusedSvgCarriesTheRefusal(): void {
   if (!outcome.ok) return;
   expect(outcome.attachments[0]?.svgRefusal).toEqual(expect.any(String));
   expect(outcome.attachments[0]?.svgSummary).toBeUndefined();
+}
+
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(32)]);
+const WEBP = Buffer.concat([Buffer.from("RIFF", "ascii"), Buffer.alloc(4), Buffer.from("WEBP", "ascii"), Buffer.alloc(32)]);
+const PDF = Buffer.concat([Buffer.from("%PDF-1.7\n", "ascii"), Buffer.alloc(32)]);
+
+/** `F4.267` (ADR 0090 Amendment 3 C3): a PNG, a JPEG or a WebP makes an image turn. Mutation: drop one type from the set → red. */
+export function eachRasterImageMakesAnImageTurn(): void {
+  for (const [name, buffer] of [["PNG", png()], ["JPEG", JPEG], ["WebP", WEBP]] as const) {
+    expect(hasImageAttachment([file(buffer)]), name).toBe(true);
+  }
+}
+
+/** C3: a PDF alone is not an image turn (out of scope: PDF turns stay on the main model). Mutation: add application/pdf to the set → red. */
+export function aPdfAloneIsNotAnImageTurn(): void {
+  expect(sniffAttachmentType(PDF)).toBe("application/pdf");
+  expect(hasImageAttachment([file(PDF, "spec.pdf")])).toBe(false);
+}
+
+/** C3: an SVG is text to the model, never an image part, so it is not an image turn. Mutation: add image/svg+xml to the set → red. */
+export function anSvgAloneIsNotAnImageTurn(): void {
+  expect(hasImageAttachment([file(Buffer.from(SYMBOL_SVG), "pump.svg")])).toBe(false);
+}
+
+/** C3: one image among other files is an image turn. Mutation: `every` for `some` → red. */
+export function aPngBesideAPdfIsAnImageTurn(): void {
+  expect(hasImageAttachment([file(PDF, "spec.pdf"), file(png())])).toBe(true);
+}
+
+/** Bytes of no known type are not an image, whatever their name. Mutation: return true for a null sniff → red. */
+export function unknownBytesAreNotAnImageTurn(): void {
+  expect(hasImageAttachment([file(Buffer.alloc(64, 7), "photo.png")])).toBe(false);
+  expect(hasImageAttachment([])).toBe(false);
 }

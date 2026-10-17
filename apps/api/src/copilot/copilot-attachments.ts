@@ -83,6 +83,21 @@ export function sniffAttachmentType(buffer: Buffer): AttachmentMediaType | null 
   return null;
 }
 
+/** The types that travel to the provider as an image part (an SVG is text, a PDF a document part). */
+const IMAGE_TYPES: ReadonlySet<AttachmentMediaType> = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+/**
+ * `F4.267` (ADR 0090 Amendment 3 C3) — whether a turn's files hold an image,
+ * from the bytes: such a turn resolves the organization's image model. A PDF
+ * or an SVG alone does not; one image among them does.
+ */
+export function hasImageAttachment(files: readonly UploadedAttachment[]): boolean {
+  return files.some((file) => {
+    const mediaType = sniffAttachmentType(file.buffer);
+    return mediaType !== null && IMAGE_TYPES.has(mediaType);
+  });
+}
+
 function refused(status: 400 | 413, message: string): AttachmentInspection {
   return { ok: false, status, message };
 }

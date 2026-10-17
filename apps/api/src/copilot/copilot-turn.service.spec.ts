@@ -118,6 +118,8 @@ type Options = {
   open?: CopilotPendingChangeDto[];
   /** `F3.87` PR 7: the organization's attachment switch (on unless false). */
   attachmentsOn?: boolean;
+  /** `F4.267` (ADR 0090 Amendment 3 C3): the provider an image turn resolves to (absent: the main one, `vision: false`). */
+  visionLlm?: FakeLlmProvider;
 };
 
 export const CHANGE_ID = "44444444-4444-4444-8444-444444444444";
@@ -130,7 +132,7 @@ const TEMPLATE_T = "55555555-5555-4555-8555-555555555555";
 export function harness(llm: FakeLlmProvider, options: Options = {}) {
   const conversationOrg = options.conversationOrg === undefined ? ORG_X : options.conversationOrg;
   const history: CopilotMessageDto[] = [...(options.stored ?? [])];
-  const counts = { resolveForOrganization: [] as string[], resolvePlatformScope: 0, consumeTurn: [] as Array<{ identity: UsageIdentity; organizationId: string | null }>, appendTurn: 0, recentLimit: [] as number[], unbind: 0, attachmentsOn: [] as string[] };
+  const counts = { resolveForOrganization: [] as string[], resolvePlatformScope: 0, consumeTurn: [] as Array<{ identity: UsageIdentity; organizationId: string | null }>, appendTurn: 0, recentLimit: [] as number[], unbind: 0, attachmentsOn: [] as string[], resolveImage: [] as boolean[] };
   let tick = 0;
   const conversations = {
     findConversation: async (userId: string, id: string) =>
@@ -164,11 +166,15 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
       return options.attachmentsOn !== false;
     },
   };
-  const ready = (): ResolvedLlm => ({ kind: "ready", provider: llm as LlmProvider, source: "organization", vision: false });
+  const ready = (image: boolean): ResolvedLlm =>
+    image && options.visionLlm !== undefined
+      ? { kind: "ready", provider: options.visionLlm as LlmProvider, source: "organization", vision: true }
+      : { kind: "ready", provider: llm as LlmProvider, source: "organization", vision: false };
   const resolver = {
-    resolveForOrganization: async (id: string): Promise<ResolvedLlm> => {
+    resolveForOrganization: async (id: string, resolveOptions: { readonly image?: boolean } = {}): Promise<ResolvedLlm> => {
       counts.resolveForOrganization.push(id);
-      return (options.bound ?? "ready") === "ready" ? ready() : { kind: "guided", reason: "organization_off" };
+      counts.resolveImage.push(resolveOptions.image === true);
+      return (options.bound ?? "ready") === "ready" ? ready(resolveOptions.image === true) : { kind: "guided", reason: "organization_off" };
     },
     resolvePlatformScope: async (): Promise<ResolvedPlatformScope> => {
       counts.resolvePlatformScope += 1;
