@@ -8,6 +8,7 @@ import {
   assertMaxBytesIsTenMiB,
   assertNoControlCharactersPatternIsPortable,
   assertPerAssetCapIsTwenty,
+  assertRowCarriesItsLabelledCodePoint,
   assertStorageSectionIsOptionalOnLiveness,
   assertStringAtTheBoundParses,
   assertStringBoundConstantIs,
@@ -43,6 +44,10 @@ describe("F3.3 — asset-image constants and contracts (ADR 0066)", () => {
 
   it.each(CONTROL_CHARACTER_ROWS)("$label", (row) => {
     assertControlCharacterRow(row);
+  });
+
+  it.each(CONTROL_CHARACTER_ROWS)("$label carries the code point its label names", (row) => {
+    assertRowCarriesItsLabelledCodePoint(row);
   });
 
   it("makes storage optional on the liveness body, and still validates it when present", () => {

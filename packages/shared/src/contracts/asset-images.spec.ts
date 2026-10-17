@@ -139,10 +139,10 @@ export const CONTROL_CHARACTER_ROWS = [
   { label: "caption with a tab", patch: { caption: "tab\there" }, accepted: false },
   { label: "caption with a plain space", patch: { caption: "a b" }, accepted: true },
   { label: "caption in CJK", patch: { caption: "中文" }, accepted: true },
-  { label: "caption with U+00A0 (no-break space)", patch: { caption: "a b" }, accepted: true },
+  { label: "caption with U+00A0 (no-break space)", patch: { caption: "a\u00A0b" }, accepted: true },
   // U+2028 is category Zl (line separator), not Cc: accepted today, and this
   // row pins that the explicit ranges did not widen the refusal.
-  { label: "caption with U+2028 (line separator, not Cc)", patch: { caption: "a b" }, accepted: true },
+  { label: "caption with U+2028 (line separator, not Cc)", patch: { caption: "a\u2028b" }, accepted: true },
 ] as const;
 
 export function assertControlCharacterRow(row: (typeof CONTROL_CHARACTER_ROWS)[number]): void {
@@ -152,6 +152,24 @@ export function assertControlCharacterRow(row: (typeof CONTROL_CHARACTER_ROWS)[n
     `${row.label} must ${row.accepted ? "parse" : "be refused"}, got ${JSON.stringify(
       result.success === false ? result.error.issues : result.data,
     )}`,
+  );
+}
+
+/**
+ * `F4.265` review — a row whose label names a code point (`U+00A0`) must carry
+ * that code point in its patch. The rows write it as a `\u` escape so a diff
+ * shows it; this pin catches the escape (or a literal) being turned into a
+ * plain space by an editor or a copy-paste, which would leave the row green as
+ * a silent copy of the "a b" row.
+ */
+export function assertRowCarriesItsLabelledCodePoint(row: (typeof CONTROL_CHARACTER_ROWS)[number]): void {
+  const named = /U\+([0-9A-F]{4})/.exec(row.label);
+  if (named === null) return;
+  const codePoint = Number.parseInt(named[1] ?? "", 16);
+  const values = Object.values(row.patch) as string[];
+  assert(
+    values.some((value) => [...value].some((char) => char.codePointAt(0) === codePoint)),
+    `${row.label} must carry U+${named[1]} in its patch, got ${JSON.stringify(values)}`,
   );
 }
 
