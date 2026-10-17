@@ -125,6 +125,7 @@ function storedRow(provider = "openrouter", apiKey: string | null = ORG_KEY): Ro
     organizationId: ORG,
     provider,
     model: provider === "off" ? null : "moonshotai/kimi-k3",
+    visionModel: null,
     keyCiphertext: null,
     keyIv: null,
     keyVersion: null,

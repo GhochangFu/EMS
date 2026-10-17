@@ -74,6 +74,7 @@ function orgRow(overrides: Partial<Row> & { apiKey?: string } = {}): Row {
     organizationId: "org-1",
     provider: "openai",
     model: "gpt-4o",
+    visionModel: null,
     keyCiphertext: null,
     keyIv: null,
     keyVersion: null,

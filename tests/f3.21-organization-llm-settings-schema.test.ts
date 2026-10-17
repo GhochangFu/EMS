@@ -136,13 +136,14 @@ describe("F3.21 migration 0100 — bms.organization_llm_settings (ADR 0090 Amend
     expect(policy).not.toMatch(/\bTO\s+bms_/i);
   });
 
-  it("the drizzle block declares the same nine columns", () => {
+  it("the drizzle block declares the same ten columns (F4.267 adds vision_model after model)", () => {
     const block = drizzleBlock(read(SCHEMA_REL));
     const columns = [...block.matchAll(/^\s+(\w+): (\w+)\("(\w+)"/gm)].map((m) => m[3]);
     expect(columns).toEqual([
       "organization_id",
       "provider",
       "model",
+      "vision_model",
       "key_ciphertext",
       "key_iv",
       "key_version",
