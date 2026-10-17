@@ -121,3 +121,36 @@ describe("F4.267 migration 0111 — organization_llm_settings.vision_model (ADR 
     );
   });
 });
+
+/**
+ * `F4.267` review finding — `LLM_VISION_MODEL` reaches every api container that
+ * reads it. The AWS demo stack is a separate compose file; without the line
+ * there, the host `.env` value never reaches the api and image turns silently
+ * go to the main model. Each `api` service block is sliced on its own, so a
+ * line under another service cannot satisfy the assertion.
+ */
+const serviceBlock = (compose: string, service: string): string => {
+  const header = `\n  ${service}:\n`;
+  const start = compose.indexOf(header);
+  if (start < 0) throw new Error(`no "${service}" service`);
+  const next = compose.slice(start + header.length).search(/\n {2}[a-z][\w-]*:\n|\n[a-z]/);
+  return next < 0 ? compose.slice(start) : compose.slice(start, start + header.length + next);
+};
+
+describe("F4.267 — LLM_VISION_MODEL reaches the api containers", () => {
+  const LINE = "LLM_VISION_MODEL: ${LLM_VISION_MODEL:-}";
+
+  it("the root compose passes it to api and api-replica", () => {
+    const compose = read("docker-compose.yml");
+    expect(serviceBlock(compose, "api")).toContain(LINE);
+    expect(serviceBlock(compose, "api-replica")).toContain(LINE);
+  });
+
+  it("the AWS demo compose passes it to api", () => {
+    expect(serviceBlock(read("deploy/aws/docker-compose.yml"), "api")).toContain(LINE);
+  });
+
+  it("the AWS .env template lists it beside the other LLM variables", () => {
+    expect(read("deploy/aws/setup-server.sh")).toMatch(/\nANTHROPIC_MODEL=\nLLM_VISION_MODEL=\n/);
+  });
+});

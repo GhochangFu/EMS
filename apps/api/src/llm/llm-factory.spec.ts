@@ -62,6 +62,9 @@ export function assertAnImageRefusalIsNoImageSupport(): void {
     [apiError(404, "No endpoints found that support tool use. Try disabling tools."), "no_tool_support"],
     [apiError(404, "Not Found"), "unknown_model"],
     [apiError(500, "image too large"), "provider_error"],
+    // A model id that contains "image" is not an image refusal (review finding).
+    [apiError(404, "The model `gpt-image-1` does not exist"), "unknown_model"],
+    [apiError(400, "openai/gpt-5-image: No endpoints found that support tool use"), "no_tool_support"],
   ];
   for (const [err, expected] of cases) {
     const got: string = classifyProviderError(err);
