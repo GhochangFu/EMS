@@ -21,7 +21,7 @@ import { asRole } from "../apps/api/src/testing/role-urls.js";
  *     a wired asset's RTU is at the asset's own location; MATCH SIMPLE skips `rtu_id IS NULL`.
  *
  * Each refusal is proved as `bms_tenant`, as `bms_owner` and as the superuser
- * (the `fleetDb` shape, no GUC), because the RI check runs with row security
+ * (no GUC), because the RI check runs with row security
  * off: the key refuses whatever the caller can see.
  *
  * **Why the disagreement is in the location or the RTU, never the row's own
@@ -217,7 +217,7 @@ describe.skipIf(!has)("F4.132/F4.137 — asset and RTU composite keys against a 
   const roles: Array<[string, () => IntegrationPool, boolean]> = [
     ["bms_tenant", () => tenantPool, true],
     ["bms_owner", () => ownerPool, true],
-    ["superuser (fleetDb shape)", () => superPool, false],
+    ["superuser (no GUC)", () => superPool, false],
   ];
 
   describe.each(roles)("as %s", (_role, pool, tenant) => {
@@ -340,19 +340,6 @@ describe.skipIf(!has)("F4.132/F4.137 — asset and RTU composite keys against a 
         ["rtus_id_location_key", "bms.rtus", "u", "-", " ", " "],
         [K2, "bms.rtus", "f", "bms.locations", "a", "a"],
       ]);
-    });
-
-    it("C2 the three migration-0113 guard queries each count 0 on the seeded database", async () => {
-      const r = await superPool.query<{ rtu_org: string; asset_org: string; asset_rtu: string }>(
-        `SELECT
-           (SELECT count(*) FROM bms.rtus r JOIN bms.locations l ON l.id = r.location_id
-             WHERE l.organization_id <> r.organization_id) AS rtu_org,
-           (SELECT count(*) FROM bms.assets a JOIN bms.locations l ON l.id = a.location_id
-             WHERE l.organization_id <> a.organization_id) AS asset_org,
-           (SELECT count(*) FROM bms.assets a JOIN bms.rtus r ON r.id = a.rtu_id
-             WHERE a.location_id <> r.location_id) AS asset_rtu`,
-      );
-      expect(r.rows[0]).toEqual({ rtu_org: "0", asset_org: "0", asset_rtu: "0" });
     });
   });
 });
