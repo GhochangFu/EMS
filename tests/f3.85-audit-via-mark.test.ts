@@ -63,6 +63,8 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/users/users.service.ts",
   "apps/api/src/admin/users/user-grants.service.ts",
   "apps/api/src/admin/onboarding/onboarding-commit.service.ts",
+  // `F3.24b` (ADR 0103): the `onboarding.discovery` handler audits start and refuse rows here.
+  "apps/api/src/admin/onboarding/onboarding-discovery.service.ts",
   "apps/api/src/control-room/site-control-room-view.service.ts",
   // `F3.87` PR 2 (plan §4.7): every service a release-3 entry's handler reaches.
   "apps/api/src/mimic-layouts/mimic-layouts.service.ts",

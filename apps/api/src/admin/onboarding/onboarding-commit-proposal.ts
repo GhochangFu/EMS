@@ -6,6 +6,7 @@ import { z } from "zod";
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { exceedsDepth, isJsonContainer } from "../stack-safe-json";
 import { MAX_ONBOARDING_DRAFT_DEPTH } from "./onboarding.schema";
+import { DISCOVERY_KEY, DISCOVERY_PROPOSAL_KEY } from "./onboarding-discovery-state";
 import {
   draftTemplateCode,
   draftTemplateRef,
@@ -55,6 +56,17 @@ export function withoutCommitProposal<T>(draft: T): T {
   return copy as T;
 }
 
+/** A shallow copy of `draft` without the two discovery keys (`F3.24b`). */
+function withoutDiscoveryState<T>(draft: T): T {
+  if (!isJsonContainer(draft) || Array.isArray(draft)) {
+    return draft;
+  }
+  const copy = { ...(draft as Record<string, unknown>) };
+  delete copy[DISCOVERY_KEY];
+  delete copy[DISCOVERY_PROPOSAL_KEY];
+  return copy as T;
+}
+
 /** A shallow copy of `draft` carrying `proposal`. The caller's object is untouched. */
 export function attachCommitProposal<T extends object>(draft: T, proposal: CommitProposal): T {
   return { ...draft, [COMMIT_PROPOSAL_KEY]: proposal };
@@ -80,11 +92,15 @@ export function readCommitProposal(draft: unknown): CommitProposal | null {
  * `_secrets` is **inside** the hash on purpose: setting a credential after a
  * proposal changes what would be committed, so the proposal goes stale.
  *
+ * `F3.24b` (ADR 0103): `_discovery` and `_discoveryProposal` are **outside**
+ * it. The worker writes `_discovery` while a turn may run, and neither is
+ * committed, so neither may make a commit proposal or a turn read as stale.
+ *
  * `JSON.stringify` recurses, so the depth is checked first with the iterative
  * walk; a draft over the bound never hashes and so never matches.
  */
 export function draftHash(draft: unknown): string | null {
-  const value = withoutCommitProposal(draft);
+  const value = withoutDiscoveryState(withoutCommitProposal(draft));
   if (exceedsDepth(value, MAX_ONBOARDING_DRAFT_DEPTH)) {
     return null;
   }

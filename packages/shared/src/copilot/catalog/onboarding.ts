@@ -1,4 +1,9 @@
 import { commitOnboardingBodySchema } from "../../contracts/onboarding";
+import {
+  MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS,
+  MQTT_DISCOVERY_SHARED_USER_WARNING,
+  startOnboardingDiscoveryBodySchema,
+} from "../../contracts/onboarding-discovery";
 import { plural, quoted, uuidParam } from "./summary-text";
 import type { CatalogEntry, ExcludedRoute } from "./types";
 
@@ -65,6 +70,40 @@ export const ONBOARDING_ENTRIES: readonly CatalogEntry[] = [
     formulas: [],
     steps: [{ id: "draft", title: "Draft", fields: ["draftHash"] }],
     summary: ({ targetName }) => `Commit the onboarding draft for site ${quoted(targetName)}.`,
+  },
+  /**
+   * `F3.24b` (ADR 0103 decision 2) — one bounded, read-only MQTT listening
+   * job on the broker of a draft RTU. Made by the **server** after a turn
+   * whose onboarding agent proposed it (`propose_discovery`), as
+   * `onboarding.commit` is; the drawer's Discover button is its wizard and
+   * sends the same body without the header. `expected` is the broker the
+   * card showed, inside the hash (security review H3): the route answers 409
+   * when the draft's RTU host or port changed since. TLS is always on
+   * (decisions Q5), so the card has no TLS field to show.
+   */
+  {
+    id: "onboarding.discovery",
+    title: "Discover the devices on an RTU's broker",
+    method: "POST",
+    path: "/admin/onboarding/sessions/:id/discovery",
+    params: { id: uuidParam },
+    body: startOnboardingDiscoveryBodySchema,
+    bodyName: "startOnboardingDiscoveryBodySchema",
+    clientOnly: [],
+    proposer: "server",
+    risk: "create",
+    target: { kind: "onboardingSession", param: "id" },
+    refs: [],
+    formulas: [],
+    steps: [{ id: "discovery", title: "Discovery", fields: ["rtuCode", "expected", "topicPrefix", "windowSeconds"] }],
+    summary: ({ body, targetName }) => {
+      const b = body as { rtuCode?: unknown; topicPrefix?: unknown; windowSeconds?: unknown };
+      const seconds = typeof b.windowSeconds === "number" ? b.windowSeconds : MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS;
+      return (
+        `Listen on the broker of RTU ${quoted(String(b.rtuCode ?? ""))} of the draft for site ${quoted(targetName)} ` +
+        `on ${quoted(`${String(b.topicPrefix ?? "")}/#`)} for ${seconds} s, with TLS. ${MQTT_DISCOVERY_SHARED_USER_WARNING}`
+      );
+    },
   },
 ];
 

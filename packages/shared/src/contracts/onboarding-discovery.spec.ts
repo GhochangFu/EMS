@@ -23,7 +23,11 @@ import {
  * sibling `.test.ts` (ADR 0014).
  */
 
-const BODY = { rtuCode: "R1", topicPrefix: "Airsprint-1051/Data" };
+const BODY = {
+  rtuCode: "R1",
+  topicPrefix: "Airsprint-1051/Data",
+  expected: { host: "broker.example.com", port: 8883 },
+};
 
 const DEVICE = {
   topic: "Airsprint-1051/Data/1051",
@@ -93,6 +97,19 @@ export function theBodyAcceptsWindow120(): void {
 }
 export function theBodyRefusesAnUnknownKey(): void {
   expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, host: "x" }).success).toBe(false);
+}
+/** Security review H3: the card and the button bind the connection target they showed. */
+export function theBodyRequiresTheExpectedTarget(): void {
+  const { expected: _omitted, ...without } = BODY;
+  expect(startOnboardingDiscoveryBodySchema.safeParse(without).success).toBe(false);
+}
+export function theBodyRefusesAnExpectedPortOutOfRange(): void {
+  expect(startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, expected: { host: "h", port: 70_000 } }).success).toBe(false);
+}
+export function theBodyRefusesAnUnknownExpectedKey(): void {
+  expect(
+    startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, expected: { ...BODY.expected, tls: false } }).success,
+  ).toBe(false);
 }
 export function theBodyIssueNeverEchoesTheValue(): void {
   const r = startOnboardingDiscoveryBodySchema.safeParse({ ...BODY, topicPrefix: "secret/+" });

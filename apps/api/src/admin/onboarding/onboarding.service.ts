@@ -58,7 +58,7 @@ import {
   type Checkpoint,
 } from "./onboarding-checkpoints";
 import { draftCountProblem } from "./onboarding-draft-caps";
-import { readDiscovery } from "./onboarding-discovery-state";
+import { readDiscovery, withDiscoveryOf } from "./onboarding-discovery-state";
 import { diffSections } from "./onboarding-draft-merge";
 import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
 import type { RollbackBody, SetCredentialsBody } from "./onboarding.schema";
@@ -520,7 +520,8 @@ export class OnboardingService {
       const [row] = await tx
         .update(onboardingSessions)
         .set({
-          draft: mergedDraft,
+          // F3.24b: the worker may have written `_discovery` since the turn read the draft.
+          draft: withDiscoveryOf(locked.draft, mergedDraft),
           currentPhase: turn.currentPhase,
           messages,
           ...checkpointWrite,
@@ -723,7 +724,8 @@ export class OnboardingService {
       const [row] = await tx
         .update(onboardingSessions)
         .set({
-          draft: mergedDraft,
+          // F3.24b: as `chat` — keep the `_discovery` the worker wrote since the read.
+          draft: withDiscoveryOf(locked.draft, mergedDraft),
           currentPhase: phase,
           messages,
           // F3.25 (plan Q3): as `patchDraft` — an upload is not checkpointed.
@@ -779,8 +781,11 @@ export class OnboardingService {
    * `F4.256` (AGENTS.md §4.7, the F4.64 rule): the role gate runs before the
    * read, so its 403 does not depend on whether the id exists, and a session
    * outside the caller's organization scope is the same 404 as a missing one.
+   *
+   * Public since `F3.24b`: `OnboardingDiscoveryService` runs the same gate
+   * before it writes any refuse row (security review M5).
    */
-  private async loadSession(jwt: JwtPayload, sessionId: string) {
+  async loadSession(jwt: JwtPayload, sessionId: string) {
     await this.assertOnboardingRole(jwt);
     const [session] = await this.fleetDb
       .select()

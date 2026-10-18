@@ -41,6 +41,8 @@ export const MQTT_DISCOVERY_DEV_ID_MAX = 128;
 export const MQTT_DISCOVERY_SOURCE_KEY_MAX = 128;
 /** Mirrors `ONBOARDING_DRAFT_STRING_MAX["rtus.code"]`. */
 export const MQTT_DISCOVERY_RTU_CODE_MAX = 64;
+/** A DNS name is at most 253 characters; an `expected.host` past 255 cannot match a draft host. */
+export const MQTT_DISCOVERY_HOST_MAX = 255;
 
 /** The one sentence the card and the Discover button both show (drafter choice 6). */
 export const MQTT_DISCOVERY_SHARED_USER_WARNING =
@@ -62,6 +64,18 @@ export const startOnboardingDiscoveryBodySchema = z
       .min(MQTT_DISCOVERY_MIN_WINDOW_SECONDS)
       .max(MQTT_DISCOVERY_MAX_WINDOW_SECONDS)
       .optional(),
+    /**
+     * Security review H3 (ADR 0103 Amendment 1): the broker the card or the
+     * Discover button showed. Inside the hashed body, so a draft whose RTU
+     * host or port changed after the card was made answers 409 rather than
+     * sending the stored credentials to a target the user never approved.
+     */
+    expected: z
+      .object({
+        host: z.string().min(1).max(MQTT_DISCOVERY_HOST_MAX),
+        port: z.number().int().min(1).max(65_535),
+      })
+      .strict(),
   })
   .strict();
 

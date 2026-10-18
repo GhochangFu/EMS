@@ -1,6 +1,7 @@
 import type { OnboardingDraft } from "@bms/shared";
 
 import { cloneJson, rebuildDeep } from "../stack-safe-json";
+import { DISCOVERY_KEY, DISCOVERY_PROPOSAL_KEY } from "./onboarding-discovery-state";
 
 /**
  * Draft redaction and the internal encrypted-credential store (ADR 0022).
@@ -236,6 +237,11 @@ export function redactDraftForClient(draft: unknown): OnboardingDraft {
   // and summary never reach the client, and — through `redactDraftForLlm`,
   // which composes this — never reach the prompt.
   delete copy._commitProposal;
+  // F3.24b (ADR 0103): the worker's result reaches the client as the
+  // session DTO's parsed `discovery` field, never as the raw blob, and the
+  // discovery proposal is server state as the commit proposal is.
+  delete (copy as Record<string, unknown>)[DISCOVERY_KEY];
+  delete (copy as Record<string, unknown>)[DISCOVERY_PROPOSAL_KEY];
   if (copy.location) {
     copy.location = scrubMeta(copy.location);
   }

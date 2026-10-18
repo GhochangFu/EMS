@@ -18,7 +18,7 @@ import { FileInterceptor } from "@nestjs/platform-express";
 import type { Response } from "express";
 import { ZodError } from "zod";
 
-import { commitOnboardingBodySchema, type JwtPayload } from "@bms/shared";
+import { commitOnboardingBodySchema, startOnboardingDiscoveryBodySchema, type JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
@@ -30,12 +30,16 @@ import {
   rollbackBodySchema,
   setCredentialsBodySchema,
 } from "./onboarding.schema";
+import { OnboardingDiscoveryService } from "./onboarding-discovery.service";
 import { OnboardingService } from "./onboarding.service";
 
 @Controller("admin/onboarding")
 @UseGuards(JwtAuthGuard)
 export class OnboardingController {
-  constructor(private readonly service: OnboardingService) {}
+  constructor(
+    private readonly service: OnboardingService,
+    private readonly discovery: OnboardingDiscoveryService,
+  ) {}
 
   @Get("template.xlsx")
   async downloadTemplate(@CurrentUser() user: JwtPayload, @Res() res: Response) {
@@ -187,6 +191,29 @@ export class OnboardingController {
   @HttpCode(HttpStatus.OK)
   async validate(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
     return this.service.validate(user, idParamSchema.parse(id));
+  }
+
+  /**
+   * `F3.24b` (ADR 0103 decision 2) — start one bounded, read-only MQTT
+   * discovery on a draft RTU; 202 with `{ discoveryId }`, and the session DTO
+   * carries the status from then on. The body is `safeParse`d here with the
+   * shared export the catalog entry names, and the **result** goes to the
+   * service: the service runs the session gate before it audits a refused
+   * prefix (security review M5), so the 400 cannot be thrown here.
+   */
+  @Post("sessions/:id/discovery")
+  @HttpCode(HttpStatus.ACCEPTED)
+  async startDiscovery(@Param("id") id: string, @Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    let sessionId: string;
+    try {
+      sessionId = idParamSchema.parse(id);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+    return this.discovery.start(user, sessionId, startOnboardingDiscoveryBodySchema.safeParse(body));
   }
 
   /**
