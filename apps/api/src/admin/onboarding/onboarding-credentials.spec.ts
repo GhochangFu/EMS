@@ -1,5 +1,5 @@
 import { setCredentialsBodySchema } from "./onboarding.schema";
-import { OnboardingService } from "./onboarding.service";
+import { MQTT_CREDENTIAL_CONTROL_CHARS, OnboardingService } from "./onboarding.service";
 import { redactDraftForClient } from "./onboarding-redaction";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 
@@ -143,6 +143,38 @@ function runSchemaTests(): void {
   ];
   for (const [label, body] of rejected) {
     assert(!setCredentialsBodySchema.safeParse(body).success, `the schema must reject ${label}`);
+  }
+}
+
+/**
+ * `F3.24b` (ADR 0103 Amendment 1; security review C1) — an MQTT RTU's
+ * credential with a control character is refused before anything is stored:
+ * the MQTT CONNECT packet carries it, and a CR LF there is a command line to
+ * a plaintext protocol. The sentence is fixed; the value is never echoed.
+ */
+export async function assertMqttCredentialWithControlCharIsRefused(): Promise<void> {
+  const previousKey = process.env.CREDENTIAL_ENCRYPTION_KEY;
+  try {
+    process.env.CREDENTIAL_ENCRYPTION_KEY = TEST_KEY;
+    const { service, calls } = buildService({});
+    const message = await rejects(
+      () =>
+        service.setCredentials(JWT, "s-1", {
+          rtuIndex: 0,
+          credentials: { username: "u", password: "pw\r\nCONFIG SET dir /tmp" },
+        }),
+      "a control character in an MQTT credential must be refused",
+    );
+    assert(
+      message === `BadRequestException: ${MQTT_CREDENTIAL_CONTROL_CHARS}` && calls.length === 0,
+      `expected the fixed 400 before any merge; got ${message}, merges=${calls.length}`,
+    );
+  } finally {
+    if (previousKey === undefined) {
+      delete process.env.CREDENTIAL_ENCRYPTION_KEY;
+    } else {
+      process.env.CREDENTIAL_ENCRYPTION_KEY = previousKey;
+    }
   }
 }
 

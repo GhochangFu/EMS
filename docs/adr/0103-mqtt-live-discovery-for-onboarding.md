@@ -277,3 +277,75 @@ followed the recommendation; choice 5 did not.
 - **ADR 0090** — ruling 1 holds: the model edits only the draft.
 - **ADR 0092** — the mapping path the results feed.
 - **ADR 0099** — the Confirm pattern and Amendment 2's draft erase.
+
+## Amendment 1 — build decisions (agent, under the owner's delegation, 2026-10-18)
+
+The owner was away during the build and delegated every open decision ("Do
+not ask for my permissions", 2026-10-18). Two plan reviews (security and code
+accuracy) ran before the build. The decisions below narrow or extend this
+record. They were taken by the agent, not ruled by the owner, and **the owner
+can reverse any of them**; each names the code that holds it.
+
+1. **Own-subnet refusal (extends decision 3; security review C1).** The job
+   also refuses any resolved address inside a subnet of the worker's own
+   non-loopback interfaces (`os.networkInterfaces()` and each entry's
+   netmask). Reason: the worker shares a compose network with a Redis that
+   has no password, and an IP literal on that network passes the name list.
+   The job and `setCredentials` (for an MQTT RTU) also refuse a username or
+   password that holds a control character (`[\x00-\x1f\x7f]`), and the job
+   reads only the string `username` and `password` fields of the decrypted
+   record. The job audits that refusal as `onboarding.discovery.refuse` with
+   the refusal class `bad credential`, a sixth class beside decision 9's five.
+   Private ranges outside the worker's own subnets stay permitted (ruling 3).
+   Code: `apps/api/src/onboarding-discovery/discovery-host-guard.ts`,
+   `discovery-credentials.ts`.
+2. **The full block list (extends decision 3; review H1).** Beyond decision
+   3's ranges: `0.0.0.0/8` (not only `0.0.0.0`), `240.0.0.0/4` with the
+   `255.255.255.255` broadcast address, and `fd00:ec2::/32` (the AWS IPv6
+   metadata and DNS addresses, inside the `fc00::/7` that ruling 3 would
+   otherwise permit). The IPv4 address inside `::ffff:0:0/96`, `::/96`,
+   `64:ff9b::/96` and `2002::/16` is taken out and checked again. The name
+   list holds every service name, alias, container name and hostname in
+   **both** compose files (`docker-compose.yml` and
+   `deploy/aws/docker-compose.yml`), Docker Desktop's
+   `host.docker.internal`, `gateway.docker.internal` and
+   `kubernetes.docker.internal`, `localhost` and `*.localhost`, and compose's
+   own `bms-<service>-<n>` container names; the spec reads both files.
+3. **The card is bound to its target (extends decision 2; review H3).** The
+   Confirm card's hashed body carries `expected: { host, port }`, and the
+   route answers `409` when the draft's RTU host or port differs from it. The
+   Discover button sends the same field.
+4. **One discovery per organization (extends decision 5; review M3).** At most
+   one `queued` or `running` discovery per organization, checked under the
+   session lock and an organization-level advisory lock, refused as `busy`.
+   The worker runs one job at a time per queue, so one tenant's 120 s window
+   would otherwise delay every other tenant's. A per-user hourly limit is not
+   in this row (general rate limiting is `F4.17`).
+5. **A total-keys cap (extends decision 5; decisions Q2).** 5,000 keys per
+   job across all devices; the job then stops and marks the result
+   `truncated`. 200 devices × 500 keys would otherwise allow 100,000 keys in
+   the draft, read on every session route.
+6. **Always `mqtts` (narrows decision 4; decisions Q5).** The job connects
+   with `mqtts://` and `rejectUnauthorized: true` always, as ingest does. The
+   draft RTU's `tls` flag does not select plaintext, and the card shows "TLS:
+   always on". The integration test reaches a plain CI broker only through a
+   constructor-injected transport option, never the environment.
+7. **One draft RTU per discovered device, and the credential copy (refines
+   decision 8; accuracy review #3).** Ingest routes a payload by
+   `dev_id === rtus.rtu_code`, one topic per RTU. So one discovered
+   `(topic, devId)` becomes one draft RTU with `code = devId` and
+   `config.topic = topic`, host and port copied from the source RTU. When the
+   agent adds such an RTU, code — never the model — copies the source RTU's
+   encrypted `_secrets` entry to the new code. A `devId` equal to the source
+   RTU's code uses the source RTU itself. `source: "discovery"` is stamped by
+   code (the model cannot set it) on asset points whose RTU code is a
+   discovered `devId` and whose source key is among that device's keys.
+8. **`organizationId` in the job payload (extends decision 7).** The payload
+   is `{ organizationId, sessionId, rtuCode, discoveryId, topicPrefix,
+   windowSeconds }`. A `tenant` queue requires `organizationId`, and the
+   worker opens its tenant transaction with it. The route takes it from the
+   locked session row, never from the token or the body. It is not a
+   credential.
+
+Build note (`F3.24b` U2): `mqtt ^5.10.4` is added to `apps/api/package.json`
+in the commit that adds this amendment.

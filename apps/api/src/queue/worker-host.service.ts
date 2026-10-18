@@ -11,6 +11,7 @@ import { Worker } from "bullmq";
 import { CopilotPurgeService } from "../copilot/copilot-purge.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { MetricsService } from "../observability/metrics.service";
+import { DiscoveryJobService } from "../onboarding-discovery/discovery-job.service";
 import { ReportDispatchService } from "../reports/report-dispatch.service";
 import { ReportRenderService } from "../reports/report-render.service";
 import { RuleSweepService } from "../rules/rule-sweep.service";
@@ -22,6 +23,7 @@ import {
   heartbeatProcessor,
   heartbeatQueue,
 } from "./heartbeat";
+import { onboardingDiscoveryQueue } from "./onboarding-discovery";
 import type { WorkerConfig } from "./queue-config";
 import { runProcessor, type ProcessorDbs } from "./queue-processor";
 import {
@@ -55,14 +57,15 @@ import { QUEUE_CLIENT, WORKER_CONFIG } from "./queue.tokens";
  * shutdown hooks for exactly this).
  *
  * **Constructor order is a contract**: `(client, tenantDb, fleetDb,
- * metrics, ruleSweep, config, reportDispatch, reportRender, copilotPurge)`. `runProcessor`
+ * metrics, ruleSweep, config, reportDispatch, reportRender, copilotPurge,
+ * discovery)`. `runProcessor`
  * receives `{ tenantDb, fleetDb }` and a `tenant` queue's handler runs
  * inside `withTenant(tenantDb, …)` — swap the two pools and every tenant job
  * runs on the BYPASSRLS pool with a GUC nobody reads. No test boots
  * `WorkerModule` (Amendment 1), so `database/fleet-read-wiring.spec.ts` pins
  * slots 1 and 2 by token; `F3.11` **appended** slots 4 and 5 and `F3.5b`
- * **appended** slots 6 and 7, and `F3.85` PR 5 **appended** slot 8, each
- * moving nothing before them.
+ * **appended** slots 6 and 7, `F3.85` PR 5 **appended** slot 8, and `F3.24b` **appended** slot 10
+ * (`DiscoveryJobService`), each moving nothing before them.
  *
  * **Every consumer is registered here, beside `ALL_QUEUES`'s declarations,
  * and not in a host of its own inside the module that owns the body.** One
@@ -138,6 +141,7 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
     private readonly reportDispatch: ReportDispatchService,
     private readonly reportRender: ReportRenderService,
     private readonly copilotPurge: CopilotPurgeService,
+    private readonly discovery: DiscoveryJobService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -204,7 +208,13 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
       );
     });
 
-    this.host = startQueueWorkers(this.client, [heartbeat, sweep, dispatch, render, purge], {
+    // `F3.24b` (ADR 0103): phase A on ctx.tx, the broker window after its
+    // commit — the same continuation shape as the render job.
+    const discovery = runProcessor(onboardingDiscoveryQueue, dbs, (payload, ctx) =>
+      this.discovery.run(payload, ctx.tx),
+    );
+
+    this.host = startQueueWorkers(this.client, [heartbeat, sweep, dispatch, render, purge, discovery], {
       createWorker: (name, process, opts) => new Worker(name, process, opts),
       metrics: this.metrics,
       logger: this.logger,

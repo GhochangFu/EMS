@@ -50,6 +50,8 @@ vi.mock("./worker-host", () => ({
 
 import type { ProcessorContinuation } from "./queue-processor";
 import {
+  assertDiscoveryHandlerRanTheJobOnTheTransactionItWasGiven,
+  assertDiscoveryHandlerReturnsTheJobsContinuation,
   assertDispatchHandlerRanTheTickOnTheHandleItWasGiven,
   assertDispatchScheduleUpsertedAtTheConfiguredInterval,
   assertHeartbeatRegistrationReceivedTheFleetSentinelAsFleetDb,
@@ -66,6 +68,7 @@ import {
   assertSweepRegistrationReceivedTheTenantSentinelAsTenantDb,
   assertSweepScheduleUpsertedAtTheConfiguredInterval,
   initWorkerHost,
+  invokeDiscoveryHandler,
   invokeDispatchHandler,
   invokePurgeHandler,
   invokeRenderHandler,
@@ -73,7 +76,7 @@ import {
   type WorkerHostProbe,
 } from "./worker-host.service.spec";
 
-describe("F4.24 / F3.11 / F3.5b / F3.85 — WorkerHostService registers one processor per declared queue, with the pools by slot", () => {
+describe("F4.24 / F3.11 / F3.5b / F3.85 / F3.24b — WorkerHostService registers one processor per declared queue, with the pools by slot", () => {
   let probe: WorkerHostProbe;
 
   beforeAll(async () => {
@@ -163,6 +166,22 @@ describe("F4.24 / F3.11 / F3.5b / F3.85 — WorkerHostService registers one proc
 
     it("runs CopilotPurgeService.purge once", () => {
       assertPurgeHandlerRanThePurgeOnce(probe);
+    });
+  });
+
+  describe("the onboarding-discovery handler, invoked with (payload, { tx: TX_SENTINEL }) as runProcessor would for a tenant queue", () => {
+    let resolved: void | ProcessorContinuation;
+
+    beforeAll(async () => {
+      resolved = await invokeDiscoveryHandler(recorded.runProcessorCalls);
+    });
+
+    it("hands the payload and ctx.tx to DiscoveryJobService.run", () => {
+      assertDiscoveryHandlerRanTheJobOnTheTransactionItWasGiven(probe);
+    });
+
+    it("returns the job's continuation unchanged", () => {
+      assertDiscoveryHandlerReturnsTheJobsContinuation(resolved);
     });
   });
 });

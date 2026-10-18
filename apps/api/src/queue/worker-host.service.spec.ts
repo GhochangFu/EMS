@@ -6,10 +6,12 @@ import type { RuleSweepSummary } from "@bms/shared";
 import type { CopilotPurgeService, CopilotPurgeSummary } from "../copilot/copilot-purge.service";
 import type { BmsTx } from "../database/tenant-context";
 import type { MetricsService } from "../observability/metrics.service";
+import type { DiscoveryJobService } from "../onboarding-discovery/discovery-job.service";
 import type { ReportDispatchService, ReportDispatchSummary } from "../reports/report-dispatch.service";
 import type { RenderOutcome, ReportRenderService } from "../reports/report-render.service";
 import type { RuleSweepService } from "../rules/rule-sweep.service";
 import { copilotPurgeQueue } from "./copilot-purge";
+import { onboardingDiscoveryQueue } from "./onboarding-discovery";
 import type { ProcessorContinuation, ProcessorDbs, ProcessorHandler } from "./queue-processor";
 import type { QueueClient, QueueHandle } from "./queue-registry";
 import { ALL_QUEUES } from "./queues";
@@ -178,6 +180,8 @@ export type WorkerHostProbe = {
   readonly finishedOutcomes: readonly unknown[];
   /** How many times the fake `CopilotPurgeService.purge` ran. */
   readonly purgeRuns: () => number;
+  /** Every `(payload, tx)` handed to the fake `DiscoveryJobService.run`. */
+  readonly discoveryRuns: readonly (readonly [payload: unknown, tx: unknown])[];
 };
 
 /** A `QueueHandle` whose `client` resolves to a Redis fake that records `set`. */
@@ -199,6 +203,7 @@ export async function initWorkerHost(): Promise<WorkerHostProbe> {
   const renderTxs: unknown[] = [];
   const finishedOutcomes: unknown[] = [];
   let purgeRuns = 0;
+  const discoveryRuns: (readonly [unknown, unknown])[] = [];
   const client: QueueClient = {
     kind: "configured",
     prefix: PREFIX,
@@ -250,9 +255,15 @@ export async function initWorkerHost(): Promise<WorkerHostProbe> {
     reportDispatch,
     reportRender,
     copilotPurge,
+    {
+      run: async (payload: unknown, tx: unknown) => {
+        discoveryRuns.push([payload, tx]);
+        return DISCOVERY_CONTINUATION;
+      },
+    } as unknown as DiscoveryJobService,
   );
   await service.onModuleInit();
-  return { sweepRuns, keyWrites, dispatchTicks, renderTxs, finishedOutcomes, purgeRuns: () => purgeRuns };
+  return { sweepRuns, keyWrites, dispatchTicks, renderTxs, finishedOutcomes, purgeRuns: () => purgeRuns, discoveryRuns };
 }
 
 function declNameOf(call: RecordedRunProcessorCall): string {
@@ -475,6 +486,45 @@ export function assertPurgeScheduleUpsertedAtTheConfiguredInterval(
   assert(
     actual.length === 1 && actual[0] === expected,
     `expected upsertSchedule("copilot-purge", ${expected}) exactly once — the interval is hard-coded, crossed with another queue's, or the scheduler id drifted; got [${actual.join(", ")}] (all upserts: ${upserts.map(([name]) => name).join(", ")})`,
+  );
+}
+
+/** The continuation the fake `DiscoveryJobService.run` resolves — the handler must hand it back unchanged. */
+const DISCOVERY_CONTINUATION = { afterCommit: async () => undefined };
+
+const DISCOVERY_PAYLOAD = {
+  organizationId: "11111111-1111-4111-8111-111111111111",
+  sessionId: "22222222-2222-4222-8222-222222222222",
+  rtuCode: "R1",
+  discoveryId: "33333333-3333-4333-8333-333333333333",
+  topicPrefix: "p",
+  windowSeconds: 60,
+};
+
+/** Runs the recorded `onboarding-discovery` handler the way `runProcessor` would for a `tenant` queue. */
+export async function invokeDiscoveryHandler(
+  calls: readonly RecordedRunProcessorCall[],
+): Promise<void | ProcessorContinuation> {
+  const handler = registrationOf(calls, onboardingDiscoveryQueue.name)[2] as ProcessorHandler<
+    typeof onboardingDiscoveryQueue
+  >;
+  return handler(DISCOVERY_PAYLOAD, { tx: TX_SENTINEL });
+}
+
+/** `F3.24b`: the discovery handler runs the job on ctx.tx with the payload it was given, once. */
+export function assertDiscoveryHandlerRanTheJobOnTheTransactionItWasGiven(probe: WorkerHostProbe): void {
+  const [only] = probe.discoveryRuns;
+  assert(
+    probe.discoveryRuns.length === 1 && only?.[0] === DISCOVERY_PAYLOAD && only[1] === TX_SENTINEL,
+    `expected DiscoveryJobService.run(payload, ctx.tx) exactly once — the handler hands a different handle or payload; runs=${probe.discoveryRuns.length}`,
+  );
+}
+
+/** `F3.24b`: the broker window is the job's continuation, handed back so it runs after the commit. */
+export function assertDiscoveryHandlerReturnsTheJobsContinuation(resolved: void | ProcessorContinuation): void {
+  assert(
+    resolved === DISCOVERY_CONTINUATION,
+    "expected the discovery handler to return the job's continuation unchanged — dropped, the broker window would never run; awaited inline, it would hold the tenant transaction",
   );
 }
 

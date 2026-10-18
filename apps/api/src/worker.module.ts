@@ -7,6 +7,7 @@ import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
 import { pinoHttpOptions } from "./logger.options";
 import { ObservabilityModule } from "./observability/observability.module";
+import { OnboardingDiscoveryModule } from "./onboarding-discovery/onboarding-discovery.module";
 import { readWorkerConfig } from "./queue/queue-config";
 import { QueueModule } from "./queue/queue.module";
 import { WORKER_CONFIG } from "./queue/queue.tokens";
@@ -50,6 +51,12 @@ import { StorageModule } from "./storage/storage.module";
  * never imported here; `tests/f4.24` rule 8 keeps every `copilot/` file but
  * the purge leaves out of this closure.
  *
+ * **`F3.24b` (ADR 0103 decision 1) adds `OnboardingDiscoveryModule`**, the
+ * discovery job: a leaf that imports `DatabaseModule` only. It reaches
+ * `admin/onboarding/onboarding-locked-writes.ts` and
+ * `onboarding-redaction.ts` — pure helpers — and no `admin/` module, and
+ * the worker process now loads `mqtt` at start.
+ *
  * **`WORKER_CONFIG` is a second, deterministic read of the environment
  * `worker.ts` already validated.** `readWorkerConfig` ran before any Nest
  * context existed and refused a bad `REDIS_URL`, `WORKER_PORT` or
@@ -87,6 +94,8 @@ import { StorageModule } from "./storage/storage.module";
     ReportsCoreModule,
     // `F3.85` PR 5 — the copilot history purge (ADR 0099 decision 8).
     CopilotPurgeModule,
+    // `F3.24b` (ADR 0103 decision 1) — the MQTT discovery job, a leaf on DatabaseModule.
+    OnboardingDiscoveryModule,
   ],
   providers: [
     WorkerHostService,

@@ -27,6 +27,7 @@ import type {
 import { AccessControlService } from "../../auth/access-control.service";
 import { recalledIdentity, resolveActorId } from "../../auth/identity-resolver";
 import { parseStoredContract } from "../../common/parse-stored-contract";
+import { hasControlChars } from "../../onboarding-discovery/discovery-credentials";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
@@ -74,6 +75,9 @@ import {
 } from "./onboarding-locked-writes";
 
 export { SESSION_NO_LONGER_DRAFT, DRAFT_CHANGED_DURING_TURN, DRAFT_TOO_DEEP_FOR_TURN } from "./onboarding-locked-writes";
+
+/** `F3.24b` (ADR 0103 Amendment 1, C1): the MQTT CONNECT packet carries the credential, so a control character in it is refused. */
+export const MQTT_CREDENTIAL_CONTROL_CHARS = "An MQTT username or password must not contain control characters such as a line break.";
 
 /** `F4.255`: the global administrator's draft list names no organization — it has no home organization to fall back to. */
 export const ONBOARDING_DRAFTS_GLOBAL_NEEDS_ORGANIZATION = "A global administrator must name the organization whose drafts to list";
@@ -280,6 +284,9 @@ export class OnboardingService {
     const draft = session.draft as OnboardingDraft;
     if (!Array.isArray(draft.rtus) || !draft.rtus[body.rtuIndex]) {
       throw new BadRequestException(`No RTU at index ${body.rtuIndex} in this draft`);
+    }
+    if (draft.rtus[body.rtuIndex]?.protocol === "mqtt" && Object.values(body.credentials).some(hasControlChars)) {
+      throw new BadRequestException(MQTT_CREDENTIAL_CONTROL_CHARS);
     }
 
     // M4: `_secrets` is keyed by RTU `code`, not by position, so a later
