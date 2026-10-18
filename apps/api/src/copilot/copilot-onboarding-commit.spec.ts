@@ -45,6 +45,7 @@ function session(messages: OnboardingChatMessage[], draftHash: string | null): O
     result: null,
     checkpoints: [],
     draftHash,
+    discovery: null,
   };
 }
 

@@ -655,6 +655,7 @@ export type DefaultDashboardsBackfillResultDto = z.infer<
 export type * from "./types/template-migration";
 export type * from "./types/copilot";
 export type * from "./types/onboarding";
+export type * from "./types/onboarding-discovery";
 
 // ---------------------------------------------------------------------------
 // AI onboarding wizard (ADR 0011, ADR 0022)

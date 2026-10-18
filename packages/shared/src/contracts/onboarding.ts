@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 import { locationTypeCodeSchema } from "./location-types";
+import { onboardingDiscoveryResultDtoSchema } from "./onboarding-discovery";
 import { assetDomainCodeSchema } from "./operations";
 
 /** Onboarding wizard phase tracked by the AI bot. */
@@ -358,6 +359,8 @@ export const onboardingDraftAssetPointSchema = z.object({
   sourceDataKey: z.string().max(ONBOARDING_DRAFT_STRING_MAX["assetPoints.sourceDataKey"]),
   sensorCode: z.string().max(ONBOARDING_DRAFT_STRING_MAX["assetPoints.sensorCode"]).optional(),
   unit: z.string().max(ONBOARDING_DRAFT_STRING_MAX["assetPoints.unit"]).optional(),
+  /** `F3.24b`: set by code, never the model, when the key came from a discovery. Never committed. */
+  source: z.enum(["discovery"]).optional(),
 });
 
 /**
@@ -637,6 +640,9 @@ export const onboardingSessionDtoSchema = z.object({
   // SHA-256 of the stored draft minus its proposal, which a rollback binds to.
   checkpoints: z.array(onboardingCheckpointSummarySchema),
   draftHash: z.string().nullable(),
+  // F3.24b (ADR 0103): the latest MQTT discovery, mapped from `draft._discovery`
+  // (which `redactDraftForClient` removes). Added in place: a flat object.
+  discovery: onboardingDiscoveryResultDtoSchema.nullable(),
 });
 
 /** `F4.255` (ADR 0099 Amendment 2 A1): the draft list answers at most this many drafts, newest update first. */

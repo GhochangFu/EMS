@@ -57,6 +57,7 @@ import {
   type Checkpoint,
 } from "./onboarding-checkpoints";
 import { draftCountProblem } from "./onboarding-draft-caps";
+import { readDiscovery } from "./onboarding-discovery-state";
 import { diffSections } from "./onboarding-draft-merge";
 import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
 import type { RollbackBody, SetCredentialsBody } from "./onboarding.schema";
@@ -949,6 +950,8 @@ export class OnboardingService {
       // the hash a rollback binds to.
       checkpoints: readCheckpoints(row.checkpoints).map(checkpointSummary),
       draftHash: draftHash(row.draft),
+      // F3.24b (ADR 0103): the worker's result; `redactDraftForClient` removes the raw key.
+      discovery: readDiscovery(row.draft),
     };
   }
 }

@@ -43,6 +43,7 @@ function sessionDto(status: OnboardingSessionDto["status"], messages: Onboarding
     result: null,
     checkpoints: [],
     draftHash: null,
+    discovery: null,
   };
 }
 

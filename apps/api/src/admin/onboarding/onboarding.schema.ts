@@ -207,6 +207,8 @@ export const draftAssetPointSchema = z
       .max(ONBOARDING_DRAFT_STRING_MAX["assetPoints.sourceDataKey"]),
     sensorCode: z.string().max(ONBOARDING_DRAFT_STRING_MAX["assetPoints.sensorCode"]).optional(),
     unit: z.string().max(ONBOARDING_DRAFT_STRING_MAX["assetPoints.unit"]).optional(),
+    // F3.24b: stamped by code when the key came from a discovery; never committed.
+    source: z.enum(["discovery"]).optional(),
   });
 
 /**
