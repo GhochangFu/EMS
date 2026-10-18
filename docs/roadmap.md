@@ -5235,7 +5235,7 @@ possible, so the explicit organization predicate is defence in depth. The audit
 row now records `assetsMoved`, the count only.
 
 **Still open:** `F4.137` (no constraint makes `assets.rtu_id` respect the
-organization) and `F4.138` (the gate reads the location's organization while
+organization; closed 2026-10-18, PR #890) and `F4.138` (the gate reads the location's organization while
 the write uses the RTU's; closed 2026-09-27, PR #607). `F4.139` and `F4.140` closed 2026-09-16 (PR #461,
 next section).
 
@@ -7810,3 +7810,5 @@ Owed: `F4.263`, `F4.264`; a `chore(agents):` sweep for AGENTS.md in its own PR.
 **`F4.267` and `F4.266` done 2026-10-17** in [#880](https://github.com/GhochangFu/EMS/pull/880) (`c352f303`): an optional second model per AI assistant setting answers a copilot turn that carries an image (ADR 0090 Amendment 3), and the layout tools state the node and pipe shape. Live on local ESKOM, three PNG turns went to Nemotron and each made a correct card in 3–4 tool calls with no hint; three PDF turns stayed on GLM-5.3 and failed, recorded as `F4.268`. The `chore(agents):` sweep merged as #882.
 
 **`F4.265`, `F4.263` and `F4.268` done 2026-10-18** in [#883](https://github.com/GhochangFu/EMS/pull/883) (`eae30159`), [#884](https://github.com/GhochangFu/EMS/pull/884) (`8b24b196`) and [#885](https://github.com/GhochangFu/EMS/pull/885) (`e9459fbd`): the copilot's tool patterns compile without the `u` flag, so OpenAI models answer again (verified live on two); the network demo seed and migration `0112` use underscore node keys, so a seeded network layout saves again; a PDF-only turn is told it reads text only and asks for a drawing as an image (verified live, 5–7 s instead of a timeout). `F4.269` keeps the owner's two ADR-level options for drawings in a PDF. A `chore(agents):` sweep follows in its own PR.
+
+**`F4.132` and `F4.137` done 2026-10-18** in [#890](https://github.com/GhochangFu/EMS/pull/890) (`49db7807`) under [ADR 0102](./adr/0102-asset-rtu-composite-keys.md): migration `0113` adds composite foreign keys so the database holds an asset's organization equal to its location's, an RTU's organization equal to its location's, and a wired asset's RTU at the asset's own location. The migration refuses on disagreeing data and never repairs; each key is proved to refuse as `bms_tenant`, `bms_owner` and the superuser.
