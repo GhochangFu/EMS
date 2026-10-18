@@ -2,7 +2,8 @@
 
 ## Status
 
-**Proposed — 2026-10-18.** Five gate questions were put to the owner one at a
+**Accepted — 2026-10-18** (owner, in chat, after the eleven rulings below).
+Five gate questions were put to the owner one at a
 time, in chat, each with options and a recommendation. The owner accepted all
 five recommendations (see *Gate questions*). Six further details were then
 put the same way; the owner confirmed five and changed one (see *Drafter
