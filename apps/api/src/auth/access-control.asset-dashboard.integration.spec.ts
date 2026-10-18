@@ -3,6 +3,7 @@ import type pg from "pg";
 
 import type { AccessControlService } from "./access-control.service";
 import { jwtFor, jwtForUnprovisioned, SEEDED } from "./access-control.integration.spec";
+import { plantWithConstraintsOff } from "../testing/constraints-off";
 import { resolveSeededAssetByCode } from "../testing/integration-fixtures";
 
 /**
@@ -514,30 +515,41 @@ export function assertFixturesAreDistinct(f: AssetDashboardFixtures): void {
  * over: A5 is refused by the organization check before the location check is ever reached,
  * which is why it left this hole green.
  *
- * **The database permits the inconsistent row, and that was the open question.** Checked on
- * the running stack: `bms.assets` carries `assets_location_id_locations_id_fk` to
- * `bms.locations(id)` and `assets_organization_id_fkey` to `bms.organizations(id)`, but no
- * CHECK, no composite foreign key and no trigger relates the two — so the row inserts, and the
- * refusal has to come from this service.
+ * **The database refuses the inconsistent row since ADR 0102.** When this case was written no
+ * CHECK, composite foreign key or trigger related `assets.organization_id` to
+ * `assets.location_id`, so the row inserted and the refusal had to come from this service.
+ * Migration `0113` added `assets_location_id_organization_id_fkey`
+ * (`(location_id, organization_id) -> bms.locations(id, organization_id)`), so the row is now a
+ * state only a superuser with constraints off can leave. The service check stays the first
+ * refusal, and this case keeps it gated: the fixture plants the row that way
+ * (`plantWithConstraintsOff`).
  *
- * One asset, inserted on the fleet pool and deleted in a `finally` (the A7b precedent). Nothing
+ * One asset, planted on the superuser pool, deleted on the fleet pool in a `finally` (the A7b
+ * precedent). Nothing
  * seeded is mutated: a grant row added to `wc-admin@bms.local` would be read by other suites'
  * unordered `user_location_access` fixtures in the same parallel run.
  */
 export async function assertA11InconsistentAssetLocationDoesNotAuthorize(
   svc: AccessControlService,
   pool: pg.Pool,
+  superPool: pg.Pool,
   f: AssetDashboardFixtures,
 ): Promise<void> {
   const code = `f32-a11-${Date.now()}`;
-  const asset = await one<{ id: string }>(
-    pool,
-    `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
-     VALUES ($1, $2, $3, 'F3.2 A11 inconsistent-location proof', 'F3.2 A11', 'hvac')
-     RETURNING id`,
-    [f.phewbOrgId, f.locationAdminLocationId, code],
-    "the inconsistent fixture asset (organization B, located in organization A)",
+  const planted = await plantWithConstraintsOff(superPool, (client) =>
+    client.query<{ id: string }>(
+      `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
+       VALUES ($1, $2, $3, 'F3.2 A11 inconsistent-location proof', 'F3.2 A11', 'hvac')
+       RETURNING id`,
+      [f.phewbOrgId, f.locationAdminLocationId, code],
+    ),
   );
+  const asset = planted.rows[0];
+  if (!asset) {
+    throw new Error(
+      "F3.2: the inconsistent fixture asset (organization B, located in organization A) — insert returned no id",
+    );
+  }
   try {
     const locationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
     expect(

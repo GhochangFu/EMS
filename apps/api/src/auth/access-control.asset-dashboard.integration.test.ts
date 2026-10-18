@@ -22,7 +22,11 @@ import {
   resolveAssetDashboardFixtures,
   type AssetDashboardFixtures,
 } from "./access-control.asset-dashboard.integration.spec";
-import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import {
+  openIntegrationPool,
+  requireIntegrationDb,
+  resolveIntegrationRoleUrl,
+} from "../testing/integration-db-gate";
 import { primeSeededSubjects } from "../testing/seeded-subjects";
 
 /**
@@ -38,6 +42,10 @@ import { primeSeededSubjects } from "../testing/seeded-subjects";
  * `access-control.integration.test.ts`'s docblock gives at length: this suite proves query
  * correctness, not row-level security, and `bms_fleet` holds `BYPASSRLS` regardless of which
  * pool a query nominally runs through.
+ *
+ * A third pool, the superuser with `max: 1`, plants A11's inconsistent asset with constraints
+ * off: since ADR 0102 (migration `0113`) `assets_location_id_organization_id_fkey` refuses it
+ * from every other role.
  */
 const connectionString = requireIntegrationDb({
   item: "F3.2",
@@ -51,6 +59,7 @@ const connectionString = requireIntegrationDb({
 
 describe.skipIf(!connectionString)("F3.2 — canManageDashboard's asset arm", () => {
   let pool: pg.Pool | undefined;
+  let superPool: pg.Pool | undefined;
   let svc: AccessControlService;
   let fixtures: AssetDashboardFixtures;
 
@@ -62,10 +71,15 @@ describe.skipIf(!connectionString)("F3.2 — canManageDashboard's asset arm", ()
     const db = createDb(created);
     svc = new AccessControlService(db, db);
     fixtures = await resolveAssetDashboardFixtures(created);
+    superPool = await openIntegrationPool(
+      resolveIntegrationRoleUrl(connectionString as string, "superuser", process.env),
+      "F3.2",
+      { max: 1 },
+    );
   }, 60_000);
 
   afterAll(async () => {
-    await pool?.end();
+    await Promise.all([pool?.end(), superPool?.end()]);
   }, 60_000);
 
   // First, because every claim below is vacuous or self-contradictory if two fixture ids
@@ -119,6 +133,11 @@ describe.skipIf(!connectionString)("F3.2 — canManageDashboard's asset arm", ()
   }, 60_000);
 
   it("A11 — an asset of another organization at this admin's own location does not authorize", async () => {
-    await assertA11InconsistentAssetLocationDoesNotAuthorize(svc, pool as pg.Pool, fixtures);
+    await assertA11InconsistentAssetLocationDoesNotAuthorize(
+      svc,
+      pool as pg.Pool,
+      superPool as pg.Pool,
+      fixtures,
+    );
   }, 60_000);
 });

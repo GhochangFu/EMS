@@ -153,10 +153,20 @@
  * fleet with no `organization_id` filter, so a key scoped per organization would
  * not have closed the defect `F4.60` exists to close.
  *
- * Re-measured from `pg_constraint` and `pg_indexes` on 2026-09-12 after `0071`
- * applied, rather than incremented: the six tables carry 17 unique indexes, 6 of
- * them primary keys, leaving 11. `locations_org_code_idx` is still the only one
- * whose key mentions `organization_id`.
+ * Re-measured from `pg_indexes` (joined to `pg_index.indisunique` /
+ * `indisprimary`) on 2026-10-18 after `0113` applied, rather than incremented:
+ * the six tables carry 19 unique indexes, 6 of them primary keys, leaving 13.
+ * The count of 2026-09-12 (17, leaving 11) was stale from `0103` on. Two of the
+ * 13 are not among the eleven above and are deliberately not mapped:
+ * `locations_id_organization_key` `(id, organization_id)` (migration `0103`,
+ * ADR 0098) and `rtus_id_location_key` `(id, location_id)` (migration `0113`,
+ * ADR 0102). Each exists only as the target of a composite foreign key, and
+ * each leads with the table's `defaultRandom()` primary key, so no draft insert
+ * can collide on one without first colliding on the primary key — a mapping no
+ * mutation could redden, the `rtu_connection_configs_rtu_id_key` argument.
+ * Counting key columns: `locations_org_code_idx` is the one mapped unique whose
+ * key mentions `organization_id`; `locations_id_organization_key` also mentions
+ * it, behind `id`.
  *
  * ## The other translation of `assets_code_unique`
  *

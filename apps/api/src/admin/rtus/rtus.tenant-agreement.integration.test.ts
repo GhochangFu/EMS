@@ -4,7 +4,11 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { createDb } from "@bms/db";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
+import {
+  openIntegrationPool,
+  requireIntegrationDb,
+  resolveIntegrationRoleUrl,
+} from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { RtusAdminService } from "./rtus.service";
@@ -42,6 +46,7 @@ describe.skipIf(!connectionString)("F4.138 — a drifted RTU is refused under re
   let fixturePool: pg.Pool;
   let authPool: pg.Pool;
   let tenantPool: pg.Pool;
+  let superPool: pg.Pool;
   let ctx: TenantAgreementCtx;
 
   const createdRtuIds: string[] = [];
@@ -62,6 +67,13 @@ describe.skipIf(!connectionString)("F4.138 — a drifted RTU is refused under re
     tenantPool = await openIntegrationPool(
       process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
       "F4.138",
+    );
+    // ADR 0102: the drifted RTU is a state migration 0113's keys forbid, so the
+    // fixture plants it as the superuser with constraints off (`constraints-off.ts`).
+    superPool = await openIntegrationPool(
+      resolveIntegrationRoleUrl(url, "superuser", process.env),
+      "F4.138",
+      { max: 1 },
     );
 
     const own = await fixturePool.query<{ organization_id: string; location_id: string }>(
@@ -111,6 +123,7 @@ describe.skipIf(!connectionString)("F4.138 — a drifted RTU is refused under re
       ),
       jwt: jwtFor(ORGANIZATION_ADMIN_EMAIL, "organization_admin"),
       fixturePool,
+      superPool,
       organizationId: own.rows[0].organization_id,
       locationId: own.rows[0].location_id,
       foreignOrganizationId: foreign.rows[0].organization_id,
@@ -135,7 +148,12 @@ describe.skipIf(!connectionString)("F4.138 — a drifted RTU is refused under re
       ]);
       await fixturePool.query("DELETE FROM bms.rtus WHERE id = ANY($1)", [createdRtuIds]);
     }
-    await Promise.all([fixturePool?.end(), authPool?.end(), tenantPool?.end()]);
+    await Promise.all([
+      fixturePool?.end(),
+      authPool?.end(),
+      tenantPool?.end(),
+      superPool?.end(),
+    ]);
   }, 60_000);
 
   // One claim per `it`, and one drifted RTU per `it`: no case depends on another.

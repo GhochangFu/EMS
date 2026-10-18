@@ -4,6 +4,7 @@ import { expect } from "vitest";
 
 import type { JwtPayload } from "@bms/shared";
 
+import { plantWithConstraintsOff } from "../../testing/constraints-off";
 import { RTU_ORG_MISMATCH_MESSAGE, type RtusAdminService } from "./rtus.service";
 
 /**
@@ -17,8 +18,11 @@ import { RTU_ORG_MISMATCH_MESSAGE, type RtusAdminService } from "./rtus.service"
  * the asset update and the audit insert — every row carries the GUC's org. That
  * is the defect, and a fake transaction cannot show that the writes would have
  * passed. The drift itself cannot be made through the service (`create` stamps
- * the location's org), so the fixture writes it as `bms_fleet`: the state a
- * migration, an import or a future bug could leave.
+ * the location's org), and since ADR 0102 (migration `0113`) the composite key
+ * `rtus_location_id_organization_id_fkey` refuses it from every writer: it is a
+ * state only a superuser with constraints off can leave. The fixture plants it
+ * that way (`plantWithConstraintsOff`); the guard is the first refusal and stays
+ * gated.
  *
  * **One RTU per case.** Each case makes its own drifted RTU, calls the path, and
  * reads one fact back, so no case depends on another having run. The refusal
@@ -34,6 +38,8 @@ export type TenantAgreementCtx = {
   readonly jwt: JwtPayload;
   /** `bms_fleet` (BYPASSRLS) — fixture rows and read-back only. */
   readonly fixturePool: pg.Pool;
+  /** The superuser (`max: 1`) — plants the rows `0113`'s keys forbid, constraints off. */
+  readonly superPool: pg.Pool;
   /** The caller's organization and one of its active locations. */
   readonly organizationId: string;
   readonly locationId: string;
@@ -61,12 +67,14 @@ async function insertDriftedRtu(
   ctx: TenantAgreementCtx,
   start: { active: boolean },
 ): Promise<string> {
-  const res = await ctx.fixturePool.query<{ id: string }>(
-    `INSERT INTO bms.rtus
-       (organization_id, location_id, code, display_name, source_type, ingest_enabled, active)
-     VALUES ($1, $2, $3, $4, 'mqtt', false, $5)
-     RETURNING id`,
-    [ctx.foreignOrganizationId, ctx.locationId, fixtureTag(), DRIFTED_DISPLAY_NAME, start.active],
+  const res = await plantWithConstraintsOff(ctx.superPool, (client) =>
+    client.query<{ id: string }>(
+      `INSERT INTO bms.rtus
+         (organization_id, location_id, code, display_name, source_type, ingest_enabled, active)
+       VALUES ($1, $2, $3, $4, 'mqtt', false, $5)
+       RETURNING id`,
+      [ctx.foreignOrganizationId, ctx.locationId, fixtureTag(), DRIFTED_DISPLAY_NAME, start.active],
+    ),
   );
   const id = res.rows[0]?.id;
   if (id === undefined) {
@@ -86,13 +94,23 @@ async function insertDriftedRtu(
 async function attachForeignOrgAsset(ctx: TenantAgreementCtx, rtuId: string): Promise<string> {
   const tag = fixtureTag();
   // `assets_code_charset_check` (migration 0070) is `^[A-Za-z0-9_-]+$`.
-  const res = await ctx.fixturePool.query<{ id: string }>(
-    `INSERT INTO bms.assets
-       (organization_id, code, name, site_name, location_id, rtu_id, domain, meta)
-     VALUES ($1, $2, $3, 'F4.138 site', $4, $5, 'electrical',
-             '{"telemetrySource":"catalog"}'::jsonb)
-     RETURNING id`,
-    [ctx.foreignOrganizationId, `${tag}-asset`, `F4.138 asset ${tag}`, ctx.foreignLocationId, rtuId],
+  // ADR 0102: `assets_rtu_id_location_id_fkey` forbids an asset at another
+  // location than its RTU's, so this plant runs with constraints off too.
+  const res = await plantWithConstraintsOff(ctx.superPool, (client) =>
+    client.query<{ id: string }>(
+      `INSERT INTO bms.assets
+         (organization_id, code, name, site_name, location_id, rtu_id, domain, meta)
+       VALUES ($1, $2, $3, 'F4.138 site', $4, $5, 'electrical',
+               '{"telemetrySource":"catalog"}'::jsonb)
+       RETURNING id`,
+      [
+        ctx.foreignOrganizationId,
+        `${tag}-asset`,
+        `F4.138 asset ${tag}`,
+        ctx.foreignLocationId,
+        rtuId,
+      ],
+    ),
   );
   const id = res.rows[0]?.id;
   if (id === undefined) {
