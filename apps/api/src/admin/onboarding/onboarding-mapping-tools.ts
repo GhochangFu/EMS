@@ -2,6 +2,7 @@ import { z, type ZodTypeAny } from "zod";
 
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { countOf } from "./onboarding-commit-proposal";
+import { stampDiscovered } from "./onboarding-discovery-tools";
 import { assetPointProblems } from "./onboarding-mapping-refs";
 import { pointKeyDeclarationProblems } from "./onboarding-point-key-conflict";
 import { unresolvedPointKey, type ValidateTemplateContext } from "./onboarding-template-refs";
@@ -38,7 +39,8 @@ export const MAPPING_TOOL_SCHEMAS = {
   map_points: z
     .object({
       assetIndex: draftAssetPointSchema.shape.assetIndex,
-      points: z.array(draftAssetPointSchema.omit({ assetIndex: true }).strict()).min(1).max(MAX_ASSET_POINTS_PER_CALL),
+      // F3.24b (decisions Q3): `source` is code-stamped, so a row that carries it is refused.
+      points: z.array(draftAssetPointSchema.omit({ assetIndex: true, source: true }).strict()).min(1).max(MAX_ASSET_POINTS_PER_CALL),
     })
     .strict(),
   get_asset_points: z.object({ assetIndex: z.number().int().min(0) }).strict(),
@@ -133,15 +135,17 @@ export function dispatchMappingTool(
 
     case "map_points": {
       const { assetIndex, points } = args as z.infer<(typeof MAPPING_TOOL_SCHEMAS)["map_points"]>;
-      const rows = points.map((point) => ({ assetIndex, ...point }));
+      const given = points.map((point) => ({ assetIndex, ...point }));
       const existing = draft.assetPoints ?? [];
       // ADR 0092 decision 2: the validator's mapping rule, so no row written
       // here fails the commit as 23503 or 23505.
-      const problems = assetPointProblems(existing, rows, draft, ctx.templates.pointKeys);
+      const problems = assetPointProblems(existing, given, draft, ctx.templates.pointKeys);
       const first = problems[0];
       if (first !== undefined) {
         return fail(first.field === "assetIndex" ? first.message : `points.${first.index}: ${first.message}`);
       }
+      // F3.24b (decisions Q3): code stamps the keys the discovery saw on the device RTU of the asset.
+      const { rows, discovered } = stampDiscovered(draft, given);
       const asset = draft.assets![assetIndex]!;
       return write(
         state,
@@ -149,8 +153,8 @@ export function dispatchMappingTool(
         `Mapped ${countOf(rows.length, "point")} on asset ${quoteCell(asset.code)}: ${listOf(
           rows.map((row) => `${quoteCell(row.sourceDataKey)} → ${quoteCell(row.pointKey)}`),
           "mappings",
-        )}`,
-        { mapped: rows.length },
+        )}${discovered > 0 ? ` (${discovered} discovered)` : ""}`,
+        { mapped: rows.length, ...(discovered > 0 ? { discovered } : {}) },
       );
     }
 

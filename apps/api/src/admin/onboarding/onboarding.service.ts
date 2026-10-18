@@ -59,6 +59,7 @@ import {
 } from "./onboarding-checkpoints";
 import { draftCountProblem } from "./onboarding-draft-caps";
 import { readDiscovery, withDiscoveryOf } from "./onboarding-discovery-state";
+import { applyDiscoveryTurn } from "./onboarding-discovery-tools";
 import { diffSections } from "./onboarding-draft-merge";
 import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
 import type { RollbackBody, SetCredentialsBody } from "./onboarding.schema";
@@ -412,6 +413,8 @@ export class OnboardingService {
     // `mergeDraft` clears any stored proposal. A turn that proposed gets a new
     // one, bound to the hash of exactly the draft stored below (decision 5).
     let mergedDraft = this.chatService.mergeDraft(session.draft, turn.draftPatch);
+    // F3.24b: the discovery proposal and the credential copies, before the commit hash (a copy changes `_secrets`).
+    mergedDraft = applyDiscoveryTurn(mergedDraft, turn, new Date().toISOString());
     if (turn.commitProposal) {
       const hash = draftHash(mergedDraft);
       if (hash !== null) {

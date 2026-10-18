@@ -1,4 +1,14 @@
-import { discoveryDtoOf, onboardingDiscoveryStoredSchema } from "@bms/shared";
+import { z } from "zod";
+
+import {
+  discoveryDtoOf,
+  MQTT_DISCOVERY_HOST_MAX,
+  MQTT_DISCOVERY_MAX_WINDOW_SECONDS,
+  MQTT_DISCOVERY_MIN_WINDOW_SECONDS,
+  MQTT_DISCOVERY_RTU_CODE_MAX,
+  MQTT_DISCOVERY_TOPIC_MAX,
+  onboardingDiscoveryStoredSchema,
+} from "@bms/shared";
 import type { OnboardingDiscoveryResultDto, OnboardingDiscoveryStored } from "@bms/shared";
 
 /** The draft key the discovery worker writes (ADR 0103). Server state; never sent to the client. */
@@ -10,6 +20,38 @@ export const DISCOVERY_KEY = "_discovery";
  * restore (accuracy review #8), never sent to the client or the model.
  */
 export const DISCOVERY_PROPOSAL_KEY = "_discoveryProposal";
+
+/**
+ * `F3.24b` U4 — the stored `_discoveryProposal`: the `propose_discovery`
+ * arguments the turn validated, the broker the card shows (H3) and when.
+ * Strict and bounded, so a malformed blob reads as none.
+ */
+export const discoveryProposalSchema = z
+  .object({
+    rtuCode: z.string().min(2).max(MQTT_DISCOVERY_RTU_CODE_MAX),
+    topicPrefix: z.string().min(1).max(MQTT_DISCOVERY_TOPIC_MAX),
+    windowSeconds: z.number().int().min(MQTT_DISCOVERY_MIN_WINDOW_SECONDS).max(MQTT_DISCOVERY_MAX_WINDOW_SECONDS),
+    host: z.string().min(1).max(MQTT_DISCOVERY_HOST_MAX),
+    port: z.number().int().min(1).max(65_535),
+    proposedAt: z.string(),
+  })
+  .strict();
+
+export type StoredDiscoveryProposal = z.infer<typeof discoveryProposalSchema>;
+
+/** A shallow copy of `draft` carrying `proposal` as `_discoveryProposal`. */
+export function attachDiscoveryProposal<T extends object>(draft: T, proposal: StoredDiscoveryProposal): T {
+  return { ...draft, [DISCOVERY_PROPOSAL_KEY]: proposal };
+}
+
+/** The stored discovery proposal, or `null`. Fails closed. */
+export function readDiscoveryProposal(draft: unknown): StoredDiscoveryProposal | null {
+  if (typeof draft !== "object" || draft === null) {
+    return null;
+  }
+  const parsed = discoveryProposalSchema.safeParse((draft as Record<string, unknown>)[DISCOVERY_PROPOSAL_KEY]);
+  return parsed.success ? parsed.data : null;
+}
 
 /**
  * How long a `running` discovery stays busy past its window: the worker's

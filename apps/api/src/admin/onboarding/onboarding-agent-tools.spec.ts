@@ -83,11 +83,11 @@ function parsed(content: string): Record<string, unknown> {
   return JSON.parse(content) as Record<string, unknown>;
 }
 
-const FORBIDDEN = ["credentialsSet", "_secrets", "_commitProposal", "rtuTargetCount", "importedFromExcel"];
+const FORBIDDEN = ["credentialsSet", "_secrets", "_commitProposal", "_discovery", "_discoveryProposal", "rtuTargetCount", "importedFromExcel"];
 
 /** Every tool's JSON Schema; none carries a field the agent must never write. */
 export function assertEveryToolHasAJsonSchemaWithNoForbiddenProperty(): void {
-  assert(TOOL_DEFINITIONS.length === 29, `there are 29 tools, got ${TOOL_DEFINITIONS.length}`);
+  assert(TOOL_DEFINITIONS.length === 31, `there are 31 tools, got ${TOOL_DEFINITIONS.length}`);
   for (const tool of TOOL_DEFINITIONS) {
     const text = JSON.stringify(tool.parameters);
     for (const field of FORBIDDEN) {

@@ -394,6 +394,41 @@ export function attachEncryptedCredentials(
 }
 
 /**
+ * `F3.24b` (ADR 0103 Amendment 1, the RTU-per-device mapping): a copy of
+ * `draft` whose RTU at `toIndex` holds the **encrypted** blob of the RTU at
+ * `fromIndex`, with `credentialsSet: true`. The blob is copied as stored —
+ * never decrypted — so the model and the chat never handle the credential.
+ *
+ * `null` when either position does not name exactly one RTU (`rtuCodeAt`, the
+ * M4 rule), when the source holds no blob, or when the target already holds
+ * one: a copy never overwrites a credential the user entered.
+ */
+export function copyEncryptedCredentials(draft: unknown, fromIndex: number, toIndex: number): DraftWithSecrets | null {
+  const from = rtuCodeAt(draft, fromIndex);
+  const to = rtuCodeAt(draft, toIndex);
+  if (from === null || to === null || from === to) {
+    return null;
+  }
+  const secrets = (draft as DraftWithSecrets)._secrets;
+  const blob = ownBlob(secrets, from);
+  if (blob === null || ownBlob(secrets, to) !== null) {
+    return null;
+  }
+  const next = cloneJson(draft) as DraftWithSecrets;
+  const store: Record<string, EncryptedBlob> = {};
+  for (const existing of Object.keys(next._secrets ?? {})) {
+    const kept = ownBlob(next._secrets, existing);
+    if (kept) {
+      setBlob(store, existing, kept);
+    }
+  }
+  setBlob(store, to, { ...blob });
+  next._secrets = store;
+  next.rtus = next.rtus!.map((rtu, i) => (i === toIndex ? { ...rtu, credentialsSet: true } : rtu));
+  return next;
+}
+
+/**
  * Reads encrypted credential blobs from draft internal store.
  *
  * `keyVersion` is `entry.v ?? 1` (ADR 0062 decision 3): a blob written before

@@ -26,6 +26,11 @@ import {
   assertTheMappingChipsSurviveAndAreNotStepLabels,
   assertThePromptTellsTheModelToReadExistingCodesFirst,
   assertThePromptTellsTheModelToReadTheCatalogBeforeANonMqttRtu,
+  assertThePromptCarriesDiscoveryForACredentialedMqttRtu,
+  assertThePromptOmitsDiscoveryWithoutACredentialedMqttRtu,
+  assertTheDiscoveryParagraphMarksWireDataUntrusted,
+  assertADiscoveryProposalSurfacesFromTheTurn,
+  assertALaterWriteDropsTheDiscoveryProposal,
 } from "./onboarding-agent-loop.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -138,5 +143,27 @@ describe("the organization inventory sentence (F3.26, ADR 0095 decision 5)", () 
 describe("the protocol catalog sentence (F3.24a, ADR 0093 decision 5)", () => {
   it("tells the model to call list_protocols before it adds a non-MQTT RTU", () => {
     assertThePromptTellsTheModelToReadTheCatalogBeforeANonMqttRtu();
+  });
+});
+
+describe("the discovery rules (F3.24b, ADR 0103 decisions 2 and 8)", () => {
+  it("sends the Discovery paragraph when an MQTT RTU has credentials", () => {
+    assertThePromptCarriesDiscoveryForACredentialedMqttRtu();
+  });
+
+  it("omits the Discovery paragraph without a credentialed MQTT RTU", () => {
+    assertThePromptOmitsDiscoveryWithoutACredentialedMqttRtu();
+  });
+
+  it("marks discovery values as untrusted data", () => {
+    assertTheDiscoveryParagraphMarksWireDataUntrusted();
+  });
+
+  it("surfaces a discovery proposal from the turn", async () => {
+    await assertADiscoveryProposalSurfacesFromTheTurn();
+  });
+
+  it("drops the discovery proposal on a later write", async () => {
+    await assertALaterWriteDropsTheDiscoveryProposal();
   });
 });

@@ -385,6 +385,8 @@ export class OnboardingChatService {
       suggestedReplies: agentReplies(agent.suggestedReplies, result.currentPhase),
       actionLines: [...agent.actionLines],
       ...(agent.commitProposal ? { commitProposal: { summary: agent.commitProposal.summary } } : {}),
+      ...(agent.discoveryProposal ? { discoveryProposal: agent.discoveryProposal } : {}),
+      ...(agent.secretCopies ? { secretCopies: agent.secretCopies } : {}),
     };
   }
 
