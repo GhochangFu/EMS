@@ -4,9 +4,9 @@
 
 **Proposed — 2026-10-18.** Five gate questions were put to the owner one at a
 time, in chat, each with options and a recommendation. The owner accepted all
-five recommendations (see *Gate questions*). Details the rulings do not give
-are listed under *Drafter choices (not asked)* for the owner to confirm at
-acceptance. Drafted before any implementation code. Code citations are to
+five recommendations (see *Gate questions*). Six further details were then
+put the same way; the owner confirmed five and changed one (see *Drafter
+choices*). Drafted before any implementation code. Code citations are to
 `main` at `23af3e93`.
 
 This record **amends ADR 0093** decision 7 and gate question 1: it builds
@@ -184,30 +184,41 @@ channel.
 9. **Audit.** The route writes one `bms.audit_log` entry per started job
    (action `onboarding.discovery.start`, with session, RTU code, host, port and
    topic filter), and the worker writes one per finished job
-   (`onboarding.discovery.finish`, with status and counts). Neither carries a
-   credential or a sample value.
+   (`onboarding.discovery.finish`, with status and counts). A refused attempt
+   also writes one entry (`onboarding.discovery.refuse`, with session, RTU
+   code, host, port, topic filter and the refusal class: `blocked host`,
+   `bad prefix`, `bad port`, `busy`, `no worker`), from the route or from the
+   job, whichever refused it. No entry carries a credential or a sample value.
 
 10. **Not in this ADR.** Discovery for OPC-UA, SNMP and REST stays with `F1.4`
     and `F1.5`. A model-started connection with no Confirm. Discovery of an
     already committed RTU. Storing wire keys from the running ingest feed
     (the normaliser's `unmappedSourceKey` stays a counter).
 
-## Drafter choices (not asked)
+## Drafter choices
 
-For the owner to confirm at acceptance:
+Put to the owner one at a time on 2026-10-18, after the gate questions. Five
+followed the recommendation; choice 5 did not.
 
 1. The bounds in decision 5 (60 s / 120 s, 5,000 messages, 256 KiB, 200
-   devices, 500 keys, one job per session).
-2. The route shape and the two tool names in decision 2.
-3. Storing the result in the draft as `_discovery` (decision 6) rather than a
-   table.
-4. The `source: "discovery"` marker in decision 8.
-5. The two audit actions in decision 9.
+   devices, 500 keys, one job per session). **Confirmed** (alternatives:
+   30/60 s, 120/300 s).
+2. The route shape and the two tool names in decision 2. **Confirmed**
+   (alternatives: one tool only, an extra `GET` status route).
+3. Storing the result in the draft as `_discovery` (decision 6). **Confirmed**
+   (alternative: a `bms.onboarding_discoveries` table).
+4. The `source: "discovery"` marker and a "Discovered" badge with the sample
+   value in the preview (decision 8), not committed. **Confirmed**
+   (alternatives: commit the origin, no marker).
+5. Audit. **Owner chose start, finish and refusals** over the recommended
+   start and finish only, for a better trace of a misuse attempt. Decision 9
+   carries the third action.
 6. **A broker that permits one connection per username** may drop the ingest
    connection while a discovery job is connected with the same username.
    This ADR does not detect that case. The Confirm card and the Discover button
    show the warning text: "If this broker allows one connection per user, use
-   a separate username for discovery."
+   a separate username for discovery." **Confirmed** (alternatives: separate
+   discovery credentials, block while ingest is connected).
 
 ## Dependencies
 
