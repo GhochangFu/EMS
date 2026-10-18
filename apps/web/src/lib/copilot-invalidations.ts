@@ -119,6 +119,8 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "pointKey.update": [POINT_KEYS],
   "pointKey.deactivate": [POINT_KEYS],
   "pointKey.reactivate": [POINT_KEYS],
+  // `F3.24b` (ADR 0103) — a discovery writes only the draft's `_discovery`, so only the session reads go stale.
+  "onboarding.discovery": [["onboarding"]],
   // `F3.86` PR 6 — an onboarding commit creates the site, its RTUs, assets, mappings, groups and templates.
   "onboarding.commit": [
     LOCATIONS,
