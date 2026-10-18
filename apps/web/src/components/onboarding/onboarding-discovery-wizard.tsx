@@ -91,7 +91,7 @@ export function OnboardingDiscoveryWizard({ session, rtu, onStarted, onClose }: 
                 Topic prefix
                 <input
                   aria-label="Topic prefix"
-                  className="surface-input mt-1 w-full px-2 py-1 font-mono"
+                  className="surface-field mt-1 w-full px-2 py-1 font-mono"
                   value={topicPrefix}
                   onChange={(e) => setValues({ ...values, topicPrefix: e.target.value })}
                 />
