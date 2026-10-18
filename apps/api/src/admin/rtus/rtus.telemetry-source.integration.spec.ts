@@ -3,6 +3,7 @@ import { expect } from "vitest";
 
 import type { JwtPayload } from "@bms/shared";
 
+import { plantWithConstraintsOff } from "../../testing/constraints-off";
 import type { CreateRtuBody } from "./rtus.schema";
 import type { RtusAdminService } from "./rtus.service";
 
@@ -45,6 +46,8 @@ export type TelemetrySourceCtx = {
   readonly svcOnABypassingTenantChannel: RtusAdminService;
   /** `bms_fleet` (BYPASSRLS) — fixture rows and read-back only. */
   readonly fixturePool: pg.Pool;
+  /** The superuser (`max: 1`) — plants the row `0113`'s keys forbid, constraints off. */
+  readonly superPool: pg.Pool;
   readonly organizationId: string;
   readonly locationId: string;
   readonly createdRtuIds: string[];
@@ -358,12 +361,12 @@ export async function assertARenameRepairsASplitRow(
  *
  * **The row has to be inserted directly.** `AssetsAdminService` will not create
  * it: `assertRtuLocation` refuses an RTU outside the asset's location, so the
- * shape cannot be reached through the API at all. Nothing in the schema forbids
- * it today either — `assets.rtu_id` and `assets.organization_id` are
- * independent foreign keys, and the composite key that would make the state
- * impossible is a schema change with its own row. So the fixture writes what a
- * migration, an import or a future bug could write, which is the only way to
- * find out what this service does when it meets one.
+ * shape cannot be reached through the API at all. Since ADR 0102 (migration
+ * `0113`) the schema forbids it too: `assets_rtu_id_location_id_fkey` holds a
+ * wired asset to its RTU's location, so it is a state only a superuser with
+ * constraints off can leave. The fixture plants it that way
+ * (`plantWithConstraintsOff`) to keep the service's organization predicate
+ * gated — the key is the backstop, the predicate stays the first refusal.
  */
 async function attachAForeignOrgAsset(
   ctx: TelemetrySourceCtx,
@@ -393,13 +396,15 @@ async function attachAForeignOrgAsset(
   }
 
   const tag = `f4-59-foreign-${Date.now()}-${fixtureSeq++}`;
-  const inserted = await ctx.fixturePool.query<{ id: string }>(
-    `INSERT INTO bms.assets
-       (organization_id, code, name, site_name, location_id, rtu_id, domain, meta)
-     VALUES ($1, $2, $3, 'F4.59 foreign site', $4, $5, 'electrical',
-             '{"telemetrySource":"catalog"}'::jsonb)
-     RETURNING id`,
-    [row.organization_id, tag, `F4.59 foreign asset ${tag}`, row.location_id, rtuId],
+  const inserted = await plantWithConstraintsOff(ctx.superPool, (client) =>
+    client.query<{ id: string }>(
+      `INSERT INTO bms.assets
+         (organization_id, code, name, site_name, location_id, rtu_id, domain, meta)
+       VALUES ($1, $2, $3, 'F4.59 foreign site', $4, $5, 'electrical',
+               '{"telemetrySource":"catalog"}'::jsonb)
+       RETURNING id`,
+      [row.organization_id, tag, `F4.59 foreign asset ${tag}`, row.location_id, rtuId],
+    ),
   );
   const assetId = inserted.rows[0]?.id;
   if (assetId === undefined) {

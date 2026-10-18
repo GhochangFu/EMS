@@ -5,7 +5,11 @@ import { createDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
+import {
+  openIntegrationPool,
+  requireIntegrationDb,
+  resolveIntegrationRoleUrl,
+} from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { RtusAdminService } from "./rtus.service";
@@ -48,6 +52,7 @@ describe.skipIf(!connectionString)("F4.59 — telemetrySource moves with ingest_
   let fixturePool: pg.Pool;
   let authPool: pg.Pool;
   let tenantPool: pg.Pool;
+  let superPool: pg.Pool;
   let ctx: TelemetrySourceCtx;
 
   let jwt: JwtPayload;
@@ -70,6 +75,13 @@ describe.skipIf(!connectionString)("F4.59 — telemetrySource moves with ingest_
     tenantPool = await openIntegrationPool(
       process.env.DATABASE_URL_TENANT ?? asRole(url, "bms_tenant", "bms_tenant_dev"),
       "F4.59",
+    );
+    // ADR 0102: the foreign-organization asset is a state migration 0113's keys
+    // forbid, so the fixture plants it as the superuser with constraints off.
+    superPool = await openIntegrationPool(
+      resolveIntegrationRoleUrl(url, "superuser", process.env),
+      "F4.59",
+      { max: 1 },
     );
 
     const org = await fixturePool.query<{ id: string }>(
@@ -116,6 +128,7 @@ describe.skipIf(!connectionString)("F4.59 — telemetrySource moves with ingest_
         new MasterDataAuditService(fleetDb, fleetDb),
       ),
       fixturePool,
+      superPool,
       organizationId: org.rows[0].id,
       locationId: loc.rows[0].id,
       createdRtuIds,
@@ -140,7 +153,12 @@ describe.skipIf(!connectionString)("F4.59 — telemetrySource moves with ingest_
       ]);
       await fixturePool.query("DELETE FROM bms.rtus WHERE id = ANY($1)", [createdRtuIds]);
     }
-    await Promise.all([fixturePool?.end(), authPool?.end(), tenantPool?.end()]);
+    await Promise.all([
+      fixturePool?.end(),
+      authPool?.end(),
+      tenantPool?.end(),
+      superPool?.end(),
+    ]);
   }, 60_000);
 
   // One claim per `it`: `expect` throws, so two directions in one block would

@@ -171,6 +171,18 @@ export const rtus = bmsSchema.table("rtus", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+}, (t) => {
+  // F4.132 / F4.137 (ADR 0102, migration 0113). rtus_id_location_key never refuses a
+  // row (`id` is the PK); it is only K4's target, so it is not in RTU_UNIQUE_CONFLICTS.
+  // Block body so the text slices still end at the first `});`.
+  return {
+    idLocationKey: unique("rtus_id_location_key").on(t.id, t.locationId),
+    locationOrganizationFk: foreignKey({
+      name: "rtus_location_id_organization_id_fkey",
+      columns: [t.locationId, t.organizationId],
+      foreignColumns: [locations.id, locations.organizationId],
+    }),
+  };
 });
 
 /**
@@ -360,6 +372,23 @@ export const assets = bmsSchema.table("assets", {
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
+}, (t) => {
+  // F4.132 / F4.137 (ADR 0102, migration 0113). K3 holds the asset's organization
+  // to its location's; K4 holds a wired asset's RTU to the asset's own location
+  // (MATCH SIMPLE: a NULL rtu_id skips it). The single-column FKs stay. Block body
+  // so the text slices still end at the first `});`.
+  return {
+    locationOrganizationFk: foreignKey({
+      name: "assets_location_id_organization_id_fkey",
+      columns: [t.locationId, t.organizationId],
+      foreignColumns: [locations.id, locations.organizationId],
+    }),
+    rtuLocationFk: foreignKey({
+      name: "assets_rtu_id_location_id_fkey",
+      columns: [t.rtuId, t.locationId],
+      foreignColumns: [rtus.id, rtus.locationId],
+    }),
+  };
 });
 
 export const assetGroups = bmsSchema.table("asset_groups", {

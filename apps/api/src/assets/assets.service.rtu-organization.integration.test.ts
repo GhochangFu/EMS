@@ -13,6 +13,11 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
  * `.spec` (ADR 0014); this file owns the database lifecycle. Its own suite
  * because it is rollback-isolated and `tests/integration-fixture-isolation`
  * keeps such a spec apart from one that reads the seed (see the spec).
+ *
+ * `connection: "superuser"` (ADR 0102): the mis-stamp is a state migration
+ * `0113`'s keys forbid, and the spec plants it with `session_replication_role =
+ * replica`, which needs the superuser. The superuser bypasses row-level
+ * security as `bms_fleet` does, so `listAll` reads what it read before.
  */
 const connectionString = requireIntegrationDb({
   item: "F3.31",
@@ -21,6 +26,7 @@ const connectionString = requireIntegrationDb({
     "a green run here would assert that a mis-stamped rtu_id never names another " +
     "organization's RTU through GET /api/v1/assets — while nothing checked it against " +
     "a real database. Fix the pipeline, do not relax this guard.",
+  connection: "superuser",
 });
 
 describe.skipIf(!connectionString)("F3.31 — the rtus join carries the organization predicate", () => {

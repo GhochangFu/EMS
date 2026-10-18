@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 
+import { sql } from "drizzle-orm";
 import {
   assetPoints,
   assets,
@@ -12,6 +13,7 @@ import {
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
+import { withConstraintsOff } from "../../testing/constraints-off";
 import { withRollback } from "../../testing/with-rollback";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import {
@@ -48,6 +50,11 @@ import {
 export type InventoryCtx = {
   /** `createDb` on the `bms_fleet` pool. */
   readonly fleetDb: BmsDb;
+  /**
+   * `createDb` on the superuser pool — I14 only, to plant the crossed rows
+   * migration `0113`'s keys forbid with constraints off (ADR 0102).
+   */
+  readonly superDb: BmsDb;
   /** Per-run token, base 36. */
   readonly run: string;
 };
@@ -483,33 +490,44 @@ export async function assertAssetRowsCarryTheirTemplateAndRtu(ctx: InventoryCtx)
  * when a broken invariant points at it: B's RTU on A's location is not counted
  * into A's `rtuCount`; an A asset whose `rtu_id` is B's RTU shows `rtu: null`;
  * an A RTU on B's location is not listed. The fleet pool bypasses RLS, so the
- * join predicate is the only boundary.
+ * join predicate is the service's only boundary.
+ *
+ * Since ADR 0102 (migration `0113`) the composite keys refuse all three crossed
+ * rows, so they are a state only a superuser with constraints off can leave.
+ * The case runs on `superDb` (which bypasses RLS as the fleet pool does),
+ * plants them inside `withConstraintsOff`, and switches back to origin before
+ * the service reads — the join predicates stay gated.
  */
 export async function assertJoinsNeverReadAnotherOrganizationsRows(ctx: InventoryCtx): Promise<void> {
-  await withRollback(ctx.fleetDb, async (tx) => {
+  await withRollback(ctx.superDb, async (tx) => {
     const { a, b } = await seedFamily(tx, ctx.run);
-    await tx.insert(rtus).values({
-      organizationId: b.organizationId,
-      locationId: a.locationId,
-      code: "F326-RTU-B-ON-A",
-      displayName: "F3.26 B's RTU on A's location",
-    });
-    await tx.insert(rtus).values({
-      organizationId: a.organizationId,
-      locationId: b.locationId,
-      code: "F326-RTU-A-ON-B",
-      displayName: "F3.26 A's RTU on B's location",
-    });
     const crossed = `F326-CROSS-${ctx.run}`;
-    await tx.insert(assets).values({
-      organizationId: a.organizationId,
-      code: crossed,
-      name: "F3.26 crossed asset",
-      siteName: "F3.26 site",
-      locationId: a.locationId,
-      rtuId: b.rtuId,
-      domain: "electrical",
-    });
+    await withConstraintsOff(
+      (statement) => tx.execute(sql.raw(statement)),
+      async () => {
+        await tx.insert(rtus).values({
+          organizationId: b.organizationId,
+          locationId: a.locationId,
+          code: "F326-RTU-B-ON-A",
+          displayName: "F3.26 B's RTU on A's location",
+        });
+        await tx.insert(rtus).values({
+          organizationId: a.organizationId,
+          locationId: b.locationId,
+          code: "F326-RTU-A-ON-B",
+          displayName: "F3.26 A's RTU on B's location",
+        });
+        await tx.insert(assets).values({
+          organizationId: a.organizationId,
+          code: crossed,
+          name: "F3.26 crossed asset",
+          siteName: "F3.26 site",
+          locationId: a.locationId,
+          rtuId: b.rtuId,
+          domain: "electrical",
+        });
+      },
+    );
     const svc = service(tx);
 
     const located = await svc.listExisting(a.organizationId, { kind: "location" });

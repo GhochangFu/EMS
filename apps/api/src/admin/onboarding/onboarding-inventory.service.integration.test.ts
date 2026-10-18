@@ -3,7 +3,11 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 
 import { createDb } from "@bms/db";
 
-import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
+import {
+  openIntegrationPool,
+  requireIntegrationDb,
+  resolveIntegrationRoleUrl,
+} from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
 import {
   assertAssetRowsCarryTheirTemplateAndRtu,
@@ -29,6 +33,11 @@ import {
  * `organization-llm-settings.rls.integration.test.ts` harness. Every case
  * inserts its fixture inside a transaction it rolls back, so there is no
  * cleanup and no stale sweep here.
+ *
+ * A second pool, the superuser, serves I14 alone: since ADR 0102 (migration
+ * `0113`) the crossed rows it plants are refused by the composite keys, so it
+ * plants them with `session_replication_role = replica`, which needs the
+ * superuser. Every other case stays on the fleet pool.
  */
 const connectionString = requireIntegrationDb({
   item: "F3.26",
@@ -45,6 +54,7 @@ const RUN = Date.now().toString(36);
 
 describe.skipIf(!connectionString)("F3.26 — onboarding inventory reads (ADR 0095)", () => {
   let fleetPool: pg.Pool;
+  let superPool: pg.Pool;
   let ctx: InventoryCtx;
 
   beforeAll(async () => {
@@ -53,11 +63,16 @@ describe.skipIf(!connectionString)("F3.26 — onboarding inventory reads (ADR 00
       process.env.DATABASE_URL_FLEET ?? asRole(url, "bms_fleet", "bms_fleet_dev"),
       "F3.26",
     );
-    ctx = { fleetDb: createDb(fleetPool), run: RUN };
+    superPool = await openIntegrationPool(
+      resolveIntegrationRoleUrl(url, "superuser", process.env),
+      "F3.26",
+      { max: 1 },
+    );
+    ctx = { fleetDb: createDb(fleetPool), superDb: createDb(superPool), run: RUN };
   });
 
   afterAll(async () => {
-    await fleetPool?.end();
+    await Promise.all([fleetPool?.end(), superPool?.end()]);
   });
 
   it("I1 assertLocationsListOnlyTheSessionOrganization", async () => {
