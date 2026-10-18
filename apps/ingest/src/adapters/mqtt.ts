@@ -1,10 +1,6 @@
 import mqtt from "mqtt";
 
-import {
-  mqttConfigSchema,
-  mqttDeviceSchema,
-  parseMqttEnvelope as parsePayload,
-} from "@bms/shared/ingest";
+import { mqttConfigSchema, mqttDeviceSchema, parseMqttEnvelope as parsePayload } from "@bms/shared/ingest";
 import type { AdapterHealth, MqttConfig, MqttDevice, SourceSample } from "@bms/shared/ingest";
 
 import type {
