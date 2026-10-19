@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   aLegacyTopicIsPrinted,
   anEmptyTopicBesideALegacyKeyPrintsADash,
+  theMappingsLineCountsDiscoveredRows,
+  theMappingsLineIsUnchangedWithoutDiscoveredRows,
   theTopicKeyWinsOverTheLegacyKey,
   anAbsentTopicPrintsADash,
   aNonStringTopicFallsBackToTheLegacyKey,
@@ -63,5 +65,13 @@ describe("F3.22 onboarding draft summary", () => {
 
   it("prints a whitespace-only topic as sent (F4.234)", () => {
     aWhitespaceTopicIsPrintedAsSent();
+  });
+
+  it("counts discovered rows on the Mappings line (F3.24b)", () => {
+    theMappingsLineCountsDiscoveredRows();
+  });
+
+  it("leaves the Mappings line alone without discovered rows (F3.24b)", () => {
+    theMappingsLineIsUnchangedWithoutDiscoveredRows();
   });
 });

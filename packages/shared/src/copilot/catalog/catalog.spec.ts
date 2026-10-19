@@ -180,6 +180,12 @@ export const FIXTURES: Readonly<
   "assetPoint.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
   // `F3.86` PR 6 — the server-made onboarding commit (decision 7): the hash of the draft the turn stored.
   "onboarding.commit": { body: { draftHash: "a".repeat(64) }, params: { id: ROW }, names: TARGET_NAME },
+  // `F3.24b` (ADR 0103) — the server-made discovery start, bound to the broker the card showed (H3).
+  "onboarding.discovery": {
+    body: { rtuCode: "R1", topicPrefix: "Airsprint-1051/Data", windowSeconds: 60, expected: { host: "broker.example.com", port: 8883 } },
+    params: { id: ROW },
+    names: TARGET_NAME,
+  },
   // `F3.87` PR 5 — the canvas entries (owner ruling Q1): two units and one pipe; the replace at version 1.
   "mimicLayout.create": { body: { organizationId: ORG, ...LAYOUT_GRAPH }, params: {}, names: "Raw water" },
   "mimicLayout.replace": { body: { version: 1, ...LAYOUT_GRAPH }, params: { id: ROW }, names: TARGET_NAME },

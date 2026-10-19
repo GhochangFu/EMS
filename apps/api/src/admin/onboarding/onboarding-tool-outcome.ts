@@ -39,12 +39,39 @@ export const MAX_MODEL_REPLIES = 4;
 /** The longest reply a chip may carry. A longer one is dropped, never cut: a cut chip would send a cut message. */
 export const MAX_SUGGESTED_REPLY_CHARS = 40;
 
+/**
+ * `F3.24b` (ADR 0103 decision 2): what a `propose_discovery` call records. The
+ * server makes the Confirm card from it after the turn; `host` and `port` are
+ * the broker the card shows and the route checks again (security review H3).
+ * TLS is always on (decisions Q5), so no flag is carried.
+ */
+export type DiscoveryProposal = {
+  readonly rtuCode: string;
+  readonly topicPrefix: string;
+  readonly windowSeconds: number;
+  readonly host: string;
+  readonly port: number;
+};
+
+/** `F3.24b`: one RTU-per-device credential copy, applied by code after the turn (never by the model). */
+export type DiscoverySecretCopy = { readonly from: string; readonly to: string };
+
 /** The turn's working state; `runTool` replaces `working` only after a write passes every check. */
 export type ToolState = {
   working: OnboardingDraft;
   pendingProposal?: { summary: string };
   /** F3.25 (ADR 0094 decision 9): the replies the last `suggest_replies` call offered; code filters them. */
   suggestedReplies?: string[];
+  /** F3.24b: the last `propose_discovery` of the turn; a later write drops it, as it drops `pendingProposal`. */
+  pendingDiscovery?: DiscoveryProposal;
+  /**
+   * F3.24b (security review H2): set once `get_discovery_results` returned
+   * wire data in this turn. From then on only the scoped writes run
+   * (`discoveryScopeProblem`); never cleared inside the turn.
+   */
+  discoveryRead?: { readonly rtuCode: string; readonly devIds: readonly string[] };
+  /** F3.24b: the credential copies the turn's `add_rtu` calls earned; checked again when applied. */
+  secretCopies?: DiscoverySecretCopy[];
 };
 
 /**
@@ -65,6 +92,7 @@ export function write(state: ToolState, patch: OnboardingDraftInput, actionLine:
   }
   state.working = next;
   state.pendingProposal = undefined;
+  state.pendingDiscovery = undefined;
   return succeed(result, actionLine);
 }
 

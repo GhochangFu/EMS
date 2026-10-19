@@ -53,6 +53,8 @@ export function assertTurnStillBound(
 export function lockSession(tx: Parameters<Parameters<typeof withTenant>[2]>[0], sessionId: string) {
   return tx
     .select({
+      // F3.24b (security review M4): a discovery payload and its audit rows take the organization from the locked row.
+      organizationId: onboardingSessions.organizationId,
       draft: onboardingSessions.draft,
       status: onboardingSessions.status,
       messages: onboardingSessions.messages,

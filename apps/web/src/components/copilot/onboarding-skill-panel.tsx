@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -8,8 +8,9 @@ import type {
   OnboardingChatResponseDto,
   OnboardingSessionDto,
 } from "@bms/shared";
+import { discoveryIsActive } from "@bms/shared/contracts";
 
-import { rollbackOnboardingSession, validateOnboardingSession } from "../../api/admin/onboarding";
+import { fetchOnboardingSession, rollbackOnboardingSession, validateOnboardingSession } from "../../api/admin/onboarding";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { invalidationKeysFor } from "../../lib/copilot-invalidations";
@@ -35,6 +36,12 @@ function stateOf(skill: CopilotSkillStateDto, data: OnboardingChatResponseDto): 
     autoOpenReason: data.autoOpenReason,
   };
 }
+
+/** How often the panel reads the session while a discovery is queued or running (ADR 0103: the session DTO carries the status). */
+export const DISCOVERY_POLL_MS = 5_000;
+
+/** The chip offered once a discovery that found devices has finished: a client-made reply, sent as a turn. */
+export const DISCOVERY_MAP_CHIP = "Map the discovered points";
 
 /** Where a committed session's RTUs are listed. */
 function rtusPathFor(locationId: string): string {
@@ -117,6 +124,47 @@ export function OnboardingSkillPanel({
   const withSession = (next: OnboardingSessionDto): void =>
     onSkillChange({ ...skill, session: next, autoOpenPreview: false, autoOpenReason: undefined });
 
+  // F3.24b: while a discovery is active (the route's own rule, so a `running` past its window + 60 s is not)
+  // the session is read every DISCOVERY_POLL_MS and pushed up. A turn in flight writes the same draft, so its
+  // answer wins: a read that arrives during a turn, or that started before the last turn ended (it may hold
+  // the pre-turn draft and hash), is dropped.
+  const discoveryStatus = session.discovery?.status;
+  const discoveryActive = discoveryIsActive(session.discovery, Date.now());
+  const turnsEnded = useRef(0);
+  const turnsEndedAtPollStart = useRef(0);
+  const wasSending = useRef(sending);
+  useEffect(() => {
+    if (wasSending.current && !sending) turnsEnded.current += 1;
+    wasSending.current = sending;
+  }, [sending]);
+  const polled = useQuery({
+    queryKey: ["onboarding", session.id],
+    queryFn: () => {
+      turnsEndedAtPollStart.current = turnsEnded.current;
+      return fetchOnboardingSession(session.id);
+    },
+    enabled: discoveryActive,
+    refetchInterval: DISCOVERY_POLL_MS,
+    retry: false,
+  });
+  useEffect(() => {
+    const current = turnsEndedAtPollStart.current === turnsEnded.current;
+    if (polled.data && polled.isFetchedAfterMount && discoveryActive && !sending && current) withSession(polled.data);
+    // Each read is pushed once, when it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [polled.data]);
+  // The chip is offered when the status flips to done with devices found, and withdrawn once picked.
+  const [mapOffered, setMapOffered] = useState(false);
+  const lastStatus = useRef(discoveryStatus);
+  useEffect(() => {
+    const was = lastStatus.current;
+    lastStatus.current = discoveryStatus;
+    if ((was === "queued" || was === "running") && discoveryStatus === "done" && (session.discovery?.devices.length ?? 0) > 0) {
+      setMapOffered(true);
+    }
+    if (discoveryStatus !== "done") setMapOffered(false);
+  }, [discoveryStatus, session.discovery?.devices.length]);
+
   const validateM = useMutation({
     mutationFn: () => validateOnboardingSession(session.id),
     onSuccess: (data) => {
@@ -157,6 +205,7 @@ export function OnboardingSkillPanel({
   useEffect(() => () => onUndoingChange(false), [onUndoingChange]);
 
   function pick(reply: string): void {
+    if (reply === DISCOVERY_MAP_CHIP) setMapOffered(false);
     if (reply.trim().toLowerCase() === "view draft") {
       setPreviewOpen(true);
       return;
@@ -169,7 +218,7 @@ export function OnboardingSkillPanel({
     if (session.currentPhase === "review") setDismissedReason("review");
   }
 
-  const replies = offeredReplies(skill.suggestedReplies);
+  const replies = [...offeredReplies(skill.suggestedReplies), ...(mapOffered ? [DISCOVERY_MAP_CHIP] : [])];
   const undoCheckpoints = [...session.checkpoints].reverse();
   const draft = session.status === "draft";
   const undoTarget = undoCheckpoints.some((c) => c.id === undoChoice) ? undoChoice : (undoCheckpoints[0]?.id ?? "");

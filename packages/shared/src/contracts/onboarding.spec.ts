@@ -176,6 +176,7 @@ export function assertSessionDtoCarriesTheCaps(): void {
     result: null,
     checkpoints: [],
     draftHash: null,
+    discovery: null,
   });
 
   assert(
@@ -529,6 +530,7 @@ export function assertSessionDtoCarriesTheStringBounds(): void {
     result: null,
     checkpoints: [],
     draftHash: null,
+    discovery: null,
   });
 
   assert(
@@ -767,6 +769,7 @@ function sessionWith(extra: Record<string, unknown>): Record<string, unknown> {
     updatedAt: "2026-10-06T00:00:00.000Z",
     committedAt: null,
     result: null,
+    discovery: null,
     ...extra,
   };
 }

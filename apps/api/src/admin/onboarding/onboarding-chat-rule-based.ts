@@ -39,6 +39,7 @@ import {
 } from "./onboarding-chat-summaries";
 import { guidedWrite } from "./onboarding-guided-writes";
 import type { ValidateTemplateContext } from "./onboarding-template-refs";
+import type { DiscoveryProposal, DiscoverySecretCopy } from "./onboarding-tool-outcome";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { draftNeedsPointKeys, type OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -55,6 +56,10 @@ export type ChatTurnResult = {
   actionLines: string[];
   /** F3.21 decision 5: set when the agent proposed a commit; the caller binds it to the stored draft's hash. */
   commitProposal?: { summary: string };
+  /** F3.24b (ADR 0103 decision 2): the agent proposed a discovery; `chat` stores it for the server-made card. */
+  discoveryProposal?: DiscoveryProposal;
+  /** F3.24b: the RTU-per-device credential copies, applied (and checked again) by `applyDiscoveryTurn`. */
+  secretCopies?: readonly DiscoverySecretCopy[];
   // No `credentialsToEncrypt` here by design (ADR 0022 decision 2): a chat turn
   // can no longer yield a credential, so the field is removed rather than left
   // permanently undefined where someone could re-populate it. `mergeDraft`

@@ -28,7 +28,7 @@ function route() {
       return LIST;
     },
   } as unknown as OnboardingService;
-  return { controller: new OnboardingController(service), calls };
+  return { controller: new OnboardingController(service, {} as never), calls };
 }
 
 /** A uuid reaches `listDrafts(user, id)` and the route answers its list. */

@@ -39,7 +39,7 @@ function serviceWithRecordingCommit() {
 function controllerWithRecordingService() {
   const calls: unknown[][] = [];
   const service = { commit: async (...args: unknown[]) => (calls.push(args), { sessionId: SESSION_ID }) };
-  return { controller: new OnboardingController(service as never), calls };
+  return { controller: new OnboardingController(service as never, {} as never), calls };
 }
 
 /** The service commits only the draft the hash names, through `commitProposed`, never `commit`. */

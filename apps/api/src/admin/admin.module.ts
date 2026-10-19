@@ -56,6 +56,8 @@ import { OnboardingCatalogService } from "./onboarding/onboarding-catalog.servic
 import { OnboardingInventoryService } from "./onboarding/onboarding-inventory.service";
 import { OnboardingChatService } from "./onboarding/onboarding-chat.service";
 import { OnboardingCommitService } from "./onboarding/onboarding-commit.service";
+import { OnboardingDiscoveryService } from "./onboarding/onboarding-discovery.service";
+import { OnboardingDiscoveryStore } from "./onboarding/onboarding-discovery-store";
 import { OnboardingExcelService } from "./onboarding/onboarding-excel.service";
 import { LlmModule } from "../llm/llm.module";
 import { OnboardingProtocolService } from "./onboarding/onboarding-protocol.service";
@@ -137,6 +139,9 @@ import { UsersService } from "./users/users.service";
     OnboardingChatService,
     OnboardingCommitService,
     OnboardingService,
+    // F3.24b (ADR 0103): the discovery route; QUEUE_CLIENT comes from the global QueueModule.
+    OnboardingDiscoveryService,
+    OnboardingDiscoveryStore,
     OrganizationsAdminService,
     LocationsAdminService,
     RtusAdminService,

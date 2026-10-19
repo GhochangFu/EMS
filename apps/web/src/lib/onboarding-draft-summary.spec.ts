@@ -135,3 +135,16 @@ export function aNonStringTopicFallsBackToTheLegacyKey(): void {
 export function aWhitespaceTopicIsPrintedAsSent(): void {
   expect(topicLine({ topic: "  " })).toBe(`${LINE}  `);
 }
+
+const POINT = { assetIndex: 0, pointKey: "p", sourceDataKey: "k" };
+
+/** F3.24b — a discovery-stamped row adds "(n discovered)" to the Mappings line. */
+export function theMappingsLineCountsDiscoveredRows(): void {
+  const text = formatOnboardingDraftSummary({ assetPoints: [POINT, { ...POINT, source: "discovery" }] });
+  expect(text).toContain("Mappings: 2 asset-point row(s) (1 discovered)");
+}
+
+/** F3.24b — with no discovered row the Mappings line is unchanged. */
+export function theMappingsLineIsUnchangedWithoutDiscoveredRows(): void {
+  expect(formatOnboardingDraftSummary({ assetPoints: [POINT] })).toBe("Mappings: 1 asset-point row(s)");
+}

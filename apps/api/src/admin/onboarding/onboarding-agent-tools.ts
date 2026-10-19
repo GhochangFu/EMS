@@ -6,6 +6,15 @@ import { isJsonContainer, rebuildDeep } from "../stack-safe-json";
 import { commitSummary } from "./onboarding-commit-proposal";
 import { looksLikeCredential } from "./onboarding-credential-detect";
 import { assetPointProblems } from "./onboarding-mapping-refs";
+import {
+  discoveredRtuSource,
+  discoveryScopeProblem,
+  dispatchDiscoveryTool,
+  DISCOVERY_TOOL_DESCRIPTIONS,
+  DISCOVERY_TOOL_SCHEMAS,
+  isDiscoveryToolName,
+  stampDiscovered,
+} from "./onboarding-discovery-tools";
 import { dispatchMappingTool, isMappingToolName, MAPPING_TOOL_DESCRIPTIONS, MAPPING_TOOL_SCHEMAS } from "./onboarding-mapping-tools";
 import { cutToBound, draftCountProblem } from "./onboarding-draft-caps";
 import type { LlmToolCall, LlmToolDefinition } from "../../llm/llm-port";
@@ -109,6 +118,8 @@ const CREDENTIAL_CHECKED_TOOLS: ReadonlySet<string> = new Set([
   "add_template_assets",
   "add_point_keys",
   "map_points",
+  // F3.24b: the prefix is stored in the proposal and shown on the card, so it is walked too.
+  "propose_discovery",
 ]);
 
 /** Security review M2: an RTU with stored credentials keeps its connection, so the credential cannot be sent elsewhere. */
@@ -232,7 +243,8 @@ const TOOL_SCHEMAS = {
   remove_point_key: indexSchema,
   add_asset: assetArgs,
   remove_asset: indexSchema,
-  map_point: draftAssetPointSchema,
+  // F3.24b (decisions Q3): `source` is code-stamped, so a call that carries it is refused.
+  map_point: draftAssetPointSchema.omit({ source: true }).strict(),
   remove_asset_point: indexSchema,
   use_existing_point_keys: z.object({ value: z.boolean() }).strict(),
   validate_draft: noArgs,
@@ -243,6 +255,7 @@ const TOOL_SCHEMAS = {
     .strict(),
   ...TEMPLATE_TOOL_SCHEMAS,
   ...MAPPING_TOOL_SCHEMAS,
+  ...DISCOVERY_TOOL_SCHEMAS,
 } as const satisfies Record<string, ZodTypeAny>;
 
 export type ToolName = keyof typeof TOOL_SCHEMAS;
@@ -250,6 +263,7 @@ export type ToolName = keyof typeof TOOL_SCHEMAS;
 const DESCRIPTIONS: Record<ToolName, string> = {
   ...TEMPLATE_TOOL_DESCRIPTIONS,
   ...MAPPING_TOOL_DESCRIPTIONS,
+  ...DISCOVERY_TOOL_DESCRIPTIONS,
   get_draft: "Returns the current onboarding draft (credentials redacted).",
   list_point_keys: "Lists catalog point keys (code, name, unit, domain, inUse). Optional `search` filters code and name; `domain` and `unit` match exactly, case-insensitive. Keys this organization already maps come first.",
   find_existing:
@@ -292,7 +306,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
 /** `F3.85` (ADR 0099): the name → schema map and its definitions, built by the generic registry in `llm/`. */
 const TOOL_REGISTRY = defineToolRegistry(TOOL_SCHEMAS, DESCRIPTIONS);
 
-/** The 29 tools as the model sees them, in a fixed order. */
+/** The 31 tools as the model sees them, in a fixed order. */
 export const TOOL_DEFINITIONS: readonly LlmToolDefinition[] = TOOL_REGISTRY.definitions;
 
 /**
@@ -345,6 +359,14 @@ export async function runTool(call: LlmToolCall, state: ToolState, ctx: ToolCont
 }
 
 async function dispatch(name: ToolName, args: Record<string, unknown>, state: ToolState, ctx: ToolContext): Promise<ToolOutcome> {
+  // F3.24b (security review H2): after a read of wire data, only the scoped writes run.
+  const scoped = discoveryScopeProblem(name, args, state);
+  if (scoped !== null) {
+    return fail(scoped);
+  }
+  if (isDiscoveryToolName(name)) {
+    return dispatchDiscoveryTool(name, args, state);
+  }
   if (isTemplateToolName(name)) {
     return dispatchTemplateTool(name, args, state, ctx);
   }
@@ -441,7 +463,19 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       if (problem) {
         return fail(problem);
       }
-      return write(state, { rtus: [...(draft.rtus ?? []), rtu] }, `Added RTU ${rtu.code} (${rtu.protocol})${rtuActionTail(rtu.protocol)}`);
+      // F3.24b (accuracy review #3): an RTU for a discovered device on the confirmed broker earns a copy of the
+      // source RTU's encrypted credential, applied by code after the turn and checked again there.
+      const source = discoveredRtuSource(draft, rtu);
+      const copied = source === null ? "" : ` (credentials of RTU ${source})`;
+      const outcome = write(
+        state,
+        { rtus: [...(draft.rtus ?? []), rtu] },
+        `Added RTU ${rtu.code} (${rtu.protocol})${rtuActionTail(rtu.protocol)}${copied}`,
+      );
+      if (outcome.ok && source !== null) {
+        state.secretCopies = [...(state.secretCopies ?? []), { from: source, to: code }];
+      }
+      return outcome;
     }
 
     case "update_rtu": {
@@ -596,16 +630,19 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
     case "map_point": {
       // F3.23 (ADR 0092 decision 2): the validator's mapping rule, so a
       // mapping written here cannot fail the commit as 23503 or 23505.
-      const point = args as z.infer<typeof draftAssetPointSchema>;
-      const problems = assetPointProblems(draft.assetPoints ?? [], [point], draft, ctx.templates.pointKeys);
+      const given = args as z.infer<(typeof TOOL_SCHEMAS)["map_point"]>;
+      const problems = assetPointProblems(draft.assetPoints ?? [], [given], draft, ctx.templates.pointKeys);
       if (problems.length > 0) {
         return fail(problems[0]!.message);
       }
+      // F3.24b (decisions Q3): code stamps a key the discovery saw on the device RTU of the asset.
+      const { rows, discovered } = stampDiscovered(draft, [given]);
+      const point = rows[0]!;
       const asset = draft.assets![point.assetIndex]!;
       return write(
         state,
         { assetPoints: [...(draft.assetPoints ?? []), point] },
-        `Mapped ${quoteCell(point.sourceDataKey)} → ${quoteCell(point.pointKey)} on asset ${quoteCell(asset.code)}`,
+        `Mapped ${quoteCell(point.sourceDataKey)} → ${quoteCell(point.pointKey)} on asset ${quoteCell(asset.code)}${discovered > 0 ? " (discovered)" : ""}`,
       );
     }
 

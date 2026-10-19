@@ -183,6 +183,23 @@ const WORKER_LEAVES = [
   "queue/copilot-purge.ts",
   "copilot/copilot-purge.module.ts",
   "copilot/copilot-purge.service.ts",
+  // F3.24b (ADR 0103 decision 1): the MQTT discovery job — the queue
+  // declaration, the leaf module and its seven files, and the four helpers it
+  // reaches outside its directory. No admin/ module and no copilot/ or llm/
+  // file: credential-detect moved to security/ in this row for rule 8.
+  "queue/onboarding-discovery.ts",
+  "onboarding-discovery/onboarding-discovery.module.ts",
+  "onboarding-discovery/discovery-job.service.ts",
+  "onboarding-discovery/discovery-job-store.ts",
+  "onboarding-discovery/discovery-host-guard.ts",
+  "onboarding-discovery/discovery-collector.ts",
+  "onboarding-discovery/discovery-listener.ts",
+  "onboarding-discovery/discovery-transport.ts",
+  "onboarding-discovery/discovery-credentials.ts",
+  "security/credential-crypto.service.ts",
+  "security/credential-detect.ts",
+  "admin/onboarding/onboarding-redaction.ts",
+  "admin/onboarding/onboarding-locked-writes.ts",
 ] as const;
 
 /** Rule 8: the only `copilot/` files the worker's closure may hold. */
@@ -353,7 +370,7 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
     it("WORKER_LEAVES names every leaf file: the count is pinned here so the docblock carries no number that can drift", () => {
       // F3.5b post-merge sweep (ADR 0071 Amendment 2 item 7 F): the docblock
       // once said "the nine files" against a list of twenty-six.
-      expect(WORKER_LEAVES.length).toBe(29);
+      expect(WORKER_LEAVES.length).toBe(42);
     });
 
     it("reaches the modules WorkerModule is built from (the walker follows something)", () => {

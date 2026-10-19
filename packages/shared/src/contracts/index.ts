@@ -49,6 +49,7 @@ export * from "./mimic-symbol-library-catalog";
 export type * from "./schema-types";
 export * from "./notifications";
 export * from "./onboarding";
+export * from "./onboarding-discovery";
 export * from "./operations";
 export * from "./point-keys";
 export * from "./point-key-states";

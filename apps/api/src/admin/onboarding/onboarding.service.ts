@@ -27,6 +27,7 @@ import type {
 import { AccessControlService } from "../../auth/access-control.service";
 import { recalledIdentity, resolveActorId } from "../../auth/identity-resolver";
 import { parseStoredContract } from "../../common/parse-stored-contract";
+import { hasControlChars } from "../../onboarding-discovery/discovery-credentials";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
@@ -57,6 +58,8 @@ import {
   type Checkpoint,
 } from "./onboarding-checkpoints";
 import { draftCountProblem } from "./onboarding-draft-caps";
+import { readDiscovery, withDiscoveryOf } from "./onboarding-discovery-state";
+import { applyDiscoveryTurn } from "./onboarding-discovery-tools";
 import { diffSections } from "./onboarding-draft-merge";
 import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
 import type { RollbackBody, SetCredentialsBody } from "./onboarding.schema";
@@ -73,6 +76,9 @@ import {
 } from "./onboarding-locked-writes";
 
 export { SESSION_NO_LONGER_DRAFT, DRAFT_CHANGED_DURING_TURN, DRAFT_TOO_DEEP_FOR_TURN } from "./onboarding-locked-writes";
+
+/** `F3.24b` (ADR 0103 Amendment 1, C1): the MQTT CONNECT packet carries the credential, so a control character in it is refused. */
+export const MQTT_CREDENTIAL_CONTROL_CHARS = "An MQTT username or password must not contain control characters such as a line break.";
 
 /** `F4.255`: the global administrator's draft list names no organization — it has no home organization to fall back to. */
 export const ONBOARDING_DRAFTS_GLOBAL_NEEDS_ORGANIZATION = "A global administrator must name the organization whose drafts to list";
@@ -280,6 +286,9 @@ export class OnboardingService {
     if (!Array.isArray(draft.rtus) || !draft.rtus[body.rtuIndex]) {
       throw new BadRequestException(`No RTU at index ${body.rtuIndex} in this draft`);
     }
+    if (draft.rtus[body.rtuIndex]?.protocol === "mqtt" && Object.values(body.credentials).some(hasControlChars)) {
+      throw new BadRequestException(MQTT_CREDENTIAL_CONTROL_CHARS);
+    }
 
     // M4: `_secrets` is keyed by RTU `code`, not by position, so a later
     // reorder cannot hand this password to a different broker. An RTU with no
@@ -404,6 +413,8 @@ export class OnboardingService {
     // `mergeDraft` clears any stored proposal. A turn that proposed gets a new
     // one, bound to the hash of exactly the draft stored below (decision 5).
     let mergedDraft = this.chatService.mergeDraft(session.draft, turn.draftPatch);
+    // F3.24b: the discovery proposal and the credential copies, before the commit hash (a copy changes `_secrets`).
+    mergedDraft = applyDiscoveryTurn(mergedDraft, turn, new Date().toISOString());
     if (turn.commitProposal) {
       const hash = draftHash(mergedDraft);
       if (hash !== null) {
@@ -512,7 +523,8 @@ export class OnboardingService {
       const [row] = await tx
         .update(onboardingSessions)
         .set({
-          draft: mergedDraft,
+          // F3.24b: the worker may have written `_discovery` since the turn read the draft.
+          draft: withDiscoveryOf(locked.draft, mergedDraft),
           currentPhase: turn.currentPhase,
           messages,
           ...checkpointWrite,
@@ -715,7 +727,8 @@ export class OnboardingService {
       const [row] = await tx
         .update(onboardingSessions)
         .set({
-          draft: mergedDraft,
+          // F3.24b: as `chat` — keep the `_discovery` the worker wrote since the read.
+          draft: withDiscoveryOf(locked.draft, mergedDraft),
           currentPhase: phase,
           messages,
           // F3.25 (plan Q3): as `patchDraft` — an upload is not checkpointed.
@@ -771,8 +784,11 @@ export class OnboardingService {
    * `F4.256` (AGENTS.md §4.7, the F4.64 rule): the role gate runs before the
    * read, so its 403 does not depend on whether the id exists, and a session
    * outside the caller's organization scope is the same 404 as a missing one.
+   *
+   * Public since `F3.24b`: `OnboardingDiscoveryService` runs the same gate
+   * before it writes any refuse row (security review M5).
    */
-  private async loadSession(jwt: JwtPayload, sessionId: string) {
+  async loadSession(jwt: JwtPayload, sessionId: string) {
     await this.assertOnboardingRole(jwt);
     const [session] = await this.fleetDb
       .select()
@@ -949,6 +965,8 @@ export class OnboardingService {
       // the hash a rollback binds to.
       checkpoints: readCheckpoints(row.checkpoints).map(checkpointSummary),
       draftHash: draftHash(row.draft),
+      // F3.24b (ADR 0103): the worker's result; `redactDraftForClient` removes the raw key.
+      discovery: readDiscovery(row.draft),
     };
   }
 }

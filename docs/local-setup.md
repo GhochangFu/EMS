@@ -391,6 +391,19 @@ uncomment the six variables in `apps/api/.env` above. The worker process
 reads none of them — `worker.module.ts` has no `StorageModule` import
 (decision 9).
 
+The MQTT discovery integration suite (`F3.24b`, ADR 0103) needs a plain
+broker. Run the same container CI runs, then export the URL:
+
+```bash
+docker run -d --name mosquitto -p 1883:1883 \
+  -v "$PWD/infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro" \
+  eclipse-mosquitto:2.0
+MQTT_TEST_URL=mqtt://127.0.0.1:1883 npx vitest run apps/api/src/onboarding-discovery/discovery-job.integration.test.ts
+```
+
+Without `MQTT_TEST_URL` the suite skips and prints that on stderr. Under CI it
+refuses to skip.
+
 `pnpm install` also runs `pnpm hooks:install`, which points git at the
 committed `.githooks/` directory. See §10a below — if you skip `pnpm install`
 and run the services some other way, the commit-time rule checks are not

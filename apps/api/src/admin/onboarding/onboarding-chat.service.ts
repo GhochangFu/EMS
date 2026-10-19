@@ -19,6 +19,7 @@ import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingInventoryService } from "./onboarding-inventory.service";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { mergeDraftPatch } from "./onboarding-draft-merge";
+import { DISCOVERY_PROPOSAL_KEY } from "./onboarding-discovery-state";
 import { formatAssetsByRtuSummary, mqttSetupTemplate, needsMqttSetup } from "./onboarding-chat-summaries";
 import {
   confirmStepFor,
@@ -384,6 +385,8 @@ export class OnboardingChatService {
       suggestedReplies: agentReplies(agent.suggestedReplies, result.currentPhase),
       actionLines: [...agent.actionLines],
       ...(agent.commitProposal ? { commitProposal: { summary: agent.commitProposal.summary } } : {}),
+      ...(agent.discoveryProposal ? { discoveryProposal: agent.discoveryProposal } : {}),
+      ...(agent.secretCopies ? { secretCopies: agent.secretCopies } : {}),
     };
   }
 
@@ -464,6 +467,8 @@ export class OnboardingChatService {
     // `chat` re-attaches one only for a turn that proposed, hashed on the
     // draft it stores, so a proposal never outlives a change it did not see.
     delete (base as { _commitProposal?: unknown })._commitProposal;
+    // F3.24b: the discovery proposal goes with it; the worker's `_discovery` stays.
+    delete (base as Record<string, unknown>)[DISCOVERY_PROPOSAL_KEY];
     const merged = mergeDraftPatch(base, patch);
 
     let stored: OnboardingDraft & { _secrets?: Record<string, EncryptedBlob> } =

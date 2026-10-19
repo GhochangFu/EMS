@@ -30,6 +30,7 @@ const SESSION = {
   result: null,
   checkpoints: [],
   draftHash: null,
+  discovery: null,
 };
 
 const SKILL = { kind: "onboarding", sessionId: SESSION.id, session: SESSION, suggestedReplies: ["View draft"] };

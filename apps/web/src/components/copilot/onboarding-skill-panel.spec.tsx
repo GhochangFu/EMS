@@ -9,13 +9,13 @@ import type {
   OnboardingSessionDto,
   UserRole,
 } from "@bms/shared";
+import { MQTT_DISCOVERY_SHARED_USER_WARNING } from "@bms/shared/contracts";
 import { COPILOT_CHANGE_HEADER } from "@bms/shared/copilot";
 
 import * as copilotApi from "../../api/copilot";
 import { ONBOARDING_COMMIT_DRAFT_CHANGED, ONBOARDING_COMMIT_NOT_A_DRAFT } from "../onboarding/onboarding-commit-wizard";
 import { useCopilotStore } from "../../stores/copilot-store";
 import { CONVERSATION_ID, answered, openPanel, READY, renderDock, settle, stub } from "./copilot-dock.spec";
-
 /**
  * `F3.86` PR 6 (ADR 0099 decision 7; plan §8.3) — the copilot dock while the
  * conversation runs the onboarding skill (`OnboardingSkillPanel`).
@@ -52,6 +52,7 @@ function session(overrides: Partial<OnboardingSessionDto> = {}): OnboardingSessi
     result: null,
     checkpoints: [],
     draftHash: HASH,
+    discovery: null,
     ...overrides,
   };
 }
@@ -509,4 +510,162 @@ export async function enterSendsNothingWhileAnUndoIsInFlight(): Promise<void> {
   await screen.findByRole("button", { name: "Undo" });
   fireEvent.keyDown(box, { key: "Enter" });
   await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "Add an asset"));
+}
+
+// ---- F3.24b: the discovery status poll, the map chip, the Confirm card -------------------------
+
+const DISCOVERY_ID = "77777777-7777-4777-8777-777777777777";
+const SESSION_URL = new RegExp(`/api/v1/admin/onboarding/sessions/${SESSION}$`);
+
+type DiscoveryDto = NonNullable<OnboardingSessionDto["discovery"]>;
+
+function discovery(over: Partial<DiscoveryDto> = {}): DiscoveryDto {
+  return {
+    discoveryId: DISCOVERY_ID,
+    rtuCode: "RTU-1",
+    topicFilter: "Airsprint-1051/Data/#",
+    windowSeconds: 60,
+    status: "queued",
+    startedAt: null,
+    finishedAt: null,
+    truncated: false,
+    devices: [],
+    ...over,
+  };
+}
+
+const FOUND = [{ topic: "a/b", devId: "D1", messageCount: 2, keys: [{ sourceKey: "kw", sampleValue: 3 }] }];
+
+const DISCOVERY_CARD: CopilotPendingChangeDto = {
+  id: CHANGE,
+  catalogId: "onboarding.discovery",
+  method: "POST",
+  path: `/api/v1/admin/onboarding/sessions/${SESSION}/discovery`,
+  body: { rtuCode: "RTU-1", topicPrefix: "Airsprint-1051/Data", windowSeconds: 60, expected: { host: "phe.thinkiot.co.in", port: 8883 } },
+  summary:
+    'Listen on the broker of RTU "RTU-1" of the draft for site "Plant 4". Host: "phe.thinkiot.co.in". Port: 8883. TLS: always on. ' +
+    `Topic filter: "Airsprint-1051/Data/#". Window: 60 s. ${MQTT_DISCOVERY_SHARED_USER_WARNING}`,
+  risk: "create",
+  proposedAt: "2026-10-12T00:00:00.000Z",
+  expiresAt: "2026-10-12T00:15:00.000Z",
+};
+
+/** A queued discovery is read at once, and a flip to done with devices offers the map chip. */
+export async function aFinishedDiscoveryOffersTheMapChip(): Promise<void> {
+  const sent = stubFetch(() => ({ status: 200, json: session({ discovery: discovery({ status: "done", devices: FOUND }) }) }));
+  await openSkill({ skill: skillState({ session: session({ discovery: discovery() }) }) });
+  await screen.findByRole("button", { name: "Map the discovered points" });
+  expect(sent.some((r) => r.method === "GET" && SESSION_URL.test(r.url))).toBe(true);
+}
+
+/** Picking the map chip sends its text as a turn. */
+export async function theMapChipSendsItsTextAsATurn(): Promise<void> {
+  stubFetch(() => ({ status: 200, json: session({ discovery: discovery({ status: "done", devices: FOUND }) }) }));
+  const stubs = await openSkill({ skill: skillState({ session: session({ discovery: discovery() }) }) });
+  stubs.turn.mockResolvedValue({ ...answered("Map the discovered points", "ok"), skill: skillState() });
+  fireEvent.click(await screen.findByRole("button", { name: "Map the discovered points" }));
+  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "Map the discovered points"));
+}
+
+/** A discovery that is already done reads nothing (the poll stops) and offers no chip (it did not just flip). */
+export async function aDoneDiscoveryIsNotPolledAndOffersNoChip(): Promise<void> {
+  const sent = stubFetch(() => ({ status: 200, json: session() }));
+  await openSkill({ skill: skillState({ session: session({ discovery: discovery({ status: "done", devices: FOUND }) }) }) });
+  expect(screen.getByRole("button", { name: "Add an RTU" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Map the discovered points" })).not.toBeInTheDocument();
+  expect(sent.filter((r) => SESSION_URL.test(r.url))).toHaveLength(0);
+}
+
+/** A discovery that finds nothing offers no chip. */
+export async function anEmptyResultOffersNoChip(): Promise<void> {
+  const sent = stubFetch(() => ({ status: 200, json: session({ discovery: discovery({ status: "done" }) }) }));
+  await openSkill({ skill: skillState({ session: session({ discovery: discovery() }) }) });
+  await waitFor(() => expect(sent.some((r) => SESSION_URL.test(r.url))).toBe(true));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "Map the discovered points" })).not.toBeInTheDocument());
+  expect(screen.getByRole("button", { name: "Add an RTU" })).toBeInTheDocument();
+}
+
+/** F3.24b review: a `running` past `startedAt + window + 60 s` is not active (the route's rule), so the session is not polled. */
+export async function aStaleRunningDiscoveryIsNotPolled(): Promise<void> {
+  const sent = stubFetch(() => ({ status: 200, json: session() }));
+  const stale = discovery({ status: "running", startedAt: new Date(Date.now() - 10 * 60_000).toISOString() });
+  await openSkill({ skill: skillState({ session: session({ discovery: stale }) }) });
+  await settle();
+  expect(screen.getByRole("button", { name: "Add an RTU" })).toBeInTheDocument();
+  expect(sent.filter((r) => SESSION_URL.test(r.url))).toHaveLength(0);
+}
+
+/** The adjacent positive: a fresh `running` is polled. */
+export async function aFreshRunningDiscoveryIsPolled(): Promise<void> {
+  const sent = stubFetch(() => ({ status: 200, json: session({ discovery: discovery({ status: "running", startedAt: new Date().toISOString() }) }) }));
+  const fresh = discovery({ status: "running", startedAt: new Date().toISOString() });
+  await openSkill({ skill: skillState({ session: session({ discovery: fresh }) }) });
+  await waitFor(() => expect(sent.some((r) => r.method === "GET" && SESSION_URL.test(r.url))).toBe(true));
+}
+
+const TURN_REPLY = "The turn's reply, written after the poll read the row.";
+
+/**
+ * F3.24b review: a poll that read the row before a chat turn wrote it, and
+ * answers after the turn finished, must not put the pre-turn session (its
+ * thread, draft and draftHash) back over the turn's.
+ */
+export async function aPollStartedBeforeATurnEndedIsDropped(): Promise<void> {
+  const running = discovery({ status: "running", startedAt: new Date().toISOString() });
+  const releases: (() => void)[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return new Response(JSON.stringify(session({ discovery: running })), { status: 200, headers: { "Content-Type": "application/json" } });
+    }),
+  );
+  const stubs = await openSkill({ skill: skillState({ session: session({ discovery: running }) }) });
+  await waitFor(() => expect(releases.length).toBe(1));
+  const after = session({
+    discovery: running,
+    messages: [
+      { id: "o1", role: "assistant", content: "Welcome to onboarding.", createdAt: "2026-10-12T00:00:00.000Z" },
+      { id: "o2", role: "assistant", content: TURN_REPLY, createdAt: "2026-10-12T00:00:01.000Z" },
+    ],
+  });
+  stubs.turn.mockResolvedValue({ ...answered("Add an RTU", "ok"), skill: skillState({ session: after }) });
+  fireEvent.click(screen.getByRole("button", { name: "Add an RTU" }));
+  await screen.findByText(TURN_REPLY);
+  // The chips come back only once the turn is no longer in flight (`sending` is false).
+  await screen.findByRole("button", { name: "Add an RTU" });
+  releases[0]!();
+  await settle();
+  await settle();
+  expect(screen.getByText(TURN_REPLY)).toBeInTheDocument();
+}
+
+/** The discovery card shows the broker, the filter, the window and the warning; Confirm sends the hashed body with the header. */
+export async function theDiscoveryCardShowsTheConnectionAndConfirmsWithTheHeader(): Promise<void> {
+  await openSkill({ cards: [DISCOVERY_CARD] });
+  const card = await screen.findByRole("region", { name: "Discover the devices on an RTU's broker" });
+  expect(within(card).getByText(DISCOVERY_CARD.summary)).toBeInTheDocument();
+  const sent = stubFetch((url) =>
+    /discovery$/.test(url)
+      ? { status: 202, json: { discoveryId: DISCOVERY_ID } }
+      : { status: 200, json: session({ discovery: discovery({ status: "running" }) }) },
+  );
+  fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+  await waitFor(() => expect(sent.some((r) => r.method === "POST")).toBe(true));
+  const post = sent.find((r) => r.method === "POST")!;
+  expect(post.url).toMatch(new RegExp(`/api/v1/admin/onboarding/sessions/${SESSION}/discovery$`));
+  expect(post.headers.get(COPILOT_CHANGE_HEADER)).toBe(CHANGE);
+  expect(JSON.parse(post.body)).toEqual(DISCOVERY_CARD.body);
+}
+
+/** After the apply the dock reads the session, so the panel's poll starts at once. */
+export async function aConfirmedDiscoveryReadsTheSession(): Promise<void> {
+  await openSkill({ cards: [DISCOVERY_CARD] });
+  const sent = stubFetch((url) =>
+    /discovery$/.test(url)
+      ? { status: 202, json: { discoveryId: DISCOVERY_ID } }
+      : { status: 200, json: session({ discovery: discovery({ status: "running" }) }) },
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Confirm" }));
+  await waitFor(() => expect(sent.some((r) => r.method === "GET" && SESSION_URL.test(r.url))).toBe(true));
 }

@@ -18,6 +18,7 @@ import {
   MAX_MIMIC_SYMBOL_SVG_BYTES,
 } from "@bms/shared/contracts";
 
+import { fetchOnboardingSession } from "../../api/admin/onboarding";
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import {
   copilotLimitOf,
@@ -158,6 +159,9 @@ const SCOPE_OFF_SENTENCE = "The copilot is off for this organization.";
 
 /** The server-made onboarding commit's catalog id: a conversation shows one such card at a time. */
 const ONBOARDING_COMMIT = "onboarding.commit";
+/** `F3.24b`: the server-made discovery card's id, the commit card's twin (one open per conversation). */
+const ONBOARDING_DISCOVERY = "onboarding.discovery";
+const isServerMadeCard = (catalogId: string): boolean => catalogId === ONBOARDING_COMMIT || catalogId === ONBOARDING_DISCOVERY;
 
 /** "Onboard a site" needs an organization: the global administrator's cross-organization scope names none. */
 const ONBOARD_PICK_SENTENCE = "Pick an organization to onboard a site.";
@@ -441,9 +445,9 @@ function DockPanel({
   /** Drops the `onboarding.commit` cards, cached and kept: their Confirm could only answer 400 now. */
   function dropCommitCards(id: string): void {
     queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(id), (prev) =>
-      prev ? { ...prev, pendingChanges: prev.pendingChanges.filter((c) => c.catalogId !== ONBOARDING_COMMIT) } : prev,
+      prev ? { ...prev, pendingChanges: prev.pendingChanges.filter((c) => !isServerMadeCard(c.catalogId)) } : prev,
     );
-    setKept((prev) => prev.filter((c) => c.catalogId !== ONBOARDING_COMMIT));
+    setKept((prev) => prev.filter((c) => !isServerMadeCard(c.catalogId)));
   }
 
   /** The conversation the skill route answered, in the cache: its messages, open changes and skill. */
@@ -454,6 +458,11 @@ function DockPanel({
   function applied(change: CopilotPendingChangeDto): void {
     updateThread((prev) => withoutChange(prev, change.id));
     setFollowUp({ since: Date.now(), baseline: messages.length });
+    // `F3.24b`: a confirmed discovery is queued; reading the session starts the skill panel's status poll at once.
+    if (change.catalogId === ONBOARDING_DISCOVERY && skill !== null && conversationId !== null) {
+      const id = conversationId;
+      void fetchOnboardingSession(skill.session.id).then((fresh) => setSkill(id, { ...skill, session: fresh }), () => undefined);
+    }
   }
 
   function rejected(change: CopilotPendingChangeDto, stored: CopilotMessageDto[]): void {
@@ -538,7 +547,7 @@ function DockPanel({
                   (c) =>
                     !data.pendingChanges.some((n) => n.id === c.id) &&
                     // `F3.86` PR 6: a new onboarding commit card replaces the old one (the server discarded it).
-                    !(c.catalogId === ONBOARDING_COMMIT && data.pendingChanges.some((n) => n.catalogId === ONBOARDING_COMMIT)),
+                    !(isServerMadeCard(c.catalogId) && data.pendingChanges.some((n) => n.catalogId === c.catalogId)),
                 ),
                 ...data.pendingChanges,
               ],

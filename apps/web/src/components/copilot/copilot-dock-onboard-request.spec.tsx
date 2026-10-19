@@ -50,6 +50,7 @@ function skillState(): CopilotSkillStateDto {
       result: null,
       checkpoints: [],
       draftHash: "a".repeat(64),
+      discovery: null,
     },
     suggestedReplies: [],
     validationErrors: [],

@@ -135,6 +135,8 @@ const REMOVE_DEFERRED = "deferred, ADR 0090 Amendment 2";
 const TEMPLATES_AGENT_ONLY = "B6 / ADR 0091 decision 11: templates are the Asset Templates editor's in guided mode";
 const MAPPINGS_AGENT_ONLY =
   "F3.23 / ADR 0092 decision 6: bulk point keys and mappings are agent-only; the guided mode keeps its kw sample";
+const DISCOVERY_AGENT_ONLY =
+  "F3.24b / ADR 0103 decision 2: the guided mode has the drawer's Discover button and fixed prompts; reading wire data needs a model";
 
 /**
  * ADR 0090 Amendment 2 B7 — every registry tool is either covered by a guided
@@ -172,4 +174,6 @@ export const GUIDED_TOOL_COVERAGE: Readonly<Record<ToolName, GuidedToolCoverage>
   add_point_keys: { mode: "agent_only", reason: MAPPINGS_AGENT_ONLY },
   map_points: { mode: "agent_only", reason: MAPPINGS_AGENT_ONLY },
   get_asset_points: { mode: "agent_only", reason: MAPPINGS_AGENT_ONLY },
+  propose_discovery: { mode: "agent_only", reason: DISCOVERY_AGENT_ONLY },
+  get_discovery_results: { mode: "agent_only", reason: DISCOVERY_AGENT_ONLY },
 };

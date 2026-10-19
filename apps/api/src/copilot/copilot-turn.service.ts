@@ -39,6 +39,7 @@ import {
   skillStateOfSession,
 } from "./copilot-onboarding-skill";
 import { CopilotOnboardingCommitReader, discardOnboardingCommitCards, onboardingCommitCards } from "./copilot-onboarding-commit";
+import { onboardingDiscoveryCards, turnProposedDiscovery } from "./copilot-onboarding-discovery";
 import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pending-changes.service";
 import { accessIntentOf } from "./copilot-access-intent";
 import { assetIntentOf } from "./copilot-asset-intent";
@@ -709,10 +710,19 @@ export class CopilotTurnService {
     ]);
     // `F3.86` PR 6 (plan §8.2): a turn whose agent proposed the commit gets the one Confirm card, bound to
     // the hash of the draft this turn stored. After the store, so a failed store leaves no orphan card.
-    const pendingChanges = await onboardingCommitCards(
+    const commitCards = await onboardingCommitCards(
       { reader: this.commitReader, pending: this.pending },
       { userId: identity.id, conversationId, organizationId, sessionId, answer, wrote: own },
     );
+    // `F3.24b` (ADR 0103 decision 2): a turn whose agent proposed a discovery gets its Confirm card, made the same way.
+    // At most one of the two is non-empty: a write drops both proposals, and the conversation holds one open change.
+    const pendingChanges =
+      commitCards.length > 0
+        ? commitCards
+        : await onboardingDiscoveryCards(
+            { reader: this.commitReader, pending: this.pending },
+            { userId: identity.id, conversationId, organizationId, sessionId, answer, wrote: own, proposed: turnProposedDiscovery(actions) },
+          );
     this.logger.log(
       { conversationId, kind: "skill", sessionId, actions: actions.length, proposed: pendingChanges.length },
       "copilot skill turn",

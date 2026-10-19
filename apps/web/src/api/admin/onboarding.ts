@@ -4,6 +4,7 @@ import {
   onboardingDraftListDtoSchema,
   onboardingSessionDtoSchema,
   onboardingValidateResponseDtoSchema,
+  startOnboardingDiscoveryResponseDtoSchema,
 } from "@bms/shared/contracts";
 import type {
   OnboardingChatResponseDto,
@@ -11,6 +12,8 @@ import type {
   OnboardingDraftListDto,
   OnboardingSessionDto,
   OnboardingValidateResponseDto,
+  StartOnboardingDiscoveryBody,
+  StartOnboardingDiscoveryResponseDto,
 } from "@bms/shared";
 
 import { adminFetch, getAdminAuthHeaders } from "./client";
@@ -201,5 +204,23 @@ export async function commitOnboardingDraft(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ draftHash }),
+  });
+}
+
+/**
+ * `F3.24b` (ADR 0103) — queues one bounded MQTT discovery job on a draft RTU's
+ * broker: the `onboarding.discovery` wizard's Submit. 202 `{ discoveryId }`;
+ * 409 when a discovery is already queued or running, or when `expected` no
+ * longer matches the draft RTU's host and port. No `X-Copilot-Change` header —
+ * a wizard is not a copilot change.
+ */
+export async function startOnboardingDiscovery(
+  sessionId: string,
+  body: StartOnboardingDiscoveryBody,
+): Promise<StartOnboardingDiscoveryResponseDto> {
+  return adminFetch(`/admin/onboarding/sessions/${sessionId}/discovery`, startOnboardingDiscoveryResponseDtoSchema, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
   });
 }

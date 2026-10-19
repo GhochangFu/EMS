@@ -143,6 +143,13 @@ jobs:
       # value here is a workflow break, not an environment choice. No other spec
       # reads this variable; the API is never booted in this job.
       REDIS_URL: redis://localhost:6379
+      # ADR 0103 (F3.24b). Enables
+      # `apps/api/src/onboarding-discovery/discovery-job.integration.test.ts`,
+      # which `integration-mqtt-gate.ts` refuses to skip under CI — the gate
+      # refuses to skip, so an unset value here is a workflow break, not an
+      # environment choice. A plain, anonymous broker: the suite reaches it
+      # through an injected transport seam; the production path stays mqtts-only.
+      MQTT_TEST_URL: mqtt://127.0.0.1:1883
       # ADR 0066 decision 10 (F3.3), on the REDIS_URL comment's reasoning
       # directly above. These six enable
       # `apps/api/src/storage/storage.integration.test.ts`, which
@@ -379,6 +386,26 @@ jobs:
           done
           echo "MinIO did not answer /minio/health/live within 60s."
           docker logs minio
+          exit 1
+
+      # ADR 0103 (F3.24b), the MinIO step's shape: a `docker run` step with a
+      # bounded readiness loop that FAILS THE JOB if the broker never answers.
+      # `sys_interval 1` makes the broker publish `$SYS/#` every second.
+      - name: Start Mosquitto for the discovery integration spec
+        run: |
+          docker run -d --name mosquitto \
+            -p 1883:1883 \
+            -v "${GITHUB_WORKSPACE}/infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro" \
+            eclipse-mosquitto:2.0
+          for attempt in $(seq 1 30); do
+            if (exec 3<>/dev/tcp/127.0.0.1/1883) 2>/dev/null; then
+              echo "Mosquitto is listening after ${attempt} attempt(s)."
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Mosquitto did not accept a connection on 1883 within 60s."
+          docker logs mosquitto
           exit 1
 
       # Deliberately last. Vitest fails fast, so running it earlier would let a

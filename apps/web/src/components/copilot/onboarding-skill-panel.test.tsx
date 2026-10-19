@@ -5,6 +5,12 @@ import { afterEach, describe, it, vi } from "vitest";
 import { useAuthStore } from "../../stores/auth-store";
 import { resetCopilotStore } from "../../stores/copilot-store";
 import {
+  aConfirmedDiscoveryReadsTheSession,
+  aDoneDiscoveryIsNotPolledAndOffersNoChip,
+  aFinishedDiscoveryOffersTheMapChip,
+  anEmptyResultOffersNoChip,
+  theDiscoveryCardShowsTheConnectionAndConfirmsWithTheHeader,
+  theMapChipSendsItsTextAsATurn,
   aChangedDraftShowsTheRoutesSentence,
   anEndDropsAKeptCommitCard,
   aFailedFreshReadShowsTheRoutesSentence,
@@ -27,6 +33,9 @@ import {
   theCommitCardConfirmsWithTheHeader,
   theDrawerCommitIsTheWizardWithoutTheHeader,
   theGlobalAdminPicksAnOrganizationFirst,
+  aStaleRunningDiscoveryIsNotPolled,
+  aFreshRunningDiscoveryIsPolled,
+  aPollStartedBeforeATurnEndedIsDropped,
 } from "./onboarding-skill-panel.spec";
 
 afterEach(() => {
@@ -67,4 +76,16 @@ describe("F3.86 PR 6 — starting the onboarding skill (ruling Q4)", () => {
   it("offers a location_admin no start", aLocationAdminIsNotOfferedOnboarding);
   it("makes the global admin pick an organization first", theGlobalAdminPicksAnOrganizationFirst);
   it("offers no onboarding where the organization's copilot is off", aSwitchedOffOrganizationOffersNoOnboarding);
+  it("offers the map chip when a discovery flips to done with devices (F3.24b)", aFinishedDiscoveryOffersTheMapChip);
+  it("sends the map chip's text as a turn (F3.24b)", theMapChipSendsItsTextAsATurn);
+  it("neither polls nor offers the chip for a discovery already done (F3.24b)", aDoneDiscoveryIsNotPolledAndOffersNoChip);
+  it("offers no chip for a discovery that found nothing (F3.24b)", anEmptyResultOffersNoChip);
+  it("shows the discovery card's connection and confirms with the header (F3.24b)", theDiscoveryCardShowsTheConnectionAndConfirmsWithTheHeader);
+  it("reads the session after a confirmed discovery (F3.24b)", aConfirmedDiscoveryReadsTheSession);
+});
+
+describe("F3.24b review — the discovery poll", () => {
+  it("does not poll a running discovery past its stale bound", aStaleRunningDiscoveryIsNotPolled);
+  it("polls a fresh running discovery", aFreshRunningDiscoveryIsPolled);
+  it("drops a poll that started before a turn ended", aPollStartedBeforeATurnEndedIsDropped);
 });

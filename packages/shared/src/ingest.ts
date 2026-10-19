@@ -44,6 +44,8 @@ export { mqttTopicHasWildcard } from "./mqtt-topic";
 
 // `F3.24a` (ADR 0093 decision 4): the MQTT config, device and draft schemas.
 export * from "./ingest-adapters/mqtt";
+// `F3.24b` (ADR 0103): the envelope parse, shared with the discovery collector.
+export * from "./ingest-adapters/mqtt-envelope";
 // `F3.24a` (ADR 0093 decisions 2, 3): the code-defined protocol catalog.
 export * from "./protocol-catalog";
 

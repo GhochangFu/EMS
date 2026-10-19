@@ -1,6 +1,7 @@
 import type { OnboardingDraft } from "@bms/shared";
 
 import { cloneJson, rebuildDeep } from "../stack-safe-json";
+import { DISCOVERY_KEY, DISCOVERY_PROPOSAL_KEY } from "./onboarding-discovery-state";
 
 /**
  * Draft redaction and the internal encrypted-credential store (ADR 0022).
@@ -236,6 +237,11 @@ export function redactDraftForClient(draft: unknown): OnboardingDraft {
   // and summary never reach the client, and — through `redactDraftForLlm`,
   // which composes this — never reach the prompt.
   delete copy._commitProposal;
+  // F3.24b (ADR 0103): the worker's result reaches the client as the
+  // session DTO's parsed `discovery` field, never as the raw blob, and the
+  // discovery proposal is server state as the commit proposal is.
+  delete (copy as Record<string, unknown>)[DISCOVERY_KEY];
+  delete (copy as Record<string, unknown>)[DISCOVERY_PROPOSAL_KEY];
   if (copy.location) {
     copy.location = scrubMeta(copy.location);
   }
@@ -384,6 +390,41 @@ export function attachEncryptedCredentials(
   if (Array.isArray(next.rtus) && next.rtus[rtuIndex]) {
     next.rtus[rtuIndex] = { ...next.rtus[rtuIndex], credentialsSet: true };
   }
+  return next;
+}
+
+/**
+ * `F3.24b` (ADR 0103 Amendment 1, the RTU-per-device mapping): a copy of
+ * `draft` whose RTU at `toIndex` holds the **encrypted** blob of the RTU at
+ * `fromIndex`, with `credentialsSet: true`. The blob is copied as stored —
+ * never decrypted — so the model and the chat never handle the credential.
+ *
+ * `null` when either position does not name exactly one RTU (`rtuCodeAt`, the
+ * M4 rule), when the source holds no blob, or when the target already holds
+ * one: a copy never overwrites a credential the user entered.
+ */
+export function copyEncryptedCredentials(draft: unknown, fromIndex: number, toIndex: number): DraftWithSecrets | null {
+  const from = rtuCodeAt(draft, fromIndex);
+  const to = rtuCodeAt(draft, toIndex);
+  if (from === null || to === null || from === to) {
+    return null;
+  }
+  const secrets = (draft as DraftWithSecrets)._secrets;
+  const blob = ownBlob(secrets, from);
+  if (blob === null || ownBlob(secrets, to) !== null) {
+    return null;
+  }
+  const next = cloneJson(draft) as DraftWithSecrets;
+  const store: Record<string, EncryptedBlob> = {};
+  for (const existing of Object.keys(next._secrets ?? {})) {
+    const kept = ownBlob(next._secrets, existing);
+    if (kept) {
+      setBlob(store, existing, kept);
+    }
+  }
+  setBlob(store, to, { ...blob });
+  next._secrets = store;
+  next.rtus = next.rtus!.map((rtu, i) => (i === toIndex ? { ...rtu, credentialsSet: true } : rtu));
   return next;
 }
 
