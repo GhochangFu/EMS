@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { OnboardingSessionDto } from "@bms/shared";
+import type { OnboardingDiscoveryErrorClass, OnboardingSessionDto } from "@bms/shared";
 import { MQTT_DISCOVERY_SHARED_USER_WARNING } from "@bms/shared/contracts";
 
 import { fetchOnboardingSession } from "../../api/admin/onboarding";
@@ -29,12 +29,24 @@ function brokerOf(config: Record<string, unknown>): Broker | null {
   return { host, port, topic: typeof saved === "string" ? saved : "" };
 }
 
-const isActive = (d: OnboardingSessionDto["discovery"]): boolean => d?.status === "queued" || d?.status === "running";
+/**
+ * One sentence per error class. The class is a closed enum, not an error's message, so a
+ * lookup — rather than a template over `d.error` — keeps the F4.204 raw-message gate exact.
+ */
+const FAILED_SENTENCE: Record<OnboardingDiscoveryErrorClass, string> = {
+  "auth refused": "Failed: auth refused.",
+  "host unreachable": "Failed: host unreachable.",
+  "TLS failed": "Failed: TLS failed.",
+  timeout: "Failed: timeout.",
+  "blocked host": "Failed: blocked host.",
+};
+
+const isActive =(d: OnboardingSessionDto["discovery"]): boolean => d?.status === "queued" || d?.status === "running";
 
 function statusLine(d: NonNullable<OnboardingSessionDto["discovery"]>): string {
   if (d.status === "queued") return "A discovery is queued.";
   if (d.status === "running") return `A discovery is running. It listens for up to ${d.windowSeconds} s.`;
-  if (d.status === "failed") return d.error ? `Failed: ${d.error}.` : "Failed.";
+  if (d.status === "failed") return d.error ? FAILED_SENTENCE[d.error] : "Failed.";
   const keys = d.devices.reduce((n, dev) => n + dev.keys.length, 0);
   const counts = `Done: ${d.devices.length} ${d.devices.length === 1 ? "device" : "devices"}, ${keys} ${keys === 1 ? "key" : "keys"}.`;
   return d.truncated ? `${counts} The result was cut at a limit.` : counts;
@@ -92,9 +104,10 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
                   type="button"
                   className="surface-button px-2 py-1 text-[11px] disabled:opacity-50"
                   disabled={active || reason !== null || busy || broker === null}
+                  aria-busy={busy}
                   onClick={() => setWizardFor(index)}
                 >
-                  {`Discover devices on ${rtu.code ?? `RTU ${index + 1}`}`}
+                  {busy ? "Waiting for the chat turn…" : `Discover devices on ${rtu.code ?? `RTU ${index + 1}`}`}
                 </button>
               </div>
               {reason !== null && <p className="mt-1 text-[11px] text-ink-muted">{reason}</p>}

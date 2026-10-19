@@ -88,6 +88,13 @@ export function aRunningDiscoveryDisablesTheButtonAndShowsTheStatus(): void {
   expect(screen.getByText("A discovery is running. It listens for up to 60 s.")).toBeTruthy();
 }
 
+export function aChatTurnInFlightRenamesTheButtonAndMarksItBusy(): void {
+  mount(session(), true);
+  const button = screen.getByRole("button", { name: "Waiting for the chat turn…" }) as HTMLButtonElement;
+  expect(button.disabled).toBe(true);
+  expect(button.getAttribute("aria-busy")).toBe("true");
+}
+
 export function aNonMqttDraftRendersNoSection(): void {
   mount(session({ rtus: [{ ...rtu(BROKER), protocol: "simulator" }] }));
   expect(screen.queryByRole("button", { name: /^Discover/ })).toBeNull();

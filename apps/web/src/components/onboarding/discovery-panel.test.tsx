@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aChatTurnInFlightRenamesTheButtonAndMarksItBusy,
   aDiscoveredRowShowsTheBadgeAndTheSampleValue,
   aDoneDiscoveryShowsTheCountsAndTheTruncatedNote,
   aDoneDiscoveryWithNoDeviceShowsTheEmptySentence,
@@ -26,6 +27,7 @@ describe("F3.24b discovery panel", () => {
   it("without credentials the button is disabled with its reason", withoutCredentialsTheButtonIsDisabledWithItsReason);
   it("without a host the button is disabled with its reason", withoutAHostTheButtonIsDisabledWithItsReason);
   it("a running discovery disables the button and shows the status", aRunningDiscoveryDisablesTheButtonAndShowsTheStatus);
+  it("a chat turn in flight renames the button and marks it busy", aChatTurnInFlightRenamesTheButtonAndMarksItBusy);
   it("a draft with no MQTT RTU renders no Discover button", aNonMqttDraftRendersNoSection);
   it("a done discovery with no device shows the empty sentence", aDoneDiscoveryWithNoDeviceShowsTheEmptySentence);
   it("a done discovery shows the counts and the truncated note", aDoneDiscoveryShowsTheCountsAndTheTruncatedNote);
