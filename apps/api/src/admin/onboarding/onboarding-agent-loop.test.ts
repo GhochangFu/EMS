@@ -31,6 +31,11 @@ import {
   assertTheDiscoveryParagraphMarksWireDataUntrusted,
   assertADiscoveryProposalSurfacesFromTheTurn,
   assertALaterWriteDropsTheDiscoveryProposal,
+  assertACallCapWithNoEditSaysNothingWasWritten,
+  assertADeadlineWithNoEditSaysNothingWasWritten,
+  assertACapAfterADiscoveryReadAsksForOneDevice,
+  assertACapWithoutADiscoveryReadHasNoDeviceHint,
+  assertTheDiscoveryParagraphMapsOneDevicePerTurn,
 } from "./onboarding-agent-loop.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -53,6 +58,26 @@ describe("onboarding agent loop (F3.21, ADR 0090 decisions 2, 3, 7, 9)", () => {
 
   it("stops at the call cap with its reply and keeps the edits", async () => {
     await assertTheCallCapStopsWithItsReplyAndKeepsTheEdits();
+  });
+
+  it("F4.270: a call cap with no edit says nothing was written", async () => {
+    await assertACallCapWithNoEditSaysNothingWasWritten();
+  });
+
+  it("F4.270: a deadline with no edit says nothing was written", async () => {
+    await assertADeadlineWithNoEditSaysNothingWasWritten();
+  });
+
+  it("F4.270: a cap after a discovery read asks for one device at a time", async () => {
+    await assertACapAfterADiscoveryReadAsksForOneDevice();
+  });
+
+  it("F4.270: a cap with no discovery read has no device hint", async () => {
+    await assertACapWithoutADiscoveryReadHasNoDeviceHint();
+  });
+
+  it("F4.270: the Discovery paragraph maps one device per turn", () => {
+    assertTheDiscoveryParagraphMapsOneDevicePerTurn();
   });
 
   it("keeps completed edits at the deadline without falling back", async () => {
