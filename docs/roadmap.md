@@ -7812,3 +7812,17 @@ Owed: `F4.263`, `F4.264`; a `chore(agents):` sweep for AGENTS.md in its own PR.
 **`F4.265`, `F4.263` and `F4.268` done 2026-10-18** in [#883](https://github.com/GhochangFu/EMS/pull/883) (`eae30159`), [#884](https://github.com/GhochangFu/EMS/pull/884) (`8b24b196`) and [#885](https://github.com/GhochangFu/EMS/pull/885) (`e9459fbd`): the copilot's tool patterns compile without the `u` flag, so OpenAI models answer again (verified live on two); the network demo seed and migration `0112` use underscore node keys, so a seeded network layout saves again; a PDF-only turn is told it reads text only and asks for a drawing as an image (verified live, 5–7 s instead of a timeout). `F4.269` keeps the owner's two ADR-level options for drawings in a PDF. A `chore(agents):` sweep follows in its own PR.
 
 **`F4.132` and `F4.137` done 2026-10-18** in [#890](https://github.com/GhochangFu/EMS/pull/890) (`49db7807`) under [ADR 0102](./adr/0102-asset-rtu-composite-keys.md): migration `0113` adds composite foreign keys so the database holds an asset's organization equal to its location's, an RTU's organization equal to its location's, and a wired asset's RTU at the asset's own location. The migration refuses on disagreeing data and never repairs; each key is proved to refuse as `bms_tenant`, `bms_owner` and the superuser.
+
+### `F3.24b` — live device discovery over MQTT for the onboarding agent ✅ 2026-10-19
+
+One PR, [#894](https://github.com/GhochangFu/EMS/pull/894) (`09836994`), under [ADR 0103](./adr/0103-mqtt-live-discovery-for-onboarding.md) (accepted 2026-10-18 in #893) and its Amendment 1. Built by workflow while the owner was away, with standing merge permission on green CI; the owner then asked for every layer against Docker before the merge.
+
+- The API worker runs a bounded, read-only MQTT job (`mqtts` only, own client id, `<prefix>/#`, 60 s default, 120 s maximum) behind an SSRF guard that checks every resolved address; the result goes into the draft as `_discovery`.
+- The copilot proposes discovery on a Confirm card bound to the RTU's host and port, or the user presses Discover; after it reads the result, code limits that turn's writes to the discovered devices, adds one RTU per device with the credentials copied by code, and stamps `source: "discovery"` on the mappings it makes.
+- Start, finish and every refusal are audited; no credential reaches a job payload, a result, an audit row, a log line or a tool reply.
+
+**Verified:** CI green; the full suite against the Docker stack; API and worker boot; the browser flow; and a live discovery against the PHE broker (8 devices, 223 keys in 60 s) through to the Discovered badge.
+
+**Owner ruling 2026-10-19:** discovery keeps requiring RTU credentials.
+
+**Follow-ups:** `F4.270` (a multi-device mapping turn spends its tool calls and writes nothing), `F4.271` (repo-scan test timeouts); a `chore(agents):` sweep for ADR 0016 §7 and the onboarding scope in its own PR.
