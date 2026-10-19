@@ -42,6 +42,8 @@ type OnboardingDiscoveryWizardProps = {
   session: OnboardingSessionDto;
   rtu: OnboardingDiscoveryRtu;
   onStarted: (result: StartOnboardingDiscoveryResponseDto) => void;
+  /** The route refused the start; the HTTP status when there was one (a 503 means no worker is running). */
+  onRefused?: (status: number | undefined) => void;
   onClose: () => void;
 };
 
@@ -52,7 +54,7 @@ type OnboardingDiscoveryWizardProps = {
  * `windowSeconds`) without the `X-Copilot-Change` header. TLS is always on
  * (build decision Q5), so there is no TLS field.
  */
-export function OnboardingDiscoveryWizard({ session, rtu, onStarted, onClose }: OnboardingDiscoveryWizardProps) {
+export function OnboardingDiscoveryWizard({ session, rtu, onStarted, onRefused, onClose }: OnboardingDiscoveryWizardProps) {
   const [error, setError] = useState<string | null>(null);
   // The title and the summary read this; the `<WizardShell entry=…>` below keeps its own literal call,
   // because the stepper gate (`tests/f3.85-stepper-coverage.test.ts`) reads only that form, not a variable.
@@ -66,8 +68,10 @@ export function OnboardingDiscoveryWizard({ session, rtu, onStarted, onClose }: 
   const startM = useMutation({
     mutationFn: (body: StartOnboardingDiscoveryBody) => startOnboardingDiscovery(session.id, body),
     onSuccess: onStarted,
-    onError: (cause: unknown) =>
-      setError(cause instanceof ApiError && cause.status === 409 ? ONBOARDING_DISCOVERY_CONFLICT : apiErrorMessage(cause)),
+    onError: (cause: unknown) => {
+      onRefused?.(cause instanceof ApiError ? cause.status : undefined);
+      setError(cause instanceof ApiError && cause.status === 409 ? ONBOARDING_DISCOVERY_CONFLICT : apiErrorMessage(cause));
+    },
   });
   const topicPrefix = typeof values.topicPrefix === "string" ? values.topicPrefix : "";
   const seconds = typeof values.windowSeconds === "number" ? values.windowSeconds : MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS;

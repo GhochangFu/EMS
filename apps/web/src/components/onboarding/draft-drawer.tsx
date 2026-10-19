@@ -12,6 +12,7 @@ import {
   formatOnboardingValidationErrors,
 } from "../../lib/onboarding-draft-summary";
 import { StatusPill } from "../status-pill";
+import { DiscoveryPanel } from "./discovery-panel";
 
 /**
  * The config a Save topic writes (`F4.236`, owner ruling): the typed topic, and
@@ -293,6 +294,7 @@ export function DraftDrawer({
               Do not type them into the chat — those messages are stored.
             </p>
           </div>
+          {session && <DiscoveryPanel session={session} onSessionChange={onSessionChange} busy={busy} />}
           <div>
             <div className="mb-1 font-semibold uppercase tracking-wide text-ink-muted">
               Validation

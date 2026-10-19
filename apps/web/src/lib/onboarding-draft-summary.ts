@@ -78,7 +78,10 @@ export function formatOnboardingDraftSummary(draft: OnboardingDraft): string {
     lines.push("Point keys: using existing organization catalog");
   }
   if (draft.assetPoints?.length) {
-    lines.push(`Mappings: ${draft.assetPoints.length} asset-point row(s)`);
+    const discovered = draft.assetPoints.filter((row) => row.source === "discovery").length;
+    lines.push(
+      `Mappings: ${draft.assetPoints.length} asset-point row(s)${discovered > 0 ? ` (${discovered} discovered)` : ""}`,
+    );
   }
   return lines.length > 0 ? lines.join("\n") : "Draft is empty.";
 }

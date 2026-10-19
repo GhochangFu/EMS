@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -9,7 +9,7 @@ import type {
   OnboardingSessionDto,
 } from "@bms/shared";
 
-import { rollbackOnboardingSession, validateOnboardingSession } from "../../api/admin/onboarding";
+import { fetchOnboardingSession, rollbackOnboardingSession, validateOnboardingSession } from "../../api/admin/onboarding";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { invalidationKeysFor } from "../../lib/copilot-invalidations";
@@ -35,6 +35,12 @@ function stateOf(skill: CopilotSkillStateDto, data: OnboardingChatResponseDto): 
     autoOpenReason: data.autoOpenReason,
   };
 }
+
+/** How often the panel reads the session while a discovery is queued or running (ADR 0103: the session DTO carries the status). */
+export const DISCOVERY_POLL_MS = 5_000;
+
+/** The chip offered once a discovery that found devices has finished: a client-made reply, sent as a turn. */
+export const DISCOVERY_MAP_CHIP = "Map the discovered points";
 
 /** Where a committed session's RTUs are listed. */
 function rtusPathFor(locationId: string): string {
@@ -117,6 +123,34 @@ export function OnboardingSkillPanel({
   const withSession = (next: OnboardingSessionDto): void =>
     onSkillChange({ ...skill, session: next, autoOpenPreview: false, autoOpenReason: undefined });
 
+  // F3.24b: while a discovery is queued or running the session is read every DISCOVERY_POLL_MS and pushed up;
+  // a turn in flight writes the same draft, so its answer wins and the read waits.
+  const discoveryStatus = session.discovery?.status;
+  const discoveryActive = discoveryStatus === "queued" || discoveryStatus === "running";
+  const polled = useQuery({
+    queryKey: ["onboarding", session.id],
+    queryFn: () => fetchOnboardingSession(session.id),
+    enabled: discoveryActive,
+    refetchInterval: DISCOVERY_POLL_MS,
+    retry: false,
+  });
+  useEffect(() => {
+    if (polled.data && polled.isFetchedAfterMount && discoveryActive && !sending) withSession(polled.data);
+    // Each read is pushed once, when it arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [polled.data]);
+  // The chip is offered when the status flips to done with devices found, and withdrawn once picked.
+  const [mapOffered, setMapOffered] = useState(false);
+  const lastStatus = useRef(discoveryStatus);
+  useEffect(() => {
+    const was = lastStatus.current;
+    lastStatus.current = discoveryStatus;
+    if ((was === "queued" || was === "running") && discoveryStatus === "done" && (session.discovery?.devices.length ?? 0) > 0) {
+      setMapOffered(true);
+    }
+    if (discoveryStatus !== "done") setMapOffered(false);
+  }, [discoveryStatus, session.discovery?.devices.length]);
+
   const validateM = useMutation({
     mutationFn: () => validateOnboardingSession(session.id),
     onSuccess: (data) => {
@@ -157,6 +191,7 @@ export function OnboardingSkillPanel({
   useEffect(() => () => onUndoingChange(false), [onUndoingChange]);
 
   function pick(reply: string): void {
+    if (reply === DISCOVERY_MAP_CHIP) setMapOffered(false);
     if (reply.trim().toLowerCase() === "view draft") {
       setPreviewOpen(true);
       return;
@@ -169,7 +204,7 @@ export function OnboardingSkillPanel({
     if (session.currentPhase === "review") setDismissedReason("review");
   }
 
-  const replies = offeredReplies(skill.suggestedReplies);
+  const replies = [...offeredReplies(skill.suggestedReplies), ...(mapOffered ? [DISCOVERY_MAP_CHIP] : [])];
   const undoCheckpoints = [...session.checkpoints].reverse();
   const draft = session.status === "draft";
   const undoTarget = undoCheckpoints.some((c) => c.id === undoChoice) ? undoChoice : (undoCheckpoints[0]?.id ?? "");
