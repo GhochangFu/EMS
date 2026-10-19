@@ -39,9 +39,14 @@ export function anAbsentKeyReadsAsNull(): void {
 
 const NOW = Date.parse("2026-10-18T12:00:00.000Z");
 
-/** Decisions #7: the worker runs one job at a time across tenants, so `queued` has no stale bound. */
-export function anOldQueuedDiscoveryIsBusy(): void {
-  expect(discoveryIsBusy({ ...STORED, status: "queued", queuedAt: "2026-10-01T00:00:00.000Z" }, NOW)).toBe(true);
+/** A queued job can wait behind other tenants' windows, so a recent `queued` is busy. */
+export function aRecentQueuedDiscoveryIsBusy(): void {
+  expect(discoveryIsBusy({ ...STORED, status: "queued", queuedAt: "2026-10-18T11:40:00.000Z" }, NOW)).toBe(true);
+}
+
+/** F3.24b review: a job lost before it wrote `running` (a failed phase-A COMMIT) must not hold the organization for ever. */
+export function aQueuedDiscoveryPastItsStaleBoundIsNotBusy(): void {
+  expect(discoveryIsBusy({ ...STORED, status: "queued", queuedAt: "2026-10-01T00:00:00.000Z" }, NOW)).toBe(false);
 }
 
 /** `running` is busy until `startedAt + windowSeconds + 60 s`. */

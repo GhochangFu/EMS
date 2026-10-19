@@ -23,6 +23,9 @@ export type ListenOutcome =
   | { readonly kind: "done" }
   | { readonly kind: "failed"; readonly error?: OnboardingDiscoveryErrorClass };
 
+/** The hard deadline's margin past the connect timeout and the window. */
+export const DISCOVERY_DEADLINE_MARGIN_MS = 5_000;
+
 const AUTH_CODES: ReadonlySet<number> = new Set([4, 5, 134, 135]);
 const UNREACHABLE_CODES: ReadonlySet<string> = new Set([
   "ECONNREFUSED",
@@ -72,12 +75,16 @@ export async function listenForDevices(args: {
   readonly windowMs: number;
   readonly collector: DiscoveryCollector;
   readonly connectTimeoutMs?: number;
+  /** Added to the connect timeout and the window for the hard deadline. */
+  readonly deadlineMarginMs?: number;
 }): Promise<ListenOutcome> {
   return new Promise<ListenOutcome>((resolve) => {
     let settled = false;
     let connected = false;
+    let subscribed = false;
     let connectTimer: ReturnType<typeof setTimeout> | undefined;
     let windowTimer: ReturnType<typeof setTimeout> | undefined;
+    let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
     let handle: ReturnType<MqttDiscoveryTransport["connect"]> | undefined;
 
     const finish = (outcome: ListenOutcome): void => {
@@ -87,6 +94,7 @@ export async function listenForDevices(args: {
       settled = true;
       clearTimeout(connectTimer);
       clearTimeout(windowTimer);
+      clearTimeout(deadlineTimer);
       try {
         handle?.end(true);
       } catch {
@@ -119,6 +127,10 @@ export async function listenForDevices(args: {
           finish({ kind: "failed", error: "auth refused" });
           return;
         }
+        if (settled) {
+          return;
+        }
+        subscribed = true;
         windowTimer = setTimeout(() => {
           finish({ kind: "done" });
         }, args.windowMs);
@@ -150,8 +162,17 @@ export async function listenForDevices(args: {
       finish(connected ? { kind: "done" } : { kind: "failed", error: "host unreachable" });
     });
 
+    const connectTimeoutMs = args.connectTimeoutMs ?? DISCOVERY_CONNECT_TIMEOUT_MS;
     connectTimer = setTimeout(() => {
       finish({ kind: "failed", error: "timeout" });
-    }, args.connectTimeoutMs ?? DISCOVERY_CONNECT_TIMEOUT_MS);
+    }, connectTimeoutMs);
+    // F3.24b review: no other timer covers CONNACK → SUBACK, and a broker that
+    // answers pings keeps mqtt.js's keepalive quiet. The queue runs one job at
+    // a time for every tenant, so one window has a hard upper bound. A window
+    // that started ends `done` on its own timer first; one that never got a
+    // SUBACK listened to nothing, so it is `timeout`.
+    deadlineTimer = setTimeout(() => {
+      finish(subscribed ? { kind: "done" } : { kind: "failed", error: "timeout" });
+    }, connectTimeoutMs + args.windowMs + (args.deadlineMarginMs ?? DISCOVERY_DEADLINE_MARGIN_MS));
   });
 }

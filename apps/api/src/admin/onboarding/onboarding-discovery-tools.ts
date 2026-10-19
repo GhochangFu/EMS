@@ -56,6 +56,20 @@ export const DISCOVERY_SCOPE_ERROR =
   "add_rtu for a discovered device on the discovered broker, add_asset and map_points on the discovered RTUs, and add_point_keys run. " +
   "Ask the user about anything else in your reply.";
 
+/**
+ * `F3.24b` review (H2, continued) — the unattended writes of the read turn
+ * store wire strings (`add_rtu`'s code and topic, `map_points`'s source keys)
+ * in the draft, and later turns read the draft with every tool open. So in
+ * the read turn only identifier-shaped wire strings are written: no spaces,
+ * no punctuation that free text needs. Anything else waits for the user.
+ */
+const WIRE_IDENTIFIER = /^[A-Za-z0-9_.:-]+$/;
+const WIRE_TOPIC = /^[A-Za-z0-9_.:/-]+$/;
+
+export const DISCOVERY_WIRE_TEXT_ERROR =
+  "A discovered code, topic or key holds characters other than letters, digits and _ . : - (and / in a topic). " +
+  "It may be text a device published. Ask the user before you write it.";
+
 export const DISCOVERY_TOOL_NOT_MQTT = "Discovery runs on an MQTT RTU only.";
 export const DISCOVERY_TOOL_NO_TARGET = "The RTU has no broker host and port in the draft. Ask the user to set both on the RTU step.";
 export const DISCOVERY_TOOL_NO_CREDENTIALS =
@@ -224,10 +238,16 @@ export function discoveryScopeProblem(name: string, args: Record<string, unknown
     return null;
   }
   if (name === "map_points" && typeof args.assetIndex === "number" && inScope(draft.assets?.[args.assetIndex]?.rtuIndex)) {
-    return null;
+    const points = Array.isArray(args.points) ? (args.points as { sourceDataKey?: unknown }[]) : [];
+    return points.every((p) => typeof p?.sourceDataKey === "string" && WIRE_IDENTIFIER.test(p.sourceDataKey))
+      ? null
+      : DISCOVERY_WIRE_TEXT_ERROR;
   }
   if (name === "add_rtu" && discoveredRtuSource(draft, args as { code: string; protocol: string; config?: unknown }) !== null) {
-    return null;
+    const topic = (args.config as { topic?: unknown } | undefined)?.topic;
+    return typeof args.code === "string" && WIRE_IDENTIFIER.test(args.code.trim()) && typeof topic === "string" && WIRE_TOPIC.test(topic)
+      ? null
+      : DISCOVERY_WIRE_TEXT_ERROR;
   }
   return DISCOVERY_SCOPE_ERROR;
 }

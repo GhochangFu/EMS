@@ -5,7 +5,7 @@ import { expect, vi } from "vitest";
 import type { OnboardingSessionDto } from "@bms/shared";
 import { MQTT_DISCOVERY_SHARED_USER_WARNING } from "@bms/shared/contracts";
 
-import { DISCOVERY_NEEDS_WORKER, DiscoveryPanel } from "./discovery-panel";
+import { DISCOVERY_NEEDS_WORKER, DISCOVERY_STALE_SENTENCE, DiscoveryPanel } from "./discovery-panel";
 
 /**
  * `F3.24b` (ADR 0103) — the drawer's Discovery section: the Discover button
@@ -83,9 +83,22 @@ export function withoutAHostTheButtonIsDisabledWithItsReason(): void {
 }
 
 export function aRunningDiscoveryDisablesTheButtonAndShowsTheStatus(): void {
-  mount(session({ discovery: discovery({ status: "running", finishedAt: null }) }));
+  mount(session({ discovery: discovery({ status: "running", startedAt: new Date().toISOString(), finishedAt: null }) }));
   expect(discoverButton().disabled).toBe(true);
   expect(screen.getByText("A discovery is running. It listens for up to 60 s.")).toBeTruthy();
+}
+
+/** F3.24b review: past `startedAt + window + 60 s` the API no longer counts `running` as busy, and neither does the button. */
+const STALE_START = (): string => new Date(Date.now() - 10 * 60_000).toISOString();
+
+export function aStaleRunningDiscoveryLeavesTheButtonEnabled(): void {
+  mount(session({ discovery: discovery({ status: "running", startedAt: STALE_START(), finishedAt: null }) }));
+  expect(discoverButton().disabled).toBe(false);
+}
+
+export function aStaleRunningDiscoverySaysItDidNotFinish(): void {
+  mount(session({ discovery: discovery({ status: "running", startedAt: STALE_START(), finishedAt: null }) }));
+  expect(screen.getByText(DISCOVERY_STALE_SENTENCE)).toBeTruthy();
 }
 
 export function aChatTurnInFlightRenamesTheButtonAndMarksItBusy(): void {

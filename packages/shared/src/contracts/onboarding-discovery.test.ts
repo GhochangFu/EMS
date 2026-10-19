@@ -36,3 +36,16 @@ describe("F3.24b — the discovery contracts (ADR 0103)", () => {
   it("accepts source discovery on an asset point", () => S.anAssetPointAcceptsSourceDiscovery());
   it("refuses source manual on an asset point", () => S.anAssetPointRefusesSourceManual());
 });
+
+describe("F3.24b — discoveryIsActive (the shared busy rule)", () => {
+  it("a recent queued discovery is active", () => S.aRecentQueuedDiscoveryIsActive());
+  it("a queued discovery past 30 minutes is not active", () => S.aQueuedDiscoveryPast30MinutesIsNotActive());
+  it("a queued discovery with no queuedAt is active", () => S.aQueuedDiscoveryWithNoQueuedAtIsActive());
+  it("a queued discovery with an unparsable queuedAt is active", () => S.aQueuedDiscoveryWithAnUnparsableQueuedAtIsActive());
+  it("a running discovery inside window + grace is active", () => S.aRunningDiscoveryInsideWindowPlusGraceIsActive());
+  it("a running discovery past window + grace is not active", () => S.aRunningDiscoveryPastWindowPlusGraceIsNotActive());
+  it("a running discovery with no startedAt is active", () => S.aRunningDiscoveryWithNoStartIsActive());
+  it("a done discovery is not active", () => S.aDoneDiscoveryIsNotActive());
+  it("a failed discovery is not active", () => S.aFailedDiscoveryIsNotActive());
+  it("no discovery is not active", () => S.noDiscoveryIsNotActive());
+});

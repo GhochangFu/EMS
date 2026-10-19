@@ -2,6 +2,11 @@ import { describe, it } from "vitest";
 
 import {
   assertBinaryPayloadIsRead,
+  assertEmojiCutAtTheSampleBoundIsNotSplit,
+  assertLoneSurrogateInDevIdIsRemoved,
+  assertLoneSurrogateInKeyIsRemoved,
+  assertLoneSurrogateInSampleIsRemoved,
+  assertWholeEmojiInsideTheBoundIsKept,
   assertBrokerPasswordKeyIsSkipped,
   assertBrokerPasswordValueIsRedacted,
   assertControlCharsAreStripped,
@@ -49,5 +54,13 @@ describe("F3.24b — the discovery collector", () => {
     it("redacts a sample equal to the broker password", () => assertBrokerPasswordValueIsRedacted());
     it("skips a key equal to the broker password", () => assertBrokerPasswordKeyIsSkipped());
     it("skips a devId equal to the broker password", () => assertCredentialLookingDevIdIsSkipped());
+  });
+
+  describe("every stored string is well-formed UTF-16 (Postgres jsonb)", () => {
+    it("removes a lone surrogate from a devId", () => assertLoneSurrogateInDevIdIsRemoved());
+    it("removes a lone surrogate from a key", () => assertLoneSurrogateInKeyIsRemoved());
+    it("removes a lone surrogate from a sample", () => assertLoneSurrogateInSampleIsRemoved());
+    it("does not split a surrogate pair at the sample bound", () => assertEmojiCutAtTheSampleBoundIsNotSplit());
+    it("keeps a whole surrogate pair", () => assertWholeEmojiInsideTheBoundIsKept());
   });
 });

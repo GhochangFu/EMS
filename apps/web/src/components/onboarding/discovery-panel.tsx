@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { OnboardingDiscoveryErrorClass, OnboardingSessionDto } from "@bms/shared";
-import { MQTT_DISCOVERY_SHARED_USER_WARNING } from "@bms/shared/contracts";
+import { discoveryIsActive, MQTT_DISCOVERY_SHARED_USER_WARNING } from "@bms/shared/contracts";
 
 import { fetchOnboardingSession } from "../../api/admin/onboarding";
 import { StatusPill } from "../status-pill";
@@ -41,10 +41,12 @@ const FAILED_SENTENCE: Record<OnboardingDiscoveryErrorClass, string> = {
   "blocked host": "Failed: blocked host.",
 };
 
-const isActive =(d: OnboardingSessionDto["discovery"]): boolean => d?.status === "queued" || d?.status === "running";
+/** A `running` discovery past its stale bound: the worker stopped or its final write failed. */
+export const DISCOVERY_STALE_SENTENCE = "The discovery did not finish. You can start it again.";
 
-function statusLine(d: NonNullable<OnboardingSessionDto["discovery"]>): string {
+function statusLine(d: NonNullable<OnboardingSessionDto["discovery"]>, active: boolean): string {
   if (d.status === "queued") return "A discovery is queued.";
+  if (d.status === "running" && !active) return DISCOVERY_STALE_SENTENCE;
   if (d.status === "running") return `A discovery is running. It listens for up to ${d.windowSeconds} s.`;
   if (d.status === "failed") return d.error ? FAILED_SENTENCE[d.error] : "Failed.";
   const keys = d.devices.reduce((n, dev) => n + dev.keys.length, 0);
@@ -72,7 +74,8 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
   if (mqtt.length === 0) return null;
 
   const result = session.discovery;
-  const active = isActive(result);
+  // The route's own busy rule (`discoveryIsActive`): a `running` past its window + 60 s no longer holds the session.
+  const active = discoveryIsActive(result, Date.now());
   const discovered = (session.draft?.assetPoints ?? []).filter((row) => row.source === "discovery");
   const samples = new Map<string, string | number | boolean>();
   for (const device of result?.devices ?? []) {
@@ -118,7 +121,7 @@ export function DiscoveryPanel({ session, onSessionChange, busy }: DiscoveryPane
       </ul>
       {result !== null && (
         <div className="mt-2 text-[11px]">
-          <p>{statusLine(result)}</p>
+          <p>{statusLine(result, active)}</p>
           {result.status === "done" && result.devices.length === 0 && <p>No device published in the window.</p>}
         </div>
       )}

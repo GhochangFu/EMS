@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import {
   discoveryDtoOf,
+  discoveryIsActive,
   MQTT_DISCOVERY_HOST_MAX,
   MQTT_DISCOVERY_MAX_WINDOW_SECONDS,
   MQTT_DISCOVERY_MIN_WINDOW_SECONDS,
@@ -53,13 +54,6 @@ export function readDiscoveryProposal(draft: unknown): StoredDiscoveryProposal |
   return parsed.success ? parsed.data : null;
 }
 
-/**
- * How long a `running` discovery stays busy past its window: the worker's
- * connect timeout and the second transaction fit well inside it. A worker that
- * died mid-window must not block the session for ever (decisions #7).
- */
-export const DISCOVERY_RUNNING_GRACE_MS = 60_000;
-
 /** `draft._discovery` in the stored shape (with `queuedAt` and the counters), or `null`. Fails closed. */
 export function readStoredDiscovery(draft: unknown): OnboardingDiscoveryStored | null {
   if (typeof draft !== "object" || draft === null) {
@@ -86,28 +80,15 @@ export function readDiscovery(draft: unknown): OnboardingDiscoveryResultDto | nu
  * Whether `stored` still holds the session (and, through the route's
  * per-organization check, the organization — security review M3).
  *
- * - `queued` is busy with **no** stale bound: the worker runs one job at a
- *   time per queue across every tenant, so a job can wait behind others for
- *   minutes and still run (decisions #7).
- * - `running` is busy until `startedAt + windowSeconds + 60 s`; a `running`
- *   row with no `startedAt` cannot be bounded, so it stays busy.
- * - `done` and `failed` are not busy.
+ * The rule is `discoveryIsActive` in `@bms/shared`, so the web's Discover
+ * button and poll read the same one: `queued` until `queuedAt + 30 min`,
+ * `running` until `startedAt + windowSeconds + 60 s` (unbounded only when
+ * `startedAt` is missing), `done` and `failed` never. A job lost before it
+ * wrote `running`, or a worker that died mid-window, must not hold the
+ * organization for ever (decisions #7; `F3.24b` review).
  */
 export function discoveryIsBusy(stored: OnboardingDiscoveryStored | null, nowMs: number): boolean {
-  if (stored === null) {
-    return false;
-  }
-  if (stored.status === "queued") {
-    return true;
-  }
-  if (stored.status !== "running") {
-    return false;
-  }
-  const started = stored.startedAt === null ? Number.NaN : Date.parse(stored.startedAt);
-  if (!Number.isFinite(started)) {
-    return true;
-  }
-  return nowMs <= started + stored.windowSeconds * 1000 + DISCOVERY_RUNNING_GRACE_MS;
+  return discoveryIsActive(stored, nowMs);
 }
 
 /**

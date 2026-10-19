@@ -173,6 +173,52 @@ export function assertOverlongTopicIsSkipped(): void {
   assert(c.result().skipped === 1, "a topic longer than 255 characters is skipped");
 }
 
+// --- well-formed UTF-16: Postgres refuses a lone surrogate in jsonb (F3.24b review) ---
+
+/** `JSON.stringify` writes a lone surrogate as a `\udXXX` escape, and a valid pair as the raw characters. */
+const LONE_SURROGATE_ESCAPE = /\\u[dD][89a-fA-F][0-9a-fA-F]{2}/;
+
+function storedText(c: ReturnType<typeof createDiscoveryCollector>): string {
+  return JSON.stringify(c.result());
+}
+
+export function assertLoneSurrogateInDevIdIsRemoved(): void {
+  const c = createDiscoveryCollector({});
+  c.offer("t", '{"dev_id":"D\\ud800X","values":{"k":1}}');
+  assert(c.result().devices[0]?.devId === "DX", `a lone surrogate is removed from the devId; got ${storedText(c)}`);
+}
+
+export function assertLoneSurrogateInKeyIsRemoved(): void {
+  const c = createDiscoveryCollector({});
+  c.offer("t", '{"dev_id":"D1","values":{"k\\udc00w":1}}');
+  const text = storedText(c);
+  assert(!LONE_SURROGATE_ESCAPE.test(text) && c.result().devices[0]?.keys[0]?.sourceKey === "kw", `a lone surrogate is removed from a key; got ${text}`);
+}
+
+export function assertLoneSurrogateInSampleIsRemoved(): void {
+  const c = createDiscoveryCollector({});
+  c.offer("t", '{"dev_id":"D1","values":{"s":"a\\ud83db"}}');
+  const text = storedText(c);
+  assert(!LONE_SURROGATE_ESCAPE.test(text) && c.result().devices[0]?.keys[0]?.sampleValue === "ab", `a lone surrogate is removed from a sample; got ${text}`);
+}
+
+export function assertEmojiCutAtTheSampleBoundIsNotSplit(): void {
+  const c = createDiscoveryCollector({});
+  // 63 ASCII characters, then a non-BMP emoji whose pair spans indexes 63 and 64.
+  c.offer("t", msg("D1", { s: `${"a".repeat(63)}\u{1F600}tail` }));
+  const sample = c.result().devices[0]?.keys[0]?.sampleValue;
+  assert(
+    sample === "a".repeat(63) && !LONE_SURROGATE_ESCAPE.test(storedText(c)),
+    `a cut through a surrogate pair drops the half; got ${JSON.stringify(sample)}`,
+  );
+}
+
+export function assertWholeEmojiInsideTheBoundIsKept(): void {
+  const c = createDiscoveryCollector({});
+  c.offer("t", msg("D1", { s: "ok \u{1F600}" }));
+  assert(c.result().devices[0]?.keys[0]?.sampleValue === "ok \u{1F600}", "a whole surrogate pair is kept");
+}
+
 export function assertBinaryPayloadIsRead(): void {
   const c = createDiscoveryCollector({});
   c.offer("t", new TextEncoder().encode(msg("D1", { k: 1 })));

@@ -8,6 +8,7 @@ import type {
   OnboardingChatResponseDto,
   OnboardingSessionDto,
 } from "@bms/shared";
+import { discoveryIsActive } from "@bms/shared/contracts";
 
 import { fetchOnboardingSession, rollbackOnboardingSession, validateOnboardingSession } from "../../api/admin/onboarding";
 import { ApiError } from "../../lib/api-error";
@@ -123,19 +124,32 @@ export function OnboardingSkillPanel({
   const withSession = (next: OnboardingSessionDto): void =>
     onSkillChange({ ...skill, session: next, autoOpenPreview: false, autoOpenReason: undefined });
 
-  // F3.24b: while a discovery is queued or running the session is read every DISCOVERY_POLL_MS and pushed up;
-  // a turn in flight writes the same draft, so its answer wins and the read waits.
+  // F3.24b: while a discovery is active (the route's own rule, so a `running` past its window + 60 s is not)
+  // the session is read every DISCOVERY_POLL_MS and pushed up. A turn in flight writes the same draft, so its
+  // answer wins: a read that arrives during a turn, or that started before the last turn ended (it may hold
+  // the pre-turn draft and hash), is dropped.
   const discoveryStatus = session.discovery?.status;
-  const discoveryActive = discoveryStatus === "queued" || discoveryStatus === "running";
+  const discoveryActive = discoveryIsActive(session.discovery, Date.now());
+  const turnsEnded = useRef(0);
+  const turnsEndedAtPollStart = useRef(0);
+  const wasSending = useRef(sending);
+  useEffect(() => {
+    if (wasSending.current && !sending) turnsEnded.current += 1;
+    wasSending.current = sending;
+  }, [sending]);
   const polled = useQuery({
     queryKey: ["onboarding", session.id],
-    queryFn: () => fetchOnboardingSession(session.id),
+    queryFn: () => {
+      turnsEndedAtPollStart.current = turnsEnded.current;
+      return fetchOnboardingSession(session.id);
+    },
     enabled: discoveryActive,
     refetchInterval: DISCOVERY_POLL_MS,
     retry: false,
   });
   useEffect(() => {
-    if (polled.data && polled.isFetchedAfterMount && discoveryActive && !sending) withSession(polled.data);
+    const current = turnsEndedAtPollStart.current === turnsEnded.current;
+    if (polled.data && polled.isFetchedAfterMount && discoveryActive && !sending && current) withSession(polled.data);
     // Each read is pushed once, when it arrives.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [polled.data]);

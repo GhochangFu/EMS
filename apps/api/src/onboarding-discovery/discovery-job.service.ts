@@ -272,6 +272,30 @@ export class DiscoveryJobService {
       );
     } catch (err) {
       this.logger.error(`discovery finish write failed: ${errorName(err)} ${this.ids(payload)}`);
+      await this.finishFallback(payload, stored);
+    }
+  }
+
+  /**
+   * F3.24b review — the full result could not be written (Postgres refused a
+   * value in it, or the transaction failed). Write `failed` with no devices
+   * and one `finish` row in a fresh transaction, so the discovery does not
+   * stay `running` until its stale bound. Never throws.
+   */
+  private async finishFallback(payload: DiscoveryJobPayload, stored: StoredDiscovery): Promise<void> {
+    try {
+      await this.store.inTenant(payload.organizationId, async (tx) => {
+        const locked = await this.store.lock(tx, payload.sessionId);
+        const current = onboardingDiscoveryStoredSchema.safeParse(
+          (locked?.draft as Record<string, unknown> | undefined)?._discovery,
+        );
+        if (locked?.status !== "draft" || !current.success || current.data.discoveryId !== payload.discoveryId) {
+          return;
+        }
+        await this.fail(tx, payload, stored, undefined);
+      });
+    } catch (err) {
+      this.logger.error(`discovery fallback write failed: ${errorName(err)} ${this.ids(payload)}`);
     }
   }
 

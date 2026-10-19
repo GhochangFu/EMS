@@ -16,7 +16,6 @@ import * as copilotApi from "../../api/copilot";
 import { ONBOARDING_COMMIT_DRAFT_CHANGED, ONBOARDING_COMMIT_NOT_A_DRAFT } from "../onboarding/onboarding-commit-wizard";
 import { useCopilotStore } from "../../stores/copilot-store";
 import { CONVERSATION_ID, answered, openPanel, READY, renderDock, settle, stub } from "./copilot-dock.spec";
-
 /**
  * `F3.86` PR 6 (ADR 0099 decision 7; plan §8.3) — the copilot dock while the
  * conversation runs the onboarding skill (`OnboardingSkillPanel`).
@@ -584,6 +583,61 @@ export async function anEmptyResultOffersNoChip(): Promise<void> {
   await waitFor(() => expect(sent.some((r) => SESSION_URL.test(r.url))).toBe(true));
   await waitFor(() => expect(screen.queryByRole("button", { name: "Map the discovered points" })).not.toBeInTheDocument());
   expect(screen.getByRole("button", { name: "Add an RTU" })).toBeInTheDocument();
+}
+
+/** F3.24b review: a `running` past `startedAt + window + 60 s` is not active (the route's rule), so the session is not polled. */
+export async function aStaleRunningDiscoveryIsNotPolled(): Promise<void> {
+  const sent = stubFetch(() => ({ status: 200, json: session() }));
+  const stale = discovery({ status: "running", startedAt: new Date(Date.now() - 10 * 60_000).toISOString() });
+  await openSkill({ skill: skillState({ session: session({ discovery: stale }) }) });
+  await settle();
+  expect(screen.getByRole("button", { name: "Add an RTU" })).toBeInTheDocument();
+  expect(sent.filter((r) => SESSION_URL.test(r.url))).toHaveLength(0);
+}
+
+/** The adjacent positive: a fresh `running` is polled. */
+export async function aFreshRunningDiscoveryIsPolled(): Promise<void> {
+  const sent = stubFetch(() => ({ status: 200, json: session({ discovery: discovery({ status: "running", startedAt: new Date().toISOString() }) }) }));
+  const fresh = discovery({ status: "running", startedAt: new Date().toISOString() });
+  await openSkill({ skill: skillState({ session: session({ discovery: fresh }) }) });
+  await waitFor(() => expect(sent.some((r) => r.method === "GET" && SESSION_URL.test(r.url))).toBe(true));
+}
+
+const TURN_REPLY = "The turn's reply, written after the poll read the row.";
+
+/**
+ * F3.24b review: a poll that read the row before a chat turn wrote it, and
+ * answers after the turn finished, must not put the pre-turn session (its
+ * thread, draft and draftHash) back over the turn's.
+ */
+export async function aPollStartedBeforeATurnEndedIsDropped(): Promise<void> {
+  const running = discovery({ status: "running", startedAt: new Date().toISOString() });
+  const releases: (() => void)[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => {
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return new Response(JSON.stringify(session({ discovery: running })), { status: 200, headers: { "Content-Type": "application/json" } });
+    }),
+  );
+  const stubs = await openSkill({ skill: skillState({ session: session({ discovery: running }) }) });
+  await waitFor(() => expect(releases.length).toBe(1));
+  const after = session({
+    discovery: running,
+    messages: [
+      { id: "o1", role: "assistant", content: "Welcome to onboarding.", createdAt: "2026-10-12T00:00:00.000Z" },
+      { id: "o2", role: "assistant", content: TURN_REPLY, createdAt: "2026-10-12T00:00:01.000Z" },
+    ],
+  });
+  stubs.turn.mockResolvedValue({ ...answered("Add an RTU", "ok"), skill: skillState({ session: after }) });
+  fireEvent.click(screen.getByRole("button", { name: "Add an RTU" }));
+  await screen.findByText(TURN_REPLY);
+  // The chips come back only once the turn is no longer in flight (`sending` is false).
+  await screen.findByRole("button", { name: "Add an RTU" });
+  releases[0]!();
+  await settle();
+  await settle();
+  expect(screen.getByText(TURN_REPLY)).toBeInTheDocument();
 }
 
 /** The discovery card shows the broker, the filter, the window and the warning; Confirm sends the hashed body with the header. */

@@ -354,3 +354,14 @@ Build note (`F3.24b` U6, 2026-10-19): the integration broker is the CI
 `mosquitto` step (`eclipse-mosquitto:2.0`, `infra/mosquitto/mosquitto.conf`,
 `MQTT_TEST_URL`), not a compose service; the compose service list is
 unchanged.
+
+Build note (`F3.24b` review fixes, 2026-10-19; the owner can reverse each):
+a `queued` discovery stops counting as busy 30 minutes after `queuedAt`
+(`MQTT_DISCOVERY_QUEUED_STALE_MS`), so a job lost before it wrote `running`
+cannot hold the organization's one discovery for ever; the route and the web
+share one rule, `discoveryIsActive` in `@bms/shared`. The job has a hard
+deadline of connect timeout + window + 5 s, and the production transport ends
+the connection at any MQTT packet header that declares more than 256 KiB +
+4 KiB, before the parser buffers it. In the turn that read results, the
+scoped `add_rtu` and `map_points` writes accept only identifier-shaped wire
+strings (`[A-Za-z0-9_.:-]`, plus `/` in a topic).

@@ -38,6 +38,16 @@ import {
   assertTlsFlagSelectsNothing,
   assertUnreachableHostIsNotARefusal,
   assertUsernameAppearsNowhere,
+  assertRefusedResultWriteFallsBackToFailed,
+  assertRefusedResultWriteLeavesOneFailedFinishRow,
+  assertMissingSubackEndsAtTheDeadline,
+  assertSubackedWindowEndsDone,
+  assertNoServernameForABracketedIpv6Literal,
+  assertGuardPassesPacketsInsideTheBound,
+  assertGuardTripsOnAnOversizeHeader,
+  assertGuardTripsOnAHeaderSplitAcrossChunks,
+  assertGuardFollowsPacketBoundariesAcrossChunks,
+  assertProductionTransportClosesOnAnOversizePacket,
 } from "./discovery-job.service.spec";
 
 /** `F3.24b` (ADR 0103) — Vitest entry point; assertions live in the sibling `.spec` (§4.6). */
@@ -99,5 +109,18 @@ describe("F3.24b — the discovery job", () => {
     it("DEPTH_ZERO_SELF_SIGNED_CERT is TLS failed", () => assertErrorClassOf({ code: "DEPTH_ZERO_SELF_SIGNED_CERT" }, "TLS failed"));
     it("ERR_SSL_WRONG_VERSION_NUMBER is TLS failed", () => assertErrorClassOf({ code: "ERR_SSL_WRONG_VERSION_NUMBER" }, "TLS failed"));
     it("an unknown error is host unreachable", () => assertErrorClassOf(new Error("something"), "host unreachable"));
+  });
+
+  describe("review fixes (F3.24b)", () => {
+    it("a refused result write falls back to failed with no devices", () => assertRefusedResultWriteFallsBackToFailed());
+    it("a refused result write leaves one failed finish row", () => assertRefusedResultWriteLeavesOneFailedFinishRow());
+    it("a connection with no SUBACK ends at the deadline as timeout", () => assertMissingSubackEndsAtTheDeadline());
+    it("a subscribed window ends done", () => assertSubackedWindowEndsDone());
+    it("sends no SNI for a bracketed IPv6 literal", () => assertNoServernameForABracketedIpv6Literal());
+    it("the packet guard passes packets inside the bound", () => assertGuardPassesPacketsInsideTheBound());
+    it("the packet guard trips on an oversize header", () => assertGuardTripsOnAnOversizeHeader());
+    it("the packet guard trips on a header split across chunks", () => assertGuardTripsOnAHeaderSplitAcrossChunks());
+    it("the packet guard follows packet boundaries across chunks", () => assertGuardFollowsPacketBoundariesAcrossChunks());
+    it("the production transport closes on an oversize packet", () => assertProductionTransportClosesOnAnOversizePacket());
   });
 });

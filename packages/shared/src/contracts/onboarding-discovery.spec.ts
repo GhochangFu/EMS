@@ -6,6 +6,7 @@ import {
   MQTT_DISCOVERY_SOURCE_KEY_MAX,
   MQTT_DISCOVERY_TOPIC_MAX,
   discoveryDtoOf,
+  discoveryIsActive,
   onboardingDiscoveryDeviceSchema,
   onboardingDiscoveryResultDtoSchema,
   onboardingDiscoveryStoredSchema,
@@ -177,6 +178,43 @@ export function anAssetPointAcceptsSourceDiscovery(): void {
 export function anAssetPointRefusesSourceManual(): void {
   const row = { assetIndex: 0, pointKey: "p", sourceDataKey: "k" };
   expect(onboardingDraftAssetPointSchema.safeParse({ ...row, source: "manual" }).success).toBe(false);
+}
+
+// --- discoveryIsActive: the busy rule the route and the web share (F3.24b review) ---
+
+const ACTIVE_NOW = Date.parse("2026-10-18T12:00:00.000Z");
+const ACTIVE_BASE = { windowSeconds: 60, startedAt: null } as const;
+
+export function aRecentQueuedDiscoveryIsActive(): void {
+  expect(discoveryIsActive({ ...ACTIVE_BASE, status: "queued", queuedAt: "2026-10-18T11:45:00.000Z" }, ACTIVE_NOW)).toBe(true);
+}
+export function aQueuedDiscoveryPast30MinutesIsNotActive(): void {
+  expect(discoveryIsActive({ ...ACTIVE_BASE, status: "queued", queuedAt: "2026-10-18T11:29:59.000Z" }, ACTIVE_NOW)).toBe(false);
+}
+export function aQueuedDiscoveryWithNoQueuedAtIsActive(): void {
+  expect(discoveryIsActive({ ...ACTIVE_BASE, status: "queued" }, ACTIVE_NOW)).toBe(true);
+}
+export function aQueuedDiscoveryWithAnUnparsableQueuedAtIsActive(): void {
+  expect(discoveryIsActive({ ...ACTIVE_BASE, status: "queued", queuedAt: "not a date" }, ACTIVE_NOW)).toBe(true);
+}
+export function aRunningDiscoveryInsideWindowPlusGraceIsActive(): void {
+  // 60 s window + 60 s grace: started 119 s ago.
+  expect(discoveryIsActive({ status: "running", windowSeconds: 60, startedAt: "2026-10-18T11:58:01.000Z" }, ACTIVE_NOW)).toBe(true);
+}
+export function aRunningDiscoveryPastWindowPlusGraceIsNotActive(): void {
+  expect(discoveryIsActive({ status: "running", windowSeconds: 60, startedAt: "2026-10-18T11:57:59.000Z" }, ACTIVE_NOW)).toBe(false);
+}
+export function aRunningDiscoveryWithNoStartIsActive(): void {
+  expect(discoveryIsActive({ status: "running", windowSeconds: 60, startedAt: null }, ACTIVE_NOW)).toBe(true);
+}
+export function aDoneDiscoveryIsNotActive(): void {
+  expect(discoveryIsActive({ ...ACTIVE_BASE, status: "done" }, ACTIVE_NOW)).toBe(false);
+}
+export function aFailedDiscoveryIsNotActive(): void {
+  expect(discoveryIsActive({ ...ACTIVE_BASE, status: "failed" }, ACTIVE_NOW)).toBe(false);
+}
+export function noDiscoveryIsNotActive(): void {
+  expect(discoveryIsActive(null, ACTIVE_NOW)).toBe(false);
 }
 
 /** The three bounds restated here (to avoid an import cycle) equal the onboarding constants. */

@@ -1,5 +1,7 @@
 import "reflect-metadata";
 
+import { createServer, type AddressInfo } from "node:net";
+
 import type { CredentialCryptoService } from "../security/credential-crypto.service";
 import type { BmsTx } from "../database/tenant-context";
 import type { ProcessorContinuation } from "../queue/queue-processor";
@@ -10,6 +12,7 @@ import { createDiscoveryCollector } from "./discovery-collector";
 import type { HostResolution } from "./discovery-host-guard";
 import {
   buildConnectOptions,
+  createPacketSizeGuard,
   mqttDiscoveryTransport,
   PRODUCTION_TRANSPORT_OPTIONS,
   type DiscoveryClientHandle,
@@ -148,10 +151,13 @@ function build(opts: {
   subackQos?: number;
   transport?: MqttDiscoveryTransport;
   finishWriteThrows?: boolean;
+  /** The first write on the second transaction throws (the whole transaction rolls back); later ones succeed. */
+  finishWriteThrowsOnce?: boolean;
   phaseAWriteThrows?: boolean;
 }) {
   const probe: Probe = { writes: [], audits: [], connects: [], subscribes: [], logs: [], handles: [] };
   const resolved: string[] = [];
+  let finishThrowsLeft = opts.finishWriteThrowsOnce ? 1 : 0;
   const store = {
     inTenant: async <T>(_org: string, fn: (tx: BmsTx) => Promise<T>) => fn(TX2),
     lock: async () =>
@@ -161,6 +167,10 @@ function build(opts: {
     writeDiscovery: async (tx: BmsTx, _sessionId: string, stored: StoredDiscovery) => {
       if (opts.finishWriteThrows && tx === TX2) {
         throw new Error(`write failed near ${BROKER_TEXT}`);
+      }
+      if (finishThrowsLeft > 0 && tx === TX2) {
+        finishThrowsLeft -= 1;
+        throw new Error("Unicode low surrogate must follow a high surrogate");
       }
       if (opts.phaseAWriteThrows && tx === TX) {
         throw new Error(`phase A write failed near ${BROKER_TEXT}`);
@@ -557,6 +567,31 @@ export async function assertFailedFinishWriteDoesNotThrow(): Promise<void> {
   assert(!probe.logs.join("\n").includes("BROKER-SAID"), "the final write's error text must not be logged");
 }
 
+/**
+ * F3.24b review: when the full result cannot be written (Postgres refused a
+ * value in it), the job writes a fallback `failed` with no devices, so the
+ * discovery does not stay `running`.
+ */
+export async function assertRefusedResultWriteFallsBackToFailed(): Promise<void> {
+  const { service, probe } = build({ finishWriteThrowsOnce: true });
+  await runFully(service);
+  const second = probe.writes.filter((w) => w.tx === TX2);
+  assert(
+    second.length === 1 && second[0]?.stored.status === "failed" && second[0].stored.devices.length === 0,
+    `a refused result write must fall back to failed with no devices; got ${JSON.stringify(second.map((w) => w.stored))}`,
+  );
+}
+
+export async function assertRefusedResultWriteLeavesOneFailedFinishRow(): Promise<void> {
+  const { service, probe } = build({ finishWriteThrowsOnce: true });
+  await runFully(service);
+  const finish = probe.audits.filter((a) => a.action === "onboarding.discovery.finish");
+  assert(
+    finish.length === 1 && finish[0]?.payload.status === "failed" && finish[0].payload.devices === 0,
+    `the fallback must write one failed finish row; got ${JSON.stringify(probe.audits)}`,
+  );
+}
+
 export async function assertSubackRefusalIsAuthRefused(): Promise<void> {
   const { service, probe } = build({ script: (emit) => emit.connect(), subackQos: 128 });
   await runFully(service);
@@ -581,6 +616,152 @@ export async function assertConnectTimerIsTimeout(): Promise<void> {
     connectTimeoutMs: 10,
   });
   assert(outcome.kind === "failed" && outcome.error === "timeout", `no CONNACK within the bound must be timeout; got ${JSON.stringify(outcome)}`);
+}
+
+/**
+ * F3.24b review: a broker that sends CONNACK and answers pings but never a
+ * SUBACK must not hold the one-at-a-time queue for ever. The hard deadline
+ * (connect timeout + window + margin) ends it as `timeout`.
+ */
+export async function assertMissingSubackEndsAtTheDeadline(): Promise<void> {
+  const probe: Probe = { writes: [], audits: [], connects: [], subscribes: [], logs: [], handles: [] };
+  const noSuback: MqttDiscoveryTransport = {
+    connect: () => {
+      let onConnect: (() => void) | undefined;
+      const handle = {
+        on: (event: string, listener: () => void) => {
+          if (event === "connect") onConnect = listener;
+        },
+        subscribe: (filter: string, opts: { qos: 0 }) => {
+          probe.subscribes.push({ filter, qos: opts.qos });
+        },
+        end: () => undefined,
+      } as unknown as DiscoveryClientHandle;
+      setImmediate(() => onConnect?.());
+      return handle;
+    },
+  };
+  const outcome = await listenForDevices({
+    transport: noSuback,
+    options: {} as DiscoveryConnectOptions,
+    filter: "t/#",
+    windowMs: 20,
+    collector: createDiscoveryCollector({}),
+    connectTimeoutMs: 10,
+    deadlineMarginMs: 10,
+  });
+  assert(
+    probe.subscribes.length === 1 && outcome.kind === "failed" && outcome.error === "timeout",
+    `a connection with no SUBACK must end at the deadline as timeout; got ${JSON.stringify(outcome)} subscribes=${probe.subscribes.length}`,
+  );
+}
+
+/** The adjacent positive: a SUBACK that arrives starts the window, which ends `done` before the deadline. */
+export async function assertSubackedWindowEndsDone(): Promise<void> {
+  const probe: Probe = { writes: [], audits: [], connects: [], subscribes: [], logs: [], handles: [] };
+  const outcome = await listenForDevices({
+    transport: fakeTransport(probe, (emit) => emit.connect()),
+    options: {} as DiscoveryConnectOptions,
+    filter: "t/#",
+    windowMs: 20,
+    collector: createDiscoveryCollector({}),
+    connectTimeoutMs: 10,
+    deadlineMarginMs: 1_000,
+  });
+  assert(outcome.kind === "done", `a subscribed window must end done; got ${JSON.stringify(outcome)}`);
+}
+
+// --- the transport: IPv6 SNI and the packet-size guard (F3.24b review) -------
+
+export function assertNoServernameForABracketedIpv6Literal(): void {
+  const options = buildConnectOptions(
+    { address: "2001:db8::10", typedHost: "[2001:db8::10]", port: 8883, discoveryId: PAYLOAD.discoveryId, credentials: {} },
+    PRODUCTION_TRANSPORT_OPTIONS,
+  );
+  assert(!("servername" in options), `a bracketed IPv6 literal must not be sent as SNI; got ${String(options.servername)}`);
+}
+
+/** A PUBLISH fixed header: type byte, then the remaining length as an MQTT variable-length integer. */
+function fixedHeader(remaining: number): number[] {
+  const bytes = [0x30];
+  let n = remaining;
+  do {
+    let digit = n % 128;
+    n = Math.floor(n / 128);
+    if (n > 0) digit |= 0x80;
+    bytes.push(digit);
+  } while (n > 0);
+  return bytes;
+}
+
+function packet(remaining: number): number[] {
+  return [...fixedHeader(remaining), ...new Array<number>(remaining).fill(0x61)];
+}
+
+export function assertGuardPassesPacketsInsideTheBound(): void {
+  const over = createPacketSizeGuard(1_000);
+  const results = [over(Uint8Array.from([...packet(10), ...packet(1_000)])), over(Uint8Array.from(packet(0)))];
+  assert(results.every((r) => !r), `packets inside the bound must pass; got ${results.join()}`);
+}
+
+export function assertGuardTripsOnAnOversizeHeader(): void {
+  const over = createPacketSizeGuard(1_000);
+  assert(over(Uint8Array.from(fixedHeader(1_001))), "a declared remaining length over the bound must trip the guard");
+}
+
+export function assertGuardTripsOnAHeaderSplitAcrossChunks(): void {
+  const over = createPacketSizeGuard(1_000);
+  const header = fixedHeader(300 * 1024 * 1024);
+  const first = over(Uint8Array.from(header.slice(0, 2)));
+  const second = over(Uint8Array.from(header.slice(2)));
+  assert(!first && second, `a header split across chunks must trip once complete; got ${first},${second}`);
+}
+
+export function assertGuardFollowsPacketBoundariesAcrossChunks(): void {
+  const over = createPacketSizeGuard(1_000);
+  const bytes = [...packet(900), ...fixedHeader(5_000)];
+  const a = over(Uint8Array.from(bytes.slice(0, 500)));
+  const b = over(Uint8Array.from(bytes.slice(500)));
+  assert(!a && b, `the guard must skip a packet's body across chunks and read the next header; got ${a},${b}`);
+}
+
+/**
+ * The production transport ends a connection whose next packet declares more
+ * than the bound, before the parser buffers it: a local server sends a
+ * PUBLISH header for 300 MB and keeps the socket open.
+ */
+export async function assertProductionTransportClosesOnAnOversizePacket(): Promise<void> {
+  const server = createServer((socket) => {
+    socket.on("error", () => undefined);
+    socket.write(Uint8Array.from(fixedHeader(300 * 1024 * 1024)));
+    socket.write(Buffer.alloc(64 * 1024, 0x61));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const port = (server.address() as AddressInfo).port;
+  try {
+    const closed = await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), 3_000);
+      const handle = mqttDiscoveryTransport.connect({
+        protocol: "mqtt",
+        host: "127.0.0.1",
+        port,
+        clientId: "bms-discovery-guard",
+        clean: true,
+        reconnectPeriod: 0,
+        connectTimeout: 10_000,
+        rejectUnauthorized: true,
+      });
+      handle.on("error", () => undefined);
+      handle.on("close", () => {
+        clearTimeout(timer);
+        handle.end(true);
+        resolve(true);
+      });
+    });
+    assert(closed, "a packet over the bound must close the connection");
+  } finally {
+    server.close();
+  }
 }
 
 /**

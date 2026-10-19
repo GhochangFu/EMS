@@ -31,8 +31,8 @@ import { looksLikeCredential } from "../security/credential-detect";
  *
  * **Every wire string is untrusted (H2).** Anyone who can publish to the
  * customer's broker writes the topic, the `dev_id`, the keys and the samples,
- * and the onboarding agent reads them. So C0/C1 controls and the Unicode line
- * separators are stripped from each; a topic over 255, a `dev_id` over 128 or
+ * and the onboarding agent reads them. So C0/C1 controls, the Unicode line
+ * separators and lone surrogates are stripped from each; a topic over 255, a `dev_id` over 128 or
  * a key over 128 characters is skipped (none could be stored in the draft);
  * a topic, `dev_id` or key that `looksLikeCredential` or holds the broker's
  * own username or password is skipped; a sample that does, or whose key
@@ -88,8 +88,22 @@ export type DiscoveryCollector = {
 /** C0 and C1 controls, DEL, and the Unicode line and paragraph separators. */
 const UNSAFE_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
 
+/**
+ * A lone UTF-16 surrogate: a high half not followed by a low one, or a low
+ * half not preceded by a high one. `JSON.parse` keeps an escaped one
+ * (`"\ud800"`), and Postgres refuses it in `jsonb` ("Unicode low surrogate
+ * must follow a high surrogate"), which would lose the whole result.
+ */
+const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+
+/** Controls and separators removed, and the string made well-formed UTF-16. */
 export function stripUnsafe(value: string): string {
-  return value.replace(UNSAFE_CHARS, "");
+  return value.replace(UNSAFE_CHARS, "").replace(LONE_SURROGATE, "");
+}
+
+/** The first `max` UTF-16 units, without the half of a pair the cut would split. */
+function cutAt(value: string, max: number): string {
+  return value.length <= max ? value : value.slice(0, max).replace(LONE_SURROGATE, "");
 }
 
 type Device = { topic: string; devId: string; messageCount: number; keys: Map<string, OnboardingDiscoveryKey["sampleValue"]> };
@@ -127,7 +141,7 @@ export function createDiscoveryCollector(opts: {
       if (untrusted(raw)) {
         return REDACTED;
       }
-      const clean = stripUnsafe(raw).slice(0, caps.sampleStringMax);
+      const clean = cutAt(stripUnsafe(raw), caps.sampleStringMax);
       return untrusted(clean) ? REDACTED : clean;
     }
     return raw === null ? "null" : typeof raw;

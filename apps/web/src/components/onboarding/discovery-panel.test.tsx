@@ -11,6 +11,8 @@ import {
   aNonMqttDraftRendersNoSection,
   aPlainRowShowsNoBadge,
   aRunningDiscoveryDisablesTheButtonAndShowsTheStatus,
+  aStaleRunningDiscoveryLeavesTheButtonEnabled,
+  aStaleRunningDiscoverySaysItDidNotFinish,
   aWorkerRefusalDisablesTheButtonWithTheWorkerReason,
   theButtonIsEnabledForAnMqttRtuWithCredentials,
   withoutAHostTheButtonIsDisabledWithItsReason,
@@ -27,6 +29,8 @@ describe("F3.24b discovery panel", () => {
   it("without credentials the button is disabled with its reason", withoutCredentialsTheButtonIsDisabledWithItsReason);
   it("without a host the button is disabled with its reason", withoutAHostTheButtonIsDisabledWithItsReason);
   it("a running discovery disables the button and shows the status", aRunningDiscoveryDisablesTheButtonAndShowsTheStatus);
+  it("a running discovery past its stale bound leaves the button enabled", aStaleRunningDiscoveryLeavesTheButtonEnabled);
+  it("a running discovery past its stale bound says it did not finish", aStaleRunningDiscoverySaysItDidNotFinish);
   it("a chat turn in flight renames the button and marks it busy", aChatTurnInFlightRenamesTheButtonAndMarksItBusy);
   it("a draft with no MQTT RTU renders no Discover button", aNonMqttDraftRendersNoSection);
   it("a done discovery with no device shows the empty sentence", aDoneDiscoveryWithNoDeviceShowsTheEmptySentence);

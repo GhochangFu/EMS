@@ -35,6 +35,10 @@ import {
   assertS9AddAssetOnAnotherRtuIsRefusedAfterTheRead,
   assertS10MapPointsOnAnotherRtuIsRefusedAfterTheRead,
   assertS11AddRtuForAnUndiscoveredCodeIsRefusedAfterTheRead,
+  assertS12MapPointsWithAFreeTextKeyIsRefusedAfterTheRead,
+  assertS13MapPointsWithAnIdentifierKeyRunsAfterTheRead,
+  assertS14AddRtuWithAFreeTextTopicIsRefusedAfterTheRead,
+  assertS15AddRtuWithAnIdentifierDevIdRunsAfterTheRead,
   assertC1AddRtuForADiscoveredDeviceEarnsACopy,
   assertC2AnotherHostEarnsNoCopy,
   assertC3AnotherTopicEarnsNoCopy,
@@ -154,6 +158,18 @@ describe("onboarding discovery tools (F3.24b, ADR 0103 decisions 2, 7 and 8)", (
   });
   it("S11 add rtu for an undiscovered code is refused after the read", async () => {
     await assertS11AddRtuForAnUndiscoveredCodeIsRefusedAfterTheRead();
+  });
+  it("S12 map points with a free-text key is refused after the read", async () => {
+    await assertS12MapPointsWithAFreeTextKeyIsRefusedAfterTheRead();
+  });
+  it("S13 map points with an identifier key runs after the read", async () => {
+    await assertS13MapPointsWithAnIdentifierKeyRunsAfterTheRead();
+  });
+  it("S14 add rtu with a free-text topic is refused after the read", async () => {
+    await assertS14AddRtuWithAFreeTextTopicIsRefusedAfterTheRead();
+  });
+  it("S15 add rtu with an identifier devId and topic runs after the read", async () => {
+    await assertS15AddRtuWithAnIdentifierDevIdRunsAfterTheRead();
   });
   it("C1 add rtu for a discovered device earns a copy", async () => {
     await assertC1AddRtuForADiscoveredDeviceEarnsACopy();

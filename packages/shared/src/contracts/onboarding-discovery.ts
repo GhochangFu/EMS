@@ -153,6 +153,60 @@ export const startOnboardingDiscoveryResponseDtoSchema = z
   .object({ discoveryId: z.string().uuid() })
   .strict();
 
+/**
+ * How long a `running` discovery stays active past its window. The job's own
+ * hard deadline (connect timeout + window + a few seconds) and the second
+ * transaction fit well inside it. A worker that died mid-window, or a final
+ * write that failed, must not hold the session for ever (decisions #7).
+ */
+export const MQTT_DISCOVERY_RUNNING_GRACE_MS = 60_000;
+
+/**
+ * How long a `queued` discovery stays active (`F3.24b` review). The worker
+ * runs one job at a time across every tenant and each job ends within about
+ * `windowSeconds + 25 s`, so a real queue drains far sooner. A job lost before
+ * it wrote `running` (a phase-A COMMIT that failed, a job evicted from Redis)
+ * would otherwise hold the organization's one discovery for ever. A late job
+ * that still runs after a newer discovery replaced it is superseded and skips.
+ */
+export const MQTT_DISCOVERY_QUEUED_STALE_MS = 30 * 60_000;
+
+/** The fields {@link discoveryIsActive} reads; the DTO (no `queuedAt`) and the stored shape both fit. */
+export type DiscoveryActivityFields = {
+  readonly status: z.infer<typeof onboardingDiscoveryStatusSchema>;
+  readonly startedAt: string | null;
+  readonly windowSeconds: number;
+  readonly queuedAt?: string;
+};
+
+/**
+ * Whether a discovery still holds its session: the one rule the route's
+ * `busy` check and the web's Discover button and poll share.
+ *
+ * - `queued` is active until `queuedAt + 30 min`; with no `queuedAt` (the
+ *   client DTO) or one that does not parse, it stays active.
+ * - `running` is active until `startedAt + windowSeconds + 60 s`; with no
+ *   `startedAt`, or one that does not parse, it stays active (fails closed).
+ * - `done` and `failed` are not active.
+ */
+export function discoveryIsActive(d: DiscoveryActivityFields | null | undefined, nowMs: number): boolean {
+  if (d === null || d === undefined) {
+    return false;
+  }
+  if (d.status === "queued") {
+    const queued = d.queuedAt === undefined ? Number.NaN : Date.parse(d.queuedAt);
+    return !Number.isFinite(queued) || nowMs <= queued + MQTT_DISCOVERY_QUEUED_STALE_MS;
+  }
+  if (d.status !== "running") {
+    return false;
+  }
+  const started = d.startedAt === null ? Number.NaN : Date.parse(d.startedAt);
+  if (!Number.isFinite(started)) {
+    return true;
+  }
+  return nowMs <= started + d.windowSeconds * 1000 + MQTT_DISCOVERY_RUNNING_GRACE_MS;
+}
+
 /** The stored `_discovery` as the DTO the client sees: `queuedAt` and the counters stay server-side. */
 export function discoveryDtoOf(
   stored: z.infer<typeof onboardingDiscoveryStoredSchema>,

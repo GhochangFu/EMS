@@ -11,7 +11,8 @@ describe("F3.24b — readDiscovery", () => {
 });
 
 describe("F3.24b — discoveryIsBusy (decisions #7)", () => {
-  it("an old queued discovery is busy", () => S.anOldQueuedDiscoveryIsBusy());
+  it("a recent queued discovery is busy", () => S.aRecentQueuedDiscoveryIsBusy());
+  it("a queued discovery past its 30-minute stale bound is not busy", () => S.aQueuedDiscoveryPastItsStaleBoundIsNotBusy());
   it("a running discovery inside its bound is busy", () => S.aRunningDiscoveryInsideItsBoundIsBusy());
   it("a running discovery past its bound is not busy", () => S.aRunningDiscoveryPastItsBoundIsNotBusy());
   it("a running discovery with no startedAt is busy", () => S.aRunningDiscoveryWithNoStartIsBusy());
