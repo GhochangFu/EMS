@@ -56,7 +56,7 @@ export function requireIntegrationMqtt({
     // console output from a skipped file.
     process.stderr.write(
       `\n[${item}] Skipping ${label}: MQTT_TEST_URL is not set.\n` +
-        "        docker run -d --name mosquitto -p 1883:1883 eclipse-mosquitto:2.0 mosquitto -c /mosquitto-no-auth.conf\n" +
+        "        docker run -d --name mosquitto -p 1883:1883 -v \"$PWD/infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro\" eclipse-mosquitto:2.0\n" +
         "        MQTT_TEST_URL=mqtt://127.0.0.1:1883 npx vitest run apps/api/src/onboarding-discovery\n\n",
     );
     return undefined;

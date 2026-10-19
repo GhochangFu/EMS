@@ -256,7 +256,7 @@ followed the recommendation; choice 5 did not.
   checks every resolved address; the topic-prefix guard refuses `+` and `#`;
   the result grouping by topic → `dev_id` → keys; every cap; the sample-value
   rule.
-- Integration: a job against a local broker (the compose test broker) with a
+- Integration: a job against a local broker (the CI `mosquitto` step, `MQTT_TEST_URL`) with a
   publisher that sends two `dev_id`s, proving the result, `truncated`, the
   unique client ID, that the job never publishes, and that a concurrent ingest
   subscriber on the same topic keeps receiving.
@@ -349,3 +349,8 @@ can reverse any of them**; each names the code that holds it.
 
 Build note (`F3.24b` U2): `mqtt ^5.10.4` is added to `apps/api/package.json`
 in the commit that adds this amendment.
+
+Build note (`F3.24b` U6, 2026-10-19): the integration broker is the CI
+`mosquitto` step (`eclipse-mosquitto:2.0`, `infra/mosquitto/mosquitto.conf`,
+`MQTT_TEST_URL`), not a compose service; the compose service list is
+unchanged.
