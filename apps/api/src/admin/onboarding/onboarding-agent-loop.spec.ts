@@ -4,7 +4,11 @@ import {
   MAX_HISTORY_MESSAGE_CHARS,
   MAX_HISTORY_MESSAGES,
   MAX_TOOL_CALLS_PER_TURN,
+  ONE_DEVICE_PER_TURN_HINT,
+  ONE_DEVICE_PER_TURN_RULE,
+  STOPPED_EARLY_CALLS_NOTHING_REPLY,
   STOPPED_EARLY_CALLS_REPLY,
+  STOPPED_EARLY_TIME_NOTHING_REPLY,
   STOPPED_EARLY_TIME_REPLY,
   TURN_DEADLINE_MS,
   buildSystemPrompt,
@@ -158,6 +162,44 @@ export async function assertTheCallCapStopsWithItsReplyAndKeepsTheEdits(): Promi
   assert(result.stopReason === "cap_calls" && result.reply === STOPPED_EARLY_CALLS_REPLY, "the cap stops the turn");
   assert(result.draftPatch.pointKeys?.length === 8 && result.actionLines.length === 8, "the eight edits are kept");
   assert(llm.calls === 9, `the provider is called nine times, got ${llm.calls}`);
+}
+
+/** F4.270: a cap stop with no edit must not claim changes; eight reads and a ninth call. */
+export async function assertACallCapWithNoEditSaysNothingWasWritten(): Promise<void> {
+  const script: LlmReply[] = Array.from({ length: 9 }, () => calls(toolCall("get_draft", {})));
+  const result = await runAgentTurn(turn(new FakeLlmProvider(script)));
+  assert(result.stopReason === "cap_calls", `the cap stops the turn, got ${result.stopReason}`);
+  assert(result.reply === STOPPED_EARLY_CALLS_NOTHING_REPLY, `the reply says nothing was written, got ${result.reply}`);
+}
+
+/** F4.270: the same for the deadline, when the first provider call hangs. */
+export async function assertADeadlineWithNoEditSaysNothingWasWritten(): Promise<void> {
+  const result = await runAgentTurn(turn(new FakeLlmProvider(["hang"])), { deadlineMs: 20 });
+  assert(result.stopReason === "cap_time", `the deadline stops the turn, got ${result.stopReason}`);
+  assert(result.reply === STOPPED_EARLY_TIME_NOTHING_REPLY, `the reply says nothing was written, got ${result.reply}`);
+}
+
+/** F4.270 (owner ruling 2026-10-20): a cap stop after a discovery read asks for one device at a time. */
+export async function assertACapAfterADiscoveryReadAsksForOneDevice(): Promise<void> {
+  const script: LlmReply[] = [
+    calls(toolCall("get_discovery_results", {})),
+    ...Array.from({ length: 8 }, () => calls(toolCall("get_draft", {}))),
+  ];
+  const result = await runAgentTurn(turn(new FakeLlmProvider(script), { draft: discoveredDraft() }));
+  assert(result.stopReason === "cap_calls", `the cap stops the turn, got ${result.stopReason}`);
+  assert(result.reply.endsWith(ONE_DEVICE_PER_TURN_HINT), `the reply asks for one device at a time, got ${result.reply}`);
+}
+
+/** F4.270: the adjacent negative — a cap stop with no discovery read carries no device hint. */
+export async function assertACapWithoutADiscoveryReadHasNoDeviceHint(): Promise<void> {
+  const script: LlmReply[] = Array.from({ length: 9 }, () => calls(toolCall("get_draft", {})));
+  const result = await runAgentTurn(turn(new FakeLlmProvider(script), { draft: discoveredDraft() }));
+  assert(!result.reply.includes(ONE_DEVICE_PER_TURN_HINT), `no device hint, got ${result.reply}`);
+}
+
+/** F4.270 (owner ruling 2026-10-20): the Discovery paragraph tells the model to map one device per turn. */
+export function assertTheDiscoveryParagraphMapsOneDevicePerTurn(): void {
+  assert(DISCOVERY_PROMPT_PARAGRAPH.includes(ONE_DEVICE_PER_TURN_RULE), "the one-device-per-turn rule");
 }
 
 export async function assertTheDeadlineKeepsCompletedEdits(): Promise<void> {
@@ -399,6 +441,30 @@ function credentialedDraft(): OnboardingDraft {
     ...readyDraft(),
     rtus: [{ ...PLAIN_RTU, credentialsSet: true, ingestEnabled: false }],
     _secrets: { "RTU-1": { c: "Yw==", iv: "aXY=", v: 1 } },
+  } as unknown as OnboardingDraft;
+}
+
+/** F4.270: a credentialed draft with a finished discovery of two devices stored on it. */
+function discoveredDraft(): OnboardingDraft {
+  return {
+    ...credentialedDraft(),
+    _discovery: {
+      discoveryId: "11111111-1111-4111-8111-111111111111",
+      rtuCode: "RTU-1",
+      topicFilter: "site/data/#",
+      windowSeconds: 60,
+      status: "done",
+      startedAt: "2026-10-19T00:00:00.000Z",
+      finishedAt: "2026-10-19T00:01:00.000Z",
+      truncated: false,
+      devices: [
+        { topic: "site/data/1051", devId: "1051", messageCount: 3, keys: [{ sourceKey: "kw", sampleValue: 12.5 }] },
+        { topic: "site/data/1052", devId: "1052", messageCount: 1, keys: [{ sourceKey: "kw", sampleValue: 1 }] },
+      ],
+      queuedAt: "2026-10-19T00:00:00.000Z",
+      messages: 4,
+      skipped: 0,
+    },
   } as unknown as OnboardingDraft;
 }
 
