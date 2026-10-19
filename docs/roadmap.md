@@ -7826,3 +7826,5 @@ One PR, [#894](https://github.com/GhochangFu/EMS/pull/894) (`09836994`), under [
 **Owner ruling 2026-10-19:** discovery keeps requiring RTU credentials.
 
 **Follow-ups:** `F4.270` (a multi-device mapping turn spends its tool calls and writes nothing), `F4.271` (repo-scan test timeouts); a `chore(agents):` sweep for ADR 0016 §7 and the onboarding scope in its own PR.
+
+**`F4.270` done 2026-10-20** in [#897](https://github.com/GhochangFu/EMS/pull/897) (`ca6e39d8`): a discovery mapping turn maps one device and offers "Map the next device" (owner ruling), and a stop with no write says nothing was written. Verified live against the PHE discovery.
