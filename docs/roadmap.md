@@ -2140,9 +2140,7 @@ Process (`AGENTS.md` §10).
   the migration's guard-pairing assertion passed with both guard names swapped,
   and a `cross-ref.ts` docblock claimed the row settles group codes, which
   ADR 0065 lists as out of scope. **Four pre-merge reviews missed all three.**
-- **Still open:** `F4.135` (the LLM chat path drops a whole draft patch on an
-  illegal code and still says it updated the draft — inert while
-  `OPENAI_API_KEY` is absent) and `F4.136`, now narrowed to the readability of
+- **Still open:** `F4.136` (`F4.135` closed 2026-10-20, below), now narrowed to the readability of
   the hash suffix rather than a refusal.
 
 ### Template authoring UI + formula editor (`F2.5`, ADR 0038) — done
@@ -7836,3 +7834,5 @@ One PR, [#894](https://github.com/GhochangFu/EMS/pull/894) (`09836994`), under [
 **`F4.116` done 2026-10-20** in [#904](https://github.com/GhochangFu/EMS/pull/904) (`86e1a6e7`): the onboarding draft's four free-form records hold at most 64 keys and 8 KB each, refused on every write path.
 
 **`F4.272` done 2026-10-20** in [#906](https://github.com/GhochangFu/EMS/pull/906) (`d6e59bdb`): discovery samples under a short credential name (`pin`, `psk`, `pass`, `pw`, `user`, `key`) are redacted; the key is kept.
+
+**`F4.135` done 2026-10-20** in [#908](https://github.com/GhochangFu/EMS/pull/908) (`8db60811`), ADR 0090 Amendment 4: a refused onboarding draft write gets a code-written `Not applied: <tool> (field: …)` action line, so the agent's reply cannot claim it.
