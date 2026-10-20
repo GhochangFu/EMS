@@ -18,6 +18,7 @@ import {
   a409SaysTheChangeIsGone,
   aCreateCardReadsNoRecord,
   aFillStepReachesTheWizardStore,
+  aTemplateEditCardShowsTheFormulaRow,
   anArchiveCardIsRed,
   anEditCardComparesWithTheRecordNow,
   anErrorShowsOnTheCard,
@@ -80,6 +81,7 @@ describe("F3.85 PR 8 copilot Confirm card — Confirm, Reject and the record now
   it("styles a deactivating change red", () => anArchiveCardIsRed());
   it("compares an edit with the record now", () => anEditCardComparesWithTheRecordNow());
   it("reads no record for a create", () => aCreateCardReadsNoRecord());
+  it("F4.246: shows a template edit's formula row", () => aTemplateEditCardShowsTheFormulaRow());
   it("hands a fillStep to the wizard store", () => aFillStepReachesTheWizardStore());
 });
 

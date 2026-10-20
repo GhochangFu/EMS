@@ -83,7 +83,7 @@ export function ChangeCard(props: ChangeCardProps) {
           </thead>
           <tbody>
             {props.rows.map((row) => (
-              <tr key={row.field} data-changed={row.changed} className={row.changed ? "text-ink" : "text-ink-muted"}>
+              <tr key={`${row.label ?? ""}|${row.field}`} data-changed={row.changed} className={row.changed ? "text-ink" : "text-ink-muted"}>
                 <th scope="row" className="truncate py-0.5 pr-2 text-left font-normal">
                   {row.label ?? fieldLabel(row.field)}
                 </th>

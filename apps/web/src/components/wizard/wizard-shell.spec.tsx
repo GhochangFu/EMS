@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { expect, vi } from "vitest";
@@ -235,4 +235,22 @@ export function aCleanPageLeavesAtOnce(): void {
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(h.onCancel).toHaveBeenCalledTimes(1);
   expect(screen.queryByRole("alertdialog")).toBeNull();
+}
+
+/**
+ * `F4.246` (ADR 0099 §3) — the Review card passes the entry's `formulas` to `changeRows`, so a
+ * template edit's derived point gets its own full-text formula row. Mutation: drop that argument
+ * in `wizard-shell.tsx` → this reddens.
+ */
+export function reviewShowsATemplatePointsFormulaRow(): void {
+  renderWizard("assetTemplate.update", {
+    points: [
+      { pointKey: "kw", kind: "measured" },
+      { pointKey: "eff", kind: "derived", formula: "{kw} * 2", formulaDialect: "bms-calc-v1", calcTrigger: "streaming" },
+    ],
+  });
+  for (let step = 0; step < 3; step += 1) fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(current()).toBe("4. Review");
+  const card = screen.getByRole("region", { name: "Edit an asset template" });
+  expect(within(card).getByRole("rowheader", { name: "Formula eff" })).toBeTruthy();
 }

@@ -1,5 +1,5 @@
 import { render } from "@testing-library/react";
-import { expect } from "vitest";
+import { expect, vi } from "vitest";
 
 import type { ChangeRow } from "../../lib/copilot-diff";
 import { ChangeCard } from "./change-card";
@@ -53,4 +53,22 @@ export function aPlainRowHasNoExpandControl(): void {
   const cell = cellOf(container, 0);
   expect(cell.textContent).toBe("Feeder");
   expect(cell.querySelector("details")).toBeNull();
+}
+
+/**
+ * Two rows on one field (a field row and a row with its own label) are two keyed rows: React
+ * reports no duplicate key, and both render.
+ */
+export function rowsOnOneFieldAreKeyedApart(): void {
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    const container = renderCard([
+      { field: "formula", after: "{KW} * 3", changed: true },
+      { field: "formula", label: "Formula eff", after: "{KW} * 3 (inherited dialect)", changed: true },
+    ]);
+    expect(container.querySelectorAll("tbody tr")).toHaveLength(2);
+    expect(error.mock.calls.flat().join(" ")).not.toMatch(/same key/);
+  } finally {
+    error.mockRestore();
+  }
 }

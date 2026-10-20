@@ -25,6 +25,9 @@ import {
   anUnchangedStructuredValueIsNotChanged,
   aShortValueHasNoFullText,
   aSiteWithoutAnExpressionIsNoRow,
+  aFormulaRowWithoutAnIdentityIsLabelledByItsPath,
+  aKpiFormulaRowIsLabelledByItsCode,
+  aTopLevelFormulaSiteIsOnlyItsFieldRow,
   formulaRowsAreAbsentWithoutFormulas,
   formulaRowsShowEachSiteInFull,
 } from "./copilot-card-logic.spec";
@@ -60,6 +63,9 @@ describe("F4.246 — the card's full values and formula rows (ADR 0099 §3, owne
   it("pairs a KPI expression with the Now KPI of the same code", () => aKpiExpressionIsPairedByCodeNotIndex());
   it("makes no row for a site without an expression", () => aSiteWithoutAnExpressionIsNoRow());
   it("makes no formula row without formulas", () => formulaRowsAreAbsentWithoutFormulas());
+  it("labels a KPI's formula row by its code", () => aKpiFormulaRowIsLabelledByItsCode());
+  it("labels a formula row without an identity by its dotted path", () => aFormulaRowWithoutAnIdentityIsLabelledByItsPath());
+  it("makes no second row for a top-level formula site (calcOverride.set)", () => aTopLevelFormulaSiteIsOnlyItsFieldRow());
   it("reads an equal structured value as unchanged, whatever its key order and nulls", () =>
     anUnchangedStructuredValueIsNotChanged());
   it("reads a structured value with one nested difference as changed", () => aChangedStructuredValueIsChanged());

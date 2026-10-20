@@ -2,7 +2,7 @@ import { expect } from "vitest";
 
 import type pg from "pg";
 
-import type { InstantiateSectionTemplateResponse, JwtPayload } from "@bms/shared";
+import { type InstantiateSectionTemplateResponse, instantiateRefusedMessage, type JwtPayload } from "@bms/shared";
 
 import type { DashboardTemplatesInstantiateService } from "./dashboard-templates-instantiate.service";
 
@@ -260,7 +260,10 @@ export async function assertForeignGroupIsRefusedAndLeavesNothing(
 }
 
 /** A draft cannot be instantiated: it is still being authored, and pinning a
- * dashboard to it would pin it to a version nobody intends to support. */
+ * dashboard to it would pin it to a version nobody intends to support.
+ *
+ * `F4.246` review: the refusal is exactly `instantiateRefusedMessage("draft", "dashboard")` — the
+ * sentence the copilot's propose-time mirror returns — so the two copies are joined. */
 export async function assertDraftCannotBeInstantiated(
   service: DashboardTemplatesInstantiateService,
   actor: JwtPayload,
@@ -274,7 +277,7 @@ export async function assertDraftCannotBeInstantiated(
       slug,
       name: "F3.36 draft instantiate proof",
     } as Parameters<DashboardTemplatesInstantiateService["instantiate"]>[2]),
-  ).rejects.toThrow(/Only a published template can be instantiated/i);
+  ).rejects.toHaveProperty("message", instantiateRefusedMessage("draft", "dashboard"));
 }
 
 // ---------------------------------------------------------------------------

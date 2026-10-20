@@ -176,10 +176,12 @@ export function canInstantiate(status: TemplateLifecycleStatus): boolean {
 export type TemplateInstantiateTable = "asset" | "dashboard";
 
 /**
- * Refusal for instantiating a version that is not published — each route's
- * own sentence, byte for byte: the dashboard route's
+ * Refusal for instantiating a version that is not published — a copy of each
+ * route's own sentence: the dashboard route's
  * (`dashboard-templates-instantiate.service.ts`) is one sentence, the asset
- * route's (`asset-templates-instantiate-core.ts`) adds a second.
+ * route's (`asset-templates-instantiate-core.ts`) adds a second. The routes
+ * keep their literals; each route's integration spec asserts its refusal
+ * equals this function's output.
  */
 export function instantiateRefusedMessage(status: TemplateLifecycleStatus, table: TemplateInstantiateTable): string {
   const first = `Only a published template can be instantiated; this one is ${status}`;

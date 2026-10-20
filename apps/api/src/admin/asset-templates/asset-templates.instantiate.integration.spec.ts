@@ -1,9 +1,10 @@
 import type pg from "pg";
 
-import type {
-  AdminAssetTemplateDto,
-  AssetInstantiationResultDto,
-  JwtPayload,
+import {
+  type AdminAssetTemplateDto,
+  type AssetInstantiationResultDto,
+  instantiateRefusedMessage,
+  type JwtPayload,
 } from "@bms/shared";
 
 import type { AssetTemplatesAdminService } from "./asset-templates.service";
@@ -581,22 +582,30 @@ export async function assertCollidingCodeRollsBackBatch(
   await cleanupAssets(pool);
 }
 
-/** Only published versions instantiate; a draft's shape is not yet frozen. */
+/**
+ * Only published versions instantiate; a draft's shape is not yet frozen.
+ *
+ * `F4.246` review: the refusal is exactly `instantiateRefusedMessage("draft", "asset")` — the
+ * sentence the copilot's propose-time mirror returns — so the route's literal and the shared copy
+ * cannot drift apart unseen.
+ */
 export async function assertOnlyPublishedTemplatesInstantiate(
   svc: Services,
   fx: Fixtures,
   publishedId: string,
 ): Promise<void> {
   const draft = await svc.templates.createDraftFrom(fx.adminJwt, publishedId);
-  await expectRejection(
-    () =>
-      svc.instantiate(fx.adminJwt, draft.id, {
-        rtuId: fx.rtuId,
-        assets: [{ code: `${TEST_ASSET_PREFIX}50`, name: "From a draft" }],
-      }),
-    /published/i,
-    "instantiating a draft must be rejected",
-  );
+  let refusal: string | null = null;
+  try {
+    await svc.instantiate(fx.adminJwt, draft.id, {
+      rtuId: fx.rtuId,
+      assets: [{ code: `${TEST_ASSET_PREFIX}50`, name: "From a draft" }],
+    });
+  } catch (err) {
+    refusal = err instanceof Error ? err.message : String(err);
+  }
+  const expected = instantiateRefusedMessage("draft", "asset");
+  assert(refusal === expected, `instantiating a draft must be refused with "${expected}", got "${refusal}"`);
   await svc.templates.deleteDraft(fx.adminJwt, draft.id);
 }
 

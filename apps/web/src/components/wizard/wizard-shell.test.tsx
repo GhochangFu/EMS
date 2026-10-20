@@ -15,6 +15,7 @@ import {
   cancelAsksOnlyWhenChanged,
   nextStaysOnAWrongStep,
   reviewRefusesABodyTheRouteWouldRefuse,
+  reviewShowsATemplatePointsFormulaRow,
   reviewSubmitsThePlainBody,
   showsTheEntrysStepsThenReview,
 } from "./wizard-shell.spec";
@@ -31,6 +32,7 @@ describe("F3.85 PR 8 wizard shell — every catalog route is a stepper (ADR 0099
   it("stays on a step whose fields are wrong", () => nextStaysOnAWrongStep());
   it("submits the plain body from Review, never through the copilot", () => reviewSubmitsThePlainBody());
   it("does not submit a body the route would refuse", () => reviewRefusesABodyTheRouteWouldRefuse());
+  it("F4.246: shows a template point's formula row on Review", () => reviewShowsATemplatePointsFormulaRow());
   it("is the Review step alone for a bodyless route", () => aBodylessRouteIsReviewAlone());
   it("takes a copilot fill for its own entry only", () => aFillForThisEntryFillsItsStep());
   it("leaves a clean wizard at once", () => cancelAsksOnlyWhenChanged());

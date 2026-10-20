@@ -122,39 +122,54 @@ export function changeRows(
 /** The keys that name an array item across a reorder: a template point's `pointKey`, a KPI's `code`. */
 const ITEM_IDENTITY_KEYS = ["pointKey", "code"] as const;
 
-/**
- * Which item a formula site belongs to, stable across an insert or a reorder: `points.1.formula`
- * becomes `points[pointKey=eff].formula`. A site outside an array, or an item without an identity
- * key, keeps its issue path (index pairing — the only pairing it has).
- */
-function siteIdentity(root: unknown, path: string): string {
+/** The identity key and value of the array item a site sits in (`["pointKey", "eff"]`), or none. */
+function itemIdentity(root: unknown, path: string): readonly [string, string] | undefined {
   const segments = path.split(".");
-  const leaf = segments.pop();
+  segments.pop();
   const index = segments.at(-1);
-  if (index === undefined || !/^\d+$/.test(index)) return path;
+  if (index === undefined || !/^\d+$/.test(index)) return undefined;
   let item: unknown = root;
   for (const segment of segments) {
     item = Array.isArray(item) ? item[Number(segment)] : isRecord(item) ? item[segment] : undefined;
   }
-  if (!isRecord(item)) return path;
+  if (!isRecord(item)) return undefined;
   for (const key of ITEM_IDENTITY_KEYS) {
     const id = item[key];
-    if (typeof id === "string") return `${segments.slice(0, -1).join(".")}[${key}=${id}].${leaf}`;
+    if (typeof id === "string") return [key, id];
   }
-  return path;
+  return undefined;
 }
+
+/**
+ * Which item a formula site belongs to, stable across an insert or a reorder: `points.1.formula`
+ * becomes `points[pointKey=eff].formula`. An item without an identity key keeps its issue path
+ * (index pairing — the only pairing it has).
+ */
+function siteIdentity(root: unknown, path: string): string {
+  const identity = itemIdentity(root, path);
+  if (identity === undefined) return path;
+  const segments = path.split(".");
+  const leaf = segments.pop();
+  return `${segments.slice(0, -1).join(".")}[${identity[0]}=${identity[1]}].${leaf}`;
+}
+
+/** A site inside an array item (`points.1.formula`); a top-level site (`formula`) is a field row already. */
+const isInArray = (path: string): boolean => path.split(".").some((segment) => /^\d+$/.test(segment));
 
 /** A formula as its row shows it: the whole expression, never cut, then its dialect. */
 const formulaText = (site: FormulaSite): string =>
   `${site.expression as string} (${typeof site.dialect === "string" ? site.dialect : "inherited dialect"})`;
 
 /**
- * `F4.246` (ADR 0099 §3) — one row per formula site of the body, under the site's issue path
- * (`points.1.formula`, the path `formulaSitesOf` and the api's issues use), with the whole
- * expression: a 300-character formula inside a cut `points` summary is not reviewable. A site with
- * no expression (a measured point's `formula: null`) is no row. The Now value is the same item's
- * site in `current`, by `pointKey`/`code` (`siteIdentity`), formatted the same way — so an
- * unchanged formula is `changed: false` even when points were inserted ahead of it.
+ * `F4.246` (ADR 0099 §3) — one row per formula site of the body inside an array item, under the
+ * site's issue path (`points.1.formula`, the path `formulaSitesOf` and the api's issues use),
+ * labelled by the item's `pointKey`/`code` ("Formula eff") or, without one, its dotted path, with
+ * the whole expression: a 300-character formula inside a cut `points` summary is not reviewable. A
+ * site with no expression (a measured point's `formula: null`) is no row, and neither is a
+ * top-level site (`calcOverride.set`'s `formula`): its field row shows it already, and expands.
+ * The Now value is the same item's site in `current`, by `pointKey`/`code` (`siteIdentity`),
+ * formatted the same way — so an unchanged formula is `changed: false` even when points were
+ * inserted ahead of it.
  */
 function formulaRows(
   body: Readonly<Record<string, unknown>>,
@@ -168,8 +183,9 @@ function formulaRows(
         ? null
         : new Map(formulaSitesOf(current, formula).map((site) => [siteIdentity(current, site.path), site]));
     for (const site of formulaSitesOf(body, formula)) {
-      if (typeof site.expression !== "string") continue;
-      const row = { field: site.path, label: `Formula ${site.path.replace(/\.[^.]+$/, "")}`, after: formulaText(site) };
+      if (typeof site.expression !== "string" || !isInArray(site.path)) continue;
+      const name = itemIdentity(body, site.path)?.[1] ?? site.path.replace(/\.[^.]+$/, "");
+      const row = { field: site.path, label: `Formula ${name}`, after: formulaText(site) };
       if (now === null) {
         rows.push({ ...row, changed: true });
         continue;

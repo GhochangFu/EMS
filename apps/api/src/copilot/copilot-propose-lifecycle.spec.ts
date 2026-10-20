@@ -2,7 +2,7 @@ import { expect } from "vitest";
 
 import { archiveRefusedMessage, draftRequiredMessage, instantiateRefusedMessage, type TemplateLifecycleStatus } from "@bms/shared";
 
-import { PROPOSE_TARGET_ERROR } from "./copilot-propose-tools";
+import { PROPOSE_STORED_CONTENT_ERROR, PROPOSE_TARGET_ERROR } from "./copilot-propose-tools";
 import { proposeHarness } from "./copilot-propose-tools.spec";
 import type { ResolvedTarget } from "./copilot-target-resolver";
 
@@ -95,11 +95,19 @@ export async function theStatusCheckRunsAfterTheTargetCheck(): Promise<void> {
 /**
  * The status check runs before the stored content is merged: a published
  * template whose stored content could not be written back answers the
- * lifecycle sentence, not the stored-content one.
+ * lifecycle sentence, not the stored-content one. The draft twin, on the
+ * same stored content, proves that content does make the merge refuse — so
+ * the published answer is the order, not a content that merges cleanly.
  */
 export async function theStatusCheckRunsBeforeTheContentMerge(): Promise<void> {
-  const h = proposeHarness({ target: target("published", { currentContent: { optimisation: {} } }) });
-  const refused = await h.call("propose_assetTemplate_update", { id: ROW, body: { content: { kpis: [] } } });
+  const stored = { currentContent: { optimisation: {} } };
+  const body = { content: { kpis: [] } };
+  const h = proposeHarness({ target: target("published", stored) });
+  const refused = await h.call("propose_assetTemplate_update", { id: ROW, body });
   expect(refused.error).toBe(draftRequiredMessage("published", "edited"));
   expect(h.stored).toEqual([]);
+  const draft = proposeHarness({ target: target("draft", stored) });
+  const merged = await draft.call("propose_assetTemplate_update", { id: ROW, body });
+  expect(merged.error?.startsWith(PROPOSE_STORED_CONTENT_ERROR)).toBe(true);
+  expect(draft.stored).toEqual([]);
 }

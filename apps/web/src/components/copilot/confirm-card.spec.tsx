@@ -388,6 +388,31 @@ export async function anEditCardComparesWithTheRecordNow(): Promise<void> {
   expect(current).toHaveBeenCalledWith(TEMPLATE);
 }
 
+/**
+ * `F4.246` (ADR 0099 §3) — the card passes the entry's `formulas` to `changeRows`, so a template
+ * edit's derived point gets its own full-text formula row. Mutation: drop that argument in
+ * `confirm-card.tsx` → this reddens.
+ */
+export async function aTemplateEditCardShowsTheFormulaRow(): Promise<void> {
+  vi.spyOn(currentApi, "fetchCopilotCurrent").mockResolvedValue(null);
+  await proposed(
+    change({
+      catalogId: "assetTemplate.update",
+      method: "PATCH",
+      path: `/api/v1/admin/asset-templates/${TEMPLATE}`,
+      body: {
+        points: [
+          { pointKey: "kw", kind: "measured" },
+          { pointKey: "eff", kind: "derived", formula: "{kw} * 2", formulaDialect: "bms-calc-v1", calcTrigger: "streaming" },
+        ],
+      },
+      summary: 'Change points of the asset template "Pump".',
+    }),
+  );
+  const card = await screen.findByRole("region", { name: "Edit an asset template" });
+  expect(within(card).getByRole("rowheader", { name: "Formula eff" })).toBeTruthy();
+}
+
 /** A create card reads no record: there is nothing to compare. */
 export async function aCreateCardReadsNoRecord(): Promise<void> {
   const current = vi.spyOn(templatesApi, "fetchAdminDashboardTemplate");

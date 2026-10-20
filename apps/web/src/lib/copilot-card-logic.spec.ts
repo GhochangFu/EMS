@@ -259,7 +259,7 @@ export function formulaRowsShowEachSiteInFull(): void {
   expect(rows.map((row) => row.field)).toEqual(["points", "content", "points.1.formula", "content.kpis.0.expression"]);
   expect(rowAt(rows, "points.1.formula")).toEqual({
     field: "points.1.formula",
-    label: "Formula points.1",
+    label: "Formula eff",
     after: `${LONG_EXPRESSION} (bms-calc-v2)`,
     changed: true,
   });
@@ -317,11 +317,33 @@ export function aSiteWithoutAnExpressionIsNoRow(): void {
   expect(rows.map((row) => row.field)).toEqual(["points"]);
 }
 
-/** No formulas passed (every non-template entry, and the default call): field rows only. */
+/** No formulas passed (an entry without formula sites, and the default call): field rows only. */
 export function formulaRowsAreAbsentWithoutFormulas(): void {
   const body = { points: [derived("eff", "kw * 2")] };
   expect(changeRows(body, null, [], []).map((row) => row.field)).toEqual(["points"]);
   expect(changeRows(body, null).map((row) => row.field)).toEqual(["points"]);
+}
+
+/** A KPI's formula row is labelled by its `code`. */
+export function aKpiFormulaRowIsLabelledByItsCode(): void {
+  const rows = changeRows({ content: { kpis: [kpi("load", "kw * 2")] } }, null, [], TEMPLATE_FORMULAS);
+  expect(rowAt(rows, "content.kpis.0.expression").label).toBe("Formula load");
+}
+
+/** An item without a `pointKey` or `code` is labelled by its dotted path. */
+export function aFormulaRowWithoutAnIdentityIsLabelledByItsPath(): void {
+  const rows = changeRows({ points: [{ kind: "derived", formula: "kw * 2", formulaDialect: null }] }, null, [], TEMPLATE_FORMULAS);
+  expect(rowAt(rows, "points.0.formula").label).toBe("Formula points.0");
+}
+
+/**
+ * `calcOverride.set`'s formula site is the top-level `formula`: its field row shows it (and
+ * expands), so there is no second, formula row for it — every row's field is unique.
+ */
+export function aTopLevelFormulaSiteIsOnlyItsFieldRow(): void {
+  const body = { formula: "{KW} * 3", formulaDialect: null, calcTrigger: "on_input" };
+  const fields = changeRows(body, null, [], entry("calcOverride.set").formulas).map((row) => row.field);
+  expect(fields).toEqual(["formula", "formulaDialect", "calcTrigger"]);
 }
 
 /** The Now record lists every key (nulls, schema order); a body that leaves nulls out, in its own order, is the same value. */

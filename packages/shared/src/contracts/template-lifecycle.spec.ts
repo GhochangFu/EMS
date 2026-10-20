@@ -6,9 +6,13 @@ import { canInstantiate, instantiateRefusedMessage } from "./template-lifecycle"
  * rather than spelling a status literal. Vitest entry point: the sibling
  * `.test.ts` (ADR 0014).
  *
- * The two sentences are asserted byte for byte against the two routes'
- * literals (`asset-templates-instantiate-core.ts`,
- * `dashboard-templates-instantiate.service.ts`), which are not rewired here.
+ * The two sentences below are copies of the two routes' literals
+ * (`asset-templates-instantiate-core.ts`,
+ * `dashboard-templates-instantiate.service.ts`), which are not rewired. What
+ * joins each route to `instantiateRefusedMessage` is the route's own
+ * integration spec (`asset-templates.instantiate.integration.spec.ts`,
+ * `dashboard-templates-instantiate.integration.spec.ts`), which asserts the
+ * refusal equals it.
  */
 
 function assert(condition: boolean, message: string): void {
