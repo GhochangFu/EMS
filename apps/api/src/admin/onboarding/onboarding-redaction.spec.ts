@@ -2,6 +2,8 @@ import type { OnboardingDraftRtu } from "@bms/shared";
 
 import {
   attachEncryptedCredentials,
+  isDraftRecordSecretKey,
+  isSecretKey,
   readEncryptedCredentials,
   reconcileSecrets,
   redactDraftForClient,
@@ -709,4 +711,78 @@ export function assertW10APasswordVariableIsRedactedForTheModel(): void {
   const vars = out.assets[0].template.sourceDataKeyVars;
   assert(vars.password === "[REDACTED]", `the password variable is redacted, got ${JSON.stringify(vars)}`);
   assert(vars.site === "S1", `a plain variable is kept beside it, got ${JSON.stringify(vars)}`);
+}
+
+/** `F4.185` — the short names the agent's refusal already used, now scrubbed from both views of a draft. */
+const SHORT_NAMES = ["user", "username", "login", "pass", "pw", "creds", "cred", "psk", "pin", "bearer", "key", "PASS", "user_name", "Pin"];
+
+/** Readable neighbours: whole-name matching must not catch these. */
+const READABLE = { pointKey: "kw", sourceDataKey: "s01", passive: "yes", pinned: "top", keyName: "k1", userCount: "3" };
+
+function shortNameRecord(): Record<string, string> {
+  return Object.fromEntries(SHORT_NAMES.map((name) => [name, `secret-${name}`]));
+}
+
+function shortNameDraft(): unknown {
+  return {
+    location: { code: "L1", name: "L1", meta: shortNameRecord() },
+    rtus: [{ ...rtu("RTU-1"), config: { host: "broker", ...shortNameRecord(), ...READABLE }, meta: shortNameRecord() }],
+    assets: [{ rtuIndex: 0, code: "A1", name: "A1", siteName: "S", domain: "electrical", meta: shortNameRecord() }],
+    assetPoints: [{ assetIndex: 0, pointKey: "kw", sourceDataKey: "s01" }],
+  };
+}
+
+function leakedShortNames(record: unknown, where: string): string[] {
+  const values = (record ?? {}) as Record<string, unknown>;
+  return SHORT_NAMES.filter((name) => values[name] !== "[REDACTED]").map((name) => `${where}.${name}=${JSON.stringify(values[name])}`);
+}
+
+function assertEveryRecordScrubbed(name: string, out: Record<string, unknown>): void {
+  const draft = out as { location: { meta: unknown }; rtus: { config: unknown; meta: unknown }[]; assets: { meta: unknown }[] };
+  const leaks = [
+    ...leakedShortNames(draft.rtus[0].config, "rtus[0].config"),
+    ...leakedShortNames(draft.rtus[0].meta, "rtus[0].meta"),
+    ...leakedShortNames(draft.location.meta, "location.meta"),
+    ...leakedShortNames(draft.assets[0].meta, "assets[0].meta"),
+  ];
+  assert(leaks.length === 0, `${name} left short credential names in clear: ${leaks.join(", ")}`);
+}
+
+/** S1 — the client view scrubs every short name in `config` and the three `meta` records. */
+export function assertS1TheClientViewScrubsShortNames(): void {
+  assertEveryRecordScrubbed("redactDraftForClient", redactDraftForClient(shortNameDraft()) as Record<string, unknown>);
+}
+
+/** S2 — the prompt view does too (it composes the client view). */
+export function assertS2ThePromptViewScrubsShortNames(): void {
+  assertEveryRecordScrubbed("redactDraftForLlm", redactDraftForLlm(shortNameDraft()) as Record<string, unknown>);
+}
+
+/** S3 — `pointKey`, `sourceDataKey` and names that merely contain a short name stay readable in both views. */
+export function assertS3PointKeysAndNeighboursStayReadable(): void {
+  for (const [name, redact] of [
+    ["redactDraftForClient", redactDraftForClient],
+    ["redactDraftForLlm", redactDraftForLlm],
+  ] as const) {
+    const out = redact(shortNameDraft()) as unknown as {
+      rtus: { config: Record<string, unknown> }[];
+      assetPoints: { pointKey: string; sourceDataKey: string }[];
+    };
+    const config = Object.fromEntries(Object.keys(READABLE).map((key) => [key, out.rtus[0].config[key]]));
+    assert(JSON.stringify(config) === JSON.stringify(READABLE), `${name} hid a readable config key: ${JSON.stringify(config)}`);
+    assert(
+      out.assetPoints[0].pointKey === "kw" && out.assetPoints[0].sourceDataKey === "s01",
+      `${name} hid the mapping: ${JSON.stringify(out.assetPoints[0])}`,
+    );
+  }
+}
+
+/** S4 — the shared predicate stays narrow: copilot results carry fields named `key` (dashboard tabs, mimic nodes). */
+export function assertS4TheSharedPredicateStaysNarrow(): void {
+  const caught = ["key", "pin", "user", "pass"].filter((name) => isSecretKey(name));
+  assert(caught.length === 0, `isSecretKey now catches ${caught.join(", ")}; the copilot scrub would hide product data`);
+  assert(
+    ["key", "pin", "user", "pass"].every((name) => isDraftRecordSecretKey(name)),
+    "isDraftRecordSecretKey must catch the short names",
+  );
 }

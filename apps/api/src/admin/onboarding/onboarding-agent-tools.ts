@@ -42,7 +42,7 @@ import {
   type ToolOutcome,
   type ToolState,
 } from "./onboarding-tool-outcome";
-import { isSecretKey } from "./onboarding-redaction";
+import { isDraftRecordSecretKey } from "./onboarding-redaction";
 import {
   draftAssetPointSchema,
   draftAssetSchema,
@@ -72,7 +72,7 @@ export type { ToolOutcome, ToolState };
  *
  * **No tool takes a credential**, and code enforces it (decision 4): an RTU
  * argument is refused whole when any key at any depth matches the secret
- * fragments the redactors use (`isSecretKey`, one list for scrub and refusal)
+ * names the draft scrub uses (`isDraftRecordSecretKey`, one list for scrub and refusal)
  * or any string value `looksLikeCredential`. No tool schema carries `_secrets`,
  * `credentialsSet`, `_commitProposal` or an `onboardingMeta` field other than
  * `useExistingPointKeys`.
@@ -88,19 +88,16 @@ export type { ToolOutcome, ToolState };
  */
 
 /**
- * Security review M1: short credential names the redactors' substring list
- * does not cover (`pass` is not a substring of "password"). Matched whole,
- * after normalising, so `pointKey` and `sourceDataKey` stay legal, plus any
- * key that contains `auth` (`auth`, `basicAuth`, `authorization`). The
- * list widens the **refusal** only; widening the shared scrub would change the
- * client and prompt views of drafts the workbook and `PATCH` already wrote, and
- * is its own follow-up.
+ * Security review M1: the refusal reads the draft scrub's predicate — the
+ * substring fragments plus the short names matched whole
+ * (`SHORT_SECRET_KEY_NAMES`, one list since `F4.185`) — plus any key that
+ * contains `auth` (`auth`, `basicAuth`, `authorization`). The `auth` rule
+ * stays refusal-only: refusing a new key is cheap, while scrubbing every
+ * stored `author` or `authority` would hide data the drafts already hold.
  */
-const AGENT_SECRET_KEY_NAMES = new Set(["user", "username", "login", "pass", "pw", "creds", "cred", "psk", "pin", "bearer", "key"]);
-
 function agentSecretKey(key: string): boolean {
   const normalised = key.toLowerCase().replace(/[^a-z0-9]/g, "");
-  return isSecretKey(key) || AGENT_SECRET_KEY_NAMES.has(normalised) || normalised.includes("auth");
+  return isDraftRecordSecretKey(key) || normalised.includes("auth");
 }
 
 /**
