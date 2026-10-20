@@ -7830,3 +7830,5 @@ One PR, [#894](https://github.com/GhochangFu/EMS/pull/894) (`09836994`), under [
 **`F4.270` done 2026-10-20** in [#897](https://github.com/GhochangFu/EMS/pull/897) (`ca6e39d8`): a discovery mapping turn maps one device and offers "Map the next device" (owner ruling), and a stop with no write says nothing was written. Verified live against the PHE discovery.
 
 **`F4.111` done 2026-10-20** in [#900](https://github.com/GhochangFu/EMS/pull/900) (`bc81dbda`) under [ADR 0104](./adr/0104-point-key-catalog-growth-quota.md): the fleet point-key catalog grows at most 200 new keys per onboarding commit and 1,000 per organization, enforced under a per-organization advisory lock; a global admin is exempt.
+
+**`F4.185` done 2026-10-20** in [#902](https://github.com/GhochangFu/EMS/pull/902) (`0fc94066`): the onboarding draft's client and prompt views scrub short credential names in `config` and `meta`, and a `PATCH` of the redacted view keeps the stored values. Follow-up `F4.272` (discovery samples).
