@@ -52,6 +52,7 @@ export async function assertTwoHundredOneNewKeysAreRefusedAndWriteNothing(ctx: P
 
 /** Q-I2 — 200 new keys and one existing code commit; each new row carries the organization; the audit counts 200. */
 export async function assertTwoHundredNewKeysCommitStamped(ctx: PointKeyQuotaCtx): Promise<void> {
+  await ctx.fillTo(0);
   const sessionId = await ctx.seed("AT", 200, ["kw"]);
   const result = await ctx.commitSvc.commit(ctx.orgAdmin, sessionId);
   ctx.committed.push(result);
@@ -100,11 +101,38 @@ export async function assertAGlobalAdminIsExemptAndStillStamps(ctx: PointKeyQuot
 /**
  * Q-I6 — at 999, two concurrent commits of one new key each: the advisory lock
  * makes the second count the first's row, so exactly one commits.
+ *
+ * The overlap is forced, not hoped for: a held session lock on the same key
+ * stops both commits at their `pg_advisory_xact_lock`, the test waits until
+ * `pg_locks` shows both waiting, then releases. With the lock removed nobody
+ * waits; with it moved below the count both have counted 999 before it — either
+ * way both commit and the expectation goes red.
  */
 export async function assertTwoConcurrentCommitsCannotBothPassTheLimit(ctx: PointKeyQuotaCtx): Promise<void> {
   await ctx.fillTo(999);
   const [first, second] = await Promise.all([ctx.seed("RACEA", 1), ctx.seed("RACEB", 1)]);
-  const outcomes = await Promise.allSettled([ctx.commitSvc.commit(ctx.orgAdmin, first), ctx.commitSvc.commit(ctx.orgAdmin, second)]);
+  const key = `bms.point_keys.quota:${ctx.organizationId}`;
+  const holder = await ctx.ownerPool.connect();
+  let waiting = 0;
+  let pending: Promise<PromiseSettledResult<OnboardingCommitResponseDto>[]> | undefined;
+  try {
+    await holder.query("SELECT pg_advisory_lock(hashtext($1))", [key]);
+    pending = Promise.allSettled([ctx.commitSvc.commit(ctx.orgAdmin, first), ctx.commitSvc.commit(ctx.orgAdmin, second)]);
+    for (let i = 0; i < 200 && waiting < 2; i++) {
+      const { rows } = await ctx.ownerPool.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted AND objid = hashtext($1)::oid",
+        [key],
+      );
+      waiting = rows[0]?.n ?? 0;
+      if (waiting < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    }
+  } finally {
+    await holder.query("SELECT pg_advisory_unlock(hashtext($1))", [key]);
+    holder.release();
+  }
+  const outcomes = await (pending ?? Promise.resolve([]));
   for (const outcome of outcomes) {
     if (outcome.status === "fulfilled") {
       ctx.committed.push(outcome.value);
@@ -112,7 +140,8 @@ export async function assertTwoConcurrentCommitsCannotBothPassTheLimit(ctx: Poin
   }
   const refusals = outcomes.filter((o): o is PromiseRejectedResult => o.status === "rejected").map((o) => String(o.reason));
   expect({
+    waiting,
     fulfilled: outcomes.filter((o) => o.status === "fulfilled").length,
     refusedByQuota: refusals.filter((r) => r.includes("past the 1000")).length,
-  }).toEqual({ fulfilled: 1, refusedByQuota: 1 });
+  }).toEqual({ waiting: 2, fulfilled: 1, refusedByQuota: 1 });
 }

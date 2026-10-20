@@ -173,16 +173,6 @@ export class OnboardingTemplateCatalogService {
   }
 
   /**
-   * `F4.196`: every catalog code with its `active` flag. The commit refuses a
-   * template point whose key is not active (`assertPointKeysActive`), and a
-   * key the draft declares that the catalog already holds reuses that row, so
-   * validation needs the inactive codes as well as the active ones.
-   *
-   * `F4.225`: the same read carries each code's `unit` and `domain`, which the
-   * commit compares with a draft declaration of that code. One read, two
-   * projections, so the two maps cannot come from two catalog states.
-   */
-  /**
    * `F4.111` (ADR 0104 decisions 5 and 6): the growth-quota state of one turn —
    * `"exempt"` for a global admin, otherwise the number of catalog rows the
    * organization has added. Read without the commit's lock: the tools use it
@@ -199,6 +189,16 @@ export class OnboardingTemplateCatalogService {
     return { createdByOrganization: created };
   }
 
+  /**
+   * `F4.196`: every catalog code with its `active` flag. The commit refuses a
+   * template point whose key is not active (`assertPointKeysActive`), and a
+   * key the draft declares that the catalog already holds reuses that row, so
+   * validation needs the inactive codes as well as the active ones.
+   *
+   * `F4.225`: the same read carries each code's `unit` and `domain`, which the
+   * commit compares with a draft declaration of that code. One read, two
+   * projections, so the two maps cannot come from two catalog states.
+   */
   private async listPointKeyCatalog(): Promise<Pick<ValidateTemplateContext, "pointKeys" | "pointKeyFields">> {
     const rows = await this.db
       .select({ code: pointKeys.code, active: pointKeys.active, unit: pointKeys.unit, domain: pointKeys.domain })

@@ -908,7 +908,8 @@ export function assertPointKeyPreviewIsCapped(): void {
     [],
   );
   assert(
-    few.assistantMessage.includes("already has point keys"),
+    // F4.111 (ADR 0104 decision 7): the full sentence, so a revert to "Your organization" reddens here.
+    few.assistantMessage.includes("The catalog already has point keys"),
     "this case must reach the point-key preview, or site 5 goes unasserted",
   );
   for (const code of nine) {
