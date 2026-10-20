@@ -23,6 +23,7 @@ import {
   assertPerDeviceKeyCapTruncatesWithoutStopping,
   assertSampleValueRule,
   assertSecretNamedKeyIsRedacted,
+  assertShortSecretNamedKeysAreRedacted,
   assertTotalKeyCapTruncatesAndStops,
 } from "./discovery-collector.spec";
 
@@ -51,6 +52,7 @@ describe("F3.24b — the discovery collector", () => {
     it("strips control characters and line separators", () => assertControlCharsAreStripped());
     it("redacts a credential-looking sample", () => assertCredentialLookingSampleIsRedacted());
     it("redacts a password-named key's sample", () => assertSecretNamedKeyIsRedacted());
+    it("F4.272: redacts a short-secret-named key's sample and keeps the key", () => assertShortSecretNamedKeysAreRedacted());
     it("redacts a sample equal to the broker password", () => assertBrokerPasswordValueIsRedacted());
     it("skips a key equal to the broker password", () => assertBrokerPasswordKeyIsSkipped());
     it("skips a devId equal to the broker password", () => assertCredentialLookingDevIdIsSkipped());
