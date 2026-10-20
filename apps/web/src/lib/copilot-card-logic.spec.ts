@@ -259,7 +259,7 @@ export function formulaRowsShowEachSiteInFull(): void {
   expect(rows.map((row) => row.field)).toEqual(["points", "content", "points.1.formula", "content.kpis.0.expression"]);
   expect(rowAt(rows, "points.1.formula")).toEqual({
     field: "points.1.formula",
-    label: "Formula eff",
+    label: "Formula eff (points)",
     after: `${LONG_EXPRESSION} (bms-calc-v2)`,
     changed: true,
   });
@@ -327,7 +327,16 @@ export function formulaRowsAreAbsentWithoutFormulas(): void {
 /** A KPI's formula row is labelled by its `code`. */
 export function aKpiFormulaRowIsLabelledByItsCode(): void {
   const rows = changeRows({ content: { kpis: [kpi("load", "kw * 2")] } }, null, [], TEMPLATE_FORMULAS);
-  expect(rowAt(rows, "content.kpis.0.expression").label).toBe("Formula load");
+  expect(rowAt(rows, "content.kpis.0.expression").label).toBe("Formula load (kpis)");
+}
+
+/** A point and a KPI that share a code get two different row headers (re-review nit). */
+export function aPointAndAKpiWithOneCodeAreLabelledApart(): void {
+  const body = { points: [derived("eff", "kw * 2")], content: { kpis: [kpi("eff", "kw * 3")] } };
+  const labels = changeRows(body, null, [], TEMPLATE_FORMULAS)
+    .filter((row) => row.label?.startsWith("Formula "))
+    .map((row) => row.label);
+  expect(labels).toEqual(["Formula eff (points)", "Formula eff (kpis)"]);
 }
 
 /** An item without a `pointKey` or `code` is labelled by its dotted path. */

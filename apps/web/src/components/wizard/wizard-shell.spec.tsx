@@ -252,5 +252,5 @@ export function reviewShowsATemplatePointsFormulaRow(): void {
   for (let step = 0; step < 3; step += 1) fireEvent.click(screen.getByRole("button", { name: "Next" }));
   expect(current()).toBe("4. Review");
   const card = screen.getByRole("region", { name: "Edit an asset template" });
-  expect(within(card).getByRole("rowheader", { name: "Formula eff" })).toBeTruthy();
+  expect(within(card).getByRole("rowheader", { name: "Formula eff (points)" })).toBeTruthy();
 }

@@ -163,7 +163,7 @@ const formulaText = (site: FormulaSite): string =>
 /**
  * `F4.246` (ADR 0099 §3) — one row per formula site of the body inside an array item, under the
  * site's issue path (`points.1.formula`, the path `formulaSitesOf` and the api's issues use),
- * labelled by the item's `pointKey`/`code` ("Formula eff") or, without one, its dotted path, with
+ * labelled by the item's `pointKey`/`code` and its list ("Formula eff (points)") or, without one, its dotted path, with
  * the whole expression: a 300-character formula inside a cut `points` summary is not reviewable. A
  * site with no expression (a measured point's `formula: null`) is no row, and neither is a
  * top-level site (`calcOverride.set`'s `formula`): its field row shows it already, and expands.
@@ -184,7 +184,11 @@ function formulaRows(
         : new Map(formulaSitesOf(current, formula).map((site) => [siteIdentity(current, site.path), site]));
     for (const site of formulaSitesOf(body, formula)) {
       if (typeof site.expression !== "string" || !isInArray(site.path)) continue;
-      const name = itemIdentity(body, site.path)?.[1] ?? site.path.replace(/\.[^.]+$/, "");
+      // A point and a KPI may share a code, so a named row also names its list ("Formula eff (points)").
+      const identity = itemIdentity(body, site.path);
+      const segments = site.path.split(".");
+      const list = segments.find((_segment, i) => /^\d+$/.test(segments[i + 1] ?? ""));
+      const name = identity !== undefined ? `${identity[1]} (${list ?? "items"})` : site.path.replace(/\.[^.]+$/, "");
       const row = { field: site.path, label: `Formula ${name}`, after: formulaText(site) };
       if (now === null) {
         rows.push({ ...row, changed: true });

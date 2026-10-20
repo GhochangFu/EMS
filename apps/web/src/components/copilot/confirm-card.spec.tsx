@@ -410,7 +410,7 @@ export async function aTemplateEditCardShowsTheFormulaRow(): Promise<void> {
     }),
   );
   const card = await screen.findByRole("region", { name: "Edit an asset template" });
-  expect(within(card).getByRole("rowheader", { name: "Formula eff" })).toBeTruthy();
+  expect(within(card).getByRole("rowheader", { name: "Formula eff (points)" })).toBeTruthy();
 }
 
 /** A create card reads no record: there is nothing to compare. */
