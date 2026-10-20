@@ -57,7 +57,7 @@ import {
   undoReply,
   type Checkpoint,
 } from "./onboarding-checkpoints";
-import { draftCountProblem } from "./onboarding-draft-caps";
+import { draftCountProblem, draftRecordProblem } from "./onboarding-draft-caps";
 import { readDiscovery, withDiscoveryOf } from "./onboarding-discovery-state";
 import { applyDiscoveryTurn } from "./onboarding-discovery-tools";
 import { diffSections } from "./onboarding-draft-merge";
@@ -592,7 +592,19 @@ export class OnboardingService {
       assertSessionStillDraft(locked);
       // F4.185 (review finding): a client sends back the redacted view, so a
       // placeholder under a scrubbed key keeps the stored value, never itself.
-      const merged = this.chatService.mergeDraft(locked.draft, keepRedactedValues(locked.draft, draft));
+      const body = keepRedactedValues(locked.draft, draft);
+      // F4.116: the records the body carries, **after** the restore above —
+      // a placeholder is 12 bytes in the body and the whole stored secret once
+      // restored (review finding). Not the merge: `mergeDraft` replaces a
+      // record wholesale, so these are the records stored; and a stored
+      // oversized record the body leaves out must not block a PATCH that
+      // repairs something else, or the PATCH that shrinks it. The throw rolls
+      // the transaction back, so nothing is written.
+      const recordProblem = draftRecordProblem(body as OnboardingDraft);
+      if (recordProblem !== null) {
+        throw new BadRequestException(recordProblem);
+      }
+      const merged = this.chatService.mergeDraft(locked.draft, body);
       const [row] = await tx
         .update(onboardingSessions)
         .set({

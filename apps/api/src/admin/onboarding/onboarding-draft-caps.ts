@@ -47,6 +47,8 @@
 import { createHash } from "node:crypto";
 
 import {
+  MAX_DRAFT_RECORD_BYTES,
+  MAX_DRAFT_RECORD_KEYS,
   MAX_NEW_POINT_KEYS_PER_COMMIT,
   MAX_ONBOARDING_ASSET_POINTS,
   MAX_ONBOARDING_ASSETS,
@@ -224,6 +226,12 @@ const CAPPED_DRAFT_ARRAYS: readonly CappedDraftArray[] = [
  *
  * A missing array is not an empty one being refused — an onboarding draft is
  * legitimately partial until it commits, so `undefined` counts as zero.
+ *
+ * `F4.116`: after the array caps, the four free-form records are held to
+ * `draftRecordProblem`, so every caller of this function — the chat write, the
+ * tool `write()`, `propose_commit` and the commit — refuses an oversized record
+ * too. A `PATCH` calls `draftRecordProblem` itself (its schema `.max()` covers
+ * only the arrays).
  */
 export function draftCountProblem(draft: OnboardingDraft): string | null {
   for (const { field, label, cap } of CAPPED_DRAFT_ARRAYS) {
@@ -233,6 +241,58 @@ export function draftCountProblem(draft: OnboardingDraft): string | null {
         `The draft holds ${found} ${label}, more than the ${cap} one onboarding session may ` +
         `commit; remove some and commit the rest in a second session`
       );
+    }
+  }
+  return draftRecordProblem(draft);
+}
+
+/** Keys at every nesting level of one value; array indices are not keys. Iterative (`F4.115`). */
+function keyCount(value: unknown): number {
+  let count = 0;
+  const stack: unknown[] = [value];
+  while (stack.length > 0) {
+    const next = stack.pop();
+    if (Array.isArray(next)) {
+      stack.push(...next);
+    } else if (typeof next === "object" && next !== null) {
+      const keys = Object.keys(next);
+      count += keys.length;
+      for (const key of keys) {
+        stack.push((next as Record<string, unknown>)[key]);
+      }
+    }
+  }
+  return count;
+}
+
+/**
+ * `F4.116` (owner rulings 2026-10-20) — the sentence that refuses a draft whose
+ * free-form record (`location.meta`, `rtus[].config`, `rtus[].meta` or
+ * `assets[].meta`) holds more than `MAX_DRAFT_RECORD_KEYS` keys, counted at
+ * every nesting level, or more than `MAX_DRAFT_RECORD_BYTES` bytes as UTF-8
+ * JSON; `null` when every record fits. Refused, never cut, as `F4.103` and
+ * `F4.104` refuse. Every interpolation is a path built from literals and an
+ * index, or a number, so nothing from the draft reaches the message (§4.3).
+ */
+export function draftRecordProblem(draft: OnboardingDraft): string | null {
+  const records: [string, unknown][] = [["location.meta", draft.location?.meta]];
+  (draft.rtus ?? []).forEach((rtu, i) => {
+    records.push([`rtus[${i}].config`, rtu?.config], [`rtus[${i}].meta`, rtu?.meta]);
+  });
+  (draft.assets ?? []).forEach((asset, i) => {
+    records.push([`assets[${i}].meta`, asset?.meta]);
+  });
+  for (const [path, record] of records) {
+    if (record === undefined || record === null) {
+      continue;
+    }
+    const keys = keyCount(record);
+    if (keys > MAX_DRAFT_RECORD_KEYS) {
+      return `${path} holds ${keys} keys, more than the ${MAX_DRAFT_RECORD_KEYS} one record may hold; remove ${keys - MAX_DRAFT_RECORD_KEYS} of them`;
+    }
+    const bytes = Buffer.byteLength(JSON.stringify(record) ?? "", "utf8");
+    if (bytes > MAX_DRAFT_RECORD_BYTES) {
+      return `${path} is ${bytes} bytes, more than the ${MAX_DRAFT_RECORD_BYTES} one record may hold; shorten it`;
     }
   }
   return null;

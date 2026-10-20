@@ -16,6 +16,9 @@ import {
   assertThePatchInfersThePhaseOnTheLockedMerge,
   assertThePatchOverALoadedCommittedRowAnswers403,
   assertThePatchOfTheRedactedViewKeepsAStoredKey,
+  assertThePatchOfAnOversizedRecordAnswers400,
+  assertThePatchBesideAStoredOversizedRecordWrites,
+  assertThePatchCountsARestoredSecret,
 } from "./onboarding-locked-writes.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). One `it()` per claim. */
@@ -78,5 +81,17 @@ describe("onboarding upload, credential and PATCH draft writes under the row loc
 
   it("U15 a PATCH of the redacted view keeps a stored config key", async () => {
     await assertThePatchOfTheRedactedViewKeepsAStoredKey();
+  });
+
+  it("U16 a PATCH of an oversized record answers 400", async () => {
+    await assertThePatchOfAnOversizedRecordAnswers400();
+  });
+
+  it("U17 a PATCH beside a stored oversized record still writes", async () => {
+    await assertThePatchBesideAStoredOversizedRecordWrites();
+  });
+
+  it("U18 a PATCH counts a restored secret against the bound", async () => {
+    await assertThePatchCountsARestoredSecret();
   });
 });
