@@ -36,6 +36,11 @@ import {
   assertACapAfterADiscoveryReadAsksForOneDevice,
   assertACapWithoutADiscoveryReadHasNoDeviceHint,
   assertTheDiscoveryParagraphMapsOneDevicePerTurn,
+  assertARefusedWriteGetsANotAppliedLineNamingTheField,
+  assertTwoRefusedFieldsUseThePluralForm,
+  assertARefusedWriteKeepsTheTurnsOtherWrites,
+  assertARefusedReadGetsNoLine,
+  assertEveryToolIsClassifiedAsADraftWriteOrNot,
 } from "./onboarding-agent-loop.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). One `it()` per claim. */
@@ -190,5 +195,27 @@ describe("the discovery rules (F3.24b, ADR 0103 decisions 2 and 8)", () => {
 
   it("drops the discovery proposal on a later write", async () => {
     await assertALaterWriteDropsTheDiscoveryProposal();
+  });
+});
+
+describe("refused draft writes (F4.135, ADR 0090 Amendment 4)", () => {
+  it("gives a refused draft write a Not applied line naming the field (F4.135)", async () => {
+    await assertARefusedWriteGetsANotAppliedLineNamingTheField();
+  });
+
+  it("names two refused fields in the plural form (F4.135)", async () => {
+    await assertTwoRefusedFieldsUseThePluralForm();
+  });
+
+  it("keeps the turn's other writes after a refused write (F4.135)", async () => {
+    await assertARefusedWriteKeepsTheTurnsOtherWrites();
+  });
+
+  it("gives a refused read no line (F4.135)", async () => {
+    await assertARefusedReadGetsNoLine();
+  });
+
+  it("pins the draft-write tools by name and classifies the rest (F4.135)", () => {
+    assertEveryToolIsClassifiedAsADraftWriteOrNot();
   });
 });

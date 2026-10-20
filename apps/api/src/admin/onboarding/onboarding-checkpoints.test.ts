@@ -14,6 +14,7 @@ import {
   assertTakeCheckpointCopiesTheSectionsOnly,
   assertTakeCheckpointOfAnEmptyDraftHasNoSections,
   assertUndoReplyNamesLostCredentials,
+  assertCheckpointLabelLeavesOutRefusedLines,
 } from "./onboarding-checkpoints.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). One `it()` per claim. */
@@ -76,5 +77,8 @@ describe("onboarding checkpoints — the label and the undo phrase (F3.25, ADR 0
 
   it("(19) undoReply names lost credentials only when there are some", () => {
     assertUndoReplyNamesLostCredentials();
+  });
+  it("leaves a refused write out of the checkpoint label (F4.135)", () => {
+    assertCheckpointLabelLeavesOutRefusedLines();
   });
 });

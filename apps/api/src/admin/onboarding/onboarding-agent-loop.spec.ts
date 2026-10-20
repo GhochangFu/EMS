@@ -16,7 +16,15 @@ import {
   diffSections,
   runAgentTurn,
 } from "./onboarding-agent-loop";
-import { TOOL_RESULT_MAX_CHARS, type ToolContext } from "./onboarding-agent-tools";
+import {
+  DRAFT_WRITE_TOOLS,
+  isToolName,
+  NON_DRAFT_WRITE_TOOLS,
+  NOT_APPLIED_PREFIX,
+  TOOL_DEFINITIONS,
+  TOOL_RESULT_MAX_CHARS,
+  type ToolContext,
+} from "./onboarding-agent-tools";
 import type { LlmMessage, LlmReply, LlmToolCall, LlmProvider } from "../../llm/llm-port";
 import { stepLabelFor } from "./onboarding-chat-rule-based";
 import { filterSuggestedReplies } from "./onboarding-suggested-replies";
@@ -141,7 +149,12 @@ export async function assertAToolErrorGoesBackAsAResultNotAThrow(): Promise<void
   const tool = llm.seen[1]?.at(-1) as { role: string; isError?: boolean; content?: string };
   assert(tool.role === "tool" && tool.isError === true, "the refused call goes back as an error result");
   assert((JSON.parse(tool.content ?? "{}") as { ok: boolean }).ok === false, "with ok false");
-  assert(result.stopReason === "final" && result.actionLines.length === 0, "the loop carries on to the final reply");
+  assert(result.stopReason === "final", "the loop carries on to the final reply");
+  // F4.135: a guard refusal names no field, so its line is the tool alone.
+  assert(
+    JSON.stringify(result.actionLines) === JSON.stringify([`${NOT_APPLIED_PREFIX}add_rtu`]),
+    `one Not applied line, got ${JSON.stringify(result.actionLines)}`,
+  );
 }
 
 /** Eight single-call replies, then a ninth: exactly eight tool runs. */
@@ -509,4 +522,87 @@ export async function assertALaterWriteDropsTheDiscoveryProposal(): Promise<void
   ]);
   const result = await runAgentTurn(turn(llm, { draft: credentialedDraft() }));
   assert(result.discoveryProposal === undefined, "the write drops the proposal");
+}
+
+const BAD_CODE_ASSET = { rtuIndex: 0, code: "feeder.a", name: "Feeder A", siteName: "Berhampur", domain: "electrical" };
+
+/** `F4.135` (ADR 0090 Amendment 4): a schema-refused draft write gets a code-written line naming the field. */
+export async function assertARefusedWriteGetsANotAppliedLineNamingTheField(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("add_asset", BAD_CODE_ASSET)), { kind: "final", text: "I've updated the draft." }]);
+  const result = await runAgentTurn(turn(llm, { draft: readyDraft() }));
+  assert(
+    JSON.stringify(result.actionLines) === JSON.stringify([`${NOT_APPLIED_PREFIX}add_asset (field: code)`]),
+    `one Not applied line names the code field, got ${JSON.stringify(result.actionLines)}`,
+  );
+  assert(result.draftPatch.assets === undefined, "nothing is written");
+}
+
+/** `F4.135`: two refused fields are named in the plural form, in issue order. */
+export async function assertTwoRefusedFieldsUseThePluralForm(): Promise<void> {
+  const llm = new FakeLlmProvider([
+    calls(toolCall("add_asset", { ...BAD_CODE_ASSET, name: 7 })),
+    { kind: "final", text: "ok" },
+  ]);
+  const result = await runAgentTurn(turn(llm, { draft: readyDraft() }));
+  assert(
+    JSON.stringify(result.actionLines) === JSON.stringify([`${NOT_APPLIED_PREFIX}add_asset (fields: code, name)`]),
+    `the plural form, got ${JSON.stringify(result.actionLines)}`,
+  );
+}
+
+/** `F4.135`: one refused write does not drop the turn's other writes, and the lines keep the call order. */
+export async function assertARefusedWriteKeepsTheTurnsOtherWrites(): Promise<void> {
+  const llm = new FakeLlmProvider([
+    calls(toolCall("add_asset", BAD_CODE_ASSET), toolCall("add_point_key", { code: "ph", name: "pH" })),
+    { kind: "final", text: "ok" },
+  ]);
+  const result = await runAgentTurn(turn(llm, { draft: readyDraft() }));
+  assert(result.draftPatch.pointKeys?.length === 2, `the point key is written, got ${JSON.stringify(result.draftPatch.pointKeys)}`);
+  assert(
+    result.actionLines.length === 2 &&
+      result.actionLines[0] === `${NOT_APPLIED_PREFIX}add_asset (field: code)` &&
+      result.actionLines[1]!.startsWith("Added point key"),
+    `the refused line, then the write's line, got ${JSON.stringify(result.actionLines)}`,
+  );
+}
+
+/** `F4.135`: a refused read is not a write, so it gets no line. */
+export async function assertARefusedReadGetsNoLine(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("find_existing", { kind: "planet" })), { kind: "final", text: "ok" }]);
+  const result = await runAgentTurn(turn(llm, { draft: readyDraft() }));
+  const tool = llm.seen[1]?.at(-1) as { isError?: boolean };
+  assert(tool.isError === true, "the read is refused");
+  assert(result.actionLines.length === 0, `a refused read has no line, got ${JSON.stringify(result.actionLines)}`);
+}
+
+/**
+ * `F4.135`: the draft-write set is pinned by name, so moving a write tool out of
+ * it is a deliberate edit here (code review #1); every other tool is a non-write.
+ */
+export function assertEveryToolIsClassifiedAsADraftWriteOrNot(): void {
+  const expected = [
+    "add_asset",
+    "add_point_key",
+    "add_point_keys",
+    "add_rtu",
+    "add_template",
+    "add_template_assets",
+    "import_stock_template",
+    "map_point",
+    "map_points",
+    "remove_asset",
+    "remove_asset_point",
+    "remove_point_key",
+    "remove_rtu",
+    "remove_template",
+    "set_location",
+    "update_rtu",
+    "use_existing_point_keys",
+  ];
+  const writes = [...DRAFT_WRITE_TOOLS].sort();
+  assert(JSON.stringify(writes) === JSON.stringify(expected), `the draft writes are pinned, got ${JSON.stringify(writes)}`);
+  const names = TOOL_DEFINITIONS.map((definition) => definition.name);
+  const nonWrites = names.filter((name) => isToolName(name) && !DRAFT_WRITE_TOOLS.has(name)).sort();
+  const classified = [...NON_DRAFT_WRITE_TOOLS].sort();
+  assert(JSON.stringify(nonWrites) === JSON.stringify(classified), `every other tool is a non-write, got ${JSON.stringify(classified)}`);
 }

@@ -25,6 +25,11 @@ ADR 0091 decision 11. It follows Amendment 1.
 carries an image, with the same provider and key. It amends A2–A6 of
 Amendment 1. It is at the end of this record.
 
+**Amendment 4 (2026-10-20)** records row `F4.135`: a refused draft write on
+the agent path adds a code-written `Not applied` action line. It amends
+decision 6 and touches ADR 0094 decision 5 (the undo checkpoint's label). It
+is at the end of this record.
+
 Implements row `F3.21` (Track E, Wave 2, ⭐). Amends
 [ADR 0011](./0011-ai-onboarding-chat.md) decision 1 (see *Amended records*).
 Keeps [ADR 0022](./0022-onboarding-credential-capture.md) unchanged. Promotes
@@ -939,3 +944,66 @@ None.
 - **`F4.266` closes with this row** if C6's live gate passes.
 - One migration (`migration-reviewer`), one page change, one route-group
   change; `security-reviewer` checks C4's test endpoint and the audit row.
+
+## Amendment 4 — a refused draft write is named by code (`F4.135`, 2026-10-20)
+
+### Status
+
+Proposed — the owner ruled the one gate question below on 2026-10-20. This
+written amendment lands with the code in the same pull request; the owner's
+merge of that pull request is its approval.
+
+**Why.** Row `F4.135` was raised against the pre-`F3.21` chat, which parsed
+the model's echoed draft whole, so one bad field emptied the patch while the
+reply still said "I've updated the draft". The tool loop removed that shape:
+each call parses its own arguments, and a refused call writes nothing while
+the turn's other writes stand. One part stayed. A refused call reached the
+user only through the model's own reply, so a model could still report a write
+that did not happen. Decision 6 wrote a line for each *successful* write only.
+
+### Gate questions
+
+1. **How does `F4.135` close?** Options: a code-written line for each refused
+   draft write; close the row as superseded by `F3.21` with a gate test; or
+   discard the whole turn on any refused write. **Ruled as recommended: the
+   code-written line.** Discarding the turn would lose the good writes for one
+   bad field, which is the shape the row reported.
+
+### Decisions
+
+D1. **The line.** On the agent path, a refused call of a tool that writes the
+    draft adds one `action` message: `Not applied: <tool>`, plus
+    ` (field: <path>)` or ` (fields: <path>, …)` when the arguments failed the
+    tool's schema. Code writes it from the tool's name and the schema's issue
+    paths, each walked down the tool's own schema: a segment that is not an
+    array index or a key the schema declares — a record key, which the model
+    chooses — is shown as `*`, so the line carries no argument value. At most ten
+    paths. A refusal by a guard or by the tool itself (a credential, a cap, a
+    missing reference) names the tool only; the model's reply explains it.
+
+D2. **Which tools.** The seventeen tools that write the draft
+    (`DRAFT_WRITE_TOOLS`). Reads, `validate_draft`, `propose_commit`,
+    `propose_discovery` and `suggest_replies` get no line. A spec holds that
+    every tool in the registry is in exactly one of the two sets, so a new tool
+    must be classified.
+
+D3. **Where.** The onboarding agent turn only. The guided mode already answers
+    a refusal with its own sentence (Amendment 2 B4), and the copilot keeps its
+    own outcome lines (ADR 0099). The shared registry carries the paths as
+    `refusedFields` on a schema refusal; only the onboarding turn reads them.
+
+D4. **Undo.** A `Not applied` line is left out of the undo checkpoint's label
+    (ADR 0094 decision 5): it names nothing the checkpoint brings back.
+
+### Dependencies
+
+None.
+
+### Consequences
+
+- **A retried call shows twice.** A model that fixes its arguments and calls
+  again leaves a `Not applied` line and then the write's own line. Both are
+  true, in order.
+- **History carries the line.** The model reads `action` messages as
+  assistant text (decision 6), so the next turn sees what was refused.
+- No schema, migration or dependency change.

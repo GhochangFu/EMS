@@ -466,8 +466,9 @@ export class OnboardingService {
       ? "[REDACTED] — the assistant's reply looked like it contained a credential (ADR 0022)"
       : turn.assistantMessage;
     const assistantMsg = this.chatService.createMessage("assistant", assistantText);
-    // Decision 6: one code-written `action` message per draft write, between the
-    // user's turn and the reply.
+    // Decision 6: one code-written `action` message per draft write — and, on
+    // the agent path, per refused draft write (F4.135, ADR 0090 Amendment 4) —
+    // between the user's turn and the reply.
     // Security review L5: an action line carries model-chosen names, so it takes
     // the same credential scrub as the reply above.
     const actionMsgs = turn.actionLines.map((line) =>
