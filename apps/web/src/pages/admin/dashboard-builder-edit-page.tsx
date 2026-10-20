@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 
 import type { UpdateDashboardBody } from "@bms/shared/contracts";
 import { catalogEntry } from "@bms/shared/copilot";
@@ -43,6 +43,8 @@ import {
   type TabWritePayload,
 } from "../../lib/dashboard-builder-form";
 import type { WizardStep } from "../../lib/wizard-steps";
+import { builderStateFromWidgetsFill, pointLabelsOf } from "../../lib/dashboard-builder-fill";
+import { editPath } from "../../lib/dashboard-edit-path";
 import { withDefaultMimicTabKey } from "../../lib/dashboard-builder-mimic-tab";
 import { chosenScopeFromFill } from "../../lib/dashboard-scope-fill";
 import { metricCatalogLabel } from "../../lib/metric-catalog";
@@ -141,6 +143,11 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   const [tabs, setTabs] = useState<readonly TabWritePayload[]>([]);
   const [selectedTabKey, setSelectedTabKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // `F4.245` (owner rulings 2 and 3): a copilot slug fill, shown read-only and sent in the save, and
+  // why the last layout fill could not reach the canvas.
+  const [filledSlug, setFilledSlug] = useState<string | null>(null);
+  const [fillProblem, setFillProblem] = useState<string | null>(null);
+  const navigate = useNavigate();
   // ADR 0047 Amendment 2 ruling 3's duplicate action needs a way in, and this page is it: the
   // ruling reserved the organization-wide dashboard to the two organization-level roles and
   // named copy as the replacement route by which a site admin's good dashboard reaches another
@@ -296,7 +303,11 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   // disables with a reason nothing on the page shows.
   const summaryProblems = unselectedDashboardBuilderProblems(problems, selected);
   const fieldsChanged = dto
-    ? name !== dto.name || description !== (dto.description ?? "") || scopeChanged(scope, dto)
+    ? name !== dto.name ||
+      description !== (dto.description ?? "") ||
+      scopeChanged(scope, dto) ||
+      // `F4.245`: a copilot slug fill that names another address is a change to save.
+      (filledSlug !== null && filledSlug !== dto.slug)
     : false;
   const widgetsChanged = dto ? builderHasChanged(rows, dto) || tabsHaveChanged(tabs, dto) : false;
   const changed = fieldsChanged || widgetsChanged;
@@ -382,15 +393,17 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   // does not hold (`F3.63` review): the clamp does not fire (the kind is offered), so it is
   // `isScopeAuthorised` in `detailsReason` above that refuses the Submit there, and the 404 the
   // PATCH would otherwise meet is never reached.
-  // `slug` is left unset: this page has no slug field, so the body never renames the address.
+  // `slug` is sent only after a copilot slug fill (`F4.245`, owner ruling 2): this page has no slug
+  // input, so a save the user types alone never renames the address.
   const updateValues: Record<string, unknown> = {
     name: name.trim(),
+    ...(filledSlug !== null ? { slug: filledSlug } : {}),
     description: description.trim() === "" ? null : description.trim(),
     ...scopePatch(scope),
   };
-  // The stored values the Review card shows beside the new ones.
+  // The stored values the Review card shows beside the new ones (the slug's "now" too).
   const updateCurrent: Record<string, unknown> | null = dto
-    ? { name: dto.name, description: dto.description, locationId: dto.locationId, assetGroupId: dto.assetGroupId }
+    ? { name: dto.name, slug: dto.slug, description: dto.description, locationId: dto.locationId, assetGroupId: dto.assetGroupId }
     : null;
   // `F3.73` D11 — the edited tabs, labels trimmed; stored ids kept, so the API's diff keeps them.
   const widgetsValues: Record<string, unknown> = {
@@ -400,10 +413,12 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
     ),
   };
 
-  /** A copilot `fill_step` mapped back onto the typed state: the name, the description and a
-   * chosen scope. An asset-scoped row keeps its read-only scope; `slug` has no field here. */
+  /** A copilot `fill_step` mapped back onto the typed state: the name, the slug (`F4.245`, shown
+   * read-only on Basics), the description and a chosen scope. An asset-scoped row keeps its
+   * read-only scope. */
   function applyUpdateValues(next: Record<string, unknown>): void {
     if (typeof next.name === "string") setName(next.name);
+    if (typeof next.slug === "string") setFilledSlug(next.slug);
     if (typeof next.description === "string" || next.description === null) setDescription(next.description ?? "");
     // Review fix (C3) — the kind is read from the column the fill changed (`chosenScopeFromFill`).
     // The edit wizard's Scope step has no organization field, so the tenant stays the dashboard's.
@@ -433,7 +448,14 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
       setError(null);
       reseed.current = { ...reseed.current, fields: true };
       stored(next);
+      setFilledSlug(null);
       setDetailsRound((current) => current + 1);
+      // `F4.245` (owner ruling 2): a saved slug fill moved the address. The answer is cached under the
+      // new slug first, so the new path renders it without a refetch, then the router follows.
+      if (next.slug !== slug) {
+        queryClient.setQueryData(["dashboards", "detail", next.slug, next.organizationId], next);
+        navigate(editPath(next));
+      }
     },
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
   });
@@ -456,12 +478,31 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
 
   function cancelDetails(): void {
     if (dto) seedFields(dto);
+    setFilledSlug(null);
     updateM.reset();
     setDetailsRound((current) => current + 1);
   }
 
+  /**
+   * `F4.245` (owner ruling 3): a copilot layout fill mapped back onto the canvas rows and tabs. A
+   * fill the route would refuse leaves the canvas as it was and says why on the Layout step.
+   */
+  function applyWidgetsValues(next: Record<string, unknown>): void {
+    const state = builderStateFromWidgetsFill(next, pointLabelsOf(rows));
+    if (!state.ok) {
+      setFillProblem(state.problem);
+      return;
+    }
+    setRows(state.rows);
+    setTabs(state.tabs);
+    setSelected(null);
+    setSelectedTabKey(state.tabs[0]?.key ?? null);
+    setFillProblem(null);
+  }
+
   function cancelWidgets(): void {
     if (dto) seedWidgets(dto);
+    setFillProblem(null);
     widgetsM.reset();
     setWidgetsRound((current) => current + 1);
   }
@@ -599,6 +640,9 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
     if (step.id === "basics") {
       return (
         <div className="grid gap-3 md:grid-cols-2">
+          {filledSlug !== null && dto ? (
+            <p className="text-xs text-ink-muted md:col-span-2">{`Slug: ${filledSlug} (filled by the copilot; now ${dto.slug}).`}</p>
+          ) : null}
           <label className="block space-y-1 text-xs">
             <span className="font-semibold uppercase tracking-wide text-ink-muted">Name</span>
             <input
@@ -635,6 +679,11 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   function renderLayoutStep() {
     return (
       <div className="space-y-4">
+        {fillProblem !== null ? (
+          <p role="alert" className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink">
+            {fillProblem}
+          </p>
+        ) : null}
         <DashboardTabsPanel
           tabs={tabs}
           groups={tabGroups}
@@ -706,6 +755,7 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                   <WizardShell
                     key={`details-${detailsRound}`}
                     entry={catalogEntry("dashboard.update")!}
+                    params={{ id: dto.id }}
                     values={updateValues}
                     onChange={applyUpdateValues}
                     renderStep={renderDetailsStep}
@@ -748,10 +798,9 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                 <WizardShell
                   key={`widgets-${widgetsRound}`}
                   entry={catalogEntry("dashboard.widgets.replace")!}
+                  params={{ id: dto.id }}
                   values={widgetsValues}
-                  // The rows are the builder's own state; a copilot fill of whole widget payloads is
-                  // not mapped back onto them (see the PR 9 notes). The shell marks a fill changed itself.
-                  onChange={() => undefined}
+                  onChange={applyWidgetsValues}
                   renderStep={renderLayoutStep}
                   // Review fix (C4) — the builder's work is mostly clicks (add, drag, remove), so it asks first.
                   dirty={widgetsChanged}

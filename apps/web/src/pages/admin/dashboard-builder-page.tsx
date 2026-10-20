@@ -30,6 +30,8 @@ import {
   type PutDashboardWidgetsPayload,
 } from "../../lib/dashboard-builder-form";
 import type { WizardStep } from "../../lib/wizard-steps";
+import { builderStateFromWidgetsFill, CREATE_PAGE_TABS_PROBLEM, pointLabelsOf } from "../../lib/dashboard-builder-fill";
+import { editPath } from "../../lib/dashboard-edit-path";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 import { AppShell } from "../../layouts/app-shell";
 import { PageHeader } from "../../components/page-header";
@@ -47,10 +49,6 @@ type DashboardBuilderPageProps = {
 
 type WidgetTile = CanvasTile & { row: DashboardWidgetRow; index: number };
 
-/** The edit page of a dashboard — where a created dashboard lives from now on. */
-function editPath(dto: Pick<DashboardDto, "slug" | "organizationId">): string {
-  return `/admin/dashboards/${dto.slug}?organizationId=${dto.organizationId}`;
-}
 
 /**
  * `F3.1d` Unit 7 — creates a dashboard. Lives under `/admin/…` deliberately
@@ -86,6 +84,8 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
   });
   const [rows, setRows] = useState<DashboardWidgetRow[]>([]);
   const [selected, setSelected] = useState<number | null>(null);
+  // `F4.245` (owner ruling 3): why the copilot's last layout fill could not reach the canvas, or `null`.
+  const [fillProblem, setFillProblem] = useState<string | null>(null);
   const [widgetsError, setWidgetsError] = useState<string | null>(null);
   // Bumped by Cancel: the first wizard remounts on its first step with the form cleared.
   const [round, setRound] = useState(0);
@@ -292,9 +292,33 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
     );
   }
 
+  /**
+   * `F4.245` (owner ruling 3): a copilot layout fill mapped back onto the rows. A new dashboard has no
+   * tabs (the PUT below sends `[]`), so a fill that names tabs is refused with a sentence that says where.
+   */
+  function applyWidgetsValues(next: Record<string, unknown>): void {
+    if (Array.isArray(next.tabs) && next.tabs.length > 0) {
+      setFillProblem(CREATE_PAGE_TABS_PROBLEM);
+      return;
+    }
+    const state = builderStateFromWidgetsFill({ ...next, tabs: [] }, pointLabelsOf(rows));
+    if (!state.ok) {
+      setFillProblem(state.problem);
+      return;
+    }
+    setRows(state.rows);
+    setSelected(null);
+    setFillProblem(null);
+  }
+
   function renderLayoutStep() {
     return (
       <div className="space-y-3">
+        {fillProblem !== null ? (
+          <p role="alert" className="rounded border border-critical-line bg-critical-wash p-2 text-xs text-critical-ink">
+            {fillProblem}
+          </p>
+        ) : null}
         <div className="flex flex-wrap gap-2">
           {/* `F3.32` (ADR 0079 decision 4): a plant mimic is offered only on a group scope. */}
           {offerableWidgetTypes(widgetsScopeKind).map((type) => (
@@ -378,6 +402,7 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
                 <WizardShell
                   key={round}
                   entry={catalogEntry("dashboard.create")!}
+                  params={{}}
                   values={createValues}
                   onChange={applyCreateValues}
                   renderStep={renderCreateStep}
@@ -408,10 +433,9 @@ export function DashboardBuilderPage({ user }: DashboardBuilderPageProps) {
                 <WizardShell
                   key={created.id}
                   entry={catalogEntry("dashboard.widgets.replace")!}
+                  params={{ id: created.id }}
                   values={widgetsValues}
-                  // The rows are the builder's own state; a copilot fill of whole widget payloads is
-                  // not mapped back onto them (see the PR 9 notes). The shell marks a fill changed itself.
-                  onChange={() => undefined}
+                  onChange={applyWidgetsValues}
                   renderStep={renderLayoutStep}
                   dirty={rows.length > 0}
                   onSubmit={(body) => {

@@ -12,7 +12,6 @@ import {
 } from "@bms/shared";
 import type {
   DashboardDto,
-  DashboardWidgetDto,
   DashboardWidgetPointDto,
   DashboardWidgetSpec,
   MetricCatalogKey,
@@ -240,8 +239,10 @@ function pointBindingLabel(point: DashboardWidgetPointDto): string {
 /** The reverse of `buildGaugeConfig`/`buildTankConfig`/`buildTileConfig`/`buildChartConfig` —
  * an already-validated `DashboardWidgetDto` (unlike `template-dashboard-form.ts`'s
  * `widgetRowFrom`, which reads an unvalidated `z.record(z.unknown())` blob) narrows through the
- * `switch` on `widget.widgetType` the same way `DashboardWidget`'s own dispatcher does. */
-function configRowFromDto(widget: DashboardWidgetDto): WidgetConfigRow {
+ * `switch` on `widget.widgetType` the same way `DashboardWidget`'s own dispatcher does.
+ * `F4.245`: typed on the spec half of the DTO, so a copilot layout fill (`dashboard-builder-fill.ts`)
+ * reads its widgets through the same switch. */
+export function configRowFromDto(widget: DashboardWidgetSpec): WidgetConfigRow {
   const row = blankConfigRow();
   // `F3.32` / plan D8 — `mimicConfigSchema` carries neither field, so the generic read is guarded.
   if ("unit" in widget.config) {
