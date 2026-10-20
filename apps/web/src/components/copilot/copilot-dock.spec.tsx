@@ -205,7 +205,7 @@ export async function sendsTheTypedTextAndRendersTheReply(): Promise<void> {
   renderDock("organization_admin");
   await openPanel();
   await send("How many alarms?");
-  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "How many alarms?"));
+  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "How many alarms?", [], []));
   const thread = screen.getByRole("log", { name: "Copilot conversation" });
   expect(await within(thread).findByText("3")).toBeInTheDocument();
   expect(within(thread).getByText("3").tagName).toBe("STRONG");
@@ -412,7 +412,7 @@ export async function keepsTheThreadAndThePickAcrossAnOpenPageNavigation(): Prom
 
   await send("And the critical ones?");
   await waitFor(() => expect(stubs.turn).toHaveBeenCalledTimes(2));
-  expect(stubs.turn).toHaveBeenLastCalledWith(CONVERSATION_ID, "And the critical ones?");
+  expect(stubs.turn).toHaveBeenLastCalledWith(CONVERSATION_ID, "And the critical ones?", [], []);
   expect(stubs.create).toHaveBeenCalledTimes(1);
   expect(stubs.create).toHaveBeenCalledWith(ORG_ID);
   // The thread came from the query cache the turn wrote, not from a reload that could race it.
@@ -775,7 +775,7 @@ export async function showsNoPdfNoteForAnImage(): Promise<void> {
 
 /**
  * The chosen files reach the wire as `FormData` through the real
- * `sendCopilotTurn`: `message`, then three `files` entries, no `Content-Type`.
+ * `sendCopilotTurn`: `message`, `wizards` (`F4.245`), then three `files` entries, no `Content-Type`.
  */
 export async function sendsTheChosenFilesAsFormData(): Promise<void> {
   const stubs = stub(READY_WITH_FILES);
@@ -794,8 +794,9 @@ export async function sendsTheChosenFilesAsFormData(): Promise<void> {
   await waitFor(() => expect(seen.body).not.toBeNull());
   expect(seen.body).toBeInstanceOf(FormData);
   const form = seen.body as FormData;
-  expect([...form.keys()]).toEqual(["message", "files", "files", "files"]);
+  expect([...form.keys()]).toEqual(["message", "wizards", "files", "files", "files"]);
   expect(form.get("message")).toBe("draw it");
+  expect(form.get("wizards")).toBe("[]");
   expect(form.getAll("files").map((f) => (f as File).name)).toEqual(["a.png", "b.pdf", "c.svg"]);
   expect(seen.headers?.get("Content-Type")).toBeNull();
 }
@@ -808,12 +809,12 @@ export async function clearsTheChipsAfterTheTurnIsAnswered(): Promise<void> {
   await screen.findByLabelText(ATTACH);
   choose(aFile("a.png"));
   await send("draw it");
-  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "draw it", [expect.any(File)]));
+  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "draw it", [expect.any(File)], []));
   expect(await screen.findByText("Here is the drawing.")).toBeInTheDocument();
   expect(chips()).toEqual([]);
 }
 
-/** A turn with no file keeps the two-argument call: nothing changes for a plain turn. */
+/** A turn with no file sends an empty file list (`F4.245`: one call shape, the open wizards last). */
 export async function sendsAPlainTurnWithoutAFileList(): Promise<void> {
   const stubs = stub(READY_WITH_FILES);
   renderDock("organization_admin");
@@ -821,7 +822,7 @@ export async function sendsAPlainTurnWithoutAFileList(): Promise<void> {
   await screen.findByLabelText(ATTACH);
   await send("hello");
   await waitFor(() => expect(stubs.turn).toHaveBeenCalledTimes(1));
-  expect(stubs.turn.mock.calls[0]).toEqual([CONVERSATION_ID, "hello"]);
+  expect(stubs.turn.mock.calls[0]).toEqual([CONVERSATION_ID, "hello", [], []]);
 }
 
 const PLACEHOLDER = `[Attachment 1 of 2: "plant.png", image/png, 12 bytes, sha256 ${"a".repeat(64)}; not stored]`;

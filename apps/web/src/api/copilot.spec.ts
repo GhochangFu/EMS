@@ -15,6 +15,8 @@ import { sendCopilotTurn } from "./copilot";
  * `node` environment, as `copilot-confirm.spec.ts`.
  */
 const CONVERSATION_ID = "11111111-1111-4111-8111-111111111111";
+/** `F4.245`: one open wizard, sent with every turn. */
+const WIZARDS = [{ catalogId: "dashboard.update", params: { id: CONVERSATION_ID } }];
 
 const RESPONSE: CopilotTurnResponseDto = {
   conversationId: CONVERSATION_ID,
@@ -49,21 +51,22 @@ export async function aTurnWithFilesIsSentAsFormData(): Promise<void> {
   useAuthStore.setState({ accessToken: "token-1" });
   const seen = capture();
   const files = [file("plant.png", "image/png"), file("sld.pdf", "application/pdf")];
-  expect(await sendCopilotTurn(CONVERSATION_ID, "draw the mimic", files)).toEqual(RESPONSE);
+  expect(await sendCopilotTurn(CONVERSATION_ID, "draw the mimic", files, WIZARDS)).toEqual(RESPONSE);
   const { url, init } = seen();
   expect(url).toMatch(new RegExp(`/api/v1/copilot/conversations/${CONVERSATION_ID}/turns$`));
   expect(init.method).toBe("POST");
   expect(init.body).toBeInstanceOf(FormData);
   const form = init.body as FormData;
-  expect([...form.keys()]).toEqual(["message", "files", "files"]);
+  expect([...form.keys()]).toEqual(["message", "wizards", "files", "files"]);
   expect(form.get("message")).toBe("draw the mimic");
+  expect(form.get("wizards")).toBe(JSON.stringify(WIZARDS));
   expect(form.getAll("files").map((f) => (f as File).name)).toEqual(["plant.png", "sld.pdf"]);
 }
 
 export async function aTurnWithFilesSetsNoContentType(): Promise<void> {
   useAuthStore.setState({ accessToken: "token-1" });
   const seen = capture();
-  await sendCopilotTurn(CONVERSATION_ID, "draw", [file("plant.png", "image/png")]);
+  await sendCopilotTurn(CONVERSATION_ID, "draw", [file("plant.png", "image/png")], []);
   const headers = new Headers(seen().init.headers);
   // Positive beside the absence: the request did carry headers (the bearer).
   expect(headers.get("Authorization")).toBe("Bearer token-1");
@@ -73,17 +76,18 @@ export async function aTurnWithFilesSetsNoContentType(): Promise<void> {
 export async function aTurnWithoutFilesIsSentAsJson(): Promise<void> {
   useAuthStore.setState({ accessToken: "token-1" });
   const seen = capture();
-  await sendCopilotTurn(CONVERSATION_ID, "how many alarms?");
+  await sendCopilotTurn(CONVERSATION_ID, "how many alarms?", [], WIZARDS);
   const { init } = seen();
   expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
-  expect(init.body).toBe(JSON.stringify({ message: "how many alarms?" }));
+  // `F4.245`: the open wizards ride with the message. Mutation: send `[]` whatever the argument → red.
+  expect(init.body).toBe(JSON.stringify({ message: "how many alarms?", wizards: WIZARDS }));
 }
 
 export async function anEmptyFileListIsSentAsJson(): Promise<void> {
   useAuthStore.setState({ accessToken: "token-1" });
   const seen = capture();
-  await sendCopilotTurn(CONVERSATION_ID, "hi", []);
+  await sendCopilotTurn(CONVERSATION_ID, "hi", [], []);
   const { init } = seen();
   expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
-  expect(init.body).toBe(JSON.stringify({ message: "hi" }));
+  expect(init.body).toBe(JSON.stringify({ message: "hi", wizards: [] }));
 }

@@ -156,7 +156,7 @@ export async function aChipSendsItsTextAsATurn(): Promise<void> {
   const stubs = await openSkill();
   stubs.turn.mockResolvedValue({ ...answered("Add an RTU", "ok"), skill: skillState({ suggestedReplies: [] }) });
   fireEvent.click(screen.getByRole("button", { name: "Add an RTU" }));
-  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "Add an RTU"));
+  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "Add an RTU", [], []));
 }
 
 /** No AI key here (`configured: false`): a bound skill still takes input (the onboarding's guided mode answers). */
@@ -509,7 +509,7 @@ export async function enterSendsNothingWhileAnUndoIsInFlight(): Promise<void> {
   undo.release();
   await screen.findByRole("button", { name: "Undo" });
   fireEvent.keyDown(box, { key: "Enter" });
-  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "Add an asset"));
+  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "Add an asset", [], []));
 }
 
 // ---- F3.24b: the discovery status poll, the map chip, the Confirm card -------------------------
@@ -564,7 +564,7 @@ export async function theMapChipSendsItsTextAsATurn(): Promise<void> {
   const stubs = await openSkill({ skill: skillState({ session: session({ discovery: discovery() }) }) });
   stubs.turn.mockResolvedValue({ ...answered("Map the discovered points", "ok"), skill: skillState() });
   fireEvent.click(await screen.findByRole("button", { name: "Map the discovered points" }));
-  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "Map the discovered points"));
+  await waitFor(() => expect(stubs.turn).toHaveBeenCalledWith(CONVERSATION_ID, "Map the discovered points", [], []));
 }
 
 /** A discovery that is already done reads nothing (the poll stops) and offers no chip (it did not just flip). */
