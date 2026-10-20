@@ -17,6 +17,9 @@ import {
   assertS2ThePromptViewScrubsShortNames,
   assertS3PointKeysAndNeighboursStayReadable,
   assertS4TheSharedPredicateStaysNarrow,
+  assertS5APatchOfTheRedactedViewKeepsStoredValues,
+  assertS6APlaceholderIsNeverWrittenAsASecret,
+  assertS7AuthNamesAreScrubbedWhole,
 } from "./onboarding-redaction.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). */
@@ -98,5 +101,17 @@ describe("onboarding-redaction — short credential names (F4.185)", () => {
 
   it("S4 the shared predicate stays narrow for the copilot", () => {
     assertS4TheSharedPredicateStaysNarrow();
+  });
+
+  it("S5 a PATCH of the redacted view keeps the stored values", () => {
+    assertS5APatchOfTheRedactedViewKeepsStoredValues();
+  });
+
+  it("S6 a placeholder is never written as a secret", () => {
+    assertS6APlaceholderIsNeverWrittenAsASecret();
+  });
+
+  it("S7 auth names are scrubbed whole and author stays readable", () => {
+    assertS7AuthNamesAreScrubbedWhole();
   });
 });

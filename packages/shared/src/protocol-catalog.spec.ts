@@ -19,8 +19,10 @@ import { INGEST_WIRED_PROTOCOLS, PROTOCOL_CATALOG, describeProtocol, protocolCat
  * cannot import `apps/api`. Two sources:
  * - `SECRET_FRAGMENTS`, `apps/api/src/admin/onboarding/onboarding-redaction.ts`
  *   (24 fragments, matched as substrings of the normalised key);
- * - `AGENT_SECRET_KEY_NAMES`, `apps/api/src/admin/onboarding/onboarding-agent-tools.ts`
- *   (exact normalised names), plus that file's `includes("auth")` rule.
+ * - `SHORT_SECRET_KEY_NAMES`, `apps/api/src/admin/onboarding/onboarding-redaction.ts`
+ *   (exact normalised names; since `F4.185` the draft scrub and the agent's
+ *   refusal both read it), plus the refusal's `includes("auth")` rule in
+ *   `onboarding-agent-tools.ts`.
  * `onboarding-protocol.service.spec.ts` runs the **real** predicate,
  * `configCarriesCredential`, over the same keys, so this copy cannot drift unnoticed.
  */
@@ -62,6 +64,9 @@ const COPIED_AGENT_SECRET_KEY_NAMES = new Set([
   "pin",
   "bearer",
   "key",
+  "auth",
+  "authorization",
+  "basicauth",
 ]);
 
 /** As `onboarding-redaction.ts` `normaliseKey`: lowercase, separators dropped. */

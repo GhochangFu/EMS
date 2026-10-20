@@ -4,6 +4,7 @@ import {
   attachEncryptedCredentials,
   isDraftRecordSecretKey,
   isSecretKey,
+  keepRedactedValues,
   readEncryptedCredentials,
   reconcileSecrets,
   redactDraftForClient,
@@ -785,4 +786,50 @@ export function assertS4TheSharedPredicateStaysNarrow(): void {
     ["key", "pin", "user", "pass"].every((name) => isDraftRecordSecretKey(name)),
     "isDraftRecordSecretKey must catch the short names",
   );
+}
+
+/** S5 — a PATCH of the redacted view keeps the stored values under scrubbed keys, matched by code. */
+export function assertS5APatchOfTheRedactedViewKeepsStoredValues(): void {
+  const stored = {
+    location: { code: "L1", name: "L1", meta: { user: "ops", nested: { pin: "1234" } } },
+    rtus: [
+      { ...rtu("RTU-A"), config: { host: "a", key: "k-a" }, meta: { user: "u-a" } },
+      { ...rtu("RTU-B"), config: { host: "b", key: "k-b" } },
+    ],
+    assets: [{ rtuIndex: 0, code: "A1", name: "A1", siteName: "S", domain: "electrical", meta: { pin: "9" } }],
+  };
+  const view = redactDraftForClient(stored) as unknown as typeof stored;
+  // The client reorders the RTUs and edits a topic, as the drawer's Save does.
+  const patch = { ...view, rtus: [{ ...view.rtus[1], config: { ...view.rtus[1].config, topic: "t" } }, view.rtus[0]] };
+  const kept = keepRedactedValues(stored, patch) as unknown as typeof stored;
+  const got = {
+    locationUser: kept.location.meta.user,
+    nestedPin: (kept.location.meta.nested as { pin: string }).pin,
+    bKey: kept.rtus[0].config.key,
+    aKey: kept.rtus[1].config.key,
+    aUser: (kept.rtus[1].meta as { user: string }).user,
+    assetPin: kept.assets[0].meta.pin,
+  };
+  const want = { locationUser: "ops", nestedPin: "1234", bKey: "k-b", aKey: "k-a", aUser: "u-a", assetPin: "9" };
+  assert(JSON.stringify(got) === JSON.stringify(want), `stored values were not kept: ${JSON.stringify(got)}`);
+}
+
+/** S6 — a placeholder with nothing stored is dropped; under a non-secret key it is ordinary text. */
+export function assertS6APlaceholderIsNeverWrittenAsASecret(): void {
+  const patch = { rtus: [{ ...rtu("RTU-NEW"), config: { key: "[REDACTED]", label: "[REDACTED]" } }] };
+  const kept = keepRedactedValues({}, patch);
+  const config = kept.rtus[0].config as Record<string, unknown>;
+  assert(!("key" in config), `a placeholder with nothing stored was kept: ${JSON.stringify(config)}`);
+  assert(config.label === "[REDACTED]", `a non-secret key lost its text: ${JSON.stringify(config)}`);
+}
+
+/** S7 — `auth`, `authorization` and `basicAuth` are scrubbed whole; `author` stays readable. */
+export function assertS7AuthNamesAreScrubbedWhole(): void {
+  const out = redactDraftForLlm({
+    rtus: [{ ...rtu("RTU-1"), config: { auth: "a", Authorization: "Bearer x", basic_auth: "b", author: "Ion" } }],
+  }) as unknown as { rtus: { config: Record<string, unknown> }[] };
+  const config = out.rtus[0].config;
+  const want = { auth: "[REDACTED]", Authorization: "[REDACTED]", basic_auth: "[REDACTED]", author: "Ion" };
+  const got = Object.fromEntries(Object.keys(want).map((key) => [key, config[key]]));
+  assert(JSON.stringify(got) === JSON.stringify(want), `got ${JSON.stringify(got)}`);
 }

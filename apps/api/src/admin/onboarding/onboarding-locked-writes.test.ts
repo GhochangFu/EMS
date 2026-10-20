@@ -15,6 +15,7 @@ import {
   assertThePatchOverAChangedDraftStillWrites,
   assertThePatchInfersThePhaseOnTheLockedMerge,
   assertThePatchOverALoadedCommittedRowAnswers403,
+  assertThePatchOfTheRedactedViewKeepsAStoredKey,
 } from "./onboarding-locked-writes.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). One `it()` per claim. */
@@ -73,5 +74,9 @@ describe("onboarding upload, credential and PATCH draft writes under the row loc
 
   it("answers 403 to a PATCH over a row already committed when loaded", async () => {
     await assertThePatchOverALoadedCommittedRowAnswers403();
+  });
+
+  it("U15 a PATCH of the redacted view keeps a stored config key", async () => {
+    await assertThePatchOfTheRedactedViewKeepsAStoredKey();
   });
 });
