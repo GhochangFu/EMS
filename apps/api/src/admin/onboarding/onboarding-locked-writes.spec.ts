@@ -285,9 +285,31 @@ export async function assertThePatchOfAnOversizedRecordAnswers400(): Promise<voi
 
 /** (U17) Adjacent positive: a stored oversized record the body leaves out does not block a PATCH of another section. */
 export async function assertThePatchBesideAStoredOversizedRecordWrites(): Promise<void> {
-  const session = patchSession();
-  const locked = { ...session, draft: { ...rtuDraft(), location: { ...PLACE, meta: sixtyFiveKeys() } } } as Row;
-  const { service, record } = patchBuild(session, { locked });
+  // In both the loaded and the locked row, so a pre-lock check of the merge would redden this too (review finding).
+  const stored = { ...rtuDraft(), location: { ...PLACE, meta: sixtyFiveKeys() } } as OnboardingDraft;
+  const session = sessionRow(stored, "rtu") as Row;
+  const { service, record } = patchBuild(session, { locked: { ...session } as Row });
   await service.patchDraft(JWT, "s-1", PATCH_BODY);
   assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
+}
+
+/** (U18) F4.116 review: the bound reads the body after the placeholder restore, so a restored secret counts. */
+export async function assertThePatchCountsARestoredSecret(): Promise<void> {
+  const session = patchSession();
+  const stored = {
+    ...rtuDraft(),
+    rtus: [{ code: "RTU-1", displayName: "RTU-1", protocol: "mqtt", config: { host: "h", key: "k".repeat(3_000) } }],
+  } as OnboardingDraft;
+  const { service, record } = patchBuild(session, { locked: { ...session, draft: stored } as Row });
+  let message: string | null = null;
+  try {
+    await service.patchDraft(JWT, "s-1", {
+      rtus: [{ code: "RTU-1", displayName: "RTU-1", protocol: "mqtt", config: { host: "h", key: "[REDACTED]", note: "n".repeat(6_000) } }],
+    } as never);
+  } catch (error) {
+    if (!(error instanceof BadRequestException)) throw error;
+    message = String((error.getResponse() as { message?: unknown }).message ?? error.message);
+  }
+  assert(message !== null && message.startsWith("rtus[0].config is "), `400 on the restored size, got ${message}`);
+  assert(record.updates.length === 0, `nothing written, got ${record.updates.length} updates`);
 }

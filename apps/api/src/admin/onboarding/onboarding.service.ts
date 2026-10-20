@@ -585,14 +585,6 @@ export class OnboardingService {
     // gate, so a caller outside it learns nothing, and only when the body names
     // a type, so a draft whose stored type was retired can still be repaired.
     await assertPatchLocationTypeIsActive(draft, this.vocabularies);
-    // F4.116: the body's own records, not the merge. `mergeDraft` replaces a
-    // record wholesale, so a record the body carries is the one stored; and a
-    // stored oversized record the body leaves out must not block a PATCH that
-    // repairs something else, or the PATCH that shrinks it.
-    const recordProblem = draftRecordProblem(draft as OnboardingDraft);
-    if (recordProblem !== null) {
-      throw new BadRequestException(recordProblem);
-    }
     const locationTypeCodes = await this.activeLocationTypeCodes();
     const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
       // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
@@ -600,7 +592,19 @@ export class OnboardingService {
       assertSessionStillDraft(locked);
       // F4.185 (review finding): a client sends back the redacted view, so a
       // placeholder under a scrubbed key keeps the stored value, never itself.
-      const merged = this.chatService.mergeDraft(locked.draft, keepRedactedValues(locked.draft, draft));
+      const body = keepRedactedValues(locked.draft, draft);
+      // F4.116: the records the body carries, **after** the restore above —
+      // a placeholder is 12 bytes in the body and the whole stored secret once
+      // restored (review finding). Not the merge: `mergeDraft` replaces a
+      // record wholesale, so these are the records stored; and a stored
+      // oversized record the body leaves out must not block a PATCH that
+      // repairs something else, or the PATCH that shrinks it. The throw rolls
+      // the transaction back, so nothing is written.
+      const recordProblem = draftRecordProblem(body as OnboardingDraft);
+      if (recordProblem !== null) {
+        throw new BadRequestException(recordProblem);
+      }
+      const merged = this.chatService.mergeDraft(locked.draft, body);
       const [row] = await tx
         .update(onboardingSessions)
         .set({

@@ -18,6 +18,7 @@ import {
   assertThePatchOfTheRedactedViewKeepsAStoredKey,
   assertThePatchOfAnOversizedRecordAnswers400,
   assertThePatchBesideAStoredOversizedRecordWrites,
+  assertThePatchCountsARestoredSecret,
 } from "./onboarding-locked-writes.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). One `it()` per claim. */
@@ -88,5 +89,9 @@ describe("onboarding upload, credential and PATCH draft writes under the row loc
 
   it("U17 a PATCH beside a stored oversized record still writes", async () => {
     await assertThePatchBesideAStoredOversizedRecordWrites();
+  });
+
+  it("U18 a PATCH counts a restored secret against the bound", async () => {
+    await assertThePatchCountsARestoredSecret();
   });
 });
