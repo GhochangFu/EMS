@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException } from "@nestjs/common";
+import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
 
 import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
 
@@ -261,4 +261,33 @@ export async function assertThePatchOfTheRedactedViewKeepsAStoredKey(): Promise<
   const draft = record.updates[0]?.draft as OnboardingDraft | undefined;
   const config = draft?.rtus?.[0]?.config as Record<string, unknown> | undefined;
   assert(config?.key === "k-stored" && config?.topic === "t", `stored key kept and topic written, got ${JSON.stringify(config)}`);
+}
+
+function sixtyFiveKeys(): Record<string, number> {
+  return Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`k${i}`, i]));
+}
+
+/** (U16) F4.116: a PATCH whose body carries a record over the bound answers 400 and writes nothing. */
+export async function assertThePatchOfAnOversizedRecordAnswers400(): Promise<void> {
+  const { service, record } = patchBuild(patchSession());
+  let message: string | null = null;
+  try {
+    await service.patchDraft(JWT, "s-1", {
+      rtus: [{ code: "RTU-1", displayName: "RTU-1", protocol: "mqtt", config: sixtyFiveKeys() }],
+    } as never);
+  } catch (error) {
+    if (!(error instanceof BadRequestException)) throw error;
+    message = String((error.getResponse() as { message?: unknown }).message ?? error.message);
+  }
+  assert(message !== null && message.startsWith("rtus[0].config holds 65 keys"), `400 naming the record, got ${message}`);
+  assert(record.updates.length === 0, `nothing written, got ${record.updates.length} updates`);
+}
+
+/** (U17) Adjacent positive: a stored oversized record the body leaves out does not block a PATCH of another section. */
+export async function assertThePatchBesideAStoredOversizedRecordWrites(): Promise<void> {
+  const session = patchSession();
+  const locked = { ...session, draft: { ...rtuDraft(), location: { ...PLACE, meta: sixtyFiveKeys() } } } as Row;
+  const { service, record } = patchBuild(session, { locked });
+  await service.patchDraft(JWT, "s-1", PATCH_BODY);
+  assert(record.updates.length === 1, `one write, got ${record.updates.length}`);
 }

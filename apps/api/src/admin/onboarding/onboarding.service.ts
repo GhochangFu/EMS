@@ -57,7 +57,7 @@ import {
   undoReply,
   type Checkpoint,
 } from "./onboarding-checkpoints";
-import { draftCountProblem } from "./onboarding-draft-caps";
+import { draftCountProblem, draftRecordProblem } from "./onboarding-draft-caps";
 import { readDiscovery, withDiscoveryOf } from "./onboarding-discovery-state";
 import { applyDiscoveryTurn } from "./onboarding-discovery-tools";
 import { diffSections } from "./onboarding-draft-merge";
@@ -585,6 +585,14 @@ export class OnboardingService {
     // gate, so a caller outside it learns nothing, and only when the body names
     // a type, so a draft whose stored type was retired can still be repaired.
     await assertPatchLocationTypeIsActive(draft, this.vocabularies);
+    // F4.116: the body's own records, not the merge. `mergeDraft` replaces a
+    // record wholesale, so a record the body carries is the one stored; and a
+    // stored oversized record the body leaves out must not block a PATCH that
+    // repairs something else, or the PATCH that shrinks it.
+    const recordProblem = draftRecordProblem(draft as OnboardingDraft);
+    if (recordProblem !== null) {
+      throw new BadRequestException(recordProblem);
+    }
     const locationTypeCodes = await this.activeLocationTypeCodes();
     const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
       // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).

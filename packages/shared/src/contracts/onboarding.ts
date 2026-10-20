@@ -518,6 +518,21 @@ export const MAX_NEW_POINT_KEYS_PER_COMMIT = 200;
 export const MAX_POINT_KEYS_PER_ORGANIZATION = 1000;
 
 /**
+ * The most keys one free-form draft record may hold, counted at every nesting
+ * level (`F4.116`, owner ruling 2026-10-20): `location.meta`, `rtus[].config`,
+ * `rtus[].meta` and `assets[].meta`. Sixteen times the widest protocol
+ * catalog config (4 fields) measured when it was set.
+ */
+export const MAX_DRAFT_RECORD_KEYS = 64;
+
+/**
+ * The most bytes one free-form draft record may hold as UTF-8 JSON (`F4.116`,
+ * owner ruling 2026-10-20). About 45 times the largest stored record (178
+ * bytes) measured when it was set; four at the cap fit well inside one 100 KB body.
+ */
+export const MAX_DRAFT_RECORD_BYTES = 8 * 1024;
+
+/**
  * The number of assets one onboarding session may create (`F4.103`).
  * See `MAX_ONBOARDING_RTUS` for the derivation of all four caps.
  */
