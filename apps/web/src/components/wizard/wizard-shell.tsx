@@ -125,7 +125,7 @@ export function WizardShell(props: WizardShellProps) {
           title={entry.title}
           summary={props.summary ?? entry.title}
           risk={entry.risk}
-          rows={changeRows(body, props.current ?? null)}
+          rows={changeRows(body, props.current ?? null, [], entry.formulas)}
           error={props.submitError ?? (reviewProblems.length > 0 ? reviewProblems.join("; ") : null)}
           busy={props.submitting}
           confirmLabel="Submit"

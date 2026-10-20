@@ -260,7 +260,7 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
           ...scalarRowsOf(changeRows(change.body, null, [...cardOnly, "nodes", "pipes"]), baseline),
           ...(baseline !== null ? layoutGraphRows(layoutBody, baseline) : []),
         ]
-      : changeRows(change.body, isEdit ? (current.data ?? null) : null, cardOnly);
+      : changeRows(change.body, isEdit ? (current.data ?? null) : null, cardOnly, entry?.formulas ?? []);
   const note = isEdit
     ? `Proposed at ${timeOf(change.proposedAt)}. The record can change before you confirm; the request sends the values shown. Expires at ${timeOf(change.expiresAt)}.`
     : `Proposed at ${timeOf(change.proposedAt)}. Expires at ${timeOf(change.expiresAt)}.`;
