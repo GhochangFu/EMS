@@ -169,6 +169,7 @@ describe.skipIf(!connectionString)("F4.111 — the onboarding commit enforces th
             `DELETE FROM bms.point_keys WHERE id IN (
                SELECT id FROM bms.point_keys
                 WHERE created_by_organization_id = $1 AND code LIKE 'F4111\\_FILL\\_%'
+                ORDER BY created_at, id
                 LIMIT $2)`,
             [organizationId, total - count],
           );
