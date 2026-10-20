@@ -96,7 +96,7 @@ export function proposeHarness(options: Options = {}) {
   const stored: NewPendingChange[] = [];
   const resolved: Array<{ id: string; params: Record<string, string>; allowed: readonly string[]; bound?: string | null }> = [];
   const target: ResolvedTarget | null =
-    options.target === undefined ? { organizationId: ORG_X, organizationName: "Org X", targetName: "Template T" } : options.target;
+    options.target === undefined ? { organizationId: ORG_X, organizationName: "Org X", targetName: "Template T", status: "draft" } : options.target;
   const tools = createCopilotProposeTools(
     {
       targets: {
@@ -229,7 +229,7 @@ export async function aTargetOutsideTheAllowedSetStoresNothing(): Promise<void> 
 
 /** A cross-organization turn: the target must be in the platform scope, and the resolver is asked with that scope. */
 export async function aCrossOrganizationProposalUsesTheAllowedSet(): Promise<void> {
-  const h = proposeHarness({ target: { organizationId: ORG_Y, organizationName: "Org Y", targetName: "Y-T" } });
+  const h = proposeHarness({ target: { organizationId: ORG_Y, organizationName: "Org Y", targetName: "Y-T", status: "published" } });
   const outcome = await h.call(
     "propose_dashboardTemplate_archive",
     { id: ROW },
@@ -574,14 +574,9 @@ const kpi = (pointKeys: string[], expression: string) => ({
   expression,
   dialect: "bms-calc-v1",
 });
-const templateTarget = (over: Partial<ResolvedTarget> = {}): ResolvedTarget => ({
-  organizationId: ORG_X,
-  organizationName: "Org X",
-  targetName: "Pump template",
-  pointKeys: ["kw"],
-  currentContent: {},
-  ...over,
-});
+/** `F4.246`: a draft, which the lifecycle mirror admits for an edit or a publish; archive and instantiate pass `published`. */
+const templateTarget = (over: Partial<ResolvedTarget> = {}): ResolvedTarget =>
+  ({ organizationId: ORG_X, organizationName: "Org X", targetName: "Pump template", pointKeys: ["kw"], currentContent: {}, status: "draft", ...over });
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** An invalid `points[0].formula` stores nothing (the shared body refuses it at its path); the valid one beside it stores. */
@@ -773,7 +768,7 @@ export async function aStockImportStoresOnItsCodePath(): Promise<void> {
 
 /** Archiving a template is bodyless and red: `{}` on its own path, risk `deactivate`. */
 export async function aTemplateArchiveStoresTheEmptyObjectAsDeactivate(): Promise<void> {
-  const h = proposeHarness({ target: templateTarget() });
+  const h = proposeHarness({ target: templateTarget({ status: "published" }) });
   expect((await h.call("propose_assetTemplate_archive", { id: ROW })).ok).toBe(true);
   expect(h.stored[0]).toMatchObject({
     body: {},
@@ -794,7 +789,7 @@ const INSTANTIATE_RAW = { locationId: SITE, assets: [{ code: "P-1", name: "Pump 
  * first). Mutation: store `parsed.data` → the equality reddens.
  */
 export async function aTemplateInstantiateStoresTheRawBody(): Promise<void> {
-  const h = proposeHarness({ target: templateTarget() });
+  const h = proposeHarness({ target: templateTarget({ status: "published" }) });
   expect((await h.call("propose_assetTemplate_instantiate", { id: ROW, body: INSTANTIATE_RAW })).ok).toBe(true);
   expect(h.stored[0]).toMatchObject({
     body: INSTANTIATE_RAW,
@@ -808,7 +803,7 @@ export async function aTemplateInstantiateStoresTheRawBody(): Promise<void> {
 
 /** A body that names both arms is refused with the refinement's own sentence, and nothing is stored. */
 export async function aTemplateInstantiateWithBothTargetsStoresNothing(): Promise<void> {
-  const h = proposeHarness({ target: templateTarget() });
+  const h = proposeHarness({ target: templateTarget({ status: "published" }) });
   const refused = await h.call("propose_assetTemplate_instantiate", { id: ROW, body: { ...INSTANTIATE_RAW, rtuId: RTU } });
   expect(refused.error).toMatch(/^Invalid body: .*Supply rtuId or locationId, not both/);
   expect(h.stored).toEqual([]);
@@ -816,7 +811,7 @@ export async function aTemplateInstantiateWithBothTargetsStoresNothing(): Promis
 
 /** The summary counts the assets and names the template, the site by id, and the organization. */
 export async function aTemplateInstantiateSummaryNamesTheCountAndTheSite(): Promise<void> {
-  const h = proposeHarness({ target: templateTarget() });
+  const h = proposeHarness({ target: templateTarget({ status: "published" }) });
   await h.call("propose_assetTemplate_instantiate", { id: ROW, body: INSTANTIATE_RAW });
   expect(h.stored[0]?.summary).toBe(`Build 1 asset from the asset template "Pump template" at the location ${SITE} in Org X.`);
 }

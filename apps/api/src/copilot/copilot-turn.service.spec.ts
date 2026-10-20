@@ -197,7 +197,7 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
   /** The user and conversation each `listOpen` named, and the user each `discard` named (two same-typed strings). */
   const pendingAsked = { listOpen: [] as Array<[string, string]>, discardUsers: [] as string[] };
   const target: ResolvedTarget | null =
-    options.target === undefined ? { organizationId: ORG_X, organizationName: "Org X", targetName: "T" } : options.target;
+    options.target === undefined ? { organizationId: ORG_X, organizationName: "Org X", targetName: "T", status: "draft" } : options.target;
   const pending = {
     hasOpen: async () => false,
     propose: async (_userId: string, change: NewPendingChange): Promise<CopilotPendingChangeDto> => {
@@ -556,6 +556,7 @@ export async function assertAnObeyedInjectionYieldsOnlyAPendingCard(): Promise<v
   ]);
   const h = harness(llm, {
     tools: { list_assets: () => ({ ok: true, result: { items: [{ name: INJECTED }] }, organizationIds: [ORG_X] }) },
+    target: { organizationId: ORG_X, organizationName: "Org X", targetName: "T", status: "published" },
   });
   const logged: unknown[] = [];
   const original = Logger.prototype.log;

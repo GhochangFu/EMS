@@ -147,3 +147,41 @@ export function draftRequiredMessage(
 export function archiveRefusedMessage(status: TemplateLifecycleStatus): string {
   return `Only a published template can be archived; this one is ${status}`;
 }
+
+/**
+ * The statuses a version may be **instantiated** from — assets built from an
+ * asset template, a dashboard made from a dashboard template (`F4.246`).
+ *
+ * Declared rather than derived, for the reason `TEMPLATE_BRANCHABLE_STATUSES`
+ * gives: it holds the same single member today, and that coincidence is not
+ * the rule. Instantiating freezes a shape other rows are built from, which
+ * only a published version promises.
+ *
+ * Declared here so a reader of the rule (the copilot's propose-time mirror,
+ * `apps/api/src/copilot/copilot-template-lifecycle.ts`) reads the set instead
+ * of spelling a status literal. That is a convention, not a gate: the
+ * single-source scan reads only its pinned transition owners. The two
+ * instantiate services still hold their own `status !== "published"` check
+ * and sentence; they are not rewired here, and their integration specs
+ * assert their literal sentences.
+ */
+export const TEMPLATE_INSTANTIABLE_STATUSES: readonly TemplateLifecycleStatus[] = ["published"];
+
+/** Whether assets or a dashboard may be built from this version. */
+export function canInstantiate(status: TemplateLifecycleStatus): boolean {
+  return TEMPLATE_INSTANTIABLE_STATUSES.includes(status);
+}
+
+/** Which template table an instantiate refusal is for: the two routes word it differently. */
+export type TemplateInstantiateTable = "asset" | "dashboard";
+
+/**
+ * Refusal for instantiating a version that is not published — each route's
+ * own sentence, byte for byte: the dashboard route's
+ * (`dashboard-templates-instantiate.service.ts`) is one sentence, the asset
+ * route's (`asset-templates-instantiate-core.ts`) adds a second.
+ */
+export function instantiateRefusedMessage(status: TemplateLifecycleStatus, table: TemplateInstantiateTable): string {
+  const first = `Only a published template can be instantiated; this one is ${status}`;
+  return table === "asset" ? `${first}. Publishing is what freezes the shape assets are built from.` : first;
+}

@@ -21,7 +21,13 @@ import {
   siteControlRoomViews,
   templatePoints,
 } from "@bms/db";
-import { type JwtPayload, userGrantKindSchema, userRoleSchema } from "@bms/shared";
+import {
+  type JwtPayload,
+  type TemplateLifecycleStatus,
+  templateLifecycleStatusSchema,
+  userGrantKindSchema,
+  userRoleSchema,
+} from "@bms/shared";
 import type { CatalogEntry, CatalogRef, CatalogRefKind } from "@bms/shared/copilot";
 
 import { UserGrantsService } from "../admin/users/user-grants.service";
@@ -45,6 +51,8 @@ export type ResolvedTarget = {
   readonly currentContent?: Readonly<Record<string, unknown>>;
   /** `F3.86` PR 4, `userGrantAdd` and `userGrant`: the grant target's name, for the summary. */
   readonly refName?: string;
+  /** Template targets: the version's lifecycle status, for the propose tool's lifecycle mirror (`F4.246`). */
+  readonly status?: TemplateLifecycleStatus;
 };
 
 /** What the user targets need from the users services: their own checks, called, never copied (plan §6.3). */
@@ -86,6 +94,7 @@ type Found = {
   currentWidgetIds?: string[];
   pointKeys?: string[];
   currentContent?: Record<string, unknown>;
+  status?: TemplateLifecycleStatus;
 };
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
 type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet" | "onboardingSession" | UserKind>;
@@ -196,6 +205,7 @@ export class CopilotTargetResolver implements CopilotTargets {
       ...(found.pointKeys ? { pointKeys: found.pointKeys } : {}),
       ...(found.currentContent ? { currentContent: found.currentContent } : {}),
       ...(found.refName !== undefined ? { refName: found.refName } : {}),
+      ...(found.status !== undefined ? { status: found.status } : {}),
     };
   }
 
@@ -372,11 +382,11 @@ export class CopilotTargetResolver implements CopilotTargets {
       }
       case "dashboardTemplate": {
         const [row] = await tx
-          .select({ name: dashboardTemplates.name })
+          .select({ name: dashboardTemplates.name, status: dashboardTemplates.status })
           .from(dashboardTemplates)
           .where(and(eq(dashboardTemplates.id, id), eq(dashboardTemplates.organizationId, organizationId)))
           .limit(1);
-        return row ? { organizationId, name: row.name } : null;
+        return row ? { organizationId, name: row.name, ...lifecycleStatusOf(row.status) } : null;
       }
       case "calcParameter": {
         const [row] = await tx
@@ -405,7 +415,7 @@ export class CopilotTargetResolver implements CopilotTargets {
       case "assetTemplate":
       case "assetTemplateDeploy": {
         const [row] = await tx
-          .select({ name: assetTemplates.name, content: assetTemplates.content })
+          .select({ name: assetTemplates.name, content: assetTemplates.content, status: assetTemplates.status })
           .from(assetTemplates)
           .where(and(eq(assetTemplates.id, id), eq(assetTemplates.organizationId, organizationId)))
           .limit(1);
@@ -418,6 +428,7 @@ export class CopilotTargetResolver implements CopilotTargets {
         return {
           organizationId,
           name: row.name,
+          ...lifecycleStatusOf(row.status),
           pointKeys: points.map((point) => point.pointKey),
           // The column is `jsonb NOT NULL`; anything but an object merges as empty (ruling Q10).
           currentContent:
@@ -628,4 +639,14 @@ export function refKindOf(ref: CatalogRef, body: Readonly<Record<string, unknown
   if ("kind" in ref) return ref.kind;
   const value = body[ref.kindField];
   return typeof value === "string" && Object.prototype.hasOwnProperty.call(ref.kinds, value) ? (ref.kinds[value] ?? null) : null;
+}
+
+/**
+ * `F4.246` — a template row's `status` column as the lifecycle vocabulary. A
+ * value outside it is left off, so the propose tool's mirror fails closed on
+ * it rather than reading an unknown state as admissible.
+ */
+function lifecycleStatusOf(status: string): { status?: TemplateLifecycleStatus } {
+  const parsed = templateLifecycleStatusSchema.safeParse(status);
+  return parsed.success ? { status: parsed.data } : {};
 }

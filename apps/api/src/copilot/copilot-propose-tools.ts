@@ -30,6 +30,7 @@ import { CopilotPendingChangesService } from "./copilot-pending-changes.service"
 import type { CopilotReadTools, CopilotToolContext, CopilotToolResult, RegistryOptions } from "./copilot-read-tools";
 import { prepareUpload } from "./copilot-upload-prepare";
 import { COPILOT_TARGETS, type CopilotTargets } from "./copilot-target-resolver";
+import { PROPOSE_TARGET_ERROR, templateLifecycleRefusal } from "./copilot-template-lifecycle";
 
 export const FILL_STEP_TOOL = "fill_step";
 export const DESCRIBE_CHANGE_TOOL = "describe_change";
@@ -37,8 +38,8 @@ export const DESCRIBE_CHANGE_TOOL = "describe_change";
 /** The propose tool's refusals, each a sentence the model can act on. */
 export const PROPOSE_OPEN_CHANGE_ERROR =
   "A proposed change in this conversation is still waiting. Ask the user to Confirm or Reject its card first.";
-export const PROPOSE_TARGET_ERROR =
-  "That record was not found among the organizations this conversation may change, or you may not change it.";
+/** `F4.246`: declared beside the lifecycle mirror that fails closed with it; re-exported so its importers do not move. */
+export { PROPOSE_TARGET_ERROR } from "./copilot-template-lifecycle";
 export const PROPOSE_ACCESS_ON_FOLLOW_UP_ERROR =
   "An access change can be proposed only when the user's own message asks for it, never after a confirmed change.";
 export const UNKNOWN_CHANGE_ERROR = "There is no such change in the catalog.";
@@ -220,7 +221,9 @@ function proposeDescription(entry: CatalogEntry): string {
  * **A propose tool never writes the change.** It checks the body against the
  * entry's own schema (the controller's export) and any formula, refuses while
  * the conversation has a change in flight, resolves the target's organization
- * inside the turn's allowed set (`CopilotTargets`), and stores one `pending`
+ * inside the turn's allowed set (`CopilotTargets`), refuses a template whose
+ * lifecycle status the route would refuse (`F4.246`, with the route's own
+ * sentence), and stores one `pending`
  * row: the method, the encoded path, the body the browser will send and its
  * canonical hash. Only the user's Confirm, through the `X-Copilot-Change`
  * interceptor, sends the request.
@@ -410,6 +413,11 @@ export function createCopilotProposeTools(
     ) {
       return { ok: false, error: PROPOSE_TARGET_ERROR };
     }
+    // `F4.246`: a template the route would refuse for its lifecycle status is refused here with the
+    // route's sentence — after the target check (a row outside the scope never leaks its status), and
+    // before the content merge (a version that cannot change is never read into a card).
+    const lifecycle = templateLifecycleRefusal(entry.id, target.status);
+    if (lifecycle !== null) return { ok: false, error: lifecycle };
     // `F3.87` PR 5: a layout card is stored only when it can apply (Amendment 3 A2), and a replace
     // keeps the layout it was built from for the card's diff (ruling Q5).
     if (LAYOUT_ENTRY_IDS.has(entry.id)) {

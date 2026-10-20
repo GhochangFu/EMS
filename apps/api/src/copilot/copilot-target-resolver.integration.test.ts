@@ -29,6 +29,7 @@ import {
   anInstantiateUnderAnRtuOfAnotherOrganizationIsRefused,
   anInstantiateWithNoTargetIsRefused,
   theAuthoringKindAsksOnlyTheAuthoringCheck,
+  aTemplateTargetCarriesItsStatus,
   theDeployKindNeverAsksTheAuthoringCheck,
   refKindOfReadsTheKindField,
   RESOLVER_NAMES,
@@ -223,6 +224,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("never asks the authoring check for an instantiate", () => theDeployKindNeverAsksTheAuthoringCheck(ctx));
   it("asks only the authoring check for an authoring entry on the same template", () =>
     theAuthoringKindAsksOnlyTheAuthoringCheck(ctx));
+  it("F4.246: gives a template target its lifecycle status", () => aTemplateTargetCarriesItsStatus(ctx));
   it("refuses an instantiate whose site is of another organization", () =>
     anInstantiateTargetOfAnotherOrganizationIsRefused(ctx));
   it("refuses an instantiate that names no target", () => anInstantiateWithNoTargetIsRefused(ctx));
