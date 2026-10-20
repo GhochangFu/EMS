@@ -3,6 +3,9 @@ import "reflect-metadata";
 import { describe, it } from "vitest";
 
 import {
+  aJsonTurnWithoutWizardsIs400,
+  aMalformedMultipartWizardsFieldIs400,
+  aWizardTheCatalogRefusesIs400,
   assertTheDetailCarriesTheOpenChanges,
   assertABadBodyIs400,
   assertAJsonTurnPassesNoFiles,
@@ -48,6 +51,9 @@ describe("F3.85 — POST /copilot/conversations/:id/turns (ADR 0099 decisions 1,
   it("answers 200", () => assertTheTurnRouteAnswers200());
   it("F3.87 PR 7: a JSON turn passes no files", () => assertAJsonTurnPassesNoFiles());
   it("F3.87 PR 7: a multipart turn passes its message and files", () => assertAMultipartTurnPassesTheFiles());
+  it("F4.245: a JSON turn without wizards is a 400", () => aJsonTurnWithoutWizardsIs400());
+  it("F4.245: a wizard the catalog refuses is a 400", () => aWizardTheCatalogRefusesIs400());
+  it("F4.245: a malformed multipart wizards field is a 400", () => aMalformedMultipartWizardsFieldIs400());
   it("F3.87 PR 7: the route declares the files interceptor", () => assertTheTurnRouteDeclaresTheFilesInterceptor());
   it("F3.85 PR 8: the detail carries the conversation's open changes", async () => {
     await assertTheDetailCarriesTheOpenChanges();

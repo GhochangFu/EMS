@@ -12,6 +12,7 @@ import {
 import type {
   CopilotFillStepDto,
   CopilotMessageDto,
+  CopilotOpenWizard,
   CopilotPendingChangeDto,
   CopilotSkillStateDto,
   CopilotTurnOutcome,
@@ -44,6 +45,7 @@ import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pen
 import { accessIntentOf } from "./copilot-access-intent";
 import { assetIntentOf } from "./copilot-asset-intent";
 import { hasImageAttachment, hasPdfWithoutImage, inspectAttachments, type TurnAttachment, type UploadedAttachment } from "./copilot-attachments";
+import { type CopilotOpenWizardRecord, openWizardsMessage } from "./copilot-open-wizards";
 import { COPILOT_PROPOSE_TOOLS, type CopilotProposeTools } from "./copilot-propose-tools";
 import { COPILOT_READ_TOOLS, type CopilotReadTools, type CopilotToolContext } from "./copilot-read-tools";
 import {
@@ -358,7 +360,13 @@ export function historyHasAttachmentSinceLastLayout(messages: readonly CopilotMe
 
 /** What starts a turn: the user's message, or a confirmed change's outcome (a follow-up). */
 type TurnInput =
-  | { readonly kind: "user"; readonly message: string; readonly attachments: readonly UploadedAttachment[] }
+  | {
+      readonly kind: "user";
+      readonly message: string;
+      readonly attachments: readonly UploadedAttachment[];
+      /** `F4.245` (ADR 0099 Amendment 4): the wizards open on the user's screen, checked against the catalog. */
+      readonly wizards: readonly CopilotOpenWizard[];
+    }
   | { readonly kind: "follow_up"; readonly changeId: string; readonly change: FinishedChange };
 
 /**
@@ -425,9 +433,11 @@ export class CopilotTurnService {
     conversationId: string,
     message: string,
     kind: "user",
-    attachments: readonly UploadedAttachment[] = [],
+    attachments: readonly UploadedAttachment[],
+    // `F4.245` (critique F3): required, so a caller that drops the hand-off does not compile.
+    wizards: readonly CopilotOpenWizard[],
   ): Promise<CopilotTurnResponseDto> {
-    return this.run(caller, conversationId, { kind, message, attachments });
+    return this.run(caller, conversationId, { kind, message, attachments, wizards });
   }
 
   /**
@@ -537,7 +547,7 @@ export class CopilotTurnService {
     let navigateTo: string | null = null;
     let fillStep: CopilotFillStepDto | null = null;
     const proposed: CopilotPendingChangeDto[] = [];
-    const ctx: CopilotToolContext = {
+    const baseCtx: CopilotToolContext = {
       identity,
       user: caller.user,
       conversationId,
@@ -553,6 +563,13 @@ export class CopilotTurnService {
       historyHasAttachmentSinceLastLayout: historyHasAttachmentSinceLastLayout(recent),
       now: this.clock(),
     };
+    // `F4.245` (ADR 0099 Amendment 4): the open wizards' records, each resolved inside this turn's scope;
+    // a follow-up has no screen. Their names reach the model, so their organizations are provenance.
+    const openWizards = input.kind === "user" ? await this.proposeTools.openWizardRecords(input.wizards, baseCtx) : [];
+    const pageWizards: CopilotOpenWizardRecord[] = [];
+    const ctx: CopilotToolContext = { ...baseCtx, openWizards, pageWizards };
+    for (const record of openWizards) if (record.organizationId !== null) read.add(record.organizationId);
+    const wizardsLine = openWizardsMessage(openWizards);
     // Ruling Q3 (the access entries), `F3.87` PR 2, Amendment 3 A1 (the entries offered to this role), and D8.
     const registry = combineToolRegistries(
       this.tools.registry,
@@ -566,6 +583,7 @@ export class CopilotTurnService {
       messages: [
         { role: "system", content: COPILOT_SYSTEM_PROMPT },
         { role: "system", content: copilotScopeMessage(scope.allowed) },
+        ...(wizardsLine !== null ? [{ role: "system" as const, content: wizardsLine }] : []),
         ...(pdfTextOnly ? [{ role: "system" as const, content: COPILOT_PDF_TEXT_ONLY_PROMPT }] : []),
         ...history.messages,
         ...(input.kind === "user"
@@ -583,14 +601,20 @@ export class CopilotTurnService {
             const out = await tools.dispatch(name, args, ctx);
             if (!out.ok) return fail(out.error);
             if (out.organizationIds.some((id) => !allowed.has(id))) return fail(COPILOT_OUT_OF_SCOPE_TOOL_ERROR);
+            let result = out.result;
             if (out.navigateTo !== undefined) {
               if (!isAppRoute(out.navigateTo)) return fail(COPILOT_BAD_ROUTE_TOOL_ERROR);
               navigateTo = out.navigateTo;
+              // `F4.245`: the page's wizards, in scope, so a fill in this turn may name one and wait for it.
+              const page = await this.proposeTools.pageWizardRecords(out.navigateTo, ctx);
+              pageWizards.push(...page);
+              for (const record of page) if (record.organizationId !== null) read.add(record.organizationId);
+              result = { ...result, wizards: page.map(({ catalogId, params, name }) => ({ catalogId, params, name })) };
             }
             if (out.pendingChange !== undefined) proposed.push(out.pendingChange);
             if (out.fillStep !== undefined) fillStep = out.fillStep;
             for (const id of out.organizationIds) read.add(id);
-            return succeed(scrubToolResult(out.result));
+            return succeed(scrubToolResult(result));
           },
           COPILOT_TOOL_GUARDS,
         ),

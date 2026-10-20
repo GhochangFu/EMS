@@ -2,7 +2,7 @@ import { HttpException, Logger } from "@nestjs/common";
 import { expect } from "vitest";
 import { z } from "zod";
 
-import { type CopilotMessageDto, type CopilotPendingChangeDto, copilotTurnResponseDtoSchema, type JwtPayload } from "@bms/shared";
+import { type CopilotMessageDto, type CopilotOpenWizard, type CopilotPendingChangeDto, copilotTurnResponseDtoSchema, type JwtPayload } from "@bms/shared";
 import { type CatalogEntry, catalogEntry, proposeToolName } from "@bms/shared/copilot";
 
 import { calls, FakeLlmProvider, toolCall } from "../admin/onboarding/onboarding-agent-loop.spec";
@@ -120,6 +120,8 @@ type Options = {
   attachmentsOn?: boolean;
   /** `F4.267` (ADR 0090 Amendment 3 C3): the provider an image turn resolves to (absent: the main one, `vision: false`). */
   visionLlm?: FakeLlmProvider;
+  /** `F4.245`: the dashboard id the fake resolver finds for a slug (none by default). */
+  slugId?: string | null;
 };
 
 export const CHANGE_ID = "44444444-4444-4444-8444-444444444444";
@@ -225,7 +227,7 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
     finished: async (_userId: string, id: string) => (id === CHANGE_ID ? (options.finished ?? null) : null),
   };
   const proposeTools = createCopilotProposeTools(
-    { targets: { resolve: async () => target }, pending, ...(options.layouts ? { layouts: options.layouts } : {}) },
+    { targets: { resolve: async () => target, dashboardIdBySlug: async () => options.slugId ?? null }, pending, ...(options.layouts ? { layouts: options.layouts } : {}) },
     options.proposeCatalog,
   );
   const service = new CopilotTurnService(
@@ -243,8 +245,8 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
   return { service, counts, history, seenTools: seen, proposed, discarded, pendingAsked, setPlatform: (p: Options["platform"]) => (options.platform = p) };
 }
 
-export function turn(h: ReturnType<typeof harness>, message: string, who: ResolvedIdentity = GLOBAL_ADMIN) {
-  return h.service.turn({ identity: who, user: JWT }, CONVERSATION, message, "user");
+export function turn(h: ReturnType<typeof harness>, message: string, who: ResolvedIdentity = GLOBAL_ADMIN, wizards: readonly CopilotOpenWizard[] = []) {
+  return h.service.turn({ identity: who, user: JWT }, CONVERSATION, message, "user", [], wizards);
 }
 
 export async function statusOf(run: () => Promise<unknown>): Promise<{ status: number; body: unknown }> {
@@ -713,15 +715,15 @@ export async function assertAFailedTurnDiscardsItsProposals(): Promise<void> {
   expect(h.discarded).toEqual([[CHANGE_ID]]);
 }
 
-/** `fill_step` reaches the response for the open wizard, and writes nothing. */
+/** `fill_step` reaches the response for the open wizard (`F4.245`: named by its params), and writes nothing. */
 export async function assertFillStepReachesTheResponse(): Promise<void> {
   const llm = new FakeLlmProvider([
-    calls(toolCall("fill_step", { catalogId: "dashboard.create", stepId: "basics", values: { name: "Main" } })),
+    calls(toolCall("fill_step", { catalogId: "dashboard.create", params: {}, stepId: "basics", values: { name: "Main" } })),
     { kind: "final", text: "Filled." },
   ]);
   const h = harness(llm);
-  const response = await turn(h, "name it Main");
-  expect(response.fillStep).toEqual({ catalogId: "dashboard.create", stepId: "basics", values: { name: "Main" } });
+  const response = await turn(h, "name it Main", GLOBAL_ADMIN, [{ catalogId: "dashboard.create", params: {} }]);
+  expect(response.fillStep).toEqual({ catalogId: "dashboard.create", params: {}, stepId: "basics", values: { name: "Main" } });
   expect(h.proposed).toEqual([]);
 }
 

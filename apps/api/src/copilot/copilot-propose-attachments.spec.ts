@@ -78,10 +78,12 @@ export async function anAssetCreateWithTheWordsPassesTheGuard(): Promise<void> {
 /** D8 in `fill_step` too: a file turn cannot pre-fill an asset wizard without the words (review #6). Mutation: drop it → red. */
 export async function anAssetFillStepWithoutTheWordsIsRefused(): Promise<void> {
   const h = proposeHarness();
-  const args = { catalogId: "asset.create", stepId: catalogEntry("asset.create")!.steps[0]!.id, values: {} };
-  expect(await h.call("fill_step", args, { assetIntent: false })).toMatchObject({ ok: false, error: PROPOSE_ASSET_NOT_ASKED_ERROR });
-  const allowed = await h.call("fill_step", args, { assetIntent: true });
-  expect(allowed.error).not.toBe(PROPOSE_ASSET_NOT_ASKED_ERROR);
+  const args = { catalogId: "asset.create", params: {}, stepId: catalogEntry("asset.create")!.steps[0]!.id, values: {} };
+  // `F4.245`: the create wizard is open, so the adjacent positive reaches the step check.
+  const openWizards = [{ catalogId: "asset.create", params: {}, name: null, organizationId: null }];
+  expect(await h.call("fill_step", args, { assetIntent: false, openWizards })).toMatchObject({ ok: false, error: PROPOSE_ASSET_NOT_ASKED_ERROR });
+  const allowed = await h.call("fill_step", args, { assetIntent: true, openWizards });
+  expect(allowed.ok).toBe(true);
 }
 
 /** D11: a layout proposed in a turn that carries a file stores a summary with the note. */

@@ -42,6 +42,8 @@ export type ResolverCtx = {
   pointKeyId: string;
   pointKeyCode: string;
   dashboardA: string;
+  /** `F4.245`: dashboard A's slug, for the edit page an `open_page` call opens. */
+  dashboardSlugA: string;
   dashboardTemplateA: string;
   /** `F4.254` PR 3: a published asset template of A (the instantiate route's template). */
   assetTemplateA: string;
@@ -606,4 +608,17 @@ export async function aMimicLayoutResolvesForAnOrgAdminInItsOrganizationOnly(ctx
   expect(await resolverWith(ctx, across.access).resolve(entry, { id: ctx.mimicLayoutA }, {}, [ctx.orgB], JWT)).toBeNull();
   expect(across.calls.filter(([name]) => name === "canManageOrganization")).toEqual([]);
   expect(await resolverWith(ctx, recorder({}, "location_admin").access).resolve(entry, { id: ctx.mimicLayoutA }, {}, [ctx.orgA], JWT)).toBeNull();
+}
+
+/**
+ * `F4.245` (ADR 0099 Amendment 4): a slug names a dashboard only in the
+ * allowed organizations; the tenant policy confines each read. Mutation: drop
+ * the organization filter and read under one tenant only, or search every
+ * organization: the B-only case finds A's dashboard.
+ */
+export async function aDashboardSlugIsFoundInTheAllowedSetOnly(ctx: ResolverCtx): Promise<void> {
+  const resolver = resolverWith(ctx, recorder().access);
+  expect(await resolver.dashboardIdBySlug(ctx.dashboardSlugA, [ctx.orgA])).toBe(ctx.dashboardA);
+  expect(await resolver.dashboardIdBySlug(ctx.dashboardSlugA, [ctx.orgB])).toBeNull();
+  expect(await resolver.dashboardIdBySlug("no-such-slug", [ctx.orgA, ctx.orgB])).toBeNull();
 }

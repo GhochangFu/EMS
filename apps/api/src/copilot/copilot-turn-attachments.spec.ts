@@ -48,7 +48,7 @@ import {
 type Harness = ReturnType<typeof harness>;
 
 function fileTurn(h: Harness, message: string, files: UploadedAttachment[]) {
-  return h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, message, "user", files);
+  return h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, message, "user", files, []);
 }
 
 const PNG_BYTES = png(96);
@@ -117,7 +117,7 @@ export async function aTurnAfterAFileTellsItsToolsTheHistoryHasOne(): Promise<vo
     },
   ];
   const h = harness(llm, { stored, tools: { list_assets: () => ({ ok: true, result: { items: [] }, organizationIds: [ORG_X] }) } });
-  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "now propose it", "user");
+  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "now propose it", "user", [], []);
   expect(h.seenTools[0]?.ctx.historyHasAttachmentSinceLastLayout).toBe(true);
   expect(h.seenTools[0]?.ctx.attachments).toBeUndefined();
 }
@@ -134,7 +134,7 @@ export async function aFileTurnHandsItsFilesToItsTools(): Promise<void> {
 export async function aProviderErrorWithoutAFileKeepsThePlainReply(): Promise<void> {
   const llm = new FakeLlmProvider(["reject"]);
   const h = harness(llm);
-  const response = await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "any alarms?", "user");
+  const response = await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "any alarms?", "user", [], []);
   expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_TURN_FAILED_REPLY });
 }
 
@@ -356,7 +356,7 @@ export async function aTextTurnAsksForNoImage(): Promise<void> {
   const main = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
   const vision = new FakeLlmProvider([]);
   const h = harness(main, { visionLlm: vision });
-  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "how many alarms?", "user");
+  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "how many alarms?", "user", [], []);
   expect(h.counts.resolveImage).toEqual([false]);
   expect(vision.calls).toBe(0);
 }
@@ -438,7 +438,7 @@ export async function anImageTurnCarriesNoPdfClause(): Promise<void> {
 export async function aTextTurnCarriesNoPdfClause(): Promise<void> {
   const main = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
   const h = harness(main);
-  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "how many alarms?", "user");
+  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "how many alarms?", "user", [], []);
   expect(systemTexts(main)).toHaveLength(2);
   expect(systemTexts(main)).not.toContain(COPILOT_PDF_TEXT_ONLY_PROMPT);
 }
@@ -486,7 +486,7 @@ export async function aDeadlineOnATextTurnKeepsThePlainReply(): Promise<void> {
   vi.useFakeTimers();
   try {
     const h = harness(new FakeLlmProvider(["hang"]));
-    const pending = h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "how many alarms?", "user");
+    const pending = h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "how many alarms?", "user", [], []);
     await vi.advanceTimersByTimeAsync(TURN_DEADLINE_MS);
     const response = await pending;
     expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_TURN_FAILED_REPLY });

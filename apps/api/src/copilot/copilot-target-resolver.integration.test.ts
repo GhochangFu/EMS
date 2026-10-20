@@ -7,6 +7,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   aCreateUnderAParentTakesTheParentsOrganization,
+  aDashboardSlugIsFoundInTheAllowedSetOnly,
   aFleetRowLivesInTheBoundOrganization,
   aGrantLivesInItsTargetsOrganizationAndNeedsTheUsersHomeInScope,
   aGrantTargetUsesTheGrantsServicesChecks,
@@ -188,6 +189,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       pointKeyId: key.id,
       pointKeyCode: key.code,
       dashboardA,
+      dashboardSlugA: `${FAMILY}-dash`.toLowerCase(),
       dashboardTemplateA,
       assetTemplateA,
       mimicLayoutA,
@@ -232,4 +234,5 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
     anInstantiateUnderAnRtuOfAnotherOrganizationIsRefused(ctx));
   it("F3.87 PR 5: resolves a mimic layout for an org admin in its organization only", () =>
     aMimicLayoutResolvesForAnOrgAdminInItsOrganizationOnly(ctx));
+  it("F4.245: finds a dashboard by its slug in the allowed organizations only", () => aDashboardSlugIsFoundInTheAllowedSetOnly(ctx));
 });

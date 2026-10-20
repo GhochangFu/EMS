@@ -76,6 +76,13 @@ export interface CopilotTargets {
      */
     boundOrganizationId?: string | null,
   ): Promise<ResolvedTarget | null>;
+  /**
+   * `F4.245` (ADR 0099 Amendment 4): the id of the dashboard `slug` names in
+   * the allowed organizations, for the edit page an `open_page` call opens;
+   * `null` when none has it or more than one does (the slug is unique per
+   * organization only).
+   */
+  dashboardIdBySlug(slug: string, allowedOrganizationIds: readonly string[]): Promise<string | null>;
 }
 
 export const COPILOT_TARGETS = Symbol("COPILOT_TARGETS");
@@ -207,6 +214,21 @@ export class CopilotTargetResolver implements CopilotTargets {
       ...(found.refName !== undefined ? { refName: found.refName } : {}),
       ...(found.status !== undefined ? { status: found.status } : {}),
     };
+  }
+
+  async dashboardIdBySlug(slug: string, allowedOrganizationIds: readonly string[]): Promise<string | null> {
+    const ids: string[] = [];
+    for (const organizationId of allowedOrganizationIds) {
+      const rows = await withTenant(this.tenantDb, organizationId, (tx) =>
+        tx
+          .select({ id: dashboards.id })
+          .from(dashboards)
+          .where(and(eq(dashboards.slug, slug), eq(dashboards.organizationId, organizationId)))
+          .limit(2),
+      );
+      ids.push(...rows.map((row) => row.id));
+    }
+    return ids.length === 1 ? (ids[0] as string) : null;
   }
 
   /**
