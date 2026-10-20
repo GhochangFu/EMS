@@ -40,6 +40,11 @@ four drafter choices; owner rulings Q1–Q8 of the same day): release 3
 building a mimic from an attached image or PDF. Where Amendment 3 conflicts
 with the decisions above or with Amendments 1 and 2, it wins.
 
+**Amendment 4 — Proposed — owner ruled 2026-10-20/21; the merge approves the
+text** (`F4.245`): `fill_step` names the record it fills and the server
+checks it against the wizards open on the user's screen. Where Amendment 4
+conflicts with decision 6 or with Amendments 1–3, it wins; decision 10 stands.
+
 | # | Question | Options put | Ruled | Decision |
 | --- | --- | --- | --- | --- |
 | 1 | Copilot or narrow assistant | narrow admin assistant; general copilot; no change | **general copilot** (owner's own choice) | 1 |
@@ -908,3 +913,88 @@ which must name attachments and A7's residual.
 - Mutation runs on every new guard.
 - Live stack: a layout drawn from a photo of the ESKOM `ND-` demo network is
   proposed, previewed, confirmed and audited with the copilot change id.
+
+## Amendment 4 — `fill_step` names its record (owner, 2026-10-20/21)
+
+**Status: Proposed — owner ruled 2026-10-20/21; the merge approves the text.**
+
+Decision 6 says the model "can call `fill_step`, which returns field values
+for the current step". On `main` before `F4.245` the fill named a catalog
+entry only, so the browser handed it to any open wizard of that entry: a
+conversation about dashboard A filled dashboard B's open edit form
+(`docs/BACKLOG.md` F4.245). The owner ruled on 2026-10-20 that the browser
+sends the open wizard with each turn, and on 2026-10-21, after the plan's
+adversarial critique (its C1 and C3), replaced "the server stamps the
+wizard's parameters on the fill" with the rulings below. Code citations are to
+`main` at `1b38ca60`.
+
+| # | Question | Ruled | Item |
+| --- | --- | --- | --- |
+| 1 | How the open wizard reaches the server | the turn body names every open wizard: its catalog id and all its path parameters | B1 |
+| 2 | Who names the record a fill is for | **the model names it; the server checks it** (replaces "the server stamps it") | B2, B3 |
+| 3 | A fill in the turn that opens the page | allowed through the `open_page` target the server resolved; the fill waits for that wizard only | B4 |
+| 4 | A field the page fixes (critique C2) | never set by a fill | B5 |
+
+- **B1 — The turn body names the open wizards (ruling 1).** `POST
+  /copilot/conversations/:id/turns` carries `wizards: [{ catalogId, params }]`
+  (strict, at most 8, required; `[]` when none is open). `params` holds
+  **every** path parameter of the entry's route (`{}` for a create). A
+  multipart turn sends it as a JSON string; a value that is not JSON is a 400.
+  The API checks each wizard against its catalog entry: the entry exists, the
+  parameter names are exactly the entry's, and each value parses with the
+  entry's own `params` schema; a mismatch is a 400. The dock names one record
+  once; a duplicate a client still sends does not fail the turn, and only a
+  fill for that record is refused as ambiguous.
+- **B2 — The server resolves the records inside the conversation's scope and
+  tells the model (ruling 2).** Each open wizard's record is read through the
+  propose target resolver with the turn's allowed organizations and the
+  conversation's bound organization — the check `propose` makes (decision 10).
+  A record outside that scope, or one the caller may not manage, is not named
+  to the model and cannot be filled. A create, and an entry named by codes
+  whose organization the page fixes (a stock import, a library setting), has no
+  row to read and is open with no name; a server-proposed entry (the onboarding
+  wizards) is never open. The model reads the open records in one system line
+  per turn — at most 8 entries, each name cut to 80 characters, scrubbed and
+  quoted as data; no line when none is open — because it must know the record
+  before it chooses a tool: a tool description is static per registry, and a
+  tool result comes too late. A record's organization becomes the turn's
+  provenance, as a tool read's does.
+- **B3 — `fill_step` names its record (ruling 2).** The tool's arguments gain
+  `params`. The server refuses the fill unless `{ catalogId, params }` equals
+  one open, in-scope wizard's, with a sentence that tells the model to propose
+  a card instead. A conversation about A with B's wizard open is refused. The
+  fill the browser receives carries `{ catalogId, params, stepId, values }`,
+  and the browser applies it only to the wizard whose catalog id and filled
+  path (its key) are the fill's.
+- **B4 — `open_page` and `fill_step` in one turn (ruling 3).** A fill with no
+  matching open wizard is accepted only when the same turn called `open_page`
+  for a page that mounts that entry's wizard and the parameters equal the
+  record the server resolved for that page (the dashboard edit page's slug is
+  read in the allowed organizations). The `open_page` result names those
+  records. In the browser the fill waits for that wizard's key only; it is
+  dropped when the user is on another page, or when a wizard of that key
+  unregisters. A fill no open wizard matches and no page waits for is dropped
+  at once.
+- **B5 — A page-fixed field is never filled (critique C2).** A body field the
+  page fixes — an asset page's `assetId` for a point mapping, the
+  organization of a library setting, a library create or a stock import — is
+  never set by a fill: the page sends its own value, so a filled one would make
+  the Review card differ from the request, or move the record.
+
+**The wizard context is never an authorization input.** It chooses which open
+form a fill may land in and nothing else. Decision 10's rule — the key and the
+organization are decided on the server, never from a page context the client
+sends — stands: the propose tools, the Confirm interceptor and the routes
+authorize exactly as before, and a fill still writes nothing (decision 6).
+
+**Not in this amendment.** Read tools for the records that have none (users,
+grants, RTUs, asset groups and members, calculation parameters); If-Match on
+Confirm (`F4.247`); any catalog change.
+
+**Verification owed.** Unit and loop: the shared contract, the open-wizard
+check, the record resolution in and out of scope, the fill refusals
+(another record, no wizard, two copies), `open_page` then `fill_step` in one
+turn, the browser store's keyed hand-off and its drops, and the page-fixed
+fields — each with a named mutation. Integration: the dashboard slug lookup
+under the tenant policy. Live stack: a fill for another record than the open
+one is refused, and a fill for the open one lands.
