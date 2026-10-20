@@ -6,6 +6,7 @@ import {
   anUnknownPointReadsNull,
   anUnknownRtuReadsNull,
   theAssetCardReadsTheListedRow,
+  theAssetTemplateCardReadsTheVersionsFields,
   theLocationCardReadsTheListedRow,
   thePointCardReadsTheStoredRow,
   theRtuCardReadsTheListedRow,
@@ -41,4 +42,13 @@ describe("F3.86 PR 3b — the asset and point-mapping edit cards' Now values", (
   it("reads null for an asset the list does not hold", () => anUnknownAssetReadsNull());
   it("maps the stored point row to the update body's fields, not the template's", () => thePointCardReadsTheStoredRow());
   it("reads null for a point mapping the list does not hold", () => anUnknownPointReadsNull());
+});
+
+describe("F4.246 — the asset-template edit card's Now values", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("maps the version's detail read to the update body's fields, points in the write shape", () =>
+    theAssetTemplateCardReadsTheVersionsFields());
 });

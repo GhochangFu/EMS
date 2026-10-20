@@ -37,6 +37,22 @@ type ChangeCardProps = {
 
 const RED_RISKS: ReadonlySet<CopilotChangeRisk> = new Set(["deactivate", "access"]);
 
+/**
+ * `F4.246` (ADR 0099 §3, owner ruling 2026-10-20 option C, "Summary + expand") — a cell's value:
+ * the summary alone when it is the whole value, else the summary as a `<details>` control that
+ * opens to the full value. Every value cell wraps (`break-all`), so a full formula row's long
+ * expression wraps in the dock instead of overflowing it.
+ */
+function ValueText(props: { text: string; full: string | undefined }) {
+  if (props.full === undefined) return <>{props.text}</>;
+  return (
+    <details>
+      <summary className="cursor-pointer">{props.text}</summary>
+      <pre className="mt-1 max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px]">{props.full}</pre>
+    </details>
+  );
+}
+
 export function ChangeCard(props: ChangeCardProps) {
   const red = RED_RISKS.has(props.risk);
   const hasBefore = props.rows.some((row) => row.before !== undefined);
@@ -67,12 +83,18 @@ export function ChangeCard(props: ChangeCardProps) {
           </thead>
           <tbody>
             {props.rows.map((row) => (
-              <tr key={row.field} data-changed={row.changed} className={row.changed ? "text-ink" : "text-ink-muted"}>
+              <tr key={`${row.label ?? ""}|${row.field}`} data-changed={row.changed} className={row.changed ? "text-ink" : "text-ink-muted"}>
                 <th scope="row" className="truncate py-0.5 pr-2 text-left font-normal">
                   {row.label ?? fieldLabel(row.field)}
                 </th>
-                {hasBefore && <td className="break-words py-0.5 pr-2">{row.before ?? "—"}</td>}
-                <td className="break-words py-0.5">{row.after}</td>
+                {hasBefore && (
+                  <td className="whitespace-pre-wrap break-all py-0.5 pr-2">
+                    <ValueText text={row.before ?? "—"} full={row.beforeFull} />
+                  </td>
+                )}
+                <td className="whitespace-pre-wrap break-all py-0.5">
+                  <ValueText text={row.after} full={row.afterFull} />
+                </td>
               </tr>
             ))}
           </tbody>

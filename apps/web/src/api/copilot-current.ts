@@ -1,8 +1,9 @@
-import { calcParameterDtoSchema } from "@bms/shared/contracts";
+import { calcParameterDtoSchema, templatePointBodySchema } from "@bms/shared/contracts";
 import type { CopilotPendingChangeDto } from "@bms/shared";
-import { catalogEntry, catalogParamsOf } from "@bms/shared/copilot";
+import { bodyFieldsOf, catalogEntry, catalogParamsOf } from "@bms/shared/copilot";
 
 import { fetchAdminAssetCalcPoints, fetchAdminAssetPoints } from "./admin/asset-points";
+import { fetchAdminAssetTemplate } from "./admin/asset-templates";
 import { fetchAdminAssets } from "./admin/assets";
 import { adminFetch } from "./admin/client";
 import { fetchAdminDashboardTemplate } from "./admin/dashboard-templates";
@@ -10,6 +11,12 @@ import { fetchAdminLocations, fetchSiteControlRoomView } from "./admin/locations
 import { fetchAdminRtus } from "./admin/rtus";
 import { fetchDashboards } from "./dashboards";
 import { fetchMimicLayout } from "./mimic-layouts";
+
+/** `F4.246`: a template point's write keys, derived once from the write schema — never a hand-typed list. */
+const TEMPLATE_POINT_WRITE_KEYS = bodyFieldsOf(templatePointBodySchema);
+
+const writeShapeOfPoint = (point: Readonly<Record<string, unknown>>): Record<string, unknown> =>
+  Object.fromEntries(TEMPLATE_POINT_WRITE_KEYS.filter((key) => key in point).map((key) => [key, point[key]]));
 
 /**
  * `F3.85` PR 8 (plan §10.3, decision 4.9) — the record an edit card compares
@@ -39,6 +46,20 @@ export async function fetchCopilotCurrent(change: CopilotPendingChangeDto): Prom
             assetId: found.assetId,
           }
         : null;
+    }
+    // `F4.246`: the version's detail read (the template page's own), as `updateAssetTemplateBodySchema`'s
+    // six fields. Each point keeps exactly the write body's keys — the Points tab's round-trip rule —
+    // so the DTO's `id`, `templateId` and `createdAt` never reach the Now column.
+    case "assetTemplate.update": {
+      const template = await fetchAdminAssetTemplate(params.id as string);
+      return {
+        name: template.name,
+        assetType: template.assetType,
+        domain: template.domain,
+        description: template.description,
+        content: template.content,
+        points: template.points.map(writeShapeOfPoint),
+      };
     }
     case "dashboardTemplate.update": {
       const template = await fetchAdminDashboardTemplate(params.id as string);

@@ -2,6 +2,7 @@ import { expect, vi } from "vitest";
 import type { CopilotPendingChangeDto } from "@bms/shared";
 
 import * as assetPointsApi from "./admin/asset-points";
+import * as assetTemplatesApi from "./admin/asset-templates";
 import * as assetsApi from "./admin/assets";
 import * as locationsApi from "./admin/locations";
 import * as rtusApi from "./admin/rtus";
@@ -260,4 +261,94 @@ export async function anUnknownPointReadsNull(): Promise<void> {
   const list = vi.spyOn(assetPointsApi, "fetchAdminAssetPoints").mockResolvedValue({ items: [POINT_ROW] });
   expect(await fetchCopilotCurrent(updateChange("assetPoint.update", `/api/v1/admin/asset-points/${UNKNOWN}`))).toBeNull();
   expect(list).toHaveBeenCalledTimes(1);
+}
+
+/*
+ * `F4.246` — the asset-template edit card's Now values: the version the detail route reads (the
+ * template page's own read), as `updateAssetTemplateBodySchema`'s six fields, each point in the
+ * write body's shape. The DTO's `id`, `templateId` and `createdAt` are no write key: carried into
+ * the Now column, every points row would read as changed.
+ */
+
+const TEMPLATE_ID = "77777777-7777-4777-8777-777777777777";
+
+const WRITE_POINT_KW = {
+  pointKey: "kw",
+  label: "Power",
+  unit: "kW",
+  kind: "measured" as const,
+  sourceDataKeyPattern: "*_kw",
+  formula: null,
+  formulaDialect: null,
+  calcTrigger: null,
+  calcIntervalSeconds: null,
+  maxInputAgeSeconds: null,
+  minCoverageRatio: null,
+  required: true,
+  sortOrder: 0,
+  meta: { tier: "core" as const },
+  scaleMultiplier: null,
+  scaleOffset: null,
+  engMin: null,
+  engMax: 900,
+  qualityPolicy: null,
+};
+
+const WRITE_POINT_EFF = {
+  ...WRITE_POINT_KW,
+  pointKey: "eff",
+  label: "Efficiency",
+  unit: "%",
+  kind: "derived" as const,
+  sourceDataKeyPattern: null,
+  formula: "kw * 2",
+  formulaDialect: "bms-calc-v1" as const,
+  calcTrigger: "streaming" as const,
+  sortOrder: 1,
+  engMax: null,
+};
+
+const readPoint = (point: typeof WRITE_POINT_KW | typeof WRITE_POINT_EFF, id: string) => ({
+  ...point,
+  id,
+  templateId: TEMPLATE_ID,
+  createdAt: "2026-10-01T00:00:00.000Z",
+});
+
+const TEMPLATE_DTO = {
+  id: TEMPLATE_ID,
+  organizationId: "33333333-3333-4333-8333-333333333333",
+  organizationCode: "PHE",
+  organizationName: "PHE",
+  code: "PUMP",
+  version: 2,
+  name: "Pump",
+  assetType: "pump",
+  domain: "water",
+  description: null,
+  status: "draft" as const,
+  content: { kpis: [] },
+  publishedAt: null,
+  archivedAt: null,
+  stockCode: null,
+  stockVersion: null,
+  createdAt: "2026-10-01T00:00:00.000Z",
+  updatedAt: "2026-10-01T00:00:00.000Z",
+  points: [readPoint(WRITE_POINT_KW, "p1"), readPoint(WRITE_POINT_EFF, "p2")],
+};
+
+/** The Now record: the six update fields, the points without the read-only keys, read by the path's id. */
+export async function theAssetTemplateCardReadsTheVersionsFields(): Promise<void> {
+  const read = vi.spyOn(assetTemplatesApi, "fetchAdminAssetTemplate").mockResolvedValue(TEMPLATE_DTO);
+
+  const path = `/api/v1/admin/asset-templates/${TEMPLATE_ID}`;
+  expect(await fetchCopilotCurrent(updateChange("assetTemplate.update", path))).toEqual({
+    name: "Pump",
+    assetType: "pump",
+    domain: "water",
+    description: null,
+    content: { kpis: [] },
+    points: [WRITE_POINT_KW, WRITE_POINT_EFF],
+  });
+  expect(read).toHaveBeenCalledWith(TEMPLATE_ID);
 }

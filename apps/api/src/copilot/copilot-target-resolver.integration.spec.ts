@@ -539,6 +539,21 @@ export async function theAuthoringKindAsksOnlyTheAuthoringCheck(ctx: ResolverCtx
 }
 
 /**
+ * `F4.246` — a template target carries its version's lifecycle status, for
+ * the propose tool's mirror of the route's refusal: the published asset
+ * template through both of its kinds, the dashboard template at its column
+ * default (`draft`). Two distinct values, so a hard-coded status reddens one.
+ */
+export async function aTemplateTargetCarriesItsStatus(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  const authoring = await r.resolve(fixture({ kind: "assetTemplate", param: "id" }), { id: ctx.assetTemplateA }, {}, [ctx.orgA], JWT);
+  expect(authoring?.status).toBe("published");
+  expect((await deploy(ctx, recorder(), { locationId: ctx.locationA, assets: ASSETS }))?.status).toBe("published");
+  const dashboard = await r.resolve(fixture({ kind: "dashboardTemplate", param: "id" }), { id: ctx.dashboardTemplateA }, {}, [ctx.orgA], JWT);
+  expect(dashboard?.status).toBe("draft");
+}
+
+/**
  * (f) A target site of another organization is refused by the ref loop: the
  * recorder answers `true`, so the site check passed (its call is the proof),
  * and only the `locationId` ref of organization B is left to refuse it.

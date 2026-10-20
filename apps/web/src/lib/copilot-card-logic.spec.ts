@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 import { COPILOT_CATALOG, catalogEntry } from "@bms/shared/copilot";
 
-import { CHANGE_VALUE_MAX, changeRows, fieldLabel, formatChangeValue } from "./copilot-diff";
+import { CHANGE_VALUE_MAX, type ChangeRow, changeRows, fieldLabel, formatChangeValue } from "./copilot-diff";
 import { INVALIDATED_ENTRIES, invalidationKeysFor, onboardingDraftsKey } from "./copilot-invalidations";
 import {
   applyFill,
@@ -204,4 +204,167 @@ export function changeRowsSkipsTheNamedKeys(): void {
   const rows = changeRows({ name: "L", baseline: { version: 1 }, slug: "l" }, null, ["baseline"]);
   expect(rows.map((row) => row.field)).toEqual(["name", "slug"]);
   expect(changeRows({ name: "L", baseline: 1 }, null).map((row) => row.field)).toEqual(["name", "baseline"]);
+}
+
+/*
+ * `F4.246` (ADR 0099 §3, owner ruling 2026-10-20 option C, "Summary + expand") — the row keeps
+ * its 160-character summary and carries the full value beside it for the card to expand, and a
+ * template body gets one full-text row per formula site, paired with the Now site by identity.
+ */
+
+const BIG = { kpis: Array.from({ length: 12 }, (_, index) => ({ code: `k${index}`, expression: "kw * 2" })) };
+const BIG_NOW = { kpis: Array.from({ length: 12 }, (_, index) => ({ code: `n${index}`, expression: "kw * 3" })) };
+const TEMPLATE_FORMULAS = entry("assetTemplate.update").formulas;
+const LONG_EXPRESSION = `kw + ${"kw * 1 + ".repeat(32)}kw`;
+const measured = (pointKey: string) => ({ pointKey, kind: "measured", formula: null, formulaDialect: null });
+const derived = (pointKey: string, formula: string, formulaDialect: string | null = "bms-calc-v1") => ({
+  pointKey,
+  kind: "derived",
+  formula,
+  formulaDialect,
+});
+const kpi = (code: string, expression: string) => ({ code, expression, dialect: "bms-calc-v1", pointKeys: ["kw"] });
+const rowAt = (rows: readonly ChangeRow[], field: string): ChangeRow => {
+  const found = rows.find((row) => row.field === field);
+  if (!found) throw new Error(`no row ${field} in ${rows.map((row) => row.field).join(", ")}`);
+  return found;
+};
+
+/** A value longer than the cut keeps its summary and carries the whole pretty-printed value. */
+export function aLongValueCarriesItsFullText(): void {
+  const [row] = changeRows({ content: BIG }, null);
+  expect(row?.after).toHaveLength(CHANGE_VALUE_MAX);
+  expect(row?.after.endsWith("…")).toBe(true);
+  expect(row?.afterFull).toBe(JSON.stringify(BIG, null, 2));
+}
+
+/** A value inside the cut is shown whole already, so it carries no full text (and no expand control). */
+export function aShortValueHasNoFullText(): void {
+  const [row] = changeRows({ name: "ten chars." }, null);
+  expect(row?.after).toBe("ten chars.");
+  expect(row).not.toHaveProperty("afterFull");
+}
+
+/** An edit's Now value is carried in full too — its own value, not the proposed one. */
+export function anEditCarriesTheFullNowValueToo(): void {
+  const [row] = changeRows({ content: BIG }, { content: BIG_NOW });
+  expect(row?.beforeFull).toBe(JSON.stringify(BIG_NOW, null, 2));
+  expect(row?.changed).toBe(true);
+}
+
+/** Each formula site is its own row, under its issue path, with the whole expression and its dialect. */
+export function formulaRowsShowEachSiteInFull(): void {
+  const body = { points: [measured("kw"), derived("eff", LONG_EXPRESSION, "bms-calc-v2")], content: { kpis: [kpi("load", "kw * 2")] } };
+  const rows = changeRows(body, null, [], TEMPLATE_FORMULAS);
+  expect(rows.map((row) => row.field)).toEqual(["points", "content", "points.1.formula", "content.kpis.0.expression"]);
+  expect(rowAt(rows, "points.1.formula")).toEqual({
+    field: "points.1.formula",
+    label: "Formula eff (points)",
+    after: `${LONG_EXPRESSION} (bms-calc-v2)`,
+    changed: true,
+  });
+}
+
+/** A Now site that holds the same expression and dialect is formatted alike, so the row is unchanged. */
+export function anUnchangedFormulaRowIsNotChanged(): void {
+  const body = { content: { kpis: [kpi("load", "kw * 2")] } };
+  const rows = changeRows(body, { content: { kpis: [kpi("load", "kw * 2")] } }, [], TEMPLATE_FORMULAS);
+  expect(rowAt(rows, "content.kpis.0.expression")).toMatchObject({
+    before: "kw * 2 (bms-calc-v1)",
+    after: "kw * 2 (bms-calc-v1)",
+    changed: false,
+  });
+}
+
+/** A changed formula shows the Now expression, formatted the same way, and is marked changed. */
+export function aChangedFormulaShowsTheNowExpression(): void {
+  const body = { points: [measured("kw"), derived("eff", "kw * 3")] };
+  const rows = changeRows(body, { points: [measured("kw"), derived("eff", "kw * 2")] }, [], TEMPLATE_FORMULAS);
+  expect(rowAt(rows, "points.1.formula")).toMatchObject({
+    before: "kw * 2 (bms-calc-v1)",
+    after: "kw * 3 (bms-calc-v1)",
+    changed: true,
+  });
+}
+
+/** A point inserted ahead of the others: each Now formula is the same point's, by `pointKey`, not the same index's. */
+export function aFormulaIsPairedByPointKeyNotIndex(): void {
+  const now = { points: [measured("kw"), derived("eff", "kw * 2")] };
+  const body = { points: [derived("new", "kw * 5"), measured("kw"), derived("eff", "kw * 2")] };
+  const rows = changeRows(body, now, [], TEMPLATE_FORMULAS);
+  expect(rowAt(rows, "points.2.formula")).toMatchObject({ before: "kw * 2 (bms-calc-v1)", changed: false });
+}
+
+/** The inserted point has no Now formula: a dash, and a change. */
+export function aNewFormulaSiteHasNoNowValue(): void {
+  const now = { points: [measured("kw"), derived("eff", "kw * 2")] };
+  const body = { points: [derived("new", "kw * 5"), measured("kw"), derived("eff", "kw * 2")] };
+  const rows = changeRows(body, now, [], TEMPLATE_FORMULAS);
+  expect(rowAt(rows, "points.0.formula")).toMatchObject({ before: "—", changed: true });
+}
+
+/** Reordered KPIs: each Now expression is the same KPI's, by `code`. */
+export function aKpiExpressionIsPairedByCodeNotIndex(): void {
+  const now = { content: { kpis: [kpi("a", "kw * 1"), kpi("b", "kw * 2")] } };
+  const body = { content: { kpis: [kpi("b", "kw * 2"), kpi("a", "kw * 1")] } };
+  const rows = changeRows(body, now, [], TEMPLATE_FORMULAS);
+  expect(rowAt(rows, "content.kpis.0.expression")).toMatchObject({ before: "kw * 2 (bms-calc-v1)", changed: false });
+}
+
+/** A site with no expression (a measured point's `formula: null`) is no row. */
+export function aSiteWithoutAnExpressionIsNoRow(): void {
+  const rows = changeRows({ points: [measured("kw")] }, null, [], TEMPLATE_FORMULAS);
+  expect(rows.map((row) => row.field)).toEqual(["points"]);
+}
+
+/** No formulas passed (an entry without formula sites, and the default call): field rows only. */
+export function formulaRowsAreAbsentWithoutFormulas(): void {
+  const body = { points: [derived("eff", "kw * 2")] };
+  expect(changeRows(body, null, [], []).map((row) => row.field)).toEqual(["points"]);
+  expect(changeRows(body, null).map((row) => row.field)).toEqual(["points"]);
+}
+
+/** A KPI's formula row is labelled by its `code`. */
+export function aKpiFormulaRowIsLabelledByItsCode(): void {
+  const rows = changeRows({ content: { kpis: [kpi("load", "kw * 2")] } }, null, [], TEMPLATE_FORMULAS);
+  expect(rowAt(rows, "content.kpis.0.expression").label).toBe("Formula load (kpis)");
+}
+
+/** A point and a KPI that share a code get two different row headers (re-review nit). */
+export function aPointAndAKpiWithOneCodeAreLabelledApart(): void {
+  const body = { points: [derived("eff", "kw * 2")], content: { kpis: [kpi("eff", "kw * 3")] } };
+  const labels = changeRows(body, null, [], TEMPLATE_FORMULAS)
+    .filter((row) => row.label?.startsWith("Formula "))
+    .map((row) => row.label);
+  expect(labels).toEqual(["Formula eff (points)", "Formula eff (kpis)"]);
+}
+
+/** An item without a `pointKey` or `code` is labelled by its dotted path. */
+export function aFormulaRowWithoutAnIdentityIsLabelledByItsPath(): void {
+  const rows = changeRows({ points: [{ kind: "derived", formula: "kw * 2", formulaDialect: null }] }, null, [], TEMPLATE_FORMULAS);
+  expect(rowAt(rows, "points.0.formula").label).toBe("Formula points.0");
+}
+
+/**
+ * `calcOverride.set`'s formula site is the top-level `formula`: its field row shows it (and
+ * expands), so there is no second, formula row for it — every row's field is unique.
+ */
+export function aTopLevelFormulaSiteIsOnlyItsFieldRow(): void {
+  const body = { formula: "{KW} * 3", formulaDialect: null, calcTrigger: "on_input" };
+  const fields = changeRows(body, null, [], entry("calcOverride.set").formulas).map((row) => row.field);
+  expect(fields).toEqual(["formula", "formulaDialect", "calcTrigger"]);
+}
+
+/** The Now record lists every key (nulls, schema order); a body that leaves nulls out, in its own order, is the same value. */
+export function anUnchangedStructuredValueIsNotChanged(): void {
+  const now = { points: [{ pointKey: "kw", label: null, unit: "kW", kind: "measured", formula: null }] };
+  const body = { points: [{ unit: "kW", kind: "measured", pointKey: "kw" }] };
+  expect(changeRows(body, now)[0]?.changed).toBe(false);
+}
+
+/** The positive twin: a structured value that differs in one nested field is still a change. */
+export function aChangedStructuredValueIsChanged(): void {
+  const now = { points: [{ pointKey: "kw", label: null, unit: "kW", kind: "measured", formula: null }] };
+  const body = { points: [{ unit: "MW", kind: "measured", pointKey: "kw" }] };
+  expect(changeRows(body, now)[0]?.changed).toBe(true);
 }
