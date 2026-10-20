@@ -60,6 +60,8 @@ function harness(read: OnboardingDraft, locked: OnboardingDraft) {
     {
       requireMasterDataUser: () => Promise.resolve({ id: "u-1", role: "admin" }),
       canManageOrganization: () => Promise.resolve(true),
+      // F4.111: exempt, so the quota's locked reads stay out of this fake transaction (the integration suite holds them).
+      isGlobalAdmin: () => Promise.resolve(true),
     } as never,
     {} as never,
     { validate: () => ({ valid: true, errors: [], readyToCommit: true, suggestedPhase: "review" }) } as never,
@@ -68,7 +70,7 @@ function harness(read: OnboardingDraft, locked: OnboardingDraft) {
       listLocationTypes: () => Promise.resolve([]),
       assertLocationType: () => Promise.resolve(),
     } as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     // F3.22: the three template services; this draft holds no template, so none is called.
     {} as never,
     {} as never,

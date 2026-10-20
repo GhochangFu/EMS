@@ -108,7 +108,7 @@ export function build(opts: {
     { listPointKeys: async () => [] } as never,
     vocabularies as never,
     resolver as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
   const service = new OnboardingService(
@@ -117,6 +117,7 @@ export function build(opts: {
     {
       requireMasterDataUser: () => Promise.resolve({ id: "u-1", role: "admin" }),
       canManageOrganization: () => Promise.resolve(true),
+      isGlobalAdmin: () => Promise.resolve(true),
     } as never,
     chat,
     new OnboardingValidateService(),
@@ -124,7 +125,7 @@ export function build(opts: {
     (opts.excel ?? {}) as never,
     (opts.catalog ?? {}) as never,
     vocabularies as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
   );
   return { service, record };
 }

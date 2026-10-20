@@ -36,7 +36,7 @@ function longCell(fill: string): string {
  * services and only one of them would still be the one this file describes.
  */
 export function chatService(): OnboardingChatService {
-  return new OnboardingChatService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never, { context: async () => EMPTY_TEMPLATE_CONTEXT } as never, { listExisting: async () => ({ rows: [], total: 0 }) } as never);
+  return new OnboardingChatService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never, { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never, { listExisting: async () => ({ rows: [], total: 0 }) } as never);
 }
 
 /** A topic exactly at the bound — the longest one `parseRtus` accepts. */
@@ -435,7 +435,7 @@ function ruleBasedChatService(): OnboardingChatService {
     { listPointKeys: async () => [] } as never,
     { listLocationTypes: async () => [...FOUR] } as never,
     { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
 }
@@ -462,7 +462,7 @@ export async function ruleBasedTurn(
   const savedKey = process.env.OPENAI_API_KEY;
   delete process.env.OPENAI_API_KEY;
   try {
-    return await ruleBasedChatService().handleTurn(message, draft, phase, "Ion Exchange", "org-1", { sessionId: "s-1", history: [] });
+    return await ruleBasedChatService().handleTurn(message, draft, phase, "Ion Exchange", "org-1", { sessionId: "s-1", history: [], pointKeyQuota: { createdByOrganization: 0 } });
   } finally {
     if (savedKey === undefined) {
       delete process.env.OPENAI_API_KEY;

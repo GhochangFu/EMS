@@ -4,6 +4,7 @@ import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { countOf } from "./onboarding-commit-proposal";
 import { stampDiscovered } from "./onboarding-discovery-tools";
 import { assetPointProblems } from "./onboarding-mapping-refs";
+import { draftCountProblem, pointKeyQuotaProblem, type PointKeyQuota } from "./onboarding-draft-caps";
 import { pointKeyDeclarationProblems } from "./onboarding-point-key-conflict";
 import { unresolvedPointKey, type ValidateTemplateContext } from "./onboarding-template-refs";
 import { fail, succeed, TOOL_LIST_MAX_ITEMS, write, type ToolOutcome, type ToolState } from "./onboarding-tool-outcome";
@@ -71,6 +72,8 @@ export function isMappingToolName(name: string): name is MappingToolName {
 /** What the mapping tools read, typed here so this module never imports the registry. */
 export type MappingToolContext = {
   readonly templates: ValidateTemplateContext;
+  /** `F4.111` (ADR 0104 decision 5): required, as on `ToolContext`. */
+  readonly pointKeyQuota: PointKeyQuota;
 };
 
 /** A bounded, quoted list: at most `LINE_ITEMS` items, the rest counted. */
@@ -119,6 +122,13 @@ export function dispatchMappingTool(
       );
       if (conflict) {
         return fail(`keys.${conflict.index - existing.length}: ${conflict.message}`);
+      }
+      // F4.111 (ADR 0104 decision 5): all or none, like the checks above. The
+      // draft cap answers first (through write()): it is the one no reuse fixes.
+      const next = { ...draft, pointKeys: [...existing, ...keys] };
+      const quotaProblem = draftCountProblem(next) === null ? pointKeyQuotaProblem(next, catalog, ctx.pointKeyQuota) : null;
+      if (quotaProblem !== null) {
+        return fail(quotaProblem);
       }
       const newToCatalog = keys.filter((key) => catalog.get(key.code) === undefined).map((key) => key.code);
       const fresh = newToCatalog.length > 0 ? ` (${newToCatalog.length} new to the catalog)` : "";

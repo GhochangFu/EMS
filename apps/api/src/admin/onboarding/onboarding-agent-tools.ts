@@ -16,7 +16,7 @@ import {
   stampDiscovered,
 } from "./onboarding-discovery-tools";
 import { dispatchMappingTool, isMappingToolName, MAPPING_TOOL_DESCRIPTIONS, MAPPING_TOOL_SCHEMAS } from "./onboarding-mapping-tools";
-import { cutToBound, draftCountProblem } from "./onboarding-draft-caps";
+import { cutToBound, draftCountProblem, pointKeyQuotaProblem, type PointKeyQuota } from "./onboarding-draft-caps";
 import type { LlmToolCall, LlmToolDefinition } from "../../llm/llm-port";
 import { defineToolRegistry, runToolCall, type ToolGuard } from "../../llm/tool-registry";
 import { deriveLocationPatch } from "./onboarding-location-derive";
@@ -194,6 +194,12 @@ export type ToolContext = {
   };
   /** `F3.22`: the organization's template versions and the stock catalog, read once per turn. */
   readonly templates: ValidateTemplateContext;
+  /**
+   * `F4.111` (ADR 0104 decision 5): the growth quota's early refusal, read once
+   * per turn. Required, so every caller states the exemption or the count; the
+   * commit re-checks under its lock.
+   */
+  readonly pointKeyQuota: PointKeyQuota;
   /** F3.26 (ADR 0095 decisions 1–3): the session organization's committed rows; required, so every fake must supply it. */
   readonly inventory: {
     listExisting(organizationId: string, query: ExistingQuery): Promise<{ rows: ExistingRow[]; total: number }>;
@@ -540,6 +546,13 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
       if (problem) {
         return fail(problem.message);
       }
+      // F4.111 (ADR 0104 decision 5): refused before the draft passes a growth
+      // limit. The draft cap answers first (through write()).
+      const next = { ...draft, pointKeys: [...existing, key] };
+      const quotaProblem = draftCountProblem(next) === null ? pointKeyQuotaProblem(next, ctx.templates.pointKeys, ctx.pointKeyQuota) : null;
+      if (quotaProblem !== null) {
+        return fail(quotaProblem);
+      }
       return write(state, { pointKeys: [...existing, key] }, `Added point key ${quoteCell(key.code)}`);
     }
 
@@ -675,7 +688,8 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
     }
 
     case "propose_commit": {
-      const problem = draftCountProblem(draft);
+      // F4.111 (ADR 0104 decision 5): a draft over a growth limit is not proposed.
+      const problem = draftCountProblem(draft) ?? pointKeyQuotaProblem(draft, ctx.templates.pointKeys, ctx.pointKeyQuota);
       const result = ctx.validator.validate(draft, activeCodes(ctx), ctx.templates);
       if (problem !== null || !result.readyToCommit) {
         const { shown } = echoedItems(result.errors, 10);

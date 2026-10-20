@@ -59,6 +59,7 @@ function fakeAccessControl(role: Role, canManage = true) {
   return {
     requireMasterDataUser: () => Promise.resolve({ id: "u-1", role }),
     canManageOrganization: () => Promise.resolve(canManage),
+    isGlobalAdmin: () => Promise.resolve(true),
   } as never;
 }
 
@@ -97,7 +98,7 @@ function buildService(opts: {
     {} as never,
     {} as never,
     {} as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
   );
   return { service, calls };
 }

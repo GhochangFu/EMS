@@ -6,7 +6,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 
 import {
   assetPoints,
@@ -46,7 +46,7 @@ import {
   templateGroups,
   type CommitTemplateDeps,
 } from "./onboarding-commit-templates";
-import { distinctAssetDomains, draftCountProblem } from "./onboarding-draft-caps";
+import { distinctAssetDomains, draftCountProblem, pointKeyQuotaProblem } from "./onboarding-draft-caps";
 import {
   conflictingPointKeyDeclaration,
   pointKeyConflictMessage,
@@ -323,6 +323,10 @@ export class OnboardingCommitService {
     // unchanged, which is why the `throw` re-throws the original error object
     // with its stack intact. An unmapped constraint, a foreign-key violation
     // and a dropped connection all still answer exactly as they did.
+    // `F4.111` (ADR 0104 decision 6): a global admin's commit skips both
+    // growth limits. Read before the transaction, beside the other access reads.
+    const quotaExempt = await this.accessControl.isGlobalAdmin(jwt);
+
     return withTenant(this.tenantDb, session.organizationId, async (tx) => {
       if (expectedDraftHash !== null) {
         const [locked] = await tx
@@ -332,6 +336,31 @@ export class OnboardingCommitService {
           .for("update");
         if (!locked || locked.status !== "draft" || draftHash(locked.draft) !== expectedDraftHash) {
           throw new BadRequestException(PROPOSED_DRAFT_CHANGED);
+        }
+      }
+
+      // `F4.111` (ADR 0104 decision 4) — the growth quota's authority. The
+      // advisory lock is per organization and held to the end of this
+      // transaction, so two commits for one organization count one after the
+      // other; the early refusals in the draft tools read without it. The
+      // catalog read names only this draft's codes. Before the first insert,
+      // so a refusal rolls back a transaction that has written nothing.
+      const draftCodes = [...new Set((draft.pointKeys ?? []).map((key) => key.code))];
+      if (!quotaExempt && draftCodes.length > 0) {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${"bms.point_keys.quota:" + session.organizationId}))`);
+        const held = await tx
+          .select({ code: pointKeys.code })
+          .from(pointKeys)
+          .where(inArray(pointKeys.code, draftCodes));
+        const [{ created }] = await tx
+          .select({ created: sql<number>`count(*)::int` })
+          .from(pointKeys)
+          .where(eq(pointKeys.createdByOrganizationId, session.organizationId));
+        const quotaProblem = pointKeyQuotaProblem(draft, new Map(held.map((row) => [row.code, true])), {
+          createdByOrganization: created,
+        });
+        if (quotaProblem !== null) {
+          throw new BadRequestException(quotaProblem);
         }
       }
       const loc = draft.location!;
@@ -385,6 +414,8 @@ export class OnboardingCommitService {
       // and reading the catalog in the transaction that writes it leaves no
       // window between the two.
       const pointKeyIds: string[] = [];
+      // ADR 0104 drafter choice 4: the audit row counts the catalog rows added.
+      let newPointKeys = 0;
       const declaredInThisDraft = new Map<string, { id: string; row: CatalogPointKey }>();
       for (const pk of draft.pointKeys ?? []) {
         // The same code twice in one draft. Compared against what this draft
@@ -424,9 +455,12 @@ export class OnboardingCommitService {
             unit: pk.unit ?? null,
             description: pk.description ?? null,
             active: true,
+            // ADR 0104 decisions 1 and 6: stamped for an exempt commit too.
+            createdByOrganizationId: session.organizationId,
           })
           .returning();
         pointKeyIds.push(created.id);
+        newPointKeys++;
         declaredInThisDraft.set(pk.code, {
           id: created.id,
           row: { domain: created.domain, unit: created.unit },
@@ -633,7 +667,7 @@ export class OnboardingCommitService {
           entityType: "onboarding_session",
           entityId: sessionId,
           organizationId: session.organizationId,
-          payload: result,
+          payload: { ...result, newPointKeys },
         },
         tx,
       );

@@ -47,11 +47,13 @@
 import { createHash } from "node:crypto";
 
 import {
+  MAX_NEW_POINT_KEYS_PER_COMMIT,
   MAX_ONBOARDING_ASSET_POINTS,
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_POINT_KEYS,
   MAX_ONBOARDING_RTUS,
   MAX_ONBOARDING_TEMPLATES,
+  MAX_POINT_KEYS_PER_ORGANIZATION,
   ONBOARDING_DRAFT_STRING_MAX,
 } from "@bms/shared";
 import type { OnboardingDraft } from "@bms/shared";
@@ -232,6 +234,60 @@ export function draftCountProblem(draft: OnboardingDraft): string | null {
         `commit; remove some and commit the rest in a second session`
       );
     }
+  }
+  return null;
+}
+
+/**
+ * `F4.111` (ADR 0104 decision 6) — what the growth quota knows about the
+ * actor and the organization: a global admin is `"exempt"`; anyone else
+ * carries the number of catalog rows the organization has already added
+ * (`created_by_organization_id`). Required wherever it is read, so a caller
+ * cannot forget the exemption or the count.
+ */
+export type PointKeyQuota = "exempt" | { readonly createdByOrganization: number };
+
+/**
+ * The distinct draft point-key codes the catalog does not hold, in
+ * first-appearance order — the keys a commit would insert. A code the draft
+ * names twice counts once, as the commit loop reuses its first row.
+ */
+export function newCatalogCodes(draft: OnboardingDraft, catalog: ReadonlyMap<string, unknown>): string[] {
+  return [...new Set((draft.pointKeys ?? []).map((key) => key.code))].filter((code) => !catalog.has(code));
+}
+
+/**
+ * `F4.111` (ADR 0104 decisions 2–5) — the sentence that refuses a draft whose
+ * new catalog keys pass either growth limit, or `null`. The commit asks it
+ * inside its transaction under the organization's advisory lock (the
+ * authority); the draft tools ask it unlocked, as an early warning.
+ *
+ * Every interpolation is a number, so nothing from the draft reaches the
+ * message (AGENTS.md §4.3).
+ */
+export function pointKeyQuotaProblem(
+  draft: OnboardingDraft,
+  catalog: ReadonlyMap<string, unknown>,
+  quota: PointKeyQuota,
+): string | null {
+  if (quota === "exempt") {
+    return null;
+  }
+  const added = newCatalogCodes(draft, catalog).length;
+  const fix = "or map those points to codes the catalog already holds";
+  if (added > MAX_NEW_POINT_KEYS_PER_COMMIT) {
+    return (
+      `The draft adds ${added} point keys that are new to the catalog, more than the ` +
+      `${MAX_NEW_POINT_KEYS_PER_COMMIT} one commit may add; remove ${added - MAX_NEW_POINT_KEYS_PER_COMMIT} of them, ${fix}`
+    );
+  }
+  const total = quota.createdByOrganization + added;
+  if (added > 0 && total > MAX_POINT_KEYS_PER_ORGANIZATION) {
+    return (
+      `This organization has added ${quota.createdByOrganization} point keys to the catalog and the draft adds ` +
+      `${added} more, past the ${MAX_POINT_KEYS_PER_ORGANIZATION} one organization may add; ` +
+      `remove ${total - MAX_POINT_KEYS_PER_ORGANIZATION} of them, ${fix}`
+    );
   }
   return null;
 }

@@ -38,6 +38,7 @@ function context(templates: ValidateTemplateContext): ToolContext {
     protocols: { getContextForOrganization: async () => ({ catalog: [], orgExamples: [] }), formatForAssistant: () => "" },
     validator: new OnboardingValidateService(),
     templates,
+    pointKeyQuota: { createdByOrganization: 0 },
     inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
   };
 }
@@ -238,6 +239,7 @@ function writeContext(templates: ValidateTemplateContext): ToolContext {
     protocols: { getContextForOrganization: async () => ({ catalog: [], orgExamples: [] }), formatForAssistant: () => "" },
     validator: new OnboardingValidateService(),
     templates,
+    pointKeyQuota: { createdByOrganization: 0 },
     inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
   };
 }

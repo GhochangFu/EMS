@@ -54,6 +54,7 @@ function context(overrides: Partial<ToolContext> = {}): ToolContext {
     },
     validator: new OnboardingValidateService(),
     templates: EMPTY_TEMPLATE_CONTEXT,
+    pointKeyQuota: { createdByOrganization: 0 },
     inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
     ...overrides,
   };

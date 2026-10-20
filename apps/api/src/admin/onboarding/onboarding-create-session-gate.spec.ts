@@ -34,6 +34,7 @@ function serviceAs(role: Role, canManage = true) {
   const accessControl = {
     requireMasterDataUser: () => Promise.resolve({ id: "u-1", role }),
     canManageOrganization: () => Promise.resolve(canManage),
+    isGlobalAdmin: () => Promise.resolve(true),
   };
   const none = {} as never;
   const service = new OnboardingService(db as never, db as never, accessControl as never, none, none, none, none, none, none, none);
@@ -122,6 +123,7 @@ function insertingServiceAs(jwt: { sub: string }) {
   const accessControl = {
     requireMasterDataUser: () => Promise.resolve({ id: "u-1", role: "organization_admin" }),
     canManageOrganization: () => Promise.resolve(true),
+    isGlobalAdmin: () => Promise.resolve(true),
   };
   const chatService = {
     openingMessage: () => ({ assistantMessage: "Welcome to onboarding.", currentPhase: "location", suggestedReplies: [] }),

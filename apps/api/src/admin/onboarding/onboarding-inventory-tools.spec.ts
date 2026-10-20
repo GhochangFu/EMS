@@ -53,6 +53,7 @@ function context(result: { rows: ExistingRow[]; total: number } | Error = { rows
     },
     validator: new OnboardingValidateService(),
     templates: EMPTY_TEMPLATE_CONTEXT,
+    pointKeyQuota: { createdByOrganization: 0 },
   };
   return { calls, ctx };
 }

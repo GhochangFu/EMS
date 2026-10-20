@@ -98,7 +98,7 @@ function build(opts: { results: unknown[][]; llm?: FakeLlmProvider; commit?: Ret
     { listPointKeys: async () => [] } as never,
     vocabularies as never,
     { resolveForOrganization: async () => ({ kind: "ready", provider: llm, source: "platform" }) } as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
   const service = new OnboardingService(
@@ -107,6 +107,7 @@ function build(opts: { results: unknown[][]; llm?: FakeLlmProvider; commit?: Ret
     {
       requireMasterDataUser: () => Promise.resolve({ id: "u-1", role: "admin" }),
       canManageOrganization: () => Promise.resolve(true),
+      isGlobalAdmin: () => Promise.resolve(true),
     } as never,
     chat,
     new OnboardingValidateService(),
@@ -114,7 +115,7 @@ function build(opts: { results: unknown[][]; llm?: FakeLlmProvider; commit?: Ret
     {} as never,
     {} as never,
     vocabularies as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
   );
   return { service, record, llm, commit };
 }

@@ -36,6 +36,7 @@ function context(): ToolContext {
     protocols: { getContextForOrganization: async () => ({ catalog: [], orgExamples: [] }), formatForAssistant: () => "MQTT" },
     validator: new OnboardingValidateService(),
     templates: KW_ACTIVE,
+    pointKeyQuota: { createdByOrganization: 0 },
     inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
   };
 }

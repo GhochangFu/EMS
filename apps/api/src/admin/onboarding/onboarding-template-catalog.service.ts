@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { assetTemplates, pointKeys, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -9,6 +9,7 @@ import { dashboardWidgetRowsFor, sortedViewNames } from "../asset-templates/asse
 import { parseStoredTemplateContent } from "../asset-templates/asset-templates-content.schema";
 import { crossRefPointKeys } from "../asset-templates/asset-templates-cross-refs";
 import { AssetTemplatesStockService } from "../asset-templates/asset-templates-stock.service";
+import type { PointKeyQuota } from "./onboarding-draft-caps";
 import type { StockTemplateRef, TemplatePointRef, TemplateRef, ValidateTemplateContext } from "./onboarding-template-refs";
 
 type ContentCounts = Pick<TemplateRef, "alarmCount" | "dashboardCount" | "dashboardWidgetCount">;
@@ -169,6 +170,23 @@ export class OnboardingTemplateCatalogService {
       stock: this.listStock(),
       ...(await this.listPointKeyCatalog()),
     };
+  }
+
+  /**
+   * `F4.111` (ADR 0104 decisions 5 and 6): the growth-quota state of one turn —
+   * `"exempt"` for a global admin, otherwise the number of catalog rows the
+   * organization has added. Read without the commit's lock: the tools use it
+   * for an early refusal only.
+   */
+  async pointKeyQuota(organizationId: string, exempt: boolean): Promise<PointKeyQuota> {
+    if (exempt) {
+      return "exempt";
+    }
+    const [{ created }] = await this.db
+      .select({ created: sql<number>`count(*)::int` })
+      .from(pointKeys)
+      .where(eq(pointKeys.createdByOrganizationId, organizationId));
+    return { createdByOrganization: created };
   }
 
   /**

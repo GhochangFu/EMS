@@ -146,3 +146,26 @@ These are the drafter's, open to the owner's change before acceptance.
 - **Amends ADR 0051** decision 3: the fleet-wide catalog gets a growth quota.
 - Relates to ADR 0103 (discovery fills drafts with keys), `F4.103` (draft caps),
   `F4.105` (echo caps), `F3.39` / migrations `0057` and `0059`.
+
+## Amendment 1 — build decisions (agent, 2026-10-20)
+
+Recorded during the `F4.111` build. None changes a ruled decision.
+
+1. **Where the early refusal runs (decision 5).** Three tools ask
+   `pointKeyQuotaProblem`: the agent's `add_point_keys`, the guided mode's
+   `add_point_key`, and `propose_commit`. A `PATCH :id/draft` and a workbook
+   upload replace the draft wholesale and are not refused at write time; a
+   draft over a limit is refused when it is proposed and when it commits. The
+   upload already has its own count caps (`F4.103`), and refusing a `PATCH` is
+   what leaves an operator a way to repair a draft.
+2. **How a turn learns the quota.** `OnboardingService.chat` reads
+   `isGlobalAdmin` and the organization's stamped row count once per turn
+   (`OnboardingTemplateCatalogService.pointKeyQuota`) and passes it through the
+   required `pointKeyQuota` field of `handleTurn`'s context, the turn
+   vocabulary and `ToolContext`. Required, so `tsc` names every caller that
+   must state the exemption or the count.
+3. **The lock key.** `pg_advisory_xact_lock(hashtext('bms.point_keys.quota:' ||
+   organization_id))`. A hash collision with another organization only makes
+   two commits wait for each other; it cannot let one pass a limit.
+4. **The commit reads only the draft's codes** (`code = ANY(...)`) to find which
+   are new, under the lock, not the whole catalog.

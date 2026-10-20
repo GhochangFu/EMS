@@ -208,6 +208,8 @@ function build(stored: OnboardingDraft, failures: Failures = {}): Harness {
   const accessControl = {
     requireMasterDataUser: () => Promise.resolve({ id: "u-1", role: "admin" }),
     canManageOrganization: () => Promise.resolve(true),
+    // F4.111: exempt, so the quota's locked reads stay out of this fake transaction (the integration suite holds them).
+    isGlobalAdmin: () => Promise.resolve(true),
   } as never;
   const audit = {
     write: (entry: { action: string }) => {
@@ -266,7 +268,7 @@ function build(stored: OnboardingDraft, failures: Failures = {}): Harness {
     audit,
     validateService,
     vocabularies,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     templates,
     instantiation,
     { bodyFor: () => Promise.reject(new Error("no stock entry in this harness")) } as never,

@@ -604,12 +604,13 @@ export async function assertAgentTurnForwardsABoundedPrompt(): Promise<void> {
     {} as never,
     { listLocationTypes: async () => [{ code: "pump_station", label: "Pump station" }] } as never,
     { resolveForOrganization: async () => ({ kind: "ready", provider: llm, source: "platform" }) } as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
   await service.handleTurn("Tell me about the site", draft, "location", "Ion Exchange", "org-1", {
     sessionId: "s-1",
     history: [],
+    pointKeyQuota: { createdByOrganization: 0 },
   });
 
   assert(llm.calls === 1, "the agent branch must have run — a guided turn would measure nothing");

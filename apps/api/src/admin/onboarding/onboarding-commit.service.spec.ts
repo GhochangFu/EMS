@@ -75,6 +75,7 @@ function buildService(draft: OnboardingDraft, opts: { liveTypes: readonly string
   const accessControl = {
     requireMasterDataUser: () => Promise.resolve({ id: "u-1", role: "admin" }),
     canManageOrganization: () => Promise.resolve(true),
+    isGlobalAdmin: () => Promise.resolve(true),
   } as never;
 
   // `validate` is stubbed ready: what is under test is the commit's own
@@ -103,7 +104,7 @@ function buildService(draft: OnboardingDraft, opts: { liveTypes: readonly string
     {} as never,
     validateService,
     vocabularies,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     // F3.22: the three template services; this draft holds no template, so none is called.
     {} as never,
     {} as never,

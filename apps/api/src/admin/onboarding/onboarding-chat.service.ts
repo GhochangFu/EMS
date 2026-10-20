@@ -47,6 +47,7 @@ import {
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingProtocolService } from "./onboarding-protocol.service";
 import { draftNeedsPointKeys, OnboardingValidateService } from "./onboarding-validate.service";
+import type { PointKeyQuota } from "./onboarding-draft-caps";
 
 export type { ChatTurnResult } from "./onboarding-chat-rule-based";
 
@@ -192,7 +193,8 @@ export class OnboardingChatService {
           .filter(Boolean)
           .join(", ");
         lines.push(
-          `\nYour organization already has point keys (${preview}). ` +
+          // F4.111 (ADR 0104 decision 7): the keys are the fleet's, not the organization's.
+          `\nThe catalog already has point keys (${preview}). ` +
             "Say **use existing keys** or **confirm point keys** to continue.",
         );
         return {
@@ -262,6 +264,7 @@ export class OnboardingChatService {
       protocols: this.protocolService,
       validator: this.validateService,
       templates: turn.templates,
+      pointKeyQuota: turn.pointKeyQuota,
       inventory: this.inventoryService,
     };
   }
@@ -293,7 +296,12 @@ export class OnboardingChatService {
     phase: OnboardingPhase,
     orgName: string,
     organizationId: string,
-    context: { readonly sessionId: string; readonly history: readonly OnboardingChatMessage[] },
+    context: {
+      readonly sessionId: string;
+      readonly history: readonly OnboardingChatMessage[];
+      /** `F4.111` (ADR 0104 decision 5): required, so the caller states the exemption or the count. */
+      readonly pointKeyQuota: PointKeyQuota;
+    },
   ): Promise<ChatTurnResult> {
     // F4.162 (plan D9): the active types, read once per turn. Every branch and
     // `finalizeTurn` use this one list, so the reply, the phase and the
@@ -303,7 +311,7 @@ export class OnboardingChatService {
     // types, so the agent tools and every `finalizeTurn` validate against one
     // read.
     const templates = await this.templateCatalog.context(organizationId);
-    const turn: TurnVocabulary = { types, templates };
+    const turn: TurnVocabulary = { types, templates, pointKeyQuota: context.pointKeyQuota };
     const lower = message.toLowerCase().trim();
     if (
       // F4.220: whole words, so "restriction" is not a protocol question.

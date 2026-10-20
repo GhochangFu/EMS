@@ -293,10 +293,10 @@ async function protocolTurn(
     {} as never,
     { listLocationTypes: async () => [{ code: "smoc_campus", label: "SMOC campus" }] } as never,
     { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
-  return service.handleTurn(message, draft, "rtu", "Ion Exchange", "org-1", { sessionId: "s-1", history: [] });
+  return service.handleTurn(message, draft, "rtu", "Ion Exchange", "org-1", { sessionId: "s-1", history: [], pointKeyQuota: { createdByOrganization: 0 } });
 }
 
 /** F4.220 — "restriction" holds `rest` and "what" is a question word, yet it asks for no protocol list: the guided topic guard answers. */
@@ -485,7 +485,7 @@ async function orgTurn(message: string, draft: OnboardingDraft): Promise<ChatTur
     { context: async () => KW_ACTIVE } as never,
     { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
-  return service.handleTurn(message, draft, "rtu", "Ion Exchange", "org-1", { sessionId: "s-1", history: [] });
+  return service.handleTurn(message, draft, "rtu", "Ion Exchange", "org-1", { sessionId: "s-1", history: [], pointKeyQuota: { createdByOrganization: 0 } });
 }
 
 /** Review item 2: at the RTU step "confirm point keys" does not switch the draft to the existing keys. */
