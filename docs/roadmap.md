@@ -7828,3 +7828,5 @@ One PR, [#894](https://github.com/GhochangFu/EMS/pull/894) (`09836994`), under [
 **Follow-ups:** `F4.270` (a multi-device mapping turn spends its tool calls and writes nothing), `F4.271` (repo-scan test timeouts); a `chore(agents):` sweep for ADR 0016 §7 and the onboarding scope in its own PR.
 
 **`F4.270` done 2026-10-20** in [#897](https://github.com/GhochangFu/EMS/pull/897) (`ca6e39d8`): a discovery mapping turn maps one device and offers "Map the next device" (owner ruling), and a stop with no write says nothing was written. Verified live against the PHE discovery.
+
+**`F4.111` done 2026-10-20** in [#900](https://github.com/GhochangFu/EMS/pull/900) (`bc81dbda`) under [ADR 0104](./adr/0104-point-key-catalog-growth-quota.md): the fleet point-key catalog grows at most 200 new keys per onboarding commit and 1,000 per organization, enforced under a per-organization advisory lock; a global admin is exempt.
