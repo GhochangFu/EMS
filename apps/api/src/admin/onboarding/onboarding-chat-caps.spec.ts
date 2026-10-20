@@ -178,6 +178,7 @@ export function buildService(opts: { session: ReturnType<typeof sessionRow>; res
   const accessControl = {
     requireMasterDataUser: () => Promise.resolve({ id: "u-1", role: "admin" }),
     canManageOrganization: () => Promise.resolve(true),
+    isGlobalAdmin: () => Promise.resolve(true),
   } as never;
   const chatService = new OnboardingChatService(
     new OnboardingValidateService(),
@@ -190,7 +191,7 @@ export function buildService(opts: { session: ReturnType<typeof sessionRow>; res
     // F3.21: the platform has no provider, so the guided (rule-based) mode
     // answers — the producer these cases are about.
     { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
   const service = new OnboardingService(
@@ -203,7 +204,7 @@ export function buildService(opts: { session: ReturnType<typeof sessionRow>; res
     {} as never,
     {} as never,
     {} as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
   );
   return { service, record };
 }

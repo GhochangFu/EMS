@@ -13,7 +13,7 @@ import { OnboardingValidateService } from "./onboarding-validate.service";
  */
 
 const ACTIVE_TYPE = { code: "smoc_campus", label: "SMOC campus" } as never;
-const TURN = { types: [ACTIVE_TYPE], templates: EMPTY_TEMPLATE_CONTEXT };
+const TURN = { types: [ACTIVE_TYPE], templates: EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: { createdByOrganization: 0 } };
 
 type Finalized = Parameters<RuleBasedTurnDeps["finalizeTurn"]>;
 
@@ -64,6 +64,7 @@ async function runTurn(message: string): Promise<{ result: ChatTurnResult; final
       },
       validator: new OnboardingValidateService(),
       templates: TURN.templates,
+      pointKeyQuota: TURN.pointKeyQuota,
     },
     finalizeTurn: (...args) => {
       finalized.push(args);

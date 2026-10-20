@@ -30,7 +30,7 @@ function protocolService(): OnboardingChatService {
     { listPointKeys: async () => [] } as never,
     { listLocationTypes: async () => [{ code: "smoc_campus", label: "SMOC campus" }] } as never,
     { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
 }
@@ -38,7 +38,7 @@ function protocolService(): OnboardingChatService {
 /** I1 - the protocol question answers every catalog entry with its fields and its wiring, and changes nothing. */
 export async function assertTheProtocolQuestionAnswersTheCatalog(): Promise<void> {
   const service = protocolService();
-  const result = await service.handleTurn("which protocols are available", {}, "location", "Org", "org-1", { sessionId: "s", history: [] });
+  const result = await service.handleTurn("which protocols are available", {}, "location", "Org", "org-1", { sessionId: "s", history: [], pointKeyQuota: { createdByOrganization: 0 } });
   const reply = result.assistantMessage;
   for (const text of ["Here are the protocols available in BMS:", "(`mqtt`, live ingest)", "Required: topic", "(`modbus_tcp`, config only)"]) {
     assert(reply.includes(text), `the reply holds "${text}", got ${reply}`);
@@ -50,7 +50,7 @@ export async function assertTheProtocolQuestionAnswersTheCatalog(): Promise<void
 export async function assertAListedRtuMessageAppendsTheRtu(): Promise<void> {
   const service = protocolService();
   const draft = { location: { name: "Pump House", slug: "pump-house", code: "PUMP-HOUSE", type: "smoc_campus", latitude: 22.3, longitude: 87.3 } };
-  const result = await service.handleTurn("Modbus RTU at the pump house, listed as P-1", draft, "rtu", "Org", "org-1", { sessionId: "s", history: [] });
+  const result = await service.handleTurn("Modbus RTU at the pump house, listed as P-1", draft, "rtu", "Org", "org-1", { sessionId: "s", history: [], pointKeyQuota: { createdByOrganization: 0 } });
   const rtus = result.draftPatch.rtus ?? [];
   assert(rtus.length === 1, `one RTU appended, got ${rtus.length}; reply: ${result.assistantMessage}`);
   assert(rtus[0]?.protocol === "modbus_tcp", `a modbus_tcp RTU, got ${String(rtus[0]?.protocol)}`);

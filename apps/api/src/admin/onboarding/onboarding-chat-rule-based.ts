@@ -42,6 +42,7 @@ import type { ValidateTemplateContext } from "./onboarding-template-refs";
 import type { DiscoveryProposal, DiscoverySecretCopy } from "./onboarding-tool-outcome";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { draftNeedsPointKeys, type OnboardingValidateService } from "./onboarding-validate.service";
+import type { PointKeyQuota } from "./onboarding-draft-caps";
 
 export type ChatTurnResult = {
   assistantMessage: string;
@@ -73,6 +74,8 @@ export type ChatTurnResult = {
 export type TurnVocabulary = {
   readonly types: readonly LocationTypeDto[];
   readonly templates: ValidateTemplateContext;
+  /** `F4.111` (ADR 0104 decision 5): the turn's growth-quota state, for the tools' early refusal. */
+  readonly pointKeyQuota: PointKeyQuota;
 };
 
 /**

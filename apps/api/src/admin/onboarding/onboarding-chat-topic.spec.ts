@@ -541,7 +541,7 @@ function credentialChatService(): OnboardingChatService {
     {} as never,
     {} as never,
     {} as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
 }

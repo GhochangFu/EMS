@@ -63,6 +63,7 @@ function context(): ToolContext {
     },
     validator: new OnboardingValidateService(),
     templates: EMPTY_TEMPLATE_CONTEXT,
+    pointKeyQuota: { createdByOrganization: 0 },
   };
 }
 

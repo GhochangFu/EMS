@@ -30,7 +30,7 @@ function service(resolved: ResolvedLlm): { chat: OnboardingChatService; asked: s
         return resolved;
       },
     } as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
   return { chat, asked };
@@ -40,7 +40,7 @@ function ready(llm: FakeLlmProvider): ResolvedLlm {
   return { kind: "ready", provider: llm, source: "organization", vision: false };
 }
 
-const CONTEXT = { sessionId: "s-42", history: [] };
+const CONTEXT = { sessionId: "s-42", history: [], pointKeyQuota: { createdByOrganization: 0 } };
 
 /** On a fresh draft the guided mode reads the message as the location name: the clearest proof it answered. */
 async function turn(chat: OnboardingChatService, message = "Berhampur") {

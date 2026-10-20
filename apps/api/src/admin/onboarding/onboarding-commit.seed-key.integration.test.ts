@@ -186,7 +186,7 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — the onboarding commit s
       new MasterDataAuditService(tenantDb, fleetDb),
       new OnboardingValidateService(),
       new VocabulariesService(fleetDb),
-      { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+      { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
       // F3.22: the three template services; this draft holds no template, so none is called.
       {} as never,
       {} as never,

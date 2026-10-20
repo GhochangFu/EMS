@@ -503,6 +503,21 @@ export const MAX_ONBOARDING_RTUS = 100;
 export const MAX_ONBOARDING_POINT_KEYS = 500;
 
 /**
+ * The number of point keys **new to the fleet catalog** one onboarding commit
+ * may add (`F4.111`, ADR 0104 decision 2). A draft key whose code the catalog
+ * already holds does not count. A global admin's commit is exempt (decision 6).
+ */
+export const MAX_NEW_POINT_KEYS_PER_COMMIT = 200;
+
+/**
+ * The number of catalog rows one organization may add through onboarding in
+ * total (`F4.111`, ADR 0104 decisions 2 and 3): rows whose
+ * `created_by_organization_id` is that organization, plus the commit's new
+ * keys. Rows from before migration `0114` are `NULL` and do not count.
+ */
+export const MAX_POINT_KEYS_PER_ORGANIZATION = 1000;
+
+/**
  * The number of assets one onboarding session may create (`F4.103`).
  * See `MAX_ONBOARDING_RTUS` for the derivation of all four caps.
  */

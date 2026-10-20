@@ -69,7 +69,7 @@ function serviceWith(rows: readonly LocationTypeDto[], llmResolver: unknown = GU
     { listPointKeys: async () => [] } as never,
     { listLocationTypes: async () => [...rows] } as never,
     llmResolver as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     { listExisting: async () => ({ rows: [], total: 0 }) } as never,
   );
 }
@@ -87,6 +87,7 @@ async function ruleBasedTurn(
     return await serviceWith(rows).handleTurn(message, draft, phase, "Ion Exchange", "org-1", {
       sessionId: "s-1",
       history: [],
+      pointKeyQuota: { createdByOrganization: 0 },
     });
   } finally {
     if (savedKey !== undefined) {
@@ -265,6 +266,7 @@ async function agentTurn(
   const turn = await serviceWith(FOUR, resolver).handleTurn("Tell me about the site", stored, "location", "Ion Exchange", "org-1", {
     sessionId: "s-1",
     history: [],
+    pointKeyQuota: { createdByOrganization: 0 },
   });
   assert(llm.calls >= 1, "the agent branch must have run");
   return { turn, llm };

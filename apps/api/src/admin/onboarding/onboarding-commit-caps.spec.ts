@@ -90,6 +90,8 @@ function buildService(opts: {
   const accessControl = {
     requireMasterDataUser: () => Promise.resolve({ id: "u-1", role: "admin" }),
     canManageOrganization: () => Promise.resolve(opts.canManage ?? true),
+    // F4.111: exempt, so the quota's locked reads stay out of this fake transaction (the integration suite holds them).
+    isGlobalAdmin: () => Promise.resolve(true),
   } as never;
 
   const domainCalls: string[] = [];
@@ -133,7 +135,7 @@ function buildService(opts: {
     {} as never,
     validateService,
     vocabularies,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     // F3.22: the three template services; this draft holds no template, so none is called.
     {} as never,
     {} as never,

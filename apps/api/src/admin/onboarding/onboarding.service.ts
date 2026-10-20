@@ -407,7 +407,12 @@ export class OnboardingService {
       phase,
       org?.name ?? "Organization",
       session.organizationId,
-      { sessionId, history: session.messages as OnboardingChatMessage[] },
+      {
+        sessionId,
+        history: session.messages as OnboardingChatMessage[],
+        // F4.111 (ADR 0104 decisions 5 and 6): the early refusal's count, or the exemption.
+        pointKeyQuota: await this.templateCatalog.pointKeyQuota(session.organizationId, await this.accessControl.isGlobalAdmin(jwt)),
+      },
     );
 
     // `mergeDraft` clears any stored proposal. A turn that proposed gets a new

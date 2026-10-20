@@ -162,7 +162,7 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
       { listPointKeys: async () => [] } as never,
       vocabularies as never,
       { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
-      { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+      { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
       { listExisting: async () => ({ rows: [], total: 0 }) } as never,
     );
     const service = new OnboardingService(
@@ -175,7 +175,7 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
       EXCEL_STUB as never,
       CATALOG_STUB as never,
       vocabularies as never,
-      { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+      { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     );
 
     Object.assign(ctx, {

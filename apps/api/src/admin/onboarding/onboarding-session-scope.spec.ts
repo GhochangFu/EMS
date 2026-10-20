@@ -69,6 +69,7 @@ function fakeAccessControl(role: Role, canManage: boolean) {
     requireMasterDataUser: () => Promise.resolve({ id: "u-1", role }),
     canManageOrganization: (_jwt: unknown, organizationId: unknown) =>
       Promise.resolve(organizationId === "org-1" ? canManage : true),
+    isGlobalAdmin: () => Promise.resolve(true),
   };
 }
 
@@ -87,7 +88,7 @@ function commitServiceOver(row: Row | null, canManage: boolean, role: Role = "ad
       listLocationTypes: () => Promise.resolve([]),
       assertLocationType: () => Promise.resolve(),
     } as never,
-    { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+    { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     // F3.22: the three template services; this draft holds no template, so none is called.
     {} as never,
     {} as never,

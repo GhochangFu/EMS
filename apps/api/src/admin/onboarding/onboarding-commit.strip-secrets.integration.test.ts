@@ -212,7 +212,7 @@ describe.skipIf(!connectionString)("F4.258 — the onboarding commit strips the 
       new MasterDataAuditService(tenantDb, fleetDb),
       new OnboardingValidateService(),
       new VocabulariesService(fleetDb),
-      { context: async () => EMPTY_TEMPLATE_CONTEXT } as never,
+      { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
       // F3.22: the three template services; these drafts hold no template, so none is called.
       {} as never,
       {} as never,
