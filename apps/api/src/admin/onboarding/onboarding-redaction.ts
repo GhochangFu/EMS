@@ -100,6 +100,37 @@ export function isSecretKey(key: string): boolean {
 }
 
 /**
+ * `F4.185` — short credential names that no fragment above covers (`pass` is not
+ * a substring of "password"), matched **whole** after normalising, so
+ * `pointKey`, `sourceDataKey`, `passive`, `pinned` and `author` stay readable.
+ * `auth`, `authorization` and `basicAuth` are here whole (review finding); the
+ * refusal's wider `includes("auth")` rule would hide stored `author` values. The
+ * agent's refusal (`onboarding-agent-tools.ts`, `F3.21` security review M1)
+ * and the draft scrub read this one list.
+ */
+export const SHORT_SECRET_KEY_NAMES: ReadonlySet<string> = new Set(
+  ["user", "username", "login", "pass", "pw", "creds", "cred", "psk", "pin", "bearer", "key", "auth", "authorization", "basicAuth"].map(
+    normaliseKey,
+  ),
+);
+
+/**
+ * `F4.185` — the predicate for the draft's free-form records (`rtus[].config`
+ * and the three `meta` records): `isSecretKey`, plus a key whose whole name is
+ * in `SHORT_SECRET_KEY_NAMES`.
+ *
+ * **Not** the shared predicate. `isSecretKey` also scrubs copilot tool results
+ * and arguments (`copilot-secret-scrub.ts`) and discovery samples, where a
+ * field named `key` is product data: dashboard tabs, dashboard template
+ * widgets and mimic nodes all carry one. Inside `config` and `meta` nothing
+ * the product writes is named `key`, `user` or `pin`, so there it is a
+ * credential until shown otherwise.
+ */
+export function isDraftRecordSecretKey(key: string): boolean {
+  return isSecretKey(key) || SHORT_SECRET_KEY_NAMES.has(normaliseKey(key));
+}
+
+/**
  * The internal store's per-RTU shape. `v` is the ADR 0062 decision 3 key
  * version: absent on a blob written before that change (read as version 1 by
  * `readEncryptedCredentials`), and otherwise a safe integer `>= 1` — anything
@@ -255,7 +286,8 @@ export function redactDraftForClient(draft: unknown): OnboardingDraft {
       // and nothing else, so the CLIENT response was less redacted than the LLM
       // context — anything plaintext in `config` (which the model can write via
       // `draftPatch`) was returned by `GET /sessions/:id` and by `validate`.
-      config: scrubSecrets(rtu.config) as typeof rtu.config,
+      // F4.185: the free-form records take the whole-name list as well.
+      config: scrubSecrets(rtu.config, isDraftRecordSecretKey) as typeof rtu.config,
       credentialsSet: Boolean(rtu.credentialsSet),
     }));
   }
@@ -271,7 +303,7 @@ function scrubMeta<T extends { meta?: unknown }>(entry: T): T {
   if (entry.meta === undefined || entry.meta === null) {
     return entry;
   }
-  return { ...entry, meta: scrubSecrets(entry.meta) as T["meta"] };
+  return { ...entry, meta: scrubSecrets(entry.meta, isDraftRecordSecretKey) as T["meta"] };
 }
 
 /**
@@ -303,10 +335,12 @@ export function redactDraftForLlm(draft: unknown): OnboardingDraft {
  * container predicate and the one visitor that makes it a scrub rather than a
  * clone. It shipped as a near-duplicate body differing in a single `if`.
  *
- * The semantics are unchanged: an object key that satisfies `isSecretKey`
- * becomes the placeholder and is **not** descended into, everything else is
- * copied, and arrays keep their indices so no index is ever tested against
- * `isSecretKey` — `rebuildDeep` offers the visitor object keys only.
+ * The semantics are unchanged: an object key that satisfies the `secret`
+ * predicate (`isSecretKey` by default; `isDraftRecordSecretKey` for `config`
+ * and `meta` since `F4.185`) becomes the placeholder and is **not** descended
+ * into, everything else is copied, and arrays keep their indices so no index
+ * is ever tested against the predicate — `rebuildDeep` offers the visitor
+ * object keys only.
  *
  * **One thing did change, and it is a fix rather than a regression.** The
  * previous `out[key] = …` invoked `Object.prototype`'s `__proto__` accessor, so
@@ -316,10 +350,85 @@ export function redactDraftForLlm(draft: unknown): OnboardingDraft {
  * that: the output is `JSON.stringify`d onto the wire, and the web's own
  * `z.record` parse drops the key again on arrival.
  */
-function scrubSecrets(value: unknown): unknown {
+function scrubSecrets(value: unknown, secret: (key: string) => boolean = isSecretKey): unknown {
   return rebuildDeep(value, isContainer, (key) =>
-    isSecretKey(key) ? { value: "[REDACTED]" } : null,
+    secret(key) ? { value: REDACTED_PLACEHOLDER } : null,
   );
+}
+
+/** What the client and prompt views show in place of a scrubbed value. */
+export const REDACTED_PLACEHOLDER = "[REDACTED]";
+
+type PlainRecord = Record<string, unknown>;
+
+function plainRecord(value: unknown): value is PlainRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * `F4.185` (review finding) — a client edits the **redacted** view and sends
+ * it back: the draft drawer's topic Save `PATCH`es every RTU it holds. Without
+ * this, a stored `config.key` or `meta.user` would be overwritten by the
+ * literal placeholder, and the commit would write `"[REDACTED]"` into
+ * `rtu_connection_configs.config` or `bms.rtus.meta`.
+ *
+ * Returns a copy of `patch` in which every value that is exactly the
+ * placeholder, under a key `isDraftRecordSecretKey` matches, inside
+ * `location.meta`, `rtus[].config`, `rtus[].meta` or `assets[].meta`, is
+ * replaced by the stored value at the same path — or dropped when nothing is
+ * stored there, so a placeholder is never written as data. An RTU or asset is
+ * matched to its stored entry by `code`. Iterative, so a deep record cannot
+ * overflow the stack (`F4.115`).
+ */
+export function keepRedactedValues<T>(stored: unknown, patch: T): T {
+  if (!plainRecord(patch)) {
+    return patch;
+  }
+  const out = cloneJson(patch) as PlainRecord;
+  const base = plainRecord(stored) ? stored : {};
+  const pairs: [PlainRecord, unknown][] = [];
+  const location = out.location;
+  if (plainRecord(location) && plainRecord(location.meta)) {
+    pairs.push([location.meta, plainRecord(base.location) ? base.location.meta : undefined]);
+  }
+  for (const [section, fields] of [
+    ["rtus", ["config", "meta"]],
+    ["assets", ["meta"]],
+  ] as const) {
+    const incoming = out[section];
+    const storedList = Array.isArray(base[section]) ? (base[section] as unknown[]) : [];
+    if (!Array.isArray(incoming)) {
+      continue;
+    }
+    for (const entry of incoming) {
+      if (!plainRecord(entry)) {
+        continue;
+      }
+      const match = storedList.find((candidate) => plainRecord(candidate) && candidate.code === entry.code);
+      for (const field of fields) {
+        if (plainRecord(entry[field])) {
+          pairs.push([entry[field] as PlainRecord, plainRecord(match) ? match[field] : undefined]);
+        }
+      }
+    }
+  }
+  while (pairs.length > 0) {
+    const [record, storedRecord] = pairs.pop()!;
+    const storedValues = plainRecord(storedRecord) ? storedRecord : {};
+    for (const key of Object.keys(record)) {
+      const value = record[key];
+      if (value === REDACTED_PLACEHOLDER && isDraftRecordSecretKey(key)) {
+        if (Object.prototype.hasOwnProperty.call(storedValues, key)) {
+          record[key] = storedValues[key];
+        } else {
+          delete record[key];
+        }
+      } else if (plainRecord(value)) {
+        pairs.push([value, storedValues[key]]);
+      }
+    }
+  }
+  return out as T;
 }
 
 /**

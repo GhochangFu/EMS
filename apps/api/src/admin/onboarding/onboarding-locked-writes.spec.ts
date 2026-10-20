@@ -246,3 +246,19 @@ export async function assertThePatchOverALoadedCommittedRowAnswers403(): Promise
   assert(status === 403, `403 Forbidden, got ${status}`);
   assert(record.updates.length === 0, `nothing written, got ${record.updates.length} updates`);
 }
+
+/** (U15) F4.185 review: a PATCH that sends back the redacted view keeps the stored `config.key`, not the placeholder. */
+export async function assertThePatchOfTheRedactedViewKeepsAStoredKey(): Promise<void> {
+  const session = patchSession();
+  const stored = {
+    ...rtuDraft(),
+    rtus: [{ code: "RTU-1", displayName: "RTU-1", protocol: "mqtt", config: { host: "h", key: "k-stored" } }],
+  } as OnboardingDraft;
+  const { service, record } = patchBuild(session, { locked: { ...session, draft: stored } as Row });
+  await service.patchDraft(JWT, "s-1", {
+    rtus: [{ code: "RTU-1", displayName: "RTU-1", protocol: "mqtt", config: { host: "h", key: "[REDACTED]", topic: "t" } }],
+  } as never);
+  const draft = record.updates[0]?.draft as OnboardingDraft | undefined;
+  const config = draft?.rtus?.[0]?.config as Record<string, unknown> | undefined;
+  assert(config?.key === "k-stored" && config?.topic === "t", `stored key kept and topic written, got ${JSON.stringify(config)}`);
+}

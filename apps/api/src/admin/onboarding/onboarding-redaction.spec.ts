@@ -2,6 +2,9 @@ import type { OnboardingDraftRtu } from "@bms/shared";
 
 import {
   attachEncryptedCredentials,
+  isDraftRecordSecretKey,
+  isSecretKey,
+  keepRedactedValues,
   readEncryptedCredentials,
   reconcileSecrets,
   redactDraftForClient,
@@ -709,4 +712,124 @@ export function assertW10APasswordVariableIsRedactedForTheModel(): void {
   const vars = out.assets[0].template.sourceDataKeyVars;
   assert(vars.password === "[REDACTED]", `the password variable is redacted, got ${JSON.stringify(vars)}`);
   assert(vars.site === "S1", `a plain variable is kept beside it, got ${JSON.stringify(vars)}`);
+}
+
+/** `F4.185` — the short names the agent's refusal already used, now scrubbed from both views of a draft. */
+const SHORT_NAMES = ["user", "username", "login", "pass", "pw", "creds", "cred", "psk", "pin", "bearer", "key", "PASS", "user_name", "Pin"];
+
+/** Readable neighbours: whole-name matching must not catch these. */
+const READABLE = { pointKey: "kw", sourceDataKey: "s01", passive: "yes", pinned: "top", keyName: "k1", userCount: "3" };
+
+function shortNameRecord(): Record<string, string> {
+  return Object.fromEntries(SHORT_NAMES.map((name) => [name, `secret-${name}`]));
+}
+
+function shortNameDraft(): unknown {
+  return {
+    location: { code: "L1", name: "L1", meta: shortNameRecord() },
+    rtus: [{ ...rtu("RTU-1"), config: { host: "broker", ...shortNameRecord(), ...READABLE }, meta: shortNameRecord() }],
+    assets: [{ rtuIndex: 0, code: "A1", name: "A1", siteName: "S", domain: "electrical", meta: shortNameRecord() }],
+    assetPoints: [{ assetIndex: 0, pointKey: "kw", sourceDataKey: "s01" }],
+  };
+}
+
+function leakedShortNames(record: unknown, where: string): string[] {
+  const values = (record ?? {}) as Record<string, unknown>;
+  return SHORT_NAMES.filter((name) => values[name] !== "[REDACTED]").map((name) => `${where}.${name}=${JSON.stringify(values[name])}`);
+}
+
+function assertEveryRecordScrubbed(name: string, out: Record<string, unknown>): void {
+  const draft = out as { location: { meta: unknown }; rtus: { config: unknown; meta: unknown }[]; assets: { meta: unknown }[] };
+  const leaks = [
+    ...leakedShortNames(draft.rtus[0].config, "rtus[0].config"),
+    ...leakedShortNames(draft.rtus[0].meta, "rtus[0].meta"),
+    ...leakedShortNames(draft.location.meta, "location.meta"),
+    ...leakedShortNames(draft.assets[0].meta, "assets[0].meta"),
+  ];
+  assert(leaks.length === 0, `${name} left short credential names in clear: ${leaks.join(", ")}`);
+}
+
+/** S1 — the client view scrubs every short name in `config` and the three `meta` records. */
+export function assertS1TheClientViewScrubsShortNames(): void {
+  assertEveryRecordScrubbed("redactDraftForClient", redactDraftForClient(shortNameDraft()) as Record<string, unknown>);
+}
+
+/** S2 — the prompt view does too (it composes the client view). */
+export function assertS2ThePromptViewScrubsShortNames(): void {
+  assertEveryRecordScrubbed("redactDraftForLlm", redactDraftForLlm(shortNameDraft()) as Record<string, unknown>);
+}
+
+/** S3 — `pointKey`, `sourceDataKey` and names that merely contain a short name stay readable in both views. */
+export function assertS3PointKeysAndNeighboursStayReadable(): void {
+  for (const [name, redact] of [
+    ["redactDraftForClient", redactDraftForClient],
+    ["redactDraftForLlm", redactDraftForLlm],
+  ] as const) {
+    const out = redact(shortNameDraft()) as unknown as {
+      rtus: { config: Record<string, unknown> }[];
+      assetPoints: { pointKey: string; sourceDataKey: string }[];
+    };
+    const config = Object.fromEntries(Object.keys(READABLE).map((key) => [key, out.rtus[0].config[key]]));
+    assert(JSON.stringify(config) === JSON.stringify(READABLE), `${name} hid a readable config key: ${JSON.stringify(config)}`);
+    assert(
+      out.assetPoints[0].pointKey === "kw" && out.assetPoints[0].sourceDataKey === "s01",
+      `${name} hid the mapping: ${JSON.stringify(out.assetPoints[0])}`,
+    );
+  }
+}
+
+/** S4 — the shared predicate stays narrow: copilot results carry fields named `key` (dashboard tabs, mimic nodes). */
+export function assertS4TheSharedPredicateStaysNarrow(): void {
+  const caught = ["key", "pin", "user", "pass"].filter((name) => isSecretKey(name));
+  assert(caught.length === 0, `isSecretKey now catches ${caught.join(", ")}; the copilot scrub would hide product data`);
+  assert(
+    ["key", "pin", "user", "pass"].every((name) => isDraftRecordSecretKey(name)),
+    "isDraftRecordSecretKey must catch the short names",
+  );
+}
+
+/** S5 — a PATCH of the redacted view keeps the stored values under scrubbed keys, matched by code. */
+export function assertS5APatchOfTheRedactedViewKeepsStoredValues(): void {
+  const stored = {
+    location: { code: "L1", name: "L1", meta: { user: "ops", nested: { pin: "1234" } } },
+    rtus: [
+      { ...rtu("RTU-A"), config: { host: "a", key: "k-a" }, meta: { user: "u-a" } },
+      { ...rtu("RTU-B"), config: { host: "b", key: "k-b" } },
+    ],
+    assets: [{ rtuIndex: 0, code: "A1", name: "A1", siteName: "S", domain: "electrical", meta: { pin: "9" } }],
+  };
+  const view = redactDraftForClient(stored) as unknown as typeof stored;
+  // The client reorders the RTUs and edits a topic, as the drawer's Save does.
+  const patch = { ...view, rtus: [{ ...view.rtus[1], config: { ...view.rtus[1].config, topic: "t" } }, view.rtus[0]] };
+  const kept = keepRedactedValues(stored, patch) as unknown as typeof stored;
+  const got = {
+    locationUser: kept.location.meta.user,
+    nestedPin: (kept.location.meta.nested as { pin: string }).pin,
+    bKey: kept.rtus[0].config.key,
+    aKey: kept.rtus[1].config.key,
+    aUser: (kept.rtus[1].meta as { user: string }).user,
+    assetPin: kept.assets[0].meta.pin,
+  };
+  const want = { locationUser: "ops", nestedPin: "1234", bKey: "k-b", aKey: "k-a", aUser: "u-a", assetPin: "9" };
+  assert(JSON.stringify(got) === JSON.stringify(want), `stored values were not kept: ${JSON.stringify(got)}`);
+}
+
+/** S6 — a placeholder with nothing stored is dropped; under a non-secret key it is ordinary text. */
+export function assertS6APlaceholderIsNeverWrittenAsASecret(): void {
+  const patch = { rtus: [{ ...rtu("RTU-NEW"), config: { key: "[REDACTED]", label: "[REDACTED]" } }] };
+  const kept = keepRedactedValues({}, patch);
+  const config = kept.rtus[0].config as Record<string, unknown>;
+  assert(!("key" in config), `a placeholder with nothing stored was kept: ${JSON.stringify(config)}`);
+  assert(config.label === "[REDACTED]", `a non-secret key lost its text: ${JSON.stringify(config)}`);
+}
+
+/** S7 — `auth`, `authorization` and `basicAuth` are scrubbed whole; `author` stays readable. */
+export function assertS7AuthNamesAreScrubbedWhole(): void {
+  const out = redactDraftForLlm({
+    rtus: [{ ...rtu("RTU-1"), config: { auth: "a", Authorization: "Bearer x", basic_auth: "b", author: "Ion" } }],
+  }) as unknown as { rtus: { config: Record<string, unknown> }[] };
+  const config = out.rtus[0].config;
+  const want = { auth: "[REDACTED]", Authorization: "[REDACTED]", basic_auth: "[REDACTED]", author: "Ion" };
+  const got = Object.fromEntries(Object.keys(want).map((key) => [key, config[key]]));
+  assert(JSON.stringify(got) === JSON.stringify(want), `got ${JSON.stringify(got)}`);
 }

@@ -13,6 +13,13 @@ import {
   runOnboardingRedactionTests,
   assertW9BothRedactorsKeepTemplatesAndTheAssetRef,
   assertW10APasswordVariableIsRedactedForTheModel,
+  assertS1TheClientViewScrubsShortNames,
+  assertS2ThePromptViewScrubsShortNames,
+  assertS3PointKeysAndNeighboursStayReadable,
+  assertS4TheSharedPredicateStaysNarrow,
+  assertS5APatchOfTheRedactedViewKeepsStoredValues,
+  assertS6APlaceholderIsNeverWrittenAsASecret,
+  assertS7AuthNamesAreScrubbedWhole,
 } from "./onboarding-redaction.spec";
 
 /** Vitest entry point — see `admin.schema.test.ts` for the pattern (ADR 0014). */
@@ -76,5 +83,35 @@ describe("onboarding-redaction — templates (F3.22, ADR 0091 decision 2)", () =
 
   it("W10 redacts a password variable on the model's path", () => {
     assertW10APasswordVariableIsRedactedForTheModel();
+  });
+});
+
+describe("onboarding-redaction — short credential names (F4.185)", () => {
+  it("S1 the client view scrubs short names in config and meta", () => {
+    assertS1TheClientViewScrubsShortNames();
+  });
+
+  it("S2 the prompt view scrubs short names in config and meta", () => {
+    assertS2ThePromptViewScrubsShortNames();
+  });
+
+  it("S3 pointKey, sourceDataKey and neighbour names stay readable", () => {
+    assertS3PointKeysAndNeighboursStayReadable();
+  });
+
+  it("S4 the shared predicate stays narrow for the copilot", () => {
+    assertS4TheSharedPredicateStaysNarrow();
+  });
+
+  it("S5 a PATCH of the redacted view keeps the stored values", () => {
+    assertS5APatchOfTheRedactedViewKeepsStoredValues();
+  });
+
+  it("S6 a placeholder is never written as a secret", () => {
+    assertS6APlaceholderIsNeverWrittenAsASecret();
+  });
+
+  it("S7 auth names are scrubbed whole and author stays readable", () => {
+    assertS7AuthNamesAreScrubbedWhole();
   });
 });

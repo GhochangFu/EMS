@@ -63,7 +63,7 @@ import { applyDiscoveryTurn } from "./onboarding-discovery-tools";
 import { diffSections } from "./onboarding-draft-merge";
 import { assertPatchLocationTypeIsActive } from "./onboarding-location-type-match";
 import type { RollbackBody, SetCredentialsBody } from "./onboarding.schema";
-import { redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
+import { keepRedactedValues, redactDraftForClient, rtuSecretKey } from "./onboarding-redaction";
 import type { OnboardingDraftInput } from "./onboarding.schema";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import {
@@ -590,7 +590,9 @@ export class OnboardingService {
       // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
       const locked = await lockSession(tx, sessionId);
       assertSessionStillDraft(locked);
-      const merged = this.chatService.mergeDraft(locked.draft, draft);
+      // F4.185 (review finding): a client sends back the redacted view, so a
+      // placeholder under a scrubbed key keeps the stored value, never itself.
+      const merged = this.chatService.mergeDraft(locked.draft, keepRedactedValues(locked.draft, draft));
       const [row] = await tx
         .update(onboardingSessions)
         .set({
