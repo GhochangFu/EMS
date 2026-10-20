@@ -36,10 +36,13 @@ type HarnessOptions = {
   dirty?: boolean;
   /** This field renders as a controlled `<select>` (options `a` and `b`) instead of a text input. */
   select?: string;
+  /** `F4.245`: the record's path parameters (`{}`, a create's, by default) and the page-fixed fields. */
+  params?: Record<string, string>;
+  fixedFields?: string[];
 };
 
 /** A page over the shell: one text input per field of the open step. */
-function renderWizard(id: string, initial: Record<string, unknown> = {}, options: HarnessOptions = {}): Harness {
+function renderWizard(id: string, initial: Record<string, unknown> = {}, options: HarnessOptions = {}): Harness & { unmount: () => void } {
   const onSubmit = vi.fn();
   const onCancel = vi.fn();
   const onSelect = vi.fn();
@@ -50,6 +53,8 @@ function renderWizard(id: string, initial: Record<string, unknown> = {}, options
     return (
       <WizardShell
         entry={entry(id)}
+        params={options.params ?? {}}
+        fixedFields={options.fixedFields}
         values={values}
         onChange={setValues}
         onSubmit={onSubmit}
@@ -84,8 +89,8 @@ function renderWizard(id: string, initial: Record<string, unknown> = {}, options
       />
     );
   }
-  render(<Page />);
-  return { onSubmit, onCancel, onSelect, values: () => latest };
+  const { unmount } = render(<Page />);
+  return { onSubmit, onCancel, onSelect, values: () => latest, unmount };
 }
 
 const stepNames = () => screen.getAllByRole("listitem").map((li) => li.textContent);
@@ -152,21 +157,54 @@ export function aBodylessRouteIsReviewAlone(): void {
   expect(h.onSubmit).toHaveBeenCalledWith({});
 }
 
-/** A copilot fill for this entry fills the named step's fields; a fill for another entry waits. */
+/** A copilot fill for this entry fills the named step's fields only. */
 export function aFillForThisEntryFillsItsStep(): void {
   const h = renderWizard("dashboard.create");
   act(() => {
-    useWizardStore.getState().receiveFill({ catalogId: "dashboard.update", stepId: "basics", values: { name: "Other" } });
-  });
-  expect(h.values().name).toBeUndefined();
-  expect(useWizardStore.getState().fill?.catalogId).toBe("dashboard.update");
-  act(() => {
     useWizardStore
       .getState()
-      .receiveFill({ catalogId: "dashboard.create", stepId: "basics", values: { name: "Main", organizationId: ORG } });
+      .receiveFill({ catalogId: "dashboard.create", params: {}, stepId: "basics", values: { name: "Main", organizationId: ORG } }, null);
   });
   expect(h.values()).toEqual({ name: "Main" });
   expect((screen.getByRole("textbox", { name: "name" }) as HTMLInputElement).value).toBe("Main");
+}
+
+const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const nameFill = (id: string, name: string) => ({ catalogId: "dashboard.update", params: { id }, stepId: "basics", values: { name } });
+
+/**
+ * `F4.245` (ADR 0099 Amendment 4): A's wizard never takes B's fill; the fill for A lands. Mutation: the
+ * store's `take` compares the catalog id only (the pre-F4.245 rule) → A's Name shows "B's".
+ */
+export function aFillForAnotherRecordIsNotTaken(): void {
+  const h = renderWizard("dashboard.update", { name: "A" }, { params: { id: A } });
+  act(() => useWizardStore.getState().receiveFill(nameFill(B, "B's"), "/admin/dashboards/b"));
+  expect(h.values().name).toBe("A");
+  act(() => useWizardStore.getState().receiveFill(nameFill(A, "A's"), null));
+  expect((screen.getByRole("textbox", { name: "name" }) as HTMLInputElement).value).toBe("A's");
+}
+
+/** `F4.245`: a mounted wizard is open with its record, and is not after unmount. Mutation: drop the cleanup → red. */
+export function aMountedWizardRegistersItsRecord(): void {
+  const h = renderWizard("dashboard.update", {}, { params: { id: A } });
+  expect(useWizardStore.getState().openWizards()).toEqual([{ catalogId: "dashboard.update", params: { id: A } }]);
+  h.unmount();
+  expect(useWizardStore.getState().openWizards()).toEqual([]);
+}
+
+/** Critique C7: a wizard whose params are not its entry's says so and is not open; it never throws. Mutation: drop the alert. */
+export function aWizardThatDoesNotNameItsRecordSaysSo(): void {
+  renderWizard("dashboard.update", {}, { params: {} });
+  expect(screen.getByRole("alert").textContent).toBe("This form does not name its record, so the copilot cannot fill it.");
+  expect(useWizardStore.getState().openWizards()).toEqual([]);
+}
+
+/** Critique C2: a page-fixed field is never filled. Mutation: the shell drops `fixedFields` from `applyFill` → red. */
+export function aPageFixedFieldIsNotFilled(): void {
+  const h = renderWizard("dashboard.create", { name: "Fixed" }, { fixedFields: ["name"] });
+  act(() => useWizardStore.getState().receiveFill({ catalogId: "dashboard.create", params: {}, stepId: "basics", values: { name: "X", slug: "x" } }, null));
+  expect(h.values()).toEqual({ name: "Fixed", slug: "x" });
 }
 
 /** Cancel leaves a clean wizard at once and asks before leaving a changed one. */
@@ -248,7 +286,7 @@ export function reviewShowsATemplatePointsFormulaRow(): void {
       { pointKey: "kw", kind: "measured" },
       { pointKey: "eff", kind: "derived", formula: "{kw} * 2", formulaDialect: "bms-calc-v1", calcTrigger: "streaming" },
     ],
-  });
+  }, { params: { id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc" } });
   for (let step = 0; step < 3; step += 1) fireEvent.click(screen.getByRole("button", { name: "Next" }));
   expect(current()).toBe("4. Review");
   const card = screen.getByRole("region", { name: "Edit an asset template" });

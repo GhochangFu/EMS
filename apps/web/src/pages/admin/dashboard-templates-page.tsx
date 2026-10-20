@@ -505,6 +505,9 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
             <h2 className="font-condensed text-base font-bold text-ink">Import {importing.name}</h2>
             <WizardShell
               entry={wizardEntry("dashboardTemplate.importStock")}
+              params={{ code: importing.code }}
+              // `F4.245` (critique C2): the organization is the page's; a fill never sets it.
+              fixedFields={["organizationId"]}
               values={importValues}
               onChange={updateImport}
               renderStep={(step) =>

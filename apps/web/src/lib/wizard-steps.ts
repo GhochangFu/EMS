@@ -1,5 +1,5 @@
 import type { CopilotFillStepDto } from "@bms/shared";
-import { type CatalogEntry, stepValuesSchema } from "@bms/shared/copilot";
+import { type CatalogEntry, catalogPath, pathParamsOf, stepValuesSchema } from "@bms/shared/copilot";
 
 /**
  * `F3.85` PR 8 / ADR 0099 decision 6 (plan §10.3, ruling Q6) — the pure logic
@@ -85,22 +85,54 @@ export function wizardBody(values: Readonly<Record<string, unknown>>): Record<st
 }
 
 /**
+ * `F4.245` (ADR 0099 Amendment 4) — the key that names one open wizard's
+ * record: its catalog id and its route with every path parameter filled. The
+ * id is part of the key because two entries can share a path
+ * (`assetGroup.member.setRole` and `.remove`, critique C5). `null` when the
+ * parameters are not exactly the entry's or a value fails the entry's own
+ * schema — the shell then shows an alert and takes no fill, rather than
+ * throwing at render (critique C7).
+ */
+export function openWizardKey(
+  entry: Pick<CatalogEntry, "id" | "path" | "params">,
+  params: Readonly<Record<string, string>>,
+): string | null {
+  // A shell rendered without the prop (a JavaScript caller) gets no key, never a throw at render.
+  if (typeof params !== "object" || params === null) return null;
+  const names = pathParamsOf(entry.path).sort();
+  const given = Object.keys(params).sort();
+  if (names.length !== given.length || names.some((name, at) => name !== given[at])) return null;
+  for (const name of names) {
+    const schema = entry.params[name] as { safeParse(value: unknown): { success: boolean } } | undefined;
+    if (schema === undefined || !schema.safeParse(params[name]).success) return null;
+  }
+  return `${entry.id} ${catalogPath(entry, params)}`;
+}
+
+/**
  * Values the copilot's `fill_step` put in a step, merged into the form. Only
  * a fill for this entry and for fields of the named step is taken; anything
  * else is ignored, so a fill can never set a field the step does not show.
+ * Which record a fill is for is the store's check (`openWizardKey`).
+ *
+ * `F4.245` (critique C2): `fixed` names the body fields the page fixes — an
+ * asset page's `assetId`, the organization a library setting or a stock
+ * import is for. A fill never sets one: the page sends its own value, so a
+ * filled one would only make the Review card differ from the request.
  */
 export function applyFill(
   entryId: string,
   steps: readonly WizardStep[],
   values: Readonly<Record<string, unknown>>,
   fill: CopilotFillStepDto,
+  fixed: readonly string[] = [],
 ): Record<string, unknown> | null {
   if (fill.catalogId !== entryId) return null;
   const step = steps.find((candidate) => candidate.id === fill.stepId);
   if (step === undefined) return null;
   const next = { ...values };
   for (const [field, value] of Object.entries(fill.values)) {
-    if (step.fields.includes(field)) next[field] = value;
+    if (step.fields.includes(field) && !fixed.includes(field)) next[field] = value;
   }
   return next;
 }
