@@ -7836,3 +7836,5 @@ One PR, [#894](https://github.com/GhochangFu/EMS/pull/894) (`09836994`), under [
 **`F4.272` done 2026-10-20** in [#906](https://github.com/GhochangFu/EMS/pull/906) (`d6e59bdb`): discovery samples under a short credential name (`pin`, `psk`, `pass`, `pw`, `user`, `key`) are redacted; the key is kept.
 
 **`F4.135` done 2026-10-20** in [#908](https://github.com/GhochangFu/EMS/pull/908) (`8db60811`), ADR 0090 Amendment 4: a refused onboarding draft write gets a code-written `Not applied: <tool> (field: …)` action line, so the agent's reply cannot claim it.
+
+**`F4.246` done 2026-10-21** in [#910](https://github.com/GhochangFu/EMS/pull/910) (`ffdff440`): the copilot card shows each formula in full and every shortened value expands, an asset-template edit card has its Now column, and a template proposal is refused at propose when the route would refuse it at Confirm.
