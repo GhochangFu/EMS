@@ -1,7 +1,14 @@
 import type { OnboardingChatMessage, OnboardingDraft } from "@bms/shared";
 
 import { cloneJson } from "../stack-safe-json";
-import { isToolName, runTool, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
+import {
+  isToolName,
+  refusedWriteLine,
+  runTool,
+  TOOL_DEFINITIONS,
+  type ToolContext,
+  type ToolState,
+} from "./onboarding-agent-tools";
 import { cutToBound } from "./onboarding-draft-caps";
 import { diffSections } from "./onboarding-draft-merge";
 import {
@@ -208,7 +215,12 @@ export async function runAgentTurn(
     {
       messages,
       tools: { definitions: TOOL_DEFINITIONS, isToolName },
-      runTool: (call) => runTool(call, state, input.tools),
+      // F4.135 (ADR 0090 Amendment 4): a refused draft write gets a code-written line, so the reply cannot claim it.
+      runTool: async (call) => {
+        const outcome = await runTool(call, state, input.tools);
+        const refused = refusedWriteLine(call.name, outcome);
+        return refused === undefined ? outcome : { ...outcome, actionLine: refused };
+      },
       llm: input.llm,
     },
     options,

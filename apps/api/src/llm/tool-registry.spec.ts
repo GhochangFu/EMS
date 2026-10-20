@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import type { LlmToolCall } from "./llm-port";
 import { defineToolRegistry, jsonSchemaOf, runToolCall, type ToolGuard } from "./tool-registry";
-import { succeed, type ToolOutcome } from "./tool-result";
+import { MAX_REFUSED_FIELDS, refusedFieldsOf, succeed, type ToolOutcome } from "./tool-result";
 
 /** The generic tool registry skeleton (`F3.85`, ADR 0099). `runToolCall` never throws. */
 
@@ -111,4 +111,67 @@ export function assertTheDefinitionsFollowTheSchemaOrder(): void {
   const names = registry.definitions.map((definition) => `${definition.name}=${definition.description}`).join("|");
   assert(names === "alpha=The alpha tool.|beta=The beta tool.", `definitions in key order with descriptions: ${names}`);
   assert(registry.isToolName("alpha") && !registry.isToolName("toString"), "isToolName reads own keys only");
+}
+
+/** `F4.135`: a schema refusal carries its field paths, so a caller can name the refused field. */
+export async function assertASchemaFailureCarriesItsFieldPaths(): Promise<void> {
+  const { dispatch } = recordingDispatch();
+  const out = await runToolCall(registry, call("alpha", JSON.stringify({ value: 7 })), dispatch, []);
+  assert(!out.ok && JSON.stringify(out.refusedFields) === '["value"]', `the refused field is value, got ${JSON.stringify(out.refusedFields)}`);
+}
+
+/** `F4.135`: a guard refusal is not a schema refusal, so it names no field. */
+export async function assertAGuardRefusalCarriesNoFieldPaths(): Promise<void> {
+  const { dispatch } = recordingDispatch();
+  const guard: ToolGuard<Name> = () => "refused by the guard";
+  const out = await runToolCall(registry, call("alpha", JSON.stringify({ value: 7 })), dispatch, [guard]);
+  assert(!out.ok && out.refusedFields === undefined, `a guard refusal has no fields, got ${JSON.stringify(out.refusedFields)}`);
+}
+
+/** `F4.135` (security review L1): a record key is the model's choice, so it is starred even when it looks like an identifier. */
+export function assertARecordKeyIsStarred(): void {
+  const schema = z.object({ config: z.record(z.number()) }).strict();
+  const parsed = schema.safeParse({ config: { "pass word=hunter2": "x", ghp_Token0123456789: "y" } });
+  if (parsed.success) throw new Error("the fixture fails");
+  const fields = refusedFieldsOf(parsed.error, schema);
+  assert(JSON.stringify(fields) === '["config.*"]', `got ${JSON.stringify(fields)}`);
+}
+
+/** `F4.135`: a declared key under an optional array of objects is shown, with its index. */
+export function assertADeclaredNestedFieldIsShown(): void {
+  const schema = z.object({ a: z.array(z.object({ code: z.string().regex(/^[a-z]+$/) })).optional() }).strict();
+  const parsed = schema.safeParse({ a: [{ code: "ok" }, { code: "A" }] });
+  if (parsed.success) throw new Error("the fixture fails");
+  const fields = refusedFieldsOf(parsed.error, schema);
+  assert(JSON.stringify(fields) === '["a.1.code"]', `got ${JSON.stringify(fields)}`);
+}
+
+/** `F4.135`: an empty path is named as the arguments, and a repeated path is named once. */
+export function assertAnEmptyPathIsTheArgumentsAndPathsAreDistinct(): void {
+  const schema = z.object({ a: z.string().min(3).regex(/^[a-z]+$/) }).strict();
+  const parsed = schema.safeParse({ a: "A", extra: 1 });
+  if (parsed.success) throw new Error("the fixture fails");
+  const fields = refusedFieldsOf(parsed.error, schema);
+  assert(JSON.stringify(fields) === '["a","(arguments)"]', `got ${JSON.stringify(fields)}`);
+}
+
+/** `F4.135`: at most `MAX_REFUSED_FIELDS` paths. */
+export function assertRefusedFieldsAreCapped(): void {
+  const shape = Object.fromEntries(Array.from({ length: 15 }, (_, i) => [`f${i}`, z.string()]));
+  const schema = z.object(shape);
+  const parsed = schema.safeParse({});
+  if (parsed.success) throw new Error("the fixture fails");
+  const fields = refusedFieldsOf(parsed.error, schema);
+  assert(fields.length === MAX_REFUSED_FIELDS && fields[0] === "f0", `got ${fields.length} fields`);
+}
+
+/** `F4.135`: a key the schema does not declare — here added by a refinement — is starred. */
+export function assertAnUndeclaredKeyIsStarred(): void {
+  const schema = z.object({
+    m: z.any().superRefine((_value, ctx) => ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ghp_Token0123456789"], message: "no" })),
+  });
+  const parsed = schema.safeParse({ m: 1 });
+  if (parsed.success) throw new Error("the fixture fails");
+  const fields = refusedFieldsOf(parsed.error, schema);
+  assert(JSON.stringify(fields) === '["m.*"]', `got ${JSON.stringify(fields)}`);
 }

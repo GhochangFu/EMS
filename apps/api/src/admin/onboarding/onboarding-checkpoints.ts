@@ -10,6 +10,7 @@ import { DISCOVERY_PROPOSAL_KEY } from "./onboarding-discovery-state";
 import { cutToBound } from "./onboarding-draft-caps";
 import { DRAFT_SECTIONS } from "./onboarding-draft-merge";
 import { reconcileSecrets, type EncryptedBlob } from "./onboarding-redaction";
+import { NOT_APPLIED_PREFIX } from "./onboarding-tool-outcome";
 
 /**
  * Draft checkpoints and the step undo (`F3.25`, ADR 0094 decisions 3 and 5).
@@ -183,8 +184,10 @@ export function cutRingBefore(ring: readonly Checkpoint[], cp: Checkpoint): Chec
  * A label of at most `MAX_CHECKPOINT_LABEL_CHARS`: the first three action lines,
  * each cut to an equal share, then `moreTail` for the rest. With no lines, the
  * changed section names. Action lines are code-written, so they are not quoted.
+ * `F4.135`: a refused write's line names nothing the checkpoint undoes, so it is left out.
  */
-export function checkpointLabel(actionLines: readonly string[], changedSections: readonly string[]): string {
+export function checkpointLabel(lines: readonly string[], changedSections: readonly string[]): string {
+  const actionLines = lines.filter((line) => !line.startsWith(NOT_APPLIED_PREFIX));
   if (actionLines.length === 0) {
     const names = changedSections.length > 0 ? changedSections.join(", ") : "the draft";
     return cutToBound(`Changed ${names}`, MAX_CHECKPOINT_LABEL_CHARS);

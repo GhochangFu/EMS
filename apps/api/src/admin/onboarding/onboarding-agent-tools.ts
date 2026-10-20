@@ -38,6 +38,7 @@ import {
   TOOL_LIST_MAX_ITEMS,
   TOOL_RESULT_CUT_TAIL,
   TOOL_RESULT_MAX_CHARS,
+  NOT_APPLIED_PREFIX,
   write,
   type ToolOutcome,
   type ToolState,
@@ -52,7 +53,7 @@ import {
 } from "./onboarding.schema";
 
 // The outcome helpers moved to `onboarding-tool-outcome.ts` (F3.22 P3); re-exported so existing imports compile.
-export { toolResultContent, TOOL_LIST_MAX_ITEMS, TOOL_RESULT_CUT_TAIL, TOOL_RESULT_MAX_CHARS };
+export { toolResultContent, NOT_APPLIED_PREFIX, TOOL_LIST_MAX_ITEMS, TOOL_RESULT_CUT_TAIL, TOOL_RESULT_MAX_CHARS };
 export type { ToolOutcome, ToolState };
 
 /**
@@ -81,7 +82,9 @@ export type { ToolOutcome, ToolState };
  * schema from the catalog (F3.24a, ADR 0093), reporting paths only.
  *
  * **Action lines are written by code** from the validated, applied values —
- * never the raw arguments and never the model's text (decision 6).
+ * never the raw arguments and never the model's text (decision 6). A refused
+ * draft write's line (`F4.135`, Amendment 4) is the tool's name and the
+ * schema's declared field paths.
  *
  * The guided mode calls `runTool` too (F3.27, ADR 0090 Amendment 2 B4), through
  * `guidedWrite`, so these refusals and action lines hold on both paths.
@@ -359,6 +362,67 @@ const TOOL_GUARDS: readonly ToolGuard<ToolName>[] = [
 /** Runs one tool call against the turn's state. Never throws (`runToolCall`, `F3.85`). */
 export async function runTool(call: LlmToolCall, state: ToolState, ctx: ToolContext): Promise<ToolOutcome> {
   return runToolCall(TOOL_REGISTRY, call, (name, args) => dispatch(name, args, state, ctx), TOOL_GUARDS);
+}
+
+/**
+ * `F4.135` (ADR 0090 Amendment 4): the tools that write the draft. A refused
+ * call of one of these gets a code-written action line on the agent path, so
+ * the model cannot report a write that did not happen. Every other tool is in
+ * `NON_DRAFT_WRITE_TOOLS`; a spec holds that the two sets cover the registry.
+ */
+export const DRAFT_WRITE_TOOLS: ReadonlySet<ToolName> = new Set<ToolName>([
+  "set_location",
+  "add_rtu",
+  "update_rtu",
+  "remove_rtu",
+  "add_point_key",
+  "remove_point_key",
+  "add_asset",
+  "remove_asset",
+  "map_point",
+  "remove_asset_point",
+  "use_existing_point_keys",
+  "add_template",
+  "import_stock_template",
+  "remove_template",
+  "add_template_assets",
+  "add_point_keys",
+  "map_points",
+]);
+
+/** `F4.135`: reads, proposals and reply chips — a refusal of one changes nothing the user reads as a write. */
+export const NON_DRAFT_WRITE_TOOLS: ReadonlySet<ToolName> = new Set<ToolName>([
+  "get_draft",
+  "list_point_keys",
+  "find_existing",
+  "list_location_types",
+  "list_protocols",
+  "validate_draft",
+  "propose_commit",
+  "suggest_replies",
+  "list_templates",
+  "get_template",
+  "list_stock_templates",
+  "get_asset_points",
+  "propose_discovery",
+  "get_discovery_results",
+]);
+
+/**
+ * `F4.135` (ADR 0090 Amendment 4): the action line of a refused draft write,
+ * or `undefined` for any other outcome. Code writes it from the tool's name
+ * and, for a schema refusal, the refused field paths — never an argument's
+ * value and never the model's text (decision 6).
+ */
+export function refusedWriteLine(name: string, outcome: ToolOutcome): string | undefined {
+  if (outcome.ok || !isToolName(name) || !DRAFT_WRITE_TOOLS.has(name)) {
+    return undefined;
+  }
+  const fields = outcome.refusedFields ?? [];
+  if (fields.length === 0) {
+    return `${NOT_APPLIED_PREFIX}${name}`;
+  }
+  return `${NOT_APPLIED_PREFIX}${name} (${fields.length === 1 ? "field" : "fields"}: ${fields.join(", ")})`;
 }
 
 async function dispatch(name: ToolName, args: Record<string, unknown>, state: ToolState, ctx: ToolContext): Promise<ToolOutcome> {

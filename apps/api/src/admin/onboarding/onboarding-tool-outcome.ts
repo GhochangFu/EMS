@@ -30,6 +30,13 @@ export { fail, issuesOf, succeed, toolResultContent, TOOL_LIST_MAX_ITEMS, TOOL_R
 export type { ToolOutcome };
 
 /**
+ * `F4.135` (ADR 0090 Amendment 4): the prefix of a refused draft write's
+ * action line. Declared here so `checkpointLabel` reads it without importing
+ * the registry.
+ */
+export const NOT_APPLIED_PREFIX = "Not applied: ";
+
+/**
  * F3.25 (ADR 0094 decision 9): the bounds of a `suggest_replies` call. Declared
  * here, beside the other tool bounds, so the registry reads them without
  * importing `onboarding-suggested-replies.ts` (which imports the guided mode,

@@ -27,6 +27,7 @@ import {
 } from "./onboarding-checkpoints";
 import { attachCommitProposal, COMMIT_PROPOSAL_KEY, readCommitProposal } from "./onboarding-commit-proposal";
 import { DRAFT_SECTIONS, mergeDraftPatch, type DraftSection } from "./onboarding-draft-merge";
+import { NOT_APPLIED_PREFIX } from "./onboarding-tool-outcome";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -284,4 +285,12 @@ export function assertUndoReplyNamesLostCredentials(): void {
   assert(lost.includes("Enter the credentials"), "the reply asks for the credentials again (adjacent positive)");
   const none = undoReply("Added RTU RTU-3", []);
   assert(!none.includes("Enter the credentials"), `with no loss there is no credentials sentence, got ${none}`);
+}
+
+/** `F4.135`: a refused write's line is left out of the label; the label names the writes. */
+export function assertCheckpointLabelLeavesOutRefusedLines(): void {
+  const label = checkpointLabel([`${NOT_APPLIED_PREFIX}add_asset (field: code)`, "Added RTU RTU-1 (mqtt)"], ["rtus"]);
+  assert(label === "Added RTU RTU-1 (mqtt)", `the label names the write only, got ${label}`);
+  const onlyRefused = checkpointLabel([`${NOT_APPLIED_PREFIX}add_asset`], ["rtus"]);
+  assert(onlyRefused === "Changed rtus", `with only a refused line the label names the sections, got ${onlyRefused}`);
 }

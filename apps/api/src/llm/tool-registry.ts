@@ -3,7 +3,7 @@ import { zodToJsonSchema } from "zod-to-json-schema";
 
 import { quoteCell } from "../admin/spreadsheet-guard";
 import type { LlmToolCall, LlmToolDefinition } from "./llm-port";
-import { fail, issuesOf, type ToolOutcome } from "./tool-result";
+import { fail, issuesOf, refusedFieldsOf, type ToolOutcome } from "./tool-result";
 
 /**
  * The skeleton of an agent's tool registry (`F3.85`, ADR 0099), extracted from
@@ -95,7 +95,7 @@ export async function runToolCall<Name extends string>(
   }
   const parsed = registry.schemas[name].safeParse(raw);
   if (!parsed.success) {
-    return fail(`Invalid arguments: ${issuesOf(parsed.error)}`);
+    return { ...fail(`Invalid arguments: ${issuesOf(parsed.error)}`), refusedFields: refusedFieldsOf(parsed.error, registry.schemas[name]) };
   }
   try {
     return await dispatch(name, parsed.data as Record<string, unknown>);

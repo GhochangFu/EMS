@@ -12,6 +12,13 @@ import {
   assertEmptyArgumentsParseAsAnEmptyObject,
   assertTheDefinitionsFollowTheSchemaOrder,
   assertTheFirstRefusingGuardWins,
+  assertASchemaFailureCarriesItsFieldPaths,
+  assertAGuardRefusalCarriesNoFieldPaths,
+  assertARecordKeyIsStarred,
+  assertADeclaredNestedFieldIsShown,
+  assertAnUndeclaredKeyIsStarred,
+  assertAnEmptyPathIsTheArgumentsAndPathsAreDistinct,
+  assertRefusedFieldsAreCapped,
 } from "./tool-registry.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). One `it()` per claim. */
@@ -58,5 +65,31 @@ describe("the generic tool registry (F3.85, ADR 0099)", () => {
 
   it("builds the definitions in the schema map's order", () => {
     assertTheDefinitionsFollowTheSchemaOrder();
+  });
+  it("a schema refusal carries its field paths (F4.135)", async () => {
+    await assertASchemaFailureCarriesItsFieldPaths();
+  });
+
+  it("a guard refusal carries no field paths (F4.135)", async () => {
+    await assertAGuardRefusalCarriesNoFieldPaths();
+  });
+
+  it("stars a record key, even an identifier-shaped one (F4.135)", () => {
+    assertARecordKeyIsStarred();
+  });
+
+  it("shows a declared nested field with its index (F4.135)", () => {
+    assertADeclaredNestedFieldIsShown();
+  });
+
+  it("names an empty path as the arguments, each path once (F4.135)", () => {
+    assertAnEmptyPathIsTheArgumentsAndPathsAreDistinct();
+  });
+
+  it("caps the refused field paths (F4.135)", () => {
+    assertRefusedFieldsAreCapped();
+  });
+  it("stars a key the schema does not declare (F4.135)", () => {
+    assertAnUndeclaredKeyIsStarred();
   });
 });
