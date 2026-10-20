@@ -129,6 +129,16 @@ export function assertSecretNamedKeyIsRedacted(): void {
   assert(sample === "<redacted>", `a password-named key's sample is redacted; got ${String(sample)}`);
 }
 
+/** F4.272: a short credential name, matched whole, redacts the sample and keeps the key; a neighbour name keeps both. */
+export function assertShortSecretNamedKeysAreRedacted(): void {
+  const c = createDiscoveryCollector({});
+  c.offer("t", msg("D1", { pin: "1234", psk: "abc", pass: "p", pw: "q", user: "u", pinned: 7 }));
+  const keys = c.result().devices[0]?.keys ?? [];
+  const got = Object.fromEntries(keys.map((k) => [k.sourceKey, k.sampleValue]));
+  const want = { pin: "<redacted>", psk: "<redacted>", pass: "<redacted>", pw: "<redacted>", user: "<redacted>", pinned: 7 };
+  assert(JSON.stringify(got) === JSON.stringify(want), `got ${JSON.stringify(got)}`);
+}
+
 export function assertBrokerPasswordValueIsRedacted(): void {
   const c = createDiscoveryCollector({ secrets: ["s3cretBrokerPw"] });
   c.offer("t", msg("D1", { echo: "s3cretBrokerPw" }));
@@ -152,11 +162,12 @@ export function assertCredentialLookingDevIdIsSkipped(): void {
 
 export function assertControlCharsAreStripped(): void {
   const c = createDiscoveryCollector({});
-  c.offer("site/\na", msg("D\r\n1", { ["k\u0000ey"]: "line1\nIGNORE PREVIOUS\u2028" }));
+  // F4.272: `kw`, not `key` \u2014 `key` is a short secret name now, so its sample is redacted.
+  c.offer("site/\na", msg("D\r\n1", { ["k\u0000w"]: "line1\nIGNORE PREVIOUS\u2028" }));
   const d = c.result().devices[0];
   const text = JSON.stringify(d);
   assert(
-    d?.topic === "site/a" && d.devId === "D1" && d.keys[0]?.sourceKey === "key" && d.keys[0].sampleValue === "line1IGNORE PREVIOUS",
+    d?.topic === "site/a" && d.devId === "D1" && d.keys[0]?.sourceKey === "kw" && d.keys[0].sampleValue === "line1IGNORE PREVIOUS",
     `control characters and line separators are stripped from every wire string; got ${text}`,
   );
 }

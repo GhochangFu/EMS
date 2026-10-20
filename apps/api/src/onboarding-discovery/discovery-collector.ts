@@ -13,7 +13,7 @@ import {
   parseMqttEnvelope,
 } from "@bms/shared";
 
-import { isSecretKey } from "../admin/onboarding/onboarding-redaction";
+import { isDraftRecordSecretKey } from "../admin/onboarding/onboarding-redaction";
 import { looksLikeCredential } from "../security/credential-detect";
 
 /**
@@ -36,7 +36,9 @@ import { looksLikeCredential } from "../security/credential-detect";
  * a key over 128 characters is skipped (none could be stored in the draft);
  * a topic, `dev_id` or key that `looksLikeCredential` or holds the broker's
  * own username or password is skipped; a sample that does, or whose key
- * `isSecretKey`, is `"<redacted>"`.
+ * `isDraftRecordSecretKey` (the draft scrub's predicate, short names whole
+ * included, `F4.272`), is `"<redacted>"`. The key itself is kept: it names a
+ * point, and only the sample can carry the secret.
  */
 
 export type CollectorCaps = {
@@ -128,7 +130,7 @@ export function createDiscoveryCollector(opts: {
   const untrusted = (s: string): boolean => looksLikeCredential(s) || holdsSecret(s);
 
   const sampleOf = (key: string, raw: unknown): OnboardingDiscoveryKey["sampleValue"] => {
-    if (isSecretKey(key)) {
+    if (isDraftRecordSecretKey(key)) {
       return REDACTED;
     }
     if (typeof raw === "number") {

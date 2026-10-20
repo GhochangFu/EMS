@@ -105,8 +105,9 @@ export function isSecretKey(key: string): boolean {
  * `pointKey`, `sourceDataKey`, `passive`, `pinned` and `author` stay readable.
  * `auth`, `authorization` and `basicAuth` are here whole (review finding); the
  * refusal's wider `includes("auth")` rule would hide stored `author` values. The
- * agent's refusal (`onboarding-agent-tools.ts`, `F3.21` security review M1)
- * and the draft scrub read this one list.
+ * agent's refusal (`onboarding-agent-tools.ts`, `F3.21` security review M1),
+ * the draft scrub and, since `F4.272`, the discovery collector's sample
+ * redaction read this one list.
  */
 export const SHORT_SECRET_KEY_NAMES: ReadonlySet<string> = new Set(
   ["user", "username", "login", "pass", "pw", "creds", "cred", "psk", "pin", "bearer", "key", "auth", "authorization", "basicAuth"].map(
@@ -120,11 +121,12 @@ export const SHORT_SECRET_KEY_NAMES: ReadonlySet<string> = new Set(
  * in `SHORT_SECRET_KEY_NAMES`.
  *
  * **Not** the shared predicate. `isSecretKey` also scrubs copilot tool results
- * and arguments (`copilot-secret-scrub.ts`) and discovery samples, where a
- * field named `key` is product data: dashboard tabs, dashboard template
- * widgets and mimic nodes all carry one. Inside `config` and `meta` nothing
- * the product writes is named `key`, `user` or `pin`, so there it is a
- * credential until shown otherwise.
+ * and arguments (`copilot-secret-scrub.ts`), where a field named `key` is
+ * product data: dashboard tabs, dashboard template widgets and mimic nodes all
+ * carry one. Inside `config` and `meta` nothing the product writes is named
+ * `key`, `user` or `pin`, so there it is a credential until shown otherwise.
+ * Discovery samples read this predicate too since `F4.272`: the collector keeps
+ * the key and hides only its sample, so nothing the product needs is lost.
  */
 export function isDraftRecordSecretKey(key: string): boolean {
   return isSecretKey(key) || SHORT_SECRET_KEY_NAMES.has(normaliseKey(key));
