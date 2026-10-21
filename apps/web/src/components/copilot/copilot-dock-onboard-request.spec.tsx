@@ -149,6 +149,36 @@ export async function aRequestFiledAfterTheMountStartsTheSkillOnce(): Promise<vo
   expect(create).toHaveBeenCalledTimes(1);
 }
 
+/**
+ * `F4.244` (review C5): the stored conversation was purged (404) while the request waited on its
+ * thread. The request is not lost: the dock drops the stored id and starts the skill in a new
+ * conversation. The cancel on a thread error does not fire first, measured: the drop is a store
+ * write, which re-renders at a higher priority than the effect's own state update, so the next
+ * render already has no conversation. Mutation: remove the dock's 404 effect.
+ */
+export async function aRequestAfterAPurgedConversationStillStartsTheSkill(): Promise<void> {
+  const { start, create } = stubs();
+  let refuse: (err: Error) => void = () => undefined;
+  vi.spyOn(copilotApi, "fetchCopilotConversation").mockReturnValue(new Promise((_, reject) => (refuse = reject)));
+  useCopilotStore.getState().setConversation("u1", CONVERSATION_ID);
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <MemoryRouter>
+        <CopilotDock user={asUser("organization_admin")} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  await screen.findByRole("button", { name: "Open the copilot" });
+  // The request is taken while the stored thread still loads (the dock opens for it); then the 404 lands.
+  await fileRequest();
+  await screen.findByRole("complementary", { name: "Copilot" });
+  await act(async () => {
+    refuse(new ApiError('{"statusCode":404}', 404));
+  });
+  await waitFor(() => expect(start).toHaveBeenCalledWith(CONVERSATION_ID, ORG));
+  expect(create).toHaveBeenCalledTimes(1);
+}
+
 /** (b) With a skill already bound to the conversation, a request starts no second one. */
 export async function aRequestDoesNotStartASecondSkill(): Promise<void> {
   const { start } = stubs();

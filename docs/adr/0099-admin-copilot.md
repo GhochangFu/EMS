@@ -52,6 +52,12 @@ proposes (`dashboard.widgets.replace`, `assetTemplate.update`) carry an
 Where Amendment 5 conflicts with decisions 4.5 and 4.9 or the *Not in this
 ADR* list, it wins.
 
+**Amended 2026-10-21 — Amendment 6** (owner-ruled 2026-10-20, "localStorage";
+Proposed until merge): `F4.244` — the dock's session (user, organization pick,
+conversation) persists in `localStorage`, so a reload and a new tab resume the
+conversation and a pending follow-up wait; every session exit clears it.
+Where Amendment 6 conflicts with Amendment 2's context paragraph, it wins.
+
 | # | Question | Options put | Ruled | Decision |
 | --- | --- | --- | --- | --- |
 | 1 | Copilot or narrow assistant | narrow admin assistant; general copilot; no change | **general copilot** (owner's own choice) | 1 |
@@ -612,6 +618,10 @@ loser's session behind. Such a draft can hold encrypted RTU credentials
 ruled on 2026-10-13 (the plan's §0) and approved this amendment the same day.
 Each item names the decision or choice whose text it changes.
 
+*Note (2026-10-21, Amendment 6).* Since `F4.244` a reload no longer drops the
+conversation: the dock resumes it from `localStorage`. An organization pick,
+a sign-out and the decision 8 purge still do.
+
 - **A1 — Decision 7: a draft can be resumed; a resume is a skill start.**
   The dock, while the conversation runs no skill, lists the organization's
   open drafts (its location's name, the phase, the last update, who started
@@ -1142,3 +1152,65 @@ value, refusing a stale one with nothing written, matching a microsecond stamp
 by its milliseconds, and applying with no header. Live stack: a stale Confirm
 is a 412 on the card, and a live one applies — through the AWS nginx
 configuration too, which has no `proxy_cache` (`tests/f4.130-nginx-cache-headers`).
+
+## Amendment 6 — the dock resumes its conversation after a reload (owner, 2026-10-20)
+
+**Status: Proposed — owner ruled 2026-10-20 ("localStorage"); the owner chose an amendment over an erratum on 2026-10-21; the merge approves the text.**
+
+The dock held its session (`userId`, `organizationId`, `conversationId`) in a
+Zustand store that a reload emptied, and held the wait for a Confirm's
+follow-up turn (decision 4.7) in component state that a route change emptied
+(`docs/BACKLOG.md` F4.244). After a reload the user lost the conversation, and
+after a route change during the wait Send was free again before the outcome
+line arrived. The owner ruled on 2026-10-20 to persist the session the way
+`bms-auth` persists the sign-in (ADR 0042 decision 2), to clear it on logout,
+and to start afresh when the stored conversation is gone.
+
+- **D1 — What is stored.** `localStorage` key `bms-copilot-session` holds
+  three ids: `userId`, `organizationId` and `conversationId`. It holds no
+  message text, no card, no token and no email. Messages stay in the TanStack
+  Query cache and are read again from `GET /copilot/conversations/:id` after a
+  reload. The one-shot onboarding request is not stored.
+- **D2 — Who may read it.** The dock reads a stored session only when its
+  `userId` is the signed-in user's. The server is the authority: the detail
+  route reads the conversation under `withUser` and RLS with
+  `user_id = <caller>`, so a stored or forged id of another user is a 404.
+- **D3 — When it is cleared.** Every session exit clears it beside the Query
+  cache (`bindSessionStores`, `lib/query-cache-session.ts`): a logout, a 401,
+  JWT expiry, a failed `/me`, and a switch to another user. A sign-in from a
+  signed-out state clears a stored session of another user. A same-user token
+  renewal keeps it.
+- **D4 — A gone conversation.** A 404 on load (the decision 8 purge, a deleted
+  conversation, another user's id) drops the stored id, and the next message
+  starts a new conversation. Any other error keeps the id.
+- **D5 — The resumed wait.** The conversation detail gains
+  `awaitingFollowUp: { changeId, status, ageMs } | null` (ADR 0030, additive
+  and optional): the newest change of the conversation that a Confirm request
+  recorded (`result_status` set; a row the stuck-claim sweeper resolved has
+  none and is never awaited), finished within the sweeper's 5-minute window,
+  whose own outcome line is not yet stored. `ageMs` is the server's age of the
+  change, never a timestamp, so the dock never compares the database clock
+  with the browser clock. The dock arms decision 4.7's wait from it on every
+  mount, with the same 60-second cap.
+- **D6 — Residuals, stated.**
+  - **(a) The clear is per tab.** A second tab still signed in as the same
+    user can write the key again after the first tab signs out. D2 and the
+    sign-in clear in D3 keep the next user from reading it; the three ids stay
+    on the workstation until then.
+  - **(b) A bundle older than the API.** During a rolling deploy an open tab
+    with the old bundle reads the new field as response drift: in production
+    `checkResponse` logs it and returns the payload, so nothing breaks until
+    the tab reloads.
+
+**Not in this amendment.** A conversation list or history page; the failed
+cards kept beside the thread (they still empty on a remount); a change to the
+follow-up turn, its poll interval or its cap; a server-side session store.
+
+**Verification owed.** Unit: the outcome-line predicate, the `awaitingFollowUp`
+composition (no field without a recorded change; the exact outcome line ends
+it), the hook's arm, end and cap, the store's stored keys, and every session
+exit — each with a named mutation. Integration: `latestFinished` skips a
+pending, claimed, swept or stale row and names the newest recorded one. Live
+stack: a route change and a reload during the wait keep Send held until the
+outcome line arrives; a sign-out removes the key; a deleted conversation
+starts afresh.

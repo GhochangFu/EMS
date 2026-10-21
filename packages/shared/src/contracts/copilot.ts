@@ -163,6 +163,22 @@ export const copilotSkillStateDtoSchema = z
   })
   .strict();
 
+/**
+ * `F4.244` — the follow-up turn the dock still waits for (ADR 0099 decision
+ * 4.7): the conversation's newest finished change that its Confirm request
+ * recorded (never one the stuck-claim sweeper resolved), within the server's
+ * stuck window, whose own outcome line is not stored yet. `ageMs` is the
+ * server's `now() - finished_at`: an age, not a timestamp, so the dock never
+ * compares the database clock with the browser clock (owner ruling 2026-10-20).
+ */
+export const copilotAwaitingFollowUpDtoSchema = z
+  .object({
+    changeId: z.string(),
+    status: z.enum(["applied", "failed"]),
+    ageMs: z.number().int().nonnegative(),
+  })
+  .strict();
+
 /** `GET /api/v1/copilot/conversations/:id` — the conversation and its messages, oldest first. */
 export const copilotConversationDetailDtoSchema = z
   .object({
@@ -176,6 +192,12 @@ export const copilotConversationDetailDtoSchema = z
     pendingChanges: z.array(copilotPendingChangeDtoSchema),
     /** `F3.86` PR 5: the skill the conversation runs, or `null` (absent before PR 5). */
     skill: copilotSkillStateDtoSchema.nullable().optional(),
+    /**
+     * `F4.244`: the follow-up the dock waits for, or `null`. The server always sends the key
+     * (`copilot-conversations.controller.spec.ts` pins it); it is optional here only so the many
+     * web spec stubs of this DTO stay valid.
+     */
+    awaitingFollowUp: copilotAwaitingFollowUpDtoSchema.nullable().optional(),
   })
   .strict();
 

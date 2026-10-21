@@ -92,12 +92,13 @@ export class CopilotConversationsService {
    */
   /**
    * The conversation and its messages; the controller adds its open changes
-   * (`pendingChanges`, F3.85 PR 8) and, from `onboardingSessionId`, its skill (F3.86 PR 5).
+   * (`pendingChanges`, F3.85 PR 8), from `onboardingSessionId` its skill (F3.86 PR 5), and the
+   * follow-up it waits for (`awaitingFollowUp`, F4.244).
    */
   async get(
     userId: string,
     conversationId: string,
-  ): Promise<(Omit<CopilotConversationDetailDto, "pendingChanges" | "skill"> & { onboardingSessionId: string | null }) | null> {
+  ): Promise<(Omit<CopilotConversationDetailDto, "pendingChanges" | "skill" | "awaitingFollowUp"> & { onboardingSessionId: string | null }) | null> {
     const found = await withUser(this.tenantDb, userId, async (tx) => {
       const [conversation] = await tx
         .select()

@@ -33,6 +33,7 @@ export {
 } from "./catalog/onboarding";
 export { bodyFieldsOf, objectShapeOf, stepValuesSchema } from "./catalog/object-shape";
 export { writeNodeOfDto } from "./mimic-layout-write-node";
+export { isCopilotOutcomeLine } from "./outcome-line";
 export type {
   CatalogEntry,
   CatalogFormula,

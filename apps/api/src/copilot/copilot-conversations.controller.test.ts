@@ -6,6 +6,8 @@ import {
   aJsonTurnWithoutWizardsIs400,
   aMalformedMultipartWizardsFieldIs400,
   aWizardTheCatalogRefusesIs400,
+  assertTheDetailAlwaysCarriesTheAwaitingFollowUpKey,
+  assertTheDetailCarriesTheAwaitingFollowUp,
   assertTheDetailCarriesTheOpenChanges,
   assertABadBodyIs400,
   assertAJsonTurnPassesNoFiles,
@@ -57,5 +59,11 @@ describe("F3.85 — POST /copilot/conversations/:id/turns (ADR 0099 decisions 1,
   it("F3.87 PR 7: the route declares the files interceptor", () => assertTheTurnRouteDeclaresTheFilesInterceptor());
   it("F3.85 PR 8: the detail carries the conversation's open changes", async () => {
     await assertTheDetailCarriesTheOpenChanges();
+  });
+  it("F4.244: the detail carries the awaited follow-up", async () => {
+    await assertTheDetailCarriesTheAwaitingFollowUp();
+  });
+  it("F4.244: the detail always carries the awaitingFollowUp key", async () => {
+    await assertTheDetailAlwaysCarriesTheAwaitingFollowUpKey();
   });
 });

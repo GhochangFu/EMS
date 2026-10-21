@@ -18,6 +18,7 @@ export type CopilotPendingChangeDto = z.infer<typeof C.copilotPendingChangeDtoSc
 export type CopilotMessageRole = z.infer<typeof C.copilotMessageRoleSchema>;
 export type CopilotConversationDto = z.infer<typeof C.copilotConversationDtoSchema>;
 export type CopilotMessageDto = z.infer<typeof C.copilotMessageDtoSchema>;
+export type CopilotAwaitingFollowUpDto = z.infer<typeof C.copilotAwaitingFollowUpDtoSchema>;
 export type CopilotConversationDetailDto = z.infer<typeof C.copilotConversationDetailDtoSchema>;
 export type CopilotCreateConversationBody = z.infer<typeof C.copilotCreateConversationBodySchema>;
 export type CopilotTurnBody = z.infer<typeof C.copilotTurnBodySchema>;

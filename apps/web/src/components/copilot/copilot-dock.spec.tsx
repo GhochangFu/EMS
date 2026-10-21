@@ -464,7 +464,7 @@ export const READY_WITH_FILES: CopilotStatusDto = { available: true, configured:
 const ATTACH = /AI provider as it is, unscrubbed/;
 const SKILL_SESSION = "33333333-3333-4333-8333-333333333333";
 
-function onboardingSkill(): CopilotSkillStateDto {
+export function onboardingSkill(): CopilotSkillStateDto {
   return {
     kind: "onboarding",
     sessionId: SKILL_SESSION,

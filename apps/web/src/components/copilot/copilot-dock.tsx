@@ -22,13 +22,13 @@ import {
   copilotLimitOf,
   createCopilotConversation,
   endCopilotOnboardingSkill,
-  fetchCopilotConversation,
   fetchCopilotStatus,
   sendCopilotTurn,
   startCopilotOnboardingSkill,
   type CopilotLimit,
 } from "../../api/copilot";
 import { canAccessOnboarding, canAuthorDashboards } from "../../lib/admin-access";
+import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { ATTACHMENT_EXTENSIONS, attachmentProblem, sizeLabel, splitAttachmentRecords, unscrubbedSentence } from "../../lib/copilot-attachments";
 import { ONBOARDING_DRAFTS, onboardingDraftsKey } from "../../lib/copilot-invalidations";
@@ -45,6 +45,7 @@ import { AssistantText } from "./assistant-text";
 import { ConfirmCard } from "./confirm-card";
 import { OnboardingDraftPicker, type OnboardingDraftsOf } from "./onboarding-draft-picker";
 import { OnboardingSkillPanel } from "./onboarding-skill-panel";
+import { appendMessages, awaitingAfterConfirm, FOLLOW_UP_POLL_MS, FOLLOW_UP_WAIT_MS, receivedThread, useConversationThread } from "./use-conversation-thread";
 
 /**
  * `F3.85` PR 7 (ADR 0099 decisions 1, 5, 10; plan §9.2) — the administrator
@@ -77,7 +78,10 @@ import { OnboardingSkillPanel } from "./onboarding-skill-panel";
  * Confirm cards below the thread; Confirm sends the real request, Reject the
  * reject route. After a Confirm the dock polls the conversation every
  * {@link FOLLOW_UP_POLL_MS} ms, for at most {@link FOLLOW_UP_WAIT_MS} ms, until
- * the follow-up turn's messages arrive (decision 4.7) — with any next card. A
+ * the follow-up turn's messages arrive (decision 4.7) — with any next card.
+ * `F4.244`: the wait lives in `useConversationThread` and is armed from the
+ * detail's `awaitingFollowUp` on every mount; the Confirm seeds that field
+ * into the cache, so a remount before the first poll needs no read. A
  * turn's `fillStep` goes to `useWizardStore` for an open wizard.
  *
  * **The onboarding skill** (`F3.86` PR 6, decision 7). "Onboard a site"
@@ -112,8 +116,11 @@ import { OnboardingSkillPanel } from "./onboarding-skill-panel";
  * dock. The conversation and the pick live in `useCopilotStore`, and the
  * thread in the Query cache under `copilotConversationKey`: a turn writes its
  * messages there, and a remount reads them back. `fetchCopilotConversation`
- * loads them only when that cache entry was evicted while the dock was
- * unmounted. A page reload empties both and starts a new conversation.
+ * loads them when that cache entry was evicted while the dock was unmounted,
+ * and after a reload or in a new tab: `F4.244` (owner ruling 2026-10-20) keeps
+ * the session in `localStorage`, so both resume the stored conversation, and a
+ * stored conversation the server no longer has (404: purged or deleted) is
+ * dropped and the next send starts a fresh one.
  *
  * **Files** (`F3.87` PR 8, ADR 0099 Amendment 3 A4, A7; plan §10, D2). The
  * attach control beside the composer renders only when the scope's status says
@@ -128,19 +135,6 @@ import { OnboardingSkillPanel } from "./onboarding-skill-panel";
  * re-checks every one by the bytes. The stored user row's `[Attachment …; not
  * stored]` lines render under the text as a muted record.
  */
-
-/**
- * How often, and for how long, the dock reads the conversation after a
- * Confirm. The wait outlasts the follow-up turn's own 45-second deadline
- * (`TURN_DEADLINE_MS`, `apps/api/src/llm/agent-loop.ts`) with a margin.
- */
-export const FOLLOW_UP_POLL_MS = 2_000;
-export const FOLLOW_UP_WAIT_MS = 60_000;
-
-/** The follow-up turn has finished when its outcome line is stored (`changeOutcomeLine` on the server). */
-function isOutcomeLine(message: CopilotMessageDto): boolean {
-  return message.role === "action" && (message.content.startsWith("Applied: ") || message.content.startsWith("Failed"));
-}
 
 /** The `localStorage` key that holds whether the panel is open. */
 export const COPILOT_OPEN_KEY = "bms-copilot-open";
@@ -282,28 +276,15 @@ function DockPanel({
   const { organizationId, conversationId } = useCopilotSession(user.id);
   const pickInStore = useCopilotStore((s) => s.pick);
   const setConversation = useCopilotStore((s) => s.setConversation);
-  // The turn writes its messages into this cache entry, so it is fresh for the
-  // tab; the server load is the fallback for an entry evicted while unmounted.
-  // After a Confirm: when the wait began, and how many messages there were then.
+  // The turn writes its messages into the thread's cache entry; the server load is the fallback.
+  // `followUp` is set while the confirmed change's follow-up turn runs (`F4.244`: armed from the thread).
   // `failed` (`F3.86` PR 2): the route refused the confirmed change; the follow-up turn still runs.
-  const [followUp, setFollowUp] = useState<{ since: number; baseline: number; failed?: boolean } | null>(null);
+  const { thread, messages, pendingChanges, skill, followUp } = useConversationThread(conversationId);
   // `F3.86` PR 2: cards whose route refused the change. The server no longer lists them (the row is
   // `failed`), but the card keeps the route's sentence — and a site layout's candidates — on screen
   // until the next message.
   const [kept, setKept] = useState<CopilotPendingChangeDto[]>([]);
-  const thread = useQuery({
-    queryKey: copilotConversationKey(conversationId),
-    queryFn: () => fetchCopilotConversation(conversationId as string),
-    enabled: conversationId !== null,
-    staleTime: Infinity,
-    refetchInterval: followUp === null ? false : FOLLOW_UP_POLL_MS,
-    // A user who switches tab after a Confirm must still get the follow-up: the poll is bounded, so it may run hidden.
-    refetchIntervalInBackground: true,
-  });
-  const messages = conversationId === null ? [] : (thread.data?.messages ?? []);
-  const pendingChanges = conversationId === null ? [] : (thread.data?.pendingChanges ?? []);
   const cards = [...pendingChanges, ...kept.filter((k) => !pendingChanges.some((c) => c.id === k.id))];
-  const skill = conversationId === null ? null : (thread.data?.skill ?? null);
   const receiveFill = useWizardStore((s) => s.receiveFill);
   const [input, setInput] = useState("");
   // `F3.86` PR 6 review: the skill panel's undo is a write too (F3.25, one write at a time): Send waits for it.
@@ -366,23 +347,12 @@ function DockPanel({
     }
   }, [messages, cards.length, banner]);
 
-  // The follow-up's outcome line arrived, or the wait ran out: stop polling. Not "the thread
-  // grew": the follow-up stores its outcome and its reply in one write, and nothing else may write
-  // meanwhile — Send waits too, so a user turn cannot race the follow-up's proposal.
+  // `F4.244`: a stored conversation the server no longer has (purged, deleted: 404) is dropped, and
+  // the next send starts a fresh one; the pick stays. A 404 is not retried, so this runs at once.
+  const notFound = conversationId !== null && thread.error instanceof ApiError && thread.error.status === 404;
   useEffect(() => {
-    if (followUp === null) return;
-    if (messages.slice(followUp.baseline).some(isOutcomeLine)) {
-      setFollowUp(null);
-      return;
-    }
-    const left = FOLLOW_UP_WAIT_MS - (Date.now() - followUp.since);
-    const timer = setTimeout(() => {
-      setFollowUp(null);
-      // One last read: a follow-up that finished just after the last poll still shows.
-      if (conversationId !== null) void queryClient.invalidateQueries({ queryKey: copilotConversationKey(conversationId) });
-    }, Math.max(0, left));
-    return () => clearTimeout(timer);
-  }, [followUp, messages, conversationId, queryClient]);
+    if (notFound) pickInStore(user.id, organizationId);
+  }, [notFound, pickInStore, user.id, organizationId]);
 
   /** Writes into the thread's cache entry: the dock unmounts on navigation, the cache does not. */
   function updateThread(change: (prev: CopilotConversationDetailDto) => CopilotConversationDetailDto): void {
@@ -416,12 +386,23 @@ function DockPanel({
 
   /** The conversation the skill route answered, in the cache: its messages, open changes and skill. */
   function putConversation(detail: CopilotConversationDetailDto): void {
-    queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(detail.id), detail);
+    void queryClient.cancelQueries({ queryKey: copilotConversationKey(detail.id) });
+    queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(detail.id), receivedThread(detail));
+  }
+
+  /**
+   * `F4.244`: the follow-up is awaited from the cache, so a remount before the first poll holds Send.
+   * A read in flight (an earlier poll, a `gone()` invalidation, a focus read) is cancelled first:
+   * it began before the change was recorded, and its answer would overwrite the seed (review C4).
+   */
+  function awaitFollowUp(change: CopilotPendingChangeDto, status: "applied" | "failed"): void {
+    if (conversationId === null) return;
+    void queryClient.cancelQueries({ queryKey: copilotConversationKey(conversationId) });
+    updateThread((prev) => awaitingAfterConfirm(prev, change.id, status));
   }
 
   function applied(change: CopilotPendingChangeDto): void {
-    updateThread((prev) => withoutChange(prev, change.id));
-    setFollowUp({ since: Date.now(), baseline: messages.length });
+    awaitFollowUp(change, "applied");
     // `F3.24b`: a confirmed discovery is queued; reading the session starts the skill panel's status poll at once.
     if (change.catalogId === ONBOARDING_DISCOVERY && skill !== null && conversationId !== null) {
       const id = conversationId;
@@ -429,8 +410,10 @@ function DockPanel({
     }
   }
 
+  /** A focus read in flight began before the Reject; its answer would bring the card back. */
   function rejected(change: CopilotPendingChangeDto, stored: CopilotMessageDto[]): void {
-    updateThread((prev) => ({ ...withoutChange(prev, change.id), messages: [...prev.messages, ...stored] }));
+    if (conversationId !== null) void queryClient.cancelQueries({ queryKey: copilotConversationKey(conversationId) });
+    updateThread((prev) => ({ ...withoutChange(prev, change.id), messages: appendMessages(prev.messages, stored) }));
   }
 
   function gone(): void {
@@ -440,8 +423,7 @@ function DockPanel({
   /** The route refused the confirmed change: keep its card, and wait for the follow-up as after an apply. */
   function routeFailed(change: CopilotPendingChangeDto): void {
     setKept((prev) => (prev.some((k) => k.id === change.id) ? prev : [...prev, change]));
-    updateThread((prev) => withoutChange(prev, change.id));
-    setFollowUp({ since: Date.now(), baseline: messages.length, failed: true });
+    awaitFollowUp(change, "failed");
   }
 
   // A new conversation starts with no kept cards.
@@ -481,6 +463,8 @@ function DockPanel({
     onSuccess: (data, sent) => {
       // The files went with the turn; a refused send (onError) keeps them for another try.
       if (sent.files.length > 0) setFiles([]);
+      // Before any cache write, the early skill write included: a focus read that began before the turn stored its rows must not overwrite them.
+      void queryClient.cancelQueries({ queryKey: copilotConversationKey(data.conversationId) });
       // Before any early return: a skill state answers even when nothing was stored (a closed or lost session).
       if (data.skill !== undefined) setSkill(data.conversationId, data.skill);
       // `F4.255`: the skill ended (lost or done: `null`) or its session is no longer a draft (the closed reply):
@@ -505,7 +489,8 @@ function DockPanel({
         prev
           ? {
               ...prev,
-              messages: [...prev.messages, ...data.messages],
+              // A focus read that answered before this response may hold these rows already.
+              messages: appendMessages(prev.messages, data.messages),
               pendingChanges: [
                 ...prev.pendingChanges.filter(
                   (c) =>

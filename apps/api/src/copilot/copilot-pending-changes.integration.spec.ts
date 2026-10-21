@@ -13,6 +13,8 @@ import {
   type NewPendingChange,
   PENDING_CHANGE_TTL_MINUTES,
 } from "./copilot-pending-changes.service";
+import { awaitingFollowUp } from "./copilot-awaiting-follow-up";
+import { CopilotConversationsService } from "./copilot-conversations.service";
 import { createCopilotProposeTools, PROPOSE_TARGET_ERROR } from "./copilot-propose-tools";
 import type { CopilotToolContext } from "./copilot-read-tools";
 import { NO_GRANTS, NO_USERS } from "../testing/copilot-user-checks";
@@ -37,17 +39,19 @@ const service = (ctx: PendingCtx) => new CopilotPendingChangesService(ctx.tenant
 
 async function insertPending(
   ctx: PendingCtx,
-  options: { expiresIn?: string; status?: string; claimedAgo?: string } = {},
+  options: { expiresIn?: string; status?: string; claimedAgo?: string; conversationId?: string } = {},
 ): Promise<string> {
   const { rows } = await withUser(ctx.tenantDb, ctx.userA, (tx) =>
     tx.execute<{ id: string }>(sql`
       INSERT INTO bms.copilot_pending_changes
-        (user_id, organization_id, catalog_id, method, path, body, body_hash, summary, risk, status, expires_at, claimed_at)
+        (user_id, organization_id, catalog_id, method, path, body, body_hash, summary, risk, status, expires_at, claimed_at,
+         conversation_id)
       VALUES (${ctx.userA}, ${ctx.orgA}, 'dashboards.create', 'POST', '/api/v1/dashboards', '{}'::jsonb,
               repeat('a', 64), 'F3.85 pending probe', 'create', ${options.status ?? "pending"},
               now() + ${options.expiresIn ?? "1 hour"}::interval,
               CASE WHEN ${options.claimedAgo ?? null}::text IS NULL THEN NULL
-                   ELSE now() - ${options.claimedAgo ?? "0 seconds"}::interval END)
+                   ELSE now() - ${options.claimedAgo ?? "0 seconds"}::interval END,
+              ${options.conversationId ?? null}::uuid)
       RETURNING id`),
   );
   const id = rows[0]?.id;
@@ -533,4 +537,101 @@ export async function aChangeWithoutAPreconditionListsANullIfMatch(ctx: ProposeC
   const listed = (await service(ctx).listOpen(ctx.userA, conversation)).find((c) => c.id === dto.id);
   expect(listed?.id).toBe(dto.id);
   expect(listed?.ifMatch).toBeNull();
+}
+
+// --- F4.244: the follow-up the dock waits for --------------------------------
+
+/** Proposes, claims and records one change in `conversation`, as the Confirm request would. */
+async function recorded(
+  ctx: ProposeCtx,
+  conversation: string,
+  summary: string,
+  outcome: "applied" | "failed",
+  resultStatus: number,
+): Promise<string> {
+  const dto = await proposed(ctx, change(ctx, conversation, summary));
+  await service(ctx).claim(ctx.userA, dto.id);
+  await service(ctx).record(ctx.userA, dto.id, outcome, resultStatus, null);
+  return dto.id;
+}
+
+/**
+ * `latestFinished` names no change while the conversation's only change is
+ * pending or applying. Mutation: drop the three row filters (status,
+ * `result_status`, window). Dropping the status filter alone survives: only
+ * `record()` sets `result_status`, and it sets `applied` or `failed`, so the
+ * status filter states the intent and the `result_status` filter holds it.
+ */
+export async function latestFinishedIsNullWhilePendingOrApplying(ctx: ProposeCtx): Promise<void> {
+  const conversation = await newConversation(ctx);
+  const dto = await proposed(ctx, change(ctx, conversation));
+  expect(await service(ctx).latestFinished(ctx.userA, conversation)).toBeNull();
+  await service(ctx).claim(ctx.userA, dto.id);
+  expect(await service(ctx).latestFinished(ctx.userA, conversation)).toBeNull();
+}
+
+/**
+ * The newest recorded change, with its age and its `finished_at` in floored
+ * epoch milliseconds read back from the database (no `Date.now()`). Mutation:
+ * `ORDER BY finished_at ASC`.
+ */
+export async function latestFinishedIsTheNewestRecordedChange(ctx: ProposeCtx): Promise<void> {
+  const conversation = await newConversation(ctx);
+  await recorded(ctx, conversation, "first", "applied", 200);
+  const second = await recorded(ctx, conversation, "second", "failed", 400);
+  const latest = await service(ctx).latestFinished(ctx.userA, conversation);
+  const { rows } = await withUser(ctx.tenantDb, ctx.userA, (tx) =>
+    tx.execute<{ ms: string }>(sql`
+      SELECT floor(extract(epoch FROM finished_at) * 1000)::bigint::text AS ms
+        FROM bms.copilot_pending_changes WHERE id = ${second}`),
+  );
+  expect(latest).toMatchObject({ id: second, status: "failed", resultStatus: 400, summary: "second" });
+  expect(latest?.finishedAtMs).toBe(Number(rows[0]?.ms));
+  expect(latest?.ageMs).toBeGreaterThanOrEqual(0);
+  expect(latest?.ageMs).toBeLessThan(60_000);
+}
+
+/** A change that finished before the stuck window is no longer awaited. Mutation: drop the window bound. */
+export async function latestFinishedIgnoresAChangeOlderThanTheStuckWindow(ctx: ProposeCtx): Promise<void> {
+  const conversation = await newConversation(ctx);
+  const id = await recorded(ctx, conversation, "old", "applied", 200);
+  await withUser(ctx.tenantDb, ctx.userA, (tx) =>
+    tx.execute(sql`UPDATE bms.copilot_pending_changes SET finished_at = now() - interval '6 minutes' WHERE id = ${id}`),
+  );
+  expect(await service(ctx).latestFinished(ctx.userA, conversation)).toBeNull();
+}
+
+/**
+ * Plan critique #2: a row the stuck-claim sweeper resolved (`failed`, just
+ * finished, no `result_status`) is never awaited. Mutation: drop
+ * `result_status IS NOT NULL`.
+ */
+export async function aSweptRowIsNeverAwaited(ctx: ProposeCtx): Promise<void> {
+  const conversation = await newConversation(ctx);
+  const id = await insertPending(ctx, { status: "applying", claimedAgo: "10 minutes", conversationId: conversation });
+  await service(ctx).sweepStuck(ctx.userA);
+  expect(await statusOf(ctx, id)).toMatchObject({ status: "failed", finished: true, result_status: null });
+  expect(await service(ctx).latestFinished(ctx.userA, conversation)).toBeNull();
+}
+
+/**
+ * The composition on real clocks: `finished_at` (`now()` in `record`) and the
+ * outcome line's `created_at` (`clock_timestamp()` in `appendTurn`). After the
+ * record the change is awaited; after its exact outcome line is appended it is
+ * not. Mutation: swap the operands of the time compare in `awaitingFollowUp`.
+ */
+export async function theRealTimestampsCompose(ctx: ProposeCtx): Promise<void> {
+  const conversations = new CopilotConversationsService(ctx.tenantDb);
+  const conversation = await newConversation(ctx);
+  const id = await recorded(ctx, conversation, "compose probe", "applied", 200);
+  const read = async () =>
+    awaitingFollowUp(
+      await service(ctx).latestFinished(ctx.userA, conversation),
+      (await conversations.get(ctx.userA, conversation))?.messages ?? [],
+    );
+  expect(await read()).toMatchObject({ changeId: id, status: "applied" });
+  await conversations.appendTurn(ctx.userA, conversation, [
+    { role: "action", content: "Applied: compose probe", organizationIds: [ctx.orgA] },
+  ]);
+  expect(await read()).toBeNull();
 }

@@ -7,6 +7,11 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   aChangeWithoutAPreconditionListsANullIfMatch,
+  aSweptRowIsNeverAwaited,
+  latestFinishedIgnoresAChangeOlderThanTheStuckWindow,
+  latestFinishedIsNullWhilePendingOrApplying,
+  latestFinishedIsTheNewestRecordedChange,
+  theRealTimestampsCompose,
   aClaimReturnsThePreconditionItWasProposedWith,
   aKpiOnlyProposalKeepsTheStoredSections,
   aMissingAssetTemplateIsTheSameRefusal,
@@ -234,5 +239,20 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
   });
   it("F4.247: aChangeWithoutAPreconditionListsANullIfMatch", async () => {
     await aChangeWithoutAPreconditionListsANullIfMatch(proposeCtx);
+  });
+  it("F4.244: latestFinishedIsNullWhilePendingOrApplying", async () => {
+    await latestFinishedIsNullWhilePendingOrApplying(proposeCtx);
+  });
+  it("F4.244: latestFinishedIsTheNewestRecordedChange", async () => {
+    await latestFinishedIsTheNewestRecordedChange(proposeCtx);
+  });
+  it("F4.244: latestFinishedIgnoresAChangeOlderThanTheStuckWindow", async () => {
+    await latestFinishedIgnoresAChangeOlderThanTheStuckWindow(proposeCtx);
+  });
+  it("F4.244: aSweptRowIsNeverAwaited", async () => {
+    await aSweptRowIsNeverAwaited(proposeCtx);
+  });
+  it("F4.244: theRealTimestampsCompose", async () => {
+    await theRealTimestampsCompose(proposeCtx);
   });
 });

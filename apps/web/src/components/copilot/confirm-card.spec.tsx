@@ -28,7 +28,8 @@ import { CHANGE_GONE_SENTENCE } from "./confirm-card";
 
 const TEMPLATE = "33333333-3333-4333-8333-333333333333";
 
-function change(over: Partial<CopilotPendingChangeDto> = {}): CopilotPendingChangeDto {
+/** Exported for `copilot-dock-follow-up.spec.tsx` (`F4.244`). */
+export function change(over: Partial<CopilotPendingChangeDto> = {}): CopilotPendingChangeDto {
   return {
     id: "44444444-4444-4444-8444-444444444444",
     catalogId: "dashboardTemplate.publish",
