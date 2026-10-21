@@ -3,7 +3,12 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { CopilotAwaitingFollowUpDto, CopilotConversationDetailDto, CopilotPendingChangeDto } from "@bms/shared";
+import type {
+  CopilotAwaitingFollowUpDto,
+  CopilotConversationDetailDto,
+  CopilotPendingChangeDto,
+  CopilotTurnResponseDto,
+} from "@bms/shared";
 
 import * as copilotApi from "../../api/copilot";
 import * as confirmApi from "../../api/copilot-confirm";
@@ -12,7 +17,7 @@ import type { AuthUser } from "../../stores/auth-store";
 import { useCopilotStore } from "../../stores/copilot-store";
 import { change } from "./confirm-card.spec";
 import { CopilotDock } from "./copilot-dock";
-import { CONVERSATION_ID, message, openPanel, send, settle, stub } from "./copilot-dock.spec";
+import { CONVERSATION_ID, message, onboardingSkill, openPanel, send, settle, stub } from "./copilot-dock.spec";
 import { FOLLOW_UP_WAIT_MS } from "./use-conversation-thread";
 
 /**
@@ -239,4 +244,131 @@ export async function keepsTheStoredConversationOnAServerError(): Promise<void> 
   await waitFor(() => expect(read).toHaveBeenCalledTimes(1));
   await settle();
   expect(useCopilotStore.getState().conversationId).toBe(CONVERSATION_ID);
+}
+
+/** Re-reads the thread as a window focus does (`refetchOnWindowFocus`), then leaves the window unfocused. */
+function focusRead(): void {
+  act(() => {
+    focusManager.setFocused(false);
+    focusManager.setFocused(true);
+  });
+}
+
+/**
+ * Answers the read in flight, then waits until no read is in flight and the
+ * cache's notifications (a `setTimeout(0)` batch) have rendered — so an
+ * absence check after it cannot pass on a render that has not happened yet.
+ */
+async function lateAnswer(client: QueryClient, answer: () => void): Promise<void> {
+  act(answer);
+  await waitFor(() => expect(client.isFetching()).toBe(0));
+  await settle();
+}
+
+/**
+ * Review (focus race a): a focus read that answers while a turn is in flight
+ * already holds the rows the turn stored; the turn's response then appends
+ * only the rows the thread lacks, so each row shows once. Mutation: append
+ * `data.messages` without the id check.
+ */
+export async function aTurnAfterAFocusReadShowsEachRowOnce(): Promise<void> {
+  const stubs = stub();
+  const asked = message("user", "how many feeders?", 3);
+  const reply = message("assistant", "Four feeders are live.", 4);
+  let respond: (response: CopilotTurnResponseDto) => void = () => undefined;
+  stubs.turn.mockReturnValueOnce(new Promise((resolve) => (respond = resolve)));
+  const read = vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValueOnce(thread());
+  read.mockResolvedValue(thread({ messages: [...thread().messages, asked, reply] }));
+  storedSession();
+  renderDockWith(newClient());
+  await openPanel();
+  await screen.findByText("Confirm the card to publish it.");
+  await send("how many feeders?");
+  await waitFor(() => expect(stubs.turn).toHaveBeenCalledTimes(1));
+  focusRead();
+  expect(await screen.findByText("Four feeders are live.")).toBeTruthy();
+  focusManager.setFocused(false);
+  await act(async () => {
+    respond({
+      conversationId: CONVERSATION_ID,
+      outcome: "answered",
+      configured: true,
+      reply: "Four feeders are live.",
+      messages: [asked, reply],
+      navigateTo: null,
+      pendingChanges: [],
+      fillStep: null,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+  await waitFor(() => expect(screen.queryByText("Copilot is thinking…")).toBeNull());
+  expect([screen.getAllByText("how many feeders?").length, screen.getAllByText("Four feeders are live.").length]).toEqual([1, 1]);
+}
+
+/**
+ * Review (focus race b): a focus read in flight at the Reject answers from
+ * before the change was rejected. It must not bring the card back. Mutation:
+ * drop the `cancelQueries` in `rejected()`.
+ */
+export async function aReadInFlightAtTheRejectDoesNotRestoreTheCard(): Promise<void> {
+  stub();
+  const pending = change();
+  vi.spyOn(copilotApi, "rejectCopilotChange").mockResolvedValue({
+    id: pending.id,
+    status: "rejected",
+    messages: [message("action", `Rejected: ${pending.summary}`, 3)],
+  });
+  const read = vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValueOnce(thread({ pendingChanges: [pending] }));
+  let answer: (detail: CopilotConversationDetailDto) => void = () => undefined;
+  read.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+  read.mockResolvedValue(thread());
+  storedSession();
+  const client = newClient();
+  renderDockWith(client);
+  await openPanel();
+  const card = await screen.findByRole("region", { name: "Publish a dashboard template" });
+  focusRead();
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  focusManager.setFocused(false);
+  fireEvent.click(within(card).getByRole("button", { name: "Reject" }));
+  expect(await screen.findByText(`Rejected: ${pending.summary}`)).toBeTruthy();
+  await lateAnswer(client, () => answer(thread({ pendingChanges: [pending] })));
+  expect(screen.queryByRole("region", { name: "Publish a dashboard template" })).toBeNull();
+}
+
+/**
+ * Review (focus race c): a turn that stores no row but answers a skill state
+ * writes it before its early return. A focus read in flight from before must
+ * not overwrite that state. Mutation: move the `cancelQueries` back below the
+ * early returns.
+ */
+export async function aReadInFlightAtASkillOnlyTurnKeepsTheSkill(): Promise<void> {
+  const stubs = stub();
+  stubs.turn.mockResolvedValueOnce({
+    conversationId: CONVERSATION_ID,
+    outcome: "answered",
+    configured: true,
+    reply: "Onboarding started.",
+    messages: [],
+    navigateTo: null,
+    pendingChanges: [],
+    fillStep: null,
+    skill: onboardingSkill(),
+  });
+  const read = vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValueOnce(thread());
+  let answer: (detail: CopilotConversationDetailDto) => void = () => undefined;
+  read.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+  read.mockResolvedValue(thread());
+  storedSession();
+  const client = newClient();
+  renderDockWith(client);
+  await openPanel();
+  await screen.findByText("Confirm the card to publish it.");
+  focusRead();
+  await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
+  focusManager.setFocused(false);
+  await send("onboard PHE");
+  expect(await screen.findByText("Welcome to onboarding.")).toBeTruthy();
+  await lateAnswer(client, () => answer(thread()));
+  expect(screen.queryByText("Welcome to onboarding.")).not.toBeNull();
 }

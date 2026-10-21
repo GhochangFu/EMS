@@ -45,7 +45,7 @@ import { AssistantText } from "./assistant-text";
 import { ConfirmCard } from "./confirm-card";
 import { OnboardingDraftPicker, type OnboardingDraftsOf } from "./onboarding-draft-picker";
 import { OnboardingSkillPanel } from "./onboarding-skill-panel";
-import { awaitingAfterConfirm, FOLLOW_UP_POLL_MS, FOLLOW_UP_WAIT_MS, receivedThread, useConversationThread } from "./use-conversation-thread";
+import { appendMessages, awaitingAfterConfirm, FOLLOW_UP_POLL_MS, FOLLOW_UP_WAIT_MS, receivedThread, useConversationThread } from "./use-conversation-thread";
 
 /**
  * `F3.85` PR 7 (ADR 0099 decisions 1, 5, 10; plan §9.2) — the administrator
@@ -410,8 +410,10 @@ function DockPanel({
     }
   }
 
+  /** A focus read in flight began before the Reject; its answer would bring the card back. */
   function rejected(change: CopilotPendingChangeDto, stored: CopilotMessageDto[]): void {
-    updateThread((prev) => ({ ...withoutChange(prev, change.id), messages: [...prev.messages, ...stored] }));
+    if (conversationId !== null) void queryClient.cancelQueries({ queryKey: copilotConversationKey(conversationId) });
+    updateThread((prev) => ({ ...withoutChange(prev, change.id), messages: appendMessages(prev.messages, stored) }));
   }
 
   function gone(): void {
@@ -461,6 +463,8 @@ function DockPanel({
     onSuccess: (data, sent) => {
       // The files went with the turn; a refused send (onError) keeps them for another try.
       if (sent.files.length > 0) setFiles([]);
+      // Before any cache write, the early skill write included: a focus read that began before the turn stored its rows must not overwrite them.
+      void queryClient.cancelQueries({ queryKey: copilotConversationKey(data.conversationId) });
       // Before any early return: a skill state answers even when nothing was stored (a closed or lost session).
       if (data.skill !== undefined) setSkill(data.conversationId, data.skill);
       // `F4.255`: the skill ended (lost or done: `null`) or its session is no longer a draft (the closed reply):
@@ -480,14 +484,13 @@ function DockPanel({
         return;
       }
       setBanner(null);
-      // A focus read that began before the turn stored its messages must not overwrite them.
-      void queryClient.cancelQueries({ queryKey: copilotConversationKey(data.conversationId) });
       // Into the cache, not component state: `navigate` below unmounts this dock.
       queryClient.setQueryData<CopilotConversationDetailDto>(copilotConversationKey(data.conversationId), (prev) =>
         prev
           ? {
               ...prev,
-              messages: [...prev.messages, ...data.messages],
+              // A focus read that answered before this response may hold these rows already.
+              messages: appendMessages(prev.messages, data.messages),
               pendingChanges: [
                 ...prev.pendingChanges.filter(
                   (c) =>

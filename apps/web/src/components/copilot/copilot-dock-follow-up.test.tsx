@@ -5,9 +5,12 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import { resetCopilotStore } from "../../stores/copilot-store";
 import {
+  aReadInFlightAtASkillOnlyTurnKeepsTheSkill,
   aReadInFlightAtTheConfirmDoesNotDropTheWait,
+  aReadInFlightAtTheRejectDoesNotRestoreTheCard,
   aRemountBeforeTheFirstPollKeepsTheWait,
   aRouteFailureSeedsTheWaitToo,
+  aTurnAfterAFocusReadShowsEachRowOnce,
   doesNotHoldSendForAWaitOlderThanTheWindow,
   dropsAStoredConversationTheServerNoLongerHas,
   keepsTheStoredConversationOnAServerError,
@@ -36,6 +39,9 @@ describe("F4.244 copilot dock — the follow-up wait resumes", () => {
   it("keeps the wait on a remount before the first poll", aRemountBeforeTheFirstPollKeepsTheWait);
   it("seeds the wait after a route's refusal too", aRouteFailureSeedsTheWaitToo);
   it("keeps the seed when a read in flight at the Confirm answers late (review C4)", aReadInFlightAtTheConfirmDoesNotDropTheWait);
+  it("shows each row once when a focus read answered before the turn's response", aTurnAfterAFocusReadShowsEachRowOnce);
+  it("does not restore a rejected card from a read in flight at the Reject", aReadInFlightAtTheRejectDoesNotRestoreTheCard);
+  it("keeps a skill-only turn's skill state from a read in flight at the turn", aReadInFlightAtASkillOnlyTurnKeepsTheSkill);
   it("drops a stored conversation the server no longer has", dropsAStoredConversationTheServerNoLongerHas);
   it("keeps the stored conversation on a server error", keepsTheStoredConversationOnAServerError);
 });

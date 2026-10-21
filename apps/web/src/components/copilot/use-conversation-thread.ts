@@ -60,6 +60,16 @@ export function awaitingAfterConfirm(
   };
 }
 
+/**
+ * `added` after `messages`, in order, without a message whose `id` the thread
+ * already holds: a focus read can answer between a write's store and its
+ * response, and the response must not show those rows twice (review, focus race).
+ */
+export function appendMessages(messages: readonly CopilotMessageDto[], added: readonly CopilotMessageDto[]): CopilotMessageDto[] {
+  const held = new Set(messages.map((m) => m.id));
+  return [...messages, ...added.filter((m) => !held.has(m.id))];
+}
+
 /** One wait: for which change, since when (local), and how many messages the thread held then. */
 type Wait = { changeId: string; since: number; baseline: number; failed: boolean };
 
@@ -99,7 +109,9 @@ export type ConversationThread = {
  * **Fresh on focus.** The thread is fresh for the tab (`staleTime: Infinity`:
  * the dock writes every turn into it), so a second tab on the same
  * conversation re-reads it when the window gains focus and no wait is on
- * (review C3).
+ * (review C3). The dock cancels such a read before each of its cache writes
+ * and appends a response's rows by id ({@link appendMessages}), so a read that
+ * answers first neither undoes a write nor shows a row twice.
  */
 export function useConversationThread(conversationId: string | null): ConversationThread {
   const queryClient = useQueryClient();
