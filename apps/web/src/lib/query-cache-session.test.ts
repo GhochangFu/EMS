@@ -3,6 +3,10 @@ import { afterEach, describe, it } from "vitest";
 
 import { resetCopilotStore } from "../stores/copilot-store";
 import {
+  aRehydratedCopilotSessionOfAnotherUserIsCleared,
+  aSignInAsAnotherUserClearsAStoredCopilotSession,
+  aSignInAsTheSameUserKeepsTheStoredCopilotSession,
+  aStoredCopilotSessionOfAnotherUserIsClearedAtBind,
   clearsWhenTheSessionEnds,
   clearsWhenTheUserChanges,
   keepsTheCacheOnAnUnrelatedStoreChange,
@@ -48,5 +52,21 @@ describe("F4.156 query cache bound to the session", () => {
 
   it("F4.244: keeps the stored copilot session on a same-user renewal", () => {
     theCopilotSessionSurvivesASameUserRenewal();
+  });
+
+  it("F4.244: a sign-in as another user clears a stored copilot session", () => {
+    aSignInAsAnotherUserClearsAStoredCopilotSession();
+  });
+
+  it("F4.244: a sign-in as the same user keeps the stored copilot session", () => {
+    aSignInAsTheSameUserKeepsTheStoredCopilotSession();
+  });
+
+  it("F4.244: the bind clears a stored copilot session of another user", () => {
+    aStoredCopilotSessionOfAnotherUserIsClearedAtBind();
+  });
+
+  it("F4.244: a rehydrate clears a stored copilot session of another user", async () => {
+    await aRehydratedCopilotSessionOfAnotherUserIsCleared();
   });
 });

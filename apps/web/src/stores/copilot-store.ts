@@ -27,7 +27,9 @@ import { persist } from "zustand/middleware";
  * 401, JWT expiry, a failed `/me`, another user): `bindSessionStores` in
  * `lib/query-cache-session.ts` calls it beside the cache clear. The clear is
  * per tab: a second tab still signed in writes the key again on its next
- * store write, and the `userId` rule below is the second line of defence.
+ * store write. `bindSessionStores` clears such a key when another user signs
+ * in, reloads or rehydrates it (security L1), and the `userId` rule below is
+ * the last line of defence.
  *
  * **Owned by one user.** `userId` records who started the session; the dock
  * reads the session only when it is the signed-in user's, so a second sign-in

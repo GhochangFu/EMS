@@ -156,3 +156,84 @@ export function theCopilotSessionSurvivesASameUserRenewal(): void {
     unbind();
   }
 }
+
+const CONVERSATION = "33333333-3333-4333-8333-333333333333";
+
+/**
+ * Signed out and bound, with a copilot session of A stored meanwhile — the
+ * key another tab of A, still signed in, wrote back after this tab's clear.
+ */
+function signedOutWithAStoredSessionOfA(): () => void {
+  useAuthStore.getState().clearSession();
+  const unbind = bindSessionStores(useAuthStore, new QueryClient());
+  useCopilotStore.getState().setConversation(USER_A.id, CONVERSATION);
+  assert(window.localStorage.getItem(COPILOT_SESSION_KEY) !== null, "fixture: the copilot session of A is stored");
+  return unbind;
+}
+
+/**
+ * `F4.244` (security L1): a sign-in from signed out as B finds A's stored
+ * session and clears it. Neither transition rule of `sessionChanged` fires on
+ * null → B. Mutation: drop the owner check from the auth subscription.
+ */
+export function aSignInAsAnotherUserClearsAStoredCopilotSession(): void {
+  const unbind = signedOutWithAStoredSessionOfA();
+  try {
+    useAuthStore.getState().setSession("token-b", USER_B, null, null);
+    assert(window.localStorage.getItem(COPILOT_SESSION_KEY) === null, "a sign-in as B removes A's copilot key");
+  } finally {
+    unbind();
+  }
+}
+
+/** The adjacent positive: a sign-in from signed out as A keeps A's stored session. Mutation: clear on any sign-in. */
+export function aSignInAsTheSameUserKeepsTheStoredCopilotSession(): void {
+  const unbind = signedOutWithAStoredSessionOfA();
+  try {
+    useAuthStore.getState().setSession("token-a", USER_A, null, null);
+    assert(window.localStorage.getItem(COPILOT_SESSION_KEY) !== null, "a sign-in as A keeps A's copilot key");
+  } finally {
+    unbind();
+  }
+}
+
+/** Signed in as B, unbound, with a copilot session of A in the store and the key (a reload of B's tab). */
+function signedInAsBWithAStoredSessionOfA(): void {
+  useAuthStore.getState().clearSession();
+  useAuthStore.getState().setSession("token-b", USER_B, null, null);
+  useCopilotStore.getState().setConversation(USER_A.id, CONVERSATION);
+  assert(window.localStorage.getItem(COPILOT_SESSION_KEY) !== null, "fixture: the copilot session of A is stored");
+}
+
+/** The state at bind time counts too: a reload signed in as B clears A's key. Mutation: drop the bind-time check. */
+export function aStoredCopilotSessionOfAnotherUserIsClearedAtBind(): void {
+  signedInAsBWithAStoredSessionOfA();
+  const unbind = bindSessionStores(useAuthStore, new QueryClient());
+  try {
+    assert(window.localStorage.getItem(COPILOT_SESSION_KEY) === null, "the bind removes another user's copilot key");
+  } finally {
+    unbind();
+  }
+}
+
+/**
+ * A rehydrate that reads another user's key clears it too. The key is
+ * written straight into `localStorage`, as another tab does. Mutation: drop
+ * the `onFinishHydration` check.
+ */
+export async function aRehydratedCopilotSessionOfAnotherUserIsCleared(): Promise<void> {
+  useAuthStore.getState().clearSession();
+  useAuthStore.getState().setSession("token-b", USER_B, null, null);
+  const unbind = bindSessionStores(useAuthStore, new QueryClient());
+  try {
+    window.localStorage.setItem(
+      COPILOT_SESSION_KEY,
+      JSON.stringify({ state: { userId: USER_A.id, organizationId: "", conversationId: CONVERSATION }, version: 0 }),
+    );
+    await useCopilotStore.persist.rehydrate();
+    assert(window.localStorage.getItem(COPILOT_SESSION_KEY) === null, "a rehydrate of another user's key removes it");
+    assert(useCopilotStore.getState().conversationId === null, "a rehydrate of another user's key empties the store");
+  } finally {
+    unbind();
+  }
+}

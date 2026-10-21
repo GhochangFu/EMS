@@ -24,10 +24,11 @@
  * `F4.244`: the copilot session (`bms-copilot-session`, persisted since the
  * owner ruling of 2026-10-20) belongs to the session too. {@link bindSessionStores}
  * clears it on the same transitions, so every exit above removes the key with
- * no code of its own; `main.tsx` binds through it.
+ * no code of its own; `main.tsx` binds through it. It also clears a stored
+ * session of another user than the signed-in one (security L1).
  */
 
-import { clearCopilotSession } from "../stores/copilot-store";
+import { clearCopilotSession, useCopilotStore } from "../stores/copilot-store";
 
 type SessionState = {
   readonly accessToken: string | null;
@@ -63,11 +64,31 @@ export function bindQueryCacheToSession<S extends SessionState>(
  * session change of `store`: the Query cache `client` and the persisted
  * copilot session. Returns the unsubscribe.
  */
-export function bindSessionStores<S extends SessionState>(store: SessionStore<S>, client: { clear(): void }): () => void {
-  return bindQueryCacheToSession(store, {
+export function bindSessionStores<S extends SessionState>(
+  store: SessionStore<S> & { getState(): S },
+  client: { clear(): void },
+): () => void {
+  const unbindCache = bindQueryCacheToSession(store, {
     clear() {
       client.clear();
       clearCopilotSession();
     },
   });
+  // Security L1: the clear is per tab, so another tab of A, still signed in, can write A's key back
+  // after this tab signed out. A sign-in from signed out (null → B) is no transition above; the
+  // stored owner is checked against the signed-in user instead — at bind (a reload), on a
+  // rehydrate, and on every auth write. A same-user renewal keeps the session.
+  const clearAnotherUsersSession = (): void => {
+    const user = store.getState().user;
+    const owner = useCopilotStore.getState().userId;
+    if (user !== null && owner !== null && owner !== user.id) clearCopilotSession();
+  };
+  clearAnotherUsersSession();
+  const unbindHydration = useCopilotStore.persist.onFinishHydration(clearAnotherUsersSession);
+  const unbindOwner = store.subscribe(clearAnotherUsersSession);
+  return () => {
+    unbindCache();
+    unbindHydration();
+    unbindOwner();
+  };
 }
