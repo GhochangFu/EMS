@@ -116,9 +116,10 @@ export function openWizardKey(
  * Which record a fill is for is the store's check (`openWizardKey`).
  *
  * `F4.245` (critique C2): `fixed` names the body fields the page fixes — an
- * asset page's `assetId`, the organization a library setting or a stock
- * import is for. A fill never sets one: the page sends its own value, so a
- * filled one would only make the Review card differ from the request.
+ * asset page's `assetId`, the organization a library setting is for. A fill
+ * never sets one: the page sends its own value, so a filled one would only
+ * make the Review card differ from the request. `null` when the fill sets no
+ * field at all (review C2), so a no-op fill never marks the wizard dirty.
  */
 export function applyFill(
   entryId: string,
@@ -131,10 +132,15 @@ export function applyFill(
   const step = steps.find((candidate) => candidate.id === fill.stepId);
   if (step === undefined) return null;
   const next = { ...values };
+  let applied = 0;
   for (const [field, value] of Object.entries(fill.values)) {
-    if (step.fields.includes(field) && !fixed.includes(field)) next[field] = value;
+    if (step.fields.includes(field) && !fixed.includes(field)) {
+      next[field] = value;
+      applied += 1;
+    }
   }
-  return next;
+  // Review C2: a fill that sets nothing is no change, so it never marks the wizard dirty.
+  return applied === 0 ? null : next;
 }
 
 export type LeaveDecision =

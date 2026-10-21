@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -12,63 +13,45 @@ const WEB_SRC = "apps/web/src";
  * writes in its OWN props (`params={…}`). The shell registers that record for the dock and takes
  * only a fill for it, so an element without `params` is a wizard the copilot cannot fill (or one a
  * fill for another record could reach). `tsc` already refuses a missing required prop; this scan
- * is the second gate, and it also refuses a `params` that arrives only through a spread
- * (`{...shared}`), where a change to the spread object would drop it with no compiler error at the
- * element. Comments are blanked first, so a commented-out element counts for nothing.
+ * is the second gate, and it also refuses:
+ *  - a `params` that arrives only through a spread (`{...shared}`), where a change to the spread
+ *    object would drop it with no compiler error at the element;
+ *  - a `params` followed by a spread on the same element (review F3): in JSX the later spread
+ *    wins, so a `params` key in it would replace the element's own, and `tsc` is silent.
+ *
+ * The elements are read by the TypeScript parser (review F3), not a text scan: a comment is no
+ * element, and an apostrophe in JSX text inside a prop ("Don't") is text, not a quote that could
+ * hide the rest of the file.
  */
 
-const BLOCK_COMMENT = /\/\*[\s\S]*?\*\//g;
-const LINE_COMMENT = /^\s*\/\/.*$/gm;
+/** One `<WizardShell>` element's attributes in source order: a named prop, or a spread. */
+export type ShellAttribute = { readonly kind: "prop"; readonly name: string } | { readonly kind: "spread" };
 
-function code(source: string): string {
-  return source
-    .replace(BLOCK_COMMENT, (c) => c.replace(/[^\n]/g, ""))
-    .replace(LINE_COMMENT, "");
-}
-
-/** The props text of each `<WizardShell …>` element: from the tag to its closing `>` / `/>` outside braces and strings. */
-export function shellElements(source: string): string[] {
-  const text = code(source);
-  const out: string[] = [];
-  const open = /<WizardShell\b/g;
-  let hit: RegExpExecArray | null;
-  while ((hit = open.exec(text)) !== null) {
-    let depth = 0;
-    let quote: string | null = null;
-    let i = hit.index + hit[0].length;
-    const start = i;
-    for (; i < text.length; i += 1) {
-      const c = text[i]!;
-      if (quote !== null) {
-        if (c === "\\") i += 1;
-        else if (c === quote) quote = null;
-      } else if (c === '"' || c === "'" || c === "`") quote = c;
-      else if (c === "{") depth += 1;
-      else if (c === "}") depth -= 1;
-      else if (c === ">" && depth === 0) break;
+/** The attributes of each `<WizardShell …>` element in `source`, in source order. */
+export function shellElements(source: string, file = "scan.tsx"): ShellAttribute[][] {
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, false, ts.ScriptKind.TSX);
+  const out: ShellAttribute[][] = [];
+  const visit = (node: ts.Node): void => {
+    if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && node.tagName.getText(sf) === "WizardShell") {
+      out.push(
+        node.attributes.properties.map((attribute): ShellAttribute =>
+          ts.isJsxSpreadAttribute(attribute) ? { kind: "spread" } : { kind: "prop", name: attribute.name.getText(sf) },
+        ),
+      );
     }
-    out.push(text.slice(start, i));
-  }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
   return out;
 }
 
-/** The element's own top-level props text: brace-nested text (a prop value or a spread) blanked. */
-function ownProps(props: string): string {
-  let depth = 0;
-  let out = "";
-  for (const c of props) {
-    if (c === "{") depth += 1;
-    if (depth === 0) out += c;
-    else out += c === "{" || c === "}" ? c : " ";
-    if (c === "}") depth -= 1;
-  }
-  return out;
+/** True when the element writes `params` itself and no spread follows it (a later spread wins). */
+export function namesItsRecord(attributes: readonly ShellAttribute[]): boolean {
+  const at = attributes.findIndex((attribute) => attribute.kind === "prop" && attribute.name === "params");
+  return at >= 0 && !attributes.slice(at + 1).some((attribute) => attribute.kind === "spread");
 }
 
-/** True when the element writes `params={…}` itself (not through a spread). */
-export function namesItsRecord(props: string): boolean {
-  return /(^|\s)params=\{/.test(ownProps(props));
-}
+const verdicts = (source: string): boolean[] => shellElements(source).map(namesItsRecord);
 
 function webSources(dir = WEB_SRC): string[] {
   return readdirSync(join(repoRoot, dir), { withFileTypes: true }).flatMap((dirent) => {
@@ -81,40 +64,52 @@ function webSources(dir = WEB_SRC): string[] {
 
 describe("F4.245 wizard record gate — every WizardShell element names its record", () => {
   it("positive control: the scan finds the elements, in more than ten files", () => {
-    const files = webSources().filter((f) => shellElements(readFileSync(join(repoRoot, f), "utf8")).length > 0);
+    const files = webSources().filter((f) => shellElements(readFileSync(join(repoRoot, f), "utf8"), f).length > 0);
     expect(files.length).toBeGreaterThan(10);
   });
 
   it("negative control: an element with no params is refused", () => {
-    expect(namesItsRecord('\n entry={catalogEntry("a.b")!}\n values={v}\n/')).toBe(false);
+    expect(verdicts('<WizardShell entry={catalogEntry("a.b")!} values={v} />')).toEqual([false]);
   });
 
   it("negative control: a params that arrives only through a spread is refused", () => {
-    expect(namesItsRecord('\n entry={e}\n {...shared}\n/')).toBe(false);
-    expect(namesItsRecord("\n entry={e}\n onChange={() => ({ params: 1 })}\n/")).toBe(false);
+    expect(verdicts("<WizardShell entry={e} {...shared} />")).toEqual([false]);
   });
 
-  it("positive control: params in the element's own props is accepted, even beside a spread", () => {
-    expect(namesItsRecord("\n entry={e}\n params={{ id: x.id }}\n {...shared}\n/")).toBe(true);
-    expect(namesItsRecord("\n params={{}}\n/")).toBe(true);
+  it("negative control: a params inside another prop's value is not the element's", () => {
+    expect(verdicts("<WizardShell entry={e} onChange={() => ({ params: 1 })} />")).toEqual([false]);
+  });
+
+  it("negative control (review F3): a params followed by a spread is refused — the later spread wins", () => {
+    expect(verdicts("<WizardShell entry={e} params={{ id: x.id }} {...shared} />")).toEqual([false]);
+  });
+
+  it("positive control: params after a spread is accepted — the element's own wins", () => {
+    expect(verdicts("<WizardShell {...shared} entry={e} params={{ id: x.id }} />")).toEqual([true]);
+  });
+
+  it("positive control: params in the element's own props is accepted", () => {
+    expect(verdicts("<WizardShell params={{}} />")).toEqual([true]);
   });
 
   it("a commented-out element is not counted", () => {
-    expect(shellElements("// <WizardShell entry={e} />\n{/* <WizardShell entry={e} /> */}")).toEqual([]);
+    expect(shellElements("// <WizardShell entry={e} />\nconst x = <div>{/* <WizardShell entry={e} /> */}</div>;")).toEqual([]);
   });
 
   it("the scan reads past a nested JSX element in a prop", () => {
-    const els = shellElements("<WizardShell renderStep={() => <input />} params={{}} />");
-    expect(els).toHaveLength(1);
-    expect(namesItsRecord(els[0]!)).toBe(true);
+    expect(verdicts("<WizardShell renderStep={() => <input />} params={{}} />")).toEqual([true]);
   });
 
-  it("every WizardShell element in apps/web/src writes params itself", () => {
+  it("review F3: an apostrophe in JSX text inside a prop does not hide the next element", () => {
+    const source = "<>\n<WizardShell renderStep={() => <p>Don't leave</p>} params={{}} />\n<WizardShell entry={e} />\n</>";
+    expect(verdicts(source)).toEqual([true, false]);
+  });
+
+  it("every WizardShell element in apps/web/src writes params itself, after any spread", () => {
     const bare: string[] = [];
     for (const file of webSources()) {
-      const found = shellElements(readFileSync(join(repoRoot, file), "utf8"));
-      found.forEach((props, at) => {
-        if (!namesItsRecord(props)) bare.push(`${file} #${at + 1}`);
+      shellElements(readFileSync(join(repoRoot, file), "utf8"), file).forEach((attributes, at) => {
+        if (!namesItsRecord(attributes)) bare.push(`${file} #${at + 1}`);
       });
     }
     expect(bare).toEqual([]);

@@ -452,16 +452,16 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                 <WizardShell
                   key={`deactivate-${toggling.id}`}
                   entry={wizardEntry("pointKey.deactivate")}
-                  params={{ id: toggling.id }}
                   {...toggleProps}
+                  params={{ id: toggling.id }}
                   summary={toggleSummary("pointKey.deactivate")}
                 />
               ) : (
                 <WizardShell
                   key={`reactivate-${toggling.id}`}
                   entry={wizardEntry("pointKey.reactivate")}
-                  params={{ id: toggling.id }}
                   {...toggleProps}
+                  params={{ id: toggling.id }}
                   summary={toggleSummary("pointKey.reactivate")}
                 />
               )}

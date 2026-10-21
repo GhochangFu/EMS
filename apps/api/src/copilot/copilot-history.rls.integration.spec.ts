@@ -178,10 +178,10 @@ export async function aBodyNamingAnotherOrganizationNeverCountsIt(ctx: HistoryCt
   const bound = await store.create(ctx.globalAdmin, ctx.orgA);
   const beforeX = (await orgCounter(ctx, ctx.orgA)) ?? 0;
 
-  await controller.turn(bound.id, { message: "any alarms?" }, admin, jwt);
+  await controller.turn(bound.id, { message: "any alarms?", wizards: [] }, admin, jwt);
   expect(await orgCounter(ctx, ctx.orgA), "the positive control: the turn counted on X").toBe(beforeX + 1);
 
-  const error = await controller.turn(bound.id, { message: "any alarms?", organizationId: ctx.orgY }, admin, jwt).then(
+  const error = await controller.turn(bound.id, { message: "any alarms?", wizards: [], organizationId: ctx.orgY }, admin, jwt).then(
     () => null,
     (err: { getStatus?: () => number }) => err,
   );

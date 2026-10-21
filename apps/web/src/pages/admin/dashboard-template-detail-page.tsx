@@ -554,8 +554,8 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
             {lifecycle === "publish" ? (
               <WizardShell
                 entry={wizardEntry("dashboardTemplate.publish")}
-                params={{ id: template.id }}
                 {...lifecycleProps(publishM)}
+                params={{ id: template.id }}
                 summary={wizardEntry("dashboardTemplate.publish").summary(summaryContext)}
               />
             ) : null}
@@ -568,8 +568,8 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 </p>
                 <WizardShell
                   entry={wizardEntry("dashboardTemplate.archive")}
-                  params={{ id: template.id }}
                   {...lifecycleProps(archiveM)}
+                  params={{ id: template.id }}
                   summary={wizardEntry("dashboardTemplate.archive").summary(summaryContext)}
                 />
               </>
@@ -577,8 +577,8 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
             {lifecycle === "draft" ? (
               <WizardShell
                 entry={wizardEntry("dashboardTemplate.draft")}
-                params={{ id: template.id }}
                 {...lifecycleProps(draftM)}
+                params={{ id: template.id }}
                 summary={wizardEntry("dashboardTemplate.draft").summary(summaryContext)}
               />
             ) : null}

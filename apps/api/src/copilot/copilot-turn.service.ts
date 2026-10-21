@@ -45,7 +45,7 @@ import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pen
 import { accessIntentOf } from "./copilot-access-intent";
 import { assetIntentOf } from "./copilot-asset-intent";
 import { hasImageAttachment, hasPdfWithoutImage, inspectAttachments, type TurnAttachment, type UploadedAttachment } from "./copilot-attachments";
-import { type CopilotOpenWizardRecord, openWizardsMessage } from "./copilot-open-wizards";
+import { type CopilotOpenWizardRecord, openWizardNamesMessage, openWizardsMessage } from "./copilot-open-wizards";
 import { COPILOT_PROPOSE_TOOLS, type CopilotProposeTools } from "./copilot-propose-tools";
 import { COPILOT_READ_TOOLS, type CopilotReadTools, type CopilotToolContext } from "./copilot-read-tools";
 import {
@@ -570,6 +570,8 @@ export class CopilotTurnService {
     const ctx: CopilotToolContext = { ...baseCtx, openWizards, pageWizards };
     for (const record of openWizards) if (record.organizationId !== null) read.add(record.organizationId);
     const wizardsLine = openWizardsMessage(openWizards);
+    // Review L3: the records' names are tenant text — a user-role block labelled as data, never the system role.
+    const wizardNames = openWizardNamesMessage(openWizards);
     // Ruling Q3 (the access entries), `F3.87` PR 2, Amendment 3 A1 (the entries offered to this role), and D8.
     const registry = combineToolRegistries(
       this.tools.registry,
@@ -587,7 +589,10 @@ export class CopilotTurnService {
         ...(pdfTextOnly ? [{ role: "system" as const, content: COPILOT_PDF_TEXT_ONLY_PROMPT }] : []),
         ...history.messages,
         ...(input.kind === "user"
-          ? [{ role: "user" as const, content: userTurnContent(input.message, attachments) }]
+          ? [
+              ...(wizardNames !== null ? [{ role: "user" as const, content: wizardNames }] : []),
+              { role: "user" as const, content: userTurnContent(input.message, attachments) },
+            ]
           : followUpMessages(input)),
       ],
       tools: registry,
@@ -607,6 +612,8 @@ export class CopilotTurnService {
               navigateTo = out.navigateTo;
               // `F4.245`: the page's wizards, in scope, so a fill in this turn may name one and wait for it.
               const page = await this.proposeTools.pageWizardRecords(out.navigateTo, ctx);
+              // Review C3: the browser goes to the last page only and waits there, so only its wizards count.
+              pageWizards.length = 0;
               pageWizards.push(...page);
               for (const record of page) if (record.organizationId !== null) read.add(record.organizationId);
               result = { ...result, wizards: page.map(({ catalogId, params, name }) => ({ catalogId, params, name })) };

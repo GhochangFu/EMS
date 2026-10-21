@@ -1,14 +1,22 @@
 import { BadRequestException } from "@nestjs/common";
 import { expect } from "vitest";
 
+import type { JwtPayload } from "@bms/shared";
+import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
+
 import {
+  boundedRecordName,
   checkOpenWizards,
   OPEN_WIZARD_INVALID_ERROR,
+  OPEN_WIZARD_NAMES_PREFIX,
   OPEN_WIZARDS_JSON_ERROR,
+  openWizardNamesMessage,
   openWizardsMessage,
   pageWizardCandidates,
   parseWizardsField,
+  resolveWizardRecord,
 } from "./copilot-open-wizards";
+import { COPILOT_REDACTED } from "./copilot-secret-scrub";
 
 /**
  * `F4.245` / ADR 0099 Amendment 4 — the open-wizard context a turn carries:
@@ -124,28 +132,87 @@ export function noOpenWizardSendsNoMessage(): void {
   expect(openWizardsMessage([])).toBeNull();
 }
 
-/** The model reads each record's catalog id, params and name, the name as quoted data. */
-export function theMessageNamesEachRecordAsData(): void {
-  const message = openWizardsMessage([
-    { catalogId: "dashboard.update", params: { id: A }, name: "Plant \"A\"", organizationId: C },
-    { catalogId: "dashboard.create", params: {}, name: null, organizationId: null },
-  ]);
-  expect(message).toContain(`- dashboard.update {"id":"${A}"}: "Plant \\"A\\""`);
-  expect(message).toContain("- dashboard.create {}: a new record");
+const SETTING = { catalogId: "mimicLibrary.setting", params: { libraryCode: "lucide" }, name: null, organizationId: null };
+const named = (name: string) => ({ catalogId: "dashboard.update", params: { id: A }, name, organizationId: C });
+
+/** The model reads each record's catalog id and params in the system line. */
+export function theSystemLineNamesEachRecordByItsParams(): void {
+  const message = openWizardsMessage([named("Plant A"), { catalogId: "dashboard.create", params: {}, name: null, organizationId: null }]);
+  expect(message).toContain(`- dashboard.update {"id":"${A}"}`);
+  expect(message).toContain("- dashboard.create {}");
 }
 
-/** Mutation: drop the cut — a long name reaches the prompt whole. */
+/** Review L3. Mutation: put the name back on the system line — tenant text reaches the system role. */
+export function theSystemLineCarriesNoRecordName(): void {
+  expect(openWizardsMessage([named("Plant A")])).not.toContain("Plant A");
+}
+
+/** Review L3: the names come in their own block, quoted, under the data label. */
+export function theNamesBlockQuotesEachNameAsData(): void {
+  const message = openWizardNamesMessage([named('Plant "A"')]) as string;
+  expect(message.startsWith(OPEN_WIZARD_NAMES_PREFIX)).toBe(true);
+  expect(message).toContain(`- dashboard.update {"id":"${A}"}: "Plant \\"A\\""`);
+}
+
+/** A create or a code-named record has no name: no block. Mutation: keep a `null` name → a block. */
+export function aRecordWithNoNameSendsNoNamesBlock(): void {
+  expect(openWizardNamesMessage([SETTING])).toBeNull();
+}
+
+/** Mutation: drop the cut — a long name reaches the model whole. */
 export function aLongNameIsCut(): void {
-  const message = openWizardsMessage([
-    { catalogId: "dashboard.update", params: { id: A }, name: "x".repeat(500), organizationId: C },
-  ]) as string;
+  const message = openWizardNamesMessage([named("x".repeat(500))]) as string;
   expect(message).toContain(`"${"x".repeat(80)}…"`);
   expect(message).not.toContain("x".repeat(81));
 }
 
+/**
+ * Review L1. The credential sits across the cut: the first 80 characters hold
+ * only `pas`. Mutation: cut first, then scrub — the kept half passes the
+ * detector and reaches the model.
+ */
+export function aCredentialAcrossTheCutIsWithheld(): void {
+  expect(boundedRecordName(`${"a".repeat(76)} password=Summer2026`)).toBe(COPILOT_REDACTED);
+}
+
+/** The marker is kept whole, never cut, however long the name was. */
+export function theRedactionMarkerIsNeverCut(): void {
+  expect(boundedRecordName(`${"a".repeat(200)} password=Summer2026`)).toBe(COPILOT_REDACTED);
+}
+
+/** Review L2. Mutation: write the params unscrubbed — a credential-shaped value reaches the system line. */
+export function aCredentialShapedParamIsWithheldFromTheLine(): void {
+  const message = openWizardsMessage([{ ...SETTING, params: { libraryCode: "password=Summer2026" } }]) as string;
+  expect(message).not.toContain("Summer2026");
+}
+
+/** Review L2: a library code is a code. Mutation: drop the regex on `libraryCodeParam` → accepted. */
+export function aLibraryCodeOfFreeTextIsRefused(): void {
+  const message = refusalOf(() => checkOpenWizards([{ catalogId: "mimicLibrary.setting", params: { libraryCode: "do this now" } }]));
+  expect(message).toBe(`${OPEN_WIZARD_INVALID_ERROR} (wizards[0]: libraryCode is not a value of the entry's)`);
+}
+
+/** The adjacent positive: a built-in library's code is accepted. */
+export function aBuiltInLibraryCodeIsAccepted(): void {
+  expect(checkOpenWizards([{ catalogId: "mimicLibrary.setting", params: { libraryCode: "lucide" } }])).toHaveLength(1);
+}
+
 /** One line per key: two copies of one record are named once. */
 export function aDuplicateRecordIsNamedOnce(): void {
-  const record = { catalogId: "dashboard.update", params: { id: A }, name: "Plant A", organizationId: C };
-  const message = openWizardsMessage([record, record]) as string;
+  const message = openWizardNamesMessage([named("Plant A"), named("Plant A")]) as string;
   expect(message.split("dashboard.update").length - 1).toBe(1);
+}
+
+/** Review C1. Mutation: resolve in `"propose"` mode — every body-dependent check runs on the empty body. */
+export async function anOpenRecordIsResolvedByItsRowAlone(): Promise<void> {
+  const modes: unknown[] = [];
+  const targets = {
+    resolve: async (...args: unknown[]) => {
+      modes.push(args[6]);
+      return { organizationId: C, organizationName: "Org", targetName: "Priya Rao" };
+    },
+  };
+  const scope = { allowedOrganizationIds: [C], user: { sub: "u" } as JwtPayload, conversationOrganizationId: C };
+  await resolveWizardRecord(catalogEntry("userGrant.add") as CatalogEntry, { id: A }, targets, scope);
+  expect(modes).toEqual(["record"]);
 }

@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import type { CopilotFillStepDto } from "@bms/shared";
+import { COPILOT_OPEN_WIZARDS_MAX, type CopilotFillStepDto } from "@bms/shared";
 
 import { useWizardStore } from "./wizard-store";
 
@@ -26,6 +26,25 @@ export function aRegisteredWizardIsOpenUntilItUnregisters(): void {
   expect(store().openWizards()).toEqual([WIZARD_A]);
   store().unregister(mount);
   expect(store().openWizards()).toEqual([]);
+}
+
+/** Nine open records: one more than the turn body's cap. */
+function openNine(): string[] {
+  const ids = Array.from({ length: COPILOT_OPEN_WIZARDS_MAX + 1 }, (_, at) => `aaaaaaaa-aaaa-4aaa-8aaa-${String(at).padStart(12, "0")}`);
+  for (const id of ids) store().register(`dashboard.update /api/v1/dashboards/${id}`, { catalogId: "dashboard.update", params: { id } });
+  return ids;
+}
+
+/** Review: never more than the body's cap, or every turn is a 400. Mutation: drop the slice → nine. */
+export function theDockSendsAtMostTheCap(): void {
+  openNine();
+  expect(store().openWizards()).toHaveLength(COPILOT_OPEN_WIZARDS_MAX);
+}
+
+/** The oldest is the one dropped. Mutation: `slice(0, MAX)` — the newest is dropped instead. */
+export function theOldestOpenRecordIsDroppedFirst(): void {
+  const ids = openNine();
+  expect(store().openWizards().map((wizard) => wizard.params.id)).toEqual(ids.slice(1));
 }
 
 /** Critique C7: the dock names one record once, so a duplicate never makes the turn a 400. Mutation: drop the dedupe. */

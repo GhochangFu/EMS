@@ -718,17 +718,17 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                 <WizardShell
                   key="create"
                   entry={wizardEntry("assetGroup.create")}
-                  params={{}}
                   values={createValues(form)}
                   {...groupWizardProps}
+                  params={{}}
                 />
               ) : selectedGroup ? (
                 <WizardShell
                   key={`update-${selectedGroup.id}`}
                   entry={wizardEntry("assetGroup.update")}
-                  params={{ id: selectedGroup.id }}
                   values={updateValues(form)}
                   {...groupWizardProps}
+                  params={{ id: selectedGroup.id }}
                   current={{
                     name: selectedGroup.name,
                     description: selectedGroup.description,

@@ -1,12 +1,16 @@
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type { DashboardDto } from "@bms/shared";
 import { TAB_KEY_UNKNOWN_MESSAGE } from "@bms/shared/contracts";
 
+import * as copilotApi from "../../api/copilot";
 import * as dashboardsApi from "../../api/dashboards";
 import { useWizardStore } from "../../stores/wizard-store";
+import { DashboardBuilderEditPage } from "./dashboard-builder-edit-page";
 import {
   asUser,
   detailsWizard,
@@ -119,4 +123,31 @@ export async function aSaveWithoutASlugFillSendsNoSlugKey(): Promise<void> {
   await submitDetails();
   await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
   expect(Object.keys(update.mock.calls[0]?.[1] as Record<string, unknown>)).not.toContain("slug");
+}
+
+/**
+ * Review (quality): the move after a slug save replaces the history entry, so
+ * Back never returns to the old address (stale, then a 404 on refetch).
+ * Mutation: `navigate(editPath(next))` as a push → the action is `PUSH`.
+ */
+export async function aSavedSlugFillReplacesTheHistoryEntry(): Promise<void> {
+  stubLoads({ dto: U_DTO, groups: [GROUP] });
+  const update = vi.spyOn(dashboardsApi, "updateDashboard").mockResolvedValue({ ...U_DTO, slug: "new-slug" });
+  vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue(U_DTO);
+  vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
+  const router = createMemoryRouter([{ path: "/admin/dashboards/:slug", element: <DashboardBuilderEditPage user={asUser("admin")} /> }], {
+    initialEntries: ["/admin/dashboards", "/admin/dashboards/site-a-overview"],
+    initialIndex: 1,
+  });
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>,
+  );
+  await waitForPrefill("Location");
+  act(() => useWizardStore.getState().receiveFill(fill("dashboard.update", "basics", { slug: "new-slug" }), null));
+  await submitDetails();
+  await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(router.state.location.pathname).toBe("/admin/dashboards/new-slug"));
+  expect(router.state.historyAction).toBe("REPLACE");
 }

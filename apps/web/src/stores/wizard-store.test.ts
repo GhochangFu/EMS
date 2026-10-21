@@ -9,7 +9,9 @@ import {
   aRegisteredWizardIsOpenUntilItUnregisters,
   aWaitingFillIsDroppedWhenItsWizardUnregisters,
   aWaitingFillIsDroppedWhenTheUserLeavesThePage,
+  theDockSendsAtMostTheCap,
   theFillForTheOpenRecordIsTakenByIt,
+  theOldestOpenRecordIsDroppedFirst,
   twoCopiesOfOneRecordAreNamedOnce,
 } from "./wizard-store.spec";
 
@@ -19,6 +21,8 @@ afterEach(() => resetWizardStore());
 describe("F4.245 — the wizard store hands a fill only to its record's wizard (ADR 0099 Amendment 4)", () => {
   it("keeps a registered wizard open until it unregisters", () => aRegisteredWizardIsOpenUntilItUnregisters());
   it("names two copies of one record once", () => twoCopiesOfOneRecordAreNamedOnce());
+  it("sends at most the turn body's cap of open records", () => theDockSendsAtMostTheCap());
+  it("drops the oldest open record first", () => theOldestOpenRecordIsDroppedFirst());
   it("hands the open record's fill to it once", () => theFillForTheOpenRecordIsTakenByIt());
   it("never hands A's fill to B's wizard", () => anotherRecordsWizardDoesNotTakeTheFill());
   it("drops a fill with no open match and no page to wait for", () => aFillWithNoOpenMatchAndNoPageIsDropped());

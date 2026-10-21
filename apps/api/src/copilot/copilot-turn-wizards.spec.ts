@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 
 import { calls, FakeLlmProvider, toolCall } from "../admin/onboarding/onboarding-agent-loop.spec";
-import { FILL_NO_OPEN_WIZARD_ERROR } from "./copilot-open-wizards";
+import { FILL_NO_OPEN_WIZARD_ERROR, OPEN_WIZARD_NAMES_PREFIX } from "./copilot-open-wizards";
 import type { CopilotToolResult } from "./copilot-read-tools";
 import { GLOBAL_ADMIN, harness, ORG_X, turn } from "./copilot-turn.service.spec";
 
@@ -38,7 +38,24 @@ export async function theModelIsToldWhichRecordsAreOpen(): Promise<void> {
   const llm = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
   await turn(harness(llm), "hi", GLOBAL_ADMIN, OPEN_A);
   const system = (llm.seen[0] ?? []).filter((m) => m.role === "system").map((m) => m.content);
-  expect(system.some((content) => typeof content === "string" && content.includes(`- dashboard.update {"id":"${A}"}: "T"`))).toBe(true);
+  expect(system.some((content) => typeof content === "string" && content.includes(`- dashboard.update {"id":"${A}"}`))).toBe(true);
+}
+
+/** Review L3. Mutation: send the names block as a system message — tenant text gets the system role. */
+export async function theOpenRecordsNamesComeAsUserRoleData(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  await turn(harness(llm), "hi", GLOBAL_ADMIN, OPEN_A);
+  const block = (llm.seen[0] ?? []).find((m) => typeof m.content === "string" && m.content.startsWith(OPEN_WIZARD_NAMES_PREFIX));
+  expect(block?.role).toBe("user");
+}
+
+/** Review L3: the block names the record, quoted. Mutation: drop the block — the model never reads the name. */
+export async function theNamesBlockCarriesTheRecordsName(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  await turn(harness(llm), "hi", GLOBAL_ADMIN, OPEN_A);
+  const users = (llm.seen[0] ?? []).filter((m) => m.role === "user").map((m) => m.content);
+  expect(users).toContainEqual(`${OPEN_WIZARD_NAMES_PREFIX}
+- dashboard.update {"id":"${A}"}: "T"`);
 }
 
 /** Mutation: drop the provenance loop — a record's name reached the model, so its organization is on the reply. */
@@ -66,4 +83,27 @@ export async function theOpenPageResultNamesThePagesRecords(): Promise<void> {
   await turn(h, "open plant-a", GLOBAL_ADMIN, []);
   const tool = (llm.seen[1] ?? []).find((m) => m.role === "tool");
   expect(JSON.stringify(tool)).toContain(`{\\"catalogId\\":\\"dashboard.update\\",\\"params\\":{\\"id\\":\\"${A}\\"},\\"name\\":\\"T\\"}`);
+}
+
+/**
+ * Review C3: the browser goes to the last page a turn opened and waits there,
+ * so a fill for an earlier page's record is refused. Mutation: keep every
+ * opened page's wizards — the fill for plant-a is accepted, and waits on a
+ * page that never mounts it.
+ */
+export async function onlyTheLastOpenedPageAdmitsAFill(): Promise<void> {
+  const routes = ["/admin/dashboards/plant-a", "/admin/users"];
+  let at = 0;
+  const openPage = (): CopilotToolResult => {
+    const route = routes[Math.min(at++, routes.length - 1)] as string;
+    return { ok: true, result: { route }, organizationIds: [], navigateTo: route };
+  };
+  const llm = new FakeLlmProvider([
+    calls(toolCall("open_page", {})),
+    calls(toolCall("open_page", {})),
+    calls(toolCall("fill_step", FILL_A)),
+    { kind: "final", text: "Opened." },
+  ]);
+  const response = await turn(harness(llm, { tools: { open_page: openPage }, slugId: A }), "open plant-a, then users", GLOBAL_ADMIN, []);
+  expect(response.fillStep).toBeNull();
 }

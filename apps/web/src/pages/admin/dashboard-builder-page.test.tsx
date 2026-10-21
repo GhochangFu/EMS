@@ -184,6 +184,8 @@ describe("F3.1d dashboard builder page", () => {
   it("cancelling click-only Layout work asks first (review C4)", async () => {
     await cancellingClickOnlyLayoutWorkAsksFirst();
   });
-  it("F4.245: a layout fill after the create reaches the canvas", () => aLayoutFillAfterCreateReachesTheCanvas());
-  it("F4.245: a layout fill with tabs is refused on the create page", () => aLayoutFillWithTabsIsRefusedOnTheCreatePage());
+  it("F4.245: a layout fill after the create reaches the canvas", () =>
+    aLayoutFillAfterCreateReachesTheCanvas());
+  it("F4.245: a layout fill with tabs is refused on the create page", () =>
+    aLayoutFillWithTabsIsRefusedOnTheCreatePage());
 });

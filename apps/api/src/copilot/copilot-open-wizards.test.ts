@@ -1,7 +1,17 @@
 import { describe, it } from "vitest";
 
 import {
+  aBuiltInLibraryCodeIsAccepted,
   aCreateWizardWithNoParamsIsAccepted,
+  aCredentialAcrossTheCutIsWithheld,
+  aCredentialShapedParamIsWithheldFromTheLine,
+  aLibraryCodeOfFreeTextIsRefused,
+  anOpenRecordIsResolvedByItsRowAlone,
+  aRecordWithNoNameSendsNoNamesBlock,
+  theNamesBlockQuotesEachNameAsData,
+  theRedactionMarkerIsNeverCut,
+  theSystemLineCarriesNoRecordName,
+  theSystemLineNamesEachRecordByItsParams,
   aDuplicateRecordIsNamedOnce,
   aDuplicateWizardDoesNotFailTheTurn,
   aListPageMountsItsCreateWizard,
@@ -19,7 +29,6 @@ import {
   aValueTheEntryRefusesIsRefused,
   noOpenWizardSendsNoMessage,
   theDashboardEditPageMountsItsTwoWizardsBySlug,
-  theMessageNamesEachRecordAsData,
 } from "./copilot-open-wizards.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -40,7 +49,16 @@ describe("F4.245 — the open-wizard context of a turn (ADR 0099 Amendment 4)", 
   it("maps a list route to its create wizard", () => aListPageMountsItsCreateWizard());
   it("maps a page without a wizard to none", () => aPageWithoutAWizardMountsNone());
   it("sends no message when no wizard is open", () => noOpenWizardSendsNoMessage());
-  it("names each open record as quoted data", () => theMessageNamesEachRecordAsData());
+  it("names each open record by its params in the system line", () => theSystemLineNamesEachRecordByItsParams());
+  it("L3: puts no record name on the system line", () => theSystemLineCarriesNoRecordName());
+  it("L3: quotes each name as data in its own block", () => theNamesBlockQuotesEachNameAsData());
+  it("sends no names block when no open record has a name", () => aRecordWithNoNameSendsNoNamesBlock());
   it("cuts a long record name", () => aLongNameIsCut());
+  it("L1: withholds a credential that spans the cut", () => aCredentialAcrossTheCutIsWithheld());
+  it("L1: never cuts the redaction marker", () => theRedactionMarkerIsNeverCut());
+  it("L2: withholds a credential-shaped param from the line", () => aCredentialShapedParamIsWithheldFromTheLine());
+  it("L2: refuses a library code of free text", () => aLibraryCodeOfFreeTextIsRefused());
+  it("L2: accepts a built-in library's code", () => aBuiltInLibraryCodeIsAccepted());
   it("names a duplicate record once", () => aDuplicateRecordIsNamedOnce());
+  it("C1: resolves an open record by its row alone", () => anOpenRecordIsResolvedByItsRowAlone());
 });

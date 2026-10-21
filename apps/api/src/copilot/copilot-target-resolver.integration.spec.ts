@@ -6,6 +6,7 @@ import type { JwtPayload, UserRole } from "@bms/shared";
 import { type CatalogEntry, type CatalogRef, type CatalogTarget, catalogEntry } from "@bms/shared/copilot";
 
 import { NO_GRANTS, NO_USERS } from "../testing/copilot-user-checks";
+import { resolveWizardRecord, type WizardScope } from "./copilot-open-wizards";
 import { CopilotTargetResolver, refKindOf } from "./copilot-target-resolver";
 
 /**
@@ -621,4 +622,53 @@ export async function aDashboardSlugIsFoundInTheAllowedSetOnly(ctx: ResolverCtx)
   expect(await resolver.dashboardIdBySlug(ctx.dashboardSlugA, [ctx.orgA])).toBe(ctx.dashboardA);
   expect(await resolver.dashboardIdBySlug(ctx.dashboardSlugA, [ctx.orgB])).toBeNull();
   expect(await resolver.dashboardIdBySlug("no-such-slug", [ctx.orgA, ctx.orgB])).toBeNull();
+}
+
+/**
+ * `F4.245` review C1 (ADR 0099 Amendment 4, B2) — an open wizard's record is
+ * resolved by its row alone, on the real resolver: an open grant-add drawer is
+ * its user, and an open instantiate wizard is its template with the
+ * organization check. The body-dependent checks (a grant's `kind` and
+ * `targetId`, the instantiate's site) are what a fill is about to set, so they
+ * never run here. Mutation: `resolveWizardRecord` asks the `"propose"` mode —
+ * all four go red or null.
+ */
+const wizardScope = (ctx: ResolverCtx): WizardScope => ({ allowedOrganizationIds: [ctx.orgA], user: JWT, conversationOrganizationId: ctx.orgA });
+
+export async function anOpenGrantAddDrawerIsItsUsersRecord(ctx: ResolverCtx): Promise<void> {
+  const record = await resolveWizardRecord(catalogEntry("userGrant.add")!, { id: "user-1" }, withUsers(ctx, userServices(ctx)), wizardScope(ctx));
+  expect(record).toStrictEqual({ catalogId: "userGrant.add", params: { id: "user-1" }, name: "Priya Rao", organizationId: ctx.orgA });
+}
+
+/** The user checks run; the grant check (which reads the body) does not. */
+export async function anOpenGrantAddDrawerNeverAsksTheGrantCheck(ctx: ResolverCtx): Promise<void> {
+  const services = userServices(ctx);
+  await resolveWizardRecord(catalogEntry("userGrant.add")!, { id: "user-1" }, withUsers(ctx, services), wizardScope(ctx));
+  expect(services.calls).toEqual([["requireManager"], ["requireManageableTarget", "user-1"]]);
+}
+
+export async function anOpenInstantiateWizardIsItsTemplatesRecord(ctx: ResolverCtx): Promise<void> {
+  const r = recorder({}, "location_admin");
+  const record = await resolveWizardRecord(catalogEntry("assetTemplate.instantiate")!, { id: ctx.assetTemplateA }, resolverWith(ctx, r.access), wizardScope(ctx));
+  expect(record).toStrictEqual({
+    catalogId: "assetTemplate.instantiate",
+    params: { id: ctx.assetTemplateA },
+    name: RESOLVER_NAMES.assetTemplateA,
+    organizationId: ctx.orgA,
+  });
+}
+
+/** The organization check still runs, and no site is asked (the body names none). */
+export async function anOpenInstantiateWizardAsksTheOrganizationCheckOnly(ctx: ResolverCtx): Promise<void> {
+  const r = recorder({}, "location_admin");
+  await resolveWizardRecord(catalogEntry("assetTemplate.instantiate")!, { id: ctx.assetTemplateA }, resolverWith(ctx, r.access), wizardScope(ctx));
+  expect(r.calls).toEqual([["requireMasterDataUser"], ["canManageOrganization", ctx.orgA]]);
+}
+
+/** The adjacent negative: a caller who does not manage the template's organization gets no record. */
+export async function anOpenInstantiateWizardOfAnUnmanagedOrganizationIsNotOpen(ctx: ResolverCtx): Promise<void> {
+  const r = recorder({ canManageOrganization: false }, "location_admin");
+  expect(
+    await resolveWizardRecord(catalogEntry("assetTemplate.instantiate")!, { id: ctx.assetTemplateA }, resolverWith(ctx, r.access), wizardScope(ctx)),
+  ).toBeNull();
 }

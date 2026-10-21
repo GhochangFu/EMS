@@ -57,8 +57,29 @@ export function aFillNeverSetsAPageFixedField(): void {
   const create = entry("dashboardTemplate.importStock");
   const steps = wizardStepsOf(create);
   const field = steps[0]?.fields[0] as string;
-  const filled = applyFill(create.id, steps, { [field]: A }, { catalogId: create.id, params: { code: "x" }, stepId: steps[0]?.id as string, values: { [field]: B } }, [field]);
-  expect(filled).toEqual({ [field]: A });
+  const filled = applyFill(
+    create.id,
+    steps,
+    { [field]: A, name: "kept" },
+    { catalogId: create.id, params: { code: "x" }, stepId: steps[0]?.id as string, values: { [field]: B, other: "y" } },
+    [field],
+  );
+  expect(filled).toBeNull();
+}
+
+/** Review C2. Mutation: return the copy when no field was applied — a no-op fill reads as a change. */
+export function aFillThatSetsNoFieldIsNull(): void {
+  const create = entry("dashboard.create");
+  const steps = wizardStepsOf(create);
+  expect(applyFill(create.id, steps, { name: "kept" }, { catalogId: create.id, params: {}, stepId: "basics", values: { notAField: "x" } })).toBeNull();
+}
+
+/** The adjacent positive: a page-fixed field beside a free one — only the free one is set. */
+export function aFillSetsOnlyTheFreeFieldsBesideAFixedOne(): void {
+  const create = entry("dashboard.create");
+  const steps = wizardStepsOf(create);
+  const filled = applyFill(create.id, steps, { name: "Fixed" }, { catalogId: create.id, params: {}, stepId: "basics", values: { name: "X", slug: "x" } }, ["name"]);
+  expect(filled).toEqual({ name: "Fixed", slug: "x" });
 }
 
 /** The adjacent positive: without `fixed`, the same fill sets the field. */

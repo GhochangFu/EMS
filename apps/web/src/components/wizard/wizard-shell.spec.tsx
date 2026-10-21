@@ -207,6 +207,14 @@ export function aPageFixedFieldIsNotFilled(): void {
   expect(h.values()).toEqual({ name: "Fixed", slug: "x" });
 }
 
+/** Review C2: a fill that sets no field leaves the wizard clean. Mutation: `applyFill` returns the copy → Cancel asks. */
+export function aFillThatSetsNothingLeavesTheWizardClean(): void {
+  const h = renderWizard("dashboard.create", { name: "Fixed" }, { fixedFields: ["name"] });
+  act(() => useWizardStore.getState().receiveFill({ catalogId: "dashboard.create", params: {}, stepId: "basics", values: { name: "X" } }, null));
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(h.onCancel).toHaveBeenCalledTimes(1);
+}
+
 /** Cancel leaves a clean wizard at once and asks before leaving a changed one. */
 export function cancelAsksOnlyWhenChanged(): void {
   const clean = renderWizard("dashboard.create");

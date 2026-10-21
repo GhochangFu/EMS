@@ -9,6 +9,7 @@ import {
   aLayoutFillReplacesTheCanvasRows,
   aLayoutFillTheRouteWouldRefuseShowsTheProblem,
   aSavedSlugFillMovesToTheNewEditPath,
+  aSavedSlugFillReplacesTheHistoryEntry,
   aSaveWithoutASlugFillSendsNoSlugKey,
   aSlugFillIsSentInTheSave,
   aSlugFillShowsOnBasics,
@@ -29,5 +30,6 @@ describe("F4.245 dashboard builder edit page — layout and slug fills (owner ru
   it("shows a slug fill read-only on Basics", () => aSlugFillShowsOnBasics());
   it("sends a slug fill in the save", () => aSlugFillIsSentInTheSave());
   it("moves to the new edit path after a renaming save", () => aSavedSlugFillMovesToTheNewEditPath());
+  it("replaces the history entry when a slug save moves the address", () => aSavedSlugFillReplacesTheHistoryEntry());
   it("sends no slug key in a save without a slug fill", () => aSaveWithoutASlugFillSendsNoSlugKey());
 });

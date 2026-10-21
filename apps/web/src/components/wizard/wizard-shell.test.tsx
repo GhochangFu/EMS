@@ -10,6 +10,7 @@ import {
   aFillForAnotherRecordIsNotTaken,
   aFillForThisEntryFillsItsStep,
   aMountedWizardRegistersItsRecord,
+  aFillThatSetsNothingLeavesTheWizardClean,
   aPageFixedFieldIsNotFilled,
   aWizardThatDoesNotNameItsRecordSaysSo,
   aSelectFirstPickReachesThePage,
@@ -43,6 +44,7 @@ describe("F3.85 PR 8 wizard shell — every catalog route is a stepper (ADR 0099
   it("F4.245: registers its record while mounted", () => aMountedWizardRegistersItsRecord());
   it("F4.245: says so when it does not name its record", () => aWizardThatDoesNotNameItsRecordSaysSo());
   it("F4.245: never fills a page-fixed field", () => aPageFixedFieldIsNotFilled());
+  it("F4.245 C2: a fill that sets no field leaves the wizard clean", () => aFillThatSetsNothingLeavesTheWizardClean());
   it("leaves a clean wizard at once", () => cancelAsksOnlyWhenChanged());
   it("asks before leaving a changed wizard", () => cancelAsksBeforeLeavingAChangedWizard());
   it("gives the page the new value of a select-first pick", () => aSelectFirstPickReachesThePage());

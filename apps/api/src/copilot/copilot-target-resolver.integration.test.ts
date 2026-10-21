@@ -8,6 +8,11 @@ import { asRole } from "../testing/role-urls";
 import {
   aCreateUnderAParentTakesTheParentsOrganization,
   aDashboardSlugIsFoundInTheAllowedSetOnly,
+  anOpenGrantAddDrawerIsItsUsersRecord,
+  anOpenGrantAddDrawerNeverAsksTheGrantCheck,
+  anOpenInstantiateWizardAsksTheOrganizationCheckOnly,
+  anOpenInstantiateWizardIsItsTemplatesRecord,
+  anOpenInstantiateWizardOfAnUnmanagedOrganizationIsNotOpen,
   aFleetRowLivesInTheBoundOrganization,
   aGrantLivesInItsTargetsOrganizationAndNeedsTheUsersHomeInScope,
   aGrantTargetUsesTheGrantsServicesChecks,
@@ -235,4 +240,11 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("F3.87 PR 5: resolves a mimic layout for an org admin in its organization only", () =>
     aMimicLayoutResolvesForAnOrgAdminInItsOrganizationOnly(ctx));
   it("F4.245: finds a dashboard by its slug in the allowed organizations only", () => aDashboardSlugIsFoundInTheAllowedSetOnly(ctx));
+  it("F4.245 C1: resolves an open grant-add drawer as its user's record", () => anOpenGrantAddDrawerIsItsUsersRecord(ctx));
+  it("F4.245 C1: never asks the grant check for an open grant-add drawer", () => anOpenGrantAddDrawerNeverAsksTheGrantCheck(ctx));
+  it("F4.245 C1: resolves an open instantiate wizard as its template's record", () => anOpenInstantiateWizardIsItsTemplatesRecord(ctx));
+  it("F4.245 C1: asks only the organization check for an open instantiate wizard", () =>
+    anOpenInstantiateWizardAsksTheOrganizationCheckOnly(ctx));
+  it("F4.245 C1: names no open instantiate wizard of an organization the caller does not manage", () =>
+    anOpenInstantiateWizardOfAnUnmanagedOrganizationIsNotOpen(ctx));
 });

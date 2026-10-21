@@ -451,10 +451,11 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
       setFilledSlug(null);
       setDetailsRound((current) => current + 1);
       // `F4.245` (owner ruling 2): a saved slug fill moved the address. The answer is cached under the
-      // new slug first, so the new path renders it without a refetch, then the router follows.
+      // new slug first, so the new path renders it without a refetch, then the router follows —
+      // replacing the entry, so Back never returns to the old address (stale, then a 404).
       if (next.slug !== slug) {
         queryClient.setQueryData(["dashboards", "detail", next.slug, next.organizationId], next);
-        navigate(editPath(next));
+        navigate(editPath(next), { replace: true });
       }
     },
     onError: (cause: Error) => setError(apiErrorMessage(cause)),

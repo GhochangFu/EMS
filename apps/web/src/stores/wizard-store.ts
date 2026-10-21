@@ -1,4 +1,4 @@
-import type { CopilotFillStepDto, CopilotOpenWizard } from "@bms/shared";
+import { COPILOT_OPEN_WIZARDS_MAX, type CopilotFillStepDto, type CopilotOpenWizard } from "@bms/shared";
 import { catalogEntry } from "@bms/shared/copilot";
 import { create } from "zustand";
 
@@ -32,7 +32,11 @@ type WizardFillState = {
   /** A mounted shell's record; returns the mount id `unregister` takes. */
   register: (key: string, wizard: CopilotOpenWizard) => number;
   unregister: (mount: number) => void;
-  /** The open records, one per key, for the dock to send with a turn. */
+  /**
+   * The open records, one per key, for the dock to send with a turn — at most
+   * `COPILOT_OPEN_WIZARDS_MAX`, the turn body's cap, the oldest dropped first
+   * (review: more would make every turn a 400).
+   */
   openWizards: () => CopilotOpenWizard[];
   /** A turn's fill; `waitPath` is the route the same turn's `open_page` sent the user to, or `null`. */
   receiveFill: (fill: CopilotFillStepDto, waitPath: string | null) => void;
@@ -74,7 +78,7 @@ export const useWizardStore = create<WizardFillState>((set, get) => ({
       seen.add(row.key);
       out.push(row.wizard);
     }
-    return out;
+    return out.slice(-COPILOT_OPEN_WIZARDS_MAX);
   },
   receiveFill: (fill, waitPath) =>
     set((state) => {

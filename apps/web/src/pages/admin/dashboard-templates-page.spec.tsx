@@ -551,3 +551,27 @@ export async function createSummaryNamesAnUnlistedOrganizationById(): Promise<vo
     `(ELEC) in ${unlisted}.`,
   );
 }
+
+/**
+ * `F4.245` review C2 — the import wizard's organization is the user's pick in
+ * a select, not the page's, so a copilot fill sets it. Mutation: put back
+ * `fixedFields={["organizationId"]}` — the select stays empty.
+ */
+export async function aStockImportFillSetsTheOrganization(): Promise<void> {
+  resetWizardStore();
+  stubApi();
+  renderPage();
+  const importButton = await screen.findByRole("button", { name: "Import Electrical (stock)" });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Import into organization" }), ORG_ID);
+  await userEvent.click(importButton);
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: "Organization" }), "");
+  act(() => {
+    useWizardStore
+      .getState()
+      .receiveFill(
+        { catalogId: "dashboardTemplate.importStock", params: { code: "electrical-default" }, stepId: "organization", values: { organizationId: ORG_ID } },
+        null,
+      );
+  });
+  expect((screen.getByRole("combobox", { name: "Organization" }) as HTMLSelectElement).value).toBe(ORG_ID);
+}

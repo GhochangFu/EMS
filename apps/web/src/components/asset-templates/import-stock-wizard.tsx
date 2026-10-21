@@ -97,8 +97,6 @@ export function ImportStockWizard({
         <WizardShell
           entry={wizardEntry("assetTemplate.importStock")}
           params={{ code: entry.code }}
-          // `F4.245` (critique C2): the organization is the page's; a fill never sets it.
-          fixedFields={["organizationId"]}
           values={values}
           onChange={update}
           renderStep={(step) =>
