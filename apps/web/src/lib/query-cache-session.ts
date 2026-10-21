@@ -20,7 +20,14 @@
  * app's cache for nothing. Both rules are transitions on `(state, prev)`, not
  * "the token is null now", so a later write while signed out does not clear
  * again.
+ *
+ * `F4.244`: the copilot session (`bms-copilot-session`, persisted since the
+ * owner ruling of 2026-10-20) belongs to the session too. {@link bindSessionStores}
+ * clears it on the same transitions, so every exit above removes the key with
+ * no code of its own; `main.tsx` binds through it.
  */
+
+import { clearCopilotSession } from "../stores/copilot-store";
 
 type SessionState = {
   readonly accessToken: string | null;
@@ -48,5 +55,19 @@ export function bindQueryCacheToSession<S extends SessionState>(
     if (sessionChanged(state, prev)) {
       client.clear();
     }
+  });
+}
+
+/**
+ * `F4.244` — every store that belongs to one session, cleared together on a
+ * session change of `store`: the Query cache `client` and the persisted
+ * copilot session. Returns the unsubscribe.
+ */
+export function bindSessionStores<S extends SessionState>(store: SessionStore<S>, client: { clear(): void }): () => void {
+  return bindQueryCacheToSession(store, {
+    clear() {
+      client.clear();
+      clearCopilotSession();
+    },
   });
 }

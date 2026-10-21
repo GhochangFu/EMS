@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 /**
  * `F3.85` PR 7 (review code:F2) — the copilot dock's session: which
@@ -15,9 +16,18 @@ import { create } from "zustand";
  * `copilotConversationKey(id)`, which outlives the unmount too. The open state
  * stays in `localStorage` (`bms-copilot-open`), read when the dock mounts.
  *
- * **Not persisted.** A page reload empties this store and the cache, so it
- * starts a new conversation. `fetchCopilotConversation` is the fallback for a
- * cache entry evicted while the dock was unmounted (over five minutes).
+ * **Persisted** (`F4.244`, owner ruling 2026-10-20, reversing the F3.85
+ * code:F2 choice). `userId`, `organizationId` and `conversationId` live in
+ * `localStorage` under {@link COPILOT_SESSION_KEY} (the `bms-auth` shape, ADR
+ * 0042 decision 2), so a reload and a new tab resume the same conversation.
+ * The Query cache still empties on a reload, so `fetchCopilotConversation`
+ * loads the thread then, as it does for an entry evicted while the dock was
+ * unmounted. The key holds three ids and no message text or token.
+ * {@link clearCopilotSession} removes it on every session exit (logout, a
+ * 401, JWT expiry, a failed `/me`, another user): `bindSessionStores` in
+ * `lib/query-cache-session.ts` calls it beside the cache clear. The clear is
+ * per tab: a second tab still signed in writes the key again on its next
+ * store write, and the `userId` rule below is the second line of defence.
  *
  * **Owned by one user.** `userId` records who started the session; the dock
  * reads the session only when it is the signed-in user's, so a second sign-in
@@ -68,29 +78,51 @@ const INITIAL = {
   onboardRequest: null,
 } as const;
 
-export const useCopilotStore = create<CopilotSessionState>()((set, get) => ({
-  ...INITIAL,
-  requestOnboarding: (userId, organizationId) => set({ onboardRequest: { userId, organizationId, at: Date.now() } }),
-  consumeOnboardRequest: (userId) => {
-    const request = get().onboardRequest;
-    if (request === null) return null;
-    set({ onboardRequest: null });
-    return request.userId === userId && Date.now() - request.at <= ONBOARD_REQUEST_TTL_MS ? request : null;
-  },
-  pick: (userId, organizationId) => set({ userId, organizationId, conversationId: null }),
-  setConversation: (userId, conversationId) => {
-    const state = get();
-    set({
-      userId,
-      organizationId: state.userId === userId ? state.organizationId : COPILOT_ALL_ORGANIZATIONS,
-      conversationId,
-    });
-  },
-}));
+/** The `localStorage` key of the persisted session (`F4.244`). */
+export const COPILOT_SESSION_KEY = "bms-copilot-session";
+
+export const useCopilotStore = create<CopilotSessionState>()(
+  persist(
+    (set, get) => ({
+      ...INITIAL,
+      requestOnboarding: (userId, organizationId) => set({ onboardRequest: { userId, organizationId, at: Date.now() } }),
+      consumeOnboardRequest: (userId) => {
+        const request = get().onboardRequest;
+        if (request === null) return null;
+        set({ onboardRequest: null });
+        return request.userId === userId && Date.now() - request.at <= ONBOARD_REQUEST_TTL_MS ? request : null;
+      },
+      pick: (userId, organizationId) => set({ userId, organizationId, conversationId: null }),
+      setConversation: (userId, conversationId) => {
+        const state = get();
+        set({
+          userId,
+          organizationId: state.userId === userId ? state.organizationId : COPILOT_ALL_ORGANIZATIONS,
+          conversationId,
+        });
+      },
+    }),
+    {
+      name: COPILOT_SESSION_KEY,
+      // The session only: the one-shot onboarding request stays in memory.
+      partialize: (state) => ({
+        userId: state.userId,
+        organizationId: state.organizationId,
+        conversationId: state.conversationId,
+      }),
+    },
+  ),
+);
+
+/** Ends the copilot session: back to no session, and the stored key removed (`F4.244`). */
+export function clearCopilotSession(): void {
+  useCopilotStore.setState({ ...INITIAL });
+  useCopilotStore.persist.clearStorage();
+}
 
 /** Back to no session — for a spec's `afterEach`, since the store is module-global. */
 export function resetCopilotStore(): void {
-  useCopilotStore.setState({ ...INITIAL });
+  clearCopilotSession();
 }
 
 /** The signed-in user's session; another user's reads as a fresh one. */

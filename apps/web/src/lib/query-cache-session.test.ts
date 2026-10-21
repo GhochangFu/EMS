@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
-import { describe, it } from "vitest";
+import { afterEach, describe, it } from "vitest";
 
+import { resetCopilotStore } from "../stores/copilot-store";
 import {
   clearsWhenTheSessionEnds,
   clearsWhenTheUserChanges,
   keepsTheCacheOnAnUnrelatedStoreChange,
   keepsTheCacheWhenMeResetsTheSameSession,
   keepsTheCacheWhenTheTokenIsRenewedForTheSameUser,
+  theCopilotSessionIsClearedWhenTheSessionEnds,
+  theCopilotSessionSurvivesASameUserRenewal,
 } from "./query-cache-session.spec";
 
 /**
@@ -14,6 +17,11 @@ import {
  * jsdom because `useAuthStore` persists to `localStorage`.
  */
 describe("F4.156 query cache bound to the session", () => {
+  // `F4.244`: the copilot cases store a session; none may reach the next case.
+  afterEach(() => {
+    resetCopilotStore();
+  });
+
   it("clears the cache when the session ends", () => {
     clearsWhenTheSessionEnds();
   });
@@ -32,5 +40,13 @@ describe("F4.156 query cache bound to the session", () => {
 
   it("keeps the cache on an unrelated store change", () => {
     keepsTheCacheOnAnUnrelatedStoreChange();
+  });
+
+  it("F4.244: clears the stored copilot session when the session ends", () => {
+    theCopilotSessionIsClearedWhenTheSessionEnds();
+  });
+
+  it("F4.244: keeps the stored copilot session on a same-user renewal", () => {
+    theCopilotSessionSurvivesASameUserRenewal();
   });
 });

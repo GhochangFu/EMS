@@ -1,7 +1,8 @@
 import { QueryClient } from "@tanstack/react-query";
 
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
-import { bindQueryCacheToSession } from "./query-cache-session";
+import { COPILOT_SESSION_KEY, useCopilotStore } from "../stores/copilot-store";
+import { bindQueryCacheToSession, bindSessionStores } from "./query-cache-session";
 
 /**
  * `F4.156` — the query cache belongs to one session.
@@ -114,6 +115,43 @@ export function keepsTheCacheOnAnUnrelatedStoreChange(): void {
     assert(client.getQueryData(KEY) === ROWS, "setScope keeps the cache");
     useAuthStore.getState().clearSession();
     assert(client.getQueryData(KEY) === undefined, "positive control: the binding is live");
+  } finally {
+    unbind();
+  }
+}
+
+/** Signs in as A, binds both stores through `bindSessionStores`, and stores a copilot session. */
+function copilotSessionOfA(): () => void {
+  useAuthStore.getState().clearSession();
+  useAuthStore.getState().setSession("token-a", USER_A, null, null);
+  const unbind = bindSessionStores(useAuthStore, new QueryClient());
+  useCopilotStore.getState().setConversation(USER_A.id, "33333333-3333-4333-8333-333333333333");
+  assert(window.localStorage.getItem(COPILOT_SESSION_KEY) !== null, "fixture: the copilot session is stored");
+  return unbind;
+}
+
+/**
+ * `F4.244` (critique F1): the session ending removes the stored copilot
+ * session — the one wiring `main.tsx` uses, gated here. Mutation: drop
+ * `clearCopilotSession()` from `bindSessionStores`.
+ */
+export function theCopilotSessionIsClearedWhenTheSessionEnds(): void {
+  const unbind = copilotSessionOfA();
+  try {
+    useAuthStore.getState().clearSession();
+    assert(window.localStorage.getItem(COPILOT_SESSION_KEY) === null, "the session end removes the copilot key");
+    assert(useCopilotStore.getState().conversationId === null, "the session end empties the copilot store");
+  } finally {
+    unbind();
+  }
+}
+
+/** The adjacent positive: a renewal for the same user keeps the copilot session. */
+export function theCopilotSessionSurvivesASameUserRenewal(): void {
+  const unbind = copilotSessionOfA();
+  try {
+    useAuthStore.getState().setSession("token-a-renewed", { ...USER_A }, null, null);
+    assert(window.localStorage.getItem(COPILOT_SESSION_KEY) !== null, "a same-user renewal keeps the copilot key");
   } finally {
     unbind();
   }
