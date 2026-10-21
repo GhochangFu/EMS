@@ -666,8 +666,9 @@
 > asset until `F3.70` (#574) made them redirects and deleted the gate
 > (`ControlRoomRoute`, `useControlRoomAccess`, `canAccessControlRoomPath`,
 > `hasAnyControlRoomAsset`). `F4.156` also clears
-> the query cache on any session change (`bindQueryCacheToSession` in
-> `main.tsx`), and makes `setSession` require the OIDC id token. **`F3.67`**
+> the query cache on any session change (`bindQueryCacheToSession`, wired in
+> `main.tsx` through `bindSessionStores` since `F4.244`, which also clears the
+> stored copilot session), and makes `setSession` require the OIDC id token. **`F3.67`**
 > (#558, squash `2c3fe9c7`) adds `bms.site_control_room_views` (migration
 > `0082`; no row = the generated view), `apps/api/src/control-room/` and the
 > one resolve read every later row consumes, `GET
@@ -978,7 +979,8 @@
 > only through the hash-bound `POST /api/v1/admin/onboarding/sessions/:id/commit`
 > (`draftHash` required since #833)
 > — the drawer's commit wizard (the Commit button) or the copilot's
-> `onboarding.commit` Confirm card. Each draft change the agent makes writes an
+> `onboarding.commit` Confirm card. Each draft change the agent makes, and since
+> `F4.135` each refused draft write (`Not applied: <tool>`), writes an
 > `action` message, a fourth `role` in `onboardingChatMessageSchema`. Three
 > providers sit behind one port: OpenAI, OpenRouter (the `openai` package at
 > its base URL) and Anthropic (`@anthropic-ai/sdk`, imported dynamically).
@@ -994,6 +996,14 @@
 > platform default) on the same provider and key: the resolver uses it only
 > for a copilot turn that carries a PNG, JPEG or WebP — a PDF or an `.svg`
 > stays on the main model — and the Test button checks both models.
+> **Since `F4.135` (ADR 0090 Amendment 4, #908 `8db60811`)** a refused call of
+> one of the 17 draft-write tools (`DRAFT_WRITE_TOOLS`) adds a code-written
+> `action` line on the agent path — `Not applied: <tool>`, plus ` (field: …)`
+> or ` (fields: …)` for a schema refusal, at most ten paths, each walked down
+> the tool's own schema so an undeclared segment (a record key) is `*` and the
+> line carries no argument value. A guard or tool refusal names the tool
+> only; the guided mode and the copilot keep their own lines, and the undo
+> checkpoint's label leaves the line out.
 > The setting has its own admin page and route group,
 > `/api/v1/admin/organizations/:orgId/ai-assistant` (§4.7's sixth gate). Next
 > under ADR 0090: `F3.22` is built under ADR 0091, and `F3.23`–`F3.27` (Track E)
@@ -1098,7 +1108,9 @@
 > over `runTool`), so they have the same caps, schemas, credential refusal and
 > action lines as the agent path; `onboarding-guided-coverage.spec.ts` fails
 > when a tool in `TOOL_DEFINITIONS` is neither guided-covered nor agent-only,
-> so **a new agent tool must be classified there**. **`F3.25`** (#756
+> so **a new agent tool must be classified there** — and since `F4.135` also
+> in `DRAFT_WRITE_TOOLS` or `NON_DRAFT_WRITE_TOOLS` (`onboarding-agent-tools.ts`),
+> which `onboarding-agent-loop.spec.ts` holds cover the registry. **`F3.25`** (#756
 > `e59140ec`, ADR 0094): migration `0101_onboarding_session_checkpoints` adds
 > the nullable `onboarding_sessions.checkpoints` jsonb, a ring of the last 10
 > pre-turn draft snapshots under a byte bound; a PATCH or the Excel upload
@@ -1246,7 +1258,8 @@
 > **ADR 0099 Amendment 1** (two usage counters, the organization's day
 > boundary) in #805 `eb85237e`; **Amendment 2** (a draft onboarding session is
 > resumed from the dock, and one untouched for 30 days is erased by the purge
-> tick; `F4.255`) in #837 `d00ead32`. **`F3.86`, release 2, and `F3.87`, release 3, are built (below).**
+> tick; `F4.255`) in #837 `d00ead32`. **`F3.86`, release 2, and `F3.87`, release 3, are built, and so are
+> Amendments 4–6 (`F4.245`, `F4.247`, `F4.244`) (all below).**
 > It promotes §6's general copilot item for `admin`, `organization_admin`,
 > `location_admin` and `asset_group_admin` only; operators and viewers get none. It answers
 > read-only questions within the user's own read scope and proposes admin
@@ -1272,7 +1285,10 @@
 > `contracts/asset-template-instantiate-writes.ts`, #838); the schema is
 > migrations `0104` (the availability switches), `0105` (the history and
 > pending-change tables) and `0106` (the two daily counters and
-> `bms.organizations.timezone`); the
+> `bms.organizations.timezone`); later columns: `0107`
+> (`copilot_conversations.onboarding_session_id`), `0110`
+> (`copilot_org_settings.attachments_enabled`) and `0115`
+> (`copilot_pending_changes.precondition`, `F4.247`); the
 > history tables bind to `app.current_user`, which `withUser` sets (§4.4). The
 > web mounts the dock in `layouts/app-shell.tsx`, and every catalog wizard
 > renders `components/wizard/wizard-shell.tsx`. Gates (seven `tests/` files):
@@ -1362,6 +1378,37 @@
 > **A turn that carries a PDF and no image** is told the PDF reaches it as
 > text only and asks for a drawing as an image; the composer and a failed
 > reply say the same (`F4.268`, #885).
+> **`F4.246`** (#910 `ffdff440`; ADR 0099 §3, owner ruling 2026-10-20, no
+> amendment): a change card keeps each value's 160-character summary and
+> expands a cut one to the full text, shows each formula of the body in full
+> beside its Now value, and `assetTemplate.update` reads its Now column; a
+> propose tool refuses a template entry whose target's status the route would
+> refuse, with the route's own 409 sentence
+> (`apps/api/src/copilot/copilot-template-lifecycle.ts` over
+> `packages/shared/src/contracts/template-lifecycle.ts`). **`F4.245`** (**ADR
+> 0099 Amendment 4**, #912 `7218b16b`): each turn names its open wizards
+> (`wizards: [{ catalogId, params }]`, at most 8); the server resolves each
+> record inside the conversation's scope (`copilot-open-wizards.ts`) and names
+> it to the model in a user-role block, never the system prompt; `fill_step`
+> names its record and is refused unless it equals an open wizard's or the
+> last `open_page`'s. The wizard context is never an authorization input, and
+> a page-fixed field is never filled. **`F4.247`** (**ADR 0099 Amendment 5**,
+> #914 `17afb2b1`; supersedes decision 4.9 for two entries):
+> `dashboard.widgets.replace` and `assetTemplate.update` store the target's
+> `updated_at` at propose time (`bms.copilot_pending_changes.precondition`,
+> migration `0115`), the Confirm sends it as `If-Match`, and the interceptor
+> refuses (409) and releases a change whose header is absent or another
+> instant. `PUT /dashboards/:id/widgets` and `PATCH /admin/asset-templates/:id`
+> answer a stale `If-Match` with 412 from any caller
+> (`apps/api/src/common/if-match.ts`); the manual pages send none yet
+> (`F4.273`). The read before the proposal stays open (Amendment 5 C5 a).
+> **`F4.244`** (**ADR 0099 Amendment 6**, #916 `b223260b`): the dock's session
+> — three ids, no text, no token — persists in
+> `localStorage["bms-copilot-session"]`, is read only for the same user, and
+> is cleared on every session exit by `bindSessionStores`; a 404 on load
+> starts afresh, and the conversation detail's
+> `awaitingFollowUp { changeId, status, ageMs }` re-arms the 60-second
+> follow-up wait after a reload or a route change.
 > EMQX and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
@@ -1766,7 +1813,7 @@ bms/
 │   │                            and components/map-subtree-filter.tsx is the
 │   │                            parent filter both maps share.
 │   │                            F3.85 (ADR 0099): components/copilot/ is the
-│   │                            dock (copilot-dock.tsx, 797 lines, mounted in
+│   │                            dock (copilot-dock.tsx, 946 lines, mounted in
 │   │                            layouts/app-shell.tsx) and its Confirm card,
 │   │                            over api/copilot.ts, copilot-confirm.ts and
 │   │                            copilot-current.ts, with lib/copilot-diff.ts,
@@ -1781,6 +1828,20 @@ bms/
 │   │                            lib/wizard-steps.ts; change-card.tsx is the
 │   │                            card both the Confirm card and a wizard's
 │   │                            Review step show.
+│   │                            F4.245: WizardShell takes a required params
+│   │                            prop and registers { catalogId, params } in
+│   │                            stores/wizard-store.ts, which hands a fill
+│   │                            only to its own key; lib/dashboard-builder-
+│   │                            fill.ts and dashboard-edit-path.ts carry
+│   │                            layout and slug fills to the dashboard pages;
+│   │                            lib/copilot-attachments.ts moved out of the
+│   │                            dock. F4.247: api/copilot-confirm.ts sends
+│   │                            If-Match. F4.244: copilot/use-conversation-
+│   │                            thread.ts holds the thread read and the
+│   │                            follow-up wait; stores/copilot-store.ts
+│   │                            persists the session (bms-copilot-session),
+│   │                            which lib/query-cache-session.ts's
+│   │                            bindSessionStores clears.
 │   ├── api/                   ← NestJS REST + WebSocket (incl. src/admin, src/security)
 │   │                            src/admin/asset-templates/ holds ADR 0015's
 │   │                            lifecycle + instantiation services, and
@@ -1897,7 +1958,15 @@ bms/
 │   │                            conversations, usage limits, the 30-day purge (history,
 │   │                            usage counters and, since F4.255, onboarding
 │   │                            drafts untouched for 30 days),
-│   │                            the turn service and the read tools in tools/.
+│   │                            the turn service and the read tools in tools/;
+│   │                            copilot-open-wizards.ts (F4.245) checks a
+│   │                            turn's open wizards and a fill's record,
+│   │                            copilot-template-lifecycle.ts (F4.246) refuses
+│   │                            a non-draft target at propose, and
+│   │                            copilot-awaiting-follow-up.ts (F4.244) composes
+│   │                            the detail's awaitingFollowUp.
+│   │                            src/common/if-match.ts (F4.247) parses If-Match
+│   │                            and answers the two list writes' 412.
 │   │                            src/database/user-context.ts is withUser
 │   │                            (§4.4), which the history and usage services
 │   │                            and the purge use.
@@ -2065,10 +2134,17 @@ bms/
 │   │                            (#822: location, rtu, asset, point-key,
 │   │                            asset-point, site-control-room-view,
 │   │                            site-layout), and F4.254's
-│   │                            asset-template-instantiate-writes.ts (#838), which tests/adr-0029-openapi-
-│   │                            contract.test.ts scans in a second walk.
+│   │                            asset-template-instantiate-writes.ts (#838),
+│   │                            which tests/adr-0029-openapi-contract.test.ts
+│   │                            scans in a second walk; and F4.247's
+│   │                            contracts/if-match.ts, the If-Match header
+│   │                            schema the two list-write routes and the
+│   │                            Confirm interceptor parse (ADR 0099
+│   │                            Amendment 5), which is not a *-writes.ts body.
 │   │                            src/copilot/ is the ADR 0099 action catalog
-│   │                            (catalog/) and canonical-json.ts, exported as
+│   │                            (catalog/), canonical-json.ts and, since
+│   │                            F4.244, outcome-line.ts (isCopilotOutcomeLine,
+│   │                            read by the dock's wait and the API), exported as
 │   │                            @bms/shared/copilot: an exports entry plus a
 │   │                            typesVersions entry, as for ./site-templates,
 │   │                            so the subpath also resolves under apps/api's
@@ -3597,7 +3673,8 @@ what the database will tell you has changed: since `F4.45`,
 
 **`F3.21` widened one enum and added one contract file** (ADR 0090).
 `onboardingChatMessageSchema.role` gained `action`, the code-written line for
-each draft change the agent makes, so a client that knows only `user`, `assistant` and `system`
+each draft change the agent makes (and, since `F4.135`, ADR 0090 Amendment 4,
+a `Not applied: <tool>` line for each refused draft write), so a client that knows only `user`, `assistant` and `system`
 must accept it; the onboarding skill panel
 (`components/copilot/onboarding-skill-panel.tsx`) is the one consumer outside
 `apps/api` (`onboarding-chat-page.tsx` was retired in `F3.86`). `packages/shared/src/contracts/ai-assistant.ts` holds the
@@ -4083,8 +4160,11 @@ These are intentionally deferred. Do not implement them yet:
   (content and publish since `F3.85`; ADR 0099 decision 3, the scope source).
   Migrate, seeded-rules reapply, default dashboards and migration preview stay
   manual for good (`F4.254` plan-gate ruling 2); the asset-point bulk update
-  stays on the page (ruling 3).
-  Live device discovery per adapter, `F3.24b`, is deferred to its own ADR)
+  stays on the page (ruling 3). Also still out: a copilot conversation list or
+  history page (ADR 0099 Amendment 6), and an `ETag` header or `If-Match` for
+  any other catalog entry (Amendment 5).
+  Live device discovery over MQTT is promoted by ADR 0103 (`F3.24b`); OPC-UA,
+  SNMP and REST discovery stay with `F1.4` / `F1.5`)
 - NERSA / ISO compliance reports
 - Kubernetes production manifests
 
