@@ -141,6 +141,7 @@ export async function aProposingTurnStoresOneDiscoveryCard(): Promise<void> {
       bodyHash: bodyHash(BODY),
       summary: undefined,
       risk: "create",
+      precondition: null, // F4.247: a server-made card has no precondition
     },
   ]);
 }

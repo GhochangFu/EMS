@@ -129,6 +129,7 @@ export async function aProposingTurnStoresOneCommitCard(): Promise<void> {
     bodyHash: bodyHash({ draftHash: HASH }),
     summary: undefined,
     risk: "create",
+    precondition: null, // F4.247: a server-made card has no precondition
   });
   expect(change.summary).toBe('Commit the onboarding draft for site "Plant 4". It creates 1 RTU, 2 assets and 0 mappings.');
   expect(response.pendingChanges.map((c) => [c.id, c.catalogId, c.body])).toEqual([[CHANGE_ID, "onboarding.commit", { draftHash: HASH }]]);
