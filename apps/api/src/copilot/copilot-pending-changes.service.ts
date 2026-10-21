@@ -54,6 +54,21 @@ export type FinishedChange = {
   summary: string;
 };
 
+/**
+ * `F4.244` — the conversation's newest change its Confirm request recorded:
+ * what the dock's follow-up wait needs. `finishedAtMs` is `finished_at` in
+ * epoch milliseconds, floored, for the compare with a message's `createdAt`;
+ * `ageMs` is the server's `now() - finished_at`, the only time the dock sees.
+ */
+export type LatestFinishedChange = {
+  id: string;
+  status: PendingChangeOutcome;
+  resultStatus: number | null;
+  summary: string;
+  finishedAtMs: number;
+  ageMs: number;
+};
+
 /** Drafter choice 1: a proposal can be confirmed for this long. */
 export const PENDING_CHANGE_TTL_MINUTES = 15;
 
@@ -295,6 +310,59 @@ export class CopilotPendingChangesService {
           resultStatus: row.result_status,
           resourceId: row.resource_id,
           summary: row.summary,
+        }
+      : null;
+  }
+
+  /**
+   * `F4.244` — the conversation's newest `applied` or `failed` change that its
+   * Confirm request recorded, finished within {@link STUCK_AFTER_MINUTES}
+   * minutes; `null` when there is none. The controller tells from the thread
+   * whether its outcome line is stored yet (`awaitingFollowUp`).
+   *
+   * - **`result_status IS NOT NULL`.** Only `record()` sets it; `sweepStuck`
+   *   never does. A swept row can still get a follow-up — the interceptor's
+   *   `record()` matches no row after a sweep but its `.then` starts the
+   *   follow-up anyway (`copilot-change.interceptor.ts`) — so the exclusion
+   *   does not claim that none runs: it means the dock does not wait for it.
+   * - **The stuck window, reused on purpose.** A follow-up older than five
+   *   minutes is dead (its turn deadline is 45 seconds); the dock waits 60.
+   * - **Epoch milliseconds, floored.** A message's `createdAt` reaches the
+   *   compare as `toISOString()`, a `Date` already truncated to the
+   *   millisecond. Flooring `finished_at` too means `created_at >= finished_at`
+   *   at the microsecond implies it at the millisecond; a rounding form (such
+   *   as `to_char(… 'MS')`) would miss a line stored in the same millisecond.
+   */
+  async latestFinished(userId: string, conversationId: string): Promise<LatestFinishedChange | null> {
+    const { rows } = await withUser(this.tenantDb, userId, (tx) =>
+      tx.execute<{
+        id: string;
+        status: PendingChangeOutcome;
+        result_status: number | null;
+        summary: string;
+        finished_at_ms: string;
+        age_ms: number;
+      }>(sql`
+        SELECT id, status, result_status, summary,
+               floor(extract(epoch FROM finished_at) * 1000)::bigint::text AS finished_at_ms,
+               greatest(0, floor(extract(epoch FROM (now() - finished_at)) * 1000))::int AS age_ms
+          FROM bms.copilot_pending_changes
+         WHERE user_id = ${userId} AND conversation_id = ${conversationId}
+           AND status IN ('applied', 'failed')
+           AND result_status IS NOT NULL
+           AND finished_at > now() - make_interval(mins => ${STUCK_AFTER_MINUTES})
+         ORDER BY finished_at DESC
+         LIMIT 1`),
+    );
+    const row = rows[0];
+    return row
+      ? {
+          id: row.id,
+          status: row.status,
+          resultStatus: row.result_status,
+          summary: row.summary,
+          finishedAtMs: Number(row.finished_at_ms),
+          ageMs: row.age_ms,
         }
       : null;
   }

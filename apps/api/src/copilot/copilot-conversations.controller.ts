@@ -38,6 +38,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { COPILOT_UNAVAILABLE_MESSAGE, CopilotAccessGuard, CopilotIdentity } from "./copilot-access.guard";
 import type { UploadedAttachment } from "./copilot-attachments";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
+import { awaitingFollowUp } from "./copilot-awaiting-follow-up";
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import { liveOpenChanges } from "./copilot-onboarding-commit";
 import { checkOpenWizards, parseWizardsField } from "./copilot-open-wizards";
@@ -149,7 +150,10 @@ export class CopilotConversationsController {
   /**
    * The conversation, its open changes and its skill: `skillOf` gets the bound
    * session id (or null) and answers the state, `null`, or `undefined` for a
-   * plain conversation, which carries no `skill` key.
+   * plain conversation, which carries no `skill` key. `F4.244`: always the
+   * `awaitingFollowUp` key — the follow-up the dock still waits for, or `null`
+   * — so a dock that mounts after a Confirm (a route change, a reload, a new
+   * tab) holds Send until that follow-up's outcome line is stored.
    */
   private async detail(
     identity: ResolvedIdentity,
@@ -164,7 +168,13 @@ export class CopilotConversationsController {
     const open = await this.pendingChanges.listOpen(identity.id, conversationId);
     // F3.86 PR 6 review: a commit card with no draft skill behind it is rejected, and not shown.
     const pendingChanges = await liveOpenChanges(this.pendingChanges, identity.id, open, skill?.session.status === "draft");
-    return { ...conversation, pendingChanges, ...(skill !== undefined ? { skill } : {}) };
+    const latest = await this.pendingChanges.latestFinished(identity.id, conversationId);
+    return {
+      ...conversation,
+      pendingChanges,
+      awaitingFollowUp: awaitingFollowUp(latest, conversation.messages),
+      ...(skill !== undefined ? { skill } : {}),
+    };
   }
 
   /**

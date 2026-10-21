@@ -12,7 +12,7 @@ import type { CopilotAvailabilityService } from "./copilot-availability.service"
 import { OPEN_WIZARD_INVALID_ERROR, OPEN_WIZARDS_JSON_ERROR } from "./copilot-open-wizards";
 import { CopilotConversationsController } from "./copilot-conversations.controller";
 import { CopilotConversationsService } from "./copilot-conversations.service";
-import type { CopilotPendingChangesService } from "./copilot-pending-changes.service";
+import type { CopilotPendingChangesService, LatestFinishedChange } from "./copilot-pending-changes.service";
 import type { CopilotTurnService } from "./copilot-turn.service";
 import { SPEC_JWT, UNUSED_SKILL_SERVICE } from "../testing/copilot-onboarding-fakes";
 
@@ -348,11 +348,57 @@ export async function assertTheDetailCarriesTheOpenChanges(): Promise<void> {
       asked.push([userId, id]);
       return [card];
     },
+    latestFinished: async () => null,
   } as unknown as CopilotPendingChangesService;
   const controller = new CopilotConversationsController(conversations, availabilityFake().service, pending, turnsFake().service, UNUSED_SKILL_SERVICE);
   const detail = await controller.get(conversationId, identityFor("admin", null), SPEC_JWT);
   expect(detail.pendingChanges).toEqual([card]);
   expect(asked).toEqual([[USER_ID, conversationId]]);
+}
+
+/** `F4.244`: a detail controller whose `latestFinished` answers `latest`; it records what it was asked. */
+function detailControllerWith(latest: LatestFinishedChange | null) {
+  const conversationId = "33333333-3333-4333-8333-333333333333";
+  const asked: Array<[string, string]> = [];
+  const conversations = {
+    get: async () => ({ id: conversationId, organizationId: null, title: null, createdAt: "x", lastTurnAt: "x", messages: [] }),
+  } as unknown as CopilotConversationsService;
+  const pending = {
+    sweepStuck: async () => 0,
+    listOpen: async () => [],
+    latestFinished: async (userId: string, id: string) => {
+      asked.push([userId, id]);
+      return latest;
+    },
+  } as unknown as CopilotPendingChangesService;
+  const controller = new CopilotConversationsController(conversations, availabilityFake().service, pending, turnsFake().service, UNUSED_SKILL_SERVICE);
+  return { controller, conversationId, asked };
+}
+
+/** `F4.244`: the detail names the change whose follow-up has not stored its outcome line. Mutation: never call `latestFinished`. */
+export async function assertTheDetailCarriesTheAwaitingFollowUp(): Promise<void> {
+  const latest: LatestFinishedChange = {
+    id: "c-9",
+    status: "applied",
+    resultStatus: 200,
+    summary: "Publish it.",
+    finishedAtMs: Date.parse("2026-10-21T10:00:00.000Z"),
+    ageMs: 1_200,
+  };
+  const h = detailControllerWith(latest);
+  const detail = await h.controller.get(h.conversationId, identityFor("admin", null), SPEC_JWT);
+  expect(detail.awaitingFollowUp).toEqual({ changeId: "c-9", status: "applied", ageMs: 1_200 });
+  expect(h.asked).toEqual([[USER_ID, h.conversationId]]);
+}
+
+/**
+ * `F4.244`: the key is always sent, `null` when nothing is awaited — the gate against the schema's
+ * `.optional()` hiding a missing producer. Mutation: spread the key only when it is not null.
+ */
+export async function assertTheDetailAlwaysCarriesTheAwaitingFollowUpKey(): Promise<void> {
+  const h = detailControllerWith(null);
+  const detail = await h.controller.get(h.conversationId, identityFor("admin", null), SPEC_JWT);
+  expect(detail).toHaveProperty("awaitingFollowUp", null);
 }
 
 /** `F3.87` PR 7: a JSON turn hands the service no files. */

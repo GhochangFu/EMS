@@ -49,6 +49,7 @@ function routes(boundSessionId: string | null, options: { state?: CopilotSkillSt
       record.discardUsers.push(userId);
       record.discarded.push([...ids]);
     },
+    latestFinished: async () => null,
   };
   const skills = {
     stateOf: async (user: JwtPayload, sessionId: string | null) => {
