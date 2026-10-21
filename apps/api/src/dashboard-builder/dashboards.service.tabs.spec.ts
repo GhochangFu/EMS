@@ -98,9 +98,13 @@ function countingTenantDb(): { db: BmsDb; calls: () => number } {
   return { db, calls: () => count };
 }
 
-/** A transaction whose every read answers `[]`: this dashboard stores no tab, no widget. */
+/**
+ * A transaction whose every read answers `[]`: this dashboard stores no tab, no widget. `F4.247`:
+ * the conditional stamp (`update … returning`), the transaction's first write, finds its row.
+ */
 function emptyStoreTenantDb(): BmsDb {
-  const tx = { execute: async () => undefined, select: () => chain([]) };
+  const stamped = { set: () => ({ where: () => ({ returning: async () => [{ id: "stamped" }] }) }) };
+  const tx = { execute: async () => undefined, select: () => chain([]), update: () => stamped };
   return {
     transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),
   } as unknown as BmsDb;

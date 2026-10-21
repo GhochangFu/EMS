@@ -19,6 +19,7 @@ import type {
   AdminAssetTemplateDto,
   AdminAssetTemplateSummaryDto,
   AssetTemplateStatus,
+  IfMatch,
   JwtPayload,
   TemplateDraftRequiredVerb,
   TemplateLifecycleStatus,
@@ -27,6 +28,7 @@ import type {
 import { AccessControlService } from "../../auth/access-control.service";
 import { resolveActorId } from "../../auth/identity-resolver";
 import { CalcParametersService } from "../../calc/calc-parameters.service";
+import { noRowWritten, updatedAtMatches } from "../../common/if-match";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { type BmsTx, withTenant } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -220,11 +222,15 @@ export class AssetTemplatesAdminService {
    * decision, not a permission check: instantiated `asset_points` rows are
    * physical wiring that `apps/ingest` and the rule engine read, so a template
    * edit must never reach assets already built from it. Use `createDraftFrom`.
+   *
+   * `F4.247` (ADR 0099 Amendment 5 C3): `ifMatch`, the `If-Match` header, makes the write
+   * conditional on the row's `updated_at` — a stale one is a 412 that writes nothing.
    */
   async update(
     jwt: JwtPayload,
     id: string,
     body: UpdateAssetTemplateBody,
+    ifMatch?: IfMatch,
   ): Promise<AdminAssetTemplateDto> {
     const { template } = await this.fetchRow(id);
     await this.assertCanAuthor(jwt, template.organizationId);
@@ -249,7 +255,7 @@ export class AssetTemplatesAdminService {
     }
 
     await withTenant(this.tenantDb, template.organizationId, async (tx) => {
-      await tx
+      const [written] = await tx
         .update(assetTemplates)
         .set({
           name: body.name ?? template.name,
@@ -260,7 +266,11 @@ export class AssetTemplatesAdminService {
           content: body.content ?? (template.content as Record<string, unknown>),
           updatedAt: new Date(),
         })
-        .where(eq(assetTemplates.id, id));
+        .where(and(eq(assetTemplates.id, id), updatedAtMatches(assetTemplates.updatedAt, ifMatch)))
+        .returning({ id: assetTemplates.id });
+      // `F4.247`: a stale `If-Match` touches no row — a 412 before the points or the audit row (the
+      // throw rolls the transaction back).
+      if (!written) throw noRowWritten(ifMatch, "Asset template not found");
 
       if (body.points) {
         await this.replacePoints(tx, id, template.organizationId, body.points);

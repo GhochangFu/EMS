@@ -29,6 +29,7 @@ import type {
   DashboardDto,
   DashboardSummaryDto,
   DashboardWidgetSourceDto,
+  IfMatch,
   JwtPayload,
   CreateDashboardBody,
   PutDashboardWidgetsBody,
@@ -36,6 +37,7 @@ import type {
 } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { noRowWritten, updatedAtMatches } from "../common/if-match";
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
@@ -507,8 +509,12 @@ export class DashboardsService {
     });
   }
 
-  /** `PUT :id/widgets` — D2: the whole set, written whole, one transaction. */
-  async putWidgets(jwt: JwtPayload, id: string, body: PutDashboardWidgetsBody): Promise<DashboardDto> {
+  /**
+   * `PUT :id/widgets` — D2: the whole set, written whole, one transaction. `F4.247` (ADR 0099
+   * Amendment 5 C3): `ifMatch`, the `If-Match` header, makes the write conditional on the row's
+   * `updated_at` — a stale one is a 412 that writes nothing.
+   */
+  async putWidgets(jwt: JwtPayload, id: string, body: PutDashboardWidgetsBody, ifMatch?: IfMatch): Promise<DashboardDto> {
     await this.accessControl.assertOperationsWriteRole(jwt, "configuration");
     const existing = await this.fetchRowForWrite(id);
     const scope: DashboardScope = {
@@ -545,6 +551,16 @@ export class DashboardsService {
     }
 
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {
+      // `F4.247` — the stamp first, and conditional: a stale `If-Match` touches no row, so it is a
+      // 412 before any read or write (the throw rolls the transaction back; no audit row). It also
+      // row-locks the dashboard, so two saves of one dashboard run one after the other.
+      const [stamped] = await tx
+        .update(dashboards)
+        .set({ updatedAt: new Date() })
+        .where(and(eq(dashboards.id, id), updatedAtMatches(dashboards.updatedAt, ifMatch)))
+        .returning({ id: dashboards.id });
+      if (!stamped) throw noRowWritten(ifMatch, "Dashboard not found");
+
       // `F3.73` — the stored tabs, read on this transaction, and the two tab guards before any
       // write: a body tab id must be one of them, and every named group must be at the site.
       const storedTabs = await readDashboardTabs(tx, id, existing.organizationId);
@@ -677,8 +693,6 @@ export class DashboardsService {
         await this.insertPoints(tx, existing.organizationId, row.id, widget.points);
         await this.insertSources(tx, existing.organizationId, row.id, widget.sources);
       }
-
-      await tx.update(dashboards).set({ updatedAt: new Date() }).where(eq(dashboards.id, id));
 
       await this.audit.write(
         {
