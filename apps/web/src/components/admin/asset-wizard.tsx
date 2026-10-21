@@ -265,6 +265,7 @@ export function AssetWizard(props: AssetWizardProps) {
         <WizardShell
           key={`update-${editing.id}`}
           entry={wizardEntry("asset.update")}
+          params={{ id: editing.id }}
           values={values}
           onChange={(next) => setForm(assetFormWithValues(form, next))}
           renderStep={renderStep}
@@ -299,6 +300,7 @@ export function AssetWizard(props: AssetWizardProps) {
       <WizardShell
         key="create"
         entry={wizardEntry("asset.create")}
+        params={{}}
         values={values}
         onChange={(next) => setForm(assetFormWithValues(form, next))}
         renderStep={renderStep}

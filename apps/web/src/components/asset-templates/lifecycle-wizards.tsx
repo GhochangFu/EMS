@@ -73,6 +73,7 @@ export function AssetTemplateLifecycleWizard({
           <WizardShell
             key="publish"
             entry={wizardEntry("assetTemplate.publish")}
+            params={{ id: template.id }}
             {...shared}
             current={null}
             summary={`Publish ${template.name} v${template.version}. A published version is frozen; editing it again makes a new draft.`}
@@ -87,6 +88,7 @@ export function AssetTemplateLifecycleWizard({
             <WizardShell
               key="archive"
               entry={wizardEntry("assetTemplate.archive")}
+              params={{ id: template.id }}
               {...shared}
               summary={wizardEntry("assetTemplate.archive").summary(context)}
             />
@@ -96,6 +98,7 @@ export function AssetTemplateLifecycleWizard({
           <WizardShell
             key="createDraft"
             entry={wizardEntry("assetTemplate.draft")}
+            params={{ id: template.id }}
             {...shared}
             summary={wizardEntry("assetTemplate.draft").summary(context)}
           />

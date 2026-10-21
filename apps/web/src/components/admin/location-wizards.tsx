@@ -356,6 +356,7 @@ export function LocationWizard(props: LocationWizardProps) {
         <WizardShell
           key={`update-${editing.id}`}
           entry={wizardEntry("location.update")}
+          params={{ id: editing.id }}
           values={values}
           onChange={(next) => setForm(locationFormWithValues(form, next))}
           renderStep={renderStep}
@@ -386,6 +387,7 @@ export function LocationWizard(props: LocationWizardProps) {
         <WizardShell
           key="create"
           entry={wizardEntry("location.create")}
+          params={{}}
           values={values}
           onChange={(next) => setForm(locationFormWithValues(form, next))}
           renderStep={renderStep}
@@ -447,6 +449,7 @@ export function LocationStatusWizard({
           key={`deactivate-${target.id}`}
           {...shared}
           entry={wizardEntry("location.deactivate")}
+          params={{ id: target.id }}
           summary={wizardEntry("location.deactivate").summary(context)}
         />
       </AdminWizardFrame>
@@ -458,6 +461,7 @@ export function LocationStatusWizard({
         key={`reactivate-${target.id}`}
         {...shared}
         entry={wizardEntry("location.reactivate")}
+        params={{ id: target.id }}
         summary={wizardEntry("location.reactivate").summary(context)}
       />
     </AdminWizardFrame>

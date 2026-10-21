@@ -615,7 +615,7 @@ export async function aLocationFillAfterAGroupChoiceChoosesTheLocation(): Promis
   await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), GRP_1);
 
   act(() => {
-    useWizardStore.getState().receiveFill({ catalogId: "dashboard.create", stepId: "scope", values: { locationId: LOC_1 } });
+    useWizardStore.getState().receiveFill({ catalogId: "dashboard.create", params: {}, stepId: "scope", values: { locationId: LOC_1 } }, null);
   });
 
   expect(await screen.findByRole("radio", { name: "Location", checked: true })).toBeInTheDocument();
@@ -651,10 +651,10 @@ export async function anOrganizationWideFillOnReviewDoesNotCreateForALocationAdm
   const createSpy = await locationAdminReachesReview();
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "dashboard.create",
+      catalogId: "dashboard.create", params: {},
       stepId: "scope",
       values: { locationId: null, assetGroupId: null },
-    });
+    }, null);
   });
   await userEvent.click(within(createWizard()).getByRole("button", { name: "Submit" }));
   expect(createSpy).not.toHaveBeenCalled();

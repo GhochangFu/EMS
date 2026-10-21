@@ -517,7 +517,7 @@ async function openCreateWithFill(stepId: string, values: Record<string, unknown
   renderPage();
   await userEvent.click(await screen.findByRole("button", { name: "New template" }));
   act(() => {
-    useWizardStore.getState().receiveFill({ catalogId: "dashboardTemplate.create", stepId, values });
+    useWizardStore.getState().receiveFill({ catalogId: "dashboardTemplate.create", params: {}, stepId, values }, null);
   });
 }
 

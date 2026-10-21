@@ -618,17 +618,17 @@ export async function aGroupBodyOnASiteTemplateIsRefusedBeforeTheWire(): Promise
   await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "dashboardTemplate.instantiate",
+      catalogId: "dashboardTemplate.instantiate", params: { id: TEMPLATE_ID },
       stepId: "target",
       values: { assetGroupId: GROUP_ID },
-    });
+    }, null);
   });
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "dashboardTemplate.instantiate",
+      catalogId: "dashboardTemplate.instantiate", params: { id: TEMPLATE_ID },
       stepId: "details",
       values: { name: "Plant one", slug: "plant-one" },
-    });
+    }, null);
   });
   await next();
   await next();
@@ -654,10 +654,10 @@ export async function aSiteBodyOnAGroupTemplateIsRefusedBeforeTheWire(): Promise
   await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "dashboardTemplate.instantiate",
+      catalogId: "dashboardTemplate.instantiate", params: { id: TEMPLATE_ID },
       stepId: "target",
       values: { locationId: LOC_1 },
-    });
+    }, null);
   });
   await next();
   await userEvent.clear(screen.getByRole("textbox", { name: "Name" }));
@@ -683,10 +683,10 @@ export async function anOrganizationWideFillOnARoleBoundTemplateIsRefused(): Pro
   await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "dashboardTemplate.instantiate",
+      catalogId: "dashboardTemplate.instantiate", params: { id: TEMPLATE_ID },
       stepId: "target",
       values: { assetGroupId: null },
-    });
+    }, null);
   });
   await next();
   await userEvent.type(screen.getByRole("textbox", { name: "Slug" }), "electrical-p1");
@@ -726,10 +726,10 @@ export async function siteTargetShowsAFilledTabGroups(): Promise<void> {
   await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "dashboardTemplate.instantiate",
+      catalogId: "dashboardTemplate.instantiate", params: { id: TEMPLATE_ID },
       stepId: "target",
       values: { tabGroups: { sld: "33333333-3333-4333-8333-333333333333" } },
-    });
+    }, null);
   });
 
   expect(screen.getByRole("region", { name: "Target" }).textContent).toContain(

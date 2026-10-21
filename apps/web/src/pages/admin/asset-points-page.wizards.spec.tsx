@@ -220,7 +220,7 @@ export async function aFillFillsItsStepOnly(): Promise<void> {
   act(() => {
     useWizardStore
       .getState()
-      .receiveFill({ catalogId: "assetPoint.create", stepId: "instrument", values: { scaleMultiplier: 0.5, sourceDataKey: "HIJACK" } });
+      .receiveFill({ catalogId: "assetPoint.create", params: {}, stepId: "instrument", values: { scaleMultiplier: 0.5, sourceDataKey: "HIJACK" } }, null);
   });
   await waitFor(() => expect((screen.getByLabelText("Scale multiplier") as HTMLInputElement).value).toBe("0.5"));
   await userEvent.click(screen.getByRole("button", { name: "Back" }));

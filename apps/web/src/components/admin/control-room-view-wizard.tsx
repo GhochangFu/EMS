@@ -151,6 +151,7 @@ export function ControlRoomViewWizard({ location, canSetBuiltin, onClose }: Cont
     content = (
       <WizardShell
         entry={wizardEntry("location.controlRoomView.set")}
+        params={{ id: location.id }}
         values={values}
         onChange={(next) => {
           setError(null);

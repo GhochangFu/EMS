@@ -291,6 +291,7 @@ export function InstantiateWizard({
         {answer === null ? (
           <WizardShell
             entry={catalogEntry("dashboardTemplate.instantiate")!}
+            params={{ id: template.id }}
             values={values}
             onChange={update}
             renderStep={renderStep}

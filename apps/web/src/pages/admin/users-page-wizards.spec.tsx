@@ -316,10 +316,10 @@ export async function aFillOfANewKindKeepsItsTarget(): Promise<void> {
   renderPage();
   const drawer = await openGrants();
   useWizardStore.getState().receiveFill({
-    catalogId: "userGrant.add",
+    catalogId: "userGrant.add", params: { id: LINKED_ID },
     stepId: "grant",
     values: { kind: "organization", targetId: ORG_ID },
-  });
+  }, null);
   await userEvent.click(await within(drawer).findByRole("button", { name: "Next" }));
   await userEvent.click(await within(drawer).findByRole("button", { name: "Submit" }));
   await waitFor(() => {

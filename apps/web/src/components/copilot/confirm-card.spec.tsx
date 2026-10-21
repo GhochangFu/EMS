@@ -3,7 +3,7 @@ import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
 import type { CopilotPendingChangeDto } from "@bms/shared";
-import { COPILOT_CHANGE_REFUSED_MESSAGE, COPILOT_UNAVAILABLE_MESSAGE } from "@bms/shared/copilot";
+import { catalogEntry, COPILOT_CHANGE_REFUSED_MESSAGE, COPILOT_UNAVAILABLE_MESSAGE } from "@bms/shared/copilot";
 
 import * as templatesApi from "../../api/admin/dashboard-templates";
 import * as copilotApi from "../../api/copilot";
@@ -11,6 +11,7 @@ import * as confirmApi from "../../api/copilot-confirm";
 import * as currentApi from "../../api/copilot-current";
 import * as loginApi from "../../api/login";
 import { ApiError } from "../../lib/api-error";
+import { openWizardKey } from "../../lib/wizard-steps";
 import { useAuthStore } from "../../stores/auth-store";
 import { useCopilotStore } from "../../stores/copilot-store";
 import { useWizardStore } from "../../stores/wizard-store";
@@ -503,10 +504,12 @@ export async function aCopilotLocationRenameKeepsTheScope(): Promise<void> {
 /** A turn's `fillStep` goes to the wizard store for an open wizard. */
 export async function aFillStepReachesTheWizardStore(): Promise<void> {
   const stubs = stub();
-  const fill = { catalogId: "dashboard.create", stepId: "basics", values: { name: "Main" } };
+  const fill = { catalogId: "dashboard.create", params: {}, stepId: "basics", values: { name: "Main" } };
+  const key = openWizardKey(catalogEntry("dashboard.create")!, {});
+  useWizardStore.getState().register(key!, { catalogId: "dashboard.create", params: {} });
   stubs.turn.mockResolvedValueOnce({ ...answered("name it Main", "Filled."), fillStep: fill });
   renderDock("admin");
   await openPanel();
   await send("name it Main");
-  await waitFor(() => expect(useWizardStore.getState().fill).toEqual(fill));
+  await waitFor(() => expect(useWizardStore.getState().waiting?.fill).toEqual(fill));
 }

@@ -222,6 +222,7 @@
     "tests/f3.85-copilot-interceptor-wiring.test.ts",
     "tests/f3.85-catalog-coverage.test.ts",
     "tests/f3.85-stepper-coverage.test.ts",
+    "tests/f4.245-wizard-record-params.test.ts",
     "tests/f3.25-onboarding-session-checkpoints-schema.test.ts",
     "tests/f3.78-users-admin-reachable.test.ts",
     "tests/f3.22-template-cores.test.ts",

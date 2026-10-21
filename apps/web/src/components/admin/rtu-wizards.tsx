@@ -270,6 +270,7 @@ export function RtuWizard(props: RtuWizardProps) {
         <WizardShell
           key={`update-${editing.id}`}
           entry={wizardEntry("rtu.update")}
+          params={{ id: editing.id }}
           values={values}
           onChange={(next) => setForm(rtuFormWithValues(form, next))}
           renderStep={renderStep}
@@ -305,6 +306,7 @@ export function RtuWizard(props: RtuWizardProps) {
       <WizardShell
         key="create"
         entry={wizardEntry("rtu.create")}
+        params={{}}
         values={values}
         onChange={(next) => setForm(rtuFormWithValues(form, next))}
         renderStep={renderStep}
@@ -352,6 +354,7 @@ export function RtuStatusWizard({
           key={`deactivate-${target.id}`}
           {...shared}
           entry={wizardEntry("rtu.deactivate")}
+          params={{ id: target.id }}
           summary={wizardEntry("rtu.deactivate").summary(context)}
         />
       </AdminWizardFrame>
@@ -363,6 +366,7 @@ export function RtuStatusWizard({
         key={`reactivate-${target.id}`}
         {...shared}
         entry={wizardEntry("rtu.reactivate")}
+        params={{ id: target.id }}
         summary={wizardEntry("rtu.reactivate").summary(context)}
       />
     </AdminWizardFrame>

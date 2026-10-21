@@ -97,6 +97,7 @@ export function SymbolUploadWizard({ library, onCancel, onDone }: Done & { libra
       </label>
       <WizardShell
         entry={wizardEntry("mimicSymbol.upload")}
+        params={{ id: library.id }}
         values={values}
         onChange={setValues}
         renderStep={() => (
@@ -164,6 +165,7 @@ export function SymbolUpdateWizard({
     <AdminWizardFrame title={`Edit ${symbol.label}`}>
       <WizardShell
         entry={wizardEntry("mimicSymbol.update")}
+        params={{ id: library.id, symbolId: symbol.id }}
         values={values}
         onChange={setValues}
         renderStep={() => (

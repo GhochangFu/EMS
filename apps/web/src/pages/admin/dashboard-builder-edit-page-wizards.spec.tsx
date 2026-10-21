@@ -64,7 +64,7 @@ export async function theDetailsReviewShowsTheStoredNameBesideTheNewOne(): Promi
  * it. Mutation: render the wizards on `dto` alone (drop `seededFor === dto.id`) => red. */
 export async function aFillWaitingForTheLoadIsNotOverwrittenByTheSeed(): Promise<void> {
   stubLoads({ dto: DTO, groups: [GROUP] });
-  useWizardStore.getState().receiveFill({ catalogId: "dashboard.update", stepId: "basics", values: { name: "Chiller plant" } });
+  useWizardStore.getState().receiveFill({ catalogId: "dashboard.update", params: { id: DTO.id }, stepId: "basics", values: { name: "Chiller plant" } }, "/admin/dashboards/site-a-overview");
   renderPage(asUser("admin"));
 
   const region = await screen.findByRole("region", { name: "Dashboard details" });
@@ -81,7 +81,7 @@ export async function aLocationFillOnAGroupDashboardChoosesTheLocation(): Promis
   await waitForPrefill("Asset group");
 
   act(() => {
-    useWizardStore.getState().receiveFill({ catalogId: "dashboard.update", stepId: "scope", values: { locationId: LOC_1 } });
+    useWizardStore.getState().receiveFill({ catalogId: "dashboard.update", params: { id: GROUP_DTO.id }, stepId: "scope", values: { locationId: LOC_1 } }, null);
   });
 
   expect(await screen.findByRole("radio", { name: "Location", checked: true })).toBeInTheDocument();

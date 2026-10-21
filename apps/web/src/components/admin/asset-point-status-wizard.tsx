@@ -45,6 +45,7 @@ export function AssetPointStatusWizard({
           key={`deactivate-${target.id}`}
           {...shared}
           entry={wizardEntry("assetPoint.deactivate")}
+          params={{ id: target.id }}
           summary={wizardEntry("assetPoint.deactivate").summary(context)}
         />
       </AdminWizardFrame>
@@ -56,6 +57,7 @@ export function AssetPointStatusWizard({
         key={`reactivate-${target.id}`}
         {...shared}
         entry={wizardEntry("assetPoint.reactivate")}
+        params={{ id: target.id }}
         summary={wizardEntry("assetPoint.reactivate").summary(context)}
       />
     </AdminWizardFrame>

@@ -245,6 +245,7 @@ export function InstantiateWizard({
             </p>
             <WizardShell
               entry={wizardEntry("assetTemplate.instantiate")}
+              params={{ id: template.id }}
               values={values}
               onChange={fromValues}
               renderStep={renderStep}

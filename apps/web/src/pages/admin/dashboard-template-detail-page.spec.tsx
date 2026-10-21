@@ -709,7 +709,7 @@ export async function saveContentStepDescribesAFilledContent(): Promise<void> {
   await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "dashboardTemplate.update",
+      catalogId: "dashboardTemplate.update", params: { id: TEMPLATE_ID },
       stepId: "content",
       // One top-level widget and one in a tab: the count is both, as the header counts.
       values: {
@@ -718,7 +718,7 @@ export async function saveContentStepDescribesAFilledContent(): Promise<void> {
           tabs: [{ key: "t1", title: "Tab", widgets: publishedTemplate().content.widgets }],
         },
       },
-    });
+    }, null);
   });
   await userEvent.click(screen.getByRole("button", { name: "Next" }));
 
@@ -736,10 +736,10 @@ export async function saveBasicsShowsAFilledSection(): Promise<void> {
   await userEvent.click(await screen.findByRole("button", { name: "Save canvas" }));
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "dashboardTemplate.update",
+      catalogId: "dashboardTemplate.update", params: { id: TEMPLATE_ID },
       stepId: "basics",
       values: { section: "water" },
-    });
+    }, null);
   });
 
   expect(screen.getByRole("region", { name: "Basics" }).textContent).toContain(

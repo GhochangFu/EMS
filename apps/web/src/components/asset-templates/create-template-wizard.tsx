@@ -215,6 +215,7 @@ export function CreateTemplateWizard({
         </p>
         <WizardShell
           entry={wizardEntry("assetTemplate.create")}
+          params={{}}
           values={form}
           onChange={update}
           renderStep={renderStep}

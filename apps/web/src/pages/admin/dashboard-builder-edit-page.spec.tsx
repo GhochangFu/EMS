@@ -149,7 +149,7 @@ export const LOCATION = {
 };
 
 export const DTO: DashboardDto = {
-  id: "dash-1",
+  id: "d0000000-0000-4000-8000-000000000001",
   organizationId: ORG_ID,
   slug: "site-a-overview",
   name: "Site A Overview",
@@ -166,14 +166,14 @@ export const DTO: DashboardDto = {
 };
 
 /** The same dashboard, scoped to an asset group — `locationId` NULL, `assetGroupId` set. */
-export const GROUP_DTO: DashboardDto = { ...DTO, id: "dash-2", slug: "hvac-kolkata", locationId: null, assetGroupId: GRP_1 };
+export const GROUP_DTO: DashboardDto = { ...DTO, id: "d0000000-0000-4000-8000-000000000002", slug: "hvac-kolkata", locationId: null, assetGroupId: GRP_1 };
 
 /** The same dashboard, instantiated onto an asset (ADR 0067) — `assetId` set and BOTH scope
  * columns NULL, as the merged-singularity guard stores it. A fixture with `assetId` beside a
  * scope column would be a row the API never writes, and a body pinned against it proves nothing. */
 const ASSET_DTO: DashboardDto = {
   ...DTO,
-  id: "dash-3",
+  id: "d0000000-0000-4000-8000-000000000003",
   slug: "chiller-1",
   name: "Chiller 1 — health",
   locationId: null,

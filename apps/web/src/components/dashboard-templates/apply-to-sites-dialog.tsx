@@ -132,6 +132,7 @@ export function ApplyToSitesDialog({
             </p>
             <WizardShell
               entry={catalogEntry("dashboardTemplate.applyToSites")!}
+              params={{ id: template.id }}
               values={NO_VALUES}
               onChange={() => undefined}
               renderStep={() => null}

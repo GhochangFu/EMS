@@ -103,6 +103,7 @@ export function OnboardingCommitWizard({ session, onCommitted, onSessionRefreshe
         ) : (
           <WizardShell
             entry={wizardEntry("onboarding.commit")}
+            params={{ id: session.id }}
             values={{ draftHash: hash }}
             onChange={() => undefined}
             renderStep={() => (

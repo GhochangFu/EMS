@@ -698,6 +698,7 @@ function CalcParameterForm({
               <WizardShell
                 key={`update-${editing.id}`}
                 entry={wizardEntry("calcParameter.update")}
+                params={{ id: editing.id }}
                 values={updateValues(form, editing)}
                 onChange={(values) => setForm(formWithValues(form, values))}
                 renderStep={(step) => (step.id === "value" ? valueField : dateFields)}
@@ -718,6 +719,7 @@ function CalcParameterForm({
             <WizardShell
               key="create"
               entry={wizardEntry("calcParameter.create")}
+              params={{}}
               values={createValues(form, organizationId)}
               onChange={(values) => setForm(formWithValues(form, values))}
               renderStep={(step) => {

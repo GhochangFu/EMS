@@ -242,6 +242,7 @@ export function LibraryUpdateWizard({
     <AdminWizardFrame title={title}>
       <WizardShell
         entry={wizardEntry("mimicLibrary.update")}
+        params={{ id: library.id }}
         values={values}
         onChange={setValues}
         renderStep={renderStep}

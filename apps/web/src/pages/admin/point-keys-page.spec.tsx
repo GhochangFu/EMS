@@ -358,10 +358,10 @@ export async function aFillFillsTheNamedStepOnly(): Promise<void> {
   await openCreate();
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "pointKey.create",
+      catalogId: "pointKey.create", params: {},
       stepId: "basics",
       values: { code: "f386_filled", name: "Filled", description: "not a Basics field" },
-    });
+    }, null);
   });
   await waitFor(() => expect(screen.getByRole("textbox", { name: "Code" })).toHaveValue("f386_filled"));
   expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Filled");

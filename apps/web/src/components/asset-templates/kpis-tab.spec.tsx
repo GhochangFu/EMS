@@ -46,6 +46,7 @@ const V2 = "bms-calc-v2";
 const READS_LABEL = /Points this KPI reads/;
 const VALIDATE = "Validate this expression";
 const SAVE = "Save KPIs";
+const TEMPLATE_ID = "a1a1a1a1-0000-4000-8000-0000000000a1";
 /**
  * `formatCalcError` of the `v1` parser's refusal at the `@` of
  * `sum({kw} @site)` — read off the red run, not predicted. Under `v1` `sum(`
@@ -73,7 +74,7 @@ const DOUBLE: TemplateKpi = {
 function measuredPoint(key: string): unknown {
   return {
     id: `id-${key}`,
-    templateId: "t1",
+    templateId: TEMPLATE_ID,
     pointKey: key,
     label: null,
     unit: "kW",
@@ -104,7 +105,7 @@ function measuredPoint(key: string): unknown {
  */
 function fixture(status = "draft"): AdminAssetTemplateDto {
   return adminAssetTemplateDtoSchema.parse({
-    id: "t1",
+    id: TEMPLATE_ID,
     organizationId: "o1",
     organizationCode: "IONEX",
     organizationName: "Ion Exchange",
@@ -361,7 +362,7 @@ export async function submitSendsTheMergedContentAlone(): Promise<void> {
     expect(save).toHaveBeenCalledTimes(1);
   });
 
-  expect(save.mock.calls[0]).toEqual(["t1", RENAMED_BODY]);
+  expect(save.mock.calls[0]).toEqual([TEMPLATE_ID, RENAMED_BODY]);
 }
 
 /**
@@ -405,7 +406,7 @@ export async function theWizardAloneSendsNoCopilotHeader(): Promise<void> {
     });
 
     const [{ url, init }] = seen;
-    expect(url).toMatch(/\/api\/v1\/admin\/asset-templates\/t1$/);
+    expect(url).toMatch(new RegExp(`/api/v1/admin/asset-templates/${TEMPLATE_ID}$`));
     expect(init.method).toBe("PATCH");
     expect(JSON.parse(init.body as string)).toEqual(RENAMED_BODY);
     const headers = new Headers(init.headers);
@@ -441,10 +442,10 @@ export async function aCopilotContentFillKeepsEveryOtherStoredSection(): Promise
 
     act(() => {
       useWizardStore.getState().receiveFill({
-        catalogId: "assetTemplate.update",
+        catalogId: "assetTemplate.update", params: { id: TEMPLATE_ID },
         stepId: "content",
         values: { content: { kpis: [FILLED] } },
-      });
+      }, null);
     });
     for (let step = 0; step < 3; step += 1) {
       await userEvent.click(screen.getByRole("button", { name: "Next" }));
@@ -522,10 +523,10 @@ async function saveAFilledContentThenRefetch(onDirtyChange: (dirty: boolean) => 
   await userEvent.click(screen.getByRole("button", { name: SAVE }));
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "assetTemplate.update",
+      catalogId: "assetTemplate.update", params: { id: TEMPLATE_ID },
       stepId: "content",
       values: { content: { kpis: [FILLED] } },
-    });
+    }, null);
   });
   for (let step = 0; step < 3; step += 1) {
     await userEvent.click(screen.getByRole("button", { name: "Next" }));

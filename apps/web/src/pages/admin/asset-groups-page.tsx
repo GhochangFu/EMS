@@ -612,6 +612,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                 <WizardShell
                   key={`add-${selectedGroup.id}`}
                   entry={wizardEntry("assetGroup.member.add")}
+                  params={{ id: selectedGroup.id }}
                   values={{ assetId: memberWizard.assetId, role: memberWizard.role === "" ? undefined : memberWizard.role }}
                   onChange={(values) =>
                     openMemberWizard({
@@ -645,6 +646,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                 <WizardShell
                   key={`role-${memberWizard.member.membershipId}`}
                   entry={wizardEntry("assetGroup.member.setRole")}
+                  params={{ id: memberWizard.member.membershipId }}
                   // "No role" is an explicit `null`, never `""` or a dropped key: the route takes `null` to clear.
                   values={{ role: memberWizard.role === "" ? null : memberWizard.role }}
                   onChange={(values) =>
@@ -679,6 +681,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                 <WizardShell
                   key={`remove-${memberWizard.member.membershipId}`}
                   entry={wizardEntry("assetGroup.member.remove")}
+                  params={{ id: memberWizard.member.membershipId }}
                   values={{}}
                   onChange={() => undefined}
                   renderStep={() => null}
@@ -715,6 +718,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                 <WizardShell
                   key="create"
                   entry={wizardEntry("assetGroup.create")}
+                  params={{}}
                   values={createValues(form)}
                   {...groupWizardProps}
                 />
@@ -722,6 +726,7 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                 <WizardShell
                   key={`update-${selectedGroup.id}`}
                   entry={wizardEntry("assetGroup.update")}
+                  params={{ id: selectedGroup.id }}
                   values={updateValues(form)}
                   {...groupWizardProps}
                   current={{

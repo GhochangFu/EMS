@@ -84,6 +84,7 @@ export function OnboardingDiscoveryWizard({ session, rtu, onStarted, onRefused, 
         </h2>
         <WizardShell
           entry={wizardEntry("onboarding.discovery")}
+          params={{ id: session.id }}
           values={values}
           onChange={setValues}
           renderStep={() => (
