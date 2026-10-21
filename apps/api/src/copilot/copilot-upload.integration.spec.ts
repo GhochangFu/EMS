@@ -72,6 +72,7 @@ async function storeCard(ctx: UploadConfirmCtx, libraryId: string, name: string)
     bodyHash: bodyHash(prepared.body, hashExcludedKeysFor(entry.id)),
     summary: `Upload the symbol ${name}.`,
     risk: "create",
+    precondition: null,
   });
   if (change === null) throw new Error("F3.87: the card was not stored");
   return { changeId: change.id, body: prepared.body };

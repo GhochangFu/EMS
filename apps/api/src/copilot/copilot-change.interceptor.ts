@@ -14,7 +14,7 @@ import { Reflector } from "@nestjs/core";
 import { catchError, concatMap, from, type Observable, throwError } from "rxjs";
 import { ZodError } from "zod";
 
-import type { JwtPayload } from "@bms/shared";
+import { ifMatchHeaderSchema, type JwtPayload } from "@bms/shared";
 import { catalogEntry, COPILOT_CHANGE_REFUSED_MESSAGE, COPILOT_UNAVAILABLE_MESSAGE } from "@bms/shared/copilot";
 
 import { recalledIdentity } from "../auth/identity-resolver";
@@ -81,7 +81,10 @@ export function statusOf(err: unknown): number {
  * 6. The atomic claim, `pending` → `applying`, else 409.
  * 7. The method, the raw path (`req.path`: the global prefix included, not
  *    decoded) and the body's canonical hash match the stored change, else the
- *    claim is released and 409.
+ *    claim is released and 409. `F4.247` (ADR 0099 Amendment 5 C2): a change
+ *    stored with a precondition also needs an `If-Match` naming it — absent,
+ *    malformed or another instant is the same release and 409. A change with
+ *    no precondition ignores the header; the route decides.
  * 8. The request's copilot store is marked, so every audit row the handler
  *    writes carries `via: "copilot"` and the change id; the outcome is
  *    recorded (`applied` with the resource id, or `failed` with the status
@@ -158,6 +161,13 @@ export class CopilotChangeInterceptor implements NestInterceptor {
     if (req.method !== claimed.method || req.path !== claimed.path || !hashMatches) {
       await release();
       throw new ConflictException(CHANGE_REFUSED);
+    }
+    if (claimed.precondition !== null) {
+      const sent = ifMatchHeaderSchema.safeParse(req.headers["if-match"]);
+      if (!sent.success || sent.data !== claimed.precondition) {
+        await release();
+        throw new ConflictException(CHANGE_REFUSED);
+      }
     }
 
     const upload: CopilotUploadClaim | undefined = multipart

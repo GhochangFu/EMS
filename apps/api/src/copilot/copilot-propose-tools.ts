@@ -54,6 +54,8 @@ export const UNKNOWN_CHANGE_ERROR = "There is no such change in the catalog.";
 export const PROPOSE_FLEET_UNBOUND_ERROR = "Pick an organization in the dock to change the point-key catalog.";
 export const UNKNOWN_STEP_ERROR = "That wizard has no such step.";
 export const UNKNOWN_PATH_ERROR = "That path is not in the body's shape.";
+/** `F4.247` (ADR 0099 Amendment 5 C1): a flagged entry whose target read no `updatedAt` stores nothing (fail closed). */
+export const PROPOSE_PRECONDITION_ERROR = "This change cannot be proposed now; ask the user to use the page.";
 export const PROPOSE_STORED_CONTENT_ERROR =
   "The template's saved content cannot be written back as it is, so this change could never apply. Tell the user which part:";
 
@@ -439,6 +441,13 @@ export function createCopilotProposeTools(
     // before the content merge (a version that cannot change is never read into a card).
     const lifecycle = templateLifecycleRefusal(entry.id, target.status);
     if (lifecycle !== null) return { ok: false, error: lifecycle };
+    // `F4.247` (Amendment 5 C1): the stamp the Confirm's `If-Match` must name, read with the row the
+    // card is built from. A flagged entry whose resolver read none is refused, never stored unguarded.
+    let precondition: string | null = null;
+    if (entry.precondition === "updatedAt") {
+      if (target.updatedAt === undefined) return { ok: false, error: PROPOSE_PRECONDITION_ERROR };
+      precondition = target.updatedAt;
+    }
     // `F3.87` PR 5: a layout card is stored only when it can apply (Amendment 3 A2), and a replace
     // keeps the layout it was built from for the card's diff (ruling Q5).
     if (LAYOUT_ENTRY_IDS.has(entry.id)) {
@@ -500,6 +509,7 @@ export function createCopilotProposeTools(
       bodyHash: bodyHash(body, hashExcludedKeysOf(entry)),
       summary,
       risk: entry.risk,
+      precondition,
     });
     // Another turn stored a change between the check above and this insert.
     if (change === null) return { ok: false, error: PROPOSE_OPEN_CHANGE_ERROR };

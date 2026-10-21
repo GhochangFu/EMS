@@ -22,6 +22,8 @@ export type ClaimedChange = {
   bodyHash: string;
   organizationId: string;
   catalogId: string;
+  /** `F4.247` (ADR 0099 Amendment 5 C2): the `updatedAt` the Confirm's `If-Match` must name, or `null`. */
+  precondition: string | null;
 };
 
 export type PendingChangeOutcome = "applied" | "failed";
@@ -37,6 +39,8 @@ export type NewPendingChange = {
   bodyHash: string;
   summary: string;
   risk: CopilotPendingChangeDto["risk"];
+  /** `F4.247` (ADR 0099 Amendment 5 C1): required, so every producer decides — `null` for an entry with no precondition. */
+  precondition: string | null;
 };
 
 /** What the follow-up turn reads of a finished change (decision 4.7). */
@@ -66,6 +70,7 @@ export function toPendingChangeDto(row: PendingRow): CopilotPendingChangeDto {
     risk: row.risk as CopilotPendingChangeDto["risk"],
     proposedAt: row.proposedAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
+    ifMatch: row.precondition,
   };
 }
 
@@ -102,11 +107,18 @@ export class CopilotPendingChangesService {
   /** `pending` → `applying` in one statement; `null` when the row is not this user's, not pending, or expired. */
   async claim(userId: string, id: string): Promise<ClaimedChange | null> {
     const { rows } = await withUser(this.tenantDb, userId, (tx) =>
-      tx.execute<{ method: string; path: string; body_hash: string; organization_id: string; catalog_id: string }>(sql`
+      tx.execute<{
+        method: string;
+        path: string;
+        body_hash: string;
+        organization_id: string;
+        catalog_id: string;
+        precondition: string | null;
+      }>(sql`
         UPDATE bms.copilot_pending_changes
            SET status = 'applying', claimed_at = now()
          WHERE id = ${id} AND user_id = ${userId} AND status = 'pending' AND expires_at > now()
-        RETURNING method, path, body_hash, organization_id, catalog_id`),
+        RETURNING method, path, body_hash, organization_id, catalog_id, precondition`),
     );
     const row = rows[0];
     return row
@@ -116,6 +128,7 @@ export class CopilotPendingChangesService {
           bodyHash: row.body_hash,
           organizationId: row.organization_id,
           catalogId: row.catalog_id,
+          precondition: row.precondition,
         }
       : null;
   }
@@ -179,6 +192,7 @@ export class CopilotPendingChangesService {
           bodyHash: change.bodyHash,
           summary: change.summary,
           risk: change.risk,
+          precondition: change.precondition,
           status: "pending",
           expiresAt: sql`now() + make_interval(mins => ${PENDING_CHANGE_TTL_MINUTES})`,
         })

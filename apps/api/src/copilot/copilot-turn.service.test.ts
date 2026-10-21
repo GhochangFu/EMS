@@ -14,6 +14,8 @@ import {
   assertFillStepReachesTheResponse,
   assertAFollowUpTurnRunsOnTheChangesOutcome,
   assertAFollowUpThatFailsStoresTheOutcomeOnly,
+  assertA412FollowUpRecordSaysReadTheRecordAgain,
+  assertA412OutcomeLineSaysReadTheRecordAgain,
   assertAFollowUpWithoutAFinishedChangeDoesNothing,
   assertAFollowUpOutsideTheScopeStoresTheOutcomeOnly,
   assertAFailedStoreDiscardsTheTurnsProposals,
@@ -143,6 +145,12 @@ describe("F3.85 PR 8 — proposals and the follow-up turn (ADR 0099 decisions 2,
   });
   it("stores only the outcome when a follow-up fails", async () => {
     await assertAFollowUpThatFailsStoresTheOutcomeOnly();
+  });
+  it("F4.247: a 412 outcome line tells the model to read the record again", () => {
+    assertA412OutcomeLineSaysReadTheRecordAgain();
+  });
+  it("F4.247: a 412 follow-up record tells the model to read the record again", async () => {
+    await assertA412FollowUpRecordSaysReadTheRecordAgain();
   });
   it("does nothing without a finished change", async () => {
     await assertAFollowUpWithoutAFinishedChangeDoesNothing();

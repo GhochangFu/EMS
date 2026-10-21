@@ -676,3 +676,38 @@ export async function anOpenInstantiateWizardOfAnUnmanagedOrganizationIsNotOpen(
     await resolveWizardRecord(catalogEntry("assetTemplate.instantiate")!, { id: ctx.assetTemplateA }, resolverWith(ctx, r.access), wizardScope(ctx)),
   ).toBeNull();
 }
+
+/**
+ * `F4.247` (ADR 0099 Amendment 5 C1): the `updated_at` the test file stamps on
+ * dashboard A and asset template A, with microseconds, and the millisecond ISO
+ * instant the resolver must read from each — the value the Confirm's
+ * `If-Match` names.
+ */
+export const RESOLVER_STAMPS = {
+  dashboardA: { stored: "2026-01-02 03:04:05.678901+00", iso: "2026-01-02T03:04:05.678Z" },
+  assetTemplateA: { stored: "2026-01-03 04:05:06.789123+00", iso: "2026-01-03T04:05:06.789Z" },
+} as const;
+
+/** Mutation: select `dashboards.createdAt` for the stamp — a row stamped apart from its creation reads wrong. */
+export async function aDashboardTargetCarriesItsUpdatedAt(ctx: ResolverCtx): Promise<void> {
+  const target = await resolverWith(ctx, recorder().access).resolve(
+    catalogEntry("dashboard.widgets.replace")!,
+    { id: ctx.dashboardA },
+    {},
+    [ctx.orgA],
+    JWT,
+  );
+  expect(target?.updatedAt).toBe(RESOLVER_STAMPS.dashboardA.iso);
+}
+
+/** Mutation: leave `updatedAt` out of the asset-template case — the target carries none. */
+export async function anAssetTemplateTargetCarriesItsUpdatedAt(ctx: ResolverCtx): Promise<void> {
+  const target = await resolverWith(ctx, recorder().access).resolve(
+    catalogEntry("assetTemplate.update")!,
+    { id: ctx.assetTemplateA },
+    {},
+    [ctx.orgA],
+    JWT,
+  );
+  expect(target?.updatedAt).toBe(RESOLVER_STAMPS.assetTemplateA.iso);
+}

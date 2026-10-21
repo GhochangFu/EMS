@@ -97,6 +97,7 @@ export async function onboardingDiscoveryCards(
       organizationName: answer.session.organizationName,
     }),
     risk: entry.risk,
+    precondition: null,
   });
   return card ? [card] : [];
 }

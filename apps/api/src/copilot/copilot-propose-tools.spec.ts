@@ -49,9 +49,9 @@ const ROW = "33333333-3333-4333-8333-333333333333";
 /** The shared vector (`body-hash.spec.ts`, `canonical-json.spec.ts`) and its SHA-256. */
 const VECTOR = { b: [{ z: 1, a: null }], a: "x" };
 const VECTOR_SHA256 = "cd46abb94645a78c7ce4802b707895cda25a3e69932ec5040b0fcb7abc663b64";
-const EMPTY_SHA256 = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
+const EMPTY_SHA256 = "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"; export const STAMP = "2026-10-11T05:00:00.000Z"; // F4.247
 
-function fixtureEntry(over: Partial<CatalogEntry>): CatalogEntry {
+export function fixtureEntry(over: Partial<CatalogEntry>): CatalogEntry {
   return {
     id: "fixture.vector",
     title: "Store the vector",
@@ -97,7 +97,7 @@ export function proposeHarness(options: Options = {}) {
   const stored: NewPendingChange[] = [];
   const resolved: Array<{ id: string; params: Record<string, string>; allowed: readonly string[]; bound?: string | null }> = [];
   const target: ResolvedTarget | null =
-    options.target === undefined ? { organizationId: ORG_X, organizationName: "Org X", targetName: "Template T", status: "draft" } : options.target;
+    options.target === undefined ? { organizationId: ORG_X, organizationName: "Org X", targetName: "Template T", status: "draft", updatedAt: STAMP } : options.target;
   const tools = createCopilotProposeTools(
     {
       targets: {
@@ -122,7 +122,7 @@ export function proposeHarness(options: Options = {}) {
             summary: change.summary,
             risk: change.risk,
             proposedAt: "2026-10-11T06:00:00.000Z",
-            expiresAt: "2026-10-11T06:15:00.000Z",
+            expiresAt: "2026-10-11T06:15:00.000Z", ifMatch: change.precondition,
           };
         },
       },
@@ -579,7 +579,7 @@ const kpi = (pointKeys: string[], expression: string) => ({
 });
 /** `F4.246`: a draft, which the lifecycle mirror admits for an edit or a publish; archive and instantiate pass `published`. */
 const templateTarget = (over: Partial<ResolvedTarget> = {}): ResolvedTarget =>
-  ({ organizationId: ORG_X, organizationName: "Org X", targetName: "Pump template", pointKeys: ["kw"], currentContent: {}, status: "draft", ...over });
+  ({ organizationId: ORG_X, organizationName: "Org X", targetName: "Pump template", pointKeys: ["kw"], currentContent: {}, status: "draft", updatedAt: STAMP, ...over });
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** An invalid `points[0].formula` stores nothing (the shared body refuses it at its path); the valid one beside it stores. */

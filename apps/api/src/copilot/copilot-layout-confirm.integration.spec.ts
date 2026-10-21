@@ -73,6 +73,7 @@ async function storeCard(ctx: LayoutConfirmCtx, layoutId: string, body: PutMimic
     bodyHash: bodyHash(stored, hashExcludedKeysFor("mimicLayout.replace")),
     summary: `Replace the layout (version ${body.version}).`,
     risk: "edit",
+    precondition: null,
   });
   if (change === null) throw new Error("F3.87: the card was not stored");
   return change.id;

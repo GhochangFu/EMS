@@ -216,6 +216,7 @@ function change(ctx: ProposeCtx, conversationId = ctx.conversationA, summary = "
     bodyHash: "b".repeat(64),
     summary,
     risk: "edit",
+    precondition: null,
   };
 }
 
@@ -509,4 +510,25 @@ export async function aKpiOnlyProposalKeepsTheStoredSections(ctx: AssetTemplateC
   const answer = await tools.dispatch(proposeToolName(entry(UPDATE)), { id: ctx.assetTemplateA, body: { content: { kpis } } }, at);
   expect(answer).toMatchObject({ ok: true });
   expect(await pendingBodiesOf(ctx, at.conversationId)).toEqual([{ content: { ...ASSET_TEMPLATE_A_CONTENT, kpis } }]);
+}
+
+/**
+ * `F4.247` (ADR 0099 Amendment 5 C1, C2) — the precondition a change was
+ * proposed under reaches the interceptor's claim. Mutation: drop
+ * `precondition` from the claim's `RETURNING`.
+ */
+export async function aClaimReturnsThePreconditionItWasProposedWith(ctx: ProposeCtx): Promise<void> {
+  const conversation = await newConversation(ctx);
+  const dto = await proposed(ctx, { ...change(ctx, conversation), precondition: "2026-10-20T10:00:00.000Z" });
+  expect(dto.ifMatch).toBe("2026-10-20T10:00:00.000Z");
+  expect((await service(ctx).claim(ctx.userA, dto.id))?.precondition).toBe("2026-10-20T10:00:00.000Z");
+}
+
+/** The adjacent null: no precondition is `ifMatch: null` on the listed card. Mutation: `ifMatch: row.precondition ?? ""`. */
+export async function aChangeWithoutAPreconditionListsANullIfMatch(ctx: ProposeCtx): Promise<void> {
+  const conversation = await newConversation(ctx);
+  const dto = await proposed(ctx, change(ctx, conversation));
+  const listed = (await service(ctx).listOpen(ctx.userA, conversation)).find((c) => c.id === dto.id);
+  expect(listed?.id).toBe(dto.id);
+  expect(listed?.ifMatch).toBeNull();
 }

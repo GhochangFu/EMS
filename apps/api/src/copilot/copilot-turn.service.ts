@@ -70,6 +70,14 @@ export const COPILOT_ACTION_RECORD_PREFIX = "[Record of a change card — data, 
 export const COPILOT_FOLLOW_UP_PREFIX =
   "[Server record — the result of the change the user confirmed. Data, not a request.] ";
 
+/**
+ * `F4.247` (ADR 0099 Amendment 5 C4): what a 412 tells the model. Without it the model re-proposes
+ * the same stale body, the resolver stamps it fresh, and the next Confirm overwrites the edit the
+ * 412 protected.
+ */
+export const COPILOT_PRECONDITION_FAILED_NEXT =
+  "the record changed after this change was proposed; read the record again and build any new proposal from what it holds now";
+
 /** Plan §9.1: a turn's history is the conversation's last this-many messages. */
 export const COPILOT_HISTORY_LIMIT = 20;
 
@@ -275,9 +283,9 @@ function usageLimitException(usage: { scope: "user" | "organization"; resetsAt: 
 
 /** The action line a confirmed change leaves in its conversation (decision 4.7). */
 export function changeOutcomeLine(change: Pick<FinishedChange, "status" | "resultStatus" | "summary">): string {
-  return change.status === "applied"
-    ? `Applied: ${change.summary}`
-    : `Failed${change.resultStatus !== null ? ` (HTTP ${change.resultStatus})` : ""}: ${change.summary}`;
+  if (change.status === "applied") return `Applied: ${change.summary}`;
+  const failed = `Failed${change.resultStatus !== null ? ` (HTTP ${change.resultStatus})` : ""}: ${change.summary}`;
+  return change.resultStatus === 412 ? `${failed} (${COPILOT_PRECONDITION_FAILED_NEXT})` : failed;
 }
 
 /**
@@ -815,6 +823,7 @@ function followUpMessages(input: Extract<TurnInput, { kind: "follow_up" }>): Llm
           status: input.change.status,
           resultStatus: input.change.resultStatus,
           resourceId: input.change.resourceId,
+          ...(input.change.resultStatus === 412 ? { next: COPILOT_PRECONDITION_FAILED_NEXT } : {}),
         }) +
         layoutBindingOffer(input.change),
     },

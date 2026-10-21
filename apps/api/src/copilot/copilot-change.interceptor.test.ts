@@ -43,6 +43,10 @@ import {
   aMarkedHandlerWithoutTheRouteStageIs409,
   aJsonConfirmOfAnUploadEntryIs409BeforeTheClaim,
   aChangedUploadGroupIs409AndReleased,
+  aPreconditionWithAnotherIfMatchIs409AndReleased,
+  aPreconditionWithItsIfMatchIsApplied,
+  aPreconditionWithoutIfMatchIs409AndReleased,
+  noPreconditionIgnoresTheIfMatch,
 } from "./copilot-change.interceptor.spec";
 
 // `F3.86` PR 2: no catalog entry has a `clientOnly` field until PR 4, so one fixture id has one;
@@ -117,4 +121,12 @@ describe("F3.87 PR 6a — the two-stage multipart Confirm (ADR 0099 Amendment 3 
   it("refuses a marked handler without the route stage before the claim", () => aMarkedHandlerWithoutTheRouteStageIs409());
   it("refuses a JSON Confirm of an upload entry before the claim", () => aJsonConfirmOfAnUploadEntryIs409BeforeTheClaim());
   it("refuses and releases a changed group", () => aChangedUploadGroupIs409AndReleased());
+});
+
+describe("F4.247 — the Confirm binds If-Match (ADR 0099 Amendment 5 C2)", () => {
+  it("refuses and releases a precondition change without If-Match", () => aPreconditionWithoutIfMatchIs409AndReleased());
+  it("refuses and releases a precondition change naming another instant", () =>
+    aPreconditionWithAnotherIfMatchIs409AndReleased());
+  it("applies a precondition change whose quoted If-Match names it", () => aPreconditionWithItsIfMatchIsApplied());
+  it("ignores If-Match on a change with no precondition", () => noPreconditionIgnoresTheIfMatch());
 });
