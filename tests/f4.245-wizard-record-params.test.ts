@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import * as ts from "typescript";
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const WEB_SRC = "apps/web/src";
@@ -63,9 +63,14 @@ function webSources(dir = WEB_SRC): string[] {
 }
 
 describe("F4.245 wizard record gate — every WizardShell element names its record", () => {
+  /** `apps/web/src` parsed once (review: twice cost 2–3 s against the 5 s test timeout); both scans read it. */
+  let scanned: { readonly file: string; readonly elements: ShellAttribute[][] }[] = [];
+  beforeAll(() => {
+    scanned = webSources().map((file) => ({ file, elements: shellElements(readFileSync(join(repoRoot, file), "utf8"), file) }));
+  }, 60_000);
+
   it("positive control: the scan finds the elements, in more than ten files", () => {
-    const files = webSources().filter((f) => shellElements(readFileSync(join(repoRoot, f), "utf8"), f).length > 0);
-    expect(files.length).toBeGreaterThan(10);
+    expect(scanned.filter(({ elements }) => elements.length > 0).length).toBeGreaterThan(10);
   });
 
   it("negative control: an element with no params is refused", () => {
@@ -107,8 +112,8 @@ describe("F4.245 wizard record gate — every WizardShell element names its reco
 
   it("every WizardShell element in apps/web/src writes params itself, after any spread", () => {
     const bare: string[] = [];
-    for (const file of webSources()) {
-      shellElements(readFileSync(join(repoRoot, file), "utf8"), file).forEach((attributes, at) => {
+    for (const { file, elements } of scanned) {
+      elements.forEach((attributes, at) => {
         if (!namesItsRecord(attributes)) bare.push(`${file} #${at + 1}`);
       });
     }

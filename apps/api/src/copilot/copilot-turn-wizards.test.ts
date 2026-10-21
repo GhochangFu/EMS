@@ -1,7 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  aFillAfterOpenPageForTheCurrentPagesWizardIsRefused,
   aFillAfterOpenPageInOneTurnIsAccepted,
+  anOpenPageAfterAFillDropsTheFill,
+  anOpenPageThatMountsTheFilledRecordKeepsTheFill,
   anOpenRecordsOrganizationIsTheReplysProvenance,
   onlyTheLastOpenedPageAdmitsAFill,
   theNamesBlockCarriesTheRecordsName,
@@ -10,6 +13,8 @@ import {
   aTurnWithTheOpenWizardGetsTheFill,
   theModelIsToldWhichRecordsAreOpen,
   theOpenPageResultNamesThePagesRecords,
+  theOpenPageResultSaysTheFillWasDropped,
+  theRefusalAfterOpenPageNamesTheOpenedPage,
 } from "./copilot-turn-wizards.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -23,4 +28,9 @@ describe("F4.245 — a turn's open wizards reach the tools and the model (ADR 00
   it("accepts a fill after open_page in one turn", () => aFillAfterOpenPageInOneTurnIsAccepted());
   it("C3: admits a fill only for the last page the turn opened", () => onlyTheLastOpenedPageAdmitsAFill());
   it("names the opened page's records in the open_page result", () => theOpenPageResultNamesThePagesRecords());
+  it("refuses a fill for the current page's wizard after open_page", () => aFillAfterOpenPageForTheCurrentPagesWizardIsRefused());
+  it("names the opened page in that refusal", () => theRefusalAfterOpenPageNamesTheOpenedPage());
+  it("drops a fill for the current page's wizard at a later open_page", () => anOpenPageAfterAFillDropsTheFill());
+  it("tells the model in the open_page result that the fill was dropped", () => theOpenPageResultSaysTheFillWasDropped());
+  it("keeps a fill whose record the opened page mounts", () => anOpenPageThatMountsTheFilledRecordKeepsTheFill());
 });

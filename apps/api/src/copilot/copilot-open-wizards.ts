@@ -5,7 +5,7 @@ import type { CopilotOpenWizard } from "@bms/shared";
 import { type CatalogEntry, catalogEntry, pathParamsOf } from "@bms/shared/copilot";
 
 import type { CopilotToolContext } from "./copilot-read-tools";
-import { COPILOT_REDACTED, scrubToolResult } from "./copilot-secret-scrub";
+import { scrubToolResult } from "./copilot-secret-scrub";
 import type { CopilotTargets } from "./copilot-target-resolver";
 
 /**
@@ -40,6 +40,13 @@ export const FILL_NO_OPEN_WIZARD_ERROR =
   "Propose the change instead with its propose_ tool, or ask the user to open the wizard.";
 export const FILL_AMBIGUOUS_WIZARD_ERROR =
   "More than one wizard for that record is open on the user's screen. Ask the user to close one, or propose the change instead.";
+export const FILL_NOT_ON_OPENED_PAGE_ERROR =
+  "This turn opened another page, so the wizards on the user's current page close. " +
+  "Fill only a wizard the opened page lists in its open_page result, or propose the change instead.";
+/** `open_page`'s note when it drops a fill made earlier in the turn for a wizard the page does not mount. */
+export const FILL_DROPPED_BY_OPEN_PAGE_NOTE =
+  "The earlier fill_step was dropped: the page this opens does not show that wizard, so nothing on the user's screen is filled. " +
+  "Do not say the form is filled. Fill a wizard this page lists, or propose the change instead.";
 
 const invalid = (index: number, reason: string): BadRequestException =>
   new BadRequestException(`${OPEN_WIZARD_INVALID_ERROR} (wizards[${index}]: ${reason})`);
@@ -214,11 +221,10 @@ function recordKey(record: CopilotOpenWizardRecord): string {
  * A record name for the model: scrubbed **whole**, then cut to
  * {@link NAME_MAX} characters (review L1 — a cut first could split a
  * credential below the detector's pattern and send its first half). The
- * redaction marker is kept whole.
+ * redaction marker is shorter than the cap, so it is never cut.
  */
 export function boundedRecordName(name: string): string {
   const scrubbed = scrubToolResult(name);
-  if (scrubbed === COPILOT_REDACTED) return scrubbed;
   return scrubbed.length > NAME_MAX ? `${scrubbed.slice(0, NAME_MAX)}…` : scrubbed;
 }
 
@@ -351,18 +357,26 @@ export async function pageWizardRecords(
 
 /**
  * Why `fill_step` may not fill the record `{ catalogId, params }`, or `null`
- * when it may: one open wizard is that record, or none is and a page this turn
- * opened mounts it (the fill then waits in the browser for that wizard only).
- * Two open wizards of one record refuse the fill, not the turn.
+ * when it may. Before any `open_page`: one open wizard is that record. After
+ * one: the last page the turn opened mounts it (the fill then waits in the
+ * browser for that wizard only) — the browser leaves the current page, so its
+ * open wizards no longer count. Two open wizards of one record refuse the fill,
+ * not the turn.
  */
 export function fillRecordRefusal(
   catalogId: string,
   params: Readonly<Record<string, string>>,
-  ctx: Pick<CopilotToolContext, "openWizards" | "pageWizards">,
+  ctx: Pick<CopilotToolContext, "openWizards" | "pageWizards" | "pageOpened">,
 ): string | null {
   const same = (record: CopilotOpenWizardRecord): boolean => record.catalogId === catalogId && sameParams(record.params, params);
+  if (ctx.pageOpened === true) return (ctx.pageWizards ?? []).some(same) ? null : FILL_NOT_ON_OPENED_PAGE_ERROR;
   const open = (ctx.openWizards ?? []).filter(same);
   if (open.length > 1) return FILL_AMBIGUOUS_WIZARD_ERROR;
   if (open.length === 1) return null;
   return (ctx.pageWizards ?? []).some(same) ? null : FILL_NO_OPEN_WIZARD_ERROR;
+}
+
+/** Whether the page an `open_page` opened mounts the wizard `fill` names — if not, the fill is dropped. */
+export function pageMountsFill(fill: { readonly catalogId: string; readonly params: Readonly<Record<string, string>> }, page: readonly CopilotOpenWizardRecord[]): boolean {
+  return page.some((record) => record.catalogId === fill.catalogId && sameParams(record.params, fill.params));
 }

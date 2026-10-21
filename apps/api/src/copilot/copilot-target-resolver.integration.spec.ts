@@ -631,7 +631,11 @@ export async function aDashboardSlugIsFoundInTheAllowedSetOnly(ctx: ResolverCtx)
  * organization check. The body-dependent checks (a grant's `kind` and
  * `targetId`, the instantiate's site) are what a fill is about to set, so they
  * never run here. Mutation: `resolveWizardRecord` asks the `"propose"` mode —
- * all four go red or null.
+ * the two record cases (`anOpenGrantAddDrawerIsItsUsersRecord`,
+ * `anOpenInstantiateWizardIsItsTemplatesRecord`) go red, as no record comes
+ * back. The call-list cases and the unmanaged-organization case pin the checks
+ * that run; with an empty body the `"propose"` mode records the same calls and
+ * gives `null` too, so they do not carry that mutation.
  */
 const wizardScope = (ctx: ResolverCtx): WizardScope => ({ allowedOrganizationIds: [ctx.orgA], user: JWT, conversationOrganizationId: ctx.orgA });
 

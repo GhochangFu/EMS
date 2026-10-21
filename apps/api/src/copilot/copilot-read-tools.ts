@@ -78,6 +78,12 @@ export interface CopilotToolContext {
    * for one of these waits in the browser for that wizard. Absent is none.
    */
   readonly pageWizards?: CopilotOpenWizardRecord[];
+  /**
+   * `F4.245` re-review: an `open_page` call of this turn ran, so the browser
+   * leaves the current page and only `pageWizards` admit a fill. The turn
+   * service sets it as the call runs; absent is no page opened.
+   */
+  pageOpened?: boolean;
   readonly now: Date;
 }
 

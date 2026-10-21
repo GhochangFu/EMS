@@ -1,7 +1,12 @@
 import { expect } from "vitest";
 
 import { calls, FakeLlmProvider, toolCall } from "../admin/onboarding/onboarding-agent-loop.spec";
-import { FILL_NO_OPEN_WIZARD_ERROR, OPEN_WIZARD_NAMES_PREFIX } from "./copilot-open-wizards";
+import {
+  FILL_DROPPED_BY_OPEN_PAGE_NOTE,
+  FILL_NO_OPEN_WIZARD_ERROR,
+  FILL_NOT_ON_OPENED_PAGE_ERROR,
+  OPEN_WIZARD_NAMES_PREFIX,
+} from "./copilot-open-wizards";
 import type { CopilotToolResult } from "./copilot-read-tools";
 import { GLOBAL_ADMIN, harness, ORG_X, turn } from "./copilot-turn.service.spec";
 
@@ -106,4 +111,48 @@ export async function onlyTheLastOpenedPageAdmitsAFill(): Promise<void> {
   ]);
   const response = await turn(harness(llm, { tools: { open_page: openPage }, slugId: A }), "open plant-a, then users", GLOBAL_ADMIN, []);
   expect(response.fillStep).toBeNull();
+}
+
+const USERS_PAGE: CopilotToolResult = { ok: true, result: { route: "/admin/users" }, organizationIds: [], navigateTo: "/admin/users" };
+
+/**
+ * Re-review Low: a turn that opens another page unmounts the wizard open on
+ * the current page, so a fill for it would wait for a wizard that never comes.
+ * Mutation: let a navigating turn's fill match the open wizards — the fill is
+ * accepted.
+ */
+export async function aFillAfterOpenPageForTheCurrentPagesWizardIsRefused(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("open_page", {})), calls(toolCall("fill_step", FILL_A)), { kind: "final", text: "Opened." }]);
+  const response = await turn(harness(llm, { tools: { open_page: () => USERS_PAGE }, slugId: A }), "open users and name it Main", GLOBAL_ADMIN, OPEN_A);
+  expect(response.fillStep).toBeNull();
+}
+
+/** Mutation: refuse with the plain no-wizard sentence — the model is not told the page it opened is why. */
+export async function theRefusalAfterOpenPageNamesTheOpenedPage(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("open_page", {})), calls(toolCall("fill_step", FILL_A)), { kind: "final", text: "Opened." }]);
+  await turn(harness(llm, { tools: { open_page: () => USERS_PAGE }, slugId: A }), "open users and name it Main", GLOBAL_ADMIN, OPEN_A);
+  const tool = (llm.seen[2] ?? []).filter((m) => m.role === "tool").at(-1);
+  expect(JSON.stringify(tool)).toContain(FILL_NOT_ON_OPENED_PAGE_ERROR);
+}
+
+/** The reverse order. Mutation: do not drop an earlier fill at `open_page` — the fill is sent, then lost. */
+export async function anOpenPageAfterAFillDropsTheFill(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("fill_step", FILL_A)), calls(toolCall("open_page", {})), { kind: "final", text: "Opened." }]);
+  const response = await turn(harness(llm, { tools: { open_page: () => USERS_PAGE }, slugId: A }), "name it Main, then open users", GLOBAL_ADMIN, OPEN_A);
+  expect(response.fillStep).toBeNull();
+}
+
+/** Mutation: drop the fill without a word — the model still tells the user the form is filled. */
+export async function theOpenPageResultSaysTheFillWasDropped(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("fill_step", FILL_A)), calls(toolCall("open_page", {})), { kind: "final", text: "Opened." }]);
+  await turn(harness(llm, { tools: { open_page: () => USERS_PAGE }, slugId: A }), "name it Main, then open users", GLOBAL_ADMIN, OPEN_A);
+  const tool = (llm.seen[2] ?? []).filter((m) => m.role === "tool").at(-1);
+  expect(JSON.stringify(tool)).toContain(FILL_DROPPED_BY_OPEN_PAGE_NOTE);
+}
+
+/** The positive control. Mutation: drop every earlier fill at `open_page` — the fill for a record the page mounts is lost. */
+export async function anOpenPageThatMountsTheFilledRecordKeepsTheFill(): Promise<void> {
+  const llm = new FakeLlmProvider([calls(toolCall("fill_step", FILL_A)), calls(toolCall("open_page", {})), { kind: "final", text: "Opened." }]);
+  const response = await turn(harness(llm, { tools: { open_page: () => OPEN_PAGE }, slugId: A }), "name it Main, then open plant-a", GLOBAL_ADMIN, OPEN_A);
+  expect(response.fillStep).toStrictEqual(FILL_A);
 }

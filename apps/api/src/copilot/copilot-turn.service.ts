@@ -45,7 +45,13 @@ import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pen
 import { accessIntentOf } from "./copilot-access-intent";
 import { assetIntentOf } from "./copilot-asset-intent";
 import { hasImageAttachment, hasPdfWithoutImage, inspectAttachments, type TurnAttachment, type UploadedAttachment } from "./copilot-attachments";
-import { type CopilotOpenWizardRecord, openWizardNamesMessage, openWizardsMessage } from "./copilot-open-wizards";
+import {
+  type CopilotOpenWizardRecord,
+  FILL_DROPPED_BY_OPEN_PAGE_NOTE,
+  openWizardNamesMessage,
+  openWizardsMessage,
+  pageMountsFill,
+} from "./copilot-open-wizards";
 import { COPILOT_PROPOSE_TOOLS, type CopilotProposeTools } from "./copilot-propose-tools";
 import { COPILOT_READ_TOOLS, type CopilotReadTools, type CopilotToolContext } from "./copilot-read-tools";
 import {
@@ -615,8 +621,16 @@ export class CopilotTurnService {
               // Review C3: the browser goes to the last page only and waits there, so only its wizards count.
               pageWizards.length = 0;
               pageWizards.push(...page);
+              // Re-review: the current page's wizards unmount, so an earlier fill the new page does not mount is lost.
+              ctx.pageOpened = true;
+              const dropped = fillStep !== null && !pageMountsFill(fillStep, page);
+              if (dropped) fillStep = null;
               for (const record of page) if (record.organizationId !== null) read.add(record.organizationId);
-              result = { ...result, wizards: page.map(({ catalogId, params, name }) => ({ catalogId, params, name })) };
+              result = {
+                ...result,
+                wizards: page.map(({ catalogId, params, name }) => ({ catalogId, params, name })),
+                ...(dropped ? { fillDropped: FILL_DROPPED_BY_OPEN_PAGE_NOTE } : {}),
+              };
             }
             if (out.pendingChange !== undefined) proposed.push(out.pendingChange);
             if (out.fillStep !== undefined) fillStep = out.fillStep;

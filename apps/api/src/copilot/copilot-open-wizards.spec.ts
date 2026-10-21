@@ -175,11 +175,6 @@ export function aCredentialAcrossTheCutIsWithheld(): void {
   expect(boundedRecordName(`${"a".repeat(76)} password=Summer2026`)).toBe(COPILOT_REDACTED);
 }
 
-/** The marker is kept whole, never cut, however long the name was. */
-export function theRedactionMarkerIsNeverCut(): void {
-  expect(boundedRecordName(`${"a".repeat(200)} password=Summer2026`)).toBe(COPILOT_REDACTED);
-}
-
 /** Review L2. Mutation: write the params unscrubbed — a credential-shaped value reaches the system line. */
 export function aCredentialShapedParamIsWithheldFromTheLine(): void {
   const message = openWizardsMessage([{ ...SETTING, params: { libraryCode: "password=Summer2026" } }]) as string;

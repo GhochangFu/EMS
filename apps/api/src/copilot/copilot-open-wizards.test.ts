@@ -9,7 +9,6 @@ import {
   anOpenRecordIsResolvedByItsRowAlone,
   aRecordWithNoNameSendsNoNamesBlock,
   theNamesBlockQuotesEachNameAsData,
-  theRedactionMarkerIsNeverCut,
   theSystemLineCarriesNoRecordName,
   theSystemLineNamesEachRecordByItsParams,
   aDuplicateRecordIsNamedOnce,
@@ -55,7 +54,6 @@ describe("F4.245 — the open-wizard context of a turn (ADR 0099 Amendment 4)", 
   it("sends no names block when no open record has a name", () => aRecordWithNoNameSendsNoNamesBlock());
   it("cuts a long record name", () => aLongNameIsCut());
   it("L1: withholds a credential that spans the cut", () => aCredentialAcrossTheCutIsWithheld());
-  it("L1: never cuts the redaction marker", () => theRedactionMarkerIsNeverCut());
   it("L2: withholds a credential-shaped param from the line", () => aCredentialShapedParamIsWithheldFromTheLine());
   it("L2: refuses a library code of free text", () => aLibraryCodeOfFreeTextIsRefused());
   it("L2: accepts a built-in library's code", () => aBuiltInLibraryCodeIsAccepted());

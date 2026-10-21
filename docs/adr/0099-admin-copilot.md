@@ -1004,7 +1004,12 @@ wizard's parameters on the fill" with the rulings below. Code citations are to
   unregisters. A fill no open wizard matches and no page waits for is dropped
   at once. Only the **last** `open_page` of a turn counts: the browser goes to
   the last page and waits there, so a fill for an earlier page's record is
-  refused (code review C3).
+  refused (code review C3). The same holds for the wizards open on the
+  current page: once a turn calls `open_page`, the browser leaves that page
+  and they unmount, so a fill after it is admitted only for the last page's
+  records, and a fill made before it is dropped unless that page mounts its
+  record — the `open_page` result then tells the model the fill was dropped
+  (code re-review).
 - **B5 — A page-fixed field is never filled (critique C2).** A body field the
   page fixes — an asset page's `assetId` for a point mapping, the
   organization of a library setting or a library create — is never set by a
