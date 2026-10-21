@@ -65,3 +65,24 @@ describe.each(["apps/web/nginx.conf", "deploy/aws/nginx.conf"])("F4.130 — %s",
     expect(conf.replace(/#[^\n]*/g, "")).not.toMatch(/location\s+~/);
   });
 });
+
+/**
+ * `F4.247` / ADR 0099 Amendment 5 C3 — nginx answers no `If-Match` itself. Its
+ * not-modified filter evaluates a request's `If-Match` against the response's
+ * `ETag` and can finalize a 200 as 412; it is skipped for a proxied response that
+ * is not cacheable (`r->disable_not_modified = !u->cacheable`). So the API's own
+ * 200 or 412 passes through only while nothing caches. A `proxy_cache` at
+ * `http`, `server` or `location` level is inherited, so the whole file is
+ * scanned, comments stripped.
+ */
+describe.each(["apps/web/nginx.conf", "deploy/aws/nginx.conf"])("F4.247 — %s", (file) => {
+  it("caches no proxied response anywhere in the file", () => {
+    expect(read(file).replace(/#[^\n]*/g, "")).not.toMatch(/\bproxy_cache\b/);
+  });
+});
+
+describe("F4.247 — deploy/aws/nginx.conf proxies the API", () => {
+  it("passes /api/ to the API upstream, the path the If-Match writes take", () => {
+    expect(locationBlock(read("deploy/aws/nginx.conf"), "/api/")).toMatch(/proxy_pass\s+\$api_upstream\s*;/);
+  });
+});

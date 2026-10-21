@@ -163,6 +163,8 @@ export const copilotPendingChanges = bmsSchema.table(
     finishedAt: timestamp("finished_at", { withTimezone: true }),
     resultStatus: integer("result_status"),
     resourceId: varchar("resource_id", { length: 128 }),
+    // F4.247 / migration 0115 (ADR 0099 Amendment 5 C1): the target's updated_at (ms ISO) the Confirm's If-Match must name.
+    precondition: varchar("precondition", { length: 40 }),
   },
   (t) => [
     index("copilot_pending_changes_user_status_idx").on(t.userId, t.status),
