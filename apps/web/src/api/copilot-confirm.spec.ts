@@ -26,6 +26,7 @@ const CHANGE: CopilotPendingChangeDto = {
   risk: "create",
   proposedAt: "2026-10-10T00:00:00.000Z",
   expiresAt: "2026-10-10T01:00:00.000Z",
+  ifMatch: null,
 };
 
 type Seen = { url: string; init: RequestInit };
@@ -196,4 +197,37 @@ export async function anUploadSendsNoCardOnlyOrHashField(): Promise<void> {
   expect(form.has("fileSha256")).toBe(false);
   expect(form.has("filename")).toBe(false);
   expect(form.get("group")).toBe("water");
+}
+
+/** `F4.247` (ADR 0099 Amendment 5 C2): a precondition is sent quoted, beside the change header. Mutation: send it unquoted. */
+export async function aPreconditionIsSentAsAQuotedIfMatch(): Promise<void> {
+  const seen = capture(() => new Response(JSON.stringify({ id: "dash-1" }), { status: 200 }));
+  await confirmCopilotChange({ ...CHANGE, ifMatch: "2026-10-20T10:00:00.000Z" });
+  const headers = new Headers(seen().init.headers);
+  expect(headers.get("If-Match")).toBe('"2026-10-20T10:00:00.000Z"');
+  expect(headers.get("X-Copilot-Change")).toBe(CHANGE.id);
+}
+
+/** No precondition, no header — and the change header still goes (adjacent positive). Mutation: send `"null"`. */
+export async function noPreconditionSendsNoIfMatch(): Promise<void> {
+  const seen = capture(() => new Response(JSON.stringify({ id: "dash-1" }), { status: 201 }));
+  await confirmCopilotChange(CHANGE);
+  const headers = new Headers(seen().init.headers);
+  expect(headers.get("If-Match")).toBeNull();
+  expect(headers.get("X-Copilot-Change")).toBe(CHANGE.id);
+}
+
+/** Critique C11: an older API sends no `ifMatch` at all. Mutation: test `!== null` — `"undefined"` is sent. */
+export async function aMissingIfMatchFromAnOlderApiSendsNoHeader(): Promise<void> {
+  const seen = capture(() => new Response(JSON.stringify({ id: "dash-1" }), { status: 201 }));
+  const { ifMatch: _ifMatch, ...older } = CHANGE;
+  await confirmCopilotChange(older as CopilotPendingChangeDto);
+  expect(new Headers(seen().init.headers).get("If-Match")).toBeNull();
+}
+
+/** The multipart branch carries it too. Mutation: add it to the JSON branch only. */
+export async function anUploadSendsItsIfMatch(): Promise<void> {
+  const seen = capture(() => new Response(JSON.stringify({ id: "sym-1" }), { status: 201 }));
+  await confirmCopilotChange({ ...UPLOAD_CHANGE, ifMatch: "2026-10-20T10:00:00.000Z" });
+  expect(new Headers(seen().init.headers).get("If-Match")).toBe('"2026-10-20T10:00:00.000Z"');
 }

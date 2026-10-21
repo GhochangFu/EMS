@@ -78,6 +78,7 @@ const COMMIT_CARD: CopilotPendingChangeDto = {
   risk: "create",
   proposedAt: "2026-10-12T00:00:00.000Z",
   expiresAt: "2026-10-12T00:15:00.000Z",
+  ifMatch: null,
 };
 
 function detail(skill: CopilotSkillStateDto | null, pendingChanges: CopilotPendingChangeDto[] = []): CopilotConversationDetailDto {
@@ -548,6 +549,7 @@ const DISCOVERY_CARD: CopilotPendingChangeDto = {
   risk: "create",
   proposedAt: "2026-10-12T00:00:00.000Z",
   expiresAt: "2026-10-12T00:15:00.000Z",
+  ifMatch: null,
 };
 
 /** A queued discovery is read at once, and a flip to done with devices offers the map chip. */

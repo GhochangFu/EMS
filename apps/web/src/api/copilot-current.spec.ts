@@ -28,6 +28,7 @@ function viewChange(path = `/api/v1/admin/locations/${SITE}/control-room-view`):
     risk: "edit",
     proposedAt: "2026-10-12T10:00:00.000Z",
     expiresAt: "2026-10-12T10:15:00.000Z",
+    ifMatch: null,
   };
 }
 
