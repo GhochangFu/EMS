@@ -238,6 +238,14 @@ export interface CatalogEntry {
    * before it sends the write.
    */
   readonly cardOnly?: readonly string[];
+  /**
+   * `F4.247` (ADR 0099 Amendment 5 C1): the entry's write takes an `If-Match`
+   * precondition. The target resolver reads the row's `updated_at`, the propose
+   * tool stores it on the pending change (and refuses the proposal when it read
+   * none), and the browser sends it as `If-Match` on Confirm. Absent: no
+   * precondition.
+   */
+  readonly precondition?: "updatedAt";
   readonly risk: CatalogRisk;
   readonly target: CatalogTarget;
   readonly refs: readonly CatalogRef[];

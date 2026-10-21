@@ -905,3 +905,12 @@ export function theLibraryAndRoleSummariesNameTheirTarget(): void {
     'Add the unit role "pump-x" (Pump X) to the fleet-wide role vocabulary.',
   );
 }
+
+/**
+ * `F4.247` (ADR 0099 Amendment 5 C1): exactly the two list writes take an
+ * `If-Match` precondition. Mutation: drop the flag from one entry.
+ */
+export function exactlyTheTwoListWritesTakeAPrecondition(): void {
+  const flagged = COPILOT_CATALOG.filter((e) => e.precondition === "updatedAt").map((e) => e.id).sort();
+  expect(flagged).toStrictEqual(["assetTemplate.update", "dashboard.widgets.replace"]);
+}

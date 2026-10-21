@@ -63,6 +63,7 @@ export const DASHBOARD_ENTRIES: readonly CatalogEntry[] = [
     params: { id: uuidParam },
     body: putDashboardWidgetsBodySchema,
     bodyName: "putDashboardWidgetsBodySchema",
+    precondition: "updatedAt",
     clientOnly: [],
     risk: "edit",
     target: { kind: "dashboard", param: "id" },
