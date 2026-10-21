@@ -7842,3 +7842,5 @@ One PR, [#894](https://github.com/GhochangFu/EMS/pull/894) (`09836994`), under [
 **`F4.245` done 2026-10-21** in [#912](https://github.com/GhochangFu/EMS/pull/912) (`7218b16b`), ADR 0099 Amendment 4: a copilot fill names its record and the server checks it against the wizards open on the user's screen; layout and slug fills reach the dashboard pages.
 
 **`F4.247` done 2026-10-21** in [#914](https://github.com/GhochangFu/EMS/pull/914) (`17afb2b1`), ADR 0099 Amendment 5 and migration 0115: a copilot Confirm of a widget-list or asset-template edit carries the record's `updated_at` as `If-Match`, and the two routes refuse a stale one with 412. Follow-up `F4.273` (the manual pages).
+
+**`F4.244` done 2026-10-22** in [#916](https://github.com/GhochangFu/EMS/pull/916) (`b223260b`), ADR 0099 Amendment 6: the copilot dock keeps its conversation in `localStorage` (cleared on every session exit) and resumes a pending follow-up wait after a reload, a route change or in a new tab.
