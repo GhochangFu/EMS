@@ -7838,3 +7838,5 @@ One PR, [#894](https://github.com/GhochangFu/EMS/pull/894) (`09836994`), under [
 **`F4.135` done 2026-10-20** in [#908](https://github.com/GhochangFu/EMS/pull/908) (`8db60811`), ADR 0090 Amendment 4: a refused onboarding draft write gets a code-written `Not applied: <tool> (field: …)` action line, so the agent's reply cannot claim it.
 
 **`F4.246` done 2026-10-21** in [#910](https://github.com/GhochangFu/EMS/pull/910) (`ffdff440`): the copilot card shows each formula in full and every shortened value expands, an asset-template edit card has its Now column, and a template proposal is refused at propose when the route would refuse it at Confirm.
+
+**`F4.245` done 2026-10-21** in [#912](https://github.com/GhochangFu/EMS/pull/912) (`7218b16b`), ADR 0099 Amendment 4: a copilot fill names its record and the server checks it against the wizards open on the user's screen; layout and slug fills reach the dashboard pages.
