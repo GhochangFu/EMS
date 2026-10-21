@@ -25,8 +25,12 @@ function source(relative: string): string {
  * The call must sit at module scope — column 0, not inside an effect, where
  * StrictMode would subscribe twice — and bind the same `queryClient` the
  * provider receives.
+ *
+ * `F4.244`: the call is `bindSessionStores`, which binds the cache through
+ * `bindQueryCacheToSession` and clears the persisted copilot session with it;
+ * `query-cache-session.spec.ts` proves that it does both.
  */
-const BOUND_AT_MODULE_SCOPE = /^bindQueryCacheToSession\(\s*useAuthStore\s*,\s*queryClient\s*\);/m;
+const BOUND_AT_MODULE_SCOPE = /^bindSessionStores\(\s*useAuthStore\s*,\s*queryClient\s*\);/m;
 
 const main = source("apps/web/src/main.tsx");
 
@@ -36,10 +40,8 @@ describe("F4.156 — the query cache is bound to the session in main.tsx", () =>
     expect(/<QueryClientProvider client=\{queryClient\}>/.test(main)).toBe(true);
   });
 
-  it("main.tsx imports bindQueryCacheToSession and useAuthStore", () => {
-    expect(
-      /import \{ bindQueryCacheToSession \} from "\.\/lib\/query-cache-session"/.test(main),
-    ).toBe(true);
+  it("main.tsx imports bindSessionStores and useAuthStore", () => {
+    expect(/import \{ bindSessionStores \} from "\.\/lib\/query-cache-session"/.test(main)).toBe(true);
     expect(/import \{ useAuthStore \} from "\.\/stores\/auth-store"/.test(main)).toBe(true);
   });
 
