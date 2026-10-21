@@ -245,6 +245,7 @@ export function AssetPointWizard(props: AssetPointWizardProps) {
         <WizardShell
           key={`update-${editing.id}`}
           entry={wizardEntry("assetPoint.update")}
+          params={{ id: editing.id }}
           values={values}
           onChange={(next) => setForm(assetPointFormWithValues(form, next))}
           renderStep={renderStep}
@@ -279,6 +280,9 @@ export function AssetPointWizard(props: AssetPointWizardProps) {
       <WizardShell
         key="create"
         entry={wizardEntry("assetPoint.create")}
+        params={{}}
+        // `F4.245` (critique C2): on an asset's page the asset is fixed, so a fill never moves the mapping.
+        fixedFields={pickAsset ? undefined : ["assetId"]}
         values={values}
         onChange={(next) => setForm(assetPointFormWithValues(form, next))}
         renderStep={renderStep}

@@ -191,7 +191,7 @@ export async function aFillFillsItsStepOnly(): Promise<void> {
   act(() => {
     useWizardStore
       .getState()
-      .receiveFill({ catalogId: "location.create", stepId: "place", values: { province: "Gujarat", code: "HIJACK" } });
+      .receiveFill({ catalogId: "location.create", params: {}, stepId: "place", values: { province: "Gujarat", code: "HIJACK" } }, null);
   });
   await waitFor(() => expect((screen.getByLabelText("Province") as HTMLInputElement).value).toBe("Gujarat"));
   await userEvent.click(screen.getByRole("button", { name: "Back" }));

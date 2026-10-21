@@ -100,7 +100,7 @@ export async function noAttachmentByteReachesAnyTable(ctx: HistoryCtx): Promise<
   const { who, jwt } = caller(ctx);
   const conversation = await store.create(ctx.userA, ctx.orgA);
   const { buffer, marker } = markedPng();
-  const response = await controller.turn(conversation.id, { message: "what is this?" }, who, jwt, [
+  const response = await controller.turn(conversation.id, { message: "what is this?", wizards: "[]" }, who, jwt, [
     { buffer, originalname: "plant.png" },
   ]);
   expect(response.outcome).toBe("answered");
@@ -137,7 +137,7 @@ export async function theSwitchOffIs403AndCountsNothing(ctx: HistoryCtx): Promis
   const conversation = await store.create(ctx.userA, ctx.orgA);
   const before = await userTurnsToday(ctx, ctx.userA);
   const error = await controller
-    .turn(conversation.id, { message: "read this" }, who, jwt, [{ buffer: png(64), originalname: "a.png" }])
+    .turn(conversation.id, { message: "read this", wizards: "[]" }, who, jwt, [{ buffer: png(64), originalname: "a.png" }])
     .then(
       () => null,
       (err: { getStatus?: () => number }) => err,
@@ -155,7 +155,7 @@ export async function theSwitchOnRunsAndCountsOnce(ctx: HistoryCtx): Promise<voi
   const { who, jwt } = caller(ctx);
   const conversation = await store.create(ctx.userA, ctx.orgA);
   const before = await userTurnsToday(ctx, ctx.userA);
-  const response = await controller.turn(conversation.id, { message: "read this" }, who, jwt, [
+  const response = await controller.turn(conversation.id, { message: "read this", wizards: "[]" }, who, jwt, [
     { buffer: png(64), originalname: "a.png" },
   ]);
   expect(response.outcome).toBe("answered");

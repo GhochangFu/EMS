@@ -3,6 +3,7 @@ import type { CopilotFillStepDto, CopilotPendingChangeDto, JwtPayload } from "@b
 import type { ResolvedIdentity } from "../auth/identity-resolver";
 import { defineToolRegistry, type ToolRegistry } from "../llm/tool-registry";
 import type { TurnAttachment } from "./copilot-attachments";
+import type { CopilotOpenWizardRecord } from "./copilot-open-wizards";
 
 /**
  * `F3.85` PR 7 / ADR 0099 decisions 1, 9, 10 — the seam between the turn
@@ -65,6 +66,24 @@ export interface CopilotToolContext {
    * last layout proposal, so a layout card says it was read from a file.
    */
   readonly historyHasAttachmentSinceLastLayout?: boolean;
+  /**
+   * `F4.245` (ADR 0099 Amendment 4): the wizards open on the user's screen,
+   * each resolved inside this turn's scope; a record outside it is not here.
+   * `fill_step` fills only one of these. Absent is none open: a fill is refused.
+   */
+  readonly openWizards?: readonly CopilotOpenWizardRecord[];
+  /**
+   * `F4.245`: the wizards of the pages an `open_page` call of this turn opened,
+   * resolved the same way; the turn service appends as the calls run. A fill
+   * for one of these waits in the browser for that wizard. Absent is none.
+   */
+  readonly pageWizards?: CopilotOpenWizardRecord[];
+  /**
+   * `F4.245` re-review: an `open_page` call of this turn ran, so the browser
+   * leaves the current page and only `pageWizards` admit a fill. The turn
+   * service sets it as the call runs; absent is no page opened.
+   */
+  pageOpened?: boolean;
   readonly now: Date;
 }
 
@@ -106,10 +125,15 @@ export const COPILOT_READ_TOOLS = Symbol("COPILOT_READ_TOOLS");
 export const EMPTY_COPILOT_READ_TOOLS: CopilotReadTools & {
   readonly registryWithoutAccess: CopilotReadTools["registry"];
   registryFor(options: RegistryOptions): CopilotReadTools["registry"];
+  openWizardRecords(): Promise<CopilotOpenWizardRecord[]>;
+  pageWizardRecords(): Promise<CopilotOpenWizardRecord[]>;
 } = {
   registry: defineToolRegistry<string>({}, {}),
   // `F3.86` PR 4: also an empty propose tool set, which has the second registry (and, `F3.87` PR 2, one per role).
   registryWithoutAccess: defineToolRegistry<string>({}, {}),
   registryFor: () => defineToolRegistry<string>({}, {}),
+  // `F4.245`: no propose tools, so no wizard is open to a fill.
+  openWizardRecords: async () => [],
+  pageWizardRecords: async () => [],
   dispatch: async () => ({ ok: false, error: "No such tool." }),
 };

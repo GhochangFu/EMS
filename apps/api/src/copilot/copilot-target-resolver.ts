@@ -75,8 +75,28 @@ export interface CopilotTargets {
      * in it, and is refused without one (ruling Q1).
      */
     boundOrganizationId?: string | null,
+    /**
+     * `F4.245` (ADR 0099 Amendment 4, review C1): `"record"` resolves the
+     * record a wizard's path names **by its row alone** — the body-dependent
+     * checks a proposal needs (a grant's `kind` and `targetId`, an
+     * instantiate's site) are not run, because an open wizard's body is what
+     * a fill is about to set. `userGrantAdd` reads as its `user` row and
+     * `assetTemplateDeploy` as its template row with the organization check.
+     * `"propose"` (the default) is every check.
+     */
+    mode?: CopilotResolveMode,
   ): Promise<ResolvedTarget | null>;
+  /**
+   * `F4.245` (ADR 0099 Amendment 4): the id of the dashboard `slug` names in
+   * the allowed organizations, for the edit page an `open_page` call opens;
+   * `null` when none has it or more than one does (the slug is unique per
+   * organization only).
+   */
+  dashboardIdBySlug(slug: string, allowedOrganizationIds: readonly string[]): Promise<string | null>;
 }
+
+/** What `resolve` checks: a proposal's every check, or an open wizard's record by its row alone. */
+export type CopilotResolveMode = "propose" | "record";
 
 export const COPILOT_TARGETS = Symbol("COPILOT_TARGETS");
 
@@ -141,6 +161,7 @@ export class CopilotTargetResolver implements CopilotTargets {
     allowedOrganizationIds: readonly string[],
     user: JwtPayload,
     boundOrganizationId: string | null = null,
+    mode: CopilotResolveMode = "propose",
   ): Promise<ResolvedTarget | null> {
     const target = entry.target;
     let found: Found | null;
@@ -165,7 +186,9 @@ export class CopilotTargetResolver implements CopilotTargets {
       if (found !== null && !(await this.safely(() => this.mayManage(of, parentId, found as Found, user, {})))) found = null;
     } else if (target.kind === "user" || target.kind === "userGrantAdd" || target.kind === "userGrant") {
       // `F3.86` PR 4: the users services' own checks; a 403 or 404 from them is the one refusal.
-      found = await this.findUserTarget(target, params, body, user, allowedOrganizationIds).catch(() => null);
+      // `F4.245` (review C1): an open grant-add drawer's record is its user; the grant is what a fill sets.
+      const asked: UserTarget = mode === "record" && target.kind === "userGrantAdd" ? { kind: "user", param: target.param } : target;
+      found = await this.findUserTarget(asked, params, body, user, allowedOrganizationIds).catch(() => null);
       if (found !== null && !allowedOrganizationIds.includes(found.organizationId)) found = null;
     } else if (target.kind === "fleet" || target.kind === "pointKey") {
       // Ruling Q1: a row with no organization lives in the conversation's bound organization.
@@ -186,7 +209,7 @@ export class CopilotTargetResolver implements CopilotTargets {
       if (id === undefined) return null;
       const kind = target.kind;
       found = await this.findRow(kind, id, allowedOrganizationIds);
-      if (found !== null && !(await this.safely(() => this.mayManage(kind, id, found as Found, user, body)))) found = null;
+      if (found !== null && !(await this.safely(() => this.mayManage(kind, id, found as Found, user, body, mode)))) found = null;
     }
     if (found === null) return null;
     for (const ref of entry.refs) {
@@ -207,6 +230,21 @@ export class CopilotTargetResolver implements CopilotTargets {
       ...(found.refName !== undefined ? { refName: found.refName } : {}),
       ...(found.status !== undefined ? { status: found.status } : {}),
     };
+  }
+
+  async dashboardIdBySlug(slug: string, allowedOrganizationIds: readonly string[]): Promise<string | null> {
+    const ids: string[] = [];
+    for (const organizationId of allowedOrganizationIds) {
+      const rows = await withTenant(this.tenantDb, organizationId, (tx) =>
+        tx
+          .select({ id: dashboards.id })
+          .from(dashboards)
+          .where(and(eq(dashboards.slug, slug), eq(dashboards.organizationId, organizationId)))
+          .limit(2),
+      );
+      ids.push(...rows.map((row) => row.id));
+    }
+    return ids.length === 1 ? (ids[0] as string) : null;
   }
 
   /**
@@ -525,6 +563,7 @@ export class CopilotTargetResolver implements CopilotTargets {
     found: Found,
     user: JwtPayload,
     body: Readonly<Record<string, unknown>> = {},
+    mode: CopilotResolveMode = "propose",
   ): Promise<boolean> {
     switch (kind) {
       // The location, RTU and asset-group routes: a master-data user who manages the site.
@@ -578,6 +617,8 @@ export class CopilotTargetResolver implements CopilotTargets {
       case "assetTemplateDeploy": {
         await this.access.requireMasterDataUser(user);
         if (!(await this.access.canManageOrganization(user, found.organizationId))) return false;
+        // `F4.245` (review C1): an open instantiate wizard's record is the template; the site is what a fill sets.
+        if (mode === "record") return true;
         const locationId =
           typeof body.locationId === "string"
             ? body.locationId

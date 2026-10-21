@@ -615,7 +615,7 @@ export async function aLocationFillAfterAGroupChoiceChoosesTheLocation(): Promis
   await userEvent.selectOptions(await screen.findByRole("combobox", { name: "Asset group" }), GRP_1);
 
   act(() => {
-    useWizardStore.getState().receiveFill({ catalogId: "dashboard.create", stepId: "scope", values: { locationId: LOC_1 } });
+    useWizardStore.getState().receiveFill({ catalogId: "dashboard.create", params: {}, stepId: "scope", values: { locationId: LOC_1 } }, null);
   });
 
   expect(await screen.findByRole("radio", { name: "Location", checked: true })).toBeInTheDocument();
@@ -651,10 +651,10 @@ export async function anOrganizationWideFillOnReviewDoesNotCreateForALocationAdm
   const createSpy = await locationAdminReachesReview();
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "dashboard.create",
+      catalogId: "dashboard.create", params: {},
       stepId: "scope",
       values: { locationId: null, assetGroupId: null },
-    });
+    }, null);
   });
   await userEvent.click(within(createWizard()).getByRole("button", { name: "Submit" }));
   expect(createSpy).not.toHaveBeenCalled();
@@ -693,4 +693,48 @@ export async function cancellingClickOnlyLayoutWorkAsksFirst(): Promise<void> {
   await userEvent.click(within(layoutWizard()).getByRole("button", { name: "Cancel" }));
 
   expect(within(layoutWizard()).getByRole("alertdialog", { name: "Leave the wizard" })).toBeInTheDocument();
+}
+
+const FILL_POINT = "70000000-0000-4000-8000-000000000001";
+const layoutFill = (values: Record<string, unknown>) => ({
+  catalogId: "dashboard.widgets.replace",
+  params: { id: CREATED_ID },
+  stepId: "layout",
+  values,
+});
+const FILLED_TILE = {
+  widgetType: "value_tile",
+  title: "Filled tile",
+  gridX: 0,
+  gridY: 0,
+  gridW: 3,
+  gridH: 2,
+  points: [{ pointId: FILL_POINT, role: "primary", sortOrder: 0 }],
+  sources: [],
+  config: {},
+};
+
+/**
+ * `F4.245` (owner ruling 3) — a layout fill after the create reaches the canvas and the PUT. Before
+ * it the page's `onChange` dropped it. Mutation: put back `onChange={() => undefined}` → red.
+ */
+export async function aLayoutFillAfterCreateReachesTheCanvas(): Promise<void> {
+  const putSpy = vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue(createdDashboard());
+  await createAs("Asset group");
+  act(() => useWizardStore.getState().receiveFill(layoutFill({ widgets: [FILLED_TILE] }), null));
+  expect(await within(layoutWizard()).findByText("Filled tile")).toBeInTheDocument();
+  await submitWizard(layoutWizard);
+  await waitFor(() => expect(putSpy).toHaveBeenCalledTimes(1));
+  expect((putSpy.mock.calls[0]?.[1] as { widgets: Array<{ title?: string }> }).widgets.map((w) => w.title)).toEqual(["Filled tile"]);
+}
+
+/** `F4.245`: a new dashboard has no tabs, so a fill that names tabs says where to fill them. Mutation: drop the tabs check → red. */
+export async function aLayoutFillWithTabsIsRefusedOnTheCreatePage(): Promise<void> {
+  await createAs("Asset group");
+  const tabs = [{ key: "main", label: "Main", sortOrder: 0, assetGroupId: null }];
+  act(() => useWizardStore.getState().receiveFill(layoutFill({ tabs, widgets: [{ ...FILLED_TILE, tabKey: "main" }] }), null));
+  expect(await within(layoutWizard()).findByRole("alert")).toHaveTextContent(
+    "This page lays out a dashboard without tabs; open the dashboard's edit page to fill tabs.",
+  );
+  expect(within(layoutWizard()).queryByText("Filled tile")).toBeNull();
 }

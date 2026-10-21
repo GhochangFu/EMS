@@ -265,6 +265,7 @@ export function CreateUserWizard({
       <WizardShell
         key="create"
         entry={wizardEntry("user.create")}
+        params={{}}
         values={values}
         onChange={fromValues}
         renderStep={renderStep}
@@ -365,6 +366,7 @@ export function UpdateUserWizard({
       <WizardShell
         key={`update-${target.id}`}
         entry={wizardEntry("user.update")}
+        params={{ id: target.id }}
         values={values}
         onChange={fromValues}
         renderStep={renderStep}
@@ -420,6 +422,7 @@ export function UserStatusWizard({
           key={`${action}-${target.id}`}
           {...shared}
           entry={wizardEntry("user.deactivate")}
+          params={{ id: target.id }}
           summary={wizardEntry("user.deactivate").summary(context)}
         />
       </WizardFrame>
@@ -431,6 +434,7 @@ export function UserStatusWizard({
         key={`${action}-${target.id}`}
         {...shared}
         entry={wizardEntry("user.reactivate")}
+        params={{ id: target.id }}
         summary={wizardEntry("user.reactivate").summary(context)}
       />
     </WizardFrame>

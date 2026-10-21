@@ -26,8 +26,15 @@ import { COPILOT_NEVER_GLOBAL_ADMIN_MESSAGE } from "@bms/shared";
 import { PROPOSE_ACCESS_NOT_ASKED_ERROR } from "./copilot-access-intent";
 import { ASSET_CREATE_IDS, PROPOSE_ASSET_NOT_ASKED_ERROR } from "./copilot-asset-intent";
 import { bodyDefinitionOf, describeBody } from "./copilot-change-schema";
+import {
+  type CopilotOpenWizardRecord,
+  fillRecordRefusal,
+  openWizardRecords,
+  pageWizardRecords,
+} from "./copilot-open-wizards";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import type { CopilotReadTools, CopilotToolContext, CopilotToolResult, RegistryOptions } from "./copilot-read-tools";
+import type { CopilotOpenWizard } from "@bms/shared";
 import { prepareUpload } from "./copilot-upload-prepare";
 import { COPILOT_TARGETS, type CopilotTargets } from "./copilot-target-resolver";
 import { PROPOSE_TARGET_ERROR, templateLifecycleRefusal } from "./copilot-template-lifecycle";
@@ -99,6 +106,13 @@ export const DESCRIBE_BUDGET_ERROR =
 export interface CopilotProposeTools extends CopilotReadTools {
   readonly registryWithoutAccess: ToolRegistry<string>;
   registryFor(options: RegistryOptions): ToolRegistry<string>;
+  /**
+   * `F4.245` (ADR 0099 Amendment 4): the open wizards whose records are in the
+   * turn's scope, each with its name, through the propose target resolver.
+   */
+  openWizardRecords(wizards: readonly CopilotOpenWizard[], ctx: CopilotToolContext): Promise<CopilotOpenWizardRecord[]>;
+  /** `F4.245`: the wizards the page an `open_page` route opens mounts, in scope. */
+  pageWizardRecords(route: string, ctx: CopilotToolContext): Promise<CopilotOpenWizardRecord[]>;
 }
 
 /** `F3.87` PR 2: the second guard behind the role-filtered registry (Amendment 3 A1). */
@@ -254,14 +268,21 @@ export function createCopilotProposeTools(
     definitions.push({ name, description: proposeDescription(entry), parameters: proposeDefinition(entry) });
   }
   const catalogIdSchema = z.enum(ids);
+  // `F4.245` (Amendment 4): the model names the record by its path parameters; the dispatch checks them.
   schemas[FILL_STEP_TOOL] = z
-    .object({ catalogId: catalogIdSchema, stepId: z.string().min(1).max(64), values: z.record(z.string(), z.unknown()) })
+    .object({
+      catalogId: catalogIdSchema,
+      params: z.record(z.string().min(1).max(64), z.string().min(1).max(256)),
+      stepId: z.string().min(1).max(64),
+      values: z.record(z.string(), z.unknown()),
+    })
     .strict();
   definitions.push({
     name: FILL_STEP_TOOL,
     description:
-      "Fill one step of the wizard the user has open for a catalog change, with values for that step's fields. " +
-      "It saves nothing and sends nothing: the user reviews the wizard.",
+      "Fill one step of a wizard open on the user's screen, with values for that step's fields. Name the wizard by " +
+      "its catalogId and params exactly as the open-wizards list or an open_page result gives them ({} for a create); " +
+      "any other record is refused, so propose that change instead. It saves nothing and sends nothing.",
     parameters: jsonSchemaOf(schemas[FILL_STEP_TOOL]),
   });
   schemas[DESCRIBE_CHANGE_TOOL] = z
@@ -494,6 +515,8 @@ export function createCopilotProposeTools(
     registry,
     registryWithoutAccess,
     registryFor,
+    openWizardRecords: (wizards, ctx) => openWizardRecords(wizards, services.targets, ctx, (id) => byId.get(id)),
+    pageWizardRecords: (route, ctx) => pageWizardRecords(route, services.targets, ctx, (id) => byId.get(id)),
     dispatch: async (name, args, ctx): Promise<CopilotToolResult> => {
       const entry = byTool.get(name);
       if (entry !== undefined) return propose(entry, args, ctx);
@@ -504,6 +527,10 @@ export function createCopilotProposeTools(
         if (!offeredToRole(target, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
         // `F3.87` PR 7, D8: a file turn cannot pre-fill an asset wizard with what it read from the file either.
         if (ASSET_CREATE_IDS.has(target.id) && ctx.assetIntent === false) return { ok: false, error: PROPOSE_ASSET_NOT_ASKED_ERROR };
+        // `F4.245` (Amendment 4): only a record the user has open, or one a page this turn opened mounts.
+        const params = args.params as Record<string, string>;
+        const refusal = fillRecordRefusal(target.id, params, ctx);
+        if (refusal !== null) return { ok: false, error: refusal };
         const step = target.steps.find((candidate) => candidate.id === args.stepId);
         if (step === undefined) return { ok: false, error: UNKNOWN_STEP_ERROR };
         const values = stepValuesSchema(target.body, step.fields).safeParse(args.values);
@@ -517,7 +544,7 @@ export function createCopilotProposeTools(
           ok: true,
           result: { filled: step.id },
           organizationIds: [],
-          fillStep: { catalogId: target.id, stepId: step.id, values: args.values as Record<string, unknown> },
+          fillStep: { catalogId: target.id, params, stepId: step.id, values: args.values as Record<string, unknown> },
         };
       }
       if (name === DESCRIBE_CHANGE_TOOL) {
@@ -576,6 +603,14 @@ export class CopilotProposeToolSet implements CopilotProposeTools {
 
   registryFor(options: RegistryOptions): ToolRegistry<string> {
     return this.tools.registryFor(options);
+  }
+
+  openWizardRecords(wizards: readonly CopilotOpenWizard[], ctx: CopilotToolContext): Promise<CopilotOpenWizardRecord[]> {
+    return this.tools.openWizardRecords(wizards, ctx);
+  }
+
+  pageWizardRecords(route: string, ctx: CopilotToolContext): Promise<CopilotOpenWizardRecord[]> {
+    return this.tools.pageWizardRecords(route, ctx);
   }
 
   dispatch(name: string, args: Record<string, unknown>, ctx: CopilotToolContext): Promise<CopilotToolResult> {

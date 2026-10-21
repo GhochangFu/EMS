@@ -215,7 +215,7 @@ export async function aFillFillsItsStepOnly(): Promise<void> {
   act(() => {
     useWizardStore
       .getState()
-      .receiveFill({ catalogId: "asset.create", stepId: "classification", values: { tripCause: "overload", code: "HIJACK" } });
+      .receiveFill({ catalogId: "asset.create", params: {}, stepId: "classification", values: { tripCause: "overload", code: "HIJACK" } }, null);
   });
   await waitFor(() => expect((screen.getByLabelText("Last trip cause") as HTMLInputElement).value).toBe("overload"));
   await userEvent.click(screen.getByRole("button", { name: "Back" }));

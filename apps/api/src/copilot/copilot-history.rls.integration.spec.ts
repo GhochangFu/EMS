@@ -178,10 +178,10 @@ export async function aBodyNamingAnotherOrganizationNeverCountsIt(ctx: HistoryCt
   const bound = await store.create(ctx.globalAdmin, ctx.orgA);
   const beforeX = (await orgCounter(ctx, ctx.orgA)) ?? 0;
 
-  await controller.turn(bound.id, { message: "any alarms?" }, admin, jwt);
+  await controller.turn(bound.id, { message: "any alarms?", wizards: [] }, admin, jwt);
   expect(await orgCounter(ctx, ctx.orgA), "the positive control: the turn counted on X").toBe(beforeX + 1);
 
-  const error = await controller.turn(bound.id, { message: "any alarms?", organizationId: ctx.orgY }, admin, jwt).then(
+  const error = await controller.turn(bound.id, { message: "any alarms?", wizards: [], organizationId: ctx.orgY }, admin, jwt).then(
     () => null,
     (err: { getStatus?: () => number }) => err,
   );
@@ -230,7 +230,7 @@ export async function aTurnOnAnotherUsersConversationIs404(ctx: HistoryCtx): Pro
   const llmB = new FakeLlmProvider([{ kind: "final", text: "leak" }]);
   const countedB: Array<string | null> = [];
   const error = await turnService(ctx, llmB, countedB)
-    .turn({ identity: identity(ctx.userB, "organization_admin", ctx.orgA), user: jwt }, mine.id, "hello", "user")
+    .turn({ identity: identity(ctx.userB, "organization_admin", ctx.orgA), user: jwt }, mine.id, "hello", "user", [], [])
     .then(
       () => null,
       (err: { getStatus?: () => number }) => err,
@@ -246,6 +246,8 @@ export async function aTurnOnAnotherUsersConversationIs404(ctx: HistoryCtx): Pro
     mine.id,
     "hello",
     "user",
+    [],
+    [],
   );
   expect(response.outcome).toBe("answered");
   expect(response.messages.map((m) => m.role)).toEqual(["user", "assistant"]);

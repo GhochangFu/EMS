@@ -214,6 +214,7 @@ export function SiteLayoutWizard({ locationId, siteName }: SiteLayoutWizardProps
               <WizardShell
                 key={attempt}
                 entry={wizardEntry("location.siteLayout.make")}
+                params={{ id: locationId }}
                 values={values}
                 onChange={(next) => {
                   setError(null);

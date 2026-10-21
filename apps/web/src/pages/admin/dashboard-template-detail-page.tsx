@@ -520,6 +520,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
             <h2 className="font-condensed text-base font-bold text-ink">Save canvas</h2>
             <WizardShell
               entry={wizardEntry("dashboardTemplate.update")}
+              params={{ id: template.id }}
               values={saveValues}
               onChange={updateSave}
               renderStep={(step: WizardStep) => renderSaveStep(step, saveValues)}
@@ -554,6 +555,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
               <WizardShell
                 entry={wizardEntry("dashboardTemplate.publish")}
                 {...lifecycleProps(publishM)}
+                params={{ id: template.id }}
                 summary={wizardEntry("dashboardTemplate.publish").summary(summaryContext)}
               />
             ) : null}
@@ -567,6 +569,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 <WizardShell
                   entry={wizardEntry("dashboardTemplate.archive")}
                   {...lifecycleProps(archiveM)}
+                  params={{ id: template.id }}
                   summary={wizardEntry("dashboardTemplate.archive").summary(summaryContext)}
                 />
               </>
@@ -575,6 +578,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
               <WizardShell
                 entry={wizardEntry("dashboardTemplate.draft")}
                 {...lifecycleProps(draftM)}
+                params={{ id: template.id }}
                 summary={wizardEntry("dashboardTemplate.draft").summary(summaryContext)}
               />
             ) : null}

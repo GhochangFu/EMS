@@ -189,7 +189,7 @@ export async function aFillFillsItsStepOnly(): Promise<void> {
   act(() => {
     useWizardStore
       .getState()
-      .receiveFill({ catalogId: "rtu.create", stepId: "source", values: { stationCode: "ST-7", code: "HIJACK" } });
+      .receiveFill({ catalogId: "rtu.create", params: {}, stepId: "source", values: { stationCode: "ST-7", code: "HIJACK" } }, null);
   });
   await waitFor(() => expect((screen.getByLabelText("Station code") as HTMLInputElement).value).toBe("ST-7"));
   await userEvent.click(screen.getByRole("button", { name: "Back" }));

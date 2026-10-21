@@ -9,6 +9,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { CopilotAccessGuard } from "./copilot-access.guard";
 import type { CopilotAvailability } from "./copilot-availability";
 import type { CopilotAvailabilityService } from "./copilot-availability.service";
+import { OPEN_WIZARD_INVALID_ERROR, OPEN_WIZARDS_JSON_ERROR } from "./copilot-open-wizards";
 import { CopilotConversationsController } from "./copilot-conversations.controller";
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import type { CopilotPendingChangesService } from "./copilot-pending-changes.service";
@@ -95,7 +96,7 @@ function conversationsFake(options: { organizations?: Array<{ id: string }> } = 
 
 /** A `CopilotTurnService` double: the turn's order is its own spec's; the route is tested for the HTTP rules only. */
 function turnsFake() {
-  const turned: Array<{ identityId: string; user: JwtPayload; conversationId: string; message: string; kind: string }> = [];
+  const turned: Array<{ identityId: string; user: JwtPayload; conversationId: string; message: string; kind: string; wizards: unknown }> = [];
   const files: unknown[][] = [];
   const service = {
     turn: async (
@@ -104,8 +105,10 @@ function turnsFake() {
       message: string,
       kind: string,
       attachments: unknown[],
+      wizards: unknown,
     ) => {
-      turned.push({ identityId: caller.identity.id, user: caller.user, conversationId, message, kind });
+      // `F4.245` (critique F3): the fake records the wizards, so a dropped hand-off reddens.
+      turned.push({ identityId: caller.identity.id, user: caller.user, conversationId, message, kind, wizards });
       files.push(attachments);
       return { conversationId, outcome: "answered", configured: true, reply: "ok", messages: [], navigateTo: null };
     },
@@ -283,10 +286,11 @@ const CONVERSATION = "33333333-3333-4333-8333-333333333333";
 export async function assertTheTurnRoutePassesTheCallerAndTheMessage(): Promise<void> {
   const h = controllerWith("organization_admin");
   const jwt = tokenFor("organization_admin");
-  const response = await h.controller.turn(CONVERSATION, { message: "any alarms?" }, h.identity, jwt);
+  const wizards = [{ catalogId: "dashboard.update", params: { id: CONVERSATION } }];
+  const response = await h.controller.turn(CONVERSATION, { message: "any alarms?", wizards }, h.identity, jwt);
   expect(response.outcome).toBe("answered");
   expect(h.swept).toEqual([USER_ID]);
-  expect(h.turned).toEqual([{ identityId: USER_ID, user: jwt, conversationId: CONVERSATION, message: "any alarms?", kind: "user" }]);
+  expect(h.turned).toEqual([{ identityId: USER_ID, user: jwt, conversationId: CONVERSATION, message: "any alarms?", kind: "user", wizards }]);
 }
 
 /**
@@ -297,12 +301,14 @@ export async function assertTheTurnRoutePassesTheCallerAndTheMessage(): Promise<
 export async function assertATurnBodyNamingAnOrganizationIs400(): Promise<void> {
   const h = controllerWith("admin");
   const jwt = tokenFor("admin", null);
-  await rejectsWith(() => h.controller.turn(CONVERSATION, { message: "hi", organizationId: OTHER }, h.identity, jwt), BadRequestException);
-  await rejectsWith(() => h.controller.turn(CONVERSATION, { message: "" }, h.identity, jwt), BadRequestException);
-  await rejectsWith(() => h.controller.turn(CONVERSATION, { message: "x".repeat(8_001) }, h.identity, jwt), BadRequestException);
-  await rejectsWith(() => h.controller.turn(CONVERSATION, {}, h.identity, jwt), BadRequestException);
+  // `F4.245` (critique F2): each negative case carries `wizards`, so it isolates the one key it names.
+  const wizards: unknown[] = [];
+  await rejectsWith(() => h.controller.turn(CONVERSATION, { message: "hi", wizards, organizationId: OTHER }, h.identity, jwt), BadRequestException);
+  await rejectsWith(() => h.controller.turn(CONVERSATION, { message: "", wizards }, h.identity, jwt), BadRequestException);
+  await rejectsWith(() => h.controller.turn(CONVERSATION, { message: "x".repeat(8_001), wizards }, h.identity, jwt), BadRequestException);
+  await rejectsWith(() => h.controller.turn(CONVERSATION, { wizards }, h.identity, jwt), BadRequestException);
   expect(h.turned).toEqual([]);
-  await h.controller.turn(CONVERSATION, { message: "hi" }, h.identity, jwt);
+  await h.controller.turn(CONVERSATION, { message: "hi", wizards }, h.identity, jwt);
   expect(h.turned).toHaveLength(1);
 }
 
@@ -352,8 +358,37 @@ export async function assertTheDetailCarriesTheOpenChanges(): Promise<void> {
 /** `F3.87` PR 7: a JSON turn hands the service no files. */
 export async function assertAJsonTurnPassesNoFiles(): Promise<void> {
   const h = controllerWith("organization_admin");
-  await h.controller.turn(CONVERSATION, { message: "any alarms?" }, h.identity, tokenFor("organization_admin"));
+  await h.controller.turn(CONVERSATION, { message: "any alarms?", wizards: [] }, h.identity, tokenFor("organization_admin"));
   expect(h.files).toEqual([[]]);
+}
+
+/** `F4.245`: a JSON turn without `wizards` is a 400 (the dock always sends it, `[]` when none is open). */
+export async function aJsonTurnWithoutWizardsIs400(): Promise<void> {
+  const h = controllerWith("organization_admin");
+  await rejectsWith(() => h.controller.turn(CONVERSATION, { message: "hi" }, h.identity, tokenFor("organization_admin")), BadRequestException);
+  expect(h.turned).toEqual([]);
+}
+
+/** `F4.245`: a wizard that does not match its catalog entry is a 400 and no turn runs. Mutation: drop `checkOpenWizards` → red. */
+export async function aWizardTheCatalogRefusesIs400(): Promise<void> {
+  const h = controllerWith("organization_admin");
+  const wizards = [{ catalogId: "dashboard.update", params: { id: "not-a-uuid" } }];
+  const err = await h.controller.turn(CONVERSATION, { message: "hi", wizards }, h.identity, tokenFor("organization_admin")).catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect((err as BadRequestException).message).toBe(`${OPEN_WIZARD_INVALID_ERROR} (wizards[0]: id is not a value of the entry's)`);
+  expect(h.turned).toEqual([]);
+}
+
+/** `F4.245` (critique C4): a multipart `wizards` string that is not JSON is a 400, never a 500. */
+export async function aMalformedMultipartWizardsFieldIs400(): Promise<void> {
+  const h = controllerWith("organization_admin");
+  const files = [{ buffer: Buffer.from("x"), originalname: "a.png" }];
+  const err = await h.controller
+    .turn(CONVERSATION, { message: "read this", wizards: "[{" }, h.identity, tokenFor("organization_admin"), files)
+    .catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect((err as BadRequestException).message).toBe(OPEN_WIZARDS_JSON_ERROR);
+  expect(h.turned).toEqual([]);
 }
 
 /**
@@ -364,8 +399,12 @@ export async function assertAMultipartTurnPassesTheFiles(): Promise<void> {
   const h = controllerWith("organization_admin");
   const files = [{ buffer: Buffer.from("x"), originalname: "a.png" }];
   // A stray field beside `message` would be a 400 on the JSON path (strict); the multipart path reads `message` only.
-  await h.controller.turn(CONVERSATION, { message: "read this", stray: "x" }, h.identity, tokenFor("organization_admin"), files);
+  // `F4.245`: the `wizards` field is a JSON string there, parsed and handed on.
+  const wizards = [{ catalogId: "dashboard.create", params: {} }];
+  const body = { message: "read this", wizards: JSON.stringify(wizards), stray: "x" };
+  await h.controller.turn(CONVERSATION, body, h.identity, tokenFor("organization_admin"), files);
   expect(h.turned.map((turn) => turn.message)).toEqual(["read this"]);
+  expect(h.turned.map((turn) => turn.wizards)).toEqual([wizards]);
   expect(h.files).toEqual([files]);
 }
 

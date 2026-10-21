@@ -9,6 +9,7 @@ import {
   guardWizardLeave,
   type LeaveDecision,
   nextStepId,
+  openWizardKey,
   previousStepId,
   REVIEW_STEP,
   stepProblems,
@@ -22,6 +23,18 @@ import { ChangeCard } from "../copilot/change-card";
 type WizardShellProps = {
   /** The catalog entry this wizard submits (`@bms/shared/copilot`). */
   entry: CatalogEntry;
+  /**
+   * `F4.245` (ADR 0099 Amendment 4): every path parameter of the entry's route
+   * for the record this wizard writes (`{}` for a create). The shell registers
+   * the record for the dock and takes only a fill for it. Required, so the
+   * compiler names every wizard that does not say which record it is.
+   */
+  params: Readonly<Record<string, string>>;
+  /**
+   * `F4.245` (critique C2): the body fields the page fixes — a fill never sets
+   * one (`applyFill`). For example an asset page's `assetId`.
+   */
+  fixedFields?: readonly string[];
   /** The form's values, keyed by body field; the page owns them. */
   values: Record<string, unknown>;
   onChange: (values: Record<string, unknown>) => void;
@@ -63,6 +76,11 @@ type WizardShellProps = {
  * and lost a select-first pick; the bubbled `onChange` batches with the page's. Values the copilot's `fill_step` gave this
  * entry (`useWizardStore`) are merged into the named step's fields only, and
  * mark the wizard as changed.
+ *
+ * `F4.245` (ADR 0099 Amendment 4): the shell registers the record it writes
+ * (`params`) while it is mounted, and takes only a fill whose catalog id and
+ * parameters are that record's (`openWizardKey`); a page-fixed field
+ * (`fixedFields`) is never filled.
  */
 export function WizardShell(props: WizardShellProps) {
   const { entry, values, onChange } = props;
@@ -73,16 +91,26 @@ export function WizardShell(props: WizardShellProps) {
   const [leave, setLeave] = useState<Extract<LeaveDecision, { allow: false }> | null>(null);
   const seq = useWizardStore((s) => s.seq);
   const take = useWizardStore((s) => s.take);
+  const key = openWizardKey(entry, props.params);
+
+  // `F4.245`: the record this wizard writes is open while it is mounted; the dock sends it with each turn.
+  useEffect(() => {
+    if (key === null) return undefined;
+    const { register, unregister } = useWizardStore.getState();
+    const mount = register(key, { catalogId: entry.id, params: { ...props.params } });
+    return () => unregister(mount);
+  }, [key]);
 
   useEffect(() => {
-    const fill = take(entry.id);
+    if (key === null) return;
+    const fill = take(key);
     if (fill === null) return;
-    const next = applyFill(entry.id, steps, values, fill);
+    const next = applyFill(entry.id, steps, values, fill, props.fixedFields);
     if (next === null) return;
     setDirty(true);
     onChange(next);
-    // Each fill is read once, when it arrives: `seq` is the only trigger.
-  }, [seq]);
+    // Each fill is read once, when it arrives (`seq`), or when this wizard's record changes (`key`).
+  }, [seq, key]);
 
   const step = steps.find((candidate) => candidate.id === stepId) ?? REVIEW_STEP;
   const index = steps.indexOf(step);
@@ -119,6 +147,12 @@ export function WizardShell(props: WizardShellProps) {
           </li>
         ))}
       </ol>
+
+      {key === null && (
+        <p role="alert" className="text-xs text-critical-ink">
+          This form does not name its record, so the copilot cannot fill it.
+        </p>
+      )}
 
       {step.id === REVIEW_STEP.id ? (
         <ChangeCard

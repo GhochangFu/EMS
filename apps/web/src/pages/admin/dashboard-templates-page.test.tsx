@@ -20,6 +20,7 @@ import {
   createContentStepDescribesAFilledContent,
   createBasicsShowsAFilledTarget,
   createSummaryNamesAnUnlistedOrganizationById,
+  aStockImportFillSetsTheOrganization,
   importingAnnouncesImportingThisEntry,
   importingRemovesThatEntrysIdleName,
   rendersTemplatesAndStockCatalog,
@@ -138,5 +139,9 @@ describe("F3.85 PR 10a dashboard template wizards on the list page", () => {
 
   it("the create Review names an organization missing from the list by its id", async () => {
     await createSummaryNamesAnUnlistedOrganizationById();
+  });
+
+  it("F4.245 C2: a copilot fill sets the stock import's organization", async () => {
+    await aStockImportFillSetsTheOrganization();
   });
 });

@@ -350,7 +350,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.85` PR 5 (ADR 0099 decision 8). `_list` and `_get` take no body and no
   // query (one path parameter on `_get`).
   CopilotConversationsController_create: copilotCreateConversationBodySchema,
-  // `F3.85` PR 7 (ADR 0099 decisions 1, 9, 10): the message only, plus one path parameter.
+  // `F3.85` PR 7 (ADR 0099 decisions 1, 9, 10): the message, plus one path parameter; `F4.245`
+  // (Amendment 4) adds the wizards open on the user's screen, never an authorization input.
   CopilotConversationsController_turn: copilotTurnBodySchema,
   // `F3.86` PR 5 (decision 7): the organization the skill runs in. `_endOnboarding` takes no body.
   CopilotConversationsController_startOnboarding: copilotStartOnboardingSkillBodySchema,

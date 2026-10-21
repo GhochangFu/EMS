@@ -106,7 +106,7 @@ function setup(options: Setup = {}) {
     commitReader: reader,
     ...(options.open ? { open: options.open } : {}),
   });
-  const turn = () => h.service.turn({ identity: ORG_ADMIN, user: JWT }, CONVERSATION, "discover the devices", "user");
+  const turn = () => h.service.turn({ identity: ORG_ADMIN, user: JWT }, CONVERSATION, "discover the devices", "user", [], []);
   return { ...h, reads, turn };
 }
 

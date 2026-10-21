@@ -478,6 +478,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
             <h2 className="font-condensed text-base font-bold text-ink">New template</h2>
             <WizardShell
               entry={wizardEntry("dashboardTemplate.create")}
+              params={{}}
               values={form}
               onChange={updateForm}
               renderStep={renderCreateStep}
@@ -505,6 +506,7 @@ export function DashboardTemplatesAdminPage({ user }: DashboardTemplatesAdminPag
             <h2 className="font-condensed text-base font-bold text-ink">Import {importing.name}</h2>
             <WizardShell
               entry={wizardEntry("dashboardTemplate.importStock")}
+              params={{ code: importing.code }}
               values={importValues}
               onChange={updateImport}
               renderStep={(step) =>

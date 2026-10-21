@@ -36,6 +36,7 @@ export function AssetRoleWizard({ onCancel, onDone }: { onCancel: () => void; on
     <AdminWizardFrame title="Add a unit role">
       <WizardShell
         entry={wizardEntry("assetRole.create")}
+        params={{}}
         values={values}
         onChange={setValues}
         renderStep={() => (

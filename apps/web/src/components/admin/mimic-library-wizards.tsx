@@ -61,6 +61,9 @@ export function LibrarySettingWizard({
     <AdminWizardFrame title={title}>
       <WizardShell
         entry={wizardEntry("mimicLibrary.setting")}
+        params={{ libraryCode: library.code }}
+        // `F4.245` (critique C2): the organization is the page's; a fill never sets it.
+        fixedFields={["organizationId"]}
         values={values}
         onChange={setValues}
         renderStep={() => (
@@ -127,6 +130,9 @@ export function LibraryCreateWizard({ organizationId, organizationName, onCancel
     <AdminWizardFrame title="New organization library">
       <WizardShell
         entry={wizardEntry("mimicLibrary.create")}
+        params={{}}
+        // `F4.245` (critique C2): the organization is the page's; a fill never sets it.
+        fixedFields={["organizationId"]}
         values={values}
         onChange={setValues}
         renderStep={renderStep}
@@ -236,6 +242,7 @@ export function LibraryUpdateWizard({
     <AdminWizardFrame title={title}>
       <WizardShell
         entry={wizardEntry("mimicLibrary.update")}
+        params={{ id: library.id }}
         values={values}
         onChange={setValues}
         renderStep={renderStep}

@@ -74,6 +74,7 @@ export function AssetTemplateLifecycleWizard({
             key="publish"
             entry={wizardEntry("assetTemplate.publish")}
             {...shared}
+            params={{ id: template.id }}
             current={null}
             summary={`Publish ${template.name} v${template.version}. A published version is frozen; editing it again makes a new draft.`}
           />
@@ -88,6 +89,7 @@ export function AssetTemplateLifecycleWizard({
               key="archive"
               entry={wizardEntry("assetTemplate.archive")}
               {...shared}
+              params={{ id: template.id }}
               summary={wizardEntry("assetTemplate.archive").summary(context)}
             />
           </>
@@ -97,6 +99,7 @@ export function AssetTemplateLifecycleWizard({
             key="createDraft"
             entry={wizardEntry("assetTemplate.draft")}
             {...shared}
+            params={{ id: template.id }}
             summary={wizardEntry("assetTemplate.draft").summary(context)}
           />
         ) : null}

@@ -148,12 +148,13 @@ export function aFillIsTakenOnlyForItsStepsFields(): void {
   const steps = wizardStepsOf(entry("dashboard.create"));
   const filled = applyFill("dashboard.create", steps, { slug: "keep" }, {
     catalogId: "dashboard.create",
+    params: {},
     stepId: "basics",
     values: { name: "Main", organizationId: ORG },
   });
   expect(filled).toEqual({ slug: "keep", name: "Main" });
-  expect(applyFill("dashboard.update", steps, {}, { catalogId: "dashboard.create", stepId: "basics", values: { name: "x" } })).toBeNull();
-  expect(applyFill("dashboard.create", steps, {}, { catalogId: "dashboard.create", stepId: "nope", values: {} })).toBeNull();
+  expect(applyFill("dashboard.update", steps, {}, { catalogId: "dashboard.create", params: {}, stepId: "basics", values: { name: "x" } })).toBeNull();
+  expect(applyFill("dashboard.create", steps, {}, { catalogId: "dashboard.create", params: {}, stepId: "nope", values: {} })).toBeNull();
 }
 
 /** The `guardTabSwitch` rule: a clean wizard leaves silently; a dirty one asks. */

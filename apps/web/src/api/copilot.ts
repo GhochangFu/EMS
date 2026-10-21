@@ -8,6 +8,7 @@ import {
 import type {
   CopilotConversationDetailDto,
   CopilotConversationDto,
+  CopilotOpenWizard,
   CopilotRejectResponseDto,
   CopilotStatusDto,
   CopilotTurnResponseDto,
@@ -53,12 +54,15 @@ export async function fetchCopilotConversation(conversationId: string): Promise<
 
 /**
  * `POST /api/v1/copilot/conversations/:id/turns` (`F3.85` PR 7, ADR 0099
- * decisions 1, 9, 10). The body is the message only: the organization a turn
- * reads and is counted against is the conversation's own, read on the server.
+ * decisions 1, 9, 10). The body is the message and, since `F4.245` (ADR 0099
+ * Amendment 4), the wizards open on the user's screen (`[]` when none), so a
+ * `fill_step` names a record the user has open. The organization a turn reads
+ * and is counted against is still the conversation's own, read on the server;
+ * the wizards are never an authorization input.
  *
  * **Files** (`F3.87` PR 8, ADR 0099 Amendment 3 A4, A7). With at least one
- * file the turn goes as `FormData` — `message`, then one `files` entry per
- * file — and sets **no `Content-Type`**: the browser writes the multipart
+ * file the turn goes as `FormData` — `message`, `wizards` as a JSON string,
+ * then one `files` entry per file — and sets **no `Content-Type`**: the browser writes the multipart
  * boundary, which a hand-set header would lack. With none it stays JSON. The
  * server re-checks every limit (count, type by magic bytes, size) and the
  * organization's switch; the dock's checks only spare a refused upload.
@@ -66,19 +70,22 @@ export async function fetchCopilotConversation(conversationId: string): Promise<
 export async function sendCopilotTurn(
   conversationId: string,
   message: string,
-  files: readonly File[] = [],
+  files: readonly File[],
+  // `F4.245` (critique F3): required, so a caller that drops the open wizards does not compile.
+  wizards: readonly CopilotOpenWizard[],
 ): Promise<CopilotTurnResponseDto> {
   const path = `/copilot/conversations/${encodeURIComponent(conversationId)}/turns`;
   if (files.length > 0) {
     const form = new FormData();
     form.append("message", message);
+    form.append("wizards", JSON.stringify(wizards));
     for (const file of files) form.append("files", file, file.name);
     return adminFetch(path, copilotTurnResponseDtoSchema, { method: "POST", body: form });
   }
   return adminFetch(path, copilotTurnResponseDtoSchema, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, wizards }),
   });
 }
 

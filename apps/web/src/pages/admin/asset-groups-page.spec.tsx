@@ -603,10 +603,10 @@ export async function aFillFillsTheNamedStepOnly(): Promise<void> {
   const dialog = await screen.findByRole("dialog", { name: "New asset group" });
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "assetGroup.create",
+      catalogId: "assetGroup.create", params: {},
       stepId: "basics",
       values: { code: "f386-filled", name: "Filled group", description: "not a Basics field" },
-    });
+    }, null);
   });
   await waitFor(() => expect(within(dialog).getByLabelText("Code")).toHaveValue("f386-filled"));
   expect(within(dialog).getByLabelText("Name")).toHaveValue("Filled group");

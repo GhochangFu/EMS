@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChangeEvent, FormEvent, KeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import type {
   CopilotConversationDetailDto,
   CopilotMessageDto,
@@ -13,9 +13,7 @@ import type {
 import {
   COPILOT_ATTACHMENTS_MAX,
   COPILOT_TURN_MESSAGE_MAX,
-  MAX_COPILOT_ATTACHMENT_BYTES,
   MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES,
-  MAX_MIMIC_SYMBOL_SVG_BYTES,
 } from "@bms/shared/contracts";
 
 import { fetchOnboardingSession } from "../../api/admin/onboarding";
@@ -32,6 +30,7 @@ import {
 } from "../../api/copilot";
 import { canAccessOnboarding, canAuthorDashboards } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { ATTACHMENT_EXTENSIONS, attachmentProblem, sizeLabel, splitAttachmentRecords, unscrubbedSentence } from "../../lib/copilot-attachments";
 import { ONBOARDING_DRAFTS, onboardingDraftsKey } from "../../lib/copilot-invalidations";
 import type { AuthUser } from "../../stores/auth-store";
 import {
@@ -173,44 +172,6 @@ const ONBOARD_PICK_SENTENCE = "Pick an organization to onboard a site.";
  */
 const APP_ROUTE = /^\/(?!\/)[A-Za-z0-9_\-/]*$/;
 
-/** `F3.87` PR 8: the file types a turn may carry, by extension (the server decides by the bytes). */
-export const ATTACHMENT_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".pdf", ".svg"] as const;
-
-/** The sentence the attach control's label and title carry (Amendment 3 A7). */
-export function unscrubbedSentence(organization: string): string {
-  return `The file goes to ${organization}'s AI provider as it is, unscrubbed.`;
-}
-
-function sizeLabel(bytes: number): string {
-  return bytes >= 1024 * 1024 ? `${Math.round(bytes / (1024 * 1024))} MB` : `${Math.round(bytes / 1024)} KB`;
-}
-
-/** Why the picker refuses this file, or `null` when it may be attached. The count is the caller's check. */
-export function attachmentProblem(file: File): string | null {
-  const name = file.name.toLowerCase();
-  if (!ATTACHMENT_EXTENSIONS.some((ext) => name.endsWith(ext))) {
-    return `"${file.name}" is not a PNG, JPEG, WebP, PDF or SVG file.`;
-  }
-  const max = name.endsWith(".svg") ? MAX_MIMIC_SYMBOL_SVG_BYTES : MAX_COPILOT_ATTACHMENT_BYTES;
-  return file.size > max ? `"${file.name}" is larger than ${sizeLabel(max)}.` : null;
-}
-
-/** One stored placeholder line, as `attachmentPlaceholder` writes it on the server (`F3.87` PR 7). */
-const ATTACHMENT_RECORD = /^\[Attachment \d+ of \d+: .*; not stored\]$/;
-
-/**
- * A stored user row split into the typed text and its placeholder lines: the
- * lines after the last blank line, when every one of them is a placeholder.
- * A row with none is all text.
- */
-export function splitAttachmentRecords(content: string): { text: string; records: string[] } {
-  const cut = content.lastIndexOf("\n\n");
-  if (cut < 0) return { text: content, records: [] };
-  const lines = content.slice(cut + 2).split("\n");
-  if (!lines.every((line) => ATTACHMENT_RECORD.test(line))) return { text: content, records: [] };
-  return { text: content.slice(0, cut), records: lines };
-}
-
 /** A user bubble's content: the text, then the files it carried as a muted record. */
 function UserText({ content }: { content: string }) {
   const { text, records } = splitAttachmentRecords(content);
@@ -312,6 +273,9 @@ function DockPanel({
   homeAttachments,
 }: CopilotDockProps & { homeConfigured: boolean; homeAttachments: boolean }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  // `F4.245`: a fill waiting for the page `open_page` opened is dropped once the user is elsewhere.
+  useEffect(() => useWizardStore.getState().leavePage(pathname), [pathname]);
   const queryClient = useQueryClient();
   const isGlobalAdmin = user.role === "admin";
   const [open, setOpen] = useState(readOpen);
@@ -511,8 +475,8 @@ function DockPanel({
         carryHomeDrafts(created.organizationId);
         setConversation(user.id, id);
       }
-      // A plain turn keeps the two-argument call; only a turn with files goes as FormData.
-      return files.length > 0 ? sendCopilotTurn(id, message, files) : sendCopilotTurn(id, message);
+      // `F4.245` (ADR 0099 Amendment 4): the wizards open now, read at send time, one per record.
+      return sendCopilotTurn(id, message, files, useWizardStore.getState().openWizards());
     },
     onSuccess: (data, sent) => {
       // The files went with the turn; a refused send (onError) keeps them for another try.
@@ -554,11 +518,13 @@ function DockPanel({
             }
           : prev,
       );
+      const route = data.navigateTo !== null && APP_ROUTE.test(data.navigateTo) ? data.navigateTo : null;
       if (data.fillStep !== null) {
-        receiveFill(data.fillStep);
+        // `F4.245`: a fill for a record no wizard shows waits only for the page this turn opens.
+        receiveFill(data.fillStep, route);
       }
-      if (data.navigateTo !== null && APP_ROUTE.test(data.navigateTo)) {
-        navigate(data.navigateTo);
+      if (route !== null) {
+        navigate(route);
       }
     },
     onError: (err: Error) => {

@@ -48,7 +48,7 @@ vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
   ScopedDashboardsList: () => <div data-testid="scoped-dashboards-list" />,
 }));
 
-const LOCATION_ID = "p1";
+const LOCATION_ID = "a1b2c3d4-0000-4000-8000-0000000000a1";
 const GROUP_A = "33333333-3333-4333-8333-333333333333";
 const GROUP_B = "44444444-4444-4444-8444-444444444444";
 
@@ -275,7 +275,7 @@ export async function aFillStepFillsTheTemplate(): Promise<void> {
   renderPage();
   const dialog = await openTheWizard();
   act(() => {
-    useWizardStore.getState().receiveFill({ catalogId: "location.siteLayout.make", stepId: "groups", values: { templateId: TEMPLATE_ID } });
+    useWizardStore.getState().receiveFill({ catalogId: "location.siteLayout.make", params: { id: LOCATION_ID }, stepId: "groups", values: { templateId: TEMPLATE_ID } }, null);
   });
 
   expect((await within(dialog).findByText(/filled by the copilot/)).textContent).toContain(TEMPLATE_ID);

@@ -347,7 +347,7 @@ export async function aFillStepFillsTheView(): Promise<void> {
   stub(setting({ kind: "dashboard", dashboardId: SITE_DASHBOARD_ID }));
   renderWizard(true, vi.fn());
   await waitForStoredKind("dashboard");
-  useWizardStore.getState().receiveFill({ catalogId: "location.controlRoomView.set", stepId: "view", values: { kind: "generated" } });
+  useWizardStore.getState().receiveFill({ catalogId: "location.controlRoomView.set", params: { id: SITE_ID }, stepId: "view", values: { kind: "generated" } }, null);
   await waitForStoredKind("generated");
 }
 

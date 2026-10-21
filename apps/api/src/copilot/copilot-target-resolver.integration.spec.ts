@@ -6,6 +6,7 @@ import type { JwtPayload, UserRole } from "@bms/shared";
 import { type CatalogEntry, type CatalogRef, type CatalogTarget, catalogEntry } from "@bms/shared/copilot";
 
 import { NO_GRANTS, NO_USERS } from "../testing/copilot-user-checks";
+import { resolveWizardRecord, type WizardScope } from "./copilot-open-wizards";
 import { CopilotTargetResolver, refKindOf } from "./copilot-target-resolver";
 
 /**
@@ -42,6 +43,8 @@ export type ResolverCtx = {
   pointKeyId: string;
   pointKeyCode: string;
   dashboardA: string;
+  /** `F4.245`: dashboard A's slug, for the edit page an `open_page` call opens. */
+  dashboardSlugA: string;
   dashboardTemplateA: string;
   /** `F4.254` PR 3: a published asset template of A (the instantiate route's template). */
   assetTemplateA: string;
@@ -606,4 +609,70 @@ export async function aMimicLayoutResolvesForAnOrgAdminInItsOrganizationOnly(ctx
   expect(await resolverWith(ctx, across.access).resolve(entry, { id: ctx.mimicLayoutA }, {}, [ctx.orgB], JWT)).toBeNull();
   expect(across.calls.filter(([name]) => name === "canManageOrganization")).toEqual([]);
   expect(await resolverWith(ctx, recorder({}, "location_admin").access).resolve(entry, { id: ctx.mimicLayoutA }, {}, [ctx.orgA], JWT)).toBeNull();
+}
+
+/**
+ * `F4.245` (ADR 0099 Amendment 4): a slug names a dashboard only in the
+ * allowed organizations; the tenant policy confines each read. Mutation: drop
+ * the organization filter and read under one tenant only, or search every
+ * organization: the B-only case finds A's dashboard.
+ */
+export async function aDashboardSlugIsFoundInTheAllowedSetOnly(ctx: ResolverCtx): Promise<void> {
+  const resolver = resolverWith(ctx, recorder().access);
+  expect(await resolver.dashboardIdBySlug(ctx.dashboardSlugA, [ctx.orgA])).toBe(ctx.dashboardA);
+  expect(await resolver.dashboardIdBySlug(ctx.dashboardSlugA, [ctx.orgB])).toBeNull();
+  expect(await resolver.dashboardIdBySlug("no-such-slug", [ctx.orgA, ctx.orgB])).toBeNull();
+}
+
+/**
+ * `F4.245` review C1 (ADR 0099 Amendment 4, B2) — an open wizard's record is
+ * resolved by its row alone, on the real resolver: an open grant-add drawer is
+ * its user, and an open instantiate wizard is its template with the
+ * organization check. The body-dependent checks (a grant's `kind` and
+ * `targetId`, the instantiate's site) are what a fill is about to set, so they
+ * never run here. Mutation: `resolveWizardRecord` asks the `"propose"` mode —
+ * the two record cases (`anOpenGrantAddDrawerIsItsUsersRecord`,
+ * `anOpenInstantiateWizardIsItsTemplatesRecord`) go red, as no record comes
+ * back. The call-list cases and the unmanaged-organization case pin the checks
+ * that run; with an empty body the `"propose"` mode records the same calls and
+ * gives `null` too, so they do not carry that mutation.
+ */
+const wizardScope = (ctx: ResolverCtx): WizardScope => ({ allowedOrganizationIds: [ctx.orgA], user: JWT, conversationOrganizationId: ctx.orgA });
+
+export async function anOpenGrantAddDrawerIsItsUsersRecord(ctx: ResolverCtx): Promise<void> {
+  const record = await resolveWizardRecord(catalogEntry("userGrant.add")!, { id: "user-1" }, withUsers(ctx, userServices(ctx)), wizardScope(ctx));
+  expect(record).toStrictEqual({ catalogId: "userGrant.add", params: { id: "user-1" }, name: "Priya Rao", organizationId: ctx.orgA });
+}
+
+/** The user checks run; the grant check (which reads the body) does not. */
+export async function anOpenGrantAddDrawerNeverAsksTheGrantCheck(ctx: ResolverCtx): Promise<void> {
+  const services = userServices(ctx);
+  await resolveWizardRecord(catalogEntry("userGrant.add")!, { id: "user-1" }, withUsers(ctx, services), wizardScope(ctx));
+  expect(services.calls).toEqual([["requireManager"], ["requireManageableTarget", "user-1"]]);
+}
+
+export async function anOpenInstantiateWizardIsItsTemplatesRecord(ctx: ResolverCtx): Promise<void> {
+  const r = recorder({}, "location_admin");
+  const record = await resolveWizardRecord(catalogEntry("assetTemplate.instantiate")!, { id: ctx.assetTemplateA }, resolverWith(ctx, r.access), wizardScope(ctx));
+  expect(record).toStrictEqual({
+    catalogId: "assetTemplate.instantiate",
+    params: { id: ctx.assetTemplateA },
+    name: RESOLVER_NAMES.assetTemplateA,
+    organizationId: ctx.orgA,
+  });
+}
+
+/** The organization check still runs, and no site is asked (the body names none). */
+export async function anOpenInstantiateWizardAsksTheOrganizationCheckOnly(ctx: ResolverCtx): Promise<void> {
+  const r = recorder({}, "location_admin");
+  await resolveWizardRecord(catalogEntry("assetTemplate.instantiate")!, { id: ctx.assetTemplateA }, resolverWith(ctx, r.access), wizardScope(ctx));
+  expect(r.calls).toEqual([["requireMasterDataUser"], ["canManageOrganization", ctx.orgA]]);
+}
+
+/** The adjacent negative: a caller who does not manage the template's organization gets no record. */
+export async function anOpenInstantiateWizardOfAnUnmanagedOrganizationIsNotOpen(ctx: ResolverCtx): Promise<void> {
+  const r = recorder({ canManageOrganization: false }, "location_admin");
+  expect(
+    await resolveWizardRecord(catalogEntry("assetTemplate.instantiate")!, { id: ctx.assetTemplateA }, resolverWith(ctx, r.access), wizardScope(ctx)),
+  ).toBeNull();
 }

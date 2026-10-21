@@ -21,8 +21,16 @@ const LIBRARY: CatalogTarget = { kind: "mimicLibrary", param: "id" };
 /** A create or a built-in library setting: the body's `organizationId`, with the authoring check. */
 const ORGANIZATION: CatalogTarget = { kind: "organization", manage: "mimic" };
 
-/** The `:libraryCode` rule the controller parses it with (`mimicLibraryCodeParamSchema`; params are not bodies). */
-const libraryCodeParam = z.string().min(1).max(32);
+/**
+ * A built-in library's code (`core`, `tabler`, … in `mimic-symbol-libraries/index.ts`): the controller's
+ * length rule (`mimicLibraryCodeParamSchema`), narrowed to a code's characters as `stockCodeParam` is.
+ * `F4.245` (review L2): an open wizard's params reach the model, so free text is refused here.
+ */
+const libraryCodeParam = z
+  .string()
+  .min(1)
+  .max(32)
+  .regex(/^[a-z0-9-]+$/, "a library code is lowercase letters, digits and hyphens");
 
 /** "Retire …" / "Reactivate …" for a patch that only flips `active`; else the fields it changes. */
 function libraryPatchSummary(body: Readonly<Record<string, unknown>>, targetName: string): string {

@@ -219,15 +219,34 @@ export const COPILOT_ATTACHMENTS_MAX = 3;
 export const MAX_COPILOT_ATTACHMENT_BYTES: number = 10_000_000;
 export const MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES: number = 10_000_000;
 
+/** `F4.245` (ADR 0099 Amendment 4): the most open wizards one turn may name. */
+export const COPILOT_OPEN_WIZARDS_MAX = 8;
+
+/**
+ * `F4.245` (ADR 0099 Amendment 4): one wizard open on the user's screen — its
+ * catalog entry and **every** path parameter of that entry's route (`{}` for
+ * a create). The API checks each value with the entry's own `params` schema.
+ */
+export const copilotOpenWizardSchema = z
+  .object({
+    catalogId: z.string().min(1).max(64),
+    params: z.record(z.string().min(1).max(64), z.string().min(1).max(256)),
+  })
+  .strict();
+
 /**
  * `POST /api/v1/copilot/conversations/:id/turns` (`F3.85` PR 7, ADR 0099
- * decisions 1, 9, 10). The message only: the organization a turn reads and is
- * counted against is the conversation's own, read on the server (decision 10),
- * so a body naming one is a 400, never a hint.
+ * decisions 1, 9, 10). The message, and since `F4.245` (Amendment 4) the
+ * wizards open on the user's screen (`[]` when none). The organization a turn
+ * reads and is counted against is still the conversation's own, read on the
+ * server (decision 10), so a body naming one is a 400, never a hint: the
+ * wizards only say which open form a `fill_step` may land in, and are never
+ * an authorization input.
  */
 export const copilotTurnBodySchema = z
   .object({
     message: z.string().min(1).max(COPILOT_TURN_MESSAGE_MAX),
+    wizards: z.array(copilotOpenWizardSchema).max(COPILOT_OPEN_WIZARDS_MAX),
   })
   .strict();
 
@@ -235,10 +254,16 @@ export const copilotTurnBodySchema = z
  * `F3.85` PR 8 (plan §10.2): the `fill_step` tool's output — values for one
  * step of the wizard for `catalogId`, checked against that step's fields.
  * The dock hands them to an open wizard; nothing is stored or sent.
+ *
+ * `F4.245` (ADR 0099 Amendment 4): `params` names the record — the path
+ * parameters of the wizard the fill is for. The model names them and the
+ * server accepts the fill only when they equal an open wizard's; the browser
+ * applies it only to the wizard with the same catalog id and parameters.
  */
 export const copilotFillStepDtoSchema = z
   .object({
     catalogId: z.string(),
+    params: z.record(z.string(), z.string()),
     stepId: z.string(),
     values: z.record(z.string(), z.unknown()),
   })

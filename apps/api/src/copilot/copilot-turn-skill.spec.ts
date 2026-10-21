@@ -91,7 +91,7 @@ export function fakeOnboarding(options: FakeOptions = {}) {
 function skillHarness(fake = fakeOnboarding(), options: Parameters<typeof harness>[1] = {}) {
   const llm = new FakeLlmProvider([{ kind: "final", text: "the copilot answered" }]);
   const h = harness(llm, { onboardingSessionId: SESSION, onboarding: fake.skill, ...options });
-  const turn = (message: string) => h.service.turn({ identity: ORG_ADMIN, user: JWT }, CONVERSATION, message, "user");
+  const turn = (message: string) => h.service.turn({ identity: ORG_ADMIN, user: JWT }, CONVERSATION, message, "user", [], []);
   return { ...h, llm, fake, turn };
 }
 
@@ -228,7 +228,7 @@ export async function aFollowUpOnASkillConversationStoresTheOutcomeOnly(): Promi
 export async function aPlainConversationNeverReachesTheSkill(): Promise<void> {
   const llm = new FakeLlmProvider([{ kind: "final", text: "plain answer" }]);
   const h = harness(llm);
-  const response = await h.service.turn({ identity: ORG_ADMIN, user: JWT }, CONVERSATION, "How many alarms?", "user");
+  const response = await h.service.turn({ identity: ORG_ADMIN, user: JWT }, CONVERSATION, "How many alarms?", "user", [], []);
   expect(response.reply).toBe("plain answer");
   expect("skill" in response).toBe(false);
 }

@@ -90,6 +90,7 @@ type Options = {
   env?: Record<string, string | undefined>;
   /** `F3.87` PR 5: the layout checks (absent: no layouts service, as every other spec builds the tools). */
   layouts?: CopilotProposeServices["layouts"];
+  slugId?: string | null; // `F4.245`: the dashboard id a slug names (none by default)
 };
 
 export function proposeHarness(options: Options = {}) {
@@ -104,6 +105,7 @@ export function proposeHarness(options: Options = {}) {
           resolved.push({ id: entry.id, params: { ...params }, allowed, bound });
           return target;
         },
+        dashboardIdBySlug: async () => options.slugId ?? null,
       },
       ...(options.layouts ? { layouts: options.layouts } : {}),
       pending: {
@@ -546,13 +548,14 @@ export async function describeChangeHasAPerTurnBudget(): Promise<void> {
 /** `fill_step` checks the values against the step's fields and writes nothing. */
 export async function fillStepChecksOneStepAndWritesNothing(): Promise<void> {
   const h = proposeHarness();
-  const ok = await h.call(FILL_STEP_TOOL, { catalogId: "dashboard.create", stepId: "basics", values: { name: "Main", slug: "main" } });
-  expect(ok.ok).toBe(true);
+  const fill = (stepId: string, values: object) =>
+    h.call(FILL_STEP_TOOL, { catalogId: "dashboard.create", params: {}, stepId, values }, { openWizards: [{ catalogId: "dashboard.create", params: {}, name: null, organizationId: null }] });
+  expect((await fill("basics", { name: "Main", slug: "main" })).ok).toBe(true);
   const result = h.lastResult();
-  expect(result?.ok && result.fillStep).toEqual({ catalogId: "dashboard.create", stepId: "basics", values: { name: "Main", slug: "main" } });
-  expect((await h.call(FILL_STEP_TOOL, { catalogId: "dashboard.create", stepId: "basics", values: { organizationId: ORG_X } })).ok).toBe(false);
-  expect((await h.call(FILL_STEP_TOOL, { catalogId: "dashboard.create", stepId: "basics", values: { slug: "Bad Slug" } })).ok).toBe(false);
-  expect((await h.call(FILL_STEP_TOOL, { catalogId: "dashboard.create", stepId: "nope", values: {} })).ok).toBe(false);
+  expect(result?.ok && result.fillStep).toEqual({ catalogId: "dashboard.create", params: {}, stepId: "basics", values: { name: "Main", slug: "main" } });
+  expect((await fill("basics", { organizationId: ORG_X })).ok).toBe(false);
+  expect((await fill("basics", { slug: "Bad Slug" })).ok).toBe(false);
+  expect((await fill("nope", {})).ok).toBe(false);
   expect(h.stored).toEqual([]);
   expect(h.resolved).toEqual([]);
 }
@@ -851,7 +854,7 @@ export async function aFillOrDescribeOfAnAccessEntryNeedsTheUsersOwnAsk(): Promi
   const update = catalogEntry("user.update") as CatalogEntry;
   const grant = catalogEntry("userGrant.add") as CatalogEntry;
   const h = proposeHarness({ catalog: [update, grant] });
-  const fill = { catalogId: "userGrant.add", stepId: "grant", values: { kind: "location", targetId: ROW } };
+  const fill = { catalogId: "userGrant.add", params: { id: ROW }, stepId: "grant", values: { kind: "location", targetId: ROW } };
   for (const over of [{ accessIntent: false }, { accessIntent: true, turnKind: "follow_up" as const }]) {
     expect(await h.tools.dispatch(FILL_STEP_TOOL, fill, h.ctx(over)), JSON.stringify(over)).toEqual({
       ok: false,
@@ -862,12 +865,13 @@ export async function aFillOrDescribeOfAnAccessEntryNeedsTheUsersOwnAsk(): Promi
       error: PROPOSE_ACCESS_NOT_ASKED_ERROR,
     });
   }
-  const asked = h.ctx({ accessIntent: true });
+  const open = ["userGrant.add", "user.update"].map((catalogId) => ({ catalogId, params: { id: ROW }, name: "U", organizationId: ORG_X }));
+  const asked = h.ctx({ accessIntent: true, openWizards: open });
   expect((await h.tools.dispatch(FILL_STEP_TOOL, fill, asked)).ok).toBe(true);
   expect((await h.tools.dispatch(DESCRIBE_CHANGE_TOOL, { catalogId: "userGrant.add" }, asked)).ok).toBe(true);
-  const admin = await h.tools.dispatch(FILL_STEP_TOOL, { catalogId: "user.update", stepId: "role", values: { role: "admin" } }, asked);
-  expect(admin.ok).toBe(false);
-  expect((await h.tools.dispatch(FILL_STEP_TOOL, { catalogId: "user.update", stepId: "role", values: { role: "viewer" } }, asked)).ok).toBe(true);
+  const role = (value: string) => ({ catalogId: "user.update", params: { id: ROW }, stepId: "role", values: { role: value } });
+  expect((await h.tools.dispatch(FILL_STEP_TOOL, role("admin"), asked)).ok).toBe(false);
+  expect((await h.tools.dispatch(FILL_STEP_TOOL, role("viewer"), asked)).ok).toBe(true);
 }
 
 /**

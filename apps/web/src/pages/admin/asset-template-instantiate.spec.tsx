@@ -146,10 +146,10 @@ export async function aCopilotFillReachesTheAssetRows(): Promise<void> {
   await screen.findByRole("option", { name: "West Campus" });
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "assetTemplate.instantiate",
+      catalogId: "assetTemplate.instantiate", params: { id: TEMPLATE_ID },
       stepId: "assets",
       values: { assets: [{ code: "F-1", name: "Feeder 1" }] },
-    });
+    }, null);
   });
   await userEvent.click(screen.getByRole("button", { name: "Next" }));
 
@@ -208,10 +208,10 @@ export async function anAssetsFillAfterAnRtuChoiceKeepsTheLocation(): Promise<vo
   const locationSelect = await chooseTheRtu();
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "assetTemplate.instantiate",
+      catalogId: "assetTemplate.instantiate", params: { id: TEMPLATE_ID },
       stepId: "assets",
       values: { assets: [{ code: "F-1", name: "Feeder 1" }] },
-    });
+    }, null);
   });
 
   expect(locationSelect).toHaveValue(LOCATION_ID);
@@ -236,17 +236,17 @@ export async function aTargetFillOfALocationAfterAnRtuChoiceSendsTheLocation(): 
   await chooseTheRtu();
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "assetTemplate.instantiate",
+      catalogId: "assetTemplate.instantiate", params: { id: TEMPLATE_ID },
       stepId: "target",
       values: { locationId: LOCATION_2_ID },
-    });
+    }, null);
   });
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "assetTemplate.instantiate",
+      catalogId: "assetTemplate.instantiate", params: { id: TEMPLATE_ID },
       stepId: "assets",
       values: { assets: [{ code: "F-1" }] },
-    });
+    }, null);
   });
 
   await nextNextSubmit();
@@ -275,10 +275,10 @@ export async function aFilledSiteNameReachesTheBody(): Promise<void> {
   await userEvent.selectOptions(locationOption.closest("select")!, LOCATION_ID);
   act(() => {
     useWizardStore.getState().receiveFill({
-      catalogId: "assetTemplate.instantiate",
+      catalogId: "assetTemplate.instantiate", params: { id: TEMPLATE_ID },
       stepId: "assets",
       values: { assets: [{ code: "F-1", name: "Feeder 1", siteName: "Plant A" }] },
-    });
+    }, null);
   });
 
   await nextNextSubmit();

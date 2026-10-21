@@ -24,6 +24,7 @@ import {
   type CopilotSkillStateDto,
   type CopilotStartOnboardingSkillBody,
   copilotStartOnboardingSkillBodySchema,
+  type CopilotTurnBody,
   copilotTurnBodySchema,
   type CopilotTurnResponseDto,
   type JwtPayload,
@@ -39,6 +40,7 @@ import type { UploadedAttachment } from "./copilot-attachments";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotConversationsService } from "./copilot-conversations.service";
 import { liveOpenChanges } from "./copilot-onboarding-commit";
+import { checkOpenWizards, parseWizardsField } from "./copilot-open-wizards";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import { CopilotSkillService } from "./copilot-skill.service";
 import { CopilotTurnService } from "./copilot-turn.service";
@@ -173,7 +175,8 @@ export class CopilotConversationsController {
    * addresses.
    *
    * `F3.87` PR 7 (ADR 0099 Amendment 3 A4): the same route takes a multipart
-   * body — the `message` field and up to three `files`. A JSON request passes
+   * body — the `message` field, the `wizards` field (`F4.245`, a JSON string)
+   * and up to three `files`. A JSON request passes
    * multer untouched (`files` is undefined); a multipart one parses only its
    * `message` field. The limits are written inline for `tests/f4.102`. The
    * turn service decides every attachment rule, in its check order, before the
@@ -184,7 +187,7 @@ export class CopilotConversationsController {
   @HttpCode(200)
   @UseInterceptors(
     FilesInterceptor("files", COPILOT_ATTACHMENTS_MAX, {
-      limits: { fileSize: MAX_COPILOT_ATTACHMENT_BYTES, files: COPILOT_ATTACHMENTS_MAX, fields: 1, fieldSize: 32768 },
+      limits: { fileSize: MAX_COPILOT_ATTACHMENT_BYTES, files: COPILOT_ATTACHMENTS_MAX, fields: 2, fieldSize: 32768 },
     }),
   )
   async turn(
@@ -197,14 +200,18 @@ export class CopilotConversationsController {
     await this.pendingChanges.sweepStuck(identity.id);
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) throw new NotFoundException("Conversation not found");
-    let message: string;
+    let turn: CopilotTurnBody;
     try {
-      const fields = files === undefined ? body : { message: (body as { message?: unknown } | undefined)?.message };
-      message = copilotTurnBodySchema.parse(fields).message;
+      const multipart = body as { message?: unknown; wizards?: unknown } | undefined;
+      // `F4.245`: a multipart turn carries its open wizards as a JSON string; a malformed one is a 400.
+      const fields = files === undefined ? body : { message: multipart?.message, wizards: parseWizardsField(multipart?.wizards) };
+      turn = copilotTurnBodySchema.parse(fields);
     } catch (err) {
       if (err instanceof ZodError) throw new BadRequestException(err.flatten());
       throw err;
     }
-    return this.turns.turn({ identity, user }, parsed.data, message, "user", files ?? []);
+    // `F4.245` (ADR 0099 Amendment 4): each open wizard against its catalog entry (a mismatch is a 400).
+    const wizards = checkOpenWizards(turn.wizards);
+    return this.turns.turn({ identity, user }, parsed.data, turn.message, "user", files ?? [], wizards);
   }
 }

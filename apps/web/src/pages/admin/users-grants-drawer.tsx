@@ -212,6 +212,7 @@ export function GrantsDrawer({
           <WizardShell
             key={`add-${addRound}`}
             entry={wizardEntry("userGrant.add")}
+            params={{ id: target.id }}
             values={addGrantValues(kind, targetId)}
             onChange={(values) => {
               const nextKind = userGrantKindSchema.safeParse(values.kind);
@@ -254,6 +255,7 @@ export function GrantsDrawer({
               <WizardShell
                 key={`remove-${removing.kind}-${removing.id}`}
                 entry={wizardEntry("userGrant.remove")}
+                params={{ id: target.id, kind: removing.kind, grantId: removing.id }}
                 values={NO_VALUES}
                 onChange={() => undefined}
                 renderStep={() => null}

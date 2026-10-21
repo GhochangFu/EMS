@@ -402,6 +402,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                 <WizardShell
                   key={`update-${editing.id}`}
                   entry={wizardEntry("pointKey.update")}
+                  params={{ id: editing.id }}
                   values={updateValues(form)}
                   onChange={(values) => setForm(formWithValues(form, values))}
                   renderStep={renderStep}
@@ -421,6 +422,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                 <WizardShell
                   key="create"
                   entry={wizardEntry("pointKey.create")}
+                  params={{}}
                   values={createValues(form)}
                   onChange={(values) => setForm(formWithValues(form, values))}
                   renderStep={renderStep}
@@ -451,6 +453,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                   key={`deactivate-${toggling.id}`}
                   entry={wizardEntry("pointKey.deactivate")}
                   {...toggleProps}
+                  params={{ id: toggling.id }}
                   summary={toggleSummary("pointKey.deactivate")}
                 />
               ) : (
@@ -458,6 +461,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                   key={`reactivate-${toggling.id}`}
                   entry={wizardEntry("pointKey.reactivate")}
                   {...toggleProps}
+                  params={{ id: toggling.id }}
                   summary={toggleSummary("pointKey.reactivate")}
                 />
               )}

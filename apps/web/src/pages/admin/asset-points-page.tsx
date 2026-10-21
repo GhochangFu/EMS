@@ -146,6 +146,7 @@ function wizardEntry(id: string): CatalogEntry {
 }
 
 type CalcOverrideWizardProps = {
+  assetId: string;
   config: AssetPointCalcConfigDto;
   draft: OverrideDraft;
   saving: boolean;
@@ -175,6 +176,7 @@ type CalcOverrideWizardProps = {
  * wizard.
  */
 function CalcOverrideWizard({
+  assetId,
   config,
   draft,
   saving,
@@ -218,6 +220,7 @@ function CalcOverrideWizard({
       </div>
       <WizardShell
         entry={wizardEntry("calcOverride.set")}
+        params={{ assetId, pointKey: config.pointKey }}
         values={draftToBody(draft)}
         onChange={(values) => onDraftChange(draftFromFields(values))}
         renderStep={(step) => (step.id === "formula" ? formulaStep : scheduleStep)}
@@ -614,6 +617,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             openPointKey === config.pointKey ? (
               <CalcOverrideWizard
                 key={config.pointKey}
+                assetId={assetId ?? ""}
                 config={config}
                 draft={draft}
                 saving={setOverrideM.isPending}

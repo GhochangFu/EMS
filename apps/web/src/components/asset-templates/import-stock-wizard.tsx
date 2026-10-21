@@ -96,6 +96,7 @@ export function ImportStockWizard({
         <h2 className="font-condensed text-base font-bold text-ink">Import {entry.name}</h2>
         <WizardShell
           entry={wizardEntry("assetTemplate.importStock")}
+          params={{ code: entry.code }}
           values={values}
           onChange={update}
           renderStep={(step) =>

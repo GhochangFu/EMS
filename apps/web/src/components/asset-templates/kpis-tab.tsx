@@ -259,6 +259,7 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
     return (
       <WizardShell
         entry={catalogEntry("assetTemplate.update")!}
+        params={{ id: template.id }}
         values={wizardValues}
         onChange={(next) =>
           setWizardValues((held) =>

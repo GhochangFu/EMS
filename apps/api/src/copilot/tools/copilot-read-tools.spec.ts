@@ -314,13 +314,13 @@ export async function assertKpisOfAnOwnKeyOrganizationsAssetNeverRun(): Promise<
   const { tools, log } = fakeServices();
   const llm = new FakeLlmProvider([calls(toolCall("get_asset_kpis", { assetId: ASSET_B })), { kind: "final", text: "ok" }]);
   const h = harness(llm, { conversationOrg: null, platform: { kind: "ready", allowed: [ORG_X] }, readTools: tools });
-  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "kpis?", "user");
+  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "kpis?", "user", [], []);
   expect(log.kpis).toEqual([]);
   expect(toolMessages(llm).join("\n")).toContain(COPILOT_TOOL_RECORD_OUT_OF_SCOPE);
 
   const llm2 = new FakeLlmProvider([calls(toolCall("get_asset_kpis", { assetId: ASSET_X })), { kind: "final", text: "ok" }]);
   const h2 = harness(llm2, { conversationOrg: null, platform: { kind: "ready", allowed: [ORG_X] }, readTools: tools });
-  const response = await h2.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "kpis?", "user");
+  const response = await h2.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "kpis?", "user", [], []);
   expect(log.kpis).toEqual([ASSET_X]);
   expect(response.messages.find((m) => m.role === "assistant")?.organizationIds).toEqual([ORG_X]);
 }
@@ -343,7 +343,7 @@ export async function assertAnAlarmSecretNeverReachesTheProvider(): Promise<void
   const { tools } = fakeServices({ alarmMessage: `Panel note ${SECRET}` });
   const llm = new FakeLlmProvider([calls(toolCall("list_alarms", {})), { kind: "final", text: "ok" }]);
   const h = harness(llm, { conversationOrg: ORG_X, readTools: tools });
-  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "alarms?", "user");
+  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "alarms?", "user", [], []);
   const content = toolMessages(llm).join("\n");
   expect(content).toContain(ALARM);
   expect(content).toContain("AHU-7");
@@ -375,7 +375,7 @@ export async function assertAnInjectedProposeCallFindsNoTool(): Promise<void> {
     { kind: "final", text: "Done." },
   ]);
   const h = harness(llm, { conversationOrg: ORG_X, readTools: tools });
-  const response = await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "list the assets", "user");
+  const response = await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "list the assets", "user", [], []);
   expect(sentText(llm)).toContain(INJECTED);
   expect(toolMessages(llm).some((c) => c.includes("Unknown tool"))).toBe(true);
   expect(response.messages.filter((m) => m.role === "action")).toEqual([]);
@@ -454,7 +454,7 @@ export async function assertOpenPageNavigatesToAnAllowedRoute(): Promise<void> {
   const { tools } = fakeServices();
   const llm = new FakeLlmProvider([calls(toolCall("open_page", { route })), { kind: "final", text: "Opened." }]);
   const h = harness(llm, { conversationOrg: ORG_X, readTools: tools });
-  const response = await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "open the rtus", "user");
+  const response = await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "open the rtus", "user", [], []);
   expect(response.navigateTo).toBe(route);
 }
 
