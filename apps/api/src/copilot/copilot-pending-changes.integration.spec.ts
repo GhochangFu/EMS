@@ -76,6 +76,8 @@ export async function concurrentClaimsApplyOnce(ctx: PendingCtx): Promise<void> 
     bodyHash: "a".repeat(64),
     organizationId: ctx.orgA,
     catalogId: "dashboards.create",
+    // F4.247: the claim carries the stored precondition; `dashboards.create` has none.
+    precondition: null,
   });
   expect(await statusOf(ctx, id)).toMatchObject({ status: "applying", claimed: true });
 }
