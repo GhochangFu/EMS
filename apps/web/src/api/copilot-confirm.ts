@@ -77,16 +77,20 @@ export async function confirmCopilotChange(
     throw new ApiError(`copilot change path is not an API path`, 400);
   }
   const entry = catalogEntry(change.catalogId);
+  // `F4.247` (ADR 0099 Amendment 5 C2): the precondition the change was proposed under, quoted as
+  // an entity tag. Only a string: an API older than this web sends no `ifMatch` (the drift check
+  // passes the payload through), and `"undefined"` would be the routes' 400.
+  const ifMatch: Record<string, string> = typeof change.ifMatch === "string" ? { "If-Match": `"${change.ifMatch}"` } : {};
   const sent = entry?.upload
     ? withAuth({
         method: change.method,
         // No `Content-Type`: the browser writes `multipart/form-data` with its boundary.
-        headers: { [COPILOT_CHANGE_HEADER]: change.id },
+        headers: { [COPILOT_CHANGE_HEADER]: change.id, ...ifMatch },
         body: uploadFormOf(change.body, bodyFieldsOf(entry.body), entry.upload),
       })
     : withAuth({
         method: change.method,
-        headers: { "Content-Type": "application/json", [COPILOT_CHANGE_HEADER]: change.id },
+        headers: { "Content-Type": "application/json", [COPILOT_CHANGE_HEADER]: change.id, ...ifMatch },
         body: JSON.stringify({ ...withoutKeys(change.body, cardOnlyKeysFor(change.catalogId)), ...clientOnly }),
       });
   const res = await fetch(`${base}${change.path}`, sent);

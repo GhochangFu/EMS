@@ -6,6 +6,8 @@ import { createDb } from "@bms/db";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import {
+  aChangeWithoutAPreconditionListsANullIfMatch,
+  aClaimReturnsThePreconditionItWasProposedWith,
   aKpiOnlyProposalKeepsTheStoredSections,
   aMissingAssetTemplateIsTheSameRefusal,
   anAssetTemplateOutsideTheAllowedSetIsTheSingleRefusal,
@@ -226,5 +228,11 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
   });
   it("aKpiOnlyProposalKeepsTheStoredSections", async () => {
     await aKpiOnlyProposalKeepsTheStoredSections(assetTemplateCtx);
+  });
+  it("F4.247: aClaimReturnsThePreconditionItWasProposedWith", async () => {
+    await aClaimReturnsThePreconditionItWasProposedWith(proposeCtx);
+  });
+  it("F4.247: aChangeWithoutAPreconditionListsANullIfMatch", async () => {
+    await aChangeWithoutAPreconditionListsANullIfMatch(proposeCtx);
   });
 });

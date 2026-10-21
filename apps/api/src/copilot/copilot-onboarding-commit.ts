@@ -201,6 +201,7 @@ export async function onboardingCommitCards(
       organizationName: answer.session.organizationName,
     })} ${onboardingCommitCounts(draft)}`,
     risk: entry.risk,
+    precondition: null,
   });
   return card ? [card] : [];
 }

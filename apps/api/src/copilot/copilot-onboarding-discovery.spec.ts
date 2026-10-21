@@ -121,6 +121,7 @@ function openCard(id: string, body: Record<string, unknown>): CopilotPendingChan
     risk: "create",
     proposedAt: "2026-10-19T00:00:00.000Z",
     expiresAt: "2026-10-19T00:15:00.000Z",
+    ifMatch: null,
   };
 }
 
@@ -140,6 +141,7 @@ export async function aProposingTurnStoresOneDiscoveryCard(): Promise<void> {
       bodyHash: bodyHash(BODY),
       summary: undefined,
       risk: "create",
+      precondition: null, // F4.247: a server-made card has no precondition
     },
   ]);
 }

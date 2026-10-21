@@ -53,6 +53,12 @@ export type ResolvedTarget = {
   readonly refName?: string;
   /** Template targets: the version's lifecycle status, for the propose tool's lifecycle mirror (`F4.246`). */
   readonly status?: TemplateLifecycleStatus;
+  /**
+   * `F4.247` (ADR 0099 Amendment 5 C1): `dashboard` and `assetTemplate` targets — the row's
+   * `updated_at` as a millisecond ISO instant, read in the same `SELECT` as the row. A flagged
+   * entry's propose tool stores it; the Confirm sends it as `If-Match`.
+   */
+  readonly updatedAt?: string;
 };
 
 /** What the user targets need from the users services: their own checks, called, never copied (plan §6.3). */
@@ -115,6 +121,7 @@ type Found = {
   pointKeys?: string[];
   currentContent?: Record<string, unknown>;
   status?: TemplateLifecycleStatus;
+  updatedAt?: string;
 };
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
 type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet" | "onboardingSession" | UserKind>;
@@ -229,6 +236,7 @@ export class CopilotTargetResolver implements CopilotTargets {
       ...(found.currentContent ? { currentContent: found.currentContent } : {}),
       ...(found.refName !== undefined ? { refName: found.refName } : {}),
       ...(found.status !== undefined ? { status: found.status } : {}),
+      ...(found.updatedAt !== undefined ? { updatedAt: found.updatedAt } : {}),
     };
   }
 
@@ -402,6 +410,7 @@ export class CopilotTargetResolver implements CopilotTargets {
             locationId: dashboards.locationId,
             assetGroupId: dashboards.assetGroupId,
             assetId: dashboards.assetId,
+            updatedAt: dashboards.updatedAt,
           })
           .from(dashboards)
           .where(and(eq(dashboards.id, id), eq(dashboards.organizationId, organizationId)))
@@ -416,6 +425,7 @@ export class CopilotTargetResolver implements CopilotTargets {
           name: row.name,
           scope: { locationId: row.locationId, assetGroupId: row.assetGroupId, assetId: row.assetId },
           currentWidgetIds: widgets.map((widget) => widget.id),
+          updatedAt: row.updatedAt.toISOString(),
         };
       }
       case "dashboardTemplate": {
@@ -453,7 +463,12 @@ export class CopilotTargetResolver implements CopilotTargets {
       case "assetTemplate":
       case "assetTemplateDeploy": {
         const [row] = await tx
-          .select({ name: assetTemplates.name, content: assetTemplates.content, status: assetTemplates.status })
+          .select({
+            name: assetTemplates.name,
+            content: assetTemplates.content,
+            status: assetTemplates.status,
+            updatedAt: assetTemplates.updatedAt,
+          })
           .from(assetTemplates)
           .where(and(eq(assetTemplates.id, id), eq(assetTemplates.organizationId, organizationId)))
           .limit(1);
@@ -468,6 +483,7 @@ export class CopilotTargetResolver implements CopilotTargets {
           name: row.name,
           ...lifecycleStatusOf(row.status),
           pointKeys: points.map((point) => point.pointKey),
+          updatedAt: row.updatedAt.toISOString(),
           // The column is `jsonb NOT NULL`; anything but an object merges as empty (ruling Q10).
           currentContent:
             typeof content === "object" && content !== null && !Array.isArray(content) ? (content as Record<string, unknown>) : {},

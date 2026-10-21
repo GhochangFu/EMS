@@ -10,6 +10,10 @@ import {
   aRefusalIsAnApiError,
   aReplaceIsSentWithoutItsBaseline,
   itSendsTheStoredRequestWithTheHeader,
+  aMissingIfMatchFromAnOlderApiSendsNoHeader,
+  anUploadSendsItsIfMatch,
+  aPreconditionIsSentAsAQuotedIfMatch,
+  noPreconditionSendsNoIfMatch,
 } from "./copilot-confirm.spec";
 
 /**
@@ -30,4 +34,8 @@ describe("F3.85 — the copilot Confirm executor (ADR 0099 decision 4.5)", () =>
   it("F3.87 PR 5: sends a body whole when its entry has no cardOnly key", () => aChangeWithNoCardOnlyKeySendsItsBodyWhole());
   it("F3.87 PR 6b: sends an upload as FormData with the file part and no explicit Content-Type", () => anUploadIsSentAsFormData());
   it("F3.87 PR 6b: sends no svgText, filename or hash field, and group only when stored", () => anUploadSendsNoCardOnlyOrHashField());
+  it("F4.247: sends a precondition as a quoted If-Match", () => aPreconditionIsSentAsAQuotedIfMatch());
+  it("F4.247: sends no If-Match without a precondition", () => noPreconditionSendsNoIfMatch());
+  it("F4.247: sends no If-Match when an older API sent no ifMatch", () => aMissingIfMatchFromAnOlderApiSendsNoHeader());
+  it("F4.247: sends If-Match on the multipart branch too", () => anUploadSendsItsIfMatch());
 });

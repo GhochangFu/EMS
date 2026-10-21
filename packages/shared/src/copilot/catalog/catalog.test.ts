@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   aBodylessEntryTakesOnlyTheEmptyObject,
+  exactlyTheTwoListWritesTakeAPrecondition,
   noMimicOrRoleRouteIsPending,
   theLibraryAndRoleSummariesNameTheirTarget,
   theLibraryEntriesAreForTheAuthors,
@@ -121,4 +122,8 @@ describe("F3.87 PR 6 — the library, symbol and role entries (ADR 0099 Amendmen
   it("offers assetRole.create to the global admin only", () => theRoleCreateIsForTheGlobalAdminOnly());
   it("leaves no mimic or role route pending", () => noMimicOrRoleRouteIsPending());
   it("names the target in each library and role summary", () => theLibraryAndRoleSummariesNameTheirTarget());
+});
+
+describe("F4.247 — the If-Match precondition (ADR 0099 Amendment 5 C1)", () => {
+  it("flags exactly dashboard.widgets.replace and assetTemplate.update", () => exactlyTheTwoListWritesTakeAPrecondition());
 });

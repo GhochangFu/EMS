@@ -39,6 +39,7 @@ function change(over: Partial<CopilotPendingChangeDto> = {}): CopilotPendingChan
     risk: "edit",
     proposedAt: "2026-10-11T10:00:00.000Z",
     expiresAt: "2026-10-11T10:15:00.000Z",
+    ifMatch: null,
     ...over,
   };
 }

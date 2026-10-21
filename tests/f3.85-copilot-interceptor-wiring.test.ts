@@ -84,6 +84,21 @@ describe("F3.85 — the copilot interceptor's wiring (ADR 0099 decision 4.5)", (
     }
   });
 
+  // `F4.247` (ADR 0099 Amendment 5 C2): the Confirm of a precondition change sends `If-Match`, which
+  // is not a CORS-safelisted request header. Today no `allowedHeaders` is set and the preflight
+  // reflects the request; a list that omits it would make every such Confirm from the dev SPA a
+  // network error while every other gate stays green. (AWS is same-origin through nginx.)
+  it("CORS lets If-Match through", () => {
+    const code = read("apps/api/src/main.ts")
+      .split(/\r?\n/)
+      .filter((line) => !isComment(line))
+      .join("\n");
+    expect(code).toMatch(/app\.enableCors\(/);
+    if (/\ballowedHeaders\b/.test(code)) {
+      expect(code, "an allowedHeaders list must name If-Match").toMatch(/["'`]If-Match["'`]/i);
+    }
+  });
+
   it("publishes the ./copilot subpath in the shared manifest", () => {
     const manifest = JSON.parse(read("packages/shared/package.json")) as {
       exports: Record<string, Record<string, string>>;

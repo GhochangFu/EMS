@@ -7,6 +7,9 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   aCreateUnderAParentTakesTheParentsOrganization,
+  aDashboardTargetCarriesItsUpdatedAt,
+  anAssetTemplateTargetCarriesItsUpdatedAt,
+  RESOLVER_STAMPS,
   aDashboardSlugIsFoundInTheAllowedSetOnly,
   anOpenGrantAddDrawerIsItsUsersRecord,
   anOpenGrantAddDrawerNeverAsksTheGrantCheck,
@@ -177,6 +180,12 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       "INSERT INTO bms.mimic_layouts (organization_id, name, slug, canvas_w, canvas_h) VALUES ($1, $2, $3, 120, 80) RETURNING id",
       [orgA, RESOLVER_NAMES.mimicLayoutA, "f387-resolver-layout"],
     );
+    // `F4.247`: a stamp apart from `created_at`, with microseconds the resolver must cut to milliseconds.
+    await superPool.query("UPDATE bms.dashboards SET updated_at = $2 WHERE id = $1", [dashboardA, RESOLVER_STAMPS.dashboardA.stored]);
+    await superPool.query("UPDATE bms.asset_templates SET updated_at = $2 WHERE id = $1", [
+      assetTemplateA,
+      RESOLVER_STAMPS.assetTemplateA.stored,
+    ]);
     ctx = {
       tenantDb: createDb(tenantPool),
       orgA,
@@ -207,6 +216,9 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   });
 
   it("resolves a location with its site check", () => aLocationResolvesWithItsSiteCheck(ctx));
+  it("F4.247: a dashboard target carries its updated_at as a ms ISO instant", () => aDashboardTargetCarriesItsUpdatedAt(ctx));
+  it("F4.247: an asset-template target carries its updated_at as a ms ISO instant", () =>
+    anAssetTemplateTargetCarriesItsUpdatedAt(ctx));
   it("asks for an organization-level admin when a location update names parentId (PR 3a)", () =>
     aLocationMoveNeedsAnOrganizationLevelAdmin(ctx));
   it("checks an RTU, a group and a member on their own site", () => aSiteRowIsCheckedOnItsOwnSite(ctx));

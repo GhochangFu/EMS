@@ -91,6 +91,7 @@ export const ASSET_TEMPLATE_ENTRIES: readonly CatalogEntry[] = [
     params: { id: uuidParam },
     body: updateAssetTemplateBodySchema,
     bodyName: "updateAssetTemplateBodySchema",
+    precondition: "updatedAt",
     clientOnly: [],
     risk: "edit",
     target: ASSET_TEMPLATE,

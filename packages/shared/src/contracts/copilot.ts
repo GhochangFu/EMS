@@ -107,6 +107,9 @@ export const copilotPendingChangeDtoSchema = z
     risk: copilotChangeRiskSchema,
     proposedAt: z.string(),
     expiresAt: z.string(),
+    // F4.247 / ADR 0099 Amendment 5: the target's `updatedAt` read at propose time, which the
+    // browser sends as `If-Match` on Confirm; null for an entry with no precondition.
+    ifMatch: z.string().nullable(),
   })
   .strict();
 

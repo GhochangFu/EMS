@@ -46,6 +46,7 @@ function openCard(id: string, catalogId: string): CopilotPendingChangeDto {
     risk: "create",
     proposedAt: "2026-10-12T00:00:00.000Z",
     expiresAt: "2026-10-12T00:15:00.000Z",
+    ifMatch: null,
   };
 }
 

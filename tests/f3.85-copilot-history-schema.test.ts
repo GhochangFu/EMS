@@ -260,6 +260,8 @@ describe("F3.85 migration 0105 — the copilot history and pending-change tables
       "finished_at",
       "result_status",
       "resource_id",
+      // F4.247: migration 0115 (ADR 0099 Amendment 5 C1).
+      "precondition",
     ]);
   });
 });

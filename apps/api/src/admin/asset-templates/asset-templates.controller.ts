@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -18,6 +19,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
+import { parseIfMatchHeader } from "../../common/if-match";
 import { idParamSchema, stockCodeParamSchema } from "../admin.schema";
 // Reused by identity, not moved: `tests/adr-0029-openapi-contract.test.ts`
 // forbids DECLARING a body schema in a controller, not importing one.
@@ -142,17 +144,20 @@ export class AssetTemplatesAdminController {
     }
   }
 
+  /** `F4.247` (ADR 0099 Amendment 5 C3): `If-Match` names the template's `updatedAt`; a stale one is a 412. */
   @Patch(":id")
   async update(
     @Param("id") id: string,
     @Body() body: unknown,
     @CurrentUser() user: JwtPayload,
+    @Headers("if-match") ifMatch?: string,
   ) {
     try {
       return await this.service.update(
         user,
         idParamSchema.parse(id),
         updateAssetTemplateBodySchema.parse(body),
+        parseIfMatchHeader(ifMatch),
       );
     } catch (err) {
       if (err instanceof ZodError) {

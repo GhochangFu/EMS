@@ -37,6 +37,7 @@ export * from "./envelopes";
 export * from "./escalation";
 export * from "./generated-site-view";
 export * from "./health";
+export * from "./if-match";
 export * from "./location-types";
 export * from "./mapping-sheet";
 export * from "./metric-catalog-values";

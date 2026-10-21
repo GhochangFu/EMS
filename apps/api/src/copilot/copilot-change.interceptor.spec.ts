@@ -70,6 +70,8 @@ type Options = {
   authenticated?: boolean;
   type?: string;
   stored?: Partial<ClaimedChange>;
+  /** `F4.247`: the `If-Match` header the Confirm sends (absent by default). */
+  ifMatch?: string;
   handlerResult?: () => Promise<unknown>;
   /** The route's `@HttpCode`, set on the handler as Nest's decorator sets it. */
   httpCode?: number;
@@ -96,6 +98,7 @@ function harness(options: Options = {}): Harness {
     headers: {
       "x-copilot-change": "header" in options ? options.header : CHANGE_ID,
       "content-type": options.contentType ?? "application/json",
+      ...(options.ifMatch !== undefined ? { "if-match": options.ifMatch } : {}),
     },
     body: "body" in options ? options.body : BODY,
     user: options.authenticated === false ? undefined : user,
@@ -132,6 +135,7 @@ function harness(options: Options = {}): Harness {
     bodyHash: bodyHash(BODY),
     organizationId: ORG_ID,
     catalogId: "dashboards.create",
+    precondition: null,
     ...options.stored,
   };
   const pending = {
@@ -606,4 +610,37 @@ export async function aChangedUploadGroupIs409AndReleased(): Promise<void> {
       stored: { path: LIBRARY_PATH, catalogId: UPLOAD_FIXTURE_ID, bodyHash: bodyHash(stored) },
     }),
   );
+}
+
+/**
+ * `F4.247` (ADR 0099 Amendment 5 C2) — a change stored with a precondition is
+ * applied only when the Confirm's `If-Match` names it. `STAMP` is a valid ms
+ * instant, so a refusal is the compare's, never the header schema's.
+ */
+const STAMP = "2026-10-20T10:00:00.000Z";
+
+/** Mutation: skip the compare when the header is absent. */
+export async function aPreconditionWithoutIfMatchIs409AndReleased(): Promise<void> {
+  await expectReleased(harness({ stored: { precondition: STAMP } }));
+}
+
+/** Mutation: check the header's presence only. */
+export async function aPreconditionWithAnotherIfMatchIs409AndReleased(): Promise<void> {
+  await expectReleased(harness({ stored: { precondition: STAMP }, ifMatch: '"2026-10-20T10:00:00.001Z"' }));
+}
+
+/** Mutation: compare the raw (quoted) header to the stored (bare) instant — the browser's quoting never matches. */
+export async function aPreconditionWithItsIfMatchIsApplied(): Promise<void> {
+  const h = harness({ stored: { precondition: STAMP }, ifMatch: `"${STAMP}"` });
+  await run(h);
+  expect(h.handler).toHaveBeenCalledTimes(1);
+  expect(h.pending.record).toHaveBeenCalledWith(expect.any(String), CHANGE_ID, "applied", 201, "dash-1");
+}
+
+/** Mutation: refuse any `If-Match` on a change with no precondition — the route decides that one. */
+export async function noPreconditionIgnoresTheIfMatch(): Promise<void> {
+  const h = harness({ ifMatch: '"not an instant"' });
+  await run(h);
+  expect(h.handler).toHaveBeenCalledTimes(1);
+  expect(h.pending.release).not.toHaveBeenCalled();
 }

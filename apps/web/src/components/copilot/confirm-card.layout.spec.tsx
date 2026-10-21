@@ -55,6 +55,7 @@ function replaceChange(body: MimicLayoutWriteBody = FLOW_WRITE_BODY, version = 2
     risk: "edit",
     proposedAt: "2026-10-15T10:00:00.000Z",
     expiresAt: "2026-10-15T10:15:00.000Z",
+    ifMatch: null,
   };
 }
 

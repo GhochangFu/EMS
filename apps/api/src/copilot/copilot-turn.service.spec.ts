@@ -33,6 +33,7 @@ import {
   COPILOT_SYSTEM_PROMPT,
   COPILOT_ACTION_RECORD_PREFIX,
   COPILOT_FOLLOW_UP_PREFIX,
+  COPILOT_PRECONDITION_FAILED_NEXT,
   changeOutcomeLine,
   copilotScopeMessage,
   CopilotTurnService,
@@ -214,6 +215,7 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
         risk: change.risk,
         proposedAt: "2026-10-11T06:00:00.000Z",
         expiresAt: "2026-10-11T06:15:00.000Z",
+        ifMatch: change.precondition,
       };
     },
     discard: async (userId: string, ids: readonly string[]) => {
@@ -779,6 +781,21 @@ export async function assertAFollowUpThatFailsStoresTheOutcomeOnly(): Promise<vo
   await h.service.followUp({ identity: GLOBAL_ADMIN, user: JWT }, CHANGE_ID);
   expect(h.history.map((m) => m.role)).toEqual(["action"]);
   expect(h.history[0]?.content).toBe(changeOutcomeLine(failed));
+}
+
+/** `F4.247` (Amendment 5 C4): a 412's action line tells the model to read the record again. Mutation: drop the suffix. */
+export function assertA412OutcomeLineSaysReadTheRecordAgain(): void {
+  const stale = { ...APPLIED, status: "failed", resultStatus: 412, resourceId: null };
+  expect(changeOutcomeLine(stale)).toBe(`Failed (HTTP 412): ${APPLIED.summary} (${COPILOT_PRECONDITION_FAILED_NEXT})`);
+}
+
+/** `F4.247` (Amendment 5 C4): the 412 follow-up record carries the same instruction. Mutation: drop its `next`. */
+export async function assertA412FollowUpRecordSaysReadTheRecordAgain(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: "I will read it again." }]);
+  const h = harness(llm, { finished: { ...APPLIED, status: "failed", resultStatus: 412, resourceId: null } });
+  await h.service.followUp({ identity: GLOBAL_ADMIN, user: JWT }, CHANGE_ID);
+  const input = (llm.seen[0] ?? []).at(-1);
+  expect(input?.role === "user" ? textOfContent(input.content) : "").toContain(COPILOT_PRECONDITION_FAILED_NEXT);
 }
 
 /** No finished change (another user's, or still pending): nothing runs. */

@@ -27,6 +27,7 @@ export const UPLOAD_CARD: CopilotPendingChangeDto = {
   risk: "create",
   proposedAt: "2026-10-16T10:00:00.000Z",
   expiresAt: "2026-10-16T10:15:00.000Z",
+  ifMatch: null,
 };
 
 /** Installs `URL.createObjectURL` / `revokeObjectURL` stubs that record the blobs made and the URLs revoked — none, since the card uses a `data:` URL. */

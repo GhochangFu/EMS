@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -20,6 +21,7 @@ import type { JwtPayload } from "@bms/shared";
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { parseIfMatchHeader } from "../common/if-match";
 import {
   createDashboardBodySchema,
   getDashboardQuerySchema,
@@ -151,13 +153,24 @@ export class DashboardBuilderController {
     return { deleted: true as const };
   }
 
+  /**
+   * `F4.247` (ADR 0099 Amendment 5 C3): `If-Match` names the dashboard's `updatedAt`; a stale one
+   * is a 412, a malformed one a 400, none the save as before. With the asset-template `PATCH`,
+   * the first `@Headers(` in this API — a source scan pins the wiring (`common/if-match.spec.ts`).
+   */
   @Put(":id/widgets")
-  async putWidgets(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Body() body: unknown) {
+  async putWidgets(
+    @CurrentUser() user: JwtPayload,
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @Headers("if-match") ifMatch?: string,
+  ) {
     await this.accessControl.assertOperationsWriteRole(user, "configuration");
     return this.dashboards.putWidgets(
       user,
       parse(idParamSchema, id),
       parse(putDashboardWidgetsBodySchema, body),
+      parseIfMatchHeader(ifMatch),
     );
   }
 }

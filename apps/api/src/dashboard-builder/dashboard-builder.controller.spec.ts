@@ -445,3 +445,44 @@ export async function siteWidgetsRefusesAMalformedQueryWith400(): Promise<void> 
   }
   assert(seen.length === 0, `a malformed request must not reach the service; it ran ${seen.length} time(s)`);
 }
+
+/**
+ * `F4.247` (ADR 0099 Amendment 5 C3) — `If-Match` reaches `putWidgets` as its FOURTH argument,
+ * unquoted. An optional trailing parameter at an adapter is invisible to tsc, so only the
+ * recorded argument list says it is wired; the `@Headers("if-match")` decorator itself is the
+ * source scan in `common/if-match.spec.ts`. Mutation: drop the fourth argument.
+ */
+export async function putWidgetsForwardsTheIfMatchUnquoted(): Promise<void> {
+  const seen: unknown[][] = [];
+  const putWidgets = (...args: unknown[]) => {
+    seen.push(args);
+    return Promise.resolve(dto);
+  };
+  const { controller } = controllerWith({ service: { putWidgets: putWidgets as unknown as ServiceStub["putWidgets"] } });
+  await controller.putWidgets(ADMIN, DASHBOARD_ID, validWidgetsBody, '"2026-10-20T10:00:00.000Z"');
+  assert(seen[0]?.[3] === "2026-10-20T10:00:00.000Z", `If-Match must arrive unquoted; got ${JSON.stringify(seen[0])}`);
+  await controller.putWidgets(ADMIN, DASHBOARD_ID, validWidgetsBody);
+  assert(seen[1]?.[3] === undefined, `no If-Match must arrive as undefined; got ${JSON.stringify(seen[1])}`);
+}
+
+/** Mutation: pass the raw header through unparsed — a weak tag reaches the service. */
+export async function putWidgetsRefusesAWeakIfMatchWith400(): Promise<void> {
+  const { controller, service } = controllerWith({});
+  await rejects(
+    () => controller.putWidgets(ADMIN, DASHBOARD_ID, validWidgetsBody, 'W/"2026-10-20T10:00:00.000Z"'),
+    (err) => err instanceof BadRequestException,
+    "a weak If-Match",
+  );
+  assert(service.putWidgets.calls === 0, "a weak If-Match must never reach the service");
+}
+
+/** Critique C1: a quoted non-instant is a 400 at the controller, never a value the database casts. */
+export async function putWidgetsRefusesANonInstantIfMatchWith400(): Promise<void> {
+  const { controller, service } = controllerWith({});
+  await rejects(
+    () => controller.putWidgets(ADMIN, DASHBOARD_ID, validWidgetsBody, '"abc"'),
+    (err) => err instanceof BadRequestException,
+    "a non-instant If-Match",
+  );
+  assert(service.putWidgets.calls === 0, "a non-instant If-Match must never reach the service");
+}

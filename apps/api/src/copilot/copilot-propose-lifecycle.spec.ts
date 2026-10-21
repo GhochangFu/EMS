@@ -26,6 +26,7 @@ const target = (status: TemplateLifecycleStatus | undefined, over: Partial<Resol
   targetName: "Pump template",
   pointKeys: ["kw"],
   currentContent: {},
+  updatedAt: "2026-10-11T05:00:00.000Z", // F4.247: assetTemplate.update is flagged; its target carries the stamp
   ...(status !== undefined ? { status } : {}),
   ...over,
 });
