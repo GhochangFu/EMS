@@ -45,6 +45,13 @@ until merge): `F4.245` — `fill_step` names the record it fills and the server
 checks it against the wizards open on the user's screen. Where Amendment 4
 conflicts with decision 6 or with Amendments 1–3, it wins; decision 10 stands.
 
+**Amended 2026-10-21 — Amendment 5** (owner-ruled 2026-10-20, "Column +
+412"; Proposed until merge): `F4.247` — the two list writes the copilot
+proposes (`dashboard.widgets.replace`, `assetTemplate.update`) carry an
+`If-Match` precondition, bound on Confirm and refused with 412 by the routes.
+Where Amendment 5 conflicts with decisions 4.5 and 4.9 or the *Not in this
+ADR* list, it wins.
+
 | # | Question | Options put | Ruled | Decision |
 | --- | --- | --- | --- | --- |
 | 1 | Copilot or narrow assistant | narrow admin assistant; general copilot; no change | **general copilot** (owner's own choice) | 1 |
@@ -210,7 +217,8 @@ every hard `DELETE` not named in decision 3.
      therefore apply once: **the change id is the idempotency key**.
    - It checks that the request's **method, resolved path and canonical body
      hash** (without `clientOnly` fields) all equal the claimed row; a mismatch
-     sets the row back to `pending` and refuses with 409.
+     sets the row back to `pending` and refuses with 409. *(Amendment 5 C2: for
+     an entry with a precondition the `If-Match` header joins this compare.)*
    - The controller then runs unchanged — every role check, Zod parse, RLS
      policy and audit write. The interceptor puts `{ via: "copilot", changeId }`
      in a request-scoped context (`AsyncLocalStorage`), and **every writer of
@@ -237,6 +245,8 @@ every hard `DELETE` not named in decision 3.
    time. A `PUT` that replaces a list can overwrite a concurrent edit made
    after the card was shown; no `If-Match` exists today. The card says when it
    was proposed, and the 15-minute expiry bounds the window.
+   *(Superseded by Amendment 5 for the two list writes the copilot proposes;
+   its C5 states what stays open.)*
 
 The header binds the audit mark and the idempotency to what the admin saw. A
 user can send any body by hand without it, as today; the copilot adds no power
@@ -379,7 +389,8 @@ the copilot gains them through the catalog when that row ships.
 - Granting the global `admin` role.
 - Streaming replies, a platform AI settings screen, live model lists.
 - An invite email for new users (ADR 0089 Q3 stands).
-- `If-Match` / optimistic concurrency on list `PUT`s (decision 4.9).
+- ~~`If-Match` / optimistic concurrency on list `PUT`s (decision 4.9).~~
+  Amendment 5 adds it for the two list writes the copilot proposes.
 - Mimic drawing by conversation (release 3 needs its own amendment).
 
 ## Amends and relates to
@@ -1045,3 +1056,86 @@ Integration: the dashboard slug lookup under the tenant policy, and the
 row-alone resolution of an open grant-add drawer and an open instantiate
 wizard on the real resolver. Live stack: a fill for another record than the open
 one is refused, and a fill for the open one lands.
+
+## Amendment 5 — `If-Match` for the two list writes (owner, 2026-10-20)
+
+**Status: Proposed — owner ruled 2026-10-20 ("Column + 412"); the merge approves the text.**
+
+Decision 4.9 accepted that a write which replaces a list can overwrite an
+edit another user made after the card was shown: the propose tool reads the
+target and stores the whole body, and a Confirm inside the 15-minute window
+applies it as it stands (`docs/BACKLOG.md` F4.247). The owner ruled on
+2026-10-20 to close the window from the proposal to the Confirm with a stored
+precondition and a 412. Code citations are to the `F4.245` tip `4602606e`.
+
+- **C1 — The precondition.** The catalog flags `dashboard.widgets.replace`
+  and `assetTemplate.update` with `precondition: "updatedAt"`. For them the
+  propose target resolver reads the row's `updated_at` in the same `SELECT`
+  as the row it names, and the propose tool stores it, as a millisecond ISO
+  instant, in `bms.copilot_pending_changes.precondition` (migration 0115, a
+  nullable `varchar(40)`; no backfill, no grant — the table's default
+  privileges cover a new column). The pending-change DTO carries it as
+  `ifMatch` (`null` for every other entry). A flagged entry whose resolver
+  read no stamp is refused at propose: the guard fails closed.
+- **C2 — The binding.** On Confirm the browser sends `If-Match: "<ifMatch>"`
+  when `ifMatch` is a string. Decision 4.5's compare list gains it: for a
+  claimed change with a precondition, a header that is absent, malformed or
+  names another instant is refused with decision 4.5's one sentence (409) and
+  the claim is released, exactly as a changed body is. A change with no
+  precondition ignores the header: the route decides.
+- **C3 — The routes.** `PUT /dashboards/:id/widgets` and
+  `PATCH /admin/asset-templates/:id` take `If-Match` from any caller, not only
+  the copilot. The value is the record DTO's `updatedAt` in quotes — **not**
+  the response's `ETag` (Express sends a weak one, and a weak tag is refused).
+  - `"<ms ISO instant>"` that equals the row's `updated_at`, rendered as text
+    to the same millisecond shape inside the write transaction: the write
+    applies and moves `updated_at`.
+  - The same shape naming another instant: **412 Precondition Failed** with
+    `PRECONDITION_STALE_MESSAGE`; nothing is written and no audit row is
+    written. The compare is text, so a value Postgres cannot cast (the year
+    0000) is a 412, never a 500.
+  - A weak tag, `*`, a list, an unquoted value or a quoted non-instant: 400.
+  - No header: the route behaves as before, and a row deleted between the
+    route's read and its write is the route's own 404, never a 412.
+- **C4 — The follow-up turn.** A 412 outcome tells the model, in the action
+  line and the follow-up record, that the record changed after the proposal
+  and that it must read the record again before it proposes a change. Without
+  that, the model re-proposes the same stale body, the resolver stamps it
+  fresh, and the next Confirm overwrites the edit the 412 protected.
+- **C5 — Residuals, stated.**
+  - **(a) The read before the proposal.** The precondition is the stamp **at
+    propose time**. For `dashboard.widgets.replace` the model builds the list
+    from an earlier read, possibly turns earlier, and the propose tool does not
+    merge it, so an edit made between that read and the proposal is inside the
+    stamp and is still overwritten on Confirm. Amendment 3 A2's body `version`
+    (mimics) closes that window; this amendment does not. C4 narrows it for a
+    retry after a 412; the model can still ignore the instruction.
+  - **(b) The stamp is per row.** Any write that moves the row's `updated_at`
+    — a rename through `PATCH /dashboards/:id`, a publish or an archive —
+    refuses a pending Confirm, even when it touched no field of the list. This
+    errs on the safe side.
+  - **(c) Changes proposed before the deploy.** A pending change stored before
+    migration 0115 has `precondition = NULL` and confirms with no compare
+    until it expires, at most 15 minutes after the deploy.
+  - **(d) The manual pages.** The dashboard builder and the asset-template
+    editor send no `If-Match` (backlog row `F4.273`).
+
+Decision 4.9 is marked superseded by this amendment for the two entries, and
+*Not in this ADR* loses its `If-Match` line.
+
+**Not in this amendment.** An `ETag` response header; a precondition for any
+other catalog entry; idempotency keys beyond decision 4.5's change id; the
+manual pages (C5 d).
+
+**Verification owed.** Unit: the header schema (quoted ms instant only), the
+DTO's required `ifMatch`, the catalog flag on exactly two entries, the propose
+tool's store and its fail-closed refusal, the interceptor's compare (absent,
+other, equal, no precondition), the 412 outcome line, the route helpers' text
+compare and their 412-only-when-sent rule, the `@Headers("if-match")` wiring
+in both controllers, and the web sender — each with a named mutation.
+Integration: the column round-trip through `propose` and `claim`, the resolver
+reading `updated_at` for both kinds, and both routes applying on the live
+value, refusing a stale one with nothing written, matching a microsecond stamp
+by its milliseconds, and applying with no header. Live stack: a stale Confirm
+is a 412 on the card, and a live one applies — through the AWS nginx
+configuration too, which has no `proxy_cache` (`tests/f4.130-nginx-cache-headers`).
