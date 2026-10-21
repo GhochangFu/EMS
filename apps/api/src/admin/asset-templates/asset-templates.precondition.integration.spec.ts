@@ -107,7 +107,7 @@ export async function aStaleIfMatchIs412AndWritesNothing(ctx: TemplatePreconditi
 /** Claim 3 — a microsecond stamp matches its milliseconds. Mutation: compare `updated_at = ${ifMatch}::timestamptz`. */
 export async function aMicrosecondStampMatchesItsMilliseconds(ctx: TemplatePreconditionCtx): Promise<void> {
   const id = await newDraft(ctx);
-  await stampTo(ctx, id, "2026-10-20 10:00:00.123456+00");
+  await stampTo(ctx, id, "2026-10-20 10:00:00.123999+00");
   const dto = await ctx.svc.update(ctx.fx.adminJwt, id, { name: "F4.247 after" }, STAMP.iso);
   expect(dto.name).toBe("F4.247 after");
 }

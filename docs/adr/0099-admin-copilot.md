@@ -1107,7 +1107,10 @@ precondition and a 412. Code citations are to the `F4.245` tip `4602606e`.
     propose time**. For `dashboard.widgets.replace` the model builds the list
     from an earlier read, possibly turns earlier, and the propose tool does not
     merge it, so an edit made between that read and the proposal is inside the
-    stamp and is still overwritten on Confirm. Amendment 3 A2's body `version`
+    stamp and is still overwritten on Confirm. `assetTemplate.update` has the
+    same window for `points` (the list is replaced whole) and for each
+    `content` section the proposal names (the merge replaces a named section
+    whole). Amendment 3 A2's body `version`
     (mimics) closes that window; this amendment does not. C4 narrows it for a
     retry after a 412; the model can still ignore the instruction.
   - **(b) The stamp is per row.** Any write that moves the row's `updated_at`

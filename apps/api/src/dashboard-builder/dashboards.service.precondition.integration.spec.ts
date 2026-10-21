@@ -95,7 +95,7 @@ export async function aStaleIfMatchIs412AndWritesNothing(ctx: PreconditionCtx): 
  */
 export async function aMicrosecondStampMatchesItsMilliseconds(ctx: PreconditionCtx): Promise<void> {
   const id = await ctx.newDashboard();
-  await stampTo(ctx, id, "2026-10-20 10:00:00.123456+00");
+  await stampTo(ctx, id, "2026-10-20 10:00:00.123999+00");
   await ctx.service.putWidgets(ctx.actor, id, body(), STAMP.iso);
   expect(await widgetCount(ctx, id)).toBe(1);
 }
