@@ -16,6 +16,9 @@ import {
   assertInUsePointKeysAreTenantScoped,
   assertJoinsNeverReadAnotherOrganizationsRows,
   assertLocationCodeFilterIsExact,
+  assertLocationRowsNameTheirParentCode,
+  assertParentCandidatesAreTheSessionOrganizationsWithDepth,
+  assertTheParentJoinNeverReadsAnotherOrganizationsCode,
   assertLocationsListOnlyTheSessionOrganization,
   assertNoRowCarriesTheConfigOrMetaSentinel,
   assertResultKeysArePerKindAllowlists,
@@ -129,5 +132,17 @@ describe.skipIf(!connectionString)("F3.26 — onboarding inventory reads (ADR 00
 
   it("I14 assertJoinsNeverReadAnotherOrganizationsRows", async () => {
     await assertJoinsNeverReadAnotherOrganizationsRows(ctx);
+  });
+
+  it("I-P1 assertLocationRowsNameTheirParentCode (F4.243)", async () => {
+    await assertLocationRowsNameTheirParentCode(ctx);
+  });
+
+  it("I-P2 assertParentCandidatesAreTheSessionOrganizationsWithDepth (F4.243)", async () => {
+    await assertParentCandidatesAreTheSessionOrganizationsWithDepth(ctx);
+  });
+
+  it("I-P3 assertTheParentJoinNeverReadsAnotherOrganizationsCode (F4.243)", async () => {
+    await assertTheParentJoinNeverReadsAnotherOrganizationsCode(ctx);
   });
 });

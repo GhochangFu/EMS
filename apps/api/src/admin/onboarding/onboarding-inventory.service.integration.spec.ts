@@ -283,7 +283,8 @@ export async function assertNoRowCarriesTheConfigOrMetaSentinel(ctx: InventoryCt
  */
 export async function assertResultKeysArePerKindAllowlists(ctx: InventoryCtx): Promise<void> {
   const expected: Record<ExistingKind, string[]> = {
-    location: ["active", "code", "name", "rtuCount", "slug", "type"],
+    // F4.243 (ADR 0098 Amendment 2, B7): the key list grows by `parentCode`.
+    location: ["active", "code", "name", "parentCode", "rtuCount", "slug", "type"],
     rtu: ["active", "code", "displayName", "locationCode", "protocol", "rtuCode"],
     asset: ["code", "domain", "locationCode", "name", "rtu", "templateCode", "templateVersion"],
   };
@@ -433,12 +434,19 @@ export async function assertInUsePointKeysAreTenantScoped(ctx: InventoryCtx): Pr
   });
 }
 
-async function insertLocation(tx: Tx, owner: OrgFixture, code: string, slug: string): Promise<string> {
+async function insertLocation(
+  tx: Tx,
+  owner: OrgFixture,
+  code: string,
+  slug: string,
+  parentId: string | null = null,
+): Promise<string> {
   return first(
     await tx
       .insert(locations)
       .values({
         organizationId: owner.organizationId,
+        parentId,
         code,
         slug,
         name: `F3.26 ${code}`,
@@ -545,6 +553,72 @@ export async function assertJoinsNeverReadAnotherOrganizationsRows(ctx: Inventor
     assert.ok(text.includes(a.rtuCode), "the adjacent positive: A's RTU is listed");
     assert.ok(!text.includes(b.locationCode), "no RTU row carries B's location code");
     assert.equal(rtuRows.total, rtuRows.rows.length, "the RTU total matches the rows");
+    tx.rollback();
+  });
+}
+
+/**
+ * I-P1 (`F4.243`, ADR 0098 Amendment 2 B7) — a location row names its
+ * parent's code, and a root names `null`. Mutation: drop the `parentCode`
+ * select, or join on `locations.id` instead of `parent_id`.
+ */
+export async function assertLocationRowsNameTheirParentCode(ctx: InventoryCtx): Promise<void> {
+  await withRollback(ctx.fleetDb, async (tx) => {
+    const { a } = await seedFamily(tx, ctx.run);
+    const childCode = `F326-LOC-A-CHILD-${ctx.run}`;
+    await insertLocation(tx, a, childCode, `f326-loc-a-child-${ctx.run}`, a.locationId);
+    const { rows } = await service(tx).listExisting(a.organizationId, { kind: "location" });
+    const parents = Object.fromEntries(rows.map((row) => [row.code, (row as { parentCode: string | null }).parentCode]));
+    assert.deepEqual(parents, { [a.locationCode]: null, [childCode]: a.locationCode });
+    tx.rollback();
+  });
+}
+
+/**
+ * I-P2 (`F4.243`, B4) — `listParentCandidates` lists the session
+ * organization's locations with their depth (a root is 1) and active flag, and
+ * none of B's. Mutation: drop the organization predicate.
+ */
+export async function assertParentCandidatesAreTheSessionOrganizationsWithDepth(ctx: InventoryCtx): Promise<void> {
+  await withRollback(ctx.fleetDb, async (tx) => {
+    // B is seeded too: the exact key set below has no room for B's location.
+    const { a } = await seedFamily(tx, ctx.run);
+    const childCode = `F326-LOC-A-CHILD-${ctx.run}`;
+    const childId = await insertLocation(tx, a, childCode, `f326-loc-a-child-${ctx.run}`, a.locationId);
+    const grandCode = `F326-LOC-A-GRAND-${ctx.run}`;
+    await insertLocation(tx, a, grandCode, `f326-loc-a-grand-${ctx.run}`, childId);
+    const candidates = await service(tx).listParentCandidates(a.organizationId);
+    const byCode = Object.fromEntries(candidates.map((row) => [row.code, { depth: row.depth, active: row.active }]));
+    assert.deepEqual(byCode, {
+      [a.locationCode]: { depth: 1, active: true },
+      [childCode]: { depth: 2, active: true },
+      [grandCode]: { depth: 3, active: true },
+    });
+    tx.rollback();
+  });
+}
+
+/**
+ * I-P3 (`F4.243`, review L6 for the parent join) — an A location whose
+ * `parent_id` points at B's location never reads B's code: `parentCode` is
+ * `null`. Migration `0103`'s composite foreign key and `locations_tree_guard`
+ * refuse that edge, so it is planted on `superDb` with constraints off, as
+ * I14 plants its crossed rows. Mutation 10 (drop the organization predicate
+ * from the parent join's `ON`) reddens it.
+ */
+export async function assertTheParentJoinNeverReadsAnotherOrganizationsCode(ctx: InventoryCtx): Promise<void> {
+  await withRollback(ctx.superDb, async (tx) => {
+    const { a, b } = await seedFamily(tx, ctx.run);
+    const crossedCode = `F326-LOC-A-CROSSED-${ctx.run}`;
+    await withConstraintsOff(
+      (statement) => tx.execute(sql.raw(statement)),
+      async () => {
+        await insertLocation(tx, a, crossedCode, `f326-loc-a-crossed-${ctx.run}`, b.locationId);
+      },
+    );
+    const { rows } = await service(tx).listExisting(a.organizationId, { kind: "location" });
+    const parents = Object.fromEntries(rows.map((row) => [row.code, (row as { parentCode: string | null }).parentCode]));
+    assert.deepEqual(parents, { [a.locationCode]: null, [crossedCode]: null }, "B's code is not read through the parent join");
     tx.rollback();
   });
 }

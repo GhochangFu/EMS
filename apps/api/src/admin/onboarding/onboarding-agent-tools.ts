@@ -274,6 +274,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   list_point_keys: "Lists catalog point keys (code, name, unit, domain, inUse). Optional `search` filters code and name; `domain` and `unit` match exactly, case-insensitive. Keys this organization already maps come first.",
   find_existing:
     "Lists this organization's existing locations, RTUs or assets (codes, names, protocol, domain, template). " +
+    "A location row names its parent's code as `parentCode` (null for a top-level location). " +
     "Call it before you choose a new code, so the draft follows the organization's naming and avoids a code it already holds. " +
     "Optional `search` matches code and name; `locationCode` is exact.",
   list_location_types: "Lists the active location type codes and labels. A location's `type` must be one of these codes.",
