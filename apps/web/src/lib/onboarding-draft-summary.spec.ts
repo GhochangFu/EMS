@@ -148,3 +148,19 @@ export function theMappingsLineCountsDiscoveredRows(): void {
 export function theMappingsLineIsUnchangedWithoutDiscoveredRows(): void {
   expect(formatOnboardingDraftSummary({ assetPoints: [POINT] })).toBe("Mappings: 1 asset-point row(s)");
 }
+
+/** `F4.243` (ADR 0098 Amendment 2): a location with a parent, or none. */
+function located(parentCode?: string | null): OnboardingDraft {
+  const location = { name: "Thane", code: "THANE", slug: "thane", latitude: 0, longitude: 0 };
+  return { location: parentCode === undefined ? location : { ...location, parentCode } } as unknown as OnboardingDraft;
+}
+
+/** W1: a named parent is printed after the location. */
+export function aLocationLineNamesItsParent(): void {
+  expect(formatOnboardingDraftSummary(located("CAMPUS-1")).split("\n")[0]).toBe("Location: Thane (THANE) under CAMPUS-1");
+}
+
+/** W2: a top-level location (`null`) prints the line as before. */
+export function aTopLevelLocationLineIsUnchanged(): void {
+  expect(formatOnboardingDraftSummary(located(null)).split("\n")[0]).toBe("Location: Thane (THANE)");
+}

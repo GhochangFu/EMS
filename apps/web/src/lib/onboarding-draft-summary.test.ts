@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   aLegacyTopicIsPrinted,
+  aLocationLineNamesItsParent,
+  aTopLevelLocationLineIsUnchanged,
   anEmptyTopicBesideALegacyKeyPrintsADash,
   theMappingsLineCountsDiscoveredRows,
   theMappingsLineIsUnchangedWithoutDiscoveredRows,
@@ -73,5 +75,15 @@ describe("F3.22 onboarding draft summary", () => {
 
   it("leaves the Mappings line alone without discovered rows (F3.24b)", () => {
     theMappingsLineIsUnchangedWithoutDiscoveredRows();
+  });
+});
+
+describe("formatOnboardingDraftSummary: the parent location (F4.243)", () => {
+  it("W1 names the parent after the location", () => {
+    aLocationLineNamesItsParent();
+  });
+
+  it("W2 prints a top-level location as before", () => {
+    aTopLevelLocationLineIsUnchanged();
   });
 });
