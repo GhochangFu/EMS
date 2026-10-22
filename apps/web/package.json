@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "smoke:cr": "node scripts/cr-extension-smoke.mjs",
-    "smoke:realtime": "node scripts/realtime-smoke.mjs"
+    "smoke:realtime": "node scripts/realtime-smoke.mjs",
+    "predev": "node scripts/copy-pdfjs-assets.mjs",
+    "prebuild": "node scripts/copy-pdfjs-assets.mjs"
   },
   "dependencies": {
     "@bms/shared": "workspace:*",
@@ -21,6 +23,7 @@
     "echarts": "^5.6.0",
     "echarts-for-react": "^3.0.2",
     "leaflet": "^1.9.4",
+    "pdfjs-dist": "5.4.394",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-leaflet": "^4.2.1",

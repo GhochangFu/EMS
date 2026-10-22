@@ -49,8 +49,6 @@ import {
   sendsAPlainTurnWithoutAFileList,
   sendsTheChosenFilesAsFormData,
   showsAChipPerChosenFile,
-  showsNoPdfNoteForAnImage,
-  showsThePdfNoteWhenAPdfIsChosen,
 } from "./copilot-dock.spec";
 
 afterEach(() => {
@@ -120,8 +118,6 @@ describe("F3.87 PR 8 copilot dock — the picker's client checks and chips", () 
   it("refuses a file over 10 MB", refusesAFileOverTenMegabytes);
   it("refuses an .svg over 64 KB", refusesAnSvgOverSixtyFourKilobytes);
   it("removes a chip", removesAChip);
-  it("F4.268: shows the PDF note when a PDF is chosen", showsThePdfNoteWhenAPdfIsChosen);
-  it("F4.268: shows no PDF note for an image", showsNoPdfNoteForAnImage);
   it("drops the chosen files on a pick of another organization", dropsTheChosenFilesOnAPickOfAnotherOrganization);
 });
 

@@ -22,7 +22,6 @@ import { ApiError } from "../../lib/api-error";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { useCopilotStore } from "../../stores/copilot-store";
 import { OPERATIONAL } from "../system-status-indicator.spec";
-import { PDF_DRAWING_NOTE } from "./copilot-attachment-note";
 import { COPILOT_OPEN_KEY, CopilotDock, formatCopilotReset } from "./copilot-dock";
 
 /**
@@ -505,18 +504,18 @@ function rememberConversation(organizationId: string | null, skill: CopilotSkill
   });
 }
 
-function aFile(name: string, size = 3, type = ""): File {
+export function aFile(name: string, size = 3, type = ""): File {
   const file = new File([new Uint8Array([1, 2, 3])], name, { type });
   // The size is what the dock reads; no 10 MB buffer is allocated for it.
   Object.defineProperty(file, "size", { value: size });
   return file;
 }
 
-function choose(...files: File[]): void {
+export function choose(...files: File[]): void {
   fireEvent.change(screen.getByLabelText(ATTACH), { target: { files } });
 }
 
-function chips(): string[] {
+export function chips(): string[] {
   const list = screen.queryByRole("list", { name: "Files to attach" });
   return list === null ? [] : within(list).getAllByRole("listitem").map((li) => li.getAttribute("data-name") ?? "");
 }
@@ -675,8 +674,8 @@ export async function showsAChipPerChosenFile(): Promise<void> {
   renderDock("organization_admin");
   await openPanel();
   await screen.findByLabelText(ATTACH);
-  choose(aFile("plant.png"), aFile("sld.PDF"), aFile("valve.svg"));
-  expect(chips()).toEqual(["plant.png", "sld.PDF", "valve.svg"]);
+  choose(aFile("plant.png"), aFile("sld.WEBP"), aFile("valve.svg"));
+  expect(chips()).toEqual(["plant.png", "sld.WEBP", "valve.svg"]);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 }
 
@@ -739,38 +738,9 @@ export async function removesAChip(): Promise<void> {
   renderDock("organization_admin");
   await openPanel();
   await screen.findByLabelText(ATTACH);
-  choose(aFile("a.png"), aFile("b.pdf"));
+  choose(aFile("a.png"), aFile("b.webp"));
   fireEvent.click(screen.getByRole("button", { name: "Remove a.png" }));
-  expect(chips()).toEqual(["b.pdf"]);
-}
-
-/**
- * `F4.268` (ADR 0090 Amendment 3 ruling 6): a chosen PDF shows the note that a
- * drawing in it is read as text only; removing it removes the note.
- * Mutations: drop the render → the first half red; render it whatever the files → the removal half red.
- */
-export async function showsThePdfNoteWhenAPdfIsChosen(): Promise<void> {
-  stub(READY_WITH_FILES);
-  renderDock("organization_admin");
-  await openPanel();
-  await screen.findByLabelText(ATTACH);
-  choose(aFile("sld.PDF"));
-  expect(screen.getByText(PDF_DRAWING_NOTE)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Remove sld.PDF" }));
-  expect(chips()).toEqual([]);
-  expect(screen.queryByText(PDF_DRAWING_NOTE)).not.toBeInTheDocument();
-}
-
-/** No note before a file, nor for an image; the chip is the positive control. Mutation: show it for any file → red. */
-export async function showsNoPdfNoteForAnImage(): Promise<void> {
-  stub(READY_WITH_FILES);
-  renderDock("organization_admin");
-  await openPanel();
-  await screen.findByLabelText(ATTACH);
-  expect(screen.queryByText(PDF_DRAWING_NOTE)).not.toBeInTheDocument();
-  choose(aFile("plant.png"));
-  expect(chips()).toEqual(["plant.png"]);
-  expect(screen.queryByText(PDF_DRAWING_NOTE)).not.toBeInTheDocument();
+  expect(chips()).toEqual(["b.webp"]);
 }
 
 /**
@@ -789,7 +759,7 @@ export async function sendsTheChosenFilesAsFormData(): Promise<void> {
   renderDock("organization_admin");
   await openPanel();
   await screen.findByLabelText(ATTACH);
-  choose(aFile("a.png"), aFile("b.pdf"), aFile("c.svg"));
+  choose(aFile("a.png"), aFile("b.webp"), aFile("c.svg"));
   await send("draw it");
   await waitFor(() => expect(seen.body).not.toBeNull());
   expect(seen.body).toBeInstanceOf(FormData);
@@ -797,7 +767,7 @@ export async function sendsTheChosenFilesAsFormData(): Promise<void> {
   expect([...form.keys()]).toEqual(["message", "wizards", "files", "files", "files"]);
   expect(form.get("message")).toBe("draw it");
   expect(form.get("wizards")).toBe("[]");
-  expect(form.getAll("files").map((f) => (f as File).name)).toEqual(["a.png", "b.pdf", "c.svg"]);
+  expect(form.getAll("files").map((f) => (f as File).name)).toEqual(["a.png", "b.webp", "c.svg"]);
   expect(seen.headers?.get("Content-Type")).toBeNull();
 }
 

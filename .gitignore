@@ -11,6 +11,8 @@ out/
 .turbo/
 .cache/
 .vite/
+# F4.269 (ADR 0105): pdfjs-dist assets copied by apps/web's predev/prebuild script.
+apps/web/public/pdfjs/
 
 # --- TypeScript -------------------------------------------------------------
 *.tsbuildinfo

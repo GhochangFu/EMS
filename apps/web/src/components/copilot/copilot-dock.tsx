@@ -31,6 +31,7 @@ import { canAccessOnboarding, canAuthorDashboards } from "../../lib/admin-access
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { ATTACHMENT_EXTENSIONS, attachmentProblem, sizeLabel, splitAttachmentRecords, unscrubbedSentence } from "../../lib/copilot-attachments";
+import { isPdfFile, prepareChosenFiles, renderedPageCount, withoutEach, type PreparedFile } from "../../lib/copilot-pdf-page";
 import { ONBOARDING_DRAFTS, onboardingDraftsKey } from "../../lib/copilot-invalidations";
 import type { AuthUser } from "../../stores/auth-store";
 import {
@@ -40,7 +41,6 @@ import {
   useCopilotStore,
 } from "../../stores/copilot-store";
 import { useWizardStore } from "../../stores/wizard-store";
-import { hasPdfFile, PDF_DRAWING_NOTE } from "./copilot-attachment-note";
 import { AssistantText } from "./assistant-text";
 import { ConfirmCard } from "./confirm-card";
 import { OnboardingDraftPicker, type OnboardingDraftsOf } from "./onboarding-draft-picker";
@@ -330,14 +330,23 @@ function DockPanel({
   const attachAllowed =
     skill === null && configured === true && scope?.attachmentsEnabled === true && boundToOneOrganization;
   const [files, setFiles] = useState<File[]>([]);
+  // `F4.269`: a PDF pick resolves after its page render, so it adds to the files of that moment, and
+  // a drop below (the epoch moves) discards a render still in flight.
+  const filesRef = useRef(files);
+  filesRef.current = files;
+  const dropEpoch = useRef(0);
+  // The names of the PDFs whose page render is in flight: each shows a chip, and Send waits for them.
+  const [rendering, setRendering] = useState<string[]>([]);
   // The scope moved away from one that takes files (a pick, a skill, a refused key): drop the chosen ones.
   useEffect(() => {
     if (!attachAllowed) setFiles([]);
+    dropEpoch.current += 1;
   }, [attachAllowed]);
   // A pick of another organization drops them too, even when `attachAllowed` never goes false: the
   // new organization's status can be cached as on, and the user agreed only to the old one's provider.
   useEffect(() => {
     setFiles([]);
+    dropEpoch.current += 1;
   }, [organizationId]);
 
   useEffect(() => {
@@ -461,8 +470,9 @@ function DockPanel({
       return sendCopilotTurn(id, message, files, useWizardStore.getState().openWizards());
     },
     onSuccess: (data, sent) => {
-      // The files went with the turn; a refused send (onError) keeps them for another try.
-      if (sent.files.length > 0) setFiles([]);
+      // The files went with the turn; a refused send (onError) keeps them for another try. Only those:
+      // a page render that landed during the send stays for the next one.
+      if (sent.files.length > 0) setFiles((prev) => prev.filter((f) => !sent.files.includes(f)));
       // Before any cache write, the early skill write included: a focus read that began before the turn stored its rows must not overwrite them.
       void queryClient.cancelQueries({ queryKey: copilotConversationKey(data.conversationId) });
       // Before any early return: a skill state answers even when nothing was stored (a closed or lost session).
@@ -651,18 +661,36 @@ function DockPanel({
     turn.mutate({ message: text, files: withFiles && attachAllowed ? files : [] });
   }
 
-  /** The picker's client checks: the type by extension, the size, and at most three files a message. */
+  /**
+   * The picker's client checks: the type by extension, the size, and at most three files a message.
+   * `F4.269` (ADR 0105): a PDF that passes is rendered first and its page-1 PNG is checked and sent in its place.
+   */
   function onChooseFiles(e: ChangeEvent<HTMLInputElement>): void {
     const chosen = Array.from(e.target.files ?? []);
     // The same file chosen again after a removal must fire `change` again.
     e.target.value = "";
-    const next = [...files];
+    if (!chosen.some(isPdfFile)) {
+      addChosen(chosen.map((file) => ({ file, problem: attachmentProblem(file) })));
+      return;
+    }
+    const epoch = dropEpoch.current;
+    const pdfs = chosen.filter(isPdfFile).map((file) => file.name);
+    setRendering((prev) => [...prev, ...pdfs]);
+    void prepareChosenFiles(chosen)
+      .then((prepared) => {
+        if (epoch === dropEpoch.current) addChosen(prepared, true);
+      })
+      .finally(() => setRendering((prev) => withoutEach(prev, pdfs)));
+  }
+
+  /** A render that lands later (`late`) only adds its own problems; it never clears another banner. */
+  function addChosen(chosen: readonly PreparedFile[], late = false): void {
+    const next = [...filesRef.current];
     const problems: string[] = [];
     let overCount = false;
     let overTotal = false;
     let total = next.reduce((sum, file) => sum + file.size, 0);
-    for (const file of chosen) {
-      const problem = attachmentProblem(file);
+    for (const { file, problem } of chosen) {
       if (problem !== null) problems.push(problem);
       else if (next.length >= COPILOT_ATTACHMENTS_MAX) overCount = true;
       // Owner ruling 2026-10-16: the files of one message together stay within 10 MB (the server checks too).
@@ -674,8 +702,10 @@ function DockPanel({
     }
     if (overCount) problems.push(`A message can carry at most ${COPILOT_ATTACHMENTS_MAX} files.`);
     if (overTotal) problems.push(`The files of one message may be at most ${sizeLabel(MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES)} together.`);
+    filesRef.current = next;
     setFiles(next);
-    setBanner(problems.length > 0 ? problems.join(" ") : null);
+    if (problems.length > 0) setBanner(problems.join(" "));
+    else if (!late) setBanner(null);
   }
 
   function removeFile(index: number): void {
@@ -683,7 +713,7 @@ function DockPanel({
   }
 
   function submit(): void {
-    if (!input.trim() || busy) {
+    if (!input.trim() || busy || rendering.length > 0) {
       return;
     }
     sendText(input, true);
@@ -882,6 +912,9 @@ function DockPanel({
                     >
                       <span className="truncate">{file.name}</span>
                       <span className="text-ink-muted">{sizeLabel(file.size)}</span>
+                      {renderedPageCount(file) !== undefined && (
+                        <span className="text-ink-muted">{`page 1 of ${renderedPageCount(file)}, sent as an image`}</span>
+                      )}
                       <button
                         type="button"
                         aria-label={turn.isPending ? `Sending ${file.name}…` : `Remove ${file.name}`}
@@ -896,7 +929,13 @@ function DockPanel({
                   ))}
                 </ul>
               )}
-              {attachAllowed && hasPdfFile(files) && <p className="mb-2 text-[11px] text-ink-muted">{PDF_DRAWING_NOTE}</p>}
+              {attachAllowed && rendering.length > 0 && (
+                <p role="status" className="mb-2 flex flex-wrap gap-1 text-[11px] text-ink-muted">
+                  {rendering.map((name, i) => (
+                    <span key={`${i}-${name}`} className="surface-pressed rounded px-2 py-0.5">{`Rendering ${name}…`}</span>
+                  ))}
+                </p>
+              )}
               <div className="flex items-end gap-2">
                 {attachAllowed && (
                   <label
@@ -927,7 +966,7 @@ function DockPanel({
                 />
                 <button
                   type="submit"
-                  disabled={busy || input.trim() === ""}
+                  disabled={busy || rendering.length > 0 || input.trim() === ""}
                   // F4.164: name the label's own flag; `busy` is turn.isPending, a follow-up or a skill undo.
                   aria-busy={turn.isPending || followUp !== null || skillUndoing}
                   className="surface-button px-3 py-1 text-xs disabled:opacity-50"
