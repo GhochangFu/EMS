@@ -8,6 +8,13 @@ import {
   assertCutToBoundWithHashSuffix,
   assertDistinctAssetDomains,
   assertDraftCountProblem,
+  assertSlugCodeHashesASlugTheClassChanges,
+  assertSlugCodeKeepsAnUnderscore,
+  assertSlugCodeKeepsCaseDistinctSlugsApart,
+  assertSlugCodeOfALongSlugIsCutInsideTheClass,
+  assertSlugCodeOfAnAllIllegalSlugIsTheHashAlone,
+  assertSlugCodeOfAOneWordSlug,
+  assertSlugCodeOfACleanSlugTakesNoHash,
   assertW5ADraftOverTheTemplateCapIsRefused,
   assertW6ADraftAtTheTemplateCapIsAccepted,
   assertWorkbookSectionCountProblem,
@@ -55,5 +62,35 @@ describe("onboarding draft count caps — templates (F3.22, ADR 0091 decision 2)
 
   it("W6 accepts a draft at the template cap", () => {
     assertW6ADraftAtTheTemplateCapIsAccepted();
+  });
+});
+
+describe("the asset code derived from the location slug (F4.136, ADR 0065 Amendment 2)", () => {
+  it("a derived slug yields a readable code with no hash", () => {
+    assertSlugCodeOfACleanSlugTakesNoHash();
+  });
+
+  it("a one-word slug yields its own code", () => {
+    assertSlugCodeOfAOneWordSlug();
+  });
+
+  it("an underscore in the slug survives with no hash", () => {
+    assertSlugCodeKeepsAnUnderscore();
+  });
+
+  it("two slugs that differ only in case get distinct codes", () => {
+    assertSlugCodeKeepsCaseDistinctSlugsApart();
+  });
+
+  it("a slug the class changes is slugged and hashed", () => {
+    assertSlugCodeHashesASlugTheClassChanges();
+  });
+
+  it("an all-illegal slug yields the hash alone, with no leading separator", () => {
+    assertSlugCodeOfAnAllIllegalSlugIsTheHashAlone();
+  });
+
+  it("a long clean slug is cut by the length hash and stays inside the class", () => {
+    assertSlugCodeOfALongSlugIsCutInsideTheClass();
   });
 });

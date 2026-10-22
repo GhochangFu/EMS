@@ -25,7 +25,11 @@ import { ONBOARDING_DRAFT_STRING_MAX, protocolCatalogEntry } from "@bms/shared";
 import { quoteCell } from "../spreadsheet-guard";
 import type { ToolContext, ToolState } from "./onboarding-agent-tools";
 import type { OnboardingCatalogService } from "./onboarding-catalog.service";
-import { catalogCodeFromLocationName, cutToBound } from "./onboarding-draft-caps";
+import {
+  catalogCodeFromLocationName,
+  catalogCodeFromLocationSlug,
+  cutToBound,
+} from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import * as locationTypes from "./onboarding-location-type-match";
 import {
@@ -572,54 +576,35 @@ export async function handleRuleBasedTurn(
     if (intent !== "one asset") {
       return unchangedTurn(deps, message, draft, derived, types, turn);
     }
-    // F4.104, and the one site here that was a live functional bug rather
-    // than only an unbounded string. `site` is the **stored** location name,
-    // so it reaches this branch from any producer and from any draft written
-    // before those producers were bounded; `-ASSET-1` then adds eight
-    // characters to it. A location name of 57 characters — legal against
-    // every bound in this file — produced a 65-character asset code, which
-    // `draftAssetSchema.code.max(64)` refuses when
-    // `OnboardingValidateService.validate` re-parses the stored draft. The
-    // turn still answered 200, and the operator was left with a permanent
-    // validation error and no chat instruction that could clear it.
-    //
-    // Cut the finished code, not `site`: cutting the name to 64 first and
-    // then appending the suffix gives 64 + 8 = 72 and fails the same way.
-    //
-    // **Hash-suffixed when the cut fires** (owner ruling 6).
-    // `bms.assets.code` carries `assets_code_unique` from
-    // `0000_sprint1_foundation.sql:18` — global, across every tenant — and
-    // `OnboardingCommitService` inserts with no `onConflict`, so two long
-    // location names agreeing on their first characters would give the second
-    // organisation an uncaught unique violation. The suffix costs the trailing
-    // `-ASSET-1` marker on a code that had to be cut, which is the trade the
-    // ruling makes: a code an operator can still recognise by its prefix and
-    // that no other tenant can already hold.
+    // The asset code (F4.136, ADR 0065 Amendment 2) derives from the draft
+    // location's **slug** through `catalogCodeFromLocationSlug`, and from the
+    // organisation name through `catalogCodeFromLocationName` only when the
+    // draft has no slug. `bms.locations.slug` is unique across every tenant
+    // and commits with the asset, so a code collides only where the slug
+    // already refuses. Both producers slug to the catalog class before the
+    // upper-case (ADR 0065 decision 4: `"ß".toUpperCase()` is `"SS"`), hash
+    // the whole input when that drops anything, so distinct inputs never share
+    // a code (`F4.104` owner ruling 6), and cut the **finished** code with
+    // `cutToBoundWithHashSuffix` — cutting the input first and then appending
+    // `-ASSET-1` gives 64 + 8 = 72, which `draftAssetSchema.code.max(64)`
+    // refuses when `validate` re-parses the draft (`F4.104`). Each producer's
+    // docblock carries the full account.
     //
     // `siteName` takes the plain surrogate-safe cut: `bms.assets.site_name` is
     // not unique, so there is nothing for a hash to protect.
     //
-    // **Slugified to the catalog class first** (F2.23, ADR 0065 decision 4).
-    // F4.104 bounded this code's length and not its alphabet: replacing only
-    // whitespace let `St. Mary's Works` produce `ST.-MARY'S-WORKS-ASSET-1`,
-    // which decision 1's `CATALOG_CODE_PATTERN` refuses at `assets.0.code` when
-    // `validate` re-parses the draft — the same permanent, chat-unclearable
-    // error, reopened for charset. `catalogCodeSlug` turns every run outside
-    // `[A-Za-z0-9_-]` into one `-`, collapses and trims, and runs **before**
-    // `toUpperCase()` because `"ß".toUpperCase()` is `"SS"` — the order
-    // decides which code a name yields, and the spec pins it. The hash suffix
-    // `cutToBoundWithHashSuffix` appends is `-` plus upper-case hex, inside the
-    // class, so the composition stays legal. A name with nothing inside the
-    // class yields `-ASSET-1` alone: legal, and the operator's to rename.
-    //
     // F3.27: the code and site name are cut before the call. `add_asset`
     // appends, where this branch once replaced the array.
     const site = draft.location?.name ?? orgName;
+    const slug = draft.location?.slug;
     const written = await guidedWrite(
       "add_asset",
       {
         rtuIndex: 0,
-        code: catalogCodeFromLocationName(site),
+        code:
+          typeof slug === "string" && slug !== ""
+            ? catalogCodeFromLocationSlug(slug)
+            : catalogCodeFromLocationName(site),
         name: "Primary Device",
         siteName: cutToBound(site, ONBOARDING_DRAFT_STRING_MAX["assets.siteName"]),
         domain: "electrical",

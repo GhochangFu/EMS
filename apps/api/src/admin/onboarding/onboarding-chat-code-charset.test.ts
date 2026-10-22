@@ -1,7 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
-  assertDistinctNamesNoLongerShareADerivedCode,
+  assertDerivedCodesCollideOnlyWhereSlugsDo,
   assertAssetsTurnFromAnAllIllegalName,
   assertAssetsTurnKeepsACutCodeInsideTheClass,
   assertAssetsTurnPatchSatisfiesTheSchema,
@@ -23,7 +23,7 @@ describe("OnboardingChatService.handleTurn, assets branch — the catalog code c
     await assertAssetsTurnSlugifiesBeforeUpperCasing();
   });
 
-  it("yields the marker alone from a name with nothing inside the class", async () => {
+  it("yields the fallback slug's code from a name with nothing inside the class", async () => {
     await assertAssetsTurnFromAnAllIllegalName();
   });
 
@@ -31,7 +31,7 @@ describe("OnboardingChatService.handleTurn, assets branch — the catalog code c
     await assertAssetsTurnKeepsACutCodeInsideTheClass();
   });
 
-  it("no longer derives one code from two distinct location names", async () => {
-    await assertDistinctNamesNoLongerShareADerivedCode();
+  it("derives one code from two names only where they derive one slug (F4.136)", async () => {
+    await assertDerivedCodesCollideOnlyWhereSlugsDo();
   });
 });

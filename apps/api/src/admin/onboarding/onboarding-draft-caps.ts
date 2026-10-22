@@ -513,6 +513,35 @@ export function catalogCodeSlug(value: string): string {
 const DERIVED_ASSET_MARKER = "-ASSET-1";
 
 /**
+ * The discriminator a derived asset code takes when its derivation dropped
+ * information: the first eight hex characters of the sha256 of the **whole**
+ * input, upper-case so it stays inside the catalog class. Shared by the name
+ * and the slug producer below so the two cannot drift apart.
+ */
+function upperInputHash(value: string): string {
+  return createHash("sha256")
+    .update(value, "utf8")
+    .digest("hex")
+    .slice(0, HASH_SUFFIX_CHARS)
+    .toUpperCase();
+}
+
+/**
+ * The marked, bounded code over `upper` — the upper-cased slug — with `digest`
+ * between them when the derivation was lossy. An empty slug takes the hash
+ * alone: `-A1B2C3D4-ASSET-1` would carry a leading `-` that says nothing and
+ * reads like a typo.
+ */
+function markedAssetCode(upper: string, lossless: boolean, digest: string): string {
+  const base = lossless ? upper : upper === "" ? digest : `${upper}${HASH_SEPARATOR}${digest}`;
+  return cutToBoundWithHashSuffix(
+    `${base}${DERIVED_ASSET_MARKER}`,
+    ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+    "upper",
+  );
+}
+
+/**
  * The asset code the rule-based onboarding chat derives from a location name:
  * slugified to the catalog class, upper-cased, marked, and bounded — and made
  * **distinct** whenever the slug had to drop something.
@@ -541,19 +570,33 @@ const DERIVED_ASSET_MARKER = "-ASSET-1";
  */
 export function catalogCodeFromLocationName(name: string): string {
   const slug = catalogCodeSlug(name);
-  const upper = slug.toUpperCase();
-  const digest = createHash("sha256")
-    .update(name, "utf8")
-    .digest("hex")
-    .slice(0, HASH_SUFFIX_CHARS)
-    .toUpperCase();
-  // An all-illegal name slugs to nothing, so the hash stands alone rather than
-  // after a separator — `-A1B2C3D4-ASSET-1` would carry a leading `-` that says
-  // nothing and reads like a typo.
-  const base = slug === name ? upper : upper === "" ? digest : `${upper}${HASH_SEPARATOR}${digest}`;
-  return cutToBoundWithHashSuffix(
-    `${base}${DERIVED_ASSET_MARKER}`,
-    ONBOARDING_DRAFT_STRING_MAX["assets.code"],
-    "upper",
-  );
+  return markedAssetCode(slug.toUpperCase(), slug === name, upperInputHash(name));
+}
+
+/**
+ * The asset code the rule-based onboarding chat derives from the draft's
+ * location **slug** (`F4.136`, ADR 0065 Amendment 2) — the producer of record
+ * whenever the draft has a location; {@link catalogCodeFromLocationName} stays
+ * the fallback over the organisation name.
+ *
+ * **Why the slug and not the name.** `bms.locations.slug` is unique across
+ * every tenant (`locations_slug_unique`) and the commit inserts it in the same
+ * transaction as the asset, so two names that slug alike are refused on the
+ * slug whatever the code is. The name hash bought distinctness only where the
+ * slug already refuses, at the cost of eight hex characters an operator cannot
+ * read. A derived slug is already `[a-z0-9-]`, so it takes no hash:
+ * `st-mary-s-works` → `ST-MARY-S-WORKS-ASSET-1`.
+ *
+ * **Distinctness still holds, over the slug** (`F4.104` owner ruling 6). The
+ * draft slug is free text — a workbook cell, a `PATCH` — so `Plant-A` and
+ * `plant-a` are two slugs that upper-case to one code. The slug is lossless
+ * only when `catalogCodeSlug` leaves it unchanged **and** it holds no
+ * upper-case letter; otherwise the code takes the hash of the whole slug,
+ * exactly as Amendment 1 hashed the whole name. Distinct slugs therefore give
+ * distinct codes. The length bound is applied last, as for the name.
+ */
+export function catalogCodeFromLocationSlug(slug: string): string {
+  const cleaned = catalogCodeSlug(slug);
+  const lossless = cleaned === slug && !/[A-Z]/.test(slug);
+  return markedAssetCode(cleaned.toUpperCase(), lossless, upperInputHash(slug));
 }
