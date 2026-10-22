@@ -3,8 +3,10 @@ import { describe, it } from "vitest";
 import {
   assertAnEmptyParentCellIsNull,
   assertAnOverlongParentCellIsRefusedWithoutEcho,
+  assertAParentCellIsFoldedToUpperCase,
   assertAParentCodeCellIsRead,
   assertAWorkbookWithoutTheColumnIsNull,
+  assertTheParentBoundReadsTheFoldedValue,
   assertTheTemplateHeaderEndsWithParentCode,
 } from "./onboarding-excel-location-parent.spec";
 
@@ -24,5 +26,11 @@ describe("F4.243 — the workbook's parent_code column (ADR 0098 Amendment 2, B8
   });
   it("X5 refuses an over-long cell without echo", () => {
     assertAnOverlongParentCellIsRefusedWithoutEcho();
+  });
+  it("X6 folds the cell to upper case", () => {
+    assertAParentCellIsFoldedToUpperCase();
+  });
+  it("X7 bounds the folded cell", () => {
+    assertTheParentBoundReadsTheFoldedValue();
   });
 });

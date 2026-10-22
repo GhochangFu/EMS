@@ -6,6 +6,7 @@ import { OnboardingChatService } from "./onboarding-chat.service";
 import { JWT, ORG, sessionRow, withoutOpenAi, type Recorder } from "./onboarding-chat-caps.spec";
 import { MAX_ONBOARDING_CHECKPOINTS, takeCheckpoint, type Checkpoint } from "./onboarding-checkpoints";
 import { draftHash } from "./onboarding-commit-proposal";
+import type { ParentCandidate } from "./onboarding-location-parent";
 import { OnboardingService } from "./onboarding.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
@@ -94,6 +95,8 @@ export function build(opts: {
   commit?: unknown;
   locked?: Row;
   updateReturnsNoRow?: boolean;
+  /** F4.243: the organization's parent candidates; none by default. */
+  candidates?: readonly ParentCandidate[];
 }) {
   const record: Recorder = { updates: [], transactions: 0 };
   const db = echoDb(opts.session, opts.selects, record, { locked: opts.locked, updateReturnsNoRow: opts.updateReturnsNoRow });
@@ -109,7 +112,7 @@ export function build(opts: {
     vocabularies as never,
     resolver as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
-    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [...(opts.candidates ?? [])] } as never,
   );
   const service = new OnboardingService(
     db,
@@ -127,7 +130,7 @@ export function build(opts: {
     vocabularies as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
     // F4.243: the parent candidates validate reads.
-    { listParentCandidates: async () => [] } as never,
+    { listParentCandidates: async () => [...(opts.candidates ?? [])] } as never,
   );
   return { service, record };
 }

@@ -13,6 +13,7 @@ import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { needsMqttSetup, rtuTopic, topicHasWildcard } from "./onboarding-chat-summaries";
 import {
   PARENT_REQUIRED_MESSAGE,
+  parentChoiceOpen,
   parentChoicePending,
   parentPlacementProblem,
   type PlacementContext,
@@ -300,7 +301,9 @@ export class OnboardingValidateService {
    * phase at `location`, as a missing one does, so the chat asks for it again.
    *
    * `F4.243` (ADR 0098 Amendment 2, B5, owner ruling Q1 "ask until
-   * answered"): an open parent choice keeps it there too.
+   * answered"): an open parent choice keeps it there too, and so does a
+   * stored parent the commit would refuse (`parentChoiceOpen`), as a retired
+   * type does, so the guided step asks again and can repair it.
    */
   inferPhase(draft: unknown, activeLocationTypeCodes: readonly string[], placement: PlacementContext): OnboardingPhase {
     const d =
@@ -314,7 +317,7 @@ export class OnboardingValidateService {
       !d.location.type ||
       !activeLocationTypeCodes.includes(d.location.type) ||
       d.location.latitude === undefined ||
-      parentChoicePending(d.location, placement)
+      parentChoiceOpen(d.location, placement)
     ) {
       return "location";
     }

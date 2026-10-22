@@ -17,6 +17,7 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { buildFixture, dropFixture } from "../locations/locations.tree.integration.spec";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
+  assertACodeInAnotherCaseIsPlacedUnderTheCandidate,
   assertANullParentCommitsARoot,
   assertAnInactiveParentIsRefused,
   assertAnotherOrganizationsParentIsNotFound,
@@ -191,5 +192,8 @@ describe.skipIf(!connectionString)("F4.243 — the onboarding commit places the 
   }, 30_000);
   it("C5 a refused placement writes no location", async () => {
     await assertARefusedPlacementWritesNothing(use());
+  }, 30_000);
+  it("C6 a stored code in another case is placed under the candidate", async () => {
+    await assertACodeInAnotherCaseIsPlacedUnderTheCandidate(use());
   }, 30_000);
 });

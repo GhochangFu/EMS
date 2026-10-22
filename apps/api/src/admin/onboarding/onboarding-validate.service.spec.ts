@@ -860,3 +860,19 @@ export function assertAnActiveParentIsReady(): void {
   const result = new OnboardingValidateService().validate(placedDraft("CAMPUS-1"), CODES, EMPTY_TEMPLATE_CONTEXT, PLACEMENT);
   assert(result.readyToCommit, `an active parent must be ready, got ${JSON.stringify(result.errors)}`);
 }
+
+/**
+ * V8 (review #1) — a stored parent the commit would refuse keeps the phase at
+ * `location`, as a retired type does, so the guided step asks again. Each
+ * guard is its own case; the positive control is V9.
+ */
+export function assertAStoredBadParentKeepsTheLocationPhase(code: "OLD-SITE" | "DEEP-8" | "NOPE-42"): void {
+  const phase = new OnboardingValidateService().inferPhase(placedDraft(code), CODES, PLACEMENT);
+  assert(phase === "location", `a stored ${code} parent must stay in the location phase, got ${phase}`);
+}
+
+/** V9 — V8's positive control: the same draft under an active parent, in another case (B2), is at review. */
+export function assertAStoredGoodParentLeavesTheLocationPhase(): void {
+  const phase = new OnboardingValidateService().inferPhase(placedDraft("campus-1"), CODES, PLACEMENT);
+  assert(phase === "review", `a good stored parent must leave the location phase, got ${phase}`);
+}

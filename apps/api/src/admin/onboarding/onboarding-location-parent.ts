@@ -60,11 +60,39 @@ export function parentChoicePending(
 }
 
 /**
+ * B2 — the one case rule for a parent code, in every path: the candidate whose
+ * code is equal, else the single candidate whose code is equal without regard
+ * to case. Two candidates that differ only in case and match neither exactly
+ * are no match. Validate and the commit resolve a stored code by this rule;
+ * `set_location` and the guided step store the candidate's own code.
+ */
+export function findParentCandidate(
+  parentCode: string,
+  candidates: readonly ParentCandidate[],
+): ParentCandidate | undefined {
+  const exact = candidates.find((candidate) => candidate.code === parentCode);
+  if (exact !== undefined) {
+    return exact;
+  }
+  const folded = parentCode.toLowerCase();
+  const matches = candidates.filter((candidate) => candidate.code.toLowerCase() === folded);
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+/** B2 — a named code as the candidate's own code; absent, `null` and a code with no match are unchanged. */
+export function canonicalParentCode<T extends string | null | undefined>(parentCode: T, placement: PlacementContext): T {
+  if (typeof parentCode !== "string") {
+    return parentCode;
+  }
+  return (findParentCandidate(parentCode, placement.candidates)?.code ?? parentCode) as T;
+}
+
+/**
  * B4 — the guard's own sentence for a named parent that the commit would
  * refuse, or `null`. Absent and `null` have no problem here. The order is the
  * commit's (`assertParentPlacement`): not found, then depth, then inactive.
- * The code is compared exactly, as the commit's lookup compares it, and is
- * never echoed (AGENTS.md §4.3).
+ * The code is matched by `findParentCandidate`, as the commit resolves it, and
+ * is never echoed (AGENTS.md §4.3).
  */
 export function parentPlacementProblem(
   parentCode: string | null | undefined,
@@ -73,7 +101,7 @@ export function parentPlacementProblem(
   if (parentCode === undefined || parentCode === null) {
     return null;
   }
-  const parent = placement.candidates.find((candidate) => candidate.code === parentCode);
+  const parent = findParentCandidate(parentCode, placement.candidates);
   if (parent === undefined) {
     return refusalSentence("location_parent_not_found");
   }
@@ -88,16 +116,46 @@ export function parentPlacementProblem(
 }
 
 /**
- * B6 — the guided step's question and its chips: each active code (capped by
- * the echo bound), then **No parent** and **View draft**. A cut list says how
- * many codes it left out, so the user knows to type one.
+ * B5 (F4.243 review #1) — whether the parent step is still open: the choice is
+ * pending, or the stored code is one the commit would refuse (inactive,
+ * deleted, too deep, unknown). The second keeps a draft whose parent went bad
+ * after it was stored at `location`, as F4.162 does for a retired type, so the
+ * guided step can repair it.
  */
-export function parentQuestion(name: string, placement: PlacementContext): { text: string; replies: string[] } {
-  const codes = placement.candidates.filter((candidate) => candidate.active).map((candidate) => candidate.code);
+export function parentChoiceOpen(
+  location: Pick<DraftLocation, "parentCode"> | undefined,
+  placement: PlacementContext,
+): boolean {
+  return (
+    parentChoicePending(location, placement) ||
+    (location !== undefined && parentPlacementProblem(location.parentCode, placement) !== null)
+  );
+}
+
+/** B6 (F4.243 review #3) — the candidates a reply may choose: the ones the commit would accept as a parent. */
+function choosableCandidates(placement: PlacementContext): ParentCandidate[] {
+  return placement.candidates.filter((candidate) => parentPlacementProblem(candidate.code, placement) === null);
+}
+
+/**
+ * B6 — the guided step's question and its chips: each code the commit would
+ * accept as a parent (capped by the echo bound), then **No parent** and
+ * **View draft**. A cut list says how many codes it left out, so the user
+ * knows to type one. A stored `parentCode` the commit would refuse puts the
+ * guard's sentence first; the code itself is not echoed (AGENTS.md §4.3).
+ */
+export function parentQuestion(
+  name: string,
+  placement: PlacementContext,
+  storedParentCode?: string | null,
+): { text: string; replies: string[] } {
+  const codes = choosableCandidates(placement).map((candidate) => candidate.code);
   const { shown, omitted } = echoedItems(codes);
   const tail = omitted > 0 ? ` (${moreTail(omitted, "locations")}: type the code.)` : "";
+  const problem = parentPlacementProblem(storedParentCode, placement);
+  const lead = problem === null ? "" : `${problem}. `;
   return {
-    text: `Which existing location is **${name}** under?${tail} Say **${NO_PARENT_REPLY}** for a top-level location.`,
+    text: `${lead}Which existing location is **${name}** under?${tail} Say **${NO_PARENT_REPLY}** for a top-level location.`,
     replies: [...shown, NO_PARENT_REPLY, "View draft"],
   };
 }
@@ -108,9 +166,10 @@ function normalisedReply(message: string): string {
 }
 
 /**
- * B6 — what one reply to the parent question chooses. An active candidate's
- * code wins over a name; a name counts only when one active candidate has it.
- * Both are compared without regard to case, and the stored value is the
+ * B6 — what one reply to the parent question chooses, among the candidates
+ * the commit would accept (`choosableCandidates`). A code wins over a name
+ * and is matched by `findParentCandidate`; a name counts only when one
+ * candidate has it, compared without regard to case. The stored value is the
  * candidate's own code. The "no parent" words choose a root. Anything else is
  * `unmatched`: the caller asks again and writes nothing.
  */
@@ -122,12 +181,12 @@ export function resolveParentTurn(
   if (reply === "") {
     return { kind: "unmatched" };
   }
-  const active = placement.candidates.filter((candidate) => candidate.active);
-  const byCode = active.find((candidate) => candidate.code.toLowerCase() === reply);
+  const choosable = choosableCandidates(placement);
+  const byCode = findParentCandidate(message.trim(), choosable) ?? findParentCandidate(reply, choosable);
   if (byCode !== undefined) {
     return { kind: "code", code: byCode.code };
   }
-  const byName = active.filter((candidate) => normalisedReply(candidate.name) === reply);
+  const byName = choosable.filter((candidate) => normalisedReply(candidate.name) === reply);
   if (byName.length === 1) {
     return { kind: "code", code: byName[0].code };
   }

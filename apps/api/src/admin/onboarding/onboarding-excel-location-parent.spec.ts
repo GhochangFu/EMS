@@ -36,7 +36,7 @@ function parentOf(rows: (string | number)[][]): unknown {
   return new OnboardingExcelService().parseUpload(buildWorkbookBuffer(rows), LOCATION_TYPE_CODES).location.parentCode;
 }
 
-/** X1 — a code in the cell is the draft's `parentCode`, as typed. */
+/** X1 — a code in the cell is the draft's `parentCode`. */
 export function assertAParentCodeCellIsRead(): void {
   const got = parentOf(rowsWithParentCell("CAMPUS-1"));
   assert(got === "CAMPUS-1", `the cell is the parent code, got ${JSON.stringify(got)}`);
@@ -68,5 +68,22 @@ export function assertAWorkbookWithoutTheColumnIsNull(): void {
 export function assertAnOverlongParentCellIsRefusedWithoutEcho(): void {
   const cell = "P".repeat(ONBOARDING_DRAFT_STRING_MAX["location.parentCode"] + 1);
   const message = refusalMessage(buildWorkbookBuffer(rowsWithParentCell(cell)), "an over-long parent_code cell");
+  assert(message.includes("parent_code") && !message.includes(cell), `the refusal names the column only, got "${message}"`);
+}
+
+/** X6 — B2 (review #7): the cell is folded to upper case, as the `code` cell is. */
+export function assertAParentCellIsFoldedToUpperCase(): void {
+  const got = parentOf(rowsWithParentCell("campus-1"));
+  assert(got === "CAMPUS-1", `the cell is folded to upper case, got ${JSON.stringify(got)}`);
+}
+
+/**
+ * X7 — the bound reads the folded value: 64 `ß` are legal as typed and 128
+ * characters once upper-cased, so the upload is refused, without echo.
+ */
+export function assertTheParentBoundReadsTheFoldedValue(): void {
+  const cell = "ß".repeat(ONBOARDING_DRAFT_STRING_MAX["location.parentCode"]);
+  assert(cell.toUpperCase().length > cell.length, "the fixture must grow when folded — repair the fixture");
+  const message = refusalMessage(buildWorkbookBuffer(rowsWithParentCell(cell)), "a parent_code cell over the bound once folded");
   assert(message.includes("parent_code") && !message.includes(cell), `the refusal names the column only, got "${message}"`);
 }

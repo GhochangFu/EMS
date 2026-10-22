@@ -3,7 +3,9 @@ import { BadRequestException, ConflictException } from "@nestjs/common";
 import type { JwtPayload, OnboardingDraft } from "@bms/shared";
 
 import { OnboardingCommitService } from "./onboarding-commit.service";
+import { PARENT_REQUIRED_MESSAGE, type ParentCandidate } from "./onboarding-location-parent";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
+import { OnboardingValidateService } from "./onboarding-validate.service";
 
 /**
  * `F4.157` K1 (ADR 0077, plan D4) — the onboarding commit asks
@@ -53,7 +55,12 @@ type Harness = { service: OnboardingCommitService; events: string[] };
 
 function buildService(
   draft: OnboardingDraft,
-  opts: { liveTypes: readonly string[]; insertError?: unknown },
+  opts: {
+    liveTypes: readonly string[];
+    insertError?: unknown;
+    /** F4.243 review #4: run the real validator over these parent candidates. */
+    candidates?: readonly ParentCandidate[];
+  },
 ): Harness {
   const events: string[] = [];
   const session = { id: "s-1", organizationId: "org-1", status: "draft", draft };
@@ -83,15 +90,17 @@ function buildService(
 
   // `validate` is stubbed ready: what is under test is the commit's own
   // check, including the fail-closed `""` for a draft `validate` let through.
-  const validateService = {
-    validate: () => ({ valid: true, errors: [], readyToCommit: true, suggestedPhase: "review" }),
-  } as never;
+  const validateService = (
+    opts.candidates
+      ? new OnboardingValidateService()
+      : { validate: () => ({ valid: true, errors: [], readyToCommit: true, suggestedPhase: "review" }) }
+  ) as never;
 
   const vocabularies = {
     assertAssetDomain: () => Promise.resolve(),
     // F4.162 (plan D9): the commit reads the active codes for `validate`, which
     // is stubbed here, so the list is not read; no event is recorded for it.
-    listLocationTypes: () => Promise.resolve([]),
+    listLocationTypes: () => Promise.resolve(opts.liveTypes.map((code) => ({ code, label: code }))),
     assertLocationType: (code: string) => {
       events.push(`assertLocationType:${code}`);
       return opts.liveTypes.includes(code)
@@ -112,8 +121,8 @@ function buildService(
     {} as never,
     {} as never,
     {} as never,
-    // F4.243: validate is stubbed, so the candidates are read and not used.
-    { listParentCandidates: async () => [] } as never,
+    // F4.243: with the stub validate the candidates are read and not used.
+    { listParentCandidates: async () => [...(opts.candidates ?? [])] } as never,
   );
   return { service, events };
 }
@@ -191,4 +200,35 @@ export async function assertATreeGuardRaceAnswersTheConflict(): Promise<void> {
     body === JSON.stringify({ message: "The parent location is inactive", reason: "location_parent_inactive" }),
     `expected the 409 refusal body, got ${body}`,
   );
+}
+
+/**
+ * `F4.243` review #4 (ADR 0098 Amendment 2, B5, B9) — the commit reads the
+ * organization's candidates and hands them to the real validate: an absent
+ * `parentCode` while the organization has an active location is the validate
+ * gate's 400, with the `location.parentCode` field error, and the transaction
+ * never opens. The mutation `{ candidates: [] }` at the commit's placement
+ * read reddens it: an empty placement asks nothing.
+ */
+export async function assertAnOpenParentChoiceIsTheValidateGates400(): Promise<void> {
+  const root: ParentCandidate = { code: "CAMPUS-1", name: "Campus", active: true, depth: 1 };
+  const { service } = buildService(draftWithType("pump_station"), { liveTypes: ["pump_station"], candidates: [root] });
+  const err = await settle(service.commit(JWT, "s-1"));
+  const body = err instanceof BadRequestException ? (err.getResponse() as { message?: unknown; errors?: unknown }) : null;
+  const parentErrors = Array.isArray(body?.errors)
+    ? (body.errors as { path: string; message: string }[]).filter((error) => error.path === "location.parentCode")
+    : null;
+  assert(
+    body?.message === "Draft is not ready to commit" &&
+      JSON.stringify(parentErrors) === JSON.stringify([{ path: "location.parentCode", message: PARENT_REQUIRED_MESSAGE }]),
+    `expected the validate gate's 400 with the parent field error, got ${String(err)} ${JSON.stringify(body)}`,
+  );
+}
+
+/** The same case writes nothing: the transaction never opens. */
+export async function assertAnOpenParentChoiceOpensNoTransaction(): Promise<void> {
+  const root: ParentCandidate = { code: "CAMPUS-1", name: "Campus", active: true, depth: 1 };
+  const { service, events } = buildService(draftWithType("pump_station"), { liveTypes: ["pump_station"], candidates: [root] });
+  await settle(service.commit(JWT, "s-1"));
+  assert(!events.includes("transaction"), `nothing may be written, got ${JSON.stringify(events)}`);
 }

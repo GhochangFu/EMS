@@ -173,3 +173,85 @@ export async function assertTheParentTextsCarryNoBannedWord(): Promise<void> {
   const hits = texts.flatMap((text) => BANNED_IN_GUIDED_TEXT.filter((banned) => text.includes(banned)));
   assert(hits.length === 0, `a parent-step reply carries ${JSON.stringify(hits)}: ${JSON.stringify(texts)}`);
 }
+
+/* -------------------------------------------------------------------------- *
+ * Review #1 and #2 — a stored parent the commit would refuse is repaired on   *
+ * the guided path, and the follow-up is the step the written draft is at.     *
+ * -------------------------------------------------------------------------- */
+
+const OLD: ParentCandidate = { code: "OLD-SITE", name: "Old Site", active: false, depth: 1 };
+
+/** A draft past every step, at review, whose location names `parentCode` (absent when not passed). */
+function reviewableDraft(parentCode?: string | null): OnboardingDraft {
+  const location = awaitingParent().location!;
+  return {
+    location: { ...location, ...(parentCode === undefined ? {} : { parentCode }) },
+    rtus: [
+      {
+        code: "RTU-1",
+        displayName: "RTU 1",
+        protocol: "modbus_tcp",
+        config: { host: "10.0.0.1", port: 502 },
+        credentialsSet: false,
+        ingestEnabled: false,
+      },
+    ],
+    pointKeys: [{ code: "kw", name: "Active Power", domain: "electrical", unit: "kW" }],
+    assets: [{ code: "THANE-ASSET-1", name: "Asset 1", siteName: "Thane Pump", rtuIndex: 0, domain: "electrical" }],
+    assetPoints: [{ assetIndex: 0, pointKey: "kw", sourceDataKey: "s01" }],
+  } as OnboardingDraft;
+}
+
+/** G8 — a stored inactive parent at review comes back to `location`. */
+export async function assertAStoredInactiveParentComesBackToLocation(): Promise<void> {
+  const result = await turn("somewhere else", reviewableDraft("OLD-SITE"), [CAMPUS, OLD], "review");
+  assert(result.currentPhase === "location", `the phase comes back to location, got ${result.currentPhase}`);
+}
+
+/** G8b — and the question puts the inactive sentence first, without the stored code. */
+export async function assertTheReAskCarriesTheInactiveSentence(): Promise<void> {
+  const result = await turn("somewhere else", reviewableDraft("OLD-SITE"), [CAMPUS, OLD], "review");
+  const want = "I did not change the draft. The parent location is inactive. Which existing location is **Thane Pump** under?";
+  assert(
+    result.assistantMessage.startsWith(want) && !result.assistantMessage.includes("OLD-SITE"),
+    `the re-ask leads with the guard sentence, got "${result.assistantMessage}"`,
+  );
+}
+
+/** G9 — **No parent** repairs it: the stored code becomes `null`. */
+export async function assertNoParentRepairsAStoredInactiveParent(): Promise<void> {
+  const result = await turn("No parent", reviewableDraft("OLD-SITE"), [CAMPUS, OLD], "review");
+  const stored = result.draftPatch.location?.parentCode;
+  assert(stored === null, `No parent repairs the parent, got ${JSON.stringify(stored)}`);
+}
+
+/** G9b — a valid code repairs it too. */
+export async function assertAValidCodeRepairsAStoredInactiveParent(): Promise<void> {
+  const result = await turn("CAMPUS-1", reviewableDraft("OLD-SITE"), [CAMPUS, OLD], "review");
+  const stored = result.draftPatch.location?.parentCode;
+  assert(stored === "CAMPUS-1", `a valid code repairs the parent, got ${JSON.stringify(stored)}`);
+}
+
+/** G10 (review #2) — past the RTU step, the follow-up is the review prompt, not the RTU 1 question. */
+export async function assertTheFollowUpIsTheStepTheDraftIsAt(): Promise<void> {
+  const result = await turn("CAMPUS-1", reviewableDraft(), [CAMPUS], "location");
+  const want = "Got it — **Thane Pump** is under **CAMPUS-1**. Open the preview and click **Commit**, or say **create it**.";
+  assert(result.assistantMessage === want, `the follow-up is the review step, got "${result.assistantMessage}"`);
+}
+
+/** G10b — and its phase and chips are that step's. */
+export async function assertTheFollowUpPhaseIsTheStepTheDraftIsAt(): Promise<void> {
+  const result = await turn("CAMPUS-1", reviewableDraft(), [CAMPUS], "location");
+  const got = JSON.stringify([result.currentPhase, result.suggestedReplies]);
+  assert(got === JSON.stringify(["review", ["create it", "View draft"]]), `the review step's phase and chips, got ${got}`);
+}
+
+/**
+ * G11 (review #1, `stepPrompt`) — a turn that writes nothing and answers the
+ * step prompt asks the parent question too, with the guard sentence first.
+ */
+export async function assertTheStepPromptAsksAStoredBadParentAgain(): Promise<void> {
+  const result = await turn("yes please", reviewableDraft("OLD-SITE"), [CAMPUS, OLD], "review");
+  const want = "I did not change the draft. The parent location is inactive. Which existing location is **Thane Pump** under?";
+  assert(result.assistantMessage.startsWith(want), `the step prompt asks for the parent, got "${result.assistantMessage}"`);
+}

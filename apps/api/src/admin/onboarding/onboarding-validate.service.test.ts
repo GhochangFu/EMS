@@ -294,4 +294,20 @@ describe("OnboardingValidateService — the parent location (F4.243, ADR 0098 Am
   it("V7 passes an active parent: the draft is ready", () => {
     parent.assertAnActiveParentIsReady();
   });
+
+  it("V8 keeps the location phase for a stored inactive parent", () => {
+    parent.assertAStoredBadParentKeepsTheLocationPhase("OLD-SITE");
+  });
+
+  it("V8 keeps the location phase for a stored too-deep parent", () => {
+    parent.assertAStoredBadParentKeepsTheLocationPhase("DEEP-8");
+  });
+
+  it("V8 keeps the location phase for a stored unknown parent", () => {
+    parent.assertAStoredBadParentKeepsTheLocationPhase("NOPE-42");
+  });
+
+  it("V9 leaves the location phase for a stored active parent in another case", () => {
+    parent.assertAStoredGoodParentLeavesTheLocationPhase();
+  });
 });

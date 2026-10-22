@@ -19,9 +19,19 @@ import type { ParentCandidate } from "./onboarding-location-parent";
  * `OnboardingInventoryService` read, so a bad parent is normally its field
  * error. The cases below hand the commit an inventory that says every named
  * parent is an active root — the read a concurrent tree write has since made
- * stale — so the refusal they see is the transaction's own (B3). C2 and C2b
- * are the lookup's own not-found. C3 and C4 are `assertParentPlacement`'s, and
- * the `locations_tree_guard` trigger answers the same body behind it.
+ * stale — so the refusal they see is the transaction's own (B3). C2 is the
+ * lookup's own not-found.
+ *
+ * **The other refusals are layered, so no single mutation reddens them.**
+ * C2b holds through the lookup's organization predicate and, behind it,
+ * row-level security, which hides the other organization's row on the tenant
+ * transaction: dropping the predicate (mutation 2) leaves it green. C3 and C4
+ * hold through `assertParentPlacement` and, behind it, the
+ * `locations_tree_guard` trigger, whose `23514` `treeGuardRefusal` maps to the
+ * same body: dropping the pre-check (mutation 1) or passing `nodeActive:
+ * false` (mutation 3) leaves them green. Only the pre-check and the mapping
+ * removed together (mutations 1+4 and 3+4) redden C3–C5. The unit race case in
+ * `onboarding-commit.service.spec.ts` gates the mapping alone (mutation 4).
  */
 export type ParentCommitCtx = {
   readonly superPool: pg.Pool;
@@ -138,7 +148,11 @@ export async function assertAnotherOrganizationsParentIsNotFound(ctx: ParentComm
   });
 }
 
-/** C3 — an inactive parent: 409 `location_parent_inactive`. Mutation 3 (`nodeActive: false`) reddens it. */
+/**
+ * C3 — an inactive parent: 409 `location_parent_inactive`. Mutation 3
+ * (`nodeActive: false`) alone does NOT redden it — the trigger answers the
+ * same body; mutation 3+4 does (see the file docblock).
+ */
 export async function assertAnInactiveParentIsRefused(ctx: ParentCommitCtx): Promise<void> {
   const parentId = await ctx.fx.node("c3-parent", null, { active: false });
   const parentCode = await codeOf(ctx, parentId);
@@ -176,4 +190,17 @@ export async function assertARefusedPlacementWritesNothing(ctx: ParentCommitCtx)
     [ctx.fx.organizationId, draft.location?.code],
   );
   expect(rows[0]?.n).toBe(0);
+}
+
+/**
+ * C6 (review #7, B2) — a stored code in another case is resolved by
+ * validate's case rule before the lookup: the commit places the node under
+ * the candidate. Dropping `canonicalParentCode` at the commit reddens it.
+ */
+export async function assertACodeInAnotherCaseIsPlacedUnderTheCandidate(ctx: ParentCommitCtx): Promise<void> {
+  const parentId = await ctx.fx.node("c6-parent", null);
+  const parentCode = await codeOf(ctx, parentId);
+  const { sessionId } = await ctx.session("c6", parentCode.toLowerCase());
+  const committed = await commitAs(ctx, ctx.fx.orgAdmin, sessionId, [parentCode]);
+  expect(await placedParent(ctx, committed.locationId)).toBe(parentId);
 }

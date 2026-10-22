@@ -3,6 +3,13 @@ import { describe, it } from "vitest";
 import {
   assertACodeReplyKeepsTheLocationName,
   assertACodeReplyStoresTheParent,
+  assertAStoredInactiveParentComesBackToLocation,
+  assertAValidCodeRepairsAStoredInactiveParent,
+  assertNoParentRepairsAStoredInactiveParent,
+  assertTheFollowUpIsTheStepTheDraftIsAt,
+  assertTheFollowUpPhaseIsTheStepTheDraftIsAt,
+  assertTheReAskCarriesTheInactiveSentence,
+  assertTheStepPromptAsksAStoredBadParentAgain,
   assertAnOrgWithNoLocationIsNotAsked,
   assertAnUnmatchedReplyAsksAgain,
   assertAnUnmatchedReplyWritesNothing,
@@ -48,5 +55,29 @@ describe("F4.243 — the guided chat asks for the parent location (ADR 0098 Amen
   });
   it("G7 the parent step's texts carry no banned word", async () => {
     await assertTheParentTextsCarryNoBannedWord();
+  });
+});
+
+describe("F4.243 review — the guided step repairs a stored bad parent (ADR 0098 Amendment 2, B5)", () => {
+  it("G8 brings a stored inactive parent at review back to location", async () => {
+    await assertAStoredInactiveParentComesBackToLocation();
+  });
+  it("G8b leads the re-ask with the inactive sentence", async () => {
+    await assertTheReAskCarriesTheInactiveSentence();
+  });
+  it("G9 repairs it with No parent", async () => {
+    await assertNoParentRepairsAStoredInactiveParent();
+  });
+  it("G9b repairs it with a valid code", async () => {
+    await assertAValidCodeRepairsAStoredInactiveParent();
+  });
+  it("G10 follows the parent with the step the draft is at", async () => {
+    await assertTheFollowUpIsTheStepTheDraftIsAt();
+  });
+  it("G10b takes that step's phase and chips", async () => {
+    await assertTheFollowUpPhaseIsTheStepTheDraftIsAt();
+  });
+  it("G11 answers a no-op turn with the parent question, guard sentence first", async () => {
+    await assertTheStepPromptAsksAStoredBadParentAgain();
   });
 });

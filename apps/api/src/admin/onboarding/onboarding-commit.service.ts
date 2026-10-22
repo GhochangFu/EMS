@@ -61,6 +61,7 @@ import {
 import { readEncryptedCredentials } from "./onboarding-redaction";
 import { draftHash } from "./onboarding-commit-proposal";
 import { OnboardingInventoryService } from "./onboarding-inventory.service";
+import { canonicalParentCode } from "./onboarding-location-parent";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -387,13 +388,25 @@ export class OnboardingCommitService {
       // `location_parent_not_found`, as in `assertParentPlacement`. The cycle
       // guard cannot fire for an insert (`nodeId: null`). An absent or `null`
       // parent is a root, which the trigger lets through without the lock (A2).
+      // The code is first resolved by validate's case rule (B2), so a code
+      // validate accepted is the code looked up here.
+      //
+      // Defence in depth, stated truthfully: the lookup's organization
+      // predicate is layered over row-level security, the composite foreign
+      // key and the trigger, and `assertParentPlacement` over the
+      // `locations_tree_guard` trigger, which answers the same body through
+      // `treeGuardRefusal`. So no test can redden the predicate or the
+      // pre-check alone (mutations 1, 2 and 3 survive); only the pre-check
+      // and the mapping removed together do. The unit race case in
+      // `onboarding-commit.service.spec.ts` gates the trigger mapping alone.
       let parentId: string | null = null;
-      if (typeof loc.parentCode === "string") {
+      const parentCode = canonicalParentCode(loc.parentCode, placement);
+      if (typeof parentCode === "string") {
         await takeLocationTreeLock(tx, session.organizationId);
         const [parent] = await tx
           .select({ id: locations.id })
           .from(locations)
-          .where(and(eq(locations.organizationId, session.organizationId), eq(locations.code, loc.parentCode)));
+          .where(and(eq(locations.organizationId, session.organizationId), eq(locations.code, parentCode)));
         if (!parent) {
           throw refusal("location_parent_not_found");
         }

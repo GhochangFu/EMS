@@ -32,7 +32,7 @@ import {
 } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import {
-  parentChoicePending,
+  parentChoiceOpen,
   parentQuestion,
   resolveParentTurn,
   type PlacementContext,
@@ -206,9 +206,10 @@ function stepPrompt(
       if (name && !locationTypes.hasActiveLocationType(draft.location, types)) {
         return { text: locationTypes.locationTypeQuestion(name), replies: types.map((t) => t.label) };
       }
-      // F4.243 (B6): a named, typed location waits for its parent.
-      if (name && parentChoicePending(draft.location, placement)) {
-        return parentQuestion(name, placement);
+      // F4.243 (B6): a named, typed location waits for its parent, and a
+      // stored parent the commit would refuse is asked again (review #1).
+      if (name && parentChoiceOpen(draft.location, placement)) {
+        return parentQuestion(name, placement, draft.location?.parentCode);
       }
       return { text: "The location needs a name and a type first. What is the location name?", replies: ["View draft"] };
     }
@@ -342,10 +343,11 @@ export async function handleRuleBasedTurn(
   }
 
   // F4.243 (ADR 0098 Amendment 2, B6): a named, typed location whose parent is
-  // still open reads the message as the parent. Before the location-name
-  // branch, so a code typed here never renames the location.
+  // still open, or whose stored parent the commit would refuse, reads the
+  // message as the parent. Before the location-name branch, so a code typed
+  // here never renames the location.
   const located = draft.location;
-  if (located?.name && locationTypes.hasActiveLocationType(located, types) && parentChoicePending(located, turn.placement)) {
+  if (located?.name && locationTypes.hasActiveLocationType(located, types) && parentChoiceOpen(located, turn.placement)) {
     return parentTurn(deps, message, draft, located, state, turn);
   }
 
@@ -463,8 +465,8 @@ export async function handleRuleBasedTurn(
       return { ...deps.finalizeTurn(ask, patch, "location", labels, message, draft, turn), actionLines };
     }
     // F4.243 (B6): with the type set, an open parent choice is the next question.
-    if (parentChoicePending(state.working.location, turn.placement)) {
-      const ask = parentQuestion(name, turn.placement);
+    if (parentChoiceOpen(state.working.location, turn.placement)) {
+      const ask = parentQuestion(name, turn.placement, state.working.location?.parentCode);
       return { ...deps.finalizeTurn(ask.text, patch, "location", ask.replies, message, draft, turn), actionLines };
     }
     const result = deps.finalizeTurn(
@@ -716,7 +718,8 @@ export async function handleRuleBasedTurn(
  * active candidate's code or name stores that code; a "no parent" word stores
  * `null`; anything else asks again, writes nothing and adds no action line.
  * The write is `set_location` with the stored name and type, so only
- * `parentCode` changes.
+ * `parentCode` changes. The follow-up is the step the written draft is at
+ * (review #2), as the topic branch builds it, not always the RTU question.
  */
 async function parentTurn(
   deps: RuleBasedTurnDeps,
@@ -728,7 +731,7 @@ async function parentTurn(
 ): Promise<ChatTurnResult> {
   const answer = resolveParentTurn(message, turn.placement);
   if (answer.kind === "unmatched") {
-    const ask = parentQuestion(located.name, turn.placement);
+    const ask = parentQuestion(located.name, turn.placement, located.parentCode);
     return deps.finalizeTurn(`I did not change the draft. ${ask.text}`, {}, "location", ask.replies, message, draft, turn);
   }
   const parentCode = answer.kind === "code" ? answer.code : null;
@@ -736,16 +739,18 @@ async function parentTurn(
   const args = { name: located.name, type: located.type, parentCode };
   const written = await guidedWrite("set_location", args, state, deps.tools);
   if (!written.ok) {
-    const ask = parentQuestion(located.name, turn.placement);
+    const ask = parentQuestion(located.name, turn.placement, located.parentCode);
     return deps.finalizeTurn(`I did not change the draft. ${written.error} ${ask.text}`, {}, "location", ask.replies, message, draft, turn);
   }
   const patch: OnboardingDraftInput = { location: state.working.location };
   const placed = parentCode === null ? "a top-level location" : `under **${parentCode}**`;
+  const next = deps.validateService.inferPhase(state.working, turn.types.map((t) => t.code), turn.placement);
+  const prompt = stepPrompt(next, state.working, turn.types, turn.placement);
   const result = deps.finalizeTurn(
-    `Got it — **${located.name}** is ${placed}. Which communication protocol will RTU 1 use?`,
+    `Got it — **${located.name}** is ${placed}. ${prompt.text}`,
     patch,
-    "rtu",
-    [...PROTOCOL_REPLIES],
+    next,
+    prompt.replies,
     message,
     draft,
     turn,

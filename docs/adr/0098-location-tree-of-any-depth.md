@@ -844,6 +844,12 @@ may place a root may also place a child.
   decision 3). Not the slug: a slug is a URL handle with a hash suffix. The
   field has three states: absent (not chosen yet), `null` (a root, by choice)
   and a code. The code becomes an id only inside the commit transaction.
+  One case rule holds in every path: a code names the candidate whose code
+  is equal, else the single candidate whose code is equal without regard to
+  case (two candidates that differ only in case, neither equal, are no
+  match). Validate and the commit resolve a stored code by this rule;
+  `set_location` and the guided step store the candidate's own code; the
+  workbook folds its `parent_code` cell to upper case, as it folds `code`.
 - **B3 — The commit places the node.** After the point-key quota block and
   before the location insert, the commit takes `takeLocationTreeLock(tx,
   orgId)`, reads the parent's id by organization and code on the tenant
@@ -866,16 +872,20 @@ may place a root may also place a child.
   `location` with the error `location.parentCode: "Parent location is
   required: name an existing location code, or No parent for a top-level
   location"`. A `null` moves on. An organization with no active location is
-  not asked, and an absent key is a root at commit.
+  not asked, and an absent key is a root at commit. A stored code that B4
+  would refuse (inactive, deleted, too deep, unknown) also keeps the phase at
+  `location`, as a retired type does (`F4.162`), so the guided step asks
+  again with the guard's sentence first and **No parent** or a valid code
+  repairs it.
 - **B6 — The guided chat asks one question.** After the name and the type, it
   asks "Which existing location is **<name>** under?" with a chip for each
-  active code (capped like every echoed list), **No parent** and **View
-  draft**. A reply matches an active candidate's code or name without regard
-  to case and stores the code; "no parent", "none", "root" or "top level"
+  code B4 would accept as a parent (capped like every echoed list), **No
+  parent** and **View draft**. A reply matches such a candidate's code (B2's
+  rule) or name without regard to case and stores the candidate's code; "no parent", "none", "root" or "top level"
   stores `null`; anything else asks again, writes nothing and adds no action
   line. The write goes through `guidedWrite("set_location", …)`. The step runs
   before the location-name branch, so a code typed here never renames the
-  location.
+  location. After the write the reply asks for the step the draft is now at.
 - **B7 — The agent sets it too.** `set_location` accepts `parentCode` (a code
   or `null`) and refuses early with the B4 sentence plus "Call find_existing
   with kind "location" for the codes." The `find_existing` location rows gain
@@ -889,10 +899,14 @@ may place a root may also place a child.
   64 characters is refused by `refuseIfTooLong`, without echo. An unknown or
   inactive code is a validate-time field error on the upload response, not an
   upload refusal, so the parser stays free of the database.
-- **B9 — Errors.** The commit answers with `locationWriteRefusalSchema`
-  (`{ message, reason }`): 400 for `location_parent_not_found` and
-  `location_depth_exceeded`, 409 for `location_parent_inactive`. Validate gives
-  a field error. Neither echoes the cell (`AGENTS.md` §4.3).
+- **B9 — Errors.** The normal refusal of a bad or missing parent is the
+  commit's validate gate: 400 `{ message: "Draft is not ready to commit",
+  errors: [{ path: "location.parentCode", … }] }`, the same field error the
+  validate and upload responses carry. `locationWriteRefusalSchema`
+  (`{ message, reason }`) is the answer only for a race past that gate,
+  when the tree changed after validate read it: 400 for
+  `location_parent_not_found` and `location_depth_exceeded`, 409 for
+  `location_parent_inactive`. Neither echoes the cell (`AGENTS.md` §4.3).
 - **B10 — Audit.** The onboarding `master.location.create` payload carries
   `parentId`, `null` for a root.
 - **B11 — Contract (ADR 0030, additive).** `parentCode:

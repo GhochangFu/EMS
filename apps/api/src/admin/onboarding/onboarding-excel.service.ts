@@ -517,12 +517,15 @@ export class OnboardingExcelService {
       province,
       ONBOARDING_DRAFT_STRING_MAX["location.province"],
     );
-    // F4.243 (ADR 0098 Amendment 2, B8): the parent's code, as typed — the
-    // commit compares it exactly. Bounded here, never echoed; whether the code
-    // names an active location is validate's field error (Q2), so this parser
-    // stays free of the database. An empty cell or a missing column is `null`:
-    // a root by choice, so an old workbook still uploads.
-    const parentCode = get("parent_code");
+    // F4.243 (ADR 0098 Amendment 2, B8): the parent's code, folded to upper
+    // case as the `code` cell is (B2, review #7); validate and the commit match
+    // it to a candidate by `findParentCandidate`, so a candidate stored in
+    // another case still resolves. Bounded after the fold, for the reason
+    // above, and never echoed; whether the code names an active location is
+    // validate's field error (Q2), so this parser stays free of the database.
+    // An empty cell or a missing column is `null`: a root by choice, so an old
+    // workbook still uploads.
+    const parentCode = get("parent_code").toUpperCase();
     this.refuseIfTooLong(
       "LOCATION",
       null,

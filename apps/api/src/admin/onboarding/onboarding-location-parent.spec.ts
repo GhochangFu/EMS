@@ -9,6 +9,9 @@ import { MAX_ECHOED_ITEMS } from "../spreadsheet-guard";
 import {
   EMPTY_PLACEMENT,
   NO_PARENT_REPLY,
+  canonicalParentCode,
+  findParentCandidate,
+  parentChoiceOpen,
   parentChoicePending,
   parentPlacementProblem,
   parentQuestion,
@@ -75,9 +78,9 @@ export function assertUnknownCodeIsNotFound(): void {
   assert(problem === "Parent location not found", `an unknown code must be not found, got ${String(problem)}`);
 }
 
-export function assertCodeIsComparedExactly(): void {
+export function assertCodeIsMatchedWithoutCase(): void {
   const problem = parentPlacementProblem("campus-1", PLACEMENT);
-  assert(problem === "Parent location not found", `the commit compares the code exactly, got ${String(problem)}`);
+  assert(problem === null, `B2: a code in another case names the candidate, got ${String(problem)}`);
 }
 
 export function assertInactiveParentIsRefused(): void {
@@ -112,7 +115,8 @@ export function assertQuestionNamesTheLocation(): void {
 
 export function assertChipsAreActiveCodesThenNoParentThenViewDraft(): void {
   const { replies } = parentQuestion("X", PLACEMENT);
-  const expected = ["CAMPUS-1", "DEEP-7", "DEEP-8", NO_PARENT_REPLY, "View draft"];
+  // Review #3: DEEP-8 is active but too deep to hold a child, so it is no chip.
+  const expected = ["CAMPUS-1", "DEEP-7", NO_PARENT_REPLY, "View draft"];
   assert(JSON.stringify(replies) === JSON.stringify(expected), `chips: ${JSON.stringify(replies)}`);
 }
 
@@ -172,4 +176,73 @@ export function assertOtherReplyIsUnmatched(): void {
     const turn = resolveParentTurn(reply, PLACEMENT);
     assert(turn.kind === "unmatched", `${JSON.stringify(reply)} must be unmatched: ${JSON.stringify(turn)}`);
   }
+}
+
+/* P6 — B2 (review #7): the one case rule for a parent code. */
+
+const LOWER: ParentCandidate = { code: "campus-1", name: "Lower", active: true, depth: 1 };
+
+export function assertAnExactCodeWinsOverACaseMatch(): void {
+  const found = findParentCandidate("campus-1", [CAMPUS, LOWER]);
+  assert(found === LOWER, `the exact code wins, got ${JSON.stringify(found)}`);
+}
+
+export function assertAUniqueCaseMatchIsFound(): void {
+  const found = findParentCandidate("Campus-1", [CAMPUS, OLD]);
+  assert(found === CAMPUS, `the one case-insensitive match is found, got ${JSON.stringify(found)}`);
+}
+
+export function assertTwoCaseMatchesAreNoMatch(): void {
+  const found = findParentCandidate("Campus-1", [CAMPUS, LOWER]);
+  assert(found === undefined, `two case-insensitive matches are no match, got ${JSON.stringify(found)}`);
+}
+
+export function assertTheCanonicalCodeIsTheCandidatesOwn(): void {
+  const got = canonicalParentCode("campus-1", PLACEMENT);
+  assert(got === "CAMPUS-1", `the stored code is the candidate's own, got ${String(got)}`);
+}
+
+export function assertAnUnmatchedCodeIsLeftAsNamed(): void {
+  const got = canonicalParentCode("NOPE", PLACEMENT);
+  assert(got === "NOPE", `an unmatched code is unchanged, got ${String(got)}`);
+}
+
+/* P7 — review #1: a stored parent the commit would refuse keeps the step open. */
+
+export function assertAStoredInactiveParentKeepsTheStepOpen(): void {
+  assert(parentChoiceOpen({ parentCode: "OLD-SITE" }, PLACEMENT), "an inactive stored parent keeps the step open");
+}
+
+export function assertAStoredTooDeepParentKeepsTheStepOpen(): void {
+  assert(parentChoiceOpen({ parentCode: "DEEP-8" }, PLACEMENT), "a too-deep stored parent keeps the step open");
+}
+
+export function assertAStoredUnknownParentKeepsTheStepOpen(): void {
+  assert(parentChoiceOpen({ parentCode: "GONE" }, EMPTY_PLACEMENT), "an unknown stored parent keeps the step open");
+}
+
+export function assertAValidStoredParentClosesTheStep(): void {
+  assert(!parentChoiceOpen({ parentCode: "CAMPUS-1" }, PLACEMENT), "a valid stored parent closes the step");
+}
+
+export function assertAStoredRootClosesTheStep(): void {
+  assert(!parentChoiceOpen({ parentCode: null }, PLACEMENT), "a stored root closes the step");
+}
+
+export function assertTheReAskPutsTheGuardSentenceFirst(): void {
+  const { text } = parentQuestion("Thane Pump", PLACEMENT, "OLD-SITE");
+  const expected = "The parent location is inactive. Which existing location is **Thane Pump** under?";
+  assert(text.startsWith(expected) && !text.includes("OLD-SITE"), `the guard sentence comes first, unechoed: ${text}`);
+}
+
+/* P8 — review #3: a reply cannot choose a parent the commit would refuse. */
+
+export function assertATooDeepCodeIsNotMatched(): void {
+  const turn = resolveParentTurn("DEEP-8", PLACEMENT);
+  assert(turn.kind === "unmatched", `a parent at depth 8 must not match: ${JSON.stringify(turn)}`);
+}
+
+export function assertATooDeepNameIsNotMatched(): void {
+  const turn = resolveParentTurn("Level eight", PLACEMENT);
+  assert(turn.kind === "unmatched", `a parent at depth 8 must not match by name: ${JSON.stringify(turn)}`);
 }
