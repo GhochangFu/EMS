@@ -398,7 +398,7 @@ export function assertPartialWorkbookStillParses(): void {
     "the draft schema rejects this partial draft — which is exactly why it is not parsed at the upload boundary",
   );
 
-  const validation = new OnboardingValidateService().validate(draft, LOCATION_TYPE_CODES, EMPTY_TEMPLATE_CONTEXT);
+  const validation = new OnboardingValidateService().validate(draft, LOCATION_TYPE_CODES, EMPTY_TEMPLATE_CONTEXT, { candidates: [] });
   assert(validation.valid === false, "a draft with a blank location code is not valid yet");
   assert(
     validation.errors.some((error) => error.path === "location.code"),

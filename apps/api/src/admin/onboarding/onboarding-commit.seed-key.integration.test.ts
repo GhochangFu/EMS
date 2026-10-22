@@ -191,6 +191,8 @@ describe.skipIf(!connectionString)("F4.170 ruling 20 — the onboarding commit s
       {} as never,
       {} as never,
       {} as never,
+      // F4.243: the parent candidates validate reads.
+      { listParentCandidates: async () => [] } as never,
     );
 
     ctx.ownerPool = ownerPool;

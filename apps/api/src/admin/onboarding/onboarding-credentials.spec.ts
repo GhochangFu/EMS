@@ -99,6 +99,8 @@ function buildService(opts: {
     {} as never,
     {} as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
+    // F4.243: the parent candidates validate reads.
+    { listParentCandidates: async () => [] } as never,
   );
   return { service, calls };
 }

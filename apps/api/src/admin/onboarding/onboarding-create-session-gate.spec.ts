@@ -37,7 +37,7 @@ function serviceAs(role: Role, canManage = true) {
     isGlobalAdmin: () => Promise.resolve(true),
   };
   const none = {} as never;
-  const service = new OnboardingService(db as never, db as never, accessControl as never, none, none, none, none, none, none, none);
+  const service = new OnboardingService(db as never, db as never, accessControl as never, none, none, none, none, none, none, none, { listParentCandidates: async () => [] } as never);
   return { service, reads };
 }
 
@@ -141,6 +141,8 @@ function insertingServiceAs(jwt: { sub: string }) {
     none,
     none,
     none,
+    // F4.243: the parent candidates validate reads.
+    { listParentCandidates: async () => [] } as never,
   );
   return { service: service as OnboardingService, inserted, reads, jwt: jwt as never };
 }

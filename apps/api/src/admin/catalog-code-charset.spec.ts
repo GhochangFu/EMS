@@ -161,7 +161,7 @@ export function assertValidateNamesTheField(): void {
     assets: [
       { rtuIndex: 0, code: "ST.-MARY'S-WORKS-ASSET-1", name: "Probe asset", siteName: "Probe site", domain: "electrical" },
     ],
-  }, CODES, EMPTY_TEMPLATE_CONTEXT);
+  }, CODES, EMPTY_TEMPLATE_CONTEXT, { candidates: [] });
 
   const names = (path: string): boolean =>
     result.errors.some((error) => error.path === path && error.message === CATALOG_CODE_MESSAGE);

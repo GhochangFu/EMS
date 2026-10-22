@@ -54,6 +54,7 @@ import {
 } from "./onboarding-point-key-conflict";
 import { readEncryptedCredentials } from "./onboarding-redaction";
 import { draftHash } from "./onboarding-commit-proposal";
+import { OnboardingInventoryService } from "./onboarding-inventory.service";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -132,6 +133,9 @@ export class OnboardingCommitService {
     private readonly templates: AssetTemplatesAdminService,
     private readonly instantiation: AssetTemplateInstantiationService,
     private readonly stock: AssetTemplatesStockService,
+    // F4.243 (ADR 0098 Amendment 2, B4): validate's parent candidates. Last, so
+    // a test's positional `{} as never` fakes cannot shift onto it silently.
+    private readonly inventory: OnboardingInventoryService,
   ) {}
 
   private templateDeps(): CommitTemplateDeps {
@@ -246,7 +250,10 @@ export class OnboardingCommitService {
     // the stock catalog, so a templated asset that no longer resolves is
     // refused here, before the transaction, with the other field errors.
     const templates = await this.templateCatalog.context(session.organizationId);
-    const validation = this.validateService.validate(draft, activeTypeCodes, templates);
+    // F4.243 (ADR 0098 Amendment 2, B4): the parent is checked here with the
+    // other field errors; the transaction checks it again under the tree lock.
+    const placement = { candidates: await this.inventory.listParentCandidates(session.organizationId) };
+    const validation = this.validateService.validate(draft, activeTypeCodes, templates, placement);
     if (!validation.readyToCommit) {
       throw new BadRequestException({
         message: "Draft is not ready to commit",

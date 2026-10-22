@@ -13,6 +13,7 @@ import { quoteCell } from "../spreadsheet-guard";
 import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
 import { pointKeyConflictMessage } from "./onboarding-point-key-conflict";
 import { EMPTY_TEMPLATE_CONTEXT, unresolvedPointKey, type ValidateTemplateContext } from "./onboarding-template-refs";
+import { EMPTY_PLACEMENT } from "./onboarding-location-parent";
 import { OnboardingValidateService, type ValidateResult } from "./onboarding-validate.service";
 
 function assert(condition: boolean, message: string): void {
@@ -56,7 +57,7 @@ function readyDraft(): OnboardingDraft {
 }
 
 function validate(draft: OnboardingDraft, templates: ValidateTemplateContext = EMPTY_TEMPLATE_CONTEXT): ValidateResult {
-  return new OnboardingValidateService().validate(draft, CODES, templates);
+  return new OnboardingValidateService().validate(draft, CODES, templates, EMPTY_PLACEMENT);
 }
 
 function mappingErrors(result: ValidateResult): OnboardingFieldError[] {

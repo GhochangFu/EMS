@@ -136,6 +136,8 @@ describe.skipIf(!connectionString)("F4.255 — the draft list on real Postgres",
       none,
       none,
       none,
+      // F4.243: the parent candidates validate reads.
+      { listParentCandidates: async () => [] } as never,
     );
     ctx.list = await service.listDrafts(jwtFor(SEEDED.globalAdmin, "admin"), orgA);
 

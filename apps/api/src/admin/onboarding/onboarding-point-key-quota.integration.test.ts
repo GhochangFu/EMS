@@ -129,6 +129,8 @@ describe.skipIf(!connectionString)("F4.111 — the onboarding commit enforces th
       {} as never,
       {} as never,
       {} as never,
+      // F4.243: the parent candidates validate reads.
+      { listParentCandidates: async () => [] } as never,
     );
 
     ctx = {

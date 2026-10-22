@@ -1,5 +1,7 @@
 import { describe, it } from "vitest";
 
+import * as parent from "./onboarding-validate.service.spec";
+
 import {
   assertAStockDraftWithAnInactiveKeyIsNotReady,
   assertAStockFormulaKeyMissingFromTheCatalogIsAnError,
@@ -257,5 +259,39 @@ describe("OnboardingValidateService — templates and templated assets (F3.22, A
 
   it("F4.205 keeps a draft whose stock entry needs an inactive key from ready", () => {
     assertAStockDraftWithAnInactiveKeyIsNotReady();
+  });
+});
+
+describe("OnboardingValidateService — the parent location (F4.243, ADR 0098 Amendment 2)", () => {
+  it("V1 reports an open parent choice as required", () => {
+    parent.assertAnOpenParentChoiceIsRequired();
+  });
+
+  it("V2 keeps the location phase while the parent choice is open", () => {
+    parent.assertAnOpenParentChoiceKeepsTheLocationPhase();
+  });
+
+  it("V3 does not ask an organization with no active location", () => {
+    parent.assertAnOrgWithNoActiveLocationIsNotAsked();
+  });
+
+  it("V4 takes a null parent as a choice: the draft is ready", () => {
+    parent.assertANullParentIsReady();
+  });
+
+  it("V5 reports an unknown parent as a field error", () => {
+    parent.assertAnUnknownParentIsAFieldError();
+  });
+
+  it("V6 reports an inactive parent as a field error", () => {
+    parent.assertAnInactiveParentIsAFieldError();
+  });
+
+  it("V7 reports a parent at depth 8 as a field error", () => {
+    parent.assertATooDeepParentIsAFieldError();
+  });
+
+  it("V7 passes an active parent: the draft is ready", () => {
+    parent.assertAnActiveParentIsReady();
   });
 });

@@ -37,6 +37,7 @@ import { OnboardingCommitService } from "./onboarding-commit.service";
 import { OnboardingCatalogService } from "./onboarding-catalog.service";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { OnboardingExcelService } from "./onboarding-excel.service";
+import { OnboardingInventoryService } from "./onboarding-inventory.service";
 import { looksLikeCredential, scrubMessages } from "./onboarding-credential-detect";
 import {
   attachCommitProposal,
@@ -112,6 +113,7 @@ export class OnboardingService {
     private readonly catalogService: OnboardingCatalogService,
     private readonly vocabularies: VocabulariesService,
     private readonly templateCatalog: OnboardingTemplateCatalogService,
+    private readonly inventory: OnboardingInventoryService, // F4.243: validate's parent candidates (ADR 0098 Amendment 2, B4).
   ) {}
 
   /** Creates a new onboarding session for an organization. */
@@ -587,6 +589,7 @@ export class OnboardingService {
     // a type, so a draft whose stored type was retired can still be repaired.
     await assertPatchLocationTypeIsActive(draft, this.vocabularies);
     const locationTypeCodes = await this.activeLocationTypeCodes();
+    const placement = { candidates: await this.inventory.listParentCandidates(session.organizationId) };
     const updated = await withTenant(this.tenantDb, session.organizationId, async (tx) => {
       // Lock placement is gated by onboarding-chat-lock.integration.test.ts (real Postgres).
       const locked = await lockSession(tx, sessionId);
@@ -610,7 +613,7 @@ export class OnboardingService {
         .update(onboardingSessions)
         .set({
           draft: merged,
-          currentPhase: this.validateService.inferPhase(merged, locationTypeCodes),
+          currentPhase: this.validateService.inferPhase(merged, locationTypeCodes, placement),
           // F3.25 (plan Q3): a write the ring did not checkpoint ends undo
           // history, so a later rollback cannot silently undo this edit.
           checkpoints: null,
@@ -662,6 +665,7 @@ export class OnboardingService {
       session.draft,
       await this.activeLocationTypeCodes(),
       await this.templateCatalog.context(session.organizationId),
+      { candidates: await this.inventory.listParentCandidates(session.organizationId) },
     );
     let autoOpenReason = validation.readyToCommit
       ? ("ready_to_commit" as const)
@@ -722,7 +726,8 @@ export class OnboardingService {
       patch,
       parsed.rtuCredentials.length > 0 ? parsed.rtuCredentials : undefined,
     ) as OnboardingDraft;
-    const phase = this.validateService.inferPhase(mergedDraft, locationTypeCodes);
+    const placement = { candidates: await this.inventory.listParentCandidates(session.organizationId) };
+    const phase = this.validateService.inferPhase(mergedDraft, locationTypeCodes, placement);
 
     const followUp = this.chatService.excelImportFollowUp(
       mergedDraft,
@@ -774,6 +779,7 @@ export class OnboardingService {
       mergedDraft,
       locationTypeCodes,
       await this.templateCatalog.context(session.organizationId),
+      placement,
     );
 
     return {
@@ -897,6 +903,7 @@ export class OnboardingService {
   ): Promise<OnboardingChatResponseDto> {
     const codes = await this.activeLocationTypeCodes();
     const templateContext = await this.templateCatalog.context(session.organizationId);
+    const placement = { candidates: await this.inventory.listParentCandidates(session.organizationId) };
     const deriveCredentialsSet = CredentialCryptoService.isConfigured();
     const expectedHash = draftHash(session.draft);
     // Review finding (F3.25): the hash check and the write are one locked
@@ -932,7 +939,7 @@ export class OnboardingService {
         .update(onboardingSessions)
         .set({
           draft: restored.draft,
-          currentPhase: this.validateService.inferPhase(restored.draft, codes),
+          currentPhase: this.validateService.inferPhase(restored.draft, codes, placement),
           messages,
           checkpoints: cutRingBefore(ring, target),
           updatedAt: sql`now()`,
@@ -941,7 +948,7 @@ export class OnboardingService {
         .returning();
       return { updated: row, draft: restored.draft, reply: answer };
     });
-    const validation = this.validateService.validate(draft, codes, templateContext);
+    const validation = this.validateService.validate(draft, codes, templateContext, placement);
     return {
       assistantMessage: reply,
       session: await this.mapSessionWithOrg(updated),

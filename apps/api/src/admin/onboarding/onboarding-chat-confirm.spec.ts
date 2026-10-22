@@ -99,7 +99,7 @@ function build(opts: { results: unknown[][]; llm?: FakeLlmProvider; commit?: Ret
     vocabularies as never,
     { resolveForOrganization: async () => ({ kind: "ready", provider: llm, source: "platform" }) } as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
-    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
   );
   const service = new OnboardingService(
     db,
@@ -116,6 +116,8 @@ function build(opts: { results: unknown[][]; llm?: FakeLlmProvider; commit?: Ret
     {} as never,
     vocabularies as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
+    // F4.243: the parent candidates validate reads.
+    { listParentCandidates: async () => [] } as never,
   );
   return { service, record, llm, commit };
 }

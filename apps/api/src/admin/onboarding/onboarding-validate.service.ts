@@ -11,6 +11,12 @@ import {
 
 import { echoedItems, moreTail, quoteCell } from "../spreadsheet-guard";
 import { needsMqttSetup, rtuTopic, topicHasWildcard } from "./onboarding-chat-summaries";
+import {
+  PARENT_REQUIRED_MESSAGE,
+  parentChoicePending,
+  parentPlacementProblem,
+  type PlacementContext,
+} from "./onboarding-location-parent";
 import { assetPointProblems } from "./onboarding-mapping-refs";
 import { pointKeyDeclarationProblems } from "./onboarding-point-key-conflict";
 import {
@@ -80,11 +86,17 @@ export class OnboardingValidateService {
    * `OnboardingTemplateCatalogService.context`. Required for the same reason
    * as the codes: an optional context would let a caller validate templated
    * assets against nothing, and the template rules would refuse every one.
+   *
+   * `F4.243` (ADR 0098 Amendment 2, B4, B5): `placement` is the organization's
+   * locations, read by the caller (`listParentCandidates`). Required, and an
+   * object rather than a fourth array, so it cannot be swapped with
+   * `activeLocationTypeCodes` at a call site.
    */
   validate(
     draft: unknown,
     activeLocationTypeCodes: readonly string[],
     templates: ValidateTemplateContext,
+    placement: PlacementContext,
   ): ValidateResult {
     const errors: OnboardingFieldError[] = [];
     const parsed = onboardingDraftSchema.safeParse(draft);
@@ -99,12 +111,13 @@ export class OnboardingValidateService {
         valid: false,
         errors,
         readyToCommit: false,
-        suggestedPhase: this.inferPhase(draft, activeLocationTypeCodes),
+        suggestedPhase: this.inferPhase(draft, activeLocationTypeCodes, placement),
       };
     }
 
     const d = parsed.data as OnboardingDraft;
     this.validateCrossField(d, errors, activeLocationTypeCodes);
+    validateParentPlacement(d, placement, errors);
     validateDraftTemplates(d, templates, errors);
     validateTemplatedAssets(d, templates, errors);
     validateAssetPoints(d, templates, errors);
@@ -113,7 +126,7 @@ export class OnboardingValidateService {
     for (const problem of pointKeyDeclarationProblems(d.pointKeys ?? [], templates.pointKeyFields)) {
       errors.push({ path: `pointKeys.${problem.index}.${problem.field}`, message: problem.message });
     }
-    const phase = this.inferPhase(d, activeLocationTypeCodes);
+    const phase = this.inferPhase(d, activeLocationTypeCodes, placement);
     const readyToCommit = errors.length === 0 && phase === "review";
     return {
       valid: errors.length === 0,
@@ -285,8 +298,11 @@ export class OnboardingValidateService {
    *
    * `F4.162` (D9): a type that is not in `activeLocationTypeCodes` keeps the
    * phase at `location`, as a missing one does, so the chat asks for it again.
+   *
+   * `F4.243` (ADR 0098 Amendment 2, B5, owner ruling Q1 "ask until
+   * answered"): an open parent choice keeps it there too.
    */
-  inferPhase(draft: unknown, activeLocationTypeCodes: readonly string[]): OnboardingPhase {
+  inferPhase(draft: unknown, activeLocationTypeCodes: readonly string[], placement: PlacementContext): OnboardingPhase {
     const d =
       typeof draft === "object" && draft !== null ? (draft as OnboardingDraft) : {};
     if (!d.location?.name) {
@@ -297,7 +313,8 @@ export class OnboardingValidateService {
       !d.location.code ||
       !d.location.type ||
       !activeLocationTypeCodes.includes(d.location.type) ||
-      d.location.latitude === undefined
+      d.location.latitude === undefined ||
+      parentChoicePending(d.location, placement)
     ) {
       return "location";
     }
@@ -320,6 +337,25 @@ export class OnboardingValidateService {
       return "mappings";
     }
     return "review";
+  }
+}
+
+/**
+ * `F4.243` (ADR 0098 Amendment 2, B4, B5) — the parent of the draft location:
+ * a named parent the commit would refuse is a field error with the guard's own
+ * sentence, and an open choice (the organization has an active location and
+ * the key is absent) is the "required" error. `null` and a valid code add
+ * nothing. The commit checks again inside its transaction (B3).
+ */
+function validateParentPlacement(d: OnboardingDraft, placement: PlacementContext, errors: OnboardingFieldError[]): void {
+  if (!d.location) {
+    return;
+  }
+  const problem = parentPlacementProblem(d.location.parentCode, placement);
+  if (problem !== null) {
+    errors.push({ path: "location.parentCode", message: problem });
+  } else if (parentChoicePending(d.location, placement)) {
+    errors.push({ path: "location.parentCode", message: PARENT_REQUIRED_MESSAGE });
   }
 }
 

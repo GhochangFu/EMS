@@ -109,6 +109,8 @@ function buildService(draft: OnboardingDraft, opts: { liveTypes: readonly string
     {} as never,
     {} as never,
     {} as never,
+    // F4.243: validate is stubbed, so the candidates are read and not used.
+    { listParentCandidates: async () => [] } as never,
   );
   return { service, events };
 }

@@ -20,6 +20,7 @@ import { cutToBound, draftCountProblem, pointKeyQuotaProblem, type PointKeyQuota
 import type { LlmToolCall, LlmToolDefinition } from "../../llm/llm-port";
 import { defineToolRegistry, runToolCall, type ToolGuard } from "../../llm/tool-registry";
 import { deriveLocationPatch } from "./onboarding-location-derive";
+import type { PlacementContext } from "./onboarding-location-parent";
 import { pointKeyDeclarationProblems } from "./onboarding-point-key-conflict";
 import type { OrgPointKeySummary } from "./onboarding-catalog.service";
 import type { ExistingQuery, ExistingRow } from "./onboarding-inventory.service";
@@ -190,6 +191,7 @@ export type ToolContext = {
       draft: unknown,
       activeLocationTypeCodes: readonly string[],
       templates: ValidateTemplateContext,
+      placement: PlacementContext,
     ): { valid: boolean; readyToCommit: boolean; errors: { path: string; message: string }[]; suggestedPhase: string };
   };
   /** `F3.22`: the organization's template versions and the stock catalog, read once per turn. */
@@ -204,6 +206,12 @@ export type ToolContext = {
   readonly inventory: {
     listExisting(organizationId: string, query: ExistingQuery): Promise<{ rows: ExistingRow[]; total: number }>;
   };
+  /**
+   * `F4.243` (ADR 0098 Amendment 2, B4, B7): the organization's locations, read
+   * once per turn. Required, so every fake states it; `set_location` checks a
+   * named parent against it and the validator reads it.
+   */
+  readonly placement: PlacementContext;
 };
 
 /**
@@ -744,7 +752,7 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
     }
 
     case "validate_draft": {
-      const result = ctx.validator.validate(draft, activeCodes(ctx), ctx.templates);
+      const result = ctx.validator.validate(draft, activeCodes(ctx), ctx.templates, ctx.placement);
       const { shown, omitted } = echoedItems(result.errors, TOOL_LIST_MAX_ITEMS);
       return succeed({ valid: result.valid, readyToCommit: result.readyToCommit, errors: shown, more: moreTail(omitted, "errors") || undefined });
     }
@@ -752,7 +760,7 @@ async function dispatch(name: ToolName, args: Record<string, unknown>, state: To
     case "propose_commit": {
       // F4.111 (ADR 0104 decision 5): a draft over a growth limit is not proposed.
       const problem = draftCountProblem(draft) ?? pointKeyQuotaProblem(draft, ctx.templates.pointKeys, ctx.pointKeyQuota);
-      const result = ctx.validator.validate(draft, activeCodes(ctx), ctx.templates);
+      const result = ctx.validator.validate(draft, activeCodes(ctx), ctx.templates, ctx.placement);
       if (problem !== null || !result.readyToCommit) {
         const { shown } = echoedItems(result.errors, 10);
         // F4.192: with no field error, the phase is what holds the draft back,

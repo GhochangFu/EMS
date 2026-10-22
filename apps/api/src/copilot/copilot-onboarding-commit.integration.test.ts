@@ -152,6 +152,8 @@ describe.skipIf(!connectionString)("F3.86 PR 6 — the onboarding commit card is
       {} as never,
       {} as never,
       {} as never,
+      // F4.243: the parent candidates validate reads.
+      { listParentCandidates: async () => [] } as never,
     );
     const codes = new Map([
       [changedSessionId, `${CODE}A-${RUN}`],

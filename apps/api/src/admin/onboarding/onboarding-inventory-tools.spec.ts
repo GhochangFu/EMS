@@ -42,6 +42,7 @@ function context(result: { rows: ExistingRow[]; total: number } | Error = { rows
       getContextForOrganization: async () => ({ catalog: [], orgExamples: [] }),
       formatForAssistant: () => "MQTT",
     },
+    placement: { candidates: [] },
     inventory: {
       listExisting: async (organizationId, query) => {
         calls.push({ organizationId, query });

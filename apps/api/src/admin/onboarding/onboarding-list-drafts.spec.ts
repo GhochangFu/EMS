@@ -132,6 +132,8 @@ function serviceAs(role: Role, options: { canManage?: boolean; orgExists?: boole
     none,
     none,
     none,
+    // F4.243: the parent candidates validate reads.
+    { listParentCandidates: async () => [] } as never,
   );
   return { service, reads, recorded, managed };
 }

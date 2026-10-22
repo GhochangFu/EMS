@@ -74,7 +74,7 @@ export function assertAnOverLongTopicNeedsSetup(): void {
 
 /** A2 — `inferPhase` keeps such a draft on the RTU step instead of moving on to point keys. */
 export function assertAnOverLongTopicKeepsTheRtuStep(): void {
-  const phase = new OnboardingValidateService().inferPhase(draftWith(credentialedRtu(OVER_LONG)), ACTIVE_TYPES);
+  const phase = new OnboardingValidateService().inferPhase(draftWith(credentialedRtu(OVER_LONG)), ACTIVE_TYPES, { candidates: [] });
   assert(phase === "rtu", `an over-long topic keeps the phase at rtu, got ${phase}`);
 }
 
@@ -83,6 +83,7 @@ function topicErrors(topic: string): string[] {
     draftWith(credentialedRtu(topic)),
     ACTIVE_TYPES,
     EMPTY_TEMPLATE_CONTEXT,
+    { candidates: [] },
   );
   return result.errors.filter((error) => error.path === "rtus.0.config.topic").map((error) => error.message);
 }
@@ -502,7 +503,7 @@ export function assertANonMqttRtuIsNotInHand(): void {
 
 /** The validation messages at `rtus.0.config.topic` for a one-RTU draft. */
 function rtuTopicErrors(rtu: DraftRtu): string[] {
-  const result = new OnboardingValidateService().validate(draftWith(rtu), ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT);
+  const result = new OnboardingValidateService().validate(draftWith(rtu), ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT, { candidates: [] });
   return result.errors.filter((error) => error.path === "rtus.0.config.topic").map((error) => error.message);
 }
 
@@ -542,7 +543,7 @@ function credentialChatService(): OnboardingChatService {
     {} as never,
     {} as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
-    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
   );
 }
 
@@ -605,7 +606,7 @@ export function assertAWildcardTopicNeedsSetup(): void {
 
 /** W2 — `inferPhase` keeps such a draft on the RTU step. */
 export function assertAWildcardTopicKeepsTheRtuStep(): void {
-  const phase = new OnboardingValidateService().inferPhase(draftWith(credentialedRtu("plant/a/#")), ACTIVE_TYPES);
+  const phase = new OnboardingValidateService().inferPhase(draftWith(credentialedRtu("plant/a/#")), ACTIVE_TYPES, { candidates: [] });
   assert(phase === "rtu", `a wildcard topic keeps the phase at rtu, got ${phase}`);
 }
 
@@ -632,6 +633,7 @@ export function assertAWildcardOnAModbusRtuIsNotAnError(): void {
     draftWith(credentialedRtu("plant/#", { protocol: "modbus_tcp", ingestEnabled: false, credentialsSet: false })),
     ACTIVE_TYPES,
     EMPTY_TEMPLATE_CONTEXT,
+    { candidates: [] },
   );
   const messages = result.errors.filter((error) => error.path === "rtus.0.config.topic").map((error) => error.message);
   assert(messages.length === 0, `a wildcard on a Modbus RTU is not an error, got ${JSON.stringify(messages)}`);
@@ -650,7 +652,7 @@ export async function assertAWildcardTopicTurnIsRefused(): Promise<void> {
 /** W7 (F4.215) — ingest lets `config.device.topic` override the head topic, so a nested wildcard is refused. */
 export function assertANestedDeviceWildcardIsAValidationError(): void {
   const rtu = credentialedRtu("plant/a", { config: { host: "h", port: 8883, tls: true, topic: "plant/a", device: { topic: "plant/#" } } });
-  const result = new OnboardingValidateService().validate(draftWith(rtu), ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT);
+  const result = new OnboardingValidateService().validate(draftWith(rtu), ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT, { candidates: [] });
   const messages = result.errors.filter((error) => error.path === "rtus.0.config.device.topic").map((error) => error.message);
   assert(messages.includes(WILDCARD_MESSAGE), `a nested device.topic wildcard is refused, got ${JSON.stringify(messages)}`);
 }

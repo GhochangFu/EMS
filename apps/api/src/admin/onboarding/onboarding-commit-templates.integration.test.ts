@@ -168,6 +168,8 @@ describe.skipIf(!connectionString)("F3.22 — the onboarding commit writes templ
       templates,
       instantiation,
       stock,
+      // F4.243: the parent candidates validate reads.
+      { listParentCandidates: async () => [] } as never,
     );
 
     // I4's organization template, published before the run.

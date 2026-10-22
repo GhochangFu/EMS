@@ -36,6 +36,7 @@ function context(templates: ValidateTemplateContext = KW_ACTIVE): ToolContext {
     validator: new OnboardingValidateService(),
     templates,
     inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
+    placement: { candidates: [] },
   };
 }
 

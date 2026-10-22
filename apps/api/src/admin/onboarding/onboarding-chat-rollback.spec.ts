@@ -180,7 +180,7 @@ export async function assertARollbackRestoresAndCutsTheRing(): Promise<void> {
   assert(record.updates.length === 1 && write !== undefined, `one write, got ${record.updates.length}`);
   const written = write.draft as OnboardingDraft;
   assert(!("_commitProposal" in (written as object)), "the written draft still carries _commitProposal");
-  const phase = new OnboardingValidateService().inferPhase(written, CODES);
+  const phase = new OnboardingValidateService().inferPhase(written, CODES, { candidates: [] });
   assert(write.currentPhase === phase, `currentPhase ${String(write.currentPhase)} vs inferPhase ${phase}`);
   const seqs = ((write.checkpoints ?? []) as Checkpoint[]).map((cp) => cp.seq);
   assert(JSON.stringify(seqs) === "[1]", `the ring keeps only seqs below 2, got ${JSON.stringify(seqs)}`);

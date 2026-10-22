@@ -31,6 +31,7 @@ import {
   cutToBound,
 } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
+import type { PlacementContext } from "./onboarding-location-parent";
 import * as locationTypes from "./onboarding-location-type-match";
 import {
   MQTT_RTU_ADDED_REPLY,
@@ -80,6 +81,8 @@ export type TurnVocabulary = {
   readonly templates: ValidateTemplateContext;
   /** `F4.111` (ADR 0104 decision 5): the turn's growth-quota state, for the tools' early refusal. */
   readonly pointKeyQuota: PointKeyQuota;
+  /** `F4.243` (ADR 0098 Amendment 2, B4–B6): the organization's locations, for the parent step and validate. */
+  readonly placement: PlacementContext;
 };
 
 /**
@@ -233,7 +236,7 @@ export function fallbackTurn(
   turn: TurnVocabulary,
 ): ChatTurnResult {
   const { types } = turn;
-  const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code));
+  const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code), turn.placement);
   const prompt = stepPrompt(derived, draft, types);
   return deps.finalizeTurn(prompt.text, {}, derived, prompt.replies, message, draft, turn);
 }
@@ -255,7 +258,7 @@ export async function handleRuleBasedTurn(
   // works as its button — one space, no trailing `.!?`. The undo phrase in
   // `OnboardingService.chat` stays exact (`isUndoPhrase`); no typed phrase commits.
   const intent = normaliseReply(message);
-  const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code));
+  const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code), turn.placement);
   // F3.27 (ADR 0090 Amendment 2 B4, B5): every draft write below runs through
   // `guidedWrite` against this one working copy, so the caps, the depth bound,
   // the element schemas and the credential and prompt-marker refusals are the
@@ -479,7 +482,7 @@ export async function handleRuleBasedTurn(
     const merged = state.working;
     const rtus = merged.rtus ?? [];
     patch.rtus = rtus;
-    const prompt = stepPrompt(deps.validateService.inferPhase(merged, types.map((t) => t.code)), merged, types);
+    const prompt = stepPrompt(deps.validateService.inferPhase(merged, types.map((t) => t.code), turn.placement), merged, types);
     const text = `Topic **${quoteCell(topic)}** set on **${quoteCell(rtus[inHand].displayName)}**. ${prompt.text}`;
     return { ...deps.finalizeTurn(text, patch, "rtu", prompt.replies, message, draft, turn), actionLines: [written.actionLine] };
   }
@@ -705,7 +708,7 @@ function unchangedTurn(
  * `point_keys`.
  */
 function addedRtuReplies(deps: RuleBasedTurnDeps, draft: OnboardingDraft, turn: TurnVocabulary): string[] {
-  const next = deps.validateService.inferPhase(draft, turn.types.map((t) => t.code));
+  const next = deps.validateService.inferPhase(draft, turn.types.map((t) => t.code), turn.placement);
   if (next === "rtu") {
     return ["confirm rtu", "View draft", "Add another RTU"];
   }
@@ -728,7 +731,7 @@ export function confirmStepTurn(
   draft: OnboardingDraft,
   turn: TurnVocabulary,
 ): ChatTurnResult {
-  const derived = deps.validateService.inferPhase(draft, turn.types.map((t) => t.code));
+  const derived = deps.validateService.inferPhase(draft, turn.types.map((t) => t.code), turn.placement);
   const position = PHASE_ORDER.indexOf(derived) - PHASE_ORDER.indexOf(step);
   const name = STEP_NAMES[step];
   const lead =

@@ -198,6 +198,8 @@ describe.skipIf(!connectionString)("F4.228 — the onboarding commit stores an e
       {} as never,
       {} as never,
       {} as never,
+      // F4.243: the parent candidates validate reads.
+      { listParentCandidates: async () => [] } as never,
     );
 
     ctx = { ownerPool, commitSvc, jwt, secondSessionId, thirdSessionId, committed };
