@@ -10,6 +10,7 @@ old and the new parent" let a location administrator take over a root; ruling
 12 supersedes that clause. Rulings 14–16 closed three alternatives the first
 draft left open among its drafter choices. Each ruling maps to a numbered
 decision below.
+Amendment 2 (2026-10-22, `F4.243`) reverses *Drafter choices* 7.
 Where a decision needed a detail the rulings do not give, the detail is listed
 under *Drafter choices (not asked)* for the owner to confirm at acceptance.
 Drafted before any implementation code. Line citations are to `main` at
@@ -817,3 +818,101 @@ the text above, this amendment wins.
     every `AdminLocationDto` the locations service returns: `parentId` is
     `null` when the caller cannot read the parent.
   - The tripwire lives in `apps/api/src/auth/location-tree.integration.spec.ts`.
+
+## Amendment 2 — onboarding places the new node (owner ruling 2026-10-22, "Both parts now"; F4.243)
+
+**Status: Proposed — owner ruled 2026-10-22 ("Both parts now", then Q1
+ask-until-answered, Q2 validate-time field error, Q3 amendment in this PR); the
+merge approves it.**
+
+Drafter choice 7 said onboarding creates roots only, and an administrator
+places the new node afterwards. With a campus in the tree, that leaves every
+onboarded site as a root to be moved by hand. The owner ruled that onboarding
+places the node itself, through the chat and the workbook. Where this
+amendment conflicts with the text above, this amendment wins. Decision 12
+holds: onboarding is already organization-level (`canUseOnboarding` admits
+`admin` and `organization_admin`, and the commit checks
+`canManageOrganization` on the session's organization), so the people who
+may place a root may also place a child.
+
+- **B1 — Drafter choice 7 is reversed.** A draft that names a parent creates
+  a child of that parent; a draft that names none creates a root.
+- **B2 — The parent is named by its code.** The draft field is
+  `location.parentCode`. A location code is unique in its organization
+  (`locations_org_code_idx`), the user reads it in the inventory, and it says
+  what it means. Not the id: the agent inventory exposes no ids (ADR 0095
+  decision 3). Not the slug: a slug is a URL handle with a hash suffix. The
+  field has three states: absent (not chosen yet), `null` (a root, by choice)
+  and a code. The code becomes an id only inside the commit transaction.
+- **B3 — The commit places the node.** After the point-key quota block and
+  before the location insert, the commit takes `takeLocationTreeLock(tx,
+  orgId)`, reads the parent's id by organization and code on the tenant
+  transaction (absent or in another organization: `location_parent_not_found`),
+  and calls `assertParentPlacement(tx, { organizationId, nodeId: null,
+  parentId, nodeActive: true })`. A refusal by the `locations_tree_guard`
+  trigger maps through `treeGuardRefusal` to the same 4xx. The cycle guard
+  cannot fire for an insert, so no cycle refusal exists here. Lock order is
+  quota, then tree; the locations service takes the tree lock alone, so the
+  two cannot deadlock.
+- **B4 — Validate checks the parent first.** `validate` receives a placement
+  context: the organization's locations with code, name, active flag and depth
+  (`OnboardingInventoryService.listParentCandidates`, read on `fleetDb`). A
+  bad parent is a field error on `location.parentCode` with the guard's own
+  sentence: not found, inactive, or too deep (`depthExceeded(parent.depth,
+  1)`). The commit still checks again (B3), because the tree can change
+  between the two.
+- **B5 — The parent is asked, not defaulted.** When the organization has at
+  least one active location and the key is absent, the phase stays at
+  `location` with the error `location.parentCode: "Parent location is
+  required: name an existing location code, or No parent for a top-level
+  location"`. A `null` moves on. An organization with no active location is
+  not asked, and an absent key is a root at commit.
+- **B6 — The guided chat asks one question.** After the name and the type, it
+  asks "Which existing location is **<name>** under?" with a chip for each
+  active code (capped like every echoed list), **No parent** and **View
+  draft**. A reply matches an active candidate's code or name without regard
+  to case and stores the code; "no parent", "none", "root" or "top level"
+  stores `null`; anything else asks again, writes nothing and adds no action
+  line. The write goes through `guidedWrite("set_location", …)`. The step runs
+  before the location-name branch, so a code typed here never renames the
+  location.
+- **B7 — The agent sets it too.** `set_location` accepts `parentCode` (a code
+  or `null`) and refuses early with the B4 sentence plus "Call find_existing
+  with kind "location" for the codes." The `find_existing` location rows gain
+  `parentCode: string | null`, so ADR 0095 decision 3's key list grows by one
+  and the same integration spec pins it. The prompt tells the model to call
+  `find_existing` and set `parentCode` when the organization has locations;
+  the model may propose a parent, and the user decides.
+- **B8 — The workbook gets a column.** The `LOCATION` sheet gains a last
+  column, `parent_code`. An empty cell is `null`; a workbook without the
+  column is `null` too, so an old workbook still uploads. A cell longer than
+  64 characters is refused by `refuseIfTooLong`, without echo. An unknown or
+  inactive code is a validate-time field error on the upload response, not an
+  upload refusal, so the parser stays free of the database.
+- **B9 — Errors.** The commit answers with `locationWriteRefusalSchema`
+  (`{ message, reason }`): 400 for `location_parent_not_found` and
+  `location_depth_exceeded`, 409 for `location_parent_inactive`. Validate gives
+  a field error. Neither echoes the cell (`AGENTS.md` §4.3).
+- **B10 — Audit.** The onboarding `master.location.create` payload carries
+  `parentId`, `null` for a root.
+- **B11 — Contract (ADR 0030, additive).** `parentCode:
+  z.string().min(1).max(ONBOARDING_DRAFT_STRING_MAX["location.parentCode"]).nullable().optional()`
+  in both `packages/shared/src/contracts/onboarding.ts` and
+  `apps/api/src/admin/onboarding/onboarding.schema.ts`, with
+  `"location.parentCode": 64`, the width of `bms.locations.code`.
+
+**Not in this amendment:** a move from onboarding; more than one node per
+draft; a parent for an RTU or an asset; editing the parent in the web drawer;
+any change to the guards beyond exporting `refusalSentence`; any change to the
+depth cap; a picker in the dock.
+
+**Verification owed.** Database: a chat commit and a workbook commit set
+`parent_id`; the audit payload carries `parentId`; no migration. API: one
+refusal per guard the commit can reach (not found, another organization's
+code, inactive, depth 9), the race, the trigger mapped to 409; validate's three
+field errors and the pending state; the inventory's `parentCode` for a child
+and a root, with the fixed key list. Chat: a site placed under a campus
+without a rename; **No parent** stores `null`; an unmatched reply asks again;
+an organization with no candidate is not asked. Workbook: a code; an empty
+cell is `null`; an old workbook is `null`. Browser: none, held by the jsdom
+and rule-based specs.
