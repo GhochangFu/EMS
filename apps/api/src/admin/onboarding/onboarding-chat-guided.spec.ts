@@ -49,7 +49,7 @@ function draftAt(phase: OnboardingPhase): OnboardingDraft {
 const PHASES: readonly OnboardingPhase[] = ["location", "rtu", "point_keys", "assets", "mappings", "review"];
 
 /** Words a guided reply never carries: inputs the code does not parse, and the registry's model-facing refusal text. */
-const BANNED_IN_GUIDED_TEXT = [
+export const BANNED_IN_GUIDED_TEXT = [
   "->",
   "How many",
   "per RTU",

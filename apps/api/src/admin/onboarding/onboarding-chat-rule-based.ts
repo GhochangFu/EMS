@@ -31,7 +31,12 @@ import {
   cutToBound,
 } from "./onboarding-draft-caps";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
-import type { PlacementContext } from "./onboarding-location-parent";
+import {
+  parentChoicePending,
+  parentQuestion,
+  resolveParentTurn,
+  type PlacementContext,
+} from "./onboarding-location-parent";
 import * as locationTypes from "./onboarding-location-type-match";
 import {
   MQTT_RTU_ADDED_REPLY,
@@ -192,6 +197,7 @@ function stepPrompt(
   phase: OnboardingPhase,
   draft: OnboardingDraft,
   types: readonly LocationTypeDto[],
+  placement: PlacementContext,
 ): { text: string; replies: string[] } {
   switch (phase) {
     case "location": {
@@ -199,6 +205,10 @@ function stepPrompt(
       const name = draft.location?.name;
       if (name && !locationTypes.hasActiveLocationType(draft.location, types)) {
         return { text: locationTypes.locationTypeQuestion(name), replies: types.map((t) => t.label) };
+      }
+      // F4.243 (B6): a named, typed location waits for its parent.
+      if (name && parentChoicePending(draft.location, placement)) {
+        return parentQuestion(name, placement);
       }
       return { text: "The location needs a name and a type first. What is the location name?", replies: ["View draft"] };
     }
@@ -237,7 +247,7 @@ export function fallbackTurn(
 ): ChatTurnResult {
   const { types } = turn;
   const derived = deps.validateService.inferPhase(draft, types.map((t) => t.code), turn.placement);
-  const prompt = stepPrompt(derived, draft, types);
+  const prompt = stepPrompt(derived, draft, types, turn.placement);
   return deps.finalizeTurn(prompt.text, {}, derived, prompt.replies, message, draft, turn);
 }
 
@@ -265,7 +275,7 @@ export async function handleRuleBasedTurn(
   // agent path's own. A refusal changes nothing and answers its sentence.
   const state: ToolState = { working: draft };
   const refused = (error: string): ChatTurnResult => {
-    const prompt = stepPrompt(derived, draft, types);
+    const prompt = stepPrompt(derived, draft, types, turn.placement);
     return deps.finalizeTurn(`I did not change the draft. ${error} ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
   };
 
@@ -327,8 +337,16 @@ export async function handleRuleBasedTurn(
   // Any other message that starts like a confirm is not a label: it changes
   // nothing and answers with the step the draft is at.
   if (/^(yes|confirm|commit|create)\b/.test(intent)) {
-    const prompt = stepPrompt(derived, draft, types);
+    const prompt = stepPrompt(derived, draft, types, turn.placement);
     return deps.finalizeTurn(`I did not change the draft. ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
+  }
+
+  // F4.243 (ADR 0098 Amendment 2, B6): a named, typed location whose parent is
+  // still open reads the message as the parent. Before the location-name
+  // branch, so a code typed here never renames the location.
+  const located = draft.location;
+  if (located?.name && locationTypes.hasActiveLocationType(located, types) && parentChoicePending(located, turn.placement)) {
+    return parentTurn(deps, message, draft, located, state, turn);
   }
 
   // F4.162 (plan D9): a stored type that is not active counts as missing, so a
@@ -444,6 +462,11 @@ export async function handleRuleBasedTurn(
       const labels = types.map((row) => row.label);
       return { ...deps.finalizeTurn(ask, patch, "location", labels, message, draft, turn), actionLines };
     }
+    // F4.243 (B6): with the type set, an open parent choice is the next question.
+    if (parentChoicePending(state.working.location, turn.placement)) {
+      const ask = parentQuestion(name, turn.placement);
+      return { ...deps.finalizeTurn(ask.text, patch, "location", ask.replies, message, draft, turn), actionLines };
+    }
     const result = deps.finalizeTurn(
       `Got it — location **${name}**. Which communication protocol will RTU 1 use?`,
       patch,
@@ -469,7 +492,7 @@ export async function handleRuleBasedTurn(
     const topic = cutToBound(topicTurn[1], MAX_RTU_TOPIC_CHARS);
     // F4.215: ingest refuses a wildcard topic, so the turn stores nothing.
     if (topicHasWildcard(topic)) {
-      const waiting = stepPrompt(derived, draft, types);
+      const waiting = stepPrompt(derived, draft, types, turn.placement);
       const refusal = `I did not change the draft. A topic must name one device; # and + are wildcards. ${waiting.text}`;
       return deps.finalizeTurn(refusal, {}, derived, waiting.replies, message, draft, turn);
     }
@@ -482,7 +505,7 @@ export async function handleRuleBasedTurn(
     const merged = state.working;
     const rtus = merged.rtus ?? [];
     patch.rtus = rtus;
-    const prompt = stepPrompt(deps.validateService.inferPhase(merged, types.map((t) => t.code), turn.placement), merged, types);
+    const prompt = stepPrompt(deps.validateService.inferPhase(merged, types.map((t) => t.code), turn.placement), merged, types, turn.placement);
     const text = `Topic **${quoteCell(topic)}** set on **${quoteCell(rtus[inHand].displayName)}**. ${prompt.text}`;
     return { ...deps.finalizeTurn(text, patch, "rtu", prompt.replies, message, draft, turn), actionLines: [written.actionLine] };
   }
@@ -491,7 +514,7 @@ export async function handleRuleBasedTurn(
   // is a question, not a value. It changes nothing and gets the step prompt;
   // naming a protocol, or "add another rtu", still appends.
   if (derived === "rtu" && !topicTurn && !addAnother && /\btopics?\b/i.test(message) && !NAMES_A_PROTOCOL.test(lower)) {
-    const prompt = stepPrompt(derived, draft, types);
+    const prompt = stepPrompt(derived, draft, types, turn.placement);
     return deps.finalizeTurn(`I did not change the draft. ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
   }
 
@@ -509,7 +532,7 @@ export async function handleRuleBasedTurn(
     // schema, which `guidedRefusal` would answer with the generic config sentence.
     // The topic turn's F4.215 sentence names the cause, so this branch answers it too.
     if (protocol === "mqtt" && typeof config.topic === "string" && topicHasWildcard(config.topic)) {
-      const waiting = stepPrompt(derived, draft, types);
+      const waiting = stepPrompt(derived, draft, types, turn.placement);
       const refusal = `I did not change the draft. A topic must name one device; # and + are wildcards. ${waiting.text}`;
       return deps.finalizeTurn(refusal, {}, derived, waiting.replies, message, draft, turn);
     }
@@ -688,6 +711,48 @@ export async function handleRuleBasedTurn(
   );
 }
 
+/**
+ * `F4.243` (ADR 0098 Amendment 2, B6) — one reply to the parent question. An
+ * active candidate's code or name stores that code; a "no parent" word stores
+ * `null`; anything else asks again, writes nothing and adds no action line.
+ * The write is `set_location` with the stored name and type, so only
+ * `parentCode` changes.
+ */
+async function parentTurn(
+  deps: RuleBasedTurnDeps,
+  message: string,
+  draft: OnboardingDraft,
+  located: NonNullable<OnboardingDraft["location"]>,
+  state: ToolState,
+  turn: TurnVocabulary,
+): Promise<ChatTurnResult> {
+  const answer = resolveParentTurn(message, turn.placement);
+  if (answer.kind === "unmatched") {
+    const ask = parentQuestion(located.name, turn.placement);
+    return deps.finalizeTurn(`I did not change the draft. ${ask.text}`, {}, "location", ask.replies, message, draft, turn);
+  }
+  const parentCode = answer.kind === "code" ? answer.code : null;
+  // The name is unchanged, so `set_location` keeps the stored slug and code.
+  const args = { name: located.name, type: located.type, parentCode };
+  const written = await guidedWrite("set_location", args, state, deps.tools);
+  if (!written.ok) {
+    const ask = parentQuestion(located.name, turn.placement);
+    return deps.finalizeTurn(`I did not change the draft. ${written.error} ${ask.text}`, {}, "location", ask.replies, message, draft, turn);
+  }
+  const patch: OnboardingDraftInput = { location: state.working.location };
+  const placed = parentCode === null ? "a top-level location" : `under **${parentCode}**`;
+  const result = deps.finalizeTurn(
+    `Got it — **${located.name}** is ${placed}. Which communication protocol will RTU 1 use?`,
+    patch,
+    "rtu",
+    [...PROTOCOL_REPLIES],
+    message,
+    draft,
+    turn,
+  );
+  return { ...result, actionLines: [written.actionLine] };
+}
+
 /** Q-B — a message that is not the offered label changes nothing and gets the step prompt (the `I did not change the draft.` shape). */
 function unchangedTurn(
   deps: RuleBasedTurnDeps,
@@ -697,7 +762,7 @@ function unchangedTurn(
   types: readonly LocationTypeDto[],
   turn: TurnVocabulary,
 ): ChatTurnResult {
-  const prompt = stepPrompt(derived, draft, types);
+  const prompt = stepPrompt(derived, draft, types, turn.placement);
   return deps.finalizeTurn(`I did not change the draft. ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
 }
 
@@ -740,7 +805,7 @@ export function confirmStepTurn(
       : position === 0
         ? `The ${name} step is not complete yet.`
         : `The ${name} step comes later.`;
-  const prompt = stepPrompt(derived, draft, turn.types);
+  const prompt = stepPrompt(derived, draft, turn.types, turn.placement);
   return deps.finalizeTurn(`${lead} ${prompt.text}`, {}, derived, prompt.replies, message, draft, turn);
 }
 
