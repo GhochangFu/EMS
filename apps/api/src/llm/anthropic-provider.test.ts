@@ -28,7 +28,10 @@ import {
   assertConsecutiveToolResultsAreOneUserMessage,
   assertImageAndPdfPartsAreNativeBlocks,
   assertMaxTokensIsAProviderError,
+  assertNoSystemAndNoToolsSendNoMark,
+  assertOnlyTheLastToolIsCacheMarked,
   assertProviderContentIsEchoedBackUnchanged,
+  assertSystemBlocksKeepOrderAndOnlyTheFirstIsCacheMarked,
   assertTextOnlyIsFinal,
   assertTheCallShapeIsTheAmendmentsOne,
   assertToolUseBlocksBecomeToolCallsWithStringifiedInput,
@@ -70,5 +73,17 @@ describe("Anthropic provider (F3.21, ADR 0090 Amendment 1 A1)", () => {
 
   it("sends a string user content as a string", async () => {
     await assertAStringUserContentIsSentAsAString(capture);
+  });
+
+  it("cache-marks only the last tool (ADR 0099 Amendment 7 C1)", async () => {
+    await assertOnlyTheLastToolIsCacheMarked(capture);
+  });
+
+  it("sends one system block per system message in order, cache-marking only the first (ADR 0099 Amendment 7 C1)", async () => {
+    await assertSystemBlocksKeepOrderAndOnlyTheFirstIsCacheMarked(capture);
+  });
+
+  it("sends no system field and no cache mark when there is no system message and no tool (ADR 0099 Amendment 7 C1)", async () => {
+    await assertNoSystemAndNoToolsSendNoMark(capture);
   });
 });

@@ -46,6 +46,12 @@ export const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
  *   returned, thinking blocks included (`providerContent`); rebuilding it from
  *   the tool calls would drop them.
  *
+ * - Prompt caching (ADR 0099 Amendment 7 C1, F4.249): `system` is one text
+ *   block per system message, in order, and `cache_control: ephemeral` marks
+ *   the **first** system block and the **last** tool — no other block. The API
+ *   reads tools, then system, so the two marks cache the tools and the tools
+ *   plus the fixed prompt; the scope, wizard and PDF lines after it stay out.
+ *
  * It reads no environment variable: the key and the model come from the
  * resolver.
  */
@@ -65,18 +71,15 @@ export class AnthropicProvider implements LlmProvider {
     // organization's key. `ANTHROPIC_CUSTOM_HEADERS` has no option to refuse
     // it; compose does not set it.
     const client = new Anthropic({ apiKey: this.options.apiKey, authToken: null, baseURL: ANTHROPIC_BASE_URL });
-    const system = input.messages
-      .filter((message): message is { role: "system"; content: string } => message.role === "system")
-      .map((message) => message.content)
-      .join("\n\n");
+    const system = toAnthropicSystem(input.messages);
     const response = await client.beta.messages.create(
       {
         betas: [ANTHROPIC_FALLBACK_BETA],
         model: this.options.model,
         max_tokens: ANTHROPIC_MAX_TOKENS,
-        ...(system ? { system } : {}),
+        ...(system.length > 0 ? { system } : {}),
         messages: toAnthropicMessages(input.messages),
-        tools: input.tools.map(toAnthropicTool),
+        tools: toAnthropicTools(input.tools),
         tool_choice: { type: "auto" },
         output_config: { effort: "medium" },
         fallbacks: "default",
@@ -109,12 +112,34 @@ function joinText(content: readonly BetaContentBlock[]): string {
     .trim();
 }
 
-function toAnthropicTool(tool: LlmToolDefinition): BetaTool {
-  return {
-    name: tool.name,
-    description: tool.description,
-    input_schema: tool.parameters as BetaTool["input_schema"],
-  };
+/** ADR 0099 Amendment 7 C1: the cache breakpoint both marks carry. */
+const EPHEMERAL = { type: "ephemeral" } as const;
+
+/**
+ * ADR 0099 Amendment 7 C1: one text block per system message, in order; only
+ * the first carries the cache mark. No system message gives an empty array, and
+ * the request then has no `system` field.
+ */
+export function toAnthropicSystem(messages: readonly LlmMessage[]): BetaTextBlockParam[] {
+  return messages
+    .filter((message): message is { role: "system"; content: string } => message.role === "system")
+    .map((message, index): BetaTextBlockParam =>
+      index === 0
+        ? { type: "text", text: message.content, cache_control: EPHEMERAL }
+        : { type: "text", text: message.content },
+    );
+}
+
+/** ADR 0099 Amendment 7 C1: the tools in the caller's order; only the last carries the cache mark. */
+export function toAnthropicTools(tools: readonly LlmToolDefinition[]): BetaTool[] {
+  return tools.map(
+    (tool, index): BetaTool => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.parameters as BetaTool["input_schema"],
+      ...(index === tools.length - 1 ? { cache_control: EPHEMERAL } : {}),
+    }),
+  );
 }
 
 /**
