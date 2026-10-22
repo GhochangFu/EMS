@@ -577,14 +577,17 @@ export async function handleRuleBasedTurn(
       return unchangedTurn(deps, message, draft, derived, types, turn);
     }
     // The asset code (F4.136, ADR 0065 Amendment 2) derives from the draft
-    // location's **slug** through `catalogCodeFromLocationSlug`, and from the
-    // organisation name through `catalogCodeFromLocationName` only when the
-    // draft has no slug. `bms.locations.slug` is unique across every tenant
-    // and commits with the asset, so a code collides only where the slug
-    // already refuses. Both producers slug to the catalog class before the
-    // upper-case (ADR 0065 decision 4: `"ß".toUpperCase()` is `"SS"`), hash
-    // the whole input when that drops anything, so distinct inputs never share
-    // a code (`F4.104` owner ruling 6), and cut the **finished** code with
+    // location's **slug** through `catalogCodeFromLocationSlug`. This branch
+    // cannot run without a location, so the live fallback is a location whose
+    // slug is empty (only a blank workbook slug cell gives one): that derives
+    // from the location name through `catalogCodeFromLocationName`. Both
+    // producers slug to the catalog class before the upper-case (ADR 0065
+    // decision 4: `"ß".toUpperCase()` is `"SS"`), hash the whole input when
+    // that drops anything, so distinct inputs give distinct codes except for
+    // a collision of the 32-bit hash, which a caller can construct (`-plant`
+    // and `plant-42b9d71d`) and which `assets_code_unique` refuses as a
+    // translated 400, not a 500 (`F4.104` owner ruling 6), and cut the
+    // **finished** code with
     // `cutToBoundWithHashSuffix` — cutting the input first and then appending
     // `-ASSET-1` gives 64 + 8 = 72, which `draftAssetSchema.code.max(64)`
     // refuses when `validate` re-parses the draft (`F4.104`). Each producer's

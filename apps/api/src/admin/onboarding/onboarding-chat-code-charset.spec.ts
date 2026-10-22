@@ -6,6 +6,7 @@ import {
 
 import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
 import { draftBeforeAssets, ruleBasedTurn } from "./onboarding-chat.service.spec";
+import { catalogCodeFromLocationName } from "./onboarding-draft-caps";
 import { onboardingDraftSchema } from "./onboarding.schema";
 
 function assert(condition: boolean, message: string): void {
@@ -39,12 +40,19 @@ function preRowAssetCode(site: string): string {
  * the code derives from the slug, and `draftBeforeAssets` stores the slug the
  * location branch derives from the name.
  */
-async function assetCodeFromLocation(name: string): Promise<{
+async function assetCodeFromLocation(
+  name: string,
+  storedSlug?: string,
+): Promise<{
   code: string;
   slug: string;
   patch: Awaited<ReturnType<typeof ruleBasedTurn>>["draftPatch"];
 }> {
-  const draft = draftBeforeAssets(name);
+  const built = draftBeforeAssets(name);
+  const draft =
+    storedSlug === undefined || built.location === undefined
+      ? built
+      : { ...built, location: { ...built.location, slug: storedSlug } };
   const slug = draft.location?.slug ?? "";
   const turn = await ruleBasedTurn("One asset", draft, "assets");
   const asset = turn.draftPatch.assets?.[0];
@@ -103,6 +111,28 @@ export async function assertAssetsTurnPatchSatisfiesTheSchema(): Promise<void> {
     codeIssue?.message === CATALOG_CODE_MESSAGE,
     `the refusal carries decision 1's sentence, got ${JSON.stringify(codeIssue?.message)}`,
   );
+}
+
+/**
+ * `F4.136` — the branch reads the **stored** slug, not one re-derived from the
+ * name. `West Campus HQ` derives `west-campus-hq`; the stored `wc-hq` must
+ * win. Mutation: re-derive the slug from the name in the branch and the code
+ * is `WEST-CAMPUS-HQ-ASSET-1`.
+ */
+export async function assertAssetsTurnReadsTheStoredSlug(): Promise<void> {
+  const { code } = await assetCodeFromLocation("West Campus HQ", "wc-hq");
+  assert(code === "WC-HQ-ASSET-1", `the code derives from the stored slug "wc-hq", got "${code}"`);
+}
+
+/**
+ * A location with an empty slug (only a blank workbook slug cell gives one)
+ * derives the code from the location name. Mutation: drop the call-site
+ * `slug !== ""` guard and the code is the hash of `""`, not the name's code.
+ */
+export async function assertAssetsTurnWithAnEmptySlugDerivesFromTheName(): Promise<void> {
+  const { code } = await assetCodeFromLocation("West Campus HQ", "");
+  const expected = catalogCodeFromLocationName("West Campus HQ");
+  assert(code === expected, `an empty slug falls back to the name's code "${expected}", got "${code}"`);
 }
 
 /**

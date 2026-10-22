@@ -5,6 +5,8 @@ import {
   assertAssetsTurnFromAnAllIllegalName,
   assertAssetsTurnKeepsACutCodeInsideTheClass,
   assertAssetsTurnPatchSatisfiesTheSchema,
+  assertAssetsTurnReadsTheStoredSlug,
+  assertAssetsTurnWithAnEmptySlugDerivesFromTheName,
   assertAssetsTurnSlugifiesBeforeUpperCasing,
   assertAssetsTurnSlugifiesTheLocationName,
 } from "./onboarding-chat-code-charset.spec";
@@ -17,6 +19,14 @@ describe("OnboardingChatService.handleTurn, assets branch — the catalog code c
 
   it("produces a patch the draft schema accepts, where the pre-row formula's is refused", async () => {
     await assertAssetsTurnPatchSatisfiesTheSchema();
+  });
+
+  it("derives the code from the stored slug, not one re-derived from the name (F4.136)", async () => {
+    await assertAssetsTurnReadsTheStoredSlug();
+  });
+
+  it("derives the code from the location name when the stored slug is empty (F4.136)", async () => {
+    await assertAssetsTurnWithAnEmptySlugDerivesFromTheName();
   });
 
   it("slugifies before it upper-cases, so ß does not fold into SS", async () => {

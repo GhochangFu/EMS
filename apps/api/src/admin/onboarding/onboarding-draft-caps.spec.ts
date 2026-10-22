@@ -605,10 +605,12 @@ export function assertSlugCodeKeepsAnUnderscore(): void {
 }
 
 /**
- * The draft slug is free text, so `Plant-A` and `plant-a` are two slugs that
- * upper-case to one code. The upper-case letter is information the code
- * drops, so it takes the hash of the whole slug. Mutation: drop the
- * `/[A-Z]/` test and both give `PLANT-A-ASSET-1`.
+ * Defence, not a live path: `PATCH` validates `/^[a-z0-9-]+$/` and the
+ * workbook lower-cases, so no producer writes an upper-case slug today. Should
+ * one ever arrive, `Plant-A` and `plant-a` would upper-case to one code, so
+ * the upper-case letter counts as information the code drops and takes the
+ * hash of the whole slug. Mutation: drop the `/[A-Z]/` test and both give
+ * `PLANT-A-ASSET-1`.
  */
 export function assertSlugCodeKeepsCaseDistinctSlugsApart(): void {
   const upper = catalogCodeFromLocationSlug("Plant-A");
@@ -621,7 +623,39 @@ export function assertSlugCodeKeepsCaseDistinctSlugsApart(): void {
   );
 }
 
-/** A slug with a character outside the class is slugged and hashed. */
+/**
+ * The lossy slugs that can actually reach a draft through `PATCH` or the
+ * workbook: a leading `-`, a trailing `-`, a doubled `-`. `catalogCodeSlug`
+ * trims or collapses each, so each takes the hash of the whole slug and stays
+ * apart from the clean slug it would otherwise fold onto.
+ */
+export function assertSlugCodeHashesTheReachableLossySlugs(): void {
+  const pairs: ReadonlyArray<readonly [string, string]> = [
+    ["-plant", "plant"],
+    ["plant-", "plant"],
+    ["plant--1", "plant-1"],
+  ];
+  for (const [lossy, clean] of pairs) {
+    const code = catalogCodeFromLocationSlug(lossy);
+    const expected = `${catalogCodeSlug(lossy).toUpperCase()}-${upperHash8(lossy)}-ASSET-1`;
+    assert(code === expected, `"${lossy}" is hashed over the whole slug: expected "${expected}", got "${code}"`);
+    assert(
+      code !== catalogCodeFromLocationSlug(clean),
+      `"${lossy}" and "${clean}" must not share a code, both gave "${code}"`,
+    );
+  }
+}
+
+/**
+ * An empty slug is lossy: it yields the hash of `""` alone, never a bare
+ * `-ASSET-1`. Mutation: drop `cleaned !== ""` and the code is `-ASSET-1`.
+ */
+export function assertSlugCodeOfAnEmptySlugIsTheHashAlone(): void {
+  const code = catalogCodeFromLocationSlug("");
+  assert(code === `${upperHash8("")}-ASSET-1`, `an empty slug yields HASH-ASSET-1, got "${code}"`);
+}
+
+/** A slug with a character outside the class is slugged and hashed (defence, as above). */
 export function assertSlugCodeHashesASlugTheClassChanges(): void {
   const code = catalogCodeFromLocationSlug("Site A");
   assert(code === `SITE-A-${upperHash8("Site A")}-ASSET-1`, `"Site A" is slugged and hashed, got "${code}"`);

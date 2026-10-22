@@ -336,18 +336,26 @@ as before. A derived slug is already `[a-z0-9-]`, so it takes no hash:
 
 **The distinctness ruling still holds, now over the slug.** `F4.104` owner
 ruling 6 asks that a derivation onto a globally unique column never merge two
-values it was given. The draft slug is free text (a workbook cell, a `PATCH`),
-so `Plant-A` and `plant-a`, or `Site A` and `site-a`, are distinct slugs that
-upper-case or slug to one code. Whenever `catalogCodeSlug` changes the slug or
-the slug holds an upper-case letter, the code takes the eight-character hash of the **whole slug**
-(Amendment 1's rule, moved from the name to the slug). Distinct slugs
-therefore give distinct codes, and a code collides only where the slug itself
-collides — one refusal, on a value the operator can see and edit.
+values it was given. A slug reaches the draft from a `PATCH`, which validates
+`/^[a-z0-9-]+$/` (`onboarding.schema.ts`), or a workbook cell, which the
+importer lower-cases (`onboarding-excel.service.ts`). The lossy slugs that can
+actually arrive are therefore the ones `catalogCodeSlug` trims or collapses:
+`-plant`, `plant-` and `plant--1` would otherwise share a code with `plant`
+and `plant-1`. Whenever the slug is empty, `catalogCodeSlug` changes it, or it
+holds an upper-case letter, the code takes the eight-character hash of the
+**whole slug** (Amendment 1's rule, moved from the name to the slug); an empty
+slug yields the hash alone, never a bare `-ASSET-1`. No producer writes an
+upper-case slug today — that check is defence against a future path that
+admits one. Distinct slugs therefore give distinct codes, except for a
+collision of the 32-bit hash, which a caller can construct (`-plant` and
+`plant-42b9d71d` both give `PLANT-42B9D71D-ASSET-1`); such a clash reaches
+`assets_code_unique`, which the commit answers as a translated 400, not a 500.
 
-**What this does not change.** A draft with no location still derives from
-the organisation name through `catalogCodeFromLocationName`, Amendment 1
-unchanged. The Excel importer still copies `asset_code` verbatim. Decisions 1,
-2, 3 and 5 stand.
+**What this does not change.** The `assets` branch cannot run without a
+location, so the live fallback to `catalogCodeFromLocationName` (Amendment 1
+unchanged) is a location whose slug is empty — only a blank workbook slug cell
+gives one — and it derives from the location name. The Excel importer still
+copies `asset_code` verbatim. Decisions 1, 2, 3 and 5 stand.
 
 **Consequences.** The pinned values Amendment 1 moved move back for every
 name whose derived slug is clean: `St. Mary's Works` gives
@@ -357,4 +365,12 @@ distinct codes first; that was already the outcome at commit. The slug
 derivation itself (`deriveLocationPatch`) hashes only on a length cut, so
 names with no character in `[a-z0-9]` still share the slug `location`; that is
 a slug residual, not a code one, and this amendment does not change it.
+
+**Residual: the code does not follow a later slug change.** The code is
+derived once, on the `assets` turn. A later change of the slug — a `PATCH`, a
+workbook re-upload, or `set_location` with a new name — leaves the asset code
+as it was. The stale code can then refuse another tenant whose name derives
+the old slug, at `assets_code_unique` (a translated 400). This amendment does
+not fix that.
+
 `F4.136` closes with this amendment.

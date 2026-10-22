@@ -9,6 +9,8 @@ import {
   assertDistinctAssetDomains,
   assertDraftCountProblem,
   assertSlugCodeHashesASlugTheClassChanges,
+  assertSlugCodeHashesTheReachableLossySlugs,
+  assertSlugCodeOfAnEmptySlugIsTheHashAlone,
   assertSlugCodeKeepsAnUnderscore,
   assertSlugCodeKeepsCaseDistinctSlugsApart,
   assertSlugCodeOfALongSlugIsCutInsideTheClass,
@@ -80,6 +82,14 @@ describe("the asset code derived from the location slug (F4.136, ADR 0065 Amendm
 
   it("two slugs that differ only in case get distinct codes", () => {
     assertSlugCodeKeepsCaseDistinctSlugsApart();
+  });
+
+  it("the lossy slugs PATCH and the workbook admit are hashed apart from their clean twins", () => {
+    assertSlugCodeHashesTheReachableLossySlugs();
+  });
+
+  it("an empty slug yields the hash alone, never a bare marker", () => {
+    assertSlugCodeOfAnEmptySlugIsTheHashAlone();
   });
 
   it("a slug the class changes is slugged and hashed", () => {
