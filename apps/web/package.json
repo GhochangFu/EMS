@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "smoke:cr": "node scripts/cr-extension-smoke.mjs",
-    "smoke:realtime": "node scripts/realtime-smoke.mjs"
+    "smoke:realtime": "node scripts/realtime-smoke.mjs",
+    "predev": "node scripts/copy-pdfjs-assets.mjs",
+    "prebuild": "node scripts/copy-pdfjs-assets.mjs"
   },
   "dependencies": {
     "@bms/shared": "workspace:*",

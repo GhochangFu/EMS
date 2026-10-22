@@ -1,13 +1,13 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
-import { aFile, answered, chips, choose, openPanel, READY_WITH_FILES, renderDock, send, stub } from "./copilot-dock.spec";
+import { aFile, answered, chips, CONVERSATION_ID, choose, openPanel, READY_WITH_FILES, renderDock, send, stub } from "./copilot-dock.spec";
 
 /**
  * `F4.269` (ADR 0105) — the dock sends a picked PDF's first page as a PNG, in
  * place of the PDF. `pdfjs-dist` is stubbed at the module seam by
  * `copilot-dock-pdf.test.tsx` (`vi.mock`), delegating to `PDFJS_FAKE` below;
- * jsdom has no canvas, so `getContext` and `toBlob` are spies on the prototype.
+ * jsdom has no canvas, so `toBlob` is a spy on the prototype (the fake never draws).
  * The real `renderPdfFirstPage` and `prepareChosenFiles` run.
  */
 
@@ -40,7 +40,6 @@ function stubPdf(numPages = 2, fails = false, gate: Promise<void> = Promise.reso
   control.numPages = numPages;
   control.fails = fails;
   control.gate = gate;
-  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as never);
   vi.spyOn(HTMLCanvasElement.prototype, "toBlob").mockImplementation((callback) =>
     callback(new Blob([new Uint8Array([137, 80, 78, 71])], { type: "image/png" })),
   );
@@ -132,4 +131,109 @@ export async function dropsARenderInFlightOnAPickOfAnotherOrganization(): Promis
   release();
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(chips()).toEqual(["valve.png"]);
+}
+
+/** Holds the stubbed document until the returned `release` is called. */
+function holdPdf(): () => void {
+  let release = (): void => undefined;
+  stubPdf(2, false, new Promise<void>((resolve) => (release = resolve)));
+  return () => release();
+}
+
+/**
+ * A PDF whose page is still rendering shows a "Rendering <name>…" chip, gone once it lands.
+ * Mutation: drop the chip → red.
+ */
+export async function showsARenderingChipWhileThePageRenders(): Promise<void> {
+  stub(READY_WITH_FILES);
+  const release = holdPdf();
+  await attachReady();
+  choose(aFile("sld.pdf", 3, "application/pdf"));
+  expect(await screen.findByText("Rendering sld.pdf…")).toBeInTheDocument();
+  release();
+  await waitFor(() => expect(chips()).toEqual(["sld-page-1.png"]));
+  expect(screen.queryByText("Rendering sld.pdf…")).toBeNull();
+}
+
+/**
+ * Send waits for a page render in flight, so the turn cannot leave without the page.
+ * Mutation: drop `rendering.length > 0` from the button's `disabled` → red.
+ */
+export async function disablesSendWhileARenderIsPending(): Promise<void> {
+  stub(READY_WITH_FILES);
+  const release = holdPdf();
+  await attachReady();
+  choose(aFile("sld.pdf", 3, "application/pdf"));
+  fireEvent.change(screen.getByRole("textbox", { name: "Message the copilot" }), { target: { value: "read it" } });
+  await screen.findByText("Rendering sld.pdf…");
+  expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
+  release();
+  // The positive control: the same button is enabled once the page lands.
+  await waitFor(() => expect(screen.getByRole("button", { name: "Send" })).toBeEnabled());
+}
+
+/**
+ * Enter does not send while a page render is in flight.
+ * Mutation: drop `rendering.length > 0` from `submit`'s guard → red.
+ */
+export async function holdsEnterWhileARenderIsPending(): Promise<void> {
+  const stubs = stub(READY_WITH_FILES);
+  const release = holdPdf();
+  await attachReady();
+  choose(aFile("sld.pdf", 3, "application/pdf"));
+  await screen.findByText("Rendering sld.pdf…");
+  await send("read it");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(stubs.turn).not.toHaveBeenCalled();
+  release();
+  await waitFor(() => expect(chips()).toEqual(["sld-page-1.png"]));
+  // The positive control: the same Enter sends once the page lands.
+  await send("read it");
+  await waitFor(() => expect(stubs.turn).toHaveBeenCalledTimes(1));
+}
+
+/**
+ * A page that lands while a turn is in flight stays for the next turn; only the sent files go.
+ * The Attach input is disabled during a send, so the pick is a `change` dispatched on it: this
+ * holds `onSuccess` itself, as defence in depth. Mutation: `setFiles([])` in `onSuccess` → red.
+ */
+export async function keepsAPageThatLandsDuringASend(): Promise<void> {
+  const stubs = stub(READY_WITH_FILES);
+  // Bound to the organization, so the thread the send seeds keeps the Attach control.
+  stubs.create.mockResolvedValue({
+    id: CONVERSATION_ID,
+    organizationId: ORG_ID,
+    title: null,
+    createdAt: "2026-10-22T10:00:00.000Z",
+    lastTurnAt: "2026-10-22T10:00:00.000Z",
+  });
+  let answer = (): void => undefined;
+  stubs.turn.mockImplementation(
+    () => new Promise((resolve) => (answer = () => resolve(answered("read it", "A diagram.")))),
+  );
+  stubPdf();
+  await attachReady();
+  choose(aFile("plant.png"));
+  await send("read it");
+  await waitFor(() => expect(stubs.turn).toHaveBeenCalledTimes(1));
+  choose(aFile("sld.pdf", 3, "application/pdf"));
+  await waitFor(() => expect(chips()).toEqual(["plant.png", "sld-page-1.png"]));
+  answer();
+  await waitFor(() => expect(chips()).toEqual(["sld-page-1.png"]));
+}
+
+/**
+ * A page that lands later never clears a banner another pick set.
+ * Mutation: `setBanner(problems.length > 0 ? … : null)` on the late path → red.
+ */
+export async function keepsAnotherBannerWhenAPageLands(): Promise<void> {
+  stub(READY_WITH_FILES);
+  const release = holdPdf();
+  await attachReady();
+  choose(aFile("sld.pdf", 3, "application/pdf"));
+  choose(aFile("notes.exe"));
+  expect(await screen.findByRole("alert")).toHaveTextContent('"notes.exe" is not a PNG, JPEG, WebP, PDF or SVG file.');
+  release();
+  await waitFor(() => expect(chips()).toEqual(["sld-page-1.png"]));
+  expect(screen.getByRole("alert")).toHaveTextContent('"notes.exe" is not a PNG, JPEG, WebP, PDF or SVG file.');
 }

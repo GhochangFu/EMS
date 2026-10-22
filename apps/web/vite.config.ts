@@ -41,6 +41,16 @@ export default defineConfig({
       { find: "@bms/shared", replacement: resolve(dir, "../../packages/shared/src/index.ts") },
     ],
   },
+  /**
+   * `F4.269` (ADR 0105): the `pdfjs-dist` worker is imported with `?worker&url`,
+   * so Vite emits it as `assets/*.js`, a type nginx serves as JavaScript (its
+   * `mime.types` has no `.mjs`). `pdfjs-dist` 5 starts it with
+   * `new Worker(src, { type: "module" })`, and the worker file ends in an
+   * `export`, so it must stay an ES module: the default `"iife"` is not.
+   */
+  worker: {
+    format: "es",
+  },
   server: {
     port: 5173,
   },

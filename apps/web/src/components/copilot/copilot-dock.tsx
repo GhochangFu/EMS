@@ -31,7 +31,7 @@ import { canAccessOnboarding, canAuthorDashboards } from "../../lib/admin-access
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { ATTACHMENT_EXTENSIONS, attachmentProblem, sizeLabel, splitAttachmentRecords, unscrubbedSentence } from "../../lib/copilot-attachments";
-import { isPdfFile, prepareChosenFiles, renderedPageCount, type PreparedFile } from "../../lib/copilot-pdf-page";
+import { isPdfFile, prepareChosenFiles, renderedPageCount, withoutEach, type PreparedFile } from "../../lib/copilot-pdf-page";
 import { ONBOARDING_DRAFTS, onboardingDraftsKey } from "../../lib/copilot-invalidations";
 import type { AuthUser } from "../../stores/auth-store";
 import {
@@ -335,6 +335,8 @@ function DockPanel({
   const filesRef = useRef(files);
   filesRef.current = files;
   const dropEpoch = useRef(0);
+  // The names of the PDFs whose page render is in flight: each shows a chip, and Send waits for them.
+  const [rendering, setRendering] = useState<string[]>([]);
   // The scope moved away from one that takes files (a pick, a skill, a refused key): drop the chosen ones.
   useEffect(() => {
     if (!attachAllowed) setFiles([]);
@@ -468,8 +470,9 @@ function DockPanel({
       return sendCopilotTurn(id, message, files, useWizardStore.getState().openWizards());
     },
     onSuccess: (data, sent) => {
-      // The files went with the turn; a refused send (onError) keeps them for another try.
-      if (sent.files.length > 0) setFiles([]);
+      // The files went with the turn; a refused send (onError) keeps them for another try. Only those:
+      // a page render that landed during the send stays for the next one.
+      if (sent.files.length > 0) setFiles((prev) => prev.filter((f) => !sent.files.includes(f)));
       // Before any cache write, the early skill write included: a focus read that began before the turn stored its rows must not overwrite them.
       void queryClient.cancelQueries({ queryKey: copilotConversationKey(data.conversationId) });
       // Before any early return: a skill state answers even when nothing was stored (a closed or lost session).
@@ -671,12 +674,17 @@ function DockPanel({
       return;
     }
     const epoch = dropEpoch.current;
-    void prepareChosenFiles(chosen).then((prepared) => {
-      if (epoch === dropEpoch.current) addChosen(prepared);
-    });
+    const pdfs = chosen.filter(isPdfFile).map((file) => file.name);
+    setRendering((prev) => [...prev, ...pdfs]);
+    void prepareChosenFiles(chosen)
+      .then((prepared) => {
+        if (epoch === dropEpoch.current) addChosen(prepared, true);
+      })
+      .finally(() => setRendering((prev) => withoutEach(prev, pdfs)));
   }
 
-  function addChosen(chosen: readonly PreparedFile[]): void {
+  /** A render that lands later (`late`) only adds its own problems; it never clears another banner. */
+  function addChosen(chosen: readonly PreparedFile[], late = false): void {
     const next = [...filesRef.current];
     const problems: string[] = [];
     let overCount = false;
@@ -696,7 +704,8 @@ function DockPanel({
     if (overTotal) problems.push(`The files of one message may be at most ${sizeLabel(MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES)} together.`);
     filesRef.current = next;
     setFiles(next);
-    setBanner(problems.length > 0 ? problems.join(" ") : null);
+    if (problems.length > 0) setBanner(problems.join(" "));
+    else if (!late) setBanner(null);
   }
 
   function removeFile(index: number): void {
@@ -704,7 +713,7 @@ function DockPanel({
   }
 
   function submit(): void {
-    if (!input.trim() || busy) {
+    if (!input.trim() || busy || rendering.length > 0) {
       return;
     }
     sendText(input, true);
@@ -920,6 +929,13 @@ function DockPanel({
                   ))}
                 </ul>
               )}
+              {attachAllowed && rendering.length > 0 && (
+                <p role="status" className="mb-2 flex flex-wrap gap-1 text-[11px] text-ink-muted">
+                  {rendering.map((name, i) => (
+                    <span key={`${i}-${name}`} className="surface-pressed rounded px-2 py-0.5">{`Rendering ${name}…`}</span>
+                  ))}
+                </p>
+              )}
               <div className="flex items-end gap-2">
                 {attachAllowed && (
                   <label
@@ -950,7 +966,7 @@ function DockPanel({
                 />
                 <button
                   type="submit"
-                  disabled={busy || input.trim() === ""}
+                  disabled={busy || rendering.length > 0 || input.trim() === ""}
                   // F4.164: name the label's own flag; `busy` is turn.isPending, a follow-up or a skill undo.
                   aria-busy={turn.isPending || followUp !== null || skillUndoing}
                   className="surface-button px-3 py-1 text-xs disabled:opacity-50"
