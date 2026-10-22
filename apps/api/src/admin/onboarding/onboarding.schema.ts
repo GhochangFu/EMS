@@ -74,6 +74,14 @@ export const draftLocationSchema = z
     longitude: z.number().min(-180).max(180),
     province: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.province"]).optional(),
     capital: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.capital"]).optional(),
+    // F4.243 (ADR 0098 Amendment 2, B2/B11): same as the shared copy — absent
+    // = not chosen, `null` = a root by choice, a code = the parent.
+    parentCode: z
+      .string()
+      .min(1)
+      .max(ONBOARDING_DRAFT_STRING_MAX["location.parentCode"])
+      .nullable()
+      .optional(),
     // `F4.170` owner ruling 20 (compliance review B1).
     meta: z
       .record(z.unknown())

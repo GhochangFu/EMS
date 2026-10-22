@@ -156,6 +156,10 @@ export const ONBOARDING_DRAFT_STRING_MAX = {
   // reserves (the field is `.optional()`), but a *present* one that is the
   // empty string is not a location type at all.
   "location.type": 32,
+  // F4.243 (ADR 0098 Amendment 2, B2/B11) — the parent named by its code, so
+  // the width of `bms.locations.code`. `.min(1)` in both copies: an empty
+  // string is not a code; `null` is a root by choice and absent is unchosen.
+  "location.parentCode": 64,
   "rtus.code": 64,
   "rtus.displayName": 255,
   "rtus.domain": 64,
@@ -219,6 +223,9 @@ export const onboardingDraftLocationSchema = z.object({
   longitude: z.number(),
   province: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.province"]).optional(),
   capital: z.string().max(ONBOARDING_DRAFT_STRING_MAX["location.capital"]).optional(),
+  // F4.243 (ADR 0098 Amendment 2, B2): absent = not chosen yet, `null` = a
+  // root by choice, a code = the parent. Resolved to an id only at commit.
+  parentCode: z.string().min(1).max(ONBOARDING_DRAFT_STRING_MAX["location.parentCode"]).nullable().optional(),
   // `F4.170` owner ruling 20 (compliance review B1).
   meta: z
     .record(z.unknown())
