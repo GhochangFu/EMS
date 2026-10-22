@@ -7844,3 +7844,5 @@ One PR, [#894](https://github.com/GhochangFu/EMS/pull/894) (`09836994`), under [
 **`F4.247` done 2026-10-21** in [#914](https://github.com/GhochangFu/EMS/pull/914) (`17afb2b1`), ADR 0099 Amendment 5 and migration 0115: a copilot Confirm of a widget-list or asset-template edit carries the record's `updated_at` as `If-Match`, and the two routes refuse a stale one with 412. Follow-up `F4.273` (the manual pages).
 
 **`F4.244` done 2026-10-22** in [#916](https://github.com/GhochangFu/EMS/pull/916) (`b223260b`), ADR 0099 Amendment 6: the copilot dock keeps its conversation in `localStorage` (cleared on every session exit) and resumes a pending follow-up wait after a reload, a route change or in a new tab.
+
+**`F4.136` done 2026-10-22** in [#920](https://github.com/GhochangFu/EMS/pull/920) (`3f959e1a`), ADR 0065 Amendment 2: the onboarding chat derives an asset code from the location slug, so an ordinary name yields a readable code with no hash.
