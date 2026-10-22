@@ -310,3 +310,67 @@ operator can still recognise by its prefix, that no other tenant can already
 hold. `F4.136` (an operator refused on a code they never typed) is largely
 closed by this amendment; what remains of it is the readability of the suffix,
 not a refusal.
+
+## Amendment 2 — the asset code is derived from the location slug (2026-10-22)
+
+**Status:** Proposed — ruled 2026-10-22 by the owner under `F4.136` ("Derive
+from slug"); the merge of the `F4.136` PR approves it.
+
+**Context.** Amendment 1 made every derived asset code distinct per distinct
+location *name*, at the cost of an eight-character hash an operator cannot
+read (`ST-MARY-S-WORKS-95289584-ASSET-1`). The hash buys less than it looks.
+The same draft carries `location.slug`, which `bms.locations.slug` holds unique
+across every tenant (`locations_slug_unique`) and which the commit inserts in
+the same transaction as the asset. Two names that differ only outside the
+class — `Plant 1` and `Plant.1` — derive the same slug (`plant-1`), so the
+second tenant is refused on the slug whatever the asset code is. The name hash
+separates codes only where the slug already refuses.
+
+**Amendment: decision 4's producer reads the slug, not the name.** The
+rule-based chat's `assets` branch derives `assets[0].code` from
+`draft.location.slug` with `catalogCodeFromLocationSlug`
+(`onboarding-draft-caps.ts`): the slug is run through `catalogCodeSlug`,
+upper-cased and marked `-ASSET-1`, then bounded by `cutToBoundWithHashSuffix`
+as before. A derived slug is already `[a-z0-9-]`, so it takes no hash:
+`St. Mary's Works` → slug `st-mary-s-works` → `ST-MARY-S-WORKS-ASSET-1`.
+
+**The distinctness ruling still holds, now over the slug.** `F4.104` owner
+ruling 6 asks that a derivation onto a globally unique column never merge two
+values it was given. A slug reaches the draft from a `PATCH`, which validates
+`/^[a-z0-9-]+$/` (`onboarding.schema.ts`), or a workbook cell, which the
+importer lower-cases (`onboarding-excel.service.ts`). The lossy slugs that can
+actually arrive are therefore the ones `catalogCodeSlug` trims or collapses:
+`-plant`, `plant-` and `plant--1` would otherwise share a code with `plant`
+and `plant-1`. Whenever the slug is empty, `catalogCodeSlug` changes it, or it
+holds an upper-case letter, the code takes the eight-character hash of the
+**whole slug** (Amendment 1's rule, moved from the name to the slug); an empty
+slug yields the hash alone, never a bare `-ASSET-1`. No producer writes an
+upper-case slug today — that check is defence against a future path that
+admits one. Distinct slugs therefore give distinct codes, except for a
+collision of the 32-bit hash, which a caller can construct (`-plant` and
+`plant-42b9d71d` both give `PLANT-42B9D71D-ASSET-1`); such a clash reaches
+`assets_code_unique`, which the commit answers as a translated 400, not a 500.
+
+**What this does not change.** The `assets` branch cannot run without a
+location, so the live fallback to `catalogCodeFromLocationName` (Amendment 1
+unchanged) is a location whose slug is empty — only a blank workbook slug cell
+gives one — and it derives from the location name. The Excel importer still
+copies `asset_code` verbatim. Decisions 1, 2, 3 and 5 stand.
+
+**Consequences.** The pinned values Amendment 1 moved move back for every
+name whose derived slug is clean: `St. Mary's Works` gives
+`ST-MARY-S-WORKS-ASSET-1` again. Two tenants whose names derive one slug are
+refused at `locations_slug_unique` (a translated 400) rather than reaching two
+distinct codes first; that was already the outcome at commit. The slug
+derivation itself (`deriveLocationPatch`) hashes only on a length cut, so
+names with no character in `[a-z0-9]` still share the slug `location`; that is
+a slug residual, not a code one, and this amendment does not change it.
+
+**Residual: the code does not follow a later slug change.** The code is
+derived once, on the `assets` turn. A later change of the slug — a `PATCH`, a
+workbook re-upload, or `set_location` with a new name — leaves the asset code
+as it was. The stale code can then refuse another tenant whose name derives
+the old slug, at `assets_code_unique` (a translated 400). This amendment does
+not fix that.
+
+`F4.136` closes with this amendment.

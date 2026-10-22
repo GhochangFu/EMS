@@ -4,7 +4,8 @@ import type { OnboardingDraft, OnboardingPhase } from "@bms/shared";
 import { MAX_ECHOED_CELL_CHARS, MAX_ECHOED_ITEMS } from "../spreadsheet-guard";
 import { OnboardingChatService } from "./onboarding-chat.service";
 import type { ChatTurnResult } from "./onboarding-chat.service";
-import { catalogCodeFromLocationName, catalogCodeSlug } from "./onboarding-draft-caps";
+import { catalogCodeFromLocationSlug, catalogCodeSlug } from "./onboarding-draft-caps";
+import { deriveLocationPatch } from "./onboarding-location-derive";
 import { MAX_RTU_TOPIC_CHARS } from "./onboarding-excel.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 import { onboardingDraftSchema } from "./onboarding.schema";
@@ -485,11 +486,11 @@ function requiredItem<T>(value: T | undefined, message: string): T {
   return value;
 }
 
-/** A stored location, as the `assets` and `rtu` branches read it back. */
+/** A stored location, with the slug the location branch derives from `name` (F4.136). */
 function locationNamed(name: string): NonNullable<OnboardingDraft["location"]> {
   return {
     name,
-    slug: "site",
+    slug: deriveLocationPatch({ name, stored: undefined }).slug,
     code: "SITE",
     type: "smoc_campus",
     latitude: -25.7,
@@ -528,13 +529,12 @@ export function draftBeforeAssets(locationName: string): OnboardingDraft {
 const LEGAL_LOCATION_NAME = "Berhampur Water Treatment Plant ".repeat(3).trim();
 
 /**
- * The code the `assets` branch actually stores — the real producer, bound and
- * all. It was the pre-cut value until the `F2.23` post-merge sweep; the fix
- * folds the loss-hash into the same function, so a spec that rebuilt the
- * pre-cut form by hand would be asserting its own arithmetic.
+ * The code the `assets` branch stores for a location named `site` — the real
+ * producer over the slug `draftBeforeAssets` stores (F4.136, ADR 0065
+ * Amendment 2), so the spec never rebuilds the derivation by hand.
  */
 function assetCodeFor(site: string): string {
-  return catalogCodeFromLocationName(site);
+  return catalogCodeFromLocationSlug(locationNamed(site).slug);
 }
 
 /**
@@ -871,9 +871,9 @@ export async function assertRuleBasedTurnCutsWholeCharacters(): Promise<void> {
   // or `config.topic` would leave all of them green — the "asserted in one
   // direction only" shape this file has already been corrected for once. Each
   // branch below carries the same astral payload and the same `JSON.stringify`
-  // oracle. `assets[].code` is no longer one of the sites: since F2.23 (ADR
-  // 0065 decision 4) `catalogCodeSlug` reduces the name to ASCII before the
-  // cut, so the code cannot carry a surrogate at all, and the length case in
+  // oracle. `assets[].code` is no longer one of the sites: since F4.136 (ADR
+  // 0065 Amendment 2) it derives from the ASCII location slug, never the name,
+  // so the code cannot carry a surrogate at all, and the length case in
   // `assertRuleBasedTurnBoundsDerivedDraftStrings` is its gate. What this
   // branch asserts on the code is the exact value the slug yields.
   const assetsTurn = await ruleBasedTurn("One asset", draftBeforeAssets(astral), "assets");
@@ -887,8 +887,8 @@ export async function assertRuleBasedTurnCutsWholeCharacters(): Promise<void> {
       `${JSON.stringify(astralAsset.siteName).slice(0, 80)}`,
   );
   assert(
-    astralAsset.code === "BERHAMPUR-691F771F-ASSET-1",
-    `the astral run collapses and the name it dropped is carried by the hash, ` +
+    astralAsset.code === "BERHAMPUR-ASSET-1",
+    `the code follows the derived slug, where the astral run is already gone (F4.136), ` +
       `got ${JSON.stringify(astralAsset.code)}`,
   );
   const assetsParsed = onboardingDraftSchema.safeParse(assetsTurn.draftPatch);

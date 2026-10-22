@@ -4,9 +4,9 @@ import {
   ONBOARDING_DRAFT_STRING_MAX,
 } from "@bms/shared";
 
-import { catalogCodeSlug } from "./onboarding-draft-caps";
 import { COMMIT_UNIQUE_CONFLICTS } from "./onboarding-commit-conflict";
 import { draftBeforeAssets, ruleBasedTurn } from "./onboarding-chat.service.spec";
+import { catalogCodeFromLocationName } from "./onboarding-draft-caps";
 import { onboardingDraftSchema } from "./onboarding.schema";
 
 function assert(condition: boolean, message: string): void {
@@ -34,12 +34,27 @@ function preRowAssetCode(site: string): string {
   return `${site.replace(/\s+/g, "-").toUpperCase()}-ASSET-1`;
 }
 
-/** The asset the rule-based `assets` branch yields for a stored location name. */
-async function assetCodeFromLocation(name: string): Promise<{
+/**
+ * The asset the rule-based `assets` branch yields for a stored location name,
+ * and the slug that location carries. Since `F4.136` (ADR 0065 Amendment 2)
+ * the code derives from the slug, and `draftBeforeAssets` stores the slug the
+ * location branch derives from the name.
+ */
+async function assetCodeFromLocation(
+  name: string,
+  storedSlug?: string,
+): Promise<{
   code: string;
+  slug: string;
   patch: Awaited<ReturnType<typeof ruleBasedTurn>>["draftPatch"];
 }> {
-  const turn = await ruleBasedTurn("One asset", draftBeforeAssets(name), "assets");
+  const built = draftBeforeAssets(name);
+  const draft =
+    storedSlug === undefined || built.location === undefined
+      ? built
+      : { ...built, location: { ...built.location, slug: storedSlug } };
+  const slug = draft.location?.slug ?? "";
+  const turn = await ruleBasedTurn("One asset", draft, "assets");
   const asset = turn.draftPatch.assets?.[0];
   if (asset === undefined) {
     throw new Error("this case must reach the rule-based assets branch, or it measures the OpenAI one");
@@ -48,15 +63,15 @@ async function assetCodeFromLocation(name: string): Promise<{
     asset.name === "Primary Device",
     "only the rule-based branch names the asset — this patch came from elsewhere",
   );
-  return { code: asset.code, patch: turn.draftPatch };
+  return { code: asset.code, slug, patch: turn.draftPatch };
 }
 
 /** A name with `.`, `'` and spaces yields a code inside the class, and nothing else changes. */
 export async function assertAssetsTurnSlugifiesTheLocationName(): Promise<void> {
   const { code } = await assetCodeFromLocation("St. Mary's Works");
   assert(
-    code === "ST-MARY-S-WORKS-95289584-ASSET-1",
-    `each illegal run becomes one "-" before the upper-case and the marker, got "${code}"`,
+    code === "ST-MARY-S-WORKS-ASSET-1",
+    `the code is the derived slug, upper-cased and marked, with no hash (F4.136), got "${code}"`,
   );
 }
 
@@ -99,6 +114,28 @@ export async function assertAssetsTurnPatchSatisfiesTheSchema(): Promise<void> {
 }
 
 /**
+ * `F4.136` — the branch reads the **stored** slug, not one re-derived from the
+ * name. `West Campus HQ` derives `west-campus-hq`; the stored `wc-hq` must
+ * win. Mutation: re-derive the slug from the name in the branch and the code
+ * is `WEST-CAMPUS-HQ-ASSET-1`.
+ */
+export async function assertAssetsTurnReadsTheStoredSlug(): Promise<void> {
+  const { code } = await assetCodeFromLocation("West Campus HQ", "wc-hq");
+  assert(code === "WC-HQ-ASSET-1", `the code derives from the stored slug "wc-hq", got "${code}"`);
+}
+
+/**
+ * A location with an empty slug (only a blank workbook slug cell gives one)
+ * derives the code from the location name. Mutation: drop the call-site
+ * `slug !== ""` guard and the code is the hash of `""`, not the name's code.
+ */
+export async function assertAssetsTurnWithAnEmptySlugDerivesFromTheName(): Promise<void> {
+  const { code } = await assetCodeFromLocation("West Campus HQ", "");
+  const expected = catalogCodeFromLocationName("West Campus HQ");
+  assert(code === expected, `an empty slug falls back to the name's code "${expected}", got "${code}"`);
+}
+
+/**
  * Slug before upper-case. `"ß".toUpperCase()` is `"SS"`, so upper-casing first
  * would fold a letter outside the class into two inside it and the name would
  * yield `STRASSE-WORKS-ASSET-1`; the class is safe either way, but the code an
@@ -107,26 +144,26 @@ export async function assertAssetsTurnPatchSatisfiesTheSchema(): Promise<void> {
 export async function assertAssetsTurnSlugifiesBeforeUpperCasing(): Promise<void> {
   const { code } = await assetCodeFromLocation("Straße Works");
   assert(
-    code === "STRA-E-WORKS-7271CB65-ASSET-1",
+    code === "STRA-E-WORKS-ASSET-1",
     `"ß" is outside the class and becomes "-" before the upper-case, got "${code}"`,
   );
   assert(
-    code !== "STRASSE-WORKS-7271CB65-ASSET-1",
+    code !== "STRASSE-WORKS-ASSET-1",
     "upper-casing first folds ß into SS and yields the wrong code for this name",
   );
 }
 
 /**
- * A name with nothing inside the class collapses to the empty slug, so the
- * code is the hash of that name plus the marker — legal under `.min(2)` and
- * the class, and distinct from every other all-illegal name. Before the
- * post-merge fix it was the marker alone, which every such name shared on a
- * globally unique column. Stated executably rather than inherited from the
- * plan's arithmetic.
+ * A name with nothing in `[a-z0-9]` derives the slug `location`, so the code
+ * is `LOCATION-ASSET-1` — legal under `.min(2)` and the class. Every such
+ * name shares that slug, and so that code: ADR 0065 Amendment 2 records it as
+ * a slug residual, refused at `locations_slug_unique` before the code. The
+ * all-illegal *slug* (a hand-written one) is `onboarding-draft-caps.spec.ts`'s.
  */
 export async function assertAssetsTurnFromAnAllIllegalName(): Promise<void> {
-  const { code, patch } = await assetCodeFromLocation("\u{1F600}\u{1F600}");
-  assert(code === "91AD485B-ASSET-1", `an all-illegal name yields the hash of that name plus the marker, got "${code}"`);
+  const { code, slug, patch } = await assetCodeFromLocation("\u{1F600}\u{1F600}");
+  assert(slug === "location", `this case needs the fallback slug, got "${slug}"`);
+  assert(code === "LOCATION-ASSET-1", `an all-illegal name yields the fallback slug's code, got "${code}"`);
   const parsed = onboardingDraftSchema.safeParse(patch);
   assert(
     parsed.success,
@@ -162,25 +199,22 @@ export async function assertAssetsTurnKeepsACutCodeInsideTheClass(): Promise<voi
 }
 
 /**
- * The `F2.23` security review (M1) asked whether the slug's collisions are a
- * new cross-tenant refusal. The post-merge sweep then found the sharper
- * problem underneath: the slug removed the distinctness `F4.104` owner
- * ruling 6 established, because `cutToBoundWithHashSuffix` appends its
- * discriminator only when the LENGTH cut fires and the slug shortens the
- * value before the length is measured. Measured on `3e3b4c86`, five location
- * names produced three codes.
+ * `F4.136` (ADR 0065 Amendment 2) — the property the `assets` branch holds on
+ * `bms.assets.code`, unique across every tenant, is now stated over the
+ * location **slug**: two names derive one code **if and only if** they derive
+ * one slug. `bms.locations.slug` is unique too (`locations_slug_unique`) and
+ * the commit inserts the location before the asset, so where two codes
+ * coincide the slug has already refused the second tenant — one refusal, on a
+ * value the operator can see and edit.
  *
- * `catalogCodeFromLocationName` now hashes the original name whenever the
- * slug drops anything, so **two distinct names no longer share a code at
- * all**. This drives the real rule-based branch over a pool built to collide
- * under the old producer and asserts exactly that.
+ * Amendment 1 hashed the name instead, so `Plant 1` and `Plant.1` reached two
+ * codes and were refused on the slug anyway. Driving the branch from the name
+ * again reddens the "same slug, same code" half below.
  *
- * The translation check stays, and it is not redundant: two tenants can still
- * reach one code by choosing the *same* location name, which no derivation
- * can separate. That case must remain a translated 400 rather than an
- * untranslated 500, on either constraint.
+ * The translation check stays: whichever constraint a collision reaches, the
+ * commit answers a translated 400 rather than an untranslated 500.
  */
-export async function assertDistinctNamesNoLongerShareADerivedCode(): Promise<void> {
+export async function assertDerivedCodesCollideOnlyWhereSlugsDo(): Promise<void> {
   const names = [
     "Plant 1",
     "Plant.1",
@@ -190,36 +224,44 @@ export async function assertDistinctNamesNoLongerShareADerivedCode(): Promise<vo
     "कारखाना",
     "工厂",
     // F3.27: two characters, not one — `add_asset` now refuses a one-character
-    // `siteName` (min 2), as the validator did. Still a name the slug empties.
+    // `siteName` (min 2), as the validator did.
     "İİ",
     "İstanbul Works",
     "St. Mary's Works",
     "Straße Works",
   ];
-  const seen = new Map();
+  const rows = [];
   for (const name of names) {
-    const { code } = await assetCodeFromLocation(name);
-    const prior = seen.get(code);
-    assert(
-      prior === undefined,
-      `two distinct location names must no longer derive one code: ` +
-        `${JSON.stringify(prior)} and ${JSON.stringify(name)} both gave "${code}"`,
-    );
-    seen.set(code, name);
+    rows.push({ name, ...(await assetCodeFromLocation(name)) });
   }
-  // Positive control: the pool has to be one the OLD producer collapsed, or
-  // the assertion above is satisfied by any pool at all.
-  const oldCodes = new Set(
-    names.map((n) => `${catalogCodeSlug(n).toUpperCase()}-ASSET-1`),
-  );
+  let sharedSlugPairs = 0;
+  for (const [i, a] of rows.entries()) {
+    for (const b of rows.slice(i + 1)) {
+      if (a.slug === b.slug) {
+        sharedSlugPairs += 1;
+      }
+      assert(
+        (a.code === b.code) === (a.slug === b.slug),
+        `two names share a code exactly when they share a slug: ${JSON.stringify(a.name)} ` +
+          `(slug "${a.slug}", code "${a.code}") and ${JSON.stringify(b.name)} (slug "${b.slug}", code "${b.code}")`,
+      );
+    }
+  }
+  // Positive controls: the pool must exercise both halves of the "if and only
+  // if", or the loop above passes on a pool where every slug differs (the
+  // name-hashing producer) or where every code is one value.
+  const plant1 = rows.filter((row) => row.slug === "plant-1");
   assert(
-    oldCodes.size < names.length,
-    `the pool must collide under the pre-fix producer, or this proves nothing: ` +
-      `${oldCodes.size} codes for ${names.length} names`,
+    plant1.length === 5 && sharedSlugPairs >= 10,
+    `the five "Plant 1" spellings must derive one slug, or the shared-code half is untested: ` +
+      `${plant1.length} rows, ${sharedSlugPairs} shared-slug pairs`,
+  );
+  const distinctSlugs = new Set(rows.map((row) => row.slug)).size;
+  assert(
+    distinctSlugs >= 5 && new Set(rows.map((row) => row.code)).size === distinctSlugs,
+    `the pool must carry several distinct slugs, each with its own code: ${distinctSlugs} slugs`,
   );
 
-  // Whichever constraint an identical-name collision reaches, the commit
-  // answers a translated 400 rather than an untranslated 500.
   for (const constraint of ["assets_code_unique", "locations_slug_unique"]) {
     const mapped = COMMIT_UNIQUE_CONFLICTS.get(constraint);
     if (mapped === undefined) {

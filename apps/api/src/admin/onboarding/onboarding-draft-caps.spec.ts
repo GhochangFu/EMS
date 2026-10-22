@@ -13,6 +13,7 @@ import type { OnboardingDraft } from "@bms/shared";
 
 import {
   catalogCodeFromLocationName,
+  catalogCodeFromLocationSlug,
   catalogCodeSlug,
   cellLengthProblem,
   cutToBound,
@@ -573,6 +574,115 @@ export function assertCatalogCodeCarriesTheNameApartFromTheClass(): void {
     catalogCodeFromLocationName("Plant_A-2") === "PLANT_A-2-ASSET-1",
     `every character the class admits survives, got "${catalogCodeFromLocationName("Plant_A-2")}"`,
   );
+}
+
+/** The upper-case eight-hex hash of the whole `value`, as the producer takes it. */
+function upperHash8(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex").slice(0, 8).toUpperCase();
+}
+
+/**
+ * `F4.136`, ADR 0065 Amendment 2 — the rule-based chat derives the asset code
+ * from the draft's location **slug**. A derived slug is already `[a-z0-9-]`,
+ * so it loses nothing and takes no hash: the readable code Amendment 1 hid
+ * behind a name hash comes back.
+ */
+export function assertSlugCodeOfACleanSlugTakesNoHash(): void {
+  const code = catalogCodeFromLocationSlug("st-mary-s-works");
+  assert(code === "ST-MARY-S-WORKS-ASSET-1", `a derived slug yields a readable code, got "${code}"`);
+}
+
+/** The positive control of the same claim on a one-word slug. */
+export function assertSlugCodeOfAOneWordSlug(): void {
+  const code = catalogCodeFromLocationSlug("berhampur");
+  assert(code === "BERHAMPUR-ASSET-1", `a one-word slug yields its own code, got "${code}"`);
+}
+
+/** `_` is inside the catalog class, so a slug that carries one is still lossless. */
+export function assertSlugCodeKeepsAnUnderscore(): void {
+  const code = catalogCodeFromLocationSlug("plant_1");
+  assert(code === "PLANT_1-ASSET-1", `an underscore survives with no hash, got "${code}"`);
+}
+
+/**
+ * Defence, not a live path: `PATCH` validates `/^[a-z0-9-]+$/` and the
+ * workbook lower-cases, so no producer writes an upper-case slug today. Should
+ * one ever arrive, `Plant-A` and `plant-a` would upper-case to one code, so
+ * the upper-case letter counts as information the code drops and takes the
+ * hash of the whole slug. Mutation: drop the `/[A-Z]/` test and both give
+ * `PLANT-A-ASSET-1`.
+ */
+export function assertSlugCodeKeepsCaseDistinctSlugsApart(): void {
+  const upper = catalogCodeFromLocationSlug("Plant-A");
+  const lower = catalogCodeFromLocationSlug("plant-a");
+  assert(upper !== lower, `"Plant-A" and "plant-a" must not share a code, both gave "${upper}"`);
+  assert(lower === "PLANT-A-ASSET-1", `the lower-case slug takes no hash, got "${lower}"`);
+  assert(
+    upper === `PLANT-A-${upperHash8("Plant-A")}-ASSET-1`,
+    `the upper-case slug carries the hash of the whole slug, got "${upper}"`,
+  );
+}
+
+/**
+ * The lossy slugs that can actually reach a draft through `PATCH` or the
+ * workbook: a leading `-`, a trailing `-`, a doubled `-`. `catalogCodeSlug`
+ * trims or collapses each, so each takes the hash of the whole slug and stays
+ * apart from the clean slug it would otherwise fold onto.
+ */
+export function assertSlugCodeHashesTheReachableLossySlugs(): void {
+  const pairs: ReadonlyArray<readonly [string, string]> = [
+    ["-plant", "plant"],
+    ["plant-", "plant"],
+    ["plant--1", "plant-1"],
+  ];
+  for (const [lossy, clean] of pairs) {
+    const code = catalogCodeFromLocationSlug(lossy);
+    const expected = `${catalogCodeSlug(lossy).toUpperCase()}-${upperHash8(lossy)}-ASSET-1`;
+    assert(code === expected, `"${lossy}" is hashed over the whole slug: expected "${expected}", got "${code}"`);
+    assert(
+      code !== catalogCodeFromLocationSlug(clean),
+      `"${lossy}" and "${clean}" must not share a code, both gave "${code}"`,
+    );
+  }
+}
+
+/**
+ * An empty slug is lossy: it yields the hash of `""` alone, never a bare
+ * `-ASSET-1`. Mutation: drop `cleaned !== ""` and the code is `-ASSET-1`.
+ */
+export function assertSlugCodeOfAnEmptySlugIsTheHashAlone(): void {
+  const code = catalogCodeFromLocationSlug("");
+  assert(code === `${upperHash8("")}-ASSET-1`, `an empty slug yields HASH-ASSET-1, got "${code}"`);
+}
+
+/** A slug with a character outside the class is slugged and hashed (defence, as above). */
+export function assertSlugCodeHashesASlugTheClassChanges(): void {
+  const code = catalogCodeFromLocationSlug("Site A");
+  assert(code === `SITE-A-${upperHash8("Site A")}-ASSET-1`, `"Site A" is slugged and hashed, got "${code}"`);
+  assert(code !== catalogCodeFromLocationSlug("site-a"), `"Site A" and "site-a" stay apart, got "${code}"`);
+}
+
+/** An all-illegal slug gives the hash alone, never a leading `-`. */
+export function assertSlugCodeOfAnAllIllegalSlugIsTheHashAlone(): void {
+  const code = catalogCodeFromLocationSlug("!!!");
+  assert(code === `${upperHash8("!!!")}-ASSET-1`, `an all-illegal slug yields HASH-ASSET-1, got "${code}"`);
+  assert(!code.startsWith("-"), `the code carries no leading separator, got "${code}"`);
+}
+
+/** A clean slug at the slug bound is cut by the length hash and stays legal. */
+export function assertSlugCodeOfALongSlugIsCutInsideTheClass(): void {
+  const slug = "a".repeat(64);
+  const code = catalogCodeFromLocationSlug(slug);
+  assert(
+    code.length <= ONBOARDING_DRAFT_STRING_MAX["assets.code"],
+    `the code stays inside the bound, got ${code.length}`,
+  );
+  assert(CATALOG_CODE_PATTERN.test(code), `the code stays inside the class, got "${code}"`);
+  assert(
+    code === cutToBoundWithHashSuffix(`${"A".repeat(64)}-ASSET-1`, ONBOARDING_DRAFT_STRING_MAX["assets.code"], "upper"),
+    `the length cut carries its own hash and no slug hash, got "${code}"`,
+  );
+  assert(/-[0-9A-F]{8}$/.test(code), `the cut code ends in the length hash, got "${code}"`);
 }
 
 /** A stock template entry; only the count is read. */
