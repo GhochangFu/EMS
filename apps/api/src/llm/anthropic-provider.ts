@@ -47,7 +47,8 @@ export const ANTHROPIC_BASE_URL = "https://api.anthropic.com";
  *   the tool calls would drop them.
  *
  * - Prompt caching (ADR 0099 Amendment 7 C1, F4.249): `system` is one text
- *   block per system message, in order, and `cache_control: ephemeral` marks
+ *   block per non-blank system message, in order, each but the last ending
+ *   with "\n\n" as the old joined string had it; `cache_control: ephemeral` marks
  *   the **first** system block and the **last** tool — no other block. The API
  *   reads tools, then system, so the two marks cache the tools and the tools
  *   plus the fixed prompt; the scope, wizard and PDF lines after it stay out.
@@ -115,19 +116,26 @@ function joinText(content: readonly BetaContentBlock[]): string {
 /** ADR 0099 Amendment 7 C1: the cache breakpoint both marks carry. */
 const EPHEMERAL = { type: "ephemeral" } as const;
 
+/** The separator the system messages were joined with before the blocks; it ends every block but the last. */
+const SYSTEM_SEPARATOR = "\n\n";
+
 /**
- * ADR 0099 Amendment 7 C1: one text block per system message, in order; only
- * the first carries the cache mark. No system message gives an empty array, and
- * the request then has no `system` field.
+ * ADR 0099 Amendment 7 C1: one text block per non-blank system message, in
+ * order; only the first carries the cache mark. Every block but the last ends
+ * with "\n\n", so the blocks concatenate to the text the model saw when the
+ * messages were joined into one string. A blank system message is dropped, so
+ * it never takes the mark. No block left gives an empty array, and the request
+ * then has no `system` field.
  */
 export function toAnthropicSystem(messages: readonly LlmMessage[]): BetaTextBlockParam[] {
-  return messages
+  const contents = messages
     .filter((message): message is { role: "system"; content: string } => message.role === "system")
-    .map((message, index): BetaTextBlockParam =>
-      index === 0
-        ? { type: "text", text: message.content, cache_control: EPHEMERAL }
-        : { type: "text", text: message.content },
-    );
+    .map((message) => message.content)
+    .filter((content) => content.trim() !== "");
+  return contents.map((content, index): BetaTextBlockParam => {
+    const text = index < contents.length - 1 ? content + SYSTEM_SEPARATOR : content;
+    return index === 0 ? { type: "text", text, cache_control: EPHEMERAL } : { type: "text", text };
+  });
 }
 
 /** ADR 0099 Amendment 7 C1: the tools in the caller's order; only the last carries the cache mark. */

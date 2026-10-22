@@ -62,7 +62,7 @@ Where Amendment 6 conflicts with Amendment 2's context paragraph, it wins.
 stable prefix"; Proposed until merge): `F4.249` — the `anthropic` provider marks
 the tool definitions and the system prompt for prompt caching, and the turn
 keeps its prefix byte-stable so the `openai` and `openrouter` providers' automatic
-caching can hit. Where Amendment 7 conflicts with the *Not in this ADR* list, it wins.
+caching can hit.
 
 | # | Question | Options put | Ruled | Decision |
 | --- | --- | --- | --- | --- |
@@ -1236,8 +1236,10 @@ the request to the model's own provider, so it caches as that provider does.
 - **C1 — The `anthropic` provider marks two breakpoints.** `AnthropicProvider`
   sends `cache_control: { type: "ephemeral" }` on the **last tool definition**
   and on the **first system block**. The system parameter becomes one text
-  block per system message, in order, instead of one joined string, so the
-  first block is the fixed prompt (`COPILOT_SYSTEM_PROMPT`; the onboarding
+  block per non-blank system message, in order, instead of one joined string;
+  every block but the last ends with the old `"\n\n"` separator, so the model
+  reads the same text, and a blank system message is dropped before the mark is
+  placed. The first block is the fixed prompt (`COPILOT_SYSTEM_PROMPT`; the onboarding
   agent's `buildSystemPrompt` output) and the scope, wizard and PDF lines after
   it stay outside the cached prefix. The API reads tools, then system, then
   messages, so the first mark caches the tools and the second the tools plus
@@ -1253,8 +1255,8 @@ the request to the model's own provider, so it caches as that provider does.
 - **C3 — Caching is never an input to a decision.** No scope, refusal or
   audit path reads a cache counter. The cached prefix holds no tenant data
   that the uncached request did not already send, and a cache entry is held by
-  the provider under the organization's own key (ADR 0090 Amendment 1), as the
-  request itself is.
+  the provider under the key the request used (the organization's key, or the
+  platform key for a cross-organization turn), as the request itself is.
 - **C4 — It reaches the onboarding agent too.** The onboarding agent loop
   (ADR 0090) uses the same provider class, so C1 applies there as well. Its
   system prompt carries the draft, so only the tool breakpoint hits across
@@ -1264,6 +1266,8 @@ the request to the model's own provider, so it caches as that provider does.
 one-hour cache lifetime; `cache_control` sent through OpenRouter to an
 Anthropic model; a cache counter in the turn log or the usage figures; any
 change to the prompt text, the tool list or the 20 KB tool-definition bound.
+Amendment 7 overrides nothing on the *Not in this ADR* list: that list, and
+ADR 0099 before this amendment, named no caching at all.
 
 **Verification owed.** Unit: the Anthropic request carries `cache_control` on
 the last tool and the first system block only, and the system blocks keep

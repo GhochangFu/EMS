@@ -251,8 +251,8 @@ export async function assertSystemBlocksKeepOrderAndOnlyTheFirstIsCacheMarked(ca
   assert(
     JSON.stringify(body.system) ===
       JSON.stringify([
-        { type: "text", text: "FIXED PROMPT", cache_control: EPHEMERAL },
-        { type: "text", text: "scope line" },
+        { type: "text", text: "FIXED PROMPT\n\n", cache_control: EPHEMERAL },
+        { type: "text", text: "scope line\n\n" },
         { type: "text", text: "wizard line" },
       ]),
     "three system messages are three text blocks in order, and only the first carries cache_control",
@@ -261,12 +261,74 @@ export async function assertSystemBlocksKeepOrderAndOnlyTheFirstIsCacheMarked(ca
   assert(messages.length === 1 && messages[0].role === "user", "no system turn is sent as a message");
 }
 
-/** ADR 0099 Amendment 7 C1: no system message sends no system field; no tool sends no mark. */
-export async function assertNoSystemAndNoToolsSendNoMark(capture: AnthropicCapture): Promise<void> {
+/** ADR 0099 Amendment 7 C1: no system message sends no system field. */
+export async function assertNoSystemMessageSendsNoSystemField(capture: AnthropicCapture): Promise<void> {
+  reset(capture, message([{ type: "text", text: "ok" }]));
+  await provider().complete({ messages: [{ role: "user", content: "hi" }], tools: [TOOL], signal: signal() });
+  const body = capture.requests[0]?.body ?? {};
+  assert(Array.isArray(body.tools) && (body.tools as unknown[]).length === 1, "the one tool is sent");
+  assert(!("system" in body), "no system message sends no system field");
+}
+
+/** ADR 0099 Amendment 7 C1: no tool sends an empty tool list and no mark anywhere. */
+export async function assertNoToolSendsNoMark(capture: AnthropicCapture): Promise<void> {
   reset(capture, message([{ type: "text", text: "ok" }]));
   await provider().complete({ messages: [{ role: "user", content: "hi" }], tools: [], signal: signal() });
   const body = capture.requests[0]?.body ?? {};
-  assert(!("system" in body), "no system message sends no system field");
   assert(Array.isArray(body.tools) && (body.tools as unknown[]).length === 0, "no tool sends an empty tool list");
   assert(!JSON.stringify(body).includes("cache_control"), "the request carries no cache_control at all");
+}
+
+const SYSTEM_TEXTS = ["FIXED PROMPT", "scope line", "wizard line", "pdf line"];
+
+/**
+ * ADR 0099 Amendment 7 C1: the blocks concatenate to the text the model saw
+ * before caching — the system messages joined with "\n\n".
+ */
+export async function assertTheBlocksConcatenateToTheOldJoinedSystem(capture: AnthropicCapture): Promise<void> {
+  reset(capture, message([{ type: "text", text: "ok" }]));
+  await provider().complete({
+    messages: [...SYSTEM_TEXTS.map((content): LlmMessage => ({ role: "system", content })), { role: "user", content: "hi" }],
+    tools: [TOOL],
+    signal: signal(),
+  });
+  const blocks = (capture.requests[0]?.body.system ?? []) as { text: string }[];
+  assert(blocks.length === SYSTEM_TEXTS.length, `one block per system message (${blocks.length})`);
+  const joined = blocks.map((block) => block.text).join("");
+  assert(joined === SYSTEM_TEXTS.join("\n\n"), `the blocks concatenate to the old joined string (${JSON.stringify(joined)})`);
+}
+
+/** ADR 0099 Amendment 7 C1: a blank system message is dropped, and the first block left takes the mark. */
+export async function assertABlankSystemMessageIsDroppedBeforeTheMark(capture: AnthropicCapture): Promise<void> {
+  reset(capture, message([{ type: "text", text: "ok" }]));
+  await provider().complete({
+    messages: [
+      { role: "system", content: "" },
+      { role: "system", content: "x" },
+      { role: "user", content: "hi" },
+    ],
+    tools: [TOOL],
+    signal: signal(),
+  });
+  const body = capture.requests[0]?.body ?? {};
+  assert(
+    JSON.stringify(body.system) === JSON.stringify([{ type: "text", text: "x", cache_control: EPHEMERAL }]),
+    `["", "x"] sends one block "x" that carries the mark (${JSON.stringify(body.system)})`,
+  );
+}
+
+/** ADR 0099 Amendment 7 C1: only blank system messages send no system field. */
+export async function assertOnlyBlankSystemMessagesSendNoSystemField(capture: AnthropicCapture): Promise<void> {
+  reset(capture, message([{ type: "text", text: "ok" }]));
+  await provider().complete({
+    messages: [
+      { role: "system", content: "" },
+      { role: "user", content: "hi" },
+    ],
+    tools: [TOOL],
+    signal: signal(),
+  });
+  const body = capture.requests[0]?.body ?? {};
+  assert(Array.isArray(body.messages) && (body.messages as unknown[]).length === 1, "the user turn is sent");
+  assert(!("system" in body), `[""] sends no system field (${JSON.stringify(body.system)})`);
 }

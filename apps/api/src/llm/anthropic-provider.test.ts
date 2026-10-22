@@ -23,16 +23,20 @@ vi.mock("@anthropic-ai/sdk", () => ({
 }));
 
 import {
+  assertABlankSystemMessageIsDroppedBeforeTheMark,
   assertARefusalIsAProviderError,
   assertAStringUserContentIsSentAsAString,
   assertConsecutiveToolResultsAreOneUserMessage,
   assertImageAndPdfPartsAreNativeBlocks,
   assertMaxTokensIsAProviderError,
-  assertNoSystemAndNoToolsSendNoMark,
+  assertNoSystemMessageSendsNoSystemField,
+  assertNoToolSendsNoMark,
+  assertOnlyBlankSystemMessagesSendNoSystemField,
   assertOnlyTheLastToolIsCacheMarked,
   assertProviderContentIsEchoedBackUnchanged,
   assertSystemBlocksKeepOrderAndOnlyTheFirstIsCacheMarked,
   assertTextOnlyIsFinal,
+  assertTheBlocksConcatenateToTheOldJoinedSystem,
   assertTheCallShapeIsTheAmendmentsOne,
   assertToolUseBlocksBecomeToolCallsWithStringifiedInput,
 } from "./anthropic-provider.spec";
@@ -83,7 +87,23 @@ describe("Anthropic provider (F3.21, ADR 0090 Amendment 1 A1)", () => {
     await assertSystemBlocksKeepOrderAndOnlyTheFirstIsCacheMarked(capture);
   });
 
-  it("sends no system field and no cache mark when there is no system message and no tool (ADR 0099 Amendment 7 C1)", async () => {
-    await assertNoSystemAndNoToolsSendNoMark(capture);
+  it("sends no system field when there is no system message (ADR 0099 Amendment 7 C1)", async () => {
+    await assertNoSystemMessageSendsNoSystemField(capture);
+  });
+
+  it("sends an empty tool list and no cache mark when there is no tool (ADR 0099 Amendment 7 C1)", async () => {
+    await assertNoToolSendsNoMark(capture);
+  });
+
+  it("sends system blocks that concatenate to the old \\n\\n-joined system text (ADR 0099 Amendment 7 C1)", async () => {
+    await assertTheBlocksConcatenateToTheOldJoinedSystem(capture);
+  });
+
+  it("drops a blank system message, so the first block left takes the mark (ADR 0099 Amendment 7 C1)", async () => {
+    await assertABlankSystemMessageIsDroppedBeforeTheMark(capture);
+  });
+
+  it("sends no system field when every system message is blank (ADR 0099 Amendment 7 C1)", async () => {
+    await assertOnlyBlankSystemMessagesSendNoSystemField(capture);
   });
 });
