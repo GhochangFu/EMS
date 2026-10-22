@@ -198,7 +198,7 @@ export function assertTwoCaseMatchesAreNoMatch(): void {
 }
 
 export function assertTheCanonicalCodeIsTheCandidatesOwn(): void {
-  const got = canonicalParentCode("campus-1", PLACEMENT);
+  const got: unknown = canonicalParentCode("campus-1", PLACEMENT);
   assert(got === "CAMPUS-1", `the stored code is the candidate's own, got ${String(got)}`);
 }
 

@@ -41,7 +41,7 @@ async function parentErrorsOfUpload(parentCode: string): Promise<string> {
   const session = sessionRow({ location: PLACE } as OnboardingDraft, "location") as Row;
   const { service } = build({ session, selects: [[session], ORG], candidates: [CAMPUS, OLD], ...workbookNaming(parentCode) });
   const response = await service.uploadExcel(JWT, "s-1", Buffer.from("x"));
-  return JSON.stringify(response.validationErrors.filter((error) => error.path === "location.parentCode"));
+  return JSON.stringify((response.validationErrors ?? []).filter((error) => error.path === "location.parentCode"));
 }
 
 /** U-P1 — an unknown `parent_code` is the not-found field error on the upload response. */
