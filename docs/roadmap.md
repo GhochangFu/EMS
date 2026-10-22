@@ -7848,3 +7848,5 @@ One PR, [#894](https://github.com/GhochangFu/EMS/pull/894) (`09836994`), under [
 **`F4.136` done 2026-10-22** in [#920](https://github.com/GhochangFu/EMS/pull/920) (`3f959e1a`), ADR 0065 Amendment 2: the onboarding chat derives an asset code from the location slug, so an ordinary name yields a readable code with no hash.
 
 **`F4.249` done 2026-10-22** in [#921](https://github.com/GhochangFu/EMS/pull/921) (`6a45f8a3`), ADR 0099 Amendment 7: the Anthropic provider marks the tool definitions and the fixed system prompt for prompt caching, and the copilot keeps that prefix byte-stable for every provider.
+
+**`F4.269` done 2026-10-23** in [#924](https://github.com/GhochangFu/EMS/pull/924) (`47e8ecd8`), ADR 0105: the copilot dock renders a PDF's first page to an image in the browser and sends it to the vision model in place of the PDF.
