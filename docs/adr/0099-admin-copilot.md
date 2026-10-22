@@ -58,6 +58,12 @@ conversation) persists in `localStorage`, so a reload and a new tab resume the
 conversation and a pending follow-up wait; every session exit clears it.
 Where Amendment 6 conflicts with Amendment 2's context paragraph, it wins.
 
+**Amended 2026-10-22 — Amendment 7** (owner-ruled 2026-10-22, "Anthropic marks +
+stable prefix"; Proposed until merge): `F4.249` — the `anthropic` provider marks
+the tool definitions and the system prompt for prompt caching, and the turn
+keeps its prefix byte-stable so the `openai` and `openrouter` providers' automatic
+caching can hit. Where Amendment 7 conflicts with the *Not in this ADR* list, it wins.
+
 | # | Question | Options put | Ruled | Decision |
 | --- | --- | --- | --- | --- |
 | 1 | Copilot or narrow assistant | narrow admin assistant; general copilot; no change | **general copilot** (owner's own choice) | 1 |
@@ -1214,3 +1220,55 @@ pending, claimed, swept or stale row and names the newest recorded one. Live
 stack: a route change and a reload during the wait keep Send held until the
 outcome line arrives; a sign-out removes the key; a deleted conversation
 starts afresh.
+
+## Amendment 7 — prompt caching for the system prompt and the tool definitions (owner, 2026-10-22)
+
+**Status: Proposed — owner ruled 2026-10-22 ("Anthropic marks + stable prefix"); the merge approves the text.**
+
+Every copilot turn sends the system prompt and the read and propose tool
+definitions again, and the agent loop sends them again on each of its up to
+nine calls in that turn (`docs/BACKLOG.md` F4.249). This ADR named no
+caching, so `F3.85` built none. The three providers differ: the Anthropic
+Messages API caches only a prefix that the request marks with `cache_control`;
+the OpenAI API caches a long enough request prefix by itself; OpenRouter passes
+the request to the model's own provider, so it caches as that provider does.
+
+- **C1 — The `anthropic` provider marks two breakpoints.** `AnthropicProvider`
+  sends `cache_control: { type: "ephemeral" }` on the **last tool definition**
+  and on the **first system block**. The system parameter becomes one text
+  block per system message, in order, instead of one joined string, so the
+  first block is the fixed prompt (`COPILOT_SYSTEM_PROMPT`; the onboarding
+  agent's `buildSystemPrompt` output) and the scope, wizard and PDF lines after
+  it stay outside the cached prefix. The API reads tools, then system, then
+  messages, so the first mark caches the tools and the second the tools plus
+  the fixed prompt. The default five-minute lifetime is kept; no beta header
+  is added.
+- **C2 — The prefix stays byte-stable for every provider.** The fixed system
+  prompt is the first message of a turn and carries no clock, user, scope or
+  draft text; the tool definitions are listed in a fixed order (the read
+  registry, then the propose registry, each in declaration order). A spec
+  holds both: the same inputs give byte-identical tools and first system
+  message across two turns. The `openai` and `openrouter` providers send no
+  new field.
+- **C3 — Caching is never an input to a decision.** No scope, refusal or
+  audit path reads a cache counter. The cached prefix holds no tenant data
+  that the uncached request did not already send, and a cache entry is held by
+  the provider under the organization's own key (ADR 0090 Amendment 1), as the
+  request itself is.
+- **C4 — It reaches the onboarding agent too.** The onboarding agent loop
+  (ADR 0090) uses the same provider class, so C1 applies there as well. Its
+  system prompt carries the draft, so only the tool breakpoint hits across
+  turns; inside one turn, the calls of the loop hit both.
+
+**Not in this amendment.** A breakpoint on the conversation history; a
+one-hour cache lifetime; `cache_control` sent through OpenRouter to an
+Anthropic model; a cache counter in the turn log or the usage figures; any
+change to the prompt text, the tool list or the 20 KB tool-definition bound.
+
+**Verification owed.** Unit: the Anthropic request carries `cache_control` on
+the last tool and the first system block only, and the system blocks keep
+their order and text — each with a named mutation; the copilot's fixed
+system prompt and tool definitions are byte-identical across two turns with
+different scopes, wizards and clocks. Live (with a real Anthropic key only):
+the second turn's `usage.cache_read_input_tokens` is above zero. Without a key
+the live check is N/A and is said so.
