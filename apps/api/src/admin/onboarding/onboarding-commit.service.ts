@@ -6,7 +6,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import {
   assetPoints,
@@ -31,6 +31,12 @@ import { withTenant } from "../../database/tenant-context";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { requestMetaForCreate } from "../locations/location-seed-key";
+import {
+  assertParentPlacement,
+  refusal,
+  takeLocationTreeLock,
+  treeGuardRefusal,
+} from "../locations/locations-tree-guards";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { emptyTopicAsNull } from "../rtu-topic";
 import { resolveTelemetrySource, withTelemetrySource, type TelemetrySource } from "../telemetry-source";
@@ -371,10 +377,39 @@ export class OnboardingCommitService {
         }
       }
       const loc = draft.location!;
+      // `F4.243` (ADR 0098 Amendment 2, B3) — a named parent becomes an id here,
+      // and only here. The organization's tree lock first (the lock migration
+      // `0103`'s trigger takes), so no tree write in this organization changes
+      // the parent between this check and the insert. The lock order is quota,
+      // then tree; the locations service takes the tree lock alone, so the two
+      // cannot deadlock. The lookup is on the tenant transaction and names the
+      // organization: absent and foreign are one answer,
+      // `location_parent_not_found`, as in `assertParentPlacement`. The cycle
+      // guard cannot fire for an insert (`nodeId: null`). An absent or `null`
+      // parent is a root, which the trigger lets through without the lock (A2).
+      let parentId: string | null = null;
+      if (typeof loc.parentCode === "string") {
+        await takeLocationTreeLock(tx, session.organizationId);
+        const [parent] = await tx
+          .select({ id: locations.id })
+          .from(locations)
+          .where(and(eq(locations.organizationId, session.organizationId), eq(locations.code, loc.parentCode)));
+        if (!parent) {
+          throw refusal("location_parent_not_found");
+        }
+        await assertParentPlacement(tx, {
+          organizationId: session.organizationId,
+          nodeId: null,
+          parentId: parent.id,
+          nodeActive: true,
+        });
+        parentId = parent.id;
+      }
       const [locationRow] = await tx
         .insert(locations)
         .values({
           organizationId: session.organizationId,
+          parentId,
           code: loc.code,
           slug: loc.slug,
           name: loc.name,
@@ -692,7 +727,8 @@ export class OnboardingCommitService {
           entityType: "location",
           entityId: locationRow.id,
           organizationId: session.organizationId,
-          payload: { orgCode: org?.code, via: "onboarding" },
+          // F4.243 (B10): the parent the node was placed under; `null` for a root.
+          payload: { orgCode: org?.code, via: "onboarding", parentId },
         },
         tx,
       );
@@ -710,7 +746,9 @@ export class OnboardingCommitService {
       // a race) answers the instantiate route's 409. `assets_code_unique` is
       // translated first, by the commit's own map, so a plain or templated
       // asset-code race keeps the commit's field error.
-      throw translateAssetCodeCollision(translateCommitUniqueConflict(err));
+      // F4.243 (B3, B9): the `locations_tree_guard` trigger's refusal (a race
+      // past the check above) answers the pre-check's own 4xx.
+      throw translateAssetCodeCollision(translateCommitUniqueConflict(treeGuardRefusal(err) ?? err));
     });
   }
 

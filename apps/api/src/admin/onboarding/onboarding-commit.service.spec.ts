@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 
 import type { JwtPayload, OnboardingDraft } from "@bms/shared";
 
@@ -51,7 +51,10 @@ function draftWithType(type: string | undefined): OnboardingDraft {
 
 type Harness = { service: OnboardingCommitService; events: string[] };
 
-function buildService(draft: OnboardingDraft, opts: { liveTypes: readonly string[] }): Harness {
+function buildService(
+  draft: OnboardingDraft,
+  opts: { liveTypes: readonly string[]; insertError?: unknown },
+): Harness {
   const events: string[] = [];
   const session = { id: "s-1", organizationId: "org-1", status: "draft", draft };
   const chain = {
@@ -63,7 +66,7 @@ function buildService(draft: OnboardingDraft, opts: { liveTypes: readonly string
 
   const tx = {
     execute: () => Promise.resolve(),
-    insert: () => ({ values: () => ({ returning: () => Promise.reject(INSERT_REACHED) }) }),
+    insert: () => ({ values: () => ({ returning: () => Promise.reject(opts.insertError ?? INSERT_REACHED) }) }),
   };
   const tenantDb = {
     transaction: (fn: (inner: unknown) => Promise<unknown>) => {
@@ -163,5 +166,29 @@ export async function assertADraftWithoutATypeIsAssertedAsEmpty(): Promise<void>
   assert(
     JSON.stringify(events) === JSON.stringify(["assertLocationType:"]),
     `expected "" asserted and refused, with no transaction, got ${JSON.stringify(events)}`,
+  );
+}
+
+/**
+ * `F4.243` (ADR 0098 Amendment 2, B3, B9) — the race: the parent was active
+ * when the commit checked it and the `locations_tree_guard` trigger refuses
+ * the insert. The driver's `23514` answers the pre-check's own 409 body, not
+ * a 500. A root draft (`parentCode: null`) skips the commit's own check, so
+ * the trigger's error is the only refusal here. Mutation 4 (drop
+ * `treeGuardRefusal` from the catch) reddens it.
+ */
+export async function assertATreeGuardRaceAnswersTheConflict(): Promise<void> {
+  const draft = draftWithType("pump_station");
+  draft.location = { ...draft.location!, parentCode: null };
+  const raced = Object.assign(new Error("location_parent_inactive"), {
+    code: "23514",
+    constraint: "locations_tree_guard",
+  });
+  const { service } = buildService(draft, { liveTypes: ["pump_station"], insertError: raced });
+  const err = await settle(service.commit(JWT, "s-1"));
+  const body = err instanceof ConflictException ? JSON.stringify(err.getResponse()) : String(err);
+  assert(
+    body === JSON.stringify({ message: "The parent location is inactive", reason: "location_parent_inactive" }),
+    `expected the 409 refusal body, got ${body}`,
   );
 }
