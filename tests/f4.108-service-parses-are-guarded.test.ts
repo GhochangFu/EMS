@@ -118,6 +118,9 @@ const COPILOT_TOOL_FILES = {
   // `F4.277`: the system-status and audit-log read tools, one parse each.
   copilotGetSystemStatus: `${COPILOT_TOOLS}/get-system-status.tool.ts`,
   copilotListAuditLog: `${COPILOT_TOOLS}/list-audit-log.tool.ts`,
+  // `F4.276`: the alarm details and alarm knowledge-base read tools, one parse each.
+  copilotGetAlarmDetails: `${COPILOT_TOOLS}/get-alarm-details.tool.ts`,
+  copilotGetAlarmKb: `${COPILOT_TOOLS}/get-alarm-kb.tool.ts`,
 } as const;
 const HELPER = "apps/api/src/common/parse-stored-contract.ts";
 
@@ -624,8 +627,9 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       "the StoredContractContext union no longer parses as a list of string literals, so the " +
         "per-site counts below would be vacuous",
       // `F4.274`: 23 + the five telemetry read tools' literals; `F4.275`: + six energy read tools;
-      // `F4.277`: + the system-status and audit-log read tools.
-    ).toBe(36);
+      // `F4.277`: + the system-status and audit-log read tools; `F4.276`: + the alarm
+      // details and alarm knowledge-base read tools.
+    ).toBe(38);
 
     const callSites = [
       STOCK_SERVICE,

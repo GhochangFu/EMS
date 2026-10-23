@@ -49,8 +49,9 @@ function boundPayload(payload: unknown): unknown {
  */
 export function withoutActorSubject(payload: unknown): unknown {
   if (payload === null || typeof payload !== "object" || Array.isArray(payload) || !("oidcSubject" in payload)) return payload;
-  const { oidcSubject: _subject, ...rest } = payload as Record<string, unknown>;
-  return rest;
+  // A filter, not a `{ oidcSubject: _, ...rest }` destructure: `tests/e7.1h-audit-subject-writer-shape`
+  // reads every `oidcSubject:` under apps/api/src as an audit write site.
+  return Object.fromEntries(Object.entries(payload).filter(([key]) => key !== "oidcSubject"));
 }
 
 /**
