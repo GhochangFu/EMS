@@ -152,8 +152,8 @@ export function AssetRoleToggleWizard({ role, onCancel, onDone }: RoleWizardProp
     mutationFn: (body: Record<string, unknown>) => updateAssetRole(role.code, body as UpdateAssetRoleBody),
     onSuccess: async () => onDone(),
   });
+  const params = { code: role.code };
   const shared = {
-    params: { code: role.code },
     onChange: () => undefined,
     renderStep: () => null,
     onSubmit: (body: Record<string, unknown>) => save.mutate(body),
@@ -162,12 +162,13 @@ export function AssetRoleToggleWizard({ role, onCancel, onDone }: RoleWizardProp
     submitError: save.error ? apiErrorMessage(save.error) : null,
   };
   const summaryOf = (id: string) =>
-    wizardEntry(id).summary({ body: {}, params: { code: role.code }, targetName: role.label, organizationName: "" });
+    wizardEntry(id).summary({ body: {}, params, targetName: role.label, organizationName: "" });
   return role.active ? (
     <AdminWizardFrame title="Deactivate a unit role">
       <WizardShell
         entry={wizardEntry("assetRole.deactivate")}
         {...shared}
+        params={params}
         values={{ active: false }}
         summary={summaryOf("assetRole.deactivate")}
       />
@@ -177,6 +178,7 @@ export function AssetRoleToggleWizard({ role, onCancel, onDone }: RoleWizardProp
       <WizardShell
         entry={wizardEntry("assetRole.reactivate")}
         {...shared}
+        params={params}
         values={{ active: true }}
         summary={summaryOf("assetRole.reactivate")}
       />
