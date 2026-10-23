@@ -20,6 +20,7 @@ import {
   runLocationScopePredicateTests,
   runLocationTypesTabHiddenFromOrganizationAdminTest,
   runLocationTypesTabShownToAdminTest,
+  runUnitRolesTabIsGlobalAdminOnlyTest,
   runNotificationTabTests,
 } from "./admin-access.spec";
 
@@ -63,6 +64,10 @@ describe("admin-access", () => {
 
   it("A2b hides the Location Types tab from organization_admin (F4.162)", () => {
     runLocationTypesTabHiddenFromOrganizationAdminTest();
+  });
+
+  it("shows the Unit Roles tab to the global admin alone (F4.282)", () => {
+    runUnitRolesTabIsGlobalAdminOnlyTest();
   });
 
   it("canManageMimicLayouts admits admin and organization_admin (F3.32c)", () => {

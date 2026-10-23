@@ -61,6 +61,7 @@ export const COPILOT_APP_ROUTE_TEMPLATES: readonly string[] = [
   "/admin/users",
   "/admin/point-keys",
   "/admin/location-types",
+  "/admin/unit-roles",
   "/admin/mimic-layouts",
   "/admin/mimic-layouts/new",
   "/admin/mimic-layouts/:layoutId",

@@ -153,13 +153,16 @@ const ROLE_CREATE_TOOL = proposeToolName({ id: "assetRole.create" });
  * `F3.87` PR 5 / owner ruling Q4 — a layout whose units name a role the
  * vocabulary lacks. A global admin is told to propose the role first (its
  * registry names `assetRole.create`); any other role is told to say so in a
- * sentence and to draw without it. The codes are the model's own words echoed
+ * sentence and to draw without it. `F4.282`: a missing code may be retired, and
+ * a create of a retired code fails at Confirm, so the admin is told to try
+ * `assetRole.reactivate` first. The codes are the model's own words echoed
  * back to it, never tenant text.
  */
 export function PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(codes: readonly string[]): string {
   return (
-    `The unit role codes ${codes.join(", ")} are not in the vocabulary. Propose assetRole.create for each one first — ` +
-    "one card per turn — and propose the layout again after they are applied."
+    `The unit role codes ${codes.join(", ")} are not active in the vocabulary: each one is absent or retired. For each ` +
+    "one, propose assetRole.reactivate first, and assetRole.create only if the reactivate is refused (a retired code " +
+    "cannot be created again) — one card per turn — and propose the layout again after they are applied."
   );
 }
 
@@ -205,9 +208,14 @@ export function modelBodySchema(entry: CatalogEntry): ZodTypeAny {
   return modelBodyOf(entry);
 }
 
+/** `F4.282` (D3): whether the model sends a body — never for a bodyless route or a `fixedBody` entry. */
+function takesBody(entry: CatalogEntry): boolean {
+  return entry.bodyName !== null && entry.fixedBody === undefined;
+}
+
 function proposeArguments(entry: CatalogEntry): ZodTypeAny {
   const shape: Record<string, ZodTypeAny> = { ...entry.params };
-  if (entry.bodyName !== null) shape.body = z.record(z.string(), z.unknown());
+  if (takesBody(entry)) shape.body = z.record(z.string(), z.unknown());
   return z.object(shape).strict();
 }
 
@@ -215,7 +223,7 @@ function proposeDefinition(entry: CatalogEntry): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   for (const [name, schema] of Object.entries(entry.params)) properties[name] = jsonSchemaOf(schema as ZodTypeAny);
   const required = Object.keys(entry.params);
-  if (entry.bodyName !== null) {
+  if (takesBody(entry)) {
     const body = modelBodySchema(entry);
     properties.body = bodyDefinitionOf(body, entry.id, bodyFieldsOf(body), entry.bodyGuide);
     required.push("body");
@@ -226,7 +234,8 @@ function proposeDefinition(entry: CatalogEntry): Record<string, unknown> {
 function proposeDescription(entry: CatalogEntry): string {
   return (
     `Propose: ${entry.title} (${entry.method} ${entry.path}; ${entry.risk}). ` +
-    "This changes nothing: it shows the user a card, and only the user's Confirm applies it."
+    "This changes nothing: it shows the user a card, and only the user's Confirm applies it." +
+    (entry.fixedBody !== undefined ? " The body is fixed: send only the path parameter(s)." : "")
   );
 }
 
@@ -408,7 +417,9 @@ export function createCopilotProposeTools(
     if (isUserAccountEntry(entry) && resolveAuthMode(env) === "local") return { ok: false, error: LOCAL_MODE_READ_ONLY };
     const params: Record<string, string> = {};
     for (const name of Object.keys(entry.params)) params[name] = args[name] as string;
-    const raw = entry.bodyName === null ? {} : (args.body as Record<string, unknown>);
+    // `F4.282` (D3): a direction entry's body is its `fixedBody`, parsed below like any other.
+    const raw =
+      entry.fixedBody !== undefined ? { ...entry.fixedBody } : entry.bodyName === null ? {} : (args.body as Record<string, unknown>);
     const parsed = modelBodySchema(entry).safeParse(raw);
     if (!parsed.success) return { ok: false, error: `Invalid body: ${issuesOf(parsed.error)}` };
     // The JSON image is what is stored, hashed and sent: one object on all three sides. It is the
@@ -419,7 +430,7 @@ export function createCopilotProposeTools(
     if (await services.pending.hasOpen(ctx.identity.id, ctx.conversationId)) {
       return { ok: false, error: PROPOSE_OPEN_CHANGE_ERROR };
     }
-    const fleetRow = entry.target.kind === "fleet" || entry.target.kind === "pointKey";
+    const fleetRow = entry.target.kind === "fleet" || entry.target.kind === "pointKey" || entry.target.kind === "vocabulary";
     if (fleetRow && ctx.conversationOrganizationId === null) return { ok: false, error: PROPOSE_FLEET_UNBOUND_ERROR };
     const target = await services.targets.resolve(
       entry,
@@ -497,6 +508,7 @@ export function createCopilotProposeTools(
         organizationName: target.organizationName,
         ...(target.currentWidgetIds ? { currentWidgetIds: target.currentWidgetIds } : {}),
         ...(target.refName !== undefined ? { refName: target.refName } : {}),
+        ...(target.usageCount !== undefined ? { usageCount: target.usageCount } : {}),
       }) + (fromFile ? COPILOT_READ_FROM_FILE_NOTE : "");
     const change = await services.pending.propose(ctx.identity.id, {
       conversationId: ctx.conversationId,

@@ -43,6 +43,7 @@ import { dashboardTemplateSummaryDtoSchema, stockDashboardTemplateDtoSchema } fr
 import {
   alarmListItemSchema,
   alarmSeverityCountSchema,
+  assetRoleDtoSchema,
   assetRoleSummaryItemSchema,
   maintenanceScheduleItemSchema,
   ruleBuilderCatalogAssetSchema,
@@ -83,6 +84,9 @@ export const locationTypesListResponseSchema = itemsOf(locationTypeDtoSchema);
 /** `GET /admin/vocabularies/location-types` (`F4.162`, ADR 0077 Amendment 1, D3) —
  * the global-admin catalog, active and retired rows, each with its count. */
 export const adminLocationTypesListResponseSchema = itemsOf(adminLocationTypeDtoSchema);
+/** `GET /admin/vocabularies/asset-roles` (`F3.40`; read by the `F4.282` Unit Roles page) —
+ * active and retired unit roles. */
+export const assetRolesListResponseSchema = itemsOf(assetRoleDtoSchema);
 export const assetsListResponseSchema = itemsOf(adminAssetDtoSchema);
 export const assetPointsListResponseSchema = itemsOf(adminAssetPointDtoSchema);
 export const pointKeysListResponseSchema = itemsOf(adminPointKeyDtoSchema);

@@ -8,6 +8,7 @@ import { ASSET_ENTRIES, ASSET_PENDING } from "./assets";
 import { DASHBOARD_TEMPLATE_ENTRIES } from "./dashboard-templates";
 import { DASHBOARD_ENTRIES } from "./dashboards";
 import { KPI_ENTRIES } from "./kpis";
+import { LOCATION_TYPE_ENTRIES, LOCATION_TYPE_PENDING } from "./location-types";
 import { LOCATION_ENTRIES, LOCATION_PENDING } from "./locations";
 import { ONBOARDING_ENTRIES, ONBOARDING_PENDING } from "./onboarding";
 import { POINT_KEY_ENTRIES, POINT_KEY_PENDING } from "./point-keys";
@@ -42,6 +43,7 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...MIMIC_LAYOUT_ENTRIES,
   ...MIMIC_SYMBOL_LIBRARY_ENTRIES,
   ...ASSET_ROLE_ENTRIES,
+  ...LOCATION_TYPE_ENTRIES,
 ];
 
 /**
@@ -79,13 +81,9 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   { method: "DELETE", path: "/admin/asset-templates/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/calc-parameters/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/assets/:assetId/calc-points/:pointKey", reason: NO_DELETE },
-  // `F3.87` (Amendment 3 A1): the layout DELETE, and the unit-role edit and retire.
+  // `F3.87` (Amendment 3 A1): the layout DELETE. The unit-role edit and retire are entries since
+  // `F4.282` (Amendment 8, Q17 withdraws A1's exclusion).
   { method: "DELETE", path: "/mimic-layouts/:id", reason: NO_DELETE },
-  {
-    method: "PATCH",
-    path: "/admin/vocabularies/asset-roles/:code",
-    reason: "a vocabulary edit or retire stays on its page (Amendment 3 A1)",
-  },
   // `F3.86`: each area's routes that are not (yet) entries.
   ...ASSET_TEMPLATE_PENDING,
   ...LOCATION_PENDING,
@@ -101,6 +99,7 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...MIMIC_LAYOUT_PENDING,
   ...MIMIC_SYMBOL_LIBRARY_PENDING,
   ...ASSET_ROLE_PENDING,
+  ...LOCATION_TYPE_PENDING,
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */

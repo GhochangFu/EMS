@@ -1,12 +1,11 @@
 import { expect } from "vitest";
 
-import { CATALOG_CODE_MESSAGE } from "@bms/shared";
-
+import { CATALOG_CODE_MESSAGE } from "../constants";
 import {
   createLocationTypeBodySchema,
   LOCATION_TYPE_CODE_MESSAGE,
   updateLocationTypeBodySchema,
-} from "./location-types.schema";
+} from "./location-type-writes";
 
 /**
  * `F4.162` (ADR 0077 Amendment 1, plan U2 S1–S7b) — the request bodies of the

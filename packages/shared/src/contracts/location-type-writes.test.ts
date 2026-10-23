@@ -10,7 +10,7 @@ import {
   assertS6CreateRefusesAFractionalSortOrder,
   assertS7bCreateRefusesAHyphenatedCode,
   assertS7CreateRefusesAnUpperCaseCode,
-} from "./location-types.schema.spec";
+} from "./location-type-writes.spec";
 
 /**
  * `F4.162` — Vitest entry point for the location-type request bodies.

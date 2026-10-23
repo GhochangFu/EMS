@@ -10,12 +10,16 @@ import { asc, eq, sql, type SQL } from "drizzle-orm";
 
 import { locations, locationTypes } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AdminLocationTypeDto, JwtPayload } from "@bms/shared";
+import type {
+  AdminLocationTypeDto,
+  CreateLocationTypeBody,
+  JwtPayload,
+  UpdateLocationTypeBody,
+} from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE } from "../../database/database.tokens";
 import { MasterDataAuditService } from "../master-data-audit.service";
-import type { CreateLocationTypeBody, UpdateLocationTypeBody } from "./location-types.schema";
 
 /**
  * `F4.162` (ADR 0077 Amendment 1) — the global-admin write path for

@@ -495,10 +495,11 @@ export function noToolDefinitionCarriesALargeBody(): void {
  * asset-role tools of PR 6b (5,138 characters together). Measured at PR 6b:
  * 48,027. The headroom is for the next release's entries, not this one's.
  * `F4.266` (C6): the layout body guide on both layout tools, 48,027 before, 49,745 after.
+ * Owner ruling 2026-10-23 (release 4): F4.282 measured 53,985
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();
-  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(52_000);
+  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(55_000);
 }
 
 /** Every catalog entry has one propose tool; a large body is read on demand. */

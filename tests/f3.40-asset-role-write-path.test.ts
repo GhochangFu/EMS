@@ -179,8 +179,9 @@ describe("F3.40 the write path is wired, gated, and keyed by code", () => {
   });
 
   it("keeps code out of the patch body, so the primary key cannot be renamed", () => {
-    expect(schema).toContain('.omit({ code: true })');
-    expect(schema).toContain("active: z.boolean()");
+    // `F4.282` (ADR 0030): the patch body moved to the contracts file beside the create body.
+    expect(writes).toContain('.omit({ code: true })');
+    expect(writes).toContain("active: z.boolean()");
 
     // And the create body still declares it, or the assertion above passes
     // because the field was renamed out from under it.
@@ -200,7 +201,13 @@ describe("F3.40 the write path is wired, gated, and keyed by code", () => {
     // `asset-roles.controller.spec.ts` holds the other half: a malformed create body, built by
     // the shared schema, still answers 400 with `flatten()` through the controller's `catch`.
     expect(schema).not.toContain("assetRoleCodeSchema");
-    expect(schema).toContain('import { createAssetRoleBodySchema } from "@bms/shared"');
+    // `F4.282`: both bodies come from `@bms/shared` now, imported by the controller; the api
+    // schema declares the param alone.
+    expect(controller).toContain(
+      'import { createAssetRoleBodySchema, updateAssetRoleBodySchema } from "@bms/shared"',
+    );
+    expect(schema).not.toContain("createAssetRoleBodySchema");
+    expect(schema).not.toContain("updateAssetRoleBodySchema");
 
     // The moved create body states the same bound a third time, so all three must agree.
     expect(writes).toContain("const assetRoleCodeBound = z.string().min(1).max(64)");

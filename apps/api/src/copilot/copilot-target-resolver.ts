@@ -1,10 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 
 import {
   assetGroupMembers,
   assetGroups,
   assetPoints,
+  assetRoles,
   assets,
   assetTemplates,
   type BmsDb,
@@ -13,6 +14,7 @@ import {
   dashboardTemplates,
   dashboardWidgets,
   locations,
+  locationTypes,
   mimicLayouts,
   mimicOrgSymbolLibraries,
   organizations,
@@ -51,6 +53,8 @@ export type ResolvedTarget = {
   readonly currentContent?: Readonly<Record<string, unknown>>;
   /** `F3.86` PR 4, `userGrantAdd` and `userGrant`: the grant target's name, for the summary. */
   readonly refName?: string;
+  /** `F4.282`: `vocabulary` targets of `locationType` — how many locations in the turn's organizations use the type. */
+  readonly usageCount?: number;
   /** Template targets: the version's lifecycle status, for the propose tool's lifecycle mirror (`F4.246`). */
   readonly status?: TemplateLifecycleStatus;
   /**
@@ -122,9 +126,10 @@ type Found = {
   currentContent?: Record<string, unknown>;
   status?: TemplateLifecycleStatus;
   updatedAt?: string;
+  usageCount?: number;
 };
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
-type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet" | "onboardingSession" | UserKind>;
+type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet" | "vocabulary" | "onboardingSession" | UserKind>;
 type UserKind = "user" | "userGrantAdd" | "userGrant";
 type UserTarget = Extract<CatalogEntry["target"], { kind: UserKind }>;
 
@@ -197,13 +202,18 @@ export class CopilotTargetResolver implements CopilotTargets {
       const asked: UserTarget = mode === "record" && target.kind === "userGrantAdd" ? { kind: "user", param: target.param } : target;
       found = await this.findUserTarget(asked, params, body, user, allowedOrganizationIds).catch(() => null);
       if (found !== null && !allowedOrganizationIds.includes(found.organizationId)) found = null;
-    } else if (target.kind === "fleet" || target.kind === "pointKey") {
+    } else if (target.kind === "fleet" || target.kind === "pointKey" || target.kind === "vocabulary") {
       // Ruling Q1: a row with no organization lives in the conversation's bound organization.
       if (boundOrganizationId === null || !allowedOrganizationIds.includes(boundOrganizationId)) return null;
       const organizationName = await this.organizationName(boundOrganizationId);
       if (organizationName === null) return null;
       if (target.kind === "fleet") {
         found = { organizationId: boundOrganizationId, name: organizationName };
+      } else if (target.kind === "vocabulary") {
+        // `F4.282` (Amendment 8 D2): an unknown code is refused before the gate is asked.
+        const code = params[target.param];
+        if (code === undefined) return null;
+        found = await this.vocabularyRow(target.of, code, allowedOrganizationIds, boundOrganizationId);
       } else {
         const id = params[target.param];
         if (id === undefined) return null;
@@ -237,6 +247,7 @@ export class CopilotTargetResolver implements CopilotTargets {
       ...(found.refName !== undefined ? { refName: found.refName } : {}),
       ...(found.status !== undefined ? { status: found.status } : {}),
       ...(found.updatedAt !== undefined ? { updatedAt: found.updatedAt } : {}),
+      ...(found.usageCount !== undefined ? { usageCount: found.usageCount } : {}),
     };
   }
 
@@ -307,6 +318,44 @@ export class CopilotTargetResolver implements CopilotTargets {
   private async pointKeyCode(id: string): Promise<string | null> {
     const [row] = await this.tenantDb.select({ code: pointKeys.code }).from(pointKeys).where(eq(pointKeys.id, id)).limit(1);
     return row?.code ?? null;
+  }
+
+  /**
+   * `F4.282` (ADR 0099 Amendment 8 D2) — a vocabulary row's label, by code. Both tables are
+   * fleet-wide with no row-level security (the `pointKeyCode` precedent; `VocabulariesService`
+   * reads them on the tenant pool). A location type also carries how many locations use it,
+   * inactive ones included, summed over the turn's allowed organizations under `withTenant` —
+   * never outside the turn's scope. A vocabulary target needs a bound conversation, so that is
+   * the bound organization's count alone, not the page's fleet-wide OQ4 count: the card names
+   * the organization it counted (`locationType.deactivate`'s summary).
+   */
+  private async vocabularyRow(
+    of: "locationType" | "assetRole",
+    code: string,
+    allowedOrganizationIds: readonly string[],
+    organizationId: string,
+  ): Promise<Found | null> {
+    if (of === "assetRole") {
+      const [role] = await this.tenantDb.select({ label: assetRoles.label }).from(assetRoles).where(eq(assetRoles.code, code)).limit(1);
+      return role ? { organizationId, name: role.label } : null;
+    }
+    const [type] = await this.tenantDb
+      .select({ label: locationTypes.label })
+      .from(locationTypes)
+      .where(eq(locationTypes.code, code))
+      .limit(1);
+    if (!type) return null;
+    let usageCount = 0;
+    for (const allowed of allowedOrganizationIds) {
+      const [row] = await withTenant(this.tenantDb, allowed, (tx) =>
+        tx
+          .select({ n: count(locations.id) })
+          .from(locations)
+          .where(and(eq(locations.type, code), eq(locations.organizationId, allowed))),
+      );
+      usageCount += Number(row?.n ?? 0);
+    }
+    return { organizationId, name: type.label, usageCount };
   }
 
   private async findRow(
@@ -505,7 +554,10 @@ export class CopilotTargetResolver implements CopilotTargets {
     }
   }
 
-  /** The point-key routes' check (`point-keys.service.ts` `requireGlobalAdmin`): a master-data user who is a global admin. */
+  /**
+   * The point-key routes' check (`point-keys.service.ts` `requireGlobalAdmin`): a master-data user who is a global admin.
+   * `F4.282`: also the vocabulary routes' `requireGlobalAdmin` (location types, unit roles).
+   */
   private async mayManageFleet(user: JwtPayload): Promise<boolean> {
     await this.access.requireMasterDataUser(user);
     return this.access.isGlobalAdmin(user);

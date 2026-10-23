@@ -25,6 +25,9 @@ import {
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
   createAssetRoleBodySchema,
+  updateAssetRoleBodySchema,
+  createLocationTypeBodySchema,
+  updateLocationTypeBodySchema,
   createMimicLayoutBodySchema,
   createMimicOrgSymbolLibraryBodySchema,
   putMimicLayoutBodySchema,
@@ -82,11 +85,6 @@ import {
   createPointKeyBodySchema,
   updatePointKeyBodySchema,
 } from "../admin/point-keys/point-keys.schema";
-import { updateAssetRoleBodySchema } from "../admin/vocabularies/asset-roles/asset-roles.schema";
-import {
-  createLocationTypeBodySchema,
-  updateLocationTypeBodySchema,
-} from "../admin/vocabularies/location-types.schema";
 import {
   createRtuBodySchema,
   updateRtuBodySchema,

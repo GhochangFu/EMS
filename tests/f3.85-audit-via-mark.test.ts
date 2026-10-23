@@ -70,6 +70,8 @@ const CATALOG_WRITERS = [
   "apps/api/src/mimic-layouts/mimic-layouts.service.ts",
   "apps/api/src/mimic-symbol-libraries/mimic-symbol-libraries.service.ts",
   "apps/api/src/admin/vocabularies/asset-roles/asset-roles.service.ts",
+  // `F4.282` (Amendment 8): the location-type vocabulary, every route an entry.
+  "apps/api/src/admin/vocabularies/location-types.service.ts",
 ] as const;
 
 /**
@@ -128,10 +130,10 @@ const CATALOG_DIRS = [
   "admin/point-keys",
   "admin/users",
   "admin/onboarding",
-  // `F3.87` PR 2: never `admin/vocabularies` itself — `location-types.service.ts` audits and is no entry (plan D7).
   "mimic-layouts",
   "mimic-symbol-libraries",
-  "admin/vocabularies/asset-roles",
+  // `F4.282` (Amendment 8): the whole vocabulary directory — both services back catalog entries.
+  "admin/vocabularies",
 ] as const;
 
 /** The drizzle form and the raw-SQL form. */

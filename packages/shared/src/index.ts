@@ -729,6 +729,7 @@ export type LocationTypesListResponse = z.infer<typeof E.locationTypesListRespon
 export type AdminLocationTypeDto = z.infer<typeof Loc.adminLocationTypeDtoSchema>;
 /** `GET /admin/vocabularies/location-types`. */
 export type AdminLocationTypesListResponse = z.infer<typeof E.adminLocationTypesListResponseSchema>;
+export type AssetRolesListResponse = z.infer<typeof E.assetRolesListResponseSchema>;
 export type AssetsListResponse = z.infer<typeof E.assetsListResponseSchema>;
 export type AssetPointsListResponse = z.infer<typeof E.assetPointsListResponseSchema>;
 export type PointKeysListResponse = z.infer<typeof E.pointKeysListResponseSchema>;

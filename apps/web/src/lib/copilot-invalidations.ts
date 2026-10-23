@@ -44,6 +44,11 @@ const MIMIC_LAYOUTS: QueryKey = ["mimic-layouts"];
 // the vocabularies read (`api/vocabularies.ts`) the layout editor's role picker lists.
 const MIMIC_SYMBOL_LIBRARIES: QueryKey = ["mimic-symbol-libraries"];
 const VOCABULARIES: QueryKey = ["vocabularies"];
+// `F4.282` (Amendment 8 Q17): the location-type dropdown (`GET /admin/location-types`) and the two
+// vocabulary pages' own reads (`location-types-page.tsx`, `unit-roles-page.tsx`).
+const LOCATION_TYPES: QueryKey = ["admin", "location-types"];
+const LOCATION_TYPES_CATALOG: QueryKey = ["admin", "location-types-catalog"];
+const ASSET_ROLES_CATALOG: QueryKey = ["admin", "asset-roles-catalog"];
 // `F4.255` PR 3: the copilot dock's list of an organization's open onboarding drafts.
 export const ONBOARDING_DRAFTS: QueryKey = ["admin", "onboarding", "drafts"];
 
@@ -141,7 +146,14 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "mimicLibrary.update": [MIMIC_SYMBOL_LIBRARIES],
   "mimicSymbol.update": [MIMIC_SYMBOL_LIBRARIES],
   "mimicSymbol.upload": [MIMIC_SYMBOL_LIBRARIES],
-  "assetRole.create": [VOCABULARIES],
+  "assetRole.create": [VOCABULARIES, ASSET_ROLES_CATALOG],
+  "assetRole.update": [VOCABULARIES, ASSET_ROLES_CATALOG],
+  "assetRole.deactivate": [VOCABULARIES, ASSET_ROLES_CATALOG],
+  "assetRole.reactivate": [VOCABULARIES, ASSET_ROLES_CATALOG],
+  "locationType.create": [LOCATION_TYPES, LOCATION_TYPES_CATALOG],
+  "locationType.update": [LOCATION_TYPES, LOCATION_TYPES_CATALOG],
+  "locationType.deactivate": [LOCATION_TYPES, LOCATION_TYPES_CATALOG],
+  "locationType.reactivate": [LOCATION_TYPES, LOCATION_TYPES_CATALOG],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

@@ -115,6 +115,13 @@ export type CatalogTarget =
     }
   | { readonly kind: "parent"; readonly field: "locationId" | "assetId"; readonly of: "location" | "asset" }
   | { readonly kind: "fleet" }
+  /**
+   * `F4.282` (ADR 0099 Amendment 8 D2, Q17): a fleet vocabulary row named by its `code`; like
+   * `fleet`, the change lives in the conversation's bound organization and the global admin
+   * alone may make it (`requireGlobalAdmin`); the resolver reads the label and refuses an
+   * unknown code.
+   */
+  | { readonly kind: "vocabulary"; readonly of: "locationType" | "assetRole"; readonly param: "code" }
   | { readonly kind: "onboardingSession"; readonly param: "id" }
   | { readonly kind: "assetTemplateDeploy"; readonly param: "id" }
   | { readonly kind: "user" | "userGrantAdd"; readonly param: "id" }
@@ -166,6 +173,8 @@ export type CatalogSummaryInput = {
   readonly currentWidgetIds?: readonly string[];
   /** `F3.86` PR 4: the name of the row a change names beside its target (a grant's organization, site or group). */
   readonly refName?: string;
+  /** `F4.282`: `vocabulary` targets of `locationType` — how many locations in the turn's organizations use the type. */
+  readonly usageCount?: number;
 };
 
 export interface CatalogEntry {
@@ -246,6 +255,14 @@ export interface CatalogEntry {
    * precondition.
    */
   readonly precondition?: "updatedAt";
+  /**
+   * `F4.282` (ADR 0099 Amendment 8 D3): a direction entry on a route whose body is one boolean.
+   * The whole body, fixed: the model's tool has no `body` argument, the pending row stores this
+   * object, the wizard is the Review step alone and `steps` is empty. `body` stays the route's
+   * export (the coverage gate's identity rule) and `fixedBody` must parse with it
+   * (`catalog.spec.ts`).
+   */
+  readonly fixedBody?: Readonly<Record<string, unknown>>;
   readonly risk: CatalogRisk;
   readonly target: CatalogTarget;
   readonly refs: readonly CatalogRef[];

@@ -50,6 +50,11 @@ export type ResolverCtx = {
   assetTemplateA: string;
   /** `F3.87` PR 5: a mimic layout of A (owed by PR 2: the `mimicLayout` kind on a real database). */
   mimicLayoutA: string;
+  /** `F4.282`: a location type used by two locations of A and one of B, and a unit role. */
+  locationTypeCode: string;
+  locationTypeLabel: string;
+  assetRoleCode: string;
+  assetRoleLabel: string;
 };
 
 /** `locationA` carries a stored `builtin` view (`site_control_room_views`); `locationA2` carries none. */
@@ -276,6 +281,62 @@ export async function aFleetRowLivesInTheBoundOrganization(ctx: ResolverCtx): Pr
   const notGlobal = recorder({ isGlobalAdmin: false });
   expect(await resolverWith(ctx, notGlobal.access).resolve(update, { id: ctx.pointKeyId }, {}, [ctx.orgA], JWT, ctx.orgA)).toBeNull();
   expect(notGlobal.calls).toEqual([["requireMasterDataUser"], ["isGlobalAdmin"]]);
+}
+
+/** `F4.282` (Amendment 8 D2): the vocabulary entries the resolver reads. */
+const LOCATION_TYPE_ROW = fixture({ kind: "vocabulary", of: "locationType", param: "code" });
+const ASSET_ROLE_ROW = fixture({ kind: "vocabulary", of: "assetRole", param: "code" });
+
+/** Ruling Q1: a vocabulary row lives in the bound organization; an unbound conversation is refused. */
+export async function aVocabularyRowNeedsABoundConversation(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  expect(await r.resolve(LOCATION_TYPE_ROW, { code: ctx.locationTypeCode }, {}, [ctx.orgA], JWT, null)).toBeNull();
+  expect(await r.resolve(LOCATION_TYPE_ROW, { code: ctx.locationTypeCode }, {}, [ctx.orgA], JWT, ctx.orgA)).toMatchObject({
+    organizationId: ctx.orgA,
+  });
+}
+
+/**
+ * A location type's card counts the locations that use it in the bound organization only — a
+ * vocabulary target needs a bound conversation, so the turn's allowed list is that organization
+ * (`resolveScope`). Two locations of A use the type and one of B; each bound turn counts its own.
+ */
+export async function aLocationTypeCountsItsLocationsInTheAllowedOrganizations(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  const params = { code: ctx.locationTypeCode };
+  expect(await r.resolve(LOCATION_TYPE_ROW, params, {}, [ctx.orgA], JWT, ctx.orgA)).toMatchObject({
+    organizationId: ctx.orgA,
+    targetName: ctx.locationTypeLabel,
+    usageCount: 2,
+  });
+  expect(await r.resolve(LOCATION_TYPE_ROW, params, {}, [ctx.orgB], JWT, ctx.orgB)).toMatchObject({
+    organizationId: ctx.orgB,
+    usageCount: 1,
+  });
+}
+
+/** An unknown code is refused before the route's gate is asked. */
+export async function anUnknownVocabularyCodeIsRefusedBeforeTheGate(ctx: ResolverCtx): Promise<void> {
+  const r = recorder();
+  const params = { code: "f4282_absent" };
+  expect(await resolverWith(ctx, r.access).resolve(LOCATION_TYPE_ROW, params, {}, [ctx.orgA], JWT, ctx.orgA)).toBeNull();
+  expect(r.calls).toEqual([]);
+}
+
+/** The routes' `requireGlobalAdmin`: a master-data user, then a global admin, in that order. */
+export async function aVocabularyRowNeedsTheGlobalAdmin(ctx: ResolverCtx): Promise<void> {
+  const notGlobal = recorder({ isGlobalAdmin: false });
+  const params = { code: ctx.assetRoleCode };
+  expect(await resolverWith(ctx, notGlobal.access).resolve(ASSET_ROLE_ROW, params, {}, [ctx.orgA], JWT, ctx.orgA)).toBeNull();
+  expect(notGlobal.calls).toEqual([["requireMasterDataUser"], ["isGlobalAdmin"]]);
+}
+
+/** A unit role resolves its label and carries no usage count. */
+export async function aUnitRoleResolvesItsLabel(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  const resolved = await r.resolve(ASSET_ROLE_ROW, { code: ctx.assetRoleCode }, {}, [ctx.orgA], JWT, ctx.orgA);
+  expect(resolved).toMatchObject({ organizationId: ctx.orgA, targetName: ctx.assetRoleLabel });
+  expect(resolved).not.toHaveProperty("usageCount");
 }
 
 /**

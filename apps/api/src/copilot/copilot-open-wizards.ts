@@ -151,6 +151,9 @@ const PAGE_WIZARDS: readonly PageWizards[] = [
   { template: "/admin/asset-points", wizards: [{ catalogId: "assetPoint.create" }] },
   { template: "/admin/asset-groups", wizards: [{ catalogId: "assetGroup.create" }] },
   { template: "/admin/point-keys", wizards: [{ catalogId: "pointKey.create" }] },
+  // `F4.282` (Amendment 8 Q17): the two vocabulary pages' create wizards.
+  { template: "/admin/location-types", wizards: [{ catalogId: "locationType.create" }] },
+  { template: "/admin/unit-roles", wizards: [{ catalogId: "assetRole.create" }] },
   { template: "/admin/users", wizards: [{ catalogId: "user.create" }] },
   { template: "/admin/calc-parameters", wizards: [{ catalogId: "calcParameter.create" }] },
   { template: "/admin/mimic-symbol-libraries", wizards: [{ catalogId: "mimicLibrary.create" }] },

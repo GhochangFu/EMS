@@ -67,6 +67,8 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/mimic-layouts/mimic-layouts.controller.ts", full: true },
   { file: "apps/api/src/mimic-symbol-libraries/mimic-symbol-libraries.controller.ts", full: true },
   { file: "apps/api/src/admin/vocabularies/asset-roles/asset-roles.controller.ts", full: true },
+  // `F4.282` (Amendment 8): the release-4 vocabulary controller.
+  { file: "apps/api/src/admin/vocabularies/location-types.controller.ts", full: true },
 ];
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;

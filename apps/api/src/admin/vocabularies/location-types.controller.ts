@@ -12,15 +12,12 @@ import {
 } from "@nestjs/common";
 import { ZodError } from "zod";
 
+import { createLocationTypeBodySchema, updateLocationTypeBodySchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
-import {
-  createLocationTypeBodySchema,
-  locationTypeCodeParamSchema,
-  updateLocationTypeBodySchema,
-} from "./location-types.schema";
+import { locationTypeCodeParamSchema } from "./location-types.schema";
 import { LocationTypesVocabularyAdminService } from "./location-types.service";
 
 /**

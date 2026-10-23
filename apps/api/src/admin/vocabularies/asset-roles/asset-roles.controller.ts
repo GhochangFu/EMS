@@ -11,13 +11,13 @@ import {
 } from "@nestjs/common";
 import { ZodError } from "zod";
 
-import { createAssetRoleBodySchema } from "@bms/shared";
+import { createAssetRoleBodySchema, updateAssetRoleBodySchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../../auth/jwt-auth.guard";
 import { parseActiveFilter } from "../../admin.schema";
-import { assetRoleCodeParamSchema, updateAssetRoleBodySchema } from "./asset-roles.schema";
+import { assetRoleCodeParamSchema } from "./asset-roles.schema";
 import { AssetRolesAdminService } from "./asset-roles.service";
 
 /**

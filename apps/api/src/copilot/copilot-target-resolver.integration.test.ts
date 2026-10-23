@@ -17,6 +17,11 @@ import {
   anOpenInstantiateWizardIsItsTemplatesRecord,
   anOpenInstantiateWizardOfAnUnmanagedOrganizationIsNotOpen,
   aFleetRowLivesInTheBoundOrganization,
+  aLocationTypeCountsItsLocationsInTheAllowedOrganizations,
+  anUnknownVocabularyCodeIsRefusedBeforeTheGate,
+  aUnitRoleResolvesItsLabel,
+  aVocabularyRowNeedsABoundConversation,
+  aVocabularyRowNeedsTheGlobalAdmin,
   aGrantLivesInItsTargetsOrganizationAndNeedsTheUsersHomeInScope,
   aGrantTargetUsesTheGrantsServicesChecks,
   aUserCreateRunsTheRoutesManagerChecks,
@@ -64,6 +69,9 @@ const superuserConnectionString = requireIntegrationDb({
 
 const FAMILY = `F386-RESOLVER-${Date.now()}`;
 const FAMILY_PATTERN = "F386-RESOLVER-%";
+/** `F4.282`: the vocabulary rows, one code per run (the tables are fleet-wide). */
+const LOCATION_TYPE_CODE = `f4282_${Date.now()}`;
+const ASSET_ROLE_CODE = `f4282-role-${Date.now()}`;
 /** Child tables first; each keyed by `organization_id` except the two joined through their parent. */
 const CLEANUP = [
   "DELETE FROM bms.asset_group_members WHERE asset_group_id IN (SELECT id FROM bms.asset_groups WHERE organization_id = ANY($1))",
@@ -104,6 +112,11 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       [FAMILY_PATTERN],
     );
     for (const statement of CLEANUP) await superPool.query(statement, [stale.map((row) => row.id)]);
+    // `F4.282`: a killed run's vocabulary rows, once no location uses them.
+    await superPool.query(
+      "DELETE FROM bms.location_types t WHERE t.code LIKE 'f4282%' AND NOT EXISTS (SELECT 1 FROM bms.locations l WHERE l.type = t.code)",
+    );
+    await superPool.query("DELETE FROM bms.asset_roles WHERE code LIKE 'f4282-role-%'");
 
     const one = async (text: string, values: unknown[]): Promise<string> => {
       const { rows } = await superPool.query<{ id: string }>(text, values);
@@ -130,6 +143,15 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
     const locationA = await location(orgA, "a", RESOLVER_NAMES.locationA);
     const locationA2 = await location(orgA, "a2", "F3.86 site A2");
     const locationB = await location(orgB, "b", "F3.86 site B");
+    // `F4.282`: a location type used by two locations of A and one of B, and a unit role.
+    await superPool.query("INSERT INTO bms.location_types (code, label) VALUES ($1, 'F4.282 type')", [LOCATION_TYPE_CODE]);
+    await superPool.query("INSERT INTO bms.asset_roles (code, label) VALUES ($1, 'F4.282 role')", [ASSET_ROLE_CODE]);
+    for (const [org, suffix] of [[orgA, "t1"], [orgA, "t2"], [orgB, "t3"]] as const) {
+      await superPool.query(
+        "INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude) VALUES ($1, $2, $2, $3, $4, 0, 0)",
+        [org, `${FAMILY}-l${suffix}`.toLowerCase(), `F4.282 site ${suffix}`, LOCATION_TYPE_CODE],
+      );
+    }
     const rtuA = await one(
       "INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type) VALUES ($1, $2, $3, $4, 'simulator') RETURNING id",
       [orgA, locationA, `${FAMILY}-RTU`, RESOLVER_NAMES.rtuA],
@@ -207,11 +229,17 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       dashboardTemplateA,
       assetTemplateA,
       mimicLayoutA,
+      locationTypeCode: LOCATION_TYPE_CODE,
+      locationTypeLabel: "F4.282 type",
+      assetRoleCode: ASSET_ROLE_CODE,
+      assetRoleLabel: "F4.282 role",
     };
   });
 
   afterAll(async () => {
     if (superPool) for (const statement of CLEANUP) await superPool.query(statement, [orgIds]);
+    await superPool?.query("DELETE FROM bms.location_types WHERE code = $1", [LOCATION_TYPE_CODE]);
+    await superPool?.query("DELETE FROM bms.asset_roles WHERE code = $1", [ASSET_ROLE_CODE]);
     await Promise.all([tenantPool?.end(), superPool?.end()]);
   });
 
@@ -226,6 +254,12 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("checks the new site too when an asset update names locationId (PR 3b)", () => anAssetMoveNeedsTheNewSiteToo(ctx));
   it("gives a create under a parent the parent's organization", () => aCreateUnderAParentTakesTheParentsOrganization(ctx));
   it("puts a fleet row in the bound organization (ruling Q1)", () => aFleetRowLivesInTheBoundOrganization(ctx));
+  it("F4.282: refuses a vocabulary row in an unbound conversation", () => aVocabularyRowNeedsABoundConversation(ctx));
+  it("F4.282: counts a location type's locations in the allowed organizations", () =>
+    aLocationTypeCountsItsLocationsInTheAllowedOrganizations(ctx));
+  it("F4.282: refuses an unknown vocabulary code before the gate", () => anUnknownVocabularyCodeIsRefusedBeforeTheGate(ctx));
+  it("F4.282: refuses a vocabulary row for a caller who is no global admin", () => aVocabularyRowNeedsTheGlobalAdmin(ctx));
+  it("F4.282: resolves a unit role's label with no usage count", () => aUnitRoleResolvesItsLabel(ctx));
   it("keeps the built-in view rule (ruling Q7(b))", () => aSiteViewKeepsTheBuiltinRule(ctx));
   it("needs the dashboard check for a site layout (ruling Q7(b))", () => aSiteLayoutNeedsTheDashboardCheckToo(ctx));
   it("refuses a location create by a location admin", () => aLocationCreateRefusesALocationAdmin(ctx));

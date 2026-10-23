@@ -39,6 +39,7 @@ export * from "./generated-site-view";
 export * from "./health";
 export * from "./if-match";
 export * from "./location-types";
+export * from "./location-type-writes";
 export * from "./mapping-sheet";
 export * from "./metric-catalog-values";
 export * from "./mimic";

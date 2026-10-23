@@ -124,6 +124,12 @@ export function aListPageMountsItsCreateWizard(): void {
   expect(pageWizardCandidates("/admin/locations")).toStrictEqual([{ catalogId: "location.create", params: {} }]);
 }
 
+/** `F4.282` (Q17): each vocabulary page mounts its create wizard. */
+export function theVocabularyPagesMountTheirCreateWizards(): void {
+  expect(pageWizardCandidates("/admin/location-types")).toStrictEqual([{ catalogId: "locationType.create", params: {} }]);
+  expect(pageWizardCandidates("/admin/unit-roles")).toStrictEqual([{ catalogId: "assetRole.create", params: {} }]);
+}
+
 export function aPageWithoutAWizardMountsNone(): void {
   expect(pageWizardCandidates("/alarms")).toStrictEqual([]);
 }

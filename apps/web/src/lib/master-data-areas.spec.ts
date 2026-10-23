@@ -24,7 +24,7 @@ export function groupsEveryTabIntoItsArea(): void {
   );
   expect(grouped).toEqual({
     "Sites & Equipment": ["Organizations", "Locations", "RTUs", "Assets", "Asset Points"],
-    "Reference Data": ["Asset Groups", "Point Keys", "Location Types", "Calc Parameters"],
+    "Reference Data": ["Asset Groups", "Point Keys", "Location Types", "Unit Roles", "Calc Parameters"],
     "Templates & Visuals": ["Asset Templates", "Dashboard Templates", "Mimic Layouts", "Symbol Libraries"],
     "Data Input": ["Manual Entry", "Import Telemetry"],
     Notifications: ["Channels", "Escalation", "Deliveries"],

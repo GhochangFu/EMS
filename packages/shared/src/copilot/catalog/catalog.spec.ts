@@ -201,6 +201,13 @@ export const FIXTURES: Readonly<
   "mimicSymbol.upload": { body: { name: "pump-x", label: "Pump X", svg: { kind: "text", text: SYMBOL_SVG } }, params: { id: ROW }, names: TARGET_NAME },
   // `F3.87` PR 6 — the unit-role vocabulary, for the global admin (Amendment 3 A1, A6; ruling Q4).
   "assetRole.create": { body: { code: "pump-x", label: "Pump X" }, params: {}, names: "pump-x" },
+  "assetRole.update": { body: { label: "Renamed" }, params: { code: "cooling-tower" }, names: TARGET_NAME },
+  "assetRole.deactivate": { body: { active: false }, params: { code: "cooling-tower" }, names: TARGET_NAME },
+  "assetRole.reactivate": { body: { active: true }, params: { code: "cooling-tower" }, names: TARGET_NAME },
+  "locationType.create": { body: { code: "pump_station_x", label: "Pump station X", sortOrder: 40 }, params: {}, names: "pump_station_x" },
+  "locationType.update": { body: { label: "Renamed" }, params: { code: "pump_station" }, names: TARGET_NAME },
+  "locationType.deactivate": { body: {}, params: { code: "pump_station" }, names: TARGET_NAME },
+  "locationType.reactivate": { body: {}, params: { code: "pump_station" }, names: TARGET_NAME },
 };
 
 /**
@@ -370,13 +377,23 @@ const passwordEntry = (modelBody: ZodTypeAny | undefined) => ({
  * Amendment 3 A3: the model sends the file as text), and never `svg` for any
  * other entry. An `upload` entry must have a `modelBody`.
  */
+/** `F4.282` (D3): the fields a `fixedBody` entry on the same route sets — the direction entries', not the model's or a step's. */
+function directionOwnedFields(id: string): string[] {
+  const self = COPILOT_CATALOG.find((candidate) => candidate.id === id);
+  if (self === undefined) return [];
+  return COPILOT_CATALOG.filter((c) => c.fixedBody && c.method === self.method && c.path === self.path).flatMap((c) =>
+    Object.keys(c.fixedBody ?? {}),
+  );
+}
+
 function modelBodyProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "modelBody" | "upload">): string[] {
   if (entry.modelBody === undefined) return entry.upload ? [`${entry.id}: an upload entry needs a modelBody`] : [];
   const problems: string[] = [];
   let object: ZodTypeAny = entry.modelBody;
   while (object instanceof z.ZodEffects) object = object._def.schema as ZodTypeAny;
   if ((object as z.AnyZodObject)._def.unknownKeys !== "strict") problems.push(`${entry.id}: modelBody is not strict`);
-  const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field));
+  const owned = directionOwnedFields(entry.id);
+  const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field) && !owned.includes(field));
   const expected = (entry.upload ? [...fields, "svg"] : fields).sort();
   if (JSON.stringify(bodyFieldsOf(entry.modelBody).sort()) !== JSON.stringify(expected)) {
     problems.push(`${entry.id}: modelBody fields differ from the body's without clientOnly`);
@@ -541,14 +558,16 @@ export function pathParamsAndTheirSchemasAgree(): void {
  * field the body lacks. `F3.87` owner ruling Q1: a canvas entry
  * (`CANVAS_ENTRY_IDS`, the layout editor) has no steps at all.
  */
-function stepProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "steps">): string[] {
+export function stepProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "steps" | "fixedBody">): string[] {
   const inSteps = entry.steps.flatMap((step) => step.fields);
+  if (entry.fixedBody !== undefined) return entry.steps.length === 0 ? [] : [`${entry.id}: a fixed-body entry has steps`];
   if ((CANVAS_ENTRY_IDS as readonly string[]).includes(entry.id)) {
     return inSteps.length === 0 && entry.steps.length === 0 ? [] : [`${entry.id}: a canvas entry has steps`];
   }
   const problems: string[] = [];
   if (new Set(inSteps).size !== inSteps.length) problems.push(`${entry.id}: a field in two steps`);
-  const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field));
+  const owned = directionOwnedFields(entry.id);
+  const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field) && !owned.includes(field));
   if (JSON.stringify([...inSteps].sort()) !== JSON.stringify([...fields].sort())) problems.push(`${entry.id}: steps differ from the body's fields`);
   if (entry.clientOnly.some((field) => inSteps.includes(field))) problems.push(`${entry.id}: a clientOnly field in a step`);
   return problems;
