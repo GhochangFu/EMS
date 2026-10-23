@@ -16,6 +16,8 @@ import { AssetsModule } from "../../assets/assets.module";
 import { AssetsService } from "../../assets/assets.service";
 import { AccessControlService } from "../../auth/access-control.service";
 import type { ResolvedIdentity } from "../../auth/identity-resolver";
+import { DashboardModule } from "../../dashboard/dashboard.module";
+import { DashboardService } from "../../dashboard/dashboard.service";
 import { DashboardBuilderModule } from "../../dashboard-builder/dashboard-builder.module";
 import { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import type { LlmMessage } from "../../llm/llm-port";
@@ -24,6 +26,8 @@ import { MimicLayoutsModule } from "../../mimic-layouts/mimic-layouts.module";
 import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesModule } from "../../mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
+import { ReportsCoreModule } from "../../reports/reports-core.module";
+import { ReportsService } from "../../reports/reports.service";
 import { TelemetryModule } from "../../telemetry/telemetry.module";
 import { TelemetryService } from "../../telemetry/telemetry.service";
 import { repoRoot } from "../../testing/repo-root";
@@ -399,6 +403,13 @@ export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
     "get_values_at_instant",
     "get_recent_values",
     "get_point_aggregate",
+    // `F4.275`: the energy and portfolio reads.
+    "get_dashboard_kpis",
+    "get_load_trend",
+    "get_energy_summary",
+    "get_energy_source_mix",
+    "get_energy_top_consumers",
+    "get_energy_report_preview",
     "list_locations",
     "list_dashboards",
     "get_health_summary",
@@ -513,6 +524,9 @@ export function assertTheModuleWiresTheReadTools(): void {
     VocabulariesService,
     // `F4.274`: the telemetry read tools.
     TelemetryService,
+    // `F4.275`: the energy and portfolio read tools.
+    DashboardService,
+    ReportsService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
   for (const module of [
@@ -524,6 +538,8 @@ export function assertTheModuleWiresTheReadTools(): void {
     MimicLayoutsModule,
     MimicSymbolLibrariesModule,
     TelemetryModule,
+    DashboardModule,
+    ReportsCoreModule,
   ]) {
     expect(imports).toContain(module);
   }
@@ -536,5 +552,7 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(MimicLayoutsModule)).toContain(MimicLayoutsService);
   expect(exportsOf(MimicSymbolLibrariesModule)).toContain(MimicSymbolLibrariesService);
   expect(exportsOf(TelemetryModule)).toContain(TelemetryService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(16);
+  expect(exportsOf(DashboardModule)).toContain(DashboardService);
+  expect(exportsOf(ReportsCoreModule)).toContain(ReportsService);
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(22);
 }

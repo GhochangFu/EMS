@@ -7,17 +7,25 @@ import { AssetHealthService } from "../../asset-health/asset-health.service";
 import { AssetKpisService } from "../../assets/asset-kpis.service";
 import { AssetsService } from "../../assets/assets.service";
 import { AccessControlService } from "../../auth/access-control.service";
+import { DashboardService } from "../../dashboard/dashboard.service";
 import { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import { defineToolRegistry, type ToolRegistry } from "../../llm/tool-registry";
 import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
+import { ReportsService } from "../../reports/reports.service";
 import { TelemetryService } from "../../telemetry/telemetry.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import type { CopilotReadTools, CopilotToolContext, CopilotToolResult } from "../copilot-read-tools";
 import type { CopilotReadServices, CopilotReadToolDefinition } from "./copilot-read-tool";
 import { getAssetKpisTool } from "./get-asset-kpis.tool";
+import { getDashboardKpisTool } from "./get-dashboard-kpis.tool";
+import { getEnergyReportPreviewTool } from "./get-energy-report-preview.tool";
+import { getEnergySourceMixTool } from "./get-energy-source-mix.tool";
+import { getEnergySummaryTool } from "./get-energy-summary.tool";
+import { getEnergyTopConsumersTool } from "./get-energy-top-consumers.tool";
 import { getHealthSummaryTool } from "./get-health-summary.tool";
 import { getLatestValuesTool } from "./get-latest-values.tool";
+import { getLoadTrendTool } from "./get-load-trend.tool";
 import { getMimicLayoutTool } from "./get-mimic-layout.tool";
 import { getPointAggregateTool } from "./get-point-aggregate.tool";
 import { getRecentValuesTool } from "./get-recent-values.tool";
@@ -36,7 +44,8 @@ import { openPageTool } from "./open-page.tool";
  * The read tools, in the order the model sees them. No tool here writes.
  * `F3.87` PR 2 adds the four mimic reads (ADR 0099 Amendment 3 drafter choice
  * 1, plan D16) before `open_page`. `F4.274` adds the five telemetry reads
- * after `get_asset_kpis`.
+ * after `get_asset_kpis`. `F4.275` adds the six energy and portfolio reads
+ * after `get_point_aggregate`.
  */
 export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[] = [
   listAlarmsTool,
@@ -47,6 +56,12 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   getValuesAtInstantTool,
   getRecentValuesTool,
   getPointAggregateTool,
+  getDashboardKpisTool,
+  getLoadTrendTool,
+  getEnergySummaryTool,
+  getEnergySourceMixTool,
+  getEnergyTopConsumersTool,
+  getEnergyReportPreviewTool,
   listLocationsTool,
   listDashboardsTool,
   getHealthSummaryTool,
@@ -105,6 +120,10 @@ export class CopilotReadToolSet implements CopilotReadTools {
     @Inject(VocabulariesService) vocabularies: VocabulariesService,
     // `F4.274`: appended last — the wiring spec reads the slots by index.
     @Inject(TelemetryService) telemetry: TelemetryService,
+    // `F4.275`: appended last, the same reason. `DashboardService` is the KPI
+    // service (`dashboard/`), not the builder's `DashboardsService` above.
+    @Inject(DashboardService) portfolio: DashboardService,
+    @Inject(ReportsService) reports: ReportsService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -118,6 +137,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
       symbolLibraries,
       vocabularies,
       telemetry,
+      portfolio,
+      reports,
     });
   }
 

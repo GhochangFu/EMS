@@ -121,6 +121,13 @@ export type StoredContractContext =
   | "copilot_tools.get_values_at_instant.result"
   | "copilot_tools.get_recent_values.rows"
   | "copilot_tools.get_point_aggregate.result"
+  // `F4.275`: the energy and portfolio read tools.
+  | "copilot_tools.get_dashboard_kpis.result"
+  | "copilot_tools.get_load_trend.result"
+  | "copilot_tools.get_energy_summary.result"
+  | "copilot_tools.get_energy_source_mix.result"
+  | "copilot_tools.get_energy_top_consumers.page"
+  | "copilot_tools.get_energy_report_preview.result"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");
