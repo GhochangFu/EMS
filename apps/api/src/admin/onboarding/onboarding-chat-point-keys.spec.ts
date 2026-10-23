@@ -294,7 +294,7 @@ async function protocolTurn(
     { listLocationTypes: async () => [{ code: "smoc_campus", label: "SMOC campus" }] } as never,
     { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
-    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
   );
   return service.handleTurn(message, draft, "rtu", "Ion Exchange", "org-1", { sessionId: "s-1", history: [], pointKeyQuota: { createdByOrganization: 0 } });
 }
@@ -483,7 +483,7 @@ async function orgTurn(message: string, draft: OnboardingDraft): Promise<ChatTur
     { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
     // F3.23 (ADR 0092 decision 3): the fleet catalog holds `kw` active, as the global seed does.
     { context: async () => KW_ACTIVE } as never,
-    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
   );
   return service.handleTurn(message, draft, "rtu", "Ion Exchange", "org-1", { sessionId: "s-1", history: [], pointKeyQuota: { createdByOrganization: 0 } });
 }

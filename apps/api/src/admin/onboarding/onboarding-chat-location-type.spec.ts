@@ -70,7 +70,7 @@ function serviceWith(rows: readonly LocationTypeDto[], llmResolver: unknown = GU
     { listLocationTypes: async () => [...rows] } as never,
     llmResolver as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
-    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
   );
 }
 
@@ -339,7 +339,7 @@ const NAMED_INACTIVE_TYPE = {
 async function storedTurn(
   message: string,
   stored: OnboardingDraft,
-  phase: OnboardingPhase = new OnboardingValidateService().inferPhase(stored, CODES),
+  phase: OnboardingPhase = new OnboardingValidateService().inferPhase(stored, CODES, { candidates: [] }),
 ): Promise<{ turn: ChatTurnResult; draft: OnboardingDraft }> {
   const turn = await ruleBasedTurn(message, stored, phase);
   return { turn, draft: serviceWith(FOUR).mergeDraft(stored, turn.draftPatch) as OnboardingDraft };

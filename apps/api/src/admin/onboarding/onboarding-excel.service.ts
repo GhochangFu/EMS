@@ -202,6 +202,9 @@ const LOCATION_HEADERS = [
   "latitude",
   "longitude",
   "province",
+  // F4.243 (ADR 0098 Amendment 2, B8): the last column, so a workbook built
+  // before it still reads; a missing column or an empty cell is a root.
+  "parent_code",
 ] as const;
 
 const RTU_HEADERS = [
@@ -238,7 +241,8 @@ export class OnboardingExcelService {
       [...LOCATION_HEADERS],
       // F4.157 (owner ruling OQ3): the example row uses a seeded code that
       // describes an ordinary Ion Exchange site.
-      [locationExample, prefix, slug, "pump_station", "22.3159", "87.3222", "Odisha"],
+      // F4.243: `parent_code` empty — a top-level location; name an existing code to place it under one.
+      [locationExample, prefix, slug, "pump_station", "22.3159", "87.3222", "Odisha", ""],
       [],
       ["RTUS"],
       [...RTU_HEADERS],
@@ -513,6 +517,22 @@ export class OnboardingExcelService {
       province,
       ONBOARDING_DRAFT_STRING_MAX["location.province"],
     );
+    // F4.243 (ADR 0098 Amendment 2, B8): the parent's code, folded to upper
+    // case as the `code` cell is (B2, review #7); validate and the commit match
+    // it to a candidate by `findParentCandidate`, so a candidate stored in
+    // another case still resolves. Bounded after the fold, for the reason
+    // above, and never echoed; whether the code names an active location is
+    // validate's field error (Q2), so this parser stays free of the database.
+    // An empty cell or a missing column is `null`: a root by choice, so an old
+    // workbook still uploads.
+    const parentCode = get("parent_code").toUpperCase();
+    this.refuseIfTooLong(
+      "LOCATION",
+      null,
+      "parent_code",
+      parentCode,
+      ONBOARDING_DRAFT_STRING_MAX["location.parentCode"],
+    );
     return {
       name,
       code,
@@ -521,6 +541,7 @@ export class OnboardingExcelService {
       latitude: Number.isFinite(lat) ? lat : ONBOARDING_DEFAULT_COORDINATES.latitude,
       longitude: Number.isFinite(lng) ? lng : ONBOARDING_DEFAULT_COORDINATES.longitude,
       province: province || undefined,
+      parentCode: parentCode === "" ? null : parentCode,
     };
   }
 
@@ -531,9 +552,9 @@ export class OnboardingExcelService {
    * are all recorded on {@link cellLengthProblem}. This wrapper exists so that
    * the call sites read as one line each.
    *
-   * **Twelve calls cover thirteen columns**, and the mismatch is deliberate.
-   * Eleven are one cell each, and every one of those reaches the draft. The
-   * twelfth covers `username` and `password` together — the two columns that
+   * **Thirteen calls cover fourteen columns**, and the mismatch is deliberate.
+   * Twelve are one cell each (`F4.243` added `parent_code`), and every one of
+   * those reaches the draft. The thirteenth covers `username` and `password` together — the two columns that
    * reach `CredentialCryptoService` rather than the draft — and it names them
    * with the single literal `"username or password"` because a refusal that
    * said which of the two was long would tell an uploader whether a password

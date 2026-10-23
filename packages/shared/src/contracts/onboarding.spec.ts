@@ -228,13 +228,14 @@ const DRAFT_SUB_SCHEMAS: readonly (readonly [string, Record<string, z.ZodTypeAny
 
 /**
  * The number of string fields those nine schemas hold between them —
- * 6 + 6 + 5 + 4 + 4 + 5 + 1 + 4 + 1. The last four are `F3.22`'s authored
+ * 7 + 6 + 5 + 4 + 4 + 5 + 1 + 4 + 1. The last four are `F3.22`'s authored
  * template (code, name, assetType, domain, description), stock entry
  * (stockCode), template point (pointKey, label, unit, sourceDataKeyPattern) and
  * template reference (code); record keys and values are not shape fields and
  * are not counted. (`location` gained `type` — `F4.157`, `locationTypeCodeSchema`
  * is a `ZodString` under its `.optional()` wrapper, same as every other
- * optional string field the walk already counts).
+ * optional string field the walk already counts; `F4.243` added `parentCode`,
+ * a `ZodString` under `.nullable().optional()`, which the walk unwraps too).
  *
  * **Written as a literal on purpose: it is the non-vacuity anchor** (AGENTS.md
  * §4.4). Both key-set comparisons below are satisfied by two empty sets, so a
@@ -243,7 +244,7 @@ const DRAFT_SUB_SCHEMAS: readonly (readonly [string, Record<string, z.ZodTypeAny
  * no schema at all. Repair the walk when this number is what fails; do not
  * adjust the number to match a broken walk.
  */
-const DRAFT_STRING_FIELD_COUNT = 36;
+const DRAFT_STRING_FIELD_COUNT = 37;
 
 /** Only the wrappers zod puts *outside* the string: `.optional()`, `.default()`, `.nullable()`. */
 function unwrapSchema(schema: z.ZodTypeAny): z.ZodTypeAny {
@@ -422,7 +423,11 @@ export function assertDraftStringBoundsAreEnforced(): void {
         ? assetDomainCodeSchema.minLength
         : key === "location.type"
           ? locationTypeCodeSchema.minLength
-          : null;
+          : // F4.243 (ADR 0098 Amendment 2, B11): `.min(1)` in both copies —
+            // an empty string is not a code; absent and `null` stay admitted.
+            key === "location.parentCode"
+            ? 1
+            : null;
     assert(
       schema.minLength === expectedMin,
       `${key} must carry no minimum on the response contract (expected ` +

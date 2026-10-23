@@ -53,18 +53,20 @@ const DRAFT_SUB_SCHEMAS: readonly (readonly [string, Record<string, z.ZodTypeAny
 ];
 
 /**
- * 6 + 6 + 5 + 4 + 4 + 5 + 1 + 4 + 1 — the last four are `F3.22`'s authored template
+ * 7 + 6 + 5 + 4 + 4 + 5 + 1 + 4 + 1 — the last four are `F3.22`'s authored template
  * (code, name, assetType, domain, description), stock entry (stockCode),
  * template point (pointKey, label, unit, sourceDataKeyPattern) and template
  * reference (code); record keys and values are not shape fields and are not
  * counted (`location` gained `type` — `F4.157`, D1: `locationTypeCodeSchema`
  * is a `ZodString` under the `.optional()` this copy wraps it in, same as every
- * other optional string field the walk already counts). The non-vacuity
+ * other optional string field the walk already counts; `F4.243` added
+ * `location.parentCode`, a `ZodString` under `.nullable().optional()` — the
+ * walk unwraps `ZodNullable` too, so it counts). The non-vacuity
  * anchor: every key-set comparison below is satisfied by two empty sets, so a
  * walk that silently stops finding fields would make this whole function green
  * having read nothing. Repair the walk, not the number.
  */
-const DRAFT_STRING_FIELD_COUNT = 36;
+const DRAFT_STRING_FIELD_COUNT = 37;
 
 /**
  * The minimum each string field of **this** copy carries, and it is written out
@@ -87,6 +89,9 @@ const EXPECTED_MIN_LENGTH: Readonly<Record<string, number | null>> = {
   "location.capital": null,
   // `locationTypeCodeSchema` (`F4.157`, D1) — `.min(1)`, kept, same as `assets.domain`.
   "location.type": 1,
+  // F4.243 (ADR 0098 Amendment 2, B11) — a new field, so not F4.104's "no
+  // field gains a minimum": an empty string is not a code.
+  "location.parentCode": 1,
   "rtus.code": 2,
   "rtus.displayName": 2,
   "rtus.domain": null,
@@ -143,6 +148,8 @@ const DRAFT_COLUMNS: Readonly<Record<string, { readonly columnType: string }>> =
   "location.province": locations.province,
   "location.capital": locations.capital,
   "location.type": locations.type,
+  // F4.243 — the parent's code: it is matched against `bms.locations.code`.
+  "location.parentCode": locations.code,
   "rtus.code": rtus.code,
   "rtus.displayName": rtus.displayName,
   "rtus.domain": rtus.domain,

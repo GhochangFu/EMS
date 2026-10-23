@@ -84,6 +84,8 @@ const EXPECTED_BOUNDS: Readonly<Record<string, string>> = {
   "location.province": "location.province",
   "location.capital": "location.capital",
   "location.type": LOCATION_TYPE_SCHEMA,
+  // F4.243 (ADR 0098 Amendment 2, B11).
+  "location.parentCode": "location.parentCode",
   "rtus.code": "rtus.code",
   "rtus.displayName": "rtus.displayName",
   "rtus.domain": "rtus.domain",
@@ -412,7 +414,8 @@ const HEADER_ARRAYS: Readonly<Record<string, string>> = {
 };
 
 /** Non-vacuity for the header scan: the three arrays as the template writes them. */
-const HEADER_COUNTS: Readonly<Record<string, number>> = { LOCATION: 7, RTUS: 9, ASSETS: 5 };
+// F4.243 (ADR 0098 Amendment 2, B8): LOCATION gained `parent_code`, guarded by `refuseIfTooLong`.
+const HEADER_COUNTS: Readonly<Record<string, number>> = { LOCATION: 8, RTUS: 9, ASSETS: 5 };
 
 /**
  * The one guard call that covers two columns, and must keep covering both.

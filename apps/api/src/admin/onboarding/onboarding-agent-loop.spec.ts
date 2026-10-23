@@ -89,6 +89,7 @@ export function toolContext(): ToolContext {
     templates: EMPTY_TEMPLATE_CONTEXT,
     pointKeyQuota: { createdByOrganization: 0 },
     inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
+    placement: { candidates: [] },
   };
 }
 

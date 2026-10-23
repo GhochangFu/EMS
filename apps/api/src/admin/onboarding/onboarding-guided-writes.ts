@@ -145,7 +145,7 @@ const DISCOVERY_AGENT_ONLY =
  * it a test failure too.
  */
 export const GUIDED_TOOL_COVERAGE: Readonly<Record<ToolName, GuidedToolCoverage>> = {
-  set_location: { mode: "guided", reason: "the location step" },
+  set_location: { mode: "guided", reason: "the location step and its parent question (F4.243)" },
   add_rtu: { mode: "guided", reason: "the RTU step" },
   update_rtu: { mode: "guided", reason: "the topic: turn (Amendment 2 Q-D)" },
   add_point_key: { mode: "guided", reason: "the point-key step" },

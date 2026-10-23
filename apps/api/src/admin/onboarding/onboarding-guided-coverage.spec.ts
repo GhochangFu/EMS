@@ -20,7 +20,7 @@ function assert(condition: boolean, message: string): void {
 
 const ACTIVE_TYPE = { code: "smoc_campus", label: "SMOC campus" } as never;
 // F3.23 (ADR 0092 decision 3): "use existing keys" needs `kw` active in the fleet catalog, as the global seed holds it.
-const TURN = { types: [ACTIVE_TYPE], templates: { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["kw", true]]) }, pointKeyQuota: { createdByOrganization: 0 } };
+const TURN = { types: [ACTIVE_TYPE], templates: { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["kw", true]]) }, pointKeyQuota: { createdByOrganization: 0 }, placement: { candidates: [] } };
 
 const PLACE = { name: "Berhampur", slug: "berhampur", code: "BERHAMPUR", type: "smoc_campus", latitude: 22.3, longitude: 87.3 };
 const MODBUS_RTU = { code: "RTU-1", displayName: "RTU-1", protocol: "modbus_tcp", config: { host: "127.0.0.1", port: 502, unitId: 1, pollIntervalMs: 5000 }, credentialsSet: false, ingestEnabled: false };
@@ -97,6 +97,7 @@ function depsFor(reads: string[] = []): RuleBasedTurnDeps {
           throw new Error("a guided turn read the in-use point keys");
         },
       },
+      placement: { candidates: [] },
       inventory: {
         listExisting: async () => {
           reads.push("listExisting");

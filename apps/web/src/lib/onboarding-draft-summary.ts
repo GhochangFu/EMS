@@ -29,7 +29,11 @@ function topicOf(config: Record<string, unknown>): string {
 export function formatOnboardingDraftSummary(draft: OnboardingDraft): string {
   const lines: string[] = [];
   if (draft.location?.name) {
-    lines.push(`Location: ${draft.location.name} (${draft.location.code})`);
+    // F4.243 (ADR 0098 Amendment 2): the parent the commit places it under.
+    // Absent (not chosen) and `null` (top level) print the line as before.
+    const parent = draft.location.parentCode;
+    const under = typeof parent === "string" ? ` under ${parent}` : "";
+    lines.push(`Location: ${draft.location.name} (${draft.location.code})${under}`);
   }
   if (draft.rtus?.length) {
     lines.push("RTUs:");

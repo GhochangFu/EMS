@@ -40,6 +40,7 @@ function context(templates: ValidateTemplateContext): ToolContext {
     templates,
     pointKeyQuota: { createdByOrganization: 0 },
     inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
+    placement: { candidates: [] },
   };
 }
 
@@ -241,6 +242,7 @@ function writeContext(templates: ValidateTemplateContext): ToolContext {
     templates,
     pointKeyQuota: { createdByOrganization: 0 },
     inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
+    placement: { candidates: [] },
   };
 }
 

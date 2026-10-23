@@ -140,7 +140,7 @@ export async function assertW13AGuidedTurnLeavesTemplatesIntact(): Promise<void>
     {} as never,
     {} as never,
     {} as never,
-    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
   );
   const merged = service.mergeDraft(stored, turn.draftPatch) as OnboardingDraft;
   assert(
@@ -164,7 +164,7 @@ function mergeThroughService(stored: OnboardingDraft, patch: OnboardingDraft): O
     {} as never,
     {} as never,
     {} as never,
-    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
   );
   return service.mergeDraft(stored, patch) as OnboardingDraft;
 }
@@ -174,7 +174,7 @@ function mergeThroughService(stored: OnboardingDraft, patch: OnboardingDraft): O
  * one active code, and `AUTHORED`'s key `flow` is in the catalog (`F4.196`).
  */
 function validated(draft: OnboardingDraft): ReturnType<OnboardingValidateService["validate"]> {
-  return new OnboardingValidateService().validate(draft, ["smoc_campus"], { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["flow", true]]) });
+  return new OnboardingValidateService().validate(draft, ["smoc_campus"], { ...EMPTY_TEMPLATE_CONTEXT, pointKeys: new Map([["flow", true]]) }, { candidates: [] });
 }
 
 /**

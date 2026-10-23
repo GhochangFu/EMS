@@ -272,6 +272,8 @@ function build(stored: OnboardingDraft, failures: Failures = {}): Harness {
     templates,
     instantiation,
     { bodyFor: () => Promise.reject(new Error("no stock entry in this harness")) } as never,
+    // F4.243: the parent candidates validate reads.
+    { listParentCandidates: async () => [] } as never,
   );
   return { service, events, inserts, instantiateCalls };
 }

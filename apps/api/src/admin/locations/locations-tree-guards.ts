@@ -48,6 +48,15 @@ const TRIGGER_REASONS: ReadonlySet<string> = new Set<LocationWriteRefusalReason>
 const CHECK_VIOLATION = "23514";
 const TREE_GUARD_CONSTRAINT = "locations_tree_guard";
 
+/**
+ * The sentence the refusal for `reason` carries. `F4.243` (ADR 0098 Amendment 2,
+ * B4): onboarding's validate reports the same sentence as a field error before
+ * the commit's own check answers it as a 4xx.
+ */
+export function refusalSentence(reason: LocationWriteRefusalReason): string {
+  return SENTENCES[reason];
+}
+
 /** The refusal for `reason`: 400 for a shape the tree cannot take, 409 for a state it is in. */
 export function refusal(reason: LocationWriteRefusalReason): BadRequestException | ConflictException {
   const body = { message: SENTENCES[reason], reason };

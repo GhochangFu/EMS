@@ -38,6 +38,7 @@ function context(): ToolContext {
     templates: KW_ACTIVE,
     pointKeyQuota: { createdByOrganization: 0 },
     inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
+    placement: { candidates: [] },
   };
 }
 

@@ -31,7 +31,7 @@ function service(resolved: ResolvedLlm): { chat: OnboardingChatService; asked: s
       },
     } as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
-    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
   );
   return { chat, asked };
 }

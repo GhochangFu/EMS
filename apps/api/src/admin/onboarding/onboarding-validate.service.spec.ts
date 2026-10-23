@@ -10,6 +10,7 @@
 import type { OnboardingDraft } from "@bms/shared";
 
 import { MAX_ECHOED_ITEMS, moreTail, quoteCell } from "../spreadsheet-guard";
+import { EMPTY_PLACEMENT, PARENT_REQUIRED_MESSAGE, type PlacementContext } from "./onboarding-location-parent";
 import { EMPTY_TEMPLATE_CONTEXT, type TemplateRef, type ValidateTemplateContext } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -57,7 +58,7 @@ function completeDraft(type: string | undefined): OnboardingDraft {
 
 /** N1 — a location with no type is a `location.type` error, and the draft cannot commit. */
 export function assertMissingLocationTypeIsAnError(): void {
-  const result = new OnboardingValidateService().validate(completeDraft(undefined), CODES, EMPTY_TEMPLATE_CONTEXT);
+  const result = new OnboardingValidateService().validate(completeDraft(undefined), CODES, EMPTY_TEMPLATE_CONTEXT, EMPTY_PLACEMENT);
   const paths = result.errors.map((error) => error.path);
   assert(
     paths.includes("location.type"),
@@ -76,7 +77,7 @@ export function assertMissingLocationTypeIsAnError(): void {
  * hands the validator `[]` instead of the active codes.
  */
 export function assertTypedLocationIsReadyToCommit(): void {
-  const result = new OnboardingValidateService().validate(completeDraft("pump_station"), CODES, EMPTY_TEMPLATE_CONTEXT);
+  const result = new OnboardingValidateService().validate(completeDraft("pump_station"), CODES, EMPTY_TEMPLATE_CONTEXT, EMPTY_PLACEMENT);
   assert(
     result.errors.length === 0,
     `the fixture with a type must be clean, got ${JSON.stringify(result.errors)}`,
@@ -86,13 +87,13 @@ export function assertTypedLocationIsReadyToCommit(): void {
 
 /** N2 — while the type is missing, the phase stays `location`, so the chat asks for it. */
 export function assertMissingLocationTypeKeepsTheLocationPhase(): void {
-  const phase = new OnboardingValidateService().inferPhase(completeDraft(undefined), CODES);
+  const phase = new OnboardingValidateService().inferPhase(completeDraft(undefined), CODES, EMPTY_PLACEMENT);
   assert(phase === "location", `a location with no type must stay in the location phase, got ${phase}`);
 }
 
 /** The positive control for N2: with a type, the same draft infers `review`. */
 export function assertTypedLocationLeavesTheLocationPhase(): void {
-  const phase = new OnboardingValidateService().inferPhase(completeDraft("pump_station"), CODES);
+  const phase = new OnboardingValidateService().inferPhase(completeDraft("pump_station"), CODES, EMPTY_PLACEMENT);
   assert(phase === "review", `the fixture with a type must reach review, got ${phase}`);
 }
 
@@ -102,7 +103,7 @@ export function assertTypedLocationLeavesTheLocationPhase(): void {
  * `F4.162` (plan D9, owner ruling OQ3): a type retired after it was stored.
  */
 export function assertInactiveLocationTypeIsAnErrorNamingTheCodes(): void {
-  const result = new OnboardingValidateService().validate(completeDraft("space_port"), CODES, EMPTY_TEMPLATE_CONTEXT);
+  const result = new OnboardingValidateService().validate(completeDraft("space_port"), CODES, EMPTY_TEMPLATE_CONTEXT, EMPTY_PLACEMENT);
   const errors = result.errors.filter((error) => error.path === "location.type");
   assert(errors.length === 1, `an inactive type must carry one error at location.type, got ${JSON.stringify(result.errors)}`);
   for (const code of CODES) {
@@ -115,7 +116,7 @@ export function assertInactiveLocationTypeIsAnErrorNamingTheCodes(): void {
  * workbook cell or a `PATCH` body; the codes are what the operator can use.
  */
 export function assertInactiveLocationTypeMessageDoesNotEchoTheValue(): void {
-  const result = new OnboardingValidateService().validate(completeDraft("space_port"), CODES, EMPTY_TEMPLATE_CONTEXT);
+  const result = new OnboardingValidateService().validate(completeDraft("space_port"), CODES, EMPTY_TEMPLATE_CONTEXT, EMPTY_PLACEMENT);
   const error = result.errors.find((candidate) => candidate.path === "location.type");
   const message = error?.message ?? "";
   assert(error !== undefined, `the positive half: an error at location.type exists, got ${JSON.stringify(result.errors)}`);
@@ -128,13 +129,13 @@ export function assertInactiveLocationTypeMessageDoesNotEchoTheValue(): void {
  * redden it.
  */
 export function assertInactiveLocationTypeIsNotReadyToCommit(): void {
-  const result = new OnboardingValidateService().validate(completeDraft("space_port"), CODES, EMPTY_TEMPLATE_CONTEXT);
+  const result = new OnboardingValidateService().validate(completeDraft("space_port"), CODES, EMPTY_TEMPLATE_CONTEXT, EMPTY_PLACEMENT);
   assert(result.readyToCommit === false, "a draft whose type is not active must never be ready to commit");
 }
 
 /** N4 — an inactive type keeps the phase at `location`, so the chat asks for the type again. */
 export function assertInactiveLocationTypeKeepsTheLocationPhase(): void {
-  const phase = new OnboardingValidateService().inferPhase(completeDraft("space_port"), CODES);
+  const phase = new OnboardingValidateService().inferPhase(completeDraft("space_port"), CODES, EMPTY_PLACEMENT);
   assert(phase === "location", `an inactive type must stay in the location phase, got ${phase}`);
 }
 
@@ -148,7 +149,7 @@ const MANY_CODES: readonly string[] = Array.from(
 );
 
 function inactiveTypeMessage(codes: readonly string[]): string {
-  const result = new OnboardingValidateService().validate(completeDraft("space_port"), codes, EMPTY_TEMPLATE_CONTEXT);
+  const result = new OnboardingValidateService().validate(completeDraft("space_port"), codes, EMPTY_TEMPLATE_CONTEXT, EMPTY_PLACEMENT);
   const error = result.errors.find((candidate) => candidate.path === "location.type");
   assert(error !== undefined, `an error at location.type exists, got ${JSON.stringify(result.errors)}`);
   return error!.message;
@@ -323,7 +324,7 @@ type Breaker = (draft: OnboardingDraft) => void;
 function templateErrors(breaker: Breaker, context: ValidateTemplateContext = TEMPLATES): string {
   const draft = templatedDraft();
   breaker(draft);
-  return JSON.stringify(new OnboardingValidateService().validate(draft, CODES, context).errors);
+  return JSON.stringify(new OnboardingValidateService().validate(draft, CODES, context, EMPTY_PLACEMENT).errors);
 }
 
 function assertOnly(breaker: Breaker, path: string, message: string, context?: ValidateTemplateContext): void {
@@ -592,7 +593,7 @@ export function assertV11AnAllTemplatedDraftNeedsNoMappings(): void {
   const draft = templatedDraft();
   draft.assets = draft.assets!.slice(1);
   draft.assetPoints = [];
-  const phase = new OnboardingValidateService().inferPhase(draft, CODES);
+  const phase = new OnboardingValidateService().inferPhase(draft, CODES, EMPTY_PLACEMENT);
   assert(phase === "review", `an all-templated draft reaches review, got ${phase}`);
 }
 
@@ -600,7 +601,7 @@ export function assertV11AnAllTemplatedDraftNeedsNoMappings(): void {
 export function assertV11AMixedDraftStillNeedsMappings(): void {
   const draft = templatedDraft();
   draft.assetPoints = [];
-  const phase = new OnboardingValidateService().inferPhase(draft, CODES);
+  const phase = new OnboardingValidateService().inferPhase(draft, CODES, EMPTY_PLACEMENT);
   assert(phase === "mappings", `a draft with a plain asset and no mapping stays in mappings, got ${phase}`);
 }
 
@@ -618,7 +619,7 @@ function allTemplatedNoPointKeys(): OnboardingDraft {
 
 /** F4.192 — an all-templated draft with no point key reaches review and is ready to commit. */
 export function assertAnAllTemplatedDraftSkipsThePointKeysPhase(): void {
-  const result = new OnboardingValidateService().validate(allTemplatedNoPointKeys(), CODES, TEMPLATES);
+  const result = new OnboardingValidateService().validate(allTemplatedNoPointKeys(), CODES, TEMPLATES, EMPTY_PLACEMENT);
   assert(result.suggestedPhase === "review", `an all-templated draft with no point key reaches review, got ${result.suggestedPhase}`);
   assert(result.readyToCommit === true, "the draft is ready to commit");
 }
@@ -627,7 +628,7 @@ export function assertAnAllTemplatedDraftSkipsThePointKeysPhase(): void {
 export function assertAMixedDraftWithNoPointKeyStaysInThePointKeysPhase(): void {
   const draft = allTemplatedNoPointKeys();
   draft.assets!.push({ code: "PLAIN-1", name: "Plain 1", siteName: "Lotapata", rtuIndex: 0, domain: "electrical" });
-  const phase = new OnboardingValidateService().inferPhase(draft, CODES);
+  const phase = new OnboardingValidateService().inferPhase(draft, CODES, EMPTY_PLACEMENT);
   assert(phase === "point_keys", `a draft with a plain asset and no point key stays in point_keys, got ${phase}`);
 }
 
@@ -635,13 +636,13 @@ export function assertAMixedDraftWithNoPointKeyStaysInThePointKeysPhase(): void 
 export function assertADraftWithNoAssetAndNoPointKeyStaysInThePointKeysPhase(): void {
   const draft = allTemplatedNoPointKeys();
   draft.assets = [];
-  const phase = new OnboardingValidateService().inferPhase(draft, CODES);
+  const phase = new OnboardingValidateService().inferPhase(draft, CODES, EMPTY_PLACEMENT);
   assert(phase === "point_keys", `a draft with no asset and no point key stays in point_keys, got ${phase}`);
 }
 
 /** V12 — the positive control: the fixture is clean and ready to commit. */
 export function assertV12ATemplatedDraftIsReadyToCommit(): void {
-  const result = new OnboardingValidateService().validate(templatedDraft(), CODES, TEMPLATES);
+  const result = new OnboardingValidateService().validate(templatedDraft(), CODES, TEMPLATES, EMPTY_PLACEMENT);
   assert(result.errors.length === 0, `the fixture is clean, got ${JSON.stringify(result.errors)}`);
   assert(result.readyToCommit === true, `the fixture is ready to commit, got phase ${result.suggestedPhase}`);
 }
@@ -711,7 +712,7 @@ function patchDroppedResult(): ReturnType<OnboardingValidateService["validate"]>
   pumpKey(draft, "kw");
   draft.pointKeys = [];
   draft.onboardingMeta = { useExistingPointKeys: true };
-  return new OnboardingValidateService().validate(draft, CODES, TEMPLATES);
+  return new OnboardingValidateService().validate(draft, CODES, TEMPLATES, EMPTY_PLACEMENT);
 }
 
 /** F4.196 — that draft is not ready to commit. */
@@ -769,7 +770,7 @@ export function assertAStockKeyNamedTwiceIsReportedOnce(): void {
 
 /** F4.205 — a draft whose stock entry needs an inactive key is not ready to commit. */
 export function assertAStockDraftWithAnInactiveKeyIsNotReady(): void {
-  const result = new OnboardingValidateService().validate(templatedDraft(), CODES, stockContext([], { score: false }));
+  const result = new OnboardingValidateService().validate(templatedDraft(), CODES, stockContext([], { score: false }), EMPTY_PLACEMENT);
   assert(
     result.readyToCommit === false,
     `the draft is not ready, got phase ${result.suggestedPhase} and ${JSON.stringify(result.errors)}`,
@@ -780,4 +781,98 @@ export function assertAStockDraftWithAnInactiveKeyIsNotReady(): void {
 export function assertADraftWhosePatchDroppedATemplateKeyNamesThePoint(): void {
   const { errors } = patchDroppedResult();
   assert(errors.some((error) => error.path === "templates.0.points.0.pointKey"), `the error names the point, got ${JSON.stringify(errors)}`);
+}
+
+/* -------------------------------------------------------------------------- *
+ * `F4.243` (ADR 0098 Amendment 2, B4, B5) — the parent of the new location.   *
+ * -------------------------------------------------------------------------- */
+
+/** An organization holding one active campus, one inactive site and a node at depth 8. */
+const PLACEMENT: PlacementContext = {
+  candidates: [
+    { code: "CAMPUS-1", name: "Campus", active: true, depth: 1 },
+    { code: "OLD-SITE", name: "Old site", active: false, depth: 1 },
+    { code: "DEEP-8", name: "Deep", active: true, depth: 8 },
+  ],
+};
+
+/** `completeDraft("pump_station")` with `parentCode` set; the key is absent when none is passed. */
+function placedDraft(parentCode?: string | null): OnboardingDraft {
+  const draft = completeDraft("pump_station");
+  draft.location = { ...draft.location!, ...(parentCode === undefined ? {} : { parentCode }) };
+  return draft;
+}
+
+function parentErrors(draft: OnboardingDraft, placement: PlacementContext): string {
+  const result = new OnboardingValidateService().validate(draft, CODES, EMPTY_TEMPLATE_CONTEXT, placement);
+  return JSON.stringify(result.errors.filter((error) => error.path === "location.parentCode"));
+}
+
+/** V1 (B5) — an absent parent while the org has an active location is the "required" error. */
+export function assertAnOpenParentChoiceIsRequired(): void {
+  const got = parentErrors(placedDraft(), PLACEMENT);
+  const want = JSON.stringify([{ path: "location.parentCode", message: PARENT_REQUIRED_MESSAGE }]);
+  assert(got === want, `an open choice must be required, got ${got}`);
+}
+
+/** V2 (B5, Q1 ask until answered) — and the phase stays `location`, so the chat asks. */
+export function assertAnOpenParentChoiceKeepsTheLocationPhase(): void {
+  const phase = new OnboardingValidateService().inferPhase(placedDraft(), CODES, PLACEMENT);
+  assert(phase === "location", `an open parent choice must stay in the location phase, got ${phase}`);
+}
+
+/** V3 (B5) — an org with no active location is not asked: the phase moves on. Mutation 9 reddens it. */
+export function assertAnOrgWithNoActiveLocationIsNotAsked(): void {
+  const inactiveOnly: PlacementContext = { candidates: [PLACEMENT.candidates[1]] };
+  const phase = new OnboardingValidateService().inferPhase(placedDraft(), CODES, inactiveOnly);
+  assert(phase === "review", `an org with no active location must not be asked, got ${phase}`);
+}
+
+/** V4 (B5) — `null` is a choice (a root): no error and the draft is ready. */
+export function assertANullParentIsReady(): void {
+  const result = new OnboardingValidateService().validate(placedDraft(null), CODES, EMPTY_TEMPLATE_CONTEXT, PLACEMENT);
+  assert(result.readyToCommit, `a null parent must be ready, got ${JSON.stringify(result.errors)}`);
+}
+
+/** V5 (B4) — an unknown code is the not-found field error, with no echo of the code. */
+export function assertAnUnknownParentIsAFieldError(): void {
+  const got = parentErrors(placedDraft("NOPE-42"), PLACEMENT);
+  const want = JSON.stringify([{ path: "location.parentCode", message: "Parent location not found" }]);
+  assert(got === want, `an unknown parent must be a field error, got ${got}`);
+}
+
+/** V6 (B4) — an inactive parent is its field error. */
+export function assertAnInactiveParentIsAFieldError(): void {
+  const got = parentErrors(placedDraft("OLD-SITE"), PLACEMENT);
+  const want = JSON.stringify([{ path: "location.parentCode", message: "The parent location is inactive" }]);
+  assert(got === want, `an inactive parent must be a field error, got ${got}`);
+}
+
+/** V7 (B4) — a parent at depth 8 is the depth field error; an active parent passes and the draft is ready. */
+export function assertATooDeepParentIsAFieldError(): void {
+  const got = parentErrors(placedDraft("DEEP-8"), PLACEMENT);
+  const want = JSON.stringify([{ path: "location.parentCode", message: "A location tree may be at most 8 levels deep" }]);
+  assert(got === want, `a parent at depth 8 must be a field error, got ${got}`);
+}
+
+/** V7's positive control — the same draft under an active root parent is ready to commit. */
+export function assertAnActiveParentIsReady(): void {
+  const result = new OnboardingValidateService().validate(placedDraft("CAMPUS-1"), CODES, EMPTY_TEMPLATE_CONTEXT, PLACEMENT);
+  assert(result.readyToCommit, `an active parent must be ready, got ${JSON.stringify(result.errors)}`);
+}
+
+/**
+ * V8 (review #1) — a stored parent the commit would refuse keeps the phase at
+ * `location`, as a retired type does, so the guided step asks again. Each
+ * guard is its own case; the positive control is V9.
+ */
+export function assertAStoredBadParentKeepsTheLocationPhase(code: "OLD-SITE" | "DEEP-8" | "NOPE-42"): void {
+  const phase = new OnboardingValidateService().inferPhase(placedDraft(code), CODES, PLACEMENT);
+  assert(phase === "location", `a stored ${code} parent must stay in the location phase, got ${phase}`);
+}
+
+/** V9 — V8's positive control: the same draft under an active parent, in another case (B2), is at review. */
+export function assertAStoredGoodParentLeavesTheLocationPhase(): void {
+  const phase = new OnboardingValidateService().inferPhase(placedDraft("campus-1"), CODES, PLACEMENT);
+  assert(phase === "review", `a good stored parent must leave the location phase, got ${phase}`);
 }

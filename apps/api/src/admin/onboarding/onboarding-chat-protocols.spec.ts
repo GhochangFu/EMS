@@ -31,7 +31,7 @@ function protocolService(): OnboardingChatService {
     { listLocationTypes: async () => [{ code: "smoc_campus", label: "SMOC campus" }] } as never,
     { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
-    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
   );
 }
 

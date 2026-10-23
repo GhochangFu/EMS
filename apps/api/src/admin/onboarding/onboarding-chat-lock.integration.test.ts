@@ -163,7 +163,7 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
       vocabularies as never,
       { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
       { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
-      { listExisting: async () => ({ rows: [], total: 0 }) } as never,
+      { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
     );
     const service = new OnboardingService(
       fleetDb,
@@ -176,6 +176,8 @@ describe.skipIf(!connectionString)("F4.227 — the chat write locks the session 
       CATALOG_STUB as never,
       vocabularies as never,
       { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
+      // F4.243: the parent candidates validate reads.
+      { listParentCandidates: async () => [] } as never,
     );
 
     Object.assign(ctx, {

@@ -1,5 +1,6 @@
 import { MAX_RTU_TOPIC_CHARS, MQTT_REJECT_UNAUTHORIZED_DRAFT_MESSAGE, type OnboardingDraft } from "@bms/shared";
 
+import { EMPTY_PLACEMENT } from "./onboarding-location-parent";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -50,7 +51,7 @@ function mqttRtu(config: Record<string, unknown>, overrides: Partial<DraftRtu> =
 
 function errorsOf(...rtus: DraftRtu[]): { path: string; message: string }[] {
   const draft: OnboardingDraft = { location: { ...LOCATION }, rtus };
-  return new OnboardingValidateService().validate(draft, ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT).errors;
+  return new OnboardingValidateService().validate(draft, ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT, EMPTY_PLACEMENT).errors;
 }
 
 function configErrors(errors: { path: string; message: string }[], index: number): { path: string; message: string }[] {
@@ -230,7 +231,7 @@ export function assertAPlainTopicHasNoConfigError(): void {
  */
 function validateAWhitespaceTopic() {
   const draft: OnboardingDraft = { location: { ...LOCATION }, rtus: [mqttRtu({ topic: "  " })] };
-  return new OnboardingValidateService().validate(draft, ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT);
+  return new OnboardingValidateService().validate(draft, ACTIVE_TYPES, EMPTY_TEMPLATE_CONTEXT, EMPTY_PLACEMENT);
 }
 
 export function assertAWhitespaceTopicPassesTheRequiredCheck(): void {

@@ -605,7 +605,7 @@ export async function assertAgentTurnForwardsABoundedPrompt(): Promise<void> {
     { listLocationTypes: async () => [{ code: "pump_station", label: "Pump station" }] } as never,
     { resolveForOrganization: async () => ({ kind: "ready", provider: llm, source: "platform" }) } as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
-    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
   );
   await service.handleTurn("Tell me about the site", draft, "location", "Ion Exchange", "org-1", {
     sessionId: "s-1",

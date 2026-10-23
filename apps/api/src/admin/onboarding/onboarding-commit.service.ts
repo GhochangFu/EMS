@@ -6,7 +6,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import {
   assetPoints,
@@ -31,6 +31,12 @@ import { withTenant } from "../../database/tenant-context";
 import { CredentialCryptoService } from "../../security/credential-crypto.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { requestMetaForCreate } from "../locations/location-seed-key";
+import {
+  assertParentPlacement,
+  refusal,
+  takeLocationTreeLock,
+  treeGuardRefusal,
+} from "../locations/locations-tree-guards";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { emptyTopicAsNull } from "../rtu-topic";
 import { resolveTelemetrySource, withTelemetrySource, type TelemetrySource } from "../telemetry-source";
@@ -54,6 +60,8 @@ import {
 } from "./onboarding-point-key-conflict";
 import { readEncryptedCredentials } from "./onboarding-redaction";
 import { draftHash } from "./onboarding-commit-proposal";
+import { OnboardingInventoryService } from "./onboarding-inventory.service";
+import { canonicalParentCode } from "./onboarding-location-parent";
 import { OnboardingTemplateCatalogService } from "./onboarding-template-catalog.service";
 import { OnboardingValidateService } from "./onboarding-validate.service";
 
@@ -132,6 +140,9 @@ export class OnboardingCommitService {
     private readonly templates: AssetTemplatesAdminService,
     private readonly instantiation: AssetTemplateInstantiationService,
     private readonly stock: AssetTemplatesStockService,
+    // F4.243 (ADR 0098 Amendment 2, B4): validate's parent candidates. Last, so
+    // a test's positional `{} as never` fakes cannot shift onto it silently.
+    private readonly inventory: OnboardingInventoryService,
   ) {}
 
   private templateDeps(): CommitTemplateDeps {
@@ -246,7 +257,10 @@ export class OnboardingCommitService {
     // the stock catalog, so a templated asset that no longer resolves is
     // refused here, before the transaction, with the other field errors.
     const templates = await this.templateCatalog.context(session.organizationId);
-    const validation = this.validateService.validate(draft, activeTypeCodes, templates);
+    // F4.243 (ADR 0098 Amendment 2, B4): the parent is checked here with the
+    // other field errors; the transaction checks it again under the tree lock.
+    const placement = { candidates: await this.inventory.listParentCandidates(session.organizationId) };
+    const validation = this.validateService.validate(draft, activeTypeCodes, templates, placement);
     if (!validation.readyToCommit) {
       throw new BadRequestException({
         message: "Draft is not ready to commit",
@@ -364,10 +378,51 @@ export class OnboardingCommitService {
         }
       }
       const loc = draft.location!;
+      // `F4.243` (ADR 0098 Amendment 2, B3) — a named parent becomes an id here,
+      // and only here. The organization's tree lock first (the lock migration
+      // `0103`'s trigger takes), so no tree write in this organization changes
+      // the parent between this check and the insert. The lock order is quota,
+      // then tree; the locations service takes the tree lock alone, so the two
+      // cannot deadlock. The lookup is on the tenant transaction and names the
+      // organization: absent and foreign are one answer,
+      // `location_parent_not_found`, as in `assertParentPlacement`. The cycle
+      // guard cannot fire for an insert (`nodeId: null`). An absent or `null`
+      // parent is a root, which the trigger lets through without the lock (A2).
+      // The code is first resolved by validate's case rule (B2), so a code
+      // validate accepted is the code looked up here.
+      //
+      // Defence in depth, stated truthfully: the lookup's organization
+      // predicate is layered over row-level security, the composite foreign
+      // key and the trigger, and `assertParentPlacement` over the
+      // `locations_tree_guard` trigger, which answers the same body through
+      // `treeGuardRefusal`. So no test can redden the predicate or the
+      // pre-check alone (mutations 1, 2 and 3 survive); only the pre-check
+      // and the mapping removed together do. The unit race case in
+      // `onboarding-commit.service.spec.ts` gates the trigger mapping alone.
+      let parentId: string | null = null;
+      const parentCode = canonicalParentCode(loc.parentCode, placement);
+      if (typeof parentCode === "string") {
+        await takeLocationTreeLock(tx, session.organizationId);
+        const [parent] = await tx
+          .select({ id: locations.id })
+          .from(locations)
+          .where(and(eq(locations.organizationId, session.organizationId), eq(locations.code, parentCode)));
+        if (!parent) {
+          throw refusal("location_parent_not_found");
+        }
+        await assertParentPlacement(tx, {
+          organizationId: session.organizationId,
+          nodeId: null,
+          parentId: parent.id,
+          nodeActive: true,
+        });
+        parentId = parent.id;
+      }
       const [locationRow] = await tx
         .insert(locations)
         .values({
           organizationId: session.organizationId,
+          parentId,
           code: loc.code,
           slug: loc.slug,
           name: loc.name,
@@ -685,7 +740,8 @@ export class OnboardingCommitService {
           entityType: "location",
           entityId: locationRow.id,
           organizationId: session.organizationId,
-          payload: { orgCode: org?.code, via: "onboarding" },
+          // F4.243 (B10): the parent the node was placed under; `null` for a root.
+          payload: { orgCode: org?.code, via: "onboarding", parentId },
         },
         tx,
       );
@@ -703,7 +759,9 @@ export class OnboardingCommitService {
       // a race) answers the instantiate route's 409. `assets_code_unique` is
       // translated first, by the commit's own map, so a plain or templated
       // asset-code race keeps the commit's field error.
-      throw translateAssetCodeCollision(translateCommitUniqueConflict(err));
+      // F4.243 (B3, B9): the `locations_tree_guard` trigger's refusal (a race
+      // past the check above) answers the pre-check's own 4xx.
+      throw translateAssetCodeCollision(translateCommitUniqueConflict(treeGuardRefusal(err) ?? err));
     });
   }
 

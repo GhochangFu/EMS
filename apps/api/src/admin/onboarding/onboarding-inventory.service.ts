@@ -1,11 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, asc, count, eq, ilike, or, type SQL } from "drizzle-orm";
-import type { AnyPgColumn } from "drizzle-orm/pg-core";
+import { alias, type AnyPgColumn } from "drizzle-orm/pg-core";
 
 import { assets, assetTemplates, locations, rtuConnectionConfigs, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
+import { locationAncestorChains } from "../../auth/location-tree";
 import { FLEET_DRIZZLE } from "../../database/database.tokens";
+import type { ParentCandidate } from "./onboarding-location-parent";
 import { TOOL_LIST_MAX_ITEMS } from "./onboarding-tool-outcome";
 
 export type ExistingKind = "location" | "rtu" | "asset";
@@ -25,6 +27,11 @@ export type ExistingLocation = {
   type: string;
   active: boolean;
   rtuCount: number;
+  /**
+   * `F4.243` (ADR 0098 Amendment 2, B7): the parent's code, `null` for a root.
+   * A code and not an id — this inventory exposes no ids (ADR 0095 decision 3).
+   */
+  parentCode: string | null;
 };
 
 /**
@@ -86,6 +93,9 @@ export type ExistingResult = { rows: ExistingRow[]; total: number };
  * result (F3.26 review L6). In `ON`, not `WHERE`, so a left join stays a left
  * join.
  */
+/** The parent row of a listed location, joined by `parent_id` (`F4.243`). */
+const parentLocation = alias(locations, "parent");
+
 @Injectable()
 export class OnboardingInventoryService {
   constructor(@Inject(FLEET_DRIZZLE) private readonly db: BmsDb) {}
@@ -116,17 +126,57 @@ export class OnboardingInventoryService {
         type: locations.type,
         active: locations.active,
         rtuCount: count(rtus.id),
+        parentCode: parentLocation.code,
       })
       .from(locations)
       .leftJoin(rtus, and(eq(rtus.locationId, locations.id), eq(rtus.organizationId, organizationId)))
+      // F4.243: the organization predicate in `ON` as on every join here (L6).
+      // Migration `0103`'s composite foreign key already keeps a parent in its
+      // child's organization, so this one is belt-and-braces: no row a test
+      // can plant without disabling that key reaches it.
+      .leftJoin(
+        parentLocation,
+        and(eq(parentLocation.id, locations.parentId), eq(parentLocation.organizationId, organizationId)),
+      )
       .where(where)
-      .groupBy(locations.id)
+      .groupBy(locations.id, parentLocation.id)
       .orderBy(asc(locations.code))
       .limit(TOOL_LIST_MAX_ITEMS);
     // No rtus join here: the join fans a location out per RTU, and the total
     // counts locations.
     const [counted] = await this.db.select({ total: count() }).from(locations).where(where);
     return { rows, total: counted?.total ?? 0 };
+  }
+
+  /**
+   * `F4.243` (ADR 0098 Amendment 2, B4): every location of the organization
+   * with its code, name, active flag and depth (a root is 1), for validate's
+   * parent check and the guided chat's parent question. Not capped: validate
+   * must find any code the draft names. Tenant-only, as `listExisting`.
+   */
+  async listParentCandidates(organizationId: string): Promise<ParentCandidate[]> {
+    const rows = await this.db
+      .select({ id: locations.id, code: locations.code, name: locations.name, active: locations.active })
+      .from(locations)
+      .where(eq(locations.organizationId, organizationId))
+      .orderBy(asc(locations.code));
+    const chains = await locationAncestorChains(this.db, {
+      organizationIds: [organizationId],
+      ids: rows.map((row) => row.id),
+    });
+    // `steps` 0 is the node itself, so the deepest step plus one is its depth.
+    const depth = new Map<string, number>();
+    for (const link of chains) {
+      depth.set(link.nodeId, Math.max(depth.get(link.nodeId) ?? 0, link.steps + 1));
+    }
+    return rows.map((row) => ({
+      code: row.code,
+      name: row.name,
+      active: row.active,
+      // Fails closed: a node the walk did not reach reads as `NaN`, and
+      // `depthExceeded` treats a non-finite depth as exceeded.
+      depth: depth.get(row.id) ?? Number.NaN,
+    }));
   }
 
   private async listRtus(organizationId: string, query: ExistingQuery): Promise<ExistingResult> {

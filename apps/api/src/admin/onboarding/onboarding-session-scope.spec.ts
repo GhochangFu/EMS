@@ -93,6 +93,8 @@ function commitServiceOver(row: Row | null, canManage: boolean, role: Role = "ad
     {} as never,
     {} as never,
     {} as never,
+    // F4.243: the parent candidates validate reads.
+    { listParentCandidates: async () => [] } as never,
   );
   return Object.assign(service, { fleetReads: reads });
 }
@@ -112,6 +114,8 @@ function onboardingServiceOver(row: Row | null, role: Role, canManage: boolean) 
     none,
     none,
     none,
+    // F4.243: the parent candidates validate reads.
+    { listParentCandidates: async () => [] } as never,
   );
   return { service, fleetReads: fleet.reads, tenantReads: tenant.reads };
 }

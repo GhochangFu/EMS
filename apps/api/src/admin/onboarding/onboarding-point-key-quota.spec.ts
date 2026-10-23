@@ -45,6 +45,7 @@ function context(quota: PointKeyQuota, templates: ValidateTemplateContext = KW_A
     templates,
     pointKeyQuota: quota,
     inventory: { listExisting: async () => ({ rows: [], total: 0 }) },
+    placement: { candidates: [] },
   };
 }
 

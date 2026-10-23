@@ -266,6 +266,7 @@ export class OnboardingChatService {
       templates: turn.templates,
       pointKeyQuota: turn.pointKeyQuota,
       inventory: this.inventoryService,
+      placement: turn.placement,
     };
   }
 
@@ -311,7 +312,10 @@ export class OnboardingChatService {
     // types, so the agent tools and every `finalizeTurn` validate against one
     // read.
     const templates = await this.templateCatalog.context(organizationId);
-    const turn: TurnVocabulary = { types, templates, pointKeyQuota: context.pointKeyQuota };
+    // F4.243 (ADR 0098 Amendment 2, B4–B6): the organization's locations, read
+    // once per turn beside the types, for the parent step and validate.
+    const placement = { candidates: await this.inventoryService.listParentCandidates(organizationId) };
+    const turn: TurnVocabulary = { types, templates, pointKeyQuota: context.pointKeyQuota, placement };
     const lower = message.toLowerCase().trim();
     if (
       // F4.220: whole words, so "restriction" is not a protocol question.
@@ -329,7 +333,7 @@ export class OnboardingChatService {
         phase,
         // F4.199: a protocol reply adds an RTU only at the RTU step; past it
         // the same text reaches the point-key or asset branch.
-        this.validateService.inferPhase(draft, types.map((t) => t.code)) === "rtu"
+        this.validateService.inferPhase(draft, types.map((t) => t.code), turn.placement) === "rtu"
           ? ["MQTT", "Modbus TCP", "View draft"]
           : ["View draft"],
         message,
@@ -415,6 +419,7 @@ export class OnboardingChatService {
       mergeDraftPatch(draft, draftPatch),
       turn.types.map((t) => t.code),
       turn.templates,
+      turn.placement,
     );
     const phase = validation.suggestedPhase ?? currentPhase;
     let autoOpenPreview = false;

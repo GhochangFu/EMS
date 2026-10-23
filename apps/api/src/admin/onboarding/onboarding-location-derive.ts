@@ -52,6 +52,9 @@ export function deriveLocationPatch(input: {
     longitude: stored?.longitude ?? ONBOARDING_DEFAULT_COORDINATES.longitude,
     province: stored?.province,
     capital: stored?.capital,
+    // F4.243 (ADR 0098 Amendment 2, B7): the stored parent choice survives a
+    // rename or a type change; the call's own `parentCode` (in `kept`) wins.
+    parentCode: stored?.parentCode,
     ...kept,
     slug: kept?.slug || slug || "location",
     code: kept?.code || code || "LOC",

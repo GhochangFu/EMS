@@ -140,6 +140,8 @@ function buildService(opts: {
     {} as never,
     {} as never,
     {} as never,
+    // F4.243: the parent candidates validate reads.
+    { listParentCandidates: async () => [] } as never,
   );
   return { service, domainCalls, validateCalls: () => validateCalls };
 }
@@ -201,10 +203,10 @@ export async function assertOverCapDraftIsRefusedBeforeValidate(): Promise<void>
   const validateService = new OnboardingValidateService();
   const atCap: OnboardingDraft = { assets: times(MAX_ONBOARDING_ASSETS, (index) => assetAt(index)) };
   assert(
-    validateService.validate(atCap, CODES, EMPTY_TEMPLATE_CONTEXT).errors.filter((error) => error.path === "assets").length === 0,
+    validateService.validate(atCap, CODES, EMPTY_TEMPLATE_CONTEXT, { candidates: [] }).errors.filter((error) => error.path === "assets").length === 0,
     "a draft at the asset cap raises no array-level issue — the cap is a ceiling, not a target",
   );
-  const realVerdict = validateService.validate(overCapDraft(), CODES, EMPTY_TEMPLATE_CONTEXT);
+  const realVerdict = validateService.validate(overCapDraft(), CODES, EMPTY_TEMPLATE_CONTEXT, { candidates: [] });
   assert(
     realVerdict.errors.some((error) => error.path === "assets"),
     `the real validate service reports the over-cap array, got ${JSON.stringify(realVerdict.errors)}`,

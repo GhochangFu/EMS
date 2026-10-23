@@ -192,7 +192,7 @@ export function buildService(opts: { session: ReturnType<typeof sessionRow>; res
     // answers — the producer these cases are about.
     { resolveForOrganization: async () => ({ kind: "guided", reason: "platform_off" }) } as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
-    { listExisting: async () => ({ rows: [], total: 0 }) } as never,
+    { listExisting: async () => ({ rows: [], total: 0 }), listParentCandidates: async () => [] } as never,
   );
   const service = new OnboardingService(
     db,
@@ -205,6 +205,8 @@ export function buildService(opts: { session: ReturnType<typeof sessionRow>; res
     {} as never,
     {} as never,
     { context: async () => EMPTY_TEMPLATE_CONTEXT, pointKeyQuota: async () => "exempt" } as never,
+    // F4.243: the parent candidates validate reads.
+    { listParentCandidates: async () => [] } as never,
   );
   return { service, record };
 }

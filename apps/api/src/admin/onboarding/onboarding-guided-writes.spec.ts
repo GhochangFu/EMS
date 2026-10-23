@@ -48,6 +48,7 @@ function context(): ToolContext {
         throw new Error("a guided write read the catalog");
       },
     },
+    placement: { candidates: [] },
     inventory: {
       listExisting: async () => {
         throw new Error("a guided write read the inventory");
