@@ -7850,3 +7850,5 @@ One PR, [#894](https://github.com/GhochangFu/EMS/pull/894) (`09836994`), under [
 **`F4.249` done 2026-10-22** in [#921](https://github.com/GhochangFu/EMS/pull/921) (`6a45f8a3`), ADR 0099 Amendment 7: the Anthropic provider marks the tool definitions and the fixed system prompt for prompt caching, and the copilot keeps that prefix byte-stable for every provider.
 
 **`F4.269` done 2026-10-23** in [#924](https://github.com/GhochangFu/EMS/pull/924) (`47e8ecd8`), ADR 0105: the copilot dock renders a PDF's first page to an image in the browser and sends it to the vision model in place of the PDF.
+
+**`F4.243` done 2026-10-23** in [#926](https://github.com/GhochangFu/EMS/pull/926) (`b75b74f5`), ADR 0098 Amendment 2: onboarding places the new site under an existing location (workbook `parent_code`, a guided parent step, `set_location` `parentCode`) inside the commit transaction with the location tree's guards, and the agent's inventory names each location's parent.
