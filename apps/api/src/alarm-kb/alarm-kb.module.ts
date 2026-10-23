@@ -16,5 +16,8 @@ import { AlarmKbService } from "./alarm-kb.service";
 @Module({
   controllers: [AlarmKbController],
   providers: [AlarmKbService, JwtAuthGuard],
+  // `F4.276`: exported for the copilot's `get_alarm_kb` read tool. Stateless
+  // (`FLEET_DRIZZLE` only), and this module still imports nothing.
+  exports: [AlarmKbService],
 })
 export class AlarmKbModule {}

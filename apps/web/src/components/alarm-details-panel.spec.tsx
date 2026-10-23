@@ -43,6 +43,7 @@ function details(overrides: Partial<AlarmDetailsResponse> = {}): AlarmDetailsRes
     acknowledgedBy: null,
     clearedAt: null,
     ruleId: "rule-1",
+    rulePointKey: null,
     thresholdOperator: "gte",
     thresholdValue: 85,
     currentValue: 91,

@@ -131,6 +131,9 @@ export type StoredContractContext =
   // `F4.277`: the system-status and audit-log read tools.
   | "copilot_tools.get_system_status.result"
   | "copilot_tools.list_audit_log.page"
+  // `F4.276`: the alarm details and alarm knowledge-base read tools.
+  | "copilot_tools.get_alarm_details.result"
+  | "copilot_tools.get_alarm_kb.result"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");

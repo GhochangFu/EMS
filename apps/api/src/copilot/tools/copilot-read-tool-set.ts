@@ -3,6 +3,8 @@ import type { ZodTypeAny } from "zod";
 
 import { AuditAdminService } from "../../admin/audit/audit.service";
 import { LocationsAdminService } from "../../admin/locations/locations.service";
+import { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
+import { AlarmDetailsService } from "../../alarms/alarm-details.service";
 import { AlarmsService } from "../../alarms/alarms.service";
 import { AssetHealthService } from "../../asset-health/asset-health.service";
 import { AssetKpisService } from "../../assets/asset-kpis.service";
@@ -19,6 +21,8 @@ import { TelemetryService } from "../../telemetry/telemetry.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import type { CopilotReadTools, CopilotToolContext, CopilotToolResult } from "../copilot-read-tools";
 import type { CopilotReadServices, CopilotReadToolDefinition } from "./copilot-read-tool";
+import { getAlarmDetailsTool } from "./get-alarm-details.tool";
+import { getAlarmKbTool } from "./get-alarm-kb.tool";
 import { getAssetKpisTool } from "./get-asset-kpis.tool";
 import { getDashboardKpisTool } from "./get-dashboard-kpis.tool";
 import { getEnergyReportPreviewTool } from "./get-energy-report-preview.tool";
@@ -50,10 +54,13 @@ import { openPageTool } from "./open-page.tool";
  * 1, plan D16) before `open_page`. `F4.274` adds the five telemetry reads
  * after `get_asset_kpis`. `F4.275` adds the six energy and portfolio reads
  * after `get_point_aggregate`. `F4.277` adds `get_system_status` and
- * `list_audit_log` after `get_health_summary`.
+ * `list_audit_log` after `get_health_summary`. `F4.276` adds
+ * `get_alarm_details` and `get_alarm_kb` after `list_alarms`.
  */
 export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[] = [
   listAlarmsTool,
+  getAlarmDetailsTool,
+  getAlarmKbTool,
   listAssetsTool,
   getAssetKpisTool,
   listAssetPointsTool,
@@ -134,6 +141,9 @@ export class CopilotReadToolSet implements CopilotReadTools {
     // `F4.277`: appended last, the same reason.
     @Inject(AuditAdminService) audit: AuditAdminService,
     @Inject(SystemStatusService) systemStatus: SystemStatusService,
+    // `F4.276`: appended last, the same reason.
+    @Inject(AlarmDetailsService) alarmDetails: AlarmDetailsService,
+    @Inject(AlarmKbService) alarmKb: AlarmKbService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -151,6 +161,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
       reports,
       audit,
       systemStatus,
+      alarmDetails,
+      alarmKb,
     });
   }
 

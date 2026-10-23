@@ -7,6 +7,7 @@ import { OnboardingService } from "../admin/onboarding/onboarding.service";
 import { UserGrantsService } from "../admin/users/user-grants.service";
 import { UsersService } from "../admin/users/users.service";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { AlarmKbModule } from "../alarm-kb/alarm-kb.module";
 import { AlarmsModule } from "../alarms/alarms.module";
 import { AssetHealthModule } from "../asset-health/asset-health.module";
 import { AssetsModule } from "../assets/assets.module";
@@ -127,6 +128,11 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * `SystemStatusModule` exports `SystemStatusService` for the audit-log and
  * system-status read tools. `SystemStatusModule` imports only `AuthModule`,
  * and stays API-only: the worker never reaches this module.
+ *
+ * `F4.276`: `AlarmsModule` (already imported) exports `AlarmDetailsService`
+ * and `AlarmKbModule` exports `AlarmKbService` for the alarm details and the
+ * alarm knowledge-base read tools. `AlarmKbModule` declares no imports, so the
+ * graph stays acyclic; the worker never reaches this module.
  */
 @Module({
   imports: [
@@ -146,6 +152,7 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     DashboardModule,
     ReportsCoreModule,
     SystemStatusModule,
+    AlarmKbModule,
   ],
   controllers: [CopilotAccessController, CopilotChangesController, CopilotConversationsController, CopilotStatusController],
   providers: [

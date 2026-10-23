@@ -221,6 +221,7 @@ export class AlarmDetailsService {
       acknowledgedBy: row.acknowledgedBy,
       clearedAt: row.clearedAt?.toISOString() ?? null,
       ruleId: row.ruleId,
+      rulePointKey: row.rulePointKey,
       thresholdOperator: row.thresholdOperator as AutomationRuleOperator | null,
       thresholdValue: row.thresholdValue,
       currentValue: currentValue?.value ?? null,

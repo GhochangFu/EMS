@@ -9,6 +9,9 @@ import { calls, FakeLlmProvider, toolCall } from "../../admin/onboarding/onboard
 import { AdminModule } from "../../admin/admin.module";
 import { AuditAdminService } from "../../admin/audit/audit.service";
 import { LocationsAdminService } from "../../admin/locations/locations.service";
+import { AlarmKbModule } from "../../alarm-kb/alarm-kb.module";
+import { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
+import { AlarmDetailsService } from "../../alarms/alarm-details.service";
 import { AlarmsModule } from "../../alarms/alarms.module";
 import { AlarmsService } from "../../alarms/alarms.service";
 import { AssetHealthModule } from "../../asset-health/asset-health.module";
@@ -392,15 +395,18 @@ export async function assertAnInjectedProposeCallFindsNoTool(): Promise<void> {
 }
 
 /**
- * The registry is the twenty-four read tools (`F3.87` PR 2 added the four
+ * The registry is the twenty-six read tools (`F3.87` PR 2 added the four
  * mimic reads, `F4.274` the five telemetry reads, `F4.275` the six energy
- * reads, `F4.277` the system status and the audit log), each with a strict
- * argument schema.
+ * reads, `F4.277` the system status and the audit log, `F4.276` the alarm
+ * details and the alarm knowledge base), each with a strict argument schema.
  */
 export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
   const { tools } = fakeServices();
   expect(tools.registry.definitions.map((d) => d.name)).toEqual([
     "list_alarms",
+    // `F4.276`: the alarm details and the knowledge base, beside the alarm list.
+    "get_alarm_details",
+    "get_alarm_kb",
     "list_assets",
     "get_asset_kpis",
     // `F4.274`: the telemetry reads, after the KPIs they sit beside.
@@ -539,6 +545,9 @@ export function assertTheModuleWiresTheReadTools(): void {
     // `F4.277`: the audit-log and system-status read tools.
     AuditAdminService,
     SystemStatusService,
+    // `F4.276`: the alarm details and the alarm knowledge-base read tools.
+    AlarmDetailsService,
+    AlarmKbService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
   for (const module of [
@@ -554,11 +563,13 @@ export function assertTheModuleWiresTheReadTools(): void {
     ReportsCoreModule,
     AdminModule,
     SystemStatusModule,
+    AlarmKbModule,
   ]) {
     expect(imports).toContain(module);
   }
   const exportsOf = (module: unknown) => (Reflect.getMetadata("exports", module as object) ?? []) as unknown[];
-  expect(exportsOf(AlarmsModule)).toContain(AlarmsService);
+  expect(exportsOf(AlarmsModule)).toEqual(expect.arrayContaining([AlarmsService, AlarmDetailsService]));
+  expect(exportsOf(AlarmKbModule)).toContain(AlarmKbService);
   expect(exportsOf(AssetsModule)).toEqual(expect.arrayContaining([AssetsService, AssetKpisService]));
   expect(exportsOf(DashboardBuilderModule)).toContain(DashboardsService);
   expect(exportsOf(AssetHealthModule)).toContain(AssetHealthService);
@@ -570,5 +581,5 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(ReportsCoreModule)).toContain(ReportsService);
   expect(exportsOf(AdminModule)).toContain(AuditAdminService);
   expect(exportsOf(SystemStatusModule)).toContain(SystemStatusService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(24);
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(26);
 }

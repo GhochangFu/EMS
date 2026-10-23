@@ -2,6 +2,8 @@ import type { z, ZodTypeAny } from "zod";
 
 import type { AuditAdminService } from "../../admin/audit/audit.service";
 import type { LocationsAdminService } from "../../admin/locations/locations.service";
+import type { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
+import type { AlarmDetailsService } from "../../alarms/alarm-details.service";
 import type { AlarmsService } from "../../alarms/alarms.service";
 import type { AssetHealthService } from "../../asset-health/asset-health.service";
 import type { AssetKpisService } from "../../assets/asset-kpis.service";
@@ -23,7 +25,8 @@ import { COPILOT_TOOL_LIST_MAX_ITEMS, targetOrganizations } from "./copilot-tool
  * each uses, so a spec passes a fake with a call counter and nothing else.
  */
 export interface CopilotReadServices {
-  readonly access: Pick<AccessControlService, "readableAssetIdsInOrganization">;
+  /** `F4.276`: `readableOrganizationIds` narrows `get_alarm_kb`'s BYPASSRLS read, as `GET /alarm-kb` does. */
+  readonly access: Pick<AccessControlService, "readableAssetIdsInOrganization" | "readableOrganizationIds">;
   readonly alarms: Pick<AlarmsService, "list">;
   /** `F4.274`: `listPoints` for `list_asset_points`. */
   readonly assets: Pick<AssetsService, "listAll" | "listPoints">;
@@ -56,6 +59,16 @@ export interface CopilotReadServices {
   readonly audit: Pick<AuditAdminService, "list">;
   /** `F4.277`: the system status (`GET /system/status`); never called with `null` (the whole fleet). */
   readonly systemStatus: Pick<SystemStatusService, "read">;
+  /**
+   * `F4.276`: one alarm's details (`GET /alarms/:id/details`); never called with
+   * `null`. `get` only, so the acknowledgement and the enrichment stay unreachable.
+   */
+  readonly alarmDetails: Pick<AlarmDetailsService, "get">;
+  /**
+   * `F4.276`: the alarm knowledge base (`GET /alarm-kb`); never called with
+   * `null` (the unrestricted-admin scope) or `[]`.
+   */
+  readonly alarmKb: Pick<AlarmKbService, "list">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */
