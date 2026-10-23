@@ -1261,7 +1261,8 @@
 > boundary) in #805 `eb85237e`; **Amendment 2** (a draft onboarding session is
 > resumed from the dock, and one untouched for 30 days is erased by the purge
 > tick; `F4.255`) in #837 `d00ead32`. **`F3.86`, release 2, and `F3.87`, release 3, are built, and so are
-> Amendments 4–7 (`F4.245`, `F4.247`, `F4.244`, `F4.249`) (all below).**
+> Amendments 4–7 (`F4.245`, `F4.247`, `F4.244`, `F4.249`), and the read-tool
+> rows `F4.274`–`F4.277` (all below).**
 > It promotes §6's general copilot item for `admin`, `organization_admin`,
 > `location_admin` and `asset_group_admin` only; operators and viewers get none. It answers
 > read-only questions within the user's own read scope and proposes admin
@@ -1430,6 +1431,27 @@
 > from `/pdfjs/`, copied by `apps/web/scripts/copy-pdfjs-assets.mjs` as the
 > `predev` and `prebuild` scripts. A PDF it cannot open is refused at the
 > picker; pages 2 and later are not sent.
+> **`F4.274`–`F4.277`** (ADR 0099 decision 1, no ADR; #930 `b86393d8`, #931
+> `3aef9bfc`): the copilot's read-only answers reach telemetry, energy, alarms,
+> the audit log and the system status — 26 read tools in
+> `apps/api/src/copilot/tools/` (was 11). Telemetry: `list_asset_points`,
+> `get_latest_values`, `get_values_at_instant`, `get_recent_values`,
+> `get_point_aggregate` (statistics only, no series). Energy and portfolio:
+> `get_dashboard_kpis`, `get_load_trend`, `get_energy_summary`,
+> `get_energy_source_mix`, `get_energy_top_consumers`,
+> `get_energy_report_preview` (windows `24h`/`7d`/`30d`). Alarms:
+> `get_alarm_details` and `get_alarm_kb`, joined to `get_recent_values` by
+> `rulePointKey` on `alarmDetailsResponseSchema` (additive). Audit and status:
+> `list_audit_log` (never NULL-organization rows; the actor's `oidcSubject`
+> stripped for every caller) and `get_system_status`. Every new tool places its
+> asset or record inside the conversation's organizations before any service
+> call, parses through `parseStoredContract` (so **a new copilot read tool must
+> be added to `COPILOT_TOOL_FILES` in `tests/f4.108-service-parses-are-guarded.test.ts`**),
+> and bounds its result. The read registry has its own size gate (< 13,000
+> characters, `telemetry-read-tools.spec.ts`); the `F4.266` propose gate stays
+> at 52,000. `list_assets` takes a name/code `search`, applied before its
+> 25-item cap. Acknowledging alarms, work orders and every other operations
+> write stay out (decision 1); `F4.278`–`F4.284` hold the gated next jobs.
 > EMQX and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
