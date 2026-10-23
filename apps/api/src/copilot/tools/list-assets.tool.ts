@@ -12,12 +12,18 @@ import { COPILOT_TOOL_LIST_MAX_ITEMS, targetOrganizations } from "./copilot-tool
 export const listAssetsTool = defineReadTool({
   name: "list_assets",
   description:
-    "List assets (id, code, name, site, location, domain). Optional organizationId narrows the list. " +
-    "The result groups assets by organization; truncated means there are more.",
-  schema: z.object({ organizationId: z.string().uuid().optional() }).strict(),
+    "List assets (id, code, name, site, location, domain). Optional organizationId narrows the list; " +
+    "optional search matches part of the name or code. The result groups assets by organization; truncated means there are more.",
+  schema: z
+    .object({ organizationId: z.string().uuid().optional(), search: z.string().min(1).max(64).optional() })
+    .strict(),
   async run({ access, assets }, args, ctx) {
     const target = targetOrganizations(args.organizationId, ctx.allowedOrganizationIds);
     if (!target.ok) return target;
+    // `F4.274` live check: the filter runs before the 25-item cap, so a named asset past the 25th is found.
+    const needle = args.search?.trim().toLowerCase() || undefined;
+    const matches = (row: { name: string; code: string }): boolean =>
+      needle === undefined || row.name.toLowerCase().includes(needle) || row.code.toLowerCase().includes(needle);
     const out = collectByOrganization<z.infer<typeof assetListResponseSchema>[number]>();
     let room = COPILOT_TOOL_LIST_MAX_ITEMS;
     let truncated = false;
@@ -35,7 +41,7 @@ export const listAssetsTool = defineReadTool({
         assetListResponseSchema,
         await assets.listAll(assetIds, organizationId),
         "copilot_tools.list_assets.rows",
-      );
+      ).filter(matches);
       if (rows.length > room) truncated = true;
       room -= out.add(organizationId, rows, room);
     }
