@@ -49,6 +49,8 @@ const VOCABULARIES: QueryKey = ["vocabularies"];
 const LOCATION_TYPES: QueryKey = ["admin", "location-types"];
 const LOCATION_TYPES_CATALOG: QueryKey = ["admin", "location-types-catalog"];
 const ASSET_ROLES_CATALOG: QueryKey = ["admin", "asset-roles-catalog"];
+/** `F4.278`: the Rule Engine's queries — the list, the executions and the builder catalog (`rules-panel.tsx`). */
+const RULES: QueryKey = ["rules"];
 // `F4.255` PR 3: the copilot dock's list of an organization's open onboarding drafts.
 export const ONBOARDING_DRAFTS: QueryKey = ["admin", "onboarding", "drafts"];
 
@@ -154,6 +156,14 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "locationType.update": [LOCATION_TYPES, LOCATION_TYPES_CATALOG],
   "locationType.deactivate": [LOCATION_TYPES, LOCATION_TYPES_CATALOG],
   "locationType.reactivate": [LOCATION_TYPES, LOCATION_TYPES_CATALOG],
+  // `F4.278` (Amendment 8): the alarm rules.
+  "rule.create": [RULES],
+  "rule.update": [RULES],
+  "rule.duplicate": [RULES],
+  "rule.publish": [RULES],
+  "rule.enable": [RULES],
+  "rule.disable": [RULES],
+  "rule.archive": [RULES],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

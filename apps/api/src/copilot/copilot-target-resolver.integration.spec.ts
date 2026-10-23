@@ -55,6 +55,10 @@ export type ResolverCtx = {
   locationTypeLabel: string;
   assetRoleCode: string;
   assetRoleLabel: string;
+  /** `F4.278`: an asset of B, a published rule on `assetA` and a rule on `assetB`. */
+  assetB: string;
+  ruleA: string;
+  ruleB: string;
 };
 
 /** `locationA` carries a stored `builtin` view (`site_control_room_views`); `locationA2` carries none. */
@@ -89,6 +93,14 @@ function recorder(answers: Partial<Record<string, boolean>> = {}, role: UserRole
       answer("canManageDashboard", organizationId, scope),
     canManageTemplate: (_user: JwtPayload, organizationId: string) => answer("canManageTemplate", organizationId),
     isGlobalAdmin: () => answer("isGlobalAdmin"),
+    // `F4.278`: the rule routes' two gates — the role class (a refusal throws) and the read scope.
+    assertOperationsWriteRole: async (_user: JwtPayload, writeClass: string) => {
+      calls.push(["assertOperationsWriteRole", writeClass]);
+    },
+    readableAssetIds: async () => {
+      calls.push(["readableAssetIds"]);
+      return null;
+    },
     isOrganizationLevelAdmin: (_user: JwtPayload, organizationId: string) =>
       answer("isOrganizationLevelAdmin", organizationId),
   };
@@ -771,4 +783,35 @@ export async function anAssetTemplateTargetCarriesItsUpdatedAt(ctx: ResolverCtx)
     JWT,
   );
   expect(target?.updatedAt).toBe(RESOLVER_STAMPS.assetTemplateA.iso);
+}
+
+/** `F4.278` (Amendment 8 D2): the rule target on a real database. */
+const RULE_ROW = fixture({ kind: "rule", param: "id" });
+const RULE_UPDATE = fixture({ kind: "rule", param: "id" }, [{ field: "assetId", kind: "asset" }]);
+
+/** A rule of another organization is not found: the read is bounded to the turn's organizations. */
+export async function aRuleOfAnotherOrganizationIsNotFound(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  expect(await r.resolve(RULE_ROW, { id: ctx.ruleB }, {}, [ctx.orgA], JWT)).toBeNull();
+  expect(await r.resolve(RULE_ROW, { id: ctx.ruleA }, {}, [ctx.orgA], JWT)).toMatchObject({
+    organizationId: ctx.orgA,
+    lifecycle: "published",
+  });
+}
+
+/**
+ * The refs rule: a rule update naming an asset of another organization is refused, beside its
+ * allowed twin naming an asset of the rule's own organization; the recorder proves the route's
+ * read-scope gate was asked.
+ */
+export async function aRuleUpdateRefusesAnAssetOfAnotherOrganization(ctx: ResolverCtx): Promise<void> {
+  const allowed = recorder();
+  expect(
+    await resolverWith(ctx, allowed.access).resolve(RULE_UPDATE, { id: ctx.ruleA }, { assetId: ctx.assetA }, [ctx.orgA], JWT),
+  ).toMatchObject({ organizationId: ctx.orgA });
+  expect(allowed.calls).toEqual([["assertOperationsWriteRole", "configuration"], ["readableAssetIds"]]);
+  const refused = recorder();
+  expect(
+    await resolverWith(ctx, refused.access).resolve(RULE_UPDATE, { id: ctx.ruleA }, { assetId: ctx.assetB }, [ctx.orgA], JWT),
+  ).toBeNull();
 }

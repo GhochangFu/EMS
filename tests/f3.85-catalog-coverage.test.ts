@@ -69,6 +69,8 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/admin/vocabularies/asset-roles/asset-roles.controller.ts", full: true },
   // `F4.282` (Amendment 8): the release-4 vocabulary controller.
   { file: "apps/api/src/admin/vocabularies/location-types.controller.ts", full: true },
+  // `F4.278` (Amendment 8): the alarm rules — seven entries, three routes excluded.
+  { file: "apps/api/src/rules/rules.controller.ts", full: true },
 ];
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;

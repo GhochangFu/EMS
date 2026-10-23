@@ -14,6 +14,7 @@ import {
   aDuplicateRecordIsNamedOnce,
   aDuplicateWizardDoesNotFailTheTurn,
   aListPageMountsItsCreateWizard,
+  theRulesPageMountsItsCreateWizard,
   theVocabularyPagesMountTheirCreateWizards,
   aLongNameIsCut,
   aMalformedMultipartFieldIsA400,
@@ -48,6 +49,7 @@ describe("F4.245 — the open-wizard context of a turn (ADR 0099 Amendment 4)", 
   it("names no wizard for a route value the entry refuses", () => aTemplatePageWithANonUuidNamesNoWizard());
   it("maps a list route to its create wizard", () => aListPageMountsItsCreateWizard());
   it("maps the two vocabulary pages to their create wizards", () => theVocabularyPagesMountTheirCreateWizards());
+  it("maps the Rule Engine page to its create wizard (F4.278)", () => theRulesPageMountsItsCreateWizard());
   it("maps a page without a wizard to none", () => aPageWithoutAWizardMountsNone());
   it("sends no message when no wizard is open", () => noOpenWizardSendsNoMessage());
   it("names each open record by its params in the system line", () => theSystemLineNamesEachRecordByItsParams());

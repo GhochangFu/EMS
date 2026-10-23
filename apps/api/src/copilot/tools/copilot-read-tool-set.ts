@@ -16,6 +16,7 @@ import { defineToolRegistry, type ToolRegistry } from "../../llm/tool-registry";
 import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import { ReportsService } from "../../reports/reports.service";
+import { RulesService } from "../../rules/rules.service";
 import { SystemStatusService } from "../../system-status/system-status.service";
 import { TelemetryService } from "../../telemetry/telemetry.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -46,6 +47,7 @@ import { listDashboardsTool } from "./list-dashboards.tool";
 import { listLocationsTool } from "./list-locations.tool";
 import { listMimicLayoutsTool } from "./list-mimic-layouts.tool";
 import { listMimicSymbolsTool } from "./list-mimic-symbols.tool";
+import { listRulesTool } from "./list-rules.tool";
 import { openPageTool } from "./open-page.tool";
 
 /**
@@ -83,6 +85,8 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   getMimicLayoutTool,
   listMimicSymbolsTool,
   listAssetRolesTool,
+  // `F4.278` (Amendment 8 D7): after the unit roles, before `open_page`.
+  listRulesTool,
   openPageTool,
 ];
 
@@ -144,6 +148,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
     // `F4.276`: appended last, the same reason.
     @Inject(AlarmDetailsService) alarmDetails: AlarmDetailsService,
     @Inject(AlarmKbService) alarmKb: AlarmKbService,
+    // `F4.278`: appended last (slot 17), the same reason.
+    @Inject(RulesService) rules: RulesService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -163,6 +169,7 @@ export class CopilotReadToolSet implements CopilotReadTools {
       systemStatus,
       alarmDetails,
       alarmKb,
+      rules,
     });
   }
 

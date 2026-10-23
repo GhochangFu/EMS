@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { asc, desc, eq, inArray } from "drizzle-orm";
 
-import { assets, auditLog, automationRules, ruleExecutions } from "@bms/db";
+import { assets, automationRules, ruleExecutions } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   AssetDomain,
@@ -18,8 +18,13 @@ import type {
   RuleExecutionStatus,
   RuleListItem,
   RulePreviewResult,
+  RuleDraftBody,
+  RuleLifecycleBody,
+  RuleToggleBody,
+  RuleUpdateBody,
 } from "@bms/shared";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import {
   AlarmRaiser,
   isSampleFreshEnoughToRaise,
@@ -37,13 +42,13 @@ import { notifyOnRaise } from "./rule-actions";
 // and carries its own spec instead of needing one here.
 import { evaluateRule } from "./rule-evaluation";
 import { assertArmable } from "./rule-arming";
-import { insertRuleAuditLog, resolveActorId } from "./rule-audit";
 import { assertRuleCodeAvailable, nextRuleCode } from "./rule-codes";
 import {
   asTrace,
   draftValuesFromDto,
   mapRuleRow,
   mergeRuleDraft,
+  previewRowFromValues,
   ruleBodyFromRow,
 } from "./rule-mapping";
 import { resolveAssetOrgOrNull, resolveWriteOrg } from "./rule-org";
@@ -57,13 +62,18 @@ import { assertCompatiblePoint, ruleTargetPointKeysByAsset } from "./rule-points
 import { batchedLatestPointValues, latestPointValue } from "./rule-samples";
 import type {
   ListRuleExecutionsQuery,
-  RuleDraftBody,
-  RuleLifecycleBody,
   RulePreviewBody,
-  RuleToggleBody,
-  RuleUpdateBody,
 } from "./rules.schema";
 import type { RuleDraftValues, RuleRow } from "./rules.types";
+
+/**
+ * `F4.278` — the three lifecycle refusals, exported so the copilot's proposal
+ * check (`rule-proposal-check.service.ts`) refuses with the route's own sentence
+ * and the sentence lives once.
+ */
+export const ARCHIVED_CANNOT_BE_EDITED = "Archived rules cannot be edited";
+export const ARCHIVED_CANNOT_BE_PUBLISHED = "Archived rules cannot be published";
+export const ONLY_PUBLISHED_CAN_TOGGLE = "Only published rules can be enabled or disabled";
 
 @Injectable()
 export class RulesService {
@@ -92,6 +102,10 @@ export class RulesService {
     // wrong pool while still compiling. `rules.module.ts:15` already imports
     // `NotificationsModule` (acyclic, checked there), so no module edit is owed.
     private readonly notifications: NotificationsService,
+    // `F4.278` (ADR 0099 Amendment 8): APPENDED as the sixth slot, for the same
+    // pinned-position reason. Every rule audit row goes through this funnel, so a
+    // confirmed copilot change stamps `via: "copilot"` on it.
+    @Inject(MasterDataAuditService) private readonly audit: MasterDataAuditService,
   ) {}
 
   /** Lists Sprint D automation rules with optional asset context. */
@@ -158,7 +172,6 @@ export class RulesService {
     // both branches, so this is the same value the old order would have used.
     const organizationId = await resolveWriteOrg(this.fleetDb, dto.assetId ?? null, dto.ruleType);
     const values = await this.validateRuleDraft(dto, undefined, organizationId);
-    const actorId = await resolveActorId(this.fleetDb, actor);
     const code = values.code ?? (await nextRuleCode(this.fleetDb, dto.name));
     const now = new Date();
 
@@ -183,14 +196,18 @@ export class RulesService {
         throw new BadRequestException("Could not create rule draft");
       }
 
-      await insertRuleAuditLog(tx, {
-        organizationId,
-        actorId,
-        action: "rule_draft_create",
-        entityId: row.id,
-        reason: "Operator created rule draft",
-        payload: { code, name: dto.name, oidcSubject: actor.sub, actorEmail: actor.email },
-      });
+      await this.audit.write(
+        {
+          actor,
+          organizationId,
+          entityType: "automation_rule",
+          action: "rule_draft_create",
+          entityId: row.id,
+          reason: "Operator created rule draft",
+          payload: { code, name: dto.name, oidcSubject: actor.sub, actorEmail: actor.email },
+        },
+        tx,
+      );
 
       // E7.1c: read back under the write's own tenant GUC, not on fleetDb.
       return this.getRuleRowTx(tx, row.id);
@@ -209,7 +226,7 @@ export class RulesService {
     const current = await this.getRuleRow(id);
     this.assertAssetInScope(current.assetId, assetIds);
     if (current.lifecycleStatus === "archived") {
-      throw new BadRequestException("Archived rules cannot be edited");
+      throw new BadRequestException(ARCHIVED_CANNOT_BE_EDITED);
     }
     const merged = mergeRuleDraft(current, dto);
     this.assertAssetInScope(merged.assetId ?? null, assetIds);
@@ -219,7 +236,6 @@ export class RulesService {
     // validateRuleDraft so its E7.1c code check can be scoped to it.
     const organizationId = this.requireRuleOrg(current);
     const values = await this.validateRuleDraft(merged, id, organizationId);
-    const actorId = await resolveActorId(this.fleetDb, actor);
     const now = new Date();
 
     const updated = await withTenant(this.db, organizationId, async (tx) => {
@@ -228,19 +244,23 @@ export class RulesService {
         .set({ ...values, updatedAt: now })
         .where(eq(automationRules.id, id));
 
-      await insertRuleAuditLog(tx, {
-        organizationId,
-        actorId,
-        action: "rule_update",
-        entityId: id,
-        reason: dto.reason ?? "Operator updated rule",
-        payload: {
-          code: current.code,
-          lifecycleStatus: current.lifecycleStatus,
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
+      await this.audit.write(
+        {
+          actor,
+          organizationId,
+          entityType: "automation_rule",
+          action: "rule_update",
+          entityId: id,
+          reason: dto.reason ?? "Operator updated rule",
+          payload: {
+            code: current.code,
+            lifecycleStatus: current.lifecycleStatus,
+            oidcSubject: actor.sub,
+            actorEmail: actor.email,
+          },
         },
-      });
+        tx,
+      );
 
       // E7.1c: read back under the write's own tenant GUC, not on fleetDb.
       return this.getRuleRowTx(tx, id);
@@ -260,44 +280,13 @@ export class RulesService {
     // there is no org to scope the code-uniqueness check to — it is skipped
     // here and left to the authoritative check in `createDraft`.
     const values = await this.validateRuleDraft(dto, dto.id, null);
-    const actorId = await resolveActorId(this.fleetDb, actor);
+    const now = new Date();
     const result = await evaluateRule(
-      {
-      id: dto.id ?? "00000000-0000-0000-0000-000000000000",
-      code: values.code ?? "DRAFT",
-      name: values.name,
-      description: values.description,
-      category: values.category,
-      ruleType: values.ruleType,
-      source: "operator_rule",
-      enabled: false,
-      // A preview evaluates a draft, not a persisted rule — no org on either axis.
-      organizationId: null,
-      assetOrganizationId: null,
-      assetId: values.assetId ?? null,
-      assetCode: null,
-      assetName: null,
-      siteName: null,
-      // A preview is evaluated against a draft, not a joined row — the asset
-      // columns are null here by construction, and the domain is one of them.
-      assetDomain: null,
-      pointKey: values.pointKey ?? null,
-      operator: values.operator ?? null,
-      thresholdValue: values.thresholdValue ?? null,
-      severity: values.severity ?? null,
-      clearHoldSeconds: values.clearHoldSeconds ?? null,
-      condition: values.condition,
-      action: values.action,
-      lastEvaluatedAt: null,
-      lifecycleStatus: "draft",
-      publishedAt: null,
-      archivedAt: null,
-      duplicatedFromRuleId: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      },
+      // `F4.278`: the synthetic draft row is built in `rule-mapping.ts`, so the
+      // copilot's write-free proposal check evaluates a draft the same way.
+      previewRowFromValues(values, dto.id, now),
       (assetId, pointKey) => latestPointValue(this.db, assetId, pointKey),
-      new Date(),
+      now,
     );
 
     // E7.1c (item D) — the AUDIT ROW's org, not the evaluation's. The synthetic
@@ -320,8 +309,8 @@ export class RulesService {
     const auditOrg = values.assetId
       ? await resolveAssetOrgOrNull(this.fleetDb, values.assetId)
       : null;
-    const auditPayload = {
-      actorId,
+    const auditInput = {
+      actor,
       action: "rule_preview",
       entityType: "automation_rule",
       entityId: dto.id ?? null,
@@ -336,10 +325,10 @@ export class RulesService {
       },
     };
     if (auditOrg === null) {
-      await this.fleetDb.insert(auditLog).values({ organizationId: null, ...auditPayload });
+      await this.audit.write({ organizationId: null, ...auditInput }, this.fleetDb);
     } else {
       await withTenant(this.db, auditOrg, (tx) =>
-        tx.insert(auditLog).values({ organizationId: auditOrg, ...auditPayload }),
+        this.audit.write({ organizationId: auditOrg, ...auditInput }, tx),
       );
     }
 
@@ -356,7 +345,7 @@ export class RulesService {
     const current = await this.getRuleRow(id);
     this.assertAssetInScope(current.assetId, assetIds);
     if (current.lifecycleStatus === "archived") {
-      throw new BadRequestException("Archived rules cannot be published");
+      throw new BadRequestException(ARCHIVED_CANNOT_BE_PUBLISHED);
     }
     // Publishing re-validates the rule's own current code, scoped to its own
     // org — `currentId` already excludes the row from colliding with itself,
@@ -415,7 +404,6 @@ export class RulesService {
     // The copy inherits the source rule's tenant. `duplicateRule` bypasses
     // `validateRuleDraft`, so it carries its own `organizationId` stamp.
     const organizationId = this.requireRuleOrg(current);
-    const actorId = await resolveActorId(this.fleetDb, actor);
     const now = new Date();
     const code = await nextRuleCode(this.fleetDb, `${current.code}-COPY`);
 
@@ -457,20 +445,24 @@ export class RulesService {
         throw new BadRequestException("Could not duplicate rule");
       }
 
-      await insertRuleAuditLog(tx, {
-        organizationId,
-        actorId,
-        action: "rule_duplicate",
-        entityId: row.id,
-        reason: dto.reason ?? "Operator duplicated rule",
-        payload: {
-          fromRuleId: current.id,
-          fromCode: current.code,
-          code,
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
+      await this.audit.write(
+        {
+          actor,
+          organizationId,
+          entityType: "automation_rule",
+          action: "rule_duplicate",
+          entityId: row.id,
+          reason: dto.reason ?? "Operator duplicated rule",
+          payload: {
+            fromRuleId: current.id,
+            fromCode: current.code,
+            code,
+            oidcSubject: actor.sub,
+            actorEmail: actor.email,
+          },
         },
-      });
+        tx,
+      );
 
       return this.getRuleRowTx(tx, row.id); // E7.1c: read back on the write's tenant GUC
     });
@@ -554,7 +546,7 @@ export class RulesService {
     const current = await this.getRuleRow(id);
     this.assertAssetInScope(current.assetId, assetIds);
     if (current.lifecycleStatus !== "published") {
-      throw new BadRequestException("Only published rules can be enabled or disabled");
+      throw new BadRequestException(ONLY_PUBLISHED_CAN_TOGGLE);
     }
     // ADR 0058 decision 3 — see `rule-arming.ts`. Guarded on `dto.enabled`, not
     // run unconditionally: *disabling* a half-built seeded rule stays allowed.
@@ -562,7 +554,6 @@ export class RulesService {
       assertArmable(current);
     }
     const organizationId = this.requireRuleOrg(current);
-    const actorId = await resolveActorId(this.fleetDb, actor);
     const now = new Date();
 
     const updated = await withTenant(this.db, organizationId, async (tx) => {
@@ -571,20 +562,24 @@ export class RulesService {
         .set({ enabled: dto.enabled, updatedAt: now })
         .where(eq(automationRules.id, id));
 
-      await insertRuleAuditLog(tx, {
-        organizationId,
-        actorId,
-        action: "rule_enabled_update",
-        entityId: id,
-        reason: dto.reason ?? (dto.enabled ? "Rule enabled" : "Rule disabled"),
-        payload: {
-          code: current.code,
-          fromEnabled: current.enabled,
-          toEnabled: dto.enabled,
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
+      await this.audit.write(
+        {
+          actor,
+          organizationId,
+          entityType: "automation_rule",
+          action: "rule_enabled_update",
+          entityId: id,
+          reason: dto.reason ?? (dto.enabled ? "Rule enabled" : "Rule disabled"),
+          payload: {
+            code: current.code,
+            fromEnabled: current.enabled,
+            toEnabled: dto.enabled,
+            oidcSubject: actor.sub,
+            actorEmail: actor.email,
+          },
         },
-      });
+        tx,
+      );
 
       return this.getRuleRowTx(tx, id); // E7.1c: read back on the write's tenant GUC
     });
@@ -825,7 +820,7 @@ export class RulesService {
    * a default would let a forgotten call site silently stop checking rather
    * than fail to compile. Only `previewRule` passes `null` explicitly.
    */
-  private async validateRuleDraft(
+  async validateRuleDraft(
     dto: RuleDraftBody,
     currentId: string | undefined,
     organizationId: string | null,
@@ -927,21 +922,24 @@ export class RulesService {
     }>,
     organizationId: string,
   ): Promise<RuleRow> {
-    const actorId = await resolveActorId(this.fleetDb, actor);
     return withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(automationRules)
         .set({ ...values, updatedAt: new Date() })
         .where(eq(automationRules.id, id));
 
-      await insertRuleAuditLog(tx, {
-        organizationId,
-        actorId,
-        action,
-        entityId: id,
-        reason: dto.reason ?? (action === "rule_publish" ? "Rule published" : "Rule archived"),
-        payload: { oidcSubject: actor.sub, actorEmail: actor.email },
-      });
+      await this.audit.write(
+        {
+          actor,
+          organizationId,
+          entityType: "automation_rule",
+          action,
+          entityId: id,
+          reason: dto.reason ?? (action === "rule_publish" ? "Rule published" : "Rule archived"),
+          payload: { oidcSubject: actor.sub, actorEmail: actor.email },
+        },
+        tx,
+      );
 
       return this.getRuleRowTx(tx, id); // E7.1c: read back on the write's tenant GUC
     });

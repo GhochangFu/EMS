@@ -34,6 +34,10 @@ import {
   putMimicLibrarySettingBodySchema,
   updateMimicOrgSymbolBodySchema,
   updateMimicOrgSymbolLibraryBodySchema,
+  ruleDraftBodySchema,
+  ruleLifecycleBodySchema,
+  ruleToggleBodySchema,
+  ruleUpdateBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -136,14 +140,7 @@ import {
   pointsLatestQuerySchema,
   pointValuesAtQuerySchema,
 } from "../telemetry/telemetry.schema";
-import {
-  listRuleExecutionsQuerySchema,
-  ruleDraftBodySchema,
-  ruleLifecycleBodySchema,
-  rulePreviewBodySchema,
-  ruleToggleBodySchema,
-  ruleUpdateBodySchema,
-} from "../rules/rules.schema";
+import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "../rules/rules.schema";
 import {
   closeWorkOrderBodySchema,
   createWorkOrderBodySchema,

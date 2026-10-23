@@ -133,3 +133,109 @@ export async function anAdminOutsideTheOrganizationIsRefused(): Promise<void> {
   expect(await resolveMimic(LIBRARY_TARGET, "organization_admin", false, { id: LAYOUT })).toBeNull();
   expect(await resolveMimic(CREATE_TARGET, "organization_admin", false, {}, { organizationId: ORG })).toBeNull();
 }
+
+/**
+ * `F4.278` (ADR 0099 Amendment 8 D2) — the `rule` target. It mirrors
+ * `rules.controller.ts`: `assertOperationsWriteRole(user, "configuration")`, then
+ * the rule's (or the create body's) asset in the caller's **read** scope
+ * (`readableAssetIds`; `null` is a global admin, who reads every asset). The
+ * route refuses no copilot role by role — all four are in the configuration
+ * class — so the per-role refusal is by scope.
+ */
+const RULE = "44444444-4444-4444-8444-444444444444";
+const RULE_ASSET = "55555555-5555-4555-8555-555555555555";
+const OTHER_ASSET = "66666666-6666-4666-8666-666666666666";
+
+function ruleAccess(readable: string[] | null, refuseRole = false, asked: string[] = []): never {
+  return {
+    assertOperationsWriteRole: async (_user: unknown, writeClass: string) => {
+      asked.push(`role:${writeClass}`);
+      if (refuseRole) throw new Error("403");
+    },
+    readableAssetIds: async () => {
+      asked.push("readableAssetIds");
+      return readable;
+    },
+  } as never;
+}
+
+async function resolveRule(
+  id: string,
+  readable: string[] | null,
+  options: { refuseRole?: boolean; asked?: string[]; body?: Record<string, unknown>; mode?: "propose" | "record" } = {},
+) {
+  const resolver = new CopilotTargetResolver(
+    oneRowDb({ name: "Chiller high", assetId: RULE_ASSET, lifecycleStatus: "published" }),
+    ruleAccess(readable, options.refuseRole, options.asked),
+    {} as never,
+    {} as never,
+  );
+  const entry = catalogEntry(id)!;
+  const params: Record<string, string> = id === "rule.create" ? {} : { id: RULE };
+  return resolver.resolve(entry, params, options.body ?? {}, [ORG], JWT, ORG, options.mode);
+}
+
+/** Each of the four copilot roles, with the rule's asset in its read scope, resolves the rule (the route's two gates pass). */
+export async function everyCopilotRoleInTheConfigurationClassResolvesARule(): Promise<void> {
+  for (const readable of [null, [RULE_ASSET], [OTHER_ASSET, RULE_ASSET]]) {
+    const asked: string[] = [];
+    expect((await resolveRule("rule.publish", readable, { asked }))?.targetName).toBe("Chiller high");
+    expect(asked).toEqual(["role:configuration", "readableAssetIds"]);
+  }
+}
+
+/** A role the configuration class refuses (the route's 403) is refused, before the scope is read. */
+export async function aRoleTheConfigurationClassRefusesIsRefused(): Promise<void> {
+  const asked: string[] = [];
+  expect(await resolveRule("rule.publish", null, { refuseRole: true, asked })).toBeNull();
+  expect(asked).toEqual(["role:configuration"]);
+}
+
+/** A rule whose asset is outside the caller's read scope is refused (the route's 404). */
+export async function aRuleWhoseAssetIsOutsideTheReadScopeIsRefused(): Promise<void> {
+  expect(await resolveRule("rule.disable", [OTHER_ASSET])).toBeNull();
+  expect(await resolveRule("rule.disable", [])).toBeNull();
+}
+
+/** The create needs an `assetId`; it resolves the asset's organization and name, and its scope check reads the body's asset. */
+export async function aRuleCreateNeedsAnAssetIdAndResolvesTheAssetsOrganization(): Promise<void> {
+  expect(await resolveRule("rule.create", null, { body: { name: "x" } })).toBeNull();
+  const resolved = await resolveRule("rule.create", [RULE_ASSET], { body: { assetId: RULE_ASSET } });
+  expect([resolved?.organizationId, resolved?.targetName]).toEqual([ORG, "Chiller high"]);
+  expect(await resolveRule("rule.create", [RULE_ASSET], { body: { assetId: OTHER_ASSET } })).toBeNull();
+}
+
+/** A rule target carries the row's lifecycle, so the update summary can carry D3's live line. */
+export async function aRuleTargetCarriesItsLifecycle(): Promise<void> {
+  expect((await resolveRule("rule.update", null, { body: { thresholdValue: 4 } }))?.lifecycle).toBe("published");
+}
+
+/**
+ * F4.278 review: `RulesService.updateRule` runs `assertAssetInScope` on the rule's current asset
+ * **and** on the merged one, so an update whose body names an asset outside the read scope is refused.
+ */
+export async function aRuleUpdateToAnAssetOutsideTheReadScopeIsRefused(): Promise<void> {
+  expect(await resolveRule("rule.update", [RULE_ASSET], { body: { assetId: OTHER_ASSET } })).toBeNull();
+}
+
+/** The allowed twin: an update whose body names an asset in the read scope resolves. */
+export async function aRuleUpdateToAnAssetInTheReadScopeResolves(): Promise<void> {
+  const resolved = await resolveRule("rule.update", [RULE_ASSET, OTHER_ASSET], { body: { assetId: OTHER_ASSET } });
+  expect(resolved?.targetName).toBe("Chiller high");
+}
+
+/** A body `assetId: null` clears the asset; the route refuses that for a scoped caller (`!assetId`). */
+export async function aRuleUpdateThatClearsTheAssetIsRefusedForAScopedCaller(): Promise<void> {
+  expect(await resolveRule("rule.update", [RULE_ASSET], { body: { assetId: null } })).toBeNull();
+}
+
+/** A global admin (`null` read scope) may clear the asset, as the route lets them. */
+export async function aRuleUpdateThatClearsTheAssetResolvesForAGlobalAdmin(): Promise<void> {
+  expect((await resolveRule("rule.update", null, { body: { assetId: null } }))?.targetName).toBe("Chiller high");
+}
+
+/** A record-mode read (an open wizard) resolves the row with the same two gates. */
+export async function aRecordModeReadResolvesTheRow(): Promise<void> {
+  expect((await resolveRule("rule.update", [RULE_ASSET], { mode: "record" }))?.targetName).toBe("Chiller high");
+  expect(await resolveRule("rule.update", [OTHER_ASSET], { mode: "record" })).toBeNull();
+}

@@ -34,6 +34,10 @@ import {
   putMimicLibrarySettingBodySchema,
   updateMimicOrgSymbolBodySchema,
   updateMimicOrgSymbolLibraryBodySchema,
+  ruleDraftBodySchema,
+  ruleLifecycleBodySchema,
+  ruleToggleBodySchema,
+  ruleUpdateBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -134,14 +138,7 @@ import {
   updateReportScheduleBodySchema,
 } from "../reports/report-schedules.schema";
 import { energyReportQuerySchema } from "../reports/reports.schema";
-import {
-  listRuleExecutionsQuerySchema,
-  ruleDraftBodySchema,
-  ruleLifecycleBodySchema,
-  rulePreviewBodySchema,
-  ruleToggleBodySchema,
-  ruleUpdateBodySchema,
-} from "../rules/rules.schema";
+import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "../rules/rules.schema";
 import {
   closeWorkOrderBodySchema,
   createWorkOrderBodySchema,

@@ -17,6 +17,9 @@ import { CopilotSkillService } from "./copilot-skill.service";
 import { CopilotTargetResolver } from "./copilot-target-resolver";
 import { CopilotTurnService } from "./copilot-turn.service";
 import { CopilotModule } from "./copilot.module";
+import { RuleProposalCheckService } from "../rules/rule-proposal-check.service";
+import { RulesModule } from "../rules/rules.module";
+import { RulesService } from "../rules/rules.service";
 
 /**
  * `F3.86` PR 4 / ADR 0099 decision 3 — the module edges a green build does not
@@ -97,4 +100,25 @@ export function assertTheProposeToolsInjectTheLayoutsService(): void {
   expect(deps.get(2)).toBe(MimicLayoutsService);
   expect(moduleList(CopilotModule, "imports")).toContain(MimicLayoutsModule);
   expect(moduleList(MimicLayoutsModule, "exports")).toContain(MimicLayoutsService);
+}
+
+/**
+ * `F4.278` (ADR 0099 Amendment 8): the propose tool set's fourth parameter is
+ * `RuleProposalCheckService`, by `@Inject`; without it a rule proposal is
+ * refused at runtime while every spec over fakes stays green.
+ */
+export function assertTheProposeToolsInjectTheRuleCheck(): void {
+  expect(injected(CopilotProposeToolSet).get(3)).toBe(RuleProposalCheckService);
+}
+
+/** `CopilotModule` imports `RulesModule`, which exports both rule services the copilot injects. */
+export function assertTheModuleImportsTheRulesModule(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(RulesModule);
+  expect(moduleList(RulesModule, "exports")).toEqual(expect.arrayContaining([RulesService, RuleProposalCheckService]));
+}
+
+/** `RulesService` audits through the funnel: its sixth parameter, provided by `RulesModule`. */
+export function assertTheRulesServiceInjectsTheAuditFunnel(): void {
+  expect(injected(RulesService).get(5)).toBe(MasterDataAuditService);
+  expect(moduleList(RulesModule, "providers")).toContain(MasterDataAuditService);
 }

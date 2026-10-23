@@ -32,6 +32,7 @@ export {
   onboardingCommitSiteName,
 } from "./catalog/onboarding";
 export { bodyFieldsOf, objectShapeOf, stepValuesSchema } from "./catalog/object-shape";
+export { RULE_LIVE_LINE } from "./catalog/rules";
 export { writeNodeOfDto } from "./mimic-layout-write-node";
 export { isCopilotOutcomeLine } from "./outcome-line";
 export type {

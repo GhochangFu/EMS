@@ -208,6 +208,27 @@ export const FIXTURES: Readonly<
   "locationType.update": { body: { label: "Renamed" }, params: { code: "pump_station" }, names: TARGET_NAME },
   "locationType.deactivate": { body: {}, params: { code: "pump_station" }, names: TARGET_NAME },
   "locationType.reactivate": { body: {}, params: { code: "pump_station" }, names: TARGET_NAME },
+  // `F4.278` (Amendment 8) — the alarm rules; a threshold create on an asset, the rest on one rule row.
+  "rule.create": {
+    body: {
+      name: "Chiller high",
+      ruleType: "threshold",
+      assetId: ROW,
+      pointKey: "supply_temp_c",
+      operator: "gt",
+      thresholdValue: 3,
+      condition: { window: "latest" },
+      action: { type: "notify", target: "Operations" },
+    },
+    params: {},
+    names: "Chiller high",
+  },
+  "rule.update": { body: { thresholdValue: 4 }, params: { id: ROW }, names: TARGET_NAME },
+  "rule.duplicate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "rule.publish": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "rule.enable": { body: { enabled: true }, params: { id: ROW }, names: TARGET_NAME },
+  "rule.disable": { body: { enabled: false }, params: { id: ROW }, names: TARGET_NAME },
+  "rule.archive": { body: {}, params: { id: ROW }, names: TARGET_NAME },
 };
 
 /**

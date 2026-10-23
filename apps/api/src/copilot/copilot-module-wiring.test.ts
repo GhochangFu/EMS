@@ -4,7 +4,10 @@ import {
   assertTheIdentityAdminTokenResolves,
   assertTheOnboardingSkillIsTheOnboardingService,
   assertTheSkillSeamIsInjectedByToken,
+  assertTheModuleImportsTheRulesModule,
   assertTheModuleProvidesTheUsersServices,
+  assertTheProposeToolsInjectTheRuleCheck,
+  assertTheRulesServiceInjectsTheAuditFunnel,
   assertTheProposeToolsInjectTheLayoutsService,
   assertTheResolverInjectsTheUsersServices,
 } from "./copilot-module-wiring.spec";
@@ -18,4 +21,8 @@ describe("F3.86 PR 4 — CopilotModule wiring for the user targets", () => {
   it("F3.86 PR 5: injects the skill seam by token", () => assertTheSkillSeamIsInjectedByToken());
   it("F3.87 PR 5: the propose tools inject MimicLayoutsService from MimicLayoutsModule", () =>
     assertTheProposeToolsInjectTheLayoutsService());
+  it("F4.278: the propose tools inject RuleProposalCheckService", () => assertTheProposeToolsInjectTheRuleCheck());
+  it("F4.278: the module imports RulesModule, which exports both rule services", () => assertTheModuleImportsTheRulesModule());
+  it("F4.278: RulesService injects MasterDataAuditService, provided by RulesModule", () =>
+    assertTheRulesServiceInjectsTheAuditFunnel());
 });

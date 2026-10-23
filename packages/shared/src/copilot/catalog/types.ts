@@ -122,6 +122,14 @@ export type CatalogTarget =
    * unknown code.
    */
   | { readonly kind: "vocabulary"; readonly of: "locationType" | "assetRole"; readonly param: "code" }
+  /**
+   * `F4.278` (ADR 0099 Amendment 8 D2): an alarm rule. With `param`, the rule row the path
+   * parameter `id` names; with `field`, a create, whose organization is the asset's the body's
+   * `assetId` names (`resolveWriteOrg`). Both mirror `rules.controller.ts`: the `configuration`
+   * role class, then the rule's (or the body's) asset in the caller's **read** scope.
+   */
+  | { readonly kind: "rule"; readonly param: "id" }
+  | { readonly kind: "rule"; readonly field: "assetId" }
   | { readonly kind: "onboardingSession"; readonly param: "id" }
   | { readonly kind: "assetTemplateDeploy"; readonly param: "id" }
   | { readonly kind: "user" | "userGrantAdd"; readonly param: "id" }
@@ -175,6 +183,8 @@ export type CatalogSummaryInput = {
   readonly refName?: string;
   /** `F4.282`: `vocabulary` targets of `locationType` — how many locations in the turn's organizations use the type. */
   readonly usageCount?: number;
+  /** `F4.278` (Amendment 8 D3): a `rule` target's lifecycle status, so a PATCH of a published rule carries the live-effect line. */
+  readonly lifecycle?: string;
 };
 
 export interface CatalogEntry {

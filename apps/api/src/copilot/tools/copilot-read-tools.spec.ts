@@ -11,6 +11,8 @@ import { AuditAdminService } from "../../admin/audit/audit.service";
 import { LocationsAdminService } from "../../admin/locations/locations.service";
 import { AlarmKbModule } from "../../alarm-kb/alarm-kb.module";
 import { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
+import { RulesModule } from "../../rules/rules.module";
+import { RulesService } from "../../rules/rules.service";
 import { AlarmDetailsService } from "../../alarms/alarm-details.service";
 import { AlarmsModule } from "../../alarms/alarms.module";
 import { AlarmsService } from "../../alarms/alarms.service";
@@ -461,6 +463,8 @@ export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
     "get_mimic_layout",
     "list_mimic_symbols",
     "list_asset_roles",
+    // `F4.278` (Amendment 8 D7): the alarm rules.
+    "list_rules",
     "open_page",
   ]);
   const extra = await runToolCall(
@@ -577,6 +581,8 @@ export function assertTheModuleWiresTheReadTools(): void {
     // `F4.276`: the alarm details and the alarm knowledge-base read tools.
     AlarmDetailsService,
     AlarmKbService,
+    // `F4.278`: the alarm-rule read tool.
+    RulesService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
   for (const module of [
@@ -593,12 +599,14 @@ export function assertTheModuleWiresTheReadTools(): void {
     AdminModule,
     SystemStatusModule,
     AlarmKbModule,
+    RulesModule,
   ]) {
     expect(imports).toContain(module);
   }
   const exportsOf = (module: unknown) => (Reflect.getMetadata("exports", module as object) ?? []) as unknown[];
   expect(exportsOf(AlarmsModule)).toEqual(expect.arrayContaining([AlarmsService, AlarmDetailsService]));
   expect(exportsOf(AlarmKbModule)).toContain(AlarmKbService);
+  expect(exportsOf(RulesModule)).toContain(RulesService);
   expect(exportsOf(AssetsModule)).toEqual(expect.arrayContaining([AssetsService, AssetKpisService]));
   expect(exportsOf(DashboardBuilderModule)).toContain(DashboardsService);
   expect(exportsOf(AssetHealthModule)).toContain(AssetHealthService);
@@ -610,5 +618,5 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(ReportsCoreModule)).toContain(ReportsService);
   expect(exportsOf(AdminModule)).toContain(AuditAdminService);
   expect(exportsOf(SystemStatusModule)).toContain(SystemStatusService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(26);
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(27); // `F4.278`: + list_rules.
 }

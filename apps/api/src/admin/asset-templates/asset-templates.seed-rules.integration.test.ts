@@ -129,7 +129,14 @@ describe.skipIf(!connectionString)("E2.4 — template alarms seed automation rul
     } as unknown as NotificationsService;
     svc = {
       templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies, new CalcParametersService(fleetDb)),
-      rules: new RulesService(tenantDb, fleetDb, vocabularies, alarmRaiser, notifications),
+      rules: new RulesService(
+        tenantDb,
+        fleetDb,
+        vocabularies,
+        alarmRaiser,
+        notifications,
+        new MasterDataAuditService(tenantDb, fleetDb),
+      ),
       // Parsed through the real schema so these cases exercise the controller's
       // path, transform included — not a hand-built post-transform shape.
       instantiate: (jwt, templateId, body) =>

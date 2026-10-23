@@ -72,6 +72,8 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/vocabularies/asset-roles/asset-roles.service.ts",
   // `F4.282` (Amendment 8): the location-type vocabulary, every route an entry.
   "apps/api/src/admin/vocabularies/location-types.service.ts",
+  // `F4.278` (Amendment 8): every alarm-rule write entry's handler reaches this service.
+  "apps/api/src/rules/rules.service.ts",
 ] as const;
 
 /**
@@ -134,6 +136,8 @@ const CATALOG_DIRS = [
   "mimic-symbol-libraries",
   // `F4.282` (Amendment 8): the whole vocabulary directory — both services back catalog entries.
   "admin/vocabularies",
+  // `F4.278` (Amendment 8): the alarm rules — the old direct `insert(auditLog)` helper is gone.
+  "rules",
 ] as const;
 
 /** The drizzle form and the raw-SQL form. */

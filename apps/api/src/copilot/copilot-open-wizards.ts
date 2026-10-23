@@ -154,6 +154,8 @@ const PAGE_WIZARDS: readonly PageWizards[] = [
   // `F4.282` (Amendment 8 Q17): the two vocabulary pages' create wizards.
   { template: "/admin/location-types", wizards: [{ catalogId: "locationType.create" }] },
   { template: "/admin/unit-roles", wizards: [{ catalogId: "assetRole.create" }] },
+  // `F4.278` (Amendment 8): the Rule Engine's create wizard.
+  { template: "/rules", wizards: [{ catalogId: "rule.create" }] },
   { template: "/admin/users", wizards: [{ catalogId: "user.create" }] },
   { template: "/admin/calc-parameters", wizards: [{ catalogId: "calcParameter.create" }] },
   { template: "/admin/mimic-symbol-libraries", wizards: [{ catalogId: "mimicLibrary.create" }] },

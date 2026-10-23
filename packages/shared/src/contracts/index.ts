@@ -69,6 +69,7 @@ export * from "./mimic-layout-writes";
 export * from "./mimic-symbol-library-writes";
 export * from "./point-key-writes";
 export * from "./rtu-writes";
+export * from "./rule-writes";
 export * from "./site-control-room-view-writes";
 export * from "./site-layout-writes";
 export * from "./asset-template-content-writes";

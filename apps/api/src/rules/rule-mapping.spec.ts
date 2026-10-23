@@ -6,7 +6,7 @@ import {
   mergeRuleDraft,
   ruleBodyFromRow,
 } from "./rule-mapping";
-import { ruleDraftBodySchema } from "./rules.schema";
+import { ruleDraftBodySchema } from "@bms/shared";
 import type { RuleRow } from "./rules.types";
 
 function assert(condition: boolean, message: string): void {

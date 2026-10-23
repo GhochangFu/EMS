@@ -8,6 +8,7 @@ import {
   assetRoles,
   assets,
   assetTemplates,
+  automationRules,
   type BmsDb,
   calcParameters,
   dashboards,
@@ -63,6 +64,8 @@ export type ResolvedTarget = {
    * entry's propose tool stores it; the Confirm sends it as `If-Match`.
    */
   readonly updatedAt?: string;
+  /** `F4.278` (Amendment 8 D3): `rule` targets — the rule's `lifecycle_status`, so a PATCH of a published rule carries the live line. */
+  readonly lifecycle?: string
 };
 
 /** What the user targets need from the users services: their own checks, called, never copied (plan §6.3). */
@@ -127,6 +130,7 @@ type Found = {
   status?: TemplateLifecycleStatus;
   updatedAt?: string;
   usageCount?: number;
+  lifecycle?: string
 };
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
 type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet" | "vocabulary" | "onboardingSession" | UserKind>;
@@ -221,6 +225,13 @@ export class CopilotTargetResolver implements CopilotTargets {
         found = code === null ? null : { organizationId: boundOrganizationId, name: code };
       }
       if (found !== null && !(await this.safely(() => this.mayManageFleet(user)))) found = null;
+    } else if (target.kind === "rule" && "field" in target) {
+      // `F4.278` (Amendment 8 D2): a rule create — the organization is its asset's (`resolveWriteOrg`),
+      // and the route's two gates run on the body's asset.
+      const assetId = body[target.field];
+      if (typeof assetId !== "string") return null;
+      found = await this.ruleAsset(assetId, allowedOrganizationIds);
+      if (found !== null && !(await this.safely(() => this.mayWriteRule(user, assetId)))) found = null;
     } else {
       const id = params[target.param];
       if (id === undefined) return null;
@@ -248,6 +259,7 @@ export class CopilotTargetResolver implements CopilotTargets {
       ...(found.status !== undefined ? { status: found.status } : {}),
       ...(found.updatedAt !== undefined ? { updatedAt: found.updatedAt } : {}),
       ...(found.usageCount !== undefined ? { usageCount: found.usageCount } : {}),
+      ...(found.lifecycle !== undefined ? { lifecycle: found.lifecycle } : {}),
     };
   }
 
@@ -356,6 +368,34 @@ export class CopilotTargetResolver implements CopilotTargets {
       usageCount += Number(row?.n ?? 0);
     }
     return { organizationId, name: type.label, usageCount };
+  }
+
+  /** `F4.278`: the asset a rule create names, in the first allowed organization that has it (its name and organization). */
+  private async ruleAsset(assetId: string, allowed: readonly string[]): Promise<Found | null> {
+    for (const organizationId of allowed) {
+      const [row] = await withTenant(this.tenantDb, organizationId, (tx) =>
+        tx
+          .select({ name: assets.name })
+          .from(assets)
+          .where(and(eq(assets.id, assetId), eq(assets.organizationId, organizationId)))
+          .limit(1),
+      );
+      if (row) return { organizationId, name: row.name, assetId };
+    }
+    return null;
+  }
+
+  /**
+   * `F4.278` (Amendment 8 D2): the rule routes' own two gates and nothing more —
+   * `rules.controller.ts`'s `assertOperationsWriteRole(user, "configuration")` (a throw is a
+   * refusal, `safely`), then `RulesService.assertAssetInScope` on the caller's **read** scope:
+   * a global admin (`null`) reads every asset; anyone else needs the asset among theirs.
+   */
+  private async mayWriteRule(user: JwtPayload, ...assetIds: readonly (string | null)[]): Promise<boolean> {
+    await this.access.assertOperationsWriteRole(user, "configuration");
+    const readable = await this.access.readableAssetIds(user);
+    if (readable === null) return true;
+    return assetIds.every((assetId) => assetId !== null && readable.includes(assetId));
   }
 
   private async findRow(
@@ -494,6 +534,25 @@ export class CopilotTargetResolver implements CopilotTargets {
         return row
           ? { organizationId, name: row.key, scope: { locationId: row.locationId, assetGroupId: null, assetId: row.assetId } }
           : null;
+      }
+      // `F4.278`: a rule row — its asset (the scope gate's input) and its lifecycle (D3's live line).
+      case "rule": {
+        const [row] = await tx
+          .select({
+            name: automationRules.name,
+            assetId: automationRules.assetId,
+            lifecycleStatus: automationRules.lifecycleStatus,
+          })
+          .from(automationRules)
+          .where(and(eq(automationRules.id, id), eq(automationRules.organizationId, organizationId)))
+          .limit(1);
+        if (!row) return null;
+        return {
+          organizationId,
+          name: row.name,
+          ...(row.assetId ? { assetId: row.assetId } : {}),
+          lifecycle: row.lifecycleStatus,
+        };
       }
       case "asset": {
         const [row] = await tx
@@ -704,6 +763,16 @@ export class CopilotTargetResolver implements CopilotTargets {
       // `F3.86` PR 3b: `AssetsAdminService.update` — a body that names `locationId` moves the
       // asset, and the route checks the new site too (its own truthiness test, mirrored).
       // A create under an asset (`parent`) passes `{}`; `calcOverride.set`'s body has no `locationId`.
+      // `F4.278` (Amendment 8 D2): the rule routes' role class and read-scope gate.
+      // `RulesService.updateRule` checks the current asset and the merged one (`mergeRuleDraft`:
+      // an absent `assetId` keeps the current asset, `null` clears it), so a body that names
+      // `assetId` is checked too — before the proposal check reads that asset's telemetry.
+      case "rule": {
+        const current = found.assetId ?? null;
+        if (mode === "record" || body.assetId === undefined) return this.mayWriteRule(user, current);
+        const next = typeof body.assetId === "string" ? body.assetId : null;
+        return this.mayWriteRule(user, current, next);
+      }
       case "asset":
         if (!(await this.access.canManageAsset(user, id))) return false;
         if (!body.locationId) return true;

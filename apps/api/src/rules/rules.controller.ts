@@ -18,6 +18,12 @@ import {
 import type { Response } from "express";
 import { ZodError, z } from "zod";
 
+import {
+  ruleDraftBodySchema,
+  ruleLifecycleBodySchema,
+  ruleToggleBodySchema,
+  ruleUpdateBodySchema,
+} from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
@@ -26,14 +32,7 @@ import { setRuleNotificationsBodySchema } from "../notifications/notifications.s
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { EvaluateThrottle, throttleKeysFor } from "./evaluate-throttle";
-import {
-  listRuleExecutionsQuerySchema,
-  ruleDraftBodySchema,
-  ruleLifecycleBodySchema,
-  rulePreviewBodySchema,
-  ruleToggleBodySchema,
-  ruleUpdateBodySchema,
-} from "./rules.schema";
+import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "./rules.schema";
 import { RulesService } from "./rules.service";
 
 const idParamSchema = z.string().uuid();

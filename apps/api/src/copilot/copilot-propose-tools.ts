@@ -36,6 +36,8 @@ import { CopilotPendingChangesService } from "./copilot-pending-changes.service"
 import type { CopilotReadTools, CopilotToolContext, CopilotToolResult, RegistryOptions } from "./copilot-read-tools";
 import type { CopilotOpenWizard } from "@bms/shared";
 import { prepareUpload } from "./copilot-upload-prepare";
+import { checkRule, type CopilotRuleChecks, RULE_ENTRY_IDS } from "./copilot-propose-rules";
+import { RuleProposalCheckService } from "../rules/rule-proposal-check.service";
 import { COPILOT_TARGETS, type CopilotTargets } from "./copilot-target-resolver";
 import { PROPOSE_TARGET_ERROR, templateLifecycleRefusal } from "./copilot-template-lifecycle";
 
@@ -196,6 +198,12 @@ export interface CopilotProposeServices {
    * proposal without it is refused ({@link PROPOSE_LAYOUT_UNAVAILABLE_ERROR}).
    */
   readonly layouts?: Pick<MimicLayoutsService, "validateProposal" | "missingRoleCodes">;
+  /**
+   * `F4.278` (Amendment 8, Q9): the rule check a rule proposal runs before its
+   * card is stored. Optional for the same reason as `layouts`; a rule proposal
+   * without it is refused (`PROPOSE_RULES_UNAVAILABLE_ERROR`).
+   */
+  readonly rules?: CopilotRuleChecks;
 }
 
 /**
@@ -461,6 +469,13 @@ export function createCopilotProposeTools(
     }
     // `F3.87` PR 5: a layout card is stored only when it can apply (Amendment 3 A2), and a replace
     // keeps the layout it was built from for the card's diff (ruling Q5).
+    // `F4.278` (Q9): the route's refusals, "would match now" and the backtest, before the card.
+    let ruleNote = "";
+    if (RULE_ENTRY_IDS.has(entry.id)) {
+      const checked = await checkRule(services.rules, entry.id, params, body, target.organizationId, ctx.now);
+      if (!checked.ok) return checked;
+      ruleNote = ` ${checked.note}`;
+    }
     if (LAYOUT_ENTRY_IDS.has(entry.id)) {
       const checked = await checkLayout(entry, params, body, ctx);
       if (!checked.ok) return checked;
@@ -509,7 +524,10 @@ export function createCopilotProposeTools(
         ...(target.currentWidgetIds ? { currentWidgetIds: target.currentWidgetIds } : {}),
         ...(target.refName !== undefined ? { refName: target.refName } : {}),
         ...(target.usageCount !== undefined ? { usageCount: target.usageCount } : {}),
-      }) + (fromFile ? COPILOT_READ_FROM_FILE_NOTE : "");
+        ...(target.lifecycle !== undefined ? { lifecycle: target.lifecycle } : {}),
+      }) +
+      ruleNote +
+      (fromFile ? COPILOT_READ_FROM_FILE_NOTE : "");
     const change = await services.pending.propose(ctx.identity.id, {
       conversationId: ctx.conversationId,
       organizationId: target.organizationId,
@@ -611,8 +629,10 @@ export class CopilotProposeToolSet implements CopilotProposeTools {
     @Inject(CopilotPendingChangesService) pending: CopilotPendingChangesService,
     // `F3.87` PR 5: the layout checks a layout proposal runs (`MimicLayoutsModule` exports it).
     @Inject(MimicLayoutsService) layouts: MimicLayoutsService,
+    // `F4.278` (Amendment 8, Q9): APPENDED (slot 3) — the rule check (`RulesModule` exports it).
+    @Inject(RuleProposalCheckService) rules: RuleProposalCheckService,
   ) {
-    this.tools = createCopilotProposeTools({ targets, pending, layouts });
+    this.tools = createCopilotProposeTools({ targets, pending, layouts, rules });
   }
 
   get registry(): ToolRegistry<string> {

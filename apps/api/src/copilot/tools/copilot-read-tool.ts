@@ -14,6 +14,7 @@ import type { DashboardsService } from "../../dashboard-builder/dashboards.servi
 import type { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import type { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import type { ReportsService } from "../../reports/reports.service";
+import type { RulesService } from "../../rules/rules.service";
 import type { SystemStatusService } from "../../system-status/system-status.service";
 import type { TelemetryService } from "../../telemetry/telemetry.service";
 import type { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -69,6 +70,11 @@ export interface CopilotReadServices {
    * `null` (the unrestricted-admin scope) or `[]`.
    */
   readonly alarmKb: Pick<AlarmKbService, "list">;
+  /**
+   * `F4.278` (Amendment 8 D7): the Rule Engine's rule list (`GET /rules`); never
+   * called with `null` (the whole fleet) or `[]`.
+   */
+  readonly rules: Pick<RulesService, "listRules">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */

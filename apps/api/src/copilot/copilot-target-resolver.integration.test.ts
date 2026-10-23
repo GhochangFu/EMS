@@ -18,6 +18,8 @@ import {
   anOpenInstantiateWizardOfAnUnmanagedOrganizationIsNotOpen,
   aFleetRowLivesInTheBoundOrganization,
   aLocationTypeCountsItsLocationsInTheAllowedOrganizations,
+  aRuleOfAnotherOrganizationIsNotFound,
+  aRuleUpdateRefusesAnAssetOfAnotherOrganization,
   anUnknownVocabularyCodeIsRefusedBeforeTheGate,
   aUnitRoleResolvesItsLabel,
   aVocabularyRowNeedsABoundConversation,
@@ -77,6 +79,7 @@ const CLEANUP = [
   "DELETE FROM bms.asset_group_members WHERE asset_group_id IN (SELECT id FROM bms.asset_groups WHERE organization_id = ANY($1))",
   "DELETE FROM bms.site_control_room_views WHERE organization_id = ANY($1)",
   "DELETE FROM bms.asset_points WHERE organization_id = ANY($1)",
+  "DELETE FROM bms.automation_rules WHERE organization_id = ANY($1)",
   "DELETE FROM bms.asset_groups WHERE organization_id = ANY($1)",
   "DELETE FROM bms.assets WHERE organization_id = ANY($1)",
   "DELETE FROM bms.rtus WHERE organization_id = ANY($1)",
@@ -164,6 +167,19 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       "INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain) VALUES ($1, $2, $3, $4, $5, 'electrical') RETURNING id",
       [orgA, `${FAMILY}-ASSET`, RESOLVER_NAMES.assetA, RESOLVER_NAMES.locationA, locationA],
     );
+    // `F4.278`: an asset of B, a published rule on `assetA` and a rule on that asset of B.
+    const assetB = await one(
+      "INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain) VALUES ($1, $2, $3, $4, $5, 'electrical') RETURNING id",
+      [orgB, `${FAMILY}-ASSET-B`, "F4.278 asset B", "F3.86 site B", locationB],
+    );
+    const rule = (org: string, asset: string, code: string) =>
+      one(
+        "INSERT INTO bms.automation_rules (organization_id, code, name, rule_type, asset_id, point_key, operator, threshold_value, condition, action, lifecycle_status) " +
+          "VALUES ($1, $2, $3, 'threshold', $4, 'kw', 'gt', 1, '{\"window\":\"latest\"}', '{\"type\":\"notify\",\"target\":\"Ops\"}', 'published') RETURNING id",
+        [org, code, `F4.278 rule ${code}`, asset],
+      );
+    const ruleA = await rule(orgA, assetA, `${FAMILY}-RA`);
+    const ruleB = await rule(orgB, assetB, `${FAMILY}-RB`);
     const groupA = await one(
       "INSERT INTO bms.asset_groups (organization_id, location_id, code, name) VALUES ($1, $2, $3, $4) RETURNING id",
       [orgA, locationA, `${FAMILY}-GROUP`.toLowerCase(), RESOLVER_NAMES.groupA],
@@ -233,6 +249,9 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       locationTypeLabel: "F4.282 type",
       assetRoleCode: ASSET_ROLE_CODE,
       assetRoleLabel: "F4.282 role",
+      assetB,
+      ruleA,
+      ruleB,
     };
   });
 
@@ -260,6 +279,10 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("F4.282: refuses an unknown vocabulary code before the gate", () => anUnknownVocabularyCodeIsRefusedBeforeTheGate(ctx));
   it("F4.282: refuses a vocabulary row for a caller who is no global admin", () => aVocabularyRowNeedsTheGlobalAdmin(ctx));
   it("F4.282: resolves a unit role's label with no usage count", () => aUnitRoleResolvesItsLabel(ctx));
+  it("F4.278: a rule of another organization is not found; its own rule carries its lifecycle", () =>
+    aRuleOfAnotherOrganizationIsNotFound(ctx));
+  it("F4.278: a rule update refuses an asset of another organization, beside its allowed twin", () =>
+    aRuleUpdateRefusesAnAssetOfAnotherOrganization(ctx));
   it("keeps the built-in view rule (ruling Q7(b))", () => aSiteViewKeepsTheBuiltinRule(ctx));
   it("needs the dashboard check for a site layout (ruling Q7(b))", () => aSiteLayoutNeedsTheDashboardCheckToo(ctx));
   it("refuses a location create by a location admin", () => aLocationCreateRefusesALocationAdmin(ctx));

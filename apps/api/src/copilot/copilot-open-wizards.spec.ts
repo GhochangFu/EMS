@@ -217,3 +217,8 @@ export async function anOpenRecordIsResolvedByItsRowAlone(): Promise<void> {
   await resolveWizardRecord(catalogEntry("userGrant.add") as CatalogEntry, { id: A }, targets, scope);
   expect(modes).toEqual(["record"]);
 }
+
+/** `F4.278` (Amendment 8): the Rule Engine page mounts its create wizard. */
+export function theRulesPageMountsItsCreateWizard(): void {
+  expect(pageWizardCandidates("/rules")).toStrictEqual([{ catalogId: "rule.create", params: {} }]);
+}

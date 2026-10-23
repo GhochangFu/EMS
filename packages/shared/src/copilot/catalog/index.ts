@@ -13,6 +13,7 @@ import { LOCATION_ENTRIES, LOCATION_PENDING } from "./locations";
 import { ONBOARDING_ENTRIES, ONBOARDING_PENDING } from "./onboarding";
 import { POINT_KEY_ENTRIES, POINT_KEY_PENDING } from "./point-keys";
 import { RTU_ENTRIES, RTU_PENDING } from "./rtus";
+import { RULE_ENTRIES, RULE_PENDING } from "./rules";
 import { SITE_VIEW_ENTRIES, SITE_VIEW_PENDING } from "./site-views";
 import type { CatalogEntry, CatalogFormula, ExcludedRoute } from "./types";
 import { USER_ENTRIES, USER_PENDING } from "./users";
@@ -44,6 +45,8 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...MIMIC_SYMBOL_LIBRARY_ENTRIES,
   ...ASSET_ROLE_ENTRIES,
   ...LOCATION_TYPE_ENTRIES,
+  // `F4.278` (Amendment 8): the alarm rules.
+  ...RULE_ENTRIES,
 ];
 
 /**
@@ -100,6 +103,7 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...MIMIC_SYMBOL_LIBRARY_PENDING,
   ...ASSET_ROLE_PENDING,
   ...LOCATION_TYPE_PENDING,
+  ...RULE_PENDING,
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */

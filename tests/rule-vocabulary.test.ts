@@ -172,7 +172,8 @@ describe("F4.45 rule vocabularies", () => {
     // in these files has no legitimate form.
     const surfaces = [
       {
-        path: join(repoRoot, "apps", "web", "src", "components", "rule-builder-panel.tsx"),
+        // `F4.278`: the rule form moved from `rule-builder-panel.tsx` onto the wizard's field steps.
+        path: join(repoRoot, "apps", "web", "src", "components", "rules", "rule-wizard-fields.tsx"),
         source: "ruleCategories.map(",
       },
       {
@@ -382,18 +383,19 @@ describe("F3.6 ESKOM simulator threshold rules (migration 0033)", () => {
  * option is no longer gated at all.
  */
 describe("F4.46 no-severity affordance", () => {
+  // `F4.278`: the rule form moved from `rule-builder-panel.tsx` onto the wizard's field steps.
   const panel = readFileSync(
-    join(repoRoot, "apps", "web", "src", "components", "rule-builder-panel.tsx"),
+    join(repoRoot, "apps", "web", "src", "components", "rules", "rule-wizard-fields.tsx"),
     "utf8",
   );
 
   it("gates the None option on the predicate rather than rendering it always", () => {
     expect(
-      /offersNoSeverityOption\(\s*form\.ruleType,\s*form\.severity\s*\)\s*&&\s*\(?\s*<option value="">/.test(
+      /offersNoSeverityOption\(\s*ruleType,\s*severity\s*\)\s*&&\s*\(?\s*<option value="">/.test(
         panel,
       ),
-      'rule-builder-panel.tsx renders <option value=""> without gating it on ' +
-        "`offersNoSeverityOption(form.ruleType, form.severity)`. Offering `None` on " +
+      'rule-wizard-fields.tsx renders <option value=""> without gating it on ' +
+        "`offersNoSeverityOption(ruleType, severity)`. Offering `None` on " +
         "every rule makes clearing a threshold rule's severity newly authorable, " +
         "which is product scope (§10) and not what F4.46 fixed.",
     ).toBe(true);
@@ -411,7 +413,7 @@ describe("F4.46 no-severity affordance", () => {
     // one. The replacement is imported, so the panel must not declare its own.
     expect(
       /function normalizeSeverity/.test(panel),
-      "rule-builder-panel.tsx declares `normalizeSeverity` again. Narrowing a " +
+      "rule-wizard-fields.tsx declares `normalizeSeverity` again. Narrowing a " +
         "stored severity belongs in `lib/rule-severity.ts`, where it is under test.",
     ).toBe(false);
 
@@ -436,7 +438,7 @@ describe("F4.46 no-severity affordance", () => {
     // options come from the data.
     expect(
       panel,
-      "rule-builder-panel.tsx must render severity options from the " +
+      "rule-wizard-fields.tsx must render severity options from the " +
         "`alarmSeverities` vocabulary (ADR 0032), not from a literal list.",
     ).toMatch(/\{alarmSeverities\.map\(/);
   });

@@ -121,6 +121,8 @@ const COPILOT_TOOL_FILES = {
   // `F4.276`: the alarm details and alarm knowledge-base read tools, one parse each.
   copilotGetAlarmDetails: `${COPILOT_TOOLS}/get-alarm-details.tool.ts`,
   copilotGetAlarmKb: `${COPILOT_TOOLS}/get-alarm-kb.tool.ts`,
+  // `F4.278` (Amendment 8 D7): the alarm-rule read tool, one parse.
+  copilotListRules: `${COPILOT_TOOLS}/list-rules.tool.ts`,
 } as const;
 const HELPER = "apps/api/src/common/parse-stored-contract.ts";
 
@@ -590,7 +592,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         "site-layout.service.ts; F3.85 PR 7 six more, one per copilot read tool; F4.255 the " +
         "draft list's whole-DTO parse in onboarding.service.ts; F3.87 PR 2 four more, one per " +
         "mimic read tool; F4.274 five more, one per telemetry read tool; F4.275 six more, one " +
-        "per energy read tool; F4.277 two more, the system-status and audit-log read tools. " +
+        "per energy read tool; F4.277 two more, the system-status and audit-log read tools; " +
+        "F4.278 one more, the alarm-rule read tool. " +
         "A site reverted to " +
         "a bare .parse() answers 400 under the filter, which is ruling 2's failure mode " +
         "exactly.",
@@ -628,8 +631,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         "per-site counts below would be vacuous",
       // `F4.274`: 23 + the five telemetry read tools' literals; `F4.275`: + six energy read tools;
       // `F4.277`: + the system-status and audit-log read tools; `F4.276`: + the alarm
-      // details and alarm knowledge-base read tools.
-    ).toBe(38);
+      // details and alarm knowledge-base read tools; `F4.278`: + the alarm-rule read tool.
+    ).toBe(39);
 
     const callSites = [
       STOCK_SERVICE,

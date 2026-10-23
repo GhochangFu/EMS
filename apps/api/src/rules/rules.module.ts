@@ -1,10 +1,12 @@
 import { Module } from "@nestjs/common";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AlarmsModule } from "../alarms/alarms.module";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { EvaluateThrottle } from "./evaluate-throttle";
+import { RuleProposalCheckService } from "./rule-proposal-check.service";
 import { RulesController } from "./rules.controller";
 import { RulesService } from "./rules.service";
 
@@ -19,6 +21,13 @@ import { RulesService } from "./rules.service";
   // instance, so it must stay a **singleton** (the default scope). Making it
   // request-scoped would hand every request a fresh Map and throttle nothing,
   // and no unit test in this repository could see that.
-  providers: [RulesService, JwtAuthGuard, EvaluateThrottle],
+  //
+  // `F4.278` (ADR 0099 Amendment 8): `MasterDataAuditService` is the funnel every
+  // rule audit row goes through (so a confirmed copilot change carries
+  // `via: "copilot"`), and `RulesService` is exported for the copilot's
+  // `list_rules` read tool, with `RuleProposalCheckService` for the copilot's
+  // write-free proposal check.
+  providers: [RulesService, JwtAuthGuard, EvaluateThrottle, MasterDataAuditService, RuleProposalCheckService],
+  exports: [RulesService, RuleProposalCheckService],
 })
 export class RulesModule {}

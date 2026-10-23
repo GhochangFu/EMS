@@ -515,3 +515,21 @@ export async function aFillStepReachesTheWizardStore(): Promise<void> {
   await send("name it Main");
   await waitFor(() => expect(useWizardStore.getState().waiting?.fill).toEqual(fill));
 }
+
+/**
+ * `F4.278` (ADR 0099 Amendment 8 D3, Q9) — a `rule.disable` card is red, and the
+ * server's check note (appended to the summary) reaches the card verbatim: no
+ * card change carries it.
+ */
+export async function aRuleDisableCardIsRedAndShowsTheCheckNote(): Promise<void> {
+  const rule = "55555555-5555-4555-8555-555555555555";
+  const summary =
+    'Disable the rule "Chiller high": it stops evaluating until it is enabled again. ' +
+    "Condition: CH-01 supply_temp_c above 3 (latest value; clear hold 120 s).";
+  await proposed(
+    change({ catalogId: "rule.disable", method: "PATCH", path: `/api/v1/rules/${rule}/enabled`, body: { enabled: false }, summary, risk: "deactivate" }),
+  );
+  const card = await screen.findByRole("region", { name: "Disable an alarm rule" });
+  expect(card.getAttribute("data-risk")).toBe("deactivate");
+  expect(within(card).getByText(summary)).toBeTruthy();
+}
