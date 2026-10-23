@@ -199,6 +199,8 @@ type Overrides = {
   assetExtra?: Record<string, unknown>;
   locationOrg?: string;
   dashboardOrg?: string;
+  /** `F4.274` live check: the readable asset ids per organization, in place of `ASSETS_BY_ORG`. */
+  readableIds?: Record<string, string[]>;
 };
 
 /** Fake services with a call log each. Every one answers only for the organization it is asked. */
@@ -216,7 +218,7 @@ function fakeServices(overrides: Overrides = {}) {
     access: {
       readableAssetIdsInOrganization: async (_user: JwtPayload, organizationId: string) => {
         log.access.push(organizationId);
-        return ASSETS_BY_ORG[organizationId] ?? [];
+        return (overrides.readableIds ?? ASSETS_BY_ORG)[organizationId] ?? [];
       },
     },
     alarms: {
@@ -361,6 +363,33 @@ export async function assertAnAlarmSecretNeverReachesTheProvider(): Promise<void
   expect(content).toContain(ALARM);
   expect(content).toContain("AHU-7");
   expect(content).not.toContain("hunter2");
+}
+
+/** 40 readable assets in ORG_X with codes `C-00` … `C-39`; the last one is the only `C-39`. */
+const FORTY_ASSETS = Array.from({ length: 40 }, (_, i) => `30000000-0000-4000-8000-0000000000${String(i).padStart(2, "0")}`);
+
+/**
+ * `F4.274` live check (2026-10-23): with 158 ESKOM assets and a 25-item cap,
+ * the model could not find "Control Room Breaker Q11" and answered for Q1. A
+ * `search` filters before the cap, so a match past the 25th asset is returned.
+ */
+export async function assertListAssetsSearchFindsAMatchPastTheCap(): Promise<void> {
+  const { tools } = fakeServices({ readableIds: { [ORG_X]: FORTY_ASSETS } });
+  const out = await tools.dispatch("list_assets", { search: "c-39" }, ctx([ORG_X]));
+  expect(out.ok).toBe(true);
+  const result = (out as unknown as { result: { organizations: Array<{ items: Array<{ code: string }> }>; truncated: boolean } }).result;
+  expect(result.organizations.flatMap((o) => o.items.map((a) => a.code))).toStrictEqual(["C-39"]);
+  expect(result.truncated).toBe(false);
+}
+
+/** `F4.274` live check: the search matches the name as well as the code, case-insensitively. */
+export async function assertListAssetsSearchMatchesTheName(): Promise<void> {
+  const { tools } = fakeServices({ assetName: "Control Room Breaker Q11" });
+  const out = await tools.dispatch("list_assets", { search: "breaker q11" }, ctx([ORG_X, ORG_Y]));
+  expect(JSON.stringify(out)).toContain(ASSET_X);
+  expect(JSON.stringify(out)).toContain(ASSET_Y);
+  const none = await tools.dispatch("list_assets", { search: "breaker q12" }, ctx([ORG_X, ORG_Y]));
+  expect(JSON.stringify(none)).not.toContain(ASSET_X);
 }
 
 /** A result is parsed through its contract schema: a field the contract does not name is stripped. */
