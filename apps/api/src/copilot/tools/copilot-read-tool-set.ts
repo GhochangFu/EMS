@@ -11,13 +11,19 @@ import { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import { defineToolRegistry, type ToolRegistry } from "../../llm/tool-registry";
 import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
+import { TelemetryService } from "../../telemetry/telemetry.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import type { CopilotReadTools, CopilotToolContext, CopilotToolResult } from "../copilot-read-tools";
 import type { CopilotReadServices, CopilotReadToolDefinition } from "./copilot-read-tool";
 import { getAssetKpisTool } from "./get-asset-kpis.tool";
 import { getHealthSummaryTool } from "./get-health-summary.tool";
+import { getLatestValuesTool } from "./get-latest-values.tool";
 import { getMimicLayoutTool } from "./get-mimic-layout.tool";
+import { getPointAggregateTool } from "./get-point-aggregate.tool";
+import { getRecentValuesTool } from "./get-recent-values.tool";
+import { getValuesAtInstantTool } from "./get-values-at-instant.tool";
 import { listAlarmsTool } from "./list-alarms.tool";
+import { listAssetPointsTool } from "./list-asset-points.tool";
 import { listAssetRolesTool } from "./list-asset-roles.tool";
 import { listAssetsTool } from "./list-assets.tool";
 import { listDashboardsTool } from "./list-dashboards.tool";
@@ -29,12 +35,18 @@ import { openPageTool } from "./open-page.tool";
 /**
  * The read tools, in the order the model sees them. No tool here writes.
  * `F3.87` PR 2 adds the four mimic reads (ADR 0099 Amendment 3 drafter choice
- * 1, plan D16) before `open_page`.
+ * 1, plan D16) before `open_page`. `F4.274` adds the five telemetry reads
+ * after `get_asset_kpis`.
  */
 export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[] = [
   listAlarmsTool,
   listAssetsTool,
   getAssetKpisTool,
+  listAssetPointsTool,
+  getLatestValuesTool,
+  getValuesAtInstantTool,
+  getRecentValuesTool,
+  getPointAggregateTool,
   listLocationsTool,
   listDashboardsTool,
   getHealthSummaryTool,
@@ -91,6 +103,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
     @Inject(MimicLayoutsService) layouts: MimicLayoutsService,
     @Inject(MimicSymbolLibrariesService) symbolLibraries: MimicSymbolLibrariesService,
     @Inject(VocabulariesService) vocabularies: VocabulariesService,
+    // `F4.274`: appended last — the wiring spec reads the slots by index.
+    @Inject(TelemetryService) telemetry: TelemetryService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -103,6 +117,7 @@ export class CopilotReadToolSet implements CopilotReadTools {
       layouts,
       symbolLibraries,
       vocabularies,
+      telemetry,
     });
   }
 

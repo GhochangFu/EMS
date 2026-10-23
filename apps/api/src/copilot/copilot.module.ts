@@ -17,6 +17,7 @@ import { IdentityAdminModule } from "../identity/identity-admin.module";
 import { LlmModule } from "../llm/llm.module";
 import { MimicLayoutsModule } from "../mimic-layouts/mimic-layouts.module";
 import { MimicSymbolLibrariesModule } from "../mimic-symbol-libraries/mimic-symbol-libraries.module";
+import { TelemetryModule } from "../telemetry/telemetry.module";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { CopilotAccessController } from "./copilot-access.controller";
 import { CopilotAccessGuard } from "./copilot-access.guard";
@@ -109,6 +110,9 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * `F3.87` PR 2 (ADR 0099 Amendment 3): `MimicLayoutsModule` and
  * `MimicSymbolLibrariesModule` export their services for the mimic read tools
  * and the layout proposal check. Neither imports this module.
+ *
+ * `F4.274`: `TelemetryModule` exports `TelemetryService` for the telemetry
+ * read tools; it imports nothing of this module, so the graph stays acyclic.
  */
 @Module({
   imports: [
@@ -124,6 +128,7 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     AssetHealthModule,
     DashboardBuilderModule,
     VocabulariesModule,
+    TelemetryModule,
   ],
   controllers: [CopilotAccessController, CopilotChangesController, CopilotConversationsController, CopilotStatusController],
   providers: [

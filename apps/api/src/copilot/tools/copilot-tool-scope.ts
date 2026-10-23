@@ -77,3 +77,28 @@ export async function organizationOfAsset(
   }
   return null;
 }
+
+/**
+ * `F4.274` — the organization of each of several assets, with one
+ * `readableAssetIdsInOrganization` per candidate (not per asset). `null` when
+ * any asset is not placed: a call naming one unreadable asset is refused
+ * whole, as the controller answers 403 for the whole request.
+ */
+export async function organizationsOfAssets(
+  access: Pick<AccessControlService, "readableAssetIdsInOrganization">,
+  user: JwtPayload,
+  candidates: readonly string[],
+  assetIds: readonly string[],
+): Promise<ReadonlyMap<string, string> | null> {
+  const wanted = new Set(assetIds);
+  if (wanted.size === 0) return null;
+  const placed = new Map<string, string>();
+  for (const organizationId of candidates) {
+    if (placed.size === wanted.size) break;
+    const readable = new Set(await access.readableAssetIdsInOrganization(user, organizationId));
+    for (const assetId of wanted) {
+      if (!placed.has(assetId) && readable.has(assetId)) placed.set(assetId, organizationId);
+    }
+  }
+  return placed.size === wanted.size ? placed : null;
+}

@@ -115,6 +115,12 @@ export type StoredContractContext =
   | "copilot_tools.get_mimic_layout.layout"
   | "copilot_tools.list_mimic_symbols.page"
   | "copilot_tools.list_asset_roles.page"
+  // `F4.274`: the telemetry read tools.
+  | "copilot_tools.list_asset_points.page"
+  | "copilot_tools.get_latest_values.result"
+  | "copilot_tools.get_values_at_instant.result"
+  | "copilot_tools.get_recent_values.rows"
+  | "copilot_tools.get_point_aggregate.result"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");

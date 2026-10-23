@@ -9,6 +9,7 @@ import type { AccessControlService } from "../../auth/access-control.service";
 import type { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import type { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import type { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
+import type { TelemetryService } from "../../telemetry/telemetry.service";
 import type { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import type { CopilotToolContext, CopilotToolResult } from "../copilot-read-tools";
 
@@ -19,7 +20,8 @@ import type { CopilotToolContext, CopilotToolResult } from "../copilot-read-tool
 export interface CopilotReadServices {
   readonly access: Pick<AccessControlService, "readableAssetIdsInOrganization">;
   readonly alarms: Pick<AlarmsService, "list">;
-  readonly assets: Pick<AssetsService, "listAll">;
+  /** `F4.274`: `listPoints` for `list_asset_points`. */
+  readonly assets: Pick<AssetsService, "listAll" | "listPoints">;
   readonly kpis: Pick<AssetKpisService, "listKpis">;
   readonly locations: Pick<LocationsAdminService, "list">;
   readonly dashboards: Pick<DashboardsService, "list">;
@@ -28,6 +30,12 @@ export interface CopilotReadServices {
   readonly layouts: Pick<MimicLayoutsService, "list" | "get">;
   readonly symbolLibraries: Pick<MimicSymbolLibrariesService, "list">;
   readonly vocabularies: Pick<VocabulariesService, "list">;
+  /**
+   * `F4.274`: the telemetry reads. `telemetry.*` carries no Row Level Security
+   * and the service reads on the tenant pool unfiltered, so each tool places
+   * its asset (`organizationOfAsset` / `organizationsOfAssets`) first.
+   */
+  readonly telemetry: Pick<TelemetryService, "latestPointValues" | "pointValuesAt" | "recentForPoint" | "pointAggregate">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */

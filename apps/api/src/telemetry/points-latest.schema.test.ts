@@ -14,6 +14,7 @@ import {
   assertOneIdAndOneKeyParse,
   assertSixtyFiveKeysAreRefused,
   assertSixtyFourKeysParse,
+  assertThePointKeySchemaHoldsTheColumnRule,
   assertTheWindowBoundsParse,
   assertTwentyOneIdsParseInOrder,
 } from "./points-latest.schema.spec";
@@ -78,5 +79,9 @@ describe("F4.176 — pointsLatestQuerySchema (ADR 0074 Amendment 2)", () => {
 
   it("refuses an unknown query key", () => {
     assertAnUnknownKeyIsRefused();
+  });
+
+  it("F4.274: pointKeySchema refuses an empty, a 129-character and a control-character key", () => {
+    assertThePointKeySchemaHoldsTheColumnRule();
   });
 });
