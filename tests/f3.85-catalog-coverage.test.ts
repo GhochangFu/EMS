@@ -69,8 +69,12 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/admin/vocabularies/asset-roles/asset-roles.controller.ts", full: true },
   // `F4.282` (Amendment 8): the release-4 vocabulary controller.
   { file: "apps/api/src/admin/vocabularies/location-types.controller.ts", full: true },
-  // `F4.278` (Amendment 8): the alarm rules — seven entries, three routes excluded.
+  // `F4.278` (Amendment 8): the alarm rules — seven entries, two routes excluded (since `F4.279`).
   { file: "apps/api/src/rules/rules.controller.ts", full: true },
+  // `F4.279` (Amendment 8): the notification channels, and the escalation profiles and severity
+  // map (two controllers in one file; the walk takes the prefix from the last `@Controller`).
+  { file: "apps/api/src/notifications/notifications.controller.ts", full: true },
+  { file: "apps/api/src/notifications/escalation-profiles.controller.ts", full: true },
 ];
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;

@@ -59,8 +59,16 @@ export function theVocabularyTargetsNameTheCodeParameter(): void {
 /** A fixed body parses with the route's own body, and its wizard has no step. */
 export function aFixedBodyParsesWithTheRoutesBody(): void {
   const fixed = COPILOT_CATALOG.filter((candidate) => candidate.fixedBody !== undefined);
-  // `F4.278` adds the two rule directions on the toggle route (Amendment 8 D3).
-  expect(fixed.map((candidate) => candidate.id).sort()).toEqual(["assetRole.deactivate", "assetRole.reactivate", "rule.disable", "rule.enable"]);
+  // `F4.278` adds the two rule directions on the toggle route (Amendment 8 D3); `F4.279` the two
+  // channel directions on the channel PATCH (Q5).
+  expect(fixed.map((candidate) => candidate.id).sort()).toEqual([
+    "assetRole.deactivate",
+    "assetRole.reactivate",
+    "notificationChannel.deactivate",
+    "notificationChannel.reactivate",
+    "rule.disable",
+    "rule.enable",
+  ]);
   for (const candidate of fixed) {
     expect(candidate.body.safeParse(candidate.fixedBody).success, candidate.id).toBe(true);
     expect(candidate.steps, candidate.id).toEqual([]);

@@ -74,6 +74,11 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/vocabularies/location-types.service.ts",
   // `F4.278` (Amendment 8): every alarm-rule write entry's handler reaches this service.
   "apps/api/src/rules/rules.service.ts",
+  // `F4.279` (Amendment 8): the channel writes (and `PUT /rules/:id/notifications`) and the
+  // escalation profiles and defaults. `channels.service.ts` is deliberately NOT listed: it
+  // holds only the reads the worker loads and no longer references the funnel.
+  "apps/api/src/notifications/channel-writes.service.ts",
+  "apps/api/src/notifications/escalation-profiles.service.ts",
 ] as const;
 
 /**
@@ -138,6 +143,8 @@ const CATALOG_DIRS = [
   "admin/vocabularies",
   // `F4.278` (Amendment 8): the alarm rules — the old direct `insert(auditLog)` helper is gone.
   "rules",
+  // `F4.279` (Amendment 8): notifications and escalation — the two direct helpers are gone.
+  "notifications",
 ] as const;
 
 /** The drizzle form and the raw-SQL form. */

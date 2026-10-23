@@ -138,7 +138,8 @@ export function assertScanFindsTheConfigToken(): void {
   const tokens = injectedTokens(NotificationsController).map((d) => d.param);
   expect(tokens).toContain(NOTIFICATIONS_CONFIG);
   const classes = classTypedParams("notifications.controller.ts", "NotificationsController");
-  expect(classes).toEqual(["ChannelsService", "NotificationsService"]);
+  // `F4.279`: the third, `ChannelWritesService`, holds the writes that audit through the funnel.
+  expect(classes).toEqual(["ChannelsService", "NotificationsService", "ChannelWritesService"]);
 }
 
 /** The three controllers are still the module's controllers (the carve moved none). */

@@ -1,10 +1,13 @@
 import { Module } from "@nestjs/common";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { ChannelWritesService } from "./channel-writes.service";
 import {
   EscalationDefaultsController,
   EscalationProfilesController,
 } from "./escalation-profiles.controller";
 import { EscalationProfilesService } from "./escalation-profiles.service";
+import { NotificationProposalCheckService } from "./notification-proposal-check.service";
 import { NotificationsController } from "./notifications.controller";
 import { NotificationsCoreModule } from "./notifications-core.module";
 
@@ -31,6 +34,14 @@ import { NotificationsCoreModule } from "./notifications-core.module";
  * `VocabulariesModule` is needed; `AccessControlService` and the two drizzle
  * tokens come from `@Global()` modules, exactly as `ChannelsService` already
  * gets them.
+ *
+ * **`F4.279`** (ADR 0099 Amendment 8): the channel writes moved into
+ * `ChannelWritesService`, provided here and not in the core, because they audit
+ * through `MasterDataAuditService` and that funnel imports the copilot request
+ * context the worker must not load (`tests/f4.24-worker-imports-no-api-loop.test.ts`).
+ * `RulesModule` resolves it for `PUT /rules/:id/notifications`; the copilot
+ * resolves `EscalationProfilesService` for its read tool and `NotificationProposalCheckService`
+ * for the write-free check a notification proposal runs before its card is stored.
  */
 @Module({
   imports: [NotificationsCoreModule],
@@ -39,7 +50,7 @@ import { NotificationsCoreModule } from "./notifications-core.module";
     EscalationProfilesController,
     EscalationDefaultsController,
   ],
-  providers: [EscalationProfilesService],
-  exports: [NotificationsCoreModule],
+  providers: [EscalationProfilesService, ChannelWritesService, MasterDataAuditService, NotificationProposalCheckService],
+  exports: [NotificationsCoreModule, ChannelWritesService, EscalationProfilesService, NotificationProposalCheckService],
 })
 export class NotificationsModule {}

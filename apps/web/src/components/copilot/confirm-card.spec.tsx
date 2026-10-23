@@ -533,3 +533,73 @@ export async function aRuleDisableCardIsRedAndShowsTheCheckNote(): Promise<void>
   expect(card.getAttribute("data-risk")).toBe("deactivate");
   expect(within(card).getByText(summary)).toBeTruthy();
 }
+
+const CHANNEL_ORG = "66666666-6666-4666-8666-666666666666";
+const ADDRESS = "ops@example.test";
+
+/** `F4.279`: a channel create card, as the server stores it (the recipients card-only). */
+function channelCreate(kind: "email" | "webhook"): CopilotPendingChangeDto {
+  return change({
+    catalogId: "notificationChannel.create",
+    path: "/api/v1/notifications/channels",
+    risk: "create",
+    body: {
+      organizationId: CHANNEL_ORG,
+      code: "ops",
+      name: "Ops",
+      kind,
+      ...(kind === "email" ? { config: { to: [ADDRESS] } } : {}),
+      recipients: [{ channelId: null, name: "Ops", kind, targets: kind === "email" ? [ADDRESS] : ["(typed on Confirm)"] }],
+    },
+    summary: `Create the ${kind} channel "Ops" (ops) in Org. Recipients: 1.`,
+  });
+}
+
+/** `F4.279` (Q12): a webhook create's Confirm stays disabled until the typed URL parses. */
+export async function aWebhookCreateWaitsForAUrl(): Promise<void> {
+  vi.spyOn(confirmApi, "confirmCopilotChange").mockResolvedValue({ id: "c-1" });
+  await proposed(channelCreate("webhook"));
+  const card = await screen.findByRole("region", { name: "Create a notification channel" });
+  const confirm = within(card).getByRole("button", { name: "Confirm" }) as HTMLButtonElement;
+  const url = within(card).getByLabelText("Webhook URL") as HTMLInputElement;
+  expect([confirm.disabled, url.type]).toEqual([true, "url"]);
+  fireEvent.change(url, { target: { value: "not a url" } });
+  expect(confirm.disabled).toBe(true);
+  fireEvent.change(url, { target: { value: "https://hooks.example.test/x" } });
+  expect(confirm.disabled).toBe(false);
+}
+
+/** `F4.279` (Q11, Q10): the webhook secret is an optional password box; the typed URL goes with Confirm. */
+export async function aWebhookCreateSendsTheTypedUrlAndAnOptionalSecret(): Promise<void> {
+  const sent = vi.spyOn(confirmApi, "confirmCopilotChange").mockResolvedValue({ id: "c-1" });
+  vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue(EMPTY_CONVERSATION);
+  await proposed(channelCreate("webhook"));
+  const card = await screen.findByRole("region", { name: "Create a notification channel" });
+  const secret = within(card).getByLabelText("Webhook secret (optional)") as HTMLInputElement;
+  expect(secret.type).toBe("password");
+  fireEvent.change(within(card).getByLabelText("Webhook URL"), { target: { value: "https://hooks.example.test/x" } });
+  fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+  await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
+  expect(sent.mock.calls[0]?.[1]).toEqual({ secret: "", "config.url": "https://hooks.example.test/x" });
+}
+
+/** `F4.279` (Q11): an email create shows no box, and its Confirm sends no secret. */
+export async function anEmailCreateSendsNoSecret(): Promise<void> {
+  const sent = vi.spyOn(confirmApi, "confirmCopilotChange").mockResolvedValue({ id: "c-1" });
+  vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue(EMPTY_CONVERSATION);
+  await proposed(channelCreate("email"));
+  const card = await screen.findByRole("region", { name: "Create a notification channel" });
+  expect(within(card).queryByLabelText(/Webhook/)).toBeNull();
+  fireEvent.click(within(card).getByRole("button", { name: "Confirm" }));
+  await waitFor(() => expect(sent).toHaveBeenCalledTimes(1));
+  expect(sent.mock.calls[0]?.[1]).toEqual({});
+}
+
+/** `F4.279` (D5): the recipients list shows the address in full; the summary the model wrote does not. */
+export async function theRecipientsAreShownInFull(): Promise<void> {
+  const pending = channelCreate("email");
+  await proposed(pending);
+  const card = await screen.findByRole("region", { name: "Create a notification channel" });
+  const list = within(card).getByTestId("copilot-recipients");
+  expect([list.textContent, pending.summary.includes("@")]).toEqual([`Ops (email): ${ADDRESS}`, false]);
+}

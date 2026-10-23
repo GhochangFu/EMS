@@ -11,6 +11,8 @@ import { jwtFor, SEEDED } from "../auth/access-control.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import { countingDb } from "../testing/counting-db";
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { ChannelWritesService } from "./channel-writes.service";
 import { ChannelsService } from "./channels.service";
 import {
   assertChannelAndDeliveryReadsAreOrgScoped,
@@ -20,6 +22,7 @@ import {
   assertFleetChannelErrorIsRedactedForATenant,
   assertSetRuleChannelsKeepsJoinsOutsideTheCallersScope,
   assertSetRuleChannelsRefusesCrossOrgChannel,
+  type ChannelReadsAndWrites,
 } from "./channels.service.rls.integration.spec";
 import { primeSeededSubjects } from "../testing/seeded-subjects";
 
@@ -132,14 +135,31 @@ describe.skipIf(!connectionString)(
       const countedTenant = countingDb(createDb(tenantPool));
       const countedFleet = countingDb(fleetDb);
       const accessControl = new AccessControlService(createDb(authPool), fleetDb);
-      const channels = new ChannelsService(
+      // `F4.279`: the writes moved to `ChannelWritesService`, auditing through the funnel.
+      const writes = new ChannelWritesService(
         countedFleet.db,
         countedTenant.db,
         { encrypt: () => ({ ciphertext: Buffer.alloc(0), iv: Buffer.alloc(0), keyVersion: 1 }) } as unknown as ConstructorParameters<
-          typeof ChannelsService
+          typeof ChannelWritesService
         >[2],
         accessControl,
+        new MasterDataAuditService(countedTenant.db, countedFleet.db),
       );
+      const reads = new ChannelsService(
+        countedFleet.db,
+        countedTenant.db,
+        {} as unknown as ConstructorParameters<typeof ChannelsService>[2],
+        accessControl,
+      );
+      const channels: ChannelReadsAndWrites = {
+        list: (jwt) => reads.list(jwt),
+        listDeliveries: (jwt, query) => reads.listDeliveries(jwt, query),
+        ruleChannelIds: (ruleId) => reads.ruleChannelIds(ruleId),
+        create: (jwt, body) => writes.create(jwt, body),
+        update: (jwt, id, body) => writes.update(jwt, id, body),
+        remove: (jwt, id) => writes.remove(jwt, id),
+        setRuleChannels: (ruleId, channelIds, actor) => writes.setRuleChannels(ruleId, channelIds, actor),
+      };
 
       const orgAdminJwt = jwtFor(SEEDED.organizationAdmin, "organization_admin");
       const globalAdminJwt = jwtFor(SEEDED.globalAdmin, "admin");

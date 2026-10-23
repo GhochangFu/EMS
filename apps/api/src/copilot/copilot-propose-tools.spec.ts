@@ -93,7 +93,7 @@ type Options = {
   slugId?: string | null; // `F4.245`: the dashboard id a slug names (none by default)
 };
 
-export function proposeHarness(options: Options & { rules?: CopilotProposeServices["rules"] } = {}) { // `F4.278`: `rules`, the rule check
+export function proposeHarness(options: Options & Pick<CopilotProposeServices, "rules" | "notifications"> = {}) { // `F4.278` rules, `F4.279` notifications
   const stored: NewPendingChange[] = [];
   const resolved: Array<{ id: string; params: Record<string, string>; allowed: readonly string[]; bound?: string | null }> = [];
   const target: ResolvedTarget | null =
@@ -107,7 +107,7 @@ export function proposeHarness(options: Options & { rules?: CopilotProposeServic
         },
         dashboardIdBySlug: async () => options.slugId ?? null,
       },
-      ...(options.layouts ? { layouts: options.layouts } : {}), ...(options.rules ? { rules: options.rules } : {}),
+      ...(options.layouts ? { layouts: options.layouts } : {}), ...(options.rules ? { rules: options.rules } : {}), ...(options.notifications ? { notifications: options.notifications } : {}),
       pending: {
         hasOpen: async () => options.open === true,
         propose: async (_userId, change): Promise<CopilotPendingChangeDto | null> => {
@@ -495,11 +495,11 @@ export function noToolDefinitionCarriesALargeBody(): void {
  * asset-role tools of PR 6b (5,138 characters together). Measured at PR 6b:
  * 48,027. The headroom is for the next release's entries, not this one's.
  * `F4.266` (C6): the layout body guide on both layout tools, 48,027 before, 49,745 after.
- * Owner ruling 2026-10-23 (release 4): F4.282 measured 53,985; F4.278 measured 60,492
+ * Owner ruling 2026-10-23 (release 4): F4.282 measured 53,985; F4.278 measured 60,492; F4.279 measured 68,366
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();
-  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(62_000);
+  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(70_000);
 }
 
 /** Every catalog entry has one propose tool; a large body is read on demand. */
@@ -912,8 +912,8 @@ export function theAccessAndRoleFiltersCompose(): void {
   expect(names(true, "location_admin")).not.toContain(layout);
   expect(names(false, "location_admin")).not.toContain(access);
   expect(names(false, "location_admin")).not.toContain(layout);
-  expect(h.tools.registryFor({ access: true, role: "admin" })).toBe(h.tools.registry);
-  expect(h.tools.registryFor({ access: false, role: "admin" })).toBe(h.tools.registryWithoutAccess);
+  expect(h.tools.registryFor({ access: true, role: "admin", outward: true })).toBe(h.tools.registry); // `F4.279`: outward kept
+  expect(h.tools.registryFor({ access: false, role: "admin", outward: true })).toBe(h.tools.registryWithoutAccess);
 }
 
 /** Called anyway by a `location_admin`, the tool is refused by the second guard; nothing is resolved or stored. */

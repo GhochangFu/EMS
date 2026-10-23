@@ -11,7 +11,7 @@ import {
   thePublishAndEnableSummariesCarryTheLiveLine,
   theRuleTargetsMirrorTheRoute,
   theSevenRuleEntriesNameTheirRoutes,
-  theThreeRuleRoutesAreExcludedWithTheirReasons,
+  theTwoRuleRoutesAreExcludedWithTheirReasons,
   theUpdateSummaryCarriesTheLiveLineForAPublishedRule,
   theUpdateSummaryOfADraftHasNoLiveLine,
 } from "./rules.spec";
@@ -66,7 +66,7 @@ describe("F4.278 — alarm-rule catalog entries (ADR 0099 Amendment 8)", () => {
     noRuleEntryNarrowsTheRoles();
   });
 
-  it("the three rule routes are excluded with their reasons", () => {
-    theThreeRuleRoutesAreExcludedWithTheirReasons();
+  it("the two rule routes are excluded with their reasons", () => {
+    theTwoRuleRoutesAreExcludedWithTheirReasons();
   });
 });

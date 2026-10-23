@@ -13,6 +13,10 @@ import { AlarmKbModule } from "../../alarm-kb/alarm-kb.module";
 import { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
 import { RulesModule } from "../../rules/rules.module";
 import { RulesService } from "../../rules/rules.service";
+import { ChannelsService } from "../../notifications/channels.service";
+import { EscalationProfilesService } from "../../notifications/escalation-profiles.service";
+import { NotificationsCoreModule } from "../../notifications/notifications-core.module";
+import { NotificationsModule } from "../../notifications/notifications.module";
 import { AlarmDetailsService } from "../../alarms/alarm-details.service";
 import { AlarmsModule } from "../../alarms/alarms.module";
 import { AlarmsService } from "../../alarms/alarms.service";
@@ -465,6 +469,9 @@ export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
     "list_asset_roles",
     // `F4.278` (Amendment 8 D7): the alarm rules.
     "list_rules",
+    // `F4.279` (Amendment 8 D7).
+    "list_notification_channels",
+    "list_escalation_profiles",
     "open_page",
   ]);
   const extra = await runToolCall(
@@ -583,6 +590,9 @@ export function assertTheModuleWiresTheReadTools(): void {
     AlarmKbService,
     // `F4.278`: the alarm-rule read tool.
     RulesService,
+    // `F4.279`: the channel and escalation read tools.
+    ChannelsService,
+    EscalationProfilesService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
   for (const module of [
@@ -600,6 +610,7 @@ export function assertTheModuleWiresTheReadTools(): void {
     SystemStatusModule,
     AlarmKbModule,
     RulesModule,
+    NotificationsModule,
   ]) {
     expect(imports).toContain(module);
   }
@@ -607,6 +618,9 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(AlarmsModule)).toEqual(expect.arrayContaining([AlarmsService, AlarmDetailsService]));
   expect(exportsOf(AlarmKbModule)).toContain(AlarmKbService);
   expect(exportsOf(RulesModule)).toContain(RulesService);
+  // `F4.279`: `ChannelsService` through the re-exported core, `EscalationProfilesService` directly.
+  expect(exportsOf(NotificationsModule)).toEqual(expect.arrayContaining([NotificationsCoreModule, EscalationProfilesService]));
+  expect(exportsOf(NotificationsCoreModule)).toContain(ChannelsService);
   expect(exportsOf(AssetsModule)).toEqual(expect.arrayContaining([AssetsService, AssetKpisService]));
   expect(exportsOf(DashboardBuilderModule)).toContain(DashboardsService);
   expect(exportsOf(AssetHealthModule)).toContain(AssetHealthService);
@@ -618,5 +632,5 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(ReportsCoreModule)).toContain(ReportsService);
   expect(exportsOf(AdminModule)).toContain(AuditAdminService);
   expect(exportsOf(SystemStatusModule)).toContain(SystemStatusService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(27); // `F4.278`: + list_rules.
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(29); // `F4.278`: + list_rules; `F4.279`: + the two notification reads.
 }

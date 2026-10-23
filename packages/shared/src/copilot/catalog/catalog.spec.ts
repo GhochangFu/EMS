@@ -229,6 +229,25 @@ export const FIXTURES: Readonly<
   "rule.enable": { body: { enabled: true }, params: { id: ROW }, names: TARGET_NAME },
   "rule.disable": { body: { enabled: false }, params: { id: ROW }, names: TARGET_NAME },
   "rule.archive": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  // `F4.279` (Amendment 8) — notifications and escalation; no fixture holds a secret or a URL (Q11, Q12).
+  "notificationChannel.create": {
+    body: { organizationId: ORG, code: "ops", name: "Ops", kind: "email", config: { to: ["a@example.test"] } },
+    params: {},
+    names: "Ops",
+  },
+  "notificationChannel.update": { body: { name: "Ops desk" }, params: { id: ROW }, names: TARGET_NAME },
+  "notificationChannel.deactivate": { body: { enabled: false }, params: { id: ROW }, names: TARGET_NAME },
+  "notificationChannel.reactivate": { body: { enabled: true }, params: { id: ROW }, names: TARGET_NAME },
+  "notificationChannel.test": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  "escalationProfile.create": { body: { organizationId: ORG, code: "p1", name: "P1" }, params: {}, names: "P1" },
+  "escalationProfile.update": { body: { name: "P1 renamed" }, params: { id: ROW }, names: TARGET_NAME },
+  "escalationDefaults.set": {
+    body: { organizationId: ORG, items: [{ severity: "critical", profileId: ROW }] },
+    params: {},
+    names: ORG_NAME,
+  },
+  "escalationDefaults.clear": { body: { organizationId: ORG, items: [] }, params: {}, names: ORG_NAME },
+  "rule.notifications.set": { body: { channelIds: [ROW] }, params: { id: ROW }, names: TARGET_NAME },
 };
 
 /**
@@ -947,10 +966,11 @@ export function theLibraryAndRoleSummariesNameTheirTarget(): void {
 }
 
 /**
- * `F4.247` (ADR 0099 Amendment 5 C1): exactly the two list writes take an
- * `If-Match` precondition. Mutation: drop the flag from one entry.
+ * `F4.247` (ADR 0099 Amendment 5 C1): exactly the three list writes take an
+ * `If-Match` precondition (`F4.279` Amendment 8 D6 adds the escalation ladder).
+ * Mutation: drop the flag from one entry.
  */
-export function exactlyTheTwoListWritesTakeAPrecondition(): void {
+export function exactlyTheThreeListWritesTakeAPrecondition(): void {
   const flagged = COPILOT_CATALOG.filter((e) => e.precondition === "updatedAt").map((e) => e.id).sort();
-  expect(flagged).toStrictEqual(["assetTemplate.update", "dashboard.widgets.replace"]);
+  expect(flagged).toStrictEqual(["assetTemplate.update", "dashboard.widgets.replace", "escalationProfile.update"]);
 }

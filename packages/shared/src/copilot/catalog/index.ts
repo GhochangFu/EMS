@@ -10,6 +10,7 @@ import { DASHBOARD_ENTRIES } from "./dashboards";
 import { KPI_ENTRIES } from "./kpis";
 import { LOCATION_TYPE_ENTRIES, LOCATION_TYPE_PENDING } from "./location-types";
 import { LOCATION_ENTRIES, LOCATION_PENDING } from "./locations";
+import { NOTIFICATION_ENTRIES, NOTIFICATION_PENDING } from "./notifications";
 import { ONBOARDING_ENTRIES, ONBOARDING_PENDING } from "./onboarding";
 import { POINT_KEY_ENTRIES, POINT_KEY_PENDING } from "./point-keys";
 import { RTU_ENTRIES, RTU_PENDING } from "./rtus";
@@ -47,6 +48,8 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...LOCATION_TYPE_ENTRIES,
   // `F4.278` (Amendment 8): the alarm rules.
   ...RULE_ENTRIES,
+  // `F4.279` (Amendment 8): notification channels, escalation, and the rule channel set (D8).
+  ...NOTIFICATION_ENTRIES,
 ];
 
 /**
@@ -104,6 +107,7 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...ASSET_ROLE_PENDING,
   ...LOCATION_TYPE_PENDING,
   ...RULE_PENDING,
+  ...NOTIFICATION_PENDING,
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */

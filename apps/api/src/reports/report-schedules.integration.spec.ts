@@ -9,6 +9,7 @@ import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { SEEDED, jwtFor } from "../auth/access-control.integration.spec";
 import type { BmsTx } from "../database/tenant-context";
 import { withTenant } from "../database/tenant-context";
+import { ChannelWritesService } from "../notifications/channel-writes.service";
 import { ChannelsService } from "../notifications/channels.service";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { buildReportObjectKey } from "../storage/object-key";
@@ -56,6 +57,8 @@ import type { CreateReportScheduleBodyInput } from "./report-schedules.schema";
 export type ScheduleIntegrationFixtures = {
   readonly base: ReportFileIntegrationFixtures;
   readonly channels: ChannelsService;
+  /** `F4.279`: the channel writes, moved out of `ChannelsService`. */
+  readonly channelWrites: ChannelWritesService;
   readonly service: ReportSchedulesService;
   /** `RSMOC-EC` — an ESKOM location `wc-admin@bms.local` does not hold. */
   readonly ecId: string;
@@ -103,6 +106,13 @@ export async function openScheduleFixtures(
   const fx: ScheduleIntegrationFixtures = {
     base,
     channels,
+    channelWrites: new ChannelWritesService(
+      base.fleetDb,
+      base.tenantDb,
+      new CredentialCryptoService(),
+      base.accessControl,
+      new MasterDataAuditService(base.tenantDb, base.fleetDb),
+    ),
     service: new ReportSchedulesService(
       base.tenantDb,
       base.fleetDb,
@@ -417,7 +427,7 @@ export async function removeTakesTheFilesWithIt(fx: ScheduleIntegrationFixtures)
 /** A real `email` channel of ESKOM, created through `ChannelsService.create` as admin, is accepted. */
 export async function channelOfThisOrganizationIsAccepted(fx: ScheduleIntegrationFixtures): Promise<void> {
   const suffix = randomUUID().slice(0, 8);
-  const channel = await fx.channels.create(admin(), {
+  const channel = await fx.channelWrites.create(admin(), {
     organizationId: fx.base.eskomId,
     code: `f35b-sched-${suffix}`,
     name: `f3.5b-sched-${suffix}`,
@@ -433,7 +443,7 @@ export async function channelOfThisOrganizationIsAccepted(fx: ScheduleIntegratio
 /** Q-6 on real grants: `ChannelsService.loadById` refuses a `location_admin` before the channel is read. */
 export async function wcAdminCannotAttachAChannel(fx: ScheduleIntegrationFixtures): Promise<void> {
   const suffix = randomUUID().slice(0, 8);
-  const channel = await fx.channels.create(admin(), {
+  const channel = await fx.channelWrites.create(admin(), {
     organizationId: fx.base.eskomId,
     code: `f35b-sched-${suffix}`,
     name: `f3.5b-sched-${suffix}`,

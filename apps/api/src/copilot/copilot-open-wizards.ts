@@ -156,6 +156,12 @@ const PAGE_WIZARDS: readonly PageWizards[] = [
   { template: "/admin/unit-roles", wizards: [{ catalogId: "assetRole.create" }] },
   // `F4.278` (Amendment 8): the Rule Engine's create wizard.
   { template: "/rules", wizards: [{ catalogId: "rule.create" }] },
+  // `F4.279` (Amendment 8): the Channels and Escalation pages.
+  { template: "/admin/notification-channels", wizards: [{ catalogId: "notificationChannel.create" }] },
+  {
+    template: "/admin/escalation-profiles",
+    wizards: [{ catalogId: "escalationProfile.create" }, { catalogId: "escalationDefaults.set" }, { catalogId: "escalationDefaults.clear" }],
+  },
   { template: "/admin/users", wizards: [{ catalogId: "user.create" }] },
   { template: "/admin/calc-parameters", wizards: [{ catalogId: "calcParameter.create" }] },
   { template: "/admin/mimic-symbol-libraries", wizards: [{ catalogId: "mimicLibrary.create" }] },

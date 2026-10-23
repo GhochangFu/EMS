@@ -1,5 +1,5 @@
 import type { CopilotPendingChangeDto } from "@bms/shared";
-import { bodyFieldsOf, cardOnlyKeysFor, catalogEntry, COPILOT_CHANGE_HEADER } from "@bms/shared/copilot";
+import { bodyFieldsOf, cardOnlyKeysFor, catalogEntry, COPILOT_CHANGE_HEADER, withPaths } from "@bms/shared/copilot";
 
 import { ApiError } from "../lib/api-error";
 import { clearSessionOnAuthFailure, withAuth } from "./http";
@@ -91,7 +91,9 @@ export async function confirmCopilotChange(
     : withAuth({
         method: change.method,
         headers: { "Content-Type": "application/json", [COPILOT_CHANGE_HEADER]: change.id, ...ifMatch },
-        body: JSON.stringify({ ...withoutKeys(change.body, cardOnlyKeysFor(change.catalogId)), ...clientOnly }),
+        // `F4.279` (Q12): a typed value goes to its path (`config.url` inside `config`); a blank one is
+        // not set, so an untyped optional secret is omitted and the PATCH keeps the stored one.
+        body: JSON.stringify(withPaths(withoutKeys(change.body, cardOnlyKeysFor(change.catalogId)), clientOnly)),
       });
   const res = await fetch(`${base}${change.path}`, sent);
   if (!res.ok) {

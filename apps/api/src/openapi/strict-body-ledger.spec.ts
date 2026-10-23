@@ -38,6 +38,12 @@ import {
   ruleLifecycleBodySchema,
   ruleToggleBodySchema,
   ruleUpdateBodySchema,
+  createEscalationProfileBodySchema,
+  createNotificationChannelBodySchema,
+  setEscalationDefaultsBodySchema,
+  setRuleNotificationsBodySchema,
+  updateEscalationProfileBodySchema,
+  updateNotificationChannelBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -110,18 +116,8 @@ import {
   listMaintenanceQuerySchema,
   updateMaintenanceScheduleBodySchema,
 } from "../maintenance/maintenance.schema";
-import {
-  createEscalationProfileBodySchema,
-  escalationDefaultsQuerySchema,
-  setEscalationDefaultsBodySchema,
-  updateEscalationProfileBodySchema,
-} from "../notifications/escalation-profiles.schema";
-import {
-  createNotificationChannelBodySchema,
-  listDeliveriesQuerySchema,
-  setRuleNotificationsBodySchema,
-  updateNotificationChannelBodySchema,
-} from "../notifications/notifications.schema";
+import { escalationDefaultsQuerySchema } from "../notifications/escalation-profiles.schema";
+import { listDeliveriesQuerySchema } from "../notifications/notifications.schema";
 import {
   listReportFilesQuerySchema,
   saveEnergyReportFileBodySchema,

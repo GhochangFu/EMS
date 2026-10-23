@@ -73,6 +73,15 @@ const webhookChannel: NotificationChannelDto = {
   updatedAt: new Date(0).toISOString(),
 };
 
+/**
+ * `F4.279` (decision 6): the editor is a one-step `WizardShell` — Next opens
+ * Review, and Submit sends the set.
+ */
+async function save(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(await screen.findByRole("button", { name: "Submit" }));
+}
+
 function stubApi(overrides: Partial<typeof api> = {}): void {
   vi.spyOn(api, "fetchNotificationChannels").mockResolvedValue({
     items: [emailChannel, webhookChannel],
@@ -131,7 +140,7 @@ export async function savesTheWholeSetAndInvalidatesTheJoinQuery(): Promise<void
   await userEvent.click(
     screen.getByRole("checkbox", { name: "Operations webhook (disabled)" }),
   );
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await save();
 
   await waitFor(() => {
     expect(api.setRuleNotifications).toHaveBeenCalledTimes(1);
@@ -166,7 +175,7 @@ export async function showsWhatTheServerStoredAfterASuccessfulSave(): Promise<vo
   vi.spyOn(api, "fetchRuleNotifications").mockResolvedValue({
     channelIds: [emailChannel.id],
   });
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await save();
 
   await waitFor(() => {
     expect(
@@ -217,12 +226,13 @@ export async function keepsTheOperatorsBoxesWhenTheSaveIsRefused(): Promise<void
   expect(await screen.findByRole("checkbox", { name: "Operations email" })).toBeChecked();
   const webhook = screen.getByRole("checkbox", { name: "Operations webhook (disabled)" });
   await userEvent.click(webhook);
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await save();
 
   await waitFor(() => {
     expect(screen.getByRole("alert")).toHaveTextContent(/boom/i);
   });
-  // The refusal reports; it does not undo the operator's work.
+  // The refusal reports; it does not undo the operator's work (Back shows the boxes again).
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
   expect(screen.getByRole("checkbox", { name: "Operations webhook (disabled)" })).toBeChecked();
 }
 
@@ -257,7 +267,7 @@ export async function carriesAJoinedChannelItCannotShowThroughTheSave(): Promise
   ).toBeInTheDocument();
 
   await userEvent.click(email);
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await save();
 
   await waitFor(() => {
     expect(api.setRuleNotifications).toHaveBeenCalledTimes(1);
@@ -485,7 +495,7 @@ export async function readsARawEnvelopeRefusalAsItsSentence(): Promise<void> {
 
   expect(await screen.findByRole("checkbox", { name: "Operations email" })).toBeChecked();
   await userEvent.click(screen.getByRole("checkbox", { name: "Operations webhook (disabled)" }));
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  await save();
 
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toBe("You may not edit this rule");

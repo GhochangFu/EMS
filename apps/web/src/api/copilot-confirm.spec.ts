@@ -231,3 +231,34 @@ export async function anUploadSendsItsIfMatch(): Promise<void> {
   await confirmCopilotChange({ ...UPLOAD_CHANGE, ifMatch: "2026-10-20T10:00:00.000Z" });
   expect(new Headers(seen().init.headers).get("If-Match")).toBe('"2026-10-20T10:00:00.000Z"');
 }
+
+/** `F4.279` (Q12): a webhook channel create, its recipients stored for the card alone. */
+const WEBHOOK_CREATE: CopilotPendingChangeDto = {
+  ...CHANGE,
+  catalogId: "notificationChannel.create",
+  path: "/api/v1/notifications/channels",
+  body: {
+    organizationId: "11111111-1111-4111-8111-111111111111",
+    code: "hook",
+    name: "Hook",
+    kind: "webhook",
+    config: { to: ["a@example.test"] },
+    recipients: [{ channelId: null, name: "Hook", kind: "webhook", targets: ["(typed on Confirm)"] }],
+  },
+};
+
+/** `F4.279` (Q12): the typed URL is sent nested in `config`, beside the keys `config` already holds. */
+export async function aTypedUrlIsSentAtItsNestedPath(): Promise<void> {
+  const seen = capture(() => new Response(JSON.stringify({ id: "c-1" }), { status: 201 }));
+  await confirmCopilotChange(WEBHOOK_CREATE, { secret: "", "config.url": "https://hooks.example.test/x" });
+  const sent = JSON.parse(seen().init.body as string) as Record<string, unknown>;
+  expect(sent.config).toEqual({ to: ["a@example.test"], url: "https://hooks.example.test/x" });
+}
+
+/** `F4.279` (Q10): a blank optional secret is not sent, so the route keeps (or stores no) secret. */
+export async function aBlankSecretIsNotSent(): Promise<void> {
+  const seen = capture(() => new Response(JSON.stringify({ id: "c-1" }), { status: 201 }));
+  await confirmCopilotChange(WEBHOOK_CREATE, { secret: "", "config.url": "https://hooks.example.test/x" });
+  const sent = JSON.parse(seen().init.body as string) as Record<string, unknown>;
+  expect(Object.keys(sent).sort()).toEqual(["code", "config", "kind", "name", "organizationId"]);
+}

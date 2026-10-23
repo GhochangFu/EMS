@@ -143,7 +143,8 @@ export async function aRefusedTargetNeverRunsTheCheck(): Promise<void> {
  * should skip it must be named in `notChecked`; one missing from `RULE_ENTRY_IDS` would store an unchecked card.
  */
 export function theCheckedIdsAreTheCatalogsRuleEntries(): void {
-  const notChecked: readonly string[] = [];
+  // F4.279: checked by the notification step, not the rule validator.
+  const notChecked: readonly string[] = ["rule.notifications.set"];
   const ruleTargeted = COPILOT_CATALOG.filter((entry) => entry.target.kind === "rule");
   const expected = ruleTargeted.map((entry) => entry.id).filter((id) => !notChecked.includes(id));
   expect([...RULE_ENTRY_IDS].sort()).toEqual([...expected].sort());

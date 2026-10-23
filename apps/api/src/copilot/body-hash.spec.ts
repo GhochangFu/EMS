@@ -38,3 +38,10 @@ export function aNonObjectBodyIsHashedWhole(): void {
   expect(bodyHash([VECTOR], ["a"])).toBe(bodyHash([VECTOR]));
   expect(bodyHash(null, ["a"])).toBe(bodyHash(null));
 }
+
+/** `F4.279` (Q12): a dotted `clientOnly` path strips the nested key, so the typed webhook URL never has to match the stored hash. */
+export function aNestedClientOnlyPathIsStripped(): void {
+  const typed = { name: "Hook", config: { to: ["a@example.test"], url: "https://hooks.example.test/x" } };
+  const stored = { name: "Hook", config: { to: ["a@example.test"] } };
+  expect(bodyHash(typed, ["config.url"])).toBe(bodyHash(stored));
+}

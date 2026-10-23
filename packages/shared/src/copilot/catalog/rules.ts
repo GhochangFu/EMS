@@ -161,13 +161,11 @@ export const RULE_ENTRIES: readonly CatalogEntry[] = [
   },
 ];
 
-/** The rule routes that are not entries, and why (Amendment 8 D8, "Not in this amendment"). */
+/**
+ * The rule routes that are not entries, and why (Amendment 8, "Not in this amendment"). By D8
+ * `PUT /rules/:id/notifications` is the `rule.notifications.set` entry in `notifications.ts`.
+ */
 export const RULE_PENDING: readonly ExcludedRoute[] = [
-  {
-    method: "PUT",
-    path: "/rules/:id/notifications",
-    reason: "F4.279 (Amendment 8 D8): proposed beside the channels it points at",
-  },
   {
     method: "POST",
     path: "/rules/preview",

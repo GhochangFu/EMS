@@ -37,6 +37,13 @@ import type { CopilotReadTools, CopilotToolContext, CopilotToolResult, RegistryO
 import type { CopilotOpenWizard } from "@bms/shared";
 import { prepareUpload } from "./copilot-upload-prepare";
 import { checkRule, type CopilotRuleChecks, RULE_ENTRY_IDS } from "./copilot-propose-rules";
+import { checkNotification, type CopilotNotificationChecks, NOTIFICATION_ENTRY_IDS } from "./copilot-propose-notifications";
+import { NotificationProposalCheckService } from "../notifications/notification-proposal-check.service";
+import {
+  OUTWARD_ENTRY_IDS,
+  PROPOSE_OUTWARD_NOT_ASKED_ERROR,
+  PROPOSE_OUTWARD_ON_FOLLOW_UP_ERROR,
+} from "./copilot-outward-intent";
 import { RuleProposalCheckService } from "../rules/rule-proposal-check.service";
 import { COPILOT_TARGETS, type CopilotTargets } from "./copilot-target-resolver";
 import { PROPOSE_TARGET_ERROR, templateLifecycleRefusal } from "./copilot-template-lifecycle";
@@ -204,6 +211,12 @@ export interface CopilotProposeServices {
    * without it is refused (`PROPOSE_RULES_UNAVAILABLE_ERROR`).
    */
   readonly rules?: CopilotRuleChecks;
+  /**
+   * `F4.279` (Amendment 8 D2, D5): the notification check a notification
+   * proposal runs before its card is stored. Optional for the same reason; a
+   * notification proposal without it is refused (`PROPOSE_NOTIFICATIONS_UNAVAILABLE_ERROR`).
+   */
+  readonly notifications?: CopilotNotificationChecks;
 }
 
 /**
@@ -334,21 +347,26 @@ export function createCopilotProposeTools(
   const registries = new Map<string, ToolRegistry<string>>();
   // `F3.87` PR 7, plan D8: a turn with a file whose words name no asset drops the asset and point creates.
   const assetCreateTools = [...byTool].filter(([, entry]) => ASSET_CREATE_IDS.has(entry.id)).map(([name]) => name);
-  const registryFor = ({ access, role, assetCreate = true }: RegistryOptions): ToolRegistry<string> => {
-    const key = `${access ? "access" : "no-access"}:${assetCreate ? "assets" : "no-assets"}:${role}`;
+  // `F4.279` (D4): the channel test send is dropped unless the user's own message asked (absent: dropped).
+  const outwardTools = [...byTool].filter(([, entry]) => OUTWARD_ENTRY_IDS.has(entry.id)).map(([name]) => name);
+  const registryFor = ({ access, role, assetCreate = true, outward = false }: RegistryOptions): ToolRegistry<string> => {
+    const key = `${access ? "access" : "no-access"}:${assetCreate ? "assets" : "no-assets"}:${outward ? "outward" : "no-outward"}:${role}`;
     const known = registries.get(key);
     if (known !== undefined) return known;
     const dropped = new Set([
       ...(access ? [] : accessTools),
       ...(assetCreate ? [] : assetCreateTools),
+      ...(outward ? [] : outwardTools),
       ...[...byTool].filter(([, entry]) => !offeredToRole(entry, role)).map(([name]) => name),
     ]);
     const made = registryWithout(dropped);
     registries.set(key, made);
     return made;
   };
-  const registry = registryFor({ access: true, role: "admin" });
-  const registryWithoutAccess = registryFor({ access: false, role: "admin" });
+  // The full registry keeps every tool for its existing callers (a spec, the definitions budget);
+  // a turn always builds its own through `registryFor`.
+  const registry = registryFor({ access: true, role: "admin", outward: true });
+  const registryWithoutAccess = registryFor({ access: false, role: "admin", outward: true });
 
   /**
    * `F3.87` PR 5 — a layout proposal's checks, in the order the owner ruled:
@@ -417,6 +435,10 @@ export function createCopilotProposeTools(
     if (entry.risk === "access" && ctx.turnKind === "follow_up") return { ok: false, error: PROPOSE_ACCESS_ON_FOLLOW_UP_ERROR };
     // Ruling Q3: only when the user's own message asked (the turn also withholds the tool; this is the second guard).
     if (entry.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
+    // `F4.279` (D4): an outward-facing write, like an access change — never on a follow-up turn, and
+    // only when the user's own message asked (the registry also withholds the tool).
+    if (OUTWARD_ENTRY_IDS.has(entry.id) && ctx.turnKind === "follow_up") return { ok: false, error: PROPOSE_OUTWARD_ON_FOLLOW_UP_ERROR };
+    if (OUTWARD_ENTRY_IDS.has(entry.id) && ctx.outwardIntent !== true) return { ok: false, error: PROPOSE_OUTWARD_NOT_ASKED_ERROR };
     // `F3.87` PR 2 (Amendment 3 A1): the registry withholds the tool from another role; this is the second guard.
     if (!offeredToRole(entry, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
     // `F3.87` PR 7, plan D8: the registry withholds the creates on a file turn the words did not ask; the second guard.
@@ -476,6 +498,15 @@ export function createCopilotProposeTools(
       if (!checked.ok) return checked;
       ruleNote = ` ${checked.note}`;
     }
+    // `F4.279` (D2, D5): every channel the change names, through the route's gate; the card-only
+    // recipients (stored beside the body, never in the summary) and a note with counts only.
+    let cardBody: Record<string, unknown> = {};
+    if (NOTIFICATION_ENTRY_IDS.has(entry.id)) {
+      const checked = await checkNotification(services.notifications, entry.id, params, body, target.organizationId, ctx.user);
+      if (!checked.ok) return checked;
+      if (checked.note !== "") ruleNote = ` ${checked.note}`;
+      cardBody = checked.cardBody;
+    }
     if (LAYOUT_ENTRY_IDS.has(entry.id)) {
       const checked = await checkLayout(entry, params, body, ctx);
       if (!checked.ok) return checked;
@@ -528,6 +559,8 @@ export function createCopilotProposeTools(
       }) +
       ruleNote +
       (fromFile ? COPILOT_READ_FROM_FILE_NOTE : "");
+    // `F4.279`: the card-only keys join the body after the summary read it, so no summary lists them.
+    body = { ...body, ...cardBody };
     const change = await services.pending.propose(ctx.identity.id, {
       conversationId: ctx.conversationId,
       organizationId: target.organizationId,
@@ -631,8 +664,10 @@ export class CopilotProposeToolSet implements CopilotProposeTools {
     @Inject(MimicLayoutsService) layouts: MimicLayoutsService,
     // `F4.278` (Amendment 8, Q9): APPENDED (slot 3) — the rule check (`RulesModule` exports it).
     @Inject(RuleProposalCheckService) rules: RuleProposalCheckService,
+    // `F4.279` (Amendment 8 D5): APPENDED (slot 4) — the notification check (`NotificationsModule` exports it).
+    @Inject(NotificationProposalCheckService) notifications: NotificationProposalCheckService,
   ) {
-    this.tools = createCopilotProposeTools({ targets, pending, layouts, rules });
+    this.tools = createCopilotProposeTools({ targets, pending, layouts, rules, notifications });
   }
 
   get registry(): ToolRegistry<string> {

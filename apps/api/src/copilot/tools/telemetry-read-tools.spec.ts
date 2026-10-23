@@ -393,8 +393,9 @@ export async function assertTheTurnAnswersTheLast24HoursFromATool(): Promise<voi
  * tools); 11,342 after F4.276 (26 tools); 12,119 after F4.278 (27 tools,
  * still under the bound, so it is unchanged). The bound is the latest
  * measurement rounded up to the next thousand plus one thousand of headroom.
+ * Owner ruling 2026-10-23 (release 4): F4.279 measured 13,135
  */
 export function assertTheReadRegistryStaysInItsBudget(): void {
   const { tools } = fakeTelemetryServices();
-  expect(JSON.stringify(tools.registry.definitions).length).toBeLessThan(13_000);
+  expect(JSON.stringify(tools.registry.definitions).length).toBeLessThan(15_000);
 }

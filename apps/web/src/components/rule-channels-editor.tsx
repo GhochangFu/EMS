@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
+import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
+
 import type { AutomationRuleAction } from "@bms/shared";
 
 import {
@@ -9,6 +11,14 @@ import {
   setRuleNotifications,
 } from "../api/notifications";
 import { apiErrorMessage } from "../lib/api-error-message";
+import { WizardShell } from "./wizard/wizard-shell";
+
+/** The catalog entry, or a build defect (the `rule-wizard.tsx` rule). */
+function wizardEntry(id: string): CatalogEntry {
+  const entry = catalogEntry(id);
+  if (!entry) throw new Error(`F4.279: the catalog has no entry "${id}"`);
+  return entry;
+}
 
 /**
  * `F3.7` — which channels a rule notifies, on the rule's own card.
@@ -47,6 +57,11 @@ import { apiErrorMessage } from "../lib/api-error-message";
  * Mounted by `RuleCard` **only while the picker is open**. 289 rules are live
  * on this database and each mounted editor issues one
  * `GET /rules/:id/notifications`.
+ *
+ * `F4.279` (ADR 0099 decision 6, Amendment 8 D8): the channel set is a one-step
+ * `WizardShell` on `rule.notifications.set` — Channels, then Review — so the
+ * copilot can fill it and the page and the copilot write one body. The joins
+ * the caller cannot see ride along in the values, as before.
  */
 export function RuleChannelsEditor({
   ruleId,
@@ -64,6 +79,8 @@ export function RuleChannelsEditor({
    */
   const [selected, setSelected] = useState<readonly string[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // `F4.279`: a new round remounts the wizard on its first step after a save.
+  const [round, setRound] = useState(0);
 
   // The same key the channels admin screen uses, so a channel created there is
   // in this list without a reload.
@@ -87,6 +104,7 @@ export function RuleChannelsEditor({
       // say) must read back as what is stored, not as what was asked for.
       // Deliberately not done on failure: a refusal keeps the operator's work.
       setSelected(null);
+      setRound((was) => was + 1);
     },
     onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
@@ -117,8 +135,9 @@ export function RuleChannelsEditor({
   }
 
   // A save on top of a join query that never answered would write the empty set
-  // over whatever is stored. It waits, or says it cannot.
-  const cannotSave = saveM.isPending || joinedQ.isPending || joinedQ.isError;
+  // over whatever is stored. It waits, or says it cannot: the wizard is mounted
+  // only once the join query has answered.
+  const canSave = joinedQ.isSuccess;
 
   const caption =
     action.type === "notify"
@@ -164,37 +183,48 @@ export function RuleChannelsEditor({
 
       {channels.length > 0 ? (
         <>
-          <div className="mt-2 space-y-1">
-            {channels.map((channel) => {
-              const inputId = `rule-${ruleId}-channel-${channel.id}`;
-              return (
-                <label
-                  key={channel.id}
-                  htmlFor={inputId}
-                  className="flex items-center gap-2 text-xs text-ink"
-                >
-                  <input
-                    id={inputId}
-                    type="checkbox"
-                    checked={checked.has(channel.id)}
-                    onChange={() => toggle(channel.id)}
-                  />
-                  {channel.enabled ? channel.name : `${channel.name} (disabled)`}
-                </label>
-              );
-            })}
-          </div>
-          <div className="mt-3 flex items-center gap-2">
-            <button
-              className="surface-button-primary bg-accent px-2 py-1 text-[11px] font-semibold text-on-accent disabled:cursor-not-allowed disabled:bg-line-strong"
-              disabled={cannotSave}
-              aria-busy={saveM.isPending}
-              onClick={() => saveM.mutate([...channelIds, ...hidden])}
-            >
-              {saveM.isPending ? "Saving..." : "Save"}
-            </button>
-            <span className="text-[11px] text-ink-muted">{caption}</span>
-          </div>
+          {canSave ? (
+            <WizardShell
+              key={round}
+              entry={wizardEntry("rule.notifications.set")}
+              params={{ id: ruleId }}
+              values={{ channelIds: [...channelIds, ...hidden] }}
+              current={{ channelIds: joinedQ.data?.channelIds ?? [] }}
+              onChange={(values) => {
+                const ids = Array.isArray(values.channelIds) ? values.channelIds : [];
+                setSelected(channels.filter((channel) => ids.includes(channel.id)).map((c) => c.id));
+              }}
+              renderStep={() => (
+                <div className="mt-2 space-y-1">
+                  {channels.map((channel) => {
+                    const inputId = `rule-${ruleId}-channel-${channel.id}`;
+                    return (
+                      <label
+                        key={channel.id}
+                        htmlFor={inputId}
+                        className="flex items-center gap-2 text-xs text-ink"
+                      >
+                        <input
+                          id={inputId}
+                          type="checkbox"
+                          checked={checked.has(channel.id)}
+                          onChange={() => toggle(channel.id)}
+                        />
+                        {channel.enabled ? channel.name : `${channel.name} (disabled)`}
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+              onSubmit={(body) => saveM.mutate(Array.isArray(body.channelIds) ? (body.channelIds as string[]) : [])}
+              onCancel={() => {
+                setSelected(null);
+                setRound((was) => was + 1);
+              }}
+              submitting={saveM.isPending}
+            />
+          ) : null}
+          <p className="mt-2 text-[11px] text-ink-muted">{caption}</p>
           {/*
             Inside this block on purpose: `channels` is also `[]` while the
             list loads and after it fails, and out here every joined id would

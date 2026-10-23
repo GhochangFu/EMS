@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  aNestedClientOnlyPathIsStripped,
   aNonObjectBodyIsHashedWhole,
   anEmptyBodyHashesToTheBracesLiteral,
   clientOnlyKeysAreStripped,
@@ -13,4 +14,5 @@ describe("F3.85 — the copilot body hash, API side (ADR 0099 drafter choice 5)"
   it("hashes an empty body to the braces literal", () => anEmptyBodyHashesToTheBracesLiteral());
   it("strips clientOnly keys before hashing", () => clientOnlyKeysAreStripped());
   it("hashes a non-object body whole", () => aNonObjectBodyIsHashedWhole());
+  it("strips a nested clientOnly path before hashing", () => aNestedClientOnlyPathIsStripped());
 });

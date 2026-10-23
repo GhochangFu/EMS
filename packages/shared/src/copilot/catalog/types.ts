@@ -96,7 +96,7 @@ export type CatalogMethod = "POST" | "PUT" | "PATCH" | "DELETE";
 export type CatalogTarget =
   | {
       readonly kind: "organization";
-      readonly manage: "dashboard" | "template" | "calcParameter" | "location" | "user" | "mimic";
+      readonly manage: "dashboard" | "template" | "calcParameter" | "location" | "user" | "mimic" | "notification";
     }
   | { readonly kind: "mimicLayout" | "mimicLibrary"; readonly param: "id" }
   | { readonly kind: "dashboard" | "dashboardTemplate" | "calcParameter" | "assetTemplate"; readonly param: "id" }
@@ -130,6 +130,14 @@ export type CatalogTarget =
    */
   | { readonly kind: "rule"; readonly param: "id" }
   | { readonly kind: "rule"; readonly field: "assetId" }
+  /**
+   * `F4.279` (ADR 0099 Amendment 8 D2): a notification channel or an escalation profile, the row
+   * the path parameter `id` names. Both mirror the routes' gate: `requireMasterDataUser`, then
+   * `canManageNotificationChannel` on the row's organization; a fleet-wide (NULL-organization)
+   * channel is never found (Q13). `organization` with `manage: "notification"` is the same gate
+   * on the body's `organizationId` (a channel or profile create, the severity map).
+   */
+  | { readonly kind: "notificationChannel" | "escalationProfile"; readonly param: "id" }
   | { readonly kind: "onboardingSession"; readonly param: "id" }
   | { readonly kind: "assetTemplateDeploy"; readonly param: "id" }
   | { readonly kind: "user" | "userGrantAdd"; readonly param: "id" }
@@ -205,7 +213,11 @@ export interface CatalogEntry {
   readonly body: ZodTypeAny;
   /** The export name of `body` in `@bms/shared`, or `null` for a route that takes no body (`tests/f3.85-catalog-coverage`). */
   readonly bodyName: string | null;
-  /** Body keys the user types on the Confirm card and the model never sees (none in release 1). */
+  /**
+   * Body keys the user types on the Confirm card and the model never sees (none in release 1).
+   * `F4.279` (Q12): a dotted entry (`config.url`) names a nested path; typed on the card, stripped
+   * from the hash by path (`client-only.ts`).
+   */
   readonly clientOnly: readonly string[];
   /**
    * `F3.86` PR 2: the schema the model proposes with, when it differs from

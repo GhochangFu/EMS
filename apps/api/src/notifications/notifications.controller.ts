@@ -16,17 +16,15 @@ import {
 } from "@nestjs/common";
 import { ZodError, z } from "zod";
 
+import { createNotificationChannelBodySchema, updateNotificationChannelBodySchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { ChannelWritesService } from "./channel-writes.service";
 import { ChannelsService } from "./channels.service";
 import { NOTIFICATIONS_CONFIG, type NotificationsConfig } from "./notifications.config";
-import {
-  createNotificationChannelBodySchema,
-  listDeliveriesQuerySchema,
-  updateNotificationChannelBodySchema,
-} from "./notifications.schema";
+import { listDeliveriesQuerySchema } from "./notifications.schema";
 import { NotificationsService } from "./notifications.service";
 
 const idParamSchema = z.string().uuid();
@@ -57,6 +55,8 @@ export class NotificationsController {
     private readonly channels: ChannelsService,
     private readonly notifications: NotificationsService,
     @Inject(NOTIFICATIONS_CONFIG) private readonly config: NotificationsConfig,
+    // `F4.279`: the writes, which audit through `MasterDataAuditService` (API-only).
+    private readonly channelWrites: ChannelWritesService,
   ) {}
 
   @Get("channels")
@@ -68,7 +68,7 @@ export class NotificationsController {
   @HttpCode(HttpStatus.CREATED)
   async createChannel(@CurrentUser() user: JwtPayload, @Body() body: unknown) {
     const dto = parse(createNotificationChannelBodySchema, body);
-    return this.channels.create(user, dto);
+    return this.channelWrites.create(user, dto);
   }
 
   @Patch("channels/:id")
@@ -79,7 +79,7 @@ export class NotificationsController {
   ) {
     const channelId = parse(idParamSchema, id);
     const dto = parse(updateNotificationChannelBodySchema, body);
-    const updated = await this.channels.update(user, channelId, dto);
+    const updated = await this.channelWrites.update(user, channelId, dto);
     if (updated === null) throw new NotFoundException("Notification channel not found");
     return updated;
   }
@@ -88,7 +88,7 @@ export class NotificationsController {
   @HttpCode(HttpStatus.OK)
   async deleteChannel(@CurrentUser() user: JwtPayload, @Param("id") id: string) {
     const channelId = parse(idParamSchema, id);
-    const removed = await this.channels.remove(user, channelId);
+    const removed = await this.channelWrites.remove(user, channelId);
     if (!removed) throw new NotFoundException("Notification channel not found");
     return { deleted: true as const };
   }

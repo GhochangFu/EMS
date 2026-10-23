@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq } from "drizzle-orm";
 
 import {
+  alarmEscalationProfiles,
   assetGroupMembers,
   assetGroups,
   assetPoints,
@@ -18,6 +19,7 @@ import {
   locationTypes,
   mimicLayouts,
   mimicOrgSymbolLibraries,
+  notificationChannels,
   organizations,
   pointKeys,
   rtus,
@@ -535,6 +537,25 @@ export class CopilotTargetResolver implements CopilotTargets {
           ? { organizationId, name: row.key, scope: { locationId: row.locationId, assetGroupId: null, assetId: row.assetId } }
           : null;
       }
+      // `F4.279` (Amendment 8 D2, Q13): a channel of this organization. The organization filter is
+      // what keeps a fleet-wide (NULL-organization) channel from ever being found.
+      case "notificationChannel": {
+        const [row] = await tx
+          .select({ name: notificationChannels.name })
+          .from(notificationChannels)
+          .where(and(eq(notificationChannels.id, id), eq(notificationChannels.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.name } : null;
+      }
+      // `F4.279` (D6): a profile, with the stamp its ladder replace binds to.
+      case "escalationProfile": {
+        const [row] = await tx
+          .select({ name: alarmEscalationProfiles.name, updatedAt: alarmEscalationProfiles.updatedAt })
+          .from(alarmEscalationProfiles)
+          .where(and(eq(alarmEscalationProfiles.id, id), eq(alarmEscalationProfiles.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.name, updatedAt: row.updatedAt.toISOString() } : null;
+      }
       // `F4.278`: a rule row — its asset (the scope gate's input) and its lifecycle (D3's live line).
       case "rule": {
         const [row] = await tx
@@ -663,7 +684,22 @@ export class CopilotTargetResolver implements CopilotTargets {
       // `assertCanAuthor` on the body's organization.
       case "mimic":
         return this.mayAuthorMimic(user, organizationId);
+      // `F4.279`: a channel or profile create, or the severity map — the routes' gate on the body's organization.
+      case "notification":
+        return this.mayManageNotification(user, organizationId);
     }
+  }
+
+  /**
+   * `F4.279` (ADR 0099 Amendment 8 D2) — the notification routes' gate, exactly
+   * `ChannelsService.loadById`'s and `EscalationProfilesService`'s:
+   * `requireMasterDataUser` (a throw, as for an `asset_group_admin`, is a refusal
+   * through `safely`), then `canManageNotificationChannel`, which admits `admin`
+   * and an `organization_admin` of the organization only.
+   */
+  private async mayManageNotification(user: JwtPayload, organizationId: string): Promise<boolean> {
+    await this.access.requireMasterDataUser(user);
+    return this.access.canManageNotificationChannel(user, organizationId);
   }
 
   /**
@@ -763,6 +799,10 @@ export class CopilotTargetResolver implements CopilotTargets {
       // `F3.86` PR 3b: `AssetsAdminService.update` — a body that names `locationId` moves the
       // asset, and the route checks the new site too (its own truthiness test, mirrored).
       // A create under an asset (`parent`) passes `{}`; `calcOverride.set`'s body has no `locationId`.
+      // `F4.279` (Amendment 8 D2): the notification routes' gate, on the row's organization.
+      case "notificationChannel":
+      case "escalationProfile":
+        return this.mayManageNotification(user, found.organizationId);
       // `F4.278` (Amendment 8 D2): the rule routes' role class and read-scope gate.
       // `RulesService.updateRule` checks the current asset and the merged one (`mergeRuleDraft`:
       // an absent `assetId` keeps the current asset, `null` clears it), so a body that names

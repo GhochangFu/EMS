@@ -1,4 +1,10 @@
-import { BadRequestException, ConflictException, ForbiddenException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  PreconditionFailedException,
+} from "@nestjs/common";
+import { createEscalationProfileBodySchema, setEscalationDefaultsBodySchema, updateEscalationProfileBodySchema } from "@bms/shared";
 
 import {
   alarmEscalationDefaults,
@@ -7,14 +13,11 @@ import {
   alarmEscalationSteps,
   auditLog,
 } from "@bms/db";
-import type { JwtPayload, UserRole } from "@bms/shared";
+import type { IfMatch, JwtPayload, UserRole } from "@bms/shared";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import type { AuditInput } from "../admin/master-data-audit.service";
 import { EscalationProfilesService } from "./escalation-profiles.service";
-import {
-  createEscalationProfileBodySchema,
-  setEscalationDefaultsBodySchema,
-  updateEscalationProfileBodySchema,
-} from "./escalation-profiles.schema";
 import type { NotificationChannelRow } from "./notification-transport";
 
 function assert(condition: boolean, message: string): void {
@@ -315,6 +318,27 @@ function fakeTenant(
   } as unknown as Ctor[1];
 }
 
+/**
+ * `F4.279`: the real audit funnel. Its own fleet handle answers only the actor
+ * lookup; the row itself is written on the executor the service passes (the
+ * service's fleet fake), so `rec.audits` still sees every audit row.
+ */
+function funnel(): Ctor[4] {
+  return new MasterDataAuditService({} as never, fakeFleet(recorder()));
+}
+
+/** `F4.279`: a funnel fake that records what the service hands it, and on which executor. */
+function recordingFunnel(): { funnel: Ctor[4]; calls: { input: AuditInput; executor: unknown }[] } {
+  const calls: { input: AuditInput; executor: unknown }[] = [];
+  const fake = {
+    write: (input: AuditInput, executor: unknown) => {
+      calls.push({ input, executor });
+      return Promise.resolve();
+    },
+  } as unknown as Ctor[4];
+  return { funnel: fake, calls };
+}
+
 const PROFILE_ROW = {
   id: PROFILE_ID,
   organizationId: ORG_A,
@@ -398,6 +422,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       fakeTenant(rec, { profileRow: PROFILE_ROW, stepRows: [{ stepNo: 1, afterMinutes: 5, channelId: CHANNEL_A }] }),
       channels,
       accessControl("organization_admin", [ORG_A]),
+      funnel(),
     );
 
     const dto = await service.create(ORG_ADMIN, {
@@ -436,6 +461,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       fakeTenant(rec),
       channels,
       accessControl("admin", null),
+      funnel(),
     );
     await rejectsWith(
       () => service.create(ADMIN, { code: "after-hours", name: "After hours", steps: [] }),
@@ -457,6 +483,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       fakeTenant(rec, { profileRow: PROFILE_ROW }),
       channels,
       accessControl("organization_admin", [ORG_A]),
+      funnel(),
     );
     await rejectsWith(
       () =>
@@ -492,6 +519,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       fakeTenant(rec, { profileRow: PROFILE_ROW }),
       channels,
       accessControl("admin", null),
+      funnel(),
     );
     await rejectsWith(
       () =>
@@ -520,6 +548,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       fakeTenant(rec, { profileRow: PROFILE_ROW }),
       channels,
       accessControl("admin", null),
+      funnel(),
     );
     await rejectsWith(
       () =>
@@ -553,6 +582,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       }),
       channels,
       accessControl("admin", null),
+      funnel(),
     );
 
     const dto = await service.update(ADMIN, PROFILE_ID, {
@@ -593,6 +623,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       fakeTenant(rec),
       channels,
       accessControl("admin", null),
+      funnel(),
     );
     assert(
       (await service.update(ADMIN, PROFILE_ID, { name: "x" })) === null,
@@ -616,6 +647,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       fakeTenant(rec, { failWith: { code: "23503", constraint: "alarm_escalation_defaults_profile_id_fk" } }),
       channels,
       accessControl("admin", null),
+      funnel(),
     );
     await rejectsWith(
       () => service.remove(ADMIN, PROFILE_ID),
@@ -633,6 +665,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       fakeTenant(rec, { failWith: { code: "23505" } }),
       channels,
       accessControl("admin", null),
+      funnel(),
     );
     await rejectsWith(
       () => service.create(ADMIN, { organizationId: ORG_A, code: "after-hours", name: "After hours", steps: [] }),
@@ -658,6 +691,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       }),
       channels,
       accessControl("admin", null),
+      funnel(),
     );
     await rejectsWith(
       () =>
@@ -686,6 +720,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       fakeTenant(rec, { visibleProfileIds: [] }),
       channels,
       accessControl("admin", null),
+      funnel(),
     );
     await rejectsWith(
       () =>
@@ -717,6 +752,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       }),
       channels,
       accessControl("organization_admin", [ORG_A]),
+      funnel(),
     );
     const response = await service.setDefaults(ORG_ADMIN, {
       items: [{ severity: "critical", profileId: PROFILE_ID }],
@@ -760,6 +796,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       fakeTenant(rec),
       channels,
       accessControl("location_admin", [ORG_A]),
+      funnel(),
     );
     assert((await service.list(LOCATION_ADMIN)).length === 0, "a location_admin sees no profiles");
     await rejectsWith(
@@ -785,6 +822,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       fakeTenant(rec),
       channels,
       accessControl("admin", null),
+      funnel(),
     );
     const items = await service.list(ADMIN);
     assert(items.length === 2, "one item per profile, however many join rows it produced");
@@ -824,6 +862,7 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       fakeTenant(rec),
       channels,
       accessControl("admin", null),
+      funnel(),
     );
     const items = await service.list(ADMIN);
     assert(items.length === 2, "two organizations sharing a code are two profiles");
@@ -839,4 +878,97 @@ export async function runEscalationProfilesServiceTests(): Promise<void> {
       "and it carries org B's channel, not a merge of both tenants'",
     );
   }
+}
+
+const STAMP = "2026-01-02T00:00:00.000Z" as IfMatch;
+const EXISTING = [{ organizationId: ORG_A, code: "after-hours", name: "After hours" }];
+
+/** `F4.279` (Amendment 8 D6): a stale `If-Match` matches no row and answers 412. */
+export async function aStaleIfMatchIsA412(): Promise<void> {
+  const rec = recorder();
+  const { channels } = channelsService({});
+  const service = new EscalationProfilesService(
+    fakeFleet(rec, { existing: EXISTING }),
+    fakeTenant(rec, { updatedRow: undefined }),
+    channels,
+    accessControl("admin", null),
+    funnel(),
+  );
+  await rejectsWith(
+    () => service.update(ADMIN, PROFILE_ID, { name: "Renamed" }, STAMP),
+    (e) => e instanceof PreconditionFailedException,
+    "a stale stamp",
+  );
+}
+
+/** `F4.279`: the refused stale write leaves no audit row. */
+export async function aStaleIfMatchWritesNoAuditRow(): Promise<void> {
+  const rec = recorder();
+  const { channels } = channelsService({});
+  const service = new EscalationProfilesService(
+    fakeFleet(rec, { existing: EXISTING }),
+    fakeTenant(rec, { updatedRow: undefined }),
+    channels,
+    accessControl("admin", null),
+    funnel(),
+  );
+  await service.update(ADMIN, PROFILE_ID, { name: "Renamed" }, STAMP).catch(() => undefined);
+  assert(rec.audits.length === 0, "no audit row for a refused write");
+}
+
+/** `F4.279`: without a header, a missing row is still `null` (the controller's 404), not a 412. */
+export async function noIfMatchKeepsTheNotFound(): Promise<void> {
+  const rec = recorder();
+  const { channels } = channelsService({});
+  const service = new EscalationProfilesService(
+    fakeFleet(rec, { existing: EXISTING }),
+    fakeTenant(rec, { updatedRow: undefined }),
+    channels,
+    accessControl("admin", null),
+    funnel(),
+  );
+  const result = await service.update(ADMIN, PROFILE_ID, { name: "Renamed" });
+  assert(result === null, "no header and no row is null, which the controller answers 404");
+}
+
+/** `F4.279`: a matching stamp writes, and audits once. */
+export async function aMatchingIfMatchWrites(): Promise<void> {
+  const rec = recorder();
+  const { channels } = channelsService({});
+  const service = new EscalationProfilesService(
+    fakeFleet(rec, { existing: EXISTING }),
+    fakeTenant(rec, { updatedRow: { ...PROFILE_ROW, name: "Renamed" }, stepRows: [] }),
+    channels,
+    accessControl("admin", null),
+    funnel(),
+  );
+  const dto = await service.update(ADMIN, PROFILE_ID, { name: "Renamed" }, STAMP);
+  assert(dto?.name === "Renamed", "the write went through");
+  assert(rec.audits.length === 1, "one audit row for the write");
+}
+
+/** `F4.279` (Amendment 8): the create's audit goes through the funnel, on the fleet pool, with the profile's organization. */
+export async function theCreateAuditsThroughTheFunnel(): Promise<void> {
+  const rec = recorder();
+  const { channels } = channelsService({ [CHANNEL_A]: channelRow(CHANNEL_A, ORG_A) });
+  const fleet = fakeFleet(rec);
+  const { funnel: recording, calls } = recordingFunnel();
+  const service = new EscalationProfilesService(
+    fleet,
+    fakeTenant(rec, { profileRow: PROFILE_ROW, stepRows: [{ stepNo: 1, afterMinutes: 5, channelId: CHANNEL_A }] }),
+    channels,
+    accessControl("admin", null),
+    recording,
+  );
+  await service.create(ADMIN, {
+    organizationId: ORG_A,
+    code: "after-hours",
+    name: "After hours",
+    steps: [{ afterMinutes: 5, channelIds: [CHANNEL_A] }],
+  });
+  assert(calls.length === 1, "one funnel call");
+  assert(calls[0]?.input.action === "alarm_escalation_profile_create", "the create action");
+  assert(calls[0]?.input.organizationId === ORG_A, "stamped with the profile's organization");
+  assert(calls[0]?.executor === fleet, "written on the fleet pool");
+  assert(rec.audits.length === 0, "no direct audit insert beside the funnel");
 }

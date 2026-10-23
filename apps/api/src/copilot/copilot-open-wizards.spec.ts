@@ -222,3 +222,17 @@ export async function anOpenRecordIsResolvedByItsRowAlone(): Promise<void> {
 export function theRulesPageMountsItsCreateWizard(): void {
   expect(pageWizardCandidates("/rules")).toStrictEqual([{ catalogId: "rule.create", params: {} }]);
 }
+
+/** `F4.279` (Amendment 8): the Channels page mounts its create wizard. */
+export function theChannelsPageMountsItsCreateWizard(): void {
+  expect(pageWizardCandidates("/admin/notification-channels")).toStrictEqual([{ catalogId: "notificationChannel.create", params: {} }]);
+}
+
+/** `F4.279`: the Escalation page mounts the profile create and the two severity-map wizards. */
+export function theEscalationPageMountsItsWizards(): void {
+  expect(pageWizardCandidates("/admin/escalation-profiles")).toStrictEqual([
+    { catalogId: "escalationProfile.create", params: {} },
+    { catalogId: "escalationDefaults.set", params: {} },
+    { catalogId: "escalationDefaults.clear", params: {} },
+  ]);
+}

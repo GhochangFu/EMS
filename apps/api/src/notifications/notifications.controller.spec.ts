@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { createNotificationChannelBodySchema, updateNotificationChannelBodySchema } from "@bms/shared";
 
 import { notificationChannels, users, userOrganizationAccess } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -7,10 +8,6 @@ import type { JwtPayload, NotificationChannelDto, UserRole } from "@bms/shared";
 import { AccessControlService } from "../auth/access-control.service";
 import { ChannelsService } from "./channels.service";
 import { NotificationsController } from "./notifications.controller";
-import {
-  createNotificationChannelBodySchema,
-  updateNotificationChannelBodySchema,
-} from "./notifications.schema";
 import { buildConfig } from "./notifications.config";
 import type { NotificationChannelRow } from "./notification-transport";
 
@@ -111,7 +108,13 @@ function controllerWith(options: {
     ...options.notifications,
   } as unknown as Ctor[1];
 
-  return new NotificationsController(channels, notifications, buildConfig(options.env ?? {}));
+  // `F4.279`: the same fake answers the writes, which moved to `ChannelWritesService`.
+  return new NotificationsController(
+    channels,
+    notifications,
+    buildConfig(options.env ?? {}),
+    channels as unknown as Ctor[3],
+  );
 }
 
 /**
@@ -199,6 +202,7 @@ function realGateController(
       channels as unknown as Ctor[0],
       notifications,
       buildConfig({}),
+      channels as unknown as Ctor[3],
     ),
     jwt,
   };

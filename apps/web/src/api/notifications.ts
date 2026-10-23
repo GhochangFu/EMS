@@ -9,6 +9,7 @@ import {
 } from "@bms/shared/contracts";
 import type {
   NotificationChannelDto,
+  NotificationChannelsListResponse,
   NotificationDeliveryDto,
   NotificationReadinessDto,
   NotificationTestResult,
@@ -29,7 +30,8 @@ import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
-export type NotificationChannelsResponse = { items: NotificationChannelDto[] };
+/** `F4.279` (ADR 0030): the shared `z.infer` of the response schema, not typed by hand. */
+export type NotificationChannelsResponse = NotificationChannelsListResponse;
 export type NotificationDeliveriesResponse = { items: NotificationDeliveryDto[] };
 export type NotificationReadinessResponse = { items: NotificationReadinessDto[] };
 

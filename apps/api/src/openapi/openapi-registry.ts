@@ -38,6 +38,12 @@ import {
   ruleLifecycleBodySchema,
   ruleToggleBodySchema,
   ruleUpdateBodySchema,
+  createEscalationProfileBodySchema,
+  createNotificationChannelBodySchema,
+  setEscalationDefaultsBodySchema,
+  setRuleNotificationsBodySchema,
+  updateEscalationProfileBodySchema,
+  updateNotificationChannelBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -103,18 +109,8 @@ import {
   pointsLatestQuerySchema,
   pointValuesAtQuerySchema,
 } from "../telemetry/telemetry.schema";
-import {
-  createEscalationProfileBodySchema,
-  escalationDefaultsQuerySchema,
-  setEscalationDefaultsBodySchema,
-  updateEscalationProfileBodySchema,
-} from "../notifications/escalation-profiles.schema";
-import {
-  createNotificationChannelBodySchema,
-  listDeliveriesQuerySchema,
-  setRuleNotificationsBodySchema,
-  updateNotificationChannelBodySchema,
-} from "../notifications/notifications.schema";
+import { escalationDefaultsQuerySchema } from "../notifications/escalation-profiles.schema";
+import { listDeliveriesQuerySchema } from "../notifications/notifications.schema";
 import { alarmAckBodySchema } from "../alarms/ack.schema";
 import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-list.schema";
 import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";

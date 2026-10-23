@@ -8,6 +8,7 @@ import { UserGrantsService } from "../admin/users/user-grants.service";
 import { UsersService } from "../admin/users/users.service";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AlarmKbModule } from "../alarm-kb/alarm-kb.module";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { RulesModule } from "../rules/rules.module";
 import { AlarmsModule } from "../alarms/alarms.module";
 import { AssetHealthModule } from "../asset-health/asset-health.module";
@@ -140,6 +141,12 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * check. Its imports (vocabularies, alarms, notifications) never import this
  * module, so the graph stays acyclic; the worker's `RuleSweepModule` does not
  * import `RulesModule`.
+ *
+ * `F4.279` (ADR 0099 Amendment 8): `NotificationsModule` exports
+ * `NotificationProposalCheckService` for the notification proposal check and
+ * `EscalationProfilesService` (with `ChannelsService` through the core) for the
+ * two notification read tools. It imports only `NotificationsCoreModule`, never
+ * this module, so the graph stays acyclic; the worker imports the core alone.
  */
 @Module({
   imports: [
@@ -161,6 +168,7 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     SystemStatusModule,
     AlarmKbModule,
     RulesModule,
+    NotificationsModule,
   ],
   controllers: [CopilotAccessController, CopilotChangesController, CopilotConversationsController, CopilotStatusController],
   providers: [

@@ -2,7 +2,7 @@ import {
   createNotificationChannelBodySchema,
   setRuleNotificationsBodySchema,
   updateNotificationChannelBodySchema,
-} from "./notifications.schema";
+} from "@bms/shared";
 
 /**
  * `E7.1f` — the notification channel bodies refuse an unknown key.

@@ -136,6 +136,9 @@ export type StoredContractContext =
   | "copilot_tools.get_alarm_kb.result"
   // `F4.278`: the alarm-rule read tool.
   | "copilot_tools.list_rules.page"
+  // `F4.279`: the channel and escalation read tools.
+  | "copilot_tools.list_notification_channels.page"
+  | "copilot_tools.list_escalation_profiles.page"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");

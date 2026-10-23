@@ -59,6 +59,9 @@ export type ResolverCtx = {
   assetB: string;
   ruleA: string;
   ruleB: string;
+  /** `F4.279`: a channel of A, and a fleet-wide (NULL-organization) channel. */
+  channelA: string;
+  fleetChannel: string;
 };
 
 /** `locationA` carries a stored `builtin` view (`site_control_room_views`); `locationA2` carries none. */
@@ -103,6 +106,9 @@ function recorder(answers: Partial<Record<string, boolean>> = {}, role: UserRole
     },
     isOrganizationLevelAdmin: (_user: JwtPayload, organizationId: string) =>
       answer("isOrganizationLevelAdmin", organizationId),
+    // `F4.279`: the notification routes' gate.
+    canManageNotificationChannel: (_user: JwtPayload, organizationId: string | null) =>
+      answer("canManageNotificationChannel", organizationId),
   };
   return { calls, access: access as never };
 }
@@ -814,4 +820,21 @@ export async function aRuleUpdateRefusesAnAssetOfAnotherOrganization(ctx: Resolv
   expect(
     await resolverWith(ctx, refused.access).resolve(RULE_UPDATE, { id: ctx.ruleA }, { assetId: ctx.assetB }, [ctx.orgA], JWT),
   ).toBeNull();
+}
+
+/**
+ * `F4.279` (ADR 0099 Amendment 8 D2, Q13): a fleet-wide (NULL-organization) channel is found
+ * under no tenant, so no copilot card names one — beside its allowed twin, a channel of A, which
+ * resolves with the route's gate asked on A.
+ */
+export async function aFleetWideChannelIsNotFound(ctx: ResolverCtx): Promise<void> {
+  const update = catalogEntry("notificationChannel.update");
+  if (!update) throw new Error("notificationChannel.update");
+  const r = resolverWith(ctx, recorder().access);
+  expect(await r.resolve(update, { id: ctx.fleetChannel }, { name: "x" }, [ctx.orgA, ctx.orgB], JWT)).toBeNull();
+  const allowed = recorder();
+  expect(
+    await resolverWith(ctx, allowed.access).resolve(update, { id: ctx.channelA }, { name: "x" }, [ctx.orgA], JWT),
+  ).toMatchObject({ organizationId: ctx.orgA, targetName: "F4.279 channel A" });
+  expect(allowed.calls).toEqual([["requireMasterDataUser"], ["canManageNotificationChannel", ctx.orgA]]);
 }

@@ -13,7 +13,7 @@ import {
  * Assertions live in the sibling `.spec` (ADR 0014).
  */
 describe("F3.11 — NotificationsModule's controllers resolve after the provider-only carve (ADR 0064 Amendment 1 A1)", () => {
-  it("the scan sees NOTIFICATIONS_CONFIG and the two service classes on NotificationsController (positive control)", () => {
+  it("the scan sees NOTIFICATIONS_CONFIG and the three service classes on NotificationsController (positive control)", () => {
     assertScanFindsTheConfigToken();
   });
 

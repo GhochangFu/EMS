@@ -25,6 +25,7 @@ export {
   pathParamsOf,
   proposeToolName,
 } from "./catalog";
+export { withoutPaths, withPaths } from "./catalog/client-only";
 export { modelBodyOf } from "./catalog/model-body";
 export {
   onboardingCommitCounts,

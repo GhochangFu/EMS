@@ -20,6 +20,9 @@ import { CopilotModule } from "./copilot.module";
 import { RuleProposalCheckService } from "../rules/rule-proposal-check.service";
 import { RulesModule } from "../rules/rules.module";
 import { RulesService } from "../rules/rules.service";
+import { EscalationProfilesService } from "../notifications/escalation-profiles.service";
+import { NotificationProposalCheckService } from "../notifications/notification-proposal-check.service";
+import { NotificationsModule } from "../notifications/notifications.module";
 
 /**
  * `F3.86` PR 4 / ADR 0099 decision 3 — the module edges a green build does not
@@ -121,4 +124,31 @@ export function assertTheModuleImportsTheRulesModule(): void {
 export function assertTheRulesServiceInjectsTheAuditFunnel(): void {
   expect(injected(RulesService).get(5)).toBe(MasterDataAuditService);
   expect(moduleList(RulesModule, "providers")).toContain(MasterDataAuditService);
+}
+
+/**
+ * `F4.279` (ADR 0099 Amendment 8 D5): the propose tools' fifth parameter is
+ * `NotificationProposalCheckService`, by `@Inject`; without it a notification
+ * proposal is refused at runtime while every spec over fakes stays green.
+ */
+export function assertTheProposeToolsInjectTheNotificationCheck(): void {
+  expect(injected(CopilotProposeToolSet).get(4)).toBe(NotificationProposalCheckService);
+}
+
+/** `CopilotModule` imports `NotificationsModule`. */
+export function assertTheModuleImportsTheNotificationsModule(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(NotificationsModule);
+}
+
+/** `NotificationsModule` exports the check and the profile service the copilot injects. */
+export function assertTheNotificationsModuleExportsTheCopilotServices(): void {
+  expect(moduleList(NotificationsModule, "exports")).toEqual(
+    expect.arrayContaining([NotificationProposalCheckService, EscalationProfilesService]),
+  );
+}
+
+/** `EscalationProfilesService` audits through the funnel: its fifth parameter, provided by `NotificationsModule`. */
+export function assertTheEscalationServiceInjectsTheAuditFunnel(): void {
+  expect(injected(EscalationProfilesService).get(4)).toBe(MasterDataAuditService);
+  expect(moduleList(NotificationsModule, "providers")).toContain(MasterDataAuditService);
 }

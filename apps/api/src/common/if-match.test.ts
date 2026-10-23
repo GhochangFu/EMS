@@ -8,6 +8,7 @@ import {
   noRowWithAHeaderIsA412,
   noRowWithoutAHeaderIsTheRoutes404,
   theAssetTemplateUpdateHandlerTakesIfMatch,
+  theEscalationProfileUpdateHandlerTakesIfMatch,
   thePredicateComparesTheStampAsText,
   thePutWidgetsHandlerTakesIfMatch,
 } from "./if-match.spec";
@@ -23,4 +24,5 @@ describe("F4.247 — the If-Match helpers and their wiring (ADR 0099 Amendment 5
   it("answers 412 when no row was written and a header was sent", () => noRowWithAHeaderIsA412());
   it("wires @Headers(\"if-match\") into PUT /dashboards/:id/widgets", () => thePutWidgetsHandlerTakesIfMatch());
   it("wires @Headers(\"if-match\") into PATCH /admin/asset-templates/:id", () => theAssetTemplateUpdateHandlerTakesIfMatch());
+  it("wires @Headers(\"if-match\") into PATCH /admin/escalation-profiles/:id", () => theEscalationProfileUpdateHandlerTakesIfMatch());
 });

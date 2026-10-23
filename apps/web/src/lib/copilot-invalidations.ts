@@ -51,6 +51,16 @@ const LOCATION_TYPES_CATALOG: QueryKey = ["admin", "location-types-catalog"];
 const ASSET_ROLES_CATALOG: QueryKey = ["admin", "asset-roles-catalog"];
 /** `F4.278`: the Rule Engine's queries — the list, the executions and the builder catalog (`rules-panel.tsx`). */
 const RULES: QueryKey = ["rules"];
+/**
+ * `F4.279`: the Channels page and the pickers that list channels (`notification-channels-page.tsx`,
+ * `escalation-profiles-page.tsx`, `rule-channels-editor.tsx`), the delivery ledger a test send
+ * writes a row to, and the Escalation page's profiles and severity map (keyed by organization under
+ * the prefix). A rule's channel set is `["rules", ruleId, "notifications"]`, under `RULES`.
+ */
+const NOTIFICATION_CHANNELS: QueryKey = ["notifications", "channels"];
+const NOTIFICATION_DELIVERIES: QueryKey = ["notifications", "deliveries"];
+const ESCALATION_PROFILES: QueryKey = ["escalation", "profiles"];
+const ESCALATION_DEFAULTS: QueryKey = ["escalation", "defaults"];
 // `F4.255` PR 3: the copilot dock's list of an organization's open onboarding drafts.
 export const ONBOARDING_DRAFTS: QueryKey = ["admin", "onboarding", "drafts"];
 
@@ -164,6 +174,17 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "rule.enable": [RULES],
   "rule.disable": [RULES],
   "rule.archive": [RULES],
+  // `F4.279` (Amendment 8): notification channels, escalation, and the rule channel set.
+  "notificationChannel.create": [NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERIES],
+  "notificationChannel.update": [NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERIES],
+  "notificationChannel.deactivate": [NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERIES],
+  "notificationChannel.reactivate": [NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERIES],
+  "notificationChannel.test": [NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERIES],
+  "escalationProfile.create": [ESCALATION_PROFILES, ESCALATION_DEFAULTS],
+  "escalationProfile.update": [ESCALATION_PROFILES, ESCALATION_DEFAULTS],
+  "escalationDefaults.set": [ESCALATION_PROFILES, ESCALATION_DEFAULTS],
+  "escalationDefaults.clear": [ESCALATION_PROFILES, ESCALATION_DEFAULTS],
+  "rule.notifications.set": [RULES],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

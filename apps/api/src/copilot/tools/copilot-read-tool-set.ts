@@ -17,6 +17,8 @@ import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import { ReportsService } from "../../reports/reports.service";
 import { RulesService } from "../../rules/rules.service";
+import { ChannelsService } from "../../notifications/channels.service";
+import { EscalationProfilesService } from "../../notifications/escalation-profiles.service";
 import { SystemStatusService } from "../../system-status/system-status.service";
 import { TelemetryService } from "../../telemetry/telemetry.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -48,6 +50,8 @@ import { listLocationsTool } from "./list-locations.tool";
 import { listMimicLayoutsTool } from "./list-mimic-layouts.tool";
 import { listMimicSymbolsTool } from "./list-mimic-symbols.tool";
 import { listRulesTool } from "./list-rules.tool";
+import { listNotificationChannelsTool } from "./list-notification-channels.tool";
+import { listEscalationProfilesTool } from "./list-escalation-profiles.tool";
 import { openPageTool } from "./open-page.tool";
 
 /**
@@ -87,6 +91,9 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   listAssetRolesTool,
   // `F4.278` (Amendment 8 D7): after the unit roles, before `open_page`.
   listRulesTool,
+  // `F4.279` (Amendment 8 D7): after the rules, before `open_page`.
+  listNotificationChannelsTool,
+  listEscalationProfilesTool,
   openPageTool,
 ];
 
@@ -150,6 +157,9 @@ export class CopilotReadToolSet implements CopilotReadTools {
     @Inject(AlarmKbService) alarmKb: AlarmKbService,
     // `F4.278`: appended last (slot 17), the same reason.
     @Inject(RulesService) rules: RulesService,
+    // `F4.279`: appended last (slots 18 and 19), the same reason.
+    @Inject(ChannelsService) channels: ChannelsService,
+    @Inject(EscalationProfilesService) escalationProfiles: EscalationProfilesService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -170,6 +180,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
       alarmDetails,
       alarmKb,
       rules,
+      channels,
+      escalationProfiles,
     });
   }
 

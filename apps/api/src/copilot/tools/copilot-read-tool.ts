@@ -13,6 +13,8 @@ import type { DashboardService } from "../../dashboard/dashboard.service";
 import type { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import type { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import type { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
+import type { ChannelsService } from "../../notifications/channels.service";
+import type { EscalationProfilesService } from "../../notifications/escalation-profiles.service";
 import type { ReportsService } from "../../reports/reports.service";
 import type { RulesService } from "../../rules/rules.service";
 import type { SystemStatusService } from "../../system-status/system-status.service";
@@ -75,6 +77,13 @@ export interface CopilotReadServices {
    * called with `null` (the whole fleet) or `[]`.
    */
   readonly rules: Pick<RulesService, "listRules">;
+  /**
+   * `F4.279` (Amendment 8 D7): the Channels page's list (`GET /notifications/channels`);
+   * `list` only, so no write and no secret read is reachable.
+   */
+  readonly channels: Pick<ChannelsService, "list">;
+  /** `F4.279` (D7, Q9): the Escalation page's profile list and severity map; reads only. */
+  readonly escalationProfiles: Pick<EscalationProfilesService, "list" | "getDefaults">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */

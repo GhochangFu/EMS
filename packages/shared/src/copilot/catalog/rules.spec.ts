@@ -118,8 +118,11 @@ export function noRuleEntryNarrowsTheRoles(): void {
   for (const id of RULE_IDS) expect(entry(id).offeredTo, id).toBeUndefined();
 }
 
-/** D8 and "Not in this amendment": the three rule routes that are not entries are excluded, each with its reason. */
-export function theThreeRuleRoutesAreExcludedWithTheirReasons(): void {
+/**
+ * "Not in this amendment": the two rule routes that are not entries are excluded, each with its
+ * reason. `F4.279` (D8) made `PUT /rules/:id/notifications` the `rule.notifications.set` entry.
+ */
+export function theTwoRuleRoutesAreExcludedWithTheirReasons(): void {
   const reasons = Object.fromEntries(
     EXCLUDED_ROUTES.filter((route) => route.path.startsWith("/rules")).map((route) => [
       `${route.method} ${route.path}`,
@@ -129,8 +132,6 @@ export function theThreeRuleRoutesAreExcludedWithTheirReasons(): void {
   expect(Object.keys(reasons).sort()).toEqual([
     "POST /rules/evaluate",
     "POST /rules/preview",
-    "PUT /rules/:id/notifications",
   ]);
-  expect(reasons["PUT /rules/:id/notifications"]).toContain("F4.279");
   expect(reasons["POST /rules/preview"]).toContain("rule_preview audit row");
 }

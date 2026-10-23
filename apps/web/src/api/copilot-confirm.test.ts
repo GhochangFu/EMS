@@ -6,6 +6,8 @@ import {
   aBodylessChangeSendsBraces,
   aChangeWithNoCardOnlyKeySendsItsBodyWhole,
   aClientOnlyValueIsSentBesideTheStoredBody,
+  aBlankSecretIsNotSent,
+  aTypedUrlIsSentAtItsNestedPath,
   aNonApiPathIsRefusedBeforeFetch,
   aRefusalIsAnApiError,
   aReplaceIsSentWithoutItsBaseline,
@@ -38,4 +40,6 @@ describe("F3.85 — the copilot Confirm executor (ADR 0099 decision 4.5)", () =>
   it("F4.247: sends no If-Match without a precondition", () => noPreconditionSendsNoIfMatch());
   it("F4.247: sends no If-Match when an older API sent no ifMatch", () => aMissingIfMatchFromAnOlderApiSendsNoHeader());
   it("F4.247: sends If-Match on the multipart branch too", () => anUploadSendsItsIfMatch());
+  it("F4.279: sends a typed URL at its nested path", () => aTypedUrlIsSentAtItsNestedPath());
+  it("F4.279: sends no blank secret and no recipients", () => aBlankSecretIsNotSent());
 });

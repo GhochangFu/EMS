@@ -19,6 +19,7 @@ import {
   aFleetRowLivesInTheBoundOrganization,
   aLocationTypeCountsItsLocationsInTheAllowedOrganizations,
   aRuleOfAnotherOrganizationIsNotFound,
+  aFleetWideChannelIsNotFound,
   aRuleUpdateRefusesAnAssetOfAnotherOrganization,
   anUnknownVocabularyCodeIsRefusedBeforeTheGate,
   aUnitRoleResolvesItsLabel,
@@ -80,6 +81,7 @@ const CLEANUP = [
   "DELETE FROM bms.site_control_room_views WHERE organization_id = ANY($1)",
   "DELETE FROM bms.asset_points WHERE organization_id = ANY($1)",
   "DELETE FROM bms.automation_rules WHERE organization_id = ANY($1)",
+  "DELETE FROM bms.notification_channels WHERE organization_id = ANY($1)",
   "DELETE FROM bms.asset_groups WHERE organization_id = ANY($1)",
   "DELETE FROM bms.assets WHERE organization_id = ANY($1)",
   "DELETE FROM bms.rtus WHERE organization_id = ANY($1)",
@@ -120,6 +122,8 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       "DELETE FROM bms.location_types t WHERE t.code LIKE 'f4282%' AND NOT EXISTS (SELECT 1 FROM bms.locations l WHERE l.type = t.code)",
     );
     await superPool.query("DELETE FROM bms.asset_roles WHERE code LIKE 'f4282-role-%'");
+    // `F4.279`: a killed run's fleet-wide channel.
+    await superPool.query("DELETE FROM bms.notification_channels WHERE organization_id IS NULL AND code LIKE 'f4279-resolver-%'");
 
     const one = async (text: string, values: unknown[]): Promise<string> => {
       const { rows } = await superPool.query<{ id: string }>(text, values);
@@ -180,6 +184,15 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       );
     const ruleA = await rule(orgA, assetA, `${FAMILY}-RA`);
     const ruleB = await rule(orgB, assetB, `${FAMILY}-RB`);
+    // `F4.279`: a channel of A and a fleet-wide one (the first active channel kind).
+    const channel = (org: string | null, code: string, name: string) =>
+      one(
+        "INSERT INTO bms.notification_channels (organization_id, code, name, kind, config, enabled) " +
+          "VALUES ($1, $2, $3, (SELECT code FROM bms.notification_channel_kinds WHERE active ORDER BY code LIMIT 1), '{}'::jsonb, true) RETURNING id",
+        [org, code, name],
+      );
+    const channelA = await channel(orgA, `f4279-resolver-a-${Date.now()}`, "F4.279 channel A");
+    const fleetChannel = await channel(null, `f4279-resolver-${Date.now()}`, "F4.279 fleet channel");
     const groupA = await one(
       "INSERT INTO bms.asset_groups (organization_id, location_id, code, name) VALUES ($1, $2, $3, $4) RETURNING id",
       [orgA, locationA, `${FAMILY}-GROUP`.toLowerCase(), RESOLVER_NAMES.groupA],
@@ -228,6 +241,8 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       tenantDb: createDb(tenantPool),
       orgA,
       orgB,
+      channelA,
+      fleetChannel,
       locationA,
       locationA2,
       locationB,
@@ -259,6 +274,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
     if (superPool) for (const statement of CLEANUP) await superPool.query(statement, [orgIds]);
     await superPool?.query("DELETE FROM bms.location_types WHERE code = $1", [LOCATION_TYPE_CODE]);
     await superPool?.query("DELETE FROM bms.asset_roles WHERE code = $1", [ASSET_ROLE_CODE]);
+    if (ctx?.fleetChannel) await superPool?.query("DELETE FROM bms.notification_channels WHERE id = $1", [ctx.fleetChannel]);
     await Promise.all([tenantPool?.end(), superPool?.end()]);
   });
 
@@ -283,6 +299,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
     aRuleOfAnotherOrganizationIsNotFound(ctx));
   it("F4.278: a rule update refuses an asset of another organization, beside its allowed twin", () =>
     aRuleUpdateRefusesAnAssetOfAnotherOrganization(ctx));
+  it("F4.279: a fleet-wide channel is found under no tenant; a channel of A resolves", () => aFleetWideChannelIsNotFound(ctx));
   it("keeps the built-in view rule (ruling Q7(b))", () => aSiteViewKeepsTheBuiltinRule(ctx));
   it("needs the dashboard check for a site layout (ruling Q7(b))", () => aSiteLayoutNeedsTheDashboardCheckToo(ctx));
   it("refuses a location create by a location admin", () => aLocationCreateRefusesALocationAdmin(ctx));

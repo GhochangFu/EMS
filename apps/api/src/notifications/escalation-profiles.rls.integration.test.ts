@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { jwtFor, SEEDED } from "../auth/access-control.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
@@ -211,7 +212,13 @@ describe.skipIf(!connectionString)(
         } as unknown as ConstructorParameters<typeof ChannelsService>[2],
         accessControl,
       );
-      const service = new EscalationProfilesService(fleetDb, tenantDb, channels, accessControl);
+      const service = new EscalationProfilesService(
+        fleetDb,
+        tenantDb,
+        channels,
+        accessControl,
+        new MasterDataAuditService(tenantDb, fleetDb),
+      );
       const adminJwt = jwtFor(SEEDED.globalAdmin, "admin");
       await assertSetDefaultsRefusesAForeignProfileWith400(
         service,

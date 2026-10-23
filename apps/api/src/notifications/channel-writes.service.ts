@@ -1,0 +1,549 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Inject,
+  Injectable,
+} from "@nestjs/common";
+import { eq, inArray } from "drizzle-orm";
+
+import type { BmsDb } from "@bms/db";
+import { automationRules, notificationChannels, ruleNotifications } from "@bms/db";
+import type {
+  CreateNotificationChannelBody,
+  JwtPayload,
+  NotificationChannelDto,
+  UpdateNotificationChannelBody,
+  UserRole,
+} from "@bms/shared";
+
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { AccessControlService } from "../auth/access-control.service";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { withTenant } from "../database/tenant-context";
+import { translateConstraintErrors } from "../database/translate-constraint-errors";
+import { CredentialCryptoService } from "../security/credential-crypto.service";
+import { SECRET_FIELD, toDto } from "./channel-dto";
+
+/**
+ * Turns the two constraint violations a channel write can raise into the
+ * answers they are, through the shared {@link translateConstraintErrors}
+ * (`database/translate-constraint-errors.ts`; `F3.78` U6 moved it there).
+ *
+ * Without this, `POST` with a code that already exists — the first mistake
+ * anyone makes on the admin screen — is a 500, and so is a `kind` the
+ * vocabulary does not declare. The schema comment says the foreign key
+ * "refuses an undeclared kind at write time with a clear database error", and
+ * that is only true if something translates it.
+ */
+function translateChannelConstraintErrors<T>(
+  run: () => Promise<T>,
+  /**
+   * What a foreign-key violation means for THIS operation, given the raw
+   * error (so a caller can tell one constraint from another by `.constraint`
+   * — see `create`'s override below).
+   *
+   * The default assumes the only FK a write can hit is `kind`, true until
+   * `E7.1c` gave `create` a second one: `body.organizationId`, checked
+   * against `bms.organizations(id)` as `notification_channels_organization_
+   * id_fkey` (verified against `pg_constraint`, not assumed). On a delete the
+   * direction is the opposite one anyway — a row that still references the
+   * channel — so its own override never reads `err`.
+   */
+  onForeignKey: (err: unknown) => Error = () =>
+    new BadRequestException(
+      "Unknown channel kind — it must be a code declared in bms.notification_channel_kinds",
+    ),
+): Promise<T> {
+  return translateConstraintErrors(run, {
+    // E7.1c (0048): identity re-keyed from a bare `code` to `(organization_id,
+    // code)`, so the same code is fine in two different organizations — the
+    // message must say which scope the collision is in, not imply it is global.
+    onUnique: () =>
+      new ConflictException(
+        "That code is already used in this organization (or as a fleet-managed global channel)",
+      ),
+    onForeignKey,
+  });
+}
+
+/** The Postgres constraint name behind `create`'s `body.organizationId` FK. */
+const ORGANIZATION_ID_FK = "notification_channels_organization_id_fkey";
+
+/**
+ * `F4.279` (ADR 0099 Amendment 8, "Common to every entry") — the channel
+ * writes, moved out of `ChannelsService`: `create`, `update`, `remove` and
+ * `setRuleChannels`, each auditing through `MasterDataAuditService` so a
+ * confirmed copilot change carries `via: "copilot"` (`tests/f3.85-audit-via-mark.test.ts`).
+ *
+ * **Why a second service, not an injection into the first.** `ChannelsService`
+ * is in the worker's import closure (`notifications.service.ts` imports it), and
+ * `master-data-audit.service.ts` imports the copilot request context;
+ * `tests/f4.24-worker-imports-no-api-loop.test.ts` rule 8 admits only the two
+ * purge files from `copilot/`. This service is provided by the API-only
+ * `NotificationsModule`, the `EscalationProfilesService` precedent.
+ *
+ * The tenancy rules are `ChannelsService`'s class comment's, unchanged: an
+ * org-scoped channel is written under `withTenant`, a fleet-managed global one
+ * on `fleetDb` (BYPASSRLS), and `setRuleChannels` runs under the rule's org.
+ */
+@Injectable()
+export class ChannelWritesService {
+  constructor(
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+    @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    private readonly crypto: CredentialCryptoService,
+    private readonly accessControl: AccessControlService,
+    @Inject(MasterDataAuditService) private readonly auditFunnel: MasterDataAuditService,
+  ) {}
+
+  /**
+   * Resolves who a create is for, before the gate runs.
+   *
+   * `body.organizationId` wins when supplied (Blocker 1's ruling: an `admin`
+   * who supplies one creates an org-scoped channel; an `organization_admin`
+   * who supplies their own org is explicit about it). Omitted, an
+   * `organization_admin` with exactly one direct grant gets it implicitly —
+   * more than one is ambiguous and must be named, zero is refused below by
+   * the gate having nothing to approve. Omitted by anyone else (`admin`,
+   * `location_admin`), the target is `null`: a global, fleet-managed channel,
+   * exactly today's behaviour — the reason the web UI needs no change and
+   * `E7.1d` stays out of this slice.
+   */
+  private async resolveCreateTargetOrg(
+    jwt: JwtPayload,
+    role: UserRole,
+    bodyOrgId: string | undefined,
+  ): Promise<string | null> {
+    if (bodyOrgId !== undefined) return bodyOrgId;
+    if (role !== "organization_admin") return null;
+    const writable = (await this.accessControl.writableOrganizationIds(jwt)) ?? [];
+    if (writable.length === 1) return writable[0] as string;
+    if (writable.length === 0) {
+      throw new ForbiddenException("You have no organization to create a channel in");
+    }
+    throw new BadRequestException(
+      "You manage more than one organization — specify organizationId explicitly",
+    );
+  }
+
+  /** Pre-GUC resolution (E7.1b's classification): the row's own organization_id,
+   * read on fleetDb before any tenant GUC exists to read it under. `null` when
+   * the channel does not exist. */
+  private async loadExistingForWrite(
+    id: string,
+  ): Promise<{ organizationId: string | null } | null> {
+    const rows = await this.fleetDb
+      .select({ organizationId: notificationChannels.organizationId })
+      .from(notificationChannels)
+      .where(eq(notificationChannels.id, id))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
+  async create(
+    jwt: JwtPayload,
+    body: CreateNotificationChannelBody,
+  ): Promise<NotificationChannelDto> {
+    const user = await this.accessControl.requireMasterDataUser(jwt);
+    const targetOrgId = await this.resolveCreateTargetOrg(jwt, user.role, body.organizationId);
+    if (!(await this.accessControl.canManageNotificationChannel(jwt, targetOrgId))) {
+      throw new ForbiddenException("Organization is outside your access scope");
+    }
+
+    const secret = this.encryptSecret(body.secret ?? null);
+    const values = {
+      organizationId: targetOrgId,
+      code: body.code,
+      name: body.name,
+      kind: body.kind,
+      config: body.config,
+      enabled: body.enabled,
+      ...secret,
+    };
+
+    const row = await translateChannelConstraintErrors(
+      async () => {
+        const rows =
+          targetOrgId === null
+            ? await this.fleetDb.insert(notificationChannels).values(values).returning()
+            : await withTenant(this.db, targetOrgId, (tx) =>
+                tx.insert(notificationChannels).values(values).returning(),
+              );
+        const inserted = rows[0];
+        if (inserted === undefined) throw new Error("channel insert returned no row");
+        return inserted;
+      },
+      (err) => {
+        const constraint = (err as { constraint?: string } | null)?.constraint;
+        if (constraint === ORGANIZATION_ID_FK) {
+          return new BadRequestException(
+            "organizationId does not name an existing organization",
+          );
+        }
+        return new BadRequestException(
+          "Unknown channel kind — it must be a code declared in bms.notification_channel_kinds",
+        );
+      },
+    );
+
+    await this.audit(jwt, "notification_channel_create", row.id, row.organizationId, {
+      code: row.code,
+      kind: row.kind,
+      hasSecret: row.secretCiphertext !== null,
+      enabled: row.enabled,
+    });
+    return toDto(row);
+  }
+
+  /**
+   * Applies a PATCH.
+   *
+   * Three intentions stay distinct: omitting `secret` keeps the stored one,
+   * `null` clears all three columns, and a string replaces it. A single
+   * optional string could not express "clear it".
+   */
+  async update(
+    jwt: JwtPayload,
+    id: string,
+    body: UpdateNotificationChannelBody,
+  ): Promise<NotificationChannelDto | null> {
+    await this.accessControl.requireMasterDataUser(jwt);
+    const existing = await this.loadExistingForWrite(id);
+    if (existing === null) return null;
+    if (!(await this.accessControl.canManageNotificationChannel(jwt, existing.organizationId))) {
+      throw new ForbiddenException("Notification channel is outside your access scope");
+    }
+
+    const values: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.name !== undefined) values.name = body.name;
+    if (body.kind !== undefined) values.kind = body.kind;
+    if (body.config !== undefined) values.config = body.config;
+    if (body.enabled !== undefined) values.enabled = body.enabled;
+    if (body.secret !== undefined) Object.assign(values, this.encryptSecret(body.secret));
+
+    const row = await translateChannelConstraintErrors(async () => {
+      // A foreign-org row can never reach this point — the gate above already
+      // refused it. If it ever did (a gate bug, or a race with a delete), an
+      // UPDATE under FORCE matches ZERO ROWS WITHOUT ERRORING (no current_org
+      // makes NULL/another-org's id equal this GUC's), which falls through to
+      // `row === undefined` below and the existing 404 — never a corrupted
+      // write. That silent zero is a backstop here, not the authorization; do
+      // not "fix" it into a thrown error.
+      const rows =
+        existing.organizationId === null
+          ? await this.fleetDb
+              .update(notificationChannels)
+              .set(values)
+              .where(eq(notificationChannels.id, id))
+              .returning()
+          : await withTenant(this.db, existing.organizationId, (tx) =>
+              tx
+                .update(notificationChannels)
+                .set(values)
+                .where(eq(notificationChannels.id, id))
+                .returning(),
+            );
+      return rows[0];
+    });
+    if (row === undefined) return null;
+    await this.audit(jwt, "notification_channel_update", row.id, existing.organizationId, {
+      code: row.code,
+      // Which FIELDS changed, never their values — `secret` is one of them.
+      changed: Object.keys(body).sort(),
+      secretRotated: body.secret !== undefined && body.secret !== null,
+      secretCleared: body.secret === null,
+      enabled: row.enabled,
+    });
+    return toDto(row);
+  }
+
+  /**
+   * Deletes a channel.
+   *
+   * The foreign keys decide what happens next, and they are not symmetrical:
+   * `rule_notifications` rows go with the rule, not with the channel, so a
+   * channel still joined to a rule cannot be deleted until it is detached, and
+   * a channel with delivery history cannot be deleted at all. Both refusals are
+   * Postgres's, and both are deliberate — history must outlive configuration
+   * (migration 0038) — so both are translated into a 409 that says what to do
+   * instead, rather than a 500 that says nothing.
+   */
+  async remove(jwt: JwtPayload, id: string): Promise<boolean> {
+    await this.accessControl.requireMasterDataUser(jwt);
+    const existing = await this.loadExistingForWrite(id);
+    if (existing === null) return false;
+    if (!(await this.accessControl.canManageNotificationChannel(jwt, existing.organizationId))) {
+      throw new ForbiddenException("Notification channel is outside your access scope");
+    }
+
+    const rows = await translateChannelConstraintErrors(
+      () =>
+        existing.organizationId === null
+          ? this.fleetDb
+              .delete(notificationChannels)
+              .where(eq(notificationChannels.id, id))
+              .returning({ id: notificationChannels.id })
+          : withTenant(this.db, existing.organizationId as string, (tx) =>
+              tx
+                .delete(notificationChannels)
+                .where(eq(notificationChannels.id, id))
+                .returning({ id: notificationChannels.id }),
+            ),
+      // Found by clicking Delete in the browser: sending one test writes a
+      // ledger row, and from then on the channel cannot be deleted. That
+      // refusal is the design — history outlives configuration — but it
+      // surfaced as "Internal server error", which tells an operator nothing
+      // and looks like a fault in the screen.
+      () =>
+        new ConflictException(
+          "This channel has delivery history and cannot be deleted. Disable it instead — " +
+            "the ledger must keep the attempts it already recorded.",
+        ),
+    );
+    if (rows.length === 0) return false;
+    await this.audit(jwt, "notification_channel_delete", id, existing.organizationId, {});
+    return true;
+  }
+
+  /**
+   * Replaces the set of channels a rule notifies (plan D1).
+   *
+   * **The whole set, not a delta.** A join is a set, and "these are the
+   * channels" survives a lost or repeated request in a way "add this one" does
+   * not. Delete-then-insert inside one transaction, so a rule is never left
+   * notifying nobody because the second statement failed.
+   *
+   * Returns `null` when the rule does not exist, so the caller can answer 404
+   * rather than letting a foreign-key violation surface as a 500.
+   *
+   * **"The whole set" is the set the caller can SEE (`F3.7` review finding,
+   * High, both reviewers; owner ruling 2026-09-06).** `list()` filters with
+   * `inArray(organizationId, writableOrgIds)`, and `inArray` never matches
+   * `NULL`, so a fleet-managed global channel — which decision 7 keeps
+   * shareable, and which `ruleChannelIds()` returns unfiltered — is absent
+   * from an `organization_admin`'s picker while being present in that rule's
+   * join list. A full replace therefore let an operator open the picker, tick
+   * nothing, press Save, and silently delete a join they were never shown; the
+   * rule stopped notifying that channel and nothing on screen said so. So an
+   * org-scoped caller's submitted set is unioned with every existing join
+   * whose channel is outside their manage scope, and only a caller with no org
+   * fence at all (`writableOrganizationIds === null`, i.e. `admin`) still
+   * replaces the whole set.
+   *
+   * This lives here rather than in `RulesService` for a mundane reason worth
+   * recording: that file is at 953 lines against the AGENTS.md §4.5 cap of
+   * 1000, and the join is notification state, not rule state. `RulesModule`
+   * imports `NotificationsModule`, which imports nothing from rules — checked,
+   * not assumed.
+   */
+  async setRuleChannels(
+    ruleId: string,
+    channelIds: string[],
+    actor: JwtPayload,
+  ): Promise<string[] | null> {
+    const [rule] = await this.fleetDb
+      .select({ id: automationRules.id, organizationId: automationRules.organizationId })
+      .from(automationRules)
+      .where(eq(automationRules.id, ruleId))
+      .limit(1);
+    if (rule === undefined) return null;
+    if (!rule.organizationId) {
+      // E7.1b: the junction rewrite runs under the rule's org GUC; a NULL-org
+      // rule would silently no-op it under FORCE. Refuse rather than corrupt.
+      throw new BadRequestException("Rule has no organization; run the 0046 backfill");
+    }
+    const organizationId = rule.organizationId;
+
+    const unique = [...new Set(channelIds)];
+    if (unique.length > 0) {
+      // The junction has no policy of its own to catch this (0047's
+      // rule_notifications policy tests automation_rules.organization_id
+      // alone — channel org was nullable when it was written, 0048 made it a
+      // real key, and nothing enforces the pairing). Refuse before the
+      // insert rather than silently wiring a rule to another tenant's
+      // channel. A channel id this batch cannot resolve at all is left to the
+      // existing foreign-key refusal at insert time; only a channel that
+      // resolves to a DIFFERENT organization is rejected here — a
+      // fleet-managed global (organizationId === null) stays shareable per
+      // decision 7.
+      const channelRows = await this.fleetDb
+        .select({ id: notificationChannels.id, organizationId: notificationChannels.organizationId })
+        .from(notificationChannels)
+        .where(inArray(notificationChannels.id, unique));
+      const orgById = new Map(channelRows.map((row) => [row.id, row.organizationId]));
+      const wrongOrg = unique.filter((id) => {
+        const channelOrg = orgById.get(id);
+        return channelOrg !== undefined && channelOrg !== null && channelOrg !== organizationId;
+      });
+      if (wrongOrg.length > 0) {
+        throw new BadRequestException(
+          `Channel(s) belong to a different organization than this rule: ${wrongOrg.join(", ")}`,
+        );
+      }
+    }
+    // Read the joins the caller cannot see BEFORE the rewrite, and on the
+    // fleet (BYPASSRLS) connection: the tenant connection runs under FORCE
+    // with the rule's org GUC, so a join to a NULL-org channel — the very row
+    // being preserved — would not come back from it at all.
+    const preserved = await this.joinsOutsideManageScope(actor, ruleId, unique);
+    // Submitted first, in the order the picker sent them, then whatever was
+    // kept for the caller. Already disjoint: `joinsOutsideManageScope` drops
+    // anything submitted.
+    const stored = [...unique, ...preserved];
+
+    await withTenant(this.db, organizationId, async (tx) => {
+      await tx.delete(ruleNotifications).where(eq(ruleNotifications.ruleId, ruleId));
+      if (stored.length > 0) {
+        await tx
+          .insert(ruleNotifications)
+          .values(stored.map((channelId) => ({ ruleId, channelId })));
+      }
+    });
+    await this.audit(actor, "rule_notifications_set", ruleId, organizationId, {
+      ruleId,
+      // What the caller asked for, not what was stored — the two differ
+      // exactly when a join was kept, and `preservedChannelIds` is the
+      // difference. Recording only the union would hide the request.
+      channelIds: unique,
+      preservedChannelIds: preserved,
+      // The interesting case: emptying the set silences a rule, and without a
+      // row that change is invisible once the rule simply stops notifying.
+      // Keyed on what is STORED, because an empty submission that preserved a
+      // join has not silenced anything and must not claim to have.
+      cleared: stored.length === 0,
+    });
+    return stored;
+  }
+
+  /**
+   * The existing joins an org-scoped caller must not be able to delete by
+   * omitting them — the `F3.7` review finding above, in one place.
+   *
+   * Returns `[]` for a caller with no organization fence (`admin`), which is
+   * what keeps today's full replace for them: they see every channel in the
+   * picker, so an id they left out was left out on purpose.
+   *
+   * Scope is `writableOrganizationIds`, per the owner's ruling, rather than
+   * `list()`'s stricter `admin`/`organization_admin` gate. The two differ only
+   * for a `location_admin`, whose picker is empty either way
+   * (`list()` gives it `[]`, so the editor renders no Save button at all);
+   * keying on the writable set still narrows what a hand-made `PUT` from that
+   * role can delete, from every join to its own home org's.
+   *
+   * **The `catch` is not defensive padding.** `assertOperationsWriteRole(user,
+   * "configuration")` on the route admits `asset_group_admin`, which
+   * `isMasterDataRole` excludes, so `writableOrganizationIds` throws
+   * `ForbiddenException` for it — from `assertMasterDataRole`, and from
+   * nowhere else here, because the route already resolved the same user
+   * through `resolveDbUser` without throwing. Turning that into a 403 would
+   * take a working `PUT` away from a role this row was not asked to re-gate,
+   * so it is read as "manages no channel organization at all": every existing
+   * join is outside its scope and survives.
+   */
+  private async joinsOutsideManageScope(
+    actor: JwtPayload,
+    ruleId: string,
+    submitted: readonly string[],
+  ): Promise<string[]> {
+    let writableOrgIds: string[] | null;
+    try {
+      writableOrgIds = await this.accessControl.writableOrganizationIds(actor);
+    } catch (err) {
+      if (!(err instanceof ForbiddenException)) throw err;
+      writableOrgIds = [];
+    }
+    if (writableOrgIds === null) return [];
+    const manageable = new Set(writableOrgIds);
+
+    const existing = await this.fleetDb
+      .select({
+        channelId: ruleNotifications.channelId,
+        channelOrganizationId: notificationChannels.organizationId,
+      })
+      .from(ruleNotifications)
+      .innerJoin(notificationChannels, eq(notificationChannels.id, ruleNotifications.channelId))
+      .where(eq(ruleNotifications.ruleId, ruleId));
+
+    const submittedIds = new Set(submitted);
+    const kept: string[] = [];
+    for (const row of existing) {
+      if (submittedIds.has(row.channelId)) continue;
+      // A NULL org is the case that motivated this; an org outside the
+      // writable set is the same hazard reached by a corrupt or migrated row.
+      if (row.channelOrganizationId !== null && manageable.has(row.channelOrganizationId)) continue;
+      if (kept.includes(row.channelId)) continue;
+      kept.push(row.channelId);
+    }
+    return kept;
+  }
+
+  /**
+   * Writes one `bms.audit_log` row for a notification change.
+   *
+   * **Audits the action, never the request body.** `bms.audit_log.payload` is
+   * returned verbatim by `GET /admin/audit`, and
+   * `createNotificationChannelBodySchema` carries a `secret` field — so
+   * spreading the body here, the obvious shortcut, would put a plaintext
+   * webhook HMAC key in front of every auditor. That is ADR 0021 decision 6's
+   * standing obligation, and it is the reason this takes named fields.
+   *
+   * Deciding who is told about an alarm is a configuration change of the same
+   * class as editing the rule itself, and `rules.service.ts` audits six such
+   * paths. Before this, creating a channel, rotating its secret, deleting it,
+   * or emptying a rule's channel set left no trace at all — so silencing a
+   * site's notifications was unattributable. Found by the `F3.8` security
+   * review.
+   *
+   * **`organizationId` (E7.1c, closing the item-D hazard):** the channel's own
+   * org for an org-scoped channel, `ruleOrg` for `rule_notifications_set` (a
+   * tenant action on a rule that is always org-scoped since `0047`), and
+   * `null` **only** for a genuinely fleet-managed global channel. Until this
+   * item every row here was `null` because every channel was global, and that
+   * was correct only for as long as it stayed true — `bms-schema.ts`'s own
+   * comment on `audit_log.organization_id` states the rule this closes: "a
+   * NULL on [a tenant-scoped row] is a defect, not a platform event." This
+   * write stays on `fleetDb` regardless of the stamped org: `bms_fleet` is
+   * BYPASSRLS, so it is not subject to `audit_log`'s policy either way, and the
+   * actor-identity lookup just below is the same pre-tenant read it always was.
+   */
+  private async audit(
+    actor: Pick<JwtPayload, "sub" | "email">,
+    action: string,
+    entityId: string | null,
+    organizationId: string | null,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    // `F4.279` (ADR 0099 Amendment 8): through the funnel, so a confirmed copilot
+    // change carries `via: "copilot"`. The executor stays `fleetDb` for the reason
+    // above: `null` is admitted `TO bms_fleet` alone.
+    await this.auditFunnel.write(
+      {
+        actor,
+        action,
+        entityType: "notification_channel",
+        entityId,
+        organizationId,
+        payload: { ...payload, oidcSubject: actor.sub, actorEmail: actor.email },
+      },
+      this.fleetDb,
+    );
+  }
+
+  /** `{ secret }` encrypted, or all three columns cleared. */
+  private encryptSecret(secret: string | null): {
+    secretCiphertext: Buffer | null;
+    secretIv: Buffer | null;
+    secretKeyVersion: number | null;
+  } {
+    if (secret === null) {
+      return { secretCiphertext: null, secretIv: null, secretKeyVersion: null };
+    }
+    const payload = this.crypto.encrypt({ [SECRET_FIELD]: secret });
+    return {
+      secretCiphertext: payload.ciphertext,
+      secretIv: payload.iv,
+      secretKeyVersion: payload.keyVersion,
+    };
+  }
+}
