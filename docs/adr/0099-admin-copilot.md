@@ -64,6 +64,15 @@ the tool definitions and the system prompt for prompt caching, and the turn
 keeps its prefix byte-stable so the `openai` and `openrouter` providers' automatic
 caching can hit.
 
+**Amended 2026-10-23 — Amendment 8** (owner-ruled 2026-10-23, 21 questions one
+at a time, 19 as recommended; Proposed until merge): `F4.278`–`F4.283` — release 4, the operations configuration:
+alarm rules, notification channels and escalation, report schedules and files,
+maintenance schedules, the location-type and unit-role vocabularies, and
+file-borne data (telemetry import, manual readings, asset images). Where
+Amendment 8 conflicts with decisions 2, 3, 4.4, 4.7, 6 and 12 or with
+Amendment 3 A1, A3, A4 and A7, it wins. Decision 1's *cannot* list is
+unchanged: alarm and work-order writes are ADR 0106.
+
 | # | Question | Options put | Ruled | Decision |
 | --- | --- | --- | --- | --- |
 | 1 | Copilot or narrow assistant | narrow admin assistant; general copilot; no change | **general copilot** (owner's own choice) | 1 |
@@ -1276,3 +1285,223 @@ system prompt and tool definitions are byte-identical across two turns with
 different scopes, wizards and clocks. Live (with a real Anthropic key only):
 the second turn's `usage.cache_read_input_tokens` is above zero. Without a key
 the live check is N/A and is said so.
+
+## Amendment 8 — release 4: the operations configuration (owner, 2026-10-23)
+
+**Status: Proposed — owner ruled 2026-10-23 (21 questions put one at a time;
+19 as recommended, Q9 and Q16 otherwise); the merge approves the text.** A
+line marked *(Qn)* states that question's ruling; the table at the end records
+each one. Lines marked *drafter choice* were not asked. Code citations are to
+`main` at `5d8249e9`.
+
+The 2026-10-22 coverage review (#919) found that the copilot proposes 64
+changes but none in six admin areas: alarm rules, notification channels and
+escalation, report schedules and files, maintenance schedules, the location
+type and unit-role vocabularies, and file-borne data. Ruling 2 put *"every
+other admin object"* in scope, but decision 12 names no release that holds
+them, so `F3.85`–`F3.87` built none. A read-only research pass (seven readers
+and a critic, 2026-10-23) mapped each route's real role check and side
+effects; the facts below come from it.
+
+### Facts the amendment rests on
+
+- **Rules** (`apps/api/src/rules/`): every write calls
+  `assertOperationsWriteRole(user, "configuration")`
+  (`apps/api/src/auth/operations-write.ts:24-30`), which admits exactly the
+  four copilot roles, then checks the rule's asset against **read** scope
+  (`readableAssetIds`, `rules.service.ts:785-796`) — not master-data manage
+  scope. Publish sets `enabled = true` at once, so it arms the rule; a PATCH
+  of a published rule changes live behaviour; archive is one-way. Rule
+  conditions are structured Zod shapes (`rules.schema.ts:68-112`), not the
+  calc DSL. `POST /rules/preview` evaluates the draft once against the latest
+  sample and **writes a `rule_preview` audit row** on every call; `POST
+  /rules/evaluate` evaluates every published rule of every organization and
+  raises alarms. `PATCH /rules/:id` does not re-derive the organization on an
+  asset change, by the `E7.1b` ruling (`rules.service.ts:216-220`; the
+  streaming divergence guard is the backstop).
+- **Notifications** (`apps/api/src/notifications/`): a webhook channel's
+  `secret` is its HMAC key; a webhook URL can itself be a bearer credential;
+  `POST /notifications/channels/:id/test` sends a real message, writes a
+  delivery-ledger row that blocks the channel's delete, and refuses a
+  NULL-organization channel. `PATCH /admin/escalation-profiles/:id` and `PUT
+  /admin/escalation-defaults` replace a whole list.
+- **Reports** (`apps/api/src/reports/`): schedules and the on-demand file save
+  use `assertMasterDataRole` (admin, organization_admin, location_admin); a
+  schedule with a `channelId` sends recurring email with no later Confirm; the
+  file save renders inside the request and stores an object.
+- **Maintenance** (`apps/api/src/maintenance/`): create and PATCH are the
+  `configuration` class; `POST /maintenance/schedules/:id/convert` makes a
+  work order, which decision 1 forbids.
+- **Vocabularies**: location types and unit roles are fleet rows (no
+  organization), written by the global admin only; `bms.location_types` has
+  no `updated_at`.
+- **File-borne data**: telemetry import (`preview` + `commit`), manual
+  readings and asset-image upload admit `isMasterDataRole` only (no
+  `asset_group_admin`); an import or a manual reading can create
+  `asset_points` mappings; the copilot accepts PNG, JPEG, WebP, PDF and SVG
+  attachments only (`copilot-attachments.ts`).
+
+### Decisions
+
+- **D1 — Release 4.** Decision 12 gains one row, *release 4 — operations
+  configuration*, holding `F4.278`–`F4.283`; each row keeps its own plan gate.
+  *(Q1)*
+- **D2 — The resolver mirrors each route's own gate.** A new target kind per
+  area (`rule`, `notificationChannel`, `escalationProfile`, `reportSchedule`,
+  `maintenanceSchedule`, `vocabulary`) refuses at propose time exactly what
+  the route would refuse on Confirm, and nothing more: the `configuration`
+  role plus read scope for rules and maintenance, the master-data role for
+  reports and files, the global admin for vocabularies. The `E7.1b` behaviour
+  of `PATCH /rules/:id` stays; the copilot's refs rule adds that a rule's
+  `assetId` belongs to the rule's organization. *(Q2)*
+- **D3 — A write with a live or one-way effect gets its own entry and a red
+  card, within the four risk values.** An entry's risk is static, so each
+  direction is its own entry: `rule.enable` (edit) / `rule.disable`
+  (deactivate), `maintenanceSchedule.activate` / `.deactivate`,
+  `assetRole.update` / `.deactivate` / `.reactivate`, `locationType.deactivate`;
+  `rule.publish` and a PATCH of a published rule carry a fixed *"changes live
+  alarm behaviour now"* line; an empty escalation-defaults map is a
+  deactivate card. `copilot_pending_changes_risk_check` is not widened. *(Q3)*
+- **D4 — An outward-facing write is proposed only when the admin's own message
+  asked.** The channel test send and a report schedule's email delivery
+  (`channelId`) follow ruling 20's rule for access changes: only in a user turn
+  whose own message asked for it, never in an automatic follow-up turn, never
+  from a tool result. *(Q4)*
+- **D5 — Recipients are shown in full on the card, not sent to the model.** A
+  new card-only field carries each email address and channel target; the
+  model-facing summary (`copilot-propose-tools.ts:518`) carries the channel
+  name and the recipient count only. *(Q5)*
+- **D6 — A replace-all write binds to what the card showed, where a stamp
+  exists.** `escalationProfile.update` takes Amendment 5's `precondition:
+  "updatedAt"`; the partial PATCHes (`reportSchedule.update`, rules,
+  maintenance) and `escalationDefaults.set` accept decision 4.9's residual,
+  bounded by the 15-minute expiry. *(Q6)*
+- **D7 — The model looks ids up, never guesses them.** New read tools
+  `list_notification_channels` and `list_escalation_profiles` (shared DTOs,
+  webhook URLs redacted), `list_rules` and `list_maintenance_schedules` (with
+  inactive rows, so a reactivate can name one), each placed and bounded as the
+  `F4.274` tools are. *(Q7)*
+- **D8 — `PUT /rules/:id/notifications` belongs to `F4.279`**, beside the
+  channels it points at. *(Q8)*
+
+**Per area.**
+
+- **Rules (`F4.278`).** Entries `rule.create`, `rule.update`, `rule.duplicate`,
+  `rule.publish`, `rule.enable`, `rule.disable`, `rule.archive`. Before the card
+  the server runs the rule validator (`validateRuleDraft`, plus
+  `assertArmable` for publish and enable) and evaluates the draft against the
+  latest sample through a side-effect-free path — no `rule_preview` audit row —
+  and the card shows the full condition and *"would match now: yes/no, latest
+  value X at T"*. It also runs a **7-day backtest** of the condition and the
+  card shows *"would have fired N times in the last 7 days"*. This is ruling
+  18's analogue for rules. *(Q9)* The backtest is new read code (drafter
+  choices): it reads the 1-minute aggregate of the rule's one point
+  (`telemetry.point_values_1m`), counts the transitions from not-matching to matching
+  with the rule's clear hold applied, writes nothing, is bounded to 7 days and
+  one point, and the card labels the count an estimate (a 1-minute bucket can
+  hide a shorter excursion, and the live engine sees raw samples). A
+  `time_window` rule shows no backtest. The copilot may
+  edit a published rule in place, under D3's live-effect line. *(Q10)* `POST
+  /rules/preview` and `POST /rules/evaluate` join the exclusion list. A
+  duplicate card says that the copy is a draft and that notification links are
+  not copied (drafter choice).
+- **Notifications (`F4.279`).** Entries `notificationChannel.create`,
+  `.update`, `.deactivate`, `.test`, `escalationProfile.create`, `.update`,
+  `escalationDefaults.set`, `rule.notifications.set`; the `DELETE` routes stay
+  manual (decision 3). A webhook's `secret` is a `clientOnly` field typed on
+  the Confirm card, as the temporary password is — never in `fill_step`, the
+  pending row, the history or the hash. *(Q11)* A webhook URL is typed on the
+  card too (a nested `clientOnly` path); an email recipient list is proposed by
+  the model and shown in full under D5. *(Q12)* The copilot's channel body
+  requires `organizationId` = the conversation's bound organization;
+  fleet-wide channels stay on the page. *(Q13)*
+- **Reports (`F4.280`).** Entries `reportSchedule.create`, `.update` and
+  `reportFile.save` (`POST /reports/energy/files`), offered to admin,
+  organization_admin and location_admin — the route's own gate. The file save
+  renders inside the Confirm request, as on the page. *(Q14)* Both `DELETE`
+  routes stay manual.
+- **Maintenance (`F4.281`).** Entries `maintenanceSchedule.create`,
+  `.activate`, `.deactivate`, for all four copilot roles (the `configuration`
+  class). *(Q15)* `POST /maintenance/schedules/:id/convert` joins the exclusion
+  list with the reason *"creates a work order; ADR 0099 decision 1"*; ADR 0106
+  decides whether it returns. The card names `safetyCritical` and
+  `complianceRef` when set (drafter choice). The Schedule Centre's create form
+  on `/maintenance-schedules` becomes a decision 6 stepper built from the
+  entry's steps — the first wizard outside an admin page; operators use the
+  same stepper, and its copilot panel shows only to the four copilot roles.
+  *(Q16)*
+- **Vocabularies (`F4.282`).** Entries `locationType.create`, `.update`,
+  `.deactivate`, `.reactivate` and `assetRole.update`, `.deactivate`,
+  `.reactivate`, offered to the global admin only, on the `vocabulary` target
+  kind (it reads the current label and refuses an unknown code before the
+  card; ruling Q1's binding to the conversation's organization stands). A
+  location-type deactivate card states how many locations use the type
+  (drafter choice). Amendment 3 A1's exclusion of `PATCH
+  /admin/vocabularies/asset-roles/:code` is withdrawn. Decision 6's wizards:
+  the location-types page moves to `WizardShell` forms and a small global-admin
+  *Unit roles* page is added beside it. *(Q17)*
+- **File-borne data (`F4.283`).** Entries `telemetry.import` (the commit, after
+  the server's `preview` counts are on the card), `telemetryReading.create` and
+  `assetImage.upload`, offered to admin, organization_admin and
+  location_admin. *(Q18)* The file is not stored: the browser keeps the
+  attached `File` with the card, the pending row stores its name and SHA-256,
+  and the interceptor refuses a Confirm whose bytes differ (409); after a
+  reload the card asks for the same file again. Amendment 3 A4's *nothing is
+  stored* stands. *(Q19)* CSV and XLSX (at most 5 MiB, sniffed) are accepted as
+  carry-only attachments, never sent to the provider; the model gets the file
+  name, the size and the preview counts; Amendment 3 A7's switch applies.
+  *(Q20)* The copilot's import and reading bodies fix `conflictPolicy:
+  "reject"`; overwrite stays on the telemetry pages. *(Q21)* Every row's asset
+  must be in the conversation's bound organization and the user's writable
+  scope, or the proposal is refused with the row numbers (drafter choice, the
+  `fleet` and `pointKey` target rule). The card names the `asset_points`
+  mappings an import would create. `DELETE /assets/:assetId/images/:imageId`
+  stays manual.
+
+**Common to every entry (drafter choices).** Each body schema moves to
+`packages/shared/src/contracts/` and the controller imports it (decision 2,
+ADR 0030); each controller joins the catalog coverage spec. Each write service
+audits through `MasterDataAuditService` and joins `CATALOG_WRITERS` in
+`tests/f3.85-audit-via-mark.test.ts`, so the `via: "copilot"` mark reaches its
+audit row — decision 4.5's *every writer adds the mark* is read as that gate
+requires, not as a mark in each writer.
+
+**Not in this amendment.** Any alarm or work-order write, maintenance
+convert, and operator use of the copilot (ADR 0106); `POST /rules/evaluate`;
+a backtest longer than 7 days or over more than the rule's one point; every
+`DELETE` route; fleet-wide notification
+channels; telemetry overwrite.
+
+**Verification owed (each row's plan).** Per entry: the resolver refuses what
+the route refuses (a spec per role the route refuses, including
+`asset_group_admin` where it applies); the card shows the live-effect line or
+the red style D3 names; D4's own-message rule refuses a follow-up-turn
+proposal; no `clientOnly` value reaches `fill_step`, the pending row, the
+history or the provider; the audit row carries `via: "copilot"`. Live: one
+Confirm per area against the Docker stack.
+
+### Gate questions
+
+| # | Question | Recommended | Ruled |
+| --- | --- | --- | --- |
+| Q1 | Where release 4 sits in decision 12 | one row for `F4.278`–`F4.283` | as recommended |
+| Q2 | Which scope check the resolver mirrors | each route's own gate; keep `E7.1b` | as recommended |
+| Q3 | How live-effect and one-way writes are styled | one entry per direction, four risk values | as recommended |
+| Q4 | Test send and report email delivery | own message only (ruling 20's rule) | as recommended |
+| Q5 | Recipients on the card and to the model | full on the card, count to the model | as recommended |
+| Q6 | Stale cards on list replaces and PATCHes | `updatedAt` where a stamp exists, else 4.9's residual | as recommended |
+| Q7 | How the model finds ids | four new read tools | as recommended |
+| Q8 | Owner of `PUT /rules/:id/notifications` | `F4.279` | as recommended |
+| Q9 | What the rule card shows before Confirm | validator + "would match now" | **validator + "would match now" + a 7-day backtest** (owner's own choice) |
+| Q10 | Copilot edit of a published rule | yes, with the live-effect line | as recommended |
+| Q11 | The webhook `secret` | `clientOnly`, typed on the card | as recommended |
+| Q12 | Webhook URLs and email recipients | URL typed on the card; recipients proposed | as recommended |
+| Q13 | Fleet-wide channels | page only | as recommended |
+| Q14 | The on-demand report file save | in scope, the route's three roles | as recommended |
+| Q15 | Maintenance schedules for which roles | all four (`configuration` class) | as recommended |
+| Q16 | The Schedule Centre form and decision 6 | no wizard; record the exception | **convert it to a stepper** (the other option) |
+| Q17 | Vocabulary wizards | convert the page; add a Unit roles page | as recommended |
+| Q18 | Which file-borne writes are in scope | all three | as recommended |
+| Q19 | Where the file lives until Confirm | the browser; the row stores the hash | as recommended |
+| Q20 | How a CSV reaches the copilot | carry-only, A7 switch applies | as recommended |
+| Q21 | Telemetry `overwrite` | no; `reject` only | as recommended |
