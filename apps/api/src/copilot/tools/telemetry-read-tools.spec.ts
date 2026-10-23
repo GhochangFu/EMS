@@ -389,10 +389,11 @@ export async function assertTheTurnAnswersTheLast24HoursFromATool(): Promise<voi
  * The read registry's own budget. The F4.266 gate (`copilot-propose-tools.spec.ts`,
  * 52,000) measures the propose registry only; the turn sends this one beside
  * it. Measured 2026-10-23: 4,040 characters before F4.274 (11 tools), 6,630
- * after (16 tools); 9,028 after F4.275 (22 tools). The bound is the latest
- * measurement rounded up to the next thousand plus one thousand of headroom.
+ * after (16 tools); 9,028 after F4.275 (22 tools); 10,384 after F4.277 (24
+ * tools). The bound is the latest measurement rounded up to the next thousand
+ * plus one thousand of headroom.
  */
 export function assertTheReadRegistryStaysInItsBudget(): void {
   const { tools } = fakeTelemetryServices();
-  expect(JSON.stringify(tools.registry.definitions).length).toBeLessThan(11_000);
+  expect(JSON.stringify(tools.registry.definitions).length).toBeLessThan(12_000);
 }

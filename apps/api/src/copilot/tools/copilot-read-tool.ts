@@ -1,5 +1,6 @@
 import type { z, ZodTypeAny } from "zod";
 
+import type { AuditAdminService } from "../../admin/audit/audit.service";
 import type { LocationsAdminService } from "../../admin/locations/locations.service";
 import type { AlarmsService } from "../../alarms/alarms.service";
 import type { AssetHealthService } from "../../asset-health/asset-health.service";
@@ -11,6 +12,7 @@ import type { DashboardsService } from "../../dashboard-builder/dashboards.servi
 import type { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import type { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import type { ReportsService } from "../../reports/reports.service";
+import type { SystemStatusService } from "../../system-status/system-status.service";
 import type { TelemetryService } from "../../telemetry/telemetry.service";
 import type { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import type { CopilotToolContext, CopilotToolResult } from "../copilot-read-tools";
@@ -50,6 +52,10 @@ export interface CopilotReadServices {
   readonly portfolio: Pick<DashboardService, "kpis" | "loadTrend" | "energySummary" | "energySourceMix" | "energyTopConsumers">;
   /** `F4.275`: the energy report preview (`GET /reports/energy/preview`); the same `null` rule. */
   readonly reports: Pick<ReportsService, "energyPreview">;
+  /** `F4.277`: the audit list (`GET /admin/audit`); `list` only, so the export is unreachable. */
+  readonly audit: Pick<AuditAdminService, "list">;
+  /** `F4.277`: the system status (`GET /system/status`); never called with `null` (the whole fleet). */
+  readonly systemStatus: Pick<SystemStatusService, "read">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */

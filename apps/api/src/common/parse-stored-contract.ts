@@ -128,6 +128,9 @@ export type StoredContractContext =
   | "copilot_tools.get_energy_source_mix.result"
   | "copilot_tools.get_energy_top_consumers.page"
   | "copilot_tools.get_energy_report_preview.result"
+  // `F4.277`: the system-status and audit-log read tools.
+  | "copilot_tools.get_system_status.result"
+  | "copilot_tools.list_audit_log.page"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");

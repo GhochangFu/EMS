@@ -19,6 +19,7 @@ import { LlmModule } from "../llm/llm.module";
 import { MimicLayoutsModule } from "../mimic-layouts/mimic-layouts.module";
 import { MimicSymbolLibrariesModule } from "../mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { ReportsCoreModule } from "../reports/reports-core.module";
+import { SystemStatusModule } from "../system-status/system-status.module";
 import { TelemetryModule } from "../telemetry/telemetry.module";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { CopilotAccessController } from "./copilot-access.controller";
@@ -121,6 +122,11 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * read tools. `ReportsCoreModule`, not `ReportsModule`, which mounts the
  * report controllers. Neither imports this module; `DashboardModule` ->
  * `CalcModule` -> `TelemetryModule` is already in this module's graph.
+ *
+ * `F4.277`: `AdminModule` (already imported) exports `AuditAdminService` and
+ * `SystemStatusModule` exports `SystemStatusService` for the audit-log and
+ * system-status read tools. `SystemStatusModule` imports only `AuthModule`,
+ * and stays API-only: the worker never reaches this module.
  */
 @Module({
   imports: [
@@ -139,6 +145,7 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     TelemetryModule,
     DashboardModule,
     ReportsCoreModule,
+    SystemStatusModule,
   ],
   controllers: [CopilotAccessController, CopilotChangesController, CopilotConversationsController, CopilotStatusController],
   providers: [
