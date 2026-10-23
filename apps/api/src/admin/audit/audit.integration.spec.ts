@@ -705,6 +705,42 @@ export async function assertGrantlessOrgAdminReadsNothing(
 }
 
 /**
+ * `F4.277` (ADR 0099 decision 10) — the organization restriction the copilot's
+ * `list_audit_log` passes inside the query. It only narrows: the global admin
+ * restricted to one organization reads that organization's row and **not** the
+ * platform row it reads unrestricted; an organization admin restricted to an
+ * organization outside its grants reads nothing (the intersection), and an
+ * empty restriction reads nothing (§4.7), never everything.
+ */
+export async function assertCopilotOrganizationRestriction(
+  svc: AuditAdminService,
+  fx: Fixtures,
+): Promise<void> {
+  const own = await svc.list(fx.adminJwt, { ...ORG_FIXTURES, organizationIds: [fx.ownOrgId] });
+  assert(own.total === 1, `the admin restricted to one organization reads one row, got total ${own.total}`);
+  assert(own.items[0]?.action === ACTION_OWN, `and it is that organization's row, got ${own.items[0]?.action}`);
+  assert(
+    !own.items.some((item) => item.action === ACTION_PLATFORM),
+    "the platform row is excluded even for the global admin under a restriction",
+  );
+
+  const both = await svc.list(fx.adminJwt, {
+    ...ORG_FIXTURES,
+    organizationIds: [fx.ownOrgId, fx.foreignOrgId],
+  });
+  assert(both.total === 2, `the admin restricted to both organizations reads two rows, got total ${both.total}`);
+
+  const foreign = await svc.list(fx.orgAdminJwt, { ...ORG_FIXTURES, organizationIds: [fx.foreignOrgId] });
+  assert(
+    foreign.total === 0 && foreign.items.length === 0,
+    `an organization admin restricted outside its grants reads nothing, got total ${foreign.total}`,
+  );
+
+  const empty = await svc.list(fx.adminJwt, { ...ORG_FIXTURES, organizationIds: [] });
+  assert(empty.total === 0, `an empty restriction reads nothing, got total ${empty.total}`);
+}
+
+/**
  * ADR 0046 decision 6 — export carries the same scope as the list.
  *
  * What this does **not** prove, said plainly: that an over-cap export is

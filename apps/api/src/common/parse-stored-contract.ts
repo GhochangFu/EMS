@@ -115,6 +115,25 @@ export type StoredContractContext =
   | "copilot_tools.get_mimic_layout.layout"
   | "copilot_tools.list_mimic_symbols.page"
   | "copilot_tools.list_asset_roles.page"
+  // `F4.274`: the telemetry read tools.
+  | "copilot_tools.list_asset_points.page"
+  | "copilot_tools.get_latest_values.result"
+  | "copilot_tools.get_values_at_instant.result"
+  | "copilot_tools.get_recent_values.rows"
+  | "copilot_tools.get_point_aggregate.result"
+  // `F4.275`: the energy and portfolio read tools.
+  | "copilot_tools.get_dashboard_kpis.result"
+  | "copilot_tools.get_load_trend.result"
+  | "copilot_tools.get_energy_summary.result"
+  | "copilot_tools.get_energy_source_mix.result"
+  | "copilot_tools.get_energy_top_consumers.page"
+  | "copilot_tools.get_energy_report_preview.result"
+  // `F4.277`: the system-status and audit-log read tools.
+  | "copilot_tools.get_system_status.result"
+  | "copilot_tools.list_audit_log.page"
+  // `F4.276`: the alarm details and alarm knowledge-base read tools.
+  | "copilot_tools.get_alarm_details.result"
+  | "copilot_tools.get_alarm_kb.result"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");

@@ -647,6 +647,8 @@ export const alarmDetailsResponseSchema = z.object({
   // F3.10 / ADR 0057 decision 11: the alarm response gains `clearedAt`.
   clearedAt: z.string().nullable(),
   ruleId: z.string().nullable(),
+  /** `F4.276`: the linked rule's point key, the join key for the copilot's `get_recent_values`; `null` with no rule. */
+  rulePointKey: z.string().nullable(),
   thresholdOperator: automationRuleOperatorSchema.nullable(),
   thresholdValue: z.number().nullable(),
   currentValue: z.number().nullable(),

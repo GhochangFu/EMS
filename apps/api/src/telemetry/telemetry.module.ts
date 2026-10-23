@@ -39,6 +39,7 @@ import { TelemetryService } from "./telemetry.service";
       },
     },
   ],
-  exports: [TelemetryBroadcastHub],
+  // `F4.274`: `TelemetryService` for the copilot telemetry read tools (`CopilotReadToolSet`).
+  exports: [TelemetryBroadcastHub, TelemetryService],
 })
 export class TelemetryModule {}

@@ -10,8 +10,9 @@ import { SystemStatusService } from "./system-status.service";
  * `AccessControlService`, the pool tokens, `QueueHealthService` and
  * `StorageHealthService` resolve through the `@Global()` `AccessControlModule`,
  * `DatabaseModule`, `QueueModule` and `StorageModule`; `AuthModule` is
- * imported for `JwtAuthGuard`, as `AssetHealthModule` does. Nothing is
- * exported. The module is API-only: `AppModule` imports it and the worker's
+ * imported for `JwtAuthGuard`, as `AssetHealthModule` does. It exports
+ * `SystemStatusService` for the copilot read tool (`F4.277`,
+ * `get_system_status`); `CopilotModule` imports this module. The module is API-only: `AppModule` imports it and the worker's
  * graph must not reach it (`tests/f4.24-worker-imports-no-api-loop.test.ts`),
  * which is why `StorageHealthService` is injected required here while
  * `HealthController` takes it `@Optional()`.
@@ -21,5 +22,6 @@ import { SystemStatusService } from "./system-status.service";
   imports: [AuthModule],
   controllers: [SystemStatusController],
   providers: [SystemStatusService],
+  exports: [SystemStatusService],
 })
 export class SystemStatusModule {}

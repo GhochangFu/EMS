@@ -66,8 +66,10 @@ export class TelemetryService {
   /**
    * Returns recent samples for one logical point (`assetId::pointKey`).
    * @param window e.g. `15m`, `1h`
+   * @param limit the most rows read, newest first. The route leaves it at
+   *   5,000; `F4.274`'s `get_recent_values` passes its own cap plus one.
    */
-  async recentForPoint(pointRef: string, window?: string): Promise<TelemetryReading[]> {
+  async recentForPoint(pointRef: string, window?: string, limit = 5000): Promise<TelemetryReading[]> {
     let assetId: string;
     let pointKey: string;
     try {
@@ -100,7 +102,7 @@ export class TelemetryService {
         ),
       )
       .orderBy(desc(pointValues.time))
-      .limit(5000);
+      .limit(limit);
 
     return rows.map((r) => ({
       time: r.time.toISOString(),

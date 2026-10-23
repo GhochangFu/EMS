@@ -109,6 +109,17 @@ export const pointValuesAtQuerySchema = z
 
 export type PointValuesAtQuery = z.infer<typeof pointValuesAtQuerySchema>;
 
+/**
+ * One point key: bounded by its column, `varchar(128)`, and free of control
+ * characters (Postgres refuses a NUL byte in `text`, 22021). Shared since
+ * `F4.274` by the latest-values query and the copilot telemetry read tools.
+ */
+export const pointKeySchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[^\u0000-\u001f\u007f]+$/, "a point key may not contain a control character");
+
 /** The most asset ids one `GET /telemetry/points/latest` call may name. */
 export const MAX_LATEST_ASSET_IDS = 50;
 
@@ -142,16 +153,7 @@ export const pointsLatestQuerySchema = z
     ),
     pointKeys: z.preprocess(
       foldRepeatedQueryValue,
-      z
-        .array(
-          z
-            .string()
-            .min(1)
-            .max(128)
-            .regex(/^[^\u0000-\u001f\u007f]+$/, "a point key may not contain a control character"),
-        )
-        .min(1)
-        .max(MAX_LATEST_POINT_KEYS),
+      z.array(pointKeySchema).min(1).max(MAX_LATEST_POINT_KEYS),
     ),
     windowMinutes: z.coerce
       .number()

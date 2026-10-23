@@ -51,6 +51,9 @@ import { AlarmsService } from "./alarms.service";
   // `F3.85` PR 7: `AlarmsService` is exported for the copilot's `list_alarms`
   // read tool. It injects `AlarmsGateway`, so a second copy in `CopilotModule`
   // would be a second socket gateway; exporting shares this one.
-  exports: [AlarmRaiseModule, AlarmsService],
+  //
+  // `F4.276`: `AlarmDetailsService` is exported for the copilot's
+  // `get_alarm_details` read tool. It is stateless (`FLEET_DRIZZLE` only).
+  exports: [AlarmRaiseModule, AlarmsService, AlarmDetailsService],
 })
 export class AlarmsModule {}

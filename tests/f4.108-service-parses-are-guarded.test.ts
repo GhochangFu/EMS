@@ -102,6 +102,25 @@ const COPILOT_TOOL_FILES = {
   copilotGetMimicLayout: `${COPILOT_TOOLS}/get-mimic-layout.tool.ts`,
   copilotListMimicSymbols: `${COPILOT_TOOLS}/list-mimic-symbols.tool.ts`,
   copilotListAssetRoles: `${COPILOT_TOOLS}/list-asset-roles.tool.ts`,
+  // `F4.274`: the five telemetry read tools, one parse each.
+  copilotListAssetPoints: `${COPILOT_TOOLS}/list-asset-points.tool.ts`,
+  copilotGetLatestValues: `${COPILOT_TOOLS}/get-latest-values.tool.ts`,
+  copilotGetValuesAtInstant: `${COPILOT_TOOLS}/get-values-at-instant.tool.ts`,
+  copilotGetRecentValues: `${COPILOT_TOOLS}/get-recent-values.tool.ts`,
+  copilotGetPointAggregate: `${COPILOT_TOOLS}/get-point-aggregate.tool.ts`,
+  // `F4.275`: the six energy and portfolio read tools, one parse each.
+  copilotGetDashboardKpis: `${COPILOT_TOOLS}/get-dashboard-kpis.tool.ts`,
+  copilotGetLoadTrend: `${COPILOT_TOOLS}/get-load-trend.tool.ts`,
+  copilotGetEnergySummary: `${COPILOT_TOOLS}/get-energy-summary.tool.ts`,
+  copilotGetEnergySourceMix: `${COPILOT_TOOLS}/get-energy-source-mix.tool.ts`,
+  copilotGetEnergyTopConsumers: `${COPILOT_TOOLS}/get-energy-top-consumers.tool.ts`,
+  copilotGetEnergyReportPreview: `${COPILOT_TOOLS}/get-energy-report-preview.tool.ts`,
+  // `F4.277`: the system-status and audit-log read tools, one parse each.
+  copilotGetSystemStatus: `${COPILOT_TOOLS}/get-system-status.tool.ts`,
+  copilotListAuditLog: `${COPILOT_TOOLS}/list-audit-log.tool.ts`,
+  // `F4.276`: the alarm details and alarm knowledge-base read tools, one parse each.
+  copilotGetAlarmDetails: `${COPILOT_TOOLS}/get-alarm-details.tool.ts`,
+  copilotGetAlarmKb: `${COPILOT_TOOLS}/get-alarm-kb.tool.ts`,
 } as const;
 const HELPER = "apps/api/src/common/parse-stored-contract.ts";
 
@@ -570,7 +589,9 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         "in report-schedules.service.ts; F3.73 a twelfth, the site template content in " +
         "site-layout.service.ts; F3.85 PR 7 six more, one per copilot read tool; F4.255 the " +
         "draft list's whole-DTO parse in onboarding.service.ts; F3.87 PR 2 four more, one per " +
-        "mimic read tool. A site reverted to " +
+        "mimic read tool; F4.274 five more, one per telemetry read tool; F4.275 six more, one " +
+        "per energy read tool; F4.277 two more, the system-status and audit-log read tools. " +
+        "A site reverted to " +
         "a bare .parse() answers 400 under the filter, which is ruling 2's failure mode " +
         "exactly.",
     ).toEqual({
@@ -605,7 +626,10 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       declared.length,
       "the StoredContractContext union no longer parses as a list of string literals, so the " +
         "per-site counts below would be vacuous",
-    ).toBe(23);
+      // `F4.274`: 23 + the five telemetry read tools' literals; `F4.275`: + six energy read tools;
+      // `F4.277`: + the system-status and audit-log read tools; `F4.276`: + the alarm
+      // details and alarm knowledge-base read tools.
+    ).toBe(38);
 
     const callSites = [
       STOCK_SERVICE,

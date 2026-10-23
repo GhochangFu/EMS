@@ -488,3 +488,37 @@ export async function assertDetailsOmitsClassPhilosophyWhenOnlyAnUnresolvableSki
     tx.rollback();
   });
 }
+
+/**
+ * `F4.276` — the details name the linked rule's point key (`rulePointKey`), the
+ * join key the copilot's `get_recent_values` reads the asset's recent samples
+ * with, and `null` for an alarm raised with no rule.
+ */
+export async function assertDetailsReturnsTheRulePointKey(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    const location = await fixtureLocation(tx);
+    const [assetId] = await createFixtureAssets(tx, 1, "F4276", location);
+    const ruled = await insertPlainTestAlarm(tx, assetId, "F4276_TEST_POINT_KEY");
+    const withRule = await new AlarmDetailsService(tx).get(ruled, null);
+    assert(
+      withRule.rulePointKey === "e21_test_point",
+      `expected the rule's point key, got ${String(withRule.rulePointKey)}`,
+    );
+
+    const [bare] = await tx
+      .insert(alarms)
+      .values({
+        organizationId: location.organizationId,
+        assetId,
+        ruleId: null,
+        severity: "warning",
+        message: "F4.276 alarm with no rule",
+      })
+      .returning({ id: alarms.id });
+    assert(bare !== undefined, "failed to insert the rule-less alarm");
+    const noRule = await new AlarmDetailsService(tx).get(bare!.id, null);
+    assert(noRule.rulePointKey === null, `expected null with no rule, got ${String(noRule.rulePointKey)}`);
+
+    tx.rollback();
+  });
+}

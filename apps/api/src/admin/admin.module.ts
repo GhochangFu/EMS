@@ -187,6 +187,7 @@ import { UsersService } from "./users/users.service";
   ],
   // F3.86 PR 5 (ADR 0099 decision 7) — the copilot's onboarding skill calls the onboarding service itself
   // (`COPILOT_ONBOARDING_SKILL` in `CopilotModule`), never a second copy of its provider tree.
-  exports: [OnboardingService],
+  // F4.277 — the copilot's `list_audit_log` calls `AuditAdminService.list` (the route's own read gate).
+  exports: [OnboardingService, AuditAdminService],
 })
 export class AdminModule {}

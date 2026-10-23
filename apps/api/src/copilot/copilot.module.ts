@@ -7,16 +7,21 @@ import { OnboardingService } from "../admin/onboarding/onboarding.service";
 import { UserGrantsService } from "../admin/users/user-grants.service";
 import { UsersService } from "../admin/users/users.service";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { AlarmKbModule } from "../alarm-kb/alarm-kb.module";
 import { AlarmsModule } from "../alarms/alarms.module";
 import { AssetHealthModule } from "../asset-health/asset-health.module";
 import { AssetsModule } from "../assets/assets.module";
 import { AuthModule } from "../auth/auth.module";
+import { DashboardModule } from "../dashboard/dashboard.module";
 import { DashboardBuilderModule } from "../dashboard-builder/dashboard-builder.module";
 import { DatabaseModule } from "../database/database.module";
 import { IdentityAdminModule } from "../identity/identity-admin.module";
 import { LlmModule } from "../llm/llm.module";
 import { MimicLayoutsModule } from "../mimic-layouts/mimic-layouts.module";
 import { MimicSymbolLibrariesModule } from "../mimic-symbol-libraries/mimic-symbol-libraries.module";
+import { ReportsCoreModule } from "../reports/reports-core.module";
+import { SystemStatusModule } from "../system-status/system-status.module";
+import { TelemetryModule } from "../telemetry/telemetry.module";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { CopilotAccessController } from "./copilot-access.controller";
 import { CopilotAccessGuard } from "./copilot-access.guard";
@@ -109,6 +114,25 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * `F3.87` PR 2 (ADR 0099 Amendment 3): `MimicLayoutsModule` and
  * `MimicSymbolLibrariesModule` export their services for the mimic read tools
  * and the layout proposal check. Neither imports this module.
+ *
+ * `F4.274`: `TelemetryModule` exports `TelemetryService` for the telemetry
+ * read tools; it imports nothing of this module, so the graph stays acyclic.
+ *
+ * `F4.275`: `DashboardModule` exports `DashboardService` and
+ * `ReportsCoreModule` exports `ReportsService` for the energy and portfolio
+ * read tools. `ReportsCoreModule`, not `ReportsModule`, which mounts the
+ * report controllers. Neither imports this module; `DashboardModule` ->
+ * `CalcModule` -> `TelemetryModule` is already in this module's graph.
+ *
+ * `F4.277`: `AdminModule` (already imported) exports `AuditAdminService` and
+ * `SystemStatusModule` exports `SystemStatusService` for the audit-log and
+ * system-status read tools. `SystemStatusModule` imports only `AuthModule`,
+ * and stays API-only: the worker never reaches this module.
+ *
+ * `F4.276`: `AlarmsModule` (already imported) exports `AlarmDetailsService`
+ * and `AlarmKbModule` exports `AlarmKbService` for the alarm details and the
+ * alarm knowledge-base read tools. `AlarmKbModule` declares no imports, so the
+ * graph stays acyclic; the worker never reaches this module.
  */
 @Module({
   imports: [
@@ -124,6 +148,11 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     AssetHealthModule,
     DashboardBuilderModule,
     VocabulariesModule,
+    TelemetryModule,
+    DashboardModule,
+    ReportsCoreModule,
+    SystemStatusModule,
+    AlarmKbModule,
   ],
   controllers: [CopilotAccessController, CopilotChangesController, CopilotConversationsController, CopilotStatusController],
   providers: [

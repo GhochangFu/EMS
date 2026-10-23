@@ -9,6 +9,7 @@ import { AuditAdminService } from "./audit.service";
 import {
   assertActorSubjectRedaction,
   assertActorlessRowSurvives,
+  assertCopilotOrganizationRestriction,
   assertExportShape,
   assertFiltersNarrow,
   assertGrantlessOrgAdminReadsNothing,
@@ -122,6 +123,10 @@ describe.skipIf(!connectionString)("F4.14 — audit read API", () => {
 
   it("reads nothing for an organization admin with no grant (§4.7)", async () => {
     await assertGrantlessOrgAdminReadsNothing(svc, fx);
+  });
+
+  it("narrows the read to the copilot's organization restriction, never widens it (F4.277)", async () => {
+    await assertCopilotOrganizationRestriction(svc, fx);
   });
 
   it("exports under the same scope as the list (ADR 0046 decision 6)", async () => {

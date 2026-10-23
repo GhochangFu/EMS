@@ -5,6 +5,7 @@ import {
   MAX_LATEST_ASSET_IDS,
   MAX_LATEST_POINT_KEYS,
   MAX_LATEST_WINDOW_MINUTES,
+  pointKeySchema,
   pointsLatestQuerySchema,
 } from "./telemetry.schema";
 
@@ -187,4 +188,17 @@ export function assertAControlCharacterInAKeyIsRefused(): void {
   }
   const ok = parse(ids(1), ["supply_air_temp_c", "pdu-a.status"]);
   assert(ok.success === true, `ordinary keys must parse: ${issues(ok)}`);
+}
+
+/**
+ * `F4.274` — `pointKeySchema`, the one point-key rule the latest-values query
+ * and the copilot telemetry tools share: 1–128 characters, no control character.
+ */
+export function assertThePointKeySchemaHoldsTheColumnRule(): void {
+  for (const bad of ["", "k".repeat(129), "a\u0000b", "k\nw", "\u007f"]) {
+    assert(pointKeySchema.safeParse(bad).success === false, `${JSON.stringify(bad)} must be refused`);
+  }
+  for (const good of ["kw_total", "k".repeat(128), "pdu-a.status"]) {
+    assert(pointKeySchema.safeParse(good).success === true, `${good.slice(0, 20)} must parse`);
+  }
 }

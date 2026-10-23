@@ -9,5 +9,7 @@ import { DashboardService } from "./dashboard.service";
   imports: [CalcModule],
   controllers: [DashboardController],
   providers: [DashboardService],
+  // `F4.275` — the copilot's energy and portfolio read tools (`CopilotModule`).
+  exports: [DashboardService],
 })
 export class DashboardModule {}

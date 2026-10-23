@@ -12,6 +12,7 @@ import {
   assertDetailsRefusesATemplateFromAnotherOrganization,
   assertDetailsResolvesAnInactiveSkillLabel,
   assertDetailsReturnsClassPhilosophyForASeededRule,
+  assertDetailsReturnsTheRulePointKey,
 } from "./alarm-class-philosophy.integration.spec";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 
@@ -73,5 +74,10 @@ describe.skipIf(!connectionString)("E2.2 — the class philosophy against a real
   // Post-merge review finding 4 (2026-09-08).
   it("returns null when the only philosophy field is an unresolvable skill", async () => {
     await assertDetailsOmitsClassPhilosophyWhenOnlyAnUnresolvableSkillIsAuthored(db);
+  });
+
+  // F4.276: the join key for the copilot's get_recent_values.
+  it("returns the rule's point key, and null for an alarm with no rule", async () => {
+    await assertDetailsReturnsTheRulePointKey(db);
   });
 });

@@ -6,7 +6,12 @@ import { expect } from "vitest";
 import type { JwtPayload } from "@bms/shared";
 
 import { calls, FakeLlmProvider, toolCall } from "../../admin/onboarding/onboarding-agent-loop.spec";
+import { AdminModule } from "../../admin/admin.module";
+import { AuditAdminService } from "../../admin/audit/audit.service";
 import { LocationsAdminService } from "../../admin/locations/locations.service";
+import { AlarmKbModule } from "../../alarm-kb/alarm-kb.module";
+import { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
+import { AlarmDetailsService } from "../../alarms/alarm-details.service";
 import { AlarmsModule } from "../../alarms/alarms.module";
 import { AlarmsService } from "../../alarms/alarms.service";
 import { AssetHealthModule } from "../../asset-health/asset-health.module";
@@ -16,6 +21,8 @@ import { AssetsModule } from "../../assets/assets.module";
 import { AssetsService } from "../../assets/assets.service";
 import { AccessControlService } from "../../auth/access-control.service";
 import type { ResolvedIdentity } from "../../auth/identity-resolver";
+import { DashboardModule } from "../../dashboard/dashboard.module";
+import { DashboardService } from "../../dashboard/dashboard.service";
 import { DashboardBuilderModule } from "../../dashboard-builder/dashboard-builder.module";
 import { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import type { LlmMessage } from "../../llm/llm-port";
@@ -24,6 +31,12 @@ import { MimicLayoutsModule } from "../../mimic-layouts/mimic-layouts.module";
 import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesModule } from "../../mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
+import { ReportsCoreModule } from "../../reports/reports-core.module";
+import { ReportsService } from "../../reports/reports.service";
+import { TelemetryModule } from "../../telemetry/telemetry.module";
+import { TelemetryService } from "../../telemetry/telemetry.service";
+import { SystemStatusModule } from "../../system-status/system-status.module";
+import { SystemStatusService } from "../../system-status/system-status.service";
 import { repoRoot } from "../../testing/repo-root";
 import { VocabulariesModule } from "../../vocabularies/vocabularies.module";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -381,16 +394,40 @@ export async function assertAnInjectedProposeCallFindsNoTool(): Promise<void> {
   expect(response.messages.filter((m) => m.role === "action")).toEqual([]);
 }
 
-/** The registry is the eleven read tools (`F3.87` PR 2 added the four mimic reads), each with a strict argument schema. */
+/**
+ * The registry is the twenty-six read tools (`F3.87` PR 2 added the four
+ * mimic reads, `F4.274` the five telemetry reads, `F4.275` the six energy
+ * reads, `F4.277` the system status and the audit log, `F4.276` the alarm
+ * details and the alarm knowledge base), each with a strict argument schema.
+ */
 export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
   const { tools } = fakeServices();
   expect(tools.registry.definitions.map((d) => d.name)).toEqual([
     "list_alarms",
+    // `F4.276`: the alarm details and the knowledge base, beside the alarm list.
+    "get_alarm_details",
+    "get_alarm_kb",
     "list_assets",
     "get_asset_kpis",
+    // `F4.274`: the telemetry reads, after the KPIs they sit beside.
+    "list_asset_points",
+    "get_latest_values",
+    "get_values_at_instant",
+    "get_recent_values",
+    "get_point_aggregate",
+    // `F4.275`: the energy and portfolio reads.
+    "get_dashboard_kpis",
+    "get_load_trend",
+    "get_energy_summary",
+    "get_energy_source_mix",
+    "get_energy_top_consumers",
+    "get_energy_report_preview",
     "list_locations",
     "list_dashboards",
     "get_health_summary",
+    // `F4.277`: the system status and the audit log.
+    "get_system_status",
+    "list_audit_log",
     "list_mimic_layouts",
     "get_mimic_layout",
     "list_mimic_symbols",
@@ -500,6 +537,17 @@ export function assertTheModuleWiresTheReadTools(): void {
     MimicLayoutsService,
     MimicSymbolLibrariesService,
     VocabulariesService,
+    // `F4.274`: the telemetry read tools.
+    TelemetryService,
+    // `F4.275`: the energy and portfolio read tools.
+    DashboardService,
+    ReportsService,
+    // `F4.277`: the audit-log and system-status read tools.
+    AuditAdminService,
+    SystemStatusService,
+    // `F4.276`: the alarm details and the alarm knowledge-base read tools.
+    AlarmDetailsService,
+    AlarmKbService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
   for (const module of [
@@ -510,16 +558,28 @@ export function assertTheModuleWiresTheReadTools(): void {
     VocabulariesModule,
     MimicLayoutsModule,
     MimicSymbolLibrariesModule,
+    TelemetryModule,
+    DashboardModule,
+    ReportsCoreModule,
+    AdminModule,
+    SystemStatusModule,
+    AlarmKbModule,
   ]) {
     expect(imports).toContain(module);
   }
   const exportsOf = (module: unknown) => (Reflect.getMetadata("exports", module as object) ?? []) as unknown[];
-  expect(exportsOf(AlarmsModule)).toContain(AlarmsService);
+  expect(exportsOf(AlarmsModule)).toEqual(expect.arrayContaining([AlarmsService, AlarmDetailsService]));
+  expect(exportsOf(AlarmKbModule)).toContain(AlarmKbService);
   expect(exportsOf(AssetsModule)).toEqual(expect.arrayContaining([AssetsService, AssetKpisService]));
   expect(exportsOf(DashboardBuilderModule)).toContain(DashboardsService);
   expect(exportsOf(AssetHealthModule)).toContain(AssetHealthService);
   expect(exportsOf(VocabulariesModule)).toContain(VocabulariesService);
   expect(exportsOf(MimicLayoutsModule)).toContain(MimicLayoutsService);
   expect(exportsOf(MimicSymbolLibrariesModule)).toContain(MimicSymbolLibrariesService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(11);
+  expect(exportsOf(TelemetryModule)).toContain(TelemetryService);
+  expect(exportsOf(DashboardModule)).toContain(DashboardService);
+  expect(exportsOf(ReportsCoreModule)).toContain(ReportsService);
+  expect(exportsOf(AdminModule)).toContain(AuditAdminService);
+  expect(exportsOf(SystemStatusModule)).toContain(SystemStatusService);
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(26);
 }

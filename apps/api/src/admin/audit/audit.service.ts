@@ -11,7 +11,8 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { resolveActorId } from "../../auth/identity-resolver";
 import { FLEET_DRIZZLE } from "../../database/database.tokens";
 import { MAX_EXPORT_ROWS, assertWithinExportCap } from "./audit.limits";
-import type { AuditExportQuery, AuditListQuery } from "./audit.schema";
+import { restrictScope, type AuditListRead } from "./audit.read-scope";
+import type { AuditExportQuery } from "./audit.schema";
 import { toCsv, toSheetRows } from "./audit.serialise";
 import type { AuditRow } from "./audit.serialise";
 
@@ -89,8 +90,12 @@ export class AuditAdminService {
     private readonly accessControl: AccessControlService,
   ) {}
 
-  /** Lists audit rows, newest first. */
-  async list(jwt: JwtPayload, query: AuditListQuery): Promise<AuditLogListResponse> {
+  /**
+   * Lists audit rows, newest first. `query.organizationIds` (`F4.277`, the
+   * copilot's restriction; never sent by the route) narrows the caller's scope
+   * in {@link AuditAdminService.buildWhere}.
+   */
+  async list(jwt: JwtPayload, query: AuditListRead): Promise<AuditLogListResponse> {
     const { scope, redactActorSubject } = await this.resolveReadScope(jwt);
     const where = this.buildWhere(query, scope);
 
@@ -226,17 +231,20 @@ export class AuditAdminService {
    *   and `inArray` excludes the `NULL`-organization rows for free — ADR 0046
    *   decision 2. Conjoined here rather than in `selectRows` so `count` sees the
    *   same predicate, which is what makes the export cap count the scoped set
-   *   (decision 6).
+   *   (decision 6). `F4.277`: a list read's `organizationIds` restriction
+   *   narrows it (`restrictScope`, the intersection); the export takes none.
    */
   private buildWhere(
-    query: AuditListQuery | AuditExportQuery,
+    query: AuditListRead | AuditExportQuery,
     scope: string[] | null,
   ): SQL | undefined {
     const conditions: SQL[] = [];
-    if (scope !== null) {
+    const effective = restrictScope(scope, "organizationIds" in query ? query.organizationIds : undefined);
+    if (effective !== null) {
       // drizzle 0.38.4 compiles an empty array to `false`, so an
-      // `organization_admin` with no grants matches nothing.
-      conditions.push(inArray(auditLog.organizationId, scope));
+      // `organization_admin` with no grants — or a restriction outside its
+      // grants — matches nothing.
+      conditions.push(inArray(auditLog.organizationId, effective));
     }
     if (query.action) {
       conditions.push(eq(auditLog.action, query.action));
