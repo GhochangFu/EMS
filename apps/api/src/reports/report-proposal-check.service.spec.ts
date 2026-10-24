@@ -57,7 +57,16 @@ function untouchable<T extends object>(service: T, methods: readonly string[], t
   return service;
 }
 
-type Built = { check: ReportProposalCheckService; touched: string[]; filesCalls: () => string[]; renders: () => number };
+type Built = {
+  check: ReportProposalCheckService;
+  touched: string[];
+  filesCalls: () => string[];
+  renders: () => number;
+  /** The schedules fakes' reads (`fleet:readById`, `tx:storedChannel`, …). */
+  schedulesCalls: () => string[];
+  channelWheres: () => { sql: string; params: unknown[] }[];
+  executed: () => { sql: string; params: unknown[] }[];
+};
 
 function build(
   options: { schedules?: SchedulesScenario; files?: FilesScenario; writable?: string[] | null } = {},
@@ -70,7 +79,15 @@ function build(
     untouchable(files.service, ["saveOnDemand", "remove"], touched),
     accessWith(options.writable === undefined ? null : options.writable),
   );
-  return { check, touched, filesCalls: () => files.calls, renders: () => files.reports.calls.length };
+  return {
+    check,
+    touched,
+    filesCalls: () => files.calls,
+    renders: () => files.reports.calls.length,
+    schedulesCalls: () => schedules.calls,
+    channelWheres: () => schedules.channelWheres,
+    executed: () => schedules.executed,
+  };
 }
 
 function input(entryId: string, body: Record<string, unknown>, params: Record<string, string> = {}): ReportProposalCheckInput {
@@ -276,4 +293,100 @@ export async function reEnablingWhileClearingTheChannelStartsNoEmail(): Promise<
 export async function theSaveStartsNoEmail(): Promise<void> {
   const { check } = build();
   expect(await check.startsEmail(SAVE)).toBe(false);
+}
+
+/*
+ * `F4.280` follow-up (owner ruling 2026-10-24): an update that sets `enabled:
+ * true` and omits `channelId` reads the schedule's stored channel once and lists
+ * its recipients, so the admin sees who gets the emails again. The read is the
+ * route's row read, then the channel on the tenant handle under the schedule's
+ * organization — never `ChannelsService.loadById`, whose gate refuses a
+ * `location_admin` the PATCH route admits. Every other update makes no read.
+ */
+
+const reEnable = () => updateWith({ enabled: true });
+const withStoredChannel = (over: Record<string, unknown> = {}): SchedulesScenario => ({
+  scheduleRows: [storedSchedule({ channelId: CHANNEL_ID, enabled: false, ...over })],
+});
+const UNCHANGED = { note: "Email delivery: unchanged.", recipients: [] };
+
+/** Re-enabling a schedule with a stored channel lists that channel's recipients on the card. */
+export async function reEnablingWithAStoredChannelListsItsRecipients(): Promise<void> {
+  const { check } = build({ schedules: withStoredChannel() });
+  expect((await check.check(reEnable())).recipients).toEqual([
+    { channelId: CHANNEL_ID, name: "Ops email", kind: "email", targets: ["ops@example.test"] },
+  ]);
+}
+
+/** The re-enable note names the stored channel and the count, as a `channelId` body does. */
+export async function reEnablingWithAStoredChannelNamesItInTheNote(): Promise<void> {
+  const { check } = build({ schedules: withStoredChannel() });
+  expect((await check.check(reEnable())).note).toBe(
+    'Email delivery: channel "Ops email", 1 recipient, on every run with no later Confirm.',
+  );
+}
+
+/** The re-enable reads the stored channel exactly once. */
+export async function reEnablingWithAStoredChannelReadsItOnce(): Promise<void> {
+  const built = build({ schedules: withStoredChannel() });
+  await built.check.check(reEnable());
+  expect(built.schedulesCalls().filter((call) => call === "tx:storedChannel")).toEqual(["tx:storedChannel"]);
+}
+
+/** The channel read is bound to the schedule's organization: the tenant GUC and the predicate both name it. */
+export async function theStoredChannelReadIsScopedToTheSchedulesOrganization(): Promise<void> {
+  const built = build({ schedules: withStoredChannel({ organizationId: OTHER_ORG_ID }) });
+  await built.check.check(reEnable());
+  const tenantSet = built.executed().find((statement) => statement.sql.includes("set_config"));
+  expect([tenantSet?.params, built.channelWheres()[0]?.params]).toEqual([
+    expect.arrayContaining([OTHER_ORG_ID]),
+    expect.arrayContaining([CHANNEL_ID, OTHER_ORG_ID]),
+  ]);
+}
+
+/** Re-enabling a schedule with no stored channel stays "unchanged". */
+export async function reEnablingWithNoStoredChannelStaysUnchanged(): Promise<void> {
+  const { check } = build({ schedules: { scheduleRows: [storedSchedule({ channelId: null, enabled: false })] } });
+  expect(await check.check(reEnable())).toEqual(UNCHANGED);
+}
+
+/** Re-enabling a schedule with no stored channel makes no channel read. */
+export async function reEnablingWithNoStoredChannelReadsNoChannel(): Promise<void> {
+  const built = build({ schedules: { scheduleRows: [storedSchedule({ channelId: null, enabled: false })] } });
+  await built.check.check(reEnable());
+  expect(built.schedulesCalls()).not.toContain("tx:storedChannel");
+}
+
+/** An update that does not set `enabled: true` reads neither the row nor the channel. */
+export async function aNonEnableUpdateMakesNoRead(): Promise<void> {
+  const built = build({ schedules: withStoredChannel() });
+  await built.check.check(updateWith({ name: "Renamed", enabled: false }));
+  expect(built.schedulesCalls().filter((call) => call === "fleet:readById" || call === "tx:storedChannel")).toEqual([]);
+}
+
+/** A stored channel gone from the table keeps "unchanged". */
+export async function aGoneStoredChannelStaysUnchanged(): Promise<void> {
+  const { check } = build({ schedules: { ...withStoredChannel(), storedChannel: null } });
+  expect(await check.check(reEnable())).toEqual(UNCHANGED);
+}
+
+/** A stored channel of another organization is never listed (the check fails closed past RLS too). */
+export async function aStoredChannelOfAnotherOrganizationIsNotListed(): Promise<void> {
+  const { check } = build({ schedules: { ...withStoredChannel(), storedChannel: { organizationId: OTHER_ORG_ID } } });
+  expect(await check.check(reEnable())).toEqual(UNCHANGED);
+}
+
+/** A stored channel that is not email is not listed. */
+export async function aStoredWebhookChannelIsNotListed(): Promise<void> {
+  const { check } = build({ schedules: { ...withStoredChannel(), storedChannel: { kind: "webhook" } } });
+  expect(await check.check(reEnable())).toEqual(UNCHANGED);
+}
+
+/** A `location_admin` the route admits is not refused: `loadById`'s 403 is never reached on a re-enable. */
+export async function aLocationAdminTheRouteAdmitsIsNotRefusedTheReEnable(): Promise<void> {
+  const { check } = build({
+    schedules: { ...withStoredChannel({ locationIds: [WC] }), channel: "refused", readScope: { kind: "location" } as never },
+    writable: [WC],
+  });
+  expect((await check.check(reEnable())).recipients.map((recipient) => recipient.channelId)).toEqual([CHANNEL_ID]);
 }

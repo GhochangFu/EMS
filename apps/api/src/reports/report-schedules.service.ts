@@ -11,7 +11,7 @@ import { and, arrayContained, count, desc, eq, inArray, sql } from "drizzle-orm"
 import type { SQL } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
-import { locations, reportFiles, reportSchedules } from "@bms/db";
+import { locations, notificationChannels, reportFiles, reportSchedules } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { MAX_REPORT_SCHEDULES_PER_ORGANIZATION, reportScheduleDtoSchema, reportTemplateIdSchema } from "@bms/shared";
 import type { JwtPayload, ReportCadence, ReportScheduleDto } from "@bms/shared";
@@ -363,6 +363,49 @@ export class ReportSchedulesService {
       return channel;
     }
     return null;
+  }
+
+  /**
+   * `F4.280` follow-up (owner ruling 2026-10-24) — the stored email channel of
+   * schedule `id`, for the copilot's card on a re-enable (`enabled: true` with
+   * no `channelId`), so the admin sees who gets the emails again. Read-only.
+   *
+   * The row is read as `update` reads it ({@link readRowForVerdict}: 404, the
+   * decision-6 403), so a caller the PATCH route admits gets the same row. The
+   * channel is then read the way the render job reads it: on the tenant handle
+   * under the schedule's own organization, with an `organization_id` predicate
+   * as well — never through `ChannelsService.loadById`, whose
+   * `canManageNotificationChannel` gate refuses a `location_admin` the route
+   * admits (`update` itself never reads the stored channel). `null` when the
+   * schedule has no stored channel, or the channel is gone, of another
+   * organization, or not email.
+   */
+  async storedEmailChannel(
+    jwt: JwtPayload,
+    id: string,
+  ): Promise<Pick<NotificationChannelRow, "id" | "name" | "kind" | "config"> | null> {
+    const row = await this.readRowForVerdict(jwt, id);
+    const channelId = row.channelId;
+    if (channelId === null) return null;
+    const [channel] = await withTenant(this.tenantDb, row.organizationId, (tx) =>
+      tx
+        .select({
+          id: notificationChannels.id,
+          organizationId: notificationChannels.organizationId,
+          name: notificationChannels.name,
+          kind: notificationChannels.kind,
+          config: notificationChannels.config,
+        })
+        .from(notificationChannels)
+        .where(and(eq(notificationChannels.id, channelId), eq(notificationChannels.organizationId, row.organizationId)))
+        .limit(1),
+    );
+    if (!channel || channel.organizationId !== row.organizationId || channel.kind !== "email") return null;
+    const config =
+      typeof channel.config === "object" && channel.config !== null && !Array.isArray(channel.config)
+        ? (channel.config as Record<string, unknown>)
+        : {};
+    return { id: channel.id, name: channel.name, kind: channel.kind, config };
   }
 
   /** The fleet read by id (404), then the decision-6 verdict (403). Shared by `get`, `update` and `remove`. */

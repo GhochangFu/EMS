@@ -26,6 +26,17 @@ import {
   theSaveNoteSaysItRendersOnConfirm,
   theSaveStartsNoEmail,
   theUntouchableFakeRefusesAWrite,
+  reEnablingWithAStoredChannelListsItsRecipients,
+  reEnablingWithAStoredChannelNamesItInTheNote,
+  reEnablingWithAStoredChannelReadsItOnce,
+  theStoredChannelReadIsScopedToTheSchedulesOrganization,
+  reEnablingWithNoStoredChannelStaysUnchanged,
+  reEnablingWithNoStoredChannelReadsNoChannel,
+  aNonEnableUpdateMakesNoRead,
+  aGoneStoredChannelStaysUnchanged,
+  aStoredChannelOfAnotherOrganizationIsNotListed,
+  aStoredWebhookChannelIsNotListed,
+  aLocationAdminTheRouteAdmitsIsNotRefusedTheReEnable,
 } from "./report-proposal-check.service.spec";
 
 /** `F4.280` — Vitest entry point; assertions live in the sibling `.spec` (§4.6). */
@@ -55,4 +66,18 @@ describe("F4.280 — the report proposal check runs the routes' checks read-only
   it("re-enabling with no stored channel starts no email", () => reEnablingAScheduleWithNoStoredChannelStartsNoEmail());
   it("re-enabling while clearing the channel starts no email", () => reEnablingWhileClearingTheChannelStartsNoEmail());
   it("the save starts no email", () => theSaveStartsNoEmail());
+});
+
+describe("F4.280 follow-up — a re-enabled report schedule names its stored recipients (owner ruling 2026-10-24)", () => {
+  it("re-enabling with a stored channel lists its recipients", () => reEnablingWithAStoredChannelListsItsRecipients());
+  it("re-enabling with a stored channel names it in the note", () => reEnablingWithAStoredChannelNamesItInTheNote());
+  it("re-enabling with a stored channel reads it once", () => reEnablingWithAStoredChannelReadsItOnce());
+  it("the stored channel read is scoped to the schedule's organization", () => theStoredChannelReadIsScopedToTheSchedulesOrganization());
+  it("re-enabling with no stored channel stays unchanged", () => reEnablingWithNoStoredChannelStaysUnchanged());
+  it("re-enabling with no stored channel reads no channel", () => reEnablingWithNoStoredChannelReadsNoChannel());
+  it("a non-enable update makes no read", () => aNonEnableUpdateMakesNoRead());
+  it("a gone stored channel stays unchanged", () => aGoneStoredChannelStaysUnchanged());
+  it("a stored channel of another organization is not listed", () => aStoredChannelOfAnotherOrganizationIsNotListed());
+  it("a stored webhook channel is not listed", () => aStoredWebhookChannelIsNotListed());
+  it("a location_admin the route admits is not refused the re-enable", () => aLocationAdminTheRouteAdmitsIsNotRefusedTheReEnable());
 });

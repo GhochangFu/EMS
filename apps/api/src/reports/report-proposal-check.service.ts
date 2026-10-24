@@ -48,7 +48,13 @@ const plural = (count: number, one: string): string => `${count} ${one}${count =
  * Q4: an update whose body omits `channelId` lists no recipients and says the
  * delivery is unchanged — the stored channel is not read for the card, because
  * the route does not read it either and its gate must not refuse a PATCH the
- * route admits (D2's "nothing more").
+ * route admits (D2's "nothing more"). The one exception (owner ruling
+ * 2026-10-24): an update that sets `enabled: true` and omits `channelId` reads
+ * the stored channel once, through `ReportSchedulesService.storedEmailChannel`
+ * (the route's row read, then the channel under the schedule's organization,
+ * not the channel route's gate), and lists its recipients as a `channelId`
+ * body does, so the admin sees who gets the emails again. No stored channel,
+ * or one gone, foreign or not email, keeps "unchanged".
  *
  * The on-demand save runs `ReportFilesService.previewSave`: the storage gate
  * (503), the location stamp (403) and the cap pre-check (409), with no render
@@ -61,7 +67,8 @@ const plural = (count: number, one: string): string => `${count} ${one}${count =
 @Injectable()
 export class ReportProposalCheckService {
   constructor(
-    @Inject(ReportSchedulesService) private readonly schedules: Pick<ReportSchedulesService, "checkWriteScope" | "get">,
+    @Inject(ReportSchedulesService)
+    private readonly schedules: Pick<ReportSchedulesService, "checkWriteScope" | "get" | "storedEmailChannel">,
     @Inject(ReportFilesService) private readonly files: Pick<ReportFilesService, "previewSave">,
     @Inject(AccessControlService) private readonly access: Pick<AccessControlService, "writableLocationIds">,
   ) {}
@@ -76,7 +83,10 @@ export class ReportProposalCheckService {
     const locationIds = Array.isArray(body.locationIds) ? strings(body.locationIds) : undefined;
     const channelId = typeof body.channelId === "string" || body.channelId === null ? body.channelId : undefined;
     const writable = await this.access.writableLocationIds(input.user);
-    const channel = await this.schedules.checkWriteScope(input.user, input.organizationId, locationIds, channelId, writable);
+    const named = await this.schedules.checkWriteScope(input.user, input.organizationId, locationIds, channelId, writable);
+    const unchanged = input.entryId === "reportSchedule.update" && channelId === undefined;
+    const channel =
+      named ?? (unchanged && body.enabled === true ? await this.schedules.storedEmailChannel(input.user, input.params.id as string) : null);
     if (channel !== null) {
       const recipient = recipientOf(channel);
       return {
@@ -84,7 +94,6 @@ export class ReportProposalCheckService {
         recipients: [recipient],
       };
     }
-    const unchanged = input.entryId === "reportSchedule.update" && channelId === undefined;
     return { note: unchanged ? "Email delivery: unchanged." : "Email delivery: none.", recipients: [] };
   }
 
