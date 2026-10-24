@@ -2,6 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   assertContentTypesAreExactlyTheThree,
+  assertCopilotImageBodyAcceptsACaptionAndFile,
+  assertCopilotImageBodyRefusesALongCaption,
+  assertCopilotImageBodyRefusesAnUnknownKey,
   assertControlCharacterRow,
   CONTROL_CHARACTER_ROWS,
   assertDtoRefusesObjectKey,
@@ -61,4 +64,11 @@ describe("F3.3 — asset-image constants and contracts (ADR 0066)", () => {
   it("states the pattern without a Unicode property escape (F4.265)", () => {
     assertNoControlCharactersPatternIsPortable();
   });
+});
+
+/** `F4.283` (ADR 0099 Amendment 8, Q18) — the copilot image upload body. */
+describe("F4.283 — the copilot asset image upload body", () => {
+  it("accepts a caption and an attachment reference", () => assertCopilotImageBodyAcceptsACaptionAndFile());
+  it("refuses a 1001-character caption", () => assertCopilotImageBodyRefusesALongCaption());
+  it("refuses an unknown key", () => assertCopilotImageBodyRefusesAnUnknownKey());
 });

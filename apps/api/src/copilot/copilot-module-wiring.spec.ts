@@ -29,6 +29,9 @@ import { ReportsModule } from "../reports/reports.module";
 import { MaintenanceModule } from "../maintenance/maintenance.module";
 import { MaintenanceService } from "../maintenance/maintenance.service";
 import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
+import { TelemetryProposalCheckService } from "../admin/telemetry-entry/telemetry-proposal-check.service";
+import { AssetImagesWriteService } from "../assets/asset-images-write.service";
+import { AssetsModule } from "../assets/assets.module";
 
 /**
  * `F3.86` PR 4 / ADR 0099 decision 3 — the module edges a green build does not
@@ -191,4 +194,27 @@ export function assertTheMaintenanceModuleExportsItsService(): void {
 /** The read tools' slot 21 is `MaintenanceService`, by `@Inject`. */
 export function assertTheReadToolsInjectTheMaintenanceService(): void {
   expect(injected(CopilotReadToolSet).get(21)).toBe(MaintenanceService);
+}
+
+/**
+ * `F4.283` (ADR 0099 Amendment 8 Q18–Q21): the propose tools' seventh and eighth parameters
+ * are `TelemetryProposalCheckService` and `AssetImagesWriteService`, by `@Inject`; without
+ * them a file-data proposal is refused at runtime while every spec over fakes stays green.
+ */
+export function assertTheProposeToolsInjectTheTelemetryCheck(): void {
+  expect(injected(CopilotProposeToolSet).get(6)).toBe(TelemetryProposalCheckService);
+}
+
+export function assertTheProposeToolsInjectTheImageWriteService(): void {
+  expect(injected(CopilotProposeToolSet).get(7)).toBe(AssetImagesWriteService);
+}
+
+/** `AdminModule` exports the telemetry check. */
+export function assertTheAdminModuleExportsTheTelemetryCheck(): void {
+  expect(moduleList(AdminModule, "exports")).toContain(TelemetryProposalCheckService);
+}
+
+/** `AssetsModule` exports the image write service. */
+export function assertTheAssetsModuleExportsTheImageWriteService(): void {
+  expect(moduleList(AssetsModule, "exports")).toContain(AssetImagesWriteService);
 }

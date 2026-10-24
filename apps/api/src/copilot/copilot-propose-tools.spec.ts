@@ -93,7 +93,7 @@ type Options = {
   slugId?: string | null; // `F4.245`: the dashboard id a slug names (none by default)
 };
 
-export function proposeHarness(options: Options & Pick<CopilotProposeServices, "rules" | "notifications" | "reports"> = {}) { // `F4.278` rules, `F4.279` notifications, `F4.280` reports
+export function proposeHarness(options: Options & Pick<CopilotProposeServices, "rules" | "notifications" | "reports" | "files"> = {}) { // `F4.278` rules, `F4.279` notifications, `F4.280` reports, `F4.283` files
   const stored: NewPendingChange[] = [];
   const resolved: Array<{ id: string; params: Record<string, string>; allowed: readonly string[]; bound?: string | null }> = [];
   const target: ResolvedTarget | null =
@@ -107,7 +107,7 @@ export function proposeHarness(options: Options & Pick<CopilotProposeServices, "
         },
         dashboardIdBySlug: async () => options.slugId ?? null,
       },
-      ...(options.layouts ? { layouts: options.layouts } : {}), ...(options.rules ? { rules: options.rules } : {}), ...(options.notifications ? { notifications: options.notifications } : {}), ...(options.reports ? { reports: options.reports } : {}),
+      ...(options.layouts ? { layouts: options.layouts } : {}), ...(options.rules ? { rules: options.rules } : {}), ...(options.notifications ? { notifications: options.notifications } : {}), ...(options.reports ? { reports: options.reports } : {}), ...(options.files ? { files: options.files } : {}),
       pending: {
         hasOpen: async () => options.open === true,
         propose: async (_userId, change): Promise<CopilotPendingChangeDto | null> => {
@@ -940,7 +940,7 @@ export const UPLOAD_ENTRY = fixtureEntry({
   modelBody: z
     .object({ name: z.string().optional(), label: z.string().optional(), svg: z.object({ kind: z.literal("text"), text: z.string() }).strict() })
     .strict(),
-  upload: { fileField: "file", contentType: "image/svg+xml", maxBytes: 65_536 },
+  upload: { fileField: "file", kind: "svg", accepts: ["image/svg+xml"], maxBytes: 65_536 },
   cardOnly: ["svgText"],
   steps: [{ id: "symbol", title: "Symbol", fields: ["name", "label"] }],
 });

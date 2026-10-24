@@ -28,6 +28,8 @@ import { layoutWarnings } from "../../lib/mimic-editor-warnings";
 import { catalogOrgSymbols } from "../../lib/mimic-symbols";
 import { useAuthStore } from "../../stores/auth-store";
 import { ChangeCard } from "./change-card";
+import { FileAgainSlot } from "./file-again-slot";
+import { ImportPreviewCard } from "./import-preview-card";
 import { MimicLayoutPreview } from "./mimic-layout-preview";
 import { SymbolUploadPreview } from "./symbol-upload-preview";
 
@@ -207,6 +209,9 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
   const [ready, setReady] = useState<Record<string, boolean>>({});
   const [problems, setProblems] = useState<Record<string, string>>({});
   const allReady = clientOnly.every((field) => ready[field.path] ?? !field.required);
+  // `F4.283` (Amendment 8 Q19): a file-upload card sends the file this tab kept, or the same file picked again.
+  const fileUpload = entry?.upload?.kind === "file";
+  const [file, setFile] = useState<File | null>(null);
 
   const onType = (field: (typeof clientOnly)[number], value: string) => {
     typed.current[field.path] = value;
@@ -246,7 +251,7 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
     mutationFn: () => {
       const values: Record<string, string> = {};
       for (const field of clientOnly) values[field.path] = typed.current[field.path] ?? "";
-      return confirmCopilotChange(change, values);
+      return confirmCopilotChange(change, values, file ?? undefined);
     },
     onSuccess: async () => {
       setError(null);
@@ -301,10 +306,14 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
         onConfirm={() => confirm.mutate()}
         secondaryLabel="Reject"
         onSecondary={() => reject.mutate()}
-        confirmDisabled={!allReady}
+        confirmDisabled={!allReady || (fileUpload && file === null)}
       >
         {layoutBody !== null && <MimicLayoutPreview body={layoutBody} orgSymbols={orgSymbols} />}
-        {entry?.upload !== undefined && typeof change.body.svgText === "string" && (
+        {fileUpload && typeof change.body.filename === "string" && typeof change.body.fileSha256 === "string" && (
+          <FileAgainSlot filename={change.body.filename} sha256={change.body.fileSha256} onFile={setFile} />
+        )}
+        {change.catalogId === "telemetry.import" && <ImportPreviewCard preview={change.body.preview} />}
+        {entry?.upload?.kind === "svg" && typeof change.body.svgText === "string" && (
           <SymbolUploadPreview
             svgText={change.body.svgText}
             label={typeof change.body.label === "string" && change.body.label !== "" ? change.body.label : String(change.body.name ?? "")}

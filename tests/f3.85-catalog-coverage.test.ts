@@ -81,6 +81,11 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/reports/report-files.controller.ts", full: true },
   // F4.281 (Amendment 8): the maintenance schedules — three entries, the convert excluded.
   { file: "apps/api/src/maintenance/maintenance.controller.ts", full: true },
+  // F4.283 (Amendment 8): file-borne data — the import commit an entry and its preview excluded; the
+  // manual readings an entry; the asset image upload an entry and its DELETE excluded.
+  { file: "apps/api/src/admin/telemetry-import/telemetry-import.controller.ts", full: true },
+  { file: "apps/api/src/admin/telemetry-entry/manual-readings.controller.ts", full: true },
+  { file: "apps/api/src/assets/asset-images-write.controller.ts", full: true },
 ];
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;

@@ -554,6 +554,41 @@ export async function aChangedUploadFilenameIs409AndReleased(): Promise<void> {
   await expectReleased(uploadHarness({ file: { originalname: "other.svg", buffer: SVG } }));
 }
 
+/** `F4.283` (Amendment 8 Q19): a telemetry import Confirm — its fields are the entry body's, read from the catalog. */
+const IMPORT_PATH = "/api/v1/admin/telemetry/import/commit";
+const CSV = Buffer.from("asset_code,point_key,value,time\nPUMP-1,kw,1,2026-10-20T09:00:00Z\n", "utf8");
+const IMPORT_FIELDS = { sourceKind: "manual", conflictPolicy: "reject" };
+const STORED_IMPORT = { ...IMPORT_FIELDS, filename: "readings.csv", fileSha256: createHash("sha256").update(CSV).digest("hex") };
+
+function importHarness(over: Options = {}): Harness {
+  return uploadHarness({
+    path: IMPORT_PATH,
+    body: IMPORT_FIELDS,
+    file: { originalname: "readings.csv", buffer: CSV },
+    stored: { path: IMPORT_PATH, catalogId: "telemetry.import", bodyHash: bodyHash(STORED_IMPORT, ["preview"]) },
+    ...over,
+  });
+}
+
+/** The same bytes and the import's own fields: applied and marked. Mutation: keep the fixed symbol field list → red. */
+export async function aMatchingImportIsAppliedAndMarked(): Promise<void> {
+  const h = importHarness();
+  await run(h);
+  expect(h.seen).toEqual([{ via: "copilot", changeId: CHANGE_ID }]);
+}
+
+/** Other bytes under the same name: 409, and the claim is released once. */
+export async function aChangedImportFileIs409AndReleasedOnce(): Promise<void> {
+  const h = importHarness({ file: { originalname: "readings.csv", buffer: Buffer.concat([CSV, Buffer.from("x")]) } });
+  await expectReleased(h);
+  expect(h.pending.release).toHaveBeenCalledTimes(1);
+}
+
+/** A changed import field (overwrite on the wire): the same refusal. */
+export async function aChangedImportFieldIs409AndReleased(): Promise<void> {
+  await expectReleased(importHarness({ body: { ...IMPORT_FIELDS, conflictPolicy: "overwrite" } }));
+}
+
 /** A multer limit error before the route stage compared anything: released, not recorded `failed` (critique A6 item 12). */
 export async function aMulterErrorBeforeTheCompareReleases(): Promise<void> {
   const h = uploadHarness({ routeStage: "multerError" });

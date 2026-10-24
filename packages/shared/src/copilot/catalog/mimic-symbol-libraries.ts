@@ -138,7 +138,7 @@ export const MIMIC_SYMBOL_LIBRARY_ENTRIES: readonly CatalogEntry[] = [
     modelBody: copilotMimicSymbolUploadModelBodySchema,
     modelBodyName: "copilotMimicSymbolUploadModelBodySchema",
     offeredTo: AUTHORS,
-    upload: { fileField: "file", contentType: "image/svg+xml", maxBytes: MAX_MIMIC_SYMBOL_SVG_BYTES },
+    upload: { fileField: "file", kind: "svg", accepts: ["image/svg+xml"], maxBytes: MAX_MIMIC_SYMBOL_SVG_BYTES },
     cardOnly: ["svgText"],
     risk: "create",
     target: LIBRARY,

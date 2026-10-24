@@ -154,6 +154,13 @@ export type CatalogTarget =
    */
   | { readonly kind: "maintenanceSchedule"; readonly param: "id" }
   | { readonly kind: "maintenanceSchedule"; readonly field: "assetId" }
+  /**
+   * `F4.283` (ADR 0099 Amendment 8 D2, Q21): the two telemetry writes (the import commit, the manual
+   * readings). Like `fleet`, the change lives in the conversation's bound organization (a conversation
+   * bound to none is refused), gated by `requireMasterDataUser` alone — the routes' own gate. Each
+   * row's asset is checked by the proposal check, which refuses with the row numbers.
+   */
+  | { readonly kind: "telemetry" }
   | { readonly kind: "onboardingSession"; readonly param: "id" }
   | { readonly kind: "assetTemplateDeploy"; readonly param: "id" }
   | { readonly kind: "user" | "userGrantAdd"; readonly param: "id" }
@@ -268,14 +275,22 @@ export interface CatalogEntry {
    */
   readonly offeredTo?: readonly UserRole[];
   /**
-   * `F3.87` PR 2 (Amendment 3 A3): the entry's route is multipart. The
-   * model sends the file as the `svg` text in its `modelBody`; the pending
-   * row keeps it under a `cardOnly` key, and on Confirm the browser sends it
-   * as the `fileField` part. The interceptor hashes the file's bytes.
+   * `F3.87` PR 2 (Amendment 3 A3): the entry's route is multipart, and on
+   * Confirm the browser sends the file as the `fileField` part, whose bytes
+   * the interceptor hashes.
+   *
+   * - `kind: "svg"`: the model sends the file as the `svg` text in its
+   *   `modelBody`; the pending row keeps it under the `cardOnly` key `svgText`.
+   * - `kind: "file"` (`F4.283`, Amendment 8 Q18): the model names an attached
+   *   file as `file`; the pending row stores its name and SHA-256 only, and
+   *   the browser keeps the bytes (a reload asks for the same file again).
+   *
+   * `accepts`: the media types, sniffed from the bytes, the attachment may be.
    */
   readonly upload?: {
     readonly fileField: "file";
-    readonly contentType: "image/svg+xml";
+    readonly kind: "svg" | "file";
+    readonly accepts: readonly string[];
     readonly maxBytes: number;
   };
   /**

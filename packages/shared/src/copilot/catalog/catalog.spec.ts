@@ -215,7 +215,8 @@ function modelBodyProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly
   if ((object as z.AnyZodObject)._def.unknownKeys !== "strict") problems.push(`${entry.id}: modelBody is not strict`);
   const owned = directionOwnedFields(entry.id);
   const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field) && !owned.includes(field));
-  const expected = (entry.upload ? [...fields, "svg"] : fields).sort();
+  // `F4.283`: a `kind: "file"` upload names its attachment as `file`; the bytes stay in the browser.
+  const expected = (entry.upload ? [...fields, entry.upload.kind === "svg" ? "svg" : "file"] : fields).sort();
   if (JSON.stringify(bodyFieldsOf(entry.modelBody).sort()) !== JSON.stringify(expected)) {
     problems.push(`${entry.id}: modelBody fields differ from the body's without clientOnly`);
   }
@@ -225,8 +226,11 @@ function modelBodyProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly
 /** `F3.87` PR 2: an upload fixture — the multipart text fields, and the model's body that adds the file as `svg`. */
 const UPLOAD_FIELDS = z.object({ name: z.string(), label: z.string() }).strict();
 const UPLOAD_MODEL_BODY = z.object({ name: z.string(), label: z.string(), svg: z.string() }).strict();
-const UPLOAD_DESCRIPTOR = { fileField: "file", contentType: "image/svg+xml", maxBytes: 65_536 } as const;
-const uploadEntry = (modelBody: ZodTypeAny | undefined, upload: typeof UPLOAD_DESCRIPTOR | undefined) => ({
+const UPLOAD_DESCRIPTOR: NonNullable<CatalogEntry["upload"]> = { fileField: "file", kind: "svg", accepts: ["image/svg+xml"], maxBytes: 65_536 };
+/** `F4.283`: a file upload fixture — the browser keeps the bytes, the model names the attachment as `file`. */
+const FILE_UPLOAD_DESCRIPTOR: NonNullable<CatalogEntry["upload"]> = { fileField: "file", kind: "file", accepts: ["text/csv"], maxBytes: 5_242_880 };
+const FILE_MODEL_BODY = z.object({ name: z.string(), label: z.string(), file: z.object({}) }).strict();
+const uploadEntry = (modelBody: ZodTypeAny | undefined, upload: CatalogEntry["upload"] | undefined) => ({
   id: "fixture.symbol.upload",
   body: UPLOAD_FIELDS,
   clientOnly: [] as const,
@@ -244,6 +248,14 @@ export function anUploadModelBodyAddsTheSvgAndOnlyThere(): void {
     "fixture.symbol.upload: modelBody fields differ from the body's without clientOnly",
   ]);
   expect(modelBodyProblems(uploadEntry(undefined, UPLOAD_DESCRIPTOR))).toEqual(["fixture.symbol.upload: an upload entry needs a modelBody"]);
+}
+
+/** `F4.283`: a `kind: "file"` upload adds `file`, never `svg`. */
+export function aFileUploadModelBodyAddsTheFileNotTheSvg(): void {
+  expect(modelBodyProblems(uploadEntry(FILE_MODEL_BODY, FILE_UPLOAD_DESCRIPTOR))).toEqual([]);
+  expect(modelBodyProblems(uploadEntry(UPLOAD_MODEL_BODY, FILE_UPLOAD_DESCRIPTOR))).toEqual([
+    "fixture.symbol.upload: modelBody fields differ from the body's without clientOnly",
+  ]);
 }
 
 const COPILOT_ROLES: readonly string[] = ["admin", "organization_admin", "location_admin", "asset_group_admin"];
@@ -676,14 +688,15 @@ export function theSymbolUploadIsTheMultipartEntry(): void {
   const entry = catalogEntry("mimicSymbol.upload");
   if (!entry) throw new Error("mimicSymbol.upload");
   const exports = contracts as unknown as Record<string, unknown>;
-  expect(entry.upload).toEqual({ fileField: "file", contentType: "image/svg+xml", maxBytes: contracts.MAX_MIMIC_SYMBOL_SVG_BYTES });
+  expect(entry.upload).toEqual({ fileField: "file", kind: "svg", accepts: ["image/svg+xml"], maxBytes: contracts.MAX_MIMIC_SYMBOL_SVG_BYTES });
   expect(entry.cardOnly).toEqual(["svgText"]);
   expect(hashExcludedKeysFor(entry.id)).toEqual(["svgText"]);
   expect(entry.bodyName).toBe("mimicSymbolUploadFieldsSchema");
   expect(entry.modelBody).toBe(exports.copilotMimicSymbolUploadModelBodySchema);
   expect(entry.modelBodyName).toBe("copilotMimicSymbolUploadModelBodySchema");
   expect(entry.steps).toEqual([{ id: "symbol", title: "Symbol", fields: ["name", "label", "group"] }]);
-  expect(COPILOT_CATALOG.filter((candidate) => candidate.upload !== undefined).map((candidate) => candidate.id)).toEqual(["mimicSymbol.upload"]);
+  // `F4.283`: the import and the asset image are multipart too, but keep the bytes in the browser (`kind: "file"`).
+  expect(COPILOT_CATALOG.filter((candidate) => candidate.upload?.kind === "svg").map((candidate) => candidate.id)).toEqual(["mimicSymbol.upload"]);
 }
 
 /** The model's upload body takes the SVG as text or as an attachment index, and nothing else. */

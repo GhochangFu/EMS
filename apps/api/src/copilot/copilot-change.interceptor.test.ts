@@ -37,6 +37,9 @@ import {
   aChangedFileByteIs409AndReleased,
   aChangedUploadFieldIs409AndReleased,
   aChangedUploadFilenameIs409AndReleased,
+  aChangedImportFieldIs409AndReleased,
+  aChangedImportFileIs409AndReleasedOnce,
+  aMatchingImportIsAppliedAndMarked,
   aMulterErrorBeforeTheCompareReleases,
   aHandlerErrorAfterTheCompareIsRecorded,
   theRouteStageFailsClosedWithoutAClaim,
@@ -69,7 +72,13 @@ vi.mock("@bms/shared/copilot", async (importOriginal) => {
     ...real,
     catalogEntry: (id: string) =>
       id === "fixture.symbol.upload"
-        ? { id, upload: { fileField: "file", contentType: "image/svg+xml", maxBytes: 65_536 }, clientOnly: [], cardOnly: [] }
+        ? {
+            id,
+            body: real.catalogEntry("mimicSymbol.upload")?.body,
+            upload: { fileField: "file", kind: "svg", accepts: ["image/svg+xml"], maxBytes: 65_536 },
+            clientOnly: [],
+            cardOnly: [],
+          }
         : real.catalogEntry(id),
   };
 });
@@ -115,6 +124,9 @@ describe("F3.87 PR 6a — the two-stage multipart Confirm (ADR 0099 Amendment 3 
   it("refuses and releases a changed file byte", () => aChangedFileByteIs409AndReleased());
   it("refuses and releases a changed field", () => aChangedUploadFieldIs409AndReleased());
   it("refuses and releases a changed filename", () => aChangedUploadFilenameIs409AndReleased());
+  it("F4.283: applies and marks a matching telemetry import", () => aMatchingImportIsAppliedAndMarked());
+  it("F4.283: refuses a changed import file and releases once", () => aChangedImportFileIs409AndReleasedOnce());
+  it("F4.283: refuses and releases a changed import field", () => aChangedImportFieldIs409AndReleased());
   it("releases, and does not record, a multer error before the compare", () => aMulterErrorBeforeTheCompareReleases());
   it("records a handler error after the compare as failed", () => aHandlerErrorAfterTheCompareIsRecorded());
   it("fails closed in the route stage without a claim", () => theRouteStageFailsClosedWithoutAClaim());

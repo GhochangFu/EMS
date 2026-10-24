@@ -69,6 +69,7 @@ import { OrganizationsAdminService } from "./organizations/organizations.service
 import { RtusAdminController } from "./rtus/rtus.controller";
 import { RtusAdminService } from "./rtus/rtus.service";
 import { ManualReadingsController } from "./telemetry-entry/manual-readings.controller";
+import { TelemetryProposalCheckService } from "./telemetry-entry/telemetry-proposal-check.service";
 import { TelemetryWriteService } from "./telemetry-entry/telemetry-write.service";
 import { TelemetryImportController } from "./telemetry-import/telemetry-import.controller";
 import { TelemetryImportService } from "./telemetry-import/telemetry-import.service";
@@ -182,12 +183,15 @@ import { UsersService } from "./users/users.service";
     AuditAdminService,
     TelemetryWriteService,
     TelemetryImportService,
+    // F4.283 (ADR 0099 Amendment 8) — the copilot's read-only telemetry proposal check.
+    TelemetryProposalCheckService,
     UsersService,
     UserGrantsService,
   ],
   // F3.86 PR 5 (ADR 0099 decision 7) — the copilot's onboarding skill calls the onboarding service itself
   // (`COPILOT_ONBOARDING_SKILL` in `CopilotModule`), never a second copy of its provider tree.
   // F4.277 — the copilot's `list_audit_log` calls `AuditAdminService.list` (the route's own read gate).
-  exports: [OnboardingService, AuditAdminService],
+  // F4.283 — the copilot's telemetry proposals run `TelemetryProposalCheckService` (the routes' own checks, read-only).
+  exports: [OnboardingService, AuditAdminService, TelemetryProposalCheckService],
 })
 export class AdminModule {}

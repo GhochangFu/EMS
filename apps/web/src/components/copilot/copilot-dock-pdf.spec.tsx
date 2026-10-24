@@ -232,8 +232,8 @@ export async function keepsAnotherBannerWhenAPageLands(): Promise<void> {
   await attachReady();
   choose(aFile("sld.pdf", 3, "application/pdf"));
   choose(aFile("notes.exe"));
-  expect(await screen.findByRole("alert")).toHaveTextContent('"notes.exe" is not a PNG, JPEG, WebP, PDF or SVG file.');
+  expect(await screen.findByRole("alert")).toHaveTextContent('"notes.exe" is not a PNG, JPEG, WebP, PDF, SVG, CSV or XLSX file.');
   release();
   await waitFor(() => expect(chips()).toEqual(["sld-page-1.png"]));
-  expect(screen.getByRole("alert")).toHaveTextContent('"notes.exe" is not a PNG, JPEG, WebP, PDF or SVG file.');
+  expect(screen.getByRole("alert")).toHaveTextContent('"notes.exe" is not a PNG, JPEG, WebP, PDF, SVG, CSV or XLSX file.');
 }

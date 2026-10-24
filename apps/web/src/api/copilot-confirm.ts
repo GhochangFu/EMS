@@ -24,16 +24,24 @@ export function withoutKeys(body: Readonly<Record<string, unknown>>, keys: reado
 export function uploadFormOf(
   body: Readonly<Record<string, unknown>>,
   fields: readonly string[],
-  upload: { readonly fileField: string; readonly contentType: string },
+  upload: { readonly fileField: string; readonly kind: "svg" | "file"; readonly accepts: readonly string[] },
+  file?: File,
 ): FormData {
   const form = new FormData();
   for (const field of fields) {
     const value = body[field];
     if (typeof value === "string") form.append(field, value);
   }
+  const filename = typeof body.filename === "string" ? body.filename : upload.kind === "svg" ? "symbol.svg" : "file";
+  if (upload.kind === "file") {
+    // `F4.283` (Amendment 8 Q19): the browser kept the bytes; they go under the stored name, so the
+    // route stage hashes the same name. Without the file there is nothing to send.
+    if (file === undefined) throw new ApiError("Attach the file again", 400);
+    form.append(upload.fileField, file, filename);
+    return form;
+  }
   const text = typeof body.svgText === "string" ? body.svgText : "";
-  const filename = typeof body.filename === "string" ? body.filename : "symbol.svg";
-  form.append(upload.fileField, new File([text], filename, { type: upload.contentType }));
+  form.append(upload.fileField, new File([text], filename, { type: upload.accepts[0] ?? "image/svg+xml" }));
   return form;
 }
 
@@ -64,6 +72,8 @@ export function uploadFormOf(
  * `F3.87` PR 6b (Amendment 3 A3, plan §8.4): an `upload` entry's Confirm is
  * the real multipart call ({@link uploadFormOf}); the server's route stage
  * hashes the fields it receives, the file's name and the SHA-256 of its bytes.
+ * `F4.283` (Amendment 8 Q19): a `kind: "file"` entry sends the `file` the card
+ * kept in this browser (the server refuses other bytes with a 409).
  *
  * Returns the parsed response, or `null` for a `204`. The response shape
  * belongs to the catalog entry, so it stays `unknown` here; the caller that
@@ -72,6 +82,7 @@ export function uploadFormOf(
 export async function confirmCopilotChange(
   change: CopilotPendingChangeDto,
   clientOnly: Readonly<Record<string, string>> = {},
+  file?: File,
 ): Promise<unknown> {
   if (!API_PATH.test(change.path)) {
     throw new ApiError(`copilot change path is not an API path`, 400);
@@ -86,7 +97,7 @@ export async function confirmCopilotChange(
         method: change.method,
         // No `Content-Type`: the browser writes `multipart/form-data` with its boundary.
         headers: { [COPILOT_CHANGE_HEADER]: change.id, ...ifMatch },
-        body: uploadFormOf(change.body, bodyFieldsOf(entry.body), entry.upload),
+        body: uploadFormOf(change.body, bodyFieldsOf(entry.body), entry.upload, file),
       })
     : withAuth({
         method: change.method,

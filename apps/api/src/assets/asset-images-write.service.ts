@@ -224,6 +224,18 @@ export class AssetImagesWriteService {
     return toAssetImageDto(row);
   }
 
+  /**
+   * `F4.283` (ADR 0099 Amendment 8; owner ruling 2026-10-24, drafter choice 3, the F4.280
+   * `previewSave` precedent) — the copilot's read-only pre-check of an image upload: storage
+   * configured (503) and the asset under its image cap (409), with the sentences `upload` uses. The
+   * access check is the caller's, as for `upload` (the target resolver runs `canManageAsset`).
+   */
+  async previewUpload(_jwt: JwtPayload, assetId: string): Promise<void> {
+    requireStorageConfigured(this.client);
+    await this.resolveAssetOrg(assetId);
+    this.refuseAtCap(await countImages(this.fleetDb, assetId));
+  }
+
   async remove(jwt: JwtPayload, assetId: string, imageId: string): Promise<void> {
     requireStorageConfigured(this.client);
     const organizationId = await this.resolveAssetOrg(assetId);

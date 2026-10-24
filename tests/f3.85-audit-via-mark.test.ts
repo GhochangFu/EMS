@@ -84,6 +84,10 @@ const CATALOG_WRITERS = [
   "apps/api/src/reports/report-files.service.ts",
   // F4.281 (Amendment 8): the maintenance schedule create and the two direction entries.
   "apps/api/src/maintenance/maintenance.service.ts",
+  // F4.283 (Amendment 8): the telemetry import and manual readings write through the one write path;
+  // the asset image upload (and its excluded DELETE) through the image write service.
+  "apps/api/src/admin/telemetry-entry/telemetry-write.service.ts",
+  "apps/api/src/assets/asset-images-write.service.ts",
 ] as const;
 
 /**
@@ -154,6 +158,10 @@ const CATALOG_DIRS = [
   "reports",
   // F4.281 (Amendment 8): the maintenance schedules — the three direct audit inserts are gone.
   "maintenance",
+  // F4.283 (Amendment 8): the telemetry write path and importer, and the assets directory (the image writes).
+  "admin/telemetry-entry",
+  "admin/telemetry-import",
+  "assets",
 ] as const;
 
 /** The drizzle form and the raw-SQL form. */

@@ -140,7 +140,10 @@ type Found = {
   locationIds?: readonly string[];
 };
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
-type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet" | "vocabulary" | "onboardingSession" | UserKind>;
+type RowKind = Exclude<
+  CatalogEntry["target"]["kind"],
+  "organization" | "parent" | "fleet" | "vocabulary" | "telemetry" | "onboardingSession" | UserKind
+>;
 type UserKind = "user" | "userGrantAdd" | "userGrant";
 type UserTarget = Extract<CatalogEntry["target"], { kind: UserKind }>;
 
@@ -213,12 +216,12 @@ export class CopilotTargetResolver implements CopilotTargets {
       const asked: UserTarget = mode === "record" && target.kind === "userGrantAdd" ? { kind: "user", param: target.param } : target;
       found = await this.findUserTarget(asked, params, body, user, allowedOrganizationIds).catch(() => null);
       if (found !== null && !allowedOrganizationIds.includes(found.organizationId)) found = null;
-    } else if (target.kind === "fleet" || target.kind === "pointKey" || target.kind === "vocabulary") {
+    } else if (target.kind === "fleet" || target.kind === "pointKey" || target.kind === "vocabulary" || target.kind === "telemetry") {
       // Ruling Q1: a row with no organization lives in the conversation's bound organization.
       if (boundOrganizationId === null || !allowedOrganizationIds.includes(boundOrganizationId)) return null;
       const organizationName = await this.organizationName(boundOrganizationId);
       if (organizationName === null) return null;
-      if (target.kind === "fleet") {
+      if (target.kind === "fleet" || target.kind === "telemetry") {
         found = { organizationId: boundOrganizationId, name: organizationName };
       } else if (target.kind === "vocabulary") {
         // `F4.282` (Amendment 8 D2): an unknown code is refused before the gate is asked.
@@ -231,7 +234,9 @@ export class CopilotTargetResolver implements CopilotTargets {
         const code = await this.pointKeyCode(id);
         found = code === null ? null : { organizationId: boundOrganizationId, name: code };
       }
-      if (found !== null && !(await this.safely(() => this.mayManageFleet(user)))) found = null;
+      // `F4.283` (Amendment 8 D2, drafter choice 2): the telemetry routes' gate is `requireMasterDataUser` alone.
+      const gate = target.kind === "telemetry" ? () => this.mayWriteTelemetry(user) : () => this.mayManageFleet(user);
+      if (found !== null && !(await this.safely(gate))) found = null;
     } else if ((target.kind === "rule" || target.kind === "maintenanceSchedule") && "field" in target) {
       // `F4.278` / `F4.281` (Amendment 8 D2): a rule or maintenance schedule create — the organization
       // is its asset's, and the route's two gates run on the body's asset.
@@ -669,6 +674,16 @@ export class CopilotTargetResolver implements CopilotTargets {
   private async mayManageFleet(user: JwtPayload): Promise<boolean> {
     await this.access.requireMasterDataUser(user);
     return this.access.isGlobalAdmin(user);
+  }
+
+  /**
+   * `F4.283` (Amendment 8 D2): the telemetry import and manual-reading routes' gate,
+   * `requireMasterDataUser` — a throw (an `asset_group_admin`, a viewer) is the refusal, through
+   * `safely`. Each row's asset is the proposal check's (`TelemetryProposalCheckService`).
+   */
+  private async mayWriteTelemetry(user: JwtPayload): Promise<boolean> {
+    await this.access.requireMasterDataUser(user);
+    return true;
   }
 
   /** A create's authority: the route's own check, on the body's organization and scope. */

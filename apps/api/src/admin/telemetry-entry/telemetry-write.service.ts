@@ -74,7 +74,7 @@ export type WriteReadingsOutput = {
   rejected: RejectedRowDto[];
 };
 
-type AcceptedRow = {
+export type AcceptedRow = {
   rowNumber: number;
   row: TelemetryEntryRow;
   unit: string | null;
@@ -143,7 +143,17 @@ export class TelemetryWriteService {
     private readonly audit: MasterDataAuditService,
   ) {}
 
-  async writeReadings(jwt: JwtPayload, input: WriteReadingsInput): Promise<WriteReadingsOutput> {
+  /**
+   * `F4.283` (ADR 0099 Amendment 8, Q21): the read-only half of `writeReadings` — the role gate,
+   * then every row validated and resolved, then the in-batch duplicates reported. It never writes,
+   * so the copilot's proposal check runs it before a card is stored (the mappings an import would
+   * create are the accepted rows with `mappingNeeded`). `writeReadings` writes exactly what it accepts.
+   */
+  async validateRows(
+    jwt: JwtPayload,
+    rows: readonly TelemetryEntryRow[],
+    rowNumbers?: readonly number[],
+  ): Promise<{ accepted: AcceptedRow[]; rejected: RejectedRowDto[] }> {
     // Fails uniformly for a non-master-data caller before any row is looked
     // at — `validateRow`'s per-row `canManageAsset` also enforces this, but
     // only after checking whether that row's assetId exists, which would
@@ -155,9 +165,9 @@ export class TelemetryWriteService {
     const rejected: RejectedRowDto[] = [];
     const validated: AcceptedRow[] = [];
 
-    for (let i = 0; i < input.rows.length; i += 1) {
-      const rowNumber = input.rowNumbers?.[i] ?? i + 1;
-      const row = input.rows[i];
+    for (let i = 0; i < rows.length; i += 1) {
+      const rowNumber = rowNumbers?.[i] ?? i + 1;
+      const row = rows[i];
       const outcome = await this.validateRow(jwt, row);
       if (!outcome.ok) {
         rejected.push({ rowNumber, field: outcome.field, reason: outcome.reason });
@@ -195,6 +205,12 @@ export class TelemetryWriteService {
       firstSeenAtRow.set(key, v.rowNumber);
       accepted.push(v);
     }
+
+    return { accepted, rejected };
+  }
+
+  async writeReadings(jwt: JwtPayload, input: WriteReadingsInput): Promise<WriteReadingsOutput> {
+    const { accepted, rejected } = await this.validateRows(jwt, input.rows, input.rowNumbers);
 
     if (accepted.length === 0) {
       // No row survived to be `accepted` — there is no assetId to key a

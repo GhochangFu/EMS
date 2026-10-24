@@ -16,6 +16,9 @@ import {
   anUploadSendsItsIfMatch,
   aPreconditionIsSentAsAQuotedIfMatch,
   noPreconditionSendsNoIfMatch,
+  aFileUploadSendsNoPreviewOrHash,
+  aFileUploadSendsTheKeptFileAndItsFields,
+  aFileUploadWithoutTheFileIsRefusedBeforeFetch,
 } from "./copilot-confirm.spec";
 
 /**
@@ -42,4 +45,7 @@ describe("F3.85 — the copilot Confirm executor (ADR 0099 decision 4.5)", () =>
   it("F4.247: sends If-Match on the multipart branch too", () => anUploadSendsItsIfMatch());
   it("F4.279: sends a typed URL at its nested path", () => aTypedUrlIsSentAtItsNestedPath());
   it("F4.279: sends no blank secret and no recipients", () => aBlankSecretIsNotSent());
+  it("F4.283: sends the kept file under the stored name, beside the import fields", () => aFileUploadSendsTheKeptFileAndItsFields());
+  it("F4.283: sends no preview, hash or filename field", () => aFileUploadSendsNoPreviewOrHash());
+  it("F4.283: refuses a file upload without the kept file before fetch", () => aFileUploadWithoutTheFileIsRefusedBeforeFetch());
 });

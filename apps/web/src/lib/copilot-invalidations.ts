@@ -64,6 +64,8 @@ const REPORT_SCHEDULES: QueryKey = ["report-schedules"];
 const REPORT_FILES: QueryKey = ["report-files"];
 /** `F4.281`: the Schedule Centre's list (`maintenance-schedules-panel.tsx`, keyed by its filters under the prefix). */
 const MAINTENANCE_SCHEDULES: QueryKey = ["maintenance", "schedules"];
+/** `F4.283`: an asset's image list (`asset-images-panel.tsx`, keyed by the asset under the prefix). */
+const ASSET_IMAGES: QueryKey = ["asset-images"];
 const ESCALATION_PROFILES: QueryKey = ["escalation", "profiles"];
 const ESCALATION_DEFAULTS: QueryKey = ["escalation", "defaults"];
 // `F4.255` PR 3: the copilot dock's list of an organization's open onboarding drafts.
@@ -198,6 +200,11 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "maintenanceSchedule.create": [MAINTENANCE_SCHEDULES],
   "maintenanceSchedule.activate": [MAINTENANCE_SCHEDULES],
   "maintenanceSchedule.deactivate": [MAINTENANCE_SCHEDULES],
+  // `F4.283` (Amendment 8): a reading write can create point mappings (`asset-points-page.tsx`);
+  // an image upload adds to the asset's image list.
+  "telemetry.import": [ASSET_POINTS],
+  "telemetryReading.create": [ASSET_POINTS],
+  "assetImage.upload": [ASSET_IMAGES],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

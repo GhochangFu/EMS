@@ -7,6 +7,7 @@ import { ASSET_TEMPLATE_ENTRIES, ASSET_TEMPLATE_PENDING } from "./asset-template
 import { ASSET_ENTRIES, ASSET_PENDING } from "./assets";
 import { DASHBOARD_TEMPLATE_ENTRIES } from "./dashboard-templates";
 import { DASHBOARD_ENTRIES } from "./dashboards";
+import { FILE_DATA_ENTRIES, FILE_DATA_PENDING } from "./file-data";
 import { KPI_ENTRIES } from "./kpis";
 import { LOCATION_TYPE_ENTRIES, LOCATION_TYPE_PENDING } from "./location-types";
 import { LOCATION_ENTRIES, LOCATION_PENDING } from "./locations";
@@ -56,6 +57,8 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...REPORT_ENTRIES,
   // F4.281 (Amendment 8): the maintenance schedules.
   ...MAINTENANCE_ENTRIES,
+  // F4.283 (Amendment 8): file-borne data — the telemetry import, manual readings and the asset image upload.
+  ...FILE_DATA_ENTRIES,
 ];
 
 /**
@@ -118,6 +121,8 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...REPORT_PENDING,
   // F4.281 (Amendment 8): the convert creates a work order and stays manual.
   ...MAINTENANCE_PENDING,
+  // F4.283 (Amendment 8): the import preview runs inside the propose step; the image DELETE stays manual.
+  ...FILE_DATA_PENDING,
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */

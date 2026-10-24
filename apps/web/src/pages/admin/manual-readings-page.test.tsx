@@ -2,9 +2,13 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
+import { resetWizardStore } from "../../stores/wizard-store";
 import {
+  aFillSendsTheFilledAsset,
+  aFillSetsTheTimestamp,
   aRefusedSubmitShowsTheSentence,
   anInvalidFormShowsTheFixSentenceWithoutACall,
+  theWizardSubmitsTheSameRequest,
 } from "./manual-readings-page.spec";
 
 /**
@@ -24,13 +28,25 @@ describe("F4.204 manual readings page — a refusal reads as a sentence", () => 
     cleanup();
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+    resetWizardStore();
   });
 
   it("F4.204 a refused submit shows the sentence, not the envelope", async () => {
     await aRefusedSubmitShowsTheSentence();
   }, CASE_TIMEOUT_MS);
 
-  it("F4.204 control: an invalid form shows the fix sentence and calls no API", async () => {
+  it("F4.204 control: an invalid form stays on its step and calls no API", async () => {
     await anInvalidFormShowsTheFixSentenceWithoutACall();
+  }, CASE_TIMEOUT_MS);
+
+  it("F4.283: the wizard submits the same request as the old form", async () => {
+    await theWizardSubmitsTheSameRequest();
+  }, CASE_TIMEOUT_MS);
+  it("F4.283: a copilot fill sets the timestamp", async () => {
+    await aFillSetsTheTimestamp();
+  }, CASE_TIMEOUT_MS);
+
+  it("F4.283: a copilot fill sends the filled asset", async () => {
+    await aFillSendsTheFilledAsset();
   }, CASE_TIMEOUT_MS);
 });

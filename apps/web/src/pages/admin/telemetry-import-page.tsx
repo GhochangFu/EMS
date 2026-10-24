@@ -1,6 +1,7 @@
 import { useMutation } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import type { TelemetryImportCommitDto, TelemetryImportPreviewDto } from "@bms/shared";
+import { catalogEntry } from "@bms/shared/copilot";
 
 import {
   commitTelemetryImport,
@@ -10,6 +11,7 @@ import {
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
+import { WizardShell } from "../../components/wizard/wizard-shell";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import {
   groupRejectionsByReason,
@@ -20,7 +22,14 @@ import type { AuthUser } from "../../stores/auth-store";
 
 type TelemetryImportPageProps = { user: AuthUser };
 
-/** Admin screen for CSV/Excel telemetry bulk import (`F1.9`) — preview, then an explicit commit. */
+/**
+ * Admin screen for CSV/Excel telemetry bulk import (`F1.9`) — preview, then an explicit commit.
+ *
+ * `F4.283` (ADR 0099 Amendment 8): the commit is the `telemetry.import` wizard — one Options step
+ * (source kind, conflict policy), then Review and Submit. The file sits beside the wizard and is
+ * never a wizard value (the `SymbolUploadWizard` rule); the page keeps `overwrite`, which the
+ * copilot never proposes (Q21).
+ */
 export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -51,9 +60,9 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
   });
 
   const commitMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (options: TelemetryImportRequestOptions) => {
       if (!file) throw new Error("Choose a file first");
-      return commitTelemetryImport(file, { sourceKind, conflictPolicy });
+      return commitTelemetryImport(file, options);
     },
     onSuccess: (result) => {
       setCommitResult(result);
@@ -61,6 +70,10 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
     },
     onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
+
+  // The old Commit button's gate, kept on the wizard (`F4.283` review): no commit without a preview,
+  // none when the preview accepted no row, and no second commit of the same file.
+  const commitBlocked = preview === null || preview.acceptedCount === 0 || commitResult !== null;
 
   const reset = () => {
     setFile(null);
@@ -97,32 +110,6 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
               setError(null);
             }}
           />
-          <label className="text-xs font-semibold text-ink-muted">
-            Source kind
-            <select
-              className="mt-1 block surface-field px-3 py-1.5 text-sm"
-              value={sourceKind}
-              onChange={(event) =>
-                setSourceKind(event.target.value as TelemetryImportRequestOptions["sourceKind"])
-              }
-            >
-              <option value="unmapped">Unmapped (default)</option>
-              <option value="manual">Manual</option>
-            </select>
-          </label>
-          <label className="text-xs font-semibold text-ink-muted">
-            On conflict
-            <select
-              className="mt-1 block surface-field px-3 py-1.5 text-sm"
-              value={conflictPolicy}
-              onChange={(event) =>
-                setConflictPolicy(event.target.value as TelemetryImportRequestOptions["conflictPolicy"])
-              }
-            >
-              <option value="reject">Reject (default)</option>
-              <option value="overwrite">Overwrite</option>
-            </select>
-          </label>
           <button
             type="button"
             className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
@@ -143,6 +130,68 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
           ) : null}
         </div>
         {error ? <div className="text-xs text-critical-ink">{error}</div> : null}
+      </SectionCard>
+
+      <SectionCard title="Options and commit" bodyClassName="p-4 space-y-3">
+        {commitBlocked ? (
+          <p className="text-xs text-ink-muted">
+            {commitResult !== null
+              ? "This file is committed. Start over to import another."
+              : preview === null
+                ? "Preview the file before you commit it."
+                : "The preview accepted no row, so there is nothing to commit."}
+          </p>
+        ) : null}
+        <WizardShell
+          entry={catalogEntry("telemetry.import")!}
+          params={{}}
+          values={{ sourceKind, conflictPolicy }}
+          onChange={(next) => {
+            if (next.sourceKind === "unmapped" || next.sourceKind === "manual") setSourceKind(next.sourceKind);
+            if (next.conflictPolicy === "reject" || next.conflictPolicy === "overwrite") setConflictPolicy(next.conflictPolicy);
+          }}
+          renderStep={() => (
+            <div className="flex flex-wrap items-end gap-3">
+                <label className="text-xs font-semibold text-ink-muted">
+                  Source kind
+                  <select
+                    className="mt-1 block surface-field px-3 py-1.5 text-sm"
+                    value={sourceKind}
+                    onChange={(event) =>
+                      setSourceKind(event.target.value as TelemetryImportRequestOptions["sourceKind"])
+                    }
+                  >
+                    <option value="unmapped">Unmapped (default)</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-ink-muted">
+                  On conflict
+                  <select
+                    className="mt-1 block surface-field px-3 py-1.5 text-sm"
+                    value={conflictPolicy}
+                    onChange={(event) =>
+                      setConflictPolicy(event.target.value as TelemetryImportRequestOptions["conflictPolicy"])
+                    }
+                  >
+                    <option value="reject">Reject (default)</option>
+                    <option value="overwrite">Overwrite</option>
+                  </select>
+                </label>
+            </div>
+          )}
+          nextDisabled={commitBlocked}
+          onSubmit={(body) => {
+            if (commitBlocked || commitMutation.isPending) return;
+            commitMutation.mutate({
+              sourceKind: body.sourceKind === "manual" ? "manual" : "unmapped",
+              conflictPolicy: body.conflictPolicy === "overwrite" ? "overwrite" : "reject",
+            });
+          }}
+          onCancel={reset}
+          submitting={commitMutation.isPending}
+          submitError={commitMutation.error ? apiErrorMessage(commitMutation.error) : null}
+        />
       </SectionCard>
 
       {preview ? (
@@ -166,15 +215,6 @@ export function TelemetryImportPage({ user }: TelemetryImportPageProps) {
               </tbody>
             </table>
           ) : null}
-          <button
-            type="button"
-            className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
-            disabled={preview.acceptedCount === 0 || commitMutation.isPending || commitResult !== null}
-            aria-busy={commitMutation.isPending}
-            onClick={() => commitMutation.mutate()}
-          >
-            {commitResult ? "Committed" : commitMutation.isPending ? "Committing…" : "Commit"}
-          </button>
         </SectionCard>
       ) : null}
 

@@ -6,6 +6,7 @@ import {
   MAX_ASSET_IMAGES_PER_ASSET,
   NO_CONTROL_CHARACTERS,
   assetImageDtoSchema,
+  copilotAssetImageUploadModelBodySchema,
 } from "./asset-images";
 import { z } from "zod";
 import { livenessResponseSchema, queueHealthSchema } from "./health";
@@ -224,4 +225,20 @@ export function assertStorageSectionIsOptionalOnLiveness(): void {
     withBadStorage.success === false,
     "livenessResponseSchema must refuse a malformed storage section",
   );
+}
+
+/** `F4.283` (Amendment 8, Q18): the copilot's image upload body — the route's caption rule, and a file reference. */
+export function assertCopilotImageBodyAcceptsACaptionAndFile(): void {
+  const parsed = copilotAssetImageUploadModelBodySchema.safeParse({ caption: "Front panel", file: { kind: "attachment", index: 1 } });
+  assert(parsed.success, "the copilot image body must accept a caption and an attachment reference");
+}
+
+export function assertCopilotImageBodyRefusesALongCaption(): void {
+  const parsed = copilotAssetImageUploadModelBodySchema.safeParse({ caption: "x".repeat(1001), file: { kind: "attachment", index: 1 } });
+  assert(!parsed.success, "the copilot image body must refuse a 1001-character caption");
+}
+
+export function assertCopilotImageBodyRefusesAnUnknownKey(): void {
+  const parsed = copilotAssetImageUploadModelBodySchema.safeParse({ file: { kind: "attachment", index: 1 }, data: "AAAA" });
+  assert(!parsed.success, "the copilot image body must refuse an unknown key (no bytes in a body)");
 }

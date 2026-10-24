@@ -41,6 +41,9 @@ import { checkNotification, type CopilotNotificationChecks, NOTIFICATION_ENTRY_I
 import { NotificationProposalCheckService } from "../notifications/notification-proposal-check.service";
 import { checkReport, type CopilotReportChecks, REPORT_ENTRY_IDS, reportEmailRefusal } from "./copilot-propose-reports";
 import { ReportProposalCheckService } from "../reports/report-proposal-check.service";
+import { checkFile, type CopilotFileChecks, FILE_ENTRY_IDS } from "./copilot-propose-files";
+import { TelemetryProposalCheckService } from "../admin/telemetry-entry/telemetry-proposal-check.service";
+import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import {
   OUTWARD_ENTRY_IDS,
   PROPOSE_OUTWARD_NOT_ASKED_ERROR,
@@ -242,6 +245,8 @@ export interface CopilotProposeServices {
   readonly notifications?: CopilotNotificationChecks;
   /** `F4.280` (Amendment 8 D2, D4, D5): the report check; optional for the same reason (`PROPOSE_REPORTS_UNAVAILABLE_ERROR`). */
   readonly reports?: CopilotReportChecks;
+  /** `F4.283` (Amendment 8 Q18–Q21): the telemetry and image checks; optional for the same reason (`PROPOSE_FILES_UNAVAILABLE_ERROR`). */
+  readonly files?: CopilotFileChecks;
 }
 
 /**
@@ -492,7 +497,11 @@ export function createCopilotProposeTools(
     if (await services.pending.hasOpen(ctx.identity.id, ctx.conversationId)) {
       return { ok: false, error: PROPOSE_OPEN_CHANGE_ERROR };
     }
-    const fleetRow = entry.target.kind === "fleet" || entry.target.kind === "pointKey" || entry.target.kind === "vocabulary";
+    const fleetRow =
+      entry.target.kind === "fleet" ||
+      entry.target.kind === "pointKey" ||
+      entry.target.kind === "vocabulary" ||
+      entry.target.kind === "telemetry";
     if (fleetRow && ctx.conversationOrganizationId === null) return { ok: false, error: PROPOSE_FLEET_UNBOUND_ERROR };
     const target = await services.targets.resolve(
       entry,
@@ -546,6 +555,14 @@ export function createCopilotProposeTools(
       ruleNote = ` ${checked.note}`;
       cardBody = checked.cardBody;
     }
+    // `F4.283` (Q18–Q21): the file's name and SHA-256 (never its bytes), then the route's own checks, read-only.
+    if (FILE_ENTRY_IDS.has(entry.id)) {
+      const checked = await checkFile(services.files, entry, params, body, target.organizationId, ctx);
+      if (!checked.ok) return checked;
+      body = checked.body;
+      if (checked.note !== "") ruleNote = ` ${checked.note}`;
+      cardBody = checked.cardBody;
+    }
     if (LAYOUT_ENTRY_IDS.has(entry.id)) {
       const checked = await checkLayout(entry, params, body, ctx);
       if (!checked.ok) return checked;
@@ -573,7 +590,7 @@ export function createCopilotProposeTools(
     }
     // `F3.87` PR 6a (Amendment 3 A3): an upload entry stores the text fields, the file's name and
     // SHA-256, and the SVG text under its `cardOnly` key, after the route's own parser passed it.
-    if (entry.upload !== undefined) {
+    if (entry.upload?.kind === "svg") {
       // `F3.87` PR 7: an attached file is the source by its 1-based index; a file that is not an SVG has no text.
       const attached = (ctx.attachments ?? []).map((file) =>
         file.svgText === undefined ? undefined : { filename: file.filename, svgText: file.svgText },
@@ -710,8 +727,20 @@ export class CopilotProposeToolSet implements CopilotProposeTools {
     @Inject(NotificationProposalCheckService) notifications: NotificationProposalCheckService,
     // `F4.280` (Amendment 8 D2, D5): APPENDED (slot 5) — the report check (`ReportsModule` exports it).
     @Inject(ReportProposalCheckService) reports: ReportProposalCheckService,
+    // `F4.283` (Amendment 8 Q18–Q21): APPENDED (slots 6 and 7) — the telemetry check (`AdminModule`
+    // exports it) and the image pre-check (`AssetsModule` exports `AssetImagesWriteService`).
+    @Inject(TelemetryProposalCheckService) telemetry: TelemetryProposalCheckService,
+    @Inject(AssetImagesWriteService) images: AssetImagesWriteService,
   ) {
-    this.tools = createCopilotProposeTools({ targets, pending, layouts, rules, notifications, reports });
+    this.tools = createCopilotProposeTools({
+      targets,
+      pending,
+      layouts,
+      rules,
+      notifications,
+      reports,
+      files: { telemetry, images },
+    });
   }
 
   get registry(): ToolRegistry<string> {

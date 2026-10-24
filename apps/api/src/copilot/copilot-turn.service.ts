@@ -45,7 +45,14 @@ import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pen
 import { accessIntentOf } from "./copilot-access-intent";
 import { assetIntentOf } from "./copilot-asset-intent";
 import { outwardIntentOf, reportEmailIntentOf } from "./copilot-outward-intent";
-import { hasImageAttachment, hasPdfWithoutImage, inspectAttachments, type TurnAttachment, type UploadedAttachment } from "./copilot-attachments";
+import {
+  hasImageAttachment,
+  hasPdfWithoutImage,
+  inspectAttachments,
+  isCarryOnly,
+  type TurnAttachment,
+  type UploadedAttachment,
+} from "./copilot-attachments";
 import {
   type CopilotOpenWizardRecord,
   FILL_DROPPED_BY_OPEN_PAGE_NOTE,
@@ -308,6 +315,13 @@ function attachmentLine(attachment: TurnAttachment): string {
   const head =
     `[Attachment ${attachment.index}: ${JSON.stringify(attachment.filename)}, ${attachment.mediaType}, ` +
     `${attachment.byteSize} bytes`;
+  // `F4.283` (Amendment 8 Q20, owner ruling 2026-10-24 drafter choice 9): a data file stays in the browser.
+  if (isCarryOnly(attachment.mediaType)) {
+    return (
+      `${head}; a data file kept in the browser, not read here — to import it call propose_telemetry_import ` +
+      `with file {"kind":"attachment","index":${attachment.index}}]`
+    );
+  }
   if (attachment.mediaType !== "image/svg+xml") return `${head}]`;
   if (attachment.svgSummary !== undefined) {
     return (
@@ -322,7 +336,8 @@ function attachmentLine(attachment: TurnAttachment): string {
  * `F3.87` PR 7 (Amendment 3 A4, A5): the user message the loop sends. Without
  * files it is the text; with files, the text, one line naming each file, and
  * each image or PDF as a native part. An `.svg` is never a provider part: the
- * model gets the parser's summary as text.
+ * model gets the parser's summary as text. `F4.283` (Q20): nor is a CSV or
+ * XLSX — the model gets its name, type and size, and the bytes stay in the browser.
  */
 export function userTurnContent(message: string, attachments: readonly TurnAttachment[]): LlmUserContent {
   if (attachments.length === 0) return message;
@@ -331,7 +346,8 @@ export function userTurnContent(message: string, attachments: readonly TurnAttac
     parts.push({ type: "text", text: attachmentLine(attachment) });
     if (attachment.mediaType === "application/pdf") {
       parts.push({ type: "document", mediaType: "application/pdf", data: attachment.data, filename: attachment.filename });
-    } else if (attachment.mediaType !== "image/svg+xml") {
+    } else if (attachment.mediaType === "image/png" || attachment.mediaType === "image/jpeg" || attachment.mediaType === "image/webp") {
+      // `F4.283` (Q20): a CSV or XLSX is carry-only and never a provider part; an SVG is text.
       parts.push({ type: "image", mediaType: attachment.mediaType, data: attachment.data });
     }
   }

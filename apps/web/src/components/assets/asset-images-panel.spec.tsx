@@ -126,8 +126,18 @@ function cellOf(label: string): ReturnType<typeof within> {
   return within(cell);
 }
 
+/**
+ * `F4.283`: the upload is the `assetImage.upload` wizard — its Next waits for an acceptable file
+ * (the old Upload button's rule), then Review's Submit sends the request.
+ */
 function uploadButton(): HTMLElement {
-  return screen.getByRole("button", { name: "Upload" });
+  return screen.getByRole("button", { name: "Next" });
+}
+
+/** Next, then Submit on the Review step: the old single Upload click. */
+async function submitUpload(): Promise<void> {
+  await userEvent.click(uploadButton());
+  await userEvent.click(await screen.findByRole("button", { name: "Submit" }));
 }
 
 /** A1 — with no file chosen, Upload is disabled and says what is missing. */
@@ -225,7 +235,7 @@ export async function pressingUploadPostsTheFileAndCaptionOnce(): Promise<void> 
   await userEvent.type(screen.getByLabelText("Caption"), "Front panel");
 
   const before = upload.mock.calls.length;
-  await userEvent.click(uploadButton());
+  await submitUpload();
 
   await waitFor(() => {
     expect(upload.mock.calls.length - before).toBe(1);
@@ -251,7 +261,7 @@ export async function aSuccessfulUploadRefetchesTheList(): Promise<void> {
   chooseFile(pngFile());
 
   const before = list.mock.calls.length;
-  await userEvent.click(uploadButton());
+  await submitUpload();
 
   await waitFor(() => {
     expect(list.mock.calls.length - before).toBe(1);
@@ -269,7 +279,7 @@ export async function aRefusedOversizeUploadRendersTheTenMbSentence(): Promise<v
   renderPanel();
   await screen.findByText("No images for this asset yet.");
   chooseFile(pngFile());
-  await userEvent.click(uploadButton());
+  await submitUpload();
 
   expect(await screen.findByText("Image is too large — the limit is 10 MB.")).toBeInTheDocument();
   // The server's own words for a 413 are generic; the negative proves the
@@ -300,7 +310,7 @@ export async function aConflictRendersTheApiSentenceUnwrapped(): Promise<void> {
   renderPanel();
   await screen.findByText("Front panel");
   chooseFile(pngFile());
-  await userEvent.click(uploadButton());
+  await submitUpload();
 
   expect(
     await screen.findByText(

@@ -77,3 +77,37 @@ export const telemetryWriteResponseSchema = z.object({
   result: telemetryWriteResultDtoSchema,
   rejected: z.array(rejectedRowDtoSchema),
 });
+
+/**
+ * The F1.8/F1.9 manual-entry request body. `sourceKind` is deliberately
+ * absent — the controller hardcodes `"manual"`, so a caller cannot ask for
+ * anything else; `.strict()` turns an attempt into a 400 rather than a
+ * silently-ignored key. Row count is capped at 50 (A4a's M2, discharged for
+ * this endpoint only — F1.9's own bulk-import cap is separate).
+ *
+ * `F4.283` (ADR 0099 Amendment 8, ADR 0030): moved here from
+ * `apps/api/src/admin/telemetry-entry/manual-readings.schema.ts` with the same
+ * rules, so the copilot catalog carries the route's own export by identity.
+ */
+export const manualReadingsBodySchema = z
+  .object({
+    rows: z.array(telemetryEntryRowSchema).min(1).max(50),
+    conflictPolicy: z.enum(["reject", "overwrite"]).default("reject"),
+  })
+  .strict();
+
+/**
+ * `F4.283` (Amendment 8, Q21): the body the copilot proposes manual readings
+ * with — the route's rows, and `conflictPolicy` fixed to `"reject"`; an
+ * overwrite stays on the telemetry pages. The propose step stores `"reject"`
+ * explicitly when the model leaves it out, so the card and the request say it.
+ */
+export const copilotManualReadingsModelBodySchema = z
+  .object({
+    rows: z.array(telemetryEntryRowSchema).min(1).max(50),
+    conflictPolicy: z.literal("reject").optional(),
+  })
+  .strict();
+
+export type ManualReadingsBody = z.infer<typeof manualReadingsBodySchema>;
+export type CopilotManualReadingsModelBody = z.infer<typeof copilotManualReadingsModelBodySchema>;

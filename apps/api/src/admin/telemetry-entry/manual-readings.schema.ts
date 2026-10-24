@@ -1,16 +1,9 @@
-import { telemetryEntryRowSchema } from "@bms/shared";
-import { z } from "zod";
-
 /**
- * The F1.8/F1.9 manual-entry request body. `sourceKind` is deliberately
- * absent — the controller hardcodes `"manual"`, so a caller cannot ask for
- * anything else; `.strict()` turns an attempt into a 400 rather than a
- * silently-ignored key. Row count is capped at 50 (A4a's M2, discharged for
- * this endpoint only — F1.9's own bulk-import cap is separate).
+ * The F1.8/F1.9 manual-entry request body. `F4.283` (ADR 0099 Amendment 8,
+ * ADR 0030): it lives in `packages/shared/src/contracts/telemetry-entry.ts`,
+ * so the copilot catalog carries the route's own export by identity.
+ * Re-exported here under its old name for the OpenAPI registry, the
+ * strict-body ledger and this file's spec; the controller imports it from
+ * `@bms/shared`.
  */
-export const manualReadingsBodySchema = z
-  .object({
-    rows: z.array(telemetryEntryRowSchema).min(1).max(50),
-    conflictPolicy: z.enum(["reject", "overwrite"]).default("reject"),
-  })
-  .strict();
+export { manualReadingsBodySchema } from "@bms/shared";

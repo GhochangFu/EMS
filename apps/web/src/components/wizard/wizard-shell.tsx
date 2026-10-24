@@ -55,6 +55,11 @@ type WizardShellProps = {
    * when the shell saw a change itself.
    */
   dirty?: boolean;
+  /**
+   * `F4.283`: the page holds a value the steps do not (a file beside the wizard) and Next cannot
+   * proceed without it; the page says why beside the shell.
+   */
+  nextDisabled?: boolean;
 };
 
 /**
@@ -186,7 +191,12 @@ export function WizardShell(props: WizardShellProps) {
                 Back
               </button>
             )}
-            <button type="button" onClick={goNext} className="surface-button-primary px-3 py-1 text-xs">
+            <button
+              type="button"
+              onClick={goNext}
+              disabled={props.nextDisabled === true}
+              className="surface-button-primary px-3 py-1 text-xs disabled:opacity-50"
+            >
               Next
             </button>
           </div>

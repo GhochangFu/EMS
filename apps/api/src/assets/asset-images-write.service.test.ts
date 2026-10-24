@@ -49,6 +49,9 @@ import {
   assertUploadPutsTheObjectBeforeTheTransactionCommits,
   assertUploadStoresTheResolvedActorAsCreatedBy,
   assertVanishedAssetUnderForUpdateRejectsNotFound,
+  assertPreviewUploadAtTheCapIsTheCapSentence,
+  assertPreviewUploadUnderTheCapWritesNothing,
+  assertPreviewUploadWithoutStorageIs503,
 } from "./asset-images-write.service.spec";
 
 /**
@@ -249,4 +252,10 @@ describe("F3.4 — AssetImagesWriteService.upload over fakes", () => {
   it("the audit payload carries ids and the type, never the filename or the caption", async () => {
     await assertUploadAuditPayloadCarriesNoFilenameOrCaption();
   });
+});
+
+describe("F4.283 — AssetImagesWriteService.previewUpload (ADR 0099 Amendment 8)", () => {
+  it("at the cap throws the cap sentence", () => assertPreviewUploadAtTheCapIsTheCapSentence());
+  it("without storage throws the 503", () => assertPreviewUploadWithoutStorageIs503());
+  it("under the cap writes nothing", () => assertPreviewUploadUnderTheCapWritesNothing());
 });

@@ -343,3 +343,15 @@ export const copilotRejectResponseDtoSchema = z
     messages: z.array(copilotMessageDtoSchema),
   })
   .strict();
+
+/**
+ * `F4.283` (ADR 0099 Amendment 8, Q18, Q19): the model names an attached file of this turn by its
+ * 1-based index. One shape for the three file-borne model bodies (the telemetry import, the asset
+ * image upload); the bytes never reach the body — the browser keeps the `File`, the pending row
+ * stores its name and SHA-256.
+ */
+export const copilotAttachmentRefSchema = z
+  .object({ kind: z.literal("attachment"), index: z.number().int().min(1).max(COPILOT_ATTACHMENTS_MAX) })
+  .strict();
+
+export type CopilotAttachmentRef = z.infer<typeof copilotAttachmentRefSchema>;

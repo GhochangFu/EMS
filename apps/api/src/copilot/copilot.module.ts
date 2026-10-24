@@ -128,6 +128,10 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * report controllers. Neither imports this module; `DashboardModule` ->
  * `CalcModule` -> `TelemetryModule` is already in this module's graph.
  *
+ * `F4.283`: `AdminModule` (already imported) exports `TelemetryProposalCheckService`
+ * and `AssetsModule` (already imported) exports `AssetImagesWriteService`, the
+ * file-borne data proposal checks (slots 6 and 7 of `CopilotProposeToolSet`).
+ *
  * `F4.277`: `AdminModule` (already imported) exports `AuditAdminService` and
  * `SystemStatusModule` exports `SystemStatusService` for the audit-log and
  * system-status read tools. `SystemStatusModule` imports only `AuthModule`,

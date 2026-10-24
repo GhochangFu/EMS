@@ -14,6 +14,10 @@ import {
   assertTheProposeToolsInjectTheNotificationCheck,
   assertTheProposeToolsInjectTheReportCheck,
   assertTheModuleImportsTheReportsModule,
+  assertTheAdminModuleExportsTheTelemetryCheck,
+  assertTheAssetsModuleExportsTheImageWriteService,
+  assertTheProposeToolsInjectTheImageWriteService,
+  assertTheProposeToolsInjectTheTelemetryCheck,
   assertTheReportsModuleExportsTheCopilotServices,
   assertTheMaintenanceModuleExportsItsService,
   assertTheModuleImportsTheMaintenanceModule,
@@ -43,6 +47,10 @@ describe("F3.86 PR 4 — CopilotModule wiring for the user targets", () => {
     assertTheEscalationServiceInjectsTheAuditFunnel());
   it("F4.280: the propose tools inject ReportProposalCheckService", () => assertTheProposeToolsInjectTheReportCheck());
   it("F4.280: the module imports ReportsModule", () => assertTheModuleImportsTheReportsModule());
+  it("F4.283: the propose tools inject the telemetry check at slot 6", () => assertTheProposeToolsInjectTheTelemetryCheck());
+  it("F4.283: the propose tools inject AssetImagesWriteService at slot 7", () => assertTheProposeToolsInjectTheImageWriteService());
+  it("F4.283: AdminModule exports the telemetry check", () => assertTheAdminModuleExportsTheTelemetryCheck());
+  it("F4.283: AssetsModule exports AssetImagesWriteService", () => assertTheAssetsModuleExportsTheImageWriteService());
   it("F4.280: ReportsModule exports the check and ReportSchedulesService", () =>
     assertTheReportsModuleExportsTheCopilotServices());
   it("F4.281: the module imports MaintenanceModule", () => assertTheModuleImportsTheMaintenanceModule());

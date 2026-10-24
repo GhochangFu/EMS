@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-import { MAX_ASSET_IMAGE_CAPTION_CHARS, MAX_ASSET_IMAGE_FILENAME_CHARS, NO_CONTROL_CHARACTERS } from "@bms/shared";
-
 /**
  * `F3.3` (ADR 0066 decision 6) — the path parameters of the two asset-image
  * read routes.
@@ -33,44 +31,10 @@ export const assetIdParamSchema = z.string().uuid();
 
 /**
  * `F3.4` (ADR 0066 Amendment 3, R-8) — the multipart upload's non-file
- * field, and the sniffed-from-`file.originalname` filename.
- *
- * **Named `*FieldsSchema`/`*FilenameSchema`, not `*BodySchema`.** The upload
- * route is multipart, and `openapi-registry.ts`'s "multipart routes are
- * deliberately absent" paragraph (ADR 0029 decisions 1 and 3) describes only
- * a JSON `*BodySchema`/`*QuerySchema` pair; `tests/adr-0029-openapi-contract
- * .test.ts` forbids exactly those two suffixes inline in a controller. These
- * two schemas carry neither suffix and live in this `*.schema.ts` file, not
- * inline in a controller, so the scan has nothing to flag either way.
- *
- * No `.refine` on either schema, so decision 10's `.describe()` rule on a
- * `.refine` has nothing to hold here.
+ * field and the decoded filename. `F4.283` (ADR 0099 Amendment 8, ADR 0030):
+ * both live in `packages/shared/src/contracts/asset-images.ts`, so the copilot
+ * catalog carries the route's own export by identity. Re-exported here for the
+ * schema specs; the controller imports them from `@bms/shared`.
  */
-export const assetImageUploadFieldsSchema = z
-  .object({
-    caption: z.string().trim().max(MAX_ASSET_IMAGE_CAPTION_CHARS).regex(NO_CONTROL_CHARACTERS).optional(),
-  })
-  .strict();
-
-export type AssetImageUploadFields = z.infer<typeof assetImageUploadFieldsSchema>;
-
-/**
- * The filename multer reports on `file.originalname`, after
- * `decodeMulterFilename` has undone busboy's latin1 decode.
- *
- * **The control-character refusal (post-merge sweep, security Low)** mirrors
- * the shared DTO's, through the **same imported pattern** — a second copy of
- * a security regex drifts in silence (§4.8). It matters here as well as in
- * the DTO because `.trim()` only removes *surrounding* whitespace: `a\r\nb
- * .png` keeps its interior CR LF and would otherwise be stored and read back
- * verbatim. `.min(1)` stays: an empty name is a missing name, not a
- * control character.
- */
-export const assetImageFilenameSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(MAX_ASSET_IMAGE_FILENAME_CHARS)
-  .regex(NO_CONTROL_CHARACTERS);
-
-export type AssetImageFilename = z.infer<typeof assetImageFilenameSchema>;
+export { assetImageFilenameSchema, assetImageUploadFieldsSchema } from "@bms/shared";
+export type { AssetImageFilename, AssetImageUploadFields } from "@bms/shared";

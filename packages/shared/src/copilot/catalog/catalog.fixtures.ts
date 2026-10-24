@@ -250,4 +250,12 @@ export const FIXTURES: Readonly<
   },
   "maintenanceSchedule.activate": { body: { active: true }, params: { id: ROW }, names: TARGET_NAME },
   "maintenanceSchedule.deactivate": { body: { active: false, reason: "Season over" }, params: { id: ROW }, names: TARGET_NAME },
+  // `F4.283` (Amendment 8) — file-borne data; the telemetry writes name the bound organization, the image its asset.
+  "telemetry.import": { body: { sourceKind: "manual", file: { kind: "attachment", index: 1 } }, params: {}, names: ORG_NAME },
+  "telemetryReading.create": {
+    body: { rows: [{ assetId: ROW, pointKey: "kw", value: 12.5, time: "2026-10-20T09:00:00.000Z" }] },
+    params: {},
+    names: ORG_NAME,
+  },
+  "assetImage.upload": { body: { caption: "Front panel", file: { kind: "attachment", index: 1 } }, params: { assetId: ROW }, names: TARGET_NAME },
 };

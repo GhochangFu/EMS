@@ -42,6 +42,7 @@ import {
   thePointKeyEntriesAreFleetTargets,
   theOnboardingCommitIsAServerEntry,
   anUploadModelBodyAddsTheSvgAndOnlyThere,
+  aFileUploadModelBodyAddsTheFileNotTheSvg,
   theReleaseThreeEntryFieldsAreWellFormed,
   noCardOnlyKeyIsABodyField,
   theHashLeavesOutClientOnlyAndCardOnlyKeys,
@@ -93,6 +94,7 @@ describe("F3.86 PR 6 — the onboarding commit (ADR 0099 decision 7)", () => {
 
 describe("F3.87 PR 2 — release-3 entry fields (ADR 0099 Amendment 3 A1, A3; owner ruling Q1)", () => {
   it("adds svg to an upload modelBody, and only there", () => anUploadModelBodyAddsTheSvgAndOnlyThere());
+  it("adds file, not svg, to a file upload modelBody (F4.283)", () => aFileUploadModelBodyAddsTheFileNotTheSvg());
   it("makes an upload entry a POST with a modelBody, offered to copilot roles only", () => theReleaseThreeEntryFieldsAreWellFormed());
   it("refuses a malformed upload or offeredTo (negative control)", () => aMalformedReleaseThreeEntryIsRefused());
   it("never makes a cardOnly key a body field", () => noCardOnlyKeyIsABodyField());
@@ -117,7 +119,7 @@ describe("F3.85 PR 11a — formula paths into array items (plan §11.3 Unit 2)",
 
 describe("F3.87 PR 6 — the library, symbol and role entries (ADR 0099 Amendment 3 A1, A3; ruling Q4)", () => {
   it("offers the five library and symbol entries to the authoring roles", () => theLibraryEntriesAreForTheAuthors());
-  it("makes the symbol upload the one multipart entry, svgText card-only", () => theSymbolUploadIsTheMultipartEntry());
+  it("makes the symbol upload the one SVG upload entry, svgText card-only", () => theSymbolUploadIsTheMultipartEntry());
   it("takes the model's SVG as text or as an attachment index only", () => theUploadModelBodyTakesTextOrAnAttachment());
   it("offers assetRole.create to the global admin only", () => theRoleCreateIsForTheGlobalAdminOnly());
   it("leaves no mimic or role route pending", () => noMimicOrRoleRouteIsPending());

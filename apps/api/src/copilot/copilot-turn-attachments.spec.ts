@@ -516,3 +516,54 @@ export async function aProviderErrorOnAnImageTurnKeepsTheUnreadableReplyAlone():
   expect(vision.calls).toBe(1);
   expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_ATTACHMENT_UNREADABLE_REPLY });
 }
+
+/** `F4.283` (Amendment 8 Q20): a CSV turn's file. */
+const CSV_BYTES = Buffer.from("asset_code,point_key,value,time\nPUMP-1,kw,12.5,2026-10-20T09:00:00Z\n", "utf8");
+const CSV_FILE: UploadedAttachment = { buffer: CSV_BYTES, originalname: "readings.csv" };
+
+/** Q20: a CSV is never sent to the provider — no image and no document part. Mutation: send it as a part → red. */
+export async function aCsvIsNeverAProviderPart(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const h = harness(llm);
+  await fileTurn(h, "import this", [CSV_FILE]);
+  const content = lastUserContent(llm) as Array<{ type: string }>;
+  expect(content.filter((part) => part.type === "image" || part.type === "document")).toEqual([]);
+}
+
+/** The positive sibling: a PNG beside the CSV still reaches the provider as an image part. */
+export async function aPngBesideACsvIsStillAnImagePart(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const h = harness(llm);
+  await fileTurn(h, "import this", [CSV_FILE, PNG_FILE]);
+  const content = lastUserContent(llm) as Array<{ type: string }>;
+  expect(content.filter((part) => part.type === "image").length).toBe(1);
+}
+
+/** Drafter choice 9: the model's line for a CSV names the import tool and the index. */
+export async function aCsvLineNamesTheImportTool(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const h = harness(llm);
+  await fileTurn(h, "import this", [CSV_FILE]);
+  const content = lastUserContent(llm) as Array<{ type: string; text?: string }>;
+  const line = content.find((part) => part.type === "text" && part.text?.startsWith("[Attachment 1:"))?.text ?? "";
+  expect(line).toContain('propose_telemetry_import with file {"kind":"attachment","index":1}');
+}
+
+/** A4 "nothing is stored": the stored row holds one placeholder and none of the CSV's bytes. */
+export async function aCsvTurnStoresOnlyThePlaceholder(): Promise<void> {
+  const llm = new FakeLlmProvider([{ kind: "final", text: "ok" }]);
+  const h = harness(llm);
+  await fileTurn(h, "import this", [CSV_FILE]);
+  const row = h.history.find((m) => m.role === "user")?.content ?? "";
+  expect([row.split("[Attachment ").length - 1, row.includes("PUMP-1")]).toEqual([1, false]);
+}
+
+/** Q20: Amendment 3 A7's switch applies to a CSV turn — 403, not counted. Mutation: skip the switch for a data file → red. */
+export async function aCsvTurnWithTheSwitchOffIs403(): Promise<void> {
+  const llm = new FakeLlmProvider([]);
+  const h = harness(llm, { attachmentsOn: false });
+  expect(await statusOf(() => fileTurn(h, "import this", [CSV_FILE]))).toMatchObject({
+    status: 403,
+    body: expect.objectContaining({ message: COPILOT_ATTACHMENTS_OFF_MESSAGE }),
+  });
+}

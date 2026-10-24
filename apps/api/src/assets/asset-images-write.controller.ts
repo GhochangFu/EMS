@@ -14,14 +14,16 @@ import {
 } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
 
-import { MAX_ASSET_IMAGE_BYTES } from "@bms/shared";
+import { assetImageFilenameSchema, assetImageUploadFieldsSchema, MAX_ASSET_IMAGE_BYTES } from "@bms/shared";
 import type { AssetImageDto, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
+import { CopilotUploadChangeInterceptor } from "../copilot/copilot-upload-change.interceptor";
+import { CopilotUploadRoute } from "../copilot/copilot-upload-route";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 
-import { assetIdParamSchema, assetImageFilenameSchema, assetImageParamsSchema, assetImageUploadFieldsSchema } from "./asset-images.schema";
+import { assetIdParamSchema, assetImageParamsSchema } from "./asset-images.schema";
 import { AssetImagesWriteService } from "./asset-images-write.service";
 import { decodeMulterFilename } from "./multer-filename";
 
@@ -115,10 +117,14 @@ export class AssetImagesWriteController {
   // `fieldSize: 4096` caps each of those two fields: multer's default is
   // 1 MB **per field**, so `fields: 2` alone still admitted 2 MB of caption
   // to be buffered and handed to a `.max(1000)` parse that then refused it.
+  // `F4.283` (ADR 0099 Amendment 8 Q19): the copilot's multipart Confirm target. Its body hash is
+  // compared after multer, by the stage that follows the file interceptor in the same call.
+  @CopilotUploadRoute()
   @UseInterceptors(
     FileInterceptor("file", {
       limits: { fileSize: MAX_ASSET_IMAGE_BYTES, files: 1, fields: 2, fieldSize: 4096 },
     }),
+    CopilotUploadChangeInterceptor,
   )
   async upload(
     @CurrentUser() user: JwtPayload,

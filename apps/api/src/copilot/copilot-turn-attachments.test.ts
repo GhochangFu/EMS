@@ -48,3 +48,11 @@ describe("F4.268 — a drawing sent as a PDF (ADR 0090 Amendment 3 ruling 6)", (
   it("the call cap on a PDF-only turn keeps the plain reply", () => T.aCallCapOnAPdfTurnKeepsThePlainReply());
   it("a provider error on an image turn keeps the unreadable reply alone", () => T.aProviderErrorOnAnImageTurnKeepsTheUnreadableReplyAlone());
 });
+
+describe("F4.283 — a CSV turn is carry-only (ADR 0099 Amendment 8 Q20)", () => {
+  it("a CSV is never an image or document part", () => T.aCsvIsNeverAProviderPart());
+  it("a PNG beside a CSV is still an image part", () => T.aPngBesideACsvIsStillAnImagePart());
+  it("the CSV line names propose_telemetry_import and the index", () => T.aCsvLineNamesTheImportTool());
+  it("a CSV turn stores one placeholder and no bytes", () => T.aCsvTurnStoresOnlyThePlaceholder());
+  it("A7: a CSV turn with the switch off is 403", () => T.aCsvTurnWithTheSwitchOffIs403());
+});

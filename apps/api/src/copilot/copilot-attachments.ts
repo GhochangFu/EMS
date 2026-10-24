@@ -4,6 +4,7 @@ import {
   COPILOT_ATTACHMENTS_MAX,
   MAX_COPILOT_ATTACHMENT_BYTES,
   MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES,
+  MAX_IMPORT_FILE_BYTES,
   MAX_MIMIC_SYMBOL_SVG_BYTES,
   mimicSymbolFilenameSchema,
 } from "@bms/shared";
@@ -19,8 +20,21 @@ import { parseSvgSymbol, SvgSymbolRefusal } from "../mimic-symbol-libraries/svg-
  */
 export type UploadedAttachment = { readonly buffer: Buffer; readonly originalname: string };
 
-/** The five types a turn accepts, decided from the bytes, never from the client's label or the name. */
-export type AttachmentMediaType = "image/png" | "image/jpeg" | "image/webp" | "application/pdf" | "image/svg+xml";
+/**
+ * The seven types a turn accepts, decided from the bytes, never from the client's label or the name.
+ * `F4.283` (Amendment 8 Q20): CSV and XLSX are carry-only — never sent to the provider.
+ */
+export type AttachmentMediaType =
+  | "image/png"
+  | "image/jpeg"
+  | "image/webp"
+  | "application/pdf"
+  | "image/svg+xml"
+  | "text/csv"
+  | typeof XLSX_MEDIA_TYPE;
+
+/** The XLSX media type. */
+export const XLSX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
 /**
  * One inspected file of a turn. `data` is the bytes for the provider and is
@@ -45,7 +59,9 @@ export type AttachmentInspection =
   | { readonly ok: false; readonly status: 400 | 413; readonly message: string };
 
 export const COPILOT_ATTACHMENTS_TOO_MANY_MESSAGE = `Attach at most ${COPILOT_ATTACHMENTS_MAX} files to one message.`;
-export const COPILOT_ATTACHMENT_TYPE_MESSAGE = "Attach a PNG, JPEG, WebP, PDF or SVG file. Other file types are not read.";
+export const COPILOT_ATTACHMENT_TYPE_MESSAGE = "Attach a PNG, JPEG, WebP, PDF, SVG, CSV or XLSX file. Other file types are not read.";
+/** `F4.283` (Amendment 8 Q20): the import route's own cap. */
+export const COPILOT_ATTACHMENT_DATA_FILE_TOO_LARGE_MESSAGE = "A CSV or XLSX file may be at most 5 MiB.";
 export const COPILOT_ATTACHMENT_TOO_LARGE_MESSAGE = "An image or PDF may be at most 10 MB.";
 export const COPILOT_ATTACHMENTS_TOTAL_TOO_LARGE_MESSAGE = "The files of one message may be at most 10 MB together.";
 export const COPILOT_ATTACHMENT_SVG_TOO_LARGE_MESSAGE = "An SVG may be at most 64 KB.";
@@ -69,6 +85,39 @@ function isPdf(buffer: Buffer): boolean {
   return [0x25, 0x50, 0x44, 0x46, 0x2d].every((byte, index) => buffer[index] === byte);
 }
 
+/** `F4.283`: an XLSX is a zip — the local file header signature `50 4B 03 04`, compared as bytes. */
+function isZip(buffer: Buffer): boolean {
+  return [0x50, 0x4b, 0x03, 0x04].every((byte, index) => buffer[index] === byte);
+}
+
+/** The first bytes that decide a CSV. */
+const CSV_SNIFF_BYTES = 8192;
+
+/**
+ * `F4.283` (owner ruling 2026-10-24, drafter choice 1): CSV has no magic bytes. The first 8 KiB must
+ * decode as UTF-8 with no NUL, and the first line must hold a comma, a semicolon or a tab.
+ */
+function isCsv(buffer: Buffer): boolean {
+  const head = buffer.subarray(0, CSV_SNIFF_BYTES);
+  if (head.length === 0 || head.includes(0)) return false;
+  // A multi-byte character cut at the 8 KiB edge is not a decode failure of the file: up to three
+  // trailing bytes may be dropped, and only when the file goes on past the sniffed head.
+  const cuts = buffer.length > CSV_SNIFF_BYTES ? [0, 1, 2, 3] : [0];
+  const decoded = cuts.map((cut) => utf8OrNull(head.subarray(0, head.length - cut))).find((text) => text !== null);
+  if (decoded === undefined || decoded === null) return false;
+  const firstLine = decoded.replace(/^\uFEFF/, "").split(/\r?\n/, 1)[0] ?? "";
+  return /[,;\t]/.test(firstLine);
+}
+
+/** The bytes as strict UTF-8, or `null` when they are not UTF-8. */
+function utf8OrNull(bytes: Buffer): string | null {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
 function isSvg(buffer: Buffer): boolean {
   const head = buffer.subarray(0, SVG_SNIFF_BYTES).toString("utf8").replace(/^﻿/, "").trimStart();
   return (head.startsWith("<?xml") || head.startsWith("<svg")) && head.includes("<svg");
@@ -80,7 +129,20 @@ export function sniffAttachmentType(buffer: Buffer): AttachmentMediaType | null 
   if (image !== null) return image;
   if (isPdf(buffer)) return "application/pdf";
   if (isSvg(buffer)) return "image/svg+xml";
+  if (isZip(buffer)) return XLSX_MEDIA_TYPE;
+  if (isCsv(buffer)) return "text/csv";
   return null;
+}
+
+/**
+ * `F4.283` (Amendment 8 Q20): the data files a turn carries and never sends to the provider — the
+ * model gets the file name, the type and the size only, and the browser keeps the bytes.
+ */
+export const CARRY_ONLY_TYPES: ReadonlySet<AttachmentMediaType> = new Set(["text/csv", XLSX_MEDIA_TYPE]);
+
+/** Whether a file of this type is carry-only (never a provider part). */
+export function isCarryOnly(mediaType: AttachmentMediaType): boolean {
+  return CARRY_ONLY_TYPES.has(mediaType);
 }
 
 /** The types that travel to the provider as an image part (an SVG is text, a PDF a document part). */
@@ -129,6 +191,8 @@ export function inspectAttachments(files: readonly UploadedAttachment[]): Attach
     const byteSize = file.buffer.byteLength;
     if (mediaType === "image/svg+xml") {
       if (byteSize > MAX_MIMIC_SYMBOL_SVG_BYTES) return refused(413, COPILOT_ATTACHMENT_SVG_TOO_LARGE_MESSAGE);
+    } else if (isCarryOnly(mediaType)) {
+      if (byteSize > MAX_IMPORT_FILE_BYTES) return refused(413, COPILOT_ATTACHMENT_DATA_FILE_TOO_LARGE_MESSAGE);
     } else if (byteSize > MAX_COPILOT_ATTACHMENT_BYTES) {
       return refused(413, COPILOT_ATTACHMENT_TOO_LARGE_MESSAGE);
     }
