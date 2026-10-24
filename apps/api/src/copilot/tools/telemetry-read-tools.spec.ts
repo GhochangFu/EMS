@@ -386,7 +386,7 @@ export async function assertTheTurnAnswersTheLast24HoursFromATool(): Promise<voi
 }
 
 /**
- * The read registry's own budget. The F4.266 gate (`copilot-propose-tools.spec.ts`,
+ * The read registry's own budget. The F4.266 gate (`copilot-propose-budget.spec.ts`,
  * 52,000) measures the propose registry only; the turn sends this one beside
  * it. Measured 2026-10-23: 4,040 characters before F4.274 (11 tools), 6,630
  * after (16 tools); 9,028 after F4.275 (22 tools); 10,384 after F4.277 (24
