@@ -75,6 +75,10 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   // map (two controllers in one file; the walk takes the prefix from the last `@Controller`).
   { file: "apps/api/src/notifications/notifications.controller.ts", full: true },
   { file: "apps/api/src/notifications/escalation-profiles.controller.ts", full: true },
+  // F4.280 (Amendment 8): the report schedules (two entries, the DELETE excluded) and the file
+  // routes (the on-demand save an entry, the DELETE excluded).
+  { file: "apps/api/src/reports/report-schedules.controller.ts", full: true },
+  { file: "apps/api/src/reports/report-files.controller.ts", full: true },
 ];
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;

@@ -59,6 +59,9 @@ const RULES: QueryKey = ["rules"];
  */
 const NOTIFICATION_CHANNELS: QueryKey = ["notifications", "channels"];
 const NOTIFICATION_DELIVERIES: QueryKey = ["notifications", "deliveries"];
+/** `F4.280`: the Reports page's schedule list and its History list (`REPORT_SCHEDULES_QUERY_KEY`, `REPORT_FILES_QUERY_KEY`). */
+const REPORT_SCHEDULES: QueryKey = ["report-schedules"];
+const REPORT_FILES: QueryKey = ["report-files"];
 const ESCALATION_PROFILES: QueryKey = ["escalation", "profiles"];
 const ESCALATION_DEFAULTS: QueryKey = ["escalation", "defaults"];
 // `F4.255` PR 3: the copilot dock's list of an organization's open onboarding drafts.
@@ -185,6 +188,10 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "escalationDefaults.set": [ESCALATION_PROFILES, ESCALATION_DEFAULTS],
   "escalationDefaults.clear": [ESCALATION_PROFILES, ESCALATION_DEFAULTS],
   "rule.notifications.set": [RULES],
+  // `F4.280` (Amendment 8): the report schedules and the on-demand file save.
+  "reportSchedule.create": [REPORT_SCHEDULES],
+  "reportSchedule.update": [REPORT_SCHEDULES],
+  "reportFile.save": [REPORT_FILES],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

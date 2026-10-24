@@ -118,15 +118,14 @@ import {
 } from "../maintenance/maintenance.schema";
 import { escalationDefaultsQuerySchema } from "../notifications/escalation-profiles.schema";
 import { listDeliveriesQuerySchema } from "../notifications/notifications.schema";
-import {
-  listReportFilesQuerySchema,
-  saveEnergyReportFileBodySchema,
-} from "../reports/report-files.schema";
+import { listReportFilesQuerySchema } from "../reports/report-files.schema";
+// `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`.
 import {
   createReportScheduleBodySchema,
+  energyReportQuerySchema,
+  saveEnergyReportFileBodySchema,
   updateReportScheduleBodySchema,
-} from "../reports/report-schedules.schema";
-import { energyReportQuerySchema } from "../reports/reports.schema";
+} from "@bms/shared";
 import {
   assetHealthQuerySchema,
   healthSummaryQuerySchema,

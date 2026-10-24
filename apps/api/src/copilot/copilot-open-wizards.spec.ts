@@ -228,6 +228,14 @@ export function theChannelsPageMountsItsCreateWizard(): void {
   expect(pageWizardCandidates("/admin/notification-channels")).toStrictEqual([{ catalogId: "notificationChannel.create", params: {} }]);
 }
 
+/** `F4.280` (Amendment 8): the Reports page mounts the schedule create and the Save-to-history wizard. */
+export function theReportsPageMountsItsTwoCreates(): void {
+  expect(pageWizardCandidates("/reports")).toStrictEqual([
+    { catalogId: "reportSchedule.create", params: {} },
+    { catalogId: "reportFile.save", params: {} },
+  ]);
+}
+
 /** `F4.279`: the Escalation page mounts the profile create and the two severity-map wizards. */
 export function theEscalationPageMountsItsWizards(): void {
   expect(pageWizardCandidates("/admin/escalation-profiles")).toStrictEqual([

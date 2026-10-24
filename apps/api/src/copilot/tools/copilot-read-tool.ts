@@ -15,6 +15,7 @@ import type { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.serv
 import type { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import type { ChannelsService } from "../../notifications/channels.service";
 import type { EscalationProfilesService } from "../../notifications/escalation-profiles.service";
+import type { ReportSchedulesService } from "../../reports/report-schedules.service";
 import type { ReportsService } from "../../reports/reports.service";
 import type { RulesService } from "../../rules/rules.service";
 import type { SystemStatusService } from "../../system-status/system-status.service";
@@ -84,6 +85,8 @@ export interface CopilotReadServices {
   readonly channels: Pick<ChannelsService, "list">;
   /** `F4.279` (D7, Q9): the Escalation page's profile list and severity map; reads only. */
   readonly escalationProfiles: Pick<EscalationProfilesService, "list" | "getDefaults">;
+  /** `F4.280` (Amendment 8 D7, Q1): the Reports page's schedule list (`GET /reports/schedules`); `list` only. */
+  readonly schedules: Pick<ReportSchedulesService, "list">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */

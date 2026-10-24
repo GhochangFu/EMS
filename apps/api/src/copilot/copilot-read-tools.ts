@@ -69,6 +69,13 @@ export interface CopilotToolContext {
    */
   readonly outwardIntent?: boolean;
   /**
+   * `F4.280` (ADR 0099 Amendment 8 D4, Q3): the user's own message in this turn, which carries
+   * no file, asks for a report schedule's email delivery (`reportEmailIntentOf`: "email",
+   * "mail", "deliver" and their forms), decided before any tool ran. Absent is `false`: a
+   * schedule body that starts email refuses.
+   */
+  readonly reportEmailIntent?: boolean;
+  /**
    * `F3.87` PR 7, plan D11: a file was attached in this conversation after its
    * last layout proposal, so a layout card says it was read from a file.
    */

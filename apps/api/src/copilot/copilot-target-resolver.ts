@@ -22,6 +22,7 @@ import {
   notificationChannels,
   organizations,
   pointKeys,
+  reportSchedules,
   rtus,
   siteControlRoomViews,
   templatePoints,
@@ -132,7 +133,9 @@ type Found = {
   status?: TemplateLifecycleStatus;
   updatedAt?: string;
   usageCount?: number;
-  lifecycle?: string
+  lifecycle?: string;
+  /** `F4.280`: `reportSchedule` — the locations the schedule is stamped with (the verdict's input). */
+  locationIds?: readonly string[];
 };
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
 type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet" | "vocabulary" | "onboardingSession" | UserKind>;
@@ -547,6 +550,15 @@ export class CopilotTargetResolver implements CopilotTargets {
           .limit(1);
         return row ? { organizationId, name: row.name } : null;
       }
+      // `F4.280` (Amendment 8 D2): a schedule of this organization, with its stamped locations.
+      case "reportSchedule": {
+        const [row] = await tx
+          .select({ name: reportSchedules.name, locationIds: reportSchedules.locationIds })
+          .from(reportSchedules)
+          .where(and(eq(reportSchedules.id, id), eq(reportSchedules.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.name, locationIds: row.locationIds } : null;
+      }
       // `F4.279` (D6): a profile, with the stamp its ladder replace binds to.
       case "escalationProfile": {
         const [row] = await tx
@@ -687,6 +699,12 @@ export class CopilotTargetResolver implements CopilotTargets {
       // `F4.279`: a channel or profile create, or the severity map — the routes' gate on the body's organization.
       case "notification":
         return this.mayManageNotification(user, organizationId);
+      // `F4.280` (D2): `writableLocationIds` (the role gate), then `resolveReportOrganization`'s admit set.
+      case "report": {
+        await this.access.requireMasterDataUser(user);
+        const writable = await this.access.writableOrganizationIds(user);
+        return writable === null || writable.includes(organizationId);
+      }
     }
   }
 
@@ -803,6 +821,10 @@ export class CopilotTargetResolver implements CopilotTargets {
       case "notificationChannel":
       case "escalationProfile":
         return this.mayManageNotification(user, found.organizationId);
+      // `F4.280` (D2): `readRowForVerdict` after the route's role gate (a throw refuses, `safely`).
+      case "reportSchedule":
+        await this.access.requireMasterDataUser(user);
+        return this.access.canReadReportFile(user, { organizationId: found.organizationId, locationIds: found.locationIds ?? [] });
       // `F4.278` (Amendment 8 D2): the rule routes' role class and read-scope gate.
       // `RulesService.updateRule` checks the current asset and the merged one (`mergeRuleDraft`:
       // an absent `assetId` keeps the current asset, `null` clears it), so a body that names

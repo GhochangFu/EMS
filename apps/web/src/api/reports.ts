@@ -6,11 +6,12 @@ import {
   reportScheduleListResponseSchema,
 } from "@bms/shared/contracts";
 import type {
+  CreateReportScheduleBody,
   EnergyReportPreview,
-  ReportCadence,
   ReportFileDto,
   ReportFileFormat,
   ReportScheduleDto,
+  UpdateReportScheduleBody,
 } from "@bms/shared";
 
 import { ApiError } from "../lib/api-error";
@@ -193,29 +194,11 @@ export async function deleteReportFile(id: string): Promise<void> {
 }
 
 /**
- * The request shape of `POST /api/v1/reports/schedules` — a plain TS type
- * mirroring `createReportScheduleBodySchema`'s (`.strict()`) fields on the
- * API, not a `z.infer`: ADR 0030 governs **response** types, and this repo
- * has no schema package for a request body the API alone validates.
+ * `F4.280` (ADR 0030): the request shapes of `POST` and `PATCH /api/v1/reports/schedules`
+ * are `z.infer`red from the route bodies in `@bms/shared` (`report-writes.ts`), re-exported
+ * here for their importers.
  */
-export type CreateReportScheduleBody = {
-  name: string;
-  formats: ReportFileFormat[];
-  cadence: ReportCadence;
-  runAtLocal: string;
-  timezone: string;
-  locationIds: string[];
-  channelId?: string | null;
-  enabled?: boolean;
-  organizationId?: string;
-};
-
-/**
- * The request shape of `PATCH /api/v1/reports/schedules/:id` —
- * `updateReportScheduleBodySchema`'s fields, every one optional, and never
- * `organizationId` (a schedule does not move between tenants).
- */
-export type UpdateReportScheduleBody = Partial<Omit<CreateReportScheduleBody, "organizationId">>;
+export type { CreateReportScheduleBody, UpdateReportScheduleBody };
 
 /** `GET /api/v1/reports/schedules` (ADR 0071 R-12). */
 export async function fetchReportSchedules(): Promise<ReportScheduleDto[]> {

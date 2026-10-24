@@ -17,6 +17,7 @@ import {
   theRulesPageMountsItsCreateWizard,
   theChannelsPageMountsItsCreateWizard,
   theEscalationPageMountsItsWizards,
+  theReportsPageMountsItsTwoCreates,
   theVocabularyPagesMountTheirCreateWizards,
   aLongNameIsCut,
   aMalformedMultipartFieldIsA400,
@@ -54,6 +55,7 @@ describe("F4.245 — the open-wizard context of a turn (ADR 0099 Amendment 4)", 
   it("maps the Rule Engine page to its create wizard (F4.278)", () => theRulesPageMountsItsCreateWizard());
   it("maps the Channels page to its create wizard (F4.279)", () => theChannelsPageMountsItsCreateWizard());
   it("maps the Escalation page to its three wizards (F4.279)", () => theEscalationPageMountsItsWizards());
+  it("maps the Reports page to its two creates (F4.280)", () => theReportsPageMountsItsTwoCreates());
   it("maps a page without a wizard to none", () => aPageWithoutAWizardMountsNone());
   it("sends no message when no wizard is open", () => noOpenWizardSendsNoMessage());
   it("names each open record by its params in the system line", () => theSystemLineNamesEachRecordByItsParams());

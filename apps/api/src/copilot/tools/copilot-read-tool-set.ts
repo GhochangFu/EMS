@@ -19,6 +19,7 @@ import { ReportsService } from "../../reports/reports.service";
 import { RulesService } from "../../rules/rules.service";
 import { ChannelsService } from "../../notifications/channels.service";
 import { EscalationProfilesService } from "../../notifications/escalation-profiles.service";
+import { ReportSchedulesService } from "../../reports/report-schedules.service";
 import { SystemStatusService } from "../../system-status/system-status.service";
 import { TelemetryService } from "../../telemetry/telemetry.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -52,6 +53,7 @@ import { listMimicSymbolsTool } from "./list-mimic-symbols.tool";
 import { listRulesTool } from "./list-rules.tool";
 import { listNotificationChannelsTool } from "./list-notification-channels.tool";
 import { listEscalationProfilesTool } from "./list-escalation-profiles.tool";
+import { listReportSchedulesTool } from "./list-report-schedules.tool";
 import { openPageTool } from "./open-page.tool";
 
 /**
@@ -94,6 +96,8 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   // `F4.279` (Amendment 8 D7): after the rules, before `open_page`.
   listNotificationChannelsTool,
   listEscalationProfilesTool,
+  // `F4.280` (Amendment 8 D7, Q1): after the escalation profiles, before `open_page`.
+  listReportSchedulesTool,
   openPageTool,
 ];
 
@@ -160,6 +164,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
     // `F4.279`: appended last (slots 18 and 19), the same reason.
     @Inject(ChannelsService) channels: ChannelsService,
     @Inject(EscalationProfilesService) escalationProfiles: EscalationProfilesService,
+    // `F4.280`: appended last (slot 20), the same reason.
+    @Inject(ReportSchedulesService) schedules: ReportSchedulesService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -182,6 +188,7 @@ export class CopilotReadToolSet implements CopilotReadTools {
       rules,
       channels,
       escalationProfiles,
+      schedules,
     });
   }
 

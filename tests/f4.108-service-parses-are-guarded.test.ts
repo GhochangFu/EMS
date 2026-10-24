@@ -126,6 +126,8 @@ const COPILOT_TOOL_FILES = {
   // `F4.279` (Amendment 8 D7): the channel and escalation read tools.
   copilotListNotificationChannels: `${COPILOT_TOOLS}/list-notification-channels.tool.ts`,
   copilotListEscalationProfiles: `${COPILOT_TOOLS}/list-escalation-profiles.tool.ts`,
+  // `F4.280` (Amendment 8 D7, Q1): the report-schedule read tool, one parse.
+  copilotListReportSchedules: `${COPILOT_TOOLS}/list-report-schedules.tool.ts`,
 } as const;
 const HELPER = "apps/api/src/common/parse-stored-contract.ts";
 
@@ -636,8 +638,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       // `F4.274`: 23 + the five telemetry read tools' literals; `F4.275`: + six energy read tools;
       // `F4.277`: + the system-status and audit-log read tools; `F4.276`: + the alarm
       // details and alarm knowledge-base read tools; `F4.278`: + the alarm-rule read tool;
-      // `F4.279`: + the channel and escalation read tools.
-    ).toBe(41);
+      // `F4.279`: + the channel and escalation read tools; `F4.280`: + the report-schedule read tool.
+    ).toBe(42);
 
     const callSites = [
       STOCK_SERVICE,

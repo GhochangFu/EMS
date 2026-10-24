@@ -23,6 +23,9 @@ import { RulesService } from "../rules/rules.service";
 import { EscalationProfilesService } from "../notifications/escalation-profiles.service";
 import { NotificationProposalCheckService } from "../notifications/notification-proposal-check.service";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { ReportProposalCheckService } from "../reports/report-proposal-check.service";
+import { ReportSchedulesService } from "../reports/report-schedules.service";
+import { ReportsModule } from "../reports/reports.module";
 
 /**
  * `F3.86` PR 4 / ADR 0099 decision 3 — the module edges a green build does not
@@ -151,4 +154,23 @@ export function assertTheNotificationsModuleExportsTheCopilotServices(): void {
 export function assertTheEscalationServiceInjectsTheAuditFunnel(): void {
   expect(injected(EscalationProfilesService).get(4)).toBe(MasterDataAuditService);
   expect(moduleList(NotificationsModule, "providers")).toContain(MasterDataAuditService);
+}
+
+/**
+ * `F4.280` (ADR 0099 Amendment 8 D2, D5): the propose tools' sixth parameter is
+ * `ReportProposalCheckService`, by `@Inject`; without it a report proposal is refused at
+ * runtime while every spec over fakes stays green.
+ */
+export function assertTheProposeToolsInjectTheReportCheck(): void {
+  expect(injected(CopilotProposeToolSet).get(5)).toBe(ReportProposalCheckService);
+}
+
+/** `CopilotModule` imports `ReportsModule`. */
+export function assertTheModuleImportsTheReportsModule(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(ReportsModule);
+}
+
+/** `ReportsModule` exports the check and the schedule service the copilot injects. */
+export function assertTheReportsModuleExportsTheCopilotServices(): void {
+  expect(moduleList(ReportsModule, "exports")).toEqual(expect.arrayContaining([ReportProposalCheckService, ReportSchedulesService]));
 }

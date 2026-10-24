@@ -39,6 +39,8 @@ import { prepareUpload } from "./copilot-upload-prepare";
 import { checkRule, type CopilotRuleChecks, RULE_ENTRY_IDS } from "./copilot-propose-rules";
 import { checkNotification, type CopilotNotificationChecks, NOTIFICATION_ENTRY_IDS } from "./copilot-propose-notifications";
 import { NotificationProposalCheckService } from "../notifications/notification-proposal-check.service";
+import { checkReport, type CopilotReportChecks, REPORT_ENTRY_IDS, reportEmailRefusal } from "./copilot-propose-reports";
+import { ReportProposalCheckService } from "../reports/report-proposal-check.service";
 import {
   OUTWARD_ENTRY_IDS,
   PROPOSE_OUTWARD_NOT_ASKED_ERROR,
@@ -238,6 +240,8 @@ export interface CopilotProposeServices {
    * notification proposal without it is refused (`PROPOSE_NOTIFICATIONS_UNAVAILABLE_ERROR`).
    */
   readonly notifications?: CopilotNotificationChecks;
+  /** `F4.280` (Amendment 8 D2, D4, D5): the report check; optional for the same reason (`PROPOSE_REPORTS_UNAVAILABLE_ERROR`). */
+  readonly reports?: CopilotReportChecks;
 }
 
 /**
@@ -535,6 +539,13 @@ export function createCopilotProposeTools(
       if (checked.note !== "") ruleNote = ` ${checked.note}`;
       cardBody = checked.cardBody;
     }
+    // `F4.280` (D4 per field, then D2, D5): email only when the user's own message asked; the route's checks.
+    if (REPORT_ENTRY_IDS.has(entry.id)) {
+      const checked = await checkReport(services.reports, entry.id, params, body, target.organizationId, ctx);
+      if (!checked.ok) return checked;
+      ruleNote = ` ${checked.note}`;
+      cardBody = checked.cardBody;
+    }
     if (LAYOUT_ENTRY_IDS.has(entry.id)) {
       const checked = await checkLayout(entry, params, body, ctx);
       if (!checked.ok) return checked;
@@ -636,6 +647,9 @@ export function createCopilotProposeTools(
         if (step === undefined) return { ok: false, error: UNKNOWN_STEP_ERROR };
         const values = fillValuesSchema(target, step.fields).safeParse(args.values);
         if (!values.success) return { ok: false, error: `Invalid values: ${issuesOf(values.error)}` };
+        // `F4.280` (D4): a tool result can no more pre-fill a schedule's email delivery than propose it.
+        const emailRefusal = await reportEmailRefusal(services.reports, target.id, params, args.values as Record<string, unknown>, ctx);
+        if (emailRefusal !== null) return { ok: false, error: emailRefusal };
         // The step check reads field shapes only; the model body's rule that the copilot never names
         // the global admin role (decision 3) is a refinement, so it is held here on the server too.
         if (target.risk === "access" && (args.values as Record<string, unknown>).role === "admin") {
@@ -694,8 +708,10 @@ export class CopilotProposeToolSet implements CopilotProposeTools {
     @Inject(RuleProposalCheckService) rules: RuleProposalCheckService,
     // `F4.279` (Amendment 8 D5): APPENDED (slot 4) — the notification check (`NotificationsModule` exports it).
     @Inject(NotificationProposalCheckService) notifications: NotificationProposalCheckService,
+    // `F4.280` (Amendment 8 D2, D5): APPENDED (slot 5) — the report check (`ReportsModule` exports it).
+    @Inject(ReportProposalCheckService) reports: ReportProposalCheckService,
   ) {
-    this.tools = createCopilotProposeTools({ targets, pending, layouts, rules, notifications });
+    this.tools = createCopilotProposeTools({ targets, pending, layouts, rules, notifications, reports });
   }
 
   get registry(): ToolRegistry<string> {

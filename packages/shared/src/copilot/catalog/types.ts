@@ -96,7 +96,7 @@ export type CatalogMethod = "POST" | "PUT" | "PATCH" | "DELETE";
 export type CatalogTarget =
   | {
       readonly kind: "organization";
-      readonly manage: "dashboard" | "template" | "calcParameter" | "location" | "user" | "mimic" | "notification";
+      readonly manage: "dashboard" | "template" | "calcParameter" | "location" | "user" | "mimic" | "notification" | "report";
     }
   | { readonly kind: "mimicLayout" | "mimicLibrary"; readonly param: "id" }
   | { readonly kind: "dashboard" | "dashboardTemplate" | "calcParameter" | "assetTemplate"; readonly param: "id" }
@@ -138,6 +138,13 @@ export type CatalogTarget =
    * on the body's `organizationId` (a channel or profile create, the severity map).
    */
   | { readonly kind: "notificationChannel" | "escalationProfile"; readonly param: "id" }
+  /**
+   * `F4.280` (ADR 0099 Amendment 8 D2): a report schedule, the row the path parameter `id` names.
+   * Mirrors `readRowForVerdict`: `requireMasterDataUser`, then `canReadReportFile` on the row's
+   * organization and stamped locations. `organization` with `manage: "report"` is the create gate
+   * (`writableLocationIds`, then `resolveReportOrganization`) on the body's `organizationId`.
+   */
+  | { readonly kind: "reportSchedule"; readonly param: "id" }
   | { readonly kind: "onboardingSession"; readonly param: "id" }
   | { readonly kind: "assetTemplateDeploy"; readonly param: "id" }
   | { readonly kind: "user" | "userGrantAdd"; readonly param: "id" }

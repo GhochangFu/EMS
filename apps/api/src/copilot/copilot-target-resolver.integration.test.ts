@@ -20,6 +20,7 @@ import {
   aLocationTypeCountsItsLocationsInTheAllowedOrganizations,
   aRuleOfAnotherOrganizationIsNotFound,
   aFleetWideChannelIsNotFound,
+  aReportScheduleResolvesWithItsStampedLocations,
   aRuleUpdateRefusesAnAssetOfAnotherOrganization,
   anUnknownVocabularyCodeIsRefusedBeforeTheGate,
   aUnitRoleResolvesItsLabel,
@@ -81,6 +82,7 @@ const CLEANUP = [
   "DELETE FROM bms.site_control_room_views WHERE organization_id = ANY($1)",
   "DELETE FROM bms.asset_points WHERE organization_id = ANY($1)",
   "DELETE FROM bms.automation_rules WHERE organization_id = ANY($1)",
+  "DELETE FROM bms.report_schedules WHERE organization_id = ANY($1)",
   "DELETE FROM bms.notification_channels WHERE organization_id = ANY($1)",
   "DELETE FROM bms.asset_groups WHERE organization_id = ANY($1)",
   "DELETE FROM bms.assets WHERE organization_id = ANY($1)",
@@ -193,6 +195,12 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       );
     const channelA = await channel(orgA, `f4279-resolver-a-${Date.now()}`, "F4.279 channel A");
     const fleetChannel = await channel(null, `f4279-resolver-${Date.now()}`, "F4.279 fleet channel");
+    // `F4.280`: a report schedule of A, stamped with locationA.
+    const scheduleA = await one(
+      "INSERT INTO bms.report_schedules (organization_id, name, template_id, formats, cadence, run_at_local, timezone, location_ids, next_run_at) " +
+        "VALUES ($1, $2, 'energy_consumption', ARRAY['pdf'], 'weekly', '07:00', 'Asia/Kolkata', ARRAY[$3]::uuid[], now() + interval '1 day') RETURNING id",
+      [orgA, "F4.280 schedule A", locationA],
+    );
     const groupA = await one(
       "INSERT INTO bms.asset_groups (organization_id, location_id, code, name) VALUES ($1, $2, $3, $4) RETURNING id",
       [orgA, locationA, `${FAMILY}-GROUP`.toLowerCase(), RESOLVER_NAMES.groupA],
@@ -243,6 +251,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       orgB,
       channelA,
       fleetChannel,
+      scheduleA,
       locationA,
       locationA2,
       locationB,
@@ -300,6 +309,8 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("F4.278: a rule update refuses an asset of another organization, beside its allowed twin", () =>
     aRuleUpdateRefusesAnAssetOfAnotherOrganization(ctx));
   it("F4.279: a fleet-wide channel is found under no tenant; a channel of A resolves", () => aFleetWideChannelIsNotFound(ctx));
+  it("F4.280: a report schedule of A resolves with its stamped locations; under B it is not found", () =>
+    aReportScheduleResolvesWithItsStampedLocations(ctx));
   it("keeps the built-in view rule (ruling Q7(b))", () => aSiteViewKeepsTheBuiltinRule(ctx));
   it("needs the dashboard check for a site layout (ruling Q7(b))", () => aSiteLayoutNeedsTheDashboardCheckToo(ctx));
   it("refuses a location create by a location admin", () => aLocationCreateRefusesALocationAdmin(ctx));

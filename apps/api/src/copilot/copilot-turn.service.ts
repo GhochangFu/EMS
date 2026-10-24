@@ -44,7 +44,7 @@ import { onboardingDiscoveryCards, turnProposedDiscovery } from "./copilot-onboa
 import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pending-changes.service";
 import { accessIntentOf } from "./copilot-access-intent";
 import { assetIntentOf } from "./copilot-asset-intent";
-import { outwardIntentOf } from "./copilot-outward-intent";
+import { outwardIntentOf, reportEmailIntentOf } from "./copilot-outward-intent";
 import { hasImageAttachment, hasPdfWithoutImage, inspectAttachments, type TurnAttachment, type UploadedAttachment } from "./copilot-attachments";
 import {
   type CopilotOpenWizardRecord,
@@ -578,6 +578,8 @@ export class CopilotTurnService {
       assetIntent: attachments.length === 0 || (input.kind === "user" && assetIntentOf(input.message)),
       // `F4.279` (Amendment 8 D4, Q4): the test send, from the user's own words alone; a file turn never offers it (A7).
       outwardIntent: input.kind === "user" && attachments.length === 0 && outwardIntentOf(input.message),
+      // `F4.280` (D4, Q3): report email, its own words and switch; a file turn never allows it (A7).
+      reportEmailIntent: input.kind === "user" && attachments.length === 0 && reportEmailIntentOf(input.message),
       ...(attachments.length > 0 ? { attachments } : {}),
       historyHasAttachmentSinceLastLayout: historyHasAttachmentSinceLastLayout(recent),
       now: this.clock(),

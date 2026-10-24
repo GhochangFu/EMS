@@ -5,20 +5,16 @@ import { afterEach, describe, it, vi } from "vitest";
 import {
   aCostRendersInTheReportsPanel,
   aFailedPdfExportRendersItsOwnLine,
-  aLocationAdminSavesWithoutAnOrganizationSelect,
   aMeasuredRatioRendersInTheReportsPanel,
   aNullCostRendersTheDashInTheReportsPanel,
-  aRefusedSaveRendersTheApiSentence,
   aViewerSeesNoSchedulesHeading,
   aViewerSeesThePdfButtonAndNoSaveOrHistory,
-  anAdminMustChooseAnOrganizationBeforeSaving,
-  anAdminSaveSendsTheFormatAndTheOrganizationInOrder,
   anAdminSeesTheSchedulesHeading,
   anAssetGroupAdminSeesNoSchedulesHeading,
   anUnconfiguredPreviewShowsTheDashAndTheReason,
   exportPdfCallsTheApiWithTheRange,
-  saveCallsTheApiByPositionAndRendersTheSavedLine,
   theDeferredPillIsGoneAndTheCardNamesThreeFormats,
+  aSaveFromThePanelPostsThePreviewRange,
 } from "./reports-panel.spec";
 
 /**
@@ -71,24 +67,8 @@ describe("F3.5a reports panel — PDF export, Save to history, role gate", () =>
     await aFailedPdfExportRendersItsOwnLine();
   });
 
-  it("an admin must choose an organization before Save enables", async () => {
-    await anAdminMustChooseAnOrganizationBeforeSaving();
-  });
-
-  it("a location_admin has no organization select and Save enables once the preview resolved", async () => {
-    await aLocationAdminSavesWithoutAnOrganizationSelect();
-  });
-
-  it("Save calls saveEnergyReportFile(input, 'pdf', undefined) and renders the saved line", async () => {
-    await saveCallsTheApiByPositionAndRendersTheSavedLine();
-  });
-
-  it("an admin save sends the format and the organization in order and refetches the list", async () => {
-    await anAdminSaveSendsTheFormatAndTheOrganizationInOrder();
-  });
-
-  it("a refused save renders the API's sentence", async () => {
-    await aRefusedSaveRendersTheApiSentence();
+  it("F4.280: a save from the panel posts the preview's range", async () => {
+    await aSaveFromThePanelPostsThePreviewRange();
   });
 
   it("F3.5b — a viewer sees no Schedules heading; Export PDF is the control", async () => {

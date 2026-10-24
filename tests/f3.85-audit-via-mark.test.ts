@@ -79,6 +79,9 @@ const CATALOG_WRITERS = [
   // holds only the reads the worker loads and no longer references the funnel.
   "apps/api/src/notifications/channel-writes.service.ts",
   "apps/api/src/notifications/escalation-profiles.service.ts",
+  // F4.280 (Amendment 8): the report schedule writes and the on-demand file save.
+  "apps/api/src/reports/report-schedules.service.ts",
+  "apps/api/src/reports/report-files.service.ts",
 ] as const;
 
 /**
@@ -145,6 +148,8 @@ const CATALOG_DIRS = [
   "rules",
   // `F4.279` (Amendment 8): notifications and escalation — the two direct helpers are gone.
   "notifications",
+  // F4.280 (Amendment 8): the report schedules and files — both write services already audit through the funnel.
+  "reports",
 ] as const;
 
 /** The drizzle form and the raw-SQL form. */

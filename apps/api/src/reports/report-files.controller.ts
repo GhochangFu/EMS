@@ -17,15 +17,12 @@ import type { Response } from "express";
 import { pipeline } from "node:stream";
 import { ZodError } from "zod";
 
+import { saveEnergyReportFileBodySchema } from "@bms/shared";
 import type { JwtPayload, ReportFileDto } from "@bms/shared";
 
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import {
-  listReportFilesQuerySchema,
-  reportFileIdParamSchema,
-  saveEnergyReportFileBodySchema,
-} from "./report-files.schema";
+import { listReportFilesQuerySchema, reportFileIdParamSchema } from "./report-files.schema";
 import { ReportFilesService } from "./report-files.service";
 
 /**

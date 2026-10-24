@@ -62,6 +62,8 @@ export type ResolverCtx = {
   /** `F4.279`: a channel of A, and a fleet-wide (NULL-organization) channel. */
   channelA: string;
   fleetChannel: string;
+  /** `F4.280`: a report schedule of A, stamped with `locationA`. */
+  scheduleA: string;
 };
 
 /** `locationA` carries a stored `builtin` view (`site_control_room_views`); `locationA2` carries none. */
@@ -109,6 +111,9 @@ function recorder(answers: Partial<Record<string, boolean>> = {}, role: UserRole
     // `F4.279`: the notification routes' gate.
     canManageNotificationChannel: (_user: JwtPayload, organizationId: string | null) =>
       answer("canManageNotificationChannel", organizationId),
+    // `F4.280`: the report schedule routes' verdict.
+    canReadReportFile: (_user: JwtPayload, file: { organizationId: string; locationIds: readonly string[] }) =>
+      answer("canReadReportFile", file.organizationId, [...file.locationIds]),
   };
   return { calls, access: access as never };
 }
@@ -837,4 +842,20 @@ export async function aFleetWideChannelIsNotFound(ctx: ResolverCtx): Promise<voi
     await resolverWith(ctx, allowed.access).resolve(update, { id: ctx.channelA }, { name: "x" }, [ctx.orgA], JWT),
   ).toMatchObject({ organizationId: ctx.orgA, targetName: "F4.279 channel A" });
   expect(allowed.calls).toEqual([["requireMasterDataUser"], ["canManageNotificationChannel", ctx.orgA]]);
+}
+
+/**
+ * `F4.280` (ADR 0099 Amendment 8 D2): a stored report schedule of A resolves by its name, with the
+ * route's verdict asked on its organization and its stamped locations — beside its refused twin,
+ * the same schedule when the turn allows only B (the organization filter finds no row there).
+ */
+export async function aReportScheduleResolvesWithItsStampedLocations(ctx: ResolverCtx): Promise<void> {
+  const update = catalogEntry("reportSchedule.update");
+  if (!update) throw new Error("reportSchedule.update");
+  const allowed = recorder();
+  expect(
+    await resolverWith(ctx, allowed.access).resolve(update, { id: ctx.scheduleA }, { name: "x" }, [ctx.orgA], JWT),
+  ).toMatchObject({ organizationId: ctx.orgA, targetName: "F4.280 schedule A" });
+  expect(allowed.calls).toEqual([["requireMasterDataUser"], ["canReadReportFile", ctx.orgA, [ctx.locationA]]]);
+  expect(await resolverWith(ctx, recorder().access).resolve(update, { id: ctx.scheduleA }, { name: "x" }, [ctx.orgB], JWT)).toBeNull();
 }

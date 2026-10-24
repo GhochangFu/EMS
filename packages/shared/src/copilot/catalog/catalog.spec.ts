@@ -248,6 +248,26 @@ export const FIXTURES: Readonly<
   },
   "escalationDefaults.clear": { body: { organizationId: ORG, items: [] }, params: {}, names: ORG_NAME },
   "rule.notifications.set": { body: { channelIds: [ROW] }, params: { id: ROW }, names: TARGET_NAME },
+  // `F4.280` (Amendment 8) — report schedules and the on-demand save; no fixture holds `recipients` (D5).
+  "reportSchedule.create": {
+    body: {
+      organizationId: ORG,
+      name: "Weekly energy",
+      formats: ["pdf"],
+      cadence: "weekly",
+      runAtLocal: "07:00",
+      timezone: "Asia/Kolkata",
+      locationIds: [ROW],
+    },
+    params: {},
+    names: ORG_NAME,
+  },
+  "reportSchedule.update": { body: { name: "Weekly energy v2" }, params: { id: ROW }, names: TARGET_NAME },
+  "reportFile.save": {
+    body: { organizationId: ORG, startDate: "2026-09-01", endDate: "2026-09-30", format: "pdf" },
+    params: {},
+    names: ORG_NAME,
+  },
 };
 
 /**

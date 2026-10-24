@@ -22,6 +22,7 @@ import { LlmModule } from "../llm/llm.module";
 import { MimicLayoutsModule } from "../mimic-layouts/mimic-layouts.module";
 import { MimicSymbolLibrariesModule } from "../mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { ReportsCoreModule } from "../reports/reports-core.module";
+import { ReportsModule } from "../reports/reports.module";
 import { SystemStatusModule } from "../system-status/system-status.module";
 import { TelemetryModule } from "../telemetry/telemetry.module";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
@@ -147,6 +148,14 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * `EscalationProfilesService` (with `ChannelsService` through the core) for the
  * two notification read tools. It imports only `NotificationsCoreModule`, never
  * this module, so the graph stays acyclic; the worker imports the core alone.
+ *
+ * `F4.280` (ADR 0099 Amendment 8): `ReportsModule` now as well as the core —
+ * it exports `ReportProposalCheckService` for the report proposal check and
+ * `ReportSchedulesService` for `list_report_schedules`, which live beside the
+ * report controllers. A module is a singleton, so its controllers still mount
+ * once. It imports only `ReportsCoreModule` and `NotificationsCoreModule`,
+ * never this module, so the graph stays acyclic; the worker never reaches
+ * this module.
  */
 @Module({
   imports: [
@@ -165,6 +174,7 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     TelemetryModule,
     DashboardModule,
     ReportsCoreModule,
+    ReportsModule,
     SystemStatusModule,
     AlarmKbModule,
     RulesModule,

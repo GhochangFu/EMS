@@ -5,6 +5,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { NotificationsCoreModule } from "../notifications/notifications-core.module";
 import { ReportFilesController } from "./report-files.controller";
 import { ReportFilesService } from "./report-files.service";
+import { ReportProposalCheckService } from "./report-proposal-check.service";
 import { ReportSchedulesController } from "./report-schedules.controller";
 import { ReportSchedulesService } from "./report-schedules.service";
 import { ReportsController } from "./reports.controller";
@@ -34,10 +35,17 @@ import { ReportsCoreModule } from "./reports-core.module";
  * imports that module for the render's email but does not re-export it — so
  * this module imports `NotificationsCoreModule` itself. A green build is not
  * a DI gate: the api container boot is.
+ *
+ * `F4.280` (ADR 0099 Amendment 8 D2, D5) — `ReportProposalCheckService` (the
+ * copilot's read-only report check) joins the providers, and the module
+ * exports it with `ReportSchedulesService` (the `list_report_schedules` read
+ * tool) for `CopilotModule`. This module imports nothing of the copilot, so
+ * the graph stays acyclic.
  */
 @Module({
   imports: [ReportsCoreModule, NotificationsCoreModule],
   controllers: [ReportsController, ReportFilesController, ReportSchedulesController],
-  providers: [ReportFilesService, ReportSchedulesService, MasterDataAuditService, JwtAuthGuard],
+  providers: [ReportFilesService, ReportSchedulesService, ReportProposalCheckService, MasterDataAuditService, JwtAuthGuard],
+  exports: [ReportProposalCheckService, ReportSchedulesService],
 })
 export class ReportsModule {}

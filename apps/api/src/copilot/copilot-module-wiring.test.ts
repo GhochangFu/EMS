@@ -12,6 +12,9 @@ import {
   assertTheModuleImportsTheNotificationsModule,
   assertTheNotificationsModuleExportsTheCopilotServices,
   assertTheProposeToolsInjectTheNotificationCheck,
+  assertTheProposeToolsInjectTheReportCheck,
+  assertTheModuleImportsTheReportsModule,
+  assertTheReportsModuleExportsTheCopilotServices,
   assertTheProposeToolsInjectTheLayoutsService,
   assertTheResolverInjectsTheUsersServices,
 } from "./copilot-module-wiring.spec";
@@ -35,4 +38,8 @@ describe("F3.86 PR 4 — CopilotModule wiring for the user targets", () => {
     assertTheNotificationsModuleExportsTheCopilotServices());
   it("F4.279: EscalationProfilesService injects MasterDataAuditService, provided by NotificationsModule", () =>
     assertTheEscalationServiceInjectsTheAuditFunnel());
+  it("F4.280: the propose tools inject ReportProposalCheckService", () => assertTheProposeToolsInjectTheReportCheck());
+  it("F4.280: the module imports ReportsModule", () => assertTheModuleImportsTheReportsModule());
+  it("F4.280: ReportsModule exports the check and ReportSchedulesService", () =>
+    assertTheReportsModuleExportsTheCopilotServices());
 });

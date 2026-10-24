@@ -162,6 +162,8 @@ const PAGE_WIZARDS: readonly PageWizards[] = [
     template: "/admin/escalation-profiles",
     wizards: [{ catalogId: "escalationProfile.create" }, { catalogId: "escalationDefaults.set" }, { catalogId: "escalationDefaults.clear" }],
   },
+  // `F4.280` (Amendment 8): the Reports page — the schedule create and the Save-to-history wizard.
+  { template: "/reports", wizards: [{ catalogId: "reportSchedule.create" }, { catalogId: "reportFile.save" }] },
   { template: "/admin/users", wizards: [{ catalogId: "user.create" }] },
   { template: "/admin/calc-parameters", wizards: [{ catalogId: "calcParameter.create" }] },
   { template: "/admin/mimic-symbol-libraries", wizards: [{ catalogId: "mimicLibrary.create" }] },

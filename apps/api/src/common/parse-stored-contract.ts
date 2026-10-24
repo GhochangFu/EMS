@@ -139,6 +139,8 @@ export type StoredContractContext =
   // `F4.279`: the channel and escalation read tools.
   | "copilot_tools.list_notification_channels.page"
   | "copilot_tools.list_escalation_profiles.page"
+  // `F4.280`: the report-schedule read tool.
+  | "copilot_tools.list_report_schedules.page"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");

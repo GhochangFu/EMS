@@ -147,7 +147,17 @@ export class ReportFilesService {
     private readonly audit: MasterDataAuditService,
   ) {}
 
-  async saveOnDemand(jwt: JwtPayload, body: SaveEnergyReportFileBody): Promise<ReportFileDto> {
+  /**
+   * `F4.280` (ADR 0099 Amendment 8 D2, Q14) — the save's checks before the render, in the
+   * route's order, run read-only: the storage gate (503), the role gate, the organization, the
+   * location stamp (a `location_admin` with no granted node in it: 403) and the cap pre-check
+   * (409). No render and no storage call. `saveOnDemand` runs it first; the copilot's proposal
+   * check runs it alone, so a card is offered only for a save the route would start.
+   */
+  async previewSave(
+    jwt: JwtPayload,
+    requestedOrganizationId: string | undefined,
+  ): Promise<{ organizationId: string; locationIds: string[] }> {
     requireStorageConfigured(this.client);
 
     // Decision 6: the role gate, before any other read.
@@ -155,7 +165,7 @@ export class ReportFilesService {
     const organizationId = await resolveReportOrganization(
       { accessControl: this.accessControl, fleetDb: this.fleetDb },
       jwt,
-      body.organizationId,
+      requestedOrganizationId,
     );
     // F2.10 / ADR 0098 Drafter choice 9: the stamp is the caller's direct grants,
     // never the subtree closure `writableLocationIds` answers — a file records
@@ -165,6 +175,11 @@ export class ReportFilesService {
 
     // R-11: the cheap refusal, before the render and before any storage call.
     this.refuseAtCap(await countFiles(this.fleetDb, organizationId));
+    return { organizationId, locationIds };
+  }
+
+  async saveOnDemand(jwt: JwtPayload, body: SaveEnergyReportFileBody): Promise<ReportFileDto> {
+    const { organizationId, locationIds } = await this.previewSave(jwt, body.organizationId);
 
     // Amendment 1 item 1: the render never carries another organization's rows.
     const assetIds = await this.accessControl.readableAssetIdsInOrganization(jwt, organizationId);

@@ -11,6 +11,7 @@ import { KPI_ENTRIES } from "./kpis";
 import { LOCATION_TYPE_ENTRIES, LOCATION_TYPE_PENDING } from "./location-types";
 import { LOCATION_ENTRIES, LOCATION_PENDING } from "./locations";
 import { NOTIFICATION_ENTRIES, NOTIFICATION_PENDING } from "./notifications";
+import { REPORT_ENTRIES, REPORT_PENDING } from "./reports";
 import { ONBOARDING_ENTRIES, ONBOARDING_PENDING } from "./onboarding";
 import { POINT_KEY_ENTRIES, POINT_KEY_PENDING } from "./point-keys";
 import { RTU_ENTRIES, RTU_PENDING } from "./rtus";
@@ -50,6 +51,8 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...RULE_ENTRIES,
   // `F4.279` (Amendment 8): notification channels, escalation, and the rule channel set (D8).
   ...NOTIFICATION_ENTRIES,
+  // F4.280 (Amendment 8): the report schedules and the on-demand file save.
+  ...REPORT_ENTRIES,
 ];
 
 /**
@@ -108,6 +111,8 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...LOCATION_TYPE_PENDING,
   ...RULE_PENDING,
   ...NOTIFICATION_PENDING,
+  // F4.280 (Amendment 8): the two report DELETEs stay manual.
+  ...REPORT_PENDING,
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */

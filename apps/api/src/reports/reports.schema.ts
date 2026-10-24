@@ -1,8 +1,2 @@
-import { z } from "zod";
-
-export const energyReportQuerySchema = z.object({
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-});
-
-export type EnergyReportQuery = z.infer<typeof energyReportQuerySchema>;
+/** `F4.280` (ADR 0030): the energy-report query moved to `@bms/shared`; re-exported so its importers stay unchanged. */
+export { energyReportQuerySchema, type EnergyReportQuery } from "@bms/shared";

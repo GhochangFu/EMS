@@ -3,7 +3,7 @@ import { expect } from "vitest";
 import { proposeToolName } from "@bms/shared/copilot";
 
 import { calls, toolCall } from "../admin/onboarding/onboarding-agent-loop.spec";
-import { outwardIntentOf } from "./copilot-outward-intent";
+import { outwardIntentOf, reportEmailIntentOf } from "./copilot-outward-intent";
 import { APPLIED, CHANGE_ID, GLOBAL_ADMIN, harness, JWT, ORG_X, ToolRecordingLlm, turn } from "./copilot-turn.service.spec";
 
 /**
@@ -71,4 +71,36 @@ export function theWordsAreWholeWordsCaseInsensitive(): void {
     false,
     false,
   ]);
+}
+
+/** `F4.280` (D4, Q3): the report-email words are whole words, case-insensitive. */
+export function theReportEmailWordsAreWholeWords(): void {
+  expect(["schedule a weekly report emailed to Ops", "Mail it", "DELIVERY by email", "the Ops mailbox", "redelivery"].map(reportEmailIntentOf)).toEqual([
+    true,
+    true,
+    true,
+    false,
+    false,
+  ]);
+}
+
+/** Q3: the two word lists are separate — an email word is no test send, and a test word is no report email. */
+export function theTwoSwitchesAreSeparate(): void {
+  expect([outwardIntentOf("email the report weekly"), reportEmailIntentOf("send a test message")]).toEqual([false, false]);
+}
+
+/** Q3: the turn sets `reportEmailIntent` from the user's own message, and leaves the test-send switch off. */
+export async function aTurnThatAsksForEmailSetsTheReportSwitch(): Promise<void> {
+  const llm = new ToolRecordingLlm([calls(toolCall("get_asset", {})), { kind: "final", text: "done" }]);
+  const h = harness(llm, { tools: { get_asset: () => ({ ok: true, result: { name: "x" }, organizationIds: [ORG_X] }) } });
+  await turn(h, "schedule a weekly report emailed to Ops");
+  expect([h.seenTools[0]?.ctx.reportEmailIntent, h.seenTools[0]?.ctx.outwardIntent]).toEqual([true, false]);
+}
+
+/** A turn that does not ask leaves the report switch off (adjacent control). */
+export async function aTurnThatDoesNotAskLeavesTheReportSwitchOff(): Promise<void> {
+  const llm = new ToolRecordingLlm([calls(toolCall("get_asset", {})), { kind: "final", text: "done" }]);
+  const h = harness(llm, { tools: { get_asset: () => ({ ok: true, result: { name: "x" }, organizationIds: [ORG_X] }) } });
+  await turn(h, "schedule a weekly report for Ops");
+  expect(h.seenTools[0]?.ctx.reportEmailIntent).toBe(false);
 }

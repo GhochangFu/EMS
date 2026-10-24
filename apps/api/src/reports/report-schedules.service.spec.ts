@@ -732,7 +732,7 @@ export async function patchRunsTheWriteChecksOnTheNewChannelId(): Promise<void> 
 
 /**
  * Post-merge sweep (Amendment 2 item 7 A): PATCH's two 403 branches of
- * `assertWriteScope` were gated by no row — mutations `writableLocations:
+ * `checkWriteScope` were gated by no row — mutations `writableLocations:
  * null` and `undefined` on `[]` left every row green. A `[WC]` row moved to
  * a location of the organization the caller does not hold is 403 with the
  * scope sentence; `organizationLocations` carries the target so the 400 of

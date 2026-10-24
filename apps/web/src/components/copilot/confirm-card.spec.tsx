@@ -603,3 +603,41 @@ export async function theRecipientsAreShownInFull(): Promise<void> {
   const list = within(card).getByTestId("copilot-recipients");
   expect([list.textContent, pending.summary.includes("@")]).toEqual([`Ops (email): ${ADDRESS}`, false]);
 }
+
+/** `F4.280`: a report schedule create card, as the server stores it (the recipients card-only, D5). */
+function scheduleCreate(): CopilotPendingChangeDto {
+  return change({
+    catalogId: "reportSchedule.create",
+    path: "/api/v1/reports/schedules",
+    risk: "create",
+    body: {
+      organizationId: CHANNEL_ORG,
+      name: "Weekly energy",
+      formats: ["pdf"],
+      cadence: "weekly",
+      runAtLocal: "07:00",
+      timezone: "Asia/Kolkata",
+      locationIds: [],
+      channelId: "77777777-7777-4777-8777-777777777777",
+      recipients: [{ channelId: "77777777-7777-4777-8777-777777777777", name: "Ops", kind: "email", targets: [ADDRESS] }],
+    },
+    summary:
+      'Create the weekly report schedule "Weekly energy" in Org: pdf at 07:00 Asia/Kolkata, the whole organization, emailed to a channel on every run with no later Confirm. Email delivery: channel "Ops", 1 recipient, on every run with no later Confirm.',
+  });
+}
+
+/** `F4.280` (D5): a schedule card lists every recipient address in full. */
+export async function aScheduleCardListsTheRecipientsInFull(): Promise<void> {
+  await proposed(scheduleCreate());
+  const card = await screen.findByRole("region", { name: "Create a report schedule" });
+  expect(within(card).getByTestId("copilot-recipients").textContent).toBe(`Ops (email): ${ADDRESS}`);
+}
+
+/** `F4.280` (D5, adjacent negative): the schedule card's summary text names no address. */
+export async function aScheduleCardSummaryNamesNoAddress(): Promise<void> {
+  const pending = scheduleCreate();
+  await proposed(pending);
+  const card = await screen.findByRole("region", { name: "Create a report schedule" });
+  // The address is on the card (the recipients list), and not in the summary's own element.
+  expect([within(card).getByText(pending.summary).textContent?.includes("@"), card.textContent?.includes(ADDRESS)]).toEqual([false, true]);
+}

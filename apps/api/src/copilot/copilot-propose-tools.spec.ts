@@ -93,7 +93,7 @@ type Options = {
   slugId?: string | null; // `F4.245`: the dashboard id a slug names (none by default)
 };
 
-export function proposeHarness(options: Options & Pick<CopilotProposeServices, "rules" | "notifications"> = {}) { // `F4.278` rules, `F4.279` notifications
+export function proposeHarness(options: Options & Pick<CopilotProposeServices, "rules" | "notifications" | "reports"> = {}) { // `F4.278` rules, `F4.279` notifications, `F4.280` reports
   const stored: NewPendingChange[] = [];
   const resolved: Array<{ id: string; params: Record<string, string>; allowed: readonly string[]; bound?: string | null }> = [];
   const target: ResolvedTarget | null =
@@ -107,7 +107,7 @@ export function proposeHarness(options: Options & Pick<CopilotProposeServices, "
         },
         dashboardIdBySlug: async () => options.slugId ?? null,
       },
-      ...(options.layouts ? { layouts: options.layouts } : {}), ...(options.rules ? { rules: options.rules } : {}), ...(options.notifications ? { notifications: options.notifications } : {}),
+      ...(options.layouts ? { layouts: options.layouts } : {}), ...(options.rules ? { rules: options.rules } : {}), ...(options.notifications ? { notifications: options.notifications } : {}), ...(options.reports ? { reports: options.reports } : {}),
       pending: {
         hasOpen: async () => options.open === true,
         propose: async (_userId, change): Promise<CopilotPendingChangeDto | null> => {
@@ -495,11 +495,11 @@ export function noToolDefinitionCarriesALargeBody(): void {
  * asset-role tools of PR 6b (5,138 characters together). Measured at PR 6b:
  * 48,027. The headroom is for the next release's entries, not this one's.
  * `F4.266` (C6): the layout body guide on both layout tools, 48,027 before, 49,745 after.
- * Owner ruling 2026-10-23 (release 4): F4.282 measured 53,985; F4.278 measured 60,492; F4.279 measured 68,366
+ * Owner ruling 2026-10-23 (release 4): F4.282 measured 53,985; F4.278 measured 60,492; F4.279 measured 68,366; F4.280 measured 72,289
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();
-  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(70_000);
+  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(74_000);
 }
 
 /** Every catalog entry has one propose tool; a large body is read on demand. */
