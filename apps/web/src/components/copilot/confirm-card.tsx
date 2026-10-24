@@ -34,6 +34,9 @@ import { SymbolUploadPreview } from "./symbol-upload-preview";
 /** What a 409 means on a card: the change was applied, rejected, expired or claimed elsewhere. */
 export const CHANGE_GONE_SENTENCE = "This change is no longer available.";
 
+/** `F4.279` review: the words after a recipient the route keeps (a join outside the caller's scope). */
+export const RECIPIENT_KEPT_SUFFIX = "(stays joined: outside your scope)";
+
 function timeOf(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
@@ -117,9 +120,10 @@ function recipientsOf(value: unknown): { key: string; line: string }[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item, index) => {
     if (typeof item !== "object" || item === null) return [];
-    const { name, kind, targets } = item as Record<string, unknown>;
+    const { name, kind, targets, kept } = item as Record<string, unknown>;
     const list = Array.isArray(targets) ? targets.filter((target): target is string => typeof target === "string") : [];
-    return [{ key: `${index}`, line: `${String(name ?? "")} (${String(kind ?? "")}): ${list.length > 0 ? list.join(", ") : "none"}` }];
+    const suffix = kept === true ? ` ${RECIPIENT_KEPT_SUFFIX}` : "";
+    return [{ key: `${index}`, line: `${String(name ?? "")} (${String(kind ?? "")}): ${list.length > 0 ? list.join(", ") : "none"}${suffix}` }];
   });
 }
 

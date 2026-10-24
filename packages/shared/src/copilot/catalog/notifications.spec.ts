@@ -116,9 +116,12 @@ export function theClearSummarySaysNothingEscalates(): void {
   expect(summary("escalationDefaults.clear", { body: { organizationId: ORG, items: [] } })).toContain("no severity escalates");
 }
 
-/** An empty rule channel set says the rule then notifies nobody. */
-export function anEmptyRuleChannelSetSaysNobody(): void {
-  expect(summary("rule.notifications.set", { body: { channelIds: [] } })).toContain("notifies nobody");
+/**
+ * `F4.279` review: an empty rule channel set's summary does not claim the rule notifies nobody —
+ * a join outside the caller's scope stays, so the proposal check's note says it only when true.
+ */
+export function anEmptyRuleChannelSetMakesNoNobodyClaim(): void {
+  expect(summary("rule.notifications.set", { body: { channelIds: [] } })).not.toContain("nobody");
 }
 
 /** D5: no summary names an address; the channel create names its kind and name. */

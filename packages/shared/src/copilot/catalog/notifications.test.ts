@@ -1,7 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
-  anEmptyRuleChannelSetSaysNobody,
+  anEmptyRuleChannelSetMakesNoNobodyClaim,
   everyEntryStoresTheRecipientsForTheCard,
   theChannelAndEscalationEntriesAreForTheChannelAdmins,
   theChannelCreateModelBodyRequiresTheOrganization,
@@ -58,8 +58,8 @@ describe("F4.279 — notification and escalation catalog entries (ADR 0099 Amend
     theClearSummarySaysNothingEscalates();
   });
 
-  it("an empty rule channel set says the rule notifies nobody", () => {
-    anEmptyRuleChannelSetSaysNobody();
+  it("an empty rule channel set's summary makes no notifies-nobody claim", () => {
+    anEmptyRuleChannelSetMakesNoNobodyClaim();
   });
 
   it("the channel create summary names no address", () => {

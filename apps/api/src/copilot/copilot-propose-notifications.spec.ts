@@ -1,14 +1,14 @@
 import { BadRequestException } from "@nestjs/common";
 import { expect } from "vitest";
 
-import { proposeToolName } from "@bms/shared/copilot";
+import { proposeToolName, withPaths } from "@bms/shared/copilot";
 
 import type { ResolvedIdentity } from "../auth/identity-resolver";
 import type { NotificationProposalCheckInput } from "../notifications/notification-proposal-check.service";
 import { bodyHash } from "./body-hash";
 import { PROPOSE_OUTWARD_NOT_ASKED_ERROR, PROPOSE_OUTWARD_ON_FOLLOW_UP_ERROR } from "./copilot-outward-intent";
 import { NOTIFICATION_ENTRY_IDS, PROPOSE_NOTIFICATIONS_UNAVAILABLE_ERROR } from "./copilot-propose-notifications";
-import { PROPOSE_PRECONDITION_ERROR } from "./copilot-propose-tools";
+import { FILL_STEP_TOOL, PROPOSE_PRECONDITION_ERROR } from "./copilot-propose-tools";
 import { proposeHarness, STAMP } from "./copilot-propose-tools.spec";
 import type { ResolvedTarget } from "./copilot-target-resolver";
 
@@ -30,6 +30,11 @@ const RULE_SET_TOOL = proposeToolName({ id: "rule.notifications.set" });
 const PROFILE_UPDATE_TOOL = proposeToolName({ id: "escalationProfile.update" });
 const NOTIFICATION_TOOLS = [...NOTIFICATION_ENTRY_IDS].map((id) => proposeToolName({ id }));
 const CHANNEL_ADMIN_TOOLS = NOTIFICATION_TOOLS.filter((name) => name !== RULE_SET_TOOL);
+
+const UPDATE_TOOL = proposeToolName({ id: "notificationChannel.update" });
+const HOOK_URL = "https://hooks.example.test/ops";
+const CHANNEL_HASH_EXCLUDED = ["secret", "config.url", "recipients"];
+const OPEN_CREATE = { openWizards: [{ catalogId: "notificationChannel.create", params: {}, name: null, organizationId: null }] };
 
 const EMAIL_CREATE = { organizationId: ORG_X, code: "ops", name: "Ops", kind: "email", config: { to: [ADDRESS] } };
 
@@ -227,4 +232,101 @@ export async function theCheckIsAskedWithTheResolvedOrganization(): Promise<void
   const h = harness();
   await h.call(RULE_SET_TOOL, { id: ROW, body: { channelIds: [ROW] } }, asRole("organization_admin"));
   expect(h.c.calls.map((call) => [call.entryId, call.organizationId, call.params.id])).toEqual([["rule.notifications.set", ORG_X, ROW]]);
+}
+
+/** What the browser sends on Confirm: the stored body without its card-only keys, with the typed paths set. */
+function confirmedBody(stored: unknown, typed: Record<string, string>): unknown {
+  const { recipients: _recipients, ...sent } = stored as Record<string, unknown>;
+  return withPaths(sent, typed);
+}
+
+/**
+ * Review: a webhook create the model sent without `config` stores the defaulted parent, so the
+ * Confirm that types `config.url` into it hashes to the stored hash.
+ */
+export async function aWebhookCreateWithoutConfigConfirmsWithItsUrl(): Promise<void> {
+  const h = harness();
+  await h.call(CREATE_TOOL, { body: { organizationId: ORG_X, code: "hook", name: "Hook", kind: "webhook" } });
+  const stored = h.stored[0];
+  expect(bodyHash(confirmedBody(stored?.body, { "config.url": HOOK_URL }), CHANNEL_HASH_EXCLUDED)).toBe(stored?.bodyHash);
+}
+
+/** Review: the defaulted parent is the empty object the card writes the URL into. */
+export async function aWebhookCreateWithoutConfigStoresTheEmptyConfig(): Promise<void> {
+  const h = harness();
+  await h.call(CREATE_TOOL, { body: { organizationId: ORG_X, code: "hook", name: "Hook", kind: "webhook" } });
+  expect((h.stored[0]?.body as Record<string, unknown>).config).toEqual({});
+}
+
+/** Review: an update the model sent without `config` stores none, so the PATCH keeps the stored one. */
+export async function anUpdateWithoutConfigStoresNoConfig(): Promise<void> {
+  const h = harness();
+  await h.call(UPDATE_TOOL, { id: ROW, body: { name: "Ops desk" } });
+  expect(Object.keys(h.stored[0]?.body ?? {}).sort()).toEqual(["name", "recipients"]);
+}
+
+/** Review: a kind change without its `config` is refused (it would leave an email list on a webhook). */
+export async function aKindChangeWithoutConfigIsRefused(): Promise<void> {
+  const h = harness();
+  const outcome = await h.call(UPDATE_TOOL, { id: ROW, body: { kind: "webhook" } });
+  expect([outcome.ok, h.stored]).toEqual([false, []]);
+}
+
+/** The positive control: the same kind change with its (empty) `config` is stored. */
+export async function aKindChangeWithConfigIsStored(): Promise<void> {
+  const h = harness();
+  await h.call(UPDATE_TOOL, { id: ROW, body: { kind: "webhook", config: {} } });
+  expect(h.stored.length).toBe(1);
+}
+
+/** Review (Q6, Q12): `fill_step` cannot put a webhook URL into a channel's `config`. */
+export async function fillStepRefusesAUrlInConfig(): Promise<void> {
+  const h = harness();
+  const outcome = await h.call(
+    FILL_STEP_TOOL,
+    { catalogId: "notificationChannel.create", params: {}, stepId: "delivery", values: { config: { url: HOOK_URL } } },
+    OPEN_CREATE,
+  );
+  expect(outcome.ok).toBe(false);
+}
+
+/** Review (Q6): `fill_step` cannot name a kind the copilot does not propose. */
+export async function fillStepRefusesAnUnproposedKind(): Promise<void> {
+  const h = harness();
+  const outcome = await h.call(
+    FILL_STEP_TOOL,
+    { catalogId: "notificationChannel.create", params: {}, stepId: "channel", values: { kind: "sms" } },
+    OPEN_CREATE,
+  );
+  expect(outcome.ok).toBe(false);
+}
+
+/** The positive control: `fill_step` fills an email recipient list. */
+export async function fillStepFillsAnEmailList(): Promise<void> {
+  const h = harness();
+  const outcome = await h.call(
+    FILL_STEP_TOOL,
+    { catalogId: "notificationChannel.create", params: {}, stepId: "delivery", values: { config: { to: [ADDRESS] } } },
+    OPEN_CREATE,
+  );
+  expect(outcome.ok).toBe(true);
+}
+
+/** Every `items` node under a JSON schema that is an array (a tuple), by path. */
+function arrayItemsPaths(node: unknown, path: string): string[] {
+  if (Array.isArray(node)) return node.flatMap((item, index) => arrayItemsPaths(item, `${path}[${index}]`));
+  if (node === null || typeof node !== "object") return [];
+  return Object.entries(node).flatMap(([key, value]) => [
+    ...(key === "items" && Array.isArray(value) ? [`${path}.items`] : []),
+    ...arrayItemsPaths(value, `${path}.${key}`),
+  ]);
+}
+
+/**
+ * Review: no propose-tool definition holds an array-valued `items` — JSON Schema 2020-12, which the
+ * providers validate tool input schemas against, requires `items` to be a schema.
+ */
+export function noToolDefinitionHoldsATupleItems(): void {
+  const definitions = harness().tools.registry.definitions;
+  expect(definitions.flatMap((d) => arrayItemsPaths(d, d.name))).toEqual([]);
 }

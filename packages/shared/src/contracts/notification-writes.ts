@@ -159,7 +159,9 @@ export const copilotCreateNotificationChannelModelBodySchema = z
 /**
  * `F4.279` — the copilot's model body for `notificationChannel.update`. No
  * `secret` (Q11) and no `enabled`: the deactivate and reactivate entries own
- * the direction (Q5, the `assetRole.update` rule).
+ * the direction (Q5, the `assetRole.update` rule). A `kind` comes with its
+ * `config`: the PATCH keeps a stored `config` it is not sent, so a kind change
+ * alone would leave an email list on a webhook, and the card would show no URL box.
  */
 export const copilotUpdateNotificationChannelModelBodySchema = z
   .object({
@@ -171,7 +173,13 @@ export const copilotUpdateNotificationChannelModelBodySchema = z
   .refine((body) => Object.keys(body).length > 0, {
     message: "a PATCH must change at least one field",
   })
-  .describe("Partial update of a notification channel. At least one field must be present.");
+  .refine((body) => body.kind === undefined || body.config !== undefined, {
+    message: "a kind change must send its config ({} for a webhook)",
+    path: ["config"],
+  })
+  .describe(
+    "Partial update of a notification channel. At least one field must be present; a `kind` must come with its `config`.",
+  );
 
 export type CreateNotificationChannelBody = z.infer<typeof createNotificationChannelBodySchema>;
 export type UpdateNotificationChannelBody = z.infer<typeof updateNotificationChannelBodySchema>;
@@ -191,6 +199,12 @@ export const notificationRecipientSchema = z
     name: z.string(),
     kind: z.string(),
     targets: z.array(z.string()),
+    /**
+     * A current join `setRuleChannels` keeps because it is outside the
+     * caller's manage scope (`F3.7`): the change leaves it, and it still
+     * receives the rule's alarms.
+     */
+    kept: z.literal(true).optional(),
   })
   .strict();
 

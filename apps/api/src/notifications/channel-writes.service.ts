@@ -70,6 +70,31 @@ function translateChannelConstraintErrors<T>(
 /** The Postgres constraint name behind `create`'s `body.organizationId` FK. */
 const ORGANIZATION_ID_FK = "notification_channels_organization_id_fkey";
 
+/** The channel columns a proposal card shows: never the secret. */
+const PREVIEW_COLUMNS = {
+  id: notificationChannels.id,
+  organizationId: notificationChannels.organizationId,
+  name: notificationChannels.name,
+  kind: notificationChannels.kind,
+  config: notificationChannels.config,
+};
+
+/** One channel as {@link ChannelWritesService.previewRuleChannels} reads it. */
+export type RuleChannelPreviewRow = {
+  readonly id: string;
+  readonly organizationId: string | null;
+  readonly name: string;
+  readonly kind: string;
+  readonly config: Record<string, unknown>;
+};
+
+/** What `setRuleChannels` would store for a set: the named channels, and the current joins it keeps or drops. */
+export type RuleChannelsPreview = {
+  readonly named: readonly RuleChannelPreviewRow[];
+  readonly kept: readonly RuleChannelPreviewRow[];
+  readonly removed: readonly RuleChannelPreviewRow[];
+};
+
 /**
  * `F4.279` (ADR 0099 Amendment 8, "Common to every entry") — the channel
  * writes, moved out of `ChannelsService`: `create`, `update`, `remove` and
@@ -414,6 +439,38 @@ export class ChannelWritesService {
       cleared: stored.length === 0,
     });
     return stored;
+  }
+
+  /**
+   * `F4.279` review (ADR 0099 Amendment 8 D2) — what {@link setRuleChannels}
+   * would do with this set, **read and never written**, for the copilot's
+   * proposal check. `named` are the submitted channels as the route's pairing
+   * check reads them — on `fleetDb`, with no manage gate, because the route has
+   * none — in the order submitted. `kept` are the current joins the route keeps
+   * for the caller ({@link joinsOutsideManageScope}), and `removed` the current
+   * joins the rewrite drops.
+   */
+  async previewRuleChannels(actor: JwtPayload, ruleId: string, channelIds: readonly string[]): Promise<RuleChannelsPreview> {
+    const unique = [...new Set(channelIds)];
+    const named =
+      unique.length === 0
+        ? []
+        : await this.fleetDb.select(PREVIEW_COLUMNS).from(notificationChannels).where(inArray(notificationChannels.id, unique));
+    const keptIds = new Set(await this.joinsOutsideManageScope(actor, ruleId, unique));
+    const current = await this.fleetDb
+      .select(PREVIEW_COLUMNS)
+      .from(ruleNotifications)
+      .innerJoin(notificationChannels, eq(notificationChannels.id, ruleNotifications.channelId))
+      .where(eq(ruleNotifications.ruleId, ruleId));
+    const submitted = new Set(unique);
+    // `config` is a jsonb column typed `unknown`; a channel's config is always an object (`channelConfigSchema`).
+    const rows = (list: readonly (Omit<RuleChannelPreviewRow, "config"> & { config: unknown })[]) =>
+      list.map((channel) => ({ ...channel, config: (channel.config ?? {}) as Record<string, unknown> }));
+    return {
+      named: rows(unique.flatMap((id) => named.filter((channel) => channel.id === id))),
+      kept: rows(current.filter((channel) => keptIds.has(channel.id))),
+      removed: rows(current.filter((channel) => !submitted.has(channel.id) && !keptIds.has(channel.id))),
+    };
   }
 
   /**

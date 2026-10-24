@@ -251,8 +251,10 @@ export const NOTIFICATION_ENTRIES: readonly CatalogEntry[] = [
     steps: [{ id: "channels", title: "Channels", fields: ["channelIds"] }],
     summary: ({ body, targetName }) => {
       const count = countOf(body, "channelIds");
+      // `F4.279` review: no "notifies nobody" here — a join outside the caller's scope stays
+      // (`setRuleChannels`), so the proposal check's note says it only when it is true.
       return count === 0
-        ? `Set the notification channels of the rule ${quoted(targetName)} to none: the rule then notifies nobody.`
+        ? `Set the notification channels of the rule ${quoted(targetName)} to none.`
         : `Set the notification channels of the rule ${quoted(targetName)} to ${plural(count, "channel")}.`;
     },
   },

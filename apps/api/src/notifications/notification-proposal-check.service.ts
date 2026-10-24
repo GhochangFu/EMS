@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 
 import { type JwtPayload, type NotificationRecipient, WEBHOOK_URL_TYPED_ON_CONFIRM } from "@bms/shared";
 
+import { ChannelWritesService, type RuleChannelPreviewRow } from "./channel-writes.service";
 import { ChannelsService } from "./channels.service";
 import { EscalationProfilesService } from "./escalation-profiles.service";
 import type { NotificationChannelRow } from "./notification-transport";
@@ -54,7 +55,7 @@ function proposedTargets(kind: string, config: Readonly<Record<string, unknown>>
   return kind === "webhook" ? [WEBHOOK_URL_TYPED_ON_CONFIRM] : strings(config.to);
 }
 
-function recipientOf(channel: NotificationChannelRow): NotificationRecipient {
+function recipientOf(channel: Pick<NotificationChannelRow, "id" | "name" | "kind" | "config">): NotificationRecipient {
   return { channelId: channel.id, name: channel.name, kind: channel.kind, targets: storedTargets(channel.kind, channel.config) };
 }
 
@@ -66,18 +67,20 @@ const targetCount = (recipients: readonly NotificationRecipient[]): number =>
  * notification proposal runs before its card is stored, the
  * `RuleProposalCheckService` shape.
  *
- * It resolves every channel the proposal names — the path's channel, a rule's
- * `channelIds`, a ladder's `steps[].channelIds`, and for a severity map the
- * ladders of the profiles it maps — through `ChannelsService.loadById`, the
- * route's own gate (a 403 is the refusal, and its sentence is the route's).
+ * It resolves every channel the proposal names — the path's channel, a
+ * ladder's `steps[].channelIds`, and for a severity map the ladders of the
+ * profiles it maps — through `ChannelsService.loadById`, the route's own gate
+ * (a 403 is the refusal, and its sentence is the route's). A rule's
+ * `channelIds` are read through `ChannelWritesService.previewRuleChannels`
+ * instead, because `setRuleChannels` has no manage gate of its own.
  * A fleet-wide channel (`organizationId === null`) is refused with
  * {@link FLEET_CHANNEL_REFUSAL}, and a channel of another organization with the
  * pairing sentence `setRuleChannels` and the profile service use.
  *
  * It builds the card-only `recipients` list, every address and URL in full,
  * and a `note` with names and counts only, which the propose tool appends to
- * the model-facing summary. **It reads only; it writes nothing** — its two
- * services are used for `loadById` and `list` alone.
+ * the model-facing summary. **It reads only; it writes nothing** — its three
+ * services are used for `loadById`, `list` and `previewRuleChannels` alone.
  *
  * In the API-only `NotificationsModule`, exported for `CopilotModule`.
  */
@@ -86,6 +89,7 @@ export class NotificationProposalCheckService {
   constructor(
     @Inject(ChannelsService) private readonly channels: Pick<ChannelsService, "loadById">,
     @Inject(EscalationProfilesService) private readonly profiles: Pick<EscalationProfilesService, "list">,
+    @Inject(ChannelWritesService) private readonly writes: Pick<ChannelWritesService, "previewRuleChannels">,
   ) {}
 
   async check(input: NotificationProposalCheckInput): Promise<NotificationProposalCheckResult> {
@@ -116,11 +120,13 @@ export class NotificationProposalCheckService {
       return { note: `Recipients: ${recipient.targets.length}.`, recipients: [recipient] };
     }
 
+    if (entryId === "rule.notifications.set") {
+      return this.checkRuleChannels(user, params.id as string, strings(body.channelIds), organizationId);
+    }
+
     let channelIds: string[] = [];
     let pairing = "rule";
-    if (entryId === "rule.notifications.set") {
-      channelIds = strings(body.channelIds);
-    } else if (entryId === "escalationProfile.create" || entryId === "escalationProfile.update") {
+    if (entryId === "escalationProfile.create" || entryId === "escalationProfile.update") {
       pairing = "profile";
       channelIds = Array.isArray(body.steps)
         ? body.steps.flatMap((step) => (isObject(step) ? strings(step.channelIds) : []))
@@ -136,6 +142,40 @@ export class NotificationProposalCheckService {
     const recipients = found.map(recipientOf);
     if (recipients.length === 0) return { note: "", recipients };
     return { note: `Channels: ${recipients.length}; recipients: ${targetCount(recipients)}.`, recipients };
+  }
+
+  /**
+   * `F4.279` review (D2) — a rule's channel set, read as `setRuleChannels` reads it: the named
+   * channels with no manage gate (the route has none, so a location or asset-group admin whose
+   * rule is in scope is not refused here either), a fleet-wide one refused first (Q3), then one
+   * of another organization with the route's pairing sentence. A fleet-wide join the rewrite
+   * would drop (a caller with no fence, the global admin) is refused too: the copilot never
+   * names one (Q3), so the card could not keep it. The joins the route keeps for the caller are
+   * listed on the card as `kept`, and the note says when the rule then notifies nobody.
+   */
+  private async checkRuleChannels(
+    user: JwtPayload,
+    ruleId: string,
+    channelIds: readonly string[],
+    organizationId: string,
+  ): Promise<NotificationProposalCheckResult> {
+    const unique = [...new Set(channelIds)];
+    const preview = await this.writes.previewRuleChannels(user, ruleId, unique);
+    if (preview.named.some((channel) => channel.organizationId === null)) throw new BadRequestException(FLEET_CHANNEL_REFUSAL);
+    const wrongOrg = preview.named.filter((channel) => channel.organizationId !== organizationId).map((channel) => channel.id);
+    if (wrongOrg.length > 0) {
+      throw new BadRequestException(`Channel(s) belong to a different organization than this rule: ${wrongOrg.join(", ")}`);
+    }
+    const missing = unique.filter((id) => !preview.named.some((channel) => channel.id === id));
+    if (missing.length > 0) throw new BadRequestException(`Channel does not exist: ${missing.join(", ")}`);
+    if (preview.removed.some((channel) => channel.organizationId === null)) throw new BadRequestException(FLEET_CHANNEL_REFUSAL);
+    const named = preview.named.map((channel: RuleChannelPreviewRow) => recipientOf(channel));
+    const kept = preview.kept.map((channel: RuleChannelPreviewRow) => ({ ...recipientOf(channel), kept: true as const }));
+    const notes: string[] = [];
+    if (named.length > 0) notes.push(`Channels: ${named.length}; recipients: ${targetCount(named)}.`);
+    if (kept.length > 0) notes.push(`Kept outside your scope: ${kept.length} ${kept.length === 1 ? "channel" : "channels"}.`);
+    if (named.length + kept.length === 0) notes.push("The rule then notifies nobody.");
+    return { note: notes.join(" "), recipients: [...named, ...kept] };
   }
 
   /**

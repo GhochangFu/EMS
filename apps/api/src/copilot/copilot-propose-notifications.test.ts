@@ -25,6 +25,15 @@ import {
   theStoredBodyCarriesTheRecipients,
   theSummaryCarriesTheNoteAndNoAddress,
   theUpdateSummaryNeverListsTheRecipients,
+  aWebhookCreateWithoutConfigConfirmsWithItsUrl,
+  aWebhookCreateWithoutConfigStoresTheEmptyConfig,
+  anUpdateWithoutConfigStoresNoConfig,
+  aKindChangeWithoutConfigIsRefused,
+  aKindChangeWithConfigIsStored,
+  fillStepRefusesAUrlInConfig,
+  fillStepRefusesAnUnproposedKind,
+  fillStepFillsAnEmailList,
+  noToolDefinitionHoldsATupleItems,
 } from "./copilot-propose-notifications.spec";
 
 /** `F4.279` — Vitest entry point; assertions live in the sibling `.spec` (§4.6). */
@@ -54,4 +63,13 @@ describe("F4.279 — the notification propose tools (ADR 0099 Amendment 8)", () 
   it("the profile update stores its precondition", async () => theProfileUpdateStoresItsPrecondition());
   it("refuses a profile update without a stamp", async () => theProfileUpdateWithoutAStampIsRefused());
   it("asks the check with the resolved organization", async () => theCheckIsAskedWithTheResolvedOrganization());
+  it("a webhook create without config confirms with its typed URL", async () => aWebhookCreateWithoutConfigConfirmsWithItsUrl());
+  it("a webhook create without config stores the empty config", async () => aWebhookCreateWithoutConfigStoresTheEmptyConfig());
+  it("an update without config stores no config", async () => anUpdateWithoutConfigStoresNoConfig());
+  it("refuses a kind change without its config", async () => aKindChangeWithoutConfigIsRefused());
+  it("stores a kind change with its config (positive control)", async () => aKindChangeWithConfigIsStored());
+  it("fill_step refuses a URL in config", async () => fillStepRefusesAUrlInConfig());
+  it("fill_step refuses a kind the copilot does not propose", async () => fillStepRefusesAnUnproposedKind());
+  it("fill_step fills an email list (positive control)", async () => fillStepFillsAnEmailList());
+  it("no tool definition holds an array-valued items", () => noToolDefinitionHoldsATupleItems());
 });

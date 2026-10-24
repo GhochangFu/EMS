@@ -201,11 +201,15 @@ export const copilotSetEscalationDefaultsModelBodySchema = z
   })
   .describe("Replaces one organization's severity → escalation profile map with at least one pair.");
 
-/** `F4.279` (Amendment 8 D3) — the copilot's model body for `escalationDefaults.clear`: the empty map. */
+/**
+ * `F4.279` (Amendment 8 D3) — the copilot's model body for `escalationDefaults.clear`: the empty map.
+ * An array capped at zero, not `z.tuple([])`: a tuple emits an array-valued `items`, which a JSON
+ * Schema 2020-12 tool-input validator refuses, and this body is inlined in its propose tool.
+ */
 export const copilotClearEscalationDefaultsModelBodySchema = z
   .object({
     organizationId: z.string().uuid(),
-    items: z.tuple([]),
+    items: z.array(escalationDefaultItemSchema).max(0),
   })
   .strict();
 

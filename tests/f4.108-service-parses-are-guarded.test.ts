@@ -635,8 +635,9 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         "per-site counts below would be vacuous",
       // `F4.274`: 23 + the five telemetry read tools' literals; `F4.275`: + six energy read tools;
       // `F4.277`: + the system-status and audit-log read tools; `F4.276`: + the alarm
-      // details and alarm knowledge-base read tools; `F4.278`: + the alarm-rule read tool.
-    ).toBe(39);
+      // details and alarm knowledge-base read tools; `F4.278`: + the alarm-rule read tool;
+      // `F4.279`: + the channel and escalation read tools.
+    ).toBe(41);
 
     const callSites = [
       STOCK_SERVICE,

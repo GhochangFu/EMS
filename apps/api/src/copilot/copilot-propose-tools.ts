@@ -150,6 +150,27 @@ export const COPILOT_READ_FROM_FILE_NOTE = " (read from an attached file: check 
 /** `F3.86` ruling Q8: the user-account entries a local sign-in deployment refuses (grants are database-only and stay). */
 const isUserAccountEntry = (entry: CatalogEntry): boolean => entry.id.startsWith("user.");
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** The top-level parent of each dotted `clientOnly` path (`config.url` → `config`). */
+export const nestedClientOnlyParents = (clientOnly: readonly string[]): string[] => [
+  ...new Set(clientOnly.filter((path) => path.includes(".")).map((path) => path.split(".")[0] as string)),
+];
+
+/**
+ * `F4.279` review: a `fill_step` value is checked against the copilot's model body where that
+ * body narrows the field (Q6, Q12: a channel's `config` holds `to` only, never a URL), and against
+ * the route body for a field the model body does not name.
+ */
+function fillValuesSchema(entry: CatalogEntry, fields: readonly string[]): ZodTypeAny {
+  if (entry.modelBody === undefined) return stepValuesSchema(entry.body, fields);
+  const modelFields = new Set(bodyFieldsOf(entry.modelBody));
+  const narrowed = fields.filter((field) => modelFields.has(field));
+  const rest = fields.filter((field) => !modelFields.has(field));
+  return stepValuesSchema(entry.modelBody, narrowed).merge(stepValuesSchema(entry.body, rest)).strict();
+}
+
 /**
  * The propose tool the admin form of the role refusal names. `F3.87` PR 6 made
  * `assetRole.create` an entry with `offeredTo: ["admin"]`, so the global
@@ -456,6 +477,13 @@ export function createCopilotProposeTools(
     // raw body, not `parsed.data` (a transform or default would change what the route parses); it
     // never holds a `clientOnly` key, because the strict model body refused one above (`F3.86` PR 2).
     let body = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
+    // `F4.279` review: the card sets a nested `clientOnly` path (`config.url`) inside its parent, and
+    // the Confirm strips only the leaf — so a parent the model body defaults is stored as defaulted,
+    // or the stored hash never matches the Confirm's (`{ config: {} }` against no `config`).
+    for (const parent of nestedClientOnlyParents(entry.clientOnly)) {
+      const defaulted = (parsed.data as Record<string, unknown>)[parent];
+      if (body[parent] === undefined && isPlainObject(defaulted)) body[parent] = JSON.parse(JSON.stringify(defaulted));
+    }
 
     if (await services.pending.hasOpen(ctx.identity.id, ctx.conversationId)) {
       return { ok: false, error: PROPOSE_OPEN_CHANGE_ERROR };
@@ -606,7 +634,7 @@ export function createCopilotProposeTools(
         if (refusal !== null) return { ok: false, error: refusal };
         const step = target.steps.find((candidate) => candidate.id === args.stepId);
         if (step === undefined) return { ok: false, error: UNKNOWN_STEP_ERROR };
-        const values = stepValuesSchema(target.body, step.fields).safeParse(args.values);
+        const values = fillValuesSchema(target, step.fields).safeParse(args.values);
         if (!values.success) return { ok: false, error: `Invalid values: ${issuesOf(values.error)}` };
         // The step check reads field shapes only; the model body's rule that the copilot never names
         // the global admin role (decision 3) is a refinement, so it is held here on the server too.

@@ -50,6 +50,32 @@ const ROWS: Record<string, NotificationChannelRow> = {
   [FOREIGN]: row(FOREIGN, OTHER_ORG, "email", { to: ["other@example.test"] }, "Other mail"),
 };
 
+/** The rule's current joins, and which of them the route keeps for the caller (`joinsOutsideManageScope`). */
+type Joins = { readonly current?: readonly string[]; readonly kept?: readonly string[] };
+
+/** `setRuleChannels`'s read, from `ROWS`: no manage gate, as the route has none. */
+function previewFake(joins: Joins = {}): Ctor[2] {
+  return {
+    previewRuleChannels: async (_jwt: JwtPayload, _ruleId: string, ids: readonly string[]) => {
+      const rows = (list: readonly string[]) => list.flatMap((id) => (ROWS[id] === undefined ? [] : [ROWS[id]]));
+      const kept = joins.kept ?? [];
+      const current = joins.current ?? [];
+      return {
+        named: rows(ids),
+        kept: rows(current.filter((id) => kept.includes(id))),
+        removed: rows(current.filter((id) => !ids.includes(id) && !kept.includes(id))),
+      };
+    },
+  } as unknown as Ctor[2];
+}
+
+/** A `loadById` that refuses every channel: the manage gate a location or asset-group admin meets. */
+const refusingChannels = {
+  loadById: async () => {
+    throw new ForbiddenException("Notification channel is outside your access scope");
+  },
+} as unknown as Ctor[0];
+
 /** A channel read that answers from `ROWS`, and any write method that records and throws. */
 function fakes(touched: string[] = []): { channels: Ctor[0]; profiles: Ctor[1] } {
   const untouchable = (name: string) => () => {
@@ -84,7 +110,24 @@ function fakes(touched: string[] = []): { channels: Ctor[0]; profiles: Ctor[1] }
 
 function check(entryId: string, body: Record<string, unknown>, params: Record<string, string> = {}, touched: string[] = []) {
   const { channels, profiles } = fakes(touched);
-  return new NotificationProposalCheckService(channels, profiles).check({ entryId, params, body, organizationId: ORG, user: USER });
+  return new NotificationProposalCheckService(channels, profiles, previewFake()).check({
+    entryId,
+    params,
+    body,
+    organizationId: ORG,
+    user: USER,
+  });
+}
+
+/** A rule channel set checked with a refusing manage gate, as `role`, over the rule's joins. */
+function checkRuleSet(channelIds: string[], role: string, joins: Joins = {}, channels: Ctor[0] = refusingChannels) {
+  return new NotificationProposalCheckService(channels, fakes().profiles, previewFake(joins)).check({
+    entryId: "rule.notifications.set",
+    params: { id: "r" },
+    body: { channelIds },
+    organizationId: ORG,
+    user: { ...USER, role } as JwtPayload,
+  });
 }
 
 async function refusal(run: () => Promise<unknown>): Promise<unknown> {
@@ -117,7 +160,7 @@ export async function aChannelOutsideTheScopeIsTheRoutesRefusal(): Promise<void>
     },
   } as unknown as Ctor[0];
   const err = await refusal(() =>
-    new NotificationProposalCheckService(channels, profiles).check({
+    new NotificationProposalCheckService(channels, profiles, previewFake()).check({
       entryId: "notificationChannel.test",
       params: { id: EMAIL },
       body: {},
@@ -182,4 +225,54 @@ export async function theUntouchableFakeRecordsAWrite(): Promise<void> {
   const { channels } = fakes(touched);
   expect(() => (channels as unknown as { create: () => void }).create()).toThrow();
   expect(touched).toEqual(["channels.create"]);
+}
+
+/** D2 (review): a location admin's rule channel set is not refused by a manage gate the route does not have. */
+export async function aLocationAdminsRuleChannelSetPasses(): Promise<void> {
+  const result = await checkRuleSet([EMAIL], "location_admin");
+  expect(result.recipients.map((r) => r.channelId)).toEqual([EMAIL]);
+}
+
+/** D2 (review): an asset-group admin's rule channel set is not refused by a manage gate the route does not have. */
+export async function anAssetGroupAdminsRuleChannelSetPasses(): Promise<void> {
+  const result = await checkRuleSet([EMAIL], "asset_group_admin");
+  expect(result.recipients.map((r) => r.channelId)).toEqual([EMAIL]);
+}
+
+/** Q3 (review): an organization admin naming a fleet-wide channel meets Q3's sentence, not a 403. */
+export async function anOrganizationAdminNamingAFleetChannelMeetsQ3(): Promise<void> {
+  const err = await refusal(() => checkRuleSet([FLEET], "organization_admin"));
+  expect([err instanceof BadRequestException, (err as Error).message]).toEqual([true, FLEET_CHANNEL_REFUSAL]);
+}
+
+/** Q3 (review): a set that would drop a fleet-wide join (the global admin's full replace) is refused. */
+export async function droppingAFleetJoinIsRefused(): Promise<void> {
+  const err = await refusal(() => checkRuleSet([EMAIL], "admin", { current: [FLEET, EMAIL] }));
+  expect([err instanceof BadRequestException, (err as Error).message]).toEqual([true, FLEET_CHANNEL_REFUSAL]);
+}
+
+/** The positive control: the same set, with the fleet join kept by the route, passes. */
+export async function aKeptFleetJoinIsNotRefused(): Promise<void> {
+  const result = await checkRuleSet([EMAIL], "organization_admin", { current: [FLEET, EMAIL], kept: [FLEET] });
+  expect(result.recipients.map((r) => r.channelId)).toEqual([EMAIL, FLEET]);
+}
+
+/** D5 (review): a join the route keeps is on the card, marked `kept`. */
+export async function aKeptJoinIsListedAsKept(): Promise<void> {
+  const result = await checkRuleSet([], "organization_admin", { current: [FLEET], kept: [FLEET] });
+  expect(result.recipients).toEqual([
+    { channelId: FLEET, name: "Fleet mail", kind: "email", targets: ["fleet@example.test"], kept: true },
+  ]);
+}
+
+/** D5 (review): an empty set with a kept join does not say the rule notifies nobody. */
+export async function anEmptySetWithAKeptJoinMakesNoNobodyClaim(): Promise<void> {
+  const result = await checkRuleSet([], "organization_admin", { current: [FLEET], kept: [FLEET] });
+  expect(result.note).toBe("Kept outside your scope: 1 channel.");
+}
+
+/** D5 (review): an empty set with nothing kept says the rule then notifies nobody. */
+export async function anEmptySetWithNothingKeptSaysNobody(): Promise<void> {
+  const result = await checkRuleSet([], "admin", { current: [EMAIL] });
+  expect(result.note).toBe("The rule then notifies nobody.");
 }
