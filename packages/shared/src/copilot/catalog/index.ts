@@ -10,6 +10,7 @@ import { DASHBOARD_ENTRIES } from "./dashboards";
 import { KPI_ENTRIES } from "./kpis";
 import { LOCATION_TYPE_ENTRIES, LOCATION_TYPE_PENDING } from "./location-types";
 import { LOCATION_ENTRIES, LOCATION_PENDING } from "./locations";
+import { MAINTENANCE_ENTRIES, MAINTENANCE_PENDING } from "./maintenance";
 import { NOTIFICATION_ENTRIES, NOTIFICATION_PENDING } from "./notifications";
 import { REPORT_ENTRIES, REPORT_PENDING } from "./reports";
 import { ONBOARDING_ENTRIES, ONBOARDING_PENDING } from "./onboarding";
@@ -53,6 +54,8 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...NOTIFICATION_ENTRIES,
   // F4.280 (Amendment 8): the report schedules and the on-demand file save.
   ...REPORT_ENTRIES,
+  // F4.281 (Amendment 8): the maintenance schedules.
+  ...MAINTENANCE_ENTRIES,
 ];
 
 /**
@@ -113,6 +116,8 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...NOTIFICATION_PENDING,
   // F4.280 (Amendment 8): the two report DELETEs stay manual.
   ...REPORT_PENDING,
+  // F4.281 (Amendment 8): the convert creates a work order and stays manual.
+  ...MAINTENANCE_PENDING,
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */

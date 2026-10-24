@@ -236,6 +236,11 @@ export function theReportsPageMountsItsTwoCreates(): void {
   ]);
 }
 
+/** `F4.281` (Amendment 8 Q16): the Schedule Centre mounts the maintenance schedule create. */
+export function theScheduleCentreMountsItsCreateWizard(): void {
+  expect(pageWizardCandidates("/maintenance-schedules")).toStrictEqual([{ catalogId: "maintenanceSchedule.create", params: {} }]);
+}
+
 /** `F4.279`: the Escalation page mounts the profile create and the two severity-map wizards. */
 export function theEscalationPageMountsItsWizards(): void {
   expect(pageWizardCandidates("/admin/escalation-profiles")).toStrictEqual([

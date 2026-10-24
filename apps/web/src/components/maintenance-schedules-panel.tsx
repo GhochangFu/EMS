@@ -1,8 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { FormEvent } from "react";
 import { useMemo, useState } from "react";
 import type {
-  MaintenanceGenerationMode,
   MaintenanceScheduleCategory,
   MaintenanceScheduleItem,
   WorkOrderPriority,
@@ -11,9 +9,7 @@ import type {
 import type { AssetRow } from "../api/assets";
 import {
   convertMaintenanceSchedule,
-  createMaintenanceSchedule,
   fetchMaintenanceSchedules,
-  updateMaintenanceSchedule,
 } from "../api/maintenance";
 // The three label maps left this file in `F2.19` (ADR 0038 Amendment 5 Part B).
 // The Maintenance tab is the second surface that renders these twenty-three
@@ -26,6 +22,8 @@ import {
   WORK_ORDER_PRIORITY_LABELS,
 } from "../lib/maintenance-labels";
 import { apiErrorMessage } from "../lib/api-error-message";
+import { MaintenanceScheduleToggleWizard } from "./maintenance-schedule-toggle-wizard";
+import { MaintenanceScheduleWizard } from "./maintenance-schedule-wizard";
 
 type MaintenanceSchedulesPanelProps = {
   assetOptions: AssetRow[];
@@ -51,13 +49,6 @@ const categoryOptions: MaintenanceScheduleCategory[] = [
   "shutdown_outage",
   "energy_optimization",
   "safety_critical",
-];
-const generationModes: MaintenanceGenerationMode[] = [
-  "manual",
-  "calendar",
-  "runtime",
-  "condition",
-  "predictive",
 ];
 
 /** Exported for `maintenance-schedules-panel.spec.tsx` (F3.65b owner ruling R-f: high and medium differ). */
@@ -109,12 +100,16 @@ function dueLabel(item: MaintenanceScheduleItem): string {
   return `Due in ${days}d`;
 }
 
-function tomorrowDateInput(): string {
-  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  return tomorrow.toISOString().slice(0, 10);
-}
-
-/** Manages maintenance schedule templates and generates related work orders. */
+/**
+ * Manages maintenance schedule templates and generates related work orders.
+ *
+ * `F4.281` (ADR 0099 decision 6, Amendment 8 Q16): the create form and a row's
+ * Deactivate (or Activate) are the catalog steppers
+ * (`MaintenanceScheduleWizard`, `MaintenanceScheduleToggleWizard`), for every
+ * role the routes admit. "Show inactive" (owner ruling DC3) lists deactivated
+ * schedules so a person reaches the Activate stepper too. "Generate WO" stays a
+ * direct call: the convert route is excluded from the catalog.
+ */
 export function MaintenanceSchedulesPanel({
   assetOptions,
 }: MaintenanceSchedulesPanelProps) {
@@ -123,25 +118,9 @@ export function MaintenanceSchedulesPanel({
   const [categoryFilter, setCategoryFilter] = useState<CategoryFilter>("all");
   const [dueFilter, setDueFilter] = useState<DueFilter>("all");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
+  const [showInactive, setShowInactive] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [templateAssetId, setTemplateAssetId] = useState("");
-  const [templateTitle, setTemplateTitle] = useState("");
-  const [templateDescription, setTemplateDescription] = useState("");
-  const [templateCategory, setTemplateCategory] =
-    useState<MaintenanceScheduleCategory>("preventive");
-  const [generationMode, setGenerationMode] =
-    useState<MaintenanceGenerationMode>("calendar");
-  const [ownerTeam, setOwnerTeam] = useState("");
-  const [vendorName, setVendorName] = useState("");
-  const [complianceRef, setComplianceRef] = useState("");
-  const [triggerSummary, setTriggerSummary] = useState("");
-  const [safetyCritical, setSafetyCritical] = useState(false);
-  const [templatePriority, setTemplatePriority] =
-    useState<WorkOrderPriority>("medium");
-  const [estimatedMinutes, setEstimatedMinutes] = useState(60);
-  const [intervalDays, setIntervalDays] = useState(30);
-  const [firstDueDate, setFirstDueDate] = useState(tomorrowDateInput());
-  const [createError, setCreateError] = useState<string | null>(null);
+  const [toggleItem, setToggleItem] = useState<MaintenanceScheduleItem | null>(null);
 
   const schedulesQ = useQuery({
     queryKey: [
@@ -151,6 +130,7 @@ export function MaintenanceSchedulesPanel({
       categoryFilter,
       dueFilter,
       priorityFilter,
+      showInactive,
     ],
     queryFn: () =>
       fetchMaintenanceSchedules({
@@ -159,19 +139,8 @@ export function MaintenanceSchedulesPanel({
         dueState: dueFilter,
         priority: priorityFilter,
         horizonDays: 120,
+        includeInactive: showInactive,
       }),
-  });
-
-  const createM = useMutation({
-    mutationFn: createMaintenanceSchedule,
-    onSuccess: () => {
-      setCreateOpen(false);
-      resetCreateForm();
-      void qc.invalidateQueries({ queryKey: ["maintenance", "schedules"] });
-    },
-    onError: (err: unknown) => {
-      setCreateError(apiErrorMessage(err));
-    },
   });
 
   const convertM = useMutation({
@@ -182,12 +151,9 @@ export function MaintenanceSchedulesPanel({
     },
   });
 
-  const updateM = useMutation({
-    mutationFn: updateMaintenanceSchedule,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["maintenance", "schedules"] });
-    },
-  });
+  const refresh = (): void => {
+    void qc.invalidateQueries({ queryKey: ["maintenance", "schedules"] });
+  };
 
   const items = schedulesQ.data?.items ?? [];
   const overdueCount = items.filter((item) => item.dueState === "overdue").length;
@@ -202,51 +168,6 @@ export function MaintenanceSchedulesPanel({
         : assetOptions.filter((asset) => asset.id === assetFilter),
     [assetFilter, assetOptions],
   );
-
-  function resetCreateForm(): void {
-    setTemplateAssetId(filteredAssetOptions[0]?.id ?? assetOptions[0]?.id ?? "");
-    setTemplateTitle("");
-    setTemplateDescription("");
-    setTemplateCategory("preventive");
-    setGenerationMode("calendar");
-    setOwnerTeam("");
-    setVendorName("");
-    setComplianceRef("");
-    setTriggerSummary("");
-    setSafetyCritical(false);
-    setTemplatePriority("medium");
-    setEstimatedMinutes(60);
-    setIntervalDays(30);
-    setFirstDueDate(tomorrowDateInput());
-    setCreateError(null);
-  }
-
-  function openCreate(): void {
-    resetCreateForm();
-    setCreateOpen(true);
-  }
-
-  function submitCreate(e: FormEvent<HTMLFormElement>): void {
-    e.preventDefault();
-    setCreateError(null);
-    const dueAt = new Date(`${firstDueDate}T09:00:00`);
-    createM.mutate({
-      assetId: templateAssetId,
-      title: templateTitle.trim(),
-      description: templateDescription.trim() || undefined,
-      category: templateCategory,
-      generationMode,
-      ownerTeam: ownerTeam.trim() || undefined,
-      vendorName: vendorName.trim() || undefined,
-      complianceRef: complianceRef.trim() || undefined,
-      triggerSummary: triggerSummary.trim() || undefined,
-      safetyCritical,
-      priority: templatePriority,
-      estimatedMinutes,
-      intervalDays,
-      firstDueAt: dueAt.toISOString(),
-    });
-  }
 
   return (
     <div className="space-y-4">
@@ -334,10 +255,18 @@ export function MaintenanceSchedulesPanel({
         <button
           type="button"
           className="self-end surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent hover:bg-accent-strong"
-          onClick={openCreate}
+          onClick={() => setCreateOpen(true)}
         >
           + New Schedule
         </button>
+        <label className="flex items-center gap-2 text-xs font-medium text-ink-muted lg:col-span-5">
+          <input
+            type="checkbox"
+            checked={showInactive}
+            onChange={(ev) => setShowInactive(ev.target.checked)}
+          />
+          Show inactive
+        </label>
       </section>
 
       {schedulesQ.isLoading ? (
@@ -351,8 +280,6 @@ export function MaintenanceSchedulesPanel({
       ) : (
         <section className="grid gap-3 xl:grid-cols-3">
           {items.map((item) => {
-            const deactivatingThis =
-              updateM.isPending && updateM.variables?.id === item.id;
             const generatingThis =
               convertM.isPending && convertM.variables?.id === item.id;
             return (
@@ -368,6 +295,11 @@ export function MaintenanceSchedulesPanel({
                     <h2 className="mt-1 text-sm font-semibold text-ink">
                       {item.title}
                     </h2>
+                    {item.active ? null : (
+                      <span className="text-[10px] font-semibold uppercase text-ink-muted">
+                        Inactive
+                      </span>
+                    )}
                   </div>
                   <span
                     className={`rounded border px-2 py-0.5 text-[10px] font-bold uppercase ${dueStateStyle(item)}`}
@@ -412,23 +344,15 @@ export function MaintenanceSchedulesPanel({
                 <div className="mt-4 flex flex-wrap justify-end gap-2">
                   <button
                     type="button"
-                    className="surface-button px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={updateM.isPending}
-                    aria-busy={deactivatingThis}
-                    onClick={() =>
-                      updateM.mutate({
-                        id: item.id,
-                        active: false,
-                        reason: `Deactivated ${item.title}`,
-                      })
-                    }
+                    className="surface-button px-3 py-1.5 text-xs font-semibold"
+                    onClick={() => setToggleItem(item)}
                   >
-                    {deactivatingThis ? "Deactivating…" : "Deactivate"}
+                    {item.active ? "Deactivate" : "Activate"}
                   </button>
                   <button
                     type="button"
                     className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={Boolean(item.activeWorkOrderId) || convertM.isPending}
+                    disabled={!item.active || Boolean(item.activeWorkOrderId) || convertM.isPending}
                     aria-busy={generatingThis}
                     onClick={() =>
                       convertM.mutate({
@@ -455,231 +379,26 @@ export function MaintenanceSchedulesPanel({
           Could not generate work order: {apiErrorMessage(convertM.error)}
         </p>
       ) : null}
-      {updateM.isError ? (
-        <p className="text-xs text-critical-ink" role="alert">
-          Could not update schedule: {apiErrorMessage(updateM.error)}
-        </p>
-      ) : null}
 
       {createOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="schedule-create-title"
-        >
-          <div className="max-h-[90vh] w-full max-w-3xl overflow-auto surface-dialog p-6">
-            <h2
-              id="schedule-create-title"
-              className="font-condensed text-lg font-bold text-ink"
-            >
-              Create maintenance schedule
-            </h2>
-            <form className="mt-4 space-y-3" onSubmit={submitCreate}>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block text-xs font-medium text-ink-muted">
-                  Asset
-                  <select
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
-                    value={templateAssetId}
-                    onChange={(ev) => setTemplateAssetId(ev.target.value)}
-                    required
-                  >
-                    <option value="" disabled>
-                      Select an asset
-                    </option>
-                    {filteredAssetOptions.map((asset) => (
-                      <option key={asset.id} value={asset.id}>
-                        {asset.code} · {asset.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block text-xs font-medium text-ink-muted">
-                  Category
-                  <select
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
-                    value={templateCategory}
-                    onChange={(ev) =>
-                      setTemplateCategory(
-                        ev.target.value as MaintenanceScheduleCategory,
-                      )
-                    }
-                  >
-                    {categoryOptions.map((category) => (
-                      <option key={category} value={category}>
-                        {MAINTENANCE_CATEGORY_LABELS[category]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <label className="block text-xs font-medium text-ink-muted">
-                Schedule title
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
-                  value={templateTitle}
-                  onChange={(ev) => setTemplateTitle(ev.target.value)}
-                  maxLength={255}
-                  required
-                />
-              </label>
-              <label className="block text-xs font-medium text-ink-muted">
-                Description
-                <textarea
-                  className="mt-1 min-h-20 w-full surface-field px-3 py-2 text-sm text-ink"
-                  value={templateDescription}
-                  onChange={(ev) => setTemplateDescription(ev.target.value)}
-                  maxLength={4000}
-                />
-              </label>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <label className="block text-xs font-medium text-ink-muted">
-                  Generation mode
-                  <select
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
-                    value={generationMode}
-                    onChange={(ev) =>
-                      setGenerationMode(
-                        ev.target.value as MaintenanceGenerationMode,
-                      )
-                    }
-                  >
-                    {generationModes.map((mode) => (
-                      <option key={mode} value={mode}>
-                        {MAINTENANCE_GENERATION_MODE_LABELS[mode]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block text-xs font-medium text-ink-muted">
-                  Priority
-                  <select
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
-                    value={templatePriority}
-                    onChange={(ev) =>
-                      setTemplatePriority(ev.target.value as WorkOrderPriority)
-                    }
-                  >
-                    {priorities.map((priority) => (
-                      <option key={priority} value={priority}>
-                        {WORK_ORDER_PRIORITY_LABELS[priority]}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block text-xs font-medium text-ink-muted">
-                  First due date
-                  <input
-                    type="date"
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
-                    value={firstDueDate}
-                    onChange={(ev) => setFirstDueDate(ev.target.value)}
-                    required
-                  />
-                </label>
-                <label className="block text-xs font-medium text-ink-muted">
-                  Interval days
-                  <input
-                    type="number"
-                    min={1}
-                    max={730}
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
-                    value={intervalDays}
-                    onChange={(ev) => setIntervalDays(Number(ev.target.value))}
-                    required
-                  />
-                </label>
-                <label className="block text-xs font-medium text-ink-muted">
-                  Estimated minutes
-                  <input
-                    type="number"
-                    min={5}
-                    max={1440}
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
-                    value={estimatedMinutes}
-                    onChange={(ev) =>
-                      setEstimatedMinutes(Number(ev.target.value))
-                    }
-                    required
-                  />
-                </label>
-                <label className="flex items-end gap-2 surface-raised-sm px-3 py-2 text-xs font-medium text-ink-muted">
-                  <input
-                    type="checkbox"
-                    checked={safetyCritical}
-                    onChange={(ev) => setSafetyCritical(ev.target.checked)}
-                  />
-                  Safety-critical
-                </label>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <label className="block text-xs font-medium text-ink-muted">
-                  Owner team
-                  <input
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
-                    value={ownerTeam}
-                    onChange={(ev) => setOwnerTeam(ev.target.value)}
-                    maxLength={128}
-                  />
-                </label>
-                <label className="block text-xs font-medium text-ink-muted">
-                  Vendor / AMC
-                  <input
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
-                    value={vendorName}
-                    onChange={(ev) => setVendorName(ev.target.value)}
-                    maxLength={128}
-                  />
-                </label>
-                <label className="block text-xs font-medium text-ink-muted">
-                  Compliance ref
-                  <input
-                    className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
-                    value={complianceRef}
-                    onChange={(ev) => setComplianceRef(ev.target.value)}
-                    maxLength={128}
-                  />
-                </label>
-              </div>
-              <label className="block text-xs font-medium text-ink-muted">
-                Trigger summary
-                <textarea
-                  className="mt-1 min-h-16 w-full surface-field px-3 py-2 text-sm text-ink"
-                  value={triggerSummary}
-                  onChange={(ev) => setTriggerSummary(ev.target.value)}
-                  maxLength={2000}
-                  placeholder="Example: Generate after 500 fan runtime hours, or when CRAC filter pressure trend degrades."
-                />
-              </label>
-              {createError ? (
-                <p className="text-xs text-critical-ink" role="alert">
-                  {createError}
-                </p>
-              ) : null}
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  className="surface-button px-3 py-2 text-sm font-semibold"
-                  onClick={() => {
-                    setCreateOpen(false);
-                    setCreateError(null);
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
-                  disabled={createM.isPending || filteredAssetOptions.length === 0}
-                  aria-busy={createM.isPending}
-                >
-                  {createM.isPending ? "Creating..." : "Create schedule"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <MaintenanceScheduleWizard
+          assetOptions={filteredAssetOptions}
+          onCancel={() => setCreateOpen(false)}
+          onDone={() => {
+            setCreateOpen(false);
+            refresh();
+          }}
+        />
+      ) : null}
+      {toggleItem !== null ? (
+        <MaintenanceScheduleToggleWizard
+          item={toggleItem}
+          onCancel={() => setToggleItem(null)}
+          onDone={() => {
+            setToggleItem(null);
+            refresh();
+          }}
+        />
       ) : null}
     </div>
   );

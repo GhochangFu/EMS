@@ -19,6 +19,7 @@ import { DashboardBuilderModule } from "../dashboard-builder/dashboard-builder.m
 import { DatabaseModule } from "../database/database.module";
 import { IdentityAdminModule } from "../identity/identity-admin.module";
 import { LlmModule } from "../llm/llm.module";
+import { MaintenanceModule } from "../maintenance/maintenance.module";
 import { MimicLayoutsModule } from "../mimic-layouts/mimic-layouts.module";
 import { MimicSymbolLibrariesModule } from "../mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { ReportsCoreModule } from "../reports/reports-core.module";
@@ -156,6 +157,11 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * once. It imports only `ReportsCoreModule` and `NotificationsCoreModule`,
  * never this module, so the graph stays acyclic; the worker never reaches
  * this module.
+ *
+ * `F4.281` (ADR 0099 Amendment 8 D7): `MaintenanceModule` exports
+ * `MaintenanceService` for `list_maintenance_schedules`. It imports nothing of
+ * this module (its providers take only `DatabaseModule`'s tokens), so the graph
+ * stays acyclic; the worker never reaches this module.
  */
 @Module({
   imports: [
@@ -179,6 +185,7 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     AlarmKbModule,
     RulesModule,
     NotificationsModule,
+    MaintenanceModule,
   ],
   controllers: [CopilotAccessController, CopilotChangesController, CopilotConversationsController, CopilotStatusController],
   providers: [

@@ -145,6 +145,15 @@ export type CatalogTarget =
    * (`writableLocationIds`, then `resolveReportOrganization`) on the body's `organizationId`.
    */
   | { readonly kind: "reportSchedule"; readonly param: "id" }
+  /**
+   * `F4.281` (ADR 0099 Amendment 8 D2): a maintenance schedule. With `param`, the schedule row the
+   * path parameter `id` names (its organization, its template's title and asset); with `field`, a
+   * create, whose organization is the asset's the body's `assetId` names. Both mirror
+   * `maintenance.controller.ts`: the `configuration` role class, then the schedule's (or the body's)
+   * asset in the caller's **read** scope (`readableAssetIds`).
+   */
+  | { readonly kind: "maintenanceSchedule"; readonly param: "id" }
+  | { readonly kind: "maintenanceSchedule"; readonly field: "assetId" }
   | { readonly kind: "onboardingSession"; readonly param: "id" }
   | { readonly kind: "assetTemplateDeploy"; readonly param: "id" }
   | { readonly kind: "user" | "userGrantAdd"; readonly param: "id" }

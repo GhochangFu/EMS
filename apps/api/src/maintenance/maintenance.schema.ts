@@ -33,6 +33,15 @@ export const listMaintenanceQuerySchema = z.object({
    * behind it are the same vocabulary and must not drift from it. */
   priority: z.enum(["all", ...maintenancePrioritySchema.options]).default("all"),
   horizonDays: z.coerce.number().int().min(1).max(120).default(30),
+  /**
+   * `F4.281` (Amendment 8, owner ruling DC3): list deactivated schedules too, so
+   * the Schedule Centre can reach the Activate stepper. A string enum, not
+   * `z.coerce.boolean()`, which reads `"false"` as `true` (`telemetry.schema.ts`).
+   */
+  includeInactive: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
 });
 
 export const convertMaintenanceBodySchema = z
@@ -41,41 +50,25 @@ export const convertMaintenanceBodySchema = z
   })
   .strict();
 
-export const createMaintenanceScheduleBodySchema = z
-  .object({
-    assetId: z.string().uuid(),
-    title: z.string().min(3).max(255),
-    description: z.string().max(4000).optional(),
-    category: maintenanceCategorySchema.default("preventive"),
-    generationMode: maintenanceGenerationModeSchema.default("calendar"),
-    ownerTeam: z.string().max(128).optional(),
-    vendorName: z.string().max(128).optional(),
-    complianceRef: z.string().max(128).optional(),
-    triggerSummary: z.string().max(2000).optional(),
-    safetyCritical: z.boolean().default(false),
-    priority: maintenancePrioritySchema.default("medium"),
-    estimatedMinutes: z.number().int().min(5).max(1_440).default(60),
-    intervalDays: z.number().int().min(1).max(730),
-    firstDueAt: z.string().datetime({ offset: true }),
-  })
-  .strict();
-
-export const updateMaintenanceScheduleBodySchema = z
-  .object({
-    active: z.boolean(),
-    reason: z.string().min(3).max(2000).optional(),
-  })
-  .strict();
+/**
+ * `F4.281` (ADR 0099 Amendment 8, ADR 0030): the two schedule write bodies
+ * live in `packages/shared/src/contracts/maintenance-writes.ts`, so the copilot
+ * catalog carries the route's own export by identity. Re-exported here under
+ * their old names for the service and this file's spec; the controller and the
+ * OpenAPI registry import them from `@bms/shared`.
+ */
+export {
+  createMaintenanceScheduleBodySchema,
+  updateMaintenanceScheduleBodySchema,
+} from "@bms/shared";
+export type {
+  CreateMaintenanceScheduleBody,
+  UpdateMaintenanceScheduleBody,
+} from "@bms/shared";
 
 export type ListMaintenanceQuery = z.infer<typeof listMaintenanceQuerySchema>;
 export type ConvertMaintenanceBody = z.infer<
   typeof convertMaintenanceBodySchema
->;
-export type CreateMaintenanceScheduleBody = z.infer<
-  typeof createMaintenanceScheduleBodySchema
->;
-export type UpdateMaintenanceScheduleBody = z.infer<
-  typeof updateMaintenanceScheduleBodySchema
 >;
 
 /**

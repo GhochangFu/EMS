@@ -4,7 +4,7 @@ import {
   maintenanceSchedulesResponseSchema,
 } from "@bms/shared/contracts";
 import type {
-  MaintenanceGenerationMode,
+  CreateMaintenanceScheduleInput,
   MaintenanceScheduleItem,
   MaintenanceScheduleCategory,
   WorkOrderListItem,
@@ -24,22 +24,8 @@ export type ConvertMaintenanceResponse = {
   workOrder: WorkOrderListItem;
 };
 
-export type CreateMaintenanceScheduleInput = {
-  assetId: string;
-  title: string;
-  description?: string;
-  category: MaintenanceScheduleCategory;
-  generationMode: MaintenanceGenerationMode;
-  ownerTeam?: string;
-  vendorName?: string;
-  complianceRef?: string;
-  triggerSummary?: string;
-  safetyCritical: boolean;
-  priority: WorkOrderPriority;
-  estimatedMinutes: number;
-  intervalDays: number;
-  firstDueAt: string;
-};
+/** `F4.281` (ADR 0030): the create body is the route's own, `@bms/shared`'s `createMaintenanceScheduleBodySchema`. */
+export type { CreateMaintenanceScheduleInput };
 
 /** GET /api/v1/maintenance/schedules */
 export async function fetchMaintenanceSchedules(input: {
@@ -48,6 +34,8 @@ export async function fetchMaintenanceSchedules(input: {
   dueState?: "all" | "overdue" | "upcoming";
   priority?: WorkOrderPriority | "all";
   horizonDays?: number;
+  /** `F4.281` (owner ruling DC3): list deactivated schedules too. */
+  includeInactive?: boolean;
 }): Promise<MaintenanceSchedulesResponse> {
   const params = new URLSearchParams({
     horizonDays: String(input.horizonDays ?? 30),
@@ -63,6 +51,9 @@ export async function fetchMaintenanceSchedules(input: {
   }
   if (input.priority) {
     params.set("priority", input.priority);
+  }
+  if (input.includeInactive) {
+    params.set("includeInactive", "true");
   }
   const sent = withAuth();
   const res = await fetch(

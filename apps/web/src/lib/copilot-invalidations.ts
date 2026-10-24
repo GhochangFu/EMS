@@ -62,6 +62,8 @@ const NOTIFICATION_DELIVERIES: QueryKey = ["notifications", "deliveries"];
 /** `F4.280`: the Reports page's schedule list and its History list (`REPORT_SCHEDULES_QUERY_KEY`, `REPORT_FILES_QUERY_KEY`). */
 const REPORT_SCHEDULES: QueryKey = ["report-schedules"];
 const REPORT_FILES: QueryKey = ["report-files"];
+/** `F4.281`: the Schedule Centre's list (`maintenance-schedules-panel.tsx`, keyed by its filters under the prefix). */
+const MAINTENANCE_SCHEDULES: QueryKey = ["maintenance", "schedules"];
 const ESCALATION_PROFILES: QueryKey = ["escalation", "profiles"];
 const ESCALATION_DEFAULTS: QueryKey = ["escalation", "defaults"];
 // `F4.255` PR 3: the copilot dock's list of an organization's open onboarding drafts.
@@ -192,6 +194,10 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "reportSchedule.create": [REPORT_SCHEDULES],
   "reportSchedule.update": [REPORT_SCHEDULES],
   "reportFile.save": [REPORT_FILES],
+  // `F4.281` (Amendment 8): the maintenance schedules.
+  "maintenanceSchedule.create": [MAINTENANCE_SCHEDULES],
+  "maintenanceSchedule.activate": [MAINTENANCE_SCHEDULES],
+  "maintenanceSchedule.deactivate": [MAINTENANCE_SCHEDULES],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

@@ -17,6 +17,8 @@ import {
   dashboardWidgets,
   locations,
   locationTypes,
+  maintenanceSchedules,
+  maintenanceTaskTemplates,
   mimicLayouts,
   mimicOrgSymbolLibraries,
   notificationChannels,
@@ -230,13 +232,13 @@ export class CopilotTargetResolver implements CopilotTargets {
         found = code === null ? null : { organizationId: boundOrganizationId, name: code };
       }
       if (found !== null && !(await this.safely(() => this.mayManageFleet(user)))) found = null;
-    } else if (target.kind === "rule" && "field" in target) {
-      // `F4.278` (Amendment 8 D2): a rule create — the organization is its asset's (`resolveWriteOrg`),
-      // and the route's two gates run on the body's asset.
+    } else if ((target.kind === "rule" || target.kind === "maintenanceSchedule") && "field" in target) {
+      // `F4.278` / `F4.281` (Amendment 8 D2): a rule or maintenance schedule create — the organization
+      // is its asset's, and the route's two gates run on the body's asset.
       const assetId = body[target.field];
       if (typeof assetId !== "string") return null;
-      found = await this.ruleAsset(assetId, allowedOrganizationIds);
-      if (found !== null && !(await this.safely(() => this.mayWriteRule(user, assetId)))) found = null;
+      found = await this.configurationAsset(assetId, allowedOrganizationIds);
+      if (found !== null && !(await this.safely(() => this.mayWriteConfiguration(user, assetId)))) found = null;
     } else {
       const id = params[target.param];
       if (id === undefined) return null;
@@ -375,8 +377,11 @@ export class CopilotTargetResolver implements CopilotTargets {
     return { organizationId, name: type.label, usageCount };
   }
 
-  /** `F4.278`: the asset a rule create names, in the first allowed organization that has it (its name and organization). */
-  private async ruleAsset(assetId: string, allowed: readonly string[]): Promise<Found | null> {
+  /**
+   * `F4.278` / `F4.281`: the asset a rule or maintenance schedule create names, in the first allowed
+   * organization that has it (its name and organization).
+   */
+  private async configurationAsset(assetId: string, allowed: readonly string[]): Promise<Found | null> {
     for (const organizationId of allowed) {
       const [row] = await withTenant(this.tenantDb, organizationId, (tx) =>
         tx
@@ -391,12 +396,13 @@ export class CopilotTargetResolver implements CopilotTargets {
   }
 
   /**
-   * `F4.278` (Amendment 8 D2): the rule routes' own two gates and nothing more —
-   * `rules.controller.ts`'s `assertOperationsWriteRole(user, "configuration")` (a throw is a
-   * refusal, `safely`), then `RulesService.assertAssetInScope` on the caller's **read** scope:
-   * a global admin (`null`) reads every asset; anyone else needs the asset among theirs.
+   * `F4.278` / `F4.281` (Amendment 8 D2): the rule and maintenance routes' own two gates and
+   * nothing more — `rules.controller.ts`'s and `maintenance.controller.ts`'s
+   * `assertOperationsWriteRole(user, "configuration")` (a throw is a refusal, `safely`), then the
+   * asset in the caller's **read** scope (`RulesService.assertAssetInScope`, `MaintenanceService`'s
+   * `assetIds` filter): a global admin (`null`) reads every asset; anyone else needs it among theirs.
    */
-  private async mayWriteRule(user: JwtPayload, ...assetIds: readonly (string | null)[]): Promise<boolean> {
+  private async mayWriteConfiguration(user: JwtPayload, ...assetIds: readonly (string | null)[]): Promise<boolean> {
     await this.access.assertOperationsWriteRole(user, "configuration");
     const readable = await this.access.readableAssetIds(user);
     if (readable === null) return true;
@@ -586,6 +592,16 @@ export class CopilotTargetResolver implements CopilotTargets {
           ...(row.assetId ? { assetId: row.assetId } : {}),
           lifecycle: row.lifecycleStatus,
         };
+      }
+      // `F4.281`: a maintenance schedule — named by its template's title, with the template's asset.
+      case "maintenanceSchedule": {
+        const [row] = await tx
+          .select({ title: maintenanceTaskTemplates.title, assetId: maintenanceTaskTemplates.assetId })
+          .from(maintenanceSchedules)
+          .innerJoin(maintenanceTaskTemplates, eq(maintenanceSchedules.templateId, maintenanceTaskTemplates.id))
+          .where(and(eq(maintenanceSchedules.id, id), eq(maintenanceSchedules.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.title, assetId: row.assetId } : null;
       }
       case "asset": {
         const [row] = await tx
@@ -831,10 +847,14 @@ export class CopilotTargetResolver implements CopilotTargets {
       // `assetId` is checked too — before the proposal check reads that asset's telemetry.
       case "rule": {
         const current = found.assetId ?? null;
-        if (mode === "record" || body.assetId === undefined) return this.mayWriteRule(user, current);
+        if (mode === "record" || body.assetId === undefined) return this.mayWriteConfiguration(user, current);
         const next = typeof body.assetId === "string" ? body.assetId : null;
-        return this.mayWriteRule(user, current, next);
+        return this.mayWriteConfiguration(user, current, next);
       }
+      // `F4.281` (Amendment 8 D2): the maintenance routes' role class and the schedule's template asset
+      // in the read scope (`getScheduleItem`'s 404). The PATCH body never moves the asset.
+      case "maintenanceSchedule":
+        return this.mayWriteConfiguration(user, found.assetId ?? null);
       case "asset":
         if (!(await this.access.canManageAsset(user, id))) return false;
         if (!body.locationId) return true;

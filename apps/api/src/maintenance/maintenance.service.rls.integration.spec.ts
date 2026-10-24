@@ -422,3 +422,80 @@ export async function assertSingleOrgMaintenanceListRunsOnTenantTransaction(
   expect(tenant.transactions(), "a single-org list opens one tenant transaction").toBe(1);
   expect(fleet.transactions(), "a single-org list opens no fleet transaction").toBe(0);
 }
+
+/**
+ * `F4.281` (Amendment 8): the create's audit row now goes through
+ * `MasterDataAuditService` (so a confirmed copilot change carries its `via`
+ * mark), and keeps the action name and payload keys it had before the move.
+ */
+export async function assertCreateAuditRowKeepsItsShapeThroughTheFunnel(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const { id, templateId } = await createSchedule(ctx, "F4.281 audit funnel", 3);
+  const audit = await ctx.ownerPool.query<{ organization_id: string | null; payload: Record<string, unknown> | null }>(
+    `SELECT organization_id, payload FROM bms.audit_log
+      WHERE entity_type = 'maintenance_schedule' AND entity_id = $1
+        AND action = 'maintenance_schedule_create'`,
+    [id],
+  );
+  expect(audit.rows.length, "one create audit row").toBe(1);
+  expect(audit.rows[0]?.organization_id).toBe(ctx.organizationId);
+  expect(audit.rows[0]?.payload).toMatchObject({ templateId, assetId: ctx.assetId, intervalDays: INTERVAL_DAYS });
+}
+
+/** `F4.281` (owner ruling DC3): `includeInactive` lists a deactivated schedule with `active: false`. */
+export async function assertIncludeInactiveListsADeactivatedSchedule(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const { id } = await createSchedule(ctx, "F4.281 inactive listed", 4);
+  await ctx.service.updateSchedule(id, deactivate, ctx.scopedActor, [ctx.assetId]);
+  const listed = await ctx.service.list({ ...READ_QUERY, includeInactive: true }, [ctx.assetId]);
+  expect(listed.items.find((item) => item.id === id)?.active).toBe(false);
+}
+
+/** The adjacent negative: the default list still leaves the deactivated schedule out. */
+export async function assertTheDefaultListLeavesADeactivatedScheduleOut(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const { id } = await createSchedule(ctx, "F4.281 inactive hidden", 4);
+  await ctx.service.updateSchedule(id, deactivate, ctx.scopedActor, [ctx.assetId]);
+  const listed = await ctx.service.list({ ...READ_QUERY, includeInactive: false }, [ctx.assetId]);
+  expect(listed.items.map((item) => item.id)).not.toContain(id);
+  expect(listed.items.length, "the default list is not empty").toBeGreaterThan(0);
+}
+
+/** `F4.281` (owner ruling DC4): `anyDueDate` lists a schedule due beyond the 120-day horizon; the windowed read does not. */
+export async function assertAnyDueDateListsAScheduleBeyondTheHorizon(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const { id } = await createSchedule(ctx, "F4.281 far due", 200);
+  const windowed = await ctx.service.list(READ_QUERY, [ctx.assetId]);
+  expect(windowed.items.map((item) => item.id), "the 120-day window leaves it out").not.toContain(id);
+  const all = await ctx.service.list(READ_QUERY, [ctx.assetId], { anyDueDate: true });
+  expect(all.items.find((item) => item.id === id)?.active).toBe(true);
+}
+
+/**
+ * `F4.281` (owner ruling DC3): with `includeInactive` the horizon binds active
+ * rows only, so the page's "Show inactive" reaches a deactivated schedule due
+ * past 120 days; an active one due as far stays out.
+ */
+export async function assertIncludeInactiveListsADeactivatedScheduleBeyondTheHorizon(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const { id } = await createSchedule(ctx, "F4.281 far inactive", 200);
+  await ctx.service.updateSchedule(id, deactivate, ctx.scopedActor, [ctx.assetId]);
+  const { id: farActive } = await createSchedule(ctx, "F4.281 far active", 200);
+  const listed = await ctx.service.list({ ...READ_QUERY, includeInactive: true }, [ctx.assetId]);
+  expect(listed.items.find((item) => item.id === id)?.active).toBe(false);
+  expect(listed.items.map((item) => item.id), "the horizon still binds an active row").not.toContain(farActive);
+}
+
+/** `F4.281` (DC4): `titleSearch` narrows in the SQL, case-insensitively, to the matching title. */
+export async function assertTitleSearchNarrowsInTheQuery(
+  ctx: MaintenanceRlsFixtures,
+): Promise<void> {
+  const { id } = await createSchedule(ctx, "F4.281 Annual CHILLER teardown", 5);
+  const listed = await ctx.service.list(READ_QUERY, [ctx.assetId], { anyDueDate: true, titleSearch: "annual chiller" });
+  expect(listed.items.map((item) => item.id)).toEqual([id]);
+}

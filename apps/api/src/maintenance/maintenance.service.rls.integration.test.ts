@@ -4,12 +4,19 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import { assets, createDb, maintenanceSchedules, maintenanceTaskTemplates } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { withTenant } from "../database/tenant-context";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import { jwtFor, primeSeededSubjects } from "../testing/seeded-subjects";
 import { MaintenanceService } from "./maintenance.service";
 import {
+  assertAnyDueDateListsAScheduleBeyondTheHorizon,
+  assertCreateAuditRowKeepsItsShapeThroughTheFunnel,
+  assertIncludeInactiveListsADeactivatedSchedule,
+  assertIncludeInactiveListsADeactivatedScheduleBeyondTheHorizon,
+  assertTheDefaultListLeavesADeactivatedScheduleOut,
+  assertTitleSearchNarrowsInTheQuery,
   assertConvertReadsBackOnTenantTransaction,
   assertConvertStampsAndAdvancesUnderRealRls,
   assertCreateScheduleReadsBackInTenantTransaction,
@@ -191,7 +198,9 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
     foreignAssetId = foreignAsset.id;
     const foreignScheduleId = await seedSchedule(foreignOrgId, foreignAssetId);
 
-    const makeService = (t: BmsDb, f: BmsDb): MaintenanceService => new MaintenanceService(f, t);
+    const makeService = (t: BmsDb, f: BmsDb): MaintenanceService => 
+      // F4.281: the service audits through the funnel (the copilot `via` mark).
+      new MaintenanceService(f, t, new MasterDataAuditService(t, f));
     ctx = {
       service: makeService(tenantDb, fleetDb),
       tenantDb,
@@ -293,5 +302,29 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
 
   it("runs a single-org list on the tenant pool (one tenant transaction, no fleet)", async () => {
     await assertSingleOrgMaintenanceListRunsOnTenantTransaction(ctx);
+  });
+
+  it("F4.281: the create audit row keeps its action and payload through MasterDataAuditService", async () => {
+    await assertCreateAuditRowKeepsItsShapeThroughTheFunnel(ctx);
+  });
+
+  it("F4.281: includeInactive lists a deactivated schedule with active false", async () => {
+    await assertIncludeInactiveListsADeactivatedSchedule(ctx);
+  });
+
+  it("F4.281: the default list leaves a deactivated schedule out", async () => {
+    await assertTheDefaultListLeavesADeactivatedScheduleOut(ctx);
+  });
+
+  it("F4.281: anyDueDate lists a schedule due beyond the 120-day horizon", async () => {
+    await assertAnyDueDateListsAScheduleBeyondTheHorizon(ctx);
+  });
+
+  it("F4.281: includeInactive lists a deactivated schedule due beyond the horizon", async () => {
+    await assertIncludeInactiveListsADeactivatedScheduleBeyondTheHorizon(ctx);
+  });
+
+  it("F4.281: titleSearch narrows in the query", async () => {
+    await assertTitleSearchNarrowsInTheQuery(ctx);
   });
 });

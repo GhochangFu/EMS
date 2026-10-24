@@ -94,3 +94,18 @@ export function runMaintenanceSchemaTests(): void {
     "assetId must be a uuid",
   );
 }
+
+/** `F4.281` (owner ruling DC3): the default list is unchanged, and the string "false" is not coerced to `true`. */
+export function includeInactiveReadsTheStringFalseAsFalse(): void {
+  assert(listMaintenanceQuerySchema.parse({}).includeInactive === false, "includeInactive must default to false");
+  assert(
+    listMaintenanceQuerySchema.parse({ includeInactive: "false" }).includeInactive === false,
+    '"false" must read as false (z.coerce.boolean would read it as true)',
+  );
+  assert(!listMaintenanceQuerySchema.safeParse({ includeInactive: "yes" }).success, "only true or false");
+}
+
+/** The adjacent positive. */
+export function includeInactiveReadsTheStringTrueAsTrue(): void {
+  assert(listMaintenanceQuerySchema.parse({ includeInactive: "true" }).includeInactive === true, '"true" must read as true');
+}

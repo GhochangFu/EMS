@@ -15,6 +15,9 @@ import {
   assertTheProposeToolsInjectTheReportCheck,
   assertTheModuleImportsTheReportsModule,
   assertTheReportsModuleExportsTheCopilotServices,
+  assertTheMaintenanceModuleExportsItsService,
+  assertTheModuleImportsTheMaintenanceModule,
+  assertTheReadToolsInjectTheMaintenanceService,
   assertTheProposeToolsInjectTheLayoutsService,
   assertTheResolverInjectsTheUsersServices,
 } from "./copilot-module-wiring.spec";
@@ -42,4 +45,7 @@ describe("F3.86 PR 4 — CopilotModule wiring for the user targets", () => {
   it("F4.280: the module imports ReportsModule", () => assertTheModuleImportsTheReportsModule());
   it("F4.280: ReportsModule exports the check and ReportSchedulesService", () =>
     assertTheReportsModuleExportsTheCopilotServices());
+  it("F4.281: the module imports MaintenanceModule", () => assertTheModuleImportsTheMaintenanceModule());
+  it("F4.281: MaintenanceModule exports MaintenanceService", () => assertTheMaintenanceModuleExportsItsService());
+  it("F4.281: the read tools inject MaintenanceService in slot 21", () => assertTheReadToolsInjectTheMaintenanceService());
 });

@@ -26,6 +26,9 @@ import { NotificationsModule } from "../notifications/notifications.module";
 import { ReportProposalCheckService } from "../reports/report-proposal-check.service";
 import { ReportSchedulesService } from "../reports/report-schedules.service";
 import { ReportsModule } from "../reports/reports.module";
+import { MaintenanceModule } from "../maintenance/maintenance.module";
+import { MaintenanceService } from "../maintenance/maintenance.service";
+import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
 
 /**
  * `F3.86` PR 4 / ADR 0099 decision 3 — the module edges a green build does not
@@ -173,4 +176,19 @@ export function assertTheModuleImportsTheReportsModule(): void {
 /** `ReportsModule` exports the check and the schedule service the copilot injects. */
 export function assertTheReportsModuleExportsTheCopilotServices(): void {
   expect(moduleList(ReportsModule, "exports")).toEqual(expect.arrayContaining([ReportProposalCheckService, ReportSchedulesService]));
+}
+
+/** `F4.281` (Amendment 8 D7): `CopilotModule` imports `MaintenanceModule`. */
+export function assertTheModuleImportsTheMaintenanceModule(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(MaintenanceModule);
+}
+
+/** `MaintenanceModule` exports the service `list_maintenance_schedules` reads through. */
+export function assertTheMaintenanceModuleExportsItsService(): void {
+  expect(moduleList(MaintenanceModule, "exports")).toContain(MaintenanceService);
+}
+
+/** The read tools' slot 21 is `MaintenanceService`, by `@Inject`. */
+export function assertTheReadToolsInjectTheMaintenanceService(): void {
+  expect(injected(CopilotReadToolSet).get(21)).toBe(MaintenanceService);
 }

@@ -64,6 +64,9 @@ export type ResolverCtx = {
   fleetChannel: string;
   /** `F4.280`: a report schedule of A, stamped with `locationA`. */
   scheduleA: string;
+  /** `F4.281`: a maintenance schedule of A on `assetA`, and its template's title. */
+  maintenanceScheduleA: string;
+  maintenanceTitleA: string;
 };
 
 /** `locationA` carries a stored `builtin` view (`site_control_room_views`); `locationA2` carries none. */
@@ -858,4 +861,19 @@ export async function aReportScheduleResolvesWithItsStampedLocations(ctx: Resolv
   ).toMatchObject({ organizationId: ctx.orgA, targetName: "F4.280 schedule A" });
   expect(allowed.calls).toEqual([["requireMasterDataUser"], ["canReadReportFile", ctx.orgA, [ctx.locationA]]]);
   expect(await resolverWith(ctx, recorder().access).resolve(update, { id: ctx.scheduleA }, { name: "x" }, [ctx.orgB], JWT)).toBeNull();
+}
+
+/**
+ * `F4.281` (Amendment 8 D2): a maintenance schedule is looked for in the allowed organizations only — the
+ * organization filter the unit fake cannot prove. Under A it resolves by its template's title; under B it is
+ * not found.
+ */
+export async function aMaintenanceScheduleOfAnotherOrganizationIsNotFound(ctx: ResolverCtx): Promise<void> {
+  const entry = catalogEntry("maintenanceSchedule.deactivate");
+  if (!entry) throw new Error("maintenanceSchedule.deactivate");
+  const r = resolverWith(ctx, recorder().access);
+  expect((await r.resolve(entry, { id: ctx.maintenanceScheduleA }, { active: false }, [ctx.orgA], JWT))?.targetName).toBe(
+    ctx.maintenanceTitleA,
+  );
+  expect(await r.resolve(entry, { id: ctx.maintenanceScheduleA }, { active: false }, [ctx.orgB], JWT)).toBeNull();
 }

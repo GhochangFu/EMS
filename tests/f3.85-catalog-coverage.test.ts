@@ -79,6 +79,8 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   // routes (the on-demand save an entry, the DELETE excluded).
   { file: "apps/api/src/reports/report-schedules.controller.ts", full: true },
   { file: "apps/api/src/reports/report-files.controller.ts", full: true },
+  // F4.281 (Amendment 8): the maintenance schedules — three entries, the convert excluded.
+  { file: "apps/api/src/maintenance/maintenance.controller.ts", full: true },
 ];
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;

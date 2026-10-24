@@ -4,11 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, lte, ne, or } from "drizzle-orm";
 
 import {
   assets,
-  auditLog,
   maintenanceHistory,
   maintenanceSchedules,
   maintenanceTaskTemplates,
@@ -25,6 +24,7 @@ import type {
   WorkOrderStatus,
 } from "@bms/shared";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
@@ -64,12 +64,36 @@ import type {
  * on the tenant pool under the write's org — `createSchedule`/`updateSchedule`
  * fold `readScheduleItem` into the write transaction, and `convertToWorkOrder`
  * reads the work order back in its own `withTenant` (decision 1).
+ *
+ * `F4.281` (ADR 0099 Amendment 8): every audit row goes through
+ * `MasterDataAuditService.write(input, tx)` — the same `tx`, so the row stays
+ * atomic with the write and under its GUC — so a confirmed copilot change
+ * carries its `via: "copilot"` mark (`tests/f3.85-audit-via-mark.test.ts`).
+ * Action names and payload keys are unchanged.
  */
+
+/** `F4.281`: the most rows one `list` returns (the Schedule Centre's and the copilot tool's cap). */
+export const MAINTENANCE_LIST_LIMIT = 100;
+
+/** `F4.281` (owner ruling DC4): read options a route query cannot set. */
+export type MaintenanceListOptions = {
+  /** Every schedule the caller may read, whatever its next due date — the copilot's list tool. */
+  readonly anyDueDate?: boolean;
+  /** A case-insensitive title substring, applied in the SQL before the row limit. */
+  readonly titleSearch?: string;
+};
+
+/** A substring `ILIKE` pattern with `\`, `%` and `_` escaped, so the search is literal text. */
+function titleLikePattern(search: string): string {
+  return `%${search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
+
 @Injectable()
 export class MaintenanceService {
   constructor(
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    @Inject(MasterDataAuditService) private readonly audit: MasterDataAuditService,
   ) {}
 
   private mapWorkOrderRow(r: {
@@ -136,6 +160,7 @@ export class MaintenanceService {
       assetCode: string;
       assetName: string;
       siteName: string;
+      active: boolean;
     },
     activeWorkOrderId: string | null,
   ): MaintenanceScheduleItem {
@@ -162,6 +187,7 @@ export class MaintenanceService {
       assetName: r.assetName,
       siteName: r.siteName,
       activeWorkOrderId,
+      active: r.active,
     };
   }
 
@@ -278,10 +304,17 @@ export class MaintenanceService {
     return bySchedule;
   }
 
-  /** Lists upcoming and overdue maintenance schedules for the Schedule Centre. */
+  /**
+   * Lists upcoming and overdue maintenance schedules for the Schedule Centre.
+   * `F4.281`: `query.includeInactive` (owner ruling DC3) drops the two
+   * `active = true` filters and applies the horizon to active rows only, so a
+   * deactivated schedule due past it is still listed; `options.anyDueDate`
+   * (DC4) drops the horizon; `options.titleSearch` narrows before the limit.
+   */
   async list(
     query: ListMaintenanceQuery,
     assetIds?: string[] | null,
+    options: MaintenanceListOptions = {},
   ): Promise<{ items: MaintenanceScheduleItem[] }> {
     const horizon = new Date(Date.now() + query.horizonDays * 24 * 60 * 60 * 1000);
     return withReadScope(
@@ -290,10 +323,9 @@ export class MaintenanceService {
       assetIds,
       () => ({ items: [] }),
       async (tx) => {
-        const filters = [
-          eq(maintenanceSchedules.active, true),
-          eq(maintenanceTaskTemplates.active, true),
-        ];
+        const filters = query.includeInactive
+          ? []
+          : [eq(maintenanceSchedules.active, true), eq(maintenanceTaskTemplates.active, true)];
         if (assetIds) {
           filters.push(inArray(maintenanceTaskTemplates.assetId, assetIds));
         }
@@ -305,6 +337,22 @@ export class MaintenanceService {
         }
         if (query.priority !== "all") {
           filters.push(eq(maintenanceTaskTemplates.priority, query.priority));
+        }
+        // F4.281: the horizon moved into the WHERE, so the row limit counts only rows in it.
+        if (!options.anyDueDate) {
+          const inHorizon = lte(maintenanceSchedules.nextDueAt, horizon);
+          filters.push(
+            query.includeInactive
+              ? (or(
+                  eq(maintenanceSchedules.active, false),
+                  eq(maintenanceTaskTemplates.active, false),
+                  inHorizon,
+                ) ?? inHorizon)
+              : inHorizon,
+          );
+        }
+        if (options.titleSearch) {
+          filters.push(ilike(maintenanceTaskTemplates.title, titleLikePattern(options.titleSearch)));
         }
         const rows = await tx
           .select({
@@ -328,6 +376,7 @@ export class MaintenanceService {
             assetCode: assets.code,
             assetName: assets.name,
             siteName: assets.siteName,
+            active: maintenanceSchedules.active,
           })
           .from(maintenanceSchedules)
           .innerJoin(
@@ -337,7 +386,7 @@ export class MaintenanceService {
           .innerJoin(assets, eq(maintenanceTaskTemplates.assetId, assets.id))
           .where(and(...filters))
           .orderBy(asc(maintenanceSchedules.nextDueAt), asc(assets.code))
-          .limit(100);
+          .limit(MAINTENANCE_LIST_LIMIT);
         const activeBySchedule = await this.getActiveWorkOrdersBySchedule(
           rows.map((row) => row.id),
           tx,
@@ -347,7 +396,7 @@ export class MaintenanceService {
             .filter((row) => {
               const dueState = row.nextDueAt.getTime() < Date.now() ? "overdue" : "upcoming";
               const dueMatch = query.dueState === "all" || dueState === query.dueState;
-              return dueMatch && row.nextDueAt <= horizon;
+              return dueMatch;
             })
             .map((row) => this.mapScheduleRow(row, activeBySchedule.get(row.id) ?? null)),
         };
@@ -379,7 +428,6 @@ export class MaintenanceService {
     }
     const organizationId = asset.organizationId;
 
-    const actorId = await this.resolveActorId(actor);
     const firstDueAt = new Date(dto.firstDueAt);
     const item = await withTenant(this.db, organizationId, async (tx) => {
       const [template] = await tx
@@ -417,24 +465,27 @@ export class MaintenanceService {
         throw new BadRequestException("Could not create maintenance schedule");
       }
 
-      await tx.insert(auditLog).values({
-        organizationId,
-        actorId,
-        action: "maintenance_schedule_create",
-        entityType: "maintenance_schedule",
-        entityId: schedule.id,
-        reason: "Maintenance schedule created",
-        payload: {
-          templateId: template.id,
-          assetId: dto.assetId,
-          category: dto.category,
-          generationMode: dto.generationMode,
-          intervalDays: dto.intervalDays,
-          firstDueAt: firstDueAt.toISOString(),
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
+      await this.audit.write(
+        {
+          actor,
+          organizationId,
+          action: "maintenance_schedule_create",
+          entityType: "maintenance_schedule",
+          entityId: schedule.id,
+          reason: "Maintenance schedule created",
+          payload: {
+            templateId: template.id,
+            assetId: dto.assetId,
+            category: dto.category,
+            generationMode: dto.generationMode,
+            intervalDays: dto.intervalDays,
+            firstDueAt: firstDueAt.toISOString(),
+            oidcSubject: actor.sub,
+            actorEmail: actor.email,
+          },
         },
-      });
+        tx,
+      );
 
       // E7.1c: read back under the write's own tenant GUC, not on fleetDb.
       return this.readScheduleItem(tx, schedule.id, assetIds);
@@ -481,6 +532,7 @@ export class MaintenanceService {
         assetCode: assets.code,
         assetName: assets.name,
         siteName: assets.siteName,
+        active: maintenanceSchedules.active,
       })
       .from(maintenanceSchedules)
       .innerJoin(
@@ -519,7 +571,6 @@ export class MaintenanceService {
   ): Promise<MaintenanceScheduleItem> {
     const existing = await this.getScheduleItem(id, assetIds);
     const organizationId = await this.resolveScheduleOrg(id, assetIds);
-    const actorId = await this.resolveActorId(actor);
     const now = new Date();
     const item = await withTenant(this.db, organizationId, async (tx) => {
       await tx
@@ -530,26 +581,29 @@ export class MaintenanceService {
         .update(maintenanceTaskTemplates)
         .set({ active: dto.active })
         .where(eq(maintenanceTaskTemplates.id, existing.templateId));
-      await tx.insert(auditLog).values({
-        organizationId,
-        actorId,
-        action: dto.active
-          ? "maintenance_schedule_activate"
-          : "maintenance_schedule_deactivate",
-        entityType: "maintenance_schedule",
-        entityId: id,
-        reason:
-          dto.reason ??
-          (dto.active
-            ? "Maintenance schedule activated"
-            : "Maintenance schedule deactivated"),
-        payload: {
-          templateId: existing.templateId,
-          assetId: existing.assetId,
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
+      await this.audit.write(
+        {
+          actor,
+          organizationId,
+          action: dto.active
+            ? "maintenance_schedule_activate"
+            : "maintenance_schedule_deactivate",
+          entityType: "maintenance_schedule",
+          entityId: id,
+          reason:
+            dto.reason ??
+            (dto.active
+              ? "Maintenance schedule activated"
+              : "Maintenance schedule deactivated"),
+          payload: {
+            templateId: existing.templateId,
+            assetId: existing.assetId,
+            oidcSubject: actor.sub,
+            actorEmail: actor.email,
+          },
         },
-      });
+        tx,
+      );
       // E7.1c: read back under the write's own tenant GUC, not on fleetDb.
       return this.readScheduleItem(tx, id, assetIds);
     });
@@ -656,21 +710,24 @@ export class MaintenanceService {
         .set({ nextDueAt, updatedAt: now })
         .where(eq(maintenanceSchedules.id, scheduleId));
 
-      await tx.insert(auditLog).values({
-        organizationId,
-        actorId,
-        action: "maintenance_convert_to_work_order",
-        entityType: "maintenance_schedule",
-        entityId: scheduleId,
-        reason: dto.notes ?? "Scheduled maintenance converted to work order",
-        payload: {
-          workOrderId: workOrder.id,
-          templateId: schedule.templateId,
-          assetId: schedule.assetId,
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
+      await this.audit.write(
+        {
+          actor,
+          organizationId,
+          action: "maintenance_convert_to_work_order",
+          entityType: "maintenance_schedule",
+          entityId: scheduleId,
+          reason: dto.notes ?? "Scheduled maintenance converted to work order",
+          payload: {
+            workOrderId: workOrder.id,
+            templateId: schedule.templateId,
+            assetId: schedule.assetId,
+            oidcSubject: actor.sub,
+            actorEmail: actor.email,
+          },
         },
-      });
+        tx,
+      );
 
       return workOrder.id;
     });

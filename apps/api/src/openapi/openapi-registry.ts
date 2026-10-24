@@ -44,6 +44,9 @@ import {
   setRuleNotificationsBodySchema,
   updateEscalationProfileBodySchema,
   updateNotificationChannelBodySchema,
+  // `F4.281` (ADR 0030): the maintenance schedule write bodies.
+  createMaintenanceScheduleBodySchema,
+  updateMaintenanceScheduleBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -119,12 +122,7 @@ import { loginBodySchema } from "../auth/login.schema";
 import { mapSitesQuerySchema } from "../map/map.schema";
 import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import { siteWidgetsQuerySchema } from "../dashboard-builder/site-widgets.schema";
-import {
-  convertMaintenanceBodySchema,
-  createMaintenanceScheduleBodySchema,
-  listMaintenanceQuerySchema,
-  updateMaintenanceScheduleBodySchema,
-} from "../maintenance/maintenance.schema";
+import { convertMaintenanceBodySchema, listMaintenanceQuerySchema } from "../maintenance/maintenance.schema";
 import { listReportFilesQuerySchema } from "../reports/report-files.schema";
 // `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`.
 import {

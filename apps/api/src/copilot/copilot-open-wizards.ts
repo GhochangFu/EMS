@@ -164,6 +164,8 @@ const PAGE_WIZARDS: readonly PageWizards[] = [
   },
   // `F4.280` (Amendment 8): the Reports page — the schedule create and the Save-to-history wizard.
   { template: "/reports", wizards: [{ catalogId: "reportSchedule.create" }, { catalogId: "reportFile.save" }] },
+  // `F4.281` (Amendment 8 Q16): the Schedule Centre's create stepper.
+  { template: "/maintenance-schedules", wizards: [{ catalogId: "maintenanceSchedule.create" }] },
   { template: "/admin/users", wizards: [{ catalogId: "user.create" }] },
   { template: "/admin/calc-parameters", wizards: [{ catalogId: "calcParameter.create" }] },
   { template: "/admin/mimic-symbol-libraries", wizards: [{ catalogId: "mimicLibrary.create" }] },

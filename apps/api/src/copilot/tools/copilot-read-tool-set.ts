@@ -12,6 +12,7 @@ import { AssetsService } from "../../assets/assets.service";
 import { AccessControlService } from "../../auth/access-control.service";
 import { DashboardService } from "../../dashboard/dashboard.service";
 import { DashboardsService } from "../../dashboard-builder/dashboards.service";
+import { MaintenanceService } from "../../maintenance/maintenance.service";
 import { defineToolRegistry, type ToolRegistry } from "../../llm/tool-registry";
 import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
@@ -53,6 +54,7 @@ import { listMimicSymbolsTool } from "./list-mimic-symbols.tool";
 import { listRulesTool } from "./list-rules.tool";
 import { listNotificationChannelsTool } from "./list-notification-channels.tool";
 import { listEscalationProfilesTool } from "./list-escalation-profiles.tool";
+import { listMaintenanceSchedulesTool } from "./list-maintenance-schedules.tool";
 import { listReportSchedulesTool } from "./list-report-schedules.tool";
 import { openPageTool } from "./open-page.tool";
 
@@ -98,6 +100,8 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   listEscalationProfilesTool,
   // `F4.280` (Amendment 8 D7, Q1): after the escalation profiles, before `open_page`.
   listReportSchedulesTool,
+  // `F4.281` (Amendment 8 D7, owner ruling DC4): after the report schedules, before `open_page`.
+  listMaintenanceSchedulesTool,
   openPageTool,
 ];
 
@@ -166,6 +170,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
     @Inject(EscalationProfilesService) escalationProfiles: EscalationProfilesService,
     // `F4.280`: appended last (slot 20), the same reason.
     @Inject(ReportSchedulesService) schedules: ReportSchedulesService,
+    // `F4.281`: appended last (slot 21), the same reason.
+    @Inject(MaintenanceService) maintenance: MaintenanceService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -189,6 +195,7 @@ export class CopilotReadToolSet implements CopilotReadTools {
       channels,
       escalationProfiles,
       schedules,
+      maintenance,
     });
   }
 

@@ -82,6 +82,8 @@ const CATALOG_WRITERS = [
   // F4.280 (Amendment 8): the report schedule writes and the on-demand file save.
   "apps/api/src/reports/report-schedules.service.ts",
   "apps/api/src/reports/report-files.service.ts",
+  // F4.281 (Amendment 8): the maintenance schedule create and the two direction entries.
+  "apps/api/src/maintenance/maintenance.service.ts",
 ] as const;
 
 /**
@@ -150,6 +152,8 @@ const CATALOG_DIRS = [
   "notifications",
   // F4.280 (Amendment 8): the report schedules and files — both write services already audit through the funnel.
   "reports",
+  // F4.281 (Amendment 8): the maintenance schedules — the three direct audit inserts are gone.
+  "maintenance",
 ] as const;
 
 /** The drizzle form and the raw-SQL form. */

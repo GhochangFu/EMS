@@ -369,3 +369,10 @@ export function aChangedStructuredValueIsChanged(): void {
   const body = { points: [{ unit: "MW", kind: "measured", pointKey: "kw" }] };
   expect(changeRows(body, now)[0]?.changed).toBe(true);
 }
+
+/** `F4.281` (Amendment 8): the three maintenance entries re-read the Schedule Centre (`["maintenance", "schedules", …]`). */
+export function theMaintenanceEntriesInvalidateTheScheduleCentre(): void {
+  for (const id of ["maintenanceSchedule.create", "maintenanceSchedule.activate", "maintenanceSchedule.deactivate"]) {
+    expect(invalidationKeysFor(id), id).toEqual([["maintenance", "schedules"]]);
+  }
+}

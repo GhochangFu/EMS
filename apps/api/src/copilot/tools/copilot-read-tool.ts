@@ -11,6 +11,7 @@ import type { AssetsService } from "../../assets/assets.service";
 import type { AccessControlService } from "../../auth/access-control.service";
 import type { DashboardService } from "../../dashboard/dashboard.service";
 import type { DashboardsService } from "../../dashboard-builder/dashboards.service";
+import type { MaintenanceService } from "../../maintenance/maintenance.service";
 import type { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import type { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import type { ChannelsService } from "../../notifications/channels.service";
@@ -87,6 +88,11 @@ export interface CopilotReadServices {
   readonly escalationProfiles: Pick<EscalationProfilesService, "list" | "getDefaults">;
   /** `F4.280` (Amendment 8 D7, Q1): the Reports page's schedule list (`GET /reports/schedules`); `list` only. */
   readonly schedules: Pick<ReportSchedulesService, "list">;
+  /**
+   * `F4.281` (Amendment 8 D7, owner ruling DC4): the Schedule Centre's list
+   * (`GET /maintenance/schedules`); `list` only, never called with `null` or `[]`.
+   */
+  readonly maintenance: Pick<MaintenanceService, "list">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */

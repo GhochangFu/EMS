@@ -13,16 +13,18 @@ import {
 } from "@nestjs/common";
 import { ZodError, z } from "zod";
 
-import type { JwtPayload } from "@bms/shared";
+import {
+  createMaintenanceScheduleBodySchema,
+  type JwtPayload,
+  updateMaintenanceScheduleBodySchema,
+} from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import {
   convertMaintenanceBodySchema,
-  createMaintenanceScheduleBodySchema,
   listMaintenanceQuerySchema,
-  updateMaintenanceScheduleBodySchema,
 } from "./maintenance.schema";
 import { MaintenanceService } from "./maintenance.service";
 

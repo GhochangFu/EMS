@@ -141,6 +141,8 @@ export type StoredContractContext =
   | "copilot_tools.list_escalation_profiles.page"
   // `F4.280`: the report-schedule read tool.
   | "copilot_tools.list_report_schedules.page"
+  // `F4.281`: the maintenance-schedule read tool.
+  | "copilot_tools.list_maintenance_schedules.page"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");
