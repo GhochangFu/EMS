@@ -4,7 +4,9 @@ import { proposeToolName } from "@bms/shared/copilot";
 
 import { calls, toolCall } from "../admin/onboarding/onboarding-agent-loop.spec";
 import { outwardIntentOf, reportEmailIntentOf } from "./copilot-outward-intent";
-import { APPLIED, CHANGE_ID, GLOBAL_ADMIN, harness, JWT, ORG_X, ToolRecordingLlm, turn } from "./copilot-turn.service.spec";
+import { png } from "./copilot-attachments.spec";
+import type { UploadedAttachment } from "./copilot-attachments";
+import { APPLIED, CHANGE_ID, CONVERSATION, GLOBAL_ADMIN, harness, JWT, ORG_X, ToolRecordingLlm, turn } from "./copilot-turn.service.spec";
 
 /**
  * `F4.279` (ADR 0099 Amendment 8 D4; owner ruling Q4) — the turn decides the
@@ -103,4 +105,17 @@ export async function aTurnThatDoesNotAskLeavesTheReportSwitchOff(): Promise<voi
   const h = harness(llm, { tools: { get_asset: () => ({ ok: true, result: { name: "x" }, organizationIds: [ORG_X] }) } });
   await turn(h, "schedule a weekly report for Ops");
   expect(h.seenTools[0]?.ctx.reportEmailIntent).toBe(false);
+}
+
+/**
+ * Q3 (A7): a turn that carries a file never sets the report switch, even when its
+ * words ask for email; `aTurnThatAsksForEmailSetsTheReportSwitch` is the positive
+ * control. Mutation: drop `attachments.length === 0` from the switch → red.
+ */
+export async function aFileTurnLeavesTheReportSwitchOff(): Promise<void> {
+  const llm = new ToolRecordingLlm([calls(toolCall("get_asset", {})), { kind: "final", text: "done" }]);
+  const h = harness(llm, { tools: { get_asset: () => ({ ok: true, result: { name: "x" }, organizationIds: [ORG_X] }) } });
+  const file: UploadedAttachment = { buffer: png(96), originalname: "plant.png" };
+  await h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "email the weekly report to Ops", "user", [file], []);
+  expect([h.seenTools.length > 0, h.seenTools[0]?.ctx.reportEmailIntent]).toEqual([true, false]);
 }
