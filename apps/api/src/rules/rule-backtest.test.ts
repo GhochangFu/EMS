@@ -3,11 +3,17 @@ import { describe, it } from "vitest";
 import {
   aBucketWithNoSamplesIsSkipped,
   aFirstBucketThatMatchesCounts,
+  aGtBucketWhoseMaxIsOverTheThresholdCounts,
+  aGtBucketWithNoMaxIsSkipped,
+  aGteBucketWhoseMaxReachesTheThresholdCounts,
   anEmptySeriesCountsZero,
+  anEqBucketComparesTheMean,
+  anLtBucketWhoseMinIsUnderTheThresholdCounts,
+  anLtBucketWithNoMinIsSkipped,
+  anLteBucketWhoseMinReachesTheThresholdCounts,
   aTimestampGapClearsByElapsedTime,
   oneExcursionCountsOnce,
   theLtDirectionCountsADip,
-  theMeanIsWhatIsCompared,
   twoExcursionsApartByTheHoldCountTwice,
   twoExcursionsInsideTheHoldCountOnce,
 } from "./rule-backtest.spec";
@@ -21,6 +27,12 @@ describe("F4.278 — the 7-day rule backtest (ADR 0099 Amendment 8, Q9)", () => 
   it("a timestamp gap clears by elapsed time", () => aTimestampGapClearsByElapsedTime());
   it("the lt direction counts a dip", () => theLtDirectionCountsADip());
   it("a first bucket that matches counts", () => aFirstBucketThatMatchesCounts());
-  it("the bucket mean is what is compared", () => theMeanIsWhatIsCompared());
+  it("gt compares the bucket max (ruling Q1)", () => aGtBucketWhoseMaxIsOverTheThresholdCounts());
+  it("gte compares the bucket max (ruling Q1)", () => aGteBucketWhoseMaxReachesTheThresholdCounts());
+  it("lt compares the bucket min (ruling Q1)", () => anLtBucketWhoseMinIsUnderTheThresholdCounts());
+  it("lte compares the bucket min (ruling Q1)", () => anLteBucketWhoseMinReachesTheThresholdCounts());
+  it("eq still compares the bucket mean (ruling Q1)", () => anEqBucketComparesTheMean());
+  it("a gt bucket with no max is skipped", () => aGtBucketWithNoMaxIsSkipped());
+  it("an lt bucket with no min is skipped", () => anLtBucketWithNoMinIsSkipped());
   it("a bucket with no samples is skipped", () => aBucketWithNoSamplesIsSkipped());
 });

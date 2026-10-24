@@ -13,7 +13,7 @@ import { DEFAULT_CLEAR_HOLD_SECONDS } from "../alarms/alarm-lifecycle";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { assertArmable } from "./rule-arming";
-import { backtestRule, type BacktestResult } from "./rule-backtest";
+import { type BacktestBasis, backtestBasis, backtestRule, type BacktestResult } from "./rule-backtest";
 import { evaluateRule } from "./rule-evaluation";
 import { asCondition, mergeRuleDraft, previewRowFromValues, ruleBodyFromRow } from "./rule-mapping";
 import { selectRuleRowById } from "./rule-reads";
@@ -131,7 +131,7 @@ export class RuleProposalCheckService {
         },
         now,
       );
-      sentences.push(backtestSentence(backtest));
+      sentences.push(backtestSentence(backtest, row.operator as AutomationRuleOperator));
     }
     return { note: sentences.join(" ") };
   }
@@ -174,9 +174,17 @@ function matchSentence(row: RuleRow, result: EvaluationResult): string {
   return `Would match now: ${result.matched ? "yes" : "no"} — latest value ${result.observedValue ?? ""}${unit}${time}.`;
 }
 
-/** The backtest, labelled an estimate. */
-function backtestSentence(backtest: BacktestResult): string {
+/** The words for the bucket value each basis compares (ruling Q1). */
+const BASIS_WORDS: Record<BacktestBasis, string> = {
+  max: "each minute's highest value",
+  min: "each minute's lowest value",
+  mean: "each minute's average",
+};
+
+/** The backtest, labelled an estimate, naming the bucket value it compared. */
+function backtestSentence(backtest: BacktestResult, operator: AutomationRuleOperator): string {
   if (backtest.buckets === 0) return "No 1-minute history in the last 7 days to estimate from.";
   const times = backtest.firings === 1 ? "1 time" : `${backtest.firings} times`;
-  return `Would have fired about ${times} in the last 7 days (an estimate from 1-minute averages; the live engine sees every sample).`;
+  const basis = BASIS_WORDS[backtestBasis(operator)];
+  return `Would have fired about ${times} in the last 7 days (an estimate from ${basis}; the live engine sees every sample).`;
 }

@@ -3,6 +3,9 @@ import { describe, it } from "vitest";
 import {
   aCreateCallsTheValidatorAsTheRouteDoes,
   aCreateNoteCarriesTheBacktestEstimate,
+  aGtBacktestNamesTheMinuteHigh,
+  anEqBacktestNamesTheMinuteAverage,
+  anLtBacktestNamesTheMinuteLow,
   aCreateNoteNamesTheCondition,
   aCreateNoteSaysItWouldMatchNow,
   anEnableOfADraftIsRefused,
@@ -22,6 +25,9 @@ describe("F4.278 — the copilot's write-free rule check (ADR 0099 Amendment 8, 
   it("a create's note says it would match now", () => aCreateNoteSaysItWouldMatchNow());
   it("a create's note names the condition", () => aCreateNoteNamesTheCondition());
   it("a create's note carries the backtest estimate", () => aCreateNoteCarriesTheBacktestEstimate());
+  it("a gt backtest names the minute's highest value (ruling Q1)", () => aGtBacktestNamesTheMinuteHigh());
+  it("an lt backtest names the minute's lowest value (ruling Q1)", () => anLtBacktestNamesTheMinuteLow());
+  it("an eq backtest names the minute's average (ruling Q1)", () => anEqBacktestNamesTheMinuteAverage());
   it("a time-window draft has no backtest", () => aTimeWindowDraftHasNoBacktest());
   it("an update of an archived rule is refused", () => anUpdateOfAnArchivedRuleIsRefused());
   it("an update validates the merged draft", () => anUpdateValidatesTheMergedDraft());

@@ -35,6 +35,8 @@ const BUCKETS = [5, 1, 1, 1, 5, 1].map((value, i) => ({
   bucket: new Date(NOW.getTime() - 60 * MINUTE + i * MINUTE),
   sumValue: value,
   sampleCount: 1,
+  minValue: value,
+  maxValue: value,
 }));
 
 type Reads = { rule: number; sample: number; buckets: number; asset: number };
@@ -186,6 +188,29 @@ export async function aCreateNoteCarriesTheBacktestEstimate(): Promise<void> {
   const { note } = await s.check.check({ entryId: "rule.create", params: {}, body: THRESHOLD_BODY, organizationId: ORG, now: NOW });
   expect(note).toContain("Would have fired about 2 times in the last 7 days");
   expect(note).toContain("estimate");
+}
+
+/** The card names what the backtest compared (ruling Q1): a `gt` rule reads each minute's highest value. */
+export async function aGtBacktestNamesTheMinuteHigh(): Promise<void> {
+  const s = service();
+  const { note } = await s.check.check({ entryId: "rule.create", params: {}, body: THRESHOLD_BODY, organizationId: ORG, now: NOW });
+  expect(note).toContain("(an estimate from each minute's highest value; the live engine sees every sample).");
+}
+
+/** An `lt` rule's backtest reads each minute's lowest value. */
+export async function anLtBacktestNamesTheMinuteLow(): Promise<void> {
+  const s = service();
+  const body = { ...THRESHOLD_BODY, operator: "lt" };
+  const { note } = await s.check.check({ entryId: "rule.create", params: {}, body, organizationId: ORG, now: NOW });
+  expect(note).toContain("(an estimate from each minute's lowest value; the live engine sees every sample).");
+}
+
+/** An `eq` rule's backtest still reads each minute's average. */
+export async function anEqBacktestNamesTheMinuteAverage(): Promise<void> {
+  const s = service();
+  const body = { ...THRESHOLD_BODY, operator: "eq" };
+  const { note } = await s.check.check({ entryId: "rule.create", params: {}, body, organizationId: ORG, now: NOW });
+  expect(note).toContain("(an estimate from each minute's average; the live engine sees every sample).");
 }
 
 /** A time-window draft shows its window and "would match now", and no backtest. */
