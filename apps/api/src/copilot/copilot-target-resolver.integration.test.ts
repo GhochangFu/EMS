@@ -190,7 +190,11 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
     const locationB = await location(orgB, "b", "F3.86 site B");
     // `F4.282`: a location type used by two locations of A and one of B, and a unit role.
     await superPool.query("INSERT INTO bms.location_types (code, label) VALUES ($1, 'F4.282 type')", [LOCATION_TYPE_CODE]);
-    await superPool.query("INSERT INTO bms.asset_roles (code, label) VALUES ($1, 'F4.282 role')", [ASSET_ROLE_CODE]);
+    // Sorted last: `asset-groups.service.integration.test.ts` reads the first two active roles by
+    // `sort_order`, and a default-0 fixture role was its pick when this file's `afterAll` deleted it.
+    await superPool.query("INSERT INTO bms.asset_roles (code, label, sort_order) VALUES ($1, 'F4.282 role', 2147483647)", [
+      ASSET_ROLE_CODE,
+    ]);
     for (const [org, suffix] of [[orgA, "t1"], [orgA, "t2"], [orgB, "t3"]] as const) {
       await superPool.query(
         "INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude) VALUES ($1, $2, $2, $3, $4, 0, 0)",
