@@ -1,6 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  listAlarmSkillsListsTheActiveCodesAndLabels,
+  listAlarmSkillsParsesTheServicesRows,
+  listAlarmSkillsTakesNoArgument,
   listUsersListsIdNameAndRole,
   listUsersListsOnlyTheOrganizationsActiveUsers,
   listUsersNeverShowsAnEmail,
@@ -25,4 +28,8 @@ describe("F4.284 — list_work_orders and list_users (ADR 0106; DC1, DC7)", () =
   it("DC1: an email address never reaches the model.", () => listUsersNeverShowsAnEmail());
   it("DC1: a global admin, a disabled account and another organization's user are not listed.", () => listUsersListsOnlyTheOrganizationsActiveUsers());
   it("An organization outside the turn's scope is refused.", () => listUsersRefusesAnOrganizationOutsideTheScope());
+  // Owner ruling 2026-10-25 (Q4): the alarm skill vocabulary.
+  it("list_alarm_skills lists the active codes and labels, naming no organization.", () => listAlarmSkillsListsTheActiveCodesAndLabels());
+  it("list_alarm_skills parses the service's rows through the guarded parse.", () => listAlarmSkillsParsesTheServicesRows());
+  it("list_alarm_skills takes no argument.", () => listAlarmSkillsTakesNoArgument());
 });

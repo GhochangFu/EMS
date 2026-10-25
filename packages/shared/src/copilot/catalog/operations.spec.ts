@@ -121,11 +121,14 @@ export function theStatusModelBodyLeavesOutClosed(): void {
   expect(modelBodyOf(status).safeParse({ status: "closed" }).success).toBe(false);
 }
 
-/** DC4: the enrichment model body leaves out `skillCode`; the route body keeps it. */
-export function theEnrichmentModelBodyLeavesOutSkillCode(): void {
-  const enrichment = entry("alarm.enrichment.set");
-  expect(modelBodyOf(enrichment).safeParse({ skillCode: "electrical" }).success).toBe(false);
-  expect(enrichment.body.safeParse({ skillCode: "electrical" }).success).toBe(true);
+/** Owner ruling 2026-10-25 (Q4), replacing DC4: the enrichment model body carries `skillCode`, as the route body does. */
+export function theEnrichmentModelBodyCarriesSkillCode(): void {
+  expect(modelBodyOf(entry("alarm.enrichment.set")).safeParse({ skillCode: "electrical" }).success).toBe(true);
+}
+
+/** The resolver reads `skillCode` as an `alarmSkill` ref, so an unknown code is refused before the card. */
+export function theEnrichmentChecksItsSkillCodeAsARef(): void {
+  expect(entry("alarm.enrichment.set").refs).toEqual([{ field: "skillCode", kind: "alarmSkill" }]);
 }
 
 /** DC2: the reorder is a canvas entry with no steps, and its card-only `moves` is left out of the hash. */

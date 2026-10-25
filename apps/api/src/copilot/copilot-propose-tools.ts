@@ -183,8 +183,7 @@ function fillValuesSchema(entry: CatalogEntry, fields: readonly string[]): ZodTy
   if (entry.modelBody === undefined) return stepValuesSchema(entry.body, fields);
   const modelFields = new Set(bodyFieldsOf(entry.modelBody));
   const narrowed = fields.filter((field) => modelFields.has(field));
-  // `F4.284` (DC4): a field the model body leaves out on purpose is the page's alone; the strict merge refuses it.
-  const rest = fields.filter((field) => !modelFields.has(field) && !(entry.modelOmits ?? []).includes(field));
+  const rest = fields.filter((field) => !modelFields.has(field));
   return stepValuesSchema(entry.modelBody, narrowed).merge(stepValuesSchema(entry.body, rest)).strict();
 }
 

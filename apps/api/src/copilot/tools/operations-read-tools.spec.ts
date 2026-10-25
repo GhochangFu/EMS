@@ -198,3 +198,43 @@ export async function listUsersRefusesAnOrganizationOutsideTheScope(): Promise<v
   const { tools } = fake([], [user("70000000-0000-4000-8000-000000000004", ORG_B)]);
   expect(await dispatch(tools, "list_users", { organizationId: ORG_B }, [ORG_X])).toEqual({ ok: false, error: organizationOutOfScope([ORG_X]) });
 }
+
+/*
+ * `F4.284` owner ruling 2026-10-25 (Q4): `list_alarm_skills` — the active alarm skill vocabulary
+ * (ADR 0034) the enrichment route accepts, over a fake `VocabulariesService.list`.
+ */
+const SKILLS = [
+  { code: "electrical", label: "Electrical", sortOrder: 10, active: true },
+  { code: "retired_trade", label: "Retired", sortOrder: 15, active: false },
+  { code: "hvac", label: "HVAC", sortOrder: 30, active: true },
+];
+
+function skillsFake(alarmSkills: unknown) {
+  const services = {
+    vocabularies: {
+      list: async () => ({ ruleCategories: [], assetDomains: [], alarmSeverities: [], alarmSkills, assetRoles: [], dashboardSections: [] }),
+    },
+  } as unknown as CopilotReadServices;
+  return createCopilotReadTools(services);
+}
+
+/** The active skills, code and label only, in the service's order; a fleet vocabulary names no organization. */
+export async function listAlarmSkillsListsTheActiveCodesAndLabels(): Promise<void> {
+  expect(await skillsFake(SKILLS).dispatch("list_alarm_skills", {}, ctx([ORG_X]))).toEqual({
+    ok: true,
+    result: { items: [{ code: "electrical", label: "Electrical" }, { code: "hvac", label: "HVAC" }] },
+    organizationIds: [],
+  });
+}
+
+/** The service's rows go through the guarded parse: a row off its contract is a refusal, never a pass-through. */
+export async function listAlarmSkillsParsesTheServicesRows(): Promise<void> {
+  await expect(skillsFake([{ code: 7, label: "Bad" }]).dispatch("list_alarm_skills", {}, ctx([ORG_X]))).rejects.toThrow();
+}
+
+/** The tool takes no argument (strict): an organization id is refused by the schema. */
+export function listAlarmSkillsTakesNoArgument(): void {
+  const tools = skillsFake(SKILLS);
+  const definition = tools.registry.definitions.find((d) => d.name === "list_alarm_skills");
+  expect(definition?.parameters).toMatchObject({ type: "object", properties: {}, additionalProperties: false });
+}

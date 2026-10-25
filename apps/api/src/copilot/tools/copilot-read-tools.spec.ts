@@ -486,6 +486,8 @@ export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
     // `F4.284` (ADR 0106; owner rulings DC1, DC7).
     "list_work_orders",
     "list_users",
+    // `F4.284` owner ruling 2026-10-25 (Q4).
+    "list_alarm_skills",
     "open_page",
   ]);
   const extra = await runToolCall(
@@ -659,5 +661,5 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(ReportsCoreModule)).toContain(ReportsService);
   expect(exportsOf(AdminModule)).toContain(AuditAdminService);
   expect(exportsOf(SystemStatusModule)).toContain(SystemStatusService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(33); // `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users.
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(34); // `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills.
 }

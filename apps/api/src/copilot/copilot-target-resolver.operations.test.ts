@@ -6,6 +6,10 @@ import {
   anAssigneeOfTheOrganizationBelongs,
   anAssigneeOutsideTheOrganizationIsRefused,
   anEnrichmentWithAForeignAffectedAssetIsRefused,
+  anEnrichmentClearingTheSkillResolves,
+  anEnrichmentWithAnActiveSkillResolves,
+  anEnrichmentWithARetiredSkillIsRefused,
+  anEnrichmentWithAnUnknownSkillIsRefused,
   anEnrichmentWithAnUnreadableAffectedAssetIsRefused,
   aReorderOutsideTheScopeIsRefused,
   aReorderWithADuplicateIsRefused,
@@ -31,6 +35,11 @@ describe("F4.284 — the alarm and work-order targets mirror the routes' gate (A
   it("refuses an alarm in no allowed organization", () => anAlarmInAnotherOrganizationIsRefused());
   it("refuses an enrichment whose affected asset is outside the read scope", () => anEnrichmentWithAnUnreadableAffectedAssetIsRefused());
   it("refuses an enrichment whose affected asset the organization does not hold", () => anEnrichmentWithAForeignAffectedAssetIsRefused());
+  // Owner ruling 2026-10-25 (Q4): the skill code, before the card.
+  it("resolves an enrichment naming an active skill code", () => anEnrichmentWithAnActiveSkillResolves());
+  it("refuses an enrichment naming an unknown skill code, naming the read tool", () => anEnrichmentWithAnUnknownSkillIsRefused());
+  it("refuses an enrichment naming a retired skill code", () => anEnrichmentWithARetiredSkillIsRefused());
+  it("resolves an enrichment that clears the skill code", () => anEnrichmentClearingTheSkillResolves());
   it("resolves each copilot role on a work order, with its title, status and asset", () => everyCopilotRoleResolvesTheWorkOrder());
   it("refuses a viewer a work order", () => aViewerIsRefusedTheWorkOrder());
   it("resolves a work-order create on the body's asset, in scope only", () => theCreateResolvesTheBodysAsset());

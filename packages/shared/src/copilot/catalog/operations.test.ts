@@ -8,7 +8,8 @@ import {
   theAckSummaryNamesTheAlarm,
   theBodyNamesAreTheRoutesExports,
   theCloseSummaryQuotesItsReason,
-  theEnrichmentModelBodyLeavesOutSkillCode,
+  theEnrichmentChecksItsSkillCodeAsARef,
+  theEnrichmentModelBodyCarriesSkillCode,
   theEntriesAreOfferedToEveryCopilotRole,
   theRefsNameTheAssigneeAndTheAlarm,
   theReorderIsACanvasEntryWithCardOnlyMoves,
@@ -33,7 +34,8 @@ describe("F4.284 — alarm and work-order catalog entries (ADR 0106)", () => {
   it("no entry takes a precondition", () => noEntryTakesAPrecondition());
   it("the ack has a Reason step and hashes the reason (decision 3)", () => theAckHasAReasonStep());
   it("the status model body leaves out closed (decision 2)", () => theStatusModelBodyLeavesOutClosed());
-  it("the enrichment model body leaves out skillCode (DC4)", () => theEnrichmentModelBodyLeavesOutSkillCode());
+  it("the enrichment model body carries skillCode (ruling 2026-10-25)", () => theEnrichmentModelBodyCarriesSkillCode());
+  it("the enrichment checks its skillCode as an alarmSkill ref", () => theEnrichmentChecksItsSkillCodeAsARef());
   it("the reorder is a canvas entry with card-only moves (DC2)", () => theReorderIsACanvasEntryWithCardOnlyMoves());
   it("the ack summary names the alarm text, severity, asset and raised time", () => theAckSummaryNamesTheAlarm());
   it("the status summary names from and to", () => theStatusSummaryNamesFromAndTo());

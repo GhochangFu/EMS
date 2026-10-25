@@ -9,6 +9,7 @@ import { NO_GRANTS, NO_USERS } from "../testing/copilot-user-checks";
 import { resolveWizardRecord, type WizardScope } from "./copilot-open-wizards";
 import { CopilotTargetResolver, refKindOf } from "./copilot-target-resolver";
 import { CopilotTargetRefusal } from "./copilot-telemetry-targets";
+import { unknownAlarmSkillMessage } from "./copilot-operations-targets";
 
 /**
  * `F3.86` PR 2 / ADR 0099 decision 10 (plan §4.2) — the resolver's release-2
@@ -947,5 +948,28 @@ export async function readingsOfAnUnmanageableAssetAreRefusedByRow(ctx: Resolver
   expect(await refusalOf(readingsAt(ctx, recorder({ canManageAsset: false }).access, ctx.assetA))).toEqual([
     true,
     "Row 1: Asset not found or outside your access scope.",
+  ]);
+}
+
+/**
+ * `F4.284` owner ruling 2026-10-25 (Q4) — an `alarmSkill` ref on a real database, as `bms_tenant`:
+ * `bms.alarm_skills` is a fleet vocabulary (migration `0034` seeds `electrical`), read on the tenant
+ * pool, so this also proves the role's grant. A seeded active code resolves; an absent code is a
+ * `CopilotTargetRefusal`.
+ */
+export async function aSkillCodeRefIsReadFromTheVocabulary(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  const entry = fixture({ kind: "location", param: "id" }, [{ field: "skillCode", kind: "alarmSkill" }]);
+  const at = (skillCode: string) => r.resolve(entry, { id: ctx.locationA }, { skillCode }, [ctx.orgA], JWT);
+  expect((await at("electrical"))?.organizationId).toBe(ctx.orgA);
+}
+
+/** An absent skill code is refused with the read tool's sentence. */
+export async function anAbsentSkillCodeRefIsRefused(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  const entry = fixture({ kind: "location", param: "id" }, [{ field: "skillCode", kind: "alarmSkill" }]);
+  expect(await refusalOf(r.resolve(entry, { id: ctx.locationA }, { skillCode: "f4284-no-such-skill" }, [ctx.orgA], JWT))).toEqual([
+    true,
+    unknownAlarmSkillMessage("f4284-no-such-skill"),
   ]);
 }

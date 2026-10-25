@@ -196,7 +196,9 @@ export type CatalogRefKind =
   | "dashboardTemplate"
   // `F4.284` (ADR 0106 decision 6): a work order's `assignedTo` (a user of the change's organization) and `alarmId`.
   | "user"
-  | "alarm";
+  | "alarm"
+  // `F4.284` owner ruling 2026-10-25 (Q4): an alarm skill code (ADR 0034, a fleet vocabulary; active rows only).
+  | "alarmSkill";
 
 /**
  * A body field holding the id of a row that must belong to the change's
@@ -287,12 +289,6 @@ export interface CatalogEntry {
   readonly modelBody?: ZodTypeAny;
   /** The export name of `modelBody` in `@bms/shared`, when there is one (PR 4 gates it with the first such entry). */
   readonly modelBodyName?: string;
-  /**
-   * `F4.284` (owner ruling DC4): the body fields `modelBody` leaves out on purpose, so the page
-   * alone sets them — `fill_step` refuses them too. Only an optional field the route keeps when
-   * absent may be listed. Absent: none.
-   */
-  readonly modelOmits?: readonly string[];
   /**
    * `F4.266` (ADR 0090 Amendment 3 C6): a short statement of a large body's
    * shape, appended to the propose tool's field list so the model can propose

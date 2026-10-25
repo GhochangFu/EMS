@@ -31,7 +31,9 @@ import type { CatalogEntry, CatalogSummaryInput } from "./types";
  * - Owner ruling DC2 (2026-10-24): `workOrder.reorder` is a canvas entry — the
  *   Kanban drag is its form — and its card lists every moved work order from the
  *   card-only `moves` the propose step stores (left out of the hash).
- * - Owner ruling DC4: the enrichment model body leaves out `skillCode`.
+ * - Owner ruling 2026-10-25 (Q4), replacing DC4: the enrichment model body
+ *   carries `skillCode`; `list_alarm_skills` lists the active codes, and the
+ *   `alarmSkill` ref refuses an unknown or retired one before the card.
  * - No entry takes a precondition: the PATCHes accept decision 4.9's residual.
  */
 
@@ -79,13 +81,12 @@ export const OPERATIONS_ENTRIES: readonly CatalogEntry[] = [
     bodyName: "alarmEnrichmentUpsertBodySchema",
     modelBody: copilotAlarmEnrichmentModelBodySchema,
     modelBodyName: "copilotAlarmEnrichmentModelBodySchema",
-    // DC4: no read tool lists the alarm skills, so the page alone sets `skillCode`.
-    modelOmits: ["skillCode"],
     clientOnly: [],
     risk: "edit",
     target: { kind: "alarm", param: "id" },
     // `affectedAssetIds` is an array: the resolver checks each id (read scope, the alarm's organization).
-    refs: [],
+    // Owner ruling 2026-10-25 (Q4): `skillCode` is an active `bms.alarm_skills` code (the route's `assertAlarmSkill`).
+    refs: [{ field: "skillCode", kind: "alarmSkill" }],
     formulas: [],
     steps: [
       { id: "analysis", title: "Analysis", fields: ["rootCause", "impact", "correctiveActions"] },

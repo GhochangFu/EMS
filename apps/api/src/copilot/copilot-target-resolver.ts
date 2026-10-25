@@ -47,7 +47,7 @@ import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
 import { CopilotTargetRefusal, mayWriteTelemetry, telemetryRowRefusal } from "./copilot-telemetry-targets";
 // prettier-ignore
-import { findWorkOrderBatch, mayWriteOperationalAssets, type OperationsAlarm, type OperationsBatchRow, type OperationsWorkOrder, readAlarmRow, readConvertibleSchedule, readOrganizationUserName, readWorkOrderRow } from "./copilot-operations-targets";
+import { findWorkOrderBatch, isActiveAlarmSkill, mayWriteOperationalAssets, type OperationsAlarm, type OperationsBatchRow, type OperationsWorkOrder, readAlarmRow, readConvertibleSchedule, readOrganizationUserName, readWorkOrderRow, unknownAlarmSkillMessage } from "./copilot-operations-targets";
 
 /** What a proposal's target resolved to. */
 export type ResolvedTarget = {
@@ -295,6 +295,9 @@ export class CopilotTargetResolver implements CopilotTargets {
         const assignee = await readOrganizationUserName(this.tenantDb, value, found.organizationId);
         if (assignee === null) return null;
         found.refName ??= assignee;
+        // Owner ruling 2026-10-25 (Q4): a skill code is a fleet vocabulary row; the refusal names the read tool.
+      } else if (kind === "alarmSkill") {
+        if (!(await isActiveAlarmSkill(this.tenantDb, value))) throw new CopilotTargetRefusal(unknownAlarmSkillMessage(value));
       } else if (!(await this.refBelongs(kind, value, found.organizationId))) return null;
     }
     const organizationName =
@@ -946,7 +949,7 @@ export class CopilotTargetResolver implements CopilotTargets {
     return rtu?.locationId ?? null;
   }
 
-  private async refBelongs(kind: CatalogRefKind, id: string, organizationId: string): Promise<boolean> {
+  private async refBelongs(kind: Exclude<CatalogRefKind, "alarmSkill">, id: string, organizationId: string): Promise<boolean> {
     if (kind === "organization") return id === organizationId;
     if (kind === "user") return (await readOrganizationUserName(this.tenantDb, id, organizationId)) !== null;
     const table = {

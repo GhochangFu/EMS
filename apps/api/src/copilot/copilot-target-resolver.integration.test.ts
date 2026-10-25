@@ -10,6 +10,8 @@ import { asRole } from "../testing/role-urls";
 import {
   aCreateUnderAParentTakesTheParentsOrganization,
   readingsOfABoundAssetResolveOnItsAsset,
+  aSkillCodeRefIsReadFromTheVocabulary,
+  anAbsentSkillCodeRefIsRefused,
   readingsOfAnotherOrganizationsAssetAreRefusedByRow,
   readingsOfAnUnknownAssetAreRefusedByRow,
   readingsOfAnUnmanageableAssetAreRefusedByRow,
@@ -373,6 +375,9 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("F4.283: readings of an unknown asset are refused by row", () => readingsOfAnUnknownAssetAreRefusedByRow(ctx));
   it("F4.283: readings of an asset the caller may not manage are refused by row", () =>
     readingsOfAnUnmanageableAssetAreRefusedByRow(ctx));
+  // `F4.284` owner ruling 2026-10-25 (Q4): the skill code ref, on the fleet vocabulary.
+  it("F4.284: a seeded active skill code resolves", () => aSkillCodeRefIsReadFromTheVocabulary(ctx));
+  it("F4.284: an absent skill code is refused with the read tool's sentence", () => anAbsentSkillCodeRefIsRefused(ctx));
   it("resolves a user target through the users service (PR 4)", () => aUserTargetUsesTheUsersServicesChecks(ctx));
   it("resolves a grant through the grants service (PR 4)", () => aGrantTargetUsesTheGrantsServicesChecks(ctx));
   it("runs the route's manager checks for a user create (PR 4)", () => aUserCreateRunsTheRoutesManagerChecks(ctx));

@@ -44,6 +44,7 @@ import { getPointAggregateTool } from "./get-point-aggregate.tool";
 import { getRecentValuesTool } from "./get-recent-values.tool";
 import { getSystemStatusTool } from "./get-system-status.tool";
 import { getValuesAtInstantTool } from "./get-values-at-instant.tool";
+import { listAlarmSkillsTool } from "./list-alarm-skills.tool";
 import { listAlarmsTool } from "./list-alarms.tool";
 import { listAssetPointsTool } from "./list-asset-points.tool";
 import { listAssetRolesTool } from "./list-asset-roles.tool";
@@ -109,6 +110,8 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   // `F4.284` (ADR 0106; owner rulings DC1, DC7): the ids a work-order change names, and its assignee.
   listWorkOrdersTool,
   listUsersTool,
+  // `F4.284` owner ruling 2026-10-25 (Q4): the skill codes an alarm analysis may name.
+  listAlarmSkillsTool,
   openPageTool,
 ];
 

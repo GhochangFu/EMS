@@ -31,8 +31,9 @@ export function theEnrichmentBodyIsStrict(): void {
   expect(alarmEnrichmentUpsertBodySchema.safeParse({ rootCause: "Loose lug", extra: 1 }).success).toBe(false);
 }
 
-export function theEnrichmentModelBodyRefusesSkillCode(): void {
-  expect(copilotAlarmEnrichmentModelBodySchema.safeParse({ rootCause: "Loose lug", skillCode: "electrical" }).success).toBe(false);
+/** Owner ruling 2026-10-25 (Q4): the copilot's enrichment body carries `skillCode` again (`list_alarm_skills` lists the codes). */
+export function theEnrichmentModelBodyAcceptsASkillCode(): void {
+  expect(copilotAlarmEnrichmentModelBodySchema.safeParse({ rootCause: "Loose lug", skillCode: "electrical" }).success).toBe(true);
 }
 
 export function theEnrichmentModelBodyAcceptsTheAnalysis(): void {

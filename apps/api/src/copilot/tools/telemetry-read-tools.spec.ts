@@ -396,6 +396,7 @@ export async function assertTheTurnAnswersTheLast24HoursFromATool(): Promise<voi
  * Owner ruling 2026-10-23 (release 4): F4.279 measured 13,135
  * Owner ruling 2026-10-23 (release 4): F4.281 measured 14,262 (31 tools, under the bound, so it is unchanged)
  * Owner ruling 2026-10-23 (release 4): F4.284 measured 15,207 (33 tools)
+ * Owner ruling 2026-10-25 (release 4): F4.284 alarm skills measured 15,452 (34 tools, under the bound, so it is unchanged)
  */
 export function assertTheReadRegistryStaysInItsBudget(): void {
   const { tools } = fakeTelemetryServices();

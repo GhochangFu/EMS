@@ -208,17 +208,13 @@ function directionOwnedFields(id: string): string[] {
   );
 }
 
-/**
- * `F4.284` owner ruling DC4 (2026-10-24): an entry's `modelOmits` are the body fields its model body
- * leaves out on purpose, so the page alone sets them (the enrichment upsert writes only the keys it is sent).
- */
-function modelBodyProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "modelBody" | "modelOmits" | "upload">): string[] {
+function modelBodyProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "modelBody" | "upload">): string[] {
   if (entry.modelBody === undefined) return entry.upload ? [`${entry.id}: an upload entry needs a modelBody`] : [];
   const problems: string[] = [];
   let object: ZodTypeAny = entry.modelBody;
   while (object instanceof z.ZodEffects) object = object._def.schema as ZodTypeAny;
   if ((object as z.AnyZodObject)._def.unknownKeys !== "strict") problems.push(`${entry.id}: modelBody is not strict`);
-  const owned = [...directionOwnedFields(entry.id), ...(entry.modelOmits ?? [])];
+  const owned = directionOwnedFields(entry.id);
   const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field) && !owned.includes(field));
   // `F4.283`: a `kind: "file"` upload names its attachment as `file`; the bytes stay in the browser.
   const expected = (entry.upload ? [...fields, entry.upload.kind === "svg" ? "svg" : "file"] : fields).sort();

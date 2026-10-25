@@ -146,6 +146,8 @@ export type StoredContractContext =
   // `F4.284`: the work-order and user read tools.
   | "copilot_tools.list_work_orders.page"
   | "copilot_tools.list_users.page"
+  // `F4.284` owner ruling 2026-10-25 (Q4): the alarm skill read tool.
+  | "copilot_tools.list_alarm_skills.page"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");

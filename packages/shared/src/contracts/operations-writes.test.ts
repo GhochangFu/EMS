@@ -7,7 +7,7 @@ import {
   theCreateBodyIsStrict,
   theEnrichmentBodyIsStrict,
   theEnrichmentModelBodyAcceptsTheAnalysis,
-  theEnrichmentModelBodyRefusesSkillCode,
+  theEnrichmentModelBodyAcceptsASkillCode,
   theReorderBodyIsStrict,
   theReorderBodyRefuses101Items,
   theStatusBodyIsStrict,
@@ -21,7 +21,7 @@ describe("F4.284 — alarm and work-order write bodies (ADR 0030)", () => {
   it("the ack body refuses an unknown key", () => theAckBodyIsStrict());
   it("the ack body refuses a reason under 3 characters", () => theAckBodyRefusesAShortReason());
   it("the enrichment body refuses an unknown key", () => theEnrichmentBodyIsStrict());
-  it("the enrichment model body refuses skillCode", () => theEnrichmentModelBodyRefusesSkillCode());
+  it("the enrichment model body accepts a skillCode (ruling 2026-10-25)", () => theEnrichmentModelBodyAcceptsASkillCode());
   it("the enrichment model body accepts the analysis fields", () => theEnrichmentModelBodyAcceptsTheAnalysis());
   it("the create body refuses an unknown key", () => theCreateBodyIsStrict());
   it("the status body refuses an unknown key", () => theStatusBodyIsStrict());

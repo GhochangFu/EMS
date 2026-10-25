@@ -4,7 +4,9 @@ import type { JwtPayload, UserRole } from "@bms/shared";
 import { catalogEntry } from "@bms/shared/copilot";
 
 import { canPerformOperationsWrite, type OperationsWriteClass } from "../auth/operations-write";
+import { unknownAlarmSkillMessage } from "./copilot-operations-targets";
 import { CopilotTargetResolver } from "./copilot-target-resolver";
+import { CopilotTargetRefusal } from "./copilot-telemetry-targets";
 
 /**
  * `F4.284` (ADR 0106 decision 6; ADR 0099 Amendment 8 D2; owner rulings DC1, DC5) —
@@ -36,6 +38,8 @@ type World = {
   refFound: boolean;
   scheduleActive: boolean;
   openWorkOrder: boolean;
+  /** `F4.284` owner ruling 2026-10-25 (Q4): the `bms.alarm_skills` row a `skillCode` names. */
+  skill: "active" | "retired" | "absent";
 };
 
 const BASE: World = {
@@ -47,6 +51,7 @@ const BASE: World = {
   refFound: true,
   scheduleActive: true,
   openWorkOrder: false,
+  skill: "active",
 };
 
 /**
@@ -69,6 +74,8 @@ function worldDb(world: World, ask: { org: string | null; id?: string; ids?: str
     if (keys.includes("scheduleActive")) {
       return inOrg ? [{ title: "Quarterly check", assetId: ASSET, assetName: "AHU 4", scheduleActive: world.scheduleActive, templateActive: true }] : [];
     }
+    // `bms.alarm_skills` is fleet-wide (no RLS): the skill read answers outside a tenant too.
+    if (keys.length === 1 && keys[0] === "active") return world.skill === "absent" ? [] : [{ active: world.skill === "active" }];
     if (keys.includes("workOrderId")) return world.openWorkOrder ? [{ workOrderId: ROW }] : [];
     if (keys.includes("status")) {
       const row = world.workOrders[ask.id ?? ROW];
@@ -193,6 +200,46 @@ export async function anEnrichmentWithAnUnreadableAffectedAssetIsRefused(): Prom
 export async function anEnrichmentWithAForeignAffectedAssetIsRefused(): Promise<void> {
   const body = { rootCause: "Loose lug", affectedAssetIds: [OTHER_ASSET] };
   expect(await resolveAs("alarm.enrichment.set", "admin", null, { body, world: { refFound: false } })).toBeNull();
+}
+
+/** What a resolve threw: its class (the propose tool catches `CopilotTargetRefusal` only) and its sentence. */
+async function refusalOf(result: Promise<unknown>): Promise<[boolean, string] | "resolved"> {
+  try {
+    await result;
+    return "resolved";
+  } catch (err) {
+    return [err instanceof CopilotTargetRefusal, (err as Error).message];
+  }
+}
+
+/** Owner ruling 2026-10-25 (Q4): an enrichment naming an active skill code resolves. */
+export async function anEnrichmentWithAnActiveSkillResolves(): Promise<void> {
+  const body = { rootCause: "Loose lug", skillCode: "electrical" };
+  expect((await resolveAs("alarm.enrichment.set", "admin", null, { body }))?.targetName).toBe("MCC-1");
+}
+
+/** An unknown skill code is refused before the card with a sentence naming the read tool. Mutation: drop the skill ref → red. */
+export async function anEnrichmentWithAnUnknownSkillIsRefused(): Promise<void> {
+  const body = { rootCause: "Loose lug", skillCode: "plumbing" };
+  expect(await refusalOf(resolveAs("alarm.enrichment.set", "admin", null, { body, world: { skill: "absent" } }))).toEqual([
+    true,
+    unknownAlarmSkillMessage("plumbing"),
+  ]);
+}
+
+/** A retired skill code is refused as the route refuses it (`assertAlarmSkill` needs `active`). Mutation: drop the active check → red. */
+export async function anEnrichmentWithARetiredSkillIsRefused(): Promise<void> {
+  const body = { rootCause: "Loose lug", skillCode: "retired_trade" };
+  expect(await refusalOf(resolveAs("alarm.enrichment.set", "admin", null, { body, world: { skill: "retired" } }))).toEqual([
+    true,
+    unknownAlarmSkillMessage("retired_trade"),
+  ]);
+}
+
+/** A `null` skill code clears the field: nothing to check, it resolves. */
+export async function anEnrichmentClearingTheSkillResolves(): Promise<void> {
+  const body = { rootCause: "Loose lug", skillCode: null };
+  expect((await resolveAs("alarm.enrichment.set", "admin", null, { body, world: { skill: "absent" } }))?.targetName).toBe("MCC-1");
 }
 
 /** Each copilot role resolves a work-order status change by title, through the operational class. */

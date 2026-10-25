@@ -7,7 +7,8 @@ import {
   anAckWordDoesNotAllowAClose,
   fillStepFillsTheEnrichmentDetails,
   fillStepRefusesAnAckOnACloseWord,
-  fillStepRefusesASkillCode,
+  anEnrichmentWithASkillCodeIsStored,
+  fillStepFillsASkillCode,
   theCreateCardNamesTheAssignee,
   aClosedWorkOrderCloseIsRefused,
   aClosedWorkOrderStatusChangeIsRefused,
@@ -62,7 +63,8 @@ describe("F4.284 — the operations propose tools (ADR 0106 decisions 2-4, DC2, 
   it("The registry for a close word withholds the acknowledge.", () => aCloseOnlyRegistryWithholdsTheAck());
   it("The registry for an ack word withholds the close.", () => anAckOnlyRegistryWithholdsTheClose());
   it("fill_step: a close word cannot pre-fill an acknowledge wizard.", () => fillStepRefusesAnAckOnACloseWord());
-  it("DC4: fill_step refuses a skillCode for the enrichment wizard.", () => fillStepRefusesASkillCode());
-  it("DC4 positive control: the enrichment details step still fills.", () => fillStepFillsTheEnrichmentDetails());
+  it("Ruling 2026-10-25: fill_step fills a skillCode for the enrichment wizard.", () => fillStepFillsASkillCode());
+  it("Ruling 2026-10-25: an enrichment with a skill code is stored.", () => anEnrichmentWithASkillCodeIsStored());
+  it("the enrichment details step's other fields fill too.", () => fillStepFillsTheEnrichmentDetails());
   it("DC1: a create's card names the assignee the resolver read.", () => theCreateCardNamesTheAssignee());
 });

@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 
-import { alarms, assets, maintenanceHistory, maintenanceSchedules, maintenanceTaskTemplates, users, workOrders } from "@bms/db";
+import { alarms, alarmSkills, assets, maintenanceHistory, maintenanceSchedules, maintenanceTaskTemplates, users, workOrders } from "@bms/db";
 
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
@@ -150,6 +150,21 @@ export async function readOrganizationUserName(tenantDb: BmsDb, id: string, orga
       .limit(1),
   );
   return row ? row.displayName : null;
+}
+
+/**
+ * `F4.284` owner ruling 2026-10-25 (Q4): whether `code` is an active `bms.alarm_skills` row — the
+ * enrichment route's `VocabulariesService.assertAlarmSkill` (absent or retired is its 400). A fleet
+ * vocabulary with no row-level security (the `pointKeyCode` precedent), read on the tenant pool.
+ */
+export async function isActiveAlarmSkill(tenantDb: BmsDb, code: string): Promise<boolean> {
+  const [row] = await tenantDb.select({ active: alarmSkills.active }).from(alarmSkills).where(eq(alarmSkills.code, code)).limit(1);
+  return row?.active === true;
+}
+
+/** The refusal of an unknown or retired skill code; it names the read tool that lists the live ones. */
+export function unknownAlarmSkillMessage(code: string): string {
+  return `"${code}" is not an active alarm skill code. Read list_alarm_skills and use a listed code, or leave skillCode out.`;
 }
 
 /** The work orders of `ids` that are this organization's (any not found is simply absent). */

@@ -274,15 +274,23 @@ export async function fillStepRefusesAnAckOnACloseWord(): Promise<void> {
 
 const ENRICHMENT_WIZARD = [{ catalogId: "alarm.enrichment.set", params: { id: ALARM }, name: "MCC-1", organizationId: ORG_X }];
 
-/** DC4: `fill_step` refuses a `skillCode` for the enrichment wizard; the page alone sets it. */
-export async function fillStepRefusesASkillCode(): Promise<void> {
+/** Owner ruling 2026-10-25 (Q4), replacing DC4: `fill_step` fills a `skillCode` for the enrichment wizard. */
+export async function fillStepFillsASkillCode(): Promise<void> {
   const h = proposeHarness({ target: ALARM_TARGET });
-  const args = { catalogId: "alarm.enrichment.set", params: { id: ALARM }, stepId: "details", values: { skillCode: "ELEC" } };
+  const args = { catalogId: "alarm.enrichment.set", params: { id: ALARM }, stepId: "details", values: { skillCode: "electrical" } };
   const outcome = await h.call("fill_step", args, { openWizards: ENRICHMENT_WIZARD });
-  expect([outcome.ok, outcome.error]).toEqual([false, expect.stringContaining("skillCode")]);
+  expect(outcome.ok, outcome.content).toBe(true);
 }
 
-/** DC4 positive control: the same step's other fields still fill. */
+/** The propose tool stores an enrichment whose body names a skill code. */
+export async function anEnrichmentWithASkillCodeIsStored(): Promise<void> {
+  const h = proposeHarness({ target: ALARM_TARGET });
+  const body = { rootCause: "Loose lug", skillCode: "electrical" };
+  await h.call("propose_alarm_enrichment_set", { id: ALARM, body });
+  expect(h.stored[0]?.body).toEqual(body);
+}
+
+/** The same step's other fields fill too. */
 export async function fillStepFillsTheEnrichmentDetails(): Promise<void> {
   const h = proposeHarness({ target: ALARM_TARGET });
   const args = { catalogId: "alarm.enrichment.set", params: { id: ALARM }, stepId: "details", values: { affectedAssetIds: [ASSET] } };

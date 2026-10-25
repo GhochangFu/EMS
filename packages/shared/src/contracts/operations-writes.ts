@@ -44,9 +44,10 @@ export const alarmEnrichmentUpsertBodySchema = z
   .strict();
 
 /**
- * Owner ruling DC4 (2026-10-24): the copilot's enrichment body leaves out
- * `skillCode` — no read tool lists the alarm skills, so the page sets it. The
- * route still parses {@link alarmEnrichmentUpsertBodySchema}.
+ * The copilot's enrichment body. Owner ruling DC4 (2026-10-24) left `skillCode`
+ * out; the owner ruling of 2026-10-25 (Q4) puts it back — `list_alarm_skills`
+ * lists the active codes, and the resolver refuses an unknown one before the
+ * card. The route still parses {@link alarmEnrichmentUpsertBodySchema}.
  */
 export const copilotAlarmEnrichmentModelBodySchema = z
   .object({
@@ -57,6 +58,7 @@ export const copilotAlarmEnrichmentModelBodySchema = z
     waterImpact: enrichmentText,
     productionImpact: enrichmentText,
     etrAt: enrichmentEtr,
+    skillCode: alarmSkillCodeSchema.nullable().optional(),
     affectedAssetIds: enrichmentAffected,
   })
   .strict();
