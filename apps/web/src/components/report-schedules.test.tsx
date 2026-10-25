@@ -2,113 +2,42 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
+import { resetWizardStore } from "../stores/wizard-store";
 import {
   aDeleteInFlightDisablesThatRowsEdit,
   aDeleteInFlightEditCarriesNoAriaBusy,
-  aLocationAdminCreateBodyHasNoOrganizationIdKey,
   aPendingDeleteHasAriaBusyTrue,
   anIdleDeleteHasAriaBusyFalse,
-  aLocationAdminHasNoOrganizationSelect,
-  aLocationAdminWithNoLocationSelectedIsBlockedOnTheLocation,
-  aLocationAdminHasNoWholeOrganizationOption,
-  aLocationAdminReadsTheChannelSentenceInsteadOfTheSelect,
-  aRefusedCreateRendersTheApiSentence,
-  aTypedTimezoneSurvivesALocationChange,
-  aWebhookChannelIsNotAnOption,
-  anAdminHasTheWholeOrganizationOption,
-  anAdminSaveSendsTheBodyByKey,
-  anAdminSeesTheOrganizationSelect,
-  anOrganizationAdminGetsTheChannelSelect,
-  anUnchangedEditKeepsSaveDisabled,
-  choosingAnOrganizationLoadsItsLocations,
   deleteCallsTheApiOnceAndRefetches,
   editPrefillsTheName,
-  saveIsDisabledBesideTheBlockedSentence,
-  selectingALocationDefaultsTheTimezoneToItsZone,
-  theTimezoneDefaultsToKolkataWithNoLocationSelected,
+  newScheduleOpensTheCreateWizard,
   twoDeletesInFlightKeepBothButtonsPending,
   twoSchedulesRenderTwoRows,
-  updateSendsOnlyTheChangedKey,
-  theLocationsPickerListsTheTree,
 } from "./report-schedules.spec";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and
  * the jsdom docblock is here because this is the file Vitest collects
- * (ADR 0042 decision 2).
+ * (ADR 0042 decision 2). `F4.280`: the form claims run in
+ * `report-schedule-wizard.test.tsx`.
  */
 describe("F3.5b report schedules section", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
-  });
-
-  it("an admin sees the organization select", async () => {
-    await anAdminSeesTheOrganizationSelect();
-  });
-
-  it("choosing an organization calls fetchAdminLocations('true', ESKOM)", async () => {
-    await choosingAnOrganizationLoadsItsLocations();
-  });
-
-  it("the timezone reads Asia/Kolkata with no location selected", async () => {
-    await theTimezoneDefaultsToKolkataWithNoLocationSelected();
-  });
-
-  it("selecting a location defaults the timezone to its zone", async () => {
-    await selectingALocationDefaultsTheTimezoneToItsZone();
-  });
-
-  it("a typed timezone survives a later location change", async () => {
-    await aTypedTimezoneSurvivesALocationChange();
-  });
-
-  it("an admin save sends the create body, asserted by key", async () => {
-    await anAdminSaveSendsTheBodyByKey();
-  });
-
-  it("a webhook channel is not an option; the email one is", async () => {
-    await aWebhookChannelIsNotAnOption();
-  });
-
-  it("a location_admin has no organization select", async () => {
-    await aLocationAdminHasNoOrganizationSelect();
-  });
-
-  it("a location_admin has no Whole organization option", async () => {
-    await aLocationAdminHasNoWholeOrganizationOption();
-  });
-
-  it("an admin has the Whole organization option", async () => {
-    await anAdminHasTheWholeOrganizationOption();
-  });
-
-  it("Q-6: a location_admin reads the channel sentence instead of the select", async () => {
-    await aLocationAdminReadsTheChannelSentenceInsteadOfTheSelect();
-  });
-
-  it("an organization_admin gets the channel select through the locations' organization", async () => {
-    await anOrganizationAdminGetsTheChannelSelect();
-  });
-
-  it("a location_admin create body has no organizationId key", async () => {
-    await aLocationAdminCreateBodyHasNoOrganizationIdKey();
+    resetWizardStore();
   });
 
   it("two DTOs render two rows", async () => {
     await twoSchedulesRenderTwoRows();
   });
 
-  it("Edit pre-fills the name", async () => {
+  it("F4.280: New schedule opens the create wizard", async () => {
+    await newScheduleOpensTheCreateWizard();
+  });
+
+  it("Edit opens the edit wizard pre-filled with the name", async () => {
     await editPrefillsTheName();
-  });
-
-  it("an unchanged edit keeps Save disabled beside Nothing changed yet", async () => {
-    await anUnchangedEditKeepsSaveDisabled();
-  });
-
-  it("a rename PATCHes only the name key", async () => {
-    await updateSendsOnlyTheChangedKey();
   });
 
   it("Delete calls deleteReportSchedule once and refetches the list", async () => {
@@ -133,28 +62,5 @@ describe("F3.5b report schedules section", () => {
 
   it("another row's idle Delete carries aria-busy=\"false\"", async () => {
     await anIdleDeleteHasAriaBusyFalse();
-  });
-
-  it("a refused create renders the API's sentence", async () => {
-    await aRefusedCreateRendersTheApiSentence();
-  });
-
-  it("a location_admin with a name but no location is blocked on the location (step-5 nit)", async () => {
-    await aLocationAdminWithNoLocationSelectedIsBlockedOnTheLocation();
-  });
-
-  it("Save is disabled beside the blocked sentence", async () => {
-    await saveIsDisabledBesideTheBlockedSentence();
-  });
-});
-
-describe("F2.10 report schedules — the Locations picker lists the tree (B11)", () => {
-  afterEach(() => {
-    cleanup();
-    vi.restoreAllMocks();
-  });
-
-  it("lists a child after its parent with the tree's dash", async () => {
-    await theLocationsPickerListsTheTree();
   });
 });

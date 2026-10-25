@@ -1,4 +1,5 @@
 import { expect } from "vitest";
+import type { CreateNotificationChannelBody } from "@bms/shared";
 
 import { sql } from "drizzle-orm";
 
@@ -6,8 +7,15 @@ import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import type { CountingDb } from "../testing/counting-db";
+import type { ChannelWritesService } from "./channel-writes.service";
 import type { ChannelsService } from "./channels.service";
-import type { CreateNotificationChannelBody } from "./notifications.schema";
+
+/**
+ * `F4.279`: the writes moved to `ChannelWritesService`; these claims read and write,
+ * so they take the two services' methods as one object.
+ */
+export type ChannelReadsAndWrites = Pick<ChannelsService, "list" | "listDeliveries" | "ruleChannelIds"> &
+  Pick<ChannelWritesService, "create" | "update" | "remove" | "setRuleChannels">;
 
 /**
  * `E7.1c` (ADR 0043 Amendment 5, decision 7, Task 7) — the per-service RLS
@@ -35,7 +43,7 @@ import type { CreateNotificationChannelBody } from "./notifications.schema";
  *    exactly what this file does for both an org-scoped and a global create.
  */
 export async function assertChannelWritesRouteByOrgScope(
-  channels: ChannelsService,
+  channels: ChannelReadsAndWrites,
   countedTenant: CountingDb,
   countedFleet: CountingDb,
   orgAdminJwt: JwtPayload,
@@ -103,7 +111,7 @@ export async function assertChannelWritesRouteByOrgScope(
 /** `remove`'s half of the same fork — separated so the caller controls order
  * against its own cleanup. */
 export async function assertChannelRemoveRoutesByOrgScope(
-  channels: ChannelsService,
+  channels: ChannelReadsAndWrites,
   countedTenant: CountingDb,
   countedFleet: CountingDb,
   orgAdminJwt: JwtPayload,
@@ -132,7 +140,7 @@ export async function assertChannelRemoveRoutesByOrgScope(
  * well if the code hard-coded `null`.
  */
 export async function assertChannelAuditStampsOrgCorrectly(
-  channels: ChannelsService,
+  channels: ChannelReadsAndWrites,
   fleetDb: BmsDb,
   orgAdminJwt: JwtPayload,
   globalAdminJwt: JwtPayload,
@@ -190,7 +198,7 @@ export async function assertChannelAuditStampsOrgCorrectly(
  * refusal, and the pre-fix code would pass only the acceptance.
  */
 export async function assertSetRuleChannelsRefusesCrossOrgChannel(
-  channels: ChannelsService,
+  channels: ChannelReadsAndWrites,
   ruleIdInOrgA: string,
   channelIdInOrgB: string,
   globalChannelId: string,
@@ -242,7 +250,7 @@ export async function assertSetRuleChannelsRefusesCrossOrgChannel(
  * case 1 and a hard-coded non-empty value fails case 3.
  */
 export async function assertSetRuleChannelsKeepsJoinsOutsideTheCallersScope(
-  channels: ChannelsService,
+  channels: ChannelReadsAndWrites,
   fleetDb: BmsDb,
   ruleId: string,
   globalChannelId: string,
@@ -330,7 +338,7 @@ export async function assertSetRuleChannelsKeepsJoinsOutsideTheCallersScope(
  * own proof.
  */
 export async function assertChannelAndDeliveryReadsAreOrgScoped(
-  channels: ChannelsService,
+  channels: ChannelReadsAndWrites,
   orgAdminJwt: JwtPayload,
   globalAdminJwt: JwtPayload,
   locationAdminJwt: JwtPayload,
@@ -409,7 +417,7 @@ export async function assertChannelAndDeliveryReadsAreOrgScoped(
  * and passes the unfixed code too.
  */
 export async function assertFleetChannelErrorIsRedactedForATenant(
-  channels: ChannelsService,
+  channels: ChannelReadsAndWrites,
   orgAdminJwt: JwtPayload,
   globalAdminJwt: JwtPayload,
   fleetDelivery: { readonly id: string; readonly channelCode: string; readonly error: string },

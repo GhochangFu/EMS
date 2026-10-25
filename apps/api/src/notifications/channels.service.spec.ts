@@ -2,6 +2,8 @@ import { BadRequestException, ConflictException } from "@nestjs/common";
 
 import type { JwtPayload } from "@bms/shared";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
+import { ChannelWritesService } from "./channel-writes.service";
 import { ChannelsService } from "./channels.service";
 import { buildConfig } from "./notifications.config";
 
@@ -125,6 +127,15 @@ function makeChannels(db: Ctor[0]): ChannelsService {
   return new ChannelsService(db, db, crypto, accessControl);
 }
 
+/**
+ * `F4.279`: the writes moved to `ChannelWritesService`; the claims below that
+ * create, update or delete build one over the same fake. The audit funnel is the
+ * real one, writing on the executor the service passes (the same fake).
+ */
+function makeWrites(db: Ctor[0]): ChannelWritesService {
+  return new ChannelWritesService(db, db, crypto, accessControl, new MasterDataAuditService(db, db));
+}
+
 /** `makeChannels` with the crypto slot supplied — the `E8.4` rows below need a
  * fake that answers `decrypt`, which the module-level `crypto` does not. */
 function makeChannelsWith(db: Ctor[0], withCrypto: Ctor[2]): ChannelsService {
@@ -237,7 +248,7 @@ export async function runChannelsServiceTests(): Promise<void> {
   // anyone makes on the admin screen, and an undeclared kind is the second.
   // Untranslated, both are 500s.
   {
-    const duplicate = makeChannels(dbRejecting("23505"));
+    const duplicate = makeWrites(dbRejecting("23505"));
     await rejectsWith(
       () =>
         duplicate.create(ACTOR, {
@@ -251,7 +262,7 @@ export async function runChannelsServiceTests(): Promise<void> {
       "a duplicate channel code",
     );
 
-    const unknownKind = makeChannels(dbRejecting("23503"));
+    const unknownKind = makeWrites(dbRejecting("23503"));
     await rejectsWith(
       () =>
         unknownKind.create(ACTOR, {
@@ -289,7 +300,7 @@ export async function runChannelsServiceTests(): Promise<void> {
     // organization was told to fix a `kind` that was never wrong. `create`'s
     // own `onForeignKey` distinguishes them by `err.constraint` — verified
     // against a live `pg_constraint` read, not assumed.
-    const badOrg = makeChannels(
+    const badOrg = makeWrites(
       dbRejecting("23503", "notification_channels_organization_id_fkey"),
     );
     await rejectsWith(
@@ -310,7 +321,7 @@ export async function runChannelsServiceTests(): Promise<void> {
 
     // Anything else still surfaces as itself — this translates two states, it
     // does not swallow errors.
-    const other = makeChannels(dbRejecting("40001"));
+    const other = makeWrites(dbRejecting("40001"));
     await rejectsWith(
       () =>
         other.create(ACTOR, {
@@ -425,7 +436,7 @@ export async function runChannelsServiceTests(): Promise<void> {
     // is an accepted cost (Amendment 3 §6(a)), which is why this asserts on a
     // body that carries nothing but `name`.
     let capturedUpdatedAt: unknown = "update() was never reached";
-    await makeChannels(
+    await makeWrites(
       dbCapturingUpdate((values) => {
         capturedUpdatedAt = values.updatedAt;
       }),

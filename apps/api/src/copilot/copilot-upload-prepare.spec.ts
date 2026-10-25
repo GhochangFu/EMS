@@ -3,9 +3,15 @@ import { createHash } from "node:crypto";
 import { expect } from "vitest";
 
 import { bodyHash } from "./body-hash";
-import { uploadBodyOf } from "./copilot-upload-change.interceptor";
+import { catalogEntry } from "@bms/shared/copilot";
+
+import { uploadBodyOf, uploadFieldsFor } from "./copilot-upload-change.interceptor";
 import {
+  type FileUploadAttachment,
+  prepareFileUpload,
   prepareUpload,
+  UPLOAD_NEEDS_FILE_ERROR,
+  uploadWrongTypeError,
   UPLOAD_BAD_FILENAME_ERROR,
   UPLOAD_NEEDS_ATTACHMENT_ERROR,
   UPLOAD_NO_SVG_ERROR,
@@ -19,7 +25,7 @@ import {
  * Vitest entry point: the sibling `.test.ts` (ADR 0014).
  */
 
-const ENTRY = { upload: { fileField: "file", contentType: "image/svg+xml", maxBytes: 65_536 } } as const;
+const ENTRY = { upload: { fileField: "file", kind: "svg", accepts: ["image/svg+xml"], maxBytes: 65_536 } } as const;
 export const VALID_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M2 12h20"/></svg>';
 const sha = (text: string): string => createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex");
 
@@ -81,4 +87,76 @@ export function aFilenameThatMulterChangesIsRefused(): void {
       error: UPLOAD_BAD_FILENAME_ERROR,
     });
   }
+}
+
+/** `F4.283` (Amendment 8 Q19): the attached files of a turn, as the inspection hands them. */
+const CSV_BYTES = Buffer.from("asset_code,point_key,value,time\nPUMP-1,kw,1,2026-10-20T09:00:00Z\n", "utf8");
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d]);
+const attached = (index: number, filename: string, mediaType: FileUploadAttachment["mediaType"], data: Buffer): FileUploadAttachment => ({
+  index,
+  filename,
+  mediaType,
+  byteSize: data.byteLength,
+  sha256: createHash("sha256").update(data).digest("hex"),
+  data,
+});
+const CSV_FILE = attached(1, "readings.csv", "text/csv", CSV_BYTES);
+const PNG_FILE = attached(1, "panel.png", "image/png", PNG_BYTES);
+
+function entryOf(id: string) {
+  const entry = catalogEntry(id);
+  if (!entry) throw new Error(id);
+  return entry;
+}
+
+/** A CSV at index 1: the options, `"reject"` written explicitly (Q21), the file's name and SHA-256. */
+export function aCsvImportStoresItsNameAndHash(): void {
+  const prepared = prepareFileUpload(entryOf("telemetry.import"), { sourceKind: "manual", file: { kind: "attachment", index: 1 } }, [CSV_FILE]);
+  expect(prepared.ok ? prepared.body : prepared.error).toEqual({
+    sourceKind: "manual",
+    conflictPolicy: "reject",
+    filename: "readings.csv",
+    fileSha256: CSV_FILE.sha256,
+  });
+}
+
+/** A4 "nothing is stored": no stored value is a Buffer or longer than 256 characters. Mutation: store `data` → red. */
+export function aPreparedImportStoresNoBytes(): void {
+  const prepared = prepareFileUpload(entryOf("telemetry.import"), { file: { kind: "attachment", index: 1 } }, [CSV_FILE]);
+  if (!prepared.ok) throw new Error(prepared.error);
+  const heavy = Object.entries(prepared.body).filter(([, value]) => Buffer.isBuffer(value) || String(value).length > 256);
+  expect(heavy).toEqual([]);
+}
+
+/** Index 2 with one file — and a follow-up turn, which carries none — is the attach sentence. */
+export function aMissingFileIsTheAttachSentence(): void {
+  const model = { file: { kind: "attachment", index: 2 } };
+  expect([
+    prepareFileUpload(entryOf("telemetry.import"), model, [CSV_FILE]),
+    prepareFileUpload(entryOf("telemetry.import"), { file: { kind: "attachment", index: 1 } }, undefined),
+  ]).toEqual([
+    { ok: false, error: UPLOAD_NEEDS_FILE_ERROR },
+    { ok: false, error: UPLOAD_NEEDS_FILE_ERROR },
+  ]);
+}
+
+/** A file of a type the entry does not take is the type sentence. Mutation: drop the `accepts` check → red. */
+export function aPdfForTheImportIsTheTypeSentence(): void {
+  const pdf = attached(1, "spec.pdf", "application/pdf", Buffer.from("%PDF-1.7"));
+  const prepared = prepareFileUpload(entryOf("telemetry.import"), { file: { kind: "attachment", index: 1 } }, [pdf]);
+  expect(prepared).toEqual({ ok: false, error: uploadWrongTypeError(entryOf("telemetry.import").upload?.accepts ?? []) });
+}
+
+/** A PNG for the asset image: its caption, the file's name and SHA-256 — and no `conflictPolicy`. */
+export function aPngImageStoresItsCaptionNameAndHash(): void {
+  const prepared = prepareFileUpload(entryOf("assetImage.upload"), { caption: "Front", file: { kind: "attachment", index: 1 } }, [PNG_FILE]);
+  expect(prepared.ok ? prepared.body : prepared.error).toEqual({ caption: "Front", filename: "panel.png", fileSha256: PNG_FILE.sha256 });
+}
+
+/** The round trip: the stored body, sent as the browser sends it and read as multer hands it, hashes the same. */
+export function aPreparedImportRoundTripsThroughTheRouteStage(): void {
+  const prepared = prepareFileUpload(entryOf("telemetry.import"), { sourceKind: "manual", file: { kind: "attachment", index: 1 } }, [CSV_FILE]);
+  if (!prepared.ok) throw new Error(prepared.error);
+  const req = { headers: {}, body: { sourceKind: "manual", conflictPolicy: "reject" }, file: { originalname: "readings.csv", buffer: CSV_BYTES } };
+  expect(bodyHash(uploadBodyOf(req, uploadFieldsFor("telemetry.import")))).toBe(bodyHash(prepared.body, ["preview"]));
 }

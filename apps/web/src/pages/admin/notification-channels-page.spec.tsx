@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -107,6 +107,32 @@ function renderPage(as: AuthUser = user): void {
   );
 }
 
+/**
+ * `F4.279` (ADR 0099 decision 6): the form is a `WizardShell` — Channel, then
+ * Delivery, then Review. These walk it as an operator does.
+ */
+async function openCreate(): Promise<HTMLElement> {
+  await userEvent.click(await screen.findByRole("button", { name: "Add channel" }));
+  return screen.findByRole("dialog", { name: "Create a notification channel" });
+}
+
+async function next(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+}
+
+async function submit(): Promise<void> {
+  await userEvent.click(await screen.findByRole("button", { name: "Submit" }));
+}
+
+/** The Channel step's code and name, then the Delivery step's recipients, then Review. */
+async function fillEmailChannel(code: string, name: string, recipients: string): Promise<void> {
+  await userEvent.type(screen.getByLabelText("Code"), code);
+  await userEvent.type(screen.getByLabelText("Name"), name);
+  await next();
+  await userEvent.type(screen.getByLabelText(/Recipients/i), recipients);
+  await next();
+}
+
 function stubApi(overrides: Partial<typeof api> = {}): void {
   vi.spyOn(api, "fetchNotificationChannels").mockResolvedValue({
     items: [emailChannel, webhookChannel],
@@ -146,6 +172,8 @@ export async function showsWhetherASecretIsStoredWithoutShowingIt(): Promise<voi
   // Opening the channel for editing must leave the secret box EMPTY. A
   // populated box would say the stored value is retrievable; it is not.
   await userEvent.click(screen.getAllByRole("button", { name: "Edit" })[1] as HTMLElement);
+  await screen.findByRole("dialog", { name: "Edit a notification channel" });
+  await next();
   const secretBox = await screen.findByLabelText(/Secret \(set/i);
   expect(secretBox).toHaveValue("");
 }
@@ -169,6 +197,8 @@ export async function surfacesAGuardRefusalAsVisibleText(): Promise<void> {
 
   await screen.findByText("ops-webhook");
   await userEvent.click(screen.getAllByRole("button", { name: "Send test" })[1] as HTMLElement);
+  // `F4.279`: Send test opens the red Review card; Submit sends.
+  await submit();
 
   await waitFor(() => {
     expect(screen.getByRole("status")).toHaveTextContent(/Test failed for ops-webhook/i);
@@ -191,6 +221,10 @@ export async function surfacesASuccessfulTest(): Promise<void> {
 
   await screen.findByText("ops-email");
   await userEvent.click(screen.getAllByRole("button", { name: "Send test" })[0] as HTMLElement);
+  const card = await screen.findByRole("dialog", { name: "Send a test message" });
+  // Q1: the test send is red — a real message goes out.
+  expect(within(card).getByText(/a real message goes to its recipients/i)).toBeInTheDocument();
+  await submit();
 
   await waitFor(() => {
     expect(screen.getByRole("status")).toHaveTextContent(/sent through ops-email/i);
@@ -208,10 +242,9 @@ export async function showsTheServerRefusalOnSave(): Promise<void> {
   renderPage();
 
   await screen.findByText("ops-email");
-  await userEvent.type(screen.getByLabelText("Code"), "ops-email");
-  await userEvent.type(screen.getByLabelText("Name"), "Duplicate");
-  await userEvent.type(screen.getByLabelText(/Recipients/i), "a@b.c");
-  await userEvent.click(screen.getByRole("button", { name: "Add channel" }));
+  await openCreate();
+  await fillEmailChannel("ops-email", "Duplicate", "a@b.c");
+  await submit();
 
   await waitFor(() => {
     expect(screen.getByRole("alert")).toHaveTextContent(/already exists/i);
@@ -319,20 +352,18 @@ export async function anAdminCreatesAnOrgScopedChannel(): Promise<void> {
   renderPage();
 
   await screen.findByText("ops-email");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Add channel" })).toBeEnabled());
+  await openCreate();
   const organizationSelect = await screen.findByLabelText("Organization");
   // Fleet-wide is offered to an `admin` and is the default, which is what an
   // omitted `organizationId` means to `resolveCreateTargetOrg`.
   expect(organizationSelect).toHaveValue("");
   expect(organizationSelect).toBeEnabled();
+  expect(screen.getByRole("option", { name: "Ion Exchange" })).toBeInTheDocument();
 
-  await waitFor(() => {
-    expect(screen.getByRole("option", { name: "Ion Exchange" })).toBeInTheDocument();
-  });
   await userEvent.selectOptions(organizationSelect, ORGANIZATIONS[0]!.id);
-  await userEvent.type(screen.getByLabelText("Code"), "ionx-ops");
-  await userEvent.type(screen.getByLabelText("Name"), "Ion Exchange ops");
-  await userEvent.type(screen.getByLabelText(/Recipients/i), "ops@ionexchange.test");
-  await userEvent.click(screen.getByRole("button", { name: "Add channel" }));
+  await fillEmailChannel("ionx-ops", "Ion Exchange ops", "ops@ionexchange.test");
+  await submit();
 
   await waitFor(() => {
     expect(create).toHaveBeenCalledTimes(1);
@@ -340,6 +371,7 @@ export async function anAdminCreatesAnOrgScopedChannel(): Promise<void> {
   expect(create.mock.calls[0]![0]).toMatchObject({
     code: "ionx-ops",
     organizationId: ORGANIZATIONS[0]!.id,
+    config: { to: ["ops@ionexchange.test"] },
   });
 }
 
@@ -350,10 +382,10 @@ export async function anAdminCreatingFleetWideOmitsTheOrganization(): Promise<vo
   renderPage();
 
   await screen.findByText("ops-email");
-  await userEvent.type(screen.getByLabelText("Code"), "fleet-ops");
-  await userEvent.type(screen.getByLabelText("Name"), "Fleet ops");
-  await userEvent.type(screen.getByLabelText(/Recipients/i), "ops@example.test");
-  await userEvent.click(screen.getByRole("button", { name: "Add channel" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Add channel" })).toBeEnabled());
+  await openCreate();
+  await fillEmailChannel("fleet-ops", "Fleet ops", "ops@example.test");
+  await submit();
 
   await waitFor(() => {
     expect(create).toHaveBeenCalledTimes(1);
@@ -383,17 +415,15 @@ export async function anOrganizationAdminSeesItsOwnOrganizationLocked(): Promise
   renderPage(orgAdmin);
 
   await screen.findByText("ops-email");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Add channel" })).toBeEnabled());
+  await openCreate();
   const organizationSelect = await screen.findByLabelText("Organization");
-  await waitFor(() => {
-    expect(organizationSelect).toBeDisabled();
-  });
+  expect(organizationSelect).toBeDisabled();
   expect(organizationSelect).toHaveValue(ORGANIZATIONS[1]!.id);
   expect(screen.queryByRole("option", { name: /Fleet-wide/i })).not.toBeInTheDocument();
 
-  await userEvent.type(screen.getByLabelText("Code"), "phe-ops");
-  await userEvent.type(screen.getByLabelText("Name"), "PHE ops");
-  await userEvent.type(screen.getByLabelText(/Recipients/i), "ops@phe.test");
-  await userEvent.click(screen.getByRole("button", { name: "Add channel" }));
+  await fillEmailChannel("phe-ops", "PHE ops", "ops@phe.test");
+  await submit();
 
   await waitFor(() => {
     expect(create).toHaveBeenCalledTimes(1);
@@ -424,15 +454,18 @@ export async function editingShowsTheOrganizationAndCannotChangeIt(): Promise<vo
   renderPage();
 
   await screen.findByText("ops-email");
+  await waitFor(() => expect(screen.getAllByText("Ion Exchange").length).toBeGreaterThan(0));
   await userEvent.click(screen.getByRole("button", { name: "Edit" }));
 
-  const organizationSelect = await screen.findByLabelText("Organization");
-  expect(organizationSelect).toBeDisabled();
-  await waitFor(() => {
-    expect(screen.getByRole("option", { name: "Ion Exchange" })).toBeInTheDocument();
-  });
+  // The organization is shown, not offered: a channel cannot change organization.
+  const dialog = await screen.findByRole("dialog", { name: "Edit a notification channel" });
+  expect(within(dialog).getByText("Organization: Ion Exchange")).toBeInTheDocument();
+  expect(within(dialog).queryByLabelText("Organization")).not.toBeInTheDocument();
+  expect(within(dialog).queryByLabelText("Code")).not.toBeInTheDocument();
 
-  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await next();
+  await next();
+  await submit();
   await waitFor(() => {
     expect(update).toHaveBeenCalledTimes(1);
   });
@@ -462,39 +495,33 @@ export async function asksAMultiGrantOrganizationAdminToChoose(): Promise<void> 
   renderPage(orgAdmin);
 
   await screen.findByText("ops-email");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Add channel" })).toBeEnabled());
+  await openCreate();
   const organizationSelect = await screen.findByLabelText("Organization");
-  await waitFor(() => {
-    expect(screen.getByRole("option", { name: "PHE West Bengal" })).toBeInTheDocument();
-  });
 
   // The placeholder is what keeps the control honest: it holds no organization
   // and it says so, instead of displaying one it will not send.
   expect(screen.getByRole("option", { name: "Select organization" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "PHE West Bengal" })).toBeInTheDocument();
   expect(organizationSelect).toHaveValue("");
   expect(organizationSelect).toBeEnabled();
   expect(screen.queryByRole("option", { name: /Fleet-wide/i })).not.toBeInTheDocument();
-
-  // The refusal arrives before the click, and the reason is on the screen.
-  const submit = screen.getByRole("button", { name: "Add channel" });
-  expect(submit).toBeDisabled();
+  // The refusal is on the screen before the submit.
   expect(screen.getByText(/Choose an organization/i)).toBeInTheDocument();
 
-  await userEvent.type(screen.getByLabelText("Code"), "phe-ops");
-  await userEvent.type(screen.getByLabelText("Name"), "PHE ops");
-  await userEvent.type(screen.getByLabelText(/Recipients/i), "ops@phe.test");
-  await userEvent.click(submit);
-  // Asserting the negative, not only `toBeDisabled()`: a guard swapped for a
-  // no-op handler would still leave the button looking right.
+  await fillEmailChannel("phe-ops", "PHE ops", "ops@phe.test");
+  await submit();
+  // Asserting the negative: a guard swapped for a no-op handler would still look right.
   expect(create).not.toHaveBeenCalled();
 
   // Choosing clears the refusal and the choice reaches the API.
-  await userEvent.selectOptions(organizationSelect, ORGANIZATIONS[1]!.id);
-  await waitFor(() => {
-    expect(screen.getByRole("button", { name: "Add channel" })).toBeEnabled();
-  });
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  await userEvent.selectOptions(screen.getByLabelText("Organization"), ORGANIZATIONS[1]!.id);
   expect(screen.queryByText(/Choose an organization/i)).not.toBeInTheDocument();
-
-  await userEvent.click(screen.getByRole("button", { name: "Add channel" }));
+  await next();
+  await next();
+  await submit();
   await waitFor(() => {
     expect(create).toHaveBeenCalledTimes(1);
   });
@@ -525,25 +552,14 @@ export async function refusesCreateWhenNoActiveOrganizationIsAdministered(): Pro
   renderPage(orgAdmin);
 
   await screen.findByText("ops-email");
-
-  // Locked and empty — there is genuinely nothing to choose between, so the
-  // control says so by being inert rather than by offering a placeholder the
-  // operator can never satisfy.
-  const organizationSelect = await screen.findByLabelText("Organization");
+  const submit_ = await screen.findByRole("button", { name: "Add channel" });
   await waitFor(() => {
-    expect(organizationSelect).toBeDisabled();
-  });
-
-  const submit = await screen.findByRole("button", { name: "Add channel" });
-  await waitFor(() => {
-    expect(submit).toBeDisabled();
+    expect(submit_).toBeDisabled();
   });
   expect(screen.getByText(/no active organization/i)).toBeInTheDocument();
 
-  await userEvent.type(screen.getByLabelText("Code"), "orphan-ops");
-  await userEvent.type(screen.getByLabelText("Name"), "Orphan ops");
-  await userEvent.type(screen.getByLabelText(/Recipients/i), "ops@example.test");
-  await userEvent.click(submit);
+  await userEvent.click(submit_);
+  expect(screen.queryByRole("dialog", { name: "Create a notification channel" })).not.toBeInTheDocument();
   expect(create).not.toHaveBeenCalled();
 }
 
@@ -589,10 +605,9 @@ export async function readsARawEnvelopeRefusalAsItsSentence(): Promise<void> {
   renderPage();
 
   await screen.findByText("ops-email");
-  await userEvent.type(screen.getByLabelText("Code"), "ops-email");
-  await userEvent.type(screen.getByLabelText("Name"), "Duplicate");
-  await userEvent.type(screen.getByLabelText(/Recipients/i), "a@b.c");
-  await userEvent.click(screen.getByRole("button", { name: "Add channel" }));
+  await openCreate();
+  await fillEmailChannel("ops-email", "Duplicate", "a@b.c");
+  await submit();
 
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toBe("A notification channel with that code already exists");

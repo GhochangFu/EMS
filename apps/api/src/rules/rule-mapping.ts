@@ -10,7 +10,7 @@ import type {
   RuleListItem,
 } from "@bms/shared";
 
-import type { RuleDraftBody, RuleUpdateBody } from "./rules.schema";
+import type { RuleDraftBody, RuleUpdateBody } from "@bms/shared";
 import type { RuleDraftValues, RuleRow } from "./rules.types";
 
 /**
@@ -213,7 +213,8 @@ export function mergeRuleDraft(row: RuleRow, dto: RuleUpdateBody): RuleDraftBody
  * no database, no clock — which is this module's whole remit (D16), and
  * `rules.service.ts` sits at the AGENTS.md §4.5 1000-line cap that the
  * pre-commit hook measures whole-file. `rule-reads.ts`, `rule-codes.ts` and
- * `rule-audit.ts` were split off that same file for the same two reasons.
+ * `rule-audit.ts` (folded into `MasterDataAuditService` by `F4.278`) were split
+ * off that same file for the same two reasons.
  *
  * **Why `branch` is a parameter** rather than something derived from
  * `dto.ruleType` in here: the threshold path reaches its return only after
@@ -259,5 +260,52 @@ export function draftValuesFromDto(
     clearHoldSeconds: dto.clearHoldSeconds ?? null,
     condition: dto.condition,
     action: dto.action,
+  };
+}
+
+/**
+ * `F4.278` — the synthetic row a draft is evaluated as, extracted from
+ * `RulesService.previewRule` so the copilot's proposal check
+ * (`rule-proposal-check.service.ts`) evaluates a draft the same way without the
+ * preview's `rule_preview` audit row. Pure: the clock is passed in.
+ *
+ * A draft is evaluated, not a persisted rule — no organization on either axis,
+ * and the joined asset columns are null by construction.
+ */
+export function previewRowFromValues(
+  values: RuleDraftValues,
+  id: string | undefined,
+  now: Date,
+): RuleRow {
+  return {
+    id: id ?? "00000000-0000-0000-0000-000000000000",
+    code: values.code ?? "DRAFT",
+    name: values.name,
+    description: values.description,
+    category: values.category,
+    ruleType: values.ruleType,
+    source: "operator_rule",
+    enabled: false,
+    organizationId: null,
+    assetOrganizationId: null,
+    assetId: values.assetId ?? null,
+    assetCode: null,
+    assetName: null,
+    siteName: null,
+    assetDomain: null,
+    pointKey: values.pointKey ?? null,
+    operator: values.operator ?? null,
+    thresholdValue: values.thresholdValue ?? null,
+    severity: values.severity ?? null,
+    clearHoldSeconds: values.clearHoldSeconds ?? null,
+    condition: values.condition,
+    action: values.action,
+    lastEvaluatedAt: null,
+    lifecycleStatus: "draft",
+    publishedAt: null,
+    archivedAt: null,
+    duplicatedFromRuleId: null,
+    createdAt: now,
+    updatedAt: now,
   };
 }

@@ -721,3 +721,29 @@ export async function assertUploadAuditPayloadCarriesNoFilenameOrCaption(): Prom
   assert(payload.includes(ASSET_ID) && payload.includes("image/png"), `positive control: payload must carry the asset id and the type: ${payload}`);
   assert(!payload.includes("pump.png") && !payload.includes("Pump 1"), `the audit payload must not carry the filename or caption: ${payload}`);
 }
+
+// `F4.283` (ADR 0099 Amendment 8; drafter choice 3) — the copilot's read-only pre-check.
+
+/** At the per-asset cap: the 409 sentence `upload` uses. Mutation: drop `refuseAtCap` from `previewUpload` → red. */
+export async function assertPreviewUploadAtTheCapIsTheCapSentence(): Promise<void> {
+  const h = harness({ fleetCount: 20 });
+  const err = await captureRejection(() => h.service.previewUpload(JWT, ASSET_ID));
+  assert(
+    errorMessage(err) === "This asset already has 20 images; delete one before uploading another",
+    `previewUpload at the cap threw ${errorName(err)}: ${errorMessage(err)}`,
+  );
+}
+
+/** Storage unset: the 503 sentence `upload` uses. Mutation: drop `requireStorageConfigured` → red. */
+export async function assertPreviewUploadWithoutStorageIs503(): Promise<void> {
+  const h = harness({ client: UNCONFIGURED });
+  const err = await captureRejection(() => h.service.previewUpload(JWT, ASSET_ID));
+  assert(errorName(err) === "ServiceUnavailableException", `previewUpload without storage threw ${errorName(err)}`);
+}
+
+/** Under the cap with storage set: it resolves and writes nothing (no put, no transaction). */
+export async function assertPreviewUploadUnderTheCapWritesNothing(): Promise<void> {
+  const h = harness({ fleetCount: 3 });
+  await h.service.previewUpload(JWT, ASSET_ID);
+  assert(h.putKeys.length === 0 && h.tenantTransactions() === 0, "previewUpload must write nothing");
+}

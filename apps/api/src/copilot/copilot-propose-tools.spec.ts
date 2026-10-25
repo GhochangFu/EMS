@@ -91,9 +91,11 @@ type Options = {
   /** `F3.87` PR 5: the layout checks (absent: no layouts service, as every other spec builds the tools). */
   layouts?: CopilotProposeServices["layouts"];
   slugId?: string | null; // `F4.245`: the dashboard id a slug names (none by default)
+  /** `F4.283` (ruling 2026-10-25, Q2): the resolver throws this instead of answering. */
+  resolveThrows?: Error;
 };
 
-export function proposeHarness(options: Options = {}) {
+export function proposeHarness(options: Options & Pick<CopilotProposeServices, "rules" | "notifications" | "reports" | "files"> = {}) { // `F4.278` rules, `F4.279` notifications, `F4.280` reports, `F4.283` files
   const stored: NewPendingChange[] = [];
   const resolved: Array<{ id: string; params: Record<string, string>; allowed: readonly string[]; bound?: string | null }> = [];
   const target: ResolvedTarget | null =
@@ -103,11 +105,12 @@ export function proposeHarness(options: Options = {}) {
       targets: {
         resolve: async (entry, params, _body, allowed, _user, bound) => {
           resolved.push({ id: entry.id, params: { ...params }, allowed, bound });
+          if (options.resolveThrows) throw options.resolveThrows;
           return target;
         },
         dashboardIdBySlug: async () => options.slugId ?? null,
       },
-      ...(options.layouts ? { layouts: options.layouts } : {}),
+      ...(options.layouts ? { layouts: options.layouts } : {}), ...(options.rules ? { rules: options.rules } : {}), ...(options.notifications ? { notifications: options.notifications } : {}), ...(options.reports ? { reports: options.reports } : {}), ...(options.files ? { files: options.files } : {}),
       pending: {
         hasOpen: async () => options.open === true,
         propose: async (_userId, change): Promise<CopilotPendingChangeDto | null> => {
@@ -467,7 +470,7 @@ export async function aServerProposedEntryHasNoProposeTool(): Promise<void> {
  * The 1,000 above the constant is the wrapper, the params and the description
  * (the largest definition was 1,388 at PR 3c). The widget save alone is 45 KB
  * as JSON Schema, so an inlined large body fails here however few entries the
- * catalog has — the total budget below cannot say that.
+ * catalog has — the total budget (`copilot-propose-budget.spec.ts`) cannot say that.
  */
 export function noToolDefinitionCarriesALargeBody(): void {
   const h = proposeHarness();
@@ -475,30 +478,6 @@ export function noToolDefinitionCarriesALargeBody(): void {
     .map((d) => ({ name: d.name, size: JSON.stringify(d).length }))
     .filter((d) => d.size > INLINE_BODY_SCHEMA_MAX_CHARS + 1_000);
   expect(oversized).toEqual([]);
-}
-
-/**
- * Every definition is sent on every turn. Release 1 (16 entries) was under
- * 20,000 characters; release 2 adds one tool per entry, and `fill_step` and
- * `describe_change` name every catalog id. Measured at PR 3c (33 entries):
- * 24,218, of which 20,851 without the access tools. The 16 entries of PRs 3a
- * and 3b bring the estimate to about 36,000 (about 9k tokens); the cap is that
- * plus headroom, not room to grow into.
- *
- * Owner ruling 2026-10-13 (`F4.254` ruling 4): 48,000, for the five
- * asset-template lifecycle tools (the plan estimated about 730 characters
- * each). Measured at `F4.254` PR 2: 37,492 over 51 definitions before, 39,682
- * over 55 after (the four authoring tools add 2,190). Measured at PR 3: 41,001
- * over 56 (the instantiate tool adds 1,319).
- *
- * Owner ruling 2026-10-16 (`F3.87`): 52,000, for the six library, symbol and
- * asset-role tools of PR 6b (5,138 characters together). Measured at PR 6b:
- * 48,027. The headroom is for the next release's entries, not this one's.
- * `F4.266` (C6): the layout body guide on both layout tools, 48,027 before, 49,745 after.
- */
-export function theToolDefinitionsStayInTheTurnBudget(): void {
-  const h = proposeHarness();
-  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(52_000);
 }
 
 /** Every catalog entry has one propose tool; a large body is read on demand. */
@@ -911,8 +890,8 @@ export function theAccessAndRoleFiltersCompose(): void {
   expect(names(true, "location_admin")).not.toContain(layout);
   expect(names(false, "location_admin")).not.toContain(access);
   expect(names(false, "location_admin")).not.toContain(layout);
-  expect(h.tools.registryFor({ access: true, role: "admin" })).toBe(h.tools.registry);
-  expect(h.tools.registryFor({ access: false, role: "admin" })).toBe(h.tools.registryWithoutAccess);
+  expect(h.tools.registryFor({ access: true, role: "admin", outward: true, operational: ["alarm.acknowledge", "workOrder.close"] })).toBe(h.tools.registry); // `F4.279` outward, `F4.284` operational
+  expect(h.tools.registryFor({ access: false, role: "admin", outward: true, operational: ["workOrder.close", "alarm.acknowledge"] })).toBe(h.tools.registryWithoutAccess);
 }
 
 /** Called anyway by a `location_admin`, the tool is refused by the second guard; nothing is resolved or stored. */
@@ -964,7 +943,7 @@ export const UPLOAD_ENTRY = fixtureEntry({
   modelBody: z
     .object({ name: z.string().optional(), label: z.string().optional(), svg: z.object({ kind: z.literal("text"), text: z.string() }).strict() })
     .strict(),
-  upload: { fileField: "file", contentType: "image/svg+xml", maxBytes: 65_536 },
+  upload: { fileField: "file", kind: "svg", accepts: ["image/svg+xml"], maxBytes: 65_536 },
   cardOnly: ["svgText"],
   steps: [{ id: "symbol", title: "Symbol", fields: ["name", "label"] }],
 });

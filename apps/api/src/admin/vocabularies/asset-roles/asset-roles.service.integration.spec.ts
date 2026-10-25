@@ -4,11 +4,10 @@ import type pg from "pg";
 
 import { expect } from "vitest";
 
-import { createAssetRoleBodySchema } from "@bms/shared";
+import { createAssetRoleBodySchema, updateAssetRoleBodySchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { VocabulariesService } from "../../../vocabularies/vocabularies.service";
-import { updateAssetRoleBodySchema } from "./asset-roles.schema";
 import type { AssetRolesAdminService } from "./asset-roles.service";
 import { lazyJwtFor } from "../../../testing/seeded-subjects";
 

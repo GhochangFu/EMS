@@ -344,6 +344,9 @@ export const masterDataTabs = [
   // `admin`, the read included, so a tab shown to anyone else would lead only
   // to the page's status line.
   { label: "Location Types", path: "/admin/location-types", globalAdminOnly: true, area: "reference" },
+  // `F4.282` (ADR 0099 Amendment 8 Q17): the unit-role vocabulary, gated like Location Types —
+  // every `admin/vocabularies/asset-roles` write is the global `admin`'s (`requireGlobalAdmin`).
+  { label: "Unit Roles", path: "/admin/unit-roles", globalAdminOnly: true, area: "reference" },
   // `E4.1a` (ADR 0070 decision 2). Ungated, like Asset Groups above: the API
   // gates a write by the row's scope, so a `location_admin` writes location
   // and asset scope for its own location and is refused the rest by the

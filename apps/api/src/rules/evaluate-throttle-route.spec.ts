@@ -213,7 +213,7 @@ function controllerWith(
   } as unknown as Response;
 
   return {
-    controller: new RulesController(rules, accessControl, channels, throttle),
+    controller: new RulesController(rules, accessControl, channels, throttle, {} as unknown as ConstructorParameters<typeof RulesController>[4]),
     res,
     throttle,
     headers,

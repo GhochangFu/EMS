@@ -182,7 +182,7 @@ export async function showsTheClassPhilosophyToAViewer(): Promise<void> {
 
   // …and the write half really is hidden, so this is a claim about `readOnly`
   // rather than a second copy of the happy-path test.
-  expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
+  expect(screen.queryByRole("button", { name: /save|next|submit/i })).toBeNull();
   expect(screen.queryByLabelText("Root cause")).toBeNull();
 }
 
@@ -222,11 +222,14 @@ export async function enrichmentSaveRefusalShowsTheServerSentence(): Promise<voi
   await renderPanel(details());
 
   await userEvent.type(screen.getByLabelText("Root cause"), "Grease line cracked");
-  await userEvent.click(screen.getByRole("button", { name: "Save" }));
+  // `F4.284`: the form is the three-step `WizardShell` (owner ruling Q9): Analysis → Impacts → Details → Review.
+  for (let step = 0; step < 3; step += 1) await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
 
-  const alert = await screen.findByRole("alert");
+  // The fixture's alarm id is no UUID, so the shell also warns that the copilot cannot fill it.
+  const alert = (await screen.findAllByRole("alert")).find((node) => node.textContent?.includes(sentence));
   expect(alert).toHaveTextContent(sentence);
-  expect(alert.textContent).not.toContain('{"');
+  expect(alert?.textContent).not.toContain('{"');
 }
 
 /**

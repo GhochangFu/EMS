@@ -10,12 +10,15 @@ import * as locationsApi from "../api/admin/locations";
 import * as organizationsApi from "../api/admin/organizations";
 import * as notificationsApi from "../api/notifications";
 import * as reportsApi from "../api/reports";
-import { ApiError } from "../lib/api-error";
 import type { AuthUser } from "../stores/auth-store";
 import { ReportSchedules } from "./report-schedules";
 
 /**
  * `F3.5b` Unit 13 — the Schedules section (ADR 0071 R-12, R-18; Q-6).
+ *
+ * `F4.280` (ADR 0099 decision 6): the form is the `ReportScheduleWizard`
+ * stepper; its claims moved to `report-schedule-wizard.spec.tsx`. This file
+ * keeps the list, Edit and Delete, and the two ways the wizard opens.
  *
  * Assertions live here; `report-schedules.test.tsx` is the Vitest entry point
  * and carries the `@vitest-environment jsdom` docblock (ADR 0014, ADR 0042
@@ -165,179 +168,6 @@ async function rowFor(name: string): Promise<HTMLElement> {
   return row as HTMLElement;
 }
 
-/** The organization select, resolved once the fetched organization is an option. */
-async function chooseEskom(): Promise<void> {
-  const select = await screen.findByLabelText("Schedule organization");
-  await within(select).findByRole("option", { name: "ESKOM · Eskom SMOC" });
-  await userEvent.selectOptions(select, ESKOM_ID);
-}
-
-/** The locations select, resolved once the fetched location is an option. */
-async function locationsSelect(): Promise<HTMLElement> {
-  const select = await screen.findByLabelText("Locations");
-  await within(select).findByRole("option", { name: WESTERN_CAPE.name });
-  return select;
-}
-
-function saveButton(): HTMLElement {
-  return screen.getByRole("button", { name: "Save schedule" });
-}
-
-/** As `admin` the organization select renders, listing the fetched organization. */
-export async function anAdminSeesTheOrganizationSelect(): Promise<void> {
-  renderSchedules("admin");
-
-  const select = await screen.findByLabelText("Schedule organization");
-  expect(await within(select).findByRole("option", { name: "ESKOM · Eskom SMOC" })).toBeInTheDocument();
-}
-
-/** Choosing ESKOM loads its active locations: `fetchAdminLocations("true", ESKOM)` (`"true"` is the active filter). */
-export async function choosingAnOrganizationLoadsItsLocations(): Promise<void> {
-  const { locations } = renderSchedules("admin");
-
-  await chooseEskom();
-
-  await waitFor(() => expect(locations).toHaveBeenCalledWith("true", ESKOM_ID));
-}
-
-/** With no location selected the timezone input reads `Asia/Kolkata`. */
-export async function theTimezoneDefaultsToKolkataWithNoLocationSelected(): Promise<void> {
-  renderSchedules("admin");
-  await chooseEskom();
-  await locationsSelect();
-
-  expect(screen.getByLabelText("Timezone")).toHaveValue("Asia/Kolkata");
-}
-
-/** Selecting Western Cape flips the untouched timezone to its zone, `Africa/Johannesburg`. */
-export async function selectingALocationDefaultsTheTimezoneToItsZone(): Promise<void> {
-  renderSchedules("admin");
-  await chooseEskom();
-
-  await userEvent.selectOptions(await locationsSelect(), WESTERN_CAPE.id);
-
-  await waitFor(() => expect(screen.getByLabelText("Timezone")).toHaveValue("Africa/Johannesburg"));
-}
-
-/** A zone the user typed survives a later location change (the `touched` flag). */
-export async function aTypedTimezoneSurvivesALocationChange(): Promise<void> {
-  renderSchedules("admin");
-  await chooseEskom();
-  const select = await locationsSelect();
-  const timezone = screen.getByLabelText("Timezone");
-  await userEvent.clear(timezone);
-  await userEvent.type(timezone, "Europe/London");
-
-  await userEvent.selectOptions(select, WESTERN_CAPE.id);
-
-  await waitFor(() => expect(screen.getByLabelText("Timezone")).toHaveValue("Europe/London"));
-}
-
-/**
- * Save calls `createReportSchedule` with the body asserted **by key**: the
- * checked formats, the run time, the defaulted zone, the selected location,
- * the chosen channel and the organization the global admin named.
- */
-export async function anAdminSaveSendsTheBodyByKey(): Promise<void> {
-  const create = vi.spyOn(reportsApi, "createReportSchedule").mockResolvedValue(FIRST);
-  renderSchedules("admin");
-  await chooseEskom();
-  await userEvent.selectOptions(await locationsSelect(), WESTERN_CAPE.id);
-  await userEvent.type(screen.getByLabelText("Name"), "Weekly energy digest");
-  await userEvent.selectOptions(screen.getByLabelText("Cadence"), "weekly");
-  await userEvent.clear(screen.getByLabelText("Run time"));
-  await userEvent.type(screen.getByLabelText("Run time"), "07:00");
-  await userEvent.click(screen.getByLabelText("XLSX"));
-  const channel = screen.getByLabelText("Email channel");
-  await within(channel).findByRole("option", { name: EMAIL_CHANNEL.code });
-  await userEvent.selectOptions(channel, EMAIL_CHANNEL.id);
-  await waitFor(() => expect(saveButton()).toBeEnabled());
-
-  await userEvent.click(saveButton());
-
-  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
-  const body = create.mock.calls[0]?.[0];
-  expect(body).toMatchObject({
-    name: "Weekly energy digest",
-    cadence: "weekly",
-    formats: ["pdf", "xlsx"],
-    runAtLocal: "07:00",
-    timezone: "Africa/Johannesburg",
-    locationIds: [WESTERN_CAPE.id],
-    channelId: EMAIL_CHANNEL.id,
-    organizationId: ESKOM_ID,
-    enabled: true,
-  });
-}
-
-/** A webhook channel is not an option; the email one is the positive control. */
-export async function aWebhookChannelIsNotAnOption(): Promise<void> {
-  renderSchedules("admin");
-  await chooseEskom();
-
-  const channel = screen.getByLabelText("Email channel");
-  await within(channel).findByRole("option", { name: EMAIL_CHANNEL.code });
-
-  expect(within(channel).queryByRole("option", { name: WEBHOOK_CHANNEL.code })).not.toBeInTheDocument();
-}
-
-/** A `location_admin` has no organization select; the Locations select is the control. */
-export async function aLocationAdminHasNoOrganizationSelect(): Promise<void> {
-  renderSchedules("location_admin");
-  await locationsSelect();
-
-  expect(screen.queryByLabelText("Schedule organization")).not.toBeInTheDocument();
-}
-
-/** A `location_admin` has no "Whole organization" option; Western Cape is the control. */
-export async function aLocationAdminHasNoWholeOrganizationOption(): Promise<void> {
-  renderSchedules("location_admin");
-  const select = await locationsSelect();
-
-  expect(within(select).queryByRole("option", { name: "Whole organization" })).not.toBeInTheDocument();
-}
-
-/** The global admin does have the "Whole organization" option — the positive control for the row above. */
-export async function anAdminHasTheWholeOrganizationOption(): Promise<void> {
-  renderSchedules("admin");
-  await chooseEskom();
-  const select = await locationsSelect();
-
-  expect(within(select).getByRole("option", { name: "Whole organization" })).toBeInTheDocument();
-}
-
-/** Q-6: a `location_admin` has no channel select and reads the sentence instead. */
-export async function aLocationAdminReadsTheChannelSentenceInsteadOfTheSelect(): Promise<void> {
-  renderSchedules("location_admin");
-  await locationsSelect();
-
-  expect(screen.getByText(CHANNEL_SENTENCE)).toBeInTheDocument();
-  expect(screen.queryByLabelText("Email channel")).not.toBeInTheDocument();
-}
-
-/** An `organization_admin` gets the channel select, resolved through the fetched locations' organization. */
-export async function anOrganizationAdminGetsTheChannelSelect(): Promise<void> {
-  renderSchedules("organization_admin");
-  await locationsSelect();
-
-  const channel = await screen.findByLabelText("Email channel");
-  expect(await within(channel).findByRole("option", { name: EMAIL_CHANNEL.code })).toBeInTheDocument();
-}
-
-/** A `location_admin`'s create body carries **no** `organizationId` key at all. */
-export async function aLocationAdminCreateBodyHasNoOrganizationIdKey(): Promise<void> {
-  const create = vi.spyOn(reportsApi, "createReportSchedule").mockResolvedValue(FIRST);
-  renderSchedules("location_admin");
-  await userEvent.selectOptions(await locationsSelect(), WESTERN_CAPE.id);
-  await userEvent.type(screen.getByLabelText("Name"), "Site digest");
-  await waitFor(() => expect(saveButton()).toBeEnabled());
-
-  await userEvent.click(saveButton());
-
-  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
-  expect(create.mock.calls[0]?.[0]).not.toHaveProperty("organizationId");
-}
-
 /** Two DTOs render two rows, with the whole-organization and channel cells. */
 export async function twoSchedulesRenderTwoRows(): Promise<void> {
   renderSchedules("admin", [FIRST, SECOND]);
@@ -350,7 +180,7 @@ export async function twoSchedulesRenderTwoRows(): Promise<void> {
   expect(within(second).getByText("—")).toBeInTheDocument();
 }
 
-/** Edit pre-fills the form with the row's name. */
+/** Edit opens the edit wizard pre-filled with the row's name. */
 export async function editPrefillsTheName(): Promise<void> {
   renderSchedules("admin", [FIRST, SECOND]);
   const first = await rowFor(FIRST.name);
@@ -358,36 +188,6 @@ export async function editPrefillsTheName(): Promise<void> {
   await userEvent.click(within(first).getByRole("button", { name: "Edit" }));
 
   await waitFor(() => expect(screen.getByLabelText("Name")).toHaveValue(FIRST.name));
-}
-
-/** Editing a row and changing nothing keeps Save disabled beside "Nothing changed yet" (no empty PATCH). */
-export async function anUnchangedEditKeepsSaveDisabled(): Promise<void> {
-  renderSchedules("admin", [FIRST, SECOND]);
-  const first = await rowFor(FIRST.name);
-  await userEvent.click(within(first).getByRole("button", { name: "Edit" }));
-  await waitFor(() => expect(screen.getByLabelText("Name")).toHaveValue(FIRST.name));
-
-  expect(saveButton()).toBeDisabled();
-  expect(screen.getByText("Nothing changed yet")).toBeInTheDocument();
-}
-
-/** A rename alone PATCHes `{ name }` — only the changed key. */
-export async function updateSendsOnlyTheChangedKey(): Promise<void> {
-  const update = vi.spyOn(reportsApi, "updateReportSchedule").mockResolvedValue(FIRST);
-  renderSchedules("admin", [FIRST, SECOND]);
-  const first = await rowFor(FIRST.name);
-  await userEvent.click(within(first).getByRole("button", { name: "Edit" }));
-  const name = screen.getByLabelText("Name");
-  await waitFor(() => expect(name).toHaveValue(FIRST.name));
-  await userEvent.clear(name);
-  await userEvent.type(name, "Renamed digest");
-  await waitFor(() => expect(saveButton()).toBeEnabled());
-
-  await userEvent.click(saveButton());
-
-  await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
-  expect(update.mock.calls[0]?.[0]).toBe(FIRST.id);
-  expect(Object.keys(update.mock.calls[0]?.[1] ?? {})).toEqual(["name"]);
 }
 
 /** Delete calls `deleteReportSchedule(id)` once and the list refetches (delta 1). */
@@ -477,61 +277,12 @@ export async function aDeleteInFlightEditCarriesNoAriaBusy(): Promise<void> {
   });
   expect(edit).not.toHaveAttribute("aria-busy");
 }
+/** `F4.280`: New schedule opens the create wizard. */
+export async function newScheduleOpensTheCreateWizard(): Promise<void> {
+  renderSchedules("admin", [FIRST]);
+  await rowFor(FIRST.name);
 
-/** A refused create renders the API's own sentence verbatim. */
-export async function aRefusedCreateRendersTheApiSentence(): Promise<void> {
-  vi.spyOn(reportsApi, "createReportSchedule").mockRejectedValue(
-    new ApiError("Report schedule cap reached for this organization", 409),
-  );
-  renderSchedules("location_admin");
-  await userEvent.selectOptions(await locationsSelect(), WESTERN_CAPE.id);
-  await userEvent.type(screen.getByLabelText("Name"), "Site digest");
-  await waitFor(() => expect(saveButton()).toBeEnabled());
+  await userEvent.click(screen.getByRole("button", { name: "New schedule" }));
 
-  await userEvent.click(saveButton());
-
-  expect(await screen.findByText("Report schedule cap reached for this organization")).toBeInTheDocument();
-}
-
-/** Step-5 nit: a `location_admin` with a name but no location selected reads "Choose at least one location" beside a disabled Save. */
-export async function aLocationAdminWithNoLocationSelectedIsBlockedOnTheLocation(): Promise<void> {
-  renderSchedules("location_admin");
-  await locationsSelect();
-  await userEvent.type(screen.getByLabelText("Name"), "Site digest");
-
-  expect(await screen.findByText("Choose at least one location")).toBeInTheDocument();
-  expect(saveButton()).toBeDisabled();
-}
-
-/** Save stays disabled beside the blocked sentence until a name is entered. */
-export async function saveIsDisabledBesideTheBlockedSentence(): Promise<void> {
-  renderSchedules("location_admin");
-  await locationsSelect();
-
-  expect(saveButton()).toBeDisabled();
-  expect(screen.getByText("Enter a name")).toBeInTheDocument();
-}
-
-/**
- * `F2.10` (ADR 0098 B11) — the Locations picker lists the tree depth-first. The API's name order
- * puts the child ("Cape Town CBD") before its sibling root "Gauteng" and after its parent; a
- * flat render would put it between them unindented.
- */
-export async function theLocationsPickerListsTheTree(): Promise<void> {
-  renderSchedules("admin");
-  vi.mocked(locationsApi.fetchAdminLocations).mockResolvedValue({
-    items: [
-      { ...WESTERN_CAPE, id: "7d3e2f1a-3333-4a5b-8c4d-000000000029", code: "CBD", slug: "cbd", name: "Cape Town CBD", parentId: WESTERN_CAPE.id },
-      GAUTENG,
-      WESTERN_CAPE,
-    ],
-  });
-  await chooseEskom();
-  const select = await screen.findByLabelText("Locations");
-  await within(select).findByRole("option", { name: "— Cape Town CBD" });
-  const names = within(select)
-    .getAllByRole("option")
-    .map((o) => o.textContent)
-    .filter((name) => name !== "Whole organization");
-  expect(names).toEqual(["Gauteng", "Western Cape", "— Cape Town CBD"]);
+  expect(await screen.findByRole("dialog", { name: "Create a report schedule" })).toBeInTheDocument();
 }

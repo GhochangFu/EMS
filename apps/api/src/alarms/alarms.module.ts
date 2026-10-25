@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { TelemetryModule } from "../telemetry/telemetry.module";
@@ -41,6 +42,8 @@ import { AlarmsService } from "./alarms.service";
     // broadcast. It needs the gateway, so it lives here and not in
     // `AlarmRaiseModule`; the worker never reaches this module.
     AlarmNotifyService,
+    // `F4.284` (ADR 0106 decision 7): the acknowledge and the enrichment audit through the funnel.
+    MasterDataAuditService,
     JwtAuthGuard,
   ],
   // `RulesModule` (F3.6 task 5) needs `AlarmRaiser` so the on-demand evaluator

@@ -4,9 +4,10 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aRefusedConvertShowsTheSentence,
-  aRefusedCreateShowsTheSentence,
-  aRefusedUpdateShowsTheSentence,
+  deactivateMountsTheToggleStepper,
   highAndMediumPillsDiffer,
+  newScheduleMountsTheCreateStepper,
+  showInactiveListsAnInactiveRowWithActivate,
   highPillIsTheRuledStrongWarning,
   mediumPillIsTheRuledSoftWarning,
 } from "./maintenance-schedules-panel.spec";
@@ -37,15 +38,20 @@ describe("F4.204 maintenance-schedule refusals read as a sentence, not the respo
     vi.unstubAllGlobals();
   });
 
-  it("MS1 a refused schedule create shows the server's sentence", async () => {
-    await aRefusedCreateShowsTheSentence();
+  // `F4.281`: MS1 and MS3 moved to the two stepper specs; these rows mount the steppers.
+  it("MS1 + New Schedule mounts the create stepper", async () => {
+    await newScheduleMountsTheCreateStepper();
   });
 
   it("MS2 a refused convert to work order shows the server's sentence", async () => {
     await aRefusedConvertShowsTheSentence();
   });
 
-  it("MS3 a refused schedule update shows the server's sentence", async () => {
-    await aRefusedUpdateShowsTheSentence();
+  it("MS3 Deactivate mounts the toggle stepper", async () => {
+    await deactivateMountsTheToggleStepper();
+  });
+
+  it("F4.281: Show inactive lists a deactivated schedule with Activate", async () => {
+    await showInactiveListsAnInactiveRowWithActivate();
   });
 });

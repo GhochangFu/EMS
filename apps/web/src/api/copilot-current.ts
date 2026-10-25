@@ -10,7 +10,9 @@ import { fetchAdminDashboardTemplate } from "./admin/dashboard-templates";
 import { fetchAdminLocations, fetchSiteControlRoomView } from "./admin/locations";
 import { fetchAdminRtus } from "./admin/rtus";
 import { fetchDashboards } from "./dashboards";
+import { fetchAlarmDetails } from "./alarms";
 import { fetchMimicLayout } from "./mimic-layouts";
+import { fetchWorkOrders } from "./work-orders";
 
 /** `F4.246`: a template point's write keys, derived once from the write schema — never a hand-typed list. */
 const TEMPLATE_POINT_WRITE_KEYS = bodyFieldsOf(templatePointBodySchema);
@@ -160,6 +162,27 @@ export async function fetchCopilotCurrent(change: CopilotPendingChangeDto): Prom
     case "mimicLayout.replace": {
       const layout = await fetchMimicLayout(params.id as string);
       return { version: layout.version, organizationId: layout.organizationId };
+    }
+    // `F4.284` (ADR 0106): the work-order board's list (no by-id read exists) and the alarm's details read.
+    case "workOrder.setStatus": {
+      const found = (await fetchWorkOrders(100)).items.find((item) => item.id === params.id);
+      return found ? { status: found.status, sortOrder: found.sortOrder, assignedTo: found.assignedTo } : null;
+    }
+    case "alarm.enrichment.set": {
+      const enrichment = (await fetchAlarmDetails(params.id as string)).enrichment;
+      return enrichment
+        ? {
+            rootCause: enrichment.rootCause,
+            impact: enrichment.impact,
+            correctiveActions: enrichment.correctiveActions,
+            energyImpact: enrichment.energyImpact,
+            waterImpact: enrichment.waterImpact,
+            productionImpact: enrichment.productionImpact,
+            etrAt: enrichment.etrAt,
+            skillCode: enrichment.skillCode,
+            affectedAssetIds: enrichment.affectedAssets.map((asset) => asset.assetId),
+          }
+        : null;
     }
     default:
       return null;

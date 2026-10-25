@@ -84,9 +84,10 @@ export const copilotAccessDtoSchema = z
 /**
  * How much a proposed change can do (`F3.85` PR 4, ADR 0099 decision 4): the
  * Confirm card shows it, and the `copilot_pending_changes_risk_check` CHECK
- * holds the same four.
+ * holds the same values. `F4.284` / ADR 0106 (migration `0116`) adds the fifth,
+ * `operational`: an alarm acknowledge or a work-order close, which cannot be undone.
  */
-export const copilotChangeRiskSchema = z.enum(["create", "edit", "deactivate", "access"]);
+export const copilotChangeRiskSchema = z.enum(["create", "edit", "deactivate", "access", "operational"]);
 
 /**
  * A change the model proposed, waiting for the user's Confirm (decision 4.5).
@@ -343,3 +344,15 @@ export const copilotRejectResponseDtoSchema = z
     messages: z.array(copilotMessageDtoSchema),
   })
   .strict();
+
+/**
+ * `F4.283` (ADR 0099 Amendment 8, Q18, Q19): the model names an attached file of this turn by its
+ * 1-based index. One shape for the three file-borne model bodies (the telemetry import, the asset
+ * image upload); the bytes never reach the body — the browser keeps the `File`, the pending row
+ * stores its name and SHA-256.
+ */
+export const copilotAttachmentRefSchema = z
+  .object({ kind: z.literal("attachment"), index: z.number().int().min(1).max(COPILOT_ATTACHMENTS_MAX) })
+  .strict();
+
+export type CopilotAttachmentRef = z.infer<typeof copilotAttachmentRefSchema>;

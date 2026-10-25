@@ -62,6 +62,27 @@ export interface CopilotToolContext {
    */
   readonly assetIntent?: boolean;
   /**
+   * `F4.279` (ADR 0099 Amendment 8 D4, Q4): the user's own message in this turn,
+   * which carries no file, asks for an outward-facing write (`outwardIntentOf`:
+   * "test", "send", "try"), decided before any tool ran. Absent is `false`: the
+   * channel test send refuses.
+   */
+  readonly outwardIntent?: boolean;
+  /**
+   * `F4.284` (ADR 0106 decision 3; owner ruling DC3): the user's own message in this turn, which
+   * carries no file, asks for an alarm acknowledge or a work-order close (`operationalIntentOf`),
+   * decided before any tool ran: the catalog ids it asks for, each by its own words. Absent is
+   * empty: both propose tools refuse.
+   */
+  readonly operationalIntent?: readonly string[];
+  /**
+   * `F4.280` (ADR 0099 Amendment 8 D4, Q3): the user's own message in this turn, which carries
+   * no file, asks for a report schedule's email delivery (`reportEmailIntentOf`: "email",
+   * "mail", "deliver" and their forms), decided before any tool ran. Absent is `false`: a
+   * schedule body that starts email refuses.
+   */
+  readonly reportEmailIntent?: boolean;
+  /**
    * `F3.87` PR 7, plan D11: a file was attached in this conversation after its
    * last layout proposal, so a layout card says it was read from a file.
    */
@@ -116,7 +137,15 @@ export interface CopilotReadTools {
  * the caller's role, and with or without the asset and point creates (absent
  * is `true`).
  */
-export type RegistryOptions = { readonly access: boolean; readonly role: string; readonly assetCreate?: boolean };
+export type RegistryOptions = {
+  readonly access: boolean;
+  readonly role: string;
+  readonly assetCreate?: boolean;
+  /** `F4.279` (D4): with the outward-facing entries (the channel test send). Absent is `false`, fail closed. */
+  readonly outward?: boolean;
+  /** `F4.284` (ADR 0106 decision 3): the operational entries (acknowledge, close) to keep, by id. Absent is none, fail closed. */
+  readonly operational?: readonly string[];
+};
 
 /** The Nest token the turn service injects its read tools by. */
 export const COPILOT_READ_TOOLS = Symbol("COPILOT_READ_TOOLS");

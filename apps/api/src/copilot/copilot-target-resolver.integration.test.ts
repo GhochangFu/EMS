@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
@@ -7,6 +9,12 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   aCreateUnderAParentTakesTheParentsOrganization,
+  readingsOfABoundAssetResolveOnItsAsset,
+  aSkillCodeRefIsReadFromTheVocabulary,
+  anAbsentSkillCodeRefIsRefused,
+  readingsOfAnotherOrganizationsAssetAreRefusedByRow,
+  readingsOfAnUnknownAssetAreRefusedByRow,
+  readingsOfAnUnmanageableAssetAreRefusedByRow,
   aDashboardTargetCarriesItsUpdatedAt,
   anAssetTemplateTargetCarriesItsUpdatedAt,
   RESOLVER_STAMPS,
@@ -17,6 +25,16 @@ import {
   anOpenInstantiateWizardIsItsTemplatesRecord,
   anOpenInstantiateWizardOfAnUnmanagedOrganizationIsNotOpen,
   aFleetRowLivesInTheBoundOrganization,
+  aLocationTypeCountsItsLocationsInTheAllowedOrganizations,
+  aRuleOfAnotherOrganizationIsNotFound,
+  aMaintenanceScheduleOfAnotherOrganizationIsNotFound,
+  aFleetWideChannelIsNotFound,
+  aReportScheduleResolvesWithItsStampedLocations,
+  aRuleUpdateRefusesAnAssetOfAnotherOrganization,
+  anUnknownVocabularyCodeIsRefusedBeforeTheGate,
+  aUnitRoleResolvesItsLabel,
+  aVocabularyRowNeedsABoundConversation,
+  aVocabularyRowNeedsTheGlobalAdmin,
   aGrantLivesInItsTargetsOrganizationAndNeedsTheUsersHomeInScope,
   aGrantTargetUsesTheGrantsServicesChecks,
   aUserCreateRunsTheRoutesManagerChecks,
@@ -44,6 +62,7 @@ import {
   RESOLVER_NAMES,
   type ResolverCtx,
   theNewRefKindsBelongToTheOrganization,
+  anAssigneeIsReadUnderTheTenantAndNamed,
 } from "./copilot-target-resolver.integration.spec";
 
 const connectionString = requireIntegrationDb({
@@ -64,11 +83,25 @@ const superuserConnectionString = requireIntegrationDb({
 
 const FAMILY = `F386-RESOLVER-${Date.now()}`;
 const FAMILY_PATTERN = "F386-RESOLVER-%";
+/**
+ * `F4.282`: the vocabulary rows, one code per run (the tables are fleet-wide). A
+ * randomUUID suffix, so a concurrent instance of this file never shares a row.
+ */
+const LOCATION_TYPE_CODE = `f4282_${randomUUID().replace(/-/g, "").slice(0, 10)}`;
+const ASSET_ROLE_CODE = `f4282-role-${randomUUID().replace(/-/g, "").slice(0, 10)}`;
+/** `F4.279`: the two channel codes, per run for the same reason. */
+const CHANNEL_RUN = randomUUID().replace(/-/g, "").slice(0, 10);
 /** Child tables first; each keyed by `organization_id` except the two joined through their parent. */
 const CLEANUP = [
   "DELETE FROM bms.asset_group_members WHERE asset_group_id IN (SELECT id FROM bms.asset_groups WHERE organization_id = ANY($1))",
   "DELETE FROM bms.site_control_room_views WHERE organization_id = ANY($1)",
   "DELETE FROM bms.asset_points WHERE organization_id = ANY($1)",
+  "DELETE FROM bms.automation_rules WHERE organization_id = ANY($1)",
+  "DELETE FROM bms.report_schedules WHERE organization_id = ANY($1)",
+  // `F4.281`: the schedule before its template, both before the asset.
+  "DELETE FROM bms.maintenance_schedules WHERE organization_id = ANY($1)",
+  "DELETE FROM bms.maintenance_task_templates WHERE organization_id = ANY($1)",
+  "DELETE FROM bms.notification_channels WHERE organization_id = ANY($1)",
   "DELETE FROM bms.asset_groups WHERE organization_id = ANY($1)",
   "DELETE FROM bms.assets WHERE organization_id = ANY($1)",
   "DELETE FROM bms.rtus WHERE organization_id = ANY($1)",
@@ -78,6 +111,8 @@ const CLEANUP = [
   "DELETE FROM bms.asset_templates WHERE organization_id = ANY($1)",
   "DELETE FROM bms.mimic_layouts WHERE organization_id = ANY($1)",
   "DELETE FROM bms.locations WHERE organization_id = ANY($1)",
+  // `F4.284`: the assignee fixtures (`bms.users`, FORCE RLS), before their organizations.
+  "DELETE FROM bms.users WHERE organization_id = ANY($1)",
   "DELETE FROM bms.organizations WHERE id = ANY($1)",
 ];
 
@@ -104,6 +139,20 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       [FAMILY_PATTERN],
     );
     for (const statement of CLEANUP) await superPool.query(statement, [stale.map((row) => row.id)]);
+    // `F4.282`: a killed run's vocabulary rows, once no location uses them. Bounded by
+    // age, the organizations' rule: a live instance's rows are younger than 30 minutes.
+    await superPool.query(
+      "DELETE FROM bms.location_types t WHERE t.code LIKE 'f4282%' AND t.created_at < now() - interval '30 minutes' " +
+        "AND NOT EXISTS (SELECT 1 FROM bms.locations l WHERE l.type = t.code)",
+    );
+    await superPool.query("DELETE FROM bms.asset_roles WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'", [
+      "f4282-role-%",
+    ]);
+    // `F4.279`: a killed run's fleet-wide channel, bounded by age the same way.
+    await superPool.query(
+      "DELETE FROM bms.notification_channels WHERE organization_id IS NULL AND code LIKE 'f4279-resolver-%' " +
+        "AND created_at < now() - interval '30 minutes'",
+    );
 
     const one = async (text: string, values: unknown[]): Promise<string> => {
       const { rows } = await superPool.query<{ id: string }>(text, values);
@@ -127,9 +176,31 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
 
     const orgA = await organization("A", RESOLVER_NAMES.orgA);
     const orgB = await organization("B", "F3.86 resolver B");
+    // `F4.284` (DC1): an assignee of each organization.
+    const user = (organizationId: string, suffix: string, name: string) =>
+      one("INSERT INTO bms.users (organization_id, email, display_name, role) VALUES ($1, $2, $3, 'operator') RETURNING id", [
+        organizationId,
+        `${FAMILY.toLowerCase()}-${suffix}@example.test`,
+        name,
+      ]);
+    const userA = await user(orgA, "assignee-a", RESOLVER_NAMES.userA);
+    const userB = await user(orgB, "assignee-b", "F4.284 assignee B");
     const locationA = await location(orgA, "a", RESOLVER_NAMES.locationA);
     const locationA2 = await location(orgA, "a2", "F3.86 site A2");
     const locationB = await location(orgB, "b", "F3.86 site B");
+    // `F4.282`: a location type used by two locations of A and one of B, and a unit role.
+    await superPool.query("INSERT INTO bms.location_types (code, label) VALUES ($1, 'F4.282 type')", [LOCATION_TYPE_CODE]);
+    // Sorted last: `asset-groups.service.integration.test.ts` reads the first two active roles by
+    // `sort_order`, and a default-0 fixture role was its pick when this file's `afterAll` deleted it.
+    await superPool.query("INSERT INTO bms.asset_roles (code, label, sort_order) VALUES ($1, 'F4.282 role', 2147483647)", [
+      ASSET_ROLE_CODE,
+    ]);
+    for (const [org, suffix] of [[orgA, "t1"], [orgA, "t2"], [orgB, "t3"]] as const) {
+      await superPool.query(
+        "INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude) VALUES ($1, $2, $2, $3, $4, 0, 0)",
+        [org, `${FAMILY}-l${suffix}`.toLowerCase(), `F4.282 site ${suffix}`, LOCATION_TYPE_CODE],
+      );
+    }
     const rtuA = await one(
       "INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type) VALUES ($1, $2, $3, $4, 'simulator') RETURNING id",
       [orgA, locationA, `${FAMILY}-RTU`, RESOLVER_NAMES.rtuA],
@@ -141,6 +212,43 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
     const assetA = await one(
       "INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain) VALUES ($1, $2, $3, $4, $5, 'electrical') RETURNING id",
       [orgA, `${FAMILY}-ASSET`, RESOLVER_NAMES.assetA, RESOLVER_NAMES.locationA, locationA],
+    );
+    // `F4.278`: an asset of B, a published rule on `assetA` and a rule on that asset of B.
+    const assetB = await one(
+      "INSERT INTO bms.assets (organization_id, code, name, site_name, location_id, domain) VALUES ($1, $2, $3, $4, $5, 'electrical') RETURNING id",
+      [orgB, `${FAMILY}-ASSET-B`, "F4.278 asset B", "F3.86 site B", locationB],
+    );
+    const rule = (org: string, asset: string, code: string) =>
+      one(
+        "INSERT INTO bms.automation_rules (organization_id, code, name, rule_type, asset_id, point_key, operator, threshold_value, condition, action, lifecycle_status) " +
+          "VALUES ($1, $2, $3, 'threshold', $4, 'kw', 'gt', 1, '{\"window\":\"latest\"}', '{\"type\":\"notify\",\"target\":\"Ops\"}', 'published') RETURNING id",
+        [org, code, `F4.278 rule ${code}`, asset],
+      );
+    const ruleA = await rule(orgA, assetA, `${FAMILY}-RA`);
+    const ruleB = await rule(orgB, assetB, `${FAMILY}-RB`);
+    // `F4.279`: a channel of A and a fleet-wide one (the first active channel kind).
+    const channel = (org: string | null, code: string, name: string) =>
+      one(
+        "INSERT INTO bms.notification_channels (organization_id, code, name, kind, config, enabled) " +
+          "VALUES ($1, $2, $3, (SELECT code FROM bms.notification_channel_kinds WHERE active ORDER BY code LIMIT 1), '{}'::jsonb, true) RETURNING id",
+        [org, code, name],
+      );
+    const channelA = await channel(orgA, `f4279-resolver-a-${CHANNEL_RUN}`, "F4.279 channel A");
+    const fleetChannel = await channel(null, `f4279-resolver-${CHANNEL_RUN}`, "F4.279 fleet channel");
+    // `F4.280`: a report schedule of A, stamped with locationA.
+    const scheduleA = await one(
+      "INSERT INTO bms.report_schedules (organization_id, name, template_id, formats, cadence, run_at_local, timezone, location_ids, next_run_at) " +
+        "VALUES ($1, $2, 'energy_consumption', ARRAY['pdf'], 'weekly', '07:00', 'Asia/Kolkata', ARRAY[$3]::uuid[], now() + interval '1 day') RETURNING id",
+      [orgA, "F4.280 schedule A", locationA],
+    );
+    // `F4.281`: a maintenance template on `assetA` and its schedule.
+    const maintenanceTemplateA = await one(
+      "INSERT INTO bms.maintenance_task_templates (organization_id, asset_id, title) VALUES ($1, $2, $3) RETURNING id",
+      [orgA, assetA, "F4.281 filter check A"],
+    );
+    const maintenanceScheduleA = await one(
+      "INSERT INTO bms.maintenance_schedules (organization_id, template_id, interval_days, next_due_at) VALUES ($1, $2, 90, now() + interval '10 days') RETURNING id",
+      [orgA, maintenanceTemplateA],
     );
     const groupA = await one(
       "INSERT INTO bms.asset_groups (organization_id, location_id, code, name) VALUES ($1, $2, $3, $4) RETURNING id",
@@ -190,6 +298,11 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       tenantDb: createDb(tenantPool),
       orgA,
       orgB,
+      channelA,
+      fleetChannel,
+      scheduleA,
+      maintenanceScheduleA,
+      maintenanceTitleA: "F4.281 filter check A",
       locationA,
       locationA2,
       locationB,
@@ -207,11 +320,23 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       dashboardTemplateA,
       assetTemplateA,
       mimicLayoutA,
+      locationTypeCode: LOCATION_TYPE_CODE,
+      locationTypeLabel: "F4.282 type",
+      assetRoleCode: ASSET_ROLE_CODE,
+      assetRoleLabel: "F4.282 role",
+      assetB,
+      ruleA,
+      ruleB,
+      userA,
+      userB,
     };
   });
 
   afterAll(async () => {
     if (superPool) for (const statement of CLEANUP) await superPool.query(statement, [orgIds]);
+    await superPool?.query("DELETE FROM bms.location_types WHERE code = $1", [LOCATION_TYPE_CODE]);
+    await superPool?.query("DELETE FROM bms.asset_roles WHERE code = $1", [ASSET_ROLE_CODE]);
+    if (ctx?.fleetChannel) await superPool?.query("DELETE FROM bms.notification_channels WHERE id = $1", [ctx.fleetChannel]);
     await Promise.all([tenantPool?.end(), superPool?.end()]);
   });
 
@@ -226,10 +351,37 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("checks the new site too when an asset update names locationId (PR 3b)", () => anAssetMoveNeedsTheNewSiteToo(ctx));
   it("gives a create under a parent the parent's organization", () => aCreateUnderAParentTakesTheParentsOrganization(ctx));
   it("puts a fleet row in the bound organization (ruling Q1)", () => aFleetRowLivesInTheBoundOrganization(ctx));
+  it("F4.282: refuses a vocabulary row in an unbound conversation", () => aVocabularyRowNeedsABoundConversation(ctx));
+  it("F4.282: counts a location type's locations in the allowed organizations", () =>
+    aLocationTypeCountsItsLocationsInTheAllowedOrganizations(ctx));
+  it("F4.282: refuses an unknown vocabulary code before the gate", () => anUnknownVocabularyCodeIsRefusedBeforeTheGate(ctx));
+  it("F4.282: refuses a vocabulary row for a caller who is no global admin", () => aVocabularyRowNeedsTheGlobalAdmin(ctx));
+  it("F4.282: resolves a unit role's label with no usage count", () => aUnitRoleResolvesItsLabel(ctx));
+  it("F4.278: a rule of another organization is not found; its own rule carries its lifecycle", () =>
+    aRuleOfAnotherOrganizationIsNotFound(ctx));
+  it("F4.278: a rule update refuses an asset of another organization, beside its allowed twin", () =>
+    aRuleUpdateRefusesAnAssetOfAnotherOrganization(ctx));
+  it("F4.279: a fleet-wide channel is found under no tenant; a channel of A resolves", () => aFleetWideChannelIsNotFound(ctx));
+  it("F4.280: a report schedule of A resolves with its stamped locations; under B it is not found", () =>
+    aReportScheduleResolvesWithItsStampedLocations(ctx));
+  it("F4.281: a maintenance schedule of A resolves by its title; under B it is not found", () =>
+    aMaintenanceScheduleOfAnotherOrganizationIsNotFound(ctx));
   it("keeps the built-in view rule (ruling Q7(b))", () => aSiteViewKeepsTheBuiltinRule(ctx));
   it("needs the dashboard check for a site layout (ruling Q7(b))", () => aSiteLayoutNeedsTheDashboardCheckToo(ctx));
   it("refuses a location create by a location admin", () => aLocationCreateRefusesALocationAdmin(ctx));
   it("keeps the new ref kinds inside the organization", () => theNewRefKindsBelongToTheOrganization(ctx));
+  it("F4.284: reads an assignee under the tenant, names it, and refuses another organization's", () =>
+    anAssigneeIsReadUnderTheTenantAndNamed(ctx));
+  // `F4.283` (owner ruling 2026-10-25, Q2): every readings row's asset, before the card.
+  it("F4.283: readings of a bound asset resolve, asking canManageAsset on it", () => readingsOfABoundAssetResolveOnItsAsset(ctx));
+  it("F4.283: readings of another organization's asset are refused by row", () =>
+    readingsOfAnotherOrganizationsAssetAreRefusedByRow(ctx));
+  it("F4.283: readings of an unknown asset are refused by row", () => readingsOfAnUnknownAssetAreRefusedByRow(ctx));
+  it("F4.283: readings of an asset the caller may not manage are refused by row", () =>
+    readingsOfAnUnmanageableAssetAreRefusedByRow(ctx));
+  // `F4.284` owner ruling 2026-10-25 (Q4): the skill code ref, on the fleet vocabulary.
+  it("F4.284: a seeded active skill code resolves", () => aSkillCodeRefIsReadFromTheVocabulary(ctx));
+  it("F4.284: an absent skill code is refused with the read tool's sentence", () => anAbsentSkillCodeRefIsRefused(ctx));
   it("resolves a user target through the users service (PR 4)", () => aUserTargetUsesTheUsersServicesChecks(ctx));
   it("resolves a grant through the grants service (PR 4)", () => aGrantTargetUsesTheGrantsServicesChecks(ctx));
   it("runs the route's manager checks for a user create (PR 4)", () => aUserCreateRunsTheRoutesManagerChecks(ctx));

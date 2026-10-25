@@ -14,6 +14,12 @@ import {
   aDuplicateRecordIsNamedOnce,
   aDuplicateWizardDoesNotFailTheTurn,
   aListPageMountsItsCreateWizard,
+  theRulesPageMountsItsCreateWizard,
+  theChannelsPageMountsItsCreateWizard,
+  theEscalationPageMountsItsWizards,
+  theReportsPageMountsItsTwoCreates,
+  theScheduleCentreMountsItsCreateWizard,
+  theVocabularyPagesMountTheirCreateWizards,
   aLongNameIsCut,
   aMalformedMultipartFieldIsA400,
   aMissingPathParameterIsRefused,
@@ -46,6 +52,12 @@ describe("F4.245 — the open-wizard context of a turn (ADR 0099 Amendment 4)", 
   it("maps a template route to its wizards for the route's record", () => aTemplatePageMountsItsWizardsForTheRoutesRecord());
   it("names no wizard for a route value the entry refuses", () => aTemplatePageWithANonUuidNamesNoWizard());
   it("maps a list route to its create wizard", () => aListPageMountsItsCreateWizard());
+  it("maps the two vocabulary pages to their create wizards", () => theVocabularyPagesMountTheirCreateWizards());
+  it("maps the Rule Engine page to its create wizard (F4.278)", () => theRulesPageMountsItsCreateWizard());
+  it("maps the Channels page to its create wizard (F4.279)", () => theChannelsPageMountsItsCreateWizard());
+  it("maps the Escalation page to its three wizards (F4.279)", () => theEscalationPageMountsItsWizards());
+  it("maps the Reports page to its two creates (F4.280)", () => theReportsPageMountsItsTwoCreates());
+  it("maps the Schedule Centre to its create (F4.281)", () => theScheduleCentreMountsItsCreateWizard());
   it("maps a page without a wizard to none", () => aPageWithoutAWizardMountsNone());
   it("sends no message when no wizard is open", () => noOpenWizardSendsNoMessage());
   it("names each open record by its params in the system line", () => theSystemLineNamesEachRecordByItsParams());

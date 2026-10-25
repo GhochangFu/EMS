@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { copilotAttachmentRefSchema } from "./copilot";
+
 /**
  * `F3.3` — the asset-image constants and DTO (ADR 0066 decisions 3, 5, 7).
  *
@@ -106,3 +108,55 @@ export const assetImageDtoSchema = z
 
 /** `GET /api/v1/assets/:assetId/images`. */
 export const assetImageListResponseSchema = z.array(assetImageDtoSchema);
+
+/**
+ * `F3.4` (ADR 0066 Amendment 3, R-8) — the multipart upload's non-file
+ * field. Named `*FieldsSchema`, not `*BodySchema`: the upload route is
+ * multipart, and `openapi-registry.ts`'s "multipart routes are deliberately
+ * absent" paragraph (ADR 0029 decisions 1 and 3) describes only a JSON
+ * `*BodySchema`/`*QuerySchema` pair. No `.refine`, so decision 10's
+ * `.describe()` rule has nothing to hold here.
+ *
+ * `F4.283` (ADR 0099 Amendment 8, ADR 0030): moved here from
+ * `apps/api/src/assets/asset-images.schema.ts`, same rules, so the copilot
+ * catalog carries the route's own export by identity.
+ */
+export const assetImageUploadFieldsSchema = z
+  .object({
+    caption: z.string().trim().max(MAX_ASSET_IMAGE_CAPTION_CHARS).regex(NO_CONTROL_CHARACTERS).optional(),
+  })
+  .strict();
+
+export type AssetImageUploadFields = z.infer<typeof assetImageUploadFieldsSchema>;
+
+/**
+ * The filename multer reports on `file.originalname`, after
+ * `decodeMulterFilename` has undone busboy's latin1 decode. The
+ * control-character refusal mirrors the DTO's through the same imported
+ * pattern (§4.8): `.trim()` only removes surrounding whitespace, so an
+ * interior CR LF would otherwise be stored. `.min(1)`: an empty name is a
+ * missing name. `F4.283`: moved here with the fields schema.
+ */
+export const assetImageFilenameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(MAX_ASSET_IMAGE_FILENAME_CHARS)
+  .regex(NO_CONTROL_CHARACTERS);
+
+export type AssetImageFilename = z.infer<typeof assetImageFilenameSchema>;
+
+/**
+ * `F4.283` (ADR 0099 Amendment 8, Q18): the body the copilot proposes an asset
+ * image upload with — the route's `caption`, and the attached image by its
+ * index. The propose step turns `file` into the image's name and SHA-256; the
+ * bytes stay in the browser until Confirm.
+ */
+export const copilotAssetImageUploadModelBodySchema = z
+  .object({
+    caption: z.string().trim().max(MAX_ASSET_IMAGE_CAPTION_CHARS).regex(NO_CONTROL_CHARACTERS).optional(),
+    file: copilotAttachmentRefSchema,
+  })
+  .strict();
+
+export type CopilotAssetImageUploadModelBody = z.infer<typeof copilotAssetImageUploadModelBodySchema>;

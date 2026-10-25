@@ -13,15 +13,12 @@ import {
 } from "@nestjs/common";
 import { ZodError } from "zod";
 
+import { createReportScheduleBodySchema, updateReportScheduleBodySchema } from "@bms/shared";
 import type { JwtPayload, ReportScheduleDto } from "@bms/shared";
 
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import {
-  createReportScheduleBodySchema,
-  reportScheduleIdParamSchema,
-  updateReportScheduleBodySchema,
-} from "./report-schedules.schema";
+import { reportScheduleIdParamSchema } from "./report-schedules.schema";
 import { ReportSchedulesService } from "./report-schedules.service";
 
 /**

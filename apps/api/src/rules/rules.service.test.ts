@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  duplicateAuditsThroughTheFunnelOnItsTransaction,
+  previewWritesItsAuditRowThroughTheFunnelOnFleetDbWhenAssetless,
   runCompatiblePointWideningTests,
   runDuplicateRuleCopiesClearHoldTests,
   runRuleCodeUniquenessTests,
@@ -25,5 +27,13 @@ describe("rules.service", () => {
 
   it("copies the clear hold onto a duplicated rule, null included (F3.10)", async () => {
     await runDuplicateRuleCopiesClearHoldTests();
+  });
+
+  it("audits a duplicate through MasterDataAuditService on its own transaction (F4.278)", async () => {
+    await duplicateAuditsThroughTheFunnelOnItsTransaction();
+  });
+
+  it("audits an asset-less preview through MasterDataAuditService on fleetDb (F4.278)", async () => {
+    await previewWritesItsAuditRowThroughTheFunnelOnFleetDbWhenAssetless();
   });
 });

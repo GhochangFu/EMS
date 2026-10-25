@@ -5,6 +5,7 @@ import {
   MAX_ASSET_IMAGE_CAPTION_CHARS,
 } from "@bms/shared";
 import type { AdminAssetDto, AssetImageDto } from "@bms/shared";
+import { catalogEntry } from "@bms/shared/copilot";
 
 import { deleteAssetImage, uploadAssetImage } from "../../api/asset-images";
 import { useAssetImages } from "../../hooks/use-asset-images";
@@ -17,6 +18,7 @@ import {
   uploadBlockedReason,
 } from "../../lib/asset-images-view";
 import { StatusPill } from "../status-pill";
+import { WizardShell } from "../wizard/wizard-shell";
 import { AssetImageGallery } from "./asset-image-gallery";
 
 /**
@@ -75,6 +77,8 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [caption, setCaption] = useState("");
+  // `F4.283`: a new wizard after each upload, so the next one starts on its first step.
+  const [uploads, setUploads] = useState(0);
   const [error, setError] = useState<string | null>(null);
   // One entry per delete in flight (post-merge sweep C2). A single id was one
   // too few: `onMutate` overwrote it, so pressing Delete on A and then B put
@@ -96,18 +100,19 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
   }
 
   const uploadMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (input: { caption: string }) => {
       // Unreachable through the button, which is disabled without a file. The
       // throw is here so a future caller cannot make this post an empty body.
       if (file === null) {
         throw new Error("Choose an image to upload.");
       }
-      return uploadAssetImage(asset.id, file, caption);
+      return uploadAssetImage(asset.id, file, input.caption);
     },
     onSuccess: async () => {
       setError(null);
       setFile(null);
       setCaption("");
+      setUploads((n) => n + 1);
       // The DOM input keeps the old filename after its React state is cleared —
       // an uncontrolled value only `ref.current.value = ""` resets (the
       // `mapping-sheet-panel` precedent). Without it the field names a file the
@@ -167,13 +172,12 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
           deletingIds={deletingIds}
         />
 
-        <form
-          className="space-y-2 border-t border-line pt-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            uploadMutation.mutate();
-          }}
-        >
+        {/*
+          `F4.283` (ADR 0099 Amendment 8): the upload is the `assetImage.upload` wizard — one Image step
+          (the caption), then Review and Submit. The file sits beside the wizard and is never a wizard
+          value (the `SymbolUploadWizard` rule); Next waits for an acceptable file.
+        */}
+        <div className="space-y-2 border-t border-line pt-3">
           <label className="block text-xs font-semibold text-ink-muted">
             Image file
             <input
@@ -191,30 +195,36 @@ export function AssetImagesPanel({ asset, onClose }: AssetImagesPanelProps): JSX
               }}
             />
           </label>
-          <label className="block text-xs font-semibold text-ink-muted">
-            Caption
-            <input
-              className="mt-1 w-full surface-field px-3 py-2 text-sm"
-              aria-label="Caption"
-              maxLength={MAX_ASSET_IMAGE_CAPTION_CHARS}
-              value={caption}
-              onChange={(event) => setCaption(event.target.value)}
-            />
-          </label>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="submit"
-              className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
-              disabled={blockedReason !== null || uploadMutation.isPending}
-              aria-busy={uploadMutation.isPending}
-            >
-              {uploadMutation.isPending ? "Uploading…" : "Upload"}
-            </button>
-            {blockedReason !== null ? (
-              <span className="text-xs text-ink-muted">{blockedReason}</span>
-            ) : null}
-          </div>
-        </form>
+          <WizardShell
+            key={uploads}
+            entry={catalogEntry("assetImage.upload")!}
+            params={{ assetId: asset.id }}
+            values={caption === "" ? {} : { caption }}
+            onChange={(next) => setCaption(typeof next.caption === "string" ? next.caption : "")}
+            renderStep={() => (
+              <label className="block text-xs font-semibold text-ink-muted">
+                Caption
+                <input
+                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
+                  aria-label="Caption"
+                  maxLength={MAX_ASSET_IMAGE_CAPTION_CHARS}
+                  value={caption}
+                  onChange={(event) => setCaption(event.target.value)}
+                />
+              </label>
+            )}
+            nextDisabled={blockedReason !== null}
+            onSubmit={(body) => uploadMutation.mutate({ caption: typeof body.caption === "string" ? body.caption : "" })}
+            onCancel={() => {
+              setFile(null);
+              setCaption("");
+              setError(null);
+              if (fileInputRef.current !== null) fileInputRef.current.value = "";
+            }}
+            submitting={uploadMutation.isPending}
+          />
+          {blockedReason !== null ? <span className="text-xs text-ink-muted">{blockedReason}</span> : null}
+        </div>
 
         {error !== null ? <p className="text-xs text-critical-ink">{error}</p> : null}
       </div>

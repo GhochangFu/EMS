@@ -5,13 +5,14 @@ import { BadRequestException } from "@nestjs/common";
 import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 import type { BmsDb } from "@bms/db";
 
+import type { AuditInput, MasterDataAuditService } from "../admin/master-data-audit.service";
 import type { AlarmRaiser } from "../alarms/alarm-raise.service";
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { mergeRuleDraft } from "./rule-mapping";
 import { ruleRow } from "./rule-mapping.spec";
 import { RulesService } from "./rules.service";
-import type { RuleDraftBody } from "./rules.schema";
+import type { RuleDraftBody } from "@bms/shared";
 import type { RuleDraftValues, RuleRow } from "./rules.types";
 
 function assert(condition: boolean, message: string): void {
@@ -34,6 +35,24 @@ function assert(condition: boolean, message: string): void {
  * only when this spec runs. It does run in CI (§4.6), which is what makes that
  * acceptable rather than merely known.
  */
+/**
+ * `F4.278` (Amendment 8, "Common to every entry") — the audit funnel stand-in.
+ * `RulesService` audits through `MasterDataAuditService` since this row, so every
+ * case hands it a recorder: each call's input and the executor it ran on.
+ */
+export function auditRecorder(): {
+  audit: MasterDataAuditService;
+  writes: { input: AuditInput; executor: unknown }[];
+} {
+  const writes: { input: AuditInput; executor: unknown }[] = [];
+  const audit = {
+    write: async (input: AuditInput, executor: unknown) => {
+      writes.push({ input, executor });
+    },
+  } as unknown as MasterDataAuditService;
+  return { audit, writes };
+}
+
 type ValidateAccess = {
   validateRuleDraft: (
     dto: RuleDraftBody,
@@ -113,6 +132,7 @@ function validator(rows: unknown[] = [], queue?: unknown[][]): ValidateAccess {
     vocabularies,
     alarmRaiser,
     notifications,
+    auditRecorder().audit,
   ) as unknown as ValidateAccess;
 }
 
@@ -437,7 +457,7 @@ function ruleReadChain(row: RuleRow): ReadChain {
 }
 
 /**
- * `.values()` has to be both awaitable and chainable: `insertRuleAuditLog`
+ * `.values()` has to be both awaitable and chainable: an audit insert
  * awaits it bare, while the rule insert calls `.returning()` on it.
  */
 type InsertResult = {
@@ -445,8 +465,76 @@ type InsertResult = {
   then: (resolve: (rows: unknown[]) => void) => void;
 };
 
+type DuplicateRun = {
+  copy: Record<string, unknown>;
+  inserts: Record<string, unknown>[];
+  writes: { input: AuditInput; executor: unknown }[];
+  tx: unknown;
+};
+
 /** Runs the real `duplicateRule` and hands back the values it inserted. */
 async function duplicatedValues(row: RuleRow): Promise<Record<string, unknown>> {
+  return (await duplicateRun(row)).copy;
+}
+
+/**
+ * `F4.278` — the duplicate's audit row goes through the funnel: the db sees ONE
+ * insert (the copy, no direct `audit_log` insert), and the recorder sees one
+ * `rule_duplicate` write stamped with the rule's organization, on the write's own
+ * transaction by identity.
+ */
+export async function duplicateAuditsThroughTheFunnelOnItsTransaction(): Promise<void> {
+  const row = ruleRow();
+  const run = await duplicateRun(row);
+  assert(run.inserts.length === 1, `expected one db insert (the copy), got ${run.inserts.length}`);
+  assert(run.writes.length === 1, `expected one audit write, got ${run.writes.length}`);
+  const [write] = run.writes;
+  assert(write?.input.action === "rule_duplicate", `action ${String(write?.input.action)}`);
+  assert(write?.input.entityType === "automation_rule", `entityType ${String(write?.input.entityType)}`);
+  assert(write?.input.entityId === "copy-1", `entityId ${String(write?.input.entityId)}`);
+  assert(
+    write?.input.organizationId === row.organizationId,
+    `organizationId ${String(write?.input.organizationId)} vs ${String(row.organizationId)}`,
+  );
+  assert(write?.executor === run.tx, "the audit write must run on the duplicate's own transaction");
+}
+
+/**
+ * `F4.278` — an asset-less preview (a time-window draft) writes its `rule_preview`
+ * row through the funnel on `fleetDb`, with a `null` organization: the tenant
+ * pool's NULL branch is scoped `TO bms_fleet` only.
+ */
+export async function previewWritesItsAuditRowThroughTheFunnelOnFleetDbWhenAssetless(): Promise<void> {
+  const refuseInsert = () => {
+    throw new Error("the preview must not insert into audit_log itself");
+  };
+  const tenantDb = { select: () => selectChain([]), insert: refuseInsert } as unknown as BmsDb;
+  const fleetDb = { select: () => selectChain([]), insert: refuseInsert } as unknown as BmsDb;
+  const vocabularies = {
+    assertRuleCategory: async () => undefined,
+    assertAlarmSeverity: async () => undefined,
+  } as unknown as VocabulariesService;
+  const { audit, writes } = auditRecorder();
+  const service = new RulesService(
+    tenantDb,
+    fleetDb,
+    vocabularies,
+    {} as unknown as AlarmRaiser,
+    { dispatch: () => Promise.resolve([]) } as unknown as NotificationsService,
+    audit,
+  );
+  await service.previewRule(
+    { ...timeWindowDraft(), id: undefined },
+    { sub: "00000000-0000-4000-8000-0000000000d2", email: "previewer@bms.local" },
+  );
+  assert(writes.length === 1, `expected one audit write, got ${writes.length}`);
+  assert(writes[0]?.input.action === "rule_preview", `action ${String(writes[0]?.input.action)}`);
+  assert(writes[0]?.input.organizationId === null, "an asset-less preview stamps a null organization");
+  assert(writes[0]?.executor === fleetDb, "an asset-less preview audits on fleetDb");
+}
+
+/** Runs the real `duplicateRule` and hands back what it inserted and audited. */
+async function duplicateRun(row: RuleRow): Promise<DuplicateRun> {
   const inserts: Record<string, unknown>[] = [];
   const tx = {
     // `withTenant`'s `set_config` — the fake has no GUC to set.
@@ -478,19 +566,21 @@ async function duplicatedValues(row: RuleRow): Promise<Record<string, unknown>> 
     dispatch: () => Promise.resolve([]),
   } as unknown as NotificationsService;
 
-  const service = new RulesService(db, db, vocabularies, alarmRaiser, notifications);
+  const { audit, writes } = auditRecorder();
+
+  const service = new RulesService(db, db, vocabularies, alarmRaiser, notifications, audit);
   await service.duplicateRule(row.id, {}, {
     sub: "00000000-0000-4000-8000-0000000000d1",
     email: "duplicator@bms.local",
   });
 
-  // Two inserts run: the rule copy and its audit row. The copy is the one
-  // carrying `duplicatedFromRuleId`, which the audit entry never has.
+  // Since `F4.278` the audit row goes through `MasterDataAuditService`, so the
+  // copy is the only db insert; it carries `duplicatedFromRuleId`.
   const copy = inserts.find((values) => "duplicatedFromRuleId" in values);
   if (!copy) {
     throw new Error("duplicateRule inserted no automation_rules row");
   }
-  return copy;
+  return { copy, inserts, writes, tx };
 }
 
 /**

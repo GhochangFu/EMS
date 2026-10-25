@@ -66,22 +66,26 @@ function controllerWith(options: { writeAllowed?: boolean } = {}): {
   } as unknown as Ctor[1];
 
   const channels = {
-    setRuleChannels: (ruleId: string, channelIds: string[]) => {
-      writes.push({ ruleId, channelIds });
-      return Promise.resolve(channelIds);
-    },
     ruleChannelIds: (ruleId: string) => {
       reads.push(ruleId);
       return Promise.resolve([CHANNEL_ID]);
     },
   } as unknown as Ctor[2];
 
+  // `F4.279`: the write moved to `ChannelWritesService`, the fifth parameter.
+  const channelWrites = {
+    setRuleChannels: (ruleId: string, channelIds: string[]) => {
+      writes.push({ ruleId, channelIds });
+      return Promise.resolve(channelIds);
+    },
+  } as unknown as Ctor[4];
+
   // A real `EvaluateThrottle` (`F3.47`), not a fake: it is the fourth and last
   // constructor parameter, it bounds only `POST /rules/evaluate`, and no route
   // asserted here ever calls it. A fresh instance per controller keeps it that
   // way if one ever does.
   return {
-    controller: new RulesController(rules, accessControl, channels, new EvaluateThrottle()),
+    controller: new RulesController(rules, accessControl, channels, new EvaluateThrottle(), channelWrites),
     writes,
     reads,
   };

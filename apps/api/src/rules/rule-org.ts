@@ -6,7 +6,8 @@ import type { BmsDb } from "@bms/db";
 
 /**
  * Rule-write organization resolution — `E7.1c` §4.5 extraction, done for the
- * same reason `rule-codes.ts`, `rule-audit.ts`, `rule-reads.ts` and
+ * same reason `rule-codes.ts`, `rule-audit.ts` (since `F4.278` folded into
+ * `MasterDataAuditService`), `rule-reads.ts` and
  * `rule-samples.ts` were: `rules.service.ts` was at the 1000-line cap before
  * `previewRule`'s item-D audit fix could be added. Both functions here read
  * on `fleetDb`, matching every other pre-write lookup in this service.

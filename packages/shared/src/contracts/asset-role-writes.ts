@@ -71,3 +71,36 @@ export const createAssetRoleBodySchema = z
   .strict();
 
 export type CreateAssetRoleBody = z.infer<typeof createAssetRoleBodySchema>;
+
+/**
+ * `F3.40` / ADR 0051 decision 5 — the PATCH body. Moved here from
+ * `apps/api/src/admin/vocabularies/asset-roles/asset-roles.schema.ts` at `F4.282` (ADR 0030,
+ * ADR 0099 Amendment 8), so the copilot catalog's three `assetRole.*` edit entries carry the
+ * route's own body by identity. `code` is absent, `active` is present, and both are deliberate.
+ *
+ * **No `code`.** It is the primary key and the target of
+ * `asset_group_members_role_fkey`, which carries no `ON DELETE` by design
+ * (`0051` step 3). Renaming a code in place would either break that key or
+ * silently re-point every membership that holds it.
+ *
+ * **`active`, because retirement is this `PATCH` and not a `DELETE`.** ADR 0051
+ * decision 5 and `0051`'s own step 3 both say so: *"Retire a role with
+ * `active = false`."* A code in use cannot be deleted, and a code not in use
+ * still should not be, because a membership may hold it tomorrow.
+ */
+export const updateAssetRoleBodySchema = createAssetRoleBodySchema
+  .omit({ code: true })
+  .extend({ active: z.boolean() })
+  .partial()
+  .strict();
+
+export type UpdateAssetRoleBody = z.infer<typeof updateAssetRoleBodySchema>;
+
+/**
+ * `F4.282` (ADR 0099 Amendment 8 D3) — the body the model fills for `assetRole.update`: label
+ * and sort order. `active` is the two direction entries' (`assetRole.deactivate`,
+ * `assetRole.reactivate`, each a fixed body), so an edit proposal cannot also retire the role.
+ */
+export const copilotUpdateAssetRoleModelBodySchema = updateAssetRoleBodySchema.omit({
+  active: true,
+});

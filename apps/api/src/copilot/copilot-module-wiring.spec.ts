@@ -17,6 +17,23 @@ import { CopilotSkillService } from "./copilot-skill.service";
 import { CopilotTargetResolver } from "./copilot-target-resolver";
 import { CopilotTurnService } from "./copilot-turn.service";
 import { CopilotModule } from "./copilot.module";
+import { RuleProposalCheckService } from "../rules/rule-proposal-check.service";
+import { RulesModule } from "../rules/rules.module";
+import { RulesService } from "../rules/rules.service";
+import { EscalationProfilesService } from "../notifications/escalation-profiles.service";
+import { NotificationProposalCheckService } from "../notifications/notification-proposal-check.service";
+import { NotificationsModule } from "../notifications/notifications.module";
+import { ReportProposalCheckService } from "../reports/report-proposal-check.service";
+import { ReportSchedulesService } from "../reports/report-schedules.service";
+import { ReportsModule } from "../reports/reports.module";
+import { MaintenanceModule } from "../maintenance/maintenance.module";
+import { MaintenanceService } from "../maintenance/maintenance.service";
+import { WorkOrdersModule } from "../work-orders/work-orders.module";
+import { WorkOrdersService } from "../work-orders/work-orders.service";
+import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
+import { TelemetryProposalCheckService } from "../admin/telemetry-entry/telemetry-proposal-check.service";
+import { AssetImagesWriteService } from "../assets/asset-images-write.service";
+import { AssetsModule } from "../assets/assets.module";
 
 /**
  * `F3.86` PR 4 / ADR 0099 decision 3 — the module edges a green build does not
@@ -97,4 +114,125 @@ export function assertTheProposeToolsInjectTheLayoutsService(): void {
   expect(deps.get(2)).toBe(MimicLayoutsService);
   expect(moduleList(CopilotModule, "imports")).toContain(MimicLayoutsModule);
   expect(moduleList(MimicLayoutsModule, "exports")).toContain(MimicLayoutsService);
+}
+
+/**
+ * `F4.278` (ADR 0099 Amendment 8): the propose tool set's fourth parameter is
+ * `RuleProposalCheckService`, by `@Inject`; without it a rule proposal is
+ * refused at runtime while every spec over fakes stays green.
+ */
+export function assertTheProposeToolsInjectTheRuleCheck(): void {
+  expect(injected(CopilotProposeToolSet).get(3)).toBe(RuleProposalCheckService);
+}
+
+/** `CopilotModule` imports `RulesModule`, which exports both rule services the copilot injects. */
+export function assertTheModuleImportsTheRulesModule(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(RulesModule);
+  expect(moduleList(RulesModule, "exports")).toEqual(expect.arrayContaining([RulesService, RuleProposalCheckService]));
+}
+
+/** `RulesService` audits through the funnel: its sixth parameter, provided by `RulesModule`. */
+export function assertTheRulesServiceInjectsTheAuditFunnel(): void {
+  expect(injected(RulesService).get(5)).toBe(MasterDataAuditService);
+  expect(moduleList(RulesModule, "providers")).toContain(MasterDataAuditService);
+}
+
+/**
+ * `F4.279` (ADR 0099 Amendment 8 D5): the propose tools' fifth parameter is
+ * `NotificationProposalCheckService`, by `@Inject`; without it a notification
+ * proposal is refused at runtime while every spec over fakes stays green.
+ */
+export function assertTheProposeToolsInjectTheNotificationCheck(): void {
+  expect(injected(CopilotProposeToolSet).get(4)).toBe(NotificationProposalCheckService);
+}
+
+/** `CopilotModule` imports `NotificationsModule`. */
+export function assertTheModuleImportsTheNotificationsModule(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(NotificationsModule);
+}
+
+/** `NotificationsModule` exports the check and the profile service the copilot injects. */
+export function assertTheNotificationsModuleExportsTheCopilotServices(): void {
+  expect(moduleList(NotificationsModule, "exports")).toEqual(
+    expect.arrayContaining([NotificationProposalCheckService, EscalationProfilesService]),
+  );
+}
+
+/** `EscalationProfilesService` audits through the funnel: its fifth parameter, provided by `NotificationsModule`. */
+export function assertTheEscalationServiceInjectsTheAuditFunnel(): void {
+  expect(injected(EscalationProfilesService).get(4)).toBe(MasterDataAuditService);
+  expect(moduleList(NotificationsModule, "providers")).toContain(MasterDataAuditService);
+}
+
+/**
+ * `F4.280` (ADR 0099 Amendment 8 D2, D5): the propose tools' sixth parameter is
+ * `ReportProposalCheckService`, by `@Inject`; without it a report proposal is refused at
+ * runtime while every spec over fakes stays green.
+ */
+export function assertTheProposeToolsInjectTheReportCheck(): void {
+  expect(injected(CopilotProposeToolSet).get(5)).toBe(ReportProposalCheckService);
+}
+
+/** `CopilotModule` imports `ReportsModule`. */
+export function assertTheModuleImportsTheReportsModule(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(ReportsModule);
+}
+
+/** `ReportsModule` exports the check and the schedule service the copilot injects. */
+export function assertTheReportsModuleExportsTheCopilotServices(): void {
+  expect(moduleList(ReportsModule, "exports")).toEqual(expect.arrayContaining([ReportProposalCheckService, ReportSchedulesService]));
+}
+
+/** `F4.281` (Amendment 8 D7): `CopilotModule` imports `MaintenanceModule`. */
+export function assertTheModuleImportsTheMaintenanceModule(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(MaintenanceModule);
+}
+
+/** `MaintenanceModule` exports the service `list_maintenance_schedules` reads through. */
+export function assertTheMaintenanceModuleExportsItsService(): void {
+  expect(moduleList(MaintenanceModule, "exports")).toContain(MaintenanceService);
+}
+
+/** The read tools' slot 21 is `MaintenanceService`, by `@Inject`. */
+export function assertTheReadToolsInjectTheMaintenanceService(): void {
+  expect(injected(CopilotReadToolSet).get(21)).toBe(MaintenanceService);
+}
+
+/**
+ * `F4.283` (ADR 0099 Amendment 8 Q18–Q21): the propose tools' seventh and eighth parameters
+ * are `TelemetryProposalCheckService` and `AssetImagesWriteService`, by `@Inject`; without
+ * them a file-data proposal is refused at runtime while every spec over fakes stays green.
+ */
+export function assertTheProposeToolsInjectTheTelemetryCheck(): void {
+  expect(injected(CopilotProposeToolSet).get(6)).toBe(TelemetryProposalCheckService);
+}
+
+export function assertTheProposeToolsInjectTheImageWriteService(): void {
+  expect(injected(CopilotProposeToolSet).get(7)).toBe(AssetImagesWriteService);
+}
+
+/** `AdminModule` exports the telemetry check. */
+export function assertTheAdminModuleExportsTheTelemetryCheck(): void {
+  expect(moduleList(AdminModule, "exports")).toContain(TelemetryProposalCheckService);
+}
+
+/** `AssetsModule` exports the image write service. */
+export function assertTheAssetsModuleExportsTheImageWriteService(): void {
+  expect(moduleList(AssetsModule, "exports")).toContain(AssetImagesWriteService);
+}
+
+/** `F4.284` (ADR 0106; owner ruling DC7): `CopilotModule` imports `WorkOrdersModule`, which exports its service. */
+export function assertTheModuleImportsTheWorkOrdersModule(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(WorkOrdersModule);
+  expect(moduleList(WorkOrdersModule, "exports")).toContain(WorkOrdersService);
+}
+
+/** The read tools' slot 22 is `WorkOrdersService` and slot 23 `UsersService`, by `@Inject` (DC1, DC7). */
+export function assertTheReadToolsInjectTheWorkOrdersAndUsersServices(): void {
+  expect([injected(CopilotReadToolSet).get(22), injected(CopilotReadToolSet).get(23)]).toEqual([WorkOrdersService, UsersService]);
+}
+
+/** `F4.284` (ADR 0106 decision 7): `WorkOrdersModule` provides the audit funnel its service injects. */
+export function assertTheWorkOrdersModuleProvidesTheAuditFunnel(): void {
+  expect(moduleList(WorkOrdersModule, "providers")).toContain(MasterDataAuditService);
 }

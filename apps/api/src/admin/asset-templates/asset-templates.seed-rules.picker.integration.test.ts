@@ -125,7 +125,14 @@ describe.skipIf(!connectionString)("F3.49 — the picker offers what the validat
     } as unknown as NotificationsService;
     svc = {
       templates: new AssetTemplatesAdminService(fleetDb, tenantDb, access, audit, vocabularies, new CalcParametersService(fleetDb)),
-      rules: new RulesService(tenantDb, fleetDb, vocabularies, alarmRaiser, notifications),
+      rules: new RulesService(
+        tenantDb,
+        fleetDb,
+        vocabularies,
+        alarmRaiser,
+        notifications,
+        new MasterDataAuditService(tenantDb, fleetDb),
+      ),
       instantiate: (jwt, templateId, body) =>
         instantiation.instantiate(jwt, templateId, instantiateAssetsBodySchema.parse(body)),
     };

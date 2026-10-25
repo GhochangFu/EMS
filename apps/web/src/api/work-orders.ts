@@ -3,8 +3,9 @@ import {
   workOrdersListResponseSchema,
 } from "@bms/shared/contracts";
 import type {
+  CreateWorkOrderInput as SharedCreateWorkOrderInput,
+  UpdateWorkOrderStatusBody,
   WorkOrderListItem,
-  WorkOrderPriority,
   WorkOrderStatus,
 } from "@bms/shared";
 
@@ -17,20 +18,11 @@ export type WorkOrdersListResponse = {
   items: WorkOrderListItem[];
 };
 
-export type CreateWorkOrderInput = {
-  assetId: string;
-  alarmId?: string;
-  title: string;
-  description?: string;
-  priority: WorkOrderPriority;
-};
+/** `F4.284` (ADR 0030): the route's own `z.input`, from `@bms/shared` (`contracts/operations-writes.ts`). */
+export type CreateWorkOrderInput = SharedCreateWorkOrderInput;
 
-export type UpdateWorkOrderStatusInput = {
-  id: string;
-  status: WorkOrderStatus;
-  reason?: string;
-  sortOrder?: number;
-};
+/** The path's `id` beside the route's own body (`updateWorkOrderStatusBodySchema`). */
+export type UpdateWorkOrderStatusInput = { id: string } & UpdateWorkOrderStatusBody;
 
 export type ReorderWorkOrderItem = {
   id: string;

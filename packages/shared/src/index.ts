@@ -395,8 +395,8 @@ export type AlarmKbAlarm = z.infer<typeof Op.alarmKbAlarmSchema>;
 export type AlarmKbClass = z.infer<typeof Op.alarmKbClassSchema>;
 /** `GET /api/v1/alarm-kb` (`E2.2` PR 2, ADR 0059 decision 4). */
 export type AlarmKbResponse = z.infer<typeof Op.alarmKbResponseSchema>;
-// `AlarmEnrichmentUpsertBody` deliberately not here — it is a request type,
-// declared in `apps/api/src/alarms/enrichment.schema.ts` (AGENTS.md §3).
+// `AlarmEnrichmentUpsertBody` and the other alarm and work-order request types are
+// `z.infer`red beside their schemas in `contracts/operations-writes.ts` (`F4.284`, ADR 0030).
 
 // ---------------------------------------------------------------------------
 // Work orders and maintenance
@@ -729,6 +729,7 @@ export type LocationTypesListResponse = z.infer<typeof E.locationTypesListRespon
 export type AdminLocationTypeDto = z.infer<typeof Loc.adminLocationTypeDtoSchema>;
 /** `GET /admin/vocabularies/location-types`. */
 export type AdminLocationTypesListResponse = z.infer<typeof E.adminLocationTypesListResponseSchema>;
+export type AssetRolesListResponse = z.infer<typeof E.assetRolesListResponseSchema>;
 export type AssetsListResponse = z.infer<typeof E.assetsListResponseSchema>;
 export type AssetPointsListResponse = z.infer<typeof E.assetPointsListResponseSchema>;
 export type PointKeysListResponse = z.infer<typeof E.pointKeysListResponseSchema>;

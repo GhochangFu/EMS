@@ -97,3 +97,8 @@ export function thePutWidgetsHandlerTakesIfMatch(): void {
 export function theAssetTemplateUpdateHandlerTakesIfMatch(): void {
   expect(handlerText("apps/api/src/admin/asset-templates/asset-templates.controller.ts", "async update(")).toMatch(WIRED);
 }
+
+/** `F4.279` (Amendment 8 D6). Mutation: drop or misspell the decorator on the escalation-profile `update`. */
+export function theEscalationProfileUpdateHandlerTakesIfMatch(): void {
+  expect(handlerText("apps/api/src/notifications/escalation-profiles.controller.ts", "async update(")).toMatch(WIRED);
+}

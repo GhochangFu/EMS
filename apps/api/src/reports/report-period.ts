@@ -1,3 +1,4 @@
+import { isValidTimeZone } from "@bms/shared";
 import type { ReportCadence } from "@bms/shared";
 
 /**
@@ -58,26 +59,15 @@ export class ReportPeriodError extends Error {
 export type LocalDate = { readonly year: number; readonly month: number; readonly day: number };
 export type LocalClock = { readonly hour: number; readonly minute: number };
 
-const ZONE_SEGMENT_CASING = /^[A-Z][A-Za-z0-9_+-]*(\/[A-Z][A-Za-z0-9_+-]*)+$/;
-
 const MINUTE_MS = 60_000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 
-/** R-6: contains `/`, constructs without `RangeError`, every segment capitalised. */
-export function isValidTimeZone(zone: string): boolean {
-  if (!zone.includes("/") || !ZONE_SEGMENT_CASING.test(zone)) {
-    return false;
-  }
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: zone });
-    return true;
-  } catch (err) {
-    if (err instanceof RangeError) {
-      return false;
-    }
-    throw err;
-  }
-}
+/**
+ * R-6: contains `/`, constructs without `RangeError`, every segment capitalised.
+ * `F4.280` (ADR 0030): moved to `packages/shared/src/contracts/report-writes.ts`
+ * with the schedule bodies that refine on it; re-exported so its importers stay unchanged.
+ */
+export { isValidTimeZone };
 
 /** Accepts `HH:MM` and `HH:MM:SS` (what `pg` returns for `time`); seconds must be `00`. */
 export function parseRunAtLocal(value: string): LocalClock {

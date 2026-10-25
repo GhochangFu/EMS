@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
 } from "@nestjs/common";
+import type { CreateEscalationProfileBody, SetEscalationDefaultsBody, UpdateEscalationProfileBody } from "@bms/shared";
 import { and, eq, inArray } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
@@ -13,28 +14,24 @@ import {
   alarmEscalationProfiles,
   alarmEscalationStepChannels,
   alarmEscalationSteps,
-  auditLog,
 } from "@bms/db";
 import type {
   EscalationDefaultDto,
   EscalationDefaultsResponse,
   EscalationProfileDto,
   EscalationStepDto,
+  IfMatch,
   JwtPayload,
   UserRole,
 } from "@bms/shared";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
-import { resolveActorId } from "../auth/identity-resolver";
+import { noRowWritten, updatedAtMatches } from "../common/if-match";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import type { BmsTx } from "../database/tenant-context";
 import { withTenant } from "../database/tenant-context";
 import { ChannelsService } from "./channels.service";
-import type {
-  CreateEscalationProfileBody,
-  SetEscalationDefaultsBody,
-  UpdateEscalationProfileBody,
-} from "./escalation-profiles.schema";
 
 /** Postgres SQLSTATEs this service can produce and must not answer with a 500. */
 const UNIQUE_VIOLATION = "23505";
@@ -131,6 +128,10 @@ export class EscalationProfilesService {
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     private readonly channels: ChannelsService,
     private readonly accessControl: AccessControlService,
+    // `F4.279` (ADR 0099 Amendment 8): appended, the `RulesService` precedent — every
+    // audit row goes through the funnel so a confirmed copilot change carries
+    // `via: "copilot"` (`tests/f3.85-audit-via-mark.test.ts`).
+    @Inject(MasterDataAuditService) private readonly auditFunnel: MasterDataAuditService,
   ) {}
 
   /**
@@ -222,6 +223,7 @@ export class EscalationProfilesService {
     jwt: JwtPayload,
     id: string,
     body: UpdateEscalationProfileBody,
+    ifMatch?: IfMatch,
   ): Promise<EscalationProfileDto | null> {
     await this.accessControl.requireMasterDataUser(jwt);
     const existing = await this.loadExistingForWrite(id);
@@ -245,9 +247,12 @@ export class EscalationProfilesService {
           const rows = await tx
             .update(alarmEscalationProfiles)
             .set(values)
-            .where(eq(alarmEscalationProfiles.id, id))
+            .where(and(eq(alarmEscalationProfiles.id, id), updatedAtMatches(alarmEscalationProfiles.updatedAt, ifMatch)))
             .returning();
           const row = rows[0];
+          // `F4.279` (Amendment 8 D6): with an `If-Match`, a stale stamp matches no
+          // row and answers 412; the ladder is not rewritten.
+          if (row === undefined && ifMatch !== undefined) throw noRowWritten(ifMatch, "Escalation profile not found");
           // A foreign-org row cannot reach here — the gate above refused it.
           // If it ever did, an UPDATE under FORCE matches zero rows WITHOUT
           // erroring, which falls through to the 404 rather than to a
@@ -563,17 +568,19 @@ export class EscalationProfilesService {
     organizationId: string,
     payload: Record<string, unknown>,
   ): Promise<void> {
-    const actorId = await resolveActorId(this.fleetDb, actor);
-
-    await this.fleetDb.insert(auditLog).values({
-      organizationId,
-      actorId,
-      action,
-      entityType,
-      entityId,
-      reason: null,
-      payload: { ...payload, oidcSubject: actor.sub, actorEmail: actor.email },
-    });
+    // `F4.279`: through the funnel; the executor stays `fleetDb`, the pool this
+    // row was always written on (BYPASSRLS, so `audit_log`'s policy does not bind it).
+    await this.auditFunnel.write(
+      {
+        actor,
+        action,
+        entityType,
+        entityId,
+        organizationId,
+        payload: { ...payload, oidcSubject: actor.sub, actorEmail: actor.email },
+      },
+      this.fleetDb,
+    );
   }
 }
 

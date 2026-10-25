@@ -205,6 +205,8 @@ export const maintenanceScheduleItemSchema = z.object({
   assetName: z.string(),
   siteName: z.string(),
   activeWorkOrderId: z.string().nullable(),
+  /** `F4.281` (Amendment 8, owner ruling DC2): the schedule's own `active` flag; the list shows inactive rows only on request. */
+  active: z.boolean(),
 });
 
 // ---------------------------------------------------------------------------

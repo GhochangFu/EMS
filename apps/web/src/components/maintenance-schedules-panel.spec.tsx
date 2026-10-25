@@ -68,6 +68,15 @@ const SCHEDULE: MaintenanceScheduleItem = {
   assetName: "Air Handler One",
   siteName: "Plant A",
   activeWorkOrderId: null,
+  active: true,
+};
+
+/** `F4.281`: a deactivated schedule, listed only with "Show inactive". */
+const INACTIVE: MaintenanceScheduleItem = {
+  ...SCHEDULE,
+  id: "5c4e1d2c-0000-4000-8000-000000000002",
+  title: "Seasonal coil clean",
+  active: false,
 };
 
 function envelope(sentence: string): Error {
@@ -79,7 +88,10 @@ async function renderPanel(): Promise<void> {
     "fetch",
     vi.fn(() => Promise.reject(new Error("maintenance-schedules-panel.spec: no fetch expected"))),
   );
-  vi.spyOn(maintenanceApi, "fetchMaintenanceSchedules").mockResolvedValue({ items: [SCHEDULE] });
+  // `F4.281`: the inactive row comes back only when the panel asks for it ("Show inactive").
+  vi.spyOn(maintenanceApi, "fetchMaintenanceSchedules").mockImplementation(async (input) => ({
+    items: input.includeInactive === true ? [SCHEDULE, INACTIVE] : [SCHEDULE],
+  }));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
@@ -96,21 +108,17 @@ async function expectTheSentenceNotTheEnvelope(sentence: string): Promise<void> 
   expect(element.textContent).not.toContain('{"');
 }
 
-const CREATE_SENTENCE = "A schedule with this title already exists for the asset";
 const CONVERT_SENTENCE = "This schedule already has an open work order";
-const UPDATE_SENTENCE = "This schedule was changed by another user";
 
-/** A refused schedule create shows the server sentence, not the JSON envelope. */
-export async function aRefusedCreateShowsTheSentence(): Promise<void> {
-  vi.spyOn(maintenanceApi, "createMaintenanceSchedule").mockRejectedValue(envelope(CREATE_SENTENCE));
+/**
+ * `F4.281` (Amendment 8 Q16): "+ New Schedule" mounts the `maintenanceSchedule.create` stepper.
+ * The refused-create sentence (`MS1`) moved to `maintenance-schedule-wizard.spec.tsx`.
+ */
+export async function newScheduleMountsTheCreateStepper(): Promise<void> {
   await renderPanel();
-
   await userEvent.click(screen.getByRole("button", { name: "+ New Schedule" }));
   const dialog = await screen.findByRole("dialog", { name: "Create maintenance schedule" });
-  await userEvent.type(within(dialog).getByLabelText("Schedule title"), "Monthly belt check");
-  await userEvent.click(within(dialog).getByRole("button", { name: "Create schedule" }));
-
-  await expectTheSentenceNotTheEnvelope(CREATE_SENTENCE);
+  expect(within(dialog).getByRole("list", { name: "Steps" })).toHaveTextContent("1. Schedule");
 }
 
 /** A refused convert-to-work-order shows the server sentence, not the JSON envelope. */
@@ -119,16 +127,32 @@ export async function aRefusedConvertShowsTheSentence(): Promise<void> {
   await renderPanel();
 
   await userEvent.click(screen.getByRole("button", { name: "Generate WO" }));
+  // `F4.284` (ADR 0106 decision 5): Notes → Review on the shared `WizardShell`.
+  const dialog = await screen.findByRole("dialog", { name: "Generate a work order" });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
 
   await expectTheSentenceNotTheEnvelope(CONVERT_SENTENCE);
 }
 
-/** A refused schedule update shows the server sentence, not the JSON envelope. */
-export async function aRefusedUpdateShowsTheSentence(): Promise<void> {
-  vi.spyOn(maintenanceApi, "updateMaintenanceSchedule").mockRejectedValue(envelope(UPDATE_SENTENCE));
+/**
+ * `F4.281` (Amendment 8 Q16): a row's Deactivate mounts the direction stepper and sends nothing yet.
+ * The refused-update sentence (`MS3`) moved to `maintenance-schedule-toggle-wizard.spec.tsx`.
+ */
+export async function deactivateMountsTheToggleStepper(): Promise<void> {
+  const update = vi.spyOn(maintenanceApi, "updateMaintenanceSchedule");
   await renderPanel();
-
   await userEvent.click(screen.getByRole("button", { name: "Deactivate" }));
+  expect(await screen.findByRole("dialog", { name: "Deactivate a maintenance schedule" })).toBeInTheDocument();
+  expect(update).not.toHaveBeenCalled();
+}
 
-  await expectTheSentenceNotTheEnvelope(UPDATE_SENTENCE);
+/** `F4.281` (owner ruling DC3): "Show inactive" lists a deactivated schedule with an Activate button. */
+export async function showInactiveListsAnInactiveRowWithActivate(): Promise<void> {
+  await renderPanel();
+  expect(screen.queryByText(INACTIVE.title)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByLabelText("Show inactive"));
+  const card = (await screen.findByText(INACTIVE.title)).closest("article");
+  expect(card).not.toBeNull();
+  expect(within(card as HTMLElement).getByRole("button", { name: "Activate" })).toBeInTheDocument();
 }

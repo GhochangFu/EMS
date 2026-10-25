@@ -27,6 +27,8 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 const CONTROLLER_REL = "apps/api/src/admin/vocabularies/location-types.controller.ts";
 const SERVICE_REL = "apps/api/src/admin/vocabularies/location-types.service.ts";
 const SCHEMA_REL = "apps/api/src/admin/vocabularies/location-types.schema.ts";
+/** `F4.282` (ADR 0030): the two bodies moved to the contracts; the param stays in SCHEMA_REL. */
+const WRITES_REL = "packages/shared/src/contracts/location-type-writes.ts";
 const MODULE_REL = "apps/api/src/admin/admin.module.ts";
 const REGISTRY_REL = "apps/api/src/openapi/openapi-registry.ts";
 const CONTRACT_REL = "packages/shared/src/contracts/location-types.ts";
@@ -57,6 +59,7 @@ function methodBody(source: string, method: string): string {
 const controller = codeOnly(read(CONTROLLER_REL));
 const service = codeOnly(read(SERVICE_REL));
 const schema = codeOnly(read(SCHEMA_REL));
+const writes = codeOnly(read(WRITES_REL));
 const adminModule = codeOnly(read(MODULE_REL));
 const registry = codeOnly(read(REGISTRY_REL));
 const contract = codeOnly(read(CONTRACT_REL));
@@ -213,8 +216,8 @@ describe("F4.162 the write runs on the fleet pool with an org-less audit row", (
 
 describe("F4.162 the body schemas keep code out of the PATCH and pin the bound", () => {
   it("omits code from the update body", () => {
-    expect(schema).toContain(".omit({ code: true })");
-    expect(schema).toContain("code: locationTypeCodeParamSchema");
+    expect(writes).toContain(".omit({ code: true })");
+    expect(writes).toContain("code: locationTypeCodeBound");
   });
 
   it("anti-vacuity: the omit check is not satisfied by a different key", () => {
@@ -233,6 +236,19 @@ describe("F4.162 the body schemas keep code out of the PATCH and pin the bound",
     ).toContain("export const locationTypeCodeSchema = z.string().min(1).max(32)");
   });
 
+  it("states the same width for the body's code bound in the contracts file", () => {
+    expect(
+      writes,
+      "location-type-writes.ts's code bound moved; the param, the contract and the body " +
+        "state one width for code varchar(32) — move all three.",
+    ).toContain("const locationTypeCodeBound = z.string().min(1).max(32)");
+  });
+
+  it("anti-vacuity: the body schemas are no longer declared beside the param", () => {
+    expect(schema).not.toContain("createLocationTypeBodySchema");
+    expect(writes).toContain("export const createLocationTypeBodySchema");
+  });
+
   it("anti-vacuity: a widened bound does not match the pin", () => {
     expect("export const locationTypeCodeParamSchema = z.string().min(1).max(64)").not.toContain(
       "export const locationTypeCodeParamSchema = z.string().min(1).max(32)",
@@ -240,8 +256,8 @@ describe("F4.162 the body schemas keep code out of the PATCH and pin the bound",
   });
 
   it("applies the catalog class and the ruled snake_case class to the create code", () => {
-    expect(schema).toContain(".regex(CATALOG_CODE_PATTERN, CATALOG_CODE_MESSAGE)");
-    expect(schema).toContain(".regex(/^[a-z][a-z0-9_]*$/, LOCATION_TYPE_CODE_MESSAGE)");
+    expect(writes).toContain(".regex(CATALOG_CODE_PATTERN, CATALOG_CODE_MESSAGE)");
+    expect(writes).toContain(".regex(/^[a-z][a-z0-9_]*$/, LOCATION_TYPE_CODE_MESSAGE)");
   });
 
   it("anti-vacuity: a class that admits '-' does not match the ruled one", () => {

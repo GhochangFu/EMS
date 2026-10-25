@@ -7,11 +7,18 @@ import { ASSET_TEMPLATE_ENTRIES, ASSET_TEMPLATE_PENDING } from "./asset-template
 import { ASSET_ENTRIES, ASSET_PENDING } from "./assets";
 import { DASHBOARD_TEMPLATE_ENTRIES } from "./dashboard-templates";
 import { DASHBOARD_ENTRIES } from "./dashboards";
+import { FILE_DATA_ENTRIES, FILE_DATA_PENDING } from "./file-data";
 import { KPI_ENTRIES } from "./kpis";
+import { LOCATION_TYPE_ENTRIES, LOCATION_TYPE_PENDING } from "./location-types";
 import { LOCATION_ENTRIES, LOCATION_PENDING } from "./locations";
+import { MAINTENANCE_ENTRIES } from "./maintenance";
+import { NOTIFICATION_ENTRIES, NOTIFICATION_PENDING } from "./notifications";
+import { OPERATIONS_ENTRIES } from "./operations";
+import { REPORT_ENTRIES, REPORT_PENDING } from "./reports";
 import { ONBOARDING_ENTRIES, ONBOARDING_PENDING } from "./onboarding";
 import { POINT_KEY_ENTRIES, POINT_KEY_PENDING } from "./point-keys";
 import { RTU_ENTRIES, RTU_PENDING } from "./rtus";
+import { RULE_ENTRIES, RULE_PENDING } from "./rules";
 import { SITE_VIEW_ENTRIES, SITE_VIEW_PENDING } from "./site-views";
 import type { CatalogEntry, CatalogFormula, ExcludedRoute } from "./types";
 import { USER_ENTRIES, USER_PENDING } from "./users";
@@ -42,6 +49,19 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...MIMIC_LAYOUT_ENTRIES,
   ...MIMIC_SYMBOL_LIBRARY_ENTRIES,
   ...ASSET_ROLE_ENTRIES,
+  ...LOCATION_TYPE_ENTRIES,
+  // `F4.278` (Amendment 8): the alarm rules.
+  ...RULE_ENTRIES,
+  // `F4.279` (Amendment 8): notification channels, escalation, and the rule channel set (D8).
+  ...NOTIFICATION_ENTRIES,
+  // F4.280 (Amendment 8): the report schedules and the on-demand file save.
+  ...REPORT_ENTRIES,
+  // F4.281 (Amendment 8): the maintenance schedules.
+  ...MAINTENANCE_ENTRIES,
+  // F4.283 (Amendment 8): file-borne data — the telemetry import, manual readings and the asset image upload.
+  ...FILE_DATA_ENTRIES,
+  // F4.284 (ADR 0106): the alarm and work-order writes.
+  ...OPERATIONS_ENTRIES,
 ];
 
 /**
@@ -79,13 +99,9 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   { method: "DELETE", path: "/admin/asset-templates/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/calc-parameters/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/assets/:assetId/calc-points/:pointKey", reason: NO_DELETE },
-  // `F3.87` (Amendment 3 A1): the layout DELETE, and the unit-role edit and retire.
+  // `F3.87` (Amendment 3 A1): the layout DELETE. The unit-role edit and retire are entries since
+  // `F4.282` (Amendment 8, Q17 withdraws A1's exclusion).
   { method: "DELETE", path: "/mimic-layouts/:id", reason: NO_DELETE },
-  {
-    method: "PATCH",
-    path: "/admin/vocabularies/asset-roles/:code",
-    reason: "a vocabulary edit or retire stays on its page (Amendment 3 A1)",
-  },
   // `F3.86`: each area's routes that are not (yet) entries.
   ...ASSET_TEMPLATE_PENDING,
   ...LOCATION_PENDING,
@@ -101,6 +117,14 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...MIMIC_LAYOUT_PENDING,
   ...MIMIC_SYMBOL_LIBRARY_PENDING,
   ...ASSET_ROLE_PENDING,
+  ...LOCATION_TYPE_PENDING,
+  ...RULE_PENDING,
+  ...NOTIFICATION_PENDING,
+  // F4.280 (Amendment 8): the two report DELETEs stay manual.
+  ...REPORT_PENDING,
+  // F4.281 (Amendment 8) excluded the maintenance convert; F4.284 (ADR 0106 Q6) made it an entry.
+  // F4.283 (Amendment 8): the import preview runs inside the propose step; the image DELETE stays manual.
+  ...FILE_DATA_PENDING,
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */
@@ -146,9 +170,13 @@ export function hashExcludedKeysOf(entry: Pick<CatalogEntry, "clientOnly" | "car
  * `F3.87` PR 2 / owner ruling Q1 (2026-10-15) — the entries whose web form is
  * the layout editor's canvas, not a stepper: they have no steps, and
  * `tests/f3.85-stepper-coverage` takes each from the editor page instead of a
- * `WizardShell`.
+ * `WizardShell`. `F4.284` (owner ruling DC2, 2026-10-24): the work-order reorder,
+ * whose form is the Kanban board's drag.
  */
-export const CANVAS_ENTRY_IDS = ["mimicLayout.create", "mimicLayout.replace"] as const;
+export const CANVAS_ENTRY_IDS = ["mimicLayout.create", "mimicLayout.replace", "workOrder.reorder"] as const;
+
+/** The two canvas entries whose canvas is the mimic layout editor (`CANVAS_ENTRY_IDS` less the work-order board). */
+export const LAYOUT_ENTRY_IDS = ["mimicLayout.create", "mimicLayout.replace"] as const;
 
 /** The propose tool's name: provider tool names allow `[A-Za-z0-9_-]` only, so the id's dots become underscores. */
 export function proposeToolName(entry: Pick<CatalogEntry, "id">): string {

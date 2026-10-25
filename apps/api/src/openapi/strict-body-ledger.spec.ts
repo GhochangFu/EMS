@@ -25,12 +25,28 @@ import {
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
   createAssetRoleBodySchema,
+  updateAssetRoleBodySchema,
+  createLocationTypeBodySchema,
+  updateLocationTypeBodySchema,
   createMimicLayoutBodySchema,
   createMimicOrgSymbolLibraryBodySchema,
   putMimicLayoutBodySchema,
   putMimicLibrarySettingBodySchema,
   updateMimicOrgSymbolBodySchema,
   updateMimicOrgSymbolLibraryBodySchema,
+  ruleDraftBodySchema,
+  ruleLifecycleBodySchema,
+  ruleToggleBodySchema,
+  ruleUpdateBodySchema,
+  createEscalationProfileBodySchema,
+  createNotificationChannelBodySchema,
+  setEscalationDefaultsBodySchema,
+  setRuleNotificationsBodySchema,
+  updateEscalationProfileBodySchema,
+  updateNotificationChannelBodySchema,
+  // `F4.281` (ADR 0030): the maintenance schedule write bodies.
+  createMaintenanceScheduleBodySchema,
+  updateMaintenanceScheduleBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -84,51 +100,36 @@ import {
   createPointKeyBodySchema,
   updatePointKeyBodySchema,
 } from "../admin/point-keys/point-keys.schema";
-import { updateAssetRoleBodySchema } from "../admin/vocabularies/asset-roles/asset-roles.schema";
-import {
-  createLocationTypeBodySchema,
-  updateLocationTypeBodySchema,
-} from "../admin/vocabularies/location-types.schema";
 import {
   createRtuBodySchema,
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
 import { manualReadingsBodySchema } from "../admin/telemetry-entry/manual-readings.schema";
-import { alarmAckBodySchema } from "../alarms/ack.schema";
 import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-list.schema";
-import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { assetKpisQuerySchema, assetRoleSummaryQuerySchema } from "../assets/assets.schema";
 import { loginBodySchema } from "../auth/login.schema";
 import { mapSitesQuerySchema } from "../map/map.schema";
 import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import { siteWidgetsQuerySchema } from "../dashboard-builder/site-widgets.schema";
+import { listMaintenanceQuerySchema } from "../maintenance/maintenance.schema";
+import { escalationDefaultsQuerySchema } from "../notifications/escalation-profiles.schema";
+import { listDeliveriesQuerySchema } from "../notifications/notifications.schema";
+import { listReportFilesQuerySchema } from "../reports/report-files.schema";
+// `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`;
+// `F4.284`: the alarm, work-order and convert bodies too.
 import {
+  alarmAckBodySchema,
+  alarmEnrichmentUpsertBodySchema,
+  closeWorkOrderBodySchema,
   convertMaintenanceBodySchema,
-  createMaintenanceScheduleBodySchema,
-  listMaintenanceQuerySchema,
-  updateMaintenanceScheduleBodySchema,
-} from "../maintenance/maintenance.schema";
-import {
-  createEscalationProfileBodySchema,
-  escalationDefaultsQuerySchema,
-  setEscalationDefaultsBodySchema,
-  updateEscalationProfileBodySchema,
-} from "../notifications/escalation-profiles.schema";
-import {
-  createNotificationChannelBodySchema,
-  listDeliveriesQuerySchema,
-  setRuleNotificationsBodySchema,
-  updateNotificationChannelBodySchema,
-} from "../notifications/notifications.schema";
-import {
-  listReportFilesQuerySchema,
-  saveEnergyReportFileBodySchema,
-} from "../reports/report-files.schema";
-import {
+  createWorkOrderBodySchema,
+  reorderWorkOrdersBodySchema,
+  updateWorkOrderStatusBodySchema,
   createReportScheduleBodySchema,
+  energyReportQuerySchema,
+  saveEnergyReportFileBodySchema,
   updateReportScheduleBodySchema,
-} from "../reports/report-schedules.schema";
-import { energyReportQuerySchema } from "../reports/reports.schema";
+} from "@bms/shared";
 import {
   assetHealthQuerySchema,
   healthSummaryQuerySchema,
@@ -138,20 +139,7 @@ import {
   pointsLatestQuerySchema,
   pointValuesAtQuerySchema,
 } from "../telemetry/telemetry.schema";
-import {
-  listRuleExecutionsQuerySchema,
-  ruleDraftBodySchema,
-  ruleLifecycleBodySchema,
-  rulePreviewBodySchema,
-  ruleToggleBodySchema,
-  ruleUpdateBodySchema,
-} from "../rules/rules.schema";
-import {
-  closeWorkOrderBodySchema,
-  createWorkOrderBodySchema,
-  reorderWorkOrdersBodySchema,
-  updateWorkOrderStatusBodySchema,
-} from "../work-orders/work-order.schema";
+import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "../rules/rules.schema";
 
 import { REQUEST_SCHEMAS } from "./openapi-registry";
 

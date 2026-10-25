@@ -28,6 +28,7 @@ import { buildConfig } from "../notifications/notifications.config";
 import type { DispatchInput } from "../notifications/notifications.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AlarmLifecycleService } from "./alarm-lifecycle.service";
 import { type AlarmRaiseRule, AlarmRaiser } from "./alarm-raise.service";
 import type { AlarmsGateway } from "./alarms.gateway";
@@ -182,7 +183,7 @@ export function buildHarness(db: BmsDb, options: HarnessOptions = {}): Harness {
   return {
     lifecycle: new AlarmLifecycleService(db, db, notifications, channels, gateway),
     raiser: new AlarmRaiser(db),
-    alarmsService: new AlarmsService(db, db, gateway),
+    alarmsService: new AlarmsService(db, db, gateway, new MasterDataAuditService(db, db)),
     notifications,
     sent,
     clearedBroadcasts,

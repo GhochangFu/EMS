@@ -49,6 +49,7 @@ import { AssetGroupsAdminPage } from "./pages/admin/asset-groups-page";
 import { UsersAdminPage } from "./pages/admin/users-page";
 import { CalcParametersAdminPage } from "./pages/admin/calc-parameters-page";
 import { LocationTypesAdminPage } from "./pages/admin/location-types-page";
+import { UnitRolesAdminPage } from "./pages/admin/unit-roles-page";
 import { MimicLayoutEditorPage } from "./pages/admin/mimic-layout-editor-page";
 import { MimicLayoutsPage } from "./pages/admin/mimic-layouts-page";
 import { MimicSymbolLibrariesPage } from "./pages/admin/mimic-symbol-libraries-page";
@@ -772,6 +773,19 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <LocationTypesAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/* `F4.282` (ADR 0099 Amendment 8 Q17) — the unit-role vocabulary; the page fails closed for a non-global admin. */}
+      <Route
+        path="/admin/unit-roles"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <UnitRolesAdminPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

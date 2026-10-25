@@ -4,6 +4,7 @@ import { z, type ZodTypeAny } from "zod";
 import * as contracts from "../../contracts";
 import {
   CANVAS_ENTRY_IDS,
+  LAYOUT_ENTRY_IDS,
   cardOnlyKeysFor,
   catalogEntry,
   catalogParamsOf,
@@ -17,6 +18,7 @@ import {
   pathParamsOf,
   proposeToolName,
 } from "./index";
+import { FIXTURES, ORG, ORG_NAME, ROW, SYMBOL_SVG, TARGET_NAME } from "./catalog.fixtures";
 import { modelBodyOf } from "./model-body";
 import { onboardingCommitCounts, onboardingCommitSiteName } from "./onboarding";
 import { bodyFieldsOf, objectShapeOf, stepValuesSchema } from "./object-shape";
@@ -29,179 +31,6 @@ import type { CatalogEntry, CatalogFormula } from "./types";
  * controller parses the same export) is `tests/f3.85-catalog-coverage.test.ts`.
  * Vitest entry point: the sibling `.test.ts`.
  */
-
-const ORG = "11111111-1111-4111-8111-111111111111";
-const ROW = "22222222-2222-4222-8222-222222222222";
-const TARGET_NAME = "Target Row 7";
-const ORG_NAME = "Org Seven";
-
-/** `F3.87` PR 5: a layout body's fields — two units on the core library and one pipe between them. */
-const LAYOUT_GRAPH = {
-  name: "Raw water",
-  slug: "raw-water",
-  canvasW: 120,
-  canvasH: 80,
-  nodes: [
-    { key: "pump_1", kind: "unit", symbol: "pump", label: "Pump 1", x: 0, y: 0, w: 20, h: 25, isSource: true },
-    { key: "tank_1", kind: "unit", symbol: "tank", label: "Tank 1", x: 40, y: 0, w: 20, h: 25 },
-  ],
-  pipes: [{ fromKey: "pump_1", toKey: "tank_1" }],
-  symbolLibraries: ["core"],
-};
-
-/** `F3.87` PR 6: an SVG the symbol parser takes — one circle on a 24 by 24 box. */
-const SYMBOL_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>';
-
-/** One valid body and path per entry, and the name its summary must contain. */
-export const FIXTURES: Readonly<
-  Record<string, { body: Record<string, unknown>; params: Record<string, string>; names: string }>
-> = {
-  "dashboard.create": { body: { organizationId: ORG, slug: "main-tx", name: "Main TX" }, params: {}, names: "Main TX" },
-  "dashboard.update": { body: { name: "Renamed" }, params: { id: ROW }, names: TARGET_NAME },
-  "dashboard.widgets.replace": { body: { widgets: [] }, params: { id: ROW }, names: TARGET_NAME },
-  "dashboardTemplate.create": {
-    body: { organizationId: ORG, code: "tpl-1", name: "Feeder Template", section: "operations" },
-    params: {},
-    names: "Feeder Template",
-  },
-  "dashboardTemplate.update": { body: { name: "Renamed" }, params: { id: ROW }, names: TARGET_NAME },
-  "dashboardTemplate.publish": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "dashboardTemplate.archive": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "dashboardTemplate.draft": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "dashboardTemplate.instantiate": {
-    body: { assetGroupId: null, slug: "from-tpl", name: "From Template" },
-    params: { id: ROW },
-    names: TARGET_NAME,
-  },
-  "dashboardTemplate.importStock": { body: { organizationId: ORG }, params: { code: "smoc-standard" }, names: ORG_NAME },
-  "dashboardTemplate.applyToSites": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "calcParameter.create": {
-    body: { organizationId: ORG, key: "tariff_rate", value: 1.5, effectiveFrom: "2026-10-01T00:00:00+00:00" },
-    params: {},
-    names: "tariff_rate",
-  },
-  "calcParameter.update": { body: { value: 2 }, params: { id: ROW }, names: TARGET_NAME },
-  "calcOverride.set": {
-    body: { formula: null, formulaDialect: null, calcTrigger: null, calcIntervalSeconds: null, maxInputAgeSeconds: 60 },
-    params: { assetId: ROW, pointKey: "kw_total" },
-    names: TARGET_NAME,
-  },
-  "assetTemplate.update": {
-    body: {
-      points: [
-        { pointKey: "kw", kind: "measured" },
-        { pointKey: "kw_x2", kind: "derived", formula: "{kw} * 2", formulaDialect: "bms-calc-v1", calcTrigger: "streaming" },
-      ],
-      content: { kpis: [{ code: "kw_avg", name: "Average kW", pointKeys: ["kw"], expression: "{kw}", dialect: "bms-calc-v1" }] },
-    },
-    params: { id: ROW },
-    names: TARGET_NAME,
-  },
-  "assetTemplate.publish": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  // `F4.254` PR 2: the four authoring entries. `points` defaults to `[]` on create.
-  "assetTemplate.create": {
-    body: { organizationId: ORG, code: "feeder-1", name: "Feeder Meter", assetType: "feeder", domain: "electrical", points: [] },
-    params: {},
-    names: "Feeder Meter",
-  },
-  "assetTemplate.archive": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "assetTemplate.draft": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "assetTemplate.importStock": { body: { organizationId: ORG }, params: { code: "feeder" }, names: ORG_NAME },
-  // `F4.254` PR 3: the raw body the route parses (its `.transform` output is never stored or sent).
-  "assetTemplate.instantiate": {
-    body: { locationId: ROW, assets: [{ code: "P-1", name: "Pump 1" }] },
-    params: { id: ROW },
-    names: TARGET_NAME,
-  },
-  // `F3.86` PR 4: what the model proposes (`modelBodyOf`) — a create has no password.
-  "user.create": {
-    body: { email: "priya@example.test", displayName: "Priya Rao", role: "viewer", organizationId: ORG },
-    params: {},
-    names: "Priya Rao",
-  },
-  "user.update": { body: { displayName: "Renamed" }, params: { id: ROW }, names: TARGET_NAME },
-  "user.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "user.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "userGrant.add": { body: { kind: "location", targetId: ROW }, params: { id: ROW }, names: TARGET_NAME },
-  "userGrant.remove": { body: {}, params: { id: ROW, kind: "location", grantId: ROW }, names: TARGET_NAME },
-  "location.controlRoomView.set": { body: { kind: "dashboard", dashboardId: ROW }, params: { id: ROW }, names: TARGET_NAME },
-  "location.siteLayout.make": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  // `F3.86` PR 3c — asset groups and their members, and the point-key catalog (ruling Q1).
-  "assetGroup.create": {
-    body: { locationId: ROW, code: "WATER", name: "Water Plant", description: null, domain: "water" },
-    params: {},
-    names: "Water Plant",
-  },
-  "assetGroup.update": { body: { name: "Renamed", description: "x" }, params: { id: ROW }, names: TARGET_NAME },
-  "assetGroup.member.add": { body: { assetId: ORG, role: "raw_water_pump" }, params: { id: ROW }, names: TARGET_NAME },
-  "assetGroup.member.setRole": { body: { role: null }, params: { id: ROW }, names: TARGET_NAME },
-  "assetGroup.member.remove": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "pointKey.create": {
-    body: { code: "kw_total", name: "Total kW", domain: "electrical", unit: "kW", headlineRank: null },
-    params: {},
-    names: "kw_total",
-  },
-  "pointKey.update": { body: { name: "Renamed", headlineRank: 3 }, params: { id: ROW }, names: TARGET_NAME },
-  "pointKey.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "pointKey.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  // `F3.86` PR 3a: locations and RTUs.
-  "location.create": {
-    body: { organizationId: ORG, code: "PUNE-1", slug: "pune-1", name: "Pune Works", type: "rsmoc", latitude: 18.5, longitude: 73.8 },
-    params: {},
-    names: "Pune Works",
-  },
-  "location.update": { body: { name: "Renamed", parentId: ROW }, params: { id: ROW }, names: TARGET_NAME },
-  "location.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "location.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "rtu.create": {
-    body: { locationId: ROW, code: "RTU-7", displayName: "Gateway Seven", sourceType: "mqtt", mqttTopic: "site/rtu7" },
-    params: {},
-    names: "Gateway Seven",
-  },
-  "rtu.update": { body: { displayName: "Renamed" }, params: { id: ROW }, names: TARGET_NAME },
-  "rtu.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "rtu.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  // `F3.86` PR 3b: assets and asset points.
-  "asset.create": {
-    body: { code: "PUMP-7", name: "Feed Pump Seven", siteName: "Pune Works", locationId: ROW, domain: "water" },
-    params: {},
-    names: "Feed Pump Seven",
-  },
-  "asset.update": { body: { name: "Renamed", locationId: ROW }, params: { id: ROW }, names: TARGET_NAME },
-  "asset.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "asset.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "assetPoint.create": {
-    body: { assetId: ROW, pointKey: "kw", sourceDataKey: "pump7_kw", scaleMultiplier: 0.1 },
-    params: {},
-    names: TARGET_NAME,
-  },
-  "assetPoint.update": { body: { unit: "kW", engMax: 500 }, params: { id: ROW }, names: TARGET_NAME },
-  "assetPoint.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  "assetPoint.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
-  // `F3.86` PR 6 — the server-made onboarding commit (decision 7): the hash of the draft the turn stored.
-  "onboarding.commit": { body: { draftHash: "a".repeat(64) }, params: { id: ROW }, names: TARGET_NAME },
-  // `F3.24b` (ADR 0103) — the server-made discovery start, bound to the broker the card showed (H3).
-  "onboarding.discovery": {
-    body: { rtuCode: "R1", topicPrefix: "Airsprint-1051/Data", windowSeconds: 60, expected: { host: "broker.example.com", port: 8883 } },
-    params: { id: ROW },
-    names: TARGET_NAME,
-  },
-  // `F3.87` PR 5 — the canvas entries (owner ruling Q1): two units and one pipe; the replace at version 1.
-  "mimicLayout.create": { body: { organizationId: ORG, ...LAYOUT_GRAPH }, params: {}, names: "Raw water" },
-  "mimicLayout.replace": { body: { version: 1, ...LAYOUT_GRAPH }, params: { id: ROW }, names: TARGET_NAME },
-  // `F3.87` PR 6 — the symbol libraries (Amendment 3 A3); the upload fixture is the model's body, the SVG as text.
-  "mimicLibrary.setting": { body: { organizationId: ORG, enabled: false }, params: { libraryCode: "lucide" }, names: ORG_NAME },
-  "mimicLibrary.create": {
-    body: { organizationId: ORG, code: "plant", label: "Plant Symbols", style: "stroke", licence: "MIT" },
-    params: {},
-    names: "Plant Symbols",
-  },
-  "mimicLibrary.update": { body: { active: false }, params: { id: ROW }, names: TARGET_NAME },
-  "mimicSymbol.update": { body: { group: "water" }, params: { id: ROW, symbolId: ORG }, names: TARGET_NAME },
-  "mimicSymbol.upload": { body: { name: "pump-x", label: "Pump X", svg: { kind: "text", text: SYMBOL_SVG } }, params: { id: ROW }, names: TARGET_NAME },
-  // `F3.87` PR 6 — the unit-role vocabulary, for the global admin (Amendment 3 A1, A6; ruling Q4).
-  "assetRole.create": { body: { code: "pump-x", label: "Pump X" }, params: {}, names: "pump-x" },
-};
 
 /**
  * `F3.86` PR 6 (plan §8.2, decision 7): the onboarding commit is made by the
@@ -370,14 +199,25 @@ const passwordEntry = (modelBody: ZodTypeAny | undefined) => ({
  * Amendment 3 A3: the model sends the file as text), and never `svg` for any
  * other entry. An `upload` entry must have a `modelBody`.
  */
+/** `F4.282` (D3): the fields a `fixedBody` entry on the same route sets — the direction entries', not the model's or a step's. */
+function directionOwnedFields(id: string): string[] {
+  const self = COPILOT_CATALOG.find((candidate) => candidate.id === id);
+  if (self === undefined) return [];
+  return COPILOT_CATALOG.filter((c) => c.fixedBody && c.method === self.method && c.path === self.path).flatMap((c) =>
+    Object.keys(c.fixedBody ?? {}),
+  );
+}
+
 function modelBodyProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "modelBody" | "upload">): string[] {
   if (entry.modelBody === undefined) return entry.upload ? [`${entry.id}: an upload entry needs a modelBody`] : [];
   const problems: string[] = [];
   let object: ZodTypeAny = entry.modelBody;
   while (object instanceof z.ZodEffects) object = object._def.schema as ZodTypeAny;
   if ((object as z.AnyZodObject)._def.unknownKeys !== "strict") problems.push(`${entry.id}: modelBody is not strict`);
-  const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field));
-  const expected = (entry.upload ? [...fields, "svg"] : fields).sort();
+  const owned = directionOwnedFields(entry.id);
+  const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field) && !owned.includes(field));
+  // `F4.283`: a `kind: "file"` upload names its attachment as `file`; the bytes stay in the browser.
+  const expected = (entry.upload ? [...fields, entry.upload.kind === "svg" ? "svg" : "file"] : fields).sort();
   if (JSON.stringify(bodyFieldsOf(entry.modelBody).sort()) !== JSON.stringify(expected)) {
     problems.push(`${entry.id}: modelBody fields differ from the body's without clientOnly`);
   }
@@ -387,8 +227,11 @@ function modelBodyProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly
 /** `F3.87` PR 2: an upload fixture — the multipart text fields, and the model's body that adds the file as `svg`. */
 const UPLOAD_FIELDS = z.object({ name: z.string(), label: z.string() }).strict();
 const UPLOAD_MODEL_BODY = z.object({ name: z.string(), label: z.string(), svg: z.string() }).strict();
-const UPLOAD_DESCRIPTOR = { fileField: "file", contentType: "image/svg+xml", maxBytes: 65_536 } as const;
-const uploadEntry = (modelBody: ZodTypeAny | undefined, upload: typeof UPLOAD_DESCRIPTOR | undefined) => ({
+const UPLOAD_DESCRIPTOR: NonNullable<CatalogEntry["upload"]> = { fileField: "file", kind: "svg", accepts: ["image/svg+xml"], maxBytes: 65_536 };
+/** `F4.283`: a file upload fixture — the browser keeps the bytes, the model names the attachment as `file`. */
+const FILE_UPLOAD_DESCRIPTOR: NonNullable<CatalogEntry["upload"]> = { fileField: "file", kind: "file", accepts: ["text/csv"], maxBytes: 5_242_880 };
+const FILE_MODEL_BODY = z.object({ name: z.string(), label: z.string(), file: z.object({}) }).strict();
+const uploadEntry = (modelBody: ZodTypeAny | undefined, upload: CatalogEntry["upload"] | undefined) => ({
   id: "fixture.symbol.upload",
   body: UPLOAD_FIELDS,
   clientOnly: [] as const,
@@ -406,6 +249,14 @@ export function anUploadModelBodyAddsTheSvgAndOnlyThere(): void {
     "fixture.symbol.upload: modelBody fields differ from the body's without clientOnly",
   ]);
   expect(modelBodyProblems(uploadEntry(undefined, UPLOAD_DESCRIPTOR))).toEqual(["fixture.symbol.upload: an upload entry needs a modelBody"]);
+}
+
+/** `F4.283`: a `kind: "file"` upload adds `file`, never `svg`. */
+export function aFileUploadModelBodyAddsTheFileNotTheSvg(): void {
+  expect(modelBodyProblems(uploadEntry(FILE_MODEL_BODY, FILE_UPLOAD_DESCRIPTOR))).toEqual([]);
+  expect(modelBodyProblems(uploadEntry(UPLOAD_MODEL_BODY, FILE_UPLOAD_DESCRIPTOR))).toEqual([
+    "fixture.symbol.upload: modelBody fields differ from the body's without clientOnly",
+  ]);
 }
 
 const COPILOT_ROLES: readonly string[] = ["admin", "organization_admin", "location_admin", "asset_group_admin"];
@@ -541,14 +392,16 @@ export function pathParamsAndTheirSchemasAgree(): void {
  * field the body lacks. `F3.87` owner ruling Q1: a canvas entry
  * (`CANVAS_ENTRY_IDS`, the layout editor) has no steps at all.
  */
-function stepProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "steps">): string[] {
+export function stepProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "steps" | "fixedBody">): string[] {
   const inSteps = entry.steps.flatMap((step) => step.fields);
+  if (entry.fixedBody !== undefined) return entry.steps.length === 0 ? [] : [`${entry.id}: a fixed-body entry has steps`];
   if ((CANVAS_ENTRY_IDS as readonly string[]).includes(entry.id)) {
     return inSteps.length === 0 && entry.steps.length === 0 ? [] : [`${entry.id}: a canvas entry has steps`];
   }
   const problems: string[] = [];
   if (new Set(inSteps).size !== inSteps.length) problems.push(`${entry.id}: a field in two steps`);
-  const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field));
+  const owned = directionOwnedFields(entry.id);
+  const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field) && !owned.includes(field));
   if (JSON.stringify([...inSteps].sort()) !== JSON.stringify([...fields].sort())) problems.push(`${entry.id}: steps differ from the body's fields`);
   if (entry.clientOnly.some((field) => inSteps.includes(field))) problems.push(`${entry.id}: a clientOnly field in a step`);
   return problems;
@@ -774,7 +627,7 @@ export function aGrantSummaryNamesItsTarget(): void {
  * only, and a replace whose card-only `baseline` is left out of the hash.
  */
 export function theLayoutEntriesAreCanvasEntriesForTheAuthors(): void {
-  for (const id of CANVAS_ENTRY_IDS) {
+  for (const id of LAYOUT_ENTRY_IDS) {
     const entry = catalogEntry(id);
     if (!entry) throw new Error(id);
     expect(entry.steps, id).toEqual([]);
@@ -836,14 +689,15 @@ export function theSymbolUploadIsTheMultipartEntry(): void {
   const entry = catalogEntry("mimicSymbol.upload");
   if (!entry) throw new Error("mimicSymbol.upload");
   const exports = contracts as unknown as Record<string, unknown>;
-  expect(entry.upload).toEqual({ fileField: "file", contentType: "image/svg+xml", maxBytes: contracts.MAX_MIMIC_SYMBOL_SVG_BYTES });
+  expect(entry.upload).toEqual({ fileField: "file", kind: "svg", accepts: ["image/svg+xml"], maxBytes: contracts.MAX_MIMIC_SYMBOL_SVG_BYTES });
   expect(entry.cardOnly).toEqual(["svgText"]);
   expect(hashExcludedKeysFor(entry.id)).toEqual(["svgText"]);
   expect(entry.bodyName).toBe("mimicSymbolUploadFieldsSchema");
   expect(entry.modelBody).toBe(exports.copilotMimicSymbolUploadModelBodySchema);
   expect(entry.modelBodyName).toBe("copilotMimicSymbolUploadModelBodySchema");
   expect(entry.steps).toEqual([{ id: "symbol", title: "Symbol", fields: ["name", "label", "group"] }]);
-  expect(COPILOT_CATALOG.filter((candidate) => candidate.upload !== undefined).map((candidate) => candidate.id)).toEqual(["mimicSymbol.upload"]);
+  // `F4.283`: the import and the asset image are multipart too, but keep the bytes in the browser (`kind: "file"`).
+  expect(COPILOT_CATALOG.filter((candidate) => candidate.upload?.kind === "svg").map((candidate) => candidate.id)).toEqual(["mimicSymbol.upload"]);
 }
 
 /** The model's upload body takes the SVG as text or as an attachment index, and nothing else. */
@@ -907,10 +761,11 @@ export function theLibraryAndRoleSummariesNameTheirTarget(): void {
 }
 
 /**
- * `F4.247` (ADR 0099 Amendment 5 C1): exactly the two list writes take an
- * `If-Match` precondition. Mutation: drop the flag from one entry.
+ * `F4.247` (ADR 0099 Amendment 5 C1): exactly the three list writes take an
+ * `If-Match` precondition (`F4.279` Amendment 8 D6 adds the escalation ladder).
+ * Mutation: drop the flag from one entry.
  */
-export function exactlyTheTwoListWritesTakeAPrecondition(): void {
+export function exactlyTheThreeListWritesTakeAPrecondition(): void {
   const flagged = COPILOT_CATALOG.filter((e) => e.precondition === "updatedAt").map((e) => e.id).sort();
-  expect(flagged).toStrictEqual(["assetTemplate.update", "dashboard.widgets.replace"]);
+  expect(flagged).toStrictEqual(["assetTemplate.update", "dashboard.widgets.replace", "escalationProfile.update"]);
 }

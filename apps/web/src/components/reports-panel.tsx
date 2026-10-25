@@ -1,25 +1,21 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import type { EnergyReportPreview, EnergyTopConsumer, ReportFileFormat } from "@bms/shared";
-import { REPORT_FILE_FORMATS } from "@bms/shared/contracts";
+import type { EnergyReportPreview, EnergyTopConsumer } from "@bms/shared";
 
-import { fetchAdminOrganizations } from "../api/admin/organizations";
 import {
   downloadEnergyReportCsv,
   downloadEnergyReportPdf,
   downloadEnergyReportXlsx,
   fetchEnergyReportPreview,
-  saveEnergyReportFile,
   type EnergyReportInput,
 } from "../api/reports";
 import { isMasterDataAdmin } from "../lib/admin-access";
-import { apiErrorMessage } from "../lib/api-error-message";
 import { costTileProps } from "../lib/money";
 import { pueTileProps } from "../lib/pue-tile";
-import { formatLabel, saveBlockedReason } from "../lib/report-files-view";
 import type { AuthUser } from "../stores/auth-store";
 import { KpiTile } from "./kpi-tile";
-import { REPORT_FILES_QUERY_KEY, ReportHistory } from "./report-history";
+import { ReportHistory } from "./report-history";
+import { ReportFileSaveWizard } from "./report-file-save-wizard";
 import { ReportSchedules } from "./report-schedules";
 
 type ReportCard = {
@@ -229,7 +225,7 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
             <p className="mt-2 text-xs text-critical-ink">PDF export failed.</p>
           ) : null}
           {canSave ? (
-            <SaveToHistory
+            <ReportFileSaveWizard
               input={input}
               user={user}
               hasPreview={preview !== undefined}
@@ -298,115 +294,6 @@ export function ReportsPanel({ user }: ReportsPanelProps) {
         {canSave ? <ReportHistory /> : null}
         {canSave ? <ReportSchedules user={user} /> : null}
       </section>
-    </div>
-  );
-}
-
-type SaveToHistoryProps = {
-  input: EnergyReportInput;
-  user: AuthUser;
-  hasPreview: boolean;
-  previewError: boolean;
-};
-
-/**
- * The Save-to-history block (ADR 0071 decisions 4 and 11; Amendment 1 item
- * 1). Rendered only for a master-data admin — the caller holds the gate.
- *
- * The organization select exists only for the global `admin`, who must name
- * one; every other role sends no `organizationId` and, if the API still asks
- * for one (an organization admin holding several), renders its 400 sentence.
- * Every disabled state is one of `saveBlockedReason`'s sentences: the
- * pending one is carried by the button label ("Saving…"), the others are
- * rendered beside the button, so nothing here is disabled without saying why.
- */
-function SaveToHistory({ input, user, hasPreview, previewError }: SaveToHistoryProps) {
-  const queryClient = useQueryClient();
-  const needsOrganization = user.role === "admin";
-  const [format, setFormat] = useState<ReportFileFormat>("pdf");
-  const [organizationId, setOrganizationId] = useState<string | undefined>(undefined);
-  const [outcome, setOutcome] = useState<{ tone: "saved" | "refused"; text: string } | null>(null);
-
-  const organizationsQ = useQuery({
-    queryKey: ["admin", "organizations", "true"],
-    queryFn: () => fetchAdminOrganizations("true"),
-    enabled: needsOrganization,
-  });
-
-  const saveM = useMutation({
-    mutationFn: () => saveEnergyReportFile(input, format, organizationId),
-    onSuccess: async (file) => {
-      setOutcome({ tone: "saved", text: `Saved ${file.filename} to history.` });
-      await queryClient.invalidateQueries({ queryKey: REPORT_FILES_QUERY_KEY });
-    },
-    onError: (cause: Error) => setOutcome({ tone: "refused", text: apiErrorMessage(cause) }),
-  });
-
-  const blockedReason = saveBlockedReason({
-    hasPreview,
-    previewError,
-    needsOrganization,
-    organizationId,
-    pending: saveM.isPending,
-  });
-
-  return (
-    <div className="mt-4 border-t border-line pt-4">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Save to history</h3>
-      <div className="mt-2 grid gap-2">
-        <label className="text-xs font-medium text-ink-muted" htmlFor="save-format">
-          Format
-        </label>
-        <select
-          id="save-format"
-          className="surface-field px-3 py-2 text-sm"
-          value={format}
-          onChange={(e) => setFormat(e.target.value as ReportFileFormat)}
-        >
-          {REPORT_FILE_FORMATS.map((option) => (
-            <option key={option} value={option}>
-              {formatLabel(option)}
-            </option>
-          ))}
-        </select>
-        {needsOrganization ? (
-          <>
-            <label className="text-xs font-medium text-ink-muted" htmlFor="save-organization">
-              Organization
-            </label>
-            <select
-              id="save-organization"
-              className="surface-field px-3 py-2 text-sm"
-              value={organizationId ?? ""}
-              onChange={(e) => setOrganizationId(e.target.value === "" ? undefined : e.target.value)}
-            >
-              <option value="">Choose an organization</option>
-              {(organizationsQ.data?.items ?? []).map((organization) => (
-                <option key={organization.id} value={organization.id}>
-                  {organization.code} · {organization.name}
-                </option>
-              ))}
-            </select>
-          </>
-        ) : null}
-      </div>
-      <button
-        type="button"
-        className="mt-3 w-full surface-button-primary bg-chrome px-3 py-2 text-sm font-semibold text-on-dark disabled:cursor-not-allowed disabled:bg-line-strong"
-        disabled={blockedReason !== null}
-        aria-busy={saveM.isPending}
-        onClick={() => saveM.mutate()}
-      >
-        {saveM.isPending ? "Saving…" : "Save to history"}
-      </button>
-      {blockedReason !== null && !saveM.isPending ? (
-        <p className="mt-2 text-xs text-ink-muted">{blockedReason}</p>
-      ) : null}
-      {outcome !== null ? (
-        <p className={`mt-2 text-xs ${outcome.tone === "saved" ? "text-accent-strong" : "text-critical-ink"}`}>
-          {outcome.text}
-        </p>
-      ) : null}
     </div>
   );
 }

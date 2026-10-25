@@ -10,12 +10,16 @@ import { and, asc, eq } from "drizzle-orm";
 
 import { assetRoles } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AssetRoleDto, CreateAssetRoleBody, JwtPayload } from "@bms/shared";
+import type {
+  AssetRoleDto,
+  CreateAssetRoleBody,
+  JwtPayload,
+  UpdateAssetRoleBody,
+} from "@bms/shared";
 
 import { AccessControlService } from "../../../auth/access-control.service";
 import { FLEET_DRIZZLE } from "../../../database/database.tokens";
 import { MasterDataAuditService } from "../../master-data-audit.service";
-import type { UpdateAssetRoleBody } from "./asset-roles.schema";
 
 /**
  * `F3.40` / ADR 0051 decision 5 — the write path for `bms.asset_roles`.

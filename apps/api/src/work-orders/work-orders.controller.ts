@@ -13,17 +13,18 @@ import {
 } from "@nestjs/common";
 import { ZodError, z } from "zod";
 
-import type { JwtPayload } from "@bms/shared";
+// F4.284 (ADR 0030): the write bodies live in `@bms/shared`, the copilot catalog's exports by identity.
+import {
+  closeWorkOrderBodySchema,
+  createWorkOrderBodySchema,
+  type JwtPayload,
+  reorderWorkOrdersBodySchema,
+  updateWorkOrderStatusBodySchema,
+} from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import {
-  closeWorkOrderBodySchema,
-  createWorkOrderBodySchema,
-  reorderWorkOrdersBodySchema,
-  updateWorkOrderStatusBodySchema,
-} from "./work-order.schema";
 import { WorkOrdersService } from "./work-orders.service";
 
 const idParamSchema = z.string().uuid();

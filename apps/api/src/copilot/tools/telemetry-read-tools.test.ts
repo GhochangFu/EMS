@@ -26,5 +26,5 @@ describe("F4.274 — the copilot's telemetry read tools", () => {
   it("get_recent_values returns 10 rows by default and refuses 169 minutes or 26 rows", assertRecentValuesIsBounded);
   it("get_point_aggregate reads stats only and never asks for buckets", assertPointAggregateReadsStatsOnly);
   it("a turn answers the last 24 hours from get_point_aggregate, and refuses an own-key asset", assertTheTurnAnswersTheLast24HoursFromATool);
-  it("the read registry stays under 11,000 characters", assertTheReadRegistryStaysInItsBudget);
+  it("the read registry stays under 17,000 characters", assertTheReadRegistryStaysInItsBudget);
 });

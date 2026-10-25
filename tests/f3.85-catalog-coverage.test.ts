@@ -67,6 +67,28 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/mimic-layouts/mimic-layouts.controller.ts", full: true },
   { file: "apps/api/src/mimic-symbol-libraries/mimic-symbol-libraries.controller.ts", full: true },
   { file: "apps/api/src/admin/vocabularies/asset-roles/asset-roles.controller.ts", full: true },
+  // `F4.282` (Amendment 8): the release-4 vocabulary controller.
+  { file: "apps/api/src/admin/vocabularies/location-types.controller.ts", full: true },
+  // `F4.278` (Amendment 8): the alarm rules — seven entries, two routes excluded (since `F4.279`).
+  { file: "apps/api/src/rules/rules.controller.ts", full: true },
+  // `F4.279` (Amendment 8): the notification channels, and the escalation profiles and severity
+  // map (two controllers in one file; the walk takes the prefix from the last `@Controller`).
+  { file: "apps/api/src/notifications/notifications.controller.ts", full: true },
+  { file: "apps/api/src/notifications/escalation-profiles.controller.ts", full: true },
+  // F4.280 (Amendment 8): the report schedules (two entries, the DELETE excluded) and the file
+  // routes (the on-demand save an entry, the DELETE excluded).
+  { file: "apps/api/src/reports/report-schedules.controller.ts", full: true },
+  { file: "apps/api/src/reports/report-files.controller.ts", full: true },
+  // F4.281 (Amendment 8): the maintenance schedules — three entries, the convert excluded.
+  { file: "apps/api/src/maintenance/maintenance.controller.ts", full: true },
+  // F4.283 (Amendment 8): file-borne data — the import commit an entry and its preview excluded; the
+  // manual readings an entry; the asset image upload an entry and its DELETE excluded.
+  { file: "apps/api/src/admin/telemetry-import/telemetry-import.controller.ts", full: true },
+  { file: "apps/api/src/admin/telemetry-entry/manual-readings.controller.ts", full: true },
+  { file: "apps/api/src/assets/asset-images-write.controller.ts", full: true },
+  // `F4.284` (ADR 0106): the alarm and work-order writes.
+  { file: "apps/api/src/alarms/alarms.controller.ts", full: true },
+  { file: "apps/api/src/work-orders/work-orders.controller.ts", full: true },
 ];
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;

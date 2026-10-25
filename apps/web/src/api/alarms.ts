@@ -6,6 +6,7 @@ import {
 } from "@bms/shared/contracts";
 import type {
   AlarmDetailsResponse,
+  AlarmEnrichmentUpsertBody as SharedAlarmEnrichmentUpsertBody,
   AlarmListItem,
   AlarmsListResponse,
   AlarmSummaryResponse,
@@ -120,21 +121,10 @@ export async function fetchAlarmDetails(id: string): Promise<AlarmDetailsRespons
 }
 
 /**
- * The `PUT .../enrichment` request payload. Typed locally rather than
- * imported from `@bms/shared` — request schemas live in `apps/api`
- * (AGENTS.md §3), matching how `ackAlarm` above types its own body.
+ * The `PUT .../enrichment` request payload: the route's own `z.infer` from
+ * `@bms/shared` (`contracts/operations-writes.ts`, `F4.284`, ADR 0030).
  */
-export type AlarmEnrichmentUpsertBody = {
-  rootCause?: string | null;
-  impact?: string | null;
-  correctiveActions?: string | null;
-  energyImpact?: string | null;
-  waterImpact?: string | null;
-  productionImpact?: string | null;
-  etrAt?: string | null;
-  skillCode?: string | null;
-  affectedAssetIds?: string[];
-};
+export type AlarmEnrichmentUpsertBody = SharedAlarmEnrichmentUpsertBody;
 
 /** PUT /api/v1/alarms/:id/enrichment (ADR 0034 decision 6). */
 export async function saveAlarmEnrichment(

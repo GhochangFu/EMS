@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 
-import { MAX_COPILOT_ATTACHMENT_BYTES, MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES, MAX_MIMIC_SYMBOL_SVG_BYTES } from "@bms/shared";
+import { MAX_COPILOT_ATTACHMENT_BYTES, MAX_COPILOT_ATTACHMENTS_TOTAL_BYTES, MAX_IMPORT_FILE_BYTES, MAX_MIMIC_SYMBOL_SVG_BYTES } from "@bms/shared";
 import { expect } from "vitest";
 
 import {
+  COPILOT_ATTACHMENT_DATA_FILE_TOO_LARGE_MESSAGE,
   COPILOT_ATTACHMENT_FILENAME_CREDENTIAL_MESSAGE,
   COPILOT_ATTACHMENT_FILENAME_MESSAGE,
   COPILOT_ATTACHMENT_SVG_TOO_LARGE_MESSAGE,
@@ -14,7 +15,9 @@ import {
   hasImageAttachment,
   hasPdfWithoutImage,
   inspectAttachments,
+  isCarryOnly,
   sniffAttachmentType,
+  XLSX_MEDIA_TYPE,
   type AttachmentMediaType as TurnAttachmentType,
   type UploadedAttachment,
 } from "./copilot-attachments";
@@ -205,4 +208,59 @@ export function aPdfWithoutAnImageIsTextOnly(): void {
   expect(hasPdfWithoutImage(of("image/png")), "[png]").toBe(false);
   expect(hasPdfWithoutImage(of("image/svg+xml")), "[svg]").toBe(false);
   expect(hasPdfWithoutImage(of("application/pdf", "image/svg+xml")), "[pdf, svg]").toBe(true);
+}
+
+/** `F4.283` (Amendment 8 Q20): a zip's local file header is an XLSX. Mutation: drop `isZip` → red. */
+export function aZipSignatureIsAnXlsx(): void {
+  const xlsx = Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.alloc(60, 1)]);
+  expect(sniffAttachmentType(xlsx)).toBe(XLSX_MEDIA_TYPE);
+}
+
+/** Drafter choice 1: UTF-8 text whose first line holds a comma is a CSV. Mutation: drop `isCsv` → red. */
+export function commaSeparatedTextIsACsv(): void {
+  expect(sniffAttachmentType(Buffer.from("a,b\n1,2\n", "utf8"))).toBe("text/csv");
+}
+
+/** The bytes decide, never the name: a PNG named `.csv` is a PNG. Mutation: sniff the CSV first → red. */
+export function aPngNamedCsvIsAPng(): void {
+  const inspected = inspectAttachments([file(png(), "readings.csv")]);
+  expect(inspected.ok ? inspected.attachments[0]?.mediaType : inspected.message).toBe("image/png");
+}
+
+/** Q20: a CSV over the import route's 5 MiB is refused 413. Mutation: put CSV under the 10 MB image cap → red. */
+export function aCsvOverFiveMebibytesIsRefused(): void {
+  const big = Buffer.alloc(MAX_IMPORT_FILE_BYTES + 1, 0x31);
+  Buffer.from("a,b\n").copy(big);
+  expect(refusal([file(big, "readings.csv")])).toEqual({ status: 413, message: COPILOT_ATTACHMENT_DATA_FILE_TOO_LARGE_MESSAGE });
+}
+
+/** The positive sibling: a CSV of exactly 5 MiB is accepted. */
+export function aCsvOfFiveMebibytesIsAccepted(): void {
+  const atCap = Buffer.alloc(MAX_IMPORT_FILE_BYTES, 0x31);
+  Buffer.from("a,b\n").copy(atCap);
+  const inspected = inspectAttachments([file(atCap, "readings.csv")]);
+  expect(inspected.ok ? inspected.attachments[0]?.mediaType : inspected.message).toBe("text/csv");
+}
+
+/** Drafter choice 1: a NUL byte in the head is not text. Mutation: drop the NUL check → red. */
+export function aCsvWithANulByteIsRefused(): void {
+  expect(refusal([file(Buffer.from("a,b\n1,\u00002\n", "utf8"), "readings.csv")])).toEqual({
+    status: 400,
+    message: COPILOT_ATTACHMENT_TYPE_MESSAGE,
+  });
+}
+
+/** Q20: a CSV and an XLSX are carry-only; an image is not. */
+export function onlyCsvAndXlsxAreCarryOnly(): void {
+  expect([isCarryOnly("text/csv"), isCarryOnly(XLSX_MEDIA_TYPE), isCarryOnly("image/png"), isCarryOnly("application/pdf")]).toEqual([
+    true,
+    true,
+    false,
+    false,
+  ]);
+}
+
+/** A CSV is never an image turn (it resolves no image model). */
+export function aCsvIsNotAnImageTurn(): void {
+  expect(hasImageAttachment([file(Buffer.from("a,b\n1,2\n"), "readings.csv")])).toBe(false);
 }

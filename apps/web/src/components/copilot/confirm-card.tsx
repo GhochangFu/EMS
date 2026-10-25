@@ -3,13 +3,12 @@ import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { CopilotMessageDto, CopilotPendingChangeDto, SiteLayoutAmbiguousDto } from "@bms/shared";
 import {
-  CANVAS_ENTRY_IDS,
   cardOnlyKeysFor,
   catalogEntry,
   catalogParamsOf,
   COPILOT_CHANGE_REFUSED_MESSAGE,
   COPILOT_UNAVAILABLE_MESSAGE,
-  objectShapeOf,
+  LAYOUT_ENTRY_IDS,
 } from "@bms/shared/copilot";
 
 import { rejectCopilotChange } from "../../api/copilot";
@@ -21,18 +20,24 @@ import { useMimicSymbolLibraries } from "../../hooks/use-mimic-symbol-libraries"
 import { refreshScope } from "../../api/login";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { type ChangeRow, changeRows, fieldLabel, type LayoutBaseline, layoutGraphRows } from "../../lib/copilot-diff";
+import { type ChangeRow, changeRows, type LayoutBaseline, layoutGraphRows } from "../../lib/copilot-diff";
+import { clientOnlyFieldsFor } from "../../lib/copilot-client-only-fields";
 import { invalidationKeysFor } from "../../lib/copilot-invalidations";
 import { editorLayoutFromWriteBody } from "../../lib/mimic-editor";
 import { layoutWarnings } from "../../lib/mimic-editor-warnings";
 import { catalogOrgSymbols } from "../../lib/mimic-symbols";
 import { useAuthStore } from "../../stores/auth-store";
 import { ChangeCard } from "./change-card";
+import { FileAgainSlot } from "./file-again-slot";
+import { ImportPreviewCard } from "./import-preview-card";
 import { MimicLayoutPreview } from "./mimic-layout-preview";
 import { SymbolUploadPreview } from "./symbol-upload-preview";
 
 /** What a 409 means on a card: the change was applied, rejected, expired or claimed elsewhere. */
 export const CHANGE_GONE_SENTENCE = "This change is no longer available.";
+
+/** `F4.279` review: the words after a recipient the route keeps (a join outside the caller's scope). */
+export const RECIPIENT_KEPT_SUFFIX = "(stays joined: outside your scope)";
 
 function timeOf(iso: string): string {
   return new Date(iso).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -112,12 +117,31 @@ function scalarRowsOf(rows: readonly ChangeRow[], baseline: LayoutBaseline | nul
   );
 }
 
-/** A Zod schema, named through the shared helper (`apps/web` does not depend on `zod` itself). */
-type Schema = Parameters<typeof objectShapeOf>[0];
+/** `F4.279` (D5): the card-only recipient list a notification proposal stored, read defensively. */
+function recipientsOf(value: unknown): { key: string; line: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    if (typeof item !== "object" || item === null) return [];
+    const { name, kind, targets, kept } = item as Record<string, unknown>;
+    const list = Array.isArray(targets) ? targets.filter((target): target is string => typeof target === "string") : [];
+    const suffix = kept === true ? ` ${RECIPIENT_KEPT_SUFFIX}` : "";
+    return [{ key: `${index}`, line: `${String(name ?? "")} (${String(kind ?? "")}): ${list.length > 0 ? list.join(", ") : "none"}${suffix}` }];
+  });
+}
 
-/** The schema of one `clientOnly` field, from the entry's body (the first object shape that has it). */
-function clientOnlySchema(body: Schema, field: string): Schema | undefined {
-  return objectShapeOf(body).find((shape) => Object.prototype.hasOwnProperty.call(shape, field))?.[field];
+/**
+ * `F4.284` (ADR 0106 decision 2; owner ruling DC2): a reorder's card-only `moves`, one line per
+ * work order whose status or position changes, with its old and new position.
+ */
+export function movesOf(value: unknown): { key: string; line: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    if (typeof item !== "object" || item === null) return [];
+    const move = item as Record<string, unknown>;
+    const from = `${String(move.fromStatus ?? "")} #${String(move.fromSortOrder ?? "")}`;
+    const to = `${String(move.toStatus ?? "")} #${String(move.toSortOrder ?? "")}`;
+    return [{ key: `${index}`, line: `${String(move.title ?? move.id ?? "")}: ${from} → ${to}` }];
+  });
 }
 
 /**
@@ -141,6 +165,13 @@ function clientOnlySchema(body: Schema, field: string): Schema | undefined {
  * only. The values sit in a ref — never React state, the dock store or the
  * stored change — and Confirm waits until each one parses with its field's
  * own schema.
+ *
+ * `F4.279` (ADR 0099 Amendment 8 Q11, Q12, D5; owner ruling Q10): a webhook
+ * channel's secret (optional: blank keeps the stored one) and URL (required on
+ * a create, or an update that replaces `config`) are typed here too, and the
+ * URL is sent at its nested path (`clientOnlyFieldsFor`, `withPaths`). The
+ * card-only `recipients` the server stored are listed in full under the rows;
+ * the summary the model wrote carries names and counts only.
  */
 export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFailed }: ConfirmCardProps) {
   const queryClient = useQueryClient();
@@ -156,7 +187,8 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
   // `F3.87` PR 5 (Amendment 3 A2, rulings Q1, Q5): a layout card draws the body, warns on it, and
   // diffs a replace against the baseline the row stored at propose time — never the layout now.
   const cardOnly = cardOnlyKeysFor(change.catalogId);
-  const isLayout = entry !== undefined && (CANVAS_ENTRY_IDS as readonly string[]).includes(entry.id);
+  // `F4.284` (DC2): the work-order reorder is a canvas entry too, but not a layout — the mimic two only.
+  const isLayout = entry !== undefined && (LAYOUT_ENTRY_IDS as readonly string[]).includes(entry.id);
   const layoutBody = useMemo((): MimicLayoutWriteBody | null => {
     if (!isLayout || entry === undefined) return null;
     const parsed = entry.body.safeParse(withoutKeys(change.body, cardOnly));
@@ -182,20 +214,27 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
   const [error, setError] = useState<string | null>(null);
   const [finished, setFinished] = useState(false);
   const [ambiguous, setAmbiguous] = useState<SiteLayoutAmbiguousDto["ambiguous"] | null>(null);
-  const clientOnly = entry?.clientOnly ?? [];
+  const currentRecord = current.data ?? null;
+  const clientOnly = useMemo(
+    () => (entry ? clientOnlyFieldsFor(entry, change.body, currentRecord).filter((field) => field.shown) : []),
+    [entry, change.body, currentRecord],
+  );
   const typed = useRef<Record<string, string>>({});
-  // Which fields parse now, and why not; the values themselves stay in the ref.
+  // Which fields may be sent now, and why not; the values themselves stay in the ref. A required box
+  // must parse; an optional one is ready while blank (`F4.279`, ruling Q10).
   const [ready, setReady] = useState<Record<string, boolean>>({});
   const [problems, setProblems] = useState<Record<string, string>>({});
-  const allReady = clientOnly.every((field) => ready[field] === true);
+  const allReady = clientOnly.every((field) => ready[field.path] ?? !field.required);
+  // `F4.283` (Amendment 8 Q19): a file-upload card sends the file this tab kept, or the same file picked again.
+  const fileUpload = entry?.upload?.kind === "file";
+  const [file, setFile] = useState<File | null>(null);
 
-  const onType = (field: string, value: string) => {
-    typed.current[field] = value;
-    const schema = entry ? clientOnlySchema(entry.body, field) : undefined;
-    const parsed = schema?.safeParse(value);
+  const onType = (field: (typeof clientOnly)[number], value: string) => {
+    typed.current[field.path] = value;
+    const parsed = field.schema?.safeParse(value);
     const ok = parsed?.success === true;
-    setReady((was) => ({ ...was, [field]: ok }));
-    setProblems((was) => ({ ...was, [field]: ok || value === "" ? "" : (parsed?.error?.issues[0]?.message ?? "Not valid") }));
+    setReady((was) => ({ ...was, [field.path]: ok || (!field.required && value === "") }));
+    setProblems((was) => ({ ...was, [field.path]: ok || value === "" ? "" : (parsed?.error?.issues[0]?.message ?? "Not valid") }));
   };
 
   const failConfirm = (err: unknown) => {
@@ -227,8 +266,8 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
   const confirm = useMutation({
     mutationFn: () => {
       const values: Record<string, string> = {};
-      for (const field of clientOnly) values[field] = typed.current[field] ?? "";
-      return confirmCopilotChange(change, values);
+      for (const field of clientOnly) values[field.path] = typed.current[field.path] ?? "";
+      return confirmCopilotChange(change, values, file ?? undefined);
     },
     onSuccess: async () => {
       setError(null);
@@ -265,6 +304,8 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
     ? `Proposed at ${timeOf(change.proposedAt)}. The record can change before you confirm; the request sends the values shown. Expires at ${timeOf(change.expiresAt)}.`
     : `Proposed at ${timeOf(change.proposedAt)}. Expires at ${timeOf(change.expiresAt)}.`;
   const siteId = entry ? catalogParamsOf(entry, change.path)?.id : undefined;
+  const recipients = cardOnly.includes("recipients") ? recipientsOf(change.body.recipients) : [];
+  const moves = cardOnly.includes("moves") ? movesOf(change.body.moves) : [];
 
   return (
     <>
@@ -282,10 +323,14 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
         onConfirm={() => confirm.mutate()}
         secondaryLabel="Reject"
         onSecondary={() => reject.mutate()}
-        confirmDisabled={!allReady}
+        confirmDisabled={!allReady || (fileUpload && file === null)}
       >
         {layoutBody !== null && <MimicLayoutPreview body={layoutBody} orgSymbols={orgSymbols} />}
-        {entry?.upload !== undefined && typeof change.body.svgText === "string" && (
+        {fileUpload && typeof change.body.filename === "string" && typeof change.body.fileSha256 === "string" && (
+          <FileAgainSlot filename={change.body.filename} sha256={change.body.fileSha256} onFile={setFile} />
+        )}
+        {change.catalogId === "telemetry.import" && <ImportPreviewCard preview={change.body.preview} />}
+        {entry?.upload?.kind === "svg" && typeof change.body.svgText === "string" && (
           <SymbolUploadPreview
             svgText={change.body.svgText}
             label={typeof change.body.label === "string" && change.body.label !== "" ? change.body.label : String(change.body.name ?? "")}
@@ -303,18 +348,35 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
             {versionNote}
           </p>
         )}
+        {recipients.length > 0 && (
+          <ul data-testid="copilot-recipients" aria-label="Recipients" className="mt-2 list-disc pl-4 text-[11px] text-ink">
+            {recipients.map((recipient) => (
+              <li key={recipient.key}>{recipient.line}</li>
+            ))}
+          </ul>
+        )}
+        {moves.length > 0 && (
+          <ul data-testid="copilot-moves" aria-label="Moves" className="mt-2 list-disc pl-4 text-[11px] text-ink">
+            {moves.map((move) => (
+              <li key={move.key}>{move.line}</li>
+            ))}
+          </ul>
+        )}
         {clientOnly.length > 0 && (
           <div className="mt-2 space-y-1">
             {clientOnly.map((field) => (
-              <label key={field} className="block">
-                <span className="text-[11px] text-ink-muted">{fieldLabel(field)}</span>
+              <label key={field.path} className="block">
+                <span className="text-[11px] text-ink-muted">
+                  {field.label}
+                  {field.required ? "" : " (optional)"}
+                </span>
                 <input
-                  type="password"
-                  autoComplete="new-password"
+                  type={field.path === "config.url" ? "url" : "password"}
+                  autoComplete={field.path === "config.url" ? "off" : "new-password"}
                   onChange={(event) => onType(field, event.target.value)}
                   className="surface-field mt-0.5 block w-full px-2 py-1 text-xs"
                 />
-                {problems[field] && <span className="text-[11px] text-critical-ink">{problems[field]}</span>}
+                {problems[field.path] && <span className="text-[11px] text-critical-ink">{problems[field.path]}</span>}
               </label>
             ))}
           </div>

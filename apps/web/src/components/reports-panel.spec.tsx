@@ -10,7 +10,6 @@ import * as locationsApi from "../api/admin/locations";
 import * as organizationsApi from "../api/admin/organizations";
 import * as notificationsApi from "../api/notifications";
 import * as reportsApi from "../api/reports";
-import { ApiError } from "../lib/api-error";
 import type { AuthUser } from "../stores/auth-store";
 import { ReportsPanel } from "./reports-panel";
 
@@ -32,7 +31,6 @@ import { ReportsPanel } from "./reports-panel";
 
 const NOT_CONFIGURED = "Not configured — no incomer in scope computes site_kw and it_kw";
 const MEASURED_HINT = "Σ site kW ÷ Σ IT kW, from the incomers' site_kw / it_kw";
-const ORGANIZATION_SENTENCE = "Choose an organization to file the report under.";
 
 const VIEWER: AuthUser = {
   id: "9b1d2c3e-0000-4a5b-8c4d-000000000001",
@@ -277,99 +275,18 @@ export async function aFailedPdfExportRendersItsOwnLine(): Promise<void> {
 }
 
 /**
- * `F3.5a` R-13 — a global `admin` must name an organization: the select exists,
- * lists the fetched organizations, and Save stays disabled beside the
- * organization sentence until one is chosen. Asserted **after** the preview
- * resolves, because `saveBlockedReason` names the missing range first.
+ * `F4.280` (Q8): Save to history is the `ReportFileSaveWizard` (its claims are
+ * `report-file-save-wizard.spec.tsx`); here the panel hands it the range the
+ * preview used, and a `location_admin` sends no organization.
  */
-export async function anAdminMustChooseAnOrganizationBeforeSaving(): Promise<void> {
-  renderPanel(1.25, {}, userWithRole("admin"));
-  await previewResolved();
-
-  const select = await screen.findByLabelText("Organization");
-  expect(await within(select).findByRole("option", { name: "ESKOM · Eskom SMOC" })).toBeInTheDocument();
-  const save = screen.getByRole("button", { name: "Save to history" });
-  expect(save).toBeDisabled();
-  expect(screen.getByText(ORGANIZATION_SENTENCE)).toBeInTheDocument();
-
-  await userEvent.selectOptions(select, ESKOM.id);
-
-  await waitFor(() => expect(save).toBeEnabled());
-  expect(screen.queryByText(ORGANIZATION_SENTENCE)).not.toBeInTheDocument();
-}
-
-/**
- * `F3.5a` R-13 — a `location_admin` sends no organization: no select, and Save
- * is enabled once the preview resolved. The History heading is the second
- * positive control for the role gate.
- */
-export async function aLocationAdminSavesWithoutAnOrganizationSelect(): Promise<void> {
-  renderPanel(1.25, {}, userWithRole("location_admin"));
-  await previewResolved();
-
-  expect(screen.queryByLabelText("Organization")).not.toBeInTheDocument();
-  await waitFor(() => expect(screen.getByRole("button", { name: "Save to history" })).toBeEnabled());
-  expect(screen.getByRole("heading", { name: "History" })).toBeInTheDocument();
-}
-
-/**
- * `F3.5a` — Save calls `saveEnergyReportFile(input, "pdf", undefined)` for a
- * `location_admin`, asserted by position so a swapped `format` /
- * `organizationId` pair reddens here, and renders the saved line.
- */
-export async function saveCallsTheApiByPositionAndRendersTheSavedLine(): Promise<void> {
+export async function aSaveFromThePanelPostsThePreviewRange(): Promise<void> {
   const save = vi.spyOn(reportsApi, "saveEnergyReportFile").mockResolvedValue(SAVED);
   renderPanel(1.25, {}, userWithRole("location_admin"));
   await previewResolved();
 
-  const button = screen.getByRole("button", { name: "Save to history" });
-  await waitFor(() => expect(button).toBeEnabled());
-  await userEvent.click(button);
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
 
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-  const call = save.mock.calls[0];
-  expect(call?.[0]).toEqual(rangeSentToThePreview());
-  expect(call?.[1]).toBe("pdf");
-  expect(call?.[2]).toBeUndefined();
-  expect(await screen.findByText(`Saved ${SAVED.filename} to history.`)).toBeInTheDocument();
-}
-
-/**
- * `F3.5a` — the admin path with a chosen organization and the `xlsx` format:
- * two non-undefined strings in the last two positions, so a swap cannot hide
- * behind `undefined`. The list refetches after the save (spy delta 1).
- */
-export async function anAdminSaveSendsTheFormatAndTheOrganizationInOrder(): Promise<void> {
-  const save = vi.spyOn(reportsApi, "saveEnergyReportFile").mockResolvedValue({ ...SAVED, format: "xlsx" });
-  renderPanel(1.25, {}, userWithRole("admin"));
-  await previewResolved();
-  const list = vi.mocked(reportsApi.fetchReportFiles);
-
-  await userEvent.selectOptions(await screen.findByLabelText("Organization"), ESKOM.id);
-  await userEvent.selectOptions(screen.getByLabelText("Format"), "xlsx");
-  const button = screen.getByRole("button", { name: "Save to history" });
-  await waitFor(() => expect(button).toBeEnabled());
-  const listCallsBefore = list.mock.calls.length;
-  await userEvent.click(button);
-
-  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-  const call = save.mock.calls[0];
-  expect(call?.[1]).toBe("xlsx");
-  expect(call?.[2]).toBe(ESKOM.id);
-  await waitFor(() => expect(list.mock.calls.length).toBe(listCallsBefore + 1));
-}
-
-/** `F3.5a` — a refused save renders the API's own sentence (the 409 cap here). */
-export async function aRefusedSaveRendersTheApiSentence(): Promise<void> {
-  vi.spyOn(reportsApi, "saveEnergyReportFile").mockRejectedValue(
-    new ApiError("On-demand report cap reached for this organization", 409),
-  );
-  renderPanel(1.25, {}, userWithRole("location_admin"));
-  await previewResolved();
-
-  const button = screen.getByRole("button", { name: "Save to history" });
-  await waitFor(() => expect(button).toBeEnabled());
-  await userEvent.click(button);
-
-  expect(await screen.findByText("On-demand report cap reached for this organization")).toBeInTheDocument();
+  expect(save.mock.calls[0]).toEqual([rangeSentToThePreview(), "pdf", undefined]);
 }

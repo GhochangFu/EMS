@@ -4,6 +4,8 @@ import "reflect-metadata";
 
 import type { BmsDb } from "@bms/db";
 
+import type { AuditInput, MasterDataAuditService } from "../admin/master-data-audit.service";
+
 import type { AlarmsGateway } from "./alarms.gateway";
 import { AlarmsService } from "./alarms.service";
 
@@ -45,7 +47,7 @@ async function sqlLimitFor(limit: number): Promise<number | undefined> {
   const fleetDb = {
     transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx),
   } as unknown as BmsDb;
-  const service = new AlarmsService({} as BmsDb, fleetDb, {} as AlarmsGateway);
+  const service = new AlarmsService({} as BmsDb, fleetDb, {} as AlarmsGateway, {} as MasterDataAuditService);
   await service.list({ limit, assetIds: null });
   return seen;
 }
@@ -69,4 +71,53 @@ export async function assertAnInfiniteLimitClampsToOneHundred(): Promise<void> {
 export async function assertASubOneFractionalLimitClampsToOne(): Promise<void> {
   const n = await sqlLimitFor(0.5);
   assert(n === 2, `limit=0.5 reached .limit() as ${String(n)}, not 2`);
+}
+
+/**
+ * A query-builder stand-in: every chained call returns itself, and awaiting it answers `rows`.
+ * `F4.284` uses it to drive `acknowledge` with no database.
+ */
+function chain(rows: unknown[]): unknown {
+  const target = (): unknown => proxy;
+  const proxy: unknown = new Proxy(target, {
+    get: (_t, key) => (key === "then" ? (resolve: (v: unknown) => void) => resolve(rows) : () => proxy),
+    apply: () => proxy,
+  });
+  return proxy;
+}
+
+/**
+ * `F4.284` (ADR 0106 decision 7): `acknowledge` audits through `MasterDataAuditService.write`, in the
+ * write's own transaction, with the action, reason and payload keys it wrote before. The read-back
+ * answers no row, so the call ends in "vanished" — after the audit write, which is what is asserted.
+ */
+export async function assertAcknowledgeAuditsThroughTheFunnel(): Promise<void> {
+  const calls: Array<{ input: AuditInput; executor: unknown }> = [];
+  const audit = { write: async (input: AuditInput, executor: unknown) => void calls.push({ input, executor }) };
+  const tx = {
+    execute: async () => undefined,
+    update: () => chain([{ id: "alarm-1" }]),
+    select: () => chain([]),
+  };
+  const db = { transaction: async (fn: (t: unknown) => Promise<unknown>) => fn(tx) } as unknown as BmsDb;
+  const fleetDb = { select: () => chain([{ organizationId: "org-1" }]) } as unknown as BmsDb;
+  const service = new AlarmsService(db, fleetDb, {} as AlarmsGateway, audit as unknown as MasterDataAuditService);
+  const actor = { sub: "sub-1", email: "a@b.c" };
+  await service.acknowledge("alarm-1", actor, "Panel checked", null).catch(() => undefined);
+  assert(calls.length === 1, `audit.write ran ${calls.length} times, not once`);
+  const [call] = calls;
+  assert(call?.executor === tx, "audit.write did not run in the acknowledge transaction");
+  assert(
+    JSON.stringify({ ...call.input }) ===
+      JSON.stringify({
+        actor,
+        organizationId: "org-1",
+        action: "alarm_ack",
+        entityType: "alarm",
+        entityId: "alarm-1",
+        reason: "Panel checked",
+        payload: { alarmId: "alarm-1", oidcSubject: "sub-1", actorEmail: "a@b.c" },
+      }),
+    `audit.write got ${JSON.stringify(call.input)}`,
+  );
 }

@@ -13,6 +13,7 @@ import {
   latestFinishedIsTheNewestRecordedChange,
   theRealTimestampsCompose,
   aClaimReturnsThePreconditionItWasProposedWith,
+  anOperationalChangeStores,
   aKpiOnlyProposalKeepsTheStoredSections,
   aMissingAssetTemplateIsTheSameRefusal,
   anAssetTemplateOutsideTheAllowedSetIsTheSingleRefusal,
@@ -236,6 +237,9 @@ describe.skipIf(!connectionString)("F3.85 — the copilot pending-change claim (
   });
   it("F4.247: aClaimReturnsThePreconditionItWasProposedWith", async () => {
     await aClaimReturnsThePreconditionItWasProposedWith(proposeCtx);
+  });
+  it("F4.284: anOperationalChangeStores", async () => {
+    await anOperationalChangeStores(proposeCtx);
   });
   it("F4.247: aChangeWithoutAPreconditionListsANullIfMatch", async () => {
     await aChangeWithoutAPreconditionListsANullIfMatch(proposeCtx);

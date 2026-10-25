@@ -70,6 +70,28 @@ const CATALOG_WRITERS = [
   "apps/api/src/mimic-layouts/mimic-layouts.service.ts",
   "apps/api/src/mimic-symbol-libraries/mimic-symbol-libraries.service.ts",
   "apps/api/src/admin/vocabularies/asset-roles/asset-roles.service.ts",
+  // `F4.282` (Amendment 8): the location-type vocabulary, every route an entry.
+  "apps/api/src/admin/vocabularies/location-types.service.ts",
+  // `F4.278` (Amendment 8): every alarm-rule write entry's handler reaches this service.
+  "apps/api/src/rules/rules.service.ts",
+  // `F4.279` (Amendment 8): the channel writes (and `PUT /rules/:id/notifications`) and the
+  // escalation profiles and defaults. `channels.service.ts` is deliberately NOT listed: it
+  // holds only the reads the worker loads and no longer references the funnel.
+  "apps/api/src/notifications/channel-writes.service.ts",
+  "apps/api/src/notifications/escalation-profiles.service.ts",
+  // F4.280 (Amendment 8): the report schedule writes and the on-demand file save.
+  "apps/api/src/reports/report-schedules.service.ts",
+  "apps/api/src/reports/report-files.service.ts",
+  // F4.281 (Amendment 8): the maintenance schedule create and the two direction entries.
+  "apps/api/src/maintenance/maintenance.service.ts",
+  // F4.283 (Amendment 8): the telemetry import and manual readings write through the one write path;
+  // the asset image upload (and its excluded DELETE) through the image write service.
+  "apps/api/src/admin/telemetry-entry/telemetry-write.service.ts",
+  "apps/api/src/assets/asset-images-write.service.ts",
+  // F4.284 (ADR 0106): the alarm acknowledge and enrichment, and every work-order write.
+  "apps/api/src/alarms/alarms.service.ts",
+  "apps/api/src/alarms/alarm-enrichment.service.ts",
+  "apps/api/src/work-orders/work-orders.service.ts",
 ] as const;
 
 /**
@@ -128,10 +150,25 @@ const CATALOG_DIRS = [
   "admin/point-keys",
   "admin/users",
   "admin/onboarding",
-  // `F3.87` PR 2: never `admin/vocabularies` itself — `location-types.service.ts` audits and is no entry (plan D7).
   "mimic-layouts",
   "mimic-symbol-libraries",
-  "admin/vocabularies/asset-roles",
+  // `F4.282` (Amendment 8): the whole vocabulary directory — both services back catalog entries.
+  "admin/vocabularies",
+  // `F4.278` (Amendment 8): the alarm rules — the old direct `insert(auditLog)` helper is gone.
+  "rules",
+  // `F4.279` (Amendment 8): notifications and escalation — the two direct helpers are gone.
+  "notifications",
+  // F4.280 (Amendment 8): the report schedules and files — both write services already audit through the funnel.
+  "reports",
+  // F4.281 (Amendment 8): the maintenance schedules — the three direct audit inserts are gone.
+  "maintenance",
+  // F4.284 (ADR 0106): the alarm and work-order writes — their direct audit inserts are gone.
+  "alarms",
+  "work-orders",
+  // F4.283 (Amendment 8): the telemetry write path and importer, and the assets directory (the image writes).
+  "admin/telemetry-entry",
+  "admin/telemetry-import",
+  "assets",
 ] as const;
 
 /** The drizzle form and the raw-SQL form. */
@@ -349,7 +386,8 @@ describe("F3.85 — every catalog write is audited through the copilot mark (ADR
       .map((file) => relative(apiSrc, file).replaceAll("\\", "/"));
     // Positive control: the scan sees the known writers, so an empty result cannot mean a broken regex.
     expect(direct).toContain("admin/master-data-audit.service.ts");
-    expect(direct).toContain("work-orders/work-orders.service.ts");
+    // `F4.284` moved the work-order inserts onto the funnel; the discovery job store still inserts directly.
+    expect(direct).toContain("onboarding-discovery/discovery-job-store.ts");
     const inCatalog = direct.filter((file) => CATALOG_DIRS.some((dir) => file.startsWith(`${dir}/`)));
     expect(inCatalog, "a catalog write inserting into bms.audit_log itself loses the copilot mark").toEqual([]);
   });

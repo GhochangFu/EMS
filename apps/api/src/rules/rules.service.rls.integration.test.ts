@@ -7,6 +7,7 @@ import { assets, automationRules, createDb, ruleExecutions } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AlarmRaiser } from "../alarms/alarm-raise.service";
 import { withTenant } from "../database/tenant-context";
 import type { NotificationsService } from "../notifications/notifications.service";
@@ -34,6 +35,7 @@ import {
   assertUpdateRuleReadsBackInTenantTransaction,
   EVALUATOR_SUBJECT,
   type RulesRlsFixtures,
+  theRuleCheckWritesNoAuditRowWherePreviewWritesOne,
 } from "./rules.service.rls.integration.spec";
 
 /**
@@ -275,6 +277,7 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
         new VocabulariesService(f),
         new AlarmRaiser(t),
         notifications,
+        new MasterDataAuditService(t, f),
       );
     ctx = {
       service: makeService(tenantDb, fleetDb),
@@ -339,6 +342,10 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
 
   it("previewRule's audit org forks on whether the draft resolves an asset (E7.1c item D)", async () => {
     await assertPreviewAuditOrgForksOnAsset(ctx, `${PREFIX}PREVIEWASSET`, `${PREFIX}PREVIEWNOASSET`);
+  });
+
+  it("the copilot rule check writes no audit row where previewRule writes one (F4.278)", async () => {
+    await theRuleCheckWritesNoAuditRowWherePreviewWritesOne(ctx, `${PREFIX}CHECK`);
   });
 
   it("folds the updateRule read-back into the write's tenant transaction (E7.1c)", async () => {

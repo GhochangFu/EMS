@@ -5,29 +5,24 @@ import type { NotificationChannelDto, NotificationTestResult } from "@bms/shared
 
 import { fetchAdminOrganizations } from "../../api/admin/organizations";
 import {
-  createNotificationChannel,
   deleteNotificationChannel,
   fetchNotificationChannels,
   fetchNotificationReadiness,
-  testNotificationChannel,
-  updateNotificationChannel,
 } from "../../api/notifications";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
+import { ChannelTestWizard } from "../../components/notifications/channel-test-wizard";
+import { ChannelToggleWizard } from "../../components/notifications/channel-toggle-wizard";
+import { ChannelWizard } from "../../components/notifications/channel-wizard";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import {
-  blankChannelForm,
-  channelFormToPatch,
-  channelFormToPayload,
   channelOrganizationOptions,
-  formFromChannel,
   organizationChoiceRefusal,
   organizationLabel,
   sendTestRefusal,
   targetFromConfig,
   testResultMessage,
-  type ChannelForm,
 } from "../../lib/notification-channels";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
@@ -76,8 +71,17 @@ type NotificationChannelsPageProps = { user: AuthUser };
  */
 export function NotificationChannelsPage({ user }: NotificationChannelsPageProps) {
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<ChannelForm>(blankChannelForm());
-  const [editing, setEditing] = useState<NotificationChannelDto | null>(null);
+  /**
+   * `F4.279` (ADR 0099 decision 6): the open wizard — a create or an edit
+   * (`ChannelWizard`), a direction (`ChannelToggleWizard`) or a send test
+   * (`ChannelTestWizard`). Each is a catalog entry on `WizardShell`, so the
+   * copilot can fill it.
+   */
+  const [open, setOpen] = useState<
+    | { kind: "create" }
+    | { kind: "edit" | "toggle" | "test"; channel: NotificationChannelDto }
+    | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<
     (NotificationTestResult & { channelCode: string }) | null
@@ -93,10 +97,6 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
     queryFn: fetchNotificationReadiness,
   });
 
-  // `"all"`, not `"true"`: this list resolves the Organization column's names,
-  // and a channel in a deactivated organization is still a real row that must
-  // render its name. `channelOrganizationOptions` filters to active for the
-  // picker, where offering a deactivated organization would be wrong.
   const organizationsQ = useQuery({
     queryKey: ["admin", "organizations", "all"],
     queryFn: () => fetchAdminOrganizations("all"),
@@ -110,61 +110,23 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
     [user.role, organizations],
   );
 
-  // The `HierarchyFilterBar` pattern: a non-global admin with nothing to
-  // choose between is shown the control locked rather than not shown it at
-  // all. Hiding it would leave the operator unable to see which tenant the
-  // channel they are creating belongs to.
-  //
-  // `<= 1` covers two states — one option, chosen for you, and none, where
-  // there is nothing to choose at all. Both lock the control, and the second
-  // is why this is not `=== 1`: an unlocked empty picker offers a placeholder
-  // the operator can never satisfy.
-  //
-  // The lock is not what keeps an unchosen organization from being SUBMITTED.
-  // With no options `effectiveOrganizationId` falls back to `""`, which omits
-  // `organizationId` and lets `resolveCreateTargetOrg` resolve a tenant the
-  // picker deliberately refused to offer. `organizationChoiceRefusal` below is
-  // the only thing that stops that. Two guards, two different jobs.
+  // `E7.1d`. One organization and no choice: the wizard's select shows it disabled.
   const organizationLocked = user.role !== "admin" && organizationOptions.length <= 1;
-  const effectiveOrganizationId = organizationLocked
-    ? (organizationOptions[0]?.value ?? "")
-    : form.organizationId;
 
-  // Whether the create form has a usable organization, and why not when it has
-  // none. The list decides it, so the form waits for the list rather than
-  // guessing while it loads: an `organization_admin` briefly has no options,
-  // and acting on that would show a refusal that is about to stop being true.
+  // Create only, and the page-level half of `organizationChoiceRefusal`: a list
+  // that failed, or no organization at all, leaves nothing to choose in the
+  // wizard, so the button says why it is disabled. The "choose one" half is the
+  // wizard's own (its Organization field).
   const organizationsSettled = !organizationsQ.isPending;
-  const organizationRefusal =
-    editing === null && organizationsSettled
-      ? organizationChoiceRefusal(
-          user.role,
-          organizationOptions,
-          effectiveOrganizationId,
-          organizationsQ.isError,
-        )
-      : null;
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (editing) {
-        // `channelFormToPatch`, not `channelFormToPayload`: an update carries
-        // neither `code` nor `organizationId`, and sending a tenancy field the
-        // API silently strips would read back as a successful move.
-        return updateNotificationChannel({ id: editing.id, patch: channelFormToPatch(form) });
-      }
-      return createNotificationChannel(
-        channelFormToPayload({ ...form, organizationId: effectiveOrganizationId }),
-      );
-    },
-    onSuccess: async () => {
-      setForm(blankChannelForm());
-      setEditing(null);
-      setError(null);
-      await queryClient.invalidateQueries({ queryKey: ["notifications", "channels"] });
-    },
-    onError: (err: unknown) => setError(apiErrorMessage(err)),
-  });
+  const createRefusal = !organizationsSettled
+    ? null
+    : user.role === "admin"
+      ? null
+      : organizationsQ.isError
+        ? organizationChoiceRefusal(user.role, organizationOptions, "", true)
+        : organizationOptions.length === 0
+          ? organizationChoiceRefusal(user.role, organizationOptions, "")
+          : null;
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteNotificationChannel(id),
@@ -175,26 +137,15 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
     onError: (err: unknown) => setError(apiErrorMessage(err)),
   });
 
-  const testMutation = useMutation({
-    mutationFn: (channel: NotificationChannelDto) => testNotificationChannel(channel.id),
-    onSuccess: async (result) => {
-      setTestResult({ ...result, channelCode: result.channelCode });
-      setError(null);
-      // A test writes a delivery row like any other attempt.
-      await queryClient.invalidateQueries({ queryKey: ["notifications", "deliveries"] });
-    },
-    onError: (err: unknown) => setError(apiErrorMessage(err)),
-  });
+  const afterWrite = async () => {
+    setOpen(null);
+    setError(null);
+    await queryClient.invalidateQueries({ queryKey: ["notifications", "channels"] });
+  };
 
   const channels = channelsQ.data?.items ?? [];
   const unready = (readinessQ.data?.items ?? []).filter((item) => !item.configured);
-  // Declared after the mutations because it reads one of them. A create waits
-  // for the organization list as well as for its own request: without the list
-  // the form cannot know whether it has a tenant to create in.
-  const cannotSave =
-    saveMutation.isPending ||
-    organizationRefusal !== null ||
-    (editing === null && !organizationsSettled);
+  const cannotCreate = createRefusal !== null || !organizationsSettled;
 
   return (
     <MasterDataLayout user={user}>
@@ -258,8 +209,6 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
           <tbody>
             {channels.map((channel) => {
               const testRefusal = sendTestRefusal(channel);
-              const testingThis =
-                testMutation.isPending && testMutation.variables?.id === channel.id;
               return (
                 <tr key={channel.id} className="border-b border-well-deep">
                   <td className="px-2 py-2 font-mono">{channel.code}</td>
@@ -284,25 +233,31 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
                         type="button"
                         className="text-xs font-semibold text-accent-strong"
                         onClick={() => {
-                          setEditing(channel);
-                          setForm(formFromChannel(channel));
+                          setOpen({ kind: "edit", channel });
                           setError(null);
                         }}
                       >
                         Edit
                       </button>
+                      {/* `E7.1d`: disabled on a fleet-wide channel, with the
+                          reason beside it — a button that is greyed out and
+                          says nothing is the same dead end as one that fails
+                          silently. `F4.279`: it opens the red Review card. */}
                       <button
                         type="button"
                         className="text-xs font-semibold text-accent-strong disabled:text-ink-muted"
-                        disabled={testMutation.isPending || testRefusal !== null}
-                        aria-busy={testingThis}
-                        // The reason travels with the disabled control. A button
-                        // that is greyed out and says nothing is the same dead
-                        // end as one that fails silently.
+                        disabled={testRefusal !== null}
                         title={testRefusal ?? undefined}
-                        onClick={() => testMutation.mutate(channel)}
+                        onClick={() => setOpen({ kind: "test", channel })}
                       >
-                        {testingThis ? "Sending test…" : "Send test"}
+                        Send test
+                      </button>
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-accent-strong"
+                        onClick={() => setOpen({ kind: "toggle", channel })}
+                      >
+                        {channel.enabled ? "Disable" : "Enable"}
                       </button>
                       <button
                         type="button"
@@ -330,155 +285,51 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
         </table>
       </SectionCard>
 
-      <SectionCard
-        title={editing ? `Edit ${editing.code}` : "Add a channel"}
-        bodyClassName="p-3 space-y-3"
-      >
-        <form
-          className="space-y-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            saveMutation.mutate();
+      <SectionCard title="Add a channel" bodyClassName="p-3 space-y-3">
+        {/* The reason travels with the disabled control, the same way the
+            Send test refusal does. */}
+        {createRefusal ? <p className="text-xs text-ink-muted">{createRefusal}</p> : null}
+        <button
+          type="button"
+          className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
+          disabled={cannotCreate}
+          aria-busy={organizationsQ.isPending}
+          onClick={() => {
+            setOpen({ kind: "create" });
+            setError(null);
           }}
         >
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-ink-muted">Code</span>
-              <input
-                className="w-full surface-field px-3 py-1.5"
-                value={form.code}
-                disabled={editing !== null}
-                onChange={(event) => setForm({ ...form, code: event.target.value })}
-              />
-            </label>
-            <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-ink-muted">Name</span>
-              <input
-                className="w-full surface-field px-3 py-1.5"
-                value={form.name}
-                onChange={(event) => setForm({ ...form, name: event.target.value })}
-              />
-            </label>
-            {/* `E7.1d`. Disabled while editing rather than hidden: a channel
-                cannot change organization (`PATCH` carries no
-                `organizationId`), but the operator must still see whose
-                channel they are editing. Disabled again when the role has
-                exactly one organization — no choice to make, and hiding it
-                would hide the tenant too. */}
-            <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-ink-muted">
-                Organization
-              </span>
-              <select
-                className="w-full surface-field px-3 py-1.5 disabled:opacity-60 disabled:text-ink-muted"
-                value={editing ? form.organizationId : effectiveOrganizationId}
-                disabled={editing !== null || organizationLocked}
-                onChange={(event) =>
-                  setForm({ ...form, organizationId: event.target.value })
-                }
-              >
-                {/* An edited channel may sit in an organization the picker
-                    does not offer — a deactivated one, or fleet-wide under a
-                    role that cannot create fleet-wide. The disabled control
-                    must still render its real value rather than snap to the
-                    first option and misreport the row. */}
-                {editing ? (
-                  <option value={form.organizationId}>
-                    {organizationLabel(editing.organizationId, organizations)}
-                  </option>
-                ) : (
-                  <>
-                    {/* An `organization_admin` is offered no fleet-wide entry,
-                        so a blank form's `""` matches no option and the
-                        control would render `selectedIndex = -1` — a picker
-                        showing the first organization while holding none.
-                        `HierarchyFilterBar` answers this with an explicit
-                        placeholder and so does this. An `admin` needs none:
-                        `""` is Fleet-wide there, and it is the first option. */}
-                    {user.role !== "admin" && !organizationLocked ? (
-                      <option value="">Select organization</option>
-                    ) : null}
-                    {organizationOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </>
-                )}
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-ink-muted">Kind</span>
-              <select
-                className="w-full surface-field px-3 py-1.5"
-                value={form.kind}
-                onChange={(event) => setForm({ ...form, kind: event.target.value })}
-              >
-                <option value="email">email</option>
-                <option value="webhook">webhook</option>
-              </select>
-            </label>
-            <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-ink-muted">
-                {form.kind === "email" ? "Recipients (comma separated)" : "Webhook URL"}
-              </span>
-              <input
-                className="w-full surface-field px-3 py-1.5"
-                value={form.target}
-                onChange={(event) => setForm({ ...form, target: event.target.value })}
-              />
-            </label>
-            <label className="text-sm">
-              <span className="block text-xs font-semibold uppercase text-ink-muted">
-                {editing?.hasSecret ? "Secret (set — type to replace)" : "Secret (optional)"}
-              </span>
-              <input
-                type="password"
-                className="w-full surface-field px-3 py-1.5"
-                value={form.secret}
-                placeholder={editing?.hasSecret ? "•••••••• stored" : ""}
-                onChange={(event) => setForm({ ...form, secret: event.target.value })}
-              />
-            </label>
-            <label className="flex items-end gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                onChange={(event) => setForm({ ...form, enabled: event.target.checked })}
-              />
-              <span>Enabled</span>
-            </label>
-          </div>
-          {/* The reason travels with the disabled control, the same way the
-              Send test refusal does. A submit button that is greyed out and
-              says nothing leaves the operator with no move to make. */}
-          {organizationRefusal ? (
-            <p className="text-xs text-ink-muted">{organizationRefusal}</p>
-          ) : null}
-          <div className="flex gap-2">
-            <button
-              type="submit"
-              className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
-              disabled={cannotSave}
-              aria-busy={saveMutation.isPending}
-            >
-              {saveMutation.isPending ? "Saving…" : editing ? "Save changes" : "Add channel"}
-            </button>
-            {editing ? (
-              <button
-                type="button"
-                className="surface-button px-3 py-2"
-                onClick={() => {
-                  setEditing(null);
-                  setForm(blankChannelForm());
-                }}
-              >
-                Cancel
-              </button>
-            ) : null}
-          </div>
-        </form>
+          {organizationsQ.isPending ? "Loading organizations…" : "Add channel"}
+        </button>
       </SectionCard>
+
+      {open?.kind === "create" || open?.kind === "edit" ? (
+        <ChannelWizard
+          channel={open.kind === "edit" ? open.channel : null}
+          role={user.role}
+          organizationOptions={organizationOptions}
+          organizationLocked={organizationLocked}
+          organizationsUnavailable={organizationsQ.isError}
+          organizationName={open.kind === "edit" ? organizationLabel(open.channel.organizationId, organizations) : ""}
+          onCancel={() => setOpen(null)}
+          onDone={afterWrite}
+        />
+      ) : null}
+      {open?.kind === "toggle" ? (
+        <ChannelToggleWizard channel={open.channel} onCancel={() => setOpen(null)} onDone={afterWrite} />
+      ) : null}
+      {open?.kind === "test" ? (
+        <ChannelTestWizard
+          channel={open.channel}
+          onCancel={() => setOpen(null)}
+          onDone={async (result) => {
+            setOpen(null);
+            setTestResult({ ...result, channelCode: result.channelCode });
+            setError(null);
+            await queryClient.invalidateQueries({ queryKey: ["notifications", "deliveries"] });
+          }}
+        />
+      ) : null}
     </MasterDataLayout>
   );
 }

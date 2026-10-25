@@ -25,12 +25,28 @@ import {
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
   createAssetRoleBodySchema,
+  updateAssetRoleBodySchema,
+  createLocationTypeBodySchema,
+  updateLocationTypeBodySchema,
   createMimicLayoutBodySchema,
   createMimicOrgSymbolLibraryBodySchema,
   putMimicLayoutBodySchema,
   putMimicLibrarySettingBodySchema,
   updateMimicOrgSymbolBodySchema,
   updateMimicOrgSymbolLibraryBodySchema,
+  ruleDraftBodySchema,
+  ruleLifecycleBodySchema,
+  ruleToggleBodySchema,
+  ruleUpdateBodySchema,
+  createEscalationProfileBodySchema,
+  createNotificationChannelBodySchema,
+  setEscalationDefaultsBodySchema,
+  setRuleNotificationsBodySchema,
+  updateEscalationProfileBodySchema,
+  updateNotificationChannelBodySchema,
+  // `F4.281` (ADR 0030): the maintenance schedule write bodies.
+  createMaintenanceScheduleBodySchema,
+  updateMaintenanceScheduleBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -82,11 +98,6 @@ import {
   createPointKeyBodySchema,
   updatePointKeyBodySchema,
 } from "../admin/point-keys/point-keys.schema";
-import { updateAssetRoleBodySchema } from "../admin/vocabularies/asset-roles/asset-roles.schema";
-import {
-  createLocationTypeBodySchema,
-  updateLocationTypeBodySchema,
-} from "../admin/vocabularies/location-types.schema";
 import {
   createRtuBodySchema,
   updateRtuBodySchema,
@@ -101,55 +112,32 @@ import {
   pointsLatestQuerySchema,
   pointValuesAtQuerySchema,
 } from "../telemetry/telemetry.schema";
-import {
-  createEscalationProfileBodySchema,
-  escalationDefaultsQuerySchema,
-  setEscalationDefaultsBodySchema,
-  updateEscalationProfileBodySchema,
-} from "../notifications/escalation-profiles.schema";
-import {
-  createNotificationChannelBodySchema,
-  listDeliveriesQuerySchema,
-  setRuleNotificationsBodySchema,
-  updateNotificationChannelBodySchema,
-} from "../notifications/notifications.schema";
-import { alarmAckBodySchema } from "../alarms/ack.schema";
+import { escalationDefaultsQuerySchema } from "../notifications/escalation-profiles.schema";
+import { listDeliveriesQuerySchema } from "../notifications/notifications.schema";
 import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-list.schema";
-import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { assetKpisQuerySchema, assetRoleSummaryQuerySchema } from "../assets/assets.schema";
 import { loginBodySchema } from "../auth/login.schema";
 import { mapSitesQuerySchema } from "../map/map.schema";
 import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import { siteWidgetsQuerySchema } from "../dashboard-builder/site-widgets.schema";
+import { listMaintenanceQuerySchema } from "../maintenance/maintenance.schema";
+import { listReportFilesQuerySchema } from "../reports/report-files.schema";
+// `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`;
+// `F4.284`: the alarm, work-order and convert bodies too.
 import {
-  convertMaintenanceBodySchema,
-  createMaintenanceScheduleBodySchema,
-  listMaintenanceQuerySchema,
-  updateMaintenanceScheduleBodySchema,
-} from "../maintenance/maintenance.schema";
-import {
-  listReportFilesQuerySchema,
-  saveEnergyReportFileBodySchema,
-} from "../reports/report-files.schema";
-import {
-  createReportScheduleBodySchema,
-  updateReportScheduleBodySchema,
-} from "../reports/report-schedules.schema";
-import { energyReportQuerySchema } from "../reports/reports.schema";
-import {
-  listRuleExecutionsQuerySchema,
-  ruleDraftBodySchema,
-  ruleLifecycleBodySchema,
-  rulePreviewBodySchema,
-  ruleToggleBodySchema,
-  ruleUpdateBodySchema,
-} from "../rules/rules.schema";
-import {
+  alarmAckBodySchema,
+  alarmEnrichmentUpsertBodySchema,
   closeWorkOrderBodySchema,
+  convertMaintenanceBodySchema,
   createWorkOrderBodySchema,
   reorderWorkOrdersBodySchema,
   updateWorkOrderStatusBodySchema,
-} from "../work-orders/work-order.schema";
+  createReportScheduleBodySchema,
+  energyReportQuerySchema,
+  saveEnergyReportFileBodySchema,
+  updateReportScheduleBodySchema,
+} from "@bms/shared";
+import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "../rules/rules.schema";
 
 /**
  * `F4.20` / ADR 0029 decision 3 — the join between a route and the Zod schema

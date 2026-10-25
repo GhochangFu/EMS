@@ -56,7 +56,7 @@ function sameObject(actual: unknown, expected: unknown, message: string): void {
  * side moves. All three, not only the regex: the schema is
  * `.min(3).max(64).regex(...)`, and a derived code that satisfies the pattern
  * and the column can still be too short for the rule builder's own PATCH.
- * `ruleCodeSchema` is private to `rules.schema.ts`, so this is a restatement
+ * `ruleCodeSchema` is private to `packages/shared/src/contracts/rule-writes.ts`, so this is a restatement
  * rather than an import — that is why it lists every check the schema applies.
  */
 const RULE_CODE_PATTERN = /^[A-Z0-9][A-Z0-9_-]*$/;

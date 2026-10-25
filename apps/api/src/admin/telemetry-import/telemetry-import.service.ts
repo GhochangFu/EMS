@@ -1,10 +1,11 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { inArray, or } from "drizzle-orm";
 import { z } from "zod";
 
 import { assets } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
+  CopilotTelemetryImportPreview,
   JwtPayload,
   RejectedRowDto,
   TelemetryEntryRow,
@@ -14,6 +15,7 @@ import type {
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE } from "../../database/database.tokens";
+import { echoedItems, moreTail } from "../spreadsheet-guard";
 import { TelemetryWriteService } from "../telemetry-entry/telemetry-write.service";
 import { type ImportRowRejection, type ParsedImportRow, parseWorkbook } from "./telemetry-import-rows";
 import { MAX_IMPORT_FILE_BYTES, type TelemetryImportOptions } from "./telemetry-import.schema";
@@ -25,11 +27,34 @@ import { MAX_IMPORT_FILE_BYTES, type TelemetryImportOptions } from "./telemetry-
  * requirement). `TelemetryWriteService`'s own scope rejection for a resolved
  * `assetId` uses this same text.
  */
-const ASSET_NOT_FOUND_REASON = "Asset not found or outside your access scope";
+export const ASSET_NOT_FOUND_REASON = "Asset not found or outside your access scope";
+
+/** `F4.283` (Amendment 8 Q21): the row numbers a refusal lists, bounded (`echoedItems`). */
+export function rowList(rowNumbers: readonly number[]): string {
+  const { shown, omitted } = echoedItems([...new Set(rowNumbers)].sort((a, b) => a - b));
+  return `${shown.length + omitted === 1 ? "Row" : "Rows"} ${shown.join(", ")}${moreTail(omitted)}`;
+}
+
+/** `F4.283` (Q21): the refusal for rows whose asset is in another organization than the conversation's. */
+export function outsideOrganizationMessage(rowNumbers: readonly number[]): string {
+  return `${rowList(rowNumbers)}: the asset is outside this conversation's organization.`;
+}
+
+/** `F4.283`: what the copilot's import check gets — the route's preview, and the mappings the commit would create. */
+export type ImportProposalPreview = Omit<CopilotTelemetryImportPreview, "mappingsToCreate"> & {
+  readonly rejected: RejectedRowDto[];
+  readonly mappingsToCreate: ReadonlyArray<{ readonly assetCode: string; readonly pointKey: string }>;
+};
 
 const assetIdShape = z.string().uuid();
 
-type ResolvedRow = { readonly rowNumber: number; readonly row: TelemetryEntryRow };
+type ResolvedRow = {
+  readonly rowNumber: number;
+  readonly row: TelemetryEntryRow;
+  /** `F4.283`: the asset's organization and the sheet's own label for it (its code, else its id). */
+  readonly organizationId: string;
+  readonly assetLabel: string;
+};
 
 /**
  * CSV/Excel telemetry bulk import (`F1.9`).
@@ -81,6 +106,46 @@ export class TelemetryImportService {
       acceptedCount: resolved.length,
       rejectedCount: rejected.length,
       rejected,
+    };
+  }
+
+  /**
+   * `F4.283` (ADR 0099 Amendment 8 Q18, Q21; owner ruling 2026-10-24, drafter choice 4) — the
+   * copilot's read-only import check. The counts are the route's own `preview` (the same parse, the
+   * same resolution); `commit` stays the authority. Two refusals the route's preview does not make:
+   * a row whose asset is not found or outside the caller's scope (the route's own sentence, with the
+   * row numbers), and a row whose asset is in another organization than the conversation's. The
+   * mappings the commit would create come from `validateRows`, which writes nothing.
+   */
+  async previewForProposal(jwt: JwtPayload, buffer: Buffer, organizationId: string): Promise<ImportProposalPreview> {
+    await this.accessControl.requireMasterDataUser(jwt);
+    this.assertFileSize(buffer);
+    const parsed = this.parseOrThrow(buffer);
+    const { resolved, rejected: resolutionRejected } = await this.resolveRows(jwt, parsed.rows);
+    if (resolutionRejected.length > 0) {
+      throw new ForbiddenException(`${rowList(resolutionRejected.map((r) => r.rowNumber))}: ${ASSET_NOT_FOUND_REASON}.`);
+    }
+    const outside = resolved.filter((r) => r.organizationId !== organizationId).map((r) => r.rowNumber);
+    if (outside.length > 0) throw new ForbiddenException(outsideOrganizationMessage(outside));
+    const rejected = this.mergeRejected(parsed.rejected, resolutionRejected);
+    const { accepted } = await this.writeService.validateRows(
+      jwt,
+      resolved.map((r) => r.row),
+      resolved.map((r) => r.rowNumber),
+    );
+    const labelOf = new Map(resolved.map((r) => [r.rowNumber, r.assetLabel]));
+    const mappings = new Map<string, { assetCode: string; pointKey: string }>();
+    for (const a of accepted) {
+      if (!a.mappingNeeded) continue;
+      const assetCode = labelOf.get(a.rowNumber) ?? a.row.assetId;
+      mappings.set(`${a.row.assetId}|${a.row.pointKey}`, { assetCode, pointKey: a.row.pointKey });
+    }
+    return {
+      totalRows: parsed.rows.length + parsed.rejected.length,
+      acceptedCount: resolved.length,
+      rejectedCount: rejected.length,
+      rejected,
+      mappingsToCreate: [...mappings.values()],
     };
   }
 
@@ -180,19 +245,19 @@ export class TelemetryImportService {
       ),
     ];
 
-    const byCode = new Map<string, { id: string; locationId: string }>();
-    const byId = new Map<string, { locationId: string }>();
+    const byCode = new Map<string, { id: string; locationId: string; organizationId: string }>();
+    const byId = new Map<string, { locationId: string; organizationId: string; code: string }>();
     if (codes.length > 0 || ids.length > 0) {
       const conditions = [];
       if (codes.length > 0) conditions.push(inArray(assets.code, codes));
       if (ids.length > 0) conditions.push(inArray(assets.id, ids));
       const found = await this.fleetDb
-        .select({ id: assets.id, code: assets.code, locationId: assets.locationId })
+        .select({ id: assets.id, code: assets.code, locationId: assets.locationId, organizationId: assets.organizationId })
         .from(assets)
         .where(or(...conditions));
       for (const f of found) {
-        byCode.set(f.code, { id: f.id, locationId: f.locationId });
-        byId.set(f.id, { locationId: f.locationId });
+        byCode.set(f.code, { id: f.id, locationId: f.locationId, organizationId: f.organizationId });
+        byId.set(f.id, { locationId: f.locationId, organizationId: f.organizationId, code: f.code });
       }
     }
 
@@ -204,17 +269,23 @@ export class TelemetryImportService {
     for (const r of rows) {
       let assetId: string | undefined;
       let locationId: string | undefined;
+      let organizationId = "";
+      let assetLabel = "";
       if (r.assetId) {
         const match = byId.get(r.assetId);
         if (match) {
           assetId = r.assetId;
           locationId = match.locationId;
+          organizationId = match.organizationId;
+          assetLabel = match.code;
         }
       } else if (r.assetCode) {
         const match = byCode.get(r.assetCode);
         if (match) {
           assetId = match.id;
           locationId = match.locationId;
+          organizationId = match.organizationId;
+          assetLabel = r.assetCode;
         }
       }
       const inScope =
@@ -231,6 +302,8 @@ export class TelemetryImportService {
       }
       resolved.push({
         rowNumber: r.rowNumber,
+        organizationId,
+        assetLabel,
         row: {
           assetId,
           pointKey: r.pointKey,

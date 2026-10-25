@@ -474,8 +474,15 @@ describe("repo invariants", () => {
         }
       }
     }
+    // `F4.283` names `text/csv` as the media type of a file the admin attaches, never as a download
+    // it builds: `copilot-attachments.ts` sniffs the bytes, and the shared `file-data.ts` catalog
+    // entry lists it in `upload.accepts`. Neither writes a CSV cell. Checks 4 and 5 both skip them.
+    const notWriters = new Set([
+      "apps/api/src/copilot/copilot-attachments.ts",
+      "packages/shared/src/copilot/catalog/file-data.ts",
+    ]);
     const orphanWriters = [...body]
-      .filter(([f, src]) => src.includes("text/csv") && !/\.(spec|test)\.tsx?$/.test(f))
+      .filter(([f, src]) => src.includes("text/csv") && !/\.(spec|test)\.tsx?$/.test(f) && !notWriters.has(f))
       .map(([f]) => f)
       .filter((f) => !reaching.has(f));
     expect(
@@ -496,7 +503,7 @@ describe("repo invariants", () => {
     //    import. `exports/export-phe-from-json.mjs` is outside `searchRoots`
     //    entirely, for the reason given above.
     const outside = [...all]
-      .filter(([f]) => !f.startsWith("apps/api/src/") && !/\.(spec|test)\.tsx?$/.test(f))
+      .filter(([f]) => !f.startsWith("apps/api/src/") && !/\.(spec|test)\.tsx?$/.test(f) && !notWriters.has(f))
       .filter(([, src]) => src.includes("text/csv") || doublesQuotes.test(src))
       .map(([f]) => f);
     expect(

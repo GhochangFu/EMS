@@ -596,13 +596,16 @@ export async function offersAttachWithTheUnscrubbedSentence(): Promise<void> {
   await openPanel();
   const input = await screen.findByLabelText(ATTACH);
   expect(input).toHaveAttribute("type", "file");
-  expect(input).toHaveAttribute("accept", ".png,.jpg,.jpeg,.webp,.pdf,.svg");
+  expect(input).toHaveAttribute("accept", ".png,.jpg,.jpeg,.webp,.pdf,.svg,.csv,.xlsx");
   expect(input).toHaveAttribute("multiple");
   const sentence = "The file goes to your organization's AI provider as it is, unscrubbed.";
+  // `F4.283` (drafter choice 8): the CSV/XLSX line rides on the accessible name too.
+  const carryOnly = "A CSV or XLSX file stays in this browser and is not sent to the provider.";
   expect(screen.getByTitle(sentence)).toBeInTheDocument();
-  expect(input).toHaveAccessibleName(`Attach files. ${sentence}`);
+  expect(input).toHaveAccessibleName(`Attach files. ${sentence} ${carryOnly}`);
   // A7: the sentence is on screen, not only in a tooltip and an accessible name.
   expect(screen.getByText(sentence)).toBeVisible();
+  expect(screen.getByText(carryOnly)).toBeVisible();
 }
 
 /** Present in a remembered conversation bound to the organization: the positive twin of (5). */
@@ -709,7 +712,7 @@ export async function refusesAFileTypeNotInTheList(): Promise<void> {
   await screen.findByLabelText(ATTACH);
   choose(aFile("plant.gif", 3, "image/gif"), aFile("plant.png"));
   expect(chips()).toEqual(["plant.png"]);
-  expect(screen.getByRole("alert")).toHaveTextContent('"plant.gif" is not a PNG, JPEG, WebP, PDF or SVG file.');
+  expect(screen.getByRole("alert")).toHaveTextContent('"plant.gif" is not a PNG, JPEG, WebP, PDF, SVG, CSV or XLSX file.');
 }
 
 export async function refusesAFileOverTenMegabytes(): Promise<void> {

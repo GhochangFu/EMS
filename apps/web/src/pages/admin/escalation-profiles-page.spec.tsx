@@ -217,6 +217,23 @@ async function addStep(): Promise<void> {
  * for in turn: the picker's options, the severity map's scope and the channel
  * checklist's filter all come from it.
  */
+/**
+ * `F4.279` (ADR 0099 decision 6): the profile form is a `WizardShell` — Profile,
+ * then Ladder, then Review — opened by Add profile (or a row's Edit).
+ */
+async function openCreate(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Add profile" }));
+  await screen.findByRole("dialog", { name: "Create an escalation profile" });
+}
+
+async function next(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+}
+
+async function submit(): Promise<void> {
+  await userEvent.click(await screen.findByRole("button", { name: "Submit" }));
+}
+
 async function organizationsLoaded(): Promise<void> {
   await screen.findByRole("option", { name: "Ion Exchange" });
 }
@@ -252,16 +269,18 @@ export async function createPostsTheOrganizationCodeNameAndLadder(): Promise<voi
 
   await organizationsLoaded();
   await userEvent.selectOptions(screen.getByLabelText("Organization"), ORG_A);
+  await openCreate();
   await userEvent.type(screen.getByLabelText("Code"), "after-hours");
   await userEvent.type(screen.getByLabelText("Name"), "After hours");
+  await next();
 
   await addStep();
   const step = screen.getByRole("group", { name: /Step 1/ });
   await userEvent.clear(within(step).getByLabelText("After (minutes)"));
   await userEvent.type(within(step).getByLabelText("After (minutes)"), "15");
   await userEvent.click(within(step).getByLabelText("Operations email"));
-
-  await userEvent.click(screen.getByRole("button", { name: "Add profile" }));
+  await next();
+  await submit();
 
   await waitFor(() => {
     expect(api.createEscalationProfile).toHaveBeenCalledWith({
@@ -278,8 +297,10 @@ export async function aStepRowCanBeAddedAndRemoved(): Promise<void> {
   renderPage(orgAdmin);
 
   await organizationsLoaded();
+  await openCreate();
   await userEvent.type(screen.getByLabelText("Code"), "night-shift");
   await userEvent.type(screen.getByLabelText("Name"), "Night shift");
+  await next();
 
   await addStep();
   await addStep();
@@ -298,9 +319,8 @@ export async function aStepRowCanBeAddedAndRemoved(): Promise<void> {
 
   expect(screen.queryByRole("group", { name: /Step 2/ })).not.toBeInTheDocument();
 
-  // The removal is real, not visual: the payload carries the surviving rung
-  // only, and it keeps the values that were typed into it.
-  await userEvent.click(screen.getByRole("button", { name: "Add profile" }));
+  await next();
+  await submit();
   await waitFor(() => {
     expect(api.createEscalationProfile).toHaveBeenCalledWith({
       organizationId: ORG_A,
@@ -329,16 +349,17 @@ export async function editingSendsOnlyTheNameAndLadder(): Promise<void> {
     within(screen.getByRole("row", { name: /after-hours/ })).getByRole("button", { name: "Edit" }),
   );
 
-  const code = screen.getByLabelText("Code");
+  const dialog = await screen.findByRole("dialog", { name: "Edit an escalation profile" });
+  const code = within(dialog).getByLabelText("Code");
   expect(code).toHaveValue("after-hours");
   expect(code).toBeDisabled();
-  const organizationSelect = screen.getByLabelText("Organization");
-  expect(organizationSelect).toBeDisabled();
-  expect(within(organizationSelect).getByRole("option")).toHaveTextContent("Ion Exchange");
+  // The organization is shown, not offered: a profile cannot change organization.
+  expect(within(dialog).getByText("Organization: Ion Exchange")).toBeInTheDocument();
 
-  // The stored ladder opens as it is stored — two rungs, in order, each with
-  // the channels it holds. Nothing else proves `stepNo` survives the round trip
-  // as a position rather than as a field the form has to carry.
+  await userEvent.clear(within(dialog).getByLabelText("Name"));
+  await userEvent.type(within(dialog).getByLabelText("Name"), "After hours (revised)");
+  await next();
+
   expect(
     within(screen.getByRole("group", { name: /Step 1/ })).getByLabelText("After (minutes)"),
   ).toHaveValue("15");
@@ -346,10 +367,8 @@ export async function editingSendsOnlyTheNameAndLadder(): Promise<void> {
   expect(within(second).getByLabelText("After (minutes)")).toHaveValue("60");
   expect(within(second).getByLabelText("Fleet webhook")).toBeChecked();
   expect(within(second).getByLabelText("Operations email")).not.toBeChecked();
-
-  await userEvent.clear(screen.getByLabelText("Name"));
-  await userEvent.type(screen.getByLabelText("Name"), "After hours (revised)");
-  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await next();
+  await submit();
 
   await waitFor(() => {
     expect(api.updateEscalationProfile).toHaveBeenCalledWith({
@@ -376,10 +395,15 @@ export async function theChannelChecklistExcludesAnotherTenantsChannels(): Promi
   renderPage(orgAdmin);
 
   await organizationsLoaded();
+  await waitFor(() => expect(screen.getByRole("button", { name: "Add profile" })).toBeEnabled());
+  await openCreate();
+  await userEvent.type(screen.getByLabelText("Code"), "night-shift");
+  await userEvent.type(screen.getByLabelText("Name"), "Night shift");
+  await next();
   await addStep();
 
-  const step = screen.getByRole("group", { name: /Step 1/ });
-  expect(within(step).getByLabelText("Operations email")).toBeInTheDocument();
+  const step = await screen.findByRole("group", { name: /Step 1/ });
+  expect(await within(step).findByLabelText("Operations email")).toBeInTheDocument();
   expect(within(step).getByLabelText("Fleet webhook")).toBeInTheDocument();
   expect(within(step).queryByLabelText("PHE email")).not.toBeInTheDocument();
 }
@@ -388,19 +412,19 @@ export async function theSeverityMapPutsOnlyTheMappedSeverities(): Promise<void>
   stubApi({ organizations: [ORGANIZATIONS[0]!] });
   renderPage(orgAdmin);
 
-  // The stored map arrives selected, so an operator edits what is, not a blank.
   await waitFor(() => {
     expect(screen.getByLabelText("Critical")).toHaveValue(AFTER_HOURS_ID);
   });
-  // Every live severity gets a control; a deactivated one gets none.
   expect(screen.getByLabelText("Warning")).toBeInTheDocument();
   expect(screen.queryByLabelText("Legacy")).not.toBeInTheDocument();
 
   await userEvent.selectOptions(screen.getByLabelText("Warning"), AFTER_HOURS_ID);
-  // Back to `None` — the only way to turn escalation off for a severity, and
-  // the reason `items` is a filtered list rather than one entry per severity.
   await userEvent.selectOptions(screen.getByLabelText("Critical"), "");
   await userEvent.click(screen.getByRole("button", { name: "Save severity map" }));
+  // `F4.279`: the save is the `escalationDefaults.set` wizard — its step, then Review.
+  await screen.findByRole("dialog", { name: "Set the severity map" });
+  await next();
+  await submit();
 
   await waitFor(() => {
     expect(api.setEscalationDefaults).toHaveBeenCalledWith({
@@ -417,24 +441,25 @@ export async function refusesABlankOrNonNumericStepDelay(): Promise<void> {
 
   await organizationsLoaded();
   await userEvent.selectOptions(screen.getByLabelText("Organization"), ORG_A);
+  await openCreate();
   await userEvent.type(screen.getByLabelText("Code"), "after-hours");
   await userEvent.type(screen.getByLabelText("Name"), "After hours");
+  await next();
 
   await addStep();
   const step = screen.getByRole("group", { name: /Step 1/ });
-  // Blank: the message is already there, and the submit is refused.
   expect(within(step).getByText("Enter the delay in minutes.")).toBeInTheDocument();
-  await userEvent.click(screen.getByRole("button", { name: "Add profile" }));
+  // The step does not pass: Review is not reached, and nothing is sent.
+  await next();
+  expect(screen.queryByRole("button", { name: "Submit" })).not.toBeInTheDocument();
   expect(api.createEscalationProfile).not.toHaveBeenCalled();
 
-  // Non-numeric: the same message, the same refusal — not `afterMinutes: 0`.
   await userEvent.type(within(step).getByLabelText("After (minutes)"), "abc");
   await userEvent.click(within(step).getByLabelText("Operations email"));
-  await userEvent.click(screen.getByRole("button", { name: "Add profile" }));
+  await next();
   expect(within(step).getByText("Enter the delay in minutes.")).toBeInTheDocument();
   expect(api.createEscalationProfile).not.toHaveBeenCalled();
 
-  // A number clears the message.
   await userEvent.clear(within(step).getByLabelText("After (minutes)"));
   await userEvent.type(within(step).getByLabelText("After (minutes)"), "15");
   expect(within(step).queryByText("Enter the delay in minutes.")).not.toBeInTheDocument();
@@ -451,9 +476,12 @@ export async function showsTheServerRefusalOnCreate(): Promise<void> {
   renderPage(orgAdmin);
 
   await organizationsLoaded();
+  await openCreate();
   await userEvent.type(screen.getByLabelText("Code"), "bad-ladder");
   await userEvent.type(screen.getByLabelText("Name"), "Bad ladder");
-  await userEvent.click(screen.getByRole("button", { name: "Add profile" }));
+  await next();
+  await next();
+  await submit();
 
   await waitFor(() => {
     expect(screen.getByRole("alert")).toHaveTextContent(/strictly increasing/i);
@@ -559,9 +587,12 @@ export async function readsARawEnvelopeRefusalAsItsSentence(): Promise<void> {
   renderPage(orgAdmin);
 
   await organizationsLoaded();
+  await openCreate();
   await userEvent.type(screen.getByLabelText("Code"), "after-hours");
   await userEvent.type(screen.getByLabelText("Name"), "Duplicate");
-  await userEvent.click(screen.getByRole("button", { name: "Add profile" }));
+  await next();
+  await next();
+  await submit();
 
   const alert = await screen.findByRole("alert");
   expect(alert.textContent).toBe("An escalation profile with that code already exists");

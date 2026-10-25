@@ -8,6 +8,8 @@ import { UserGrantsService } from "../admin/users/user-grants.service";
 import { UsersService } from "../admin/users/users.service";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AlarmKbModule } from "../alarm-kb/alarm-kb.module";
+import { NotificationsModule } from "../notifications/notifications.module";
+import { RulesModule } from "../rules/rules.module";
 import { AlarmsModule } from "../alarms/alarms.module";
 import { AssetHealthModule } from "../asset-health/asset-health.module";
 import { AssetsModule } from "../assets/assets.module";
@@ -17,9 +19,12 @@ import { DashboardBuilderModule } from "../dashboard-builder/dashboard-builder.m
 import { DatabaseModule } from "../database/database.module";
 import { IdentityAdminModule } from "../identity/identity-admin.module";
 import { LlmModule } from "../llm/llm.module";
+import { MaintenanceModule } from "../maintenance/maintenance.module";
+import { WorkOrdersModule } from "../work-orders/work-orders.module";
 import { MimicLayoutsModule } from "../mimic-layouts/mimic-layouts.module";
 import { MimicSymbolLibrariesModule } from "../mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { ReportsCoreModule } from "../reports/reports-core.module";
+import { ReportsModule } from "../reports/reports.module";
 import { SystemStatusModule } from "../system-status/system-status.module";
 import { TelemetryModule } from "../telemetry/telemetry.module";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
@@ -124,6 +129,10 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * report controllers. Neither imports this module; `DashboardModule` ->
  * `CalcModule` -> `TelemetryModule` is already in this module's graph.
  *
+ * `F4.283`: `AdminModule` (already imported) exports `TelemetryProposalCheckService`
+ * and `AssetsModule` (already imported) exports `AssetImagesWriteService`, the
+ * file-borne data proposal checks (slots 6 and 7 of `CopilotProposeToolSet`).
+ *
  * `F4.277`: `AdminModule` (already imported) exports `AuditAdminService` and
  * `SystemStatusModule` exports `SystemStatusService` for the audit-log and
  * system-status read tools. `SystemStatusModule` imports only `AuthModule`,
@@ -133,6 +142,36 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * and `AlarmKbModule` exports `AlarmKbService` for the alarm details and the
  * alarm knowledge-base read tools. `AlarmKbModule` declares no imports, so the
  * graph stays acyclic; the worker never reaches this module.
+ *
+ * `F4.278` (ADR 0099 Amendment 8): `RulesModule` exports `RulesService` for the
+ * `list_rules` read tool and `RuleProposalCheckService` for the rule proposal
+ * check. Its imports (vocabularies, alarms, notifications) never import this
+ * module, so the graph stays acyclic; the worker's `RuleSweepModule` does not
+ * import `RulesModule`.
+ *
+ * `F4.279` (ADR 0099 Amendment 8): `NotificationsModule` exports
+ * `NotificationProposalCheckService` for the notification proposal check and
+ * `EscalationProfilesService` (with `ChannelsService` through the core) for the
+ * two notification read tools. It imports only `NotificationsCoreModule`, never
+ * this module, so the graph stays acyclic; the worker imports the core alone.
+ *
+ * `F4.280` (ADR 0099 Amendment 8): `ReportsModule` now as well as the core —
+ * it exports `ReportProposalCheckService` for the report proposal check and
+ * `ReportSchedulesService` for `list_report_schedules`, which live beside the
+ * report controllers. A module is a singleton, so its controllers still mount
+ * once. It imports only `ReportsCoreModule` and `NotificationsCoreModule`,
+ * never this module, so the graph stays acyclic; the worker never reaches
+ * this module.
+ *
+ * `F4.281` (ADR 0099 Amendment 8 D7): `MaintenanceModule` exports
+ * `MaintenanceService` for `list_maintenance_schedules`. It imports nothing of
+ * this module (its providers take only `DatabaseModule`'s tokens), so the graph
+ * stays acyclic; the worker never reaches this module.
+ *
+ * `F4.284` (ADR 0106; owner ruling DC7): `WorkOrdersModule` exports
+ * `WorkOrdersService` for `list_work_orders`. It imports nothing of this module,
+ * so the graph stays acyclic. `list_users` reads through the `UsersService` this
+ * module already provides.
  */
 @Module({
   imports: [
@@ -151,8 +190,13 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     TelemetryModule,
     DashboardModule,
     ReportsCoreModule,
+    ReportsModule,
     SystemStatusModule,
     AlarmKbModule,
+    RulesModule,
+    NotificationsModule,
+    MaintenanceModule,
+    WorkOrdersModule,
   ],
   controllers: [CopilotAccessController, CopilotChangesController, CopilotConversationsController, CopilotStatusController],
   providers: [

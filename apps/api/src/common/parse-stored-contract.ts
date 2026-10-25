@@ -134,6 +134,20 @@ export type StoredContractContext =
   // `F4.276`: the alarm details and alarm knowledge-base read tools.
   | "copilot_tools.get_alarm_details.result"
   | "copilot_tools.get_alarm_kb.result"
+  // `F4.278`: the alarm-rule read tool.
+  | "copilot_tools.list_rules.page"
+  // `F4.279`: the channel and escalation read tools.
+  | "copilot_tools.list_notification_channels.page"
+  | "copilot_tools.list_escalation_profiles.page"
+  // `F4.280`: the report-schedule read tool.
+  | "copilot_tools.list_report_schedules.page"
+  // `F4.281`: the maintenance-schedule read tool.
+  | "copilot_tools.list_maintenance_schedules.page"
+  // `F4.284`: the work-order and user read tools.
+  | "copilot_tools.list_work_orders.page"
+  | "copilot_tools.list_users.page"
+  // `F4.284` owner ruling 2026-10-25 (Q4): the alarm skill read tool.
+  | "copilot_tools.list_alarm_skills.page"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");

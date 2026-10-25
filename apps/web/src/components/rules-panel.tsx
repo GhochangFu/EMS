@@ -9,23 +9,30 @@ import type {
   RuleListItem,
 } from "@bms/shared";
 
-import {
-  archiveRule,
-  duplicateRule,
-  evaluateRules,
-  fetchRuleExecutions,
-  fetchRules,
-  setRuleEnabled,
-} from "../api/rules";
+import { evaluateRules, fetchRuleExecutions, fetchRules } from "../api/rules";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { labelFor, toneClass, toneFor } from "../lib/vocabulary";
 import { EvaluateRefusalNotice } from "./evaluate-refusal-notice";
-import { RuleBuilderPanel } from "./rule-builder-panel";
 import { RuleChannelsEditor } from "./rule-channels-editor";
+import { type RuleLifecycleAction, RuleLifecycleWizard } from "./rules/rule-lifecycle-wizard";
+import { RuleToggleWizard } from "./rules/rule-toggle-wizard";
+import { RuleWizard } from "./rules/rule-wizard";
 
 type RuleFilter = AutomationRuleCategory | "all";
 type StatusFilter = "all" | "enabled" | "disabled";
 type LifecycleFilter = "all" | "draft" | "published" | "archived";
+
+/**
+ * `F4.278` (ADR 0099 decision 6, Amendment 8): which wizard is open. Every rule
+ * write on this page is a `WizardShell` over its catalog entry; the card's
+ * buttons open one, and none calls the API directly.
+ */
+type OpenWizard =
+  | { kind: "create" }
+  | { kind: "edit"; rule: RuleListItem }
+  | { kind: "toggle"; rule: RuleListItem }
+  | { kind: RuleLifecycleAction; rule: RuleListItem }
+  | null;
 
 /**
  * Both vocabularies are fetched, not declared (ADR 0031 Amendment 1). The badge
@@ -105,7 +112,7 @@ export function RulesPanel() {
   const [categoryFilter, setCategoryFilter] = useState<RuleFilter>("all");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleFilter>("all");
-  const [selectedRule, setSelectedRule] = useState<RuleListItem | null>(null);
+  const [open, setOpen] = useState<OpenWizard>(null);
 
   const rulesQ = useQuery({
     queryKey: ["rules", "list"],
@@ -126,13 +133,6 @@ export function RulesPanel() {
   const ruleCategories = vocabQ.data?.ruleCategories;
   const assetDomains = vocabQ.data?.assetDomains;
 
-  const toggleM = useMutation({
-    mutationFn: setRuleEnabled,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["rules", "list"] });
-    },
-  });
-
   const evaluateM = useMutation({
     mutationFn: evaluateRules,
     onSuccess: () => {
@@ -141,21 +141,11 @@ export function RulesPanel() {
     },
   });
 
-  const duplicateM = useMutation({
-    mutationFn: duplicateRule,
-    onSuccess: (rule) => {
-      setSelectedRule(rule);
-      void qc.invalidateQueries({ queryKey: ["rules", "list"] });
-    },
-  });
-
-  const archiveM = useMutation({
-    mutationFn: archiveRule,
-    onSuccess: () => {
-      setSelectedRule(null);
-      void qc.invalidateQueries({ queryKey: ["rules", "list"] });
-    },
-  });
+  // `F4.278`: a wizard's write refreshes the list and the trace log, then closes it.
+  const done = async () => {
+    setOpen(null);
+    await qc.invalidateQueries({ queryKey: ["rules"] });
+  };
 
   const rules = rulesQ.data?.items ?? [];
   const activeCount = rules.filter(
@@ -236,6 +226,9 @@ export function RulesPanel() {
                 <option value="published">Published</option>
                 <option value="archived">Archived</option>
               </select>
+              <button className="surface-button px-3 py-1.5 text-xs" onClick={() => setOpen({ kind: "create" })}>
+                New draft
+              </button>
               <button
                 className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:cursor-not-allowed disabled:bg-line-strong"
                 disabled={evaluateM.isPending || activeCount === 0}
@@ -269,35 +262,13 @@ export function RulesPanel() {
                 <RuleCard
                   key={rule.id}
                   rule={rule}
-                  pending={toggleM.isPending}
-                  lifecyclePending={duplicateM.isPending || archiveM.isPending}
-                  toggling={toggleM.isPending && toggleM.variables?.id === rule.id}
-                  duplicating={duplicateM.isPending && duplicateM.variables?.id === rule.id}
-                  archiving={archiveM.isPending && archiveM.variables?.id === rule.id}
                   ruleCategories={ruleCategories}
                   assetDomains={assetDomains}
-                  onEdit={() => setSelectedRule(rule)}
-                  onDuplicate={() =>
-                    duplicateM.mutate({
-                      id: rule.id,
-                      reason: "Operator duplicated rule from Rule Engine",
-                    })
-                  }
-                  onArchive={() =>
-                    archiveM.mutate({
-                      id: rule.id,
-                      reason: "Operator archived rule from Rule Engine",
-                    })
-                  }
-                  onToggle={() =>
-                    toggleM.mutate({
-                      id: rule.id,
-                      enabled: !rule.enabled,
-                      reason: rule.enabled
-                        ? "Operator disabled Sprint D rule"
-                        : "Operator enabled Sprint D rule",
-                    })
-                  }
+                  onEdit={() => setOpen({ kind: "edit", rule })}
+                  onPublish={() => setOpen({ kind: "publish", rule })}
+                  onDuplicate={() => setOpen({ kind: "duplicate", rule })}
+                  onArchive={() => setOpen({ kind: "archive", rule })}
+                  onToggle={() => setOpen({ kind: "toggle", rule })}
                 />
               ))}
             </div>
@@ -306,10 +277,6 @@ export function RulesPanel() {
       </section>
 
       <aside className="space-y-4">
-        <RuleBuilderPanel
-          selectedRule={selectedRule}
-          onClearSelected={() => setSelectedRule(null)}
-        />
         <section className="surface-raised">
           <div className="border-b border-line px-4 py-3">
             <h2 className="font-condensed text-lg font-bold text-ink">
@@ -334,6 +301,12 @@ export function RulesPanel() {
           )}
         </section>
       </aside>
+      {open?.kind === "create" && <RuleWizard onCancel={() => setOpen(null)} onDone={done} />}
+      {open?.kind === "edit" && <RuleWizard rule={open.rule} onCancel={() => setOpen(null)} onDone={done} />}
+      {open?.kind === "toggle" && <RuleToggleWizard rule={open.rule} onCancel={() => setOpen(null)} onDone={done} />}
+      {(open?.kind === "publish" || open?.kind === "duplicate" || open?.kind === "archive") && (
+        <RuleLifecycleWizard rule={open.rule} action={open.kind} onCancel={() => setOpen(null)} onDone={done} />
+      )}
     </div>
   );
 }
@@ -351,39 +324,26 @@ function Kpi({ label, value }: { label: string; value: string }) {
 
 function RuleCard({
   rule,
-  pending,
-  lifecyclePending,
-  toggling,
-  duplicating,
-  archiving,
   ruleCategories,
   assetDomains,
   onEdit,
+  onPublish,
   onDuplicate,
   onArchive,
   onToggle,
 }: {
   rule: RuleListItem;
-  pending: boolean;
-  lifecyclePending: boolean;
-  toggling: boolean;
-  duplicating: boolean;
-  archiving: boolean;
   ruleCategories: readonly RuleCategoryDto[] | undefined;
   assetDomains: readonly AssetDomainDto[] | undefined;
   onEdit: () => void;
+  onPublish: () => void;
   onDuplicate: () => void;
   onArchive: () => void;
   onToggle: () => void;
 }) {
   const canToggle = rule.lifecycleStatus === "published";
   const canArchive = rule.lifecycleStatus !== "archived";
-  // F4.168: `toggling`/`duplicating`/`archiving` each imply the panel-wide
-  // flag they narrow, so the `|| …` below changes no button's disabled state
-  // — it only gives the gate a token to find beside the name it names.
-  const toggleBusy = pending || toggling;
-  const duplicateBusy = lifecyclePending || duplicating;
-  const archiveBusy = lifecyclePending || archiving;
+  const canEdit = rule.lifecycleStatus !== "archived";
   /**
    * `F3.7` — the picker is mounted only while it is open, and that is the
    * point of the state rather than a nicety. `RuleChannelsEditor` issues one
@@ -397,11 +357,10 @@ function RuleCard({
         className={`mt-1 h-5 w-10 rounded-full p-0.5 transition ${
           rule.enabled ? "bg-accent" : "bg-line-strong"
         }`}
-        disabled={toggleBusy || !canToggle}
+        disabled={!canToggle}
         onClick={onToggle}
         title={rule.enabled ? "Disable rule" : "Enable rule"}
-        aria-label={toggling ? "Updating rule…" : rule.enabled ? "Disable rule" : "Enable rule"}
-        aria-busy={toggling}
+        aria-label={rule.enabled ? "Disable rule" : "Enable rule"}
       >
         <span
           className={`block h-4 w-4 rounded-full ${rule.enabled ? "bg-on-accent" : "bg-on-dark"} transition ${
@@ -459,33 +418,29 @@ function RuleCard({
           </span>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            className="surface-button px-2 py-1"
-            onClick={onEdit}
-          >
-            Edit in builder
+          <button className="surface-button px-2 py-1 disabled:opacity-50" disabled={!canEdit} onClick={onEdit}>
+            Edit
           </button>
+          {rule.lifecycleStatus === "draft" && (
+            <button className="surface-button px-2 py-1" onClick={onPublish}>
+              Publish
+            </button>
+          )}
           <button
             className="surface-button px-2 py-1"
             onClick={() => setChannelsOpen((open) => !open)}
           >
             Channels
           </button>
-          <button
-            className="surface-button px-2 py-1 disabled:opacity-50"
-            disabled={duplicateBusy}
-            aria-busy={duplicating}
-            onClick={onDuplicate}
-          >
-            {duplicating ? "Duplicating…" : "Duplicate"}
+          <button className="surface-button px-2 py-1" onClick={onDuplicate}>
+            Duplicate
           </button>
           <button
             className="surface-button px-2 py-1 text-critical-ink disabled:opacity-50"
-            disabled={archiveBusy || !canArchive}
-            aria-busy={archiving}
+            disabled={!canArchive}
             onClick={onArchive}
           >
-            {archiving ? "Archiving…" : "Archive"}
+            Archive
           </button>
         </div>
         {channelsOpen ? <RuleChannelsEditor ruleId={rule.id} action={rule.action} /> : null}

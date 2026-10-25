@@ -4,8 +4,10 @@ import {
   assertCoreExportsEmailTransport,
   assertEveryClassParamIsResolvable,
   assertEveryInjectedTokenIsResolvable,
+  assertEveryProvidedServiceDependencyIsResolvable,
   assertModuleStillDeclaresTheThreeControllers,
   assertScanFindsTheConfigToken,
+  assertScanFindsTheCryptoParam,
 } from "./notifications-module-wiring.spec";
 
 /**
@@ -13,7 +15,7 @@ import {
  * Assertions live in the sibling `.spec` (ADR 0014).
  */
 describe("F3.11 — NotificationsModule's controllers resolve after the provider-only carve (ADR 0064 Amendment 1 A1)", () => {
-  it("the scan sees NOTIFICATIONS_CONFIG and the two service classes on NotificationsController (positive control)", () => {
+  it("the scan sees NOTIFICATIONS_CONFIG and the three service classes on NotificationsController (positive control)", () => {
     assertScanFindsTheConfigToken();
   });
 
@@ -27,6 +29,14 @@ describe("F3.11 — NotificationsModule's controllers resolve after the provider
 
   it("every class-typed parameter a controller takes resolves the same way", () => {
     assertEveryClassParamIsResolvable();
+  });
+
+  it("F4.279 — the scan sees CredentialCryptoService on ChannelWritesService (positive control)", () => {
+    assertScanFindsTheCryptoParam();
+  });
+
+  it("F4.279 — every dependency of a service provided beside the controllers resolves the same way", () => {
+    assertEveryProvidedServiceDependencyIsResolvable();
   });
 
   it("F3.5b — the core exports EmailTransport for ReportsCoreModule (ADR 0071 decision 10)", () => {

@@ -44,6 +44,39 @@ const MIMIC_LAYOUTS: QueryKey = ["mimic-layouts"];
 // the vocabularies read (`api/vocabularies.ts`) the layout editor's role picker lists.
 const MIMIC_SYMBOL_LIBRARIES: QueryKey = ["mimic-symbol-libraries"];
 const VOCABULARIES: QueryKey = ["vocabularies"];
+// `F4.282` (Amendment 8 Q17): the location-type dropdown (`GET /admin/location-types`) and the two
+// vocabulary pages' own reads (`location-types-page.tsx`, `unit-roles-page.tsx`).
+const LOCATION_TYPES: QueryKey = ["admin", "location-types"];
+const LOCATION_TYPES_CATALOG: QueryKey = ["admin", "location-types-catalog"];
+const ASSET_ROLES_CATALOG: QueryKey = ["admin", "asset-roles-catalog"];
+/** `F4.278`: the Rule Engine's queries — the list, the executions and the builder catalog (`rules-panel.tsx`). */
+const RULES: QueryKey = ["rules"];
+/**
+ * `F4.279`: the Channels page and the pickers that list channels (`notification-channels-page.tsx`,
+ * `escalation-profiles-page.tsx`, `rule-channels-editor.tsx`), the delivery ledger a test send
+ * writes a row to, and the Escalation page's profiles and severity map (keyed by organization under
+ * the prefix). A rule's channel set is `["rules", ruleId, "notifications"]`, under `RULES`.
+ */
+const NOTIFICATION_CHANNELS: QueryKey = ["notifications", "channels"];
+const NOTIFICATION_DELIVERIES: QueryKey = ["notifications", "deliveries"];
+/** `F4.280`: the Reports page's schedule list and its History list (`REPORT_SCHEDULES_QUERY_KEY`, `REPORT_FILES_QUERY_KEY`). */
+const REPORT_SCHEDULES: QueryKey = ["report-schedules"];
+const REPORT_FILES: QueryKey = ["report-files"];
+/** `F4.281`: the Schedule Centre's list (`maintenance-schedules-panel.tsx`, keyed by its filters under the prefix). */
+const MAINTENANCE_SCHEDULES: QueryKey = ["maintenance", "schedules"];
+/**
+ * `F4.284`: the alarms page's list (`alarms-page.tsx`), each alarm's details panel
+ * (`alarm-details-panel.tsx`, keyed by id under the prefix), the dashboard KPIs the
+ * ack changes, and the work-orders board (`work-orders-page.tsx`).
+ */
+const ALARMS_LIST: QueryKey = ["alarms", "list"];
+const ALARM_DETAILS: QueryKey = ["alarms", "details"];
+const DASHBOARD_KPIS: QueryKey = ["dashboard", "kpis"];
+const WORK_ORDERS: QueryKey = ["work-orders", "list"];
+/** `F4.283`: an asset's image list (`asset-images-panel.tsx`, keyed by the asset under the prefix). */
+const ASSET_IMAGES: QueryKey = ["asset-images"];
+const ESCALATION_PROFILES: QueryKey = ["escalation", "profiles"];
+const ESCALATION_DEFAULTS: QueryKey = ["escalation", "defaults"];
 // `F4.255` PR 3: the copilot dock's list of an organization's open onboarding drafts.
 export const ONBOARDING_DRAFTS: QueryKey = ["admin", "onboarding", "drafts"];
 
@@ -141,7 +174,54 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "mimicLibrary.update": [MIMIC_SYMBOL_LIBRARIES],
   "mimicSymbol.update": [MIMIC_SYMBOL_LIBRARIES],
   "mimicSymbol.upload": [MIMIC_SYMBOL_LIBRARIES],
-  "assetRole.create": [VOCABULARIES],
+  "assetRole.create": [VOCABULARIES, ASSET_ROLES_CATALOG],
+  "assetRole.update": [VOCABULARIES, ASSET_ROLES_CATALOG],
+  "assetRole.deactivate": [VOCABULARIES, ASSET_ROLES_CATALOG],
+  "assetRole.reactivate": [VOCABULARIES, ASSET_ROLES_CATALOG],
+  "locationType.create": [LOCATION_TYPES, LOCATION_TYPES_CATALOG],
+  "locationType.update": [LOCATION_TYPES, LOCATION_TYPES_CATALOG],
+  "locationType.deactivate": [LOCATION_TYPES, LOCATION_TYPES_CATALOG],
+  "locationType.reactivate": [LOCATION_TYPES, LOCATION_TYPES_CATALOG],
+  // `F4.278` (Amendment 8): the alarm rules.
+  "rule.create": [RULES],
+  "rule.update": [RULES],
+  "rule.duplicate": [RULES],
+  "rule.publish": [RULES],
+  "rule.enable": [RULES],
+  "rule.disable": [RULES],
+  "rule.archive": [RULES],
+  // `F4.279` (Amendment 8): notification channels, escalation, and the rule channel set.
+  "notificationChannel.create": [NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERIES],
+  "notificationChannel.update": [NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERIES],
+  "notificationChannel.deactivate": [NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERIES],
+  "notificationChannel.reactivate": [NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERIES],
+  "notificationChannel.test": [NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERIES],
+  "escalationProfile.create": [ESCALATION_PROFILES, ESCALATION_DEFAULTS],
+  "escalationProfile.update": [ESCALATION_PROFILES, ESCALATION_DEFAULTS],
+  "escalationDefaults.set": [ESCALATION_PROFILES, ESCALATION_DEFAULTS],
+  "escalationDefaults.clear": [ESCALATION_PROFILES, ESCALATION_DEFAULTS],
+  "rule.notifications.set": [RULES],
+  // `F4.280` (Amendment 8): the report schedules and the on-demand file save.
+  "reportSchedule.create": [REPORT_SCHEDULES],
+  "reportSchedule.update": [REPORT_SCHEDULES],
+  "reportFile.save": [REPORT_FILES],
+  // `F4.281` (Amendment 8): the maintenance schedules.
+  "maintenanceSchedule.create": [MAINTENANCE_SCHEDULES],
+  "maintenanceSchedule.activate": [MAINTENANCE_SCHEDULES],
+  "maintenanceSchedule.deactivate": [MAINTENANCE_SCHEDULES],
+  // `F4.284` (ADR 0106): the convert moves the schedule's due date and adds a work order.
+  "maintenanceSchedule.convert": [MAINTENANCE_SCHEDULES, WORK_ORDERS],
+  "alarm.acknowledge": [ALARMS_LIST, ALARM_DETAILS, DASHBOARD_KPIS],
+  "alarm.enrichment.set": [ALARM_DETAILS, ALARMS_LIST],
+  "workOrder.create": [WORK_ORDERS],
+  "workOrder.setStatus": [WORK_ORDERS],
+  "workOrder.close": [WORK_ORDERS],
+  "workOrder.reorder": [WORK_ORDERS],
+  // `F4.283` (Amendment 8): a reading write can create point mappings (`asset-points-page.tsx`);
+  // an image upload adds to the asset's image list.
+  "telemetry.import": [ASSET_POINTS],
+  "telemetryReading.create": [ASSET_POINTS],
+  "assetImage.upload": [ASSET_IMAGES],
 };
 
 /** The query-key prefixes to invalidate after the change `catalogId` is applied. */

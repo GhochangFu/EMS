@@ -14,8 +14,12 @@ type UserRole = z.infer<typeof userRoleSchema>;
  * is a pure function of what the server resolved.
  */
 
-/** How much a change can do; the Confirm card styles it, and `copilot_pending_changes_risk_check` holds the same four. */
-export type CatalogRisk = "create" | "edit" | "deactivate" | "access";
+/**
+ * How much a change can do; the Confirm card styles it, and `copilot_pending_changes_risk_check` holds the same
+ * values. `F4.284` (ADR 0106 decision 4, migration `0116`): `operational` — an alarm acknowledge or a work-order
+ * close, red, and it cannot be undone.
+ */
+export type CatalogRisk = "create" | "edit" | "deactivate" | "access" | "operational";
 
 /**
  * `F3.86` PR 2: `DELETE` is a method a catalog entry may have, but only the
@@ -96,7 +100,7 @@ export type CatalogMethod = "POST" | "PUT" | "PATCH" | "DELETE";
 export type CatalogTarget =
   | {
       readonly kind: "organization";
-      readonly manage: "dashboard" | "template" | "calcParameter" | "location" | "user" | "mimic";
+      readonly manage: "dashboard" | "template" | "calcParameter" | "location" | "user" | "mimic" | "notification" | "report";
     }
   | { readonly kind: "mimicLayout" | "mimicLibrary"; readonly param: "id" }
   | { readonly kind: "dashboard" | "dashboardTemplate" | "calcParameter" | "assetTemplate"; readonly param: "id" }
@@ -115,13 +119,86 @@ export type CatalogTarget =
     }
   | { readonly kind: "parent"; readonly field: "locationId" | "assetId"; readonly of: "location" | "asset" }
   | { readonly kind: "fleet" }
+  /**
+   * `F4.282` (ADR 0099 Amendment 8 D2, Q17): a fleet vocabulary row named by its `code`; like
+   * `fleet`, the change lives in the conversation's bound organization and the global admin
+   * alone may make it (`requireGlobalAdmin`); the resolver reads the label and refuses an
+   * unknown code.
+   */
+  | { readonly kind: "vocabulary"; readonly of: "locationType" | "assetRole"; readonly param: "code" }
+  /**
+   * `F4.278` (ADR 0099 Amendment 8 D2): an alarm rule. With `param`, the rule row the path
+   * parameter `id` names; with `field`, a create, whose organization is the asset's the body's
+   * `assetId` names (`resolveWriteOrg`). Both mirror `rules.controller.ts`: the `configuration`
+   * role class, then the rule's (or the body's) asset in the caller's **read** scope.
+   */
+  | { readonly kind: "rule"; readonly param: "id" }
+  | { readonly kind: "rule"; readonly field: "assetId" }
+  /**
+   * `F4.279` (ADR 0099 Amendment 8 D2): a notification channel or an escalation profile, the row
+   * the path parameter `id` names. Both mirror the routes' gate: `requireMasterDataUser`, then
+   * `canManageNotificationChannel` on the row's organization; a fleet-wide (NULL-organization)
+   * channel is never found (Q13). `organization` with `manage: "notification"` is the same gate
+   * on the body's `organizationId` (a channel or profile create, the severity map).
+   */
+  | { readonly kind: "notificationChannel" | "escalationProfile"; readonly param: "id" }
+  /**
+   * `F4.280` (ADR 0099 Amendment 8 D2): a report schedule, the row the path parameter `id` names.
+   * Mirrors `readRowForVerdict`: `requireMasterDataUser`, then `canReadReportFile` on the row's
+   * organization and stamped locations. `organization` with `manage: "report"` is the create gate
+   * (`writableLocationIds`, then `resolveReportOrganization`) on the body's `organizationId`.
+   */
+  | { readonly kind: "reportSchedule"; readonly param: "id" }
+  /**
+   * `F4.281` (ADR 0099 Amendment 8 D2): a maintenance schedule. With `param`, the schedule row the
+   * path parameter `id` names (its organization, its template's title and asset); with `field`, a
+   * create, whose organization is the asset's the body's `assetId` names. Both mirror
+   * `maintenance.controller.ts`: the `configuration` role class, then the schedule's (or the body's)
+   * asset in the caller's **read** scope (`readableAssetIds`).
+   */
+  | { readonly kind: "maintenanceSchedule"; readonly param: "id" }
+  | { readonly kind: "maintenanceSchedule"; readonly field: "assetId" }
+  /**
+   * `F4.283` (ADR 0099 Amendment 8 D2, Q21): the two telemetry writes (the import commit, the manual
+   * readings). Like `fleet`, the change lives in the conversation's bound organization (a conversation
+   * bound to none is refused), gated by `requireMasterDataUser` alone — the routes' own gate. Each
+   * row's asset is checked by the proposal check, which refuses with the row numbers.
+   */
+  | { readonly kind: "telemetry" }
+  /**
+   * `F4.284` (ADR 0106 decision 6; ADR 0099 Amendment 8 D2): an alarm or a work order. With `param`,
+   * the row the path parameter `id` names (its organization, `alarms.organization_id` or
+   * `work_orders.organization_id`); with `field`, a work-order create, whose organization is the
+   * asset's the body's `assetId` names. Each mirrors the routes' gate: the `operational` role class,
+   * then the row's (or the body's) asset in the caller's **read** scope.
+   *
+   * - `workOrderBatch` (owner ruling DC5): the reorder, every work order the body's `items` names;
+   *   one organization, each asset in the read scope.
+   * - `maintenanceScheduleConvert` (DC5): the schedule the path names, with the convert route's
+   *   `operational` gate (the `maintenanceSchedule` kind mirrors the `configuration` one).
+   */
+  | { readonly kind: "alarm" | "workOrder" | "maintenanceScheduleConvert"; readonly param: "id" }
+  | { readonly kind: "workOrder"; readonly field: "assetId" }
+  | { readonly kind: "workOrderBatch"; readonly field: "items" }
   | { readonly kind: "onboardingSession"; readonly param: "id" }
   | { readonly kind: "assetTemplateDeploy"; readonly param: "id" }
   | { readonly kind: "user" | "userGrantAdd"; readonly param: "id" }
   | { readonly kind: "userGrant"; readonly param: "grantId"; readonly kindParam: "kind"; readonly userParam: "id" };
 
 /** The row kinds a body field may hold the id of. */
-export type CatalogRefKind = "location" | "assetGroup" | "asset" | "rtu" | "organization" | "dashboard" | "dashboardTemplate";
+export type CatalogRefKind =
+  | "location"
+  | "assetGroup"
+  | "asset"
+  | "rtu"
+  | "organization"
+  | "dashboard"
+  | "dashboardTemplate"
+  // `F4.284` (ADR 0106 decision 6): a work order's `assignedTo` (a user of the change's organization) and `alarmId`.
+  | "user"
+  | "alarm"
+  // `F4.284` owner ruling 2026-10-25 (Q4): an alarm skill code (ADR 0034, a fleet vocabulary; active rows only).
+  | "alarmSkill";
 
 /**
  * A body field holding the id of a row that must belong to the change's
@@ -166,6 +243,14 @@ export type CatalogSummaryInput = {
   readonly currentWidgetIds?: readonly string[];
   /** `F3.86` PR 4: the name of the row a change names beside its target (a grant's organization, site or group). */
   readonly refName?: string;
+  /** `F4.282`: `vocabulary` targets of `locationType` — how many locations in the turn's organizations use the type. */
+  readonly usageCount?: number;
+  /** `F4.278` (Amendment 8 D3): a `rule` target's lifecycle status, so a PATCH of a published rule carries the live-effect line. */
+  readonly lifecycle?: string;
+  /** `F4.284` (ADR 0106 decision 3): an `alarm` target — the card names the alarm text, severity, asset and raised time. */
+  readonly alarm?: { readonly message: string; readonly severity: string; readonly assetName: string; readonly raisedAt: string };
+  /** `F4.284`: a `workOrder` target's title, status now and asset. */
+  readonly workOrder?: { readonly title: string; readonly status: string; readonly assetName: string };
 };
 
 export interface CatalogEntry {
@@ -186,7 +271,11 @@ export interface CatalogEntry {
   readonly body: ZodTypeAny;
   /** The export name of `body` in `@bms/shared`, or `null` for a route that takes no body (`tests/f3.85-catalog-coverage`). */
   readonly bodyName: string | null;
-  /** Body keys the user types on the Confirm card and the model never sees (none in release 1). */
+  /**
+   * Body keys the user types on the Confirm card and the model never sees (none in release 1).
+   * `F4.279` (Q12): a dotted entry (`config.url`) names a nested path; typed on the card, stripped
+   * from the hash by path (`client-only.ts`).
+   */
   readonly clientOnly: readonly string[];
   /**
    * `F3.86` PR 2: the schema the model proposes with, when it differs from
@@ -221,14 +310,22 @@ export interface CatalogEntry {
    */
   readonly offeredTo?: readonly UserRole[];
   /**
-   * `F3.87` PR 2 (Amendment 3 A3): the entry's route is multipart. The
-   * model sends the file as the `svg` text in its `modelBody`; the pending
-   * row keeps it under a `cardOnly` key, and on Confirm the browser sends it
-   * as the `fileField` part. The interceptor hashes the file's bytes.
+   * `F3.87` PR 2 (Amendment 3 A3): the entry's route is multipart, and on
+   * Confirm the browser sends the file as the `fileField` part, whose bytes
+   * the interceptor hashes.
+   *
+   * - `kind: "svg"`: the model sends the file as the `svg` text in its
+   *   `modelBody`; the pending row keeps it under the `cardOnly` key `svgText`.
+   * - `kind: "file"` (`F4.283`, Amendment 8 Q18): the model names an attached
+   *   file as `file`; the pending row stores its name and SHA-256 only, and
+   *   the browser keeps the bytes (a reload asks for the same file again).
+   *
+   * `accepts`: the media types, sniffed from the bytes, the attachment may be.
    */
   readonly upload?: {
     readonly fileField: "file";
-    readonly contentType: "image/svg+xml";
+    readonly kind: "svg" | "file";
+    readonly accepts: readonly string[];
     readonly maxBytes: number;
   };
   /**
@@ -246,6 +343,14 @@ export interface CatalogEntry {
    * precondition.
    */
   readonly precondition?: "updatedAt";
+  /**
+   * `F4.282` (ADR 0099 Amendment 8 D3): a direction entry on a route whose body is one boolean.
+   * The whole body, fixed: the model's tool has no `body` argument, the pending row stores this
+   * object, the wizard is the Review step alone and `steps` is empty. `body` stays the route's
+   * export (the coverage gate's identity rule) and `fixedBody` must parse with it
+   * (`catalog.spec.ts`).
+   */
+  readonly fixedBody?: Readonly<Record<string, unknown>>;
   readonly risk: CatalogRisk;
   readonly target: CatalogTarget;
   readonly refs: readonly CatalogRef[];

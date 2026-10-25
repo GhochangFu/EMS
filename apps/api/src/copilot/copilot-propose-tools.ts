@@ -36,6 +36,27 @@ import { CopilotPendingChangesService } from "./copilot-pending-changes.service"
 import type { CopilotReadTools, CopilotToolContext, CopilotToolResult, RegistryOptions } from "./copilot-read-tools";
 import type { CopilotOpenWizard } from "@bms/shared";
 import { prepareUpload } from "./copilot-upload-prepare";
+import { checkRule, type CopilotRuleChecks, RULE_ENTRY_IDS } from "./copilot-propose-rules";
+import { checkNotification, type CopilotNotificationChecks, NOTIFICATION_ENTRY_IDS } from "./copilot-propose-notifications";
+import { NotificationProposalCheckService } from "../notifications/notification-proposal-check.service";
+import { checkReport, type CopilotReportChecks, REPORT_ENTRY_IDS, reportEmailRefusal } from "./copilot-propose-reports";
+import { ReportProposalCheckService } from "../reports/report-proposal-check.service";
+import { checkFile, type CopilotFileChecks, FILE_ENTRY_IDS } from "./copilot-propose-files";
+import { CopilotTargetRefusal } from "./copilot-telemetry-targets";
+import { TelemetryProposalCheckService } from "../admin/telemetry-entry/telemetry-proposal-check.service";
+import { AssetImagesWriteService } from "../assets/asset-images-write.service";
+import {
+  OUTWARD_ENTRY_IDS,
+  PROPOSE_OUTWARD_NOT_ASKED_ERROR,
+  PROPOSE_OUTWARD_ON_FOLLOW_UP_ERROR,
+} from "./copilot-outward-intent";
+import {
+  OPERATIONAL_ENTRY_IDS,
+  PROPOSE_OPERATIONAL_NOT_ASKED_ERROR,
+  PROPOSE_OPERATIONAL_ON_FOLLOW_UP_ERROR,
+} from "./copilot-operations-intent";
+import { checkOperations, OPERATIONS_ENTRY_IDS, operationsSummaryInput } from "./copilot-propose-operations";
+import { RuleProposalCheckService } from "../rules/rule-proposal-check.service";
 import { COPILOT_TARGETS, type CopilotTargets } from "./copilot-target-resolver";
 import { PROPOSE_TARGET_ERROR, templateLifecycleRefusal } from "./copilot-template-lifecycle";
 
@@ -132,6 +153,10 @@ const offeredToRole = (entry: CatalogEntry, role: string): boolean =>
  */
 const accessAsked = (ctx: CopilotToolContext): boolean => ctx.turnKind === "user" && ctx.accessIntent === true;
 
+/** `F4.284` (ADR 0106 decision 3): the same rule for an acknowledge or a close — a tool result cannot pre-fill one either. */
+const operationalAsked = (ctx: CopilotToolContext, entryId: string): boolean =>
+  ctx.turnKind === "user" && (ctx.operationalIntent ?? []).includes(entryId);
+
 /**
  * `F3.87` PR 7, plan D11: a layout card proposed from a file says so, so the
  * administrator checks the drawing against the original before Confirm.
@@ -140,6 +165,27 @@ export const COPILOT_READ_FROM_FILE_NOTE = " (read from an attached file: check 
 
 /** `F3.86` ruling Q8: the user-account entries a local sign-in deployment refuses (grants are database-only and stay). */
 const isUserAccountEntry = (entry: CatalogEntry): boolean => entry.id.startsWith("user.");
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** The top-level parent of each dotted `clientOnly` path (`config.url` → `config`). */
+export const nestedClientOnlyParents = (clientOnly: readonly string[]): string[] => [
+  ...new Set(clientOnly.filter((path) => path.includes(".")).map((path) => path.split(".")[0] as string)),
+];
+
+/**
+ * `F4.279` review: a `fill_step` value is checked against the copilot's model body where that
+ * body narrows the field (Q6, Q12: a channel's `config` holds `to` only, never a URL), and against
+ * the route body for a field the model body does not name.
+ */
+function fillValuesSchema(entry: CatalogEntry, fields: readonly string[]): ZodTypeAny {
+  if (entry.modelBody === undefined) return stepValuesSchema(entry.body, fields);
+  const modelFields = new Set(bodyFieldsOf(entry.modelBody));
+  const narrowed = fields.filter((field) => modelFields.has(field));
+  const rest = fields.filter((field) => !modelFields.has(field));
+  return stepValuesSchema(entry.modelBody, narrowed).merge(stepValuesSchema(entry.body, rest)).strict();
+}
 
 /**
  * The propose tool the admin form of the role refusal names. `F3.87` PR 6 made
@@ -153,13 +199,16 @@ const ROLE_CREATE_TOOL = proposeToolName({ id: "assetRole.create" });
  * `F3.87` PR 5 / owner ruling Q4 — a layout whose units name a role the
  * vocabulary lacks. A global admin is told to propose the role first (its
  * registry names `assetRole.create`); any other role is told to say so in a
- * sentence and to draw without it. The codes are the model's own words echoed
+ * sentence and to draw without it. `F4.282`: a missing code may be retired, and
+ * a create of a retired code fails at Confirm, so the admin is told to try
+ * `assetRole.reactivate` first. The codes are the model's own words echoed
  * back to it, never tenant text.
  */
 export function PROPOSE_LAYOUT_ROLES_MISSING_ADMIN(codes: readonly string[]): string {
   return (
-    `The unit role codes ${codes.join(", ")} are not in the vocabulary. Propose assetRole.create for each one first — ` +
-    "one card per turn — and propose the layout again after they are applied."
+    `The unit role codes ${codes.join(", ")} are not active in the vocabulary: each one is absent or retired. For each ` +
+    "one, propose assetRole.reactivate first, and assetRole.create only if the reactivate is refused (a retired code " +
+    "cannot be created again) — one card per turn — and propose the layout again after they are applied."
   );
 }
 
@@ -193,6 +242,22 @@ export interface CopilotProposeServices {
    * proposal without it is refused ({@link PROPOSE_LAYOUT_UNAVAILABLE_ERROR}).
    */
   readonly layouts?: Pick<MimicLayoutsService, "validateProposal" | "missingRoleCodes">;
+  /**
+   * `F4.278` (Amendment 8, Q9): the rule check a rule proposal runs before its
+   * card is stored. Optional for the same reason as `layouts`; a rule proposal
+   * without it is refused (`PROPOSE_RULES_UNAVAILABLE_ERROR`).
+   */
+  readonly rules?: CopilotRuleChecks;
+  /**
+   * `F4.279` (Amendment 8 D2, D5): the notification check a notification
+   * proposal runs before its card is stored. Optional for the same reason; a
+   * notification proposal without it is refused (`PROPOSE_NOTIFICATIONS_UNAVAILABLE_ERROR`).
+   */
+  readonly notifications?: CopilotNotificationChecks;
+  /** `F4.280` (Amendment 8 D2, D4, D5): the report check; optional for the same reason (`PROPOSE_REPORTS_UNAVAILABLE_ERROR`). */
+  readonly reports?: CopilotReportChecks;
+  /** `F4.283` (Amendment 8 Q18–Q21): the telemetry and image checks; optional for the same reason (`PROPOSE_FILES_UNAVAILABLE_ERROR`). */
+  readonly files?: CopilotFileChecks;
 }
 
 /**
@@ -205,9 +270,14 @@ export function modelBodySchema(entry: CatalogEntry): ZodTypeAny {
   return modelBodyOf(entry);
 }
 
+/** `F4.282` (D3): whether the model sends a body — never for a bodyless route or a `fixedBody` entry. */
+function takesBody(entry: CatalogEntry): boolean {
+  return entry.bodyName !== null && entry.fixedBody === undefined;
+}
+
 function proposeArguments(entry: CatalogEntry): ZodTypeAny {
   const shape: Record<string, ZodTypeAny> = { ...entry.params };
-  if (entry.bodyName !== null) shape.body = z.record(z.string(), z.unknown());
+  if (takesBody(entry)) shape.body = z.record(z.string(), z.unknown());
   return z.object(shape).strict();
 }
 
@@ -215,7 +285,7 @@ function proposeDefinition(entry: CatalogEntry): Record<string, unknown> {
   const properties: Record<string, unknown> = {};
   for (const [name, schema] of Object.entries(entry.params)) properties[name] = jsonSchemaOf(schema as ZodTypeAny);
   const required = Object.keys(entry.params);
-  if (entry.bodyName !== null) {
+  if (takesBody(entry)) {
     const body = modelBodySchema(entry);
     properties.body = bodyDefinitionOf(body, entry.id, bodyFieldsOf(body), entry.bodyGuide);
     required.push("body");
@@ -226,7 +296,8 @@ function proposeDefinition(entry: CatalogEntry): Record<string, unknown> {
 function proposeDescription(entry: CatalogEntry): string {
   return (
     `Propose: ${entry.title} (${entry.method} ${entry.path}; ${entry.risk}). ` +
-    "This changes nothing: it shows the user a card, and only the user's Confirm applies it."
+    "This changes nothing: it shows the user a card, and only the user's Confirm applies it." +
+    (entry.fixedBody !== undefined ? " The body is fixed: send only the path parameter(s)." : "")
   );
 }
 
@@ -317,21 +388,31 @@ export function createCopilotProposeTools(
   const registries = new Map<string, ToolRegistry<string>>();
   // `F3.87` PR 7, plan D8: a turn with a file whose words name no asset drops the asset and point creates.
   const assetCreateTools = [...byTool].filter(([, entry]) => ASSET_CREATE_IDS.has(entry.id)).map(([name]) => name);
-  const registryFor = ({ access, role, assetCreate = true }: RegistryOptions): ToolRegistry<string> => {
-    const key = `${access ? "access" : "no-access"}:${assetCreate ? "assets" : "no-assets"}:${role}`;
+  // `F4.279` (D4): the channel test send is dropped unless the user's own message asked (absent: dropped).
+  const outwardTools = [...byTool].filter(([, entry]) => OUTWARD_ENTRY_IDS.has(entry.id)).map(([name]) => name);
+  // `F4.284` (ADR 0106 decision 3): the acknowledge and the close are dropped unless the user's own message asked.
+  // Each by its own words: an asked acknowledge keeps the close dropped, and the other way round.
+  const operationalTools = [...byTool].filter(([, entry]) => OPERATIONAL_ENTRY_IDS.has(entry.id));
+  const registryFor = ({ access, role, assetCreate = true, outward = false, operational = [] }: RegistryOptions): ToolRegistry<string> => {
+    const kept = [...new Set(operational.filter((id) => OPERATIONAL_ENTRY_IDS.has(id)))].sort();
+    const key = `${access ? "access" : "no-access"}:${assetCreate ? "assets" : "no-assets"}:${outward ? "outward" : "no-outward"}:${kept.join(",")}:${role}`;
     const known = registries.get(key);
     if (known !== undefined) return known;
     const dropped = new Set([
       ...(access ? [] : accessTools),
       ...(assetCreate ? [] : assetCreateTools),
+      ...(outward ? [] : outwardTools),
+      ...operationalTools.filter(([, entry]) => !kept.includes(entry.id)).map(([name]) => name),
       ...[...byTool].filter(([, entry]) => !offeredToRole(entry, role)).map(([name]) => name),
     ]);
     const made = registryWithout(dropped);
     registries.set(key, made);
     return made;
   };
-  const registry = registryFor({ access: true, role: "admin" });
-  const registryWithoutAccess = registryFor({ access: false, role: "admin" });
+  // The full registry keeps every tool for its existing callers (a spec, the definitions budget);
+  // a turn always builds its own through `registryFor`.
+  const registry = registryFor({ access: true, role: "admin", outward: true, operational: [...OPERATIONAL_ENTRY_IDS] });
+  const registryWithoutAccess = registryFor({ access: false, role: "admin", outward: true, operational: [...OPERATIONAL_ENTRY_IDS] });
 
   /**
    * `F3.87` PR 5 — a layout proposal's checks, in the order the owner ruled:
@@ -400,6 +481,13 @@ export function createCopilotProposeTools(
     if (entry.risk === "access" && ctx.turnKind === "follow_up") return { ok: false, error: PROPOSE_ACCESS_ON_FOLLOW_UP_ERROR };
     // Ruling Q3: only when the user's own message asked (the turn also withholds the tool; this is the second guard).
     if (entry.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
+    // `F4.279` (D4): an outward-facing write, like an access change — never on a follow-up turn, and
+    // only when the user's own message asked (the registry also withholds the tool).
+    if (OUTWARD_ENTRY_IDS.has(entry.id) && ctx.turnKind === "follow_up") return { ok: false, error: PROPOSE_OUTWARD_ON_FOLLOW_UP_ERROR };
+    if (OUTWARD_ENTRY_IDS.has(entry.id) && ctx.outwardIntent !== true) return { ok: false, error: PROPOSE_OUTWARD_NOT_ASKED_ERROR };
+    // `F4.284` (ADR 0106 decision 3): an acknowledge or a close, the same two guards.
+    if (OPERATIONAL_ENTRY_IDS.has(entry.id) && ctx.turnKind === "follow_up") return { ok: false, error: PROPOSE_OPERATIONAL_ON_FOLLOW_UP_ERROR };
+    if (OPERATIONAL_ENTRY_IDS.has(entry.id) && !operationalAsked(ctx, entry.id)) return { ok: false, error: PROPOSE_OPERATIONAL_NOT_ASKED_ERROR };
     // `F3.87` PR 2 (Amendment 3 A1): the registry withholds the tool from another role; this is the second guard.
     if (!offeredToRole(entry, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
     // `F3.87` PR 7, plan D8: the registry withholds the creates on a file turn the words did not ask; the second guard.
@@ -408,27 +496,41 @@ export function createCopilotProposeTools(
     if (isUserAccountEntry(entry) && resolveAuthMode(env) === "local") return { ok: false, error: LOCAL_MODE_READ_ONLY };
     const params: Record<string, string> = {};
     for (const name of Object.keys(entry.params)) params[name] = args[name] as string;
-    const raw = entry.bodyName === null ? {} : (args.body as Record<string, unknown>);
+    // `F4.282` (D3): a direction entry's body is its `fixedBody`, parsed below like any other.
+    const raw =
+      entry.fixedBody !== undefined ? { ...entry.fixedBody } : entry.bodyName === null ? {} : (args.body as Record<string, unknown>);
     const parsed = modelBodySchema(entry).safeParse(raw);
     if (!parsed.success) return { ok: false, error: `Invalid body: ${issuesOf(parsed.error)}` };
     // The JSON image is what is stored, hashed and sent: one object on all three sides. It is the
     // raw body, not `parsed.data` (a transform or default would change what the route parses); it
     // never holds a `clientOnly` key, because the strict model body refused one above (`F3.86` PR 2).
     let body = JSON.parse(JSON.stringify(raw)) as Record<string, unknown>;
+    // `F4.279` review: the card sets a nested `clientOnly` path (`config.url`) inside its parent, and
+    // the Confirm strips only the leaf — so a parent the model body defaults is stored as defaulted,
+    // or the stored hash never matches the Confirm's (`{ config: {} }` against no `config`).
+    for (const parent of nestedClientOnlyParents(entry.clientOnly)) {
+      const defaulted = (parsed.data as Record<string, unknown>)[parent];
+      if (body[parent] === undefined && isPlainObject(defaulted)) body[parent] = JSON.parse(JSON.stringify(defaulted));
+    }
 
     if (await services.pending.hasOpen(ctx.identity.id, ctx.conversationId)) {
       return { ok: false, error: PROPOSE_OPEN_CHANGE_ERROR };
     }
-    const fleetRow = entry.target.kind === "fleet" || entry.target.kind === "pointKey";
+    const fleetRow =
+      entry.target.kind === "fleet" ||
+      entry.target.kind === "pointKey" ||
+      entry.target.kind === "vocabulary" ||
+      entry.target.kind === "telemetry";
     if (fleetRow && ctx.conversationOrganizationId === null) return { ok: false, error: PROPOSE_FLEET_UNBOUND_ERROR };
-    const target = await services.targets.resolve(
-      entry,
-      params,
-      body,
-      ctx.allowedOrganizationIds,
-      ctx.user,
-      ctx.conversationOrganizationId,
-    );
+    const resolved = await services.targets
+      .resolve(entry, params, body, ctx.allowedOrganizationIds, ctx.user, ctx.conversationOrganizationId)
+      // `F4.283` (owner ruling 2026-10-25, Q2): a telemetry row refusal names its rows; any other error is re-thrown.
+      .catch((err: unknown) => {
+        if (err instanceof CopilotTargetRefusal) return err;
+        throw err;
+      });
+    if (resolved instanceof CopilotTargetRefusal) return { ok: false, error: resolved.message };
+    const target = resolved;
     if (
       target === null ||
       !ctx.allowedOrganizationIds.includes(target.organizationId) ||
@@ -450,6 +552,43 @@ export function createCopilotProposeTools(
     }
     // `F3.87` PR 5: a layout card is stored only when it can apply (Amendment 3 A2), and a replace
     // keeps the layout it was built from for the card's diff (ruling Q5).
+    // `F4.278` (Q9): the route's refusals, "would match now" and the backtest, before the card.
+    let ruleNote = "";
+    if (RULE_ENTRY_IDS.has(entry.id)) {
+      const checked = await checkRule(services.rules, entry.id, params, body, target.organizationId, ctx.now);
+      if (!checked.ok) return checked;
+      ruleNote = ` ${checked.note}`;
+    }
+    // `F4.279` (D2, D5): every channel the change names, through the route's gate; the card-only
+    // recipients (stored beside the body, never in the summary) and a note with counts only.
+    let cardBody: Record<string, unknown> = {};
+    if (NOTIFICATION_ENTRY_IDS.has(entry.id)) {
+      const checked = await checkNotification(services.notifications, entry.id, params, body, target.organizationId, ctx.user);
+      if (!checked.ok) return checked;
+      if (checked.note !== "") ruleNote = ` ${checked.note}`;
+      cardBody = checked.cardBody;
+    }
+    // `F4.280` (D4 per field, then D2, D5): email only when the user's own message asked; the route's checks.
+    if (REPORT_ENTRY_IDS.has(entry.id)) {
+      const checked = await checkReport(services.reports, entry.id, params, body, target.organizationId, ctx);
+      if (!checked.ok) return checked;
+      ruleNote = ` ${checked.note}`;
+      cardBody = checked.cardBody;
+    }
+    // `F4.283` (Q18–Q21): the file's name and SHA-256 (never its bytes), then the route's own checks, read-only.
+    if (FILE_ENTRY_IDS.has(entry.id)) {
+      const checked = await checkFile(services.files, entry, params, body, target.organizationId, ctx);
+      if (!checked.ok) return checked;
+      body = checked.body;
+      if (checked.note !== "") ruleNote = ` ${checked.note}`;
+      cardBody = checked.cardBody;
+    }
+    // `F4.284` (DC6): the route's own refusals, read from the target; a reorder's card-only moves (DC2).
+    if (OPERATIONS_ENTRY_IDS.has(entry.id)) {
+      const checked = checkOperations(entry, body, target);
+      if (!checked.ok) return checked;
+      cardBody = checked.cardBody;
+    }
     if (LAYOUT_ENTRY_IDS.has(entry.id)) {
       const checked = await checkLayout(entry, params, body, ctx);
       if (!checked.ok) return checked;
@@ -477,7 +616,7 @@ export function createCopilotProposeTools(
     }
     // `F3.87` PR 6a (Amendment 3 A3): an upload entry stores the text fields, the file's name and
     // SHA-256, and the SVG text under its `cardOnly` key, after the route's own parser passed it.
-    if (entry.upload !== undefined) {
+    if (entry.upload?.kind === "svg") {
       // `F3.87` PR 7: an attached file is the source by its 1-based index; a file that is not an SVG has no text.
       const attached = (ctx.attachments ?? []).map((file) =>
         file.svgText === undefined ? undefined : { filename: file.filename, svgText: file.svgText },
@@ -497,7 +636,14 @@ export function createCopilotProposeTools(
         organizationName: target.organizationName,
         ...(target.currentWidgetIds ? { currentWidgetIds: target.currentWidgetIds } : {}),
         ...(target.refName !== undefined ? { refName: target.refName } : {}),
-      }) + (fromFile ? COPILOT_READ_FROM_FILE_NOTE : "");
+        ...(target.usageCount !== undefined ? { usageCount: target.usageCount } : {}),
+        ...(target.lifecycle !== undefined ? { lifecycle: target.lifecycle } : {}),
+        ...operationsSummaryInput(target),
+      }) +
+      ruleNote +
+      (fromFile ? COPILOT_READ_FROM_FILE_NOTE : "");
+    // `F4.279`: the card-only keys join the body after the summary read it, so no summary lists them.
+    body = { ...body, ...cardBody };
     const change = await services.pending.propose(ctx.identity.id, {
       conversationId: ctx.conversationId,
       organizationId: target.organizationId,
@@ -534,6 +680,7 @@ export function createCopilotProposeTools(
         const target = byId.get(args.catalogId as string);
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
         if (target.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
+        if (OPERATIONAL_ENTRY_IDS.has(target.id) && !operationalAsked(ctx, target.id)) return { ok: false, error: PROPOSE_OPERATIONAL_NOT_ASKED_ERROR };
         if (!offeredToRole(target, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
         // `F3.87` PR 7, D8: a file turn cannot pre-fill an asset wizard with what it read from the file either.
         if (ASSET_CREATE_IDS.has(target.id) && ctx.assetIntent === false) return { ok: false, error: PROPOSE_ASSET_NOT_ASKED_ERROR };
@@ -543,8 +690,11 @@ export function createCopilotProposeTools(
         if (refusal !== null) return { ok: false, error: refusal };
         const step = target.steps.find((candidate) => candidate.id === args.stepId);
         if (step === undefined) return { ok: false, error: UNKNOWN_STEP_ERROR };
-        const values = stepValuesSchema(target.body, step.fields).safeParse(args.values);
+        const values = fillValuesSchema(target, step.fields).safeParse(args.values);
         if (!values.success) return { ok: false, error: `Invalid values: ${issuesOf(values.error)}` };
+        // `F4.280` (D4): a tool result can no more pre-fill a schedule's email delivery than propose it.
+        const emailRefusal = await reportEmailRefusal(services.reports, target.id, params, args.values as Record<string, unknown>, ctx);
+        if (emailRefusal !== null) return { ok: false, error: emailRefusal };
         // The step check reads field shapes only; the model body's rule that the copilot never names
         // the global admin role (decision 3) is a refinement, so it is held here on the server too.
         if (target.risk === "access" && (args.values as Record<string, unknown>).role === "admin") {
@@ -599,8 +749,26 @@ export class CopilotProposeToolSet implements CopilotProposeTools {
     @Inject(CopilotPendingChangesService) pending: CopilotPendingChangesService,
     // `F3.87` PR 5: the layout checks a layout proposal runs (`MimicLayoutsModule` exports it).
     @Inject(MimicLayoutsService) layouts: MimicLayoutsService,
+    // `F4.278` (Amendment 8, Q9): APPENDED (slot 3) — the rule check (`RulesModule` exports it).
+    @Inject(RuleProposalCheckService) rules: RuleProposalCheckService,
+    // `F4.279` (Amendment 8 D5): APPENDED (slot 4) — the notification check (`NotificationsModule` exports it).
+    @Inject(NotificationProposalCheckService) notifications: NotificationProposalCheckService,
+    // `F4.280` (Amendment 8 D2, D5): APPENDED (slot 5) — the report check (`ReportsModule` exports it).
+    @Inject(ReportProposalCheckService) reports: ReportProposalCheckService,
+    // `F4.283` (Amendment 8 Q18–Q21): APPENDED (slots 6 and 7) — the telemetry check (`AdminModule`
+    // exports it) and the image pre-check (`AssetsModule` exports `AssetImagesWriteService`).
+    @Inject(TelemetryProposalCheckService) telemetry: TelemetryProposalCheckService,
+    @Inject(AssetImagesWriteService) images: AssetImagesWriteService,
   ) {
-    this.tools = createCopilotProposeTools({ targets, pending, layouts });
+    this.tools = createCopilotProposeTools({
+      targets,
+      pending,
+      layouts,
+      rules,
+      notifications,
+      reports,
+      files: { telemetry, images },
+    });
   }
 
   get registry(): ToolRegistry<string> {

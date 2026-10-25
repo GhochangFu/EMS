@@ -18,22 +18,22 @@ import {
 import type { Response } from "express";
 import { ZodError, z } from "zod";
 
+import {
+  ruleDraftBodySchema,
+  ruleLifecycleBodySchema,
+  ruleToggleBodySchema,
+  ruleUpdateBodySchema,
+  setRuleNotificationsBodySchema,
+} from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
+import { ChannelWritesService } from "../notifications/channel-writes.service";
 import { ChannelsService } from "../notifications/channels.service";
-import { setRuleNotificationsBodySchema } from "../notifications/notifications.schema";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { EvaluateThrottle, throttleKeysFor } from "./evaluate-throttle";
-import {
-  listRuleExecutionsQuerySchema,
-  ruleDraftBodySchema,
-  ruleLifecycleBodySchema,
-  rulePreviewBodySchema,
-  ruleToggleBodySchema,
-  ruleUpdateBodySchema,
-} from "./rules.schema";
+import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "./rules.schema";
 import { RulesService } from "./rules.service";
 
 const idParamSchema = z.string().uuid();
@@ -49,6 +49,9 @@ export class RulesController {
     // controller by hand and reads `ConstructorParameters<…>[0..2]`, so adding
     // the throttle anywhere else would silently change what those mean.
     private readonly throttle: EvaluateThrottle,
+    // `F4.279`: appended after the throttle for the same reason — the channel-set
+    // write, which audits through `MasterDataAuditService` (`ChannelWritesService`).
+    private readonly channelWrites: ChannelWritesService,
   ) {}
 
   /**
@@ -94,7 +97,7 @@ export class RulesController {
         ruleId,
         await this.accessControl.readableAssetIds(user),
       );
-      const channelIds = await this.channels.setRuleChannels(ruleId, dto.channelIds, user);
+      const channelIds = await this.channelWrites.setRuleChannels(ruleId, dto.channelIds, user);
       if (channelIds === null) throw new NotFoundException("Rule not found");
       return { channelIds };
     } catch (err) {

@@ -4,7 +4,11 @@ import {
   escalationProfileResponseSchema,
   escalationProfilesListResponseSchema,
 } from "@bms/shared/contracts";
-import type { EscalationDefaultsResponse, EscalationProfileDto } from "@bms/shared";
+import type {
+  EscalationDefaultsResponse,
+  EscalationProfileDto,
+  EscalationProfilesListResponse,
+} from "@bms/shared";
 
 import { apiErrorMessage } from "../lib/api-error-message";
 import { clearSessionOnAuthFailure, withAuth } from "./http";
@@ -21,7 +25,8 @@ import { checkResponse } from "./validate";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
-export type EscalationProfilesResponse = { items: EscalationProfileDto[] };
+/** `F4.279` (ADR 0030): the shared `z.infer` of the response schema, not typed by hand. */
+export type EscalationProfilesResponse = EscalationProfilesListResponse;
 
 /** One rung of the ladder, as the API takes it. `stepNo` is the position and
  *  is assigned by the server, so it is deliberately absent here. */

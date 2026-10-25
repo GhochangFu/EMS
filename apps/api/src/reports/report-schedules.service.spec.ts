@@ -208,6 +208,8 @@ export type Scenario = {
   organizationLocations?: string[];
   /** `ChannelsService.loadById`'s answer; `"refused"` throws its own 403. */
   channel?: NotificationChannelRow | null | "refused";
+  /** `F4.280`: the tenant `{ config, id, kind, name, organizationId }` channel read's row; default `channelRow()`, `null` for none. */
+  storedChannel?: Partial<NotificationChannelRow> | null;
   txCount?: number;
   /** The count rows verbatim — the one way to reach a non-numeric count. */
   txCountRows?: { count: unknown }[];
@@ -233,6 +235,8 @@ export type Harness = {
   listWheres: { sql: string; params: unknown[] }[];
   /** The `orderBy` arguments of every list select, rendered to SQL text. */
   listOrders: string[][];
+  /** `F4.280`: the `where` of every tenant channel read, rendered to SQL. */
+  channelWheres: { sql: string; params: unknown[] }[];
   access: { calls: string[] };
   channels: { calls: string[] };
   audit: { inputs: AuditInput[]; executors: unknown[] };
@@ -255,6 +259,7 @@ export function harness(scenario: Scenario = {}, now: Date = NOW): Harness {
   const executed: { sql: string; params: unknown[] }[] = [];
   const listWheres: { sql: string; params: unknown[] }[] = [];
   const listOrders: string[][] = [];
+  const channelWheres: { sql: string; params: unknown[] }[] = [];
   let tenantTransactions = 0;
   const scheduleRows = scenario.scheduleRows ?? [];
 
@@ -279,6 +284,11 @@ export function harness(scenario: Scenario = {}, now: Date = NOW): Harness {
           if (shape === "") {
             listWheres.push(renderSql(whereArg));
             return scheduleRows;
+          }
+          if (shape === "config,id,kind,name,organizationId") {
+            calls.push("tx:storedChannel");
+            channelWheres.push(renderSql(whereArg));
+            return scenario.storedChannel === null ? [] : [channelRow(scenario.storedChannel)];
           }
           throw new Error(`tx fake: unexpected select shape ${shape}`);
         },
@@ -448,6 +458,7 @@ export function harness(scenario: Scenario = {}, now: Date = NOW): Harness {
     executed,
     listWheres,
     listOrders,
+    channelWheres,
     access,
     channels,
     audit,
@@ -732,7 +743,7 @@ export async function patchRunsTheWriteChecksOnTheNewChannelId(): Promise<void> 
 
 /**
  * Post-merge sweep (Amendment 2 item 7 A): PATCH's two 403 branches of
- * `assertWriteScope` were gated by no row — mutations `writableLocations:
+ * `checkWriteScope` were gated by no row — mutations `writableLocations:
  * null` and `undefined` on `[]` left every row green. A `[WC]` row moved to
  * a location of the organization the caller does not hold is 403 with the
  * scope sentence; `organizationLocations` carries the target so the 400 of

@@ -72,3 +72,33 @@ export function rowsOnOneFieldAreKeyedApart(): void {
     error.mockRestore();
   }
 }
+
+/** `F4.284` (ADR 0106 decision 4): a card of the given risk, with one row. */
+function renderRisk(risk: "operational" | "deactivate"): HTMLElement {
+  const { container } = render(
+    <ChangeCard title="Acknowledge an alarm" summary="Acknowledge." risk={risk} rows={[]} busy={false} confirmLabel="Confirm" busyLabel="…" onConfirm={() => {}} />,
+  );
+  return container;
+}
+
+/** An `operational` card is red. */
+export function anOperationalCardIsRed(): void {
+  const section = renderRisk("operational").querySelector("section");
+  expect(section?.className).toContain("border-critical-line");
+}
+
+/** An `operational` card says it cannot be undone. */
+export function anOperationalCardSaysItCannotBeUndone(): void {
+  expect(renderRisk("operational").textContent).toContain("This cannot be undone.");
+}
+
+/** A `deactivate` card is red too (the positive twin of the next claim). */
+export function aDeactivateCardIsRed(): void {
+  const section = renderRisk("deactivate").querySelector("section");
+  expect(section?.className).toContain("border-critical-line");
+}
+
+/** A `deactivate` card can be undone, so it carries no such line. */
+export function aDeactivateCardDoesNotSayItCannotBeUndone(): void {
+  expect(renderRisk("deactivate").textContent).not.toContain("This cannot be undone.");
+}

@@ -14,6 +14,7 @@ import {
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AlarmRaiser } from "../alarms/alarm-raise.service";
 import { ChannelsService } from "../notifications/channels.service";
 import type {
@@ -143,6 +144,7 @@ export async function assertRaisesUnscopedButReturnsScoped(db: BmsDb): Promise<v
       stubVocabularies(),
       new AlarmRaiser(tx),
       { dispatch: () => Promise.resolve([]) } as unknown as NotificationsService,
+      new MasterDataAuditService(tx, tx),
     );
 
     const { items } = await service.evaluateEnabledRules(ACTOR, [assetA]);
@@ -236,6 +238,7 @@ export async function assertStaleSampleMatchesButDoesNotRaise(db: BmsDb): Promis
       stubVocabularies(),
       new AlarmRaiser(tx),
       { dispatch: () => Promise.resolve([]) } as unknown as NotificationsService,
+      new MasterDataAuditService(tx, tx),
     );
     await service.evaluateEnabledRules(ACTOR, [assetId]);
 
@@ -426,6 +429,7 @@ export async function assertNotifyRuleDispatchesOnRaiseOnly(db: BmsDb): Promise<
       stubVocabularies(),
       new AlarmRaiser(tx),
       notifications,
+      new MasterDataAuditService(tx, tx),
     );
     const sentForRule = (ruleId: string): NotificationMessage[] =>
       sent.filter((message) => message.ruleId === ruleId);

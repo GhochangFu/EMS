@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { type CallHandler, ConflictException, type ExecutionContext, Injectable, type NestInterceptor } from "@nestjs/common";
 import type { Observable } from "rxjs";
 
-import { COPILOT_CHANGE_REFUSED_MESSAGE, hashExcludedKeysFor } from "@bms/shared/copilot";
+import { bodyFieldsOf, catalogEntry, COPILOT_CHANGE_REFUSED_MESSAGE, hashExcludedKeysFor } from "@bms/shared/copilot";
 
 import { decodeMulterFilename } from "../assets/multer-filename";
 import { bodyHash } from "./body-hash";
@@ -12,8 +12,16 @@ import { copilotContext } from "./copilot-request-context";
 /** The header, lower-cased as Node delivers it. */
 const HEADER = "x-copilot-change";
 
-/** The multipart text fields an upload entry hashes, as the browser sends them (`group` only when present). */
-const UPLOAD_FIELDS = ["name", "label", "group"] as const;
+/**
+ * The multipart text fields an upload entry hashes, as the browser sends them (each only when
+ * present): the entry body's own fields. `F4.283`: read from the catalog, so the symbol's
+ * `name`/`label`/`group`, the import's `sourceKind`/`conflictPolicy` and the image's `caption` are
+ * the same list the web's `uploadFormOf` sends. An unknown entry hashes no field (it never matches).
+ */
+export function uploadFieldsFor(catalogId: string): readonly string[] {
+  const entry = catalogEntry(catalogId);
+  return entry ? bodyFieldsOf(entry.body) : [];
+}
 
 type UploadRequest = {
   headers: Record<string, string | string[] | undefined>;
@@ -27,10 +35,10 @@ type UploadRequest = {
  * propose step stored (`copilot-upload-prepare.ts`). A missing file hashes as
  * an empty file, which never matches a stored hash.
  */
-export function uploadBodyOf(req: UploadRequest): Record<string, unknown> {
+export function uploadBodyOf(req: UploadRequest, keys: readonly string[] = uploadFieldsFor("mimicSymbol.upload")): Record<string, unknown> {
   const fields = (req.body ?? {}) as Record<string, unknown>;
   const body: Record<string, unknown> = {};
-  for (const key of UPLOAD_FIELDS) if (typeof fields[key] === "string") body[key] = fields[key];
+  for (const key of keys) if (typeof fields[key] === "string") body[key] = fields[key];
   body.filename = req.file ? decodeMulterFilename(req.file.originalname) : "";
   body.fileSha256 = createHash("sha256").update(req.file?.buffer ?? Buffer.alloc(0)).digest("hex");
   return body;
@@ -58,7 +66,7 @@ export class CopilotUploadChangeInterceptor implements NestInterceptor {
     const store = copilotContext.getStore();
     const claim = store?.uploadClaim;
     if (store === undefined || claim === undefined) throw new ConflictException(COPILOT_CHANGE_REFUSED_MESSAGE);
-    if (bodyHash(uploadBodyOf(req), hashExcludedKeysFor(claim.catalogId)) !== claim.bodyHash) {
+    if (bodyHash(uploadBodyOf(req, uploadFieldsFor(claim.catalogId)), hashExcludedKeysFor(claim.catalogId)) !== claim.bodyHash) {
       if (!claim.released) {
         claim.released = true;
         await claim.release();

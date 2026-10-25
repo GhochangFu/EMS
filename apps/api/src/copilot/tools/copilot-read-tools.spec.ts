@@ -11,6 +11,19 @@ import { AuditAdminService } from "../../admin/audit/audit.service";
 import { LocationsAdminService } from "../../admin/locations/locations.service";
 import { AlarmKbModule } from "../../alarm-kb/alarm-kb.module";
 import { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
+import { RulesModule } from "../../rules/rules.module";
+import { RulesService } from "../../rules/rules.service";
+import { ChannelsService } from "../../notifications/channels.service";
+import { EscalationProfilesService } from "../../notifications/escalation-profiles.service";
+import { ReportSchedulesService } from "../../reports/report-schedules.service";
+import { ReportsModule } from "../../reports/reports.module";
+import { MaintenanceModule } from "../../maintenance/maintenance.module";
+import { UsersService } from "../../admin/users/users.service";
+import { MaintenanceService } from "../../maintenance/maintenance.service";
+import { WorkOrdersModule } from "../../work-orders/work-orders.module";
+import { WorkOrdersService } from "../../work-orders/work-orders.service";
+import { NotificationsCoreModule } from "../../notifications/notifications-core.module";
+import { NotificationsModule } from "../../notifications/notifications.module";
 import { AlarmDetailsService } from "../../alarms/alarm-details.service";
 import { AlarmsModule } from "../../alarms/alarms.module";
 import { AlarmsService } from "../../alarms/alarms.service";
@@ -461,6 +474,20 @@ export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
     "get_mimic_layout",
     "list_mimic_symbols",
     "list_asset_roles",
+    // `F4.278` (Amendment 8 D7): the alarm rules.
+    "list_rules",
+    // `F4.279` (Amendment 8 D7).
+    "list_notification_channels",
+    "list_escalation_profiles",
+    // `F4.280` (Amendment 8 D7, Q1).
+    "list_report_schedules",
+    // `F4.281` (Amendment 8 D7, owner ruling DC4).
+    "list_maintenance_schedules",
+    // `F4.284` (ADR 0106; owner rulings DC1, DC7).
+    "list_work_orders",
+    "list_users",
+    // `F4.284` owner ruling 2026-10-25 (Q4).
+    "list_alarm_skills",
     "open_page",
   ]);
   const extra = await runToolCall(
@@ -577,6 +604,18 @@ export function assertTheModuleWiresTheReadTools(): void {
     // `F4.276`: the alarm details and the alarm knowledge-base read tools.
     AlarmDetailsService,
     AlarmKbService,
+    // `F4.278`: the alarm-rule read tool.
+    RulesService,
+    // `F4.279`: the channel and escalation read tools.
+    ChannelsService,
+    EscalationProfilesService,
+    // `F4.280`: the report-schedule read tool.
+    ReportSchedulesService,
+    // `F4.281`: the maintenance-schedule read tool.
+    MaintenanceService,
+    // `F4.284`: the work-order and user read tools.
+    WorkOrdersService,
+    UsersService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
   for (const module of [
@@ -593,12 +632,24 @@ export function assertTheModuleWiresTheReadTools(): void {
     AdminModule,
     SystemStatusModule,
     AlarmKbModule,
+    RulesModule,
+    NotificationsModule,
+    ReportsModule,
+    MaintenanceModule,
+    WorkOrdersModule,
   ]) {
     expect(imports).toContain(module);
   }
   const exportsOf = (module: unknown) => (Reflect.getMetadata("exports", module as object) ?? []) as unknown[];
   expect(exportsOf(AlarmsModule)).toEqual(expect.arrayContaining([AlarmsService, AlarmDetailsService]));
   expect(exportsOf(AlarmKbModule)).toContain(AlarmKbService);
+  expect(exportsOf(RulesModule)).toContain(RulesService);
+  // `F4.279`: `ChannelsService` through the re-exported core, `EscalationProfilesService` directly.
+  expect(exportsOf(NotificationsModule)).toEqual(expect.arrayContaining([NotificationsCoreModule, EscalationProfilesService]));
+  expect(exportsOf(NotificationsCoreModule)).toContain(ChannelsService);
+  expect(exportsOf(ReportsModule)).toContain(ReportSchedulesService);
+  expect(exportsOf(MaintenanceModule)).toContain(MaintenanceService);
+  expect(exportsOf(WorkOrdersModule)).toContain(WorkOrdersService);
   expect(exportsOf(AssetsModule)).toEqual(expect.arrayContaining([AssetsService, AssetKpisService]));
   expect(exportsOf(DashboardBuilderModule)).toContain(DashboardsService);
   expect(exportsOf(AssetHealthModule)).toContain(AssetHealthService);
@@ -610,5 +661,5 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(ReportsCoreModule)).toContain(ReportsService);
   expect(exportsOf(AdminModule)).toContain(AuditAdminService);
   expect(exportsOf(SystemStatusModule)).toContain(SystemStatusService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(26);
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(34); // `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills.
 }

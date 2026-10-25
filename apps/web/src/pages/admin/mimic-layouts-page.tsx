@@ -42,8 +42,8 @@ export const MIMIC_LAYOUTS_QUERY_KEY = ["mimic-layouts"] as const;
  * sentence, unwrapped by `apiErrorMessage`.
  *
  * **"Add a unit role"** (`F3.87` PR 6b, owner ruling Q2(a)) is the global administrator's alone:
- * it opens the `assetRole.create` wizard (the unit-role vocabulary has no admin page, and its
- * route is the global administrator's). Every other role never sees the action.
+ * it opens the `assetRole.create` wizard (the same wizard the Unit Roles page,
+ * `/admin/unit-roles` since `F4.282`, opens; its route is the global administrator's). Every other role never sees the action.
  */
 export function MimicLayoutsPage({ user }: MimicLayoutsPageProps) {
   return (

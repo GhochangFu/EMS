@@ -15,6 +15,13 @@ import {
   anAmbiguous409ListsTheCandidates,
   anUnavailableCopilotKeepsTheCardOpen,
   aRoutesOwn409ShowsItsSentence,
+  aRuleDisableCardIsRedAndShowsTheCheckNote,
+  anEmailCreateSendsNoSecret,
+  aWebhookCreateSendsTheTypedUrlAndAnOptionalSecret,
+  aWebhookCreateWaitsForAUrl,
+  theRecipientsAreShownInFull,
+  aScheduleCardListsTheRecipientsInFull,
+  aScheduleCardSummaryNamesNoAddress,
   a409SaysTheChangeIsGone,
   aCreateCardReadsNoRecord,
   aFillStepReachesTheWizardStore,
@@ -74,6 +81,13 @@ describe("F3.85 PR 8 copilot Confirm card — Confirm, Reject and the record now
   it("shows a route's error on the card and closes it", () => anErrorShowsOnTheCard());
   it("shows a route's own 409 sentence, not 'gone'", () => aRoutesOwn409ShowsItsSentence());
   it("keeps the card open when the copilot is unavailable", () => anUnavailableCopilotKeepsTheCardOpen());
+  it("F4.278: a rule disable card is red and shows the check note", () => aRuleDisableCardIsRedAndShowsTheCheckNote());
+  it("F4.279: a webhook create waits for a URL that parses", () => aWebhookCreateWaitsForAUrl());
+  it("F4.279: a webhook create sends the typed URL and an optional secret", () => aWebhookCreateSendsTheTypedUrlAndAnOptionalSecret());
+  it("F4.279: an email create shows no box and sends no secret", () => anEmailCreateSendsNoSecret());
+  it("F4.279: the recipients are shown in full, the summary names none", () => theRecipientsAreShownInFull());
+  it("F4.280: a schedule card lists the recipients in full", () => aScheduleCardListsTheRecipientsInFull());
+  it("F4.280: a schedule card summary names no address", () => aScheduleCardSummaryNamesNoAddress());
   it("keeps the card open on a 5xx", () => a5xxKeepsTheCardOpen(), 10_000);
   it("lists the candidates of an ambiguous site layout", () => anAmbiguous409ListsTheCandidates());
   it("takes a clientOnly value in a password box and sends it only", () => aClientOnlyFieldIsTypedOnTheCard());

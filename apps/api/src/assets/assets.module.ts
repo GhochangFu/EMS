@@ -39,6 +39,7 @@ import { AssetsService } from "./assets.service";
     MasterDataAuditService,
   ],
   // `F3.85` PR 7: the copilot's `list_assets` and `get_asset_kpis` read tools.
-  exports: [AssetsService, AssetKpisService],
+  // `F4.283` (ADR 0099 Amendment 8): the copilot's image proposal runs `AssetImagesWriteService.previewUpload`.
+  exports: [AssetsService, AssetKpisService, AssetImagesWriteService],
 })
 export class AssetsModule {}

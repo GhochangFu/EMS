@@ -11,9 +11,16 @@ import type { AssetsService } from "../../assets/assets.service";
 import type { AccessControlService } from "../../auth/access-control.service";
 import type { DashboardService } from "../../dashboard/dashboard.service";
 import type { DashboardsService } from "../../dashboard-builder/dashboards.service";
+import type { MaintenanceService } from "../../maintenance/maintenance.service";
+import type { UsersService } from "../../admin/users/users.service";
+import type { WorkOrdersService } from "../../work-orders/work-orders.service";
 import type { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import type { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
+import type { ChannelsService } from "../../notifications/channels.service";
+import type { EscalationProfilesService } from "../../notifications/escalation-profiles.service";
+import type { ReportSchedulesService } from "../../reports/report-schedules.service";
 import type { ReportsService } from "../../reports/reports.service";
+import type { RulesService } from "../../rules/rules.service";
 import type { SystemStatusService } from "../../system-status/system-status.service";
 import type { TelemetryService } from "../../telemetry/telemetry.service";
 import type { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -69,6 +76,29 @@ export interface CopilotReadServices {
    * `null` (the unrestricted-admin scope) or `[]`.
    */
   readonly alarmKb: Pick<AlarmKbService, "list">;
+  /**
+   * `F4.278` (Amendment 8 D7): the Rule Engine's rule list (`GET /rules`); never
+   * called with `null` (the whole fleet) or `[]`.
+   */
+  readonly rules: Pick<RulesService, "listRules">;
+  /**
+   * `F4.279` (Amendment 8 D7): the Channels page's list (`GET /notifications/channels`);
+   * `list` only, so no write and no secret read is reachable.
+   */
+  readonly channels: Pick<ChannelsService, "list">;
+  /** `F4.279` (D7, Q9): the Escalation page's profile list and severity map; reads only. */
+  readonly escalationProfiles: Pick<EscalationProfilesService, "list" | "getDefaults">;
+  /** `F4.280` (Amendment 8 D7, Q1): the Reports page's schedule list (`GET /reports/schedules`); `list` only. */
+  readonly schedules: Pick<ReportSchedulesService, "list">;
+  /**
+   * `F4.281` (Amendment 8 D7, owner ruling DC4): the Schedule Centre's list
+   * (`GET /maintenance/schedules`); `list` only, never called with `null` or `[]`.
+   */
+  readonly maintenance: Pick<MaintenanceService, "list">;
+  /** `F4.284` (owner ruling DC7): the work-orders board's list; `list` only, never called with `null` or `[]`. */
+  readonly workOrders: Pick<WorkOrdersService, "list">;
+  /** `F4.284` (owner ruling DC1): the Users page's list, behind its own manager gate; `list` only. */
+  readonly users: Pick<UsersService, "list">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */

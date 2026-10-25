@@ -1,22 +1,31 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq } from "drizzle-orm";
 
 import {
+  alarmEscalationProfiles,
+  alarms,
   assetGroupMembers,
   assetGroups,
   assetPoints,
+  assetRoles,
   assets,
   assetTemplates,
+  automationRules,
   type BmsDb,
   calcParameters,
   dashboards,
   dashboardTemplates,
   dashboardWidgets,
   locations,
+  locationTypes,
+  maintenanceSchedules,
+  maintenanceTaskTemplates,
   mimicLayouts,
   mimicOrgSymbolLibraries,
+  notificationChannels,
   organizations,
   pointKeys,
+  reportSchedules,
   rtus,
   siteControlRoomViews,
   templatePoints,
@@ -36,6 +45,9 @@ import { UsersService } from "../admin/users/users.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
+import { CopilotTargetRefusal, mayWriteTelemetry, telemetryRowRefusal } from "./copilot-telemetry-targets";
+// prettier-ignore
+import { findWorkOrderBatch, isActiveAlarmSkill, mayWriteOperationalAssets, type OperationsAlarm, type OperationsBatchRow, type OperationsWorkOrder, readAlarmRow, readConvertibleSchedule, readOrganizationUserName, readWorkOrderRow, unknownAlarmSkillMessage } from "./copilot-operations-targets";
 
 /** What a proposal's target resolved to. */
 export type ResolvedTarget = {
@@ -51,6 +63,8 @@ export type ResolvedTarget = {
   readonly currentContent?: Readonly<Record<string, unknown>>;
   /** `F3.86` PR 4, `userGrantAdd` and `userGrant`: the grant target's name, for the summary. */
   readonly refName?: string;
+  /** `F4.282`: `vocabulary` targets of `locationType` — how many locations in the turn's organizations use the type. */
+  readonly usageCount?: number;
   /** Template targets: the version's lifecycle status, for the propose tool's lifecycle mirror (`F4.246`). */
   readonly status?: TemplateLifecycleStatus;
   /**
@@ -59,6 +73,16 @@ export type ResolvedTarget = {
    * entry's propose tool stores it; the Confirm sends it as `If-Match`.
    */
   readonly updatedAt?: string;
+  /** `F4.278` (Amendment 8 D3): `rule` targets — the rule's `lifecycle_status`, so a PATCH of a published rule carries the live line. */
+  readonly lifecycle?: string;
+  /**
+   * `F4.284` (ADR 0106): an `alarm` target's alarm; a `workOrder` target's work order (a convert's: the one it
+   * makes); a `workOrderBatch` target's rows as they are now (DC2); a convert's state (DC6).
+   */
+  readonly alarm?: OperationsAlarm;
+  readonly workOrder?: OperationsWorkOrder;
+  readonly batch?: readonly OperationsBatchRow[];
+  readonly convertible?: { readonly active: boolean; readonly hasActiveWorkOrder: boolean };
 };
 
 /** What the user targets need from the users services: their own checks, called, never copied (plan §6.3). */
@@ -91,6 +115,7 @@ export interface CopilotTargets {
      * `"propose"` (the default) is every check.
      */
     mode?: CopilotResolveMode,
+    // `F4.283` (ruling 2026-10-25, Q2): a `telemetry` row refusal throws `CopilotTargetRefusal`, its sentence for the model.
   ): Promise<ResolvedTarget | null>;
   /**
    * `F4.245` (ADR 0099 Amendment 4): the id of the dashboard `slug` names in
@@ -122,9 +147,20 @@ type Found = {
   currentContent?: Record<string, unknown>;
   status?: TemplateLifecycleStatus;
   updatedAt?: string;
+  usageCount?: number;
+  lifecycle?: string;
+  /** `F4.280`: `reportSchedule` — the locations the schedule is stamped with (the verdict's input). */
+  locationIds?: readonly string[];
+  alarm?: OperationsAlarm;
+  workOrder?: OperationsWorkOrder;
+  batch?: readonly OperationsBatchRow[];
+  convertible?: { active: boolean; hasActiveWorkOrder: boolean };
 };
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
-type RowKind = Exclude<CatalogEntry["target"]["kind"], "organization" | "parent" | "fleet" | "onboardingSession" | UserKind>;
+type RowKind = Exclude<
+  CatalogEntry["target"]["kind"],
+  "organization" | "parent" | "fleet" | "vocabulary" | "telemetry" | "onboardingSession" | "workOrderBatch" | UserKind
+>;
 type UserKind = "user" | "userGrantAdd" | "userGrant";
 type UserTarget = Extract<CatalogEntry["target"], { kind: UserKind }>;
 
@@ -197,20 +233,50 @@ export class CopilotTargetResolver implements CopilotTargets {
       const asked: UserTarget = mode === "record" && target.kind === "userGrantAdd" ? { kind: "user", param: target.param } : target;
       found = await this.findUserTarget(asked, params, body, user, allowedOrganizationIds).catch(() => null);
       if (found !== null && !allowedOrganizationIds.includes(found.organizationId)) found = null;
-    } else if (target.kind === "fleet" || target.kind === "pointKey") {
+    } else if (target.kind === "fleet" || target.kind === "pointKey" || target.kind === "vocabulary" || target.kind === "telemetry") {
       // Ruling Q1: a row with no organization lives in the conversation's bound organization.
       if (boundOrganizationId === null || !allowedOrganizationIds.includes(boundOrganizationId)) return null;
       const organizationName = await this.organizationName(boundOrganizationId);
       if (organizationName === null) return null;
-      if (target.kind === "fleet") {
+      if (target.kind === "fleet" || target.kind === "telemetry") {
         found = { organizationId: boundOrganizationId, name: organizationName };
+      } else if (target.kind === "vocabulary") {
+        // `F4.282` (Amendment 8 D2): an unknown code is refused before the gate is asked.
+        const code = params[target.param];
+        if (code === undefined) return null;
+        found = await this.vocabularyRow(target.of, code, allowedOrganizationIds, boundOrganizationId);
       } else {
         const id = params[target.param];
         if (id === undefined) return null;
         const code = await this.pointKeyCode(id);
         found = code === null ? null : { organizationId: boundOrganizationId, name: code };
       }
-      if (found !== null && !(await this.safely(() => this.mayManageFleet(user)))) found = null;
+      // `F4.283` (Amendment 8 D2): the telemetry routes' gate is `requireMasterDataUser`; then (owner ruling
+      // 2026-10-25, Q2) every row's asset, as an asset target's, refused with its row numbers before the card.
+      const gate = target.kind === "telemetry" ? () => mayWriteTelemetry(this.access, user) : () => this.mayManageFleet(user);
+      if (found !== null && !(await this.safely(gate))) found = null;
+      const rowsIn = found !== null && target.kind === "telemetry" && mode === "propose" ? boundOrganizationId : null;
+      const refusal = rowsIn === null ? null : await telemetryRowRefusal(this.tenantDb, this.access, user, body, allowedOrganizationIds, rowsIn);
+      if (refusal !== null) throw new CopilotTargetRefusal(refusal);
+    } else if ((target.kind === "rule" || target.kind === "maintenanceSchedule") && "field" in target) {
+      // `F4.278` / `F4.281` (Amendment 8 D2): a rule or maintenance schedule create — the organization
+      // is its asset's, and the route's two gates run on the body's asset.
+      const assetId = body[target.field];
+      if (typeof assetId !== "string") return null;
+      found = await this.configurationAsset(assetId, allowedOrganizationIds);
+      if (found !== null && !(await this.safely(() => this.mayWriteConfiguration(user, assetId)))) found = null;
+    } else if (target.kind === "workOrder" && "field" in target) {
+      // `F4.284` (ADR 0106 decision 6): a work-order create — the asset's organization, the route's two gates.
+      const assetId = body[target.field];
+      if (typeof assetId !== "string") return null;
+      found = await this.configurationAsset(assetId, allowedOrganizationIds);
+      if (found !== null && !(await this.safely(() => this.mayWriteOperational(user, assetId)))) found = null;
+    } else if (target.kind === "workOrderBatch") {
+      const batch = await findWorkOrderBatch(this.tenantDb, body[target.field], allowedOrganizationIds);
+      const name = batch === null ? null : await this.organizationName(batch.organizationId);
+      found = batch === null || name === null ? null : { organizationId: batch.organizationId, name, batch: batch.rows };
+      const assetIds = batch?.rows.map((row) => row.assetId) ?? [];
+      if (found !== null && !(await this.safely(() => this.mayWriteOperational(user, ...assetIds)))) found = null;
     } else {
       const id = params[target.param];
       if (id === undefined) return null;
@@ -223,7 +289,16 @@ export class CopilotTargetResolver implements CopilotTargets {
       const value = body[ref.field];
       if (value === undefined || value === null) continue;
       const kind = refKindOf(ref, body);
-      if (kind === null || typeof value !== "string" || !(await this.refBelongs(kind, value, found.organizationId))) return null;
+      if (kind === null || typeof value !== "string") return null;
+      // `F4.284` (DC1): an assignee is read under the tenant (RLS on `bms.users`), and the card names them.
+      if (kind === "user") {
+        const assignee = await readOrganizationUserName(this.tenantDb, value, found.organizationId);
+        if (assignee === null) return null;
+        found.refName ??= assignee;
+        // Owner ruling 2026-10-25 (Q4): a skill code is a fleet vocabulary row; the refusal names the read tool.
+      } else if (kind === "alarmSkill") {
+        if (!(await isActiveAlarmSkill(this.tenantDb, value))) throw new CopilotTargetRefusal(unknownAlarmSkillMessage(value));
+      } else if (!(await this.refBelongs(kind, value, found.organizationId))) return null;
     }
     const organizationName =
       target.kind === "organization" ? found.name : ((await this.organizationName(found.organizationId)) ?? "");
@@ -237,6 +312,12 @@ export class CopilotTargetResolver implements CopilotTargets {
       ...(found.refName !== undefined ? { refName: found.refName } : {}),
       ...(found.status !== undefined ? { status: found.status } : {}),
       ...(found.updatedAt !== undefined ? { updatedAt: found.updatedAt } : {}),
+      ...(found.usageCount !== undefined ? { usageCount: found.usageCount } : {}),
+      ...(found.lifecycle !== undefined ? { lifecycle: found.lifecycle } : {}),
+      ...(found.alarm ? { alarm: found.alarm } : {}),
+      ...(found.workOrder ? { workOrder: found.workOrder } : {}),
+      ...(found.batch ? { batch: found.batch } : {}),
+      ...(found.convertible ? { convertible: found.convertible } : {}),
     };
   }
 
@@ -307,6 +388,81 @@ export class CopilotTargetResolver implements CopilotTargets {
   private async pointKeyCode(id: string): Promise<string | null> {
     const [row] = await this.tenantDb.select({ code: pointKeys.code }).from(pointKeys).where(eq(pointKeys.id, id)).limit(1);
     return row?.code ?? null;
+  }
+
+  /**
+   * `F4.282` (ADR 0099 Amendment 8 D2) — a vocabulary row's label, by code. Both tables are
+   * fleet-wide with no row-level security (the `pointKeyCode` precedent; `VocabulariesService`
+   * reads them on the tenant pool). A location type also carries how many locations use it,
+   * inactive ones included, summed over the turn's allowed organizations under `withTenant` —
+   * never outside the turn's scope. A vocabulary target needs a bound conversation, so that is
+   * the bound organization's count alone, not the page's fleet-wide OQ4 count: the card names
+   * the organization it counted (`locationType.deactivate`'s summary).
+   */
+  private async vocabularyRow(
+    of: "locationType" | "assetRole",
+    code: string,
+    allowedOrganizationIds: readonly string[],
+    organizationId: string,
+  ): Promise<Found | null> {
+    if (of === "assetRole") {
+      const [role] = await this.tenantDb.select({ label: assetRoles.label }).from(assetRoles).where(eq(assetRoles.code, code)).limit(1);
+      return role ? { organizationId, name: role.label } : null;
+    }
+    const [type] = await this.tenantDb
+      .select({ label: locationTypes.label })
+      .from(locationTypes)
+      .where(eq(locationTypes.code, code))
+      .limit(1);
+    if (!type) return null;
+    let usageCount = 0;
+    for (const allowed of allowedOrganizationIds) {
+      const [row] = await withTenant(this.tenantDb, allowed, (tx) =>
+        tx
+          .select({ n: count(locations.id) })
+          .from(locations)
+          .where(and(eq(locations.type, code), eq(locations.organizationId, allowed))),
+      );
+      usageCount += Number(row?.n ?? 0);
+    }
+    return { organizationId, name: type.label, usageCount };
+  }
+
+  /**
+   * `F4.278` / `F4.281`: the asset a rule or maintenance schedule create names, in the first allowed
+   * organization that has it (its name and organization).
+   */
+  private async configurationAsset(assetId: string, allowed: readonly string[]): Promise<Found | null> {
+    for (const organizationId of allowed) {
+      const [row] = await withTenant(this.tenantDb, organizationId, (tx) =>
+        tx
+          .select({ name: assets.name })
+          .from(assets)
+          .where(and(eq(assets.id, assetId), eq(assets.organizationId, organizationId)))
+          .limit(1),
+      );
+      if (row) return { organizationId, name: row.name, assetId };
+    }
+    return null;
+  }
+
+  /**
+   * `F4.278` / `F4.281` (Amendment 8 D2): the rule and maintenance routes' own two gates and
+   * nothing more — `rules.controller.ts`'s and `maintenance.controller.ts`'s
+   * `assertOperationsWriteRole(user, "configuration")` (a throw is a refusal, `safely`), then the
+   * asset in the caller's **read** scope (`RulesService.assertAssetInScope`, `MaintenanceService`'s
+   * `assetIds` filter): a global admin (`null`) reads every asset; anyone else needs it among theirs.
+   */
+  private async mayWriteConfiguration(user: JwtPayload, ...assetIds: readonly (string | null)[]): Promise<boolean> {
+    await this.access.assertOperationsWriteRole(user, "configuration");
+    const readable = await this.access.readableAssetIds(user);
+    if (readable === null) return true;
+    return assetIds.every((assetId) => assetId !== null && readable.includes(assetId));
+  }
+
+  /** `F4.284` (ADR 0106 decision 6, DC5): the alarm and work-order routes' gate (`mayWriteOperationalAssets`). */
+  private mayWriteOperational(user: JwtPayload, ...assetIds: readonly (string | null)[]): Promise<boolean> {
+    return mayWriteOperationalAssets(this.access, user, assetIds);
   }
 
   private async findRow(
@@ -446,6 +602,76 @@ export class CopilotTargetResolver implements CopilotTargets {
           ? { organizationId, name: row.key, scope: { locationId: row.locationId, assetGroupId: null, assetId: row.assetId } }
           : null;
       }
+      // `F4.279` (Amendment 8 D2, Q13): a channel of this organization. The organization filter is
+      // what keeps a fleet-wide (NULL-organization) channel from ever being found.
+      case "notificationChannel": {
+        const [row] = await tx
+          .select({ name: notificationChannels.name })
+          .from(notificationChannels)
+          .where(and(eq(notificationChannels.id, id), eq(notificationChannels.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.name } : null;
+      }
+      // `F4.280` (Amendment 8 D2): a schedule of this organization, with its stamped locations.
+      case "reportSchedule": {
+        const [row] = await tx
+          .select({ name: reportSchedules.name, locationIds: reportSchedules.locationIds })
+          .from(reportSchedules)
+          .where(and(eq(reportSchedules.id, id), eq(reportSchedules.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.name, locationIds: row.locationIds } : null;
+      }
+      // `F4.279` (D6): a profile, with the stamp its ladder replace binds to.
+      case "escalationProfile": {
+        const [row] = await tx
+          .select({ name: alarmEscalationProfiles.name, updatedAt: alarmEscalationProfiles.updatedAt })
+          .from(alarmEscalationProfiles)
+          .where(and(eq(alarmEscalationProfiles.id, id), eq(alarmEscalationProfiles.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.name, updatedAt: row.updatedAt.toISOString() } : null;
+      }
+      // `F4.278`: a rule row — its asset (the scope gate's input) and its lifecycle (D3's live line).
+      case "rule": {
+        const [row] = await tx
+          .select({
+            name: automationRules.name,
+            assetId: automationRules.assetId,
+            lifecycleStatus: automationRules.lifecycleStatus,
+          })
+          .from(automationRules)
+          .where(and(eq(automationRules.id, id), eq(automationRules.organizationId, organizationId)))
+          .limit(1);
+        if (!row) return null;
+        return {
+          organizationId,
+          name: row.name,
+          ...(row.assetId ? { assetId: row.assetId } : {}),
+          lifecycle: row.lifecycleStatus,
+        };
+      }
+      // `F4.281`: a maintenance schedule — named by its template's title, with the template's asset.
+      case "maintenanceSchedule": {
+        const [row] = await tx
+          .select({ title: maintenanceTaskTemplates.title, assetId: maintenanceTaskTemplates.assetId })
+          .from(maintenanceSchedules)
+          .innerJoin(maintenanceTaskTemplates, eq(maintenanceSchedules.templateId, maintenanceTaskTemplates.id))
+          .where(and(eq(maintenanceSchedules.id, id), eq(maintenanceSchedules.organizationId, organizationId)))
+          .limit(1);
+        return row ? { organizationId, name: row.title, assetId: row.assetId } : null;
+      }
+      // `F4.284` (ADR 0106 decision 6): an alarm (named by its asset), a work order, a convertible schedule.
+      case "alarm": {
+        const row = await readAlarmRow(tx, id, organizationId);
+        return row ? { organizationId, name: row.alarm.assetName, assetId: row.assetId, alarm: row.alarm } : null;
+      }
+      case "workOrder": {
+        const row = await readWorkOrderRow(tx, id, organizationId);
+        return row ? { organizationId, name: row.workOrder.title, assetId: row.assetId, workOrder: row.workOrder } : null;
+      }
+      case "maintenanceScheduleConvert": {
+        const row = await readConvertibleSchedule(tx, id, organizationId);
+        return row ? { organizationId, name: row.title, assetId: row.assetId, workOrder: row.workOrder, convertible: row.convertible } : null;
+      }
       case "asset": {
         const [row] = await tx
           .select({ name: assets.name })
@@ -505,7 +731,10 @@ export class CopilotTargetResolver implements CopilotTargets {
     }
   }
 
-  /** The point-key routes' check (`point-keys.service.ts` `requireGlobalAdmin`): a master-data user who is a global admin. */
+  /**
+   * The point-key routes' check (`point-keys.service.ts` `requireGlobalAdmin`): a master-data user who is a global admin.
+   * `F4.282`: also the vocabulary routes' `requireGlobalAdmin` (location types, unit roles).
+   */
   private async mayManageFleet(user: JwtPayload): Promise<boolean> {
     await this.access.requireMasterDataUser(user);
     return this.access.isGlobalAdmin(user);
@@ -552,7 +781,28 @@ export class CopilotTargetResolver implements CopilotTargets {
       // `assertCanAuthor` on the body's organization.
       case "mimic":
         return this.mayAuthorMimic(user, organizationId);
+      // `F4.279`: a channel or profile create, or the severity map — the routes' gate on the body's organization.
+      case "notification":
+        return this.mayManageNotification(user, organizationId);
+      // `F4.280` (D2): `writableLocationIds` (the role gate), then `resolveReportOrganization`'s admit set.
+      case "report": {
+        await this.access.requireMasterDataUser(user);
+        const writable = await this.access.writableOrganizationIds(user);
+        return writable === null || writable.includes(organizationId);
+      }
     }
+  }
+
+  /**
+   * `F4.279` (ADR 0099 Amendment 8 D2) — the notification routes' gate, exactly
+   * `ChannelsService.loadById`'s and `EscalationProfilesService`'s:
+   * `requireMasterDataUser` (a throw, as for an `asset_group_admin`, is a refusal
+   * through `safely`), then `canManageNotificationChannel`, which admits `admin`
+   * and an `organization_admin` of the organization only.
+   */
+  private async mayManageNotification(user: JwtPayload, organizationId: string): Promise<boolean> {
+    await this.access.requireMasterDataUser(user);
+    return this.access.canManageNotificationChannel(user, organizationId);
   }
 
   /**
@@ -652,6 +902,40 @@ export class CopilotTargetResolver implements CopilotTargets {
       // `F3.86` PR 3b: `AssetsAdminService.update` — a body that names `locationId` moves the
       // asset, and the route checks the new site too (its own truthiness test, mirrored).
       // A create under an asset (`parent`) passes `{}`; `calcOverride.set`'s body has no `locationId`.
+      // `F4.279` (Amendment 8 D2): the notification routes' gate, on the row's organization.
+      case "notificationChannel":
+      case "escalationProfile":
+        return this.mayManageNotification(user, found.organizationId);
+      // `F4.280` (D2): `readRowForVerdict` after the route's role gate (a throw refuses, `safely`).
+      case "reportSchedule":
+        await this.access.requireMasterDataUser(user);
+        return this.access.canReadReportFile(user, { organizationId: found.organizationId, locationIds: found.locationIds ?? [] });
+      // `F4.278` (Amendment 8 D2): the rule routes' role class and read-scope gate.
+      // `RulesService.updateRule` checks the current asset and the merged one (`mergeRuleDraft`:
+      // an absent `assetId` keeps the current asset, `null` clears it), so a body that names
+      // `assetId` is checked too — before the proposal check reads that asset's telemetry.
+      case "rule": {
+        const current = found.assetId ?? null;
+        if (mode === "record" || body.assetId === undefined) return this.mayWriteConfiguration(user, current);
+        const next = typeof body.assetId === "string" ? body.assetId : null;
+        return this.mayWriteConfiguration(user, current, next);
+      }
+      // `F4.281` (Amendment 8 D2): the maintenance routes' role class and the schedule's template asset
+      // in the read scope (`getScheduleItem`'s 404). The PATCH body never moves the asset.
+      case "maintenanceSchedule":
+        return this.mayWriteConfiguration(user, found.assetId ?? null);
+      // `F4.284` (DC5): the convert route's `operational` gate on the schedule's template asset.
+      case "maintenanceScheduleConvert":
+      case "workOrder":
+        return this.mayWriteOperational(user, found.assetId ?? null);
+      // `F4.284`: an enrichment's `affectedAssetIds` too — each readable and of the alarm's organization.
+      case "alarm": {
+        const affected = mode === "record" || !Array.isArray(body.affectedAssetIds) ? [] : (body.affectedAssetIds as unknown[]);
+        if (affected.some((assetId) => typeof assetId !== "string")) return false;
+        if (!(await this.mayWriteOperational(user, found.assetId ?? null, ...(affected as string[])))) return false;
+        for (const assetId of affected as string[]) if (!(await this.refBelongs("asset", assetId, found.organizationId))) return false;
+        return true;
+      }
       case "asset":
         if (!(await this.access.canManageAsset(user, id))) return false;
         if (!body.locationId) return true;
@@ -665,9 +949,11 @@ export class CopilotTargetResolver implements CopilotTargets {
     return rtu?.locationId ?? null;
   }
 
-  private async refBelongs(kind: CatalogRefKind, id: string, organizationId: string): Promise<boolean> {
+  private async refBelongs(kind: Exclude<CatalogRefKind, "alarmSkill">, id: string, organizationId: string): Promise<boolean> {
     if (kind === "organization") return id === organizationId;
+    if (kind === "user") return (await readOrganizationUserName(this.tenantDb, id, organizationId)) !== null;
     const table = {
+      alarm: alarms,
       location: locations,
       assetGroup: assetGroups,
       asset: assets,

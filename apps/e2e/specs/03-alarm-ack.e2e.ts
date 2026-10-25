@@ -112,7 +112,9 @@ test.describe("path 3 — alarm acknowledgement", () => {
     await ourRow().getByRole("button", { name: "Ack", exact: true }).click();
     const dialog = page.getByRole("dialog", { name: "Acknowledge alarm" });
     await dialog.locator("#reason").fill(ACK_REASON);
-    await dialog.getByRole("button", { name: "Confirm ack", exact: true }).click();
+    // `F4.284` (ADR 0106, owner ruling Q9): the Ack is a Reason → Review wizard.
+    await dialog.getByRole("button", { name: "Next", exact: true }).click();
+    await dialog.getByRole("button", { name: "Submit", exact: true }).click();
     await expect(dialog).toHaveCount(0);
 
     await expect(stateCell()).toHaveText(ACKNOWLEDGED);

@@ -4,10 +4,12 @@ import { cleanup } from "@testing-library/react";
 
 import {
   ackRefusalShowsTheServerSentence,
+  aReasonThatTrimsShortStaysOnTheReasonStep,
   countsActiveAsUnclearedAndAcknowledgedAsStamped,
   offersAckOnExactlyTheUnacknowledgedRows,
   rendersAllFourLifecycleStates,
   searchingClearedKeepsBothClearedRows,
+  theAckSendsTheTrimmedReason,
 } from "./alarms-page.spec";
 
 /**
@@ -40,5 +42,13 @@ describe("F3.10 alarm lifecycle on the alarms page", () => {
 
   it("F4.204 shows the server sentence, not the JSON envelope, when an ack is refused", async () => {
     await ackRefusalShowsTheServerSentence();
+  });
+
+  it("F4.284 keeps a reason that trims below 3 characters on the Reason step", async () => {
+    await aReasonThatTrimsShortStaysOnTheReasonStep();
+  });
+
+  it("F4.284 sends the trimmed reason the Review card shows", async () => {
+    await theAckSendsTheTrimmedReason();
   });
 });

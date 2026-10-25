@@ -106,6 +106,8 @@ export function runAssetTemplateTabTests(): void {
         "/admin/asset-groups",
         "/admin/point-keys",
         "/admin/location-types",
+        // `F4.282` (ADR 0099 Amendment 8 Q17) — Unit Roles, `globalAdminOnly` like Location Types.
+        "/admin/unit-roles",
         "/admin/calc-parameters",
         // Templates & Visuals. `F3.36` Part F (ADR 0049) — ungated, like Asset
         // Groups: authoring is hidden inside the page by `canAuthorTemplates`,
@@ -156,7 +158,8 @@ export function runAssetTemplateTabTests(): void {
     // and 16 -> 17; `location_admin` stays at 11.
     // `F3.78` added Users as `usersAdmin` (admin and organization_admin only): 18 -> 19 and
     // 17 -> 18; `location_admin` stays at 11.
-    const expected = role === "location_admin" ? 11 : role === "admin" ? 19 : 18;
+    // `F4.282` added Unit Roles as `globalAdminOnly`: `admin` alone goes 19 -> 20.
+    const expected = role === "location_admin" ? 11 : role === "admin" ? 20 : 18;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
@@ -363,6 +366,15 @@ export function runCanManageLocationTypesTests(): void {
 export function runLocationTypesTabShownToAdminTest(): void {
   const paths = visibleMasterDataTabs("admin").map((tab) => tab.path);
   assert(paths.includes(LOCATION_TYPES), "admin must see the Location Types tab");
+}
+
+/** `F4.282` (Amendment 8 Q17) — the Unit Roles tab is the global `admin`'s alone. */
+export function runUnitRolesTabIsGlobalAdminOnlyTest(): void {
+  assert(visibleMasterDataTabs("admin").some((tab) => tab.path === "/admin/unit-roles"), "admin must see the Unit Roles tab");
+  for (const role of ["organization_admin", "location_admin", "asset_group_admin"] as const) {
+    const paths = visibleMasterDataTabs(role).map((tab) => tab.path);
+    assert(!paths.includes("/admin/unit-roles"), `${role} must not see the Unit Roles tab`);
+  }
 }
 
 /**

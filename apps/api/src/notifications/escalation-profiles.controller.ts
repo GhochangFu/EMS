@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   NotFoundException,
@@ -16,16 +17,13 @@ import {
 } from "@nestjs/common";
 import { ZodError, z } from "zod";
 
+import { createEscalationProfileBodySchema, setEscalationDefaultsBodySchema, updateEscalationProfileBodySchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import {
-  createEscalationProfileBodySchema,
-  escalationDefaultsQuerySchema,
-  setEscalationDefaultsBodySchema,
-  updateEscalationProfileBodySchema,
-} from "./escalation-profiles.schema";
+import { parseIfMatchHeader } from "../common/if-match";
+import { escalationDefaultsQuerySchema } from "./escalation-profiles.schema";
 import { EscalationProfilesService } from "./escalation-profiles.service";
 
 const idParamSchema = z.string().uuid();
@@ -67,10 +65,18 @@ export class EscalationProfilesController {
     @CurrentUser() user: JwtPayload,
     @Param("id") id: string,
     @Body() body: unknown,
+    // `F4.279` (ADR 0099 Amendment 8 D6): the copilot's Confirm binds the ladder
+    // replace to the stamp its card showed; absent, the write is unconditional.
+    @Headers("if-match") ifMatch?: string,
   ) {
     const profileId = parse(idParamSchema, id);
     const dto = parse(updateEscalationProfileBodySchema, body);
-    const updated = await this.profiles.update(user, profileId, dto);
+    const updated = await this.profiles.update(
+      user,
+      profileId,
+      dto,
+      parseIfMatchHeader(ifMatch),
+    );
     if (updated === null) throw new NotFoundException("Escalation profile not found");
     return updated;
   }

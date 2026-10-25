@@ -1,23 +1,11 @@
-import { z } from "zod";
-
-import { writableSourceKindSchema } from "@bms/shared";
-
-/** The upload cap decided in the plan's tunables section (`F1.9`) — 5 MiB. */
-export const MAX_IMPORT_FILE_BYTES = 5 * 1024 * 1024;
-
 /**
- * The multipart form fields that ride alongside the uploaded file on both
- * `POST /admin/telemetry/import/preview` and `.../commit`. `sourceKind`
- * reuses `writableSourceKindSchema` (`@bms/shared`, ADR 0018) rather than
- * restating its vocabulary — `measured` is excluded there for the same
- * reason it is excluded from manual entry: the API cannot supply the
- * `rtu_id` a `measured` row's CHECK constraint requires.
+ * The F1.9 import options and the 5 MiB file cap. `F4.283` (ADR 0099
+ * Amendment 8, ADR 0030): they live in
+ * `packages/shared/src/contracts/telemetry-import.ts`, so the copilot
+ * catalog carries the route's own export by identity. Re-exported here under
+ * their old names for the service, the onboarding and mapping-sheet readers
+ * of the cap, and this file's spec; the controller imports them from
+ * `@bms/shared`.
  */
-export const telemetryImportOptionsBodySchema = z
-  .object({
-    sourceKind: writableSourceKindSchema.default("unmapped"),
-    conflictPolicy: z.enum(["reject", "overwrite"]).default("reject"),
-  })
-  .strict();
-
-export type TelemetryImportOptions = z.infer<typeof telemetryImportOptionsBodySchema>;
+export { MAX_IMPORT_FILE_BYTES, telemetryImportOptionsBodySchema } from "@bms/shared";
+export type { TelemetryImportOptions } from "@bms/shared";

@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAcknowledgeAuditsThroughTheFunnel,
   assertAFractionalLimitReachesSqlAsAnInteger,
   assertAnInfiniteLimitClampsToOneHundred,
   assertASubOneFractionalLimitClampsToOne,
@@ -18,5 +19,11 @@ describe("alarms.service — the GET /alarms limit clamp (F3.28, plan decision 4
 
   it("clamps a sub-one fractional limit to 1", async () => {
     await assertASubOneFractionalLimitClampsToOne();
+  });
+});
+
+describe("F4.284 — the alarm acknowledge audits through the funnel (ADR 0106 decision 7)", () => {
+  it("writes the ack audit row through MasterDataAuditService in the write's transaction", async () => {
+    await assertAcknowledgeAuditsThroughTheFunnel();
   });
 });

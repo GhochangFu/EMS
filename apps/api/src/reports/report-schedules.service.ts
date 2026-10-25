@@ -11,7 +11,7 @@ import { and, arrayContained, count, desc, eq, inArray, sql } from "drizzle-orm"
 import type { SQL } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
-import { locations, reportFiles, reportSchedules } from "@bms/db";
+import { locations, notificationChannels, reportFiles, reportSchedules } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { MAX_REPORT_SCHEDULES_PER_ORGANIZATION, reportScheduleDtoSchema, reportTemplateIdSchema } from "@bms/shared";
 import type { JwtPayload, ReportCadence, ReportScheduleDto } from "@bms/shared";
@@ -26,6 +26,7 @@ import { withTenant } from "../database/tenant-context";
 import type { BmsTx } from "../database/tenant-context";
 import { withOrganizationReadScope } from "../database/tenant-read-scope";
 import { ChannelsService } from "../notifications/channels.service";
+import type { NotificationChannelRow } from "../notifications/notification-transport";
 import type { StorageClient } from "../storage/storage-client";
 import { STORAGE_CLIENT } from "../storage/storage.tokens";
 import { discardObjectsBestEffort } from "./report-file-store";
@@ -48,7 +49,7 @@ type StoredRow = typeof reportSchedules.$inferSelect;
  * `viewer` before any read — the F3.5a order) → `resolveReportOrganization`
  * (Amendment 1 item 1: a global admin names the organization in the body, a
  * one-organization admin gets theirs, several must name one) →
- * {@link assertWriteScope}: every `locationIds` entry must be a location of
+ * {@link checkWriteScope}: every `locationIds` entry must be a location of
  * that organization (fleet read; 400) **and** in the writable set (`null` =
  * all; 403); `[]` needs organization-level rights
  * (`reportFileReadScope(jwt).kind === "location"` → 403); a `channelId` goes
@@ -128,7 +129,7 @@ export class ReportSchedulesService {
       body.organizationId,
     );
     const channelId = body.channelId ?? null;
-    await this.assertWriteScope(jwt, organizationId, body.locationIds, channelId, writableLocations);
+    await this.checkWriteScope(jwt, organizationId, body.locationIds, channelId, writableLocations);
 
     const createdBy = await this.resolveActorId(jwt);
     const scheduleId = randomUUID();
@@ -181,7 +182,7 @@ export class ReportSchedulesService {
     return toReportScheduleDto(row);
   }
 
-  /** For a `location_admin`, the read scope's `locationIds` (and `assertWriteScope`'s `held`) are the subtree closure since `F2.10`. */
+  /** For a `location_admin`, the read scope's `locationIds` (and `checkWriteScope`'s `held`) are the subtree closure since `F2.10`. */
   async list(jwt: JwtPayload): Promise<ReportScheduleDto[]> {
     const scope = await this.accessControl.reportFileReadScope(jwt);
     if (scope.kind === "location" && scope.locationIds.length === 0) {
@@ -221,7 +222,7 @@ export class ReportSchedulesService {
     // R-12: the role gate first, then the row, then the verdict, then the write checks on the new scope.
     const writableLocations = await this.accessControl.writableLocationIds(jwt);
     const row = await this.readRowForVerdict(jwt, id);
-    await this.assertWriteScope(jwt, row.organizationId, body.locationIds, body.channelId, writableLocations);
+    await this.checkWriteScope(jwt, row.organizationId, body.locationIds, body.channelId, writableLocations);
 
     // The stored cadence is CHECK-constrained to the enum (`0078`) and the DTO parse re-validates it on the way out.
     const cadence: ReportCadence = body.cadence ?? (row.cadence as ReportCadence);
@@ -311,14 +312,18 @@ export class ReportSchedulesService {
    * the body carries: `locationIds` and `channelId` `undefined` mean "not in
    * this PATCH" and are skipped — the row's existing scope was already
    * verified by `canReadReportFile`. `create` always passes both.
+   *
+   * `F4.280` (ADR 0099 Amendment 8 D2, D5): public, and it answers the loaded email channel
+   * (or `null`), so the copilot's proposal check runs the route's own checks read-only and lists
+   * the channel's recipients on the card. `create` and `update` ignore the answer.
    */
-  private async assertWriteScope(
+  async checkWriteScope(
     jwt: JwtPayload,
     organizationId: string,
     locationIds: readonly string[] | undefined,
     channelId: string | null | undefined,
     writableLocations: string[] | null,
-  ): Promise<void> {
+  ): Promise<NotificationChannelRow | null> {
     if (locationIds !== undefined) {
       if (locationIds.length > 0) {
         // fleetDb: the organization's own locations, bounded by the requested ids.
@@ -355,7 +360,52 @@ export class ReportSchedulesService {
       if (channel.organizationId !== organizationId) {
         throw new BadRequestException("channelId names a channel of another organization");
       }
+      return channel;
     }
+    return null;
+  }
+
+  /**
+   * `F4.280` follow-up (owner ruling 2026-10-24) — the stored email channel of
+   * schedule `id`, for the copilot's card on a re-enable (`enabled: true` with
+   * no `channelId`), so the admin sees who gets the emails again. Read-only.
+   *
+   * The row is read as `update` reads it ({@link readRowForVerdict}: 404, the
+   * decision-6 403), so a caller the PATCH route admits gets the same row. The
+   * channel is then read the way the render job reads it: on the tenant handle
+   * under the schedule's own organization, with an `organization_id` predicate
+   * as well — never through `ChannelsService.loadById`, whose
+   * `canManageNotificationChannel` gate refuses a `location_admin` the route
+   * admits (`update` itself never reads the stored channel). `null` when the
+   * schedule has no stored channel, or the channel is gone, of another
+   * organization, or not email.
+   */
+  async storedEmailChannel(
+    jwt: JwtPayload,
+    id: string,
+  ): Promise<Pick<NotificationChannelRow, "id" | "name" | "kind" | "config"> | null> {
+    const row = await this.readRowForVerdict(jwt, id);
+    const channelId = row.channelId;
+    if (channelId === null) return null;
+    const [channel] = await withTenant(this.tenantDb, row.organizationId, (tx) =>
+      tx
+        .select({
+          id: notificationChannels.id,
+          organizationId: notificationChannels.organizationId,
+          name: notificationChannels.name,
+          kind: notificationChannels.kind,
+          config: notificationChannels.config,
+        })
+        .from(notificationChannels)
+        .where(and(eq(notificationChannels.id, channelId), eq(notificationChannels.organizationId, row.organizationId)))
+        .limit(1),
+    );
+    if (!channel || channel.organizationId !== row.organizationId || channel.kind !== "email") return null;
+    const config =
+      typeof channel.config === "object" && channel.config !== null && !Array.isArray(channel.config)
+        ? (channel.config as Record<string, unknown>)
+        : {};
+    return { id: channel.id, name: channel.name, kind: channel.kind, config };
   }
 
   /** The fleet read by id (404), then the decision-6 verdict (403). Shared by `get`, `update` and `remove`. */

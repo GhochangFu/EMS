@@ -12,6 +12,7 @@ import {
   showsARetiredRowAsInactiveWithReactivate,
   aRefusedSaveShowsTheSentence,
   aRefusedToggleShowsTheSentence,
+  theDeactivateReviewStatesTheLocationCount,
 } from "./location-types-page.spec";
 
 /**
@@ -59,5 +60,9 @@ describe("F4.162 Location Types admin page", () => {
 
   it("F4.204 a refused deactivate shows the sentence, not the envelope", async () => {
     await aRefusedToggleShowsTheSentence();
+  });
+
+  it("F4.282 the deactivate Review states how many locations use the type", async () => {
+    await theDeactivateReviewStatesTheLocationCount();
   });
 });

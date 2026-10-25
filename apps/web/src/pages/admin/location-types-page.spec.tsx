@@ -103,6 +103,16 @@ async function rowOf(code: string): Promise<HTMLElement> {
   return row;
 }
 
+/**
+ * `F4.282` (ADR 0099 Amendment 8 Q17) — the forms are `WizardShell` wizards: a
+ * create or edit walks the Type step, then Next to Review, then Submit; a
+ * deactivate or reactivate is the Review step alone.
+ */
+async function nextThenSubmit(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await user.click(screen.getByRole("button", { name: "Next" }));
+  await user.click(await screen.findByRole("button", { name: "Submit" }));
+}
+
 /** W1 — one row per item, each showing its label, code and `locationCount`. */
 export async function rendersOneRowPerItemWithItsCount(): Promise<void> {
   renderPage(admin);
@@ -133,7 +143,7 @@ export async function createPostsCodeLabelAndSortOrder(): Promise<void> {
   await user.type(screen.getByLabelText("Code"), "f4162_new");
   await user.type(screen.getByLabelText("Label"), "Spec new");
   await user.type(screen.getByLabelText("Sort order"), "35");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await nextThenSubmit(user);
   await waitFor(() => expect(api.createLocationType).toHaveBeenCalledTimes(1));
   expect(api.createLocationType).toHaveBeenCalledWith({
     code: "f4162_new",
@@ -151,7 +161,7 @@ export async function editSendsNoCodeInTheBody(): Promise<void> {
   const label = screen.getByLabelText("Label");
   await user.clear(label);
   await user.type(label, "Spec renamed");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await nextThenSubmit(user);
   await waitFor(() => expect(api.updateLocationType).toHaveBeenCalledTimes(1));
   expect(api.updateLocationType).toHaveBeenCalledWith(ACTIVE.code, {
     label: "Spec renamed",
@@ -165,6 +175,7 @@ export async function deactivateCallsDeactivateWithTheCode(): Promise<void> {
   renderPage(admin);
   const row = await rowOf(ACTIVE.code);
   await user.click(within(row).getByRole("button", { name: "Deactivate" }));
+  await user.click(await screen.findByRole("button", { name: "Submit" }));
   // Wait for EITHER toggle call, then assert which: a wait on the right one
   // alone would time out on the wrong one instead of failing on it.
   const toggles = (): number =>
@@ -181,7 +192,7 @@ export async function saveInvalidatesTheDropdownKey(): Promise<void> {
   renderPage(admin);
   const row = await rowOf(ACTIVE.code);
   await user.click(within(row).getByRole("button", { name: "Edit" }));
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await nextThenSubmit(user);
   await waitFor(() => expect(api.updateLocationType).toHaveBeenCalledTimes(1));
   // The page's own key is the positive control that onSuccess ran; the
   // dropdown key is then asserted at once, so its absence fails here rather
@@ -233,7 +244,7 @@ export async function aRefusedSaveShowsTheSentence(): Promise<void> {
   await user.click(screen.getByRole("button", { name: "Add location type" }));
   await user.type(screen.getByLabelText("Code"), "f4204_new");
   await user.type(screen.getByLabelText("Label"), "Spec new");
-  await user.click(screen.getByRole("button", { name: "Save" }));
+  await nextThenSubmit(user);
   const banner = await screen.findByText(/A location type with that code already exists/);
   expect(banner.textContent).not.toContain('{"');
 }
@@ -247,6 +258,24 @@ export async function aRefusedToggleShowsTheSentence(): Promise<void> {
   );
   const row = await rowOf(ACTIVE.code);
   await user.click(within(row).getByRole("button", { name: "Deactivate" }));
+  await user.click(await screen.findByRole("button", { name: "Submit" }));
   const banner = await screen.findByText(/A location type in use cannot be deactivated/);
   expect(banner.textContent).not.toContain('{"');
+}
+
+/**
+ * `F4.282` (Amendment 8) — the deactivate dialog is the Review step alone, and
+ * its sentence names the type and how many locations use it (`17`, which is
+ * no sort order, so it came from `locationCount`). No write is sent before
+ * Submit.
+ */
+export async function theDeactivateReviewStatesTheLocationCount(): Promise<void> {
+  const user = userEvent.setup();
+  renderPage(admin);
+  const row = await rowOf(ACTIVE.code);
+  await user.click(within(row).getByRole("button", { name: "Deactivate" }));
+  const dialog = await screen.findByRole("dialog", { name: "Deactivate location type" });
+  expect(dialog.textContent).toContain(`"${ACTIVE.label}" (${ACTIVE.code}), used by ${ACTIVE.locationCount} location`);
+  expect(within(dialog).queryByRole("button", { name: "Next" })).toBeNull();
+  expect(api.deactivateLocationType).toHaveBeenCalledTimes(0);
 }

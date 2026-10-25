@@ -151,6 +151,26 @@ const PAGE_WIZARDS: readonly PageWizards[] = [
   { template: "/admin/asset-points", wizards: [{ catalogId: "assetPoint.create" }] },
   { template: "/admin/asset-groups", wizards: [{ catalogId: "assetGroup.create" }] },
   { template: "/admin/point-keys", wizards: [{ catalogId: "pointKey.create" }] },
+  // `F4.282` (Amendment 8 Q17): the two vocabulary pages' create wizards.
+  { template: "/admin/location-types", wizards: [{ catalogId: "locationType.create" }] },
+  { template: "/admin/unit-roles", wizards: [{ catalogId: "assetRole.create" }] },
+  // `F4.278` (Amendment 8): the Rule Engine's create wizard.
+  { template: "/rules", wizards: [{ catalogId: "rule.create" }] },
+  // `F4.279` (Amendment 8): the Channels and Escalation pages.
+  { template: "/admin/notification-channels", wizards: [{ catalogId: "notificationChannel.create" }] },
+  {
+    template: "/admin/escalation-profiles",
+    wizards: [{ catalogId: "escalationProfile.create" }, { catalogId: "escalationDefaults.set" }, { catalogId: "escalationDefaults.clear" }],
+  },
+  // `F4.280` (Amendment 8): the Reports page — the schedule create and the Save-to-history wizard.
+  { template: "/reports", wizards: [{ catalogId: "reportSchedule.create" }, { catalogId: "reportFile.save" }] },
+  // `F4.281` (Amendment 8 Q16): the Schedule Centre's create stepper.
+  { template: "/maintenance-schedules", wizards: [{ catalogId: "maintenanceSchedule.create" }] },
+  // `F4.284` (ADR 0106): the work-orders board mounts the create wizard; the row wizards name a work order by its id, which no route parameter carries.
+  { template: "/work-orders", wizards: [{ catalogId: "workOrder.create" }] },
+  // `F4.283` (Amendment 8): the import page's commit wizard and the manual-entry wizard.
+  { template: "/admin/telemetry/import", wizards: [{ catalogId: "telemetry.import" }] },
+  { template: "/admin/manual-readings", wizards: [{ catalogId: "telemetryReading.create" }] },
   { template: "/admin/users", wizards: [{ catalogId: "user.create" }] },
   { template: "/admin/calc-parameters", wizards: [{ catalogId: "calcParameter.create" }] },
   { template: "/admin/mimic-symbol-libraries", wizards: [{ catalogId: "mimicLibrary.create" }] },

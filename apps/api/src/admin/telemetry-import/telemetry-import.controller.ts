@@ -12,12 +12,14 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { ZodError } from "zod";
 
+import { MAX_IMPORT_FILE_BYTES, telemetryImportOptionsBodySchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
+import { CopilotUploadChangeInterceptor } from "../../copilot/copilot-upload-change.interceptor";
+import { CopilotUploadRoute } from "../../copilot/copilot-upload-route";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { TelemetryImportService } from "./telemetry-import.service";
-import { MAX_IMPORT_FILE_BYTES, telemetryImportOptionsBodySchema } from "./telemetry-import.schema";
 
 type UploadedImportFile = { buffer: Buffer } | undefined;
 
@@ -50,8 +52,12 @@ export class TelemetryImportController {
   // `fields: 4` caps the non-file fields (`sourceKind`, `conflictPolicy`,
   // with headroom) — Multer defaults `fields` to Infinity at 1 MB each,
   // otherwise unbounded regardless of `fileSize`.
+  // `F4.283` (ADR 0099 Amendment 8 Q19): the copilot's multipart Confirm target. Its body hash is
+  // compared after multer, by the stage that follows the file interceptor in the same call.
+  @CopilotUploadRoute()
   @UseInterceptors(
     FileInterceptor("file", { limits: { fileSize: MAX_IMPORT_FILE_BYTES, files: 1, fields: 4 } }),
+    CopilotUploadChangeInterceptor,
   )
   async commit(
     @UploadedFile() file: UploadedImportFile,

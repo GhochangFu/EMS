@@ -8,6 +8,8 @@ import { type CatalogEntry, type CatalogRef, type CatalogTarget, catalogEntry } 
 import { NO_GRANTS, NO_USERS } from "../testing/copilot-user-checks";
 import { resolveWizardRecord, type WizardScope } from "./copilot-open-wizards";
 import { CopilotTargetResolver, refKindOf } from "./copilot-target-resolver";
+import { CopilotTargetRefusal } from "./copilot-telemetry-targets";
+import { unknownAlarmSkillMessage } from "./copilot-operations-targets";
 
 /**
  * `F3.86` PR 2 / ADR 0099 decision 10 (plan §4.2) — the resolver's release-2
@@ -50,6 +52,26 @@ export type ResolverCtx = {
   assetTemplateA: string;
   /** `F3.87` PR 5: a mimic layout of A (owed by PR 2: the `mimicLayout` kind on a real database). */
   mimicLayoutA: string;
+  /** `F4.282`: a location type used by two locations of A and one of B, and a unit role. */
+  locationTypeCode: string;
+  locationTypeLabel: string;
+  assetRoleCode: string;
+  assetRoleLabel: string;
+  /** `F4.278`: an asset of B, a published rule on `assetA` and a rule on `assetB`. */
+  assetB: string;
+  ruleA: string;
+  ruleB: string;
+  /** `F4.279`: a channel of A, and a fleet-wide (NULL-organization) channel. */
+  channelA: string;
+  fleetChannel: string;
+  /** `F4.280`: a report schedule of A, stamped with `locationA`. */
+  scheduleA: string;
+  /** `F4.281`: a maintenance schedule of A on `assetA`, and its template's title. */
+  maintenanceScheduleA: string;
+  maintenanceTitleA: string;
+  /** `F4.284` (DC1): a user of A (named `RESOLVER_NAMES.userA`) and a user of B. */
+  userA: string;
+  userB: string;
 };
 
 /** `locationA` carries a stored `builtin` view (`site_control_room_views`); `locationA2` carries none. */
@@ -61,6 +83,7 @@ export const RESOLVER_NAMES = {
   groupA: "F3.86 group A",
   assetTemplateA: "F4.254 asset template A",
   mimicLayoutA: "F3.87 layout A",
+  userA: "F4.284 assignee A",
 } as const;
 
 type Call = [string, ...unknown[]];
@@ -84,8 +107,22 @@ function recorder(answers: Partial<Record<string, boolean>> = {}, role: UserRole
       answer("canManageDashboard", organizationId, scope),
     canManageTemplate: (_user: JwtPayload, organizationId: string) => answer("canManageTemplate", organizationId),
     isGlobalAdmin: () => answer("isGlobalAdmin"),
+    // `F4.278`: the rule routes' two gates — the role class (a refusal throws) and the read scope.
+    assertOperationsWriteRole: async (_user: JwtPayload, writeClass: string) => {
+      calls.push(["assertOperationsWriteRole", writeClass]);
+    },
+    readableAssetIds: async () => {
+      calls.push(["readableAssetIds"]);
+      return null;
+    },
     isOrganizationLevelAdmin: (_user: JwtPayload, organizationId: string) =>
       answer("isOrganizationLevelAdmin", organizationId),
+    // `F4.279`: the notification routes' gate.
+    canManageNotificationChannel: (_user: JwtPayload, organizationId: string | null) =>
+      answer("canManageNotificationChannel", organizationId),
+    // `F4.280`: the report schedule routes' verdict.
+    canReadReportFile: (_user: JwtPayload, file: { organizationId: string; locationIds: readonly string[] }) =>
+      answer("canReadReportFile", file.organizationId, [...file.locationIds]),
   };
   return { calls, access: access as never };
 }
@@ -276,6 +313,62 @@ export async function aFleetRowLivesInTheBoundOrganization(ctx: ResolverCtx): Pr
   const notGlobal = recorder({ isGlobalAdmin: false });
   expect(await resolverWith(ctx, notGlobal.access).resolve(update, { id: ctx.pointKeyId }, {}, [ctx.orgA], JWT, ctx.orgA)).toBeNull();
   expect(notGlobal.calls).toEqual([["requireMasterDataUser"], ["isGlobalAdmin"]]);
+}
+
+/** `F4.282` (Amendment 8 D2): the vocabulary entries the resolver reads. */
+const LOCATION_TYPE_ROW = fixture({ kind: "vocabulary", of: "locationType", param: "code" });
+const ASSET_ROLE_ROW = fixture({ kind: "vocabulary", of: "assetRole", param: "code" });
+
+/** Ruling Q1: a vocabulary row lives in the bound organization; an unbound conversation is refused. */
+export async function aVocabularyRowNeedsABoundConversation(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  expect(await r.resolve(LOCATION_TYPE_ROW, { code: ctx.locationTypeCode }, {}, [ctx.orgA], JWT, null)).toBeNull();
+  expect(await r.resolve(LOCATION_TYPE_ROW, { code: ctx.locationTypeCode }, {}, [ctx.orgA], JWT, ctx.orgA)).toMatchObject({
+    organizationId: ctx.orgA,
+  });
+}
+
+/**
+ * A location type's card counts the locations that use it in the bound organization only — a
+ * vocabulary target needs a bound conversation, so the turn's allowed list is that organization
+ * (`resolveScope`). Two locations of A use the type and one of B; each bound turn counts its own.
+ */
+export async function aLocationTypeCountsItsLocationsInTheAllowedOrganizations(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  const params = { code: ctx.locationTypeCode };
+  expect(await r.resolve(LOCATION_TYPE_ROW, params, {}, [ctx.orgA], JWT, ctx.orgA)).toMatchObject({
+    organizationId: ctx.orgA,
+    targetName: ctx.locationTypeLabel,
+    usageCount: 2,
+  });
+  expect(await r.resolve(LOCATION_TYPE_ROW, params, {}, [ctx.orgB], JWT, ctx.orgB)).toMatchObject({
+    organizationId: ctx.orgB,
+    usageCount: 1,
+  });
+}
+
+/** An unknown code is refused before the route's gate is asked. */
+export async function anUnknownVocabularyCodeIsRefusedBeforeTheGate(ctx: ResolverCtx): Promise<void> {
+  const r = recorder();
+  const params = { code: "f4282_absent" };
+  expect(await resolverWith(ctx, r.access).resolve(LOCATION_TYPE_ROW, params, {}, [ctx.orgA], JWT, ctx.orgA)).toBeNull();
+  expect(r.calls).toEqual([]);
+}
+
+/** The routes' `requireGlobalAdmin`: a master-data user, then a global admin, in that order. */
+export async function aVocabularyRowNeedsTheGlobalAdmin(ctx: ResolverCtx): Promise<void> {
+  const notGlobal = recorder({ isGlobalAdmin: false });
+  const params = { code: ctx.assetRoleCode };
+  expect(await resolverWith(ctx, notGlobal.access).resolve(ASSET_ROLE_ROW, params, {}, [ctx.orgA], JWT, ctx.orgA)).toBeNull();
+  expect(notGlobal.calls).toEqual([["requireMasterDataUser"], ["isGlobalAdmin"]]);
+}
+
+/** A unit role resolves its label and carries no usage count. */
+export async function aUnitRoleResolvesItsLabel(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  const resolved = await r.resolve(ASSET_ROLE_ROW, { code: ctx.assetRoleCode }, {}, [ctx.orgA], JWT, ctx.orgA);
+  expect(resolved).toMatchObject({ organizationId: ctx.orgA, targetName: ctx.assetRoleLabel });
+  expect(resolved).not.toHaveProperty("usageCount");
 }
 
 /**
@@ -710,4 +803,173 @@ export async function anAssetTemplateTargetCarriesItsUpdatedAt(ctx: ResolverCtx)
     JWT,
   );
   expect(target?.updatedAt).toBe(RESOLVER_STAMPS.assetTemplateA.iso);
+}
+
+/** `F4.278` (Amendment 8 D2): the rule target on a real database. */
+const RULE_ROW = fixture({ kind: "rule", param: "id" });
+const RULE_UPDATE = fixture({ kind: "rule", param: "id" }, [{ field: "assetId", kind: "asset" }]);
+
+/** A rule of another organization is not found: the read is bounded to the turn's organizations. */
+export async function aRuleOfAnotherOrganizationIsNotFound(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  expect(await r.resolve(RULE_ROW, { id: ctx.ruleB }, {}, [ctx.orgA], JWT)).toBeNull();
+  expect(await r.resolve(RULE_ROW, { id: ctx.ruleA }, {}, [ctx.orgA], JWT)).toMatchObject({
+    organizationId: ctx.orgA,
+    lifecycle: "published",
+  });
+}
+
+/**
+ * The refs rule: a rule update naming an asset of another organization is refused, beside its
+ * allowed twin naming an asset of the rule's own organization; the recorder proves the route's
+ * read-scope gate was asked.
+ */
+export async function aRuleUpdateRefusesAnAssetOfAnotherOrganization(ctx: ResolverCtx): Promise<void> {
+  const allowed = recorder();
+  expect(
+    await resolverWith(ctx, allowed.access).resolve(RULE_UPDATE, { id: ctx.ruleA }, { assetId: ctx.assetA }, [ctx.orgA], JWT),
+  ).toMatchObject({ organizationId: ctx.orgA });
+  expect(allowed.calls).toEqual([["assertOperationsWriteRole", "configuration"], ["readableAssetIds"]]);
+  const refused = recorder();
+  expect(
+    await resolverWith(ctx, refused.access).resolve(RULE_UPDATE, { id: ctx.ruleA }, { assetId: ctx.assetB }, [ctx.orgA], JWT),
+  ).toBeNull();
+}
+
+/**
+ * `F4.279` (ADR 0099 Amendment 8 D2, Q13): a fleet-wide (NULL-organization) channel is found
+ * under no tenant, so no copilot card names one — beside its allowed twin, a channel of A, which
+ * resolves with the route's gate asked on A.
+ */
+export async function aFleetWideChannelIsNotFound(ctx: ResolverCtx): Promise<void> {
+  const update = catalogEntry("notificationChannel.update");
+  if (!update) throw new Error("notificationChannel.update");
+  const r = resolverWith(ctx, recorder().access);
+  expect(await r.resolve(update, { id: ctx.fleetChannel }, { name: "x" }, [ctx.orgA, ctx.orgB], JWT)).toBeNull();
+  const allowed = recorder();
+  expect(
+    await resolverWith(ctx, allowed.access).resolve(update, { id: ctx.channelA }, { name: "x" }, [ctx.orgA], JWT),
+  ).toMatchObject({ organizationId: ctx.orgA, targetName: "F4.279 channel A" });
+  expect(allowed.calls).toEqual([["requireMasterDataUser"], ["canManageNotificationChannel", ctx.orgA]]);
+}
+
+/**
+ * `F4.280` (ADR 0099 Amendment 8 D2): a stored report schedule of A resolves by its name, with the
+ * route's verdict asked on its organization and its stamped locations — beside its refused twin,
+ * the same schedule when the turn allows only B (the organization filter finds no row there).
+ */
+export async function aReportScheduleResolvesWithItsStampedLocations(ctx: ResolverCtx): Promise<void> {
+  const update = catalogEntry("reportSchedule.update");
+  if (!update) throw new Error("reportSchedule.update");
+  const allowed = recorder();
+  expect(
+    await resolverWith(ctx, allowed.access).resolve(update, { id: ctx.scheduleA }, { name: "x" }, [ctx.orgA], JWT),
+  ).toMatchObject({ organizationId: ctx.orgA, targetName: "F4.280 schedule A" });
+  expect(allowed.calls).toEqual([["requireMasterDataUser"], ["canReadReportFile", ctx.orgA, [ctx.locationA]]]);
+  expect(await resolverWith(ctx, recorder().access).resolve(update, { id: ctx.scheduleA }, { name: "x" }, [ctx.orgB], JWT)).toBeNull();
+}
+
+/**
+ * `F4.281` (Amendment 8 D2): a maintenance schedule is looked for in the allowed organizations only — the
+ * organization filter the unit fake cannot prove. Under A it resolves by its template's title; under B it is
+ * not found.
+ */
+export async function aMaintenanceScheduleOfAnotherOrganizationIsNotFound(ctx: ResolverCtx): Promise<void> {
+  const entry = catalogEntry("maintenanceSchedule.deactivate");
+  if (!entry) throw new Error("maintenanceSchedule.deactivate");
+  const r = resolverWith(ctx, recorder().access);
+  expect((await r.resolve(entry, { id: ctx.maintenanceScheduleA }, { active: false }, [ctx.orgA], JWT))?.targetName).toBe(
+    ctx.maintenanceTitleA,
+  );
+  expect(await r.resolve(entry, { id: ctx.maintenanceScheduleA }, { active: false }, [ctx.orgB], JWT)).toBeNull();
+}
+
+/**
+ * `F4.284` (owner ruling DC1) — an `assignedTo` ref on a real database, as `bms_tenant`: `bms.users`
+ * carries FORCE ROW LEVEL SECURITY, so a read outside the change's tenant finds no row. A user of A
+ * resolves and is the target's `refName` (the card's "assigned to"); a user of B is refused beside it.
+ */
+export async function anAssigneeIsReadUnderTheTenantAndNamed(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  const entry = fixture({ kind: "location", param: "id" }, [{ field: "assignedTo", kind: "user" }]);
+  const at = (assignedTo: string) => r.resolve(entry, { id: ctx.locationA }, { assignedTo }, [ctx.orgA, ctx.orgB], JWT);
+  expect((await at(ctx.userA))?.refName).toBe(RESOLVER_NAMES.userA);
+  expect(await at(ctx.userB)).toBeNull();
+}
+
+/**
+ * `F4.283` (owner ruling 2026-10-25, Q2) — the readings' `telemetry` target on a real database, as
+ * `bms_tenant`: each row's asset is read under its tenant (FORCE RLS on `bms.assets`) in the turn's
+ * allowed organizations, the route's `canManageAsset` runs on it, and it must be of the bound
+ * organization. A refusal is a `CopilotTargetRefusal` naming the rows.
+ */
+const READING_TIME = "2026-10-20T09:00:00.000Z";
+const readingsAt = (ctx: ResolverCtx, access: never, ...assetIds: string[]) => {
+  const entry = catalogEntry("telemetryReading.create");
+  if (!entry) throw new Error("telemetryReading.create");
+  const rows = assetIds.map((assetId) => ({ assetId, pointKey: "kw", value: 1, time: READING_TIME }));
+  return resolverWith(ctx, access).resolve(entry, {}, { rows }, [ctx.orgA, ctx.orgB], JWT, ctx.orgA);
+};
+const refusalOf = (result: Promise<unknown>) =>
+  result.then(
+    () => "resolved",
+    (err: unknown) => [err instanceof CopilotTargetRefusal, (err as Error).message],
+  );
+
+/** An asset of the bound organization resolves, with `canManageAsset` asked on it. */
+export async function readingsOfABoundAssetResolveOnItsAsset(ctx: ResolverCtx): Promise<void> {
+  const r = recorder();
+  const resolved = await readingsAt(ctx, r.access, ctx.assetA);
+  expect([resolved?.organizationId, r.calls.filter(([name]) => name === "canManageAsset")]).toEqual([
+    ctx.orgA,
+    [["canManageAsset", ctx.assetA]],
+  ]);
+}
+
+/** An asset of B — found under B's tenant only — is outside the conversation's organization A. */
+export async function readingsOfAnotherOrganizationsAssetAreRefusedByRow(ctx: ResolverCtx): Promise<void> {
+  expect(await refusalOf(readingsAt(ctx, recorder().access, ctx.assetA, ctx.assetB))).toEqual([
+    true,
+    "Row 2: the asset is outside this conversation's organization.",
+  ]);
+}
+
+/** An id that is no asset, and an asset the caller may not manage, share the route's disclosure-safe sentence. */
+export async function readingsOfAnUnknownAssetAreRefusedByRow(ctx: ResolverCtx): Promise<void> {
+  const unknown = "99999999-9999-4999-8999-999999999999";
+  expect(await refusalOf(readingsAt(ctx, recorder().access, unknown, ctx.assetA))).toEqual([
+    true,
+    "Row 1: Asset not found or outside your access scope.",
+  ]);
+}
+
+/** `canManageAsset` false on a real asset of A is the same refusal. */
+export async function readingsOfAnUnmanageableAssetAreRefusedByRow(ctx: ResolverCtx): Promise<void> {
+  expect(await refusalOf(readingsAt(ctx, recorder({ canManageAsset: false }).access, ctx.assetA))).toEqual([
+    true,
+    "Row 1: Asset not found or outside your access scope.",
+  ]);
+}
+
+/**
+ * `F4.284` owner ruling 2026-10-25 (Q4) — an `alarmSkill` ref on a real database, as `bms_tenant`:
+ * `bms.alarm_skills` is a fleet vocabulary (migration `0034` seeds `electrical`), read on the tenant
+ * pool, so this also proves the role's grant. A seeded active code resolves; an absent code is a
+ * `CopilotTargetRefusal`.
+ */
+export async function aSkillCodeRefIsReadFromTheVocabulary(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  const entry = fixture({ kind: "location", param: "id" }, [{ field: "skillCode", kind: "alarmSkill" }]);
+  const at = (skillCode: string) => r.resolve(entry, { id: ctx.locationA }, { skillCode }, [ctx.orgA], JWT);
+  expect((await at("electrical"))?.organizationId).toBe(ctx.orgA);
+}
+
+/** An absent skill code is refused with the read tool's sentence. */
+export async function anAbsentSkillCodeRefIsRefused(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  const entry = fixture({ kind: "location", param: "id" }, [{ field: "skillCode", kind: "alarmSkill" }]);
+  expect(await refusalOf(r.resolve(entry, { id: ctx.locationA }, { skillCode: "f4284-no-such-skill" }, [ctx.orgA], JWT))).toEqual([
+    true,
+    unknownAlarmSkillMessage("f4284-no-such-skill"),
+  ]);
 }

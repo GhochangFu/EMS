@@ -12,10 +12,17 @@ import { AssetsService } from "../../assets/assets.service";
 import { AccessControlService } from "../../auth/access-control.service";
 import { DashboardService } from "../../dashboard/dashboard.service";
 import { DashboardsService } from "../../dashboard-builder/dashboards.service";
+import { MaintenanceService } from "../../maintenance/maintenance.service";
+import { UsersService } from "../../admin/users/users.service";
+import { WorkOrdersService } from "../../work-orders/work-orders.service";
 import { defineToolRegistry, type ToolRegistry } from "../../llm/tool-registry";
 import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import { ReportsService } from "../../reports/reports.service";
+import { RulesService } from "../../rules/rules.service";
+import { ChannelsService } from "../../notifications/channels.service";
+import { EscalationProfilesService } from "../../notifications/escalation-profiles.service";
+import { ReportSchedulesService } from "../../reports/report-schedules.service";
 import { SystemStatusService } from "../../system-status/system-status.service";
 import { TelemetryService } from "../../telemetry/telemetry.service";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -37,6 +44,7 @@ import { getPointAggregateTool } from "./get-point-aggregate.tool";
 import { getRecentValuesTool } from "./get-recent-values.tool";
 import { getSystemStatusTool } from "./get-system-status.tool";
 import { getValuesAtInstantTool } from "./get-values-at-instant.tool";
+import { listAlarmSkillsTool } from "./list-alarm-skills.tool";
 import { listAlarmsTool } from "./list-alarms.tool";
 import { listAssetPointsTool } from "./list-asset-points.tool";
 import { listAssetRolesTool } from "./list-asset-roles.tool";
@@ -46,6 +54,13 @@ import { listDashboardsTool } from "./list-dashboards.tool";
 import { listLocationsTool } from "./list-locations.tool";
 import { listMimicLayoutsTool } from "./list-mimic-layouts.tool";
 import { listMimicSymbolsTool } from "./list-mimic-symbols.tool";
+import { listRulesTool } from "./list-rules.tool";
+import { listNotificationChannelsTool } from "./list-notification-channels.tool";
+import { listEscalationProfilesTool } from "./list-escalation-profiles.tool";
+import { listMaintenanceSchedulesTool } from "./list-maintenance-schedules.tool";
+import { listUsersTool } from "./list-users.tool";
+import { listWorkOrdersTool } from "./list-work-orders.tool";
+import { listReportSchedulesTool } from "./list-report-schedules.tool";
 import { openPageTool } from "./open-page.tool";
 
 /**
@@ -83,6 +98,20 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   getMimicLayoutTool,
   listMimicSymbolsTool,
   listAssetRolesTool,
+  // `F4.278` (Amendment 8 D7): after the unit roles, before `open_page`.
+  listRulesTool,
+  // `F4.279` (Amendment 8 D7): after the rules, before `open_page`.
+  listNotificationChannelsTool,
+  listEscalationProfilesTool,
+  // `F4.280` (Amendment 8 D7, Q1): after the escalation profiles, before `open_page`.
+  listReportSchedulesTool,
+  // `F4.281` (Amendment 8 D7, owner ruling DC4): after the report schedules, before `open_page`.
+  listMaintenanceSchedulesTool,
+  // `F4.284` (ADR 0106; owner rulings DC1, DC7): the ids a work-order change names, and its assignee.
+  listWorkOrdersTool,
+  listUsersTool,
+  // `F4.284` owner ruling 2026-10-25 (Q4): the skill codes an alarm analysis may name.
+  listAlarmSkillsTool,
   openPageTool,
 ];
 
@@ -144,6 +173,18 @@ export class CopilotReadToolSet implements CopilotReadTools {
     // `F4.276`: appended last, the same reason.
     @Inject(AlarmDetailsService) alarmDetails: AlarmDetailsService,
     @Inject(AlarmKbService) alarmKb: AlarmKbService,
+    // `F4.278`: appended last (slot 17), the same reason.
+    @Inject(RulesService) rules: RulesService,
+    // `F4.279`: appended last (slots 18 and 19), the same reason.
+    @Inject(ChannelsService) channels: ChannelsService,
+    @Inject(EscalationProfilesService) escalationProfiles: EscalationProfilesService,
+    // `F4.280`: appended last (slot 20), the same reason.
+    @Inject(ReportSchedulesService) schedules: ReportSchedulesService,
+    // `F4.281`: appended last (slot 21), the same reason.
+    @Inject(MaintenanceService) maintenance: MaintenanceService,
+    // `F4.284`: appended last (slots 22 and 23), the same reason.
+    @Inject(WorkOrdersService) workOrders: WorkOrdersService,
+    @Inject(UsersService) users: UsersService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -163,6 +204,13 @@ export class CopilotReadToolSet implements CopilotReadTools {
       systemStatus,
       alarmDetails,
       alarmKb,
+      rules,
+      channels,
+      escalationProfiles,
+      schedules,
+      maintenance,
+      workOrders,
+      users,
     });
   }
 

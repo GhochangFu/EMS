@@ -1,11 +1,11 @@
 import { BadRequestException, Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from "@nestjs/common";
 import { ZodError } from "zod";
 
+import { manualReadingsBodySchema } from "@bms/shared";
 import type { JwtPayload, TelemetryWriteResponse } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
-import { manualReadingsBodySchema } from "./manual-readings.schema";
 import { TelemetryWriteService } from "./telemetry-write.service";
 
 @Controller("admin/telemetry-entry/manual-readings")

@@ -10,6 +10,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { withTenant } from "../database/tenant-context";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { asRole } from "../testing/role-urls";
 import { WorkOrdersService } from "./work-orders.service";
 import {
@@ -268,7 +269,7 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
       foreignWorkOrderId = wo.id;
     });
 
-    const makeService = (t: BmsDb, f: BmsDb): WorkOrdersService => new WorkOrdersService(f, t);
+    const makeService = (t: BmsDb, f: BmsDb): WorkOrdersService => new WorkOrdersService(f, t, new MasterDataAuditService(t, f));
     ctx = {
       svc: makeService(tenantDb, fleetDb),
       tenantDb,

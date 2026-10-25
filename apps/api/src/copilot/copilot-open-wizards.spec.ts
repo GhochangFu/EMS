@@ -124,6 +124,12 @@ export function aListPageMountsItsCreateWizard(): void {
   expect(pageWizardCandidates("/admin/locations")).toStrictEqual([{ catalogId: "location.create", params: {} }]);
 }
 
+/** `F4.282` (Q17): each vocabulary page mounts its create wizard. */
+export function theVocabularyPagesMountTheirCreateWizards(): void {
+  expect(pageWizardCandidates("/admin/location-types")).toStrictEqual([{ catalogId: "locationType.create", params: {} }]);
+  expect(pageWizardCandidates("/admin/unit-roles")).toStrictEqual([{ catalogId: "assetRole.create", params: {} }]);
+}
+
 export function aPageWithoutAWizardMountsNone(): void {
   expect(pageWizardCandidates("/alarms")).toStrictEqual([]);
 }
@@ -210,4 +216,36 @@ export async function anOpenRecordIsResolvedByItsRowAlone(): Promise<void> {
   const scope = { allowedOrganizationIds: [C], user: { sub: "u" } as JwtPayload, conversationOrganizationId: C };
   await resolveWizardRecord(catalogEntry("userGrant.add") as CatalogEntry, { id: A }, targets, scope);
   expect(modes).toEqual(["record"]);
+}
+
+/** `F4.278` (Amendment 8): the Rule Engine page mounts its create wizard. */
+export function theRulesPageMountsItsCreateWizard(): void {
+  expect(pageWizardCandidates("/rules")).toStrictEqual([{ catalogId: "rule.create", params: {} }]);
+}
+
+/** `F4.279` (Amendment 8): the Channels page mounts its create wizard. */
+export function theChannelsPageMountsItsCreateWizard(): void {
+  expect(pageWizardCandidates("/admin/notification-channels")).toStrictEqual([{ catalogId: "notificationChannel.create", params: {} }]);
+}
+
+/** `F4.280` (Amendment 8): the Reports page mounts the schedule create and the Save-to-history wizard. */
+export function theReportsPageMountsItsTwoCreates(): void {
+  expect(pageWizardCandidates("/reports")).toStrictEqual([
+    { catalogId: "reportSchedule.create", params: {} },
+    { catalogId: "reportFile.save", params: {} },
+  ]);
+}
+
+/** `F4.281` (Amendment 8 Q16): the Schedule Centre mounts the maintenance schedule create. */
+export function theScheduleCentreMountsItsCreateWizard(): void {
+  expect(pageWizardCandidates("/maintenance-schedules")).toStrictEqual([{ catalogId: "maintenanceSchedule.create", params: {} }]);
+}
+
+/** `F4.279`: the Escalation page mounts the profile create and the two severity-map wizards. */
+export function theEscalationPageMountsItsWizards(): void {
+  expect(pageWizardCandidates("/admin/escalation-profiles")).toStrictEqual([
+    { catalogId: "escalationProfile.create", params: {} },
+    { catalogId: "escalationDefaults.set", params: {} },
+    { catalogId: "escalationDefaults.clear", params: {} },
+  ]);
 }

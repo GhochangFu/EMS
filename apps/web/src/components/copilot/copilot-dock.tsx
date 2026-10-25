@@ -30,8 +30,9 @@ import {
 import { canAccessOnboarding, canAuthorDashboards } from "../../lib/admin-access";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { ATTACHMENT_EXTENSIONS, attachmentProblem, sizeLabel, splitAttachmentRecords, unscrubbedSentence } from "../../lib/copilot-attachments";
-import { isPdfFile, prepareChosenFiles, renderedPageCount, withoutEach, type PreparedFile } from "../../lib/copilot-pdf-page";
+import { attachmentProblem, sizeLabel, splitAttachmentRecords } from "../../lib/copilot-attachments";
+import { rememberFiles } from "../../lib/copilot-file-memory";
+import { isPdfFile, prepareChosenFiles, withoutEach, type PreparedFile } from "../../lib/copilot-pdf-page";
 import { ONBOARDING_DRAFTS, onboardingDraftsKey } from "../../lib/copilot-invalidations";
 import type { AuthUser } from "../../stores/auth-store";
 import {
@@ -42,6 +43,8 @@ import {
 } from "../../stores/copilot-store";
 import { useWizardStore } from "../../stores/wizard-store";
 import { AssistantText } from "./assistant-text";
+import { AttachButton } from "./attach-button";
+import { AttachPanel } from "./attach-panel";
 import { ConfirmCard } from "./confirm-card";
 import { OnboardingDraftPicker, type OnboardingDraftsOf } from "./onboarding-draft-picker";
 import { OnboardingSkillPanel } from "./onboarding-skill-panel";
@@ -467,7 +470,11 @@ function DockPanel({
         setConversation(user.id, id);
       }
       // `F4.245` (ADR 0099 Amendment 4): the wizards open now, read at send time, one per record.
-      return sendCopilotTurn(id, message, files, useWizardStore.getState().openWizards());
+      const result = await sendCopilotTurn(id, message, files, useWizardStore.getState().openWizards());
+      // `F4.283` (Amendment 8 Q19): this tab keeps the sent files by SHA-256 before the turn's card reaches
+      // the cache, so a file-upload card finds the same bytes on its first render.
+      if (files.length > 0) await rememberFiles(files);
+      return result;
     },
     onSuccess: (data, sent) => {
       // The files went with the turn; a refused send (onError) keeps them for another try. Only those:
@@ -898,62 +905,16 @@ function DockPanel({
           ) : skill !== null || configured ? (
             <form onSubmit={onSubmit} className="border-t border-line p-3">
               {attachAllowed && (
-                <p className="mb-2 text-[11px] text-ink-muted">
-                  {unscrubbedSentence(scopeLabel)}
-                </p>
-              )}
-              {attachAllowed && files.length > 0 && (
-                <ul aria-label="Files to attach" className="mb-2 flex flex-wrap gap-1">
-                  {files.map((file, i) => (
-                    <li
-                      key={`${i}-${file.name}`}
-                      data-name={file.name}
-                      className="surface-pressed flex max-w-full items-center gap-1 rounded px-2 py-0.5 text-[11px] text-ink"
-                    >
-                      <span className="truncate">{file.name}</span>
-                      <span className="text-ink-muted">{sizeLabel(file.size)}</span>
-                      {renderedPageCount(file) !== undefined && (
-                        <span className="text-ink-muted">{`page 1 of ${renderedPageCount(file)}, sent as an image`}</span>
-                      )}
-                      <button
-                        type="button"
-                        aria-label={turn.isPending ? `Sending ${file.name}…` : `Remove ${file.name}`}
-                        aria-busy={turn.isPending}
-                        onClick={() => removeFile(i)}
-                        disabled={turn.isPending}
-                        className="px-1 text-ink-muted hover:text-ink"
-                      >
-                        ×
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-              {attachAllowed && rendering.length > 0 && (
-                <p role="status" className="mb-2 flex flex-wrap gap-1 text-[11px] text-ink-muted">
-                  {rendering.map((name, i) => (
-                    <span key={`${i}-${name}`} className="surface-pressed rounded px-2 py-0.5">{`Rendering ${name}…`}</span>
-                  ))}
-                </p>
+                <AttachPanel
+                  scopeLabel={scopeLabel}
+                  files={files}
+                  rendering={rendering}
+                  sending={turn.isPending}
+                  onRemove={removeFile}
+                />
               )}
               <div className="flex items-end gap-2">
-                {attachAllowed && (
-                  <label
-                    title={unscrubbedSentence(scopeLabel)}
-                    className="surface-button cursor-pointer px-2 py-1 text-xs focus-within:ring-2 focus-within:ring-accent"
-                  >
-                    Attach
-                    <input
-                      type="file"
-                      multiple
-                      accept={ATTACHMENT_EXTENSIONS.join(",")}
-                      aria-label={`Attach files. ${unscrubbedSentence(scopeLabel)}`}
-                      onChange={onChooseFiles}
-                      disabled={busy}
-                      className="sr-only"
-                    />
-                  </label>
-                )}
+                {attachAllowed && <AttachButton scopeLabel={scopeLabel} disabled={busy} onChoose={onChooseFiles} />}
                 <textarea
                   aria-label="Message the copilot"
                   value={input}

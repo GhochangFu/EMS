@@ -1,18 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 
-import {
-  fetchAlarmDetails,
-  saveAlarmEnrichment,
-  type AlarmEnrichmentUpsertBody,
-} from "../api/alarms";
+import { fetchAlarmDetails } from "../api/alarms";
 import { fetchAssets } from "../api/assets";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
-import { filterAssetsByQuery, toggleAssetSelection } from "../lib/asset-picker";
 import { apiErrorMessage } from "../lib/api-error-message";
-import { alarmSkillLabel, formatThresholdPairing, toLocalDateTimeInputValue } from "../lib/alarm-details";
+import { alarmSkillLabel, formatThresholdPairing } from "../lib/alarm-details";
 import { alarmSeverityTone } from "../lib/alarm-severity";
 import { alarmLifecycleState, alarmStateLabel } from "../lib/alarm-state";
+import { AlarmEnrichmentWizard } from "./alarm-enrichment-wizard";
 import { StatusPill } from "./status-pill";
 
 type AlarmDetailsPanelProps = {
@@ -21,34 +16,6 @@ type AlarmDetailsPanelProps = {
    * server-side `assertOperationsWriteRole` gate on the write endpoint. */
   readOnly: boolean;
   onClose: () => void;
-};
-
-type FormState = {
-  rootCause: string;
-  impact: string;
-  correctiveActions: string;
-  energyImpact: string;
-  waterImpact: string;
-  productionImpact: string;
-  /** `<input type="datetime-local">`'s own unzoned local-time string
-   * (`YYYY-MM-DDTHH:mm`), not the server's UTC ISO — converted only at
-   * submit. Storing the ISO string here and slicing it for display was the
-   * bug: the slice reads UTC digits as if they were local. */
-  etrAt: string;
-  skillCode: string;
-  affectedAssetIds: string[];
-};
-
-const EMPTY_FORM: FormState = {
-  rootCause: "",
-  impact: "",
-  correctiveActions: "",
-  energyImpact: "",
-  waterImpact: "",
-  productionImpact: "",
-  etrAt: "",
-  skillCode: "",
-  affectedAssetIds: [],
 };
 
 /**
@@ -62,12 +29,13 @@ const EMPTY_FORM: FormState = {
  * `affectedAssetIds` against. The picker is a full-set editor: every save
  * sends the current `affectedAssetIds`, including `[]`, since the form is
  * always hydrated from the server's current set first.
+ *
+ * `F4.284` (ADR 0099 decision 6; owner ruling Q9): the write half is the
+ * `AlarmEnrichmentWizard` (Analysis → Impacts → Details → Review on the shared
+ * `WizardShell`), which holds its own state from the moment it mounts.
  */
 export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPanelProps) {
   const qc = useQueryClient();
-  const [form, setForm] = useState<FormState>(EMPTY_FORM);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [assetQuery, setAssetQuery] = useState("");
 
   const detailsQ = useQuery({
     queryKey: ["alarms", "details", alarmId],
@@ -100,68 +68,6 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
   });
   const assets = assetsQ.data ?? [];
 
-  /**
-   * Hydrate the form once per `alarmId`, not on every `detailsQ.data`
-   * change. `QueryClient` here has no `staleTime` set on this query and the
-   * default client refetches on window focus, so without this guard a
-   * background refetch while the operator is mid-edit would silently
-   * overwrite their unsaved text with whatever is stored (found in review).
-   */
-  const hydratedForRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!detailsQ.data || hydratedForRef.current === alarmId) {
-      return;
-    }
-    hydratedForRef.current = alarmId;
-    const enrichment = detailsQ.data.enrichment;
-    setForm({
-      rootCause: enrichment?.rootCause ?? "",
-      impact: enrichment?.impact ?? "",
-      correctiveActions: enrichment?.correctiveActions ?? "",
-      energyImpact: enrichment?.energyImpact ?? "",
-      waterImpact: enrichment?.waterImpact ?? "",
-      productionImpact: enrichment?.productionImpact ?? "",
-      etrAt: enrichment?.etrAt ? toLocalDateTimeInputValue(enrichment.etrAt) : "",
-      skillCode: enrichment?.skillCode ?? "",
-      affectedAssetIds: enrichment?.affectedAssets.map((a) => a.assetId) ?? [],
-    });
-  }, [detailsQ.data, alarmId]);
-
-  const saveM = useMutation({
-    mutationFn: (body: AlarmEnrichmentUpsertBody) => saveAlarmEnrichment(alarmId, body),
-    onSuccess: (updated) => {
-      setSaveError(null);
-      qc.setQueryData(["alarms", "details", alarmId], updated);
-      void qc.invalidateQueries({ queryKey: ["alarms", "list"] });
-    },
-    onError: (e: Error) => {
-      setSaveError(apiErrorMessage(e));
-    },
-  });
-
-  function submit(e: FormEvent): void {
-    e.preventDefault();
-    setSaveError(null);
-    saveM.mutate({
-      rootCause: form.rootCause || null,
-      impact: form.impact || null,
-      correctiveActions: form.correctiveActions || null,
-      energyImpact: form.energyImpact || null,
-      waterImpact: form.waterImpact || null,
-      productionImpact: form.productionImpact || null,
-      etrAt: form.etrAt ? new Date(form.etrAt).toISOString() : null,
-      // A `<select>` whose value matches no `<option>` renders its first
-      // option, which is the `F4.44` trap — the current value is always kept
-      // as an option even if the vocabulary has since retired it (below).
-      skillCode: form.skillCode || null,
-      // Always sent, including `[]`: the form is hydrated from the server's
-      // current set on open, so it is always a complete replacement, not a
-      // partial edit — unlike the free-text fields above, there is no
-      // "leave untouched" state for this field once the picker exists.
-      affectedAssetIds: form.affectedAssetIds,
-    });
-  }
-
   const details = detailsQ.data;
   const pairing = details
     ? formatThresholdPairing({
@@ -171,14 +77,6 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
         thresholdValue: details.thresholdValue,
       })
     : null;
-
-  // The current skillCode as an option even if it is not (or no longer) in
-  // the live vocabulary — otherwise the select silently renders its first
-  // option and a save would rewrite the stored value out from under it.
-  const skillOptions =
-    form.skillCode && !skills.some((s) => s.code === form.skillCode)
-      ? [...skills, { code: form.skillCode, label: alarmSkillLabel(form.skillCode, skills) ?? form.skillCode, sortOrder: -1, active: false }]
-      : skills;
 
   return (
     <div
@@ -359,218 +257,19 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                 <p className="text-xs text-ink-muted">No enrichment recorded yet.</p>
               )
             ) : (
-              <form className="space-y-3 border-t border-well-deep pt-3" onSubmit={submit}>
-                <div>
-                  <label className="text-xs font-medium text-ink-muted" htmlFor="root-cause">
-                    Root cause
-                  </label>
-                  <textarea
-                    id="root-cause"
-                    className="mt-1 surface-field w-full px-3 py-2 text-sm"
-                    rows={2}
-                    value={form.rootCause}
-                    onChange={(ev) => setForm((f) => ({ ...f, rootCause: ev.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-ink-muted" htmlFor="impact">
-                    Impact
-                  </label>
-                  <textarea
-                    id="impact"
-                    className="mt-1 surface-field w-full px-3 py-2 text-sm"
-                    rows={2}
-                    value={form.impact}
-                    onChange={(ev) => setForm((f) => ({ ...f, impact: ev.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-ink-muted" htmlFor="corrective-actions">
-                    Corrective actions
-                  </label>
-                  <textarea
-                    id="corrective-actions"
-                    className="mt-1 surface-field w-full px-3 py-2 text-sm"
-                    rows={2}
-                    value={form.correctiveActions}
-                    onChange={(ev) => setForm((f) => ({ ...f, correctiveActions: ev.target.value }))}
-                  />
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="text-xs font-medium text-ink-muted" htmlFor="energy-impact">
-                      Energy impact
-                    </label>
-                    <textarea
-                      id="energy-impact"
-                      className="mt-1 surface-field w-full px-3 py-2 text-sm"
-                      rows={2}
-                      value={form.energyImpact}
-                      onChange={(ev) => setForm((f) => ({ ...f, energyImpact: ev.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-ink-muted" htmlFor="water-impact">
-                      Water impact
-                    </label>
-                    <textarea
-                      id="water-impact"
-                      className="mt-1 surface-field w-full px-3 py-2 text-sm"
-                      rows={2}
-                      value={form.waterImpact}
-                      onChange={(ev) => setForm((f) => ({ ...f, waterImpact: ev.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-medium text-ink-muted" htmlFor="production-impact">
-                      Production impact
-                    </label>
-                    <textarea
-                      id="production-impact"
-                      className="mt-1 surface-field w-full px-3 py-2 text-sm"
-                      rows={2}
-                      value={form.productionImpact}
-                      onChange={(ev) => setForm((f) => ({ ...f, productionImpact: ev.target.value }))}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-ink-muted" htmlFor="skill-code">
-                    Skill / trade
-                  </label>
-                  <select
-                    id="skill-code"
-                    className="mt-1 surface-field w-full px-3 py-2 text-sm"
-                    value={form.skillCode}
-                    onChange={(ev) => setForm((f) => ({ ...f, skillCode: ev.target.value }))}
-                  >
-                    <option value="">Unassigned</option>
-                    {skillOptions.map((s) => (
-                      <option key={s.code} value={s.code}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-ink-muted" htmlFor="etr">
-                    ETR
-                  </label>
-                  <input
-                    id="etr"
-                    type="datetime-local"
-                    className="mt-1 surface-field w-full px-3 py-2 text-sm"
-                    value={form.etrAt}
-                    onChange={(ev) => setForm((f) => ({ ...f, etrAt: ev.target.value }))}
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-medium text-ink-muted" htmlFor="affected-assets-search">
-                    Affected assets
-                  </label>
-                  {form.affectedAssetIds.length > 0 ? (
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      {form.affectedAssetIds.map((id) => {
-                        const asset = assets.find((a) => a.id === id);
-                        return (
-                          <span
-                            key={id}
-                            className="inline-flex items-center gap-1 surface-pressed-sm rounded-full px-2 py-0.5 text-xs"
-                          >
-                            {asset?.code ?? id}
-                            <button
-                              type="button"
-                              className="text-ink-muted hover:text-critical-ink"
-                              aria-label={`Remove ${asset?.code ?? id}`}
-                              onClick={() =>
-                                setForm((f) => ({
-                                  ...f,
-                                  affectedAssetIds: toggleAssetSelection(f.affectedAssetIds, id),
-                                }))
-                              }
-                            >
-                              ×
-                            </button>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  ) : (
-                    <p className="mt-1 text-xs text-ink-muted">None selected.</p>
-                  )}
-                  <input
-                    id="affected-assets-search"
-                    type="text"
-                    className="mt-2 surface-field w-full px-3 py-2 text-sm"
-                    placeholder="Search assets by code, name or site…"
-                    value={assetQuery}
-                    onChange={(ev) => setAssetQuery(ev.target.value)}
-                  />
-                  <div className="mt-1 max-h-32 overflow-y-auto surface-pressed">
-                    {assetsQ.isLoading ? (
-                      <p className="px-2 py-1 text-xs text-ink-muted">Loading assets…</p>
-                    ) : (
-                      (() => {
-                        const matches = filterAssetsByQuery(assets, assetQuery);
-                        const visible = matches.slice(0, 50);
-                        return (
-                          <>
-                            {visible.map((asset) => (
-                              <label
-                                key={asset.id}
-                                className="flex items-center gap-2 px-2 py-1 text-xs hover:bg-well"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={form.affectedAssetIds.includes(asset.id)}
-                                  onChange={() =>
-                                    setForm((f) => ({
-                                      ...f,
-                                      affectedAssetIds: toggleAssetSelection(f.affectedAssetIds, asset.id),
-                                    }))
-                                  }
-                                />
-                                <span className="font-medium">{asset.code}</span>
-                                <span className="text-ink-muted">{asset.name}</span>
-                              </label>
-                            ))}
-                            {visible.length === 0 ? (
-                              <p className="px-2 py-1 text-xs text-ink-muted">No matching assets.</p>
-                            ) : null}
-                            {matches.length > visible.length ? (
-                              <p className="border-t border-well-deep px-2 py-1 text-xs text-ink-muted">
-                                {matches.length - visible.length} more match — refine your search
-                              </p>
-                            ) : null}
-                          </>
-                        );
-                      })()
-                    )}
-                  </div>
-                </div>
-                {saveError ? (
-                  <p className="text-xs text-critical-ink" role="alert">
-                    {saveError}
-                  </p>
-                ) : null}
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    className="surface-button px-3 py-2"
-                    onClick={onClose}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={saveM.isPending}
-                    aria-busy={saveM.isPending}
-                    className="surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
-                  >
-                    {saveM.isPending ? "Saving…" : "Save"}
-                  </button>
-                </div>
-              </form>
+              <div className="border-t border-well-deep pt-3">
+                <AlarmEnrichmentWizard
+                  details={details}
+                  skills={skills}
+                  assets={assets}
+                  assetsLoading={assetsQ.isLoading}
+                  onCancel={onClose}
+                  onSaved={(updated) => {
+                    qc.setQueryData(["alarms", "details", alarmId], updated);
+                    void qc.invalidateQueries({ queryKey: ["alarms", "list"] });
+                  }}
+                />
+              </div>
             )}
           </div>
         ) : null}
