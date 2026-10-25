@@ -1261,8 +1261,9 @@
 > boundary) in #805 `eb85237e`; **Amendment 2** (a draft onboarding session is
 > resumed from the dock, and one untouched for 30 days is erased by the purge
 > tick; `F4.255`) in #837 `d00ead32`. **`F3.86`, release 2, and `F3.87`, release 3, are built, and so are
-> Amendments 4–7 (`F4.245`, `F4.247`, `F4.244`, `F4.249`), and the read-tool
-> rows `F4.274`–`F4.277` (all below).**
+> Amendments 4–7 (`F4.245`, `F4.247`, `F4.244`, `F4.249`), the read-tool
+> rows `F4.274`–`F4.277`, and release 4 (`F4.278`–`F4.284`, Amendment 8 and
+> ADR 0106) (all below).**
 > It promotes §6's general copilot item for `admin`, `organization_admin`,
 > `location_admin` and `asset_group_admin` only; operators and viewers get none. It answers
 > read-only questions within the user's own read scope and proposes admin
@@ -1291,7 +1292,8 @@
 > `bms.organizations.timezone`); later columns: `0107`
 > (`copilot_conversations.onboarding_session_id`), `0110`
 > (`copilot_org_settings.attachments_enabled`) and `0115`
-> (`copilot_pending_changes.precondition`, `F4.247`); the
+> (`copilot_pending_changes.precondition`, `F4.247`) and `0116` (the
+`operational` risk class in `copilot_pending_changes_risk_check`, `F4.284`); the
 > history tables bind to `app.current_user`, which `withUser` sets (§4.4). The
 > web mounts the dock in `layouts/app-shell.tsx`, and every catalog wizard
 > renders `components/wizard/wizard-shell.tsx`. Gates (seven `tests/` files):
@@ -1373,7 +1375,9 @@
 > button says so. Text inside a file is data, and a turn with an attachment
 > cannot propose an access change, nor an asset or point create its words
 > did not ask for. No new npm package. **The propose tool definitions are
-> capped at 52,000 characters** (owner ruling 2026-10-16; was 48,000).
+> capped at 84,000 characters** (`copilot-propose-budget.spec.ts`; owner
+> ruling 2026-10-23: each release-4 row raised the cap to its measured size,
+> rounded up, plus 1,000, with a docblock line per row; was 52,000).
 > **Every JSON Schema `pattern` they carry must compile as an ECMA-262 regex
 > without the `u` flag** — no `\p{…}` escapes; state the ranges instead —
 > because OpenAI refuses the whole tool list otherwise (`F4.265`, #883; gated
@@ -1447,11 +1451,33 @@
 > asset or record inside the conversation's organizations before any service
 > call, parses through `parseStoredContract` (so **a new copilot read tool must
 > be added to `COPILOT_TOOL_FILES` in `tests/f4.108-service-parses-are-guarded.test.ts`**),
-> and bounds its result. The read registry has its own size gate (< 13,000
-> characters, `telemetry-read-tools.spec.ts`); the `F4.266` propose gate stays
-> at 52,000. `list_assets` takes a name/code `search`, applied before its
-> 25-item cap. Acknowledging alarms, work orders and every other operations
-> write stay out (decision 1); `F4.278`–`F4.284` hold the gated next jobs.
+> and bounds its result. The read registry has its own size gate
+> (`telemetry-read-tools.spec.ts`; < 13,000 characters at `F4.277`, < 17,000
+> since release 4). `list_assets` takes a name/code `search`, applied before
+> its 25-item cap.
+> **Release 4, `F4.278`–`F4.284`** (ADR 0099 Amendment 8 and ADR 0106, #933
+> `b325c53f`; built in #934 `5aa5d16b`): the copilot proposes alarm-rule writes
+> (each checked before the card by `RuleProposalCheckService`, write-free, with
+> a 7-day backtest), notification channels, escalation profiles and rule
+> channels (a webhook's secret and URL are `clientOnly`, typed on the card;
+> recipients are card-only), report schedules and report files, maintenance
+> schedules, the location-type and unit-role vocabularies, telemetry import,
+> manual readings and asset images (CSV and XLSX attachments are carry-only:
+> never sent to the provider, the pending row stores the name and SHA-256),
+> and — ADR 0106 reversing decision 1 for these routes — alarm acknowledge and
+> enrichment, the six work-order routes and `maintenanceSchedule.convert`.
+> Acknowledge and close carry a **fifth risk class, `operational`** (a red
+> "cannot be undone" card). New read tools: `list_rules`,
+> `list_notification_channels`, `list_escalation_profiles`,
+> `list_report_schedules`, `list_maintenance_schedules`, `list_users`,
+> `list_work_orders`, `list_alarm_skills` (34 in all). New targets mirror their
+> route's own gate (Amendment 8 D2). The copilot is still for the four admin
+> roles only. **A Nest provider added beside the notification controllers
+> must resolve through `NotificationsCoreModule`'s exports** — the build and
+> every spec were green while the API refused to boot (`574fa2c9`);
+> `notifications-module-wiring.spec.ts` now checks those services too. Open:
+> `F4.285` (a server-side `assignedTo` check) and `F4.286` (a reply that
+> claims a card no tool proposed).
 > EMQX and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).
