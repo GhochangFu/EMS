@@ -65,6 +65,9 @@ import { WebhookTransport } from "./webhook.transport";
   // `ReportsCoreModule` injects it to email a scheduled report with
   // `NotificationMessage.attachments`, bypassing `NotificationsService`'s
   // ledger, which is an alarm's. The same wiring spec holds this export.
-  exports: [NotificationsService, ChannelsService, NOTIFICATIONS_CONFIG, EmailTransport],
+  //
+  // `CredentialCryptoService` is exported for `F4.279`: `ChannelWritesService`, provided in
+  // `NotificationsModule`, encrypts a channel's secret with it. The wiring spec holds this export.
+  exports: [NotificationsService, ChannelsService, NOTIFICATIONS_CONFIG, EmailTransport, CredentialCryptoService],
 })
 export class NotificationsCoreModule {}

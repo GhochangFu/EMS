@@ -9,7 +9,10 @@ import { DatabaseModule } from "../database/database.module";
 import { ObservabilityModule } from "../observability/observability.module";
 import { QueueModule } from "../queue/queue.module";
 import { repoRoot } from "../testing/repo-root";
+import { ChannelWritesService } from "./channel-writes.service";
 import { EmailTransport } from "./email.transport";
+import { EscalationProfilesService } from "./escalation-profiles.service";
+import { NotificationProposalCheckService } from "./notification-proposal-check.service";
 import { EscalationDefaultsController, EscalationProfilesController } from "./escalation-profiles.controller";
 import { NotificationsController } from "./notifications.controller";
 import { NotificationsCoreModule } from "./notifications-core.module";
@@ -180,6 +183,42 @@ export function assertEveryClassParamIsResolvable(): void {
   }
   expect(seen).toBeGreaterThanOrEqual(4);
   expect(missing, "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+/**
+ * `F4.279` — the services `NotificationsModule` provides beside its controllers resolve the same way.
+ * `ChannelWritesService` injects `CredentialCryptoService`, which the core provided and did not
+ * export; every spec and `pnpm build` stayed green and the API refused to start on the stack —
+ * `Nest can't resolve dependencies of the ChannelWritesService (…, ?, …)`, measured 2026-10-25.
+ */
+const PROVIDED_SERVICES: { cls: object; file: string; name: string }[] = [
+  { cls: ChannelWritesService, file: "channel-writes.service.ts", name: "ChannelWritesService" },
+  { cls: EscalationProfilesService, file: "escalation-profiles.service.ts", name: "EscalationProfilesService" },
+  {
+    cls: NotificationProposalCheckService,
+    file: "notification-proposal-check.service.ts",
+    name: "NotificationProposalCheckService",
+  },
+];
+
+/** Positive control: the scan sees the class whose absence broke the stack. */
+export function assertScanFindsTheCryptoParam(): void {
+  expect(classTypedParams("channel-writes.service.ts", "ChannelWritesService")).toContain("CredentialCryptoService");
+}
+
+/** Every dependency of a service provided beside the controllers is exported by the core, provided beside it, or global. */
+export function assertEveryProvidedServiceDependencyIsResolvable(): void {
+  const { byIdentity, byName } = resolvableTokens();
+  const missing: string[] = [];
+  for (const { cls, file, name } of PROVIDED_SERVICES) {
+    for (const dep of injectedTokens(cls)) {
+      if (!byIdentity.has(dep.param)) missing.push(`${name}[${dep.index}] ${nameOf(dep.param)}`);
+    }
+    for (const param of classTypedParams(file, name)) {
+      if (!byName.has(param)) missing.push(`${name} ${param}`);
+    }
+  }
+  expect(missing, "dependencies Nest would fail to resolve at boot").toEqual([]);
 }
 
 /**
