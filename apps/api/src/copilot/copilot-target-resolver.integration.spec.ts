@@ -8,6 +8,7 @@ import { type CatalogEntry, type CatalogRef, type CatalogTarget, catalogEntry } 
 import { NO_GRANTS, NO_USERS } from "../testing/copilot-user-checks";
 import { resolveWizardRecord, type WizardScope } from "./copilot-open-wizards";
 import { CopilotTargetResolver, refKindOf } from "./copilot-target-resolver";
+import { CopilotTargetRefusal } from "./copilot-telemetry-targets";
 
 /**
  * `F3.86` PR 2 / ADR 0099 decision 10 (plan §4.2) — the resolver's release-2
@@ -893,4 +894,58 @@ export async function anAssigneeIsReadUnderTheTenantAndNamed(ctx: ResolverCtx): 
   const at = (assignedTo: string) => r.resolve(entry, { id: ctx.locationA }, { assignedTo }, [ctx.orgA, ctx.orgB], JWT);
   expect((await at(ctx.userA))?.refName).toBe(RESOLVER_NAMES.userA);
   expect(await at(ctx.userB)).toBeNull();
+}
+
+/**
+ * `F4.283` (owner ruling 2026-10-25, Q2) — the readings' `telemetry` target on a real database, as
+ * `bms_tenant`: each row's asset is read under its tenant (FORCE RLS on `bms.assets`) in the turn's
+ * allowed organizations, the route's `canManageAsset` runs on it, and it must be of the bound
+ * organization. A refusal is a `CopilotTargetRefusal` naming the rows.
+ */
+const READING_TIME = "2026-10-20T09:00:00.000Z";
+const readingsAt = (ctx: ResolverCtx, access: never, ...assetIds: string[]) => {
+  const entry = catalogEntry("telemetryReading.create");
+  if (!entry) throw new Error("telemetryReading.create");
+  const rows = assetIds.map((assetId) => ({ assetId, pointKey: "kw", value: 1, time: READING_TIME }));
+  return resolverWith(ctx, access).resolve(entry, {}, { rows }, [ctx.orgA, ctx.orgB], JWT, ctx.orgA);
+};
+const refusalOf = (result: Promise<unknown>) =>
+  result.then(
+    () => "resolved",
+    (err: unknown) => [err instanceof CopilotTargetRefusal, (err as Error).message],
+  );
+
+/** An asset of the bound organization resolves, with `canManageAsset` asked on it. */
+export async function readingsOfABoundAssetResolveOnItsAsset(ctx: ResolverCtx): Promise<void> {
+  const r = recorder();
+  const resolved = await readingsAt(ctx, r.access, ctx.assetA);
+  expect([resolved?.organizationId, r.calls.filter(([name]) => name === "canManageAsset")]).toEqual([
+    ctx.orgA,
+    [["canManageAsset", ctx.assetA]],
+  ]);
+}
+
+/** An asset of B — found under B's tenant only — is outside the conversation's organization A. */
+export async function readingsOfAnotherOrganizationsAssetAreRefusedByRow(ctx: ResolverCtx): Promise<void> {
+  expect(await refusalOf(readingsAt(ctx, recorder().access, ctx.assetA, ctx.assetB))).toEqual([
+    true,
+    "Row 2: the asset is outside this conversation's organization.",
+  ]);
+}
+
+/** An id that is no asset, and an asset the caller may not manage, share the route's disclosure-safe sentence. */
+export async function readingsOfAnUnknownAssetAreRefusedByRow(ctx: ResolverCtx): Promise<void> {
+  const unknown = "99999999-9999-4999-8999-999999999999";
+  expect(await refusalOf(readingsAt(ctx, recorder().access, unknown, ctx.assetA))).toEqual([
+    true,
+    "Row 1: Asset not found or outside your access scope.",
+  ]);
+}
+
+/** `canManageAsset` false on a real asset of A is the same refusal. */
+export async function readingsOfAnUnmanageableAssetAreRefusedByRow(ctx: ResolverCtx): Promise<void> {
+  expect(await refusalOf(readingsAt(ctx, recorder({ canManageAsset: false }).access, ctx.assetA))).toEqual([
+    true,
+    "Row 1: Asset not found or outside your access scope.",
+  ]);
 }

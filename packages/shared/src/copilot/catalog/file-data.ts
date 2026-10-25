@@ -24,8 +24,10 @@ import type { CatalogEntry, ExcludedRoute } from "./types";
  *
  * Q21: both telemetry bodies fix `conflictPolicy: "reject"`; overwrite stays
  * on the telemetry pages. The two telemetry writes live in the conversation's
- * bound organization (`target: { kind: "telemetry" }`); every row's asset is
- * checked by the proposal check, which refuses with the row numbers.
+ * bound organization (`target: { kind: "telemetry" }`). Owner ruling
+ * 2026-10-25 (Q2): the target resolver checks every readings row's asset
+ * before the card, as an `asset` target does, and refuses with the row
+ * numbers; the import's rows (in the file) are the proposal check's.
  */
 
 /** The routes' gate: `isMasterDataRole` without `asset_group_admin` (Q18). */

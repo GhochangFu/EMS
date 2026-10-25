@@ -4,6 +4,7 @@ import type { JwtPayload } from "@bms/shared";
 import { catalogEntry } from "@bms/shared/copilot";
 
 import { CopilotTargetResolver } from "./copilot-target-resolver";
+import { CopilotTargetRefusal } from "./copilot-telemetry-targets";
 
 /**
  * `F4.283` (ADR 0099 Amendment 8 D2; owner ruling 2026-10-24, drafter choice 2)
@@ -108,4 +109,114 @@ export async function anUnmanageableAssetIsRefusedTheImageUpload(): Promise<void
 /** The image upload: an `asset_group_admin` is refused (`canManageAsset` throws). */
 export async function anAssetGroupAdminIsRefusedTheImageUpload(): Promise<void> {
   expect(await resolveAs("assetImage.upload", "asset_group_admin")).toBeNull();
+}
+
+/*
+ * `F4.283` (owner ruling 2026-10-25, Q2): the readings' `telemetry` target checks every row's
+ * asset before the card, as an `asset` target does — it exists in an allowed organization, the
+ * route's `canManageAsset` passes, and it is of the bound organization. A refusal names its rows.
+ */
+
+const ORG_B = "33333333-3333-4333-8333-333333333333";
+const OTHER = "44444444-4444-4444-8444-444444444444";
+const UNKNOWN = "55555555-5555-4555-8555-555555555555";
+const row = (assetId: string) => ({ assetId, pointKey: "kw", value: 1, time: "2026-10-20T09:00:00.000Z" });
+
+/**
+ * The `oneRowDb` shape, but a list read answers the asset ids of the tenant the current
+ * `withTenant` transaction set — the n-th transaction is the n-th allowed organization.
+ */
+function assetsDb(perTenant: ReadonlyArray<readonly string[]>): never {
+  let selected: string[] = [];
+  let tenant = -1;
+  const named: Record<string, unknown> = { name: "Pune Works", organizationId: ORG };
+  const chain = {
+    select: (columns: Record<string, unknown> = {}) => {
+      selected = Object.keys(columns);
+      return chain;
+    },
+    from: () => chain,
+    where: () => chain,
+    innerJoin: () => chain,
+    limit: async () => [Object.fromEntries(selected.map((key) => [key, named[key]]))],
+    then: (resolve: (rows: unknown[]) => unknown) => resolve((perTenant[tenant] ?? []).map((id) => ({ id }))),
+    execute: async () => undefined,
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
+      tenant += 1;
+      return fn(chain);
+    },
+  };
+  return chain as never;
+}
+
+function resolveReadings(
+  rows: readonly unknown[],
+  options: { manageable?: (assetId: string) => boolean; mode?: "propose" | "record"; tenants?: ReadonlyArray<readonly string[]> } = {},
+) {
+  const asked: string[] = [];
+  const resolver = new CopilotTargetResolver(
+    // The fake answers a tenant's ids whatever the query named: A holds ASSET, B holds OTHER.
+    assetsDb(options.tenants ?? [[ASSET], [OTHER]]),
+    {
+      requireMasterDataUser: async () => ({ id: "u1", role: "location_admin" }),
+      canManageAsset: async (_user: JwtPayload, assetId: string) => {
+        asked.push(assetId);
+        return options.manageable?.(assetId) ?? true;
+      },
+    } as never,
+    {} as never,
+    {} as never,
+  );
+  const entry = catalogEntry("telemetryReading.create")!;
+  const result = resolver.resolve(entry, {}, { rows }, [ORG, ORG_B], JWT, ORG, options.mode ?? "propose");
+  return { result, asked };
+}
+
+/** What a refusal threw: its class (the propose tool catches `CopilotTargetRefusal` only) and its sentence. */
+async function refusalOf(result: Promise<unknown>): Promise<[boolean, string] | "resolved"> {
+  try {
+    await result;
+    return "resolved";
+  } catch (err) {
+    return [err instanceof CopilotTargetRefusal, (err as Error).message];
+  }
+}
+
+/** Rows whose every asset is in the bound organization and manageable resolve. */
+export async function readingsOfManageableBoundAssetsResolve(): Promise<void> {
+  expect((await resolveReadings([row(ASSET), row(ASSET)]).result)?.organizationId).toBe(ORG);
+}
+
+/** The route's `canManageAsset` runs on the row's asset. Mutation: skip the asset check → red. */
+export async function theReadingsAskCanManageAssetOnTheRowsAsset(): Promise<void> {
+  const { result, asked } = resolveReadings([row(ASSET)], { tenants: [[ASSET], []] });
+  await result;
+  expect(asked).toEqual([ASSET]);
+}
+
+/** An asset in no allowed organization is refused with its row number. Mutation: treat a missing asset as found → red. */
+export async function anUnknownAssetIsRefusedWithItsRowNumber(): Promise<void> {
+  expect(await refusalOf(resolveReadings([row(ASSET), row(UNKNOWN)]).result)).toEqual([
+    true,
+    "Row 2: Asset not found or outside your access scope.",
+  ]);
+}
+
+/** An asset the caller may not manage is refused with the same sentence (disclosure-safe). */
+export async function anUnmanageableAssetIsRefusedWithItsRowNumber(): Promise<void> {
+  const { result } = resolveReadings([row(ASSET), row(ASSET), row(ASSET)], { manageable: () => false });
+  expect(await refusalOf(result)).toEqual([true, "Rows 1, 2, 3: Asset not found or outside your access scope."]);
+}
+
+/** An asset of another allowed organization is refused as outside the conversation's organization. Mutation: drop the bound check → red. */
+export async function anAssetOfAnotherOrganizationIsRefusedWithItsRowNumber(): Promise<void> {
+  expect(await refusalOf(resolveReadings([row(OTHER), row(ASSET)]).result)).toEqual([
+    true,
+    "Row 1: the asset is outside this conversation's organization.",
+  ]);
+}
+
+/** An open wizard's record (`"record"`) is what a fill is about to set: its rows are not checked. Mutation: drop the mode check → red. */
+export async function anOpenReadingsWizardIsNotCheckedByRow(): Promise<void> {
+  expect((await resolveReadings([row(UNKNOWN)], { mode: "record" }).result)?.organizationId).toBe(ORG);
 }

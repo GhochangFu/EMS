@@ -13,6 +13,7 @@ import { type CopilotFileChecks, PROPOSE_FILES_UNAVAILABLE_ERROR } from "./copil
 import { PROPOSE_FLEET_UNBOUND_ERROR, PROPOSE_ROLE_ERROR } from "./copilot-propose-tools";
 import { proposeHarness } from "./copilot-propose-tools.spec";
 import type { ResolvedTarget } from "./copilot-target-resolver";
+import { CopilotTargetRefusal } from "./copilot-telemetry-targets";
 import { UPLOAD_NEEDS_FILE_ERROR, uploadWrongTypeError } from "./copilot-upload-prepare";
 
 /**
@@ -80,9 +81,13 @@ function fakes(options: { refusal?: string } = {}) {
   return { calls, files };
 }
 
-function harness(options: { refusal?: string; withoutFiles?: boolean; target?: ResolvedTarget } = {}) {
+function harness(options: { refusal?: string; withoutFiles?: boolean; target?: ResolvedTarget; resolveThrows?: Error } = {}) {
   const f = fakes(options);
-  const h = proposeHarness({ target: options.target ?? target(), ...(options.withoutFiles ? {} : { files: f.files }) });
+  const h = proposeHarness({
+    target: options.target ?? target(),
+    ...(options.withoutFiles ? {} : { files: f.files }),
+    ...(options.resolveThrows ? { resolveThrows: options.resolveThrows } : {}),
+  });
   return { ...h, calls: f.calls };
 }
 
@@ -171,6 +176,27 @@ export async function theChecksRefusalReachesTheModel(): Promise<void> {
   const h = harness({ refusal });
   await h.call(READINGS_TOOL, { body: { rows: [ROW] } });
   expect([h.lastResult(), h.stored]).toEqual([{ ok: false, error: refusal }, []]);
+}
+
+/**
+ * (8b) Owner ruling 2026-10-25 (Q2): the resolver's row refusal reaches the model verbatim — no card, the
+ * proposal check never asked. Mutation: drop the propose tool's `CopilotTargetRefusal` catch → red (a throw).
+ */
+export async function theResolversRowRefusalReachesTheModel(): Promise<void> {
+  const refusal = "Row 2: Asset not found or outside your access scope.";
+  const h = harness({ resolveThrows: new CopilotTargetRefusal(refusal) });
+  await h.call(READINGS_TOOL, { body: { rows: [ROW, ROW] } });
+  expect([h.lastResult(), h.stored, h.calls]).toEqual([{ ok: false, error: refusal }, [], []]);
+}
+
+/**
+ * (8c) Any other resolver error is re-thrown, never sent as a sentence: the tool runner's generic failure
+ * reaches the model, and nothing is stored. Mutation: catch every error as a refusal → red.
+ */
+export async function anotherResolverErrorIsRethrown(): Promise<void> {
+  const h = harness({ resolveThrows: new Error("connection reset") });
+  const outcome = await h.call(READINGS_TOOL, { body: { rows: [ROW] } });
+  expect([outcome.ok, outcome.content.includes("connection reset"), h.stored]).toEqual([false, false, []]);
 }
 
 /** (9) The image with a PNG stores its caption, name and hash on the asset's path, after the pre-check. */

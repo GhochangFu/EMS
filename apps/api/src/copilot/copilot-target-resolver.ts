@@ -45,6 +45,7 @@ import { UsersService } from "../admin/users/users.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
+import { CopilotTargetRefusal, mayWriteTelemetry, telemetryRowRefusal } from "./copilot-telemetry-targets";
 // prettier-ignore
 import { findWorkOrderBatch, mayWriteOperationalAssets, type OperationsAlarm, type OperationsBatchRow, type OperationsWorkOrder, readAlarmRow, readConvertibleSchedule, readOrganizationUserName, readWorkOrderRow } from "./copilot-operations-targets";
 
@@ -114,6 +115,7 @@ export interface CopilotTargets {
      * `"propose"` (the default) is every check.
      */
     mode?: CopilotResolveMode,
+    // `F4.283` (ruling 2026-10-25, Q2): a `telemetry` row refusal throws `CopilotTargetRefusal`, its sentence for the model.
   ): Promise<ResolvedTarget | null>;
   /**
    * `F4.245` (ADR 0099 Amendment 4): the id of the dashboard `slug` names in
@@ -249,9 +251,13 @@ export class CopilotTargetResolver implements CopilotTargets {
         const code = await this.pointKeyCode(id);
         found = code === null ? null : { organizationId: boundOrganizationId, name: code };
       }
-      // `F4.283` (Amendment 8 D2, drafter choice 2): the telemetry routes' gate is `requireMasterDataUser` alone.
-      const gate = target.kind === "telemetry" ? () => this.mayWriteTelemetry(user) : () => this.mayManageFleet(user);
+      // `F4.283` (Amendment 8 D2): the telemetry routes' gate is `requireMasterDataUser`; then (owner ruling
+      // 2026-10-25, Q2) every row's asset, as an asset target's, refused with its row numbers before the card.
+      const gate = target.kind === "telemetry" ? () => mayWriteTelemetry(this.access, user) : () => this.mayManageFleet(user);
       if (found !== null && !(await this.safely(gate))) found = null;
+      const rowsIn = found !== null && target.kind === "telemetry" && mode === "propose" ? boundOrganizationId : null;
+      const refusal = rowsIn === null ? null : await telemetryRowRefusal(this.tenantDb, this.access, user, body, allowedOrganizationIds, rowsIn);
+      if (refusal !== null) throw new CopilotTargetRefusal(refusal);
     } else if ((target.kind === "rule" || target.kind === "maintenanceSchedule") && "field" in target) {
       // `F4.278` / `F4.281` (Amendment 8 D2): a rule or maintenance schedule create — the organization
       // is its asset's, and the route's two gates run on the body's asset.
@@ -729,16 +735,6 @@ export class CopilotTargetResolver implements CopilotTargets {
   private async mayManageFleet(user: JwtPayload): Promise<boolean> {
     await this.access.requireMasterDataUser(user);
     return this.access.isGlobalAdmin(user);
-  }
-
-  /**
-   * `F4.283` (Amendment 8 D2): the telemetry import and manual-reading routes' gate,
-   * `requireMasterDataUser` — a throw (an `asset_group_admin`, a viewer) is the refusal, through
-   * `safely`. Each row's asset is the proposal check's (`TelemetryProposalCheckService`).
-   */
-  private async mayWriteTelemetry(user: JwtPayload): Promise<boolean> {
-    await this.access.requireMasterDataUser(user);
-    return true;
   }
 
   /** A create's authority: the route's own check, on the body's organization and scope. */

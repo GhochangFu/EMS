@@ -15,6 +15,8 @@ describe("F4.283 — the copilot proposes file-borne data (ADR 0099 Amendment 8 
   it("(6) readings with overwrite are an invalid body", () => T.overwriteReadingsAreAnInvalidBody());
   it("(7) readings without a policy store reject", () => T.readingsWithoutAPolicyStoreReject());
   it("(8) the check's refusal reaches the model verbatim", () => T.theChecksRefusalReachesTheModel());
+  it("(8b) the resolver's row refusal reaches the model verbatim and stores no card", () => T.theResolversRowRefusalReachesTheModel());
+  it("(8c) any other resolver error is re-thrown", () => T.anotherResolverErrorIsRethrown());
   it("(9) the image stores its caption, name and hash on the asset path", () => T.theImageStoresItsCaptionNameAndHash());
   it("(10) a CSV for the image is the type sentence", () => T.aCsvForTheImageIsTheTypeSentence());
   it("(11) tools built without the checks refuse all three", () => T.toolsWithoutTheChecksRefuseAllThree());

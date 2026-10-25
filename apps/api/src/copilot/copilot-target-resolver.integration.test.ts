@@ -9,6 +9,10 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   aCreateUnderAParentTakesTheParentsOrganization,
+  readingsOfABoundAssetResolveOnItsAsset,
+  readingsOfAnotherOrganizationsAssetAreRefusedByRow,
+  readingsOfAnUnknownAssetAreRefusedByRow,
+  readingsOfAnUnmanageableAssetAreRefusedByRow,
   aDashboardTargetCarriesItsUpdatedAt,
   anAssetTemplateTargetCarriesItsUpdatedAt,
   RESOLVER_STAMPS,
@@ -362,6 +366,13 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("keeps the new ref kinds inside the organization", () => theNewRefKindsBelongToTheOrganization(ctx));
   it("F4.284: reads an assignee under the tenant, names it, and refuses another organization's", () =>
     anAssigneeIsReadUnderTheTenantAndNamed(ctx));
+  // `F4.283` (owner ruling 2026-10-25, Q2): every readings row's asset, before the card.
+  it("F4.283: readings of a bound asset resolve, asking canManageAsset on it", () => readingsOfABoundAssetResolveOnItsAsset(ctx));
+  it("F4.283: readings of another organization's asset are refused by row", () =>
+    readingsOfAnotherOrganizationsAssetAreRefusedByRow(ctx));
+  it("F4.283: readings of an unknown asset are refused by row", () => readingsOfAnUnknownAssetAreRefusedByRow(ctx));
+  it("F4.283: readings of an asset the caller may not manage are refused by row", () =>
+    readingsOfAnUnmanageableAssetAreRefusedByRow(ctx));
   it("resolves a user target through the users service (PR 4)", () => aUserTargetUsesTheUsersServicesChecks(ctx));
   it("resolves a grant through the grants service (PR 4)", () => aGrantTargetUsesTheGrantsServicesChecks(ctx));
   it("runs the route's manager checks for a user create (PR 4)", () => aUserCreateRunsTheRoutesManagerChecks(ctx));

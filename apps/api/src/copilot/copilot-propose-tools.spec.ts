@@ -91,6 +91,8 @@ type Options = {
   /** `F3.87` PR 5: the layout checks (absent: no layouts service, as every other spec builds the tools). */
   layouts?: CopilotProposeServices["layouts"];
   slugId?: string | null; // `F4.245`: the dashboard id a slug names (none by default)
+  /** `F4.283` (ruling 2026-10-25, Q2): the resolver throws this instead of answering. */
+  resolveThrows?: Error;
 };
 
 export function proposeHarness(options: Options & Pick<CopilotProposeServices, "rules" | "notifications" | "reports" | "files"> = {}) { // `F4.278` rules, `F4.279` notifications, `F4.280` reports, `F4.283` files
@@ -103,6 +105,7 @@ export function proposeHarness(options: Options & Pick<CopilotProposeServices, "
       targets: {
         resolve: async (entry, params, _body, allowed, _user, bound) => {
           resolved.push({ id: entry.id, params: { ...params }, allowed, bound });
+          if (options.resolveThrows) throw options.resolveThrows;
           return target;
         },
         dashboardIdBySlug: async () => options.slugId ?? null,

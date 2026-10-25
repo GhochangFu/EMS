@@ -42,6 +42,7 @@ import { NotificationProposalCheckService } from "../notifications/notification-
 import { checkReport, type CopilotReportChecks, REPORT_ENTRY_IDS, reportEmailRefusal } from "./copilot-propose-reports";
 import { ReportProposalCheckService } from "../reports/report-proposal-check.service";
 import { checkFile, type CopilotFileChecks, FILE_ENTRY_IDS } from "./copilot-propose-files";
+import { CopilotTargetRefusal } from "./copilot-telemetry-targets";
 import { TelemetryProposalCheckService } from "../admin/telemetry-entry/telemetry-proposal-check.service";
 import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import {
@@ -522,14 +523,15 @@ export function createCopilotProposeTools(
       entry.target.kind === "vocabulary" ||
       entry.target.kind === "telemetry";
     if (fleetRow && ctx.conversationOrganizationId === null) return { ok: false, error: PROPOSE_FLEET_UNBOUND_ERROR };
-    const target = await services.targets.resolve(
-      entry,
-      params,
-      body,
-      ctx.allowedOrganizationIds,
-      ctx.user,
-      ctx.conversationOrganizationId,
-    );
+    const resolved = await services.targets
+      .resolve(entry, params, body, ctx.allowedOrganizationIds, ctx.user, ctx.conversationOrganizationId)
+      // `F4.283` (owner ruling 2026-10-25, Q2): a telemetry row refusal names its rows; any other error is re-thrown.
+      .catch((err: unknown) => {
+        if (err instanceof CopilotTargetRefusal) return err;
+        throw err;
+      });
+    if (resolved instanceof CopilotTargetRefusal) return { ok: false, error: resolved.message };
+    const target = resolved;
     if (
       target === null ||
       !ctx.allowedOrganizationIds.includes(target.organizationId) ||
