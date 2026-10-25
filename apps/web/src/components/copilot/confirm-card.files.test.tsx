@@ -13,6 +13,7 @@ import {
   anUnhashablePickIsHandedUp,
   anUnhashablePickSaysItIsUnchecked,
   theImportCardNamesTheMappings,
+  theImportCardSaysCommitCanStillRejectBesideTheCounts,
   theImportCardShowsTheCounts,
   withoutAKeptFileConfirmIsDisabled,
 } from "./confirm-card.files.spec";
@@ -33,6 +34,8 @@ describe("F4.283 — the file-upload Confirm card (ADR 0099 Amendment 8 Q18, Q19
   it("a kept file enables Confirm", () => aKeptFileEnablesConfirm(), 15_000);
   it("a file sent with the turn enables Confirm", () => aFileSentWithTheTurnEnablesConfirm(), 15_000);
   it("the import card shows the route's counts", () => theImportCardShowsTheCounts(), 15_000);
+  it("the import card says commit can still reject rows, beside the counts", () =>
+    theImportCardSaysCommitCanStillRejectBesideTheCounts(), 15_000);
   it("the import card names the mappings to create", () => theImportCardNamesTheMappings(), 15_000);
   it("a mismatching pick shows the hash sentence", () => aMismatchingPickShowsTheSentence(), 15_000);
   it("a matching pick hands up the file", () => aMatchingPickHandsUpTheFile(), 15_000);

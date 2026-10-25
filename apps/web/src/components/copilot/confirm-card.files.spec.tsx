@@ -112,6 +112,17 @@ export async function theImportCardShowsTheCounts(): Promise<void> {
   expect(within(card).getByText("12 of 14 rows accepted, 2 rejected.")).toBeTruthy();
 }
 
+/**
+ * Owner ruling 2026-10-25 (Q4): the sentence that commit can still reject rows the preview
+ * accepted sits where the card shows the counts — the counts' next line.
+ */
+export async function theImportCardSaysCommitCanStillRejectBesideTheCounts(): Promise<void> {
+  forgetFiles();
+  const card = await importCard();
+  const counts = within(card).getByText("12 of 14 rows accepted, 2 rejected.");
+  expect(counts.nextElementSibling?.textContent).toBe("Commit can still reject rows that the preview accepted.");
+}
+
 /** The import card names the mappings the commit would create. */
 export async function theImportCardNamesTheMappings(): Promise<void> {
   forgetFiles();

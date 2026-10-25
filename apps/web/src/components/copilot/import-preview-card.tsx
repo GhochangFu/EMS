@@ -5,7 +5,8 @@ import { copilotTelemetryImportPreviewSchema } from "@bms/shared/contracts";
  * choices 4 and 10) — what the telemetry import card shows from its card-only
  * `preview`: the route's own preview counts, up to 20 of its rejected rows and
  * up to 50 of the `asset_points` mappings the commit would create. The commit
- * stays the authority: a row the preview accepts can still be rejected then.
+ * stays the authority: a row the preview accepts can still be rejected then,
+ * and (owner ruling 2026-10-25, Q4) the card says so beside the counts.
  */
 export function ImportPreviewCard({ preview }: { preview: unknown }) {
   const parsed = copilotTelemetryImportPreviewSchema.safeParse(preview);
@@ -14,6 +15,8 @@ export function ImportPreviewCard({ preview }: { preview: unknown }) {
   return (
     <section data-testid="copilot-import-preview" aria-label="Import preview" className="mt-2 space-y-1 text-[11px] text-ink">
       <p>{`${acceptedCount} of ${totalRows} rows accepted, ${rejectedCount} rejected.`}</p>
+      {/* Owner ruling 2026-10-25 (Q4): beside the counts, the preview is not the commit. */}
+      <p className="text-ink-muted">Commit can still reject rows that the preview accepted.</p>
       {rejected.length > 0 && (
         <ul aria-label="Rejected rows" className="list-disc pl-4">
           {rejected.map((row) => (
