@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS runtime
+FROM node:24.22.1-bookworm-slim AS runtime
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"

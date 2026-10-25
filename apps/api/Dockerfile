@@ -1,4 +1,4 @@
-FROM node:20-bookworm-slim AS build
+FROM node:24.22.1-bookworm-slim AS build
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
@@ -42,7 +42,7 @@ RUN pnpm --filter @bms/shared build \
   && pnpm --filter @bms/db build \
   && pnpm --filter api build
 
-FROM node:20-bookworm-slim AS runtime
+FROM node:24.22.1-bookworm-slim AS runtime
 
 ENV NODE_ENV="production"
 ENV PNPM_HOME="/pnpm"

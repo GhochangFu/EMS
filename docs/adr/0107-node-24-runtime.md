@@ -50,3 +50,14 @@ No new package. `@types/node` changes major version in two apps.
   comment) record history and stay as they are.
 - Images must be rebuilt and redeployed. The AWS demo picks the change up on the
   next green CI deploy.
+
+## Verification (2026-10-26)
+
+- Images `api`, `ingest`, `sim` and `web` built with `--no-cache` on
+  `24.22.1`. `node -v` printed `v24.22.1` in the `api`, `ingest` and `sim`
+  images. The `web` runtime stage is `nginx`, which has no Node.
+- `require('bcrypt')` loaded in the `api` image and a hash and compare returned
+  `true`.
+- `pnpm --filter api build` passed. The `api` unit tests passed (5232 passed,
+  1942 skipped for lack of `DATABASE_URL`). One test timed out at 5000 ms under
+  load and passed alone.
