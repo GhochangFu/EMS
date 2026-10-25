@@ -69,6 +69,13 @@ export interface CopilotToolContext {
    */
   readonly outwardIntent?: boolean;
   /**
+   * `F4.284` (ADR 0106 decision 3; owner ruling DC3): the user's own message in this turn, which
+   * carries no file, asks for an alarm acknowledge or a work-order close (`operationalIntentOf`),
+   * decided before any tool ran: the catalog ids it asks for, each by its own words. Absent is
+   * empty: both propose tools refuse.
+   */
+  readonly operationalIntent?: readonly string[];
+  /**
    * `F4.280` (ADR 0099 Amendment 8 D4, Q3): the user's own message in this turn, which carries
    * no file, asks for a report schedule's email delivery (`reportEmailIntentOf`: "email",
    * "mail", "deliver" and their forms), decided before any tool ran. Absent is `false`: a
@@ -136,6 +143,8 @@ export type RegistryOptions = {
   readonly assetCreate?: boolean;
   /** `F4.279` (D4): with the outward-facing entries (the channel test send). Absent is `false`, fail closed. */
   readonly outward?: boolean;
+  /** `F4.284` (ADR 0106 decision 3): the operational entries (acknowledge, close) to keep, by id. Absent is none, fail closed. */
+  readonly operational?: readonly string[];
 };
 
 /** The Nest token the turn service injects its read tools by. */

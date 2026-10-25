@@ -79,8 +79,9 @@ describe("E7.1c (item D) — every audit_log write names an organizationId", () 
     // A positive control, not a coverage threshold: it counts the known direct sites so a scan
     // that matches nothing cannot pass. `F4.279` moved the two notification helpers onto
     // `MasterDataAuditService` (owner ruling Q7, 2026-10-24), so the known count was 13; `F4.281`
-    // moved the three maintenance inserts onto the funnel too, so it is 10.
-    expect(sites.length, "expected at least the known direct insert(auditLog) sites").toBeGreaterThanOrEqual(10);
+    // moved the three maintenance inserts onto the funnel too, so it was 10; `F4.284` (owner ruling
+    // DC8, 2026-10-24) moved the alarm ack, the enrichment and the four work-order inserts, so it is 4.
+    expect(sites.length, "expected at least the known direct insert(auditLog) sites").toBeGreaterThanOrEqual(4);
     const missing = sites.filter((s) => !/organizationId/.test(s.window));
     expect(
       missing.map((s) => `${s.file}:${s.index}`),

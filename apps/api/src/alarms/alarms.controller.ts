@@ -15,16 +15,15 @@ import { z, ZodError } from "zod";
 
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import type { JwtPayload } from "@bms/shared";
+// F4.284 (ADR 0030): the two write bodies live in `@bms/shared`, the copilot catalog's exports by identity.
+import { alarmAckBodySchema, alarmEnrichmentUpsertBodySchema, type JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { intersectReadable } from "../auth/asset-scope";
-import { alarmAckBodySchema } from "./ack.schema";
 import { alarmListQuerySchema, alarmSummaryQuerySchema } from "./alarm-list.schema";
 import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmsService } from "./alarms.service";
-import { alarmEnrichmentUpsertBodySchema } from "./enrichment.schema";
 
 /**
  * Security review finding: the two new routes below passed `id` straight to

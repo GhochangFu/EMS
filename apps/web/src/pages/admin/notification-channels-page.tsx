@@ -293,12 +293,13 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
           type="button"
           className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
           disabled={cannotCreate}
+          aria-busy={organizationsQ.isPending}
           onClick={() => {
             setOpen({ kind: "create" });
             setError(null);
           }}
         >
-          Add channel
+          {organizationsQ.isPending ? "Loading organizations…" : "Add channel"}
         </button>
       </SectionCard>
 

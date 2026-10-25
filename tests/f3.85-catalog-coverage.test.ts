@@ -86,6 +86,9 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/admin/telemetry-import/telemetry-import.controller.ts", full: true },
   { file: "apps/api/src/admin/telemetry-entry/manual-readings.controller.ts", full: true },
   { file: "apps/api/src/assets/asset-images-write.controller.ts", full: true },
+  // `F4.284` (ADR 0106): the alarm and work-order writes.
+  { file: "apps/api/src/alarms/alarms.controller.ts", full: true },
+  { file: "apps/api/src/work-orders/work-orders.controller.ts", full: true },
 ];
 
 const COMMENT = /^\s*(\/\/|\*|\/\*)/;

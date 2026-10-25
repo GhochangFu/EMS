@@ -10,6 +10,7 @@ import type { JwtPayload } from "@bms/shared";
 import { withTenant } from "../database/tenant-context";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AlarmsService } from "./alarms.service";
 import type { AlarmsGateway } from "./alarms.gateway";
 import {
@@ -253,7 +254,7 @@ describe.skipIf(!connectionString)("E7.1b — alarm reads isolate by assetIds un
 
     const fleetDb = createDb(fleetPool);
     const makeService = (t: BmsDb, f: BmsDb): AlarmsService =>
-      new AlarmsService(t, f, gatewayStub);
+      new AlarmsService(t, f, gatewayStub, new MasterDataAuditService(t, f));
     ctx = {
       svc: makeService(tenantDb, fleetDb),
       tenantDb,

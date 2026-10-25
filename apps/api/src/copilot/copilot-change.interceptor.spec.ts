@@ -679,3 +679,25 @@ export async function noPreconditionIgnoresTheIfMatch(): Promise<void> {
   expect(h.handler).toHaveBeenCalledTimes(1);
   expect(h.pending.release).not.toHaveBeenCalled();
 }
+
+/**
+ * `F4.284` (ADR 0106 decision 3): an acknowledge's reason is in its body, so the hash binds it. A
+ * Confirm that sends another reason is refused (409) and the claim released; nothing runs.
+ */
+const ACK_PATH = "/api/v1/alarms/66666666-6666-4666-8666-666666666666/ack";
+const ACK_STORED = { method: "POST", path: ACK_PATH, bodyHash: bodyHash({ reason: "Panel checked" }), catalogId: "alarm.acknowledge" };
+
+export async function anAckWithAnotherReasonIs409AndReleased(): Promise<void> {
+  const h = harness({ path: ACK_PATH, body: { reason: "Something else" }, stored: ACK_STORED });
+  expect(await refused(h)).toBeInstanceOf(ConflictException);
+  expect(h.pending.release).toHaveBeenCalledWith(expect.any(String), CHANGE_ID);
+  expect(h.handler).not.toHaveBeenCalled();
+}
+
+/** The adjacent positive: the reason the card showed is applied. */
+export async function anAckWithItsReasonIsApplied(): Promise<void> {
+  const h = harness({ path: ACK_PATH, body: { reason: "Panel checked" }, stored: ACK_STORED });
+  await run(h);
+  expect(h.handler).toHaveBeenCalledTimes(1);
+  expect(h.pending.release).not.toHaveBeenCalled();
+}

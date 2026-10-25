@@ -3,6 +3,7 @@ import { and, count, eq } from "drizzle-orm";
 
 import {
   alarmEscalationProfiles,
+  alarms,
   assetGroupMembers,
   assetGroups,
   assetPoints,
@@ -44,6 +45,8 @@ import { UsersService } from "../admin/users/users.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
+// prettier-ignore
+import { findWorkOrderBatch, mayWriteOperationalAssets, type OperationsAlarm, type OperationsBatchRow, type OperationsWorkOrder, readAlarmRow, readConvertibleSchedule, readOrganizationUserName, readWorkOrderRow } from "./copilot-operations-targets";
 
 /** What a proposal's target resolved to. */
 export type ResolvedTarget = {
@@ -70,7 +73,15 @@ export type ResolvedTarget = {
    */
   readonly updatedAt?: string;
   /** `F4.278` (Amendment 8 D3): `rule` targets — the rule's `lifecycle_status`, so a PATCH of a published rule carries the live line. */
-  readonly lifecycle?: string
+  readonly lifecycle?: string;
+  /**
+   * `F4.284` (ADR 0106): an `alarm` target's alarm; a `workOrder` target's work order (a convert's: the one it
+   * makes); a `workOrderBatch` target's rows as they are now (DC2); a convert's state (DC6).
+   */
+  readonly alarm?: OperationsAlarm;
+  readonly workOrder?: OperationsWorkOrder;
+  readonly batch?: readonly OperationsBatchRow[];
+  readonly convertible?: { readonly active: boolean; readonly hasActiveWorkOrder: boolean };
 };
 
 /** What the user targets need from the users services: their own checks, called, never copied (plan §6.3). */
@@ -138,11 +149,15 @@ type Found = {
   lifecycle?: string;
   /** `F4.280`: `reportSchedule` — the locations the schedule is stamped with (the verdict's input). */
   locationIds?: readonly string[];
+  alarm?: OperationsAlarm;
+  workOrder?: OperationsWorkOrder;
+  batch?: readonly OperationsBatchRow[];
+  convertible?: { active: boolean; hasActiveWorkOrder: boolean };
 };
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
 type RowKind = Exclude<
   CatalogEntry["target"]["kind"],
-  "organization" | "parent" | "fleet" | "vocabulary" | "telemetry" | "onboardingSession" | UserKind
+  "organization" | "parent" | "fleet" | "vocabulary" | "telemetry" | "onboardingSession" | "workOrderBatch" | UserKind
 >;
 type UserKind = "user" | "userGrantAdd" | "userGrant";
 type UserTarget = Extract<CatalogEntry["target"], { kind: UserKind }>;
@@ -244,6 +259,18 @@ export class CopilotTargetResolver implements CopilotTargets {
       if (typeof assetId !== "string") return null;
       found = await this.configurationAsset(assetId, allowedOrganizationIds);
       if (found !== null && !(await this.safely(() => this.mayWriteConfiguration(user, assetId)))) found = null;
+    } else if (target.kind === "workOrder" && "field" in target) {
+      // `F4.284` (ADR 0106 decision 6): a work-order create — the asset's organization, the route's two gates.
+      const assetId = body[target.field];
+      if (typeof assetId !== "string") return null;
+      found = await this.configurationAsset(assetId, allowedOrganizationIds);
+      if (found !== null && !(await this.safely(() => this.mayWriteOperational(user, assetId)))) found = null;
+    } else if (target.kind === "workOrderBatch") {
+      const batch = await findWorkOrderBatch(this.tenantDb, body[target.field], allowedOrganizationIds);
+      const name = batch === null ? null : await this.organizationName(batch.organizationId);
+      found = batch === null || name === null ? null : { organizationId: batch.organizationId, name, batch: batch.rows };
+      const assetIds = batch?.rows.map((row) => row.assetId) ?? [];
+      if (found !== null && !(await this.safely(() => this.mayWriteOperational(user, ...assetIds)))) found = null;
     } else {
       const id = params[target.param];
       if (id === undefined) return null;
@@ -256,7 +283,13 @@ export class CopilotTargetResolver implements CopilotTargets {
       const value = body[ref.field];
       if (value === undefined || value === null) continue;
       const kind = refKindOf(ref, body);
-      if (kind === null || typeof value !== "string" || !(await this.refBelongs(kind, value, found.organizationId))) return null;
+      if (kind === null || typeof value !== "string") return null;
+      // `F4.284` (DC1): an assignee is read under the tenant (RLS on `bms.users`), and the card names them.
+      if (kind === "user") {
+        const assignee = await readOrganizationUserName(this.tenantDb, value, found.organizationId);
+        if (assignee === null) return null;
+        found.refName ??= assignee;
+      } else if (!(await this.refBelongs(kind, value, found.organizationId))) return null;
     }
     const organizationName =
       target.kind === "organization" ? found.name : ((await this.organizationName(found.organizationId)) ?? "");
@@ -272,6 +305,10 @@ export class CopilotTargetResolver implements CopilotTargets {
       ...(found.updatedAt !== undefined ? { updatedAt: found.updatedAt } : {}),
       ...(found.usageCount !== undefined ? { usageCount: found.usageCount } : {}),
       ...(found.lifecycle !== undefined ? { lifecycle: found.lifecycle } : {}),
+      ...(found.alarm ? { alarm: found.alarm } : {}),
+      ...(found.workOrder ? { workOrder: found.workOrder } : {}),
+      ...(found.batch ? { batch: found.batch } : {}),
+      ...(found.convertible ? { convertible: found.convertible } : {}),
     };
   }
 
@@ -412,6 +449,11 @@ export class CopilotTargetResolver implements CopilotTargets {
     const readable = await this.access.readableAssetIds(user);
     if (readable === null) return true;
     return assetIds.every((assetId) => assetId !== null && readable.includes(assetId));
+  }
+
+  /** `F4.284` (ADR 0106 decision 6, DC5): the alarm and work-order routes' gate (`mayWriteOperationalAssets`). */
+  private mayWriteOperational(user: JwtPayload, ...assetIds: readonly (string | null)[]): Promise<boolean> {
+    return mayWriteOperationalAssets(this.access, user, assetIds);
   }
 
   private async findRow(
@@ -607,6 +649,19 @@ export class CopilotTargetResolver implements CopilotTargets {
           .where(and(eq(maintenanceSchedules.id, id), eq(maintenanceSchedules.organizationId, organizationId)))
           .limit(1);
         return row ? { organizationId, name: row.title, assetId: row.assetId } : null;
+      }
+      // `F4.284` (ADR 0106 decision 6): an alarm (named by its asset), a work order, a convertible schedule.
+      case "alarm": {
+        const row = await readAlarmRow(tx, id, organizationId);
+        return row ? { organizationId, name: row.alarm.assetName, assetId: row.assetId, alarm: row.alarm } : null;
+      }
+      case "workOrder": {
+        const row = await readWorkOrderRow(tx, id, organizationId);
+        return row ? { organizationId, name: row.workOrder.title, assetId: row.assetId, workOrder: row.workOrder } : null;
+      }
+      case "maintenanceScheduleConvert": {
+        const row = await readConvertibleSchedule(tx, id, organizationId);
+        return row ? { organizationId, name: row.title, assetId: row.assetId, workOrder: row.workOrder, convertible: row.convertible } : null;
       }
       case "asset": {
         const [row] = await tx
@@ -870,6 +925,18 @@ export class CopilotTargetResolver implements CopilotTargets {
       // in the read scope (`getScheduleItem`'s 404). The PATCH body never moves the asset.
       case "maintenanceSchedule":
         return this.mayWriteConfiguration(user, found.assetId ?? null);
+      // `F4.284` (DC5): the convert route's `operational` gate on the schedule's template asset.
+      case "maintenanceScheduleConvert":
+      case "workOrder":
+        return this.mayWriteOperational(user, found.assetId ?? null);
+      // `F4.284`: an enrichment's `affectedAssetIds` too — each readable and of the alarm's organization.
+      case "alarm": {
+        const affected = mode === "record" || !Array.isArray(body.affectedAssetIds) ? [] : (body.affectedAssetIds as unknown[]);
+        if (affected.some((assetId) => typeof assetId !== "string")) return false;
+        if (!(await this.mayWriteOperational(user, found.assetId ?? null, ...(affected as string[])))) return false;
+        for (const assetId of affected as string[]) if (!(await this.refBelongs("asset", assetId, found.organizationId))) return false;
+        return true;
+      }
       case "asset":
         if (!(await this.access.canManageAsset(user, id))) return false;
         if (!body.locationId) return true;
@@ -885,7 +952,9 @@ export class CopilotTargetResolver implements CopilotTargets {
 
   private async refBelongs(kind: CatalogRefKind, id: string, organizationId: string): Promise<boolean> {
     if (kind === "organization") return id === organizationId;
+    if (kind === "user") return (await readOrganizationUserName(this.tenantDb, id, organizationId)) !== null;
     const table = {
+      alarm: alarms,
       location: locations,
       assetGroup: assetGroups,
       asset: assets,

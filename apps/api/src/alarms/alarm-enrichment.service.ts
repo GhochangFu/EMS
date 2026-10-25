@@ -1,15 +1,15 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 
-import { alarmAffectedAssets, alarmEnrichments, alarms, auditLog } from "@bms/db";
+import { alarmAffectedAssets, alarmEnrichments, alarms } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { JwtPayload } from "@bms/shared";
+import type { AlarmEnrichmentUpsertBody, JwtPayload } from "@bms/shared";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
-import type { AlarmEnrichmentUpsertBody } from "./enrichment.schema";
 
 /**
  * `PUT /api/v1/alarms/:id/enrichment` (ADR 0034 decision 6).
@@ -36,6 +36,8 @@ export class AlarmEnrichmentService {
     // write is then wrapped in the alarm's org.
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly vocabularies: VocabulariesService,
+    // `F4.284` (ADR 0106 decision 7): the upsert audits through the funnel (the copilot mark).
+    @Inject(MasterDataAuditService) private readonly audit: MasterDataAuditService,
   ) {}
 
   /**
@@ -138,14 +140,17 @@ export class AlarmEnrichmentService {
         }
       }
 
-      await tx.insert(auditLog).values({
-        organizationId,
-        actorId: dbActorId,
-        action: "alarm_enrichment_update",
-        entityType: "alarm",
-        entityId: alarmId,
-        payload: { alarmId, oidcSubject: actor.sub, actorEmail: actor.email, fields: body },
-      });
+      await this.audit.write(
+        {
+          actor,
+          organizationId,
+          action: "alarm_enrichment_update",
+          entityType: "alarm",
+          entityId: alarmId,
+          payload: { alarmId, oidcSubject: actor.sub, actorEmail: actor.email, fields: body },
+        },
+        tx,
+      );
     });
   }
 }

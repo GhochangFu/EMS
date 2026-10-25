@@ -20,6 +20,7 @@ import { DatabaseModule } from "../database/database.module";
 import { IdentityAdminModule } from "../identity/identity-admin.module";
 import { LlmModule } from "../llm/llm.module";
 import { MaintenanceModule } from "../maintenance/maintenance.module";
+import { WorkOrdersModule } from "../work-orders/work-orders.module";
 import { MimicLayoutsModule } from "../mimic-layouts/mimic-layouts.module";
 import { MimicSymbolLibrariesModule } from "../mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { ReportsCoreModule } from "../reports/reports-core.module";
@@ -166,6 +167,11 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
  * `MaintenanceService` for `list_maintenance_schedules`. It imports nothing of
  * this module (its providers take only `DatabaseModule`'s tokens), so the graph
  * stays acyclic; the worker never reaches this module.
+ *
+ * `F4.284` (ADR 0106; owner ruling DC7): `WorkOrdersModule` exports
+ * `WorkOrdersService` for `list_work_orders`. It imports nothing of this module,
+ * so the graph stays acyclic. `list_users` reads through the `UsersService` this
+ * module already provides.
  */
 @Module({
   imports: [
@@ -190,6 +196,7 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
     RulesModule,
     NotificationsModule,
     MaintenanceModule,
+    WorkOrdersModule,
   ],
   controllers: [CopilotAccessController, CopilotChangesController, CopilotConversationsController, CopilotStatusController],
   providers: [

@@ -44,32 +44,26 @@ export const listMaintenanceQuerySchema = z.object({
     .transform((value) => value === "true"),
 });
 
-export const convertMaintenanceBodySchema = z
-  .object({
-    notes: z.string().min(3).max(2000).optional(),
-  })
-  .strict();
-
 /**
  * `F4.281` (ADR 0099 Amendment 8, ADR 0030): the two schedule write bodies
  * live in `packages/shared/src/contracts/maintenance-writes.ts`, so the copilot
  * catalog carries the route's own export by identity. Re-exported here under
  * their old names for the service and this file's spec; the controller and the
- * OpenAPI registry import them from `@bms/shared`.
+ * OpenAPI registry import them from `@bms/shared`. `F4.284` (ADR 0106 decision 5)
+ * moved the convert body there too.
  */
 export {
+  convertMaintenanceBodySchema,
   createMaintenanceScheduleBodySchema,
   updateMaintenanceScheduleBodySchema,
 } from "@bms/shared";
 export type {
+  ConvertMaintenanceBody,
   CreateMaintenanceScheduleBody,
   UpdateMaintenanceScheduleBody,
 } from "@bms/shared";
 
 export type ListMaintenanceQuery = z.infer<typeof listMaintenanceQuerySchema>;
-export type ConvertMaintenanceBody = z.infer<
-  typeof convertMaintenanceBodySchema
->;
 
 /**
  * Compile-time drift guard, same shape and same reason as the one in

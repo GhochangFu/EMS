@@ -4,6 +4,7 @@ import { z, type ZodTypeAny } from "zod";
 import * as contracts from "../../contracts";
 import {
   CANVAS_ENTRY_IDS,
+  LAYOUT_ENTRY_IDS,
   cardOnlyKeysFor,
   catalogEntry,
   catalogParamsOf,
@@ -207,13 +208,17 @@ function directionOwnedFields(id: string): string[] {
   );
 }
 
-function modelBodyProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "modelBody" | "upload">): string[] {
+/**
+ * `F4.284` owner ruling DC4 (2026-10-24): an entry's `modelOmits` are the body fields its model body
+ * leaves out on purpose, so the page alone sets them (the enrichment upsert writes only the keys it is sent).
+ */
+function modelBodyProblems(entry: Pick<CatalogEntry, "id" | "body" | "clientOnly" | "modelBody" | "modelOmits" | "upload">): string[] {
   if (entry.modelBody === undefined) return entry.upload ? [`${entry.id}: an upload entry needs a modelBody`] : [];
   const problems: string[] = [];
   let object: ZodTypeAny = entry.modelBody;
   while (object instanceof z.ZodEffects) object = object._def.schema as ZodTypeAny;
   if ((object as z.AnyZodObject)._def.unknownKeys !== "strict") problems.push(`${entry.id}: modelBody is not strict`);
-  const owned = directionOwnedFields(entry.id);
+  const owned = [...directionOwnedFields(entry.id), ...(entry.modelOmits ?? [])];
   const fields = bodyFieldsOf(entry.body).filter((field) => !entry.clientOnly.includes(field) && !owned.includes(field));
   // `F4.283`: a `kind: "file"` upload names its attachment as `file`; the bytes stay in the browser.
   const expected = (entry.upload ? [...fields, entry.upload.kind === "svg" ? "svg" : "file"] : fields).sort();
@@ -626,7 +631,7 @@ export function aGrantSummaryNamesItsTarget(): void {
  * only, and a replace whose card-only `baseline` is left out of the hash.
  */
 export function theLayoutEntriesAreCanvasEntriesForTheAuthors(): void {
-  for (const id of CANVAS_ENTRY_IDS) {
+  for (const id of LAYOUT_ENTRY_IDS) {
     const entry = catalogEntry(id);
     if (!entry) throw new Error(id);
     expect(entry.steps, id).toEqual([]);

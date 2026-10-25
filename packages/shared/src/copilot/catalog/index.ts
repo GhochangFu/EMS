@@ -11,8 +11,9 @@ import { FILE_DATA_ENTRIES, FILE_DATA_PENDING } from "./file-data";
 import { KPI_ENTRIES } from "./kpis";
 import { LOCATION_TYPE_ENTRIES, LOCATION_TYPE_PENDING } from "./location-types";
 import { LOCATION_ENTRIES, LOCATION_PENDING } from "./locations";
-import { MAINTENANCE_ENTRIES, MAINTENANCE_PENDING } from "./maintenance";
+import { MAINTENANCE_ENTRIES } from "./maintenance";
 import { NOTIFICATION_ENTRIES, NOTIFICATION_PENDING } from "./notifications";
+import { OPERATIONS_ENTRIES } from "./operations";
 import { REPORT_ENTRIES, REPORT_PENDING } from "./reports";
 import { ONBOARDING_ENTRIES, ONBOARDING_PENDING } from "./onboarding";
 import { POINT_KEY_ENTRIES, POINT_KEY_PENDING } from "./point-keys";
@@ -59,6 +60,8 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...MAINTENANCE_ENTRIES,
   // F4.283 (Amendment 8): file-borne data — the telemetry import, manual readings and the asset image upload.
   ...FILE_DATA_ENTRIES,
+  // F4.284 (ADR 0106): the alarm and work-order writes.
+  ...OPERATIONS_ENTRIES,
 ];
 
 /**
@@ -119,8 +122,7 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...NOTIFICATION_PENDING,
   // F4.280 (Amendment 8): the two report DELETEs stay manual.
   ...REPORT_PENDING,
-  // F4.281 (Amendment 8): the convert creates a work order and stays manual.
-  ...MAINTENANCE_PENDING,
+  // F4.281 (Amendment 8) excluded the maintenance convert; F4.284 (ADR 0106 Q6) made it an entry.
   // F4.283 (Amendment 8): the import preview runs inside the propose step; the image DELETE stays manual.
   ...FILE_DATA_PENDING,
 ];
@@ -168,9 +170,13 @@ export function hashExcludedKeysOf(entry: Pick<CatalogEntry, "clientOnly" | "car
  * `F3.87` PR 2 / owner ruling Q1 (2026-10-15) — the entries whose web form is
  * the layout editor's canvas, not a stepper: they have no steps, and
  * `tests/f3.85-stepper-coverage` takes each from the editor page instead of a
- * `WizardShell`.
+ * `WizardShell`. `F4.284` (owner ruling DC2, 2026-10-24): the work-order reorder,
+ * whose form is the Kanban board's drag.
  */
-export const CANVAS_ENTRY_IDS = ["mimicLayout.create", "mimicLayout.replace"] as const;
+export const CANVAS_ENTRY_IDS = ["mimicLayout.create", "mimicLayout.replace", "workOrder.reorder"] as const;
+
+/** The two canvas entries whose canvas is the mimic layout editor (`CANVAS_ENTRY_IDS` less the work-order board). */
+export const LAYOUT_ENTRY_IDS = ["mimicLayout.create", "mimicLayout.replace"] as const;
 
 /** The propose tool's name: provider tool names allow `[A-Za-z0-9_-]` only, so the id's dots become underscores. */
 export function proposeToolName(entry: Pick<CatalogEntry, "id">): string {

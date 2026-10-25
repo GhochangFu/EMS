@@ -35,7 +35,8 @@ type ChangeCardProps = {
   confirmDisabled?: boolean;
 };
 
-const RED_RISKS: ReadonlySet<CopilotChangeRisk> = new Set(["deactivate", "access"]);
+/** `F4.284` (ADR 0106 decision 4): `operational` (an alarm acknowledge, a work-order close) is red too. */
+const RED_RISKS: ReadonlySet<CopilotChangeRisk> = new Set(["deactivate", "access", "operational"]);
 
 /**
  * `F4.246` (ADR 0099 §3, owner ruling 2026-10-20 option C, "Summary + expand") — a cell's value:
@@ -64,6 +65,7 @@ export function ChangeCard(props: ChangeCardProps) {
     >
       <h3 className={`font-semibold ${red ? "text-critical-ink" : "text-ink"}`}>{props.title}</h3>
       <p className="mt-1 text-ink">{props.summary}</p>
+      {props.risk === "operational" && <p className="mt-1 font-semibold text-critical-ink">This cannot be undone.</p>}
       {props.rows.length > 0 && (
         <table className="mt-2 w-full table-fixed border-collapse">
           <thead>

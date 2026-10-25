@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import type {
   MaintenanceScheduleCategory,
@@ -7,10 +7,7 @@ import type {
 } from "@bms/shared";
 
 import type { AssetRow } from "../api/assets";
-import {
-  convertMaintenanceSchedule,
-  fetchMaintenanceSchedules,
-} from "../api/maintenance";
+import { fetchMaintenanceSchedules } from "../api/maintenance";
 // The three label maps left this file in `F2.19` (ADR 0038 Amendment 5 Part B).
 // The Maintenance tab is the second surface that renders these twenty-three
 // strings, and two copies of one vocabulary's labels drift — a category renamed
@@ -21,7 +18,7 @@ import {
   MAINTENANCE_GENERATION_MODE_LABELS,
   WORK_ORDER_PRIORITY_LABELS,
 } from "../lib/maintenance-labels";
-import { apiErrorMessage } from "../lib/api-error-message";
+import { MaintenanceScheduleConvertWizard } from "./maintenance-schedule-convert-wizard";
 import { MaintenanceScheduleToggleWizard } from "./maintenance-schedule-toggle-wizard";
 import { MaintenanceScheduleWizard } from "./maintenance-schedule-wizard";
 
@@ -143,13 +140,8 @@ export function MaintenanceSchedulesPanel({
       }),
   });
 
-  const convertM = useMutation({
-    mutationFn: convertMaintenanceSchedule,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["maintenance", "schedules"] });
-      void qc.invalidateQueries({ queryKey: ["work-orders", "list"] });
-    },
-  });
+  // `F4.284` (ADR 0106 decision 5): "Generate WO" opens the convert wizard (Notes → Review).
+  const [convertItem, setConvertItem] = useState<MaintenanceScheduleItem | null>(null);
 
   const refresh = (): void => {
     void qc.invalidateQueries({ queryKey: ["maintenance", "schedules"] });
@@ -281,7 +273,7 @@ export function MaintenanceSchedulesPanel({
         <section className="grid gap-3 xl:grid-cols-3">
           {items.map((item) => {
             const generatingThis =
-              convertM.isPending && convertM.variables?.id === item.id;
+              convertItem?.id === item.id;
             return (
               <article
                 key={item.id}
@@ -352,14 +344,9 @@ export function MaintenanceSchedulesPanel({
                   <button
                     type="button"
                     className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50"
-                    disabled={!item.active || Boolean(item.activeWorkOrderId) || convertM.isPending}
+                    disabled={!item.active || Boolean(item.activeWorkOrderId) || convertItem !== null}
                     aria-busy={generatingThis}
-                    onClick={() =>
-                      convertM.mutate({
-                        id: item.id,
-                        notes: `Generated WO from ${MAINTENANCE_CATEGORY_LABELS[item.category]}`,
-                      })
-                    }
+                    onClick={() => setConvertItem(item)}
                   >
                     {generatingThis
                       ? "Generating WO…"
@@ -374,10 +361,19 @@ export function MaintenanceSchedulesPanel({
         </section>
       )}
 
-      {convertM.isError ? (
-        <p className="text-xs text-critical-ink" role="alert">
-          Could not generate work order: {apiErrorMessage(convertM.error)}
-        </p>
+      {convertItem !== null ? (
+        <MaintenanceScheduleConvertWizard
+          item={convertItem}
+          defaultNotes={`Generated WO from ${MAINTENANCE_CATEGORY_LABELS[convertItem.category]}`}
+          onCancel={() => setConvertItem(null)}
+          onDone={async () => {
+            setConvertItem(null);
+            await Promise.all([
+              qc.invalidateQueries({ queryKey: ["maintenance", "schedules"] }),
+              qc.invalidateQueries({ queryKey: ["work-orders", "list"] }),
+            ]);
+          }}
+        />
       ) : null}
 
       {createOpen ? (

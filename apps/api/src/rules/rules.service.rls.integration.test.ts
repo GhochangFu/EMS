@@ -16,7 +16,6 @@ import { asRole } from "../testing/role-urls";
 import { jwtFor, primeSeededSubjects } from "../testing/seeded-subjects";
 import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { pointKeysForAsset } from "./rule-points";
-import { theRuleCheckWritesNoAuditRowWherePreviewWritesOne } from "./rule-proposal-check.integration.spec";
 import { RulesService } from "./rules.service";
 import {
   assertAssetlessTimeWindowRefusedForAdmin,
@@ -36,6 +35,7 @@ import {
   assertUpdateRuleReadsBackInTenantTransaction,
   EVALUATOR_SUBJECT,
   type RulesRlsFixtures,
+  theRuleCheckWritesNoAuditRowWherePreviewWritesOne,
 } from "./rules.service.rls.integration.spec";
 
 /**

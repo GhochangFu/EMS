@@ -88,6 +88,10 @@ const CATALOG_WRITERS = [
   // the asset image upload (and its excluded DELETE) through the image write service.
   "apps/api/src/admin/telemetry-entry/telemetry-write.service.ts",
   "apps/api/src/assets/asset-images-write.service.ts",
+  // F4.284 (ADR 0106): the alarm acknowledge and enrichment, and every work-order write.
+  "apps/api/src/alarms/alarms.service.ts",
+  "apps/api/src/alarms/alarm-enrichment.service.ts",
+  "apps/api/src/work-orders/work-orders.service.ts",
 ] as const;
 
 /**
@@ -158,6 +162,9 @@ const CATALOG_DIRS = [
   "reports",
   // F4.281 (Amendment 8): the maintenance schedules — the three direct audit inserts are gone.
   "maintenance",
+  // F4.284 (ADR 0106): the alarm and work-order writes — their direct audit inserts are gone.
+  "alarms",
+  "work-orders",
   // F4.283 (Amendment 8): the telemetry write path and importer, and the assets directory (the image writes).
   "admin/telemetry-entry",
   "admin/telemetry-import",
@@ -379,7 +386,8 @@ describe("F3.85 — every catalog write is audited through the copilot mark (ADR
       .map((file) => relative(apiSrc, file).replaceAll("\\", "/"));
     // Positive control: the scan sees the known writers, so an empty result cannot mean a broken regex.
     expect(direct).toContain("admin/master-data-audit.service.ts");
-    expect(direct).toContain("work-orders/work-orders.service.ts");
+    // `F4.284` moved the work-order inserts onto the funnel; the discovery job store still inserts directly.
+    expect(direct).toContain("onboarding-discovery/discovery-job-store.ts");
     const inCatalog = direct.filter((file) => CATALOG_DIRS.some((dir) => file.startsWith(`${dir}/`)));
     expect(inCatalog, "a catalog write inserting into bms.audit_log itself loses the copilot mark").toEqual([]);
   });

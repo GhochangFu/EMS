@@ -94,6 +94,8 @@ const CATALOG_IDS = COPILOT_CATALOG.map((entry) => entry.id);
 const CANVAS_ENTRIES: readonly { id: string; page: string; write: string }[] = [
   { id: "mimicLayout.create", page: "apps/web/src/pages/admin/mimic-layout-editor-page.tsx", write: "createMimicLayout(" },
   { id: "mimicLayout.replace", page: "apps/web/src/pages/admin/mimic-layout-editor-page.tsx", write: "replaceMimicLayout(" },
+  // `F4.284` (owner ruling DC2, 2026-10-24): the work-order reorder's form is the Kanban board's drag.
+  { id: "workOrder.reorder", page: "apps/web/src/pages/work-orders-page.tsx", write: "reorderWorkOrders(" },
 ];
 
 /** The row's page holds the row's write call on a non-comment line; `false` when the page does not exist. */
@@ -158,10 +160,11 @@ describe("F3.85 stepper coverage — every catalog entry has a WizardShell (plan
     expect(CANVAS_ENTRIES.map((row) => row.id).sort()).toEqual([...CANVAS_ENTRY_IDS].sort());
   });
 
-  it("F3.87 PR 5 positive control: both canvas rows resolve against the real editor page", () => {
+  it("F3.87 PR 5 positive control: every canvas row resolves against its real page (F4.284: + the work-order board)", () => {
     expect(CANVAS_ENTRIES.map((row) => [row.id, canvasRowResolves(row)])).toEqual([
       ["mimicLayout.create", true],
       ["mimicLayout.replace", true],
+      ["workOrder.reorder", true],
     ]);
   });
 

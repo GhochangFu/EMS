@@ -74,6 +74,8 @@ export * from "./notification-writes";
 export * from "./escalation-writes";
 export * from "./report-writes";
 export * from "./maintenance-writes";
+// F4.284 (ADR 0106, ADR 0030): the alarm and work-order write bodies.
+export * from "./operations-writes";
 export * from "./site-control-room-view-writes";
 export * from "./site-layout-writes";
 export * from "./asset-template-content-writes";

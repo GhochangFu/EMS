@@ -257,5 +257,14 @@ export const FIXTURES: Readonly<
     params: {},
     names: ORG_NAME,
   },
+  // `F4.284` (ADR 0106) — the alarm and work-order writes; an alarm and a work-order create name the asset,
+  // a work-order edit its title, the reorder its organization, the convert its schedule.
+  "alarm.acknowledge": { body: { reason: "Panel checked on site" }, params: { id: ROW }, names: TARGET_NAME },
+  "alarm.enrichment.set": { body: { rootCause: "Loose lug", affectedAssetIds: [ROW] }, params: { id: ROW }, names: TARGET_NAME },
+  "workOrder.create": { body: { assetId: ROW, title: "Check the breaker", priority: "high" }, params: {}, names: TARGET_NAME },
+  "workOrder.setStatus": { body: { status: "in_progress", reason: "Crew on site" }, params: { id: ROW }, names: TARGET_NAME },
+  "workOrder.close": { body: { reason: "Repaired and tested" }, params: { id: ROW }, names: TARGET_NAME },
+  "workOrder.reorder": { body: { items: [{ id: ROW, status: "assigned", sortOrder: 0 }] }, params: {}, names: ORG_NAME },
+  "maintenanceSchedule.convert": { body: { notes: "Quarterly check due" }, params: { id: ROW }, names: TARGET_NAME },
   "assetImage.upload": { body: { caption: "Front panel", file: { kind: "attachment", index: 1 } }, params: { assetId: ROW }, names: TARGET_NAME },
 };

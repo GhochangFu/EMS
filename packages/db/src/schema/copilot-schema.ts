@@ -46,6 +46,7 @@ import { bmsSchema, onboardingSessions, organizations, users } from "./bms-schem
  * user** (`(conversation_id, user_id)` → `(id, user_id)`). Drizzle cannot
  * write the pending change's `ON DELETE SET NULL (conversation_id)`, so the
  * migration owns both keys and `conversationId` below declares no reference.
+ * `F4.284` migration `0116` (ADR 0106) widened the risk CHECK with `operational`.
  */
 
 /**

@@ -73,8 +73,10 @@ describe("ADR 0034 alarm skill vocabulary", () => {
     // for rule categories and plant domains): a <select> whose value matches
     // no <option> renders its FIRST option, so a hand-kept list falling
     // behind does not look broken — it looks like a different value.
+    // F4.284 (ADR 0106): the enrichment form left alarm-details-panel.tsx for
+    // the WizardShell in alarm-enrichment-wizard.tsx, and the skill select with it.
     const panel = readFileSync(
-      join(repoRoot, "apps", "web", "src", "components", "alarm-details-panel.tsx"),
+      join(repoRoot, "apps", "web", "src", "components", "alarm-enrichment-wizard.tsx"),
       "utf8",
     );
 
@@ -89,7 +91,7 @@ describe("ADR 0034 alarm skill vocabulary", () => {
     for (const code of seededCodes) {
       expect(
         optionPattern(code).test(panel),
-        `alarm-details-panel.tsx hardcodes <option value="${code}">. Render the ` +
+        `alarm-enrichment-wizard.tsx hardcodes <option value="${code}">. Render the ` +
           "options from skillOptions (the fetched vocabulary) instead.",
       ).toBe(false);
     }
@@ -102,7 +104,7 @@ describe("ADR 0034 alarm skill vocabulary", () => {
       "the hardcoded-option pattern no longer matches a literal violation — update it",
     ).toBe(true);
 
-    expect(panel, "alarm-details-panel.tsx no longer maps the fetched skill vocabulary").toMatch(
+    expect(panel, "alarm-enrichment-wizard.tsx no longer maps the fetched skill vocabulary").toMatch(
       /skillOptions\.map\(/,
     );
   });

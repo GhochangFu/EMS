@@ -28,6 +28,8 @@ import { ReportSchedulesService } from "../reports/report-schedules.service";
 import { ReportsModule } from "../reports/reports.module";
 import { MaintenanceModule } from "../maintenance/maintenance.module";
 import { MaintenanceService } from "../maintenance/maintenance.service";
+import { WorkOrdersModule } from "../work-orders/work-orders.module";
+import { WorkOrdersService } from "../work-orders/work-orders.service";
 import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
 import { TelemetryProposalCheckService } from "../admin/telemetry-entry/telemetry-proposal-check.service";
 import { AssetImagesWriteService } from "../assets/asset-images-write.service";
@@ -217,4 +219,20 @@ export function assertTheAdminModuleExportsTheTelemetryCheck(): void {
 /** `AssetsModule` exports the image write service. */
 export function assertTheAssetsModuleExportsTheImageWriteService(): void {
   expect(moduleList(AssetsModule, "exports")).toContain(AssetImagesWriteService);
+}
+
+/** `F4.284` (ADR 0106; owner ruling DC7): `CopilotModule` imports `WorkOrdersModule`, which exports its service. */
+export function assertTheModuleImportsTheWorkOrdersModule(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(WorkOrdersModule);
+  expect(moduleList(WorkOrdersModule, "exports")).toContain(WorkOrdersService);
+}
+
+/** The read tools' slot 22 is `WorkOrdersService` and slot 23 `UsersService`, by `@Inject` (DC1, DC7). */
+export function assertTheReadToolsInjectTheWorkOrdersAndUsersServices(): void {
+  expect([injected(CopilotReadToolSet).get(22), injected(CopilotReadToolSet).get(23)]).toEqual([WorkOrdersService, UsersService]);
+}
+
+/** `F4.284` (ADR 0106 decision 7): `WorkOrdersModule` provides the audit funnel its service injects. */
+export function assertTheWorkOrdersModuleProvidesTheAuditFunnel(): void {
+  expect(moduleList(WorkOrdersModule, "providers")).toContain(MasterDataAuditService);
 }

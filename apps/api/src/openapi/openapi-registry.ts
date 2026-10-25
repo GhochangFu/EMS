@@ -114,30 +114,30 @@ import {
 } from "../telemetry/telemetry.schema";
 import { escalationDefaultsQuerySchema } from "../notifications/escalation-profiles.schema";
 import { listDeliveriesQuerySchema } from "../notifications/notifications.schema";
-import { alarmAckBodySchema } from "../alarms/ack.schema";
 import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-list.schema";
-import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { assetKpisQuerySchema, assetRoleSummaryQuerySchema } from "../assets/assets.schema";
 import { loginBodySchema } from "../auth/login.schema";
 import { mapSitesQuerySchema } from "../map/map.schema";
 import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import { siteWidgetsQuerySchema } from "../dashboard-builder/site-widgets.schema";
-import { convertMaintenanceBodySchema, listMaintenanceQuerySchema } from "../maintenance/maintenance.schema";
+import { listMaintenanceQuerySchema } from "../maintenance/maintenance.schema";
 import { listReportFilesQuerySchema } from "../reports/report-files.schema";
-// `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`.
+// `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`;
+// `F4.284`: the alarm, work-order and convert bodies too.
 import {
+  alarmAckBodySchema,
+  alarmEnrichmentUpsertBodySchema,
+  closeWorkOrderBodySchema,
+  convertMaintenanceBodySchema,
+  createWorkOrderBodySchema,
+  reorderWorkOrdersBodySchema,
+  updateWorkOrderStatusBodySchema,
   createReportScheduleBodySchema,
   energyReportQuerySchema,
   saveEnergyReportFileBodySchema,
   updateReportScheduleBodySchema,
 } from "@bms/shared";
 import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "../rules/rules.schema";
-import {
-  closeWorkOrderBodySchema,
-  createWorkOrderBodySchema,
-  reorderWorkOrdersBodySchema,
-  updateWorkOrderStatusBodySchema,
-} from "../work-orders/work-order.schema";
 
 /**
  * `F4.20` / ADR 0029 decision 3 — the join between a route and the Zod schema

@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   eachDirectionModelBodyFixesActive,
+  theConvertBodyIsStrict,
+  theConvertBodyRefusesShortNotes,
   theCreateBodyFillsItsDefaults,
   theCreateBodyRefusesAFirstDueAtWithoutAnInstant,
   theCreateBodyRefusesAnUnknownKey,
@@ -19,4 +21,6 @@ describe("F4.281 — maintenance schedule write bodies (ADR 0030)", () => {
   it("the update body refuses a reason under 3 characters", () => theUpdateBodyRefusesAShortReason());
   it("each direction's model body fixes active", () => eachDirectionModelBodyFixesActive());
   it("a schedule list item requires active", () => theScheduleItemRequiresActive());
+  it("F4.284: the convert body refuses an unknown key", () => theConvertBodyIsStrict());
+  it("F4.284: the convert body refuses notes under 3 characters", () => theConvertBodyRefusesShortNotes());
 });

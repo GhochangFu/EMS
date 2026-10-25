@@ -13,6 +13,9 @@ import {
   highPillIsTheRuledStrongWarning,
   mediumPillIsTheRuledSoftWarning,
   mediumRailIsTheHalfOpacityWarning,
+  aCloseReasonThatTrimsShortStaysOnTheReasonStep,
+  theCloseReviewSaysItCannotBeUndone,
+  theStatusWizardOffersNoClosed,
 } from "./work-orders-page.spec";
 
 /**
@@ -77,4 +80,24 @@ describe("F4.209 the work-orders page settles while its list has no data", () =>
   it("WO5 a failed list read settles without a render loop", async () => {
     await aFailedListReadSettles();
   }, 10_000);
+});
+
+describe("F4.284 the work-order wizards (ADR 0106 decisions 2, 4)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("WO6 the status wizard offers no closed", async () => {
+    await theStatusWizardOffersNoClosed();
+  });
+
+  it("WO7 the close's Review card says it cannot be undone", async () => {
+    await theCloseReviewSaysItCannotBeUndone();
+  });
+
+  it("WO8 a closure reason that trims below 3 characters stays on the Reason step", async () => {
+    await aCloseReasonThatTrimsShortStaysOnTheReasonStep();
+  });
 });

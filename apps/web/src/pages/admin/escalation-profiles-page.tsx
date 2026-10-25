@@ -289,12 +289,13 @@ export function EscalationProfilesPage({ user }: EscalationProfilesPageProps) {
           type="button"
           className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:bg-line-strong"
           disabled={organizationRefusal !== null || !organizationsSettled}
+          aria-busy={organizationsQ.isPending}
           onClick={() => {
             setOpen({ kind: "create" });
             setError(null);
           }}
         >
-          Add profile
+          {organizationsQ.isPending ? "Loading organizations…" : "Add profile"}
         </button>
       </SectionCard>
 

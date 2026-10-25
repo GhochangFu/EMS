@@ -1,11 +1,12 @@
 import {
+  convertMaintenanceBodySchema,
   copilotActivateMaintenanceScheduleModelBodySchema,
   copilotDeactivateMaintenanceScheduleModelBodySchema,
   createMaintenanceScheduleBodySchema,
   updateMaintenanceScheduleBodySchema,
 } from "../../contracts/maintenance-writes";
 import { quoted, text, uuidParam } from "./summary-text";
-import type { CatalogEntry, CatalogStep, ExcludedRoute } from "./types";
+import type { CatalogEntry, CatalogStep } from "./types";
 
 /**
  * `F4.281` (ADR 0099 Amendment 8, D2, D3, D6, D7, Q15, Q16; owner rulings
@@ -21,8 +22,11 @@ import type { CatalogEntry, CatalogStep, ExcludedRoute } from "./types";
  * on the PATCH. Each takes the optional reason (a Reason step, then Review), so
  * the audit row records why; its model body fixes `active` to the direction's
  * value. The deactivate is red. D6: no entry takes a precondition (the PATCH
- * accepts decision 4.9's residual). The convert route creates a work order and
- * is excluded (Amendment 8, "Not in this amendment").
+ * accepts decision 4.9's residual).
+ *
+ * `F4.284` (ADR 0106 decision 5, Q6): the convert, which creates a work order,
+ * returns as `maintenanceSchedule.convert` (risk `create`). Its route's gate is
+ * the `operational` class, so its target is `maintenanceScheduleConvert`.
  */
 
 /** The fields every entry on one schedule row shares. */
@@ -109,9 +113,27 @@ export const MAINTENANCE_ENTRIES: readonly CatalogEntry[] = [
     summary: ({ body, targetName }) =>
       `Deactivate the maintenance schedule ${quoted(targetName)}: it leaves the default Schedule Centre list and no work order is generated from it until it is activated again.${reasonLine(body)}`,
   },
+  {
+    id: "maintenanceSchedule.convert",
+    title: "Create a work order from a maintenance schedule",
+    method: "POST",
+    path: "/maintenance/schedules/:id/convert",
+    params: { id: uuidParam },
+    body: convertMaintenanceBodySchema,
+    bodyName: "convertMaintenanceBodySchema",
+    clientOnly: [],
+    risk: "create",
+    target: { kind: "maintenanceScheduleConvert", param: "id" },
+    refs: [],
+    formulas: [],
+    steps: [{ id: "notes", title: "Notes", fields: ["notes"] }],
+    summary: ({ body, targetName, workOrder }) => {
+      const notes = text(body, "notes");
+      return (
+        `Create a work order from the maintenance schedule ${quoted(targetName)}${workOrder ? ` on ${workOrder.assetName}` : ""}: ` +
+        `the schedule's next due date moves on by one cycle.${notes ? ` Notes: ${quoted(notes)}.` : ""}`
+      );
+    },
+  },
 ];
 
-/** The maintenance routes that are not entries, and why (Amendment 8, "Not in this amendment"; ADR 0106 Q6 brings it back). */
-export const MAINTENANCE_PENDING: readonly ExcludedRoute[] = [
-  { method: "POST", path: "/maintenance/schedules/:id/convert", reason: "creates a work order; ADR 0099 decision 1" },
-];

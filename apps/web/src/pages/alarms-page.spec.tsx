@@ -254,11 +254,44 @@ export async function ackRefusalShowsTheServerSentence(): Promise<void> {
   await userEvent.click(
     within(rowFor("Voltage above limit")).getByRole("button", { name: "Ack" }),
   );
+  // `F4.284`: the Ack is a Reason → Review `WizardShell` (ADR 0106, owner ruling Q9).
   const dialog = screen.getByRole("dialog");
   await userEvent.type(within(dialog).getByLabelText("Reason (required)"), "Verified at panel");
-  await userEvent.click(within(dialog).getByRole("button", { name: "Confirm ack" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
 
-  const alert = await within(dialog).findByRole("alert");
+  // The fixture's alarm id is no UUID, so the shell also warns that the copilot cannot fill it.
+  const alert = (await within(dialog).findAllByRole("alert")).find((node) => node.textContent?.includes(sentence));
   expect(alert).toHaveTextContent(sentence);
-  expect(alert.textContent).not.toContain('{"');
+  expect(alert?.textContent).not.toContain('{"');
+}
+
+/** `F4.284`: a reason that trims below 3 characters stays on the Reason step (the old dialog's rule). */
+export async function aReasonThatTrimsShortStaysOnTheReasonStep(): Promise<void> {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("no fetch expected"))),
+  );
+  await renderPage();
+  await userEvent.click(within(rowFor("Voltage above limit")).getByRole("button", { name: "Ack" }));
+  const dialog = screen.getByRole("dialog");
+  await userEvent.type(within(dialog).getByLabelText("Reason (required)"), "ok ");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  expect(within(dialog).queryByRole("button", { name: "Submit" })).toBeNull();
+}
+
+/** `F4.284`: the reason sent is the trimmed one the Review card shows. */
+export async function theAckSendsTheTrimmedReason(): Promise<void> {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => Promise.reject(new Error("no fetch expected"))),
+  );
+  const ack = vi.spyOn(alarmsApi, "ackAlarm").mockRejectedValue(new Error("refused"));
+  await renderPage();
+  await userEvent.click(within(rowFor("Voltage above limit")).getByRole("button", { name: "Ack" }));
+  const dialog = screen.getByRole("dialog");
+  await userEvent.type(within(dialog).getByLabelText("Reason (required)"), "  Verified at panel  ");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+  expect(ack.mock.calls[0]?.[1]).toBe("Verified at panel");
 }

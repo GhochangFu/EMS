@@ -76,7 +76,7 @@ const user: AuthUser = {
 
 const ROW: WorkOrderListItem = {
   id: "0f4e1d2c-0000-4000-8000-000000000001",
-  assetId: "asset-1",
+  assetId: "0f4e1d2c-0000-4000-8000-0000000000a1",
   alarmId: null,
   title: "Replace pump bearing",
   description: null,
@@ -96,7 +96,7 @@ const ROW: WorkOrderListItem = {
 };
 
 const ASSET = {
-  id: "asset-1",
+  id: "0f4e1d2c-0000-4000-8000-0000000000a1",
   code: "PMP-01",
   name: "Pump One",
   siteName: "Plant A",
@@ -174,7 +174,10 @@ export async function aRefusedCreateShowsTheSentence(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "+ New WO" }));
   const dialog = await screen.findByRole("dialog", { name: "Create work order" });
   await userEvent.type(within(dialog).getByLabelText("Title"), "Check pump");
-  await userEvent.click(within(dialog).getByRole("button", { name: "Create" }));
+  // `F4.284`: Work → Assignment → Review on the shared `WizardShell`.
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
 
   await expectTheSentenceNotTheEnvelope(CREATE_SENTENCE);
 }
@@ -187,7 +190,8 @@ export async function aRefusedStatusChangeShowsTheSentence(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Edit" }));
   const dialog = await screen.findByRole("dialog", { name: "Edit status" });
   await userEvent.selectOptions(within(dialog).getByLabelText("New status"), "assigned");
-  await userEvent.click(within(dialog).getByRole("button", { name: "Save status" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
 
   await expectTheSentenceNotTheEnvelope(STATUS_SENTENCE);
 }
@@ -200,7 +204,8 @@ export async function aRefusedCloseShowsTheSentence(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Close" }));
   const dialog = await screen.findByRole("dialog", { name: "Close work order" });
   await userEvent.type(within(dialog).getByLabelText("Closure reason"), "Bearing replaced");
-  await userEvent.click(within(dialog).getByRole("button", { name: "Close work order" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
 
   await expectTheSentenceNotTheEnvelope(CLOSE_SENTENCE);
 }
@@ -305,4 +310,33 @@ export async function aFailedListReadSettles(): Promise<void> {
     await settle(() => commits);
   }
   expect(commits).toBeLessThanOrEqual(COMMIT_BOUND);
+}
+
+/** `F4.284` (ADR 0106 decision 2): the status wizard never offers `closed` — a close has its own wizard. */
+export async function theStatusWizardOffersNoClosed(): Promise<void> {
+  await renderPage();
+  await userEvent.click(screen.getByRole("button", { name: "Edit" }));
+  const dialog = await screen.findByRole("dialog", { name: "Edit status" });
+  const options = within(within(dialog).getByLabelText("New status")).getAllByRole("option").map((option) => (option as HTMLOptionElement).value);
+  expect(options).toEqual(["open", "assigned", "in_progress", "resolved"]);
+}
+
+/** `F4.284` (ADR 0106 decision 4): the close's Review card is red and says it cannot be undone. */
+export async function theCloseReviewSaysItCannotBeUndone(): Promise<void> {
+  await renderPage();
+  await userEvent.click(screen.getByRole("button", { name: "Close" }));
+  const dialog = await screen.findByRole("dialog", { name: "Close work order" });
+  await userEvent.type(within(dialog).getByLabelText("Closure reason"), "Bearing replaced");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  expect(within(dialog).getByText("This cannot be undone.")).toBeTruthy();
+}
+
+/** `F4.284`: a closure reason that trims below 3 characters stays on the Reason step. */
+export async function aCloseReasonThatTrimsShortStaysOnTheReasonStep(): Promise<void> {
+  await renderPage();
+  await userEvent.click(screen.getByRole("button", { name: "Close" }));
+  const dialog = await screen.findByRole("dialog", { name: "Close work order" });
+  await userEvent.type(within(dialog).getByLabelText("Closure reason"), "ok ");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  expect(within(dialog).queryByRole("button", { name: "Submit" })).toBeNull();
 }

@@ -1,10 +1,10 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useMemo, useState } from "react";
+import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { ackAlarm, fetchAlarmsPage } from "../api/alarms";
+import { fetchAlarmsPage } from "../api/alarms";
+import { AlarmAckWizard } from "../components/alarm-ack-wizard";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
-import { apiErrorMessage } from "../lib/api-error-message";
 import { alarmSeverityTone, summariseAlarmSeverities } from "../lib/alarm-severity";
 import {
   alarmLifecycleState,
@@ -97,8 +97,6 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [ackTarget, setAckTarget] = useState<AlarmListItem | null>(null);
-  const [reason, setReason] = useState("");
-  const [ackError, setAckError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [detailsTargetId, setDetailsTargetId] = useState<string | null>(null);
 
@@ -112,20 +110,6 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
   useAlarmsSocket(() => {
     void qc.invalidateQueries({ queryKey: ["alarms", "list"] });
     void qc.invalidateQueries({ queryKey: ["dashboard", "kpis"] });
-  });
-
-  const ackM = useMutation({
-    mutationFn: ({ id, r }: { id: string; r: string }) => ackAlarm(id, r),
-    onSuccess: () => {
-      setAckTarget(null);
-      setReason("");
-      setAckError(null);
-      void qc.invalidateQueries({ queryKey: ["alarms", "list"] });
-      void qc.invalidateQueries({ queryKey: ["dashboard", "kpis"] });
-    },
-    onError: (e: Error) => {
-      setAckError(apiErrorMessage(e));
-    },
   });
 
   const rows = listQ.data?.pages.flatMap((p) => p.items) ?? [];
@@ -189,15 +173,6 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
    * permanent and silent once the retries are exhausted.
    */
   const severityReady = vocabQ.isSuccess;
-
-  function submitAck(e: FormEvent): void {
-    e.preventDefault();
-    if (!ackTarget) {
-      return;
-    }
-    setAckError(null);
-    ackM.mutate({ id: ackTarget.id, r: reason.trim() });
-  }
 
   function startWorkOrder(alarm: AlarmListItem): void {
     const params = new URLSearchParams({
@@ -420,11 +395,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                           <button
                             type="button"
                             className="surface-button-primary bg-accent px-2.5 py-1 text-xs font-semibold text-on-accent hover:bg-accent-strong"
-                            onClick={() => {
-                              setAckTarget(a);
-                              setReason("");
-                              setAckError(null);
-                            }}
+                            onClick={() => setAckTarget(a)}
                           >
                             Ack
                           </button>
@@ -453,58 +424,17 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
       </div>
 
       {ackTarget ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="ack-title"
-        >
-          <div className="w-full max-w-md surface-dialog p-6">
-            <h2 id="ack-title" className="font-condensed text-lg font-bold">
-              Acknowledge alarm
-            </h2>
-            <p className="mt-1 text-xs text-ink-muted">{ackTarget.message}</p>
-            <form className="mt-4 space-y-3" onSubmit={submitAck}>
-              <div>
-                <label className="text-xs font-medium text-ink-muted" htmlFor="reason">
-                  Reason (required)
-                </label>
-                <textarea
-                  id="reason"
-                  className="mt-1 surface-field w-full px-3 py-2 text-sm"
-                  rows={3}
-                  value={reason}
-                  onChange={(ev) => setReason(ev.target.value)}
-                  placeholder="e.g. Verified at panel — transient spike"
-                  required
-                  minLength={3}
-                />
-              </div>
-              {ackError ? (
-                <p className="text-xs text-critical-ink" role="alert">
-                  {ackError}
-                </p>
-              ) : null}
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="surface-button px-3 py-2"
-                  onClick={() => setAckTarget(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={ackM.isPending || reason.trim().length < 3}
-                  aria-busy={ackM.isPending}
-                  className="surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
-                >
-                  {ackM.isPending ? "Saving…" : "Confirm ack"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <AlarmAckWizard
+          alarm={ackTarget}
+          onCancel={() => setAckTarget(null)}
+          onDone={async () => {
+            setAckTarget(null);
+            await Promise.all([
+              qc.invalidateQueries({ queryKey: ["alarms", "list"] }),
+              qc.invalidateQueries({ queryKey: ["dashboard", "kpis"] }),
+            ]);
+          }}
+        />
       ) : null}
 
       {detailsTargetId ? (

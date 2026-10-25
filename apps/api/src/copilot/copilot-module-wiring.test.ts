@@ -22,6 +22,9 @@ import {
   assertTheMaintenanceModuleExportsItsService,
   assertTheModuleImportsTheMaintenanceModule,
   assertTheReadToolsInjectTheMaintenanceService,
+  assertTheModuleImportsTheWorkOrdersModule,
+  assertTheReadToolsInjectTheWorkOrdersAndUsersServices,
+  assertTheWorkOrdersModuleProvidesTheAuditFunnel,
   assertTheProposeToolsInjectTheLayoutsService,
   assertTheResolverInjectsTheUsersServices,
 } from "./copilot-module-wiring.spec";
@@ -56,4 +59,8 @@ describe("F3.86 PR 4 — CopilotModule wiring for the user targets", () => {
   it("F4.281: the module imports MaintenanceModule", () => assertTheModuleImportsTheMaintenanceModule());
   it("F4.281: MaintenanceModule exports MaintenanceService", () => assertTheMaintenanceModuleExportsItsService());
   it("F4.281: the read tools inject MaintenanceService in slot 21", () => assertTheReadToolsInjectTheMaintenanceService());
+  it("F4.284: CopilotModule imports WorkOrdersModule, which exports its service", () => assertTheModuleImportsTheWorkOrdersModule());
+  it("F4.284: the read tools inject WorkOrdersService and UsersService in slots 22 and 23", () =>
+    assertTheReadToolsInjectTheWorkOrdersAndUsersServices());
+  it("F4.284: WorkOrdersModule provides MasterDataAuditService", () => assertTheWorkOrdersModuleProvidesTheAuditFunnel());
 });

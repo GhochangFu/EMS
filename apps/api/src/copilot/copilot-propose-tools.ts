@@ -49,6 +49,12 @@ import {
   PROPOSE_OUTWARD_NOT_ASKED_ERROR,
   PROPOSE_OUTWARD_ON_FOLLOW_UP_ERROR,
 } from "./copilot-outward-intent";
+import {
+  OPERATIONAL_ENTRY_IDS,
+  PROPOSE_OPERATIONAL_NOT_ASKED_ERROR,
+  PROPOSE_OPERATIONAL_ON_FOLLOW_UP_ERROR,
+} from "./copilot-operations-intent";
+import { checkOperations, OPERATIONS_ENTRY_IDS, operationsSummaryInput } from "./copilot-propose-operations";
 import { RuleProposalCheckService } from "../rules/rule-proposal-check.service";
 import { COPILOT_TARGETS, type CopilotTargets } from "./copilot-target-resolver";
 import { PROPOSE_TARGET_ERROR, templateLifecycleRefusal } from "./copilot-template-lifecycle";
@@ -146,6 +152,10 @@ const offeredToRole = (entry: CatalogEntry, role: string): boolean =>
  */
 const accessAsked = (ctx: CopilotToolContext): boolean => ctx.turnKind === "user" && ctx.accessIntent === true;
 
+/** `F4.284` (ADR 0106 decision 3): the same rule for an acknowledge or a close — a tool result cannot pre-fill one either. */
+const operationalAsked = (ctx: CopilotToolContext, entryId: string): boolean =>
+  ctx.turnKind === "user" && (ctx.operationalIntent ?? []).includes(entryId);
+
 /**
  * `F3.87` PR 7, plan D11: a layout card proposed from a file says so, so the
  * administrator checks the drawing against the original before Confirm.
@@ -172,7 +182,8 @@ function fillValuesSchema(entry: CatalogEntry, fields: readonly string[]): ZodTy
   if (entry.modelBody === undefined) return stepValuesSchema(entry.body, fields);
   const modelFields = new Set(bodyFieldsOf(entry.modelBody));
   const narrowed = fields.filter((field) => modelFields.has(field));
-  const rest = fields.filter((field) => !modelFields.has(field));
+  // `F4.284` (DC4): a field the model body leaves out on purpose is the page's alone; the strict merge refuses it.
+  const rest = fields.filter((field) => !modelFields.has(field) && !(entry.modelOmits ?? []).includes(field));
   return stepValuesSchema(entry.modelBody, narrowed).merge(stepValuesSchema(entry.body, rest)).strict();
 }
 
@@ -379,14 +390,19 @@ export function createCopilotProposeTools(
   const assetCreateTools = [...byTool].filter(([, entry]) => ASSET_CREATE_IDS.has(entry.id)).map(([name]) => name);
   // `F4.279` (D4): the channel test send is dropped unless the user's own message asked (absent: dropped).
   const outwardTools = [...byTool].filter(([, entry]) => OUTWARD_ENTRY_IDS.has(entry.id)).map(([name]) => name);
-  const registryFor = ({ access, role, assetCreate = true, outward = false }: RegistryOptions): ToolRegistry<string> => {
-    const key = `${access ? "access" : "no-access"}:${assetCreate ? "assets" : "no-assets"}:${outward ? "outward" : "no-outward"}:${role}`;
+  // `F4.284` (ADR 0106 decision 3): the acknowledge and the close are dropped unless the user's own message asked.
+  // Each by its own words: an asked acknowledge keeps the close dropped, and the other way round.
+  const operationalTools = [...byTool].filter(([, entry]) => OPERATIONAL_ENTRY_IDS.has(entry.id));
+  const registryFor = ({ access, role, assetCreate = true, outward = false, operational = [] }: RegistryOptions): ToolRegistry<string> => {
+    const kept = [...new Set(operational.filter((id) => OPERATIONAL_ENTRY_IDS.has(id)))].sort();
+    const key = `${access ? "access" : "no-access"}:${assetCreate ? "assets" : "no-assets"}:${outward ? "outward" : "no-outward"}:${kept.join(",")}:${role}`;
     const known = registries.get(key);
     if (known !== undefined) return known;
     const dropped = new Set([
       ...(access ? [] : accessTools),
       ...(assetCreate ? [] : assetCreateTools),
       ...(outward ? [] : outwardTools),
+      ...operationalTools.filter(([, entry]) => !kept.includes(entry.id)).map(([name]) => name),
       ...[...byTool].filter(([, entry]) => !offeredToRole(entry, role)).map(([name]) => name),
     ]);
     const made = registryWithout(dropped);
@@ -395,8 +411,8 @@ export function createCopilotProposeTools(
   };
   // The full registry keeps every tool for its existing callers (a spec, the definitions budget);
   // a turn always builds its own through `registryFor`.
-  const registry = registryFor({ access: true, role: "admin", outward: true });
-  const registryWithoutAccess = registryFor({ access: false, role: "admin", outward: true });
+  const registry = registryFor({ access: true, role: "admin", outward: true, operational: [...OPERATIONAL_ENTRY_IDS] });
+  const registryWithoutAccess = registryFor({ access: false, role: "admin", outward: true, operational: [...OPERATIONAL_ENTRY_IDS] });
 
   /**
    * `F3.87` PR 5 — a layout proposal's checks, in the order the owner ruled:
@@ -469,6 +485,9 @@ export function createCopilotProposeTools(
     // only when the user's own message asked (the registry also withholds the tool).
     if (OUTWARD_ENTRY_IDS.has(entry.id) && ctx.turnKind === "follow_up") return { ok: false, error: PROPOSE_OUTWARD_ON_FOLLOW_UP_ERROR };
     if (OUTWARD_ENTRY_IDS.has(entry.id) && ctx.outwardIntent !== true) return { ok: false, error: PROPOSE_OUTWARD_NOT_ASKED_ERROR };
+    // `F4.284` (ADR 0106 decision 3): an acknowledge or a close, the same two guards.
+    if (OPERATIONAL_ENTRY_IDS.has(entry.id) && ctx.turnKind === "follow_up") return { ok: false, error: PROPOSE_OPERATIONAL_ON_FOLLOW_UP_ERROR };
+    if (OPERATIONAL_ENTRY_IDS.has(entry.id) && !operationalAsked(ctx, entry.id)) return { ok: false, error: PROPOSE_OPERATIONAL_NOT_ASKED_ERROR };
     // `F3.87` PR 2 (Amendment 3 A1): the registry withholds the tool from another role; this is the second guard.
     if (!offeredToRole(entry, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
     // `F3.87` PR 7, plan D8: the registry withholds the creates on a file turn the words did not ask; the second guard.
@@ -563,6 +582,12 @@ export function createCopilotProposeTools(
       if (checked.note !== "") ruleNote = ` ${checked.note}`;
       cardBody = checked.cardBody;
     }
+    // `F4.284` (DC6): the route's own refusals, read from the target; a reorder's card-only moves (DC2).
+    if (OPERATIONS_ENTRY_IDS.has(entry.id)) {
+      const checked = checkOperations(entry, body, target);
+      if (!checked.ok) return checked;
+      cardBody = checked.cardBody;
+    }
     if (LAYOUT_ENTRY_IDS.has(entry.id)) {
       const checked = await checkLayout(entry, params, body, ctx);
       if (!checked.ok) return checked;
@@ -612,6 +637,7 @@ export function createCopilotProposeTools(
         ...(target.refName !== undefined ? { refName: target.refName } : {}),
         ...(target.usageCount !== undefined ? { usageCount: target.usageCount } : {}),
         ...(target.lifecycle !== undefined ? { lifecycle: target.lifecycle } : {}),
+        ...operationsSummaryInput(target),
       }) +
       ruleNote +
       (fromFile ? COPILOT_READ_FROM_FILE_NOTE : "");
@@ -653,6 +679,7 @@ export function createCopilotProposeTools(
         const target = byId.get(args.catalogId as string);
         if (target === undefined) return { ok: false, error: UNKNOWN_CHANGE_ERROR };
         if (target.risk === "access" && !accessAsked(ctx)) return { ok: false, error: PROPOSE_ACCESS_NOT_ASKED_ERROR };
+        if (OPERATIONAL_ENTRY_IDS.has(target.id) && !operationalAsked(ctx, target.id)) return { ok: false, error: PROPOSE_OPERATIONAL_NOT_ASKED_ERROR };
         if (!offeredToRole(target, ctx.identity.role)) return { ok: false, error: PROPOSE_ROLE_ERROR };
         // `F3.87` PR 7, D8: a file turn cannot pre-fill an asset wizard with what it read from the file either.
         if (ASSET_CREATE_IDS.has(target.id) && ctx.assetIntent === false) return { ok: false, error: PROPOSE_ASSET_NOT_ASKED_ERROR };

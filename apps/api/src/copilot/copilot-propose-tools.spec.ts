@@ -887,8 +887,8 @@ export function theAccessAndRoleFiltersCompose(): void {
   expect(names(true, "location_admin")).not.toContain(layout);
   expect(names(false, "location_admin")).not.toContain(access);
   expect(names(false, "location_admin")).not.toContain(layout);
-  expect(h.tools.registryFor({ access: true, role: "admin", outward: true })).toBe(h.tools.registry); // `F4.279`: outward kept
-  expect(h.tools.registryFor({ access: false, role: "admin", outward: true })).toBe(h.tools.registryWithoutAccess);
+  expect(h.tools.registryFor({ access: true, role: "admin", outward: true, operational: ["alarm.acknowledge", "workOrder.close"] })).toBe(h.tools.registry); // `F4.279` outward, `F4.284` operational
+  expect(h.tools.registryFor({ access: false, role: "admin", outward: true, operational: ["workOrder.close", "alarm.acknowledge"] })).toBe(h.tools.registryWithoutAccess);
 }
 
 /** Called anyway by a `location_admin`, the tool is refused by the second guard; nothing is resolved or stored. */

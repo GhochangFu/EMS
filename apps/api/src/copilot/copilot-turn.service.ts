@@ -44,6 +44,7 @@ import { onboardingDiscoveryCards, turnProposedDiscovery } from "./copilot-onboa
 import { CopilotPendingChangesService, type FinishedChange } from "./copilot-pending-changes.service";
 import { accessIntentOf } from "./copilot-access-intent";
 import { assetIntentOf } from "./copilot-asset-intent";
+import { operationalIntentOf } from "./copilot-operations-intent";
 import { outwardIntentOf, reportEmailIntentOf } from "./copilot-outward-intent";
 import {
   hasImageAttachment,
@@ -596,6 +597,9 @@ export class CopilotTurnService {
       outwardIntent: input.kind === "user" && attachments.length === 0 && outwardIntentOf(input.message),
       // `F4.280` (D4, Q3): report email, its own words and switch; a file turn never allows it (A7).
       reportEmailIntent: input.kind === "user" && attachments.length === 0 && reportEmailIntentOf(input.message),
+      // `F4.284` (ADR 0106 decision 3, DC3): an acknowledge or a close, from the user's own words alone (A7).
+      // Each entry by its own words (an ack word never allows a close).
+      operationalIntent: input.kind === "user" && attachments.length === 0 ? operationalIntentOf(input.message) : [],
       ...(attachments.length > 0 ? { attachments } : {}),
       historyHasAttachmentSinceLastLayout: historyHasAttachmentSinceLastLayout(recent),
       now: this.clock(),
@@ -617,6 +621,7 @@ export class CopilotTurnService {
         role: identity.role,
         assetCreate: ctx.assetIntent !== false,
         outward: ctx.outwardIntent === true,
+        operational: ctx.operationalIntent ?? [],
       }),
     );
     const result = await runAgentLoop({

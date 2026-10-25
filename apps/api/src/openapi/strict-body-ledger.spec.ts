@@ -105,20 +105,26 @@ import {
   updateRtuBodySchema,
 } from "../admin/rtus/rtus.schema";
 import { manualReadingsBodySchema } from "../admin/telemetry-entry/manual-readings.schema";
-import { alarmAckBodySchema } from "../alarms/ack.schema";
 import { alarmListQuerySchema, alarmSummaryQuerySchema } from "../alarms/alarm-list.schema";
-import { alarmEnrichmentUpsertBodySchema } from "../alarms/enrichment.schema";
 import { assetKpisQuerySchema, assetRoleSummaryQuerySchema } from "../assets/assets.schema";
 import { loginBodySchema } from "../auth/login.schema";
 import { mapSitesQuerySchema } from "../map/map.schema";
 import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import { siteWidgetsQuerySchema } from "../dashboard-builder/site-widgets.schema";
-import { convertMaintenanceBodySchema, listMaintenanceQuerySchema } from "../maintenance/maintenance.schema";
+import { listMaintenanceQuerySchema } from "../maintenance/maintenance.schema";
 import { escalationDefaultsQuerySchema } from "../notifications/escalation-profiles.schema";
 import { listDeliveriesQuerySchema } from "../notifications/notifications.schema";
 import { listReportFilesQuerySchema } from "../reports/report-files.schema";
-// `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`.
+// `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`;
+// `F4.284`: the alarm, work-order and convert bodies too.
 import {
+  alarmAckBodySchema,
+  alarmEnrichmentUpsertBodySchema,
+  closeWorkOrderBodySchema,
+  convertMaintenanceBodySchema,
+  createWorkOrderBodySchema,
+  reorderWorkOrdersBodySchema,
+  updateWorkOrderStatusBodySchema,
   createReportScheduleBodySchema,
   energyReportQuerySchema,
   saveEnergyReportFileBodySchema,
@@ -134,12 +140,6 @@ import {
   pointValuesAtQuerySchema,
 } from "../telemetry/telemetry.schema";
 import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "../rules/rules.schema";
-import {
-  closeWorkOrderBodySchema,
-  createWorkOrderBodySchema,
-  reorderWorkOrdersBodySchema,
-  updateWorkOrderStatusBodySchema,
-} from "../work-orders/work-order.schema";
 
 import { REQUEST_SCHEMAS } from "./openapi-registry";
 

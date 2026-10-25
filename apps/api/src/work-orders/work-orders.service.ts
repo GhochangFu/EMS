@@ -4,29 +4,44 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, type SQL } from "drizzle-orm";
 
-import { alarms, assets, auditLog, workOrders } from "@bms/db";
+import { alarms, assets, workOrders } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
+  CloseWorkOrderBody,
+  CreateWorkOrderBody,
   JwtPayload,
+  ReorderWorkOrdersBody,
+  UpdateWorkOrderStatusBody,
   WorkOrderListItem,
   WorkOrderPriority,
   WorkOrderStatus,
 } from "@bms/shared";
 
+import {
+  type AuditInput,
+  MasterDataAuditService,
+} from "../admin/master-data-audit.service";
 import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
-import type {
-  CloseWorkOrderBody,
-  CreateWorkOrderBody,
-  ReorderWorkOrdersBody,
-  UpdateWorkOrderStatusBody,
-} from "./work-order.schema";
 
 const terminalStatuses = new Set<WorkOrderStatus>(["closed"]);
+
+/** `F4.284` (owner ruling DC7): read options a route query cannot set — the copilot's `list_work_orders`. */
+export type WorkOrderListOptions = {
+  /** A case-insensitive title substring, applied in the SQL before the row limit (the `F4.281` lesson). */
+  readonly titleSearch?: string;
+  /** One status only, in the SQL before the row limit. */
+  readonly status?: WorkOrderStatus;
+};
+
+/** A substring `ILIKE` pattern with `\`, `%` and `_` escaped, so the search is literal text. */
+export function workOrderTitlePattern(search: string): string {
+  return `%${search.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+}
 
 /**
  * `E7.1b` (ADR 0043 §5, decisions 1+3) — `work_orders` gained an
@@ -61,6 +76,10 @@ export class WorkOrdersService {
   constructor(
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
+    // `F4.284` (ADR 0106 decision 7): every write audits through the funnel, in the write's own
+    // `tx`, so a confirmed copilot change carries its `via: "copilot"` mark.
+    @Inject(MasterDataAuditService)
+    private readonly audit: MasterDataAuditService,
   ) {}
 
   private mapRow(r: {
@@ -152,7 +171,9 @@ export class WorkOrdersService {
       );
     }
     if (new Set(orgs).size !== 1) {
-      throw new BadRequestException(`A ${op} must stay within a single organization`);
+      throw new BadRequestException(
+        `A ${op} must stay within a single organization`,
+      );
     }
     return orgs[0] as string;
   }
@@ -211,8 +232,13 @@ export class WorkOrdersService {
    * `updateStatus`'s existence/terminal check, which runs before the org is
    * resolved — a NULL-org row must 404 here, not 400 from `resolveWorkOrderOrg`.
    */
-  private getById(id: string, assetIds?: string[] | null): Promise<WorkOrderListItem> {
-    return this.fleetDb.transaction((tx) => this.readWorkOrderById(tx, id, assetIds));
+  private getById(
+    id: string,
+    assetIds?: string[] | null,
+  ): Promise<WorkOrderListItem> {
+    return this.fleetDb.transaction((tx) =>
+      this.readWorkOrderById(tx, id, assetIds),
+    );
   }
 
   /**
@@ -235,11 +261,21 @@ export class WorkOrdersService {
   }
 
   /** Lists recent work orders for the Sprint A API. */
-  async list(opts: {
-    limit: number;
-    assetIds?: string[] | null;
-  }): Promise<{ items: WorkOrderListItem[] }> {
+  async list(
+    opts: {
+      limit: number;
+      assetIds?: string[] | null;
+    },
+    options: WorkOrderListOptions = {},
+  ): Promise<{ items: WorkOrderListItem[] }> {
     const limit = Math.min(100, Math.max(1, opts.limit));
+    const filters: SQL[] = [
+      ...(opts.assetIds ? [inArray(workOrders.assetId, opts.assetIds)] : []),
+      ...(options.titleSearch
+        ? [ilike(workOrders.title, workOrderTitlePattern(options.titleSearch))]
+        : []),
+      ...(options.status ? [eq(workOrders.status, options.status)] : []),
+    ];
     return withReadScope(
       this.db,
       this.fleetDb,
@@ -269,24 +305,15 @@ export class WorkOrdersService {
           })
           .from(workOrders)
           .innerJoin(assets, eq(workOrders.assetId, assets.id));
-        const rows = await (opts.assetIds
-          ? base
-              .where(inArray(workOrders.assetId, opts.assetIds))
-              .orderBy(
-                asc(workOrders.status),
-                asc(workOrders.sortOrder),
-                desc(workOrders.createdAt),
-                desc(workOrders.id),
-              )
-              .limit(limit)
-          : base
-              .orderBy(
-                asc(workOrders.status),
-                asc(workOrders.sortOrder),
-                desc(workOrders.createdAt),
-                desc(workOrders.id),
-              )
-              .limit(limit));
+        const rows = await base
+          .where(filters.length > 0 ? and(...filters) : undefined)
+          .orderBy(
+            asc(workOrders.status),
+            asc(workOrders.sortOrder),
+            desc(workOrders.createdAt),
+            desc(workOrders.id),
+          )
+          .limit(limit);
         return { items: rows.map((row) => this.mapRow(row)) };
       },
     );
@@ -299,7 +326,9 @@ export class WorkOrdersService {
     assetIds?: string[] | null,
   ): Promise<WorkOrderListItem> {
     if (assetIds && !assetIds.includes(dto.assetId)) {
-      throw new NotFoundException("Asset not found or outside your access scope");
+      throw new NotFoundException(
+        "Asset not found or outside your access scope",
+      );
     }
     const [asset] = await this.fleetDb
       .select({ id: assets.id, organizationId: assets.organizationId })
@@ -359,20 +388,23 @@ export class WorkOrdersService {
       // E7.1c (item D): folded into this transaction (was a separate
       // `this.db.insert` after it closed) so the stamped organizationId
       // matches the GUC the strict WITH CHECK now demands.
-      await tx.insert(auditLog).values({
-        organizationId,
-        actorId,
-        action: "work_order_create",
-        entityType: "work_order",
-        entityId: created.id,
-        reason: "Work order created",
-        payload: {
-          assetId: dto.assetId,
-          alarmId: dto.alarmId ?? null,
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
+      await this.audit.write(
+        {
+          actor,
+          organizationId,
+          action: "work_order_create",
+          entityType: "work_order",
+          entityId: created.id,
+          reason: "Work order created",
+          payload: {
+            assetId: dto.assetId,
+            alarmId: dto.alarmId ?? null,
+            oidcSubject: actor.sub,
+            actorEmail: actor.email,
+          },
         },
-      });
+        tx,
+      );
       return created.id;
     });
 
@@ -393,7 +425,6 @@ export class WorkOrdersService {
 
     const organizationId = await this.resolveWorkOrderOrg(id, assetIds);
     const now = new Date();
-    const actorId = await this.resolveActorId(actor);
     await withTenant(this.db, organizationId, async (tx) => {
       await tx
         .update(workOrders)
@@ -407,21 +438,24 @@ export class WorkOrdersService {
         })
         .where(eq(workOrders.id, id));
 
-      await tx.insert(auditLog).values({
-        organizationId,
-        actorId,
-        action: "work_order_status_update",
-        entityType: "work_order",
-        entityId: id,
-        reason: dto.reason ?? `Status changed to ${dto.status}`,
-        payload: {
-          fromStatus: current.status,
-          toStatus: dto.status,
-          sortOrder: dto.sortOrder ?? current.sortOrder,
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
+      await this.audit.write(
+        {
+          actor,
+          organizationId,
+          action: "work_order_status_update",
+          entityType: "work_order",
+          entityId: id,
+          reason: dto.reason ?? `Status changed to ${dto.status}`,
+          payload: {
+            fromStatus: current.status,
+            toStatus: dto.status,
+            sortOrder: dto.sortOrder ?? current.sortOrder,
+            oidcSubject: actor.sub,
+            actorEmail: actor.email,
+          },
         },
-      });
+        tx,
+      );
     });
 
     return this.readBackWorkOrder(id, organizationId, assetIds);
@@ -454,7 +488,9 @@ export class WorkOrdersService {
     const ids = dto.items.map((item) => item.id);
     const uniqueIds = new Set(ids);
     if (uniqueIds.size !== ids.length) {
-      throw new BadRequestException("Duplicate work order ids in reorder request");
+      throw new BadRequestException(
+        "Duplicate work order ids in reorder request",
+      );
     }
 
     const currentRows = await this.fleetDb
@@ -495,8 +531,9 @@ export class WorkOrdersService {
     }
 
     const now = new Date();
-    const actorId = await this.resolveActorId(actor);
     await withTenant(this.db, organizationId, async (tx) => {
+      // One actor lookup and one insert for the whole batch (`writeMany`), not one per moved item.
+      const audits: AuditInput[] = [];
       for (const item of dto.items) {
         const currentStatus = currentById.get(item.id);
         await tx
@@ -510,9 +547,9 @@ export class WorkOrdersService {
           .where(eq(workOrders.id, item.id));
 
         if (currentStatus && currentStatus !== item.status) {
-          await tx.insert(auditLog).values({
+          audits.push({
+            actor,
             organizationId,
-            actorId,
             action: "work_order_status_update",
             entityType: "work_order",
             entityId: item.id,
@@ -528,9 +565,9 @@ export class WorkOrdersService {
         }
       }
 
-      await tx.insert(auditLog).values({
+      audits.push({
+        actor,
         organizationId,
-        actorId,
         action: "work_order_reorder",
         entityType: "work_order",
         entityId: null,
@@ -541,6 +578,7 @@ export class WorkOrdersService {
           actorEmail: actor.email,
         },
       });
+      await this.audit.writeMany(audits, tx);
     });
 
     // E7.1c: the N post-write read-backs run in ONE additional tenant

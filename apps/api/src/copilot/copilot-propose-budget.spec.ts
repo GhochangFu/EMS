@@ -29,15 +29,16 @@ import { proposeHarness } from "./copilot-propose-tools.spec";
  * `F4.266` (C6): the layout body guide on both layout tools, 48,027 before, 49,745 after.
  *
  * Owner ruling 2026-10-23 (release 4): the measured size rounded up to the next thousand, plus 1,000
- * (74,000 until `F4.281`; 77,000 until `F4.283`; 79,000 since). Measured per row:
+ * (74,000 until `F4.281`; 77,000 until `F4.283`; 79,000 until `F4.284`; 84,000 since). Measured per row:
  * - `F4.282` measured 53,985;
  * - `F4.278` measured 60,492;
  * - `F4.279` measured 68,366;
  * - `F4.280` measured 72,289;
  * - `F4.281` measured 75,145;
  * - Owner ruling 2026-10-23 (release 4): F4.283 measured 77,677.
+ * - Owner ruling 2026-10-23 (release 4): F4.284 measured 82,904.
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();
-  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(79_000);
+  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(84_000);
 }

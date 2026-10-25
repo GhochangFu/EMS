@@ -7,8 +7,8 @@ import { maintenanceGenerationModeSchema, maintenanceScheduleCategorySchema, wor
  * maintenance schedule write routes (`apps/api/src/maintenance/maintenance.controller.ts`),
  * moved here from `apps/api/src/maintenance/maintenance.schema.ts` so the
  * copilot catalog entries carry the route's own body by identity. The API
- * schema file keeps the list query, the convert body (an excluded route) and
- * the priority drift guard, and re-exports these under their old names.
+ * schema file keeps the list query and the priority drift guard (the convert
+ * body joined this file in `F4.284`), and re-exports these under their old names.
  *
  * Plain `z.object`s (the `rule-writes.ts` pattern): no `.merge()`, no
  * `.omit().extend()` — `tests/adr-0030-contract-derivation.test.ts` scans for
@@ -66,6 +66,18 @@ export const copilotActivateMaintenanceScheduleModelBodySchema = z
   })
   .strict();
 
+/**
+ * `F4.284` (ADR 0106 decision 5, ADR 0030): `POST /maintenance/schedules/:id/convert`,
+ * moved here from `apps/api/src/maintenance/maintenance.schema.ts` when the route
+ * became the catalog entry `maintenanceSchedule.convert`.
+ */
+export const convertMaintenanceBodySchema = z
+  .object({
+    notes: z.string().min(3).max(2000).optional(),
+  })
+  .strict();
+
+export type ConvertMaintenanceBody = z.infer<typeof convertMaintenanceBodySchema>;
 export type CreateMaintenanceScheduleBody = z.infer<typeof createMaintenanceScheduleBodySchema>;
 /** What a caller sends: the defaulted fields may be left out. */
 export type CreateMaintenanceScheduleInput = z.input<typeof createMaintenanceScheduleBodySchema>;

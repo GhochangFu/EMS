@@ -14,6 +14,7 @@ import {
 import { ZodError, z } from "zod";
 
 import {
+  convertMaintenanceBodySchema,
   createMaintenanceScheduleBodySchema,
   type JwtPayload,
   updateMaintenanceScheduleBodySchema,
@@ -22,10 +23,7 @@ import {
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import {
-  convertMaintenanceBodySchema,
-  listMaintenanceQuerySchema,
-} from "./maintenance.schema";
+import { listMaintenanceQuerySchema } from "./maintenance.schema";
 import { MaintenanceService } from "./maintenance.service";
 
 const idParamSchema = z.string().uuid();

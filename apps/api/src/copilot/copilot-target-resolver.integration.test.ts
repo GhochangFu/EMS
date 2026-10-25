@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
@@ -54,6 +56,7 @@ import {
   RESOLVER_NAMES,
   type ResolverCtx,
   theNewRefKindsBelongToTheOrganization,
+  anAssigneeIsReadUnderTheTenantAndNamed,
 } from "./copilot-target-resolver.integration.spec";
 
 const connectionString = requireIntegrationDb({
@@ -74,9 +77,14 @@ const superuserConnectionString = requireIntegrationDb({
 
 const FAMILY = `F386-RESOLVER-${Date.now()}`;
 const FAMILY_PATTERN = "F386-RESOLVER-%";
-/** `F4.282`: the vocabulary rows, one code per run (the tables are fleet-wide). */
-const LOCATION_TYPE_CODE = `f4282_${Date.now()}`;
-const ASSET_ROLE_CODE = `f4282-role-${Date.now()}`;
+/**
+ * `F4.282`: the vocabulary rows, one code per run (the tables are fleet-wide). A
+ * randomUUID suffix, so a concurrent instance of this file never shares a row.
+ */
+const LOCATION_TYPE_CODE = `f4282_${randomUUID().replace(/-/g, "").slice(0, 10)}`;
+const ASSET_ROLE_CODE = `f4282-role-${randomUUID().replace(/-/g, "").slice(0, 10)}`;
+/** `F4.279`: the two channel codes, per run for the same reason. */
+const CHANNEL_RUN = randomUUID().replace(/-/g, "").slice(0, 10);
 /** Child tables first; each keyed by `organization_id` except the two joined through their parent. */
 const CLEANUP = [
   "DELETE FROM bms.asset_group_members WHERE asset_group_id IN (SELECT id FROM bms.asset_groups WHERE organization_id = ANY($1))",
@@ -97,6 +105,8 @@ const CLEANUP = [
   "DELETE FROM bms.asset_templates WHERE organization_id = ANY($1)",
   "DELETE FROM bms.mimic_layouts WHERE organization_id = ANY($1)",
   "DELETE FROM bms.locations WHERE organization_id = ANY($1)",
+  // `F4.284`: the assignee fixtures (`bms.users`, FORCE RLS), before their organizations.
+  "DELETE FROM bms.users WHERE organization_id = ANY($1)",
   "DELETE FROM bms.organizations WHERE id = ANY($1)",
 ];
 
@@ -123,13 +133,20 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       [FAMILY_PATTERN],
     );
     for (const statement of CLEANUP) await superPool.query(statement, [stale.map((row) => row.id)]);
-    // `F4.282`: a killed run's vocabulary rows, once no location uses them.
+    // `F4.282`: a killed run's vocabulary rows, once no location uses them. Bounded by
+    // age, the organizations' rule: a live instance's rows are younger than 30 minutes.
     await superPool.query(
-      "DELETE FROM bms.location_types t WHERE t.code LIKE 'f4282%' AND NOT EXISTS (SELECT 1 FROM bms.locations l WHERE l.type = t.code)",
+      "DELETE FROM bms.location_types t WHERE t.code LIKE 'f4282%' AND t.created_at < now() - interval '30 minutes' " +
+        "AND NOT EXISTS (SELECT 1 FROM bms.locations l WHERE l.type = t.code)",
     );
-    await superPool.query("DELETE FROM bms.asset_roles WHERE code LIKE 'f4282-role-%'");
-    // `F4.279`: a killed run's fleet-wide channel.
-    await superPool.query("DELETE FROM bms.notification_channels WHERE organization_id IS NULL AND code LIKE 'f4279-resolver-%'");
+    await superPool.query("DELETE FROM bms.asset_roles WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'", [
+      "f4282-role-%",
+    ]);
+    // `F4.279`: a killed run's fleet-wide channel, bounded by age the same way.
+    await superPool.query(
+      "DELETE FROM bms.notification_channels WHERE organization_id IS NULL AND code LIKE 'f4279-resolver-%' " +
+        "AND created_at < now() - interval '30 minutes'",
+    );
 
     const one = async (text: string, values: unknown[]): Promise<string> => {
       const { rows } = await superPool.query<{ id: string }>(text, values);
@@ -153,6 +170,15 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
 
     const orgA = await organization("A", RESOLVER_NAMES.orgA);
     const orgB = await organization("B", "F3.86 resolver B");
+    // `F4.284` (DC1): an assignee of each organization.
+    const user = (organizationId: string, suffix: string, name: string) =>
+      one("INSERT INTO bms.users (organization_id, email, display_name, role) VALUES ($1, $2, $3, 'operator') RETURNING id", [
+        organizationId,
+        `${FAMILY.toLowerCase()}-${suffix}@example.test`,
+        name,
+      ]);
+    const userA = await user(orgA, "assignee-a", RESOLVER_NAMES.userA);
+    const userB = await user(orgB, "assignee-b", "F4.284 assignee B");
     const locationA = await location(orgA, "a", RESOLVER_NAMES.locationA);
     const locationA2 = await location(orgA, "a2", "F3.86 site A2");
     const locationB = await location(orgB, "b", "F3.86 site B");
@@ -197,8 +223,8 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
           "VALUES ($1, $2, $3, (SELECT code FROM bms.notification_channel_kinds WHERE active ORDER BY code LIMIT 1), '{}'::jsonb, true) RETURNING id",
         [org, code, name],
       );
-    const channelA = await channel(orgA, `f4279-resolver-a-${Date.now()}`, "F4.279 channel A");
-    const fleetChannel = await channel(null, `f4279-resolver-${Date.now()}`, "F4.279 fleet channel");
+    const channelA = await channel(orgA, `f4279-resolver-a-${CHANNEL_RUN}`, "F4.279 channel A");
+    const fleetChannel = await channel(null, `f4279-resolver-${CHANNEL_RUN}`, "F4.279 fleet channel");
     // `F4.280`: a report schedule of A, stamped with locationA.
     const scheduleA = await one(
       "INSERT INTO bms.report_schedules (organization_id, name, template_id, formats, cadence, run_at_local, timezone, location_ids, next_run_at) " +
@@ -291,6 +317,8 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       assetB,
       ruleA,
       ruleB,
+      userA,
+      userB,
     };
   });
 
@@ -332,6 +360,8 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("needs the dashboard check for a site layout (ruling Q7(b))", () => aSiteLayoutNeedsTheDashboardCheckToo(ctx));
   it("refuses a location create by a location admin", () => aLocationCreateRefusesALocationAdmin(ctx));
   it("keeps the new ref kinds inside the organization", () => theNewRefKindsBelongToTheOrganization(ctx));
+  it("F4.284: reads an assignee under the tenant, names it, and refuses another organization's", () =>
+    anAssigneeIsReadUnderTheTenantAndNamed(ctx));
   it("resolves a user target through the users service (PR 4)", () => aUserTargetUsesTheUsersServicesChecks(ctx));
   it("resolves a grant through the grants service (PR 4)", () => aGrantTargetUsesTheGrantsServicesChecks(ctx));
   it("runs the route's manager checks for a user create (PR 4)", () => aUserCreateRunsTheRoutesManagerChecks(ctx));

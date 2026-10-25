@@ -166,6 +166,8 @@ const PAGE_WIZARDS: readonly PageWizards[] = [
   { template: "/reports", wizards: [{ catalogId: "reportSchedule.create" }, { catalogId: "reportFile.save" }] },
   // `F4.281` (Amendment 8 Q16): the Schedule Centre's create stepper.
   { template: "/maintenance-schedules", wizards: [{ catalogId: "maintenanceSchedule.create" }] },
+  // `F4.284` (ADR 0106): the work-orders board mounts the create wizard; the row wizards name a work order by its id, which no route parameter carries.
+  { template: "/work-orders", wizards: [{ catalogId: "workOrder.create" }] },
   // `F4.283` (Amendment 8): the import page's commit wizard and the manual-entry wizard.
   { template: "/admin/telemetry/import", wizards: [{ catalogId: "telemetry.import" }] },
   { template: "/admin/manual-readings", wizards: [{ catalogId: "telemetryReading.create" }] },

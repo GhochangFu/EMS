@@ -1,6 +1,8 @@
 import { describe, it, vi } from "vitest";
 
 import {
+  anAckWithAnotherReasonIs409AndReleased,
+  anAckWithItsReasonIsApplied,
   aClientOnlyValueBesideTheStoredBodyMatches,
   aRoutesOwnConflictKeepsItsSentence,
   aFailedChangeStartsAFollowUpToo,
@@ -141,4 +143,9 @@ describe("F4.247 — the Confirm binds If-Match (ADR 0099 Amendment 5 C2)", () =
     aPreconditionWithAnotherIfMatchIs409AndReleased());
   it("applies a precondition change whose quoted If-Match names it", () => aPreconditionWithItsIfMatchIsApplied());
   it("ignores If-Match on a change with no precondition", () => noPreconditionIgnoresTheIfMatch());
+});
+
+describe("F4.284 — the reason is in the hash (ADR 0106 decision 3)", () => {
+  it("refuses and releases an acknowledge sent with another reason", () => anAckWithAnotherReasonIs409AndReleased());
+  it("applies an acknowledge sent with the reason the card showed", () => anAckWithItsReasonIsApplied());
 });

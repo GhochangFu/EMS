@@ -115,10 +115,28 @@ export function aDirectionSummaryQuotesItsReason(): void {
   expect(summary("maintenanceSchedule.deactivate", { body: { active: false, reason: "Plant shut" } })).toContain('Reason: "Plant shut".');
 }
 
-/** Amendment 8 "Not in this amendment": the convert creates a work order and is excluded. */
-export function theConvertIsExcluded(): void {
-  const maintenance = EXCLUDED_ROUTES.filter((route) => route.path.startsWith("/maintenance/"));
-  expect(maintenance).toEqual([
-    { method: "POST", path: "/maintenance/schedules/:id/convert", reason: "creates a work order; ADR 0099 decision 1" },
-  ]);
+/** `F4.284` (ADR 0106 decision 5, Q6): the convert left the exclusion list; no maintenance route is excluded now. */
+export function theConvertIsNoLongerExcluded(): void {
+  expect(EXCLUDED_ROUTES.filter((route) => route.path.startsWith("/maintenance/"))).toEqual([]);
+}
+
+/** ADR 0106 decision 5 and owner ruling DC5: the convert is a create, on the `operational` convert target. */
+export function theConvertIsACreateOnTheConvertTarget(): void {
+  const convert = entry("maintenanceSchedule.convert");
+  expect({ method: convert.method, path: convert.path, risk: convert.risk, target: convert.target, bodyName: convert.bodyName }).toEqual({
+    method: "POST",
+    path: "/maintenance/schedules/:id/convert",
+    risk: "create",
+    target: { kind: "maintenanceScheduleConvert", param: "id" },
+    bodyName: "convertMaintenanceBodySchema",
+  });
+}
+
+/** The convert card names the schedule, its asset and that a work order is created. */
+export function theConvertSummaryNamesTheScheduleAndTheWorkOrder(): void {
+  const text = summary("maintenanceSchedule.convert", {
+    body: { notes: "Due this week" },
+    workOrder: { title: "Quarterly filter check", status: "open", assetName: "AHU 4" },
+  });
+  for (const part of ['"Chiller 2"', "AHU 4", "Create a work order", 'Notes: "Due this week".']) expect(text, part).toContain(part);
 }

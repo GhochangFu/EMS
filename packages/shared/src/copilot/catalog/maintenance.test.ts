@@ -5,7 +5,9 @@ import {
   eachDirectionFixesActiveInItsModelBody,
   eachDirectionHasAReasonStep,
   noEntryTakesAPrecondition,
-  theConvertIsExcluded,
+  theConvertIsACreateOnTheConvertTarget,
+  theConvertIsNoLongerExcluded,
+  theConvertSummaryNamesTheScheduleAndTheWorkOrder,
   theCreateSummaryNamesSafetyAndCompliance,
   theCreateSummaryNamesTheSchedule,
   theCreateSummaryOmitsSafetyAndComplianceWhenAbsent,
@@ -28,5 +30,7 @@ describe("F4.281 — maintenance schedule catalog entries (ADR 0099 Amendment 8)
   it("the create summary names neither when both are absent", () => theCreateSummaryOmitsSafetyAndComplianceWhenAbsent());
   it("the direction summaries name the effect (DC5)", () => theDirectionSummariesNameTheEffect());
   it("a direction summary quotes its reason", () => aDirectionSummaryQuotesItsReason());
-  it("the convert route is excluded", () => theConvertIsExcluded());
+  it("F4.284: no maintenance route is excluded now (ADR 0106 Q6)", () => theConvertIsNoLongerExcluded());
+  it("F4.284: the convert is a create on the convert target (DC5)", () => theConvertIsACreateOnTheConvertTarget());
+  it("F4.284: the convert summary names the schedule, its asset and the work order", () => theConvertSummaryNamesTheScheduleAndTheWorkOrder());
 });

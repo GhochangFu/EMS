@@ -127,6 +127,10 @@ export async function aRefusedConvertShowsTheSentence(): Promise<void> {
   await renderPanel();
 
   await userEvent.click(screen.getByRole("button", { name: "Generate WO" }));
+  // `F4.284` (ADR 0106 decision 5): Notes → Review on the shared `WizardShell`.
+  const dialog = await screen.findByRole("dialog", { name: "Generate a work order" });
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
 
   await expectTheSentenceNotTheEnvelope(CONVERT_SENTENCE);
 }

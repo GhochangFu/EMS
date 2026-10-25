@@ -13,6 +13,7 @@ import {
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AlarmDetailsService } from "./alarm-details.service";
 import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { createFixtureAssets, fixtureLocation } from "../testing/integration-fixtures";
@@ -409,7 +410,7 @@ export async function assertEnrichmentUpsertCreatesThenUpdates(db: BmsDb): Promi
     const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_CREATE_UPDATE");
     const actor = await firstSeededUser(tx);
-    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx));
+    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx), new MasterDataAuditService(tx, tx));
 
     await svc.upsert(alarmId, actor, { rootCause: "first" }, null);
     await svc.upsert(alarmId, actor, { rootCause: "second" }, null);
@@ -434,7 +435,7 @@ export async function assertEnrichmentUpsertTimestampsBehaveOnUpdate(db: BmsDb):
     const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_TIMESTAMPS");
     const actor = await firstSeededUser(tx);
-    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx));
+    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx), new MasterDataAuditService(tx, tx));
 
     await svc.upsert(alarmId, actor, { rootCause: "v1" }, null);
     const [before] = await tx
@@ -476,7 +477,7 @@ export async function assertEnrichmentUpsertRejectsUnknownSkill(db: BmsDb): Prom
     const [assetId] = await createFixtureAssets(tx, 1, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_BAD_SKILL");
     const actor = await firstSeededUser(tx);
-    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx));
+    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx), new MasterDataAuditService(tx, tx));
 
     let rejected = false;
     try {
@@ -500,7 +501,7 @@ export async function assertEnrichmentUpsertRejectsOutOfScopeAffectedAsset(db: B
     const [assetId, outOfScopeAsset] = await createFixtureAssets(tx, 2, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_SCOPE_AFFECTED");
     const actor = await firstSeededUser(tx);
-    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx));
+    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx), new MasterDataAuditService(tx, tx));
 
     let rejected = false;
     try {
@@ -526,7 +527,7 @@ export async function assertEnrichmentUpsertReplacesAffectedAssetSet(db: BmsDb):
     const [assetId, otherAsset] = await createFixtureAssets(tx, 2, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_REPLACE_AFFECTED");
     const actor = await firstSeededUser(tx);
-    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx));
+    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx), new MasterDataAuditService(tx, tx));
 
     await svc.upsert(alarmId, actor, { affectedAssetIds: [assetId, otherAsset] }, null);
     await svc.upsert(alarmId, actor, { affectedAssetIds: [assetId] }, null);
@@ -557,7 +558,7 @@ export async function assertEnrichmentUpsertScopedByAssetIds(db: BmsDb): Promise
     const [assetId, otherAssetId] = await createFixtureAssets(tx, 2, "E21");
     const alarmId = await insertTestAlarm(tx, assetId, "E21_TEST_UPSERT_SCOPE_ALARM");
     const actor = await firstSeededUser(tx);
-    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx));
+    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx), new MasterDataAuditService(tx, tx));
 
     let notFound = false;
     try {
@@ -586,7 +587,7 @@ export async function assertEnrichmentUpsertDeleteScopedToCallerAccess(db: BmsDb
     const { organizationId } = location;
     const actor = await firstSeededUser(tx);
     const callerScope = [assetId, inScopeAffected];
-    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx));
+    const svc = new AlarmEnrichmentService(tx, tx, new VocabulariesService(tx), new MasterDataAuditService(tx, tx));
 
     // Seed both an in-scope and an out-of-scope affected asset directly —
     // bypassing the service's own insert-side scope check, the way a prior

@@ -67,6 +67,9 @@ export type ResolverCtx = {
   /** `F4.281`: a maintenance schedule of A on `assetA`, and its template's title. */
   maintenanceScheduleA: string;
   maintenanceTitleA: string;
+  /** `F4.284` (DC1): a user of A (named `RESOLVER_NAMES.userA`) and a user of B. */
+  userA: string;
+  userB: string;
 };
 
 /** `locationA` carries a stored `builtin` view (`site_control_room_views`); `locationA2` carries none. */
@@ -78,6 +81,7 @@ export const RESOLVER_NAMES = {
   groupA: "F3.86 group A",
   assetTemplateA: "F4.254 asset template A",
   mimicLayoutA: "F3.87 layout A",
+  userA: "F4.284 assignee A",
 } as const;
 
 type Call = [string, ...unknown[]];
@@ -876,4 +880,17 @@ export async function aMaintenanceScheduleOfAnotherOrganizationIsNotFound(ctx: R
     ctx.maintenanceTitleA,
   );
   expect(await r.resolve(entry, { id: ctx.maintenanceScheduleA }, { active: false }, [ctx.orgB], JWT)).toBeNull();
+}
+
+/**
+ * `F4.284` (owner ruling DC1) — an `assignedTo` ref on a real database, as `bms_tenant`: `bms.users`
+ * carries FORCE ROW LEVEL SECURITY, so a read outside the change's tenant finds no row. A user of A
+ * resolves and is the target's `refName` (the card's "assigned to"); a user of B is refused beside it.
+ */
+export async function anAssigneeIsReadUnderTheTenantAndNamed(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  const entry = fixture({ kind: "location", param: "id" }, [{ field: "assignedTo", kind: "user" }]);
+  const at = (assignedTo: string) => r.resolve(entry, { id: ctx.locationA }, { assignedTo }, [ctx.orgA, ctx.orgB], JWT);
+  expect((await at(ctx.userA))?.refName).toBe(RESOLVER_NAMES.userA);
+  expect(await at(ctx.userB)).toBeNull();
 }

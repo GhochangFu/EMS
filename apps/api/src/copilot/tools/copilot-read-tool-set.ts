@@ -13,6 +13,8 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { DashboardService } from "../../dashboard/dashboard.service";
 import { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import { MaintenanceService } from "../../maintenance/maintenance.service";
+import { UsersService } from "../../admin/users/users.service";
+import { WorkOrdersService } from "../../work-orders/work-orders.service";
 import { defineToolRegistry, type ToolRegistry } from "../../llm/tool-registry";
 import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
@@ -55,6 +57,8 @@ import { listRulesTool } from "./list-rules.tool";
 import { listNotificationChannelsTool } from "./list-notification-channels.tool";
 import { listEscalationProfilesTool } from "./list-escalation-profiles.tool";
 import { listMaintenanceSchedulesTool } from "./list-maintenance-schedules.tool";
+import { listUsersTool } from "./list-users.tool";
+import { listWorkOrdersTool } from "./list-work-orders.tool";
 import { listReportSchedulesTool } from "./list-report-schedules.tool";
 import { openPageTool } from "./open-page.tool";
 
@@ -102,6 +106,9 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   listReportSchedulesTool,
   // `F4.281` (Amendment 8 D7, owner ruling DC4): after the report schedules, before `open_page`.
   listMaintenanceSchedulesTool,
+  // `F4.284` (ADR 0106; owner rulings DC1, DC7): the ids a work-order change names, and its assignee.
+  listWorkOrdersTool,
+  listUsersTool,
   openPageTool,
 ];
 
@@ -172,6 +179,9 @@ export class CopilotReadToolSet implements CopilotReadTools {
     @Inject(ReportSchedulesService) schedules: ReportSchedulesService,
     // `F4.281`: appended last (slot 21), the same reason.
     @Inject(MaintenanceService) maintenance: MaintenanceService,
+    // `F4.284`: appended last (slots 22 and 23), the same reason.
+    @Inject(WorkOrdersService) workOrders: WorkOrdersService,
+    @Inject(UsersService) users: UsersService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -196,6 +206,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
       escalationProfiles,
       schedules,
       maintenance,
+      workOrders,
+      users,
     });
   }
 

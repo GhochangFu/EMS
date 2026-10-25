@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 
 import {
+  convertMaintenanceBodySchema,
   copilotActivateMaintenanceScheduleModelBodySchema,
   copilotDeactivateMaintenanceScheduleModelBodySchema,
   createMaintenanceScheduleBodySchema,
@@ -52,4 +53,13 @@ export function theScheduleItemRequiresActive(): void {
   const shape = maintenanceScheduleItemSchema.shape as Record<string, unknown>;
   expect(shape.active).toBeDefined();
   expect(maintenanceScheduleItemSchema.shape.active.safeParse(undefined).success).toBe(false);
+}
+
+/** `F4.284` (ADR 0106 decision 5): the convert body moved here from the API. */
+export function theConvertBodyIsStrict(): void {
+  expect(convertMaintenanceBodySchema.safeParse({ notes: "Quarterly check", extra: 1 }).success).toBe(false);
+}
+
+export function theConvertBodyRefusesShortNotes(): void {
+  expect(convertMaintenanceBodySchema.safeParse({ notes: "ok" }).success).toBe(false);
 }

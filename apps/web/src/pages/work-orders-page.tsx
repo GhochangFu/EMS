@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { DragEvent, FormEvent } from "react";
+import type { DragEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import type {
@@ -9,15 +9,12 @@ import type {
 } from "@bms/shared";
 
 import { fetchAssets } from "../api/assets";
-import {
-  closeWorkOrder,
-  createWorkOrder,
-  fetchWorkOrders,
-  reorderWorkOrders,
-  updateWorkOrderStatus,
-  type ReorderWorkOrderItem,
-} from "../api/work-orders";
+import { fetchWorkOrders, reorderWorkOrders, type ReorderWorkOrderItem } from "../api/work-orders";
 import { PageHeader } from "../components/page-header";
+import { WorkOrderCloseWizard } from "../components/work-orders/work-order-close-wizard";
+import { WorkOrderStatusWizard } from "../components/work-orders/work-order-status-wizard";
+import { priorities, priorityLabels, statusLabels } from "../components/work-orders/work-order-labels";
+import { WorkOrderWizard } from "../components/work-orders/work-order-wizard";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
@@ -50,23 +47,6 @@ const statuses: WorkOrderStatus[] = [
   "resolved",
   "closed",
 ];
-
-const priorities: WorkOrderPriority[] = ["low", "medium", "high", "critical"];
-
-const statusLabels: Record<WorkOrderStatus, string> = {
-  open: "Open",
-  assigned: "Assigned",
-  in_progress: "In progress",
-  resolved: "Resolved",
-  closed: "Closed",
-};
-
-const priorityLabels: Record<WorkOrderPriority, string> = {
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-  critical: "Critical",
-};
 
 const kanbanColumns: KanbanColumn[] = [
   { key: "open", label: "Open", kpiLabel: "Open WO", kpiTone: "warning" },
@@ -145,13 +125,6 @@ export function priorityRailStyle(priority: WorkOrderPriority): string {
   }
 }
 
-function nextStatusOptions(status: WorkOrderStatus): WorkOrderStatus[] {
-  if (status === "closed") {
-    return ["closed"];
-  }
-  return statuses.filter((candidate) => candidate !== "closed");
-}
-
 export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -159,20 +132,10 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [assetFilter, setAssetFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
-  const [createOpen, setCreateOpen] = useState(false);
-  const [assetId, setAssetId] = useState("");
-  const [alarmId, setAlarmId] = useState("");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState<WorkOrderPriority>("medium");
-  const [createError, setCreateError] = useState<string | null>(null);
+  // `F4.284` (ADR 0099 decision 6): the create, status and close forms are `WizardShell`s; `null` is closed.
+  const [createInitial, setCreateInitial] = useState<Record<string, unknown> | null>(null);
   const [editTarget, setEditTarget] = useState<WorkOrderListItem | null>(null);
-  const [nextStatus, setNextStatus] = useState<WorkOrderStatus>("open");
-  const [statusReason, setStatusReason] = useState("");
-  const [statusError, setStatusError] = useState<string | null>(null);
   const [closeTarget, setCloseTarget] = useState<WorkOrderListItem | null>(null);
-  const [closeReason, setCloseReason] = useState("");
-  const [closeError, setCloseError] = useState<string | null>(null);
   const [localOrder, setLocalOrder] = useState<string[]>([]);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
@@ -197,62 +160,21 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
     if (!queryAlarmId || !queryAssetId) {
       return;
     }
-    setAlarmId(queryAlarmId);
-    setAssetId(queryAssetId);
-    setTitle(searchParams.get("title") ?? "Investigate alarm");
-    setDescription(searchParams.get("description") ?? "");
-    setPriority("high");
-    setCreateError(null);
-    setCreateOpen(true);
+    const description = searchParams.get("description");
+    setCreateInitial({
+      alarmId: queryAlarmId,
+      assetId: queryAssetId,
+      title: searchParams.get("title") ?? "Investigate alarm",
+      ...(description ? { description } : {}),
+      priority: "high",
+    });
   }, [searchParams]);
 
-  const createM = useMutation({
-    mutationFn: createWorkOrder,
-    onSuccess: () => {
-      setCreateOpen(false);
-      setAlarmId("");
-      setTitle("");
-      setDescription("");
-      setPriority("medium");
-      setCreateError(null);
-      navigate("/work-orders", { replace: true });
-      void qc.invalidateQueries({ queryKey: ["work-orders", "list"] });
-    },
-    onError: (err: unknown) => {
-      setCreateError(apiErrorMessage(err));
-    },
-  });
-
-  const statusM = useMutation({
-    mutationFn: updateWorkOrderStatus,
-    onSuccess: () => {
-      setEditTarget(null);
-      setStatusReason("");
-      setStatusError(null);
-      void qc.invalidateQueries({ queryKey: ["work-orders", "list"] });
-    },
-    onError: (err: unknown) => {
-      setStatusError(apiErrorMessage(err));
-    },
-  });
-
-  const closeM = useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
-      closeWorkOrder(id, reason, closeSortOrder),
-    onSuccess: () => {
-      setCloseTarget(null);
-      setCloseReason("");
-      setCloseError(null);
-      setCloseSortOrder(undefined);
-      void qc.invalidateQueries({ queryKey: ["work-orders", "list"] });
-    },
-    onError: (err: unknown) => {
-      setCloseError(apiErrorMessage(err));
-    },
-  });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["work-orders", "list"] });
 
   const reorderM = useMutation({
-    mutationFn: reorderWorkOrders,
+    // `F4.284` (DC2): the canvas entry `workOrder.reorder` — the stepper gate reads this call.
+    mutationFn: (items: ReorderWorkOrderItem[]) => reorderWorkOrders(items),
     onSuccess: () => {
       setDragError(null);
       void qc.invalidateQueries({ queryKey: ["work-orders", "list"] });
@@ -332,67 +254,21 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
   );
 
   function openCreate(): void {
-    setAssetId(assetOptions[0]?.id ?? "");
-    setAlarmId("");
-    setTitle("");
-    setDescription("");
-    setPriority("medium");
-    setCreateError(null);
-    setCreateOpen(true);
+    setCreateInitial(assetOptions[0] ? { assetId: assetOptions[0].id } : {});
   }
 
   function closeCreate(): void {
-    setCreateOpen(false);
-    setCreateError(null);
+    setCreateInitial(null);
     navigate("/work-orders", { replace: true });
-  }
-
-  function submitCreate(e: FormEvent<HTMLFormElement>): void {
-    e.preventDefault();
-    setCreateError(null);
-    createM.mutate({
-      assetId,
-      alarmId: alarmId || undefined,
-      title: title.trim(),
-      description: description.trim() || undefined,
-      priority,
-    });
   }
 
   function openStatusEditor(row: WorkOrderListItem): void {
     setEditTarget(row);
-    setNextStatus(row.status);
-    setStatusReason("");
-    setStatusError(null);
-  }
-
-  function submitStatus(e: FormEvent<HTMLFormElement>): void {
-    e.preventDefault();
-    if (!editTarget) {
-      return;
-    }
-    setStatusError(null);
-    statusM.mutate({
-      id: editTarget.id,
-      status: nextStatus,
-      reason: statusReason.trim() || undefined,
-    });
   }
 
   function openClose(row: WorkOrderListItem): void {
     setCloseTarget(row);
-    setCloseReason("");
-    setCloseError(null);
     setCloseSortOrder(undefined);
-  }
-
-  function submitClose(e: FormEvent<HTMLFormElement>): void {
-    e.preventDefault();
-    if (!closeTarget) {
-      return;
-    }
-    setCloseError(null);
-    closeM.mutate({ id: closeTarget.id, reason: closeReason.trim() });
   }
 
   function buildReorderItems(
@@ -482,8 +358,6 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
 
     if (status === "closed" && dragged.status !== "closed") {
       setCloseTarget(dragged);
-      setCloseReason("");
-      setCloseError(null);
       setCloseSortOrder(index * 1000);
       return;
     }
@@ -745,235 +619,43 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
         ) : null}
       </div>
 
-      {createOpen ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="work-order-create-title"
-        >
-          <div className="w-full max-w-lg surface-dialog p-6">
-            <h2
-              id="work-order-create-title"
-              className="font-condensed text-lg font-bold"
-            >
-              Create work order
-            </h2>
-            <form className="mt-4 space-y-3" onSubmit={submitCreate}>
-              <label className="block text-xs font-medium text-ink-muted">
-                Asset
-                <select
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm text-ink"
-                  value={assetId}
-                  onChange={(ev) => setAssetId(ev.target.value)}
-                  required
-                >
-                  <option value="" disabled>
-                    Select an asset
-                  </option>
-                  {assetOptions.map((asset) => (
-                    <option key={asset.id} value={asset.id}>
-                      {asset.code} · {asset.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs font-medium text-ink-muted">
-                Title
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={title}
-                  onChange={(ev) => setTitle(ev.target.value)}
-                  minLength={3}
-                  maxLength={255}
-                  required
-                />
-              </label>
-              <label className="block text-xs font-medium text-ink-muted">
-                Description
-                <textarea
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  rows={3}
-                  value={description}
-                  onChange={(ev) => setDescription(ev.target.value)}
-                  maxLength={4000}
-                />
-              </label>
-              <label className="block text-xs font-medium text-ink-muted">
-                Priority
-                <select
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={priority}
-                  onChange={(ev) => setPriority(ev.target.value as WorkOrderPriority)}
-                >
-                  {priorities.map((item) => (
-                    <option key={item} value={item}>
-                      {priorityLabels[item]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {alarmId ? (
-                <p className="rounded bg-canvas px-3 py-2 font-mono text-[11px] text-ink-muted">
-                  Linked alarm: {alarmId}
-                </p>
-              ) : null}
-              {createError ? (
-                <p className="text-xs text-critical-ink" role="alert">
-                  {createError}
-                </p>
-              ) : null}
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="surface-button px-3 py-2"
-                  onClick={closeCreate}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={
-                    createM.isPending ||
-                    !assetId ||
-                    title.trim().length < 3 ||
-                    assetsQ.isLoading
-                  }
-                  aria-busy={createM.isPending}
-                  className="surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
-                >
-                  {createM.isPending ? "Creating…" : "Create"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+      {createInitial !== null ? (
+        <WorkOrderWizard
+          assets={assetOptions}
+          initial={createInitial}
+          onCancel={closeCreate}
+          onDone={async () => {
+            closeCreate();
+            await refresh();
+          }}
+        />
       ) : null}
 
       {editTarget ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="work-order-status-title"
-        >
-          <div className="w-full max-w-md surface-dialog p-6">
-            <h2
-              id="work-order-status-title"
-              className="font-condensed text-lg font-bold"
-            >
-              Edit status
-            </h2>
-            <p className="mt-1 text-xs text-ink-muted">{editTarget.title}</p>
-            <form className="mt-4 space-y-3" onSubmit={submitStatus}>
-              <label className="block text-xs font-medium text-ink-muted">
-                New status
-                <select
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={nextStatus}
-                  onChange={(ev) => setNextStatus(ev.target.value as WorkOrderStatus)}
-                >
-                  {nextStatusOptions(editTarget.status).map((status) => (
-                    <option key={status} value={status}>
-                      {statusLabels[status]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block text-xs font-medium text-ink-muted">
-                Reason
-                <textarea
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  rows={3}
-                  value={statusReason}
-                  onChange={(ev) => setStatusReason(ev.target.value)}
-                  placeholder="Optional state-change note"
-                  maxLength={2000}
-                />
-              </label>
-              {statusError ? (
-                <p className="text-xs text-critical-ink" role="alert">
-                  {statusError}
-                </p>
-              ) : null}
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="surface-button px-3 py-2"
-                  onClick={() => setEditTarget(null)}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={statusM.isPending}
-                  aria-busy={statusM.isPending}
-                  className="surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
-                >
-                  {statusM.isPending ? "Saving…" : "Save status"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <WorkOrderStatusWizard
+          row={editTarget}
+          onCancel={() => setEditTarget(null)}
+          onDone={async () => {
+            setEditTarget(null);
+            await refresh();
+          }}
+        />
       ) : null}
 
       {closeTarget ? (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="work-order-close-title"
-        >
-          <div className="w-full max-w-md surface-dialog p-6">
-            <h2
-              id="work-order-close-title"
-              className="font-condensed text-lg font-bold"
-            >
-              Close work order
-            </h2>
-            <p className="mt-1 text-xs text-ink-muted">{closeTarget.title}</p>
-            <form className="mt-4 space-y-3" onSubmit={submitClose}>
-              <label className="block text-xs font-medium text-ink-muted">
-                Closure reason
-                <textarea
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  rows={3}
-                  value={closeReason}
-                  onChange={(ev) => setCloseReason(ev.target.value)}
-                  minLength={3}
-                  maxLength={2000}
-                  required
-                />
-              </label>
-              {closeError ? (
-                <p className="text-xs text-critical-ink" role="alert">
-                  {closeError}
-                </p>
-              ) : null}
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  className="surface-button px-3 py-2"
-                  onClick={() => {
-                    setCloseTarget(null);
-                    setCloseSortOrder(undefined);
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={closeM.isPending || closeReason.trim().length < 3}
-                  aria-busy={closeM.isPending}
-                  className="surface-button-primary bg-accent px-4 py-2 text-sm font-semibold text-on-accent disabled:opacity-50"
-                >
-                  {closeM.isPending ? "Closing…" : "Close work order"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <WorkOrderCloseWizard
+          row={closeTarget}
+          {...(closeSortOrder === undefined ? {} : { sortOrder: closeSortOrder })}
+          onCancel={() => {
+            setCloseTarget(null);
+            setCloseSortOrder(undefined);
+          }}
+          onDone={async () => {
+            setCloseTarget(null);
+            setCloseSortOrder(undefined);
+            await refresh();
+          }}
+        />
       ) : null}
     </AppShell>
   );

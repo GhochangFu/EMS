@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
-import { alarms, alarmSeverities, assets, auditLog } from "@bms/db";
+import { alarms, alarmSeverities, assets } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   AlarmListItem,
@@ -15,6 +15,7 @@ import type {
   JwtPayload,
 } from "@bms/shared";
 
+import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
@@ -53,6 +54,9 @@ export class AlarmsService {
     // write's tenant transaction.
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly gateway: AlarmsGateway,
+    // `F4.284` (ADR 0106 decision 7): the acknowledge audits through the funnel, so a
+    // confirmed copilot change carries its `via: "copilot"` mark.
+    @Inject(MasterDataAuditService) private readonly audit: MasterDataAuditService,
   ) {}
 
   /**
@@ -298,19 +302,22 @@ export class AlarmsService {
         throw new NotFoundException("Alarm not found or already acknowledged");
       }
 
-      await tx.insert(auditLog).values({
-        organizationId,
-        actorId: dbActorId,
-        action: "alarm_ack",
-        entityType: "alarm",
-        entityId: alarmId,
-        reason,
-        payload: {
-          alarmId,
-          oidcSubject: actor.sub,
-          actorEmail: actor.email,
+      await this.audit.write(
+        {
+          actor,
+          organizationId,
+          action: "alarm_ack",
+          entityType: "alarm",
+          entityId: alarmId,
+          reason,
+          payload: {
+            alarmId,
+            oidcSubject: actor.sub,
+            actorEmail: actor.email,
+          },
         },
-      });
+        tx,
+      );
 
       const [row] = await tx
         .select(alarmListItemColumns)

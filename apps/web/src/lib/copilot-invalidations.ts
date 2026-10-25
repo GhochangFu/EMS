@@ -64,6 +64,15 @@ const REPORT_SCHEDULES: QueryKey = ["report-schedules"];
 const REPORT_FILES: QueryKey = ["report-files"];
 /** `F4.281`: the Schedule Centre's list (`maintenance-schedules-panel.tsx`, keyed by its filters under the prefix). */
 const MAINTENANCE_SCHEDULES: QueryKey = ["maintenance", "schedules"];
+/**
+ * `F4.284`: the alarms page's list (`alarms-page.tsx`), each alarm's details panel
+ * (`alarm-details-panel.tsx`, keyed by id under the prefix), the dashboard KPIs the
+ * ack changes, and the work-orders board (`work-orders-page.tsx`).
+ */
+const ALARMS_LIST: QueryKey = ["alarms", "list"];
+const ALARM_DETAILS: QueryKey = ["alarms", "details"];
+const DASHBOARD_KPIS: QueryKey = ["dashboard", "kpis"];
+const WORK_ORDERS: QueryKey = ["work-orders", "list"];
 /** `F4.283`: an asset's image list (`asset-images-panel.tsx`, keyed by the asset under the prefix). */
 const ASSET_IMAGES: QueryKey = ["asset-images"];
 const ESCALATION_PROFILES: QueryKey = ["escalation", "profiles"];
@@ -200,6 +209,14 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "maintenanceSchedule.create": [MAINTENANCE_SCHEDULES],
   "maintenanceSchedule.activate": [MAINTENANCE_SCHEDULES],
   "maintenanceSchedule.deactivate": [MAINTENANCE_SCHEDULES],
+  // `F4.284` (ADR 0106): the convert moves the schedule's due date and adds a work order.
+  "maintenanceSchedule.convert": [MAINTENANCE_SCHEDULES, WORK_ORDERS],
+  "alarm.acknowledge": [ALARMS_LIST, ALARM_DETAILS, DASHBOARD_KPIS],
+  "alarm.enrichment.set": [ALARM_DETAILS, ALARMS_LIST],
+  "workOrder.create": [WORK_ORDERS],
+  "workOrder.setStatus": [WORK_ORDERS],
+  "workOrder.close": [WORK_ORDERS],
+  "workOrder.reorder": [WORK_ORDERS],
   // `F4.283` (Amendment 8): a reading write can create point mappings (`asset-points-page.tsx`);
   // an image upload adds to the asset's image list.
   "telemetry.import": [ASSET_POINTS],

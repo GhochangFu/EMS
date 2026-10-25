@@ -635,3 +635,13 @@ export async function theRealTimestampsCompose(ctx: ProposeCtx): Promise<void> {
   ]);
   expect(await read()).toBeNull();
 }
+
+/**
+ * `F4.284` (ADR 0106 decision 4, migration `0116`): a change of the fifth risk class stores and
+ * lists. Red before `0116` widened `copilot_pending_changes_risk_check`.
+ */
+export async function anOperationalChangeStores(ctx: ProposeCtx): Promise<void> {
+  const conversation = await newConversation(ctx);
+  const dto = await proposed(ctx, { ...change(ctx, conversation), risk: "operational" });
+  expect(dto.risk).toBe("operational");
+}

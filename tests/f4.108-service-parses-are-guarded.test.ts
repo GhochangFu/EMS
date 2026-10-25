@@ -130,6 +130,9 @@ const COPILOT_TOOL_FILES = {
   copilotListReportSchedules: `${COPILOT_TOOLS}/list-report-schedules.tool.ts`,
   // `F4.281` (Amendment 8 D7, owner ruling DC4): the maintenance-schedule read tool, one parse.
   copilotListMaintenanceSchedules: `${COPILOT_TOOLS}/list-maintenance-schedules.tool.ts`,
+  // `F4.284` (ADR 0106; owner rulings DC1, DC7): the work-order and user read tools, one parse each.
+  copilotListWorkOrders: `${COPILOT_TOOLS}/list-work-orders.tool.ts`,
+  copilotListUsers: `${COPILOT_TOOLS}/list-users.tool.ts`,
 } as const;
 const HELPER = "apps/api/src/common/parse-stored-contract.ts";
 
@@ -601,7 +604,7 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         "mimic read tool; F4.274 five more, one per telemetry read tool; F4.275 six more, one " +
         "per energy read tool; F4.277 two more, the system-status and audit-log read tools; " +
         "F4.278 one more, the alarm-rule read tool; F4.279 two more, the channel and escalation " +
-        "read tools. " +
+        "read tools; F4.284 two more, the work-order and user read tools. " +
         "A site reverted to " +
         "a bare .parse() answers 400 under the filter, which is ruling 2's failure mode " +
         "exactly.",
@@ -641,8 +644,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       // `F4.277`: + the system-status and audit-log read tools; `F4.276`: + the alarm
       // details and alarm knowledge-base read tools; `F4.278`: + the alarm-rule read tool;
       // `F4.279`: + the channel and escalation read tools; `F4.280`: + the report-schedule read tool;
-      // `F4.281`: + the maintenance-schedule read tool.
-    ).toBe(43);
+      // `F4.281`: + the maintenance-schedule read tool; `F4.284`: + the work-order and user read tools.
+    ).toBe(45);
 
     const callSites = [
       STOCK_SERVICE,

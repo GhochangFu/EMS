@@ -173,6 +173,7 @@ export const copilotUpdateNotificationChannelModelBodySchema = z
   .refine((body) => Object.keys(body).length > 0, {
     message: "a PATCH must change at least one field",
   })
+  .describe("At least one field must be present.")
   .refine((body) => body.kind === undefined || body.config !== undefined, {
     message: "a kind change must send its config ({} for a webhook)",
     path: ["config"],

@@ -3,12 +3,12 @@ import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import type { CopilotMessageDto, CopilotPendingChangeDto, SiteLayoutAmbiguousDto } from "@bms/shared";
 import {
-  CANVAS_ENTRY_IDS,
   cardOnlyKeysFor,
   catalogEntry,
   catalogParamsOf,
   COPILOT_CHANGE_REFUSED_MESSAGE,
   COPILOT_UNAVAILABLE_MESSAGE,
+  LAYOUT_ENTRY_IDS,
 } from "@bms/shared/copilot";
 
 import { rejectCopilotChange } from "../../api/copilot";
@@ -130,6 +130,21 @@ function recipientsOf(value: unknown): { key: string; line: string }[] {
 }
 
 /**
+ * `F4.284` (ADR 0106 decision 2; owner ruling DC2): a reorder's card-only `moves`, one line per
+ * work order whose status or position changes, with its old and new position.
+ */
+export function movesOf(value: unknown): { key: string; line: string }[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item, index) => {
+    if (typeof item !== "object" || item === null) return [];
+    const move = item as Record<string, unknown>;
+    const from = `${String(move.fromStatus ?? "")} #${String(move.fromSortOrder ?? "")}`;
+    const to = `${String(move.toStatus ?? "")} #${String(move.toSortOrder ?? "")}`;
+    return [{ key: `${index}`, line: `${String(move.title ?? move.id ?? "")}: ${from} → ${to}` }];
+  });
+}
+
+/**
  * `F3.85` PR 8 / ADR 0099 decision 4 (plan §10.3) — a change the copilot
  * proposed, waiting for the user.
  *
@@ -172,7 +187,8 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
   // `F3.87` PR 5 (Amendment 3 A2, rulings Q1, Q5): a layout card draws the body, warns on it, and
   // diffs a replace against the baseline the row stored at propose time — never the layout now.
   const cardOnly = cardOnlyKeysFor(change.catalogId);
-  const isLayout = entry !== undefined && (CANVAS_ENTRY_IDS as readonly string[]).includes(entry.id);
+  // `F4.284` (DC2): the work-order reorder is a canvas entry too, but not a layout — the mimic two only.
+  const isLayout = entry !== undefined && (LAYOUT_ENTRY_IDS as readonly string[]).includes(entry.id);
   const layoutBody = useMemo((): MimicLayoutWriteBody | null => {
     if (!isLayout || entry === undefined) return null;
     const parsed = entry.body.safeParse(withoutKeys(change.body, cardOnly));
@@ -289,6 +305,7 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
     : `Proposed at ${timeOf(change.proposedAt)}. Expires at ${timeOf(change.expiresAt)}.`;
   const siteId = entry ? catalogParamsOf(entry, change.path)?.id : undefined;
   const recipients = cardOnly.includes("recipients") ? recipientsOf(change.body.recipients) : [];
+  const moves = cardOnly.includes("moves") ? movesOf(change.body.moves) : [];
 
   return (
     <>
@@ -335,6 +352,13 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
           <ul data-testid="copilot-recipients" aria-label="Recipients" className="mt-2 list-disc pl-4 text-[11px] text-ink">
             {recipients.map((recipient) => (
               <li key={recipient.key}>{recipient.line}</li>
+            ))}
+          </ul>
+        )}
+        {moves.length > 0 && (
+          <ul data-testid="copilot-moves" aria-label="Moves" className="mt-2 list-disc pl-4 text-[11px] text-ink">
+            {moves.map((move) => (
+              <li key={move.key}>{move.line}</li>
             ))}
           </ul>
         )}

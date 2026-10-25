@@ -10,6 +10,8 @@
  * returned as it is.
  */
 
+import { cloneJson } from "../../stack-safe-json";
+
 type Json = Record<string, unknown>;
 
 const isObject = (value: unknown): value is Json =>
@@ -18,7 +20,7 @@ const isObject = (value: unknown): value is Json =>
 /** A deep copy of `body` without each top-level key or dotted path. An absent path is a no-op. */
 export function withoutPaths(body: unknown, paths: readonly string[]): unknown {
   if (paths.length === 0 || !isObject(body)) return body;
-  const out = structuredClone(body);
+  const out = cloneJson(body);
   for (const path of paths) {
     const keys = path.split(".");
     const last = keys.pop() as string;
@@ -36,7 +38,7 @@ export function withoutPaths(body: unknown, paths: readonly string[]): unknown {
  */
 export function withPaths(body: unknown, values: Readonly<Record<string, string>>): unknown {
   if (!isObject(body)) return body;
-  const out = structuredClone(body);
+  const out = cloneJson(body);
   for (const [path, value] of Object.entries(values)) {
     if (value === "") continue;
     const keys = path.split(".");

@@ -14,8 +14,12 @@ type UserRole = z.infer<typeof userRoleSchema>;
  * is a pure function of what the server resolved.
  */
 
-/** How much a change can do; the Confirm card styles it, and `copilot_pending_changes_risk_check` holds the same four. */
-export type CatalogRisk = "create" | "edit" | "deactivate" | "access";
+/**
+ * How much a change can do; the Confirm card styles it, and `copilot_pending_changes_risk_check` holds the same
+ * values. `F4.284` (ADR 0106 decision 4, migration `0116`): `operational` — an alarm acknowledge or a work-order
+ * close, red, and it cannot be undone.
+ */
+export type CatalogRisk = "create" | "edit" | "deactivate" | "access" | "operational";
 
 /**
  * `F3.86` PR 2: `DELETE` is a method a catalog entry may have, but only the
@@ -161,13 +165,38 @@ export type CatalogTarget =
    * row's asset is checked by the proposal check, which refuses with the row numbers.
    */
   | { readonly kind: "telemetry" }
+  /**
+   * `F4.284` (ADR 0106 decision 6; ADR 0099 Amendment 8 D2): an alarm or a work order. With `param`,
+   * the row the path parameter `id` names (its organization, `alarms.organization_id` or
+   * `work_orders.organization_id`); with `field`, a work-order create, whose organization is the
+   * asset's the body's `assetId` names. Each mirrors the routes' gate: the `operational` role class,
+   * then the row's (or the body's) asset in the caller's **read** scope.
+   *
+   * - `workOrderBatch` (owner ruling DC5): the reorder, every work order the body's `items` names;
+   *   one organization, each asset in the read scope.
+   * - `maintenanceScheduleConvert` (DC5): the schedule the path names, with the convert route's
+   *   `operational` gate (the `maintenanceSchedule` kind mirrors the `configuration` one).
+   */
+  | { readonly kind: "alarm" | "workOrder" | "maintenanceScheduleConvert"; readonly param: "id" }
+  | { readonly kind: "workOrder"; readonly field: "assetId" }
+  | { readonly kind: "workOrderBatch"; readonly field: "items" }
   | { readonly kind: "onboardingSession"; readonly param: "id" }
   | { readonly kind: "assetTemplateDeploy"; readonly param: "id" }
   | { readonly kind: "user" | "userGrantAdd"; readonly param: "id" }
   | { readonly kind: "userGrant"; readonly param: "grantId"; readonly kindParam: "kind"; readonly userParam: "id" };
 
 /** The row kinds a body field may hold the id of. */
-export type CatalogRefKind = "location" | "assetGroup" | "asset" | "rtu" | "organization" | "dashboard" | "dashboardTemplate";
+export type CatalogRefKind =
+  | "location"
+  | "assetGroup"
+  | "asset"
+  | "rtu"
+  | "organization"
+  | "dashboard"
+  | "dashboardTemplate"
+  // `F4.284` (ADR 0106 decision 6): a work order's `assignedTo` (a user of the change's organization) and `alarmId`.
+  | "user"
+  | "alarm";
 
 /**
  * A body field holding the id of a row that must belong to the change's
@@ -216,6 +245,10 @@ export type CatalogSummaryInput = {
   readonly usageCount?: number;
   /** `F4.278` (Amendment 8 D3): a `rule` target's lifecycle status, so a PATCH of a published rule carries the live-effect line. */
   readonly lifecycle?: string;
+  /** `F4.284` (ADR 0106 decision 3): an `alarm` target — the card names the alarm text, severity, asset and raised time. */
+  readonly alarm?: { readonly message: string; readonly severity: string; readonly assetName: string; readonly raisedAt: string };
+  /** `F4.284`: a `workOrder` target's title, status now and asset. */
+  readonly workOrder?: { readonly title: string; readonly status: string; readonly assetName: string };
 };
 
 export interface CatalogEntry {
@@ -254,6 +287,12 @@ export interface CatalogEntry {
   readonly modelBody?: ZodTypeAny;
   /** The export name of `modelBody` in `@bms/shared`, when there is one (PR 4 gates it with the first such entry). */
   readonly modelBodyName?: string;
+  /**
+   * `F4.284` (owner ruling DC4): the body fields `modelBody` leaves out on purpose, so the page
+   * alone sets them — `fill_step` refuses them too. Only an optional field the route keeps when
+   * absent may be listed. Absent: none.
+   */
+  readonly modelOmits?: readonly string[];
   /**
    * `F4.266` (ADR 0090 Amendment 3 C6): a short statement of a large body's
    * shape, appended to the propose tool's field list so the model can propose
