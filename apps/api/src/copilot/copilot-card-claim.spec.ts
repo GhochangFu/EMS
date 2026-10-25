@@ -33,8 +33,8 @@ export function eachPatternFiresOnItsOwnSample(): void {
   expect(samples.map(claimsACard)).toEqual([true, true, true, true]);
 }
 
-/** Bare-word matching (owner accepted 2026-10-25): a widget noun and a clarifying "confirm" are tagged. */
-export function bareWordsAreTaggedAsAccepted(): void {
+/** Bare-word matching (the recommended drafter choice; owner ruling pending): a widget noun and a clarifying "confirm" are tagged. */
+export function bareWordsAreTagged(): void {
   expect(["It has a KPI tile and two module summary cards.", "Which alarm do you mean? Please confirm the alarm id."].map(claimsACard)).toEqual([
     true,
     true,

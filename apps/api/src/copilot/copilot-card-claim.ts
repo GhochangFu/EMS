@@ -9,12 +9,14 @@
  * never replaced, and a turn that stored a pending change is untouched.
  *
  * The phrase list leans wide on purpose: a false positive only appends a true
- * sentence, while a false negative lets a false claim reach the user. The
- * owner accepted bare-word matching on 2026-10-25 (F4.286 plan question 1), so
+ * sentence, while a false negative lets a false claim reach the user. Bare-word
+ * matching is the plan's recommended drafter choice (F4.286 plan question 1),
+ * built on the owner's 2026-10-25 instruction to build each recommendation and
+ * ask on return; the owner has not ruled on it yet. So
  * a reply that names a card or asks the user to confirm without claiming one is
  * waiting ("two module summary cards", "Please confirm the alarm id") is
  * tagged too, and the turn appends the note to it. The spec pins that
- * behaviour; narrowing the list is a new ruling, not a fix.
+ * behaviour; narrowing the list waits on that ruling.
  */
 
 /** The fixed sentence the turn appends to a reply that claims a card it never proposed. */
