@@ -72,6 +72,8 @@ export type ResolverCtx = {
   /** `F4.284` (DC1): a user of A (named `RESOLVER_NAMES.userA`) and a user of B. */
   userA: string;
   userB: string;
+  /** `F4.285`: a user of A with `disabled_at` set. */
+  userADisabled: string;
 };
 
 /** `locationA` carries a stored `builtin` view (`site_control_room_views`); `locationA2` carries none. */
@@ -895,6 +897,15 @@ export async function anAssigneeIsReadUnderTheTenantAndNamed(ctx: ResolverCtx): 
   const at = (assignedTo: string) => r.resolve(entry, { id: ctx.locationA }, { assignedTo }, [ctx.orgA, ctx.orgB], JWT);
   expect((await at(ctx.userA))?.refName).toBe(RESOLVER_NAMES.userA);
   expect(await at(ctx.userB)).toBeNull();
+}
+
+/** `F4.285`: a disabled user of A is refused like a user of B; the active user of A still resolves beside it. */
+export async function aDisabledAssigneeIsRefused(ctx: ResolverCtx): Promise<void> {
+  const r = resolverWith(ctx, recorder().access);
+  const entry = fixture({ kind: "location", param: "id" }, [{ field: "assignedTo", kind: "user" }]);
+  const at = (assignedTo: string) => r.resolve(entry, { id: ctx.locationA }, { assignedTo }, [ctx.orgA, ctx.orgB], JWT);
+  expect(await at(ctx.userADisabled)).toBeNull();
+  expect((await at(ctx.userA))?.refName).toBe(RESOLVER_NAMES.userA);
 }
 
 /**

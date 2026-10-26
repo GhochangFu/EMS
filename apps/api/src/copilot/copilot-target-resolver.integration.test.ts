@@ -63,6 +63,7 @@ import {
   type ResolverCtx,
   theNewRefKindsBelongToTheOrganization,
   anAssigneeIsReadUnderTheTenantAndNamed,
+  aDisabledAssigneeIsRefused,
 } from "./copilot-target-resolver.integration.spec";
 
 const connectionString = requireIntegrationDb({
@@ -185,6 +186,11 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       ]);
     const userA = await user(orgA, "assignee-a", RESOLVER_NAMES.userA);
     const userB = await user(orgB, "assignee-b", "F4.284 assignee B");
+    // `F4.285`: a disabled user of A (cleaned by the users-by-organization DELETE).
+    const userADisabled = await one(
+      "INSERT INTO bms.users (organization_id, email, display_name, role, disabled_at) VALUES ($1, $2, $3, 'operator', now()) RETURNING id",
+      [orgA, `${FAMILY.toLowerCase()}-assignee-a-disabled@example.test`, "F4.285 disabled assignee A"],
+    );
     const locationA = await location(orgA, "a", RESOLVER_NAMES.locationA);
     const locationA2 = await location(orgA, "a2", "F3.86 site A2");
     const locationB = await location(orgB, "b", "F3.86 site B");
@@ -329,6 +335,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
       ruleB,
       userA,
       userB,
+      userADisabled,
     };
   });
 
@@ -372,6 +379,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
   it("keeps the new ref kinds inside the organization", () => theNewRefKindsBelongToTheOrganization(ctx));
   it("F4.284: reads an assignee under the tenant, names it, and refuses another organization's", () =>
     anAssigneeIsReadUnderTheTenantAndNamed(ctx));
+  it("F4.285: refuses a disabled assignee of the organization beside the active one", () => aDisabledAssigneeIsRefused(ctx));
   // `F4.283` (owner ruling 2026-10-25, Q2): every readings row's asset, before the card.
   it("F4.283: readings of a bound asset resolve, asking canManageAsset on it", () => readingsOfABoundAssetResolveOnItsAsset(ctx));
   it("F4.283: readings of another organization's asset are refused by row", () =>
