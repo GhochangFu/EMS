@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import { claimsACard, withNoChangeNote } from "./copilot-card-claim";
+import { COPILOT_CARD_CLAIM_PATTERNS, claimsACard, withNoChangeNote } from "./copilot-card-claim";
 import { COPILOT_REPLY_REDACTED } from "./copilot-secret-scrub";
 import { COPILOT_ATTACHMENT_UNREADABLE_REPLY, COPILOT_TURN_FAILED_REPLY } from "./copilot-turn.service";
 
@@ -27,18 +27,31 @@ export function aRefusalNamingProposeClaimsNothing(): void {
   expect(claimsACard("No propose tool fits that; the Assets page does it.")).toBe(false);
 }
 
-/** Each pattern fires on its own sample. */
+/** Each pattern fires on its own sample, and only that pattern. */
 export function eachPatternFiresOnItsOwnSample(): void {
-  const samples = ["the card is ready", "your proposal is waiting", "press Confirm to apply", "it is on your screen"];
-  expect(samples.map(claimsACard)).toEqual([true, true, true, true]);
+  const samples = ["Your proposal is waiting.", "Confirm the card.", "Press Confirm.", "It is on your screen."];
+  expect(samples.map((sample) => COPILOT_CARD_CLAIM_PATTERNS.map((pattern) => pattern.test(sample)))).toEqual([
+    [true, false, false, false],
+    [false, true, false, false],
+    [false, false, true, false],
+    [false, false, false, true],
+  ]);
 }
 
-/** Bare-word matching (the recommended drafter choice; owner ruling pending): a widget noun and a clarifying "confirm" are tagged. */
-export function bareWordsAreTagged(): void {
-  expect(["It has a KPI tile and two module summary cards.", "Which alarm do you mean? Please confirm the alarm id."].map(claimsACard)).toEqual([
-    true,
-    true,
-  ]);
+/** Bare words are not claims (owner ruling 2026-10-26): a widget noun, a clarifying "confirm", a past Confirm. */
+export function bareWordsAreNotTagged(): void {
+  const replies = [
+    "It has a KPI tile and two module summary cards.",
+    "Which alarm do you mean? Please confirm the alarm id.",
+    "The card you confirmed acknowledged A-12.",
+    "Two proposals were applied yesterday.",
+  ];
+  expect(replies.map(claimsACard)).toEqual([false, false, false, false]);
+}
+
+/** A claim does not reach across a sentence end: a noun in one sentence and a state word in the next are not a claim. */
+export function aClaimStopsAtASentenceEnd(): void {
+  expect(claimsACard("It has two cards. The pump is ready.")).toBe(false);
 }
 
 /** A claim with no pending change gets the note appended after one space; the reply is kept. */

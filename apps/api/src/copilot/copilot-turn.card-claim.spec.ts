@@ -62,7 +62,7 @@ async function noteFlags(run: () => Promise<void>): Promise<unknown[]> {
   return logged.filter((args) => args[1] === "copilot turn").map((args) => (args[0] as { noteAppended?: unknown }).noteAppended);
 }
 
-const REDACTABLE_CLAIM = "Sure, the card: password: hunter2";
+const REDACTABLE_CLAIM = "The card is ready: password: hunter2";
 
 /** A reply that claims a card and carries a credential is returned as the redacted reply, unchanged. */
 export async function theRedactedReplyIsReturnedUnchanged(): Promise<void> {

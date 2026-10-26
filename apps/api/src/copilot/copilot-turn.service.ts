@@ -682,7 +682,7 @@ export class CopilotTurnService {
     });
     // 7. The secret scrub on everything the model wrote (a turn that did not end final never uses it).
     const scrubbed = looksLikeCredential(result.reply) ? COPILOT_REPLY_REDACTED : result.reply;
-    // F4.286: a reply that names a card the turn never proposed gets the fixed note appended (owner ruling 2026-10-25); never replaced.
+    // F4.286: a reply that claims a card the turn never proposed gets the fixed note appended (owner rulings 2026-10-25, 2026-10-26); never replaced.
     const reply = withNoChangeNote(scrubbed, proposed.length);
     this.logger.log(
       {
