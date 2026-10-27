@@ -702,3 +702,74 @@ onto `BASELINE-<DOMAIN>`.
   (`asset-template-health-seed.ts:50-58`): a pattern on a baseline point would
   claim, or alias, a tag. The role templates are built from the keys the
   seeded assets actually carry, so they offer no key without a row.
+
+## Amendment 4 — the rule point set adds the asset's own active points (`F4.287`)
+
+**Status: Proposed — 2026-10-27.** Awaiting the owner's acceptance; no
+implementation code exists. Source: a live copilot session on the PHE estate,
+2026-10-27. Line citations are to `main` at `9e24c3fc`.
+
+### What happens today
+
+`assertCompatiblePoint` (`apps/api/src/rules/rule-points.ts:174`) and the rule
+builder's catalog (`rules.service.ts:147`) both read one set through
+`ruleTargetPointKeysByAsset` (`rule-points.ts:139`): the hard-coded map of
+`pointKeysForAsset` (`:27`) united with the asset's pinned-template keys
+(Amendment 2). Neither reads `bms.asset_points`.
+
+The PHE pilot assets show what that costs. `phe-pilot-seed.ts` creates every
+device with `template_id` NULL, and `deviceDomain` (`:88`) puts every
+`AIRSP1051M` gateway in `environment`, whose map is `temperature_c`,
+`humidity_pct`, `leak_state` and `smoke_state`. The gateways report
+`battery_charge_pct` and `network_strength` through live `asset_points` rows,
+and both keys are refused with "Selected telemetry point is not compatible with
+asset" — on the Rule Engine page (the picker never offers them) and through the
+copilot's `propose_` rule tools (the check refuses them before the card).
+The PHE pumps and meters are `electrical`, so every reported key outside the
+generic electrical set (for example `chlorine_pump_on`, `current_i*`) is refused
+the same way. Amendment 3's baseline pin runs for the `ESKOM` organization only,
+so it does not reach these assets.
+
+Amendment 2 named this gap and left it ("It does not reconcile the map with
+`bms.point_keys` … no rule can be written against that key"), because closing it
+moves the acceptance set, which was new scope for `F3.49`.
+
+### Decision
+
+1. **The rule point set is the union of three sources:** the hard-coded map,
+   the pinned template's keys, and the keys of the asset's **active**
+   `bms.asset_points` rows. `ruleTargetPointKeysByAsset` stays the one place the
+   union is computed, so the picker and the validator still agree by
+   construction (Amendment 2).
+2. **A union, not a replacement.** Amendment 2 declined `asset_points` *alone*
+   because it would hide every derived template point (a derived point has no
+   `asset_points` row). A union keeps the template side, so no key accepted
+   today is refused after this amendment.
+3. **Active rows only.** A deactivated mapping receives no samples, so offering
+   it would let an author write a rule that can never fire. A rule already saved
+   against a key whose mapping is later deactivated is not touched: the check
+   runs on write only, as today.
+4. **Order:** map keys first, then template keys, then `asset_points` keys not
+   already listed, each source in its own existing order (`asset_points` by
+   `point_key`), so the picker stays stable across databases.
+5. **Pool and containment unchanged.** The extra read runs on `fleetDb`, with an
+   `inArray` over the same asset ids the two callers already pass; no
+   caller-supplied id reaches the WHERE (Amendment 2, "two callers").
+
+### What this amendment does not do
+
+- No schema, migration, contract or web change. `pointKeys` is already
+  `z.array(z.string())`, and the picker renders what the catalog sends.
+- It does not retire the hard-coded map or change any asset's domain. The PHE
+  gateways stay `environment`.
+- It does not change what `asset_points` itself accepts (the fleet catalog gate,
+  ADR 0051 decision 2), the alarm evaluation (it already loads a sample by asset
+  and point key), or any seeded rule.
+- It does not change the copilot's tools. A copilot reply that advised a new
+  point mapping as the fix for this refusal was wrong: the mapping already
+  existed, and the check never read it.
+
+### Cost
+
+One more indexed query per threshold-rule validation and per catalog read, the
+same shape as the `template_points` query Amendment 2 added.
