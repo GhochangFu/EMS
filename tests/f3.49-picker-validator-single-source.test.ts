@@ -18,13 +18,14 @@ import { describe, expect, it } from "vitest";
  * the picker's query only, or the map-first short-circuit re-added to the
  * validator — keeps that fixture green while diverging on other data. The
  * scan fails the moment **either of the two files it reads** holds a second
- * reader of the hard-coded map or of `template_points`, because a union
- * computed in two places has no compiler edge between them.
+ * reader of the hard-coded map, of `template_points` or (`F4.287`, ADR 0058
+ * Amendment 4) of `asset_points`, because a union computed in two places has
+ * no compiler edge between them.
  *
  * Two named limits, and the first is why this docblock does not say "the rules
  * module". It reads exactly the two files below. `apps/api/src/rules/` holds
- * 18 non-test files, and `rule-points.ts` is today the only one of them naming
- * `templatePoints` — but a reader added to a third file would keep all five of
+ * 22 non-test files (2026-10-27), and `rule-points.ts` is today the only one of them naming
+ * `templatePoints` or `assetPoints` — but a reader added to a third file would keep all seven of
  * the cases below green. Second, it cannot see a divergence *inside* the one
  * function;
  * `rule-points.spec.ts` and the integration cases hold that.
@@ -89,7 +90,7 @@ describe("F3.49 — the rules service reaches the point set only through rule-po
     expect(
       service,
       "`rules.service.ts` calls `pointKeysForAsset` directly. The picker's list must come from " +
-        "`ruleTargetPointKeysByAsset`, the one place the map ∪ template union is computed — a " +
+        "`ruleTargetPointKeysByAsset`, the one place the map ∪ template ∪ asset_points union is computed — a " +
         "direct map read here is the `F3.49` defect exactly: a picker that offers a strict " +
         "subset of what `assertCompatiblePoint` accepts.",
     ).not.toContain("pointKeysForAsset");
@@ -157,23 +158,6 @@ describe("F3.49 — getBuilderCatalog offers ruleTargetPointKeysByAsset's answer
 });
 
 /**
- * ADR 0058 Amendment 2 property 2's tie-break, held here because **no
- * behavioural test can hold it**.
- *
- * Postgres does not specify the order of rows that tie on every `ORDER BY` key,
- * so deleting `asc(point_key)` does not produce a *different* order — it
- * produces an arbitrary one, which is free to coincide with whatever a test
- * asserts. Measured while building this row: with two fixture points tied at
- * `sort_order = 5` and the alphabetically earlier one deleted and re-inserted
- * so that it was physically last, the integration case stayed green with the
- * tie-break removed.
- *
- * The clause is not decoration. `HEALTH_TEMPLATE_POINTS_SQL` writes
- * `sort_order = 0` on **every** row it creates, so on seeded data every
- * template point ties and this leg decides the whole picker order — which is
- * why the ADR argues it from the seed rather than from a failing test.
- */
-/**
  * `F4.287` (ADR 0058 Amendment 4) — the third source, held the same way as the
  * template side: one reader, in `rule-points.ts` only, filtered on `active` and
  * ordered by `point_key`. The integration pair
@@ -204,6 +188,23 @@ describe("F4.287 — rule-points.ts has one reader of asset_points, active and o
   });
 });
 
+/**
+ * ADR 0058 Amendment 2 property 2's tie-break, held here because **no
+ * behavioural test can hold it**.
+ *
+ * Postgres does not specify the order of rows that tie on every `ORDER BY` key,
+ * so deleting `asc(point_key)` does not produce a *different* order — it
+ * produces an arbitrary one, which is free to coincide with whatever a test
+ * asserts. Measured while building this row: with two fixture points tied at
+ * `sort_order = 5` and the alphabetically earlier one deleted and re-inserted
+ * so that it was physically last, the integration case stayed green with the
+ * tie-break removed.
+ *
+ * The clause is not decoration. `HEALTH_TEMPLATE_POINTS_SQL` writes
+ * `sort_order = 0` on **every** row it creates, so on seeded data every
+ * template point ties and this leg decides the whole picker order — which is
+ * why the ADR argues it from the seed rather than from a failing test.
+ */
 describe("F3.49 — the template half's order is (sort_order, point_key)", () => {
   it("ruleTargetPointKeysByAsset orders by sort_order and then by point_key", () => {
     const body = bodyOf(points, "export async function ruleTargetPointKeysByAsset(", POINTS_REL);

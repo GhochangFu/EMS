@@ -20,6 +20,7 @@ import { assertCompatiblePoint, ruleTargetPointKeysByAsset } from "./rule-points
  * `asset_points`.
  */
 
+/** Throws `message` when `condition` is false. */
 export function assert(condition: boolean, message: string): void {
   if (!condition) {
     throw new Error(message);

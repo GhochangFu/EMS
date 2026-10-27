@@ -19,7 +19,7 @@ import {
  * whose point does not belong to its asset. Both must agree, which is why it is
  * one function rather than two lists — and since `F3.49` both reach it only
  * through `ruleTargetPointKeysByAsset` below, which unions it with the asset's
- * pinned-template keys.
+ * pinned-template keys and (`F4.287`) its active `asset_points` keys.
  *
  * Order matters — the `CR-` prefix checks are narrower than the trailing
  * control-room electrical fallback, so they have to come first.
@@ -95,7 +95,8 @@ export function mergeRulePointKeys(
  * assets: a seeded rule's `point_key` comes from the template, so the
  * commissioning PATCH that arms a philosophy row, and any later local override
  * of a seeded threshold, would both be refused by `assertCompatiblePoint` on a
- * point the asset demonstrably has.
+ * point the asset demonstrably has — today only for a point with no active
+ * `asset_points` row (a derived one, or a deactivated mapping), since `F4.287`.
  *
  * **No `kind` filter, deliberately.** A `derived` template point has no
  * `asset_points` row — `F2.2` cannot emit one, because `source_data_key` is NOT
@@ -113,7 +114,8 @@ export function mergeRulePointKeys(
  *
  * An `innerJoin` and no null guard on purpose: a hand-created asset has
  * `template_id = NULL` and joins to zero rows, which is the honest answer —
- * it declares no template points, so the hard-coded map remains its only source.
+ * it declares no template points, so the hard-coded map and its active
+ * `asset_points` rows remain its sources.
  *
  * `fleetDb`, because `template_points` is a tenant table under `FORCE ROW LEVEL
  * SECURITY` and a bare tenant handle reads zero rows from it outside a
@@ -161,8 +163,8 @@ export async function ruleTargetPointKeysByAsset(
   assetRows: ReadonlyArray<{ id: string; code: string; domain: string }>,
 ): Promise<Map<string, string[]>> {
   // A saved round-trip, not a crash guard: drizzle-orm 0.38.4 renders
-  // `inArray(col, [])` as sql`false`, so without this the query below still
-  // runs and answers nothing. Do not remove it as "defensive".
+  // `inArray(col, [])` as sql`false`, so without this the two queries below
+  // still run and answer nothing. Do not remove it as "defensive".
   if (assetRows.length === 0) {
     return new Map();
   }

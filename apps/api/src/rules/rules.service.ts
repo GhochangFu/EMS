@@ -90,7 +90,8 @@ export class RulesService {
     // deliberately cross-org system sweep (ADR 0033 decision 2); the code scan,
     // the pre-write asset lookup and the pre-tenant actor read stay on `fleetDb`;
     // `getBuilderCatalog` reads `assets` (master data) and, since `F3.49`,
-    // `template_points` — its `assetIds` WHERE is the isolation control for both.
+    // `template_points` and (`F4.287`) `asset_points` — its `assetIds` WHERE is the
+    // isolation control for all three.
     // Writes run inside `withTenant(org)`, and E7.1c folds the post-write
     // read-back into that transaction (`getRuleRowTx`); the pre-write current-row
     // read stays on `fleetDb`. `rule_notifications` stays in `ChannelsService`.

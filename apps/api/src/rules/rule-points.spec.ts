@@ -97,7 +97,7 @@ export function runRulePointsTests(): void {
  * reddening whichever claim happened to come first.
  */
 
-/** No template keys: the map, byte-for-byte — a template-less asset's list does not move. */
+/** No template keys and no mapped keys: the map, byte-for-byte — such an asset's list does not move. */
 export function runMergeKeepsTemplateLessListTests(): void {
   same(
     mergeRulePointKeys("electrical", "FEEDER-01", [], []),

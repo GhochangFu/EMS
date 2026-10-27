@@ -72,12 +72,13 @@ type Chain = {
 
 /**
  * A thenable that answers every Drizzle builder call with itself and resolves
- * to `rows`. Enough for the three reads `validateRuleDraft` can perform: the
+ * to `rows`. Enough for the four reads `validateRuleDraft` can perform: the
  * code uniqueness scan (`.select().from().orderBy()`), `assertCompatiblePoint`'s
  * asset lookup (`.select().from().where().limit()`) and — since `E2.4` widened
  * that check, batched by `F3.49` — `ruleTargetPointKeysByAsset`'s
  * `.select().from().innerJoin().where().orderBy()`, which runs on every
- * threshold validation and folds its rows by `assetId`.
+ * threshold validation and folds its rows by `assetId`, then (`F4.287`) its
+ * `asset_points` read, `.select().from().where().orderBy()`, folded the same way.
  */
 function selectChain(rows: unknown[]): Chain {
   const chain: Chain = {
@@ -370,8 +371,9 @@ export async function runCompatiblePointWideningTests(): Promise<void> {
   // lookup falls through to the electrical list, which this key is not in.
   const WATER_ASSET = [{ code: "WTP-1", domain: "water" }];
   const TEMPLATE_KEY = "residual_chlorine_mgl";
-  // No `code` on the draft, so no uniqueness scan runs and the queue is exactly
-  // two selects deep: the asset lookup, then the template-point read.
+  // No `code` on the draft, so no uniqueness scan runs: the asset lookup, then the
+  // template-point read; the third select (`F4.287`, `asset_points`) falls back to
+  // `rows`, whose fixtures carry no `assetId`, so the fold ignores it.
   const draft: RuleDraftBody = { ...thresholdDraft(), pointKey: TEMPLATE_KEY };
 
   // `assetId` on the template row is load-bearing since `F3.49`:
