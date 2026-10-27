@@ -34,7 +34,7 @@ import { seededRuleCode } from "./template-alarm-rules";
  *   `assertCompatiblePoint`. The unit-level fake ignores its arguments, so a
  *   wrong predicate passes every other gate. The fixture's point keys are
  *   deliberately ones `pointKeysForAsset` does **not** return, so the
- *   commissioning `PATCH` can only succeed through that join — and
+ *   commissioning `PATCH` (its `asset_points` row deactivated, `F4.287`) can only succeed through that join — and
  *   `assertJoinPredicateIsNotVacuous` fails the suite if that stops being true.
  * - **Zero `rule_notifications` rows** (decision 2). An absence is invisible to
  *   a type system and to every unit test; it is one `SELECT count(*)` here.
@@ -787,8 +787,8 @@ export async function assertIntraBatchCodeCollisionRefused(
  * The commissioning `PATCH` is the second proof: it is the only execution of
  * the `template_points ⋈ assets` predicate `E2.4` Q1 added to
  * `assertCompatiblePoint` against a real database, and the fixture's point keys
- * are outside `pointKeysForAsset`'s map precisely so that the join is the only
- * way it can pass.
+ * are outside `pointKeysForAsset`'s map, and the case deactivates the active
+ * `asset_points` row `F4.287` would also accept, so that the join is the only way it can pass.
  */
 export async function assertPhilosophyRowCannotBeArmed(
   svc: Services,
@@ -832,12 +832,14 @@ export async function assertPhilosophyRowCannotBeArmed(
   await svc.rules.setEnabled(proto.id, { enabled: true }, actor);
   assert((await isEnabled(proto.id)) === true, `${proto.code}: re-arming a proto rule must work`);
 
-  // Commissioning: one PATCH carrying BOTH fields. This suite's only proof that
-  // the E2.4 Q1 join returns the right rows — `philosophy.point_key` is not in
-  // `pointKeysForAsset`'s answer, so `assertCompatiblePoint` can only pass by
-  // reading the asset's pinned template. It stopped being that join's only
-  // *execution* under `F3.49`, which runs it on every threshold validation
-  // rather than only on a map miss.
+  // Commissioning: one PATCH carrying BOTH fields, the proof that the E2.4 Q1 join returns the right rows —
+  // `philosophy.point_key` is outside the map, and `F4.287` (ADR 0058 Amendment 4) also accepts an active
+  // `asset_points` key, which instantiate wrote for this measured point. Deactivating it leaves the join the only way.
+  const { rowCount: deactivated } = await pool.query(
+    `UPDATE bms.asset_points ap SET active = false FROM bms.assets a WHERE ap.asset_id = a.id AND a.code = $1 AND ap.point_key = $2`,
+    [assetCode, philosophy.point_key],
+  );
+  assert(deactivated === 1, `${philosophy.code}: expected to deactivate 1 asset_points row, got ${String(deactivated)}`);
   await svc.rules.updateRule(philosophy.id, { operator: "gt", thresholdValue: 3 }, actor);
   const { rows: patched } = await pool.query<{ operator: string | null; threshold_value: string }>(
     `SELECT operator, threshold_value::text FROM bms.automation_rules WHERE id = $1`,

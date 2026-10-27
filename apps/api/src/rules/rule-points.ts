@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
-import { asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 
-import { assets, templatePoints } from "@bms/db";
+import { assetPoints, assets, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import {
   CONTROL_ROOM_ELECTRICAL_POINT_KEYS,
@@ -19,7 +19,7 @@ import {
  * whose point does not belong to its asset. Both must agree, which is why it is
  * one function rather than two lists — and since `F3.49` both reach it only
  * through `ruleTargetPointKeysByAsset` below, which unions it with the asset's
- * pinned-template keys.
+ * pinned-template keys and (`F4.287`) its active `asset_points` keys.
  *
  * Order matters — the `CR-` prefix checks are narrower than the trailing
  * control-room electrical fallback, so they have to come first.
@@ -44,34 +44,45 @@ export function pointKeysForAsset(domain: string, code: string): string[] {
 }
 
 /**
- * Map order first, then template-only keys in template order; a key in both
- * appears once, at its map position — ADR 0058 Amendment 2, properties 2 and 3.
+ * Map order first, then template-only keys in template order, then the asset's
+ * own mapped keys in the order given; a key in more than one source appears
+ * once, at its first — ADR 0058 Amendment 2, properties 2 and 3, and
+ * Amendment 4 decision 4 (`F4.287`).
  *
- * Map first so a template-less asset's list is byte-for-byte what it was, and
- * so every assertion on `pointKeysForAsset` above holds through this. The
- * template side needs no dedupe of its own: `(template_id, point_key)` is
- * unique and an asset pins one template.
+ * Map first so an asset with no template and no mapped point keeps its list
+ * byte-for-byte, and so every assertion on `pointKeysForAsset` above holds
+ * through this. Neither later source needs a dedupe of its own:
+ * `(template_id, point_key)` and `(asset_id, point_key)` are both unique.
  */
 export function mergeRulePointKeys(
   domain: string,
   code: string,
   templateKeys: readonly string[],
+  assetPointKeys: readonly string[],
 ): string[] {
-  const mapped = pointKeysForAsset(domain, code);
-  const inMap = new Set(mapped);
-  return [...mapped, ...templateKeys.filter((key) => !inMap.has(key))];
+  const merged = pointKeysForAsset(domain, code);
+  const seen = new Set(merged);
+  for (const key of [...templateKeys, ...assetPointKeys]) {
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(key);
+    }
+  }
+  return merged;
 }
 
 /**
  * The point keys a rule may target, per asset id — the hard-coded map ∪ the
- * pinned template's keys. Every input asset gets an entry.
+ * pinned template's keys ∪ the asset's active `asset_points` keys. Every input
+ * asset gets an entry.
  *
  * `F3.49` / ADR 0058 Amendment 2: the **one** place the union is computed.
  * `assertCompatiblePoint` below refuses a draft against it and
  * `RulesService.getBuilderCatalog` offers it, so picker == validator is
  * structural rather than asserted —
  * `tests/f3.49-picker-validator-single-source.test.ts` holds that this file
- * has one reader of the map and one of `template_points`.
+ * has one reader of the map, one of `template_points` and one of
+ * `asset_points`.
  *
  * Why the template side exists at all (`E2.4` Q1): `pointKeysForAsset` is a
  * hard-coded map written when every asset was a control-room one, and it falls
@@ -84,7 +95,8 @@ export function mergeRulePointKeys(
  * assets: a seeded rule's `point_key` comes from the template, so the
  * commissioning PATCH that arms a philosophy row, and any later local override
  * of a seeded threshold, would both be refused by `assertCompatiblePoint` on a
- * point the asset demonstrably has.
+ * point the asset demonstrably has — today only for a point with no active
+ * `asset_points` row (a derived one, or a deactivated mapping), since `F4.287`.
  *
  * **No `kind` filter, deliberately.** A `derived` template point has no
  * `asset_points` row — `F2.2` cannot emit one, because `source_data_key` is NOT
@@ -93,9 +105,17 @@ export function mergeRulePointKeys(
  * `E2.4` Q1 ruling widened this check with `template_points` rather than with
  * `asset_points`, which would have refused every derived point.
  *
+ * **Why the `asset_points` side exists** (`F4.287`, ADR 0058 Amendment 4): a
+ * hand-created or ingest-seeded asset has no template, so before it the map was
+ * its only source — and a PHE gateway (`environment`, no template) could hold
+ * no rule on the `battery_charge_pct` it reports live. A union, not a
+ * replacement, so the derived points above stay offered. Active rows only: a
+ * deactivated mapping receives no samples, and a rule on it could never fire.
+ *
  * An `innerJoin` and no null guard on purpose: a hand-created asset has
  * `template_id = NULL` and joins to zero rows, which is the honest answer —
- * it declares no template points, so the hard-coded map remains its only source.
+ * it declares no template points, so the hard-coded map and its active
+ * `asset_points` rows remain its sources.
  *
  * `fleetDb`, because `template_points` is a tenant table under `FORCE ROW LEVEL
  * SECURITY` and a bare tenant handle reads zero rows from it outside a
@@ -125,44 +145,58 @@ export function mergeRulePointKeys(
  * cannot be lazy at all.
  *
  * The cost lands in two places rather than one, because this function has two
- * callers. Through `assertCompatiblePoint` it is one extra indexed query per
- * rule validation — a human-paced, role-gated write path, and the evaluation
+ * callers. Through `assertCompatiblePoint` it is two extra indexed queries per
+ * rule validation (`asset_points` reads on its `(asset_id, point_key)` unique
+ * index) — a human-paced, role-gated write path, and the evaluation
  * sweep and `AlarmEngineService` reach it on neither. Through
- * `getBuilderCatalog` it is one query per catalog read, of whatever size that
+ * `getBuilderCatalog` it is two queries per catalog read, of whatever size that
  * read already was.
  *
  * Ordered by `(sort_order, point_key)`. `sort_order` is the author's declared
  * order; the `point_key` tie-break exists because the health seed writes
  * `sort_order = 0` on every row it creates, and without it those keys arrive
- * in heap order, which differs between databases.
+ * in heap order, which differs between databases. The `asset_points` read is
+ * ordered by `point_key` for the same reason.
  */
 export async function ruleTargetPointKeysByAsset(
   fleetDb: BmsDb,
   assetRows: ReadonlyArray<{ id: string; code: string; domain: string }>,
 ): Promise<Map<string, string[]>> {
   // A saved round-trip, not a crash guard: drizzle-orm 0.38.4 renders
-  // `inArray(col, [])` as sql`false`, so without this the query below still
-  // runs and answers nothing. Do not remove it as "defensive".
+  // `inArray(col, [])` as sql`false`, so without this the two queries below
+  // still run and answer nothing. Do not remove it as "defensive".
   if (assetRows.length === 0) {
     return new Map();
   }
-  const rows = await fleetDb
-    .select({ assetId: assets.id, pointKey: templatePoints.pointKey })
-    .from(templatePoints)
-    .innerJoin(assets, eq(assets.templateId, templatePoints.templateId))
-    .where(inArray(assets.id, assetRows.map((row) => row.id)))
-    .orderBy(asc(templatePoints.sortOrder), asc(templatePoints.pointKey));
+  const assetIds = assetRows.map((row) => row.id);
+  const [rows, mappedRows] = await Promise.all([
+    fleetDb
+      .select({ assetId: assets.id, pointKey: templatePoints.pointKey })
+      .from(templatePoints)
+      .innerJoin(assets, eq(assets.templateId, templatePoints.templateId))
+      .where(inArray(assets.id, assetIds))
+      .orderBy(asc(templatePoints.sortOrder), asc(templatePoints.pointKey)),
+    fleetDb
+      .select({ assetId: assetPoints.assetId, pointKey: assetPoints.pointKey })
+      .from(assetPoints)
+      .where(and(inArray(assetPoints.assetId, assetIds), eq(assetPoints.active, true)))
+      .orderBy(asc(assetPoints.pointKey)),
+  ]);
 
-  // Seeded from the input, so an asset that joins to zero template rows still
-  // has an entry; a row for an asset not asked about is ignored, not answered.
+  // Seeded from the input, so an asset that joins to zero rows still has an
+  // entry; a row for an asset not asked about is ignored, not answered.
   const templateKeys = new Map<string, string[]>(assetRows.map((row) => [row.id, []]));
   for (const row of rows) {
     templateKeys.get(row.assetId)?.push(row.pointKey);
   }
+  const mappedKeys = new Map<string, string[]>(assetRows.map((row) => [row.id, []]));
+  for (const row of mappedRows) {
+    mappedKeys.get(row.assetId)?.push(row.pointKey);
+  }
   return new Map(
     assetRows.map((row) => [
       row.id,
-      mergeRulePointKeys(row.domain, row.code, templateKeys.get(row.id) ?? []),
+      mergeRulePointKeys(row.domain, row.code, templateKeys.get(row.id) ?? [], mappedKeys.get(row.id) ?? []),
     ]),
   );
 }

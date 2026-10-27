@@ -97,10 +97,10 @@ export function runRulePointsTests(): void {
  * reddening whichever claim happened to come first.
  */
 
-/** No template keys: the map, byte-for-byte — a template-less asset's list does not move. */
+/** No template keys and no mapped keys: the map, byte-for-byte — such an asset's list does not move. */
 export function runMergeKeepsTemplateLessListTests(): void {
   same(
-    mergeRulePointKeys("electrical", "FEEDER-01", []),
+    mergeRulePointKeys("electrical", "FEEDER-01", [], []),
     ELECTRICAL_POINT_KEYS,
     "no template keys: exactly the hard-coded list",
   );
@@ -109,7 +109,7 @@ export function runMergeKeepsTemplateLessListTests(): void {
 /** Map first, then the template keys in the order given — not sorted, not first. */
 export function runMergeOrderTests(): void {
   same(
-    mergeRulePointKeys("water", "WTP-1", ["b_key", "a_key"]),
+    mergeRulePointKeys("water", "WTP-1", ["b_key", "a_key"], []),
     [...ELECTRICAL_POINT_KEYS, "b_key", "a_key"],
     "map first, then template keys in the order given, not sorted",
   );
@@ -118,9 +118,30 @@ export function runMergeOrderTests(): void {
 /** `kw` is in `ELECTRICAL_POINT_KEYS`; `pue` is not. Seven keys, not eight. */
 export function runMergeDedupeTests(): void {
   same(
-    mergeRulePointKeys("electrical", "FEEDER-01", ["kw", "pue"]),
+    mergeRulePointKeys("electrical", "FEEDER-01", ["kw", "pue"], []),
     [...ELECTRICAL_POINT_KEYS, "pue"],
     "a key in both sets appears once, at its map position",
+  );
+}
+
+/**
+ * `F4.287` (ADR 0058 Amendment 4) — the asset's own mapped keys come last, after the map and the
+ * template, in the order given. The PHE gateway shape: `environment`, no template, two reported keys.
+ */
+export function runMergeAppendsMappedKeysTests(): void {
+  same(
+    mergeRulePointKeys("environment", "PHE-AIRSP1051M-000000011", [], ["battery_charge_pct", "network_strength"]),
+    [...CONTROL_ROOM_ENVIRONMENT_POINT_KEYS, "battery_charge_pct", "network_strength"],
+    "a templateless gateway gets the map, then its mapped keys in the order given",
+  );
+}
+
+/** `F4.287` — map, then template, then mapped; a key already listed by an earlier source appears once, at that place. */
+export function runMergeThreeSourceOrderAndDedupeTests(): void {
+  same(
+    mergeRulePointKeys("water", "WTP-1", ["t_key", "both"], ["kw", "both", "m_key"]),
+    [...ELECTRICAL_POINT_KEYS, "t_key", "both", "m_key"],
+    "map first, template second, mapped third; a mapped key in the map or the template appears once",
   );
 }
 
@@ -133,20 +154,31 @@ type FoldChain = {
 };
 
 /**
- * A thenable answering `ruleTargetPointKeysByAsset`'s one query:
- * `.select().from().innerJoin().where().orderBy()`. It ignores its arguments,
- * so a `where` predicate or an added filter is invisible here — the seed-rules
- * integration suite is what sees those.
+ * A thenable answering `ruleTargetPointKeysByAsset`'s two queries in the order
+ * it starts them: the `template_points` join first, then `asset_points`
+ * (`F4.287`). Each `select()` takes the next row set. It ignores its
+ * arguments, so a `where` predicate or an added filter is invisible here — the
+ * seed-rules and `F4.287` integration suites are what see those.
  */
-function foldDb(rows: unknown[]): BmsDb {
-  const chain: FoldChain = {
-    from: () => chain,
-    innerJoin: () => chain,
-    where: () => chain,
-    orderBy: () => chain,
-    then: (resolve) => resolve(rows),
+function foldDb(templateRows: unknown[], mappedRows: unknown[] = []): BmsDb {
+  const sets = [templateRows, mappedRows];
+  const chainFor = (rows: unknown[]): FoldChain => {
+    const chain: FoldChain = {
+      from: () => chain,
+      innerJoin: () => chain,
+      where: () => chain,
+      orderBy: () => chain,
+      then: (resolve) => resolve(rows),
+    };
+    return chain;
   };
-  return { select: () => chain } as unknown as BmsDb;
+  return {
+    select: () => {
+      const rows = sets.shift();
+      if (rows === undefined) throw new Error("ruleTargetPointKeysByAsset ran a third query");
+      return chainFor(rows);
+    },
+  } as unknown as BmsDb;
 }
 
 /**
@@ -187,6 +219,27 @@ export async function runFoldAnswersEveryInputAssetTests(): Promise<void> {
     !byAsset.has("zz"),
     "a row for an asset not asked about is ignored, not answered",
   );
+}
+
+/**
+ * `F4.287` — the fold puts each mapped row on its own asset, after that asset's
+ * template keys, and ignores a mapped row for an asset not asked about.
+ */
+export async function runFoldAppendsMappedKeysPerAssetTests(): Promise<void> {
+  const db = foldDb(
+    [{ assetId: "a", pointKey: "x" }],
+    [
+      { assetId: "a", pointKey: "m_a" },
+      { assetId: "c", pointKey: "m_c" },
+      { assetId: "zz", pointKey: "stray" },
+    ],
+  );
+  const byAsset = await ruleTargetPointKeysByAsset(db, [
+    { id: "a", code: "W-1", domain: "water" },
+    { id: "c", code: "W-3", domain: "water" },
+  ]);
+  same(byAsset.get("a") ?? [], [...ELECTRICAL_POINT_KEYS, "x", "m_a"], "asset a: map, template key, then its mapped key");
+  same(byAsset.get("c") ?? [], [...ELECTRICAL_POINT_KEYS, "m_c"], "asset c: map, then its mapped key, nobody else's");
 }
 
 /**

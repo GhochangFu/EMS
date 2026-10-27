@@ -2,10 +2,13 @@ import { describe, it } from "vitest";
 
 import {
   runFoldAnswersEveryInputAssetTests,
+  runFoldAppendsMappedKeysPerAssetTests,
   runFoldSkipsTheQueryOnEmptyInputTests,
+  runMergeAppendsMappedKeysTests,
   runMergeDedupeTests,
   runMergeKeepsTemplateLessListTests,
   runMergeOrderTests,
+  runMergeThreeSourceOrderAndDedupeTests,
   runRulePointsTests,
 } from "./rule-points.spec";
 
@@ -31,6 +34,18 @@ describe("rule-points", () => {
 
   it("fold: every input asset is answered, and only input assets", async () => {
     await runFoldAnswersEveryInputAssetTests();
+  });
+
+  it("F4.287 merge: a templateless gateway gets the map, then its mapped keys", () => {
+    runMergeAppendsMappedKeysTests();
+  });
+
+  it("F4.287 merge: map, template, mapped; each key once, at its first source", () => {
+    runMergeThreeSourceOrderAndDedupeTests();
+  });
+
+  it("F4.287 fold: each mapped key lands on its own asset, after the template keys", async () => {
+    await runFoldAppendsMappedKeysPerAssetTests();
   });
 
   it("fold: an empty asset list never reaches the database", async () => {
