@@ -173,6 +173,37 @@ describe("F3.49 — getBuilderCatalog offers ruleTargetPointKeysByAsset's answer
  * template point ties and this leg decides the whole picker order — which is
  * why the ADR argues it from the seed rather than from a failing test.
  */
+/**
+ * `F4.287` (ADR 0058 Amendment 4) — the third source, held the same way as the
+ * template side: one reader, in `rule-points.ts` only, filtered on `active` and
+ * ordered by `point_key`. The integration pair
+ * `rule-points.asset-points.integration.test.ts` holds the `active` filter on
+ * real rows; this holds that no second reader appears, and the tie-free order
+ * no behavioural test can pin.
+ */
+describe("F4.287 — rule-points.ts has one reader of asset_points, active and ordered", () => {
+  it("rules.service.ts does not read assetPoints", () => {
+    expect(
+      service,
+      "`rules.service.ts` reads `assetPoints` itself. The mapped side of the union lives in " +
+        "`rule-points.ts` only; a second reader here can drift from the validator's.",
+    ).not.toContain("assetPoints");
+  });
+
+  it("ruleTargetPointKeysByAsset selects from assetPoints once, on active rows, by point_key", () => {
+    expect(points).toMatch(/import \{[^}]*\bassetPoints\b[^}]*\} from "@bms\/db"/);
+    expect(countOf(points, ".from(assetPoints)"), "`rule-points.ts` queries `asset_points` more than once").toBe(1);
+    const body = bodyOf(points, "export async function ruleTargetPointKeysByAsset(", POINTS_REL);
+    expect(body).toContain(".from(assetPoints)");
+    expect(body, "the asset_points read lost its `active` filter (ADR 0058 Amendment 4 decision 3)").toContain(
+      "eq(assetPoints.active, true)",
+    );
+    expect(body, "the asset_points read lost its `point_key` order (Amendment 4 decision 4)").toContain(
+      "orderBy(asc(assetPoints.pointKey))",
+    );
+  });
+});
+
 describe("F3.49 — the template half's order is (sort_order, point_key)", () => {
   it("ruleTargetPointKeysByAsset orders by sort_order and then by point_key", () => {
     const body = bodyOf(points, "export async function ruleTargetPointKeysByAsset(", POINTS_REL);
