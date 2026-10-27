@@ -705,8 +705,8 @@ onto `BASELINE-<DOMAIN>`.
 
 ## Amendment 4 — the rule point set adds the asset's own active points (`F4.287`)
 
-**Status: Proposed — 2026-10-27.** Awaiting the owner's acceptance; no
-implementation code exists. Source: a live copilot session on the PHE estate,
+**Status: Accepted — 2026-10-27** (owner, as drafted: "Accept ADR 0058
+Amendment 4 as drafted"). No implementation code existed at acceptance. Source: a live copilot session on the PHE estate,
 2026-10-27. Line citations are to `main` at `9e24c3fc`.
 
 ### What happens today
