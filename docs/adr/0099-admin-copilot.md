@@ -1505,3 +1505,195 @@ Confirm per area against the Docker stack.
 | Q19 | Where the file lives until Confirm | the browser; the row stores the hash | as recommended |
 | Q20 | How a CSV reaches the copilot | carry-only, A7 switch applies | as recommended |
 | Q21 | Telemetry `overwrite` | no; `reject` only | as recommended |
+
+## Amendment 9 — release 5: site-wide questions, bulk rule proposals, site reports and the dock window (owner, 2026-10-27)
+
+**Status: Proposed — owner ruled 2026-10-27 (nine questions put one at a time;
+all nine as recommended); the merge approves the text.** A line marked *(Qn)*
+states that question's ruling; the table at the end records each one. Lines
+marked *drafter choice* were not asked. Code citations are to `main` at
+`2b1c3329`.
+
+An organization admin asked the copilot two things it cannot do: *"for the PHE
+sites, go through all the points and suggest the alarm rules that need to be
+created"*, and *"the last 7 days' report for one site"* or *"a summary report
+for all locations"*. The owner then asked that every copilot ability be
+checked against the same question shape — a scope wider than one record (a
+site, all locations, all points), over a time range, and for writes many rows
+at once — and that the dock's fixed window and long threads be fixed in the
+same change. A read-only pass on 2026-10-27 found the facts below.
+
+### Facts the amendment rests on
+
+- **The turn cap.** A copilot turn runs at most 8 tool calls in 45 s
+  (`apps/api/src/llm/agent-loop.ts:26-27`, enforced at `:117`); the copilot
+  passes no options (`copilot-turn.service.ts:630`). A site with N assets needs
+  1 `list_assets` + N `list_asset_points` + one `propose_` call per rule, so two
+  assets with three rules each already exceed it.
+- **A rule card is a draft.** `rule.create` posts `POST /rules`, a draft
+  (`packages/shared/src/copilot/catalog/rules.ts:67-88`); `rule.publish`
+  (`:122-130`) needs the created id, so it comes in a later turn, and the
+  system prompt proposes a next change only when the user's earlier message
+  asked (`copilot-turn.service.ts:157`). N live rules are 2N cards over at
+  least two turns. Each rule card also runs Amendment 8's 7-day backtest
+  before it is stored (`copilot-propose-rules.ts:34-50`).
+- **Not the cause.** "One card per turn" is a prompt rule for layout roles and
+  member binding only (`copilot-turn.service.ts:150, 156`); a turn stores many
+  cards (`:586, :675`) and the dock renders all of them
+  (`apps/web/src/components/copilot/copilot-dock.tsx:285-290`). The propose
+  "budget" is the size bound of the tool definitions sent every turn
+  (`copilot-propose-budget.spec.ts`), not a card count.
+- **No read tool takes a site.** Every list and aggregate read is scoped by
+  organization or by one asset: `list_assets` (`organizationId`, `search`;
+  `tools/list-assets.tool.ts:14-20`), `list_alarms`, `list_rules`,
+  `list_work_orders`, `list_maintenance_schedules`, the energy tools,
+  `get_health_summary`, `get_dashboard_kpis`.
+- **Alarms have no range.** `list_alarms` takes `state` active/all only, newest
+  first (`tools/list-alarms.tool.ts:21-30`): no severity filter, no date range,
+  no count.
+- **Telemetry reads are per asset.** `get_point_aggregate`, `get_recent_values`
+  and `get_values_at_instant` read one asset; `get_latest_values` reads at most
+  5 (`tools/get-latest-values.tool.ts:10`). `list_asset_points` gives a key and
+  a unit only (`tools/list-asset-points.tool.ts:15-41`).
+- **Aggregates and reports are energy only and organization-wide.**
+  `get_energy_report_preview` reads per organization, at most 31 days
+  (`tools/get-energy-report-preview.tool.ts:9-60`; its query is `startDate`
+  and `endDate` only, `packages/shared/src/contracts/report-writes.ts:88-91`);
+  `reportFile.save` has no `locationIds` (`report-writes.ts:174-181`). Report
+  schedules do take `locationIds` (`catalog/reports.ts:83, 112`), and the
+  scheduled render honours them
+  (`apps/api/src/reports/report-render.service.ts:196, 213`).
+- **Lists are cut at 25 with no cursor** (`tools/copilot-tool-scope.ts:47`),
+  and every tool result at 8,000 characters (`apps/api/src/llm/tool-result.ts:15`).
+  Only `get_mimic_layout` (page) and `list_audit_log` (offset) page.
+- **Batch writes have prior art.** `dashboardTemplate.applyToSites`,
+  `assetTemplate.instantiate`, `onboarding.commit` and `telemetry.import` each
+  write many rows from one card.
+- **The dock window is fixed.** The panel is `fixed bottom-28 right-6
+  h-[520px] w-[380px]` (`copilot-dock.tsx:780`): no resize, no maximize, no
+  side-docked mode.
+- **Long threads load whole.** `GET /copilot/conversations/:id` reads every
+  message, oldest first, with no limit
+  (`apps/api/src/copilot/copilot-conversations.service.ts:98-113`), and the dock
+  renders all of them in one scroll (`copilot-dock.tsx:853-870`).
+- **No list of earlier chats.** `GET /copilot/conversations` lists the 100
+  newest (`copilot-conversations.controller.ts:89`,
+  `copilot-conversations.service.ts:11, 69-76`), but `apps/web/src/api/copilot.ts`
+  has no client for it; Amendment 6 named a conversation list as not in scope.
+- **PHE points.** A templateless `environment` gateway's live points become
+  rule targets only through ADR 0058 Amendment 4 (`F4.287`).
+
+### Decisions
+
+- **E1 — Release 5.** Decision 12 gains one row, *release 5 — site-wide
+  questions and the dock window*, holding `F4.288`–`F4.292`; each row keeps its
+  own plan gate. One amendment covers all five. *(Q5)*
+- **E2 — Site point inventory (`F4.288`).** A new read tool
+  `get_site_point_inventory`: input `locationId` (a site and its descendants;
+  drafter choice), optional `domain`, optional `cursor`; output per asset its
+  id, name and domain, and per point its key, unit, 7-day min / avg / max /
+  last and sample count (from `telemetry.point_values_1m`, the backtest's
+  source), and the ids of the rules that already watch it. The point set is
+  the rule point set (`ruleTargetPointKeysByAsset`, ADR 0058 Amendment 4), so
+  it lists only points a rule may use. Placed and bounded as the `F4.274`
+  tools are, and paged under the 8,000-character cut. Depends on `F4.287`.
+- **E3 — One batch rule card (`F4.289`).** *(Q1)* A new catalog entry
+  `rule.createBatch` on a new route `POST /rules/batch` holds up to **25 rule
+  drafts** *(Q3)*, all on assets of one organization. Before the card the
+  server runs, per row, Amendment 8's validator, `assertArmable`, the "would
+  match now" evaluation and the 7-day backtest; a row the validator refuses
+  goes back to the model with its row number and no card is stored (drafter
+  choice). The card is a table — asset, point, operator, threshold, severity,
+  would match now, 7-day fire count — with one checkbox per row. Confirm
+  **creates and publishes** the checked rows *(Q2)* in one transaction, all or
+  none (drafter choice), so their alarms are live at once; the card carries
+  D3's red style and the *"changes live alarm behaviour now"* line. The
+  checkboxes are a top-level `clientOnly` field (`excludedRows`, row indexes)
+  that the route applies, so the body hash binds the rows the model proposed
+  and the user can only remove a row, never add or edit one (drafter choice).
+  The system prompt gains: for a site-wide rule request, read the inventory,
+  then propose one batch card per 25 rows. `rule.create` and `rule.publish`
+  stay for single rules.
+- **E4 — Reports by site (`F4.290`).** *(Q4)* An optional `locationIds` is
+  added to the energy preview query, the three exports,
+  `saveEnergyReportFileBodySchema` and the copilot's model body, resolved as
+  the schedule render resolves it (ADR 0030, additive). A new read tool
+  `get_location_summary` returns one row per location in scope over a range of
+  at most 31 days: asset count, kWh where any, alarms raised and still open by
+  severity, and assets with no data in the range; paged with a cursor.
+- **E5 — Site scope and time range on the reads (`F4.291`).** *(Q6)*
+  - (a) An optional `locationId` (site and descendants) on `list_assets`,
+    `list_alarms`, `list_rules`, `list_work_orders`,
+    `list_maintenance_schedules` and the energy tools, through one shared
+    helper that turns a location into the caller's readable asset ids.
+  - (b) `list_alarms` gains `from`, `to` and `severity`; a new read tool
+    `get_alarm_stats` returns counts by severity and by location, the top
+    assets, and MTTA and MTTR, over a range of at most 31 days.
+  - (c) A new read tool `get_point_stats`: one point key over many assets (a
+    location, or at most 25 asset ids) over a range of at most 31 days, with
+    min / avg / max / last per asset.
+  - (d) A `cursor` on the 25-capped lists instead of a higher cap.
+
+  The turn cap stays 8 calls and 45 s: E2–E5 bring each of the two requests to
+  one to three calls (drafter choice).
+- **E6 — The dock window (`F4.292`).** *(Q7, Q8)* Three modes: **floating**
+  (today's place, now resized by a drag handle on its left and top edges, min
+  360 × 420 px, max the viewport), **maximized** (a centered panel of about
+  90 vw × 90 vh) and **side-docked** (a full-height right panel that pushes the
+  page). The mode and size are kept per user in `localStorage` beside
+  Amendment 6's key and cleared with it; a viewport under 768 px keeps a
+  full-screen sheet (drafter choice). The batch rule card and the summary
+  tables use the width of the maximized and docked modes. No mockup covers the
+  dock, so AGENTS.md §5 is met by the owner's ruling and a review against the
+  design tokens.
+- **E7 — Earlier chats and long threads (`F4.292`).** *(Q9)* The dock gains a
+  conversation list — title from the first user message, last turn time — as
+  a drawer in the floating mode and a left column in the maximized mode, with
+  *New chat* and a title search, on the existing `GET /copilot/conversations`.
+  The detail read pages:
+  `GET /copilot/conversations/:id?before=<messageId>&limit=50`, newest page
+  first (ADR 0030, additive; a read with no query keeps today's shape for an
+  old bundle, Amendment 6 D6(b)). The thread shows *Load earlier* at the top,
+  day separators, server records and settled cards collapsed to one line, and
+  *Jump to latest* when the user scrolls up. Amendment 6's *"a conversation
+  list or history page"* exclusion is withdrawn for the dock; a separate
+  history page stays out.
+
+**Common (drafter choices).** Each new read tool counts against the
+tool-definition size bound, measured and raised by the owner as release 4 did;
+each new contract lives in `packages/shared/src/contracts/` (decision 2, ADR
+0030); the batch route audits each created rule through
+`MasterDataAuditService` with `via: "copilot"` and joins `CATALOG_WRITERS`.
+
+**Not in this amendment.** A new report kind (alarms, KPIs and energy as one
+site operations report) — it needs its own ADR and likely a schema change;
+batch cards for any other entry (maintenance schedules, points,
+`rule.notifications.set`); notification links on batch-created rules; a
+higher turn cap; a backtest longer than 7 days; a separate copilot history
+page.
+
+**Verification owed (each row's plan).** `F4.288`: the inventory lists exactly
+the rule point set, refuses a location outside scope, and pages under the cut.
+`F4.289`: a refused row stores no card; `excludedRows` removes rows and cannot
+add or change one (the hash binds the rest); the transaction creates and
+publishes every checked row or none; each audit row carries `via: "copilot"`.
+`F4.290`–`F4.291`: each `locationId` filter returns only that subtree's
+readable assets, with a spec for an asset inside the subtree but outside the
+user's scope. `F4.292`: the modes, the resize bounds and the stored size; the
+paged read and its old shape; *Load earlier* keeps the scroll place. Live: the
+two original requests answered end to end on the PHE estate against the
+Docker stack.
+
+### Gate questions
+
+| # | Question | Recommended | Ruled |
+| --- | --- | --- | --- |
+| Q1 | How the copilot proposes many rules for a site | one batch card | as recommended |
+| Q2 | What Confirm does to the checked rows | create and publish | as recommended |
+| Q3 | Rows per batch card | 25 | as recommended |
+| Q4 | First reports step | site filter + `get_location_summary` | as recommended |
+| Q5 | ADR shape | one ADR 0099 amendment | as recommended |
+| Q6 | Read scope across all abilities | all four parts in one row (`F4.291`) | as recommended |
+| Q7 | Include the dock UI in this change | yes (the owner's own request) | as recommended |
+| Q8 | Window modes | resize + maximize + side dock | as recommended |
+| Q9 | Chat history | chat list + paged thread | as recommended |
