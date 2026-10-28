@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
 import { alarms, alarmSeverities, assets } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -100,6 +100,11 @@ export class AlarmsService {
    * belongs to that organization (`assets.organization_id`, NOT NULL since
    * 0047 — not `alarms.organization_id`). It is ANDed onto `assetIds`, never
    * a replacement for it, so it can only narrow the caller's scope.
+   *
+   * `F4.291` (ADR 0099 Amendment 9 E5(b)): `severity` (the code), and
+   * `raisedFrom` (inclusive) / `raisedTo` (exclusive) on `raised_at`, ANDed
+   * on as the others. Only the copilot's `list_alarms` passes them; the
+   * route's `alarmListQuerySchema` does not change.
    */
   async list(opts: {
     cursor?: string;
@@ -107,6 +112,9 @@ export class AlarmsService {
     assetIds?: string[] | null;
     state?: "all" | "active";
     organizationId?: string;
+    severity?: string;
+    raisedFrom?: Date;
+    raisedTo?: Date;
   }): Promise<{ items: AlarmListItem[]; nextCursor: string | null }> {
     // Truncated after the clamp (plan decision 4): the schema lets a fractional
     // `limit` through, as the old `Number(limitRaw)` did, and SQL's `LIMIT`
@@ -118,6 +126,9 @@ export class AlarmsService {
       ...(opts.state === "active" ? [activeAlarmFilter] : []),
       // The list inner-joins `assets`, so the organization is the joined row's.
       ...(opts.organizationId ? [eq(assets.organizationId, opts.organizationId)] : []),
+      ...(opts.severity !== undefined ? [eq(alarms.severity, opts.severity)] : []),
+      ...(opts.raisedFrom !== undefined ? [gte(alarms.raisedAt, opts.raisedFrom)] : []),
+      ...(opts.raisedTo !== undefined ? [lt(alarms.raisedAt, opts.raisedTo)] : []),
     ];
 
     return withReadScope(
