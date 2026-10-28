@@ -119,13 +119,19 @@ export type AlarmListFiltersFixture = {
   readonly ids: { readonly d1: string; readonly d2: string; readonly d3: string };
 };
 
-/** The fixture: one asset in a fresh organization, three alarms on three days. */
+/**
+ * The fixture: one asset in a fresh organization, three alarms on three days.
+ * `created` receives the organization id as soon as it is inserted, so the
+ * suite drops it even when a later insert throws (no leaked organization).
+ */
 export async function buildAlarmListFiltersFixture(
   db: Pg,
   run: string,
   svc: AlarmsService,
+  created: (organizationId: string) => void,
 ): Promise<AlarmListFiltersFixture> {
   const organizationId = await insertOrganization(db, `F4291-L-${run}`);
+  created(organizationId);
   const site = await insertLocationRow(db, { organizationId, code: `F4291-L-${run}-S`, name: "F4.291 list site", parentId: null });
   const assetId = await insertAsset(db, { organizationId, locationId: site, code: `F4291-L-${run}-A`, name: "F4.291 list asset" });
   const { high, low } = await twoSeverities(db);

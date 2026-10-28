@@ -40,6 +40,7 @@ export const COPILOT_RANGE_ORDER = "to must be after from";
 export const COPILOT_RANGE_OUT_OF_CLOCK =
   "That range is outside what this read accepts: not before 1970-01-01T00:00:00Z and not more than one day after now.";
 
+/** The refusal for a from/to span longer than the tool's `maxDays`. */
 export function copilotRangeTooLong(maxDays: number): string {
   return `the range is at most ${maxDays} days`;
 }

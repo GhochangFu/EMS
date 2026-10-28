@@ -42,6 +42,7 @@ describe.skipIf(!connectionString)("F4.291 — AlarmsService.list filters by sev
   const run = randomUUID().replace(/-/g, "").slice(0, 10);
   let pools: pg.Pool[] = [];
   let admin: pg.Pool | undefined;
+  let organizationId: string | undefined;
   let fx: AlarmListFiltersFixture | undefined;
 
   beforeAll(async () => {
@@ -56,11 +57,13 @@ describe.skipIf(!connectionString)("F4.291 — AlarmsService.list filters by sev
     const tenantDb = createDb(tenantPool);
     const fleetDb = createDb(fleetPool);
     const svc = new AlarmsService(tenantDb, fleetDb, gatewayStub, new MasterDataAuditService(tenantDb, fleetDb));
-    fx = await buildAlarmListFiltersFixture(admin, run, svc);
+    fx = await buildAlarmListFiltersFixture(admin, run, svc, (id) => {
+      organizationId = id;
+    });
   });
 
   afterAll(async () => {
-    if (admin && fx) await dropOrganization(admin, fx.organizationId);
+    if (admin && organizationId) await dropOrganization(admin, organizationId);
     await Promise.all(pools.map((pool) => pool.end()));
   });
 
