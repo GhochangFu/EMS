@@ -589,7 +589,8 @@ export async function offersNoAttachInACrossOrganizationConversation(): Promise<
   renderDock("admin");
   await openPanel();
   expect(await screen.findByRole("textbox", { name: "Message the copilot" })).toBeInTheDocument();
-  await waitFor(() => expect(load).toHaveBeenCalledWith(CONVERSATION_ID));
+  // F4.292: the thread reads its newest page.
+  await waitFor(() => expect(load).toHaveBeenCalledWith(CONVERSATION_ID, { limit: 50 }));
   await settle();
   expect(screen.queryByLabelText(ATTACH)).not.toBeInTheDocument();
 }
@@ -619,7 +620,8 @@ export async function offersAttachInAConversationBoundToTheOrganization(): Promi
   const load = rememberConversation(ORG_ID, null);
   renderDock("organization_admin");
   await openPanel();
-  await waitFor(() => expect(load).toHaveBeenCalledWith(CONVERSATION_ID));
+  // F4.292: the thread reads its newest page.
+  await waitFor(() => expect(load).toHaveBeenCalledWith(CONVERSATION_ID, { limit: 50 }));
   expect(await screen.findByLabelText(ATTACH)).toBeInTheDocument();
 }
 

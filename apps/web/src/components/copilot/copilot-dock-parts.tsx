@@ -19,6 +19,11 @@ export const NOT_CONFIGURED_SENTENCE =
 /** The sentence a picked organization whose copilot is off shows instead of the input. */
 export const SCOPE_OFF_SENTENCE = "The copilot is off for this organization.";
 
+/** Above an empty thread. */
+export const EMPTY_THREAD_SENTENCE =
+  "Ask about alarms, assets, KPIs, locations, dashboards or health, or ask for a change to a dashboard, " +
+  "a dashboard template or a KPI setting. A change is applied only when you confirm its card.";
+
 /** The server-made onboarding commit's catalog id: a conversation shows one such card at a time. */
 const ONBOARDING_COMMIT = "onboarding.commit";
 /** `F3.24b`: the server-made discovery card's id, the commit card's twin (one open per conversation). */

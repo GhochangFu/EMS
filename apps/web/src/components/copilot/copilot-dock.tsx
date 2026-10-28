@@ -37,7 +37,6 @@ import type { AuthUser } from "../../stores/auth-store";
 import { copilotConversationKey, useCopilotSession, useCopilotStore } from "../../stores/copilot-store";
 import { mountCopilotDock, useCopilotWindowStore } from "../../stores/copilot-window-store";
 import { useWizardStore } from "../../stores/wizard-store";
-import { AssistantText } from "./assistant-text";
 import { AttachButton } from "./attach-button";
 import { AttachPanel } from "./attach-panel";
 import { ConfirmCard } from "./confirm-card";
@@ -48,18 +47,20 @@ import {
   APP_ROUTE,
   BotIcon,
   DockTitle,
+  EMPTY_THREAD_SENTENCE,
   isServerMadeCard,
   limitSentence,
   NOT_CONFIGURED_SENTENCE,
   ONBOARD_PICK_SENTENCE,
   ONBOARDING_DISCOVERY,
   SCOPE_OFF_SENTENCE,
-  UserText,
 } from "./copilot-dock-parts";
+import { CopilotThread } from "./copilot-thread";
 import { OnboardingDraftPicker, type OnboardingDraftsOf } from "./onboarding-draft-picker";
 import { OnboardingSkillPanel } from "./onboarding-skill-panel";
 import { useCopilotSheet } from "./use-copilot-viewport";
 import { appendMessages, awaitingAfterConfirm, FOLLOW_UP_POLL_MS, FOLLOW_UP_WAIT_MS, receivedThread, useConversationThread } from "./use-conversation-thread";
+import { useThreadWindow } from "./use-thread-window";
 
 /**
  * `F3.85` PR 7 (ADR 0099 decisions 1, 5, 10; plan §9.2) — the administrator
@@ -81,6 +82,11 @@ import { appendMessages, awaitingAfterConfirm, FOLLOW_UP_POLL_MS, FOLLOW_UP_WAIT
  * `useCopilotWindowStore` (`bms-copilot-window`), cleared with the session.
  * The button shows while the panel is closed or floats: an open maximized,
  * docked or sheet panel would sit under it, and its header carries Close.
+ *
+ * **Long threads** (`F4.292`, E7). The thread reads its newest 50 messages;
+ * `useThreadWindow` keeps the earlier pages *Load earlier* reads beside it, and
+ * `CopilotThread` renders them with day separators, collapsed action rows and
+ * *Jump to latest*.
  *
  * **Scope.** A scoped administrator's conversation is bound to the home
  * organization on the server, whatever the dock sends. The global
@@ -224,7 +230,8 @@ function DockPanel({
 
   const [banner, setBanner] = useState<string | null>(null);
   const [turnNotConfigured, setTurnNotConfigured] = useState(false);
-  const threadRef = useRef<HTMLDivElement>(null);
+  // `F4.292`: the rows to render — the thread's newest page and the earlier pages *Load earlier* read.
+  const view = useThreadWindow(conversationId, messages, thread.data?.hasEarlier);
 
   const organizations = useQuery({
     queryKey: ["copilot", "organizations"],
@@ -280,13 +287,6 @@ function DockPanel({
     setFiles([]);
     dropEpoch.current += 1;
   }, [organizationId]);
-
-  useEffect(() => {
-    const thread = threadRef.current;
-    if (thread) {
-      thread.scrollTop = thread.scrollHeight;
-    }
-  }, [messages, cards.length, banner]);
 
   // `F4.244`: a stored conversation the server no longer has (purged, deleted: 404) is dropped, and
   // the next send starts a fresh one; the pick stays. A 404 is not retried, so this runs at once.
@@ -775,44 +775,19 @@ function DockPanel({
               onUndoingChange={setSkillUndoing}
             />
           ) : (
-            <div
-              ref={threadRef}
-              role="log"
-              aria-label="Copilot conversation"
-              aria-live="polite"
-              className="flex-1 space-y-3 overflow-y-auto bg-canvas px-4 py-3"
-            >
-              {messages.length === 0 && !turn.isPending && (
-                <p className="text-xs text-ink-muted">
-                  Ask about alarms, assets, KPIs, locations, dashboards or health, or ask for a change to a dashboard,
-                  a dashboard template or a KPI setting. A change is applied only when you confirm its card.
-                </p>
-              )}
-              {messages.map((m) => (
-                <div key={m.id} className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
-                  <span
-                    className={`mb-0.5 px-1 text-[10px] font-semibold uppercase tracking-wide ${
-                      m.role === "user" ? "text-accent" : "text-ink-muted"
-                    }`}
-                  >
-                    {m.role === "user" ? (user.displayName ?? user.email) : m.role === "action" ? "Action" : "Copilot"}
-                  </span>
-                  <div
-                    className={`max-w-[85%] whitespace-pre-wrap rounded px-3 py-2 text-sm ${
-                      m.role === "user"
-                        ? "bg-accent text-on-accent"
-                        : m.role === "action"
-                          ? "border border-line text-xs text-ink-muted"
-                          : "surface-raised-sm text-ink"
-                    }`}
-                  >
-                    {m.role === "user" ? <UserText content={m.content} /> : <AssistantText text={m.content} />}
-                  </div>
-                </div>
-              ))}
-              {cardList}
-              {progress}
-            </div>
+            <CopilotThread
+              conversationId={conversationId}
+              user={user}
+              messages={view.messages}
+              hasEarlier={view.hasEarlier}
+              loadingEarlier={view.loadingEarlier}
+              earlierFailed={view.earlierFailed}
+              onLoadEarlier={view.loadEarlier}
+              prepended={view.prepended}
+              cards={cardList}
+              progress={progress}
+              emptyText={turn.isPending ? null : <p className="text-xs text-ink-muted">{EMPTY_THREAD_SENTENCE}</p>}
+            />
           )}
 
           {banner && (
