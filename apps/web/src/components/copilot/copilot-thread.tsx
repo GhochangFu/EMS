@@ -208,7 +208,7 @@ export function CopilotThread({
         <button
           type="button"
           onClick={jumpToLatest}
-          className="surface-button absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 text-xs shadow-lg"
+          className="surface-button absolute bottom-3 left-1/2 -translate-x-1/2 px-3 py-1 text-xs"
         >
           Jump to latest
         </button>
