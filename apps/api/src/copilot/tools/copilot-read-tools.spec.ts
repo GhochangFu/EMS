@@ -439,11 +439,12 @@ export async function assertAnInjectedProposeCallFindsNoTool(): Promise<void> {
 }
 
 /**
- * The registry is the twenty-six read tools (`F3.87` PR 2 added the four
+ * The registry is the read tools — 36 since `F4.291` PR 3 (`F3.87` PR 2 added the four
  * mimic reads, `F4.274` the five telemetry reads, `F4.275` the six energy
  * reads, `F4.277` the system status and the audit log, `F4.276` the alarm
  * details and the alarm knowledge base), each with a strict argument schema.
- * `F4.291` PR 2 inserts `get_alarm_stats` after `get_alarm_kb`.
+ * `F4.291` PR 2 inserts `get_alarm_stats` after `get_alarm_kb`; PR 3 inserts
+ * `get_point_stats` after `get_point_aggregate` (36 tools).
  */
 export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
   const { tools } = fakeServices();
@@ -462,6 +463,8 @@ export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
     "get_values_at_instant",
     "get_recent_values",
     "get_point_aggregate",
+    // `F4.291` PR 3: one point over many assets, after the one-asset aggregate.
+    "get_point_stats",
     // `F4.275`: the energy and portfolio reads.
     "get_dashboard_kpis",
     "get_load_trend",
@@ -670,5 +673,5 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(ReportsCoreModule)).toContain(ReportsService);
   expect(exportsOf(AdminModule)).toContain(AuditAdminService);
   expect(exportsOf(SystemStatusModule)).toContain(SystemStatusService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(35); // `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills; `F4.291` PR 2: + get_alarm_stats.
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(36); // `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills; `F4.291` PR 2: + get_alarm_stats; PR 3: + get_point_stats.
 }
