@@ -22,5 +22,8 @@ describe("F4.291 PR 3 — get_point_stats", () => {
   it("the covered period reaches the model beside the asked one", spec.theCoveredPeriodReachesTheModel);
   it("an answer that breaks the contract fails the call", spec.aBadAnswerThrows);
   it("25 worst-case asset rows reach the model whole", spec.twentyFiveWorstCaseAssetIdsReachTheModelWhole);
+  it("25 worst-case assets in 25 organizations reach the model whole", spec.twentyFiveWorstCaseAssetsInTwentyFiveOrganizationsReachTheModelWhole);
+  it("the shared fields are at the top of the result, once", spec.theSharedFieldsAreAtTheTopOnce);
+  it("a location page has the shared fields at the top", spec.aLocationPageHasTheSharedFieldsAtTheTop);
   it("a worst-case location page reaches the model whole, with its cursor", spec.aWorstCaseLocationPageReachesTheModelWhole);
 });

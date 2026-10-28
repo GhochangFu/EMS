@@ -286,9 +286,9 @@ export async function anExtraKeyIsStripped(): Promise<void> {
 export async function theCoveredPeriodReachesTheModel(): Promise<void> {
   const { tools } = fake({ extra: { coveredFrom: "2026-10-01T00:01:00.000Z", coveredTo: "2026-10-07T23:59:00.000Z" } });
   const out = listed(await tools.dispatch("get_point_stats", { pointKey: "kw", assetIds: [ASSET_X], from: FROM, to: TO }, ctx([ORG_X])));
-  const entry = out.organizations[0];
-  expect([entry?.from, entry?.to]).toEqual([FROM, TO]);
-  expect([entry?.coveredFrom, entry?.coveredTo]).toEqual(["2026-10-01T00:01:00.000Z", "2026-10-07T23:59:00.000Z"]);
+  const top = out as unknown as Record<string, unknown>;
+  expect([top.from, top.to]).toEqual([FROM, TO]);
+  expect([top.coveredFrom, top.coveredTo]).toEqual(["2026-10-01T00:01:00.000Z", "2026-10-07T23:59:00.000Z"]);
 }
 
 /** (f) A bad row (a negative sample count) fails the call with the stored-contract error, not a reply. */
@@ -312,6 +312,50 @@ export async function twentyFiveWorstCaseAssetIdsReachTheModelWhole(): Promise<v
   const parsed = JSON.parse(content) as Listed;
   expect(parsed.truncated).toBe(false);
   expect(parsed.organizations[0]?.items).toHaveLength(25);
+}
+
+/**
+ * Review finding: 25 worst-case asset ids, each in its own organization (a
+ * platform user's spread). The asked window, the covered period, the point
+ * key and the bucket width are the same for every organization, so the
+ * result carries them once, at the top, and each organization entry is its
+ * id and its rows: all 25 reach the model whole and not `truncated`.
+ * Measured: the content length is in the failure message.
+ */
+export async function twentyFiveWorstCaseAssetsInTwentyFiveOrganizationsReachTheModelWhole(): Promise<void> {
+  const ids = SUBTREE.slice(0, 25);
+  const organizations = ids.map((_, i) => `00000000-0000-4000-8000-0000000007${String(i).padStart(2, "0")}`);
+  const { services, tools } = fake({ rows: (call) => call.assetIds.map(longRow) });
+  (services.access as { readableAssetIdsInOrganization: unknown }).readableAssetIdsInOrganization = async (_user: JwtPayload, organizationId: string) => {
+    const at = organizations.indexOf(organizationId);
+    return at < 0 ? [] : [ids[at]];
+  };
+  const content = asTheModelSeesIt(await tools.dispatch("get_point_stats", { pointKey: "kw", assetIds: ids, lastDays: 31 }, ctx(organizations)));
+  expect(content.endsWith(TOOL_RESULT_CUT_TAIL), `cut at ${content.length} characters`).toBe(false);
+  const parsed = JSON.parse(content) as Listed & Record<string, unknown>;
+  expect([parsed.truncated, parsed.organizations.flatMap((entry) => entry.items).length], `${content.length} characters`).toEqual([false, 25]);
+}
+
+/** The shared fields are at the top of the result, once, and not repeated in an organization entry. */
+export async function theSharedFieldsAreAtTheTopOnce(): Promise<void> {
+  const { tools } = fake();
+  const out = listed(await tools.dispatch("get_point_stats", { pointKey: "kw", assetIds: [ASSET_Y, ASSET_X], from: FROM, to: TO }, ctx([ORG_X, ORG_Y])));
+  const top = out as unknown as Record<string, unknown>;
+  expect([top.pointKey, top.from, top.to, top.coveredFrom, top.coveredTo, top.bucketSeconds]).toEqual(["kw", FROM, TO, FROM, TO, 3_600]);
+  expect(out.organizations.map((entry) => Object.keys(entry).sort())).toEqual([
+    ["items", "organizationId"],
+    ["items", "organizationId"],
+  ]);
+}
+
+/** A location's page has the same shape: the shared fields at the top, the entry its id and its rows. */
+export async function aLocationPageHasTheSharedFieldsAtTheTop(): Promise<void> {
+  const { tools } = fake({ rows: (call) => call.assetIds.map(longRow) });
+  const out = listed(await tools.dispatch("get_point_stats", { pointKey: "kw", locationId: SITE, from: FROM, to: TO }, ctx([ORG_X])));
+  const top = out as unknown as Record<string, unknown>;
+  expect([top.pointKey, top.from, top.to, top.coveredFrom, top.coveredTo, top.bucketSeconds]).toEqual(["kw", FROM, TO, FROM, TO, 3_600]);
+  expect(out.organizations.map((entry) => Object.keys(entry).sort())).toEqual([["items", "organizationId"]]);
+  expect(Object.keys(top).slice(0, 2)).toEqual(["truncated", "nextCursor"]);
 }
 
 /** The location branch's 25-asset page of worst-case rows reaches the model whole, with its cursor. */

@@ -197,17 +197,22 @@ type ListEntry = { organizationId: string; items: unknown[] } & Record<string, u
  * paged organization that lost items without a `keyAt` is a defect (throws).
  * A result within the budget is returned as it was built. `entries` and
  * `read` are the `collectByOrganization` arrays and are trimmed in place.
+ * `head` (`F4.291` PR 3 review) holds the fields every organization shares
+ * (`get_point_stats`' window), placed once after the paging keys and
+ * measured with the rest, rather than repeated in each entry.
  */
 export function fitListResult<K>(
   entries: ListEntry[],
   read: string[],
   state: { truncated: boolean; next: ListCursor<K> | null },
   paging: { readonly keyAt: ReadonlyMap<string, (kept: number) => K | undefined> } | undefined,
+  head?: Record<string, unknown>,
 ): CopilotToolResult {
   let { truncated, next } = state;
   const assemble = (): Record<string, unknown> => {
     const result: Record<string, unknown> = { truncated };
     if (paging !== undefined) result.nextCursor = next === null ? null : encodeListCursor(next as ListCursor<string | number>);
+    Object.assign(result, head);
     result.organizations = entries;
     return result;
   };
@@ -237,9 +242,9 @@ export function fitListResult<K>(
   return { ok: true, result, organizationIds: read };
 }
 
-/** `F4.291` live check: an unpaged list's result, `truncated` first and fitted to the budget. */
-export function listResult(out: { organizations: ListEntry[]; read: string[] }, truncated: boolean): CopilotToolResult {
-  return fitListResult<never>(out.organizations, out.read, { truncated, next: null }, undefined);
+/** `F4.291` live check: an unpaged list's result, `truncated` first and fitted to the budget (`head`: see {@link fitListResult}). */
+export function listResult(out: { organizations: ListEntry[]; read: string[] }, truncated: boolean, head?: Record<string, unknown>): CopilotToolResult {
+  return fitListResult<never>(out.organizations, out.read, { truncated, next: null }, undefined, head);
 }
 
 /**

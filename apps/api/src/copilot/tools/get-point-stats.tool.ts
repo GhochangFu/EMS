@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
 import { pointKeySchema } from "../../telemetry/telemetry.schema";
+import type { CopilotToolResult } from "../copilot-read-tools";
 import { CURSOR_PHRASE, LOCATION_ID_PHRASE, listCursorSchema, offsetKeySchema, offsetPage } from "./copilot-list-paging";
 import { collectByOrganization, defineReadTool, listResult, readPerOrganization } from "./copilot-read-tool";
 import { COPILOT_RANGE_MAX_DAYS, refineInstantRange, resolveInstantRange, timeRangeFields } from "./copilot-time-range";
@@ -32,9 +33,15 @@ export const COPILOT_POINT_STATS_CURSOR_NEEDS_LOCATION = "cursor pages a locatio
  * not answer (no sample in the window) as null stats and `sampleCount: 0`, so
  * the model is never told "no data" by a missing row; a row for an asset not
  * asked is dropped. Both branches return through `fitListResult` (the
- * `F4.291` live-check path, `truncated` and `nextCursor` first); a page of 25
- * worst-case rows stays well under the budget
- * (`point-stats-read-tools.spec.ts`). The service is never called with `[]`.
+ * `F4.291` live-check path, `truncated` and `nextCursor` first). The fields
+ * every organization shares (`pointKey`, the asked `from`/`to`, the covered
+ * period, `bucketSeconds`) are at the top of the result once, never repeated
+ * per organization entry: so 25 worst-case rows reach the model whole in one
+ * organization (measured 5,523 characters), a location page (5,606), and 25
+ * organizations of one asset each (7,155; 9,400 or so with the fields
+ * repeated per entry, which the fit cut to 16 rows), under the 7,500 budget
+ * (`point-stats-read-tools.spec.ts`).
+ * The service is never called with `[]`.
  */
 export const getPointStatsTool = defineReadTool({
   name: "get_point_stats",
@@ -78,7 +85,7 @@ export const getPointStatsTool = defineReadTool({
         (assetId) => byId.get(assetId) ?? { assetId, min: null, avg: null, max: null, last: null, lastAt: null, sampleCount: 0 },
       );
       const { pointKey, from: askedFrom, to: askedTo, coveredFrom, coveredTo, bucketSeconds } = answer;
-      return { items, extra: { pointKey, from: askedFrom, to: askedTo, coveredFrom, coveredTo, bucketSeconds } };
+      return { items, head: { pointKey, from: askedFrom, to: askedTo, coveredFrom, coveredTo, bucketSeconds } };
     };
 
     if (args.assetIds !== undefined) {
@@ -88,20 +95,44 @@ export const getPointStatsTool = defineReadTool({
       if (placed === null) return { ok: false, error: COPILOT_TOOL_RECORD_OUT_OF_SCOPE };
       const asked = [...new Set(args.assetIds)];
       const out = collectByOrganization<PointStatsRow>();
+      let head: Record<string, unknown> | undefined;
       for (const organizationId of target.ids) {
         const ids = asked.filter((assetId) => placed.get(assetId) === organizationId);
         if (ids.length === 0) continue;
         const page = await read(ids);
-        out.add(organizationId, page.items, POINT_STATS_MAX_ASSETS, page.extra);
+        head = page.head;
+        out.add(organizationId, page.items, POINT_STATS_MAX_ASSETS);
       }
-      return listResult(out, false);
+      // Measured with the rows: `fitListResult` places `head` once, after the paging key.
+      return listResult(out, false, head);
     }
 
     const scope = { organizationId: args.organizationId, locationId: args.locationId, paging: { cursor: args.cursor, key: offsetKeySchema } };
-    return readPerOrganization<PointStatsRow, number>(services, ctx, scope, async (_organizationId, assetIds, room, resume) => {
-      const page = offsetPage(assetIds, resume, Math.min(room, POINT_STATS_MAX_ASSETS));
-      if (page.items.length === 0) return { items: [], more: false, keyAt: page.keyAt };
-      return { ...page, ...(await read(page.items)) };
-    });
+    // A location is one organization: its shared fields ride in its entry (so the fit measures them) and are lifted to the top after.
+    return liftSharedFields(
+      await readPerOrganization<PointStatsRow, number>(services, ctx, scope, async (_organizationId, assetIds, room, resume) => {
+        const page = offsetPage(assetIds, resume, Math.min(room, POINT_STATS_MAX_ASSETS));
+        if (page.items.length === 0) return { items: [], more: false, keyAt: page.keyAt };
+        const { items, head } = await read(page.items);
+        return { ...page, items, extra: head };
+      }),
+    );
   },
 });
+
+/**
+ * The location branch's result in the `assetIds` branch's shape: the shared
+ * fields of the (one) organization entry moved to the top, after the paging
+ * keys. Moving a key between two objects of one JSON text adds no character,
+ * so the result the fit measured is still within the budget.
+ */
+function liftSharedFields(out: CopilotToolResult): CopilotToolResult {
+  if (!out.ok) return out;
+  const { organizations, ...paging } = out.result as { organizations: Array<Record<string, unknown>> } & Record<string, unknown>;
+  const head: Record<string, unknown> = {};
+  const entries = organizations.map(({ organizationId, items, ...shared }) => {
+    Object.assign(head, shared);
+    return { organizationId, items };
+  });
+  return { ...out, result: { ...paging, ...head, organizations: entries } };
+}
