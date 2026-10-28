@@ -33,6 +33,7 @@ import { AssetKpisService } from "../../assets/asset-kpis.service";
 import { AssetsModule } from "../../assets/assets.module";
 import { AssetsService } from "../../assets/assets.service";
 import { AccessControlService } from "../../auth/access-control.service";
+import { LocationAssetScopeService } from "../../auth/location-asset-scope.service";
 import type { ResolvedIdentity } from "../../auth/identity-resolver";
 import { DashboardModule } from "../../dashboard/dashboard.module";
 import { DashboardService } from "../../dashboard/dashboard.service";
@@ -616,6 +617,8 @@ export function assertTheModuleWiresTheReadTools(): void {
     // `F4.284`: the work-order and user read tools.
     WorkOrdersService,
     UsersService,
+    // `F4.291`: the location → readable-assets helper, from the `@Global()` `AuthModule`.
+    LocationAssetScopeService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
   for (const module of [

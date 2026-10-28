@@ -1,4 +1,4 @@
-import type { z, ZodTypeAny } from "zod";
+import type { z, ZodType, ZodTypeAny, ZodTypeDef } from "zod";
 
 import type { AuditAdminService } from "../../admin/audit/audit.service";
 import type { LocationsAdminService } from "../../admin/locations/locations.service";
@@ -9,6 +9,7 @@ import type { AssetHealthService } from "../../asset-health/asset-health.service
 import type { AssetKpisService } from "../../assets/asset-kpis.service";
 import type { AssetsService } from "../../assets/assets.service";
 import type { AccessControlService } from "../../auth/access-control.service";
+import type { LocationAssetScopeService } from "../../auth/location-asset-scope.service";
 import type { DashboardService } from "../../dashboard/dashboard.service";
 import type { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import type { MaintenanceService } from "../../maintenance/maintenance.service";
@@ -25,7 +26,8 @@ import type { SystemStatusService } from "../../system-status/system-status.serv
 import type { TelemetryService } from "../../telemetry/telemetry.service";
 import type { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import type { CopilotToolContext, CopilotToolResult } from "../copilot-read-tools";
-import { COPILOT_TOOL_LIST_MAX_ITEMS, targetOrganizations } from "./copilot-tool-scope";
+import { COPILOT_TOOL_BAD_CURSOR, decodeListCursor, encodeListCursor, type ListCursor } from "./copilot-list-paging";
+import { COPILOT_TOOL_LIST_MAX_ITEMS, locationRefusal, targetOrganizations } from "./copilot-tool-scope";
 
 /**
  * `F3.85` PR 7 — the services the read tools call, narrowed to the one method
@@ -34,6 +36,11 @@ import { COPILOT_TOOL_LIST_MAX_ITEMS, targetOrganizations } from "./copilot-tool
 export interface CopilotReadServices {
   /** `F4.276`: `readableOrganizationIds` narrows `get_alarm_kb`'s BYPASSRLS read, as `GET /alarm-kb` does. */
   readonly access: Pick<AccessControlService, "readableAssetIdsInOrganization" | "readableOrganizationIds">;
+  /**
+   * `F4.291` (owner ruling P5): a `locationId` to the caller's readable asset ids of its
+   * subtree, through the one shared helper in `auth/`; `readPerOrganization` calls it.
+   */
+  readonly locationScope: Pick<LocationAssetScopeService, "readableAssetIdsInLocations">;
   readonly alarms: Pick<AlarmsService, "list">;
   /** `F4.274`: `listPoints` for `list_asset_points`. */
   readonly assets: Pick<AssetsService, "listAll" | "listPoints">;
@@ -135,13 +142,33 @@ export function collectByOrganization<T>() {
  * One organization's answer to {@link readPerOrganization}: its items, entry
  * extras, and whether more were left out. `entryCost` is the room the entry's
  * `extra` takes, counted in items, for a tool whose per-organization extra is
- * large enough that the item cap alone would not bound the result.
+ * large enough that the item cap alone would not bound the result. `nextKey`
+ * (`F4.291`, paged tools only) is the key to resume THIS organization at; a
+ * paged answer that is cut must carry it. `capped` (`F4.291`) says the
+ * service itself stopped at its row cap, so rows past the last page exist
+ * that no cursor reaches: the result stays `truncated` with no `nextKey`.
  */
-export type OrganizationRead<T> = {
+export type OrganizationRead<T, K = never> = {
   readonly items: readonly T[];
   readonly extra?: Record<string, unknown>;
   readonly more?: boolean;
   readonly entryCost?: number;
+  readonly nextKey?: K;
+  readonly capped?: boolean;
+};
+
+/**
+ * `F4.291` — a tool's opt-in paging: the call's `cursor` argument and the
+ * schema its resume key must match. A tool that passes none returns no
+ * `nextCursor` (its schema has no `cursor` to send one back in).
+ */
+export type ListPaging<K> = { readonly cursor: string | undefined; readonly key: ZodType<K, ZodTypeDef, unknown> };
+
+/** `F4.291` — what one list call reads: an organization, a location (a site and its subtree), and paging. */
+export type ListScope<K> = {
+  readonly organizationId?: string;
+  readonly locationId?: string;
+  readonly paging?: ListPaging<K>;
 };
 
 /**
@@ -151,34 +178,101 @@ export type OrganizationRead<T> = {
  * service is never called with `null` (the whole fleet) or `[]`. The items are
  * cut at `COPILOT_TOOL_LIST_MAX_ITEMS` across organizations; `room` tells
  * `read` how many still fit, and an organization past a full room is not read.
+ *
+ * `F4.291` (ADR 0099 Amendment 9 E5): with `scope.locationId` the location is
+ * placed among the target organizations by `LocationAssetScopeService`
+ * (refused when it is not found there or lies outside the caller's grant),
+ * and only its organization is read, with the subtree's readable asset ids in
+ * place of the organization's. A named `organizationId` other than the
+ * location's makes the location not found (the candidates are that one
+ * organization). With `scope.paging` the result carries `nextCursor` (see
+ * {@link pageOrganizations}).
  */
-export async function readPerOrganization<T>(
-  access: CopilotReadServices["access"],
+export async function readPerOrganization<T, K = never>(
+  services: Pick<CopilotReadServices, "access" | "locationScope">,
   ctx: CopilotToolContext,
-  requestedOrganizationId: string | undefined,
-  read: (organizationId: string, assetIds: readonly string[], room: number) => Promise<OrganizationRead<T>>,
+  scope: ListScope<K>,
+  read: (organizationId: string, assetIds: readonly string[], room: number, resume: K | undefined) => Promise<OrganizationRead<T, K>>,
 ): Promise<CopilotToolResult> {
-  const target = targetOrganizations(requestedOrganizationId, ctx.allowedOrganizationIds);
+  const target = targetOrganizations(scope.organizationId, ctx.allowedOrganizationIds);
   if (!target.ok) return target;
+  let organizations = target.ids;
+  let located: readonly string[] | undefined;
+  if (scope.locationId !== undefined) {
+    const place = await services.locationScope.readableAssetIdsInLocations(ctx.user, target.ids, [scope.locationId]);
+    if (!place.ok) return { ok: false, error: locationRefusal(place.reason) };
+    organizations = [place.organizationId];
+    located = place.assetIds;
+  }
+  return pageOrganizations<T, K>(organizations, scope.paging, async (organizationId, room, resume) => {
+    const assetIds = located ?? (await services.access.readableAssetIdsInOrganization(ctx.user, organizationId));
+    return assetIds.length === 0 ? null : read(organizationId, assetIds, room, resume);
+  });
+}
+
+/**
+ * `F4.291` — the organization loop under {@link readPerOrganization}, also
+ * used by a list that reads no asset ids (`list_locations`). `readOne`
+ * answers `null` for an organization listed empty and unread, or a refusal
+ * that fails the whole call.
+ *
+ * With `paging`, a cursor resumes at its organization and key, and the loop
+ * stops at the first organization whose answer is cut, so every later
+ * organization is reached by the cursor and never by the same call twice.
+ * `nextCursor` is that organization and its `nextKey`, the next organization
+ * when the room ran out between two, or `null` when nothing is left that a
+ * cursor reaches (an answer `capped` by its service is `truncated` with a
+ * `null` cursor, so a last page is never shown as the whole list). Without
+ * `paging` the result has no `nextCursor` key at all.
+ */
+export async function pageOrganizations<T, K>(
+  organizations: readonly string[],
+  paging: ListPaging<K> | undefined,
+  readOne: (organizationId: string, room: number, resume: K | undefined) => Promise<OrganizationRead<T, K> | null | { readonly refusal: string }>,
+): Promise<CopilotToolResult> {
+  let first = 0;
+  let resume: K | undefined;
+  if (paging?.cursor !== undefined) {
+    const cursor = decodeListCursor(paging.cursor, paging.key, organizations);
+    if (cursor === null) return { ok: false, error: COPILOT_TOOL_BAD_CURSOR };
+    first = organizations.indexOf(cursor.o);
+    resume = cursor.k;
+  }
   const out = collectByOrganization<T>();
   let room = COPILOT_TOOL_LIST_MAX_ITEMS;
   let truncated = false;
-  for (const organizationId of target.ids) {
+  let next: ListCursor<K> | null = null;
+  for (let i = first; i < organizations.length; i += 1) {
+    const organizationId = organizations[i]!;
     if (room <= 0) {
       truncated = true;
+      next = { o: organizationId };
       break;
     }
-    const assetIds = await access.readableAssetIdsInOrganization(ctx.user, organizationId);
-    if (assetIds.length === 0) {
+    const answer = await readOne(organizationId, room, i === first ? resume : undefined);
+    if (answer === null) {
       out.add(organizationId, [], room);
       continue;
     }
-    const answer = await read(organizationId, assetIds, room);
+    if ("refusal" in answer) return { ok: false, error: answer.refusal };
     const cost = answer.entryCost ?? 0;
     const kept = out.add(organizationId, answer.items, room - cost, answer.extra);
     room -= kept + cost;
     // A slice by the room drops rows as surely as `more` does.
-    if (answer.more === true || kept < answer.items.length) truncated = true;
+    if (answer.more !== true && kept >= answer.items.length) {
+      // The service's own cap: rows are left that no cursor reaches.
+      if (answer.capped === true) truncated = true;
+      continue;
+    }
+    truncated = true;
+    if (paging === undefined) continue;
+    if (answer.nextKey === undefined || kept < answer.items.length) {
+      throw new Error(`F4.291: a paged read cut ${organizationId} without the key to resume it at`);
+    }
+    next = { o: organizationId, k: answer.nextKey };
+    break;
   }
-  return { ok: true, result: { organizations: out.organizations, truncated }, organizationIds: out.read };
+  const result: Record<string, unknown> = { organizations: out.organizations, truncated };
+  if (paging !== undefined) result.nextCursor = next === null ? null : encodeListCursor(next as ListCursor<string | number>);
+  return { ok: true, result, organizationIds: out.read };
 }

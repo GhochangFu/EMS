@@ -4,6 +4,7 @@ import { z } from "zod";
 import { parseStoredContract } from "../../common/parse-stored-contract";
 import { isCalendarDate } from "../../reports/report-files.schema";
 import { energyReportQuerySchema } from "../../reports/reports.schema";
+import { LOCATION_ID_PHRASE } from "./copilot-list-paging";
 import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
 
 /** The service's own limit (`ReportsService.parseRange`): 31 whole days. */
@@ -31,9 +32,10 @@ export const getEnergyReportPreviewTool = defineReadTool({
   name: "get_energy_report_preview",
   description:
     "Read the energy report per organization for startDate..endDate (YYYY-MM-DD, at most 31 days): total kWh, cost, kWh per source (DG is a nominal slice), " +
-    "and the top 10 assets by kWh, each with its site name (not a per-site total).",
+    "and the top 10 assets by kWh, each with its site name (not a per-site total). " +
+    `Optional organizationId or ${LOCATION_ID_PHRASE} narrows the read.`,
   schema: energyReportQuerySchema
-    .extend({ organizationId: z.string().uuid().optional() })
+    .extend({ organizationId: z.string().uuid().optional(), locationId: z.string().uuid().optional() })
     .strict()
     .superRefine((args, issue) => {
       const startOk = isCalendarDate(args.startDate);
@@ -48,12 +50,12 @@ export const getEnergyReportPreviewTool = defineReadTool({
         issue.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: `range is over ${COPILOT_REPORT_MAX_DAYS} days` });
       }
     }),
-  async run({ access, reports }, args, ctx) {
+  async run(services, args, ctx) {
     const query = { startDate: args.startDate, endDate: args.endDate };
-    return readPerOrganization(access, ctx, args.organizationId, async (_organizationId, assetIds) => {
+    return readPerOrganization(services, ctx, { organizationId: args.organizationId, locationId: args.locationId }, async (_organizationId, assetIds) => {
       const preview = parseStoredContract(
         energyReportPreviewSchema,
-        await reports.energyPreview(query, [...assetIds]),
+        await services.reports.energyPreview(query, [...assetIds]),
         "copilot_tools.get_energy_report_preview.result",
       );
       return {

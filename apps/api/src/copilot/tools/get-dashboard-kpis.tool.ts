@@ -2,6 +2,7 @@ import { dashboardKpisResponseSchema } from "@bms/shared";
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
+import { LOCATION_ID_PHRASE } from "./copilot-list-paging";
 import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
 
 /**
@@ -15,11 +16,12 @@ export const getDashboardKpisTool = defineReadTool({
   name: "get_dashboard_kpis",
   description:
     "Read the home-page KPIs per organization: total kW, sites online/total, open and critical alarms, PUE; total kW, open alarms and PUE also 24 h earlier. " +
-    "The on-screen Total kW tile may show a newer live socket value than this read.",
-  schema: z.object({ organizationId: z.string().uuid().optional() }).strict(),
-  async run({ access, portfolio }, args, ctx) {
-    return readPerOrganization(access, ctx, args.organizationId, async (_organizationId, assetIds) => ({
-      items: [parseStoredContract(dashboardKpisResponseSchema, await portfolio.kpis([...assetIds]), "copilot_tools.get_dashboard_kpis.result")],
+    "The on-screen Total kW tile may show a newer live socket value than this read. Optional organizationId or " +
+    `${LOCATION_ID_PHRASE} narrows the read.`,
+  schema: z.object({ organizationId: z.string().uuid().optional(), locationId: z.string().uuid().optional() }).strict(),
+  async run(services, args, ctx) {
+    return readPerOrganization(services, ctx, { organizationId: args.organizationId, locationId: args.locationId }, async (_organizationId, assetIds) => ({
+      items: [parseStoredContract(dashboardKpisResponseSchema, await services.portfolio.kpis([...assetIds]), "copilot_tools.get_dashboard_kpis.result")],
     }));
   },
 });

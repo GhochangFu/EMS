@@ -39,6 +39,9 @@ const ASSET_X = "30000000-0000-4000-8000-0000000000aa";
 const ASSET_Y = "30000000-0000-4000-8000-0000000000bb";
 const ASSET_B = "30000000-0000-4000-8000-0000000000cc";
 const ASSET_Z = "30000000-0000-4000-8000-0000000000ee";
+/** `F4.291`: a site in ORG_X, and the one readable asset of its subtree (not one ORG_X's list names). */
+const SITE = "40000000-0000-4000-8000-000000000001";
+const ASSET_SITE = "30000000-0000-4000-8000-0000000000f1";
 const NOW = new Date("2026-10-11T06:00:00Z");
 const SERIES_START = Date.parse("2026-10-04T06:00:00Z");
 const TOP_KWH = 4321.5;
@@ -125,6 +128,10 @@ function fakeEnergyServices() {
         log.access.push(organizationId);
         return ASSETS_BY_ORG[organizationId] ?? [];
       },
+    },
+    locationScope: {
+      readableAssetIdsInLocations: async (_user: JwtPayload, candidates: readonly string[]) =>
+        candidates.includes(ORG_X) ? { ok: true, organizationId: ORG_X, assetIds: [ASSET_SITE] } : { ok: false, reason: "not_found" },
     },
     portfolio: {
       kpis: async (assetIds?: string[] | null) => {
@@ -245,7 +252,7 @@ const ENERGY_CALLS: ReadonlyArray<[string, Record<string, unknown>]> = [
 export async function assertReadPerOrganizationRefusesAnOrganizationOutsideTheAllowedSet(): Promise<void> {
   const { services, log } = fakeEnergyServices();
   const reads: string[] = [];
-  const out = await readPerOrganization(services.access, ctx([ORG_X, ORG_Y]), ORG_B, async (id) => {
+  const out = await readPerOrganization(services, ctx([ORG_X, ORG_Y]), { organizationId: ORG_B }, async (id) => {
     reads.push(id);
     return { items: [1] };
   });
@@ -258,7 +265,7 @@ export async function assertReadPerOrganizationRefusesAnOrganizationOutsideTheAl
 export async function assertReadPerOrganizationSkipsAnOrganizationWithNoReadableAsset(): Promise<void> {
   const { services } = fakeEnergyServices();
   const reads: Array<{ id: string; assetIds: readonly string[] | null }> = [];
-  const out = await readPerOrganization(services.access, ctx([ORG_X, ORG_EMPTY]), undefined, async (id, assetIds) => {
+  const out = await readPerOrganization(services, ctx([ORG_X, ORG_EMPTY]), {}, async (id, assetIds) => {
     reads.push({ id, assetIds });
     return { items: ["a"] };
   });
@@ -280,7 +287,7 @@ export async function assertReadPerOrganizationSkipsAnOrganizationWithNoReadable
 export async function assertReadPerOrganizationCapsItemsAndFlagsTruncated(): Promise<void> {
   const { services } = fakeEnergyServices();
   const reads: string[] = [];
-  const out = await readPerOrganization(services.access, ctx([ORG_X, ORG_Y, ORG_Z]), undefined, async (id) => {
+  const out = await readPerOrganization(services, ctx([ORG_X, ORG_Y, ORG_Z]), {}, async (id) => {
     reads.push(id);
     return { items: Array.from({ length: 20 }, (_, i) => i), extra: { note: id } };
   });
@@ -309,6 +316,23 @@ export function assertResampleSeriesBoundsTheBucketCount(): void {
   // 420 points per group: group 1 is points 420..839, mean (420 + 839) / 2.
   expect(out[1]).toEqual({ t: minute(420), totalKw: 629.5 });
   expect(out[23]?.t).toBe(minute(23 * 420));
+}
+
+/**
+ * `F4.291` (ADR 0099 Amendment 9 E5): each of the six tools given a
+ * `locationId` reads once, in the location's organization only, with exactly
+ * the subtree's readable ids — never the organization's own list. One loop over
+ * the six names, so a tool left out reddens its own row.
+ */
+export async function assertEveryEnergyToolReadsASubtreeWhenGivenALocation(): Promise<void> {
+  for (const [name, args] of ENERGY_CALLS) {
+    const { tools, log } = fakeEnergyServices();
+    const out = await tools.dispatch(name, { ...args, locationId: SITE }, ctx([ORG_X, ORG_Y]));
+    expect(out.ok && out.organizationIds, name).toEqual([ORG_X]);
+    expect(dataCalls(log), name).toBe(1);
+    expect(onlyDataCall(log)?.assetIds, name).toEqual([ASSET_SITE]);
+    expect(log.access, name).toEqual([]);
+  }
 }
 
 // --- task 2: the refusal table, get_dashboard_kpis, get_energy_summary ------------
@@ -508,7 +532,7 @@ export async function assertTheTurnAnswersWhichSiteUsedTheMostKwhLastMonth(): Pr
 /** 20 + 20 over two organizations: the second is sliced to 5 by the room, and that slice alone sets `truncated`. */
 export async function assertReadPerOrganizationFlagsTruncatedWhenTheRoomSlicesAnAnswer(): Promise<void> {
   const { services } = fakeEnergyServices();
-  const out = await readPerOrganization(services.access, ctx([ORG_X, ORG_Y]), undefined, async () => ({
+  const out = await readPerOrganization(services, ctx([ORG_X, ORG_Y]), {}, async () => ({
     items: Array.from({ length: 20 }, (_, i) => i),
   }));
   const result = okResult(out);

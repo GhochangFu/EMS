@@ -38,6 +38,19 @@ export function organizationOutOfScope(allowed: readonly string[]): string {
 export const COPILOT_TOOL_RECORD_OUT_OF_SCOPE =
   "That record was not found in the organizations this conversation may read.";
 
+/** `F4.291`: a `locationId` that names no location in the organizations the call reads. */
+export const COPILOT_TOOL_LOCATION_OUT_OF_SCOPE =
+  "That location was not found in the organizations this conversation may read.";
+
+/** `F4.291`: a location that exists there but lies outside the caller's own grant. */
+export const COPILOT_TOOL_LOCATION_OUTSIDE_GRANT =
+  "That location is outside the sites you may read. list_locations or list_assets names the ones you may.";
+
+/** The refusal for each reason `LocationAssetScopeService` gives (one location per copilot call). */
+export function locationRefusal(reason: "not_found" | "several_organizations" | "outside_grant"): string {
+  return reason === "outside_grant" ? COPILOT_TOOL_LOCATION_OUTSIDE_GRANT : COPILOT_TOOL_LOCATION_OUT_OF_SCOPE;
+}
+
 /**
  * One list result names at most this many items across every organization it
  * read. Lower than `TOOL_LIST_MAX_ITEMS`: a contract row is wide, and

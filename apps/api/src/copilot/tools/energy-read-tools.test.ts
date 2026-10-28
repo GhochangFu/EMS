@@ -5,6 +5,7 @@ import { describe, it } from "vitest";
 import {
   assertDashboardKpisReturnsTheContractPerOrganizationAndNamesTheSocketCaveat,
   assertEnergySummaryDefaultsTheWindowAndRefusesAnotherGrammar,
+  assertEveryEnergyToolReadsASubtreeWhenGivenALocation,
   assertEveryEnergyToolRefusesAnOwnKeyOrganizationAndReadsAnAllowedOne,
   assertLoadTrendIsResampledAndBoundedWithStats,
   assertReadPerOrganizationCapsItemsAndFlagsTruncated,
@@ -37,4 +38,5 @@ describe("F4.275 — the copilot's energy and portfolio read tools", () => {
   it("readPerOrganization flags truncated when the room slices an answer", assertReadPerOrganizationFlagsTruncatedWhenTheRoomSlicesAnAnswer);
   it("get_energy_report_preview stays under the tool-result cut over many organizations", assertReportPreviewBoundsTheResultOverManyOrganizations);
   it("the dashboard and report descriptions match their contracts", assertTheDescriptionsMatchTheContracts);
+  it("F4.291: every energy tool given a locationId reads the subtree's readable assets only", assertEveryEnergyToolReadsASubtreeWhenGivenALocation);
 });
