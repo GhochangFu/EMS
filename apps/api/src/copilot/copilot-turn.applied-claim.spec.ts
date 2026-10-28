@@ -56,6 +56,47 @@ export async function aClaimAfterARealConfirmIsUntouched(): Promise<void> {
   expect(response.reply).toBe(REAL_APPLIED_REPLY);
 }
 
+/**
+ * The AWS order: a real Confirm, then a new request, then a typed "confirmed". The earlier action row is before
+ * the user's last stored message, so it does not cover the typed one: the note is appended.
+ */
+export async function anEarlierConfirmDoesNotCoverALaterTypedConfirm(): Promise<void> {
+  const stored = [
+    row("user", "Notify alarm when the main breaker is open"),
+    row("assistant", "The rule card is up for your confirmation."),
+    row("action", "Applied: Create the rule \"Pump M 000000010 - Main breaker open\"."),
+    row("assistant", "The rule was created."),
+    row("user", "Create a matching rule for the clearwell pump"),
+    row("assistant", "Here's the card."),
+  ];
+  const h = harness(new FakeLlmProvider([{ kind: "final", text: AWS_APPLIED_REPLY }]), { stored });
+  const response = await turn(h, "confirmed");
+  expect(response.reply).toBe(`${AWS_APPLIED_REPLY} ${COPILOT_NO_CHANGE_APPLIED_NOTE}`);
+}
+
+/** `F4.293` review: a Rejected row after the last user message proves nothing — the typed "confirmed" claim is noted. */
+export async function aRejectedCardDoesNotCoverATypedConfirm(): Promise<void> {
+  const stored = [row("user", "Create the rule"), row("assistant", "Here's the card."), row("action", "Rejected: Create the rule X")];
+  const h = harness(new FakeLlmProvider([{ kind: "final", text: AWS_APPLIED_REPLY }]), { stored });
+  const response = await turn(h, "confirmed, apply it");
+  expect(response.reply).toBe(`${AWS_APPLIED_REPLY} ${COPILOT_NO_CHANGE_APPLIED_NOTE}`);
+}
+
+/** `F4.293` review: an Applied row does not cover a typed "confirmed" while the next card is still open. */
+export async function anOpenCardKeepsTheNote(): Promise<void> {
+  const stored = [row("user", "Create the 4 rules"), row("assistant", "Here's card 1."), row("action", "Applied: Create the rule 1"), row("assistant", "Rule 1 is live. Here's card 2.")];
+  const h = harness(new FakeLlmProvider([{ kind: "final", text: AWS_APPLIED_REPLY }]), { stored, open: true });
+  const response = await turn(h, "confirmed");
+  expect(response.reply).toBe(`${AWS_APPLIED_REPLY} ${COPILOT_NO_CHANGE_APPLIED_NOTE}`);
+}
+
+/** `F4.293` review: a follow-up for a failed change is not an apply. */
+export async function aFailedFollowUpClaimIsNoted(): Promise<void> {
+  const h = harness(new FakeLlmProvider([{ kind: "final", text: AWS_APPLIED_REPLY }]), { finished: { ...APPLIED, status: "failed", resultStatus: 412 } });
+  await h.service.followUp({ identity: GLOBAL_ADMIN, user: JWT }, CHANGE_ID);
+  expect(lastAssistant(h)).toBe(`${AWS_APPLIED_REPLY} ${COPILOT_NO_CHANGE_APPLIED_NOTE}`);
+}
+
 /** A follow-up turn is the Confirm itself, so its applied claim is untouched. */
 export async function aFollowUpAppliedClaimIsUntouched(): Promise<void> {
   const h = harness(new FakeLlmProvider([{ kind: "final", text: AWS_APPLIED_REPLY }]), { finished: APPLIED });

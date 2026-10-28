@@ -124,9 +124,45 @@ export function theAppliedNoteNeedsNoRecord(): void {
 
 /** `F4.293`: an action record after the last user message counts; one before it, or none, does not. */
 export function anActionRecordCountsOnlyAfterTheLastUserMessage(): void {
+  const rows = (...pairs: Array<[string, string]>) => pairs.map(([role, content]) => ({ role, content }));
   expect([
-    appliedSinceLastUserMessage(["user", "assistant", "action", "assistant"]),
-    appliedSinceLastUserMessage(["action", "assistant", "user", "assistant"]),
+    appliedSinceLastUserMessage(rows(["user", "u"], ["assistant", "a"], ["action", "Applied: rule"], ["assistant", "a"])),
+    appliedSinceLastUserMessage(rows(["action", "Applied: rule"], ["assistant", "a"], ["user", "u"], ["assistant", "a"])),
     appliedSinceLastUserMessage([]),
   ]).toEqual([true, false, false]);
+}
+
+/** `F4.293` review: a Rejected, Failed or skill action row proves no apply; only an `Applied:` row does. */
+export function onlyAnAppliedRowCounts(): void {
+  const after = (content: string) => appliedSinceLastUserMessage([{ role: "user", content: "u" }, { role: "action", content }]);
+  expect([after("Rejected: Create the rule X"), after("Failed (HTTP 412): Create the rule X"), after("Onboarding: draft saved"), after("Applied: Create the rule X")]).toEqual([
+    false,
+    false,
+    false,
+    true,
+  ]);
+}
+
+/** `F4.293` review: a negated sentence — the note itself among them — is never a claim. */
+export function aNegationIsNotAClaim(): void {
+  expect([claimsApplied(COPILOT_NO_CHANGE_APPLIED_NOTE), claimsApplied("No change has been applied yet."), claimsApplied("The rule is not live.")]).toEqual([
+    false,
+    false,
+    false,
+  ]);
+}
+
+/** `F4.293` review: a read answer with no change noun is not an applied claim. */
+export function aReadAnswerIsNotAClaim(): void {
+  const replies = ["A scaling factor of 0.1 is applied to the raw register value.", "A new alarm has been created for Pump C at 08:12.", "The feed is live."];
+  expect(replies.map(claimsApplied)).toEqual([false, false, false]);
+}
+
+/** `F4.293` review: "I've created the rule" is a claim, and "the rule card is up" is a card claim. */
+export function theFirstPersonAndCardUpWordingsAreTagged(): void {
+  expect([claimsApplied("I've created the rule for PUMP-C-000000005."), claimsACard("The rule card is up for your confirmation."), claimsACard("Usage is up to 40 kW.")]).toEqual([
+    true,
+    true,
+    false,
+  ]);
 }

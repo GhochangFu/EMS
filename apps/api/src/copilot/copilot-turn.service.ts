@@ -585,6 +585,12 @@ export class CopilotTurnService {
     // 5. History.
     const recent = await this.conversations.recentMessages(identity.id, conversationId, COPILOT_HISTORY_LIMIT);
     const history = buildCopilotHistory(recent, scope.allowed);
+    // F4.293: what proves an apply, read before the loop can propose: a follow-up for an applied change, or an
+    // `Applied:` row since the user's last message while no card is still open (a typed "confirmed" is not a Confirm).
+    const appliedRecord =
+      input.kind === "follow_up"
+        ? input.change.status === "applied"
+        : appliedSinceLastUserMessage(recent) && !(await this.pending.hasOpen(identity.id, conversationId));
 
     // 6. The loop, with the read and propose tools.
     const read = new Set<string>();
@@ -691,9 +697,9 @@ export class CopilotTurnService {
     // 7. The secret scrub on everything the model wrote (a turn that did not end final never uses it).
     const scrubbed = looksLikeCredential(result.reply) ? COPILOT_REPLY_REDACTED : result.reply;
     // F4.286: a reply that claims a card the turn never proposed gets the fixed note appended (owner rulings 2026-10-25, 2026-10-26); never replaced.
-    // F4.293: so does a reply that claims an apply no Confirm made — a follow-up turn is the Confirm itself.
-    const appliedRecord = input.kind === "follow_up" || appliedSinceLastUserMessage(recent.map((message) => message.role));
-    const reply = withNoAppliedNote(withNoChangeNote(scrubbed, proposed.length), appliedRecord);
+    // F4.293: so does a reply that claims an apply no Confirm made (`appliedRecord`, read before the loop).
+    const cardNoted = withNoChangeNote(scrubbed, proposed.length);
+    const reply = withNoAppliedNote(cardNoted, appliedRecord);
     this.logger.log(
       {
         conversationId,
@@ -702,7 +708,8 @@ export class CopilotTurnService {
         source: scope.source,
         vision: scope.vision,
         proposed: proposed.length,
-        noteAppended: result.stopReason === "final" && reply !== scrubbed,
+        noteAppended: result.stopReason === "final" && cardNoted !== scrubbed,
+        appliedNoteAppended: result.stopReason === "final" && reply !== cardNoted,
         attachments: attachments.length,
         ...result.record,
       },

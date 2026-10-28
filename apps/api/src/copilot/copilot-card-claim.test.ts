@@ -3,6 +3,10 @@ import { describe, it } from "vitest";
 import {
   aFutureOrPastApplyIsNotTagged,
   anActionRecordCountsOnlyAfterTheLastUserMessage,
+  aNegationIsNotAClaim,
+  aReadAnswerIsNotAClaim,
+  onlyAnAppliedRowCounts,
+  theFirstPersonAndCardUpWordingsAreTagged,
   theAppliedNoteNeedsNoRecord,
   theAwsAppliedRepliesAreTagged,
   theAwsCardWordingsAreTagged,
@@ -39,4 +43,8 @@ describe("F4.293 — card wordings F4.286 missed, and applied claims", () => {
   it("does not tag a future, a past report or a question", () => aFutureOrPastApplyIsNotTagged());
   it("appends the applied note only when no action record follows", () => theAppliedNoteNeedsNoRecord());
   it("counts an action record only after the last user message", () => anActionRecordCountsOnlyAfterTheLastUserMessage());
+  it("counts only an Applied action row, not Rejected, Failed or a skill row", () => onlyAnAppliedRowCounts());
+  it("never tags a negated sentence, the note included", () => aNegationIsNotAClaim());
+  it("does not tag a read answer with no change noun", () => aReadAnswerIsNotAClaim());
+  it("tags \"I've created\" and \"the rule card is up\", not \"up to\"", () => theFirstPersonAndCardUpWordingsAreTagged());
 });
