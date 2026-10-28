@@ -69,7 +69,7 @@ async function expectNotFound(run: () => Promise<unknown>): Promise<void> {
 export async function createRecordsTheBinding(ctx: ConversationsCtx): Promise<void> {
   const scoped = await controller(ctx).create({ organizationId: null }, identity(ctx, ctx.userA, "organization_admin"));
   expect(scoped.organizationId).toBe(ctx.orgA);
-  const read = await controller(ctx).get(scoped.id, identity(ctx, ctx.userA, "organization_admin"), SPEC_JWT);
+  const read = await controller(ctx).get(scoped.id, {}, identity(ctx, ctx.userA, "organization_admin"), SPEC_JWT);
   expect(read).toMatchObject({ id: scoped.id, organizationId: ctx.orgA, messages: [] });
 
   const global = await controller(ctx).create({ organizationId: null }, identity(ctx, ctx.userA, "admin"));
@@ -80,11 +80,11 @@ export async function createRecordsTheBinding(ctx: ConversationsCtx): Promise<vo
 export async function anotherUsersConversationIs404(ctx: ConversationsCtx): Promise<void> {
   const mine = await controller(ctx).create({ organizationId: null }, identity(ctx, ctx.userA, "organization_admin"));
   const asB = identity(ctx, ctx.userB, "organization_admin");
-  await expectNotFound(() => controller(ctx).get(mine.id, asB, SPEC_JWT));
+  await expectNotFound(() => controller(ctx).get(mine.id, {}, asB, SPEC_JWT));
   const listed = await controller(ctx).list(asB);
   expect(listed.map((c) => c.id)).not.toContain(mine.id);
   // The positive control: the owner reads it.
-  const own = await controller(ctx).get(mine.id, identity(ctx, ctx.userA, "organization_admin"), SPEC_JWT);
+  const own = await controller(ctx).get(mine.id, {}, identity(ctx, ctx.userA, "organization_admin"), SPEC_JWT);
   expect(own.id).toBe(mine.id);
 }
 
@@ -105,7 +105,7 @@ export async function listIsNewestFirstAndMessagesAreOrdered(ctx: ConversationsC
   const ids = (await controller(ctx).list(caller)).map((c) => c.id);
   expect(ids.indexOf(newer.id)).toBeGreaterThanOrEqual(0);
   expect(ids.indexOf(newer.id)).toBeLessThan(ids.indexOf(older.id));
-  const detail = await controller(ctx).get(older.id, caller, SPEC_JWT);
+  const detail = await controller(ctx).get(older.id, {}, caller, SPEC_JWT);
   expect(detail.messages.map((m) => m.content)).toEqual(["first", "second"]);
   expect(detail.messages.map((m) => m.role)).toEqual(["user", "assistant"]);
 }
