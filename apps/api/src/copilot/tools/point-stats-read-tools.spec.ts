@@ -14,7 +14,7 @@ import type { CopilotReadServices } from "./copilot-read-tool";
 import { createCopilotReadTools } from "./copilot-read-tool-set";
 import { copilotRangeTooLong } from "./copilot-time-range";
 import { COPILOT_TOOL_RECORD_OUT_OF_SCOPE } from "./copilot-tool-scope";
-import { COPILOT_POINT_STATS_ONE_SOURCE } from "./get-point-stats.tool";
+import { COPILOT_POINT_STATS_CURSOR_NEEDS_LOCATION, COPILOT_POINT_STATS_ONE_SOURCE } from "./get-point-stats.tool";
 
 /**
  * `F4.291` PR 3 (ADR 0099 Amendment 9 E5(c); owner rulings P3, P6) — the
@@ -237,6 +237,17 @@ export async function locationIdWithAssetIdsIsRefused(): Promise<void> {
 /** (d) Neither `locationId` nor `assetIds` is refused by the schema before dispatch. */
 export async function neitherLocationIdNorAssetIdsIsRefused(): Promise<void> {
   expect(await schemaRefusal({ pointKey: "kw", lastDays: 7 })).toContain(COPILOT_POINT_STATS_ONE_SOURCE);
+}
+
+/**
+ * A `cursor` with `assetIds` is refused by the schema before dispatch: that
+ * branch is one page and never reads the cursor, so without the refusal the
+ * same page would come back as if it were the next one.
+ */
+export async function aCursorWithAssetIdsIsRefused(): Promise<void> {
+  expect(await schemaRefusal({ pointKey: "kw", assetIds: [ASSET_X], lastDays: 7, cursor: encoded({ o: ORG_X, k: 0 }) })).toContain(
+    COPILOT_POINT_STATS_CURSOR_NEEDS_LOCATION,
+  );
 }
 
 /** A 32-day range is refused by the schema; 31 days is accepted. */

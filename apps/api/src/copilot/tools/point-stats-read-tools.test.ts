@@ -15,6 +15,7 @@ describe("F4.291 PR 3 — get_point_stats", () => {
   it("the service is never called with no ids", spec.theServiceIsNeverCalledWithNoIds);
   it("locationId with assetIds is refused before dispatch", spec.locationIdWithAssetIdsIsRefused);
   it("neither locationId nor assetIds is refused before dispatch", spec.neitherLocationIdNorAssetIdsIsRefused);
+  it("a cursor with assetIds is refused before dispatch", spec.aCursorWithAssetIdsIsRefused);
   it("a range over 31 days is refused before dispatch", spec.aRangeOver31DaysIsRefused);
   it("a 26th asset id is refused before dispatch", spec.a26thAssetIdIsRefused);
   it("an extra key in the answer is stripped", spec.anExtraKeyIsStripped);
