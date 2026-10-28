@@ -29,7 +29,6 @@ function props(over: Partial<CopilotThreadProps> = {}): CopilotThreadProps {
     loadingEarlier: false,
     earlierFailed: false,
     onLoadEarlier: () => undefined,
-    prepended: 0,
     cards: null,
     progress: null,
     emptyText: null,
@@ -114,8 +113,9 @@ export function aRefusedPageSaysSo(): void {
 
 /**
  * Rows put in front keep the place: 1000 → 1600 px with `scrollTop` 0 gives
- * 600. Mutation: delete the keep-place branch (the log stays at 0, or follows
- * the bottom to 1600 — both differ from 600).
+ * 600. The rows alone carry the prepend (review: no `prepended` count, which
+ * could commit after the rows). Mutation: delete the keep-place branch (the
+ * log stays at 0, or follows the bottom to 1600 — both differ from 600).
  */
 export function aPrependKeepsTheScrollPlace(): void {
   const view = render(<CopilotThread {...props()} />);
@@ -124,11 +124,15 @@ export function aPrependKeepsTheScrollPlace(): void {
   fireEvent.scroll(log());
   view.rerender(<CopilotThread {...props()} />);
   box.height = 1600;
-  view.rerender(<CopilotThread {...props({ messages: [row(1), row(2), row(3), row(4)], prepended: 2 })} />);
+  view.rerender(<CopilotThread {...props({ messages: [row(1), row(2), row(3), row(4)] })} />);
   expect(log().scrollTop).toBe(600);
 }
 
-/** At the bottom, a new row is followed. Mutation: never follow (`following` starts `false`). */
+/**
+ * At the bottom, a new row is followed. Mutation: delete the `else if
+ * (following.current)` branch. (`following` starting `false` is not gated:
+ * the conversation-reset layout effect sets it `true` on mount.)
+ */
 export function atTheBottomANewRowIsFollowed(): void {
   const view = render(<CopilotThread {...props()} />);
   const box = { height: 1000, client: 400 };

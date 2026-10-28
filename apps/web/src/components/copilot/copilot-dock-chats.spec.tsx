@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
 import type { CopilotConversationDto } from "@bms/shared";
@@ -127,4 +127,64 @@ export async function dockedHidesTheListUntilTheToggle(): Promise<void> {
   await screen.findByRole("button", CHATS_TOGGLE);
   await settle();
   expect(screen.queryByRole("searchbox", SEARCH)).toBeNull();
+}
+
+/** The global administrator picks {@link ORG_ID}, so "Onboard a site" is offered and not blocked. */
+async function pickTheOrganization(): Promise<void> {
+  const picker = await screen.findByRole("combobox", { name: "Organization" });
+  await within(picker).findByRole("option", { name: "PHE Water" });
+  fireEvent.change(picker, { target: { value: ORG_ID } });
+}
+
+/**
+ * Review (minor): an onboarding start with no conversation makes one, and a
+ * chat opened meanwhile would be left when the store moves to it. The list is
+ * locked while the start runs. Mutation: `disabled={turn.isPending}` only.
+ */
+export async function aStartLocksTheList(): Promise<void> {
+  const { create } = openIn("maximized");
+  create.mockReturnValue(new Promise(() => undefined));
+  await pickTheOrganization();
+  fireEvent.click(await screen.findByRole("button", { name: "Onboard a site" }));
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect(screen.getByRole("button", { name: /PHE alarms/ })).toBeDisabled();
+}
+
+/**
+ * Review (minor): a start that made a conversation reads the list again.
+ * Mutation: drop `startSkill`'s `onSettled` invalidation.
+ */
+export async function aStartReadsTheListAgain(): Promise<void> {
+  const { create, conversations } = openIn("maximized");
+  create.mockResolvedValue({ ...LISTED, id: CONVERSATION_ID, title: null });
+  vi.spyOn(copilotApi, "startCopilotOnboardingSkill").mockResolvedValue({
+    ...LISTED,
+    id: CONVERSATION_ID,
+    title: null,
+    messages: [],
+    pendingChanges: [],
+    skill: null,
+  });
+  await pickTheOrganization();
+  await screen.findByRole("button", { name: /PHE alarms/ });
+  const before = conversations.mock.calls.length;
+  fireEvent.click(await screen.findByRole("button", { name: "Onboard a site" }));
+  await waitFor(() => expect(conversations.mock.calls.length).toBeGreaterThan(before));
+}
+
+/** Review (nit): a closed drawer is not named by `aria-controls`. Mutation: `aria-controls` whatever `chats.open` says. */
+export async function aClosedChatsToggleControlsNothing(): Promise<void> {
+  openIn("floating");
+  const toggle = await screen.findByRole("button", CHATS_TOGGLE);
+  expect(toggle).not.toHaveAttribute("aria-controls");
+}
+
+/** The open drawer is the element the toggle names. Mutation: drop `aria-controls`. */
+export async function anOpenChatsToggleControlsTheDrawer(): Promise<void> {
+  openIn("floating");
+  const toggle = await screen.findByRole("button", CHATS_TOGGLE);
+  fireEvent.click(toggle);
+  await screen.findByRole("searchbox", SEARCH);
+  const id = toggle.getAttribute("aria-controls");
+  expect(id !== null && document.getElementById(id)?.contains(screen.getByRole("searchbox", SEARCH))).toBe(true);
 }

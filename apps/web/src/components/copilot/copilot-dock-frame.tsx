@@ -186,7 +186,7 @@ export function CopilotDockFrame({
             <button
               type="button"
               aria-expanded={chats.open}
-              aria-controls="copilot-chats"
+              aria-controls={chats.open ? "copilot-chats" : undefined}
               onClick={chats.onToggle}
               className={`rounded px-2 py-0.5 text-xs hover:text-on-dark ${chats.open ? "bg-on-dark/15 text-on-dark" : "text-on-dark/70"}`}
             >

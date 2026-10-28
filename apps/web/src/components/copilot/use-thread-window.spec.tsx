@@ -6,9 +6,9 @@ import { expect, vi } from "vitest";
 import type { CopilotConversationDetailDto, CopilotMessageDto } from "@bms/shared";
 
 import * as copilotApi from "../../api/copilot";
-import { copilotConversationKey } from "../../stores/copilot-store";
+import { copilotConversationKey, copilotEarlierKey } from "../../stores/copilot-store";
 import { detail } from "./use-conversation-thread.spec";
-import { useThreadWindow } from "./use-thread-window";
+import { type ThreadWindowEntry, useThreadWindow } from "./use-thread-window";
 
 /**
  * `F4.292` (ADR 0099 Amendment 9 E7) — `useThreadWindow`, the earlier pages
@@ -30,11 +30,17 @@ function ids(messages: readonly CopilotMessageDto[]): string[] {
   return messages.map((m) => m.id);
 }
 
-type Props = { newest: CopilotMessageDto[]; hasEarlier: boolean | undefined };
+/** Another conversation, for the cases that switch while a page is read. */
+const OTHER_ID = "99999999-9999-4999-8999-999999999999";
+
+type Props = { newest: CopilotMessageDto[]; hasEarlier: boolean | undefined; id?: string };
 
 function mount(initial: Props, client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
   const wrapper = ({ children }: { children: ReactNode }) => <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-  const hook = renderHook(({ newest, hasEarlier }: Props) => useThreadWindow(ID, newest, hasEarlier), { wrapper, initialProps: initial });
+  const hook = renderHook(({ newest, hasEarlier, id = ID }: Props) => useThreadWindow(id, newest, hasEarlier), {
+    wrapper,
+    initialProps: initial,
+  });
   return { ...hook, client };
 }
 
@@ -79,12 +85,46 @@ export async function hasEarlierFollowsThePage(): Promise<void> {
   expect(result.current.hasEarlier).toBe(false);
 }
 
-/** Mutation: `setPrepended(0)` (or the page's length, counting a row the window held). */
-export async function prependedCountsTheNewRows(): Promise<void> {
-  vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue(page(rows(1, 2, 3), true));
-  const { result } = mount({ newest: rows(3, 4), hasEarlier: true });
+/**
+ * Review (minor): a failed read in one chat is not another chat's. Mutation:
+ * return `earlier.isError` whatever conversation the read was for.
+ */
+export async function aFailedReadInAnotherChatIsNotThisOnes(): Promise<void> {
+  vi.spyOn(copilotApi, "fetchCopilotConversation").mockRejectedValue(new Error("down"));
+  const { result, rerender } = mount({ newest: rows(3, 4), hasEarlier: true });
   act(() => result.current.loadEarlier());
-  await waitFor(() => expect(result.current.prepended).toBe(2));
+  await waitFor(() => expect(result.current.earlierFailed).toBe(true));
+  rerender({ newest: rows(7, 8), hasEarlier: true, id: OTHER_ID });
+  expect(result.current.earlierFailed).toBe(false);
+}
+
+/**
+ * Review (minor): a read in flight in one chat leaves another chat's button
+ * free. Mutation: return `earlier.isPending` whatever conversation it is for.
+ */
+export async function aPendingReadInAnotherChatIsNotThisOnes(): Promise<void> {
+  vi.spyOn(copilotApi, "fetchCopilotConversation").mockReturnValue(new Promise(() => undefined));
+  const { result, rerender } = mount({ newest: rows(3, 4), hasEarlier: true });
+  act(() => result.current.loadEarlier());
+  await waitFor(() => expect(result.current.loadingEarlier).toBe(true));
+  rerender({ newest: rows(7, 8), hasEarlier: true, id: OTHER_ID });
+  expect(result.current.loadingEarlier).toBe(false);
+}
+
+/**
+ * Review (minor): a page that answers after a switch goes in front of its own
+ * chat's rows, not the open chat's. Mutation: build the window from the rows
+ * the hook renders now (`newestRef.current`) instead of the read's own id.
+ */
+export async function aPageAfterASwitchGoesToItsOwnChat(): Promise<void> {
+  let answer: (page: CopilotConversationDetailDto) => void = () => undefined;
+  vi.spyOn(copilotApi, "fetchCopilotConversation").mockReturnValue(new Promise((resolve) => (answer = resolve)));
+  const { result, rerender, client } = mount({ newest: rows(3, 4), hasEarlier: true });
+  act(() => result.current.loadEarlier());
+  await waitFor(() => expect(result.current.loadingEarlier).toBe(true));
+  rerender({ newest: rows(7, 8), hasEarlier: true, id: OTHER_ID });
+  await act(async () => answer(page(rows(1, 2), false)));
+  expect(ids(client.getQueryData<ThreadWindowEntry>(copilotEarlierKey(ID))?.messages ?? [])).toEqual(["m-1", "m-2", "m-3", "m-4"]);
 }
 
 /**

@@ -34,8 +34,6 @@ export type CopilotThreadProps = {
   loadingEarlier: boolean;
   earlierFailed: boolean;
   onLoadEarlier: () => void;
-  /** Rows the last *Load earlier* put in front of the old first row. */
-  prepended: number;
   /** The Confirm cards, after the messages. */
   cards: ReactNode;
   /** The "thinking" and follow-up lines, last. */
@@ -79,7 +77,6 @@ export function CopilotThread({
   loadingEarlier,
   earlierFailed,
   onLoadEarlier,
-  prepended,
   cards,
   progress,
   emptyText,
@@ -107,7 +104,8 @@ export function CopilotThread({
     const before = last.current;
     const firstId = messages[0]?.id;
     const oldFirstAt = before?.firstId === undefined ? -1 : messages.findIndex((m) => m.id === before.firstId);
-    if (before !== null && prepended > 0 && oldFirstAt > 0) {
+    // `oldFirstAt > 0` alone proves rows went in front (review): no count from the hook, so no commit order to depend on.
+    if (before !== null && oldFirstAt > 0) {
       el.scrollTop = keepScrollPlace(before, el.scrollHeight);
     } else if (following.current) {
       el.scrollTop = el.scrollHeight;

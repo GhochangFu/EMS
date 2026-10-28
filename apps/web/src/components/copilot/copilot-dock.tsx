@@ -750,7 +750,10 @@ function DockPanel({
           chats={{
             open: chatsOpen,
             onToggle: () => setChatsOpen((was) => !was),
-            list: <ConversationList currentId={conversationId} onOpen={openChat} onNew={() => openChat(null)} disabled={turn.isPending} />,
+            list: (
+              // Review: a start with no conversation makes one and moves the store to it, so it locks the list too.
+              <ConversationList currentId={conversationId} onOpen={openChat} onNew={() => openChat(null)} disabled={turn.isPending || startSkill.isPending} />
+            ),
           }}
         >
           {isGlobalAdmin && (
@@ -796,7 +799,6 @@ function DockPanel({
               loadingEarlier={view.loadingEarlier}
               earlierFailed={view.earlierFailed}
               onLoadEarlier={view.loadEarlier}
-              prepended={view.prepended}
               cards={cardList}
               progress={progress}
               emptyText={turn.isPending ? null : <p className="text-xs text-ink-muted">{EMPTY_THREAD_SENTENCE}</p>}

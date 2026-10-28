@@ -1,11 +1,12 @@
 import { skipToken, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo } from "react";
 import type { CopilotMessageDto } from "@bms/shared";
 import { COPILOT_CONVERSATION_PAGE_DEFAULT } from "@bms/shared/contracts";
 
 import { fetchCopilotConversation } from "../../api/copilot";
 import { threadWindow, withEarlier } from "../../lib/copilot-thread-rows";
-import { copilotEarlierKey } from "../../stores/copilot-store";
+import { copilotConversationKey, copilotEarlierKey } from "../../stores/copilot-store";
+import type { CachedThread } from "./use-conversation-thread";
 
 /** The loaded window as the Query cache keeps it, and whether rows older than its first exist. */
 export type ThreadWindowEntry = { readonly messages: readonly CopilotMessageDto[]; readonly hasEarlier: boolean };
@@ -19,8 +20,6 @@ export type ThreadWindow = {
   loadingEarlier: boolean;
   /** The last *Load earlier* read failed (the button stays, for another try). */
   earlierFailed: boolean;
-  /** Rows the last *Load earlier* put in front of the old first row (`CopilotThread` keeps the scroll place). */
-  prepended: number;
 };
 
 const NONE: readonly CopilotMessageDto[] = [];
@@ -49,6 +48,11 @@ function sameIds(a: readonly CopilotMessageDto[], b: readonly CopilotMessageDto[
  * **`hasEarlier`** is the earliest read's: the last *Load earlier* answer's
  * while its rows lead the window, else the thread's own (`undefined` — an
  * unpaged read, the whole thread — is `false`).
+ *
+ * **A read belongs to its own chat** (review): the chat list stays open while a
+ * page is read, so `loadingEarlier` and `earlierFailed` are the open chat's
+ * only, and an answer goes in front of its own chat's rows — the window and
+ * the thread cached under the read's id, never the rows rendered now.
  */
 export function useThreadWindow(
   conversationId: string | null,
@@ -73,24 +77,25 @@ export function useThreadWindow(
     queryClient.setQueryData<ThreadWindowEntry>(copilotEarlierKey(conversationId), { messages, hasEarlier });
   }, [conversationId, newest.length, known, messages, hasEarlier, queryClient]);
 
-  const newestRef = useRef(newest);
-  newestRef.current = newest;
-  const [prepended, setPrepended] = useState(0);
   const earlier = useMutation({
     mutationFn: ({ id, before }: { id: string; before: string }) =>
       fetchCopilotConversation(id, { before, limit: COPILOT_CONVERSATION_PAGE_DEFAULT }),
     onSuccess: (page, { id }) => {
-      // Read at answer time: the thread may have grown while the page was in flight.
-      const current = threadWindow(queryClient.getQueryData<ThreadWindowEntry>(copilotEarlierKey(id))?.messages ?? [], newestRef.current);
-      const next = withEarlier(page.messages, current);
-      queryClient.setQueryData<ThreadWindowEntry>(copilotEarlierKey(id), { messages: next, hasEarlier: page.hasEarlier ?? false });
-      setPrepended(next.length - current.length);
+      // Read at answer time, under the read's own id: the thread may have grown, or another chat may be open.
+      const thread = queryClient.getQueryData<CachedThread>(copilotConversationKey(id))?.messages ?? NONE;
+      const current = threadWindow(queryClient.getQueryData<ThreadWindowEntry>(copilotEarlierKey(id))?.messages ?? NONE, thread);
+      queryClient.setQueryData<ThreadWindowEntry>(copilotEarlierKey(id), {
+        messages: withEarlier(page.messages, current),
+        hasEarlier: page.hasEarlier ?? false,
+      });
     },
   });
+  const ours = conversationId !== null && earlier.variables?.id === conversationId;
+  const loadingEarlier = ours && earlier.isPending;
 
   function loadEarlier(): void {
     const oldest = messages[0];
-    if (conversationId === null || oldest === undefined || earlier.isPending) return;
+    if (conversationId === null || oldest === undefined || loadingEarlier) return;
     earlier.mutate({ id: conversationId, before: oldest.id });
   }
 
@@ -98,8 +103,7 @@ export function useThreadWindow(
     messages,
     hasEarlier,
     loadEarlier,
-    loadingEarlier: earlier.isPending,
-    earlierFailed: earlier.isError,
-    prepended,
+    loadingEarlier,
+    earlierFailed: ours && earlier.isError,
   };
 }
