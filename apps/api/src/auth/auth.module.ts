@@ -5,6 +5,7 @@ import { AccessControlModule } from "./access-control.module";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
+import { LocationAssetScopeService } from "./location-asset-scope.service";
 import { SocketRegistry } from "./socket-registry";
 import { UserDisabledListenerService } from "./user-disabled-listener.service";
 
@@ -30,7 +31,9 @@ import { UserDisabledListenerService } from "./user-disabled-listener.service";
   // F3.78 / ADR 0089 decision 8: the socket registry the two gateways register
   // with, and the `bms_user_disabled` listener that closes a deactivated
   // user's sockets through it.
-  providers: [AuthService, JwtAuthGuard, SocketRegistry, UserDisabledListenerService],
-  exports: [JwtAuthGuard, SocketRegistry],
+  // F4.291 (ADR 0099 Amendment 9 E5; owner ruling P5): the one location → readable-assets
+  // helper, exported so the copilot reads (and F4.288 / F4.290) inject it through the global scope.
+  providers: [AuthService, JwtAuthGuard, SocketRegistry, UserDisabledListenerService, LocationAssetScopeService],
+  exports: [JwtAuthGuard, SocketRegistry, LocationAssetScopeService],
 })
 export class AuthModule {}
