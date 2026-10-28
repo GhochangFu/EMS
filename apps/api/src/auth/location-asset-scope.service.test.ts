@@ -9,6 +9,7 @@ import {
   aNonEmptyAnswerReadsNoLocationGrant,
   anEmptyReadableSetMakesNoAssetStatement,
   anEmptySiteInsideTheGrantIsAnEmptyAnswer,
+  aGrantBelowTheAskedLocationIsAnEmptyAnswer,
   locationsInTwoOrganizationsAreRefused,
   noLocationOrNoCandidateIsNotFoundWithoutAStatement,
   thePlacementIsBoundToTheCandidateOrganizations,
@@ -29,6 +30,7 @@ describe("F4.291 — a location to the caller's readable assets of its subtree",
   it("makes no asset statement for a caller with no readable asset", anEmptyReadableSetMakesNoAssetStatement);
   it("refuses a location outside the caller's grant", aLocationOutsideTheGrantIsRefused);
   it("answers an empty site inside the grant with no asset ids", anEmptySiteInsideTheGrantIsAnEmptyAnswer);
+  it("answers an empty list when the grant lies below the asked location", aGrantBelowTheAskedLocationIsAnEmptyAnswer);
   it("never refuses a found location for the global admin", aGlobalAdminIsNeverOutsideTheGrant);
   it("reads no location grant on a non-empty answer", aNonEmptyAnswerReadsNoLocationGrant);
 });

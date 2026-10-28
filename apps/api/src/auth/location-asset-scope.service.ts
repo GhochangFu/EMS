@@ -18,8 +18,8 @@ import { expandLocationSubtrees } from "./location-tree";
  *   candidate organizations (another tenant's node starts nothing).
  * - `several_organizations`: the locations lie in more than one organization.
  * - `outside_grant`: the locations exist in a candidate organization, their
- *   subtrees hold no asset the caller reads, and none of them is a location
- *   the caller reads. A site inside the grant that holds no asset is NOT this
+ *   subtrees hold no asset the caller reads, and no location of their
+ *   subtrees is one the caller reads. A site inside the grant that holds no asset is NOT this
  *   refusal: it answers `ok` with no asset ids.
  */
 export type LocationAssetScope =
@@ -84,7 +84,7 @@ export class LocationAssetScopeService {
     const readable = await this.access.readableAssetIdsInOrganization(user, organizationId);
     const assetIds = readable.length === 0 || subtree.length === 0 ? [] : await this.assetsIn(subtree, readable);
     if (assetIds.length > 0) return { ok: true, organizationId, assetIds };
-    return (await this.insideTheGrant(user, ids)) ? { ok: true, organizationId, assetIds: [] } : { ok: false, reason: "outside_grant" };
+    return (await this.insideTheGrant(user, subtree)) ? { ok: true, organizationId, assetIds: [] } : { ok: false, reason: "outside_grant" };
   }
 
   /** Step 4: the subtree's assets the caller reads, sorted by id. */
@@ -98,9 +98,13 @@ export class LocationAssetScopeService {
     return rows.rows.map((row) => row.id);
   }
 
-  /** A global admin reads every location; anyone else reads a location in their scope's list. */
-  private async insideTheGrant(user: JwtPayload, ids: readonly string[]): Promise<boolean> {
+  /**
+   * A global admin reads every location; anyone else is inside the grant when
+   * the asked subtree holds a location in their scope's list — an ancestor of
+   * the granted site included, so an empty grant below it is an empty answer.
+   */
+  private async insideTheGrant(user: JwtPayload, subtree: readonly string[]): Promise<boolean> {
     const readable = await this.access.readableLocationIds(user);
-    return readable === null || ids.some((id) => readable.includes(id));
+    return readable === null || subtree.some((id) => readable.includes(id));
   }
 }

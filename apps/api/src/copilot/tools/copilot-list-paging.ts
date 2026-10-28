@@ -34,6 +34,7 @@ export const CURSOR_PHRASE = "a non-null nextCursor: call again with the same ar
 
 export type ListCursor<K> = { readonly o: string; readonly k?: K };
 
+/** The opaque base64url JSON cursor `{ o, k? }` a paged list returns as nextCursor. */
 export function encodeListCursor(cursor: ListCursor<string | number>): string {
   return Buffer.from(JSON.stringify(cursor), "utf-8").toString("base64url");
 }
@@ -71,6 +72,16 @@ export function offsetPage<T>(
   const items = rows.slice(start, start + Math.max(0, room));
   const end = start + items.length;
   return end < rows.length ? { items, more: true, nextKey: end } : { items, more: false };
+}
+
+/**
+ * `capped` and the entry's `serviceCap` extra when the service answered `count`
+ * rows of its `cap` (it may have stopped there), or nothing. A list over a
+ * row-capped service read spreads this into its answer, so the last offset
+ * page past the cap stays `truncated` (`pageOrganizations`).
+ */
+export function serviceCapOf(count: number, cap: number): { capped: true; extra: { serviceCap: number } } | Record<string, never> {
+  return count >= cap ? { capped: true, extra: { serviceCap: cap } } : {};
 }
 
 /**

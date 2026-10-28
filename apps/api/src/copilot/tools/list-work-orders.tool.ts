@@ -2,8 +2,11 @@ import { workOrdersListResponseSchema, workOrderStatusSchema } from "@bms/shared
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
-import { CURSOR_PHRASE, LOCATION_ID_PHRASE, listCursorSchema, offsetKeySchema, offsetPage } from "./copilot-list-paging";
+import { CURSOR_PHRASE, LOCATION_ID_PHRASE, listCursorSchema, offsetKeySchema, offsetPage, serviceCapOf } from "./copilot-list-paging";
 import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
+
+/** The most rows `WorkOrdersService.list` answers (its `limit` clamp). */
+const WORK_ORDERS_SERVICE_CAP = 100;
 
 /**
  * `list_work_orders` (`F4.284`, ADR 0106; ADR 0099 Amendment 8 D7; owner ruling
@@ -18,9 +21,10 @@ import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
  * `F4.291` (ADR 0099 Amendment 9 E5): `locationId` reads the work orders of the
  * caller's readable assets of that site's subtree; `cursor` is an offset into the
  * service's rows (its order ends in `id`, so it is total). **Known limit:** the
- * service answers at most 100 rows, so the cursor pages inside those 100 only and
- * `truncated` stays true past them — `search` and `status` are what find a named
- * work order there.
+ * service answers at most 100 rows, so the cursor pages inside those 100 only;
+ * when it answers 100 the entry carries `serviceCap: 100` and the last page stays
+ * `truncated` with a `null` cursor (`serviceCapOf`) — `search` and `status` are
+ * what find a named work order there.
  */
 export const listWorkOrdersTool = defineReadTool({
   name: "list_work_orders",
@@ -42,7 +46,7 @@ export const listWorkOrdersTool = defineReadTool({
       const page = parseStoredContract(
         workOrdersListResponseSchema,
         await services.workOrders.list(
-          { limit: 100, assetIds: [...assetIds] },
+          { limit: WORK_ORDERS_SERVICE_CAP, assetIds: [...assetIds] },
           { ...(args.search ? { titleSearch: args.search } : {}), ...(args.status ? { status: args.status } : {}) },
         ),
         "copilot_tools.list_work_orders.page",
@@ -50,6 +54,7 @@ export const listWorkOrdersTool = defineReadTool({
       const { items, ...rest } = offsetPage(page.items, resume, room);
       return {
         ...rest,
+        ...serviceCapOf(page.items.length, WORK_ORDERS_SERVICE_CAP),
         items: items.map((item) => ({
           id: item.id,
           title: item.title,

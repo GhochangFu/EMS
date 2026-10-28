@@ -111,7 +111,7 @@ function fake(rows: WorkOrderListItem[], users: AdminUserDto[] = []) {
   return { tools: createCopilotReadTools(services), log };
 }
 
-type Listed = { organizations: { organizationId: string; items: Record<string, unknown>[] }[]; truncated: boolean; nextCursor?: string | null };
+type Listed = { organizations: { organizationId: string; items: Record<string, unknown>[]; serviceCap?: number }[]; truncated: boolean; nextCursor?: string | null };
 
 async function dispatch(tools: ReturnType<typeof fake>["tools"], name: string, args: Record<string, unknown>, allowed: readonly string[]) {
   return tools.dispatch(name, args, ctx(allowed)) as Promise<CopilotToolResult>;
@@ -262,4 +262,27 @@ export async function listWorkOrdersCursorResumesAtTheOffset(): Promise<void> {
   const two = await list(tools, "list_work_orders", { cursor: one.listed.nextCursor }, [ORG_X]);
   const titles = itemsOf(two.listed).map((item) => item.title);
   expect([titles[0], titles.length, two.listed.nextCursor]).toEqual(["Work order 26", 15, null]);
+}
+
+/** Pages through the cursor until it is `null`; the last page. */
+async function lastPage(tools: ReturnType<typeof fake>["tools"], allowed: readonly string[]) {
+  let page = await list(tools, "list_work_orders", {}, allowed);
+  for (let i = 0; i < 10 && page.listed.nextCursor; i += 1) {
+    page = await list(tools, "list_work_orders", { cursor: page.listed.nextCursor }, allowed);
+  }
+  return page.listed;
+}
+
+/** `F4.291`: 150 work orders, the service answers 100; the last cursor page still says truncated. */
+export async function listWorkOrdersLastPagePastTheServiceCapIsTruncated(): Promise<void> {
+  const { tools } = fake(Array.from({ length: 150 }, (_, i) => workOrder(i + 1, ASSET_X)));
+  const last = await lastPage(tools, [ORG_X]);
+  expect([last.truncated, last.nextCursor, last.organizations[0]?.serviceCap]).toEqual([true, null, 100]);
+}
+
+/** `F4.291`: 40 work orders, under the service's cap; the last cursor page is not truncated. */
+export async function listWorkOrdersLastPageUnderTheServiceCapIsComplete(): Promise<void> {
+  const { tools } = fake(Array.from({ length: 40 }, (_, i) => workOrder(i + 1, ASSET_X)));
+  const last = await lastPage(tools, [ORG_X]);
+  expect([last.truncated, last.organizations[0]?.serviceCap]).toEqual([false, undefined]);
 }

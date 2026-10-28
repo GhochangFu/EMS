@@ -2,7 +2,8 @@ import { maintenanceSchedulesResponseSchema } from "@bms/shared";
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
-import { CURSOR_PHRASE, LOCATION_ID_PHRASE, listCursorSchema, offsetKeySchema, offsetPage, orderTiesById } from "./copilot-list-paging";
+import { MAINTENANCE_LIST_LIMIT } from "../../maintenance/maintenance.service";
+import { CURSOR_PHRASE, LOCATION_ID_PHRASE, listCursorSchema, offsetKeySchema, offsetPage, orderTiesById, serviceCapOf } from "./copilot-list-paging";
 import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
 
 /**
@@ -23,8 +24,10 @@ import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
  * the service's rows. The service orders by `nextDueAt, assets.code`, which
  * ties (two schedules of one asset due together), so a tied run is put in id
  * order before the slice. **Known limit:** the service answers at most
- * `MAINTENANCE_LIST_LIMIT` rows, so the cursor pages inside those only and
- * `truncated` stays true past them — `search` and `assetId` find the rest.
+ * `MAINTENANCE_LIST_LIMIT` rows, so the cursor pages inside those only; when it
+ * answers that many the entry carries `serviceCap` and the last page stays
+ * `truncated` with a `null` cursor (`serviceCapOf`) — `search` and `assetId`
+ * find the rest.
  */
 export const listMaintenanceSchedulesTool = defineReadTool({
   name: "list_maintenance_schedules",
@@ -65,6 +68,7 @@ export const listMaintenanceSchedulesTool = defineReadTool({
       const { items, ...rest } = offsetPage(ordered, resume, room);
       return {
         ...rest,
+        ...serviceCapOf(page.items.length, MAINTENANCE_LIST_LIMIT),
         items: items.map((item) => ({
           id: item.id,
           title: item.title,

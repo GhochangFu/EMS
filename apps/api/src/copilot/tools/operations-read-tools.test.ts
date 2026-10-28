@@ -16,6 +16,8 @@ import {
   listWorkOrdersSearchesInTheService,
   listWorkOrdersLocationIdNarrowsToTheSubtree,
   listWorkOrdersCursorResumesAtTheOffset,
+  listWorkOrdersLastPagePastTheServiceCapIsTruncated,
+  listWorkOrdersLastPageUnderTheServiceCapIsComplete,
 } from "./operations-read-tools.spec";
 
 /** `F4.284` — Vitest entry point; assertions live in the sibling `.spec` (§4.6). */
@@ -36,4 +38,8 @@ describe("F4.284 — list_work_orders and list_users (ADR 0106; DC1, DC7)", () =
   it("list_alarm_skills takes no argument.", () => listAlarmSkillsTakesNoArgument());
   it("F4.291: list_work_orders locationId narrows to the subtree's readable assets", () => listWorkOrdersLocationIdNarrowsToTheSubtree());
   it("F4.291: list_work_orders cursor resumes at the offset", () => listWorkOrdersCursorResumesAtTheOffset());
+  it("F4.291: list_work_orders' last page past the service's 100 rows is truncated, with no cursor", () =>
+    listWorkOrdersLastPagePastTheServiceCapIsTruncated());
+  it("F4.291: list_work_orders' last page under the service's 100 rows is complete", () =>
+    listWorkOrdersLastPageUnderTheServiceCapIsComplete());
 });

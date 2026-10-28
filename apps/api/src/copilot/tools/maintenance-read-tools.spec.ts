@@ -106,7 +106,7 @@ function fake(byOrg: Record<string, MaintenanceScheduleItem[]>) {
   return { tools: createCopilotReadTools(services), log };
 }
 
-type Listed = { organizations: { organizationId: string; items: Record<string, unknown>[] }[]; truncated: boolean; nextCursor?: string | null };
+type Listed = { organizations: { organizationId: string; items: Record<string, unknown>[]; serviceCap?: number }[]; truncated: boolean; nextCursor?: string | null };
 
 async function list(tools: ReturnType<typeof fake>["tools"], args: Record<string, unknown>, allowed: readonly string[]) {
   const result: CopilotToolResult = await tools.dispatch("list_maintenance_schedules", args, ctx(allowed));
@@ -226,4 +226,29 @@ export async function aCursorResumesAtTheOffset(): Promise<void> {
   const two = await list(tools, { cursor: one.nextCursor }, [ORG_X]);
   const titles = itemsOf(two).map((item) => item.title);
   expect([titles[0], titles.length, two.nextCursor]).toEqual(["Schedule 26", 15, null]);
+}
+
+/** A schedule with a three-digit index (`schedule` pads to two). */
+const scheduleOf = (index: number) =>
+  schedule(index, { id: `40000000-0000-4000-8000-${String(index).padStart(12, "0")}`, title: `Schedule ${index}` });
+
+/** Pages through the cursor until it is `null`; the last page. */
+async function lastPage(tools: ReturnType<typeof fake>["tools"]) {
+  let page = await list(tools, {}, [ORG_X]);
+  for (let i = 0; i < 10 && page.nextCursor; i += 1) page = await list(tools, { cursor: page.nextCursor }, [ORG_X]);
+  return page;
+}
+
+/** `F4.291`: 150 schedules, the service answers `MAINTENANCE_LIST_LIMIT`; the last cursor page still says truncated. */
+export async function theLastPagePastTheServiceCapIsTruncated(): Promise<void> {
+  const { tools } = fake({ [ORG_X]: Array.from({ length: 150 }, (_, i) => scheduleOf(i + 1)) });
+  const last = await lastPage(tools);
+  expect([last.truncated, last.nextCursor, last.organizations[0]?.serviceCap]).toEqual([true, null, MAINTENANCE_LIST_LIMIT]);
+}
+
+/** `F4.291`: 40 schedules, under the service's cap; the last cursor page is not truncated. */
+export async function theLastPageUnderTheServiceCapIsComplete(): Promise<void> {
+  const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => schedule(i + 1)) });
+  const last = await lastPage(tools);
+  expect([last.truncated, last.organizations[0]?.serviceCap]).toEqual([false, undefined]);
 }

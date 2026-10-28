@@ -144,7 +144,9 @@ export function collectByOrganization<T>() {
  * `extra` takes, counted in items, for a tool whose per-organization extra is
  * large enough that the item cap alone would not bound the result. `nextKey`
  * (`F4.291`, paged tools only) is the key to resume THIS organization at; a
- * paged answer that is cut must carry it.
+ * paged answer that is cut must carry it. `capped` (`F4.291`) says the
+ * service itself stopped at its row cap, so rows past the last page exist
+ * that no cursor reaches: the result stays `truncated` with no `nextKey`.
  */
 export type OrganizationRead<T, K = never> = {
   readonly items: readonly T[];
@@ -152,6 +154,7 @@ export type OrganizationRead<T, K = never> = {
   readonly more?: boolean;
   readonly entryCost?: number;
   readonly nextKey?: K;
+  readonly capped?: boolean;
 };
 
 /**
@@ -217,7 +220,9 @@ export async function readPerOrganization<T, K = never>(
  * stops at the first organization whose answer is cut, so every later
  * organization is reached by the cursor and never by the same call twice.
  * `nextCursor` is that organization and its `nextKey`, the next organization
- * when the room ran out between two, or `null` when nothing is left. Without
+ * when the room ran out between two, or `null` when nothing is left that a
+ * cursor reaches (an answer `capped` by its service is `truncated` with a
+ * `null` cursor, so a last page is never shown as the whole list). Without
  * `paging` the result has no `nextCursor` key at all.
  */
 export async function pageOrganizations<T, K>(
@@ -254,7 +259,11 @@ export async function pageOrganizations<T, K>(
     const kept = out.add(organizationId, answer.items, room - cost, answer.extra);
     room -= kept + cost;
     // A slice by the room drops rows as surely as `more` does.
-    if (answer.more !== true && kept >= answer.items.length) continue;
+    if (answer.more !== true && kept >= answer.items.length) {
+      // The service's own cap: rows are left that no cursor reaches.
+      if (answer.capped === true) truncated = true;
+      continue;
+    }
     truncated = true;
     if (paging === undefined) continue;
     if (answer.nextKey === undefined || kept < answer.items.length) {

@@ -13,6 +13,8 @@ import {
   withoutTheFlagAnInactiveRowIsNotListed,
   locationIdNarrowsToTheSubtree,
   aCursorResumesAtTheOffset,
+  theLastPagePastTheServiceCapIsTruncated,
+  theLastPageUnderTheServiceCapIsComplete,
 } from "./maintenance-read-tools.spec";
 
 /** `F4.281` — Vitest entry point; assertions live in the sibling `.spec` (§4.6). */
@@ -30,4 +32,6 @@ describe("F4.281 — list_maintenance_schedules (ADR 0099 Amendment 8 D7, owner 
   it("keeps what a proposal needs and drops the free text", () => theProjectionKeepsWhatAProposalNeeds());
   it("F4.291: locationId narrows to the subtree's readable assets", () => locationIdNarrowsToTheSubtree());
   it("F4.291: a cursor resumes at the offset", () => aCursorResumesAtTheOffset());
+  it("F4.291: the last page past the service's row cap is truncated, with no cursor", () => theLastPagePastTheServiceCapIsTruncated());
+  it("F4.291: the last page under the service's row cap is complete", () => theLastPageUnderTheServiceCapIsComplete());
 });

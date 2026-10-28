@@ -167,3 +167,9 @@ export async function aNonEmptyAnswerReadsNoLocationGrant(): Promise<void> {
   await service.readableAssetIdsInLocations(USER, [ORG_A], [SITE]);
   expect(accessCalls.map((call) => call.method)).toEqual(["readableAssetIdsInOrganization"]);
 }
+
+/** A grant on a descendant of the asked location, with no asset yet, is an empty answer, not a refusal. */
+export async function aGrantBelowTheAskedLocationIsAnEmptyAnswer(): Promise<void> {
+  const { service } = fake({ subtree: [SITE, CHILD], assets: [], readableLocations: [CHILD] });
+  expect(await service.readableAssetIdsInLocations(USER, [ORG_A], [SITE])).toEqual({ ok: true, organizationId: ORG_A, assetIds: [] });
+}
