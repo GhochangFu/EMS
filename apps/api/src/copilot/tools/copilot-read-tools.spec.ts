@@ -439,7 +439,7 @@ export async function assertAnInjectedProposeCallFindsNoTool(): Promise<void> {
 }
 
 /**
- * The registry is the twenty-six read tools (`F3.87` PR 2 added the four
+ * The registry is the read tools — 36 since `F4.291` PR 3 (`F3.87` PR 2 added the four
  * mimic reads, `F4.274` the five telemetry reads, `F4.275` the six energy
  * reads, `F4.277` the system status and the audit log, `F4.276` the alarm
  * details and the alarm knowledge base), each with a strict argument schema.
