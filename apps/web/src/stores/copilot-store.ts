@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { clearCopilotWindow } from "./copilot-window-store";
+
 /**
  * `F3.85` PR 7 (review code:F2) — the copilot dock's session: which
  * conversation is open and, for the global administrator, which organization
@@ -13,8 +15,9 @@ import { persist } from "zustand/middleware";
  * conversation it belonged to. AGENTS.md §4.2 puts UI state in Zustand.
  *
  * **What is not here.** The messages live in the TanStack Query cache under
- * `copilotConversationKey(id)`, which outlives the unmount too. The open state
- * stays in `localStorage` (`bms-copilot-open`), read when the dock mounts.
+ * `copilotConversationKey(id)`, which outlives the unmount too. The open state,
+ * the window mode and the size live in `useCopilotWindowStore` (`F4.292`,
+ * key `bms-copilot-window`), which {@link clearCopilotSession} clears too.
  *
  * **Persisted** (`F4.244`, owner ruling 2026-10-20, reversing the F3.85
  * code:F2 choice). `userId`, `organizationId` and `conversationId` live in
@@ -116,10 +119,14 @@ export const useCopilotStore = create<CopilotSessionState>()(
   ),
 );
 
-/** Ends the copilot session: back to no session, and the stored key removed (`F4.244`). */
+/**
+ * Ends the copilot session: back to no session, and the stored key removed (`F4.244`).
+ * `F4.292` (owner ruling P6): the window goes with it — the panel closes and its key is removed.
+ */
 export function clearCopilotSession(): void {
   useCopilotStore.setState({ ...INITIAL });
   useCopilotStore.persist.clearStorage();
+  clearCopilotWindow();
 }
 
 /** Back to no session — for a spec's `afterEach`, since the store is module-global. */

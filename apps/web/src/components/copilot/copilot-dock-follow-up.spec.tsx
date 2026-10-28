@@ -162,7 +162,7 @@ export async function aRemountBeforeTheFirstPollKeepsTheWait(): Promise<void> {
   expect(await screen.findByText(WAITING_APPLIED)).toBeTruthy();
   view.unmount();
   renderDockWith(client);
-  // The panel remembers it was open (`bms-copilot-open`), so the remount shows it at once.
+  // The panel remembers it was open (`useCopilotWindowStore`, `bms-copilot-window`), so the remount shows it at once.
   await screen.findByRole("complementary", { name: "Copilot" });
   expect(await screen.findByText(WAITING_APPLIED)).toBeTruthy();
   expect(screen.getByRole("button", { name: "Waiting…" })).toBeTruthy();
@@ -179,7 +179,7 @@ export async function aRouteFailureSeedsTheWaitToo(): Promise<void> {
   expect(await screen.findByText(WAITING_FAILED)).toBeTruthy();
   view.unmount();
   renderDockWith(client);
-  // The panel remembers it was open (`bms-copilot-open`), so the remount shows it at once.
+  // The panel remembers it was open (`useCopilotWindowStore`, `bms-copilot-window`), so the remount shows it at once.
   await screen.findByRole("complementary", { name: "Copilot" });
   expect(await screen.findByText(WAITING_FAILED)).toBeTruthy();
   expect(read).not.toHaveBeenCalled();
@@ -217,7 +217,7 @@ export async function aReadInFlightAtTheConfirmDoesNotDropTheWait(): Promise<voi
   });
   view.unmount();
   renderDockWith(client);
-  // The panel remembers it was open (`bms-copilot-open`), so the remount shows it at once.
+  // The panel remembers it was open (`useCopilotWindowStore`, `bms-copilot-window`), so the remount shows it at once.
   await screen.findByRole("complementary", { name: "Copilot" });
   expect(await screen.findByText(WAITING_APPLIED)).toBeTruthy();
 }

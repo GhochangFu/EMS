@@ -11,7 +11,8 @@ import { ApiError } from "../../lib/api-error";
 import { onboardingDraftsKey } from "../../lib/copilot-invalidations";
 import type { AuthUser } from "../../stores/auth-store";
 import { copilotConversationKey, useCopilotStore } from "../../stores/copilot-store";
-import { COPILOT_OPEN_KEY, CopilotDock } from "./copilot-dock";
+import { useCopilotWindowStore } from "../../stores/copilot-window-store";
+import { CopilotDock } from "./copilot-dock";
 import { answered, CONVERSATION_ID, READY, send, stub } from "./copilot-dock.spec";
 
 /**
@@ -276,7 +277,7 @@ const ONE_DRAFT: OnboardingDraftListDto = {
 function renderOpen(role: UserRole, seed?: (client: QueryClient) => void): QueryClient {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   seed?.(client);
-  window.localStorage.setItem(COPILOT_OPEN_KEY, "true");
+  useCopilotWindowStore.getState().setOpen(true);
   render(tree(role, client));
   return client;
 }

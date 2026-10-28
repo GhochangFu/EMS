@@ -25,29 +25,40 @@ import {
   fetchCopilotStatus,
   sendCopilotTurn,
   startCopilotOnboardingSkill,
-  type CopilotLimit,
 } from "../../api/copilot";
 import { canAccessOnboarding, canAuthorDashboards } from "../../lib/admin-access";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { attachmentProblem, sizeLabel, splitAttachmentRecords } from "../../lib/copilot-attachments";
+import { attachmentProblem, sizeLabel } from "../../lib/copilot-attachments";
 import { rememberFiles } from "../../lib/copilot-file-memory";
 import { isPdfFile, prepareChosenFiles, withoutEach, type PreparedFile } from "../../lib/copilot-pdf-page";
 import { ONBOARDING_DRAFTS, onboardingDraftsKey } from "../../lib/copilot-invalidations";
 import type { AuthUser } from "../../stores/auth-store";
-import {
-  COPILOT_ALL_ORGANIZATIONS,
-  copilotConversationKey,
-  useCopilotSession,
-  useCopilotStore,
-} from "../../stores/copilot-store";
+import { copilotConversationKey, useCopilotSession, useCopilotStore } from "../../stores/copilot-store";
+import { mountCopilotDock, useCopilotWindowStore } from "../../stores/copilot-window-store";
 import { useWizardStore } from "../../stores/wizard-store";
 import { AssistantText } from "./assistant-text";
 import { AttachButton } from "./attach-button";
 import { AttachPanel } from "./attach-panel";
 import { ConfirmCard } from "./confirm-card";
+import { CopilotDockFrame } from "./copilot-dock-frame";
+import {
+  ALL_ORGANIZATIONS,
+  ALL_ORGANIZATIONS_LABEL,
+  APP_ROUTE,
+  BotIcon,
+  DockTitle,
+  isServerMadeCard,
+  limitSentence,
+  NOT_CONFIGURED_SENTENCE,
+  ONBOARD_PICK_SENTENCE,
+  ONBOARDING_DISCOVERY,
+  SCOPE_OFF_SENTENCE,
+  UserText,
+} from "./copilot-dock-parts";
 import { OnboardingDraftPicker, type OnboardingDraftsOf } from "./onboarding-draft-picker";
 import { OnboardingSkillPanel } from "./onboarding-skill-panel";
+import { useCopilotSheet } from "./use-copilot-viewport";
 import { appendMessages, awaitingAfterConfirm, FOLLOW_UP_POLL_MS, FOLLOW_UP_WAIT_MS, receivedThread, useConversationThread } from "./use-conversation-thread";
 
 /**
@@ -60,8 +71,16 @@ import { appendMessages, awaitingAfterConfirm, FOLLOW_UP_POLL_MS, FOLLOW_UP_WAIT
  * The role check runs before any hook, so an operator never asks (the route
  * would answer 403). `available: false` renders nothing (plan Q7).
  *
- * **Layering.** `z-50`, below `ConfirmDialog`'s `z-[60]`, so a Confirm card
- * always covers the panel.
+ * **Layering.** `z-50` (`z-40` docked), below `ConfirmDialog`'s `z-[60]`, so a
+ * Confirm card always covers the panel.
+ *
+ * **The window** (`F4.292`, ADR 0099 Amendment 9 E6; owner ruling P6).
+ * `CopilotDockFrame` draws the panel floating (resizable), maximized, docked
+ * to the side (`AppShell` pads the page by its width) or, under 768 px, as a
+ * full-screen sheet. The open flag, the mode and the size live in
+ * `useCopilotWindowStore` (`bms-copilot-window`), cleared with the session.
+ * The button shows while the panel is closed or floats: an open maximized,
+ * docked or sheet panel would sit under it, and its header carries Close.
  *
  * **Scope.** A scoped administrator's conversation is bound to the home
  * organization on the server, whatever the dock sends. The global
@@ -139,102 +158,6 @@ import { appendMessages, awaitingAfterConfirm, FOLLOW_UP_POLL_MS, FOLLOW_UP_WAIT
  * stored]` lines render under the text as a muted record.
  */
 
-/** The `localStorage` key that holds whether the panel is open. */
-export const COPILOT_OPEN_KEY = "bms-copilot-open";
-
-/** The picker value for the global administrator's cross-organization scope. */
-const ALL_ORGANIZATIONS = COPILOT_ALL_ORGANIZATIONS;
-const ALL_ORGANIZATIONS_LABEL = "All organizations (platform key)";
-
-/** The sentence a scope with no AI key shows instead of the input (decision 10). */
-const NOT_CONFIGURED_SENTENCE =
-  "The copilot is on, but no AI key is set up for this scope yet. An administrator can add one on the organization's AI assistant page.";
-
-/** The sentence a picked organization whose copilot is off shows instead of the input. */
-const SCOPE_OFF_SENTENCE = "The copilot is off for this organization.";
-
-/** The server-made onboarding commit's catalog id: a conversation shows one such card at a time. */
-const ONBOARDING_COMMIT = "onboarding.commit";
-/** `F3.24b`: the server-made discovery card's id, the commit card's twin (one open per conversation). */
-const ONBOARDING_DISCOVERY = "onboarding.discovery";
-const isServerMadeCard = (catalogId: string): boolean => catalogId === ONBOARDING_COMMIT || catalogId === ONBOARDING_DISCOVERY;
-
-/** "Onboard a site" needs an organization: the global administrator's cross-organization scope names none. */
-const ONBOARD_PICK_SENTENCE = "Pick an organization to onboard a site.";
-
-/**
- * An app route as the server's `open_page` allow-list emits it: one leading
- * `/`, no `//`, no scheme, no query and no fragment. The server checks it
- * first; this is the client's own refusal of anything else.
- */
-const APP_ROUTE = /^\/(?!\/)[A-Za-z0-9_\-/]*$/;
-
-/** A user bubble's content: the text, then the files it carried as a muted record. */
-function UserText({ content }: { content: string }) {
-  const { text, records } = splitAttachmentRecords(content);
-  if (records.length === 0) return <>{content}</>;
-  return (
-    <>
-      <span>{text}</span>
-      <ul aria-label="Attached files, not stored" className="mt-1 space-y-0.5 break-all text-[11px] text-on-accent/70">
-        {records.map((record, i) => (
-          <li key={i}>{record}</li>
-        ))}
-      </ul>
-    </>
-  );
-}
-
-/** The reset time of a daily limit, in the user's locale. */
-export function formatCopilotReset(resetsAt: string): string {
-  return new Date(resetsAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
-}
-
-function limitSentence(limit: CopilotLimit): string {
-  const who =
-    limit.scope === "user"
-      ? "You have reached your daily copilot limit."
-      : "This organization has reached its daily copilot limit.";
-  return `${who} It resets at ${formatCopilotReset(limit.resetsAt)}.`;
-}
-
-function readOpen(): boolean {
-  try {
-    return window.localStorage.getItem(COPILOT_OPEN_KEY) === "true";
-  } catch {
-    return false;
-  }
-}
-
-function writeOpen(open: boolean): void {
-  try {
-    window.localStorage.setItem(COPILOT_OPEN_KEY, open ? "true" : "false");
-  } catch {
-    // A storage the browser refuses only costs the remembered state.
-  }
-}
-
-/** The `ESKOM_SMOC.html` `#aiFab` bot mark, decorative: the button carries the label. */
-function BotIcon({ size }: { size: number }) {
-  return (
-    <svg
-      aria-hidden="true"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 8V4H8" />
-      <rect width="16" height="12" x="4" y="8" rx="2" />
-      <path d="M2 14h2M20 14h2M15 13v2M9 13v2" />
-    </svg>
-  );
-}
-
 type CopilotDockProps = { user: AuthUser };
 
 export function CopilotDock({ user }: CopilotDockProps) {
@@ -275,7 +198,13 @@ function DockPanel({
   useEffect(() => useWizardStore.getState().leavePage(pathname), [pathname]);
   const queryClient = useQueryClient();
   const isGlobalAdmin = user.role === "admin";
-  const [open, setOpen] = useState(readOpen);
+  const open = useCopilotWindowStore((s) => s.open);
+  const mode = useCopilotWindowStore((s) => s.mode);
+  const width = useCopilotWindowStore((s) => s.width);
+  const height = useCopilotWindowStore((s) => s.height);
+  const sheet = useCopilotSheet();
+  // Counted while mounted: `AppShell` pushes the page only for a dock that renders (critic: copilot off).
+  useEffect(() => mountCopilotDock(), []);
   const { organizationId, conversationId } = useCopilotSession(user.id);
   const pickInStore = useCopilotStore((s) => s.pick);
   const setConversation = useCopilotStore((s) => s.setConversation);
@@ -613,8 +542,7 @@ function DockPanel({
     if (onboardRequest === null) return;
     const request = consumeOnboardRequest(user.id);
     if (request === null || !canAccessOnboarding(user.role)) return;
-    setOpen(true);
-    writeOpen(true);
+    useCopilotWindowStore.getState().setOpen(true);
     setBanner(null);
     // Keep the conversation when it is already in that organization: a pick would drop it (and its skill).
     if (isGlobalAdmin && organizationId !== request.organizationId) {
@@ -645,11 +573,21 @@ function DockPanel({
     startSkill.mutate(undefined);
   }, [onboardFor, organizationId, isGlobalAdmin, scope, scopedStatus.isError, conversationId, thread.data, thread.isError, startSkill]);
 
+  // The button shows only while closed or floating: opened into another shape the focus goes to the
+  // panel, and Close gives it back to the button, so a keyboard user is never left on the page body.
+  const panelRef = useRef<HTMLElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const focusAfter = useRef<"panel" | "launcher" | null>(null);
+  useEffect(() => {
+    const target = focusAfter.current;
+    focusAfter.current = null;
+    if (target === "panel") panelRef.current?.focus();
+    if (target === "launcher") launcherRef.current?.focus();
+  }, [open]);
+
   function toggle(): void {
-    setOpen((was) => {
-      writeOpen(!was);
-      return !was;
-    });
+    focusAfter.current = open ? "launcher" : mode === "floating" && !sheet ? null : "panel";
+    useCopilotWindowStore.getState().toggle();
   }
 
   function pick(next: string): void {
@@ -762,43 +700,31 @@ function DockPanel({
 
   return (
     <>
-      <button
-        type="button"
-        aria-label={open ? "Close the copilot" : "Open the copilot"}
-        aria-expanded={open}
-        aria-controls="copilot-panel"
-        onClick={toggle}
-        className="fixed bottom-10 right-6 z-50 grid h-14 w-14 place-items-center rounded-full bg-accent text-sm font-bold text-on-accent shadow-lg transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-      >
-        <BotIcon size={22} />
-      </button>
+      {(!open || (mode === "floating" && !sheet)) && (
+        <button
+          ref={launcherRef}
+          type="button"
+          aria-label={open ? "Close the copilot" : "Open the copilot"}
+          aria-expanded={open}
+          aria-controls="copilot-panel"
+          onClick={toggle}
+          className="fixed bottom-10 right-6 z-50 grid h-14 w-14 place-items-center rounded-full bg-accent text-sm font-bold text-on-accent shadow-lg transition-transform hover:scale-105 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <BotIcon size={22} />
+        </button>
+      )}
 
       {open && (
-        <aside
-          id="copilot-panel"
-          aria-label="Copilot"
-          className="surface-raised fixed bottom-28 right-6 z-50 flex h-[520px] max-h-[calc(100vh-8rem)] w-[380px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-lg"
+        <CopilotDockFrame
+          mode={mode}
+          size={{ width, height }}
+          sheet={sheet}
+          onModeChange={(next) => useCopilotWindowStore.getState().setMode(next)}
+          onResize={(next, bounds) => useCopilotWindowStore.getState().resize(next, bounds)}
+          onClose={toggle}
+          panelRef={panelRef}
+          header={<DockTitle scopeLabel={scopeLabel} />}
         >
-          <header className="flex items-start justify-between gap-2 border-b border-line bg-chrome px-4 py-3 text-on-dark">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="grid h-7 w-7 shrink-0 place-items-center rounded bg-accent text-on-accent">
-                <BotIcon size={16} />
-              </span>
-              <div className="min-w-0">
-                <h2 className="text-sm font-semibold">Copilot</h2>
-                <p className="truncate text-xs text-on-dark/70">Working in: {scopeLabel}</p>
-              </div>
-            </div>
-            <button
-              type="button"
-              aria-label="Close the copilot panel"
-              onClick={toggle}
-              className="rounded px-2 text-on-dark/70 hover:text-on-dark"
-            >
-              ×
-            </button>
-          </header>
-
           {isGlobalAdmin && (
             <div className="border-b border-line px-4 py-2">
               <select
@@ -939,7 +865,7 @@ function DockPanel({
           ) : (
             <p className="border-t border-line p-3 text-xs text-ink-muted">{NOT_CONFIGURED_SENTENCE}</p>
           )}
-        </aside>
+        </CopilotDockFrame>
       )}
     </>
   );

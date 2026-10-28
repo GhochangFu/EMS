@@ -14,6 +14,7 @@ import {
   keepsTheCacheWhenTheTokenIsRenewedForTheSameUser,
   theCopilotSessionIsClearedWhenTheSessionEnds,
   theCopilotSessionSurvivesASameUserRenewal,
+  theCopilotWindowIsClearedWhenTheSessionEnds,
 } from "./query-cache-session.spec";
 
 /**
@@ -48,6 +49,10 @@ describe("F4.156 query cache bound to the session", () => {
 
   it("F4.244: clears the stored copilot session when the session ends", () => {
     theCopilotSessionIsClearedWhenTheSessionEnds();
+  });
+
+  it("F4.292: clears the stored copilot window when the session ends", () => {
+    theCopilotWindowIsClearedWhenTheSessionEnds();
   });
 
   it("F4.244: keeps the stored copilot session on a same-user renewal", () => {
