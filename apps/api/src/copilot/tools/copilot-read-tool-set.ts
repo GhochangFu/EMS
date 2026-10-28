@@ -44,6 +44,7 @@ import { getLatestValuesTool } from "./get-latest-values.tool";
 import { getLoadTrendTool } from "./get-load-trend.tool";
 import { getMimicLayoutTool } from "./get-mimic-layout.tool";
 import { getPointAggregateTool } from "./get-point-aggregate.tool";
+import { getPointStatsTool } from "./get-point-stats.tool";
 import { getRecentValuesTool } from "./get-recent-values.tool";
 import { getSystemStatusTool } from "./get-system-status.tool";
 import { getValuesAtInstantTool } from "./get-values-at-instant.tool";
@@ -74,7 +75,8 @@ import { openPageTool } from "./open-page.tool";
  * after `get_point_aggregate`. `F4.277` adds `get_system_status` and
  * `list_audit_log` after `get_health_summary`. `F4.276` adds
  * `get_alarm_details` and `get_alarm_kb` after `list_alarms`. `F4.291` PR 2
- * adds `get_alarm_stats` after `get_alarm_kb`.
+ * adds `get_alarm_stats` after `get_alarm_kb`; PR 3 adds `get_point_stats`
+ * after `get_point_aggregate`.
  */
 export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[] = [
   listAlarmsTool,
@@ -88,6 +90,7 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   getValuesAtInstantTool,
   getRecentValuesTool,
   getPointAggregateTool,
+  getPointStatsTool,
   getDashboardKpisTool,
   getLoadTrendTool,
   getEnergySummaryTool,

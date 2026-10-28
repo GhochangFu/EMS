@@ -123,6 +123,8 @@ const COPILOT_TOOL_FILES = {
   copilotGetAlarmKb: `${COPILOT_TOOLS}/get-alarm-kb.tool.ts`,
   // `F4.291` PR 2: the alarm statistics read tool, one parse.
   copilotGetAlarmStats: `${COPILOT_TOOLS}/get-alarm-stats.tool.ts`,
+  // `F4.291` PR 3: the point statistics read tool, one parse.
+  copilotGetPointStats: `${COPILOT_TOOLS}/get-point-stats.tool.ts`,
   // `F4.278` (Amendment 8 D7): the alarm-rule read tool, one parse.
   copilotListRules: `${COPILOT_TOOLS}/list-rules.tool.ts`,
   // `F4.279` (Amendment 8 D7): the channel and escalation read tools.
@@ -651,8 +653,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       // `F4.279`: + the channel and escalation read tools; `F4.280`: + the report-schedule read tool;
       // `F4.281`: + the maintenance-schedule read tool; `F4.284`: + the work-order and user read tools,
       // and (owner ruling 2026-10-25) the alarm skill read tool; `F4.291` PR 2: + the alarm
-      // statistics read tool.
-    ).toBe(47);
+      // statistics read tool; `F4.291` PR 3: + the point statistics read tool.
+    ).toBe(48);
 
     const callSites = [
       STOCK_SERVICE,
