@@ -53,7 +53,7 @@ describe.skipIf(!connectionString)("F4.291 — a location is the caller's readab
     await pool.query("BEGIN");
     await pool.query("SET LOCAL lock_timeout = '10s'");
     fx = await buildTreeFixture(pool, run);
-    admin = await insertGlobalAdmin(pool, fx.orgA, run);
+    admin = await insertGlobalAdmin(pool, run);
   });
 
   afterAll(async () => {

@@ -43,13 +43,17 @@ function expectAssets(answer: LocationAssetScope, fx: TreeFixture, nodes: readon
   }
 }
 
-/** A global admin user, inserted in the suite's transaction. */
-export async function insertGlobalAdmin(db: Pick<pg.Pool, "query">, organizationId: string, run: string): Promise<JwtPayload> {
+/**
+ * A global admin user, inserted in the suite's transaction. Its
+ * organization_id is NULL: users_role_organization_check (migration 0098)
+ * ties role 'admin' to no organization.
+ */
+export async function insertGlobalAdmin(db: Pick<pg.Pool, "query">, run: string): Promise<JwtPayload> {
   const email = `f4291-admin-${run}@integration.invalid`;
   const { rows } = await db.query<{ id: string }>(
     `INSERT INTO bms.users (organization_id, email, password_hash, display_name, role)
-     VALUES ($1, $2, 'not-a-usable-hash', 'F4.291 admin', 'admin') RETURNING id`,
-    [organizationId, email],
+     VALUES (NULL, $1, 'not-a-usable-hash', 'F4.291 admin', 'admin') RETURNING id`,
+    [email],
   );
   rememberSubject(email, rows[0]?.id ?? fail("admin user was not inserted"));
   return jwtFor(email, "admin");
