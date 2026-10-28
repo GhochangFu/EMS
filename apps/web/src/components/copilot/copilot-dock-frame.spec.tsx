@@ -170,33 +170,21 @@ export function closeCallsOnClose(): void {
   expect(onClose).toHaveBeenCalledTimes(1);
 }
 
-/** Mutation: `readSheet` drops the `typeof` guard (jsdom has no `matchMedia`, so it throws). */
-export function noMatchMediaIsNotASheet(): void {
+/** 768 px is the first width that is not a sheet. Mutation: `<=` becomes `<` with the bound 768. */
+export function a768PxViewportIsNotASheet(): void {
+  vi.stubGlobal("innerWidth", 768);
   expect(renderHook(() => useCopilotSheet()).result.current).toBe(false);
 }
 
-type Listener = () => void;
-
-/** A `matchMedia` stub whose `matches` the case moves, firing `change`. */
-function stubMatchMedia(matches: boolean): { set: (next: boolean) => void } {
-  const listeners: Listener[] = [];
-  const query = {
-    matches,
-    addEventListener: (_: string, l: Listener) => listeners.push(l),
-    removeEventListener: () => undefined,
-  };
-  vi.stubGlobal("matchMedia", () => query);
-  return {
-    set: (next) => {
-      query.matches = next;
-      listeners.forEach((l) => l());
-    },
-  };
+/** 767 px is a sheet. Mutation: `<=` becomes `<`. */
+export function a767PxViewportIsASheet(): void {
+  vi.stubGlobal("innerWidth", 767);
+  expect(renderHook(() => useCopilotSheet()).result.current).toBe(true);
 }
 
-/** The first render already says sheet: no floating flash on a phone. Mutation: `readSheet` answers `false`. */
-export function aMatchingQueryIsASheetFromTheFirstRender(): void {
-  stubMatchMedia(true);
+/** The first render already says sheet: no floating flash on a phone. Mutation: the hook starts `false` and sets in an effect. */
+export function aNarrowViewportIsASheetFromTheFirstRender(): void {
+  vi.stubGlobal("innerWidth", 500);
   const seen: boolean[] = [];
   renderHook(() => {
     const sheet = useCopilotSheet();
@@ -206,11 +194,14 @@ export function aMatchingQueryIsASheetFromTheFirstRender(): void {
   expect(seen[0]).toBe(true);
 }
 
-/** Mutation: the hook does not subscribe to `change`. */
-export function aChangeOfTheQueryMovesTheSheet(): void {
-  const media = stubMatchMedia(false);
+/** Mutation: the sheet reads the width once and does not follow `resize`. */
+export function aResizeToANarrowWindowMovesTheSheet(): void {
+  vi.stubGlobal("innerWidth", 1200);
   const { result } = renderHook(() => useCopilotSheet());
-  act(() => media.set(true));
+  act(() => {
+    vi.stubGlobal("innerWidth", 600);
+    window.dispatchEvent(new Event("resize"));
+  });
   expect(result.current).toBe(true);
 }
 

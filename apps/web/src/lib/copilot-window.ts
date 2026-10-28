@@ -20,8 +20,11 @@ export type CopilotViewport = { width: number; height: number };
 export const COPILOT_MIN_WIDTH = 360;
 export const COPILOT_MIN_HEIGHT = 420;
 export const COPILOT_DEFAULT_SIZE: Readonly<CopilotSize> = { width: 380, height: 520 };
-/** Under 768 px the dock is a full-screen sheet (E6). */
-export const COPILOT_SHEET_QUERY = "(max-width: 767px)";
+/**
+ * Under 768 px the dock is a full-screen sheet (E6). Read from the viewport
+ * width, not a media query: F3.65 R16 bans `matchMedia(` in web source.
+ */
+export const COPILOT_SHEET_MAX_WIDTH = 767;
 /** One arrow-key press on a resize handle (owner ruling P6). */
 export const COPILOT_RESIZE_STEP = 16;
 /** The page width a docked panel always leaves. */

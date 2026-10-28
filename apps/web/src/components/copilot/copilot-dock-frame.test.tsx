@@ -3,7 +3,8 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
-  aChangeOfTheQueryMovesTheSheet,
+  a767PxViewportIsASheet,
+  a768PxViewportIsNotASheet,
   aDockedPanelHasALeftHandle,
   aDockedPanelHasNoTopHandle,
   aDockedPanelTakesTheStoredWidth,
@@ -15,14 +16,14 @@ import {
   aFloatingPanelTakesTheStoredWidth,
   aFloatingWidthWiderThanTheRoomIsCapped,
   aLeftDragOfFortyPixelsAsksForWidthFourTwenty,
-  aMatchingQueryIsASheetFromTheFirstRender,
   aMaximizedPanelHasNoHandle,
   aMoveAfterThePointerUpResizesNothing,
+  aNarrowViewportIsASheetFromTheFirstRender,
   aResizeOfTheWindowMovesTheViewport,
+  aResizeToANarrowWindowMovesTheSheet,
   arrowLeftOnTheLeftHandleGrowsTheWidthBySixteen,
   closeCallsOnClose,
   maximizeAsksForTheMaximizedMode,
-  noMatchMediaIsNotASheet,
   theCurrentModesButtonIsPressed,
   theDataModeIsTheMode,
   theSheetHasNoHandle,
@@ -77,8 +78,9 @@ describe("F4.292 copilot dock frame — the sheet", () => {
 });
 
 describe("F4.292 copilot dock frame — the viewport hooks", () => {
-  it("no matchMedia is not a sheet", noMatchMediaIsNotASheet);
-  it("a matching query is a sheet from the first render", aMatchingQueryIsASheetFromTheFirstRender);
-  it("a change of the query moves the sheet", aChangeOfTheQueryMovesTheSheet);
+  it("a 768 px viewport is not a sheet", a768PxViewportIsNotASheet);
+  it("a 767 px viewport is a sheet", a767PxViewportIsASheet);
+  it("a narrow viewport is a sheet from the first render", aNarrowViewportIsASheetFromTheFirstRender);
+  it("a resize to a narrow window moves the sheet", aResizeToANarrowWindowMovesTheSheet);
   it("a resize of the window moves the viewport", aResizeOfTheWindowMovesTheViewport);
 });

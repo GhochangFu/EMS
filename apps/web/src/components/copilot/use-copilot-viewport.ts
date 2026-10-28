@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { COPILOT_SHEET_QUERY, type CopilotViewport } from "../../lib/copilot-window";
+import { COPILOT_SHEET_MAX_WIDTH, type CopilotViewport } from "../../lib/copilot-window";
 
 /**
  * `F4.292` (ADR 0099 Amendment 9 E6) — what the dock's window reads from the
@@ -9,22 +9,9 @@ import { COPILOT_SHEET_QUERY, type CopilotViewport } from "../../lib/copilot-win
  * render time (a size stored on a wider screen never overflows this one).
  */
 
-function readSheet(): boolean {
-  return typeof window.matchMedia === "function" && window.matchMedia(COPILOT_SHEET_QUERY).matches;
-}
-
-/** `true` under 768 px; subscribed, so a rotation or a window resize moves it. `false` with no `matchMedia`. */
+/** `true` under 768 px; it follows {@link useViewportSize}, so a rotation or a window resize moves it. */
 export function useCopilotSheet(): boolean {
-  const [sheet, setSheet] = useState(readSheet);
-  useEffect(() => {
-    if (typeof window.matchMedia !== "function") return undefined;
-    const query = window.matchMedia(COPILOT_SHEET_QUERY);
-    const onChange = (): void => setSheet(query.matches);
-    onChange();
-    query.addEventListener?.("change", onChange);
-    return () => query.removeEventListener?.("change", onChange);
-  }, []);
-  return sheet;
+  return useViewportSize().width <= COPILOT_SHEET_MAX_WIDTH;
 }
 
 function readViewport(): CopilotViewport {

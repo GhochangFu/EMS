@@ -122,7 +122,7 @@ export async function aFloatingPanelKeepsTheButton(): Promise<void> {
 
 /** Mutation: the dock passes `sheet={false}` to the frame. */
 export async function aNarrowScreenShowsTheSheet(): Promise<void> {
-  vi.stubGlobal("matchMedia", () => ({ matches: true, addEventListener: () => undefined, removeEventListener: () => undefined }));
+  vi.stubGlobal("innerWidth", 500);
   stub(READY);
   useCopilotWindowStore.setState({ open: true, mode: "docked" });
   renderDock("admin");
