@@ -24,6 +24,7 @@ export * from "./admin";
 export * from "./ai-assistant";
 export * from "./asset-dashboards";
 export * from "./asset-images";
+export * from "./alarm-stats";
 export * from "./asset-kpis";
 export * from "./asset-templates";
 export * from "./auth";

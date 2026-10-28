@@ -12,6 +12,7 @@ import { AlarmEnrichmentService } from "./alarm-enrichment.service";
 import { AlarmLifecycleService } from "./alarm-lifecycle.service";
 import { AlarmNotifyService } from "./alarm-notify.service";
 import { AlarmRaiseModule } from "./alarm-raise.module";
+import { AlarmStatsService } from "./alarm-stats.service";
 import { AlarmsController } from "./alarms.controller";
 import { AlarmsGateway } from "./alarms.gateway";
 import { AlarmsService } from "./alarms.service";
@@ -31,6 +32,8 @@ import { AlarmsService } from "./alarms.service";
     AlarmsGateway,
     AlarmEngineService,
     AlarmDetailsService,
+    // `F4.291` PR 2: the copilot's `get_alarm_stats` (both pools, stateless).
+    AlarmStatsService,
     AlarmEnrichmentService,
     // `F3.10` (ADR 0057 decision 4): the 30 s lifecycle sweep — the one
     // writer of `cleared_at` / `normal_since`. Needs both pools, the two
@@ -57,6 +60,9 @@ import { AlarmsService } from "./alarms.service";
   //
   // `F4.276`: `AlarmDetailsService` is exported for the copilot's
   // `get_alarm_details` read tool. It is stateless (`FLEET_DRIZZLE` only).
-  exports: [AlarmRaiseModule, AlarmsService, AlarmDetailsService],
+  //
+  // `F4.291` PR 2: `AlarmStatsService` is exported for the copilot's
+  // `get_alarm_stats` read tool. It is stateless (the two pools only).
+  exports: [AlarmRaiseModule, AlarmsService, AlarmDetailsService, AlarmStatsService],
 })
 export class AlarmsModule {}
