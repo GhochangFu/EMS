@@ -90,6 +90,8 @@ function fakeTools(script: Record<string, ToolScript>) {
 }
 
 type Options = {
+  /** `F4.293`: `hasOpen` answers true — a card is open in the conversation when the turn starts. */
+  cardOpen?: boolean;
   conversationOrg?: string | null;
   conversationExists?: boolean;
   /** Availability by organization (`null` = cross-organization); available unless named false. */
@@ -202,7 +204,7 @@ export function harness(llm: FakeLlmProvider, options: Options = {}) {
   const target: ResolvedTarget | null =
     options.target === undefined ? { organizationId: ORG_X, organizationName: "Org X", targetName: "T", status: "draft" } : options.target;
   const pending = {
-    hasOpen: async () => false,
+    hasOpen: async () => options.cardOpen === true,
     propose: async (_userId: string, change: NewPendingChange): Promise<CopilotPendingChangeDto> => {
       proposed.push(change);
       return {

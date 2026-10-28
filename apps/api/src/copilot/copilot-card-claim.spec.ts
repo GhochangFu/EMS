@@ -1,6 +1,14 @@
 import { expect } from "vitest";
 
-import { COPILOT_CARD_CLAIM_PATTERNS, claimsACard, withNoChangeNote } from "./copilot-card-claim";
+import {
+  appliedSinceLastUserMessage,
+  claimsACard,
+  claimsApplied,
+  COPILOT_CARD_CLAIM_PATTERNS,
+  COPILOT_NO_CHANGE_APPLIED_NOTE,
+  withNoAppliedNote,
+  withNoChangeNote,
+} from "./copilot-card-claim";
 import { COPILOT_REPLY_REDACTED } from "./copilot-secret-scrub";
 import { COPILOT_ATTACHMENT_UNREADABLE_REPLY, COPILOT_TURN_FAILED_REPLY } from "./copilot-turn.service";
 
@@ -72,4 +80,89 @@ export function aReplyWithNoClaimIsUntouched(): void {
 /** The fixed replies never pick up the note. */
 export function theFixedRepliesClaimNothing(): void {
   expect([COPILOT_REPLY_REDACTED, COPILOT_TURN_FAILED_REPLY, COPILOT_ATTACHMENT_UNREADABLE_REPLY].map(claimsACard)).toEqual([false, false, false]);
+}
+
+/** `F4.293`: the two AWS wordings F4.286's list missed, each tagged by the pattern that owns it. */
+export function theAwsCardWordingsAreTagged(): void {
+  const samples = ["Here's the card: Pump C 000000010 — Chlorine pump off.", "Confirm on the card to apply it."];
+  expect(samples.map((sample) => COPILOT_CARD_CLAIM_PATTERNS.map((pattern) => pattern.test(sample)))).toEqual([
+    [true, false, false, false],
+    [false, true, false, false],
+  ]);
+}
+
+/** `F4.293`: the three AWS "applied" replies, verbatim, are applied claims. */
+export function theAwsAppliedRepliesAreTagged(): void {
+  const replies = [
+    "Noted — the clearwell rule for PHE-PUMP-C-000000010 is applied.",
+    "Applied — the PUMP-M-000000011-BREAKER-OPEN rule is live for PHE-PUMP-M-000000011 (Bhutnirghat II).",
+    "Applied — PUMP-C-000000011-CHLORINE-OFF is live for PHE-PUMP-C-000000011 (Bhutnirghat II).",
+  ];
+  expect(replies.map(claimsApplied)).toEqual([true, true, true]);
+}
+
+/** `F4.293`: a future, a past report and a question are not applied claims. */
+export function aFutureOrPastApplyIsNotTagged(): void {
+  const replies = [
+    "Once you press Confirm, the rule will be applied.",
+    "Two proposals were applied yesterday.",
+    "Is the rule live? I can check its state.",
+    "Two assets.",
+  ];
+  expect(replies.map(claimsApplied)).toEqual([false, false, false, false]);
+}
+
+/** `F4.293`: the applied note is appended only when no action record follows the last user message. */
+export function theAppliedNoteNeedsNoRecord(): void {
+  const claim = "Applied — the rule is live.";
+  expect([withNoAppliedNote(claim, false), withNoAppliedNote(claim, true), withNoAppliedNote("Two assets.", false)]).toEqual([
+    `${claim} ${COPILOT_NO_CHANGE_APPLIED_NOTE}`,
+    claim,
+    "Two assets.",
+  ]);
+}
+
+/** `F4.293`: an action record after the last user message counts; one before it, or none, does not. */
+export function anActionRecordCountsOnlyAfterTheLastUserMessage(): void {
+  const rows = (...pairs: Array<[string, string]>) => pairs.map(([role, content]) => ({ role, content }));
+  expect([
+    appliedSinceLastUserMessage(rows(["user", "u"], ["assistant", "a"], ["action", "Applied: rule"], ["assistant", "a"])),
+    appliedSinceLastUserMessage(rows(["action", "Applied: rule"], ["assistant", "a"], ["user", "u"], ["assistant", "a"])),
+    appliedSinceLastUserMessage([]),
+  ]).toEqual([true, false, false]);
+}
+
+/** `F4.293` review: a Rejected, Failed or skill action row proves no apply; only an `Applied:` row does. */
+export function onlyAnAppliedRowCounts(): void {
+  const after = (content: string) => appliedSinceLastUserMessage([{ role: "user", content: "u" }, { role: "action", content }]);
+  expect([after("Rejected: Create the rule X"), after("Failed (HTTP 412): Create the rule X"), after("Onboarding: draft saved"), after("Applied: Create the rule X")]).toEqual([
+    false,
+    false,
+    false,
+    true,
+  ]);
+}
+
+/** `F4.293` review: a negated sentence — the note itself among them — is never a claim. */
+export function aNegationIsNotAClaim(): void {
+  expect([claimsApplied(COPILOT_NO_CHANGE_APPLIED_NOTE), claimsApplied("No change has been applied yet."), claimsApplied("The rule is not live.")]).toEqual([
+    false,
+    false,
+    false,
+  ]);
+}
+
+/** `F4.293` review: a read answer with no change noun is not an applied claim. */
+export function aReadAnswerIsNotAClaim(): void {
+  const replies = ["A scaling factor of 0.1 is applied to the raw register value.", "A new alarm has been created for Pump C at 08:12.", "The feed is live."];
+  expect(replies.map(claimsApplied)).toEqual([false, false, false]);
+}
+
+/** `F4.293` review: "I've created the rule" is a claim, and "the rule card is up" is a card claim. */
+export function theFirstPersonAndCardUpWordingsAreTagged(): void {
+  expect([claimsApplied("I've created the rule for PUMP-C-000000005."), claimsACard("The rule card is up for your confirmation."), claimsACard("Usage is up to 40 kW.")]).toEqual([
+    true,
+    true,
+    false,
+  ]);
 }
