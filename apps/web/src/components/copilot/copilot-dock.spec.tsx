@@ -21,8 +21,10 @@ import { AppShell } from "../../layouts/app-shell";
 import { ApiError } from "../../lib/api-error";
 import { useAuthStore, type AuthUser } from "../../stores/auth-store";
 import { useCopilotStore } from "../../stores/copilot-store";
+import { COPILOT_WINDOW_KEY, useCopilotWindowStore } from "../../stores/copilot-window-store";
 import { OPERATIONAL } from "../system-status-indicator.spec";
-import { COPILOT_OPEN_KEY, CopilotDock, formatCopilotReset } from "./copilot-dock";
+import { CopilotDock } from "./copilot-dock";
+import { formatCopilotReset } from "./copilot-dock-parts";
 
 /**
  * `F3.85` PR 7 (ADR 0099 decisions 1, 5, 10; plan §9.2) — the copilot dock.
@@ -300,20 +302,23 @@ export async function bannersACredentialRefusalAndDoesNotRestoreTheInput(): Prom
   expect(within(thread).queryByText("mqtt://user:secret@host")).not.toBeInTheDocument();
 }
 
+/** `F4.292`: the open flag is stored in the window key (`bms-copilot-window`). Mutation: `toggle` writes nothing. */
 export async function remembersTheOpenState(): Promise<void> {
   stub(READY);
-  window.localStorage.removeItem(COPILOT_OPEN_KEY);
+  window.localStorage.removeItem(COPILOT_WINDOW_KEY);
   renderDock("admin");
   await openPanel();
-  expect(window.localStorage.getItem(COPILOT_OPEN_KEY)).toBe("true");
+  const stored = JSON.parse(window.localStorage.getItem(COPILOT_WINDOW_KEY) ?? "null") as { state: { open: unknown } } | null;
+  expect(stored?.state.open).toBe(true);
 }
 
+/** A reload: the window key, read back by the store, opens the panel at once. */
 export async function opensFromTheRememberedState(): Promise<void> {
   stub(READY);
-  window.localStorage.setItem(COPILOT_OPEN_KEY, "true");
+  window.localStorage.setItem(COPILOT_WINDOW_KEY, JSON.stringify({ state: { open: true }, version: 0 }));
+  await useCopilotWindowStore.persist.rehydrate();
   renderDock("admin");
   expect(await screen.findByRole("complementary", { name: "Copilot" })).toBeInTheDocument();
-  window.localStorage.removeItem(COPILOT_OPEN_KEY);
 }
 
 export async function offersTheGlobalAdminThePlatformScopeByDefault(): Promise<void> {
