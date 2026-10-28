@@ -274,6 +274,79 @@ export function bucketSql(
 }
 
 /**
+ * `F4.291` PR 3 (ADR 0099 Amendment 9 E5(c)) — the levels `get_point_stats`
+ * reads for `[from, to)`: the statistics at the ladder's level for the
+ * window's length, and `last` at `1m` (owner ruling P6: the newest 1-minute
+ * bucket's mean). Both go through {@link levelForRange}, so a window older
+ * than a level's retention horizon reads the next level that still holds it
+ * rather than a dropped one that would answer "no data". `now` is an
+ * argument (the pure-builder rule).
+ */
+export function pointStatsLevels(from: Date, to: Date, now: Date): { level: AggregateLevel; lastLevel: AggregateLevel } {
+  const windowMinutes = (to.getTime() - from.getTime()) / 60_000;
+  return {
+    level: levelForRange({ start: from, granularity: granularityFor(windowMinutes), now }).level,
+    lastLevel: levelForRange({ start: from, granularity: "1m", now }).level,
+  };
+}
+
+/**
+ * `F4.291` PR 3 — min / mean / max / sample count per asset over `[from, to)`,
+ * one row per asset with a row in the window (`GROUP BY asset_id`). The same
+ * {@link AGG_EXPR} table as {@link scalarSql}, so the mean is `avgExpr()` in
+ * its zero guard and the weighting holds across the folded buckets.
+ *
+ * **`asset_id = ANY(ids)` is the containment**: `telemetry.*` has no Row
+ * Level Security, so an asset the caller may not read is kept out by the
+ * caller passing only placed ids and by this predicate reading only them.
+ */
+export function groupedScalarSql(level: AggregateLevel, idsIndex = 1, keyIndex = 2, fromIndex = 3, toIndex = 4): string {
+  return `
+    SELECT
+      asset_id,
+      ${AGG_EXPR.avg} AS average,
+      ${AGG_EXPR.min} AS min,
+      ${AGG_EXPR.max} AS max,
+      coalesce(sum(sample_count), 0)::bigint AS sample_count
+    FROM ${relationFor(level)}
+    WHERE asset_id = ANY(${placeholder(idsIndex)}::uuid[]) AND point_key = ${placeholder(keyIndex)}
+      AND bucket >= ${placeholder(fromIndex)}::timestamptz AND bucket < ${placeholder(toIndex)}::timestamptz
+    GROUP BY asset_id
+  `;
+}
+
+/**
+ * `F4.291` PR 3 — per asked asset, the newest bucket in `[from, to)` that
+ * holds a counted sample: its mean (`last`) and its start (`last_at`).
+ *
+ * One `LATERAL … ORDER BY bucket DESC LIMIT 1` probe per asset rather than a
+ * `DISTINCT ON` over the window, for the reason `latestPointValues` records:
+ * the probe's cost is bounded by the asset count, a `DISTINCT ON` sorts every
+ * row in the window. The `GROUP BY bucket` is degenerate (one source row per
+ * bucket at the level) and stays so the mean is the shared `AGG_EXPR.avg`, as
+ * {@link bucketSql} explains; `HAVING sum(sample_count) > 0` passes over a
+ * bucket whose samples were all null instead of dividing by zero or answering
+ * a null `last` when an earlier bucket has one. An asset with no such bucket
+ * has no row (`CROSS JOIN`).
+ */
+export function lastBucketSql(level: AggregateLevel, idsIndex = 1, keyIndex = 2, fromIndex = 3, toIndex = 4): string {
+  return `
+    SELECT a.asset_id, l.bucket AS last_at, l.last
+    FROM unnest(${placeholder(idsIndex)}::uuid[]) AS a(asset_id)
+    CROSS JOIN LATERAL (
+      SELECT p.bucket, ${AGG_EXPR.avg} AS last
+      FROM ${relationFor(level)} p
+      WHERE p.asset_id = a.asset_id AND p.point_key = ${placeholder(keyIndex)}
+        AND p.bucket >= ${placeholder(fromIndex)}::timestamptz AND p.bucket < ${placeholder(toIndex)}::timestamptz
+      GROUP BY p.bucket
+      HAVING sum(sample_count) > 0
+      ORDER BY p.bucket DESC
+      LIMIT 1
+    ) l
+  `;
+}
+
+/**
  * Fills the gaps a sparse rollup leaves, so every bucket in the window is
  * present — with `null` where there were no samples.
  *

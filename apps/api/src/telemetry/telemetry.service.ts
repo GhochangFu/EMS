@@ -7,9 +7,12 @@ import type { BmsDb } from "@bms/db";
 import {
   decodePointRefParam,
   encodePointRef,
+  MAX_WIDGET_WINDOW_MINUTES,
+  POINT_STATS_MAX_ASSETS,
   type PointAggregateFunction,
   type PointAggregateResponse,
   type PointAggregateStats,
+  type PointStatsByAsset,
   type TelemetryReading,
 } from "@bms/shared";
 
@@ -19,7 +22,10 @@ import {
   bucketSql,
   expectedBucketCount,
   fillBucketGaps,
+  groupedScalarSql,
+  lastBucketSql,
   levelFor,
+  pointStatsLevels,
   scalarSql,
   windowBounds,
 } from "./point-aggregate-window";
@@ -351,6 +357,81 @@ export class TelemetryService {
       value: Number(row.value),
       unit: row.unit,
     }));
+  }
+
+  /**
+   * `F4.291` PR 3 (ADR 0099 Amendment 9 E5(c)) — one point key over up to 25
+   * assets for `[from, to)`: min / mean / max / sample count per asset at the
+   * ladder's level for the window's length, and `last` / `lastAt`, the newest
+   * 1-minute bucket's mean (owner ruling P6) — both levels through the
+   * retention guard (`pointStatsLevels`). **One statement**, so the two halves
+   * share a snapshot. An asset with no sample in the window has no row; the
+   * copilot tool fills it with nulls.
+   *
+   * **`TENANT_POOL`, like `pointAggregate`**: `telemetry.*` has no Row Level
+   * Security, so the caller places every id first (the copilot tool through
+   * `organizationsOfAssets` or the location helper) and each fragment reads
+   * only `ANY(ids)`. No ids → the empty answer and no query.
+   *
+   * A window past `MAX_WIDGET_WINDOW_MINUTES` (or not after `from`), or more
+   * than 25 distinct ids, is refused; both are defensive — the tool's
+   * 31-day refine and its 25-id page bound make them unreachable there.
+   *
+   * @param now injectable for tests only; defaults to the current instant.
+   */
+  async pointStatsByAsset({
+    assetIds,
+    pointKey,
+    from,
+    to,
+    now = new Date(),
+  }: {
+    assetIds: readonly string[];
+    pointKey: string;
+    from: Date;
+    to: Date;
+    now?: Date;
+  }): Promise<PointStatsByAsset> {
+    const windowMinutes = (to.getTime() - from.getTime()) / 60_000;
+    if (!(windowMinutes > 0) || windowMinutes > MAX_WIDGET_WINDOW_MINUTES) {
+      throw new BadRequestException(`The window must end after it starts and span at most ${MAX_WIDGET_WINDOW_MINUTES} minutes`);
+    }
+    const ids = [...new Set(assetIds)];
+    if (ids.length > POINT_STATS_MAX_ASSETS) {
+      throw new BadRequestException(`At most ${POINT_STATS_MAX_ASSETS} assets`);
+    }
+    const { level, lastLevel } = pointStatsLevels(from, to, now);
+    const answer = { pointKey, from: from.toISOString(), to: to.toISOString(), bucketSeconds: bucketSeconds(level) };
+    if (ids.length === 0) {
+      return { ...answer, rows: [] };
+    }
+    const result = await this.pool.query<{
+      asset_id: string;
+      average: number | string | null;
+      min: number | string | null;
+      max: number | string | null;
+      sample_count: number | string | null;
+      last: number | string | null;
+      last_at: Date | string | null;
+    }>(
+      `WITH agg AS (${groupedScalarSql(level, 1, 2, 3, 4)}), lst AS (${lastBucketSql(lastLevel, 1, 2, 3, 4)})
+       SELECT coalesce(agg.asset_id, lst.asset_id) AS asset_id, agg.average, agg.min, agg.max, agg.sample_count, lst.last, lst.last_at
+       FROM agg FULL JOIN lst ON lst.asset_id = agg.asset_id
+       ORDER BY 1`,
+      [ids, pointKey, from.toISOString(), to.toISOString()],
+    );
+    return {
+      ...answer,
+      rows: result.rows.map((row) => ({
+        assetId: row.asset_id,
+        min: numberOrNull(row.min),
+        avg: numberOrNull(row.average),
+        max: numberOrNull(row.max),
+        last: numberOrNull(row.last),
+        lastAt: row.last_at === null ? null : new Date(row.last_at).toISOString(),
+        sampleCount: Number(row.sample_count ?? 0),
+      })),
+    };
   }
 
   /**

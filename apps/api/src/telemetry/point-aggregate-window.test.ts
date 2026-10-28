@@ -17,6 +17,10 @@ import {
   assertTheLadderPicksAGranularityPerRung,
   assertParameterIndicesAreChecked,
   assertThePeakHasAStableTieBreak,
+  assertGroupedScalarSqlReusesAvgExprAndGroupsByAsset,
+  assertLastBucketSqlReadsTheNewestCountedBucketPerAsset,
+  assertPointStatsParameterIndicesAreChecked,
+  assertPointStatsLevelsFollowTheLadderAndTheRetentionGuard,
 } from "./point-aggregate-window.spec";
 
 /** `F3.35` Stage A — Vitest wrapper for the pure ADR 0048 read-seam assertions (ADR 0014). */
@@ -89,5 +93,23 @@ describe("F3.35 Stage A — the SQL the endpoint emits", () => {
 describe("F3.35 Stage A — composing the fragments into one statement", () => {
   it("shifts only the window's parameter indices, and refuses a non-positional one", () => {
     assertParameterIndicesAreChecked();
+  });
+});
+
+describe("F4.291 PR 3 — the get_point_stats fragments", () => {
+  it("groups the statistics per asked asset and reuses avgExpr", () => {
+    assertGroupedScalarSqlReusesAvgExprAndGroupsByAsset();
+  });
+
+  it("reads last as each asset's newest counted bucket", () => {
+    assertLastBucketSqlReadsTheNewestCountedBucketPerAsset();
+  });
+
+  it("takes its parameter indices like scalarSql, and refuses a bad one", () => {
+    assertPointStatsParameterIndicesAreChecked();
+  });
+
+  it("picks the statistics level by the ladder and last at 1m, both through the retention guard", () => {
+    assertPointStatsLevelsFollowTheLadderAndTheRetentionGuard();
   });
 });

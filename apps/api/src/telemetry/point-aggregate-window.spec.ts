@@ -8,7 +8,10 @@ import {
   expectedBucketCount,
   fillBucketGaps,
   granularityFor,
+  groupedScalarSql,
+  lastBucketSql,
   levelFor,
+  pointStatsLevels,
   scalarSql,
   windowBounds,
 } from "./point-aggregate-window";
@@ -259,6 +262,15 @@ export function assertNoQueryCallsSqlAvg(): void {
     !/\bavg\s*\(/i.test(scalarSql("1h")),
     "scalarSql calls SQL avg(); the weighted division is the only correct mean",
   );
+  // `F4.291` PR 3: the point-stats fragments are scanned too.
+  assert(
+    !/\bavg\s*\(/i.test(groupedScalarSql("1h")),
+    "groupedScalarSql calls SQL avg(); the weighted division is the only correct mean",
+  );
+  assert(
+    !/\bavg\s*\(/i.test(lastBucketSql("1m")),
+    "lastBucketSql calls SQL avg(); the weighted division is the only correct mean",
+  );
 }
 
 /**
@@ -412,4 +424,73 @@ export function assertTheFilledCountMatchesTheLadder(): void {
     // And the guard accepts exactly that many, so the two agree by construction.
     assertBucketCount(filled.length, expectedBucketCount(windowMinutes, level));
   }
+}
+
+// --- `F4.291` PR 3: the point-stats fragments ---------------------------------------------
+
+/**
+ * `get_point_stats`' per-asset statistics: one row per asset (`GROUP BY
+ * asset_id`), bounded to the asked ids (`= ANY($1::uuid[])` — `telemetry.*`
+ * has no Row Level Security, so this predicate is the containment), and the
+ * mean through `avgExpr()` inside its zero guard, never a second division.
+ */
+export function assertGroupedScalarSqlReusesAvgExprAndGroupsByAsset(): void {
+  const sql = groupedScalarSql("1h");
+  assert(sql.includes("GROUP BY asset_id"), "the statistics must be grouped per asset");
+  assert(sql.includes("asset_id = ANY($1::uuid[])"), "the statistics must read only the asked asset ids");
+  assert(sql.includes(avgExpr()), "the per-asset mean must reuse avgExpr(), not restate the division");
+  assert(sql.includes("sum(sample_count) > 0"), "the zero-denominator guard must wrap avgExpr()");
+  assert(sql.includes("telemetry.point_values_1h"), "the level's relation is the one read");
+}
+
+/**
+ * `last` (owner ruling P6): per asked asset, the newest bucket that holds a
+ * sample — `ORDER BY p.bucket DESC LIMIT 1` over that asset's rows only
+ * (`p.asset_id = a.asset_id`), with `HAVING sum(sample_count) > 0` so a
+ * bucket with no counted sample is passed over rather than answered as null.
+ */
+export function assertLastBucketSqlReadsTheNewestCountedBucketPerAsset(): void {
+  const sql = lastBucketSql("1m");
+  assert(sql.includes("unnest($1::uuid[])"), "the last value must be read per asked asset");
+  assert(sql.includes("p.asset_id = a.asset_id"), "each asset's last value must come from its own rows");
+  assert(/ORDER BY p\.bucket DESC\s+LIMIT 1/.test(sql), "the last value is the newest bucket's");
+  assert(sql.includes("HAVING sum(sample_count) > 0"), "a bucket with no counted sample must be passed over");
+  assert(sql.includes(avgExpr()), "the last bucket's mean must reuse avgExpr()");
+  assert(sql.includes("telemetry.point_values_1m"), "the level's relation is the one read");
+}
+
+/** The point-stats fragments take their parameter indices like `scalarSql`, and refuse a bad one. */
+export function assertPointStatsParameterIndicesAreChecked(): void {
+  const shifted = groupedScalarSql("1m", 5, 6, 7, 8);
+  assert(shifted.includes("ANY($5::uuid[])") && shifted.includes("point_key = $6"), "the ids and key move with their indices");
+  assert(shifted.includes("$7::timestamptz") && shifted.includes("$8::timestamptz"), "both ends move with their indices");
+  let threw = false;
+  try {
+    lastBucketSql("1m", 0, 2, 3, 4);
+  } catch {
+    threw = true;
+  }
+  assert(threw, "a parameter index of 0 must be refused, not interpolated");
+}
+
+/**
+ * The levels `get_point_stats` reads: the statistics at the ladder's level for
+ * the window's length, `last` at `1m` (owner ruling P6) — both through the
+ * retention guard, so a window older than the `1m` horizon reads a coarser
+ * level that still holds it instead of answering "no data".
+ */
+export function assertPointStatsLevelsFollowTheLadderAndTheRetentionGuard(): void {
+  const day = 86_400_000;
+  const at = (days: number) => new Date(NOW.getTime() - days * day);
+  const hour = pointStatsLevels(new Date(NOW.getTime() - 3_600_000), NOW, NOW);
+  assert(hour.level === "1m" && hour.lastLevel === "1m", `one hour reads 1m, got ${JSON.stringify(hour)}`);
+  const week = pointStatsLevels(at(7), NOW, NOW);
+  assert(week.level === "1h" && week.lastLevel === "1m", `seven days read 1h and last at 1m, got ${JSON.stringify(week)}`);
+  const month = pointStatsLevels(at(31), NOW, NOW);
+  assert(month.level === "1d" && month.lastLevel === "1m", `31 days read 1d and last at 1m, got ${JSON.stringify(month)}`);
+  const old = pointStatsLevels(at(800), at(798), NOW);
+  assert(
+    old.level === "1h" && old.lastLevel === "1h",
+    `two days 800 days back are past the 1m horizon and read 1h, got ${JSON.stringify(old)}`,
+  );
 }
