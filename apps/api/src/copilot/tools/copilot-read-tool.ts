@@ -4,6 +4,7 @@ import type { AuditAdminService } from "../../admin/audit/audit.service";
 import type { LocationsAdminService } from "../../admin/locations/locations.service";
 import type { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
 import type { AlarmDetailsService } from "../../alarms/alarm-details.service";
+import type { AlarmStatsService } from "../../alarms/alarm-stats.service";
 import type { AlarmsService } from "../../alarms/alarms.service";
 import type { AssetHealthService } from "../../asset-health/asset-health.service";
 import type { AssetKpisService } from "../../assets/asset-kpis.service";
@@ -42,6 +43,11 @@ export interface CopilotReadServices {
    */
   readonly locationScope: Pick<LocationAssetScopeService, "readableAssetIdsInLocations">;
   readonly alarms: Pick<AlarmsService, "list">;
+  /**
+   * `F4.291` PR 2: `get_alarm_stats`' counts, MTTA and MTTR, once per organization
+   * through `readPerOrganization`; never called with `null` or `[]`.
+   */
+  readonly alarmStats: Pick<AlarmStatsService, "range">;
   /** `F4.274`: `listPoints` for `list_asset_points`. */
   readonly assets: Pick<AssetsService, "listAll" | "listPoints">;
   readonly kpis: Pick<AssetKpisService, "listKpis">;

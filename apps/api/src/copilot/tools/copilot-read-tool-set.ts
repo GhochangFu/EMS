@@ -5,6 +5,7 @@ import { AuditAdminService } from "../../admin/audit/audit.service";
 import { LocationsAdminService } from "../../admin/locations/locations.service";
 import { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
 import { AlarmDetailsService } from "../../alarms/alarm-details.service";
+import { AlarmStatsService } from "../../alarms/alarm-stats.service";
 import { AlarmsService } from "../../alarms/alarms.service";
 import { AssetHealthService } from "../../asset-health/asset-health.service";
 import { AssetKpisService } from "../../assets/asset-kpis.service";
@@ -31,6 +32,7 @@ import type { CopilotReadTools, CopilotToolContext, CopilotToolResult } from "..
 import type { CopilotReadServices, CopilotReadToolDefinition } from "./copilot-read-tool";
 import { getAlarmDetailsTool } from "./get-alarm-details.tool";
 import { getAlarmKbTool } from "./get-alarm-kb.tool";
+import { getAlarmStatsTool } from "./get-alarm-stats.tool";
 import { getAssetKpisTool } from "./get-asset-kpis.tool";
 import { getDashboardKpisTool } from "./get-dashboard-kpis.tool";
 import { getEnergyReportPreviewTool } from "./get-energy-report-preview.tool";
@@ -71,12 +73,14 @@ import { openPageTool } from "./open-page.tool";
  * after `get_asset_kpis`. `F4.275` adds the six energy and portfolio reads
  * after `get_point_aggregate`. `F4.277` adds `get_system_status` and
  * `list_audit_log` after `get_health_summary`. `F4.276` adds
- * `get_alarm_details` and `get_alarm_kb` after `list_alarms`.
+ * `get_alarm_details` and `get_alarm_kb` after `list_alarms`. `F4.291` PR 2
+ * adds `get_alarm_stats` after `get_alarm_kb`.
  */
 export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[] = [
   listAlarmsTool,
   getAlarmDetailsTool,
   getAlarmKbTool,
+  getAlarmStatsTool,
   listAssetsTool,
   getAssetKpisTool,
   listAssetPointsTool,
@@ -189,6 +193,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
     // `F4.291`: appended last (slot 24), the same reason. The location helper is
     // `AuthModule`'s (`@Global()`), so `CopilotModule` imports nothing for it.
     @Inject(LocationAssetScopeService) locationScope: LocationAssetScopeService,
+    // `F4.291` PR 2: appended last (slot 25), the same reason. `AlarmsModule` exports it.
+    @Inject(AlarmStatsService) alarmStats: AlarmStatsService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -216,6 +222,7 @@ export class CopilotReadToolSet implements CopilotReadTools {
       workOrders,
       users,
       locationScope,
+      alarmStats,
     });
   }
 

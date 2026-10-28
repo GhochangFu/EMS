@@ -36,6 +36,8 @@ import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import { AssetsModule } from "../assets/assets.module";
 import { AuthModule } from "../auth/auth.module";
 import { LocationAssetScopeService } from "../auth/location-asset-scope.service";
+import { AlarmsModule } from "../alarms/alarms.module";
+import { AlarmStatsService } from "../alarms/alarm-stats.service";
 
 /**
  * `F3.86` PR 4 / ADR 0099 decision 3 — the module edges a green build does not
@@ -251,4 +253,16 @@ export function assertTheAuthModuleExportsTheLocationScope(): void {
 /** `F4.291`: the read tools' slot 24 is `LocationAssetScopeService`, by `@Inject`. */
 export function assertTheReadToolsInjectTheLocationScope(): void {
   expect(injected(CopilotReadToolSet).get(24)).toBe(LocationAssetScopeService);
+}
+
+/** `F4.291` PR 2: `AlarmsModule` (imported by `CopilotModule`) provides and exports `AlarmStatsService`. */
+export function assertTheAlarmsModuleExportsTheAlarmStats(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(AlarmsModule);
+  expect(moduleList(AlarmsModule, "providers")).toContain(AlarmStatsService);
+  expect(moduleList(AlarmsModule, "exports")).toContain(AlarmStatsService);
+}
+
+/** `F4.291` PR 2: the read tools' slot 25 is `AlarmStatsService`, by `@Inject`. */
+export function assertTheReadToolsInjectTheAlarmStats(): void {
+  expect(injected(CopilotReadToolSet).get(25)).toBe(AlarmStatsService);
 }

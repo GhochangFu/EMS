@@ -133,6 +133,8 @@ export type StoredContractContext =
   | "copilot_tools.list_audit_log.page"
   // `F4.276`: the alarm details and alarm knowledge-base read tools.
   | "copilot_tools.get_alarm_details.result"
+  // `F4.291` PR 2: the alarm statistics read tool.
+  | "copilot_tools.get_alarm_stats.result"
   | "copilot_tools.get_alarm_kb.result"
   // `F4.278`: the alarm-rule read tool.
   | "copilot_tools.list_rules.page"
