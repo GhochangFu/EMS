@@ -6,7 +6,7 @@ import type { BmsDb } from "@bms/db";
 import type { ResolvedIdentity } from "../auth/identity-resolver";
 import { withUser } from "../database/user-context";
 import { CopilotConversationsController } from "./copilot-conversations.controller";
-import { CopilotConversationsService } from "./copilot-conversations.service";
+import { CopilotConversationsService, CopilotCursorNotFoundError } from "./copilot-conversations.service";
 import type { CopilotAvailabilityService } from "./copilot-availability.service";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
 import type { CopilotTurnService } from "./copilot-turn.service";
@@ -173,4 +173,121 @@ export async function aResumeLeavesAnotherUsersBinding(ctx: ConversationsCtx): P
   expect(await store.bindOnboardingSession(ctx.userB, theirs.id, session)).toBe(true);
   await store.unbindSessionElsewhere(ctx.userA, session, resumed.id);
   expect((await store.findConversation(ctx.userB, theirs.id))?.onboardingSessionId).toBe(session);
+}
+
+/*
+ * `F4.292` (ADR 0099 Amendment 9 E7) — the paged read and the title, on a real
+ * database as `bms_tenant`. Each case makes its own conversation, so no case
+ * reads another's rows.
+ */
+async function fiveMessages(ctx: ConversationsCtx): Promise<{ store: CopilotConversationsService; id: string; all: string[] }> {
+  const store = new CopilotConversationsService(ctx.tenantDb);
+  const conversation = await store.create(ctx.userA, ctx.orgA);
+  const stored = await store.appendTurn(
+    ctx.userA,
+    conversation.id,
+    ["one", "two", "three", "four", "five"].map((content, i) => ({
+      role: i % 2 === 0 ? ("user" as const) : ("assistant" as const),
+      content,
+      organizationIds: [],
+    })),
+  );
+  return { store, id: conversation.id, all: stored.map((m) => m.id) };
+}
+
+/** Walks the pages from the newest with `limit`; answers each page's ids and `hasEarlier`. */
+async function walkPages(store: CopilotConversationsService, userId: string, id: string, limit: number) {
+  const pages: Array<{ ids: string[]; contents: string[]; hasEarlier: boolean | undefined }> = [];
+  let before: string | undefined;
+  for (let guard = 0; guard < 10; guard += 1) {
+    const page = await store.get(userId, id, { before, limit });
+    if (!page) throw new Error("F4.292: the conversation was not found");
+    pages.push({ ids: page.messages.map((m) => m.id), contents: page.messages.map((m) => m.content), hasEarlier: page.hasEarlier });
+    if (!page.hasEarlier) return pages;
+    before = page.messages[0]?.id;
+  }
+  throw new Error("F4.292: the page walk did not end");
+}
+
+/** Pages of two, newest first, cover every message once and in order. Mutation: `<=` in the tuple compare → red (the cursor row repeats). */
+export async function aPageWalkCoversEveryMessageOnce(ctx: ConversationsCtx): Promise<void> {
+  const { store, id, all } = await fiveMessages(ctx);
+  const pages = await walkPages(store, ctx.userA, id, 2);
+  expect(pages.map((p) => p.ids)).toEqual([all.slice(3, 5), all.slice(1, 3), all.slice(0, 1)]);
+}
+
+/** Only the last page answers `hasEarlier: false`. Mutation: compare against `page.limit + 1` → red. */
+export async function onlyTheLastPageHasNoEarlier(ctx: ConversationsCtx): Promise<void> {
+  const { store, id } = await fiveMessages(ctx);
+  const pages = await walkPages(store, ctx.userA, id, 2);
+  expect(pages.map((p) => p.hasEarlier)).toEqual([true, true, false]);
+}
+
+/** A read with no page answers every message, oldest first, and no `hasEarlier` key (the old shape). */
+export async function anUnpagedReadAnswersEveryMessage(ctx: ConversationsCtx): Promise<void> {
+  const { store, id, all } = await fiveMessages(ctx);
+  const detail = await store.get(ctx.userA, id);
+  expect(detail?.messages.map((m) => m.id)).toEqual(all);
+  expect(detail && "hasEarlier" in detail).toBe(false);
+}
+
+/**
+ * Rows of one millisecond, apart by microseconds, are each paged once (critic:
+ * a cursor read into a JS `Date` and bound back loses the microseconds and
+ * skips the older row). Mutation: bind the cursor's `createdAt` read into JS
+ * → red.
+ */
+export async function rowsOfOneMillisecondArePagedOnce(ctx: ConversationsCtx): Promise<void> {
+  const store = new CopilotConversationsService(ctx.tenantDb);
+  const conversation = await store.create(ctx.userA, ctx.orgA);
+  await withUser(ctx.tenantDb, ctx.userA, async (tx) => {
+    // Inserted newest first, so the order cannot be insertion order.
+    await tx.execute(sql`
+      INSERT INTO bms.copilot_messages (conversation_id, user_id, role, content, created_at)
+      VALUES (${conversation.id}, ${ctx.userA}, 'assistant', 'c', '2026-10-01 00:00:00.123900+00'),
+             (${conversation.id}, ${ctx.userA}, 'assistant', 'b', '2026-10-01 00:00:00.123456+00'),
+             (${conversation.id}, ${ctx.userA}, 'user', 'a', '2026-10-01 00:00:00.123200+00')`);
+  });
+  const pages = await walkPages(store, ctx.userA, conversation.id, 1);
+  expect(pages.map((p) => p.contents)).toEqual([["c"], ["b"], ["a"]]);
+}
+
+/** A `before` naming a message of another conversation throws `CopilotCursorNotFoundError`. Mutation: drop `conversationId` from the lookup → red. */
+export async function aCursorOfAnotherConversationIsRefused(ctx: ConversationsCtx): Promise<void> {
+  const { store, id } = await fiveMessages(ctx);
+  const other = await fiveMessages(ctx);
+  const err = await store.get(ctx.userA, id, { before: other.all[2], limit: 2 }).catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(CopilotCursorNotFoundError);
+}
+
+/** The first turn titles the conversation from its first user line. */
+export async function theFirstTurnTitlesTheConversation(ctx: ConversationsCtx): Promise<void> {
+  const store = new CopilotConversationsService(ctx.tenantDb);
+  const conversation = await store.create(ctx.userA, ctx.orgA);
+  await store.appendTurn(ctx.userA, conversation.id, [
+    { role: "user", content: "Show PHE alarms", organizationIds: [] },
+    { role: "assistant", content: "Two are active.", organizationIds: [] },
+  ]);
+  const listed = (await store.list(ctx.userA)).find((c) => c.id === conversation.id);
+  expect(listed?.title).toBe("Show PHE alarms");
+}
+
+/** A later turn keeps the first title. Mutation: the bare title for `coalesce(...)` → red. */
+export async function aLaterTurnKeepsTheTitle(ctx: ConversationsCtx): Promise<void> {
+  const store = new CopilotConversationsService(ctx.tenantDb);
+  const conversation = await store.create(ctx.userA, ctx.orgA);
+  await store.appendTurn(ctx.userA, conversation.id, [{ role: "user", content: "Show PHE alarms", organizationIds: [] }]);
+  await store.appendTurn(ctx.userA, conversation.id, [{ role: "user", content: "And the pumps?", organizationIds: [] }]);
+  const listed = (await store.list(ctx.userA)).find((c) => c.id === conversation.id);
+  expect(listed?.title).toBe("Show PHE alarms");
+}
+
+/** A turn with no user line leaves the title for a later one. Mutation: `?? ""` after `conversationTitleOf(...)` → red. */
+export async function aTurnWithNoUserLineLeavesTheTitleOpen(ctx: ConversationsCtx): Promise<void> {
+  const store = new CopilotConversationsService(ctx.tenantDb);
+  const conversation = await store.create(ctx.userA, ctx.orgA);
+  await store.appendTurn(ctx.userA, conversation.id, [{ role: "action", content: "Onboarding started.", organizationIds: [] }]);
+  await store.appendTurn(ctx.userA, conversation.id, [{ role: "user", content: "Show PHE alarms", organizationIds: [] }]);
+  const listed = (await store.list(ctx.userA)).find((c) => c.id === conversation.id);
+  expect(listed?.title).toBe("Show PHE alarms");
 }
