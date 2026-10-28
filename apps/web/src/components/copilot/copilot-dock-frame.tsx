@@ -33,6 +33,11 @@ import { useViewportSize } from "./use-copilot-viewport";
  *   mode buttons.
  *
  * A handle is a focusable `separator`; the arrow keys step it 16 px (ruling P6).
+ *
+ * **Chats** (E7). The maximized panel shows the conversation list as a left
+ * column (`w-64`); every other shape shows it as a drawer over the body,
+ * opened by the header's *Chats* button. Docked takes the drawer too (critic:
+ * at the stored 360–380 px a column would leave the thread about 110 px).
  * The size shown is clamped against the current viewport at render time.
  * Surfaces keep the theme tokens (`surface-raised`, `bg-chrome`, `border-line`).
  */
@@ -130,6 +135,8 @@ export type CopilotDockFrameProps = {
   panelRef?: Ref<HTMLElement>;
   /** The left side of the header bar: the title and the scope line. */
   header: ReactNode;
+  /** `F4.292`: the conversation list, and whether its drawer is open (the column ignores it). */
+  chats?: { list: ReactNode; open: boolean; onToggle: () => void };
   children: ReactNode;
 };
 
@@ -142,6 +149,7 @@ export function CopilotDockFrame({
   onClose,
   panelRef,
   header,
+  chats,
   children,
 }: CopilotDockFrameProps) {
   const viewport = useViewportSize();
@@ -155,6 +163,7 @@ export function CopilotDockFrame({
         ? { width: shown.width }
         : undefined;
   const resize = (next: CopilotSize): void => onResize(next, bounds);
+  const column = shape === "maximized";
 
   return (
     <aside
@@ -173,6 +182,17 @@ export function CopilotDockFrame({
       <header className="flex items-start justify-between gap-2 border-b border-line bg-chrome px-4 py-3 text-on-dark">
         {header}
         <div className="flex shrink-0 items-center gap-1">
+          {chats !== undefined && !column && (
+            <button
+              type="button"
+              aria-expanded={chats.open}
+              aria-controls="copilot-chats"
+              onClick={chats.onToggle}
+              className={`rounded px-2 py-0.5 text-xs hover:text-on-dark ${chats.open ? "bg-on-dark/15 text-on-dark" : "text-on-dark/70"}`}
+            >
+              Chats
+            </button>
+          )}
           {!sheet && (
             <div role="group" aria-label="Copilot window mode" className="flex items-center gap-0.5">
               {MODE_BUTTONS.map((b) => (
@@ -214,7 +234,17 @@ export function CopilotDockFrame({
           </button>
         </div>
       </header>
-      {children}
+      <div className="relative flex min-h-0 flex-1">
+        {chats !== undefined && (column || chats.open) && (
+          <div
+            id="copilot-chats"
+            className={`flex flex-col bg-canvas ${column ? "w-64 shrink-0 border-r border-line" : "absolute inset-0 z-20"}`}
+          >
+            {chats.list}
+          </div>
+        )}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{children}</div>
+      </div>
     </aside>
   );
 }

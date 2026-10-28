@@ -88,6 +88,8 @@ type Stubs = {
   organizations: ReturnType<typeof vi.spyOn>;
   /** `F4.255` PR 3: the dock's draft list, empty unless a case says otherwise. */
   drafts: ReturnType<typeof vi.spyOn>;
+  /** `F4.292`: the conversation list, empty unless a case says otherwise. */
+  conversations: ReturnType<typeof vi.spyOn>;
 };
 
 export function stub(status: CopilotStatusDto = READY): Stubs {
@@ -115,6 +117,7 @@ export function stub(status: CopilotStatusDto = READY): Stubs {
       ],
     } as never),
     drafts: vi.spyOn(onboardingApi, "fetchOnboardingDrafts").mockResolvedValue({ items: [] }),
+    conversations: vi.spyOn(copilotApi, "fetchCopilotConversations").mockResolvedValue([]),
   };
 }
 

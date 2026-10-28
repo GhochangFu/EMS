@@ -4,6 +4,7 @@ import { afterEach, describe, it } from "vitest";
 import {
   aReloadResumesTheStoredConversation,
   clearingRemovesTheStoredKey,
+  openingAListedChatSetsItsPick,
   theOnboardingRequestIsNotStored,
   theStoredKeysAreTheSessionOnly,
 } from "./copilot-store.spec";
@@ -20,4 +21,5 @@ describe("F4.244 copilot store — the persisted session", () => {
   it("keeps the onboarding request out of storage", () => theOnboardingRequestIsNotStored());
   it("resumes the stored conversation after a reload", () => aReloadResumesTheStoredConversation());
   it("removes the stored key when the session is cleared", () => clearingRemovesTheStoredKey());
+  it("opens a listed chat with its pick (F4.292)", () => openingAListedChatSetsItsPick());
 });

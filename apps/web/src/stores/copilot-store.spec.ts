@@ -57,3 +57,11 @@ export function clearingRemovesTheStoredKey(): void {
   expect(useCopilotStore.getState().conversationId).toBeNull();
   expect(window.localStorage.getItem(COPILOT_SESSION_KEY)).toBeNull();
 }
+
+/** `F4.292`: opening a listed chat sets the user, its pick and its id. Mutation: keep the old pick. */
+export function openingAListedChatSetsItsPick(): void {
+  useCopilotStore.getState().pick("u1", "");
+  useCopilotStore.getState().openConversation("u1", ORG, CONVERSATION);
+  const { userId, organizationId, conversationId } = useCopilotStore.getState();
+  expect({ userId, organizationId, conversationId }).toEqual({ userId: "u1", organizationId: ORG, conversationId: CONVERSATION });
+}

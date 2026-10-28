@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type {
   CopilotConversationDetailDto,
+  CopilotConversationDto,
   CopilotMessageDto,
   CopilotPendingChangeDto,
   CopilotSkillStateDto,
@@ -34,12 +35,13 @@ import { rememberFiles } from "../../lib/copilot-file-memory";
 import { isPdfFile, prepareChosenFiles, withoutEach, type PreparedFile } from "../../lib/copilot-pdf-page";
 import { ONBOARDING_DRAFTS, onboardingDraftsKey } from "../../lib/copilot-invalidations";
 import type { AuthUser } from "../../stores/auth-store";
-import { copilotConversationKey, useCopilotSession, useCopilotStore } from "../../stores/copilot-store";
+import { COPILOT_CONVERSATIONS, copilotConversationKey, useCopilotSession, useCopilotStore } from "../../stores/copilot-store";
 import { mountCopilotDock, useCopilotWindowStore } from "../../stores/copilot-window-store";
 import { useWizardStore } from "../../stores/wizard-store";
 import { AttachButton } from "./attach-button";
 import { AttachPanel } from "./attach-panel";
 import { ConfirmCard } from "./confirm-card";
+import { ConversationList } from "./conversation-list";
 import { CopilotDockFrame } from "./copilot-dock-frame";
 import {
   ALL_ORGANIZATIONS,
@@ -53,6 +55,7 @@ import {
   NOT_CONFIGURED_SENTENCE,
   ONBOARD_PICK_SENTENCE,
   ONBOARDING_DISCOVERY,
+  OrganizationPicker,
   SCOPE_OFF_SENTENCE,
 } from "./copilot-dock-parts";
 import { CopilotThread } from "./copilot-thread";
@@ -214,6 +217,8 @@ function DockPanel({
   const { organizationId, conversationId } = useCopilotSession(user.id);
   const pickInStore = useCopilotStore((s) => s.pick);
   const setConversation = useCopilotStore((s) => s.setConversation);
+  const openConversation = useCopilotStore((s) => s.openConversation);
+  const [chatsOpen, setChatsOpen] = useState(false);
   // The turn writes its messages into the thread's cache entry; the server load is the fallback.
   // `followUp` is set while the confirmed change's follow-up turn runs (`F4.244`: armed from the thread).
   // `failed` (`F3.86` PR 2): the route refused the confirmed change; the follow-up turn still runs.
@@ -458,6 +463,8 @@ function DockPanel({
         navigate(route);
       }
     },
+    // `F4.292`: a turn moves the row's title and last turn time, and may have made the conversation.
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: COPILOT_CONVERSATIONS }),
     onError: (err: Error) => {
       const limit = copilotLimitOf(err);
       setBanner(limit ? limitSentence(limit) : apiErrorMessage(err));
@@ -493,6 +500,7 @@ function DockPanel({
       // The prefix: a scoped start from no conversation listed its drafts under "home", not the organization's id.
       void queryClient.invalidateQueries({ queryKey: ONBOARDING_DRAFTS });
     },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: COPILOT_CONVERSATIONS }),
     onError: (err: Error, sessionId) => {
       setBanner(apiErrorMessage(err));
       // `F4.255`: a refused resume (409 closed, 404) means the listed row is dead: read the list again.
@@ -594,6 +602,21 @@ function DockPanel({
     pickInStore(user.id, next);
     setBanner(null);
     setTurnNotConfigured(false);
+  }
+
+  /**
+   * `F4.292` (E7): opens a listed chat (`null`: a new one). The global administrator's pick follows the
+   * row's organization; a scoped administrator's stays (the server binds the scope). Resets what `pick`
+   * resets — the banner and a turn's not-configured answer (critic) — and drops the chosen files.
+   */
+  function openChat(conversation: CopilotConversationDto | null): void {
+    if (conversation === null) pickInStore(user.id, organizationId);
+    else openConversation(user.id, isGlobalAdmin ? (conversation.organizationId ?? ALL_ORGANIZATIONS) : organizationId, conversation.id);
+    setBanner(null);
+    setTurnNotConfigured(false);
+    setFiles([]);
+    dropEpoch.current += 1;
+    setChatsOpen(false);
   }
 
   function sendText(raw: string, withFiles = false): void {
@@ -724,24 +747,14 @@ function DockPanel({
           onClose={toggle}
           panelRef={panelRef}
           header={<DockTitle scopeLabel={scopeLabel} />}
+          chats={{
+            open: chatsOpen,
+            onToggle: () => setChatsOpen((was) => !was),
+            list: <ConversationList currentId={conversationId} onOpen={openChat} onNew={() => openChat(null)} disabled={turn.isPending} />,
+          }}
         >
           {isGlobalAdmin && (
-            <div className="border-b border-line px-4 py-2">
-              <select
-                aria-label="Organization"
-                value={organizationId}
-                onChange={(e) => pick(e.target.value)}
-                disabled={turn.isPending}
-                className="surface-field w-full px-2 py-1 text-xs"
-              >
-                <option value={ALL_ORGANIZATIONS}>{ALL_ORGANIZATIONS_LABEL}</option>
-                {(organizations.data?.items ?? []).map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <OrganizationPicker value={organizationId} options={organizations.data?.items ?? []} disabled={turn.isPending} onPick={pick} />
           )}
 
           {canOnboard && skill === null && (

@@ -12,6 +12,38 @@ import { COPILOT_ALL_ORGANIZATIONS } from "../../stores/copilot-store";
 export const ALL_ORGANIZATIONS = COPILOT_ALL_ORGANIZATIONS;
 export const ALL_ORGANIZATIONS_LABEL = "All organizations (platform key)";
 
+/** The global administrator's organization pick (plan Q9); a change of pick starts a new conversation. */
+export function OrganizationPicker({
+  value,
+  options,
+  disabled,
+  onPick,
+}: {
+  value: string;
+  options: readonly { id: string; name: string }[];
+  disabled: boolean;
+  onPick: (organizationId: string) => void;
+}) {
+  return (
+    <div className="border-b border-line px-4 py-2">
+      <select
+        aria-label="Organization"
+        value={value}
+        onChange={(e) => onPick(e.target.value)}
+        disabled={disabled}
+        className="surface-field w-full px-2 py-1 text-xs"
+      >
+        <option value={ALL_ORGANIZATIONS}>{ALL_ORGANIZATIONS_LABEL}</option>
+        {options.map((o) => (
+          <option key={o.id} value={o.id}>
+            {o.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 /** The sentence a scope with no AI key shows instead of the input (decision 10). */
 export const NOT_CONFIGURED_SENTENCE =
   "The copilot is on, but no AI key is set up for this scope yet. An administrator can add one on the organization's AI assistant page.";
