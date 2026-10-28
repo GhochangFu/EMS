@@ -7,6 +7,7 @@ import type {
   CopilotSkillStateDto,
 } from "@bms/shared";
 import { isCopilotOutcomeLine } from "@bms/shared/copilot";
+import { COPILOT_CONVERSATION_PAGE_DEFAULT } from "@bms/shared/contracts";
 
 import { fetchCopilotConversation } from "../../api/copilot";
 import { copilotConversationKey } from "../../stores/copilot-store";
@@ -70,8 +71,14 @@ export function appendMessages(messages: readonly CopilotMessageDto[], added: re
   return [...messages, ...added.filter((m) => !held.has(m.id))];
 }
 
-/** One wait: for which change, since when (local), and how many messages the thread held then. */
-type Wait = { changeId: string; since: number; baseline: number; failed: boolean };
+/**
+ * One wait: for which change, since when (local), and the ids of the messages
+ * the thread held then. `F4.292` (critic, high): ids, not a count — the thread
+ * reads the newest page only, so a poll can answer a window that starts later
+ * than the one the wait was armed on, and a count would then slice past the
+ * outcome line and hold Send for the whole {@link FOLLOW_UP_WAIT_MS}.
+ */
+type Wait = { changeId: string; since: number; seen: ReadonlySet<string>; failed: boolean };
 
 export type ConversationThread = {
   thread: UseQueryResult<CachedThread>;
@@ -112,13 +119,22 @@ export type ConversationThread = {
  * (review C3). The dock cancels such a read before each of its cache writes
  * and appends a response's rows by id ({@link appendMessages}), so a read that
  * answers first neither undoes a write nor shows a row twice.
+ *
+ * **The newest page only** (`F4.292`, ADR 0099 Amendment 9 E7). A server read
+ * asks `?limit=50`; the earlier pages live beside this entry
+ * (`useThreadWindow`, `copilotEarlierKey`) and never enter it, and the wait
+ * remembers the ids it was armed on, so a poll that answers a later window
+ * still finds the outcome line. The skill routes answer the unpaged detail
+ * (no `hasEarlier`: the whole thread), and the dock puts it here as it is.
  */
 export function useConversationThread(conversationId: string | null): ConversationThread {
   const queryClient = useQueryClient();
   const [wait, setWait] = useState<Wait | null>(null);
   const thread = useQuery<CachedThread>({
     queryKey: copilotConversationKey(conversationId),
-    queryFn: async () => receivedThread(await fetchCopilotConversation(conversationId as string)),
+    // `F4.292`: the newest page only; *Load earlier* (`useThreadWindow`) reads the rest beside this entry.
+    queryFn: async () =>
+      receivedThread(await fetchCopilotConversation(conversationId as string, { limit: COPILOT_CONVERSATION_PAGE_DEFAULT })),
     enabled: conversationId !== null,
     staleTime: Infinity,
     refetchInterval: wait === null ? false : FOLLOW_UP_POLL_MS,
@@ -136,8 +152,8 @@ export function useConversationThread(conversationId: string | null): Conversati
   useEffect(() => {
     if (wait !== null || awaited === null || since === undefined) return;
     if (!(Date.now() - since < FOLLOW_UP_WAIT_MS)) return;
-    setWait({ changeId: awaited.changeId, since, baseline: messages.length, failed: awaited.status === "failed" });
-  }, [awaited, since, wait, messages.length]);
+    setWait({ changeId: awaited.changeId, since, seen: new Set(messages.map((m) => m.id)), failed: awaited.status === "failed" });
+  }, [awaited, since, wait, messages]);
 
   // A switched or dropped conversation keeps no hold. Only on a real change of id (review C7): a
   // plain effect on `[conversationId]` would also run on mount and cancel the arm above.
@@ -153,7 +169,7 @@ export function useConversationThread(conversationId: string | null): Conversati
   // meanwhile — Send waits too, so a user turn cannot race the follow-up's proposal.
   useEffect(() => {
     if (wait === null) return;
-    const landed = messages.slice(wait.baseline).some((m) => m.role === "action" && isCopilotOutcomeLine(m.content));
+    const landed = messages.some((m) => !wait.seen.has(m.id) && m.role === "action" && isCopilotOutcomeLine(m.content));
     if (landed && awaited?.changeId !== wait.changeId) {
       setWait(null);
       return;

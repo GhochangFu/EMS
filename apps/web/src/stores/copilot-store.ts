@@ -148,3 +148,14 @@ export function useCopilotSession(userId: string): { organizationId: string; con
 export function copilotConversationKey(conversationId: string | null): readonly unknown[] {
   return ["copilot", "conversation", conversationId];
 }
+
+/**
+ * `F4.292` — the Query key of one conversation's loaded window (the earlier
+ * pages *Load earlier* read, and the thread's rows after them). Not under
+ * {@link copilotConversationKey}'s prefix: `invalidateQueries` and
+ * `cancelQueries` match by prefix, and the thread's poll, a Confirm's `gone()`
+ * and a focus read must never reach these rows (critic).
+ */
+export function copilotEarlierKey(conversationId: string | null): readonly unknown[] {
+  return ["copilot", "earlier", conversationId];
+}
