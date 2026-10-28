@@ -399,8 +399,10 @@ export async function assertTheTurnAnswersTheLast24HoursFromATool(): Promise<voi
  * Owner ruling 2026-10-25 (release 4): F4.284 alarm skills measured 15,452 (34 tools, under the bound, so it is unchanged)
  * Owner ruling P4 2026-10-27 (release 5, the release-4 rule per PR): F4.291 PR 1 measured 17,623 (34 tools; locationId
  * and cursor on the lists, locationId on the six energy reads, search on list_locations), so the bound is 19,000
+ * Owner ruling P4 2026-10-27 (release 5, the release-4 rule per PR): F4.291 PR 2 measured 18,665 (35 tools; severity and
+ * lastDays/from/to on list_alarms, get_alarm_stats), so the bound is 20,000. The propose registry is unchanged (82,991).
  */
 export function assertTheReadRegistryStaysInItsBudget(): void {
   const { tools } = fakeTelemetryServices();
-  expect(JSON.stringify(tools.registry.definitions).length).toBeLessThan(19_000);
+  expect(JSON.stringify(tools.registry.definitions).length).toBeLessThan(20_000);
 }
