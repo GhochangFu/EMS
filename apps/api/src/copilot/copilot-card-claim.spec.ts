@@ -1,6 +1,14 @@
 import { expect } from "vitest";
 
-import { COPILOT_CARD_CLAIM_PATTERNS, claimsACard, withNoChangeNote } from "./copilot-card-claim";
+import {
+  appliedSinceLastUserMessage,
+  claimsACard,
+  claimsApplied,
+  COPILOT_CARD_CLAIM_PATTERNS,
+  COPILOT_NO_CHANGE_APPLIED_NOTE,
+  withNoAppliedNote,
+  withNoChangeNote,
+} from "./copilot-card-claim";
 import { COPILOT_REPLY_REDACTED } from "./copilot-secret-scrub";
 import { COPILOT_ATTACHMENT_UNREADABLE_REPLY, COPILOT_TURN_FAILED_REPLY } from "./copilot-turn.service";
 
@@ -72,4 +80,53 @@ export function aReplyWithNoClaimIsUntouched(): void {
 /** The fixed replies never pick up the note. */
 export function theFixedRepliesClaimNothing(): void {
   expect([COPILOT_REPLY_REDACTED, COPILOT_TURN_FAILED_REPLY, COPILOT_ATTACHMENT_UNREADABLE_REPLY].map(claimsACard)).toEqual([false, false, false]);
+}
+
+/** `F4.293`: the two AWS wordings F4.286's list missed, each tagged by the pattern that owns it. */
+export function theAwsCardWordingsAreTagged(): void {
+  const samples = ["Here's the card: Pump C 000000010 — Chlorine pump off.", "Confirm on the card to apply it."];
+  expect(samples.map((sample) => COPILOT_CARD_CLAIM_PATTERNS.map((pattern) => pattern.test(sample)))).toEqual([
+    [true, false, false, false],
+    [false, true, false, false],
+  ]);
+}
+
+/** `F4.293`: the three AWS "applied" replies, verbatim, are applied claims. */
+export function theAwsAppliedRepliesAreTagged(): void {
+  const replies = [
+    "Noted — the clearwell rule for PHE-PUMP-C-000000010 is applied.",
+    "Applied — the PUMP-M-000000011-BREAKER-OPEN rule is live for PHE-PUMP-M-000000011 (Bhutnirghat II).",
+    "Applied — PUMP-C-000000011-CHLORINE-OFF is live for PHE-PUMP-C-000000011 (Bhutnirghat II).",
+  ];
+  expect(replies.map(claimsApplied)).toEqual([true, true, true]);
+}
+
+/** `F4.293`: a future, a past report and a question are not applied claims. */
+export function aFutureOrPastApplyIsNotTagged(): void {
+  const replies = [
+    "Once you press Confirm, the rule will be applied.",
+    "Two proposals were applied yesterday.",
+    "Is the rule live? I can check its state.",
+    "Two assets.",
+  ];
+  expect(replies.map(claimsApplied)).toEqual([false, false, false, false]);
+}
+
+/** `F4.293`: the applied note is appended only when no action record follows the last user message. */
+export function theAppliedNoteNeedsNoRecord(): void {
+  const claim = "Applied — the rule is live.";
+  expect([withNoAppliedNote(claim, false), withNoAppliedNote(claim, true), withNoAppliedNote("Two assets.", false)]).toEqual([
+    `${claim} ${COPILOT_NO_CHANGE_APPLIED_NOTE}`,
+    claim,
+    "Two assets.",
+  ]);
+}
+
+/** `F4.293`: an action record after the last user message counts; one before it, or none, does not. */
+export function anActionRecordCountsOnlyAfterTheLastUserMessage(): void {
+  expect([
+    appliedSinceLastUserMessage(["user", "assistant", "action", "assistant"]),
+    appliedSinceLastUserMessage(["action", "assistant", "user", "assistant"]),
+    appliedSinceLastUserMessage([]),
+  ]).toEqual([true, false, false]);
 }
