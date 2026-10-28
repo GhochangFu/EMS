@@ -11,7 +11,7 @@ import type { CopilotAvailability } from "./copilot-availability";
 import type { CopilotAvailabilityService } from "./copilot-availability.service";
 import { OPEN_WIZARD_INVALID_ERROR, OPEN_WIZARDS_JSON_ERROR } from "./copilot-open-wizards";
 import { CopilotConversationsController } from "./copilot-conversations.controller";
-import { CopilotConversationsService } from "./copilot-conversations.service";
+import { CopilotConversationsService, CopilotCursorNotFoundError } from "./copilot-conversations.service";
 import type { CopilotPendingChangesService, LatestFinishedChange } from "./copilot-pending-changes.service";
 import type { CopilotTurnService } from "./copilot-turn.service";
 import { SPEC_JWT, UNUSED_SKILL_SERVICE } from "../testing/copilot-onboarding-fakes";
@@ -217,7 +217,7 @@ export async function assertEveryRouteSweepsForTheCaller(): Promise<void> {
   expect(listed.swept).toEqual([USER_ID]);
 
   const read = controllerWith("organization_admin");
-  await rejectsWith(() => read.controller.get(OTHER, read.identity, SPEC_JWT), NotFoundException);
+  await rejectsWith(() => read.controller.get(OTHER, {}, read.identity, SPEC_JWT), NotFoundException);
   expect(read.swept).toEqual([USER_ID]);
 
   // Even a rejected body sweeps first: the sweep is the route's first act.
@@ -229,7 +229,7 @@ export async function assertEveryRouteSweepsForTheCaller(): Promise<void> {
 /** An id that is not a uuid is a 404, not a 500. */
 export async function assertANonUuidIdIs404(): Promise<void> {
   const h = controllerWith("admin");
-  await rejectsWith(() => h.controller.get("not-a-uuid", h.identity, SPEC_JWT), NotFoundException);
+  await rejectsWith(() => h.controller.get("not-a-uuid", {}, h.identity, SPEC_JWT), NotFoundException);
 }
 
 /** The guard turns an operator, a viewer, an unprovisioned token and an unavailable decision into 403. */
@@ -351,7 +351,7 @@ export async function assertTheDetailCarriesTheOpenChanges(): Promise<void> {
     latestFinished: async () => null,
   } as unknown as CopilotPendingChangesService;
   const controller = new CopilotConversationsController(conversations, availabilityFake().service, pending, turnsFake().service, UNUSED_SKILL_SERVICE);
-  const detail = await controller.get(conversationId, identityFor("admin", null), SPEC_JWT);
+  const detail = await controller.get(conversationId, {}, identityFor("admin", null), SPEC_JWT);
   expect(detail.pendingChanges).toEqual([card]);
   expect(asked).toEqual([[USER_ID, conversationId]]);
 }
@@ -386,7 +386,7 @@ export async function assertTheDetailCarriesTheAwaitingFollowUp(): Promise<void>
     ageMs: 1_200,
   };
   const h = detailControllerWith(latest);
-  const detail = await h.controller.get(h.conversationId, identityFor("admin", null), SPEC_JWT);
+  const detail = await h.controller.get(h.conversationId, {}, identityFor("admin", null), SPEC_JWT);
   expect(detail.awaitingFollowUp).toEqual({ changeId: "c-9", status: "applied", ageMs: 1_200 });
   expect(h.asked).toEqual([[USER_ID, h.conversationId]]);
 }
@@ -397,7 +397,7 @@ export async function assertTheDetailCarriesTheAwaitingFollowUp(): Promise<void>
  */
 export async function assertTheDetailAlwaysCarriesTheAwaitingFollowUpKey(): Promise<void> {
   const h = detailControllerWith(null);
-  const detail = await h.controller.get(h.conversationId, identityFor("admin", null), SPEC_JWT);
+  const detail = await h.controller.get(h.conversationId, {}, identityFor("admin", null), SPEC_JWT);
   expect(detail).toHaveProperty("awaitingFollowUp", null);
 }
 
@@ -458,4 +458,104 @@ export async function assertAMultipartTurnPassesTheFiles(): Promise<void> {
 export function assertTheTurnRouteDeclaresTheFilesInterceptor(): void {
   const interceptors = Reflect.getMetadata(INTERCEPTORS_METADATA, CopilotConversationsController.prototype.turn) as unknown[];
   expect(interceptors).toHaveLength(1);
+}
+
+/*
+ * `F4.292` (ADR 0099 Amendment 9 E7) — the detail route parses `?before=&limit=`.
+ * The service double records the page each read hands it; `latestFinished`
+ * answers a finished change, so a read that asks it carries a wait.
+ */
+const CURSOR = "44444444-4444-4444-8444-444444444444";
+
+function pagedControllerWith(options: { cursorMissing?: boolean } = {}) {
+  const pages: unknown[] = [];
+  const latestAsked: string[] = [];
+  const conversations = {
+    get: async (_userId: string, id: string, page?: unknown) => {
+      pages.push(page);
+      if (options.cursorMissing) throw new CopilotCursorNotFoundError();
+      return { id, organizationId: null, title: null, createdAt: "x", lastTurnAt: "x", messages: [], onboardingSessionId: null };
+    },
+  } as unknown as CopilotConversationsService;
+  const latest: LatestFinishedChange = {
+    id: "c-9",
+    status: "applied",
+    resultStatus: 200,
+    summary: "Publish it.",
+    finishedAtMs: Date.parse("2026-10-21T10:00:00.000Z"),
+    ageMs: 1_200,
+  };
+  const pending = {
+    sweepStuck: async () => 0,
+    listOpen: async () => [],
+    latestFinished: async (_userId: string, id: string) => {
+      latestAsked.push(id);
+      return latest;
+    },
+  } as unknown as CopilotPendingChangesService;
+  const controller = new CopilotConversationsController(conversations, availabilityFake().service, pending, turnsFake().service, UNUSED_SKILL_SERVICE);
+  return { controller, pages, latestAsked, identity: identityFor("admin", null) };
+}
+
+/** `limit` alone reaches the service as a page of that size. Mutation: pass `undefined` whatever the query → red. */
+export async function aLimitQueryReachesTheServiceAsAPage(): Promise<void> {
+  const h = pagedControllerWith();
+  await h.controller.get(CONVERSATION, { limit: "50" }, h.identity, SPEC_JWT);
+  expect(h.pages).toEqual([{ limit: 50 }]);
+}
+
+/** `before` alone gets the default page size. Mutation: drop `?? COPILOT_CONVERSATION_PAGE_DEFAULT` → red. */
+export async function aBeforeQueryGetsTheDefaultLimit(): Promise<void> {
+  const h = pagedControllerWith();
+  await h.controller.get(CONVERSATION, { before: CURSOR }, h.identity, SPEC_JWT);
+  expect(h.pages).toEqual([{ before: CURSOR, limit: 50 }]);
+}
+
+/** An empty query passes no page (the old shape). Mutation: always build a page → red. */
+export async function anEmptyQueryPassesNoPage(): Promise<void> {
+  const h = pagedControllerWith();
+  await h.controller.get(CONVERSATION, {}, h.identity, SPEC_JWT);
+  expect(h.pages).toEqual([undefined]);
+}
+
+/** A limit of 0 is a 400 and the service is not read. Mutation: skip the parse → red. */
+export async function aZeroLimitIs400(): Promise<void> {
+  const h = pagedControllerWith();
+  await rejectsWith(() => h.controller.get(CONVERSATION, { limit: "0" }, h.identity, SPEC_JWT), BadRequestException);
+  expect(h.pages).toEqual([]);
+}
+
+/** A non-uuid `before` is a 400. */
+export async function aNonUuidBeforeIs400(): Promise<void> {
+  const h = pagedControllerWith();
+  await rejectsWith(() => h.controller.get(CONVERSATION, { before: "x" }, h.identity, SPEC_JWT), BadRequestException);
+}
+
+/** A cursor the service does not find is a 404 "Message not found". Mutation: drop the catch → red (the error leaves as a 500). */
+export async function aMissingCursorIs404(): Promise<void> {
+  const h = pagedControllerWith({ cursorMissing: true });
+  const err = await h.controller.get(CONVERSATION, { before: CURSOR }, h.identity, SPEC_JWT).catch((e: unknown) => e);
+  expect(err).toBeInstanceOf(NotFoundException);
+  expect((err as NotFoundException).message).toBe("Message not found");
+}
+
+/** An earlier page answers `awaitingFollowUp: null` though a change waits. Mutation: compute it on a `before` read → red. */
+export async function anEarlierPageAnswersNoWait(): Promise<void> {
+  const h = pagedControllerWith();
+  const detail = await h.controller.get(CONVERSATION, { before: CURSOR, limit: "50" }, h.identity, SPEC_JWT);
+  expect(detail).toHaveProperty("awaitingFollowUp", null);
+}
+
+/** An earlier page never reads `latestFinished`. Mutation: call `latestFinished` on a `before` read → red. */
+export async function anEarlierPageNeverReadsTheLatestChange(): Promise<void> {
+  const h = pagedControllerWith();
+  await h.controller.get(CONVERSATION, { before: CURSOR, limit: "50" }, h.identity, SPEC_JWT);
+  expect(h.latestAsked).toEqual([]);
+}
+
+/** The newest page (no `before`) still carries the wait (the positive control). Mutation: `earlierPage = page !== undefined` → red. */
+export async function theNewestPageStillCarriesTheWait(): Promise<void> {
+  const h = pagedControllerWith();
+  const detail = await h.controller.get(CONVERSATION, { limit: "50" }, h.identity, SPEC_JWT);
+  expect(detail.awaitingFollowUp).toEqual({ changeId: "c-9", status: "applied", ageMs: 1_200 });
 }
