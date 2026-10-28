@@ -5,8 +5,10 @@ import { describe, it } from "vitest";
 import {
   aFittedAlarmPageCarriesTruncatedAndACursor,
   aFullAlarmPageIsWholeJson,
+  aDroppedOrganizationIsNotProvenance,
   aListWithinTheBudgetIsUnchanged,
   anUnpagedListPutsTruncatedFirst,
+  aScrubbedLocationPageIsWholeAndComplete,
   followingAlarmCursorsSkipsAndRepeatsNothing,
   listAssetsPagesAreWhole,
   listDashboardsPageIsWhole,
@@ -17,6 +19,7 @@ import {
   listRulesPagesAreWhole,
   listWorkOrdersPagesAreWhole,
   thePagingKeysComeBeforeTheRows,
+  twoOrganizationWalkSkipsAndRepeatsNothing,
 } from "./list-page-budget.spec";
 
 /** `F4.291` live check — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014); one `it()` per claim. */
@@ -35,4 +38,7 @@ describe("F4.291 — a capped copilot list reaches the model whole", () => {
   it("a 25-row list_dashboards page is whole", listDashboardsPageIsWhole);
   it("a 25-row list_report_schedules page is whole", listReportSchedulesPageIsWhole);
   it("a 25-row list_escalation_profiles page is whole", listEscalationProfilesPageIsWhole);
+  it("a list_locations page whose meta the scrub grows is whole and complete", aScrubbedLocationPageIsWholeAndComplete);
+  it("a walk across two organizations skips and repeats nothing", twoOrganizationWalkSkipsAndRepeatsNothing);
+  it("an organization dropped by the fit is not in organizationIds", aDroppedOrganizationIsNotProvenance);
 });

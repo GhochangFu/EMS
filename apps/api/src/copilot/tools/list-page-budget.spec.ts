@@ -49,19 +49,20 @@ import { alarmKeyset } from "./list-alarms.tool";
 
 const USER = "8d4290b4-9ecf-4a65-a82c-e6c66e31c24f";
 const ORG = "ed2aebf8-becc-4888-bd69-a1e96bb36c42";
+const ORG_B = "f1a3c5e7-0b2d-4f6a-8c9e-1d3f5a7b9c0e";
 const NOW = new Date("2026-10-28T06:00:00Z");
 
 /** A uuid whose last twelve digits are `i` (distinct and in id order). */
 const uuid = (prefix: string, i: number) => `${prefix}-4b4b-4c4c-8d8d-${String(i).padStart(12, "0")}`;
 const ASSETS = Array.from({ length: 24 }, (_, i) => uuid("8c733274", i));
 
-function ctx(): CopilotToolContext {
+function ctx(organizations: readonly string[] = [ORG]): CopilotToolContext {
   return {
     identity: { id: USER, role: "admin", organizationId: null } as ResolvedIdentity,
     user: { sub: USER, role: "admin" } as JwtPayload,
     conversationId: "22222222-2222-4222-8222-222222222222",
     conversationOrganizationId: null,
-    allowedOrganizationIds: [ORG],
+    allowedOrganizationIds: [...organizations],
     turnKind: "user",
     now: NOW,
   };
@@ -266,8 +267,8 @@ function profile(i: number): EscalationProfileDto {
 
 const range = <T>(count: number, row: (i: number) => T): T[] => Array.from({ length: count }, (_, i) => row(i));
 
-/** One service set for every list here: `count` live-length rows each. */
-function fake(count: number) {
+/** One service set for every list here: `count` live-length rows each; `overrides` replaces whole services. */
+function fake(count: number, overrides: Record<string, unknown> = {}) {
   const alarms = range(count, alarm);
   const services = {
     access: { readableAssetIdsInOrganization: async () => ASSETS },
@@ -284,6 +285,7 @@ function fake(count: number) {
       list: async () => range(count, profile),
       getDefaults: async () => ({ organizationId: ORG, items: [{ severity: "critical", profileId: uuid("88888888", 0), profileCode: "kzn-control-room-critical-0" }] }),
     },
+    ...overrides,
   } as unknown as CopilotReadServices;
   return { tools: createCopilotReadTools(services), alarms };
 }
@@ -291,8 +293,13 @@ function fake(count: number) {
 type Page = { truncated: boolean; nextCursor?: string | null; organizations: Array<{ items: Array<{ id: string }> }> };
 
 /** What the model receives for one call: the turn service's `succeed(scrubToolResult(result))`. */
-async function contentOf(tools: ReturnType<typeof fake>["tools"], name: string, args: Record<string, unknown>): Promise<string> {
-  const out: CopilotToolResult = await tools.dispatch(name, args, ctx());
+async function contentOf(
+  tools: ReturnType<typeof fake>["tools"],
+  name: string,
+  args: Record<string, unknown>,
+  organizations: readonly string[] = [ORG],
+): Promise<string> {
+  const out: CopilotToolResult = await tools.dispatch(name, args, ctx(organizations));
   if (!out.ok) throw new Error(`F4.291: ${name} refused: ${out.error}`);
   return succeed(scrubToolResult(out.result)).content;
 }
@@ -308,11 +315,15 @@ const idsOf = (page: Page) => page.organizations.flatMap((entry) => entry.items.
  * Every page of `name` from no cursor to `nextCursor: null`, as the model
  * receives it: each must parse (none is cut), and the ids are collected.
  */
-async function walk(tools: ReturnType<typeof fake>["tools"], name: string): Promise<{ pages: Page[]; ids: string[] }> {
+async function walk(
+  tools: ReturnType<typeof fake>["tools"],
+  name: string,
+  organizations: readonly string[] = [ORG],
+): Promise<{ pages: Page[]; ids: string[] }> {
   const pages: Page[] = [];
   let cursor: string | undefined;
   for (let call = 0; call < 20; call += 1) {
-    const page = parsed(await contentOf(tools, name, cursor === undefined ? {} : { cursor }));
+    const page = parsed(await contentOf(tools, name, cursor === undefined ? {} : { cursor }, organizations));
     pages.push(page);
     if (page.nextCursor == null) break;
     cursor = page.nextCursor;
@@ -403,3 +414,56 @@ export const listDashboardsPageIsWhole = () => unpagedPageIsWhole("list_dashboar
 export const listReportSchedulesPageIsWhole = () => unpagedPageIsWhole("list_report_schedules");
 /** (c8) `list_escalation_profiles`. */
 export const listEscalationProfilesPageIsWhole = () => unpagedPageIsWhole("list_escalation_profiles");
+
+// --- (d) the scrub's growth is measured --------------------------------------------------------------
+
+/**
+ * (d1) `list_locations` whose free-form `meta` holds a secret-named key on
+ * every row (three, one character each): the scrub replaces each value with
+ * `COPILOT_REDACTED`, so the page the model receives is longer than the
+ * page as built (~150 characters a row; unmeasured, a page reached 8,000
+ * and was cut). Every page still parses, and every row arrives once.
+ */
+export async function aScrubbedLocationPageIsWholeAndComplete(): Promise<void> {
+  const all = range(60, (i) => ({ ...location(i), meta: { ...location(i).meta, password: "p", apiToken: "t", secret: "s" } }));
+  const { tools } = fake(60, { locations: { list: async () => ({ items: all }) } });
+  const { pages, ids } = await walk(tools, "list_locations");
+  expect([pages.length > 2, [...ids].sort()]).toEqual([true, all.map((row) => row.id).sort()]);
+}
+
+// --- (e) two organizations ---------------------------------------------------------------------------
+
+/**
+ * Org A has 20 live-length alarms and org B 40, each paged by
+ * `AlarmsService.list`'s own keyset. Page 1 reads 20 of A and 5 of B and is
+ * fitted: B is emptied and dropped, then A is trimmed. Page 2 resumes A and
+ * reads into B, and B is trimmed: page 3 resumes B at the row it dropped.
+ */
+function twoOrganizations() {
+  const a = range(20, alarm);
+  const b = range(40, (i) => ({ ...alarm(20 + i), id: uuid("6c7dfacf", i) }));
+  const rows = new Map([
+    [ORG, a],
+    [ORG_B, b],
+  ]);
+  const list = async (opts: { limit: number; cursor?: string; organizationId: string }) => keysetPage(rows.get(opts.organizationId)!, opts.limit, opts.cursor);
+  const { tools } = fake(0, { alarms: { list } });
+  const inOrder = [...keysetPage(a, a.length, undefined).items, ...keysetPage(b, b.length, undefined).items].map((row) => row.id);
+  return { tools, inOrder };
+}
+
+/** (e1) Following the cursors across two organizations returns every alarm once, A then B, each newest first. */
+export async function twoOrganizationWalkSkipsAndRepeatsNothing(): Promise<void> {
+  const { tools, inOrder } = twoOrganizations();
+  const { ids } = await walk(tools, "list_alarms", [ORG, ORG_B]);
+  expect(ids).toEqual(inOrder);
+}
+
+/** (e2) A page that dropped an emptied organization does not name it in `organizationIds` (the turn's provenance). */
+export async function aDroppedOrganizationIsNotProvenance(): Promise<void> {
+  const { tools } = twoOrganizations();
+  const out = await tools.dispatch("list_alarms", { state: "all" }, ctx([ORG, ORG_B]));
+  if (!out.ok) throw new Error(`F4.291: list_alarms refused: ${out.error}`);
+  const listed = (out.result as { organizations: Array<{ organizationId: string }> }).organizations.map((entry) => entry.organizationId);
+  expect([out.organizationIds, listed]).toEqual([[ORG], [ORG]]);
+}

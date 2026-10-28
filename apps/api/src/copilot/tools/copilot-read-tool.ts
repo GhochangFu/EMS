@@ -27,6 +27,7 @@ import type { SystemStatusService } from "../../system-status/system-status.serv
 import type { TelemetryService } from "../../telemetry/telemetry.service";
 import type { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { TOOL_RESULT_MAX_CHARS } from "../../llm/tool-result";
+import { scrubToolResult } from "../copilot-secret-scrub";
 import type { CopilotToolContext, CopilotToolResult } from "../copilot-read-tools";
 import { COPILOT_TOOL_BAD_CURSOR, decodeListCursor, encodeListCursor, type ListCursor } from "./copilot-list-paging";
 import { COPILOT_TOOL_LIST_MAX_ITEMS, locationRefusal, targetOrganizations } from "./copilot-tool-scope";
@@ -173,9 +174,10 @@ export type OrganizationRead<T, K = never> = {
  * `F4.291` live check — the characters a list result's JSON may take.
  * `toolResultContent` cuts every tool result at `TOOL_RESULT_MAX_CHARS`
  * with a fixed tail, and a cut list is broken JSON with its paging keys gone
- * (a 25-alarm page measured 11,880). The 500 left are for the turn service's
- * `succeed` wrapper (`{"ok":true,…}`, 11) and the secret scrub, whose
- * replacement may be longer than the value it hides.
+ * (a 25-alarm page measured 11,880). The JSON is measured after the secret
+ * scrub the turn service applies (`succeed(scrubToolResult(result))`), whose
+ * replacement may be longer than the value it hides, row after row. The 500
+ * left cover the `succeed` wrapper (`{"ok":true,…}`, 11) with room to spare.
  */
 export const COPILOT_TOOL_RESULT_BUDGET_CHARS = TOOL_RESULT_MAX_CHARS - 500;
 
@@ -184,7 +186,9 @@ type ListEntry = { organizationId: string; items: unknown[] } & Record<string, u
 /**
  * `F4.291` live check — a list result whose page is whole. `truncated`
  * and `nextCursor` come first, so a backstop cut never removes them. While
- * the JSON is longer than {@link COPILOT_TOOL_RESULT_BUDGET_CHARS}, the last
+ * the JSON the model receives (after `scrubToolResult`, which is idempotent:
+ * its replacement does not match itself) is longer than
+ * {@link COPILOT_TOOL_RESULT_BUDGET_CHARS}, the last
  * item is dropped (an emptied organization after the first is dropped
  * entirely); the result is then `truncated`, and with `paging` the cursor
  * names the last organization at `keyAt` of the items it kept — so the next
@@ -207,7 +211,7 @@ export function fitListResult<K>(
     return result;
   };
   let result = assemble();
-  while (JSON.stringify(result).length > COPILOT_TOOL_RESULT_BUDGET_CHARS) {
+  while (JSON.stringify(scrubToolResult(result)).length > COPILOT_TOOL_RESULT_BUDGET_CHARS) {
     const last = entries[entries.length - 1];
     if (last === undefined) break;
     if (last.items.length > 0) {
