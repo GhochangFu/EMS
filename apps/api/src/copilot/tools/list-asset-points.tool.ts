@@ -37,8 +37,8 @@ export const listAssetPointsTool = defineReadTool({
         organizationId,
         assetId: args.assetId,
         assetName: page.items[0]?.assetName ?? null,
-        points: rows.slice(0, COPILOT_TOOL_LIST_MAX_ITEMS).map((row) => ({ pointKey: row.pointKey, unit: row.unit })),
         truncated: rows.length > COPILOT_TOOL_LIST_MAX_ITEMS,
+        points: rows.slice(0, COPILOT_TOOL_LIST_MAX_ITEMS).map((row) => ({ pointKey: row.pointKey, unit: row.unit })),
       },
       organizationIds: [organizationId],
     };

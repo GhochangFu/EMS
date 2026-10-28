@@ -3,7 +3,7 @@ import { escalationDefaultsResponseSchema, escalationProfilesListResponseSchema 
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
-import { collectByOrganization, defineReadTool } from "./copilot-read-tool";
+import { collectByOrganization, defineReadTool, listResult } from "./copilot-read-tool";
 import { COPILOT_TOOL_LIST_MAX_ITEMS, targetOrganizations } from "./copilot-tool-scope";
 import { COPILOT_NOTIFICATIONS_ROLE_REFUSAL, mayListNotifications } from "./list-notification-channels.tool";
 
@@ -79,6 +79,6 @@ export const listEscalationProfilesTool = defineReadTool({
         map === undefined ? undefined : { defaults: map.items },
       );
     }
-    return { ok: true, result: { organizations: out.organizations, truncated }, organizationIds: out.read };
+    return listResult(out, truncated);
   },
 });

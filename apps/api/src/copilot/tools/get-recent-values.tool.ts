@@ -45,8 +45,8 @@ export const getRecentValuesTool = defineReadTool({
         assetId: args.assetId,
         pointKey: args.pointKey,
         windowMinutes,
-        readings: rows.map((row) => ({ time: row.time, value: row.value, unit: row.unit })),
         truncated: all.length > limit,
+        readings: rows.map((row) => ({ time: row.time, value: row.value, unit: row.unit })),
       },
       organizationIds: [organizationId],
     };

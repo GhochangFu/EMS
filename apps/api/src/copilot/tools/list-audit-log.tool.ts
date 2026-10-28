@@ -152,6 +152,6 @@ export const listAuditLogTool = defineReadTool({
       // A row the budget refused ends the read: no later organization is queried for rows it cannot show.
       if (bounded.dropped) break;
     }
-    return { ok: true, result: { organizations: out.organizations, truncated }, organizationIds: out.read };
+    return { ok: true, result: { truncated, organizations: out.organizations }, organizationIds: out.read };
   },
 });

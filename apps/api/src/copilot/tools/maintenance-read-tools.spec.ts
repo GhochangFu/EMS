@@ -171,11 +171,14 @@ export async function assetIdNarrows(): Promise<void> {
   expect(itemsOf(await list(tools, { assetId: ASSET_X2 }, [ORG_X])).map((item) => item.title)).toEqual(["Schedule 02"]);
 }
 
-/** 40 rows are cut to 25, and `truncated` says so. */
+/**
+ * 40 rows are cut, and `truncated` says so. 18, not 25: 25 of these rows pass
+ * the result budget, so the page is fitted (`F4.291` live check, `fitListResult`).
+ */
 export async function fortyRowsAreCutToTwentyFive(): Promise<void> {
   const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => schedule(i + 1)) });
   const listed = await list(tools, {}, [ORG_X]);
-  expect(itemsOf(listed)).toHaveLength(25);
+  expect(itemsOf(listed)).toHaveLength(18);
   expect(listed.truncated).toBe(true);
 }
 
@@ -219,13 +222,20 @@ export async function locationIdNarrowsToTheSubtree(): Promise<void> {
   expect(log.map((call) => call.assetIds)).toEqual([[ASSET_SITE]]);
 }
 
-/** `F4.291`: 40 schedules; the cursor of page 1 gives 26–40 and ends the list. */
+/**
+ * `F4.291`: 40 schedules; each cursor resumes at the row after the last one
+ * before it, and the last page ends the list. (Each page is fitted to the
+ * result budget, `F4.291` live check, so 40 rows take three pages, not two.)
+ */
 export async function aCursorResumesAtTheOffset(): Promise<void> {
   const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => schedule(i + 1)) });
-  const one = await list(tools, {}, [ORG_X]);
-  const two = await list(tools, { cursor: one.nextCursor }, [ORG_X]);
-  const titles = itemsOf(two).map((item) => item.title);
-  expect([titles[0], titles.length, two.nextCursor]).toEqual(["Schedule 26", 15, null]);
+  let page = await list(tools, {}, [ORG_X]);
+  const titles = itemsOf(page).map((item) => item.title);
+  for (let i = 0; i < 10 && page.nextCursor; i += 1) {
+    page = await list(tools, { cursor: page.nextCursor }, [ORG_X]);
+    titles.push(...itemsOf(page).map((item) => item.title));
+  }
+  expect([titles, page.nextCursor]).toEqual([Array.from({ length: 40 }, (_, i) => `Schedule ${String(i + 1).padStart(2, "0")}`), null]);
 }
 
 /** A schedule with a three-digit index (`schedule` pads to two). */

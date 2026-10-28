@@ -28,6 +28,14 @@ export const alarmCursorKeySchema = z
     }
   });
 
+/**
+ * `F4.291` live check — the keyset cursor `AlarmsService` encodes after `row`
+ * (`encodeCursor`: base64url JSON `{ t, id }`; `raisedAt` is its `toISOString`).
+ */
+export function alarmKeyset(row: { readonly raisedAt: string; readonly id: string }): string {
+  return Buffer.from(JSON.stringify({ t: row.raisedAt, id: row.id }), "utf-8").toString("base64url");
+}
+
 export const COPILOT_ALARMS_ASSET_OR_LOCATION = "name assetId or locationId, not both";
 
 /**
@@ -98,7 +106,9 @@ export const listAlarmsTool = defineReadTool({
         }),
         "copilot_tools.list_alarms.page",
       );
-      return page.nextCursor === null ? { items: page.items } : { items: page.items, more: true, nextKey: page.nextCursor };
+      // A page fitted to the model's budget resumes after the last alarm it kept, in the service's own keyset.
+      const keyAt = (kept: number) => (kept === 0 ? resume : alarmKeyset(page.items[kept - 1]!));
+      return page.nextCursor === null ? { items: page.items, keyAt } : { items: page.items, more: true, nextKey: page.nextCursor, keyAt };
     });
   },
 });

@@ -56,6 +56,8 @@ export function locationRefusal(reason: "not_found" | "several_organizations" | 
  * read. Lower than `TOOL_LIST_MAX_ITEMS`: a contract row is wide, and
  * `toolResultContent` cuts the JSON at 8,000 characters, so a longer list
  * would reach the model cut mid-row. `truncated` tells the model there is more.
+ * `F4.291` live check: 25 wide rows can still pass the cut (a 25-alarm page
+ * measured 11,880), so `fitListResult` fits the page to the result budget.
  */
 export const COPILOT_TOOL_LIST_MAX_ITEMS = 25;
 

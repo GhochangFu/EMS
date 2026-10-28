@@ -124,11 +124,14 @@ export async function searchFiltersBeforeTheCap(): Promise<void> {
   expect(listed.truncated).toBe(false);
 }
 
-/** 40 rows are cut to 25, with `truncated`. */
+/**
+ * 40 rows are cut, with `truncated`. 22, not 25: 25 of these rows pass the
+ * result budget, so the page is fitted (`F4.291` live check, `fitListResult`).
+ */
 export async function fortyRowsAreCutToTwentyFive(): Promise<void> {
   const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => rule(i + 1)) });
   const listed = await listRules(tools, {}, [ORG_X]);
-  expect([itemsOf(listed).length, listed.truncated]).toEqual([25, true]);
+  expect([itemsOf(listed).length, listed.truncated]).toEqual([22, true]);
 }
 
 /** `assetId` narrows the list to that asset's rules. */
@@ -169,13 +172,14 @@ export async function locationIdNarrowsToTheSubtree(): Promise<void> {
   expect(log).toEqual([[ASSET_SITE]]);
 }
 
-/** `F4.291`: 40 rules; the cursor of page 1 gives rules 26–40 and ends the list. */
+/** `F4.291`: 40 rules; the cursor of page 1 gives the rest, from the row after page 1's last, and ends the list. */
 export async function aCursorResumesAtTheOffset(): Promise<void> {
   const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => rule(i + 1)) });
   const one = await listRules(tools, {}, [ORG_X]);
   const two = await listRules(tools, { cursor: one.nextCursor }, [ORG_X]);
   const codes = itemsOf(two).map((item) => item.code);
-  expect([codes[0], codes.at(-1), codes.length, two.nextCursor]).toEqual(["RULE-26", "RULE-40", 15, null]);
+  const first = itemsOf(one).length;
+  expect([codes[0], codes.at(-1), first + codes.length, two.nextCursor]).toEqual([`RULE-${first + 1}`, "RULE-40", 40, null]);
 }
 
 /** `F4.291` (critic: offset paging needs a total order): rules that tie on the service's key come back in id order. */

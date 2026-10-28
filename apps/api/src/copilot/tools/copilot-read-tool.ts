@@ -26,6 +26,7 @@ import type { RulesService } from "../../rules/rules.service";
 import type { SystemStatusService } from "../../system-status/system-status.service";
 import type { TelemetryService } from "../../telemetry/telemetry.service";
 import type { VocabulariesService } from "../../vocabularies/vocabularies.service";
+import { TOOL_RESULT_MAX_CHARS } from "../../llm/tool-result";
 import type { CopilotToolContext, CopilotToolResult } from "../copilot-read-tools";
 import { COPILOT_TOOL_BAD_CURSOR, decodeListCursor, encodeListCursor, type ListCursor } from "./copilot-list-paging";
 import { COPILOT_TOOL_LIST_MAX_ITEMS, locationRefusal, targetOrganizations } from "./copilot-tool-scope";
@@ -153,6 +154,10 @@ export function collectByOrganization<T>() {
  * paged answer that is cut must carry it. `capped` (`F4.291`) says the
  * service itself stopped at its row cap, so rows past the last page exist
  * that no cursor reaches: the result stays `truncated` with no `nextKey`.
+ * `keyAt` (`F4.291` live check, paged tools only) is the key to resume THIS
+ * organization at after its first `kept` items (`undefined`: its first
+ * row), so {@link fitListResult} can drop trailing items from a page that is
+ * too long for the model and still resume after the last item it kept.
  */
 export type OrganizationRead<T, K = never> = {
   readonly items: readonly T[];
@@ -161,7 +166,76 @@ export type OrganizationRead<T, K = never> = {
   readonly entryCost?: number;
   readonly nextKey?: K;
   readonly capped?: boolean;
+  readonly keyAt?: (kept: number) => K | undefined;
 };
+
+/**
+ * `F4.291` live check — the characters a list result's JSON may take.
+ * `toolResultContent` cuts every tool result at `TOOL_RESULT_MAX_CHARS`
+ * with a fixed tail, and a cut list is broken JSON with its paging keys gone
+ * (a 25-alarm page measured 11,880). The 500 left are for the turn service's
+ * `succeed` wrapper (`{"ok":true,…}`, 11) and the secret scrub, whose
+ * replacement may be longer than the value it hides.
+ */
+export const COPILOT_TOOL_RESULT_BUDGET_CHARS = TOOL_RESULT_MAX_CHARS - 500;
+
+type ListEntry = { organizationId: string; items: unknown[] } & Record<string, unknown>;
+
+/**
+ * `F4.291` live check — a list result whose page is whole. `truncated`
+ * and `nextCursor` come first, so a backstop cut never removes them. While
+ * the JSON is longer than {@link COPILOT_TOOL_RESULT_BUDGET_CHARS}, the last
+ * item is dropped (an emptied organization after the first is dropped
+ * entirely); the result is then `truncated`, and with `paging` the cursor
+ * names the last organization at `keyAt` of the items it kept — so the next
+ * page starts at the first item this one dropped, and no row is skipped. A
+ * paged organization that lost items without a `keyAt` is a defect (throws).
+ * A result within the budget is returned as it was built. `entries` and
+ * `read` are the `collectByOrganization` arrays and are trimmed in place.
+ */
+export function fitListResult<K>(
+  entries: ListEntry[],
+  read: string[],
+  state: { truncated: boolean; next: ListCursor<K> | null },
+  paging: { readonly keyAt: ReadonlyMap<string, (kept: number) => K | undefined> } | undefined,
+): CopilotToolResult {
+  let { truncated, next } = state;
+  const assemble = (): Record<string, unknown> => {
+    const result: Record<string, unknown> = { truncated };
+    if (paging !== undefined) result.nextCursor = next === null ? null : encodeListCursor(next as ListCursor<string | number>);
+    result.organizations = entries;
+    return result;
+  };
+  let result = assemble();
+  while (JSON.stringify(result).length > COPILOT_TOOL_RESULT_BUDGET_CHARS) {
+    const last = entries[entries.length - 1];
+    if (last === undefined) break;
+    if (last.items.length > 0) {
+      last.items.pop();
+      if (paging !== undefined) {
+        const keyAt = paging.keyAt.get(last.organizationId);
+        if (keyAt === undefined) throw new Error(`F4.291: a paged read of ${last.organizationId} cannot resume after a fitted page`);
+        const k = keyAt(last.items.length);
+        next = k === undefined ? { o: last.organizationId } : { o: last.organizationId, k };
+      }
+    } else if (entries.length > 1) {
+      // Never the first entry, so the cursor's own organization is never left behind its resume key.
+      entries.pop();
+      read.pop();
+      if (paging !== undefined) next = { o: last.organizationId };
+    } else {
+      break;
+    }
+    truncated = true;
+    result = assemble();
+  }
+  return { ok: true, result, organizationIds: read };
+}
+
+/** `F4.291` live check: an unpaged list's result, `truncated` first and fitted to the budget. */
+export function listResult(out: { organizations: ListEntry[]; read: string[] }, truncated: boolean): CopilotToolResult {
+  return fitListResult<never>(out.organizations, out.read, { truncated, next: null }, undefined);
+}
 
 /**
  * `F4.291` — a tool's opt-in paging: the call's `cursor` argument and the
@@ -229,7 +303,8 @@ export async function readPerOrganization<T, K = never>(
  * when the room ran out between two, or `null` when nothing is left that a
  * cursor reaches (an answer `capped` by its service is `truncated` with a
  * `null` cursor, so a last page is never shown as the whole list). Without
- * `paging` the result has no `nextCursor` key at all.
+ * `paging` the result has no `nextCursor` key at all. The result is then
+ * fitted to the model's budget ({@link fitListResult}).
  */
 export async function pageOrganizations<T, K>(
   organizations: readonly string[],
@@ -248,6 +323,7 @@ export async function pageOrganizations<T, K>(
   let room = COPILOT_TOOL_LIST_MAX_ITEMS;
   let truncated = false;
   let next: ListCursor<K> | null = null;
+  const keyAt = new Map<string, (kept: number) => K | undefined>();
   for (let i = first; i < organizations.length; i += 1) {
     const organizationId = organizations[i]!;
     if (room <= 0) {
@@ -263,6 +339,7 @@ export async function pageOrganizations<T, K>(
     if ("refusal" in answer) return { ok: false, error: answer.refusal };
     const cost = answer.entryCost ?? 0;
     const kept = out.add(organizationId, answer.items, room - cost, answer.extra);
+    if (answer.keyAt !== undefined) keyAt.set(organizationId, answer.keyAt);
     room -= kept + cost;
     // A slice by the room drops rows as surely as `more` does.
     if (answer.more !== true && kept >= answer.items.length) {
@@ -278,7 +355,5 @@ export async function pageOrganizations<T, K>(
     next = { o: organizationId, k: answer.nextKey };
     break;
   }
-  const result: Record<string, unknown> = { organizations: out.organizations, truncated };
-  if (paging !== undefined) result.nextCursor = next === null ? null : encodeListCursor(next as ListCursor<string | number>);
-  return { ok: true, result, organizationIds: out.read };
+  return fitListResult(out.organizations, out.read, { truncated, next }, paging === undefined ? undefined : { keyAt });
 }
