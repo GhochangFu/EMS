@@ -30,6 +30,11 @@ const ASSET_Y = "30000000-0000-4000-8000-0000000000bb";
 
 const ASSETS_BY_ORG: Record<string, string[]> = { [ORG_X]: [ASSET_X, ASSET_X2], [ORG_Y]: [ASSET_Y], [ORG_EMPTY]: [] };
 
+/** `F4.291`: a site in ORG_X whose subtree holds one readable asset, not one the organization list names. */
+const SITE = "40000000-0000-4000-8000-000000000001";
+const ASSET_SITE = "30000000-0000-4000-8000-0000000000f1";
+
+
 function ctx(allowed: readonly string[]): CopilotToolContext {
   return {
     identity: { id: USER, role: "asset_group_admin", organizationId: null } as ResolvedIdentity,
@@ -80,10 +85,13 @@ function fake(byOrg: Record<string, MaintenanceScheduleItem[]>) {
     access: {
       readableAssetIdsInOrganization: async (_user: JwtPayload, organizationId: string) => ASSETS_BY_ORG[organizationId] ?? [],
     },
+    locationScope: {
+      readableAssetIdsInLocations: async () => ({ ok: true, organizationId: ORG_X, assetIds: [ASSET_SITE] }),
+    },
     maintenance: {
       list: async (query: Record<string, unknown>, assetIds?: string[] | null, options?: unknown) => {
         log.push({ assetIds, query, options });
-        const owner = Object.keys(ASSETS_BY_ORG).find((org) => (ASSETS_BY_ORG[org] ?? []).includes(assetIds?.[0] ?? ""));
+        const owner = assetIds?.[0] === ASSET_SITE ? ORG_X : Object.keys(ASSETS_BY_ORG).find((org) => (ASSETS_BY_ORG[org] ?? []).includes(assetIds?.[0] ?? ""));
         const needle = (options as { titleSearch?: string } | undefined)?.titleSearch?.toLowerCase();
         const rows = (owner ? (byOrg[owner] ?? []) : []).filter(
           (row) =>
@@ -98,7 +106,7 @@ function fake(byOrg: Record<string, MaintenanceScheduleItem[]>) {
   return { tools: createCopilotReadTools(services), log };
 }
 
-type Listed = { organizations: { organizationId: string; items: Record<string, unknown>[] }[]; truncated: boolean };
+type Listed = { organizations: { organizationId: string; items: Record<string, unknown>[] }[]; truncated: boolean; nextCursor?: string | null };
 
 async function list(tools: ReturnType<typeof fake>["tools"], args: Record<string, unknown>, allowed: readonly string[]) {
   const result: CopilotToolResult = await tools.dispatch("list_maintenance_schedules", args, ctx(allowed));
@@ -202,4 +210,20 @@ export async function theProjectionKeepsWhatAProposalNeeds(): Promise<void> {
       "activeWorkOrderId",
     ].sort(),
   );
+}
+
+/** `F4.291`: `locationId` reads only the location's organization, with the subtree's readable ids. */
+export async function locationIdNarrowsToTheSubtree(): Promise<void> {
+  const { tools, log } = fake({ [ORG_X]: [schedule(1)] });
+  await list(tools, { locationId: SITE }, [ORG_X, ORG_Y]);
+  expect(log.map((call) => call.assetIds)).toEqual([[ASSET_SITE]]);
+}
+
+/** `F4.291`: 40 schedules; the cursor of page 1 gives 26–40 and ends the list. */
+export async function aCursorResumesAtTheOffset(): Promise<void> {
+  const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => schedule(i + 1)) });
+  const one = await list(tools, {}, [ORG_X]);
+  const two = await list(tools, { cursor: one.nextCursor }, [ORG_X]);
+  const titles = itemsOf(two).map((item) => item.title);
+  expect([titles[0], titles.length, two.nextCursor]).toEqual(["Schedule 26", 15, null]);
 }

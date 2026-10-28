@@ -26,6 +26,11 @@ const ASSET_Y = "30000000-0000-4000-8000-0000000000bb";
 
 const ASSETS_BY_ORG: Record<string, string[]> = { [ORG_X]: [ASSET_X], [ORG_Y]: [ASSET_Y] };
 
+/** `F4.291`: a site in ORG_X whose subtree holds one readable asset, not one the organization list names. */
+const SITE = "40000000-0000-4000-8000-000000000001";
+const ASSET_SITE = "30000000-0000-4000-8000-0000000000f1";
+
+
 function ctx(allowed: readonly string[]): CopilotToolContext {
   return {
     identity: { id: USER, role: "organization_admin", organizationId: ORG_X } as ResolvedIdentity,
@@ -85,6 +90,9 @@ function fake(rows: WorkOrderListItem[], users: AdminUserDto[] = []) {
     access: {
       readableAssetIdsInOrganization: async (_user: JwtPayload, organizationId: string) => ASSETS_BY_ORG[organizationId] ?? [],
     },
+    locationScope: {
+      readableAssetIdsInLocations: async () => ({ ok: true, organizationId: ORG_X, assetIds: [ASSET_SITE] }),
+    },
     workOrders: {
       list: async (opts: { limit: number; assetIds?: string[] | null }, options?: { titleSearch?: string; status?: string }) => {
         log.push({ opts, options });
@@ -103,7 +111,7 @@ function fake(rows: WorkOrderListItem[], users: AdminUserDto[] = []) {
   return { tools: createCopilotReadTools(services), log };
 }
 
-type Listed = { organizations: { organizationId: string; items: Record<string, unknown>[] }[]; truncated: boolean };
+type Listed = { organizations: { organizationId: string; items: Record<string, unknown>[] }[]; truncated: boolean; nextCursor?: string | null };
 
 async function dispatch(tools: ReturnType<typeof fake>["tools"], name: string, args: Record<string, unknown>, allowed: readonly string[]) {
   return tools.dispatch(name, args, ctx(allowed)) as Promise<CopilotToolResult>;
@@ -237,4 +245,21 @@ export function listAlarmSkillsTakesNoArgument(): void {
   const tools = skillsFake(SKILLS);
   const definition = tools.registry.definitions.find((d) => d.name === "list_alarm_skills");
   expect(definition?.parameters).toMatchObject({ type: "object", properties: {}, additionalProperties: false });
+}
+
+/** `F4.291`: `locationId` reads only the location's organization, with the subtree's readable ids. */
+export async function listWorkOrdersLocationIdNarrowsToTheSubtree(): Promise<void> {
+  const { tools, log } = fake([workOrder(1, ASSET_SITE), workOrder(2, ASSET_X)]);
+  const { listed } = await list(tools, "list_work_orders", { locationId: SITE }, [ORG_X, ORG_Y]);
+  expect(log.map((call) => call.opts.assetIds)).toEqual([[ASSET_SITE]]);
+  expect(itemsOf(listed).map((item) => item.title)).toEqual(["Work order 1"]);
+}
+
+/** `F4.291`: 40 work orders; the cursor of page 1 gives 26–40 and ends the list. */
+export async function listWorkOrdersCursorResumesAtTheOffset(): Promise<void> {
+  const { tools } = fake(Array.from({ length: 40 }, (_, i) => workOrder(i + 1, ASSET_X)));
+  const one = await list(tools, "list_work_orders", {}, [ORG_X]);
+  const two = await list(tools, "list_work_orders", { cursor: one.listed.nextCursor }, [ORG_X]);
+  const titles = itemsOf(two.listed).map((item) => item.title);
+  expect([titles[0], titles.length, two.listed.nextCursor]).toEqual(["Work order 26", 15, null]);
 }

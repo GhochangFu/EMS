@@ -14,6 +14,8 @@ import {
   listWorkOrdersReadsEachOrganizationWithItsAssets,
   listWorkOrdersRefusesAnOrganizationOutsideTheScope,
   listWorkOrdersSearchesInTheService,
+  listWorkOrdersLocationIdNarrowsToTheSubtree,
+  listWorkOrdersCursorResumesAtTheOffset,
 } from "./operations-read-tools.spec";
 
 /** `F4.284` — Vitest entry point; assertions live in the sibling `.spec` (§4.6). */
@@ -32,4 +34,6 @@ describe("F4.284 — list_work_orders and list_users (ADR 0106; DC1, DC7)", () =
   it("list_alarm_skills lists the active codes and labels, naming no organization.", () => listAlarmSkillsListsTheActiveCodesAndLabels());
   it("list_alarm_skills parses the service's rows through the guarded parse.", () => listAlarmSkillsParsesTheServicesRows());
   it("list_alarm_skills takes no argument.", () => listAlarmSkillsTakesNoArgument());
+  it("F4.291: list_work_orders locationId narrows to the subtree's readable assets", () => listWorkOrdersLocationIdNarrowsToTheSubtree());
+  it("F4.291: list_work_orders cursor resumes at the offset", () => listWorkOrdersCursorResumesAtTheOffset());
 });

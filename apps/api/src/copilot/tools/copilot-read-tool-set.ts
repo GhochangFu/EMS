@@ -10,6 +10,7 @@ import { AssetHealthService } from "../../asset-health/asset-health.service";
 import { AssetKpisService } from "../../assets/asset-kpis.service";
 import { AssetsService } from "../../assets/assets.service";
 import { AccessControlService } from "../../auth/access-control.service";
+import { LocationAssetScopeService } from "../../auth/location-asset-scope.service";
 import { DashboardService } from "../../dashboard/dashboard.service";
 import { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import { MaintenanceService } from "../../maintenance/maintenance.service";
@@ -185,6 +186,9 @@ export class CopilotReadToolSet implements CopilotReadTools {
     // `F4.284`: appended last (slots 22 and 23), the same reason.
     @Inject(WorkOrdersService) workOrders: WorkOrdersService,
     @Inject(UsersService) users: UsersService,
+    // `F4.291`: appended last (slot 24), the same reason. The location helper is
+    // `AuthModule`'s (`@Global()`), so `CopilotModule` imports nothing for it.
+    @Inject(LocationAssetScopeService) locationScope: LocationAssetScopeService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -211,6 +215,7 @@ export class CopilotReadToolSet implements CopilotReadTools {
       maintenance,
       workOrders,
       users,
+      locationScope,
     });
   }
 

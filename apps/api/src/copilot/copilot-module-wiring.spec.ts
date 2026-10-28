@@ -34,6 +34,8 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
 import { TelemetryProposalCheckService } from "../admin/telemetry-entry/telemetry-proposal-check.service";
 import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import { AssetsModule } from "../assets/assets.module";
+import { AuthModule } from "../auth/auth.module";
+import { LocationAssetScopeService } from "../auth/location-asset-scope.service";
 
 /**
  * `F3.86` PR 4 / ADR 0099 decision 3 — the module edges a green build does not
@@ -235,4 +237,18 @@ export function assertTheReadToolsInjectTheWorkOrdersAndUsersServices(): void {
 /** `F4.284` (ADR 0106 decision 7): `WorkOrdersModule` provides the audit funnel its service injects. */
 export function assertTheWorkOrdersModuleProvidesTheAuditFunnel(): void {
   expect(moduleList(WorkOrdersModule, "providers")).toContain(MasterDataAuditService);
+}
+
+/**
+ * `F4.291` (owner ruling P5): `AuthModule` provides and exports the location → readable-assets
+ * helper. It is `@Global()`, so the read tools (and `F4.288` / `F4.290`) resolve it with no import.
+ */
+export function assertTheAuthModuleExportsTheLocationScope(): void {
+  expect(moduleList(AuthModule, "providers")).toContain(LocationAssetScopeService);
+  expect(moduleList(AuthModule, "exports")).toContain(LocationAssetScopeService);
+}
+
+/** `F4.291`: the read tools' slot 24 is `LocationAssetScopeService`, by `@Inject`. */
+export function assertTheReadToolsInjectTheLocationScope(): void {
+  expect(injected(CopilotReadToolSet).get(24)).toBe(LocationAssetScopeService);
 }

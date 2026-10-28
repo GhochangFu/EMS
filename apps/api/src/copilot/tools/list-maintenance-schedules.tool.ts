@@ -2,6 +2,7 @@ import { maintenanceSchedulesResponseSchema } from "@bms/shared";
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
+import { CURSOR_PHRASE, LOCATION_ID_PHRASE, listCursorSchema, offsetKeySchema, offsetPage, orderTiesById } from "./copilot-list-paging";
 import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
 
 /**
@@ -16,27 +17,38 @@ import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
  * service's SQL, **before** its `MAINTENANCE_LIST_LIMIT` row cap and the
  * 25-item cap (the `F4.274` live-check rule), so a schedule past the first 100
  * by due date is still found by its title.
+ *
+ * `F4.291` (ADR 0099 Amendment 9 E5): `locationId` reads the schedules of the
+ * caller's readable assets of that site's subtree; `cursor` is an offset into
+ * the service's rows. The service orders by `nextDueAt, assets.code`, which
+ * ties (two schedules of one asset due together), so a tied run is put in id
+ * order before the slice. **Known limit:** the service answers at most
+ * `MAINTENANCE_LIST_LIMIT` rows, so the cursor pages inside those only and
+ * `truncated` stays true past them — `search` and `assetId` find the rest.
  */
 export const listMaintenanceSchedulesTool = defineReadTool({
   name: "list_maintenance_schedules",
   description:
     "List maintenance schedules (id, title, asset, category, priority, intervalDays, nextDueAt, dueState, active, " +
     "safetyCritical, complianceRef, activeWorkOrderId), whatever the due date. Set includeInactive to list " +
-    "deactivated schedules too, so an activate can name one. Optional organizationId, search (title) and assetId " +
-    "narrow the list; truncated means there are more.",
+    `deactivated schedules too, so an activate can name one. Optional organizationId, ${LOCATION_ID_PHRASE}, search (title) ` +
+    `and assetId narrow the list; truncated means there are more, with ${CURSOR_PHRASE}.`,
   schema: z
     .object({
       organizationId: z.string().uuid().optional(),
+      locationId: z.string().uuid().optional(),
       search: z.string().min(1).max(64).optional(),
       assetId: z.string().uuid().optional(),
       includeInactive: z.boolean().optional(),
+      cursor: listCursorSchema.optional(),
     })
     .strict(),
-  async run({ access, maintenance }, args, ctx) {
-    return readPerOrganization(access, ctx, args.organizationId, async (_organizationId, assetIds, room) => {
+  async run(services, args, ctx) {
+    const scope = { organizationId: args.organizationId, locationId: args.locationId, paging: { cursor: args.cursor, key: offsetKeySchema } };
+    return readPerOrganization(services, ctx, scope, async (_organizationId, assetIds, room, resume) => {
       const page = parseStoredContract(
         maintenanceSchedulesResponseSchema,
-        await maintenance.list(
+        await services.maintenance.list(
           {
             dueState: "all",
             priority: "all",
@@ -49,8 +61,11 @@ export const listMaintenanceSchedulesTool = defineReadTool({
         ),
         "copilot_tools.list_maintenance_schedules.page",
       );
+      const ordered = orderTiesById(page.items, (item) => `${item.nextDueAt}\u0000${item.assetCode}`);
+      const { items, ...rest } = offsetPage(ordered, resume, room);
       return {
-        items: page.items.slice(0, room).map((item) => ({
+        ...rest,
+        items: items.map((item) => ({
           id: item.id,
           title: item.title,
           assetId: item.assetId,
@@ -67,7 +82,6 @@ export const listMaintenanceSchedulesTool = defineReadTool({
           complianceRef: item.complianceRef,
           activeWorkOrderId: item.activeWorkOrderId,
         })),
-        more: page.items.length > room,
       };
     });
   },

@@ -2,6 +2,7 @@ import { workOrdersListResponseSchema, workOrderStatusSchema } from "@bms/shared
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
+import { CURSOR_PHRASE, LOCATION_ID_PHRASE, listCursorSchema, offsetKeySchema, offsetPage } from "./copilot-list-paging";
 import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
 
 /**
@@ -13,31 +14,43 @@ import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
  * **before** its 100-row cap and the 25-item cap (the `F4.274` live-check rule), so
  * a work order past the first 100 is still found by its title. The ids it lists are
  * what a status change, a close or a reorder names.
+ *
+ * `F4.291` (ADR 0099 Amendment 9 E5): `locationId` reads the work orders of the
+ * caller's readable assets of that site's subtree; `cursor` is an offset into the
+ * service's rows (its order ends in `id`, so it is total). **Known limit:** the
+ * service answers at most 100 rows, so the cursor pages inside those 100 only and
+ * `truncated` stays true past them — `search` and `status` are what find a named
+ * work order there.
  */
 export const listWorkOrdersTool = defineReadTool({
   name: "list_work_orders",
   description:
     "List work orders (id, title, status, priority, sortOrder, asset, alarmId, assignedTo, dueAt). Optional " +
-    "organizationId, search (title) and status narrow the list; truncated means there are more.",
+    `organizationId, ${LOCATION_ID_PHRASE}, search (title) and status narrow the list; truncated means there are more, with ${CURSOR_PHRASE}.`,
   schema: z
     .object({
       organizationId: z.string().uuid().optional(),
+      locationId: z.string().uuid().optional(),
       search: z.string().min(1).max(64).optional(),
       status: workOrderStatusSchema.optional(),
+      cursor: listCursorSchema.optional(),
     })
     .strict(),
-  async run({ access, workOrders }, args, ctx) {
-    return readPerOrganization(access, ctx, args.organizationId, async (_organizationId, assetIds, room) => {
+  async run(services, args, ctx) {
+    const scope = { organizationId: args.organizationId, locationId: args.locationId, paging: { cursor: args.cursor, key: offsetKeySchema } };
+    return readPerOrganization(services, ctx, scope, async (_organizationId, assetIds, room, resume) => {
       const page = parseStoredContract(
         workOrdersListResponseSchema,
-        await workOrders.list(
+        await services.workOrders.list(
           { limit: 100, assetIds: [...assetIds] },
           { ...(args.search ? { titleSearch: args.search } : {}), ...(args.status ? { status: args.status } : {}) },
         ),
         "copilot_tools.list_work_orders.page",
       );
+      const { items, ...rest } = offsetPage(page.items, resume, room);
       return {
-        items: page.items.slice(0, room).map((item) => ({
+        ...rest,
+        items: items.map((item) => ({
           id: item.id,
           title: item.title,
           status: item.status,
@@ -49,7 +62,6 @@ export const listWorkOrdersTool = defineReadTool({
           assignedTo: item.assignedTo,
           dueAt: item.dueAt,
         })),
-        more: page.items.length > room,
       };
     });
   },
