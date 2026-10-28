@@ -388,15 +388,20 @@ export async function listAlarmsWithALocationReadsTheSubtree(): Promise<void> {
   expect(log.alarms.map((call) => [call.organizationId, call.assetIds])).toEqual([[ORG_X, [ASSET_X2]]]);
 }
 
-/** (3e) `list_alarms` wraps the service's keyset cursor and hands it back to the service on the next call. */
+/**
+ * (3e) `list_alarms` wraps the service's keyset cursor of the last alarm page 1
+ * lists and hands it back to the service on the next call. (Page 1 is fitted
+ * to the result budget, `F4.291` live check, so its last alarm may be before the 25th.)
+ */
 export async function listAlarmsPassesTheServiceCursorThrough(): Promise<void> {
   const { tools, log } = fake({ alarmCount: 30, readable: { [ORG_X]: [ASSET_X] } });
   const one = listed(await tools.dispatch("list_alarms", { state: "all" }, ctx([ORG_X])));
-  const serviceCursor = alarmKeyset(alarmRow(24, ASSET_X));
+  const first = one.organizations[0]?.items.length ?? 0;
+  const serviceCursor = alarmKeyset(alarmRow(first - 1, ASSET_X));
   expect(decoded(one.nextCursor)).toEqual({ o: ORG_X, k: serviceCursor });
   const two = listed(await tools.dispatch("list_alarms", { state: "all", cursor: one.nextCursor }, ctx([ORG_X])));
   expect(log.alarms[1]?.cursor).toBe(serviceCursor);
-  expect((two.organizations[0]?.items[0] as { message: string }).message).toBe("Alarm 25");
+  expect((two.organizations[0]?.items[0] as { message: string }).message).toBe(`Alarm ${first}`);
   expect(two.nextCursor).toBeNull();
 }
 
@@ -431,11 +436,20 @@ export async function listLocationsSearchFindsASitePastTheCap(): Promise<void> {
   expect(out.truncated).toBe(false);
 }
 
-/** (3i) `list_locations` page 2 by cursor starts at the 26th node and ends the list. */
+/**
+ * (3i) `list_locations` pages by cursor: each page starts at the node after the
+ * last one before it, and the last ends the list. (Each page is fitted to the
+ * result budget, `F4.291` live check, so 40 nodes take three pages, not two.)
+ */
 export async function listLocationsPagesByCursor(): Promise<void> {
   const { tools } = fake({ locationRows: 40 });
-  const one = listed(await tools.dispatch("list_locations", {}, ctx([ORG_X])));
-  const two = listed(await tools.dispatch("list_locations", { cursor: one.nextCursor }, ctx([ORG_X])));
   const codes = (page: Listed) => page.organizations.flatMap((o) => (o.items as Array<{ code: string }>).map((l) => l.code));
-  expect([codes(one).length, codes(two)[0], codes(two).length, two.nextCursor]).toEqual([25, "SITE-25", 15, null]);
+  const all: string[] = [];
+  let page = listed(await tools.dispatch("list_locations", {}, ctx([ORG_X])));
+  all.push(...codes(page));
+  for (let i = 0; i < 10 && page.nextCursor; i += 1) {
+    page = listed(await tools.dispatch("list_locations", { cursor: page.nextCursor }, ctx([ORG_X])));
+    all.push(...codes(page));
+  }
+  expect([all, page.nextCursor]).toEqual([Array.from({ length: 40 }, (_, i) => `SITE-${String(i).padStart(2, "0")}`), null]);
 }

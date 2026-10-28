@@ -66,7 +66,7 @@ export function boundAlarmKb(classes: readonly AlarmKbClass[], filters: AlarmKbF
     domain: c.domain,
     organizationId: c.organizationId,
   });
-  const out: KbOut = { classes: [], truncated: false };
+  const out: KbOut = { truncated: false, classes: [] };
   let chars = 0;
   const indexMode = filters.templateCode === undefined && filters.alarmCode === undefined && filters.query === undefined;
   if (indexMode) {
@@ -165,7 +165,7 @@ export const getAlarmKbTool = defineReadTool({
     if (!target.ok) return target;
     const readable = target.ids.length === 0 ? [] : await access.readableOrganizationIds(ctx.user);
     const ids = readable === null ? [...target.ids] : target.ids.filter((id) => readable.includes(id));
-    if (ids.length === 0) return { ok: true, result: { classes: [], truncated: false }, organizationIds: [] };
+    if (ids.length === 0) return { ok: true, result: { truncated: false, classes: [] }, organizationIds: [] };
     const kb = parseStoredContract(alarmKbResponseSchema, await alarmKb.list(ids), "copilot_tools.get_alarm_kb.result");
     if (kb.classes.some((c) => !ids.includes(c.organizationId))) return { ok: false, error: COPILOT_ALARM_KB_WRONG_ORGANIZATION };
     const { organizationId: _requested, ...filters } = args;

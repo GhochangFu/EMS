@@ -61,17 +61,20 @@ export function decodeListCursor<K>(
 
 /**
  * One page of an in-memory list: rows `[resume, resume + room)`, `more` and
- * the offset to resume at when rows are left.
+ * the offset to resume at when rows are left. `keyAt` (`F4.291` live
+ * check) is the offset after the first `kept` rows of the page, for a page
+ * `fitListResult` shortens.
  */
 export function offsetPage<T>(
   rows: readonly T[],
   resume: number | undefined,
   room: number,
-): { items: T[]; more: boolean; nextKey?: number } {
+): { items: T[]; more: boolean; nextKey?: number; keyAt: (kept: number) => number } {
   const start = resume ?? 0;
   const items = rows.slice(start, start + Math.max(0, room));
   const end = start + items.length;
-  return end < rows.length ? { items, more: true, nextKey: end } : { items, more: false };
+  const keyAt = (kept: number) => start + kept;
+  return end < rows.length ? { items, more: true, nextKey: end, keyAt } : { items, more: false, keyAt };
 }
 
 /**
