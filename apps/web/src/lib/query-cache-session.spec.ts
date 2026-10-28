@@ -2,6 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { COPILOT_SESSION_KEY, useCopilotStore } from "../stores/copilot-store";
+import { COPILOT_WINDOW_KEY, useCopilotWindowStore } from "../stores/copilot-window-store";
 import { bindQueryCacheToSession, bindSessionStores } from "./query-cache-session";
 
 /**
@@ -141,6 +142,23 @@ export function theCopilotSessionIsClearedWhenTheSessionEnds(): void {
     useAuthStore.getState().clearSession();
     assert(window.localStorage.getItem(COPILOT_SESSION_KEY) === null, "the session end removes the copilot key");
     assert(useCopilotStore.getState().conversationId === null, "the session end empties the copilot store");
+  } finally {
+    unbind();
+  }
+}
+
+/**
+ * `F4.292` (owner ruling P6): a logout (token set → null) removes the stored
+ * window too. Mutation: remove the `clearCopilotWindow()` call from
+ * `clearCopilotSession`.
+ */
+export function theCopilotWindowIsClearedWhenTheSessionEnds(): void {
+  const unbind = copilotSessionOfA();
+  try {
+    useCopilotWindowStore.getState().setOpen(true);
+    assert(window.localStorage.getItem(COPILOT_WINDOW_KEY) !== null, "fixture: the copilot window is stored");
+    useAuthStore.getState().clearSession();
+    assert(window.localStorage.getItem(COPILOT_WINDOW_KEY) === null, "the session end removes the copilot window key");
   } finally {
     unbind();
   }
