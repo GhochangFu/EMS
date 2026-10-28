@@ -291,16 +291,90 @@ export function pointStatsLevels(from: Date, to: Date, now: Date): { level: Aggr
 }
 
 /**
- * `F4.291` PR 3 — min / mean / max / sample count per asset over `[from, to)`,
- * one row per asset with a row in the window (`GROUP BY asset_id`). The same
- * {@link AGG_EXPR} table as {@link scalarSql}, so the mean is `avgExpr()` in
- * its zero guard and the weighting holds across the folded buckets.
+ * `F4.291` PR 3 review — what `get_point_stats` reads for an asked `[from, to)`.
  *
- * **`asset_id = ANY(ids)` is the containment**: `telemetry.*` has no Row
- * Level Security, so an asset the caller may not read is kept out by the
- * caller passing only placed ids and by this predicate reading only them.
+ * **The rollups bucket in UTC** (`time_bucket('1 hour' | '1 day', time)`), and
+ * an asked window need not be aligned to them: an IST week starts and ends at
+ * 18:30Z. Filtering coarse buckets by their start only (`bucket >= from AND
+ * bucket < to`) counts the whole last bucket, past `to`, and drops the first
+ * one, which holds samples inside the window. So the statistics read:
+ *
+ * - `[wholeFrom, wholeTo)` at `level`: the whole `level` buckets inside the
+ *   covered period, and
+ * - the rest of `[coveredFrom, coveredTo)` at `edgeLevel` (the `last` level,
+ *   `1m` unless the window is past its retention horizon): the two partial
+ *   ends, whole `edgeLevel` buckets.
+ *
+ * `[coveredFrom, coveredTo)` is the whole `edgeLevel` buckets inside the
+ * asked window: the period every statistic AND `last` cover, which the answer
+ * names. With `1m` it differs from the asked window only by the seconds of an
+ * unaligned end (a `lastDays` window ends at the turn's clock). An empty
+ * window (shorter than one `edgeLevel` bucket) answers `coveredTo ===
+ * coveredFrom`, and `wholeTo === wholeFrom` when no whole `level` bucket fits.
+ *
+ * `edgeLevel` is never coarser than `level`: both come from
+ * {@link levelForRange} on the same start, and only `1m` has a horizon.
  */
-export function groupedScalarSql(level: AggregateLevel, idsIndex = 1, keyIndex = 2, fromIndex = 3, toIndex = 4): string {
+export interface PointStatsWindow {
+  readonly level: AggregateLevel;
+  readonly edgeLevel: AggregateLevel;
+  readonly coveredFrom: Date;
+  readonly coveredTo: Date;
+  readonly wholeFrom: Date;
+  readonly wholeTo: Date;
+}
+
+/** The first bucket start at or after `instant` (the ceiling of {@link floorToBucket}). */
+function ceilToBucket(instant: Date, level: AggregateLevel): Date {
+  const floor = floorToBucket(instant, level);
+  return floor.getTime() === instant.getTime() ? floor : new Date(floor.getTime() + bucketSeconds(level) * 1_000);
+}
+
+/** The later of two instants. */
+function later(a: Date, b: Date): Date {
+  return a.getTime() >= b.getTime() ? a : b;
+}
+
+export function pointStatsWindow(from: Date, to: Date, now: Date): PointStatsWindow {
+  const { level, lastLevel: edgeLevel } = pointStatsLevels(from, to, now);
+  const coveredFrom = ceilToBucket(from, edgeLevel);
+  const coveredTo = later(coveredFrom, floorToBucket(to, edgeLevel));
+  const wholeFrom = ceilToBucket(coveredFrom, level);
+  const wholeTo = later(wholeFrom, floorToBucket(coveredTo, level));
+  return { level, edgeLevel, coveredFrom, coveredTo, wholeFrom, wholeTo };
+}
+
+/**
+ * `F4.291` PR 3 — min / mean / max / sample count per asset over the covered
+ * period of a {@link PointStatsWindow}, one row per asset with a row in it
+ * (`GROUP BY asset_id`). The same {@link AGG_EXPR} table as
+ * {@link scalarSql}, so the mean is `avgExpr()` in its zero guard and the
+ * weighting holds across the folded buckets.
+ *
+ * Two branches under one `UNION ALL`, folded together (every rollup carries
+ * `sum_value`, `sample_count`, `min_value`, `max_value`): the whole `level`
+ * buckets in `[wholeFrom, wholeTo)`, and the `edgeLevel` buckets in
+ * `[coveredFrom, coveredTo)` outside them. No bucket that reaches past the
+ * covered period is read, and none inside it is dropped (review finding:
+ * `bucket >= from AND bucket < to` on a UTC hour or day did both). When the
+ * two levels are the same, the second branch's predicate admits nothing.
+ *
+ * **`asset_id = ANY(ids)` is the containment**, in both branches:
+ * `telemetry.*` has no Row Level Security, so an asset the caller may not
+ * read is kept out by the caller passing only placed ids and by this
+ * predicate reading only them.
+ *
+ * Parameters: ids, key, coveredFrom, coveredTo, wholeFrom, wholeTo.
+ */
+export function groupedScalarSql(
+  level: AggregateLevel,
+  edgeLevel: AggregateLevel,
+  [idsIndex, keyIndex, coveredFromIndex, coveredToIndex, wholeFromIndex, wholeToIndex] = [1, 2, 3, 4, 5, 6],
+): string {
+  const ids = `${placeholder(idsIndex)}::uuid[]`;
+  const key = placeholder(keyIndex);
+  const wholeFrom = `${placeholder(wholeFromIndex)}::timestamptz`;
+  const wholeTo = `${placeholder(wholeToIndex)}::timestamptz`;
   return `
     SELECT
       asset_id,
@@ -308,16 +382,27 @@ export function groupedScalarSql(level: AggregateLevel, idsIndex = 1, keyIndex =
       ${AGG_EXPR.min} AS min,
       ${AGG_EXPR.max} AS max,
       coalesce(sum(sample_count), 0)::bigint AS sample_count
-    FROM ${relationFor(level)}
-    WHERE asset_id = ANY(${placeholder(idsIndex)}::uuid[]) AND point_key = ${placeholder(keyIndex)}
-      AND bucket >= ${placeholder(fromIndex)}::timestamptz AND bucket < ${placeholder(toIndex)}::timestamptz
+    FROM (
+      SELECT asset_id, sum_value, sample_count, min_value, max_value
+      FROM ${relationFor(level)}
+      WHERE asset_id = ANY(${ids}) AND point_key = ${key}
+        AND bucket >= ${wholeFrom} AND bucket < ${wholeTo}
+      UNION ALL
+      SELECT asset_id, sum_value, sample_count, min_value, max_value
+      FROM ${relationFor(edgeLevel)}
+      WHERE asset_id = ANY(${ids}) AND point_key = ${key}
+        AND bucket >= ${placeholder(coveredFromIndex)}::timestamptz AND bucket < ${placeholder(coveredToIndex)}::timestamptz
+        AND (bucket < ${wholeFrom} OR bucket >= ${wholeTo})
+    ) s
     GROUP BY asset_id
   `;
 }
 
 /**
  * `F4.291` PR 3 — per asked asset, the newest bucket in `[from, to)` that
- * holds a counted sample: its mean (`last`) and its start (`last_at`).
+ * holds a counted sample: its mean (`last`) and its start (`last_at`). The
+ * service passes the covered period of a {@link PointStatsWindow} at its
+ * `edgeLevel`, so `last` and the statistics cover the same buckets.
  *
  * One `LATERAL … ORDER BY bucket DESC LIMIT 1` probe per asset rather than a
  * `DISTINCT ON` over the window, for the reason `latestPointValues` records:

@@ -25,6 +25,8 @@ export const POINT_STATS_FIXTURE = {
   pointKey: "kw",
   from: "2031-06-15T00:00:00.000Z",
   to: "2031-06-22T00:00:00.000Z",
+  coveredFrom: "2031-06-15T00:00:00.000Z",
+  coveredTo: "2031-06-22T00:00:00.000Z",
   bucketSeconds: 3_600,
   rows: [ROW],
 };
@@ -61,5 +63,21 @@ export function assertMoreThan25RowsAreRefused(): void {
   assert(
     !pointStatsByAssetSchema.safeParse({ ...POINT_STATS_FIXTURE, rows: rows(POINT_STATS_MAX_ASSETS + 1) }).success,
     "26 rows must be refused",
+  );
+}
+
+/**
+ * Review finding (F4.291 PR 3): the answer names the period its statistics
+ * cover, so an answer without `coveredFrom` is refused, beside the fixture
+ * that has it.
+ */
+export function assertAnAnswerWithoutTheCoveredPeriodIsRefused(): void {
+  assert(pointStatsByAssetSchema.safeParse(POINT_STATS_FIXTURE).success, "the positive neighbour must parse");
+  const { coveredFrom: _dropped, ...withoutCovered } = POINT_STATS_FIXTURE;
+  const parsed = pointStatsByAssetSchema.safeParse(withoutCovered);
+  if (parsed.success) throw new Error("an answer without coveredFrom must be refused");
+  assert(
+    parsed.error.issues.some((issue) => issue.path.join(".") === "coveredFrom"),
+    `the refusal must name coveredFrom, got ${JSON.stringify(parsed.error.issues)}`,
   );
 }

@@ -12,6 +12,7 @@ import {
   lastBucketSql,
   levelFor,
   pointStatsLevels,
+  pointStatsWindow,
   scalarSql,
   windowBounds,
 } from "./point-aggregate-window";
@@ -264,7 +265,7 @@ export function assertNoQueryCallsSqlAvg(): void {
   );
   // `F4.291` PR 3: the point-stats fragments are scanned too.
   assert(
-    !/\bavg\s*\(/i.test(groupedScalarSql("1h")),
+    !/\bavg\s*\(/i.test(groupedScalarSql("1h", "1m")),
     "groupedScalarSql calls SQL avg(); the weighted division is the only correct mean",
   );
   assert(
@@ -435,12 +436,17 @@ export function assertTheFilledCountMatchesTheLadder(): void {
  * mean through `avgExpr()` inside its zero guard, never a second division.
  */
 export function assertGroupedScalarSqlReusesAvgExprAndGroupsByAsset(): void {
-  const sql = groupedScalarSql("1h");
+  const sql = groupedScalarSql("1h", "1m");
   assert(sql.includes("GROUP BY asset_id"), "the statistics must be grouped per asset");
-  assert(sql.includes("asset_id = ANY($1::uuid[])"), "the statistics must read only the asked asset ids");
+  assert(
+    sql.split("asset_id = ANY($1::uuid[])").length === 3,
+    "both branches (the whole buckets and the edges) must read only the asked asset ids",
+  );
   assert(sql.includes(avgExpr()), "the per-asset mean must reuse avgExpr(), not restate the division");
   assert(sql.includes("sum(sample_count) > 0"), "the zero-denominator guard must wrap avgExpr()");
   assert(sql.includes("telemetry.point_values_1h"), "the level's relation is the one read");
+  assert(sql.includes("telemetry.point_values_1m"), "the edges are read at the edge level");
+  assert(sql.includes("bucket < $5::timestamptz OR bucket >= $6::timestamptz"), "the edges are read only outside the whole buckets");
 }
 
 /**
@@ -461,9 +467,12 @@ export function assertLastBucketSqlReadsTheNewestCountedBucketPerAsset(): void {
 
 /** The point-stats fragments take their parameter indices like `scalarSql`, and refuse a bad one. */
 export function assertPointStatsParameterIndicesAreChecked(): void {
-  const shifted = groupedScalarSql("1m", 5, 6, 7, 8);
+  const shifted = groupedScalarSql("1h", "1m", [5, 6, 7, 8, 9, 10]);
   assert(shifted.includes("ANY($5::uuid[])") && shifted.includes("point_key = $6"), "the ids and key move with their indices");
-  assert(shifted.includes("$7::timestamptz") && shifted.includes("$8::timestamptz"), "both ends move with their indices");
+  assert(
+    ["$7", "$8", "$9", "$10"].every((index) => shifted.includes(`${index}::timestamptz`)),
+    "all four bounds move with their indices",
+  );
   let threw = false;
   try {
     lastBucketSql("1m", 0, 2, 3, 4);
@@ -492,5 +501,63 @@ export function assertPointStatsLevelsFollowTheLadderAndTheRetentionGuard(): voi
   assert(
     old.level === "1h" && old.lastLevel === "1h",
     `two days 800 days back are past the 1m horizon and read 1h, got ${JSON.stringify(old)}`,
+  );
+}
+
+/**
+ * Review finding (F4.291 PR 3): an IST week, `[2026-09-30T18:30Z,
+ * 2026-10-07T18:30Z)`, reads `1h` — whose UTC buckets both ends cut. The whole
+ * hours are `[19:00 day 0, 18:00 day 7)`; the two half hours are the edges,
+ * read at `1m`. The covered period is the asked one (both ends are whole
+ * minutes).
+ */
+export function assertAnIstWeekReadsWholeHoursAndTheEdgesAtOneMinute(): void {
+  const from = new Date("2026-09-30T18:30:00.000Z");
+  const to = new Date("2026-10-07T18:30:00.000Z");
+  const window = pointStatsWindow(from, to, new Date("2026-10-08T00:00:00.000Z"));
+  const iso = (d: Date) => d.toISOString();
+  assert(window.level === "1h" && window.edgeLevel === "1m", `a week reads 1h with 1m edges, got ${window.level}/${window.edgeLevel}`);
+  assert(iso(window.wholeFrom) === "2026-09-30T19:00:00.000Z", `the first whole hour starts at 19:00, got ${iso(window.wholeFrom)}`);
+  assert(iso(window.wholeTo) === "2026-10-07T18:00:00.000Z", `the last whole hour ends at 18:00, got ${iso(window.wholeTo)}`);
+  assert(
+    iso(window.coveredFrom) === iso(from) && iso(window.coveredTo) === iso(to),
+    `a minute-aligned window is covered whole, got ${iso(window.coveredFrom)}..${iso(window.coveredTo)}`,
+  );
+}
+
+/**
+ * A `lastDays` window ends at the turn's clock, with seconds: the covered
+ * period is the whole minutes inside it — the first minute at or after
+ * `from`, the last minute that ends at or before `to`.
+ */
+export function assertAWindowWithSecondsIsCoveredByItsWholeMinutes(): void {
+  const to = new Date("2026-10-29T12:34:56.000Z");
+  const from = new Date(to.getTime() - 7 * 86_400_000);
+  const window = pointStatsWindow(from, to, to);
+  assert(window.coveredFrom.toISOString() === "2026-10-22T12:35:00.000Z", `covered from the next minute, got ${window.coveredFrom.toISOString()}`);
+  assert(window.coveredTo.toISOString() === "2026-10-29T12:34:00.000Z", `covered to the last whole minute, got ${window.coveredTo.toISOString()}`);
+}
+
+/**
+ * A window read at one level (`1m`, up to 48 hours): the whole-bucket bounds
+ * are the covered ones, so the edge branch of `groupedScalarSql` admits
+ * nothing and no bucket is counted twice.
+ */
+export function assertASingleLevelWindowHasNoEdges(): void {
+  const from = new Date("2026-10-29T10:00:30.000Z");
+  const hour = pointStatsWindow(from, new Date("2026-10-29T11:00:30.000Z"), from);
+  assert(
+    hour.level === "1m" && hour.wholeFrom.getTime() === hour.coveredFrom.getTime() && hour.wholeTo.getTime() === hour.coveredTo.getTime(),
+    `one level: the whole buckets are the covered period, got ${JSON.stringify(hour)}`,
+  );
+}
+
+/** A window with no whole minute in it is empty (`coveredTo === coveredFrom`), never inverted. */
+export function assertAWindowWithNoWholeMinuteIsEmptyNotInverted(): void {
+  const from = new Date("2026-10-29T10:00:30.000Z");
+  const tiny = pointStatsWindow(from, new Date("2026-10-29T10:00:50.000Z"), from);
+  assert(
+    tiny.coveredTo.getTime() === tiny.coveredFrom.getTime() && tiny.wholeTo.getTime() === tiny.wholeFrom.getTime(),
+    `a window with no whole minute is empty, got ${JSON.stringify(tiny)}`,
   );
 }

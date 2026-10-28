@@ -6,8 +6,12 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import {
   assertAnAssetNotPassedIsInNoRowAndNoLast,
   assertAnAssetWithNoSampleHasNoRow,
+  assertASampleAfterAnUnalignedEndIsNotCounted,
+  assertASampleInTheLeadingPartialBucketIsCounted,
   assertLastIsTheNewestBucketPerAsset,
   assertTheFixtureIsVisible,
+  assertTheAnswerNamesThePeriodItCovers,
+  assertTheStatisticsAndLastCoverTheSamePeriod,
   assertTheStatisticsAreExactPerAsset,
   assertTheWindowPicksTheLevelAndLastStaysAtOneMinute,
   cleanup,
@@ -68,5 +72,21 @@ describe.skipIf(!connectionString)("F4.291 — pointStatsByAsset against Postgre
 
   it("reads 1d for 31 days and 1h for 7, with last at the newest 1-minute bucket", async () => {
     await assertTheWindowPicksTheLevelAndLastStaysAtOneMinute(pool as pg.Pool, fx as Fixtures);
+  });
+
+  it("does not count a sample after an unaligned end", async () => {
+    await assertASampleAfterAnUnalignedEndIsNotCounted(pool as pg.Pool, fx as Fixtures);
+  });
+
+  it("counts a sample in the leading partial bucket of an unaligned window", async () => {
+    await assertASampleInTheLeadingPartialBucketIsCounted(pool as pg.Pool, fx as Fixtures);
+  });
+
+  it("covers the same period with the statistics and last", async () => {
+    await assertTheStatisticsAndLastCoverTheSamePeriod(pool as pg.Pool, fx as Fixtures);
+  });
+
+  it("names the period its statistics cover", async () => {
+    await assertTheAnswerNamesThePeriodItCovers(pool as pg.Pool, fx as Fixtures);
   });
 });

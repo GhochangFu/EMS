@@ -25,7 +25,7 @@ import {
   groupedScalarSql,
   lastBucketSql,
   levelFor,
-  pointStatsLevels,
+  pointStatsWindow,
   scalarSql,
   windowBounds,
 } from "./point-aggregate-window";
@@ -364,9 +364,16 @@ export class TelemetryService {
    * assets for `[from, to)`: min / mean / max / sample count per asset at the
    * ladder's level for the window's length, and `last` / `lastAt`, the newest
    * 1-minute bucket's mean (owner ruling P6) — both levels through the
-   * retention guard (`pointStatsLevels`). **One statement**, so the two halves
-   * share a snapshot. An asset with no sample in the window has no row; the
-   * copilot tool fills it with nulls.
+   * retention guard. **One statement**, so the two halves share a snapshot.
+   * An asset with no sample in the window has no row; the copilot tool fills
+   * it with nulls.
+   *
+   * The statistics and `last` read the same period, `[coveredFrom,
+   * coveredTo)`: the whole 1-minute buckets inside the asked window, with the
+   * coarse level read only for its whole buckets inside that and the two
+   * partial ends from 1 minute (`pointStatsWindow`; the rollups bucket in
+   * UTC, an IST week does not). The answer names that period beside the
+   * asked one.
    *
    * **`TENANT_POOL`, like `pointAggregate`**: `telemetry.*` has no Row Level
    * Security, so the caller places every id first (the copilot tool through
@@ -400,8 +407,15 @@ export class TelemetryService {
     if (ids.length > POINT_STATS_MAX_ASSETS) {
       throw new BadRequestException(`At most ${POINT_STATS_MAX_ASSETS} assets`);
     }
-    const { level, lastLevel } = pointStatsLevels(from, to, now);
-    const answer = { pointKey, from: from.toISOString(), to: to.toISOString(), bucketSeconds: bucketSeconds(level) };
+    const window = pointStatsWindow(from, to, now);
+    const answer = {
+      pointKey,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      coveredFrom: window.coveredFrom.toISOString(),
+      coveredTo: window.coveredTo.toISOString(),
+      bucketSeconds: bucketSeconds(window.level),
+    };
     if (ids.length === 0) {
       return { ...answer, rows: [] };
     }
@@ -414,11 +428,11 @@ export class TelemetryService {
       last: number | string | null;
       last_at: Date | string | null;
     }>(
-      `WITH agg AS (${groupedScalarSql(level, 1, 2, 3, 4)}), lst AS (${lastBucketSql(lastLevel, 1, 2, 3, 4)})
+      `WITH agg AS (${groupedScalarSql(window.level, window.edgeLevel)}), lst AS (${lastBucketSql(window.edgeLevel, 1, 2, 3, 4)})
        SELECT coalesce(agg.asset_id, lst.asset_id) AS asset_id, agg.average, agg.min, agg.max, agg.sample_count, lst.last, lst.last_at
        FROM agg FULL JOIN lst ON lst.asset_id = agg.asset_id
        ORDER BY 1`,
-      [ids, pointKey, from.toISOString(), to.toISOString()],
+      [ids, pointKey, answer.coveredFrom, answer.coveredTo, window.wholeFrom.toISOString(), window.wholeTo.toISOString()],
     );
     return {
       ...answer,

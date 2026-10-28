@@ -21,6 +21,10 @@ import {
   assertLastBucketSqlReadsTheNewestCountedBucketPerAsset,
   assertPointStatsParameterIndicesAreChecked,
   assertPointStatsLevelsFollowTheLadderAndTheRetentionGuard,
+  assertAnIstWeekReadsWholeHoursAndTheEdgesAtOneMinute,
+  assertAWindowWithSecondsIsCoveredByItsWholeMinutes,
+  assertASingleLevelWindowHasNoEdges,
+  assertAWindowWithNoWholeMinuteIsEmptyNotInverted,
 } from "./point-aggregate-window.spec";
 
 /** `F3.35` Stage A — Vitest wrapper for the pure ADR 0048 read-seam assertions (ADR 0014). */
@@ -111,5 +115,21 @@ describe("F4.291 PR 3 — the get_point_stats fragments", () => {
 
   it("picks the statistics level by the ladder and last at 1m, both through the retention guard", () => {
     assertPointStatsLevelsFollowTheLadderAndTheRetentionGuard();
+  });
+
+  it("reads an IST week as whole UTC hours with the two half hours at 1m", () => {
+    assertAnIstWeekReadsWholeHoursAndTheEdgesAtOneMinute();
+  });
+
+  it("covers a window with seconds by its whole minutes", () => {
+    assertAWindowWithSecondsIsCoveredByItsWholeMinutes();
+  });
+
+  it("has no edges at one level", () => {
+    assertASingleLevelWindowHasNoEdges();
+  });
+
+  it("answers an empty window, not an inverted one, when no whole minute fits", () => {
+    assertAWindowWithNoWholeMinuteIsEmptyNotInverted();
   });
 });

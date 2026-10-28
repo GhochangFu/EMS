@@ -77,7 +77,8 @@ export const getPointStatsTool = defineReadTool({
       const items: PointStatsRow[] = assetIds.map(
         (assetId) => byId.get(assetId) ?? { assetId, min: null, avg: null, max: null, last: null, lastAt: null, sampleCount: 0 },
       );
-      return { items, extra: { pointKey: answer.pointKey, from: answer.from, to: answer.to, bucketSeconds: answer.bucketSeconds } };
+      const { pointKey, from: askedFrom, to: askedTo, coveredFrom, coveredTo, bucketSeconds } = answer;
+      return { items, extra: { pointKey, from: askedFrom, to: askedTo, coveredFrom, coveredTo, bucketSeconds } };
     };
 
     if (args.assetIds !== undefined) {

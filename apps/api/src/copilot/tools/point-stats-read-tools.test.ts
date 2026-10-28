@@ -19,6 +19,7 @@ describe("F4.291 PR 3 — get_point_stats", () => {
   it("a range over 31 days is refused before dispatch", spec.aRangeOver31DaysIsRefused);
   it("a 26th asset id is refused before dispatch", spec.a26thAssetIdIsRefused);
   it("an extra key in the answer is stripped", spec.anExtraKeyIsStripped);
+  it("the covered period reaches the model beside the asked one", spec.theCoveredPeriodReachesTheModel);
   it("an answer that breaks the contract fails the call", spec.aBadAnswerThrows);
   it("25 worst-case asset rows reach the model whole", spec.twentyFiveWorstCaseAssetIdsReachTheModelWhole);
   it("a worst-case location page reaches the model whole, with its cursor", spec.aWorstCaseLocationPageReachesTheModelWhole);

@@ -106,6 +106,8 @@ function fake(options: FakeOptions = {}) {
           pointKey: call.pointKey,
           from: call.from.toISOString(),
           to: call.to.toISOString(),
+          coveredFrom: call.from.toISOString(),
+          coveredTo: call.to.toISOString(),
           bucketSeconds: 3_600,
           rows: (options.rows ?? defaultRows)(call),
           ...options.extra,
@@ -274,6 +276,19 @@ export async function anExtraKeyIsStripped(): Promise<void> {
   const text = JSON.stringify(listed(await tools.dispatch("get_point_stats", { pointKey: "kw", assetIds: [ASSET_X], lastDays: 7 }, ctx([ORG_X]))));
   expect(text).toContain('"bucketSeconds":3600');
   expect(text).not.toContain("internalNote");
+}
+
+/**
+ * Review finding: the model is told the period the statistics cover
+ * (`coveredFrom`, `coveredTo`) beside the asked `from`/`to`, so it reports
+ * that period rather than the asked one.
+ */
+export async function theCoveredPeriodReachesTheModel(): Promise<void> {
+  const { tools } = fake({ extra: { coveredFrom: "2026-10-01T00:01:00.000Z", coveredTo: "2026-10-07T23:59:00.000Z" } });
+  const out = listed(await tools.dispatch("get_point_stats", { pointKey: "kw", assetIds: [ASSET_X], from: FROM, to: TO }, ctx([ORG_X])));
+  const entry = out.organizations[0];
+  expect([entry?.from, entry?.to]).toEqual([FROM, TO]);
+  expect([entry?.coveredFrom, entry?.coveredTo]).toEqual(["2026-10-01T00:01:00.000Z", "2026-10-07T23:59:00.000Z"]);
 }
 
 /** (f) A bad row (a negative sample count) fails the call with the stored-contract error, not a reply. */
