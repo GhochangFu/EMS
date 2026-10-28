@@ -91,6 +91,7 @@ export * from "./sustainability-point-keys";
 /** The schemas themselves. See the note above on why they are re-exported. */
 export * from "./contracts";
 export type * from "./types/asset-kpis";
+export type * from "./types/alarm-stats";
 export * from "./location-tree";
 export type * from "./types/locations";
 

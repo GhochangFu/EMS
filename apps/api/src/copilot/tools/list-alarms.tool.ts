@@ -1,10 +1,11 @@
-import { alarmsListResponseSchema } from "@bms/shared";
+import { alarmSeverityCodeSchema, alarmsListResponseSchema } from "@bms/shared";
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
 import { CURSOR_PHRASE, LOCATION_ID_PHRASE, listCursorSchema } from "./copilot-list-paging";
 import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
 import { COPILOT_TOOL_RECORD_OUT_OF_SCOPE, organizationOfAsset, targetOrganizations } from "./copilot-tool-scope";
+import { refineInstantRange, resolveInstantRange, timeRangeFields } from "./copilot-time-range";
 
 /** The shape `AlarmsService`'s keyset cursor decodes to (`alarms.service.ts`, `encodeCursor`). */
 const alarmKeysetSchema = z.object({ t: z.string().datetime(), id: z.string().uuid() }).strict();
@@ -40,11 +41,18 @@ export const COPILOT_ALARMS_ASSET_OR_LOCATION = "name assetId or locationId, not
  * `cursor` carries the service's keyset cursor `(raised_at, id)` for the
  * organization it stopped in, so a page never repeats or skips an alarm.
  * `assetId` and `locationId` together are refused by the schema.
+ *
+ * `F4.291` PR 2 (E5(b); owner ruling P3): `severity` (a code), and a raised
+ * range — `lastDays` (resolved on the turn's clock) or `from`/`to` (either
+ * may be given alone), never both — passed to `AlarmsService.list` as
+ * `raisedFrom` (inclusive) / `raisedTo` (exclusive). The range is checked
+ * before any read.
  */
 export const listAlarmsTool = defineReadTool({
   name: "list_alarms",
   description:
-    `List alarms, newest first. state 'active' (default) or 'all'. Optional organizationId, assetId or ${LOCATION_ID_PHRASE} narrows the list. ` +
+    `List alarms, newest first. state 'active' (default) or 'all'. Optional organizationId, assetId or ${LOCATION_ID_PHRASE} narrows the list; ` +
+    "severity, and lastDays (1-31) or from/to (ISO instants) on the raised time, filter it. " +
     `Grouped by organization; truncated means there are more, with ${CURSOR_PHRASE}.`,
   schema: z
     .object({
@@ -52,6 +60,8 @@ export const listAlarmsTool = defineReadTool({
       assetId: z.string().uuid().optional(),
       locationId: z.string().uuid().optional(),
       state: z.enum(["active", "all"]).default("active"),
+      severity: alarmSeverityCodeSchema.optional(),
+      ...timeRangeFields,
       cursor: listCursorSchema.optional(),
     })
     .strict()
@@ -59,8 +69,11 @@ export const listAlarmsTool = defineReadTool({
       if (args.assetId !== undefined && args.locationId !== undefined) {
         issue.addIssue({ code: z.ZodIssueCode.custom, path: ["locationId"], message: COPILOT_ALARMS_ASSET_OR_LOCATION });
       }
+      refineInstantRange(args, issue, {});
     }),
   async run(services, args, ctx) {
+    const range = resolveInstantRange(args, ctx.now);
+    if (!range.ok) return range;
     let organizationId = args.organizationId;
     if (args.assetId !== undefined) {
       const target = targetOrganizations(args.organizationId, ctx.allowedOrganizationIds);
@@ -78,6 +91,9 @@ export const listAlarmsTool = defineReadTool({
           assetIds: args.assetId !== undefined ? [args.assetId] : [...assetIds],
           state: args.state,
           organizationId: organization,
+          ...(args.severity !== undefined ? { severity: args.severity } : {}),
+          ...(range.from !== undefined ? { raisedFrom: range.from } : {}),
+          ...(range.to !== undefined ? { raisedTo: range.to } : {}),
           ...(resume !== undefined ? { cursor: resume } : {}),
         }),
         "copilot_tools.list_alarms.page",

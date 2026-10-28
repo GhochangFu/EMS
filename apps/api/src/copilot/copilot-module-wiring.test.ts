@@ -27,6 +27,8 @@ import {
   assertTheWorkOrdersModuleProvidesTheAuditFunnel,
   assertTheAuthModuleExportsTheLocationScope,
   assertTheReadToolsInjectTheLocationScope,
+  assertTheAlarmsModuleExportsTheAlarmStats,
+  assertTheReadToolsInjectTheAlarmStats,
   assertTheProposeToolsInjectTheLayoutsService,
   assertTheResolverInjectsTheUsersServices,
 } from "./copilot-module-wiring.spec";
@@ -67,4 +69,6 @@ describe("F3.86 PR 4 — CopilotModule wiring for the user targets", () => {
   it("F4.284: WorkOrdersModule provides MasterDataAuditService", () => assertTheWorkOrdersModuleProvidesTheAuditFunnel());
   it("F4.291: AuthModule provides and exports LocationAssetScopeService", () => assertTheAuthModuleExportsTheLocationScope());
   it("F4.291: the read tools inject LocationAssetScopeService in slot 24", () => assertTheReadToolsInjectTheLocationScope());
+  it("F4.291 PR 2: AlarmsModule provides and exports AlarmStatsService", () => assertTheAlarmsModuleExportsTheAlarmStats());
+  it("F4.291 PR 2: the read tools inject AlarmStatsService in slot 25", () => assertTheReadToolsInjectTheAlarmStats());
 });

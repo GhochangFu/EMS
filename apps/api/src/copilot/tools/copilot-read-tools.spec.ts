@@ -34,6 +34,7 @@ import { AssetsModule } from "../../assets/assets.module";
 import { AssetsService } from "../../assets/assets.service";
 import { AccessControlService } from "../../auth/access-control.service";
 import { LocationAssetScopeService } from "../../auth/location-asset-scope.service";
+import { AlarmStatsService } from "../../alarms/alarm-stats.service";
 import type { ResolvedIdentity } from "../../auth/identity-resolver";
 import { DashboardModule } from "../../dashboard/dashboard.module";
 import { DashboardService } from "../../dashboard/dashboard.service";
@@ -442,6 +443,7 @@ export async function assertAnInjectedProposeCallFindsNoTool(): Promise<void> {
  * mimic reads, `F4.274` the five telemetry reads, `F4.275` the six energy
  * reads, `F4.277` the system status and the audit log, `F4.276` the alarm
  * details and the alarm knowledge base), each with a strict argument schema.
+ * `F4.291` PR 2 inserts `get_alarm_stats` after `get_alarm_kb`.
  */
 export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
   const { tools } = fakeServices();
@@ -450,6 +452,8 @@ export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
     // `F4.276`: the alarm details and the knowledge base, beside the alarm list.
     "get_alarm_details",
     "get_alarm_kb",
+    // `F4.291` PR 2: the alarm statistics, after the knowledge base.
+    "get_alarm_stats",
     "list_assets",
     "get_asset_kpis",
     // `F4.274`: the telemetry reads, after the KPIs they sit beside.
@@ -619,6 +623,8 @@ export function assertTheModuleWiresTheReadTools(): void {
     UsersService,
     // `F4.291`: the location → readable-assets helper, from the `@Global()` `AuthModule`.
     LocationAssetScopeService,
+    // `F4.291` PR 2: the alarm statistics read tool, from `AlarmsModule`.
+    AlarmStatsService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
   for (const module of [
@@ -644,7 +650,7 @@ export function assertTheModuleWiresTheReadTools(): void {
     expect(imports).toContain(module);
   }
   const exportsOf = (module: unknown) => (Reflect.getMetadata("exports", module as object) ?? []) as unknown[];
-  expect(exportsOf(AlarmsModule)).toEqual(expect.arrayContaining([AlarmsService, AlarmDetailsService]));
+  expect(exportsOf(AlarmsModule)).toEqual(expect.arrayContaining([AlarmsService, AlarmDetailsService, AlarmStatsService]));
   expect(exportsOf(AlarmKbModule)).toContain(AlarmKbService);
   expect(exportsOf(RulesModule)).toContain(RulesService);
   // `F4.279`: `ChannelsService` through the re-exported core, `EscalationProfilesService` directly.
@@ -664,5 +670,5 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(ReportsCoreModule)).toContain(ReportsService);
   expect(exportsOf(AdminModule)).toContain(AuditAdminService);
   expect(exportsOf(SystemStatusModule)).toContain(SystemStatusService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(34); // `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills.
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(35); // `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills; `F4.291` PR 2: + get_alarm_stats.
 }
