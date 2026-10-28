@@ -255,6 +255,16 @@ export function assertTheTitleIsCutAt200(): void {
   expect(conversationTitleOf([{ role: "user", content: "a".repeat(250) }])).toBe("a".repeat(200));
 }
 
+/**
+ * The cut counts code points, so it never splits a surrogate pair: an emoji at
+ * code point 200 stays whole. Mutation: `line.slice(0, COPILOT_CONVERSATION_TITLE_MAX)` → red.
+ */
+export function assertTheTitleCutKeepsASurrogatePairWhole(): void {
+  expect(conversationTitleOf([{ role: "user", content: "a".repeat(199) + "\u{1F600}" + "b" }])).toBe(
+    "a".repeat(199) + "\u{1F600}",
+  );
+}
+
 /** An attachment record line is skipped. Mutation: drop the `[Attachment` test → red. */
 export function assertTheTitleSkipsAnAttachmentRecord(): void {
   expect(conversationTitleOf([{ role: "user", content: '[Attachment 1 of 1: "a.png", image/png]\nRead this drawing' }])).toBe(

@@ -13,6 +13,7 @@ import {
   assertOrganizationExistsReadsTheLookup,
   assertTheListIsBounded,
   assertTheTitleIsCutAt200,
+  assertTheTitleCutKeepsASurrogatePairWhole,
   assertTheTitleIsTheFirstUserLine,
   assertTheTitleSkipsABlankLine,
   assertTheTitleSkipsAnAttachmentRecord,
@@ -36,6 +37,7 @@ describe("F4.292 — the paged read and the title (ADR 0099 Amendment 9 E7)", ()
   it("a before the lookup misses throws CopilotCursorNotFoundError", () => assertAMissingCursorThrows());
   it("the title is the first user line, trimmed", () => assertTheTitleIsTheFirstUserLine());
   it("the title is cut at 200 characters", () => assertTheTitleIsCutAt200());
+  it("the title cut keeps a surrogate pair whole", () => assertTheTitleCutKeepsASurrogatePairWhole());
   it("the title skips an attachment record line", () => assertTheTitleSkipsAnAttachmentRecord());
   it("the title skips a blank line", () => assertTheTitleSkipsABlankLine());
   it("a turn with no user line titles nothing", () => assertNoUserLineTitlesNothing());
