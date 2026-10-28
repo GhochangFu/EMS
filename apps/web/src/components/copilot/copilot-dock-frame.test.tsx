@@ -9,9 +9,11 @@ import {
   aDockedPanelTakesTheStoredWidth,
   aDockedWidthWiderThanTheScreenIsClamped,
   aFloatingPanelHasATopHandle,
+  aFloatingHeightTallerThanTheRoomIsCapped,
   aFloatingPanelHasTheModeGroup,
   aFloatingPanelTakesTheStoredHeight,
   aFloatingPanelTakesTheStoredWidth,
+  aFloatingWidthWiderThanTheRoomIsCapped,
   aLeftDragOfFortyPixelsAsksForWidthFourTwenty,
   aMatchingQueryIsASheetFromTheFirstRender,
   aMaximizedPanelHasNoHandle,
@@ -50,6 +52,8 @@ describe("F4.292 copilot dock frame — the floating size", () => {
   it("a floating panel takes the stored width", aFloatingPanelTakesTheStoredWidth);
   it("a floating panel takes the stored height", aFloatingPanelTakesTheStoredHeight);
   it("a floating panel has a top handle", aFloatingPanelHasATopHandle);
+  it("a floating height taller than the room is capped", aFloatingHeightTallerThanTheRoomIsCapped);
+  it("a floating width wider than the room is capped", aFloatingWidthWiderThanTheRoomIsCapped);
 });
 
 describe("F4.292 copilot dock frame — the handles", () => {

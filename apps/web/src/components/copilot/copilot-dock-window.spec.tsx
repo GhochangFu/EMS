@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -161,6 +161,45 @@ export async function aLogoutRemovesTheWindowKey(): Promise<void> {
   } finally {
     unbind();
   }
+}
+
+/**
+ * Review (major): a real sign-out unmounts the dock after the key is removed
+ * (`App.tsx` renders `<Navigate to="/login">`). The unmount must not write
+ * the key back. Mutation: the mount count lives in the persisted window store
+ * again (every `set` there is a `setItem`).
+ */
+export async function aSignOutLeavesNoKeyAfterTheDockUnmounts(): Promise<void> {
+  const unbind = await openWhileSignedIn();
+  try {
+    act(() => useAuthStore.getState().clearSession());
+    cleanup();
+    expect(window.localStorage.getItem(COPILOT_WINDOW_KEY)).toBeNull();
+  } finally {
+    unbind();
+  }
+}
+
+/**
+ * Review (minor): the launcher unmounts when the panel opens docked, so the
+ * panel takes the focus. Mutation: drop the `focusAfter` effect's panel branch.
+ */
+export async function openingIntoTheDockFocusesThePanel(): Promise<void> {
+  stub(READY);
+  useCopilotWindowStore.setState({ mode: "docked" });
+  renderDock("admin");
+  await openPanel();
+  expect(document.activeElement).toBe(screen.getByRole("complementary", PANEL));
+}
+
+/** Review (minor): Close in the docked panel gives the focus to the launcher. Mutation: drop the launcher branch. */
+export async function closingTheDockFocusesTheButton(): Promise<void> {
+  stub(READY);
+  useCopilotWindowStore.setState({ open: true, mode: "docked" });
+  renderDock("admin");
+  await screen.findByRole("complementary", PANEL);
+  fireEvent.click(screen.getByRole("button", { name: "Close the copilot panel" }));
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: "Open the copilot" }));
 }
 
 /** The dock renders without storage. Mutation: drop the `try`/`catch` around `localStorage.setItem`. */

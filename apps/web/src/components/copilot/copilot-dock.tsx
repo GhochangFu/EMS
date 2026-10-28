@@ -35,7 +35,7 @@ import { isPdfFile, prepareChosenFiles, withoutEach, type PreparedFile } from ".
 import { ONBOARDING_DRAFTS, onboardingDraftsKey } from "../../lib/copilot-invalidations";
 import type { AuthUser } from "../../stores/auth-store";
 import { copilotConversationKey, useCopilotSession, useCopilotStore } from "../../stores/copilot-store";
-import { useCopilotWindowStore } from "../../stores/copilot-window-store";
+import { mountCopilotDock, useCopilotWindowStore } from "../../stores/copilot-window-store";
 import { useWizardStore } from "../../stores/wizard-store";
 import { AssistantText } from "./assistant-text";
 import { AttachButton } from "./attach-button";
@@ -204,7 +204,7 @@ function DockPanel({
   const height = useCopilotWindowStore((s) => s.height);
   const sheet = useCopilotSheet();
   // Counted while mounted: `AppShell` pushes the page only for a dock that renders (critic: copilot off).
-  useEffect(() => useCopilotWindowStore.getState().mount(), []);
+  useEffect(() => mountCopilotDock(), []);
   const { organizationId, conversationId } = useCopilotSession(user.id);
   const pickInStore = useCopilotStore((s) => s.pick);
   const setConversation = useCopilotStore((s) => s.setConversation);
@@ -573,7 +573,20 @@ function DockPanel({
     startSkill.mutate(undefined);
   }, [onboardFor, organizationId, isGlobalAdmin, scope, scopedStatus.isError, conversationId, thread.data, thread.isError, startSkill]);
 
+  // The button shows only while closed or floating: opened into another shape the focus goes to the
+  // panel, and Close gives it back to the button, so a keyboard user is never left on the page body.
+  const panelRef = useRef<HTMLElement>(null);
+  const launcherRef = useRef<HTMLButtonElement>(null);
+  const focusAfter = useRef<"panel" | "launcher" | null>(null);
+  useEffect(() => {
+    const target = focusAfter.current;
+    focusAfter.current = null;
+    if (target === "panel") panelRef.current?.focus();
+    if (target === "launcher") launcherRef.current?.focus();
+  }, [open]);
+
   function toggle(): void {
+    focusAfter.current = open ? "launcher" : mode === "floating" && !sheet ? null : "panel";
     useCopilotWindowStore.getState().toggle();
   }
 
@@ -689,6 +702,7 @@ function DockPanel({
     <>
       {(!open || (mode === "floating" && !sheet)) && (
         <button
+          ref={launcherRef}
           type="button"
           aria-label={open ? "Close the copilot" : "Open the copilot"}
           aria-expanded={open}
@@ -708,6 +722,7 @@ function DockPanel({
           onModeChange={(next) => useCopilotWindowStore.getState().setMode(next)}
           onResize={(next, bounds) => useCopilotWindowStore.getState().resize(next, bounds)}
           onClose={toggle}
+          panelRef={panelRef}
           header={<DockTitle scopeLabel={scopeLabel} />}
         >
           {isGlobalAdmin && (

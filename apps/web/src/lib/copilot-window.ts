@@ -27,6 +27,9 @@ export const COPILOT_RESIZE_STEP = 16;
 /** The page width a docked panel always leaves. */
 export const COPILOT_DOCKED_PAGE_MIN = 320;
 
+/** The viewport a floating panel leaves: the `calc(100vw - 3rem)` × `calc(100vh - 8rem)` caps. */
+export const COPILOT_FLOATING_INSET: Readonly<CopilotSize> = { width: 48, height: 128 };
+
 export type CopilotEdge = "left" | "top";
 
 function clampAxis(value: number, min: number, max: number): number {
@@ -41,6 +44,16 @@ export function clampCopilotSize(size: CopilotSize, bounds: CopilotViewport): Co
     width: clampAxis(size.width, COPILOT_MIN_WIDTH, bounds.width),
     height: clampAxis(size.height, COPILOT_MIN_HEIGHT, bounds.height),
   };
+}
+
+/**
+ * The room a floating panel may take: the viewport less its `right-6` gap
+ * on both sides (48 px) and its `bottom-28` offset plus a 16 px top gap
+ * (128 px). A size past this would be drawn smaller than it is stored, and the
+ * handle would not follow the pointer until the drag came back inside.
+ */
+export function floatingBounds(viewport: CopilotViewport): CopilotViewport {
+  return { width: viewport.width - COPILOT_FLOATING_INSET.width, height: viewport.height - COPILOT_FLOATING_INSET.height };
 }
 
 /** The room a docked panel may take: the viewport less the page's own minimum width. */

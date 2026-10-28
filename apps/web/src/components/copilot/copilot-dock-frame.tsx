@@ -1,4 +1,4 @@
-import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
+import type { KeyboardEvent, PointerEvent, ReactNode, Ref } from "react";
 import { useRef } from "react";
 
 import {
@@ -6,6 +6,7 @@ import {
   COPILOT_MIN_WIDTH,
   COPILOT_MIN_HEIGHT,
   dockedBounds,
+  floatingBounds,
   resizedSize,
   steppedSize,
   type CopilotEdge,
@@ -21,7 +22,8 @@ import { useViewportSize } from "./use-copilot-viewport";
  * bar with the mode buttons and Close, and the resize handles.
  *
  * - **floating** — above the button at the bottom right, sized by the stored
- *   size, resized from the left and top edges (min 360 × 420, max the viewport).
+ *   size, resized from the left and top edges (min 360 × 420, max the viewport
+ *   less the 48 × 128 px it leaves, so the stored size is the drawn size).
  * - **maximized** — 90 vw × 90 vh, centred; no handle.
  * - **docked** — full height at the right; `AppShell` pads the page by the same
  *   width, so the page is pushed, not covered. The width is the stored width
@@ -50,6 +52,7 @@ const MODE_BUTTONS: readonly { mode: CopilotWindowMode; label: string; icon: Rea
   },
 ];
 
+// The maximized 90 vw × 90 vh, centred, is the E6 ruling's size (ADR 0099 Amendment 9).
 const SHAPE: Record<CopilotWindowMode | "sheet", string> = {
   sheet: "fixed inset-0 z-50",
   floating: "fixed bottom-28 right-6 z-50 rounded-lg",
@@ -108,7 +111,7 @@ function ResizeHandle({
       onPointerUp={onPointerEnd}
       onPointerCancel={onPointerEnd}
       onKeyDown={onKeyDown}
-      className={`absolute left-0 top-0 z-10 touch-none hover:bg-accent/40 focus:outline-none focus-visible:bg-accent ${
+      className={`absolute left-0 top-0 z-10 touch-none hover:bg-accent/40 focus:outline-none focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-accent ${
         edge === "left" ? "h-full w-1.5 cursor-ew-resize" : "h-1.5 w-full cursor-ns-resize"
       }`}
     />
@@ -123,15 +126,27 @@ export type CopilotDockFrameProps = {
   /** A size from a drag or an arrow key, already clamped to this mode's bounds. */
   onResize: (size: CopilotSize, bounds: CopilotViewport) => void;
   onClose: () => void;
+  /** The `<aside>`, focusable (`tabIndex={-1}`): the dock moves the focus here when its button unmounts. */
+  panelRef?: Ref<HTMLElement>;
   /** The left side of the header bar: the title and the scope line. */
   header: ReactNode;
   children: ReactNode;
 };
 
-export function CopilotDockFrame({ mode, size, sheet, onModeChange, onResize, onClose, header, children }: CopilotDockFrameProps) {
+export function CopilotDockFrame({
+  mode,
+  size,
+  sheet,
+  onModeChange,
+  onResize,
+  onClose,
+  panelRef,
+  header,
+  children,
+}: CopilotDockFrameProps) {
   const viewport = useViewportSize();
   const shape = sheet ? "sheet" : mode;
-  const bounds = mode === "docked" ? dockedBounds(viewport) : viewport;
+  const bounds = mode === "docked" ? dockedBounds(viewport) : floatingBounds(viewport);
   const shown = clampCopilotSize(size, bounds);
   const style =
     shape === "floating"
@@ -143,11 +158,13 @@ export function CopilotDockFrame({ mode, size, sheet, onModeChange, onResize, on
 
   return (
     <aside
+      ref={panelRef}
+      tabIndex={-1}
       id="copilot-panel"
       aria-label="Copilot"
       data-mode={shape}
       style={style}
-      className={`surface-raised flex flex-col overflow-hidden ${SHAPE[shape]}`}
+      className={`surface-raised flex flex-col overflow-hidden focus:outline-none ${SHAPE[shape]}`}
     >
       {(shape === "floating" || shape === "docked") && (
         <ResizeHandle edge="left" size={shown} bounds={bounds} onResize={resize} />

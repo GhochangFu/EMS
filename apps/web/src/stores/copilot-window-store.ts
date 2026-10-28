@@ -13,14 +13,17 @@ import {
  * `F4.292` (ADR 0099 Amendment 9 E6; owner ruling P6) — the copilot dock's
  * window: whether it is open, its mode, and its size.
  *
- * **Persisted per user, cleared with the session.** The four fields live in
+ * **Persisted per browser, cleared with the session.** The four fields live in
  * `localStorage` under {@link COPILOT_WINDOW_KEY}, beside the session key
  * `bms-copilot-session`. {@link clearCopilotWindow} removes it, and
  * `clearCopilotSession` calls it, so every session exit that clears the
  * conversation (logout, a 401, JWT expiry, a failed `/me`, another user)
  * closes the panel and forgets its mode and size. The open flag moved here
  * from the bare `bms-copilot-open` key, which no exit cleared, because
- * `AppShell` reads "open and docked" to push the page.
+ * `AppShell` reads "open and docked" to push the page. The key names no
+ * owner (accepted at review): a second tab still signed in as the user who
+ * left can write it back, and the next user then gets that window — an open
+ * flag, a mode and a size, nothing from the conversation.
  *
  * **Storage is optional.** Every read and write is guarded: a browser that
  * refuses `localStorage` (a private mode, a full quota, a policy) only loses
@@ -31,9 +34,11 @@ import {
  *
  * **Docked width = the stored width** (owner ruling P6), resizable from the
  * left edge. The page is pushed by {@link copilotPagePush} only while a dock
- * is actually mounted (`mounted`, in memory): with the copilot turned off the
- * dock renders nothing, and a stored docked window must not leave an empty
- * gutter with no Close to clear it.
+ * is actually mounted ({@link mountCopilotDock}): with the copilot turned off
+ * the dock renders nothing, and a stored docked window must not leave an empty
+ * gutter with no Close to clear it. The count is a store of its own, never
+ * persisted: `persist` writes the key on every `set`, so a count kept here
+ * would write it back when a sign-out unmounts the dock after the clear.
  */
 
 export const COPILOT_WINDOW_KEY = "bms-copilot-window";
@@ -44,15 +49,11 @@ export type CopilotWindowMode = (typeof COPILOT_WINDOW_MODES)[number];
 type CopilotWindowFields = { open: boolean; mode: CopilotWindowMode; width: number; height: number };
 
 type CopilotWindowState = CopilotWindowFields & {
-  /** How many docks are mounted now; in memory only. */
-  mounted: number;
   setOpen: (open: boolean) => void;
   toggle: () => void;
   setMode: (mode: CopilotWindowMode) => void;
   /** Stores a size, clamped to `bounds`. */
   resize: (size: CopilotSize, bounds: CopilotViewport) => void;
-  /** Counts a mounted dock; returns the unmount (an effect's cleanup). */
-  mount: () => () => void;
 };
 
 const DEFAULTS: CopilotWindowFields = {
@@ -106,15 +107,10 @@ export const useCopilotWindowStore = create<CopilotWindowState>()(
   persist(
     (set, get) => ({
       ...DEFAULTS,
-      mounted: 0,
       setOpen: (open) => set({ open }),
       toggle: () => set({ open: !get().open }),
       setMode: (mode) => set({ mode }),
       resize: (size, bounds) => set(clampCopilotSize(size, bounds)),
-      mount: () => {
-        set({ mounted: get().mounted + 1 });
-        return () => set({ mounted: Math.max(0, get().mounted - 1) });
-      },
     }),
     {
       name: COPILOT_WINDOW_KEY,
@@ -130,7 +126,16 @@ export const useCopilotWindowStore = create<CopilotWindowState>()(
   ),
 );
 
-/** Closes the panel, forgets its mode and size, and removes the stored key. `mounted` is kept. */
+/** How many docks are mounted now. In memory only: a separate store, so a mount writes no key. */
+export const useCopilotDockMountStore = create<{ mounted: number }>()(() => ({ mounted: 0 }));
+
+/** Counts a mounted dock; returns the unmount (an effect's cleanup). */
+export function mountCopilotDock(): () => void {
+  useCopilotDockMountStore.setState((s) => ({ mounted: s.mounted + 1 }));
+  return () => useCopilotDockMountStore.setState((s) => ({ mounted: Math.max(0, s.mounted - 1) }));
+}
+
+/** Closes the panel, forgets its mode and size, and removes the stored key. The mount count is kept. */
 export function clearCopilotWindow(): void {
   useCopilotWindowStore.setState({ ...DEFAULTS });
   useCopilotWindowStore.persist.clearStorage();
@@ -138,7 +143,7 @@ export function clearCopilotWindow(): void {
 
 /** The page's right padding: the docked panel's width while it shows, else 0. */
 export function copilotPagePush(
-  state: Pick<CopilotWindowState, "open" | "mode" | "width" | "mounted">,
+  state: Pick<CopilotWindowState, "open" | "mode" | "width"> & { mounted: number },
   sheet: boolean,
   viewport: CopilotViewport,
 ): number {
@@ -150,6 +155,6 @@ export function useCopilotPagePush(sheet: boolean, viewport: CopilotViewport): n
   const open = useCopilotWindowStore((s) => s.open);
   const mode = useCopilotWindowStore((s) => s.mode);
   const width = useCopilotWindowStore((s) => s.width);
-  const mounted = useCopilotWindowStore((s) => s.mounted);
+  const mounted = useCopilotDockMountStore((s) => s.mounted);
   return copilotPagePush({ open, mode, width, mounted }, sheet, viewport);
 }

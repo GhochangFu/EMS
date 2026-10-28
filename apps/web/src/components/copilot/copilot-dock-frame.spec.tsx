@@ -66,13 +66,27 @@ export function aFloatingPanelTakesTheStoredHeight(): void {
   expect(renderFrame().panel.style.height).toBe("520px");
 }
 
+/**
+ * Review (minor): the floating bounds are the drawn room (the viewport less
+ * 48 × 128 px), so a stored size never outgrows what shows and the handle
+ * follows the pointer. Mutation: the floating bounds are the full viewport.
+ */
+export function aFloatingHeightTallerThanTheRoomIsCapped(): void {
+  expect(renderFrame({ height: 5000 }).panel.style.height).toBe("640px");
+}
+
+/** The same, for the width. Mutation: `floatingBounds` keeps the full viewport width. */
+export function aFloatingWidthWiderThanTheRoomIsCapped(): void {
+  expect(renderFrame({ width: 5000 }).panel.style.width).toBe("976px");
+}
+
 /** Mutation: flip the sign of the left-edge arithmetic in `resizedSize`. */
 export function aLeftDragOfFortyPixelsAsksForWidthFourTwenty(): void {
   const { onResize } = renderFrame();
   const handle = screen.getByRole("separator", LEFT);
   fireEvent.pointerDown(handle, { clientX: 600, clientY: 300, pointerId: 1 });
   fireEvent.pointerMove(handle, { clientX: 560, clientY: 300, pointerId: 1 });
-  expect(onResize).toHaveBeenLastCalledWith({ width: 420, height: 520 }, { width: 1024, height: 768 });
+  expect(onResize).toHaveBeenLastCalledWith({ width: 420, height: 520 }, { width: 976, height: 640 });
 }
 
 /** Mutation: `onPointerEnd` does not end the drag. */
@@ -89,7 +103,7 @@ export function aMoveAfterThePointerUpResizesNothing(): void {
 export function arrowLeftOnTheLeftHandleGrowsTheWidthBySixteen(): void {
   const { onResize } = renderFrame();
   fireEvent.keyDown(screen.getByRole("separator", LEFT), { key: "ArrowLeft" });
-  expect(onResize).toHaveBeenCalledWith({ width: 396, height: 520 }, { width: 1024, height: 768 });
+  expect(onResize).toHaveBeenCalledWith({ width: 396, height: 520 }, { width: 976, height: 640 });
 }
 
 /** The adjacent positive of the docked case below: a floating panel has a top handle. */

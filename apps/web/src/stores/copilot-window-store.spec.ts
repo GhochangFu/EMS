@@ -5,6 +5,8 @@ import {
   clearCopilotWindow,
   COPILOT_WINDOW_KEY,
   copilotPagePush,
+  mountCopilotDock,
+  useCopilotDockMountStore,
   useCopilotWindowStore,
 } from "./copilot-window-store";
 
@@ -103,12 +105,23 @@ export function aRefusedRemoveStillClosesThePanel(): void {
   expect(useCopilotWindowStore.getState().open).toBe(false);
 }
 
-/** Mutation: the unmount returned by `mount` does not count down. */
+/** Mutation: the unmount returned by `mountCopilotDock` does not count down. */
 export function anUnmountCountsTheDockOut(): void {
-  const unmount = useCopilotWindowStore.getState().mount();
-  expect(useCopilotWindowStore.getState().mounted).toBe(1);
+  const unmount = mountCopilotDock();
+  expect(useCopilotDockMountStore.getState().mounted).toBe(1);
   unmount();
-  expect(useCopilotWindowStore.getState().mounted).toBe(0);
+  expect(useCopilotDockMountStore.getState().mounted).toBe(0);
+}
+
+/**
+ * Review (major): a sign-out clears the key, then unmounts the dock; that
+ * unmount must not write the key back. Mutation: the count is a `set` on the
+ * persisted window store.
+ */
+export function aMountAndUnmountAfterAClearWriteNoKey(): void {
+  clearCopilotWindow();
+  mountCopilotDock()();
+  expect(window.localStorage.getItem(COPILOT_WINDOW_KEY)).toBeNull();
 }
 
 /** Mutation: `copilotPagePush` always answers 0. */

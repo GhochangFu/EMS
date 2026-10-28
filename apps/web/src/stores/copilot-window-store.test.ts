@@ -4,6 +4,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { resetCopilotStore } from "./copilot-store";
 import {
   aClosedPanelPushesNothing,
+  aMountAndUnmountAfterAClearWriteNoKey,
   aFloatingPanelPushesNothing,
   aRefusedRemoveStillClosesThePanel,
   aRefusedWriteStillOpensThePanel,
@@ -52,6 +53,7 @@ describe("F4.292 copilot window store — the page push", () => {
   it("an unmount counts the dock out", anUnmountCountsTheDockOut);
   it("a shown docked panel pushes the page by its width", aShownDockedPanelPushesThePageByItsWidth);
   it("no mounted dock pushes nothing", noMountedDockPushesNothing);
+  it("a mount and unmount after a clear write no key", aMountAndUnmountAfterAClearWriteNoKey);
   it("the sheet pushes nothing", theSheetPushesNothing);
   it("a floating panel pushes nothing", aFloatingPanelPushesNothing);
   it("a closed panel pushes nothing", aClosedPanelPushesNothing);
