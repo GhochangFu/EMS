@@ -85,7 +85,7 @@ export async function aRejectedCardDoesNotCoverATypedConfirm(): Promise<void> {
 /** `F4.293` review: an Applied row does not cover a typed "confirmed" while the next card is still open. */
 export async function anOpenCardKeepsTheNote(): Promise<void> {
   const stored = [row("user", "Create the 4 rules"), row("assistant", "Here's card 1."), row("action", "Applied: Create the rule 1"), row("assistant", "Rule 1 is live. Here's card 2.")];
-  const h = harness(new FakeLlmProvider([{ kind: "final", text: AWS_APPLIED_REPLY }]), { stored, open: true });
+  const h = harness(new FakeLlmProvider([{ kind: "final", text: AWS_APPLIED_REPLY }]), { stored, cardOpen: true });
   const response = await turn(h, "confirmed");
   expect(response.reply).toBe(`${AWS_APPLIED_REPLY} ${COPILOT_NO_CHANGE_APPLIED_NOTE}`);
 }
