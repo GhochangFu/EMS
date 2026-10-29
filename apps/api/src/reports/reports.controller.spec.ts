@@ -109,7 +109,7 @@ export async function runReportsXlsxHeaderTests(): Promise<void> {
         return body;
       },
     } as never,
-    { readableAssetIds: async () => null } as never,
+    { assetIdsForCaller: async () => null } as never,
   );
 
   const out = stubResponse();
@@ -161,7 +161,7 @@ export async function runReportsPdfHeaderTests(): Promise<void> {
         return body;
       },
     } as never,
-    { readableAssetIds: async () => null } as never,
+    { assetIdsForCaller: async () => null } as never,
   );
 
   const out = stubResponse();
@@ -176,7 +176,7 @@ export async function runReportsPdfHeaderTests(): Promise<void> {
   assert(calls.length === 1, "the handler must have reached the service exactly once");
   assert(
     calls[0] instanceof Array && calls[0][1] === null,
-    "readableAssetIds's result must be threaded through as the service's second argument",
+    "assetIdsForCaller's result must be threaded through as the service's second argument",
   );
   assert(out.sent === body, "the pdf buffer is sent verbatim, not re-serialised");
 
