@@ -14,6 +14,7 @@ import {
   assertReportFilesServiceFleetSlot,
   assertReportFilesServiceTenantSlot,
   assertReportRenderServiceTenantSlot,
+  assertReportScopeServiceFleetSlot,
   assertReportSchedulesServiceFleetSlot,
   assertReportSchedulesServiceTenantSlot,
   assertRuleSweepServiceTenantSlot,
@@ -33,6 +34,10 @@ describe("E7.1b — services inject the right pool token in the right constructo
 
   it("the four conformed decision-1 services inject both tokens in the right slots", () => {
     assertConformedServiceSlots();
+  });
+
+  it("F4.290 ReportScopeService injects the fleet pool in slot 0", () => {
+    assertReportScopeServiceFleetSlot();
   });
 
   it("F4.24 WorkerHostService injects the tenant pool in slot 1", () => {

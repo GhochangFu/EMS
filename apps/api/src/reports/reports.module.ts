@@ -8,6 +8,7 @@ import { ReportFilesService } from "./report-files.service";
 import { ReportProposalCheckService } from "./report-proposal-check.service";
 import { ReportSchedulesController } from "./report-schedules.controller";
 import { ReportSchedulesService } from "./report-schedules.service";
+import { ReportScopeService } from "./report-scope";
 import { ReportsController } from "./reports.controller";
 import { ReportsCoreModule } from "./reports-core.module";
 
@@ -41,11 +42,24 @@ import { ReportsCoreModule } from "./reports-core.module";
  * exports it with `ReportSchedulesService` (the `list_report_schedules` read
  * tool) for `CopilotModule`. This module imports nothing of the copilot, so
  * the graph stays acyclic.
+ *
+ * `F4.290` (ADR 0099 Amendment 9 E4) — `ReportScopeService` (the site filter of
+ * the energy routes and the on-demand save) is provided here, never by the
+ * loop-free core: it injects `LocationAssetScopeService` from the `@Global()`
+ * `AuthModule`, which `WorkerModule` does not import, and the worker renders
+ * schedules with no caller to scope.
  */
 @Module({
   imports: [ReportsCoreModule, NotificationsCoreModule],
   controllers: [ReportsController, ReportFilesController, ReportSchedulesController],
-  providers: [ReportFilesService, ReportSchedulesService, ReportProposalCheckService, MasterDataAuditService, JwtAuthGuard],
+  providers: [
+    ReportFilesService,
+    ReportSchedulesService,
+    ReportProposalCheckService,
+    ReportScopeService,
+    MasterDataAuditService,
+    JwtAuthGuard,
+  ],
   exports: [ReportProposalCheckService, ReportSchedulesService],
 })
 export class ReportsModule {}
