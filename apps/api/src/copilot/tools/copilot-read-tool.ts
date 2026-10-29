@@ -254,10 +254,18 @@ export function listResult(out: { organizations: ListEntry[]; read: string[] }, 
  */
 export type ListPaging<K> = { readonly cursor: string | undefined; readonly key: ZodType<K, ZodTypeDef, unknown> };
 
-/** `F4.291` — what one list call reads: an organization, a location (a site and its subtree), and paging. */
+/**
+ * `F4.291` — what one list call reads: an organization, a location (a site and its subtree), and paging.
+ * `F4.290` (ADR 0099 Amendment 9 E4): `locationIds`, several sites of one organization (a tool
+ * names one of `locationId` and `locationIds`); `emptyLocations`, the refusal when the sites
+ * hold no asset the caller reads (owner ruling P6, the report preview) — without it such
+ * sites read as an empty organization entry, as `F4.291`'s `locationId` does.
+ */
 export type ListScope<K> = {
   readonly organizationId?: string;
   readonly locationId?: string;
+  readonly locationIds?: readonly string[];
+  readonly emptyLocations?: string;
   readonly paging?: ListPaging<K>;
 };
 
@@ -288,9 +296,11 @@ export async function readPerOrganization<T, K = never>(
   if (!target.ok) return target;
   let organizations = target.ids;
   let located: readonly string[] | undefined;
-  if (scope.locationId !== undefined) {
-    const place = await services.locationScope.readableAssetIdsInLocations(ctx.user, target.ids, [scope.locationId]);
+  const named = scope.locationIds ?? (scope.locationId === undefined ? undefined : [scope.locationId]);
+  if (named !== undefined) {
+    const place = await services.locationScope.readableAssetIdsInLocations(ctx.user, target.ids, named);
     if (!place.ok) return { ok: false, error: locationRefusal(place.reason) };
+    if (place.assetIds.length === 0 && scope.emptyLocations !== undefined) return { ok: false, error: scope.emptyLocations };
     organizations = [place.organizationId];
     located = place.assetIds;
   }
