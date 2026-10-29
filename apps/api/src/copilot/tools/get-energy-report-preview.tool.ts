@@ -21,6 +21,26 @@ const DAY_MS = 86_400_000;
 export const COPILOT_REPORT_ENTRY_COST = 3;
 
 /**
+ * The report's calendar range checks, for a tool's `superRefine`: both dates
+ * real (`isCalendarDate`), `endDate` not before `startDate`, at most
+ * {@link COPILOT_REPORT_MAX_DAYS} days. Shared by `get_location_summary`
+ * (`F4.290` PR 2) so the two report reads refuse one range alike.
+ */
+export function refineReportDates(args: { readonly startDate: string; readonly endDate: string }, issue: z.RefinementCtx): void {
+  const startOk = isCalendarDate(args.startDate);
+  const endOk = isCalendarDate(args.endDate);
+  if (!startOk) issue.addIssue({ code: z.ZodIssueCode.custom, path: ["startDate"], message: "not a calendar date" });
+  if (!endOk) issue.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "not a calendar date" });
+  if (!startOk || !endOk) return;
+  const days = (Date.parse(args.endDate) - Date.parse(args.startDate)) / DAY_MS + 1;
+  if (days < 1) {
+    issue.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "is before startDate" });
+  } else if (days > COPILOT_REPORT_MAX_DAYS) {
+    issue.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: `range is over ${COPILOT_REPORT_MAX_DAYS} days` });
+  }
+}
+
+/**
  * `get_energy_report_preview` (`F4.275`) — `ReportsService.energyPreview`, the
  * `GET /reports/energy/preview` read behind the `/sustainability` report panel,
  * once per organization. The range is checked by the schema before any read
@@ -53,17 +73,7 @@ export const getEnergyReportPreviewTool = defineReadTool({
       if (args.locationId !== undefined && args.locationIds !== undefined) {
         issue.addIssue({ code: z.ZodIssueCode.custom, path: ["locationIds"], message: "give locationId or locationIds, not both" });
       }
-      const startOk = isCalendarDate(args.startDate);
-      const endOk = isCalendarDate(args.endDate);
-      if (!startOk) issue.addIssue({ code: z.ZodIssueCode.custom, path: ["startDate"], message: "not a calendar date" });
-      if (!endOk) issue.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "not a calendar date" });
-      if (!startOk || !endOk) return;
-      const days = (Date.parse(args.endDate) - Date.parse(args.startDate)) / DAY_MS + 1;
-      if (days < 1) {
-        issue.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: "is before startDate" });
-      } else if (days > COPILOT_REPORT_MAX_DAYS) {
-        issue.addIssue({ code: z.ZodIssueCode.custom, path: ["endDate"], message: `range is over ${COPILOT_REPORT_MAX_DAYS} days` });
-      }
+      refineReportDates(args, issue);
     }),
   async run(services, args, ctx) {
     const query = { startDate: args.startDate, endDate: args.endDate };

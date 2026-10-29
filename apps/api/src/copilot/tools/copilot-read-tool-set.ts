@@ -20,6 +20,7 @@ import { WorkOrdersService } from "../../work-orders/work-orders.service";
 import { defineToolRegistry, type ToolRegistry } from "../../llm/tool-registry";
 import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
+import { LocationSummaryService } from "../../reports/location-summary.service";
 import { ReportsService } from "../../reports/reports.service";
 import { RulesService } from "../../rules/rules.service";
 import { SitePointInventoryService } from "../../rules/site-point-inventory.service";
@@ -42,6 +43,7 @@ import { getEnergySummaryTool } from "./get-energy-summary.tool";
 import { getEnergyTopConsumersTool } from "./get-energy-top-consumers.tool";
 import { getHealthSummaryTool } from "./get-health-summary.tool";
 import { getLatestValuesTool } from "./get-latest-values.tool";
+import { getLocationSummaryTool } from "./get-location-summary.tool";
 import { getLoadTrendTool } from "./get-load-trend.tool";
 import { getMimicLayoutTool } from "./get-mimic-layout.tool";
 import { getPointAggregateTool } from "./get-point-aggregate.tool";
@@ -79,7 +81,8 @@ import { openPageTool } from "./open-page.tool";
  * `get_alarm_details` and `get_alarm_kb` after `list_alarms`. `F4.291` PR 2
  * adds `get_alarm_stats` after `get_alarm_kb`; PR 3 adds `get_point_stats`
  * after `get_point_aggregate`. `F4.288` adds `get_site_point_inventory` after
- * `list_rules`.
+ * `list_rules`. `F4.290` PR 2 adds `get_location_summary` after
+ * `get_energy_report_preview`.
  */
 export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[] = [
   listAlarmsTool,
@@ -100,6 +103,8 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   getEnergySourceMixTool,
   getEnergyTopConsumersTool,
   getEnergyReportPreviewTool,
+  // `F4.290` PR 2 (Amendment 9 E4): one row per site, beside the report it summarises.
+  getLocationSummaryTool,
   listLocationsTool,
   listDashboardsTool,
   getHealthSummaryTool,
@@ -205,6 +210,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
     @Inject(AlarmStatsService) alarmStats: AlarmStatsService,
     // `F4.288`: appended last (slot 26), the same reason. `RulesModule` exports it.
     @Inject(SitePointInventoryService) inventory: SitePointInventoryService,
+    // `F4.290` PR 2: appended last (slot 27), the same reason. `ReportsCoreModule` exports it.
+    @Inject(LocationSummaryService) locationSummary: LocationSummaryService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -234,6 +241,7 @@ export class CopilotReadToolSet implements CopilotReadTools {
       locationScope,
       alarmStats,
       inventory,
+      locationSummary,
     });
   }
 
