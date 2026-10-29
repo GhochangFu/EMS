@@ -88,6 +88,8 @@ type Stubs = {
   organizations: ReturnType<typeof vi.spyOn>;
   /** `F4.255` PR 3: the dock's draft list, empty unless a case says otherwise. */
   drafts: ReturnType<typeof vi.spyOn>;
+  /** `F4.292`: the conversation list, empty unless a case says otherwise. */
+  conversations: ReturnType<typeof vi.spyOn>;
 };
 
 export function stub(status: CopilotStatusDto = READY): Stubs {
@@ -115,6 +117,7 @@ export function stub(status: CopilotStatusDto = READY): Stubs {
       ],
     } as never),
     drafts: vi.spyOn(onboardingApi, "fetchOnboardingDrafts").mockResolvedValue({ items: [] }),
+    conversations: vi.spyOn(copilotApi, "fetchCopilotConversations").mockResolvedValue([]),
   };
 }
 
@@ -589,7 +592,8 @@ export async function offersNoAttachInACrossOrganizationConversation(): Promise<
   renderDock("admin");
   await openPanel();
   expect(await screen.findByRole("textbox", { name: "Message the copilot" })).toBeInTheDocument();
-  await waitFor(() => expect(load).toHaveBeenCalledWith(CONVERSATION_ID));
+  // F4.292: the thread reads its newest page.
+  await waitFor(() => expect(load).toHaveBeenCalledWith(CONVERSATION_ID, { limit: 50 }));
   await settle();
   expect(screen.queryByLabelText(ATTACH)).not.toBeInTheDocument();
 }
@@ -619,7 +623,8 @@ export async function offersAttachInAConversationBoundToTheOrganization(): Promi
   const load = rememberConversation(ORG_ID, null);
   renderDock("organization_admin");
   await openPanel();
-  await waitFor(() => expect(load).toHaveBeenCalledWith(CONVERSATION_ID));
+  // F4.292: the thread reads its newest page.
+  await waitFor(() => expect(load).toHaveBeenCalledWith(CONVERSATION_ID, { limit: 50 }));
   expect(await screen.findByLabelText(ATTACH)).toBeInTheDocument();
 }
 

@@ -226,3 +226,34 @@ export async function aFocusReReadsTheThreadWhenNoWaitIsOn(): Promise<void> {
   });
   await waitFor(() => expect(read).toHaveBeenCalledTimes(2));
 }
+
+/** `F4.292`: the thread reads the newest page, not the whole conversation. Mutation: call the client with no page. */
+export async function theThreadReadsTheNewestPage(): Promise<void> {
+  const read = vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue(detail());
+  const { result } = mount(newClient());
+  await waitFor(() => expect(result.current.thread.isSuccess).toBe(true));
+  expect(read).toHaveBeenCalledWith(ID, { limit: 50 });
+}
+
+function assistantRow(n: number): CopilotMessageDto {
+  return { ...action(`Reply ${n}.`, n), id: `r-${n}`, role: "assistant" };
+}
+
+/**
+ * `F4.292` (critic, high): the wait was armed on a 50-row thread; the poll
+ * answers the newest 50, a window two rows later whose last row is the
+ * outcome line. The wait ends. Mutation: arm with `baseline: messages.length`
+ * and look at `messages.slice(baseline)` (it slices past the line).
+ */
+export async function anOutcomeLineInALaterPageEndsTheWait(): Promise<void> {
+  atT0();
+  const held = Array.from({ length: 50 }, (_, i) => assistantRow(i + 1));
+  const later = [...held.slice(2), assistantRow(51), { ...action("Applied: Create rule.", 2), id: "r-52" }];
+  vi.spyOn(copilotApi, "fetchCopilotConversation").mockResolvedValue(detail({ messages: later, awaitingFollowUp: null }));
+  const client = newClient();
+  client.setQueryData(copilotConversationKey(ID), awaitingAfterConfirm(detail({ messages: held }), CHANGE, "applied", T0));
+  const { result } = mount(client);
+  await waitFor(() => expect(result.current.followUp).not.toBeNull());
+  await advance(2_100);
+  expect(result.current.followUp).toBeNull();
+}

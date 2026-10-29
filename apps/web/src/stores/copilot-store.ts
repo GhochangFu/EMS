@@ -74,6 +74,8 @@ type CopilotSessionState = {
   pick: (userId: string, organizationId: string) => void;
   /** Records the conversation a turn was sent to, keeping the user's current pick. */
   setConversation: (userId: string, conversationId: string) => void;
+  /** `F4.292`: opens a listed conversation with the pick it was started in (the server reads the scope from its row). */
+  openConversation: (userId: string, organizationId: string, conversationId: string) => void;
 };
 
 const INITIAL = {
@@ -98,6 +100,7 @@ export const useCopilotStore = create<CopilotSessionState>()(
         return request.userId === userId && Date.now() - request.at <= ONBOARD_REQUEST_TTL_MS ? request : null;
       },
       pick: (userId, organizationId) => set({ userId, organizationId, conversationId: null }),
+      openConversation: (userId, organizationId, conversationId) => set({ userId, organizationId, conversationId }),
       setConversation: (userId, conversationId) => {
         const state = get();
         set({
@@ -144,7 +147,21 @@ export function useCopilotSession(userId: string): { organizationId: string; con
     : { organizationId: COPILOT_ALL_ORGANIZATIONS, conversationId: null };
 }
 
+/** `F4.292` — the Query key of the conversation list (`GET /copilot/conversations`); a turn and a new conversation make it stale. */
+export const COPILOT_CONVERSATIONS = ["copilot", "conversations"] as const;
+
 /** The TanStack Query key of one conversation's thread. */
 export function copilotConversationKey(conversationId: string | null): readonly unknown[] {
   return ["copilot", "conversation", conversationId];
+}
+
+/**
+ * `F4.292` — the Query key of one conversation's loaded window (the earlier
+ * pages *Load earlier* read, and the thread's rows after them). Not under
+ * {@link copilotConversationKey}'s prefix: `invalidateQueries` and
+ * `cancelQueries` match by prefix, and the thread's poll, a Confirm's `gone()`
+ * and a focus read must never reach these rows (critic).
+ */
+export function copilotEarlierKey(conversationId: string | null): readonly unknown[] {
+  return ["copilot", "earlier", conversationId];
 }
