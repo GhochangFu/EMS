@@ -13,6 +13,7 @@ import type { JwtPayload, ReportFileDto } from "@bms/shared";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { assertFixturesPresent, SEEDED, jwtFor } from "../auth/access-control.integration.spec";
 import { AccessControlService } from "../auth/access-control.service";
+import { LocationAssetScopeService } from "../auth/location-asset-scope.service";
 import type { BmsTx } from "../database/tenant-context";
 import { createAwsS3Ops } from "../storage/aws-s3-ops";
 import { buildReportObjectKey } from "../storage/object-key";
@@ -22,6 +23,7 @@ import type { ConfiguredStorageConfig } from "../testing/integration-storage-gat
 import { asRole } from "../testing/role-urls";
 import type { ReportFilesConfig } from "./report-files-config";
 import { OUT_OF_SCOPE_SENTENCE, ReportFilesService } from "./report-files.service";
+import { ReportScopeService } from "./report-scope";
 import { ReportsService } from "./reports.service";
 import { buildReportScopeTree } from "../testing/report-scope-tree";
 import { primeSeededSubjects } from "../testing/seeded-subjects";
@@ -330,6 +332,7 @@ export function service(
     fx.reports,
     fx.accessControl,
     options.audit ?? new MasterDataAuditService(fx.tenantDb, fx.fleetDb),
+    new ReportScopeService(fx.fleetDb, fx.accessControl, new LocationAssetScopeService(fx.fleetDb, fx.accessControl)),
   );
 }
 

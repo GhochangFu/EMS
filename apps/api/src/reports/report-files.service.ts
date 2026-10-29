@@ -40,6 +40,7 @@ import {
 import type { ReportFilesConfig } from "./report-files-config";
 import { REPORT_FILES_CONFIG } from "./report-files.tokens";
 import { resolveReportOrganization } from "./report-organization";
+import { assertLocationIdsInScope, ReportScopeService } from "./report-scope";
 import { ReportsService } from "./reports.service";
 
 /** What the controller hands `saveOnDemand` after the body parse ran (U8's `saveEnergyReportFileBodySchema`). */
@@ -49,6 +50,13 @@ export type SaveEnergyReportFileBody = {
   readonly format: ReportFileFormat;
   /** ADR 0071 Amendment 1 item 1 — required for a global admin and for an admin holding several organizations. */
   readonly organizationId?: string;
+  /**
+   * `F4.290` (ADR 0099 Amendment 9 E4) — the site filter: checked under the
+   * schedule's write rule, stamped on the row as named, and rendered under the
+   * caller's readable assets of those subtrees. Absent: the grant stamp and
+   * the organization's readable assets, as before.
+   */
+  readonly locationIds?: readonly string[];
 };
 
 /** The one sentence a covered role gets for a file its scope does not cover (ADR 0071 Amendment 1 item 3). */
@@ -145,6 +153,7 @@ export class ReportFilesService {
     private readonly reports: ReportsService,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    @Inject(ReportScopeService) private readonly scope: Pick<ReportScopeService, "assetIdsInOrganization">,
   ) {}
 
   /**
@@ -153,15 +162,20 @@ export class ReportFilesService {
    * location stamp (a `location_admin` with no granted node in it: 403) and the cap pre-check
    * (409). No render and no storage call. `saveOnDemand` runs it first; the copilot's proposal
    * check runs it alone, so a card is offered only for a save the route would start.
+   *
+   * `F4.290`: named `locationIds` are checked as a schedule's are
+   * ({@link assertLocationIdsInScope}: 400 outside the organization, 403 outside
+   * the writable set) and are the stamp; absent, the stamp is the author's grants.
    */
   async previewSave(
     jwt: JwtPayload,
     requestedOrganizationId: string | undefined,
+    namedLocationIds?: readonly string[],
   ): Promise<{ organizationId: string; locationIds: string[] }> {
     requireStorageConfigured(this.client);
 
     // Decision 6: the role gate, before any other read.
-    await this.accessControl.writableLocationIds(jwt);
+    const writable = await this.accessControl.writableLocationIds(jwt);
     const organizationId = await resolveReportOrganization(
       { accessControl: this.accessControl, fleetDb: this.fleetDb },
       jwt,
@@ -170,8 +184,20 @@ export class ReportFilesService {
     // F2.10 / ADR 0098 Drafter choice 9: the stamp is the caller's direct grants,
     // never the subtree closure `writableLocationIds` answers — a file records
     // the nodes its author holds and expands to the current subtree at read time.
-    const granted = await this.accessControl.grantedLocationIds(jwt);
-    const locationIds = await this.resolveLocationStamp(jwt, organizationId, granted);
+    let locationIds: string[];
+    if (namedLocationIds === undefined) {
+      const granted = await this.accessControl.grantedLocationIds(jwt);
+      locationIds = await this.resolveLocationStamp(jwt, organizationId, granted);
+    } else {
+      await assertLocationIdsInScope(
+        { fleetDb: this.fleetDb, accessControl: this.accessControl },
+        jwt,
+        organizationId,
+        namedLocationIds,
+        writable,
+      );
+      locationIds = [...namedLocationIds];
+    }
 
     // R-11: the cheap refusal, before the render and before any storage call.
     this.refuseAtCap(await countFiles(this.fleetDb, organizationId));
@@ -179,10 +205,14 @@ export class ReportFilesService {
   }
 
   async saveOnDemand(jwt: JwtPayload, body: SaveEnergyReportFileBody): Promise<ReportFileDto> {
-    const { organizationId, locationIds } = await this.previewSave(jwt, body.organizationId);
+    const { organizationId, locationIds } = await this.previewSave(jwt, body.organizationId, body.locationIds);
 
     // Amendment 1 item 1: the render never carries another organization's rows.
-    const assetIds = await this.accessControl.readableAssetIdsInOrganization(jwt, organizationId);
+    // `F4.290`: named sites narrow it to the caller's readable assets of their subtrees.
+    const assetIds =
+      body.locationIds === undefined
+        ? await this.accessControl.readableAssetIdsInOrganization(jwt, organizationId)
+        : await this.scope.assetIdsInOrganization(jwt, organizationId, body.locationIds);
     const query = { startDate: body.startDate, endDate: body.endDate };
     const buffer =
       body.format === "pdf"

@@ -217,6 +217,7 @@ export type Scenario = {
   putObject?: () => Promise<void>;
   getObject?: () => Promise<{ body: Readable; contentLength: number | null } | null>;
   deleteObject?: () => Promise<void>;
+  scope?: object /* F4.290: ReportScopeService; absent, a call throws (report-files.service.scope.spec.ts) */;
 };
 
 export type Harness = {
@@ -442,6 +443,7 @@ export function harness(scenario: Scenario = {}): Harness {
     reportsFake,
     accessFake,
     auditFake,
+    (scenario.scope ?? {}) as never,
   );
   return {
     service,
