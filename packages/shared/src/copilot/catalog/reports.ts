@@ -131,10 +131,15 @@ export const REPORT_ENTRIES: readonly CatalogEntry[] = [
     modelBodyName: "copilotSaveEnergyReportFileModelBodySchema",
     risk: "create",
     target: REPORT_ORG,
-    steps: [{ id: "report", title: "Report", fields: ["organizationId", "startDate", "endDate", "format"] }],
+    steps: [{ id: "report", title: "Report", fields: ["organizationId", "startDate", "endDate", "format", "locationIds"] }],
+    // `F4.290` (Amendment 9 E4): named sites are said; none says nothing about scope, because the
+    // stamp then depends on the role (a location admin's grants), which the proposal check's note names.
     summary: ({ body, organizationName }) =>
-      `Render the ${text(body, "format")} energy report for ${text(body, "startDate")} to ${text(body, "endDate")} ` +
-      `and save it to the report history of ${organizationName}; the file is rendered when you confirm.`,
+      `Render the ${text(body, "format")} energy report for ${text(body, "startDate")} to ${text(body, "endDate")}` +
+      (Array.isArray(body.locationIds) && body.locationIds.length > 0
+        ? `, scoped to ${body.locationIds.length} location${body.locationIds.length === 1 ? "" : "s"},`
+        : "") +
+      ` and save it to the report history of ${organizationName}; the file is rendered when you confirm.`,
   },
 ];
 

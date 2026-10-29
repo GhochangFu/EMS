@@ -20,6 +20,15 @@ function saveEntry(id: string): CatalogEntry {
   return entry;
 }
 
+/**
+ * `F4.290` (ADR 0099 Amendment 9 E4) — the site filter a copilot fill may set
+ * on the step (the panel has no site picker). The Review card names it ("scoped
+ * to N locations"), so it is posted too; anything but a string list is dropped.
+ */
+function locationIdsOf(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every((item) => typeof item === "string") && value.length > 0 ? value : undefined;
+}
+
 export type ReportFileSaveWizardProps = {
   /** The panel's range: the body's `startDate` and `endDate`. */
   input: EnergyReportInput;
@@ -70,6 +79,7 @@ export function ReportFileSaveWizard({ input, user, hasPreview, previewError }: 
         { startDate: String(body.startDate), endDate: String(body.endDate) },
         body.format as ReportFileFormat,
         typeof body.organizationId === "string" ? body.organizationId : undefined,
+        locationIdsOf(body.locationIds),
       ),
     onSuccess: async (file) => {
       setOutcome({ tone: "saved", text: `Saved ${file.filename} to history.` });

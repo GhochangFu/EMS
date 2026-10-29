@@ -10,6 +10,7 @@ import {
   downloadReportFileNamesTheAnchorAfterTheDto,
   fetchReportFilesReturnsTheList,
   fetchReportSchedulesReturnsTheList,
+  saveWithLocationIdsAddsThemByKey,
   saveWithOrganizationAddsItByKey,
   saveWithoutOrganizationPostsExactlyThreeFields,
   updateReportSchedulePatchesTheBodyByKey,
@@ -32,6 +33,10 @@ describe("F3.5a reports web client", () => {
 
   it("adds organizationId by key when one is given", async () => {
     await saveWithOrganizationAddsItByKey();
+  });
+
+  it("F4.290: adds locationIds by key when they are given", async () => {
+    await saveWithLocationIdsAddsThemByKey();
   });
 
   it("downloads the PDF export and names the anchor accordingly", async () => {

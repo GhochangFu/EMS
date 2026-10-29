@@ -4,6 +4,7 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import { resetWizardStore } from "../stores/wizard-store";
 import {
+  aFilledLocationIdsReachesTheSave,
   aLocationAdminSavesWithoutAnOrganizationSelect,
   anAdminMustChooseAnOrganizationBeforeSaving,
   anAdminSaveSendsTheChosenOrganization,
@@ -28,4 +29,5 @@ describe("F4.280 — the Save-to-history wizard (ADR 0099 decision 6, Q8)", () =
   it("a saved file renders the saved line", () => aSavedFileRendersTheSavedLine());
   it("a refused save renders the API's sentence", () => aRefusedSaveRendersTheApiSentence());
   it("the Review says the file renders on confirm", () => theReviewSaysTheFileRendersOnConfirm());
+  it("F4.290: a filled locationIds reaches the save", () => aFilledLocationIdsReachesTheSave());
 });

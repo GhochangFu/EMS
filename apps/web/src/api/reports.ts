@@ -137,6 +137,7 @@ export async function saveEnergyReportFile(
   input: EnergyReportInput,
   format: ReportFileFormat,
   organizationId?: string,
+  locationIds?: readonly string[],
 ): Promise<ReportFileDto> {
   return adminFetch("/reports/energy/files", reportFileDtoSchema, {
     method: "POST",
@@ -145,6 +146,8 @@ export async function saveEnergyReportFile(
       ...input,
       format,
       ...(organizationId ? { organizationId } : {}),
+      // `F4.290` (ADR 0099 Amendment 9 E4): the site filter, only when a copilot fill named sites.
+      ...(locationIds !== undefined && locationIds.length > 0 ? { locationIds } : {}),
     }),
   });
 }

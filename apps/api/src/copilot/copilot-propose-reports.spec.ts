@@ -216,6 +216,20 @@ export async function theSaveIsStoredWithoutRecipients(): Promise<void> {
   expect(h.stored[0]?.body).toEqual(SAVE);
 }
 
+/** `F4.290`: a save naming sites reaches the report check with them, unchanged. */
+export async function aSaveNamingSitesReachesTheCheckUnchanged(): Promise<void> {
+  const h = harness();
+  await h.call(SAVE_TOOL, { body: { ...SAVE, locationIds: [ROW] } });
+  expect(h.c.calls[0]?.body.locationIds).toEqual([ROW]);
+}
+
+/** `F4.290`: the stored card body keeps the sites, so the hash binds them and Confirm posts them. */
+export async function aSaveNamingSitesIsStoredWithThem(): Promise<void> {
+  const h = harness();
+  await h.call(SAVE_TOOL, { body: { ...SAVE, locationIds: [ROW] } });
+  expect(h.stored[0]?.body).toEqual({ ...SAVE, locationIds: [ROW] });
+}
+
 /** Q7: the save's model body requires `organizationId`. */
 export async function theSaveWithoutAnOrganizationIsRefused(): Promise<void> {
   const { organizationId: _omitted, ...body } = SAVE;

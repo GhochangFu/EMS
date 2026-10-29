@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -9,6 +9,7 @@ import type { ReportFileDto } from "@bms/shared";
 import * as organizationsApi from "../api/admin/organizations";
 import * as reportsApi from "../api/reports";
 import { ApiError } from "../lib/api-error";
+import { useWizardStore } from "../stores/wizard-store";
 import type { AuthUser } from "../stores/auth-store";
 import { ReportFileSaveWizard } from "./report-file-save-wizard";
 
@@ -100,7 +101,8 @@ export async function submitPostsTheRangeAndTheFormatByKey(): Promise<void> {
   await next();
   await submit();
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-  expect(save.mock.calls[0]).toEqual([{ startDate: RANGE.startDate, endDate: RANGE.endDate }, "pdf", undefined]);
+  // `F4.290`: the fourth argument is the site filter, absent without a copilot fill.
+  expect(save.mock.calls[0]).toEqual([{ startDate: RANGE.startDate, endDate: RANGE.endDate }, "pdf", undefined, undefined]);
 }
 
 /** A saved file renders the saved line. */
@@ -129,4 +131,23 @@ export async function theReviewSaysTheFileRendersOnConfirm(): Promise<void> {
   await screen.findByLabelText("Format");
   await next();
   expect(await screen.findByText(/the file is rendered when you confirm/)).toBeInTheDocument();
+}
+
+const SITE = "40000000-0000-4000-8000-000000000001";
+
+/**
+ * `F4.290` (critic fix): a copilot fill of `locationIds` on the open save
+ * wizard reaches the POST — the Review card says "scoped to 1 location", so the
+ * saved file must be scoped too, never silently organization-wide.
+ */
+export async function aFilledLocationIdsReachesTheSave(): Promise<void> {
+  const save = vi.spyOn(reportsApi, "saveEnergyReportFile").mockResolvedValue(SAVED);
+  renderWizard("location_admin");
+  await screen.findByLabelText("Format");
+  act(() => useWizardStore.getState().receiveFill({ catalogId: "reportFile.save", params: {}, stepId: "report", values: { locationIds: [SITE] } }, null));
+  await next();
+  await screen.findByText(/scoped to 1 location/);
+  await submit();
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  expect(save.mock.calls[0]?.[3]).toEqual([SITE]);
 }
