@@ -176,4 +176,9 @@ export const RULE_PENDING: readonly ExcludedRoute[] = [
     path: "/rules/evaluate",
     reason: "evaluates every published rule of every organization and raises alarms; not in Amendment 8",
   },
+  {
+    method: "POST",
+    path: "/rules/batch",
+    reason: "F4.289 PR 2 makes it the rule.createBatch entry, with its card and its wizard",
+  },
 ];

@@ -34,6 +34,7 @@ import {
   putMimicLibrarySettingBodySchema,
   updateMimicOrgSymbolBodySchema,
   updateMimicOrgSymbolLibraryBodySchema,
+  ruleBatchBodySchema,
   ruleDraftBodySchema,
   ruleLifecycleBodySchema,
   ruleToggleBodySchema,
@@ -362,6 +363,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   RtusAdminController_update: updateRtuBodySchema,
   RulesController_archiveRule: ruleLifecycleBodySchema,
   RulesController_createDraft: ruleDraftBodySchema,
+  // `F4.289`: `POST /rules/batch` (excluded from the copilot catalog until PR 2).
+  RulesController_createRuleBatch: ruleBatchBodySchema,
   RulesController_duplicateRule: ruleLifecycleBodySchema,
   RulesController_listExecutions: listRuleExecutionsQuerySchema,
   RulesController_previewRule: rulePreviewBodySchema,

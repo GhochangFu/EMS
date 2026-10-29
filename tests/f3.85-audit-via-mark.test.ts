@@ -132,6 +132,13 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     route: { method: "POST", path: "/admin/asset-templates/:id/default-dashboards" },
     auditMethods: ["backfill"],
   },
+  // `F4.289` PR 1: `POST /rules/batch` is in `RULE_PENDING` until PR 2 adds the `rule.createBatch`
+  // entry; that commit moves this file to CATALOG_WRITERS.
+  {
+    file: "apps/api/src/rules/rules-batch.service.ts",
+    route: { method: "POST", path: "/rules/batch" },
+    auditMethods: ["createAndPublish"],
+  },
 ];
 
 /** Directories whose write routes the release-1 catalog covers; no file in them may insert into the audit log itself. */

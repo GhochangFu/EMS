@@ -119,10 +119,11 @@ export function noRuleEntryNarrowsTheRoles(): void {
 }
 
 /**
- * "Not in this amendment": the two rule routes that are not entries are excluded, each with its
+ * "Not in this amendment": the rule routes that are not entries are excluded, each with its
  * reason. `F4.279` (D8) made `PUT /rules/:id/notifications` the `rule.notifications.set` entry.
+ * `F4.289` PR 1 adds `POST /rules/batch` until PR 2 makes it the `rule.createBatch` entry.
  */
-export function theTwoRuleRoutesAreExcludedWithTheirReasons(): void {
+export function theThreeRuleRoutesAreExcludedWithTheirReasons(): void {
   const reasons = Object.fromEntries(
     EXCLUDED_ROUTES.filter((route) => route.path.startsWith("/rules")).map((route) => [
       `${route.method} ${route.path}`,
@@ -130,6 +131,7 @@ export function theTwoRuleRoutesAreExcludedWithTheirReasons(): void {
     ]),
   );
   expect(Object.keys(reasons).sort()).toEqual([
+    "POST /rules/batch",
     "POST /rules/evaluate",
     "POST /rules/preview",
   ]);

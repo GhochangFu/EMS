@@ -213,7 +213,15 @@ function controllerWith(
   } as unknown as Response;
 
   return {
-    controller: new RulesController(rules, accessControl, channels, throttle, {} as unknown as ConstructorParameters<typeof RulesController>[4]),
+    controller: new RulesController(
+      rules,
+      accessControl,
+      channels,
+      throttle,
+      {} as unknown as ConstructorParameters<typeof RulesController>[4],
+      // `F4.289`: `RulesBatchService` serves only `POST /rules/batch`, which this spec never calls.
+      {} as unknown as ConstructorParameters<typeof RulesController>[5],
+    ),
     res,
     throttle,
     headers,
