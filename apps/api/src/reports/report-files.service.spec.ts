@@ -217,6 +217,7 @@ export type Scenario = {
   putObject?: () => Promise<void>;
   getObject?: () => Promise<{ body: Readable; contentLength: number | null } | null>;
   deleteObject?: () => Promise<void>;
+  scope?: object /* F4.290: ReportScopeService; absent, a call throws (report-files.service.scope.spec.ts) */;
 };
 
 export type Harness = {
@@ -442,6 +443,7 @@ export function harness(scenario: Scenario = {}): Harness {
     reportsFake,
     accessFake,
     auditFake,
+    (scenario.scope ?? {}) as never,
   );
   return {
     service,
@@ -718,7 +720,7 @@ export async function assertTheAuditPayloadCarriesIdsAndNumbersOnly(): Promise<v
       input.entityType === "report_file" &&
       input.entityId === dto.id &&
       input.organizationId === ORG_ID &&
-      keys === "byteSize,fileId,format,organizationId,periodEnd,periodStart,sha256" &&
+      keys === "byteSize,fileId,format,locationIds,organizationId,periodEnd,periodStart,sha256" &&
       !Object.values(payload).includes(dto.filename) &&
       h.audit.executors[0] === h.tx,
     `audit ${input.action} ${input.entityType} org ${input.organizationId} keys ${keys} executor-is-tx ${h.audit.executors[0] === h.tx}`,

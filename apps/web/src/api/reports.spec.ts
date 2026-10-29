@@ -166,6 +166,19 @@ export async function saveWithOrganizationAddsItByKey(): Promise<void> {
 }
 
 /**
+ * `F4.290` (ADR 0099 Amendment 9 E4): `saveEnergyReportFile` adds the site
+ * filter `locationIds` when it is given — read back by key.
+ */
+export async function saveWithLocationIdsAddsThemByKey(): Promise<void> {
+  const seen = captureFetch(201, JSON.stringify(DTO));
+
+  await saveEnergyReportFile(INPUT, "pdf", ORGANIZATION_ID, ["40000000-0000-4000-8000-000000000001"]);
+
+  const body = JSON.parse(seen().init.body as string) as Record<string, unknown>;
+  expect(body.locationIds).toEqual(["40000000-0000-4000-8000-000000000001"]);
+}
+
+/**
  * `downloadEnergyReportPdf` hits `export.pdf` — the path suffix, not
  * `export.csv` — and names the `.pdf` anchor. The query string is checked
  * for the two dates so a route that dropped them would redden too.

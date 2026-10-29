@@ -288,5 +288,6 @@ export async function aSaveFromThePanelPostsThePreviewRange(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Submit" }));
 
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
-  expect(save.mock.calls[0]).toEqual([rangeSentToThePreview(), "pdf", undefined]);
+  // F4.290: the fourth argument is the site filter; a panel save names none.
+  expect(save.mock.calls[0]).toEqual([rangeSentToThePreview(), "pdf", undefined, undefined]);
 }

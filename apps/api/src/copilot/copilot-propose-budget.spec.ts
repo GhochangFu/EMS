@@ -38,6 +38,8 @@ import { proposeHarness } from "./copilot-propose-tools.spec";
  * - Owner ruling 2026-10-23 (release 4): F4.283 measured 77,677.
  * - Owner ruling 2026-10-23 (release 4): F4.284 measured 82,904.
  * - Owner ruling 2026-10-25 (release 4): F4.284 skill code measured 82,991 (under the bound, so it is unchanged).
+ * - Owner ruling P4 2026-10-27 (release 5): F4.290 PR 1 measured 83,092 (`locationIds` on the save model body;
+ *   under the bound, so it is unchanged).
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();

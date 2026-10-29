@@ -11,7 +11,7 @@ import { and, arrayContained, count, desc, eq, inArray, sql } from "drizzle-orm"
 import type { SQL } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 
-import { locations, notificationChannels, reportFiles, reportSchedules } from "@bms/db";
+import { notificationChannels, reportFiles, reportSchedules } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { MAX_REPORT_SCHEDULES_PER_ORGANIZATION, reportScheduleDtoSchema, reportTemplateIdSchema } from "@bms/shared";
 import type { JwtPayload, ReportCadence, ReportScheduleDto } from "@bms/shared";
@@ -32,6 +32,7 @@ import { STORAGE_CLIENT } from "../storage/storage.tokens";
 import { discardObjectsBestEffort } from "./report-file-store";
 import { resolveReportOrganization } from "./report-organization";
 import { nextRunAt } from "./report-period";
+import { assertLocationIdsInScope } from "./report-scope";
 import type { CreateReportScheduleBodyInput, UpdateReportScheduleBodyInput } from "./report-schedules.schema";
 
 /** The one sentence a covered role gets for a schedule its scope does not cover (R-12). */
@@ -325,28 +326,8 @@ export class ReportSchedulesService {
     writableLocations: string[] | null,
   ): Promise<NotificationChannelRow | null> {
     if (locationIds !== undefined) {
-      if (locationIds.length > 0) {
-        // fleetDb: the organization's own locations, bounded by the requested ids.
-        const rows = await this.fleetDb
-          .select({ locationId: locations.id })
-          .from(locations)
-          .where(and(eq(locations.organizationId, organizationId), inArray(locations.id, [...locationIds])));
-        const inOrganization = new Set(rows.map((row) => row.locationId));
-        if (!locationIds.every((locationId) => inOrganization.has(locationId))) {
-          throw new BadRequestException("locationIds names a location outside the organization");
-        }
-        if (writableLocations !== null) {
-          const held = new Set(writableLocations);
-          if (!locationIds.every((locationId) => held.has(locationId))) {
-            throw new ForbiddenException("locationIds is outside your access scope");
-          }
-        }
-      } else {
-        const scope = await this.accessControl.reportFileReadScope(jwt);
-        if (scope.kind === "location") {
-          throw new ForbiddenException("An empty location scope requires organization-level rights");
-        }
-      }
+      // `F4.290`: the check moved to `report-scope.ts`, so the on-demand save stamps named sites under it too.
+      await assertLocationIdsInScope({ fleetDb: this.fleetDb, accessControl: this.accessControl }, jwt, organizationId, locationIds, writableLocations);
     }
     if (channelId !== undefined && channelId !== null) {
       // Q-6: `loadById` applies `canManageNotificationChannel` — a location_admin is refused there.

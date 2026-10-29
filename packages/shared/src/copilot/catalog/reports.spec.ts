@@ -116,3 +116,29 @@ export function theTwoDeletesAreExcluded(): void {
   const excluded = EXCLUDED_ROUTES.filter((route) => route.method === "DELETE").map((route) => route.path);
   expect(excluded).toEqual(expect.arrayContaining(["/reports/schedules/:id", "/reports/files/:id"]));
 }
+
+const SAVE_BODY = { organizationId: ORG, startDate: "2026-09-01", endDate: "2026-09-30", format: "pdf" };
+const ROW2 = "44444444-4444-4444-8444-444444444444";
+
+/** `F4.290` (Amendment 9 E4): a save naming sites says how many it is scoped to. */
+export function aSaveNamingSitesSaysItsScope(): void {
+  expect(summary("reportFile.save", { body: { ...SAVE_BODY, locationIds: [ROW, ROW2] } })).toContain("scoped to 2 locations");
+}
+
+/**
+ * `F4.290` (critic fix): a save naming no site makes no scope claim — "the whole
+ * organization" is false for a location admin, whose file is stamped to its grants.
+ */
+export function aSaveNamingNoSiteMakesNoScopeClaim(): void {
+  expect(summary("reportFile.save", { body: SAVE_BODY })).not.toMatch(/scoped|whole organization/);
+}
+
+/** `F4.290`: the save's one step holds `locationIds`, so a copilot fill may set it. */
+export function theSaveStepHoldsTheLocationIds(): void {
+  expect(entry("reportFile.save").steps?.[0]?.fields).toContain("locationIds");
+}
+
+/** D5 still holds with the new field: a save naming sites names no address. */
+export function aSaveNamingSitesNamesNoAddress(): void {
+  expect(summary("reportFile.save", { body: { ...SAVE_BODY, locationIds: [ROW] } })).not.toMatch(/@/);
+}
