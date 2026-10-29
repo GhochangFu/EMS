@@ -554,14 +554,15 @@ export function createCopilotProposeTools(
     // keeps the layout it was built from for the card's diff (ruling Q5).
     // `F4.278` (Q9): the route's refusals, "would match now" and the backtest, before the card.
     let ruleNote = "";
+    let cardBody: Record<string, unknown> = {};
     if (RULE_ENTRY_IDS.has(entry.id)) {
       const checked = await checkRule(services.rules, entry.id, params, body, target.organizationId, ctx.now);
       if (!checked.ok) return checked;
       ruleNote = ` ${checked.note}`;
+      cardBody = checked.cardBody; // `F4.289`: a batch's per-row checks, for the card alone.
     }
     // `F4.279` (D2, D5): every channel the change names, through the route's gate; the card-only
     // recipients (stored beside the body, never in the summary) and a note with counts only.
-    let cardBody: Record<string, unknown> = {};
     if (NOTIFICATION_ENTRY_IDS.has(entry.id)) {
       const checked = await checkNotification(services.notifications, entry.id, params, body, target.organizationId, ctx.user);
       if (!checked.ok) return checked;

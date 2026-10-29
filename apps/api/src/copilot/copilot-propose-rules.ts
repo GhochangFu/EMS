@@ -13,7 +13,7 @@ import type { RuleProposalCheckService } from "../rules/rule-proposal-check.serv
  * check's note is appended to the card's summary.
  */
 
-/** The seven rule entries (`packages/shared/src/copilot/catalog/rules.ts`). */
+/** The eight rule entries (`packages/shared/src/copilot/catalog/rules.ts`); `F4.289` adds the batch. */
 export const RULE_ENTRY_IDS: ReadonlySet<string> = new Set([
   "rule.create",
   "rule.update",
@@ -22,15 +22,20 @@ export const RULE_ENTRY_IDS: ReadonlySet<string> = new Set([
   "rule.enable",
   "rule.disable",
   "rule.archive",
+  "rule.createBatch",
 ]);
 
 /** A rule proposal on tools built without the check fails closed: nothing is stored. */
 export const PROPOSE_RULES_UNAVAILABLE_ERROR =
   "An alarm rule cannot be proposed here. Tell the user to use the Rule Engine page.";
 
-export type CopilotRuleChecks = Pick<RuleProposalCheckService, "check">;
+export type CopilotRuleChecks = Pick<RuleProposalCheckService, "check" | "checkBatch">;
 
-/** Runs the check; an `HttpException` is the route's refusal, any other error is re-thrown. */
+/**
+ * Runs the check; an `HttpException` is the route's refusal, any other error is re-thrown.
+ * `F4.289` (Amendment 9 E3): the batch runs `checkBatch` over the model's rows, and its per-row
+ * result is the card-only `checks` (left out of the hash, stripped by the browser on Confirm).
+ */
 export async function checkRule(
   rules: CopilotRuleChecks | undefined,
   entryId: string,
@@ -38,11 +43,16 @@ export async function checkRule(
   body: Readonly<Record<string, unknown>>,
   organizationId: string,
   now: Date,
-): Promise<{ ok: true; note: string } | { ok: false; error: string }> {
+): Promise<{ ok: true; note: string; cardBody: Record<string, unknown> } | { ok: false; error: string }> {
   if (rules === undefined) return { ok: false, error: PROPOSE_RULES_UNAVAILABLE_ERROR };
   try {
+    if (entryId === "rule.createBatch") {
+      const rows = Array.isArray(body.rules) ? (body.rules as unknown[]) : [];
+      const checked = await rules.checkBatch({ rows, organizationId, now });
+      return { ok: true, note: checked.note, cardBody: { checks: checked.rows } };
+    }
     const { note } = await rules.check({ entryId, params, body, organizationId, now });
-    return { ok: true, note };
+    return { ok: true, note, cardBody: {} };
   } catch (err) {
     if (err instanceof HttpException) return { ok: false, error: err.message };
     throw err;

@@ -74,6 +74,8 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/vocabularies/location-types.service.ts",
   // `F4.278` (Amendment 8): every alarm-rule write entry's handler reaches this service.
   "apps/api/src/rules/rules.service.ts",
+  // `F4.289` (Amendment 9 E3): `POST /rules/batch`, the `rule.createBatch` entry's handler.
+  "apps/api/src/rules/rules-batch.service.ts",
   // `F4.279` (Amendment 8): the channel writes (and `PUT /rules/:id/notifications`) and the
   // escalation profiles and defaults. `channels.service.ts` is deliberately NOT listed: it
   // holds only the reads the worker loads and no longer references the funnel.
@@ -131,13 +133,6 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     file: "apps/api/src/admin/asset-templates/asset-dashboards-instantiate.service.ts",
     route: { method: "POST", path: "/admin/asset-templates/:id/default-dashboards" },
     auditMethods: ["backfill"],
-  },
-  // `F4.289` PR 1: `POST /rules/batch` is in `RULE_PENDING` until PR 2 adds the `rule.createBatch`
-  // entry; that commit moves this file to CATALOG_WRITERS.
-  {
-    file: "apps/api/src/rules/rules-batch.service.ts",
-    route: { method: "POST", path: "/rules/batch" },
-    auditMethods: ["createAndPublish"],
   },
 ];
 

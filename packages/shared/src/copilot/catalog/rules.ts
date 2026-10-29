@@ -1,11 +1,13 @@
 import {
+  copilotRuleBatchModelBodySchema,
   copilotRuleCreateModelBodySchema,
+  ruleBatchBodySchema,
   ruleDraftBodySchema,
   ruleLifecycleBodySchema,
   ruleToggleBodySchema,
   ruleUpdateBodySchema,
 } from "../../contracts/rule-writes";
-import { fieldList, quoted, text, uuidParam } from "./summary-text";
+import { fieldList, plural, quoted, text, uuidParam } from "./summary-text";
 import type { CatalogEntry, CatalogStep, CatalogTarget, ExcludedRoute } from "./types";
 
 /**
@@ -25,6 +27,10 @@ import type { CatalogEntry, CatalogStep, CatalogTarget, ExcludedRoute } from "./
  * residual). Before a card is stored the server runs the validator, a
  * write-free "would match now" evaluation and a 7-day backtest (Q9) and appends
  * the result to this summary (`apps/api/src/rules/rule-proposal-check.service.ts`).
+ *
+ * `F4.289` (ADR 0099 Amendment 9 E3) adds an eighth, `rule.createBatch`, on
+ * `POST /rules/batch`: its `ruleBatch` target and its per-row check are the
+ * create's, applied to every row.
  */
 
 /** D3's fixed line: the change arms, or changes, a live rule at once. */
@@ -159,6 +165,41 @@ export const RULE_ENTRIES: readonly CatalogEntry[] = [
     summary: ({ targetName }) =>
       `Archive the rule ${quoted(targetName)}: it leaves evaluation for good and cannot be edited or published again.`,
   },
+  /**
+   * `F4.289` (ADR 0099 Amendment 9 E3): up to 25 rules on one organization's assets, created **and
+   * published** in one transaction on Confirm. `excludedRows` is the card's unticked rows, sent by
+   * the browser only: the hash binds `rules`, so the user can leave a row out, never add or change
+   * one. `checks` is the server's per-row check (`checkBatch`), stored for the card alone. Owner
+   * ruling P2: the card is red, and the risk stays `create`. The summary says "up to" — the count
+   * the Confirm creates is the ticked rows, and the outcome line repeats this summary (plan critic).
+   */
+  {
+    id: "rule.createBatch",
+    title: "Create and publish alarm rules",
+    method: "POST",
+    path: "/rules/batch",
+    params: {},
+    body: ruleBatchBodySchema,
+    bodyName: "ruleBatchBodySchema",
+    modelBody: copilotRuleBatchModelBodySchema,
+    modelBodyName: "copilotRuleBatchModelBodySchema",
+    clientOnly: ["excludedRows"],
+    cardOnly: ["checks"],
+    risk: "create",
+    red: true,
+    target: { kind: "ruleBatch", field: "rules" },
+    refs: [],
+    formulas: [],
+    steps: [{ id: "rules", title: "Rules", fields: ["rules"] }],
+    summary: ({ body, organizationName }) => {
+      const rows = Array.isArray(body.rules) ? body.rules : [];
+      const assets = new Set(rows.map((row) => (typeof row === "object" && row !== null ? (row as { assetId?: unknown }).assetId : undefined)));
+      return (
+        `Create and publish up to ${plural(rows.length, "alarm rule")} on ${plural(assets.size, "asset")} in ${organizationName}: ` +
+        `only the rows left ticked on this card are created. ${RULE_LIVE_LINE}`
+      );
+    },
+  },
 ];
 
 /**
@@ -175,10 +216,5 @@ export const RULE_PENDING: readonly ExcludedRoute[] = [
     method: "POST",
     path: "/rules/evaluate",
     reason: "evaluates every published rule of every organization and raises alarms; not in Amendment 8",
-  },
-  {
-    method: "POST",
-    path: "/rules/batch",
-    reason: "F4.289 PR 2 makes it the rule.createBatch entry, with its card and its wizard",
   },
 ];

@@ -359,6 +359,13 @@ export interface CatalogEntry {
    */
   readonly fixedBody?: Readonly<Record<string, unknown>>;
   readonly risk: CatalogRisk;
+  /**
+   * `F4.289` (owner ruling P2, 2026-10-27): the Confirm card is red although `risk` is not one of
+   * the red risks — a batch that creates **and publishes** live alarm rules. `risk` stays what the
+   * write is (`create`, the `copilot_pending_changes_risk_check` value); only the card's style
+   * changes. Absent: the card's colour follows `risk`.
+   */
+  readonly red?: true;
   readonly target: CatalogTarget;
   readonly refs: readonly CatalogRef[];
   readonly formulas: readonly CatalogFormula[];

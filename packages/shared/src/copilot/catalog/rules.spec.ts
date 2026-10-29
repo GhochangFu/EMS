@@ -1,6 +1,10 @@
 import { expect } from "vitest";
 
-import { copilotRuleCreateModelBodySchema } from "../../contracts/rule-writes";
+import {
+  copilotRuleBatchModelBodySchema,
+  copilotRuleCreateModelBodySchema,
+  ruleBatchBodySchema,
+} from "../../contracts/rule-writes";
 import { catalogEntry, EXCLUDED_ROUTES } from "./index";
 import { RULE_LIVE_LINE } from "./rules";
 import type { CatalogEntry, CatalogSummaryInput } from "./types";
@@ -121,9 +125,9 @@ export function noRuleEntryNarrowsTheRoles(): void {
 /**
  * "Not in this amendment": the rule routes that are not entries are excluded, each with its
  * reason. `F4.279` (D8) made `PUT /rules/:id/notifications` the `rule.notifications.set` entry.
- * `F4.289` PR 1 adds `POST /rules/batch` until PR 2 makes it the `rule.createBatch` entry.
+ * `F4.289` PR 2 made `POST /rules/batch` (excluded by PR 1) the `rule.createBatch` entry.
  */
-export function theThreeRuleRoutesAreExcludedWithTheirReasons(): void {
+export function theTwoRuleRoutesAreExcludedWithTheirReasons(): void {
   const reasons = Object.fromEntries(
     EXCLUDED_ROUTES.filter((route) => route.path.startsWith("/rules")).map((route) => [
       `${route.method} ${route.path}`,
@@ -131,9 +135,66 @@ export function theThreeRuleRoutesAreExcludedWithTheirReasons(): void {
     ]),
   );
   expect(Object.keys(reasons).sort()).toEqual([
-    "POST /rules/batch",
     "POST /rules/evaluate",
     "POST /rules/preview",
   ]);
   expect(reasons["POST /rules/preview"]).toContain("rule_preview audit row");
+}
+
+// ---------------------------------------------------------------------------
+// `F4.289` (ADR 0099 Amendment 9 E3) — `rule.createBatch`.
+
+const ASSET_2 = "33333333-3333-4333-8333-333333333333";
+const batchRow = (assetId: string) => ({ name: "Chiller high", ruleType: "threshold", assetId, condition: {}, action: {} });
+
+/** The batch entry names the batch route, its body and its model body, by identity. */
+export function theBatchEntryNamesItsRouteAndBodies(): void {
+  const batch = entry("rule.createBatch");
+  expect([batch.method, batch.path, batch.bodyName, batch.modelBodyName]).toEqual([
+    "POST",
+    "/rules/batch",
+    "ruleBatchBodySchema",
+    "copilotRuleBatchModelBodySchema",
+  ]);
+  expect([batch.body, batch.modelBody]).toEqual([ruleBatchBodySchema, copilotRuleBatchModelBodySchema]);
+}
+
+/** `excludedRows` is the browser's alone and `checks` the card's alone, so the hash binds `rules`. */
+export function theBatchExcludedRowsAreClientOnlyAndChecksCardOnly(): void {
+  const batch = entry("rule.createBatch");
+  expect([batch.clientOnly, batch.cardOnly]).toEqual([["excludedRows"], ["checks"]]);
+}
+
+/** Owner ruling P2: the batch card is red, and its risk stays `create`. */
+export function theBatchEntryIsRedWithRiskCreate(): void {
+  const batch = entry("rule.createBatch");
+  expect([batch.red, batch.risk]).toEqual([true, "create"]);
+}
+
+/** The adjacent negative: no other rule entry sets the flag (their colour follows the risk). */
+export function noOtherRuleEntryIsFlaggedRed(): void {
+  for (const id of RULE_IDS) expect(entry(id).red, id).toBeUndefined();
+}
+
+/** The batch target is the rows' assets, one organization (`ruleBatch` over `rules`). */
+export function theBatchTargetIsTheRows(): void {
+  expect(entry("rule.createBatch").target).toEqual({ kind: "ruleBatch", field: "rules" });
+}
+
+/** The batch summary counts rules and distinct assets, names the organization and carries the live line. */
+export function theBatchSummaryCountsRulesAndAssetsAndCarriesTheLiveLine(): void {
+  const text = summary("rule.createBatch", { body: { rules: [batchRow(ROW), batchRow(ROW), batchRow(ASSET_2)] } });
+  expect(text).toBe(
+    `Create and publish up to 3 alarm rules on 2 assets in Pune Works: only the rows left ticked on this card are created. ${RULE_LIVE_LINE}`,
+  );
+}
+
+/**
+ * Plan critic: the outcome line repeats the summary after a Confirm that may have left rows out, so
+ * the summary never states the count as created — it says "up to", and names the ticked rows.
+ */
+export function theBatchSummaryNeverStatesTheAppliedCount(): void {
+  const text = summary("rule.createBatch", { body: { rules: [batchRow(ROW), batchRow(ROW)] } });
+  expect(text).toContain("up to 2 alarm rules");
+  expect(text).not.toContain("publish 2 alarm rules");
 }
