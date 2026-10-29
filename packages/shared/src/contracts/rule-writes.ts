@@ -105,7 +105,43 @@ export const copilotRuleCreateModelBodySchema = z
   .object({ ...ruleDraftShape, assetId: z.string().uuid() })
   .strict();
 
+/**
+ * `F4.289` (ADR 0099 Amendment 9 E3) — the most rules one batch carries. One
+ * card proposes at most this many; a site that needs more gets the next card
+ * after the user confirms or rejects the open one.
+ */
+export const RULE_BATCH_MAX_ROWS = 25;
+
+/**
+ * `POST /rules/batch` — up to 25 drafts, created and published in one
+ * transaction, all or none. `excludedRows` is the card's unticked rows (0-based
+ * indexes into `rules`); it is the entry's `clientOnly` field, so the change
+ * hash binds `rules` alone and the user can only leave a row out, never add or
+ * change one. Each row is the route's own draft body by reference.
+ */
+export const ruleBatchBodySchema = z
+  .object({
+    rules: z.array(ruleDraftBodySchema).min(1).max(RULE_BATCH_MAX_ROWS),
+    excludedRows: z
+      .array(z.number().int().min(0).max(RULE_BATCH_MAX_ROWS - 1))
+      .max(RULE_BATCH_MAX_ROWS)
+      .optional(),
+  })
+  .strict();
+
+/**
+ * The copilot's model body for `rule.createBatch`: every row is the
+ * `rule.create` model body (asset required), and the strict object refuses
+ * `excludedRows` — only the user's ticks send it.
+ */
+export const copilotRuleBatchModelBodySchema = z
+  .object({
+    rules: z.array(copilotRuleCreateModelBodySchema).min(1).max(RULE_BATCH_MAX_ROWS),
+  })
+  .strict();
+
 export type RuleDraftBody = z.infer<typeof ruleDraftBodySchema>;
 export type RuleUpdateBody = z.infer<typeof ruleUpdateBodySchema>;
 export type RuleLifecycleBody = z.infer<typeof ruleLifecycleBodySchema>;
 export type RuleToggleBody = z.infer<typeof ruleToggleBodySchema>;
+export type RuleBatchBody = z.infer<typeof ruleBatchBodySchema>;
