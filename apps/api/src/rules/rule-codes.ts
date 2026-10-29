@@ -78,14 +78,26 @@ export async function assertRuleCodeAvailable(
  * back whether the candidate skipped), even though it never reveals WHOSE
  * code or which organization. Scoping this scan to `organizationId`, the way
  * `assertRuleCodeAvailable` was scoped, would close that — a caller in org A
- * would then only ever learn about org A's own codes. Not done here: it is a
- * behaviour change to a code-generation path with no existing test coverage
+ * would then only ever learn about org A's own codes. Not done here: it was a
+ * behaviour change to a code-generation path with no test coverage at the time
  * (unlike `assertRuleCodeAvailable`, which `rules.service.spec.ts` and
- * `assertSameRuleCodePublishesInBothOrganizations` already pin), so shipping
- * it inside this review-response would itself be an untested change of the
- * kind this task exists to eliminate.
+ * `assertSameRuleCodePublishesInBothOrganizations` already pin). Since `F4.289`
+ * the suffix walk is covered by `rules-batch.integration.spec.ts`
+ * (`twoRowsWithTheSameNameGetDistinctCodes`,
+ * `anExplicitCodeLaterInTheBatchIsNotGeneratedForAnEarlierRow`); the scan's
+ * scope is still not, and is still not narrowed.
+ *
+ * `exclude` (`F4.289`): codes a batch has already taken but not yet inserted.
+ * A candidate in the set is skipped as if it existed. Without it, two batch
+ * rows named alike (or a generated code equal to a later row's explicit one)
+ * would get the same code, and the second insert would hit the
+ * `(organization_id, code)` unique index: a 500 instead of a row's 400.
  */
-export async function nextRuleCode(fleetDb: BmsDb, seed: string): Promise<string> {
+export async function nextRuleCode(
+  fleetDb: BmsDb,
+  seed: string,
+  exclude: ReadonlySet<string> = new Set(),
+): Promise<string> {
   const base = seed
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "-")
@@ -95,6 +107,9 @@ export async function nextRuleCode(fleetDb: BmsDb, seed: string): Promise<string
 
   for (let index = 0; index < 100; index += 1) {
     const candidate = index === 0 ? prefix : `${prefix}-${index + 1}`;
+    if (exclude.has(candidate)) {
+      continue;
+    }
     const [existing] = await fleetDb
       .select({ id: automationRules.id })
       .from(automationRules)
