@@ -19,6 +19,7 @@ import type { Response } from "express";
 import { ZodError, z } from "zod";
 
 import {
+  ruleBatchBodySchema,
   ruleDraftBodySchema,
   ruleLifecycleBodySchema,
   ruleToggleBodySchema,
@@ -33,6 +34,7 @@ import { ChannelsService } from "../notifications/channels.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { EvaluateThrottle, throttleKeysFor } from "./evaluate-throttle";
+import { RulesBatchService } from "./rules-batch.service";
 import { listRuleExecutionsQuerySchema, rulePreviewBodySchema } from "./rules.schema";
 import { RulesService } from "./rules.service";
 
@@ -52,6 +54,9 @@ export class RulesController {
     // `F4.279`: appended after the throttle for the same reason — the channel-set
     // write, which audits through `MasterDataAuditService` (`ChannelWritesService`).
     private readonly channelWrites: ChannelWritesService,
+    // `F4.289`: appended last for the same reason — `POST /rules/batch`'s write
+    // (`RulesBatchService`), which audits through `MasterDataAuditService`.
+    private readonly rulesBatch: RulesBatchService,
   ) {}
 
   /**
@@ -261,6 +266,29 @@ export class RulesController {
         user,
         await this.accessControl.readableAssetIds(user),
       );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F4.289` (ADR 0099 Amendment 9 E3) — up to 25 rules on one organization's
+   * assets, created **and published** in one transaction, all or none. The same
+   * two gates as `POST /rules`, in the same order: the role first (a viewer is
+   * a 403 before the body is read), then the caller's asset scope inside the
+   * service, row by row. `excludedRows` leaves the unticked rows of a copilot
+   * card out. Excluded from the copilot catalog (`RULE_PENDING`) until the
+   * `rule.createBatch` entry, its card and its wizard ship together.
+   */
+  @Post("batch")
+  async createRuleBatch(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
+    try {
+      const dto = ruleBatchBodySchema.parse(body);
+      return await this.rulesBatch.createAndPublish(dto, user, await this.accessControl.readableAssetIds(user));
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

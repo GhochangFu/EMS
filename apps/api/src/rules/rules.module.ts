@@ -7,6 +7,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { EvaluateThrottle } from "./evaluate-throttle";
 import { RuleProposalCheckService } from "./rule-proposal-check.service";
+import { RulesBatchService } from "./rules-batch.service";
 import { RulesController } from "./rules.controller";
 import { RulesService } from "./rules.service";
 import { SitePointInventoryService } from "./site-point-inventory.service";
@@ -32,7 +33,19 @@ import { SitePointInventoryService } from "./site-point-inventory.service";
   // `F4.288` (ADR 0099 Amendment 9 E2): `SitePointInventoryService` is exported for
   // the copilot's `get_site_point_inventory` read tool (a site's rule-point set
   // and 7-day statistics); it injects the fleet pool only.
-  providers: [RulesService, JwtAuthGuard, EvaluateThrottle, MasterDataAuditService, RuleProposalCheckService, SitePointInventoryService],
+  //
+  // `F4.289` (ADR 0099 Amendment 9 E3): `RulesBatchService` is `POST /rules/batch`'s
+  // write (up to 25 rules created and published in one transaction). Only the
+  // controller injects it, so it is provided, not exported.
+  providers: [
+    RulesService,
+    JwtAuthGuard,
+    EvaluateThrottle,
+    MasterDataAuditService,
+    RuleProposalCheckService,
+    SitePointInventoryService,
+    RulesBatchService,
+  ],
   exports: [RulesService, RuleProposalCheckService, SitePointInventoryService],
 })
 export class RulesModule {}

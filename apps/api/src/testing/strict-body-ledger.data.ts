@@ -473,6 +473,13 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   reapplySeededRulesBodySchema: STRICT(CALLER_ERROR),
   reorderWorkOrdersBodySchema: STRICT(CALLER_ERROR),
   "reorderWorkOrdersBodySchema/items[]": STRICT(CALLER_ERROR),
+  // `F4.289` (ADR 0099 Amendment 9 E3) — `rules` and `excludedRows` only; each
+  // row is `ruleDraftBodySchema` by reference, so it carries that body's decisions.
+  ruleBatchBodySchema: STRICT(CALLER_ERROR),
+  "ruleBatchBodySchema/rules[]": STRICT(CALLER_ERROR),
+  "ruleBatchBodySchema/rules[]/action": STRICT(CALLER_ERROR),
+  "ruleBatchBodySchema/rules[]/condition|0": STRICT(CALLER_ERROR),
+  "ruleBatchBodySchema/rules[]/condition|1": STRICT(CALLER_ERROR),
   ruleDraftBodySchema: STRICT(CALLER_ERROR),
   // `F3.5a` (ADR 0071 decision 11; Amendment 1 item 1). One producer — the
   // Reports panel's Save to history — and five named fields (`F4.290` added

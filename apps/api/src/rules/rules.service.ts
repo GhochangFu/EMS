@@ -173,7 +173,7 @@ export class RulesService {
     // both branches, so this is the same value the old order would have used.
     const organizationId = await resolveWriteOrg(this.fleetDb, dto.assetId ?? null, dto.ruleType);
     const values = await this.validateRuleDraft(dto, undefined, organizationId);
-    const code = values.code ?? (await nextRuleCode(this.fleetDb, dto.name));
+    const code = values.code ?? (await nextRuleCode(this.fleetDb, { organizationId, seed: dto.name }));
     const now = new Date();
 
     const created = await withTenant(this.db, organizationId, async (tx) => {
@@ -406,7 +406,7 @@ export class RulesService {
     // `validateRuleDraft`, so it carries its own `organizationId` stamp.
     const organizationId = this.requireRuleOrg(current);
     const now = new Date();
-    const code = await nextRuleCode(this.fleetDb, `${current.code}-COPY`);
+    const code = await nextRuleCode(this.fleetDb, { organizationId, seed: `${current.code}-COPY` });
 
     const created = await withTenant(this.db, organizationId, async (tx) => {
       const [row] = await tx
