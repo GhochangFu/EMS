@@ -127,11 +127,16 @@ export async function buildSummaryFixture(
 export async function dropSummaryFixture(admin: pg.Pool, organizationIds: readonly string[]): Promise<void> {
   if (organizationIds.length === 0) return;
   const dayStart = Math.floor(Date.now() / DAY) * DAY - 2 * DAY;
+  // The ids first, then a constant segmentby filter (ADR 0024: no subquery in a telemetry DELETE).
+  const { rows: assetRows } = await admin.query<{ id: string }>(
+    "SELECT id FROM bms.assets WHERE organization_id = ANY($1::uuid[])",
+    [organizationIds],
+  );
   await admin.query(
     `DELETE FROM telemetry.point_values
-      WHERE asset_id IN (SELECT id FROM bms.assets WHERE organization_id = ANY($1::uuid[]))
+      WHERE asset_id = ANY($1::uuid[])
         AND time >= $2::timestamptz AND time < $3::timestamptz`,
-    [organizationIds, new Date(dayStart - DAY).toISOString(), new Date(dayStart + 2 * DAY).toISOString()],
+    [assetRows.map((r) => r.id), new Date(dayStart - DAY).toISOString(), new Date(dayStart + 2 * DAY).toISOString()],
   );
   await materializeCompleteBuckets(admin, dayStart - DAY, dayStart + 2 * DAY, Date.now());
   for (const id of organizationIds) {
