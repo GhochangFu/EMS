@@ -56,6 +56,9 @@ export function ReportFileSaveWizard({ input, user, hasPreview, previewError }: 
   const [outcome, setOutcome] = useState<{ tone: "saved" | "refused"; text: string } | null>(null);
   // A saved report starts the wizard again from its first step.
   const [round, setRound] = useState(0);
+  // `F4.290` (review fix): a copilot-filled `locationIds` has no control on this
+  // panel, so it ends with its round — a later hand save is never stamped to it.
+  const dropSiteFilter = () => setValues(({ locationIds: _dropped, ...rest }) => rest);
 
   // The range is the panel's: the wizard follows it.
   useEffect(() => {
@@ -83,6 +86,7 @@ export function ReportFileSaveWizard({ input, user, hasPreview, previewError }: 
       ),
     onSuccess: async (file) => {
       setOutcome({ tone: "saved", text: `Saved ${file.filename} to history.` });
+      dropSiteFilter();
       setRound((current) => current + 1);
       await queryClient.invalidateQueries({ queryKey: REPORT_FILES_QUERY_KEY });
     },
@@ -139,7 +143,10 @@ export function ReportFileSaveWizard({ input, user, hasPreview, previewError }: 
         onSubmit={(body) => {
           if (blockedReason === null) saveM.mutate(body);
         }}
-        onCancel={() => setRound((current) => current + 1)}
+        onCancel={() => {
+          dropSiteFilter();
+          setRound((current) => current + 1);
+        }}
         submitting={saveM.isPending}
         submitError={blockedReason}
         summary={saveEntry("reportFile.save").summary({ body: values, params: {}, targetName: organizationName, organizationName })}

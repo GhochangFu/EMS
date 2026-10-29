@@ -14,4 +14,6 @@ describe("F4.290 ReportFilesService — the save's site filter (ADR 0099 Amendme
   it("without locationIds the stamp is still the grants", spec.withoutLocationIdsTheStampIsStillTheGrants);
   it("without locationIds the scope service is never called", spec.withoutLocationIdsTheScopeIsNeverCalled);
   it("the preview stamps the named sites", spec.thePreviewStampsTheNamedSites);
+  it("the create audit records the named sites", spec.theCreateAuditRecordsTheNamedSites);
+  it("the create audit records the grant stamp without locationIds", spec.theCreateAuditRecordsTheGrantStamp);
 });

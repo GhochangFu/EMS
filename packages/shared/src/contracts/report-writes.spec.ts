@@ -123,3 +123,18 @@ export function theSaveModelBodyStillRefusesAnUnknownKey(): void {
     copilotSaveEnergyReportFileModelBodySchema.safeParse({ ...SAVE, organizationId: ORG, locationIds: [SITE], siteId: SITE }).success,
   ).toBe(false);
 }
+
+/** `F4.290` (review fix): a repeated site is refused, so a file is never stamped "2 locations" for one site. */
+export function theSaveBodyRefusesARepeatedLocationId(): void {
+  expect(saveEnergyReportFileBodySchema.safeParse({ ...SAVE, locationIds: [SITE, SITE] }).success).toBe(false);
+}
+
+/** `F4.290` (review fix): the copilot's save model body refuses a repeated site too. */
+export function theSaveModelBodyRefusesARepeatedLocationId(): void {
+  expect(copilotSaveEnergyReportFileModelBodySchema.safeParse({ ...SAVE, organizationId: ORG, locationIds: [SITE, SITE] }).success).toBe(false);
+}
+
+/** `F4.290` (review fix): the energy query refuses a repeated site. */
+export function theQueryRefusesARepeatedLocationId(): void {
+  expect(energyReportQuerySchema.safeParse({ ...RANGE, locationIds: [SITE, SITE] }).success).toBe(false);
+}

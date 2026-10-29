@@ -720,7 +720,7 @@ export async function assertTheAuditPayloadCarriesIdsAndNumbersOnly(): Promise<v
       input.entityType === "report_file" &&
       input.entityId === dto.id &&
       input.organizationId === ORG_ID &&
-      keys === "byteSize,fileId,format,organizationId,periodEnd,periodStart,sha256" &&
+      keys === "byteSize,fileId,format,locationIds,organizationId,periodEnd,periodStart,sha256" &&
       !Object.values(payload).includes(dto.filename) &&
       h.audit.executors[0] === h.tx,
     `audit ${input.action} ${input.entityType} org ${input.organizationId} keys ${keys} executor-is-tx ${h.audit.executors[0] === h.tx}`,

@@ -91,9 +91,14 @@ export function isCalendarDate(value: string): boolean {
  * descendants, at most 200 (the schedule's bound). Unlike a schedule's
  * `location_ids`, where `[]` means "the whole organization", a filter names at
  * least one site: an absent filter is the unfiltered report, so `[]` would be a
- * second spelling of it and is refused.
+ * second spelling of it and is refused. A repeated id is refused too: the save
+ * stamps the list as given, and "scoped to 2 locations" for one site would be wrong.
  */
-const reportSiteFilterSchema = z.array(z.string().uuid()).min(1).max(200);
+const reportSiteFilterSchema = z
+  .array(z.string().uuid())
+  .min(1)
+  .max(200)
+  .refine((ids) => new Set(ids).size === ids.length, { message: "locationIds names a location twice" });
 
 /**
  * The three energy export routes' query (not `.strict()`, as before the move).

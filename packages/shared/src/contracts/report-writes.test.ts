@@ -8,11 +8,14 @@ import {
   theQueryFoldsOneLocationIdIntoAList,
   theQueryRefusesAnEmptyLocationIdList,
   theQueryRefusesANonUuidLocationId,
+  theQueryRefusesARepeatedLocationId,
   theQueryRefusesMoreThan200LocationIds,
   theQueryStillParsesWithoutLocationIds,
   theSaveBodyAcceptsLocationIds,
+  theSaveBodyRefusesARepeatedLocationId,
   theSaveBodyStillRefusesAnUnknownKey,
   theSaveModelBodyAcceptsLocationIds,
+  theSaveModelBodyRefusesARepeatedLocationId,
   theSaveModelBodyStillRefusesAnUnknownKey,
   theCreateRouteBodyAcceptsNoOrganization,
   thePilotZonePasses,
@@ -43,4 +46,7 @@ describe("F4.290 — locationIds on the energy query and the save bodies", () =>
   it("the save model body accepts locationIds", () => theSaveModelBodyAcceptsLocationIds());
   it("the save body still refuses an unknown key", () => theSaveBodyStillRefusesAnUnknownKey());
   it("the save model body still refuses an unknown key", () => theSaveModelBodyStillRefusesAnUnknownKey());
+  it("the query refuses a repeated location id", () => theQueryRefusesARepeatedLocationId());
+  it("the save body refuses a repeated location id", () => theSaveBodyRefusesARepeatedLocationId());
+  it("the save model body refuses a repeated location id", () => theSaveModelBodyRefusesARepeatedLocationId());
 });

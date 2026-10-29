@@ -278,6 +278,9 @@ export class ReportFilesService {
               sha256,
               periodStart: body.startDate,
               periodEnd: body.endDate,
+              // `F4.290` (review fix): the stamp decides who may read the file later, so
+              // the audit records it, as a schedule's audit records its `locationIds`.
+              locationIds,
             },
           },
           tx,

@@ -151,3 +151,38 @@ export async function aFilledLocationIdsReachesTheSave(): Promise<void> {
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
   expect(save.mock.calls[0]?.[3]).toEqual([SITE]);
 }
+
+/**
+ * `F4.290` (review fix): the panel has no site control, so a filled
+ * `locationIds` ends with its round. After Cancel, the next hand save is
+ * unfiltered — never stamped to the site the copilot named earlier.
+ */
+export async function aCancelDropsTheFilledLocationIds(): Promise<void> {
+  const save = vi.spyOn(reportsApi, "saveEnergyReportFile").mockResolvedValue(SAVED);
+  renderWizard("location_admin");
+  await screen.findByLabelText("Format");
+  act(() => useWizardStore.getState().receiveFill({ catalogId: "reportFile.save", params: {}, stepId: "report", values: { locationIds: [SITE] } }, null));
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  // The fill made the wizard dirty, so Cancel asks first.
+  await userEvent.click(await screen.findByRole("button", { name: "Discard and leave" }));
+  await next();
+  await submit();
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  expect(save.mock.calls.at(-1)?.[3]).toBeUndefined();
+}
+
+/** `F4.290` (review fix): after a filled save, the next hand save is unfiltered. */
+export async function aSaveDropsTheFilledLocationIds(): Promise<void> {
+  const save = vi.spyOn(reportsApi, "saveEnergyReportFile").mockResolvedValue(SAVED);
+  renderWizard("location_admin");
+  await screen.findByLabelText("Format");
+  act(() => useWizardStore.getState().receiveFill({ catalogId: "reportFile.save", params: {}, stepId: "report", values: { locationIds: [SITE] } }, null));
+  await next();
+  await submit();
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+  await screen.findByText(/Saved /);
+  await next();
+  await submit();
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(save.mock.calls.at(-1)?.[3]).toBeUndefined();
+}

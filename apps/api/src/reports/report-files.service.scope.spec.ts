@@ -133,3 +133,21 @@ export async function thePreviewStampsTheNamedSites(): Promise<void> {
   const h = harness({ ...ORGANIZATION_ADMIN, scope: scopeFake().scope });
   expect((await h.service.previewSave(JWT, ORG_ID, [OTHER_LOCATION])).locationIds).toEqual([OTHER_LOCATION]);
 }
+
+/**
+ * `F4.290` (review fix): the stamp decides which location admins may later
+ * read the file, so the `report_file.create` audit records it — as the
+ * schedule's audit records its `locationIds`. A named site is the payload's.
+ */
+export async function theCreateAuditRecordsTheNamedSites(): Promise<void> {
+  const h = harness({ ...ORGANIZATION_ADMIN, scope: scopeFake().scope });
+  await save(h, { ...BODY, locationIds: [WC] });
+  expect(h.audit.inputs[0]?.payload?.locationIds).toEqual([WC]);
+}
+
+/** Without `locationIds`, the create audit records the grant stamp the row got. */
+export async function theCreateAuditRecordsTheGrantStamp(): Promise<void> {
+  const h = harness({ ...LOCATION_ADMIN, scope: scopeFake().scope });
+  await save(h, { ...BODY, organizationId: undefined });
+  expect(h.audit.inputs[0]?.payload?.locationIds).toEqual([WC]);
+}

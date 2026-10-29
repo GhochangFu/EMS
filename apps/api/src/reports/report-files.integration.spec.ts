@@ -121,7 +121,10 @@ export type ReportFileIntegrationFixtures = {
 
 export const PERIOD = { startDate: "2026-09-01", endDate: "2026-09-07" } as const;
 
-/** The R-9 payload keys of `report_file.create`; `report_file.delete` carries the first two. */
+/**
+ * The R-9 payload keys of `report_file.create`; `report_file.delete` carries the first two.
+ * `F4.290` (review fix): `locationIds`, the row's stamp — location UUIDs only.
+ */
 export const AUDIT_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
   "fileId",
   "organizationId",
@@ -130,6 +133,7 @@ export const AUDIT_PAYLOAD_KEYS: ReadonlySet<string> = new Set([
   "sha256",
   "periodStart",
   "periodEnd",
+  "locationIds",
 ]);
 
 const MASTER_DATA_SENTENCE =
