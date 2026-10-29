@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import { proposeToolName, RULE_LIVE_LINE } from "@bms/shared/copilot";
+import { catalogEntry, proposeToolName, RULE_LIVE_LINE } from "@bms/shared/copilot";
 
 import type { RuleBatchCheckResult, RuleBatchRowCheck } from "../rules/rule-proposal-check.service";
 import { bodyHash } from "./body-hash";
@@ -8,6 +8,8 @@ import { checks } from "./copilot-propose-rules.spec";
 import { PROPOSE_OPEN_CHANGE_ERROR } from "./copilot-propose-tools";
 import { proposeHarness } from "./copilot-propose-tools.spec";
 import type { ResolvedTarget } from "./copilot-target-resolver";
+import { COPILOT_RULE_BATCH_PROMPT_RULE, COPILOT_SYSTEM_PROMPT } from "./copilot-turn.service";
+import { COPILOT_READ_TOOL_DEFINITIONS } from "./tools/copilot-read-tool-set";
 
 /**
  * `F4.289` (ADR 0099 Amendment 9 E3) — the `rule.createBatch` propose path over
@@ -136,4 +138,29 @@ export async function aSecondBatchWhileOneIsOpenIsRefused(): Promise<void> {
   const result = await h.tools.dispatch(TOOL, { body: { rules: RULES } }, h.ctx());
   expect(result).toEqual({ ok: false, error: PROPOSE_OPEN_CHANGE_ERROR });
   expect([h.batchCalls, h.stored]).toEqual([[], []]);
+}
+
+/** Task 9: the system prompt carries the batch rule as its own line. */
+export function thePromptCarriesTheBatchRule(): void {
+  expect(COPILOT_SYSTEM_PROMPT.split("\n")).toContain(COPILOT_RULE_BATCH_PROMPT_RULE);
+}
+
+/** The line routes a site-wide request through the inventory read, one batch card at a time. */
+export function theBatchRuleNamesTheInventoryAndOneCardAtATime(): void {
+  for (const words of ["get_site_point_inventory", "rule.createBatch", "up to 25", "Only one card waits at a time"]) {
+    expect(COPILOT_RULE_BATCH_PROMPT_RULE, words).toContain(words);
+  }
+}
+
+/**
+ * The anti-drift bound to F4.288: every read tool the line names is in the read registry, and every
+ * catalog id it names is a catalog entry, so a renamed tool cannot leave the prompt pointing at nothing.
+ */
+export function everyToolAndEntryTheBatchRuleNamesExists(): void {
+  const reads = [...COPILOT_RULE_BATCH_PROMPT_RULE.matchAll(/\b(?:list|get)_[a-z_]+\b/g)].map((m) => m[0]);
+  const ids = [...COPILOT_RULE_BATCH_PROMPT_RULE.matchAll(/\brule\.[A-Za-z]+\b/g)].map((m) => m[0]);
+  expect([reads.length, ids.length]).toEqual([1, 3]);
+  const registry = new Set(COPILOT_READ_TOOL_DEFINITIONS.map((tool) => tool.name));
+  expect(reads.filter((name) => !registry.has(name))).toEqual([]);
+  expect(ids.filter((id) => catalogEntry(id) === undefined)).toEqual([]);
 }

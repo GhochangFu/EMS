@@ -5,10 +5,13 @@ import {
   aRefusedRowReturnsItsNumberAndStoresNoCard,
   aSecondBatchWhileOneIsOpenIsRefused,
   aTwentySixthRowIsRefusedByTheModelBody,
+  everyToolAndEntryTheBatchRuleNamesExists,
   theBatchCheckIsAskedWithTheRowsAndTheResolvedOrganization,
   theBatchHashBindsTheRulesAlone,
   theBatchSummaryCarriesTheLiveLineAndTheNote,
+  theBatchRuleNamesTheInventoryAndOneCardAtATime,
   theModelCannotSendExcludedRowsOrChecks,
+  thePromptCarriesTheBatchRule,
   twentyFiveRowsAreStored,
 } from "./copilot-propose-rules.batch.spec";
 
@@ -24,4 +27,11 @@ describe("F4.289 — the copilot proposes a batch of alarm rules (ADR 0099 Amend
   it("a twenty-sixth row is refused by the model body", () => aTwentySixthRowIsRefusedByTheModelBody());
   it("twenty-five rows are stored", () => twentyFiveRowsAreStored());
   it("a second batch while one is open is refused", () => aSecondBatchWhileOneIsOpenIsRefused());
+});
+
+/** `F4.289` Task 9 — the prompt line. Assertions live in the sibling `.spec` (§4.6). */
+describe("F4.289 — the prompt routes a site-wide rule request through the inventory", () => {
+  it("the prompt carries the batch rule", () => thePromptCarriesTheBatchRule());
+  it("the rule names the inventory and one card at a time", () => theBatchRuleNamesTheInventoryAndOneCardAtATime());
+  it("every tool and entry the rule names exists", () => everyToolAndEntryTheBatchRuleNamesExists());
 });

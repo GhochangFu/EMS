@@ -148,6 +148,15 @@ export const COPILOT_SITE_SCOPE_PROMPT_RULE =
   "When a result has a non-null nextCursor, call the same tool again with the same arguments plus cursor.";
 
 /**
+ * `F4.289` (ADR 0099 Amendment 9 E3): a site-wide rule request reads the site inventory, then one
+ * batch card of up to 25 rules. One card waits at a time (ruling P6; the open-change guard refuses
+ * a second), so the next 25 follow the user's Confirm or Reject.
+ */
+export const COPILOT_RULE_BATCH_PROMPT_RULE =
+  "For alarm rules across a whole site or many assets, read get_site_point_inventory first, then propose one rule.createBatch card of up to 25 rules; it creates and publishes the rows the user leaves ticked. " +
+  "Only one card waits at a time: propose the next 25 rules only after the user confirms or rejects the open card. Use rule.create and rule.publish for a single rule.";
+
+/**
  * ADR 0099 decision 9 and the plan §9.1 system prompt, with PR 8's propose
  * rule (decisions 2, 4): a change is only ever proposed, and only the user's
  * Confirm applies it.
@@ -169,6 +178,8 @@ export const COPILOT_SYSTEM_PROMPT = [
   "Before you propose a plant layout, check its unit roles with list_asset_roles; a missing role is added first by a global administrator (assetRole.create), one card per turn.",
   // `F4.278` (ADR 0099 Amendment 8, Q9): a rule names an asset, a point and, for a row change, a rule id.
   "Before you propose a rule, take the asset from list_assets, its point from list_asset_points and an existing rule's id from list_rules; the card shows whether the rule would match now and how often it would have fired.",
+  // `F4.289` (Amendment 9 E3): a site-wide rule request is one batch card at a time.
+  COPILOT_RULE_BATCH_PROMPT_RULE,
   // `F4.291` (Amendment 9 E5, ruling P3): a site, a period and the next page.
   COPILOT_SITE_SCOPE_PROMPT_RULE,
   // `F3.87` PR 7 (Amendment 3 A4, A6): the file is gone after this turn, and a placeholder is data.
