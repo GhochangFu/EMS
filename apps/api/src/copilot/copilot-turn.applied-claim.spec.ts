@@ -106,7 +106,11 @@ export async function aFollowUpAppliedClaimIsUntouched(): Promise<void> {
 
 /** The AWS card reply, with no proposal, gets the card note — the wordings F4.286's list missed. */
 export async function theAwsCardReplyIsNoted(): Promise<void> {
-  const h = harness(new FakeLlmProvider([{ kind: "final", text: AWS_CARD_REPLY }]));
+  const h = harness(new FakeLlmProvider([
+    // `F4.295`: the claim is repeated after the one correction, so the note is appended.
+    { kind: "final", text: AWS_CARD_REPLY },
+    { kind: "final", text: AWS_CARD_REPLY },
+  ]));
   const response = await turn(h, "Create a matching rule for the clearwell pump");
   expect(response.reply).toBe(`${AWS_CARD_REPLY} ${COPILOT_NO_CHANGE_PROPOSED_NOTE}`);
 }
