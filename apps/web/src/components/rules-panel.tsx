@@ -16,6 +16,7 @@ import { EvaluateRefusalNotice } from "./evaluate-refusal-notice";
 import { RuleChannelsEditor } from "./rule-channels-editor";
 import { type RuleLifecycleAction, RuleLifecycleWizard } from "./rules/rule-lifecycle-wizard";
 import { RuleToggleWizard } from "./rules/rule-toggle-wizard";
+import { RuleBatchWizard } from "./rules/rule-batch-wizard";
 import { RuleWizard } from "./rules/rule-wizard";
 
 type RuleFilter = AutomationRuleCategory | "all";
@@ -29,6 +30,7 @@ type LifecycleFilter = "all" | "draft" | "published" | "archived";
  */
 type OpenWizard =
   | { kind: "create" }
+  | { kind: "batch" }
   | { kind: "edit"; rule: RuleListItem }
   | { kind: "toggle"; rule: RuleListItem }
   | { kind: RuleLifecycleAction; rule: RuleListItem }
@@ -229,6 +231,10 @@ export function RulesPanel() {
               <button className="surface-button px-3 py-1.5 text-xs" onClick={() => setOpen({ kind: "create" })}>
                 New draft
               </button>
+              {/* `F4.289` (owner ruling P1): up to 25 rules, created and published at once. */}
+              <button className="surface-button px-3 py-1.5 text-xs" onClick={() => setOpen({ kind: "batch" })}>
+                New batch
+              </button>
               <button
                 className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:cursor-not-allowed disabled:bg-line-strong"
                 disabled={evaluateM.isPending || activeCount === 0}
@@ -302,6 +308,7 @@ export function RulesPanel() {
         </section>
       </aside>
       {open?.kind === "create" && <RuleWizard onCancel={() => setOpen(null)} onDone={done} />}
+      {open?.kind === "batch" && <RuleBatchWizard onCancel={() => setOpen(null)} onDone={done} />}
       {open?.kind === "edit" && <RuleWizard rule={open.rule} onCancel={() => setOpen(null)} onDone={done} />}
       {open?.kind === "toggle" && <RuleToggleWizard rule={open.rule} onCancel={() => setOpen(null)} onDone={done} />}
       {(open?.kind === "publish" || open?.kind === "duplicate" || open?.kind === "archive") && (
