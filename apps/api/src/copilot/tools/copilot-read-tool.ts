@@ -23,6 +23,7 @@ import type { EscalationProfilesService } from "../../notifications/escalation-p
 import type { ReportSchedulesService } from "../../reports/report-schedules.service";
 import type { ReportsService } from "../../reports/reports.service";
 import type { RulesService } from "../../rules/rules.service";
+import type { SitePointInventoryService } from "../../rules/site-point-inventory.service";
 import type { SystemStatusService } from "../../system-status/system-status.service";
 import type { TelemetryService } from "../../telemetry/telemetry.service";
 import type { VocabulariesService } from "../../vocabularies/vocabularies.service";
@@ -115,6 +116,12 @@ export interface CopilotReadServices {
   readonly workOrders: Pick<WorkOrdersService, "list">;
   /** `F4.284` (owner ruling DC1): the Users page's list, behind its own manager gate; `list` only. */
   readonly users: Pick<UsersService, "list">;
+  /**
+   * `F4.288` (ADR 0099 Amendment 9 E2): `get_site_point_inventory`'s reads. Called only
+   * with the asset ids `readPerOrganization` got from the location helper, so
+   * never before the location is placed; `stats` only with the page's pairs.
+   */
+  readonly inventory: Pick<SitePointInventoryService, "pairs" | "stats">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */
@@ -260,6 +267,8 @@ export type ListPaging<K> = { readonly cursor: string | undefined; readonly key:
  * names one of `locationId` and `locationIds`); `emptyLocations`, the refusal when the sites
  * hold no asset the caller reads (owner ruling P6, the report preview) — without it such
  * sites read as an empty organization entry, as `F4.291`'s `locationId` does.
+ * `maxItems` (`F4.288`) raises the item room above `COPILOT_TOOL_LIST_MAX_ITEMS` for a list of
+ * narrow rows; the page is still fitted to the result budget.
  */
 export type ListScope<K> = {
   readonly organizationId?: string;
@@ -267,6 +276,7 @@ export type ListScope<K> = {
   readonly locationIds?: readonly string[];
   readonly emptyLocations?: string;
   readonly paging?: ListPaging<K>;
+  readonly maxItems?: number;
 };
 
 /**
@@ -304,10 +314,15 @@ export async function readPerOrganization<T, K = never>(
     organizations = [place.organizationId];
     located = place.assetIds;
   }
-  return pageOrganizations<T, K>(organizations, scope.paging, async (organizationId, room, resume) => {
-    const assetIds = located ?? (await services.access.readableAssetIdsInOrganization(ctx.user, organizationId));
-    return assetIds.length === 0 ? null : read(organizationId, assetIds, room, resume);
-  });
+  return pageOrganizations<T, K>(
+    organizations,
+    scope.paging,
+    async (organizationId, room, resume) => {
+      const assetIds = located ?? (await services.access.readableAssetIdsInOrganization(ctx.user, organizationId));
+      return assetIds.length === 0 ? null : read(organizationId, assetIds, room, resume);
+    },
+    scope.maxItems,
+  );
 }
 
 /**
@@ -330,6 +345,7 @@ export async function pageOrganizations<T, K>(
   organizations: readonly string[],
   paging: ListPaging<K> | undefined,
   readOne: (organizationId: string, room: number, resume: K | undefined) => Promise<OrganizationRead<T, K> | null | { readonly refusal: string }>,
+  maxItems: number = COPILOT_TOOL_LIST_MAX_ITEMS,
 ): Promise<CopilotToolResult> {
   let first = 0;
   let resume: K | undefined;
@@ -340,7 +356,7 @@ export async function pageOrganizations<T, K>(
     resume = cursor.k;
   }
   const out = collectByOrganization<T>();
-  let room = COPILOT_TOOL_LIST_MAX_ITEMS;
+  let room = maxItems;
   let truncated = false;
   let next: ListCursor<K> | null = null;
   const keyAt = new Map<string, (kept: number) => K | undefined>();

@@ -35,6 +35,7 @@ import { AssetsService } from "../../assets/assets.service";
 import { AccessControlService } from "../../auth/access-control.service";
 import { LocationAssetScopeService } from "../../auth/location-asset-scope.service";
 import { AlarmStatsService } from "../../alarms/alarm-stats.service";
+import { SitePointInventoryService } from "../../rules/site-point-inventory.service";
 import type { ResolvedIdentity } from "../../auth/identity-resolver";
 import { DashboardModule } from "../../dashboard/dashboard.module";
 import { DashboardService } from "../../dashboard/dashboard.service";
@@ -439,12 +440,13 @@ export async function assertAnInjectedProposeCallFindsNoTool(): Promise<void> {
 }
 
 /**
- * The registry is the read tools — 36 since `F4.291` PR 3 (`F3.87` PR 2 added the four
+ * The registry is the read tools — 37 since `F4.288` (`F3.87` PR 2 added the four
  * mimic reads, `F4.274` the five telemetry reads, `F4.275` the six energy
  * reads, `F4.277` the system status and the audit log, `F4.276` the alarm
  * details and the alarm knowledge base), each with a strict argument schema.
  * `F4.291` PR 2 inserts `get_alarm_stats` after `get_alarm_kb`; PR 3 inserts
- * `get_point_stats` after `get_point_aggregate` (36 tools).
+ * `get_point_stats` after `get_point_aggregate` (36 tools). `F4.288` inserts
+ * `get_site_point_inventory` after `list_rules` (37 tools).
  */
 export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
   const { tools } = fakeServices();
@@ -484,6 +486,8 @@ export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
     "list_asset_roles",
     // `F4.278` (Amendment 8 D7): the alarm rules.
     "list_rules",
+    // `F4.288` (Amendment 9 E2): a site's rule-target points.
+    "get_site_point_inventory",
     // `F4.279` (Amendment 8 D7).
     "list_notification_channels",
     "list_escalation_profiles",
@@ -628,6 +632,8 @@ export function assertTheModuleWiresTheReadTools(): void {
     LocationAssetScopeService,
     // `F4.291` PR 2: the alarm statistics read tool, from `AlarmsModule`.
     AlarmStatsService,
+    // `F4.288`: the site point inventory read tool, from `RulesModule`.
+    SitePointInventoryService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
   for (const module of [
@@ -655,7 +661,7 @@ export function assertTheModuleWiresTheReadTools(): void {
   const exportsOf = (module: unknown) => (Reflect.getMetadata("exports", module as object) ?? []) as unknown[];
   expect(exportsOf(AlarmsModule)).toEqual(expect.arrayContaining([AlarmsService, AlarmDetailsService, AlarmStatsService]));
   expect(exportsOf(AlarmKbModule)).toContain(AlarmKbService);
-  expect(exportsOf(RulesModule)).toContain(RulesService);
+  expect(exportsOf(RulesModule)).toEqual(expect.arrayContaining([RulesService, SitePointInventoryService]));
   // `F4.279`: `ChannelsService` through the re-exported core, `EscalationProfilesService` directly.
   expect(exportsOf(NotificationsModule)).toEqual(expect.arrayContaining([NotificationsCoreModule, EscalationProfilesService]));
   expect(exportsOf(NotificationsCoreModule)).toContain(ChannelsService);
@@ -673,5 +679,5 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(ReportsCoreModule)).toContain(ReportsService);
   expect(exportsOf(AdminModule)).toContain(AuditAdminService);
   expect(exportsOf(SystemStatusModule)).toContain(SystemStatusService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(36); // `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills; `F4.291` PR 2: + get_alarm_stats; PR 3: + get_point_stats.
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(37); // `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills; `F4.291` PR 2: + get_alarm_stats; PR 3: + get_point_stats; `F4.288`: + get_site_point_inventory.
 }

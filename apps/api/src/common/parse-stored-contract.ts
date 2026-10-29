@@ -152,6 +152,8 @@ export type StoredContractContext =
   | "copilot_tools.list_users.page"
   // `F4.284` owner ruling 2026-10-25 (Q4): the alarm skill read tool.
   | "copilot_tools.list_alarm_skills.page"
+  // `F4.288` (ADR 0099 Amendment 9 E2): the rules watching the site inventory's points.
+  | "copilot_tools.get_site_point_inventory.rules"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");
