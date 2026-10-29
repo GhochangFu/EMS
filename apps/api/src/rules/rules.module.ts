@@ -9,6 +9,7 @@ import { EvaluateThrottle } from "./evaluate-throttle";
 import { RuleProposalCheckService } from "./rule-proposal-check.service";
 import { RulesController } from "./rules.controller";
 import { RulesService } from "./rules.service";
+import { SitePointInventoryService } from "./site-point-inventory.service";
 
 @Module({
   // `AlarmsModule → TelemetryModule` only, so this edge is acyclic — checked
@@ -27,7 +28,11 @@ import { RulesService } from "./rules.service";
   // `via: "copilot"`), and `RulesService` is exported for the copilot's
   // `list_rules` read tool, with `RuleProposalCheckService` for the copilot's
   // write-free proposal check.
-  providers: [RulesService, JwtAuthGuard, EvaluateThrottle, MasterDataAuditService, RuleProposalCheckService],
-  exports: [RulesService, RuleProposalCheckService],
+  //
+  // `F4.288` (ADR 0099 Amendment 9 E2): `SitePointInventoryService` is exported for
+  // the copilot's `get_site_point_inventory` read tool (a site's rule-point set
+  // and 7-day statistics); it injects the fleet pool only.
+  providers: [RulesService, JwtAuthGuard, EvaluateThrottle, MasterDataAuditService, RuleProposalCheckService, SitePointInventoryService],
+  exports: [RulesService, RuleProposalCheckService, SitePointInventoryService],
 })
 export class RulesModule {}
