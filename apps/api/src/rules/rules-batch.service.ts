@@ -50,8 +50,12 @@ function atRow(index: number, err: unknown): unknown {
  * rule write funnels through) and the single-rule helpers, so a batch row is
  * refused for exactly what `POST /rules` and `/publish` would refuse it for.
  *
- * Every pre-write check runs before the transaction opens, row by row in the
- * sent order, and the first refusal stops the batch with `Row N: <sentence>`.
+ * Every pre-write check runs before the transaction opens, in phases: the
+ * duplicate codes, then every row's scope, then every row's organization, then
+ * every row's validation. Each phase walks the rows in the sent order, and the
+ * first refusal stops the batch with `Row N: <sentence>`. So a row 2 outside
+ * the caller's scope is refused before a row 1 that would fail validation: the
+ * scope phase runs first, as the existence-oracle rule needs.
  * The writes then run in one `withTenant(organization)`: each insert is already
  * published and enabled, and the audit trail is two rows per rule
  * (`rule_draft_create`, `rule_publish`, owner ruling P6) through the funnel in
@@ -121,7 +125,7 @@ export class RulesBatchService {
     const taken = new Set(validated.flatMap(({ values }) => (values.code ? [values.code] : [])));
     const coded: { name: string; code: string; values: RuleDraftValues }[] = [];
     for (const { name, values } of validated) {
-      const code = values.code ?? (await nextRuleCode(this.fleetDb, name, taken));
+      const code = values.code ?? (await nextRuleCode(this.fleetDb, { organizationId: orgId, seed: name, exclude: taken }));
       taken.add(code);
       coded.push({ name, code, values });
     }

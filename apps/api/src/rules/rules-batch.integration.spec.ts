@@ -147,16 +147,21 @@ export async function outsideACopilotChangeNoAuditRowCarriesTheMark(ctx: RulesBa
   expect(rows.map((row) => row.payload?.via ?? null)).toEqual([null, null]);
 }
 
-/** A failure inside the transaction (the audit write throws) leaves no rule behind: all or none. */
+/**
+ * A failure inside the transaction (the audit write throws) leaves no rule
+ * behind: all or none. The rejection must be the fixture's own audit error:
+ * a pre-write refusal that fired on this fixture before the transaction opened
+ * would also leave the count unchanged, and the claim would then prove nothing.
+ */
 export async function aFailureInsideTheTransactionCreatesNothing(ctx: RulesBatchFixtures): Promise<void> {
   const before = await rulesOn(ctx, ctx.assetA1);
-  const outcome = await ctx.failingAuditService
+  const err = await ctx.failingAuditService
     .createAndPublish(batch([a1(ctx, "fail one"), a1(ctx, "fail two")]), ctx.actor, null)
     .then(
-      () => "resolved",
-      () => "rejected",
+      () => null,
+      (e: unknown) => e,
     );
-  expect(outcome).toBe("rejected");
+  expect(err instanceof Error && err.message).toBe("F4.289: the audit write fails on purpose");
   expect(await rulesOn(ctx, ctx.assetA1)).toBe(before);
 }
 
@@ -258,4 +263,17 @@ export async function anExplicitCodeLaterInTheBatchIsNotGeneratedForAnEarlierRow
     null,
   );
   expect(created.items.map((item) => item.code)).toEqual([`${explicit}-2`, explicit]);
+}
+
+/**
+ * A code that exists only in another organization does not move this
+ * organization's generated code to the next suffix. `nextRuleCode` scans the
+ * caller's organization alone, as the `(organization_id, code)` unique index
+ * does: a global scan told a caller whether a code existed in another tenant.
+ */
+export async function aCodeTakenInAnotherOrganizationDoesNotMoveTheGeneratedCode(ctx: RulesBatchFixtures): Promise<void> {
+  const elsewhere = `${ctx.prefix}ELSEWHERE`.toUpperCase();
+  await ctx.service.createAndPublish(batch([{ ...b(ctx, "elsewhere b"), code: elsewhere }]), ctx.actor, null);
+  const created = await ctx.service.createAndPublish(batch([a1(ctx, "ELSEWHERE")]), ctx.actor, null);
+  expect(created.items.map((item) => item.code)).toEqual([elsewhere]);
 }

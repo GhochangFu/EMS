@@ -15,6 +15,7 @@ import { VocabulariesService } from "../vocabularies/vocabularies.service";
 import { pointKeysForAsset } from "./rule-points";
 import { RulesBatchService } from "./rules-batch.service";
 import {
+  aCodeTakenInAnotherOrganizationDoesNotMoveTheGeneratedCode,
   aFailureInsideTheTransactionCreatesNothing,
   anExplicitCodeLaterInTheBatchIsNotGeneratedForAnEarlierRow,
   aRowOutsideTheReadableAssetsIsRefusedWithTheRouteSentence,
@@ -170,4 +171,5 @@ describe.skipIf(!connectionString)("F4.289 — RulesBatchService under real RLS"
   it("two rows with the same name get distinct codes", () => twoRowsWithTheSameNameGetDistinctCodes(ctx));
   it("two rows with the same explicit code are refused", () => twoRowsWithTheSameExplicitCodeAreRefused(ctx));
   it("an explicit code later in the batch is not generated for an earlier row", () => anExplicitCodeLaterInTheBatchIsNotGeneratedForAnEarlierRow(ctx));
+  it("a code taken in another organization does not move the generated code", () => aCodeTakenInAnotherOrganizationDoesNotMoveTheGeneratedCode(ctx));
 });
