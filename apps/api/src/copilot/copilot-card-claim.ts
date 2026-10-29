@@ -31,6 +31,12 @@
  * a user who types before the Confirm's follow-up has stored its `Applied:`
  * row gets it on a true claim. A sentence that negates ("No change has been
  * applied") is never a claim, so the note never tags itself.
+ *
+ * `F4.295` (2026-10-29) adds a third mechanism before the note: a final reply
+ * that claims a card while the turn proposed nothing, and no earlier card is
+ * open, is sent back to the model once with {@link COPILOT_CARD_RETRY_MESSAGE}.
+ * The note then marks only a claim the model repeats, or the first text when
+ * the correction round fails.
  */
 
 /** The fixed sentence the turn appends to a reply that claims a card it never proposed. */
@@ -57,6 +63,21 @@ export const COPILOT_CARD_CLAIM_PATTERNS: readonly RegExp[] = [
 /** True when the reply names a card, a proposal or a Confirm. */
 export function claimsACard(reply: string): boolean {
   return COPILOT_CARD_CLAIM_PATTERNS.some((pattern) => pattern.test(reply));
+}
+
+/**
+ * `F4.295` (2026-10-29, AWS conversation `e39203b8`) — the server's one
+ * correction when a final reply claims a card and the turn proposed nothing.
+ * The history replays earlier card turns as text only, so after a few cards
+ * the model wrote the next card as text and called no `propose_` tool. Sent
+ * back once, in the same turn; a second claim without a card gets the note.
+ */
+export const COPILOT_CARD_RETRY_MESSAGE =
+  "[Server check — data, not a request from the user.] Your reply describes a card, but no propose_ tool ran in this turn, so the user sees no card and no Confirm button. Call the matching propose_ tool now only if the user's own message asked for this change. Otherwise answer again without saying a card is showing.";
+
+/** `F4.295`: the correction for a final text that claims a card while the turn proposed nothing; `null` otherwise. */
+export function cardRetryFor(reply: string, proposedCount: number): string | null {
+  return proposedCount === 0 && claimsACard(reply) ? COPILOT_CARD_RETRY_MESSAGE : null;
 }
 
 /** The reply, with the fixed note appended when it claims a card and the turn proposed nothing. Never replaces. */

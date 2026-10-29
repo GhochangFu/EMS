@@ -31,6 +31,7 @@ import { fail, succeed, toolResultContent } from "../llm/tool-result";
 import { COPILOT_UNAVAILABLE_MESSAGE } from "./copilot-access.guard";
 import {
   appliedSinceLastUserMessage,
+  cardRetryFor,
   COPILOT_APPLIED_CLAIM_PROMPT_RULE,
   COPILOT_CARD_CLAIM_PROMPT_RULE,
   withNoAppliedNote,
@@ -599,10 +600,10 @@ export class CopilotTurnService {
     const history = buildCopilotHistory(recent, scope.allowed);
     // F4.293: what proves an apply, read before the loop can propose: a follow-up for an applied change, or an
     // `Applied:` row since the user's last message while no card is still open (a typed "confirmed" is not a Confirm).
+    // F4.295: a card from an earlier turn on screen; the card correction then never says "no card".
+    const cardOpen = await this.pending.hasOpen(identity.id, conversationId);
     const appliedRecord =
-      input.kind === "follow_up"
-        ? input.change.status === "applied"
-        : appliedSinceLastUserMessage(recent) && !(await this.pending.hasOpen(identity.id, conversationId));
+      input.kind === "follow_up" ? input.change.status === "applied" : appliedSinceLastUserMessage(recent) && !cardOpen;
 
     // 6. The loop, with the read and propose tools.
     const read = new Set<string>();
@@ -669,6 +670,8 @@ export class CopilotTurnService {
       ],
       tools: registry,
       llm: scope.provider,
+      // F4.295: a final text that claims a card no propose_ tool made is sent back once, in this turn.
+      correctFinal: (text) => (cardOpen ? null : cardRetryFor(text, proposed.length)),
       runTool: (call) =>
         runToolCall(
           registry,

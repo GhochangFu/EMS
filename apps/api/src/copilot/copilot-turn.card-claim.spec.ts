@@ -21,13 +21,24 @@ const CLAIM = "The card is showing on your screen — the server will check the 
 const NOTED = `${CLAIM} No change was proposed in this turn.`;
 const TEMPLATE_T = "55555555-5555-4555-8555-555555555555";
 
+/**
+ * `F4.295`: a claim with no card is sent back once, so the note marks a claim
+ * the model repeats after that correction — the script answers it twice.
+ */
+function twice(text: string): Array<{ kind: "final"; text: string }> {
+  return [
+    { kind: "final", text },
+    { kind: "final", text },
+  ];
+}
+
 function lastAssistant(h: ReturnType<typeof harness>): string | undefined {
   return [...h.history].reverse().find((m) => m.role === "assistant")?.content;
 }
 
 /** A claim with zero pending changes: the note is appended, returned and stored; the contract still parses. */
 export async function aClaimWithNoChangeIsNotedStoredAndReturned(): Promise<void> {
-  const h = harness(new FakeLlmProvider([{ kind: "final", text: CLAIM }]));
+  const h = harness(new FakeLlmProvider(twice(CLAIM)));
   const response = await turn(h, "record a manual reading for asset 00000000-0000-4000-8000-000000000bad");
   expect(copilotTurnResponseDtoSchema.parse(response)).toEqual(response);
   expect([response.reply, response.pendingChanges, lastAssistant(h)]).toEqual([NOTED, [], NOTED]);
@@ -49,6 +60,11 @@ export async function aReplyWithNoClaimIsUntouched(): Promise<void> {
 
 /** The "copilot turn" log lines' noteAppended flags for the turns `run` makes. */
 async function noteFlags(run: () => Promise<void>): Promise<unknown[]> {
+  return turnLogField("noteAppended", run);
+}
+
+/** `F4.295`: one field of each "copilot turn" log line for the turns `run` makes. */
+export async function turnLogField(field: string, run: () => Promise<void>): Promise<unknown[]> {
   const logged: unknown[][] = [];
   const original = Logger.prototype.log;
   Logger.prototype.log = function (...args: unknown[]) {
@@ -59,14 +75,14 @@ async function noteFlags(run: () => Promise<void>): Promise<unknown[]> {
   } finally {
     Logger.prototype.log = original;
   }
-  return logged.filter((args) => args[1] === "copilot turn").map((args) => (args[0] as { noteAppended?: unknown }).noteAppended);
+  return logged.filter((args) => args[1] === "copilot turn").map((args) => (args[0] as Record<string, unknown>)[field]);
 }
 
 const REDACTABLE_CLAIM = "The card is ready: password: hunter2";
 
 /** A reply that claims a card and carries a credential is returned as the redacted reply, unchanged. */
 export async function theRedactedReplyIsReturnedUnchanged(): Promise<void> {
-  const h = harness(new FakeLlmProvider([{ kind: "final", text: REDACTABLE_CLAIM }]));
+  const h = harness(new FakeLlmProvider(twice(REDACTABLE_CLAIM)));
   const response = await turn(h, "what is the password?");
   expect(response.reply).toBe(COPILOT_REPLY_REDACTED);
 }
@@ -74,14 +90,14 @@ export async function theRedactedReplyIsReturnedUnchanged(): Promise<void> {
 /** The scrub runs before the append: the redacted reply's log line says no note was appended. */
 export async function theScrubRunsBeforeTheAppend(): Promise<void> {
   const flags = await noteFlags(async () => {
-    await turn(harness(new FakeLlmProvider([{ kind: "final", text: REDACTABLE_CLAIM }])), "what is the password?");
+    await turn(harness(new FakeLlmProvider(twice(REDACTABLE_CLAIM))), "what is the password?");
   });
   expect(flags).toEqual([false]);
 }
 
 /** A follow-up turn takes the same check. */
 export async function aFollowUpClaimIsNoted(): Promise<void> {
-  const h = harness(new FakeLlmProvider([{ kind: "final", text: CLAIM }]), { finished: APPLIED });
+  const h = harness(new FakeLlmProvider(twice(CLAIM)), { finished: APPLIED });
   await h.service.followUp({ identity: GLOBAL_ADMIN, user: JWT }, CHANGE_ID);
   expect(lastAssistant(h)).toBe(NOTED);
 }
@@ -94,7 +110,7 @@ export function thePromptCarriesTheRule(): void {
 /** The "copilot turn" log line says whether the note was appended: true for a noted claim, false for a plain answer. */
 export async function theTurnLogSaysWhetherTheNoteWasAppended(): Promise<void> {
   const flags = await noteFlags(async () => {
-    await turn(harness(new FakeLlmProvider([{ kind: "final", text: CLAIM }])), "record a reading");
+    await turn(harness(new FakeLlmProvider(twice(CLAIM))), "record a reading");
     await turn(harness(new FakeLlmProvider([{ kind: "final", text: "Two assets." }])), "assets?");
   });
   expect(flags).toEqual([true, false]);

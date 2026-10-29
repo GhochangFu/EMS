@@ -1,6 +1,14 @@
 import { describe, it } from "vitest";
 
 import {
+  assertACorrectionAsksTheModelAgain,
+  assertACorrectionRunsOnceATurn,
+  assertACapWithNoCorrectionStaysACap,
+  assertADeadlineAfterACorrectionFallsBackToTheFirstText,
+  assertAProviderErrorAfterACorrectionFallsBackToTheFirstText,
+  assertACorrectionSendsTheTextAndTheMessageBack,
+  assertACorrectionSharesTheCallCap,
+  assertANullCorrectionAcceptsTheText,
   assertADeadlineDuringAToolSkipsTheNextCallInTheReply,
   assertADeadlineDuringTheLastToolOfARoundMakesNoFurtherProviderCall,
   assertADeadlineInsideAProviderCallIsCapTime,
@@ -8,6 +16,8 @@ import {
   assertAMadeUpNameIsRecordedAsUnknown,
   assertAProviderErrorRecordsClassAndStatus,
   assertAProviderErrorRecordsNoMessageText,
+  assertTheRecordSaysTheCorrectionRan,
+  assertTheSecondTextIsTheReply,
   assertCapTimeKeepsTheCompletedActionLines,
   assertErrorFactsHoldsOnlyClassAndStatus,
   assertTheCapRecordsEightNamesAndRunsEightCalls,
@@ -59,6 +69,46 @@ describe("the generic agent loop (F3.85, ADR 0099)", () => {
 
   it("records a made-up tool name as unknown", async () => {
     await assertAMadeUpNameIsRecordedAsUnknown();
+  });
+
+  it("F4.295: a correction asks the model again", async () => {
+    await assertACorrectionAsksTheModelAgain();
+  });
+
+  it("F4.295: a correction sends the first text and the message back", async () => {
+    await assertACorrectionSendsTheTextAndTheMessageBack();
+  });
+
+  it("F4.295: the second text is the reply", async () => {
+    await assertTheSecondTextIsTheReply();
+  });
+
+  it("F4.295: the record says the correction ran", async () => {
+    await assertTheRecordSaysTheCorrectionRan();
+  });
+
+  it("F4.295: a correction runs once a turn", async () => {
+    await assertACorrectionRunsOnceATurn();
+  });
+
+  it("F4.295: a null correction accepts the text", async () => {
+    await assertANullCorrectionAcceptsTheText();
+  });
+
+  it("F4.295: a correction shares the turn's call cap", async () => {
+    await assertACorrectionSharesTheCallCap();
+  });
+
+  it("F4.295: a deadline after a correction falls back to the first text", async () => {
+    await assertADeadlineAfterACorrectionFallsBackToTheFirstText();
+  });
+
+  it("F4.295: a provider error after a correction falls back to the first text", async () => {
+    await assertAProviderErrorAfterACorrectionFallsBackToTheFirstText();
+  });
+
+  it("F4.295: a failure with no correction stays a failure", async () => {
+    await assertACapWithNoCorrectionStaysACap();
   });
 
   it("pins the caps", () => {

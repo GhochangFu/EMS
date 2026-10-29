@@ -29,11 +29,14 @@ const SECRET_MESSAGE = "upstream said sk-live-do-not-log";
 class ScriptedProvider implements LlmProvider {
   readonly name = "openrouter" as const;
   calls = 0;
+  /** `F4.295`: the messages each call was sent, copied. */
+  readonly seen: LlmMessage[][] = [];
 
   constructor(private readonly script: (LlmReply | "reject" | "hang")[]) {}
 
   async complete(input: { messages: readonly LlmMessage[]; signal: AbortSignal }): Promise<LlmReply> {
     this.calls += 1;
+    this.seen.push(JSON.parse(JSON.stringify(input.messages)) as LlmMessage[]);
     const next = this.script.shift() ?? { kind: "final", text: "default final" };
     if (next === "reject") {
       throw new FakeHttpError(SECRET_MESSAGE);
@@ -192,6 +195,107 @@ export async function assertAMadeUpNameIsRecordedAsUnknown(): Promise<void> {
     JSON.stringify(result.record.tools) === JSON.stringify(["unknown", KNOWN]),
     `a made-up name is recorded as unknown, a known one by name: ${JSON.stringify(result.record.tools)}`,
   );
+}
+
+// (6) `F4.295`: the one correction of a final text -----------------------------
+
+const CORRECTION = "[check] call the tool";
+
+/** A loop whose `correctFinal` answers `answer` for every text it is asked about, and records each text. */
+function correctedRun(llm: LlmProvider, answer: string | null, deadlineMs?: number): { asked: string[]; result: Promise<AgentLoopResult> } {
+  const asked: string[] = [];
+  const result = runAgentLoop({
+    messages: [{ role: "user", content: "go" }],
+    tools: { definitions: [], isToolName: (name) => name === KNOWN },
+    runTool: async (): Promise<ToolOutcome> => ({ ok: true, content: "{\"ok\":true}" }),
+    llm,
+    correctFinal: (text) => {
+      asked.push(text);
+      return answer;
+    },
+  }, deadlineMs === undefined ? {} : { deadlineMs });
+  return { asked, result };
+}
+
+/** One corrected turn: a first final text, sent back, and a second one. */
+async function oneCorrection(): Promise<{ llm: ScriptedProvider; result: AgentLoopResult }> {
+  const llm = new ScriptedProvider([{ kind: "final", text: " first " }, { kind: "final", text: "second" }]);
+  return { llm, result: await correctedRun(llm, CORRECTION).result };
+}
+
+export async function assertACorrectionAsksTheModelAgain(): Promise<void> {
+  const { llm } = await oneCorrection();
+  assert(llm.calls === 2, `the model is asked again: ${llm.calls} calls`);
+}
+
+export async function assertACorrectionSendsTheTextAndTheMessageBack(): Promise<void> {
+  const { llm } = await oneCorrection();
+  const tail = JSON.stringify(llm.seen[1]?.slice(-2));
+  const expected = JSON.stringify([
+    { role: "assistant", content: "first" },
+    { role: "user", content: CORRECTION },
+  ]);
+  assert(tail === expected, `the second call ends with the first text and the correction: ${tail}`);
+}
+
+export async function assertTheSecondTextIsTheReply(): Promise<void> {
+  const { result } = await oneCorrection();
+  assert(result.reply === "second", `the reply is the second text, never the first: ${JSON.stringify(result.reply)}`);
+}
+
+export async function assertTheRecordSaysTheCorrectionRan(): Promise<void> {
+  const { result } = await oneCorrection();
+  assert(result.record.corrected === true, `the record says the correction ran: ${JSON.stringify(result.record)}`);
+}
+
+export async function assertACorrectionRunsOnceATurn(): Promise<void> {
+  const llm = new ScriptedProvider([
+    { kind: "final", text: "first" },
+    { kind: "final", text: "second" },
+    { kind: "final", text: "third" },
+  ]);
+  const run = correctedRun(llm, CORRECTION);
+  const result = await run.result;
+  assert(llm.calls === 2, `one correction only: ${llm.calls} calls`);
+  assert(JSON.stringify(run.asked) === JSON.stringify(["first"]), `asked once: ${JSON.stringify(run.asked)}`);
+  assert(result.stopReason === "final" && result.reply === "second", `the second text is the reply: ${result.reply}`);
+}
+
+export async function assertANullCorrectionAcceptsTheText(): Promise<void> {
+  const llm = new ScriptedProvider([{ kind: "final", text: "only" }]);
+  const result = await correctedRun(llm, null).result;
+  assert(llm.calls === 1, `no second call: ${llm.calls}`);
+  assert(result.reply === "only", `the text is the reply: ${result.reply}`);
+  assert(!("corrected" in result.record), `no corrected key: ${JSON.stringify(result.record)}`);
+}
+
+/** A deadline after the correction ends the turn final with the first text, and the record names the stop. */
+export async function assertADeadlineAfterACorrectionFallsBackToTheFirstText(): Promise<void> {
+  const result = await correctedRun(new ScriptedProvider([{ kind: "final", text: "first" }, "hang"]), CORRECTION, 50).result;
+  const got = JSON.stringify([result.stopReason, result.reply, result.record.stopReason, result.record.correctionFailed]);
+  assert(got === JSON.stringify(["final", "first", "final", "cap_time"]), `the first text is the reply: ${got}`);
+}
+
+/** A provider error after the correction ends the turn final with the first text, and the record names the stop. */
+export async function assertAProviderErrorAfterACorrectionFallsBackToTheFirstText(): Promise<void> {
+  const result = await correctedRun(new ScriptedProvider([{ kind: "final", text: "first" }, "reject"]), CORRECTION).result;
+  const got = JSON.stringify([result.stopReason, result.reply, result.record.correctionFailed]);
+  assert(got === JSON.stringify(["final", "first", "provider_error"]), `the first text is the reply: ${got}`);
+}
+
+/** A turn with no correction never names a correction stop. */
+export async function assertACapWithNoCorrectionStaysACap(): Promise<void> {
+  const result = await correctedRun(new ScriptedProvider(["reject"]), CORRECTION).result;
+  const got = JSON.stringify([result.stopReason, result.reply, "correctionFailed" in result.record]);
+  assert(got === JSON.stringify(["provider_error", "", false]), `a plain failure is unchanged: ${got}`);
+}
+
+/** The correction shares the turn's call cap: tools after it still count against the same eight, and the cap falls back. */
+export async function assertACorrectionSharesTheCallCap(): Promise<void> {
+  const seven = toolCalls(...Array.from({ length: 7 }, () => call(KNOWN)));
+  const llm = new ScriptedProvider([seven, { kind: "final", text: "first" }, toolCalls(call(KNOWN), call(KNOWN))]);
+  const result = await correctedRun(llm, CORRECTION).result;
+  assert(result.record.correctionFailed === "cap_calls", `the ninth call after the correction is the cap: ${JSON.stringify(result.record)}`);
 }
 
 // the constants ----------------------------------------------------------------
