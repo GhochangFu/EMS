@@ -52,8 +52,11 @@ export type LocationSummaryRows =
  * scope-leak fix: a location the caller cannot read is never named back).
  * None named (owner ruling 2026-10-29): the top-level sites the caller can
  * read — the roots of the readable scope, the active locations of the
- * organization (∩ the caller's readable locations) whose parent is not
- * among them.
+ * organization (∩ the caller's readable locations) with no strict ancestor
+ * among them. Not "whose parent is not among them": an `asset_group` scope
+ * is its groups' own locations with no subtree closure, so it can skip a
+ * level, and a parent-only test would make a nested location a second row
+ * and count its assets twice.
  *
  * **Containment.** Every asset id comes from the tool's
  * `readPerOrganization` (the caller's readable ids of the organization, or of
@@ -70,7 +73,8 @@ export type LocationSummaryRows =
  * so a row's kWh equals `GET /reports/energy/preview?locationIds=<row>`'s
  * `totalKwh` for the same dates and scope.
  *
- * **Cost per call:** one location read for the rows; then, for one page, one
+ * **Cost per call:** one location read and one ancestor walk for the rows
+ * (none of the walk when `locationIds` are named); then, for one page, one
  * asset read, one ancestor walk (`locationAncestorChains`, no new recursive
  * CTE), and one kWh, one alarm and one no-data statement over the page's
  * assets only.
@@ -103,15 +107,23 @@ export class LocationSummaryService {
       return { ok: true, rows: found.rows.map((row) => ({ id: row.id, name: row.name })) };
     }
     const scope = scopeLocationIds === null ? null : sql.param([...scopeLocationIds]);
-    const active = await this.fleetDb.execute<{ id: string; name: string; parent_id: string | null }>(sql`
-      SELECT l.id, l.name, l.parent_id
+    const active = await this.fleetDb.execute<{ id: string; name: string }>(sql`
+      SELECT l.id, l.name
         FROM bms.locations l
        WHERE l.organization_id = ${organizationId}
          AND l.active = true
          ${scope === null ? sql`` : sql`AND l.id = ANY(${scope}::uuid[])`}
        ORDER BY l.name, l.id`);
-    const ids = new Set(active.rows.map((row) => row.id));
-    const roots = active.rows.filter((row) => row.parent_id === null || !ids.has(row.parent_id));
+    // A candidate is a root when no STRICT ancestor of it is a candidate. The
+    // parent alone is not enough: an asset_group scope is its groups' own
+    // locations with no subtree closure, so it can hold S and a grandchild G
+    // without the C between them — G would be a second row, and every asset
+    // under G would count in both S's row and G's.
+    const candidateIds = active.rows.map((row) => row.id);
+    const chains = await locationAncestorChains(this.fleetDb, { organizationIds: [organizationId], ids: candidateIds });
+    const candidates = new Set(candidateIds);
+    const covered = new Set(chains.filter((link) => link.steps > 0 && candidates.has(link.ancestorId)).map((link) => link.nodeId));
+    const roots = active.rows.filter((row) => !covered.has(row.id));
     return { ok: true, rows: roots.map((row) => ({ id: row.id, name: row.name })) };
   }
 

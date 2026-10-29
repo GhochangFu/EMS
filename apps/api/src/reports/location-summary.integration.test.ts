@@ -9,6 +9,7 @@ import { openIntegrationPool, requireIntegrationDb, resolveIntegrationRoleUrl } 
 import {
   assertALocationOfAnotherOrganizationIsNotFound,
   assertALocationOutsideTheScopeIsRefused,
+  assertAScopeWithAGapHasOnlyItsTopRoot,
   assertANamedLocationIsItsOwnRow,
   assertAlarmsRaisedAndOpenBySeverity,
   assertAnAssetOutsideTheReadableIdsIsNotCounted,
@@ -71,4 +72,5 @@ describe.skipIf(!connectionString)("F4.290 — the location summary over a real 
   it("a named location is its own row", () => assertANamedLocationIsItsOwnRow(fixture()));
   it("a location of another organization is not found", () => assertALocationOfAnotherOrganizationIsNotFound(fixture()));
   it("a location outside the caller's scope is refused", () => assertALocationOutsideTheScopeIsRefused(fixture()));
+  it("a scope with a gap has only its top root", () => assertAScopeWithAGapHasOnlyItsTopRoot(fixture()));
 });

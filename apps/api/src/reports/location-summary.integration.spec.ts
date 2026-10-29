@@ -13,8 +13,8 @@ import { energyReportRange } from "./reports.service";
  * The fixture is a fresh organization O of its own, so "the roots of the
  * whole organization" are the fixture's roots and no seeded row is read:
  *
- *     O:  S ── C        T        V (inactive)        P:  U
- *        A1 A2  A3      A4       A5                       A6
+ *     O:  S ── C ── G     T        V (inactive)        P:  U
+ *        A1 A2  A3         A4       A5                       A6
  *
  * The roots S and T are named so their name order is the reverse of their id
  * order (`first` is the root with the larger id and the earlier name).
@@ -34,6 +34,8 @@ export interface SummaryFixture {
   readonly otherOrganizationId: string;
   readonly site: string;
   readonly child: string;
+  /** C's child, no assets: a scope of S and G only has a gap at C. */
+  readonly grandchild: string;
   readonly sibling: string;
   readonly inactive: string;
   readonly foreign: string;
@@ -69,6 +71,7 @@ export async function buildSummaryFixture(
     insertLocationRow(db, { organizationId: org, code: `F4290-${run}-${tag}`, name: `F4.290 ${run} ${tag}`, parentId });
   const site = await location("S", null);
   const child = await location("C", site);
+  const grandchild = await location("G", child);
   const sibling = await location("T", null);
   const inactive = await location("V", null);
   const foreign = await location("U", null, otherOrganizationId);
@@ -107,6 +110,7 @@ export async function buildSummaryFixture(
     otherOrganizationId,
     site,
     child,
+    grandchild,
     sibling,
     inactive,
     foreign,
@@ -220,6 +224,17 @@ export async function assertALocationOfAnotherOrganizationIsNotFound(fx: Summary
 export async function assertALocationOutsideTheScopeIsRefused(fx: SummaryFixture): Promise<void> {
   const rows = await fx.svc.rows(fx.organizationId, [fx.site, fx.child], [fx.sibling]);
   if (rows.ok || rows.reason !== "outside_grant") fail(`T named by a caller scoped to S: ${JSON.stringify(rows)}, expected outside_grant`);
+}
+
+/**
+ * (11) A scope with a gap (an asset_group grant on S and on G, not on C, whose
+ * locations come with no subtree closure) still has one root: G sits under S,
+ * so it is not a row of its own and S's rollup counts G's assets once.
+ */
+export async function assertAScopeWithAGapHasOnlyItsTopRoot(fx: SummaryFixture): Promise<void> {
+  const rows = await fx.svc.rows(fx.organizationId, [fx.site, fx.grandchild]);
+  const ids = rows.ok ? rows.rows.map((row) => row.id) : rows.reason;
+  if (JSON.stringify(ids) !== JSON.stringify([fx.site])) fail(`rows for scope [S, G]: ${JSON.stringify(ids)}, expected [S]`);
 }
 
 function sorted(record: Record<string, number>): Record<string, number> {
