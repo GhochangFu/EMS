@@ -74,6 +74,7 @@ export * from "./rtu-writes";
 export * from "./rule-writes";
 export * from "./notification-writes";
 export * from "./escalation-writes";
+export * from "./query-values";
 export * from "./report-writes";
 export * from "./maintenance-writes";
 // F4.284 (ADR 0106, ADR 0030): the alarm and work-order write bodies.

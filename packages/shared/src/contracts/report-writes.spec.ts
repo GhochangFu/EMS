@@ -4,6 +4,7 @@ import {
   copilotCreateReportScheduleModelBodySchema,
   copilotSaveEnergyReportFileModelBodySchema,
   createReportScheduleBodySchema,
+  energyReportQuerySchema,
   saveEnergyReportFileBodySchema,
   updateReportScheduleBodySchema,
 } from "./report-writes";
@@ -65,4 +66,60 @@ export function thePilotZonePasses(): void {
 /** Step-5 security M1: a date that does not exist is refused, never rolled forward. */
 export function aCalendarInvalidDateIsRefused(): void {
   expect(saveEnergyReportFileBodySchema.safeParse({ ...SAVE, startDate: "2026-02-30" }).success).toBe(false);
+}
+
+/*
+ * `F4.290` (ADR 0099 Amendment 9 E4) — `locationIds` on the energy query and the
+ * two save bodies: site ids, each meaning the site and its descendants.
+ */
+
+const SITE = "40000000-0000-4000-8000-000000000001";
+const RANGE = { startDate: "2026-09-01", endDate: "2026-09-30" };
+
+/** Today's producers (`apps/web/src/api/reports.ts`) send no `locationIds`: it parses absent. */
+export function theQueryStillParsesWithoutLocationIds(): void {
+  expect(energyReportQuerySchema.parse(RANGE).locationIds).toBeUndefined();
+}
+
+/** Express hands one `?locationIds=` as a bare string: it folds into a one-item list. */
+export function theQueryFoldsOneLocationIdIntoAList(): void {
+  expect(energyReportQuerySchema.parse({ ...RANGE, locationIds: SITE }).locationIds).toEqual([SITE]);
+}
+
+/** A location id that is not a uuid is refused. */
+export function theQueryRefusesANonUuidLocationId(): void {
+  expect(energyReportQuerySchema.safeParse({ ...RANGE, locationIds: ["lotapata"] }).success).toBe(false);
+}
+
+/** More than 200 locations (the schedule's bound, owner ruling P6) is refused. */
+export function theQueryRefusesMoreThan200LocationIds(): void {
+  const ids = Array.from({ length: 201 }, (_, i) => `40000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
+  expect(energyReportQuerySchema.safeParse({ ...RANGE, locationIds: ids }).success).toBe(false);
+}
+
+/** A site filter names at least one site: `[]` is refused, never read as "the whole organization". */
+export function theQueryRefusesAnEmptyLocationIdList(): void {
+  expect(energyReportQuerySchema.safeParse({ ...RANGE, locationIds: [] }).success).toBe(false);
+}
+
+/** The route's save body takes `locationIds`. */
+export function theSaveBodyAcceptsLocationIds(): void {
+  expect(saveEnergyReportFileBodySchema.parse({ ...SAVE, locationIds: [SITE] }).locationIds).toEqual([SITE]);
+}
+
+/** The copilot's save model body takes `locationIds`. */
+export function theSaveModelBodyAcceptsLocationIds(): void {
+  expect(copilotSaveEnergyReportFileModelBodySchema.parse({ ...SAVE, organizationId: ORG, locationIds: [SITE] }).locationIds).toEqual([SITE]);
+}
+
+/** The save body is still `.strict()`: an unknown key is refused. */
+export function theSaveBodyStillRefusesAnUnknownKey(): void {
+  expect(saveEnergyReportFileBodySchema.safeParse({ ...SAVE, locationIds: [SITE], siteId: SITE }).success).toBe(false);
+}
+
+/** The save model body is still `.strict()`: an unknown key is refused. */
+export function theSaveModelBodyStillRefusesAnUnknownKey(): void {
+  expect(
+    copilotSaveEnergyReportFileModelBodySchema.safeParse({ ...SAVE, organizationId: ORG, locationIds: [SITE], siteId: SITE }).success,
+  ).toBe(false);
 }

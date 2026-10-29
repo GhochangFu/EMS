@@ -5,6 +5,15 @@ import {
   aLowerCaseZoneIsRefused,
   theCreateModelBodyAcceptsAnOrganization,
   theCreateModelBodyRefusesNoOrganization,
+  theQueryFoldsOneLocationIdIntoAList,
+  theQueryRefusesAnEmptyLocationIdList,
+  theQueryRefusesANonUuidLocationId,
+  theQueryRefusesMoreThan200LocationIds,
+  theQueryStillParsesWithoutLocationIds,
+  theSaveBodyAcceptsLocationIds,
+  theSaveBodyStillRefusesAnUnknownKey,
+  theSaveModelBodyAcceptsLocationIds,
+  theSaveModelBodyStillRefusesAnUnknownKey,
   theCreateRouteBodyAcceptsNoOrganization,
   thePilotZonePasses,
   theSaveModelBodyRefusesNoOrganization,
@@ -21,4 +30,17 @@ describe("F4.280 — report write bodies (ADR 0030)", () => {
   it("a lower-case timezone is refused", () => aLowerCaseZoneIsRefused());
   it("Asia/Kolkata passes", () => thePilotZonePasses());
   it("2026-02-30 is refused", () => aCalendarInvalidDateIsRefused());
+});
+
+/** `F4.290` (ADR 0099 Amendment 9 E4) — `locationIds` on the energy query and the two save bodies. */
+describe("F4.290 — locationIds on the energy query and the save bodies", () => {
+  it("the query parses without locationIds", () => theQueryStillParsesWithoutLocationIds());
+  it("one ?locationIds= folds into a list", () => theQueryFoldsOneLocationIdIntoAList());
+  it("a non-uuid location id is refused", () => theQueryRefusesANonUuidLocationId());
+  it("more than 200 location ids are refused", () => theQueryRefusesMoreThan200LocationIds());
+  it("an empty location id list is refused", () => theQueryRefusesAnEmptyLocationIdList());
+  it("the save body accepts locationIds", () => theSaveBodyAcceptsLocationIds());
+  it("the save model body accepts locationIds", () => theSaveModelBodyAcceptsLocationIds());
+  it("the save body still refuses an unknown key", () => theSaveBodyStillRefusesAnUnknownKey());
+  it("the save model body still refuses an unknown key", () => theSaveModelBodyStillRefusesAnUnknownKey());
 });
