@@ -17,6 +17,11 @@ type ChangeCardProps = {
   title: string;
   summary: string;
   risk: CopilotChangeRisk;
+  /**
+   * `F4.289` (owner ruling P2): the catalog entry's own `red` — a batch rule create is red though its
+   * risk is `create`. Absent, the risk decides.
+   */
+  red?: boolean;
   rows: readonly ChangeRow[];
   note?: string;
   error?: string | null;
@@ -55,7 +60,7 @@ function ValueText(props: { text: string; full: string | undefined }) {
 }
 
 export function ChangeCard(props: ChangeCardProps) {
-  const red = RED_RISKS.has(props.risk);
+  const red = props.red === true || RED_RISKS.has(props.risk);
   const hasBefore = props.rows.some((row) => row.before !== undefined);
   return (
     <section
