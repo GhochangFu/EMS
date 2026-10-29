@@ -94,13 +94,14 @@ export function assertAStatisticIsRounded(): void {
   ]);
 }
 
-/** A row carries the pair's own statistics and watching rules, under the model-facing names. */
+/** A row carries its asset's index in the page's `assets`, the pair's own statistics and watching rules, under the model-facing names. */
 export function assertARowJoinsItsPairStatsAndRules(): void {
   const index = rulesWatching([rule(1, A, "k")]);
   const row = inventoryRow(
     { assetId: A, pointKey: "k" },
+    3,
     { unit: "%", min: 10, avg: 26.666666666666668, max: 50, last: 20, samples: 6 },
     index,
   );
-  expect(row).toEqual({ assetId: A, key: "k", unit: "%", min: 10, avg: 26.6667, max: 50, last: 20, samples: 6, ruleIds: [rule(1, A, "k").id], ruleCount: 1 });
+  expect(row).toEqual({ asset: 3, key: "k", unit: "%", min: 10, avg: 26.6667, max: 50, last: 20, samples: 6, ruleIds: [rule(1, A, "k").id], ruleCount: 1 });
 }

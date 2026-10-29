@@ -407,6 +407,7 @@ export async function assertTheTurnAnswersTheLast24HoursFromATool(): Promise<voi
  * get_energy_report_preview), under the bound, so it is unchanged. The propose registry measured 83,092 (under 84,000).
  * Owner ruling P4 2026-10-27 (release 5, the release-4 rule per PR): F4.288 measured 20,296 (37 tools;
  * get_site_point_inventory), under the bound, so it is unchanged. The propose registry is unchanged (82,991).
+ * F4.288 review: 20,334 (the description says a row's asset is its index in assets), under the bound; propose 82,991.
  */
 export function assertTheReadRegistryStaysInItsBudget(): void {
   const { tools } = fakeTelemetryServices();

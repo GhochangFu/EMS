@@ -3,19 +3,27 @@ import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
 import { BACKTEST_WINDOW_MS } from "../../rules/rule-backtest";
-import { inventoryRow, rulesWatching, type InventoryRow, type InventoryStats } from "../../rules/site-point-inventory-rows";
+import { inventoryRow, rulesWatching, type InventoryAsset, type InventoryRow, type InventoryStats } from "../../rules/site-point-inventory-rows";
+import { scrubToolResult } from "../copilot-secret-scrub";
 import type { CopilotToolResult } from "../copilot-read-tools";
 import { CURSOR_PHRASE, LOCATION_ID_PHRASE, listCursorSchema, offsetKeySchema, offsetPage } from "./copilot-list-paging";
-import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
+import { COPILOT_TOOL_RESULT_BUDGET_CHARS, defineReadTool, readPerOrganization } from "./copilot-read-tool";
 
 /**
  * The most pairs one page reads. Above the 25 of the other lists, so the
  * result budget, not the item count, ends a page of narrow rows: a row is
- * ~189 characters with no rule and ~227 with one, so a page holds ~29-36
- * points (`site-inventory-read-tools.spec.ts`) and `fitListResult` cuts a
- * page of wider rows.
+ * ~188 characters with one rule, so a page holds ~34-35 points
+ * (`site-inventory-read-tools.spec.ts`) and {@link inventoryPageRows} sizes
+ * a page of wider rows.
  */
 export const INVENTORY_PAGE_MAX_POINTS = 40;
+
+/**
+ * `F4.288` review — the characters a page leaves for what wraps its entry:
+ * `truncated`, `nextCursor` (an offset cursor encodes to under 80),
+ * `organizations` and `organizationId`; ~180 counted, so 250.
+ */
+export const INVENTORY_PAGE_ENVELOPE_CHARS = 250;
 
 const NO_STATS: InventoryStats = { unit: null, min: null, avg: null, max: null, last: null, samples: 0 };
 
@@ -38,18 +46,22 @@ const NO_STATS: InventoryStats = { unit: null, min: null, avg: null, max: null, 
  * into the subtree's (asset, point) pairs, ordered by asset code, then the
  * rule point set's order (`SitePointInventoryService.pairs`). Statistics and
  * rules are read for the page's pairs only. The rows are flat (one per
- * point, `assetId` on each) so `fitListResult` can cut a page between two
- * points of one asset and resume at the first it dropped; the page's assets
- * (code, name, domain) ride once in the entry's `assets`, cut after the fit
- * to the assets its rows still name. The window is the backtest's fixed 7
- * days on the turn's clock (E2 names no other; ruling P3's `lastDays` is for
- * the range tools).
+ * point, `asset` on each: the index of its asset in the entry's `assets`,
+ * which holds each asset's id, code, name and domain once). The page is
+ * sized with its assets before it returns ({@link inventoryPageRows}), so a
+ * page of long asset names holds fewer rows rather than none (`F4.288`
+ * review: a page's assets, unsized, crowded every row out and the page
+ * repeated the incoming cursor). `fitListResult` still measures the result
+ * and may drop trailing rows (the scrub can lengthen a value); the entry's
+ * `assets` are then cut to the ones its rows still name, a prefix, so no
+ * index moves. The window is the backtest's fixed 7 days on the turn's clock
+ * (E2 names no other; ruling P3's `lastDays` is for the range tools).
  */
 export const getSitePointInventoryTool = defineReadTool({
   name: "get_site_point_inventory",
   description:
     `Every rule-target point of every asset at ${LOCATION_ID_PHRASE}, optional domain: unit, 7-day min/avg/max/last, ` +
-    `samples, and ruleIds (at most 10) and ruleCount of the rules already watching it. Read it before proposing rules for a site; ${CURSOR_PHRASE}.`,
+    `samples, and ruleIds (at most 10) and ruleCount of the rules already watching it; a row's asset is its index in assets. Read it before proposing rules for a site; ${CURSOR_PHRASE}.`,
   schema: z
     .object({
       locationId: z.string().uuid(),
@@ -63,31 +75,59 @@ export const getSitePointInventoryTool = defineReadTool({
     return withPageAssets(
       await readPerOrganization<InventoryRow, number>(services, ctx, scope, async (_organizationId, assetIds, room, resume) => {
         const { assets, pairs } = await services.inventory.pairs(assetIds, args.domain);
-        const page = offsetPage(pairs, resume, room);
+        const offered = offsetPage(pairs, resume, room);
         const head = { ...window, assetCount: assets.length, pointCount: pairs.length };
-        if (page.items.length === 0) return { ...page, items: [], extra: { ...head, assets: [] } };
-        const pageAssetIds = [...new Set(page.items.map((pair) => pair.assetId))];
-        const [stats, rules] = await Promise.all([services.inventory.stats(page.items, ctx.now), services.rules.listRules(pageAssetIds)]);
+        if (offered.items.length === 0) return { ...offered, items: [], extra: { ...head, assets: [] } };
+        const pageAssetIds = [...new Set(offered.items.map((pair) => pair.assetId))];
+        const [stats, rules] = await Promise.all([services.inventory.stats(offered.items, ctx.now), services.rules.listRules(pageAssetIds)]);
         const watching = rulesWatching(parseStoredContract(rulesResponseSchema, rules, "copilot_tools.get_site_point_inventory.rules").items);
-        const items = page.items.map((pair, i) => inventoryRow(pair, stats[i] ?? NO_STATS, watching));
-        return { ...page, items, extra: { ...head, assets: assets.filter((asset) => pageAssetIds.includes(asset.id)) } };
+        // The pairs follow `assets`' order, so this keeps first-appearance order and a row's index is its asset's.
+        const pageAssets = assets.filter((asset) => pageAssetIds.includes(asset.id));
+        const rows = offered.items.map((pair, i) =>
+          inventoryRow(pair, pageAssets.findIndex((asset) => asset.id === pair.assetId), stats[i] ?? NO_STATS, watching),
+        );
+        const kept = inventoryPageRows(head, pageAssets, rows);
+        const items = rows.slice(0, kept);
+        return { ...offsetPage(pairs, resume, kept), items, extra: { ...head, assets: assetsNamed(pageAssets, items) } };
       }),
     );
   },
 });
 
 /**
+ * `F4.288` review — how many of `rows` (at least one) fit the result
+ * budget beside their own assets and `head`, measured after the scrub as
+ * `fitListResult` measures. One row and its asset always fit: every field is
+ * a bounded column (a 128-character key, a 255-character name, ten rule ids).
+ */
+export function inventoryPageRows(head: Record<string, unknown>, assets: readonly InventoryAsset[], rows: readonly InventoryRow[]): number {
+  const fits = (n: number) => {
+    const items = rows.slice(0, n);
+    const entry = { ...head, assets: assetsNamed(assets, items), items };
+    return JSON.stringify(scrubToolResult(entry)).length <= COPILOT_TOOL_RESULT_BUDGET_CHARS - INVENTORY_PAGE_ENVELOPE_CHARS;
+  };
+  let n = rows.length;
+  while (n > 1 && !fits(n)) n -= 1;
+  return n;
+}
+
+/** The prefix of a page's `assets` its rows name: rows are in asset order, so the last row's index ends it. */
+function assetsNamed<A>(assets: readonly A[], rows: ReadonlyArray<{ readonly asset: number }>): A[] {
+  const last = rows[rows.length - 1];
+  return last === undefined ? [] : assets.slice(0, last.asset + 1);
+}
+
+/**
  * Each entry's `assets` cut to the assets its rows still name, after
- * `fitListResult` dropped trailing rows. Removing entries only shortens the
- * JSON the fit measured, so the result stays within the budget.
+ * `fitListResult` dropped trailing rows. The cut is a prefix, so no row's
+ * index moves, and removing entries only shortens the JSON the fit measured,
+ * so the result stays within the budget.
  */
 function withPageAssets(out: CopilotToolResult): CopilotToolResult {
   if (!out.ok) return out;
-  const result = out.result as { organizations: Array<{ items: Array<{ assetId: string }>; assets?: Array<{ id: string }> }> };
+  const result = out.result as { organizations: Array<{ items: Array<{ asset: number }>; assets?: unknown[] }> };
   for (const entry of result.organizations) {
-    if (entry.assets === undefined) continue;
-    const named = new Set(entry.items.map((row) => row.assetId));
-    entry.assets = entry.assets.filter((asset) => named.has(asset.id));
+    if (entry.assets !== undefined) entry.assets = assetsNamed(entry.assets, entry.items);
   }
   return out;
 }

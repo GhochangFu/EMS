@@ -90,10 +90,15 @@ export function inventoryStat(value: number | null): number | null {
   return value === null ? null : Number(value.toPrecision(6));
 }
 
-/** One page row: the pair, its rounded statistics, and the rules watching it. */
-export function inventoryRow(pair: InventoryPair, stats: InventoryStats, watching: ReturnType<typeof rulesWatching>) {
+/**
+ * One page row: the pair, its rounded statistics, and the rules watching it.
+ * `asset` is the index of the pair's asset in the page's `assets` (`F4.288`
+ * review): a small integer in place of the 36-character id the page already
+ * holds once, ~37 characters a row, so a page holds more rows.
+ */
+export function inventoryRow(pair: InventoryPair, asset: number, stats: InventoryStats, watching: ReturnType<typeof rulesWatching>) {
   return {
-    assetId: pair.assetId,
+    asset,
     key: pair.pointKey,
     unit: stats.unit,
     min: inventoryStat(stats.min),

@@ -12,7 +12,9 @@ describe("F4.288 — get_site_point_inventory", () => {
   it("a row joins its pair's statistics and its own rules", spec.aRowJoinsItsStatsAndItsOwnRules);
   it("statistics and rules are read for the page only", spec.statsAndRulesReadThePageOnly);
   it("a realistic site walks whole, under the cut, every pair once", spec.aRealisticSiteWalksWholeAndComplete);
+  it("a realistic page holds at least 34 rows", spec.aRealisticPageHoldsAtLeast34Rows);
   it("a worst-case site walks whole, under the cut, every pair once", spec.aWorstCaseSiteWalksWholeAndComplete);
+  it("assets with 255-character names still walk to the end, a row a page, every pair once", spec.longAssetNamesStillWalkToTheEnd);
   it("each page names only its own assets", spec.aPageNamesOnlyItsOwnAssets);
   it("a turn answers a site question from the tool", spec.theTurnAnswersASiteQuestionFromTheTool);
 });

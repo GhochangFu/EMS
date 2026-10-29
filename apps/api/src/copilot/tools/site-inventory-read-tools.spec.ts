@@ -75,6 +75,25 @@ function worst(): Site {
   };
 }
 
+/**
+ * `F4.288` review: 45 single-point assets whose names fill the 255-character
+ * column, so a page's assets cost more than its rows and a page's worth of
+ * them alone is over the budget.
+ */
+function longNames(): Site {
+  return {
+    assets: Array.from({ length: 45 }, (_, i) => ({
+      id: uuid("5e1f0a77", i),
+      code: `PHE-AIRSP${1050 + i}M`,
+      name: `PHE Kolkata air sampling gateway ${i} `.padEnd(255, "n"),
+      domain: "environment",
+    })),
+    keys: () => ["temperature_c"],
+    unit: "%",
+    rulesPerPoint: 1,
+  };
+}
+
 function pairsOf(site: Site): InventoryPair[] {
   return site.assets.flatMap((asset, a) => site.keys(a).map((pointKey) => ({ assetId: asset.id, pointKey })));
 }
@@ -132,7 +151,7 @@ function fake(options: FakeOptions = {}) {
   return { tools: createCopilotReadTools(services), log, all };
 }
 
-type Row = { assetId: string; key: string; unit: string | null; min: number | null; avg: number | null; max: number | null; last: number | null; samples: number; ruleIds: string[]; ruleCount: number };
+type Row = { asset: number; key: string; unit: string | null; min: number | null; avg: number | null; max: number | null; last: number | null; samples: number; ruleIds: string[]; ruleCount: number };
 type Entry = { organizationId: string; from?: string; to?: string; assetCount?: number; pointCount?: number; assets?: InventoryAsset[]; items: Row[] };
 type Page = { truncated: boolean; nextCursor: string | null; organizations: Entry[] };
 
@@ -164,7 +183,12 @@ async function walk(options: FakeOptions = {}) {
   }
   const pages = contents.map((text) => JSON.parse(text) as Page);
   const rows = pages.flatMap((p) => p.organizations.flatMap((entry) => entry.items));
-  return { ...f, contents, pages, rows };
+  return { ...f, contents, pages, rows, seen: pages.flatMap(pairsSeen) };
+}
+
+/** The (asset id, key) of every row of a page: a row names its asset by its index in the entry's `assets`. */
+function pairsSeen(p: Page): Array<[string | undefined, string]> {
+  return p.organizations.flatMap((entry) => entry.items.map((row): [string | undefined, string] => [entry.assets?.[row.asset]?.id, row.key]));
 }
 
 // --- placement before data -----------------------------------------------------------------------
@@ -228,8 +252,9 @@ export async function aRowJoinsItsStatsAndItsOwnRules(): Promise<void> {
   const { tools, log, all } = fake({ site: { ...phe(2, 4), archivedPerPoint: 1 } });
   const entry = page(await call(tools, {})).organizations[0]!;
   const first = entry.items[0]!;
+  expect(entry.assets?.[0]?.id).toBe(all[0]!.assetId);
   expect(first).toEqual({
-    assetId: all[0]!.assetId,
+    asset: 0,
     key: all[0]!.pointKey,
     unit: "%",
     min: -123.457,
@@ -260,39 +285,61 @@ export async function statsAndRulesReadThePageOnly(): Promise<void> {
 /**
  * A realistic site (10 PHE gateways, 12 points each, one rule a point): every
  * page reaches the model whole, under the cut, and the walk lists every pair
- * once, in order. Measured 2026-10-29: ~227 characters a row, five pages of
- * 29, 29, 28, 29 and 5 rows (7,301, 7,311, 7,221, 7,302 and 1,520 characters
- * as the model receives them), so five calls of the turn's eight; a site with
- * no rule yet (the usual case before proposing) has ~189-character rows.
+ * once, in order. Measured 2026-10-29 after the `F4.288` review (a row names
+ * its asset by index, the page is sized with its assets): ~188 characters a
+ * row, four pages of 35, 34, 34 and 17 rows (7,304, 7,252, 7,254 and 3,720
+ * characters as the model receives them), so four calls of the turn's eight
+ * (before the review: ~227 characters, five pages of ~29).
  */
 export async function aRealisticSiteWalksWholeAndComplete(): Promise<void> {
-  const { contents, pages, rows, all } = await walk();
+  const { contents, pages, seen, all } = await walk();
   for (const text of contents) {
     expect(text.endsWith(TOOL_RESULT_CUT_TAIL)).toBe(false);
     expect(text.length).toBeLessThanOrEqual(TOOL_RESULT_MAX_CHARS);
   }
-  expect(rows.map((row) => [row.assetId, row.key])).toEqual(all.map((pair) => [pair.assetId, pair.pointKey]));
-  expect(pages.length).toBeLessThanOrEqual(5);
+  expect(seen).toEqual(all.map((pair) => [pair.assetId, pair.pointKey]));
+  expect(pages.length).toBeLessThanOrEqual(4);
+}
+
+/** A realistic page holds at least 34 rows: a row names its asset by index, not by its 36-character id (`F4.288` review; measured 35). */
+export async function aRealisticPageHoldsAtLeast34Rows(): Promise<void> {
+  const { pages } = await walk();
+  expect(pages[0]?.organizations[0]?.items.length).toBeGreaterThanOrEqual(34);
 }
 
 /** The worst-case rows (128-character keys, 10 rule ids, 32-character units): fitted pages, still whole, and every pair once. */
 export async function aWorstCaseSiteWalksWholeAndComplete(): Promise<void> {
-  const { contents, rows, all } = await walk({ site: worst() });
+  const { contents, rows, seen, all } = await walk({ site: worst() });
   for (const text of contents) {
     expect(text.endsWith(TOOL_RESULT_CUT_TAIL)).toBe(false);
     expect(text.length).toBeLessThanOrEqual(TOOL_RESULT_MAX_CHARS);
   }
-  expect(rows.map((row) => [row.assetId, row.key])).toEqual(all.map((pair) => [pair.assetId, pair.pointKey]));
+  expect(seen).toEqual(all.map((pair) => [pair.assetId, pair.pointKey]));
   expect(rows[0]?.ruleIds).toHaveLength(10);
   expect(rows[0]?.ruleCount).toBe(13);
 }
 
-/** Each page's `assets` are exactly the assets its rows name, with the subtree's counts beside them. */
+/**
+ * `F4.288` review: assets with 255-character names still walk to
+ * `nextCursor: null`; every page carries at least one row and every pair is
+ * listed once (a page's assets are sized with its rows, so they never crowd
+ * every row out and repeat the incoming cursor). Measured: four pages of 13,
+ * 13, 13 and 6 rows.
+ */
+export async function longAssetNamesStillWalkToTheEnd(): Promise<void> {
+  const { pages, seen, all } = await walk({ site: longNames() });
+  expect(pages.at(-1)?.nextCursor).toBeNull();
+  expect(pages.length).toBeLessThanOrEqual(4);
+  expect(pages.map((p) => p.organizations[0]?.items.length ?? 0).filter((n) => n === 0)).toEqual([]);
+  expect(seen).toEqual(all.map((pair) => [pair.assetId, pair.pointKey]));
+}
+
+/** Each page's `assets` are exactly the assets its rows name (index 0 up, none unnamed), with the subtree's counts beside them. */
 export async function aPageNamesOnlyItsOwnAssets(): Promise<void> {
   const { pages } = await walk();
   for (const p of pages) {
     const entry = p.organizations[0]!;
-    expect(entry.assets?.map((asset) => asset.id)).toEqual([...new Set(entry.items.map((row) => row.assetId))]);
+    expect([...new Set(entry.items.map((row) => row.asset))]).toEqual(entry.assets?.map((_, i) => i));
     expect([entry.assetCount, entry.pointCount]).toEqual([10, 120]);
   }
 }
