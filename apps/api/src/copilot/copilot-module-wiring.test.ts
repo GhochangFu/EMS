@@ -29,6 +29,9 @@ import {
   assertTheReadToolsInjectTheLocationScope,
   assertTheAlarmsModuleExportsTheAlarmStats,
   assertTheReadToolsInjectTheAlarmStats,
+  assertTheRulesModuleExportsTheInventoryService,
+  assertTheReadToolsInjectTheInventoryService,
+  assertTheInventoryServiceInjectsTheFleetPool,
   assertTheProposeToolsInjectTheLayoutsService,
   assertTheResolverInjectsTheUsersServices,
 } from "./copilot-module-wiring.spec";
@@ -71,4 +74,7 @@ describe("F3.86 PR 4 — CopilotModule wiring for the user targets", () => {
   it("F4.291: the read tools inject LocationAssetScopeService in slot 24", () => assertTheReadToolsInjectTheLocationScope());
   it("F4.291 PR 2: AlarmsModule provides and exports AlarmStatsService", () => assertTheAlarmsModuleExportsTheAlarmStats());
   it("F4.291 PR 2: the read tools inject AlarmStatsService in slot 25", () => assertTheReadToolsInjectTheAlarmStats());
+  it("F4.288: RulesModule provides and exports SitePointInventoryService", () => assertTheRulesModuleExportsTheInventoryService());
+  it("F4.288: the read tools inject SitePointInventoryService in slot 26", () => assertTheReadToolsInjectTheInventoryService());
+  it("F4.288: SitePointInventoryService injects the fleet pool", () => assertTheInventoryServiceInjectsTheFleetPool());
 });

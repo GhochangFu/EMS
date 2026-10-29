@@ -38,6 +38,8 @@ import { AuthModule } from "../auth/auth.module";
 import { LocationAssetScopeService } from "../auth/location-asset-scope.service";
 import { AlarmsModule } from "../alarms/alarms.module";
 import { AlarmStatsService } from "../alarms/alarm-stats.service";
+import { FLEET_DRIZZLE } from "../database/database.tokens";
+import { SitePointInventoryService } from "../rules/site-point-inventory.service";
 
 /**
  * `F3.86` PR 4 / ADR 0099 decision 3 — the module edges a green build does not
@@ -265,4 +267,24 @@ export function assertTheAlarmsModuleExportsTheAlarmStats(): void {
 /** `F4.291` PR 2: the read tools' slot 25 is `AlarmStatsService`, by `@Inject`. */
 export function assertTheReadToolsInjectTheAlarmStats(): void {
   expect(injected(CopilotReadToolSet).get(25)).toBe(AlarmStatsService);
+}
+
+/** `F4.288`: `RulesModule` (imported by `CopilotModule`) provides and exports `SitePointInventoryService`. */
+export function assertTheRulesModuleExportsTheInventoryService(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(RulesModule);
+  expect(moduleList(RulesModule, "providers")).toContain(SitePointInventoryService);
+  expect(moduleList(RulesModule, "exports")).toContain(SitePointInventoryService);
+}
+
+/** `F4.288`: the read tools' slot 26 is `SitePointInventoryService`, by `@Inject`. */
+export function assertTheReadToolsInjectTheInventoryService(): void {
+  expect(injected(CopilotReadToolSet).get(26)).toBe(SitePointInventoryService);
+}
+
+/**
+ * `F4.288` (the plan critic's defect 6): the service's own one slot is the fleet pool, by
+ * `@Inject` — without it the API does not boot while every other spec stays green.
+ */
+export function assertTheInventoryServiceInjectsTheFleetPool(): void {
+  expect([...injected(SitePointInventoryService)]).toEqual([[0, FLEET_DRIZZLE]]);
 }

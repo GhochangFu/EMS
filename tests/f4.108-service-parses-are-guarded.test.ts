@@ -139,6 +139,8 @@ const COPILOT_TOOL_FILES = {
   copilotListUsers: `${COPILOT_TOOLS}/list-users.tool.ts`,
   // `F4.284` owner ruling 2026-10-25 (Q4): the alarm skill read tool, one parse.
   copilotListAlarmSkills: `${COPILOT_TOOLS}/list-alarm-skills.tool.ts`,
+  // `F4.288` (ADR 0099 Amendment 9 E2): the site point inventory read tool, one parse.
+  copilotGetSitePointInventory: `${COPILOT_TOOLS}/get-site-point-inventory.tool.ts`,
 } as const;
 const HELPER = "apps/api/src/common/parse-stored-contract.ts";
 
@@ -611,7 +613,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         "per energy read tool; F4.277 two more, the system-status and audit-log read tools; " +
         "F4.278 one more, the alarm-rule read tool; F4.279 two more, the channel and escalation " +
         "read tools; F4.284 two more, the work-order and user read tools, and one more, the " +
-        "alarm skill read tool (owner ruling 2026-10-25). " +
+        "alarm skill read tool (owner ruling 2026-10-25); F4.288 one more, the site point " +
+        "inventory read tool. " +
         "A site reverted to " +
         "a bare .parse() answers 400 under the filter, which is ruling 2's failure mode " +
         "exactly.",
@@ -653,8 +656,9 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       // `F4.279`: + the channel and escalation read tools; `F4.280`: + the report-schedule read tool;
       // `F4.281`: + the maintenance-schedule read tool; `F4.284`: + the work-order and user read tools,
       // and (owner ruling 2026-10-25) the alarm skill read tool; `F4.291` PR 2: + the alarm
-      // statistics read tool; `F4.291` PR 3: + the point statistics read tool.
-    ).toBe(48);
+      // statistics read tool; `F4.291` PR 3: + the point statistics read tool; `F4.288`: + the
+      // site point inventory read tool.
+    ).toBe(49);
 
     const callSites = [
       STOCK_SERVICE,

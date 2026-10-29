@@ -24,7 +24,7 @@ import { describe, expect, it } from "vitest";
  *
  * Two named limits, and the first is why this docblock does not say "the rules
  * module". It reads exactly the two files below. `apps/api/src/rules/` holds
- * 22 non-test files (2026-10-27), and `rule-points.ts` is today the only one of them naming
+ * 24 non-test files (2026-10-29), and `rule-points.ts` is today the only one of them naming
  * `templatePoints` or `assetPoints` — but a reader added to a third file would keep all seven of
  * the cases below green. Second, it cannot see a divergence *inside* the one
  * function;

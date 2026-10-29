@@ -22,6 +22,7 @@ import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import { ReportsService } from "../../reports/reports.service";
 import { RulesService } from "../../rules/rules.service";
+import { SitePointInventoryService } from "../../rules/site-point-inventory.service";
 import { ChannelsService } from "../../notifications/channels.service";
 import { EscalationProfilesService } from "../../notifications/escalation-profiles.service";
 import { ReportSchedulesService } from "../../reports/report-schedules.service";
@@ -46,6 +47,7 @@ import { getMimicLayoutTool } from "./get-mimic-layout.tool";
 import { getPointAggregateTool } from "./get-point-aggregate.tool";
 import { getPointStatsTool } from "./get-point-stats.tool";
 import { getRecentValuesTool } from "./get-recent-values.tool";
+import { getSitePointInventoryTool } from "./get-site-point-inventory.tool";
 import { getSystemStatusTool } from "./get-system-status.tool";
 import { getValuesAtInstantTool } from "./get-values-at-instant.tool";
 import { listAlarmSkillsTool } from "./list-alarm-skills.tool";
@@ -76,7 +78,8 @@ import { openPageTool } from "./open-page.tool";
  * `list_audit_log` after `get_health_summary`. `F4.276` adds
  * `get_alarm_details` and `get_alarm_kb` after `list_alarms`. `F4.291` PR 2
  * adds `get_alarm_stats` after `get_alarm_kb`; PR 3 adds `get_point_stats`
- * after `get_point_aggregate`.
+ * after `get_point_aggregate`. `F4.288` adds `get_site_point_inventory` after
+ * `list_rules`.
  */
 export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[] = [
   listAlarmsTool,
@@ -108,6 +111,8 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   listAssetRolesTool,
   // `F4.278` (Amendment 8 D7): after the unit roles, before `open_page`.
   listRulesTool,
+  // `F4.288` (Amendment 9 E2): a site's rule-target points beside the rules that watch them.
+  getSitePointInventoryTool,
   // `F4.279` (Amendment 8 D7): after the rules, before `open_page`.
   listNotificationChannelsTool,
   listEscalationProfilesTool,
@@ -198,6 +203,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
     @Inject(LocationAssetScopeService) locationScope: LocationAssetScopeService,
     // `F4.291` PR 2: appended last (slot 25), the same reason. `AlarmsModule` exports it.
     @Inject(AlarmStatsService) alarmStats: AlarmStatsService,
+    // `F4.288`: appended last (slot 26), the same reason. `RulesModule` exports it.
+    @Inject(SitePointInventoryService) inventory: SitePointInventoryService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -226,6 +233,7 @@ export class CopilotReadToolSet implements CopilotReadTools {
       users,
       locationScope,
       alarmStats,
+      inventory,
     });
   }
 
