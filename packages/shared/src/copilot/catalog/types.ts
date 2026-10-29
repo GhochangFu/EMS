@@ -135,6 +135,13 @@ export type CatalogTarget =
   | { readonly kind: "rule"; readonly param: "id" }
   | { readonly kind: "rule"; readonly field: "assetId" }
   /**
+   * `F4.289` (ADR 0099 Amendment 9 E3): a rule batch create — the rows the body's `rules` names, at
+   * most 25, each with its `assetId`. Every row's asset is in **one** allowed organization (the
+   * first that holds any must hold all), and the gate is `rules.controller.ts`'s for a create: the
+   * `configuration` role class, then every row's asset in the caller's **read** scope.
+   */
+  | { readonly kind: "ruleBatch"; readonly field: "rules" }
+  /**
    * `F4.279` (ADR 0099 Amendment 8 D2): a notification channel or an escalation profile, the row
    * the path parameter `id` names. Both mirror the routes' gate: `requireMasterDataUser`, then
    * `canManageNotificationChannel` on the row's organization; a fleet-wide (NULL-organization)
