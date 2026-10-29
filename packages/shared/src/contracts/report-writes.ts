@@ -98,7 +98,8 @@ const reportSiteFilterSchema = z
   .array(z.string().uuid())
   .min(1)
   .max(200)
-  .refine((ids) => new Set(ids).size === ids.length, { message: "locationIds names a location twice" });
+  .refine((ids) => new Set(ids).size === ids.length, { message: "locationIds names a location twice" })
+  .describe("1 to 200 location ids, each named once; each covers that site and everything under it.");
 
 /**
  * The three energy export routes' query (not `.strict()`, as before the move).
