@@ -37,15 +37,15 @@ const CHECKS = [
   { ...CHECK, row: 3, pointKey: "flow_lps", operator: "lt", thresholdValue: 2, matchNow: "no sample", firings: null },
 ];
 
-function batchChange(checks: unknown = CHECKS): CopilotPendingChangeDto {
+function batchChange(checks: unknown = CHECKS, rules: unknown[] = RULES): CopilotPendingChangeDto {
   const entry = catalogEntry("rule.createBatch")!;
   return {
     id: "88888888-8888-4888-8888-888888888888",
     catalogId: "rule.createBatch",
     method: "POST",
     path: "/api/v1/rules/batch",
-    body: { rules: RULES, checks },
-    summary: entry.summary({ body: { rules: RULES }, params: {}, targetName: "Org X", organizationName: "Org X" }),
+    body: { rules, checks },
+    summary: entry.summary({ body: { rules }, params: {}, targetName: "Org X", organizationName: "Org X" }),
     risk: "create",
     proposedAt: "2026-10-29T10:00:00.000Z",
     expiresAt: "2026-10-29T10:15:00.000Z",
@@ -84,7 +84,7 @@ export function theTableListsEveryRowWithItsCheckAndTicksAll(): void {
   const rows = bodyRows();
   expect(rows).toHaveLength(3);
   const cells = within(rows[1]!).getAllByRole("cell").map((cell) => cell.textContent);
-  expect(cells.slice(0, 8)).toEqual(["2", "CH-01", "return_temp_c", "gt", "18", "warning", "yes", "4"]);
+  expect([cells[0], ...cells.slice(2, 9)]).toEqual(["2", "CH-01", "return_temp_c", "gt", "18", "warning", "yes", "4"]);
   expect([0, 1, 2].map((index) => (screen.getByTestId(`copilot-rule-row-${index}`) as HTMLInputElement).checked)).toEqual([true, true, true]);
 }
 
@@ -113,7 +113,7 @@ export function aMalformedChecksValueStillListsTheRules(): void {
   const rows = bodyRows();
   expect(rows).toHaveLength(3);
   const cells = within(rows[1]!).getAllByRole("cell").map((cell) => cell.textContent);
-  expect(cells.slice(0, 8)).toEqual(["2", "—", "return_temp_c", "gt", "18", "warning", "—", "—"]);
+  expect([cells[0], ...cells.slice(2, 9)]).toEqual(["2", "—", "return_temp_c", "gt", "18", "warning", "—", "—"]);
 }
 
 /** Ruling P2: the card is red although its risk is `create`, and its summary carries D3's live line. */
@@ -132,4 +132,61 @@ export function noPasswordBoxIsShownForExcludedRows(): void {
   expect(card.querySelector('input[type="password"]')).toBeNull();
   expect(screen.getAllByRole("table")).toHaveLength(1);
   expect((confirmButton() as HTMLButtonElement).disabled).toBe(false);
+}
+
+/**
+ * The review fix after `F4.289` PR 2: the hash binds every field of every row, so
+ * the card shows every one of them — not only the columns the check computes.
+ * `ruleCell(i)` is row i's Rule cell (0-based in `rules`).
+ */
+const ruleCell = (index: number) => within(bodyRows()[index]!).getAllByRole("cell")[1]!;
+
+const DETAILED = {
+  ...RULE,
+  code: "CH01-SUPPLY-HIGH",
+  name: "Supply high",
+  description: "Chilled water leaves the plant too warm",
+  category: "hvac",
+  clearHoldSeconds: 300,
+  action: { type: "review", target: "Night shift desk" },
+};
+const SCHEDULED = {
+  ...RULE,
+  name: "Weekend plant run",
+  ruleType: "time_window",
+  pointKey: null,
+  operator: null,
+  thresholdValue: null,
+  condition: { days: ["sat", "sun"], startTime: "08:00", endTime: "17:30" },
+};
+
+/** A row shows the rule's name, its code and its description. */
+export function aRowShowsItsNameCodeAndDescription(): void {
+  renderCard(batchChange(CHECKS, [DETAILED]));
+  const text = ruleCell(0).textContent ?? "";
+  expect(text).toContain("Supply high");
+  expect(text).toContain("CH01-SUPPLY-HIGH");
+  expect(text).toContain("Chilled water leaves the plant too warm");
+}
+
+/** A row shows what the rule does when it fires: the action type and its target. */
+export function aRowShowsItsActionTypeAndTarget(): void {
+  renderCard(batchChange(CHECKS, [DETAILED]));
+  expect(ruleCell(0).textContent).toContain("review → Night shift desk");
+}
+
+/** A row shows its category and its clear hold. */
+export function aRowShowsItsCategoryAndClearHold(): void {
+  renderCard(batchChange(CHECKS, [DETAILED]));
+  const text = ruleCell(0).textContent ?? "";
+  expect(text).toContain("Category hvac");
+  expect(text).toContain("Clear hold 300 s");
+}
+
+/** A time_window row shows its type, its days and its window — the schedule the user approves. */
+export function aTimeWindowRowShowsItsDaysAndTimes(): void {
+  renderCard(batchChange(null, [SCHEDULED]));
+  const text = ruleCell(0).textContent ?? "";
+  expect(text).toContain("time_window");
+  expect(text).toContain("sat, sun 08:00–17:30");
 }

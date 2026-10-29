@@ -121,7 +121,11 @@ export async function removingARowKeepsTheOthers(): Promise<void> {
   expect(screen.getAllByLabelText(/^Row \d+ name$/).map((input) => (input as HTMLInputElement).value)).toEqual(["Second"]);
 }
 
-/** Next with a row that has no name stays on the Rules step and names that row's field. */
+/**
+ * Next with a row that has no name stays on the Rules step and names that row
+ * as the table numbers it (`#` from 1, the route's `Row N:`) — never the
+ * 0-based Zod path `rules.1.name`, which reads as the complete row 1.
+ */
 export async function nextWithAnIncompleteRowStaysAndNamesIt(): Promise<void> {
   stubApi();
   renderWizard();
@@ -130,7 +134,19 @@ export async function nextWithAnIncompleteRowStaysAndNamesIt(): Promise<void> {
   await addRow();
   await next();
   expect(screen.getByRole("region", { name: "Rules" })).toBeTruthy();
-  expect(screen.getByRole("alert").textContent).toContain("rules.1.name");
+  const alert = screen.getByRole("alert").textContent ?? "";
+  expect(alert).toContain("Row 2 name:");
+  expect(alert).not.toContain("rules.");
+}
+
+/** A threshold that is not a number names the row and the table's column, `threshold`, not `thresholdValue`. */
+export async function aTextThresholdNamesTheRowAndItsColumn(): Promise<void> {
+  stubApi();
+  renderWizard();
+  await screen.findByRole("option", { name: "CH-01" });
+  await fillRow(1, "Supply high", "supply_temp_c", "warm");
+  await next();
+  expect(screen.getByRole("alert").textContent).toContain("Row 1 threshold:");
 }
 
 /** Submit posts the rows, with numeric thresholds, to the batch route — the plain request, no copilot header. */

@@ -9,6 +9,13 @@
  * (`RuleProposalCheckService.checkBatch`). It is read defensively: a value that
  * is not a list of objects still lists every rule from its own fields, with a
  * dash in the columns only the check computes.
+ *
+ * The change hash binds every field of every row, so the Rule column shows the
+ * fields no other column does — name, code, type, condition (a time_window
+ * row's days and window), clear hold, action, category and description — read
+ * from the stored row, never from `checks` (ADR 0099 decision 9: the user
+ * confirms what the card shows). Layout: the `ESKOM_SMOC.html` Rule Engine
+ * list (`R.rl`, `#/rules`) — the name in bold, its description beneath.
  */
 
 type RuleBatchTableProps = {
@@ -40,6 +47,37 @@ function textOf(value: unknown): string {
   return DASH;
 }
 
+function conditionOf(condition: unknown): string {
+  if (!isObject(condition)) return DASH;
+  if (condition.window === "latest") return typeof condition.unit === "string" ? `latest value (${condition.unit})` : "latest value";
+  const days = Array.isArray(condition.days) ? condition.days.filter((day): day is string => typeof day === "string") : [];
+  return `${days.length > 0 ? days.join(", ") : DASH} ${textOf(condition.startTime)}–${textOf(condition.endTime)}`;
+}
+
+function actionOf(action: unknown): string {
+  return isObject(action) ? `${textOf(action.type)} → ${textOf(action.target)}` : DASH;
+}
+
+/** The fields of one stored row that no other column shows; every hash-bound field is on the card. */
+function RuleCell({ rule }: { rule: Record<string, unknown> }) {
+  const hold = typeof rule.clearHoldSeconds === "number" ? `${rule.clearHoldSeconds} s` : "default";
+  const facts = [
+    `Code ${typeof rule.code === "string" && rule.code !== "" ? rule.code : "assigned on create"}`,
+    textOf(rule.ruleType),
+    conditionOf(rule.condition),
+    `Clear hold ${hold}`,
+    actionOf(rule.action),
+    `Category ${typeof rule.category === "string" && rule.category !== "" ? rule.category : "default"}`,
+  ];
+  return (
+    <td className="py-0.5 pr-2">
+      <div className="font-semibold">{textOf(rule.name)}</div>
+      <div className="text-[10px] text-ink-muted">{facts.join(" · ")}</div>
+      {typeof rule.description === "string" && rule.description !== "" && <div className="text-[10px] text-ink-muted">{rule.description}</div>}
+    </td>
+  );
+}
+
 export function RuleBatchTable({ rules, checks, excluded, onToggle, disabled }: RuleBatchTableProps) {
   const rows = batchRulesOf(rules);
   const checkList = Array.isArray(checks) ? checks : [];
@@ -48,7 +86,7 @@ export function RuleBatchTable({ rules, checks, excluded, onToggle, disabled }: 
       <table aria-label="Proposed rules" className="w-full border-collapse text-[11px]">
         <thead>
           <tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
-            {["#", "Asset", "Point", "Operator", "Threshold", "Severity", "Would match now", "7-day firings", "Create"].map((label) => (
+            {["#", "Rule", "Asset", "Point", "Operator", "Threshold", "Severity", "Would match now", "7-day firings", "Create"].map((label) => (
               <th key={label} scope="col" className="py-0.5 pr-2 font-semibold">
                 {label}
               </th>
@@ -62,6 +100,7 @@ export function RuleBatchTable({ rules, checks, excluded, onToggle, disabled }: 
             return (
               <tr key={index} data-excluded={!ticked} className={ticked ? "text-ink" : "text-ink-muted line-through"}>
                 <td className="py-0.5 pr-2">{index + 1}</td>
+                <RuleCell rule={rule} />
                 <td className="py-0.5 pr-2">{textOf(check?.assetCode)}</td>
                 <td className="break-all py-0.5 pr-2">{textOf(check?.pointKey ?? rule.pointKey)}</td>
                 <td className="py-0.5 pr-2">{textOf(check?.operator ?? rule.operator)}</td>

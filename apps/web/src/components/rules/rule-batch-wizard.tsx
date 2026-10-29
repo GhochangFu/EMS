@@ -20,6 +20,11 @@ import { wizardEntry } from "./rule-lifecycle-wizard";
  * publishes** every row in one transaction, all or none; the route's validator
  * still decides. The `<WizardShell>` line writes the literal
  * `entry={wizardEntry("rule.createBatch")}` (the stepper gate's form).
+ *
+ * Layout (AGENTS.md §5): the mockups draw no batch form. The frame and the
+ * stepper are the existing rule wizards' (`AdminWizardFrame` + `WizardShell`, as
+ * `RuleLifecycleWizard`); the rows are the `ESKOM_SMOC.html` Rule Engine page's
+ * (`R.rl`, `#/rules`) rule list, as a table of inputs.
  */
 
 /** One row of the table form: a threshold rule's own fields, the threshold as typed. */
@@ -75,6 +80,30 @@ function rowOfDraft(draft: unknown): BatchRow {
   };
 }
 
+/** The table's column for a draft field the Zod path names; any other field keeps its name. */
+const COLUMN_OF: Readonly<Record<string, string>> = {
+  name: "name",
+  assetId: "asset",
+  pointKey: "point",
+  operator: "operator",
+  thresholdValue: "threshold",
+  severity: "severity",
+};
+
+/**
+ * A Next refusal in the table's terms: the step parses `rules`, so Zod names
+ * `rules.<i>.<field>` from 0, while the `#` column and the route's own refusals
+ * (`Row N: …`) count from 1. `rules.1.name: …` becomes `Row 2 name: …`; a
+ * refusal that is not about one row is left as it is.
+ */
+export function rowProblem(problem: string): string {
+  const match = /^rules\.(\d+)(?:\.([^:]+))?: ([\s\S]*)$/.exec(problem);
+  if (match === null) return problem;
+  const [, index, field, message] = match;
+  const column = field === undefined ? "" : ` ${COLUMN_OF[field] ?? field}`;
+  return `Row ${Number(index) + 1}${column}: ${message}`;
+}
+
 type RuleBatchWizardProps = {
   onCancel: () => void;
   onDone: () => Promise<void> | void;
@@ -103,6 +132,7 @@ export function RuleBatchWizard({ onCancel, onDone }: RuleBatchWizardProps) {
         onChange={(next) => {
           if (Array.isArray(next.rules) && next.rules.length > 0) setRows(next.rules.slice(0, RULE_BATCH_MAX_ROWS).map(rowOfDraft));
         }}
+        formatProblem={rowProblem}
         renderStep={() => <BatchRowsTable rows={rows} setRows={setRows} assets={assets} severities={severities} />}
         onSubmit={(body) => save.mutate(body)}
         onCancel={onCancel}

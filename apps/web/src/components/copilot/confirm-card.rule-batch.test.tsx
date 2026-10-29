@@ -4,6 +4,10 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aMalformedChecksValueStillListsTheRules,
+  aRowShowsItsActionTypeAndTarget,
+  aRowShowsItsCategoryAndClearHold,
+  aRowShowsItsNameCodeAndDescription,
+  aTimeWindowRowShowsItsDaysAndTimes,
   noPasswordBoxIsShownForExcludedRows,
   theBatchCardIsRedAndCarriesTheLiveLine,
   theTableListsEveryRowWithItsCheckAndTicksAll,
@@ -25,4 +29,8 @@ describe("F4.289 — the batch rule card (ADR 0099 Amendment 9 E3)", () => {
   it("lists the rules from their own fields when checks is malformed", () => aMalformedChecksValueStillListsTheRules());
   it("is red and carries the live line", () => theBatchCardIsRedAndCarriesTheLiveLine());
   it("shows no password box for excludedRows", () => noPasswordBoxIsShownForExcludedRows());
+  it("shows each row's name, code and description", () => aRowShowsItsNameCodeAndDescription());
+  it("shows each row's action type and target", () => aRowShowsItsActionTypeAndTarget());
+  it("shows each row's category and clear hold", () => aRowShowsItsCategoryAndClearHold());
+  it("shows a time_window row's days and times", () => aTimeWindowRowShowsItsDaysAndTimes());
 });
