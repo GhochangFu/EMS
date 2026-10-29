@@ -1,5 +1,7 @@
 import { expect } from "vitest";
 
+import { hashExcludedKeysFor } from "@bms/shared/copilot";
+
 import { bodyHash } from "./body-hash";
 
 /**
@@ -44,4 +46,39 @@ export function aNestedClientOnlyPathIsStripped(): void {
   const typed = { name: "Hook", config: { to: ["a@example.test"], url: "https://hooks.example.test/x" } };
   const stored = { name: "Hook", config: { to: ["a@example.test"] } };
   expect(bodyHash(typed, ["config.url"])).toBe(bodyHash(stored));
+}
+
+/**
+ * `F4.289` (ADR 0099 Amendment 9 E3) — the batch card's owed claim: the user's `excludedRows` and
+ * the server's `checks` leave the hash, so a Confirm that only unticks rows matches the stored
+ * hash of `{ rules }`. Mutation: hash with `clientOnly` only (drop `cardOnly`) → this reddens.
+ */
+const BATCH_ROW = (pointKey: string, thresholdValue: number) => ({
+  name: `Chiller ${pointKey}`,
+  ruleType: "threshold",
+  assetId: "55555555-5555-4555-8555-555555555555",
+  pointKey,
+  operator: "gt",
+  thresholdValue,
+  condition: { window: "latest" },
+  action: { type: "notify", target: "Operations" },
+});
+const BATCH_RULES = [BATCH_ROW("supply_temp_c", 3), BATCH_ROW("return_temp_c", 9)];
+
+export function theBatchHashLeavesOutExcludedRowsAndChecks(): void {
+  const sent = { rules: BATCH_RULES, excludedRows: [1], checks: [{ row: 1 }, { row: 2 }] };
+  expect(bodyHash(sent, hashExcludedKeysFor("rule.createBatch"))).toBe(bodyHash({ rules: BATCH_RULES }, []));
+}
+
+/** The user can only leave a row out: a changed threshold, a third row or a reordered `rules` each move the hash. */
+export function aChangedAddedOrReorderedRowMovesTheBatchHash(): void {
+  const keys = hashExcludedKeysFor("rule.createBatch");
+  const stored = bodyHash({ rules: BATCH_RULES }, []);
+  const [first, second] = BATCH_RULES as [ReturnType<typeof BATCH_ROW>, ReturnType<typeof BATCH_ROW>];
+  const changed = [{ ...first, thresholdValue: 4 }, second];
+  const added = [first, second, BATCH_ROW("flow_m3h", 1)];
+  const reordered = [second, first];
+  for (const [label, rules] of [["changed", changed], ["added", added], ["reordered", reordered]] as const) {
+    expect(bodyHash({ rules, excludedRows: [] }, keys), label).not.toBe(stored);
+  }
 }

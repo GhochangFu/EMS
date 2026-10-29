@@ -701,3 +701,34 @@ export async function anAckWithItsReasonIsApplied(): Promise<void> {
   expect(h.handler).toHaveBeenCalledTimes(1);
   expect(h.pending.release).not.toHaveBeenCalled();
 }
+
+/**
+ * `F4.289` (ADR 0099 Amendment 9 E3), with the real catalog id: a batch Confirm that unticks a row
+ * sends `excludedRows` beside the stored `rules`, and the hash leaves it out, so the change applies.
+ */
+const BATCH_PATH = "/api/v1/rules/batch";
+const BATCH_RULE = (pointKey: string) => ({
+  name: `Chiller ${pointKey}`,
+  ruleType: "threshold",
+  assetId: "55555555-5555-4555-8555-555555555555",
+  pointKey,
+  operator: "gt",
+  thresholdValue: 3,
+  condition: { window: "latest" },
+  action: { type: "notify", target: "Operations" },
+});
+const BATCH_RULES = [BATCH_RULE("supply_temp_c"), BATCH_RULE("return_temp_c")];
+const BATCH_STORED = { path: BATCH_PATH, bodyHash: bodyHash({ rules: BATCH_RULES }), catalogId: "rule.createBatch" };
+
+export async function aBatchConfirmWithExcludedRowsIsApplied(): Promise<void> {
+  const h = harness({ path: BATCH_PATH, body: { rules: BATCH_RULES, excludedRows: [0] }, stored: BATCH_STORED });
+  await run(h);
+  expect(h.handler).toHaveBeenCalledTimes(1);
+  expect(h.pending.release).not.toHaveBeenCalled();
+}
+
+/** The adjacent negative: a row the card did not show (another point key) is 409, and the claim is released. */
+export async function aBatchConfirmWithAChangedRowIs409AndReleased(): Promise<void> {
+  const changed = [BATCH_RULES[0], { ...BATCH_RULE("return_temp_c"), pointKey: "flow_m3h" }];
+  await expectReleased(harness({ path: BATCH_PATH, body: { rules: changed, excludedRows: [0] }, stored: BATCH_STORED }));
+}
