@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { CalcParametersService } from "../calc/calc-parameters.service";
 import { NotificationsCoreModule } from "../notifications/notifications-core.module";
+import { LocationSummaryService } from "./location-summary.service";
 import { ReportDispatchService } from "./report-dispatch.service";
 import { ReportRenderService } from "./report-render.service";
 import { readReportFilesConfig } from "./report-files-config";
@@ -47,6 +48,11 @@ import { ReportsService } from "./reports.service";
  * `AccessControlService` (for `ChannelsService`) from the `@Global()`
  * `AccessControlModule`.
  *
+ * `F4.290` PR 2: `LocationSummaryService` (the copilot's
+ * `get_location_summary` reads; `FLEET_DRIZZLE` and `FLEET_POOL` only,
+ * stateless, no loop) is provided and exported here beside `ReportsService`,
+ * whose kWh expression it shares; the worker resolves it and never calls it.
+ *
  * Nest wiring, uncovered like `main.ts`. The compose worker boot (U10) is
  * the DI gate — `pnpm build` is not.
  */
@@ -57,8 +63,9 @@ import { ReportsService } from "./reports.service";
     CalcParametersService,
     ReportRenderService,
     ReportDispatchService,
+    LocationSummaryService,
     { provide: REPORT_FILES_CONFIG, useFactory: () => readReportFilesConfig(process.env) },
   ],
-  exports: [ReportsService, ReportRenderService, ReportDispatchService, REPORT_FILES_CONFIG],
+  exports: [ReportsService, ReportRenderService, ReportDispatchService, LocationSummaryService, REPORT_FILES_CONFIG],
 })
 export class ReportsCoreModule {}

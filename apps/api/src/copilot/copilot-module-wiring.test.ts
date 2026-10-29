@@ -32,6 +32,9 @@ import {
   assertTheRulesModuleExportsTheInventoryService,
   assertTheReadToolsInjectTheInventoryService,
   assertTheInventoryServiceInjectsTheFleetPool,
+  assertTheReportsCoreModuleExportsTheLocationSummary,
+  assertTheReadToolsInjectTheLocationSummary,
+  assertTheLocationSummaryInjectsTheFleetHandles,
   assertTheProposeToolsInjectTheLayoutsService,
   assertTheResolverInjectsTheUsersServices,
 } from "./copilot-module-wiring.spec";
@@ -77,4 +80,7 @@ describe("F3.86 PR 4 — CopilotModule wiring for the user targets", () => {
   it("F4.288: RulesModule provides and exports SitePointInventoryService", () => assertTheRulesModuleExportsTheInventoryService());
   it("F4.288: the read tools inject SitePointInventoryService in slot 26", () => assertTheReadToolsInjectTheInventoryService());
   it("F4.288: SitePointInventoryService injects the fleet pool", () => assertTheInventoryServiceInjectsTheFleetPool());
+  it("F4.290: ReportsCoreModule provides and exports LocationSummaryService", () => assertTheReportsCoreModuleExportsTheLocationSummary());
+  it("F4.290: the read tools inject LocationSummaryService in slot 27", () => assertTheReadToolsInjectTheLocationSummary());
+  it("F4.290: LocationSummaryService injects the fleet handles", () => assertTheLocationSummaryInjectsTheFleetHandles());
 });

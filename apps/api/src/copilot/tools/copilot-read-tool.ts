@@ -20,6 +20,7 @@ import type { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.serv
 import type { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import type { ChannelsService } from "../../notifications/channels.service";
 import type { EscalationProfilesService } from "../../notifications/escalation-profiles.service";
+import type { LocationSummaryService } from "../../reports/location-summary.service";
 import type { ReportSchedulesService } from "../../reports/report-schedules.service";
 import type { ReportsService } from "../../reports/reports.service";
 import type { RulesService } from "../../rules/rules.service";
@@ -38,8 +39,11 @@ import { COPILOT_TOOL_LIST_MAX_ITEMS, locationRefusal, targetOrganizations } fro
  * each uses, so a spec passes a fake with a call counter and nothing else.
  */
 export interface CopilotReadServices {
-  /** `F4.276`: `readableOrganizationIds` narrows `get_alarm_kb`'s BYPASSRLS read, as `GET /alarm-kb` does. */
-  readonly access: Pick<AccessControlService, "readableAssetIdsInOrganization" | "readableOrganizationIds">;
+  /**
+   * `F4.276`: `readableOrganizationIds` narrows `get_alarm_kb`'s BYPASSRLS read, as `GET /alarm-kb` does.
+   * `F4.290` PR 2: `readableLocationIds`, the roots `get_location_summary` lists and the sites it may name.
+   */
+  readonly access: Pick<AccessControlService, "readableAssetIdsInOrganization" | "readableOrganizationIds" | "readableLocationIds">;
   /**
    * `F4.291` (owner ruling P5): a `locationId` to the caller's readable asset ids of its
    * subtree, through the one shared helper in `auth/`; `readPerOrganization` calls it.
@@ -122,6 +126,13 @@ export interface CopilotReadServices {
    * never before the location is placed; `stats` only with the page's pairs.
    */
   readonly inventory: Pick<SitePointInventoryService, "pairs" | "stats">;
+  /**
+   * `F4.290` PR 2 (ADR 0099 Amendment 9 E4): `get_location_summary`'s rows and
+   * their rollups. `summarise` is called only with the asset ids
+   * `readPerOrganization` got (the organization's readable ids, or the named
+   * sites' through the location helper), so never before placement.
+   */
+  readonly locationSummary: Pick<LocationSummaryService, "rows" | "summarise">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */
@@ -294,13 +305,20 @@ export type ListScope<K> = {
  * place of the organization's. A named `organizationId` other than the
  * location's makes the location not found (the candidates are that one
  * organization). With `scope.paging` the result carries `nextCursor` (see
- * {@link pageOrganizations}).
+ * {@link pageOrganizations}). `read` may answer `{ refusal }` (`F4.290` PR 2:
+ * `get_location_summary` refuses a named site outside the caller's readable
+ * locations), which fails the whole call as `pageOrganizations` does.
  */
 export async function readPerOrganization<T, K = never>(
   services: Pick<CopilotReadServices, "access" | "locationScope">,
   ctx: CopilotToolContext,
   scope: ListScope<K>,
-  read: (organizationId: string, assetIds: readonly string[], room: number, resume: K | undefined) => Promise<OrganizationRead<T, K>>,
+  read: (
+    organizationId: string,
+    assetIds: readonly string[],
+    room: number,
+    resume: K | undefined,
+  ) => Promise<OrganizationRead<T, K> | { readonly refusal: string }>,
 ): Promise<CopilotToolResult> {
   const target = targetOrganizations(scope.organizationId, ctx.allowedOrganizationIds);
   if (!target.ok) return target;

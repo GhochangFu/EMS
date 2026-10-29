@@ -30,6 +30,34 @@ const energyTemplate: EnergyReportTemplate = {
   active: true,
 };
 
+/** The instants a report's calendar dates cover, and its length in hours. */
+export type ReportRange = { start: Date; end: Date; durationHours: number };
+
+/**
+ * The energy report's range: `startDate` 00:00:00.000 to `endDate`
+ * 23:59:59.999 UTC, at most 31 days, else a 400. A module function since
+ * `F4.290` PR 2, so `LocationSummaryService` reads the bounds the report
+ * reads (UTC day boundaries are hour boundaries: no partial `_1h` bucket).
+ */
+export function energyReportRange(query: Pick<EnergyReportQuery, "startDate" | "endDate">): ReportRange {
+  const start = new Date(`${query.startDate}T00:00:00.000Z`);
+  const end = new Date(`${query.endDate}T23:59:59.999Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    throw new BadRequestException("Invalid report date range");
+  }
+  if (start > end) {
+    throw new BadRequestException("Report start date must be before end date");
+  }
+  const durationHours = Math.max(
+    1,
+    (end.getTime() - start.getTime()) / (60 * 60 * 1000),
+  );
+  if (durationHours > 24 * 31) {
+    throw new BadRequestException("Energy report range is limited to 31 days");
+  }
+  return { start, end, durationHours };
+}
+
 @Injectable()
 export class ReportsService {
   // E7.1b: the energy report joins `bms.assets` (FORCE-policied as of 0047) —
@@ -134,27 +162,8 @@ export class ReportsService {
     return renderPdf(energyPdfDefinition(preview));
   }
 
-  private parseRange(query: EnergyReportQuery): {
-    start: Date;
-    end: Date;
-    durationHours: number;
-  } {
-    const start = new Date(`${query.startDate}T00:00:00.000Z`);
-    const end = new Date(`${query.endDate}T23:59:59.999Z`);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
-      throw new BadRequestException("Invalid report date range");
-    }
-    if (start > end) {
-      throw new BadRequestException("Report start date must be before end date");
-    }
-    const durationHours = Math.max(
-      1,
-      (end.getTime() - start.getTime()) / (60 * 60 * 1000),
-    );
-    if (durationHours > 24 * 31) {
-      throw new BadRequestException("Energy report range is limited to 31 days");
-    }
-    return { start, end, durationHours };
+  private parseRange(query: EnergyReportQuery): ReportRange {
+    return energyReportRange(query);
   }
 
   private async energySummary(

@@ -38,7 +38,9 @@ import { AuthModule } from "../auth/auth.module";
 import { LocationAssetScopeService } from "../auth/location-asset-scope.service";
 import { AlarmsModule } from "../alarms/alarms.module";
 import { AlarmStatsService } from "../alarms/alarm-stats.service";
-import { FLEET_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE, FLEET_POOL } from "../database/database.tokens";
+import { LocationSummaryService } from "../reports/location-summary.service";
+import { ReportsCoreModule } from "../reports/reports-core.module";
 import { SitePointInventoryService } from "../rules/site-point-inventory.service";
 
 /**
@@ -287,4 +289,22 @@ export function assertTheReadToolsInjectTheInventoryService(): void {
  */
 export function assertTheInventoryServiceInjectsTheFleetPool(): void {
   expect([...injected(SitePointInventoryService)]).toEqual([[0, FLEET_DRIZZLE]]);
+}
+
+/** `F4.290` PR 2: `ReportsCoreModule` (imported by `CopilotModule`) provides and exports `LocationSummaryService`. */
+export function assertTheReportsCoreModuleExportsTheLocationSummary(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(ReportsCoreModule);
+  expect(moduleList(ReportsCoreModule, "providers")).toContain(LocationSummaryService);
+  expect(moduleList(ReportsCoreModule, "exports")).toContain(LocationSummaryService);
+}
+
+/** `F4.290` PR 2: the read tools' slot 27 is `LocationSummaryService`, by `@Inject`. */
+export function assertTheReadToolsInjectTheLocationSummary(): void {
+  expect(injected(CopilotReadToolSet).get(27)).toBe(LocationSummaryService);
+}
+
+/** `F4.290` PR 2: the service's two slots are the fleet handles, by `@Inject` — without them the API does not boot. */
+export function assertTheLocationSummaryInjectsTheFleetHandles(): void {
+  const slots = injected(LocationSummaryService);
+  expect([slots.size, slots.get(0), slots.get(1)]).toEqual([2, FLEET_DRIZZLE, FLEET_POOL]);
 }

@@ -48,6 +48,7 @@ import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesModule } from "../../mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import { ReportsCoreModule } from "../../reports/reports-core.module";
+import { LocationSummaryService } from "../../reports/location-summary.service";
 import { ReportsService } from "../../reports/reports.service";
 import { TelemetryModule } from "../../telemetry/telemetry.module";
 import { TelemetryService } from "../../telemetry/telemetry.service";
@@ -440,13 +441,14 @@ export async function assertAnInjectedProposeCallFindsNoTool(): Promise<void> {
 }
 
 /**
- * The registry is the read tools — 37 since `F4.288` (`F3.87` PR 2 added the four
+ * The registry is the read tools — 38 since `F4.290` PR 2 (`F3.87` PR 2 added the four
  * mimic reads, `F4.274` the five telemetry reads, `F4.275` the six energy
  * reads, `F4.277` the system status and the audit log, `F4.276` the alarm
  * details and the alarm knowledge base), each with a strict argument schema.
  * `F4.291` PR 2 inserts `get_alarm_stats` after `get_alarm_kb`; PR 3 inserts
  * `get_point_stats` after `get_point_aggregate` (36 tools). `F4.288` inserts
- * `get_site_point_inventory` after `list_rules` (37 tools).
+ * `get_site_point_inventory` after `list_rules` (37 tools). `F4.290` PR 2
+ * inserts `get_location_summary` after `get_energy_report_preview` (38 tools).
  */
 export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
   const { tools } = fakeServices();
@@ -474,6 +476,8 @@ export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
     "get_energy_source_mix",
     "get_energy_top_consumers",
     "get_energy_report_preview",
+    // `F4.290` PR 2: one row per site, beside the report it summarises.
+    "get_location_summary",
     "list_locations",
     "list_dashboards",
     "get_health_summary",
@@ -634,6 +638,8 @@ export function assertTheModuleWiresTheReadTools(): void {
     AlarmStatsService,
     // `F4.288`: the site point inventory read tool, from `RulesModule`.
     SitePointInventoryService,
+    // `F4.290` PR 2: the location summary read tool, from `ReportsCoreModule`.
+    LocationSummaryService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
   for (const module of [
@@ -676,8 +682,8 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(MimicSymbolLibrariesModule)).toContain(MimicSymbolLibrariesService);
   expect(exportsOf(TelemetryModule)).toContain(TelemetryService);
   expect(exportsOf(DashboardModule)).toContain(DashboardService);
-  expect(exportsOf(ReportsCoreModule)).toContain(ReportsService);
+  expect(exportsOf(ReportsCoreModule)).toEqual(expect.arrayContaining([ReportsService, LocationSummaryService]));
   expect(exportsOf(AdminModule)).toContain(AuditAdminService);
   expect(exportsOf(SystemStatusModule)).toContain(SystemStatusService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(37); // `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills; `F4.291` PR 2: + get_alarm_stats; PR 3: + get_point_stats; `F4.288`: + get_site_point_inventory.
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(38); // `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills; `F4.291` PR 2: + get_alarm_stats; PR 3: + get_point_stats; `F4.288`: + get_site_point_inventory; `F4.290` PR 2: + get_location_summary.
 }
