@@ -31,6 +31,7 @@ import { ChangeCard } from "./change-card";
 import { FileAgainSlot } from "./file-again-slot";
 import { ImportPreviewCard } from "./import-preview-card";
 import { MimicLayoutPreview } from "./mimic-layout-preview";
+import { batchRulesOf, RuleBatchTable } from "./rule-batch-table";
 import { SymbolUploadPreview } from "./symbol-upload-preview";
 
 /** What a 409 means on a card: the change was applied, rejected, expired or claimed elsewhere. */
@@ -172,6 +173,12 @@ export function movesOf(value: unknown): { key: string; line: string }[] {
  * URL is sent at its nested path (`clientOnlyFieldsFor`, `withPaths`). The
  * card-only `recipients` the server stored are listed in full under the rows;
  * the summary the model wrote carries names and counts only.
+ *
+ * `F4.289` (ADR 0099 Amendment 9 E3, owner ruling P2): a batch rule card is
+ * red (`entry.red`) and lists its rules as a table with the server's per-row
+ * check and one checkbox each (`RuleBatchTable`). Confirm sends every stored
+ * rule and the unticked indexes as `excludedRows` (a client-only value, so the
+ * hash still binds the rows alone); with every row unticked Confirm waits.
  */
 export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFailed }: ConfirmCardProps) {
   const queryClient = useQueryClient();
@@ -228,6 +235,17 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
   // `F4.283` (Amendment 8 Q19): a file-upload card sends the file this tab kept, or the same file picked again.
   const fileUpload = entry?.upload?.kind === "file";
   const [file, setFile] = useState<File | null>(null);
+  // `F4.289` (Amendment 9 E3): a batch rule card's unticked rows (0-based indexes in `body.rules`).
+  const isRuleBatch = change.catalogId === "rule.createBatch";
+  const [excluded, setExcluded] = useState<ReadonlySet<number>>(() => new Set());
+  const batchRuleCount = isRuleBatch ? batchRulesOf(change.body.rules).length : 0;
+  const toggleRow = (index: number) =>
+    setExcluded((was) => {
+      const next = new Set(was);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
 
   const onType = (field: (typeof clientOnly)[number], value: string) => {
     typed.current[field.path] = value;
@@ -267,7 +285,8 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
     mutationFn: () => {
       const values: Record<string, string> = {};
       for (const field of clientOnly) values[field.path] = typed.current[field.path] ?? "";
-      return confirmCopilotChange(change, values, file ?? undefined);
+      const batch = isRuleBatch ? { excludedRows: [...excluded].sort((a, b) => a - b) } : {};
+      return confirmCopilotChange(change, values, file ?? undefined, batch);
     },
     onSuccess: async () => {
       setError(null);
@@ -299,7 +318,9 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
           ...scalarRowsOf(changeRows(change.body, null, [...cardOnly, "nodes", "pipes"]), baseline),
           ...(baseline !== null ? layoutGraphRows(layoutBody, baseline) : []),
         ]
-      : changeRows(change.body, isEdit ? (current.data ?? null) : null, cardOnly, entry?.formulas ?? []);
+      : isRuleBatch
+        ? changeRows(change.body, null, [...cardOnly, "rules"])
+        : changeRows(change.body, isEdit ? (current.data ?? null) : null, cardOnly, entry?.formulas ?? []);
   const note = isEdit
     ? `Proposed at ${timeOf(change.proposedAt)}. The record can change before you confirm; the request sends the values shown. Expires at ${timeOf(change.expiresAt)}.`
     : `Proposed at ${timeOf(change.proposedAt)}. Expires at ${timeOf(change.expiresAt)}.`;
@@ -313,6 +334,7 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
         title={entry?.title ?? change.catalogId}
         summary={change.summary}
         risk={change.risk}
+        red={entry?.red === true}
         rows={rows}
         note={note}
         error={error}
@@ -323,8 +345,11 @@ export function ConfirmCard({ change, onApplied, onRejected, onGone, onRouteFail
         onConfirm={() => confirm.mutate()}
         secondaryLabel="Reject"
         onSecondary={() => reject.mutate()}
-        confirmDisabled={!allReady || (fileUpload && file === null)}
+        confirmDisabled={!allReady || (fileUpload && file === null) || (isRuleBatch && excluded.size >= batchRuleCount)}
       >
+        {isRuleBatch && (
+          <RuleBatchTable rules={change.body.rules} checks={change.body.checks} excluded={excluded} onToggle={toggleRow} disabled={busy} />
+        )}
         {layoutBody !== null && <MimicLayoutPreview body={layoutBody} orgSymbols={orgSymbols} />}
         {fileUpload && typeof change.body.filename === "string" && typeof change.body.fileSha256 === "string" && (
           <FileAgainSlot filename={change.body.filename} sha256={change.body.fileSha256} onFile={setFile} />

@@ -45,6 +45,7 @@ import { UsersService } from "../admin/users/users.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
+import { findRuleBatch } from "./copilot-rule-targets";
 import { CopilotTargetRefusal, mayWriteTelemetry, telemetryRowRefusal } from "./copilot-telemetry-targets";
 // prettier-ignore
 import { findWorkOrderBatch, isActiveAlarmSkill, mayWriteOperationalAssets, type OperationsAlarm, type OperationsBatchRow, type OperationsWorkOrder, readAlarmRow, readConvertibleSchedule, readOrganizationUserName, readWorkOrderRow, unknownAlarmSkillMessage } from "./copilot-operations-targets";
@@ -159,7 +160,7 @@ type Found = {
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
 type RowKind = Exclude<
   CatalogEntry["target"]["kind"],
-  "organization" | "parent" | "fleet" | "vocabulary" | "telemetry" | "onboardingSession" | "workOrderBatch" | UserKind
+  "organization" | "parent" | "fleet" | "vocabulary" | "telemetry" | "onboardingSession" | "workOrderBatch" | "ruleBatch" | UserKind
 >;
 type UserKind = "user" | "userGrantAdd" | "userGrant";
 type UserTarget = Extract<CatalogEntry["target"], { kind: UserKind }>;
@@ -271,12 +272,15 @@ export class CopilotTargetResolver implements CopilotTargets {
       if (typeof assetId !== "string") return null;
       found = await this.configurationAsset(assetId, allowedOrganizationIds);
       if (found !== null && !(await this.safely(() => this.mayWriteOperational(user, assetId)))) found = null;
-    } else if (target.kind === "workOrderBatch") {
-      const batch = await findWorkOrderBatch(this.tenantDb, body[target.field], allowedOrganizationIds);
+    } else if (target.kind === "workOrderBatch" || target.kind === "ruleBatch") {
+      // `F4.289` (Amendment 9 E3): a rule batch is one organization's assets, with the rule routes' gate on each.
+      const rule = target.kind === "ruleBatch";
+      const batch = await (rule ? findRuleBatch : findWorkOrderBatch)(this.tenantDb, body[target.field], allowedOrganizationIds);
       const name = batch === null ? null : await this.organizationName(batch.organizationId);
-      found = batch === null || name === null ? null : { organizationId: batch.organizationId, name, batch: batch.rows };
-      const assetIds = batch?.rows.map((row) => row.assetId) ?? [];
-      if (found !== null && !(await this.safely(() => this.mayWriteOperational(user, ...assetIds)))) found = null;
+      found = batch === null || name === null ? null : { organizationId: batch.organizationId, name, ...("rows" in batch ? { batch: batch.rows } : {}) };
+      const assetIds = batch === null ? [] : "rows" in batch ? batch.rows.map((row) => row.assetId) : batch.assetIds;
+      const gate = rule ? () => this.mayWriteConfiguration(user, ...assetIds) : () => this.mayWriteOperational(user, ...assetIds);
+      if (found !== null && !(await this.safely(gate))) found = null;
     } else {
       const id = params[target.param];
       if (id === undefined) return null;

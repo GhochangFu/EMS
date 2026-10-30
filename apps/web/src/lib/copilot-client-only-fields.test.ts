@@ -6,6 +6,7 @@ import {
   aWebhookCreateShowsBothBoxes,
   aWebhookUpdateThatReplacesConfigAsksForTheUrl,
   aWebhookUpdateWithoutConfigShowsTheSecretOnly,
+  theBatchExcludedRowsShowNoBox,
   theSchemasAreTheRoutesRules,
 } from "./copilot-client-only-fields.spec";
 
@@ -17,4 +18,5 @@ describe("F4.279 — the Confirm card's clientOnly boxes (Q11, Q12, Q10)", () =>
   it("a webhook update that replaces config asks for the URL", () => aWebhookUpdateThatReplacesConfigAsksForTheUrl());
   it("the boxes check the route's own rules", () => theSchemasAreTheRoutesRules());
   it("another entry's clientOnly field is shown and required", () => anotherEntrysFieldIsRequired());
+  it("a rule batch's excludedRows shows no box (F4.289)", () => theBatchExcludedRowsShowNoBox());
 });

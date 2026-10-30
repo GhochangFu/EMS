@@ -17,6 +17,14 @@ import {
   aRuleWithNoSampleSaysSo,
   aTimeWindowDraftHasNoBacktest,
   theNonArmingEntriesReadNoSampleAndShowTheCondition,
+  aDuplicateCodeInsideTheBatchIsRefused,
+  aMalformedRowIsRefusedWithItsNumber,
+  anAssetCodeIsReadOncePerAsset,
+  anUnarmableRowIsRefusedWithItsNumber,
+  aRowWithNoSampleIsCountedAsNoSample,
+  everyRowIsValidatedArmedEvaluatedAndBacktested,
+  theFirstRefusedRowNamesItsNumberAndStopsTheCheck,
+  theNoteCountsTheRows,
 } from "./rule-proposal-check.service.spec";
 
 /** `F4.278` — Vitest entry point for the copilot's rule check. Assertions live in the sibling `.spec` (§4.6). */
@@ -38,4 +46,16 @@ describe("F4.278 — the copilot's write-free rule check (ADR 0099 Amendment 8, 
     theNonArmingEntriesReadNoSampleAndShowTheCondition());
   it("an unknown rule is not found", () => anUnknownRuleIsNotFound());
   it("a rule with no sample says so", () => aRuleWithNoSampleSaysSo());
+});
+
+/** `F4.289` — the batch check (ADR 0099 Amendment 9 E3). Assertions live in the sibling `.spec` (§4.6). */
+describe("F4.289 — the rule.createBatch card's check", () => {
+  it("every row is validated, armed, evaluated and backtested", () => everyRowIsValidatedArmedEvaluatedAndBacktested());
+  it("the first refused row names its number and stops the check", () => theFirstRefusedRowNamesItsNumberAndStopsTheCheck());
+  it("an unarmable row is refused with its number", () => anUnarmableRowIsRefusedWithItsNumber());
+  it("a malformed row is refused with its number", () => aMalformedRowIsRefusedWithItsNumber());
+  it("a duplicate code inside the batch is refused", () => aDuplicateCodeInsideTheBatchIsRefused());
+  it("the note counts the rows", () => theNoteCountsTheRows());
+  it("a row with no sample is counted as no sample", () => aRowWithNoSampleIsCountedAsNoSample());
+  it("an asset code is read once per asset", () => anAssetCodeIsReadOncePerAsset());
 });

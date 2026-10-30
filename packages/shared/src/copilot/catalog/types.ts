@@ -135,6 +135,13 @@ export type CatalogTarget =
   | { readonly kind: "rule"; readonly param: "id" }
   | { readonly kind: "rule"; readonly field: "assetId" }
   /**
+   * `F4.289` (ADR 0099 Amendment 9 E3): a rule batch create — the rows the body's `rules` names, at
+   * most 25, each with its `assetId`. Every row's asset is in **one** allowed organization (the
+   * first that holds any must hold all), and the gate is `rules.controller.ts`'s for a create: the
+   * `configuration` role class, then every row's asset in the caller's **read** scope.
+   */
+  | { readonly kind: "ruleBatch"; readonly field: "rules" }
+  /**
    * `F4.279` (ADR 0099 Amendment 8 D2): a notification channel or an escalation profile, the row
    * the path parameter `id` names. Both mirror the routes' gate: `requireMasterDataUser`, then
    * `canManageNotificationChannel` on the row's organization; a fleet-wide (NULL-organization)
@@ -352,6 +359,13 @@ export interface CatalogEntry {
    */
   readonly fixedBody?: Readonly<Record<string, unknown>>;
   readonly risk: CatalogRisk;
+  /**
+   * `F4.289` (owner ruling P2, 2026-10-27): the Confirm card is red although `risk` is not one of
+   * the red risks — a batch that creates **and publishes** live alarm rules. `risk` stays what the
+   * write is (`create`, the `copilot_pending_changes_risk_check` value); only the card's style
+   * changes. Absent: the card's colour follows `risk`.
+   */
+  readonly red?: true;
   readonly target: CatalogTarget;
   readonly refs: readonly CatalogRef[];
   readonly formulas: readonly CatalogFormula[];

@@ -170,6 +170,28 @@ export async function createRuleDraft(input: RuleDraftPayload): Promise<RuleList
   return checkResponse(ruleListItemSchema, await res.json(), "rules");
 }
 
+/**
+ * POST /api/v1/rules/batch — `F4.289` (ADR 0099 Amendment 9 E3, owner ruling P1): up to 25 drafts,
+ * created and published in one transaction, all or none. The Rule Engine's batch wizard sends the
+ * plain request (no `X-Copilot-Change`); the copilot's card goes through `confirmCopilotChange`.
+ */
+export async function createRuleBatch(input: { rules: RuleDraftPayload[] }): Promise<RulesResponse> {
+  const sent = {
+    ...withAuth({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }),
+  };
+  const res = await fetch(`${base}/api/v1/rules/batch`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    const text = await res.text();
+    throw new Error(text || `rule-batch ${res.status}`);
+  }
+  return checkResponse(rulesResponseSchema, await res.json(), "rules/batch");
+}
+
 /** PATCH /api/v1/rules/:id */
 export async function updateRuleDraft(input: {
   id: string;

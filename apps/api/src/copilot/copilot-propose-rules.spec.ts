@@ -4,7 +4,7 @@ import { expect } from "vitest";
 import { COPILOT_CATALOG, proposeToolName, RULE_LIVE_LINE } from "@bms/shared/copilot";
 
 import type { ResolvedIdentity } from "../auth/identity-resolver";
-import type { RuleProposalCheckInput } from "../rules/rule-proposal-check.service";
+import type { RuleBatchCheckInput, RuleBatchCheckResult, RuleProposalCheckInput } from "../rules/rule-proposal-check.service";
 import { bodyHash } from "./body-hash";
 import { PROPOSE_RULES_UNAVAILABLE_ERROR, RULE_ENTRY_IDS } from "./copilot-propose-rules";
 import { PROPOSE_TARGET_ERROR } from "./copilot-propose-tools";
@@ -31,6 +31,7 @@ export const RULE_TOOLS = [
   "rule.enable",
   "rule.disable",
   "rule.archive",
+  "rule.createBatch",
 ].map((id) => proposeToolName({ id }));
 
 const CREATE_BODY = {
@@ -55,15 +56,23 @@ function target(lifecycle: string): ResolvedTarget {
   };
 }
 
-function checks(refusal?: string) {
+/** A recording fake of the check. `F4.289`: `checkBatch` answers `batch` (default: one "yes" row per model row). */
+export function checks(refusal?: string, batch?: RuleBatchCheckResult) {
   const calls: RuleProposalCheckInput[] = [];
+  const batchCalls: RuleBatchCheckInput[] = [];
   return {
     calls,
+    batchCalls,
     rules: {
       check: async (input: RuleProposalCheckInput) => {
         calls.push(input);
         if (refusal !== undefined) throw new BadRequestException(refusal);
         return { note: NOTE };
+      },
+      checkBatch: async (input: RuleBatchCheckInput): Promise<RuleBatchCheckResult> => {
+        batchCalls.push(input);
+        if (refusal !== undefined) throw new BadRequestException(refusal);
+        return batch ?? { note: NOTE, rows: [] };
       },
     },
   };
@@ -77,7 +86,7 @@ function harness(lifecycle = "published", refusal?: string) {
   };
 }
 
-/** D1: the seven rule tools are in every copilot role's registry (the route's configuration class admits all four). */
+/** D1: the eight rule tools (`F4.289` adds the batch) are in every copilot role's registry (the route's configuration class admits all four). */
 export function theRuleToolsAreInEveryCopilotRolesRegistry(): void {
   for (const role of COPILOT_ROLES) {
     const names = proposeHarness()
@@ -145,7 +154,8 @@ export async function aRefusedTargetNeverRunsTheCheck(): Promise<void> {
 export function theCheckedIdsAreTheCatalogsRuleEntries(): void {
   // F4.279: checked by the notification step, not the rule validator.
   const notChecked: readonly string[] = ["rule.notifications.set"];
-  const ruleTargeted = COPILOT_CATALOG.filter((entry) => entry.target.kind === "rule");
+  // `F4.289`: the batch's `ruleBatch` target is a rule target too, so it must be checked.
+  const ruleTargeted = COPILOT_CATALOG.filter((entry) => entry.target.kind === "rule" || entry.target.kind === "ruleBatch");
   const expected = ruleTargeted.map((entry) => entry.id).filter((id) => !notChecked.includes(id));
   expect([...RULE_ENTRY_IDS].sort()).toEqual([...expected].sort());
 }

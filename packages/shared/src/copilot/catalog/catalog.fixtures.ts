@@ -204,6 +204,25 @@ export const FIXTURES: Readonly<
   "rule.enable": { body: { enabled: true }, params: { id: ROW }, names: TARGET_NAME },
   "rule.disable": { body: { enabled: false }, params: { id: ROW }, names: TARGET_NAME },
   "rule.archive": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  // `F4.289` (Amendment 9 E3) — one row, the create's own body; the batch names its organization.
+  "rule.createBatch": {
+    body: {
+      rules: [
+        {
+          name: "Chiller high",
+          ruleType: "threshold",
+          assetId: ROW,
+          pointKey: "supply_temp_c",
+          operator: "gt",
+          thresholdValue: 3,
+          condition: { window: "latest" },
+          action: { type: "notify", target: "Operations" },
+        },
+      ],
+    },
+    params: {},
+    names: ORG_NAME,
+  },
   // `F4.279` (Amendment 8) — notifications and escalation; no fixture holds a secret or a URL (Q11, Q12).
   "notificationChannel.create": {
     body: { organizationId: ORG, code: "ops", name: "Ops", kind: "email", config: { to: ["a@example.test"] } },

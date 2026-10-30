@@ -3,6 +3,8 @@ import { describe, it, vi } from "vitest";
 import {
   anAckWithAnotherReasonIs409AndReleased,
   anAckWithItsReasonIsApplied,
+  aBatchConfirmWithAChangedRowIs409AndReleased,
+  aBatchConfirmWithExcludedRowsIsApplied,
   aClientOnlyValueBesideTheStoredBodyMatches,
   aRoutesOwnConflictKeepsItsSentence,
   aFailedChangeStartsAFollowUpToo,
@@ -148,4 +150,9 @@ describe("F4.247 — the Confirm binds If-Match (ADR 0099 Amendment 5 C2)", () =
 describe("F4.284 — the reason is in the hash (ADR 0106 decision 3)", () => {
   it("refuses and releases an acknowledge sent with another reason", () => anAckWithAnotherReasonIs409AndReleased());
   it("applies an acknowledge sent with the reason the card showed", () => anAckWithItsReasonIsApplied());
+});
+
+describe("F4.289 — a batch Confirm can only leave rows out (ADR 0099 Amendment 9 E3)", () => {
+  it("applies a batch Confirm that sends excludedRows", () => aBatchConfirmWithExcludedRowsIsApplied());
+  it("refuses and releases a batch Confirm with a changed row", () => aBatchConfirmWithAChangedRowIs409AndReleased());
 });

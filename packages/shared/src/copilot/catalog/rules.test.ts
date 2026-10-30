@@ -11,9 +11,16 @@ import {
   thePublishAndEnableSummariesCarryTheLiveLine,
   theRuleTargetsMirrorTheRoute,
   theSevenRuleEntriesNameTheirRoutes,
-  theThreeRuleRoutesAreExcludedWithTheirReasons,
+  theTwoRuleRoutesAreExcludedWithTheirReasons,
   theUpdateSummaryCarriesTheLiveLineForAPublishedRule,
   theUpdateSummaryOfADraftHasNoLiveLine,
+  noOtherRuleEntryIsFlaggedRed,
+  theBatchEntryIsRedWithRiskCreate,
+  theBatchEntryNamesItsRouteAndBodies,
+  theBatchExcludedRowsAreClientOnlyAndChecksCardOnly,
+  theBatchSummaryCountsRulesAndAssetsAndCarriesTheLiveLine,
+  theBatchSummaryNeverStatesTheAppliedCount,
+  theBatchTargetIsTheRows,
 } from "./rules.spec";
 
 /** `F4.278` — Vitest entry point for the alarm-rule catalog entries. Assertions live in the sibling `.spec` (§4.6). */
@@ -66,7 +73,18 @@ describe("F4.278 — alarm-rule catalog entries (ADR 0099 Amendment 8)", () => {
     noRuleEntryNarrowsTheRoles();
   });
 
-  it("the three rule routes are excluded with their reasons", () => {
-    theThreeRuleRoutesAreExcludedWithTheirReasons();
+  it("the two rule routes are excluded with their reasons", () => {
+    theTwoRuleRoutesAreExcludedWithTheirReasons();
   });
+});
+
+/** `F4.289` — the batch entry (ADR 0099 Amendment 9 E3). Assertions live in the sibling `.spec` (§4.6). */
+describe("F4.289 — rule.createBatch catalog entry", () => {
+  it("the batch entry names its route and bodies", () => theBatchEntryNamesItsRouteAndBodies());
+  it("excludedRows is client-only and checks card-only", () => theBatchExcludedRowsAreClientOnlyAndChecksCardOnly());
+  it("the batch entry is red with risk create (ruling P2)", () => theBatchEntryIsRedWithRiskCreate());
+  it("no other rule entry is flagged red", () => noOtherRuleEntryIsFlaggedRed());
+  it("the batch target is the rows", () => theBatchTargetIsTheRows());
+  it("the batch summary counts rules and assets and carries the live line", () => theBatchSummaryCountsRulesAndAssetsAndCarriesTheLiveLine());
+  it("the batch summary never states the applied count", () => theBatchSummaryNeverStatesTheAppliedCount());
 });

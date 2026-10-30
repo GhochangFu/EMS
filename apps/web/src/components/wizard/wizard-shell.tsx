@@ -60,6 +60,12 @@ type WizardShellProps = {
    * proceed without it; the page says why beside the shell.
    */
   nextDisabled?: boolean;
+  /**
+   * `F4.289`: rewrites one Next refusal (`path: message`) in the page's own terms — for example
+   * a table form's 0-based `rules.1.name` as the `Row 2 name` its `#` column shows. Absent, the
+   * refusal is the Zod path as it is.
+   */
+  formatProblem?: (problem: string) => string;
 };
 
 /**
@@ -123,7 +129,7 @@ export function WizardShell(props: WizardShellProps) {
   const reviewProblems = step.id === REVIEW_STEP.id ? bodyProblems(entry, body) : [];
 
   function goNext(): void {
-    const found = stepProblems(entry, step, values);
+    const found = stepProblems(entry, step, values).map((problem) => props.formatProblem?.(problem) ?? problem);
     setProblems(found);
     if (found.length === 0) setStepId(nextStepId(steps, step.id));
   }
@@ -164,6 +170,7 @@ export function WizardShell(props: WizardShellProps) {
           title={entry.title}
           summary={props.summary ?? entry.title}
           risk={entry.risk}
+          red={entry.red === true}
           rows={changeRows(body, props.current ?? null, [], entry.formulas)}
           error={props.submitError ?? (reviewProblems.length > 0 ? reviewProblems.join("; ") : null)}
           busy={props.submitting}
