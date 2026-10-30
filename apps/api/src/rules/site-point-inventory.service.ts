@@ -110,6 +110,32 @@ export class SitePointInventoryService {
       };
     });
   }
+
+  /**
+   * `F4.296` (ADR 0099 Amendment 10 F2) — each pair's unit without its
+   * statistics, for the copilot's `unruled` read: the asset's active
+   * mapping's, else the fleet catalog's (`inventoryUnit` without the
+   * samples' own unit). No `telemetry.*` read, so its cost does not grow with
+   * the 7-day window; one answer per pair, in the pairs' order. `[]` reads
+   * nothing.
+   */
+  async units(pairs: readonly InventoryPair[]): Promise<Array<string | null>> {
+    if (pairs.length === 0) return [];
+    const result = await this.fleetDb.execute<{ asset_id: string; point_key: string; mapping_unit: string | null; catalog_unit: string | null }>(sql`
+      WITH asked AS (
+        SELECT * FROM unnest(${sql.param(pairs.map((p) => p.assetId))}::uuid[], ${sql.param(pairs.map((p) => p.pointKey))}::text[])
+          AS p(asset_id, point_key)
+      )
+      SELECT a.asset_id, a.point_key, ap.unit AS mapping_unit, pk.unit AS catalog_unit
+        FROM asked a
+        LEFT JOIN bms.asset_points ap ON ap.asset_id = a.asset_id AND ap.point_key = a.point_key AND ap.active
+        LEFT JOIN bms.point_keys pk ON pk.code = a.point_key`);
+    const byPair = new Map(result.rows.map((row) => [`${row.asset_id}\u0000${row.point_key}`, row]));
+    return pairs.map((pair) => {
+      const row = byPair.get(`${pair.assetId}\u0000${pair.pointKey}`);
+      return inventoryUnit(null, row?.mapping_unit ?? null, row?.catalog_unit ?? null);
+    });
+  }
 }
 
 /** `numeric` and `bigint` arrive as strings from `pg`. */

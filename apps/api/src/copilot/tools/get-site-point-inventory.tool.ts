@@ -127,7 +127,8 @@ export const getSitePointInventoryTool = defineReadTool({
  * `watchedCount`, `unwatchedCount` — are the whole subtree's on every
  * page. The items are one per asset in the pairs' order (asset code), each
  * with its unwatched points as key → unit; no statistics, no rule ids. The
- * unit is the full row's (`stats`, read for the page's pairs only).
+ * unit is the mapping's or the catalog's (`units`, for the page's pairs only;
+ * no `telemetry.*` read, so a large page costs no 7-day statement).
  *
  * The cursor's key is an offset into the unwatched pairs. A page is the
  * longest prefix of them whose grouped JSON fits the budget
@@ -152,23 +153,17 @@ async function readUnruled(
     const head = { assetCount: assets.length, pointCount: pairs.length, watchedCount: pairs.length - unwatched.length, unwatchedCount: unwatched.length };
     const offered = offsetPage(unwatched, resume, room);
     if (offered.items.length === 0) return { ...offered, items: [], extra: head };
-    const stats = await services.inventory.stats(offered.items, ctx.now);
+    const units = await services.inventory.units(offered.items);
     const codeOf = new Map(assets.map((asset) => [asset.id, asset.code]));
-    const groupsOf = (n: number) => unruledAssets(offered.items.slice(0, n), stats, codeOf);
+    const groupsOf = (n: number) => unruledAssets(offered.items.slice(0, n), units, codeOf);
     const kept = unruledPagePoints(head, groupsOf, offered.items.length);
     const items = groupsOf(kept);
-    const start = resume ?? 0;
-    const keyAt = (keptAssets: number) => start + items.slice(0, keptAssets).reduce((n, asset) => n + Object.keys(asset.points).length, 0);
-    return { ...offsetPage(unwatched, resume, kept), keyAt, items, extra: head };
+    return { ...offsetPage(unwatched, resume, kept), keyAt: unruledKeyAt(resume ?? 0, items), items, extra: head };
   });
 }
 
-/** The pairs grouped by asset, in their order, each point's unit from its `stats` row (same index). */
-export function unruledAssets(
-  pairs: readonly InventoryPair[],
-  stats: readonly InventoryStats[],
-  codeOf: ReadonlyMap<string, string>,
-): UnruledAsset[] {
+/** The pairs grouped by asset, in their order, each point's unit from `units` (same index). */
+export function unruledAssets(pairs: readonly InventoryPair[], units: ReadonlyArray<string | null>, codeOf: ReadonlyMap<string, string>): UnruledAsset[] {
   const out: Array<{ assetId: string; code: string; points: Record<string, string | null> }> = [];
   pairs.forEach((pair, i) => {
     let last = out[out.length - 1];
@@ -176,9 +171,19 @@ export function unruledAssets(
       last = { assetId: pair.assetId, code: codeOf.get(pair.assetId) ?? pair.assetId, points: {} };
       out.push(last);
     }
-    last.points[pair.pointKey] = (stats[i] ?? NO_STATS).unit;
+    last.points[pair.pointKey] = units[i] ?? null;
   });
   return out;
+}
+
+/**
+ * `F4.296` — the offset into the unwatched pairs after the first `keptAssets`
+ * entries of a page that starts at `start`: the points of those entries, so
+ * a page `fitListResult` shortens resumes after its last kept point, and an
+ * asset split across two pages resumes at its first point not shown.
+ */
+export function unruledKeyAt(start: number, items: readonly UnruledAsset[]): (keptAssets: number) => number {
+  return (keptAssets) => start + items.slice(0, keptAssets).reduce((n, asset) => n + Object.keys(asset.points).length, 0);
 }
 
 /**

@@ -128,8 +128,9 @@ export interface CopilotReadServices {
    * `F4.288` (ADR 0099 Amendment 9 E2): `get_site_point_inventory`'s reads. Called only
    * with the asset ids `readPerOrganization` got from the location helper, so
    * never before the location is placed; `stats` only with the page's pairs.
+   * `F4.296`: `units` for an `unruled` page's pairs.
    */
-  readonly inventory: Pick<SitePointInventoryService, "pairs" | "stats">;
+  readonly inventory: Pick<SitePointInventoryService, "pairs" | "stats" | "units">;
   /**
    * `F4.290` PR 2 (ADR 0099 Amendment 9 E4): `get_location_summary`'s rows and
    * their rollups. `summarise` is called only with the asset ids

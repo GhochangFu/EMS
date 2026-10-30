@@ -17,6 +17,7 @@ import { harness } from "../copilot-turn.service.spec";
 import type { CopilotReadServices } from "./copilot-read-tool";
 import { createCopilotReadTools } from "./copilot-read-tool-set";
 import { COPILOT_POINT_STATS_SUMMARY_NEEDS_LOCATION } from "./get-point-stats.tool";
+import { unruledAssets, unruledKeyAt } from "./get-site-point-inventory.tool";
 
 /**
  * `F4.296` (ADR 0099 Amendment 10; owner rulings Q1, Q3, 2026-10-30) — a
@@ -73,6 +74,7 @@ function fake(options: FakeOptions = {}) {
     summary: [] as Array<{ assetIds: readonly string[]; pointKey: string; from: Date; to: Date }>,
     listAll: [] as Array<readonly string[]>,
     stats: [] as Array<readonly InventoryPair[]>,
+    units: [] as Array<readonly InventoryPair[]>,
     rules: [] as Array<readonly string[]>,
   };
   const watched = options.watched ?? ((pair: InventoryPair) => pair.pointKey === KEYS[0]);
@@ -105,7 +107,11 @@ function fake(options: FakeOptions = {}) {
       pairs: async () => ({ assets: ASSETS, pairs: PAIRS }),
       stats: async (pairs: readonly InventoryPair[]): Promise<InventoryStats[]> => {
         log.stats.push(pairs);
-        return pairs.map(() => ({ unit: options.unit === undefined ? "kPa" : options.unit, min: 1, avg: 2, max: 3, last: 2, samples: 10_080 }));
+        return pairs.map(() => ({ unit: "kPa", min: 1, avg: 2, max: 3, last: 2, samples: 10_080 }));
+      },
+      units: async (pairs: readonly InventoryPair[]) => {
+        log.units.push(pairs);
+        return pairs.map(() => (options.unit === undefined ? "kPa" : options.unit));
       },
     },
     rules: {
@@ -260,13 +266,34 @@ export async function unruledListsOnlyTheUnwatchedPoints(): Promise<void> {
   expect(items.flatMap((item) => Object.keys(item.points))).not.toContain(KEYS[0]);
 }
 
-/** The rules are read once for every subtree asset; statistics (the unit) for the page's unwatched pairs only. */
-export async function unruledReadsTheRulesOnceAndStatsForThePage(): Promise<void> {
+/**
+ * The rules are read once for every subtree asset; the units for the page's
+ * unwatched pairs only; no 7-day statistics statement (review: `stats` over
+ * up to 400 pairs only to read a unit).
+ */
+export async function unruledReadsTheRulesOnceAndUnitsForThePage(): Promise<void> {
   const { tools, log } = fake();
   await unruled(tools);
   expect(log.rules).toEqual([ASSETS.map((asset) => asset.id)]);
-  expect(log.stats).toHaveLength(1);
-  expect(log.stats[0]?.every((pair) => pair.pointKey !== KEYS[0])).toBe(true);
+  expect(log.units).toHaveLength(1);
+  expect(log.units[0]?.every((pair) => pair.pointKey !== KEYS[0])).toBe(true);
+  expect(log.stats).toEqual([]);
+}
+
+/**
+ * Review: the resume key after a page `fitListResult` shortens is the points
+ * of the entries it kept, so an asset split across pages resumes at its first
+ * point not shown — every point once, none skipped.
+ */
+export async function unruledResumesAfterTheLastKeptPoint(): Promise<void> {
+  const pairs = PAIRS.slice(0, 12);
+  const codeOf = new Map(ASSETS.map((asset) => [asset.id, asset.code]));
+  // Assets 0, 1, 2 hold pairs 0-2, 3-6, 7-11: a page starting at 5 opens with the last 2 points of asset 1.
+  const items = unruledAssets(pairs.slice(5), pairs.slice(5).map(() => null), codeOf);
+  const keyAt = unruledKeyAt(5, items);
+  expect(items.map((item) => Object.keys(item.points).length)).toEqual([2, 5]);
+  expect([keyAt(0), keyAt(1)]).toEqual([5, 7]);
+  expect(keyAt(items.length)).toBe(12);
 }
 
 /** A point with no unit is `null`, never a missing key. */
@@ -338,6 +365,35 @@ export async function aFirstPageStartsTheCountAgain(): Promise<void> {
   notePagedRead(reads, "get_site_point_inventory", {}, page(items, "c1", { unwatchedCount: 9, pointCount: 20 }));
   notePagedRead(reads, "get_site_point_inventory", {}, page(items, "c1", { unwatchedCount: 9, pointCount: 20 }));
   expect(withPartialNote("x", reads)).toBe("x This answer is partial: it read 3 of 9 points.");
+}
+
+/**
+ * Review: two reads of one tool with other arguments are two reads — a second
+ * site's closed list does not hide the first site's open one.
+ */
+export async function anotherSitesClosedReadKeepsTheFirstOpen(): Promise<void> {
+  const reads: PagedReads = new Map();
+  notePagedRead(reads, "list_alarms", { locationId: "A" }, page(Array(25).fill({}), "c1"));
+  notePagedRead(reads, "list_alarms", { locationId: "B" }, page(Array(4).fill({}), null));
+  expect(withPartialNote("x", reads)).toBe("x This answer is partial: it read 25 rows from list_alarms, and more were not read.");
+}
+
+/** Review: a summary of the same site and window closes the open location read — no false sentence. */
+export async function aSummaryClosesTheOpenLocationRead(): Promise<void> {
+  const reads: PagedReads = new Map();
+  const args = { pointKey: "kw", locationId: SITE, lastDays: 7 };
+  notePagedRead(reads, "get_point_stats", args, { ...page(Array(25).fill({}), "c1"), assetCount: 52 });
+  notePagedRead(reads, "get_point_stats", { ...args, summary: true }, { truncated: false, organizations: [{ organizationId: ORG_X, site: {} }] });
+  expect(withPartialNote("The site mean is 41 kW.", reads)).toBe("The site mean is 41 kW.");
+}
+
+/** Review: a cursor sent twice counts its page once. */
+export async function aCursorSentTwiceCountsOnce(): Promise<void> {
+  const reads: PagedReads = new Map();
+  notePagedRead(reads, "get_point_stats", {}, { ...page(Array(25).fill({}), "c1"), assetCount: 80 });
+  notePagedRead(reads, "get_point_stats", { cursor: "c1" }, { ...page(Array(25).fill({}), "c2"), assetCount: 80 });
+  notePagedRead(reads, "get_point_stats", { cursor: "c1" }, { ...page(Array(25).fill({}), "c2"), assetCount: 80 });
+  expect(withPartialNote("x", reads)).toBe("x This answer is partial: it read 50 of 80 assets.");
 }
 
 /** A result with no `nextCursor` key (an unpaged read, a summary) is not noted. */
