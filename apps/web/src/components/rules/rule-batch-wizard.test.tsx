@@ -10,6 +10,8 @@ import {
   removingARowKeepsTheOthers,
   submitPostsTheRowsToTheBatchRoute,
   theReviewCardIsRedAndCountsTheRows,
+  theReviewListsEachRowInATable,
+  theReviewShowsNoRulesJson,
   theRulesPanelOpensTheBatchWizard,
   theStepsAreRulesThenReview,
 } from "./rule-batch-wizard.spec";
@@ -33,5 +35,7 @@ describe("F4.289 — the Rule Engine's batch-create wizard (owner ruling P1)", (
   it("names a text threshold by its row and column", () => aTextThresholdNamesTheRowAndItsColumn());
   it("posts the rows to POST /rules/batch without the copilot header", () => submitPostsTheRowsToTheBatchRoute());
   it("shows a red Review card that counts the rows", () => theReviewCardIsRedAndCountsTheRows());
+  it("lists each row in the Review's table", () => theReviewListsEachRowInATable());
+  it("shows the rows on Review as a table, not JSON", () => theReviewShowsNoRulesJson());
   it("opens from the Rule Engine page's New batch button", () => theRulesPanelOpensTheBatchWizard());
 });

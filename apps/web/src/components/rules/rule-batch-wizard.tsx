@@ -8,6 +8,7 @@ import { createRuleBatch, fetchRuleBuilderCatalog, type RuleDraftPayload } from 
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { AdminWizardFrame } from "../admin/admin-wizard-frame";
+import { RuleBatchTable } from "../copilot/rule-batch-table";
 import { WizardShell } from "../wizard/wizard-shell";
 import { wizardEntry } from "./rule-lifecycle-wizard";
 
@@ -24,7 +25,8 @@ import { wizardEntry } from "./rule-lifecycle-wizard";
  * Layout (AGENTS.md §5): the mockups draw no batch form. The frame and the
  * stepper are the existing rule wizards' (`AdminWizardFrame` + `WizardShell`, as
  * `RuleLifecycleWizard`); the rows are the `ESKOM_SMOC.html` Rule Engine page's
- * (`R.rl`, `#/rules`) rule list, as a table of inputs.
+ * (`R.rl`, `#/rules`) rule list, as a table of inputs. Review lists the rows in
+ * the copilot card's table without its ticks or check columns, never as JSON.
  */
 
 /** One row of the table form: a threshold rule's own fields, the threshold as typed. */
@@ -133,6 +135,11 @@ export function RuleBatchWizard({ onCancel, onDone }: RuleBatchWizardProps) {
           if (Array.isArray(next.rules) && next.rules.length > 0) setRows(next.rules.slice(0, RULE_BATCH_MAX_ROWS).map(rowOfDraft));
         }}
         formatProblem={rowProblem}
+        review={{
+          omit: ["rules"],
+          // The asset column reads `checks[i].assetCode`; here the code comes from the catalog.
+          detail: <RuleBatchTable rules={values.rules} checks={rows.map((row) => ({ assetCode: assets.find((a) => a.id === row.assetId)?.code }))} />,
+        }}
         renderStep={() => <BatchRowsTable rows={rows} setRows={setRows} assets={assets} severities={severities} />}
         onSubmit={(body) => save.mutate(body)}
         onCancel={onCancel}

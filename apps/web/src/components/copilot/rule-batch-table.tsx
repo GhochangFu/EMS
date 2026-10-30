@@ -24,11 +24,19 @@ type RuleBatchTableProps = {
   /** The stored card-only `body.checks`. */
   checks: unknown;
   /** The indexes (0-based, in `rules`) the user unticked. */
-  excluded: ReadonlySet<number>;
-  onToggle: (index: number) => void;
+  excluded?: ReadonlySet<number>;
+  /**
+   * Absent, the table only lists the rows (the batch wizard's Review): no checkbox, and no
+   * column only the server's check computes.
+   */
+  onToggle?: (index: number) => void;
   /** The card is busy or closed: the boxes stay as they are. */
   disabled?: boolean;
 };
+
+const CHECKED_COLUMNS = ["#", "Rule", "Asset", "Point", "Operator", "Threshold", "Severity", "Would match now", "7-day firings", "Create"];
+const LISTED_COLUMNS = CHECKED_COLUMNS.slice(0, 7);
+const NONE_EXCLUDED: ReadonlySet<number> = new Set();
 
 const DASH = "—";
 
@@ -78,15 +86,15 @@ function RuleCell({ rule }: { rule: Record<string, unknown> }) {
   );
 }
 
-export function RuleBatchTable({ rules, checks, excluded, onToggle, disabled }: RuleBatchTableProps) {
+export function RuleBatchTable({ rules, checks, excluded = NONE_EXCLUDED, onToggle, disabled }: RuleBatchTableProps) {
   const rows = batchRulesOf(rules);
   const checkList = Array.isArray(checks) ? checks : [];
   return (
     <div className="mt-2 max-h-80 overflow-auto">
-      <table aria-label="Proposed rules" className="w-full border-collapse text-[11px]">
+      <table aria-label={onToggle ? "Proposed rules" : "Rules to create"} className="w-full border-collapse text-[11px]">
         <thead>
           <tr className="text-left text-[10px] uppercase tracking-wide text-ink-muted">
-            {["#", "Rule", "Asset", "Point", "Operator", "Threshold", "Severity", "Would match now", "7-day firings", "Create"].map((label) => (
+            {(onToggle ? CHECKED_COLUMNS : LISTED_COLUMNS).map((label) => (
               <th key={label} scope="col" className="py-0.5 pr-2 font-semibold">
                 {label}
               </th>
@@ -106,18 +114,22 @@ export function RuleBatchTable({ rules, checks, excluded, onToggle, disabled }: 
                 <td className="py-0.5 pr-2">{textOf(check?.operator ?? rule.operator)}</td>
                 <td className="py-0.5 pr-2">{textOf(check?.thresholdValue ?? rule.thresholdValue)}</td>
                 <td className="py-0.5 pr-2">{textOf(check?.severity ?? rule.severity)}</td>
-                <td className="py-0.5 pr-2">{textOf(check?.matchNow)}</td>
-                <td className="py-0.5 pr-2">{textOf(check?.firings)}</td>
-                <td className="py-0.5">
-                  <input
-                    type="checkbox"
-                    data-testid={`copilot-rule-row-${index}`}
-                    aria-label={`Create row ${index + 1}`}
-                    checked={ticked}
-                    disabled={disabled === true}
-                    onChange={() => onToggle(index)}
-                  />
-                </td>
+                {onToggle && (
+                  <>
+                    <td className="py-0.5 pr-2">{textOf(check?.matchNow)}</td>
+                    <td className="py-0.5 pr-2">{textOf(check?.firings)}</td>
+                    <td className="py-0.5">
+                      <input
+                        type="checkbox"
+                        data-testid={`copilot-rule-row-${index}`}
+                        aria-label={`Create row ${index + 1}`}
+                        checked={ticked}
+                        disabled={disabled === true}
+                        onChange={() => onToggle(index)}
+                      />
+                    </td>
+                  </>
+                )}
               </tr>
             );
           })}

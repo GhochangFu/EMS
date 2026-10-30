@@ -180,6 +180,30 @@ export async function theReviewCardIsRedAndCountsTheRows(): Promise<void> {
   expect(card.textContent).toContain("Create and publish 2 alarm rules on 1 asset. This changes live alarm behaviour now.");
 }
 
+/** The Review lists every row in a table — its name, asset code, point, operator, threshold and severity. */
+export async function theReviewListsEachRowInATable(): Promise<void> {
+  stubApi();
+  renderWizard();
+  await twoRowsToReview();
+  const table = screen.getByRole("table", { name: "Rules to create" });
+  const rows = within(table).getAllByRole("row").slice(1);
+  expect(rows).toHaveLength(2);
+  const cells = within(rows[1]!).getAllByRole("cell").map((cell) => cell.textContent);
+  expect(cells[0]).toBe("2");
+  expect(cells[1]).toContain("Return high");
+  expect(cells.slice(2)).toEqual(["CH-01", "return_temp_c", "gt", "18.5", "critical"]);
+}
+
+/** The rows reach the Review only through the table: no field row shows them as JSON. */
+export async function theReviewShowsNoRulesJson(): Promise<void> {
+  stubApi();
+  renderWizard();
+  await twoRowsToReview();
+  const card = screen.getByRole("region", { name: "Create and publish alarm rules" });
+  expect(within(card).getByRole("table", { name: "Rules to create" })).toBeTruthy();
+  expect(card.textContent).not.toContain('[{"name"');
+}
+
 /** The Rule Engine page opens the wizard from its New batch button. */
 export async function theRulesPanelOpensTheBatchWizard(): Promise<void> {
   stubApi();

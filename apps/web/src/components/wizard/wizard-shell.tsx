@@ -66,6 +66,11 @@ type WizardShellProps = {
    * refusal is the Zod path as it is.
    */
   formatProblem?: (problem: string) => string;
+  /**
+   * `F4.289`: a body field the Review shows in the page's own form — for example a table of
+   * rows — instead of a field row; `omit` lists the fields `detail` replaces.
+   */
+  review?: { omit: readonly string[]; detail: ReactNode };
 };
 
 /**
@@ -171,7 +176,7 @@ export function WizardShell(props: WizardShellProps) {
           summary={props.summary ?? entry.title}
           risk={entry.risk}
           red={entry.red === true}
-          rows={changeRows(body, props.current ?? null, [], entry.formulas)}
+          rows={changeRows(body, props.current ?? null, props.review?.omit ?? [], entry.formulas)}
           error={props.submitError ?? (reviewProblems.length > 0 ? reviewProblems.join("; ") : null)}
           busy={props.submitting}
           confirmLabel="Submit"
@@ -181,7 +186,9 @@ export function WizardShell(props: WizardShellProps) {
           }}
           secondaryLabel={index > 0 ? "Back" : undefined}
           onSecondary={index > 0 ? goBack : undefined}
-        />
+        >
+          {props.review?.detail}
+        </ChangeCard>
       ) : (
         <section aria-label={step.title} className="flex flex-col gap-2">
           {props.renderStep(step)}
