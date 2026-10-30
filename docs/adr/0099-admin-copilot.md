@@ -1697,3 +1697,95 @@ Docker stack.
 | Q7 | Include the dock UI in this change | yes (the owner's own request) | as recommended |
 | Q8 | Window modes | resize + maximize + side dock | as recommended |
 | Q9 | Chat history | chat list + paged thread | as recommended |
+
+## Amendment 10 — a site-wide read inside one turn (owner, 2026-10-30)
+
+**Status: Proposed — owner ruled 2026-10-30 (three questions put one at a
+time; all three as recommended); the merge approves the text.** A line marked
+*(Qn)* states that question's ruling. Lines marked *drafter choice* were not
+asked. Code citations are to `main` at `ee3b4171`. Backlog row `F4.296`; the
+code follows in a second PR *(Q2)*.
+
+### Facts the amendment rests on
+
+- **The live check on `main` `990254fb` (2026-10-29).** On RSMOC Western Cape
+  (52 assets reporting `kw`, about 200 rule points), "min/avg/max of `kw` over
+  the last 7 days" made `list_locations` and four `get_point_stats` calls and
+  stopped on `cap_time` at 47 s; "the rule point inventory of the site" made
+  seven `get_site_point_inventory` calls and stopped at 48 s. The SQL took
+  under 200 ms; each model step that read a full page took about 6–15 s.
+- **The pages are small by design.** `get_point_stats` pages a location 25
+  assets at a time (`POINT_STATS_MAX_ASSETS`,
+  `packages/shared/src/contracts/point-stats.ts:30`) and
+  `get_site_point_inventory` at most 40 points
+  (`apps/api/src/copilot/tools/get-site-point-inventory.tool.ts:19`), each
+  under the 7,500-character list budget
+  (`apps/api/src/copilot/tools/copilot-read-tool.ts:201`). A site of 52 assets
+  or 200 points therefore needs 3 to 7 pages, and the turn cap stays 8 calls
+  and 45 s (`apps/api/src/llm/agent-loop.ts:34-35`; the deadline is `F4.294`'s).
+- **A paged answer can stop early.** In a third turn the model said "the site
+  has 28 in total" and stopped while `nextCursor` was still set (164 alarms in
+  the database); the paging itself was correct.
+- **The questions need one figure, not every row.** "Min/avg/max of one point
+  over a week" needs the site's figures and the extremes; "which points have no
+  rule" needs only the unwatched points, not their statistics.
+
+### Decisions
+
+- **F1 — A site summary on `get_point_stats`.** *(Q1)* An optional
+  `summary: true`, valid only with `locationId` (never with `assetIds` or
+  `cursor`), returns in one call, per organization entry: the site's min, mean
+  and max over every readable asset of the subtree in the asked range, its
+  sample count, the asset count and the count of assets with no sample; the 5
+  assets with the highest mean and the 5 with the lowest, each with its code,
+  min, mean, max and sample count; and the codes of at most 10 assets with no
+  sample (drafter choice: 5, 5 and 10). The site figures come from one SQL
+  statement over the same 1-minute buckets as the per-asset rows, so they equal
+  SQL on the same window (drafter choice); no cursor. E5(c) is amended by this
+  mode; the per-asset page stays as it is.
+- **F2 — The unwatched points on `get_site_point_inventory`.** *(Q1)* An
+  optional `unruled: true` returns only the rule-target points that no rule
+  watches, over the whole subtree, in a dense shape: one entry per asset (id,
+  code) with its points as key and unit only, no statistics and no rule ids;
+  and the counts of points, of watched points and of unwatched points. The
+  rules are read for the subtree's assets once. It pages with the `F4.291`
+  cursor only when the result passes the list budget (drafter choice). E2 is
+  amended by this mode; the full inventory stays as it is and is still the read
+  before a batch rule card.
+- **F3 — The partial line.** *(Q3)* A paged site read reports the rows it
+  read and, where the tool knows it, the total (`get_site_point_inventory` its
+  point count; `get_point_stats` its subtree asset count). When a turn ends
+  `final` after a result whose `nextCursor` no later call of the same tool sent
+  back, the server appends one fixed sentence to the stored reply, for example
+  *"This answer is partial: it read 25 of 52 assets."*, naming the rows read
+  and the total where known. No model step is added. The sentence is the
+  server's, like the `F4.295` correction, and is not sent back to the model.
+- **F4 — The prompt.** The system prompt gains one line: for a site-wide
+  figure of one point use `get_point_stats` with `summary`; for the points no
+  rule watches use `get_site_point_inventory` with `unruled` (drafter choice).
+- **F5 — Bounds.** The two optional fields count against the read-registry
+  bound (`< 23,000`, `telemetry-read-tools.spec.ts:416`); the code PR measures
+  it and raises it by the measured amount only if it must, stated in the PR, as
+  release 4 did (drafter choice). Each new result shape lives in
+  `packages/shared/src/contracts/` (decision 2, ADR 0030, additive).
+
+**Not in this amendment.** A longer turn deadline or a higher call cap
+(`F4.294`); a faster model; a summary mode on any other read tool; the batch
+rule card's own latency on a slow model (`F4.289`'s card needs one large
+propose call).
+
+**Verification owed (the code PR).** Specs drive both sizes through
+`toolResultContent`: a 52-asset summary and a 200-point unruled read each fit
+one result; the summary's figures equal SQL on the same window in an
+integration spec; `summary` with `assetIds` or `cursor` is refused; the partial
+sentence is appended only when a `nextCursor` was left unfollowed. Live: on a
+site of at least 50 assets and 200 points, both questions end `final` in at
+most three tool calls, with the call count read from the `copilot turn` log.
+
+### Gate questions
+
+| # | Question | Recommended | Ruled |
+| --- | --- | --- | --- |
+| Q1 | The shape of a site-wide read in at most 3 calls | summary mode on the two existing tools | as recommended |
+| Q2 | How the amendment and the code land | ADR PR first, then the code PR | as recommended |
+| Q3 | Who writes the partial line | the server appends one fixed sentence | as recommended |
