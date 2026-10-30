@@ -70,8 +70,12 @@ export interface CopilotReadServices {
    * and the service reads on the tenant pool unfiltered, so each tool places
    * its asset (`organizationOfAsset` / `organizationsOfAssets`) first.
    * `F4.291` PR 3: `pointStatsByAsset` for `get_point_stats`, never with `[]`.
+   * `F4.296`: `pointStatsSummary` for its `summary`, only with a placed subtree's ids.
    */
-  readonly telemetry: Pick<TelemetryService, "latestPointValues" | "pointValuesAt" | "recentForPoint" | "pointAggregate" | "pointStatsByAsset">;
+  readonly telemetry: Pick<
+    TelemetryService,
+    "latestPointValues" | "pointValuesAt" | "recentForPoint" | "pointAggregate" | "pointStatsByAsset" | "pointStatsSummary"
+  >;
   /**
    * `F4.275`: the energy and portfolio reads behind `/`, `/energy` and
    * `/sustainability`. `DashboardService` (the KPI service, `dashboard/`) is

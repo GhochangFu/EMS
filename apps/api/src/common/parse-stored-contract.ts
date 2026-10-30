@@ -123,6 +123,8 @@ export type StoredContractContext =
   | "copilot_tools.get_point_aggregate.result"
   // `F4.291` PR 3: the point statistics read tool.
   | "copilot_tools.get_point_stats.result"
+  // `F4.296`: its site summary.
+  | "copilot_tools.get_point_stats.summary"
   // `F4.275`: the energy and portfolio read tools.
   | "copilot_tools.get_dashboard_kpis.result"
   | "copilot_tools.get_load_trend.result"

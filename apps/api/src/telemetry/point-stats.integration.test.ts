@@ -8,11 +8,15 @@ import {
   assertAnAssetWithNoSampleHasNoRow,
   assertASampleAfterAnUnalignedEndIsNotCounted,
   assertASampleInTheLeadingPartialBucketIsCounted,
+  assertASiteWithNoSampleHasANullSiteRow,
   assertLastIsTheNewestBucketPerAsset,
   assertTheFixtureIsVisible,
   assertTheAnswerNamesThePeriodItCovers,
   assertTheStatisticsAndLastCoverTheSamePeriod,
+  assertTheSiteRowEqualsSqlOnTheSameWindow,
   assertTheStatisticsAreExactPerAsset,
+  assertTheSummaryKeepsAnAssetNotPassedOut,
+  assertTheSummaryRowsAreThePerAssetFigures,
   assertTheWindowPicksTheLevelAndLastStaysAtOneMinute,
   cleanup,
   setupFixtures,
@@ -88,5 +92,22 @@ describe.skipIf(!connectionString)("F4.291 — pointStatsByAsset against Postgre
 
   it("names the period its statistics cover", async () => {
     await assertTheAnswerNamesThePeriodItCovers(pool as pg.Pool, fx as Fixtures);
+  });
+
+  // `F4.296` (ADR 0099 Amendment 10 F1): pointStatsSummary.
+  it("answers a site row equal to SQL on the same window", async () => {
+    await assertTheSiteRowEqualsSqlOnTheSameWindow(pool as pg.Pool, fx as Fixtures);
+  });
+
+  it("answers the per-asset figures beside the site row", async () => {
+    await assertTheSummaryRowsAreThePerAssetFigures(pool as pg.Pool, fx as Fixtures);
+  });
+
+  it("keeps an asset not passed out of the site row and the rows", async () => {
+    await assertTheSummaryKeepsAnAssetNotPassedOut(pool as pg.Pool, fx as Fixtures);
+  });
+
+  it("answers a null site row for a set with no sample", async () => {
+    await assertASiteWithNoSampleHasANullSiteRow(pool as pg.Pool, fx as Fixtures);
   });
 });

@@ -7,3 +7,9 @@ export type PointStatsByAsset = z.infer<typeof S.pointStatsByAssetSchema>;
 
 /** One asset's statistics in {@link PointStatsByAsset}. */
 export type PointStatsRow = z.infer<typeof S.pointStatsRowSchema>;
+
+/** `F4.296` (ADR 0099 Amendment 10 F1) — one point key's site summary. */
+export type PointStatsSummary = z.infer<typeof S.pointStatsSummarySchema>;
+
+/** One asset's figures in {@link PointStatsSummary}. */
+export type PointStatsSummaryRow = z.infer<typeof S.pointStatsSummaryRowSchema>;

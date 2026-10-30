@@ -364,12 +364,19 @@ export function pointStatsWindow(from: Date, to: Date, now: Date): PointStatsWin
  * read is kept out by the caller passing only placed ids and by this
  * predicate reading only them.
  *
+ * `F4.296` (ADR 0099 Amendment 10 F1): `withSite` adds one more row, the
+ * whole set's (`GROUPING SETS ((asset_id), ())`), with a null `asset_id` and
+ * `is_site` true; it folds the same buckets, so the site figures are the
+ * per-asset ones' exact composition. Without it every row's `is_site` is
+ * false.
+ *
  * Parameters: ids, key, coveredFrom, coveredTo, wholeFrom, wholeTo.
  */
 export function groupedScalarSql(
   level: AggregateLevel,
   edgeLevel: AggregateLevel,
   [idsIndex, keyIndex, coveredFromIndex, coveredToIndex, wholeFromIndex, wholeToIndex] = [1, 2, 3, 4, 5, 6],
+  withSite = false,
 ): string {
   const ids = `${placeholder(idsIndex)}::uuid[]`;
   const key = placeholder(keyIndex);
@@ -381,7 +388,8 @@ export function groupedScalarSql(
       ${AGG_EXPR.avg} AS average,
       ${AGG_EXPR.min} AS min,
       ${AGG_EXPR.max} AS max,
-      coalesce(sum(sample_count), 0)::bigint AS sample_count
+      coalesce(sum(sample_count), 0)::bigint AS sample_count,
+      GROUPING(asset_id) = 1 AS is_site
     FROM (
       SELECT asset_id, sum_value, sample_count, min_value, max_value
       FROM ${relationFor(level)}
@@ -394,7 +402,7 @@ export function groupedScalarSql(
         AND bucket >= ${placeholder(coveredFromIndex)}::timestamptz AND bucket < ${placeholder(coveredToIndex)}::timestamptz
         AND (bucket < ${wholeFrom} OR bucket >= ${wholeTo})
     ) s
-    GROUP BY asset_id
+    GROUP BY ${withSite ? "GROUPING SETS ((asset_id), ())" : "asset_id"}
   `;
 }
 
