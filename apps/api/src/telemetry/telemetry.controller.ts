@@ -11,6 +11,8 @@ import {
   decodePointRefParam,
   type JwtPayload,
   pointAggregateQuerySchema,
+  pointRawQuerySchema,
+  type PointRawRecordsResponse,
   type PointValuesAtInstantResponse,
   type PointsLatestResponse,
 } from "@bms/shared";
@@ -235,6 +237,46 @@ export class TelemetryController {
       compare,
       bucketFunction,
       bucketStats,
+    });
+  }
+
+  /**
+   * `F4.297` (ADR 0108 decision 1.6) — the latest stored samples of one point,
+   * newest first, `limit` per page (default `DEFAULT_RAW_RECORDS_LIMIT`, at most
+   * `MAX_RAW_RECORDS_LIMIT`), with `before` as the keyset cursor and
+   * `nextBefore` in the answer.
+   *
+   * The order of refusals is the ADR's: decode (400), the asset id's UUID shape
+   * (400, for a global admin too — `canReadAsset` answers one without a lookup,
+   * so nothing else stops a non-UUID id before the `uuid` column), scope (403),
+   * the query (400), then the read. Scope before the query, so a foreign point
+   * is "outside your access" whatever its query says. `telemetry.point_values`
+   * has no Row Level Security, so this guard is the only containment, and it
+   * runs before the read.
+   *
+   * Three segments (`points/:pointRef/raw`), so it cannot collide with the
+   * two-segment `points/at-instant` and `points/latest`; no declaration-order
+   * trap. The decoded pair goes to the service, as in `aggregate`.
+   */
+  @Get("points/:pointRef/raw")
+  async raw(
+    @CurrentUser() user: JwtPayload,
+    @Param("pointRef") pointRef: string,
+    @Query() query: Record<string, unknown>,
+  ): Promise<PointRawRecordsResponse> {
+    const point = decodeGuardedPointRef(pointRef);
+    if (!(await this.accessControl.canReadAsset(user, point.assetId))) {
+      throw new ForbiddenException("Asset is outside your access scope");
+    }
+
+    const parsed = pointRawQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid query");
+    }
+    const { limit, before } = parsed.data;
+    return this.telemetry.pointRawRecords(point, {
+      limit,
+      before: before === undefined ? undefined : new Date(before),
     });
   }
 }

@@ -6,6 +6,13 @@ import {
   assertARecentMalformedRefIsABadRequest,
   assertARecentNonUuidRefIsABadRequest,
   assertARecentWellFormedRefIsRead,
+  assertAMalformedRawRefIsABadRequest,
+  assertANonUuidRawRefIsABadRequestForAGlobalAdmin,
+  assertARawReadDefaultsToTheNewestPage,
+  assertARawReadInsideScopeHandsTheDecodedPair,
+  assertARawReadOutsideScopeIsRefusedBeforeAnyRead,
+  assertARawScopeRefusalComesBeforeTheQuery,
+  assertRawQueryBoundsAreEnforced,
   assertCustomRangeBoundsAreEnforced,
   assertTheBucketStatsFlagReachesTheService,
   assertAMalformedPointRefIsABadRequest,
@@ -75,6 +82,36 @@ describe("F4.297 — aggregate takes a custom from/to and bucket stats (ADR 0108
 
   it("answers a non-UUID asset id with a 400 for a global admin, not a 500", async () => {
     await assertANonUuidAssetIdIsABadRequestNotA500();
+  });
+});
+
+describe("F4.297 — the raw records read (ADR 0108 decision 1.6)", () => {
+  it("refuses a point outside the caller's scope BEFORE reading it", async () => {
+    await assertARawReadOutsideScopeIsRefusedBeforeAnyRead();
+  });
+
+  it("checks the scope before the query, so a foreign point is a 403 not a 400", async () => {
+    await assertARawScopeRefusalComesBeforeTheQuery();
+  });
+
+  it("hands an in-scope read the decoded pair, the limit and the before instant", async () => {
+    await assertARawReadInsideScopeHandsTheDecodedPair();
+  });
+
+  it("defaults to the newest page of 100", async () => {
+    await assertARawReadDefaultsToTheNewestPage();
+  });
+
+  it("refuses each broken query with a 400 before any read", async () => {
+    await assertRawQueryBoundsAreEnforced();
+  });
+
+  it("answers a malformed raw reference with a 400, not a 500", async () => {
+    await assertAMalformedRawRefIsABadRequest();
+  });
+
+  it("answers a non-UUID asset id with a 400 for a global admin, not a 500", async () => {
+    await assertANonUuidRawRefIsABadRequestForAGlobalAdmin();
   });
 });
 

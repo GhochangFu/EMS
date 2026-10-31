@@ -14,6 +14,7 @@ import {
   type PointAggregateFunction,
   type PointAggregateResponse,
   type PointAggregateStats,
+  type PointRawRecordsResponse,
   type PointStatsByAsset,
   type PointStatsSummary,
   type TelemetryReading,
@@ -401,6 +402,66 @@ export class TelemetryService {
         unit: row.unit,
       };
     });
+  }
+
+  /**
+   * `F4.297` (ADR 0108 decision 1.6) — one page of a point's stored samples,
+   * newest first, for `GET /telemetry/points/:pointRef/raw`.
+   *
+   * **A keyset cursor on `time`.** The primary key is `(time, asset_id,
+   * point_key)`, so one point has at most one row per instant and
+   * `time < $3` neither skips nor repeats a row between pages. The read is one
+   * probe of `point_values_point_asset_time_idx (point_key, asset_id, time
+   * desc)` with `LIMIT`.
+   *
+   * **`limit + 1` rows are read** (the `recentForPoint` / `get_recent_values`
+   * idiom): a `limit + 1`-th row tells "more" from "at the bound". When it
+   * exists, `nextBefore` is the `limit`-th row's time; otherwise `null`.
+   *
+   * **The upper bound is a bound parameter (`before`, else `now`), not SQL
+   * `now()`** — `now()` is only STABLE, so the planner cannot exclude chunks
+   * at Bind (the note at {@link latestPointValues}).
+   *
+   * **`TENANT_POOL`, like `pointAggregate`.** `telemetry.point_values` has no
+   * Row Level Security; the controller's `canReadAsset` has placed the asset
+   * before this is called, and takes the DECODED pair for the reason
+   * `pointAggregate` gives.
+   *
+   * @param now injectable for tests; the newest page's exclusive upper bound.
+   */
+  async pointRawRecords(
+    point: { assetId: string; pointKey: string },
+    { limit, before, now = new Date() }: { limit: number; before?: Date; now?: Date },
+  ): Promise<PointRawRecordsResponse> {
+    const { assetId, pointKey } = point;
+    const result = await this.pool.query<{
+      time: Date;
+      device_time: Date | null;
+      value: number | string;
+      unit: string | null;
+    }>(
+      `SELECT time, device_time, value, unit
+       FROM telemetry.point_values
+       WHERE asset_id = $1
+         AND point_key = $2
+         AND time < $3::timestamptz
+       ORDER BY time DESC
+       LIMIT $4`,
+      [assetId, pointKey, (before ?? now).toISOString(), limit + 1],
+    );
+    const rows = result.rows.slice(0, limit);
+    const items = rows.map((row) => ({
+      time: new Date(row.time).toISOString(),
+      deviceTime: row.device_time === null ? null : new Date(row.device_time).toISOString(),
+      value: Number(row.value),
+      unit: row.unit,
+    }));
+    const more = result.rows.length > limit;
+    return {
+      pointRef: encodePointRef(assetId, pointKey),
+      items,
+      nextBefore: more ? (items[items.length - 1]?.time ?? null) : null,
+    };
   }
 
   /**

@@ -49,6 +49,7 @@ import {
   createMaintenanceScheduleBodySchema,
   updateMaintenanceScheduleBodySchema,
   pointAggregateQuerySchema,
+  pointRawQuerySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -386,6 +387,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F4.176` (ADR 0074 Amendment 2) — the batched latest-value read: bounded
   // `assetIds` and `pointKeys` arrays and a bounded `windowMinutes`, no body.
   TelemetryController_latest: pointsLatestQuerySchema,
+  // `F4.297` (ADR 0108 decision 1.6) — the raw records page: a bounded `limit`
+  // and an optional `before` cursor, `.strict()`, no body.
+  TelemetryController_raw: pointRawQuerySchema,
   // `F3.78` (ADR 0089 decisions 1 and 3) — the user-administration bodies. `UsersAdminController_list`,
   // `_deactivate` and `_reactivate`, and `UserGrantsAdminController_list` and `_remove`, are absent:
   // no body and no query, at most path parameters.
