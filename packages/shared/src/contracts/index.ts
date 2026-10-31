@@ -26,6 +26,8 @@ export * from "./admin";
 export * from "./aggregate-level";
 export * from "./energy-view";
 export * from "./time-zone-chain";
+// F4.297 (ADR 0108 decision 1.2): the telemetry read query schemas.
+export * from "./telemetry-queries";
 export * from "./ai-assistant";
 export * from "./asset-dashboards";
 export * from "./asset-images";

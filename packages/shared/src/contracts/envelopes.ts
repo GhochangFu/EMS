@@ -348,6 +348,16 @@ export const pointAggregateStatsSchema = z.object({
 export const pointAggregateBucketSchema = z.object({
   t: z.string(),
   v: z.number().nullable(),
+  /**
+   * `F4.297` (ADR 0108 decision 1.3) — present only when the request set
+   * `bucketStats=true`: the bucket's min, its **weighted** mean (ADR 0023, not
+   * the mean of means) and max, and its sample count. Optional so the widget
+   * path, which asks for `{ t, v }` only, still parses.
+   */
+  min: z.number().nullable().optional(),
+  average: z.number().nullable().optional(),
+  max: z.number().nullable().optional(),
+  sampleCount: z.number().int().min(0).optional(),
 });
 
 export const pointAggregateResponseSchema = z.object({
@@ -358,15 +368,27 @@ export const pointAggregateResponseSchema = z.object({
   bucketSeconds: z.number().int().positive(),
   stats: pointAggregateStatsSchema,
   /**
-   * The immediately preceding window of the same length — scalar only, and
-   * **tile-only**. Nothing overlays yesterday behind today in Stage A, so this
-   * never carries buckets. `null` unless the request asked for it.
+   * The IANA zone of the asset's site (location, else organization), resolved by
+   * the server after the scope check (`F4.297`, ADR 0108 decision 1.9). Optional
+   * so an older response parses; the page falls back to `Etc/UTC` and says so.
+   */
+  timeZone: z.string().optional(),
+  /**
+   * The immediately preceding window of the same length. `buckets` (`F4.297`,
+   * ADR 0108 decision 1.3) carries that window's plotted series with its own
+   * true timestamps, so the client shifts them by the span for an overlay. The
+   * server always sends the key when `compare` is non-null (`null` when the
+   * request named no `bucketFunction`); it is optional on the wire so a body in
+   * the older shape (an older API behind a newer bundle, a cached body) still
+   * parses, and the client treats absent and `null` alike: no overlay.
+   * `null` unless the request asked for a compare.
    */
   compare: z
     .object({
       from: z.string(),
       to: z.string(),
       stats: pointAggregateStatsSchema,
+      buckets: z.array(pointAggregateBucketSchema).nullable().optional(),
     })
     .nullable(),
   /**
@@ -374,6 +396,32 @@ export const pointAggregateResponseSchema = z.object({
    * `bucketFunction`. A tile needs one number and must not pay for 2,880 rows.
    */
   buckets: z.array(pointAggregateBucketSchema).nullable(),
+});
+
+/** The most raw records one `GET /telemetry/points/:pointRef/raw` call returns. */
+export const MAX_RAW_RECORDS_LIMIT = 500;
+
+/** The page size of that read when `limit` is omitted. */
+export const DEFAULT_RAW_RECORDS_LIMIT = 100;
+
+/**
+ * `F4.297` (ADR 0108 decision 1.6) — one stored sample of a point. Plain
+ * `z.object`, not `.strict()` and not `.readonly()`: the service builds mutable
+ * literals (the `point-stats.ts` precedent). Nothing here extends another
+ * contract.
+ */
+export const pointRawRecordSchema = z.object({
+  time: z.string(),
+  deviceTime: z.string().nullable(),
+  value: z.number(),
+  unit: z.string().nullable(),
+});
+
+/** A newest-first page; `nextBefore` is the cursor for the next older page, `null` on the last. */
+export const pointRawRecordsResponseSchema = z.object({
+  pointRef: z.string(),
+  items: z.array(pointRawRecordSchema),
+  nextBefore: z.string().nullable(),
 });
 /**
  * One requested point at the instant `at` — `GET /telemetry/points/at-instant`

@@ -10,6 +10,7 @@ import {
 import {
   decodePointRefParam,
   type JwtPayload,
+  pointAggregateQuerySchema,
   type PointValuesAtInstantResponse,
   type PointsLatestResponse,
 } from "@bms/shared";
@@ -19,7 +20,6 @@ import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import {
-  pointAggregateQuerySchema,
   pointsLatestQuerySchema,
   pointValuesAtQuerySchema,
 } from "./telemetry.schema";

@@ -94,6 +94,7 @@ export type * from "./types/asset-kpis";
 export type * from "./types/alarm-stats";
 export type * from "./types/point-stats";
 export type * from "./types/energy-view";
+export type * from "./types/telemetry-history";
 export * from "./location-tree";
 export type * from "./types/locations";
 

@@ -44,6 +44,8 @@ const MODULES: readonly string[] = [
   "packages/shared/src/contracts/aggregate-level.ts",
   "packages/shared/src/contracts/energy-view.ts",
   "packages/shared/src/contracts/time-zone-chain.ts",
+  "packages/shared/src/contracts/telemetry-queries.ts",
+  "packages/shared/src/types/telemetry-history.ts",
   "packages/shared/src/types/energy-view.ts",
   "apps/api/src/reports/energy-view-range.ts",
   "apps/api/src/reports/energy-view-partial.ts",

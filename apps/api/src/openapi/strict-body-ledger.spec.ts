@@ -48,6 +48,7 @@ import {
   // `F4.281` (ADR 0030): the maintenance schedule write bodies.
   createMaintenanceScheduleBodySchema,
   updateMaintenanceScheduleBodySchema,
+  pointAggregateQuerySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -137,7 +138,6 @@ import {
   healthSummaryQuerySchema,
 } from "../asset-health/asset-health.schema";
 import {
-  pointAggregateQuerySchema,
   pointsLatestQuerySchema,
   pointValuesAtQuerySchema,
 } from "../telemetry/telemetry.schema";

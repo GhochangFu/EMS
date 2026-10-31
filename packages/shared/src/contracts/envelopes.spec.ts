@@ -8,6 +8,8 @@ import {
   pointAggregateBucketSchema,
   pointAggregateResponseSchema,
   pointAggregateStatsSchema,
+  pointRawRecordSchema,
+  pointRawRecordsResponseSchema,
   pointValuesAtInstantResponseSchema,
   pointsLatestResponseSchema,
 } from "./envelopes";
@@ -180,6 +182,70 @@ export function runPointAggregateBucketSecondsTests(): void {
     { ...response, bucketSeconds: 90.5 },
     "a fractional bucket width must be refused — the four widths are whole seconds",
   );
+}
+
+const compareBase = {
+  from: "2026-08-28T00:00:00.000Z",
+  to: "2026-08-29T00:00:00.000Z",
+  stats,
+};
+
+/** `F4.297` U1 — `compare.buckets` is optional so an older body still parses (ADR 0108 decision 1.3). */
+export function runPointAggregateCompareBucketsTests(): void {
+  expectAccepts(
+    pointAggregateResponseSchema,
+    { ...response, compare: { ...compareBase, buckets: [{ t: "2026-08-28T00:00:00.000Z", v: 1 }] } },
+    "a compare object with buckets must parse",
+  );
+  expectAccepts(
+    pointAggregateResponseSchema,
+    { ...response, compare: { ...compareBase, buckets: null } },
+    "compare.buckets null (no bucketFunction) must parse",
+  );
+  const old = pointAggregateResponseSchema.safeParse({ ...response, compare: compareBase });
+  assert(old.success === true, "the old compare shape (no buckets key) must parse");
+  assert(
+    old.success && old.data.compare?.buckets === undefined,
+    "the old compare shape must yield buckets === undefined",
+  );
+}
+
+/** `F4.297` U1 — per-bucket stats are optional; the widget `{ t, v }` bucket still parses. */
+export function runPointAggregateBucketStatsTests(): void {
+  expectAccepts(
+    pointAggregateBucketSchema,
+    { t: "2026-08-29T00:00:00.000Z", v: 1.75, min: 1, average: 1.75, max: 4, sampleCount: 4 },
+    "a bucket with min/average/max/sampleCount must parse",
+  );
+  expectAccepts(
+    pointAggregateBucketSchema,
+    { t: "2026-08-29T00:00:00.000Z", v: null, min: null, average: null, max: null, sampleCount: 0 },
+    "an empty bucket with null stats must parse",
+  );
+  expectAccepts(pointAggregateBucketSchema, { t: "2026-08-29T00:00:00.000Z", v: 1 }, "a bare {t, v} bucket must parse");
+  expectRejects(
+    pointAggregateBucketSchema,
+    { t: "2026-08-29T00:00:00.000Z", v: 1, sampleCount: 2.5 },
+    "a fractional sampleCount must be refused",
+  );
+  expectAccepts(
+    pointAggregateResponseSchema,
+    { ...response, timeZone: "Asia/Kolkata" },
+    "a response carrying timeZone must parse",
+  );
+  expectAccepts(pointAggregateResponseSchema, response, "a response without timeZone must parse");
+}
+
+/** `F4.297` U1 — the raw-records read contract (ADR 0108 decision 1.6). */
+export function runPointRawRecordsShapeTests(): void {
+  const item = { time: "2026-08-29T00:00:00.000Z", deviceTime: "2026-08-29T00:00:01.000Z", value: 12, unit: "kW" };
+  const page = { pointRef: response.pointRef, items: [item], nextBefore: "2026-08-29T00:00:00.000Z" };
+  expectAccepts(pointRawRecordsResponseSchema, page, "a full page must parse");
+  expectAccepts(pointRawRecordSchema, { ...item, deviceTime: null }, "a null deviceTime must parse");
+  expectAccepts(pointRawRecordSchema, { ...item, unit: null }, "a null unit must parse");
+  expectAccepts(pointRawRecordsResponseSchema, { ...page, nextBefore: null }, "a null nextBefore must parse");
+  expectRejects(pointRawRecordSchema, { ...item, value: "12" }, "a string value must be refused");
+  expectAccepts(pointRawRecordSchema, { ...item, extra: 1 }, "an extra key is tolerated — not strict");
 }
 
 /**
