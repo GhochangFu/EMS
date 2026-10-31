@@ -3,7 +3,13 @@ import { describe, it } from "vitest";
 import {
   assertAWindowPastTheLastRungThrows,
   assertBothQueriesReuseAvgExpr,
-  assertEscalationIsUnreachableAtEveryRung,
+  assertACustomRangeKeepsItsEndsAndItsCompare,
+  assertACustomRangePastTheHorizonEscalatesAndReportsIt,
+  assertBucketSqlWithStatsUsesTheSharedMean,
+  assertEscalationIsUnreachableForATrailingWindow,
+  assertResolveAggregateRangeDefaultsToATrailingDay,
+  assertResolveAggregateRangeKeepsACustomPair,
+  assertWindowBoundsIsTheTrailingCase,
   assertGapsAreFilledWithNulls,
   assertMaxBucketsIsDerivedFromTheLadder,
   assertNoQueryCallsSqlAvg,
@@ -67,8 +73,34 @@ describe("F3.35 Stage A — the window and the compare window", () => {
     assertReadStartCarriesTheCompareReach();
   });
 
-  it("keeps retention escalation unreachable at every rung, compare included", () => {
-    assertEscalationIsUnreachableAtEveryRung();
+  it("keeps retention escalation unreachable for a trailing window at every rung, compare included", () => {
+    assertEscalationIsUnreachableForATrailingWindow();
+  });
+});
+
+describe("F4.297 — a custom from/to (ADR 0108 decision 1.2)", () => {
+  it("keeps a custom range's ends, and its compare is the equal period ending at from", () => {
+    assertACustomRangeKeepsItsEndsAndItsCompare();
+  });
+
+  it("keeps windowBounds as the trailing case of windowBoundsFor", () => {
+    assertWindowBoundsIsTheTrailingCase();
+  });
+
+  it("escalates a custom range past the 1m horizon and reports it in bucketSeconds", () => {
+    assertACustomRangePastTheHorizonEscalatesAndReportsIt();
+  });
+
+  it("resolves an empty query to the trailing day", () => {
+    assertResolveAggregateRangeDefaultsToATrailingDay();
+  });
+
+  it("resolves a custom pair to its instants and its span in minutes", () => {
+    assertResolveAggregateRangeKeepsACustomPair();
+  });
+
+  it("adds bucket min, the shared weighted mean and max under bucketStats", () => {
+    assertBucketSqlWithStatsUsesTheSharedMean();
   });
 });
 

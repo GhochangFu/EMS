@@ -11,6 +11,7 @@ import {
   type AssetStatus,
 } from "../../lib/generated-site-view";
 import { isStale } from "../../lib/schematic-telemetry";
+import { AssetHistoryLink } from "../assets/asset-history-link";
 import { StatusPill } from "../status-pill";
 
 const STATUS_LABEL: Record<AssetStatus, string> = { live: "Live", stale: "Stale", none: "None" };
@@ -53,6 +54,7 @@ export function GeneratedSiteAssetCard({
         <div className="min-w-0">
           <p className="font-condensed text-sm font-bold text-ink">{asset.code}</p>
           <p className="truncate text-[11px] text-ink-muted">{asset.name}</p>
+          <AssetHistoryLink assetId={asset.id} code={asset.code} />
         </div>
         <span data-testid="asset-status">
           <StatusPill label={STATUS_LABEL[status]} tone={STATUS_TONE[status]} />

@@ -2,6 +2,7 @@ import { MAX_WIDGET_WINDOW_MINUTES, pointAggregateResponseSchema } from "@bms/sh
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
+import { resolveAggregateRange } from "../../telemetry/point-aggregate-window";
 import { pointKeySchema } from "../../telemetry/telemetry.schema";
 import { defineReadTool } from "./copilot-read-tool";
 import { COPILOT_TOOL_RECORD_OUT_OF_SCOPE, organizationOfAsset } from "./copilot-tool-scope";
@@ -35,7 +36,11 @@ export const getPointAggregateTool = defineReadTool({
       await telemetry.pointAggregate(
         { assetId: args.assetId, pointKey: args.pointKey },
         {
-          windowMinutes: args.windowMinutes ?? COPILOT_AGGREGATE_DEFAULT_WINDOW_MINUTES,
+          // `F4.297`: the same range rule the route uses, trailing from the turn's clock.
+          ...resolveAggregateRange(
+            { windowMinutes: args.windowMinutes ?? COPILOT_AGGREGATE_DEFAULT_WINDOW_MINUTES },
+            ctx.now,
+          ),
           compare: args.compare ?? false,
           now: ctx.now,
         },
@@ -52,7 +57,12 @@ export const getPointAggregateTool = defineReadTool({
         to: answer.to,
         bucketSeconds: answer.bucketSeconds,
         stats: answer.stats,
-        compare: answer.compare,
+        // The compare half's scalars only: since `F4.297` the object can carry a
+        // bucket array, which this stats-only tool never passes on.
+        compare:
+          answer.compare === null
+            ? null
+            : { from: answer.compare.from, to: answer.compare.to, stats: answer.compare.stats },
       },
       organizationIds: [organizationId],
     };

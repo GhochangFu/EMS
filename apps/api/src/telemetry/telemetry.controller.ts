@@ -10,6 +10,9 @@ import {
 import {
   decodePointRefParam,
   type JwtPayload,
+  pointAggregateQuerySchema,
+  pointRawQuerySchema,
+  type PointRawRecordsResponse,
   type PointValuesAtInstantResponse,
   type PointsLatestResponse,
 } from "@bms/shared";
@@ -19,13 +22,34 @@ import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import {
-  pointAggregateQuerySchema,
   pointsLatestQuerySchema,
   pointValuesAtQuerySchema,
 } from "./telemetry.schema";
+import { resolveAggregateRange } from "./point-aggregate-window";
 import { TelemetryService } from "./telemetry.service";
 
 const assetIdSchema = z.string().uuid();
+
+/**
+ * One path-param ref, decoded and checked: a malformed ref (no separator, or a
+ * `%` sequence `decodeURIComponent` cannot read) and a non-UUID asset id are
+ * each a 400 — the same two sentences `atInstant` answers per ref. Runs before
+ * the scope check, so neither reaches a query.
+ */
+function decodeGuardedPointRef(pointRef: string): { assetId: string; pointKey: string } {
+  let point: { assetId: string; pointKey: string };
+  try {
+    point = decodePointRefParam(pointRef);
+  } catch {
+    // A 400, not a 500. A malformed reference is a caller error, and letting
+    // the decode throw raw would answer it with a stack trace.
+    throw new BadRequestException("Invalid point reference");
+  }
+  if (!assetIdSchema.safeParse(point.assetId).success) {
+    throw new BadRequestException("Invalid point reference: the asset id is not a UUID");
+  }
+  return point;
+}
 
 @Controller("telemetry")
 @UseGuards(JwtAuthGuard)
@@ -134,14 +158,22 @@ export class TelemetryController {
     return { items: await this.telemetry.latestPointValues(assetIds, pointKeys, windowMinutes) };
   }
 
-  /** Historical window for charts and TanStack Query seed data. */
+  /**
+   * Historical window for charts and TanStack Query seed data.
+   *
+   * `F4.297` (owner answer Q4): a malformed ref, or one whose asset id is not a
+   * UUID, is a 400 before the scope check and the read — the decode used to
+   * throw raw (a 500), and a non-UUID id reached the `uuid` column for a
+   * global admin, whom `canReadAsset` answers without a lookup. The response
+   * shape is unchanged.
+   */
   @Get("points/:pointRef/recent")
   async recent(
     @CurrentUser() user: JwtPayload,
     @Param("pointRef") pointRef: string,
     @Query("window") window?: string,
   ) {
-    const { assetId } = decodePointRefParam(pointRef);
+    const { assetId } = decodeGuardedPointRef(pointRef);
     if (!(await this.accessControl.canReadAsset(user, assetId))) {
       throw new ForbiddenException("Asset is outside your access scope");
     }
@@ -161,6 +193,13 @@ export class TelemetryController {
    *
    * It runs **before** `pointAggregate`, not inside it. A guard that throws after
    * reading has already read.
+   *
+   * `F4.297` (ADR 0108 decisions 1.2 and 1.5): the order is decode (400), the
+   * asset id's UUID shape (400, for a global admin too — `canReadAsset` answers
+   * one without a lookup, so nothing else stopped a non-UUID id before the
+   * `::uuid` cast, a 500), scope (403), the query (400), then the range is
+   * resolved by `resolveAggregateRange` — a custom `from`/`to`, else the
+   * trailing `windowMinutes` — and read.
    */
   @Get("points/:pointRef/aggregate")
   async aggregate(
@@ -168,14 +207,7 @@ export class TelemetryController {
     @Param("pointRef") pointRef: string,
     @Query() query: Record<string, unknown>,
   ) {
-    let point: { assetId: string; pointKey: string };
-    try {
-      point = decodePointRefParam(pointRef);
-    } catch {
-      // A 400, not a 500. A malformed reference is a caller error, and letting
-      // the decode throw raw would answer it with a stack trace.
-      throw new BadRequestException("Invalid point reference");
-    }
+    const point = decodeGuardedPointRef(pointRef);
     if (!(await this.accessControl.canReadAsset(user, point.assetId))) {
       throw new ForbiddenException("Asset is outside your access scope");
     }
@@ -184,7 +216,8 @@ export class TelemetryController {
     if (!parsed.success) {
       throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid query");
     }
-    const { windowMinutes, compare, bucketFunction } = parsed.data;
+    const { compare, bucketFunction, bucketStats } = parsed.data;
+    const range = resolveAggregateRange(parsed.data, new Date());
 
     // **The DECODED pair goes to the service, not the raw string** (security
     // review, LOW). `recent` above hands over the string and the service
@@ -197,6 +230,53 @@ export class TelemetryController {
     // read rather than a refusal. Passing the decoded pair makes the guarded
     // id and the bound id the same value structurally, and leaves no way to
     // call the service without holding one.
-    return this.telemetry.pointAggregate(point, { windowMinutes, compare, bucketFunction });
+    return this.telemetry.pointAggregate(point, {
+      from: range.from,
+      to: range.to,
+      windowMinutes: range.windowMinutes,
+      compare,
+      bucketFunction,
+      bucketStats,
+    });
+  }
+
+  /**
+   * `F4.297` (ADR 0108 decision 1.6) — the latest stored samples of one point,
+   * newest first, `limit` per page (default `DEFAULT_RAW_RECORDS_LIMIT`, at most
+   * `MAX_RAW_RECORDS_LIMIT`), with `before` as the keyset cursor and
+   * `nextBefore` in the answer.
+   *
+   * The order of refusals is the ADR's: decode (400), the asset id's UUID shape
+   * (400, for a global admin too — `canReadAsset` answers one without a lookup,
+   * so nothing else stops a non-UUID id before the `uuid` column), scope (403),
+   * the query (400), then the read. Scope before the query, so a foreign point
+   * is "outside your access" whatever its query says. `telemetry.point_values`
+   * has no Row Level Security, so this guard is the only containment, and it
+   * runs before the read.
+   *
+   * Three segments (`points/:pointRef/raw`), so it cannot collide with the
+   * two-segment `points/at-instant` and `points/latest`; no declaration-order
+   * trap. The decoded pair goes to the service, as in `aggregate`.
+   */
+  @Get("points/:pointRef/raw")
+  async raw(
+    @CurrentUser() user: JwtPayload,
+    @Param("pointRef") pointRef: string,
+    @Query() query: Record<string, unknown>,
+  ): Promise<PointRawRecordsResponse> {
+    const point = decodeGuardedPointRef(pointRef);
+    if (!(await this.accessControl.canReadAsset(user, point.assetId))) {
+      throw new ForbiddenException("Asset is outside your access scope");
+    }
+
+    const parsed = pointRawQuerySchema.safeParse(query);
+    if (!parsed.success) {
+      throw new BadRequestException(parsed.error.issues[0]?.message ?? "Invalid query");
+    }
+    const { limit, before } = parsed.data;
+    return this.telemetry.pointRawRecords(point, {
+      limit,
+      before: before === undefined ? undefined : new Date(before),
+    });
   }
 }

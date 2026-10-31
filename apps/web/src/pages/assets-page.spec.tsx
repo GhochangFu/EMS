@@ -246,6 +246,19 @@ export async function clickingARowOpensThePanelForThatRow(): Promise<void> {
   expect(within(dl).getByText("Water")).toBeInTheDocument();
 }
 
+/** F4.297 U6 - the panel links to the asset's history page, outside the `<dl>`. */
+export async function panelLinksToTheAssetHistory(): Promise<void> {
+  stubApi();
+  renderPage();
+
+  await clickRow("FEED-PUMP-2");
+  const heading = await screen.findByRole("heading", { name: "Asset · FEED-PUMP-2" });
+  const panel = heading.closest("aside") as HTMLElement;
+
+  const link = within(panel).getByRole("link", { name: "History of FEED-PUMP-2" });
+  expect(link).toHaveAttribute("href", `/assets/${UNWIRED.id}/history`);
+}
+
 /**
  * P3 (owed guard 3b) — the panel lists every dashboard the read returns, each
  * link carries the slug, and the read is narrowed by the row's id as the

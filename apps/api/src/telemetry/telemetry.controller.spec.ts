@@ -53,7 +53,16 @@ const RESPONSE: PointAggregateResponse = {
 /** Records every call so a test can assert a read did NOT happen, not only that it threw. */
 function serviceStub() {
   const calls: { point: { assetId: string; pointKey: string }; options: Record<string, unknown> }[] = [];
+  const recentCalls: string[] = [];
+  const rawCalls: { point: { assetId: string; pointKey: string }; options: Record<string, unknown> }[] = [];
   const service = {
+    pointRawRecords: async (
+      point: { assetId: string; pointKey: string },
+      options: Record<string, unknown>,
+    ) => {
+      rawCalls.push({ point, options });
+      return { pointRef: encodePointRef(point.assetId, point.pointKey), items: [], nextBefore: null };
+    },
     pointAggregate: async (
       point: { assetId: string; pointKey: string },
       options: Record<string, unknown>,
@@ -61,8 +70,12 @@ function serviceStub() {
       calls.push({ point, options });
       return RESPONSE;
     },
+    recentForPoint: async (pointRef: string) => {
+      recentCalls.push(pointRef);
+      return [];
+    },
   } as unknown as TelemetryService;
-  return { service, calls };
+  return { service, calls, recentCalls, rawCalls };
 }
 
 function accessStub(allow: boolean) {
@@ -72,8 +85,8 @@ function accessStub(allow: boolean) {
 }
 
 function controllerWith(allow: boolean) {
-  const { service, calls } = serviceStub();
-  return { controller: new TelemetryController(service, accessStub(allow)), calls };
+  const { service, calls, recentCalls, rawCalls } = serviceStub();
+  return { controller: new TelemetryController(service, accessStub(allow)), calls, recentCalls, rawCalls };
 }
 
 /**
@@ -194,6 +207,255 @@ export async function assertTheDefaultsAreATileRequest(): Promise<void> {
   await controller.aggregate(USER, POINT_REF, { bucketFunction: "avg", windowMinutes: "60" });
   assert(calls[1]?.options.bucketFunction === "avg", "a named bucket function must reach the service");
   assert(calls[1]?.options.windowMinutes === 60, "the window must be coerced from the query string");
+}
+
+// ---------------------------------------------------------------------------
+// `F4.297` (ADR 0108 decisions 1.2 and 1.5) — a custom from/to, bucket stats,
+// the UUID guard on `aggregate`, and the `/recent` malformed-ref 400.
+// ---------------------------------------------------------------------------
+
+/**
+ * A custom `{ from, to }` with a `+05:30` offset reaches the service as the
+ * same two instants, and its span becomes `windowMinutes`. Mutation: resolve
+ * the range from `windowMinutes` only (ignore `from`/`to`) and `to` is now.
+ */
+export async function assertACustomRangeReachesTheServiceAsDates(): Promise<void> {
+  const { controller, calls } = controllerWith(true);
+  await controller.aggregate(USER, POINT_REF, {
+    from: "2026-08-01T05:30:00+05:30",
+    to: "2026-08-01T07:30:00+05:30",
+  });
+  const options = calls[0]?.options;
+  assert(
+    options?.from instanceof Date && options.from.toISOString() === "2026-08-01T00:00:00.000Z",
+    `from must reach the service as the instant the offset names, got ${String(options?.from)}`,
+  );
+  assert(
+    options?.to instanceof Date && options.to.toISOString() === "2026-08-01T02:00:00.000Z",
+    `to must reach the service as the instant the offset names, got ${String(options?.to)}`,
+  );
+  assert(options?.windowMinutes === 120, `the span must become windowMinutes 120, got ${String(options?.windowMinutes)}`);
+}
+
+/** `?bucketStats=true` reaches the service as `true`, and an absent flag as `false`. */
+export async function assertTheBucketStatsFlagReachesTheService(): Promise<void> {
+  const { controller, calls } = controllerWith(true);
+  await controller.aggregate(USER, POINT_REF, { bucketFunction: "avg", bucketStats: "true" });
+  assert(calls[0]?.options.bucketStats === true, "?bucketStats=true must mean true");
+  await controller.aggregate(USER, POINT_REF, { bucketFunction: "avg" });
+  assert(calls[1]?.options.bucketStats === false, "an absent bucketStats must mean false");
+}
+
+/**
+ * Every custom-range rule is a 400 before any read, and each case is refused by
+ * ITS rule: the message names the rule, so a case refused by another guard
+ * (for example the span cap catching a year-0000 `from`) does not pass for it.
+ */
+export async function assertCustomRangeBoundsAreEnforced(): Promise<void> {
+  const ahead = new Date(Date.now() + 2 * 86_400_000).toISOString();
+  const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
+  const cases: { query: Record<string, string>; names: string }[] = [
+    { query: { from: "2026-08-01T00:00:00Z" }, names: "together" },
+    { query: { to: "2026-08-01T00:00:00Z" }, names: "together" },
+    {
+      query: { from: "2026-08-01T00:00:00Z", to: "2026-08-01T01:00:00Z", windowMinutes: "60" },
+      names: "exclusive",
+    },
+    { query: { from: "2026-08-01T01:00:00Z", to: "2026-08-01T01:00:00Z" }, names: "after from" },
+    { query: { from: "2026-08-01T02:00:00Z", to: "2026-08-01T01:00:00Z" }, names: "after from" },
+    { query: { from: "2025-01-01T00:00:00Z", to: "2026-01-01T00:01:00Z" }, names: "525600" },
+    { query: { from: "0000-01-01T00:00:00Z", to: "0000-01-01T01:00:00Z" }, names: "from must lie" },
+    { query: { from: hourAgo, to: ahead }, names: "to must lie" },
+    { query: { from: "2026-08-01T00:00:00", to: "2026-08-01T01:00:00Z" }, names: "offset" },
+    { query: { bucketStats: "yes" }, names: "bucketStats" },
+  ];
+  for (const { query, names } of cases) {
+    const { controller, calls } = controllerWith(true);
+    await rejects(
+      () => controller.aggregate(USER, POINT_REF, query),
+      (err) => err instanceof BadRequestException && err.message.includes(names),
+      `${JSON.stringify(query)} must be refused as a 400 naming "${names}"`,
+    );
+    assert(calls.length === 0, `${JSON.stringify(query)} reached the service`);
+  }
+  // The positive control beside the refusals: the boundary span is admitted.
+  const { controller, calls } = controllerWith(true);
+  await controller.aggregate(USER, POINT_REF, { from: "2025-01-01T00:00:00Z", to: "2026-01-01T00:00:00Z" });
+  assert(calls.length === 1, "a span of exactly 525,600 minutes must be read");
+}
+
+/**
+ * **A non-UUID asset id is a 400, for a global admin too.** `canReadAsset`
+ * answers a global admin without an asset lookup, so nothing else stops the id
+ * before the `::uuid` cast — a 500. Mutation: remove the guard and the stub
+ * answers, the service is called, and this reddens.
+ */
+export async function assertANonUuidAssetIdIsABadRequestNotA500(): Promise<void> {
+  const { controller, calls } = controllerWith(true);
+  await rejects(
+    () => controller.aggregate(USER, encodePointRef("not-a-uuid", "kw"), {}),
+    (err) => err instanceof BadRequestException && err.message.includes("UUID"),
+    "a non-UUID asset id must be a 400 naming the UUID rule",
+  );
+  assert(calls.length === 0, "a non-UUID asset id must not reach the service");
+}
+
+/**
+ * `F4.297` owner answer Q4 — `/recent` answered a malformed ref with a 500 (the
+ * decode threw raw). It is a 400, before the scope check and the read.
+ */
+export async function assertARecentMalformedRefIsABadRequest(): Promise<void> {
+  const { controller, recentCalls } = controllerWith(true);
+  await rejects(
+    () => controller.recent(USER, "not-a-point-ref"),
+    (err) => err instanceof BadRequestException && err.message === "Invalid point reference",
+    "a malformed /recent reference must be a 400, not a 500",
+  );
+  assert(recentCalls.length === 0, "a malformed /recent reference must not reach the service");
+}
+
+/** `/recent` refuses a non-UUID asset id with a 400 too, the same rule as `aggregate`. */
+export async function assertARecentNonUuidRefIsABadRequest(): Promise<void> {
+  const { controller, recentCalls } = controllerWith(true);
+  await rejects(
+    () => controller.recent(USER, encodePointRef("not-a-uuid", "kw")),
+    (err) => err instanceof BadRequestException && err.message.includes("UUID"),
+    "a non-UUID /recent asset id must be a 400",
+  );
+  assert(recentCalls.length === 0, "a non-UUID /recent asset id must not reach the service");
+}
+
+/** The positive case beside the two refusals: a well-formed in-scope `/recent` ref is read. */
+export async function assertARecentWellFormedRefIsRead(): Promise<void> {
+  const { controller, recentCalls } = controllerWith(true);
+  await controller.recent(USER, POINT_REF, "1h");
+  assert(recentCalls.length === 1 && recentCalls[0] === POINT_REF, "a well-formed /recent ref must be read");
+}
+
+// ---------------------------------------------------------------------------
+// `F4.297` (ADR 0108 decision 1.6) — `GET /telemetry/points/:pointRef/raw`.
+// The order of refusals is decode (400), UUID (400), scope (403), query (400),
+// then the read.
+// ---------------------------------------------------------------------------
+
+/**
+ * A point outside the caller's scope is a 403 and **nothing is read**. The read
+ * count is asserted, not only the throw: `telemetry.point_values` carries no
+ * Row Level Security, so a guard that throws after reading has already read.
+ * Mutation: move the `canReadAsset` check after the service call → reddens.
+ */
+export async function assertARawReadOutsideScopeIsRefusedBeforeAnyRead(): Promise<void> {
+  const { controller, rawCalls } = controllerWith(false);
+  await rejects(
+    () => controller.raw(USER, POINT_REF, {}),
+    (err) => err instanceof ForbiddenException,
+    "a raw read outside the caller's scope must be refused",
+  );
+  assert(rawCalls.length === 0, `the service was called ${rawCalls.length} time(s) despite the refusal`);
+}
+
+/**
+ * The scope check runs before the query contract: a foreign point with a broken
+ * query is a 403, not a 400, so the answer never says more about a foreign
+ * point than "outside your access". Mutation: parse the query first → a 400.
+ */
+export async function assertARawScopeRefusalComesBeforeTheQuery(): Promise<void> {
+  const { controller, rawCalls } = controllerWith(false);
+  await rejects(
+    () => controller.raw(USER, POINT_REF, { limit: "0" }),
+    (err) => err instanceof ForbiddenException,
+    "a foreign point with a broken query must be a 403 (scope before query)",
+  );
+  assert(rawCalls.length === 0, "a refused raw read must not reach the service");
+}
+
+/**
+ * The positive case beside the refusals: an in-scope read hands the service
+ * the DECODED pair the guard ran on, the parsed `limit`, and `before` as the
+ * instant its offset names. Mutation: hand the raw string, or drop `before`.
+ */
+export async function assertARawReadInsideScopeHandsTheDecodedPair(): Promise<void> {
+  const { controller, rawCalls } = controllerWith(true);
+  const result = await controller.raw(USER, POINT_REF, { limit: "5", before: "2026-08-01T05:30:00+05:30" });
+  assert(result.pointRef === POINT_REF, "the response must name the point it was asked for");
+  assert(rawCalls.length === 1, `expected exactly one read, got ${rawCalls.length}`);
+  const call = rawCalls[0];
+  assert(
+    call?.point.assetId === ASSET_ID && call.point.pointKey === "kw",
+    "the service must be handed the decoded pair the access check ran on",
+  );
+  assert(call?.options.limit === 5, `limit must be coerced to 5, got ${String(call?.options.limit)}`);
+  const before = call?.options.before;
+  assert(
+    before instanceof Date && before.toISOString() === "2026-08-01T00:00:00.000Z",
+    `before must reach the service as the instant its offset names, got ${String(before)}`,
+  );
+}
+
+/** An empty query is the newest page at the default size: `limit` 100 and no `before`. */
+export async function assertARawReadDefaultsToTheNewestPage(): Promise<void> {
+  const { controller, rawCalls } = controllerWith(true);
+  await controller.raw(USER, POINT_REF, {});
+  assert(rawCalls[0]?.options.limit === 100, `the default limit is 100, got ${String(rawCalls[0]?.options.limit)}`);
+  assert(rawCalls[0]?.options.before === undefined, "no before means the newest page");
+}
+
+/**
+ * Every query bound is a 400 before any read; a limit of exactly 500 is read
+ * (the positive control). Mutation: drop `.strict()` → the unknown key is read.
+ */
+export async function assertRawQueryBoundsAreEnforced(): Promise<void> {
+  const ahead = new Date(Date.now() + 2 * 86_400_000).toISOString();
+  const cases: Record<string, string>[] = [
+    { limit: "0" },
+    { limit: "501" },
+    { limit: "2.5" },
+    { limit: "many" },
+    { before: "0000-01-01T00:00:00Z" },
+    { before: ahead },
+    { before: "2026-08-01T00:00:00" },
+    { cursor: "2026-08-01T00:00:00Z" },
+  ];
+  for (const query of cases) {
+    const { controller, rawCalls } = controllerWith(true);
+    await rejects(
+      () => controller.raw(USER, POINT_REF, query),
+      (err) => err instanceof BadRequestException,
+      `${JSON.stringify(query)} must be refused as a 400`,
+    );
+    assert(rawCalls.length === 0, `${JSON.stringify(query)} reached the service`);
+  }
+  const { controller, rawCalls } = controllerWith(true);
+  await controller.raw(USER, POINT_REF, { limit: "500" });
+  assert(rawCalls.length === 1 && rawCalls[0]?.options.limit === 500, "a limit of exactly 500 must be read");
+}
+
+/** A malformed raw ref is a 400, not the decode's raw throw (a 500), and nothing is read. */
+export async function assertAMalformedRawRefIsABadRequest(): Promise<void> {
+  const { controller, rawCalls } = controllerWith(true);
+  await rejects(
+    () => controller.raw(USER, "not-a-point-ref", {}),
+    (err) => err instanceof BadRequestException && err.message === "Invalid point reference",
+    "a malformed raw reference must be a 400",
+  );
+  assert(rawCalls.length === 0, "a malformed raw reference must not reach the service");
+}
+
+/**
+ * **A non-UUID asset id is a 400 for a global admin.** `accessStub(true)` is
+ * the global-admin path: `canReadAsset` answers without an asset lookup, so
+ * nothing else stops the id before the `::uuid` cast. Mutation: remove the
+ * UUID check from the raw handler → the stub answers, the service is called,
+ * and this reddens.
+ */
+export async function assertANonUuidRawRefIsABadRequestForAGlobalAdmin(): Promise<void> {
+  const { controller, rawCalls } = controllerWith(true);
+  await rejects(
+    () => controller.raw(USER, encodePointRef("not-a-uuid", "kw"), {}),
+    (err) => err instanceof BadRequestException && err.message.includes("UUID"),
+    "a non-UUID raw asset id must be a 400 naming the UUID rule",
+  );
+  assert(rawCalls.length === 0, "a non-UUID raw asset id must not reach the service");
 }
 
 // ---------------------------------------------------------------------------

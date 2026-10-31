@@ -1,5 +1,6 @@
 import {
   pointAggregateResponseSchema,
+  pointRawRecordsResponseSchema,
   pointValuesAtInstantResponseSchema,
   pointsLatestResponseSchema,
   recentTelemetryResponseSchema,
@@ -7,6 +8,7 @@ import {
 import type {
   PointAggregateFunction,
   PointAggregateResponse,
+  PointRawRecordsResponse,
   PointValuesAtInstantResponse,
   PointsLatestResponse,
   TelemetryReading,
@@ -74,12 +76,27 @@ export async function fetchPointsLatest(
 export async function fetchPointAggregate(
   pointRefEncoded: string,
   options: {
-    windowMinutes: number;
+    /** Trailing window. Not sent when both `from` and `to` are given (`F4.297`: the server refuses both). */
+    windowMinutes?: number;
+    /** `F4.297` — a custom range; sent only as a pair. */
+    from?: string;
+    to?: string;
     compare?: boolean;
     bucketFunction?: PointAggregateFunction;
+    /** `F4.297` — per-bucket min/average/max/sampleCount. Sent only when true. */
+    bucketStats?: boolean;
   },
 ): Promise<PointAggregateResponse> {
-  const query = new URLSearchParams({ windowMinutes: String(options.windowMinutes) });
+  const query = new URLSearchParams();
+  if (options.from !== undefined && options.to !== undefined) {
+    query.set("from", options.from);
+    query.set("to", options.to);
+  } else if (options.windowMinutes !== undefined) {
+    query.set("windowMinutes", String(options.windowMinutes));
+  }
+  if (options.bucketStats) {
+    query.set("bucketStats", "true");
+  }
   // Sent only when true. The server reads `compare` as a string enum rather than
   // a coerced boolean — `z.coerce.boolean("false")` is `true` — so an explicit
   // "false" would be harmless, but an absent parameter is the clearer request.
@@ -139,4 +156,31 @@ export async function fetchPointValuesAt(
     await res.json(),
     "telemetry/points/at-instant",
   );
+}
+
+/**
+ * `GET /api/v1/telemetry/points/:pointRef/raw` (`F4.297`, ADR 0108 decision 1.6) — a
+ * newest-first page of stored samples with a `before` cursor. The server's default limit
+ * applies when `limit` is absent; `nextBefore` of one page is the `before` of the next.
+ */
+export async function fetchPointRawRecords(
+  pointRefEncoded: string,
+  options: { limit?: number; before?: string } = {},
+): Promise<PointRawRecordsResponse> {
+  const query = new URLSearchParams();
+  if (options.limit !== undefined) {
+    query.set("limit", String(options.limit));
+  }
+  if (options.before !== undefined) {
+    query.set("before", options.before);
+  }
+  const qs = query.toString();
+  const res = await fetch(
+    `${base}/api/v1/telemetry/points/${pointRefEncoded}/raw${qs === "" ? "" : `?${qs}`}`,
+    withAuth(),
+  );
+  if (!res.ok) {
+    throw new Error(`telemetry raw ${res.status}`);
+  }
+  return checkResponse(pointRawRecordsResponseSchema, await res.json(), "telemetry/points/:id/raw");
 }

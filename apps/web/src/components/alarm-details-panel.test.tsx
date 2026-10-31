@@ -6,6 +6,7 @@ import {
   detailsLoadFailureReadsTheEnvelopeSentence,
   enrichmentSaveRefusalShowsTheServerSentence,
   keepsTheClassBlockDistinctFromTheInstanceEnrichment,
+  linksTheAssetToItsHistory,
   offersNoControlThatCopiesTheClassTextIntoTheForm,
   omitsTheClassBlockEntirelyWhenThereIsNoProvenance,
   showsTheClassPhilosophyToAViewer,
@@ -50,5 +51,9 @@ describe("E2.2 — the class philosophy on the Alarm Details panel", () => {
 
   it("F4.204 reads the envelope sentence when the details load fails", async () => {
     await detailsLoadFailureReadsTheEnvelopeSentence();
+  });
+
+  it("F4.297 links the asset to its history page", async () => {
+    await linksTheAssetToItsHistory();
   });
 });

@@ -16,9 +16,12 @@ import {
   pointsLatestRefusesANullValue,
   runNotificationDeliveryStatusEnvelopeTests,
   runPointAggregateBucketSecondsTests,
+  runPointAggregateBucketStatsTests,
+  runPointAggregateCompareBucketsTests,
   runPointAggregateEmptyWindowTests,
   runPointAggregateIsNotStrictTests,
   runPointAggregateResponseShapeTests,
+  runPointRawRecordsShapeTests,
 } from "./envelopes.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -37,6 +40,20 @@ describe("F3.35 Stage A — the point-aggregate response contract", () => {
 
   it("bounds the bucket width it reports in place of a level", () => {
     runPointAggregateBucketSecondsTests();
+  });
+});
+
+describe("F4.297 — aggregate compare buckets, bucket stats and raw records (ADR 0108)", () => {
+  it("parses compare.buckets, null, and the old shape with no buckets key", () => {
+    runPointAggregateCompareBucketsTests();
+  });
+
+  it("parses per-bucket stats and timeZone, and still parses a bare {t, v} bucket", () => {
+    runPointAggregateBucketStatsTests();
+  });
+
+  it("parses the raw-records page shape", () => {
+    runPointRawRecordsShapeTests();
   });
 });
 

@@ -23,8 +23,9 @@ import { ReportsService } from "../reports/reports.service";
 import { RuleSweepService } from "../rules/rule-sweep.service";
 import { RulesService } from "../rules/rules.service";
 import { CredentialRotationService } from "../security/credential-rotation.service";
+import { TelemetryService } from "../telemetry/telemetry.service";
 import { WorkOrdersService } from "../work-orders/work-orders.service";
-import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "./database.tokens";
+import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE, TENANT_POOL } from "./database.tokens";
 
 /**
  * `E7.1b` — the one wiring guard for **which token lands in which constructor
@@ -260,4 +261,21 @@ export function assertCopilotPurgeServiceTenantSlot(): void {
 
 export function assertCopilotPurgeServiceFleetSlot(): void {
   expect(injectedToken(CopilotPurgeService, 1)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `F4.297` (ADR 0108 decision 1.9) — `TelemetryService` reads the asset's
+ * location and organization zones on the fleet pool in slot 2: `bms.assets` and
+ * `bms.locations` are FORCE RLS and the service sets no `app.current_organization`,
+ * so on the tenant pool the read sees no row and every asset reports `UTC` with
+ * no error. `point-aggregate.integration.spec.ts` passes one pool in both slots,
+ * so this is the only gate on the token. Slot 1 stays the tenant pool, for the
+ * `telemetry.*` reads. Two claims, one function each.
+ */
+export function assertTelemetryServiceTenantPoolSlot(): void {
+  expect(injectedToken(TelemetryService, 1)).toBe(TENANT_POOL);
+}
+
+export function assertTelemetryServiceFleetPoolSlot(): void {
+  expect(injectedToken(TelemetryService, 2)).toBe(FLEET_POOL);
 }

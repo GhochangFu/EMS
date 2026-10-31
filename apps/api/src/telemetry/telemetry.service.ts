@@ -9,16 +9,20 @@ import {
   encodePointRef,
   MAX_WIDGET_WINDOW_MINUTES,
   POINT_STATS_MAX_ASSETS,
+  resolveSiteTimeZone,
+  type PointAggregateBucket,
   type PointAggregateFunction,
   type PointAggregateResponse,
   type PointAggregateStats,
+  type PointRawRecordsResponse,
   type PointStatsByAsset,
   type PointStatsSummary,
   type TelemetryReading,
 } from "@bms/shared";
 
-import { TENANT_DRIZZLE, TENANT_POOL } from "../database/database.tokens";
+import { FLEET_POOL, TENANT_DRIZZLE, TENANT_POOL } from "../database/database.tokens";
 import {
+  type AggregateRange,
   assertBucketCount,
   bucketSql,
   expectedBucketCount,
@@ -28,7 +32,7 @@ import {
   levelFor,
   pointStatsWindow,
   scalarSql,
-  windowBounds,
+  windowBoundsFor,
 } from "./point-aggregate-window";
 import { bucketSeconds } from "./point-aggregates";
 
@@ -61,13 +65,62 @@ interface ScalarRow {
 interface BucketRow {
   t: string;
   v: number | null;
+  /** Present only when the query asked for bucket statistics (`F4.297`). */
+  min?: number | string | null;
+  average?: number | string | null;
+  max?: number | string | null;
+  sample_count?: number | string | null;
+}
+
+/**
+ * `F4.297` — a bucket array as the response carries it: gap-filled over
+ * `[from, to)` (see `fillBucketGaps`), and with `bucketStats` each bucket also
+ * carries its min, weighted mean, max and sample count. A filled gap has
+ * `null` statistics and a zero count, never zeros a chart would plot.
+ */
+function toResponseBuckets(
+  rows: readonly BucketRow[],
+  from: Date,
+  to: Date,
+  seconds: number,
+  withStats: boolean,
+): PointAggregateBucket[] {
+  const filled = fillBucketGaps(
+    rows.map((b) => ({ t: new Date(b.t).toISOString(), v: numberOrNull(b.v) })),
+    from,
+    to,
+    seconds,
+  );
+  if (!withStats) {
+    return filled;
+  }
+  const byStart = new Map(rows.map((row) => [new Date(row.t).getTime(), row]));
+  return filled.map((bucket) => {
+    const row = byStart.get(new Date(bucket.t).getTime());
+    return {
+      ...bucket,
+      min: numberOrNull(row?.min ?? null),
+      average: numberOrNull(row?.average ?? null),
+      max: numberOrNull(row?.max ?? null),
+      sampleCount: Number(row?.sample_count ?? 0),
+    };
+  });
 }
 
 @Injectable()
 export class TelemetryService {
+  /**
+   * @param fleetPool `F4.297` (ADR 0108 decision 1.9): the one `bms.*` read this
+   *   service makes — the asset's location and organization zones for the
+   *   `aggregate` response's `timeZone`. `bms.locations` carries Row Level
+   *   Security, so the tenant pool (no `app.current_organization` set here)
+   *   would see no row; the controller's `canReadAsset` has already placed the
+   *   asset, which is the containment for that read.
+   */
   constructor(
     @Inject(TENANT_DRIZZLE) private readonly db: BmsDb,
     @Inject(TENANT_POOL) private readonly pool: Pool,
+    @Inject(FLEET_POOL) private readonly fleetPool: Pool,
   ) {}
 
   /**
@@ -141,19 +194,32 @@ export class TelemetryService {
    * this endpoint, and why it runs before this method is called rather than
    * inside it. `0042`/`0045` grant `bms_tenant` SELECT on these aggregates.
    *
-   * @param now injectable for tests only; defaults to the current instant.
+   * `F4.297` (ADR 0108 decisions 1.2, 1.3 and 1.9): the range arrives resolved
+   * (`resolveAggregateRange`, the one rule the route and the copilot tool both
+   * use), so a custom `from`/`to` and a trailing window take the same path.
+   * With a compare and a `bucketFunction`, the compare window's buckets come
+   * back too, at their true timestamps; `bucketStats` adds min, weighted mean,
+   * max and sample count to every bucket. The response's `timeZone` is the
+   * asset's site zone (location, else organization), read on the fleet pool —
+   * the controller's `canReadAsset` has run before this is called.
+   *
+   * @param now injectable for tests only; defaults to the current instant. It
+   *   is the retention guard's clock, not the window's end.
    */
   async pointAggregate(
     point: { assetId: string; pointKey: string },
     {
+      from,
+      to,
       windowMinutes,
       compare,
       bucketFunction,
+      bucketStats = false,
       now = new Date(),
-    }: {
-      windowMinutes: number;
+    }: AggregateRange & {
       compare: boolean;
       bucketFunction?: PointAggregateFunction;
+      bucketStats?: boolean;
       now?: Date;
     },
   ): Promise<PointAggregateResponse> {
@@ -164,32 +230,48 @@ export class TelemetryService {
     // `telemetry.point_values_*` to catch it if they ever do not.
     const { assetId, pointKey } = point;
 
-    const window = windowBounds(now, windowMinutes, compare);
+    const window = windowBoundsFor({ from, to }, compare);
     const level = levelFor(window, windowMinutes, now);
+    const comparing = window.compareFrom !== null && window.compareTo !== null;
 
     const ctes = [`cur AS (${scalarSql(level, 3, 4)})`];
     const params: unknown[] = [assetId, pointKey, window.from, window.to];
-    if (window.compareFrom && window.compareTo) {
+    if (comparing) {
       params.push(window.compareFrom, window.compareTo);
       ctes.push(`prev AS (${scalarSql(level, 5, 6)})`);
     }
     if (bucketFunction) {
-      ctes.push(`bkt AS (${bucketSql(bucketFunction, level, 3, 4)})`);
+      ctes.push(`bkt AS (${bucketSql(bucketFunction, level, 3, 4, bucketStats)})`);
+      if (comparing) {
+        // The compare buckets: the same fragment at the compare window's
+        // parameters, in the same statement and snapshot.
+        ctes.push(`pbkt AS (${bucketSql(bucketFunction, level, 5, 6, bucketStats)})`);
+      }
     }
 
+    const bucketJson = bucketStats
+      ? "json_build_object('t', t, 'v', v, 'min', min, 'average', average, 'max', max, 'sample_count', sample_count)"
+      : "json_build_object('t', t, 'v', v)";
     const columns = [
       "to_jsonb(cur.*) AS cur",
-      window.compareFrom ? "(SELECT to_jsonb(prev.*) FROM prev) AS prev" : "NULL::jsonb AS prev",
+      comparing ? "(SELECT to_jsonb(prev.*) FROM prev) AS prev" : "NULL::jsonb AS prev",
       bucketFunction
-        ? "(SELECT json_agg(json_build_object('t', t, 'v', v) ORDER BY t) FROM bkt) AS buckets"
+        ? `(SELECT json_agg(${bucketJson} ORDER BY t) FROM bkt) AS buckets`
         : "NULL::json AS buckets",
+      bucketFunction && comparing
+        ? `(SELECT json_agg(${bucketJson} ORDER BY t) FROM pbkt) AS prev_buckets`
+        : "NULL::json AS prev_buckets",
     ];
 
-    const result = await this.pool.query<{
-      cur: ScalarRow;
-      prev: ScalarRow | null;
-      buckets: BucketRow[] | null;
-    }>(`WITH ${ctes.join(", ")} SELECT ${columns.join(", ")} FROM cur`, params);
+    const [result, zone] = await Promise.all([
+      this.pool.query<{
+        cur: ScalarRow;
+        prev: ScalarRow | null;
+        buckets: BucketRow[] | null;
+        prev_buckets: BucketRow[] | null;
+      }>(`WITH ${ctes.join(", ")} SELECT ${columns.join(", ")} FROM cur`, params),
+      this.siteTimeZoneOfAsset(assetId),
+    ]);
 
     // `cur` is an aggregate with no GROUP BY, so it yields exactly one row even
     // over an empty window — every statistic simply comes back NULL.
@@ -204,12 +286,17 @@ export class TelemetryService {
     // that. A caller that named a `bucketFunction` always gets an array, even
     // when every entry in it is `null`.
     const buckets = bucketFunction ? (row.buckets ?? []) : null;
-    if (buckets) {
-      // Checked against what THIS window and level should yield, not only the
-      // global worst case: a coarse read cannot otherwise trip the guard, since
-      // a 30-day window returning 2,880 rows sits exactly at the global bound.
-      assertBucketCount(buckets.length, expectedBucketCount(windowMinutes, level));
+    const prevBuckets = bucketFunction && comparing ? (row.prev_buckets ?? []) : null;
+    // Checked against what THIS window and level should yield, not only the
+    // global worst case: a coarse read cannot otherwise trip the guard, since
+    // a 30-day window returning 2,880 rows sits exactly at the global bound.
+    // The compare window has the same length, so the same expectation holds.
+    for (const array of [buckets, prevBuckets]) {
+      if (array) {
+        assertBucketCount(array.length, expectedBucketCount(windowMinutes, level));
+      }
     }
+    const seconds = bucketSeconds(level);
 
     return {
       // Rebuilt from the decoded pair rather than echoed from the request, so
@@ -217,29 +304,49 @@ export class TelemetryService {
       pointRef: encodePointRef(assetId, pointKey),
       from: window.from.toISOString(),
       to: window.to.toISOString(),
-      bucketSeconds: bucketSeconds(level),
+      bucketSeconds: seconds,
       stats: this.toStats(row.cur),
+      // The stored name (`UTC` stays `UTC`), as the energy view reports it.
+      timeZone: zone.timeZone,
       compare:
         window.compareFrom && window.compareTo && row.prev
           ? {
               from: window.compareFrom.toISOString(),
               to: window.compareTo.toISOString(),
               stats: this.toStats(row.prev),
+              // True timestamps: the client shifts each by the span for an
+              // overlay (ADR 0108 decision 1.3). `null` when no bucketFunction.
+              buckets: prevBuckets
+                ? toResponseBuckets(prevBuckets, window.compareFrom, window.compareTo, seconds, bucketStats)
+                : null,
             }
           : null,
       // Gap-filled, so an hour with no telemetry arrives as `v: null` rather
       // than as an absent row. ECharts sets no `connectNulls`, so it breaks the
       // line at a null and interpolates straight across a missing point — an
       // outage would otherwise be drawn as data.
-      buckets: buckets
-        ? fillBucketGaps(
-            buckets.map((b) => ({ t: new Date(b.t).toISOString(), v: numberOrNull(b.v) })),
-            window.from,
-            window.to,
-            bucketSeconds(level),
-          )
-        : null,
+      buckets: buckets ? toResponseBuckets(buckets, window.from, window.to, seconds, bucketStats) : null,
     };
+  }
+
+  /**
+   * `F4.297` (ADR 0108 decision 1.9) — the asset's site zone: its location's
+   * stored `timezone`, else its organization's, through the one shared chain
+   * (`resolveSiteTimeZone`; an invalid stored zone falls to the next link, a
+   * stored `UTC` stays `UTC`). One `FLEET_POOL` statement, run only after the
+   * controller's `canReadAsset`; an asset with no row answers `UTC`.
+   */
+  private async siteTimeZoneOfAsset(assetId: string) {
+    const result = await this.fleetPool.query<{ location_zone: string | null; organization_zone: string | null }>(
+      `SELECT l.timezone AS location_zone, o.timezone AS organization_zone
+         FROM bms.assets a
+         LEFT JOIN bms.locations l ON l.id = a.location_id
+         LEFT JOIN bms.organizations o ON o.id = a.organization_id
+        WHERE a.id = $1`,
+      [assetId],
+    );
+    const row = result.rows[0];
+    return resolveSiteTimeZone(row?.location_zone ?? null, row?.organization_zone ?? null);
   }
 
   /**
@@ -295,6 +402,66 @@ export class TelemetryService {
         unit: row.unit,
       };
     });
+  }
+
+  /**
+   * `F4.297` (ADR 0108 decision 1.6) — one page of a point's stored samples,
+   * newest first, for `GET /telemetry/points/:pointRef/raw`.
+   *
+   * **A keyset cursor on `time`.** The primary key is `(time, asset_id,
+   * point_key)`, so one point has at most one row per instant and
+   * `time < $3` neither skips nor repeats a row between pages. The read is one
+   * probe of `point_values_point_asset_time_idx (point_key, asset_id, time
+   * desc)` with `LIMIT`.
+   *
+   * **`limit + 1` rows are read** (the `recentForPoint` / `get_recent_values`
+   * idiom): a `limit + 1`-th row tells "more" from "at the bound". When it
+   * exists, `nextBefore` is the `limit`-th row's time; otherwise `null`.
+   *
+   * **The upper bound is a bound parameter (`before`, else `now`), not SQL
+   * `now()`** — `now()` is only STABLE, so the planner cannot exclude chunks
+   * at Bind (the note at {@link latestPointValues}).
+   *
+   * **`TENANT_POOL`, like `pointAggregate`.** `telemetry.point_values` has no
+   * Row Level Security; the controller's `canReadAsset` has placed the asset
+   * before this is called, and takes the DECODED pair for the reason
+   * `pointAggregate` gives.
+   *
+   * @param now injectable for tests; the newest page's exclusive upper bound.
+   */
+  async pointRawRecords(
+    point: { assetId: string; pointKey: string },
+    { limit, before, now = new Date() }: { limit: number; before?: Date; now?: Date },
+  ): Promise<PointRawRecordsResponse> {
+    const { assetId, pointKey } = point;
+    const result = await this.pool.query<{
+      time: Date;
+      device_time: Date | null;
+      value: number | string;
+      unit: string | null;
+    }>(
+      `SELECT time, device_time, value, unit
+       FROM telemetry.point_values
+       WHERE asset_id = $1
+         AND point_key = $2
+         AND time < $3::timestamptz
+       ORDER BY time DESC
+       LIMIT $4`,
+      [assetId, pointKey, (before ?? now).toISOString(), limit + 1],
+    );
+    const rows = result.rows.slice(0, limit);
+    const items = rows.map((row) => ({
+      time: new Date(row.time).toISOString(),
+      deviceTime: row.device_time === null ? null : new Date(row.device_time).toISOString(),
+      value: Number(row.value),
+      unit: row.unit,
+    }));
+    const more = result.rows.length > limit;
+    return {
+      pointRef: encodePointRef(assetId, pointKey),
+      items,
+      nextBefore: more ? (items[items.length - 1]?.time ?? null) : null,
+    };
   }
 
   /**

@@ -7,6 +7,7 @@ import { apiErrorMessage } from "../lib/api-error-message";
 import { alarmSkillLabel, formatThresholdPairing } from "../lib/alarm-details";
 import { alarmSeverityTone } from "../lib/alarm-severity";
 import { alarmLifecycleState, alarmStateLabel } from "../lib/alarm-state";
+import { AssetHistoryLink } from "./assets/asset-history-link";
 import { AlarmEnrichmentWizard } from "./alarm-enrichment-wizard";
 import { StatusPill } from "./status-pill";
 
@@ -112,6 +113,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
               <StatusPill label={details.severity} tone={alarmSeverityTone(details.severity, severities)} />
               <span className="font-medium">{details.assetCode}</span>
               <span className="text-ink-muted">{details.assetName}</span>
+              <AssetHistoryLink assetId={details.assetId} code={details.assetCode} />
             </div>
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-ink-muted">
               <div>

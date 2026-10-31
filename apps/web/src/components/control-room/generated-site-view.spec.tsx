@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { expect, vi, type Mock } from "vitest";
 
 import type {
@@ -170,7 +171,9 @@ function renderView({
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <GeneratedSiteView locationId={LOCATION_ID} />
+      <MemoryRouter>
+        <GeneratedSiteView locationId={LOCATION_ID} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 }
@@ -252,6 +255,16 @@ export async function cardShowsFourRows(): Promise<void> {
   await screen.findByText("AHU-01");
   expect(rowsOf("AHU-01")).toHaveLength(4);
   expect(within(card("AHU-01")).queryByText("Point five")).toBeNull();
+}
+
+/** F4.297 U6 - each card links to its own asset's history page. */
+export async function cardLinksToTheAssetHistory(): Promise<void> {
+  renderView();
+  await screen.findByText("AHU-01");
+  const ahu = within(card("AHU-01")).getByRole("link", { name: "History of AHU-01" });
+  expect(ahu).toHaveAttribute("href", `/assets/${AHU_ID}/history`);
+  const pcc = within(card("PCC-01")).getByRole("link", { name: "History of PCC-01" });
+  expect(pcc).toHaveAttribute("href", `/assets/${PCC_ID}/history`);
 }
 
 /** W2b — "All points" expands the card inline to every row (OQ2). */

@@ -44,6 +44,8 @@ const MODULES: readonly string[] = [
   "packages/shared/src/contracts/aggregate-level.ts",
   "packages/shared/src/contracts/energy-view.ts",
   "packages/shared/src/contracts/time-zone-chain.ts",
+  "packages/shared/src/contracts/telemetry-queries.ts",
+  "packages/shared/src/types/telemetry-history.ts",
   "packages/shared/src/types/energy-view.ts",
   "apps/api/src/reports/energy-view-range.ts",
   "apps/api/src/reports/energy-view-partial.ts",
@@ -54,6 +56,17 @@ const MODULES: readonly string[] = [
   "apps/web/src/api/energy-view.ts",
   "apps/web/src/lib/energy-view-filter.ts",
   "apps/web/src/components/energy-filter-bar.tsx",
+  "apps/web/src/lib/asset-history-range.ts",
+  "apps/web/src/lib/asset-history-chart-option.ts",
+  "apps/web/src/hooks/use-asset-history.ts",
+  "apps/web/src/components/asset-history/history-format.ts",
+  "apps/web/src/components/asset-history/point-list.tsx",
+  "apps/web/src/components/asset-history/range-picker.tsx",
+  "apps/web/src/components/asset-history/trend-chart.tsx",
+  "apps/web/src/components/asset-history/bucket-table.tsx",
+  "apps/web/src/components/asset-history/raw-records-table.tsx",
+  "apps/web/src/pages/asset-history-page.tsx",
+  "apps/web/src/components/assets/asset-history-link.tsx",
 ];
 
 /**

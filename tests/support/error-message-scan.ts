@@ -61,6 +61,11 @@ export const RAW_READ_ALLOWLIST: readonly { file: string; read: string; why: str
     read: "cause.message",
     why: "The body goes to `describeAssetImageUploadError`, which calls `apiErrorMessage` itself.",
   },
+  {
+    file: "apps/web/src/components/asset-history/history-format.ts",
+    read: "error.message",
+    why: "`isForbidden` tests the trailing status word for a 403 and returns a boolean; the screen shows `ACCESS_SENTENCE` or `apiErrorMessage`.",
+  },
 ];
 
 /** `Error`, `ApiError`, `TypeError` and every other class name that ends in `Error`. */

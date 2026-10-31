@@ -28,8 +28,8 @@ function assert(condition: boolean, message: string): void {
 }
 
 function serviceOn(client: pg.PoolClient): TelemetryService {
-  // `latestPointValues` reads through the pool slot only; the Drizzle slot is unused.
-  return new TelemetryService(undefined as unknown as BmsDb, client as unknown as Pool);
+  // `latestPointValues` reads through the pool slot only; the Drizzle and fleet slots are unused.
+  return new TelemetryService(undefined as unknown as BmsDb, client as unknown as Pool, undefined as unknown as Pool);
 }
 
 async function insertSample(

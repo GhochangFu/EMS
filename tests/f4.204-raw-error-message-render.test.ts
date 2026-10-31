@@ -228,6 +228,7 @@ describe("F4.204 — the web tree", () => {
       .map((f) => f.replace(/:\d+ /, " "))
       .sort();
     expect(hidden).toEqual([
+      "apps/web/src/components/asset-history/history-format.ts error.message",
       "apps/web/src/components/assets/asset-image-gallery.tsx query.error.message",
       "apps/web/src/components/assets/asset-images-panel.tsx cause.message",
       "apps/web/src/pages/admin/users-feedback.tsx err.message",
