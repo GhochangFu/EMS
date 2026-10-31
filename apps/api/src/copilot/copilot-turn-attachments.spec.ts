@@ -34,6 +34,8 @@ import {
   COPILOT_PDF_TEXT_ONLY_PROMPT,
   COPILOT_PDF_TEXT_ONLY_REPLY_NOTE,
   COPILOT_SYSTEM_PROMPT,
+  COPILOT_TURN_CALL_CAP_REPLY,
+  COPILOT_TURN_DEADLINE_REPLY,
   COPILOT_TURN_FAILED_REPLY,
   historyHasAttachmentSinceLastLayout,
 } from "./copilot-turn.service";
@@ -260,7 +262,7 @@ export async function aCapOnAFileTurnKeepsThePlainReply(): Promise<void> {
   const llm = new FakeLlmProvider([calls(...nine)]);
   const h = harness(llm, { tools: { list_assets: () => ({ ok: true, result: { items: [] }, organizationIds: [ORG_X] }) } });
   const response = await fileTurn(h, "what is this?", [PNG_FILE]);
-  expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_TURN_FAILED_REPLY });
+  expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_TURN_CALL_CAP_REPLY });
 }
 
 /** (10) An SVG is never a provider part; its symbol summary is text. */
@@ -471,7 +473,7 @@ export async function aDeadlineOnAPdfTurnAppendsThePdfNote(): Promise<void> {
     const pending = fileTurn(h, "draw this", [PDF_FILE]);
     await vi.advanceTimersByTimeAsync(TURN_DEADLINE_MS);
     const response = await pending;
-    expect(response).toMatchObject({ outcome: "failed", reply: `${COPILOT_TURN_FAILED_REPLY} ${COPILOT_PDF_TEXT_ONLY_REPLY_NOTE}` });
+    expect(response).toMatchObject({ outcome: "failed", reply: `${COPILOT_TURN_DEADLINE_REPLY} ${COPILOT_PDF_TEXT_ONLY_REPLY_NOTE}` });
   } finally {
     vi.useRealTimers();
   }
@@ -489,7 +491,7 @@ export async function aDeadlineOnATextTurnKeepsThePlainReply(): Promise<void> {
     const pending = h.service.turn({ identity: GLOBAL_ADMIN, user: JWT }, CONVERSATION, "how many alarms?", "user", [], []);
     await vi.advanceTimersByTimeAsync(TURN_DEADLINE_MS);
     const response = await pending;
-    expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_TURN_FAILED_REPLY });
+    expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_TURN_DEADLINE_REPLY });
   } finally {
     vi.useRealTimers();
   }
@@ -505,7 +507,7 @@ export async function aCallCapOnAPdfTurnKeepsThePlainReply(): Promise<void> {
   const llm = new FakeLlmProvider([calls(...nine)]);
   const h = harness(llm, { tools: { list_assets: () => ({ ok: true, result: { items: [] }, organizationIds: [ORG_X] }) } });
   const response = await fileTurn(h, "draw this", [PDF_FILE]);
-  expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_TURN_FAILED_REPLY });
+  expect(response).toMatchObject({ outcome: "failed", reply: COPILOT_TURN_CALL_CAP_REPLY });
 }
 
 /** A provider error on a PDF beside an image keeps the unreadable reply alone. Mutation: key the note on `some(pdf)` → red. */
