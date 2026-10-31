@@ -37,6 +37,7 @@ function linkOf(zone: string | null): ResolvedSiteTimeZone | null {
   return isValidTimeZone(zone) ? { timeZone: zone, arithmeticZone: zone } : null;
 }
 
+/** The location's valid stored zone, else the organization's, else `UTC` (arithmetic in `Etc/UTC`). */
 export function resolveSiteTimeZone(locationZone: string | null, organizationZone: string | null): ResolvedSiteTimeZone {
   return (
     linkOf(locationZone) ??
