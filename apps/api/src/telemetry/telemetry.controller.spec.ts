@@ -53,6 +53,7 @@ const RESPONSE: PointAggregateResponse = {
 /** Records every call so a test can assert a read did NOT happen, not only that it threw. */
 function serviceStub() {
   const calls: { point: { assetId: string; pointKey: string }; options: Record<string, unknown> }[] = [];
+  const recentCalls: string[] = [];
   const service = {
     pointAggregate: async (
       point: { assetId: string; pointKey: string },
@@ -61,8 +62,12 @@ function serviceStub() {
       calls.push({ point, options });
       return RESPONSE;
     },
+    recentForPoint: async (pointRef: string) => {
+      recentCalls.push(pointRef);
+      return [];
+    },
   } as unknown as TelemetryService;
-  return { service, calls };
+  return { service, calls, recentCalls };
 }
 
 function accessStub(allow: boolean) {
@@ -72,8 +77,8 @@ function accessStub(allow: boolean) {
 }
 
 function controllerWith(allow: boolean) {
-  const { service, calls } = serviceStub();
-  return { controller: new TelemetryController(service, accessStub(allow)), calls };
+  const { service, calls, recentCalls } = serviceStub();
+  return { controller: new TelemetryController(service, accessStub(allow)), calls, recentCalls };
 }
 
 /**
@@ -194,6 +199,129 @@ export async function assertTheDefaultsAreATileRequest(): Promise<void> {
   await controller.aggregate(USER, POINT_REF, { bucketFunction: "avg", windowMinutes: "60" });
   assert(calls[1]?.options.bucketFunction === "avg", "a named bucket function must reach the service");
   assert(calls[1]?.options.windowMinutes === 60, "the window must be coerced from the query string");
+}
+
+// ---------------------------------------------------------------------------
+// `F4.297` (ADR 0108 decisions 1.2 and 1.5) — a custom from/to, bucket stats,
+// the UUID guard on `aggregate`, and the `/recent` malformed-ref 400.
+// ---------------------------------------------------------------------------
+
+/**
+ * A custom `{ from, to }` with a `+05:30` offset reaches the service as the
+ * same two instants, and its span becomes `windowMinutes`. Mutation: resolve
+ * the range from `windowMinutes` only (ignore `from`/`to`) and `to` is now.
+ */
+export async function assertACustomRangeReachesTheServiceAsDates(): Promise<void> {
+  const { controller, calls } = controllerWith(true);
+  await controller.aggregate(USER, POINT_REF, {
+    from: "2026-08-01T05:30:00+05:30",
+    to: "2026-08-01T07:30:00+05:30",
+  });
+  const options = calls[0]?.options;
+  assert(
+    options?.from instanceof Date && options.from.toISOString() === "2026-08-01T00:00:00.000Z",
+    `from must reach the service as the instant the offset names, got ${String(options?.from)}`,
+  );
+  assert(
+    options?.to instanceof Date && options.to.toISOString() === "2026-08-01T02:00:00.000Z",
+    `to must reach the service as the instant the offset names, got ${String(options?.to)}`,
+  );
+  assert(options?.windowMinutes === 120, `the span must become windowMinutes 120, got ${String(options?.windowMinutes)}`);
+}
+
+/** `?bucketStats=true` reaches the service as `true`, and an absent flag as `false`. */
+export async function assertTheBucketStatsFlagReachesTheService(): Promise<void> {
+  const { controller, calls } = controllerWith(true);
+  await controller.aggregate(USER, POINT_REF, { bucketFunction: "avg", bucketStats: "true" });
+  assert(calls[0]?.options.bucketStats === true, "?bucketStats=true must mean true");
+  await controller.aggregate(USER, POINT_REF, { bucketFunction: "avg" });
+  assert(calls[1]?.options.bucketStats === false, "an absent bucketStats must mean false");
+}
+
+/**
+ * Every custom-range rule is a 400 before any read, and each case is refused by
+ * ITS rule: the message names the rule, so a case refused by another guard
+ * (for example the span cap catching a year-0000 `from`) does not pass for it.
+ */
+export async function assertCustomRangeBoundsAreEnforced(): Promise<void> {
+  const ahead = new Date(Date.now() + 2 * 86_400_000).toISOString();
+  const hourAgo = new Date(Date.now() - 3_600_000).toISOString();
+  const cases: { query: Record<string, string>; names: string }[] = [
+    { query: { from: "2026-08-01T00:00:00Z" }, names: "together" },
+    { query: { to: "2026-08-01T00:00:00Z" }, names: "together" },
+    {
+      query: { from: "2026-08-01T00:00:00Z", to: "2026-08-01T01:00:00Z", windowMinutes: "60" },
+      names: "exclusive",
+    },
+    { query: { from: "2026-08-01T01:00:00Z", to: "2026-08-01T01:00:00Z" }, names: "after from" },
+    { query: { from: "2026-08-01T02:00:00Z", to: "2026-08-01T01:00:00Z" }, names: "after from" },
+    { query: { from: "2025-01-01T00:00:00Z", to: "2026-01-01T00:01:00Z" }, names: "525600" },
+    { query: { from: "0000-01-01T00:00:00Z", to: "0000-01-01T01:00:00Z" }, names: "from must lie" },
+    { query: { from: hourAgo, to: ahead }, names: "to must lie" },
+    { query: { from: "2026-08-01T00:00:00", to: "2026-08-01T01:00:00Z" }, names: "offset" },
+    { query: { bucketStats: "yes" }, names: "bucketStats" },
+  ];
+  for (const { query, names } of cases) {
+    const { controller, calls } = controllerWith(true);
+    await rejects(
+      () => controller.aggregate(USER, POINT_REF, query),
+      (err) => err instanceof BadRequestException && err.message.includes(names),
+      `${JSON.stringify(query)} must be refused as a 400 naming "${names}"`,
+    );
+    assert(calls.length === 0, `${JSON.stringify(query)} reached the service`);
+  }
+  // The positive control beside the refusals: the boundary span is admitted.
+  const { controller, calls } = controllerWith(true);
+  await controller.aggregate(USER, POINT_REF, { from: "2025-01-01T00:00:00Z", to: "2026-01-01T00:00:00Z" });
+  assert(calls.length === 1, "a span of exactly 525,600 minutes must be read");
+}
+
+/**
+ * **A non-UUID asset id is a 400, for a global admin too.** `canReadAsset`
+ * answers a global admin without an asset lookup, so nothing else stops the id
+ * before the `::uuid` cast — a 500. Mutation: remove the guard and the stub
+ * answers, the service is called, and this reddens.
+ */
+export async function assertANonUuidAssetIdIsABadRequestNotA500(): Promise<void> {
+  const { controller, calls } = controllerWith(true);
+  await rejects(
+    () => controller.aggregate(USER, encodePointRef("not-a-uuid", "kw"), {}),
+    (err) => err instanceof BadRequestException && err.message.includes("UUID"),
+    "a non-UUID asset id must be a 400 naming the UUID rule",
+  );
+  assert(calls.length === 0, "a non-UUID asset id must not reach the service");
+}
+
+/**
+ * `F4.297` owner answer Q4 — `/recent` answered a malformed ref with a 500 (the
+ * decode threw raw). It is a 400, before the scope check and the read.
+ */
+export async function assertARecentMalformedRefIsABadRequest(): Promise<void> {
+  const { controller, recentCalls } = controllerWith(true);
+  await rejects(
+    () => controller.recent(USER, "not-a-point-ref"),
+    (err) => err instanceof BadRequestException && err.message === "Invalid point reference",
+    "a malformed /recent reference must be a 400, not a 500",
+  );
+  assert(recentCalls.length === 0, "a malformed /recent reference must not reach the service");
+}
+
+/** `/recent` refuses a non-UUID asset id with a 400 too, the same rule as `aggregate`. */
+export async function assertARecentNonUuidRefIsABadRequest(): Promise<void> {
+  const { controller, recentCalls } = controllerWith(true);
+  await rejects(
+    () => controller.recent(USER, encodePointRef("not-a-uuid", "kw")),
+    (err) => err instanceof BadRequestException && err.message.includes("UUID"),
+    "a non-UUID /recent asset id must be a 400",
+  );
+  assert(recentCalls.length === 0, "a non-UUID /recent asset id must not reach the service");
+}
+
+/** The positive case beside the two refusals: a well-formed in-scope `/recent` ref is read. */
+export async function assertARecentWellFormedRefIsRead(): Promise<void> {
+  const { controller, recentCalls } = controllerWith(true);
+  await controller.recent(USER, POINT_REF, "1h");
+  assert(recentCalls.length === 1 && recentCalls[0] === POINT_REF, "a well-formed /recent ref must be read");
 }
 
 // ---------------------------------------------------------------------------

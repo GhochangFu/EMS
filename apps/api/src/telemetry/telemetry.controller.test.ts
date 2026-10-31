@@ -1,6 +1,13 @@
 import { describe, it } from "vitest";
 
 import {
+  assertACustomRangeReachesTheServiceAsDates,
+  assertANonUuidAssetIdIsABadRequestNotA500,
+  assertARecentMalformedRefIsABadRequest,
+  assertARecentNonUuidRefIsABadRequest,
+  assertARecentWellFormedRefIsRead,
+  assertCustomRangeBoundsAreEnforced,
+  assertTheBucketStatsFlagReachesTheService,
   assertAMalformedPointRefIsABadRequest,
   assertAPointInsideScopeIsRead,
   assertAPointOutsideScopeIsRefusedBeforeAnyRead,
@@ -50,6 +57,38 @@ describe("F3.35 Stage A — the aggregate endpoint's query contract", () => {
 
   it("defaults to a one-day tile request that asks for no buckets", async () => {
     await assertTheDefaultsAreATileRequest();
+  });
+});
+
+describe("F4.297 — aggregate takes a custom from/to and bucket stats (ADR 0108 decision 1.2)", () => {
+  it("hands a custom from/to with an offset to the service as the same two instants", async () => {
+    await assertACustomRangeReachesTheServiceAsDates();
+  });
+
+  it("reads ?bucketStats=true as true and an absent flag as false", async () => {
+    await assertTheBucketStatsFlagReachesTheService();
+  });
+
+  it("refuses each broken custom range by its own rule, before any read", async () => {
+    await assertCustomRangeBoundsAreEnforced();
+  });
+
+  it("answers a non-UUID asset id with a 400 for a global admin, not a 500", async () => {
+    await assertANonUuidAssetIdIsABadRequestNotA500();
+  });
+});
+
+describe("F4.297 — /recent answers a malformed ref with a 400 (owner answer Q4)", () => {
+  it("answers a ref with no separator with a 400 and no read", async () => {
+    await assertARecentMalformedRefIsABadRequest();
+  });
+
+  it("answers a non-UUID asset id with a 400 and no read", async () => {
+    await assertARecentNonUuidRefIsABadRequest();
+  });
+
+  it("still reads a well-formed ref", async () => {
+    await assertARecentWellFormedRefIsRead();
   });
 });
 

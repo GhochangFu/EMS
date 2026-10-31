@@ -43,26 +43,103 @@ export function atInstantIsInRange(at: string, nowMs: number = Date.now()): bool
  * `coerce.boolean("false")` is `true` — every non-empty string is — so a caller
  * writing `?compare=false` would get a compare window and a delta they asked not
  * to have. `activeFilterSchema` in `admin.schema.ts` already sets this
- * precedent.
+ * precedent. `bucketStats` (`F4.297`) follows it.
+ *
+ * **`F4.297` (ADR 0108 decision 1.2) — a custom `from`/`to`.** `windowMinutes`
+ * has no `.default` any more, so its absence is detectable: the api's
+ * `resolveAggregateRange` applies the one-day default to the trailing form, so
+ * a widget request does not change. One `.superRefine` holds the custom-range
+ * rules, each a 400: both ends or neither; exclusive with `windowMinutes`; each
+ * end inside the at-instant range (no year 0000, no instant past now + 1 day);
+ * `to > from`; a span of at most `MAX_WIDGET_WINDOW_MINUTES`. The
+ * `.describe(...)` comes AFTER the refinement (ADR 0029 Amendment 1). The
+ * schema stays non-strict, as it was.
  */
-export const pointAggregateQuerySchema = z.object({
-  windowMinutes: z.coerce
-    .number()
-    .int()
-    .positive()
-    .max(MAX_WIDGET_WINDOW_MINUTES)
-    .default(1_440),
-  /** The tile's *vs yesterday* half. Adds the preceding window's scalar statistics. */
-  compare: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((value) => value === "true"),
-  /**
-   * The chart's half. Naming a function asks for the plotted bucket array;
-   * omitting it returns `buckets: null`, so a tile never pays for 2,880 rows.
-   */
-  bucketFunction: pointAggregateFunctionSchema.optional(),
-});
+const MAX_AGGREGATE_SPAN_MS = MAX_WIDGET_WINDOW_MINUTES * 60_000;
+
+function aggregateInstant(name: "from" | "to") {
+  return z
+    .string()
+    .datetime({ offset: true, message: `${name} must be an ISO 8601 instant with an explicit offset` })
+    .optional();
+}
+
+export const pointAggregateQuerySchema = z
+  .object({
+    windowMinutes: z.coerce.number().int().positive().max(MAX_WIDGET_WINDOW_MINUTES).optional(),
+    /** The start of a custom window (inclusive). Given with `to`, never with `windowMinutes`. */
+    from: aggregateInstant("from"),
+    /** The end of a custom window (exclusive). Given with `from`, never with `windowMinutes`. */
+    to: aggregateInstant("to"),
+    /** The tile's *vs yesterday* half. Adds the preceding window's scalar statistics. */
+    compare: z
+      .enum(["true", "false"])
+      .optional()
+      .transform((value) => value === "true"),
+    /**
+     * The chart's half. Naming a function asks for the plotted bucket array;
+     * omitting it returns `buckets: null`, so a tile never pays for 2,880 rows.
+     */
+    bucketFunction: pointAggregateFunctionSchema.optional(),
+    /**
+     * `F4.297` — adds `min`, `average`, `max` and `sampleCount` to every bucket
+     * (current and compare). Meaningful only with a `bucketFunction`.
+     */
+    bucketStats: z
+      .enum(["true", "false"], { errorMap: () => ({ message: "bucketStats must be true or false" }) })
+      .optional()
+      .transform((value) => value === "true"),
+  })
+  .superRefine((query, ctx) => {
+    const { from, to, windowMinutes } = query;
+    if (from === undefined && to === undefined) {
+      return;
+    }
+    if (from === undefined || to === undefined) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "from and to must be given together" });
+      return;
+    }
+    if (windowMinutes !== undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "from/to and windowMinutes are exclusive; give one or the other",
+      });
+      return;
+    }
+    for (const [name, at] of [
+      ["from", from],
+      ["to", to],
+    ] as const) {
+      if (!atInstantIsInRange(at)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [name],
+          message: `${name} must lie between 1970-01-01T00:00:00Z and one day after now`,
+        });
+        return;
+      }
+    }
+    const spanMs = new Date(to).getTime() - new Date(from).getTime();
+    if (!(spanMs > 0)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "to must be after from" });
+      return;
+    }
+    if (spanMs > MAX_AGGREGATE_SPAN_MS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["to"],
+        message: `the from/to span must not exceed ${MAX_WIDGET_WINDOW_MINUTES} minutes`,
+      });
+    }
+  })
+  .describe(
+    "A trailing window (`windowMinutes`, default 1440, ending now) or a custom window (`from` " +
+      "and `to`, ISO 8601 with an offset, both or neither, never with `windowMinutes`). Each " +
+      "end lies between 1970-01-01T00:00:00Z and one day after now, `to` is after `from`, and " +
+      `the span is at most ${MAX_WIDGET_WINDOW_MINUTES} minutes. \`compare\` adds the equal ` +
+      "period that ends at the window's start; `bucketFunction` asks for the plotted buckets and " +
+      "`bucketStats` adds min, average, max and sample count to each.",
+  );
 
 /**
  * `F4.297` (ADR 0108 decision 1.6) — the query contract for

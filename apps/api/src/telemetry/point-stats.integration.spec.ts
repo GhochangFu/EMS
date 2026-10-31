@@ -123,7 +123,8 @@ export async function cleanup(pool: pg.Pool, fx: Fixtures | undefined): Promise<
 }
 
 function service(pool: pg.Pool): TelemetryService {
-  return new TelemetryService(null as never, pool);
+  // The fleet slot (`F4.297`'s `aggregate` zone read) is unused by the point-stats reads.
+  return new TelemetryService(null as never, pool, null as never);
 }
 
 async function read(pool: pg.Pool, assetIds: string[], spanMs: number): Promise<PointStatsByAsset> {

@@ -1,4 +1,4 @@
-import type { PointAggregateFunction } from "@bms/shared";
+import type { PointAggregateFunction, PointAggregateQuery } from "@bms/shared";
 
 import {
   type AggregateLevel,
@@ -61,9 +61,12 @@ export function granularityFor(windowMinutes: number): AggregateLevel {
       return rung.granularity;
     }
   }
-  // Unreachable through `pointAggregateQuerySchema`, whose `.max()` is the last
-  // rung's bound. Types erase at runtime and this decides which relation gets
-  // read, so it fails loudly rather than defaulting to the coarsest level.
+  // Unreachable through `pointAggregateQuerySchema`, whose `windowMinutes`
+  // `.max()` and custom-span refinement are both the last rung's bound. Types
+  // erase at runtime and this decides which relation gets read, so it fails
+  // loudly rather than defaulting to the coarsest level. (A custom `from` older
+  // than a level's horizon is a different thing — retention escalation, which
+  // `levelFor` reaches and `bucketSeconds` reports; it never gets here.)
   throw new Error(
     `granularityFor: ${windowMinutes} minutes exceeds the coarsest rung ` +
       `(${LADDER[LADDER.length - 1]?.maxWindowMinutes}); the query schema should have refused it`,
@@ -103,24 +106,72 @@ export function windowBounds(
   windowMinutes: number,
   compare: boolean,
 ): AggregateWindow {
-  const spanMs = windowMinutes * 60_000;
-  const to = now;
-  const from = new Date(now.getTime() - spanMs);
+  return windowBoundsFor({ from: new Date(now.getTime() - windowMinutes * 60_000), to: now }, compare);
+}
+
+/**
+ * `F4.297` (ADR 0108 decision 1.2) — the same two windows for any `[from, to)`:
+ * the custom range a history page asks for, or the trailing one
+ * {@link windowBounds} builds. The compare window is the equal-length period
+ * that ends at `from`, with the abutment {@link windowBounds} documents.
+ */
+export function windowBoundsFor(range: { from: Date; to: Date }, compare: boolean): AggregateWindow {
+  const { from, to } = range;
+  const spanMs = to.getTime() - from.getTime();
   const compareTo = compare ? from : null;
   const compareFrom = compare ? new Date(from.getTime() - spanMs) : null;
   return { from, to, compareFrom, compareTo, readStart: compareFrom ?? from };
 }
 
+/** The trailing window a request that names neither `windowMinutes` nor `from`/`to` reads: one day. */
+export const DEFAULT_AGGREGATE_WINDOW_MINUTES = 1_440;
+
+/** A resolved aggregate range: both ends, and the span in minutes the ladder reads. */
+export interface AggregateRange {
+  readonly from: Date;
+  readonly to: Date;
+  readonly windowMinutes: number;
+}
+
+/**
+ * `F4.297` (ADR 0108 decision 1.2) — the one rule both callers of
+ * `TelemetryService.pointAggregate` (the route and the copilot tool) resolve a
+ * range with: a custom `from`/`to` as given, else `windowMinutes`
+ * (default one day) trailing from `now`. The query schema has already refused
+ * a half pair, a pair beside `windowMinutes`, and a span past the ladder.
+ *
+ * `windowMinutes` of a custom pair is its span, so the ladder (`granularityFor`)
+ * and the bucket-count guard read the same number they read for a trailing
+ * window. `now` is an argument (the pure-builder rule).
+ */
+export function resolveAggregateRange(
+  query: Pick<PointAggregateQuery, "windowMinutes" | "from" | "to">,
+  now: Date,
+): AggregateRange {
+  if (query.from !== undefined && query.to !== undefined) {
+    const from = new Date(query.from);
+    const to = new Date(query.to);
+    return { from, to, windowMinutes: (to.getTime() - from.getTime()) / 60_000 };
+  }
+  const windowMinutes = query.windowMinutes ?? DEFAULT_AGGREGATE_WINDOW_MINUTES;
+  return { from: new Date(now.getTime() - windowMinutes * 60_000), to: now, windowMinutes };
+}
+
 /**
  * The level to read, given the window and whether a compare doubles its reach.
  *
- * Returns only the level. `LevelChoice.coarsened` is deliberately not surfaced,
- * and that is safe rather than an oversight: the ladder bounds every request so
- * that escalation is unreachable. At `1m` the deepest reach is 2 x 48 h = 96
- * hours against a 735-day horizon, and `_1h`/`_1d` carry no horizon at all by
- * ADR 0023 decision 7. `tests/f3.35-aggregate-window-bounds.test.ts` holds that
- * arithmetic against the real retention numbers, so if a horizon is ever
- * shortened this becomes a failing test rather than a silently coarser chart.
+ * Returns only the level; the response's `bucketSeconds` is how a caller learns
+ * which one was read. **For a trailing window escalation is unreachable**: the
+ * ladder bounds every request so that at `1m` the deepest reach is
+ * 2 x 48 h = 96 hours against a 735-day horizon, and `_1h`/`_1d` carry no
+ * horizon at all by ADR 0023 decision 7. `tests/f3.35-aggregate-window-bounds.test.ts`
+ * holds that arithmetic against the real retention numbers.
+ *
+ * **For a custom `from`/`to` (`F4.297`, ADR 0108 decision 1.4) it is
+ * reachable**: a window of 48 h or less that starts more than 735 days ago
+ * asks for `1m`, and `levelForRange` escalates to `1h` (`5m` has the same
+ * horizon). That is correct — the `1m` rows are gone — and it is not hidden:
+ * `bucketSeconds` reports the escalated width and the history page prints it.
  */
 export function levelFor(window: AggregateWindow, windowMinutes: number, now: Date): AggregateLevel {
   return levelForRange({
@@ -250,19 +301,29 @@ export function scalarSql(level: AggregateLevel, fromIndex = 3, toIndex = 4): st
  * `LIMIT MAX_BUCKETS + 1` so {@link assertBucketCount} can tell "at the bound"
  * from "past it". Truncating a chart silently is the same class of defect as
  * widening a bucket silently.
+ *
+ * `F4.297` (ADR 0108 decision 1.3) — `withStats` adds the bucket's `min`, its
+ * weighted mean (`average`), `max` and `sample_count`, from the same
+ * {@link AGG_EXPR} table, so the history page's bucket table and its plotted
+ * line come from one mean. The widget path leaves it off and pays nothing.
  */
 export function bucketSql(
   fn: PointAggregateFunction,
   level: AggregateLevel,
   fromIndex = 3,
   toIndex = 4,
+  withStats = false,
 ): string {
   const expression = aggregateExpression(fn);
   if (expression === undefined) {
     throw new Error(`bucketSql: unknown aggregate function "${fn}"`);
   }
+  const stats = withStats
+    ? `, ${AGG_EXPR.min} AS min, ${AGG_EXPR.avg} AS average, ${AGG_EXPR.max} AS max, ` +
+      "coalesce(sum(sample_count), 0)::bigint AS sample_count"
+    : "";
   return `
-    SELECT bucket AS t, ${expression} AS v
+    SELECT bucket AS t, ${expression} AS v${stats}
     FROM ${relationFor(level)}
     WHERE asset_id = $1 AND point_key = $2
       AND bucket >= ${placeholder(fromIndex)}::timestamptz

@@ -16,10 +16,13 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  * migration, and no app's Vitest project can see the others. Per §4.6's carve-out,
  * files in `tests/` hold their assertions inline.
  *
- * **What these guard is why `LevelChoice.coarsened` is not surfaced.** The
- * endpoint chooses its granularity from the window arithmetically, before any row
- * is read, and the ladder is bounded so that the retention guard can never
- * escalate. `point-aggregate-window.spec.ts` proves that against the TypeScript
+ * **What these guard is that a TRAILING window never escalates.** The endpoint
+ * chooses its granularity from the window arithmetically, before any row is
+ * read, and the ladder is bounded so that the retention guard cannot escalate a
+ * window that ends now. (`F4.297`, ADR 0108 decision 1.4: a custom `from` older
+ * than a level's horizon does escalate — correctly, the rows are gone — and the
+ * response's `bucketSeconds` reports the level read, which the history page
+ * prints.) `point-aggregate-window.spec.ts` proves the trailing case against the TypeScript
  * constant; these two prove it against **the migration that actually governs the
  * data** and against **the contract bound the request is validated by**. Both
  * duplications are real and neither can be removed:
@@ -114,10 +117,10 @@ describe("F3.35 Stage A — the aggregate window ladder", () => {
         reachDays,
         `a ${rung.maxWindowMinutes}-minute window with a compare reaches ${reachDays} days back ` +
           `into telemetry.point_values_${rung.granularity}, whose chunks are dropped after ` +
-          `${horizon} days. The retention guard would escalate to a coarser level and the chart ` +
-          "would silently widen its buckets — which is the defect LevelChoice.coarsened exists " +
-          "to report and which this endpoint deliberately does not surface, because it was " +
-          "supposed to be unreachable.",
+          `${horizon} days. The retention guard would escalate a trailing window to a coarser ` +
+          "level, and a tile or widget that reads the ladder's level from its window would " +
+          "silently widen its buckets — escalation is meant to be reachable only for a custom " +
+          "from/to older than the horizon (F4.297), where bucketSeconds reports it.",
       ).toBeLessThanOrEqual(horizon);
     }
   });

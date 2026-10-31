@@ -13,8 +13,10 @@ import {
   levelFor,
   pointStatsLevels,
   pointStatsWindow,
+  resolveAggregateRange,
   scalarSql,
   windowBounds,
+  windowBoundsFor,
 } from "./point-aggregate-window";
 import { avgExpr, bucketSeconds, levelForRange, retentionDays } from "./point-aggregates";
 
@@ -190,17 +192,18 @@ export function assertReadStartCarriesTheCompareReach(): void {
 }
 
 /**
- * **The reason `LevelChoice.coarsened` is not surfaced.**
+ * **Escalation is unreachable for a TRAILING window.**
  *
- * Every rung, at its own maximum window, with the compare doubling its reach,
- * still resolves to the granularity the ladder asked for. So escalation is
- * unreachable and a flag reporting it would be dead — exactly the dead flag its
- * own docblock complains about.
+ * Every rung, at its own maximum window ending now, with the compare doubling
+ * its reach, still resolves to the granularity the ladder asked for. A custom
+ * `from`/`to` (`F4.297`, ADR 0108 decision 1.4) can reach past a horizon — see
+ * {@link assertACustomRangePastTheHorizonEscalatesAndReportsIt} — but a trailing
+ * window cannot.
  *
  * This is arithmetic against the real `RETENTION_DAYS`, so shortening a horizon
  * fails here rather than silently widening a chart's buckets.
  */
-export function assertEscalationIsUnreachableAtEveryRung(): void {
+export function assertEscalationIsUnreachableForATrailingWindow(): void {
   for (const windowMinutes of [2_880, 43_200, 525_600]) {
     const granularity = granularityFor(windowMinutes);
     const window = windowBounds(NOW, windowMinutes, true);
@@ -219,6 +222,104 @@ export function assertEscalationIsUnreachableAtEveryRung(): void {
     retentionDays("1h") === null && retentionDays("1d") === null,
     "the two coarse levels must stay free of a horizon (ADR 0023 decision 7)",
   );
+}
+
+const DAY_MS = 86_400_000;
+
+/**
+ * `F4.297` (ADR 0108 decision 1.2) — a custom range keeps both of its ends, and
+ * its compare is the equal-length period that ends at `from`.
+ *
+ * Mutation: build `windowBoundsFor` from `now` (or drop the `compareTo = from`
+ * abutment) and this reddens.
+ */
+export function assertACustomRangeKeepsItsEndsAndItsCompare(): void {
+  const from = new Date(NOW.getTime() - 10 * DAY_MS);
+  const to = new Date(from.getTime() + 3 * 3_600_000);
+  const window = windowBoundsFor({ from, to }, true);
+  assert(window.from.getTime() === from.getTime(), "a custom range must keep its from");
+  assert(window.to.getTime() === to.getTime(), "a custom range must keep its to, not end now");
+  assert(window.compareTo?.getTime() === from.getTime(), "the compare window must end at from");
+  assert(
+    (window.compareTo?.getTime() ?? 0) - (window.compareFrom?.getTime() ?? 0) === to.getTime() - from.getTime(),
+    "the compare window must be as long as the custom range",
+  );
+  assert(window.readStart.getTime() === window.compareFrom?.getTime(), "readStart carries the compare reach");
+}
+
+/**
+ * `windowBounds` is a one-line wrapper over `windowBoundsFor` for the trailing
+ * window — its signature and its callers (`asset-health.service.ts`) do not
+ * change. Mutation: break the wrapper (a different `to`, or no compare) and the
+ * comparison reddens.
+ */
+export function assertWindowBoundsIsTheTrailingCase(): void {
+  const trailing = windowBounds(NOW, 1_440, true);
+  const explicit = windowBoundsFor({ from: new Date(NOW.getTime() - DAY_MS), to: NOW }, true);
+  for (const key of ["from", "to", "compareFrom", "compareTo", "readStart"] as const) {
+    assert(
+      trailing[key] !== null && trailing[key]?.getTime() === explicit[key]?.getTime(),
+      `windowBounds(NOW, 1440, true).${key} must equal windowBoundsFor's for the same trailing day`,
+    );
+  }
+}
+
+/**
+ * A custom window older than the `1m`/`5m` horizon (735 days) escalates to
+ * `1h`, and `bucketSeconds` — what the response carries and the page prints —
+ * reports it. Mutation: give `levelFor` the ladder's granularity without the
+ * retention guard and it answers `1m`.
+ */
+export function assertACustomRangePastTheHorizonEscalatesAndReportsIt(): void {
+  const from = new Date(NOW.getTime() - 800 * DAY_MS);
+  const to = new Date(from.getTime() + 60 * 60_000);
+  const window = windowBoundsFor({ from, to }, false);
+  const choice = levelForRange({ start: window.readStart, granularity: granularityFor(60), now: NOW });
+  assert(choice.coarsened === true, "an 800-day-old one-hour window must escalate past the 1m horizon");
+  const level = levelFor(window, 60, NOW);
+  assert(level === "1h", `levelFor must report the escalated level, got ${level}`);
+  assert(bucketSeconds(level) === 3_600, "the response's bucketSeconds is the level the client prints");
+}
+
+/** No `windowMinutes`, no `from`/`to`: the trailing day, ending at `now`. */
+export function assertResolveAggregateRangeDefaultsToATrailingDay(): void {
+  const range = resolveAggregateRange({}, NOW);
+  assert(range.windowMinutes === 1_440, "the default window is one day");
+  assert(range.to.getTime() === NOW.getTime(), "a trailing window ends now");
+  assert(range.from.getTime() === NOW.getTime() - DAY_MS, "a trailing day starts one day before now");
+}
+
+/** A custom pair is kept as given, and its length becomes `windowMinutes` (which the ladder reads). */
+export function assertResolveAggregateRangeKeepsACustomPair(): void {
+  const range = resolveAggregateRange(
+    { from: "2026-08-01T05:30:00+05:30", to: "2026-08-01T07:00:00+05:30" },
+    NOW,
+  );
+  assert(range.from.toISOString() === "2026-08-01T00:00:00.000Z", "from is the instant the offset names");
+  assert(range.to.toISOString() === "2026-08-01T01:30:00.000Z", "to is the instant the offset names");
+  assert(range.windowMinutes === 90, `the span is 90 minutes, got ${range.windowMinutes}`);
+}
+
+/**
+ * `bucketSql(..., withStats = true)` adds min, the weighted mean and max from
+ * the same `AGG_EXPR` table — `avgExpr()` exactly once more than without it,
+ * never a second division — and keeps the one-past-the-bound limit.
+ */
+export function assertBucketSqlWithStatsUsesTheSharedMean(): void {
+  const count = (text: string): number => text.split(avgExpr()).length - 1;
+  for (const fn of FUNCTIONS) {
+    const plain = bucketSql(fn, "1m", 3, 4);
+    const withStats = bucketSql(fn, "1m", 3, 4, true);
+    assert(
+      count(withStats) === count(plain) + 1,
+      `bucketSql("${fn}") with stats must reuse avgExpr() exactly once more than without`,
+    );
+    assert(withStats.includes("min(min_value)"), "the bucket minimum is min(min_value)");
+    assert(withStats.includes("max(max_value)"), "the bucket maximum is max(max_value)");
+    assert(withStats.includes("sum(sample_count)"), "the bucket sample count is sum(sample_count)");
+    assert(withStats.includes(`LIMIT ${MAX_BUCKETS + 1}`), "the one-past-the-bound limit stays");
+    assert(!plain.includes("AS sample_count"), "without stats the widget query carries no extra columns");
+  }
 }
 
 /**

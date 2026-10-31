@@ -129,7 +129,12 @@ function fakeTelemetryServices(aggregate: AggregateOverrides = {}) {
           to: NOW.toISOString(),
           bucketSeconds: 60,
           stats,
-          compare: opts.compare === true ? { from: "2026-10-09T06:00:00.000Z", to: "2026-10-10T06:00:00.000Z", stats: { ...stats, average: 10 } } : null,
+          // `F4.297`: a compare object carries `buckets` too (ADR 0108 decision 1.3); the fake
+          // answers with the overridden series so a tool that passed `compare` through whole leaks it.
+          compare:
+            opts.compare === true
+              ? { from: "2026-10-09T06:00:00.000Z", to: "2026-10-10T06:00:00.000Z", stats: { ...stats, average: 10 }, buckets: aggregate.buckets ?? null }
+              : null,
           buckets: aggregate.buckets ?? null,
           ...aggregate.extra,
         };
@@ -340,16 +345,26 @@ export async function assertRecentValuesIsBounded(): Promise<void> {
 export async function assertPointAggregateReadsStatsOnly(): Promise<void> {
   const { tools, log } = fakeTelemetryServices({ buckets: [{ t: "2026-10-10T06:00:00.000Z", v: 999.25 }], extra: { internalNote: "x" } });
   const result = okResult(await tools.dispatch("get_point_aggregate", { assetId: ASSET_X, pointKey: "kw" }, ctx([ORG_X])));
-  expect(log.aggregate[0]).toEqual({ point: { assetId: ASSET_X, pointKey: "kw" }, opts: { windowMinutes: 1440, compare: false, now: NOW } });
+  // `F4.297`: the tool resolves its trailing window with the same `resolveAggregateRange` the
+  // route uses, so the service is handed the two instants and the span, ending at the turn's clock.
+  const dayBefore = new Date(NOW.getTime() - 86_400_000);
+  expect(log.aggregate[0]).toEqual({
+    point: { assetId: ASSET_X, pointKey: "kw" },
+    opts: { from: dayBefore, to: NOW, windowMinutes: 1440, compare: false, now: NOW },
+  });
   expect(log.aggregate[0]?.opts).not.toHaveProperty("bucketFunction");
+  expect(log.aggregate[0]?.opts).not.toHaveProperty("bucketStats");
   expect(result.stats).toEqual(expect.objectContaining({ average: 12.5, min: 3, max: 20 }));
   const text = JSON.stringify(result);
   expect(text).not.toContain("999.25");
   expect(text).not.toContain("internalNote");
 
   const compared = okResult(await tools.dispatch("get_point_aggregate", { assetId: ASSET_X, pointKey: "kw", compare: true }, ctx([ORG_X])));
-  expect(log.aggregate[1]?.opts).toEqual({ windowMinutes: 1440, compare: true, now: NOW });
+  expect(log.aggregate[1]?.opts).toEqual({ from: dayBefore, to: NOW, windowMinutes: 1440, compare: true, now: NOW });
   expect(compared.compare).toEqual(expect.objectContaining({ stats: expect.objectContaining({ average: 10 }) }));
+  // No bucket array reaches the tool result, the compare half's included (ADR 0108 decision 1.3).
+  expect(JSON.stringify(compared)).not.toContain("999.25");
+  expect(compared.compare).not.toHaveProperty("buckets");
 }
 
 /**
