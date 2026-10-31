@@ -13,6 +13,7 @@ import { SEEDED, primeSeededSubjects } from "../testing/seeded-subjects";
 import {
   SEGMENT,
   type TrendPointsCtx,
+  assertConcurrentWritesSerialize,
   assertEmptyBodyRestoresTheCatalog,
   assertGlobalAdminWritesAnyOrganization,
   assertLocationAdminCannotReadAnotherSite,
@@ -264,5 +265,9 @@ describe.skipIf(!connectionString)("F4.300 — TrendPointsService under real RLS
 
   it("S13 a missing organization is a 404 for a global admin", async () => {
     await assertMissingOrganizationIsNotFound(ctx);
+  });
+
+  it("S14 two overlapping writes to one segment serialize: one body wins, no 500", async () => {
+    await assertConcurrentWritesSerialize(ctx);
   });
 });

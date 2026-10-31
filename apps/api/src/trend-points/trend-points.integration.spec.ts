@@ -9,6 +9,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { withTenant } from "../database/tenant-context";
 import { SEEDED, jwtFor, jwtForUnprovisioned } from "../testing/seeded-subjects";
+import { trendPointsLockKey } from "./trend-points.pure";
 import type { TrendPointsService } from "./trend-points.service";
 
 /**
@@ -218,6 +219,56 @@ export async function assertGlobalAdminWritesAnyOrganization(ctx: TrendPointsCtx
   const segment = await ctx.svc.putSegment(admin(), ctx.phewbId, SEGMENT, { pointKeys: [c] });
   expect(segment.points.map((p) => p.code)).toEqual([c]);
   expect(await storedCodes(ctx, ctx.phewbId)).toEqual([c]);
+}
+
+/**
+ * S14 — two writes to one (organization, segment) serialize on the segment's
+ * advisory lock (review finding 1). The case holds `trendPointsLockKey` on its
+ * own connection, starts two overlapping writes with overlapping codes, and
+ * waits until BOTH are queued on an advisory lock — which they never are if
+ * `putSegment` takes no lock or a different key, so the poll ends red.
+ * After release both resolve (no `23505` 500) and the stored list is exactly
+ * one body, in its order — never the union of the two (the cap breach).
+ */
+export async function assertConcurrentWritesSerialize(ctx: TrendPointsCtx): Promise<void> {
+  const [a, b, c] = ctx.keys;
+  await ctx.svc.putSegment(admin(), ctx.fixtureOrgId, SEGMENT, { pointKeys: [] });
+  const holder = await ctx.fleetPool.connect();
+  let first: Promise<unknown> = Promise.resolve("not started");
+  let second: Promise<unknown> = Promise.resolve("not started");
+  try {
+    await holder.query("BEGIN");
+    await holder.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [
+      trendPointsLockKey(ctx.fixtureOrgId, SEGMENT),
+    ]);
+    first = rejection(ctx.svc.putSegment(admin(), ctx.fixtureOrgId, SEGMENT, { pointKeys: [a, b] }));
+    second = rejection(ctx.svc.putSegment(admin(), ctx.fixtureOrgId, SEGMENT, { pointKeys: [b, c] }));
+    let waiting = 0;
+    for (let i = 0; i < 100 && waiting < 2; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      // Only waiters on THIS key: a bigint advisory key reads back as classid
+      // (high 32 bits) + objid (low 32 bits), objsubid 1. Other runs beside
+      // this one may hold advisory locks of their own.
+      const { rows } = await ctx.fleetPool.query<{ n: number }>(
+        `WITH k AS (SELECT hashtextextended($1, 0) AS v)
+         SELECT count(*)::int AS n FROM pg_locks, k
+          WHERE locktype = 'advisory' AND NOT granted AND objsubid = 1
+            AND classid = ((k.v >> 32) & 4294967295)::oid
+            AND objid = (k.v & 4294967295)::oid`,
+        [trendPointsLockKey(ctx.fixtureOrgId, SEGMENT)],
+      );
+      waiting = rows[0]?.n ?? 0;
+    }
+    expect(waiting, "both writes queue on the segment lock").toBeGreaterThanOrEqual(2);
+    expect(await storedCodes(ctx, ctx.fixtureOrgId), "nothing commits while the lock is held").toEqual([]);
+  } finally {
+    await holder.query("COMMIT").catch(() => undefined);
+    holder.release();
+  }
+  expect(await first, "the first write resolves").toBeNull();
+  expect(await second, "the second write resolves, not a 23505").toBeNull();
+  const stored = await storedCodes(ctx, ctx.fixtureOrgId);
+  expect([JSON.stringify([a, b]), JSON.stringify([b, c])]).toContain(JSON.stringify(stored));
 }
 
 /** S13 — a global admin reading an organization that does not exist gets the 404. */

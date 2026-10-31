@@ -48,6 +48,18 @@ export type ResolveOptions = {
   includeInactive?: boolean;
 };
 
+/**
+ * The advisory-lock key `putSegment` takes as the first statement of its
+ * transaction, so two replace-all writes to one (organization, segment)
+ * serialize: under READ COMMITTED an unlocked DELETE cannot see the other
+ * write's uncommitted rows, and the two lists would union past the cap of 12
+ * (or the second INSERT would hit the primary key, a 500). One helper, so the
+ * service and its integration case cannot drift onto different keys.
+ */
+export function trendPointsLockKey(organizationId: string, domain: string): string {
+  return `org_trend_points:${organizationId}:${domain}`;
+}
+
 function toPoint(row: TrendCatalogRow): TrendPointDto {
   return { code: row.code, name: row.name, unit: row.unit, active: row.active };
 }

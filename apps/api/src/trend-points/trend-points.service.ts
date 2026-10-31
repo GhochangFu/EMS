@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { assetDomains, locations, orgTrendPoints, organizations, pointKeys, users } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -21,7 +21,7 @@ import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
-import { type ResolveOptions, resolveSegments } from "./trend-points.pure";
+import { type ResolveOptions, resolveSegments, trendPointsLockKey } from "./trend-points.pure";
 
 /**
  * `F4.300` / ADR 0108 decision 3 — the effective trend points per segment, and
@@ -123,6 +123,12 @@ export class TrendPointsService {
 
     const updatedBy = await this.provisionedUserId(user.id);
     await withTenant(this.tenantDb, organizationId, async (tx) => {
+      // Serialize writers of this (organization, segment) before the DELETE:
+      // without it two overlapping writes union past the cap, or the second
+      // INSERT hits the primary key (a 500). Released at commit or rollback.
+      await tx.execute(
+        sql`select pg_advisory_xact_lock(hashtextextended(${trendPointsLockKey(organizationId, domain)}, 0))`,
+      );
       await tx
         .delete(orgTrendPoints)
         .where(and(eq(orgTrendPoints.organizationId, organizationId), eq(orgTrendPoints.domain, domain)));
