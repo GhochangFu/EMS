@@ -242,6 +242,7 @@
     "tests/f4.300-trend-points-schema.integration.test.ts",
     "tests/f4.300-point-key-trend-defaults-seed.integration.test.ts",
     "tests/f4.300-ups-segment-seed.integration.test.ts",
+    "tests/f4.300-ups-assets-seed.integration.test.ts",
     "tests/f4.300-trend-points-admin-reachable.test.ts",
     "tests/adr-0108-no-org-or-segment-literals.test.ts"
   ]

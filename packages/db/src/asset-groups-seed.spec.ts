@@ -189,6 +189,11 @@ export function assertEveryItAssetJoinsItRackAndItLoad(): void {
   expect(demoGroupCodesForAsset("CR-ENV-1", "environment")).toEqual(["environment"]);
   expect(demoGroupCodesForAsset("CR-UPS-1", "electrical")).toEqual(["ups-battery"]);
   expect(demoGroupCodesForAsset("CR-BATT-1", "electrical")).toEqual(["ups-battery"]);
+  // `F4.300` U4c: the seeded UPS and battery assets are `ups`, and still join the UPS group.
+  expect(demoGroupCodesForAsset("CR-UPS-1", "ups")).toEqual(["ups-battery"]);
+  expect(demoGroupCodesForAsset("CR-BATT-1", "ups")).toEqual(["ups-battery"]);
+  // A `ups` asset whose code names neither joins the UPS group too, never `electrical`.
+  expect(demoGroupCodesForAsset("CR-INV-1", "ups")).toEqual(["ups-battery"]);
   expect(demoGroupCodesForAsset("CR-Q1", "electrical")).toEqual(["electrical"]);
   expect(demoGroupCodesForAsset("CR-UTILITY-11KV", "electrical")).toEqual(["electrical"]);
   // The name is the one the picker shows; the code is what the formula names.
@@ -308,10 +313,14 @@ export function assertTheBackfillFillsOnlyANullLocation(): void {
  */
 export function assertTheSmocRolesFollowTheDomainThenTheCode(): void {
   const table: ReadonlyArray<readonly [string, string, string]> = [
+    // `F4.300` U4c (owner ruling 2026-11-01): the seeded UPS and battery assets are `ups`.
+    ["CR-UPS-1", "ups", "ups"],
+    ["CR-UPS-OUT-BUS", "ups", "ups"],
+    ["UPS-A", "ups", "ups"],
+    ["CR-BATT-1", "ups", "battery"],
+    ["GP-CR-BATT-1", "ups", "battery"],
+    // An electrical asset named for a UPS or a battery still takes the role.
     ["CR-UPS-1", "electrical", "ups"],
-    ["CR-UPS-OUT-BUS", "electrical", "ups"],
-    ["UPS-A", "electrical", "ups"],
-    ["CR-BATT-1", "electrical", "battery"],
     ["GP-CR-BATT-1", "electrical", "battery"],
     ["CR-HVAC-1", "hvac", "crac"],
     ["GP-CR-HVAC-1", "hvac", "crac"],

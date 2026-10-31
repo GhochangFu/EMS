@@ -152,6 +152,13 @@ async function main(): Promise<void> {
 
     await seedMapLocations(db, mapLocationRows);
 
+    // `E5.2`: the pack's domain rows (ADR 0031 A1.1, unpoliced, no tenant
+    // context) before anything files under them. `F4.300` U4c moved this call up
+    // from beside `seedPointKeyCatalog`: the seeded UPS and battery assets are
+    // `ups` now, and `assets.domain` is a foreign key to `bms.asset_domains`, so
+    // on a cold database the row must exist before `seedEskomAssets`.
+    await seedAssetDomains(pool);
+
     // ── ESKOM ─────────────────────────────────────────────────────────────
     await withOrganization(pool, eskomOrgId, async () => {
       // Owner ruling 16 (OQ2): the slug-holder pre-read runs on the superuser
@@ -250,9 +257,8 @@ async function main(): Promise<void> {
     // `identityDb`.
     await seedPheOrganizationAdmin(identityDb, pool);
 
-    // `E5.2`: the pack's domain rows first (ADR 0031 A1.1, unpoliced, no
-    // tenant context), then the point keys filed under them — the module says why.
-    await seedAssetDomains(pool);
+    // The point keys below file under the pack's domain rows, which
+    // `seedAssetDomains` wrote before the ESKOM bracket (`F4.300` U4c).
 
     // `F3.39`: one fleet-wide catalog, so no tenant context at all — neither
     // one taken from here nor one it opens itself. `bms.point_keys` lost its

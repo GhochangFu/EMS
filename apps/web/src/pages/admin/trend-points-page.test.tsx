@@ -14,6 +14,7 @@ import {
   theAddControlIsAbsentAtTheCap,
   theBadgeNamesTheSource,
   thePickerOffersOnlyTheSegmentsMissingCodes,
+  thePickerOffersOtherSegmentsCodesInTheirOwnGroup,
 } from "./trend-points-page.spec";
 
 /**
@@ -36,8 +37,12 @@ describe("F4.300 Trend Points admin page", () => {
     await theBadgeNamesTheSource();
   });
 
-  it("T3a the Add picker offers only the segment's catalog codes not yet listed", async () => {
+  it("T3a the Add picker lists the segment's own missing codes first, outside any group", async () => {
     await thePickerOffersOnlyTheSegmentsMissingCodes();
+  });
+
+  it("T3f the picker offers other segments' codes in their own group, and Save sends one", async () => {
+    await thePickerOffersOtherSegmentsCodesInTheirOwnGroup();
   });
 
   it("T3b Add then Save sends PUT /admin/organizations/<id>/trend-points/<domain> with the ordered list", async () => {

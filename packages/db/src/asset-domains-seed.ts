@@ -68,9 +68,11 @@ export type AssetDomainSeed = {
  * codes, which `point-keys-seed.ts` files under it. `sort_order 15` places it
  * directly after `electrical` (10) in every ordered read; `facility` stays the
  * last row, which `asset-templates-stock.integration.spec.ts`'s *Expected one
- * of* pin reads. The Control Room UPS and battery assets keep the asset domain
- * `electrical`: the UPS view keys on the asset code and the point code, never
- * on `point_keys.domain` (`tests/f4.300-ups-segment-seed.integration.test.ts`).
+ * of* pin reads. Since U4c (owner ruling 2026-11-01) the seeded UPS and
+ * battery assets are `ups` too (`eskom-assets-seed.ts`), so `seed.ts` writes
+ * these rows before the first asset: `assets.domain` is a foreign key here. The
+ * UPS view keys on the asset code and the point code, never on a domain
+ * (`tests/f4.300-ups-assets-seed.integration.test.ts`).
  */
 export const PACK_ASSET_DOMAINS: readonly AssetDomainSeed[] = [
   { code: "mechanical", label: "Mechanical", sortOrder: 60 },

@@ -108,7 +108,7 @@ function catalogKey(code: string, domain: string): AdminPointKeyDto {
   };
 }
 
-/** `f4300_x1` belongs to no segment on screen, so the Alpha picker must not offer it. */
+/** `f4300_x1` belongs to no segment on screen; the Alpha picker offers it under "Other segments" (T3f). */
 const CATALOG = {
   items: [
     catalogKey("f4300_a1", ALPHA),
@@ -176,17 +176,52 @@ export async function theBadgeNamesTheSource(): Promise<void> {
   expect(within(beta).queryByText("Catalog default")).toBeNull();
 }
 
-/** T3a — the Add picker offers the segment's catalog codes not yet in the list, and no other. */
+/**
+ * T3a — the Add picker offers the segment's own catalog codes not yet in the
+ * list first, outside any group, and no code already listed.
+ */
 export async function thePickerOffersOnlyTheSegmentsMissingCodes(): Promise<void> {
   stubAll();
   renderPage(admin);
   const alpha = await cardOf("Alpha segment", ALPHA);
   const picker = await within(alpha).findByRole("combobox", { name: "Add a point to Alpha segment" });
   await waitFor(() =>
-    expect(within(picker).getAllByRole("option").map((option) => (option as HTMLOptionElement).value)).toEqual([
-      "",
-      "f4300_a3",
-    ]),
+    expect(
+      Array.from(picker.querySelectorAll(":scope > option")).map((option) => (option as HTMLOptionElement).value),
+    ).toEqual(["", "f4300_a3"]),
+  );
+  const values = within(picker).getAllByRole("option").map((option) => (option as HTMLOptionElement).value);
+  expect(values).not.toContain("f4300_a1");
+  expect(values).not.toContain("f4300_a2");
+}
+
+/**
+ * T3f — `F4.300` U4c (owner ruling 2026-11-01; ADR 0108 decision 3.4 takes any
+ * catalog code): the picker also offers every other segment's active code, in
+ * an "Other segments" group, so a segment can trend a code filed elsewhere —
+ * Electrical keeps `load_pct` and `battery_v` for a DG set after the UPS codes
+ * moved to `ups`. Add then Save sends the cross-segment code in the list.
+ */
+export async function thePickerOffersOtherSegmentsCodesInTheirOwnGroup(): Promise<void> {
+  stubAll();
+  const user = userEvent.setup();
+  renderPage(admin);
+  const alpha = await cardOf("Alpha segment", ALPHA);
+  const picker = await within(alpha).findByRole("combobox", { name: "Add a point to Alpha segment" });
+  const group = await waitFor(() => {
+    const found = picker.querySelector<HTMLOptGroupElement>('optgroup[label="Other segments"]');
+    if (!found) throw new Error("no Other segments group");
+    return found;
+  });
+  const grouped = Array.from(group.querySelectorAll("option")).map((option) => option.value);
+  expect(grouped).toContain("f4300_b1");
+  expect(grouped).toContain("f4300_x1");
+  expect(grouped).not.toContain("f4300_a3");
+  await user.selectOptions(picker, "f4300_b1");
+  await user.click(within(alpha).getByRole("button", { name: "Add" }));
+  await user.click(within(alpha).getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(api.putOrgTrendPointSegment).toHaveBeenCalledWith(ORG_ID, ALPHA, ["f4300_a1", "f4300_a2", "f4300_b1"]),
   );
 }
 

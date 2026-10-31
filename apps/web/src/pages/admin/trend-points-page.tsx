@@ -121,6 +121,7 @@ function TrendPointsEditor() {
               organizationId={organizationId}
               segment={segment}
               catalog={catalog.filter((item) => item.domain === segment.domain)}
+              otherCatalog={catalog.filter((item) => item.domain !== segment.domain)}
             />
           ))
         : null}
@@ -133,19 +134,27 @@ type SegmentCardProps = {
   segment: TrendPointSegmentDto;
   /** The active catalog codes of this segment's domain. */
   catalog: readonly AdminPointKeyDto[];
+  /**
+   * The active catalog codes filed under any other domain. ADR 0108 decision
+   * 3.4 takes any catalog code in a segment's list, and `F4.300` U4c (owner
+   * ruling 2026-11-01) needs it: Electrical keeps `load_pct` and `battery_v`
+   * for a DG set after those codes moved to the `ups` segment.
+   */
+  otherCatalog: readonly AdminPointKeyDto[];
 };
 
-function SegmentCard({ organizationId, segment, catalog }: SegmentCardProps) {
+function SegmentCard({ organizationId, segment, catalog, otherCatalog }: SegmentCardProps) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState<string[]>(() => segment.points.map((item) => item.code));
   const [pick, setPick] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const names = new Map<string, string>();
-  for (const item of [...segment.catalogDefaults, ...segment.points, ...catalog]) {
+  for (const item of [...otherCatalog, ...segment.catalogDefaults, ...segment.points, ...catalog]) {
     names.set(item.code, item.name);
   }
   const addable = catalog.filter((item) => !draft.includes(item.code));
+  const addableElsewhere = otherCatalog.filter((item) => !draft.includes(item.code));
   const pickerId = `trend-points-add-${segment.domain}`;
 
   async function refresh(): Promise<void> {
@@ -267,6 +276,15 @@ function SegmentCard({ organizationId, segment, catalog }: SegmentCardProps) {
                     {item.code} — {item.name}
                   </option>
                 ))}
+                {addableElsewhere.length > 0 ? (
+                  <optgroup label="Other segments">
+                    {addableElsewhere.map((item) => (
+                      <option key={item.code} value={item.code}>
+                        {item.code} — {item.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ) : null}
               </select>
             </div>
             <button type="button" className="surface-button px-3 py-2 text-xs" onClick={add}>

@@ -35,8 +35,10 @@ import {
  *   seed pass files them under `ups` again (`domain = EXCLUDED.domain`).
  * - **I4** the UPS Control Room view still lists them: the view keys on the
  *   asset code (`CR-UPS-*`, `CR-BATT-*`) and on the point code, never on
- *   `point_keys.domain`, so the seeded UPS and battery assets keep their asset
- *   domain and every seeded `CR_BATT_*` rule the view reads still targets an
+ *   `point_keys.domain`. Since U4c (owner ruling 2026-11-01, "Move UPS assets
+ *   too") the seeded UPS and battery assets are `ups` as well
+ *   (`f4.300-ups-assets-seed.integration.test.ts` holds the rest of that move),
+ *   and every seeded `CR_BATT_*` rule the view reads still targets an
  *   catalog code — now filed under `ups` (its `active` flag is an admin's to
  *   change, so not asserted here).
  * - **I5** the trend-point resolution over the real catalog filing puts the
@@ -174,13 +176,13 @@ describe.skipIf(!fleetUrl || !ownerUrl)("F4.300 U4b — the ups segment (databas
     }
   }, 120_000);
 
-  it("I4 keeps the Control Room UPS and battery assets' own domain", async () => {
+  it("I4 files the Control Room UPS and battery assets under ups (U4c)", async () => {
     const { rows } = await db().query<{ code: string; domain: string }>(
       `SELECT DISTINCT a.code, a.domain FROM bms.assets a
         WHERE a.code IN ('CR-UPS-1', 'CR-UPS-2', 'CR-BATT-1', 'CR-BATT-2') ORDER BY a.code`,
     );
     expect(rows.map((r) => r.code)).toEqual(["CR-BATT-1", "CR-BATT-2", "CR-UPS-1", "CR-UPS-2"]);
-    for (const row of rows) expect(row.domain, row.code).toBe("electrical");
+    for (const row of rows) expect(row.domain, row.code).toBe("ups");
   });
 
   it("I4b every seeded CR_BATT rule the UPS view reads targets a catalog code filed under ups", async () => {

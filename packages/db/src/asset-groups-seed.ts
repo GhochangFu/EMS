@@ -135,11 +135,19 @@ export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
  *    `CR-LEAK-*` / `CR-SMOKE-*` sensors take `0095`'s `leak-sensor` and
  *    `smoke-detector` (OQ6). Each reads the CODE as well as the domain, so the
  *    PHE gateways (`environment` domain, case 1) stay unroled. The UPS and
- *    battery branches read the code and run AFTER the guard, because those
- *    assets are electrical-domain and a room sensor named `CR-ENV-UPS-ROOM` is
- *    not a UPS.
+ *    battery branches read the code and run AFTER the guard, because an
+ *    electrical asset may still name a UPS and a room sensor named
+ *    `CR-ENV-UPS-ROOM` is not a UPS. Since `F4.300` U4c (owner ruling
+ *    2026-11-01) the seeded UPS and battery assets are `ups`-domain, so the
+ *    `ups` domain takes the same two code-keyed roles before the guard.
  */
 export function demoRoleForAsset(code: string, domain: string): string | null {
+  if (domain === "ups" && code.includes("UPS")) {
+    return "ups";
+  }
+  if (domain === "ups" && code.includes("BATT")) {
+    return "battery";
+  }
   if (domain === "hvac" && /CRAC|CR-HVAC/.test(code)) {
     return "crac";
   }
@@ -271,7 +279,9 @@ export function demoGroupCodesForAsset(code: string, domain: string): readonly s
   if (domain === "water") {
     return ["water"];
   }
-  if (code.includes("UPS") || code.includes("BATT")) {
+  // `F4.300` U4c — a `ups` asset joins the UPS group whatever its code, so a
+  // ups asset never falls through to the site's ELECTRICAL group.
+  if (domain === "ups" || code.includes("UPS") || code.includes("BATT")) {
     return ["ups-battery"];
   }
   return ["electrical"];
@@ -302,6 +312,10 @@ export function demoGroupDomain(groupCode: string): string | null {
   switch (groupCode) {
     case IT_LOAD_GROUP_CODE:
       return null;
+    // Still `electrical` after `F4.300` U4c moved its members to the `ups` asset
+    // domain: the stock `smoc-standard` site template binds its `ups` tab to an
+    // `electrical` group with code `ups-battery`, and the upsert never re-files a
+    // stored group domain. Moving the group is a site-template release of its own.
     case "ups-battery":
       return "electrical";
     case "it-rack":

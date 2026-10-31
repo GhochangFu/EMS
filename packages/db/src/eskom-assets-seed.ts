@@ -50,13 +50,13 @@ export function demoAssetsForRsmoc(
       code: `${prefix}-CR-UPS-1`,
       name: `${readableName} Control Room UPS 1`,
       siteName,
-      domain: "electrical",
+      domain: "ups",
     },
     {
       code: `${prefix}-CR-BATT-1`,
       name: `${readableName} Control Room Battery String 1`,
       siteName,
-      domain: "electrical",
+      domain: "ups",
     },
     {
       code: `${prefix}-CR-HVAC-1`,
@@ -102,7 +102,18 @@ export function eskomSeedAssetCatalog(
   return buildEskomAssetCatalog(CONTROL_ROOM_SITE_NAME, rsmocDemoAssets);
 }
 
-/** The full seeded asset list; order is significant, RSMOC assets stay last. */
+/**
+ * The full seeded asset list; order is significant, RSMOC assets stay last.
+ *
+ * `F4.300` U4c (owner ruling 2026-11-01, "Move UPS assets too") — the UPS and
+ * battery assets (`UPS-A`, `CR-UPS-*`, `CR-BATT-*` and each RSMOC's pair) are
+ * domain `ups`, the segment their point codes moved to in U4b. They still run
+ * on the site's electrical simulator RTU (`rtuDomainForAssetDomain`), still join
+ * the `ups-battery` group, and the ladder seed still reads them
+ * (`LADDER_ASSET_DOMAINS`). `seedEskomAssets` writes `domain` on every boot, so
+ * an existing database moves on its next seed; `seedAssetTemplateHealth`
+ * releases the electrical baseline pin the move leaves behind.
+ */
 export function buildEskomAssetCatalog(
   controlRoomSiteName: string,
   rsmocDemoAssets: readonly EskomAssetSpec[],
@@ -124,7 +135,7 @@ export function buildEskomAssetCatalog(
       code: "UPS-A",
       name: "UPS String A",
       siteName: "CSMOC Gauteng",
-      domain: "electrical",
+      domain: "ups",
     },
     {
       code: "CH-CRAC-101",
@@ -178,7 +189,7 @@ export function buildEskomAssetCatalog(
       code: "CR-UPS-OUT-BUS",
       name: "Control Room UPS Output Bus",
       siteName: controlRoomSiteName,
-      domain: "electrical",
+      domain: "ups",
     },
     ...Array.from({ length: 12 }, (_, i) => ({
       code: `CR-Q${i + 1}`,
@@ -190,25 +201,25 @@ export function buildEskomAssetCatalog(
       code: "CR-UPS-1",
       name: "Control Room UPS 1",
       siteName: controlRoomSiteName,
-      domain: "electrical",
+      domain: "ups",
     },
     {
       code: "CR-UPS-2",
       name: "Control Room UPS 2",
       siteName: controlRoomSiteName,
-      domain: "electrical",
+      domain: "ups",
     },
     {
       code: "CR-BATT-1",
       name: "Control Room Battery String 1",
       siteName: controlRoomSiteName,
-      domain: "electrical",
+      domain: "ups",
     },
     {
       code: "CR-BATT-2",
       name: "Control Room Battery String 2",
       siteName: controlRoomSiteName,
-      domain: "electrical",
+      domain: "ups",
     },
     {
       code: "CR-HVAC-1",

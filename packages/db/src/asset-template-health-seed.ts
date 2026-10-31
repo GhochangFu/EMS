@@ -505,6 +505,37 @@ SELECT
 `;
 
 /**
+ * `F4.300` U4c (owner ruling 2026-11-01, "Move UPS assets too") — frees an
+ * asset whose domain moved under its seed baseline pin, so the role pin and the
+ * domain pin below take it to its new domain's baseline in the same run.
+ *
+ * The seed moved the UPS and battery assets from `electrical` to `ups`
+ * (`eskom-assets-seed.ts`). On a database seeded before that, they stay pinned
+ * to `BASELINE-ELECTRICAL-UPS` / `-BATTERY`, and the verify's `unpinned` (no
+ * template of their own domain) would stop the boot. A published version is
+ * immutable (ADR 0015), so the template cannot follow the asset; the pin moves.
+ *
+ * Bounded to the seed's own rows — `asset_type = 'baseline'`, a `BASELINE-`
+ * code, version 1 — of ANOTHER domain. An operator's own template is never
+ * released (an operator pin across domains still stops the boot, as before),
+ * and a same-domain v1 pin, which an operator may legally restore (ADR 0058
+ * Amendment 3 decision 4), never matches `t.domain <> a.domain`.
+ */
+export const HEALTH_TEMPLATE_RELEASE_SQL = `
+UPDATE bms.assets a
+SET template_id = NULL
+FROM bms.asset_templates t
+WHERE a.organization_id = $1
+  AND a.active = true
+  AND a.template_id = t.id
+  AND t.organization_id = $1
+  AND t.asset_type = '${TEMPLATE_ASSET_TYPE}'
+  AND t.code LIKE 'BASELINE-%'
+  AND t.version = 1
+  AND t.domain <> a.domain
+`;
+
+/**
  * Seeds the baseline templates, pins the assets, and proves both.
  *
  * Runs inside the caller's tenant context — `seed.ts` calls it from the ESKOM
@@ -513,24 +544,26 @@ SELECT
  *
  * The order is load-bearing (`F2.32`): both template sets and their points
  * first — the role insert returns the ids the re-pin and the verify are bound
- * to — then the re-pin and the role pin, which read the role templates, and
- * the domain pin last, because it takes every `template_id IS NULL` asset the
- * role pin left.
+ * to — then the release (`F4.300` U4c), which frees an asset whose domain
+ * moved under its seed pin, then the re-pin and the role pin, which read the
+ * role templates, and the domain pin last, because it takes every
+ * `template_id IS NULL` asset the role pin left.
  *
- * @returns how many templates (domain and role), pins (role and domain) and
- * re-pins this call wrote. Zero for all three is the correct answer on a
- * re-seed and is not a failure; the post-condition is what fails.
+ * @returns how many templates (domain and role), pins (role and domain),
+ * re-pins and releases this call wrote. Zero for all four is the correct
+ * answer on a re-seed and is not a failure; the post-condition is what fails.
  */
 export async function seedAssetTemplateHealth(
   pool: pg.Pool,
   organizationId: string,
-): Promise<{ templates: number; pinned: number; repinned: number }> {
+): Promise<{ templates: number; pinned: number; repinned: number; released: number }> {
   const content = JSON.stringify(HEALTH_BASELINE_CONTENT);
   const domainTemplates = await pool.query(HEALTH_TEMPLATE_SQL, [organizationId, content]);
   await pool.query(HEALTH_TEMPLATE_POINTS_SQL, [organizationId]);
   const roleTemplates = await pool.query<{ id: string }>(HEALTH_ROLE_TEMPLATE_SQL, [organizationId, content]);
   const insertedRoleTemplateIds = roleTemplates.rows.map((row) => row.id);
   await pool.query(HEALTH_ROLE_TEMPLATE_POINTS_SQL, [organizationId]);
+  const released = await pool.query(HEALTH_TEMPLATE_RELEASE_SQL, [organizationId]);
   const repinned = await pool.query(HEALTH_ROLE_TEMPLATE_REPIN_SQL, [organizationId, insertedRoleTemplateIds]);
   const rolePinned = await pool.query(HEALTH_ROLE_TEMPLATE_PIN_SQL, [organizationId]);
   const domainPinned = await pool.query(HEALTH_TEMPLATE_PIN_SQL, [organizationId]);
@@ -558,5 +591,6 @@ export async function seedAssetTemplateHealth(
     templates: (domainTemplates.rowCount ?? 0) + (roleTemplates.rowCount ?? 0),
     pinned: (rolePinned.rowCount ?? 0) + (domainPinned.rowCount ?? 0),
     repinned: repinned.rowCount ?? 0,
+    released: released.rowCount ?? 0,
   };
 }
