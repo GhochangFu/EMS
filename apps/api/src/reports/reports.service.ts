@@ -13,8 +13,10 @@ import {
 } from "../telemetry/point-aggregates";
 import { CalcParametersService } from "../calc/calc-parameters.service";
 import { energyCost, perAssetEnergy, resolveTariffs } from "../telemetry/energy-cost";
+import { nominalSourceSplit } from "../telemetry/energy-sources";
 import { windowedPueRatio } from "../telemetry/pue-ratio";
 import { energyPdfDefinition, renderPdf } from "./energy-pdf";
+import { topConsumersRead } from "./energy-view-read";
 import type { EnergyReportQuery } from "./reports.schema";
 import {
   assertFiniteCells,
@@ -306,12 +308,11 @@ export class ReportsService {
     const row = r.rows[0];
     const totalKwh = row ? Number(row.total_kw) : 0;
     const solarKwh = row ? Number(row.solar_kw) : 0;
-    const net = Math.max(totalKwh - solarKwh, 0);
-    const dgKwh = Math.min(net * 0.04, totalKwh * 0.1);
+    const { dg, grid } = nominalSourceSplit(totalKwh, solarKwh);
     return {
       solarKwh: this.round(solarKwh),
-      dgKwh: this.round(dgKwh),
-      gridKwh: this.round(Math.max(net - dgKwh, 0)),
+      dgKwh: this.round(dg),
+      gridKwh: this.round(grid),
     };
   }
 
@@ -339,44 +340,18 @@ export class ReportsService {
     //
     // No `bucketHours` here: this reports a mean kW, and `estimatedKwh` multiplies
     // by `range.durationHours` exactly as before.
+    //
+    // `F4.298` (ADR 0108 decision 2.10): the SQL moved byte for byte to
+    // `energy-view-read.ts` (`topConsumersRead`), so the energy view and this
+    // preview send one statement. This path keeps the nullable `$4` leg.
     const { level } = levelForRange({ start: range.start, granularity: "1h" });
-
-    const r = await this.pool.query<{
-      id: string;
-      code: string;
-      name: string;
-      site_name: string;
-      avg_kw: string;
-    }>(
-      `
-      SELECT
-        a.id,
-        a.code,
-        a.name,
-        a.site_name,
-        ${avgExpr("v")}::float8 AS avg_kw
-      FROM ${aggregateRelation(level)} v
-      INNER JOIN bms.assets a ON a.id = v.asset_id
-      WHERE v.point_key = 'kw'
-        AND v.bucket >= $1
-        AND v.bucket <= $2
-        AND ($4::uuid[] IS NULL OR a.id = ANY($4::uuid[]))
-      GROUP BY a.id, a.code, a.name, a.site_name
-      ORDER BY avg_kw DESC
-      LIMIT $3
-      `,
-      [range.start, range.end, Math.min(25, Math.max(1, limit)), assetIds ?? null],
-    );
-    return r.rows.map((row) => {
-      const avgKw = Number(row.avg_kw);
-      return {
-        assetId: row.id,
-        code: row.code,
-        name: row.name,
-        siteName: row.site_name,
-        avgKw: this.round(avgKw),
-        estimatedKwh: this.round(avgKw * range.durationHours),
-      };
+    return topConsumersRead(this.pool, {
+      level,
+      start: range.start,
+      end: range.end,
+      durationHours: range.durationHours,
+      limit,
+      assetIds: assetIds ?? null,
     });
   }
 

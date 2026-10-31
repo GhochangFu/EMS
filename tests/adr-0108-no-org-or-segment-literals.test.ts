@@ -47,6 +47,8 @@ const MODULES: readonly string[] = [
   "packages/shared/src/types/energy-view.ts",
   "apps/api/src/reports/energy-view-range.ts",
   "apps/api/src/reports/energy-view-partial.ts",
+  "apps/api/src/reports/energy-view-read.ts",
+  "apps/api/src/telemetry/energy-sources.ts",
 ];
 
 /**
@@ -56,8 +58,6 @@ const MODULES: readonly string[] = [
  * this list turns red rather than leaving silent.
  */
 const PENDING_MODULES: readonly string[] = [
-  "apps/api/src/reports/energy-view-read.ts",
-  "apps/api/src/telemetry/energy-sources.ts",
   "apps/api/src/reports/energy-view.service.ts",
   "apps/api/src/reports/energy-filter-options.ts",
   "apps/web/src/api/energy-view.ts",

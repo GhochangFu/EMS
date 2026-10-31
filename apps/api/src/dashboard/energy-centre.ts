@@ -10,6 +10,7 @@ import {
   levelForRange,
 } from "../telemetry/point-aggregates";
 import { energyCost, perAssetEnergy, resolveTariffs } from "../telemetry/energy-cost";
+import { nominalSourceSplit } from "../telemetry/energy-sources";
 import { windowedPueRatio } from "../telemetry/pue-ratio";
 
 /**
@@ -258,9 +259,7 @@ export async function energySourceMix(
   const points = r.rows.map((x) => {
     const totalKw = Number(x.total_kw);
     const solarKw = Number(x.solar_kw);
-    const net = Math.max(totalKw - solarKw, 0);
-    const dgKw = Math.min(net * 0.04, totalKw * 0.1);
-    const gridKw = Math.max(net - dgKw, 0);
+    const { dg: dgKw, grid: gridKw } = nominalSourceSplit(totalKw, solarKw);
     return {
       t: new Date(x.bucket).toISOString(),
       gridKw: Math.round(gridKw * 100) / 100,
