@@ -5,6 +5,7 @@ import { fetchCurrentUser } from "./api/login";
 import { rememberWallReturnPath } from "./lib/return-path";
 import { AlarmKbPage } from "./pages/alarm-kb-page";
 import { AlarmsPage } from "./pages/alarms-page";
+import { AssetHistoryPage } from "./pages/asset-history-page";
 import { AssetsPage } from "./pages/assets-page";
 import { AttributionsPage } from "./pages/attributions-page";
 import { DashboardsPage } from "./pages/dashboards-page";
@@ -246,6 +247,16 @@ export function App() {
         element={
           accessToken && user ? (
             <AssetsPage user={user} />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/assets/:assetId/history"
+        element={
+          accessToken && user ? (
+            <AssetHistoryPage user={user} />
           ) : (
             <Navigate to="/login" replace />
           )
