@@ -614,7 +614,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         "F4.278 one more, the alarm-rule read tool; F4.279 two more, the channel and escalation " +
         "read tools; F4.284 two more, the work-order and user read tools, and one more, the " +
         "alarm skill read tool (owner ruling 2026-10-25); F4.288 one more, the site point " +
-        "inventory read tool. " +
+        "inventory read tool; F4.296 one more in each of the point statistics and site point " +
+        "inventory read tools, the site summary and the unruled read. " +
         "A site reverted to " +
         "a bare .parse() answers 400 under the filter, which is ruling 2's failure mode " +
         "exactly.",
@@ -628,6 +629,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       siteLayout: 1,
       onboarding: 1,
       ...Object.fromEntries(Object.keys(COPILOT_TOOL_FILES).map((key) => [key, 1])),
+      copilotGetPointStats: 2,
+      copilotGetSitePointInventory: 2,
     });
   });
 
@@ -657,8 +660,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       // `F4.281`: + the maintenance-schedule read tool; `F4.284`: + the work-order and user read tools,
       // and (owner ruling 2026-10-25) the alarm skill read tool; `F4.291` PR 2: + the alarm
       // statistics read tool; `F4.291` PR 3: + the point statistics read tool; `F4.288`: + the
-      // site point inventory read tool.
-    ).toBe(49);
+      // site point inventory read tool; `F4.296`: + the site summary and the unruled rules read.
+    ).toBe(51);
 
     const callSites = [
       STOCK_SERVICE,

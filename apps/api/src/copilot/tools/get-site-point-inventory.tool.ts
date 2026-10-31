@@ -158,7 +158,7 @@ async function readUnruled(
     const rules =
       assets.length === 0
         ? []
-        : parseStoredContract(rulesResponseSchema, await services.rules.listRules(assets.map((asset) => asset.id)), "copilot_tools.get_site_point_inventory.rules").items;
+        : parseStoredContract(rulesResponseSchema, await services.rules.listRules(assets.map((asset) => asset.id)), "copilot_tools.get_site_point_inventory.unruled_rules").items;
     const watching = rulesWatching(rules);
     const unwatched = pairs.filter((pair) => watching.get(pair.assetId, pair.pointKey).ruleCount === 0);
     const head = { assetCount: assets.length, pointCount: pairs.length, watchedCount: pairs.length - unwatched.length, unwatchedCount: unwatched.length };
