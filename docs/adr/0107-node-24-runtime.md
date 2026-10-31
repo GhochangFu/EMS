@@ -2,8 +2,8 @@
 
 ## Status
 
-**Proposed — 2026-10-25.** The merge of the PR that carries this record approves
-it. Code citations are to `main` at `a731eee3`.
+**Accepted — 2026-10-31** (owner). Proposed 2026-10-25; the merge of the PR
+that carries this record lands it. Code citations are to `main` at `a731eee3`.
 
 ## Context
 
