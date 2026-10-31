@@ -237,6 +237,8 @@
     "tests/f4.247-copilot-precondition-schema.test.ts",
     "tests/f4.284-copilot-risk-operational.test.ts",
     "tests/adr-0108-no-org-or-segment-literals.test.ts",
-    "tests/f4.297-asset-history-route.test.ts"
+    "tests/f4.297-asset-history-route.test.ts",
+    "tests/f4.300-trend-points-schema.test.ts",
+    "tests/f4.300-trend-points-schema.integration.test.ts"
   ]
 }

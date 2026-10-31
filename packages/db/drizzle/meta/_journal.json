@@ -813,6 +813,13 @@
       "when": 1792876548423,
       "tag": "0116_copilot_pending_changes_risk_operational",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1793466617000,
+      "tag": "0117_trend_points",
+      "breakpoints": true
     }
   ]
 }

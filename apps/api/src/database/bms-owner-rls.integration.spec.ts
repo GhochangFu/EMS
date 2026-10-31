@@ -74,6 +74,11 @@ export const FORCED_TABLES = [
   // `copilot-usage.integration.spec.ts` holds the non-vacuous half.
   "copilot_usage",
   "copilot_org_usage",
+  // `F4.300` (ADR 0108 decision 3, migration `0117`). A strict tenant table. The
+  // count-0 check below is VACUOUS for it (the seed writes no row);
+  // `trend-points.integration.spec.ts` (U3) holds the non-vacuous half, and
+  // `tests/f4.300-trend-points-schema.integration.test.ts` reads a PHEWB row as ESKOM.
+  "org_trend_points",
 ] as const;
 
 function assert(condition: boolean, message: string): void {
