@@ -18,6 +18,8 @@ import {
   assertReportSchedulesServiceFleetSlot,
   assertReportSchedulesServiceTenantSlot,
   assertRuleSweepServiceTenantSlot,
+  assertTelemetryServiceFleetPoolSlot,
+  assertTelemetryServiceTenantPoolSlot,
   assertUnconditionalFleetReadSlots,
   assertWorkerHostFleetSlot,
   assertWorkerHostTenantSlot,
@@ -106,5 +108,13 @@ describe("E7.1b — services inject the right pool token in the right constructo
 
   it("F3.85 CopilotPurgeService injects the fleet pool in slot 1", () => {
     assertCopilotPurgeServiceFleetSlot();
+  });
+
+  it("F4.297 TelemetryService injects the tenant pool in slot 1", () => {
+    assertTelemetryServiceTenantPoolSlot();
+  });
+
+  it("F4.297 TelemetryService injects the fleet pool in slot 2", () => {
+    assertTelemetryServiceFleetPoolSlot();
   });
 });
