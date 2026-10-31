@@ -36,7 +36,7 @@ trading, billing collection.
 | Layer            | Technology |
 |------------------|------------|
 | Frontend         | React 18, TypeScript 5, Vite, Tailwind CSS, TanStack Query, Zustand, React Router, Leaflet, Three.js, ECharts, shadcn/ui |
-| Backend API      | NestJS (Node 20 LTS, TypeScript) |
+| Backend API      | NestJS (Node 24 LTS, TypeScript) |
 | Realtime         | NestJS WebSocket gateway over Socket.IO with Redis adapter |
 | Workers / jobs   | NestJS BullMQ workers (Redis-backed) |
 | Ingestion        | Node services per protocol: BACnet, Modbus, SNMP, REST poller, OPC-UA, MQTT subscriber |

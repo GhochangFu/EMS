@@ -6,7 +6,7 @@ Target environment:
 - **Host:** Windows 11
 - **Dev shell:** WSL2 + Ubuntu 22.04 LTS
 - **Editor:** Cursor (Windows) connected to WSL via the Remote-WSL extension
-- **Runtime:** Node 20 LTS, pnpm 9
+- **Runtime:** Node 24 LTS, pnpm 9
 - **Database:** Postgres 16 + TimescaleDB 2.x, installed natively in WSL
   for the lightest local loop, or via Docker Compose for Phase 1.
 - **Identity:** Keycloak is used by the compose/pilot path in Sprint C.
@@ -50,7 +50,7 @@ sudo apt -y install build-essential curl git ca-certificates gnupg lsb-release
 
 ---
 
-## 3. Install Node 20 via fnm
+## 3. Install Node 24 via fnm
 
 We use [fnm](https://github.com/Schniz/fnm) so we can switch Node
 versions later without sudo.
@@ -59,9 +59,9 @@ versions later without sudo.
 sudo apt update && sudo apt install -y unzip
 curl -fsSL https://fnm.vercel.app/install | bash
 exec $SHELL -l
-fnm install 20
-fnm default 20
-node --version   # v20.x.x
+fnm install 24
+fnm default 24
+node --version   # v24.x.x
 ```
 
 Add this to `~/.bashrc` (already done by the installer, verify):
