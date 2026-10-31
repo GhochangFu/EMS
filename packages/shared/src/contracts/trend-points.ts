@@ -60,4 +60,11 @@ export const putOrgTrendPointsBodySchema = z
         message: "pointKeys must not repeat a code",
       });
     }
-  });
+  })
+  // ADR 0029 Amendment 1: the document cannot express the refinement, so this
+  // says it. Nothing may separate `.superRefine(...)` from `.describe(...)`.
+  .describe(
+    "Replaces one organization's trend-point list for one segment, in order. pointKeys " +
+      "must not repeat a code, holds at most 12 codes, and each must be a point_keys code; " +
+      "an empty list removes the override, so the catalog default applies again.",
+  );

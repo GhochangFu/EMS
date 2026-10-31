@@ -17,6 +17,8 @@ import {
   assertEveryOrganizationSeesEveryCode,
   assertGlobalAdminLifecycle,
   assertGlobalAdminSetsAndClearsARank,
+  assertGlobalAdminSetsTrendDefault,
+  assertOrganizationAdminCannotSetTrendDefault,
   assertOrganizationAdminIsRefusedEveryWrite,
 } from "./point-keys.rls.integration.spec";
 import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
@@ -141,6 +143,23 @@ describe.skipIf(!connectionString)("F3.39 — the point key catalog is fleet-wid
 
   it("refuses headline_rank = 0 in the database (0083's CHECK)", async () => {
     await assertCheckRefusesAZeroRank(ownerPool);
+  });
+
+  it("F4.300 — a global admin sets trendDefault true, then a decided false", async () => {
+    const code = `f4-300-trend-${Date.now()}`;
+    try {
+      await assertGlobalAdminSetsTrendDefault({ svc, ownerPool }, adminJwt, code);
+    } finally {
+      await ownerPool.query(
+        "DELETE FROM bms.audit_log WHERE entity_id IN (SELECT id FROM bms.point_keys WHERE code = $1)",
+        [code],
+      );
+      await ownerPool.query("DELETE FROM bms.point_keys WHERE code = $1", [code]);
+    }
+  });
+
+  it("F4.300 — an organization_admin is refused PATCH trendDefault", async () => {
+    await assertOrganizationAdminCannotSetTrendDefault({ svc, ownerPool }, orgAdminJwt);
   });
 
   it("F4.211 — a duplicate code is a 409 naming the code", async () => {

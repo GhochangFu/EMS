@@ -50,6 +50,8 @@ import {
   updateMaintenanceScheduleBodySchema,
   pointAggregateQuerySchema,
   pointRawQuerySchema,
+  // `F4.300` (ADR 0108 decision 3.7): the replace-all trend-point body.
+  putOrgTrendPointsBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -303,6 +305,8 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   createMimicLayoutBodySchema,
   putMimicLayoutBodySchema,
   putSiteControlRoomViewBodySchema,
+  // `F4.300` (ADR 0108 decision 3.7). `.strict()`: one replace-all list, no `z.record` escape.
+  putOrgTrendPointsBodySchema,
   // `F3.73` plan D6. `.strict()`: both keys are optional, so a misspelt `tabGroup` dropped
   // silently would run the copy with no choice and answer 409 for a reason the caller cannot see.
   siteLayoutBodySchema,
