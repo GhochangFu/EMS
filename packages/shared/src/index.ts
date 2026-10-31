@@ -93,6 +93,7 @@ export * from "./contracts";
 export type * from "./types/asset-kpis";
 export type * from "./types/alarm-stats";
 export type * from "./types/point-stats";
+export type * from "./types/energy-view";
 export * from "./location-tree";
 export type * from "./types/locations";
 

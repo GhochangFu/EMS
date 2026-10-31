@@ -5,15 +5,17 @@ import { z } from "zod";
  *
  * ---
  *
- * **`level` is deliberately absent, and `bucketSeconds` is here instead.**
+ * **`level` is absent, and `bucketSeconds` is here instead.**
  *
- * This is `F3.35`'s ruling applied unchanged: `pointAggregateStatsSchema` in
- * `./envelopes.ts` omits `level` because returning `"1m" | "5m" | "1h" | "1d"`
- * would put a second declaration of `AggregateLevel`
- * (`apps/api/src/telemetry/point-aggregate-window.ts`) in `packages/shared`,
- * which §4.8 forbids. ADR 0050 decision 6 says the same thing from the other
- * direction — the read reuses `F3.35`'s ladder and does not declare a second
- * one — so a `level` field here would break both rules at once.
+ * `pointAggregateStatsSchema` in `./envelopes.ts` omits `level` for the same
+ * reason. When `F3.35` ruled it, a `level` field would have put a second
+ * declaration of `AggregateLevel` (then only in
+ * `apps/api/src/telemetry/point-aggregates.ts`) in `packages/shared`, which
+ * §4.8 forbids. Since `F4.298` (ADR 0108 decision 2.11) the one declaration is
+ * `./aggregate-level` and the api re-exports it, so that reason is gone; the
+ * field stays absent because no row since has changed this shape. ADR 0050
+ * decision 6 still holds — the read reuses `F3.35`'s ladder — and a later row
+ * that wants `level` here imports `aggregateLevelSchema`.
  *
  * `bucketSeconds` is also strictly more useful to a renderer, which has to turn
  * a level into a human string either way.

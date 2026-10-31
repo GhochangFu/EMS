@@ -298,11 +298,13 @@ export const recentTelemetryResponseSchema = z.array(telemetryReadingSchema);
  * shapes for fixed pages. This is the first general one: an arbitrary point, an
  * arbitrary window, answered from the ADR 0023 rollup relations.
  *
- * **`level` is deliberately absent.** Returning `"1m" | "5m" | "1h" | "1d"`
- * would put a second declaration of `AggregateLevel`
- * (`apps/api/src/telemetry/point-aggregates.ts`) in `packages/shared`, which
- * §4.8 forbids — and `bucketSeconds` is strictly more useful to a renderer,
- * which has to turn it into a human string either way.
+ * **`level` is absent, and `bucketSeconds` is here instead.** The level is now
+ * declared once in `packages/shared` (`./aggregate-level`, `F4.298`, ADR 0108
+ * decision 2.11), so a `level` field would no longer be a second declaration;
+ * it stays absent because neither `F4.297` nor `F4.298` changes this shape, and
+ * `bucketSeconds` is strictly more useful to a renderer, which has to turn it
+ * into a human string either way. A later row that wants `level` here imports
+ * `aggregateLevelSchema` rather than restating the union.
  */
 export const pointAggregateStatsSchema = z.object({
   sum: z.number().nullable(),
