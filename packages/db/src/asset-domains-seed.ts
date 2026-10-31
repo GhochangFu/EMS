@@ -57,15 +57,25 @@ export type AssetDomainSeed = {
 };
 
 /**
- * The rows. Two today — `mechanical` (ADR 0053 decision 2) and `facility`
- * (ADR 0054 decision 2) — and a third is a third ADR: the spec asserts the
- * literal, so an addition is a deliberate edit to both. `verifyHierarchySeed`'s
- * Pass 1 count is derived from this array's length, so `facility` moved it
- * from six to seven with no edit there — only its comment changed.
+ * The rows. Three today — `mechanical` (ADR 0053 decision 2), `facility`
+ * (ADR 0054 decision 2) and `ups` (ADR 0108, owner answer Q1 on the `F4.300`
+ * plan) — and a fourth is a fourth ADR: the spec asserts the literal, so an
+ * addition is a deliberate edit to both. `verifyHierarchySeed`'s Pass 1 count
+ * is derived from this array's length, so `facility` moved it from six to
+ * seven and `ups` to eight with no edit there — only its comment changed.
+ *
+ * `ups` is the trend-point segment for the seven `CONTROL_ROOM_UPS_POINT_KEYS`
+ * codes, which `point-keys-seed.ts` files under it. `sort_order 15` places it
+ * directly after `electrical` (10) in every ordered read; `facility` stays the
+ * last row, which `asset-templates-stock.integration.spec.ts`'s *Expected one
+ * of* pin reads. The Control Room UPS and battery assets keep the asset domain
+ * `electrical`: the UPS view keys on the asset code and the point code, never
+ * on `point_keys.domain` (`tests/f4.300-ups-segment-seed.integration.test.ts`).
  */
 export const PACK_ASSET_DOMAINS: readonly AssetDomainSeed[] = [
   { code: "mechanical", label: "Mechanical", sortOrder: 60 },
   { code: "facility", label: "Facility", sortOrder: 70 },
+  { code: "ups", label: "UPS", sortOrder: 15 },
 ];
 
 /**

@@ -13,7 +13,7 @@ import { ASSET_DOMAIN_SQL, PACK_ASSET_DOMAINS } from "./asset-domains-seed";
  * 0053 decision 2, ADR 0054 decision 2). No database: the SQL and the seed
  * order are asserted as text, the `ruled-point-catalog-seed.spec.ts` shape.
  * The rows' *existence* on a seeded database is `verifyHierarchySeed`'s
- * Pass 1 (seven domains), and the fact that an import depends on them is the
+ * Pass 1 (eight domains since `F4.300` added `ups`), and the fact that an import depends on them is the
  * F2.13 integration suite's unknown-domain refusal, whose *Expected one of*
  * list must end in `facility`.
  */
@@ -94,14 +94,18 @@ export function assertReSeedingIsIdempotentAndNeverOverwrites(): void {
 }
 
 /**
- * Exactly the two rows ADR 0053 decision 2 and ADR 0054 decision 2 rule —
- * `mechanical` / `Mechanical` / `sort_order 60`, last after `water` (50), then
- * `facility` / `Facility` / `sort_order 70`. A third entry is a third ADR.
+ * Exactly the three rows ADR 0053 decision 2, ADR 0054 decision 2 and ADR 0108
+ * (owner answer Q1, `F4.300`) rule — `mechanical` / `Mechanical` /
+ * `sort_order 60`, last after `water` (50), then `facility` / `Facility` /
+ * `sort_order 70`, then `ups` / `UPS` / `sort_order 15`, which places the UPS
+ * segment directly after `electrical` (10) in every ordered read. A fourth
+ * entry is a fourth ADR.
  */
 export function assertThePackDeclaresExactlyTheRuledRow(): void {
   expect(PACK_ASSET_DOMAINS).toEqual([
     { code: "mechanical", label: "Mechanical", sortOrder: 60 },
     { code: "facility", label: "Facility", sortOrder: 70 },
+    { code: "ups", label: "UPS", sortOrder: 15 },
   ]);
 }
 
