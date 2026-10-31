@@ -58,7 +58,7 @@ const ROW: AdminAssetPointDto = {
 };
 
 function pointKey(id: string, code: string, unit: string) {
-  return { id, code, name: `${code} name`, domain: "electrical", unit, description: null, active: true, createdAt: new Date(0).toISOString(), headlineRank: null };
+  return { id, code, name: `${code} name`, domain: "electrical", unit, description: null, active: true, createdAt: new Date(0).toISOString(), headlineRank: null, trendDefault: false };
 }
 
 function stubApi(rows: AdminAssetPointDto[] = [ROW]): void {
