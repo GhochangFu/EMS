@@ -10,6 +10,7 @@ import {
   removeTakesTheCodeOutOfTheSentList,
   rendersOneCardPerSegmentWithItsLabel,
   resetSendsAnEmptyList,
+  saveIsDisabledOnAnUnchangedCatalogCard,
   theAddControlIsAbsentAtTheCap,
   theBadgeNamesTheSource,
   thePickerOffersOnlyTheSegmentsMissingCodes,
@@ -45,6 +46,10 @@ describe("F4.300 Trend Points admin page", () => {
 
   it("T3c Move up changes the order Save sends", async () => {
     await moveUpChangesTheSentOrder();
+  });
+
+  it("T3e Save is disabled on an unchanged catalog card, enabled after a change", async () => {
+    await saveIsDisabledOnAnUnchangedCatalogCard();
   });
 
   it("T3d Remove takes the code out of the list Save sends", async () => {

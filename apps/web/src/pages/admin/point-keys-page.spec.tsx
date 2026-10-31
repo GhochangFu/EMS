@@ -465,6 +465,27 @@ export async function untouchedBoxSendsNothing(): Promise<void> {
   expect(update.mock.calls[0]![1]).not.toHaveProperty("trendDefault");
 }
 
+/**
+ * F4.300 review finding 5 — on a row that reads "not a trend default" (stored
+ * `NULL` or `false`; the DTO cannot tell them apart), an admin who touches the
+ * box and leaves it unchecked has decided "no": the edit sends an explicit
+ * `false`, so a later seed cannot fill the code with `true`. The untouched
+ * case above stays the adjacent negative.
+ */
+export async function aTouchedUncheckedBoxSendsFalse(): Promise<void> {
+  const { update } = stubApi();
+  renderPage(admin);
+  await openEdit(UNRANKED.code);
+  const box = await screen.findByRole("checkbox", { name: "Trend default" });
+  expect(box, "precondition: the stored flag reads false").not.toBeChecked();
+  await userEvent.click(box);
+  await userEvent.click(box);
+  expect(box).not.toBeChecked();
+  await reviewAndSubmit();
+  await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  expect(update.mock.calls[0]![1]).toHaveProperty("trendDefault", false);
+}
+
 /** F4.300 U6 — an organization_admin sees the column and no checkbox (the write form is closed to them). */
 export async function organizationAdminSeesTheFlagButNoControl(): Promise<void> {
   stubApi();

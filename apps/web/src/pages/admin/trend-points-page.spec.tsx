@@ -232,6 +232,27 @@ export async function moveUpChangesTheSentOrder(): Promise<void> {
   );
 }
 
+/**
+ * T3e — Save is disabled on an unchanged catalog card (review finding 4): one
+ * click would pin the catalog list as an override, so later catalog changes
+ * would stop reaching the organization. A reorder enables it (the adjacent
+ * positive), and an unchanged organization card keeps Save enabled.
+ */
+export async function saveIsDisabledOnAnUnchangedCatalogCard(): Promise<void> {
+  stubAll();
+  const user = userEvent.setup();
+  renderPage(admin);
+  const alpha = await cardOf("Alpha segment", ALPHA);
+  const beta = await cardOf("Beta segment", BETA);
+  expect(within(alpha).getByRole("button", { name: "Save" })).toBeDisabled();
+  expect(within(beta).getByRole("button", { name: "Save" })).toBeEnabled();
+  await user.click(within(alpha).getByRole("button", { name: "Move f4300_a2 up" }));
+  expect(within(alpha).getByRole("button", { name: "Save" })).toBeEnabled();
+  await user.click(within(alpha).getByRole("button", { name: "Move f4300_a1 up" }));
+  expect(within(alpha).getByRole("button", { name: "Save" }), "back to the catalog order").toBeDisabled();
+  expect(api.putOrgTrendPointSegment).not.toHaveBeenCalled();
+}
+
 /** T3d — "Remove" takes a code out of the list, and Save sends the rest. */
 export async function removeTakesTheCodeOutOfTheSentList(): Promise<void> {
   stubAll();

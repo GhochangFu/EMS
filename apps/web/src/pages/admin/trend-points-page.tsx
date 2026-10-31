@@ -181,6 +181,13 @@ function SegmentCard({ organizationId, segment, catalog }: SegmentCardProps) {
   }
 
   const isOrganization = segment.source === "organization";
+  // An unchanged catalog card has nothing to save: a Save would pin today's
+  // catalog list as an override, and later catalog changes would stop
+  // reaching this organization (review finding 4).
+  const unchangedCatalog =
+    !isOrganization &&
+    draft.length === segment.points.length &&
+    draft.every((code, index) => code === segment.points[index]?.code);
 
   return (
     <div data-segment={segment.domain}>
@@ -282,7 +289,7 @@ function SegmentCard({ organizationId, segment, catalog }: SegmentCardProps) {
           <button
             type="button"
             className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-60"
-            disabled={saveM.isPending}
+            disabled={saveM.isPending || unchangedCatalog}
             aria-busy={saveM.isPending}
             onClick={() => saveM.mutate(draft)}
           >

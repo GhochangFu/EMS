@@ -25,6 +25,7 @@ import {
   organizationAdminSeesTheFlagButNoControl,
   uncheckingSendsFalse,
   untouchedBoxSendsNothing,
+  aTouchedUncheckedBoxSendsFalse,
 } from "./point-keys-page.spec";
 
 /**
@@ -129,6 +130,10 @@ describe("F3.86 PR 3c point keys page — the catalog wizards (ADR 0099 decision
 
   it("F4.300 an untouched box sends no trendDefault", async () => {
     await untouchedBoxSendsNothing();
+  });
+
+  it("F4.300 a touched box left unchecked on a false row sends trendDefault: false", async () => {
+    await aTouchedUncheckedBoxSendsFalse();
   });
 
   it("F4.300 an organization_admin sees the flag and no control", async () => {

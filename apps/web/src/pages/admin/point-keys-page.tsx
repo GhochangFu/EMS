@@ -36,9 +36,24 @@ type FormState = {
   headlineRank: string;
   /** `F4.300` — the catalog trend-point flag (ADR 0108 decision 3). */
   trendDefault: boolean;
+  /**
+   * The admin (or a copilot fill) set the box. The DTO reads a stored `NULL`
+   * as `false`, so on such a row a touched-and-unchecked box is the only way
+   * to record a decided `false`; an untouched one sends nothing.
+   */
+  trendDefaultTouched: boolean;
 };
 
-const EMPTY_FORM: FormState = { code: "", name: "", domain: "", unit: "", description: "", headlineRank: "", trendDefault: false };
+const EMPTY_FORM: FormState = {
+  code: "",
+  name: "",
+  domain: "",
+  unit: "",
+  description: "",
+  headlineRank: "",
+  trendDefault: false,
+  trendDefaultTouched: false,
+};
 
 /**
  * `F3.68` / ADR 0076 decision 7 — the rank text to the body value.
@@ -102,9 +117,12 @@ function updateValues(form: FormState, stored: AdminPointKeyDto): Record<string,
     unit: form.unit || undefined,
     description: form.description || undefined,
     headlineRank: rankValue(form.headlineRank),
-    // `F4.300` — the flag is tri-state. It is sent only when the admin changed
-    // it, so an edit of another field never turns an undecided flag into `false`.
-    ...(form.trendDefault !== stored.trendDefault ? { trendDefault: form.trendDefault } : {}),
+    // `F4.300` — the flag is tri-state. It is sent only when the admin set the
+    // box, so an edit of another field never turns an undecided flag into
+    // `false`, and a box touched and left unchecked records a decided `false`.
+    ...(form.trendDefaultTouched || form.trendDefault !== stored.trendDefault
+      ? { trendDefault: form.trendDefault }
+      : {}),
   };
 }
 
@@ -114,7 +132,10 @@ function formWithValues(form: FormState, values: Readonly<Record<string, unknown
   for (const key of ["code", "name", "domain", "unit", "description"] as const) {
     if (typeof values[key] === "string") next[key] = values[key] as string;
   }
-  if (typeof values.trendDefault === "boolean") next.trendDefault = values.trendDefault;
+  if (typeof values.trendDefault === "boolean") {
+    next.trendDefault = values.trendDefault;
+    next.trendDefaultTouched = true;
+  }
   if (values.headlineRank === null) next.headlineRank = "";
   else if (typeof values.headlineRank === "number") next.headlineRank = String(values.headlineRank);
   return next;
@@ -129,6 +150,7 @@ function formOf(item: AdminPointKeyDto): FormState {
     description: item.description ?? "",
     headlineRank: item.headlineRank === null ? "" : String(item.headlineRank),
     trendDefault: item.trendDefault,
+    trendDefaultTouched: false,
   };
 }
 
@@ -291,7 +313,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
         <input
           type="checkbox"
           checked={form.trendDefault}
-          onChange={(event) => setForm({ ...form, trendDefault: event.target.checked })}
+          onChange={(event) => setForm({ ...form, trendDefault: event.target.checked, trendDefaultTouched: true })}
         />
         Trend default
       </label>
