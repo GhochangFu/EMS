@@ -68,6 +68,7 @@ export function RawRecordsTable({ pointRef, pointKey, zone }: RawRecordsTablePro
             type="button"
             className="rounded border border-line-strong px-2 py-1 text-xs"
             disabled={rawQ.isFetchingNextPage}
+            aria-busy={rawQ.isFetchingNextPage}
             onClick={() => void rawQ.fetchNextPage()}
           >
             {rawQ.isFetchingNextPage ? "Loading…" : "Load older"}
