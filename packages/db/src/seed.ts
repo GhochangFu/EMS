@@ -16,6 +16,7 @@ import { seedAccessControlFixtures, seedDecommissionedLocation } from "./access-
 import { seedAssetDomains } from "./asset-domains-seed";
 import { seedPointKeyCatalog } from "./point-keys-seed";
 import { seedPointKeyHeadlineRanks } from "./point-key-headline-ranks-seed";
+import { seedPointKeyTrendDefaults } from "./point-key-trend-defaults-seed";
 import { seedPointKeyStates } from "./point-key-states-seed";
 import { loadPheCatalog, phePilotExpectedRows, seedPheCatalog } from "./phe-pilot-seed";
 import { createDb } from "./client";
@@ -265,6 +266,12 @@ async function main(): Promise<void> {
     // catalog it follows — `bms.point_keys` is fleet-wide and unpoliced since
     // `0057`/`0059`.
     await seedPointKeyHeadlineRanks(pool);
+
+    // `F4.300` C2 (ADR 0108) — same ordering as the headline ranks: after
+    // `seedPointKeyCatalog` AND `seedPheCatalog`, both of which insert rows with
+    // `trend_default` NULL. Fills only NULL, so an admin's `false` survives.
+    // No tenant context — `bms.point_keys` is fleet-wide.
+    await seedPointKeyTrendDefaults(pool);
 
     // `F3.74` D1 — the breaker state map. After `seedPointKeyCatalog`: its rows reference
     // `breaker_main` and `breaker_trip`. Global vocabulary, no tenant context (no policy).

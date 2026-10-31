@@ -239,6 +239,7 @@
     "tests/adr-0108-no-org-or-segment-literals.test.ts",
     "tests/f4.297-asset-history-route.test.ts",
     "tests/f4.300-trend-points-schema.test.ts",
-    "tests/f4.300-trend-points-schema.integration.test.ts"
+    "tests/f4.300-trend-points-schema.integration.test.ts",
+    "tests/f4.300-point-key-trend-defaults-seed.integration.test.ts"
   ]
 }
