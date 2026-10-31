@@ -93,8 +93,11 @@ export function isCalendarDate(value: string): boolean {
  * least one site: an absent filter is the unfiltered report, so `[]` would be a
  * second spelling of it and is refused. A repeated id is refused too: the save
  * stamps the list as given, and "scoped to 2 locations" for one site would be wrong.
+ *
+ * Exported since `F4.298` (ADR 0108 decision 2): `energyViewQuerySchema` takes the
+ * same filter by reference rather than a copy.
  */
-const reportSiteFilterSchema = z
+export const reportSiteFilterSchema = z
   .array(z.string().uuid())
   .min(1)
   .max(200)

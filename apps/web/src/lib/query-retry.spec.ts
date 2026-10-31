@@ -91,7 +91,7 @@ export function runRetryableStatusTests(): void {
 /**
  * The conservative half of the ruling.
  *
- * About twenty clients — `alarms.ts`, `dashboard.ts`, `energy-dashboard.ts`,
+ * About twenty clients — `alarms.ts`, `dashboard.ts`, `energy-view.ts`,
  * `locations.ts`, `assets.ts` — throw a plain `Error` with no status. Their
  * behaviour must be **byte-identical** to before this change, because the
  * defect was measured on an `adminFetch` path and nothing licensed touching

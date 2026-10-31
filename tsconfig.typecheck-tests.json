@@ -235,6 +235,7 @@
     "tests/f4.130-nginx-cache-headers.test.ts",
     "tests/f4.267-vision-model-migration.test.ts",
     "tests/f4.247-copilot-precondition-schema.test.ts",
-    "tests/f4.284-copilot-risk-operational.test.ts"
+    "tests/f4.284-copilot-risk-operational.test.ts",
+    "tests/adr-0108-no-org-or-segment-literals.test.ts"
   ]
 }

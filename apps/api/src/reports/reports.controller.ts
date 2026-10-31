@@ -9,10 +9,12 @@ import {
 } from "@nestjs/common";
 import type { Response } from "express";
 import { ZodError } from "zod";
-import type { JwtPayload } from "@bms/shared";
+import { energyViewQuerySchema } from "@bms/shared";
+import type { EnergyFilterOptions, EnergyView, JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { EnergyViewService } from "./energy-view.service";
 import { ReportScopeService } from "./report-scope";
 import { energyReportQuerySchema } from "./reports.schema";
 import { ReportsService } from "./reports.service";
@@ -30,6 +32,7 @@ export class ReportsController {
   constructor(
     private readonly reports: ReportsService,
     private readonly scope: ReportScopeService,
+    private readonly energyViews: EnergyViewService,
   ) {}
 
   @Get("energy/preview")
@@ -163,5 +166,36 @@ export class ReportsController {
     // users would leak across scopes, exactly as on the CSV and XLSX routes.
     res.setHeader("Cache-Control", "no-store");
     res.send(body);
+  }
+
+  /**
+   * `F4.298` (ADR 0108 decision 2) — the Energy page's filter and KPI view: a
+   * sibling of the preview, never a widened preview, so the preview and the
+   * three exports stay as they are. `no-store`: the answer depends on the
+   * caller's scope, the CSV route's reason.
+   */
+  @Get("energy/view")
+  @Header("Cache-Control", "no-store")
+  async energyView(@CurrentUser() user: JwtPayload, @Query() query: unknown): Promise<EnergyView> {
+    try {
+      const dto = energyViewQuerySchema.parse(query);
+      return await this.energyViews.view(user, dto);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F4.298` (ADR 0108 decision 2.7) — the caller's readable organizations and
+   * locations, for every role (`/admin/organizations` and `/admin/locations`
+   * refuse `operator` and `viewer`). No query, so no registry entry.
+   */
+  @Get("energy/filter-options")
+  @Header("Cache-Control", "no-store")
+  async energyFilterOptions(@CurrentUser() user: JwtPayload): Promise<EnergyFilterOptions> {
+    return this.energyViews.filterOptions(user);
   }
 }

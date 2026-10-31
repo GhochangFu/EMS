@@ -8,6 +8,10 @@ import {
   namedSitesReadTheSubtreesReadableAssets,
   noLocationIdsNeverCallsTheLocationService,
   noLocationIdsReadsTheCallersReadableAssets,
+  placeForCallerKeepsTheAdminsNotFoundA400,
+  placeForCallerKeepsTheOrganization,
+  placeForCallerOutsideTheGrantIsA403,
+  placeForCallerRefusesAForeignLocationWithA403,
   theCandidatesAreTheCallersReadableOrganizations,
   theGlobalAdminsCandidatesAreTheLocationsOrganizations,
   theSavesReadIsBoundToItsOrganization,
@@ -25,4 +29,11 @@ describe("F4.290 — ReportScopeService (ADR 0099 Amendment 9 E4)", () => {
   it("a location outside the grant is a 403", () => aLocationOutsideTheGrantIsA403());
   it("locations of several organizations are a 400", () => locationsOfSeveralOrganizationsAreA400());
   it("the save's read is bound to its organization", () => theSavesReadIsBoundToItsOrganization());
+
+  describe("F4.298 — placeForCaller (ADR 0108 decision 2.2)", () => {
+    it("keeps the organization the locations resolved to", () => placeForCallerKeepsTheOrganization());
+    it("a scoped caller's foreign location is a 403, with no fleet read", () => placeForCallerRefusesAForeignLocationWithA403());
+    it("the global admin's unknown location stays a 400", () => placeForCallerKeepsTheAdminsNotFoundA400());
+    it("outside the grant is a 403", () => placeForCallerOutsideTheGrantIsA403());
+  });
 });

@@ -24,8 +24,15 @@
  * `F4.28` (ADR 0025) moved the remaining six rollup sites onto this module.
  */
 
-/** The four ADR 0023 levels, coarsest last. */
-export type AggregateLevel = "1m" | "5m" | "1h" | "1d";
+import type { AggregateLevel } from "@bms/shared";
+
+/**
+ * The four ADR 0023 levels, coarsest last. Declared once, in
+ * `packages/shared/src/contracts/aggregate-level.ts` (`F4.298`, ADR 0108
+ * decision 2.11, AGENTS §4.8); re-exported here so the api importers of this
+ * module keep their import.
+ */
+export type { AggregateLevel };
 
 /** Fine to coarse. The order `levelForRange` escalates along. */
 const LADDER: readonly AggregateLevel[] = ["1m", "5m", "1h", "1d"];

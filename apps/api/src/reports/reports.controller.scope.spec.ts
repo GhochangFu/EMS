@@ -34,6 +34,8 @@ function harness() {
         return SCOPED;
       },
     } as never,
+    // `F4.298`: the energy view service; the four routes here never reach it.
+    {} as never,
   );
   const res = { setHeader: () => undefined, send: () => undefined };
   const call = (route: Route, query: unknown) =>

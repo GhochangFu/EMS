@@ -53,6 +53,11 @@ import { ReportsService } from "./reports.service";
  * stateless, no loop) is provided and exported here beside `ReportsService`,
  * whose kWh expression it shares; the worker resolves it and never calls it.
  *
+ * `F4.298` (ADR 0108 decision 2): `CalcParametersService` is exported too, for
+ * `ReportsModule`'s `EnergyViewService` (the view's cost reads the tariff through
+ * the same `resolveForAssets` as the preview). Exporting the stateless provider adds no
+ * import, so the worker's closure is unchanged.
+ *
  * Nest wiring, uncovered like `main.ts`. The compose worker boot (U10) is
  * the DI gate — `pnpm build` is not.
  */
@@ -66,6 +71,6 @@ import { ReportsService } from "./reports.service";
     LocationSummaryService,
     { provide: REPORT_FILES_CONFIG, useFactory: () => readReportFilesConfig(process.env) },
   ],
-  exports: [ReportsService, ReportRenderService, ReportDispatchService, LocationSummaryService, REPORT_FILES_CONFIG],
+  exports: [ReportsService, CalcParametersService, ReportRenderService, ReportDispatchService, LocationSummaryService, REPORT_FILES_CONFIG],
 })
 export class ReportsCoreModule {}

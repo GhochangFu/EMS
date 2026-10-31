@@ -21,6 +21,11 @@
  * until its module resolution changes, which is its own decision.
  */
 export * from "./admin";
+// F4.298 (ADR 0108 decisions 2.8 and 2.11): the one AggregateLevel enum, the
+// energy view contract, and the one site time-zone chain.
+export * from "./aggregate-level";
+export * from "./energy-view";
+export * from "./time-zone-chain";
 export * from "./ai-assistant";
 export * from "./asset-dashboards";
 export * from "./asset-images";

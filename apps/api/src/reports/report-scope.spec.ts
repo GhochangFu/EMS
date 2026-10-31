@@ -136,3 +136,46 @@ export async function theSavesReadIsBoundToItsOrganization(): Promise<void> {
   await service.assetIdsInOrganization(USER, ORG_B, [SITE]);
   expect(placeCalls).toEqual([{ candidates: [ORG_B], locationIds: [SITE] }]);
 }
+
+// --- `F4.298` U4: `placeForCaller`, the energy view's place ----------------
+
+/** The energy view keeps the organization the locations resolved to, beside the asset ids. */
+export async function placeForCallerKeepsTheOrganization(): Promise<void> {
+  const { service, placeCalls } = fake({
+    readableOrganizations: [ORG_A, ORG_B],
+    place: { ok: true, organizationId: ORG_B, assetIds: [ASSET_2] },
+  });
+  expect(await service.placeForCaller(USER, [SITE])).toEqual({ organizationId: ORG_B, assetIds: [ASSET_2] });
+  expect(placeCalls).toEqual([{ candidates: [ORG_A, ORG_B], locationIds: [SITE] }]);
+}
+
+/**
+ * A scoped caller: a location found in none of the caller's organizations is a
+ * 403 (ADR 0108 decision 2.2 — another organization's site is refused as
+ * outside the grant), and the fleet pool never reads that site's organization.
+ */
+export async function placeForCallerRefusesAForeignLocationWithA403(): Promise<void> {
+  const { service, fleetReads } = fake({ readableOrganizations: [ORG_A], place: { ok: false, reason: "not_found" } });
+  const err = await thrown(service.placeForCaller(USER, [SITE]));
+  expect([err instanceof ForbiddenException, (err as Error).message]).toEqual([true, LOCATION_IDS_OUTSIDE_SCOPE]);
+  expect(fleetReads).toEqual([]);
+}
+
+/** The global admin: the candidates are the locations' own organizations, and an unknown id stays a 400. */
+export async function placeForCallerKeepsTheAdminsNotFoundA400(): Promise<void> {
+  const { service, placeCalls } = fake({
+    readableOrganizations: null,
+    locationOrganizations: [ORG_B],
+    place: { ok: false, reason: "not_found" },
+  });
+  const err = await thrown(service.placeForCaller(USER, [SITE]));
+  expect([err instanceof BadRequestException, (err as Error).message]).toEqual([true, LOCATION_IDS_OUTSIDE_ORGANIZATION]);
+  expect(placeCalls[0]?.candidates).toEqual([ORG_B]);
+}
+
+/** `outside_grant` stays a 403 for `placeForCaller` too. */
+export async function placeForCallerOutsideTheGrantIsA403(): Promise<void> {
+  const { service } = fake({ place: { ok: false, reason: "outside_grant" } });
+  const err = await thrown(service.placeForCaller(USER, [SITE]));
+  expect([err instanceof ForbiddenException, (err as Error).message]).toEqual([true, LOCATION_IDS_OUTSIDE_SCOPE]);
+}

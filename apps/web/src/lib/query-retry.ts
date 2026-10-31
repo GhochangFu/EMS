@@ -24,7 +24,7 @@ import { ApiError } from "./api-error";
  * `useSystemStatus` sets `retry: 1`, owner ruling under ADR 0075, so a hung
  * status read turns the status bar red in about 21 s.) Meanwhile `adminFetch`
  * is only one of about twenty throw sites: `alarms.ts`, `dashboard.ts`,
- * `energy-dashboard.ts`, `locations.ts` and `assets.ts` all throw a plain
+ * `energy-view.ts`, `locations.ts` and `assets.ts` all throw a plain
  * `Error` with no status attached.
  *
  * So the rule refuses to retry **only** what it can positively identify as a

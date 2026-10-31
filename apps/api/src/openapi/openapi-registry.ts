@@ -135,6 +135,7 @@ import {
   updateWorkOrderStatusBodySchema,
   createReportScheduleBodySchema,
   energyReportQuerySchema,
+  energyViewQuerySchema,
   saveEnergyReportFileBodySchema,
   updateReportScheduleBodySchema,
 } from "@bms/shared";
@@ -358,6 +359,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   ReportsController_energyCsv: energyReportQuerySchema,
   ReportsController_energyPdf: energyReportQuerySchema,
   ReportsController_energyPreview: energyReportQuerySchema,
+  // `F4.298` (ADR 0108 decision 2.2). `_energyFilterOptions` is absent — no
+  // body and no query; the docblock above says why.
+  ReportsController_energyView: energyViewQuerySchema,
   ReportsController_energyXlsx: energyReportQuerySchema,
   RtusAdminController_create: createRtuBodySchema,
   RtusAdminController_update: updateRtuBodySchema,
