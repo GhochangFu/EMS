@@ -1,6 +1,12 @@
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aggregateCustomSendsNoWindowMinutes,
+  aggregateHalfPairIsNotSent,
+  aggregateSendsBucketStatsOnlyWhenTrue,
+  aggregateTrailingSendsNoFromTo,
+  rawReadDefaultsAndFailures,
+  rawReadHitsRawWithLimitAndBefore,
   hitsTheAtInstantPath,
   latestHitsTheLatestPath,
   latestParsesTheResponse,
@@ -74,5 +80,36 @@ describe("F4.176 telemetry web client — fetchPointsLatest", () => {
 
   it("throws on a non-2xx response", async () => {
     await latestThrowsOnANon2xxResponse();
+  });
+});
+
+describe("F4.297 telemetry web client — aggregate range and raw records", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("sends a trailing window with no from/to", async () => {
+    await aggregateTrailingSendsNoFromTo();
+  });
+
+  it("sends a custom range with no windowMinutes", async () => {
+    await aggregateCustomSendsNoWindowMinutes();
+  });
+
+  it("does not send a half pair", async () => {
+    await aggregateHalfPairIsNotSent();
+  });
+
+  it("sends bucketStats only when true", async () => {
+    await aggregateSendsBucketStatsOnlyWhenTrue();
+  });
+
+  it("reads raw records with limit and before", async () => {
+    await rawReadHitsRawWithLimitAndBefore();
+  });
+
+  it("defaults, refuses a bad body and throws on non-2xx for raw records", async () => {
+    await rawReadDefaultsAndFailures();
   });
 });

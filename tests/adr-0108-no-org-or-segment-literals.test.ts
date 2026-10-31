@@ -56,6 +56,8 @@ const MODULES: readonly string[] = [
   "apps/web/src/api/energy-view.ts",
   "apps/web/src/lib/energy-view-filter.ts",
   "apps/web/src/components/energy-filter-bar.tsx",
+  "apps/web/src/lib/asset-history-range.ts",
+  "apps/web/src/lib/asset-history-chart-option.ts",
 ];
 
 /**

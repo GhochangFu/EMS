@@ -2,7 +2,7 @@ import { expect, vi } from "vitest";
 
 import { encodePointRef } from "@bms/shared";
 
-import { fetchPointValuesAt, fetchPointsLatest } from "./telemetry";
+import { fetchPointAggregate, fetchPointRawRecords, fetchPointValuesAt, fetchPointsLatest } from "./telemetry";
 
 /**
  * `F3.28` task 2.6 — what `fetchPointValuesAt` puts on the wire, and that it
@@ -142,4 +142,85 @@ export async function latestRefusesABodyWithoutItems(): Promise<void> {
 export async function latestThrowsOnANon2xxResponse(): Promise<void> {
   vi.stubGlobal("fetch", async () => new Response("nope", { status: 403 }));
   await expect(fetchPointsLatest([ASSET_A], ["kw"])).rejects.toThrow();
+}
+
+// ---------------------------------------------------------------------------
+// `F4.297` U4 (ADR 0108) — `fetchPointAggregate` range options, `fetchPointRawRecords`.
+// ---------------------------------------------------------------------------
+
+const AGGREGATE_RESPONSE = {
+  pointRef: REF_A,
+  from: AT,
+  to: AT,
+  bucketSeconds: 60,
+  stats: { sum: null, average: null, min: null, max: null, peakAt: null, sampleCount: 0 },
+  buckets: [],
+  compare: null,
+};
+
+/** A trailing window sends `windowMinutes` and no `from`/`to`. */
+export async function aggregateTrailingSendsNoFromTo(): Promise<void> {
+  const seen = captureUrl(AGGREGATE_RESPONSE);
+  await fetchPointAggregate(REF_A, { windowMinutes: 60 });
+  const params = seen().searchParams;
+  expect(params.get("windowMinutes")).toBe("60");
+  expect(params.has("from")).toBe(false);
+  expect(params.has("to")).toBe(false);
+}
+
+/** A custom range sends `from`/`to` and never `windowMinutes`. */
+export async function aggregateCustomSendsNoWindowMinutes(): Promise<void> {
+  const seen = captureUrl(AGGREGATE_RESPONSE);
+  await fetchPointAggregate(REF_A, { from: AT, to: "2026-09-23T11:00:00.000Z", windowMinutes: 60 });
+  const params = seen().searchParams;
+  expect(params.get("from")).toBe(AT);
+  expect(params.get("to")).toBe("2026-09-23T11:00:00.000Z");
+  expect(params.has("windowMinutes")).toBe(false);
+}
+
+/** A half pair (only `from`) is not sent at all: the window applies. */
+export async function aggregateHalfPairIsNotSent(): Promise<void> {
+  const seen = captureUrl(AGGREGATE_RESPONSE);
+  await fetchPointAggregate(REF_A, { from: AT, windowMinutes: 60 });
+  const params = seen().searchParams;
+  expect(params.has("from")).toBe(false);
+  expect(params.get("windowMinutes")).toBe("60");
+}
+
+/** `bucketStats: true` is sent as `bucketStats=true`; absent otherwise. */
+export async function aggregateSendsBucketStatsOnlyWhenTrue(): Promise<void> {
+  const on = captureUrl(AGGREGATE_RESPONSE);
+  await fetchPointAggregate(REF_A, { windowMinutes: 60, bucketFunction: "avg", bucketStats: true });
+  expect(on().searchParams.get("bucketStats")).toBe("true");
+  const off = captureUrl(AGGREGATE_RESPONSE);
+  await fetchPointAggregate(REF_A, { windowMinutes: 60 });
+  expect(off().searchParams.has("bucketStats")).toBe(false);
+}
+
+const RAW_RESPONSE = {
+  pointRef: REF_A,
+  items: [{ time: AT, deviceTime: null, value: 3, unit: "kW" }],
+  nextBefore: AT,
+};
+
+/** The raw read goes to the `/raw` path, carries limit and before, and parses. */
+export async function rawReadHitsRawWithLimitAndBefore(): Promise<void> {
+  const seen = captureUrl(RAW_RESPONSE);
+  const result = await fetchPointRawRecords(REF_A, { limit: 25, before: AT });
+  const url = seen();
+  expect(url.pathname).toBe(`/api/v1/telemetry/points/${REF_A}/raw`);
+  expect(url.searchParams.get("limit")).toBe("25");
+  expect(url.searchParams.get("before")).toBe(AT);
+  expect(result).toEqual(RAW_RESPONSE);
+}
+
+/** With no options the query is empty; a malformed body is refused; a non-2xx throws. */
+export async function rawReadDefaultsAndFailures(): Promise<void> {
+  const seen = captureUrl(RAW_RESPONSE);
+  await fetchPointRawRecords(REF_A);
+  expect(seen().search).toBe("");
+  captureUrl({ pointRef: REF_A });
+  await expect(fetchPointRawRecords(REF_A)).rejects.toThrow();
+  vi.stubGlobal("fetch", async () => new Response("nope", { status: 403 }));
+  await expect(fetchPointRawRecords(REF_A)).rejects.toThrow();
 }
