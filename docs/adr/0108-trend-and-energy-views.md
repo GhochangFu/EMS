@@ -12,6 +12,16 @@ custom from/to picker works in the view's zone (site, else organization) and
 its label names that zone — not the browser's. Where a line below still says
 the owner confirms at review, these rulings are that confirmation.
 
+Nine plan questions were then ruled one at a time (recorded in each plan's
+"Owner answers" section). One changes decision 3: **F4.300 adds a `ups`
+segment** — a `ups` row in `bms.asset_domains`, the seven
+`CONTROL_ROOM_UPS_POINT_KEYS` codes re-filed from `electrical` to `ups`, and
+a `ups` default trend set — where this record below says the UPS codes stay
+under Electrical. The others confirm the plans: all four chart functions, the
+`/recent` 500 fix folded into F4.297 PR 1, an organization required for a
+global admin, a sample-average PF, a 365-day custom cap, replace-all with a cap
+of 12, and the Trend Points tab under Reference Data.
+
 Drafted 2026-10-31 (owner, in chat). The owner accepted every designer
 call in `docs/plans/2026-10-31-energy-and-trend-views-design.md` as a ruling and
 chose this one record for the whole set of rows (`F4.297`–`F4.304`), with one
