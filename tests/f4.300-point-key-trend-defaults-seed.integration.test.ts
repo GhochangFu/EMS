@@ -24,7 +24,11 @@ import {
  *   (so the seed can never name a code the catalog does not hold);
  *   `seed.ts` calls the function after `seedPointKeyHeadlineRanks(` and before
  *   the ESKOM `withOrganization` bracket.
- * - **I1** after `pnpm db:seed` every list code reads `trend_default = true`.
+ * - **I1** after `pnpm db:seed` every list code is decided (`trend_default IS
+ *   NOT NULL`). Not `= true`: C2 exists so an admin's `false` survives a
+ *   re-seed, and a `= true` check would then be red forever on that database
+ *   while green on CI's fresh one (AGENTS.md §4.6, the F4.40 history class).
+ *   The seed's own `true` is I2's positive control, on a per-run fixture.
  * - **I2** a decided `false` is never reverted (C2), while a fresh NULL code in
  *   the same call flips to `true` (adjacent positive control).
  * - **I3** the function returns the changed-row count; a second call returns 0.
@@ -158,7 +162,7 @@ describe.skipIf(!ownerUrl)("F4.300 U4 — seedPointKeyTrendDefaults (database)",
   }
 
   // I1
-  it("I1 holds trend_default = true for every list code after pnpm db:seed", async () => {
+  it("I1 leaves no list code undecided (trend_default IS NOT NULL) after pnpm db:seed", async () => {
     if (!pool) throw new Error("pool not initialised");
     const { rows } = await pool.query<{ code: string; trend_default: boolean | null }>(
       `SELECT code, trend_default FROM bms.point_keys WHERE code = ANY($1::text[])`,
@@ -167,7 +171,7 @@ describe.skipIf(!ownerUrl)("F4.300 U4 — seedPointKeyTrendDefaults (database)",
     expect(rows.length, "every list code must be seeded in the catalog — run pnpm db:seed first").toBe(
       TREND_DEFAULT_SEED.length,
     );
-    for (const row of rows) expect(row.trend_default, `${row.code} must be true`).toBe(true);
+    for (const row of rows) expect(row.trend_default, `${row.code} must be decided`).not.toBeNull();
   });
 
   // I2 (C2)

@@ -24,10 +24,12 @@ import {
  *
  * - **S1/S2** (static): the pack row exists; the seed files the UPS array under
  *   `ups`, and no other `keysForDomain` line names the array.
- * - **I1** after `pnpm db:seed` the `ups` row is active and placed directly
- *   after `electrical`.
- * - **I2** the seven codes read `domain = 'ups'`, all active, and none reads
- *   `electrical`.
+ * - **I1** after `pnpm db:seed` the `ups` row is active and sorts after
+ *   `electrical` and before `hvac` (S1 pins the exact `15`; a pack domain
+ *   placed at 11-14 must not redden this).
+ * - **I2** the seven codes read `domain = 'ups'`, and none reads
+ *   `electrical`. Not "all active": an admin may retire one, and the check
+ *   would then be red forever on that database (AGENTS.md §4.6, F4.40).
  * - **I3** the re-file reaches a database seeded before this change: with the
  *   seven codes set back to `electrical` inside a rolled-back transaction, one
  *   seed pass files them under `ups` again (`domain = EXCLUDED.domain`).
@@ -35,9 +37,13 @@ import {
  *   asset code (`CR-UPS-*`, `CR-BATT-*`) and on the point code, never on
  *   `point_keys.domain`, so the seeded UPS and battery assets keep their asset
  *   domain and every seeded `CR_BATT_*` rule the view reads still targets an
- *   active catalog code — now filed under `ups`.
- * - **I5** the trend-point resolution over the real catalog puts the UPS
- *   default set in the `ups` segment and no UPS code in `electrical`.
+ *   catalog code — now filed under `ups` (its `active` flag is an admin's to
+ *   change, so not asserted here).
+ * - **I5** the trend-point resolution over the real catalog filing puts the
+ *   UPS default set in the `ups` segment and no UPS code in `electrical`. The
+ *   flags come from `TREND_DEFAULT_SEED` (every code active), not from the
+ *   rows, so an admin's `false` or a retire cannot redden it; the filing
+ *   (`point_keys.domain`) and the segments are the database's.
  */
 
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "..");
@@ -108,23 +114,28 @@ describe.skipIf(!fleetUrl || !ownerUrl)("F4.300 U4b — the ups segment (databas
     return fleet;
   }
 
-  it("I1 holds an active ups row placed directly after electrical", async () => {
+  it("I1 holds an active ups row ordered after electrical and before hvac", async () => {
     const { rows } = await db().query<{ code: string; label: string; active: boolean }>(
       `SELECT code, label, active FROM bms.asset_domains ORDER BY sort_order, code`,
     );
     const at = rows.findIndex((r) => r.code === "ups");
     expect(at, "no ups row — run pnpm db:seed first").toBeGreaterThan(-1);
     expect(rows[at]).toEqual({ code: "ups", label: "UPS", active: true });
-    expect(rows[at - 1]?.code).toBe("electrical");
+    const electrical = rows.findIndex((r) => r.code === "electrical");
+    const hvac = rows.findIndex((r) => r.code === "hvac");
+    expect(electrical, "precondition: electrical is seeded").toBeGreaterThan(-1);
+    expect(hvac, "precondition: hvac is seeded").toBeGreaterThan(-1);
+    expect(at, "ups sorts after electrical").toBeGreaterThan(electrical);
+    expect(at, "ups sorts before hvac").toBeLessThan(hvac);
   });
 
-  it("I2 files the seven UPS codes under ups, all active", async () => {
-    const { rows } = await db().query<{ code: string; domain: string | null; active: boolean }>(
-      `SELECT code, domain, active FROM bms.point_keys WHERE code = ANY($1::text[]) ORDER BY code`,
+  it("I2 files the seven UPS codes under ups", async () => {
+    const { rows } = await db().query<{ code: string; domain: string | null }>(
+      `SELECT code, domain FROM bms.point_keys WHERE code = ANY($1::text[]) ORDER BY code`,
       [UPS],
     );
     expect(rows).toHaveLength(7);
-    for (const row of rows) expect(row, row.code).toEqual({ code: row.code, domain: "ups", active: true });
+    for (const row of rows) expect(row, row.code).toEqual({ code: row.code, domain: "ups" });
   });
 
   it("I2b leaves no UPS code under electrical", async () => {
@@ -172,9 +183,9 @@ describe.skipIf(!fleetUrl || !ownerUrl)("F4.300 U4b — the ups segment (databas
     for (const row of rows) expect(row.domain, row.code).toBe("electrical");
   });
 
-  it("I4b every seeded CR_BATT rule the UPS view reads targets an active code filed under ups", async () => {
-    const { rows } = await db().query<{ rule: string; point_key: string; domain: string | null; active: boolean | null }>(
-      `SELECT r.code AS rule, r.point_key, pk.domain, pk.active
+  it("I4b every seeded CR_BATT rule the UPS view reads targets a catalog code filed under ups", async () => {
+    const { rows } = await db().query<{ rule: string; point_key: string; domain: string | null }>(
+      `SELECT r.code AS rule, r.point_key, pk.domain
          FROM bms.automation_rules r
          JOIN bms.assets a ON a.id = r.asset_id
          LEFT JOIN bms.point_keys pk ON pk.code = r.point_key
@@ -188,7 +199,7 @@ describe.skipIf(!fleetUrl || !ownerUrl)("F4.300 U4b — the ups segment (databas
     expect(rows.length, "anti-vacuity: the seeded CR_BATT_* rules").toBeGreaterThanOrEqual(4);
     for (const row of rows) {
       expect(UPS, `${row.rule} targets ${row.point_key}`).toContain(row.point_key);
-      expect({ domain: row.domain, active: row.active }, row.rule).toEqual({ domain: "ups", active: true });
+      expect(row.domain, row.rule).toBe("ups");
     }
   });
 
@@ -201,17 +212,17 @@ describe.skipIf(!fleetUrl || !ownerUrl)("F4.300 U4b — the ups segment (databas
       name: string;
       unit: string | null;
       domain: string | null;
-      active: boolean;
-      trend_default: boolean | null;
       headline_rank: number | null;
-    }>(`SELECT code, name, unit, domain, active, trend_default, headline_rank FROM bms.point_keys`);
+    }>(`SELECT code, name, unit, domain, headline_rank FROM bms.point_keys`);
+    // The seed's flags, every code active: the claim is the filing, not an
+    // admin's later edit of the flag or the active state.
     const rows: TrendCatalogRow[] = catalog.rows.map((r) => ({
       code: r.code,
       name: r.name,
       unit: r.unit,
       domain: r.domain,
-      active: r.active,
-      trendDefault: r.trend_default,
+      active: true,
+      trendDefault: TREND_DEFAULT_SEED.includes(r.code),
       headlineRank: r.headline_rank,
     }));
     const segments = resolveSegments(
