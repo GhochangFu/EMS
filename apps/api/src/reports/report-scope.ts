@@ -106,6 +106,31 @@ export class ReportScopeService {
     return this.assetIdsIn(jwt, candidates, locationIds);
   }
 
+  /**
+   * `F4.298` (ADR 0108 decision 2.2) — the energy view's place: the one
+   * organization the named locations lie in, beside the caller's readable
+   * asset ids of their subtrees. `assetIdsForCaller` discards the
+   * organization; the view needs it for the zone and the organization check.
+   *
+   * The candidates are those of `assetIdsForCaller`. One answer differs: for a
+   * caller with an organization scope, a location found in none of the
+   * caller's organizations is a **403** (outside the grant), not the 400 the
+   * report routes give. The decision orders the checks so a location of
+   * another organization the caller cannot read is a 403, and the fleet pool
+   * still never reads that location's organization. The global admin reads
+   * every organization, so an id it names that matches no row stays a 400.
+   */
+  async placeForCaller(jwt: JwtPayload, locationIds: readonly string[]): Promise<{ organizationId: string; assetIds: string[] }> {
+    const readable = await this.access.readableOrganizationIds(jwt);
+    const candidates = readable ?? (await this.organizationsOf(locationIds));
+    const place = await this.locationScope.readableAssetIdsInLocations(jwt, candidates, locationIds);
+    if (!place.ok) {
+      if (place.reason === "not_found" && readable !== null) throw locationIdsRefusal("outside_grant");
+      throw locationIdsRefusal(place.reason);
+    }
+    return { organizationId: place.organizationId, assetIds: [...place.assetIds] };
+  }
+
   /** The on-demand save: the named sites' readable assets in the one organization the save resolved. */
   async assetIdsInOrganization(jwt: JwtPayload, organizationId: string, locationIds: readonly string[]): Promise<string[]> {
     return this.assetIdsIn(jwt, [organizationId], locationIds);

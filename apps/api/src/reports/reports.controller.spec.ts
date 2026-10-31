@@ -110,6 +110,7 @@ export async function runReportsXlsxHeaderTests(): Promise<void> {
       },
     } as never,
     { assetIdsForCaller: async () => null } as never,
+    {} as never,
   );
 
   const out = stubResponse();
@@ -162,6 +163,7 @@ export async function runReportsPdfHeaderTests(): Promise<void> {
       },
     } as never,
     { assetIdsForCaller: async () => null } as never,
+    {} as never,
   );
 
   const out = stubResponse();

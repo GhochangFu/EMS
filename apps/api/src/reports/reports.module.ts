@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { NotificationsCoreModule } from "../notifications/notifications-core.module";
+import { EnergyViewService } from "./energy-view.service";
 import { ReportFilesController } from "./report-files.controller";
 import { ReportFilesService } from "./report-files.service";
 import { ReportProposalCheckService } from "./report-proposal-check.service";
@@ -48,6 +49,10 @@ import { ReportsCoreModule } from "./reports-core.module";
  * loop-free core: it injects `LocationAssetScopeService` from the `@Global()`
  * `AuthModule`, which `WorkerModule` does not import, and the worker renders
  * schedules with no caller to scope.
+ *
+ * `F4.298` (ADR 0108 decision 2) — `EnergyViewService` (the Energy page's view
+ * and filter options) is provided here for the same reason: it injects
+ * `ReportScopeService`, so it can never sit in the loop-free core.
  */
 @Module({
   imports: [ReportsCoreModule, NotificationsCoreModule],
@@ -57,6 +62,7 @@ import { ReportsCoreModule } from "./reports-core.module";
     ReportSchedulesService,
     ReportProposalCheckService,
     ReportScopeService,
+    EnergyViewService,
     MasterDataAuditService,
     JwtAuthGuard,
   ],
