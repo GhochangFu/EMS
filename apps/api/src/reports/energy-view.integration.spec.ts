@@ -122,6 +122,29 @@ export async function aParentWithUnreadableChildrenIsPartialAndExcludesTheirAsse
   if (telemetryStatements(h.recorder).length === 0) fail("no telemetry statement was recorded — the recorder is dead");
 }
 
+/**
+ * An inactive site is not a selected site. `foreignOrgAdmin` (organization_admin
+ * of B) reads every active location of B; with X1 made inactive, naming X is
+ * one site of one, so the page shows no partial note. The positive first: with
+ * X1 active, the same request counts two of two (the fixture is visible). The
+ * flag is restored inside the suite's transaction.
+ */
+export async function anInactiveChildIsNotCountedAsAnUnreadableSite(h: EnergyViewHarness, pool: pg.Pool): Promise<void> {
+  const before = (await h.controller.energyView(h.fx.foreignOrgAdmin, { ...aroundNow(), locationIds: [h.fx.nodes.X] })) as EnergyView;
+  if (JSON.stringify(before.partial) !== JSON.stringify({ readableSites: 2, selectedSites: 2 })) {
+    fail(`partial with X1 active: ${JSON.stringify(before.partial)}, expected 2 of 2 sites`);
+  }
+  await pool.query("UPDATE bms.locations SET active = false WHERE id = $1", [h.fx.nodes.X1]);
+  try {
+    const view = (await h.controller.energyView(h.fx.foreignOrgAdmin, { ...aroundNow(), locationIds: [h.fx.nodes.X] })) as EnergyView;
+    if (JSON.stringify(view.partial) !== JSON.stringify({ readableSites: 1, selectedSites: 1 })) {
+      fail(`partial with X1 inactive: ${JSON.stringify(view.partial)}, expected 1 of 1 site (an inactive child is not unreadable)`);
+    }
+  } finally {
+    await pool.query("UPDATE bms.locations SET active = true WHERE id = $1", [h.fx.nodes.X1]);
+  }
+}
+
 /** Cross-tenant: `organizationId` of B for a caller scoped to A is a 403, and no telemetry is read. */
 export async function anotherOrganizationIdIsA403WithNoTelemetry(h: EnergyViewHarness): Promise<void> {
   h.recorder.statements.length = 0;

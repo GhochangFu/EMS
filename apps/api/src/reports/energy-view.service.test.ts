@@ -7,6 +7,7 @@ import {
   aLocationWithNoZoneUsesTheOrganizations,
   aNonEmptyScopeReadsThePool,
   aScopedCallerGetsTheCounts,
+  anInactiveChildIsDroppedBeforeTheCount,
   aSingleOrganizationCallerGetsThatOrganization,
   aStoredUtcIsComputedOnEtcUtc,
   anEmptyScopeTouchesNoPool,
@@ -46,6 +47,7 @@ describe("F4.298 — EnergyViewService (ADR 0108 decision 2)", () => {
     it("compare reads two periods that never overlap", () => compareReadsTwoPeriods());
     it("a global reader gets no partial", () => aGlobalReaderGetsNoPartial());
     it("a scoped caller gets the counts", () => aScopedCallerGetsTheCounts());
+    it("an inactive child is dropped before the count", () => anInactiveChildIsDroppedBeforeTheCount());
   });
 
   describe("the asset-id bound", () => {

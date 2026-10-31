@@ -42,6 +42,8 @@ type Options = {
   locationZone?: string | null;
   /** `expandLocationSubtrees`'s answer (the named locations' subtree). */
   subtree?: string[];
+  /** Ids of the subtree that are inactive: the active filter after the walk drops them. */
+  inactive?: string[];
   /** The organization's active locations (no location named). */
   organizationLocations?: string[];
   /** The fake telemetry answers: `true` returns one bucket of data. */
@@ -64,6 +66,8 @@ function periodRow() {
 function fake(options: Options = {}) {
   const calls: string[] = [];
   const statements: Statement[] = [];
+  /** The last subtree walk's answer, until the active filter reads it. */
+  let expanded: string[] | null = null;
   const access = {
     readableOrganizationIds: async () => {
       calls.push("readableOrganizationIds");
@@ -100,6 +104,12 @@ function fake(options: Options = {}) {
             calls.push("select:locations.timezone");
             return [{ timezone: options.locationZone === undefined ? null : options.locationZone }];
           }
+          if (table === locations && expanded !== null) {
+            calls.push("select:locations.activeSubtree");
+            const subtree = expanded;
+            expanded = null;
+            return subtree.filter((id) => !(options.inactive ?? []).includes(id)).map((id) => ({ id }));
+          }
           if (table === locations) {
             calls.push("select:locations");
             return (options.organizationLocations ?? [SITE_1, SITE_2]).map((id) => ({ id }));
@@ -110,7 +120,8 @@ function fake(options: Options = {}) {
     }),
     execute: async () => {
       calls.push("execute:subtree");
-      return { rows: (options.subtree ?? [SITE_1]).map((id) => ({ id })) };
+      expanded = options.subtree ?? [SITE_1];
+      return { rows: expanded.map((id) => ({ id })) };
     },
   };
   const pool = {
@@ -272,6 +283,21 @@ export async function aScopedCallerGetsTheCounts(): Promise<void> {
   const f = fake({ readableLocations: [SITE_1], organizationLocations: [SITE_1, SITE_2] });
   const view = await f.service.view(USER, TODAY);
   expect(view.partial).toEqual({ readableSites: 1, selectedSites: 2 });
+}
+
+/**
+ * A fully readable parent with an inactive child: the walk returns the child,
+ * the active filter drops it, and the counts are equal (no partial note).
+ */
+export async function anInactiveChildIsDroppedBeforeTheCount(): Promise<void> {
+  const f = fake({
+    readableLocations: [SITE_1, SITE_2],
+    subtree: [SITE_1, SITE_2, SITE_HIDDEN],
+    inactive: [SITE_HIDDEN],
+  });
+  const view = await f.service.view(USER, { ...TODAY, locationIds: [SITE_1] });
+  expect(f.calls).toContain("select:locations.activeSubtree");
+  expect(view.partial).toEqual({ readableSites: 2, selectedSites: 2 });
 }
 
 // --- the asset-id bound (decision 2.5) ------------------------------------

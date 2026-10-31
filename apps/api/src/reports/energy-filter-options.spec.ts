@@ -35,14 +35,21 @@ export function anUnreadableParentIsNull(): void {
 
 function fake(organizationRows: Array<{ id: string; code: string; name: string }>) {
   const where: unknown[] = [];
+  /** Each read's table and its `orderBy` columns, in call order. */
+  const orders: Array<{ table: unknown; columns: unknown[] }> = [];
   const fleetDb = {
     select: () => ({
       from: (table: unknown) => ({
-        where: async (condition: unknown) => {
+        where: (condition: unknown) => {
           where.push(condition);
-          if (table === organizations) return organizationRows;
-          if (table === locations) return [{ id: ROOT, name: "Root", parentId: null, organizationId: ORG_A }];
-          throw new Error("unexpected select");
+          return {
+            orderBy: async (...columns: unknown[]) => {
+              orders.push({ table, columns });
+              if (table === organizations) return organizationRows;
+              if (table === locations) return [{ id: ROOT, name: "Root", parentId: null, organizationId: ORG_A }];
+              throw new Error("unexpected select");
+            },
+          };
         },
       }),
     }),
@@ -59,7 +66,7 @@ function fake(organizationRows: Array<{ id: string; code: string; name: string }
     access,
     { placeForCaller: async () => ({ organizationId: ORG_A, assetIds: [] }) },
   );
-  return { service, where };
+  return { service, where, orders };
 }
 
 /** A global admin gets every active organization the read answers, and their locations. */
@@ -72,6 +79,20 @@ export async function aGlobalAdminGetsEveryActiveOrganization(): Promise<void> {
   const options = await f.service.filterOptions(ADMIN);
   expect(options.organizations).toEqual(organizationRows);
   expect(options.locations.map((l) => l.id)).toEqual([ROOT]);
+}
+
+/**
+ * Both reads carry an order, so the web's preselected first organization and
+ * the location list are the same on every refetch (no `ORDER BY` is the
+ * query plan's order). Organizations by name, then code; locations by name, then id.
+ */
+export async function bothReadsAreOrderedByName(): Promise<void> {
+  const f = fake([{ id: ORG_A, code: "A", name: "Org A" }]);
+  await f.service.filterOptions(ADMIN);
+  expect(f.orders).toEqual([
+    { table: organizations, columns: [organizations.name, organizations.code] },
+    { table: locations, columns: [locations.name, locations.id] },
+  ]);
 }
 
 /** A caller who reads no organization is answered with nothing, and no table is read. */

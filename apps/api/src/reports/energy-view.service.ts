@@ -152,7 +152,9 @@ export class EnergyViewService {
         organizationIds === null
           ? eq(organizations.active, true)
           : and(eq(organizations.active, true), inArray(organizations.id, organizationIds)),
-      );
+      )
+      // A stable order: the web preselects the first organization.
+      .orderBy(organizations.name, organizations.code);
     if (organizationRows.length === 0) return { organizations: [], locations: [] };
 
     const locationIds = await this.access.readableLocationIds(user);
@@ -172,7 +174,8 @@ export class EnergyViewService {
         organizationId: locations.organizationId,
       })
       .from(locations)
-      .where(locationIds === null ? inOrganizations : and(inOrganizations, inArray(locations.id, locationIds)));
+      .where(locationIds === null ? inOrganizations : and(inOrganizations, inArray(locations.id, locationIds)))
+      .orderBy(locations.name, locations.id);
     return { organizations: organizationRows, locations: nullUnreadableParents(locationRows) };
   }
 
@@ -216,9 +219,11 @@ export class EnergyViewService {
   }
 
   /**
-   * Decision 2.9: the named locations' subtree, or the organization's active
-   * locations, counted against the caller's readable locations. Two counts,
-   * never an id; `null` for a caller who reads every location.
+   * Decision 2.9: the named locations' active subtree, or the organization's
+   * active locations, counted against the caller's readable locations. Two
+   * counts, never an id; `null` for a caller who reads every location.
+   * `readableLocationIds` holds active locations only, so the walk's inactive
+   * nodes are dropped first: an inactive child is not an unreadable site.
    */
   private async partialFor(
     user: JwtPayload,
@@ -227,16 +232,25 @@ export class EnergyViewService {
   ): Promise<EnergyViewPartial | null> {
     const readable = await this.access.readableLocationIds(user);
     if (readable === null) return null;
-    const selected =
+    const subtree =
       named !== undefined && named.length > 0
         ? await expandLocationSubtrees(this.fleetDb, { organizationIds: [organizationId], ids: named })
-        : (
-            await this.fleetDb
-              .select({ id: locations.id })
-              .from(locations)
-              .where(and(eq(locations.organizationId, organizationId), eq(locations.active, true)))
-          ).map((row) => row.id);
-    return partialCoverage(selected, readable);
+        : null;
+    if (subtree !== null && subtree.length === 0) return partialCoverage([], readable);
+    const rows = await this.fleetDb
+      .select({ id: locations.id })
+      .from(locations)
+      .where(
+        and(
+          eq(locations.organizationId, organizationId),
+          eq(locations.active, true),
+          subtree === null ? undefined : inArray(locations.id, subtree),
+        ),
+      );
+    return partialCoverage(
+      rows.map((row) => row.id),
+      readable,
+    );
   }
 
   /** One period's KPIs: the reads of `energy-view-read.ts`, then cost and PUE as `ReportsService.energySummary`. */

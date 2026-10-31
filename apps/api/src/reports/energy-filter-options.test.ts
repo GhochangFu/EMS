@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   aCallerWithNoOrganizationReadsNothing,
   aGlobalAdminGetsEveryActiveOrganization,
+  bothReadsAreOrderedByName,
   anUnreadableParentIsNull,
 } from "./energy-filter-options.spec";
 
@@ -10,5 +11,6 @@ import {
 describe("F4.298 — energy filter options (ADR 0108 decision 2.7)", () => {
   it("a parent outside the readable rows is null", () => anUnreadableParentIsNull());
   it("a global admin gets every active organization", () => aGlobalAdminGetsEveryActiveOrganization());
+  it("both reads are ordered by name", () => bothReadsAreOrderedByName());
   it("a caller with no organization reads nothing", () => aCallerWithNoOrganizationReadsNothing());
 });

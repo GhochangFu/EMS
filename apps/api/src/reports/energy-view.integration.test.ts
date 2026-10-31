@@ -13,6 +13,7 @@ import { buildTreeFixture, type TreeFixture } from "../auth/location-tree.integr
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   aParentWithUnreadableChildrenIsPartialAndExcludesTheirAssets,
+  anInactiveChildIsNotCountedAsAnUnreadableSite,
   aReadableSiteWithAnotherOrganizationIsA400,
   aSiteOfAnotherOrganizationIsA403WithNoTelemetry,
   anotherOrganizationIdIsA403WithNoTelemetry,
@@ -77,6 +78,8 @@ describe.skipIf(!connectionString)("F4.298 — the energy view reads only the ca
 
   it("a parent with unreadable children is partial and excludes their assets", () =>
     aParentWithUnreadableChildrenIsPartialAndExcludesTheirAssets(h));
+  it("an inactive child is not counted as an unreadable site", () =>
+    anInactiveChildIsNotCountedAsAnUnreadableSite(h, pool as pg.Pool));
   it("organizationId of another organization is a 403 with no telemetry read", () => anotherOrganizationIdIsA403WithNoTelemetry(h));
   it("a site of another organization is a 403 with no telemetry read", () => aSiteOfAnotherOrganizationIsA403WithNoTelemetry(h));
   it("the own organization with a foreign site is a 403, not the mismatch 400", () => ownOrganizationWithAForeignSiteIsA403(h));
