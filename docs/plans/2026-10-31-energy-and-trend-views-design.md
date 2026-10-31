@@ -96,7 +96,10 @@ work for all current and future organizations. After the builder check: a
 generic trend report template for schedules (`F4.303`); kWh per m² as a later
 row (`F4.304`).
 
-## Calls made by the designer, not the owner (check these)
+## Calls made by the designer — accepted by the owner as written (2026-10-31)
+
+The owner accepted all of these as rulings on 2026-10-31, and chose one ADR
+(`0108`) for the whole set of rows, amended as later rows start.
 
 - **Contracts.** `F4.297` owns the `aggregate` change (custom `from`/`to`,
   compare); `F4.298` owns the energy preview change. One shape each, reused by
