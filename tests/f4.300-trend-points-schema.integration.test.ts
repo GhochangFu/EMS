@@ -149,7 +149,7 @@ describe.skipIf(!has)("F4.300 — trend points schema against a live database", 
       await client.query(`SET LOCAL app.current_organization = '${phewb}'`);
       await client.query(
         `INSERT INTO bms.org_trend_points (organization_id, domain, point_key, sort_order)
-         SELECT $1, 'electrical', code, 0 FROM bms.point_keys ORDER BY code LIMIT 1`,
+         SELECT $1, 'electrical', code, 0 FROM bms.point_keys ORDER BY created_at, code LIMIT 1`,
         [phewb],
       );
       await client.query("RESET ROLE");
@@ -171,7 +171,7 @@ describe.skipIf(!has)("F4.300 — trend points schema against a live database", 
       const r = await probe(
         run,
         `INSERT INTO bms.org_trend_points (organization_id, domain, point_key, sort_order)
-         SELECT $1, 'no-such-segment', code, 0 FROM bms.point_keys LIMIT 1`,
+         SELECT $1, 'no-such-segment', code, 0 FROM bms.point_keys ORDER BY created_at, code LIMIT 1`,
         [phewb],
       );
       expect(r.code).toBe("23503");

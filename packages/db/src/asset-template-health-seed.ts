@@ -516,7 +516,12 @@ SELECT
  * immutable (ADR 0015), so the template cannot follow the asset; the pin moves.
  *
  * Bounded to the seed's own rows — `asset_type = 'baseline'`, a `BASELINE-`
- * code, version 1 — of ANOTHER domain. An operator's own template is never
+ * code, at any version — of ANOTHER domain. Any version, not only 1: an
+ * operator who published a v2 of `BASELINE-ELECTRICAL-UPS` and migrated the
+ * assets to it would otherwise keep them on an `electrical` template, and the
+ * verify would stop every later boot (migration review, 2026-11-01). No version
+ * of another domain's template is valid for the asset, so the release loses
+ * nothing the verify would accept. An operator's own template is never
  * released (an operator pin across domains still stops the boot, as before),
  * and a same-domain v1 pin, which an operator may legally restore (ADR 0058
  * Amendment 3 decision 4), never matches `t.domain <> a.domain`.
@@ -531,7 +536,6 @@ WHERE a.organization_id = $1
   AND t.organization_id = $1
   AND t.asset_type = '${TEMPLATE_ASSET_TYPE}'
   AND t.code LIKE 'BASELINE-%'
-  AND t.version = 1
   AND t.domain <> a.domain
 `;
 

@@ -315,7 +315,7 @@ export function assertTheVerifyCountsRoledAssetsLeftOnTheDomainBaseline(): void 
  * database seeded before that, they stay pinned to `BASELINE-ELECTRICAL-UPS` /
  * `-BATTERY`, and the verify's `unpinned` would count them and stop the boot.
  * The release touches only a seed baseline (`asset_type = 'baseline'`, a
- * `BASELINE-` code, version 1) of ANOTHER domain: an operator's own template is
+ * `BASELINE-` code, at any version) of ANOTHER domain: an operator's own template is
  * never released, and a same-domain pin (an operator's legal move back to v1)
  * never matches `t.domain <> a.domain`.
  */
@@ -325,7 +325,8 @@ export function assertTheReleaseFreesOnlyACrossDomainSeedBaselinePin(): void {
   expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("t.domain <> a.domain");
   expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("t.asset_type = 'baseline'");
   expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("t.code LIKE 'BASELINE-%'");
-  expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("t.version = 1");
+  // Any version: a v2 of an electrical seed baseline is no more valid for a `ups` asset than v1.
+  expect(HEALTH_TEMPLATE_RELEASE_SQL).not.toMatch(/\bt\.version\b/);
   expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("a.organization_id = $1");
   expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("t.organization_id = $1");
 }
