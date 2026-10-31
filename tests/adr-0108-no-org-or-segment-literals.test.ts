@@ -51,19 +51,19 @@ const MODULES: readonly string[] = [
   "apps/api/src/telemetry/energy-sources.ts",
   "apps/api/src/reports/energy-view.service.ts",
   "apps/api/src/reports/energy-filter-options.ts",
+  "apps/web/src/api/energy-view.ts",
+  "apps/web/src/lib/energy-view-filter.ts",
+  "apps/web/src/components/energy-filter-bar.tsx",
 ];
 
 /**
  * `F4.298`'s planned runtime modules (`docs/plans/f4.298-energy-filter.md`
  * U2–U6) that do not exist yet. Each must stay absent until it is moved to
  * {@link MODULES}: a planned module that exists but is not scanned is a gap
- * this list turns red rather than leaving silent.
+ * this list turns red rather than leaving silent. Empty since U5; U6 rewrites
+ * `energy-page.tsx`, which pre-dates ADR 0108 and is not a new module.
  */
-const PENDING_MODULES: readonly string[] = [
-  "apps/web/src/api/energy-view.ts",
-  "apps/web/src/lib/energy-view-filter.ts",
-  "apps/web/src/components/energy-filter-bar.tsx",
-];
+const PENDING_MODULES: readonly string[] = [];
 
 /**
  * Files that are never scanned, each with its reason, so a later row does not
