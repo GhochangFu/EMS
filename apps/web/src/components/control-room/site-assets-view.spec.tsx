@@ -140,6 +140,17 @@ export async function pressingImagesOnARowMountsThatAssetsGallery(): Promise<voi
   expect(list).toHaveBeenCalledWith(SECOND_ASSET_ID);
 }
 
+/** F4.297 U6 - each asset row links to that asset's history page. */
+export async function eachRowLinksToThatAssetsHistory(): Promise<void> {
+  stubApi();
+  renderView();
+
+  const first = await screen.findByRole("link", { name: "History of CRAC-01" });
+  const second = screen.getByRole("link", { name: "History of CRAC-02" });
+  expect(first).toHaveAttribute("href", `/assets/${FIRST_ASSET_ID}/history`);
+  expect(second).toHaveAttribute("href", `/assets/${SECOND_ASSET_ID}/history`);
+}
+
 /**
  * K5 (F4.157 U8) — the header chip shows the typeLabel text, not the raw code.
  * It waits on the chip itself: the site name it waited on lived in the moved

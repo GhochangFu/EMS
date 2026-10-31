@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  eachRowLinksToThatAssetsHistory,
   pressingImagesOnARowMountsThatAssetsGallery,
   theAccessDeniedCardLinksToTheControlRoom,
   theHeaderChipShowsTheTypeLabel,
@@ -29,5 +30,9 @@ describe("F3.72 SiteAssetsView (moved from the F3.4 location dashboard)", () => 
 
   it("links the Access denied card back to the Control Room (OQ8)", async () => {
     await theAccessDeniedCardLinksToTheControlRoom();
+  });
+
+  it("F4.297 links each row to that asset's history page", async () => {
+    await eachRowLinksToThatAssetsHistory();
   });
 });

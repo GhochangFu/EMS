@@ -8,6 +8,7 @@ import {
   AssetImagesRow,
   AssetImagesToggleButton,
 } from "../assets/asset-images-row-toggle";
+import { AssetHistoryLink } from "../assets/asset-history-link";
 import { KpiTile } from "../kpi-tile";
 import { SectionCard } from "../section-card";
 import { StatusPill } from "../status-pill";
@@ -354,7 +355,8 @@ export function SiteAssetsView({ locationId }: SiteAssetsViewProps) {
                         <td className="px-3 py-2">
                           <div className="font-semibold text-ink">{asset.name}</div>
                           <div className="font-mono text-xs text-ink-muted">
-                            {asset.code}
+                            {asset.code}{" "}
+                            <AssetHistoryLink assetId={asset.id} code={asset.code} />
                           </div>
                           <div className="mt-1 text-[11px] uppercase tracking-wide text-ink-muted">
                             {asset.domain}

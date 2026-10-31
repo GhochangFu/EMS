@@ -66,6 +66,7 @@ const MODULES: readonly string[] = [
   "apps/web/src/components/asset-history/bucket-table.tsx",
   "apps/web/src/components/asset-history/raw-records-table.tsx",
   "apps/web/src/pages/asset-history-page.tsx",
+  "apps/web/src/components/assets/asset-history-link.tsx",
 ];
 
 /**

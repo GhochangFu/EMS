@@ -9,6 +9,7 @@ import { apiErrorMessage } from "../../lib/api-error-message";
 import { activeLabel, NONE, noDashboardsSentence } from "../../lib/asset-browser";
 import { AssetHealthCard } from "../asset-health/asset-health-card";
 import { StatusPill } from "../status-pill";
+import { AssetHistoryLink } from "./asset-history-link";
 import { AssetKpisCard } from "./asset-kpis-card";
 
 /**
@@ -83,6 +84,7 @@ export function AssetDetailPanel({ asset, domainLabel, onClose }: AssetDetailPan
             </div>
           ))}
         </dl>
+        <AssetHistoryLink assetId={asset.id} code={asset.code} />
 
         {healthQ.isLoading ? <p className="text-xs text-ink-muted">Loading health…</p> : null}
         {healthQ.isError ? (

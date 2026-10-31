@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type { AlarmDetailsResponse } from "@bms/shared";
@@ -98,7 +99,9 @@ async function renderPanel(payload: AlarmDetailsResponse, readOnly = false): Pro
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
-      <AlarmDetailsPanel alarmId="alarm-1" readOnly={readOnly} onClose={() => {}} />
+      <MemoryRouter>
+        <AlarmDetailsPanel alarmId="alarm-1" readOnly={readOnly} onClose={() => {}} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
   await waitFor(() => {
@@ -258,11 +261,20 @@ export async function detailsLoadFailureReadsTheEnvelopeSentence(): Promise<void
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={qc}>
-      <AlarmDetailsPanel alarmId="alarm-1" readOnly={false} onClose={() => {}} />
+      <MemoryRouter>
+        <AlarmDetailsPanel alarmId="alarm-1" readOnly={false} onClose={() => {}} />
+      </MemoryRouter>
     </QueryClientProvider>,
   );
 
   const alert = await screen.findByRole("alert");
   expect(alert).toHaveTextContent(sentence);
   expect(alert.textContent).not.toContain('{"');
+}
+
+/** F4.297 U6 - the asset code in the header links to that asset's history page. */
+export async function linksTheAssetToItsHistory(): Promise<void> {
+  await renderPanel(details());
+  const link = screen.getByRole("link", { name: "History of PMP-01" });
+  expect(link).toHaveAttribute("href", "/assets/asset-1/history");
 }

@@ -10,6 +10,7 @@ import {
   emptyDashboardsSentenceDependsOnTemplateId,
   filtersNarrowTheTable,
   panelCarriesNoWriteAffordance,
+  panelLinksToTheAssetHistory,
   panelListsDashboardsWithSlugLinks,
   panelShowsTheHealthCard,
   panelShowsTheKpisCard,
@@ -69,5 +70,9 @@ describe("F3.31 assets browser page", () => {
 
   it("P10 — the panel shows the KPI card (F2.33)", async () => {
     await panelShowsTheKpisCard();
+  });
+
+  it("F4.297 - the panel links to the asset history page", async () => {
+    await panelLinksToTheAssetHistory();
   });
 });

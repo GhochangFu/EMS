@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 
 import {
   allPointsExpandsTheCard,
+  cardLinksToTheAssetHistory,
   cardShowsFourRows,
   cleanupView,
   domainHeadingsInDtoOrder,
@@ -167,5 +168,9 @@ describe("F3.68 GeneratedSiteView", () => {
 
   it("W13b leaves the same asset's 5 s row undimmed", async () => {
     await freshRowOnTheSameAssetIsNotDimmed();
+  });
+
+  it("F4.297 links each card to its asset history page", async () => {
+    await cardLinksToTheAssetHistory();
   });
 });
