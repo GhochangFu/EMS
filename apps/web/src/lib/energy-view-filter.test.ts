@@ -8,7 +8,8 @@ import {
   aPickerValueConvertsInTheViewsZone,
   aPickerValueInAFoldResolvesToTheEarlierInstant,
   aPickerValueInAGapCarriesForward,
-  changeHasNoPercentWhenAPowerFactorIsMissing,
+  changeIsNoPreviousValueWhenThePreviousPowerFactorIsMissing,
+  changeIsNoneWhenTheCurrentPowerFactorIsMissing,
   changeHasNoPercentWhenThePreviousFigureIsZero,
   changeIsNoneWhenTheCurrentPeriodHasNoData,
   changeIsNoneWithoutACompare,
@@ -72,8 +73,12 @@ describe("F4.298 energy view filter helpers", () => {
     changeOfAZeroCurrentFigureIsMinusOneHundred();
   });
 
-  it("change: no percent when a power factor is missing", () => {
-    changeHasNoPercentWhenAPowerFactorIsMissing();
+  it("change: no previous value when the previous power factor is missing", () => {
+    changeIsNoPreviousValueWhenThePreviousPowerFactorIsMissing();
+  });
+
+  it("change: none when the current power factor is missing", () => {
+    changeIsNoneWhenTheCurrentPowerFactorIsMissing();
   });
 
   it("change: reads the named figure", () => {

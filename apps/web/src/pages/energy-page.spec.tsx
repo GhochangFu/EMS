@@ -198,6 +198,19 @@ export async function anEmptyPreviousPeriodSaysSo(): Promise<void> {
   expect(tile.textContent).not.toContain("%");
 }
 
+/**
+ * A previous period with kW data but no pf samples: the PF tile says the
+ * previous figure is missing, never that it is zero.
+ */
+export async function aMissingPreviousPowerFactorIsNotCalledZero(): Promise<void> {
+  stubEnergyApi(view({ compare: period({ avgPf: null }) }));
+  renderPage();
+
+  const tile = await readyTile("Average PF", "previous period");
+  expect(within(tile).getByText("no figure for the previous period")).toBeInTheDocument();
+  expect(tile.textContent).not.toContain("zero");
+}
+
 /** The rollup tile names the level, the bucket and the zone (decision 2.12). */
 export async function theRollupTileNamesLevelBucketAndZone(): Promise<void> {
   stubEnergyApi(view({ timeZone: "Asia/Kolkata", level: "1h", bucket: "1d" }));

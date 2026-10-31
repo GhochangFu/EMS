@@ -35,6 +35,8 @@ function changeHint(change: EnergyChange): string | undefined {
       return undefined;
     case "no_previous":
       return "no data for the previous period";
+    case "no_previous_value":
+      return "no figure for the previous period";
     case "change":
       if (change.pct === null) {
         return "no % change — the previous figure is zero";

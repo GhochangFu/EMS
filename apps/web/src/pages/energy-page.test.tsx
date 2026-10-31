@@ -5,6 +5,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import {
   aCostRendersInTheOrganizationsCurrency,
   aFullScopeRendersNoNote,
+  aMissingPreviousPowerFactorIsNotCalledZero,
   aMeasuredRatioRendersOnTheEnergyPage,
   aNullCostRendersTheDashWithoutThrowing,
   aNullPfRendersTheDashAndTheReason,
@@ -60,6 +61,10 @@ describe("F4.298 the Energy page on GET /reports/energy/view", () => {
 
   it("says there is no data for an empty previous period", async () => {
     await anEmptyPreviousPeriodSaysSo();
+  });
+
+  it("does not call a missing previous power factor zero", async () => {
+    await aMissingPreviousPowerFactorIsNotCalledZero();
   });
 
   it("names the level, the bucket and the zone on the rollup tile", async () => {

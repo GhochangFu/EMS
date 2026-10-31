@@ -85,9 +85,14 @@ export function changeOfAZeroCurrentFigureIsMinusOneHundred(): void {
   expect(changeFor(period({ totalKwh: 0 }), period({ totalKwh: 100 }), "totalKwh")).toEqual({ kind: "change", pct: -100 });
 }
 
-export function changeHasNoPercentWhenAPowerFactorIsMissing(): void {
-  expect(changeFor(period({ avgPf: null }), period({ avgPf: 0.9 }), "avgPf")).toEqual({ kind: "change", pct: null });
-  expect(changeFor(period({ avgPf: 0.9 }), period({ avgPf: null }), "avgPf")).toEqual({ kind: "change", pct: null });
+/** A previous period with data but no power factor is its own kind, never the "zero" one. */
+export function changeIsNoPreviousValueWhenThePreviousPowerFactorIsMissing(): void {
+  expect(changeFor(period({ avgPf: 0.9 }), period({ avgPf: null }), "avgPf")).toEqual({ kind: "no_previous_value" });
+}
+
+/** No current power factor: nothing to compare, so no hint. */
+export function changeIsNoneWhenTheCurrentPowerFactorIsMissing(): void {
+  expect(changeFor(period({ avgPf: null }), period({ avgPf: 0.9 }), "avgPf")).toEqual({ kind: "none" });
 }
 
 export function changeReadsTheNamedFigure(): void {

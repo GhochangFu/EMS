@@ -44,7 +44,9 @@ export const ENERGY_RANGES: readonly { value: EnergyViewRange; label: string }[]
 export type EnergyChange =
   | { kind: "none" }
   | { kind: "no_previous" }
-  /** `pct: null` when the previous figure is zero or either figure is missing. */
+  /** The previous period has data but not this figure (e.g. no `pf` samples). */
+  | { kind: "no_previous_value" }
+  /** `pct: null` when the previous figure is zero. */
   | { kind: "change"; pct: number | null };
 
 /**
@@ -64,7 +66,13 @@ export function changeFor(
   }
   const now = current[key];
   const before = compare[key];
-  if (now === null || before === null || before === 0) {
+  if (now === null) {
+    return { kind: "none" };
+  }
+  if (before === null) {
+    return { kind: "no_previous_value" };
+  }
+  if (before === 0) {
     return { kind: "change", pct: null };
   }
   return { kind: "change", pct: ((now - before) / before) * 100 };
