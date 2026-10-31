@@ -277,3 +277,65 @@ export async function assertTheAnswerNamesThePeriodItCovers(pool: pg.Pool, fx: F
   assert(ragged.to === to.toISOString(), `the asked end is echoed, got ${ragged.to}`);
   assert(ragged.coveredTo === UNALIGNED_TO.toISOString(), `a to with seconds is covered to the minute before it, got ${ragged.coveredTo}`);
 }
+
+// --- `F4.296` (ADR 0099 Amendment 10 F1): the site summary --------------------------------------
+
+async function summarise(pool: pg.Pool, assetIds: string[], spanMs: number, from: Date = BASE) {
+  return service(pool).pointStatsSummary({ assetIds, pointKey: POINT_KEY, from, to: new Date(from.getTime() + spanMs), now: NOW });
+}
+
+/** The raw samples' own figures over `[from, to)`: what "equal to SQL on the same window" compares against. */
+async function rawFigures(pool: pg.Pool, assetIds: string[], from: Date, to: Date) {
+  const { rows } = await pool.query<{ min: number | null; avg: number | null; max: number | null; n: string }>(
+    `SELECT min(value)::float8 AS min, avg(value)::float8 AS avg, max(value)::float8 AS max, count(*) AS n
+       FROM telemetry.point_values
+      WHERE asset_id = ANY($1::uuid[]) AND point_key = $2 AND time >= $3 AND time < $4`,
+    [assetIds, POINT_KEY, from.toISOString(), to.toISOString()],
+  );
+  return rows[0]!;
+}
+
+/**
+ * The site row equals SQL over the raw samples of the same window — min 1,
+ * mean 43/7 (weighted by samples, not the mean of the two asset means), max
+ * 14, 7 samples — at the `1m` level (1 hour) and the `1h` level (7 days).
+ */
+export async function assertTheSiteRowEqualsSqlOnTheSameWindow(pool: pg.Pool, fx: Fixtures): Promise<void> {
+  for (const span of [HOUR_MS, 7 * DAY_MS]) {
+    const ids = [fx.assetA, fx.assetB];
+    const answer = await summarise(pool, ids, span);
+    const raw = await rawFigures(pool, ids, BASE, new Date(BASE.getTime() + span));
+    const { site } = answer;
+    assert(Number(raw.n) === 7 && site.sampleCount === 7, `7 samples in the window, got raw ${raw.n} and site ${site.sampleCount}`);
+    assert(site.min === raw.min && site.max === raw.max, `site min/max must be SQL's ${raw.min}/${raw.max}, got ${site.min}/${site.max}`);
+    assert(site.avg !== null && raw.avg !== null && Math.abs(site.avg - raw.avg) < 1e-9, `site mean must be SQL's ${raw.avg}, got ${site.avg}`);
+    assert(Math.abs((site.avg ?? 0) - 43 / 7) < 1e-9, `the mean is weighted by samples (43/7), not (1.75 + 12) / 2; got ${site.avg}`);
+  }
+}
+
+/** The per-asset rows beside the site row are `pointStatsByAsset`'s figures; an asset with no sample has none. */
+export async function assertTheSummaryRowsAreThePerAssetFigures(pool: pg.Pool, fx: Fixtures): Promise<void> {
+  const answer = await summarise(pool, [fx.assetA, fx.assetB, fx.assetEmpty], HOUR_MS);
+  const ids = answer.rows.map((row) => row.assetId).sort();
+  assert(JSON.stringify(ids) === JSON.stringify([fx.assetA, fx.assetB].sort()), `only A and B have samples, got ${JSON.stringify(ids)}`);
+  const a = answer.rows.find((row) => row.assetId === fx.assetA);
+  assert(a?.min === 1 && a.avg === 1.75 && a.max === 4 && a.sampleCount === 4, `A must be 1/1.75/4 over 4, got ${JSON.stringify(a)}`);
+}
+
+/** The containment: an asset not passed is in neither the site row nor a row, beside a call that passes it and sees its -500. */
+export async function assertTheSummaryKeepsAnAssetNotPassedOut(pool: pg.Pool, fx: Fixtures): Promise<void> {
+  const passed = await summarise(pool, [fx.assetA, fx.outsider], HOUR_MS);
+  assert(passed.site.min === -500, `the positive neighbour must see the outsider's -500, got ${passed.site.min}`);
+  const answer = await summarise(pool, [fx.assetA, fx.assetB], HOUR_MS);
+  assert(answer.site.min === 1 && answer.site.max === 14, `the site must hold A and B only, got ${JSON.stringify(answer.site)}`);
+  assert(!answer.rows.some((row) => row.assetId === fx.outsider), "the outsider must be in no row");
+}
+
+/** A set with no sample answers a null site row with 0 samples and no rows. */
+export async function assertASiteWithNoSampleHasANullSiteRow(pool: pg.Pool, fx: Fixtures): Promise<void> {
+  const answer = await summarise(pool, [fx.assetEmpty], HOUR_MS);
+  assert(
+    JSON.stringify([answer.site, answer.rows]) === JSON.stringify([{ min: null, avg: null, max: null, sampleCount: 0 }, []]),
+    `got ${JSON.stringify([answer.site, answer.rows])}`,
+  );
+}

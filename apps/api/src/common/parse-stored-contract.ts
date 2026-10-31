@@ -123,6 +123,8 @@ export type StoredContractContext =
   | "copilot_tools.get_point_aggregate.result"
   // `F4.291` PR 3: the point statistics read tool.
   | "copilot_tools.get_point_stats.result"
+  // `F4.296`: its site summary.
+  | "copilot_tools.get_point_stats.summary"
   // `F4.275`: the energy and portfolio read tools.
   | "copilot_tools.get_dashboard_kpis.result"
   | "copilot_tools.get_load_trend.result"
@@ -154,6 +156,8 @@ export type StoredContractContext =
   | "copilot_tools.list_alarm_skills.page"
   // `F4.288` (ADR 0099 Amendment 9 E2): the rules watching the site inventory's points.
   | "copilot_tools.get_site_point_inventory.rules"
+  // `F4.296`: the rules its `unruled` read takes for the whole subtree.
+  | "copilot_tools.get_site_point_inventory.unruled_rules"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");

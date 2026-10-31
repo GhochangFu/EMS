@@ -48,3 +48,42 @@ export const pointStatsByAssetSchema = z.object({
   bucketSeconds: z.number().int().positive(),
   rows: z.array(pointStatsRowSchema).max(POINT_STATS_MAX_ASSETS),
 });
+
+/**
+ * `F4.296` (ADR 0099 Amendment 10 F1) — the site figures of one point key over
+ * every asset asked (a location's readable subtree; no 25-asset bound), over
+ * the same buckets as {@link pointStatsByAssetSchema}: min, the composed mean
+ * and max of the whole set, and its sample count. Null figures and a
+ * `sampleCount` of 0 when no asset has a sample.
+ */
+export const pointStatsSiteSchema = z.object({
+  min: z.number().nullable(),
+  avg: z.number().nullable(),
+  max: z.number().nullable(),
+  sampleCount: z.number().int().min(0),
+});
+
+/** One asset's figures in a site summary: no `last`, which the summary does not report. */
+export const pointStatsSummaryRowSchema = z.object({
+  assetId: z.string().uuid(),
+  min: z.number().nullable(),
+  avg: z.number().nullable(),
+  max: z.number().nullable(),
+  sampleCount: z.number().int().min(0),
+});
+
+/**
+ * `F4.296` — `TelemetryService.pointStatsSummary`: the site row and, for each
+ * asset with a sample, its own figures, from one statement. The copilot tool
+ * keeps only the highest and lowest assets of `rows`.
+ */
+export const pointStatsSummarySchema = z.object({
+  pointKey: z.string().min(1).max(128),
+  from: z.string().datetime({ offset: true }),
+  to: z.string().datetime({ offset: true }),
+  coveredFrom: z.string().datetime({ offset: true }),
+  coveredTo: z.string().datetime({ offset: true }),
+  bucketSeconds: z.number().int().positive(),
+  site: pointStatsSiteSchema,
+  rows: z.array(pointStatsSummaryRowSchema),
+});

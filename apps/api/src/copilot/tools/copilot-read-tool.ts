@@ -70,8 +70,12 @@ export interface CopilotReadServices {
    * and the service reads on the tenant pool unfiltered, so each tool places
    * its asset (`organizationOfAsset` / `organizationsOfAssets`) first.
    * `F4.291` PR 3: `pointStatsByAsset` for `get_point_stats`, never with `[]`.
+   * `F4.296`: `pointStatsSummary` for its `summary`, only with a placed subtree's ids.
    */
-  readonly telemetry: Pick<TelemetryService, "latestPointValues" | "pointValuesAt" | "recentForPoint" | "pointAggregate" | "pointStatsByAsset">;
+  readonly telemetry: Pick<
+    TelemetryService,
+    "latestPointValues" | "pointValuesAt" | "recentForPoint" | "pointAggregate" | "pointStatsByAsset" | "pointStatsSummary"
+  >;
   /**
    * `F4.275`: the energy and portfolio reads behind `/`, `/energy` and
    * `/sustainability`. `DashboardService` (the KPI service, `dashboard/`) is
@@ -124,8 +128,9 @@ export interface CopilotReadServices {
    * `F4.288` (ADR 0099 Amendment 9 E2): `get_site_point_inventory`'s reads. Called only
    * with the asset ids `readPerOrganization` got from the location helper, so
    * never before the location is placed; `stats` only with the page's pairs.
+   * `F4.296`: `units` for an `unruled` page's pairs.
    */
-  readonly inventory: Pick<SitePointInventoryService, "pairs" | "stats">;
+  readonly inventory: Pick<SitePointInventoryService, "pairs" | "stats" | "units">;
   /**
    * `F4.290` PR 2 (ADR 0099 Amendment 9 E4): `get_location_summary`'s rows and
    * their rollups. `summarise` is called only with the asset ids

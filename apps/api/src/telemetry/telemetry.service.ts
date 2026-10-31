@@ -13,6 +13,7 @@ import {
   type PointAggregateResponse,
   type PointAggregateStats,
   type PointStatsByAsset,
+  type PointStatsSummary,
   type TelemetryReading,
 } from "@bms/shared";
 
@@ -445,6 +446,82 @@ export class TelemetryService {
         lastAt: row.last_at === null ? null : new Date(row.last_at).toISOString(),
         sampleCount: Number(row.sample_count ?? 0),
       })),
+    };
+  }
+
+  /**
+   * `F4.296` (ADR 0099 Amendment 10 F1) — one point key's site summary over
+   * every id asked (the copilot's `get_point_stats` `summary`, a location's
+   * readable subtree): the whole set's min / mean / max / sample count and
+   * each asset's, over the same covered period and levels as
+   * {@link pointStatsByAsset}, in **one statement**
+   * (`groupedScalarSql(…, withSite)`), so the site row is the exact
+   * composition of the asset rows. No `last`. No 25-id bound: the statement
+   * returns one row per asset with a sample plus one, whatever the subtree's
+   * size. Only assets with a sample have a row.
+   *
+   * The same containment as {@link pointStatsByAsset}: `TENANT_POOL`, the
+   * caller places every id first, and the fragments read only `ANY(ids)`. No
+   * ids → the empty answer and no query. The same window refusal.
+   *
+   * @param now injectable for tests only; defaults to the current instant.
+   */
+  async pointStatsSummary({
+    assetIds,
+    pointKey,
+    from,
+    to,
+    now = new Date(),
+  }: {
+    assetIds: readonly string[];
+    pointKey: string;
+    from: Date;
+    to: Date;
+    now?: Date;
+  }): Promise<PointStatsSummary> {
+    const windowMinutes = (to.getTime() - from.getTime()) / 60_000;
+    if (!(windowMinutes > 0) || windowMinutes > MAX_WIDGET_WINDOW_MINUTES) {
+      throw new BadRequestException(`The window must end after it starts and span at most ${MAX_WIDGET_WINDOW_MINUTES} minutes`);
+    }
+    const ids = [...new Set(assetIds)];
+    const window = pointStatsWindow(from, to, now);
+    const answer = {
+      pointKey,
+      from: from.toISOString(),
+      to: to.toISOString(),
+      coveredFrom: window.coveredFrom.toISOString(),
+      coveredTo: window.coveredTo.toISOString(),
+      bucketSeconds: bucketSeconds(window.level),
+    };
+    if (ids.length === 0) {
+      return { ...answer, site: { min: null, avg: null, max: null, sampleCount: 0 }, rows: [] };
+    }
+    const result = await this.pool.query<{
+      asset_id: string | null;
+      average: number | string | null;
+      min: number | string | null;
+      max: number | string | null;
+      sample_count: number | string | null;
+      is_site: boolean;
+    }>(`${groupedScalarSql(window.level, window.edgeLevel, [1, 2, 3, 4, 5, 6], true)} ORDER BY 1`, [
+      ids,
+      pointKey,
+      answer.coveredFrom,
+      answer.coveredTo,
+      window.wholeFrom.toISOString(),
+      window.wholeTo.toISOString(),
+    ]);
+    const figures = (row: (typeof result.rows)[number]) => ({
+      min: numberOrNull(row.min),
+      avg: numberOrNull(row.average),
+      max: numberOrNull(row.max),
+      sampleCount: Number(row.sample_count ?? 0),
+    });
+    const site = result.rows.find((row) => row.is_site);
+    return {
+      ...answer,
+      site: site === undefined ? { min: null, avg: null, max: null, sampleCount: 0 } : figures(site),
+      rows: result.rows.flatMap((row) => (row.is_site || row.asset_id === null ? [] : [{ assetId: row.asset_id, ...figures(row) }])),
     };
   }
 
