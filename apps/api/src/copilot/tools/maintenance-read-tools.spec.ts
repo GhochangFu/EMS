@@ -30,6 +30,11 @@ const ASSET_Y = "30000000-0000-4000-8000-0000000000bb";
 
 const ASSETS_BY_ORG: Record<string, string[]> = { [ORG_X]: [ASSET_X, ASSET_X2], [ORG_Y]: [ASSET_Y], [ORG_EMPTY]: [] };
 
+/** `F4.291`: a site in ORG_X whose subtree holds one readable asset, not one the organization list names. */
+const SITE = "40000000-0000-4000-8000-000000000001";
+const ASSET_SITE = "30000000-0000-4000-8000-0000000000f1";
+
+
 function ctx(allowed: readonly string[]): CopilotToolContext {
   return {
     identity: { id: USER, role: "asset_group_admin", organizationId: null } as ResolvedIdentity,
@@ -80,10 +85,13 @@ function fake(byOrg: Record<string, MaintenanceScheduleItem[]>) {
     access: {
       readableAssetIdsInOrganization: async (_user: JwtPayload, organizationId: string) => ASSETS_BY_ORG[organizationId] ?? [],
     },
+    locationScope: {
+      readableAssetIdsInLocations: async () => ({ ok: true, organizationId: ORG_X, assetIds: [ASSET_SITE] }),
+    },
     maintenance: {
       list: async (query: Record<string, unknown>, assetIds?: string[] | null, options?: unknown) => {
         log.push({ assetIds, query, options });
-        const owner = Object.keys(ASSETS_BY_ORG).find((org) => (ASSETS_BY_ORG[org] ?? []).includes(assetIds?.[0] ?? ""));
+        const owner = assetIds?.[0] === ASSET_SITE ? ORG_X : Object.keys(ASSETS_BY_ORG).find((org) => (ASSETS_BY_ORG[org] ?? []).includes(assetIds?.[0] ?? ""));
         const needle = (options as { titleSearch?: string } | undefined)?.titleSearch?.toLowerCase();
         const rows = (owner ? (byOrg[owner] ?? []) : []).filter(
           (row) =>
@@ -98,7 +106,7 @@ function fake(byOrg: Record<string, MaintenanceScheduleItem[]>) {
   return { tools: createCopilotReadTools(services), log };
 }
 
-type Listed = { organizations: { organizationId: string; items: Record<string, unknown>[] }[]; truncated: boolean };
+type Listed = { organizations: { organizationId: string; items: Record<string, unknown>[]; serviceCap?: number }[]; truncated: boolean; nextCursor?: string | null };
 
 async function list(tools: ReturnType<typeof fake>["tools"], args: Record<string, unknown>, allowed: readonly string[]) {
   const result: CopilotToolResult = await tools.dispatch("list_maintenance_schedules", args, ctx(allowed));
@@ -163,11 +171,14 @@ export async function assetIdNarrows(): Promise<void> {
   expect(itemsOf(await list(tools, { assetId: ASSET_X2 }, [ORG_X])).map((item) => item.title)).toEqual(["Schedule 02"]);
 }
 
-/** 40 rows are cut to 25, and `truncated` says so. */
+/**
+ * 40 rows are cut, and `truncated` says so. 18, not 25: 25 of these rows pass
+ * the result budget, so the page is fitted (`F4.291` live check, `fitListResult`).
+ */
 export async function fortyRowsAreCutToTwentyFive(): Promise<void> {
   const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => schedule(i + 1)) });
   const listed = await list(tools, {}, [ORG_X]);
-  expect(itemsOf(listed)).toHaveLength(25);
+  expect(itemsOf(listed)).toHaveLength(18);
   expect(listed.truncated).toBe(true);
 }
 
@@ -202,4 +213,52 @@ export async function theProjectionKeepsWhatAProposalNeeds(): Promise<void> {
       "activeWorkOrderId",
     ].sort(),
   );
+}
+
+/** `F4.291`: `locationId` reads only the location's organization, with the subtree's readable ids. */
+export async function locationIdNarrowsToTheSubtree(): Promise<void> {
+  const { tools, log } = fake({ [ORG_X]: [schedule(1)] });
+  await list(tools, { locationId: SITE }, [ORG_X, ORG_Y]);
+  expect(log.map((call) => call.assetIds)).toEqual([[ASSET_SITE]]);
+}
+
+/**
+ * `F4.291`: 40 schedules; each cursor resumes at the row after the last one
+ * before it, and the last page ends the list. (Each page is fitted to the
+ * result budget, `F4.291` live check, so 40 rows take three pages, not two.)
+ */
+export async function aCursorResumesAtTheOffset(): Promise<void> {
+  const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => schedule(i + 1)) });
+  let page = await list(tools, {}, [ORG_X]);
+  const titles = itemsOf(page).map((item) => item.title);
+  for (let i = 0; i < 10 && page.nextCursor; i += 1) {
+    page = await list(tools, { cursor: page.nextCursor }, [ORG_X]);
+    titles.push(...itemsOf(page).map((item) => item.title));
+  }
+  expect([titles, page.nextCursor]).toEqual([Array.from({ length: 40 }, (_, i) => `Schedule ${String(i + 1).padStart(2, "0")}`), null]);
+}
+
+/** A schedule with a three-digit index (`schedule` pads to two). */
+const scheduleOf = (index: number) =>
+  schedule(index, { id: `40000000-0000-4000-8000-${String(index).padStart(12, "0")}`, title: `Schedule ${index}` });
+
+/** Pages through the cursor until it is `null`; the last page. */
+async function lastPage(tools: ReturnType<typeof fake>["tools"]) {
+  let page = await list(tools, {}, [ORG_X]);
+  for (let i = 0; i < 10 && page.nextCursor; i += 1) page = await list(tools, { cursor: page.nextCursor }, [ORG_X]);
+  return page;
+}
+
+/** `F4.291`: 150 schedules, the service answers `MAINTENANCE_LIST_LIMIT`; the last cursor page still says truncated. */
+export async function theLastPagePastTheServiceCapIsTruncated(): Promise<void> {
+  const { tools } = fake({ [ORG_X]: Array.from({ length: 150 }, (_, i) => scheduleOf(i + 1)) });
+  const last = await lastPage(tools);
+  expect([last.truncated, last.nextCursor, last.organizations[0]?.serviceCap]).toEqual([true, null, MAINTENANCE_LIST_LIMIT]);
+}
+
+/** `F4.291`: 40 schedules, under the service's cap; the last cursor page is not truncated. */
+export async function theLastPageUnderTheServiceCapIsComplete(): Promise<void> {
+  const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => schedule(i + 1)) });
+  const last = await lastPage(tools);
+  expect([last.truncated, last.organizations[0]?.serviceCap]).toEqual([false, undefined]);
 }

@@ -3,8 +3,17 @@ import "reflect-metadata";
 import { describe, it } from "vitest";
 
 import {
+  assertReportPreviewReadsTheNamedSitesSubtrees,
+  assertReportPreviewAsksTheLocationServiceForTheList,
+  assertReportPreviewRefusesSitesWithNothingReadable,
+  assertReportPreviewRefusesSitesOfTwoOrganizations,
+  assertReportPreviewRefuses26LocationIds,
+  assertReportPreviewRefusesLocationIdBesideLocationIds,
+  assertReportPreviewWithoutSitesNeverAsksTheLocationService,
+  assertReportPreviewDescriptionNamesLocationIds,
   assertDashboardKpisReturnsTheContractPerOrganizationAndNamesTheSocketCaveat,
   assertEnergySummaryDefaultsTheWindowAndRefusesAnotherGrammar,
+  assertEveryEnergyToolReadsASubtreeWhenGivenALocation,
   assertEveryEnergyToolRefusesAnOwnKeyOrganizationAndReadsAnAllowedOne,
   assertLoadTrendIsResampledAndBoundedWithStats,
   assertReadPerOrganizationCapsItemsAndFlagsTruncated,
@@ -37,4 +46,17 @@ describe("F4.275 — the copilot's energy and portfolio read tools", () => {
   it("readPerOrganization flags truncated when the room slices an answer", assertReadPerOrganizationFlagsTruncatedWhenTheRoomSlicesAnAnswer);
   it("get_energy_report_preview stays under the tool-result cut over many organizations", assertReportPreviewBoundsTheResultOverManyOrganizations);
   it("the dashboard and report descriptions match their contracts", assertTheDescriptionsMatchTheContracts);
+  it("F4.291: every energy tool given a locationId reads the subtree's readable assets only", assertEveryEnergyToolReadsASubtreeWhenGivenALocation);
+});
+
+/** `F4.290` (ADR 0099 Amendment 9 E4; owner ruling P6) — `get_energy_report_preview` takes `locationIds`. */
+describe("F4.290 — get_energy_report_preview takes locationIds", () => {
+  it("named sites read their subtrees' readable ids", assertReportPreviewReadsTheNamedSitesSubtrees);
+  it("the whole list reaches the location service in one call", assertReportPreviewAsksTheLocationServiceForTheList);
+  it("sites with nothing readable are refused before the read", assertReportPreviewRefusesSitesWithNothingReadable);
+  it("sites of two organizations are refused", assertReportPreviewRefusesSitesOfTwoOrganizations);
+  it("26 location ids are refused by the schema", assertReportPreviewRefuses26LocationIds);
+  it("locationId beside locationIds is refused by the schema", assertReportPreviewRefusesLocationIdBesideLocationIds);
+  it("without locationIds the location service is never asked", assertReportPreviewWithoutSitesNeverAsksTheLocationService);
+  it("the description names locationIds", assertReportPreviewDescriptionNamesLocationIds);
 });

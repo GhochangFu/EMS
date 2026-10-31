@@ -1,5 +1,6 @@
 import "reflect-metadata";
 
+import { BadRequestException } from "@nestjs/common";
 import { expect } from "vitest";
 
 import { assets, automationRules, pointValues, pointValues1m } from "@bms/db";
@@ -297,4 +298,97 @@ export async function aRuleWithNoSampleSaysSo(): Promise<void> {
   const check = new RuleProposalCheckService(db, validator().rules as RulesService);
   const { note } = await check.check({ entryId: "rule.enable", params: { id: RULE }, body: { enabled: true }, organizationId: ORG, now: NOW });
   expect(note).toContain("Would match now: no sample yet.");
+}
+
+// ---------------------------------------------------------------------------
+// `F4.289` (ADR 0099 Amendment 9 E3) — `checkBatch`, the `rule.createBatch` card's check.
+
+/** A validator that refuses the draft named `refuse` with `message`, and records every call. */
+function refusingValidator(refuse: string, message: string) {
+  const { rules, calls } = validator();
+  const refusing = {
+    validateRuleDraft: async (dto: RuleDraftBody, currentId: string | undefined, organizationId: string | null) => {
+      const values = await rules.validateRuleDraft(dto, currentId, organizationId);
+      if (dto.name === refuse) throw new BadRequestException(message);
+      return values;
+    },
+  };
+  return { rules: refusing, calls };
+}
+
+function batchService(rules: Pick<RulesService, "validateRuleDraft"> = validator().rules, hasSample = true) {
+  const { db, reads } = fakeDb(THRESHOLD_ROW, hasSample);
+  return { check: new RuleProposalCheckService(db, rules as RulesService), reads };
+}
+
+const named = (name: string, over: Record<string, unknown> = {}) => ({ ...THRESHOLD_BODY, name, ...over });
+const THREE = [named("Chiller one"), named("Chiller two"), named("Chiller three")];
+
+/** Every row is validated, armed, evaluated and backtested: one check per row, from the fakes, numbered from 1. */
+export async function everyRowIsValidatedArmedEvaluatedAndBacktested(): Promise<void> {
+  const v = validator();
+  const s = batchService(v.rules);
+  const { rows } = await s.check.checkBatch({ rows: THREE, organizationId: ORG, now: NOW });
+  expect(v.calls.map((call) => [call.dto.name, call.currentId, call.organizationId])).toEqual([
+    ["Chiller one", undefined, ORG],
+    ["Chiller two", undefined, ORG],
+    ["Chiller three", undefined, ORG],
+  ]);
+  const one = { assetCode: "CH-01", pointKey: "supply_temp_c", operator: "gt", thresholdValue: 3, severity: null, matchNow: "yes", firings: 2, buckets: 6 };
+  expect(rows).toEqual([1, 2, 3].map((row) => ({ row, ...one })));
+}
+
+/** The first refused row names its 1-based number with the route's sentence, and the check stops there. */
+export async function theFirstRefusedRowNamesItsNumberAndStopsTheCheck(): Promise<void> {
+  const v = refusingValidator("Chiller two", "Point key is not compatible with the asset");
+  const s = batchService(v.rules);
+  const message = await refusal(() => s.check.checkBatch({ rows: THREE, organizationId: ORG, now: NOW }));
+  expect(message).toBe("Row 2: Point key is not compatible with the asset");
+  expect(v.calls.map((call) => call.dto.name)).toEqual(["Chiller one", "Chiller two"]);
+}
+
+/** A row the validator accepts but `assertArmable` refuses (no operator, no threshold) is refused with its number. */
+export async function anUnarmableRowIsRefusedWithItsNumber(): Promise<void> {
+  const s = batchService();
+  const rows = [named("Chiller one"), named("Chiller two", { operator: undefined, thresholdValue: undefined })];
+  const message = await refusal(() => s.check.checkBatch({ rows, organizationId: ORG, now: NOW }));
+  expect(message).toMatch(/^Row 2: Rule .* cannot be enabled/);
+}
+
+/** A row that is not a draft body is refused with its number before any row is validated. */
+export async function aMalformedRowIsRefusedWithItsNumber(): Promise<void> {
+  const v = validator();
+  const s = batchService(v.rules);
+  const message = await refusal(() => s.check.checkBatch({ rows: [named("Chiller one"), "x"], organizationId: ORG, now: NOW }));
+  expect([message, v.calls.length]).toEqual(["Row 2: Invalid body", 0]);
+}
+
+/** Two rows with the same explicit code are refused by both numbers, before any row is validated. */
+export async function aDuplicateCodeInsideTheBatchIsRefused(): Promise<void> {
+  const v = validator();
+  const s = batchService(v.rules);
+  const rows = [named("Chiller one", { code: "CH-HIGH" }), named("Chiller two"), named("Chiller three", { code: "ch-high" })];
+  const message = await refusal(() => s.check.checkBatch({ rows, organizationId: ORG, now: NOW }));
+  expect([message, v.calls.length]).toEqual(["Row 1 and row 3 carry the same code", 0]);
+}
+
+/** The note counts the rows, the ones that would match now, and the firings summed over the batch. */
+export async function theNoteCountsTheRows(): Promise<void> {
+  const { note } = await batchService().check.checkBatch({ rows: THREE, organizationId: ORG, now: NOW });
+  expect(note).toBe(
+    "3 rows checked: 3 would match now, 0 with no sample yet; about 6 firings in the last 7 days (an estimate; the live engine sees every sample).",
+  );
+}
+
+/** A row with no sample yet is "no sample", never "no", and the note counts it. */
+export async function aRowWithNoSampleIsCountedAsNoSample(): Promise<void> {
+  const { note, rows } = await batchService(validator().rules, false).check.checkBatch({ rows: THREE.slice(0, 1), organizationId: ORG, now: NOW });
+  expect([rows[0]?.matchNow, note.startsWith("1 row checked: 0 would match now, 1 with no sample yet;")]).toEqual(["no sample", true]);
+}
+
+/** One asset's code is read once, however many rows name it. */
+export async function anAssetCodeIsReadOncePerAsset(): Promise<void> {
+  const s = batchService();
+  await s.check.checkBatch({ rows: THREE, organizationId: ORG, now: NOW });
+  expect(s.reads.asset).toBe(1);
 }

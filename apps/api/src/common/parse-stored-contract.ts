@@ -121,6 +121,10 @@ export type StoredContractContext =
   | "copilot_tools.get_values_at_instant.result"
   | "copilot_tools.get_recent_values.rows"
   | "copilot_tools.get_point_aggregate.result"
+  // `F4.291` PR 3: the point statistics read tool.
+  | "copilot_tools.get_point_stats.result"
+  // `F4.296`: its site summary.
+  | "copilot_tools.get_point_stats.summary"
   // `F4.275`: the energy and portfolio read tools.
   | "copilot_tools.get_dashboard_kpis.result"
   | "copilot_tools.get_load_trend.result"
@@ -133,6 +137,8 @@ export type StoredContractContext =
   | "copilot_tools.list_audit_log.page"
   // `F4.276`: the alarm details and alarm knowledge-base read tools.
   | "copilot_tools.get_alarm_details.result"
+  // `F4.291` PR 2: the alarm statistics read tool.
+  | "copilot_tools.get_alarm_stats.result"
   | "copilot_tools.get_alarm_kb.result"
   // `F4.278`: the alarm-rule read tool.
   | "copilot_tools.list_rules.page"
@@ -148,6 +154,10 @@ export type StoredContractContext =
   | "copilot_tools.list_users.page"
   // `F4.284` owner ruling 2026-10-25 (Q4): the alarm skill read tool.
   | "copilot_tools.list_alarm_skills.page"
+  // `F4.288` (ADR 0099 Amendment 9 E2): the rules watching the site inventory's points.
+  | "copilot_tools.get_site_point_inventory.rules"
+  // `F4.296`: the rules its `unruled` read takes for the whole subtree.
+  | "copilot_tools.get_site_point_inventory.unruled_rules"
   | "onboarding.list_drafts.dto";
 
 const logger = new Logger("StoredContract");

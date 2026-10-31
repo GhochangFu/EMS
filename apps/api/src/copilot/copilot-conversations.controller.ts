@@ -9,6 +9,7 @@ import {
   NotFoundException,
   Param,
   Post,
+  Query,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
@@ -18,7 +19,10 @@ import { ZodError } from "zod";
 
 import {
   COPILOT_ATTACHMENTS_MAX,
+  COPILOT_CONVERSATION_PAGE_DEFAULT,
   type CopilotConversationDetailDto,
+  type CopilotConversationDetailQuery,
+  copilotConversationDetailQuerySchema,
   type CopilotConversationDto,
   copilotCreateConversationBodySchema,
   type CopilotSkillStateDto,
@@ -39,7 +43,11 @@ import { COPILOT_UNAVAILABLE_MESSAGE, CopilotAccessGuard, CopilotIdentity } from
 import type { UploadedAttachment } from "./copilot-attachments";
 import { CopilotAvailabilityService } from "./copilot-availability.service";
 import { awaitingFollowUp } from "./copilot-awaiting-follow-up";
-import { CopilotConversationsService } from "./copilot-conversations.service";
+import {
+  type CopilotConversationPage,
+  CopilotConversationsService,
+  CopilotCursorNotFoundError,
+} from "./copilot-conversations.service";
 import { liveOpenChanges } from "./copilot-onboarding-commit";
 import { checkOpenWizards, parseWizardsField } from "./copilot-open-wizards";
 import { CopilotPendingChangesService } from "./copilot-pending-changes.service";
@@ -92,17 +100,38 @@ export class CopilotConversationsController {
     return this.conversations.list(identity.id);
   }
 
+  /**
+   * `F4.292` (ADR 0099 Amendment 9 E7): `?before=<messageId>&limit=<n>` makes the
+   * read a page (`limit` defaults to `COPILOT_CONVERSATION_PAGE_DEFAULT`); a read
+   * with neither key keeps the old shape. A malformed query is a 400; a `before`
+   * that names no message of this conversation is a 404.
+   */
   @Get(":id")
   async get(
     @Param("id") id: string,
+    @Query() query: unknown,
     @CopilotIdentity() identity: ResolvedIdentity,
     @CurrentUser() user: JwtPayload,
   ): Promise<CopilotConversationDetailDto> {
     await this.pendingChanges.sweepStuck(identity.id);
     const parsed = idParamSchema.safeParse(id);
     if (!parsed.success) throw new NotFoundException("Conversation not found");
+    let asked: CopilotConversationDetailQuery;
+    try {
+      asked = copilotConversationDetailQuerySchema.parse(query ?? {});
+    } catch (err) {
+      if (err instanceof ZodError) throw new BadRequestException(err.flatten());
+      throw err;
+    }
+    const page =
+      asked.before !== undefined || asked.limit !== undefined
+        ? {
+            ...(asked.before !== undefined ? { before: asked.before } : {}),
+            limit: asked.limit ?? COPILOT_CONVERSATION_PAGE_DEFAULT,
+          }
+        : undefined;
     // F3.86 PR 5: a skill conversation carries its session's state, so the dock reloads into the skill.
-    return this.detail(identity, parsed.data, (sessionId) => (sessionId ? this.skills.stateOf(user, sessionId) : undefined));
+    return this.detail(identity, parsed.data, (sessionId) => (sessionId ? this.skills.stateOf(user, sessionId) : undefined), page);
   }
 
   /**
@@ -154,13 +183,26 @@ export class CopilotConversationsController {
    * `awaitingFollowUp` key — the follow-up the dock still waits for, or `null`
    * — so a dock that mounts after a Confirm (a route change, a reload, a new
    * tab) holds Send until that follow-up's outcome line is stored.
+   *
+   * `F4.292`: `page` reads one page (the skill routes pass none, so they keep
+   * the old shape). A page **with `before`** is an earlier page: it answers
+   * `awaitingFollowUp: null` and never reads `latestFinished`, because an
+   * earlier page never arms a wait — the newest page carries the real value
+   * (plan open point 4). `pendingChanges` is read on every page.
    */
   private async detail(
     identity: ResolvedIdentity,
     conversationId: string,
     skillOf: (sessionId: string | null) => CopilotSkillStateDto | null | undefined | Promise<CopilotSkillStateDto | null | undefined>,
+    page?: CopilotConversationPage,
   ): Promise<CopilotConversationDetailDto> {
-    const found = await this.conversations.get(identity.id, conversationId);
+    let found: Awaited<ReturnType<CopilotConversationsService["get"]>>;
+    try {
+      found = await this.conversations.get(identity.id, conversationId, page);
+    } catch (err) {
+      if (err instanceof CopilotCursorNotFoundError) throw new NotFoundException("Message not found");
+      throw err;
+    }
     if (!found) throw new NotFoundException("Conversation not found");
     const { onboardingSessionId, ...conversation } = found;
     const skill = await skillOf(onboardingSessionId ?? null);
@@ -168,7 +210,9 @@ export class CopilotConversationsController {
     const open = await this.pendingChanges.listOpen(identity.id, conversationId);
     // F3.86 PR 6 review: a commit card with no draft skill behind it is rejected, and not shown.
     const pendingChanges = await liveOpenChanges(this.pendingChanges, identity.id, open, skill?.session.status === "draft");
-    const latest = await this.pendingChanges.latestFinished(identity.id, conversationId);
+    // F4.292: an earlier page reads no latest change, so it answers `awaitingFollowUp: null`.
+    const earlierPage = page?.before !== undefined;
+    const latest = earlierPage ? null : await this.pendingChanges.latestFinished(identity.id, conversationId);
     return {
       ...conversation,
       pendingChanges,

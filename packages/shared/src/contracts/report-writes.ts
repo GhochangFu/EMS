@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { NO_CONTROL_CHARACTERS } from "./asset-images";
+import { foldRepeatedQueryValue } from "./query-values";
 import {
   MAX_REPORT_SCHEDULE_NAME_CHARS,
   reportCadenceSchema,
@@ -84,10 +85,31 @@ export function isCalendarDate(value: string): boolean {
   return parsed.toISOString().slice(0, 10) === value;
 }
 
-/** The three energy export routes' query (not `.strict()`, as before the move). */
+/**
+ * `F4.290` (ADR 0099 Amendment 9 E4; owner ruling P6) — the site filter of an
+ * on-demand energy report: site ids, each meaning the site and its
+ * descendants, at most 200 (the schedule's bound). Unlike a schedule's
+ * `location_ids`, where `[]` means "the whole organization", a filter names at
+ * least one site: an absent filter is the unfiltered report, so `[]` would be a
+ * second spelling of it and is refused. A repeated id is refused too: the save
+ * stamps the list as given, and "scoped to 2 locations" for one site would be wrong.
+ */
+const reportSiteFilterSchema = z
+  .array(z.string().uuid())
+  .min(1)
+  .max(200)
+  .refine((ids) => new Set(ids).size === ids.length, { message: "locationIds names a location twice" })
+  .describe("1 to 200 location ids, each named once; each covers that site and everything under it.");
+
+/**
+ * The three energy export routes' query (not `.strict()`, as before the move).
+ * `F4.290`: optional `locationIds`, folded from a repeated `?locationIds=` as
+ * every API query is ({@link foldRepeatedQueryValue}).
+ */
 export const energyReportQuerySchema = z.object({
   startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  locationIds: z.preprocess(foldRepeatedQueryValue, reportSiteFilterSchema.optional()),
 });
 
 export type EnergyReportQuery = z.infer<typeof energyReportQuerySchema>;
@@ -177,6 +199,7 @@ export const saveEnergyReportFileBodySchema = z
     endDate: endDateSchema,
     format: reportFileFormatSchema,
     organizationId: optionalOrganizationIdSchema,
+    locationIds: reportSiteFilterSchema.optional(),
   })
   .strict();
 
@@ -208,5 +231,6 @@ export const copilotSaveEnergyReportFileModelBodySchema = z
     endDate: endDateSchema,
     format: reportFileFormatSchema,
     organizationId: z.string().uuid(),
+    locationIds: reportSiteFilterSchema.optional(),
   })
   .strict();

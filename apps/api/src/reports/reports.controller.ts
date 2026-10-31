@@ -11,18 +11,25 @@ import type { Response } from "express";
 import { ZodError } from "zod";
 import type { JwtPayload } from "@bms/shared";
 
-import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { ReportScopeService } from "./report-scope";
 import { energyReportQuerySchema } from "./reports.schema";
 import { ReportsService } from "./reports.service";
 
+/**
+ * The energy report routes. `F4.290` (ADR 0099 Amendment 9 E4): each takes an
+ * optional `locationIds` (site ids, each with its descendants), resolved by
+ * `ReportScopeService` to the caller's readable assets of those subtrees; a
+ * site outside the caller's organizations is a 400, one outside the grant a
+ * 403. Without it each route reads `readableAssetIds`, as before.
+ */
 @Controller("reports")
 @UseGuards(JwtAuthGuard)
 export class ReportsController {
   constructor(
     private readonly reports: ReportsService,
-    private readonly accessControl: AccessControlService,
+    private readonly scope: ReportScopeService,
   ) {}
 
   @Get("energy/preview")
@@ -31,7 +38,7 @@ export class ReportsController {
       const dto = energyReportQuerySchema.parse(query);
       return await this.reports.energyPreview(
         dto,
-        await this.accessControl.readableAssetIds(user),
+        await this.scope.assetIdsForCaller(user, dto.locationIds),
       );
     } catch (err) {
       if (err instanceof ZodError) {
@@ -47,7 +54,7 @@ export class ReportsController {
     "Content-Disposition",
     'attachment; filename="energy-consumption-report.csv"',
   )
-  // The export is scope-filtered per user via `readableAssetIds` and carries
+  // The export is scope-filtered per user via `assetIdsForCaller` and carries
   // asset codes, names and site names, so a shared-cache hit across two
   // differently-scoped users would leak data across scopes — the same
   // failure `F4.14` closed for the audit export (`audit.controller.ts`).
@@ -60,7 +67,7 @@ export class ReportsController {
       const dto = energyReportQuerySchema.parse(query);
       return await this.reports.energyCsv(
         dto,
-        await this.accessControl.readableAssetIds(user),
+        await this.scope.assetIdsForCaller(user, dto.locationIds),
       );
     } catch (err) {
       if (err instanceof ZodError) {
@@ -92,7 +99,7 @@ export class ReportsController {
       const dto = energyReportQuerySchema.parse(query);
       body = await this.reports.energyXlsx(
         dto,
-        await this.accessControl.readableAssetIds(user),
+        await this.scope.assetIdsForCaller(user, dto.locationIds),
       );
     } catch (err) {
       if (err instanceof ZodError) {
@@ -109,7 +116,7 @@ export class ReportsController {
       "Content-Disposition",
       'attachment; filename="energy-consumption-report.xlsx"',
     );
-    // Scope-filtered per user via `readableAssetIds` and carrying asset codes,
+    // Scope-filtered per user via `assetIdsForCaller` and carrying asset codes,
     // names and site names — a shared-cache hit across two differently-scoped
     // users would leak across scopes, exactly as on the CSV route.
     res.setHeader("Cache-Control", "no-store");
@@ -137,7 +144,7 @@ export class ReportsController {
       const dto = energyReportQuerySchema.parse(query);
       body = await this.reports.energyPdf(
         dto,
-        await this.accessControl.readableAssetIds(user),
+        await this.scope.assetIdsForCaller(user, dto.locationIds),
       );
     } catch (err) {
       if (err instanceof ZodError) {
@@ -151,7 +158,7 @@ export class ReportsController {
       "Content-Disposition",
       'attachment; filename="energy-consumption-report.pdf"',
     );
-    // Scope-filtered per user via `readableAssetIds` and carrying asset codes,
+    // Scope-filtered per user via `assetIdsForCaller` and carrying asset codes,
     // names and site names — a shared-cache hit across two differently-scoped
     // users would leak across scopes, exactly as on the CSV and XLSX routes.
     res.setHeader("Cache-Control", "no-store");

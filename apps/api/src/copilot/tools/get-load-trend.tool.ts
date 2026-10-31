@@ -2,6 +2,7 @@ import { loadTrendResponseSchema } from "@bms/shared";
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
+import { LOCATION_ID_PHRASE } from "./copilot-list-paging";
 import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
 import { COPILOT_SERIES_MAX_BUCKETS, meanOf, resampleSeries, round2 } from "./energy-read-helpers";
 
@@ -33,16 +34,18 @@ function statsOf(points: readonly LoadPoint[]): Record<string, unknown> {
  */
 export const getLoadTrendTool = defineReadTool({
   name: "get_load_trend",
-  description: "Read total kW per organization over the last windowHours (1-168, default 1): up to 24 averaged buckets, plus peak, min and average kW.",
+  description:
+    "Read total kW per organization over the last windowHours (1-168, default 1): up to 24 averaged buckets, plus peak, min and average kW. " +
+    `Optional organizationId or ${LOCATION_ID_PHRASE} narrows the read.`,
   schema: z
-    .object({ organizationId: z.string().uuid().optional(), windowHours: z.number().int().min(1).max(168).optional() })
+    .object({ organizationId: z.string().uuid().optional(), locationId: z.string().uuid().optional(), windowHours: z.number().int().min(1).max(168).optional() })
     .strict(),
-  async run({ access, portfolio }, args, ctx) {
+  async run(services, args, ctx) {
     const window = `${args.windowHours ?? 1}h`;
-    return readPerOrganization(access, ctx, args.organizationId, async (_organizationId, assetIds, room) => {
+    return readPerOrganization(services, ctx, { organizationId: args.organizationId, locationId: args.locationId }, async (_organizationId, assetIds, room) => {
       const { points } = parseStoredContract(
         loadTrendResponseSchema,
-        await portfolio.loadTrend(window, [...assetIds]),
+        await services.portfolio.loadTrend(window, [...assetIds]),
         "copilot_tools.get_load_trend.result",
       );
       const buckets = Math.min(COPILOT_SERIES_MAX_BUCKETS, room);

@@ -1,9 +1,9 @@
 import { expect, vi } from "vitest";
 
-import type { CopilotTurnResponseDto } from "@bms/shared";
+import type { CopilotConversationDetailDto, CopilotConversationDto, CopilotTurnResponseDto } from "@bms/shared";
 
 import { useAuthStore } from "../stores/auth-store";
-import { sendCopilotTurn } from "./copilot";
+import { fetchCopilotConversation, fetchCopilotConversations, sendCopilotTurn } from "./copilot";
 
 /**
  * `F3.87` PR 8 (ADR 0099 Amendment 3 A4; plan §10) — `sendCopilotTurn` puts a
@@ -90,4 +90,83 @@ export async function anEmptyFileListIsSentAsJson(): Promise<void> {
   const { init } = seen();
   expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
   expect(init.body).toBe(JSON.stringify({ message: "hi", wizards: [] }));
+}
+
+/*
+ * `F4.292` (ADR 0099 Amendment 9 E7) — the conversation list client and the
+ * paged detail read. The URL handed to `fetch` is the observable seam.
+ */
+const MESSAGE_ID = "22222222-2222-4222-8222-222222222222";
+
+const DETAIL: CopilotConversationDetailDto = {
+  id: CONVERSATION_ID,
+  organizationId: null,
+  title: null,
+  createdAt: "2026-10-27T00:00:00.000Z",
+  lastTurnAt: "2026-10-27T00:00:00.000Z",
+  messages: [],
+  pendingChanges: [],
+  hasEarlier: true,
+};
+
+const CONVERSATIONS: CopilotConversationDto[] = [
+  { id: CONVERSATION_ID, organizationId: null, title: "Show PHE alarms", createdAt: "2026-10-27T00:00:00.000Z", lastTurnAt: "2026-10-27T01:00:00.000Z" },
+];
+
+function captureAnswering(body: unknown): () => string {
+  let seen: string | null = null;
+  vi.stubGlobal("fetch", async (url: string) => {
+    seen = url;
+    return new Response(JSON.stringify(body), { status: 200 });
+  });
+  return () => {
+    if (seen === null) throw new Error("fetch was not called");
+    return seen;
+  };
+}
+
+/** A page with `before` puts `limit` and `before` in the query. Mutation: drop `before` from the query string → red. */
+export async function aPagedReadSendsLimitAndBefore(): Promise<void> {
+  useAuthStore.setState({ accessToken: "token-1" });
+  const url = captureAnswering(DETAIL);
+  await fetchCopilotConversation(CONVERSATION_ID, { before: MESSAGE_ID, limit: 50 });
+  expect(url()).toMatch(new RegExp(`/api/v1/copilot/conversations/${CONVERSATION_ID}\\?limit=50&before=${MESSAGE_ID}$`));
+}
+
+/** A page without `before` sends `limit` alone. Mutation: always append `&before=` → red. */
+export async function aNewestPageSendsLimitAlone(): Promise<void> {
+  useAuthStore.setState({ accessToken: "token-1" });
+  const url = captureAnswering(DETAIL);
+  await fetchCopilotConversation(CONVERSATION_ID, { limit: 50 });
+  expect(url()).toMatch(new RegExp(`/api/v1/copilot/conversations/${CONVERSATION_ID}\\?limit=50$`));
+}
+
+/** A read without a page has no query (the old shape). Mutation: always send `?limit=` → red. */
+export async function aReadWithoutAPageHasNoQuery(): Promise<void> {
+  useAuthStore.setState({ accessToken: "token-1" });
+  const url = captureAnswering(DETAIL);
+  await fetchCopilotConversation(CONVERSATION_ID);
+  expect(url()).toMatch(new RegExp(`/api/v1/copilot/conversations/${CONVERSATION_ID}$`));
+}
+
+/** The paged read hands back `hasEarlier` (the schema keeps it). */
+export async function aPagedReadReturnsHasEarlier(): Promise<void> {
+  useAuthStore.setState({ accessToken: "token-1" });
+  captureAnswering(DETAIL);
+  expect((await fetchCopilotConversation(CONVERSATION_ID, { limit: 50 })).hasEarlier).toBe(true);
+}
+
+/** The list client asks `/copilot/conversations`. */
+export async function theListClientAsksTheList(): Promise<void> {
+  useAuthStore.setState({ accessToken: "token-1" });
+  const url = captureAnswering(CONVERSATIONS);
+  await fetchCopilotConversations();
+  expect(url()).toMatch(/\/api\/v1\/copilot\/conversations$/);
+}
+
+/** The list client returns the parsed rows. */
+export async function theListClientReturnsTheRows(): Promise<void> {
+  useAuthStore.setState({ accessToken: "token-1" });
+  captureAnswering(CONVERSATIONS);
+  expect(await fetchCopilotConversations()).toEqual(CONVERSATIONS);
 }

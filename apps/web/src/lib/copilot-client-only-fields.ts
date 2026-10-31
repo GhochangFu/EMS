@@ -50,6 +50,9 @@ function channelKindOf(body: Readonly<Record<string, unknown>>, current: Readonl
  * replaces `config` (the PATCH replaces the whole `config`, so a URL left out
  * would be lost). Every other entry's `clientOnly` field is shown and required
  * with its body's own rule, as before (a temporary password).
+ *
+ * `F4.289` (ADR 0099 Amendment 9 E3): a rule batch's `excludedRows` has no box —
+ * the card's row checkboxes are its control, and an empty set is a valid Confirm.
  */
 export function clientOnlyFieldsFor(
   entry: Pick<CatalogEntry, "id" | "body" | "clientOnly">,
@@ -60,6 +63,9 @@ export function clientOnlyFieldsFor(
   return entry.clientOnly.flatMap((path): ClientOnlyField[] => {
     if (path === "secret" && entry.id.startsWith("notificationChannel.")) {
       return [{ path, label: "Webhook secret", schema: channelSecretSchema.unwrap() as Schema, required: false, shown: webhook }];
+    }
+    if (path === "excludedRows" && entry.id === "rule.createBatch") {
+      return [{ path, label: "Excluded rows", schema: undefined, required: false, shown: false }];
     }
     if (path === "config.url") {
       const replacesConfig = entry.id === "notificationChannel.create" || isObject(body.config);

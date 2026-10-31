@@ -37,6 +37,8 @@ import {
   aStoredChannelOfAnotherOrganizationIsNotListed,
   aStoredWebhookChannelIsNotListed,
   aLocationAdminTheRouteAdmitsIsNotRefusedTheReEnable,
+  aSaveNamingAForeignSiteIsRefused,
+  aSaveNamingASiteIsStampedToIt,
 } from "./report-proposal-check.service.spec";
 
 /** `F4.280` — Vitest entry point; assertions live in the sibling `.spec` (§4.6). */
@@ -57,6 +59,8 @@ describe("F4.280 — the report proposal check runs the routes' checks read-only
   it("a location_admin with no granted location is refused the save", () => aLocationAdminWithNoGrantedLocationIsRefused());
   it("a save at the cap is the route's 409", () => aSaveAtTheCapIsTheRoutes409());
   it("the save note says it renders on Confirm", () => theSaveNoteSaysItRendersOnConfirm());
+  it("F4.290: a save naming a site is stamped to it", () => aSaveNamingASiteIsStampedToIt());
+  it("F4.290: a save naming a foreign site is refused", () => aSaveNamingAForeignSiteIsRefused());
   it("previewSave renders nothing and stores nothing", () => thePreviewRendersNothingAndStoresNothing());
   it("the check calls no write method", () => theCheckCallsNoWriteMethod());
   it("the untouchable fake refuses a write (positive control)", () => theUntouchableFakeRefusesAWrite());

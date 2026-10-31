@@ -2,49 +2,50 @@ import { assetListResponseSchema } from "@bms/shared";
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
-import { collectByOrganization, defineReadTool } from "./copilot-read-tool";
-import { COPILOT_TOOL_LIST_MAX_ITEMS, targetOrganizations } from "./copilot-tool-scope";
+import { CURSOR_PHRASE, LOCATION_ID_PHRASE, listCursorSchema, offsetKeySchema, offsetPage, orderTiesById } from "./copilot-list-paging";
+import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
 
 /**
  * `list_assets` — `AssetsService.listAll`, one call per organization with
  * that organization's readable asset ids (never `null`, never no filter).
+ *
+ * `F4.291` (ADR 0099 Amendment 9 E5): on `readPerOrganization`, so a
+ * `locationId` narrows it to the caller's readable assets of that site's
+ * subtree, and a `cursor` pages past the 25-item cap (an offset into the
+ * organization's filtered rows; the service orders by site name and code,
+ * ties put in id order). `search` still filters before the cap and the page
+ * (the `F4.274` live-check rule).
  */
 export const listAssetsTool = defineReadTool({
   name: "list_assets",
   description:
-    "List assets (id, code, name, site, location, domain). Optional organizationId narrows the list; " +
-    "optional search matches part of the name or code. The result groups assets by organization; truncated means there are more.",
+    `List assets (id, code, name, site, location, domain). Optional organizationId or ${LOCATION_ID_PHRASE} narrows the list; ` +
+    `optional search matches part of the name or code. Grouped by organization; truncated means there are more, with ${CURSOR_PHRASE}.`,
   schema: z
-    .object({ organizationId: z.string().uuid().optional(), search: z.string().min(1).max(64).optional() })
+    .object({
+      organizationId: z.string().uuid().optional(),
+      locationId: z.string().uuid().optional(),
+      search: z.string().min(1).max(64).optional(),
+      cursor: listCursorSchema.optional(),
+    })
     .strict(),
-  async run({ access, assets }, args, ctx) {
-    const target = targetOrganizations(args.organizationId, ctx.allowedOrganizationIds);
-    if (!target.ok) return target;
+  async run(services, args, ctx) {
     // `F4.274` live check: the filter runs before the 25-item cap, so a named asset past the 25th is found.
     const needle = args.search?.trim().toLowerCase() || undefined;
     const matches = (row: { name: string; code: string }): boolean =>
       needle === undefined || row.name.toLowerCase().includes(needle) || row.code.toLowerCase().includes(needle);
-    const out = collectByOrganization<z.infer<typeof assetListResponseSchema>[number]>();
-    let room = COPILOT_TOOL_LIST_MAX_ITEMS;
-    let truncated = false;
-    for (const organizationId of target.ids) {
-      if (room <= 0) {
-        truncated = true;
-        break;
-      }
-      const assetIds = await access.readableAssetIdsInOrganization(ctx.user, organizationId);
-      if (assetIds.length === 0) {
-        out.add(organizationId, [], room);
-        continue;
-      }
+    const scope = { organizationId: args.organizationId, locationId: args.locationId, paging: { cursor: args.cursor, key: offsetKeySchema } };
+    return readPerOrganization(services, ctx, scope, async (organizationId, assetIds, room, resume) => {
       const rows = parseStoredContract(
         assetListResponseSchema,
-        await assets.listAll(assetIds, organizationId),
+        await services.assets.listAll([...assetIds], organizationId),
         "copilot_tools.list_assets.rows",
       ).filter(matches);
-      if (rows.length > room) truncated = true;
-      room -= out.add(organizationId, rows, room);
-    }
-    return { ok: true, result: { organizations: out.organizations, truncated }, organizationIds: out.read };
+      return offsetPage(
+        orderTiesById(rows, (row) => `${row.siteName}\u0000${row.code}`),
+        resume,
+        room,
+      );
+    });
   },
 });

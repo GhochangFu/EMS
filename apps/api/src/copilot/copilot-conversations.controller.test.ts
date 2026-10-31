@@ -3,6 +3,15 @@ import "reflect-metadata";
 import { describe, it } from "vitest";
 
 import {
+  aBeforeQueryGetsTheDefaultLimit,
+  aLimitQueryReachesTheServiceAsAPage,
+  aMissingCursorIs404,
+  anEarlierPageAnswersNoWait,
+  anEarlierPageNeverReadsTheLatestChange,
+  anEmptyQueryPassesNoPage,
+  aNonUuidBeforeIs400,
+  aZeroLimitIs400,
+  theNewestPageStillCarriesTheWait,
   aJsonTurnWithoutWizardsIs400,
   aMalformedMultipartWizardsFieldIs400,
   aWizardTheCatalogRefusesIs400,
@@ -66,4 +75,16 @@ describe("F3.85 — POST /copilot/conversations/:id/turns (ADR 0099 decisions 1,
   it("F4.244: the detail always carries the awaitingFollowUp key", async () => {
     await assertTheDetailAlwaysCarriesTheAwaitingFollowUpKey();
   });
+});
+
+describe("F4.292 — the detail route parses before/limit (ADR 0099 Amendment 9 E7)", () => {
+  it("a limit query reaches the service as a page", () => aLimitQueryReachesTheServiceAsAPage());
+  it("a before query gets the default limit of 50", () => aBeforeQueryGetsTheDefaultLimit());
+  it("an empty query passes no page", () => anEmptyQueryPassesNoPage());
+  it("a limit of 0 is a 400", () => aZeroLimitIs400());
+  it("a non-uuid before is a 400", () => aNonUuidBeforeIs400());
+  it("a cursor the service does not find is a 404", () => aMissingCursorIs404());
+  it("an earlier page answers awaitingFollowUp null", () => anEarlierPageAnswersNoWait());
+  it("an earlier page never reads latestFinished", () => anEarlierPageNeverReadsTheLatestChange());
+  it("the newest page still carries the wait", () => theNewestPageStillCarriesTheWait());
 });

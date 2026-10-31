@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+import { clearCopilotWindow } from "./copilot-window-store";
+
 /**
  * `F3.85` PR 7 (review code:F2) — the copilot dock's session: which
  * conversation is open and, for the global administrator, which organization
@@ -13,8 +15,9 @@ import { persist } from "zustand/middleware";
  * conversation it belonged to. AGENTS.md §4.2 puts UI state in Zustand.
  *
  * **What is not here.** The messages live in the TanStack Query cache under
- * `copilotConversationKey(id)`, which outlives the unmount too. The open state
- * stays in `localStorage` (`bms-copilot-open`), read when the dock mounts.
+ * `copilotConversationKey(id)`, which outlives the unmount too. The open state,
+ * the window mode and the size live in `useCopilotWindowStore` (`F4.292`,
+ * key `bms-copilot-window`), which {@link clearCopilotSession} clears too.
  *
  * **Persisted** (`F4.244`, owner ruling 2026-10-20, reversing the F3.85
  * code:F2 choice). `userId`, `organizationId` and `conversationId` live in
@@ -71,6 +74,8 @@ type CopilotSessionState = {
   pick: (userId: string, organizationId: string) => void;
   /** Records the conversation a turn was sent to, keeping the user's current pick. */
   setConversation: (userId: string, conversationId: string) => void;
+  /** `F4.292`: opens a listed conversation with the pick it was started in (the server reads the scope from its row). */
+  openConversation: (userId: string, organizationId: string, conversationId: string) => void;
 };
 
 const INITIAL = {
@@ -95,6 +100,7 @@ export const useCopilotStore = create<CopilotSessionState>()(
         return request.userId === userId && Date.now() - request.at <= ONBOARD_REQUEST_TTL_MS ? request : null;
       },
       pick: (userId, organizationId) => set({ userId, organizationId, conversationId: null }),
+      openConversation: (userId, organizationId, conversationId) => set({ userId, organizationId, conversationId }),
       setConversation: (userId, conversationId) => {
         const state = get();
         set({
@@ -116,10 +122,14 @@ export const useCopilotStore = create<CopilotSessionState>()(
   ),
 );
 
-/** Ends the copilot session: back to no session, and the stored key removed (`F4.244`). */
+/**
+ * Ends the copilot session: back to no session, and the stored key removed (`F4.244`).
+ * `F4.292` (owner ruling P6): the window goes with it — the panel closes and its key is removed.
+ */
 export function clearCopilotSession(): void {
   useCopilotStore.setState({ ...INITIAL });
   useCopilotStore.persist.clearStorage();
+  clearCopilotWindow();
 }
 
 /** Back to no session — for a spec's `afterEach`, since the store is module-global. */
@@ -137,7 +147,21 @@ export function useCopilotSession(userId: string): { organizationId: string; con
     : { organizationId: COPILOT_ALL_ORGANIZATIONS, conversationId: null };
 }
 
+/** `F4.292` — the Query key of the conversation list (`GET /copilot/conversations`); a turn and a new conversation make it stale. */
+export const COPILOT_CONVERSATIONS = ["copilot", "conversations"] as const;
+
 /** The TanStack Query key of one conversation's thread. */
 export function copilotConversationKey(conversationId: string | null): readonly unknown[] {
   return ["copilot", "conversation", conversationId];
+}
+
+/**
+ * `F4.292` — the Query key of one conversation's loaded window (the earlier
+ * pages *Load earlier* read, and the thread's rows after them). Not under
+ * {@link copilotConversationKey}'s prefix: `invalidateQueries` and
+ * `cancelQueries` match by prefix, and the thread's poll, a Confirm's `gone()`
+ * and a focus read must never reach these rows (critic).
+ */
+export function copilotEarlierKey(conversationId: string | null): readonly unknown[] {
+  return ["copilot", "earlier", conversationId];
 }

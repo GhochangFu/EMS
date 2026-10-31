@@ -2,7 +2,7 @@ import { dashboardsListResponseSchema } from "@bms/shared";
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
-import { collectByOrganization, defineReadTool } from "./copilot-read-tool";
+import { collectByOrganization, defineReadTool, listResult } from "./copilot-read-tool";
 import { COPILOT_TOOL_LIST_MAX_ITEMS, targetOrganizations } from "./copilot-tool-scope";
 
 export const COPILOT_DASHBOARDS_WRONG_ORGANIZATION = "The dashboard list returned a row from another organization.";
@@ -39,6 +39,6 @@ export const listDashboardsTool = defineReadTool({
       if (page.items.length > room) truncated = true;
       room -= out.add(organizationId, page.items, room);
     }
-    return { ok: true, result: { organizations: out.organizations, truncated }, organizationIds: out.read };
+    return listResult(out, truncated);
   },
 });

@@ -1,12 +1,13 @@
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 
-import { alarms, alarmSkills, assets, maintenanceHistory, maintenanceSchedules, maintenanceTaskTemplates, users, workOrders } from "@bms/db";
+import { alarms, alarmSkills, assets, maintenanceHistory, maintenanceSchedules, maintenanceTaskTemplates, workOrders } from "@bms/db";
 
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
 import { type BmsTx, withTenant } from "../database/tenant-context";
+import { readActiveOrganizationUser } from "../work-orders/assignee";
 
 /**
  * `F4.284` (ADR 0106 decision 6; ADR 0099 Amendment 8 D2) — the row reads behind the
@@ -137,18 +138,14 @@ export async function readWorkOrderRow(
 }
 
 /**
- * Owner ruling DC1 — an assignee (`assignedTo`) of `organizationId`: its display name, for the
- * card's "assigned to", or `null`. `bms.users` carries FORCE ROW LEVEL SECURITY (`0047`), so the
- * read runs under the change's tenant; a global admin (no organization) is never found.
+ * Owner ruling DC1 — an assignee (`assignedTo`): an active user of `organizationId`, its display
+ * name for the card's "assigned to", or `null`. `bms.users` carries FORCE ROW LEVEL SECURITY
+ * (`0047`), so the read runs under the change's tenant; a global admin (no organization) is never
+ * found. `F4.285`: the predicate is the work-order routes' own (`readActiveOrganizationUser`), so a
+ * disabled user is refused before the card, as the route refuses it at Confirm.
  */
 export async function readOrganizationUserName(tenantDb: BmsDb, id: string, organizationId: string): Promise<string | null> {
-  const [row] = await withTenant(tenantDb, organizationId, (tx) =>
-    tx
-      .select({ id: users.id, displayName: users.displayName })
-      .from(users)
-      .where(and(eq(users.id, id), eq(users.organizationId, organizationId)))
-      .limit(1),
-  );
+  const row = await withTenant(tenantDb, organizationId, (tx) => readActiveOrganizationUser(tx, id, organizationId));
   return row ? row.displayName : null;
 }
 

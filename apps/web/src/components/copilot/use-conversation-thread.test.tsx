@@ -12,6 +12,8 @@ import {
   armsFromTheLocalStartNotFromTheMount,
   failsClosedOnAnUnreadableAge,
   resetsTheWaitWhenTheConversationChanges,
+  anOutcomeLineInALaterPageEndsTheWait,
+  theThreadReadsTheNewestPage,
 } from "./use-conversation-thread.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), one claim per `it()`. */
@@ -31,4 +33,6 @@ describe("F4.244 useConversationThread — the follow-up wait", () => {
   it("does not end the wait on another change's outcome line (review C1)", () => anotherChangesOutcomeLineDoesNotEndTheWait());
   it("does not end the wait on an outcome line held before it began", () => anEarlierOutcomeLineDoesNotEndTheWait());
   it("re-reads the thread on a window focus when no wait is on (review C3)", () => aFocusReReadsTheThreadWhenNoWaitIsOn());
+  it("reads the newest page (F4.292)", () => theThreadReadsTheNewestPage());
+  it("ends the wait on an outcome line in a later page (F4.292 critic)", () => anOutcomeLineInALaterPageEndsTheWait());
 });

@@ -85,7 +85,8 @@ function controllerWith(options: { writeAllowed?: boolean } = {}): {
   // asserted here ever calls it. A fresh instance per controller keeps it that
   // way if one ever does.
   return {
-    controller: new RulesController(rules, accessControl, channels, new EvaluateThrottle(), channelWrites),
+    // `F4.289`: the sixth slot, `RulesBatchService`, serves only `POST /rules/batch`; no route here reaches it.
+    controller: new RulesController(rules, accessControl, channels, new EvaluateThrottle(), channelWrites, {} as unknown as Ctor[5]),
     writes,
     reads,
   };

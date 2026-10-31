@@ -180,7 +180,32 @@ export const copilotAwaitingFollowUpDtoSchema = z
   })
   .strict();
 
-/** `GET /api/v1/copilot/conversations/:id` — the conversation and its messages, oldest first. */
+/** `F4.292` (ADR 0099 Amendment 9 E7) — the largest page `GET /copilot/conversations/:id` answers. */
+export const COPILOT_CONVERSATION_PAGE_MAX = 200;
+
+/** `F4.292` — the page size a read with `before` and no `limit` gets. */
+export const COPILOT_CONVERSATION_PAGE_DEFAULT = 50;
+
+/**
+ * `F4.292` (ADR 0099 Amendment 9 E7) — the detail read's query:
+ * `?before=<messageId>&limit=<n>`. Either key makes the read a page (the newest
+ * `limit` messages older than `before`, oldest first); a read with neither keeps
+ * the old shape (every message, no `hasEarlier`). `limit` arrives as a string.
+ */
+export const copilotConversationDetailQuerySchema = z
+  .object({
+    before: z.string().uuid().optional(),
+    limit: z.coerce.number().int().min(1).max(COPILOT_CONVERSATION_PAGE_MAX).optional(),
+  })
+  .strict();
+
+/** `GET /api/v1/copilot/conversations` — the caller's conversations, newest turn first. */
+export const copilotConversationListDtoSchema = z.array(copilotConversationDtoSchema);
+
+/**
+ * `GET /api/v1/copilot/conversations/:id` — the conversation and its messages, oldest first.
+ * `F4.292`: a paged read carries one page of them (`hasEarlier` says more lie before it).
+ */
 export const copilotConversationDetailDtoSchema = z
   .object({
     id: z.string(),
@@ -199,6 +224,12 @@ export const copilotConversationDetailDtoSchema = z
      * web spec stubs of this DTO stay valid.
      */
     awaitingFollowUp: copilotAwaitingFollowUpDtoSchema.nullable().optional(),
+    /**
+     * `F4.292`: whether messages older than this page exist. Present only on a paged read
+     * (`before` or `limit` in the query); absent on a read with no query, so that read keeps
+     * its old shape (ADR 0099 Amendment 6 D6(b)).
+     */
+    hasEarlier: z.boolean().optional(),
   })
   .strict();
 

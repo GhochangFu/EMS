@@ -14,6 +14,8 @@ import {
 import { roleLabel } from "../lib/role-label";
 import { useAuthStore, type AuthUser } from "../stores/auth-store";
 import { CopilotDock } from "../components/copilot/copilot-dock";
+import { useCopilotSheet, useViewportSize } from "../components/copilot/use-copilot-viewport";
+import { useCopilotPagePush } from "../stores/copilot-window-store";
 import { StatusBarClock } from "../components/status-bar-clock";
 import { SystemStatusIndicator } from "../components/system-status-indicator";
 import { SurfaceSwitch } from "../components/surface-switch";
@@ -232,8 +234,11 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
     });
   }
 
+  // F4.292 (ADR 0099 Amendment 9 E6): a docked copilot panel pushes the page by its width, not covers it.
+  const copilotPush = useCopilotPagePush(useCopilotSheet(), useViewportSize());
+
   return (
-    <div className="flex min-h-screen flex-col bg-canvas text-ink">
+    <div className="flex min-h-screen flex-col bg-canvas text-ink" style={{ paddingRight: `${copilotPush}px` }}>
       <header className="flex h-12 shrink-0 items-center justify-between bg-chrome px-4 text-sm text-on-dark">
         <div className="flex items-center gap-3">
           <Wordmark variant="header" />

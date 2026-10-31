@@ -61,6 +61,15 @@ export function theSchemasAreTheRoutesRules(): void {
   ]).toEqual([false, true, false, true]);
 }
 
+/** `F4.289`: a rule batch's `excludedRows` shows no box and is not required (the row checkboxes set it). */
+export function theBatchExcludedRowsShowNoBox(): void {
+  const entry = catalogEntry("rule.createBatch");
+  if (!entry) throw new Error("rule.createBatch");
+  expect(clientOnlyFieldsFor(entry, { rules: [] }, null).map((field) => [field.path, field.shown, field.required])).toEqual([
+    ["excludedRows", false, false],
+  ]);
+}
+
 /** Any other entry's `clientOnly` field is shown and required, as before. */
 export function anotherEntrysFieldIsRequired(): void {
   const entry = catalogEntry("notificationChannel.create");

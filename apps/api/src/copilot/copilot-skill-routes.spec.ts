@@ -71,7 +71,7 @@ function routes(boundSessionId: string | null, options: { state?: CopilotSkillSt
 /** A bound conversation's read carries the session's state, read as the caller. */
 export async function aBoundConversationReadCarriesTheSkill(): Promise<void> {
   const h = routes(SESSION);
-  const detail = await h.controller.get(CONVERSATION, ORG_ADMIN, JWT);
+  const detail = await h.controller.get(CONVERSATION, {}, ORG_ADMIN, JWT);
   expect(detail.skill).toEqual(STATE);
   expect(h.record.stateOf).toEqual([[JWT, SESSION]]);
   // The internal column never leaves: the DTO is strict.
@@ -81,7 +81,7 @@ export async function aBoundConversationReadCarriesTheSkill(): Promise<void> {
 /** A plain conversation's read carries no `skill` key and reads no session. */
 export async function aPlainConversationReadCarriesNoSkill(): Promise<void> {
   const h = routes(null);
-  const detail = await h.controller.get(CONVERSATION, ORG_ADMIN, JWT);
+  const detail = await h.controller.get(CONVERSATION, {}, ORG_ADMIN, JWT);
   expect("skill" in detail).toBe(false);
   expect(h.record.stateOf).toEqual([]);
 }
@@ -123,7 +123,7 @@ export async function theEndRouteAnswersWithNoSkill(): Promise<void> {
  */
 export async function aReadOfACommittedSkillDropsItsCommitCard(): Promise<void> {
   const h = routes(SESSION, { state: COMMITTED_STATE, open: [OPEN_COMMIT_CARD, OPEN_OTHER_CARD] });
-  const detail = await h.controller.get(CONVERSATION, ORG_ADMIN, JWT);
+  const detail = await h.controller.get(CONVERSATION, {}, ORG_ADMIN, JWT);
   expect(h.record.discarded).toEqual([[OPEN_COMMIT_ID]]);
   expect(h.record.listOpen).toEqual([[ORG_ADMIN.id, CONVERSATION]]);
   expect(h.record.discardUsers).toEqual([ORG_ADMIN.id]);
@@ -133,7 +133,7 @@ export async function aReadOfACommittedSkillDropsItsCommitCard(): Promise<void> 
 /** A draft skill keeps its commit card: it is live, and nothing is discarded. */
 export async function aReadOfADraftSkillKeepsItsCommitCard(): Promise<void> {
   const h = routes(SESSION, { open: [OPEN_COMMIT_CARD, OPEN_OTHER_CARD] });
-  const detail = await h.controller.get(CONVERSATION, ORG_ADMIN, JWT);
+  const detail = await h.controller.get(CONVERSATION, {}, ORG_ADMIN, JWT);
   expect(h.record.discarded).toEqual([]);
   expect(detail.pendingChanges).toEqual([OPEN_COMMIT_CARD, OPEN_OTHER_CARD]);
 }
@@ -141,7 +141,7 @@ export async function aReadOfADraftSkillKeepsItsCommitCard(): Promise<void> {
 /** A plain conversation (the skill ended) holds no live commit card: a left one is rejected, the other change shown. */
 export async function aPlainReadDropsALeftCommitCard(): Promise<void> {
   const h = routes(null, { open: [OPEN_COMMIT_CARD, OPEN_OTHER_CARD] });
-  const detail = await h.controller.get(CONVERSATION, ORG_ADMIN, JWT);
+  const detail = await h.controller.get(CONVERSATION, {}, ORG_ADMIN, JWT);
   expect(h.record.discarded).toEqual([[OPEN_COMMIT_ID]]);
   expect(detail.pendingChanges).toEqual([OPEN_OTHER_CARD]);
 }

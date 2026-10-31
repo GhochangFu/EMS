@@ -27,6 +27,7 @@ import { resolveActorId } from "../auth/identity-resolver";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withReadScope } from "../database/tenant-read-scope";
+import { ASSIGNEE_REFUSAL, readActiveOrganizationUser } from "./assignee";
 
 const terminalStatuses = new Set<WorkOrderStatus>(["closed"]);
 
@@ -70,6 +71,11 @@ export function workOrderTitlePattern(search: string): string {
  * malformed request, refused rather than split across tenant transactions. The
  * `audit_log` rows carry no `organization_id` this item (ruling 5, deferred to
  * E7.1c); their inserts pass the NULL-tolerant `WITH CHECK` under any GUC.
+ *
+ * `F4.285` (ADR 0106 decision 6): an `assignedTo` on create or status update must be an
+ * active user of the work order's organization, read inside the write's own tenant
+ * transaction (`assertAssignee`), so the `0047` FORCE policy on `bms.users` backs the
+ * explicit organization filter.
  */
 @Injectable()
 export class WorkOrdersService {
@@ -161,6 +167,13 @@ export class WorkOrdersService {
       );
     }
     return row.organizationId;
+  }
+
+  /** `F4.285` (ADR 0106 decision 6): an assignee must be an active user of the work order's organization; read inside the write's tenant transaction. */
+  private async assertAssignee(tx: BmsTx, assignedTo: string, organizationId: string): Promise<void> {
+    if ((await readActiveOrganizationUser(tx, assignedTo, organizationId)) === null) {
+      throw new BadRequestException(ASSIGNEE_REFUSAL);
+    }
   }
 
   /** The one organization a batch shares, or a refusal if it spans zero or many. */
@@ -365,6 +378,9 @@ export class WorkOrdersService {
           );
         }
       }
+      if (dto.assignedTo) {
+        await this.assertAssignee(tx, dto.assignedTo, organizationId);
+      }
 
       const [created] = await tx
         .insert(workOrders)
@@ -426,6 +442,10 @@ export class WorkOrdersService {
     const organizationId = await this.resolveWorkOrderOrg(id, assetIds);
     const now = new Date();
     await withTenant(this.db, organizationId, async (tx) => {
+      // `F4.285` (DC-D): `null` clears the assignee and an omitted field keeps it — neither reads a user.
+      if (typeof dto.assignedTo === "string") {
+        await this.assertAssignee(tx, dto.assignedTo, organizationId);
+      }
       await tx
         .update(workOrders)
         .set({

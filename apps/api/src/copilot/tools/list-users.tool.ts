@@ -2,7 +2,7 @@ import { adminUsersListResponseSchema } from "@bms/shared";
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
-import { collectByOrganization, defineReadTool } from "./copilot-read-tool";
+import { collectByOrganization, defineReadTool, listResult } from "./copilot-read-tool";
 import { COPILOT_TOOL_LIST_MAX_ITEMS, targetOrganizations } from "./copilot-tool-scope";
 
 /**
@@ -50,6 +50,6 @@ export const listUsersTool = defineReadTool({
         room,
       );
     }
-    return { ok: true, result: { organizations: out.organizations, truncated }, organizationIds: out.read };
+    return listResult(out, truncated);
   },
 });

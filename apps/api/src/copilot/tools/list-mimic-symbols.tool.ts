@@ -77,6 +77,6 @@ export const listMimicSymbolsTool = defineReadTool({
         }
       }
     }
-    return { ok: true, result: { organizations, truncated }, organizationIds: organizations.map((entry) => entry.organizationId) };
+    return { ok: true, result: { truncated, organizations }, organizationIds: organizations.map((entry) => entry.organizationId) };
   },
 });

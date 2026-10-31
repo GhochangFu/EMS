@@ -17,6 +17,14 @@ import {
   assertTheLadderPicksAGranularityPerRung,
   assertParameterIndicesAreChecked,
   assertThePeakHasAStableTieBreak,
+  assertGroupedScalarSqlReusesAvgExprAndGroupsByAsset,
+  assertLastBucketSqlReadsTheNewestCountedBucketPerAsset,
+  assertPointStatsParameterIndicesAreChecked,
+  assertPointStatsLevelsFollowTheLadderAndTheRetentionGuard,
+  assertAnIstWeekReadsWholeHoursAndTheEdgesAtOneMinute,
+  assertAWindowWithSecondsIsCoveredByItsWholeMinutes,
+  assertASingleLevelWindowHasNoEdges,
+  assertAWindowWithNoWholeMinuteIsEmptyNotInverted,
 } from "./point-aggregate-window.spec";
 
 /** `F3.35` Stage A — Vitest wrapper for the pure ADR 0048 read-seam assertions (ADR 0014). */
@@ -89,5 +97,39 @@ describe("F3.35 Stage A — the SQL the endpoint emits", () => {
 describe("F3.35 Stage A — composing the fragments into one statement", () => {
   it("shifts only the window's parameter indices, and refuses a non-positional one", () => {
     assertParameterIndicesAreChecked();
+  });
+});
+
+describe("F4.291 PR 3 — the get_point_stats fragments", () => {
+  it("groups the statistics per asked asset and reuses avgExpr", () => {
+    assertGroupedScalarSqlReusesAvgExprAndGroupsByAsset();
+  });
+
+  it("reads last as each asset's newest counted bucket", () => {
+    assertLastBucketSqlReadsTheNewestCountedBucketPerAsset();
+  });
+
+  it("takes its parameter indices like scalarSql, and refuses a bad one", () => {
+    assertPointStatsParameterIndicesAreChecked();
+  });
+
+  it("picks the statistics level by the ladder and last at 1m, both through the retention guard", () => {
+    assertPointStatsLevelsFollowTheLadderAndTheRetentionGuard();
+  });
+
+  it("reads an IST week as whole UTC hours with the two half hours at 1m", () => {
+    assertAnIstWeekReadsWholeHoursAndTheEdgesAtOneMinute();
+  });
+
+  it("covers a window with seconds by its whole minutes", () => {
+    assertAWindowWithSecondsIsCoveredByItsWholeMinutes();
+  });
+
+  it("has no edges at one level", () => {
+    assertASingleLevelWindowHasNoEdges();
+  });
+
+  it("answers an empty window, not an inverted one, when no whole minute fits", () => {
+    assertAWindowWithNoWholeMinuteIsEmptyNotInverted();
   });
 });

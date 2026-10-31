@@ -7,13 +7,21 @@ import { openIntegrationPool, requireIntegrationDb } from "../testing/integratio
 import { asRole } from "../testing/role-urls";
 import {
   aBindHoldsOnlyWhileNoneIsBound,
+  aCursorOfAnotherConversationIsRefused,
+  aLaterTurnKeepsTheTitle,
+  anotherUsersConversationIs404,
+  anUnpagedReadAnswersEveryMessage,
+  aPageWalkCoversEveryMessageOnce,
   aResumeFreesTheCallersOtherConversation,
   aResumeKeepsTheResumedConversation,
   aResumeLeavesAnotherUsersBinding,
-  anotherUsersConversationIs404,
+  aTurnWithNoUserLineLeavesTheTitleOpen,
   type ConversationsCtx,
   createRecordsTheBinding,
   listIsNewestFirstAndMessagesAreOrdered,
+  onlyTheLastPageHasNoEarlier,
+  rowsOfOneMillisecondArePagedOnce,
+  theFirstTurnTitlesTheConversation,
 } from "./copilot-conversations.integration.spec";
 
 const connectionString = requireIntegrationDb({
@@ -118,5 +126,29 @@ describe.skipIf(!connectionString)("F3.85 — the copilot conversation routes (m
   });
   it("F4.255: a resume leaves another user's binding", async () => {
     await aResumeLeavesAnotherUsersBinding(ctx);
+  });
+  it("F4.292: pages of two cover every message once, in order", async () => {
+    await aPageWalkCoversEveryMessageOnce(ctx);
+  });
+  it("F4.292: only the last page has no earlier", async () => {
+    await onlyTheLastPageHasNoEarlier(ctx);
+  });
+  it("F4.292: a read with no page answers every message and no hasEarlier key", async () => {
+    await anUnpagedReadAnswersEveryMessage(ctx);
+  });
+  it("F4.292: rows of one millisecond are each paged once", async () => {
+    await rowsOfOneMillisecondArePagedOnce(ctx);
+  });
+  it("F4.292: a cursor of another conversation is refused", async () => {
+    await aCursorOfAnotherConversationIsRefused(ctx);
+  });
+  it("F4.292: the first turn titles the conversation", async () => {
+    await theFirstTurnTitlesTheConversation(ctx);
+  });
+  it("F4.292: a later turn keeps the title", async () => {
+    await aLaterTurnKeepsTheTitle(ctx);
+  });
+  it("F4.292: a turn with no user line leaves the title open", async () => {
+    await aTurnWithNoUserLineLeavesTheTitleOpen(ctx);
   });
 });

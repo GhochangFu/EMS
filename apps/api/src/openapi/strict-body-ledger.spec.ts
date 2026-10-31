@@ -34,6 +34,7 @@ import {
   putMimicLibrarySettingBodySchema,
   updateMimicOrgSymbolBodySchema,
   updateMimicOrgSymbolLibraryBodySchema,
+  ruleBatchBodySchema,
   ruleDraftBodySchema,
   ruleLifecycleBodySchema,
   ruleToggleBodySchema,
@@ -323,6 +324,8 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // a client would send and the server computes — a 400, never dropped at 201.
   createReportScheduleBodySchema,
   updateReportScheduleBodySchema,
+  // `F4.289`: `.strict()` at the top and in every row (each row is `ruleDraftBodySchema`).
+  ruleBatchBodySchema,
   ruleDraftBodySchema,
   ruleLifecycleBodySchema,
   rulePreviewBodySchema,

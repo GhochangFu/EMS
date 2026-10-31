@@ -233,6 +233,21 @@ export async function theSaveNoteSaysItRendersOnConfirm(): Promise<void> {
   expect((await check.check(SAVE)).note).toBe("Rendered on Confirm; stamped to the whole organization.");
 }
 
+/** `F4.290`: a save naming a site reaches `previewSave`, and the note names the stamp it gives. */
+export async function aSaveNamingASiteIsStampedToIt(): Promise<void> {
+  const { check } = build();
+  expect((await check.check({ ...SAVE, body: { ...SAVE.body, locationIds: [WC] } })).note).toBe("Rendered on Confirm; stamped to 1 location.");
+}
+
+/** `F4.290`: a named site outside the organization is the route's 400 sentence. */
+export async function aSaveNamingAForeignSiteIsRefused(): Promise<void> {
+  const { check } = build();
+  const foreign = "29292929-2929-4292-8292-292929292929";
+  expect(await refusal(() => check.check({ ...SAVE, body: { ...SAVE.body, locationIds: [foreign] } }))).toBe(
+    "locationIds names a location outside the organization",
+  );
+}
+
 /** `previewSave` renders nothing and makes no storage call. */
 export async function thePreviewRendersNothingAndStoresNothing(): Promise<void> {
   const built = build();

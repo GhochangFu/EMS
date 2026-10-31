@@ -74,6 +74,8 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/vocabularies/location-types.service.ts",
   // `F4.278` (Amendment 8): every alarm-rule write entry's handler reaches this service.
   "apps/api/src/rules/rules.service.ts",
+  // `F4.289` (Amendment 9 E3): `POST /rules/batch`, the `rule.createBatch` entry's handler.
+  "apps/api/src/rules/rules-batch.service.ts",
   // `F4.279` (Amendment 8): the channel writes (and `PUT /rules/:id/notifications`) and the
   // escalation profiles and defaults. `channels.service.ts` is deliberately NOT listed: it
   // holds only the reads the worker loads and no longer references the funnel.

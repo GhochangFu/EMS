@@ -307,3 +307,32 @@ export async function aFileUploadWithoutTheFileIsRefusedBeforeFetch(): Promise<v
   await expect(confirmCopilotChange(IMPORT_CHANGE)).rejects.toBeInstanceOf(ApiError);
   expect(fetchSpy).not.toHaveBeenCalled();
 }
+
+/** `F4.289` (ADR 0099 Amendment 9 E3): a batch rule card as the turn stored it — the rows and the server's per-row checks. */
+const BATCH_RULE = { name: "Supply high", ruleType: "threshold", assetId: "77777777-7777-4777-8777-777777777777", pointKey: "supply_temp_c", operator: "gt", thresholdValue: 12, condition: { window: "latest" }, action: { type: "notify", target: "Operations" } };
+const BATCH_CHANGE: CopilotPendingChangeDto = {
+  ...CHANGE,
+  catalogId: "rule.createBatch",
+  path: "/api/v1/rules/batch",
+  body: { rules: [BATCH_RULE, { ...BATCH_RULE, name: "Supply very high" }], checks: [{ row: 1 }, { row: 2 }] },
+  summary: "Create and publish up to 2 alarm rules on 1 asset in Org X",
+};
+
+/**
+ * `F4.289` (Task 11): the unticked rows go as a list at the entry's `clientOnly` key, beside the
+ * stored rows, and the card-only checks stay out. Mutation: drop the spread → `excludedRows` is absent.
+ */
+export async function aClientOnlyValueThatIsNotAStringIsSentAtItsKey(): Promise<void> {
+  const seen = capture(() => new Response(JSON.stringify({ items: [] }), { status: 201 }));
+  await confirmCopilotChange(BATCH_CHANGE, {}, undefined, { excludedRows: [1] });
+  const sent = JSON.parse(seen().init.body as string) as Record<string, unknown>;
+  expect(sent).toEqual({ rules: BATCH_CHANGE.body.rules, excludedRows: [1] });
+}
+
+/** A value at a key the entry does not name `clientOnly` is refused before `fetch`. Mutation: drop the key guard. */
+export async function aKeyOutsideTheEntrysClientOnlyIsRefusedBeforeFetch(): Promise<void> {
+  const fetchSpy = vi.fn();
+  vi.stubGlobal("fetch", fetchSpy);
+  await expect(confirmCopilotChange(BATCH_CHANGE, {}, undefined, { rules: [] })).rejects.toBeInstanceOf(ApiError);
+  expect(fetchSpy).not.toHaveBeenCalled();
+}

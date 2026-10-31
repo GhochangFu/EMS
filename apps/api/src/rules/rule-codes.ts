@@ -1,5 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import { automationRules } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -64,28 +64,34 @@ export async function assertRuleCodeAvailable(
 /**
  * Generates a fresh code from a seed name — `SEED`, `SEED-2`, `SEED-3`, …
  *
- * **Left global, out of this task's scope — reported, not fixed.** Task 9
- * (E7.1c) is the live-defect fix for `assertRuleCodeAvailable` above, which
- * turns another tenant's code into a spurious 400. This scan has no such
- * failure mode: an index collision with another org's code merely makes the
- * generated candidate skip to the next suffix, which is conservative (an
- * unnecessarily different code), not a false rejection.
+ * **Scoped to `organizationId`** (`F4.289`), as `assertRuleCodeAvailable`
+ * above and the `(organization_id, code)` unique index are. The scan was
+ * global until then: it runs on `fleetDb` (BYPASSRLS), so the returned suffix
+ * told a caller THAT a literal code existed in another tenant (seed a guessed
+ * code and read back whether the candidate skipped), though never whose. The
+ * batch route would have answered 25 such probes per request. Pinned by
+ * `rules-batch.integration.spec.ts`
+ * (`aCodeTakenInAnotherOrganizationDoesNotMoveTheGeneratedCode`); the suffix
+ * walk by `twoRowsWithTheSameNameGetDistinctCodes` and
+ * `anExplicitCodeLaterInTheBatchIsNotGeneratedForAnEarlierRow`.
  *
- * It is a narrow oracle, though, and an earlier version of this comment
- * overclaimed "not an information leak" — worth correcting rather than
- * repeating. The returned suffix reveals THAT a literal code string exists
- * SOMEWHERE in the system (seed it with a guessed competitor code and read
- * back whether the candidate skipped), even though it never reveals WHOSE
- * code or which organization. Scoping this scan to `organizationId`, the way
- * `assertRuleCodeAvailable` was scoped, would close that — a caller in org A
- * would then only ever learn about org A's own codes. Not done here: it is a
- * behaviour change to a code-generation path with no existing test coverage
- * (unlike `assertRuleCodeAvailable`, which `rules.service.spec.ts` and
- * `assertSameRuleCodePublishesInBothOrganizations` already pin), so shipping
- * it inside this review-response would itself be an untested change of the
- * kind this task exists to eliminate.
+ * The arguments are named, not positional: `organizationId` and `seed` are
+ * both strings, and a swap would still compile.
+ *
+ * `exclude` (`F4.289`): codes a batch has already taken but not yet inserted.
+ * A candidate in the set is skipped as if it existed. Without it, two batch
+ * rows named alike (or a generated code equal to a later row's explicit one)
+ * would get the same code, and the second insert would hit the
+ * `(organization_id, code)` unique index: a 500 instead of a row's 400.
  */
-export async function nextRuleCode(fleetDb: BmsDb, seed: string): Promise<string> {
+export async function nextRuleCode(
+  fleetDb: BmsDb,
+  {
+    organizationId,
+    seed,
+    exclude = new Set(),
+  }: { organizationId: string; seed: string; exclude?: ReadonlySet<string> },
+): Promise<string> {
   const base = seed
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "-")
@@ -95,10 +101,13 @@ export async function nextRuleCode(fleetDb: BmsDb, seed: string): Promise<string
 
   for (let index = 0; index < 100; index += 1) {
     const candidate = index === 0 ? prefix : `${prefix}-${index + 1}`;
+    if (exclude.has(candidate)) {
+      continue;
+    }
     const [existing] = await fleetDb
       .select({ id: automationRules.id })
       .from(automationRules)
-      .where(eq(automationRules.code, candidate))
+      .where(and(eq(automationRules.organizationId, organizationId), eq(automationRules.code, candidate)))
       .limit(1);
     if (!existing) {
       return candidate;

@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   aRefusedCheckStoresNothing,
+  aSaveNamingSitesIsStoredWithThem,
+  aSaveNamingSitesReachesTheCheckUnchanged,
   aSilentCreateNotAskedIsStored,
   anAssetGroupAdminIsRefusedByRole,
   anEmailingCreateAskedIsStored,
@@ -55,4 +57,6 @@ describe("F4.280 — the report propose tools (ADR 0099 Amendment 8 D2, D4, D5)"
   it("fill_step without channelId, not asked, is filled", () => fillingWithoutAChannelIsFilled());
   it("fill_step re-enabling an emailing schedule, not asked, is refused (Q5)", () => fillingReEnableOfAnEmailingScheduleIsRefused());
   it("the check is asked with the resolved organization", () => theCheckIsAskedWithTheResolvedOrganization());
+  it("F4.290: a save naming sites reaches the check unchanged", () => aSaveNamingSitesReachesTheCheckUnchanged());
+  it("F4.290: a save naming sites is stored with them", () => aSaveNamingSitesIsStoredWithThem());
 });

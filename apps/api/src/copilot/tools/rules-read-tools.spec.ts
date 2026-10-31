@@ -28,6 +28,11 @@ const ASSET_Y = "30000000-0000-4000-8000-0000000000bb";
 
 const ASSETS_BY_ORG: Record<string, string[]> = { [ORG_X]: [ASSET_X, ASSET_X2], [ORG_Y]: [ASSET_Y], [ORG_EMPTY]: [] };
 
+/** `F4.291`: a site in ORG_X whose subtree holds one readable asset, not one the organization list names. */
+const SITE = "40000000-0000-4000-8000-000000000001";
+const ASSET_SITE = "30000000-0000-4000-8000-0000000000f1";
+
+
 function ctx(allowed: readonly string[]): CopilotToolContext {
   return {
     identity: { id: USER, role: "admin", organizationId: null } as ResolvedIdentity,
@@ -51,10 +56,13 @@ function fake(rulesByOrg: Record<string, RuleListItem[]>) {
     access: {
       readableAssetIdsInOrganization: async (_user: JwtPayload, organizationId: string) => ASSETS_BY_ORG[organizationId] ?? [],
     },
+    locationScope: {
+      readableAssetIdsInLocations: async () => ({ ok: true, organizationId: ORG_X, assetIds: [ASSET_SITE] }),
+    },
     rules: {
       listRules: async (assetIds?: string[] | null) => {
         log.push(assetIds);
-        const owner = Object.keys(ASSETS_BY_ORG).find((org) => (ASSETS_BY_ORG[org] ?? []).includes(assetIds?.[0] ?? ""));
+        const owner = assetIds?.[0] === ASSET_SITE ? ORG_X : Object.keys(ASSETS_BY_ORG).find((org) => (ASSETS_BY_ORG[org] ?? []).includes(assetIds?.[0] ?? ""));
         return { items: owner ? (rulesByOrg[owner] ?? []) : [] };
       },
     },
@@ -62,7 +70,7 @@ function fake(rulesByOrg: Record<string, RuleListItem[]>) {
   return { tools: createCopilotReadTools(services), log };
 }
 
-type Listed = { organizations: { organizationId: string; items: Record<string, unknown>[] }[]; truncated: boolean };
+type Listed = { organizations: { organizationId: string; items: Record<string, unknown>[] }[]; truncated: boolean; nextCursor?: string | null };
 
 async function listRules(tools: ReturnType<typeof fake>["tools"], args: Record<string, unknown>, allowed: readonly string[]) {
   const result: CopilotToolResult = await tools.dispatch("list_rules", args, ctx(allowed));
@@ -116,11 +124,14 @@ export async function searchFiltersBeforeTheCap(): Promise<void> {
   expect(listed.truncated).toBe(false);
 }
 
-/** 40 rows are cut to 25, with `truncated`. */
+/**
+ * 40 rows are cut, with `truncated`. 22, not 25: 25 of these rows pass the
+ * result budget, so the page is fitted (`F4.291` live check, `fitListResult`).
+ */
 export async function fortyRowsAreCutToTwentyFive(): Promise<void> {
   const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => rule(i + 1)) });
   const listed = await listRules(tools, {}, [ORG_X]);
-  expect([itemsOf(listed).length, listed.truncated]).toEqual([25, true]);
+  expect([itemsOf(listed).length, listed.truncated]).toEqual([22, true]);
 }
 
 /** `assetId` narrows the list to that asset's rules. */
@@ -152,4 +163,28 @@ export async function theProjectionKeepsTheConditionAndDropsTheRest(): Promise<v
       "condition",
     ].sort(),
   );
+}
+
+/** `F4.291`: `locationId` reads only the location's organization, with the subtree's readable ids. */
+export async function locationIdNarrowsToTheSubtree(): Promise<void> {
+  const { tools, log } = fake({ [ORG_X]: [rule(1)] });
+  await listRules(tools, { locationId: SITE }, [ORG_X, ORG_Y]);
+  expect(log).toEqual([[ASSET_SITE]]);
+}
+
+/** `F4.291`: 40 rules; the cursor of page 1 gives the rest, from the row after page 1's last, and ends the list. */
+export async function aCursorResumesAtTheOffset(): Promise<void> {
+  const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => rule(i + 1)) });
+  const one = await listRules(tools, {}, [ORG_X]);
+  const two = await listRules(tools, { cursor: one.nextCursor }, [ORG_X]);
+  const codes = itemsOf(two).map((item) => item.code);
+  const first = itemsOf(one).length;
+  expect([codes[0], codes.at(-1), first + codes.length, two.nextCursor]).toEqual([`RULE-${first + 1}`, "RULE-40", 40, null]);
+}
+
+/** `F4.291` (critic: offset paging needs a total order): rules that tie on the service's key come back in id order. */
+export async function tiedRulesComeBackInIdOrder(): Promise<void> {
+  const tied = { name: "Same name" };
+  const { tools } = fake({ [ORG_X]: [rule(3, tied), rule(1, tied), rule(2, tied)] });
+  expect(itemsOf(await listRules(tools, {}, [ORG_X])).map((item) => item.code)).toEqual(["RULE-01", "RULE-02", "RULE-03"]);
 }

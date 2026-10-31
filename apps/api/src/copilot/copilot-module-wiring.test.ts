@@ -25,6 +25,16 @@ import {
   assertTheModuleImportsTheWorkOrdersModule,
   assertTheReadToolsInjectTheWorkOrdersAndUsersServices,
   assertTheWorkOrdersModuleProvidesTheAuditFunnel,
+  assertTheAuthModuleExportsTheLocationScope,
+  assertTheReadToolsInjectTheLocationScope,
+  assertTheAlarmsModuleExportsTheAlarmStats,
+  assertTheReadToolsInjectTheAlarmStats,
+  assertTheRulesModuleExportsTheInventoryService,
+  assertTheReadToolsInjectTheInventoryService,
+  assertTheInventoryServiceInjectsTheFleetPool,
+  assertTheReportsCoreModuleExportsTheLocationSummary,
+  assertTheReadToolsInjectTheLocationSummary,
+  assertTheLocationSummaryInjectsTheFleetHandles,
   assertTheProposeToolsInjectTheLayoutsService,
   assertTheResolverInjectsTheUsersServices,
 } from "./copilot-module-wiring.spec";
@@ -63,4 +73,14 @@ describe("F3.86 PR 4 — CopilotModule wiring for the user targets", () => {
   it("F4.284: the read tools inject WorkOrdersService and UsersService in slots 22 and 23", () =>
     assertTheReadToolsInjectTheWorkOrdersAndUsersServices());
   it("F4.284: WorkOrdersModule provides MasterDataAuditService", () => assertTheWorkOrdersModuleProvidesTheAuditFunnel());
+  it("F4.291: AuthModule provides and exports LocationAssetScopeService", () => assertTheAuthModuleExportsTheLocationScope());
+  it("F4.291: the read tools inject LocationAssetScopeService in slot 24", () => assertTheReadToolsInjectTheLocationScope());
+  it("F4.291 PR 2: AlarmsModule provides and exports AlarmStatsService", () => assertTheAlarmsModuleExportsTheAlarmStats());
+  it("F4.291 PR 2: the read tools inject AlarmStatsService in slot 25", () => assertTheReadToolsInjectTheAlarmStats());
+  it("F4.288: RulesModule provides and exports SitePointInventoryService", () => assertTheRulesModuleExportsTheInventoryService());
+  it("F4.288: the read tools inject SitePointInventoryService in slot 26", () => assertTheReadToolsInjectTheInventoryService());
+  it("F4.288: SitePointInventoryService injects the fleet pool", () => assertTheInventoryServiceInjectsTheFleetPool());
+  it("F4.290: ReportsCoreModule provides and exports LocationSummaryService", () => assertTheReportsCoreModuleExportsTheLocationSummary());
+  it("F4.290: the read tools inject LocationSummaryService in slot 27", () => assertTheReadToolsInjectTheLocationSummary());
+  it("F4.290: LocationSummaryService injects the fleet handles", () => assertTheLocationSummaryInjectsTheFleetHandles());
 });

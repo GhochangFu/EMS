@@ -90,7 +90,8 @@ export class RulesService {
     // deliberately cross-org system sweep (ADR 0033 decision 2); the code scan,
     // the pre-write asset lookup and the pre-tenant actor read stay on `fleetDb`;
     // `getBuilderCatalog` reads `assets` (master data) and, since `F3.49`,
-    // `template_points` — its `assetIds` WHERE is the isolation control for both.
+    // `template_points` and (`F4.287`) `asset_points` — its `assetIds` WHERE is the
+    // isolation control for all three.
     // Writes run inside `withTenant(org)`, and E7.1c folds the post-write
     // read-back into that transaction (`getRuleRowTx`); the pre-write current-row
     // read stays on `fleetDb`. `rule_notifications` stays in `ChannelsService`.
@@ -172,7 +173,7 @@ export class RulesService {
     // both branches, so this is the same value the old order would have used.
     const organizationId = await resolveWriteOrg(this.fleetDb, dto.assetId ?? null, dto.ruleType);
     const values = await this.validateRuleDraft(dto, undefined, organizationId);
-    const code = values.code ?? (await nextRuleCode(this.fleetDb, dto.name));
+    const code = values.code ?? (await nextRuleCode(this.fleetDb, { organizationId, seed: dto.name }));
     const now = new Date();
 
     const created = await withTenant(this.db, organizationId, async (tx) => {
@@ -405,7 +406,7 @@ export class RulesService {
     // `validateRuleDraft`, so it carries its own `organizationId` stamp.
     const organizationId = this.requireRuleOrg(current);
     const now = new Date();
-    const code = await nextRuleCode(this.fleetDb, `${current.code}-COPY`);
+    const code = await nextRuleCode(this.fleetDb, { organizationId, seed: `${current.code}-COPY` });
 
     const created = await withTenant(this.db, organizationId, async (tx) => {
       const [row] = await tx

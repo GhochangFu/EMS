@@ -1,6 +1,7 @@
 import {
   copilotConversationDetailDtoSchema,
   copilotConversationDtoSchema,
+  copilotConversationListDtoSchema,
   copilotRejectResponseDtoSchema,
   copilotStatusDtoSchema,
   copilotTurnResponseDtoSchema,
@@ -44,10 +45,30 @@ export async function createCopilotConversation(
   });
 }
 
-/** `GET /api/v1/copilot/conversations/:id` — the conversation and its messages, oldest first. */
-export async function fetchCopilotConversation(conversationId: string): Promise<CopilotConversationDetailDto> {
+/**
+ * `GET /api/v1/copilot/conversations` (`F4.292`, ADR 0099 Amendment 9 E7) — the
+ * caller's conversations, newest turn first, at most 100.
+ */
+export async function fetchCopilotConversations(): Promise<CopilotConversationDto[]> {
+  return adminFetch("/copilot/conversations", copilotConversationListDtoSchema);
+}
+
+/**
+ * `GET /api/v1/copilot/conversations/:id` — the conversation and its messages, oldest first.
+ * `F4.292`: with `page` the read is one page — `?limit=<n>[&before=<messageId>]`, the newest
+ * `limit` messages older than `before` — and carries `hasEarlier`. Without it the read keeps
+ * the old shape (every message, no `hasEarlier`).
+ */
+export async function fetchCopilotConversation(
+  conversationId: string,
+  page?: { before?: string; limit: number },
+): Promise<CopilotConversationDetailDto> {
+  const query =
+    page === undefined
+      ? ""
+      : `?limit=${encodeURIComponent(String(page.limit))}${page.before !== undefined ? `&before=${encodeURIComponent(page.before)}` : ""}`;
   return adminFetch(
-    `/copilot/conversations/${encodeURIComponent(conversationId)}`,
+    `/copilot/conversations/${encodeURIComponent(conversationId)}${query}`,
     copilotConversationDetailDtoSchema,
   );
 }

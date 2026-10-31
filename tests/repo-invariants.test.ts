@@ -88,6 +88,8 @@ describe("repo invariants", () => {
       "apps/api/src/dashboard/dashboard.service.ts",
       "apps/api/src/dashboard/energy-centre.ts",
       "apps/api/src/reports/reports.service.ts",
+      // `F4.290` PR 2: the location summary's no-data read of the `_1h` aggregate.
+      "apps/api/src/reports/location-summary.service.ts",
     ];
     // Comments discuss both markers on purpose, so strip them before matching.
     const stripComments = (src: string): string =>

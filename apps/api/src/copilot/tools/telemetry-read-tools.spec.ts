@@ -397,8 +397,21 @@ export async function assertTheTurnAnswersTheLast24HoursFromATool(): Promise<voi
  * Owner ruling 2026-10-23 (release 4): F4.281 measured 14,262 (31 tools, under the bound, so it is unchanged)
  * Owner ruling 2026-10-23 (release 4): F4.284 measured 15,207 (33 tools)
  * Owner ruling 2026-10-25 (release 4): F4.284 alarm skills measured 15,452 (34 tools, under the bound, so it is unchanged)
+ * Owner ruling P4 2026-10-27 (release 5, the release-4 rule per PR): F4.291 PR 1 measured 17,623 (34 tools; locationId
+ * and cursor on the lists, locationId on the six energy reads, search on list_locations), so the bound is 19,000
+ * Owner ruling P4 2026-10-27 (release 5, the release-4 rule per PR): F4.291 PR 2 measured 18,665 (35 tools; severity and
+ * lastDays/from/to on list_alarms, get_alarm_stats), so the bound is 20,000. The propose registry is unchanged (82,991).
+ * Owner ruling P4 2026-10-27 (release 5, the release-4 rule per PR): F4.291 PR 3 measured 19,653 (36 tools; get_point_stats),
+ * so the bound is 21,000. The propose registry is unchanged (its spec stays green under 84,000).
+ * Owner ruling P4 2026-10-27 (release 5, the release-4 rule per PR): F4.290 PR 1 measured 19,884 (36 tools; locationIds on
+ * get_energy_report_preview), under the bound, so it is unchanged. The propose registry measured 83,092 (under 84,000).
+ * Owner ruling P4 2026-10-27 (release 5, the release-4 rule per PR): F4.288 measured 20,296 (37 tools;
+ * get_site_point_inventory), under the bound, so it is unchanged. The propose registry is unchanged (82,991).
+ * F4.288 review: 20,334 (the description says a row's asset is its index in assets), under the bound; propose 82,991.
+ * Owner ruling P4 2026-10-27 (release 5, the release-4 rule per PR): F4.290 PR 2 measured 21,423 (38 tools;
+ * get_location_summary), so the bound is 23,000. The propose registry measured 83,195 (under 84,000).
  */
 export function assertTheReadRegistryStaysInItsBudget(): void {
   const { tools } = fakeTelemetryServices();
-  expect(JSON.stringify(tools.registry.definitions).length).toBeLessThan(17_000);
+  expect(JSON.stringify(tools.registry.definitions).length).toBeLessThan(23_000);
 }

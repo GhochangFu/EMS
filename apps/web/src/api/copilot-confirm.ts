@@ -75,6 +75,12 @@ export function uploadFormOf(
  * `F4.283` (Amendment 8 Q19): a `kind: "file"` entry sends the `file` the card
  * kept in this browser (the server refuses other bytes with a 409).
  *
+ * `F4.289` (ADR 0099 Amendment 9 E3): `clientOnlyValues` carries a
+ * `clientOnly` value that is not typed text — a batch rule card's
+ * `excludedRows`, the indexes the user unticked. Each is added at its own key
+ * after the typed values; a key the entry does not name `clientOnly` is refused
+ * before `fetch`, so this parameter can never change what the server hashed.
+ *
  * Returns the parsed response, or `null` for a `204`. The response shape
  * belongs to the catalog entry, so it stays `unknown` here; the caller that
  * knows the entry parses it.
@@ -83,11 +89,14 @@ export async function confirmCopilotChange(
   change: CopilotPendingChangeDto,
   clientOnly: Readonly<Record<string, string>> = {},
   file?: File,
+  clientOnlyValues: Readonly<Record<string, unknown>> = {},
 ): Promise<unknown> {
   if (!API_PATH.test(change.path)) {
     throw new ApiError(`copilot change path is not an API path`, 400);
   }
   const entry = catalogEntry(change.catalogId);
+  const outside = Object.keys(clientOnlyValues).filter((key) => !(entry?.clientOnly ?? []).includes(key));
+  if (outside.length > 0) throw new ApiError(`copilot change value is not client-only: ${outside.join(", ")}`, 400);
   // `F4.247` (ADR 0099 Amendment 5 C2): the precondition the change was proposed under, quoted as
   // an entity tag. Only a string: an API older than this web sends no `ifMatch` (the drift check
   // passes the payload through), and `"undefined"` would be the routes' 400.
@@ -104,7 +113,11 @@ export async function confirmCopilotChange(
         headers: { "Content-Type": "application/json", [COPILOT_CHANGE_HEADER]: change.id, ...ifMatch },
         // `F4.279` (Q12): a typed value goes to its path (`config.url` inside `config`); a blank one is
         // not set, so an untyped optional secret is omitted and the PATCH keeps the stored one.
-        body: JSON.stringify(withPaths(withoutKeys(change.body, cardOnlyKeysFor(change.catalogId)), clientOnly)),
+        body: JSON.stringify({
+          // `withPaths` keeps an object an object; `withoutKeys` always gives one.
+          ...(withPaths(withoutKeys(change.body, cardOnlyKeysFor(change.catalogId)), clientOnly) as Record<string, unknown>),
+          ...clientOnlyValues,
+        }),
       });
   const res = await fetch(`${base}${change.path}`, sent);
   if (!res.ok) {

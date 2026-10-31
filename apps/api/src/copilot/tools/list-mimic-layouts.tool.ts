@@ -20,7 +20,7 @@ export const listMimicLayoutsTool = defineReadTool({
   async run({ layouts }, args, ctx) {
     const target = targetOrganizations(args.organizationId, ctx.allowedOrganizationIds);
     if (!target.ok) return target;
-    if (target.ids.length === 0) return { ok: true, result: { items: [], truncated: false }, organizationIds: [] };
+    if (target.ids.length === 0) return { ok: true, result: { truncated: false, items: [] }, organizationIds: [] };
     const list = parseStoredContract(mimicLayoutsListResponseSchema, await layouts.list(ctx.user), "copilot_tools.list_mimic_layouts.page");
     const kept = list.items.filter((item) => target.ids.includes(item.organizationId));
     const items = kept.slice(0, COPILOT_TOOL_LIST_MAX_ITEMS).map((item) => ({
@@ -33,7 +33,7 @@ export const listMimicLayoutsTool = defineReadTool({
     }));
     return {
       ok: true,
-      result: { items, truncated: kept.length > items.length },
+      result: { truncated: kept.length > items.length, items },
       organizationIds: [...new Set(items.map((item) => item.organizationId))],
     };
   },

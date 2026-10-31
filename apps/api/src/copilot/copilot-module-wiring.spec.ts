@@ -34,6 +34,14 @@ import { CopilotReadToolSet } from "./tools/copilot-read-tool-set";
 import { TelemetryProposalCheckService } from "../admin/telemetry-entry/telemetry-proposal-check.service";
 import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import { AssetsModule } from "../assets/assets.module";
+import { AuthModule } from "../auth/auth.module";
+import { LocationAssetScopeService } from "../auth/location-asset-scope.service";
+import { AlarmsModule } from "../alarms/alarms.module";
+import { AlarmStatsService } from "../alarms/alarm-stats.service";
+import { FLEET_DRIZZLE, FLEET_POOL } from "../database/database.tokens";
+import { LocationSummaryService } from "../reports/location-summary.service";
+import { ReportsCoreModule } from "../reports/reports-core.module";
+import { SitePointInventoryService } from "../rules/site-point-inventory.service";
 
 /**
  * `F3.86` PR 4 / ADR 0099 decision 3 — the module edges a green build does not
@@ -235,4 +243,68 @@ export function assertTheReadToolsInjectTheWorkOrdersAndUsersServices(): void {
 /** `F4.284` (ADR 0106 decision 7): `WorkOrdersModule` provides the audit funnel its service injects. */
 export function assertTheWorkOrdersModuleProvidesTheAuditFunnel(): void {
   expect(moduleList(WorkOrdersModule, "providers")).toContain(MasterDataAuditService);
+}
+
+/**
+ * `F4.291` (owner ruling P5): `AuthModule` provides and exports the location → readable-assets
+ * helper. It is `@Global()`, so the read tools (and `F4.288` / `F4.290`) resolve it with no import.
+ */
+export function assertTheAuthModuleExportsTheLocationScope(): void {
+  expect(moduleList(AuthModule, "providers")).toContain(LocationAssetScopeService);
+  expect(moduleList(AuthModule, "exports")).toContain(LocationAssetScopeService);
+}
+
+/** `F4.291`: the read tools' slot 24 is `LocationAssetScopeService`, by `@Inject`. */
+export function assertTheReadToolsInjectTheLocationScope(): void {
+  expect(injected(CopilotReadToolSet).get(24)).toBe(LocationAssetScopeService);
+}
+
+/** `F4.291` PR 2: `AlarmsModule` (imported by `CopilotModule`) provides and exports `AlarmStatsService`. */
+export function assertTheAlarmsModuleExportsTheAlarmStats(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(AlarmsModule);
+  expect(moduleList(AlarmsModule, "providers")).toContain(AlarmStatsService);
+  expect(moduleList(AlarmsModule, "exports")).toContain(AlarmStatsService);
+}
+
+/** `F4.291` PR 2: the read tools' slot 25 is `AlarmStatsService`, by `@Inject`. */
+export function assertTheReadToolsInjectTheAlarmStats(): void {
+  expect(injected(CopilotReadToolSet).get(25)).toBe(AlarmStatsService);
+}
+
+/** `F4.288`: `RulesModule` (imported by `CopilotModule`) provides and exports `SitePointInventoryService`. */
+export function assertTheRulesModuleExportsTheInventoryService(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(RulesModule);
+  expect(moduleList(RulesModule, "providers")).toContain(SitePointInventoryService);
+  expect(moduleList(RulesModule, "exports")).toContain(SitePointInventoryService);
+}
+
+/** `F4.288`: the read tools' slot 26 is `SitePointInventoryService`, by `@Inject`. */
+export function assertTheReadToolsInjectTheInventoryService(): void {
+  expect(injected(CopilotReadToolSet).get(26)).toBe(SitePointInventoryService);
+}
+
+/**
+ * `F4.288` (the plan critic's defect 6): the service's own one slot is the fleet pool, by
+ * `@Inject` — without it the API does not boot while every other spec stays green.
+ */
+export function assertTheInventoryServiceInjectsTheFleetPool(): void {
+  expect([...injected(SitePointInventoryService)]).toEqual([[0, FLEET_DRIZZLE]]);
+}
+
+/** `F4.290` PR 2: `ReportsCoreModule` (imported by `CopilotModule`) provides and exports `LocationSummaryService`. */
+export function assertTheReportsCoreModuleExportsTheLocationSummary(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(ReportsCoreModule);
+  expect(moduleList(ReportsCoreModule, "providers")).toContain(LocationSummaryService);
+  expect(moduleList(ReportsCoreModule, "exports")).toContain(LocationSummaryService);
+}
+
+/** `F4.290` PR 2: the read tools' slot 27 is `LocationSummaryService`, by `@Inject`. */
+export function assertTheReadToolsInjectTheLocationSummary(): void {
+  expect(injected(CopilotReadToolSet).get(27)).toBe(LocationSummaryService);
+}
+
+/** `F4.290` PR 2: the service's two slots are the fleet handles, by `@Inject` — without them the API does not boot. */
+export function assertTheLocationSummaryInjectsTheFleetHandles(): void {
+  const slots = injected(LocationSummaryService);
+  expect([slots.size, slots.get(0), slots.get(1)]).toEqual([2, FLEET_DRIZZLE, FLEET_POOL]);
 }

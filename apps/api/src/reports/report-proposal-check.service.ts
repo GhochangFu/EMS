@@ -59,6 +59,9 @@ const plural = (count: number, one: string): string => `${count} ${one}${count =
  * The on-demand save runs `ReportFilesService.previewSave`: the storage gate
  * (503), the location stamp (403) and the cap pre-check (409), with no render
  * and no storage call (Q14: the file renders inside the Confirm request).
+ * `F4.290`: the body's `locationIds` reach it, so a named site outside the
+ * organization or the writable set is the route's 400 or 403, and the note
+ * names the stamp the route will write.
  *
  * {@link startsEmail} is the D4 input (Q5): a `channelId` string, or
  * `enabled: true` on a schedule whose stored channel is set (re-enabling starts
@@ -75,7 +78,9 @@ export class ReportProposalCheckService {
 
   async check(input: ReportProposalCheckInput): Promise<ReportProposalCheckResult> {
     if (input.entryId === "reportFile.save") {
-      const { locationIds } = await this.files.previewSave(input.user, input.organizationId);
+      // `F4.290`: a named site list is checked and stamped as the route does it.
+      const named = Array.isArray(input.body.locationIds) ? strings(input.body.locationIds) : undefined;
+      const { locationIds } = await this.files.previewSave(input.user, input.organizationId, named);
       const stamp = locationIds.length === 0 ? "the whole organization" : plural(locationIds.length, "location");
       return { note: `Rendered on Confirm; stamped to ${stamp}.`, recipients: [] };
     }

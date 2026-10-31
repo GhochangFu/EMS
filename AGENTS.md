@@ -1375,9 +1375,10 @@
 > button says so. Text inside a file is data, and a turn with an attachment
 > cannot propose an access change, nor an asset or point create its words
 > did not ask for. No new npm package. **The propose tool definitions are
-> capped at 84,000 characters** (`copilot-propose-budget.spec.ts`; owner
-> ruling 2026-10-23: each release-4 row raised the cap to its measured size,
-> rounded up, plus 1,000, with a docblock line per row; was 52,000).
+> capped at 87,000 characters** (`copilot-propose-budget.spec.ts`; owner
+> ruling 2026-10-23, kept for release 5 as ruling P4: each row raises the cap
+> to its measured size, rounded up, plus 1,000, with a docblock line per row;
+> was 52,000, 84,000 until `F4.289`).
 > **Every JSON Schema `pattern` they carry must compile as an ECMA-262 regex
 > without the `u` flag** — no `\p{…}` escapes; state the ranges instead —
 > because OpenAI refuses the whole tool list otherwise (`F4.265`, #883; gated
@@ -1453,7 +1454,7 @@
 > be added to `COPILOT_TOOL_FILES` in `tests/f4.108-service-parses-are-guarded.test.ts`**),
 > and bounds its result. The read registry has its own size gate
 > (`telemetry-read-tools.spec.ts`; < 13,000 characters at `F4.277`, < 17,000
-> since release 4). `list_assets` takes a name/code `search`, applied before
+> in release 4, < 23,000 since `F4.290`). `list_assets` takes a name/code `search`, applied before
 > its 25-item cap.
 > **Release 4, `F4.278`–`F4.284`** (ADR 0099 Amendment 8 and ADR 0106, #933
 > `b325c53f`; built in #934 `5aa5d16b`): the copilot proposes alarm-rule writes
@@ -1475,9 +1476,27 @@
 > roles only. **A Nest provider added beside the notification controllers
 > must resolve through `NotificationsCoreModule`'s exports** — the build and
 > every spec were green while the API refused to boot (`574fa2c9`);
-> `notifications-module-wiring.spec.ts` now checks those services too. Open:
+> `notifications-module-wiring.spec.ts` now checks those services too.
 > `F4.285` (a server-side `assignedTo` check) and `F4.286` (a reply that
-> claims a card no tool proposed).
+> claims a card no tool proposed) closed in #937.
+> **Release 5, `F4.288`–`F4.292`** (ADR 0099 Amendment 9, #941 `129f21b6`;
+> owner rulings P1–P6): the copilot reads a whole site. New read tools:
+> `get_site_point_inventory` (`F4.288`, #955), `get_alarm_stats` and
+> `get_point_stats` (`F4.291`, #945, #947, #949, #950) and
+> `get_location_summary` (`F4.290` #957, one row per site; the energy reports
+> took a site filter in #954) — 38 read tools in all. The
+> lists and the energy reads take `locationId`, `list_alarms` takes a severity
+> and a time range, and a capped list carries its paging cursor whole
+> (`fitListResult`, #949). **`rule.createBatch`** (`F4.289`, #958, #959 and
+> #960): one red card proposes up to 25 alarm rules on one organization's
+> assets, each row checked first (`RuleProposalCheckService.checkBatch`), and
+> Confirm creates and publishes the ticked rows in one transaction
+> (`POST /rules/batch`; the unticked rows are the `clientOnly`
+> `excludedRows`). The Rule Engine has the same write as its **New batch**
+> wizard (ruling P1). The dock resizes, maximizes and docks at the side, and
+> lists earlier chats with a paged thread (`F4.292`, #946, #948, #951).
+> Open: `F4.296` — a large site's read, or a batch card on a slow model,
+> does not finish inside the 45-second turn.
 > EMQX and the **non-MQTT**
 > protocol adapters remain deferred — the framework, the host and the MQTT
 > adapter are promoted; each further protocol still needs its own ADR (§9.4).

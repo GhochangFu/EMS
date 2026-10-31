@@ -10,6 +10,41 @@ import { withUser } from "../database/user-context";
 /** The list returns at most this many conversations, newest turn first. */
 export const COPILOT_CONVERSATION_LIST_LIMIT = 100;
 
+/** `F4.292` — the most characters a conversation title holds (`copilot_conversations.title` is `varchar(200)`). */
+export const COPILOT_CONVERSATION_TITLE_MAX = 200;
+
+/** `F4.292` — a paged read's `before` names no message of this conversation (the controller answers 404). */
+export class CopilotCursorNotFoundError extends Error {
+  constructor() {
+    super("F4.292: the before cursor names no message of this conversation");
+    this.name = "CopilotCursorNotFoundError";
+  }
+}
+
+/** `F4.292` — one page: the newest `limit` messages older than `before` (or the newest, without it). */
+export type CopilotConversationPage = { before?: string; limit: number };
+
+/**
+ * `F4.292` (ADR 0099 Amendment 9 E7, owner ruling P6) — the title a turn gives a
+ * conversation: the first non-empty line of its user messages, trimmed, that is
+ * not an attachment record (`[Attachment …`), cut to
+ * `COPILOT_CONVERSATION_TITLE_MAX` characters. `null` when the turn holds no
+ * such line (an action-only turn, a blank user message), so `coalesce` leaves
+ * the title for a later turn rather than fixing `""` for good.
+ */
+export function conversationTitleOf(messages: ReadonlyArray<{ role: string; content: string }>): string | null {
+  for (const message of messages) {
+    if (message.role !== "user") continue;
+    for (const raw of message.content.split("\n")) {
+      const line = raw.trim();
+      if (line.length === 0 || line.startsWith("[Attachment")) continue;
+      // By code point, as `varchar(200)` counts: a cut never splits a surrogate pair.
+      return Array.from(line).slice(0, COPILOT_CONVERSATION_TITLE_MAX).join("");
+    }
+  }
+  return null;
+}
+
 type ConversationRow = typeof copilotConversations.$inferSelect;
 type MessageRow = typeof copilotMessages.$inferSelect;
 
@@ -82,22 +117,33 @@ export class CopilotConversationsService {
    * One of the caller's conversations with its messages, or null when the
    * policy hides it (another user's) or it does not exist.
    *
-   * **Ordering contract.** Messages are read `ORDER BY created_at` and there
-   * is no tie-breaker: `id` is a random uuid. `created_at` defaults to
-   * `now()`, which is fixed at transaction start, so two messages inserted
-   * in one transaction would tie and read back in an arbitrary order. A
+   * **Ordering contract.** Messages are read `ORDER BY created_at, id`. `id`
+   * is a random uuid, so the tie-breaker only makes a tie deterministic (and
+   * the page cursor total); it is not the order of writing. `created_at`
+   * defaults to `now()`, which is fixed at transaction start, so two messages
+   * inserted in one transaction would tie and read back in uuid order. A
    * writer (PR 7's turn service) must therefore insert each message with a
    * distinct `created_at` — `clock_timestamp()` or an explicit increasing
    * value — and pin that in its own test, or a migration adds an ordinal.
-   */
-  /**
-   * The conversation and its messages; the controller adds its open changes
-   * (`pendingChanges`, F3.85 PR 8), from `onboardingSessionId` its skill (F3.86 PR 5), and the
-   * follow-up it waits for (`awaitingFollowUp`, F4.244).
+   *
+   * The controller adds its open changes (`pendingChanges`, F3.85 PR 8), from
+   * `onboardingSessionId` its skill (F3.86 PR 5), and the follow-up it waits
+   * for (`awaitingFollowUp`, F4.244).
+   *
+   * **`F4.292` — a page** (ADR 0099 Amendment 9 E7). With `page` the read is
+   * the newest `page.limit` messages, older than `page.before` when it is set,
+   * still oldest first, and it carries `hasEarlier`. The keyset compare
+   * `(created_at, id) < cursor` runs in SQL against the cursor row itself: a
+   * JS `Date` holds milliseconds and `created_at` microseconds, so a cursor
+   * read into JS and bound back would skip an older row of the same
+   * millisecond. A `before` that names no message **of this conversation**
+   * throws `CopilotCursorNotFoundError`. Without `page` the read is unchanged
+   * and has no `hasEarlier` key (Amendment 6 D6(b)).
    */
   async get(
     userId: string,
     conversationId: string,
+    page?: CopilotConversationPage,
   ): Promise<(Omit<CopilotConversationDetailDto, "pendingChanges" | "skill" | "awaitingFollowUp"> & { onboardingSessionId: string | null }) | null> {
     const found = await withUser(this.tenantDb, userId, async (tx) => {
       const [conversation] = await tx
@@ -106,18 +152,43 @@ export class CopilotConversationsService {
         .where(and(eq(copilotConversations.id, conversationId), eq(copilotConversations.userId, userId)))
         .limit(1);
       if (!conversation) return null;
-      const messages = await tx
+      if (!page) {
+        const messages = await tx
+          .select()
+          .from(copilotMessages)
+          .where(eq(copilotMessages.conversationId, conversationId))
+          .orderBy(asc(copilotMessages.createdAt), asc(copilotMessages.id));
+        return { conversation, messages, hasEarlier: undefined };
+      }
+      const { before } = page;
+      if (before !== undefined) {
+        const [cursor] = await tx
+          .select({ id: copilotMessages.id })
+          .from(copilotMessages)
+          .where(and(eq(copilotMessages.id, before), eq(copilotMessages.conversationId, conversationId)))
+          .limit(1);
+        if (!cursor) throw new CopilotCursorNotFoundError();
+      }
+      // The cursor row's own (created_at, id), read in SQL: no millisecond round trip through JS.
+      const olderThanCursor =
+        before === undefined
+          ? undefined
+          : sql`(${copilotMessages.createdAt}, ${copilotMessages.id}) < (select cursor.created_at, cursor.id from ${copilotMessages} as cursor where cursor.id = ${before} and cursor.conversation_id = ${conversationId})`;
+      const newestFirst = await tx
         .select()
         .from(copilotMessages)
-        .where(eq(copilotMessages.conversationId, conversationId))
-        .orderBy(asc(copilotMessages.createdAt));
-      return { conversation, messages };
+        .where(and(eq(copilotMessages.conversationId, conversationId), olderThanCursor))
+        .orderBy(desc(copilotMessages.createdAt), desc(copilotMessages.id))
+        .limit(page.limit + 1);
+      const hasEarlier = newestFirst.length > page.limit;
+      return { conversation, messages: newestFirst.slice(0, page.limit).reverse(), hasEarlier };
     });
     if (!found) return null;
     return {
       ...toConversation(found.conversation),
       messages: found.messages.map(toMessage),
       onboardingSessionId: found.conversation.onboardingSessionId,
+      ...(found.hasEarlier !== undefined ? { hasEarlier: found.hasEarlier } : {}),
     };
   }
 
@@ -221,9 +292,13 @@ export class CopilotConversationsService {
    *
    * Each row is its own `INSERT` with `created_at = clock_timestamp()`, set
    * explicitly: the column default `now()` is fixed at transaction start, so
-   * the user's message and the reply would tie and `get` (ordered by
-   * `created_at`, no tie-breaker) could read them back reversed.
+   * the user's message and the reply would tie and `get` (whose tie-breaker
+   * is the random `id`) could read them back reversed.
    * `copilot-history.rls.integration.spec.ts` pins the order on a real database.
+   *
+   * `F4.292`: the closing update also sets the title from this turn's first
+   * user line (`conversationTitleOf`) when the conversation has none. The
+   * first title wins; a later turn never overwrites it. No backfill (ruling P6).
    */
   async appendTurn(
     userId: string,
@@ -249,7 +324,10 @@ export class CopilotConversationsService {
       }
       await tx
         .update(copilotConversations)
-        .set({ lastTurnAt: sql`clock_timestamp()` })
+        .set({
+          lastTurnAt: sql`clock_timestamp()`,
+          title: sql`coalesce(${copilotConversations.title}, ${conversationTitleOf(messages)})`,
+        })
         .where(and(eq(copilotConversations.id, conversationId), eq(copilotConversations.userId, userId)));
       return stored;
     });

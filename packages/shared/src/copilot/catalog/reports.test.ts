@@ -1,6 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  aSaveNamingNoSiteMakesNoScopeClaim,
+  aSaveNamingSitesNamesNoAddress,
+  aSaveNamingSitesSaysItsScope,
+  theSaveStepHoldsTheLocationIds,
   aCreateWithoutAChannelMakesNoEmailClaim,
   anEmailingCreateSaysNoLaterConfirm,
   anUpdateClearingTheChannelSaysDeliveryStops,
@@ -31,4 +35,8 @@ describe("F4.280 — report schedule and file save catalog entries (ADR 0099 Ame
   it("no summary names an address", () => noSummaryNamesAnAddress());
   it("the save summary says it is rendered on Confirm", () => theSaveSummarySaysItRendersOnConfirm());
   it("the two DELETE routes are excluded", () => theTwoDeletesAreExcluded());
+  it("F4.290: a save naming sites says its scope", () => aSaveNamingSitesSaysItsScope());
+  it("F4.290: a save naming no site makes no scope claim", () => aSaveNamingNoSiteMakesNoScopeClaim());
+  it("F4.290: the save step holds locationIds", () => theSaveStepHoldsTheLocationIds());
+  it("F4.290: a save naming sites names no address", () => aSaveNamingSitesNamesNoAddress());
 });

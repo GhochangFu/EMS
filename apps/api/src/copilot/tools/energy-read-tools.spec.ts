@@ -12,7 +12,12 @@ import { COPILOT_TOOL_GUARDS } from "../copilot-turn.service";
 import { harness } from "../copilot-turn.service.spec";
 import { type CopilotReadServices, readPerOrganization } from "./copilot-read-tool";
 import { createCopilotReadTools } from "./copilot-read-tool-set";
-import { COPILOT_TOOL_ORGANIZATION_OUT_OF_SCOPE, organizationOutOfScope } from "./copilot-tool-scope";
+import {
+  COPILOT_TOOL_LOCATIONS_HOLD_NO_READABLE_ASSET,
+  COPILOT_TOOL_LOCATIONS_IN_SEVERAL_ORGANIZATIONS,
+  COPILOT_TOOL_ORGANIZATION_OUT_OF_SCOPE,
+  organizationOutOfScope,
+} from "./copilot-tool-scope";
 import { resampleSeries } from "./energy-read-helpers";
 import { getDashboardKpisTool } from "./get-dashboard-kpis.tool";
 import { getEnergyReportPreviewTool } from "./get-energy-report-preview.tool";
@@ -39,6 +44,12 @@ const ASSET_X = "30000000-0000-4000-8000-0000000000aa";
 const ASSET_Y = "30000000-0000-4000-8000-0000000000bb";
 const ASSET_B = "30000000-0000-4000-8000-0000000000cc";
 const ASSET_Z = "30000000-0000-4000-8000-0000000000ee";
+/** `F4.291`: a site in ORG_X, and the one readable asset of its subtree (not one ORG_X's list names). */
+const SITE = "40000000-0000-4000-8000-000000000001";
+const ASSET_SITE = "30000000-0000-4000-8000-0000000000f1";
+/** `F4.290`: a site in ORG_X inside the grant with no readable asset, and one whose list spans two organizations. */
+const SITE_EMPTY = "40000000-0000-4000-8000-000000000002";
+const SITE_ELSEWHERE = "40000000-0000-4000-8000-000000000003";
 const NOW = new Date("2026-10-11T06:00:00Z");
 const SERIES_START = Date.parse("2026-10-04T06:00:00Z");
 const TOP_KWH = 4321.5;
@@ -107,6 +118,7 @@ function fakeEnergyServices() {
     sourceMix: [] as Call[],
     topConsumers: [] as Call[],
     preview: [] as Array<Call & { query: { startDate: string; endDate: string } }>,
+    place: [] as Array<readonly string[]>,
   };
   const summaryOf = (window: string) => ({
     window,
@@ -124,6 +136,14 @@ function fakeEnergyServices() {
       readableAssetIdsInOrganization: async (_user: JwtPayload, organizationId: string) => {
         log.access.push(organizationId);
         return ASSETS_BY_ORG[organizationId] ?? [];
+      },
+    },
+    locationScope: {
+      readableAssetIdsInLocations: async (_user: JwtPayload, candidates: readonly string[], locationIds: readonly string[]) => {
+        log.place.push(locationIds);
+        if (!candidates.includes(ORG_X)) return { ok: false, reason: "not_found" };
+        if (locationIds.includes(SITE_ELSEWHERE)) return { ok: false, reason: "several_organizations" };
+        return { ok: true, organizationId: ORG_X, assetIds: locationIds.includes(SITE_EMPTY) ? [] : [ASSET_SITE] };
       },
     },
     portfolio: {
@@ -245,7 +265,7 @@ const ENERGY_CALLS: ReadonlyArray<[string, Record<string, unknown>]> = [
 export async function assertReadPerOrganizationRefusesAnOrganizationOutsideTheAllowedSet(): Promise<void> {
   const { services, log } = fakeEnergyServices();
   const reads: string[] = [];
-  const out = await readPerOrganization(services.access, ctx([ORG_X, ORG_Y]), ORG_B, async (id) => {
+  const out = await readPerOrganization(services, ctx([ORG_X, ORG_Y]), { organizationId: ORG_B }, async (id) => {
     reads.push(id);
     return { items: [1] };
   });
@@ -258,7 +278,7 @@ export async function assertReadPerOrganizationRefusesAnOrganizationOutsideTheAl
 export async function assertReadPerOrganizationSkipsAnOrganizationWithNoReadableAsset(): Promise<void> {
   const { services } = fakeEnergyServices();
   const reads: Array<{ id: string; assetIds: readonly string[] | null }> = [];
-  const out = await readPerOrganization(services.access, ctx([ORG_X, ORG_EMPTY]), undefined, async (id, assetIds) => {
+  const out = await readPerOrganization(services, ctx([ORG_X, ORG_EMPTY]), {}, async (id, assetIds) => {
     reads.push({ id, assetIds });
     return { items: ["a"] };
   });
@@ -280,7 +300,7 @@ export async function assertReadPerOrganizationSkipsAnOrganizationWithNoReadable
 export async function assertReadPerOrganizationCapsItemsAndFlagsTruncated(): Promise<void> {
   const { services } = fakeEnergyServices();
   const reads: string[] = [];
-  const out = await readPerOrganization(services.access, ctx([ORG_X, ORG_Y, ORG_Z]), undefined, async (id) => {
+  const out = await readPerOrganization(services, ctx([ORG_X, ORG_Y, ORG_Z]), {}, async (id) => {
     reads.push(id);
     return { items: Array.from({ length: 20 }, (_, i) => i), extra: { note: id } };
   });
@@ -309,6 +329,23 @@ export function assertResampleSeriesBoundsTheBucketCount(): void {
   // 420 points per group: group 1 is points 420..839, mean (420 + 839) / 2.
   expect(out[1]).toEqual({ t: minute(420), totalKw: 629.5 });
   expect(out[23]?.t).toBe(minute(23 * 420));
+}
+
+/**
+ * `F4.291` (ADR 0099 Amendment 9 E5): each of the six tools given a
+ * `locationId` reads once, in the location's organization only, with exactly
+ * the subtree's readable ids — never the organization's own list. One loop over
+ * the six names, so a tool left out reddens its own row.
+ */
+export async function assertEveryEnergyToolReadsASubtreeWhenGivenALocation(): Promise<void> {
+  for (const [name, args] of ENERGY_CALLS) {
+    const { tools, log } = fakeEnergyServices();
+    const out = await tools.dispatch(name, { ...args, locationId: SITE }, ctx([ORG_X, ORG_Y]));
+    expect(out.ok && out.organizationIds, name).toEqual([ORG_X]);
+    expect(dataCalls(log), name).toBe(1);
+    expect(onlyDataCall(log)?.assetIds, name).toEqual([ASSET_SITE]);
+    expect(log.access, name).toEqual([]);
+  }
 }
 
 // --- task 2: the refusal table, get_dashboard_kpis, get_energy_summary ------------
@@ -508,7 +545,7 @@ export async function assertTheTurnAnswersWhichSiteUsedTheMostKwhLastMonth(): Pr
 /** 20 + 20 over two organizations: the second is sliced to 5 by the room, and that slice alone sets `truncated`. */
 export async function assertReadPerOrganizationFlagsTruncatedWhenTheRoomSlicesAnAnswer(): Promise<void> {
   const { services } = fakeEnergyServices();
-  const out = await readPerOrganization(services.access, ctx([ORG_X, ORG_Y]), undefined, async () => ({
+  const out = await readPerOrganization(services, ctx([ORG_X, ORG_Y]), {}, async () => ({
     items: Array.from({ length: 20 }, (_, i) => i),
   }));
   const result = okResult(out);
@@ -568,4 +605,61 @@ export function assertTheDescriptionsMatchTheContracts(): void {
   expect(getEnergyReportPreviewTool.description).toMatch(/DG/);
   expect(getDashboardKpisTool.description).toContain("total kW, open alarms and PUE also 24 h earlier");
   expect(getDashboardKpisTool.description).not.toMatch(/each with its value 24 h earlier/);
+}
+
+// --- F4.290: get_energy_report_preview takes locationIds (ADR 0099 Amendment 9 E4) -------
+
+/** Named sites: the preview reads once, in their organization, with the subtrees' readable ids. */
+export async function assertReportPreviewReadsTheNamedSitesSubtrees(): Promise<void> {
+  const { tools, log } = fakeEnergyServices();
+  await tools.dispatch("get_energy_report_preview", { ...MONTH, locationIds: [SITE] }, ctx([ORG_X, ORG_Y]));
+  expect(log.preview.map((c) => c.assetIds)).toEqual([[ASSET_SITE]]);
+}
+
+/** The whole list reaches the shared location service in one call. */
+export async function assertReportPreviewAsksTheLocationServiceForTheList(): Promise<void> {
+  const { tools, log } = fakeEnergyServices();
+  await tools.dispatch("get_energy_report_preview", { ...MONTH, locationIds: [SITE, SITE_EMPTY] }, ctx([ORG_X]));
+  expect(log.place).toEqual([[SITE, SITE_EMPTY]]);
+}
+
+/** Owner ruling P6: sites with no readable asset are refused, and the preview is never read. */
+export async function assertReportPreviewRefusesSitesWithNothingReadable(): Promise<void> {
+  const { tools, log } = fakeEnergyServices();
+  const out = await tools.dispatch("get_energy_report_preview", { ...MONTH, locationIds: [SITE_EMPTY] }, ctx([ORG_X]));
+  expect([out, log.preview]).toEqual([{ ok: false, error: COPILOT_TOOL_LOCATIONS_HOLD_NO_READABLE_ASSET }, []]);
+}
+
+/** Sites of two organizations are refused with a sentence that says so. */
+export async function assertReportPreviewRefusesSitesOfTwoOrganizations(): Promise<void> {
+  const { tools } = fakeEnergyServices();
+  const out = await tools.dispatch("get_energy_report_preview", { ...MONTH, locationIds: [SITE, SITE_ELSEWHERE] }, ctx([ORG_X]));
+  expect(out).toEqual({ ok: false, error: COPILOT_TOOL_LOCATIONS_IN_SEVERAL_ORGANIZATIONS });
+}
+
+/** 26 site ids (ruling P6: 25 on the copilot) are refused by the schema. */
+export async function assertReportPreviewRefuses26LocationIds(): Promise<void> {
+  const { tools } = fakeEnergyServices();
+  const ids = Array.from({ length: 26 }, (_, i) => `40000000-0000-4000-8000-${String(i).padStart(12, "0")}`);
+  // The content, not `ok`: `refusedByTheSchema`'s dispatcher rejects too, so `ok: false` alone proves nothing.
+  expect((await refusedByTheSchema(tools, "get_energy_report_preview", { ...MONTH, locationIds: ids })).content).toContain("locationIds: Array must contain at most 25");
+}
+
+/** `locationId` and `locationIds` together are refused by the schema (one way to name the scope). */
+export async function assertReportPreviewRefusesLocationIdBesideLocationIds(): Promise<void> {
+  const { tools } = fakeEnergyServices();
+  const refused = await refusedByTheSchema(tools, "get_energy_report_preview", { ...MONTH, locationId: SITE, locationIds: [SITE] });
+  expect(refused.content).toContain("give locationId or locationIds, not both");
+}
+
+/** Without locationIds the location service is never asked (the critic's regression). */
+export async function assertReportPreviewWithoutSitesNeverAsksTheLocationService(): Promise<void> {
+  const { tools, log } = fakeEnergyServices();
+  await tools.dispatch("get_energy_report_preview", MONTH, ctx([ORG_X]));
+  expect(log.place).toEqual([]);
+}
+
+/** The description tells the model it may pass site ids. */
+export function assertReportPreviewDescriptionNamesLocationIds(): void {
+  expect(getEnergyReportPreviewTool.description).toContain("locationIds");
 }

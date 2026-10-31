@@ -102,7 +102,9 @@ export async function aFileSentWithTheTurnEnablesConfirm(): Promise<void> {
   await waitFor(() => expect(chips()).toEqual(["readings.csv"]));
   await send("import this");
   const card = await screen.findByRole("region", { name: "Import telemetry readings from a file" });
-  expect((within(card).getByRole("button", { name: "Confirm" }) as HTMLButtonElement).disabled).toBe(false);
+  // The slot reports the kept file from an effect, so Confirm enables one render after the card: wait for it.
+  // Not kept in time (the plain-map mutation), the slot never renders again and this times out.
+  await waitFor(() => expect((within(card).getByRole("button", { name: "Confirm" }) as HTMLButtonElement).disabled).toBe(false));
 }
 
 /** The import card shows the route's counts. */

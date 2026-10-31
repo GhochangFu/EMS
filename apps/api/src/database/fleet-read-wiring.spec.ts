@@ -16,6 +16,7 @@ import { QUEUE_CLIENT } from "../queue/queue.tokens";
 import { WorkerHostService } from "../queue/worker-host.service";
 import { ReportDispatchService } from "../reports/report-dispatch.service";
 import { ReportFilesService } from "../reports/report-files.service";
+import { ReportScopeService } from "../reports/report-scope";
 import { ReportRenderService } from "../reports/report-render.service";
 import { ReportSchedulesService } from "../reports/report-schedules.service";
 import { ReportsService } from "../reports/reports.service";
@@ -97,6 +98,14 @@ export function assertUnconditionalFleetReadSlots(): void {
   expect(injectedToken(LocationsAdminService, 0)).toBe(FLEET_DRIZZLE);
   expect(injectedToken(LocationsAdminService, 1)).toBe(TENANT_DRIZZLE);
   expect(injectedToken(CredentialRotationService, 0)).toBe(FLEET_DRIZZLE);
+}
+
+/**
+ * `F4.290` — `ReportScopeService` reads the named locations' organizations for
+ * the global admin before any tenant is known: slot 0 is the fleet handle.
+ */
+export function assertReportScopeServiceFleetSlot(): void {
+  expect(injectedToken(ReportScopeService, 0)).toBe(FLEET_DRIZZLE);
 }
 
 /**

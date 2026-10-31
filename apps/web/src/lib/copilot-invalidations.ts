@@ -190,6 +190,8 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "rule.enable": [RULES],
   "rule.disable": [RULES],
   "rule.archive": [RULES],
+  // `F4.289` (Amendment 9 E3): the batch create.
+  "rule.createBatch": [RULES],
   // `F4.279` (Amendment 8): notification channels, escalation, and the rule channel set.
   "notificationChannel.create": [NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERIES],
   "notificationChannel.update": [NOTIFICATION_CHANNELS, NOTIFICATION_DELIVERIES],

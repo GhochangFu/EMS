@@ -19,6 +19,8 @@ import {
   aFileUploadSendsNoPreviewOrHash,
   aFileUploadSendsTheKeptFileAndItsFields,
   aFileUploadWithoutTheFileIsRefusedBeforeFetch,
+  aClientOnlyValueThatIsNotAStringIsSentAtItsKey,
+  aKeyOutsideTheEntrysClientOnlyIsRefusedBeforeFetch,
 } from "./copilot-confirm.spec";
 
 /**
@@ -48,4 +50,6 @@ describe("F3.85 — the copilot Confirm executor (ADR 0099 decision 4.5)", () =>
   it("F4.283: sends the kept file under the stored name, beside the import fields", () => aFileUploadSendsTheKeptFileAndItsFields());
   it("F4.283: sends no preview, hash or filename field", () => aFileUploadSendsNoPreviewOrHash());
   it("F4.283: refuses a file upload without the kept file before fetch", () => aFileUploadWithoutTheFileIsRefusedBeforeFetch());
+  it("F4.289: sends a non-string clientOnly value at its key, without the card-only checks", () => aClientOnlyValueThatIsNotAStringIsSentAtItsKey());
+  it("F4.289: refuses a value at a key outside the entry's clientOnly before fetch", () => aKeyOutsideTheEntrysClientOnlyIsRefusedBeforeFetch());
 });

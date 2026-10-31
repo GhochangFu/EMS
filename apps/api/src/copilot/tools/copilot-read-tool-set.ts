@@ -5,11 +5,13 @@ import { AuditAdminService } from "../../admin/audit/audit.service";
 import { LocationsAdminService } from "../../admin/locations/locations.service";
 import { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
 import { AlarmDetailsService } from "../../alarms/alarm-details.service";
+import { AlarmStatsService } from "../../alarms/alarm-stats.service";
 import { AlarmsService } from "../../alarms/alarms.service";
 import { AssetHealthService } from "../../asset-health/asset-health.service";
 import { AssetKpisService } from "../../assets/asset-kpis.service";
 import { AssetsService } from "../../assets/assets.service";
 import { AccessControlService } from "../../auth/access-control.service";
+import { LocationAssetScopeService } from "../../auth/location-asset-scope.service";
 import { DashboardService } from "../../dashboard/dashboard.service";
 import { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import { MaintenanceService } from "../../maintenance/maintenance.service";
@@ -18,8 +20,10 @@ import { WorkOrdersService } from "../../work-orders/work-orders.service";
 import { defineToolRegistry, type ToolRegistry } from "../../llm/tool-registry";
 import { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
+import { LocationSummaryService } from "../../reports/location-summary.service";
 import { ReportsService } from "../../reports/reports.service";
 import { RulesService } from "../../rules/rules.service";
+import { SitePointInventoryService } from "../../rules/site-point-inventory.service";
 import { ChannelsService } from "../../notifications/channels.service";
 import { EscalationProfilesService } from "../../notifications/escalation-profiles.service";
 import { ReportSchedulesService } from "../../reports/report-schedules.service";
@@ -30,6 +34,7 @@ import type { CopilotReadTools, CopilotToolContext, CopilotToolResult } from "..
 import type { CopilotReadServices, CopilotReadToolDefinition } from "./copilot-read-tool";
 import { getAlarmDetailsTool } from "./get-alarm-details.tool";
 import { getAlarmKbTool } from "./get-alarm-kb.tool";
+import { getAlarmStatsTool } from "./get-alarm-stats.tool";
 import { getAssetKpisTool } from "./get-asset-kpis.tool";
 import { getDashboardKpisTool } from "./get-dashboard-kpis.tool";
 import { getEnergyReportPreviewTool } from "./get-energy-report-preview.tool";
@@ -38,10 +43,13 @@ import { getEnergySummaryTool } from "./get-energy-summary.tool";
 import { getEnergyTopConsumersTool } from "./get-energy-top-consumers.tool";
 import { getHealthSummaryTool } from "./get-health-summary.tool";
 import { getLatestValuesTool } from "./get-latest-values.tool";
+import { getLocationSummaryTool } from "./get-location-summary.tool";
 import { getLoadTrendTool } from "./get-load-trend.tool";
 import { getMimicLayoutTool } from "./get-mimic-layout.tool";
 import { getPointAggregateTool } from "./get-point-aggregate.tool";
+import { getPointStatsTool } from "./get-point-stats.tool";
 import { getRecentValuesTool } from "./get-recent-values.tool";
+import { getSitePointInventoryTool } from "./get-site-point-inventory.tool";
 import { getSystemStatusTool } from "./get-system-status.tool";
 import { getValuesAtInstantTool } from "./get-values-at-instant.tool";
 import { listAlarmSkillsTool } from "./list-alarm-skills.tool";
@@ -70,12 +78,17 @@ import { openPageTool } from "./open-page.tool";
  * after `get_asset_kpis`. `F4.275` adds the six energy and portfolio reads
  * after `get_point_aggregate`. `F4.277` adds `get_system_status` and
  * `list_audit_log` after `get_health_summary`. `F4.276` adds
- * `get_alarm_details` and `get_alarm_kb` after `list_alarms`.
+ * `get_alarm_details` and `get_alarm_kb` after `list_alarms`. `F4.291` PR 2
+ * adds `get_alarm_stats` after `get_alarm_kb`; PR 3 adds `get_point_stats`
+ * after `get_point_aggregate`. `F4.288` adds `get_site_point_inventory` after
+ * `list_rules`. `F4.290` PR 2 adds `get_location_summary` after
+ * `get_energy_report_preview`.
  */
 export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[] = [
   listAlarmsTool,
   getAlarmDetailsTool,
   getAlarmKbTool,
+  getAlarmStatsTool,
   listAssetsTool,
   getAssetKpisTool,
   listAssetPointsTool,
@@ -83,12 +96,15 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   getValuesAtInstantTool,
   getRecentValuesTool,
   getPointAggregateTool,
+  getPointStatsTool,
   getDashboardKpisTool,
   getLoadTrendTool,
   getEnergySummaryTool,
   getEnergySourceMixTool,
   getEnergyTopConsumersTool,
   getEnergyReportPreviewTool,
+  // `F4.290` PR 2 (Amendment 9 E4): one row per site, beside the report it summarises.
+  getLocationSummaryTool,
   listLocationsTool,
   listDashboardsTool,
   getHealthSummaryTool,
@@ -100,6 +116,8 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   listAssetRolesTool,
   // `F4.278` (Amendment 8 D7): after the unit roles, before `open_page`.
   listRulesTool,
+  // `F4.288` (Amendment 9 E2): a site's rule-target points beside the rules that watch them.
+  getSitePointInventoryTool,
   // `F4.279` (Amendment 8 D7): after the rules, before `open_page`.
   listNotificationChannelsTool,
   listEscalationProfilesTool,
@@ -185,6 +203,15 @@ export class CopilotReadToolSet implements CopilotReadTools {
     // `F4.284`: appended last (slots 22 and 23), the same reason.
     @Inject(WorkOrdersService) workOrders: WorkOrdersService,
     @Inject(UsersService) users: UsersService,
+    // `F4.291`: appended last (slot 24), the same reason. The location helper is
+    // `AuthModule`'s (`@Global()`), so `CopilotModule` imports nothing for it.
+    @Inject(LocationAssetScopeService) locationScope: LocationAssetScopeService,
+    // `F4.291` PR 2: appended last (slot 25), the same reason. `AlarmsModule` exports it.
+    @Inject(AlarmStatsService) alarmStats: AlarmStatsService,
+    // `F4.288`: appended last (slot 26), the same reason. `RulesModule` exports it.
+    @Inject(SitePointInventoryService) inventory: SitePointInventoryService,
+    // `F4.290` PR 2: appended last (slot 27), the same reason. `ReportsCoreModule` exports it.
+    @Inject(LocationSummaryService) locationSummary: LocationSummaryService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -211,6 +238,10 @@ export class CopilotReadToolSet implements CopilotReadTools {
       maintenance,
       workOrders,
       users,
+      locationScope,
+      alarmStats,
+      inventory,
+      locationSummary,
     });
   }
 

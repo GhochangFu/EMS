@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, HttpException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 
 import { assets } from "@bms/db";
@@ -13,6 +13,7 @@ import { DEFAULT_CLEAR_HOLD_SECONDS } from "../alarms/alarm-lifecycle";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import { assertArmable } from "./rule-arming";
+import { applyExcludedRows, duplicateCodeRows } from "./rule-batch-rows";
 import { type BacktestBasis, backtestBasis, backtestRule, type BacktestResult } from "./rule-backtest";
 import { evaluateRule } from "./rule-evaluation";
 import { asCondition, mergeRuleDraft, previewRowFromValues, ruleBodyFromRow } from "./rule-mapping";
@@ -39,6 +40,33 @@ export type RuleProposalCheckResult = {
   /** The sentences the card shows after the summary: the condition, "would match now" and the backtest. */
   readonly note: string;
 };
+
+/** `F4.289`: what the propose tool asks of the batch check — the model's rows, resolved to one organization. */
+export type RuleBatchCheckInput = {
+  readonly rows: readonly unknown[];
+  readonly organizationId: string;
+  readonly now: Date;
+};
+
+/**
+ * `F4.289` (ADR 0099 Amendment 9 E3): one row of a batch card, as the server checked it before the
+ * card was stored. `row` is 1-based (the card's and the refusals' numbering). `matchNow` is the one
+ * evaluation against the latest sample; `firings` the 7-day backtest of a threshold rule (`null`
+ * for any other), over `buckets` 1-minute buckets.
+ */
+export type RuleBatchRowCheck = {
+  readonly row: number;
+  readonly assetCode: string | null;
+  readonly pointKey: string | null;
+  readonly operator: string | null;
+  readonly thresholdValue: number | null;
+  readonly severity: string | null;
+  readonly matchNow: "yes" | "no" | "no sample" | "unknown";
+  readonly firings: number | null;
+  readonly buckets: number;
+};
+
+export type RuleBatchCheckResult = { readonly note: string; readonly rows: readonly RuleBatchRowCheck[] };
 
 const OPERATOR_WORDS: Readonly<Record<AutomationRuleOperator, string>> = {
   gt: "above",
@@ -113,27 +141,81 @@ export class RuleProposalCheckService {
     }
   }
 
+  /**
+   * `F4.289` (ADR 0099 Amendment 9 E3) — the `rule.createBatch` card's check: per row, what
+   * `POST /rules/batch` would refuse it for (the route body, a duplicate explicit code, the
+   * validator, `assertArmable` — every batch row is published), then the same write-free "would
+   * match now" evaluation and 7-day backtest as one create. The first refusal stops the check and is
+   * the route's sentence prefixed `Row N:` (1-based, the card's numbering); nothing is stored.
+   */
+  async checkBatch(input: RuleBatchCheckInput): Promise<RuleBatchCheckResult> {
+    const { organizationId, now } = input;
+    const parsed = input.rows.map((raw, i) => {
+      const result = ruleDraftBodySchema.safeParse(raw);
+      if (!result.success) throw new BadRequestException(`Row ${i + 1}: Invalid body`);
+      return result.data;
+    });
+    const duplicate = duplicateCodeRows(applyExcludedRows(parsed));
+    if (duplicate !== null) {
+      throw new BadRequestException(`Row ${duplicate[0] + 1} and row ${duplicate[1] + 1} carry the same code`);
+    }
+    const rows: RuleBatchRowCheck[] = [];
+    const codes = new Map<string, string | null>();
+    for (const [i, dto] of parsed.entries()) {
+      try {
+        const values = await this.rules.validateRuleDraft(dto, undefined, organizationId);
+        const row = previewRowFromValues(values, undefined, now);
+        assertArmable(row);
+        const { result, backtest } = await this.evaluate(row, now);
+        const assetId = row.assetId;
+        if (assetId && !codes.has(assetId)) codes.set(assetId, await this.assetCode(assetId, organizationId));
+        rows.push({
+          row: i + 1,
+          assetCode: assetId ? (codes.get(assetId) ?? null) : null,
+          pointKey: row.pointKey,
+          operator: row.operator,
+          thresholdValue: row.thresholdValue,
+          severity: row.severity,
+          matchNow: matchWord(row, result),
+          firings: backtest?.firings ?? null,
+          buckets: backtest?.buckets ?? 0,
+        });
+      } catch (err) {
+        if (err instanceof HttpException) throw new BadRequestException(`Row ${i + 1}: ${err.message}`);
+        throw err;
+      }
+    }
+    return { note: batchNote(rows), rows };
+  }
+
   /** The condition line, then — for an entry that arms or changes the rule — "would match now" and the backtest. */
   private async note(row: RuleRow, organizationId: string, now: Date, evaluate: boolean): Promise<RuleProposalCheckResult> {
     const condition = await this.conditionLine(row, organizationId);
     if (!evaluate) return { note: condition };
-    const result = await evaluateRule(row, (assetId, pointKey) => latestPointValue(this.db, assetId, pointKey), now);
+    const { result, backtest } = await this.evaluate(row, now);
     const sentences = [condition, matchSentence(row, result)];
-    if (row.ruleType === "threshold" && row.assetId && row.pointKey && row.operator && row.thresholdValue !== null) {
-      const backtest = await backtestRule(
-        this.db,
-        {
-          assetId: row.assetId,
-          pointKey: row.pointKey,
-          operator: row.operator as AutomationRuleOperator,
-          thresholdValue: row.thresholdValue,
-          clearHoldSeconds: row.clearHoldSeconds ?? DEFAULT_CLEAR_HOLD_SECONDS,
-        },
-        now,
-      );
-      sentences.push(backtestSentence(backtest, row.operator as AutomationRuleOperator));
-    }
+    if (backtest !== null) sentences.push(backtestSentence(backtest, row.operator as AutomationRuleOperator));
     return { note: sentences.join(" ") };
+  }
+
+  /** The one evaluation against the latest sample, and for a complete threshold rule the 7-day backtest. */
+  private async evaluate(row: RuleRow, now: Date): Promise<{ result: EvaluationResult; backtest: BacktestResult | null }> {
+    const result = await evaluateRule(row, (assetId, pointKey) => latestPointValue(this.db, assetId, pointKey), now);
+    if (row.ruleType !== "threshold" || !row.assetId || !row.pointKey || !row.operator || row.thresholdValue === null) {
+      return { result, backtest: null };
+    }
+    const backtest = await backtestRule(
+      this.db,
+      {
+        assetId: row.assetId,
+        pointKey: row.pointKey,
+        operator: row.operator as AutomationRuleOperator,
+        thresholdValue: row.thresholdValue,
+        clearHoldSeconds: row.clearHoldSeconds ?? DEFAULT_CLEAR_HOLD_SECONDS,
+      },
+      now,
+    );
+    return { result, backtest };
   }
 
   private async conditionLine(row: RuleRow, organizationId: string): Promise<string> {
@@ -161,6 +243,25 @@ export class RuleProposalCheckService {
     );
     return row?.code ?? null;
   }
+}
+
+/** `F4.289`: a batch row's "would match now" as one word for the card's table. */
+function matchWord(row: RuleRow, result: EvaluationResult): RuleBatchRowCheck["matchNow"] {
+  if (row.ruleType === "threshold" && result.status === "skipped") return "no sample";
+  if (row.ruleType === "threshold" && result.status === "error") return "unknown";
+  return result.matched ? "yes" : "no";
+}
+
+/** `F4.289`: the batch card's one sentence after its summary — counts only; the table carries each row. */
+function batchNote(rows: readonly RuleBatchRowCheck[]): string {
+  const yes = rows.filter((row) => row.matchNow === "yes").length;
+  const noSample = rows.filter((row) => row.matchNow === "no sample").length;
+  const firings = rows.reduce((sum, row) => sum + (row.firings ?? 0), 0);
+  const checked = rows.length === 1 ? "1 row checked" : `${rows.length} rows checked`;
+  return (
+    `${checked}: ${yes} would match now, ${noSample} with no sample yet; about ${firings} firings in the last 7 days ` +
+    "(an estimate; the live engine sees every sample)."
+  );
 }
 
 /** "Would match now", from the one evaluation. */
