@@ -100,6 +100,7 @@ export class PointKeysAdminService {
               unit: body.unit ?? null,
               description: body.description ?? null,
               headlineRank: body.headlineRank ?? null,
+              trendDefault: body.trendDefault ?? null,
               active: true,
             })
             .returning();
@@ -257,6 +258,7 @@ export class PointKeysAdminService {
       active: item.active,
       createdAt: item.createdAt.toISOString(),
       headlineRank: item.headlineRank,
+      trendDefault: item.trendDefault === true,
     };
   }
 }

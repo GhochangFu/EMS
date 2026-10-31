@@ -1,5 +1,6 @@
 import { expect } from "vitest";
 
+import { adminPointKeyDtoSchema } from "./point-keys";
 import { createPointKeyBodySchema, updatePointKeyBodySchema } from "./point-key-writes";
 
 /**
@@ -57,4 +58,41 @@ export function stillRefusesAnUnknownKey(): void {
   const update = updatePointKeyBodySchema.safeParse({ headlineRank: 2, organizationId: "x" });
   expect(update.success, "PATCH with an unknown key must be refused").toBe(false);
   expect(update.error?.issues[0]?.code).toBe("unrecognized_keys");
+}
+
+/**
+ * `F4.300` / ADR 0108 decision 3 — `trendDefault` on the point-key admin
+ * bodies and the admin DTO (plan U1, T1–T3).
+ */
+
+/** T1 — the create body accepts a boolean flag and refuses a string. */
+export function createBodyTakesABooleanTrendDefault(): void {
+  expect(
+    createPointKeyBodySchema.parse({ code: "kw", name: "kW", trendDefault: true }).trendDefault,
+  ).toBe(true);
+  expect(
+    createPointKeyBodySchema.safeParse({ code: "kw", name: "kW", trendDefault: "yes" }).success,
+  ).toBe(false);
+}
+
+/** T2 — the update body accepts `{ trendDefault: false }` alone (a decided false). */
+export function updateBodyTakesTrendDefaultAlone(): void {
+  expect(updatePointKeyBodySchema.parse({ trendDefault: false })).toEqual({ trendDefault: false });
+}
+
+/** T3 — the admin DTO requires the field, so a producer that forgets it fails. */
+export function dtoRequiresTrendDefault(): void {
+  const dto = {
+    id: "i",
+    code: "kw",
+    name: "kW",
+    domain: null,
+    unit: null,
+    description: null,
+    active: true,
+    createdAt: "2026-10-31T00:00:00.000Z",
+    headlineRank: null,
+  };
+  expect(adminPointKeyDtoSchema.safeParse(dto).success).toBe(false);
+  expect(adminPointKeyDtoSchema.safeParse({ ...dto, trendDefault: false }).success).toBe(true);
 }

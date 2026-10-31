@@ -21,6 +21,8 @@ export const createPointKeyBodySchema = z
     // card. 1..32767 is `smallint` above migration 0083's CHECK; `null` clears
     // the rank. On the create body, so the update body inherits it.
     headlineRank: z.number().int().min(1).max(32767).nullable().optional(),
+    // F4.300 / ADR 0108 — tri-state in the column; the create body sets true/false, never null.
+    trendDefault: z.boolean().optional(),
   })
   .strict();
 
