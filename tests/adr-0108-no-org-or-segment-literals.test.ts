@@ -67,6 +67,14 @@ const MODULES: readonly string[] = [
   "apps/web/src/components/asset-history/raw-records-table.tsx",
   "apps/web/src/pages/asset-history-page.tsx",
   "apps/web/src/components/assets/asset-history-link.tsx",
+  "apps/api/src/trend-points/trend-points.pure.ts",
+  "apps/api/src/trend-points/trend-points.service.ts",
+  "apps/api/src/trend-points/trend-points.controller.ts",
+  "apps/api/src/trend-points/trend-points.module.ts",
+  "packages/shared/src/contracts/trend-points.ts",
+  "packages/db/src/schema/trend-points-schema.ts",
+  "apps/web/src/api/admin/trend-points.ts",
+  "apps/web/src/pages/admin/trend-points-page.tsx",
 ];
 
 /**
