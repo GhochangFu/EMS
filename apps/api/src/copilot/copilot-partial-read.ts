@@ -43,11 +43,12 @@ const NOUN_OF: Readonly<Record<string, string>> = {
   get_site_point_inventory: "points",
 };
 
-/** The rows of one item: an `unruled` inventory asset counts its points, any other item one. */
+/** The rows of one item: an `unruled` inventory group counts its points once per asset code, any other item one. */
 function rowsOf(item: unknown): number {
   if (typeof item === "object" && item !== null && "points" in item) {
-    const points = (item as { points: unknown }).points;
-    if (typeof points === "object" && points !== null) return Object.keys(points).length;
+    const { points, codes } = item as { points: unknown; codes?: unknown };
+    const assets = Array.isArray(codes) ? codes.length : 1;
+    if (typeof points === "object" && points !== null) return Object.keys(points).length * assets;
   }
   return 1;
 }

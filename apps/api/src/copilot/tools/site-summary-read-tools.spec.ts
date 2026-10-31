@@ -17,7 +17,7 @@ import { harness } from "../copilot-turn.service.spec";
 import type { CopilotReadServices } from "./copilot-read-tool";
 import { createCopilotReadTools } from "./copilot-read-tool-set";
 import { COPILOT_POINT_STATS_SUMMARY_NEEDS_LOCATION } from "./get-point-stats.tool";
-import { unruledAssets, unruledKeyAt } from "./get-site-point-inventory.tool";
+import { unruledAssets, unruledGroups, unruledKeyAt } from "./get-site-point-inventory.tool";
 
 /**
  * `F4.296` (ADR 0099 Amendment 10; owner rulings Q1, Q3, 2026-10-30) — a
@@ -256,14 +256,40 @@ export async function aLocationPageReportsTheAssetCount(): Promise<void> {
 
 // --- F2: get_site_point_inventory unruled -----------------------------------------------------
 
-/** Only the unwatched points, grouped by asset as key → unit, with the whole subtree's counts; an archived rule watches nothing. */
+/**
+ * Only the unwatched points, one item per distinct point set (key → unit) with
+ * the codes of its assets, no asset id, and the whole subtree's counts; an
+ * archived rule watches nothing.
+ */
 export async function unruledListsOnlyTheUnwatchedPoints(): Promise<void> {
   const { tools } = fake();
   const entry = result(await unruled(tools)).organizations[0]!;
   expect([entry.assetCount, entry.pointCount, entry.watchedCount, entry.unwatchedCount]).toEqual([52, 207, 52, 155]);
-  const items = entry.items as Array<{ assetId: string; code: string; points: Record<string, string | null> }>;
-  expect(items[0]).toEqual({ assetId: ASSETS[0]!.id, code: ASSETS[0]!.code, points: { return_temp_c: "kPa", compressor_current_a: "kPa" } });
+  const items = entry.items as Array<{ codes: string[]; points: Record<string, string | null> }>;
+  // Asset i has KEYS[0..i%3+3), KEYS[0] watched: three sets, by i % 3.
+  expect(items).toHaveLength(3);
+  expect(items[0]).toEqual({
+    codes: ASSETS.filter((_, i) => i % 3 === 0).map((asset) => asset.code),
+    points: { return_temp_c: "kPa", compressor_current_a: "kPa" },
+  });
   expect(items.flatMap((item) => Object.keys(item.points))).not.toContain(KEYS[0]);
+  expect(JSON.stringify(entry)).not.toContain(ASSETS[0]!.id);
+}
+
+/**
+ * Assets 0 and 3 have the same set and asset 1 and 2 others between them: one
+ * group for 0 and 3, in first-appearance order. A shortened page resumes at
+ * the first asset no kept group names, so asset 3 is shown again, never
+ * skipped.
+ */
+export async function unruledGroupsMergeAssetsThatAreNotAdjacent(): Promise<void> {
+  const pairs = PAIRS.slice(0, 15);
+  const codeOf = new Map(ASSETS.map((asset) => [asset.id, asset.code]));
+  const assets = unruledAssets(pairs, pairs.map(() => null), codeOf);
+  const groups = unruledGroups(assets);
+  expect(groups.map((group) => group.codes)).toEqual([[ASSETS[0]!.code, ASSETS[3]!.code], [ASSETS[1]!.code], [ASSETS[2]!.code]]);
+  const keyAt = unruledKeyAt(0, assets, groups);
+  expect([keyAt(1), keyAt(2), keyAt(3)]).toEqual([3, 7, 15]);
 }
 
 /**
@@ -289,11 +315,12 @@ export async function unruledResumesAfterTheLastKeptPoint(): Promise<void> {
   const pairs = PAIRS.slice(0, 12);
   const codeOf = new Map(ASSETS.map((asset) => [asset.id, asset.code]));
   // Assets 0, 1, 2 hold pairs 0-2, 3-6, 7-11: a page starting at 5 opens with the last 2 points of asset 1.
-  const items = unruledAssets(pairs.slice(5), pairs.slice(5).map(() => null), codeOf);
-  const keyAt = unruledKeyAt(5, items);
-  expect(items.map((item) => Object.keys(item.points).length)).toEqual([2, 5]);
+  const assets = unruledAssets(pairs.slice(5), pairs.slice(5).map(() => null), codeOf);
+  const groups = unruledGroups(assets);
+  const keyAt = unruledKeyAt(5, assets, groups);
+  expect(groups.map((group) => Object.keys(group.points).length)).toEqual([2, 5]);
   expect([keyAt(0), keyAt(1)]).toEqual([5, 7]);
-  expect(keyAt(items.length)).toBe(12);
+  expect(keyAt(groups.length)).toBe(12);
 }
 
 /** A point with no unit is `null`, never a missing key. */
@@ -305,29 +332,25 @@ export async function unruledKeepsAPointWithNoUnit(): Promise<void> {
 
 /**
  * Done means (size): the 52-asset, 207-point site with no rule at all — every
- * point unwatched — and the same site with one rule per asset (155
- * unwatched) each reach the model whole in at most two pages, every point
- * once, each page whole JSON: with `list_locations`, three calls. Each asset
- * costs its id and code (~95 characters), so 52 assets alone are ~5,000 of
- * the 7,500 budget.
+ * point unwatched — the same site with one rule per asset (155 unwatched),
+ * and one whose rules leave 12 different point sets each reach the model
+ * whole in one page, every point once, as whole JSON: with `list_locations`,
+ * two calls. The live site (78 assets, 330 unwatched points) needed two pages
+ * of one entry per asset, and the model never sent the cursor.
  */
-export async function aTwoHundredPointUnruledReadFitsInTwoPages(): Promise<void> {
-  for (const [watched, maxPages] of [[() => false, 2], [undefined, 2]] as const) {
+export async function aTwoHundredPointUnruledReadFitsInOnePage(): Promise<void> {
+  const index = new Map(ASSETS.map((asset, i) => [asset.id, i]));
+  const varied = (pair: InventoryPair) => ((index.get(pair.assetId) ?? 0) + KEYS.indexOf(pair.pointKey)) % 4 === 0;
+  for (const watched of [() => false, undefined, varied]) {
     const { tools } = fake({ watched });
-    const seen: string[] = [];
-    let cursor: string | undefined;
-    let pages = 0;
-    do {
-      const content = asTheModelSeesIt(await unruled(tools, cursor === undefined ? {} : { cursor }));
-      expect(content.endsWith(TOOL_RESULT_CUT_TAIL), `${content.length} characters`).toBe(false);
-      const parsed = JSON.parse(content) as { nextCursor: string | null; organizations: Array<{ items: Array<{ assetId: string; points: Record<string, unknown> }> }> };
-      for (const item of parsed.organizations[0]!.items) for (const key of Object.keys(item.points)) seen.push(`${item.assetId}/${key}`);
-      cursor = parsed.nextCursor ?? undefined;
-      pages += 1;
-    } while (cursor !== undefined && pages < 10);
-    const expected = PAIRS.filter((pair) => !(watched ?? ((p: InventoryPair) => p.pointKey === KEYS[0]))(pair)).map((pair) => `${pair.assetId}/${pair.pointKey}`);
-    expect(pages, `${expected.length} points`).toBeLessThanOrEqual(maxPages);
-    expect(seen).toEqual(expected);
+    const content = asTheModelSeesIt(await unruled(tools));
+    expect(content.endsWith(TOOL_RESULT_CUT_TAIL), `${content.length} characters`).toBe(false);
+    const parsed = JSON.parse(content) as { nextCursor: string | null; organizations: Array<{ items: Array<{ codes: string[]; points: Record<string, unknown> }> }> };
+    expect(parsed.nextCursor, `${content.length} characters`).toBeNull();
+    const seen = parsed.organizations[0]!.items.flatMap((item) => item.codes.flatMap((code) => Object.keys(item.points).map((key) => `${code}/${key}`)));
+    const codeOf = new Map(ASSETS.map((asset) => [asset.id, asset.code]));
+    const expected = PAIRS.filter((pair) => !(watched ?? ((p: InventoryPair) => p.pointKey === KEYS[0]))(pair)).map((pair) => `${codeOf.get(pair.assetId)}/${pair.pointKey}`);
+    expect(seen.sort()).toEqual(expected.sort());
   }
 }
 
@@ -358,13 +381,16 @@ export async function aResumedReadAddsItsRows(): Promise<void> {
   expect(withPartialNote("The site has 28.", reads)).toBe("The site has 28. This answer is partial: it read 28 rows from list_alarms, and more were not read.");
 }
 
-/** A call with no cursor starts the count again; an unruled page counts its points, against `unwatchedCount`. */
+/**
+ * A call with no cursor starts the count again; an unruled page counts each
+ * group's points once per asset code, against `unwatchedCount`.
+ */
 export async function aFirstPageStartsTheCountAgain(): Promise<void> {
   const reads: PagedReads = new Map();
-  const items = [{ points: { a: null, b: null } }, { points: { c: null } }];
+  const items = [{ codes: ["A", "B"], points: { a: null, b: null } }, { codes: ["C"], points: { c: null } }];
   notePagedRead(reads, "get_site_point_inventory", {}, page(items, "c1", { unwatchedCount: 9, pointCount: 20 }));
   notePagedRead(reads, "get_site_point_inventory", {}, page(items, "c1", { unwatchedCount: 9, pointCount: 20 }));
-  expect(withPartialNote("x", reads)).toBe("x This answer is partial: it read 3 of 9 points.");
+  expect(withPartialNote("x", reads)).toBe("x This answer is partial: it read 5 of 9 points.");
 }
 
 /**

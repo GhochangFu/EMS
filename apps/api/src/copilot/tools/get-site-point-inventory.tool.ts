@@ -43,6 +43,14 @@ export const INVENTORY_UNRULED_PAGE_MAX_POINTS = 400;
 /** `F4.296` — one asset of an `unruled` page: its unwatched points as key → unit (`null`: no unit). */
 export type UnruledAsset = { readonly assetId: string; readonly code: string; readonly points: Record<string, string | null> };
 
+/**
+ * `F4.296` (owner ruling 2026-10-31, Amendment 10 F2 as amended) — one item
+ * of an `unruled` page: a set of unwatched points (key → unit) once, with the
+ * codes of the page's assets that have exactly that set. No asset ids: the
+ * full inventory stays the read before a rule card.
+ */
+export type UnruledGroup = { readonly codes: readonly string[]; readonly points: Record<string, string | null> };
+
 const NO_STATS: InventoryStats = { unit: null, min: null, avg: null, max: null, last: null, samples: 0 };
 
 /**
@@ -83,7 +91,7 @@ export const getSitePointInventoryTool = defineReadTool({
   description:
     `Every rule-target point of every asset at ${LOCATION_ID_PHRASE}, optional domain: unit, 7-day min/avg/max/last, ` +
     `samples, and ruleIds (at most 10) and ruleCount of the rules already watching it; a row's asset is its index in assets. Read it before proposing rules for a site; ${CURSOR_PHRASE}. ` +
-    "unruled: true lists only the points no rule watches, as key and unit per asset, with the counts.",
+    "unruled: true lists only the points no rule watches, with the counts: each distinct set of points (key and unit) once, with the codes of the assets that have it.",
   schema: z
     .object({
       locationId: z.string().uuid(),
@@ -125,16 +133,19 @@ export const getSitePointInventoryTool = defineReadTool({
  * `rulesWatching` the full rows count with (an archived rule watches
  * nothing). The entry's counts — `assetCount`, `pointCount`,
  * `watchedCount`, `unwatchedCount` — are the whole subtree's on every
- * page. The items are one per asset in the pairs' order (asset code), each
- * with its unwatched points as key → unit; no statistics, no rule ids. The
- * unit is the mapping's or the catalog's (`units`, for the page's pairs only;
- * no `telemetry.*` read, so a large page costs no 7-day statement).
+ * page. The items are one per distinct set of unwatched points
+ * ({@link unruledGroups}): the set as key → unit once, with the codes of the
+ * assets that have it; no statistics, no rule ids, no asset ids. The live
+ * check (78 assets, 330 unwatched points) needed two pages of one entry per
+ * asset, and the model read the first page again instead of sending the
+ * cursor; grouped, the same site is one page. The unit is the mapping's or
+ * the catalog's (`units`, for the page's pairs only; no `telemetry.*` read,
+ * so a large page costs no 7-day statement).
  *
  * The cursor's key is an offset into the unwatched pairs. A page is the
  * longest prefix of them whose grouped JSON fits the budget
- * ({@link unruledPagePoints}); `keyAt` maps the assets `fitListResult` keeps
- * back to that offset, so a shortened page resumes after its last whole
- * asset.
+ * ({@link unruledPagePoints}); `keyAt` maps the groups `fitListResult` keeps
+ * back to that offset ({@link unruledKeyAt}).
  */
 async function readUnruled(
   services: CopilotReadServices,
@@ -142,7 +153,7 @@ async function readUnruled(
   args: { locationId: string; domain?: string; cursor?: string },
 ): Promise<CopilotToolResult> {
   const scope = { locationId: args.locationId, paging: { cursor: args.cursor, key: offsetKeySchema }, maxItems: INVENTORY_UNRULED_PAGE_MAX_POINTS };
-  return readPerOrganization<UnruledAsset, number>(services, ctx, scope, async (_organizationId, assetIds, room, resume) => {
+  return readPerOrganization<UnruledGroup, number>(services, ctx, scope, async (_organizationId, assetIds, room, resume) => {
     const { assets, pairs } = await services.inventory.pairs(assetIds, args.domain);
     const rules =
       assets.length === 0
@@ -155,11 +166,29 @@ async function readUnruled(
     if (offered.items.length === 0) return { ...offered, items: [], extra: head };
     const units = await services.inventory.units(offered.items);
     const codeOf = new Map(assets.map((asset) => [asset.id, asset.code]));
-    const groupsOf = (n: number) => unruledAssets(offered.items.slice(0, n), units, codeOf);
+    const groupsOf = (n: number) => unruledGroups(unruledAssets(offered.items.slice(0, n), units, codeOf));
     const kept = unruledPagePoints(head, groupsOf, offered.items.length);
-    const items = groupsOf(kept);
-    return { ...offsetPage(unwatched, resume, kept), keyAt: unruledKeyAt(resume ?? 0, items), items, extra: head };
+    const pageAssets = unruledAssets(offered.items.slice(0, kept), units, codeOf);
+    const items = unruledGroups(pageAssets);
+    return { ...offsetPage(unwatched, resume, kept), keyAt: unruledKeyAt(resume ?? 0, pageAssets, items), items, extra: head };
   });
+}
+
+/**
+ * The page's assets merged by their set of unwatched points, in the order each
+ * set first appears. Two sets are one when they hold the same keys with the
+ * same units in the same order (the rule point set's order, so one template's
+ * assets match).
+ */
+export function unruledGroups(assets: readonly UnruledAsset[]): UnruledGroup[] {
+  const bySet = new Map<string, { codes: string[]; points: Record<string, string | null> }>();
+  for (const asset of assets) {
+    const set = JSON.stringify(Object.entries(asset.points));
+    const group = bySet.get(set);
+    if (group === undefined) bySet.set(set, { codes: [asset.code], points: asset.points });
+    else group.codes.push(asset.code);
+  }
+  return [...bySet.values()];
 }
 
 /** The pairs grouped by asset, in their order, each point's unit from `units` (same index). */
@@ -177,13 +206,24 @@ export function unruledAssets(pairs: readonly InventoryPair[], units: ReadonlyAr
 }
 
 /**
- * `F4.296` — the offset into the unwatched pairs after the first `keptAssets`
- * entries of a page that starts at `start`: the points of those entries, so
- * a page `fitListResult` shortens resumes after its last kept point, and an
- * asset split across two pages resumes at its first point not shown.
+ * `F4.296` — the offset into the unwatched pairs after a page that starts at
+ * `start` keeps its first `keptGroups` groups: the points of the page's assets,
+ * in pair order, up to the first asset no kept group names. A page kept whole
+ * resumes after its last point, and an asset split across two pages resumes at
+ * its first point not shown. A shortened page (only when the scrub lengthens a
+ * value past the budget) may show a later asset again on the next page, never
+ * skip one.
  */
-export function unruledKeyAt(start: number, items: readonly UnruledAsset[]): (keptAssets: number) => number {
-  return (keptAssets) => start + items.slice(0, keptAssets).reduce((n, asset) => n + Object.keys(asset.points).length, 0);
+export function unruledKeyAt(start: number, assets: readonly UnruledAsset[], groups: readonly UnruledGroup[]): (keptGroups: number) => number {
+  return (keptGroups) => {
+    const shown = new Set(groups.slice(0, keptGroups).flatMap((group) => group.codes));
+    let offset = start;
+    for (const asset of assets) {
+      if (!shown.has(asset.code)) break;
+      offset += Object.keys(asset.points).length;
+    }
+    return offset;
+  };
 }
 
 /**
@@ -191,7 +231,7 @@ export function unruledKeyAt(start: number, items: readonly UnruledAsset[]): (ke
  * fit the result budget, grouped (`groupsOf`) beside `head`, measured after
  * the scrub as {@link inventoryPageRows} measures.
  */
-export function unruledPagePoints(head: Record<string, unknown>, groupsOf: (n: number) => UnruledAsset[], offered: number): number {
+export function unruledPagePoints(head: Record<string, unknown>, groupsOf: (n: number) => UnruledGroup[], offered: number): number {
   const fits = (n: number) =>
     JSON.stringify(scrubToolResult({ ...head, items: groupsOf(n) })).length <= COPILOT_TOOL_RESULT_BUDGET_CHARS - INVENTORY_PAGE_ENVELOPE_CHARS;
   let n = offered;

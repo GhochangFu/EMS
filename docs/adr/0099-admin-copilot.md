@@ -1745,8 +1745,9 @@ code follows in a second PR *(Q2)*.
   mode; the per-asset page stays as it is.
 - **F2 — The unwatched points on `get_site_point_inventory`.** *(Q1)* An
   optional `unruled: true` returns only the rule-target points that no rule
-  watches, over the whole subtree, in a dense shape: one entry per asset (id,
-  code) with its points as key and unit only, no statistics and no rule ids;
+  watches, over the whole subtree, in a dense shape: one entry per distinct
+  set of unwatched points, the set as key and unit once with the codes of the
+  assets that have it, no asset ids, no statistics and no rule ids *(Q4)*;
   and the counts of points, of watched points and of unwatched points. The
   rules are read for the subtree's assets once. It pages with the `F4.291`
   cursor only when the result passes the list budget (drafter choice). E2 is
@@ -1782,6 +1783,13 @@ sentence is appended only when a `nextCursor` was left unfollowed. Live: on a
 site of at least 50 assets and 200 points, both questions end `final` in at
 most three tool calls, with the call count read from the `copilot turn` log.
 
+**Q4 (code PR, 2026-10-31).** F2 first read *one entry per asset (id, code)*.
+The live check on RSMOC Western Cape (78 assets, 576 rule points, 330
+unwatched) needed two pages of that shape, and `z-ai/glm-5.3` sent the first
+page's arguments again instead of its `nextCursor` until the turn hit the
+call cap. Grouped by point set, without asset ids, the same site is one page.
+The owner ruled the grouped shape; F2 above is amended in place.
+
 ### Gate questions
 
 | # | Question | Recommended | Ruled |
@@ -1789,3 +1797,4 @@ most three tool calls, with the call count read from the `copilot turn` log.
 | Q1 | The shape of a site-wide read in at most 3 calls | summary mode on the two existing tools | as recommended |
 | Q2 | How the amendment and the code land | ADR PR first, then the code PR | as recommended |
 | Q3 | Who writes the partial line | the server appends one fixed sentence | as recommended |
+| Q4 | The `unruled` shape after the live check needed two pages | one entry per point set, asset codes only | as recommended (2026-10-31) |

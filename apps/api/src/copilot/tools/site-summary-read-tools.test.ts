@@ -14,11 +14,12 @@ describe("F4.296 — a site-wide read inside one turn", () => {
   it("summary with assetIds is refused", spec.aSummaryWithAssetIdsIsRefused);
   it("summary with a cursor is refused", spec.aSummaryWithACursorIsRefused);
   it("a location page reports its asset count", spec.aLocationPageReportsTheAssetCount);
-  it("unruled lists only the unwatched points, with the counts", spec.unruledListsOnlyTheUnwatchedPoints);
+  it("unruled lists only the unwatched points, grouped by point set, with the counts", spec.unruledListsOnlyTheUnwatchedPoints);
+  it("unruled groups merge assets that are not adjacent", spec.unruledGroupsMergeAssetsThatAreNotAdjacent);
   it("unruled reads the rules once and units for the page, no statistics", spec.unruledReadsTheRulesOnceAndUnitsForThePage);
   it("unruled resumes after the last kept point", spec.unruledResumesAfterTheLastKeptPoint);
   it("unruled keeps a point with no unit", spec.unruledKeepsAPointWithNoUnit);
-  it("a 207-point unruled read fits in at most two pages", spec.aTwoHundredPointUnruledReadFitsInTwoPages);
+  it("a 207-point unruled read fits in one page", spec.aTwoHundredPointUnruledReadFitsInOnePage);
   it("an open page appends the partial sentence", spec.anOpenPageAppendsThePartialSentence);
   it("a final page closes the read", spec.aFinalPageClosesTheRead);
   it("a resumed read adds its rows", spec.aResumedReadAddsItsRows);
