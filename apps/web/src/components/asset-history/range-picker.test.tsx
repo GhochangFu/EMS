@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, it, vi } from "vitest";
 import {
   aCustomPairIsReadInTheSiteZone,
   aPresetSetsTheRangeInTheUrl,
+  aTooLongCustomPairIsRefusedWithTheContractSentence,
   theFunctionSelectOffersAllFour,
 } from "./range-picker.spec";
 
@@ -26,6 +27,10 @@ describe("F4.297 range picker", () => {
 
   it("reads the custom pair as wall time in the site zone", async () => {
     await aCustomPairIsReadInTheSiteZone();
+  });
+
+  it("refuses a custom pair over the span limit with the contract's sentence", async () => {
+    await aTooLongCustomPairIsRefusedWithTheContractSentence();
   });
 
   it("offers all four bucket functions", () => {

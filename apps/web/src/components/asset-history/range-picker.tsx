@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { pointAggregateFunctionSchema } from "@bms/shared";
+import { pointAggregateFunctionSchema, pointAggregateQuerySchema } from "@bms/shared";
 import type { PointAggregateFunction } from "@bms/shared";
 
 import {
@@ -53,6 +53,13 @@ export function RangePicker({ range, zone, zoneLabel, onChange }: RangePickerPro
     }
     if (Date.parse(toIso) <= Date.parse(fromIso)) {
       setError("The end must be after the start.");
+      return;
+    }
+    // The server's own rules (each end in range, the span limit): a pair it would refuse is
+    // refused here with the contract's sentence, rather than as a bare 400 on every series.
+    const checked = pointAggregateQuerySchema.safeParse({ from: fromIso, to: toIso });
+    if (!checked.success) {
+      setError(checked.error.issues[0]?.message ?? "The range is not valid.");
       return;
     }
     setError(null);

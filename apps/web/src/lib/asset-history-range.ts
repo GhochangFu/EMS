@@ -116,6 +116,50 @@ export function shiftCompareBuckets(
 }
 
 /**
+ * The previous period's value per current bucket, keyed by the current bucket's start (epoch ms).
+ *
+ * Each compare bucket moves forward by the span, then snaps down to the `bucketSeconds` grid.
+ * The rollups bucket in UTC from the epoch (`time_bucket`), so the floor is that grid. A custom
+ * span that is not a whole number of buckets (84 h 30 min at `1h`) would otherwise land every
+ * shifted bucket between two current ones, and no current bucket would find its value.
+ */
+export function previousByBucket(
+  compareBuckets: readonly PointAggregateBucket[],
+  spanMs: number,
+  bucketSeconds: number,
+): Map<number, number | null> {
+  const widthMs = bucketSeconds * 1000;
+  return new Map(
+    compareBuckets.map((b) => {
+      const shifted = Date.parse(b.t) + spanMs;
+      return [Math.floor(shifted / widthMs) * widthMs, b.v] as const;
+    }),
+  );
+}
+
+/**
+ * The point keys that can be charted together, in order: a key whose unit would need a third
+ * y axis (`axisForUnit`) is dropped. The checkbox refuses that selection on a click; this
+ * applies the same rule to a `points` list that arrives in the URL.
+ */
+export function chartablePoints(
+  keys: readonly string[],
+  unitOf: (key: string) => string | null,
+): string[] {
+  const units: (string | null)[] = [];
+  const kept: string[] = [];
+  for (const key of keys) {
+    const unit = unitOf(key);
+    if (axisForUnit(units, unit) === "refused") {
+      continue;
+    }
+    units.push(unit);
+    kept.push(key);
+  }
+  return kept;
+}
+
+/**
  * Which y axis a series of `unit` belongs on, given the units already plotted: one unit per
  * axis, two axes, a third distinct unit refused. A missing unit counts as a unit of its own.
  */

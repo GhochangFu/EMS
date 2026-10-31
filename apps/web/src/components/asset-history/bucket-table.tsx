@@ -1,6 +1,6 @@
 import type { PointAggregateResponse } from "@bms/shared";
 
-import { shiftCompareBuckets } from "../../lib/asset-history-range";
+import { previousByBucket } from "../../lib/asset-history-range";
 import { SectionCard } from "../section-card";
 import { formatInZone } from "./history-format";
 
@@ -22,14 +22,13 @@ function cell(value: number | null | undefined): string {
  * sample count per bucket (`bucketStats`), and the previous period's value when a compare is on.
  *
  * The previous value is matched by time, not by index (ADR 0108 decision 1.3 alignment): each
- * compare bucket moves forward by the span and lands on the current bucket with that time.
+ * compare bucket moves forward by the span and snaps to the bucket grid (`previousByBucket`),
+ * so a custom span that is not a whole number of buckets still lands on a current bucket.
  */
 export function BucketTable({ pointKey, unit, data, compare, zone }: BucketTableProps) {
   const buckets = data.buckets ?? [];
   const spanMs = Date.parse(data.to) - Date.parse(data.from);
-  const previous = new Map(
-    shiftCompareBuckets(data.compare?.buckets ?? [], spanMs).map((b) => [Date.parse(b.t), b.v] as const),
-  );
+  const previous = previousByBucket(data.compare?.buckets ?? [], spanMs, data.bucketSeconds);
   const showCompare = compare && data.compare !== null;
 
   return (

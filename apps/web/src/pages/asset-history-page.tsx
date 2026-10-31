@@ -14,7 +14,7 @@ import { TrendChart, type TrendSeries } from "../components/asset-history/trend-
 import { PageHeader } from "../components/page-header";
 import { useAssetHistory } from "../hooks/use-asset-history";
 import { apiErrorMessage } from "../lib/api-error-message";
-import { rangeFromSearch, rangeToSearch, type HistoryRange } from "../lib/asset-history-range";
+import { chartablePoints, rangeFromSearch, rangeToSearch, type HistoryRange } from "../lib/asset-history-range";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -51,7 +51,11 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
   const asset = assetsQ.data?.find((row) => row.id === assetId);
   const points = useMemo(() => pointsQ.data?.items ?? [], [pointsQ.data]);
   const selected = useMemo(() => {
-    const known = range.points.filter((key) => points.some((p) => p.pointKey === key));
+    // The two-axis rule holds for a URL list too: a third distinct unit is not charted.
+    const known = chartablePoints(
+      range.points.filter((key) => points.some((p) => p.pointKey === key)),
+      (key) => points.find((p) => p.pointKey === key)?.unit ?? null,
+    );
     return known.length > 0 || points.length === 0 ? known : [points[0].pointKey];
   }, [range.points, points]);
 
@@ -113,7 +117,12 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
                     {apiErrorMessage(historyError)}
                   </p>
                 ) : null}
-                <TrendChart series={series} compare={range.compare} siteZone={siteZone} />
+                <TrendChart
+                  series={series}
+                  chartedCount={selected.length}
+                  compare={range.compare}
+                  siteZone={siteZone}
+                />
                 {firstSeries ? (
                   <BucketTable
                     pointKey={firstSeries.pointKey}

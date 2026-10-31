@@ -6,6 +6,9 @@ import {
   aPresetQueryIsATrailingWindow,
   aThirdUnitIsRefused,
   anUnknownOrHalfRangeFallsBackTo24h,
+  chartablePointsDropsAThirdUnit,
+  previousByBucketKeepsAnAlignedSpan,
+  previousByBucketSnapsAnUnalignedSpanToTheGrid,
   pointsAreCappedAtTheWidgetLimit,
   pointsAreDeduplicated,
   shiftCompareBucketsMovesByExactlyTheSpan,
@@ -45,6 +48,15 @@ describe("F4.297 asset history range", () => {
   });
   it("shifts compare buckets by exactly the span", () => {
     shiftCompareBucketsMovesByExactlyTheSpan();
+  });
+  it("snaps an unaligned compare span to the bucket grid", () => {
+    previousByBucketSnapsAnUnalignedSpanToTheGrid();
+  });
+  it("keeps an aligned compare span on the bucket one span later", () => {
+    previousByBucketKeepsAnAlignedSpan();
+  });
+  it("drops a URL point whose unit needs a third axis", () => {
+    chartablePointsDropsAThirdUnit();
   });
   it("refuses a third unit", () => {
     aThirdUnitIsRefused();

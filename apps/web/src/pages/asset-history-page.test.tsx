@@ -4,7 +4,10 @@ import { afterAll, afterEach, beforeAll, describe, it, vi } from "vitest";
 
 import {
   aCustomRangeInTheUrlIsSentAsThePair,
+  aFailedReadIsNotAnEmptySelection,
   aFilledPreviousPeriodDoesNotSaySo,
+  aThirdUnitFromTheUrlIsNotCharted,
+  anUnalignedCustomCompareFillsThePreviousColumn,
   aForbiddenAssetRendersTheAccessSentence,
   aNinthPointIsRefused,
   aPresetAndCompareInTheUrlReachTheRead,
@@ -83,5 +86,17 @@ describe("F4.297 asset history page", () => {
 
   it("formats raw and poll times in the site zone and names it", async () => {
     await timesAreInTheSiteZone();
+  });
+
+  it("fills the previous-period column for a custom span that is not a whole number of buckets", async () => {
+    await anUnalignedCustomCompareFillsThePreviousColumn();
+  });
+
+  it("does not say 'Choose a point to chart.' when a charted point's read failed", async () => {
+    await aFailedReadIsNotAnEmptySelection();
+  });
+
+  it("does not chart a URL point whose unit needs a third axis", async () => {
+    await aThirdUnitFromTheUrlIsNotCharted();
   });
 });

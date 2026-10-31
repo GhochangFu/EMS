@@ -20,6 +20,11 @@ export interface TrendSeries {
 
 type TrendChartProps = {
   series: readonly TrendSeries[];
+  /**
+   * How many points are charted. With one or more and no series, the reads are loading or
+   * failed (the page shows the error), so the chart does not ask for a point to be chosen.
+   */
+  chartedCount: number;
   compare: boolean;
   siteZone: SiteZone;
 };
@@ -36,7 +41,7 @@ export function previousPeriodIsEmpty(series: readonly TrendSeries[]): boolean {
  * in the site zone, never the browser's. A compare whose previous period has no value says so
  * (ruling 4.6) rather than drawing an empty dashed line silently.
  */
-export function TrendChart({ series, compare, siteZone }: TrendChartProps) {
+export function TrendChart({ series, chartedCount, compare, siteZone }: TrendChartProps) {
   const { roles, theme } = useChartTheme();
   const first = series[0]?.data;
 
@@ -72,7 +77,9 @@ export function TrendChart({ series, compare, siteZone }: TrendChartProps) {
   if (first === undefined || option === null) {
     return (
       <SectionCard title="Trend">
-        <p className="text-xs text-ink-muted">Choose a point to chart.</p>
+        <p className="text-xs text-ink-muted">
+          {chartedCount > 0 ? "No chart data to show." : "Choose a point to chart."}
+        </p>
       </SectionCard>
     );
   }

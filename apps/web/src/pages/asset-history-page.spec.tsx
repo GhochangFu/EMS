@@ -263,3 +263,54 @@ export async function timesAreInTheSiteZone(): Promise<void> {
   const row = document.querySelector('[data-point-key="kw"]') as HTMLElement;
   await waitFor(() => expect(within(row).getByTestId("poll-time").textContent).toContain("31 Oct 2026, 11:45:00"));
 }
+
+/**
+ * `F4.297` review — a custom range of 84 h 30 min is not a whole number of `1h` buckets, so each
+ * compare bucket shifted by the span lands on `hh:30`. The "Previous period" cell still shows the
+ * value of the compare bucket the current one overlays.
+ */
+export async function anUnalignedCustomCompareFillsThePreviousColumn(): Promise<void> {
+  stubApis({
+    served: aggregate({
+      from: "2026-10-01T00:00:00.000Z",
+      to: "2026-10-04T12:30:00.000Z",
+      buckets: [{ t: "2026-10-01T00:00:00.000Z", v: 5, min: 1, average: 5, max: 9, sampleCount: 2 }],
+      compare: {
+        from: "2026-09-27T11:30:00.000Z",
+        to: "2026-10-01T00:00:00.000Z",
+        stats: { sum: 7, average: 7, min: 7, max: 7, peakAt: "2026-09-27T12:00:00.000Z", sampleCount: 1 },
+        buckets: [{ t: "2026-09-27T12:00:00.000Z", v: 7 }],
+      },
+    }),
+  });
+  renderHistoryPage("?from=2026-10-01T00:00:00.000Z&to=2026-10-04T12:30:00.000Z&compare=1&points=kw");
+  const header = await screen.findByRole("columnheader", { name: "Previous period" });
+  const table = header.closest("table") as HTMLTableElement;
+  const cells = within(within(table).getAllByRole("row")[1]).getAllByRole("cell");
+  expect(cells[5].textContent).toBe("7");
+}
+
+/**
+ * `F4.297` review — a charted point whose every read failed is not "Choose a point to chart.":
+ * the error sentence shows (the positive), and the empty-selection text does not.
+ */
+export async function aFailedReadIsNotAnEmptySelection(): Promise<void> {
+  const { aggregateSpy } = stubApis();
+  aggregateSpy.mockRejectedValue(new Error("telemetry aggregate 400"));
+  renderHistoryPage("?points=kw");
+  expect(await screen.findByText("telemetry aggregate 400")).toBeInTheDocument();
+  expect(screen.queryByText("Choose a point to chart.")).toBeNull();
+}
+
+/**
+ * `F4.297` review — a `points` list from the URL with a third distinct unit does not chart the
+ * third: its checkbox is unchecked and it is never read, while the first two are.
+ */
+export async function aThirdUnitFromTheUrlIsNotCharted(): Promise<void> {
+  const { aggregateSpy } = stubApis({ points: [point("kw"), point("pf", null), point("temp", "°C")] });
+  renderHistoryPage("?points=kw,pf,temp");
+  await waitFor(() => expect(aggregateSpy).toHaveBeenCalledTimes(2));
+  expect(((await screen.findByRole("checkbox", { name: "Chart pf" })) as HTMLInputElement).checked).toBe(true);
+  expect((screen.getByRole("checkbox", { name: "Chart temp" }) as HTMLInputElement).checked).toBe(false);
+  expect(aggregateSpy.mock.calls.map((call) => call[0])).not.toContain(encodePointRef(ASSET_ID, "temp"));
+}

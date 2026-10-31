@@ -30,6 +30,20 @@ export async function aCustomPairIsReadInTheSiteZone(): Promise<void> {
   );
 }
 
+/**
+ * `F4.297` review — a custom pair the server would refuse (a span over 525,600 minutes) is
+ * refused here with the contract's own sentence, and never reaches the URL.
+ */
+export async function aTooLongCustomPairIsRefusedWithTheContractSentence(): Promise<void> {
+  const onChange = vi.fn();
+  render(<RangePicker range={DEFAULT} zone="Etc/UTC" zoneLabel="UTC" onChange={onChange} />);
+  await userEvent.type(screen.getByLabelText("From"), "2025-01-01T00:00");
+  await userEvent.type(screen.getByLabelText("To"), "2026-02-05T00:00");
+  await userEvent.click(screen.getByRole("button", { name: "Apply" }));
+  expect(screen.getByRole("alert").textContent).toBe("the from/to span must not exceed 525600 minutes");
+  expect(onChange).not.toHaveBeenCalled();
+}
+
 /** The function select offers all four functions (owner answer Q3). */
 export function theFunctionSelectOffersAllFour(): void {
   render(<RangePicker range={DEFAULT} zone="Etc/UTC" zoneLabel="UTC" onChange={vi.fn()} />);

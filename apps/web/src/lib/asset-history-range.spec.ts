@@ -6,7 +6,9 @@ import {
   HISTORY_PRESETS,
   MAX_HISTORY_POINTS,
   axisForUnit,
+  chartablePoints,
   instantToLocalInput,
+  previousByBucket,
   localInputToInstant,
   rangeFromSearch,
   rangeToQuery,
@@ -98,6 +100,50 @@ export function shiftCompareBucketsMovesByExactlyTheSpan(): void {
   expect(shifted).toEqual([
     { t: "2026-10-31T10:00:00.000Z", v: 1 },
     { t: "2026-10-31T11:00:00.000Z", v: null },
+  ]);
+}
+
+/**
+ * `F4.297` review — a custom span that is not a whole number of buckets (84 h 30 min at the
+ * `1h` level) shifts each compare bucket onto `hh:30`; the lookup snaps it to the `time_bucket`
+ * grid, so the previous value still lands on the current bucket it overlays.
+ */
+export function previousByBucketSnapsAnUnalignedSpanToTheGrid(): void {
+  const span = Date.parse("2026-10-04T12:30:00.000Z") - Date.parse("2026-10-01T00:00:00.000Z");
+  const previous = previousByBucket(
+    [
+      { t: "2026-09-27T12:00:00.000Z", v: 7 },
+      { t: "2026-09-27T13:00:00.000Z", v: 8 },
+    ],
+    span,
+    3600,
+  );
+  expect(previous.get(Date.parse("2026-10-01T00:00:00.000Z"))).toBe(7);
+  expect(previous.get(Date.parse("2026-10-01T01:00:00.000Z"))).toBe(8);
+}
+
+/** An aligned span (a preset) maps each compare bucket onto the bucket exactly one span later. */
+export function previousByBucketKeepsAnAlignedSpan(): void {
+  const previous = previousByBucket([{ t: "2026-10-30T09:00:00.000Z", v: 3 }], 86_400_000, 3600);
+  expect(previous.get(Date.parse("2026-10-31T09:00:00.000Z"))).toBe(3);
+  expect(previous.size).toBe(1);
+}
+
+/**
+ * `F4.297` review — a `points` list from the URL keeps at most two distinct units: a point whose
+ * unit would need a third axis is dropped, in list order, so it is never shown as charted.
+ */
+export function chartablePointsDropsAThirdUnit(): void {
+  const unitOf = new Map<string, string | null>([
+    ["kw", "kW"],
+    ["kw2", "kW"],
+    ["pf", null],
+    ["temp", "°C"],
+  ]);
+  expect(chartablePoints(["kw", "pf", "temp", "kw2"], (key) => unitOf.get(key) ?? null)).toEqual([
+    "kw",
+    "pf",
+    "kw2",
   ]);
 }
 
