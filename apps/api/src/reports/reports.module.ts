@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { NotificationsCoreModule } from "../notifications/notifications-core.module";
+import { EnergyOrganizationViewsService } from "./energy-organization-views.service";
 import { EnergyViewService } from "./energy-view.service";
 import { ReportFilesController } from "./report-files.controller";
 import { ReportFilesService } from "./report-files.service";
@@ -53,6 +54,10 @@ import { ReportsCoreModule } from "./reports-core.module";
  * `F4.298` (ADR 0108 decision 2) — `EnergyViewService` (the Energy page's view
  * and filter options) is provided here for the same reason: it injects
  * `ReportScopeService`, so it can never sit in the loop-free core.
+ *
+ * `F4.299` (ADR 0108 Amendment 1, 7.2) — `EnergyOrganizationViewsService` (the
+ * Energy page's four organization views) is provided here too: it injects
+ * `EnergyViewService` for the one frame, so it follows it out of the core.
  */
 @Module({
   imports: [ReportsCoreModule, NotificationsCoreModule],
@@ -63,6 +68,7 @@ import { ReportsCoreModule } from "./reports-core.module";
     ReportProposalCheckService,
     ReportScopeService,
     EnergyViewService,
+    EnergyOrganizationViewsService,
     MasterDataAuditService,
     JwtAuthGuard,
   ],

@@ -10,10 +10,11 @@ import {
 import type { Response } from "express";
 import { ZodError } from "zod";
 import { energyViewQuerySchema } from "@bms/shared";
-import type { EnergyFilterOptions, EnergyView, JwtPayload } from "@bms/shared";
+import type { EnergyFilterOptions, EnergyOrganizationViews, EnergyView, JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { EnergyOrganizationViewsService } from "./energy-organization-views.service";
 import { EnergyViewService } from "./energy-view.service";
 import { ReportScopeService } from "./report-scope";
 import { energyReportQuerySchema } from "./reports.schema";
@@ -33,6 +34,7 @@ export class ReportsController {
     private readonly reports: ReportsService,
     private readonly scope: ReportScopeService,
     private readonly energyViews: EnergyViewService,
+    private readonly organizationViews: EnergyOrganizationViewsService,
   ) {}
 
   @Get("energy/preview")
@@ -180,6 +182,30 @@ export class ReportsController {
     try {
       const dto = energyViewQuerySchema.parse(query);
       return await this.energyViews.view(user, dto);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F4.299` (ADR 0108 Amendment 1, 7.1) — the Energy page's four organization
+   * views (sites ranked, the trend by site, the heatmap, the abnormal list): a
+   * sibling of `energy/view` on the same query schema, by identity, so the
+   * page sends one query to both and nothing is called twice. `no-store`: the
+   * answer depends on the caller's scope.
+   */
+  @Get("energy/organization-views")
+  @Header("Cache-Control", "no-store")
+  async energyOrganizationViews(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: unknown,
+  ): Promise<EnergyOrganizationViews> {
+    try {
+      const dto = energyViewQuerySchema.parse(query);
+      return await this.organizationViews.organizationViews(user, dto);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

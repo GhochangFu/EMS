@@ -36,6 +36,8 @@ function harness() {
         return options;
       },
     } as never,
+    // `F4.299`: the organization views service; these two routes never reach it.
+    {} as never,
   );
   return { controller, viewCalls, optionCalls, answer, options };
 }

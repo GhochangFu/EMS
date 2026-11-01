@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import type pg from "pg";
 
-import type { EnergyView, JwtPayload } from "@bms/shared";
+import type { EnergyOrganizationViews, EnergyView, JwtPayload } from "@bms/shared";
 
 import type { TreeFixture } from "../auth/location-tree.integration.spec";
 import type { ReportsController } from "./reports.controller";
@@ -183,6 +183,106 @@ export async function aReadableSiteWithAnotherOrganizationIsA400(h: EnergyViewHa
     "admin, organizationId=B, locationIds=A",
   );
   if (!(err instanceof BadRequestException)) fail(`admin mismatch: ${err.name} ${err.message}, expected a 400`);
+}
+
+// ---------------------------------------------------------------------------
+// `F4.299` U4 (ADR 0108 Amendment 1, 7.8, "Verification owed (added)") — the
+// organization views on the same fixture and the same recorder: the refusals
+// run no telemetry statement, and naming R leaves B's asset and B's location
+// out of every section, each with the readable A figure beside it.
+// ---------------------------------------------------------------------------
+
+const UNREADABLE_IDS = (h: EnergyViewHarness) => [h.fx.nodes.B, h.fx.nodes.B1, h.fx.assets.B, h.fx.assets.B1];
+const READABLE_SITES = (h: EnergyViewHarness) => new Set([h.fx.nodes.A, h.fx.nodes.A1, h.fx.nodes.A1a]);
+
+async function organizationViewsOfR(h: EnergyViewHarness): Promise<{ views: EnergyOrganizationViews; view: EnergyView }> {
+  const query = { ...aroundNow(), locationIds: [h.fx.nodes.R] };
+  const views = (await h.controller.energyOrganizationViews(h.fx.grantee, query)) as EnergyOrganizationViews;
+  const view = (await h.controller.energyView(h.fx.grantee, query)) as EnergyView;
+  if (!view.current.hasData) fail("the readable asset's future sample was not read — the fixture is not visible");
+  return { views, view };
+}
+
+/** Cross-tenant: `organizationId` of B for a caller scoped to A is a 403, and no telemetry is read. */
+export async function organizationViewsOfAnotherOrganizationIdIsA403WithNoTelemetry(h: EnergyViewHarness): Promise<void> {
+  h.recorder.statements.length = 0;
+  const err = await refusal(
+    h.controller.energyOrganizationViews(h.fx.grantee, { range: "today", organizationId: h.fx.orgB }),
+    "organization-views, organizationId=B",
+  );
+  if (!(err instanceof ForbiddenException)) fail(`organizationId=B: ${err.name} ${err.message}, expected a 403`);
+  if (telemetryStatements(h.recorder).length !== 0) fail(`telemetry read on a refusal: ${telemetryStatements(h.recorder).length}`);
+}
+
+/** Cross-tenant: a site of B as `locationIds` is a 403, and no telemetry is read. */
+export async function organizationViewsOfASiteOfAnotherOrganizationIsA403WithNoTelemetry(h: EnergyViewHarness): Promise<void> {
+  h.recorder.statements.length = 0;
+  const err = await refusal(
+    h.controller.energyOrganizationViews(h.fx.grantee, { range: "today", locationIds: [h.fx.nodes.X] }),
+    "organization-views, locationIds=X",
+  );
+  if (!(err instanceof ForbiddenException)) fail(`locationIds=X: ${err.name} ${err.message}, expected a 403`);
+  if (telemetryStatements(h.recorder).length !== 0) fail(`telemetry read on a refusal: ${telemetryStatements(h.recorder).length}`);
+}
+
+/**
+ * Naming R: `partial` 3 of 6, and the ranking holds readable sites only — A,
+ * by its `bms.locations.name` (never the asset's `site_name`), at A's figure;
+ * Σ kWh equals the view's total, so B's far larger figure is absent.
+ */
+export async function organizationViewsRankingHoldsReadableSitesOnly(h: EnergyViewHarness): Promise<void> {
+  h.recorder.statements.length = 0;
+  const { views, view } = await organizationViewsOfR(h);
+  if (JSON.stringify(views.partial) !== JSON.stringify({ readableSites: 3, selectedSites: 6 })) {
+    fail(`partial: ${JSON.stringify(views.partial)}, expected 3 of 6 sites`);
+  }
+  const ids = views.sites.current.map((s) => s.locationId);
+  const readable = READABLE_SITES(h);
+  if (!ids.includes(h.fx.nodes.A)) fail(`the ranking lacks A: ${JSON.stringify(ids)} — the readable figure is not read`);
+  const outside = ids.filter((id) => !readable.has(id));
+  if (outside.length > 0) fail(`the ranking names ${JSON.stringify(outside)}, outside A, A1, A1a`);
+  const a = views.sites.current.find((s) => s.locationId === h.fx.nodes.A);
+  if (!/^F2\.10 F210-.+-A$/.test(a?.name ?? "")) fail(`A's name: ${a?.name}, expected its bms.locations.name`);
+  if (a?.peakKw !== READABLE_KW) fail(`A's peakKw: ${a?.peakKw}, expected ${READABLE_KW}`);
+  const total = views.sites.current.reduce((sum, s) => sum + s.kwh, 0);
+  if (Math.abs(total - view.current.totalKwh) > 0.011) fail(`Σ sites kWh ${total} ≠ the view's totalKwh ${view.current.totalKwh}`);
+  if (views.sites.current.some((s) => s.peakKw >= UNREADABLE_KW)) fail("a site carries B's unreadable figure");
+  if (telemetryStatements(h.recorder).length === 0) fail("no telemetry statement was recorded — the recorder is dead");
+}
+
+/** Naming R: the trend's columns are readable sites, and its largest point is A's figure, never B's. */
+export async function organizationViewsTrendHoldsReadableSitesOnly(h: EnergyViewHarness): Promise<void> {
+  const { views } = await organizationViewsOfR(h);
+  const readable = READABLE_SITES(h);
+  const siteColumns = views.trend.columns.flatMap((c) => (c.kind === "site" ? [c.locationId] : []));
+  if (!siteColumns.includes(h.fx.nodes.A)) fail(`the trend lacks A's column: ${JSON.stringify(views.trend.columns)}`);
+  if (siteColumns.some((id) => !readable.has(id))) fail(`the trend names a site outside A, A1, A1a: ${JSON.stringify(siteColumns)}`);
+  const peak = Math.max(0, ...views.trend.points.flatMap((p) => p.kw));
+  if (peak !== READABLE_KW) fail(`the trend's largest point: ${peak}, expected ${READABLE_KW} (A alone; ${UNREADABLE_KW} is B's)`);
+}
+
+/** Naming R: Σ heatmap cells equals the view's total (A alone) and is above zero. */
+export async function organizationViewsHeatmapHoldsReadableKwhOnly(h: EnergyViewHarness): Promise<void> {
+  const { views, view } = await organizationViewsOfR(h);
+  const total = views.heatmap.cells.reduce((sum, c) => sum + c.kwh, 0);
+  if (!(total > 0)) fail(`the heatmap is empty: ${JSON.stringify(views.heatmap.cells)} — the readable figure is not read`);
+  if (Math.abs(total - view.current.totalKwh) > 0.011) fail(`Σ heatmap kWh ${total} ≠ the view's totalKwh ${view.current.totalKwh}`);
+}
+
+/** Naming R: the abnormal list judges A's asset (no history yet) and names nothing of B. */
+export async function organizationViewsAbnormalHoldsReadableEntitiesOnly(h: EnergyViewHarness): Promise<void> {
+  const { views } = await organizationViewsOfR(h);
+  const a = views.abnormal.entries.find((e) => e.kind === "asset" && e.id === h.fx.assets.A);
+  if (a?.verdict !== "not_enough_history") fail(`A's asset: ${JSON.stringify(a)}, expected a not_enough_history entry`);
+  const text = JSON.stringify(views.abnormal);
+  for (const id of UNREADABLE_IDS(h)) {
+    if (text.includes(id)) fail(`the abnormal list names ${id}, which the grantee cannot read`);
+  }
+  if (views.abnormal.entries.some((e) => e.currentKwh >= UNREADABLE_KW / 60)) fail("an abnormal entry carries B's figure");
+  const whole = JSON.stringify(views);
+  for (const id of UNREADABLE_IDS(h)) {
+    if (whole.includes(id)) fail(`the organization views name ${id}, which the grantee cannot read`);
+  }
 }
 
 /**

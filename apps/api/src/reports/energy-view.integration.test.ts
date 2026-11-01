@@ -19,10 +19,17 @@ import {
   anotherOrganizationIdIsA403WithNoTelemetry,
   filterOptionsNeverListsAnotherOrganization,
   insertFutureSamples,
+  organizationViewsAbnormalHoldsReadableEntitiesOnly,
+  organizationViewsHeatmapHoldsReadableKwhOnly,
+  organizationViewsOfAnotherOrganizationIdIsA403WithNoTelemetry,
+  organizationViewsOfASiteOfAnotherOrganizationIsA403WithNoTelemetry,
+  organizationViewsRankingHoldsReadableSitesOnly,
+  organizationViewsTrendHoldsReadableSitesOnly,
   ownOrganizationWithAForeignSiteIsA403,
   recordingPool,
   type EnergyViewHarness,
 } from "./energy-view.integration.spec";
+import { EnergyOrganizationViewsService } from "./energy-organization-views.service";
 import { EnergyViewService } from "./energy-view.service";
 import { ReportScopeService } from "./report-scope";
 import { ReportsController } from "./reports.controller";
@@ -62,7 +69,8 @@ describe.skipIf(!connectionString)("F4.298 — the energy view reads only the ca
       access,
       scope,
     );
-    const controller = new ReportsController({} as never, scope, energyView);
+    const organizationViews = new EnergyOrganizationViewsService(recorded.pool, energyView);
+    const controller = new ReportsController({} as never, scope, energyView, organizationViews);
     await pool.query("BEGIN");
     await pool.query("SET LOCAL lock_timeout = '10s'");
     const fx: TreeFixture = await buildTreeFixture(pool, run);
@@ -85,4 +93,13 @@ describe.skipIf(!connectionString)("F4.298 — the energy view reads only the ca
   it("the own organization with a foreign site is a 403, not the mismatch 400", () => ownOrganizationWithAForeignSiteIsA403(h));
   it("a readable site with another organizationId is a 400", () => aReadableSiteWithAnotherOrganizationIsA400(h));
   it("filter-options never lists another organization", () => filterOptionsNeverListsAnotherOrganization(h));
+  it("organization-views: organizationId of another organization is a 403 with no telemetry read", () =>
+    organizationViewsOfAnotherOrganizationIdIsA403WithNoTelemetry(h));
+  it("organization-views: a site of another organization is a 403 with no telemetry read", () =>
+    organizationViewsOfASiteOfAnotherOrganizationIsA403WithNoTelemetry(h));
+  it("organization-views: the ranking holds readable sites only", () => organizationViewsRankingHoldsReadableSitesOnly(h));
+  it("organization-views: the trend holds readable sites only", () => organizationViewsTrendHoldsReadableSitesOnly(h));
+  it("organization-views: the heatmap holds the readable kWh only", () => organizationViewsHeatmapHoldsReadableKwhOnly(h));
+  it("organization-views: the abnormal list holds readable entities only", () =>
+    organizationViewsAbnormalHoldsReadableEntitiesOnly(h));
 });
