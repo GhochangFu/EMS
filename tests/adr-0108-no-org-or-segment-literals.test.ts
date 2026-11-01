@@ -66,6 +66,7 @@ const MODULES: readonly string[] = [
   "apps/web/src/components/asset-history/bucket-table.tsx",
   "apps/web/src/components/asset-history/raw-records-table.tsx",
   "apps/web/src/pages/asset-history-page.tsx",
+  "packages/shared/src/contracts/energy-organization-views.ts",
   "apps/web/src/components/assets/asset-history-link.tsx",
   "apps/api/src/trend-points/trend-points.pure.ts",
   "apps/api/src/trend-points/trend-points.service.ts",
@@ -84,7 +85,18 @@ const MODULES: readonly string[] = [
  * this list turns red rather than leaving silent. Empty since U5; U6 rewrites
  * `energy-page.tsx`, which pre-dates ADR 0108 and is not a new module.
  */
-const PENDING_MODULES: readonly string[] = [];
+const PENDING_MODULES: readonly string[] = [
+  // F4.299 (ADR 0108 Amendment 1, 7.10): each moves to MODULES in the commit that creates it.
+  "apps/api/src/reports/energy-organization-reads.ts",
+  "apps/api/src/reports/energy-abnormal.ts",
+  "apps/api/src/reports/energy-organization-views.service.ts",
+  "apps/web/src/lib/energy-stack-option.ts",
+  "apps/web/src/lib/energy-organization-views.ts",
+  "apps/web/src/components/energy/energy-stack-chart.tsx",
+  "apps/web/src/components/energy/site-ranking-table.tsx",
+  "apps/web/src/components/energy/energy-heatmap.tsx",
+  "apps/web/src/components/energy/abnormal-list.tsx",
+];
 
 /**
  * Files that are never scanned, each with its reason, so a later row does not
