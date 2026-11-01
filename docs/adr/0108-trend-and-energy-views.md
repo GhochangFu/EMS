@@ -25,7 +25,10 @@ of 12, and the Trend Points tab under Reference Data.
 Ruling 2026-11-01 (owner, in chat, "Move UPS assets too"): the seeded UPS and
 battery assets and the stock `electrical-ups` template move to the `ups` asset
 domain as well, so the `ups` segment matches the assets that carry its codes
-(F4.300 plan, "Owner answers (2026-11-01)").
+(F4.300 plan, "Owner answers (2026-11-01)"). Second ruling the same day (owner,
+in chat, "Sim sends UPS keys"): the simulator sends the seven UPS codes for every
+asset in the `ups` domain, not only the Western Cape `CR-UPS*` / `CR-BATT*`
+pair, so all 22 moved assets carry them.
 
 Drafted 2026-10-31 (owner, in chat). The owner accepted every designer
 call in `docs/plans/2026-10-31-energy-and-trend-views-design.md` as a ruling and
