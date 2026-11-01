@@ -1,6 +1,6 @@
 import { expect, vi } from "vitest";
 
-import { fetchEnergyFilterOptions, fetchEnergyView } from "./energy-view";
+import { fetchEnergyFilterOptions, fetchEnergyOrganizationViews, fetchEnergyView } from "./energy-view";
 
 /**
  * `F4.298` U5 (ADR 0108 decision 2) — the two Energy view clients reach the
@@ -78,6 +78,51 @@ export async function refusesAViewOutsideTheContract(): Promise<void> {
 export async function throwsOnANonOkView(): Promise<void> {
   stubFetch({ message: "Forbidden" }, 403);
   await expect(fetchEnergyView({ range: "24h", organizationId: ORG })).rejects.toThrow(/403/);
+}
+
+const ORG_VIEWS = {
+  organizationId: ORG,
+  timeZone: "Asia/Kolkata",
+  generatedAt: "2026-10-31T00:00:00.000Z",
+  level: "1h",
+  bucket: "1h",
+  current: { from: "2026-10-30T00:00:00.000Z", to: "2026-10-30T23:59:59.999Z", durationHours: 24 },
+  compare: null,
+  sites: { current: [], compare: null, totalSites: 0 },
+  trend: { columns: [], points: [] },
+  heatmap: { cells: [] },
+  abnormal: {
+    baseline: { windows: 4, windowsConsulted: 4, stepDays: 1, ratio: 1.5 },
+    entries: [],
+    normalCount: { sites: 0, assets: 0 },
+    truncated: false,
+  },
+  partial: null,
+};
+
+/** The organization views are asked with the same search as the view, at their own path. */
+export async function fetchesTheOrganizationViewsWithTheSameSearch(): Promise<void> {
+  const seen = stubFetch(ORG_VIEWS);
+  const views = await fetchEnergyOrganizationViews({
+    range: "24h",
+    organizationId: ORG,
+    locationIds: [LOC_1, LOC_2],
+    compare: "previous",
+  });
+  expect(seen()).toBe(
+    `${BASE}/api/v1/reports/energy/organization-views?range=24h&organizationId=${ORG}&locationIds=${LOC_1}&locationIds=${LOC_2}&compare=previous`,
+  );
+  expect(views.sites.totalSites).toBe(0);
+}
+
+export async function refusesOrganizationViewsOutsideTheContract(): Promise<void> {
+  stubFetch({ ...ORG_VIEWS, abnormal: { ...ORG_VIEWS.abnormal, truncated: "no" } });
+  await expect(fetchEnergyOrganizationViews({ range: "24h", organizationId: ORG })).rejects.toThrow();
+}
+
+export async function throwsOnANonOkOrganizationViews(): Promise<void> {
+  stubFetch({ message: "Forbidden" }, 403);
+  await expect(fetchEnergyOrganizationViews({ range: "24h", organizationId: ORG })).rejects.toThrow(/403/);
 }
 
 export async function fetchesTheFilterOptions(): Promise<void> {

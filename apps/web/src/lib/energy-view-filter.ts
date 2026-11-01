@@ -8,6 +8,8 @@ import type {
   EnergyViewRange,
 } from "@bms/shared";
 
+import { percentChange } from "./energy-organization-views";
+
 /**
  * `F4.298` U5 (ADR 0108 decision 2) — the Energy page's pure filter helpers.
  *
@@ -72,10 +74,7 @@ export function changeFor(
   if (before === null) {
     return { kind: "no_previous_value" };
   }
-  if (before === 0) {
-    return { kind: "change", pct: null };
-  }
-  return { kind: "change", pct: ((now - before) / before) * 100 };
+  return { kind: "change", pct: percentChange(now, before) };
 }
 
 function bucketName(bucket: AggregateLevel): string {
