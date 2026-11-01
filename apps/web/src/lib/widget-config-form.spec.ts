@@ -34,7 +34,9 @@ import {
   buildModuleSummaryCardConfig,
   buildTankConfig,
   buildTileConfig,
+  buildTrendStripConfig,
   widgetConfigErrors,
+  type WidgetConfigRow,
 } from "./widget-config-form";
 
 function assert(condition: boolean, message: string): void {
@@ -405,4 +407,45 @@ export function runModuleCardConfigTests(): void {
     threw = true;
   }
   assert(threw, "buildModuleSummaryCardConfig throws on an unchosen tab");
+}
+
+/** `F4.305` — a trend strip needs a default range; the scope (`stripTabKey`) is optional. */
+export function runTrendStripRangeRequiredTests(): void {
+  const problemsFor = (stripRange: string | undefined) =>
+    widgetConfigErrors(0, 0, { widgetType: "trend_strip", config: { ...blankConfigRow(), stripRange: stripRange as WidgetConfigRow["stripRange"] } });
+  for (const bad of [undefined, "", "1y", "48h"]) {
+    assert(problemsFor(bad).some((p) => p.field === "stripRange"), `range ${JSON.stringify(bad)} is refused`);
+  }
+  for (const good of ["24h", "7d", "30d"]) {
+    assert(problemsFor(good).length === 0, `range ${good} is accepted — got ${JSON.stringify(problemsFor(good))}`);
+  }
+}
+
+/** `F4.305` — the strip binds no point, so a template cannot carry one. */
+export function runTrendStripNotTemplateAuthorableTests(): void {
+  assert(
+    !(TEMPLATE_WIDGET_TYPES as readonly string[]).includes("trend_strip"),
+    "trend_strip must stay out of TEMPLATE_WIDGET_TYPES",
+  );
+}
+
+/** `F4.305` — the config writes `defaultRange` always and `tabKey` only when chosen, and nothing else. */
+export function runTrendStripConfigValuesTests(): void {
+  const row = { ...blankConfigRow(), stripRange: "7d" as const };
+  assert(
+    JSON.stringify(buildTrendStripConfig(row)) === JSON.stringify({ defaultRange: "7d" }),
+    `no tab => defaultRange alone — got ${JSON.stringify(buildTrendStripConfig(row))}`,
+  );
+  assert(
+    JSON.stringify(buildTrendStripConfig({ ...row, stripTabKey: "hvac" })) ===
+      JSON.stringify({ tabKey: "hvac", defaultRange: "7d" }),
+    "a tab => tabKey and defaultRange",
+  );
+  let threw = false;
+  try {
+    buildTrendStripConfig(blankConfigRow());
+  } catch {
+    threw = true;
+  }
+  assert(threw, "buildTrendStripConfig throws on an unchosen range");
 }

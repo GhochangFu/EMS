@@ -98,6 +98,8 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
           Partial scope: these figures and panels cover only the assets in your asset groups.
         </p>
       ) : null}
+      {/* `F4.305` (ADR 0108 Amendment 3, item 7) — the whole-site trend strip, directly under the KPI tiles. */}
+      <TrendStrip locationId={locationId} assetGroupId={null} />
 
       {viewQuery.isError ? (
         <p role="alert" className="text-sm text-critical-ink">
@@ -125,8 +127,6 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
           </SectionCard>
         ))
       )}
-      {/* `F4.301` (ADR 0108 Amendment 2, item 9) — the whole-site trend strip, after the panels. */}
-      <TrendStrip locationId={locationId} assetGroupId={null} />
     </div>
   );
 }

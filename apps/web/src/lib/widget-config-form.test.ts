@@ -20,6 +20,9 @@ import {
   runModuleCardTargetTabRequiredTests,
   runRailConfigValuesTests,
   runRailRowsBoundsTests,
+  runTrendStripConfigValuesTests,
+  runTrendStripNotTemplateAuthorableTests,
+  runTrendStripRangeRequiredTests,
 } from "./widget-config-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -98,5 +101,17 @@ describe("widget config form", () => {
 
   it("F3.73: the module card config writes targetTabKey alone and throws on none", () => {
     runModuleCardConfigTests();
+  });
+
+  it("F4.305: a trend strip needs a default range", () => {
+    runTrendStripRangeRequiredTests();
+  });
+
+  it("F4.305: a trend strip is not template-authorable", () => {
+    runTrendStripNotTemplateAuthorableTests();
+  });
+
+  it("F4.305: the trend strip config writes defaultRange and an optional tabKey", () => {
+    runTrendStripConfigValuesTests();
   });
 });

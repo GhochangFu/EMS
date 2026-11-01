@@ -10,7 +10,6 @@ import { DashboardLiveCanvas } from "../dashboards/dashboard-live-canvas";
 import { TabStatusMarker } from "../dashboards/tab-status-marker";
 import { SectionCard } from "../section-card";
 import { siteTabHref, tabAccessibleName } from "../widgets/site-widget-parts";
-import { TrendStrip } from "./trend-strip";
 
 type SiteDashboardViewProps = {
   slug: string;
@@ -127,8 +126,6 @@ export function SiteDashboardView({ slug, organizationId, locationId, tab, wall 
           </nav>
         ) : null}
         <DashboardLiveCanvas dashboard={dashboardQ.data} tabKey={selected?.key} />
-        {/* `F4.301` (ADR 0108 Amendment 2, item 9) — the selected tab's strip; never on the wall. */}
-        {wall ? null : <TrendStrip locationId={locationId} assetGroupId={selected?.assetGroupId ?? null} />}
       </>
     ) : dashboardQ.isError ? (
       <div role="alert" className="rounded border border-critical-line bg-critical-wash p-3 text-sm text-critical-ink-strong">

@@ -7,6 +7,8 @@ import {
   MAX_DASHBOARD_TABS,
   MAX_DASHBOARD_WIDGETS,
   mimicPresetSchema,
+  trendStripRangeSchema,
+  TREND_STRIP_TAB_UNKNOWN_MESSAGE,
   RESERVED_DASHBOARD_TAB_KEYS,
   widgetTypeBindsNothing,
 } from "@bms/shared";
@@ -33,6 +35,7 @@ import {
   buildGaugeConfig,
   buildTankConfig,
   buildTileConfig,
+  buildTrendStripConfig,
   widgetConfigErrors,
   type WidgetConfigRow,
 } from "./widget-config-form";
@@ -171,6 +174,10 @@ export function blankDashboardWidgetRow(widgetType: WidgetType): DashboardWidget
     // `F3.32c` (ADR 0081) — the source select defaults to Preset, keeping a freshly added mimic's
     // behaviour unchanged from before the layout arm existed.
     config.mimicSource = "preset";
+  }
+  if (widgetType === "trend_strip") {
+    // `F4.305` — the range is required, so a fresh strip starts on the first one (24h), whole site.
+    config.stripRange = trendStripRangeSchema.options[0];
   }
   if (widgetType === "active_alarms_rail") {
     // `F3.73` — the contract's own defaults, so a fresh rail saves as the schema would default it.
@@ -331,6 +338,13 @@ export function configRowFromDto(widget: DashboardWidgetSpec): WidgetConfigRow {
     case "module_summary_card":
       row.targetTabKey = widget.config.targetTabKey;
       break;
+    case "trend_strip":
+      // `F4.305` — the same edit-and-resave reason as the arms above: both keys are read back.
+      row.stripRange = widget.config.defaultRange;
+      if (widget.config.tabKey !== undefined) {
+        row.stripTabKey = widget.config.tabKey;
+      }
+      break;
     case "state_legend":
     case "asset_class_strip":
     case "critical_systems_list":
@@ -420,6 +434,10 @@ export const MIMIC_NEEDS_ASSET_GROUP_MESSAGE =
  * unless the tab it sits on, or the dashboard's own scope, is an asset group. */
 export const BREAKER_TABLE_NEEDS_ASSET_GROUP_MESSAGE =
   "A breaker table needs an asset-group scope, or a tab bound to an asset group.";
+
+/** `F4.305` — the sentence for a trend strip on a dashboard that is not at one site: the strip reads
+ * the dashboard's own location, so on any other scope kind it draws a fixed sentence and no series. */
+export const TREND_STRIP_NEEDS_SITE_MESSAGE = "A trend strip needs a dashboard scoped to one site.";
 
 /** `F3.73` plan D2 — the fields of a tab the client rules read. `DashboardDto["tabs"]` and
  * `TabWritePayload[]` both fit, so either page passes what it already holds. */
@@ -682,6 +700,18 @@ export function dashboardBuilderErrors(
       push(index, SCOPE_PROBLEM_FIELD, BREAKER_TABLE_NEEDS_ASSET_GROUP_MESSAGE);
     }
 
+    // `F4.305` — the strip reads the dashboard's site, and `config.tabKey` (if any) names a tab of this
+    // dashboard (the API's `tabRulesHold`, same sentence, on the field the inspector shows it under).
+    if (row.widgetType === "trend_strip") {
+      if (scopeKind !== "location") {
+        push(index, SCOPE_PROBLEM_FIELD, TREND_STRIP_NEEDS_SITE_MESSAGE);
+      }
+      const named = row.config.stripTabKey;
+      if (named !== undefined && !tabs.some((tab) => tab.key === named)) {
+        push(index, "stripTabKey", TREND_STRIP_TAB_UNKNOWN_MESSAGE);
+      }
+    }
+
     if (row.gridW < DASHBOARD_GRID.minWidgetW || row.gridW > DASHBOARD_GRID.columns) {
       push(index, "gridW", "This widget's width does not fit the canvas.");
     }
@@ -796,6 +826,8 @@ export function buildPutWidgetsPayload(
           return { ...identity, widgetType: "critical_systems_list", config: {} };
         case "breaker_table":
           return { ...identity, widgetType: "breaker_table", config: {} };
+        case "trend_strip":
+          return { ...identity, widgetType: "trend_strip", config: buildTrendStripConfig(row.config) };
         default: {
           const unreachable: never = row.widgetType;
           throw new Error(`Unhandled widget type ${JSON.stringify(unreachable)}`);

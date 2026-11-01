@@ -3,6 +3,14 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aTrendStripScopeOffersTheWholeSiteAndEachGroupBoundTab,
+  choosingAScopeWritesItsTabKeyToTheConfig,
+  choosingTheWholeSiteClearsTheTabKey,
+  anUnknownStoredStripTabKeyStaysSelected,
+  theDefaultRangeShowsTheStoredRange,
+  choosingARangeWritesItToTheConfig,
+  aStripTabProblemRendersUnderTheScope,
+  aValueTileHasNoStripFields,
   aModuleCardOffersTheDashboardsTabs,
   aMimicOnAGroupBoundTabHasNoMimicTabSelect,
   aMimicWithNoGroupTabAnywhereHasNoMimicTabSelect,
@@ -249,5 +257,37 @@ describe("F3.73 widget inspector — the site widgets", () => {
 
   it("F3.74: the layout source has no Compact checkbox", () => {
     theLayoutSourceHasNoCompactCheckbox();
+  });
+
+  it("F4.305: a trend strip offers Whole site and each group-bound tab under Scope", () => {
+    aTrendStripScopeOffersTheWholeSiteAndEachGroupBoundTab();
+  });
+
+  it("F4.305: choosing a scope writes stripTabKey", async () => {
+    await choosingAScopeWritesItsTabKeyToTheConfig();
+  });
+
+  it("F4.305: choosing Whole site clears stripTabKey", async () => {
+    await choosingTheWholeSiteClearsTheTabKey();
+  });
+
+  it("F4.305: an unknown stored strip tab key stays selected", () => {
+    anUnknownStoredStripTabKeyStaysSelected();
+  });
+
+  it("F4.305: the Default range shows the stored range", () => {
+    theDefaultRangeShowsTheStoredRange();
+  });
+
+  it("F4.305: choosing a range writes stripRange", async () => {
+    await choosingARangeWritesItToTheConfig();
+  });
+
+  it("F4.305: a stripTabKey problem renders under the Scope", () => {
+    aStripTabProblemRendersUnderTheScope();
+  });
+
+  it("F4.305: a value tile has no strip fields", () => {
+    aValueTileHasNoStripFields();
   });
 });

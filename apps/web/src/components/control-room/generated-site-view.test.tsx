@@ -8,7 +8,8 @@ import {
   cleanupView,
   domainHeadingsInDtoOrder,
   domainPanelsCountTheirAssets,
-  theStripFollowsTheDomainPanels,
+  theStripSitsBetweenTheTilesAndTheFirstPanel,
+  theStripFollowsThePartialScopeNote,
   theStripReadsTheWholeSite,
   fewerPointsCollapsesTheCard,
   freshRowOnTheSameAssetIsNotDimmed,
@@ -60,8 +61,12 @@ describe("F3.68 GeneratedSiteView", () => {
     await theStripReadsTheWholeSite();
   });
 
-  it("F4.301 U5b renders the trend strip after the domain panels", async () => {
-    await theStripFollowsTheDomainPanels();
+  it("F4.305 renders the trend strip under the KPI tiles, before the first domain panel", async () => {
+    await theStripSitsBetweenTheTilesAndTheFirstPanel();
+  });
+
+  it("F4.305 renders the trend strip after the partial-scope note", async () => {
+    await theStripFollowsThePartialScopeNote();
   });
 
   it("W1b states each domain's asset count", async () => {

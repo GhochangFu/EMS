@@ -41,6 +41,10 @@ import {
   runMimicOnAGroupTabHasNoScopeProblemTests,
   runMimicOnAnOverviewTabHasTheScopeProblemTests,
   runWidgetOffEveryTabIsFlaggedTests,
+  runBlankTrendStripRowTests,
+  runTrendStripNeedsASiteTests,
+  runTrendStripOfferedOnEveryScopeTests,
+  runTrendStripRoundTripTests,
 } from "./dashboard-builder-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -203,5 +207,21 @@ describe("dashboard builder form", () => {
 
   it("F3.73: stored site widgets re-save their own config and an unedited set is no change", () => {
     runSiteWidgetsRoundTripTests();
+  });
+
+  it("F4.305: a new trend strip is 12 x 4 on 24h with no tab", () => {
+    runBlankTrendStripRowTests();
+  });
+
+  it("F4.305: the trend strip is offered on every scope kind", () => {
+    runTrendStripOfferedOnEveryScopeTests();
+  });
+
+  it("F4.305: stored trend strips re-save their own config and an unedited set is no change", () => {
+    runTrendStripRoundTripTests();
+  });
+
+  it("F4.305: a strip needs a location scope and a tabKey that names a tab", () => {
+    runTrendStripNeedsASiteTests();
   });
 });
