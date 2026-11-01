@@ -88,10 +88,10 @@ describe("repo invariants", () => {
       "apps/api/src/dashboard/dashboard.service.ts",
       "apps/api/src/dashboard/energy-centre.ts",
       "apps/api/src/reports/reports.service.ts",
-      // `F4.290` PR 2: the location summary's no-data read of the `_1h` aggregate.
-      "apps/api/src/reports/location-summary.service.ts",
+      "apps/api/src/reports/location-summary.service.ts", // `F4.290` PR 2: the no-data `_1h` read.
       // `F4.298` U3: the energy view's reads (ADR 0108), and the moved top-consumers SQL.
       "apps/api/src/reports/energy-view-read.ts",
+      "apps/api/src/reports/energy-organization-reads.ts", // `F4.299` U3 (ADR 0108 Amendment 1).
     ];
     // Comments discuss both markers on purpose, so strip them before matching.
     const stripComments = (src: string): string =>
