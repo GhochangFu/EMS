@@ -96,7 +96,7 @@ function strip(overrides: Partial<SiteTrendStripDto> = {}): SiteTrendStripDto {
   };
 }
 
-function renderStrip(assetGroupId: string | null = null): void {
+function renderStrip(assetGroupId: string | null = null): QueryClient {
   fetchSpy = vi.fn(() => Promise.reject(new Error("trend-strip spec: an unmocked read reached fetch")));
   vi.stubGlobal("fetch", fetchSpy);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -107,6 +107,7 @@ function renderStrip(assetGroupId: string | null = null): void {
       </MemoryRouter>
     </QueryClientProvider>,
   );
+  return queryClient;
 }
 
 /** One `<section>` per segment, each titled by the response's label. */
@@ -241,6 +242,44 @@ export async function aTrimmedStripSaysSo(): Promise<void> {
   expect(await screen.findByText("Trimmed to 5 assets per point")).toBeInTheDocument();
 }
 
+/**
+ * The points cap moves only once the assets cap is at 1 (`fitSeries` phase 2), so a strip
+ * trimmed to 1 asset per point names the points per segment too, in the singular for one asset.
+ */
+export async function aStripTrimmedToOneAssetNamesThePointsCap(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip({ trimmed: true, assetsPerPoint: 1, pointsPerSegment: 2 }));
+  renderStrip();
+
+  expect(
+    await screen.findByText("Trimmed to 1 asset per point and 2 points per segment"),
+  ).toBeInTheDocument();
+}
+
+/**
+ * The last trim phase drops trailing points, leaving a segment with `points: []` (the server
+ * never sends an empty segment otherwise), so the trim line says some points are not shown.
+ */
+export async function aStripWithADroppedSegmentSaysPointsAreHidden(): Promise<void> {
+  const base = strip();
+  const [first, second] = base.segments;
+  if (first === undefined || second === undefined) throw new Error("fixture: two segments");
+  fetchStrip.mockResolvedValue(
+    strip({
+      trimmed: true,
+      assetsPerPoint: 1,
+      pointsPerSegment: 1,
+      segments: [first, { ...second, points: [] }],
+    }),
+  );
+  renderStrip();
+
+  expect(
+    await screen.findByText(
+      "Trimmed to 1 asset per point and 1 point per segment; some points are not shown",
+    ),
+  ).toBeInTheDocument();
+}
+
 /** An untrimmed strip prints no trim line. */
 export async function anUntrimmedStripPrintsNoTrimLine(): Promise<void> {
   fetchStrip.mockResolvedValue(strip());
@@ -256,6 +295,25 @@ export async function aFailedReadRendersAFixedSentence(): Promise<void> {
   renderStrip();
 
   expect(await screen.findByText("Could not load the trend strip.")).toBeInTheDocument();
+  expect(screen.queryByText(/SECRET-BODY/)).toBeNull();
+}
+
+/**
+ * A failed background refetch keeps the last read on screen: TanStack Query v5 keeps `data`
+ * beside `isError`, so the sparklines stay and a fixed note says the refresh failed (F4.204:
+ * never the rejection's message).
+ */
+export async function aFailedRefetchKeepsTheSparklines(): Promise<void> {
+  fetchStrip.mockResolvedValueOnce(strip());
+  const queryClient = renderStrip();
+  await screen.findByRole("heading", { name: "Segment One Label" });
+
+  fetchStrip.mockRejectedValue(new Error("control-room/sites/:id/trend-strip 500 SECRET-BODY"));
+  await queryClient.refetchQueries();
+
+  expect(await screen.findByText("Could not refresh the trend strip; showing the last read.")).toBeInTheDocument();
+  expect(screen.getAllByRole("link", { name: /: open history$/ })).toHaveLength(7);
+  expect(screen.queryByText("Could not load the trend strip.")).toBeNull();
   expect(screen.queryByText(/SECRET-BODY/)).toBeNull();
 }
 

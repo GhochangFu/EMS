@@ -3,9 +3,12 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aFailedReadRendersAFixedSentence,
+  aFailedRefetchKeepsTheSparklines,
   aGroupStripSendsItsGroupId,
   aLinkNamesTheAssetAndThePoint,
   aPendingReadShowsTheLoadingStatus,
+  aStripTrimmedToOneAssetNamesThePointsCap,
+  aStripWithADroppedSegmentSaysPointsAreHidden,
   aTrimmedStripSaysSo,
   aWholeSiteStripSendsANullGroup,
   anUntrimmedStripPrintsNoTrimLine,
@@ -80,12 +83,24 @@ describe("F4.301 U4 TrendStrip", () => {
     await aTrimmedStripSaysSo();
   });
 
+  it("names the points cap when the strip is trimmed to one asset per point", async () => {
+    await aStripTrimmedToOneAssetNamesThePointsCap();
+  });
+
+  it("says some points are not shown when a trimmed segment has none", async () => {
+    await aStripWithADroppedSegmentSaysPointsAreHidden();
+  });
+
   it("prints no trim line for an untrimmed strip", async () => {
     await anUntrimmedStripPrintsNoTrimLine();
   });
 
   it("renders a fixed sentence and never the error message on a failed read", async () => {
     await aFailedReadRendersAFixedSentence();
+  });
+
+  it("keeps the sparklines and notes the failure when a refetch fails", async () => {
+    await aFailedRefetchKeepsTheSparklines();
   });
 
   it("prints the response zone in the window line", async () => {

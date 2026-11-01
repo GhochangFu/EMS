@@ -1,4 +1,4 @@
-import type { TrendStripPointDto, TrendStripRange, TrendStripSegmentDto } from "@bms/shared";
+import type { SiteTrendStripDto, TrendStripPointDto, TrendStripRange, TrendStripSegmentDto } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
@@ -23,6 +23,24 @@ const RANGES: readonly { readonly key: TrendStripRange; readonly label: string }
   { key: "7d", label: "7 d" },
   { key: "30d", label: "30 d" },
 ];
+
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * The trim line. `fitSeries` lowers the points cap only once the assets cap is at 1, so a
+ * strip at 1 asset per point names the points cap too; its last phase drops trailing points,
+ * which is the only way a segment arrives with `points: []`, so that case says points are hidden.
+ */
+function trimLine(strip: SiteTrendStripDto): string {
+  const assets = `Trimmed to ${plural(strip.assetsPerPoint, "asset")} per point`;
+  if (strip.assetsPerPoint > 1) return assets;
+  const points = `${assets} and ${plural(strip.pointsPerSegment, "point")} per segment`;
+  return strip.segments.some((segment) => segment.points.length === 0)
+    ? `${points}; some points are not shown`
+    : points;
+}
 
 function PointRow({
   point,
@@ -105,6 +123,7 @@ function SegmentCard({
   );
 }
 
+/** The trend strip for one Control Room tab: the whole site (`assetGroupId: null`) or one group. */
 export function TrendStrip({ locationId, assetGroupId }: { locationId: string; assetGroupId: string | null }) {
   const [range, setRange] = useState<TrendStripRange>("24h");
   const query = useQuery({
@@ -138,12 +157,17 @@ export function TrendStrip({ locationId, assetGroupId }: { locationId: string; a
         <p role="status" className="text-xs text-ink-muted">
           Loading trends…
         </p>
-      ) : query.isError || strip === undefined ? (
+      ) : strip === undefined ? (
         <p role="alert" className="text-xs text-critical">
           Could not load the trend strip.
         </p>
       ) : (
         <>
+          {query.isError ? (
+            <p role="alert" className="text-[11px] text-critical">
+              Could not refresh the trend strip; showing the last read.
+            </p>
+          ) : null}
           {strip.segments.length === 0 ? (
             <p className="text-xs text-ink-muted">No trend points for the assets on this tab.</p>
           ) : (
@@ -152,7 +176,7 @@ export function TrendStrip({ locationId, assetGroupId }: { locationId: string; a
             ))
           )}
           {strip.trimmed ? (
-            <p className="text-[11px] text-ink-muted">{`Trimmed to ${strip.assetsPerPoint} assets per point`}</p>
+            <p className="text-[11px] text-ink-muted">{trimLine(strip)}</p>
           ) : null}
           <p className="text-[11px] text-ink-muted">
             {`Window: ${stripWindowLabel(strip.from, strip.to, strip.bucketSeconds, strip.timeZone)}`}
