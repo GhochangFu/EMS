@@ -44,7 +44,8 @@ Distribution Overview*.
    `METERED_PUMPING_POINT_KEYS` (`kwh_total`, `kva`, `current_ir/iy/ib`,
    `voltage_vry/vyb/vbr/vrn/vyn/vbn`) and `CONTROL_ROOM_UPS_POINT_KEYS`
    (`load_pct`, `output_voltage_v`, `output_freq_hz`, `battery_v`,
-   `battery_temp_c`, `backup_min`, `health_pct`) — **reused verbatim**. The
+   `battery_temp_c`, `backup_min`, `health_pct`; filed under the `ups` domain
+   since F4.300 — see §4) — **reused verbatim**. The
    Indian R/Y/B phase naming from `F3.41` is kept for per-phase points; the
    older `voltage_l1_v` stays as the simulator's single-phase summary.
 
@@ -218,6 +219,12 @@ overload · under/over-frequency · DG running with mains available (cost) ·
 service due · E-stop.
 
 ## 4. UPS — static UPS with battery (single or parallel)
+
+**Domain: `ups`, not `electrical` (F4.300, ADR 0108; owner rulings
+2026-10-31 and 2026-11-01).** The seven `CONTROL_ROOM_UPS_POINT_KEYS` codes,
+the seeded UPS and battery assets and the stock `electrical-ups` template are
+filed under the `ups` asset domain. The class still belongs to this electrical
+pack and its tag list; only the domain changed.
 
 RFC 1628 groups, in the repo's existing key names where they exist.
 

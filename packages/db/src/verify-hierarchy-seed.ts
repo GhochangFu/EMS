@@ -1,7 +1,12 @@
 import pg from "pg";
 
 import { PACK_ASSET_DOMAINS } from "./asset-domains-seed";
-import { type AssetRuleForLadder, type LadderCollisionSkip, ladderSuffixesNotHeld } from "./automation-rules-seed";
+import {
+  type AssetRuleForLadder,
+  LADDER_ASSET_DOMAINS,
+  type LadderCollisionSkip,
+  ladderSuffixesNotHeld,
+} from "./automation-rules-seed";
 import { findSeedLocation } from "./eskom-locations-seed";
 import { getOrganizationId } from "./hierarchy-seed";
 import { type HierarchyExpectations, hierarchyExpectations } from "./verify-hierarchy-expected";
@@ -260,13 +265,19 @@ export async function readEskomChecks(
   // seed skipped because published operator rules hold the conditions is
   // therefore covered; one with no rule at all (the ESK-MANUAL-01 class) is
   // not.
-  const electrical = await pool.query<{ id: string; code: string }>(`
+  //
+  // The domains are the ladder seed's own (`LADDER_ASSET_DOMAINS`), so the gate
+  // reads the assets the seed wrote rules for — `ups` too since `F4.300` U4c.
+  const electrical = await pool.query<{ id: string; code: string }>(
+    `
     SELECT a.id, a.code FROM bms.assets a
       INNER JOIN bms.locations l ON l.id = a.location_id
       INNER JOIN bms.organizations o ON o.id = l.organization_id
-      WHERE o.code = 'ESKOM' AND a.domain = 'electrical'
+      WHERE o.code = 'ESKOM' AND a.domain = ANY($1::text[])
       ORDER BY a.code, a.id
-  `);
+  `,
+    [[...LADDER_ASSET_DOMAINS]],
+  );
   const assetRules = await pool.query<{
     asset_id: string;
     code: string;

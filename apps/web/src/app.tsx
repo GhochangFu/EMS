@@ -55,6 +55,7 @@ import { MimicLayoutEditorPage } from "./pages/admin/mimic-layout-editor-page";
 import { MimicLayoutsPage } from "./pages/admin/mimic-layouts-page";
 import { MimicSymbolLibrariesPage } from "./pages/admin/mimic-symbol-libraries-page";
 import { PointKeysAdminPage } from "./pages/admin/point-keys-page";
+import { TrendPointsAdminPage } from "./pages/admin/trend-points-page";
 import { RtusAdminPage } from "./pages/admin/rtus-page";
 import { TelemetryImportPage } from "./pages/admin/telemetry-import-page";
 import { AuthCallbackPage } from "./pages/auth-callback-page";
@@ -772,6 +773,18 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <PointKeysAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      <Route
+        path="/admin/trend-points"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <TrendPointsAdminPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />

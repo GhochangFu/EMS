@@ -16,6 +16,7 @@ import { seedAccessControlFixtures, seedDecommissionedLocation } from "./access-
 import { seedAssetDomains } from "./asset-domains-seed";
 import { seedPointKeyCatalog } from "./point-keys-seed";
 import { seedPointKeyHeadlineRanks } from "./point-key-headline-ranks-seed";
+import { seedPointKeyTrendDefaults } from "./point-key-trend-defaults-seed";
 import { seedPointKeyStates } from "./point-key-states-seed";
 import { loadPheCatalog, phePilotExpectedRows, seedPheCatalog } from "./phe-pilot-seed";
 import { createDb } from "./client";
@@ -151,6 +152,13 @@ async function main(): Promise<void> {
 
     await seedMapLocations(db, mapLocationRows);
 
+    // `E5.2`: the pack's domain rows (ADR 0031 A1.1, unpoliced, no tenant
+    // context) before anything files under them. `F4.300` U4c moved this call up
+    // from beside `seedPointKeyCatalog`: the seeded UPS and battery assets are
+    // `ups` now, and `assets.domain` is a foreign key to `bms.asset_domains`, so
+    // on a cold database the row must exist before `seedEskomAssets`.
+    await seedAssetDomains(pool);
+
     // ── ESKOM ─────────────────────────────────────────────────────────────
     await withOrganization(pool, eskomOrgId, async () => {
       // Owner ruling 16 (OQ2): the slug-holder pre-read runs on the superuser
@@ -249,9 +257,8 @@ async function main(): Promise<void> {
     // `identityDb`.
     await seedPheOrganizationAdmin(identityDb, pool);
 
-    // `E5.2`: the pack's domain rows first (ADR 0031 A1.1, unpoliced, no
-    // tenant context), then the point keys filed under them — the module says why.
-    await seedAssetDomains(pool);
+    // The point keys below file under the pack's domain rows, which
+    // `seedAssetDomains` wrote before the ESKOM bracket (`F4.300` U4c).
 
     // `F3.39`: one fleet-wide catalog, so no tenant context at all — neither
     // one taken from here nor one it opens itself. `bms.point_keys` lost its
@@ -265,6 +272,12 @@ async function main(): Promise<void> {
     // catalog it follows — `bms.point_keys` is fleet-wide and unpoliced since
     // `0057`/`0059`.
     await seedPointKeyHeadlineRanks(pool);
+
+    // `F4.300` C2 (ADR 0108) — same ordering as the headline ranks: after
+    // `seedPointKeyCatalog` AND `seedPheCatalog`, both of which insert rows with
+    // `trend_default` NULL. Fills only NULL, so an admin's `false` survives.
+    // No tenant context — `bms.point_keys` is fleet-wide.
+    await seedPointKeyTrendDefaults(pool);
 
     // `F3.74` D1 — the breaker state map. After `seedPointKeyCatalog`: its rows reference
     // `breaker_main` and `breaker_trip`. Global vocabulary, no tenant context (no policy).

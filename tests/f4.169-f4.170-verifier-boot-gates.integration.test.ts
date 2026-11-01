@@ -187,7 +187,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
       await pool.query(
         `SELECT a.id FROM bms.assets a
            JOIN bms.organizations o ON o.id = a.organization_id
-          WHERE o.code = 'ESKOM' AND a.domain = 'electrical'
+          WHERE o.code = 'ESKOM' AND a.domain IN ('electrical', 'ups')
           FOR KEY SHARE OF a`,
       );
       await body({

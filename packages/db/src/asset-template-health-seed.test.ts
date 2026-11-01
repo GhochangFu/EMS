@@ -18,6 +18,7 @@ import {
   assertThePinNeverReversesAnOperatorsMigration,
   assertTheRepinAndTheVerifyGetTheInsertedRoleTemplateIds,
   assertTheRepinIsBoundToTheRoleTemplatesThisRunInserted,
+  assertTheReleaseFreesOnlyACrossDomainSeedBaselinePin,
   assertTheRepinMovesOnlyADomainBaselineV1Pin,
   assertTheResultCountsEachWriteOnce,
   assertTheStatementsRunInTheirLoadBearingOrder,
@@ -86,6 +87,10 @@ describe("F2.32 — a seeded baseline per domain and role (ADR 0058 Amendment 3)
 
   it("binds the re-pin and the verify to the role templates this run inserted", () => {
     assertTheRepinIsBoundToTheRoleTemplatesThisRunInserted();
+  });
+
+  it("F4.300 U4c releases only a seed baseline pin of another domain", () => {
+    assertTheReleaseFreesOnlyACrossDomainSeedBaselinePin();
   });
 
   it("verifies that no roled asset is left on its domain baseline", () => {

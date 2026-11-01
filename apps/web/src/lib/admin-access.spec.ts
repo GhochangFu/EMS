@@ -11,6 +11,7 @@ import {
   canManageMimicLayouts,
   canManageSymbolLibraries,
   canManageNotificationChannels,
+  canEditTrendPoints,
   masterDataTabs,
   visibleMasterDataTabs,
   canCreateLocations,
@@ -105,6 +106,8 @@ export function runAssetTemplateTabTests(): void {
         // `canWriteOrganizationScopedCalcParameter`, not by the tab.
         "/admin/asset-groups",
         "/admin/point-keys",
+        // `F4.300` (ADR 0108 decision 3, plan C10) — Trend Points, `trendPointsAdmin`.
+        "/admin/trend-points",
         "/admin/location-types",
         // `F4.282` (ADR 0099 Amendment 8 Q17) — Unit Roles, `globalAdminOnly` like Location Types.
         "/admin/unit-roles",
@@ -159,7 +162,9 @@ export function runAssetTemplateTabTests(): void {
     // `F3.78` added Users as `usersAdmin` (admin and organization_admin only): 18 -> 19 and
     // 17 -> 18; `location_admin` stays at 11.
     // `F4.282` added Unit Roles as `globalAdminOnly`: `admin` alone goes 19 -> 20.
-    const expected = role === "location_admin" ? 11 : role === "admin" ? 20 : 18;
+    // `F4.300` added Trend Points as `trendPointsAdmin` (admin and organization_admin only):
+    // 20 -> 21 and 18 -> 19; `location_admin` stays at 11.
+    const expected = role === "location_admin" ? 11 : role === "admin" ? 21 : 19;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
@@ -449,6 +454,37 @@ export function runCanManageAiAssistantOthersTest(): void {
 export function runCanMoveLocationsAdminsTest(): void {
   assert(canMoveLocations("admin"), "admin moves locations");
   assert(canMoveLocations("organization_admin"), "organization_admin moves locations");
+}
+
+const TREND_POINTS = "/admin/trend-points";
+
+/**
+ * `F4.300` (ADR 0108 decision 3, plan C10) — `admin` and `organization_admin` edit an
+ * organization's trend points, as `TrendPointsService`'s `isOrganizationLevelAdmin` gate admits.
+ */
+export function runCanEditTrendPointsAdminsTest(): void {
+  assert(canEditTrendPoints("admin"), "admin edits trend points");
+  assert(canEditTrendPoints("organization_admin"), "organization_admin edits trend points");
+}
+
+/** `F4.300` — every other role is refused (the API answers 403), named one by one. */
+export function runCanEditTrendPointsOthersTest(): void {
+  for (const role of ["location_admin", "asset_group_admin", "operator", "viewer"] as const) {
+    assert(!canEditTrendPoints(role), `${role} must not edit trend points`);
+  }
+}
+
+/** `F4.300` — an `organization_admin` sees the Trend Points tab. */
+export function runTrendPointsTabShownToOrganizationAdminTest(): void {
+  const paths = visibleMasterDataTabs("organization_admin").map((tab) => tab.path);
+  assert(paths.includes(TREND_POINTS), "organization_admin must see the Trend Points tab");
+}
+
+/** `F4.300` — a `location_admin` does not; Asset Groups is the positive control. */
+export function runTrendPointsTabHiddenFromLocationAdminTest(): void {
+  const paths = visibleMasterDataTabs("location_admin").map((tab) => tab.path);
+  assert(paths.includes("/admin/asset-groups"), "location_admin sees the Asset Groups tab (control)");
+  assert(!paths.includes(TREND_POINTS), "location_admin must not see the Trend Points tab");
 }
 
 /** `F2.10` — location_admin manages its subtree yet may not move a node; the API answers 403. */

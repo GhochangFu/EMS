@@ -22,6 +22,14 @@ under Electrical. The others confirm the plans: all four chart functions, the
 global admin, a sample-average PF, a 365-day custom cap, replace-all with a cap
 of 12, and the Trend Points tab under Reference Data.
 
+Ruling 2026-11-01 (owner, in chat, "Move UPS assets too"): the seeded UPS and
+battery assets and the stock `electrical-ups` template move to the `ups` asset
+domain as well, so the `ups` segment matches the assets that carry its codes
+(F4.300 plan, "Owner answers (2026-11-01)"). Second ruling the same day (owner,
+in chat, "Sim sends UPS keys"): the simulator sends the seven UPS codes for every
+asset in the `ups` domain, not only the Western Cape `CR-UPS*` / `CR-BATT*`
+pair, so all 22 moved assets carry them.
+
 Drafted 2026-10-31 (owner, in chat). The owner accepted every designer
 call in `docs/plans/2026-10-31-energy-and-trend-views-design.md` as a ruling and
 chose this one record for the whole set of rows (`F4.297`–`F4.304`), with one
@@ -368,8 +376,12 @@ What the code has today:
      `sort_order`.
 2. **Segment** *(drafter choice)*. A segment is a `bms.asset_domains.code`. A
    new segment is a new data row (ADR 0031 Amendment 1), never a code change.
-   UPS and battery read as `electrical` until an organization's data adds a
-   domain for them.
+   *Superseded by the owner's answers (see Status):* F4.300 adds the `ups`
+   segment. The seven `CONTROL_ROOM_UPS_POINT_KEYS` codes, the seeded UPS and
+   battery assets and the stock `electrical-ups` template are domain `ups`. A
+   segment's list may still name a code filed under another segment
+   (decision 3.4), so Electrical can keep `load_pct` and `battery_v` for a DG
+   set.
 3. **Organization override.** Migration `0117` creates
    `bms.org_trend_points`:
    `organization_id uuid NOT NULL REFERENCES bms.organizations(id)`,

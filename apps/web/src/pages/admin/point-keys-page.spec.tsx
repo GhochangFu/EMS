@@ -59,6 +59,7 @@ const RANKED: AdminPointKeyDto = {
   active: true,
   createdAt: new Date(0).toISOString(),
   headlineRank: 3,
+  trendDefault: true,
 };
 
 const UNRANKED: AdminPointKeyDto = {
@@ -71,6 +72,7 @@ const UNRANKED: AdminPointKeyDto = {
   active: true,
   createdAt: new Date(0).toISOString(),
   headlineRank: null,
+  trendDefault: false,
 };
 
 /** An inactive key, for the reactivate wizard. */
@@ -84,6 +86,7 @@ const RETIRED: AdminPointKeyDto = {
   active: false,
   createdAt: new Date(0).toISOString(),
   headlineRank: null,
+  trendDefault: false,
 };
 
 function stubApi() {
@@ -403,4 +406,91 @@ export async function reactivateIsAReviewThatPostsReactivate(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Submit" }));
   await waitFor(() => expect(reactivate.mock.calls).toEqual([[RETIRED.id]]));
   expect(deactivate).not.toHaveBeenCalled();
+}
+
+/** The text of `row`'s cell under the "Trend default" header. */
+function trendCell(row: HTMLElement): string {
+  const headers = screen.getAllByRole("columnheader").map((th) => th.textContent?.trim());
+  const index = headers.indexOf("Trend default");
+  expect(index, "no Trend default column header").toBeGreaterThanOrEqual(0);
+  return within(row).getAllByRole("cell")[index]?.textContent?.trim() ?? "";
+}
+
+/** F4.300 U6 — the column shows Yes for a trend default key and a dash for one that is not. */
+export async function columnShowsTheTrendDefault(): Promise<void> {
+  stubApi();
+  renderPage(admin);
+  expect(trendCell(await rowFor(RANKED.code))).toBe("Yes");
+  expect(trendCell(await rowFor(UNRANKED.code))).toBe("—");
+}
+
+/** F4.300 U6 — the Details step has a Trend default checkbox, checked from the stored flag. */
+export async function editFormHasATrendDefaultCheckbox(): Promise<void> {
+  stubApi();
+  renderPage(admin);
+  await openEdit(RANKED.code);
+  expect(await screen.findByRole("checkbox", { name: "Trend default" })).toBeChecked();
+}
+
+/** F4.300 U6 — checking the box on create sends trendDefault: true. */
+export async function createWithTheBoxSendsTrue(): Promise<void> {
+  const { create } = stubApi();
+  renderPage(admin);
+  await walkCreateToReview();
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  await userEvent.click(await screen.findByRole("checkbox", { name: "Trend default" }));
+  await next();
+  await userEvent.click(await screen.findByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(create.mock.calls).toEqual([[{ ...CREATED, trendDefault: true }]]));
+}
+
+/** F4.300 U6 — unchecking a stored true sends an explicit false (a decided value, not omission). */
+export async function uncheckingSendsFalse(): Promise<void> {
+  const { update } = stubApi();
+  renderPage(admin);
+  await openEdit(RANKED.code);
+  await userEvent.click(await screen.findByRole("checkbox", { name: "Trend default" }));
+  await reviewAndSubmit();
+  await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  expect(update.mock.calls[0]![1]).toHaveProperty("trendDefault", false);
+}
+
+/** F4.300 U6 — an edit that leaves the box alone sends no trendDefault, so an undecided flag stays undecided. */
+export async function untouchedBoxSendsNothing(): Promise<void> {
+  const { update } = stubApi();
+  renderPage(admin);
+  await openEdit(UNRANKED.code);
+  await reviewAndSubmit();
+  await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  expect(update.mock.calls[0]![1]).not.toHaveProperty("trendDefault");
+}
+
+/**
+ * F4.300 review finding 5 — on a row that reads "not a trend default" (stored
+ * `NULL` or `false`; the DTO cannot tell them apart), an admin who touches the
+ * box and leaves it unchecked has decided "no": the edit sends an explicit
+ * `false`, so a later seed cannot fill the code with `true`. The untouched
+ * case above stays the adjacent negative.
+ */
+export async function aTouchedUncheckedBoxSendsFalse(): Promise<void> {
+  const { update } = stubApi();
+  renderPage(admin);
+  await openEdit(UNRANKED.code);
+  const box = await screen.findByRole("checkbox", { name: "Trend default" });
+  expect(box, "precondition: the stored flag reads false").not.toBeChecked();
+  await userEvent.click(box);
+  await userEvent.click(box);
+  expect(box).not.toBeChecked();
+  await reviewAndSubmit();
+  await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  expect(update.mock.calls[0]![1]).toHaveProperty("trendDefault", false);
+}
+
+/** F4.300 U6 — an organization_admin sees the column and no checkbox (the write form is closed to them). */
+export async function organizationAdminSeesTheFlagButNoControl(): Promise<void> {
+  stubApi();
+  renderPage(orgAdmin);
+  expect(trendCell(await rowFor(RANKED.code))).toBe("Yes");
+  expect(screen.queryByRole("checkbox", { name: "Trend default" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
 }

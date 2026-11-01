@@ -146,7 +146,7 @@ describe.skipIf(!ownerUrl)(
         const locked = await pool.query(
           `SELECT a.id FROM bms.assets a
              JOIN bms.organizations o ON o.id = a.organization_id
-            WHERE o.code = 'ESKOM' AND a.domain = 'electrical'
+            WHERE o.code = 'ESKOM' AND a.domain IN ('electrical', 'ups')
             FOR KEY SHARE OF a`,
         );
         assert((locked.rowCount ?? 0) > 0, "the lock must take the seeded ESKOM electrical assets");
@@ -561,10 +561,10 @@ describe.skipIf(!ownerUrl)(
       await inRolledBackTransaction(async (tx) => {
         const demandHigh = ladderRule("DEMAND_HIGH");
         const ups = await tx.pool.query<{ id: string }>(
-          `SELECT id FROM bms.assets WHERE code = 'UPS-A' AND domain = 'electrical'`,
+          `SELECT id FROM bms.assets WHERE code = 'UPS-A' AND domain = 'ups'`,
         );
         const upsId = ups.rows[0]?.id;
-        assert(!!upsId, "F4.169: UPS-A is not seeded as an electrical asset — run pnpm db:seed.");
+        assert(!!upsId, "F4.169: UPS-A is not seeded as a ups asset (F4.300 U4c) — run pnpm db:seed.");
         const demand = await tx.pool.query<{ ok: boolean }>(
           `SELECT (enabled AND lifecycle_status = 'published'
                    AND point_key = $2 AND operator = $3 AND threshold_value = $4) AS ok

@@ -427,7 +427,14 @@ function stepWater(assetId, code) {
   return points;
 }
 
-function stepElectrical(assetId, code = "") {
+/**
+ * `F4.300` (owner ruling 2026-11-01): an asset in the `ups` domain sends the
+ * seven UPS codes whatever its code, so every asset in the `ups` segment has
+ * the data its trend points name. The Western Cape `CR-UPS*` / `CR-BATT*` pair
+ * keeps its profile-driven load; any other UPS asset walks around 45 %, because
+ * its kW scale is not the 2.8 kW the `CR-` load is derived from.
+ */
+function stepElectrical(assetId, code = "", domain = "electrical") {
   const s = ensureElecState(assetId);
   const profile = crProfile(code) ?? networkProfile(code);
   s.v = rndWalk(profile ? 230 : s.v, 0.4, 220, 240);
@@ -466,19 +473,20 @@ function stepElectrical(assetId, code = "") {
       { assetId, pointKey: "frequency_hz", value: rndWalk(50.02, 0.02, 49.8, 50.2), unit: "Hz", time: t },
       { assetId, pointKey: "kwh_today", value: Math.max(0, s.kw * 14.2), unit: "kWh", time: t },
     );
-    if (code.startsWith("CR-UPS") || code.startsWith("CR-BATT")) {
-      const loadPct = profile?.loadPct ?? Math.min(100, Math.max(0, (s.kw / 2.8) * 100));
-      const batteryV = profile?.batteryV ?? (code.endsWith("2") ? 386.1 : 384.2);
-      points.push(
-        { assetId, pointKey: "load_pct", value: rndWalk(loadPct, 1.2, 0, 100), unit: "%", time: t },
-        { assetId, pointKey: "output_voltage_v", value: rndWalk(230, 0.4, 225, 235), unit: "V", time: t },
-        { assetId, pointKey: "output_freq_hz", value: rndWalk(50, 0.01, 49.8, 50.2), unit: "Hz", time: t },
-        { assetId, pointKey: "battery_v", value: rndWalk(batteryV, 0.3, 360, 392), unit: "V", time: t },
-        { assetId, pointKey: "battery_temp_c", value: rndWalk(code.endsWith("2") ? 25.8 : 26.4, 0.08, 20, 32), unit: "°C", time: t },
-        { assetId, pointKey: "backup_min", value: rndWalk(code.endsWith("2") ? 54 : 42, 0.4, 5, 80), unit: "min", time: t },
-        { assetId, pointKey: "health_pct", value: rndWalk(code.endsWith("2") ? 94 : 96, 0.2, 70, 100), unit: "%", time: t },
-      );
-    }
+  }
+  const crUps = code.startsWith("CR-UPS") || code.startsWith("CR-BATT");
+  if (crUps || domain === "ups") {
+    const loadPct = profile?.loadPct ?? (crUps ? Math.min(100, Math.max(0, (s.kw / 2.8) * 100)) : 45);
+    const batteryV = profile?.batteryV ?? (code.endsWith("2") ? 386.1 : 384.2);
+    points.push(
+      { assetId, pointKey: "load_pct", value: rndWalk(loadPct, 1.2, 0, 100), unit: "%", time: t },
+      { assetId, pointKey: "output_voltage_v", value: rndWalk(230, 0.4, 225, 235), unit: "V", time: t },
+      { assetId, pointKey: "output_freq_hz", value: rndWalk(50, 0.01, 49.8, 50.2), unit: "Hz", time: t },
+      { assetId, pointKey: "battery_v", value: rndWalk(batteryV, 0.3, 360, 392), unit: "V", time: t },
+      { assetId, pointKey: "battery_temp_c", value: rndWalk(code.endsWith("2") ? 25.8 : 26.4, 0.08, 20, 32), unit: "°C", time: t },
+      { assetId, pointKey: "backup_min", value: rndWalk(code.endsWith("2") ? 54 : 42, 0.4, 5, 80), unit: "min", time: t },
+      { assetId, pointKey: "health_pct", value: rndWalk(code.endsWith("2") ? 94 : 96, 0.2, 70, 100), unit: "%", time: t },
+    );
   }
   return points;
 }
@@ -657,7 +665,7 @@ async function tick(rows) {
               ? stepEnvironment(row.id, row.code)
               : row.domain === "water"
                 ? stepWater(row.id, row.code)
-                : stepElectrical(row.id, row.code);
+                : stepElectrical(row.id, row.code, row.domain);
       for (const r of batch) {
         outRows.push([r.time, r.assetId, r.pointKey, r.value, r.unit]);
         readings.push({

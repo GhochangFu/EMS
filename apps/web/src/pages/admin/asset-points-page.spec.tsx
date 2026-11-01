@@ -63,6 +63,7 @@ function stubApi() {
         active: true,
         createdAt: new Date(0).toISOString(),
         headlineRank: null,
+        trendDefault: false,
       },
     ],
   });

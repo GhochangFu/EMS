@@ -68,7 +68,11 @@ function keysForDomain(
 const GLOBAL_CATALOG: PointKeySeed[] = [
   ...keysForDomain(ELECTRICAL_POINT_KEYS, "electrical"),
   ...keysForDomain(HVAC_POINT_KEYS, "hvac"),
-  ...keysForDomain(CONTROL_ROOM_UPS_POINT_KEYS, "electrical"),
+  // `F4.300` (ADR 0108, owner answer Q1): the `ups` segment, a
+  // `PACK_ASSET_DOMAINS` row that `seedAssetDomains` writes first. Was
+  // `electrical`; the `domain = EXCLUDED.domain` upsert below re-files the
+  // seven codes on an existing database at the next seed.
+  ...keysForDomain(CONTROL_ROOM_UPS_POINT_KEYS, "ups"),
   ...keysForDomain(CONTROL_ROOM_IT_POINT_KEYS, "it"),
   ...keysForDomain(CONTROL_ROOM_ENVIRONMENT_POINT_KEYS, "environment"),
   ...keysForDomain(

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { BmsDb } from "./client";
 import type { SeededAsset } from "./eskom-assets-seed";
@@ -13,6 +13,14 @@ import { assets, automationRules, locations, organizations } from "./schema";
  * AGENTS.md §4.5 1000-line cap. Pure move: the control-room blocks all ran the
  * same select/update/insert sequence inline, which is now `upsertRuleByCode`.
  */
+
+/**
+ * The asset domains the ESKOM ladder covers, read by `seedEskomLadderRules` and
+ * by its boot gate in `verify-hierarchy-seed.ts`. `ups` since `F4.300` U4c
+ * (owner ruling 2026-11-01): the UPS and battery assets left `electrical` but
+ * still report the ladder's electrical points through `apps/sim`.
+ */
+export const LADDER_ASSET_DOMAINS: readonly string[] = ["electrical", "ups"];
 
 /**
  * Everything an automation rule row carries except its code and its
@@ -796,7 +804,7 @@ export async function seedEskomLadderRules(
     .from(assets)
     .innerJoin(locations, eq(locations.id, assets.locationId))
     .innerJoin(organizations, eq(organizations.id, locations.organizationId))
-    .where(and(eq(organizations.code, "ESKOM"), eq(assets.domain, "electrical")))
+    .where(and(eq(organizations.code, "ESKOM"), inArray(assets.domain, [...LADDER_ASSET_DOMAINS])))
     // A stated order, so which of two colliding assets takes a held code
     // (guard 3) does not depend on the plan.
     .orderBy(assets.createdAt, assets.code);

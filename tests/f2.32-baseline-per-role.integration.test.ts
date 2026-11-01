@@ -94,13 +94,13 @@ describe.skipIf(!ownerUrl)("F2.32 — a seeded health baseline per domain and ro
     expect(keys).not.toContain("backup_min");
   });
 
-  it("BASELINE-ELECTRICAL-BATTERY declares backup_min (the positive beside the absence)", async () => {
-    const keys = await keysOf(probePool as IntegrationPool, eskomOrgId, "BASELINE-ELECTRICAL-BATTERY");
+  it("BASELINE-UPS-BATTERY declares backup_min (the positive beside the absence; F4.300 U4c moved the batteries to ups)", async () => {
+    const keys = await keysOf(probePool as IntegrationPool, eskomOrgId, "BASELINE-UPS-BATTERY");
     expect(keys).toContain("backup_min");
   });
 
-  it("the domain baseline keeps the union, as the fallback (BASELINE-ELECTRICAL still declares backup_min)", async () => {
-    const keys = await keysOf(probePool as IntegrationPool, eskomOrgId, "BASELINE-ELECTRICAL");
+  it("the domain baseline keeps the union, as the fallback (BASELINE-UPS still declares backup_min)", async () => {
+    const keys = await keysOf(probePool as IntegrationPool, eskomOrgId, "BASELINE-UPS");
     expect(keys).toContain("backup_min");
   });
 
@@ -163,20 +163,21 @@ describe.skipIf(!ownerUrl)("F2.32 — a seeded health baseline per domain and ro
     await pool.query("BEGIN");
     try {
       await pool.query("select set_config('app.current_organization', $1, true)", [eskomOrgId]);
-      const pick = async (role: string): Promise<string> => {
+      const pick = async (role: string, assetDomain: string): Promise<string> => {
         const found = await pool.query<{ id: string }>(
           `SELECT a.id FROM bms.assets a
-            WHERE a.organization_id = $1 AND a.active = true AND a.domain = 'electrical'
+            WHERE a.organization_id = $1 AND a.active = true AND a.domain = $3
               AND (SELECT min(agm.role) FROM bms.asset_group_members agm WHERE agm.asset_id = a.id) = $2
             ORDER BY a.created_at, a.id LIMIT 1 FOR UPDATE`,
-          [eskomOrgId, role],
+          [eskomOrgId, role, assetDomain],
         );
         const id = found.rows[0]?.id;
-        assert(!!id, `ESKOM has no active electrical asset with role ${role} — run pnpm db:seed.`);
+        assert(!!id, `ESKOM has no active ${assetDomain} asset with role ${role} — run pnpm db:seed.`);
         return id as string;
       };
-      const transformerId = await pick("transformer");
-      const batteryId = await pick("battery");
+      const transformerId = await pick("transformer", "electrical");
+      // `F4.300` U4c: the seeded batteries are `ups`, so the operator's template below is too.
+      const batteryId = await pick("battery", "ups");
 
       const domain = await pool.query<{ id: string }>(
         `SELECT id FROM bms.asset_templates
@@ -189,7 +190,7 @@ describe.skipIf(!ownerUrl)("F2.32 — a seeded health baseline per domain and ro
       const operator = await pool.query<{ id: string }>(
         `INSERT INTO bms.asset_templates
            (organization_id, code, version, name, asset_type, domain, status, published_at)
-         VALUES ($1, $2, 1, 'F2.32 operator fixture', 'test_rig', 'electrical', 'published', now())
+         VALUES ($1, $2, 1, 'F2.32 operator fixture', 'test_rig', 'ups', 'published', now())
          RETURNING id`,
         [eskomOrgId, `F232-OP-${RUN_ID}`],
       );

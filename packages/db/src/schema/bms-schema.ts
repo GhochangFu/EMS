@@ -541,6 +541,9 @@ export const pointKeys = bmsSchema.table("point_keys", {
   // F3.68 / ADR 0076 decision 7 (migration 0083) — lower shows first on a
   // generated site card; NULL = unranked. Not unique; ties by code (plan D1).
   headlineRank: smallint("headline_rank"),
+  // F4.300 / ADR 0108 (migration 0117) — tri-state: NULL = undecided (the seed may
+  // fill it), true/false = decided. The DTO exposes `IS TRUE`.
+  trendDefault: boolean("trend_default"),
   // F4.111 / ADR 0104 decision 1 (migration 0114) — the organization whose
   // onboarding commit added the row; NULL for seeded, admin-added and older
   // rows. Counted by the growth quota, never a read scope.

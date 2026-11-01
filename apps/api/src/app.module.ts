@@ -27,6 +27,7 @@ import { RulesModule } from "./rules/rules.module";
 import { StorageModule } from "./storage/storage.module";
 import { SystemStatusModule } from "./system-status/system-status.module";
 import { TelemetryModule } from "./telemetry/telemetry.module";
+import { TrendPointsModule } from "./trend-points/trend-points.module";
 import { VocabulariesModule } from "./vocabularies/vocabularies.module";
 import { WorkOrdersModule } from "./work-orders/work-orders.module";
 
@@ -48,6 +49,8 @@ import { WorkOrdersModule } from "./work-orders/work-orders.module";
     MimicLayoutsModule,
     MimicSymbolLibrariesModule,
     ControlRoomModule,
+    // `F4.300` / ADR 0108 decision 3 — the site trend-point read and the organization override.
+    TrendPointsModule,
     AlarmKbModule,
     AlarmsModule,
     CalcModule,

@@ -551,7 +551,9 @@ describe("F3.39 global point-key vocabulary (ADR 0051 decisions 2-4)", () => {
     const ARRAY_DOMAIN: Record<string, string> = {
       ELECTRICAL_POINT_KEYS: "electrical",
       HVAC_POINT_KEYS: "hvac",
-      CONTROL_ROOM_UPS_POINT_KEYS: "electrical",
+      // `F4.300` (ADR 0108, owner answer Q1): re-filed from `electrical` to
+      // the `ups` segment, a `PACK_ASSET_DOMAINS` row.
+      CONTROL_ROOM_UPS_POINT_KEYS: "ups",
       CONTROL_ROOM_IT_POINT_KEYS: "it",
       CONTROL_ROOM_ENVIRONMENT_POINT_KEYS: "environment",
       CONTROL_ROOM_ELECTRICAL_POINT_KEYS: "electrical",

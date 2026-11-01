@@ -104,10 +104,21 @@ export function simRtuDisplayName(locationName: string, domain: string): string 
   return `${head}${tail}`;
 }
 
-/** Maps asset domain to simulator RTU domain column. */
+/**
+ * Maps asset domain to simulator RTU domain column.
+ *
+ * `F4.300` U4c (owner ruling 2026-11-01): a `ups` asset runs on its site's
+ * ELECTRICAL simulator RTU. The UPS and battery assets were electrical until
+ * then and `apps/sim` writes them through `stepElectrical`, so they keep the
+ * RTU they had; a separate UPS RTU per location would be a row per location
+ * with nothing new to feed it.
+ */
 export function rtuDomainForAssetDomain(domain: string): string {
   if (domain === "it") {
     return "it";
+  }
+  if (domain === "ups") {
+    return "electrical";
   }
   return domain;
 }

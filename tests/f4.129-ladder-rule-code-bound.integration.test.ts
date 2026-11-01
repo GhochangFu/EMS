@@ -168,7 +168,7 @@ describe.skipIf(!ownerUrl)(
         const locked = await pool.query(
           `SELECT a.id FROM bms.assets a
              JOIN bms.organizations o ON o.id = a.organization_id
-            WHERE o.code = 'ESKOM' AND a.domain = 'electrical'
+            WHERE o.code = 'ESKOM' AND a.domain IN ('electrical', 'ups')
             FOR KEY SHARE OF a`,
         );
         assert((locked.rowCount ?? 0) > 0, "the lock must take the seeded ESKOM electrical assets");

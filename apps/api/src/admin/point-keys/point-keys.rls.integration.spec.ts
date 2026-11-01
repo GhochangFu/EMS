@@ -461,3 +461,60 @@ export async function assertADuplicateCodeIsA409NamingTheCode(
       `(code ${(err as { code?: unknown } | null)?.code}) "${(err as Error | null)?.message}".`,
   );
 }
+
+/**
+ * `F4.300` / ADR 0108 decision 3.1 — a global admin `PATCH { trendDefault }`
+ * writes the tri-state column and reads it back: `true`, then an explicit
+ * `false` that stays `false` (not `NULL`, which the seed would refill). Read on
+ * the observer pool too, so the claim is about the column, not `mapRow`. The
+ * caller deletes `code` by code in a `finally`.
+ */
+export async function assertGlobalAdminSetsTrendDefault(
+  ctx: SvcWithFixtures,
+  jwt: JwtPayload,
+  code: string,
+): Promise<void> {
+  const { svc, ownerPool } = ctx;
+  const readFlag = async (id: string): Promise<boolean | null | undefined> =>
+    (
+      await ownerPool.query<{ trend_default: boolean | null }>(
+        "SELECT trend_default FROM bms.point_keys WHERE id = $1",
+        [id],
+      )
+    ).rows[0]?.trend_default;
+
+  const created = await svc.create(jwt, { code, name: "F4.300 trend default check" });
+  expect(created.trendDefault, "a create with no trendDefault reads false").toBe(false);
+  expect(await readFlag(created.id), "a create with no trendDefault leaves the column NULL").toBeNull();
+
+  const flagged = await svc.update(jwt, created.id, { trendDefault: true });
+  expect(flagged.trendDefault).toBe(true);
+  expect(await readFlag(created.id)).toBe(true);
+
+  const unflagged = await svc.update(jwt, created.id, { trendDefault: false });
+  expect(unflagged.trendDefault).toBe(false);
+  expect(await readFlag(created.id), "an admin false is a decided false, not NULL").toBe(false);
+}
+
+/** `F4.300` — an `organization_admin` `PATCH { trendDefault }` is refused by the existing global-admin gate. */
+export async function assertOrganizationAdminCannotSetTrendDefault(
+  ctx: SvcWithFixtures,
+  orgAdminJwt: JwtPayload,
+): Promise<void> {
+  const { rows } = await ctx.ownerPool.query<{ id: string; trend_default: boolean | null }>(
+    "SELECT id, trend_default FROM bms.point_keys WHERE active = true ORDER BY created_at, code LIMIT 1",
+  );
+  const existing = rows[0];
+  assert(Boolean(existing), "F4.300: the seeded point key catalog is empty — run pnpm db:seed.");
+  await expect(
+    ctx.svc.update(orgAdminJwt, existing!.id, { trendDefault: true }),
+    "an organization_admin must not set the fleet-wide catalog trend default",
+  ).rejects.toThrow(/global administrator/i);
+  const after = await ctx.ownerPool.query<{ trend_default: boolean | null }>(
+    "SELECT trend_default FROM bms.point_keys WHERE id = $1",
+    [existing!.id],
+  );
+  expect(after.rows[0]?.trend_default, "the refused PATCH leaves the column as it was").toBe(
+    existing!.trend_default,
+  );
+}

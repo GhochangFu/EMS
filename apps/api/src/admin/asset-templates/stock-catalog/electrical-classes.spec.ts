@@ -733,9 +733,10 @@ function checkUps(): void {
       `feeder / ro_skid / test_rig convention) — got "${entry.assetType}"`,
   );
   assert(
-    entry.domain === "electrical",
-    `${UPS_CODE}.domain must be "electrical" — assertAssetDomain checks it against ` +
-      `bms.asset_domains at import time; got "${entry.domain}"`,
+    entry.domain === "ups",
+    `${UPS_CODE}.domain must be "ups" (F4.300, owner ruling 2026-11-01: UPS assets join the ` +
+      `ups segment) — assertAssetDomain checks it against bms.asset_domains at import time; ` +
+      `got "${entry.domain}"`,
   );
   assert(
     entry.stockVersion === 1,

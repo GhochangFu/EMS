@@ -57,15 +57,27 @@ export type AssetDomainSeed = {
 };
 
 /**
- * The rows. Two today — `mechanical` (ADR 0053 decision 2) and `facility`
- * (ADR 0054 decision 2) — and a third is a third ADR: the spec asserts the
- * literal, so an addition is a deliberate edit to both. `verifyHierarchySeed`'s
- * Pass 1 count is derived from this array's length, so `facility` moved it
- * from six to seven with no edit there — only its comment changed.
+ * The rows. Three today — `mechanical` (ADR 0053 decision 2), `facility`
+ * (ADR 0054 decision 2) and `ups` (ADR 0108, owner answer Q1 on the `F4.300`
+ * plan) — and a fourth is a fourth ADR: the spec asserts the literal, so an
+ * addition is a deliberate edit to both. `verifyHierarchySeed`'s Pass 1 count
+ * is derived from this array's length, so `facility` moved it from six to
+ * seven and `ups` to eight with no edit there — only its comment changed.
+ *
+ * `ups` is the trend-point segment for the seven `CONTROL_ROOM_UPS_POINT_KEYS`
+ * codes, which `point-keys-seed.ts` files under it. `sort_order 15` places it
+ * directly after `electrical` (10) in every ordered read; `facility` stays the
+ * last row, which `asset-templates-stock.integration.spec.ts`'s *Expected one
+ * of* pin reads. Since U4c (owner ruling 2026-11-01) the seeded UPS and
+ * battery assets are `ups` too (`eskom-assets-seed.ts`), so `seed.ts` writes
+ * these rows before the first asset: `assets.domain` is a foreign key here. The
+ * UPS view keys on the asset code and the point code, never on a domain
+ * (`tests/f4.300-ups-assets-seed.integration.test.ts`).
  */
 export const PACK_ASSET_DOMAINS: readonly AssetDomainSeed[] = [
   { code: "mechanical", label: "Mechanical", sortOrder: 60 },
   { code: "facility", label: "Facility", sortOrder: 70 },
+  { code: "ups", label: "UPS", sortOrder: 15 },
 ];
 
 /**

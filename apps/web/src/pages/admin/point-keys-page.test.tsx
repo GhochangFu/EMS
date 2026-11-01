@@ -19,6 +19,13 @@ import {
   theEditReviewShowsNowBesideAfter,
   typingTwoSendsTwo,
   aRefusedSaveShowsTheSentence,
+  columnShowsTheTrendDefault,
+  createWithTheBoxSendsTrue,
+  editFormHasATrendDefaultCheckbox,
+  organizationAdminSeesTheFlagButNoControl,
+  uncheckingSendsFalse,
+  untouchedBoxSendsNothing,
+  aTouchedUncheckedBoxSendsFalse,
 } from "./point-keys-page.spec";
 
 /**
@@ -103,5 +110,33 @@ describe("F3.86 PR 3c point keys page — the catalog wizards (ADR 0099 decision
 
   it("Reactivate is a Review that posts the plain reactivate", async () => {
     await reactivateIsAReviewThatPostsReactivate();
+  });
+
+  it("F4.300 the table shows the trend default column", async () => {
+    await columnShowsTheTrendDefault();
+  });
+
+  it("F4.300 the Details step has a Trend default checkbox from the stored flag", async () => {
+    await editFormHasATrendDefaultCheckbox();
+  });
+
+  it("F4.300 checking the box on create sends trendDefault: true", async () => {
+    await createWithTheBoxSendsTrue();
+  });
+
+  it("F4.300 unchecking a stored true sends trendDefault: false", async () => {
+    await uncheckingSendsFalse();
+  });
+
+  it("F4.300 an untouched box sends no trendDefault", async () => {
+    await untouchedBoxSendsNothing();
+  });
+
+  it("F4.300 a touched box left unchecked on a false row sends trendDefault: false", async () => {
+    await aTouchedUncheckedBoxSendsFalse();
+  });
+
+  it("F4.300 an organization_admin sees the flag and no control", async () => {
+    await organizationAdminSeesTheFlagButNoControl();
   });
 });

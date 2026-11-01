@@ -50,6 +50,8 @@ import {
   updateMaintenanceScheduleBodySchema,
   pointAggregateQuerySchema,
   pointRawQuerySchema,
+  // `F4.300` (ADR 0108 decision 3.7): the replace-all trend-point body.
+  putOrgTrendPointsBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -334,6 +336,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   OnboardingController_setCredentials: setCredentialsBodySchema,
   OrganizationsAdminController_create: createOrganizationBodySchema,
   OrganizationsAdminController_update: updateOrganizationBodySchema,
+  // `F4.300` (ADR 0108 decision 3.7). `_forOrganization` and `SiteTrendPointsController_forSite`
+  // are absent: path parameters only, no body, no query.
+  OrgTrendPointsAdminController_putSegment: putOrgTrendPointsBodySchema,
   // `F3.21` (ADR 0090 Amendment 1 A5). `_get` and `_remove` take no body.
   AiAssistantSettingsController_put: putAiAssistantSettingsBodySchema,
   AiAssistantSettingsController_test: testAiAssistantBodySchema,

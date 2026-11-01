@@ -10,6 +10,7 @@ import {
   HEALTH_ROLE_TEMPLATE_SQL,
   HEALTH_TEMPLATE_PIN_SQL,
   HEALTH_TEMPLATE_POINTS_SQL,
+  HEALTH_TEMPLATE_RELEASE_SQL,
   HEALTH_TEMPLATE_SQL,
   HEALTH_TEMPLATE_VERIFY_SQL,
   ROLE_TEMPLATE_CODE_EXPR,
@@ -26,6 +27,7 @@ const WRITE_STATEMENTS = [
   HEALTH_ROLE_TEMPLATE_POINTS_SQL,
   HEALTH_ROLE_TEMPLATE_PIN_SQL,
   HEALTH_ROLE_TEMPLATE_REPIN_SQL,
+  HEALTH_TEMPLATE_RELEASE_SQL,
 ];
 
 /**
@@ -305,6 +307,30 @@ export function assertTheVerifyCountsRoledAssetsLeftOnTheDomainBaseline(): void 
   expect(HEALTH_TEMPLATE_VERIFY_SQL).toContain("dom.version = 1");
 }
 
+/**
+ * `F4.300` U4c (owner ruling 2026-11-01) — an asset whose domain moved under its
+ * seed pin is released, so the pins below take it to its new domain's baseline.
+ *
+ * The seed moved the UPS and battery assets from `electrical` to `ups`; on a
+ * database seeded before that, they stay pinned to `BASELINE-ELECTRICAL-UPS` /
+ * `-BATTERY`, and the verify's `unpinned` would count them and stop the boot.
+ * The release touches only a seed baseline (`asset_type = 'baseline'`, a
+ * `BASELINE-` code, at any version) of ANOTHER domain: an operator's own template is
+ * never released, and a same-domain pin (an operator's legal move back to v1)
+ * never matches `t.domain <> a.domain`.
+ */
+export function assertTheReleaseFreesOnlyACrossDomainSeedBaselinePin(): void {
+  expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("SET template_id = NULL");
+  expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("a.template_id = t.id");
+  expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("t.domain <> a.domain");
+  expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("t.asset_type = 'baseline'");
+  expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("t.code LIKE 'BASELINE-%'");
+  // Any version: a v2 of an electrical seed baseline is no more valid for a `ups` asset than v1.
+  expect(HEALTH_TEMPLATE_RELEASE_SQL).not.toMatch(/\bt\.version\b/);
+  expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("a.organization_id = $1");
+  expect(HEALTH_TEMPLATE_RELEASE_SQL).toContain("t.organization_id = $1");
+}
+
 type Recorded = { sql: string; params: unknown[] | undefined };
 
 /** The ids the fake role-template insert reports it wrote. */
@@ -321,6 +347,7 @@ const ROW_COUNTS = new Map<string, number>([
   [HEALTH_ROLE_TEMPLATE_REPIN_SQL, 4],
   [HEALTH_ROLE_TEMPLATE_PIN_SQL, 8],
   [HEALTH_TEMPLATE_PIN_SQL, 16],
+  [HEALTH_TEMPLATE_RELEASE_SQL, 32],
 ]);
 
 /** A pool that records each statement and answers the verify with `verifyRow`. */
@@ -350,7 +377,8 @@ const CLEAN = { unpinned: 0, unusable: 0, left_on_domain_baseline: 0 };
  * The order is load-bearing. The role templates and their points must exist
  * before the re-pin or either pin reads them, and the role pin must run before
  * the domain pin, because the domain pin takes every `template_id IS NULL`
- * asset that is left.
+ * asset that is left. The release (`F4.300` U4c) runs before both pins, so an
+ * asset it frees is pinned again in the same run.
  */
 export async function assertTheStatementsRunInTheirLoadBearingOrder(): Promise<void> {
   const { pool, calls } = recordingPool(CLEAN);
@@ -360,6 +388,7 @@ export async function assertTheStatementsRunInTheirLoadBearingOrder(): Promise<v
     HEALTH_TEMPLATE_POINTS_SQL,
     HEALTH_ROLE_TEMPLATE_SQL,
     HEALTH_ROLE_TEMPLATE_POINTS_SQL,
+    HEALTH_TEMPLATE_RELEASE_SQL,
     HEALTH_ROLE_TEMPLATE_REPIN_SQL,
     HEALTH_ROLE_TEMPLATE_PIN_SQL,
     HEALTH_TEMPLATE_PIN_SQL,
@@ -381,7 +410,8 @@ export async function assertEveryStatementGetsTheOrganizationAndTheBands(): Prom
 
 /**
  * Two template inserts (1 + 2) and two pins (8 + 16) are summed; the re-pin
- * (4) is counted on its own. The points inserts (64, 128) are in no field.
+ * (4) and the release (32) are each counted on their own. The points inserts
+ * (64, 128) are in no field.
  */
 export async function assertTheResultCountsEachWriteOnce(): Promise<void> {
   const { pool } = recordingPool(CLEAN);
@@ -389,6 +419,7 @@ export async function assertTheResultCountsEachWriteOnce(): Promise<void> {
     templates: 3,
     pinned: 24,
     repinned: 4,
+    released: 32,
   });
 }
 

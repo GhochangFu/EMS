@@ -153,12 +153,22 @@ import type { StockAssetTemplateEntry } from "./types";
  * always bind (a manual row is never populated at instantiation; a derived key has no
  * `asset_points` row to read). No `stockVersion` bump — the owner did not rule a release
  * for this content addition (plan §12 Q9, ADR 0067 §13).
+ *
+ * **`domain: "ups"` — F4.300 U4c (owner ruling 2026-11-01, "Move UPS assets too").** The
+ * entry joined the `ups` asset domain that F4.300 added (ADR 0108), with the seeded UPS and
+ * battery assets and the seven `CONTROL_ROOM_UPS_POINT_KEYS` codes. The code stays
+ * `electrical-ups` (it is the import identity) and the points are unchanged. No
+ * `stockVersion` bump, on the F3.2 precedent above: the owner did not rule a release, and
+ * ADR 0052 decision 6 keeps v2 for the client-confirmed release. A template an organization
+ * imported before stays `electrical` (a published version is immutable); a re-import opens a
+ * `ups` draft, and `migrate` refuses a domain change, so its pinned assets move by a new
+ * instantiation, not by a migration.
  */
 export const ELECTRICAL_UPS: StockAssetTemplateEntry = {
   code: "electrical-ups",
   name: "UPS — static UPS with battery",
   assetType: "ups",
-  domain: "electrical",
+  domain: "ups",
   description:
     "Static (double-conversion) UPS with a battery string, single or parallel, in RFC 1628's " +
     "register groups. Authored from docs/electrical-derived-taglist-v1.md §4 (PROVISIONAL — " +

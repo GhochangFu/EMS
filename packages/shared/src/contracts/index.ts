@@ -77,6 +77,7 @@ export * from "./location-writes";
 export * from "./mimic-layout-writes";
 export * from "./mimic-symbol-library-writes";
 export * from "./point-key-writes";
+export * from "./trend-points";
 export * from "./rtu-writes";
 export * from "./rule-writes";
 export * from "./notification-writes";

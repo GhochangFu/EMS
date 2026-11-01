@@ -459,6 +459,10 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // silently dropping one from a PUT that "states the whole kind" would read
   // as accepted while the pair rule it was meant to satisfy went unchecked.
   putSiteControlRoomViewBodySchema: STRICT(CALLER_ERROR),
+  // `F4.300` (ADR 0108 decision 3.7) — one key, a replace-all list with no `z.record`
+  // escape. An unknown key beside `pointKeys` has nowhere to land, and dropping it
+  // silently would hide a caller's typo behind a 200.
+  putOrgTrendPointsBodySchema: STRICT(CALLER_ERROR),
   // `F3.73` plan D6 — the "Make site layout" body. Both keys are optional, so an unknown key
   // dropped silently (a misspelt `tabGroup`) would run the copy with no choice at all. The
   // `tabGroups` record is the one open map, and its keys and values are each bounded.

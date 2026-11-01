@@ -21,4 +21,6 @@ export const adminPointKeyDtoSchema = z.object({
   active: z.boolean(),
   createdAt: z.string(),
   headlineRank: z.number().int().nullable(),
+  // F4.300 / ADR 0108 — required, so a producer that forgets it fails at the first request.
+  trendDefault: z.boolean(),
 });

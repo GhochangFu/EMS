@@ -67,6 +67,23 @@ export function canManageNotificationChannels(role: UserRole): boolean {
   return role === "admin" || role === "organization_admin";
 }
 
+/**
+ * Whether the role may read and edit an organization's trend-point lists (`F4.300`, ADR 0108
+ * decision 3, plan C6/C10).
+ *
+ * Mirrors `TrendPointsService`'s gate, `isOrganizationLevelAdmin`: a global `admin` for any
+ * organization, an `organization_admin` for its own, and **everyone else nothing** — a
+ * `location_admin` reads the effective list through its site, but never edits it.
+ *
+ * Deliberately its own predicate rather than a reuse of `canManageNotificationChannels`, whose
+ * body is identical today: the two answer different questions and the API gates them through
+ * different checks, so collapsing them would let a future change to either silently move the
+ * other.
+ */
+export function canEditTrendPoints(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
 /** Whether the role may create locations, roots and children (ADR 0098 decision 12, ruling 13). */
 export function canCreateLocations(role: UserRole): boolean {
   return role === "admin" || role === "organization_admin";
@@ -339,6 +356,10 @@ export const masterDataTabs = [
   // page from a role that can legitimately use it.
   { label: "Asset Groups", path: "/admin/asset-groups", area: "reference" },
   { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true, area: "reference" },
+  // `F4.300` (ADR 0108 decision 3, plan C10). `trendPointsAdmin`: every route behind the page
+  // refuses a role that is not an organization-level administrator, so the tab is hidden from
+  // the others, who would meet only the page's refusal sentence.
+  { label: "Trend Points", path: "/admin/trend-points", trendPointsAdmin: true, area: "reference" },
   // `F4.162` (ADR 0077 Amendment 1, plan D7). The first `globalAdminOnly` tab:
   // every route behind the page refuses a caller that is not the global
   // `admin`, the read included, so a tab shown to anyone else would lead only
@@ -411,6 +432,7 @@ export const masterDataTabs = [
   orgAdminOnly?: true;
   symbolLibraryAdmin?: true;
   usersAdmin?: true;
+  trendPointsAdmin?: true;
 }[];
 
 export type MasterDataTab = (typeof masterDataTabs)[number];
@@ -437,6 +459,9 @@ export function visibleMasterDataTabs(role: UserRole): MasterDataTab[] {
     }
     if ("usersAdmin" in tab && tab.usersAdmin) {
       return canManageUsers(role);
+    }
+    if ("trendPointsAdmin" in tab && tab.trendPointsAdmin) {
+      return canEditTrendPoints(role);
     }
     return true;
   });

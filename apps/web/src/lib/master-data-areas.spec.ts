@@ -24,7 +24,7 @@ export function groupsEveryTabIntoItsArea(): void {
   );
   expect(grouped).toEqual({
     "Sites & Equipment": ["Organizations", "Locations", "RTUs", "Assets", "Asset Points"],
-    "Reference Data": ["Asset Groups", "Point Keys", "Location Types", "Unit Roles", "Calc Parameters"],
+    "Reference Data": ["Asset Groups", "Point Keys", "Trend Points", "Location Types", "Unit Roles", "Calc Parameters"],
     "Templates & Visuals": ["Asset Templates", "Dashboard Templates", "Mimic Layouts", "Symbol Libraries"],
     "Data Input": ["Manual Entry", "Import Telemetry"],
     Notifications: ["Channels", "Escalation", "Deliveries"],
@@ -76,7 +76,12 @@ export function hidesTheNotificationsAreaFromALocationAdmin(): void {
 /** A4 — an area carries only the tabs the role sees (Reference Data for an `organization_admin`). */
 export function keepsOnlyTheVisibleTabsInAnArea(): void {
   const reference = visibleMasterDataAreas("organization_admin").find((area) => area.id === "reference");
-  expect(reference?.tabs.map((tab) => tab.label)).toEqual(["Asset Groups", "Point Keys", "Calc Parameters"]);
+  expect(reference?.tabs.map((tab) => tab.label)).toEqual([
+    "Asset Groups",
+    "Point Keys",
+    "Trend Points",
+    "Calc Parameters",
+  ]);
 }
 
 /** A5 — an area links to its first visible tab. */

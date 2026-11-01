@@ -4,6 +4,10 @@ import {
   runAdminAccessTests,
   runCanMoveLocationsAdminsTest,
   runCanMoveLocationsOthersTest,
+  runCanEditTrendPointsAdminsTest,
+  runCanEditTrendPointsOthersTest,
+  runTrendPointsTabShownToOrganizationAdminTest,
+  runTrendPointsTabHiddenFromLocationAdminTest,
   runAssetGroupScopePredicateTests,
   runAssetTemplateTabTests,
   runCanManageAiAssistantAdminsTest,
@@ -108,5 +112,21 @@ describe("admin-access", () => {
 
   it("canMoveLocations refuses every other role (F2.10 decision 12)", () => {
     runCanMoveLocationsOthersTest();
+  });
+
+  it("canEditTrendPoints admits admin and organization_admin (F4.300)", () => {
+    runCanEditTrendPointsAdminsTest();
+  });
+
+  it("canEditTrendPoints refuses every other role (F4.300)", () => {
+    runCanEditTrendPointsOthersTest();
+  });
+
+  it("shows the Trend Points tab to organization_admin (F4.300)", () => {
+    runTrendPointsTabShownToOrganizationAdminTest();
+  });
+
+  it("hides the Trend Points tab from location_admin (F4.300)", () => {
+    runTrendPointsTabHiddenFromLocationAdminTest();
   });
 });

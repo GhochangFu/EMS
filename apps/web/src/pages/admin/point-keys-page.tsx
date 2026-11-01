@@ -34,9 +34,26 @@ type FormState = {
   unit: string;
   description: string;
   headlineRank: string;
+  /** `F4.300` — the catalog trend-point flag (ADR 0108 decision 3). */
+  trendDefault: boolean;
+  /**
+   * The admin (or a copilot fill) set the box. The DTO reads a stored `NULL`
+   * as `false`, so on such a row a touched-and-unchecked box is the only way
+   * to record a decided `false`; an untouched one sends nothing.
+   */
+  trendDefaultTouched: boolean;
 };
 
-const EMPTY_FORM: FormState = { code: "", name: "", domain: "", unit: "", description: "", headlineRank: "" };
+const EMPTY_FORM: FormState = {
+  code: "",
+  name: "",
+  domain: "",
+  unit: "",
+  description: "",
+  headlineRank: "",
+  trendDefault: false,
+  trendDefaultTouched: false,
+};
 
 /**
  * `F3.68` / ADR 0076 decision 7 — the rank text to the body value.
@@ -87,17 +104,25 @@ function createValues(form: FormState): Record<string, unknown> {
     unit: form.unit || undefined,
     description: form.description || undefined,
     headlineRank: rankValue(form.headlineRank),
+    // Unchecked is "undecided" (omitted), so a create never writes a `false`.
+    ...(form.trendDefault ? { trendDefault: true } : {}),
   };
 }
 
 /** The `pointKey.update` values: the old form's PATCH, field for field (the code is not editable). */
-function updateValues(form: FormState): Record<string, unknown> {
+function updateValues(form: FormState, stored: AdminPointKeyDto): Record<string, unknown> {
   return {
     name: form.name,
     domain: form.domain || undefined,
     unit: form.unit || undefined,
     description: form.description || undefined,
     headlineRank: rankValue(form.headlineRank),
+    // `F4.300` — the flag is tri-state. It is sent only when the admin set the
+    // box, so an edit of another field never turns an undecided flag into
+    // `false`, and a box touched and left unchecked records a decided `false`.
+    ...(form.trendDefaultTouched || form.trendDefault !== stored.trendDefault
+      ? { trendDefault: form.trendDefault }
+      : {}),
   };
 }
 
@@ -106,6 +131,10 @@ function formWithValues(form: FormState, values: Readonly<Record<string, unknown
   const next = { ...form };
   for (const key of ["code", "name", "domain", "unit", "description"] as const) {
     if (typeof values[key] === "string") next[key] = values[key] as string;
+  }
+  if (typeof values.trendDefault === "boolean") {
+    next.trendDefault = values.trendDefault;
+    next.trendDefaultTouched = true;
   }
   if (values.headlineRank === null) next.headlineRank = "";
   else if (typeof values.headlineRank === "number") next.headlineRank = String(values.headlineRank);
@@ -120,6 +149,8 @@ function formOf(item: AdminPointKeyDto): FormState {
     unit: item.unit ?? "",
     description: item.description ?? "",
     headlineRank: item.headlineRank === null ? "" : String(item.headlineRank),
+    trendDefault: item.trendDefault,
+    trendDefaultTouched: false,
   };
 }
 
@@ -278,6 +309,14 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
         </p>
         {rankInvalid ? <p className="mt-1 text-xs text-critical-ink">{HEADLINE_RANK_ERROR}</p> : null}
       </div>
+      <label className="flex items-center gap-2 text-xs font-semibold text-ink-muted">
+        <input
+          type="checkbox"
+          checked={form.trendDefault}
+          onChange={(event) => setForm({ ...form, trendDefault: event.target.checked, trendDefaultTouched: true })}
+        />
+        Trend default
+      </label>
       <label className="block text-xs font-semibold text-ink-muted">
         Description
         <textarea
@@ -343,6 +382,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
               <th className="px-2 py-2">Domain</th>
               <th className="px-2 py-2">Unit</th>
               <th className="px-2 py-2">Headline rank</th>
+              <th className="px-2 py-2">Trend default</th>
               <th className="px-2 py-2">Status</th>
               <th className="px-2 py-2">Actions</th>
             </tr>
@@ -355,6 +395,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                 <td className="px-2 py-2">{item.domain ?? "—"}</td>
                 <td className="px-2 py-2">{item.unit ?? "—"}</td>
                 <td className="px-2 py-2">{item.headlineRank ?? "—"}</td>
+                <td className="px-2 py-2">{item.trendDefault ? "Yes" : "—"}</td>
                 <td className="px-2 py-2">
                   <StatusPill
                     label={item.active ? "Active" : "Inactive"}
@@ -403,7 +444,7 @@ export function PointKeysAdminPage({ user }: PointKeysAdminPageProps) {
                   key={`update-${editing.id}`}
                   entry={wizardEntry("pointKey.update")}
                   params={{ id: editing.id }}
-                  values={updateValues(form)}
+                  values={updateValues(form, editing)}
                   onChange={(values) => setForm(formWithValues(form, values))}
                   renderStep={renderStep}
                   onSubmit={(body) => saveMutation.mutate(body)}
