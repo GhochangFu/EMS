@@ -5,6 +5,7 @@ import type pg from "pg";
 import { expect } from "vitest";
 
 import { retryOnConcurrentRefresh } from "../testing/cagg-materialize";
+import { type Recorded, recordingPool } from "../testing/recording-pool";
 import { previousPeriod } from "./energy-view-range";
 import { averagePf, energyPeriodRead, topConsumersRead, viewTopConsumers } from "./energy-view-read";
 import { ReportsService } from "./reports.service";
@@ -433,19 +434,7 @@ export async function assertTopConsumersMatchThePreview(fleet: pg.Pool, fx: Ener
 // Statement shape, through a recording pool (no database)
 // ---------------------------------------------------------------------------
 
-type Recorded = { readonly text: string; readonly params: readonly unknown[] };
-
-/** A `pg.Pool` stand-in that records every statement and answers no rows. */
-function recordingPool(): { pool: pg.Pool; statements: Recorded[] } {
-  const statements: Recorded[] = [];
-  const pool = {
-    query: async (text: string, params: unknown[] = []) => {
-      statements.push({ text, params });
-      return { rows: [], rowCount: 0 };
-    },
-  } as unknown as pg.Pool;
-  return { pool, statements };
-}
+// `recordingPool` moved to `../testing/recording-pool` (F4.301 U2): one copy.
 
 const SCOPE = ["00000000-0000-4000-8000-000000000001", "00000000-0000-4000-8000-000000000002"];
 const START = new Date("2026-10-01T00:00:00.000Z");

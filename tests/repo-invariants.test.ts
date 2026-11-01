@@ -92,6 +92,7 @@ describe("repo invariants", () => {
       // `F4.298` U3: the energy view's reads (ADR 0108), and the moved top-consumers SQL.
       "apps/api/src/reports/energy-view-read.ts",
       "apps/api/src/reports/energy-organization-reads.ts", // `F4.299` U3 (ADR 0108 Amendment 1).
+      "apps/api/src/trend-points/trend-strip-read.ts", // F4.301 U2: the trend strip's one rollup statement.
     ];
     // Comments discuss both markers on purpose, so strip them before matching.
     const stripComments = (src: string): string =>

@@ -91,6 +91,9 @@ const MODULES: readonly string[] = [
   // F4.301 (ADR 0108 Amendment 2, item 11) — U1.
   "packages/shared/src/contracts/trend-strip.ts",
   "packages/shared/src/types/trend-strip.ts",
+  // F4.301 U2.
+  "apps/api/src/trend-points/trend-strip.pure.ts",
+  "apps/api/src/trend-points/trend-strip-read.ts",
 ];
 
 /**
@@ -101,15 +104,14 @@ const MODULES: readonly string[] = [
  * modules here in its first commit.
  *
  * `F4.301` (ADR 0108 Amendment 2, item 11; `docs/plans/f4.301-trend-strip.md`
- * U2–U4): the eight runtime modules not yet created. U1 put the two shared
- * files in {@link MODULES}; each later unit moves its own files from here. The
+ * U2–U4): the runtime modules not yet created. U1 put the two shared files
+ * in {@link MODULES} and U2 its two api files; each later unit moves its own
+ * files from here. The
  * three mount-point views (`generated-site-view.tsx`, `site-dashboard-view.tsx`,
  * `smoc-site-view.tsx`) pre-date ADR 0108 and gain one import and one JSX line
  * each, so they are not listed (the `energy-page.tsx` precedent).
  */
 const PENDING_MODULES: readonly string[] = [
-  "apps/api/src/trend-points/trend-strip.pure.ts",
-  "apps/api/src/trend-points/trend-strip-read.ts",
   "apps/api/src/trend-points/trend-strip.service.ts",
   "apps/api/src/trend-points/trend-strip.controller.ts",
   "apps/web/src/api/trend-strip.ts",
