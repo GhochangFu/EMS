@@ -25,6 +25,15 @@ const widgetRangeSchema = z.enum(["24h", "7d", "30d"]);
  * A plain `z.object`: the write side composes `.strict()` through `bindsNothingArm`.
  */
 export const trendStripWidgetConfigSchema = z.object({
-  tabKey: dashboardTabKeySchema.optional(),
+  // `.describe()` AFTER the shared refinement (ADR 0029 decision 10), as
+  // `moduleSummaryCardConfigSchema.targetTabKey` does: the document emits nothing for the
+  // reserved-key refusal.
+  tabKey: dashboardTabKeySchema
+    .describe(
+      "The key of a tab of the same dashboard whose asset group scopes the strip: lowercase " +
+        "letters, digits and hyphens, 1 to 64 characters. `assets` is reserved. Absent means " +
+        "the whole site.",
+    )
+    .optional(),
   defaultRange: widgetRangeSchema,
 });
