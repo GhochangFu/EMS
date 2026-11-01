@@ -5,7 +5,7 @@ import type {
   WidgetIcon,
   WidgetType,
 } from "@bms/shared";
-import { WIDGET_POINT_CARDINALITY, WIDGET_SOURCE_CARDINALITY } from "@bms/shared";
+import { TREND_STRIP_WIDGET_ROWS, WIDGET_POINT_CARDINALITY, WIDGET_SOURCE_CARDINALITY } from "@bms/shared";
 
 import type { KpiTileStatus } from "../components/kpi-tile";
 import type { RoleName, Roles } from "./theme";
@@ -124,8 +124,9 @@ type WidgetCatalogEntry = {
 };
 
 /**
- * The eleven widget types, closed (ADR 0047 decision 2; `table` by ADR 0048 decision 5; `mimic` by
- * ADR 0079 decision 1; the five site widgets by `F3.73`). Label,
+ * The thirteen widget types, closed (ADR 0047 decision 2; `table` by ADR 0048 decision 5; `mimic` by
+ * ADR 0079 decision 1; the five site widgets by `F3.73`; `breaker_table` by `F3.74`; `trend_strip`
+ * by `F4.305`). Label,
  * icon and default size are presentation and belong here; `points` and `sources` are validation
  * rules and are imported rather than restated (Amendment 2 §1).
  */
@@ -233,6 +234,15 @@ export const WIDGET_CATALOG: Readonly<Record<WidgetType, WidgetCatalogEntry>> = 
     defaultSize: { w: 12, h: 5 },
     points: WIDGET_POINT_CARDINALITY.breaker_table,
     sources: WIDGET_SOURCE_CARDINALITY.breaker_table,
+  },
+  trend_strip: {
+    label: "Trend strip",
+    // Two sparklines over a baseline — one row per trend point (`F4.305`).
+    iconPath: "M3 19h18v2H3v-2Zm0-6 4-4 3 3 5-6 6 5-1.3 1.5L15 8.8l-5 6-3-3-2.6 2.6L3 13Z",
+    // The full width, and the height the stock layout and the seed's v5 step use (plan call C2).
+    defaultSize: { w: 12, h: TREND_STRIP_WIDGET_ROWS },
+    points: WIDGET_POINT_CARDINALITY.trend_strip,
+    sources: WIDGET_SOURCE_CARDINALITY.trend_strip,
   },
 };
 

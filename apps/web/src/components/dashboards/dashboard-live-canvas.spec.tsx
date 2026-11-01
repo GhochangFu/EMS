@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { expect, vi, type Mock } from "vitest";
 
 import { encodePointRef, type DashboardDto, type DashboardWidgetDto } from "@bms/shared";
@@ -30,7 +31,11 @@ const mocks = vi.hoisted(() => ({
   fetchTelemetryRecent: vi.fn(),
   fetchPointAggregate: vi.fn(),
   fetchDashboardCatalogValues: vi.fn(),
+  fetchSiteTrendStrip: vi.fn(),
 }));
+
+// `F4.305` — the trend strip widget's one read, mocked like the canvas's other reads.
+vi.mock("../../api/trend-strip", () => ({ fetchSiteTrendStrip: mocks.fetchSiteTrendStrip }));
 
 vi.mock("socket.io-client", () => ({ io: mocks.io }));
 
@@ -273,4 +278,60 @@ export async function oneSocketWithTokenDisconnectsOnUnmount(): Promise<void> {
   expect(mocks.disconnect, "control: still connected while mounted").not.toHaveBeenCalled();
   unmount();
   expect(mocks.disconnect).toHaveBeenCalledTimes(1);
+}
+
+const GROUP_G = "33333333-3333-4333-8333-333333333333";
+
+/**
+ * L10 — `F4.305` (ADR 0108 Amendment 3, plan call C7): a `trend_strip` widget on the selected tab
+ * draws exactly one strip (one "Trend range" nav), and the canvas hands it the dashboard's location
+ * and tabs, so its `tabKey` reads that tab's group.
+ */
+export async function aTrendStripWidgetDrawsOneStripWithItsTabsGroup(): Promise<void> {
+  const base = tabbedDashboard();
+  const strip = {
+    ...widget(false),
+    id: "widget-ts",
+    title: "Trends",
+    tabId: TAB_SLD,
+    widgetType: "trend_strip",
+    config: { tabKey: "sld", defaultRange: "24h" },
+  } as DashboardWidgetDto;
+  const dto: DashboardDto = {
+    ...base,
+    tabs: base.tabs.map((tab) => (tab.key === "sld" ? { ...tab, assetGroupId: GROUP_G } : tab)),
+    widgets: [...base.widgets, strip],
+  };
+  fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
+  vi.stubGlobal("fetch", fetchSpy);
+  mocks.io.mockImplementation(() => ({ on: vi.fn(), disconnect: mocks.disconnect }));
+  mocks.fetchSiteTrendStrip.mockImplementation((locationId: string, { range }: { range: string }) =>
+    Promise.resolve({
+      locationId,
+      assetGroupId: GROUP_G,
+      range,
+      from: "2026-10-31T06:30:00.000Z",
+      to: "2026-11-01T06:30:00.000Z",
+      level: "5m",
+      bucketSeconds: 1800,
+      timeZone: "Asia/Kolkata",
+      assetsPerPoint: 6,
+      pointsPerSegment: 3,
+      trimmed: false,
+      segments: [],
+    }),
+  );
+  useAuthStore.setState({ accessToken: TOKEN });
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <DashboardLiveCanvas dashboard={dto} tabKey="sld" />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("SLD tile")).toBeInTheDocument();
+  expect(screen.getAllByRole("navigation", { name: "Trend range" })).toHaveLength(1);
+  await waitFor(() => expect(mocks.fetchSiteTrendStrip).toHaveBeenCalled());
+  expect(mocks.fetchSiteTrendStrip.mock.calls[0]).toEqual(["loc-1", { range: "24h", assetGroupId: GROUP_G }]);
 }

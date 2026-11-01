@@ -10,6 +10,7 @@ import {
 import { DashboardWidget } from "../widgets/dashboard-widget";
 import { MimicWidgetLive } from "./mimic-widget-live";
 import { isSiteWidget, SiteWidgetLive } from "./site-widget-live";
+import { TrendStripWidgetLive, type TrendStripTabScope } from "./trend-strip-widget-live";
 
 type DashboardWidgetLiveProps = {
   widget: DashboardWidgetDto;
@@ -20,6 +21,13 @@ type DashboardWidgetLiveProps = {
    * `null` on the Overview and on a legacy canvas. Required, like `dashboardId`, so a host that
    * forgets it cannot draw every tab's widgets from the Overview's scope. */
   tabKey: string | null;
+  /** `F4.305` — the dashboard's own location, the site a `trend_strip` reads; `null` when the
+   * dashboard has none. Required, like `tabKey`, so a second host cannot forget it and draw every
+   * strip as "no site". */
+  locationId: string | null;
+  /** `F4.305` — the dashboard's tabs, so a `trend_strip`'s `config.tabKey` resolves to its group.
+   * Required for the same reason. */
+  tabs: readonly TrendStripTabScope[];
   latestByRef: LatestByRef;
   historyByRef: HistoryByRef;
   /** `F3.35` — the aggregate reads this dashboard needed. Empty for a dashboard that uses none. */
@@ -39,11 +47,14 @@ type DashboardWidgetLiveProps = {
  * **`F3.32` — the one branch.** A `mimic` binds no point and no source, so `widgetDataFor` would
  * call it `"empty"`; it has its own read (`MimicWidgetLive`) and branches off BEFORE the mapping.
  * **`F3.73` — the same branch for the five site widgets** (`SiteWidgetLive`, one read per tab).
+ * **`F4.305` — and for the `trend_strip`** (`TrendStripWidgetLive`, the `F4.301` strip's read).
  */
 export function DashboardWidgetLive({
   widget,
   dashboardId,
   tabKey,
+  locationId,
+  tabs,
   latestByRef,
   historyByRef,
   aggregateByKey,
@@ -55,6 +66,9 @@ export function DashboardWidgetLive({
   }
   if (isSiteWidget(widget)) {
     return <SiteWidgetLive widget={widget} dashboardId={dashboardId} tabKey={tabKey} />;
+  }
+  if (widget.widgetType === "trend_strip") {
+    return <TrendStripWidgetLive widget={widget} locationId={locationId} tabs={tabs} />;
   }
   // Resolved ONCE and reused for both the staleness gate and the chart's rolling window — two
   // clock reads in one render pass could otherwise disagree by the render's own duration.

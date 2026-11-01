@@ -220,6 +220,13 @@ describe("F4.204 — the web tree", () => {
     const files = scannedWebFiles();
     expect(files.filter((f) => f.endsWith(".tsx")).length).toBeGreaterThanOrEqual(190);
     expect(files.filter((f) => f.endsWith(".ts")).length).toBeGreaterThanOrEqual(140);
+    // F4.305 U4 — the trend strip widget's two modules draw a failed read, so the walk must reach them.
+    expect(files).toEqual(
+      expect.arrayContaining([
+        "apps/web/src/components/widgets/trend-strip-widget.tsx",
+        "apps/web/src/components/dashboards/trend-strip-widget-live.tsx",
+      ]),
+    );
   });
 
   it("T3 the scanner finds each allowlisted read, so the allowlist is what hides them", { timeout: 60_000 }, () => {

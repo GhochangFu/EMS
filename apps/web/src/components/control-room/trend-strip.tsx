@@ -1,6 +1,6 @@
 import type { SiteTrendStripDto, TrendStripPointDto, TrendStripRange, TrendStripSegmentDto } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import { fetchSiteTrendStrip } from "../../api/trend-strip";
@@ -125,7 +125,34 @@ function SegmentCard({
 
 /** The trend strip for one Control Room tab: the whole site (`assetGroupId: null`) or one group. */
 export function TrendStrip({ locationId, assetGroupId }: { locationId: string; assetGroupId: string | null }) {
-  const [range, setRange] = useState<TrendStripRange>("24h");
+  return (
+    <TrendStripBody
+      locationId={locationId}
+      assetGroupId={assetGroupId}
+      defaultRange="24h"
+      heading={<h2 className="font-condensed text-sm font-bold text-ink">Trends</h2>}
+    />
+  );
+}
+
+type TrendStripBodyProps = {
+  locationId: string;
+  /** `null` is the whole site and sends no key. */
+  assetGroupId: string | null;
+  /** The range the switch starts on; the switch then owns it. */
+  defaultRange: TrendStripRange;
+  /** Drawn at the left of the range switch: the fixed mount's `h2`; a widget's frame has its own. */
+  heading?: ReactNode;
+};
+
+/**
+ * `F4.305` U4 (ADR 0108 Amendment 3, plan call C7) — the strip without its mount: the range state,
+ * the one read and the segments. The fixed mount above and the `trend_strip` dashboard widget
+ * (`widgets/trend-strip-widget.tsx`) both draw this, so the read, the click target and the fixed
+ * failure sentences are written once.
+ */
+export function TrendStripBody({ locationId, assetGroupId, defaultRange, heading }: TrendStripBodyProps) {
+  const [range, setRange] = useState<TrendStripRange>(defaultRange);
   const query = useQuery({
     queryKey: ["control-room", "trend-strip", locationId, assetGroupId, range],
     queryFn: () => fetchSiteTrendStrip(locationId, { range, assetGroupId }),
@@ -135,8 +162,10 @@ export function TrendStrip({ locationId, assetGroupId }: { locationId: string; a
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="font-condensed text-sm font-bold text-ink">Trends</h2>
+      <div
+        className={`flex flex-wrap items-center gap-3 ${heading === undefined ? "justify-end" : "justify-between"}`}
+      >
+        {heading}
         <nav aria-label="Trend range" className="flex gap-1">
           {RANGES.map((r) => (
             <button

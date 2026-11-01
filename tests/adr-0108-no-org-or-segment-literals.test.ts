@@ -106,6 +106,9 @@ const MODULES: readonly string[] = [
   "packages/shared/src/contracts/trend-strip-widget.ts",
   // F4.305 U3.
   "packages/db/src/site-layout-seed-upgrade-v5.ts",
+  // F4.305 U4.
+  "apps/web/src/components/widgets/trend-strip-widget.tsx",
+  "apps/web/src/components/dashboards/trend-strip-widget-live.tsx",
 ];
 
 /**
@@ -123,11 +126,7 @@ const MODULES: readonly string[] = [
  * `smoc-site-view.tsx`) pre-date ADR 0108 and gain one import and one JSX line
  * each, so they are not listed (the `energy-page.tsx` precedent).
  */
-const PENDING_MODULES: readonly string[] = [
-  // F4.305 (ADR 0108 Amendment 3): U4 creates these two (U3 moved the seed step to MODULES).
-  "apps/web/src/components/widgets/trend-strip-widget.tsx",
-  "apps/web/src/components/dashboards/trend-strip-widget-live.tsx",
-];
+const PENDING_MODULES: readonly string[] = [];
 
 /**
  * Files that are never scanned, each with its reason, so a later row does not

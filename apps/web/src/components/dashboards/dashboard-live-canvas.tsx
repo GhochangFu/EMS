@@ -117,6 +117,8 @@ export function DashboardLiveCanvas({ dashboard: fullDashboard, tabKey }: Dashbo
             widget={tile.widget}
             dashboardId={dashboard.id}
             tabKey={tile.widget.tabId === null ? null : (tabKeyById.get(tile.widget.tabId) ?? null)}
+            locationId={fullDashboard.locationId}
+            tabs={fullDashboard.tabs}
             latestByRef={latestByRef}
             historyByRef={historyByRef}
             aggregateByKey={aggregateByKey}

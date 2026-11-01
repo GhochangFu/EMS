@@ -14,6 +14,7 @@ import { ModuleSummaryCardWidget } from "./module-summary-card-widget";
 import { StateLegendWidget } from "./state-legend-widget";
 import { TankLevelWidget } from "./tank-level-widget";
 import { TableWidget } from "./table-widget";
+import { TrendStripWidgetPreview } from "./trend-strip-widget";
 import { ValueTileWidget } from "./value-tile-widget";
 
 /**
@@ -268,6 +269,11 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
       );
     case "breaker_table":
       return <BreakerTableWidget title={title} status={status} data={undefined} severities={NO_SEVERITIES} readings={null} />;
+    // `F4.305` — the trend strip reads the dashboard's site, which this dispatcher does not have: the
+    // live canvas branches to `TrendStripWidgetLive` before it gets here. Drawn here it is the static
+    // preview, which reads nothing.
+    case "trend_strip":
+      return <TrendStripWidgetPreview title={title} status={status} />;
     default: {
       const unreachable: never = widget;
       return unreachable;
