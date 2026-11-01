@@ -6,12 +6,8 @@ import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import { fetchSiteTrendStrip } from "../../api/trend-strip";
-import {
-  TREND_STRIP_NO_SITE_SENTENCE,
-  TREND_STRIP_STATIC_SENTENCE,
-  TrendStripWidget,
-  TrendStripWidgetPreview,
-} from "./trend-strip-widget";
+import { TREND_STRIP_NO_SITE_SENTENCE, TrendStripWidget } from "./trend-strip-widget";
+import { TREND_STRIP_STATIC_SENTENCE, TrendStripWidgetPreview } from "./trend-strip-widget-preview";
 
 /**
  * `F4.305` U4 (ADR 0108 Amendment 3, items 1–3) — `TrendStripWidget`, the `trend_strip` dashboard

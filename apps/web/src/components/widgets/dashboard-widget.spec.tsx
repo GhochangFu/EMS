@@ -8,7 +8,7 @@ import type { DashboardWidgetDto, WidgetType } from "@bms/shared";
 
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 import { DashboardWidget, type WidgetData } from "./dashboard-widget";
-import { TREND_STRIP_STATIC_SENTENCE } from "./trend-strip-widget";
+import { TREND_STRIP_STATIC_SENTENCE } from "./trend-strip-widget-preview";
 
 /**
  * `F3.1c` — what a person actually sees when a widget renders (ADR 0042

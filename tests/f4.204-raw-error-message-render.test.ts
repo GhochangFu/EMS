@@ -220,9 +220,11 @@ describe("F4.204 — the web tree", () => {
     const files = scannedWebFiles();
     expect(files.filter((f) => f.endsWith(".tsx")).length).toBeGreaterThanOrEqual(190);
     expect(files.filter((f) => f.endsWith(".ts")).length).toBeGreaterThanOrEqual(140);
-    // F4.305 U4 — the trend strip widget's two modules draw a failed read, so the walk must reach them.
+    // F4.305 U4 — the trend strip widget's modules draw a failed read, so the walk must reach them
+    // (the body, split out of trend-strip.tsx by the F4.305 review, is where the sentences are drawn).
     expect(files).toEqual(
       expect.arrayContaining([
+        "apps/web/src/components/control-room/trend-strip-body.tsx",
         "apps/web/src/components/widgets/trend-strip-widget.tsx",
         "apps/web/src/components/dashboards/trend-strip-widget-live.tsx",
       ]),

@@ -109,6 +109,9 @@ const MODULES: readonly string[] = [
   // F4.305 U4.
   "apps/web/src/components/widgets/trend-strip-widget.tsx",
   "apps/web/src/components/dashboards/trend-strip-widget-live.tsx",
+  // F4.305 review (AGENTS.md §4.2) — split out of trend-strip.tsx and trend-strip-widget.tsx.
+  "apps/web/src/components/control-room/trend-strip-body.tsx",
+  "apps/web/src/components/widgets/trend-strip-widget-preview.tsx",
 ];
 
 /**

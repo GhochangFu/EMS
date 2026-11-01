@@ -14,7 +14,7 @@ import { ModuleSummaryCardWidget } from "./module-summary-card-widget";
 import { StateLegendWidget } from "./state-legend-widget";
 import { TankLevelWidget } from "./tank-level-widget";
 import { TableWidget } from "./table-widget";
-import { TrendStripWidgetPreview } from "./trend-strip-widget";
+import { TrendStripWidgetPreview } from "./trend-strip-widget-preview";
 import { ValueTileWidget } from "./value-tile-widget";
 
 /**
