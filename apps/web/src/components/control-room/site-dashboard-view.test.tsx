@@ -35,6 +35,11 @@ import {
   theWallHidesTheTitle,
   theWallKeepsTheTabStrip,
   theWallShowsNoOpenLink,
+  aGroupTabNarrowsTheStrip,
+  theBarePathStripFollowsTheFirstTab,
+  theStockOverviewStripIsTheWholeSite,
+  theStripRendersUnderTheCanvas,
+  theWallRendersNoStrip,
 } from "./site-dashboard-view.spec";
 
 /**
@@ -179,5 +184,31 @@ describe("F3.73 D10 SiteDashboardView tabs", () => {
 
   it("F3.77 T11c the wall keeps the tab strip", async () => {
     await theWallKeepsTheTabStrip();
+  });
+});
+
+describe("F4.301 U5 SiteDashboardView trend strip", () => {
+  afterEach(() => {
+    cleanupView();
+  });
+
+  it("U5a a selected group tab passes its asset group to the strip", async () => {
+    await aGroupTabNarrowsTheStrip();
+  });
+
+  it("U5b the bare path passes the first tab's asset group", async () => {
+    await theBarePathStripFollowsTheFirstTab();
+  });
+
+  it("U5c the bare path on a stock Overview passes null", async () => {
+    await theStockOverviewStripIsTheWholeSite();
+  });
+
+  it("U5d renders the strip under the canvas", async () => {
+    await theStripRendersUnderTheCanvas();
+  });
+
+  it("U5e the wall renders no strip", async () => {
+    await theWallRendersNoStrip();
   });
 });

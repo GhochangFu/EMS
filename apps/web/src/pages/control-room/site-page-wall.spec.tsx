@@ -46,6 +46,11 @@ vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
   ScopedDashboardsList: () => <div data-testid="scoped-dashboards-list" />,
 }));
 
+/** `F4.301` U5 — the site views that render the trend strip are mocked; this keeps its read off the network too. */
+vi.mock("../../api/trend-strip", () => ({
+  fetchSiteTrendStrip: () => new Promise(() => undefined),
+}));
+
 const LOCATION_ID = "p1";
 const SITE_PATH = `/control-room/site/${LOCATION_ID}`;
 const SLUG = "site-layout-lotapata";

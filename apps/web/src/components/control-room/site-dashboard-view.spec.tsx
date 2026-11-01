@@ -13,6 +13,7 @@ import type {
 
 import * as siteWidgetsApi from "../../api/dashboard-site-widgets";
 import * as dashboardsApi from "../../api/dashboards";
+import * as trendStripApi from "../../api/trend-strip";
 import * as vocabulariesApi from "../../api/vocabularies";
 import { ApiError } from "../../lib/api-error";
 import { SiteDashboardView } from "./site-dashboard-view";
@@ -97,10 +98,20 @@ function stubMarkerReads(answer?: SiteWidgetsResponse): Mock {
   return read as unknown as Mock;
 }
 
+/** `F4.301` U5 — the trend strip's read hangs: the cases below assert only what it was asked. */
+let trendStripRead: Mock | null = null;
+
+function stubTrendStripRead(): void {
+  trendStripRead = vi
+    .spyOn(trendStripApi, "fetchSiteTrendStrip")
+    .mockImplementation(() => new Promise(() => undefined)) as unknown as Mock;
+}
+
 function stubRead(...answers: Answer[]): Mock {
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
   vi.stubGlobal("fetch", fetchSpy);
   stubMarkerReads();
+  stubTrendStripRead();
   const read = vi.spyOn(dashboardsApi, "fetchDashboard");
   for (const answer of answers) {
     if (answer === "reject") {
@@ -602,9 +613,72 @@ export async function aPendingMarkersReadDrawsNoMarker(): Promise<void> {
   expect(strip.textContent).not.toMatch(/alarm|Outside scope/);
 }
 
+/**
+ * `F4.301` U5 (ADR 0108 Amendment 2, item 9) — the strip under the canvas reads the selected
+ * tab's asset group. `GROUPED` keeps the stock Overview (no group) first; `FIRST_GROUP` puts a
+ * group tab first by `sortOrder`, with the array order reversed so a default that read the array
+ * would go red.
+ */
+const HVAC_GROUP_ID = "99999999-9999-4999-8999-999999999999";
+const GROUPED: DashboardDto = {
+  ...DTO,
+  tabs: [{ ...tab("hvac", "HVAC", 1), assetGroupId: HVAC_GROUP_ID }, tab("overview", "Overview", 0)],
+};
+const FIRST_GROUP: DashboardDto = {
+  ...DTO,
+  tabs: [tab("overview", "Overview", 1), { ...tab("hvac", "HVAC", 0), assetGroupId: HVAC_GROUP_ID }],
+};
+
+async function stripCalls(): Promise<unknown[][]> {
+  await screen.findByTestId("dashboard-live-canvas");
+  await waitFor(() => expect(trendStripRead).toHaveBeenCalled());
+  return trendStripRead?.mock.calls ?? [];
+}
+
+/** U5a — a selected group tab narrows the strip to its asset group. Mutation: pass `null` => red. */
+export async function aGroupTabNarrowsTheStrip(): Promise<void> {
+  stubRead(GROUPED);
+  renderAtTab("hvac");
+  expect(await stripCalls()).toEqual([[LOCATION_ID, { range: "24h", assetGroupId: HVAC_GROUP_ID }]]);
+}
+
+/** U5b — the bare path's strip follows the first stored tab when that tab has a group. */
+export async function theBarePathStripFollowsTheFirstTab(): Promise<void> {
+  stubRead(FIRST_GROUP);
+  renderAtTab();
+  expect(await stripCalls()).toEqual([[LOCATION_ID, { range: "24h", assetGroupId: HVAC_GROUP_ID }]]);
+}
+
+/** U5c — the bare path on a stock Overview (no group) reads the whole site. */
+export async function theStockOverviewStripIsTheWholeSite(): Promise<void> {
+  stubRead(GROUPED);
+  renderAtTab();
+  expect(await stripCalls()).toEqual([[LOCATION_ID, { range: "24h", assetGroupId: null }]]);
+}
+
+/** U5d — off the wall the strip renders under the canvas (U5e's positive control). */
+export async function theStripRendersUnderTheCanvas(): Promise<void> {
+  stubRead(TABBED);
+  renderAtTab();
+  const canvas = await screen.findByTestId("dashboard-live-canvas");
+  const strip = await screen.findByRole("heading", { name: "Trends" });
+  expect(canvas.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+/** U5e — the wall renders no strip and makes no strip read. Mutation: drop the `!wall` guard => red. */
+export async function theWallRendersNoStrip(): Promise<void> {
+  stubRead(TABBED);
+  renderWall();
+  await screen.findByTestId("dashboard-live-canvas");
+  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  expect(screen.queryByRole("heading", { name: "Trends" })).toBeNull();
+  expect(trendStripRead?.mock.calls).toEqual([]);
+}
+
 /** Unmounts, restores the spies and fails the case if any read reached the network. */
 export function cleanupView(): void {
   cleanup();
+  trendStripRead = null;
   const networkCalls = fetchSpy?.mock.calls.map((call) => String(call[0])) ?? [];
   fetchSpy = null;
   vi.restoreAllMocks();

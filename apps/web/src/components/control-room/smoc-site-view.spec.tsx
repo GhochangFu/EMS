@@ -1,10 +1,12 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { useEffect, type ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi, type Mock } from "vitest";
 
 import type { AccessibleScope } from "@bms/shared";
 
+import * as trendStripApi from "../../api/trend-strip";
 import { SMOC_TABS, smocTabPath, type SmocTabKey } from "../../lib/smoc-pages";
 import { CR_POINT_KEYS, CR_TRACKED_ASSET_CODES } from "../live-svg/control-room-bindings";
 import { SmocSiteView } from "./smoc-site-view";
@@ -91,13 +93,30 @@ const SCOPED_OUT = "Outside your asset-group scope";
 
 let fetchSpy: Mock | null = null;
 
-function renderView(tab: SmocTabKey, scope: AccessibleScope | null = GLOBAL): void {
+/** `F4.301` U5 — the trend strip's read hangs: the cases assert only what it was asked. */
+let trendStripRead: Mock | null = null;
+
+function stubNetwork(): void {
   fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
   vi.stubGlobal("fetch", fetchSpy);
+  trendStripRead = vi
+    .spyOn(trendStripApi, "fetchSiteTrendStrip")
+    .mockImplementation(() => new Promise(() => undefined)) as unknown as Mock;
+}
+
+function withQueryClient(children: ReactNode): JSX.Element {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+}
+
+function renderView(tab: SmocTabKey, scope: AccessibleScope | null = GLOBAL): void {
+  stubNetwork();
   render(
-    <MemoryRouter initialEntries={[smocTabPath(LOCATION_ID, tab)]}>
-      <SmocSiteView locationId={LOCATION_ID} tab={tab} scope={scope} />
-    </MemoryRouter>,
+    withQueryClient(
+      <MemoryRouter initialEntries={[smocTabPath(LOCATION_ID, tab)]}>
+        <SmocSiteView locationId={LOCATION_ID} tab={tab} scope={scope} />
+      </MemoryRouter>,
+    ),
   );
 }
 
@@ -195,18 +214,44 @@ export function aDisallowedTabMountsNoProvider(): void {
 }
 
 function renderThenSwitchTab(from: SmocTabKey, to: SmocTabKey): void {
-  fetchSpy = vi.fn(() => Promise.reject(new Error("a spec reached the network")));
-  vi.stubGlobal("fetch", fetchSpy);
+  stubNetwork();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const { rerender } = render(
-    <MemoryRouter initialEntries={[smocTabPath(LOCATION_ID, from)]}>
-      <SmocSiteView locationId={LOCATION_ID} tab={from} scope={GLOBAL} />
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[smocTabPath(LOCATION_ID, from)]}>
+        <SmocSiteView locationId={LOCATION_ID} tab={from} scope={GLOBAL} />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
   rerender(
-    <MemoryRouter initialEntries={[smocTabPath(LOCATION_ID, from)]}>
-      <SmocSiteView locationId={LOCATION_ID} tab={to} scope={GLOBAL} />
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[smocTabPath(LOCATION_ID, from)]}>
+        <SmocSiteView locationId={LOCATION_ID} tab={to} scope={GLOBAL} />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
+}
+
+/**
+ * `F4.301` U5a (ADR 0108 Amendment 2, item 9; owner answer 3) — the Main Dashboard tab renders
+ * the whole-site strip after its content. Mutation: pass a group id or drop the strip => red.
+ */
+export async function theOverviewTabReadsTheWholeSiteStrip(): Promise<void> {
+  renderView("overview");
+
+  const strip = await screen.findByRole("heading", { name: "Trends" });
+  expect(screen.getByTestId("tab-overview").compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(trendStripRead?.mock.calls).toEqual([[LOCATION_ID, { range: "24h", assetGroupId: null }]]);
+}
+
+/** U5b — a mimic tab (`hvac`) renders no strip and makes no strip read (after U5a's positive). */
+export async function aMimicTabRendersNoStrip(): Promise<void> {
+  renderView("hvac");
+
+  expect(screen.getByTestId("tab-hvac")).toBeInTheDocument();
+  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+  expect(screen.queryByRole("heading", { name: "Trends" })).toBeNull();
+  expect(trendStripRead?.mock.calls).toEqual([]);
 }
 
 /**
@@ -225,6 +270,7 @@ export function cleanupView(): void {
   cleanup();
   const networkCalls = fetchSpy?.mock.calls.map((call) => String(call[0])) ?? [];
   fetchSpy = null;
+  trendStripRead = null;
   state.providers.length = 0;
   state.providerMounts = 0;
   vi.restoreAllMocks();

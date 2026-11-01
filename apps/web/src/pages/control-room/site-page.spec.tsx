@@ -122,6 +122,11 @@ vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
   ),
 }));
 
+/** `F4.301` U5 — the site views that render the trend strip are mocked; this keeps its read off the network too. */
+vi.mock("../../api/trend-strip", () => ({
+  fetchSiteTrendStrip: () => new Promise(() => undefined),
+}));
+
 /**
  * `F3.66` U4 — `/control-room/site/:locationId`, the site view host (ADR 0076
  * decisions 2 and 5), rows V1a–V16 of the plan's U4 table; `F3.70` U4
