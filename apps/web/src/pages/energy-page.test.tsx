@@ -22,6 +22,7 @@ import {
   theLoadProfileStacksBySiteByDefault,
   theOnlyOrganizationIsPreselectedAndFetched,
   theOrganizationSectionsRender,
+  theOrganizationSectionsWaitWhileOnlyTheViewIsNew,
   theRollupTileNamesLevelBucketAndZone,
   theTotalTileShowsTheChangeAgainstThePreviousPeriod,
 } from "./energy-page.spec";
@@ -120,6 +121,10 @@ describe("F4.299 the organization views on the Energy page", () => {
 
   it("renders the ranking, the heatmap and the abnormal list", async () => {
     await theOrganizationSectionsRender();
+  });
+
+  it("holds the organization sections while only the view has the new filter", async () => {
+    await theOrganizationSectionsWaitWhileOnlyTheViewIsNew();
   });
 
   it("keeps the KPI tiles when the organization views fail", async () => {

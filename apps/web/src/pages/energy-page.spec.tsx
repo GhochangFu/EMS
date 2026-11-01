@@ -426,6 +426,34 @@ export async function aFailedOrganizationViewsReadLeavesTheTiles(): Promise<void
   expect(document.body.textContent).not.toContain("organization-views 500");
 }
 
+/**
+ * `F4.299` review — the two reads resolve at different times and both keep the
+ * previous answer while a new filter loads. Once `/view` holds the new filter
+ * and the organization read still shows the old one, the organization sections
+ * wait ("Loading the sites…") instead of drawing the old sites under the new
+ * tiles; the new sites render when their read resolves.
+ */
+export async function theOrganizationSectionsWaitWhileOnlyTheViewIsNew(): Promise<void> {
+  const { viewSpy, orgViewsSpy } = stubEnergyApi();
+  let resolveCompare: (value: EnergyOrganizationViews) => void = () => undefined;
+  const compareRead = new Promise<EnergyOrganizationViews>((resolve) => {
+    resolveCompare = resolve;
+  });
+  orgViewsSpy.mockImplementation((query) => (query.compare ? compareRead : Promise.resolve(organizationViews())));
+  renderPage();
+
+  expect(await screen.findByTestId("site-ranking-row")).toHaveTextContent("Alpha site");
+  await userEvent.click(await screen.findByLabelText("Compare with previous period"));
+  await waitFor(() => expect(viewSpy.mock.calls.at(-1)?.[0]).toMatchObject({ compare: "previous" }));
+
+  expect(await screen.findByText("Loading the sites…")).toBeInTheDocument();
+  expect(screen.queryByTestId("site-ranking-row")).toBeNull();
+
+  const bravo = { locationId: SITE_A, name: "Bravo site", assetCount: 2, kwh: 900, peakKw: 150, peakAt: null };
+  resolveCompare(organizationViews({ sites: { current: [bravo], compare: [bravo], totalSites: 1 } }));
+  expect(await screen.findByTestId("site-ranking-row")).toHaveTextContent("Bravo site");
+}
+
 /** The positive pair: the one organization is preselected and the view is asked for it. */
 export async function theOnlyOrganizationIsPreselectedAndFetched(): Promise<void> {
   const { viewSpy } = stubEnergyApi(view(), 1);

@@ -30,7 +30,7 @@ export type SiteRankingSort = "kwh" | "peakKw";
 export type SiteChange =
   | { kind: "none" }
   | { kind: "no_previous" }
-  | { kind: "change"; pct: number | null };
+  | { kind: "change"; pct: number };
 
 export type SiteRankingRow = {
   site: EnergySiteEnergy;
@@ -50,10 +50,13 @@ export function rankingRows(
       return { site, previous: null, change: { kind: "none" } };
     }
     const previous = previousById.get(site.locationId) ?? null;
-    if (previous === null) {
+    // Ruling 4.6: no percent unless the previous kWh is above zero. Zero has no
+    // percent, and a net-export (negative) previous kWh would invert its sign.
+    if (previous === null || !(previous.kwh > 0)) {
       return { site, previous, change: { kind: "no_previous" } };
     }
-    return { site, previous, change: { kind: "change", pct: percentChange(site.kwh, previous.kwh) } };
+    const pct = percentChange(site.kwh, previous.kwh) as number;
+    return { site, previous, change: { kind: "change", pct } };
   });
   return rows.sort((a, b) => b.site[sort] - a.site[sort] || a.site.name.localeCompare(b.site.name));
 }

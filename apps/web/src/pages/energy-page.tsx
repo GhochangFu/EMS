@@ -176,12 +176,17 @@ export function EnergyPage({ user }: EnergyPageProps) {
   const chartStatus = (count: number | undefined): KpiTileStatus =>
     status !== "ready" ? status : count === 0 ? "empty" : "ready";
 
+  // Both reads keep the previous answer while a new filter loads and resolve at
+  // different times. When one holds the new filter and the other the old, the
+  // organization sections wait: else the old sites (or a 7 d stack under a 30 d
+  // dashed compare) would be drawn under the new KPI tiles.
+  const mixedAnswers = viewQ.isPlaceholderData !== orgViewsQ.isPlaceholderData;
   const orgStatus: KpiTileStatus =
     optionsQ.isError || orgViewsQ.isError
       ? "error"
       : noOrganization
         ? "empty"
-        : orgViewsQ.data === undefined
+        : orgViewsQ.data === undefined || mixedAnswers
           ? "loading"
           : "ready";
   const ov = orgStatus === "ready" ? orgViewsQ.data : undefined;

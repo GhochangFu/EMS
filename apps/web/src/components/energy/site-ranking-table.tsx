@@ -40,7 +40,7 @@ function changeText(change: SiteChange): string {
     case "no_previous":
       return "no data for the previous period";
     case "change":
-      return change.pct === null ? "—" : `${change.pct >= 0 ? "+" : ""}${change.pct.toFixed(1)} %`;
+      return `${change.pct >= 0 ? "+" : ""}${change.pct.toFixed(1)} %`;
   }
 }
 

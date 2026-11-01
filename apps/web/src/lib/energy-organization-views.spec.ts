@@ -55,9 +55,16 @@ export function theChangeIsNoPreviousForASiteAbsentFromTheCompare(): void {
   expect(rows.find((r) => r.site.name === "A")?.change).toEqual({ kind: "change", pct: 50 });
 }
 
-export function theChangeHasNoPercentWhenThePreviousKwhIsZero(): void {
+/** Ruling 4.6: a previous kWh of zero is "no data for the previous period", never a percent. */
+export function theChangeIsNoPreviousWhenThePreviousKwhIsZero(): void {
   const rows = rankingRows([site("A", 30)], [site("A", 0)], "kwh");
-  expect(rows[0].change).toEqual({ kind: "change", pct: null });
+  expect(rows[0].change).toEqual({ kind: "no_previous" });
+}
+
+/** A net-export site (previous kWh below zero) gets no percent: its sign would be inverted. */
+export function theChangeIsNoPreviousWhenThePreviousKwhIsNegative(): void {
+  const rows = rankingRows([site("A", 30)], [site("A", -10)], "kwh");
+  expect(rows[0].change).toEqual({ kind: "no_previous" });
 }
 
 export function heatmapGridHasAscendingDaysTwentyFourHoursAndNullForAMissingCell(): void {

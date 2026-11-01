@@ -10,7 +10,8 @@ import {
   rankingRowsSortByPeakKw,
   siteStacksGiveOneStackPerColumnAndLabelOther,
   theBaselineSentenceNamesTheStepAndTheConsultedWindows,
-  theChangeHasNoPercentWhenThePreviousKwhIsZero,
+  theChangeIsNoPreviousWhenThePreviousKwhIsNegative,
+  theChangeIsNoPreviousWhenThePreviousKwhIsZero,
   theChangeIsNoPreviousForASiteAbsentFromTheCompare,
   theChangeIsNoneWithoutACompare,
 } from "./energy-organization-views.spec";
@@ -32,8 +33,11 @@ describe("F4.299 organization-view helpers", () => {
   it("has no previous for a site absent from the compare", () => {
     theChangeIsNoPreviousForASiteAbsentFromTheCompare();
   });
-  it("has no percent when the previous kWh is zero", () => {
-    theChangeHasNoPercentWhenThePreviousKwhIsZero();
+  it("has no previous when the previous kWh is zero", () => {
+    theChangeIsNoPreviousWhenThePreviousKwhIsZero();
+  });
+  it("has no previous when the previous kWh is below zero", () => {
+    theChangeIsNoPreviousWhenThePreviousKwhIsNegative();
   });
   it("builds the heatmap grid", () => {
     heatmapGridHasAscendingDaysTwentyFourHoursAndNullForAMissingCell();

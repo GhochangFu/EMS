@@ -47,7 +47,7 @@ export async function peakKwReSortsAndIsPressed(): Promise<void> {
   expect(screen.getByRole("button", { name: "kWh" })).toHaveAttribute("aria-pressed", "false");
 }
 
-/** With compare: a percent, the absent site's sentence, and a dash for a zero previous kWh. */
+/** With compare: a percent, and the sentence for an absent site and for a zero previous kWh (ruling 4.6). */
 export function theChangeColumnFollowsRuling46(): void {
   render(
     <SiteRankingTable
@@ -58,7 +58,7 @@ export function theChangeColumnFollowsRuling46(): void {
   );
   expect(changeOf("Alpha")).toBe("+12.5 %");
   expect(changeOf("Bravo")).toBe("no data for the previous period");
-  expect(changeOf("Charlie")).toBe("—");
+  expect(changeOf("Charlie")).toBe("no data for the previous period");
 }
 
 /** Without compare the change column is a dash (the positive pair is the case above). */

@@ -24,7 +24,7 @@ describe("F4.299 site ranking table", () => {
   it("re-sorts by peak kW and marks the pressed button", async () => {
     await peakKwReSortsAndIsPressed();
   });
-  it("shows the change, the absent site's sentence and a dash for zero", () => {
+  it("shows the change and the sentence for an absent site and a zero previous kWh", () => {
     theChangeColumnFollowsRuling46();
   });
   it("shows a dash in the change column without compare", () => {
