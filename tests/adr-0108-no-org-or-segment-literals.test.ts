@@ -76,6 +76,7 @@ const MODULES: readonly string[] = [
   "packages/db/src/schema/trend-points-schema.ts",
   "apps/web/src/api/admin/trend-points.ts",
   "apps/web/src/pages/admin/trend-points-page.tsx",
+  "apps/api/src/reports/energy-abnormal.ts",
 ];
 
 /**
@@ -88,7 +89,6 @@ const MODULES: readonly string[] = [
 const PENDING_MODULES: readonly string[] = [
   // F4.299 (ADR 0108 Amendment 1, 7.10): each moves to MODULES in the commit that creates it.
   "apps/api/src/reports/energy-organization-reads.ts",
-  "apps/api/src/reports/energy-abnormal.ts",
   "apps/api/src/reports/energy-organization-views.service.ts",
   "apps/web/src/lib/energy-stack-option.ts",
   "apps/web/src/lib/energy-organization-views.ts",

@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
-import { expect } from "vitest";
+import { expect, vi } from "vitest";
 
 import { locations, organizations } from "@bms/db";
 import type { EnergyView, EnergyViewQuery, JwtPayload } from "@bms/shared";
@@ -8,6 +8,7 @@ import {
   ENERGY_VIEW_ORGANIZATION_MISMATCH,
   ENERGY_VIEW_ORGANIZATION_REQUIRED,
   EnergyViewService,
+  type EnergyViewFrame,
 } from "./energy-view.service";
 
 /**
@@ -356,4 +357,41 @@ export async function theResponseCarriesCountsNeverIds(): Promise<void> {
   expect(view.partial).toEqual({ readableSites: 1, selectedSites: 2 });
   expect(Object.keys(view.partial ?? {}).sort()).toEqual(["readableSites", "selectedSites"]);
   expect(JSON.stringify(view)).not.toContain(SITE_HIDDEN);
+}
+
+// --- the frame (F4.299 U2, ADR 0108 Amendment 1, 7.2) ---------------------
+
+/** `view()` resolves its frame through the public `frame()` exactly once, with the caller's user and query. */
+export async function viewCallsFrameOnce(): Promise<void> {
+  const f = fake({ withData: true });
+  const spy = vi.spyOn(f.service, "frame");
+  const query: EnergyViewQuery = { range: "24h", compare: "previous" };
+  await f.service.view(USER, query);
+  expect(spy).toHaveBeenCalledTimes(1);
+  expect(spy).toHaveBeenCalledWith(USER, query);
+}
+
+/** The frame's organization, scope, level, bucket, zone and partial are the ones the response reports and reads. */
+export async function theFrameMatchesTheResponse(): Promise<void> {
+  const f = fake({
+    withData: true,
+    readableLocations: [SITE_1],
+    subtree: [SITE_1, SITE_HIDDEN],
+    locationZone: "Asia/Kolkata",
+    place: { organizationId: ORG_A, assetIds: [ASSET_2] },
+  });
+  const spy = vi.spyOn(f.service, "frame");
+  const view = await f.service.view(USER, { range: "7d", locationIds: [SITE_1], compare: "previous" });
+  const frame: EnergyViewFrame = await (spy.mock.results[0]?.value as Promise<EnergyViewFrame>);
+  expect(frame.organizationId).toBe(view.organizationId);
+  expect(frame.level).toBe(view.level);
+  expect(frame.bucket).toBe(view.bucket);
+  expect(frame.zone.timeZone).toBe(view.timeZone);
+  expect(frame.zone.timeZone).toBe("Asia/Kolkata");
+  expect(frame.partial).toEqual(view.partial);
+  expect(frame.partial).toEqual({ readableSites: 1, selectedSites: 2 });
+  expect(frame.current.start.toISOString()).toBe(view.current.from);
+  expect(frame.previous?.start.toISOString()).toBe(view.compare?.from);
+  expect(frame.assetIds).toEqual([ASSET_2]);
+  for (const list of boundLists(f.statements)) expect(list).toEqual(frame.assetIds);
 }

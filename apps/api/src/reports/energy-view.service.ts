@@ -12,6 +12,7 @@ import type {
   EnergyViewPeriod,
   EnergyViewQuery,
   JwtPayload,
+  ResolvedSiteTimeZone,
 } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
@@ -50,6 +51,24 @@ export const ENERGY_VIEW_ORGANIZATION_NOT_FOUND = "organizationId names no organ
 const TOP_CONSUMERS = 10;
 
 type Place = { readonly organizationId: string; readonly assetIds: readonly string[] };
+
+/**
+ * `F4.299` U2 (ADR 0108 Amendment 1, 7.2) — what every Energy page read is
+ * framed by: the placed organization, the explicit readable asset list (never
+ * `null`), the zone, the current and compare periods, the read level and the
+ * display bucket, the partial counts, and the `now` the periods ended at.
+ */
+export type EnergyViewFrame = {
+  readonly organizationId: string;
+  readonly assetIds: readonly string[];
+  readonly zone: ResolvedSiteTimeZone;
+  readonly current: EnergyViewPeriodRange;
+  readonly previous: EnergyViewPeriodRange | null;
+  readonly level: AggregateLevel;
+  readonly bucket: AggregateLevel;
+  readonly partial: EnergyViewPartial | null;
+  readonly now: Date;
+};
 
 function round(value: number, places: number): number {
   const factor = 10 ** places;
@@ -96,7 +115,15 @@ export class EnergyViewService {
     @Inject(ReportScopeService) private readonly scope: Pick<ReportScopeService, "placeForCaller">,
   ) {}
 
-  async view(user: JwtPayload, query: EnergyViewQuery): Promise<EnergyView> {
+  /**
+   * The view's frame, resolved once (ADR 0108 Amendment 1, 7.2): the place in
+   * decision 2.2's check order, the zone of 2.8, the range and compare of 2.2,
+   * the level and bucket of 2.4 and the partial of 2.9. `view()` and
+   * `EnergyOrganizationViewsService` (`F4.299`) both read through it, so no
+   * second copy of those rules exists. Every refusal is thrown here, before
+   * any telemetry statement.
+   */
+  async frame(user: JwtPayload, query: EnergyViewQuery): Promise<EnergyViewFrame> {
     const named = query.locationIds;
     const place = await this.placeFor(user, query);
     const zone = zoneForArithmetic(
@@ -114,8 +141,26 @@ export class EnergyViewService {
     });
 
     const partial = await this.partialFor(user, place.organizationId, named);
+    return {
+      organizationId: place.organizationId,
+      assetIds: place.assetIds,
+      zone,
+      current,
+      previous,
+      level,
+      bucket,
+      partial,
+      now,
+    };
+  }
+
+  async view(user: JwtPayload, query: EnergyViewQuery): Promise<EnergyView> {
+    const { organizationId, assetIds, zone, current, previous, level, bucket, partial } = await this.frame(
+      user,
+      query,
+    );
     const read = (range: EnergyViewPeriodRange) =>
-      this.period({ level, bucket, timeZone: zone.arithmeticZone, range, assetIds: place.assetIds });
+      this.period({ level, bucket, timeZone: zone.arithmeticZone, range, assetIds });
     const currentPeriod = await read(current);
     const comparePeriod = previous === null ? null : await read(previous);
     const topConsumers = await viewTopConsumers(this.pool, {
@@ -124,11 +169,11 @@ export class EnergyViewService {
       end: current.end,
       durationHours: current.durationHours,
       limit: TOP_CONSUMERS,
-      assetIds: place.assetIds,
+      assetIds,
     });
 
     return {
-      organizationId: place.organizationId,
+      organizationId,
       timeZone: zone.timeZone,
       generatedAt: new Date().toISOString(),
       level,

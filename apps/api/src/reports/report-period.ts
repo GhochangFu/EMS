@@ -108,9 +108,10 @@ function formatterFor(zone: string): Intl.DateTimeFormat {
   return created;
 }
 
-type WallTime = LocalDate & LocalClock & { readonly second: number };
+export type WallTime = LocalDate & LocalClock & { readonly second: number };
 
-function wallTimeOf(instant: Date, zone: string): WallTime {
+/** The wall date and clock `zone` shows at `instant`, to the second. Exported for `energy-abnormal.ts` (`F4.299`). */
+export function wallTimeOf(instant: Date, zone: string): WallTime {
   const parts: Record<string, number> = {};
   for (const part of formatterFor(zone).formatToParts(instant)) {
     if (part.type !== "literal") {
