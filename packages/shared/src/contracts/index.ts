@@ -24,6 +24,7 @@ export * from "./admin";
 // F4.298 (ADR 0108 decisions 2.8 and 2.11): the one AggregateLevel enum, the
 // energy view contract, and the one site time-zone chain.
 export * from "./aggregate-level";
+export * from "./energy-organization-views";
 export * from "./energy-view";
 export * from "./time-zone-chain";
 // F4.297 (ADR 0108 decision 1.2): the telemetry read query schemas.

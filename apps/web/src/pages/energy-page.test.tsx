@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup } from "@testing-library/react";
-import { afterEach, describe, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, vi } from "vitest";
 
 import {
   aCostRendersInTheOrganizationsCurrency,
@@ -13,9 +13,16 @@ import {
   aPfRendersToTwoDecimals,
   anEmptyPreviousPeriodSaysSo,
   anUnconfiguredWindowShowsTheDashAndTheReason,
+  aFailedOrganizationViewsReadLeavesTheTiles,
+  bothViewsAreFetchedWithTheSameQuery,
   noViewIsFetchedWithoutAnOrganization,
+  resetRecordedCharts,
+  sourceStacksTheThreeSources,
   thePeakTimeIsFormattedInTheViewsZone,
+  theLoadProfileStacksBySiteByDefault,
   theOnlyOrganizationIsPreselectedAndFetched,
+  theOrganizationSectionsRender,
+  theOrganizationSectionsWaitWhileOnlyTheViewIsNew,
   theRollupTileNamesLevelBucketAndZone,
   theTotalTileShowsTheChangeAgainstThePreviousPeriod,
 } from "./energy-page.spec";
@@ -25,6 +32,9 @@ import {
  * the jsdom docblock is here because this is the file Vitest collects
  * (ADR 0042 decision 2).
  */
+beforeEach(() => {
+  resetRecordedCharts();
+});
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -93,5 +103,31 @@ describe("F4.298 the Energy page on GET /reports/energy/view", () => {
 
   it("preselects the only organization and fetches its view", async () => {
     await theOnlyOrganizationIsPreselectedAndFetched();
+  });
+});
+
+describe("F4.299 the organization views on the Energy page", () => {
+  it("fetches both views with the same query", async () => {
+    await bothViewsAreFetchedWithTheSameQuery();
+  });
+
+  it("stacks the load profile by site by default", async () => {
+    await theLoadProfileStacksBySiteByDefault();
+  });
+
+  it("re-stacks the load profile into the three sources", async () => {
+    await sourceStacksTheThreeSources();
+  });
+
+  it("renders the ranking, the heatmap and the abnormal list", async () => {
+    await theOrganizationSectionsRender();
+  });
+
+  it("holds the organization sections while only the view has the new filter", async () => {
+    await theOrganizationSectionsWaitWhileOnlyTheViewIsNew();
+  });
+
+  it("keeps the KPI tiles when the organization views fail", async () => {
+    await aFailedOrganizationViewsReadLeavesTheTiles();
   });
 });

@@ -27,13 +27,8 @@ import { aggregateRelation, avgExpr, bucketHours } from "../telemetry/point-aggr
 
 type Queryable = Pick<Pool, "query">;
 
-/** The display grouping of `energyPeriodRead`'s series: a closed two-member lookup, never caller text. */
-const DISPLAY_GROUP = {
-  /** The bucket is the read level's own bucket. */
-  level: "agg.bucket",
-  /** A `1d` bucket over `_1h`: the local day of `$5` (`point_values_1d` holds UTC days). */
-  zoneDay: "time_bucket(INTERVAL '1 day', agg.bucket, $5::text)",
-} as const;
+/** The display groupings: the read level's own bucket, or a `1d` bucket over `_1h` (a local day). */
+type DisplayGroup = "level" | "zoneDay";
 
 export type EnergyPeriodReadInput = {
   /** The relation read. */
@@ -83,7 +78,7 @@ function relationFor(level: AggregateLevel): string {
   return relation;
 }
 
-function displayGroupFor(level: AggregateLevel, bucket: AggregateLevel): keyof typeof DISPLAY_GROUP {
+function displayGroupFor(level: AggregateLevel, bucket: AggregateLevel): DisplayGroup {
   if (bucket === level) {
     return "level";
   }
@@ -94,12 +89,33 @@ function displayGroupFor(level: AggregateLevel, bucket: AggregateLevel): keyof t
 }
 
 /**
+ * `F4.299` U2 (ADR 0108 Amendment 1, 7.2) — the display-bucket expression over
+ * an `agg` relation with a `bucket` column: `agg.bucket` when the bucket is the
+ * read level, or, for a `1d` bucket over `_1h`, the local day of the zone bound
+ * at `$<zoneParamIndex>` (`point_values_1d` holds UTC days). The caller binds
+ * the zone at that position only in the `1d`-over-`1h` case. The index is the
+ * only interpolated part, so a non-integer or a position below 1 is refused.
+ */
+export function displayGroupExpr(level: AggregateLevel, bucket: AggregateLevel, zoneParamIndex: number): string {
+  const group = displayGroupFor(level, bucket);
+  if (group === "level") {
+    return "agg.bucket";
+  }
+  if (!Number.isInteger(zoneParamIndex) || zoneParamIndex < 1) {
+    throw new Error(`energy view: the zone parameter index must be a positive integer`);
+  }
+  return `time_bucket(INTERVAL '1 day', agg.bucket, $${zoneParamIndex}::text)`;
+}
+
+/**
  * The period's kWh, solar kWh, peak with its time, and the display series, in
  * one statement: `per` (each asset's mean kW per read bucket) → `agg` (summed per
  * read bucket, with the existing `PV%` solar rule) → the display grouping.
  */
 export async function energyPeriodRead(pool: Queryable, input: EnergyPeriodReadInput): Promise<EnergyPeriodRead> {
   const group = displayGroupFor(input.level, input.bucket);
+  // `$5` is the zone, pushed below only for the `1d`-over-`1h` grouping.
+  const groupExpr = displayGroupExpr(input.level, input.bucket, 5);
   const relation = relationFor(input.level);
   if (input.assetIds.length === 0) {
     return EMPTY_PERIOD;
@@ -138,7 +154,7 @@ export async function energyPeriodRead(pool: Queryable, input: EnergyPeriodReadI
       GROUP BY per.bucket
     ),
     display AS (
-      SELECT ${DISPLAY_GROUP[group]} AS t, AVG(agg.total_kw)::float8 AS total_kw, AVG(agg.solar_kw)::float8 AS solar_kw
+      SELECT ${groupExpr} AS t, AVG(agg.total_kw)::float8 AS total_kw, AVG(agg.solar_kw)::float8 AS solar_kw
       FROM agg
       GROUP BY 1
     )

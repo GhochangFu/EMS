@@ -3,9 +3,12 @@ import { afterEach, describe, it, vi } from "vitest";
 import {
   fetchesACustomViewWithBothInstants,
   fetchesTheFilterOptions,
+  fetchesTheOrganizationViewsWithTheSameSearch,
   fetchesTheViewWithARepeatedLocationKey,
   refusesAViewOutsideTheContract,
+  refusesOrganizationViewsOutsideTheContract,
   throwsOnANonOkFilterOptions,
+  throwsOnANonOkOrganizationViews,
   throwsOnANonOkView,
 } from "./energy-view.spec";
 
@@ -33,6 +36,18 @@ describe("F4.298 energy view web client", () => {
 
   it("throws on a non-OK view status", async () => {
     await throwsOnANonOkView();
+  });
+
+  it("fetches GET /reports/energy/organization-views with the view's search", async () => {
+    await fetchesTheOrganizationViewsWithTheSameSearch();
+  });
+
+  it("refuses organization views outside the contract", async () => {
+    await refusesOrganizationViewsOutsideTheContract();
+  });
+
+  it("throws on a non-OK organization-views status", async () => {
+    await throwsOnANonOkOrganizationViews();
   });
 
   it("fetches GET /reports/energy/filter-options", async () => {

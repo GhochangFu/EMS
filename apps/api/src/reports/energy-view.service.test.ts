@@ -18,9 +18,11 @@ import {
   oneLocationNamedUsesItsZone,
   readableLocationsOfAnotherOrganizationAreA400,
   theReadsReceiveTheScopesAssetIds,
+  theFrameMatchesTheResponse,
   theResponseCarriesCountsNeverIds,
   twoLocationsUseTheOrganizationsZone,
   unreadableLocationsAreA403BeforeTheOrganizationIsCompared,
+  viewCallsFrameOnce,
 } from "./energy-view.service.spec";
 
 /** `F4.298` U4 — Vitest entry point for `EnergyViewService`. Assertions live in the sibling `.spec` (§4.6). */
@@ -59,5 +61,11 @@ describe("F4.298 — EnergyViewService (ADR 0108 decision 2)", () => {
 
   describe("counts, never ids", () => {
     it("the response carries counts, never an unreadable site id", () => theResponseCarriesCountsNeverIds());
+  });
+
+  describe("the frame (F4.299 U2, ADR 0108 Amendment 1, 7.2)", () => {
+    it("view() resolves its frame through frame() once, with the user and the query", () => viewCallsFrameOnce());
+    it("the frame's organization, scope, level, bucket, zone and partial are the response's", () =>
+      theFrameMatchesTheResponse());
   });
 });

@@ -363,6 +363,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   ReportSchedulesController_create: createReportScheduleBodySchema,
   ReportSchedulesController_update: updateReportScheduleBodySchema,
   ReportsController_energyCsv: energyReportQuerySchema,
+  // `F4.299` (ADR 0108 Amendment 1, 7.1): the `energy/view` query, by identity.
+  ReportsController_energyOrganizationViews: energyViewQuerySchema,
   ReportsController_energyPdf: energyReportQuerySchema,
   ReportsController_energyPreview: energyReportQuerySchema,
   // `F4.298` (ADR 0108 decision 2.2). `_energyFilterOptions` is absent — no

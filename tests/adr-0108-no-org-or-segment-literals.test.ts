@@ -66,6 +66,7 @@ const MODULES: readonly string[] = [
   "apps/web/src/components/asset-history/bucket-table.tsx",
   "apps/web/src/components/asset-history/raw-records-table.tsx",
   "apps/web/src/pages/asset-history-page.tsx",
+  "packages/shared/src/contracts/energy-organization-views.ts",
   "apps/web/src/components/assets/asset-history-link.tsx",
   "apps/api/src/trend-points/trend-points.pure.ts",
   "apps/api/src/trend-points/trend-points.service.ts",
@@ -75,14 +76,26 @@ const MODULES: readonly string[] = [
   "packages/db/src/schema/trend-points-schema.ts",
   "apps/web/src/api/admin/trend-points.ts",
   "apps/web/src/pages/admin/trend-points-page.tsx",
+  "apps/api/src/reports/energy-abnormal.ts",
+  "apps/api/src/reports/energy-organization-reads.ts",
+  "apps/api/src/reports/energy-organization-views.service.ts",
+  "apps/web/src/lib/energy-stack-option.ts",
+  "apps/web/src/lib/energy-organization-views.ts",
+  "apps/web/src/components/energy/energy-stack-chart.tsx",
+  "apps/web/src/components/energy/site-ranking-table.tsx",
+  "apps/web/src/components/energy/energy-heatmap.tsx",
+  "apps/web/src/components/energy/abnormal-list.tsx",
+  // F4.299 U6 rewrites these two existing files (Amendment 1, 7.10), so they are scanned too.
+  "apps/web/src/components/energy-source-stack-chart.tsx",
+  "apps/web/src/pages/energy-page.tsx",
 ];
 
 /**
- * `F4.298`'s planned runtime modules (`docs/plans/f4.298-energy-filter.md`
- * U2–U6) that do not exist yet. Each must stay absent until it is moved to
- * {@link MODULES}: a planned module that exists but is not scanned is a gap
- * this list turns red rather than leaving silent. Empty since U5; U6 rewrites
- * `energy-page.tsx`, which pre-dates ADR 0108 and is not a new module.
+ * The trend and energy rows' planned runtime modules that do not exist yet.
+ * Each must stay absent until it is moved to {@link MODULES}: a planned module
+ * that exists but is not scanned is a gap this list turns red rather than
+ * leaving silent. Empty since `F4.299` U6; a later row of decision 6 lists its
+ * modules here in its first commit.
  */
 const PENDING_MODULES: readonly string[] = [];
 

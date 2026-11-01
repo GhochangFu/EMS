@@ -1,5 +1,5 @@
-import { energyFilterOptionsSchema, energyViewSchema } from "@bms/shared/contracts";
-import type { EnergyFilterOptions, EnergyView, EnergyViewQuery } from "@bms/shared";
+import { energyFilterOptionsSchema, energyOrganizationViewsSchema, energyViewSchema } from "@bms/shared/contracts";
+import type { EnergyFilterOptions, EnergyOrganizationViews, EnergyView, EnergyViewQuery } from "@bms/shared";
 
 import { clearSessionOnAuthFailure, withAuth } from "./http";
 import { checkResponse } from "./validate";
@@ -43,6 +43,17 @@ export async function fetchEnergyView(query: EnergyViewQuery): Promise<EnergyVie
     throw new Error(`reports/energy/view ${res.status}`);
   }
   return checkResponse(energyViewSchema, await res.json(), "reports/energy/view");
+}
+
+/** GET /api/v1/reports/energy/organization-views — the same query as {@link fetchEnergyView} (`F4.299`). */
+export async function fetchEnergyOrganizationViews(query: EnergyViewQuery): Promise<EnergyOrganizationViews> {
+  const sent = withAuth();
+  const res = await fetch(`${base}/api/v1/reports/energy/organization-views?${viewSearch(query)}`, sent);
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new Error(`reports/energy/organization-views ${res.status}`);
+  }
+  return checkResponse(energyOrganizationViewsSchema, await res.json(), "reports/energy/organization-views");
 }
 
 /** GET /api/v1/reports/energy/filter-options — the caller's readable organizations and locations. */

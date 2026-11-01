@@ -36,6 +36,8 @@ function harness() {
     } as never,
     // `F4.298`: the energy view service; the four routes here never reach it.
     {} as never,
+    // `F4.299`: the organization views service; likewise never reached.
+    {} as never,
   );
   const res = { setHeader: () => undefined, send: () => undefined };
   const call = (route: Route, query: unknown) =>

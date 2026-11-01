@@ -21,6 +21,9 @@ import { ReportsService } from "./reports.service";
  * `PV`-coded asset (the existing `code ILIKE 'PV%'` solar rule); organization B
  * holds one foreign asset with `kw` and `pf` samples in the same hours, so a read
  * that drops its asset filter takes the foreign figures in and reddens.
+ * `F4.299` U3 adds a second location to organization A with a fourth asset
+ * (`SITE_TWO_KW` per bucket) for the per-site reads; the claims in this file
+ * pass `scope(fx)`, the first location's two assets, so it changes none of them.
  *
  * Twenty-six `_1h` buckets, one `kw` sample each per asset, around one
  * `Asia/Kolkata` day: bucket 0 is `18:00Z` of day D (23:30 local, the previous
@@ -40,15 +43,21 @@ import { ReportsService } from "./reports.service";
 
 const HOUR_MS = 3_600_000;
 const MINUTE_MS = 60_000;
-const BUCKETS = 26;
-const SPIKE_BUCKET = 9;
-const SPIKE_KW = 500;
-const PV_KW = 5;
-const FOREIGN_KW = 1_000;
+export const BUCKETS = 26;
+export const SPIKE_BUCKET = 9;
+export const SPIKE_KW = 500;
+export const PV_KW = 5;
+export const FOREIGN_KW = 1_000;
+/**
+ * `F4.299` U3: the `kw` of the fourth asset, in organization A's second
+ * location, in every bucket. The claims above pass `scope(fx)` (the grid and
+ * `PV` assets only), so this asset changes none of them.
+ */
+export const SITE_TWO_KW = 7;
 const NO_TARIFFS = { resolveForAssets: async () => new Map<string, number>() };
 
 /** The grid asset's `kw` in bucket `k`: rising, with one spike. */
-function gridKw(k: number): number {
+export function gridKw(k: number): number {
   return k === SPIKE_BUCKET ? SPIKE_KW : 10 + k;
 }
 
@@ -72,6 +81,12 @@ export interface EnergyViewReadFixture {
   readonly gridAssetId: string;
   readonly pvAssetId: string;
   readonly foreignAssetId: string;
+  /** `F4.299` U3: organization A's second-location asset (`SITE_TWO_KW` per bucket). */
+  readonly siteTwoAssetId: string;
+  /** `F4.299` U3: organization A's two locations — `a1` holds grid and `PV`, `a2` the fourth asset. */
+  readonly locationIds: { readonly a1: string; readonly a2: string };
+  /** `F4.299` U3: organization B's location (the foreign asset's). */
+  readonly foreignLocationId: string;
   /** `18:30Z` of day D: the start of the fixture's `Asia/Kolkata` day. */
   readonly localDayStart: Date;
   readonly organizationIds: readonly string[];
@@ -79,7 +94,7 @@ export interface EnergyViewReadFixture {
 }
 
 /** The start of `_1h` bucket `k` of the fixture. */
-function bucketStart(fx: EnergyViewReadFixture, k: number): Date {
+export function bucketStart(fx: EnergyViewReadFixture, k: number): Date {
   return new Date(fx.localDayStart.getTime() - 30 * MINUTE_MS + k * HOUR_MS);
 }
 
@@ -143,6 +158,16 @@ export async function setUpEnergyViewReadFixture(
     );
     return { organizationId, locationId: loc[0]?.id ?? fail(`location of ${code} was not inserted`) };
   };
+  // `F4.299` U3: a second location in the same organization.
+  const secondLocation = async (organizationId: string, suffix: string): Promise<string> => {
+    const code = `EVR-${run}-${suffix}`;
+    const { rows } = await superuser.query<{ id: string }>(
+      `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude, parent_id)
+       VALUES ($1, $2, $3, $4, 'smoc_campus', 0, 0, NULL) RETURNING id`,
+      [organizationId, `${code}-L2`, `${code}-l2`.toLowerCase(), `F4.298 ${code} site 2`],
+    );
+    return rows[0]?.id ?? fail(`second location of ${code} was not inserted`);
+  };
   const asset = async (place: { organizationId: string; locationId: string }, code: string): Promise<string> => {
     const { rows } = await superuser.query<{ id: string }>(
       `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
@@ -159,10 +184,15 @@ export async function setUpEnergyViewReadFixture(
     const gridAssetId = await asset(a, `EVR-${run}-GRID`);
     const pvAssetId = await asset(a, `PV-EVR-${run}`);
     const foreignAssetId = await asset(b, `EVR-${run}-FOREIGN`);
+    const a2 = await secondLocation(a.organizationId, "A");
+    const siteTwoAssetId = await asset({ organizationId: a.organizationId, locationId: a2 }, `EVR-${run}-SITE2`);
     const fx: EnergyViewReadFixture = {
       gridAssetId,
       pvAssetId,
       foreignAssetId,
+      siteTwoAssetId,
+      locationIds: { a1: a.locationId, a2 },
+      foreignLocationId: b.locationId,
       localDayStart,
       organizationIds,
       refreshFrom,
@@ -182,6 +212,7 @@ export async function setUpEnergyViewReadFixture(
       sample(gridAssetId, k, 10, "kw", gridKw(k));
       sample(pvAssetId, k, 10, "kw", PV_KW);
       sample(foreignAssetId, k, 10, "kw", FOREIGN_KW);
+      sample(siteTwoAssetId, k, 10, "kw", SITE_TWO_KW);
     }
     for (const minute of [20, 21, 22]) sample(gridAssetId, 3, minute, "pf", 0.9);
     sample(gridAssetId, 4, 20, "pf", 0.5);
@@ -218,7 +249,7 @@ export async function cleanupEnergyViewReadFixture(
   fx: EnergyViewReadFixture,
 ): Promise<void> {
   try {
-    for (const id of [fx.gridAssetId, fx.pvAssetId, fx.foreignAssetId]) {
+    for (const id of [fx.gridAssetId, fx.pvAssetId, fx.foreignAssetId, fx.siteTwoAssetId]) {
       for (const key of ["kw", "pf"]) {
         await owner.query(`DELETE FROM telemetry.point_values WHERE asset_id = $1 AND point_key = $2`, [id, key]);
       }
