@@ -1,14 +1,49 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { EnergyFilterOptions, EnergyView, EnergyViewPeriod, UserRole } from "@bms/shared";
+import type {
+  EnergyFilterOptions,
+  EnergyOrganizationViews,
+  EnergyView,
+  EnergyViewPeriod,
+  UserRole,
+} from "@bms/shared";
 
 import * as energyApi from "../api/energy-view";
+import { STACK_ID } from "../lib/energy-stack-option";
 import type { AuthUser } from "../stores/auth-store";
 import { EnergyPage } from "./energy-page";
 import * as copilotApi from "../api/copilot";
+
+/**
+ * `echarts-for-react` is stubbed to record the options it receives (jsdom has
+ * no canvas); the `F4.299` load-profile claims read the stacked option.
+ */
+type RecordedChart = { option: { series: { name?: string; stack?: string }[] } };
+
+const recordedCharts = vi.hoisted(() => [] as RecordedChart[]);
+
+vi.mock("echarts-for-react", () => ({
+  default: (props: RecordedChart) => {
+    recordedCharts.push(props);
+    return null;
+  },
+}));
+
+export function resetRecordedCharts(): void {
+  recordedCharts.length = 0;
+}
+
+/** The series names of the last stacked chart rendered. */
+function lastStackNames(): string[] {
+  const stacked = recordedCharts.filter((c) => c.option.series.some((s) => s.stack === STACK_ID));
+  const last = stacked.at(-1);
+  if (!last) throw new Error("no stacked chart was rendered");
+  return last.option.series.filter((s) => s.stack === STACK_ID).map((s) => s.name ?? "");
+}
 
 /**
  * The Energy Centre page on `GET /reports/energy/view` (`F4.298` U6, ADR 0108
@@ -80,11 +115,68 @@ function options(organizationCount: 0 | 1): EnergyFilterOptions {
   };
 }
 
-/** Both of the page's fetches, because an unstubbed one dials `localhost:4000`. */
-function stubEnergyApi(served: EnergyView = view(), organizationCount: 0 | 1 = 1) {
+const SITE_A = "6f1d2a3b-0000-4000-8000-0000000000a1";
+
+function organizationViews(overrides: Partial<EnergyOrganizationViews> = {}): EnergyOrganizationViews {
+  return {
+    organizationId: ORG,
+    timeZone: "America/New_York",
+    generatedAt: "2026-10-31T11:30:00.000Z",
+    level: "1h",
+    bucket: "1d",
+    current: { from: "2026-10-30T11:00:00.000Z", to: "2026-10-31T11:00:00.000Z", durationHours: 24 },
+    compare: null,
+    sites: {
+      current: [
+        { locationId: SITE_A, name: "Alpha site", assetCount: 2, kwh: 1800, peakKw: 300, peakAt: "2026-10-31T11:12:00.000Z" },
+      ],
+      compare: null,
+      totalSites: 1,
+    },
+    trend: {
+      columns: [{ kind: "site", locationId: SITE_A, name: "Alpha site" }, { kind: "other" }],
+      points: [{ t: "2026-10-31T00:00:00.000Z", kw: [80, 20] }],
+    },
+    heatmap: { cells: [{ day: "2026-10-31", hour: 7, kwh: 75 }] },
+    abnormal: {
+      baseline: { windows: 4, windowsConsulted: 4, stepDays: 1, ratio: 1.5 },
+      entries: [
+        {
+          kind: "asset",
+          id: "6f1d2a3b-0000-4000-8000-0000000000e1",
+          code: "CH-01",
+          name: "Chiller 1",
+          siteName: "Alpha site",
+          currentKwh: 150,
+          baselineKwh: 100,
+          ratio: 1.5,
+          verdict: "above",
+          baselineWindows: 4,
+        },
+      ],
+      normalCount: { sites: 0, assets: 1 },
+      truncated: false,
+    },
+    partial: null,
+    ...overrides,
+  };
+}
+
+/** Every one of the page's fetches, because an unstubbed one dials `localhost:4000`. */
+function stubEnergyApi(
+  served: EnergyView = view(),
+  organizationCount: 0 | 1 = 1,
+  orgViews: EnergyOrganizationViews | Error = organizationViews(),
+) {
   const optionsSpy = vi.spyOn(energyApi, "fetchEnergyFilterOptions").mockResolvedValue(options(organizationCount));
   const viewSpy = vi.spyOn(energyApi, "fetchEnergyView").mockResolvedValue(served);
-  return { viewSpy, optionsSpy };
+  const orgViewsSpy = vi.spyOn(energyApi, "fetchEnergyOrganizationViews");
+  if (orgViews instanceof Error) {
+    orgViewsSpy.mockRejectedValue(orgViews);
+  } else {
+    orgViewsSpy.mockResolvedValue(orgViews);
+  }
+  return { viewSpy, optionsSpy, orgViewsSpy };
 }
 
 function renderPage(): void {
@@ -263,12 +355,75 @@ export async function aPfRendersToTwoDecimals(): Promise<void> {
  * too early.
  */
 export async function noViewIsFetchedWithoutAnOrganization(): Promise<void> {
-  const { viewSpy, optionsSpy } = stubEnergyApi(view(), 0);
+  const { viewSpy, optionsSpy, orgViewsSpy } = stubEnergyApi(view(), 0);
   renderPage();
 
   expect(await screen.findByText("No organization is in your access.")).toBeInTheDocument();
   expect(optionsSpy).toHaveBeenCalled();
   expect(viewSpy).not.toHaveBeenCalled();
+  expect(orgViewsSpy).not.toHaveBeenCalled();
+}
+
+/**
+ * `F4.299` — both reads are issued with the same query object. Compare is
+ * switched on first, so a page that dropped `compare` (or any field) from one
+ * of the two queries fails the equality.
+ */
+export async function bothViewsAreFetchedWithTheSameQuery(): Promise<void> {
+  const { viewSpy, orgViewsSpy } = stubEnergyApi();
+  renderPage();
+
+  await userEvent.click(await screen.findByLabelText("Compare with previous period"));
+  await waitFor(() => expect(orgViewsSpy.mock.calls.at(-1)?.[0]).toMatchObject({ compare: "previous" }));
+  await waitFor(() => expect(viewSpy.mock.calls.at(-1)?.[0]).toMatchObject({ compare: "previous" }));
+  expect(orgViewsSpy.mock.calls.at(-1)?.[0]).toEqual(viewSpy.mock.calls.at(-1)?.[0]);
+}
+
+/** The load profile stacks by site by default: the server's columns, `other` as "Other sites". */
+export async function theLoadProfileStacksBySiteByDefault(): Promise<void> {
+  stubEnergyApi(view({ current: period({ series: [{ t: "2026-10-31T00:00:00.000Z", gridKw: 60, dgKw: 10, solarKw: 30 }] }) }));
+  renderPage();
+
+  const site = await screen.findByRole("button", { name: "Site" });
+  expect(site).toHaveAttribute("aria-pressed", "true");
+  await waitFor(() => expect(lastStackNames()).toEqual(["Alpha site", "Other sites"]));
+}
+
+/** "Source" re-stacks the profile into the three source series and moves `aria-pressed`. */
+export async function sourceStacksTheThreeSources(): Promise<void> {
+  stubEnergyApi(view({ current: period({ series: [{ t: "2026-10-31T00:00:00.000Z", gridKw: 60, dgKw: 10, solarKw: 30 }] }) }));
+  renderPage();
+
+  await waitFor(() => expect(lastStackNames()).toEqual(["Alpha site", "Other sites"]));
+  await userEvent.click(screen.getByRole("button", { name: "Source" }));
+  expect(screen.getByRole("button", { name: "Source" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Site" })).toHaveAttribute("aria-pressed", "false");
+  await waitFor(() => expect(lastStackNames()).toEqual(["Grid", "DG (nominal)", "Solar"]));
+}
+
+/** The ranking, the heatmap and the abnormal list render from the organization views. */
+export async function theOrganizationSectionsRender(): Promise<void> {
+  stubEnergyApi();
+  renderPage();
+
+  expect(await screen.findByTestId("site-ranking-row")).toHaveTextContent("Alpha site");
+  expect(screen.getByRole("heading", { name: /Consumption heatmap/ })).toBeInTheDocument();
+  expect(screen.getByTestId("abnormal-row")).toHaveTextContent("Chiller 1");
+}
+
+/**
+ * A failed organization-views read leaves the KPI tiles (from `/view`) intact
+ * and puts one fixed sentence where the organization sections were.
+ */
+export async function aFailedOrganizationViewsReadLeavesTheTiles(): Promise<void> {
+  stubEnergyApi(view(), 1, new Error("reports/energy/organization-views 500"));
+  renderPage();
+
+  expect(await screen.findByText("Could not load the organization views.")).toBeInTheDocument();
+  await readyTile("Total energy", "kWh");
+  expect((await tileLabelled("Total energy")).textContent).toContain("2,250");
+  expect(screen.queryByTestId("site-ranking-row")).toBeNull();
+  expect(document.body.textContent).not.toContain("organization-views 500");
 }
 
 /** The positive pair: the one organization is preselected and the view is asked for it. */

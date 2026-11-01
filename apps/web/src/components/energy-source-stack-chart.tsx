@@ -1,111 +1,37 @@
-import type { EChartsOption } from "echarts";
-import ReactECharts from "echarts-for-react";
 import { useMemo } from "react";
 
-import type { EnergySourceMixPoint } from "@bms/shared";
+import type { EnergySourceMixPoint, PointAggregateBucket } from "@bms/shared";
 
 import { useChartTheme } from "../lib/chart-theme";
+import type { EnergyStack } from "../lib/energy-stack-option";
+import { EnergyStackChart, type EnergySectionStatus } from "./energy/energy-stack-chart";
 
 type Props = {
   points: EnergySourceMixPoint[];
-  status: "loading" | "error" | "empty" | "ready";
+  status: EnergySectionStatus;
+  /** `F4.299` — the previous period's total, drawn dashed; absent or `null` when compare is off. */
+  compareTotal?: readonly PointAggregateBucket[] | null;
+  /** How far the compare buckets move forward, in ms. */
+  spanMs?: number;
 };
 
 /**
  * `F3.65c` — Grid `ink-faint`, DG `warning`, Solar `accent` from the current roles; the axis,
  * legend and tooltip colours come from the ECharts theme object (plan D2).
+ *
+ * `F4.299` U6 — a wrapper over the generic {@link EnergyStackChart}: the three source stacks in
+ * that colour order, so `option.color` stays `[ink-faint, warning, accent]`.
  */
-export function EnergySourceStackChart({ points, status }: Props) {
-  const { roles, theme } = useChartTheme();
-  const option = useMemo<EChartsOption>(() => {
-    return {
-      color: [roles["ink-faint"], roles.warning, roles.accent],
-      legend: {
-        data: ["Grid", "DG (nominal)", "Solar"],
-        bottom: 0,
-        textStyle: { fontSize: 11 },
-      },
-      grid: { left: 52, right: 20, top: 28, bottom: 56 },
-      tooltip: {
-        trigger: "axis",
-        valueFormatter: (v) => `${Number(v).toFixed(1)} kW`,
-      },
-      xAxis: {
-        type: "time",
-        axisLabel: { fontSize: 10 },
-      },
-      yAxis: {
-        type: "value",
-        name: "kW",
-        nameTextStyle: { fontSize: 10 },
-        axisLabel: { fontSize: 10 },
-      },
-      series: [
-        {
-          name: "Grid",
-          type: "line",
-          stack: "mix",
-          areaStyle: {},
-          showSymbol: false,
-          smooth: true,
-          lineStyle: { width: 0 },
-          data: points.map((p) => [p.t, p.gridKw] as [string, number]),
-        },
-        {
-          name: "DG (nominal)",
-          type: "line",
-          stack: "mix",
-          areaStyle: {},
-          showSymbol: false,
-          smooth: true,
-          lineStyle: { width: 0 },
-          data: points.map((p) => [p.t, p.dgKw] as [string, number]),
-        },
-        {
-          name: "Solar",
-          type: "line",
-          stack: "mix",
-          areaStyle: {},
-          showSymbol: false,
-          smooth: true,
-          lineStyle: { width: 0 },
-          data: points.map((p) => [p.t, p.solarKw] as [string, number]),
-        },
-      ],
-    };
-  }, [points, roles]);
-
-  if (status === "loading") {
-    return (
-      <div className="flex h-[300px] items-center justify-center surface-raised text-sm text-ink-muted">
-        Loading source mix…
-      </div>
-    );
-  }
-  if (status === "error") {
-    return (
-      <div className="flex h-[300px] items-center justify-center rounded-lg border border-critical-wash-strong bg-critical-wash/50 text-sm text-critical-ink">
-        Could not load source mix.
-      </div>
-    );
-  }
-  if (status === "empty" || points.length === 0) {
-    return (
-      <div className="flex h-[300px] items-center justify-center surface-raised text-sm text-ink-muted">
-        No telemetry in this window — run the simulator.
-      </div>
-    );
-  }
-
-  return (
-    <div className="surface-raised p-2">
-      <ReactECharts
-        option={option}
-        theme={theme}
-        style={{ height: 300 }}
-        notMerge
-        lazyUpdate
-      />
-    </div>
+export function EnergySourceStackChart({ points, status, compareTotal = null, spanMs = 0 }: Props) {
+  const { roles } = useChartTheme();
+  const stacks = useMemo<EnergyStack[]>(
+    () => [
+      { name: "Grid", colour: roles["ink-faint"], data: points.map((p): [string, number] => [p.t, p.gridKw]) },
+      { name: "DG (nominal)", colour: roles.warning, data: points.map((p): [string, number] => [p.t, p.dgKw]) },
+      { name: "Solar", colour: roles.accent, data: points.map((p): [string, number] => [p.t, p.solarKw]) },
+    ],
+    [points, roles],
   );
+
+  return <EnergyStackChart stacks={stacks} compareTotal={compareTotal} spanMs={spanMs} status={status} />;
 }

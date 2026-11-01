@@ -81,22 +81,23 @@ const MODULES: readonly string[] = [
   "apps/api/src/reports/energy-organization-views.service.ts",
   "apps/web/src/lib/energy-stack-option.ts",
   "apps/web/src/lib/energy-organization-views.ts",
-];
-
-/**
- * `F4.298`'s planned runtime modules (`docs/plans/f4.298-energy-filter.md`
- * U2–U6) that do not exist yet. Each must stay absent until it is moved to
- * {@link MODULES}: a planned module that exists but is not scanned is a gap
- * this list turns red rather than leaving silent. Empty since U5; U6 rewrites
- * `energy-page.tsx`, which pre-dates ADR 0108 and is not a new module.
- */
-const PENDING_MODULES: readonly string[] = [
-  // F4.299 (ADR 0108 Amendment 1, 7.10): each moves to MODULES in the commit that creates it.
   "apps/web/src/components/energy/energy-stack-chart.tsx",
   "apps/web/src/components/energy/site-ranking-table.tsx",
   "apps/web/src/components/energy/energy-heatmap.tsx",
   "apps/web/src/components/energy/abnormal-list.tsx",
+  // F4.299 U6 rewrites these two existing files (Amendment 1, 7.10), so they are scanned too.
+  "apps/web/src/components/energy-source-stack-chart.tsx",
+  "apps/web/src/pages/energy-page.tsx",
 ];
+
+/**
+ * The trend and energy rows' planned runtime modules that do not exist yet.
+ * Each must stay absent until it is moved to {@link MODULES}: a planned module
+ * that exists but is not scanned is a gap this list turns red rather than
+ * leaving silent. Empty since `F4.299` U6; a later row of decision 6 lists its
+ * modules here in its first commit.
+ */
+const PENDING_MODULES: readonly string[] = [];
 
 /**
  * Files that are never scanned, each with its reason, so a later row does not
