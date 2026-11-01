@@ -71,10 +71,16 @@ const STALE = "now() - interval '30 minutes'";
 /** T4's per-run domain tag, for {@link fixtureAssetDomainCode} and the sweep. */
 const STRIP_DOMAIN_TAG = "f_trend_strip";
 
+/** Every T4 strip asset code starts `F4301-`; the sweep's LIKE pattern for them. */
+const STRIP_ASSET_PATTERN = "F4301-%";
+
 /** Reaps what a killed earlier run committed: fixtures older than 30 minutes, child-first. */
 async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
   const staleKeys = `SELECT code FROM bms.point_keys WHERE code LIKE 'F4300-%' AND created_at < ${STALE}`;
-  const staleStripAssets = `SELECT id FROM bms.assets WHERE code LIKE 'F4301-%' AND created_at < ${STALE}`;
+  // `$1` is STRIP_ASSET_PATTERN. The pattern stays a bound parameter, as in the
+  // asset-points suites' sweeps: tests/integration-fixture-isolation.test.ts
+  // rejects a literal `code LIKE '…'` read of bms.assets.
+  const staleStripAssets = `SELECT id FROM bms.assets WHERE code LIKE $1 AND created_at < ${STALE}`;
   // The prefixed code since the F4.301 review; `F4301-%` is what a killed run
   // before it left behind.
   const staleStripDomains = `SELECT code FROM bms.asset_domains
@@ -83,8 +89,12 @@ async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
   const staleOrgs = `SELECT id FROM bms.organizations WHERE code LIKE 'F4300-%' AND created_at < ${STALE}`;
   try {
     // F4.301 first: its assets and override rows hang off the F4.300 fixtures.
-    await pool.query(`DELETE FROM bms.asset_points WHERE asset_id IN (${staleStripAssets})`);
-    await pool.query(`DELETE FROM bms.assets WHERE id IN (${staleStripAssets})`);
+    await pool.query(`DELETE FROM bms.asset_points WHERE asset_id IN (${staleStripAssets})`, [
+      STRIP_ASSET_PATTERN,
+    ]);
+    await pool.query(`DELETE FROM bms.assets WHERE id IN (${staleStripAssets})`, [
+      STRIP_ASSET_PATTERN,
+    ]);
     await pool.query(`DELETE FROM bms.org_trend_points WHERE domain IN (${staleStripDomains})`);
     await pool.query(`DELETE FROM bms.point_keys WHERE domain IN (${staleStripDomains})`);
     await pool.query(`DELETE FROM bms.asset_domains WHERE code IN (${staleStripDomains})`);
