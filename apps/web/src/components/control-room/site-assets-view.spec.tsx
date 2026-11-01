@@ -147,8 +147,8 @@ export async function eachRowLinksToThatAssetsHistory(): Promise<void> {
 
   const first = await screen.findByRole("link", { name: "History of CRAC-01" });
   const second = screen.getByRole("link", { name: "History of CRAC-02" });
-  expect(first).toHaveAttribute("href", `/assets/${FIRST_ASSET_ID}/history`);
-  expect(second).toHaveAttribute("href", `/assets/${SECOND_ASSET_ID}/history`);
+  expect(first).toHaveAttribute("href", `/asset-history/${FIRST_ASSET_ID}`);
+  expect(second).toHaveAttribute("href", `/asset-history/${SECOND_ASSET_ID}`);
 }
 
 /**

@@ -262,9 +262,9 @@ export async function cardLinksToTheAssetHistory(): Promise<void> {
   renderView();
   await screen.findByText("AHU-01");
   const ahu = within(card("AHU-01")).getByRole("link", { name: "History of AHU-01" });
-  expect(ahu).toHaveAttribute("href", `/assets/${AHU_ID}/history`);
+  expect(ahu).toHaveAttribute("href", `/asset-history/${AHU_ID}`);
   const pcc = within(card("PCC-01")).getByRole("link", { name: "History of PCC-01" });
-  expect(pcc).toHaveAttribute("href", `/assets/${PCC_ID}/history`);
+  expect(pcc).toHaveAttribute("href", `/asset-history/${PCC_ID}`);
 }
 
 /** W2b — "All points" expands the card inline to every row (OQ2). */

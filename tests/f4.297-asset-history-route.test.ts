@@ -8,10 +8,10 @@ const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const appPath = join(repoRoot, "apps/web/src/app.tsx");
 
 /**
- * `F4.297` U5 (ADR 0108 decision 1.1) — `/assets/:assetId/history` is a signed-in route that
+ * `F4.297` U5 (ADR 0108 decision 1.1) — `/asset-history/:assetId` is a signed-in route that
  * renders `AssetHistoryPage`.
  *
- * - One `<Route path="/assets/:assetId/history">` block.
+ * - One `<Route path="/asset-history/:assetId">` block.
  * - It carries the shell's auth ternary: `accessToken && user ? (<AssetHistoryPage user={user} />)
  *   : (<Navigate to="/login" replace />)`.
  * - It is **not** wrapped in `ControlRoomScopeRoute`: the API's `canReadAsset` (a 403 the page
@@ -26,7 +26,7 @@ function withoutComments(source: string): string {
 }
 
 const app = withoutComments(readFileSync(appPath, "utf8"));
-const ROUTE_PATH = "/assets/:assetId/history";
+const ROUTE_PATH = "/asset-history/:assetId";
 
 /** Quote-agnostic: `path="…"`, `path='…'`, `path={"…"}`, `` path={`…`} ``. */
 function pathRegExp(path: string): RegExp {
@@ -68,7 +68,7 @@ function historyRouteViolations(source: string): string[] {
   return reasons;
 }
 
-describe("F4.297 — /assets/:assetId/history renders AssetHistoryPage behind sign-in", () => {
+describe("F4.297 — /asset-history/:assetId renders AssetHistoryPage behind sign-in", () => {
   it("the route exists once, with the auth ternary, unwrapped", () => {
     expect(historyRouteViolations(app)).toEqual([]);
   });
@@ -78,7 +78,7 @@ describe("F4.297 — /assets/:assetId/history renders AssetHistoryPage behind si
   });
 
   it("positive control — a copy without the route is caught", () => {
-    const removed = app.replace(pathRegExp(ROUTE_PATH), 'path="/assets/:assetId/elsewhere"');
+    const removed = app.replace(pathRegExp(ROUTE_PATH), 'path="/asset-history/:assetId/elsewhere"');
     expect(removed).not.toBe(app);
     expect(historyRouteViolations(removed)).toEqual([`expected one <Route path="${ROUTE_PATH}">, found 0`]);
   });

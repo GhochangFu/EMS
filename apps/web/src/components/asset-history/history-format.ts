@@ -51,16 +51,27 @@ export function formatInZone(iso: string | null | undefined, zone: string): stri
   }).format(new Date(ms));
 }
 
-/** A chart axis label in `zone`: `31 Oct 07:12`. */
+/** A chart axis label in `zone` on two lines, time over date: `07:12\n31 Oct`. */
 export function axisLabelInZone(ms: number, zone: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: zone,
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  }).format(new Date(ms));
+  const date = new Date(ms);
+  const time = new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(date);
+  const day = new Intl.DateTimeFormat("en-GB", { timeZone: zone, day: "numeric", month: "short" }).format(date);
+  return `${time}\n${day}`;
+}
+
+/**
+ * The time axis's `axisLabel` in `zone`. ECharts drops a label that would
+ * overlap its neighbour, and the forced labels at the exact `min`/`max` of the
+ * range are off: those two sat on top of the nearest round tick and made the
+ * axis unreadable (AWS demo, 2026-11-01).
+ */
+export function timeAxisLabel(zone: string): {
+  readonly hideOverlap: true;
+  readonly showMinLabel: false;
+  readonly showMaxLabel: false;
+  readonly formatter: (value: number) => string;
+} {
+  return { hideOverlap: true, showMinLabel: false, showMaxLabel: false, formatter: (value) => axisLabelInZone(value, zone) };
 }
 
 /** How long ago `iso` was, from `nowMs`: `12 s ago`, `5 min ago`, `3 h ago`, `3 d ago`. */

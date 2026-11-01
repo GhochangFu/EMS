@@ -117,9 +117,9 @@ export function renderHistoryPage(search = ""): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={[`/assets/${ASSET_ID}/history${search}`]}>
+      <MemoryRouter initialEntries={[`/asset-history/${ASSET_ID}${search}`]}>
         <Routes>
-          <Route path="/assets/:assetId/history" element={<AssetHistoryPage user={asUser()} />} />
+          <Route path="/asset-history/:assetId" element={<AssetHistoryPage user={asUser()} />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
