@@ -59,9 +59,9 @@ function forbiddenImports(source: string): string[] {
   );
 }
 
-/** The SQL write keywords outside comments. */
+/** The SQL write keywords outside comments, in any case (SQL keywords are case-insensitive). */
 function writeKeywords(source: string): string[] {
-  return Array.from(withoutComments(source).matchAll(/\b(INSERT|UPDATE|DELETE|TRUNCATE)\b/g), (match) => match[1] as string);
+  return Array.from(withoutComments(source).matchAll(/\b(INSERT|UPDATE|DELETE|TRUNCATE)\b/gi), (match) => match[1] as string);
 }
 
 describe("F4.299 — the abnormal list is advisory only (ADR 0108 Amendment 1, 7.7)", () => {
@@ -100,5 +100,15 @@ describe("F4.299 — the abnormal list is advisory only (ADR 0108 Amendment 1, 7
     expect(writeKeywords(`${base}\nconst sql = "INSERT INTO bms.alarms (id) VALUES ($1)";\n`)).toEqual(["INSERT"]);
     expect(writeKeywords(`${base}\nconst sql = \`UPDATE bms.assets SET name = $1\`;\n`)).toEqual(["UPDATE"]);
     expect(writeKeywords(`${base}\n/** never DELETE here */\n// nor TRUNCATE\n`)).toEqual([]);
+  });
+
+  it("positive control: a lowercase write statement is caught (SQL keywords are case-insensitive)", () => {
+    const base = read(READS_FILE);
+    expect(writeKeywords(`${base}\nconst sql = "delete from bms.assets";\n`)).toEqual(["delete"]);
+    expect(writeKeywords(`${base}\nconst sql = "insert into bms.alarms (id) values ($1)";\n`)).toEqual(["insert"]);
+  });
+
+  it("negative control: a column such as updated_at is not a write keyword", () => {
+    expect(writeKeywords(`const sql = "SELECT updated_at, deleted_at, inserted_at FROM bms.assets";\n`)).toEqual([]);
   });
 });
