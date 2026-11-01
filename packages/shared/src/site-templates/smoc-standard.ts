@@ -1,4 +1,5 @@
 import { DASHBOARD_GRID } from "../contracts/dashboard-builder";
+import { TREND_STRIP_WIDGET_ROWS } from "../contracts/trend-strip-widget";
 // Type-only, and erased at emit: the `./ingest` precedent for an import back from the index.
 import type { SectionTemplateWidget, StockDashboardTemplateDto } from "../index";
 
@@ -9,7 +10,10 @@ import type { SectionTemplateWidget, StockDashboardTemplateDto } from "../index"
  * tiles, the alarm rail beside the systems list, the class strip, and a 1-row legend. Stock
  * version 4 (`F3.74`, ADR 0088 and its Amendment 2) adds the live breaker state: the electrical
  * tab draws `lv_single_line` with one breaker table under it, and the Overview holds a compact
- * copy of that diagram beside the class strip.
+ * copy of that diagram beside the class strip. Stock version 5 (`F4.305`, ADR 0108 Amendment 3)
+ * puts one `trend_strip` on every tab directly under its top row of tiles and moves the widgets
+ * below it down by the strip's height; the earlier versions are frozen in
+ * `packages/db/src/site-layout-stock-history.ts`.
  *
  * **Why it lives in `packages/shared` and not beside the other stock entries.** Two readers need
  * it: `apps/api`'s stock catalog (the import route) and `packages/db`'s site-layout seed (the
@@ -58,6 +62,12 @@ const LOWER_H = 5;
 const HALF_W = DASHBOARD_GRID.columns / 2;
 
 /**
+ * Stock v5 (`F4.305`): every tab's body starts under the tile row and the trend strip, which is
+ * full width and `TREND_STRIP_WIDGET_ROWS` tall at `(0, TILE_H)`.
+ */
+const BODY_Y = TILE_H + TREND_STRIP_WIDGET_ROWS;
+
+/**
  * The v3 Overview (`F3.77` plan D1): the tiles at y0, the alarm rail (`RAIL_W` wide) beside the
  * systems list in the rest of the row, then the class strip at `STRIP_Y` and the legend under it.
  *
@@ -65,14 +75,36 @@ const HALF_W = DASHBOARD_GRID.columns / 2;
  * ADR 0088 Amendment 2 OQ-B) put the compact electrical diagram at `(0, STRIP_Y)`, `HALF_W` wide,
  * and moved the strip to `(HALF_W, STRIP_Y)`, `HALF_W` wide. Nothing else on the Overview moved
  * for it. The diagram names the electrical tab (`tabKey: "sld"`) so it reads that tab's breaker
- * states, and draws `compact`.
+ * states, and draws `compact`. Stock v5 moved the rail, the list and that row down by the trend
+ * strip's height (`BODY_Y`).
  */
 const RAIL_W = 8;
 const RAIL_H = 7;
-const STRIP_Y = TILE_H + RAIL_H;
+const STRIP_Y = BODY_Y + RAIL_H;
 const LEGEND_Y = STRIP_Y + STRIP_H;
 
 type Widget = SectionTemplateWidget;
+
+/**
+ * `F4.305` (ADR 0108 Amendment 3 item 4) — a tab's trend strip, directly under its tile row.
+ * `tabKey` names the tab whose bound group scopes it (owner answer C1: by tab key, not by group
+ * id); `null` is the whole site (the Overview). It binds no point and reads no catalog source:
+ * the series come from the organization's trend points.
+ */
+function trendStrip(tabKey: string, scopeTabKey: string | null): Widget {
+  return {
+    key: `${tabKey}-trend-strip`,
+    title: "Trends",
+    gridX: 0,
+    gridY: TILE_H,
+    gridW: DASHBOARD_GRID.columns,
+    gridH: TREND_STRIP_WIDGET_ROWS,
+    bindings: [],
+    sources: [],
+    widgetType: "trend_strip",
+    config: scopeTabKey === null ? { defaultRange: "24h" } : { tabKey: scopeTabKey, defaultRange: "24h" },
+  };
+}
 
 /**
  * A role-bound value tile, in slot `slot` (0 to 3) of a domain tab's top row.
@@ -104,17 +136,17 @@ function roleTile(
 }
 
 /**
- * The lower half every domain tab shares: the preset mimic when the tab has one, then the
- * group's alarm rail and its asset table side by side. `between` (v4: the electrical tab's
- * breaker table, `LOWER_H` rows) sits under the mimic and pushes the rail and table down by its
- * height.
+ * The lower half every domain tab shares: the tab's trend strip (v5) under the tiles, the preset
+ * mimic when the tab has one, then the group's alarm rail and its asset table side by side.
+ * `between` (v4: the electrical tab's breaker table, `LOWER_H` rows) sits under the mimic and
+ * pushes the rail and table down by its height.
  */
 function domainTabBody(
   tabKey: string,
   preset: Extract<Widget, { widgetType: "mimic" }>["config"] | null,
   between: { readonly widget: Widget; readonly rows: number } | null = null,
 ): Widget[] {
-  const lowerY = TILE_H + (preset === null ? 0 : MIMIC_H) + (between?.rows ?? 0);
+  const lowerY = BODY_Y + (preset === null ? 0 : MIMIC_H) + (between?.rows ?? 0);
   const mimic: Widget[] =
     preset === null
       ? []
@@ -123,7 +155,7 @@ function domainTabBody(
             key: `${tabKey}-mimic`,
             title: null,
             gridX: 0,
-            gridY: TILE_H,
+            gridY: BODY_Y,
             gridW: DASHBOARD_GRID.columns,
             gridH: MIMIC_H,
             bindings: [],
@@ -133,6 +165,7 @@ function domainTabBody(
           },
         ];
   return [
+    trendStrip(tabKey, tabKey),
     ...mimic,
     ...(between === null ? [] : [between.widget]),
     {
@@ -194,11 +227,12 @@ const OVERVIEW_WIDGETS: Widget[] = [
     { icon: "bolt", unit: "kW" }),
   siteTile("overview-health-tile", "Asset health", 3,
     { catalogKey: "assets.health.score", params: {}, sortOrder: 0 }, { icon: "gauge" }),
+  trendStrip("overview", null),
   {
     key: "overview-alarms-rail",
     title: "Active alarms",
     gridX: 0,
-    gridY: TILE_H,
+    gridY: BODY_Y,
     gridW: RAIL_W,
     gridH: RAIL_H,
     bindings: [],
@@ -210,7 +244,7 @@ const OVERVIEW_WIDGETS: Widget[] = [
     key: "overview-critical-systems",
     title: "Critical systems",
     gridX: RAIL_W,
-    gridY: TILE_H,
+    gridY: BODY_Y,
     gridW: DASHBOARD_GRID.columns - RAIL_W,
     gridH: RAIL_H,
     bindings: [],
@@ -316,7 +350,7 @@ const SLD_WIDGETS: Widget[] = [
       key: "sld-breaker-table",
       title: "Breakers",
       gridX: 0,
-      gridY: TILE_H + MIMIC_H,
+      gridY: BODY_Y + MIMIC_H,
       gridW: DASHBOARD_GRID.columns,
       gridH: LOWER_H,
       bindings: [],
@@ -335,7 +369,7 @@ export const SMOC_STANDARD_SITE_TEMPLATE = {
   description:
     "One tab per domain present at the site — electrical, UPS & battery, HVAC, IT, environment, " +
     "water — behind an Overview of active alarms, site metrics and critical systems.",
-  stockVersion: 4,
+  stockVersion: 5,
   content: {
     widgets: [],
     tabs: [

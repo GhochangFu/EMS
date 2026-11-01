@@ -7,6 +7,7 @@ import {
   theFrozenV3OverviewHashesAsShipped,
   theFrozenV4ContentHashesAsShipped,
   theV4ContentHoldsNoTrendStrip,
+  theLiveV5IsV4PlusOneStripPerTab,
   theV1ContentHoldsEveryV2WidgetAtItsV1Rect,
   theV3ContentHoldsTheV3OverviewAndTheV2ElectricalTab,
   theV3ElectricalTabHoldsItsSevenWidgetsAtTheirV3Rects,
@@ -53,6 +54,9 @@ describe("F3.77 — the SMOC standard site layout's frozen stock history", () =>
   });
   it("freezes a v4 content with no trend strip", () => {
     theV4ContentHoldsNoTrendStrip();
+  });
+  it("builds the live v5 as v4 plus one trend strip per tab, the widgets below moved by 4", () => {
+    theLiveV5IsV4PlusOneStripPerTab();
   });
   it("compares config without key order", () => {
     theCanonicalFormIgnoresKeyOrder();

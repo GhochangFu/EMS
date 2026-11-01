@@ -1,4 +1,5 @@
-import { MAX_DASHBOARD_WIDGETS } from "../contracts/dashboard-builder";
+import { DASHBOARD_GRID, MAX_DASHBOARD_WIDGETS } from "../contracts/dashboard-builder";
+import { TREND_STRIP_WIDGET_ROWS } from "../contracts/trend-strip-widget";
 import { mimicPresetSchema } from "../contracts/mimic-config";
 import {
   sectionTemplateContentSchema,
@@ -28,21 +29,23 @@ const entry: StockDashboardTemplateDto = SMOC_STANDARD_SITE_TEMPLATE;
 
 export function theEntryIsTheSiteTargetStockRow(): void {
   const shape = `${entry.code}|${entry.section}|${entry.target}|${entry.stockVersion}`;
-  assert(shape === "smoc-standard|site|site|4", `code|section|target|stockVersion: got ${shape}`);
+  assert(shape === "smoc-standard|site|site|5", `code|section|target|stockVersion: got ${shape}`);
 }
 
 /**
- * Stock version 4 (`F3.74`, ADR 0088 Amendment 2) — the Overview, `key@x,y,w,h` in grid order: four
- * problem tiles, the 8-wide alarm rail beside the 4-wide systems list, then at y9 the compact
- * electrical diagram (6 wide) beside the class strip (6 wide), and the 1-row legend. One size per
- * type no longer holds: the rail is 8x7 here and 6x5 on a domain tab.
+ * Stock version 5 (`F4.305`, ADR 0108 Amendment 3) — the Overview, `key@x,y,w,h` in grid order:
+ * four problem tiles, the full-width trend strip under them, the 8-wide alarm rail beside the
+ * 4-wide systems list, then at y13 the compact electrical diagram (6 wide) beside the class strip
+ * (6 wide), and the 1-row legend. One size per type no longer holds: the rail is 8x7 here and 6x5
+ * on a domain tab.
  */
 const OVERVIEW_RECTS =
   "overview-alarms-tile@0,0,3,2;overview-offline-tile@3,0,3,2;overview-load-tile@6,0,3,2;" +
-  "overview-health-tile@9,0,3,2;overview-alarms-rail@0,2,8,7;overview-critical-systems@8,2,4,7;" +
-  "overview-sld-mimic@0,9,6,2;overview-class-strip@6,9,6,2;overview-legend@0,11,12,1";
+  "overview-health-tile@9,0,3,2;overview-trend-strip@0,2,12,4;" +
+  "overview-alarms-rail@0,6,8,7;overview-critical-systems@8,6,4,7;" +
+  "overview-sld-mimic@0,13,6,2;overview-class-strip@6,13,6,2;overview-legend@0,15,12,1";
 
-export function theOverviewHoldsItsV4Rects(): void {
+export function theOverviewHoldsItsV5Rects(): void {
   const overview = entry.content.tabs.find((tab) => tab.key === "overview");
   const rects = [...(overview?.widgets ?? [])]
     .sort((a, b) => a.gridY - b.gridY || a.gridX - b.gridX)
@@ -58,6 +61,7 @@ const DOMAIN_TAB_SIZE: Readonly<Record<string, string>> = {
   active_alarms_rail: "6x5",
   table: "6x5",
   breaker_table: "12x5",
+  trend_strip: "12x4",
 };
 
 export function everyDomainTabWidgetHasItsCompactSize(): void {
@@ -123,15 +127,51 @@ export function noTabLeavesAnEmptyRow(): void {
   }
 }
 
-/** Overview 2 + 7 + 2 + 1; a domain tab 2 + 7 + 5; the electrical tab 2 + 7 + 5 + 5; UPS (no mimic) 2 + 5. */
+/**
+ * Overview 2 + 4 + 7 + 2 + 1; a domain tab 2 + 4 + 7 + 5; the electrical tab 2 + 4 + 7 + 5 + 5;
+ * UPS (no mimic) 2 + 4 + 5. The 4 is the trend strip (`TREND_STRIP_WIDGET_ROWS`).
+ */
 export function theTabsTotalTheirCompactRows(): void {
   const totals = entry.content.tabs
     .map((tab) => `${tab.key}:${Math.max(...tab.widgets.map((widget) => widget.gridY + widget.gridH))}`)
     .join(",");
   assert(
-    totals === "overview:12,sld:19,ups:7,hvac:14,it:14,env:14,water:14",
+    totals === "overview:16,sld:23,ups:11,hvac:18,it:18,env:18,water:18",
     `rows per tab: got ${totals}`,
   );
+}
+
+/**
+ * `F4.305` (ADR 0108 Amendment 3 item 4) — every tab holds exactly one `trend_strip`, full width
+ * and `TREND_STRIP_WIDGET_ROWS` tall, directly under its top tile row: its `gridY` is the bottom
+ * of the tiles, no tile sits under it, and nothing else shares its rows. The Overview's strip is
+ * the whole site (no `tabKey`); a domain tab's names its own tab, so it reads that tab's group.
+ */
+export function everyTabHoldsOneTrendStripUnderItsTiles(): void {
+  for (const tab of entry.content.tabs) {
+    const strips = tab.widgets.filter((widget) => widget.widgetType === "trend_strip");
+    assert(strips.length === 1, `${tab.key} holds ${strips.length} trend strips`);
+    const strip = strips[0];
+    if (strip?.widgetType !== "trend_strip") continue;
+    const tiles = tab.widgets.filter((widget) => widget.widgetType === "value_tile");
+    const tileBottom = Math.max(0, ...tiles.map((widget) => widget.gridY + widget.gridH));
+    const rect = `${strip.gridX},${strip.gridY},${strip.gridW},${strip.gridH}`;
+    assert(rect === `0,${tileBottom},${DASHBOARD_GRID.columns},${TREND_STRIP_WIDGET_ROWS}`, `${tab.key} strip at ${rect}`);
+    assert(strip.key === `${tab.key}-trend-strip` && strip.title === "Trends", `${tab.key}: ${strip.key} / ${String(strip.title)}`);
+    const want = tab.key === "overview" ? { defaultRange: "24h" } : { tabKey: tab.key, defaultRange: "24h" };
+    assert(JSON.stringify(strip.config) === JSON.stringify(want), `${tab.key} strip config: ${JSON.stringify(strip.config)}`);
+    assert(
+      strip.bindings.length === 0 && strip.sources.length === 0,
+      `${tab.key} strip binds ${strip.bindings.length} points and ${strip.sources.length} sources`,
+    );
+    const under = tab.widgets.filter((widget) => widget !== strip && widget.gridY >= tileBottom);
+    const below = under.filter((widget) => widget.gridY < strip.gridY + strip.gridH);
+    assert(below.length === 0, `${tab.key}: ${below.map((w) => w.key).join(",")} share the strip's rows`);
+    assert(
+      under.every((widget) => widget.widgetType !== "value_tile"),
+      `${tab.key}: a tile sits under the strip`,
+    );
+  }
 }
 
 export function theEntryParsesUnderTheStockContract(): void {
@@ -220,10 +260,10 @@ export function theOverviewHoldsNoCardAndOneSystemsList(): void {
   assert(cards.length === 0, `the Overview holds ${cards.length} module cards`);
   const lists = overview.filter((widget) => widget.widgetType === "critical_systems_list");
   const list = lists.map((widget) => `${widget.title ?? "null"}@${widget.gridX},${widget.gridY}w${widget.gridW}`).join(";");
-  assert(list === "Critical systems@8,2w4", `the Overview systems lists: got ${list}`);
+  assert(list === "Critical systems@8,6w4", `the Overview systems lists: got ${list}`);
   const rails = overview.filter((widget) => widget.widgetType === "active_alarms_rail");
   const rail = rails.map((widget) => `${widget.gridX},${widget.gridY}w${widget.gridW}`).join(";");
-  assert(rail === "0,2w8", `the Overview alarm rails: got ${rail}`);
+  assert(rail === "0,6w8", `the Overview alarm rails: got ${rail}`);
 }
 
 /** `F3.77` (ADR 0087 Amendment 3 ruling 6) — the Offline assets tile draws the `offline` icon. */
@@ -284,8 +324,8 @@ export function theElectricalTabDrawsTheSingleLineAndOneBreakerTable(): void {
       .filter((widget) => widget.widgetType === type)
       .map((widget) => `${widget.gridX},${widget.gridY},${widget.gridW},${widget.gridH}`)
       .join(";");
-  assert(rect("breaker_table") === "0,9,12,5", `breaker table: got ${rect("breaker_table")}`);
+  assert(rect("breaker_table") === "0,13,12,5", `breaker table: got ${rect("breaker_table")}`);
   assert(tables[0]?.title === "Breakers", `its title: got ${String(tables[0]?.title)}`);
-  assert(rect("active_alarms_rail") === "0,14,6,5", `rail: got ${rect("active_alarms_rail")}`);
-  assert(rect("table") === "6,14,6,5", `assets table: got ${rect("table")}`);
+  assert(rect("active_alarms_rail") === "0,18,6,5", `rail: got ${rect("active_alarms_rail")}`);
+  assert(rect("table") === "6,18,6,5", `assets table: got ${rect("table")}`);
 }

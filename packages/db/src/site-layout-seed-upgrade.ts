@@ -36,7 +36,8 @@ export { type GridRect, siteTemplateRects, siteWidgetIdentity } from "./site-lay
  * on. It moves the seed's own rows to the current stock version and leaves every row an
  * administrator touched. The past versions it recognises are frozen in
  * `site-layout-stock-history.ts`, and the per-tab planners are `site-layout-seed-upgrade-tabs.ts`.
- * **The next version (v5) adds its step here**: freeze v4 there, then add the step after
+ * **The next version (v5, `F4.305`) adds its step here**: v4 is frozen there (`smocStandardV4Content`,
+ * which the v3 → v4 steps now take as their `to`), and the v5 step goes after
  * {@link upgradeElectricalV4} in {@link upgradeSeededSiteLayoutCopies}.
  *
  * **The chain, per seed-owned copy, in order** (the locations `site-layout-seed.ts` resolves,

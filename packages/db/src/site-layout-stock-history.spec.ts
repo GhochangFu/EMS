@@ -205,6 +205,34 @@ export function theFrozenV4ContentHashesAsShipped(): void {
   assert(digest === SMOC_STANDARD_V4_CONTENT_SHA256, `the frozen v4 content hashes to ${digest}: it changed since stock v4`);
 }
 
+/**
+ * Stock v5 (`F4.305`, ADR 0108 Amendment 3 item 4) is v4 plus one `trend_strip` per tab at
+ * `(0, 2, 12, 4)`, directly under the 2-row tile row, and nothing else: every v4 widget is still
+ * there with its config, a widget at `gridY >= 2` moved down by exactly 4, one above stayed, and
+ * each tab's own fields did not change.
+ */
+export function theLiveV5IsV4PlusOneStripPerTab(): void {
+  const v4 = smocStandardV4Content();
+  const out: string[] = [];
+  for (const tab of current.tabs) {
+    const old = v4.tabs.find((candidate) => candidate.key === tab.key);
+    if (!old) {
+      out.push(`${tab.key}: no v4 tab`);
+      continue;
+    }
+    const { widgets: liveWidgets, ...liveFields } = tab;
+    const { widgets: oldWidgets, ...oldFields } = old;
+    if (canonicalJson(liveFields) !== canonicalJson(oldFields)) out.push(`${tab.key}: tab fields changed`);
+    const strips = liveWidgets.filter((w) => w.widgetType === "trend_strip");
+    const rects = strips.map((w) => `${w.gridX},${w.gridY},${w.gridW},${w.gridH}`).join(";");
+    if (rects !== "0,2,12,4") out.push(`${tab.key}: strips at ${rects}`);
+    const rest = liveWidgets.filter((w) => w.widgetType !== "trend_strip");
+    const want = oldWidgets.map((w) => ({ ...w, gridY: w.gridY >= 2 ? w.gridY + 4 : w.gridY }));
+    if (canonicalJson(rest) !== canonicalJson(want)) out.push(`${tab.key}: the v4 widgets did not move by exactly 4`);
+  }
+  assert(out.length === 0 && current.tabs.length === v4.tabs.length, out.join("; "));
+}
+
 /** Stock v4 held no `trend_strip`, on any tab; the v4 content parses as a site template. */
 export function theV4ContentHoldsNoTrendStrip(): void {
   const v4 = smocStandardV4Content();
