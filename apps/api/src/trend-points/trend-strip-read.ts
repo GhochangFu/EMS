@@ -37,6 +37,7 @@ export type TrendStripReadInput = {
   readonly pairs: readonly { readonly assetId: string; readonly pointKey: string }[];
 };
 
+/** Reads every planned (asset, point) series of the strip window in one rollup statement. */
 export async function trendStripRead(pool: Queryable, input: TrendStripReadInput): Promise<StripRow[]> {
   if (input.pairs.length === 0) {
     return [];

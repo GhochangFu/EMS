@@ -12,6 +12,7 @@ import type pg from "pg";
 
 export type Recorded = { readonly text: string; readonly params: readonly unknown[] };
 
+/** A fresh recording pool and the list its `query` calls append to. */
 export function recordingPool(): { pool: pg.Pool; statements: Recorded[] } {
   const statements: Recorded[] = [];
   const pool = {
