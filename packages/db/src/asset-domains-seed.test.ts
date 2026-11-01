@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   assertDomainsAreSeededBeforeTheKeysFiledUnderThem,
+  assertFixtureDomainCodeRefusesABadTag,
+  assertFixtureDomainCodesAreLowercaseAndSortLast,
   assertReSeedingIsIdempotentAndNeverOverwrites,
   assertTheCallSitsOutsideAnyTenantBracket,
   assertThePackDeclaresExactlyTheRuledRow,
@@ -22,5 +24,15 @@ describe("E5.2 — the mechanical domain is the first a pack adds through the se
 
   it("runs outside every tenant bracket, because the table carries no policy", () => {
     assertTheCallSitsOutsideAnyTenantBracket();
+  });
+});
+
+describe("F4.301 review — a per-run fixture asset domain code", () => {
+  it("is lowercase after the prefix, unique per call, and sorts after every seeded code", () => {
+    assertFixtureDomainCodesAreLowercaseAndSortLast();
+  });
+
+  it("refuses a tag outside [a-z_]", () => {
+    assertFixtureDomainCodeRefusesABadTag();
   });
 });

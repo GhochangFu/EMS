@@ -369,6 +369,30 @@ export async function assertStripShowsANewSegment(ctx: TrendPointsCtx): Promise<
   expect(segment?.points[0]?.assets[0]?.buckets).toHaveLength(48);
 }
 
+/**
+ * T4b — F4.301 review: T4's live domain is not what a parallel suite picks.
+ * `ORDER BY code LIMIT 1` (locations-tree, water-balance-role and others)
+ * never returns it, and the active list in `sort_order` still ends in
+ * `facility` (the F2.13 *Expected one of* pin). The positive half proves the
+ * row is live and active, so neither absence is vacuous.
+ */
+export async function assertStripSegmentIsNotAParallelSuitesPick(ctx: TrendPointsCtx): Promise<void> {
+  const { domain } = ctx.strip.segment;
+  const live = await ctx.fleetPool.query<{ active: boolean }>(
+    `SELECT active FROM bms.asset_domains WHERE code = $1`,
+    [domain],
+  );
+  expect(live.rows, "T4's domain must be live and active").toEqual([{ active: true }]);
+  const first = await ctx.fleetPool.query<{ code: string }>(
+    `SELECT code FROM bms.asset_domains WHERE active = true ORDER BY code LIMIT 1`,
+  );
+  expect(first.rows[0]?.code, "a first-by-code pick must not land on T4's domain").not.toBe(domain);
+  const last = await ctx.fleetPool.query<{ code: string }>(
+    `SELECT code FROM bms.asset_domains WHERE active = true ORDER BY sort_order DESC, code DESC LIMIT 1`,
+  );
+  expect(last.rows[0]?.code, "facility must stay the last active domain by sort_order").toBe("facility");
+}
+
 /** T5 — a seeded `ups` asset draws under the `ups` segment on the whole-site strip, and under no other. */
 export async function assertStripDrawsUpsAssetsUnderTheUpsSegmentOnly(ctx: TrendPointsCtx): Promise<void> {
   const { rows } = await ctx.fleetPool.query<{ id: string }>(

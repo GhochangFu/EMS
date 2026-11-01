@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
-import { createDb } from "@bms/db";
+import { FIXTURE_ASSET_DOMAIN_PREFIX, createDb, fixtureAssetDomainCode } from "@bms/db";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
@@ -30,6 +30,7 @@ import {
   assertStripGroupOfAnotherSiteIsA404,
   assertStripHidesAssetsOutsideTheCallersGroups,
   assertStripOnAForeignSiteIsA404WithNoStatement,
+  assertStripSegmentIsNotAParallelSuitesPick,
   assertStripShowsANewSegment,
   assertTenantPolicyIsolatesTheRow,
   assertUnknownCodeIsBadRequest,
@@ -44,7 +45,7 @@ import { SiteTrendStripService } from "./trend-strip.service";
  * U3), on the `site-control-room-view.integration.test.ts` harness. Assertions
  * live in the sibling `.spec` (ADR 0014); this file owns the pools, the stale
  * sweep, the PHEWB snapshot and the child-first cleanup. `F4.301` U3 adds the
- * trend strip cases (T1–T5) and T4's per-run `F4301-<run>` segment, code,
+ * trend strip cases (T1–T5) and T4's per-run `zz_fixture_` segment, code,
  * override and asset at the inactive fixture site, removed child-first before
  * the F4.300 fixtures they hang off.
  */
@@ -67,11 +68,18 @@ type SnapshotRow = {
 
 const STALE = "now() - interval '30 minutes'";
 
+/** T4's per-run domain tag, for {@link fixtureAssetDomainCode} and the sweep. */
+const STRIP_DOMAIN_TAG = "f_trend_strip";
+
 /** Reaps what a killed earlier run committed: fixtures older than 30 minutes, child-first. */
 async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
   const staleKeys = `SELECT code FROM bms.point_keys WHERE code LIKE 'F4300-%' AND created_at < ${STALE}`;
   const staleStripAssets = `SELECT id FROM bms.assets WHERE code LIKE 'F4301-%' AND created_at < ${STALE}`;
-  const staleStripDomains = `SELECT code FROM bms.asset_domains WHERE code LIKE 'F4301-%' AND created_at < ${STALE}`;
+  // The prefixed code since the F4.301 review; `F4301-%` is what a killed run
+  // before it left behind.
+  const staleStripDomains = `SELECT code FROM bms.asset_domains
+    WHERE (starts_with(code, '${FIXTURE_ASSET_DOMAIN_PREFIX}${STRIP_DOMAIN_TAG}_') OR code LIKE 'F4301-%')
+      AND created_at < ${STALE}`;
   const staleOrgs = `SELECT id FROM bms.organizations WHERE code LIKE 'F4300-%' AND created_at < ${STALE}`;
   try {
     // F4.301 first: its assets and override rows hang off the F4.300 fixtures.
@@ -169,9 +177,14 @@ describe.skipIf(!connectionString)("F4.300 — TrendPointsService under real RLS
 
     // F4.301 T4: a per-run segment, a code of it, the fixture organization's
     // override listing that code, and one asset at the fixture site registering it.
-    const stripDomain = `F4301-${run}`;
+    // The domain is live to every parallel suite while this one runs, so
+    // `fixtureAssetDomainCode` names it: the boot gate's exact domain count
+    // skips its prefix, `zz_` sorts it after every seeded code (an
+    // `ORDER BY code LIMIT 1` pick elsewhere never lands on it), and
+    // `sort_order` 65 keeps `facility` (70) last in the F2.13 *Expected one of*.
+    const stripDomain = fixtureAssetDomainCode(STRIP_DOMAIN_TAG);
     const stripKey = `F4301-${run}-k`;
-    await fleetPool.query(`INSERT INTO bms.asset_domains (code, label, sort_order) VALUES ($1, $2, 9999)`, [
+    await fleetPool.query(`INSERT INTO bms.asset_domains (code, label, sort_order) VALUES ($1, $2, 65)`, [
       stripDomain,
       `F4.301 ${stripDomain}`,
     ]);
@@ -252,44 +265,60 @@ describe.skipIf(!connectionString)("F4.300 — TrendPointsService under real RLS
   });
 
   afterAll(async () => {
-    if (ctx) {
-      // F4.301 first, child-first: registration, asset, override, code, segment.
-      const strip = ctx.strip.segment;
+    try {
+      if (ctx) await cleanUp(ctx);
+    } finally {
+      await Promise.all([fleetPool?.end(), authPool?.end(), tenantPool?.end()]);
+    }
+  });
+
+  /**
+   * F4.301 first, child-first: registration, asset, override, code, segment.
+   * In a `try` whose `finally` runs the F4.300 cleanup, so a failed F4.301
+   * delete never leaks the F4.300 fixtures (the error still fails the hook).
+   */
+  async function cleanUp(ctx: TrendPointsCtx): Promise<void> {
+    const strip = ctx.strip.segment;
+    try {
       await fleetPool.query(`DELETE FROM bms.asset_points WHERE asset_id = $1`, [strip.assetId]);
       await fleetPool.query(`DELETE FROM bms.assets WHERE id = $1`, [strip.assetId]);
       await fleetPool.query(`DELETE FROM bms.org_trend_points WHERE domain = $1`, [strip.domain]);
       await fleetPool.query(`DELETE FROM bms.point_keys WHERE code = $1`, [strip.pointKey]);
       await fleetPool.query(`DELETE FROM bms.asset_domains WHERE code = $1`, [strip.domain]);
-      const keys = [...ctx.keys];
-      // Child-first, as bms_fleet: audit rows, override rows (they reference the
-      // keys and the organization with no ON DELETE), then the fixtures.
-      await fleetPool.query(
-        `DELETE FROM bms.audit_log WHERE entity_type = 'org_trend_points'
-          AND (entity_id = $1 OR (entity_id = $2 AND payload::text LIKE $3))`,
-        [ctx.fixtureOrgId, ctx.phewbId, `%F4300-${ctx.run}-%`],
-      );
-      await fleetPool.query(
-        `DELETE FROM bms.org_trend_points WHERE point_key = ANY($1) OR organization_id = $2`,
-        [keys, ctx.fixtureOrgId],
-      );
-      // Put PHEWB's list back exactly as it was (a replace-all write cleared it).
-      await fleetPool.query(`DELETE FROM bms.org_trend_points WHERE organization_id = $1 AND domain = $2`, [
-        ctx.phewbId,
-        SEGMENT,
-      ]);
-      for (const row of phewbSnapshot) {
-        await fleetPool.query(
-          `INSERT INTO bms.org_trend_points (organization_id, domain, point_key, sort_order, updated_at, updated_by)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [ctx.phewbId, row.domain, row.point_key, row.sort_order, row.updated_at, row.updated_by],
-        );
-      }
-      await fleetPool.query(`DELETE FROM bms.point_keys WHERE code = ANY($1)`, [keys]);
-      await fleetPool.query(`DELETE FROM bms.locations WHERE id = $1`, [ctx.fixtureSiteId]);
-      await fleetPool.query(`DELETE FROM bms.organizations WHERE id = $1`, [ctx.fixtureOrgId]);
+    } finally {
+      await cleanUpF4300(ctx);
     }
-    await Promise.all([fleetPool?.end(), authPool?.end(), tenantPool?.end()]);
-  });
+  }
+
+  async function cleanUpF4300(ctx: TrendPointsCtx): Promise<void> {
+    const keys = [...ctx.keys];
+    // Child-first, as bms_fleet: audit rows, override rows (they reference the
+    // keys and the organization with no ON DELETE), then the fixtures.
+    await fleetPool.query(
+      `DELETE FROM bms.audit_log WHERE entity_type = 'org_trend_points'
+        AND (entity_id = $1 OR (entity_id = $2 AND payload::text LIKE $3))`,
+      [ctx.fixtureOrgId, ctx.phewbId, `%F4300-${ctx.run}-%`],
+    );
+    await fleetPool.query(
+      `DELETE FROM bms.org_trend_points WHERE point_key = ANY($1) OR organization_id = $2`,
+      [keys, ctx.fixtureOrgId],
+    );
+    // Put PHEWB's list back exactly as it was (a replace-all write cleared it).
+    await fleetPool.query(`DELETE FROM bms.org_trend_points WHERE organization_id = $1 AND domain = $2`, [
+      ctx.phewbId,
+      SEGMENT,
+    ]);
+    for (const row of phewbSnapshot) {
+      await fleetPool.query(
+        `INSERT INTO bms.org_trend_points (organization_id, domain, point_key, sort_order, updated_at, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [ctx.phewbId, row.domain, row.point_key, row.sort_order, row.updated_at, row.updated_by],
+      );
+    }
+    await fleetPool.query(`DELETE FROM bms.point_keys WHERE code = ANY($1)`, [keys]);
+    await fleetPool.query(`DELETE FROM bms.locations WHERE id = $1`, [ctx.fixtureSiteId]);
+    await fleetPool.query(`DELETE FROM bms.organizations WHERE id = $1`, [ctx.fixtureOrgId]);
+  }
 
   it("S1a a PHEWB organization_admin writes PHEWB's list, in body order", async () => {
     await assertOrgAdminWritesItsOrganization(ctx);
@@ -369,6 +398,10 @@ describe.skipIf(!connectionString)("F4.300 — TrendPointsService under real RLS
 
   it("T4 F4.301: a new segment listed by an organization override is its own strip segment", async () => {
     await assertStripShowsANewSegment(ctx);
+  });
+
+  it("T4b F4.301 review: T4's live segment is not a parallel suite's first-by-code pick", async () => {
+    await assertStripSegmentIsNotAParallelSuitesPick(ctx);
   });
 
   it("T5 F4.301: a seeded ups asset draws under the ups segment only", async () => {

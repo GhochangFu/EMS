@@ -3,7 +3,12 @@ import { resolve } from "node:path";
 
 import { expect } from "vitest";
 
-import { ASSET_DOMAIN_SQL, PACK_ASSET_DOMAINS } from "./asset-domains-seed";
+import {
+  ASSET_DOMAIN_SQL,
+  FIXTURE_ASSET_DOMAIN_PREFIX,
+  PACK_ASSET_DOMAINS,
+  fixtureAssetDomainCode,
+} from "./asset-domains-seed";
 
 /** Vitest entry point lives in the sibling `.test.ts` (ADR 0014). */
 
@@ -158,4 +163,30 @@ export function assertTheCallSitsOutsideAnyTenantBracket(): void {
     insideAnyBracket(brackets, domainsAt),
     "seedAssetDomains(pool) must run outside every withOrganization( bracket",
   ).toBe(false);
+}
+
+/**
+ * `F4.301` review — a per-run fixture domain code is lowercase letters and
+ * underscores after the prefix, so the F2.13 *Expected one of* pattern
+ * (`[a-z_, ]*`) still matches while it is live, and it sorts after every
+ * seeded code by byte order and by a linguistic collation alike.
+ */
+export function assertFixtureDomainCodesAreLowercaseAndSortLast(): void {
+  const a = fixtureAssetDomainCode("f_trend");
+  const b = fixtureAssetDomainCode("f_trend");
+  expect(a.startsWith(FIXTURE_ASSET_DOMAIN_PREFIX)).toBe(true);
+  expect(a).toMatch(/^zz_fixture_f_trend_[a-z]{16}$/);
+  expect(a, "two calls must give two codes").not.toBe(b);
+  const seeded = ["electrical", "hvac", "it", "environment", "water", ...PACK_ASSET_DOMAINS.map((d) => d.code)];
+  for (const code of seeded) {
+    expect(a > code, `${a} must sort after ${code}`).toBe(true);
+  }
+}
+
+/** A tag outside `[a-z_]` is refused, so no caller can spell a code the pattern rejects. */
+export function assertFixtureDomainCodeRefusesABadTag(): void {
+  expect(() => fixtureAssetDomainCode("Trend")).toThrow(/tag/);
+  expect(() => fixtureAssetDomainCode("f4301")).toThrow(/tag/);
+  expect(() => fixtureAssetDomainCode("f-trend")).toThrow(/tag/);
+  expect(() => fixtureAssetDomainCode("")).toThrow(/tag/);
 }

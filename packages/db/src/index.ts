@@ -13,3 +13,8 @@ export { SEED_LOCATION_KEY } from "./seed-location-key";
  * internal to the package.
  */
 export { HEALTH_BANDS, HEALTH_BASELINE_CONTENT } from "./asset-template-health-seed";
+/**
+ * `F4.301` review — exported so an `apps/api` suite that writes a per-run
+ * asset domain names it the way the boot gate's domain count skips.
+ */
+export { FIXTURE_ASSET_DOMAIN_PREFIX, fixtureAssetDomainCode } from "./asset-domains-seed";
