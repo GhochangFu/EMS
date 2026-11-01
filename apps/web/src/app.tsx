@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { useEffect } from "react";
 
 import { fetchCurrentUser } from "./api/login";
@@ -61,6 +61,13 @@ import { TelemetryImportPage } from "./pages/admin/telemetry-import-page";
 import { AuthCallbackPage } from "./pages/auth-callback-page";
 import { LoginPage } from "./pages/login-page";
 import { useAuthStore } from "./stores/auth-store";
+
+/** `/assets/:assetId/history` (F4.297 first path) → `/asset-history/:assetId`, query kept. */
+function LegacyAssetHistoryRedirect() {
+  const { assetId = "" } = useParams();
+  const { search } = useLocation();
+  return <Navigate to={`/asset-history/${assetId}${search}`} replace />;
+}
 
 function isJwtExpired(token: string): boolean {
   const [, payload] = token.split(".");
@@ -254,7 +261,7 @@ export function App() {
         }
       />
       <Route
-        path="/assets/:assetId/history"
+        path="/asset-history/:assetId"
         element={
           accessToken && user ? (
             <AssetHistoryPage user={user} />
@@ -263,6 +270,8 @@ export function App() {
           )
         }
       />
+      {/* Legacy in-app path; `/assets/` is nginx's static prefix (F4.130), so no new route may live there. */}
+      <Route path="/assets/:assetId/history" element={<LegacyAssetHistoryRedirect />} />
       <Route
         path="/map"
         element={

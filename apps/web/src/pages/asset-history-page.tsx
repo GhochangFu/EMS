@@ -23,7 +23,7 @@ type AssetHistoryPageProps = {
 };
 
 /**
- * `F4.297` U5 (ADR 0108 decision 1) — `/assets/:assetId/history`: the asset's points with the
+ * `F4.297` U5 (ADR 0108 decision 1) — `/asset-history/:assetId`: the asset's points with the
  * latest value and poll time, a chart and a bucket table over a preset or custom range with an
  * optional compare, and the chosen point's latest raw records.
  *

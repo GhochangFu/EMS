@@ -256,7 +256,7 @@ export async function panelLinksToTheAssetHistory(): Promise<void> {
   const panel = heading.closest("aside") as HTMLElement;
 
   const link = within(panel).getByRole("link", { name: "History of FEED-PUMP-2" });
-  expect(link).toHaveAttribute("href", `/assets/${UNWIRED.id}/history`);
+  expect(link).toHaveAttribute("href", `/asset-history/${UNWIRED.id}`);
 }
 
 /**

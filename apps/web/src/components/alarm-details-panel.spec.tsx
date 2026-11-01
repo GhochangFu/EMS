@@ -276,5 +276,5 @@ export async function detailsLoadFailureReadsTheEnvelopeSentence(): Promise<void
 export async function linksTheAssetToItsHistory(): Promise<void> {
   await renderPanel(details());
   const link = screen.getByRole("link", { name: "History of PMP-01" });
-  expect(link).toHaveAttribute("href", "/assets/asset-1/history");
+  expect(link).toHaveAttribute("href", "/asset-history/asset-1");
 }

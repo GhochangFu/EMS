@@ -8,7 +8,7 @@ import { buildHistoryChartOption } from "../../lib/asset-history-chart-option";
 import { useChartTheme } from "../../lib/chart-theme";
 import { formatBucketWidth } from "../../lib/widget-value";
 import { SectionCard } from "../section-card";
-import { axisLabelInZone, formatInZone, type SiteZone } from "./history-format";
+import { formatInZone, timeAxisLabel, type SiteZone } from "./history-format";
 
 export const NO_PREVIOUS_SENTENCE = "no data for the previous period";
 
@@ -69,7 +69,7 @@ export function TrendChart({ series, chartedCount, compare, siteZone }: TrendCha
         type: "time",
         min: from,
         max: to,
-        axisLabel: { formatter: (value: number) => axisLabelInZone(value, siteZone.zone) },
+        axisLabel: timeAxisLabel(siteZone.zone),
       },
     };
   }, [first, series, compare, roles, siteZone.zone]);

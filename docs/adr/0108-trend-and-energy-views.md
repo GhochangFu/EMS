@@ -100,12 +100,12 @@ What the code has today:
 
 ### 1. `F4.297` — asset history
 
-1. **Route** *(drafter choice)*. A web page `/assets/:assetId/history` inside
+1. **Route** *(drafter choice)*. A web page `/asset-history/:assetId` inside
    the app shell, with the same `accessToken && user` guard as the other
    routes. The Assets list (`AssetDetailPanel`), the Control Room asset tile
    (`generated-site-asset-card.tsx`) and the alarm detail link to it. The page
    shows every point of the asset: one chart and one bucket table over a range
-   with compare, and a table of the latest raw records.
+   with compare, and a table of the latest raw records. The route sits outside `/assets/` because both nginx configs reserve that prefix for static build files (`try_files $uri =404`, F4.130); the first path `/assets/:assetId/history` gave a live 404 on a hard refresh (found 2026-11-01) and now redirects in the SPA.
 2. **Aggregate query change** *(owner: `F4.297` owns it, one shape reused by
    later rows)*. `pointAggregateQuerySchema` moves from
    `apps/api/src/telemetry/telemetry.schema.ts` to a new
