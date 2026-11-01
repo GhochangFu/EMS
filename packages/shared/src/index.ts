@@ -661,6 +661,7 @@ export type * from "./types/copilot";
 export type * from "./types/onboarding";
 export type * from "./types/onboarding-discovery";
 export type * from "./types/trend-points";
+export type * from "./types/trend-strip";
 
 // ---------------------------------------------------------------------------
 // AI onboarding wizard (ADR 0011, ADR 0022)
