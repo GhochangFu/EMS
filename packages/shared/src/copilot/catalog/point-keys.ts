@@ -34,7 +34,7 @@ export const POINT_KEY_ENTRIES: readonly CatalogEntry[] = [
     formulas: [],
     steps: [
       { id: "basics", title: "Basics", fields: ["code", "name", "domain", "unit"] },
-      { id: "details", title: "Details", fields: ["description", "headlineRank"] },
+      { id: "details", title: "Details", fields: ["description", "headlineRank", "trendDefault"] },
     ],
     summary: ({ body }) =>
       `Add the point key ${quoted(text(body, "code"))} (${text(body, "name")}) to the fleet-wide point-key catalog.`,
@@ -54,7 +54,7 @@ export const POINT_KEY_ENTRIES: readonly CatalogEntry[] = [
     formulas: [],
     steps: [
       { id: "basics", title: "Basics", fields: ["name", "domain", "unit"] },
-      { id: "details", title: "Details", fields: ["description", "headlineRank"] },
+      { id: "details", title: "Details", fields: ["description", "headlineRank", "trendDefault"] },
     ],
     summary: ({ body, targetName }) => `Change ${fieldList(body)} of the fleet-wide point key ${quoted(targetName)}.`,
   },
