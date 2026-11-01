@@ -222,6 +222,10 @@ export const dashboards = bmsSchema.table(
     // and dashboards_asset_stamp_check (assetTemplateId implies assetId) all live in migration
     // 0073 and are pinned by tests/f3.2-asset-dashboards-schema.test.ts.
     assetTemplateId: uuid("asset_template_id").references(() => assetTemplates.id),
+    // F4.305, migration 0118 — the stock layout version this copy was last upgraded to; NULL
+    // means "never stamped". Written by the seed copy, the API copy action and the v5 upgrade,
+    // so an administrator's deleted strip is not re-inserted. `templateId` stays provenance.
+    stockVersion: integer("stock_version"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

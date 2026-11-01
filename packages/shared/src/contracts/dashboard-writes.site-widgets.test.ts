@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   acceptsABreakerTable,
+  acceptsATrendStripNamingATabOfTheRequest,
+  acceptsATrendStripWithEachRange,
   acceptsEachOfTheFiveSiteWidgets,
   acceptsTheTwoAssetsCatalogEntries,
   refusesACardOnADashboardWithoutTabs,
@@ -9,6 +11,10 @@ import {
   refusesACardWithoutATargetTabKey,
   refusesAnUnknownKeyInASiteWidgetConfig,
   refusesAPointOnABreakerTable,
+  refusesAPointOnATrendStrip,
+  refusesATrendStripNamingAnUnknownTab,
+  refusesATrendStripWithAnUnknownRange,
+  refusesAnUnknownKeyInATrendStripConfig,
   refusesAPointOnASiteWidget,
   refusesAnUnknownKeyInABreakerTableConfig,
   refusesARailBeyondTwentyRows,
@@ -51,6 +57,30 @@ describe("F3.73 — the five site widgets on PUT /dashboards/:id/widgets", () =>
 
   it("refuses an undeclared key in a breaker_table config", () => {
     refusesAnUnknownKeyInABreakerTableConfig();
+  });
+
+  it("accepts a trend_strip with each default range", () => {
+    acceptsATrendStripWithEachRange();
+  });
+
+  it("accepts a trend_strip naming a tab of the request", () => {
+    acceptsATrendStripNamingATabOfTheRequest();
+  });
+
+  it("refuses a trend_strip with an unknown range", () => {
+    refusesATrendStripWithAnUnknownRange();
+  });
+
+  it("refuses an undeclared key in a trend_strip config", () => {
+    refusesAnUnknownKeyInATrendStripConfig();
+  });
+
+  it("refuses a point binding on a trend_strip", () => {
+    refusesAPointOnATrendStrip();
+  });
+
+  it("refuses a trend_strip naming an unknown tab", () => {
+    refusesATrendStripNamingAnUnknownTab();
   });
 
   it("refuses a rail beyond 20 rows", () => {

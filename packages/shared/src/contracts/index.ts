@@ -80,6 +80,7 @@ export * from "./mimic-symbol-library-writes";
 export * from "./point-key-writes";
 export * from "./trend-points";
 export * from "./trend-strip";
+export * from "./trend-strip-widget";
 export * from "./rtu-writes";
 export * from "./rule-writes";
 export * from "./notification-writes";
