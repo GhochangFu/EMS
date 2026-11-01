@@ -65,7 +65,7 @@ type Doc = {
   compare: unknown;
   partial: unknown;
   sites: { compare: unknown };
-  trend: { columns: unknown; points: { kw: unknown }[] };
+  trend: { columns: unknown; points: { t?: unknown; kw: unknown }[] };
   heatmap: { cells: { hour: number }[] };
   abnormal: { entries: { verdict: string }[] };
 };
