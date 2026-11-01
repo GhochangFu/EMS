@@ -911,8 +911,14 @@ export function addBuilderTab(state: BuilderTabsState): BuilderTabsState & { key
   return { tabs, rows, key };
 }
 
+/** The config keys that name a tab of the same dashboard: a module card's link, a mimic's group
+ * tab (`F3.74`) and a trend strip's scope (`F4.305`). A rename moves every one of them. */
+const TAB_NAMING_CONFIG_KEYS = ["targetTabKey", "mimicTabKey", "stripTabKey"] as const;
+
 /**
- * Re-keys one tab, and moves its widgets and every module summary card that links to it with it.
+ * Re-keys one tab, and moves its widgets and every config key that names it (a module summary
+ * card's link, a mimic's or a trend strip's `tabKey`) with it — else the renamed dashboard fails
+ * its own tab-key rules and cannot be saved (`F4.305` review).
  * Answers `null` when another tab holds the key: applying it would put two tabs' widgets under one
  * key, and no later edit could tell them apart again.
  */
@@ -929,7 +935,15 @@ export function renameBuilderTabKey(state: BuilderTabsState, index: number, key:
     tabs: state.tabs.map((other, position) => (position === index ? { ...other, key } : other)),
     rows: state.rows.map((row) => {
       const next = row.tabKey === from ? { ...row, tabKey: key } : row;
-      return next.config.targetTabKey === from ? { ...next, config: { ...next.config, targetTabKey: key } } : next;
+      const named = TAB_NAMING_CONFIG_KEYS.filter((field) => next.config[field] === from);
+      if (named.length === 0) {
+        return next;
+      }
+      const config = { ...next.config };
+      for (const field of named) {
+        config[field] = key;
+      }
+      return { ...next, config };
     }),
   };
 }
