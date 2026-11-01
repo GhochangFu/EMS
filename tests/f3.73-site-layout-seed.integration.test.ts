@@ -232,10 +232,11 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     expect(res.rows.find((row) => row.slug === CSMOC_SLUG)?.bound).toBe(2);
   });
 
-  // F3.77 (ADR 0087 Amendment 3), v4 since F3.74 (ADR 0088 Amendment 2): the Overview, written
+  // F3.77 (ADR 0087 Amendment 3), v4 since F3.74 (ADR 0088 Amendment 2), v5 since F4.305 (ADR 0108
+  // Amendment 3: the trend strip under the tiles, the body down 4): the Overview, written
   // literally rather than read from the stock entry, so a seed that wrote the stock rects of
   // another version is caught.
-  it("gives every seeded Overview the v4 rects, the compact diagram, the offline icon and no module card", async () => {
+  it("gives every seeded Overview the v5 rects, the trend strip, the compact diagram, the offline icon and no module card", async () => {
     const res = await probePool!.query<{ overview: string }>(
       `SELECT string_agg(w.widget_type || '|' || COALESCE(w.title, '') || '@' || w.grid_x || ',' || w.grid_y || ','
                          || w.grid_w || ',' || w.grid_h || COALESCE(':' || (w.config->>'icon'), ''),
@@ -244,12 +245,12 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
         GROUP BY d.slug`,
       [csmocId, pheSlugs],
     );
-    const v4 =
+    const v5 =
       "value_tile|Active alarms@0,0,3,2:alert;value_tile|Offline assets@3,0,3,2:offline;" +
-      "value_tile|Total load@6,0,3,2:bolt;value_tile|Asset health@9,0,3,2:gauge;" +
-      "active_alarms_rail|Active alarms@0,2,8,7;critical_systems_list|Critical systems@8,2,4,7;" +
-      "mimic|@0,9,6,2;asset_class_strip|@6,9,6,2;state_legend|@0,11,12,1";
-    expect(res.rows.map((row) => row.overview)).toEqual(Array.from({ length: 7 }, () => v4));
+      "value_tile|Total load@6,0,3,2:bolt;value_tile|Asset health@9,0,3,2:gauge;trend_strip|Trends@0,2,12,4;" +
+      "active_alarms_rail|Active alarms@0,6,8,7;critical_systems_list|Critical systems@8,6,4,7;" +
+      "mimic|@0,13,6,2;asset_class_strip|@6,13,6,2;state_legend|@0,15,12,1";
+    expect(res.rows.map((row) => row.overview)).toEqual(Array.from({ length: 7 }, () => v5));
   });
 
   it("writes no row on a second run", async () => {
@@ -460,6 +461,47 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     assert(res.rowCount === 1, `precondition: widget ${id} was reshaped`);
   }
 
+  /**
+   * `F4.305` — CSMOC's copy back to stock v4: every `trend_strip` deleted, the widgets under it
+   * lifted by its height, and the copy's stock stamp cleared, so the chain's v5 step runs on it
+   * again. Every rewind below starts here: a copy the seed wrote today is at v5.
+   */
+  async function dropTrendStrips(pool: Pick<SeedPool, "query">): Promise<void> {
+    const widgets = await copyWidgets(pool);
+    for (const strip of widgets.filter((w) => w.identity.split("|")[1] === "trend_strip")) {
+      const [, y, , h] = strip.rect.split(",").map(Number) as [number, number, number, number];
+      const res = await pool.query(`DELETE FROM bms.dashboard_widgets WHERE id = $1`, [strip.id]);
+      assert(res.rowCount === 1, `precondition: ${strip.identity} was deleted`);
+      for (const below of widgets.filter((w) => w.tabKey === strip.tabKey && w.id !== strip.id)) {
+        if (Number(below.rect.split(",")[1]) < y + h) continue;
+        await pool.query(`UPDATE bms.dashboard_widgets SET grid_y = grid_y - $2 WHERE id = $1`, [below.id, h]);
+      }
+    }
+    const stamp = await pool.query(`UPDATE bms.dashboards SET stock_version = NULL WHERE organization_id = $1 AND slug = $2`, [
+      eskomOrgId,
+      CSMOC_SLUG,
+    ]);
+    assert(stamp.rowCount === 1, "precondition: CSMOC Gauteng holds the seeded copy");
+  }
+
+  /**
+   * One tab's widgets with the v5 step undone: its one `trend_strip` removed and the widgets under
+   * it lifted back by its height. Throws unless the tab holds exactly one strip, so a v5 step that
+   * skipped the tab cannot pass a "left whole" comparison (the v5 step changes an edited tab too).
+   */
+  function withoutItsStrip(widgets: readonly StoredWidget[], tabKey: string): StoredWidget[] {
+    const tab = widgets.filter((w) => w.tabKey === tabKey);
+    const strips = tab.filter((w) => w.identity.split("|")[1] === "trend_strip");
+    assert(strips.length === 1, `${tabKey} holds ${strips.length} trend strips, not 1`);
+    const [, y, , h] = strips[0]!.rect.split(",").map(Number) as [number, number, number, number];
+    return tab
+      .filter((w) => w !== strips[0])
+      .map((w) => {
+        const [x, wy, ww, wh] = w.rect.split(",").map(Number) as [number, number, number, number];
+        return { ...w, rect: [x, wy >= y + h ? wy - h : wy, ww, wh].join(",") };
+      });
+  }
+
   /** Deletes the widgets v4 added (F3.74) from `tabKeys` of a copy the seed wrote at v4. */
   async function dropV4Widgets(pool: Pick<SeedPool, "query">, tabKeys: readonly string[]): Promise<void> {
     const v4Only = ["overview|mimic|", "sld|breaker_table|Breakers"];
@@ -476,6 +518,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
    * or a role tile may be missing, so an administrator's deletion fails the precondition.
    */
   async function rewindToUnpacked(pool: Pick<SeedPool, "query">): Promise<void> {
+    await dropTrendStrips(pool);
     await dropV4Widgets(pool, ["overview", "sld"]);
     const tabs = await copyTabs(pool);
     const tabKeys = new Set(tabs.map((row) => row.tab_key));
@@ -516,6 +559,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
    * gives a row of equal cards. The domain tabs are left as they are.
    */
   async function rewindOverviewToPackedV2(pool: Pick<SeedPool, "query">): Promise<void> {
+    await dropTrendStrips(pool);
     await dropV4Widgets(pool, ["overview"]);
     const tabs = await copyTabs(pool);
     const tabKeys = new Set(tabs.map((row) => row.tab_key));
@@ -628,7 +672,16 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     }
   }
 
-  const NOTHING = { descriptions: 0, widgets: 0, packed: 0, omittedTiles: 0, overviews: 0, overviewsV4: 0, electricalTabs: 0 };
+  const NOTHING = {
+    descriptions: 0,
+    widgets: 0,
+    packed: 0,
+    omittedTiles: 0,
+    overviews: 0,
+    overviewsV4: 0,
+    electricalTabs: 0,
+    trendStrips: 0,
+  };
 
   it("moves a v1 copy along the chain to where a fresh copy has it, on a re-seed", async () => {
     const fresh = await freshCopyShapes();
@@ -665,7 +718,8 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       await pool.query(`UPDATE bms.dashboard_widgets SET grid_y = grid_y + 1 WHERE id = $1`, [card?.id]);
       const before = await overviewShapes(pool);
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
-      expect(await overviewShapes(pool)).toEqual(before);
+      // The v5 step put a strip on the edited Overview too; with it taken out, it is as it was.
+      expect(withoutItsStrip(await copyWidgets(pool), "overview").map(shapeOf).sort()).toEqual(before);
     });
   });
 
@@ -674,7 +728,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       await rewindTemplate(pool, 2, smocStandardV2Content());
       expect(await templateRows(pool)).toBe("1:published:2");
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
-      expect(await templateRows(pool)).toBe("1:archived:2,2:published:4");
+      expect(await templateRows(pool)).toBe("1:archived:2,2:published:5");
     });
   });
 
@@ -748,12 +802,15 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       await pool.query(`UPDATE bms.dashboard_widgets SET grid_y = grid_y + 1 WHERE id = $1`, [rail?.id]);
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
       const after = await copyWidgets(pool);
-      const sld = after.filter((w) => w.tabKey === "sld" && w.id !== rail?.id);
+      // The v5 step put a strip on the edited tab too; with it taken out, the tab is as it was.
+      const sld = withoutItsStrip(after, "sld").filter((w) => w.id !== rail?.id);
       expect(sld.filter((w) => w.identity.startsWith("sld|value_tile|"))).toHaveLength(4);
       expect(sld.map((w) => w.rect)).toEqual(sld.map((w) => rectText(SMOC_STANDARD_V2_RECTS.get(w.identity)!)));
+      // ups was packed (no role tile binds at CSMOC), then the v5 step put its strip at the top.
       expect(after.filter((w) => w.tabKey === "ups").map((w) => `${w.identity}@${w.rect}`)).toEqual([
-        "ups|active_alarms_rail|Active alarms@0,0,6,5",
-        "ups|table|Assets@6,0,6,5",
+        "ups|trend_strip|Trends@0,0,12,4",
+        "ups|active_alarms_rail|Active alarms@0,4,6,5",
+        "ups|table|Assets@6,4,6,5",
       ]);
     });
   });
@@ -772,7 +829,7 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       await rewindToV1(pool);
       expect(await templateRows(pool)).toBe("1:published:1");
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
-      expect(await templateRows(pool)).toBe("1:archived:1,2:published:4");
+      expect(await templateRows(pool)).toBe("1:archived:1,2:published:5");
     });
   });
 
@@ -794,11 +851,11 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     await inTransaction(eskomOrgId, async (pool) => {
       await rewindToV1(pool);
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
-      expect(await templateRows(pool)).toBe("1:archived:1,2:published:4");
+      expect(await templateRows(pool)).toBe("1:archived:1,2:published:5");
       await rewindToV1(pool);
       expect(await templateRows(pool)).toBe("1:published:1");
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
-      expect(await templateRows(pool)).toBe("1:archived:1,2:published:4");
+      expect(await templateRows(pool)).toBe("1:archived:1,2:published:5");
     });
   });
 
@@ -815,14 +872,17 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
       ]);
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
       const after = await copyWidgets(pool);
-      const sld = after.filter((w) => w.tabKey === "sld" && w.id !== rail?.id);
+      // The v5 step put a strip on the edited tab too; with it taken out, the tab is as it was.
+      const sld = withoutItsStrip(after, "sld").filter((w) => w.id !== rail?.id);
       const ups = after.filter((w) => w.tabKey === "ups");
       expect(sld.length).toBeGreaterThan(0);
       expect(sld.map((w) => w.rect)).toEqual(sld.map((w) => rectText(SMOC_STANDARD_V1_RECTS.get(w.identity)!)));
-      // The ups tab moved to v2 and was then packed: both its role tiles bind nothing at CSMOC.
+      // The ups tab moved to v2 and was then packed (both its role tiles bind nothing at CSMOC),
+      // then the v5 step put its strip at the top.
       expect(ups.map((w) => `${w.identity}@${w.rect}`)).toEqual([
-        "ups|active_alarms_rail|Active alarms@0,0,6,5",
-        "ups|table|Assets@6,0,6,5",
+        "ups|trend_strip|Trends@0,0,12,4",
+        "ups|active_alarms_rail|Active alarms@0,4,6,5",
+        "ups|table|Assets@6,4,6,5",
       ]);
       expect(await descriptionOf(pool)).toBe(`Edited ${RUN_ID}`);
     });

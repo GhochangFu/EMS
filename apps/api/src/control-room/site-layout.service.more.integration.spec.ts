@@ -240,10 +240,16 @@ export async function assertTakenSlugAnswers409(ctx: SiteLayoutCtx): Promise<voi
  * provides: the S1 rows, stamped with THAT template (not the organization's newest), and the
  * copy's three audit actions once each — the arm adds no audit of its own.
  * Mutation: the arm drops `templateId` → the newer template is stamped → red.
+ * `F4.305` (owner answer C5): the copy also carries THAT template's stock version (`5`; the
+ * newer one has none). Mutation: drop `stockVersion` from the dashboard insert → `null` → red.
  */
 export async function assertInstantiateSiteArmMakesTheCopy(ctx: SiteLayoutCtx): Promise<void> {
   const org = await newOrganization(ctx.fleetPool, `${ctx.run}-inst`, ctx.created);
   const older = await newSiteTemplate(ctx.fleetPool, org, `${ctx.run}-inst`, ctx.created);
+  // `dashboard_templates_stock_stamp_check`: a stock version comes with a stock code.
+  await ctx.fleetPool.query(`UPDATE bms.dashboard_templates SET stock_code = code, stock_version = 5 WHERE id = $1`, [
+    older,
+  ]);
   const { rows } = await ctx.fleetPool.query<{ id: string }>(
     `INSERT INTO bms.dashboard_templates (organization_id, code, version, name, section, status, content, target, published_at)
      VALUES ($1, $2, 1, 'F3.73 newer', 'site', 'published', $3::jsonb, 'site', now() + interval '1 hour') RETURNING id`,
@@ -255,11 +261,11 @@ export async function assertInstantiateSiteArmMakesTheCopy(ctx: SiteLayoutCtx): 
   const result = (await ctx.instantiate.instantiateSite(admin(), older, { locationId: site })) as {
     dashboardId: string;
   };
-  const { rows: dash } = await ctx.fleetPool.query<{ id: string; template_id: string }>(
-    `SELECT id, template_id FROM bms.dashboards WHERE location_id = $1`,
+  const { rows: dash } = await ctx.fleetPool.query<{ id: string; template_id: string; stock_version: number | null }>(
+    `SELECT id, template_id, stock_version FROM bms.dashboards WHERE location_id = $1`,
     [site],
   );
-  expect(dash).toEqual([{ id: result.dashboardId, template_id: older }]);
+  expect(dash).toEqual([{ id: result.dashboardId, template_id: older, stock_version: 5 }]);
   const { rows: tabs } = await ctx.fleetPool.query<{ tab_key: string }>(
     `SELECT tab_key FROM bms.dashboard_tabs WHERE dashboard_id = $1 ORDER BY sort_order`,
     [result.dashboardId],
@@ -415,15 +421,18 @@ export async function assertUnboundRoleTilesAreOmitted(ctx: SiteLayoutCtx): Prom
   expect(widgets.filter((w) => w.includes(":value_tile:") && !w.startsWith("overview:"))).toEqual([]);
   expect(widgets.filter((w) => w.startsWith("overview:value_tile:"))).toHaveLength(4);
   // Stock v4 (`F3.74`): the `sld` tab holds the breaker table under its mimic, so its rail and
-  // table sit five rows lower than the `env` tab's.
+  // table sit five rows lower than the `env` tab's. Stock v5 (`F4.305`): the trend strip, under
+  // the emptied tile row, moves up to `y0` with the body under it.
   expect(widgets.filter((w) => w.startsWith("sld:") || w.startsWith("env:"))).toEqual([
-    "sld:mimic:@0,0",
-    "sld:breaker_table:Breakers@0,7",
-    "sld:active_alarms_rail:Active alarms@0,12",
-    "sld:table:Assets@6,12",
-    "env:mimic:@0,0",
-    "env:active_alarms_rail:Active alarms@0,7",
-    "env:table:Assets@6,7",
+    "sld:trend_strip:Trends@0,0",
+    "sld:mimic:@0,4",
+    "sld:breaker_table:Breakers@0,11",
+    "sld:active_alarms_rail:Active alarms@0,16",
+    "sld:table:Assets@6,16",
+    "env:trend_strip:Trends@0,0",
+    "env:mimic:@0,4",
+    "env:active_alarms_rail:Active alarms@0,11",
+    "env:table:Assets@6,11",
   ]);
   const tileKeys = result.resolution.flatMap((tab) => tab.widgets.map((w) => w.widgetKey)).filter((key) => key.endsWith("-tile"));
   expect(tileKeys.filter((key) => !key.startsWith("overview-")), "an omitted tile has no resolution row").toEqual([]);

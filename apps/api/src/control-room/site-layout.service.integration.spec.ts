@@ -227,6 +227,7 @@ export async function assertZeroGroupSiteGetsGroupsAndACopy(ctx: SiteLayoutCtx):
   ).toBe(0);
   // `F3.77` plan D1: the v3 Overview holds no module card, and one Critical systems list 4×7 at
   // x8 beside the 8-wide rail. The list row is the adjacent positive for the card absence.
+  // Stock v5 (`F4.305`): both sit under the trend strip, four rows lower.
   const { rows: overview } = await ctx.fleetPool.query<{ widget: string }>(
     `SELECT w.widget_type || ':' || coalesce(w.title, '') || '@' || w.grid_x || ',' || w.grid_y || ',' || w.grid_w || ',' || w.grid_h AS widget
        FROM bms.dashboard_widgets w JOIN bms.dashboard_tabs t ON t.id = w.tab_id
@@ -236,8 +237,8 @@ export async function assertZeroGroupSiteGetsGroupsAndACopy(ctx: SiteLayoutCtx):
     [result.dashboardId],
   );
   expect(overview.map((row) => row.widget)).toEqual([
-    "active_alarms_rail:Active alarms@0,2,8,7",
-    "critical_systems_list:Critical systems@8,2,4,7",
+    "active_alarms_rail:Active alarms@0,6,8,7",
+    "critical_systems_list:Critical systems@8,6,4,7",
   ]);
   expect(result.droppedCards, "the v3 Overview has no card to drop").toEqual([]);
   expect(result.omittedTabs.map((t) => t.tabKey).sort()).toEqual(["hvac", "it", "ups", "water"]);

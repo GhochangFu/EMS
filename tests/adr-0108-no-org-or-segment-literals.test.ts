@@ -104,6 +104,8 @@ const MODULES: readonly string[] = [
   "apps/web/src/components/control-room/trend-strip.tsx",
   // F4.305 (ADR 0108 Amendment 3) — U1.
   "packages/shared/src/contracts/trend-strip-widget.ts",
+  // F4.305 U3.
+  "packages/db/src/site-layout-seed-upgrade-v5.ts",
 ];
 
 /**
@@ -122,8 +124,7 @@ const MODULES: readonly string[] = [
  * each, so they are not listed (the `energy-page.tsx` precedent).
  */
 const PENDING_MODULES: readonly string[] = [
-  // F4.305 (ADR 0108 Amendment 3): U3 creates the first, U4 the other two.
-  "packages/db/src/site-layout-seed-upgrade-v5.ts",
+  // F4.305 (ADR 0108 Amendment 3): U4 creates these two (U3 moved the seed step to MODULES).
   "apps/web/src/components/widgets/trend-strip-widget.tsx",
   "apps/web/src/components/dashboards/trend-strip-widget-live.tsx",
 ];
