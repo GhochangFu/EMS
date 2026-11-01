@@ -134,6 +134,7 @@ import {
   energyReportQuerySchema,
   energyViewQuerySchema,
   saveEnergyReportFileBodySchema,
+  siteTrendStripQuerySchema,
   updateReportScheduleBodySchema,
 } from "@bms/shared";
 import {
@@ -438,6 +439,8 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   energyViewQuerySchema,
   // 28 -> 29: F4.297 registered pointRawQuerySchema (GET /telemetry/points/:pointRef/raw) — .strict(), no body, no ledger entry, the same precedent.
   pointRawQuerySchema,
+  // 29 -> 30: F4.301 registered siteTrendStripQuerySchema (GET /control-room/sites/:locationId/trend-strip) — .strict(), no body, no ledger entry, the same precedent.
+  siteTrendStripQuerySchema,
   mappingSheetQuerySchema,
   // `E4.1a`: `GET /admin/calc-parameters?organizationId=&key=` — `.strict()`,
   // no ledger entry, the `mappingSheetQuerySchema` precedent.
@@ -964,6 +967,11 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // a bounded `limit` and an optional `before`, `.strict()`, no body — the
   // `mappingSheetQuerySchema` precedent.
   //
+  // 29 -> 30: `F4.301` registered `siteTrendStripQuerySchema`
+  // (`GET /control-room/sites/:locationId/trend-strip?range=&assetGroupId=`, ADR 0108
+  // Amendment 2 item 3): a range and an optional group uuid, `.strict()`, no body —
+  // the same precedent.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -973,7 +981,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(29);
+  ).toBe(30);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))
