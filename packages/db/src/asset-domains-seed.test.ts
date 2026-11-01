@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertDomainsAreSeededBeforeTheKeysFiledUnderThem,
+  assertFixtureDomainCodeFitsTheColumn,
   assertFixtureDomainCodeRefusesABadTag,
   assertFixtureDomainCodesAreLowercaseAndSortLast,
   assertReSeedingIsIdempotentAndNeverOverwrites,
@@ -34,5 +35,9 @@ describe("F4.301 review — a per-run fixture asset domain code", () => {
 
   it("refuses a tag outside [a-z_]", () => {
     assertFixtureDomainCodeRefusesABadTag();
+  });
+
+  it("refuses a tag that would overflow varchar(64)", () => {
+    assertFixtureDomainCodeFitsTheColumn();
   });
 });

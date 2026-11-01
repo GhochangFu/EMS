@@ -92,6 +92,12 @@ export const PACK_ASSET_DOMAINS: readonly AssetDomainSeed[] = [
 export const FIXTURE_ASSET_DOMAIN_PREFIX = "zz_fixture_";
 
 /**
+ * The longest tag {@link fixtureAssetDomainCode} takes: `asset_domains.code` is
+ * `varchar(64)`, and the code is the prefix (11), the tag, `_` and 16 letters.
+ */
+export const FIXTURE_ASSET_DOMAIN_TAG_MAX = 64 - FIXTURE_ASSET_DOMAIN_PREFIX.length - 1 - 16;
+
+/**
  * A per-run fixture domain code: the prefix, `tag`, and 16 random lowercase
  * letters. Letters and underscores only, so the code stays inside the
  * `[a-z_]` shape other suites read the live domain list with (the F2.13
@@ -102,6 +108,11 @@ export const FIXTURE_ASSET_DOMAIN_PREFIX = "zz_fixture_";
 export function fixtureAssetDomainCode(tag: string): string {
   if (!/^[a-z_]+$/.test(tag)) {
     throw new Error(`fixtureAssetDomainCode: the tag must match [a-z_]+, got "${tag}"`);
+  }
+  if (tag.length > FIXTURE_ASSET_DOMAIN_TAG_MAX) {
+    throw new Error(
+      `fixtureAssetDomainCode: the tag must be at most ${FIXTURE_ASSET_DOMAIN_TAG_MAX} characters, got ${tag.length}`,
+    );
   }
   const letters = randomUUID()
     .replace(/-/g, "")

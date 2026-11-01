@@ -609,6 +609,20 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
     expect(after, "a domain a migration or the seed did not write must fail the check").toBe(before.actual + 1);
   }, 60_000);
 
+  it("P5: a near miss of the prefix that LIKE would match still moves the check (+1)", async () => {
+    // `zzxfixturex` matches `LIKE 'zz_fixture_%'` (`_` is a wildcard there) but not
+    // `starts_with`, so a rewrite of the skip to LIKE reddens this case. Rolled back by `around`.
+    const code = `zzxfixturex${fixtureAssetDomainCode("p").slice(FIXTURE_ASSET_DOMAIN_PREFIX.length)}`;
+    const { before, after } = await around(
+      "global",
+      "asset domains",
+      (pool) => insertAssetDomain(pool, code),
+      PROBE.assetDomains,
+    );
+    assertSeeded(before);
+    expect(after, "only the literal prefix may be skipped").toBe(before.actual + 1);
+  }, 60_000);
+
   it("V10: an admin asset pinned to the incomer template leaves the incomer check unmoved", async () => {
     const { before, after } = await around(
       "eskom",

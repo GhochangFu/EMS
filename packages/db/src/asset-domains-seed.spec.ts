@@ -6,6 +6,7 @@ import { expect } from "vitest";
 import {
   ASSET_DOMAIN_SQL,
   FIXTURE_ASSET_DOMAIN_PREFIX,
+  FIXTURE_ASSET_DOMAIN_TAG_MAX,
   PACK_ASSET_DOMAINS,
   fixtureAssetDomainCode,
 } from "./asset-domains-seed";
@@ -189,4 +190,11 @@ export function assertFixtureDomainCodeRefusesABadTag(): void {
   expect(() => fixtureAssetDomainCode("f4301")).toThrow(/tag/);
   expect(() => fixtureAssetDomainCode("f-trend")).toThrow(/tag/);
   expect(() => fixtureAssetDomainCode("")).toThrow(/tag/);
+}
+
+/** The longest tag still fits `varchar(64)`; one more character is refused, not a loud INSERT failure. */
+export function assertFixtureDomainCodeFitsTheColumn(): void {
+  expect(FIXTURE_ASSET_DOMAIN_TAG_MAX).toBe(36);
+  expect(fixtureAssetDomainCode("a".repeat(FIXTURE_ASSET_DOMAIN_TAG_MAX))).toHaveLength(64);
+  expect(() => fixtureAssetDomainCode("a".repeat(FIXTURE_ASSET_DOMAIN_TAG_MAX + 1))).toThrow(/at most 36/);
 }
