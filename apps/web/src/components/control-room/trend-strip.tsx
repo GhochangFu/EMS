@@ -1,0 +1,164 @@
+import type { TrendStripPointDto, TrendStripRange, TrendStripSegmentDto } from "@bms/shared";
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { Link } from "react-router-dom";
+
+import { fetchSiteTrendStrip } from "../../api/trend-strip";
+import { formatPointValue } from "../../lib/generated-site-view";
+import { siteAssetsPath } from "../../lib/smoc-pages";
+import { historyHref, lastValue, stripWindowLabel } from "../../lib/trend-strip";
+import { SectionCard } from "../section-card";
+import { Sparkline } from "./sparkline";
+
+/**
+ * `F4.301` U4 (ADR 0108 Amendment 2, items 5–9) — the Control Room site page's trend strip: one
+ * section per segment the response carries, one row per trend point, one sparkline per asset
+ * (the server caps them), a range switch, and the window line. Every label comes from the
+ * response — the strip names no segment and never falls back to a literal one. One read per
+ * (tab, range), refreshed each minute: a 24 h sparkline does not move in seconds.
+ */
+
+const RANGES: readonly { readonly key: TrendStripRange; readonly label: string }[] = [
+  { key: "24h", label: "24 h" },
+  { key: "7d", label: "7 d" },
+  { key: "30d", label: "30 d" },
+];
+
+function PointRow({
+  point,
+  range,
+  locationId,
+}: {
+  point: TrendStripPointDto;
+  range: TrendStripRange;
+  locationId: string;
+}) {
+  return (
+    <li aria-label={point.name} className="flex flex-col gap-2 border-t border-well-deep pt-3 first:border-t-0 first:pt-0">
+      <div className="flex items-baseline gap-2">
+        <span className="text-xs font-semibold text-ink">{point.name}</span>
+        {point.unit !== null ? (
+          <span data-role="point-unit" className="text-[11px] text-ink-muted">
+            {point.unit}
+          </span>
+        ) : null}
+      </div>
+      <ul className="flex flex-wrap items-end gap-4">
+        {point.assets.map((asset) => {
+          const value = lastValue(asset.buckets);
+          return (
+            <li key={asset.assetId} className="flex flex-col gap-1">
+              <Link
+                to={historyHref(asset.assetId, range, point.code)}
+                aria-label={`${asset.assetCode} ${point.name}: open history`}
+                title={asset.assetName}
+                className="rounded hover:bg-well focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+              >
+                <Sparkline buckets={asset.buckets} label={`${asset.assetCode} ${point.name}`} />
+              </Link>
+              <span className="flex justify-between gap-2 text-[11px]">
+                <span className="font-semibold text-ink-muted">{asset.assetCode}</span>
+                <span className="tabular-nums text-ink">
+                  {value === null || asset.unit === null
+                    ? formatPointValue(value)
+                    : `${formatPointValue(value)} ${asset.unit}`}
+                </span>
+              </span>
+            </li>
+          );
+        })}
+        {point.moreAssets > 0 ? (
+          <li className="self-center">
+            <Link
+              to={siteAssetsPath(locationId)}
+              className="text-xs font-semibold text-accent-strong hover:underline"
+            >
+              {`+${point.moreAssets} more`}
+            </Link>
+          </li>
+        ) : null}
+      </ul>
+    </li>
+  );
+}
+
+function SegmentCard({
+  segment,
+  range,
+  locationId,
+}: {
+  segment: TrendStripSegmentDto;
+  range: TrendStripRange;
+  locationId: string;
+}) {
+  return (
+    <SectionCard
+      title={segment.label}
+      subtitle={segment.source === "organization" ? "Organization list" : "Catalog default"}
+    >
+      <ul className="flex flex-col gap-3">
+        {segment.points.map((point) => (
+          <PointRow key={point.code} point={point} range={range} locationId={locationId} />
+        ))}
+      </ul>
+    </SectionCard>
+  );
+}
+
+export function TrendStrip({ locationId, assetGroupId }: { locationId: string; assetGroupId: string | null }) {
+  const [range, setRange] = useState<TrendStripRange>("24h");
+  const query = useQuery({
+    queryKey: ["control-room", "trend-strip", locationId, assetGroupId, range],
+    queryFn: () => fetchSiteTrendStrip(locationId, { range, assetGroupId }),
+    refetchInterval: 60_000,
+  });
+  const strip = query.data;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="font-condensed text-sm font-bold text-ink">Trends</h2>
+        <nav aria-label="Trend range" className="flex gap-1">
+          {RANGES.map((r) => (
+            <button
+              key={r.key}
+              type="button"
+              aria-pressed={r.key === range}
+              onClick={() => setRange(r.key)}
+              className={`rounded border px-2 py-1 text-xs ${
+                r.key === range ? "border-accent bg-accent text-on-accent font-semibold" : "border-line-strong"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+      {query.isPending ? (
+        <p role="status" className="text-xs text-ink-muted">
+          Loading trends…
+        </p>
+      ) : query.isError || strip === undefined ? (
+        <p role="alert" className="text-xs text-critical">
+          Could not load the trend strip.
+        </p>
+      ) : (
+        <>
+          {strip.segments.length === 0 ? (
+            <p className="text-xs text-ink-muted">No trend points for the assets on this tab.</p>
+          ) : (
+            strip.segments.map((segment) => (
+              <SegmentCard key={segment.domain} segment={segment} range={strip.range} locationId={locationId} />
+            ))
+          )}
+          {strip.trimmed ? (
+            <p className="text-[11px] text-ink-muted">{`Trimmed to ${strip.assetsPerPoint} assets per point`}</p>
+          ) : null}
+          <p className="text-[11px] text-ink-muted">
+            {`Window: ${stripWindowLabel(strip.from, strip.to, strip.bucketSeconds, strip.timeZone)}`}
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
