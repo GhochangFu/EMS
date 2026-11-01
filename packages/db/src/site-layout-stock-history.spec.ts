@@ -12,11 +12,13 @@ import {
   SMOC_STANDARD_V2_DOMAIN_TABS_SHA256,
   SMOC_STANDARD_V2_RECTS,
   SLD_V3_WIDGETS,
+  SMOC_STANDARD_V4_CONTENT_SHA256,
   siteTemplateRects,
   siteWidgetIdentity,
   smocStandardV1Content,
   smocStandardV2Content,
   smocStandardV3Content,
+  smocStandardV4Content,
 } from "./site-layout-stock-history";
 
 /**
@@ -179,13 +181,38 @@ const UNCHANGED_TABS_V3_TO_V4_SHA256 = "f2c644c2ed9a4e8d86a21cfb9cdcee9760498077
  */
 export function onlyTheElectricalTabChangedBetweenV3AndV4(): void {
   const v3 = smocStandardV3Content();
-  const untouched = current.tabs.filter((tab) => tab.key !== OVERVIEW_TAB_KEY && tab.key !== "sld");
+  const v4 = smocStandardV4Content();
+  const untouched = v4.tabs.filter((tab) => tab.key !== OVERVIEW_TAB_KEY && tab.key !== "sld");
   const digest = createHash("sha256").update(canonicalJson(untouched)).digest("hex");
   assert(digest === UNCHANGED_TABS_V3_TO_V4_SHA256, `the five untouched tabs hash to ${digest}: a tab changed since v3`);
-  const changed = current.tabs
+  const changed = v4.tabs
     .filter((tab) => canonicalJson(tab) !== canonicalJson(v3.tabs.find((old) => old.key === tab.key)))
     .map((tab) => tab.key)
     .join(",");
   assert(changed === "overview,sld", `tabs changed since v3: got ${changed}`);
-  assert(v3.tabs.length === current.tabs.length, `v3 holds ${v3.tabs.length} tabs, v4 ${current.tabs.length}`);
+  assert(v3.tabs.length === v4.tabs.length, `v3 holds ${v3.tabs.length} tabs, v4 ${v4.tabs.length}`);
+}
+
+// ── v4 ──────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The frozen v4 content is byte for byte, config included, the content stock v4 shipped: the
+ * pin was taken from the live entry at `51475211` (stock version 4) before the template moved to
+ * v5. An edit to a v4 widget, or a v5 change the derivation does not undo, reddens this.
+ */
+export function theFrozenV4ContentHashesAsShipped(): void {
+  const digest = createHash("sha256").update(canonicalJson(smocStandardV4Content())).digest("hex");
+  assert(digest === SMOC_STANDARD_V4_CONTENT_SHA256, `the frozen v4 content hashes to ${digest}: it changed since stock v4`);
+}
+
+/** Stock v4 held no `trend_strip`, on any tab; the v4 content parses as a site template. */
+export function theV4ContentHoldsNoTrendStrip(): void {
+  const v4 = smocStandardV4Content();
+  assert(sectionTemplateContentSchema.safeParse(v4).success, "the v4 content does not parse");
+  const strips = v4.tabs.flatMap((tab) => tab.widgets.filter((w) => w.widgetType === "trend_strip").map(() => tab.key));
+  assert(strips.length === 0, `v4 holds a trend strip on ${strips.join(",")}`);
+  assert(
+    v4.tabs.map((tab) => tab.key).join(",") === "overview,sld,ups,hvac,it,env,water",
+    v4.tabs.map((tab) => tab.key).join(","),
+  );
 }

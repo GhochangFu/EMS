@@ -1,4 +1,4 @@
-import type { SectionTemplateContent, SectionTemplateWidget } from "@bms/shared";
+import { packAfterRemoval, type SectionTemplateContent, type SectionTemplateWidget } from "@bms/shared";
 import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 /**
@@ -13,14 +13,18 @@ import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
  * - **v3** (`F3.77`, ADR 0087 Amendment 3): the Overview has no card
  *   ({@link OVERVIEW_V3_WIDGETS}), and the `sld` tab draws `electrical_distribution` with no
  *   breaker table ({@link SLD_V3_WIDGETS}). `F3.74` froze it here when v4 became the live entry.
- * - **v4** (`F3.74`, ADR 0088 Amendment 2) is the live entry: a compact `lv_single_line` beside
- *   the class strip on the Overview, and `lv_single_line` with a breaker table on the `sld` tab.
+ * - **v4** (`F3.74`, ADR 0088 Amendment 2): a compact `lv_single_line` beside the class strip on
+ *   the Overview, and `lv_single_line` with a breaker table on the `sld` tab. `F4.305` froze it
+ *   here ({@link smocStandardV4Content}, pinned by {@link SMOC_STANDARD_V4_CONTENT_SHA256}) when
+ *   v5 became the live entry.
+ * - **v5** (`F4.305`, ADR 0108 Amendment 3) is the live entry: one `trend_strip` under each tab's
+ *   top tile row, the widgets below it moved down by its height.
  *
- * **Adding a version** (v5 is next): freeze the shape that is about to stop being current — its
- * changed tabs' widgets and a `smocStandardV4Content()` built the way
- * {@link smocStandardV3Content} is — before the stock entry changes, then point the chain's next
- * step at it. Nothing in this file is ever edited after its version ships: a copy the seed wrote
- * at that version still holds exactly these values.
+ * **Adding a version** (v6 is next): freeze the shape that is about to stop being current —
+ * pinned by a hash taken from the live entry before it changes, the way
+ * {@link smocStandardV4Content} is — then point the chain's next step at it. Nothing in this file
+ * is ever edited after its version ships: a copy the seed wrote at that version still holds
+ * exactly these values.
  */
 
 export type GridRect = {
@@ -412,11 +416,12 @@ export const SLD_V3_WIDGETS: readonly SectionTemplateWidget[] = [
 ];
 
 /**
- * Stock v3's content: the live (v4) tabs with the Overview replaced by {@link OVERVIEW_V3_WIDGETS}
- * and the `sld` tab by its v3 shape. Every other tab is unchanged in v4.
+ * Stock v3's content: the frozen v4 tabs ({@link smocStandardV4Content}) with the Overview
+ * replaced by {@link OVERVIEW_V3_WIDGETS} and the `sld` tab by its v3 shape. Every other tab is
+ * unchanged in v4.
  */
 export function smocStandardV3Content(): SectionTemplateContent {
-  const content = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent;
+  const content = smocStandardV4Content();
   return {
     ...content,
     tabs: content.tabs.map((tab) => {
@@ -424,6 +429,34 @@ export function smocStandardV3Content(): SectionTemplateContent {
       if (tab.key === SLD_TAB_KEY) return { ...tab, mimicPreset: "electrical_distribution", widgets: [...SLD_V3_WIDGETS] };
       return tab;
     }),
+  };
+}
+
+// ── v4 ──────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The sha256 of {@link canonicalJson} of stock v4's whole content, taken from the live entry at
+ * `51475211` (stock version 4) before `F4.305` moved it to v5. {@link smocStandardV4Content}
+ * derives v4 from the live entry, which is right only while the derivation hashes to this; the
+ * history spec holds it.
+ */
+export const SMOC_STANDARD_V4_CONTENT_SHA256 = "3de4fe16e632e9d793edfd425a29310d79b82d8c3424f50a219863450c72ef52";
+
+/**
+ * Stock v4's content (`F3.74`, ADR 0088 Amendment 2): the live entry with every `trend_strip`
+ * removed (`F4.305`, ADR 0108 Amendment 3, added one under each tab's top tile row) and each tab
+ * re-packed by `packAfterRemoval`, so the rows the strip took close up and every widget below
+ * moves back to its v4 rect. Derived rather than restated: v5 changed nothing else, and
+ * {@link SMOC_STANDARD_V4_CONTENT_SHA256} says so.
+ */
+export function smocStandardV4Content(): SectionTemplateContent {
+  const content = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent;
+  return {
+    ...content,
+    tabs: content.tabs.map((tab) => ({
+      ...tab,
+      widgets: packAfterRemoval(tab.widgets, (widget) => widget.widgetType !== "trend_strip"),
+    })),
   };
 }
 
