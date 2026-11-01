@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import type * as AssetDomainsSeed from "../packages/db/dist/asset-domains-seed.js";
 import type * as AssetGroupsSeed from "../packages/db/dist/asset-groups-seed.js";
 import type * as AutomationRulesSeed from "../packages/db/dist/automation-rules-seed.js";
 import type * as DbClient from "../packages/db/dist/client.js";
@@ -38,6 +39,9 @@ const { assignEskomAssetRtus, ensureEskomDomainRtus } = require_(
 const { eskomSeedAssetCatalog, seedEskomAssets } = require_(
   "../packages/db/dist/eskom-assets-seed.js",
 ) as typeof EskomAssetsSeed;
+const { FIXTURE_ASSET_DOMAIN_PREFIX, fixtureAssetDomainCode } = require_(
+  "../packages/db/dist/asset-domains-seed.js",
+) as typeof AssetDomainsSeed;
 const { backfillAssetLocations } = require_("../packages/db/dist/asset-groups-seed.js") as typeof AssetGroupsSeed;
 const { createDb } = require_("../packages/db/dist/client.js") as typeof DbClient;
 const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typeof SeedTenant;
@@ -473,6 +477,7 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
     itRackKw: `SELECT COUNT(*)::int AS n FROM bms.asset_points ap
       JOIN bms.assets a ON a.id = ap.asset_id WHERE a.domain = 'it' AND ap.point_key = 'rack_kw'`,
     organizations: `SELECT COUNT(*)::int AS n FROM bms.organizations`,
+    assetDomains: `SELECT COUNT(*)::int AS n FROM bms.asset_domains`,
     incomerPinned: `SELECT COUNT(*)::int AS n FROM bms.assets a
       JOIN bms.asset_templates t ON t.id = a.template_id WHERE t.code = 'BASELINE-ELECTRICAL-INCOMER'`,
     phewbLocations: `SELECT COUNT(*)::int AS n FROM bms.locations l
@@ -566,6 +571,56 @@ describe.skipIf(!ownerUrl)("F4.169/F4.170 addendum — the boot gate after ordin
     assertSeeded(before);
     // Mutation: the count back on every organization reads +1.
     expect(after, "an admin organization must not move the organization check").toBe(before.actual);
+  }, 60_000);
+
+  /** One asset domain row, active, at `sort_order` 65 (as the F4.301 fixture). */
+  async function insertAssetDomain(pool: SeedPool, code: string): Promise<void> {
+    const inserted = await pool.query(
+      `INSERT INTO bms.asset_domains (code, label, sort_order) VALUES ($1, 'F4.301 boot-gate fixture', 65)`,
+      [code],
+    );
+    assert(inserted.rowCount === 1, `the asset domain ${code} must insert`);
+  }
+
+  it("V11: a test fixture asset domain (FIXTURE_ASSET_DOMAIN_PREFIX) leaves the asset domain check unmoved", async () => {
+    const code = fixtureAssetDomainCode("boot_gate");
+    expect(code.startsWith(FIXTURE_ASSET_DOMAIN_PREFIX), "the helper must stamp the prefix").toBe(true);
+    const { before, after } = await around(
+      "global",
+      "asset domains",
+      (pool) => insertAssetDomain(pool, code),
+      PROBE.assetDomains,
+    );
+    assertSeeded(before);
+    // Mutation: the count back on every asset_domains row reads +1.
+    expect(after, "a fixture-prefixed domain must not move the asset domain check").toBe(before.actual);
+  }, 60_000);
+
+  it("P4: an asset domain without the fixture prefix moves the asset domain check (+1)", async () => {
+    // Rolled back by `around`, so no other suite sees it.
+    const code = `zz_gate_${fixtureAssetDomainCode("p").slice(FIXTURE_ASSET_DOMAIN_PREFIX.length)}`;
+    const { before, after } = await around(
+      "global",
+      "asset domains",
+      (pool) => insertAssetDomain(pool, code),
+      PROBE.assetDomains,
+    );
+    assertSeeded(before);
+    expect(after, "a domain a migration or the seed did not write must fail the check").toBe(before.actual + 1);
+  }, 60_000);
+
+  it("P5: a near miss of the prefix that LIKE would match still moves the check (+1)", async () => {
+    // `zzxfixturex` matches `LIKE 'zz_fixture_%'` (`_` is a wildcard there) but not
+    // `starts_with`, so a rewrite of the skip to LIKE reddens this case. Rolled back by `around`.
+    const code = `zzxfixturex${fixtureAssetDomainCode("p").slice(FIXTURE_ASSET_DOMAIN_PREFIX.length)}`;
+    const { before, after } = await around(
+      "global",
+      "asset domains",
+      (pool) => insertAssetDomain(pool, code),
+      PROBE.assetDomains,
+    );
+    assertSeeded(before);
+    expect(after, "only the literal prefix may be skipped").toBe(before.actual + 1);
   }, 60_000);
 
   it("V10: an admin asset pinned to the incomer template leaves the incomer check unmoved", async () => {

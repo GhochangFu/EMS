@@ -46,6 +46,11 @@ vi.mock("../../components/control-room/generated-site-view", () => ({
   ),
 }));
 
+/** `F4.301` U5 — the trend strip under the site layout's canvas; its read hangs, off the network. */
+vi.mock("../../api/trend-strip", () => ({
+  fetchSiteTrendStrip: () => new Promise(() => undefined),
+}));
+
 const SLUG = "phe-lotapata";
 const LOCATION_ID = "p1";
 

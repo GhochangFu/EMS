@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type pg from "pg";
 
 /**
@@ -79,6 +81,45 @@ export const PACK_ASSET_DOMAINS: readonly AssetDomainSeed[] = [
   { code: "facility", label: "Facility", sortOrder: 70 },
   { code: "ups", label: "UPS", sortOrder: 15 },
 ];
+
+/**
+ * `F4.301` review — the prefix of an asset domain row a test suite writes and
+ * deletes itself (a per-run segment). `verifyHierarchySeed`'s exact domain
+ * count skips these rows, so a `db:seed` during a run, or after a killed run
+ * before the owning suite sweeps, does not fail the boot. Build the code with
+ * {@link fixtureAssetDomainCode}, never by hand.
+ */
+export const FIXTURE_ASSET_DOMAIN_PREFIX = "zz_fixture_";
+
+/**
+ * The longest tag {@link fixtureAssetDomainCode} takes: `asset_domains.code` is
+ * `varchar(64)`, and the code is the prefix (11), the tag, `_` and 16 letters.
+ */
+export const FIXTURE_ASSET_DOMAIN_TAG_MAX = 64 - FIXTURE_ASSET_DOMAIN_PREFIX.length - 1 - 16;
+
+/**
+ * A per-run fixture domain code: the prefix, `tag`, and 16 random lowercase
+ * letters. Letters and underscores only, so the code stays inside the
+ * `[a-z_]` shape other suites read the live domain list with (the F2.13
+ * *Expected one of* pattern), and `zz_` sorts it after every seeded code in
+ * byte order and in a linguistic collation, so an `ORDER BY code LIMIT 1`
+ * pick in a parallel suite never lands on it.
+ */
+export function fixtureAssetDomainCode(tag: string): string {
+  if (!/^[a-z_]+$/.test(tag)) {
+    throw new Error(`fixtureAssetDomainCode: the tag must match [a-z_]+, got "${tag}"`);
+  }
+  if (tag.length > FIXTURE_ASSET_DOMAIN_TAG_MAX) {
+    throw new Error(
+      `fixtureAssetDomainCode: the tag must be at most ${FIXTURE_ASSET_DOMAIN_TAG_MAX} characters, got ${tag.length}`,
+    );
+  }
+  const letters = randomUUID()
+    .replace(/-/g, "")
+    .slice(0, 16)
+    .replace(/[0-9]/g, (digit) => "ghijklmnop"[Number(digit)] as string);
+  return `${FIXTURE_ASSET_DOMAIN_PREFIX}${tag}_${letters}`;
+}
 
 /**
  * Exported so the spec can assert the arbiter and the conflict action as text.

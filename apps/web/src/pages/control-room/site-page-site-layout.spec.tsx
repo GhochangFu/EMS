@@ -48,6 +48,11 @@ vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
   ScopedDashboardsList: () => <div data-testid="scoped-dashboards-list" />,
 }));
 
+/** `F4.301` U5 — the trend strip under the site layout's canvas; its read hangs, off the network. */
+vi.mock("../../api/trend-strip", () => ({
+  fetchSiteTrendStrip: () => new Promise(() => undefined),
+}));
+
 const LOCATION_ID = "a1b2c3d4-0000-4000-8000-0000000000a1";
 const GROUP_A = "33333333-3333-4333-8333-333333333333";
 const GROUP_B = "44444444-4444-4444-8444-444444444444";

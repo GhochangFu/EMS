@@ -7,6 +7,8 @@ import {
   assertModuleImportsDatabaseAndAuth,
   assertModuleProvidesServiceAndAudit,
   assertServiceDepsResolve,
+  assertStripControllerDepsResolve,
+  assertStripServiceDepsResolve,
 } from "./trend-points-module-wiring.spec";
 
 /** `F4.300` — the Nest module graph for `TrendPointsModule` (ADR 0108 decision 3). */
@@ -15,11 +17,11 @@ describe("F4.300 — TrendPointsModule wiring", () => {
     assertModuleImportsDatabaseAndAuth();
   });
 
-  it("provides TrendPointsService and MasterDataAuditService", () => {
+  it("provides TrendPointsService, MasterDataAuditService and SiteTrendStripService", () => {
     assertModuleProvidesServiceAndAudit();
   });
 
-  it("declares SiteTrendPointsController and OrgTrendPointsAdminController", () => {
+  it("declares SiteTrendPointsController, OrgTrendPointsAdminController and SiteTrendStripController", () => {
     assertModuleDeclaresBothControllers();
   });
 
@@ -33,5 +35,13 @@ describe("F4.300 — TrendPointsModule wiring", () => {
 
   it("TrendPointsService's own dependencies resolve inside the module", () => {
     assertServiceDepsResolve();
+  });
+
+  it("F4.301: SiteTrendStripController injects only SiteTrendStripService, resolvable in the module", () => {
+    assertStripControllerDepsResolve();
+  });
+
+  it("F4.301: SiteTrendStripService's own dependencies resolve inside the module", () => {
+    assertStripServiceDepsResolve();
   });
 });

@@ -8,6 +8,8 @@ import {
   cleanupView,
   domainHeadingsInDtoOrder,
   domainPanelsCountTheirAssets,
+  theStripFollowsTheDomainPanels,
+  theStripReadsTheWholeSite,
   fewerPointsCollapsesTheCard,
   freshRowOnTheSameAssetIsNotDimmed,
   fullScopeHidesTheLine,
@@ -52,6 +54,14 @@ describe("F3.68 GeneratedSiteView", () => {
 
   it("W1a renders one domain heading per domain, in DTO order", async () => {
     await domainHeadingsInDtoOrder();
+  });
+
+  it("F4.301 U5a reads the whole-site trend strip at 24 h", async () => {
+    await theStripReadsTheWholeSite();
+  });
+
+  it("F4.301 U5b renders the trend strip after the domain panels", async () => {
+    await theStripFollowsTheDomainPanels();
   });
 
   it("W1b states each domain's asset count", async () => {

@@ -30,6 +30,7 @@ import { GeneratedSiteView } from "./generated-site-view";
 const mocks = vi.hoisted(() => ({
   fetchGeneratedSiteView: vi.fn(),
   fetchLocationDashboard: vi.fn(),
+  fetchSiteTrendStrip: vi.fn(),
   io: vi.fn(),
   disconnect: vi.fn(),
   handlers: new Map<string, (payload: unknown) => void>(),
@@ -43,6 +44,11 @@ vi.mock("../../api/generated-site-view", () => ({
 
 vi.mock("../../api/locations", () => ({
   fetchLocationDashboard: mocks.fetchLocationDashboard,
+}));
+
+/** `F4.301` U5 — the trend strip's read; it hangs, so the strip stays on its loading line. */
+vi.mock("../../api/trend-strip", () => ({
+  fetchSiteTrendStrip: mocks.fetchSiteTrendStrip,
 }));
 
 const LOCATION_ID = "22222222-2222-4222-8222-222222222222";
@@ -167,6 +173,8 @@ function renderView({
   }));
   mocks.fetchGeneratedSiteView.mockImplementation(answer(view, "generated site view"));
   mocks.fetchLocationDashboard.mockImplementation(answer(dashboard, "location dashboard"));
+  mocks.fetchSiteTrendStrip.mockReset();
+  mocks.fetchSiteTrendStrip.mockImplementation(() => new Promise(() => undefined));
   useAuthStore.setState({ accessToken: TOKEN });
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -232,12 +240,29 @@ function reading(assetId: string, pointKey: string, value: number): TelemetryRea
 
 const PARTIAL_LINE = /Partial scope/;
 
-/** W1a — one panel heading per domain, in DTO order. */
+/** W1a — one panel heading per domain, in DTO order; the `F4.301` strip's `Trends` closes the list. */
 export async function domainHeadingsInDtoOrder(): Promise<void> {
   renderView();
   await screen.findByText("AHU-01");
   const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-  expect(headings).toEqual(["HVAC", "Electrical"]);
+  expect(headings).toEqual(["HVAC", "Electrical", "Trends"]);
+}
+
+/** F4.301 U5a — the whole-site strip reads the 24 h range with no asset group. */
+export async function theStripReadsTheWholeSite(): Promise<void> {
+  renderView();
+  await screen.findByText("AHU-01");
+  expect(mocks.fetchSiteTrendStrip.mock.calls).toEqual([[LOCATION_ID, { range: "24h", assetGroupId: null }]]);
+}
+
+/** F4.301 U5b — the strip renders after the last domain panel, outside it. */
+export async function theStripFollowsTheDomainPanels(): Promise<void> {
+  renderView();
+  await screen.findByText("AHU-01");
+  const lastPanel = screen.getByRole("heading", { level: 2, name: "Electrical" }).closest("section");
+  const strip = screen.getByRole("heading", { level: 2, name: "Trends" });
+  expect(lastPanel?.contains(strip)).toBe(false);
+  expect((lastPanel?.compareDocumentPosition(strip) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 }
 
 /** W1b — each panel states its asset count. */

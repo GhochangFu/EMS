@@ -12,6 +12,7 @@ import { allowedSmocTabs, smocTabPath, type SmocTabKey } from "../../lib/smoc-pa
 import { CR_POINT_KEYS, CR_TRACKED_ASSET_CODES } from "../live-svg/control-room-bindings";
 import { SchematicTelemetryProvider } from "../live-svg/schematic-telemetry-context";
 import { SectionCard } from "../section-card";
+import { TrendStrip } from "./trend-strip";
 
 type SmocSiteViewProps = {
   locationId: string;
@@ -66,6 +67,8 @@ export function SmocSiteView({ locationId, tab, scope }: SmocSiteViewProps) {
       {allowed ? (
         <SchematicTelemetryProvider assetCodes={CR_TRACKED_ASSET_CODES} pointKeys={CR_POINT_KEYS}>
           {TAB_CONTENT[tab]}
+          {/* `F4.301` (ADR 0108 Amendment 2, item 9) — a whole-site strip on Main Dashboard only. */}
+          {tab === "overview" ? <TrendStrip locationId={locationId} assetGroupId={null} /> : null}
         </SchematicTelemetryProvider>
       ) : (
         <SectionCard title="Outside your asset-group scope" bodyClassName="p-4">

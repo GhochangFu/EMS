@@ -18,6 +18,15 @@ export const HISTORY_PRESETS = [
 
 export type HistoryPresetKey = (typeof HISTORY_PRESETS)[number]["key"];
 
+/**
+ * The history page's path for one asset, `/asset-history/:assetId` (owner ruling 2026-11-01:
+ * `/assets/` is nginx's static prefix). `F4.301`'s trend strip links through it, so the path is
+ * spelled once for the strip.
+ */
+export function assetHistoryPath(assetId: string): string {
+  return `/asset-history/${encodeURIComponent(assetId)}`;
+}
+
 /** The point cap is the widget's; imported so the two never drift. */
 export const MAX_HISTORY_POINTS = MAX_WIDGET_POINTS;
 

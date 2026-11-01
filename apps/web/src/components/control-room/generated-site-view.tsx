@@ -6,6 +6,7 @@ import { useSiteLiveReadings } from "../../hooks/use-site-live-readings";
 import { KpiTile, type KpiTileStatus } from "../kpi-tile";
 import { SectionCard } from "../section-card";
 import { GeneratedSiteAssetCard } from "./generated-site-asset-card";
+import { TrendStrip } from "./trend-strip";
 
 /**
  * `F3.68` U6 — the generated site view (ADR 0076 decision 7).
@@ -124,6 +125,8 @@ export function GeneratedSiteView({ locationId }: { locationId: string }) {
           </SectionCard>
         ))
       )}
+      {/* `F4.301` (ADR 0108 Amendment 2, item 9) — the whole-site trend strip, after the panels. */}
+      <TrendStrip locationId={locationId} assetGroupId={null} />
     </div>
   );
 }

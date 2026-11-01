@@ -9,11 +9,13 @@ import { AppModule } from "../app.module";
 import { AccessControlModule } from "../auth/access-control.module";
 import { AuthModule } from "../auth/auth.module";
 import { DatabaseModule } from "../database/database.module";
-import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "../database/database.tokens";
 import { repoRoot } from "../testing/repo-root";
 import { OrgTrendPointsAdminController, SiteTrendPointsController } from "./trend-points.controller";
 import { TrendPointsModule } from "./trend-points.module";
 import { TrendPointsService } from "./trend-points.service";
+import { SiteTrendStripController } from "./trend-strip.controller";
+import { SiteTrendStripService } from "./trend-strip.service";
 
 /**
  * `F4.300` — the Nest module graph a green build says nothing about (the
@@ -86,13 +88,13 @@ export function assertModuleImportsDatabaseAndAuth(): void {
 
 export function assertModuleProvidesServiceAndAudit(): void {
   expect(moduleList(TrendPointsModule, "providers").map(tokenOf)).toEqual(
-    expect.arrayContaining([TrendPointsService, MasterDataAuditService]),
+    expect.arrayContaining([TrendPointsService, MasterDataAuditService, SiteTrendStripService]),
   );
 }
 
 export function assertModuleDeclaresBothControllers(): void {
   expect(moduleList(TrendPointsModule, "controllers")).toEqual(
-    expect.arrayContaining([SiteTrendPointsController, OrgTrendPointsAdminController]),
+    expect.arrayContaining([SiteTrendPointsController, OrgTrendPointsAdminController, SiteTrendStripController]),
   );
 }
 
@@ -119,5 +121,26 @@ export function assertServiceDepsResolve(): void {
   );
   const classes = classTypedParams("trend-points.service.ts", "TrendPointsService");
   expect(classes).toEqual(["AccessControlService", "MasterDataAuditService"]);
+  expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve").toEqual([]);
+}
+
+/** `F4.301` — the strip controller injects exactly `SiteTrendStripService`, and it resolves (its own file). */
+export function assertStripControllerDepsResolve(): void {
+  const { byName } = resolvable();
+  const deps = classTypedParams("trend-strip.controller.ts", "SiteTrendStripController");
+  expect(deps).toEqual(["SiteTrendStripService"]);
+  expect(deps.filter((dep) => !byName.has(dep)), "classes Nest would fail to resolve").toEqual([]);
+}
+
+/** `F4.301` — `SiteTrendStripService` injects `FLEET_POOL`, `AccessControlService` and `TrendPointsService`, all resolvable. */
+export function assertStripServiceDepsResolve(): void {
+  const { byIdentity, byName } = resolvable();
+  const tokens = injectedTokens(SiteTrendStripService);
+  expect(tokens).toEqual(expect.arrayContaining([FLEET_POOL]));
+  expect(tokens.filter((t) => !byIdentity.has(t)).map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual(
+    [],
+  );
+  const classes = classTypedParams("trend-strip.service.ts", "SiteTrendStripService");
+  expect(classes).toEqual(["AccessControlService", "TrendPointsService"]);
   expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve").toEqual([]);
 }

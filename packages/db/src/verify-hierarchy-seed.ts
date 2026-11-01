@@ -1,6 +1,6 @@
 import pg from "pg";
 
-import { PACK_ASSET_DOMAINS } from "./asset-domains-seed";
+import { FIXTURE_ASSET_DOMAIN_PREFIX, PACK_ASSET_DOMAINS } from "./asset-domains-seed";
 import {
   type AssetRuleForLadder,
   LADDER_ASSET_DOMAINS,
@@ -179,8 +179,9 @@ export async function readGlobalChecks(
     SELECT
       (SELECT COUNT(*)::text FROM bms.organizations
         WHERE code = ANY($1::varchar[])) AS orgs,
-      (SELECT COUNT(*)::text FROM bms.asset_domains) AS asset_domains
-  `, [expected.organizationCodes]);
+      (SELECT COUNT(*)::text FROM bms.asset_domains
+        WHERE NOT starts_with(code, $2)) AS asset_domains
+  `, [expected.organizationCodes, FIXTURE_ASSET_DOMAIN_PREFIX]);
   const g = global.rows[0];
   if (!g) {
     throw new Error("verifyHierarchySeed: no results");
@@ -203,7 +204,10 @@ export async function readGlobalChecks(
   // `facility` to `PACK_ASSET_DOMAINS`, and this expectation moved to 7 by
   // itself. It stays an exact count of every row, unlike the counts the
   // `F4.169`/`F4.170` addendum folded, because no admin surface creates an
-  // asset domain: only a migration or this seed can move it.
+  // asset domain: only a migration or this seed can move it. The one
+  // exception is a test suite's own per-run row (`F4.301` review), which
+  // carries `FIXTURE_ASSET_DOMAIN_PREFIX` and is skipped, so a `db:seed`
+  // while that suite runs, or after a killed run, still boots.
   checks.push(
     exactCheck("asset domains", g.asset_domains, MIGRATION_0029_ASSET_DOMAINS + PACK_ASSET_DOMAINS.length),
   );

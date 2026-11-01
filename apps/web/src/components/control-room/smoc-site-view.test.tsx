@@ -7,7 +7,9 @@ import {
   aDisallowedTabMountsNoProvider,
   aDisallowedTabShowsTheScopedOutCard,
   anHvacOnlyScopeShowsTwoTabs,
+  aMimicTabRendersNoStrip,
   cleanupView,
+  theOverviewTabReadsTheWholeSiteStrip,
   noOtherContentMounts,
   oneProviderServesEveryTab,
   theActiveTabIsTheOnlyCurrentLink,
@@ -68,5 +70,13 @@ describe("F3.70 U4 SmocSiteView", () => {
 
   it("T8 keeps one provider mounted when the tab switches from hvac to ups", () => {
     oneProviderServesEveryTab();
+  });
+
+  it("F4.301 U5a renders the whole-site trend strip on the Main Dashboard tab", async () => {
+    await theOverviewTabReadsTheWholeSiteStrip();
+  });
+
+  it("F4.301 U5b renders no trend strip on a mimic tab", async () => {
+    await aMimicTabRendersNoStrip();
   });
 });

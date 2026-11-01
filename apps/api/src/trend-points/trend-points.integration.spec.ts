@@ -7,10 +7,13 @@ import { orgTrendPoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { JwtPayload } from "@bms/shared";
 
+import type { AccessControlService } from "../auth/access-control.service";
 import { withTenant } from "../database/tenant-context";
+import type { Recorded } from "../testing/recording-pool";
 import { SEEDED, jwtFor, jwtForUnprovisioned } from "../testing/seeded-subjects";
 import { trendPointsLockKey } from "./trend-points.pure";
 import type { TrendPointsService } from "./trend-points.service";
+import { TREND_STRIP_GROUP_NOT_FOUND, type SiteTrendStripService } from "./trend-strip.service";
 
 /**
  * `F4.300` — `TrendPointsService` against real, non-owner roles (plan U3,
@@ -38,6 +41,24 @@ export type TrendPointsCtx = {
   pheSiteId: string;
   /** Three per-run `hvac` point keys, all active at the start. */
   keys: readonly [string, string, string];
+  /** `F4.301` — the trend strip over the same pools (T1–T5). */
+  strip: StripCtx;
+};
+
+/** `F4.301` U3 — what the trend strip cases (T1–T5) need beside the F4.300 fixtures. */
+export type StripCtx = {
+  svc: SiteTrendStripService;
+  /** The same service over a recording pool: it records every statement and answers no rows. */
+  recording: { svc: SiteTrendStripService; statements: Recorded[] };
+  access: AccessControlService;
+  /** A group of a PHEWB site. */
+  phewbGroupId: string;
+  /** A group of `RSMOC-WC` (the adjacent positive of T3). */
+  rsmocWcGroupId: string;
+  /** The site of the first seeded `ups`-domain asset. */
+  upsSiteId: string;
+  /** T4's per-run segment, code and asset, at the inactive fixture site. */
+  segment: { domain: string; pointKey: string; assetId: string };
 };
 
 /** The segment every case writes. Specs may name a segment (the ADR 0108 §5.4 guard scans runtime modules). */
@@ -279,4 +300,114 @@ export async function assertMissingOrganizationIsNotFound(ctx: TrendPointsCtx): 
   expect((await ctx.svc.forOrganization(admin(), ctx.fixtureOrgId)).organizationId, "adjacent positive").toBe(
     ctx.fixtureOrgId,
   );
+}
+
+// --- F4.301 U3 — the trend strip (ADR 0108 Amendment 2), T1–T5 -------------
+
+const hvacAdmin = (): JwtPayload => jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin");
+
+/** Every asset id that draws a series in a strip response. */
+function seriesAssetIds(dto: Awaited<ReturnType<SiteTrendStripService["forSite"]>>): Set<string> {
+  return new Set(dto.segments.flatMap((s) => s.points.flatMap((p) => p.assets.map((a) => a.assetId))));
+}
+
+/**
+ * T1 — `wc-hvac-admin` (`asset_group_admin`) on `RSMOC-WC` draws no series of
+ * an asset outside its groups, and does draw one of its own. The foreign set
+ * is what a global admin draws on the same strip minus what the caller reads,
+ * and it must be non-empty, so the absence is not vacuous.
+ */
+export async function assertStripHidesAssetsOutsideTheCallersGroups(ctx: TrendPointsCtx): Promise<void> {
+  const readable = new Set((await ctx.strip.access.readableAssetIds(hvacAdmin())) ?? []);
+  const all = seriesAssetIds(await ctx.strip.svc.forSite(admin(), ctx.rsmocWcId, { range: "24h" }));
+  const foreign = [...all].filter((id) => !readable.has(id));
+  expect(foreign.length, "precondition: the global admin draws assets outside the caller's groups").toBeGreaterThan(0);
+
+  const mine = seriesAssetIds(await ctx.strip.svc.forSite(hvacAdmin(), ctx.rsmocWcId, { range: "24h" }));
+  expect(foreign.filter((id) => mine.has(id))).toEqual([]);
+  expect(mine.size, "the caller draws its own assets").toBeGreaterThan(0);
+  expect([...mine].filter((id) => !readable.has(id))).toEqual([]);
+}
+
+/** T2 — `wc-admin` on a PHEWB site is the 404, and the strip sends no statement at all. */
+export async function assertStripOnAForeignSiteIsA404WithNoStatement(ctx: TrendPointsCtx): Promise<void> {
+  ctx.strip.recording.statements.length = 0;
+  const err = await rejection(ctx.strip.recording.svc.forSite(wcAdmin(), ctx.pheSiteId, { range: "24h" }));
+  expect(err).toBeInstanceOf(NotFoundException);
+  expect(ctx.strip.recording.statements).toEqual([]);
+
+  await ctx.strip.recording.svc.forSite(wcAdmin(), ctx.rsmocWcId, { range: "24h" });
+  expect(ctx.strip.recording.statements.length, "adjacent positive: its own site is read").toBeGreaterThan(0);
+}
+
+/** T3 — a global admin naming a PHEWB group on an ESKOM site gets the group 404; an ESKOM group there answers. */
+export async function assertStripGroupOfAnotherSiteIsA404(ctx: TrendPointsCtx): Promise<void> {
+  const err = await rejection(
+    ctx.strip.svc.forSite(admin(), ctx.rsmocWcId, { range: "24h", assetGroupId: ctx.strip.phewbGroupId }),
+  );
+  expect(err).toBeInstanceOf(NotFoundException);
+  expect((err as Error).message).toBe(TREND_STRIP_GROUP_NOT_FOUND);
+
+  const own = await ctx.strip.svc.forSite(admin(), ctx.rsmocWcId, {
+    range: "24h",
+    assetGroupId: ctx.strip.rsmocWcGroupId,
+  });
+  expect(own.assetGroupId).toBe(ctx.strip.rsmocWcGroupId);
+}
+
+/**
+ * T4 — a per-run `asset_domains` row, listed through an organization override
+ * and registered on a per-run asset, is its own segment on the strip: a new
+ * segment needs no release.
+ */
+export async function assertStripShowsANewSegment(ctx: TrendPointsCtx): Promise<void> {
+  const { domain, pointKey, assetId } = ctx.strip.segment;
+  const dto = await ctx.strip.svc.forSite(admin(), ctx.fixtureSiteId, { range: "24h" });
+  const segment = dto.segments.find((s) => s.domain === domain);
+  expect(segment?.source).toBe("organization");
+  expect(segment?.points.map((p) => [p.code, p.assets.map((a) => a.assetId)])).toEqual([[pointKey, [assetId]]]);
+  expect(segment?.points[0]?.assets[0]?.buckets).toHaveLength(48);
+}
+
+/**
+ * T4b — F4.301 review: T4's live domain is not what a parallel suite picks.
+ * `ORDER BY code LIMIT 1` (locations-tree, water-balance-role and others)
+ * never returns it, and the active list in `sort_order` still ends in
+ * `facility` (the F2.13 *Expected one of* pin). The positive half proves the
+ * row is live and active, so neither absence is vacuous.
+ */
+export async function assertStripSegmentIsNotAParallelSuitesPick(ctx: TrendPointsCtx): Promise<void> {
+  const { domain } = ctx.strip.segment;
+  const live = await ctx.fleetPool.query<{ active: boolean }>(
+    `SELECT active FROM bms.asset_domains WHERE code = $1`,
+    [domain],
+  );
+  expect(live.rows, "T4's domain must be live and active").toEqual([{ active: true }]);
+  const first = await ctx.fleetPool.query<{ code: string }>(
+    `SELECT code FROM bms.asset_domains WHERE active = true ORDER BY code LIMIT 1`,
+  );
+  expect(first.rows[0]?.code, "a first-by-code pick must not land on T4's domain").not.toBe(domain);
+  const last = await ctx.fleetPool.query<{ code: string }>(
+    `SELECT code FROM bms.asset_domains WHERE active = true ORDER BY sort_order DESC, code DESC LIMIT 1`,
+  );
+  expect(last.rows[0]?.code, "facility must stay the last active domain by sort_order").toBe("facility");
+}
+
+/** T5 — a seeded `ups` asset draws under the `ups` segment on the whole-site strip, and under no other. */
+export async function assertStripDrawsUpsAssetsUnderTheUpsSegmentOnly(ctx: TrendPointsCtx): Promise<void> {
+  const { rows } = await ctx.fleetPool.query<{ id: string }>(
+    `SELECT id FROM bms.assets WHERE location_id = $1 AND domain = 'ups' ORDER BY created_at, id`,
+    [ctx.strip.upsSiteId],
+  );
+  const ups = new Set(rows.map((row) => row.id));
+  const dto = await ctx.strip.svc.forSite(admin(), ctx.strip.upsSiteId, { range: "24h" });
+  const upsSegment = dto.segments.find((s) => s.domain === "ups");
+  const drawn = upsSegment?.points.flatMap((p) => p.assets.map((a) => a.assetId)) ?? [];
+  expect(drawn.length, "the ups segment draws a ups asset").toBeGreaterThan(0);
+  expect(drawn.filter((id) => !ups.has(id))).toEqual([]);
+  const elsewhere = dto.segments
+    .filter((s) => s.domain !== "ups")
+    .flatMap((s) => s.points.flatMap((p) => p.assets.map((a) => a.assetId)))
+    .filter((id) => ups.has(id));
+  expect(elsewhere).toEqual([]);
 }
