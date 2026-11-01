@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID, type SectionTemplateContent, TREND_STRIP_WIDGET_ROWS } from "@bms/shared";
+import { DASHBOARD_GRID, MAX_DASHBOARD_WIDGETS, type SectionTemplateContent, TREND_STRIP_WIDGET_ROWS } from "@bms/shared";
 import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 import type { GridRect } from "./site-layout-stock-history";
@@ -17,7 +17,9 @@ import type { GridRect } from "./site-layout-stock-history";
  * tile. While any widget crosses the cut (`gridY < cut < gridY + gridH`), the cut rises to that
  * widget's bottom, so the strip at `(0, cut)` overlaps nothing above it; every widget at or below
  * the cut moves down by {@link TREND_STRIP_WIDGET_ROWS}, so it overlaps nothing below it either.
- * A tab that already holds a `trend_strip` is left whole.
+ * A tab that already holds a `trend_strip` is left whole. So is a tab already at the per-tab cap
+ * ({@link MAX_DASHBOARD_WIDGETS}, `F4.305` review): a widget past it would make every later builder
+ * save of that dashboard a 400 (`tabRulesHold`). The runner stamps the copy all the same.
  *
  * **Config (owner answer C1).** A tab with no bound group (the Overview) gets the whole site,
  * `{ defaultRange }`; a tab bound to a group gets `{ tabKey: <its own key>, defaultRange }`, so the
@@ -93,6 +95,7 @@ export function planTrendStripV5Upgrade(widgets: readonly V5CopyWidget[], tabs: 
       .filter((widget) => widget.tabKey === tab.key)
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
     if (stored.some((widget) => widget.widgetType === TREND_STRIP)) continue;
+    if (stored.length >= MAX_DASHBOARD_WIDGETS) continue;
     const cut = cutOf(stored);
     for (const widget of stored) {
       if (widget.gridY >= cut) {

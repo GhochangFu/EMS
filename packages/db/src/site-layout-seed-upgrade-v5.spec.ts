@@ -1,4 +1,4 @@
-import type { SectionTemplateContent } from "@bms/shared";
+import { MAX_DASHBOARD_WIDGETS, type SectionTemplateContent } from "@bms/shared";
 import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 import {
@@ -283,6 +283,32 @@ export function anEmptyTabGetsTheStripAtTheTop(): void {
   assert(
     insertText(plan) === 'env|trend_strip|Trends@0,0,12,4{"defaultRange":"24h","tabKey":"env"}' && plan.moves.length === 0,
     insertText(plan),
+  );
+}
+
+/**
+ * V5-11 (`F4.305` review) — a tab already at the per-tab cap (`MAX_DASHBOARD_WIDGETS`) is left
+ * whole: a 41st widget would make every later builder save of that dashboard a 400
+ * (`tabRulesHold`). A tab one under the cap still gets its strip (the adjacent positive case).
+ * Mutation: drop the cap skip => the full tab gains an insert, red.
+ */
+export function aTabAtTheWidgetCapIsLeftWhole(): void {
+  const rowOf = (tabKey: string, count: number): V5CopyWidget[] =>
+    Array.from({ length: count }, (_, n) => widget(`${tabKey}-${String(n).padStart(2, "0")}`, tabKey, "table", [0, n, 12, 1]));
+  const plan = planTrendStripV5Upgrade(
+    [...rowOf("hvac", MAX_DASHBOARD_WIDGETS), ...rowOf("env", MAX_DASHBOARD_WIDGETS - 1)],
+    [
+      { key: "hvac", assetGroupId: "group-hvac" },
+      { key: "env", assetGroupId: "group-env" },
+    ],
+  );
+  assert(
+    JSON.stringify(plan.inserts.map((insert) => insert.tabKey)) === JSON.stringify(["env"]),
+    `only the tab under the cap gains a strip — got ${insertText(plan)}`,
+  );
+  assert(
+    plan.moves.every((move) => move.id.startsWith("env-")) && plan.moves.length === MAX_DASHBOARD_WIDGETS - 1,
+    `nothing on the full tab moves — got ${moveText(plan)}`,
   );
 }
 

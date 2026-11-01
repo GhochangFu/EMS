@@ -8,6 +8,7 @@ import {
   aMovedTileRaisesTheCut,
   anEmptyTabGetsTheStripAtTheTop,
   aStockV4OverviewGainsOneStripUnderItsTiles,
+  aTabAtTheWidgetCapIsLeftWhole,
   aTabHoldingAStripIsLeftWhole,
   aTabWithNoTileGetsTheStripAtTheTop,
   everyMoveIsTheStripsHeightDown,
@@ -56,5 +57,8 @@ describe("F4.305 — the seed upgrade's v5 trend strip step", () => {
   });
   it("V5-10: lands every tab of the frozen stock v4 on the live stock v5", () => {
     theStepOnStockV4GivesStockV5();
+  });
+  it("V5-11: leaves a tab at the per-tab widget cap whole, and still plans a tab under it", () => {
+    aTabAtTheWidgetCapIsLeftWhole();
   });
 });
