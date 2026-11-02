@@ -79,8 +79,15 @@ function orgViews(totalSites: number): EnergyOrganizationViews {
   };
 }
 
-function stubEnergy(orgAnswer: EnergyOrganizationViews | Error) {
-  const viewSpy = vi.spyOn(energyApi, "fetchEnergyView").mockResolvedValue(VIEW);
+/** `F4.304` U7 — the same view for a site with a floor area and its own figure. */
+const VIEW_WITH_AREA: EnergyView = {
+  ...VIEW,
+  current: { ...VIEW.current, kwhPerM2: 0.3 },
+  floorArea: { locationId: SITE, floorAreaM2: 200 },
+};
+
+function stubEnergy(orgAnswer: EnergyOrganizationViews | Error, viewAnswer: EnergyView = VIEW) {
+  const viewSpy = vi.spyOn(energyApi, "fetchEnergyView").mockResolvedValue(viewAnswer);
   const orgSpy = vi.spyOn(energyApi, "fetchEnergyOrganizationViews");
   if (orgAnswer instanceof Error) {
     orgSpy.mockRejectedValue(orgAnswer);
@@ -142,4 +149,28 @@ export async function theKpiTilesRender(): Promise<void> {
   stubEnergy(orgViews(1));
   renderView();
   expect(await screen.findByText("5m rollup · 5 minute buckets · Asia/Kolkata")).toBeInTheDocument();
+}
+
+/** `F4.304` U7: the site tab carries the seventh tile, kWh per m², with the server's figure. */
+export async function theSiteTabShowsTheKwhPerM2Tile(): Promise<void> {
+  stubEnergy(orgViews(1), VIEW_WITH_AREA);
+  renderView();
+  expect(await screen.findByText("kWh per m²")).toBeInTheDocument();
+  expect(await screen.findByTitle("0.30 kWh/m²")).toBeInTheDocument();
+}
+
+/** `F4.304` U7: a parent with readable children says the figure is its own assets'. */
+export async function aParentSiteShowsTheOwnAssetsHint(): Promise<void> {
+  stubEnergy(orgViews(2), VIEW_WITH_AREA);
+  renderView();
+  expect(await screen.findByText("This site's own assets ÷ its floor area")).toBeInTheDocument();
+}
+
+/** The negative pair: a flat site (`totalSites: 1`) carries no such hint once the tile is ready. */
+export async function aFlatSiteShowsNoOwnAssetsHint(): Promise<void> {
+  stubEnergy(orgViews(1), VIEW_WITH_AREA);
+  renderView();
+  expect(await screen.findByTitle("0.30 kWh/m²")).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByText("Loading the abnormal list…")).toBeNull());
+  expect(screen.queryByText("This site's own assets ÷ its floor area")).toBeNull();
 }

@@ -28,7 +28,26 @@ function names(): string[] {
 
 function changeOf(name: string): string {
   const row = screen.getAllByTestId("site-ranking-row").find((r) => r.children[0].textContent === name);
+  return row?.children[5].textContent ?? "";
+}
+
+/** `F4.304` U7 — the `kWh/m²` cell of the named row. */
+function intensityOf(name: string): string {
+  const row = screen.getAllByTestId("site-ranking-row").find((r) => r.children[0].textContent === name);
   return row?.children[4].textContent ?? "";
+}
+
+/** `F4.304` U7 — three sites with areas (5, 0.004, none). */
+function sitesWithAreas(totalSites = 3): EnergySiteRanking {
+  return {
+    current: [
+      { ...site(A, "Alpha", 500, 10), floorAreaM2: 100, kwhPerM2: 5 },
+      { ...site(B, "Bravo", 900, 5), floorAreaM2: null, kwhPerM2: null },
+      { ...site(C, "Charlie", 0.4, 40), floorAreaM2: 100, kwhPerM2: 0.004 },
+    ],
+    compare: null,
+    totalSites,
+  };
 }
 
 /** The rows start in kWh order, largest first. */
@@ -83,6 +102,43 @@ export function thePeakTimeIsInTheViewsZone(): void {
 export function aCutListSaysHowManySites(): void {
   render(<SiteRankingTable sites={ranking({ totalSites: 61 })} timeZone="Etc/UTC" status="ready" />);
   expect(screen.getByText("Showing 3 of 61 sites")).toBeInTheDocument();
+}
+
+/** S1: a third button, "kWh per m²", carries `aria-pressed`. */
+export async function kwhPerM2IsAThirdPressableSort(): Promise<void> {
+  render(<SiteRankingTable sites={sitesWithAreas()} timeZone="Etc/UTC" status="ready" />);
+  const button = screen.getByRole("button", { name: "kWh per m²" });
+  expect(button).toHaveAttribute("aria-pressed", "false");
+  await userEvent.click(button);
+  expect(screen.getByRole("button", { name: "kWh per m²" })).toHaveAttribute("aria-pressed", "true");
+}
+
+/** S2: the `kWh/m²` column — two places, `< 0.01` below it, and "no area" (never `0.00`). */
+export function theIntensityColumnFormatsEachState(): void {
+  render(<SiteRankingTable sites={sitesWithAreas()} timeZone="Etc/UTC" status="ready" />);
+  expect(screen.getByRole("columnheader", { name: "kWh/m²" })).toBeInTheDocument();
+  expect([intensityOf("Alpha"), intensityOf("Charlie"), intensityOf("Bravo")]).toEqual(["5.00", "< 0.01", "no area"]);
+}
+
+/** S3: in the kWh per m² mode a cut list says it ranks the top 50 by kWh. */
+export async function theIntensityModeSaysItRanksTheTopFiftyByKwh(): Promise<void> {
+  render(<SiteRankingTable sites={sitesWithAreas(51)} timeZone="Etc/UTC" status="ready" />);
+  await userEvent.click(screen.getByRole("button", { name: "kWh per m²" }));
+  expect(screen.getByText("Among the top 50 sites by kWh")).toBeInTheDocument();
+}
+
+/** S3, the negative pair: the kWh mode carries no such line on the same list. */
+export function theKwhModeDoesNotSayTopFifty(): void {
+  render(<SiteRankingTable sites={sitesWithAreas(51)} timeZone="Etc/UTC" status="ready" />);
+  expect(screen.getByText("Showing 3 of 51 sites")).toBeInTheDocument();
+  expect(screen.queryByText("Among the top 50 sites by kWh")).toBeNull();
+}
+
+/** S4: the no-area row is the last row, though it has the most kWh. */
+export async function theNoAreaRowIsLast(): Promise<void> {
+  render(<SiteRankingTable sites={sitesWithAreas()} timeZone="Etc/UTC" status="ready" />);
+  await userEvent.click(screen.getByRole("button", { name: "kWh per m²" }));
+  expect(names()).toEqual(["Alpha", "Charlie", "Bravo"]);
 }
 
 /** The negative pair: a whole list carries no "Showing" line. */

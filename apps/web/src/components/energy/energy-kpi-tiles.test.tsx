@@ -3,12 +3,21 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aFlatSiteHasNoOwnAssetsHint,
   aNullCostIsADashWithTheReason,
   aNullPfSaysNoPfPoint,
   aNullPueIsADashWithTheReason,
   aPeriodWithoutDataSaysSo,
+  anAreaWithoutDataSaysNoKwData,
   anEmptyPreviousPeriodSaysSo,
+  noAreaSaysWhereToSetItEvenWithoutData,
+  noOwnAssetDataSaysSo,
+  readableChildrenAddTheOwnAssetsHint,
   rendersTheSixTilesInOrder,
+  theFloorAreaPropAddsASeventhTileLast,
+  theTileShowsTheChange,
+  theTileShowsTheServersFigure,
+  withoutTheFloorAreaPropThereIsNoKwhPerM2Tile,
   theRollupTileNamesLevelBucketAndZone,
   thePeakTileShowsThePeakKwNotTheTotal,
   thePeakTimeIsInTheViewsZone,
@@ -64,5 +73,41 @@ describe("F4.302 — the Energy KPI tiles", () => {
 
   it("a period without data says so", () => {
     aPeriodWithoutDataSaysSo();
+  });
+
+  it("F4.304: without the floor-area prop there is no kWh per m² tile", () => {
+    withoutTheFloorAreaPropThereIsNoKwhPerM2Tile();
+  });
+
+  it("F4.304 P1: the floor-area prop adds a seventh tile, last", () => {
+    theFloorAreaPropAddsASeventhTileLast();
+  });
+
+  it("F4.304 P2: no area says where to set it, even without kW data", () => {
+    noAreaSaysWhereToSetItEvenWithoutData();
+  });
+
+  it("F4.304 P3: an area without kW data says so", () => {
+    anAreaWithoutDataSaysNoKwData();
+  });
+
+  it("F4.304 P4: no kW data from the site's own assets says so", () => {
+    noOwnAssetDataSaysSo();
+  });
+
+  it("F4.304 P5: the tile shows the server's figure in kWh/m²", () => {
+    theTileShowsTheServersFigure();
+  });
+
+  it("F4.304 P6: the tile shows the change against the previous period", () => {
+    theTileShowsTheChange();
+  });
+
+  it("F4.304 P7: readable children add the own-assets hint", () => {
+    readableChildrenAddTheOwnAssetsHint();
+  });
+
+  it("F4.304 P7: a flat site has no own-assets hint", () => {
+    aFlatSiteHasNoOwnAssetsHint();
   });
 });

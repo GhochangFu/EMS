@@ -1,8 +1,13 @@
 import { useState } from "react";
 
-import type { EnergySiteRanking } from "@bms/shared";
+import { SITE_RANKING_MAX, type EnergySiteRanking } from "@bms/shared";
 
-import { rankingRows, type SiteChange, type SiteRankingSort } from "../../lib/energy-organization-views";
+import {
+  formatKwhPerM2,
+  rankingRows,
+  type SiteChange,
+  type SiteRankingSort,
+} from "../../lib/energy-organization-views";
 import type { EnergySectionStatus } from "./energy-stack-chart";
 
 type Props = {
@@ -15,6 +20,7 @@ type Props = {
 const SORTS: readonly { key: SiteRankingSort; label: string }[] = [
   { key: "kwh", label: "kWh" },
   { key: "peakKw", label: "Peak kW" },
+  { key: "kwhPerM2", label: "kWh per m²" },
 ];
 
 /**
@@ -93,6 +99,7 @@ export function SiteRankingTable({ sites, timeZone, status }: Props) {
             <th className="px-3 py-2 text-right">kWh</th>
             <th className="px-3 py-2 text-right">Peak kW</th>
             <th className="px-3 py-2">Peak at</th>
+            <th className="px-3 py-2 text-right">kWh/m²</th>
             <th className="px-3 py-2">Change</th>
           </tr>
         </thead>
@@ -105,6 +112,9 @@ export function SiteRankingTable({ sites, timeZone, status }: Props) {
               <td className="px-3 py-1.5 text-xs">
                 {row.site.peakAt !== null ? formatPeakTime(row.site.peakAt, timeZone) : "—"}
               </td>
+              <td className="px-3 py-1.5 text-right text-xs tabular-nums">
+                {row.site.kwhPerM2 === null ? "no area" : formatKwhPerM2(row.site.kwhPerM2)}
+              </td>
               <td className="px-3 py-1.5 text-xs">{changeText(row.change)}</td>
             </tr>
           ))}
@@ -112,6 +122,10 @@ export function SiteRankingTable({ sites, timeZone, status }: Props) {
       </table>
       {sites.totalSites > sites.current.length ? (
         <p className="text-xs text-ink-muted">{`Showing ${sites.current.length} of ${sites.totalSites} sites`}</p>
+      ) : null}
+      {/* `F4.304` item 7: the intensity sort re-orders the server's top list by kWh; it makes no second cut. */}
+      {sort === "kwhPerM2" && sites.totalSites > SITE_RANKING_MAX ? (
+        <p className="text-xs text-ink-muted">{`Among the top ${SITE_RANKING_MAX} sites by kWh`}</p>
       ) : null}
     </div>
   );

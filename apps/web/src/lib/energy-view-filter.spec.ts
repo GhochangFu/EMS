@@ -100,6 +100,18 @@ export function changeReadsTheNamedFigure(): void {
   expect(changeFor(period({ peakKw: 30, totalKwh: 100 }), period({ peakKw: 40, totalKwh: 100 }), "peakKw")).toEqual({ kind: "change", pct: -25 });
 }
 
+/** `F4.304` U7 — the kWh per m² tile's change reads the period's own `kwhPerM2`. */
+export function changeOfKwhPerM2IsThePercentAgainstThePreviousPeriod(): void {
+  expect(changeFor(period({ kwhPerM2: 5 }), period({ kwhPerM2: 4 }), "kwhPerM2")).toEqual({ kind: "change", pct: 25 });
+}
+
+/** A previous period with kW data but no own-asset figure has no percent. */
+export function changeOfKwhPerM2IsNoPreviousValueWhenThePreviousIsNull(): void {
+  expect(changeFor(period({ kwhPerM2: 5 }), period({ kwhPerM2: null }), "kwhPerM2")).toEqual({
+    kind: "no_previous_value",
+  });
+}
+
 export function levelLabelNamesTheLevelTheBucketAndTheZone(): void {
   expect(levelLabel("1h", "1d", "Asia/Kolkata")).toBe("1h rollup · 1 day buckets · Asia/Kolkata");
   expect(levelLabel("1m", "1m", "UTC")).toBe("1m rollup · 1 minute buckets · UTC");

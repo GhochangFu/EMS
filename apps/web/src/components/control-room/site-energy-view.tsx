@@ -99,7 +99,11 @@ export function SiteEnergyView({ locationId, value }: Props) {
         </p>
       ) : null}
 
-      <EnergyKpiTiles status={status} view={v} />
+      {/*
+        `F4.304` item 8: the seventh tile, kWh per m² on the site's own assets.
+        "Readable children" is the ranking's own test (`totalSites > 1`).
+      */}
+      <EnergyKpiTiles status={status} view={v} floorAreaTile={{ hasReadableChildren: showsSiteRanking }} />
 
       <SectionCard
         title="Source mix · grid / solar / nominal DG"
@@ -123,7 +127,7 @@ export function SiteEnergyView({ locationId, value }: Props) {
         {showsSiteRanking ? (
           <SectionCard
             title="Top consuming sites"
-            subtitle="This site and its readable children, by kWh or peak kW"
+            subtitle="This site and its readable children, by kWh, peak kW or kWh per m²"
           >
             <SiteRankingTable
               sites={ov.sites}

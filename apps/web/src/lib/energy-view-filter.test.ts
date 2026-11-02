@@ -16,6 +16,8 @@ import {
   changeIsNoPreviousWhenTheComparePeriodHasNoData,
   changeIsThePercentAgainstThePreviousPeriod,
   changeOfAZeroCurrentFigureIsMinusOneHundred,
+  changeOfKwhPerM2IsNoPreviousValueWhenThePreviousIsNull,
+  changeOfKwhPerM2IsThePercentAgainstThePreviousPeriod,
   changeReadsTheNamedFigure,
   defaultFilterHasNoOrganizationWhenNoneIsReadable,
   defaultFilterPreselectsTheFirstOrganization,
@@ -83,6 +85,14 @@ describe("F4.298 energy view filter helpers", () => {
 
   it("change: reads the named figure", () => {
     changeReadsTheNamedFigure();
+  });
+
+  it("change: kWh per m² against the previous period", () => {
+    changeOfKwhPerM2IsThePercentAgainstThePreviousPeriod();
+  });
+
+  it("change: no previous value when the previous kWh per m² is null", () => {
+    changeOfKwhPerM2IsNoPreviousValueWhenThePreviousIsNull();
   });
 
   it("levelLabel names the level, the bucket and the zone", () => {

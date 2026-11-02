@@ -5,11 +5,17 @@ import {
   colourMaxIsTheNearestRankNinetyFifthPercentile,
   colourMaxOfASingleCellIsItsValueAndOfNoneIsZero,
   heatmapGridHasAscendingDaysTwentyFourHoursAndNullForAMissingCell,
+  aKwhPerM2TieFallsToTheNameThenTheId,
+  aNoAreaSiteIsNeverRankedAsZero,
   percentChangeIsThePercentAndNullAgainstZero,
   rankingRowsSortByKwhDescending,
+  rankingRowsSortByKwhPerM2WithNoAreaLast,
   rankingRowsSortByPeakKw,
   siteStacksGiveOneStackPerColumnAndLabelOther,
   theBaselineSentenceNamesTheStepAndTheConsultedWindows,
+  theKwhModeIgnoresTheArea,
+  theNoAreaSitesKeepTheServersOrder,
+  thePeakKwModeIgnoresTheArea,
   theChangeIsNoPreviousWhenThePreviousKwhIsNegative,
   theChangeIsNoPreviousWhenThePreviousKwhIsZero,
   theChangeIsNoPreviousForASiteAbsentFromTheCompare,
@@ -26,6 +32,24 @@ describe("F4.299 organization-view helpers", () => {
   });
   it("sorts the ranking by peak kW", () => {
     rankingRowsSortByPeakKw();
+  });
+  it("F4.304 K1: sorts by kWh per m² with the no-area sites last", () => {
+    rankingRowsSortByKwhPerM2WithNoAreaLast();
+  });
+  it("F4.304 K2: never ranks a no-area site as a zero", () => {
+    aNoAreaSiteIsNeverRankedAsZero();
+  });
+  it("F4.304 K3: breaks a kWh per m² tie by name, then by location id", () => {
+    aKwhPerM2TieFallsToTheNameThenTheId();
+  });
+  it("F4.304 K4: keeps the server's order for the no-area sites", () => {
+    theNoAreaSitesKeepTheServersOrder();
+  });
+  it("F4.304 K5: the kWh mode ignores the area", () => {
+    theKwhModeIgnoresTheArea();
+  });
+  it("F4.304 K5: the peak kW mode ignores the area", () => {
+    thePeakKwModeIgnoresTheArea();
   });
   it("has no change without a compare", () => {
     theChangeIsNoneWithoutACompare();

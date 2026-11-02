@@ -60,6 +60,15 @@ function renderTiles(v: EnergyView | undefined, status: KpiTileStatus = "ready")
   render(<EnergyKpiTiles status={status} view={v} />);
 }
 
+/** `F4.304` U7 — the site page's seven tiles: the floor-area tile is on. */
+function renderSiteTiles(v: EnergyView, hasReadableChildren = false): void {
+  render(<EnergyKpiTiles status="ready" view={v} floorAreaTile={{ hasReadableChildren }} />);
+}
+
+const SITE = "6f1d2a3b-0000-4000-8000-0000000000a1";
+/** 200 m²: the view's 9 999 kWh over it is 50.00, far from the server's 5.00 (2 000 m² would round to 5.00). */
+const AREA = { locationId: SITE, floorAreaM2: 200 };
+
 export function rendersTheSixTilesInOrder(): void {
   renderTiles(view());
   const labels = ["Total energy", "Peak demand", "Average PF", "Rollup", "PUE", "Indicative cost"];
@@ -125,4 +134,70 @@ export function aNullPfSaysNoPfPoint(): void {
 export function aPeriodWithoutDataSaysSo(): void {
   renderTiles(view({ current: period({ hasData: false }) }));
   expect(within(tile("Total energy")).getByText("No kW data in this period")).toBeInTheDocument();
+}
+
+/** The negative pair of P1: without the prop (the Energy page) there is no seventh tile. */
+export function withoutTheFloorAreaPropThereIsNoKwhPerM2Tile(): void {
+  renderTiles(view({ floorArea: AREA, current: period({ kwhPerM2: 5 }) }));
+  expect(screen.queryByText("kWh per m²")).toBeNull();
+}
+
+/** P1: with the prop, seven tiles, the seventh labelled "kWh per m²". */
+export function theFloorAreaPropAddsASeventhTileLast(): void {
+  renderSiteTiles(view({ floorArea: AREA, current: period({ kwhPerM2: 5 }) }));
+  const labels = ["Total energy", "Peak demand", "Average PF", "Rollup", "PUE", "Indicative cost", "kWh per m²"];
+  const text = document.body.textContent ?? "";
+  const positions = labels.map((label) => text.indexOf(label));
+  expect(positions.every((p) => p >= 0)).toBe(true);
+  expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+}
+
+/** P2: no area is "No area" with where to set it — even when the period has no kW data (C3's order). */
+export function noAreaSaysWhereToSetItEvenWithoutData(): void {
+  renderSiteTiles(
+    view({ floorArea: { locationId: SITE, floorAreaM2: null }, current: period({ hasData: false, kwhPerM2: null }) }),
+  );
+  const card = tile("kWh per m²");
+  expect(within(card).getByText("No area")).toBeInTheDocument();
+  expect(within(card).getByText("Set the floor area in Admin → Locations")).toBeInTheDocument();
+}
+
+/** P3: an area and a period without kW data. */
+export function anAreaWithoutDataSaysNoKwData(): void {
+  renderSiteTiles(view({ floorArea: AREA, current: period({ hasData: false, kwhPerM2: null }) }));
+  const card = tile("kWh per m²");
+  expect(within(card).getByText("No kW data in this period")).toBeInTheDocument();
+  expect(within(card).getByText("—")).toBeInTheDocument();
+}
+
+/** P4: kW data in the subtree but none from the site's own assets (owner ruling on C3). */
+export function noOwnAssetDataSaysSo(): void {
+  renderSiteTiles(view({ floorArea: AREA, current: period({ hasData: true, kwhPerM2: null }) }));
+  const card = tile("kWh per m²");
+  expect(within(card).getByText("No kW data from this site's own assets")).toBeInTheDocument();
+  expect(within(card).getByText("—")).toBeInTheDocument();
+}
+
+/** P5: the server's figure, two places, in kWh/m² — never the view's total over the area (9 999 / 200). */
+export function theTileShowsTheServersFigure(): void {
+  renderSiteTiles(view({ floorArea: AREA, current: period({ totalKwh: 9999, kwhPerM2: 5 }) }));
+  expect(tile("kWh per m²").querySelector('[title="5.00 kWh/m²"]')).not.toBeNull();
+}
+
+/** P6: with compare, the change against the previous period's own figure. */
+export function theTileShowsTheChange(): void {
+  renderSiteTiles(view({ floorArea: AREA, current: period({ kwhPerM2: 5 }), compare: period({ kwhPerM2: 4 }) }));
+  expect(within(tile("kWh per m²")).getByText("+25.0 % vs previous")).toBeInTheDocument();
+}
+
+/** P7: a site with readable children says the figure is its own assets'. */
+export function readableChildrenAddTheOwnAssetsHint(): void {
+  renderSiteTiles(view({ floorArea: AREA, current: period({ kwhPerM2: 5 }) }), true);
+  expect(within(tile("kWh per m²")).getByText("This site's own assets ÷ its floor area")).toBeInTheDocument();
+}
+
+/** P7, the negative pair: a flat site carries no such hint. */
+export function aFlatSiteHasNoOwnAssetsHint(): void {
+  renderSiteTiles(view({ floorArea: AREA, current: period({ kwhPerM2: 5 }) }), false);
+  expect(within(tile("kWh per m²")).queryByText(/own assets/)).toBeNull();
 }
