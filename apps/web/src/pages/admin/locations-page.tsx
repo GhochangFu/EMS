@@ -200,6 +200,7 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
               <th className="px-2 py-2">Parent</th>
               <th className="px-2 py-2">Slug</th>
               <th className="px-2 py-2">Timezone</th>
+              <th className="px-2 py-2">Area (m²)</th>
               <th className="px-2 py-2">Status</th>
               <th className="px-2 py-2">Actions</th>
             </tr>
@@ -221,6 +222,9 @@ export function LocationsAdminPage({ user }: LocationsAdminPageProps) {
                 </td>
                 <td className="px-2 py-2 font-mono text-xs">{item.slug}</td>
                 <td className="px-2 py-2 font-mono text-xs">{item.timezone ?? "—"}</td>
+                <td className="px-2 py-2">
+                  {item.floorAreaM2 === null ? "—" : item.floorAreaM2.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                </td>
                 <td className="px-2 py-2">
                   <StatusPill
                     label={item.active ? "Active" : "Inactive"}

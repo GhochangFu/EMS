@@ -152,6 +152,7 @@ export async function theCreateBodyIsTheWizardsValues(): Promise<void> {
       latitude: 19.076,
       longitude: 72.8777,
       timezone: null,
+      floorArea: null,
     }),
   );
 }

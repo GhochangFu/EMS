@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useMemo, useState } from "react";
 import type { AdminLocationDto } from "@bms/shared";
+import { floorAreaM2Of, type FloorAreaUnit } from "@bms/shared/contracts";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import { fetchAdminLocations, fetchAdminLocationTypes } from "../../api/admin/locations";
@@ -46,6 +47,9 @@ export type LocationForm = {
   province: string;
   capital: string;
   timezone: string;
+  /** `F4.304` — the typed number; `""` is no area. The unit below says what it is in. */
+  floorArea: string;
+  floorAreaUnit: FloorAreaUnit;
   latitude: string;
   longitude: string;
   /** `F2.10` (ADR 0098) — the parent's id; `""` is a root. */
@@ -63,6 +67,8 @@ export const EMPTY_LOCATION_FORM: LocationForm = {
   province: "",
   capital: "",
   timezone: "",
+  floorArea: "",
+  floorAreaUnit: "m2",
   // `F3.79` (owner ruling 2026-10-04): Mumbai, not (0,0). Every active location is a map pin,
   // and a pin at (0,0) sat in the Gulf of Guinea and stretched the map's box.
   latitude: "19.076",
@@ -81,6 +87,8 @@ export function locationFormOf(row: AdminLocationDto): LocationForm {
     province: row.province ?? "",
     capital: row.capital ?? "",
     timezone: row.timezone ?? "",
+    floorArea: row.floorAreaM2 === null ? "" : String(row.floorAreaM2),
+    floorAreaUnit: "m2",
     latitude: String(row.latitude),
     longitude: String(row.longitude),
     parentId: row.parentId ?? "",
@@ -95,6 +103,8 @@ function placeValues(form: LocationForm): Record<string, unknown> {
     latitude: numberOf(form.latitude),
     longitude: numberOf(form.longitude),
     timezone: form.timezone || null,
+    // `F4.304` — sent as typed with its unit; the server converts and stores m². Empty clears.
+    floorArea: form.floorArea.trim() === "" ? null : { value: numberOf(form.floorArea), unit: form.floorAreaUnit },
   };
 }
 
@@ -152,6 +162,15 @@ export function locationFormWithValues(form: LocationForm, values: Readonly<Reco
   }
   if (typeof values.latitude === "number") next.latitude = String(values.latitude);
   if (typeof values.longitude === "number") next.longitude = String(values.longitude);
+  const area = values.floorArea;
+  if (area === null) {
+    next.floorArea = "";
+    next.floorAreaUnit = "m2";
+  } else if (typeof area === "object" && area !== undefined) {
+    const { value, unit } = area as { value?: unknown; unit?: unknown };
+    if (typeof value === "number") next.floorArea = String(value);
+    next.floorAreaUnit = unit === "ft2" ? "ft2" : "m2";
+  }
   if (typeof values.parentId === "string") next.parentId = values.parentId;
   else if (values.parentId === null) next.parentId = "";
   const meta = metaOf(values.meta);
@@ -309,6 +328,12 @@ export function LocationWizard(props: LocationWizardProps) {
       />
     </label>
   );
+  const typedArea = numberOf(form.floorArea);
+  /** The m² a typed ft² figure equals; shown, never stored by the browser. */
+  const squareMetres =
+    form.floorAreaUnit === "ft2" && typedArea !== undefined && Number.isFinite(typedArea)
+      ? floorAreaM2Of({ value: typedArea, unit: "ft2" })
+      : null;
   const place = (
     <>
       {textInput("Province", "province")}
@@ -330,6 +355,27 @@ export function LocationWizard(props: LocationWizardProps) {
           ))}
         </datalist>
       </label>
+      <label className={labelClass}>
+        Floor area
+        <input
+          className={fieldClass}
+          inputMode="decimal"
+          value={form.floorArea}
+          onChange={(event) => setForm({ ...form, floorArea: event.target.value })}
+        />
+      </label>
+      <label className={labelClass}>
+        Area unit
+        <select
+          className={fieldClass}
+          value={form.floorAreaUnit}
+          onChange={(event) => setForm({ ...form, floorAreaUnit: event.target.value === "ft2" ? "ft2" : "m2" })}
+        >
+          <option value="m2">m²</option>
+          <option value="ft2">ft²</option>
+        </select>
+      </label>
+      {squareMetres === null ? null : <p className="text-xs text-ink-muted">{`= ${squareMetres.toFixed(2)} m²`}</p>}
     </>
   );
   const metadata = <MetadataStep meta={form.meta} what="location" />;
@@ -375,6 +421,7 @@ export function LocationWizard(props: LocationWizardProps) {
             latitude: editing.latitude,
             longitude: editing.longitude,
             timezone: editing.timezone,
+            floorArea: editing.floorAreaM2 === null ? null : { value: editing.floorAreaM2, unit: "m2" },
           }}
           summary={wizardEntry("location.update").summary({
             body: wizardBody(values),
