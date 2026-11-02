@@ -135,6 +135,7 @@ function location(i: number) {
     timezone: "Africa/Johannesburg",
     latitude: -29.6006,
     longitude: 30.3794,
+    floorAreaM2: null,
     active: true,
     meta: { type: "RSMOC", source: "attached-location-dataset", capital: "Pietermaritzburg", seedKey: `rsmoc-kwazulu-natal-${n}` },
     createdAt: "2026-10-14T16:44:39.671Z",
