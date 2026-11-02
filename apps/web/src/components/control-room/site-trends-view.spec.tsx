@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
+import { MemoryRouter, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type { SiteSegmentViewsDto } from "@bms/shared";
@@ -137,6 +137,63 @@ export async function aFailedSegmentReadIsAFixedSentence(): Promise<void> {
   renderAt("?view=chillers");
   expect(await screen.findByText("Could not load this segment's trends.")).toBeInTheDocument();
   expect(screen.queryByText(/secret/)).toBeNull();
+}
+
+const OTHER_SITE = "00000000-0000-4000-8000-0000000000b2";
+
+/** The site page's shape: the route param feeds the view, so a site switch keeps it mounted. */
+function ViewFromParams() {
+  const { locationId } = useParams();
+  const navigate = useNavigate();
+  return (
+    <>
+      <SiteTrendsView locationId={locationId ?? ""} />
+      <button type="button" onClick={() => navigate(`/control-room/site/${OTHER_SITE}/trends`)}>
+        other site
+      </button>
+      <button type="button" onClick={() => navigate(`${PATH}?view=chillers&point=pf`)}>
+        other point
+      </button>
+    </>
+  );
+}
+
+/** Site A answers at once; every later read (site B, or another point of A) stays pending. */
+function renderSwitchable(search: string): void {
+  vi.spyOn(segmentApi, "fetchSiteSegmentViews").mockImplementation((locationId, query) =>
+    locationId === SITE && query.point !== "pf" ? Promise.resolve(BODY) : new Promise<SiteSegmentViewsDto>(() => {}),
+  );
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[`${PATH}${search}`]}>
+        <Routes>
+          <Route path="/control-room/site/:locationId/:tab" element={<ViewFromParams />} />
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/** Moving to another site while its read is pending lists none of the previous site's segments. */
+export async function anotherSitesSegmentsDoNotShowWhileItLoads(): Promise<void> {
+  renderSwitchable("");
+  const nav = await sectionNav();
+  await waitFor(() => expect(within(nav).getAllByRole("link")).toHaveLength(3));
+  fireEvent.click(screen.getByRole("button", { name: "other site" }));
+  await waitFor(() =>
+    expect(within(screen.getByRole("navigation", { name: "Trends sections" })).getAllByRole("link")).toHaveLength(1),
+  );
+  expect(screen.queryByRole("link", { name: "Chillers" })).toBeNull();
+}
+
+/** Another point of the same site keeps the segment nav while its read is pending. */
+export async function anotherPointKeepsTheSegmentNavWhileItLoads(): Promise<void> {
+  renderSwitchable("?view=chillers&point=kw");
+  await screen.findByRole("combobox", { name: "Trend point" });
+  fireEvent.click(screen.getByRole("button", { name: "other point" }));
+  expect(await screen.findByText("Loading the segment trends…")).toBeInTheDocument();
+  expect(within(await sectionNav()).getAllByRole("link")).toHaveLength(3);
 }
 
 /** A 404 (a segment or point not at the site) has its own sentence. */

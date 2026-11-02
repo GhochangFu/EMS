@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
@@ -45,7 +45,10 @@ export function SiteTrendsView({ locationId }: Props) {
     queryKey: query === null ? ["control-room", "segment-views", locationId, null] : segmentViewsQueryKey(locationId, query),
     queryFn: () => segmentViewsOf(locationId, query),
     enabled: query !== null,
-    placeholderData: keepPreviousData,
+    // The previous answer holds the nav steady while another segment or point of this site
+    // loads; never across sites — the router keeps this view mounted on a site switch, and the
+    // nav and the pickers' zone would show the previous site's segments and zone.
+    placeholderData: (previous) => (previous?.locationId === locationId ? previous : undefined),
     refetchInterval: 60_000,
   });
   const data = segmentQ.data;

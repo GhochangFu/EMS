@@ -6,6 +6,8 @@ import {
   aFailedSegmentReadIsAFixedSentence,
   aMissingSegmentHasItsOwnSentence,
   aSegmentSubTabAsksItsSegmentAndPoint,
+  anotherPointKeepsTheSegmentNavWhileItLoads,
+  anotherSitesSegmentsDoNotShowWhileItLoads,
   choosingAPointWritesTheSearch,
   theBareSectionShowsEnergy,
   theNavListsOneEntryPerSegment,
@@ -45,5 +47,13 @@ describe("F4.302 the Trends & Energy section", () => {
 
   it("renders its own sentence for a segment not at the site", async () => {
     await aMissingSegmentHasItsOwnSentence();
+  });
+
+  it("lists none of the previous site's segments while another site loads", async () => {
+    await anotherSitesSegmentsDoNotShowWhileItLoads();
+  });
+
+  it("keeps the segment nav while another point of the same site loads", async () => {
+    await anotherPointKeepsTheSegmentNavWhileItLoads();
   });
 });
