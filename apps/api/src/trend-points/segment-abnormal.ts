@@ -22,7 +22,8 @@ import { countingWindows, medianOf } from "../reports/energy-abnormal";
  * mean against the median of its means in the counting windows: `above` at
  * `ratio ≥ ABNORMAL_RATIO`, `below` at `ratio ≤ ABNORMAL_BELOW_RATIO`. Before
  * the ratio, a baseline within `ABNORMAL_NEAR_ZERO_FRACTION` of the largest
- * magnitude in play, or of the opposite sign to the current mean, is
+ * counting-window magnitude (the current mean is not in the scale — owner
+ * ruling 2026-11-02), or of the opposite sign to the current mean, is
  * `not_comparable` — a relative floor, so no literal per unit, and a point that
  * is zero throughout never reads `normal` by a 0 / 0. Two negatives compare by
  * magnitude (`−30 / −20 = 1.5`).
@@ -81,7 +82,9 @@ export function segmentVerdictFor(
     return { verdict: "not_enough_history", baselineMean: null, ratio: null, baselineWindows: counting.length };
   }
   const baseline = medianOf(counting.map((window) => window.mean)) as number;
-  const scale = Math.max(Math.abs(current.mean), ...counting.map((window) => Math.abs(window.mean)));
+  // The scale is the counting windows only (owner ruling 2026-11-02): a large
+  // current mean must not push a steady baseline under its own floor.
+  const scale = Math.max(...counting.map((window) => Math.abs(window.mean)));
   const notComparable = {
     verdict: "not_comparable" as const,
     baselineMean: baseline,

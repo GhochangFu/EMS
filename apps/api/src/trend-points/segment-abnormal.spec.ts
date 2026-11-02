@@ -64,16 +64,32 @@ export function assertRatioOfPointFiveOneIsNormal(): void {
 }
 
 /**
- * A baseline at 0.9 % of the largest magnitude (the current 100) is within the
- * 1 % floor: `not_comparable`, with no ratio. Without the floor the ratio is
- * 111 and the verdict `above`, so the claim reddens when the fraction is 0.
+ * The floor's scale is the largest counting-window magnitude only (owner ruling
+ * 2026-11-02, build review): counting windows `0.5, 0.9, 100` give a median of
+ * 0.9, under 1 % of 100, so `not_comparable` with no ratio. Without the floor
+ * the ratio is 111 and the verdict `above`, so the claim reddens when the
+ * fraction is 0.
  */
 export function assertANearZeroBaselineIsNotComparable(): void {
   expect(ABNORMAL_NEAR_ZERO_FRACTION).toBe(0.01);
-  const verdict = segmentVerdictFor(current(100), baseline(0.9));
+  const windows = [0.5, 0.9, 100].map((mean) => ({ mean, bucketCount: FULL }));
+  const verdict = segmentVerdictFor(current(100), windows);
   expect(verdict.verdict).toBe("not_comparable");
   expect(verdict.ratio).toBeNull();
   expect(verdict.baselineMean).toBe(0.9);
+}
+
+/**
+ * The current mean is not in the floor's scale (owner ruling 2026-11-02): four
+ * counting windows at 5 and a current mean of 600 is a ratio of 120, `above`.
+ * With `|current|` in the scale the floor is 6 and the baseline of 5 under it,
+ * so the claim reddens when the current mean is put back.
+ */
+export function assertALargeCurrentAgainstASteadyBaselineIsAbove(): void {
+  const windows = [5, 5, 5, 5].map((mean) => ({ mean, bucketCount: FULL }));
+  const verdict = segmentVerdictFor(current(600), windows);
+  expect(verdict.verdict).toBe("above");
+  expect(verdict.ratio).toBe(120);
 }
 
 /** `+5` against a baseline of `−5`: opposite signs never divide into a verdict. */

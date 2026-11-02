@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertALargeCurrentAgainstASteadyBaselineIsAbove,
   assertANearZeroBaselineIsNotComparable,
   assertAWindowAtHalfTheBucketsCounts,
   assertAnAllZeroPointIsNotComparable,
@@ -25,8 +26,10 @@ describe("F4.302 — the segment view's two-sided abnormal verdict (ADR 0108 Ame
     it("a ratio of 1.49 is normal", () => assertRatioOfOnePointFourNineIsNormal());
     it("a ratio of 0.5 is below", () => assertRatioOfOneHalfIsBelow());
     it("a ratio of 0.51 is normal", () => assertRatioOfPointFiveOneIsNormal());
-    it("a baseline within 1 % of the largest magnitude is not comparable, with no ratio", () =>
+    it("a baseline within 1 % of the largest counting-window magnitude is not comparable, with no ratio", () =>
       assertANearZeroBaselineIsNotComparable());
+    it("a current mean of 600 against counting windows at 5 is above (the current is not in the scale)", () =>
+      assertALargeCurrentAgainstASteadyBaselineIsAbove());
     it("+5 against -5 is not comparable", () => assertOppositeSignsAreNotComparable());
     it("-30 against -20 is above (by magnitude)", () => assertTwoNegativesCompareByMagnitude());
     it("an all-zero point is not comparable", () => assertAnAllZeroPointIsNotComparable());
