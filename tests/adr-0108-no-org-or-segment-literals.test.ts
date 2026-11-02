@@ -124,6 +124,15 @@ const MODULES: readonly string[] = [
   "apps/api/src/trend-points/segment-views-read.ts",
   "apps/api/src/trend-points/segment-views.service.ts",
   "apps/api/src/trend-points/segment-views.controller.ts",
+  // F4.302 U4: the web client, the pure lib and the six control-room components.
+  "apps/web/src/api/segment-views.ts",
+  "apps/web/src/lib/site-trends.ts",
+  "apps/web/src/components/control-room/site-trends-view.tsx",
+  "apps/web/src/components/control-room/site-energy-view.tsx",
+  "apps/web/src/components/control-room/segment-view.tsx",
+  "apps/web/src/components/control-room/segment-trend-chart.tsx",
+  "apps/web/src/components/control-room/segment-ranking-table.tsx",
+  "apps/web/src/components/control-room/segment-abnormal-list.tsx",
 ];
 
 /**
@@ -140,19 +149,12 @@ const MODULES: readonly string[] = [
  * three mount-point views (`generated-site-view.tsx`, `site-dashboard-view.tsx`,
  * `smoc-site-view.tsx`) pre-date ADR 0108 and gain one import and one JSX line
  * each, so they are not listed (the `energy-page.tsx` precedent).
+ *
+ * `F4.302` (Amendment 4 item 10): U4 moved the last eight web modules to {@link MODULES}, so the
+ * list is empty again. `site-page.tsx` pre-dates this record and gains one entry and one branch,
+ * so it is not listed.
  */
-const PENDING_MODULES: readonly string[] = [
-  // F4.302 U3: the two shared energy components.
-  // F4.302 U4: the web client, the pure lib and the six control-room components.
-  "apps/web/src/api/segment-views.ts",
-  "apps/web/src/lib/site-trends.ts",
-  "apps/web/src/components/control-room/site-trends-view.tsx",
-  "apps/web/src/components/control-room/site-energy-view.tsx",
-  "apps/web/src/components/control-room/segment-view.tsx",
-  "apps/web/src/components/control-room/segment-trend-chart.tsx",
-  "apps/web/src/components/control-room/segment-ranking-table.tsx",
-  "apps/web/src/components/control-room/segment-abnormal-list.tsx",
-];
+const PENDING_MODULES: readonly string[] = [];
 
 /**
  * Files that are never scanned, each with its reason, so a later row does not

@@ -46,6 +46,10 @@ vi.mock("../../components/control-room/scoped-dashboards-list", () => ({
   ScopedDashboardsList: () => <div data-testid="scoped-dashboards-list" />,
 }));
 
+vi.mock("../../components/control-room/site-trends-view", () => ({
+  SiteTrendsView: () => <div data-testid="site-trends-view" />,
+}));
+
 /** `F4.301` U5 — the site views that render the trend strip are mocked; this keeps its read off the network too. */
 vi.mock("../../api/trend-strip", () => ({
   fetchSiteTrendStrip: () => new Promise(() => undefined),
@@ -188,6 +192,25 @@ export async function wallOnTheAssetsTabRendersTheNormalPage(): Promise<void> {
   expect(await screen.findByTestId("site-assets-view")).toBeInTheDocument();
   expect(screen.getByRole("contentinfo"), "the shell's footer").toBeInTheDocument();
   expect(screen.queryByRole("link", { name: "Exit wall" })).toBeNull();
+}
+
+/**
+ * P10 (`F4.302`, ADR 0108 Amendment 4 item 9) — `?wall=1` on the Trends & Energy section renders the
+ * normal page: the section is a page, not a widget. Mutation: drop `onTrendsTab` from `wallSite` => red.
+ */
+export async function wallOnTheTrendsSectionRendersTheNormalPage(): Promise<void> {
+  stubReads(DASHBOARD_VIEW);
+  renderPage(`${SITE_PATH}/trends?wall=1&every=30`);
+  expect(await screen.findByTestId("site-trends-view")).toBeInTheDocument();
+  expect(screen.getByRole("contentinfo"), "the shell's footer").toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Exit wall" })).toBeNull();
+}
+
+/** P11 (`F4.302` item 1) — at `/trends` the Wall link omits the segment, as at `/assets`. */
+export async function theWallLinkOmitsTheTrendsSegment(): Promise<void> {
+  stubReads(DASHBOARD_VIEW);
+  renderPage(`${SITE_PATH}/trends`);
+  expect(await screen.findByRole("link", { name: "Wall" })).toHaveAttribute("href", `${SITE_PATH}?wall=1&every=30`);
 }
 
 /** P4 — on a `dashboard` view the header's Wall link carries the tab and `?wall=1&every=30`. */

@@ -11,6 +11,7 @@ import { SiteLayoutWizard } from "../../components/control-room/site-layout-wiza
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
 import { SiteAssetsView } from "../../components/control-room/site-assets-view";
 import { SiteDashboardView } from "../../components/control-room/site-dashboard-view";
+import { SiteTrendsView } from "../../components/control-room/site-trends-view";
 import { SmocSiteView } from "../../components/control-room/smoc-site-view";
 import { WallFrame } from "../../components/control-room/wall-frame";
 import { PageHeader } from "../../components/page-header";
@@ -24,7 +25,9 @@ import {
   DEFAULT_SMOC_TAB,
   isSmocSite,
   SITE_ASSETS_TAB,
+  SITE_TRENDS_TAB,
   siteAssetsPath,
+  siteTrendsPath,
   smocTabFromParam,
   type SmocTabKey,
 } from "../../lib/smoc-pages";
@@ -95,6 +98,11 @@ const linkClass = "mt-2 inline-block text-sm font-semibold text-accent-strong ho
  * outside the KPI list and a pending read render the normal page (OQ3). The page header's
  * **Wall** link shows on a `dashboard` view only and opens the current tab's wall URL at the
  * default interval. The D5 redirect runs first, so a wall URL with a bad segment still redirects.
+ *
+ * `F4.302` (ADR 0108 Amendment 4 items 1, 8, 9) — a third entry, **Trends & Energy** at
+ * `/trends` (`SITE_TRENDS_TAB`), the `assets` shape: exempt from the D5 redirect, rendered as
+ * `SiteTrendsView` for every view kind once the resolve read has answered, never a wall page,
+ * and the **Wall** link omits the segment there.
  */
 export function ControlRoomSitePage({ user, locationId: locationIdProp }: ControlRoomSitePageProps) {
   const params = useParams();
@@ -102,6 +110,7 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
   const locationId = locationIdProp ?? params.locationId ?? "";
   const tabParam = params.tab;
   const onAssetsTab = tabParam === SITE_ASSETS_TAB;
+  const onTrendsTab = tabParam === SITE_TRENDS_TAB;
   const tab = smocTabFromParam(tabParam);
   const scope = useAuthStore((state) => state.scope);
   const locationQ = useQuery({
@@ -128,7 +137,7 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
   // `F3.77` (plan D8, OQ3) — the wall shows a site's `dashboard` view only, never the assets tab.
   const wall = parseWallParams(location.search);
   const sitePath = `/control-room/site/${encodeURIComponent(locationId)}`;
-  const wallSite = wall.on && dashboardSlug !== null && !onAssetsTab ? site : undefined;
+  const wallSite = wall.on && dashboardSlug !== null && !onAssetsTab && !onTrendsTab ? site : undefined;
   // The rotation's tab order. The same key and read as `SiteDashboardView`'s (and the viewer's),
   // so the wall shares that cache entry and adds no request.
   const wallDashboardQ = useQuery({
@@ -142,6 +151,7 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
     siteView.data !== undefined &&
     tabParam !== undefined &&
     !onAssetsTab &&
+    !onTrendsTab &&
     !showsDashboard &&
     (!showsSmocTabs || tab === null)
   ) {
@@ -188,7 +198,7 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                 actions={
                   showsDashboard ? (
                     <Link
-                      to={wallHref(sitePath, onAssetsTab ? undefined : tabParam, WALL_DEFAULT_S)}
+                      to={wallHref(sitePath, onAssetsTab || onTrendsTab ? undefined : tabParam, WALL_DEFAULT_S)}
                       className={`surface-button px-3 py-1.5 text-sm font-semibold text-accent-strong ${FOCUS_OUTLINE_CLASS}`}
                     >
                       Wall
@@ -196,13 +206,15 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                   ) : undefined
                 }
               />
-              <SiteSectionStrip locationId={site.id} onAssetsTab={onAssetsTab} />
+              <SiteSectionStrip locationId={site.id} onAssetsTab={onAssetsTab} onTrendsTab={onTrendsTab} />
               {siteView.data === undefined ? (
                 <p role="status" className="text-sm text-ink-muted">
                   Loading the site view…
                 </p>
               ) : onAssetsTab ? (
                 <SiteAssetsView locationId={site.id} />
+              ) : onTrendsTab ? (
+                <SiteTrendsView locationId={site.id} />
               ) : (
                 <>
                   {/* On the SMOC view `tab` is null only for an unknown segment, which redirected above. */}
@@ -236,13 +248,27 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
 }
 
 /**
- * `F3.72` (plan D4, OQ5) — the site's two entries. "Site view" is current for
- * the bare path and every SMOC tab segment; "Assets & RTUs" only at `/assets`.
+ * `F3.72` (plan D4, OQ5) — the site's entries. "Site view" is current for
+ * the bare path and every SMOC tab segment; "Assets & RTUs" only at `/assets`;
+ * "Trends & Energy" (`F4.302`, ADR 0108 Amendment 4 item 1) only at `/trends`.
  */
-function SiteSectionStrip({ locationId, onAssetsTab }: { locationId: string; onAssetsTab: boolean }) {
+function SiteSectionStrip({
+  locationId,
+  onAssetsTab,
+  onTrendsTab,
+}: {
+  locationId: string;
+  onAssetsTab: boolean;
+  onTrendsTab: boolean;
+}) {
   const entries = [
-    { label: "Site view", to: `/control-room/site/${encodeURIComponent(locationId)}`, active: !onAssetsTab },
+    {
+      label: "Site view",
+      to: `/control-room/site/${encodeURIComponent(locationId)}`,
+      active: !onAssetsTab && !onTrendsTab,
+    },
     { label: "Assets & RTUs", to: siteAssetsPath(locationId), active: onAssetsTab },
+    { label: "Trends & Energy", to: siteTrendsPath(locationId), active: onTrendsTab },
   ];
   return (
     <nav aria-label="Site sections" className="flex flex-wrap gap-1 border-b border-line pb-2">

@@ -12,6 +12,8 @@ import {
   wallOnADashboardViewRendersTheFrame,
   wallOnAGeneratedViewRendersTheNormalPage,
   wallOnTheAssetsTabRendersTheNormalPage,
+  wallOnTheTrendsSectionRendersTheNormalPage,
+  theWallLinkOmitsTheTrendsSegment,
 } from "./site-page-wall.spec";
 
 /**
@@ -57,5 +59,13 @@ describe("F3.77 the site page's wall mode (plan D8)", () => {
 
   it("P9 does not hand the view wall on the normal page", async () => {
     await theNormalPageDoesNotPassWall();
+  });
+
+  it("P10 renders the normal page for wall=1 on the Trends & Energy section", async () => {
+    await wallOnTheTrendsSectionRendersTheNormalPage();
+  });
+
+  it("P11 omits the trends segment from the Wall link", async () => {
+    await theWallLinkOmitsTheTrendsSegment();
   });
 });
