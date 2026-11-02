@@ -135,6 +135,7 @@ import {
   energyViewQuerySchema,
   saveEnergyReportFileBodySchema,
   siteTrendStripQuerySchema,
+  siteSegmentViewsQuerySchema,
   updateReportScheduleBodySchema,
 } from "@bms/shared";
 import {
@@ -441,6 +442,7 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   pointRawQuerySchema,
   // 29 -> 30: F4.301 registered siteTrendStripQuerySchema (GET /control-room/sites/:locationId/trend-strip) — .strict(), no body, no ledger entry, the same precedent.
   siteTrendStripQuerySchema,
+  siteSegmentViewsQuerySchema, // 30 -> 31: F4.302 (GET .../segment-views, Amendment 4 item 4) — .strict(), no body, no ledger entry.
   mappingSheetQuerySchema,
   // `E4.1a`: `GET /admin/calc-parameters?organizationId=&key=` — `.strict()`,
   // no ledger entry, the `mappingSheetQuerySchema` precedent.
@@ -981,7 +983,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(30);
+  ).toBe(31);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

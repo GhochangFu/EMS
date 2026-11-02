@@ -254,8 +254,10 @@ export const dashboards = bmsSchema.table(
  *
  * CHECKs are not mirrored here, following this file's convention:
  * `dashboard_tabs_group_location_check` (`assetGroupId` and `locationId` are both NULL or
- * both set) and `dashboard_tabs_tab_key_check` (a lower-case slug, never `assets`) live in
- * migration 0094 and are pinned by `tests/f3.73-dashboard-tabs-schema.test.ts`.
+ * both set) live in migration 0094 and is pinned by `tests/f3.73-dashboard-tabs-schema.test.ts`.
+ * `dashboard_tabs_tab_key_check` (a lower-case slug, never a key of
+ * `RESERVED_DASHBOARD_TAB_KEYS`: `assets` or `trends`) was added in 0094 and re-added wider in
+ * migration 0119 (`F4.302`), pinned by `tests/f4.302-dashboard-tab-key-trends.test.ts`.
  */
 export const dashboardTabs = bmsSchema.table(
   "dashboard_tabs",

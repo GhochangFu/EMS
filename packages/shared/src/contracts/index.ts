@@ -78,6 +78,7 @@ export * from "./location-writes";
 export * from "./mimic-layout-writes";
 export * from "./mimic-symbol-library-writes";
 export * from "./point-key-writes";
+export * from "./site-segment-views";
 export * from "./trend-points";
 export * from "./trend-strip";
 export * from "./trend-strip-widget";

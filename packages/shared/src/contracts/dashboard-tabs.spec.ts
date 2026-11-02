@@ -1,4 +1,10 @@
-import { MAX_DASHBOARD_TABS, RESERVED_DASHBOARD_TAB_KEYS, SITE_ASSETS_TAB, dashboardTabKeySchema } from "./dashboard-tabs";
+import {
+  MAX_DASHBOARD_TABS,
+  RESERVED_DASHBOARD_TAB_KEYS,
+  SITE_ASSETS_TAB,
+  SITE_TRENDS_TAB,
+  dashboardTabKeySchema,
+} from "./dashboard-tabs";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -9,6 +15,12 @@ function assert(condition: boolean, message: string): void {
 /** `assets` is the site page's own segment (plan D4), so a dashboard tab may not take it. */
 export function assetsKeyIsRefused(): void {
   assert(dashboardTabKeySchema.safeParse("assets").success === false, "the key `assets` must be refused");
+}
+
+/** `trends` is the site page's third section (`F4.302`, ADR 0108 Amendment 4 item 1). */
+export function trendsKeyIsRefused(): void {
+  assert(dashboardTabKeySchema.safeParse("trends").success === false, "the key `trends` must be refused");
+  assert(dashboardTabKeySchema.safeParse("trends-1").success === true, "the key `trends-1` must be accepted");
 }
 
 /** The regex is lowercase-only, so the reserved word is not dodged by a capital. */
@@ -30,9 +42,12 @@ export function keyLengthBoundIs64(): void {
 /** One declaration: the reserved list is built from `SITE_ASSETS_TAB`, and the cap is the plan's 8. */
 export function reservedKeysAndCapArePinned(): void {
   assert(
-    RESERVED_DASHBOARD_TAB_KEYS.length === 1 && RESERVED_DASHBOARD_TAB_KEYS[0] === SITE_ASSETS_TAB,
-    "only the site page's assets segment is reserved",
+    RESERVED_DASHBOARD_TAB_KEYS.length === 2 &&
+      RESERVED_DASHBOARD_TAB_KEYS[0] === SITE_ASSETS_TAB &&
+      RESERVED_DASHBOARD_TAB_KEYS[1] === SITE_TRENDS_TAB,
+    "the site page's assets and trends segments are reserved",
   );
+  assert(SITE_TRENDS_TAB === "trends", "the Trends & Energy route segment is `trends`");
   assert(SITE_ASSETS_TAB === "assets", "the Assets & RTUs route segment is `assets`");
   assert(MAX_DASHBOARD_TABS === 8, "a dashboard carries at most 8 tabs");
 }

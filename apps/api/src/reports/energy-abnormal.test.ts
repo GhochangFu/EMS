@@ -8,6 +8,7 @@ import { describe, it } from "vitest";
 import {
   assertAThinWindowDoesNotCount,
   assertAZeroBaselineIsNotEnoughHistory,
+  assertCountingWindowsKeepsExactlyHalf,
   assertAnAbsentWindowDoesNotCount,
   assertEntriesJudgeEveryEntityWithACurrentRow,
   assertHorizonDropsByTheWindowStart,
@@ -55,6 +56,8 @@ describe("F4.299 — the abnormal list's arithmetic (ADR 0108 Amendment 1, 7.7)"
     it("a ratio of 1.49 is normal", () => assertRatioBelowOnePointFiveIsNormal());
     it("a window under half the current bucket count does not count", () => assertAThinWindowDoesNotCount());
     it("a zero baseline is not enough history and never divides", () => assertAZeroBaselineIsNotEnoughHistory());
+    it("F4.302: countingWindows keeps a window at exactly half and drops one below", () =>
+      assertCountingWindowsKeepsExactlyHalf());
   });
 
   describe("the entries", () => {

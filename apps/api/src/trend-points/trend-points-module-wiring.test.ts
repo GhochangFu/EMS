@@ -6,6 +6,8 @@ import {
   assertModuleDeclaresBothControllers,
   assertModuleImportsDatabaseAndAuth,
   assertModuleProvidesServiceAndAudit,
+  assertSegmentViewsControllerDepsResolve,
+  assertSegmentViewsServiceDepsResolve,
   assertServiceDepsResolve,
   assertStripControllerDepsResolve,
   assertStripServiceDepsResolve,
@@ -17,11 +19,11 @@ describe("F4.300 — TrendPointsModule wiring", () => {
     assertModuleImportsDatabaseAndAuth();
   });
 
-  it("provides TrendPointsService, MasterDataAuditService and SiteTrendStripService", () => {
+  it("provides TrendPointsService, MasterDataAuditService, SiteTrendStripService and SiteSegmentViewsService", () => {
     assertModuleProvidesServiceAndAudit();
   });
 
-  it("declares SiteTrendPointsController, OrgTrendPointsAdminController and SiteTrendStripController", () => {
+  it("declares the trend-points, admin, trend-strip and segment-views controllers", () => {
     assertModuleDeclaresBothControllers();
   });
 
@@ -43,5 +45,13 @@ describe("F4.300 — TrendPointsModule wiring", () => {
 
   it("F4.301: SiteTrendStripService's own dependencies resolve inside the module", () => {
     assertStripServiceDepsResolve();
+  });
+
+  it("F4.302: SiteSegmentViewsController injects only SiteSegmentViewsService, resolvable in the module", () => {
+    assertSegmentViewsControllerDepsResolve();
+  });
+
+  it("F4.302: SiteSegmentViewsService's own dependencies resolve inside the module", () => {
+    assertSegmentViewsServiceDepsResolve();
   });
 });

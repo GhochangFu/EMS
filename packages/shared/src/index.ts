@@ -660,6 +660,7 @@ export type * from "./types/template-migration";
 export type * from "./types/copilot";
 export type * from "./types/onboarding";
 export type * from "./types/onboarding-discovery";
+export type * from "./types/site-segment-views";
 export type * from "./types/trend-points";
 export type * from "./types/trend-strip";
 

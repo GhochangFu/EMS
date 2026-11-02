@@ -6,6 +6,7 @@ import {
   keyLengthBoundIs64,
   ordinaryKeyIsAccepted,
   reservedKeysAndCapArePinned,
+  trendsKeyIsRefused,
 } from "./dashboard-tabs.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -18,6 +19,10 @@ describe("F3.73 — the dashboard tab key", () => {
     capitalisedAssetsKeyIsRefused();
   });
 
+  it("refuses the reserved key trends", () => {
+    trendsKeyIsRefused();
+  });
+
   it("accepts an ordinary slug", () => {
     ordinaryKeyIsAccepted();
   });
@@ -26,7 +31,7 @@ describe("F3.73 — the dashboard tab key", () => {
     keyLengthBoundIs64();
   });
 
-  it("reserves only assets and caps a dashboard at 8 tabs", () => {
+  it("reserves assets and trends and caps a dashboard at 8 tabs", () => {
     reservedKeysAndCapArePinned();
   });
 });

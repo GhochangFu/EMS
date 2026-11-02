@@ -83,16 +83,15 @@ describe("repo invariants", () => {
     // both. Legitimate raw reads in these files — latest-value `DISTINCT ON`,
     // `MAX(value) FILTER`, `SUM(latest.kw)` — use neither, and `AVG(total_kw)` over
     // an already-aggregated CTE is untouched because it does not name `value`.
-    // `F4.159` moved three of the dashboard sites into energy-centre.ts.
     const rollupFiles = [
       "apps/api/src/dashboard/dashboard.service.ts",
-      "apps/api/src/dashboard/energy-centre.ts",
+      "apps/api/src/dashboard/energy-centre.ts", // `F4.159` moved three of the dashboard sites here.
       "apps/api/src/reports/reports.service.ts",
       "apps/api/src/reports/location-summary.service.ts", // `F4.290` PR 2: the no-data `_1h` read.
-      // `F4.298` U3: the energy view's reads (ADR 0108), and the moved top-consumers SQL.
-      "apps/api/src/reports/energy-view-read.ts",
+      "apps/api/src/reports/energy-view-read.ts", // `F4.298` U3: the energy view's reads and the moved top-consumers SQL.
       "apps/api/src/reports/energy-organization-reads.ts", // `F4.299` U3 (ADR 0108 Amendment 1).
       "apps/api/src/trend-points/trend-strip-read.ts", // F4.301 U2: the trend strip's one rollup statement.
+      "apps/api/src/trend-points/segment-views-read.ts", // F4.302 U2: the segment view's two rollup statements.
     ];
     // Comments discuss both markers on purpose, so strip them before matching.
     const stripComments = (src: string): string =>

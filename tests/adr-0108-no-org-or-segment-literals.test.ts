@@ -85,6 +85,8 @@ const MODULES: readonly string[] = [
   "apps/web/src/components/energy/site-ranking-table.tsx",
   "apps/web/src/components/energy/energy-heatmap.tsx",
   "apps/web/src/components/energy/abnormal-list.tsx",
+  "apps/web/src/components/energy/energy-kpi-tiles.tsx",
+  "apps/web/src/components/energy/range-compare-controls.tsx",
   // F4.299 U6 rewrites these two existing files (Amendment 1, 7.10), so they are scanned too.
   "apps/web/src/components/energy-source-stack-chart.tsx",
   "apps/web/src/pages/energy-page.tsx",
@@ -112,6 +114,25 @@ const MODULES: readonly string[] = [
   // F4.305 review (AGENTS.md §4.2) — split out of trend-strip.tsx and trend-strip-widget.tsx.
   "apps/web/src/components/control-room/trend-strip-body.tsx",
   "apps/web/src/components/widgets/trend-strip-widget-preview.tsx",
+  // F4.302 (ADR 0108 Amendment 4, item 10) — U1. The rest are in PENDING_MODULES until U3–U4.
+  "packages/shared/src/contracts/site-segment-views.ts",
+  "packages/shared/src/types/site-segment-views.ts",
+  // F4.302 U2: the api modules, plus the shared scope-join file.
+  "apps/api/src/trend-points/site-asset-rows.ts",
+  "apps/api/src/trend-points/segment-abnormal.ts",
+  "apps/api/src/trend-points/segment-views.pure.ts",
+  "apps/api/src/trend-points/segment-views-read.ts",
+  "apps/api/src/trend-points/segment-views.service.ts",
+  "apps/api/src/trend-points/segment-views.controller.ts",
+  // F4.302 U4: the web client, the pure lib and the six control-room components.
+  "apps/web/src/api/segment-views.ts",
+  "apps/web/src/lib/site-trends.ts",
+  "apps/web/src/components/control-room/site-trends-view.tsx",
+  "apps/web/src/components/control-room/site-energy-view.tsx",
+  "apps/web/src/components/control-room/segment-view.tsx",
+  "apps/web/src/components/control-room/segment-trend-chart.tsx",
+  "apps/web/src/components/control-room/segment-ranking-table.tsx",
+  "apps/web/src/components/control-room/segment-abnormal-list.tsx",
 ];
 
 /**
@@ -128,6 +149,10 @@ const MODULES: readonly string[] = [
  * three mount-point views (`generated-site-view.tsx`, `site-dashboard-view.tsx`,
  * `smoc-site-view.tsx`) pre-date ADR 0108 and gain one import and one JSX line
  * each, so they are not listed (the `energy-page.tsx` precedent).
+ *
+ * `F4.302` (Amendment 4 item 10): U4 moved the last eight web modules to {@link MODULES}, so the
+ * list is empty again. `site-page.tsx` pre-dates this record and gains one entry and one branch,
+ * so it is not listed.
  */
 const PENDING_MODULES: readonly string[] = [];
 

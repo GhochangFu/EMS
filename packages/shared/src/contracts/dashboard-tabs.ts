@@ -14,8 +14,19 @@ import { z } from "zod";
  */
 export const SITE_ASSETS_TAB = "assets";
 
-/** Tab keys a dashboard tab may not use — the segments the site page renders itself. */
-export const RESERVED_DASHBOARD_TAB_KEYS: readonly string[] = [SITE_ASSETS_TAB];
+/**
+ * The site page's Trends & Energy `:tab` segment (`F4.302`, ADR 0108 Amendment 4 item 1). Declared
+ * here once, like {@link SITE_ASSETS_TAB}: the web's `smoc-pages.ts` re-exports it.
+ */
+export const SITE_TRENDS_TAB = "trends";
+
+/**
+ * Tab keys a dashboard tab may not use — the segments the site page renders itself.
+ *
+ * This list and the `dashboard_tabs_tab_key_check` CHECK (migration `0119`) are two declarations
+ * of one list; `tests/f4.302-dashboard-tab-key-trends.test.ts` compares them.
+ */
+export const RESERVED_DASHBOARD_TAB_KEYS: readonly string[] = [SITE_ASSETS_TAB, SITE_TRENDS_TAB];
 
 /**
  * The most tabs one dashboard carries. The cap is on tabs, not widgets: `MAX_DASHBOARD_WIDGETS`
