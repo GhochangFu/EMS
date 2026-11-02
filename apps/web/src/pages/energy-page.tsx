@@ -254,7 +254,7 @@ export function EnergyPage({ user }: EnergyPageProps) {
           {orgViewsQ.isError ? null : (
             <SectionCard
               title="Top consuming sites"
-              subtitle="Ranked by kWh or peak kW; the change against the previous period when compare is on"
+              subtitle="Ranked by kWh, peak kW or kWh per m²; the change against the previous period when compare is on"
             >
               <SiteRankingTable
                 sites={ov?.sites}

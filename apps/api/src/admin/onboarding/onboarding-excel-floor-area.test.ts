@@ -5,6 +5,8 @@ import {
   assertANegativeNumberIsRefused,
   assertANumericCellIsRead,
   assertAValueBelowTheBoundParses,
+  assertAnUploadedFt2BelowOneSquareMetreIsRefusedByTheDraft,
+  assertAnUploadedSquareMetreBoundIsAdmitted,
   assertAValueWithATrailingUnitIsRefused,
   assertAWorkbookWithoutTheColumnsIsNull,
   assertAnEmptyAreaCellIsNull,
@@ -56,5 +58,11 @@ describe("F4.304 — the workbook's floor_area and floor_area_unit columns (ADR 
   });
   it("E13 refuses 1200 m2 in one cell", () => {
     assertAValueWithATrailingUnitIsRefused();
+  });
+  it("E14 refuses 10.76 ft2 at the draft's floorArea.value with the m2 message (owner ruling 2026-11-03)", () => {
+    assertAnUploadedFt2BelowOneSquareMetreIsRefusedByTheDraft();
+  });
+  it("E15 admits 10.77 ft2 and 1 m2 from the workbook (owner ruling 2026-11-03)", () => {
+    assertAnUploadedSquareMetreBoundIsAdmitted();
   });
 });

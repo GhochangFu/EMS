@@ -11,7 +11,10 @@
  * The fixture builders are `onboarding-excel.service.spec.ts`'s, so the rows
  * are the workbook the service generates.
  */
+import { FLOOR_AREA_M2_MIN_MESSAGE } from "@bms/shared";
+
 import { OnboardingExcelService } from "./onboarding-excel.service";
+import { draftLocationSchema } from "./onboarding.schema";
 import { buildWorkbookBuffer, refusalMessage, templateRows } from "./onboarding-excel.service.spec";
 
 function assert(condition: boolean, message: string): void {
@@ -122,6 +125,35 @@ export function assertAnEmptyUnitIsM2(): void {
 export function assertAValueBelowTheBoundParses(): void {
   const got = areaOf(rowsWithAreaCells("0.5"));
   assert(same(got, { value: 0.5, unit: "m2" }), `0.5 parses, got ${JSON.stringify(got)}`);
+}
+
+/** The uploaded workbook's location, through the draft schema validate reads: `path: message` lines. */
+function uploadedLocationIssues(area: string, unit: string): string[] {
+  const location = new OnboardingExcelService().parseUpload(
+    buildWorkbookBuffer(rowsWithAreaCells(area, unit)),
+    LOCATION_TYPE_CODES,
+  ).location;
+  const parsed = draftLocationSchema.safeParse(location);
+  return parsed.success ? [] : parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
+}
+
+/**
+ * E14 (owner ruling 2026-11-03, "Also bound the m²") — a workbook with
+ * `10.76` `ft2` (0.9997 m²) parses, and the draft it becomes is refused once
+ * at `floorArea.value` with the m² message: the upload path's bound.
+ */
+export function assertAnUploadedFt2BelowOneSquareMetreIsRefusedByTheDraft(): void {
+  const got = uploadedLocationIssues("10.76", "ft2");
+  const want = [`floorArea.value: ${FLOOR_AREA_M2_MIN_MESSAGE}`];
+  assert(same(got, want), `10.76 ft2 from the workbook, got ${JSON.stringify(got)}`);
+}
+
+/** E15 — `10.77` `ft2` and `1` `m2` from the workbook are admitted by the draft. */
+export function assertAnUploadedSquareMetreBoundIsAdmitted(): void {
+  for (const [area, unit] of [["10.77", "ft2"], ["1", "m2"]] as const) {
+    const got = uploadedLocationIssues(area, unit);
+    assert(got.length === 0, `${area} ${unit} from the workbook must be admitted, got ${JSON.stringify(got)}`);
+  }
 }
 
 /** E12 — exponent notation is refused (a plain decimal literal only). */

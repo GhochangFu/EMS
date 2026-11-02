@@ -2,6 +2,10 @@ import { describe, it } from "vitest";
 
 import {
   FLOOR_AREA_REFUSALS,
+  admitsOneSquareMetre,
+  m2MessageNamesTheMinimum,
+  refusesFt2BelowOneSquareMetre,
+  updateAdmitsSmallestFt2,
   createAdmitsFt2,
   createAdmitsNullFloorArea,
   createDefaultsUnitToM2,
@@ -62,7 +66,7 @@ describe("F4.304 — floorArea { value, unit } on the location write bodies (ADR
   it("F4 — create admits { value } and the parse carries unit m2", () => {
     createDefaultsUnitToM2();
   });
-  it("F5 — create admits ft2", () => {
+  it("F5 — create admits 10.77 ft2", () => {
     createAdmitsFt2();
   });
   it("F6 — create admits null", () => {
@@ -71,7 +75,19 @@ describe("F4.304 — floorArea { value, unit } on the location write bodies (ADR
   it("F7 — update admits floorArea alone", () => {
     updateAdmitsFloorAreaAlone();
   });
+  it("F9 — update admits 10.77 ft2", () => {
+    updateAdmitsSmallestFt2();
+  });
+  it("F11 — the m2 message names 1 m2 and 10.77 ft2", () => {
+    m2MessageNamesTheMinimum();
+  });
   for (const which of ["create", "update"] as const) {
+    it(`F8 — ${which} admits 1 m2`, () => {
+      admitsOneSquareMetre(which);
+    });
+    it(`F10 — ${which} refuses 10.76 ft2 at floorArea.value with the m2 message (owner ruling 2026-11-03)`, () => {
+      refusesFt2BelowOneSquareMetre(which);
+    });
     for (const [label, bad, path] of FLOOR_AREA_REFUSALS) {
       it(`${which} refuses ${label} at ${path}`, () => {
         refuses(which, bad, path);

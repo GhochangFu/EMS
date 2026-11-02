@@ -1,4 +1,5 @@
 import {
+  FLOOR_AREA_M2_MIN_MESSAGE,
   MAX_ONBOARDING_ASSET_POINTS,
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_POINT_KEYS,
@@ -506,6 +507,30 @@ export function assertDraftFloorAreaRefusesBelowTheBound(): void {
     paths.length === 1 && paths[0] === "floorArea.value",
     `the refusal must be at floorArea.value only, got: ${JSON.stringify(paths)}`,
   );
+}
+
+/** The draft's area parse: the issues as `path: message`, or `[]` when it parses. */
+function draftAreaIssues(floorArea: unknown): string[] {
+  const parsed = draftLocationSchema.safeParse({ ...DRAFT_LOCATION_BASE, floorArea });
+  return parsed.success ? [] : parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
+}
+
+/**
+ * Owner ruling 2026-11-03 ("Also bound the m²"): 10.76 ft² is 0.9997 m², so
+ * the draft refuses it, once, at `floorArea.value`, with the m² message.
+ */
+export function assertDraftFloorAreaRefusesFt2BelowOneSquareMetre(): void {
+  const got = draftAreaIssues({ value: 10.76, unit: "ft2" });
+  const want = [`floorArea.value: ${FLOOR_AREA_M2_MIN_MESSAGE}`];
+  assert(JSON.stringify(got) === JSON.stringify(want), `10.76 ft2 must be refused once with the m2 message, got: ${JSON.stringify(got)}`);
+}
+
+/** Owner ruling 2026-11-03: 10.77 ft² (1.0006 m²) and 1 m² are both admitted by the draft. */
+export function assertDraftFloorAreaAdmitsTheSquareMetreBound(): void {
+  for (const area of [{ value: 10.77, unit: "ft2" }, { value: 1, unit: "m2" }]) {
+    const got = draftAreaIssues(area);
+    assert(got.length === 0, `${JSON.stringify(area)} must parse, got: ${JSON.stringify(got)}`);
+  }
 }
 
 /** A value with no unit parses, and the parse carries the default `m2`. */
