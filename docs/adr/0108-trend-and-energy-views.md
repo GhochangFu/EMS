@@ -641,7 +641,7 @@ Plan: `docs/plans/f4.299-organization-views.md`. Code citations are to `main` at
 
 - **A — baseline-only scale.** The near-zero floor's scale is the largest counting-window magnitude; the current mean is not in it (item 5).
 - **B — reserve `energy`.** The Energy sub-tab is `?view=energy`, so no `asset_domains` code may be `energy`; a gate holds it, the URL does not change.
-- **C — a forward migration.** A widget whose `config->>'tabKey'` is `trends` on a dashboard whose `trends` tab `0119` renamed moves to the renamed key.
+- **C — a forward migration.** Migration `0120` (journal `idx` 121): a widget whose `config->>'tabKey'` is `trends` on a dashboard whose `trends` tab `0119` renamed (key exactly `'trends-' || left(id::text, 8)`) moves to the renamed key; a second run is a no-op.
 
 ## Dependencies
 
