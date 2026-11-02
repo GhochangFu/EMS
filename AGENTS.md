@@ -857,7 +857,9 @@
 > re-created. The cap is **40 widgets per tab** (`MAX_DASHBOARD_WIDGETS`, the
 > dashboard's one canvas if it has no tabs) and **8 tabs**
 > (`MAX_DASHBOARD_TABS`), both in the write path, not a `CHECK`. A `tab_key`
-> is a lower-case slug and never `assets`: the site page owns that tab.
+> is a lower-case slug and never `assets` or `trends` (since `F4.302`,
+> migration `0119`; `RESERVED_DASHBOARD_TAB_KEYS`): the site page owns those
+> sections.
 > **A mimic needs a group from the dashboard or from its tab** (`mimicGroupFor`
 > in `dashboards.pure.ts`), no longer only an asset-group-scoped dashboard.
 > **Templates** (migration `0095`): `dashboard_templates.target` is
@@ -962,10 +964,10 @@
 > alarms at RSMOC-WC while the simulator runs; a skip list needs an ADR 0101
 > amendment. Still out: free shapes and lines, an API refusal of a bad graph,
 > and the tones `earthed` and `racked_out` until a device sends them.
-> And **trend and energy views** (**ADR 0108** with Amendments 1–3; rows
-> `F4.297`–`F4.301` and `F4.305`, merged 2026-10-31 to 2026-11-02 in #967
-> to #969, #971 to #973 and #975 `800a773a`; the ADR in #966, #970 and
-> #974). Nothing is coded per organization or segment:
+> And **trend and energy views** (**ADR 0108** with Amendments 1–4; rows
+> `F4.297`–`F4.302` and `F4.305`, merged 2026-10-31 to 2026-11-02 in #967
+> to #969, #971 to #973, #975 `800a773a` and #979 `63358d72`; the ADR in
+> #966, #970, #974 and #978). Nothing is coded per organization or segment:
 > `tests/adr-0108-no-org-or-segment-literals.test.ts` scans every runtime
 > module the ADR adds. **`F4.305` makes the `F4.301` trend strip a widget
 > type**: migration `0118` widens the widget-type `CHECK` with `trend_strip`,
@@ -979,8 +981,17 @@
 > `site-layout-stock-history.ts`. `SiteDashboardView` no longer mounts a
 > fixed strip (an admin-made site dashboard gets one with **+ Trend
 > strip**); `GeneratedSiteView` keeps its strip under the KPI tiles. A
-> sparkline click still opens `/asset-history/:assetId`. Next: `F4.306`, a
-> guided wizard that places these widgets.
+> sparkline click still opens `/asset-history/:assetId`. **`F4.302` adds the
+> site section Trends & Energy** at `/control-room/site/:locationId/trends`
+> (not on the wall): an Energy sub-tab on the energy routes and one sub-tab
+> per asset domain at the site (`?view=<domain code>`; the code `energy` is
+> reserved for the Energy sub-tab). Each domain sub-tab reads `GET
+> /control-room/sites/:locationId/segment-views` (`QUERY_SCHEMAS` is **31**):
+> a ranking, a series and a two-sided abnormal list, `above` at ratio ≥ 1.5
+> and `below` at ratio ≤ 0.5, advisory only; the near-zero floor reads the
+> counting windows only. Migration `0119` renames an existing `trends` tab
+> to `trends-<8>` and `0120` moves its widgets' `tabKey`. Next: `F4.304`,
+> `F4.303` and `F4.306`.
 > And **the tool-calling onboarding agent loop** (**ADR 0090** with
 > **Amendment 1**; row `F3.21`, merged 2026-10-03 in #705, squash `9ff272e1`;
 > the ADR in #702 and the amendment in #703). It amends ADR 0011 decision 1:
