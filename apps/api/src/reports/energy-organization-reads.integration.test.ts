@@ -11,6 +11,7 @@ import {
   assertAnEmptyScopeSendsNoOrganizationStatement,
   assertAnEmptyWindowIsAbsent,
   assertASiteCountsDistinctBuckets,
+  assertEachSiteCarriesItsOwnArea,
   assertAssetWindowRowsCarryKwhAndBuckets,
   assertEntityWindowReadsBindsTheList,
   assertHeatmapReadBindsTheListAndTheZone,
@@ -106,6 +107,10 @@ describe.skipIf(!connectionString)("F4.299 U3 — the organization views' reads 
   it("siteEnergyRead: the name is bms.locations.name", run(assertTheSiteNameIsTheLocationName));
   it("siteEnergyRead: the limit cuts the rows, not totalSites", run(assertTheLimitCutsTheRowsNotTheCount));
   it("siteEnergyRead: locationIds narrows the sites", run(assertLocationIdsNarrowTheSites));
+  it("siteEnergyRead: each site carries its own floor area, null without one (F4.304 R2)", async () => {
+    if (!superuser || !fleet || !fx) throw new Error("fixture required");
+    await assertEachSiteCarriesItsOwnArea(superuser, fleet, fx);
+  });
   it("siteSeriesRead: one aligned grid, no other column with two sites", run(assertTheSeriesIsOneAlignedGrid));
   it("siteSeriesRead: siteLimit 1 folds the second site into other", run(assertTheRestFoldIntoOther));
   it("siteSeriesRead: a 1d bucket in Asia/Kolkata is the local day", run(assertADaySeriesPointIsTheLocalDay));

@@ -32,6 +32,7 @@ const PERIOD = {
   currency: null,
   sourceTotals: { gridKwh: 1000, solarKwh: 234.5, dgKwh: 0 },
   series: [{ t: "2026-10-31T03:00:00.000Z", gridKw: 180, solarKw: 30, dgKw: 0 }],
+  kwhPerM2: null,
 };
 
 export const ENERGY_VIEW_FIXTURE = {
@@ -46,6 +47,7 @@ export const ENERGY_VIEW_FIXTURE = {
     { assetId: "30000000-0000-4000-8000-000000000001", code: "EM-1", name: "Meter 1", siteName: "Plant A", avgKw: 120, estimatedKwh: 1260 },
   ],
   partial: null,
+  floorArea: null,
 };
 
 export function assertTodayAloneParses(): void {
@@ -136,4 +138,41 @@ export function assertTheFilterOptionsParse(): void {
     ],
   });
   assert(parsed.success, `the filter options must parse: ${JSON.stringify(parsed.error?.issues)}`);
+}
+
+// ---------------------------------------------------------------------------
+// F4.304 U5 (ADR 0108 Amendment 5, item 8) — the named site's floor area
+// ---------------------------------------------------------------------------
+
+export function assertANamedSiteAreaParses(): void {
+  const parsed = energyViewSchema.safeParse({ ...ENERGY_VIEW_FIXTURE, floorArea: { locationId: SITE_A, floorAreaM2: 200 } });
+  assert(parsed.success, `a floorArea with an area must parse: ${JSON.stringify(parsed.error?.issues)}`);
+}
+
+export function assertANamedSiteWithNoAreaParses(): void {
+  const parsed = energyViewSchema.safeParse({ ...ENERGY_VIEW_FIXTURE, floorArea: { locationId: SITE_A, floorAreaM2: null } });
+  assert(parsed.success, `a floorArea with a null area must parse: ${JSON.stringify(parsed.error?.issues)}`);
+}
+
+export function assertAPeriodWithAFigureParses(): void {
+  const parsed = energyViewSchema.safeParse({ ...ENERGY_VIEW_FIXTURE, current: { ...PERIOD, kwhPerM2: 6.173 } });
+  assert(parsed.success, `a period with kwhPerM2 must parse: ${JSON.stringify(parsed.error?.issues)}`);
+}
+
+export function assertAFloorAreaWithoutLocationIdIsRefused(): void {
+  const parsed = energyViewSchema.safeParse({ ...ENERGY_VIEW_FIXTURE, floorArea: { floorAreaM2: 200 } });
+  assert(!parsed.success, "a floorArea without locationId must be refused");
+  const paths = (parsed.error?.issues ?? []).map((i) => i.path.join("."));
+  assert(
+    JSON.stringify(paths) === JSON.stringify(["floorArea.locationId"]),
+    `the issue must name floorArea.locationId, got ${JSON.stringify(paths)}`,
+  );
+}
+
+export function assertAPeriodWithoutKwhPerM2IsRefused(): void {
+  const { kwhPerM2: _dropped, ...period } = PERIOD;
+  const parsed = energyViewSchema.safeParse({ ...ENERGY_VIEW_FIXTURE, current: period });
+  assert(!parsed.success, "a period without kwhPerM2 must be refused (null, never absent)");
+  const paths = (parsed.error?.issues ?? []).map((i) => i.path.join("."));
+  assert(JSON.stringify(paths) === JSON.stringify(["current.kwhPerM2"]), `the issue must name current.kwhPerM2, got ${JSON.stringify(paths)}`);
 }

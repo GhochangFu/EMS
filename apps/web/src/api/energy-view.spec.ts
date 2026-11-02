@@ -28,6 +28,7 @@ const PERIOD = {
   currency: null,
   sourceTotals: { gridKwh: 100, solarKwh: 0, dgKwh: 0 },
   series: [],
+  kwhPerM2: null,
 };
 
 const VIEW = {
@@ -40,6 +41,7 @@ const VIEW = {
   compare: null,
   topConsumers: [],
   partial: null,
+  floorArea: null,
 };
 
 function stubFetch(body: unknown, status = 200): () => string {

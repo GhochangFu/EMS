@@ -7,12 +7,12 @@ import {
   BASELINE_WINDOWS,
   SITE_RANKING_MAX,
   TREND_SITE_SERIES_MAX,
-  type EnergySiteEnergy,
   type EnergyViewQuery,
   type JwtPayload,
 } from "@bms/shared";
 
 import type { EntityWindowRow } from "./energy-abnormal";
+import type { SiteEnergyRow } from "./energy-organization-reads";
 import type { EnergyViewFrame } from "./energy-view.service";
 import {
   EnergyOrganizationViewsService,
@@ -52,12 +52,21 @@ function frameOf(overrides: Partial<EnergyViewFrame> = {}): EnergyViewFrame {
     bucket: "1h",
     partial: { readableSites: 1, selectedSites: 2 },
     now: NOW,
+    floorArea: null,
     ...overrides,
   };
 }
 
-function site(locationId: string, kwh: number): EnergySiteEnergy {
-  return { locationId, name: `Site ${locationId.slice(-1)}`, assetCount: 1, kwh, peakKw: kwh / 10, peakAt: NOW.toISOString() };
+function site(locationId: string, kwh: number, floorAreaM2: number | null = null): SiteEnergyRow {
+  return {
+    locationId,
+    name: `Site ${locationId.slice(-1)}`,
+    assetCount: 1,
+    kwh,
+    peakKw: kwh / 10,
+    peakAt: NOW.toISOString(),
+    floorAreaM2,
+  };
 }
 
 type Calls = {
@@ -71,7 +80,9 @@ type Calls = {
 function harness(
   options: {
     frame?: EnergyViewFrame | Error;
-    sites?: EnergySiteEnergy[];
+    sites?: SiteEnergyRow[];
+    /** The compare read's rows; the current rows when absent. */
+    compareSites?: SiteEnergyRow[];
     rows?: EntityWindowRow[];
   } = {},
 ) {
@@ -80,7 +91,8 @@ function harness(
   const reads: EnergyOrganizationReads = {
     siteEnergyRead: async (_pool, input) => {
       calls.siteEnergy.push(input);
-      return { sites, totalSites: sites.length };
+      const rows = input.locationIds !== undefined && options.compareSites !== undefined ? options.compareSites : sites;
+      return { sites: rows, totalSites: rows.length };
     },
     siteSeriesRead: async (_pool, input) => {
       calls.siteSeries.push(input);
@@ -277,4 +289,43 @@ export async function figuresAreRoundedOnTheWayOut(): Promise<void> {
   expect(out.sites.current[0]?.kwh).toBe(120.12);
   expect(out.trend.points[0]?.kw).toEqual([12.35]);
   expect(out.heatmap.cells[0]?.kwh).toBe(5.68);
+}
+
+// --- kWh per m² (F4.304, ADR 0108 Amendment 5 item 7) ----------------------
+
+const PREVIOUS = { start: new Date(NOW.getTime() - 48 * HOUR_MS), end: new Date(NOW.getTime() - 24 * HOUR_MS), durationHours: 24 };
+
+/**
+ * O1 — on the unrounded kWh, rounded to 3: 1234.5678 / 1 = 1234.568, where the
+ * sent kWh (1234.57) would give 1234.57. (The plan's 1234.5678 / 100 gives
+ * 12.346 either way, so it could not tell the two apart.)
+ */
+export async function kwhPerM2IsComputedOnTheUnroundedKwh(): Promise<void> {
+  const h = harness({ sites: [site(SITE_1, 1234.5678, 1)] });
+  const out = await h.service.organizationViews(USER, { range: "24h", organizationId: ORG });
+  expect(out.sites.current[0]?.kwh).toBe(1234.57);
+  expect(out.sites.current[0]?.kwhPerM2).toBe(1234.568);
+}
+
+/** O1′ — the ranking row carries the stored area it divided by. */
+export async function theRowCarriesItsArea(): Promise<void> {
+  const h = harness({ sites: [site(SITE_1, 500, 100)] });
+  const out = await h.service.organizationViews(USER, { range: "24h", organizationId: ORG });
+  expect(out.sites.current[0]?.floorAreaM2).toBe(100);
+  expect(out.sites.current[0]?.kwhPerM2).toBe(5);
+}
+
+/** O2 — a site with no area: `null`, never a zero, beside a site with one. */
+export async function aSiteWithNoAreaIsNull(): Promise<void> {
+  const h = harness({ sites: [site(SITE_1, 900, null), site(SITE_2, 400, 50)] });
+  const out = await h.service.organizationViews(USER, { range: "24h", organizationId: ORG });
+  expect(out.sites.current.map((s) => s.kwhPerM2)).toEqual([null, 8]);
+}
+
+/** O3 — the compare rows carry their own figure on the stored area: 300 / 100 = 3 beside 500 / 100 = 5. */
+export async function theCompareRowsCarryTheirOwnFigure(): Promise<void> {
+  const h = harness({ frame: frameOf({ previous: PREVIOUS }), sites: [site(SITE_1, 500, 100)], compareSites: [site(SITE_1, 300, 100)] });
+  const out = await h.service.organizationViews(USER, { range: "24h", organizationId: ORG, compare: "previous" });
+  expect(out.sites.current[0]?.kwhPerM2).toBe(5);
+  expect(out.sites.compare?.[0]?.kwhPerM2).toBe(3);
 }

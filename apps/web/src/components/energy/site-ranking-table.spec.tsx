@@ -13,7 +13,7 @@ const B = "6f1d2a3b-0000-4000-8000-0000000000b2";
 const C = "6f1d2a3b-0000-4000-8000-0000000000c3";
 
 function site(locationId: string, name: string, kwh: number, peakKw: number): EnergySiteEnergy {
-  return { locationId, name, assetCount: 2, kwh, peakKw, peakAt: "2026-10-31T11:12:00.000Z" };
+  return { locationId, name, assetCount: 2, kwh, peakKw, peakAt: "2026-10-31T11:12:00.000Z", floorAreaM2: null, kwhPerM2: null };
 }
 
 const CURRENT = [site(A, "Alpha", 112.5, 10), site(B, "Bravo", 300, 5), site(C, "Charlie", 50, 40)];

@@ -27,6 +27,7 @@ const ORG_B = "00000000-0000-4000-8000-0000000000bb";
 const SITE_1 = "40000000-0000-4000-8000-000000000001";
 const SITE_2 = "40000000-0000-4000-8000-000000000002";
 const SITE_HIDDEN = "40000000-0000-4000-8000-0000000000ff";
+const SITE_CHILD = "40000000-0000-4000-8000-000000000003";
 const ASSET_1 = "30000000-0000-4000-8000-000000000001";
 const ASSET_2 = "30000000-0000-4000-8000-000000000002";
 
@@ -49,7 +50,16 @@ type Options = {
   organizationLocations?: string[];
   /** The fake telemetry answers: `true` returns one bucket of data. */
   withData?: boolean;
+  /** `F4.304`: the named location's stored area, as drizzle reads a `numeric` — a string. */
+  floorAreaM2?: string | null;
+  /**
+   * `F4.304`: `perAssetEnergy`'s rows, one list per call in call order (the
+   * current period first, then the compare one); the last list repeats.
+   */
+  perAsset?: readonly (readonly PerAssetRow[])[];
 };
+
+type PerAssetRow = { asset_id: string; kwh: string; currency: string | null; location_id: string };
 
 type Statement = { text: string; params: unknown[] };
 
@@ -67,6 +77,7 @@ function periodRow() {
 function fake(options: Options = {}) {
   const calls: string[] = [];
   const statements: Statement[] = [];
+  let perAssetCalls = 0;
   /** The last subtree walk's answer, until the active filter reads it. */
   let expanded: string[] | null = null;
   const access = {
@@ -101,9 +112,14 @@ function fake(options: Options = {}) {
             const zone = options.organizationZone === undefined ? "Europe/London" : options.organizationZone;
             return zone === null ? [] : [{ timezone: zone }];
           }
-          if (table === locations && keys === "timezone") {
-            calls.push("select:locations.timezone");
-            return [{ timezone: options.locationZone === undefined ? null : options.locationZone }];
+          if (table === locations && keys === "timezone,floorAreaM2") {
+            calls.push("select:locations.named");
+            return [
+              {
+                timezone: options.locationZone === undefined ? null : options.locationZone,
+                floorAreaM2: options.floorAreaM2 === undefined ? null : options.floorAreaM2,
+              },
+            ];
           }
           if (table === locations && expanded !== null) {
             calls.push("select:locations.activeSubtree");
@@ -132,6 +148,12 @@ function fake(options: Options = {}) {
       if (!options.withData) return { rows: [] };
       if (text.includes("bucket_count")) return { rows: [periodRow()] };
       if (text.includes("avg_pf")) return { rows: [{ avg_pf: 0.9 }] };
+      if (text.includes("o.currency")) {
+        const lists = options.perAsset ?? [[]];
+        const rows = lists[Math.min(perAssetCalls, lists.length - 1)] ?? [];
+        perAssetCalls += 1;
+        return { rows };
+      }
       if (text.includes("LIMIT $3")) {
         return { rows: [{ id: ASSET_1, code: "M-1", name: "Meter 1", site_name: "Site 1", avg_kw: "10" }] };
       }
@@ -243,7 +265,7 @@ export async function twoLocationsUseTheOrganizationsZone(): Promise<void> {
   const f = fake({ locationZone: "Asia/Kolkata", organizationZone: "Europe/London" });
   const view = await f.service.view(USER, { ...TODAY, locationIds: [SITE_1, SITE_2] });
   expect(view.timeZone).toBe("Europe/London");
-  expect(f.calls).not.toContain("select:locations.timezone");
+  expect(f.calls).not.toContain("select:locations.named");
 }
 
 /** A stored zone that fails `isValidTimeZone` falls to the next link, never a 500. */
@@ -394,4 +416,116 @@ export async function theFrameMatchesTheResponse(): Promise<void> {
   expect(frame.previous?.start.toISOString()).toBe(view.compare?.from);
   expect(frame.assetIds).toEqual([ASSET_2]);
   for (const list of boundLists(f.statements)) expect(list).toEqual(frame.assetIds);
+}
+
+// --- kWh per m² (F4.304, ADR 0108 Amendment 5 item 8; plan C1–C3) ---------
+
+const AREA_200 = "200.00";
+
+function own(assetId: string, locationId: string, kwh: string): PerAssetRow {
+  return { asset_id: assetId, kwh, currency: "INR", location_id: locationId };
+}
+
+/** V1 — one location named: the frame's area is that location's, a number (drizzle reads `numeric` as a string). */
+export async function oneNamedLocationCarriesItsArea(): Promise<void> {
+  const f = fake({ withData: true, floorAreaM2: AREA_200 });
+  const view = await f.service.view(USER, { ...TODAY, locationIds: [SITE_1] });
+  expect(view.floorArea).toEqual({ locationId: SITE_1, floorAreaM2: 200 });
+}
+
+/** V1′ — the named location with no stored area: `floorAreaM2: null`, never a zero. */
+export async function aNamedLocationWithNoAreaIsNull(): Promise<void> {
+  const f = fake({ withData: true, floorAreaM2: null });
+  const view = await f.service.view(USER, { ...TODAY, locationIds: [SITE_1] });
+  expect(view.floorArea).toEqual({ locationId: SITE_1, floorAreaM2: null });
+}
+
+/** V2 — two locations named: no area, and no area figure. */
+export async function twoNamedLocationsCarryNoArea(): Promise<void> {
+  const f = fake({ withData: true, floorAreaM2: AREA_200, perAsset: [[own(ASSET_1, SITE_1, "800")]] });
+  const view = await f.service.view(USER, { ...TODAY, locationIds: [SITE_1, SITE_2] });
+  expect(view.floorArea).toBeNull();
+  expect(view.current.kwhPerM2).toBeNull();
+}
+
+/** V3 — the zone and the area come from one `locations` select. */
+export async function theZoneAndTheAreaAreOneSelect(): Promise<void> {
+  const f = fake({ withData: true, floorAreaM2: AREA_200, locationZone: "Asia/Kolkata" });
+  await f.service.view(USER, { ...TODAY, locationIds: [SITE_1] });
+  expect(f.calls.filter((c) => c === "select:locations.named")).toHaveLength(1);
+}
+
+/**
+ * V3′ — the area adds no telemetry statement: one view with one location
+ * named issues as many pool statements as the same view with two named (which
+ * computes no area figure). Per call, never a lifetime counter.
+ */
+export async function theAreaAddsNoPoolStatement(): Promise<void> {
+  const one = fake({ withData: true, floorAreaM2: AREA_200, perAsset: [[own(ASSET_1, SITE_1, "800")]] });
+  await one.service.view(USER, { ...TODAY, locationIds: [SITE_1] });
+  const two = fake({ withData: true, floorAreaM2: AREA_200, perAsset: [[own(ASSET_1, SITE_1, "800")]] });
+  await two.service.view(USER, { ...TODAY, locationIds: [SITE_1, SITE_2] });
+  expect(one.statements.length).toBeGreaterThan(0);
+  expect(one.statements.length).toBe(two.statements.length);
+}
+
+/** V4 — the figure divides the named site's own assets' kWh, not the subtree's: 800 / 200 = 4, not 1000 / 200 = 5. */
+export async function theFigureDividesTheOwnAssetsKwhOnly(): Promise<void> {
+  const f = fake({
+    withData: true,
+    floorAreaM2: AREA_200,
+    place: { organizationId: ORG_A, assetIds: [ASSET_1, ASSET_2] },
+    perAsset: [[own(ASSET_1, SITE_1, "800"), own(ASSET_2, SITE_CHILD, "200")]],
+  });
+  const view = await f.service.view(USER, { ...TODAY, locationIds: [SITE_1] });
+  expect(view.current.kwhPerM2).toBe(4);
+}
+
+/** V5 — no stored area: `null`, though the site's own assets have kWh. */
+export async function noAreaIsANullFigure(): Promise<void> {
+  const f = fake({ withData: true, floorAreaM2: null, perAsset: [[own(ASSET_1, SITE_1, "800")]] });
+  const view = await f.service.view(USER, { ...TODAY, locationIds: [SITE_1] });
+  expect(view.current.kwhPerM2).toBeNull();
+}
+
+/** V6 — the subtree has data but the site's own assets have none: `null`, never `0` (plan C3, owner ruling). */
+export async function noOwnAssetRowIsANullFigureThoughTheSubtreeHasData(): Promise<void> {
+  const f = fake({
+    withData: true,
+    floorAreaM2: AREA_200,
+    place: { organizationId: ORG_A, assetIds: [ASSET_1, ASSET_2] },
+    perAsset: [[own(ASSET_2, SITE_CHILD, "200")]],
+  });
+  const view = await f.service.view(USER, { ...TODAY, locationIds: [SITE_1] });
+  expect(view.current.hasData).toBe(true);
+  expect(view.current.kwhPerM2).toBeNull();
+}
+
+/** V7 — the compare period carries its own figure, on the same stored area: 400 / 200 = 2 beside 800 / 200 = 4. */
+export async function theComparePeriodCarriesItsOwnFigure(): Promise<void> {
+  const f = fake({
+    withData: true,
+    floorAreaM2: AREA_200,
+    perAsset: [[own(ASSET_1, SITE_1, "800")], [own(ASSET_1, SITE_1, "400")]],
+  });
+  const view = await f.service.view(USER, { range: "24h", locationIds: [SITE_1], compare: "previous" });
+  expect(view.current.kwhPerM2).toBe(4);
+  expect(view.compare?.kwhPerM2).toBe(2);
+}
+
+/** V8 — computed on the unrounded kWh: 1.0049 / 1 rounds to 1.005, not 1.00 / 1 = 1. */
+export async function theFigureIsComputedOnTheUnroundedKwh(): Promise<void> {
+  const f = fake({ withData: true, floorAreaM2: "1.00", perAsset: [[own(ASSET_1, SITE_1, "1.0049")]] });
+  const view = await f.service.view(USER, { ...TODAY, locationIds: [SITE_1] });
+  expect(view.current.kwhPerM2).toBe(1.005);
+}
+
+/** V9 — the frame carries the area the response reports. */
+export async function theFrameCarriesTheResponsesArea(): Promise<void> {
+  const f = fake({ withData: true, floorAreaM2: AREA_200 });
+  const spy = vi.spyOn(f.service, "frame");
+  const view = await f.service.view(USER, { ...TODAY, locationIds: [SITE_1] });
+  const frame: EnergyViewFrame = await (spy.mock.results[0]?.value as Promise<EnergyViewFrame>);
+  expect(frame.floorArea).toEqual({ locationId: SITE_1, floorAreaM2: 200 });
+  expect(frame.floorArea).toEqual(view.floorArea);
 }

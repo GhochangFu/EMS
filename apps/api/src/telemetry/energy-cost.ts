@@ -63,6 +63,12 @@ export interface PerAssetEnergy {
    * this read and every total it is priced against.
    */
   readonly currency: string | null;
+  /**
+   * `bms.assets.location_id` (`F4.304`, ADR 0108 Amendment 5 item 8): the
+   * energy view sums the named site's own assets' kWh by it. Read from the
+   * `bms.assets` row the statement already joins inner, so no new statement.
+   */
+  readonly locationId: string;
 }
 
 /** The three contract fields, in the shape `energyCentreSummarySchema` declares them. */
@@ -138,6 +144,7 @@ interface PerAssetEnergyRow {
   readonly asset_id: string;
   readonly kwh: string;
   readonly currency: string | null;
+  readonly location_id: string;
 }
 
 /**
@@ -185,16 +192,22 @@ export async function perAssetEnergy(
     )
     SELECT p.asset_id,
            (SUM(p.kw) * $2::float8)::float8 AS kwh,
-           o.currency
+           o.currency,
+           a.location_id AS location_id
     FROM per p
     -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
     INNER JOIN bms.assets a ON a.id = p.asset_id
     LEFT JOIN bms.organizations o ON o.id = a.organization_id
-    GROUP BY p.asset_id, o.currency
+    GROUP BY p.asset_id, a.location_id, o.currency
     `,
     params,
   );
-  return r.rows.map((row) => ({ assetId: row.asset_id, kwh: Number(row.kwh), currency: row.currency }));
+  return r.rows.map((row) => ({
+    assetId: row.asset_id,
+    kwh: Number(row.kwh),
+    currency: row.currency,
+    locationId: row.location_id,
+  }));
 }
 
 /** The one method of `CalcParametersService` the two reads need — what the services inject. */

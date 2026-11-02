@@ -2,6 +2,17 @@ import { describe, it } from "vitest";
 
 import {
   aGlobalAdminNamingNothingIsA400,
+  aNamedLocationWithNoAreaIsNull,
+  noAreaIsANullFigure,
+  noOwnAssetRowIsANullFigureThoughTheSubtreeHasData,
+  oneNamedLocationCarriesItsArea,
+  theAreaAddsNoPoolStatement,
+  theComparePeriodCarriesItsOwnFigure,
+  theFigureDividesTheOwnAssetsKwhOnly,
+  theFigureIsComputedOnTheUnroundedKwh,
+  theFrameCarriesTheResponsesArea,
+  theZoneAndTheAreaAreOneSelect,
+  twoNamedLocationsCarryNoArea,
   aGlobalAdminReadsTheExplicitList,
   aGlobalReaderGetsNoPartial,
   aLocationWithNoZoneUsesTheOrganizations,
@@ -67,5 +78,20 @@ describe("F4.298 — EnergyViewService (ADR 0108 decision 2)", () => {
     it("view() resolves its frame through frame() once, with the user and the query", () => viewCallsFrameOnce());
     it("the frame's organization, scope, level, bucket, zone and partial are the response's", () =>
       theFrameMatchesTheResponse());
+  });
+
+  describe("kWh per m² (F4.304, ADR 0108 Amendment 5 item 8)", () => {
+    it("V1 one named location carries its area as a number", () => oneNamedLocationCarriesItsArea());
+    it("V1' a named location with no area carries null", () => aNamedLocationWithNoAreaIsNull());
+    it("V2 two named locations carry no area and no figure", () => twoNamedLocationsCarryNoArea());
+    it("V3 the zone and the area come from one locations select", () => theZoneAndTheAreaAreOneSelect());
+    it("V3' the area adds no pool statement", () => theAreaAddsNoPoolStatement());
+    it("V4 the figure divides the site's own assets' kWh only", () => theFigureDividesTheOwnAssetsKwhOnly());
+    it("V5 no area is a null figure", () => noAreaIsANullFigure());
+    it("V6 no own-asset row is a null figure though the subtree has data", () =>
+      noOwnAssetRowIsANullFigureThoughTheSubtreeHasData());
+    it("V7 the compare period carries its own figure on the same area", () => theComparePeriodCarriesItsOwnFigure());
+    it("V8 the figure is computed on the unrounded kWh", () => theFigureIsComputedOnTheUnroundedKwh());
+    it("V9 the frame carries the response's area", () => theFrameCarriesTheResponsesArea());
   });
 });

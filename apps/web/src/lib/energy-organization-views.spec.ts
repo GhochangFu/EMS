@@ -26,6 +26,8 @@ function site(name: string, kwh: number, peakKw = 1): EnergySiteEnergy {
     kwh,
     peakKw,
     peakAt: null,
+    floorAreaM2: null,
+    kwhPerM2: null,
   };
 }
 

@@ -18,3 +18,11 @@ describe("F4.298 — the energy view contract (ADR 0108 decision 2, ADR 0030)", 
   it("declares the aggregate level enum as the 1m/5m/1h/1d ladder", () => spec.assertTheLevelEnumIsTheLadder());
   it("parses the filter options", () => spec.assertTheFilterOptionsParse());
 });
+
+describe("F4.304 — the named site's floor area on energy/view (ADR 0108 Amendment 5, item 8)", () => {
+  it("parses a floorArea with an area", () => spec.assertANamedSiteAreaParses());
+  it("parses a floorArea with a null area", () => spec.assertANamedSiteWithNoAreaParses());
+  it("parses a period with kwhPerM2", () => spec.assertAPeriodWithAFigureParses());
+  it("refuses a floorArea without locationId", () => spec.assertAFloorAreaWithoutLocationIdIsRefused());
+  it("refuses a period without kwhPerM2", () => spec.assertAPeriodWithoutKwhPerM2IsRefused());
+});

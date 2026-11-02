@@ -42,10 +42,12 @@ const VIEW: EnergyView = {
     currency: null,
     sourceTotals: { gridKwh: 100, solarKwh: 0, dgKwh: 0 },
     series: [],
+    kwhPerM2: null,
   },
   compare: null,
   topConsumers: [],
   partial: null,
+  floorArea: null,
 };
 
 function orgViews(totalSites: number): EnergyOrganizationViews {
@@ -59,8 +61,8 @@ function orgViews(totalSites: number): EnergyOrganizationViews {
     compare: null,
     sites: {
       current: [
-        { locationId: SITE, name: "Parent plant", assetCount: 2, kwh: 60, peakKw: 30, peakAt: null },
-        { locationId: CHILD, name: "Child unit", assetCount: 1, kwh: 40, peakKw: 20, peakAt: null },
+        { locationId: SITE, name: "Parent plant", assetCount: 2, kwh: 60, peakKw: 30, peakAt: null, floorAreaM2: null, kwhPerM2: null },
+        { locationId: CHILD, name: "Child unit", assetCount: 1, kwh: 40, peakKw: 20, peakAt: null, floorAreaM2: null, kwhPerM2: null },
       ].slice(0, totalSites),
       compare: null,
       totalSites,

@@ -54,6 +54,13 @@ export const energyViewPeriodSchema = z.object({
   currency: z.string().nullable(),
   sourceTotals: energyReportSourceTotalsSchema,
   series: z.array(energySourceMixPointSchema),
+  /**
+   * `F4.304` (ADR 0108 Amendment 5, item 8): the named site's **own assets'**
+   * kWh over its own floor area, rounded to 3 — the figure of its row in the
+   * site ranking. `null` with no single named location with an area, or when
+   * the site's own assets have no `kw` row in the period.
+   */
+  kwhPerM2: z.number().nullable(),
 });
 
 /**
@@ -83,6 +90,8 @@ export const energyViewSchema = z.object({
   topConsumers: z.array(energyTopConsumerSchema),
   /** `null` when the caller reads every location (`readableLocationIds === null`). */
   partial: energyViewPartialSchema.nullable(),
+  /** `F4.304`: non-null only when `locationIds` names exactly one location; its stored area in m². */
+  floorArea: z.object({ locationId: z.string().uuid(), floorAreaM2: z.number().nullable() }).nullable(),
 });
 
 export const energyFilterOrganizationSchema = z.object({

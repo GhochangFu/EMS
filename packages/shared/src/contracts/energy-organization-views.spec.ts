@@ -1,4 +1,4 @@
-import { energyOrganizationViewsSchema } from "./energy-organization-views";
+import { energyOrganizationViewsSchema, energySiteEnergySchema, kwhPerSquareMetre } from "./energy-organization-views";
 
 /**
  * `F4.299` U1 (ADR 0108 Amendment 1, 7.3) — the organization-views contract.
@@ -15,7 +15,16 @@ const ORG = "10000000-0000-4000-8000-000000000001";
 const SITE_A = "40000000-0000-4000-8000-000000000001";
 const SITE_B = "40000000-0000-4000-8000-000000000002";
 
-const SITE_ROW = { locationId: SITE_A, name: "Plant A", assetCount: 3, kwh: 1200.5, peakKw: 210, peakAt: "2026-10-31T03:00:00.000Z" };
+const SITE_ROW = {
+  locationId: SITE_A,
+  name: "Plant A",
+  assetCount: 3,
+  kwh: 1200.5,
+  peakKw: 210,
+  peakAt: "2026-10-31T03:00:00.000Z",
+  floorAreaM2: 100,
+  kwhPerM2: 12.005,
+};
 
 export const ORGANIZATION_VIEWS_FIXTURE = {
   organizationId: ORG,
@@ -131,4 +140,45 @@ export function assertTrendKwIsANumberArray(): void {
   const bad2 = clone();
   bad2.trend.points[0].kw = [180, "x"];
   assert(!energyOrganizationViewsSchema.safeParse(bad2).success, "kw must hold numbers");
+}
+
+// ---------------------------------------------------------------------------
+// F4.304 U5 (ADR 0108 Amendment 5, item 7) — kWh per m²
+// ---------------------------------------------------------------------------
+
+export function assertKwhPerSquareMetreDivides(): void {
+  const got = kwhPerSquareMetre(1000, 200);
+  assert(got === 5, `kwhPerSquareMetre(1000, 200) must be 5, got ${String(got)}`);
+}
+
+export function assertZeroKwhIsAZeroNotANull(): void {
+  const got = kwhPerSquareMetre(0, 200);
+  assert(got === 0, `a measured zero kWh with an area is 0, got ${String(got)}`);
+}
+
+export function assertNoAreaIsNull(): void {
+  const got = kwhPerSquareMetre(500, null);
+  assert(got === null, `no area must give null, got ${String(got)}`);
+}
+
+export function assertAZeroAreaFailsClosed(): void {
+  const got = kwhPerSquareMetre(500, 0);
+  assert(got === null, `an area of 0 must give null (fail closed), got ${String(got)}`);
+}
+
+export function assertANaNAreaFailsClosed(): void {
+  const got = kwhPerSquareMetre(500, Number.NaN);
+  assert(got === null, `an area of NaN must give null (fail closed), got ${String(got)}`);
+}
+
+export function assertASiteWithNoAreaParses(): void {
+  const parsed = energySiteEnergySchema.safeParse({ ...SITE_ROW, floorAreaM2: null, kwhPerM2: null });
+  assert(parsed.success, `a site with no area must parse: ${JSON.stringify(parsed.error?.issues)}`);
+}
+
+export function assertAStringAreaIsRefused(): void {
+  const parsed = energySiteEnergySchema.safeParse({ ...SITE_ROW, floorAreaM2: "100" });
+  assert(!parsed.success, "a string floorAreaM2 must be refused");
+  const paths = (parsed.error?.issues ?? []).map((i) => i.path.join("."));
+  assert(JSON.stringify(paths) === JSON.stringify(["floorAreaM2"]), `the issue must name floorAreaM2, got ${JSON.stringify(paths)}`);
 }

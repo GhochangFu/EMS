@@ -4,15 +4,16 @@ import type { Pool } from "pg";
 
 import { locations, organizations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type {
-  AggregateLevel,
-  EnergyFilterOptions,
-  EnergyView,
-  EnergyViewPartial,
-  EnergyViewPeriod,
-  EnergyViewQuery,
-  JwtPayload,
-  ResolvedSiteTimeZone,
+import {
+  kwhPerSquareMetre,
+  type AggregateLevel,
+  type EnergyFilterOptions,
+  type EnergyView,
+  type EnergyViewPartial,
+  type EnergyViewPeriod,
+  type EnergyViewQuery,
+  type JwtPayload,
+  type ResolvedSiteTimeZone,
 } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
@@ -68,11 +69,40 @@ export type EnergyViewFrame = {
   readonly bucket: AggregateLevel;
   readonly partial: EnergyViewPartial | null;
   readonly now: Date;
+  /**
+   * `F4.304` (ADR 0108 Amendment 5 item 8): the one named location and its
+   * stored area in m², read by the same statement as its zone; `null` unless
+   * `locationIds` names exactly one location. `EnergyOrganizationViewsService`
+   * does not read it.
+   */
+  readonly floorArea: EnergyView["floorArea"];
 };
 
 function round(value: number, places: number): number {
   const factor = 10 ** places;
   return Math.round(value * factor) / factor;
+}
+
+/**
+ * `F4.304` (plan C1, C3): the named site's own assets' kWh — the rows of
+ * `perAssetEnergy` whose asset sits at that location — over its own area,
+ * rounded to 3 on the unrounded kWh. `null` with no named site, with no area,
+ * or when no own asset has a `kw` row: the ranking lists no row for such a
+ * site, so a `0` here would be a figure the ranking does not have.
+ */
+function ownKwhPerM2(
+  perAsset: readonly { readonly locationId: string; readonly kwh: number }[],
+  floorArea: EnergyView["floorArea"],
+): number | null {
+  if (floorArea === null) return null;
+  let ownKwh: number | null = null;
+  for (const row of perAsset) {
+    if (row.locationId !== floorArea.locationId) continue;
+    ownKwh = (ownKwh === null ? 0 : ownKwh) + row.kwh;
+  }
+  if (ownKwh === null) return null;
+  const figure = kwhPerSquareMetre(ownKwh, floorArea.floorAreaM2);
+  return figure === null ? null : round(figure, 3);
 }
 
 /**
@@ -126,10 +156,10 @@ export class EnergyViewService {
   async frame(user: JwtPayload, query: EnergyViewQuery): Promise<EnergyViewFrame> {
     const named = query.locationIds;
     const place = await this.placeFor(user, query);
-    const zone = zoneForArithmetic(
-      named?.length === 1 ? await this.locationZone(place.organizationId, named[0] as string) : null,
-      await this.organizationZone(place.organizationId),
-    );
+    const one = named?.length === 1 ? (named[0] as string) : null;
+    const location = one === null ? null : await this.namedLocation(place.organizationId, one);
+    const zone = zoneForArithmetic(location?.timezone ?? null, await this.organizationZone(place.organizationId));
+    const floorArea = one === null ? null : { locationId: one, floorAreaM2: location?.floorAreaM2 ?? null };
 
     const now = new Date();
     const current = resolveEnergyRange(query, zone, now);
@@ -151,16 +181,18 @@ export class EnergyViewService {
       bucket,
       partial,
       now,
+      floorArea,
     };
   }
 
   async view(user: JwtPayload, query: EnergyViewQuery): Promise<EnergyView> {
-    const { organizationId, assetIds, zone, current, previous, level, bucket, partial } = await this.frame(
+    const { organizationId, assetIds, zone, current, previous, level, bucket, partial, floorArea } = await this.frame(
       user,
       query,
     );
+    // Both periods divide by the one stored area: the area has no history.
     const read = (range: EnergyViewPeriodRange) =>
-      this.period({ level, bucket, timeZone: zone.arithmeticZone, range, assetIds });
+      this.period({ level, bucket, timeZone: zone.arithmeticZone, range, assetIds, floorArea });
     const currentPeriod = await read(current);
     const comparePeriod = previous === null ? null : await read(previous);
     const topConsumers = await viewTopConsumers(this.pool, {
@@ -182,6 +214,7 @@ export class EnergyViewService {
       compare: comparePeriod,
       topConsumers,
       partial,
+      floorArea,
     };
   }
 
@@ -254,13 +287,22 @@ export class EnergyViewService {
     return rows[0]?.timezone ?? null;
   }
 
-  /** fleetDb: the one named location's stored zone, bounded to the placed organization. */
-  private async locationZone(organizationId: string, locationId: string): Promise<string | null> {
+  /**
+   * fleetDb: the one named location's stored zone and floor area (`F4.304`),
+   * bounded to the placed organization — one statement for both, so the frame
+   * gains none. `numeric` reads as a string in drizzle; `Number()` here.
+   */
+  private async namedLocation(
+    organizationId: string,
+    locationId: string,
+  ): Promise<{ timezone: string | null; floorAreaM2: number | null } | null> {
     const rows = await this.fleetDb
-      .select({ timezone: locations.timezone })
+      .select({ timezone: locations.timezone, floorAreaM2: locations.floorAreaM2 })
       .from(locations)
       .where(and(eq(locations.id, locationId), eq(locations.organizationId, organizationId)));
-    return rows[0]?.timezone ?? null;
+    const row = rows[0];
+    if (row === undefined) return null;
+    return { timezone: row.timezone, floorAreaM2: row.floorAreaM2 === null ? null : Number(row.floorAreaM2) };
   }
 
   /**
@@ -305,12 +347,14 @@ export class EnergyViewService {
     timeZone,
     range,
     assetIds,
+    floorArea,
   }: {
     level: AggregateLevel;
     bucket: AggregateLevel;
     timeZone: string;
     range: EnergyViewPeriodRange;
     assetIds: readonly string[];
+    floorArea: EnergyView["floorArea"];
   }): Promise<EnergyViewPeriod> {
     const { start, end } = range;
     const read = await energyPeriodRead(this.pool, { level, bucket, timeZone, start, end, assetIds });
@@ -322,6 +366,7 @@ export class EnergyViewService {
       tariffPerKwh: null,
       currency: null,
     };
+    let kwhPerM2: number | null = null;
     if (assetIds.length > 0) {
       const perAsset = await perAssetEnergy(this.pool, {
         level,
@@ -331,6 +376,9 @@ export class EnergyViewService {
       });
       cost = energyCost(perAsset, await resolveTariffs(this.parameters, perAsset, end));
       pueEstimate = await windowedPueRatio(this.pool, { level, start, end, assetIds: [...assetIds] });
+      // F4.304 (plan C1): the per-asset read already runs per period, so the
+      // own-asset kWh costs no statement and sums the ranking row's terms.
+      kwhPerM2 = ownKwhPerM2(perAsset, floorArea);
     }
     return {
       from: start.toISOString(),
@@ -345,6 +393,7 @@ export class EnergyViewService {
       ...cost,
       sourceTotals: { solarKwh: round(read.solarKwh, 2), dgKwh: round(dg, 2), gridKwh: round(grid, 2) },
       series: read.series,
+      kwhPerM2,
     };
   }
 }

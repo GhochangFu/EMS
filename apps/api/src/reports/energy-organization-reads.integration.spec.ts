@@ -143,6 +143,29 @@ export async function assertLocationIdsNarrowTheSites(fleet: pg.Pool, fx: Energy
   expect(sites[0]?.kwh).toBeCloseTo(BUCKETS * SITE_TWO_KW, 6);
 }
 
+/**
+ * `F4.304` R2 (ADR 0108 Amendment 5 item 7) — each site carries its own
+ * stored `floor_area_m2` as a number, and a site with none carries `null`.
+ * The area is set on `a1` for this case only (superuser pool: the fixture's
+ * own location) and cleared in `finally`.
+ */
+export async function assertEachSiteCarriesItsOwnArea(
+  superuser: pg.Pool,
+  fleet: pg.Pool,
+  fx: EnergyViewReadFixture,
+): Promise<void> {
+  await superuser.query(`UPDATE bms.locations SET floor_area_m2 = 100 WHERE id = $1`, [fx.locationIds.a1]);
+  try {
+    const { sites } = await siteEnergyRead(fleet, { level: "1h", ...wholeWindow(fx), assetIds: scopeA(fx), limit: 50 });
+    expect(sites.map((s) => [s.locationId, s.floorAreaM2])).toEqual([
+      [fx.locationIds.a1, 100],
+      [fx.locationIds.a2, null],
+    ]);
+  } finally {
+    await superuser.query(`UPDATE bms.locations SET floor_area_m2 = NULL WHERE id = $1`, [fx.locationIds.a1]);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // siteSeriesRead
 // ---------------------------------------------------------------------------
@@ -568,7 +591,11 @@ function expectTheScopeIsBound({ text, params }: Recorded): void {
 export async function assertSiteEnergyReadBindsTheList(): Promise<void> {
   const { pool, statements } = recordingQueryable();
   await siteEnergyRead(pool, { level: "1h", start: START, end: END, assetIds: SCOPE, limit: 50 });
-  expectTheScopeIsBound(only(statements));
+  const plain = only(statements);
+  expectTheScopeIsBound(plain);
+  // F4.304: the area is one column of the location row the read already joins — no new bound parameter.
+  expect(plain.text).toContain("l.floor_area_m2::float8 AS floor_area_m2");
+  expect(plain.params).toHaveLength(5);
   const narrowed = recordingQueryable();
   const location = "00000000-0000-4000-8000-0000000000aa";
   await siteEnergyRead(narrowed.pool, { level: "1h", start: START, end: END, assetIds: SCOPE, limit: 50, locationIds: [location] });
@@ -576,6 +603,7 @@ export async function assertSiteEnergyReadBindsTheList(): Promise<void> {
   expectTheScopeIsBound(sent);
   expect(sent.text).toMatch(/l\.id = ANY\(\$6::uuid\[\]\)/);
   expect(sent.params[5]).toEqual([location]);
+  expect(sent.params).toHaveLength(6);
 }
 
 /** 6 — `siteSeriesRead` binds the list; a `1d` bucket binds the zone at the index `displayGroupExpr` was given. */

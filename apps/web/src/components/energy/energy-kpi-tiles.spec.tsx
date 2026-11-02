@@ -29,6 +29,7 @@ function period(overrides: Partial<EnergyViewPeriod> = {}): EnergyViewPeriod {
     currency: "ZAR",
     sourceTotals: { gridKwh: 2000, solarKwh: 200, dgKwh: 50 },
     series: [],
+    kwhPerM2: null,
     ...overrides,
   };
 }
@@ -44,6 +45,7 @@ function view(overrides: Partial<EnergyView> = {}): EnergyView {
     compare: null,
     topConsumers: [],
     partial: null,
+    floorArea: null,
     ...overrides,
   };
 }

@@ -7,6 +7,7 @@ import {
   BASELINE_WINDOWS,
   SITE_RANKING_MAX,
   TREND_SITE_SERIES_MAX,
+  kwhPerSquareMetre,
   type EnergyHeatmapCell,
   type EnergyOrganizationViews,
   type EnergySiteEnergy,
@@ -24,7 +25,13 @@ import {
   type AbnormalList,
   type BaselineWindow,
 } from "./energy-abnormal";
-import { entityWindowReads, heatmapRead, siteEnergyRead, siteSeriesRead } from "./energy-organization-reads";
+import {
+  entityWindowReads,
+  heatmapRead,
+  siteEnergyRead,
+  siteSeriesRead,
+  type SiteEnergyRow,
+} from "./energy-organization-reads";
 import type { EnergyViewPeriodRange } from "./energy-view-range";
 import { EnergyViewService, type EnergyViewFrame } from "./energy-view.service";
 
@@ -50,8 +57,19 @@ function bounds(range: EnergyViewPeriodRange): { from: string; to: string; durat
   return { from: range.start.toISOString(), to: range.end.toISOString(), durationHours: range.durationHours };
 }
 
-function roundSite(site: EnergySiteEnergy): EnergySiteEnergy {
-  return { ...site, kwh: round(site.kwh, 2), peakKw: round(site.peakKw, 2) };
+/**
+ * `F4.304` (ADR 0108 Amendment 5 item 7): kWh per m² on the **unrounded** kWh
+ * and the site's own stored area, rounded to 3 — current and compare rows
+ * alike, both on today's area (the area has no history).
+ */
+function roundSite(site: SiteEnergyRow): EnergySiteEnergy {
+  const perM2 = kwhPerSquareMetre(site.kwh, site.floorAreaM2);
+  return {
+    ...site,
+    kwh: round(site.kwh, 2),
+    peakKw: round(site.peakKw, 2),
+    kwhPerM2: perM2 === null ? null : round(perM2, 3),
+  };
 }
 
 function roundTrend(trend: EnergySiteTrend): EnergySiteTrend {

@@ -9,7 +9,8 @@ import { DashboardService } from "../dashboard/dashboard.service";
 import { energyCsvDocument } from "../reports/reports.serialise";
 import { ReportsService } from "../reports/reports.service";
 import { materializeCompleteBuckets } from "../testing/cagg-materialize";
-import { ENERGY_TARIFF_KEY } from "./energy-cost";
+import { ENERGY_TARIFF_KEY, perAssetEnergy } from "./energy-cost";
+import { bucketHours } from "./point-aggregates";
 
 /**
  * `E4.1c` U4 — `DashboardService.energySummary` and
@@ -590,4 +591,32 @@ export async function assertReportSourceTotalsIgnoreOrphanTelemetry(pool: pg.Poo
     JSON.stringify(withOrphan.sourceTotals) === JSON.stringify(without.sourceTotals),
     `the orphan's kW must not add to the source totals: ${JSON.stringify(without.sourceTotals)} without it, ${JSON.stringify(withOrphan.sourceTotals)} with it`,
   );
+}
+
+/**
+ * `F4.304` U5 (ADR 0108 Amendment 5, item 8; plan C1) — the per-asset read
+ * carries each asset's `bms.assets.location_id`, the key the energy view
+ * sums the named site's own assets' kWh by. Two assets at two locations, so a
+ * read that returned one location for both would be visible.
+ */
+export async function assertPerAssetEnergyCarriesEachAssetsLocation(pool: pg.Pool, fx: CostFixture): Promise<void> {
+  const rows = await perAssetEnergy(pool, {
+    level: "1m",
+    window: { kind: "range", start: new Date(fx.fromMs), end: new Date(fx.toMs) },
+    kwhFactor: bucketHours("1m"),
+    assetIds: [fx.a1, fx.a2],
+  });
+  const { rows: stored } = await pool.query<{ id: string; location_id: string }>(
+    `SELECT id, location_id FROM bms.assets WHERE id = ANY($1::uuid[]) ORDER BY created_at, id`,
+    [[fx.a1, fx.a2]],
+  );
+  const want = new Map(stored.map((row) => [row.id, row.location_id]));
+  assert(want.size === 2 && want.get(fx.a1) !== want.get(fx.a2), "the fixture's two assets sit at two locations");
+  assert(rows.length === 2, `both assets must have energy in the window, got ${rows.length} rows`);
+  for (const row of rows) {
+    assert(
+      row.locationId === want.get(row.assetId),
+      `asset ${row.assetId} must carry location ${String(want.get(row.assetId))}, got ${String(row.locationId)}`,
+    );
+  }
 }

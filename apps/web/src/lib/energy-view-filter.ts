@@ -58,7 +58,7 @@ export type EnergyChange =
 export function changeFor(
   current: EnergyViewPeriod,
   compare: EnergyViewPeriod | null,
-  key: "totalKwh" | "peakKw" | "avgPf",
+  key: "totalKwh" | "peakKw" | "avgPf" | "kwhPerM2",
 ): EnergyChange {
   if (compare === null || !current.hasData) {
     return { kind: "none" };
