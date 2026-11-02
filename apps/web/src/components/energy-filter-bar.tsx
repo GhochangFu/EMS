@@ -1,17 +1,9 @@
-import type { EnergyFilterOptions, EnergyViewRange } from "@bms/shared";
+import type { EnergyFilterOptions } from "@bms/shared";
 
-import {
-  ENERGY_RANGES,
-  type EnergyFilterValue,
-  instantToZoneInput,
-  locationsOfOrganization,
-  zoneInputToInstant,
-  zoneLabel,
-} from "../lib/energy-view-filter";
+import { type EnergyFilterValue, locationsOfOrganization } from "../lib/energy-view-filter";
 import { locationTreeOptions } from "../lib/location-tree";
+import { type RangeCompareValue, RangeCompareControls } from "./energy/range-compare-controls";
 
-const HOUR_MS = 3_600_000;
-const MINUTE_MS = 60_000;
 const labelClass = "grid gap-1 text-xs text-ink-muted";
 const fieldClass = "surface-field px-2 py-1.5 text-sm";
 
@@ -30,12 +22,6 @@ type EnergyFilterBarProps = {
   now?: () => Date;
 };
 
-/** A copy of `value` without the custom instants. */
-function withoutInstants(value: EnergyFilterValue): EnergyFilterValue {
-  const { from: _from, to: _to, ...rest } = value;
-  return rest;
-}
-
 /**
  * `F4.298` U5 (ADR 0108 decision 2) — the Energy page's filter: organization,
  * then one or more of its locations (a parent includes its children), the
@@ -50,41 +36,9 @@ function withoutInstants(value: EnergyFilterValue): EnergyFilterValue {
 export function EnergyFilterBar({ options, value, onChange, timeZone, now = () => new Date() }: EnergyFilterBarProps) {
   const locations = locationTreeOptions(locationsOfOrganization(options, value.organizationId));
 
-  const onRange = (range: EnergyViewRange): void => {
-    if (range !== "custom") {
-      onChange({ ...withoutInstants(value), range });
-      return;
-    }
-    const endMs = Math.floor(now().getTime() / MINUTE_MS) * MINUTE_MS;
-    onChange({
-      ...value,
-      range,
-      from: value.from ?? new Date(endMs - 24 * HOUR_MS).toISOString(),
-      to: value.to ?? new Date(endMs).toISOString(),
-    });
-  };
-
-  const onInstant = (key: "from" | "to", input: string): void => {
-    if (timeZone === null) {
-      return;
-    }
-    const instant = zoneInputToInstant(input, timeZone);
-    if (instant === null) {
-      const next = { ...value };
-      delete next[key];
-      onChange(next);
-      return;
-    }
-    onChange({ ...value, [key]: instant });
-  };
-
-  const onCompare = (checked: boolean): void => {
-    if (checked) {
-      onChange({ ...value, compare: "previous" });
-      return;
-    }
-    const { compare: _compare, ...rest } = value;
-    onChange(rest);
+  const onRangeCompare = (next: RangeCompareValue): void => {
+    const { range: _range, from: _from, to: _to, compare: _compare, ...others } = value;
+    onChange({ ...others, ...next });
   };
 
   return (
@@ -123,45 +77,17 @@ export function EnergyFilterBar({ options, value, onChange, timeZone, now = () =
           ))}
         </select>
       </label>
-      <label className={labelClass}>
-        Range
-        <select className={fieldClass} value={value.range} onChange={(event) => onRange(event.target.value as EnergyViewRange)}>
-          {ENERGY_RANGES.map((range) => (
-            <option key={range.value} value={range.value}>
-              {range.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {value.range === "custom" ? (
-        <>
-          <label className={labelClass}>
-            From
-            <input
-              type="datetime-local"
-              className={fieldClass}
-              disabled={timeZone === null}
-              value={timeZone === null ? "" : instantToZoneInput(value.from, timeZone)}
-              onChange={(event) => onInstant("from", event.target.value)}
-            />
-          </label>
-          <label className={labelClass}>
-            To
-            <input
-              type="datetime-local"
-              className={fieldClass}
-              disabled={timeZone === null}
-              value={timeZone === null ? "" : instantToZoneInput(value.to, timeZone)}
-              onChange={(event) => onInstant("to", event.target.value)}
-            />
-          </label>
-          {timeZone !== null ? <span className="pb-2 text-xs text-ink-muted">{zoneLabel(timeZone)}</span> : null}
-        </>
-      ) : null}
-      <label className="flex items-center gap-2 pb-2 text-sm">
-        <input type="checkbox" checked={value.compare === "previous"} onChange={(event) => onCompare(event.target.checked)} />
-        Compare with previous period
-      </label>
+      <RangeCompareControls
+        value={{
+          range: value.range,
+          ...(value.from !== undefined ? { from: value.from } : {}),
+          ...(value.to !== undefined ? { to: value.to } : {}),
+          ...(value.compare !== undefined ? { compare: value.compare } : {}),
+        }}
+        onChange={onRangeCompare}
+        timeZone={timeZone}
+        now={now}
+      />
     </div>
   );
 }

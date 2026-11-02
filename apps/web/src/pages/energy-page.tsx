@@ -11,61 +11,26 @@ import type {
 
 import { fetchEnergyFilterOptions, fetchEnergyOrganizationViews, fetchEnergyView } from "../api/energy-view";
 import { AbnormalList } from "../components/energy/abnormal-list";
+import { EnergyKpiTiles } from "../components/energy/energy-kpi-tiles";
 import { EnergyHeatmap } from "../components/energy/energy-heatmap";
 import { EnergyStackChart } from "../components/energy/energy-stack-chart";
-import { SiteRankingTable, formatPeakTime } from "../components/energy/site-ranking-table";
+import { SiteRankingTable } from "../components/energy/site-ranking-table";
 import { EnergyFilterBar } from "../components/energy-filter-bar";
 import { EnergySourceStackChart } from "../components/energy-source-stack-chart";
 import { EnergyTopBarChart } from "../components/energy-top-bar-chart";
-import { KpiTile, type KpiTileStatus } from "../components/kpi-tile";
+import { type KpiTileStatus } from "../components/kpi-tile";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 import { AppShell } from "../layouts/app-shell";
 import { useChartTheme } from "../lib/chart-theme";
 import { siteStacks } from "../lib/energy-organization-views";
-import {
-  type EnergyChange,
-  type EnergyFilterValue,
-  changeFor,
-  defaultFilter,
-  energyViewQueryOf,
-  levelLabel,
-  partialNote,
-} from "../lib/energy-view-filter";
-import { costTileProps, formatMoney } from "../lib/money";
-import { pueTileProps } from "../lib/pue-tile";
+import { type EnergyFilterValue, defaultFilter, energyViewQueryOf, partialNote } from "../lib/energy-view-filter";
+import { formatMoney } from "../lib/money";
 import type { AuthUser } from "../stores/auth-store";
 
 type EnergyPageProps = {
   user: AuthUser;
 };
-
-/** The change hint, e.g. `+12.5 % vs previous`; `undefined` when compare is off. */
-function changeHint(change: EnergyChange): string | undefined {
-  switch (change.kind) {
-    case "none":
-      return undefined;
-    case "no_previous":
-      return "no data for the previous period";
-    case "no_previous_value":
-      return "no figure for the previous period";
-    case "change":
-      if (change.pct === null) {
-        return "no % change — the previous figure is zero";
-      }
-      return `${change.pct >= 0 ? "+" : ""}${change.pct.toFixed(1)} % vs previous`;
-  }
-}
-
-/** The hint parts that are present, joined with ` · `. */
-function joinHint(...parts: (string | undefined)[]): string | undefined {
-  const present = parts.filter((part): part is string => part !== undefined);
-  return present.length === 0 ? undefined : present.join(" · ");
-}
-
-function wholeNumber(value: number): string {
-  return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
-}
 
 function viewOf(query: EnergyViewQuery | null): Promise<EnergyView> {
   // Unreachable: the query is disabled while `query` is null.
@@ -154,24 +119,6 @@ export function EnergyPage({ user }: EnergyPageProps) {
   const current = v?.current;
   const compare = v?.compare ?? null;
   const note = v ? partialNote(v.partial) : null;
-  const noKw = current !== undefined && !current.hasData;
-  const kwStatus: KpiTileStatus = noKw ? "empty" : status;
-
-  const totalHint = current ? changeHint(changeFor(current, compare, "totalKwh")) : undefined;
-  const peakHint =
-    current && v
-      ? joinHint(
-          current.peakAt !== null ? `Peak at ${formatPeakTime(current.peakAt, v.timeZone)}` : undefined,
-          changeHint(changeFor(current, compare, "peakKw")),
-        )
-      : undefined;
-  const pfStatus: KpiTileStatus = current?.avgPf === null ? "empty" : status;
-  const pfHint =
-    current === undefined
-      ? undefined
-      : current.avgPf === null
-        ? "No pf point in scope"
-        : (changeHint(changeFor(current, compare, "avgPf")) ?? "Sample average of the pf points in scope");
 
   const chartStatus = (count: number | undefined): KpiTileStatus =>
     status !== "ready" ? status : count === 0 ? "empty" : "ready";
@@ -247,47 +194,7 @@ export function EnergyPage({ user }: EnergyPageProps) {
           </p>
         ) : null}
 
-        {/*
-          The `ESKOM_SMOC.html` `#/energy` KPI row order where it overlaps
-          (total, peak with its time, PUE, cost), the change in the hint slot.
-        */}
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <KpiTile
-            label="Total energy"
-            status={kwStatus}
-            value={current ? wholeNumber(current.totalKwh) : null}
-            unit="kWh"
-            hint={noKw ? "No kW data in this period" : totalHint}
-          />
-          <KpiTile
-            label="Peak demand"
-            status={kwStatus}
-            value={current ? wholeNumber(current.peakKw) : null}
-            unit="kW"
-            hint={noKw ? "No kW data in this period" : peakHint}
-          />
-          <KpiTile
-            label="Average PF"
-            status={pfStatus}
-            value={current?.avgPf != null ? current.avgPf.toFixed(2) : null}
-            hint={pfHint}
-          />
-          {/* Decision 2.12 — the level read, the display bucket and the zone the buckets are in. */}
-          <KpiTile
-            label="Rollup"
-            status={status}
-            value={v ? v.level : null}
-            hint={v ? levelLabel(v.level, v.bucket, v.timeZone) : undefined}
-          />
-          {/* `F2.8` — the windowed Σ site_kw / Σ it_kw, or a dash with a reason. */}
-          <KpiTile label="PUE" {...pueTileProps(status, current?.pueEstimate)} />
-          {/*
-            `E4.1c` — the organization's currency carries the symbol, so the
-            tile has no `unit`; a `null` cost (no tariff in scope, or two
-            currencies) is the dash with the reason, never a 0.
-          */}
-          <KpiTile label="Indicative cost" {...costTileProps(status, current?.indicativeCost, current?.currency)} />
-        </div>
+        <EnergyKpiTiles status={status} view={v} />
 
         {/*
           `ESKOM_SMOC.html` `#/energy` load profile card: the total stacked by

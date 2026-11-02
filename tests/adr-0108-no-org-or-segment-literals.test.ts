@@ -85,6 +85,8 @@ const MODULES: readonly string[] = [
   "apps/web/src/components/energy/site-ranking-table.tsx",
   "apps/web/src/components/energy/energy-heatmap.tsx",
   "apps/web/src/components/energy/abnormal-list.tsx",
+  "apps/web/src/components/energy/energy-kpi-tiles.tsx",
+  "apps/web/src/components/energy/range-compare-controls.tsx",
   // F4.299 U6 rewrites these two existing files (Amendment 1, 7.10), so they are scanned too.
   "apps/web/src/components/energy-source-stack-chart.tsx",
   "apps/web/src/pages/energy-page.tsx",
@@ -141,8 +143,6 @@ const MODULES: readonly string[] = [
  */
 const PENDING_MODULES: readonly string[] = [
   // F4.302 U3: the two shared energy components.
-  "apps/web/src/components/energy/energy-kpi-tiles.tsx",
-  "apps/web/src/components/energy/range-compare-controls.tsx",
   // F4.302 U4: the web client, the pure lib and the six control-room components.
   "apps/web/src/api/segment-views.ts",
   "apps/web/src/lib/site-trends.ts",
