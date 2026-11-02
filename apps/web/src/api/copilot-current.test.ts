@@ -7,7 +7,9 @@ import {
   anUnknownRtuReadsNull,
   theAssetCardReadsTheListedRow,
   theAssetTemplateCardReadsTheVersionsFields,
+  theLocationCardReadsNoAreaAsNull,
   theLocationCardReadsTheListedRow,
+  theLocationCardReadsTheStoredArea,
   thePointCardReadsTheStoredRow,
   theRtuCardReadsTheListedRow,
   theViewCardReadsTheStoredSetting,
@@ -29,6 +31,8 @@ describe("F3.86 PR 3a review — the location and RTU edit cards' Now values", (
 
   it("maps the listed location row to the update body's fields", () => theLocationCardReadsTheListedRow());
   it("reads null for a location the list does not hold", () => anUnknownLocationReadsNull());
+  it("F4.304 review: reads a stored floor area as { value, unit: m2 }", () => theLocationCardReadsTheStoredArea());
+  it("F4.304 review: reads no floor area as an explicit null", () => theLocationCardReadsNoAreaAsNull());
   it("maps the listed RTU row to the update body's fields", () => theRtuCardReadsTheListedRow());
   it("reads null for an RTU the list does not hold", () => anUnknownRtuReadsNull());
 });

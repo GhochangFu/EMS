@@ -120,9 +120,30 @@ export async function theLocationCardReadsTheListedRow(): Promise<void> {
     latitude: 20.1,
     longitude: 85.2,
     timezone: "Asia/Kolkata",
+    floorArea: null,
     meta: { region: "east" },
   });
   expect(list).toHaveBeenCalledWith("all");
+}
+
+/*
+ * `F4.304` review — the location card's Now record carries the stored area in
+ * the update body's own shape (`{ value, unit: "m2" }`), so a proposal that
+ * clears a stored area reads as a change, and one that re-sends it does not.
+ */
+
+/** A stored area reads as `{ value, unit: "m2" }`. */
+export async function theLocationCardReadsTheStoredArea(): Promise<void> {
+  vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [{ ...LOCATION_ROW, floorAreaM2: 1200 }] });
+  const current = await fetchCopilotCurrent(updateChange("location.update", `/api/v1/admin/locations/${LOCATION}`));
+  expect(current?.floorArea).toEqual({ value: 1200, unit: "m2" });
+}
+
+/** No stored area reads as an explicit `null`, never an absent key. */
+export async function theLocationCardReadsNoAreaAsNull(): Promise<void> {
+  vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [LOCATION_ROW] });
+  const current = await fetchCopilotCurrent(updateChange("location.update", `/api/v1/admin/locations/${LOCATION}`));
+  expect(current).toHaveProperty("floorArea", null);
 }
 
 /** A location id the list does not hold reads as no record. */
