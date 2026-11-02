@@ -2,6 +2,7 @@ import {
   BASELINE_WINDOWS,
   CATALOG_CODE_PATTERN,
   MIN_BASELINE_WINDOWS,
+  SITE_TRENDS_ENERGY_VIEW,
   type EnergyViewQuery,
   type SegmentAbnormalBaselineDto,
   type SegmentAbnormalEntryDto,
@@ -20,8 +21,8 @@ import { assetHistoryPath, shiftCompareBuckets } from "./asset-history-range";
  * sentences. No segment is named here: a sub-tab is whatever domain the segment read returns.
  */
 
-/** The `?view=` value of the Energy sub-tab, and the default. */
-export const ENERGY_VIEW = "energy";
+/** The `?view=` value of the Energy sub-tab, and the default (reserved as a domain code: `SITE_TRENDS_ENERGY_VIEW`). */
+export const ENERGY_VIEW = SITE_TRENDS_ENERGY_VIEW;
 
 function catalogCode(value: string | null): string | undefined {
   return value !== null && CATALOG_CODE_PATTERN.test(value) ? value : undefined;

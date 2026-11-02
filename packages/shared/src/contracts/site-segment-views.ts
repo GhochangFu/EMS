@@ -26,6 +26,12 @@ export const SEGMENT_RANKING_MAX = 50;
 export const ABNORMAL_BELOW_RATIO = 0.5;
 /** A baseline within this fraction of the scale is `not_comparable` (drafter choice, relative). */
 export const ABNORMAL_NEAR_ZERO_FRACTION = 0.01;
+/**
+ * The `?view=` value of the Energy sub-tab (item 8). A segment sub-tab is `?view=<domain code>`,
+ * so `energy` is reserved: no `bms.asset_domains` row may carry it (owner ruling B, 2026-11-02;
+ * gated by `tests/f4.302-energy-domain-code-reserved.integration.test.ts`).
+ */
+export const SITE_TRENDS_ENERGY_VIEW = "energy";
 
 /**
  * `.strict()` and no refinement, so the OpenAPI document expresses it whole. Cross-field faults
