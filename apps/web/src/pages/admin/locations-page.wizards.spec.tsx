@@ -42,6 +42,7 @@ const ROW: AdminLocationDto = {
   province: "West Bengal",
   capital: null,
   timezone: "Asia/Kolkata",
+  floorAreaM2: null,
   latitude: 22.5,
   longitude: 88.3,
   active: true,

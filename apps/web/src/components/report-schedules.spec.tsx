@@ -67,6 +67,7 @@ export const WESTERN_CAPE: AdminLocationDto = {
   province: "Western Cape",
   capital: "Cape Town",
   timezone: "Africa/Johannesburg",
+  floorAreaM2: null,
   latitude: -33.9,
   longitude: 18.4,
   active: true,

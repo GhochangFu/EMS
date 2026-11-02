@@ -10,6 +10,7 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { assets, locationTypes, locations, organizations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import { floorAreaM2Of } from "@bms/shared";
 import type {
   AdminLocationDto,
   AdminLocationSummaryDto,
@@ -204,6 +205,7 @@ export class LocationsAdminService {
           latitude: body.latitude,
           longitude: body.longitude,
           timezone: body.timezone ?? null,
+          floorAreaM2: body.floorArea ? String(floorAreaM2Of(body.floorArea)) : null,
           // Owner ruling 20: `meta.seedKey` is seed-owned; a request's is dropped.
           meta: requestMetaForCreate(body.meta),
           active: true,
@@ -325,6 +327,12 @@ export class LocationsAdminService {
           latitude: body.latitude ?? existing.latitude,
           longitude: body.longitude ?? existing.longitude,
           timezone: body.timezone !== undefined ? body.timezone : existing.timezone,
+          floorAreaM2:
+            body.floorArea !== undefined
+              ? body.floorArea === null
+                ? null
+                : String(floorAreaM2Of(body.floorArea))
+              : existing.floorAreaM2,
           // Owner ruling 20: a `meta` that replaces the stored one keeps the
           // stored `seedKey` and never takes one from the request.
           meta: body.meta !== undefined ? requestMetaForUpdate(body.meta, locked.meta) : locked.meta,
@@ -597,6 +605,7 @@ export class LocationsAdminService {
       province: loc.province,
       capital: loc.capital,
       timezone: loc.timezone,
+      floorAreaM2: loc.floorAreaM2 === null ? null : Number(loc.floorAreaM2),
       latitude: loc.latitude,
       longitude: loc.longitude,
       active: loc.active,

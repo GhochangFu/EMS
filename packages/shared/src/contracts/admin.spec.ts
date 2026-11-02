@@ -161,6 +161,7 @@ const validLocation = {
   province: null,
   capital: null,
   timezone: null,
+  floorAreaM2: null,
   latitude: 24.1,
   longitude: 88.4,
   active: true,

@@ -76,6 +76,7 @@ const LOCATION_ROW = {
   province: "Odisha",
   capital: null,
   timezone: "Asia/Kolkata",
+  floorAreaM2: null,
   latitude: 20.1,
   longitude: 85.2,
   active: false,
