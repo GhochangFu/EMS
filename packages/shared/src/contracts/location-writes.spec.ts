@@ -1,6 +1,11 @@
 import { expect } from "vitest";
 
-import { createLocationBodySchema, updateLocationBodySchema } from "./location-writes";
+import {
+  FT2_TO_M2,
+  createLocationBodySchema,
+  floorAreaM2Of,
+  updateLocationBodySchema,
+} from "./location-writes";
 
 /**
  * `E4.1b` review C1 (pre-existing) — the location form sends `null` for an
@@ -63,4 +68,73 @@ export function updateAdmitsParentIdAlone(): void {
   const parsed = updateLocationBodySchema.safeParse({ parentId: null });
   expect(parsed.success, parsed.success ? "" : JSON.stringify(parsed.error.issues)).toBe(true);
   expect(updateLocationBodySchema.safeParse({ parentId: PARENT_UUID }).success).toBe(true);
+}
+
+// F4.304 (ADR 0108 Amendment 5 item 3) — floorArea { value, unit }.
+
+type Which = "create" | "update";
+
+function parseFloorArea(which: Which, floorArea: unknown) {
+  return which === "create"
+    ? createLocationBodySchema.safeParse({ ...CREATE_BASE, floorArea })
+    : updateLocationBodySchema.safeParse({ floorArea });
+}
+
+function issuePaths(which: Which, floorArea: unknown): string[] {
+  const parsed = parseFloorArea(which, floorArea);
+  expect(parsed.success).toBe(false);
+  return parsed.success ? [] : parsed.error.issues.map((i) => i.path.join("."));
+}
+
+/** F1 — the ft² constant is exactly 0.09290304. */
+export function ft2ConstantIsExact(): void {
+  expect(FT2_TO_M2).toBe(0.09290304);
+}
+
+/** F2 — 1000 ft² is 92.90304 m². */
+export function thousandSquareFeet(): void {
+  expect(floorAreaM2Of({ value: 1000, unit: "ft2" })).toBe(92.90304);
+}
+
+/** F3 — a value in m² is stored as typed. */
+export function squareMetresUnchanged(): void {
+  expect(floorAreaM2Of({ value: 120, unit: "m2" })).toBe(120);
+}
+
+/** F4 — create admits a value alone, and the parse carries unit m2. */
+export function createDefaultsUnitToM2(): void {
+  const parsed = createLocationBodySchema.safeParse({ ...CREATE_BASE, floorArea: { value: 120 } });
+  expect(parsed.success).toBe(true);
+  expect(parsed.success ? parsed.data.floorArea : undefined).toEqual({ value: 120, unit: "m2" });
+}
+
+/** F5 — create admits ft2. */
+export function createAdmitsFt2(): void {
+  expect(parseFloorArea("create", { value: 1, unit: "ft2" }).success).toBe(true);
+}
+
+/** F6 — create admits null. */
+export function createAdmitsNullFloorArea(): void {
+  expect(parseFloorArea("create", null).success).toBe(true);
+}
+
+/** F7 — update admits a floorArea alone. */
+export function updateAdmitsFloorAreaAlone(): void {
+  expect(parseFloorArea("update", { value: 5 }).success).toBe(true);
+}
+
+/** The refusals: [label, bad value, the issue path that must fire]. */
+export const FLOOR_AREA_REFUSALS: ReadonlyArray<readonly [string, unknown, string]> = [
+  ["value 0", { value: 0 }, "floorArea.value"],
+  ["value 0.5", { value: 0.5 }, "floorArea.value"],
+  ["value 100000001", { value: 100_000_001 }, "floorArea.value"],
+  ["value NaN", { value: Number.NaN }, "floorArea.value"],
+  ["value as a string", { value: "12" }, "floorArea.value"],
+  ["unit sqft", { value: 1, unit: "sqft" }, "floorArea.unit"],
+  ["an extra key", { value: 1, note: "x" }, "floorArea"],
+];
+
+/** R — one refusal, naming the guard that fired. */
+export function refuses(which: Which, bad: unknown, path: string): void {
+  expect(issuePaths(which, bad)).toContain(path);
 }

@@ -4,7 +4,7 @@ import type { CatalogEntry, ExcludedRoute } from "./types";
 
 const LOCATION = { kind: "location", param: "id" } as const;
 const PARENT_REF = [{ field: "parentId", kind: "location" }] as const;
-const PLACE = { id: "place", title: "Place", fields: ["province", "capital", "latitude", "longitude", "timezone"] } as const;
+const PLACE = { id: "place", title: "Place", fields: ["province", "capital", "latitude", "longitude", "timezone", "floorArea"] } as const;
 const METADATA = { id: "metadata", title: "Metadata", fields: ["meta"] } as const;
 
 /** What an update's `parentId` does: nothing (absent), a move to the top level (`null`), or under a row. */

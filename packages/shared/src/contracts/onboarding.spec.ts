@@ -885,3 +885,22 @@ export function assertDraftListCarriesSummaries(): void {
   const leaked = onboardingDraftListDtoSchema.safeParse({ items: [{ ...DRAFT_SUMMARY, draft: {} }] });
   assert(!leaked.success, "a list whose summary carries `draft` must be refused");
 }
+
+const DRAFT_LOCATION_BASE = { code: "L", slug: "l", name: "L", latitude: 0, longitude: 0 };
+
+/** F4.304 A — the lenient draft location carries a floorArea with unit m2 by default and no bound. */
+export function assertLenientDraftFloorAreaDefaultsUnit(): void {
+  const parsed = onboardingDraftLocationSchema.safeParse({ ...DRAFT_LOCATION_BASE, floorArea: { value: 0.5 } });
+  assert(parsed.success, "floorArea { value: 0.5 } must parse, got: " + (parsed.success ? "" : JSON.stringify(parsed.error.issues)));
+  assert(parsed.success && parsed.data.floorArea?.unit === "m2", "the parse must carry unit m2");
+}
+
+/** F4.304 B — floorArea null parses. */
+export function assertLenientDraftFloorAreaNull(): void {
+  assert(onboardingDraftLocationSchema.safeParse({ ...DRAFT_LOCATION_BASE, floorArea: null }).success, "floorArea null must parse");
+}
+
+/** F4.304 C — floorArea absent parses. */
+export function assertLenientDraftFloorAreaAbsent(): void {
+  assert(onboardingDraftLocationSchema.safeParse(DRAFT_LOCATION_BASE).success, "absent floorArea must parse");
+}

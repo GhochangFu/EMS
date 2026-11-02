@@ -7,6 +7,28 @@ import { locationTypeCodeSchema } from "./location-types";
 // path changes.
 export const locationTypeSchema = locationTypeCodeSchema;
 
+// F4.304 (ADR 0108 Amendment 5 items 3, 6): the typed area and its unit; the
+// column stores square metres. One declaration, read by the HTTP body, the
+// onboarding draft and the catalog's Place step.
+export const floorAreaUnitSchema = z.enum(["m2", "ft2"]);
+export type FloorAreaUnit = z.infer<typeof floorAreaUnitSchema>;
+/** Square metres in one square foot (exact: 0.3048 squared). */
+export const FT2_TO_M2 = 0.09290304;
+export const FLOOR_AREA_VALUE_MIN = 1;
+export const FLOOR_AREA_VALUE_MAX = 100_000_000;
+export const floorAreaInputSchema = z
+  .object({
+    value: z.number().finite().min(FLOOR_AREA_VALUE_MIN).max(FLOOR_AREA_VALUE_MAX),
+    unit: floorAreaUnitSchema.default("m2"),
+  })
+  .strict();
+export type FloorAreaInput = z.infer<typeof floorAreaInputSchema>;
+
+/** The typed area in square metres, unrounded. */
+export function floorAreaM2Of(input: { readonly value: number; readonly unit: FloorAreaUnit }): number {
+  return input.unit === "ft2" ? input.value * FT2_TO_M2 : input.value;
+}
+
 export const createLocationBodySchema = z
   .object({
     organizationId: z.string().uuid(),
@@ -29,6 +51,8 @@ export const createLocationBodySchema = z
     // E4.1b (ADR 0070 decision 6): an IANA zone name, validated against
     // pg_timezone_names by the service; `null` clears, absent leaves it.
     timezone: z.string().max(64).nullable().optional(),
+    // F4.304: `null` clears, absent leaves it.
+    floorArea: floorAreaInputSchema.nullable().optional(),
     // `F4.170` owner ruling 20 (compliance review B1): the document says what
     // the service does with the key, since the shape cannot.
     meta: z

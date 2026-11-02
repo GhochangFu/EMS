@@ -371,6 +371,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   createEscalationProfileBodySchema: STRICT(CALLER_ERROR),
   "createEscalationProfileBodySchema/steps[]": STRICT(ESCALATION_STEP),
   createLocationBodySchema: STRICT(CALLER_ERROR),
+  // `F4.304`: a typo inside the area is a 400, not a stored default.
+  "createLocationBodySchema/floorArea": STRICT(CALLER_ERROR),
   // `F4.162`. A global vocabulary: a caller sending `organizationId` must get a
   // 400, not believe they scoped a fleet-wide type.
   createLocationTypeBodySchema: STRICT(CALLER_ERROR),
@@ -597,6 +599,7 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   updateEscalationProfileBodySchema: STRICT(ESCALATION_PATCH),
   "updateEscalationProfileBodySchema/steps[]": STRICT(ESCALATION_STEP),
   updateLocationBodySchema: STRICT(CALLER_ERROR),
+  "updateLocationBodySchema/floorArea": STRICT(CALLER_ERROR),
   // `F4.162`. `code` is the primary key; a PATCH naming it is a 400.
   updateLocationTypeBodySchema: STRICT(CALLER_ERROR),
   updateMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),
