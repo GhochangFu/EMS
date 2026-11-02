@@ -112,6 +112,9 @@ const MODULES: readonly string[] = [
   // F4.305 review (AGENTS.md §4.2) — split out of trend-strip.tsx and trend-strip-widget.tsx.
   "apps/web/src/components/control-room/trend-strip-body.tsx",
   "apps/web/src/components/widgets/trend-strip-widget-preview.tsx",
+  // F4.302 (ADR 0108 Amendment 4, item 10) — U1. The rest are in PENDING_MODULES until U2–U4.
+  "packages/shared/src/contracts/site-segment-views.ts",
+  "packages/shared/src/types/site-segment-views.ts",
 ];
 
 /**
@@ -129,7 +132,27 @@ const MODULES: readonly string[] = [
  * `smoc-site-view.tsx`) pre-date ADR 0108 and gain one import and one JSX line
  * each, so they are not listed (the `energy-page.tsx` precedent).
  */
-const PENDING_MODULES: readonly string[] = [];
+const PENDING_MODULES: readonly string[] = [
+  // F4.302 U2 (ADR 0108 Amendment 4, item 10): the api modules, plus the shared scope-join file.
+  "apps/api/src/trend-points/site-asset-rows.ts",
+  "apps/api/src/trend-points/segment-abnormal.ts",
+  "apps/api/src/trend-points/segment-views.pure.ts",
+  "apps/api/src/trend-points/segment-views-read.ts",
+  "apps/api/src/trend-points/segment-views.service.ts",
+  "apps/api/src/trend-points/segment-views.controller.ts",
+  // F4.302 U3: the two shared energy components.
+  "apps/web/src/components/energy/energy-kpi-tiles.tsx",
+  "apps/web/src/components/energy/range-compare-controls.tsx",
+  // F4.302 U4: the web client, the pure lib and the six control-room components.
+  "apps/web/src/api/segment-views.ts",
+  "apps/web/src/lib/site-trends.ts",
+  "apps/web/src/components/control-room/site-trends-view.tsx",
+  "apps/web/src/components/control-room/site-energy-view.tsx",
+  "apps/web/src/components/control-room/segment-view.tsx",
+  "apps/web/src/components/control-room/segment-trend-chart.tsx",
+  "apps/web/src/components/control-room/segment-ranking-table.tsx",
+  "apps/web/src/components/control-room/segment-abnormal-list.tsx",
+];
 
 /**
  * Files that are never scanned, each with its reason, so a later row does not

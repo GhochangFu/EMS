@@ -53,6 +53,7 @@ import {
   // `F4.300` (ADR 0108 decision 3.7): the replace-all trend-point body.
   putOrgTrendPointsBodySchema,
   siteTrendStripQuerySchema,
+  siteSegmentViewsQuerySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -342,6 +343,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   OrgTrendPointsAdminController_putSegment: putOrgTrendPointsBodySchema,
   // `F4.301` (ADR 0108 Amendment 2 item 3): the trend strip's `.strict()` query.
   SiteTrendStripController_forSite: siteTrendStripQuerySchema,
+  // `F4.302` (ADR 0108 Amendment 4 item 4): the segment view's `.strict()` query.
+  SiteSegmentViewsController_forSite: siteSegmentViewsQuerySchema,
   // `F3.21` (ADR 0090 Amendment 1 A5). `_get` and `_remove` take no body.
   AiAssistantSettingsController_put: putAiAssistantSettingsBodySchema,
   AiAssistantSettingsController_test: testAiAssistantBodySchema,

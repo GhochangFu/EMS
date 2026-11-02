@@ -1,4 +1,4 @@
-import { SITE_ASSETS_TAB, type AccessibleScope } from "@bms/shared";
+import { SITE_ASSETS_TAB, SITE_TRENDS_TAB, type AccessibleScope } from "@bms/shared";
 
 import { canAccessControlRoomArea, type ControlRoomArea } from "./control-room-access";
 
@@ -57,11 +57,16 @@ export function smocTabPath(locationId: string, tab: SmocTabKey): string {
  * declaration to `@bms/shared` (the dashboard tab key schema refuses it); the
  * re-export keeps this file's importers unchanged.
  */
-export { SITE_ASSETS_TAB };
+export { SITE_ASSETS_TAB, SITE_TRENDS_TAB };
 
 /** The URL of one site's Assets & RTUs tab, encoded for the router path segment. */
 export function siteAssetsPath(locationId: string): string {
   return `/control-room/site/${encodeURIComponent(locationId)}/${SITE_ASSETS_TAB}`;
+}
+
+/** The URL of one site's Trends & Energy tab (`F4.302`), encoded for the router path segment. */
+export function siteTrendsPath(locationId: string): string {
+  return `/control-room/site/${encodeURIComponent(locationId)}/${SITE_TRENDS_TAB}`;
 }
 
 /** Reads the optional `:tab` route param (D2): missing → `overview`, unknown → `null`. */

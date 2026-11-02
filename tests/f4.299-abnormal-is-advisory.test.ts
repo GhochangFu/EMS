@@ -28,7 +28,12 @@ const ADVISORY_MODULES = [
   "apps/api/src/reports/energy-organization-views.service.ts",
 ] as const;
 
-const READS_FILE = "apps/api/src/reports/energy-organization-reads.ts";
+/**
+ * The files that carry SQL. `F4.302` adds `segment-views-read.ts` in U2; U1 lists only what
+ * exists, and the claim below fails the day a listed path goes missing.
+ */
+const READS_FILES = ["apps/api/src/reports/energy-organization-reads.ts"] as const;
+const READS_FILE = READS_FILES[0];
 
 const FORBIDDEN_DIRECTORIES = ["alarms", "rules", "notifications"] as const;
 
@@ -91,8 +96,13 @@ describe("F4.299 — the abnormal list is advisory only (ADR 0108 Amendment 1, 7
     expect(forbiddenImports(`/** see import { A } from "../alarms/alarms.service" */\n// from "../rules/x"\n`)).toEqual([]);
   });
 
-  it("the reads file carries no INSERT, UPDATE, DELETE or TRUNCATE outside comments", () => {
-    expect(writeKeywords(read(READS_FILE))).toEqual([]);
+  it("every listed reads file exists and is not empty", () => {
+    for (const path of READS_FILES) expect(read(path).length, path).toBeGreaterThan(0);
+  });
+
+  it("the reads files carry no INSERT, UPDATE, DELETE or TRUNCATE outside comments", () => {
+    const offenders = READS_FILES.flatMap((path) => writeKeywords(read(path)).map((k) => `${path}: ${k}`));
+    expect(offenders).toEqual([]);
   });
 
   it("positive control: a write statement in the reads file is caught, a comment is not", () => {
