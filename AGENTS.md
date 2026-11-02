@@ -962,6 +962,25 @@
 > alarms at RSMOC-WC while the simulator runs; a skip list needs an ADR 0101
 > amendment. Still out: free shapes and lines, an API refusal of a bad graph,
 > and the tones `earthed` and `racked_out` until a device sends them.
+> And **trend and energy views** (**ADR 0108** with Amendments 1–3; rows
+> `F4.297`–`F4.301` and `F4.305`, merged 2026-10-31 to 2026-11-02 in #967
+> to #969, #971 to #973 and #975 `800a773a`; the ADR in #966, #970 and
+> #974). Nothing is coded per organization or segment:
+> `tests/adr-0108-no-org-or-segment-literals.test.ts` scans every runtime
+> module the ADR adds. **`F4.305` makes the `F4.301` trend strip a widget
+> type**: migration `0118` widens the widget-type `CHECK` with `trend_strip`,
+> so `widgetType` has **thirteen** values, and adds the nullable stamp
+> `bms.dashboards.stock_version`. The config is `{ tabKey?, defaultRange }`
+> (a tab key, never a group uuid). **Stock v5 of "SMOC standard"** puts one
+> strip directly under every tab's top tile row; the v5 step
+> (`site-layout-seed-upgrade-v5.ts`) adds it to seed-owned copies, edited
+> tabs included, finds the cut by geometry, and stamps the copy `5`, so a
+> strip an admin deletes stays deleted. v4 is frozen in
+> `site-layout-stock-history.ts`. `SiteDashboardView` no longer mounts a
+> fixed strip (an admin-made site dashboard gets one with **+ Trend
+> strip**); `GeneratedSiteView` keeps its strip under the KPI tiles. A
+> sparkline click still opens `/asset-history/:assetId`. Next: `F4.306`, a
+> guided wizard that places these widgets.
 > And **the tool-calling onboarding agent loop** (**ADR 0090** with
 > **Amendment 1**; row `F3.21`, merged 2026-10-03 in #705, squash `9ff272e1`;
 > the ADR in #702 and the amendment in #703). It amends ADR 0011 decision 1:
