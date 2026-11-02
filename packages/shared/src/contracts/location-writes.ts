@@ -50,11 +50,12 @@ export const floorAreaInputObjectSchema = z.object({
 export function refineFloorAreaM2<T extends z.ZodType<{ value: number; unit: FloorAreaUnit }, z.ZodTypeDef, unknown>>(
   schema: T,
 ) {
-  return schema.superRefine((input, ctx) => {
-    if (input.value >= FLOOR_AREA_VALUE_MIN && floorAreaM2Of(input) < FLOOR_AREA_VALUE_MIN) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["value"], message: FLOOR_AREA_M2_MIN_MESSAGE });
-    }
-  })
+  return schema
+    .superRefine((input, ctx) => {
+      if (input.value >= FLOOR_AREA_VALUE_MIN && floorAreaM2Of(input) < FLOOR_AREA_VALUE_MIN) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["value"], message: FLOOR_AREA_M2_MIN_MESSAGE });
+      }
+    })
     // ADR 0029 fact F: after the refinement, or the document drops it.
     .describe(
       `The floor area, typed in \`unit\`. \`value\` is ${FLOOR_AREA_VALUE_MIN} to ${FLOOR_AREA_VALUE_MAX} in ` +
