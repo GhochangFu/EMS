@@ -117,6 +117,19 @@ export function medianOf(values: readonly number[]): number | null {
 }
 
 /**
+ * The windows that count: those whose distinct bucket count is at least half
+ * the current period's. Extracted by `F4.302` (ADR 0108 Amendment 4 item 5) so
+ * the energy verdict and the segment verdict share one predicate; behaviour
+ * unchanged.
+ */
+export function countingWindows<W extends { readonly bucketCount: number }>(
+  current: { readonly bucketCount: number },
+  windows: readonly W[],
+): W[] {
+  return windows.filter((window) => window.bucketCount * 2 >= current.bucketCount);
+}
+
+/**
  * One entity's verdict. A window counts when its distinct bucket count is at
  * least half the current period's. Fewer than `MIN_BASELINE_WINDOWS` counting
  * windows, or a zero baseline, is "not enough history" with no ratio (a zero
@@ -126,7 +139,7 @@ export function verdictFor(
   current: { readonly kwh: number; readonly bucketCount: number },
   windows: readonly { readonly kwh: number; readonly bucketCount: number }[],
 ): { verdict: AbnormalVerdict; baselineKwh: number | null; ratio: number | null; baselineWindows: number } {
-  const counting = windows.filter((window) => window.bucketCount * 2 >= current.bucketCount);
+  const counting = countingWindows(current, windows);
   if (counting.length < MIN_BASELINE_WINDOWS) {
     return { verdict: "not_enough_history", baselineKwh: null, ratio: null, baselineWindows: counting.length };
   }

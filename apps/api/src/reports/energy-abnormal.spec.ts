@@ -5,6 +5,7 @@ import { ABNORMAL_LIST_MAX, ABNORMAL_RATIO, BASELINE_WINDOWS, MIN_BASELINE_WINDO
 import {
   abnormalEntries,
   baselineWindows,
+  countingWindows,
   medianOf,
   orderAndTrim,
   shiftByLocalDays,
@@ -322,4 +323,15 @@ export function assertTruncatedAtOneHundredAndOne(): void {
   const exact = orderAndTrim(many(ABNORMAL_LIST_MAX), ABNORMAL_LIST_MAX);
   expect(exact.entries).toHaveLength(100);
   expect(exact.truncated).toBe(false);
+}
+
+/**
+ * `F4.302` U2 (ADR 0108 Amendment 4 item 5) — the extracted predicate: a window at exactly half the
+ * current period's distinct bucket count counts, one bucket below does not. `verdictFor` and the
+ * segment verdict both call it, so a mutation of `>=` reddens this claim and theirs.
+ */
+export function assertCountingWindowsKeepsExactlyHalf(): void {
+  const half = { bucketCount: 5 };
+  const below = { bucketCount: 4 };
+  expect(countingWindows({ bucketCount: FULL }, [half, below])).toEqual([half]);
 }

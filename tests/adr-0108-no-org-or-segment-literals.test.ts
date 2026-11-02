@@ -112,9 +112,16 @@ const MODULES: readonly string[] = [
   // F4.305 review (AGENTS.md §4.2) — split out of trend-strip.tsx and trend-strip-widget.tsx.
   "apps/web/src/components/control-room/trend-strip-body.tsx",
   "apps/web/src/components/widgets/trend-strip-widget-preview.tsx",
-  // F4.302 (ADR 0108 Amendment 4, item 10) — U1. The rest are in PENDING_MODULES until U2–U4.
+  // F4.302 (ADR 0108 Amendment 4, item 10) — U1. The rest are in PENDING_MODULES until U3–U4.
   "packages/shared/src/contracts/site-segment-views.ts",
   "packages/shared/src/types/site-segment-views.ts",
+  // F4.302 U2: the api modules, plus the shared scope-join file.
+  "apps/api/src/trend-points/site-asset-rows.ts",
+  "apps/api/src/trend-points/segment-abnormal.ts",
+  "apps/api/src/trend-points/segment-views.pure.ts",
+  "apps/api/src/trend-points/segment-views-read.ts",
+  "apps/api/src/trend-points/segment-views.service.ts",
+  "apps/api/src/trend-points/segment-views.controller.ts",
 ];
 
 /**
@@ -133,13 +140,6 @@ const MODULES: readonly string[] = [
  * each, so they are not listed (the `energy-page.tsx` precedent).
  */
 const PENDING_MODULES: readonly string[] = [
-  // F4.302 U2 (ADR 0108 Amendment 4, item 10): the api modules, plus the shared scope-join file.
-  "apps/api/src/trend-points/site-asset-rows.ts",
-  "apps/api/src/trend-points/segment-abnormal.ts",
-  "apps/api/src/trend-points/segment-views.pure.ts",
-  "apps/api/src/trend-points/segment-views-read.ts",
-  "apps/api/src/trend-points/segment-views.service.ts",
-  "apps/api/src/trend-points/segment-views.controller.ts",
   // F4.302 U3: the two shared energy components.
   "apps/web/src/components/energy/energy-kpi-tiles.tsx",
   "apps/web/src/components/energy/range-compare-controls.tsx",

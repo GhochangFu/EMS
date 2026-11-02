@@ -6,11 +6,11 @@ import {
   type SiteTrendStripDto,
   type SiteTrendStripQuery,
   TREND_STRIP_MAX_SERIES,
-  resolveSiteTimeZone,
 } from "@bms/shared";
 
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_POOL } from "../database/database.tokens";
+import { siteAssetRows, siteTimeZone } from "./site-asset-rows";
 import { TrendPointsService } from "./trend-points.service";
 import { trendStripRead } from "./trend-strip-read";
 import {
@@ -24,15 +24,6 @@ import {
 } from "./trend-strip.pure";
 
 export const TREND_STRIP_GROUP_NOT_FOUND = "Asset group not found at this site";
-
-type AssetRow = {
-  asset_id: string;
-  asset_code: string;
-  asset_name: string;
-  domain: string;
-  point_key: string;
-  unit: string | null;
-};
 
 /**
  * `F4.301` / ADR 0108 Amendment 2 — the Control Room trend strip for one site
@@ -84,8 +75,9 @@ export class SiteTrendStripService {
 
     const window = stripWindow(query.range, now);
     const readable = await this.accessControl.readableAssetIds(jwt);
-    const timeZone = await this.zone(locationId);
-    const rows = readable !== null && readable.length === 0 ? [] : await this.scopeRows(locationId, assetGroupId);
+    const timeZone = (await siteTimeZone(this.pool, locationId)).timeZone;
+    const rows =
+      readable !== null && readable.length === 0 ? [] : await siteAssetRows(this.pool, locationId, assetGroupId);
     const readableSet = readable === null ? null : new Set(readable);
     const inScope = readableSet === null ? rows : rows.filter((row) => readableSet.has(row.asset_id));
 
@@ -128,47 +120,5 @@ export class SiteTrendStripService {
       trimmed: plan.trimmed,
       segments: groupSeries(plan, series, window),
     };
-  }
-
-  /** The location → organization → `UTC` chain (Amendment 2 item 8); a stored `UTC` reports `UTC`. */
-  private async zone(locationId: string): Promise<string> {
-    const { rows } = await this.pool.query<{ location_zone: string | null; organization_zone: string | null }>(
-      `SELECT l.timezone AS location_zone, o.timezone AS organization_zone
-         FROM bms.locations l
-         JOIN bms.organizations o ON o.id = l.organization_id
-        WHERE l.id = $1::uuid`,
-      [locationId],
-    );
-    const row = rows[0];
-    return resolveSiteTimeZone(row?.location_zone ?? null, row?.organization_zone ?? null).timeZone;
-  }
-
-  /**
-   * The site's assets — narrowed to the group's members (`asset_group_members`,
-   * the group pinned to this site) when one is named — joined to their active
-   * registrations, with the effective unit. One statement, site and group bound.
-   */
-  private async scopeRows(locationId: string, assetGroupId: string | null): Promise<AssetRow[]> {
-    const groupFilter =
-      assetGroupId === null
-        ? ""
-        : `AND a.id IN (
-             SELECT m.asset_id
-               FROM bms.asset_group_members m
-               JOIN bms.asset_groups g ON g.id = m.asset_group_id AND g.location_id = $1::uuid
-              WHERE m.asset_group_id = $2::uuid
-           )`;
-    const { rows } = await this.pool.query<AssetRow>(
-      `SELECT a.id AS asset_id, a.code AS asset_code, a.name AS asset_name, a.domain,
-              ap.point_key, COALESCE(ap.unit, pk.unit) AS unit
-         FROM bms.assets a
-         JOIN bms.asset_points ap ON ap.asset_id = a.id AND ap.active = true
-         LEFT JOIN bms.point_keys pk ON pk.code = ap.point_key
-        WHERE a.location_id = $1::uuid
-          ${groupFilter}
-        ORDER BY a.code, ap.point_key`,
-      assetGroupId === null ? [locationId] : [locationId, assetGroupId],
-    );
-    return rows;
   }
 }
