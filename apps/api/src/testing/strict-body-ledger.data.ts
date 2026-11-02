@@ -419,6 +419,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "patchDraftBodySchema/draft/templates[]|1": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/templates[]|1/points[]": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/location": { strict: false, because: THREE_PRODUCERS },
+  // `F4.304` (plan C8, owner 2026-11-02): open on its parent's terms.
+  "patchDraftBodySchema/draft/location/floorArea": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/onboardingMeta": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/pointKeys[]": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/rtus[]": { strict: false, because: THREE_PRODUCERS },

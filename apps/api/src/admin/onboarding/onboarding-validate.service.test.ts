@@ -56,6 +56,20 @@ import {
 } from "./onboarding-validate.service.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
+describe("OnboardingValidateService — the draft location's floor area (F4.304)", () => {
+  it("FA1 — an area over the bound is a location.floorArea.value error", () => {
+    parent.assertFloorAreaOverTheBoundIsAFieldError();
+  });
+
+  it("FA2 — the same draft is not ready to commit", () => {
+    parent.assertFloorAreaOverTheBoundIsNotReadyToCommit();
+  });
+
+  it("FA3 — an area within the bound adds no error and the draft is ready", () => {
+    parent.assertFloorAreaWithinTheBoundIsReadyToCommit();
+  });
+});
+
 describe("OnboardingValidateService — a location with no type (F4.157)", () => {
   it("reports location.type and keeps readyToCommit false", () => {
     assertMissingLocationTypeIsAnError();

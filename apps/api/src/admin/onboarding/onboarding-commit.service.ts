@@ -19,10 +19,11 @@ import {
   rtus,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type {
-  JwtPayload,
-  OnboardingCommitResponseDto,
-  OnboardingDraft,
+import {
+  floorAreaM2Of,
+  type JwtPayload,
+  type OnboardingCommitResponseDto,
+  type OnboardingDraft,
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
@@ -432,6 +433,9 @@ export class OnboardingCommitService {
           capital: loc.capital ?? null,
           latitude: loc.latitude,
           longitude: loc.longitude,
+          // F4.304 (ADR 0108 Amendment 5 item 6): the draft keeps the typed
+          // value and unit; the column stores m², rounded by Postgres.
+          floorAreaM2: loc.floorArea ? String(floorAreaM2Of(loc.floorArea)) : null,
           active: true,
           // Owner ruling 20: `meta.seedKey` is seed-owned; a draft's is dropped.
           meta: requestMetaForCreate(loc.meta),

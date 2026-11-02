@@ -22,7 +22,7 @@ type DraftLocation = NonNullable<OnboardingDraft["location"]>;
  *
  * - `name` is the location name, already bounded by the caller.
  * - `stored` is the draft's current location: its coordinates, province and
- *   capital carry over.
+ *   capital carry over, and so do its parent code and floor area.
  * - `kept` is spread over the derived fields, so a kept non-empty `slug` or
  *   `code` wins; an empty one is derived from the name.
  * - `type` is written only when given.
@@ -55,6 +55,8 @@ export function deriveLocationPatch(input: {
     // F4.243 (ADR 0098 Amendment 2, B7): the stored parent choice survives a
     // rename or a type change; the call's own `parentCode` (in `kept`) wins.
     parentCode: stored?.parentCode,
+    // F4.304 (ADR 0108 Amendment 5 item 6): a rename keeps the area, as above.
+    floorArea: stored?.floorArea,
     ...kept,
     slug: kept?.slug || slug || "location",
     code: kept?.code || code || "LOC",

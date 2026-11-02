@@ -38,8 +38,15 @@ export type ParentCommitCtx = {
   readonly fx: TreeFixture;
   /** The commit service with an inventory that answers `candidates`. */
   commitService(candidates: readonly ParentCandidate[]): OnboardingCommitService;
-  /** A draft session in the run's organization whose location names `parentCode`. */
-  session(tag: string, parentCode: string | null): Promise<{ sessionId: string; draft: OnboardingDraft }>;
+  /**
+   * A draft session in the run's organization whose location names
+   * `parentCode`; `location` is spread over the draft location (`F4.304`).
+   */
+  session(
+    tag: string,
+    parentCode: string | null,
+    location?: Partial<NonNullable<OnboardingDraft["location"]>>,
+  ): Promise<{ sessionId: string; draft: OnboardingDraft }>;
 };
 
 function fail(message: string): never {
@@ -203,4 +210,30 @@ export async function assertACodeInAnotherCaseIsPlacedUnderTheCandidate(ctx: Par
   const { sessionId } = await ctx.session("c6", parentCode.toLowerCase());
   const committed = await commitAs(ctx, ctx.fx.orgAdmin, sessionId, [parentCode]);
   expect(await placedParent(ctx, committed.locationId)).toBe(parentId);
+}
+
+async function storedFloorArea(ctx: ParentCommitCtx, locationId: string): Promise<string | null> {
+  const { rows } = await ctx.superPool.query<{ area: string | null }>(
+    "SELECT floor_area_m2::text AS area FROM bms.locations WHERE id = $1",
+    [locationId],
+  );
+  return rows[0] === undefined ? fail(`location ${locationId} has no row`) : rows[0].area;
+}
+
+/**
+ * F1 (`F4.304`, ADR 0108 Amendment 5 item 6) — a draft area in ft² commits in
+ * m², rounded to 2 places by the database. Mutation: write `loc.floorArea.value`
+ * without `floorAreaM2Of` reddens it (`'1000.00'`).
+ */
+export async function assertAnFt2DraftAreaCommitsInSquareMetres(ctx: ParentCommitCtx): Promise<void> {
+  const { sessionId } = await ctx.session("f1", null, { floorArea: { value: 1000, unit: "ft2" } });
+  const committed = await commitAs(ctx, ctx.fx.orgAdmin, sessionId, []);
+  expect(await storedFloorArea(ctx, committed.locationId)).toBe("92.90");
+}
+
+/** F2 — a draft without `floorArea` commits `NULL`, "no area", never a zero. */
+export async function assertADraftWithoutAnAreaCommitsNull(ctx: ParentCommitCtx): Promise<void> {
+  const { sessionId } = await ctx.session("f2", null);
+  const committed = await commitAs(ctx, ctx.fx.orgAdmin, sessionId, []);
+  expect(await storedFloorArea(ctx, committed.locationId)).toBeNull();
 }

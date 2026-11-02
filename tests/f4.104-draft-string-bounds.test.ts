@@ -415,7 +415,9 @@ const HEADER_ARRAYS: Readonly<Record<string, string>> = {
 
 /** Non-vacuity for the header scan: the three arrays as the template writes them. */
 // F4.243 (ADR 0098 Amendment 2, B8): LOCATION gained `parent_code`, guarded by `refuseIfTooLong`.
-const HEADER_COUNTS: Readonly<Record<string, number>> = { LOCATION: 8, RTUS: 9, ASSETS: 5 };
+// F4.304 (ADR 0108 Amendment 5 item 6): LOCATION gained `floor_area` and `floor_area_unit`,
+// both bounded elsewhere (below).
+const HEADER_COUNTS: Readonly<Record<string, number>> = { LOCATION: 10, RTUS: 9, ASSETS: 5 };
 
 /**
  * The one guard call that covers two columns, and must keep covering both.
@@ -498,6 +500,10 @@ const BOUNDED_ELSEWHERE: Readonly<Record<string, Readonly<Record<string, string>
   LOCATION: {
     // F4.157: the folded cell must equal an active `bms.location_types` code.
     type: "activeLocationTypeCodes.includes(type)",
+    // F4.304: a plain decimal literal, then `Number.parseFloat` — no cell text survives.
+    floor_area: "FLOOR_AREA_CELL.test(areaCell)",
+    // F4.304: the folded cell must equal one of the two unit codes.
+    floor_area_unit: "floorAreaUnitSchema.options.find(",
   },
   RTUS: {
     topic: "topic.length > MAX_RTU_TOPIC_CHARS",

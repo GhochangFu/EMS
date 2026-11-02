@@ -5,7 +5,7 @@ import * as XLSX from "xlsx";
 // rather than restated. `@bms/shared` and not `@bms/shared/contracts` — apps/api
 // compiles with moduleResolution "node" and ignores the exports map (ADR 0030
 // Amendment 2).
-import { MAX_RTU_TOPIC_CHARS, ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
+import { floorAreaUnitSchema, MAX_RTU_TOPIC_CHARS, ONBOARDING_DRAFT_STRING_MAX } from "@bms/shared";
 import type { OnboardingDraft } from "@bms/shared";
 
 import { quoteCell, zipInflationProblem } from "../spreadsheet-guard";
@@ -205,7 +205,14 @@ const LOCATION_HEADERS = [
   // F4.243 (ADR 0098 Amendment 2, B8): the last column, so a workbook built
   // before it still reads; a missing column or an empty cell is a root.
   "parent_code",
+  // F4.304 (ADR 0108 Amendment 5 item 6): a trailing pair, so a workbook built
+  // before them still reads; a missing column or an empty `floor_area` is no area.
+  "floor_area",
+  "floor_area_unit",
 ] as const;
+
+/** `F4.304`: a plain decimal literal — no sign, grouping, exponent or unit. */
+const FLOOR_AREA_CELL = /^\d+(\.\d+)?$/;
 
 const RTU_HEADERS = [
   "rtu_code",
@@ -242,7 +249,8 @@ export class OnboardingExcelService {
       // F4.157 (owner ruling OQ3): the example row uses a seeded code that
       // describes an ordinary Ion Exchange site.
       // F4.243: `parent_code` empty — a top-level location; name an existing code to place it under one.
-      [locationExample, prefix, slug, "pump_station", "22.3159", "87.3222", "Odisha", ""],
+      // F4.304: an example floor area of 1200 m²; leave `floor_area` empty for no area.
+      [locationExample, prefix, slug, "pump_station", "22.3159", "87.3222", "Odisha", "", "1200", "m2"],
       [],
       ["RTUS"],
       [...RTU_HEADERS],
@@ -533,6 +541,32 @@ export class OnboardingExcelService {
       parentCode,
       ONBOARDING_DRAFT_STRING_MAX["location.parentCode"],
     );
+    // F4.304 (ADR 0108 Amendment 5 item 6, plan C10): the area and its unit,
+    // after `parent_code` in header order, inline so `tests/f4.104` reads both
+    // checks inside this method. `sectionRows` has already stringified and
+    // trimmed every cell, so a numeric cell `1200.5` arrives as `"1200.5"`. An
+    // empty `floor_area` (or a missing column) is `null`, no area. Otherwise
+    // the cell must be a plain decimal literal: `1,200`, `-5`, `1e3` and
+    // `1200 m2` refuse the upload, with a sentence that names the column and
+    // never the cell (§4.3). A bound fault is validate's
+    // `location.floorArea.value`, not this parser's. The unit is lower-cased,
+    // an empty one is `m2`, and anything other than the two codes refuses with
+    // its length only, in the `type` shape.
+    const areaCell = get("floor_area");
+    if (areaCell !== "" && !FLOOR_AREA_CELL.test(areaCell)) {
+      throw new BadRequestException(
+        "LOCATION row 1 has a floor_area that is not a number; use a plain decimal such as 1200 " +
+          "and upload the workbook again",
+      );
+    }
+    const unitCell = get("floor_area_unit").trim().toLowerCase();
+    const unit = unitCell === "" ? "m2" : floorAreaUnitSchema.options.find((option) => option === unitCell);
+    if (unit === undefined) {
+      throw new BadRequestException(
+        `LOCATION row 1 has an unknown floor_area_unit of ${unitCell.length} characters; ` +
+          `use one of ${floorAreaUnitSchema.options.join(", ")} and upload the workbook again`,
+      );
+    }
     return {
       name,
       code,
@@ -542,6 +576,7 @@ export class OnboardingExcelService {
       longitude: Number.isFinite(lng) ? lng : ONBOARDING_DEFAULT_COORDINATES.longitude,
       province: province || undefined,
       parentCode: parentCode === "" ? null : parentCode,
+      floorArea: areaCell === "" ? null : { value: Number.parseFloat(areaCell), unit },
     };
   }
 

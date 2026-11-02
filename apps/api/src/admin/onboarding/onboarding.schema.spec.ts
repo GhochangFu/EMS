@@ -485,6 +485,60 @@ export function assertApiDraftLocationParsesWithoutType(): void {
   );
 }
 
+/* -------------------------------------------------------------------------- */
+/* F4.304 (ADR 0108 Amendment 5 item 6, plan C8) — the draft's floor area      */
+/* -------------------------------------------------------------------------- */
+
+const DRAFT_LOCATION_BASE = {
+  code: "DEMO_LOC",
+  slug: "demo-loc",
+  name: "Demo Location",
+  latitude: -25.7,
+  longitude: 28.2,
+} as const;
+
+/** The bounded draft refuses an area below the bound, at `floorArea.value`. */
+export function assertDraftFloorAreaRefusesBelowTheBound(): void {
+  const parsed = draftLocationSchema.safeParse({ ...DRAFT_LOCATION_BASE, floorArea: { value: 0.5 } });
+  assert(!parsed.success, "a draft floorArea of 0.5 must be refused");
+  const paths = parsed.success ? [] : parsed.error.issues.map((i) => i.path.join("."));
+  assert(
+    paths.length === 1 && paths[0] === "floorArea.value",
+    `the refusal must be at floorArea.value only, got: ${JSON.stringify(paths)}`,
+  );
+}
+
+/** A value with no unit parses, and the parse carries the default `m2`. */
+export function assertDraftFloorAreaDefaultsTheUnitToM2(): void {
+  const parsed = draftLocationSchema.safeParse({ ...DRAFT_LOCATION_BASE, floorArea: { value: 1200 } });
+  assert(parsed.success, `{ value: 1200 } must parse, got: ${parsed.success ? "" : JSON.stringify(parsed.error.issues)}`);
+  const area = parsed.success ? parsed.data.floorArea : undefined;
+  assert(
+    JSON.stringify(area) === JSON.stringify({ value: 1200, unit: "m2" }),
+    `the parsed area must be { value: 1200, unit: "m2" }, got: ${JSON.stringify(area)}`,
+  );
+}
+
+/**
+ * C8 (owner, 2026-11-02): the draft node is open — an unknown key inside the
+ * area is dropped, never a refusal of the operator's whole turn. Mutation:
+ * `.strict()` instead of `.strip()`.
+ */
+export function assertDraftFloorAreaDropsAnUnknownKey(): void {
+  const parsed = draftLocationSchema.safeParse({
+    ...DRAFT_LOCATION_BASE,
+    floorArea: { value: 1, note: "x" },
+  });
+  assert(parsed.success, `an unknown key inside floorArea must not refuse, got: ${
+    parsed.success ? "" : JSON.stringify(parsed.error.issues)
+  }`);
+  const area = (parsed.success ? parsed.data.floorArea : null) as Record<string, unknown> | null | undefined;
+  assert(
+    area !== null && area !== undefined && area.value === 1 && !("note" in area),
+    `the unknown key must be absent from the parse, got: ${JSON.stringify(area)}`,
+  );
+}
+
 /**
  * D3 (`F4.170`, compliance review B1) — the generated document for
  * `PATCH :id/draft` says a draft location's `meta.seedKey` is seed-owned and

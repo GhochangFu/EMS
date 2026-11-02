@@ -18,6 +18,8 @@ import { buildFixture, dropFixture } from "../locations/locations.tree.integrati
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   assertACodeInAnotherCaseIsPlacedUnderTheCandidate,
+  assertADraftWithoutAnAreaCommitsNull,
+  assertAnFt2DraftAreaCommitsInSquareMetres,
   assertANullParentCommitsARoot,
   assertAnInactiveParentIsRefused,
   assertAnotherOrganizationsParentIsNotFound,
@@ -107,7 +109,7 @@ describe.skipIf(!connectionString)("F4.243 — the onboarding commit places the 
           {} as never,
           { listParentCandidates: async () => [...candidates] } as never,
         ),
-      async session(tag, parentCode) {
+      async session(tag, parentCode, extra) {
         const code = `F4243-${run}-${tag}`.toUpperCase();
         const draft = {
           location: {
@@ -118,6 +120,7 @@ describe.skipIf(!connectionString)("F4.243 — the onboarding commit places the 
             latitude: 0,
             longitude: 0,
             parentCode,
+            ...extra,
           },
           rtus: [
             {
@@ -195,5 +198,11 @@ describe.skipIf(!connectionString)("F4.243 — the onboarding commit places the 
   }, 30_000);
   it("C6 a stored code in another case is placed under the candidate", async () => {
     await assertACodeInAnotherCaseIsPlacedUnderTheCandidate(use());
+  }, 30_000);
+  it("F1 (F4.304) a draft area of 1000 ft2 commits floor_area_m2 92.90", async () => {
+    await assertAnFt2DraftAreaCommitsInSquareMetres(use());
+  }, 30_000);
+  it("F2 (F4.304) a draft without floorArea commits NULL", async () => {
+    await assertADraftWithoutAnAreaCommitsNull(use());
   }, 30_000);
 });

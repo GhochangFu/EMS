@@ -11,7 +11,30 @@ import {
   assertAnUnknownParentIsRefused,
   assertARenameKeepsTheStoredParent,
   assertTheDerivedPatchCarriesTheStoredParent,
+  assertARenameKeepsTheStoredArea,
+  assertSetLocationStoresTheAreaAsGiven,
+  assertTheCallsOwnAreaWins,
+  assertTheDerivedPatchCarriesTheStoredArea,
+  assertTheSetLocationDescriptionNamesTheArea,
 } from "./onboarding-agent-tools-location-parent.spec";
+
+describe("F4.304 — set_location carries the floor area (ADR 0108 Amendment 5 item 6)", () => {
+  it("FA1 stores the area as given", async () => {
+    await assertSetLocationStoresTheAreaAsGiven();
+  });
+  it("FA2 keeps the stored area across a rename", async () => {
+    await assertARenameKeepsTheStoredArea();
+  });
+  it("FA3 deriveLocationPatch carries the stored area", () => {
+    assertTheDerivedPatchCarriesTheStoredArea();
+  });
+  it("FA4 the call's own area wins over the stored one", () => {
+    assertTheCallsOwnAreaWins();
+  });
+  it("FA5 the set_location description names floorArea and square metres", () => {
+    assertTheSetLocationDescriptionNamesTheArea();
+  });
+});
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F4.243 — set_location takes a parent by code (ADR 0098 Amendment 2, B7)", () => {
