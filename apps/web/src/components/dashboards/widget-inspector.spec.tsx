@@ -278,6 +278,7 @@ const SITE_TYPES = [
   "module_summary_card",
   "critical_systems_list",
   "breaker_table",
+  "trend_strip",
 ] as const;
 
 export function aSiteWidgetHidesUnitDecimalsAndBoundPoints(): void {
@@ -467,4 +468,70 @@ export function theLayoutSourceHasNoCompactCheckbox(): void {
   row.config.mimicSource = "layout";
   renderInspector(row);
   expect(screen.queryByRole("checkbox", { name: /Compact/ })).toBeNull();
+}
+
+/**
+ * `F4.305` — the trend strip's inspector surface: "Scope" (Whole site, or one group-bound tab of the
+ * dashboard) and "Default range". Each absence sits beside the `value_tile` control.
+ */
+export function aTrendStripScopeOffersTheWholeSiteAndEachGroupBoundTab(): void {
+  renderInspector(blankDashboardWidgetRow("trend_strip"), { tabs: GROUP_TABS });
+  const select = screen.getByRole("combobox", { name: /^Scope/ }) as HTMLSelectElement;
+  expect(select.value).toBe("");
+  const labels = within(select)
+    .getAllByRole("option")
+    .map((option) => option.textContent);
+  expect(labels).toEqual(["Whole site", "Electrical"]);
+}
+
+export async function choosingAScopeWritesItsTabKeyToTheConfig(): Promise<void> {
+  const onChange = vi.fn();
+  renderInspector(blankDashboardWidgetRow("trend_strip"), { tabs: GROUP_TABS, onChange });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: /^Scope/ }), "electrical");
+  expect(onChange).toHaveBeenLastCalledWith({ config: expect.objectContaining({ stripTabKey: "electrical" }) });
+}
+
+export async function choosingTheWholeSiteClearsTheTabKey(): Promise<void> {
+  const onChange = vi.fn();
+  const row = blankDashboardWidgetRow("trend_strip");
+  row.config.stripTabKey = "electrical";
+  renderInspector(row, { tabs: GROUP_TABS, onChange });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: /^Scope/ }), "");
+  expect(onChange).toHaveBeenLastCalledWith({ config: expect.objectContaining({ stripTabKey: undefined }) });
+}
+
+/** A stored key the dashboard no longer has (or that binds no group) keeps its own option. */
+export function anUnknownStoredStripTabKeyStaysSelected(): void {
+  const row = blankDashboardWidgetRow("trend_strip");
+  row.config.stripTabKey = "gone";
+  renderInspector(row, { tabs: GROUP_TABS });
+  expect((screen.getByRole("combobox", { name: /^Scope/ }) as HTMLSelectElement).value).toBe("gone");
+}
+
+export function theDefaultRangeShowsTheStoredRange(): void {
+  const row = blankDashboardWidgetRow("trend_strip");
+  row.config.stripRange = "7d";
+  renderInspector(row, { tabs: GROUP_TABS });
+  expect((screen.getByRole("combobox", { name: /^Default range/ }) as HTMLSelectElement).value).toBe("7d");
+}
+
+export async function choosingARangeWritesItToTheConfig(): Promise<void> {
+  const onChange = vi.fn();
+  renderInspector(blankDashboardWidgetRow("trend_strip"), { tabs: GROUP_TABS, onChange });
+  await userEvent.selectOptions(screen.getByRole("combobox", { name: /^Default range/ }), "30d");
+  expect(onChange).toHaveBeenLastCalledWith({ config: expect.objectContaining({ stripRange: "30d" }) });
+}
+
+export function aStripTabProblemRendersUnderTheScope(): void {
+  renderInspector(blankDashboardWidgetRow("trend_strip"), {
+    tabs: GROUP_TABS,
+    problems: [{ widget: 0, field: "stripTabKey", message: "tab problem sentence" }],
+  });
+  expect(screen.getByText("tab problem sentence")).not.toBeNull();
+}
+
+export function aValueTileHasNoStripFields(): void {
+  renderInspector(blankDashboardWidgetRow("value_tile"), { tabs: GROUP_TABS });
+  expect(screen.queryByText("Default range", { exact: true })).toBeNull();
+  expect(screen.queryByText("Scope", { exact: true })).toBeNull();
 }

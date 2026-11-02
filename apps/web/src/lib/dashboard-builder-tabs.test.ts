@@ -13,6 +13,7 @@ import {
   runAddingATabAfterAGapSavesItLastTests,
   runMovingASiteWithSavedGroupTabsIsRefusedTests,
   runRenamingATabKeyCarriesItsWidgetsTests,
+  runRenamingATabKeyCarriesTheKeysThatNameItTests,
   runMovingATabRenumbersTests,
   runRemovingATabRemovesItsWidgetsTests,
   runMimicOfferedOnAGroupTabTests,
@@ -66,6 +67,10 @@ describe("F3.73 D11 dashboard builder tabs", () => {
 
   it("re-keying a tab carries its widgets and cards; a taken key is refused", () => {
     runRenamingATabKeyCarriesItsWidgetsTests();
+  });
+
+  it("re-keying a tab carries the strip and mimic keys that name it (F4.305 review)", () => {
+    runRenamingATabKeyCarriesTheKeysThatNameItTests();
   });
 
   it("moving a tab renumbers the order", () => {

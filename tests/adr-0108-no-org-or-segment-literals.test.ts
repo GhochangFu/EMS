@@ -102,6 +102,16 @@ const MODULES: readonly string[] = [
   "apps/web/src/lib/trend-strip.ts",
   "apps/web/src/components/control-room/sparkline.tsx",
   "apps/web/src/components/control-room/trend-strip.tsx",
+  // F4.305 (ADR 0108 Amendment 3) — U1.
+  "packages/shared/src/contracts/trend-strip-widget.ts",
+  // F4.305 U3.
+  "packages/db/src/site-layout-seed-upgrade-v5.ts",
+  // F4.305 U4.
+  "apps/web/src/components/widgets/trend-strip-widget.tsx",
+  "apps/web/src/components/dashboards/trend-strip-widget-live.tsx",
+  // F4.305 review (AGENTS.md §4.2) — split out of trend-strip.tsx and trend-strip-widget.tsx.
+  "apps/web/src/components/control-room/trend-strip-body.tsx",
+  "apps/web/src/components/widgets/trend-strip-widget-preview.tsx",
 ];
 
 /**

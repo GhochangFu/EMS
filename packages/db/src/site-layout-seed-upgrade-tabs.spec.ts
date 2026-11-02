@@ -1,5 +1,4 @@
 import type { SectionTemplateContent, SectionTemplateWidget } from "@bms/shared";
-import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 import { planOverviewUpgrade } from "./site-layout-seed-upgrade";
 import {
@@ -16,6 +15,7 @@ import {
   OVERVIEW_V3_WIDGETS,
   SLD_V3_WIDGETS,
   smocStandardV2Content,
+  smocStandardV4Content,
 } from "./site-layout-stock-history";
 
 /**
@@ -36,7 +36,8 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-const live = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent;
+/** The frozen v4 content: the live entry is v5 since `F4.305`, and these steps end at v4. */
+const v4Content: SectionTemplateContent = smocStandardV4Content();
 
 /** One template widget as a copy stores it: its rect (or `rect`), its config, its row counts. */
 function stored(
@@ -67,9 +68,9 @@ function v3Overview(): TabCopyWidget[] {
   return OVERVIEW_V3_WIDGETS.map((widget) => stored("overview", widget));
 }
 
-/** The live (v4) Overview as a copy with an `sld` tab stores it. */
+/** The frozen v4 Overview as a copy with an `sld` tab stores it. */
 function v4Overview(): TabCopyWidget[] {
-  const tab = live.tabs.find((candidate) => candidate.key === "overview");
+  const tab = v4Content.tabs.find((candidate) => candidate.key === "overview");
   return (tab?.widgets ?? []).map((widget) => stored("overview", widget));
 }
 
@@ -233,14 +234,14 @@ export function aV4OverviewIsNotUpgradedAgain(): void {
 }
 
 /**
- * U7 — the v2 → v3 step given a v4 Overview, with the live (v4) content as its `to`, writes
- * nothing and does not throw. `to` is the live entry on purpose: it holds the compact diagram,
+ * U7 — the v2 → v3 step given a v4 Overview, with the frozen v4 content as its `to`, writes
+ * nothing and does not throw. `to` is the v4 content on purpose: it holds the compact diagram,
  * which v2 does not, so a restored "new in the target version" throw fires here.
  */
 export function theV3StepLeavesAV4OverviewAndDoesNotThrow(): void {
   let got: string;
   try {
-    const plan = planOverviewUpgrade(v4Overview(), CSMOC_TABS, smocStandardV2Content(), live);
+    const plan = planOverviewUpgrade(v4Overview(), CSMOC_TABS, smocStandardV2Content(), v4Content);
     got = `${plan.deletes.length}/${plan.updates.length}/${plan.inserts.length}`;
   } catch (error) {
     got = `threw: ${(error as Error).message}`;
@@ -324,7 +325,7 @@ export function anUnboundKeptTileKeepsTheElectricalTab(): void {
 
 /** E5 — a v4 `sld` tab is not upgraded again. */
 export function aV4ElectricalTabIsNotUpgradedAgain(): void {
-  const tab = live.tabs.find((candidate) => candidate.key === "sld");
+  const tab = v4Content.tabs.find((candidate) => candidate.key === "sld");
   const v4 = (tab?.widgets ?? [])
     .filter((widget) => widget.key !== "sld-incomer-kw-tile" && widget.key !== "sld-incomer-pf-tile" && widget.key !== "sld-frequency-tile")
     .map((widget) => stored("sld", widget, widget.widgetType === "value_tile" ? { ...at(0, 0, 3, 2), points: 1 } : {}));

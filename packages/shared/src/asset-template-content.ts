@@ -233,7 +233,8 @@ export type TemplateDashboardWidget = {
       | "asset_class_strip"
       | "module_summary_card"
       | "critical_systems_list"
-      | "breaker_table";
+      | "breaker_table"
+      | "trend_strip";
   }
 >;
 

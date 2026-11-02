@@ -45,6 +45,11 @@ const { canonicalJson, OVERVIEW_V3_WIDGETS, SLD_V3_WIDGETS, smocStandardV3Conten
  * ({@link rewindToV3}, precondition-asserted), inside one `BEGIN` … `ROLLBACK` on the seed pool's
  * one connection, in ESKOM's tenant context as `bms_owner` (bound by FORCE ROW LEVEL SECURITY):
  * a database seeded by this code holds v4 already, and would prove nothing.
+ *
+ * **Since `F4.305` the seed holds v5**: the rewind first takes every tab back to v4
+ * ({@link dropTrendStrips}) and clears the copy's stamp, so the chain's v5 step runs again after the
+ * v4 steps, on every tab. A case that pins a tab "left whole" by a v4 gate reads that tab with its
+ * new strip taken out again ({@link withoutItsStrip}): the v5 step changes an edited tab too.
  */
 
 const ownerUrl = requireIntegrationDb({
@@ -67,7 +72,16 @@ type StoredWidget = { id: string; identity: string; tabKey: string; rect: string
 
 const mapRows = seedMapLocationRows(loadPheCatalog());
 const CSMOC_SLUG = siteLayoutSlug("csmoc-gauteng");
-const NOTHING = { descriptions: 0, widgets: 0, packed: 0, omittedTiles: 0, overviews: 0, overviewsV4: 0, electricalTabs: 0 };
+const NOTHING = {
+  descriptions: 0,
+  widgets: 0,
+  packed: 0,
+  omittedTiles: 0,
+  overviews: 0,
+  overviewsV4: 0,
+  electricalTabs: 0,
+  trendStrips: 0,
+};
 /** The two widgets v4 added, which v3 does not hold. */
 const V4_ONLY = ["overview|mimic|", "sld|breaker_table|Breakers"];
 
@@ -165,12 +179,54 @@ describe.skipIf(!ownerUrl)("F3.74 — the v3 → v4 seed upgrade of the seeded s
   }
 
   /**
+   * `F4.305` — CSMOC's copy back to stock v4: every `trend_strip` deleted, the widgets under it
+   * lifted by its height, and the copy's stock stamp cleared, so the v5 step runs on it again.
+   */
+  async function dropTrendStrips(pool: Pick<SeedPool, "query">): Promise<void> {
+    const widgets = await copyWidgets(pool);
+    for (const strip of widgets.filter((w) => w.identity.split("|")[1] === "trend_strip")) {
+      const [, y, , h] = strip.rect.split(",").map(Number) as [number, number, number, number];
+      const res = await pool.query(`DELETE FROM bms.dashboard_widgets WHERE id = $1`, [strip.id]);
+      assert(res.rowCount === 1, `precondition: ${strip.identity} was deleted`);
+      for (const below of widgets.filter((w) => w.tabKey === strip.tabKey && w.id !== strip.id)) {
+        if (Number(below.rect.split(",")[1]) < y + h) continue;
+        await pool.query(`UPDATE bms.dashboard_widgets SET grid_y = grid_y - $2 WHERE id = $1`, [below.id, h]);
+      }
+    }
+    const stamp = await pool.query(`UPDATE bms.dashboards SET stock_version = NULL WHERE organization_id = $1 AND slug = $2`, [
+      eskomOrgId,
+      CSMOC_SLUG,
+    ]);
+    assert(stamp.rowCount === 1, "precondition: CSMOC Gauteng holds the seeded copy");
+  }
+
+  /**
+   * One tab's shapes with the v5 step undone: its one `trend_strip` removed and the widgets under
+   * it lifted back by its height. Throws unless the tab holds exactly one strip, so a v5 step that
+   * skipped the tab cannot pass a "left whole" comparison.
+   */
+  function withoutItsStrip(widgets: readonly StoredWidget[], tabKey: string): string[] {
+    const tab = widgets.filter((w) => w.tabKey === tabKey);
+    const strips = tab.filter((w) => w.identity.split("|")[1] === "trend_strip");
+    assert(strips.length === 1, `${tabKey} holds ${strips.length} trend strips, not 1`);
+    const [, y, , h] = strips[0]!.rect.split(",").map(Number) as [number, number, number, number];
+    return tab
+      .filter((w) => w !== strips[0])
+      .map((w) => {
+        const [x, wy, ww, wh] = w.rect.split(",").map(Number) as [number, number, number, number];
+        return shapeOf({ ...w, rect: [x, wy >= y + h ? wy - h : wy, ww, wh].join(",") });
+      })
+      .sort();
+  }
+
+  /**
    * Puts CSMOC's Overview and electrical tab back to what the v3 seed's copy rule wrote: the two
    * v4-only widgets deleted, every other widget of the two tabs at its frozen v3 rect and config,
    * the one kept role tile (Main bus load, CSMOC's only bound electrical tile) packed to `0,0`.
    * Accepts a copy at v3 or v4; anything else fails a precondition. Other tabs are left as they are.
    */
   async function rewindToV3(pool: Pick<SeedPool, "query">): Promise<void> {
+    await dropTrendStrips(pool);
     const frozen = new Map<string, { rect: [number, number, number, number]; config: unknown }>();
     for (const [tabKey, widgets] of [["overview", OVERVIEW_V3_WIDGETS], ["sld", SLD_V3_WIDGETS]] as const) {
       for (const widget of widgets) {
@@ -277,7 +333,7 @@ describe.skipIf(!ownerUrl)("F3.74 — the v3 → v4 seed upgrade of the seeded s
       await pool.query(`UPDATE bms.dashboard_widgets SET grid_y = grid_y + 1 WHERE id = $1`, [tile?.id]);
       const overview = await shapesOf(pool, "overview");
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
-      expect({ overview: await shapesOf(pool, "overview"), sld: await shapesOf(pool, "sld") }).toEqual({
+      expect({ overview: withoutItsStrip(await copyWidgets(pool), "overview"), sld: await shapesOf(pool, "sld") }).toEqual({
         overview,
         sld: freshSld,
       });
@@ -293,7 +349,7 @@ describe.skipIf(!ownerUrl)("F3.74 — the v3 → v4 seed upgrade of the seeded s
       await pool.query(`UPDATE bms.dashboard_widgets SET grid_y = grid_y + 1 WHERE id = $1`, [rail?.id]);
       const sld = await shapesOf(pool, "sld");
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
-      expect({ overview: await shapesOf(pool, "overview"), sld: await shapesOf(pool, "sld") }).toEqual({
+      expect({ overview: await shapesOf(pool, "overview"), sld: withoutItsStrip(await copyWidgets(pool), "sld") }).toEqual({
         overview: freshOverview,
         sld,
       });
@@ -332,7 +388,7 @@ describe.skipIf(!ownerUrl)("F3.74 — the v3 → v4 seed upgrade of the seeded s
       expect({
         overviewsV4: outcome.overviewsV4,
         electricalTabs: outcome.electricalTabs,
-        sld: await shapesOf(pool, "sld"),
+        sld: withoutItsStrip(await copyWidgets(pool), "sld"),
       }).toEqual({ overviewsV4: 1, electricalTabs: 0, sld });
     });
   });
@@ -361,12 +417,12 @@ describe.skipIf(!ownerUrl)("F3.74 — the v3 → v4 seed upgrade of the seeded s
     });
   });
 
-  it("I5: supersedes the seed's stock-3 template row with a published stock-4 row and archives it", async () => {
+  it("I5: supersedes the seed's stock-3 template row with a published stock-5 row and archives it", async () => {
     await inTransaction(async (pool) => {
       await rewindTemplate(pool, 3, smocStandardV3Content());
       expect(await templateRows(pool)).toBe("1:published:3");
       await seedEskomSiteLayouts(pool, eskomOrgId, mapRows, () => undefined);
-      expect(await templateRows(pool)).toBe("1:archived:3,2:published:4");
+      expect(await templateRows(pool)).toBe("1:archived:3,2:published:5");
     });
   });
 });

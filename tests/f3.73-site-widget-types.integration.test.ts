@@ -129,6 +129,15 @@ describe.skipIf(!has)("F3.73 — site widget types and catalog keys against a li
     });
   });
 
+  // `F4.305` (ADR 0108 Amendment 3) — migration `0118` widened the CHECK by `trend_strip`.
+  it("accepts trend_strip (F4.305, migration 0118)", async () => {
+    await inTx(async (run) => {
+      const dash = await newDashboard(run);
+      const ok = await run(INSERT_WIDGET, [org, dash, "trend_strip"]);
+      expect(ok.rows.length, "trend_strip must be accepted").toBe(1);
+    });
+  });
+
   it("accepts both new catalog keys and still refuses an unknown one, naming the CHECK", async () => {
     await inTx(async (run) => {
       const dash = await newDashboard(run);

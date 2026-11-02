@@ -8,6 +8,7 @@ import {
   moduleSummaryCardConfigSchema,
   stateLegendConfigSchema,
 } from "./site-widgets";
+import { trendStripWidgetConfigSchema } from "./trend-strip-widget";
 import {
   bindingExclusiveMessage,
   bindingRequiredMessage,
@@ -109,6 +110,8 @@ export const TAB_KEY_REQUIRED_MESSAGE = "a dashboard with tabs needs a tabKey on
 /** `F3.73` Task 3.2 — a module summary card links to a tab of the same dashboard. */
 export const TAB_TARGET_UNKNOWN_MESSAGE =
   "a module summary card's targetTabKey must name one of the tabs in this request";
+/** `F4.305` — a trend strip's `config.tabKey` names a tab of this request. */
+export const TREND_STRIP_TAB_UNKNOWN_MESSAGE = "a trend strip's tabKey must name a tab in this request";
 export const DUPLICATE_TAB_KEY_MESSAGE =
   "two tabs may not share one key (dashboard_tabs_dashboard_id_tab_key_key)";
 /** Two body tabs naming one stored `id` would both write the same row, so the second silently
@@ -671,6 +674,8 @@ export const widgetWriteSchema = z.discriminatedUnion("widgetType", [
   bindsNothingArm("critical_systems_list", criticalSystemsListConfigSchema),
   // `F3.74` / ADR 0088 decision 10 — the breaker table; binds nothing, reads `GET :id/site-widgets`.
   bindsNothingArm("breaker_table", breakerTableConfigSchema),
+  // `F4.305` — the trend strip; binds nothing. Its `config.tabKey` is `tabRulesHold`'s check.
+  bindsNothingArm("trend_strip", trendStripWidgetConfigSchema),
 ]);
 
 const eachWidgetFitsTheGrid = (
@@ -931,6 +936,14 @@ const tabRulesHold = (
         code: z.ZodIssueCode.custom,
         path: ["widgets", index, "config", "targetTabKey"],
         message: TAB_TARGET_UNKNOWN_MESSAGE,
+      });
+    }
+    const stripTab = widget.widgetType === "trend_strip" ? widget.config.tabKey : undefined;
+    if (stripTab !== undefined && !keys.has(stripTab)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["widgets", index, "config", "tabKey"],
+        message: TREND_STRIP_TAB_UNKNOWN_MESSAGE,
       });
     }
     if (keys.size > 0 && widget.tabKey === undefined) {

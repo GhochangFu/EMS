@@ -360,6 +360,32 @@ export function runRenamingATabKeyCarriesItsWidgetsTests(): void {
   assert(renameBuilderTabKey(state, 1, "overview") === null, "a key another tab holds is refused");
 }
 
+/** `F4.305` review — a trend strip and a mimic name a tab by `config.tabKey` (stock v5 gives every
+ * domain tab a strip that names its own tab; the Overview's compact mimic names a group tab), so a
+ * rename moves those keys too and the dashboard still saves. Mutation: leave `stripTabKey` (or
+ * `mimicTabKey`) behind => red. */
+export function runRenamingATabKeyCarriesTheKeysThatNameItTests(): void {
+  const strip = onTab("hvac", "trend_strip");
+  strip.config = { ...strip.config, stripTabKey: "hvac" };
+  const mimic = onTab("overview", "mimic");
+  mimic.config = { ...mimic.config, mimicTabKey: "hvac" };
+  const other = onTab("overview", "trend_strip");
+  other.config = { ...other.config, stripTabKey: "overview" };
+  const state = {
+    tabs: [tabWrite("overview", 0), tabWrite("hvac", 1, "33333333-3333-4333-8333-333333333333")],
+    rows: [strip, mimic, other],
+  };
+  const next = renameBuilderTabKey(state, 1, "hvac-plant");
+  assert(next !== null, "a free key is accepted");
+  assert(next!.rows[0]!.config.stripTabKey === "hvac-plant", `the strip's tabKey follows — got ${JSON.stringify(next!.rows[0]!.config)}`);
+  assert(next!.rows[1]!.config.mimicTabKey === "hvac-plant", `the mimic's tabKey follows — got ${JSON.stringify(next!.rows[1]!.config)}`);
+  assert(next!.rows[2]!.config.stripTabKey === "overview", "a strip that names another tab keeps its key");
+  const keyProblems = dashboardBuilderErrors(next!.rows, "location", next!.tabs).filter(
+    (problem) => problem.field === "stripTabKey" || problem.field === "mimicTabKey",
+  );
+  assert(keyProblems.length === 0, `the renamed dashboard has no tab-key problem — got ${JSON.stringify(keyProblems)}`);
+}
+
 /** Moving a tab renumbers `sortOrder` from position. */
 export function runMovingATabRenumbersTests(): void {
   const moved = moveBuilderTab([tabWrite("a", 0), tabWrite("b", 1), tabWrite("c", 2)], 2, -1);

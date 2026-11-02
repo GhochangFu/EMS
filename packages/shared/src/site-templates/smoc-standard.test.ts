@@ -16,7 +16,8 @@ import {
   theEntryParsesUnderTheStockContract,
   theOfflineTileUsesTheOfflineIcon,
   theElectricalTabDrawsTheSingleLineAndOneBreakerTable,
-  theOverviewHoldsItsV4Rects,
+  theOverviewHoldsItsV5Rects,
+  everyTabHoldsOneTrendStripUnderItsTiles,
   theOverviewHoldsNoCardAndOneSystemsList,
   theOverviewMimicNamesTheElectricalTabCompactly,
   theTabsAreThePlanOrder,
@@ -25,11 +26,14 @@ import {
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F3.73 — the SMOC standard site layout (plan D8)", () => {
-  it("is the smoc-standard site-target stock row, version 4", () => {
+  it("is the smoc-standard site-target stock row, version 5", () => {
     theEntryIsTheSiteTargetStockRow();
   });
-  it("holds the v4 Overview rects (F3.74, ADR 0088 Amendment 2)", () => {
-    theOverviewHoldsItsV4Rects();
+  it("holds the v5 Overview rects (F4.305, ADR 0108 Amendment 3)", () => {
+    theOverviewHoldsItsV5Rects();
+  });
+  it("holds one trend strip under the top tile row of every tab (F4.305)", () => {
+    everyTabHoldsOneTrendStripUnderItsTiles();
   });
   it("gives each domain-tab widget its compact v2 size", () => {
     everyDomainTabWidgetHasItsCompactSize();
@@ -43,7 +47,7 @@ describe("F3.73 — the SMOC standard site layout (plan D8)", () => {
   it("leaves no empty row in a tab", () => {
     noTabLeavesAnEmptyRow();
   });
-  it("totals 12 rows on the Overview, 19 on the electrical tab and 14 on another tab with a mimic", () => {
+  it("totals 16 rows on the Overview, 23 on the electrical tab and 18 on another tab with a mimic", () => {
     theTabsTotalTheirCompactRows();
   });
   it("parses under the stock template contract", () => {

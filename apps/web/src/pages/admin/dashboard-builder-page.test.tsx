@@ -37,6 +37,8 @@ import {
   locationAdminCreatesOnItsOwnLocation,
   anOrganizationWideFillOnReviewDoesNotCreateForALocationAdmin,
   aBreakerTableOnAnOrganizationWideDashboardReachesReview,
+  aTrendStripOnAnOrganizationWideDashboardIsRefusedAtReview,
+  theTrendStripIsOfferedOnAnAssetGroupDashboard,
   aBreakerTableOnAnOrganizationWideDashboardSendsNoPut,
   cancellingClickOnlyLayoutWorkAsksFirst,
 } from "./dashboard-builder-page.spec";
@@ -179,6 +181,14 @@ describe("F3.1d dashboard builder page", () => {
 
   it("a Breaker table on an organization-wide dashboard sends no PUT (review compliance F1)", async () => {
     await aBreakerTableOnAnOrganizationWideDashboardSendsNoPut();
+  });
+
+  it("F4.305: + Trend strip is offered on an asset-group dashboard", async () => {
+    await theTrendStripIsOfferedOnAnAssetGroupDashboard();
+  });
+
+  it("F4.305: a trend strip on an organization-wide dashboard is refused at Review and sends no PUT", async () => {
+    await aTrendStripOnAnOrganizationWideDashboardIsRefusedAtReview();
   });
 
   it("cancelling click-only Layout work asks first (review C4)", async () => {

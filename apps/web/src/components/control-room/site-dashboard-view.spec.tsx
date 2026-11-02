@@ -7,6 +7,7 @@ import type {
   AlarmSeverityDto,
   DashboardDto,
   DashboardTabDto,
+  DashboardWidgetDto,
   ResolvedSiteControlRoomViewDto,
   SiteWidgetsResponse,
 } from "@bms/shared";
@@ -33,11 +34,20 @@ import { SiteDashboardView } from "./site-dashboard-view";
  * case if anything reached it — a throwing `fetch` alone proves nothing,
  * because react-query turns the throw into `isError`.
  */
-vi.mock("../dashboards/dashboard-live-canvas", () => ({
-  DashboardLiveCanvas: ({ dashboard, tabKey }: { dashboard: DashboardDto; tabKey?: string }) => (
-    <div data-testid="dashboard-live-canvas" data-dashboard-id={dashboard.id} data-tab-key={tabKey ?? "(all)"} />
-  ),
-}));
+vi.mock("../dashboards/dashboard-live-canvas", async () => {
+  const { TrendStripWidgetLive } = await import("../dashboards/trend-strip-widget-live");
+  return {
+    DashboardLiveCanvas: ({ dashboard, tabKey }: { dashboard: DashboardDto; tabKey?: string }) => (
+      <div data-testid="dashboard-live-canvas" data-dashboard-id={dashboard.id} data-tab-key={tabKey ?? "(all)"}>
+        {dashboard.widgets.map((widget) =>
+          widget.widgetType === "trend_strip" ? (
+            <TrendStripWidgetLive key={widget.id} widget={widget} locationId={dashboard.locationId} tabs={dashboard.tabs} />
+          ) : null,
+        )}
+      </div>
+    ),
+  };
+});
 
 const ORG_PHE = { id: "org-phewb", code: "PHEWB", name: "PHE West Bengal" };
 const SLUG = "phe-lotapata";
@@ -614,65 +624,69 @@ export async function aPendingMarkersReadDrawsNoMarker(): Promise<void> {
 }
 
 /**
- * `F4.301` U5 (ADR 0108 Amendment 2, item 9) — the strip under the canvas reads the selected
- * tab's asset group. `GROUPED` keeps the stock Overview (no group) first; `FIRST_GROUP` puts a
- * group tab first by `sortOrder`, with the array order reversed so a default that read the array
- * would go red.
+ * `F4.305` (ADR 0108 Amendment 3, item 7) — the view draws no fixed strip: the `trend_strip` widget
+ * on the canvas replaces it, so no tab shows two. The mocked canvas stands in for the real one by
+ * drawing each stored `trend_strip` widget through `TrendStripWidgetLive` (the real binding), which
+ * is the only way a read can start from this view.
  */
 const HVAC_GROUP_ID = "99999999-9999-4999-8999-999999999999";
 const GROUPED: DashboardDto = {
   ...DTO,
   tabs: [{ ...tab("hvac", "HVAC", 1), assetGroupId: HVAC_GROUP_ID }, tab("overview", "Overview", 0)],
 };
-const FIRST_GROUP: DashboardDto = {
-  ...DTO,
-  tabs: [tab("overview", "Overview", 1), { ...tab("hvac", "HVAC", 0), assetGroupId: HVAC_GROUP_ID }],
-};
 
-async function stripCalls(): Promise<unknown[][]> {
-  await screen.findByTestId("dashboard-live-canvas");
-  await waitFor(() => expect(trendStripRead).toHaveBeenCalled());
-  return trendStripRead?.mock.calls ?? [];
+function stripWidget(): DashboardWidgetDto {
+  return {
+    id: "strip-1",
+    dashboardId: DTO.id,
+    organizationId: ORG_PHE.id,
+    tabId: "tab-hvac",
+    widgetType: "trend_strip",
+    title: null,
+    gridX: 0,
+    gridY: 2,
+    gridW: 12,
+    gridH: 4,
+    points: [],
+    sources: [],
+    config: { tabKey: "hvac", defaultRange: "24h" },
+  } as unknown as DashboardWidgetDto;
 }
 
-/** U5a — a selected group tab narrows the strip to its asset group. Mutation: pass `null` => red. */
-export async function aGroupTabNarrowsTheStrip(): Promise<void> {
-  stubRead(GROUPED);
-  renderAtTab("hvac");
-  expect(await stripCalls()).toEqual([[LOCATION_ID, { range: "24h", assetGroupId: HVAC_GROUP_ID }]]);
-}
+const WITH_STRIP: DashboardDto = { ...GROUPED, widgets: [stripWidget()] };
 
-/** U5b — the bare path's strip follows the first stored tab when that tab has a group. */
-export async function theBarePathStripFollowsTheFirstTab(): Promise<void> {
-  stubRead(FIRST_GROUP);
-  renderAtTab();
-  expect(await stripCalls()).toEqual([[LOCATION_ID, { range: "24h", assetGroupId: HVAC_GROUP_ID }]]);
-}
-
-/** U5c — the bare path on a stock Overview (no group) reads the whole site. */
-export async function theStockOverviewStripIsTheWholeSite(): Promise<void> {
-  stubRead(GROUPED);
-  renderAtTab();
-  expect(await stripCalls()).toEqual([[LOCATION_ID, { range: "24h", assetGroupId: null }]]);
-}
-
-/** U5d — off the wall the strip renders under the canvas (U5e's positive control). */
-export async function theStripRendersUnderTheCanvas(): Promise<void> {
-  stubRead(TABBED);
-  renderAtTab();
-  const canvas = await screen.findByTestId("dashboard-live-canvas");
-  const strip = await screen.findByRole("heading", { name: "Trends" });
-  expect(canvas.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-}
-
-/** U5e — the wall renders no strip and makes no strip read. Mutation: drop the `!wall` guard => red. */
-export async function theWallRendersNoStrip(): Promise<void> {
-  stubRead(TABBED);
-  renderWall();
+async function settled(): Promise<void> {
   await screen.findByTestId("dashboard-live-canvas");
   await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
-  expect(screen.queryByRole("heading", { name: "Trends" })).toBeNull();
+}
+
+/** U5a — no strip widget: the view starts no strip read, with a group tab selected (a fixed mount would). */
+export async function aDashboardWithoutAStripWidgetMakesNoStripRead(): Promise<void> {
+  stubRead(GROUPED);
+  renderAtTab("hvac");
+  await settled();
   expect(trendStripRead?.mock.calls).toEqual([]);
+  expect(screen.queryByRole("heading", { name: "Trends" })).toBeNull();
+}
+
+/** U5b — one strip widget: exactly one read, and it is the widget's (its tab's group). */
+export async function oneStripWidgetMakesExactlyOneRead(): Promise<void> {
+  stubRead(WITH_STRIP);
+  renderAtTab("hvac");
+  await waitFor(() => expect(trendStripRead).toHaveBeenCalled());
+  await settled();
+  expect(trendStripRead?.mock.calls).toEqual([[LOCATION_ID, { range: "24h", assetGroupId: HVAC_GROUP_ID }]]);
+  expect(screen.getAllByRole("navigation", { name: "Trend range" })).toHaveLength(1);
+}
+
+/** U5c — the wall draws the widget: the same single read, and one range nav. */
+export async function theWallRendersTheStripWidget(): Promise<void> {
+  stubRead(WITH_STRIP);
+  renderWall();
+  await waitFor(() => expect(trendStripRead).toHaveBeenCalled());
+  await settled();
+  expect(trendStripRead?.mock.calls).toEqual([[LOCATION_ID, { range: "24h", assetGroupId: HVAC_GROUP_ID }]]);
+  expect(screen.getAllByRole("navigation", { name: "Trend range" })).toHaveLength(1);
 }
 
 /** Unmounts, restores the spies and fails the case if any read reached the network. */

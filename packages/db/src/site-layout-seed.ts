@@ -193,15 +193,23 @@ export const SITE_TEMPLATE_INSERT_SQL = `
 
 /** The organization's newest published `smoc-standard` version — what a copy is made from. */
 const SITE_TEMPLATE_READ_SQL = `
-  SELECT id, content
+  SELECT id, content, stock_version
     FROM bms.dashboard_templates
    WHERE organization_id = $1 AND code = $2 AND status = 'published' AND target = 'site'
    ORDER BY version DESC
    LIMIT 1
 `;
 
-/** A published site template, parsed. */
-export type SeededSiteTemplate = { readonly id: string; readonly content: SectionTemplateContent };
+/**
+ * A published site template, parsed, with its stock stamp (`null`: not a stock import). A copy
+ * made from it is stamped with that version (`F4.305`, owner answer C5), so the upgrade chain's
+ * v5 step does not run on a copy that already holds the v5 layout.
+ */
+export type SeededSiteTemplate = {
+  readonly id: string;
+  readonly content: SectionTemplateContent;
+  readonly stockVersion: number | null;
+};
 
 /**
  * Inserts v1 when absent and returns the newest published version, or `null` when there is none
@@ -224,7 +232,7 @@ export async function ensureSiteTemplate(
     entry.stockVersion,
   ]);
   await upgradeSeedSiteTemplate(pool, organizationId);
-  const res = await pool.query<{ id: string; content: unknown }>(SITE_TEMPLATE_READ_SQL, [
+  const res = await pool.query<{ id: string; content: unknown; stock_version: number | null }>(SITE_TEMPLATE_READ_SQL, [
     organizationId,
     entry.code,
   ]);
@@ -236,7 +244,7 @@ export async function ensureSiteTemplate(
       `ensureSiteTemplate: the published ${entry.code} template ${row.id} does not parse: ${parsed.error.message}`,
     );
   }
-  return { id: row.id, content: parsed.data };
+  return { id: row.id, content: parsed.data, stockVersion: row.stock_version ?? null };
 }
 
 /** Why a location got no copy. */
@@ -268,8 +276,8 @@ const GROUPS_SQL = `
    ORDER BY code
 `;
 const DASHBOARD_INSERT_SQL = `
-  INSERT INTO bms.dashboards (organization_id, slug, name, description, location_id, template_id)
-  VALUES ($1, $2, $3, $4, $5, $6)
+  INSERT INTO bms.dashboards (organization_id, slug, name, description, location_id, template_id, stock_version)
+  VALUES ($1, $2, $3, $4, $5, $6, $7)
   ON CONFLICT (organization_id, slug) DO NOTHING
   RETURNING id
 `;
@@ -391,6 +399,7 @@ export async function seedSiteLayouts(
       SITE_LAYOUT_COPY_DESCRIPTION,
       locationId,
       options.template.id,
+      options.template.stockVersion,
     ]);
     const dashboardId = dashboard.rows[0]?.id;
     if (!dashboardId) {

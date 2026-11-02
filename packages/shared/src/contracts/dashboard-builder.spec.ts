@@ -57,10 +57,10 @@ export function runDashboardBuilderTests(): void {
   // over it.
   // -------------------------------------------------------------------------
   assert(
-    widgetTypeSchema.options.length === 12,
-    `the widget vocabulary is twelve types (ADR 0047 decision 4; ADR 0048 decision 5 added ` +
+    widgetTypeSchema.options.length === 13,
+    `the widget vocabulary is thirteen types (ADR 0047 decision 4; ADR 0048 decision 5 added ` +
       `"table", ADR 0079 decision 1 added "mimic", F3.73 added the five site widgets, F3.74 added ` +
-      `"breaker_table"), got ` +
+      `"breaker_table", F4.305 added "trend_strip"), got ` +
       `${widgetTypeSchema.options.length}`,
   );
   assert(
@@ -78,8 +78,9 @@ export function runDashboardBuilderTests(): void {
         "module_summary_card",
         "critical_systems_list",
         "breaker_table",
+        "trend_strip",
       ]),
-    `widget types must match migration 0099's widened CHECK exactly — NOT 0050's, 0055's, ` +
+    `widget types must match migration 0118's widened CHECK (0099's plus trend_strip) exactly — NOT 0050's, 0055's, ` +
       `0086's or 0096's, which froze four, five, six and eleven and cannot be edited, got ` +
       `${JSON.stringify(widgetTypeSchema.options)}`,
   );
@@ -379,8 +380,9 @@ export function runWidgetPointCardinalityTests(): void {
         "module_summary_card",
         "critical_systems_list",
         "breaker_table",
+        "trend_strip",
       ]),
-    `exactly seven widget types bind nothing (ADR 0079 + F3.73 + F3.74), got ` +
+    `exactly eight widget types bind nothing (ADR 0079 + F3.73 + F3.74 + F4.305), got ` +
       `${JSON.stringify(widgetTypeSchema.options.filter(widgetTypeBindsNothing))}`,
   );
   // `F3.74` — the breaker table, by name: it binds nothing and a template cannot author it.
@@ -388,6 +390,16 @@ export function runWidgetPointCardinalityTests(): void {
   assert(
     !isTemplateAuthorableWidgetType("breaker_table"),
     "breaker_table reads the site-widgets endpoint and binds no point, so no template can author it",
+  );
+  // `F4.305` — the trend strip, by name: last in the vocabulary, binds nothing, not template-authorable.
+  assert(
+    widgetTypeSchema.options.at(-1) === "trend_strip",
+    "trend_strip must be the last widget type (migration 0118 appends it)",
+  );
+  assert(widgetTypeBindsNothing("trend_strip"), "trend_strip must bind neither a point nor a source");
+  assert(
+    !isTemplateAuthorableWidgetType("trend_strip"),
+    "trend_strip reads the F4.301 route and binds no point, so no template can author it",
   );
   // The template predicate: bindable by point keys, which needs a source minimum of zero AND a
   // point maximum above zero. `table` fails the first clause, `mimic` the second.

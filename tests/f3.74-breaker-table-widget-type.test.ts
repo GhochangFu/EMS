@@ -77,8 +77,13 @@ describe("F3.74 — migration 0099: the breaker_table widget type", () => {
     for (const type of previous) expect(now, `${type} must stay accepted`).toContain(type);
   });
 
-  it("lists exactly the contract's widgetTypeSchema", () => {
-    expect([...checkList(sqlOnly(read(MIGRATION_REL)))].sort()).toEqual([...widgetTypes()].sort());
+  // F4.305: 0118 is the effective CHECK now (thirteen); 0099 stays frozen at the twelve below it.
+  it("lists exactly the contract's widgetTypeSchema, less the F4.305 value", () => {
+    expect([...checkList(sqlOnly(read(MIGRATION_REL)))].sort()).toEqual(
+      widgetTypes()
+        .filter((value) => value !== "trend_strip")
+        .sort(),
+    );
   });
 
   it("contract declares breaker_table", () => {

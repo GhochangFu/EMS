@@ -738,3 +738,24 @@ export async function aLayoutFillWithTabsIsRefusedOnTheCreatePage(): Promise<voi
   );
   expect(within(layoutWizard()).queryByText("Filled tile")).toBeNull();
 }
+
+/**
+ * `F4.305` — "+ Trend strip" is offered on every scope kind (the positive control is the Asset group
+ * create; the Organization-wide one is the next case). Mutation: filter it out of `offerableWidgetTypes`
+ * for a non-location scope => red.
+ */
+export async function theTrendStripIsOfferedOnAnAssetGroupDashboard(): Promise<void> {
+  await createAs("Asset group");
+  expect(within(layoutWizard()).getByRole("button", { name: "+ Trend strip" })).toBeInTheDocument();
+}
+
+/** `F4.305` — on an organization-wide dashboard the strip reads no site, so the page reaches Review with
+ * the page's reason and sends no PUT. Mutation: drop the builder's site rule => the PUT goes out => red. */
+export async function aTrendStripOnAnOrganizationWideDashboardIsRefusedAtReview(): Promise<void> {
+  const putSpy = vi.spyOn(dashboardsApi, "putDashboardWidgets").mockResolvedValue(createdDashboard());
+  await createAs("Organization-wide");
+  await userEvent.click(within(layoutWizard()).getByRole("button", { name: "+ Trend strip" }));
+  await submitWizard(layoutWizard);
+  expect(within(layoutWizard()).getByText("Fix the problems on the Layout step to save.")).toBeInTheDocument();
+  expect(putSpy).not.toHaveBeenCalled();
+}

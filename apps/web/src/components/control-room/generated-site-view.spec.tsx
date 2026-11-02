@@ -240,12 +240,12 @@ function reading(assetId: string, pointKey: string, value: number): TelemetryRea
 
 const PARTIAL_LINE = /Partial scope/;
 
-/** W1a — one panel heading per domain, in DTO order; the `F4.301` strip's `Trends` closes the list. */
+/** W1a — one panel heading per domain, in DTO order, after the `F4.301` strip's `Trends` (`F4.305` moved it up under the tiles). */
 export async function domainHeadingsInDtoOrder(): Promise<void> {
   renderView();
   await screen.findByText("AHU-01");
   const headings = screen.getAllByRole("heading", { level: 2 }).map((h) => h.textContent);
-  expect(headings).toEqual(["HVAC", "Electrical", "Trends"]);
+  expect(headings).toEqual(["Trends", "HVAC", "Electrical"]);
 }
 
 /** F4.301 U5a — the whole-site strip reads the 24 h range with no asset group. */
@@ -255,14 +255,27 @@ export async function theStripReadsTheWholeSite(): Promise<void> {
   expect(mocks.fetchSiteTrendStrip.mock.calls).toEqual([[LOCATION_ID, { range: "24h", assetGroupId: null }]]);
 }
 
-/** F4.301 U5b — the strip renders after the last domain panel, outside it. */
-export async function theStripFollowsTheDomainPanels(): Promise<void> {
+/**
+ * F4.305 (Amendment 3, item 7) — the fixed strip sits directly under the KPI tile row, before the
+ * first domain panel. Mutation: put it back after the panels => red on the second assertion.
+ */
+export async function theStripSitsBetweenTheTilesAndTheFirstPanel(): Promise<void> {
   renderView();
   await screen.findByText("AHU-01");
-  const lastPanel = screen.getByRole("heading", { level: 2, name: "Electrical" }).closest("section");
   const strip = screen.getByRole("heading", { level: 2, name: "Trends" });
-  expect(lastPanel?.contains(strip)).toBe(false);
-  expect((lastPanel?.compareDocumentPosition(strip) ?? 0) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  const lastTile = screen.getByText("RTUs");
+  const firstPanel = screen.getByRole("heading", { level: 2, name: "HVAC" });
+  expect(lastTile.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(strip.compareDocumentPosition(firstPanel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+/** F4.305 — on a partial scope the strip comes after the partial-scope note, still before the panels. */
+export async function theStripFollowsThePartialScopeNote(): Promise<void> {
+  renderView({ dashboard: kpis("partial") });
+  await screen.findByText("AHU-01");
+  const note = screen.getByText(PARTIAL_LINE);
+  const strip = screen.getByRole("heading", { level: 2, name: "Trends" });
+  expect(note.compareDocumentPosition(strip) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 }
 
 /** W1b — each panel states its asset count. */

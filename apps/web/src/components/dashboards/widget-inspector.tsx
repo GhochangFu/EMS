@@ -4,6 +4,7 @@ import {
   METRIC_CATALOG,
   MIMIC_PRESETS,
   mimicPresetSchema,
+  trendStripRangeSchema,
   widgetTypeBindsNothing,
 } from "@bms/shared";
 import type { AssetPointPickerRow, MetricCatalogKey, MimicPreset, UserRole, WidgetPointRole } from "@bms/shared";
@@ -376,6 +377,48 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, onC
             />
             Show the Alarm Summary tab
           </label>
+        </div>
+      ) : null}
+
+      {/*
+        `F4.305` — the trend strip: Scope is the whole site, or the group of one tab of THIS dashboard
+        (`config.tabKey`; the select lists the group-bound tabs, the mimic's rule), and Default range is
+        the range the strip opens on. A stored key the dashboard no longer offers keeps its own option,
+        so the select never shows another scope; the builder reports it until the author re-chooses.
+      */}
+      {row.widgetType === "trend_strip" ? (
+        <div className="grid gap-3 md:grid-cols-2">
+          <Field label="Scope" error={problemFor("stripTabKey")}>
+            <select
+              value={row.config.stripTabKey ?? ""}
+              onChange={(event) => updateConfig({ stripTabKey: event.target.value || undefined })}
+              className="surface-field w-full px-2 py-1.5 text-xs"
+            >
+              <option value="">Whole site</option>
+              {row.config.stripTabKey !== undefined && !groupTabs.some((tab) => tab.key === row.config.stripTabKey) ? (
+                <option value={row.config.stripTabKey}>{row.config.stripTabKey}</option>
+              ) : null}
+              {groupTabs.map((tab) => (
+                <option key={tab.key} value={tab.key}>
+                  {tab.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Default range" error={problemFor("stripRange")}>
+            <select
+              value={row.config.stripRange ?? ""}
+              onChange={(event) => updateConfig({ stripRange: event.target.value as WidgetConfigRow["stripRange"] })}
+              className="surface-field w-full px-2 py-1.5 text-xs"
+            >
+              {(row.config.stripRange ?? "") === "" ? <option value="">Choose a range</option> : null}
+              {trendStripRangeSchema.options.map((range) => (
+                <option key={range} value={range}>
+                  {range}
+                </option>
+              ))}
+            </select>
+          </Field>
         </div>
       ) : null}
 

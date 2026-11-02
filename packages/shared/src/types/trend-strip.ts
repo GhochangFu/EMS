@@ -6,6 +6,7 @@
 import type { z } from "zod";
 
 import type * as TS from "../contracts/trend-strip";
+import type * as TSW from "../contracts/trend-strip-widget";
 
 export type TrendStripRange = z.infer<typeof TS.trendStripRangeSchema>;
 export type SiteTrendStripQuery = z.infer<typeof TS.siteTrendStripQuerySchema>;
@@ -13,3 +14,6 @@ export type TrendStripAssetSeriesDto = z.infer<typeof TS.trendStripAssetSeriesSc
 export type TrendStripPointDto = z.infer<typeof TS.trendStripPointSchema>;
 export type TrendStripSegmentDto = z.infer<typeof TS.trendStripSegmentSchema>;
 export type SiteTrendStripDto = z.infer<typeof TS.siteTrendStripSchema>;
+
+/** `F4.305` — the `trend_strip` widget's stored config. */
+export type TrendStripWidgetConfig = z.infer<typeof TSW.trendStripWidgetConfigSchema>;

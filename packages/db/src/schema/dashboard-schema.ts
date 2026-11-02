@@ -222,6 +222,10 @@ export const dashboards = bmsSchema.table(
     // and dashboards_asset_stamp_check (assetTemplateId implies assetId) all live in migration
     // 0073 and are pinned by tests/f3.2-asset-dashboards-schema.test.ts.
     assetTemplateId: uuid("asset_template_id").references(() => assetTemplates.id),
+    // F4.305, migration 0118 — the stock layout version this copy was last upgraded to; NULL
+    // means "never stamped". Written by the seed copy, the API copy action and the v5 upgrade,
+    // so an administrator's deleted strip is not re-inserted. `templateId` stays provenance.
+    stockVersion: integer("stock_version"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -308,8 +312,9 @@ export const dashboardTabs = bmsSchema.table(
  * held the four: `radial_gauge`, `tank_level`, `value_tile`, `chart`. `0055` added `table`,
  * `0086` added `mimic`, and `0096` (F3.73) added the five site widgets — `active_alarms_rail`,
  * `state_legend`, `asset_class_strip`, `module_summary_card`, `critical_systems_list` — for
- * eleven, and `0099` (F3.74) added `breaker_table` for twelve; `tests/f3.73-site-widget-types.test.ts`
- * and `tests/f3.74-breaker-table-widget-type.test.ts` compare the list to `widgetTypeSchema`.
+ * eleven, `0099` (F3.74) added `breaker_table` for twelve, and `0118` (F4.305) added `trend_strip`
+ * for thirteen; `tests/f3.73-site-widget-types.test.ts`, `tests/f3.74-breaker-table-widget-type.test.ts`
+ * and `tests/f4.305-trend-strip-widget-type.test.ts` compare the list to `widgetTypeSchema`.
  *
  * **Grid position is on the row, not in `config`.** ADR 0047 decision 3 reserves `config` for
  * options the *renderer alone* consumes; position is read by the builder, by ordering and by

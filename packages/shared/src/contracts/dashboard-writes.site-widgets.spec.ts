@@ -3,6 +3,7 @@ import { expectAccepts, expectRejectsAt, POINT_A } from "./dashboard-writes.spec
 import {
   putDashboardWidgetsBodySchema,
   TAB_TARGET_UNKNOWN_MESSAGE,
+  TREND_STRIP_TAB_UNKNOWN_MESSAGE,
 } from "./dashboard-writes";
 
 /**
@@ -129,6 +130,74 @@ export function refusesAnUnknownKeyInABreakerTableConfig(): void {
     ["widgets", 0, "config"],
     [],
     "the breaker table config is .strict(): it configures nothing",
+  );
+}
+
+const trendStrip = {
+  ...slot,
+  gridW: 12,
+  gridH: 4,
+  widgetType: "trend_strip" as const,
+  config: { defaultRange: "24h" },
+  tabKey: "overview",
+};
+
+/** `F4.305` (ADR 0108 Amendment 3) — the thirteenth type, `trend_strip`; binds nothing. */
+export function acceptsATrendStripWithEachRange(): void {
+  for (const defaultRange of ["24h", "7d", "30d"]) {
+    expectAccepts(
+      putDashboardWidgetsBodySchema,
+      tabbed({ ...trendStrip, config: { defaultRange } }),
+      `a trend_strip with defaultRange ${defaultRange} must parse`,
+    );
+  }
+}
+
+export function acceptsATrendStripNamingATabOfTheRequest(): void {
+  expectAccepts(
+    putDashboardWidgetsBodySchema,
+    tabbed({ ...trendStrip, config: { tabKey: "hvac", defaultRange: "7d" } }),
+    "a trend_strip whose config.tabKey names a tab of the request must parse",
+  );
+}
+
+export function refusesATrendStripWithAnUnknownRange(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    tabbed({ ...trendStrip, config: { defaultRange: "1y" } }),
+    ["widgets", 0, "config", "defaultRange"],
+    [],
+    "defaultRange is one of 24h, 7d, 30d",
+  );
+}
+
+export function refusesAnUnknownKeyInATrendStripConfig(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    tabbed({ ...trendStrip, config: { defaultRange: "24h", colour: "red" } }),
+    ["widgets", 0, "config"],
+    [],
+    "the trend strip config is .strict()",
+  );
+}
+
+export function refusesAPointOnATrendStrip(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    tabbed({ ...trendStrip, points: [{ pointId: POINT_A }] }),
+    ["widgets", 0, "points"],
+    [],
+    "a trend strip binds nothing, so a point binding is capped at zero",
+  );
+}
+
+export function refusesATrendStripNamingAnUnknownTab(): void {
+  expectRejectsAt(
+    putDashboardWidgetsBodySchema,
+    tabbed({ ...trendStrip, config: { tabKey: "water", defaultRange: "24h" } }),
+    ["widgets", 0, "config", "tabKey"],
+    [TREND_STRIP_TAB_UNKNOWN_MESSAGE],
+    "a trend strip's config.tabKey must name a tab of the request",
   );
 }
 

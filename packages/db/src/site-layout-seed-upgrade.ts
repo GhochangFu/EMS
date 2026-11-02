@@ -18,6 +18,7 @@ import {
   type TabCopyWidget,
   type TabUpgradePlan,
 } from "./site-layout-seed-upgrade-tabs";
+import { planTrendStripV5Upgrade, TREND_STRIP_STOCK_VERSION } from "./site-layout-seed-upgrade-v5";
 import {
   type GridRect,
   SMOC_STANDARD_V1_RECTS,
@@ -36,8 +37,9 @@ export { type GridRect, siteTemplateRects, siteWidgetIdentity } from "./site-lay
  * on. It moves the seed's own rows to the current stock version and leaves every row an
  * administrator touched. The past versions it recognises are frozen in
  * `site-layout-stock-history.ts`, and the per-tab planners are `site-layout-seed-upgrade-tabs.ts`.
- * **The next version (v5) adds its step here**: freeze v4 there, then add the step after
- * {@link upgradeElectricalV4} in {@link upgradeSeededSiteLayoutCopies}.
+ * v4 is frozen there (`smocStandardV4Content`, which the v3 → v4 steps take as their `to`); the
+ * v5 step ({@link upgradeTrendStripV5}) runs after {@link upgradeElectricalV4} in
+ * {@link upgradeSeededSiteLayoutCopies}, last in the chain.
  *
  * **The chain, per seed-owned copy, in order** (the locations `site-layout-seed.ts` resolves,
  * the slug it gives, a `smoc-standard` template stamp):
@@ -59,6 +61,13 @@ export { type GridRect, siteTemplateRects, siteWidgetIdentity } from "./site-lay
  *    `lv_single_line`, gains the "Breakers" table under the mimic, and its alarm rail and asset
  *    table move down five rows ({@link upgradeElectricalV4}). Both insert a widget row with no
  *    binding row. The other tabs did not change in v4.
+ * 5. **v4 → v5** (`F4.305`, ADR 0108 Amendment 3 items 5 and 8; {@link upgradeTrendStripV5}):
+ *    one `trend_strip` under the top tile row of **every** tab, edited tabs included — a recorded
+ *    exception to the rule above, for this one widget — and the widgets below it moved down by its
+ *    height (`planTrendStripV5Upgrade`, `site-layout-seed-upgrade-v5.ts`). Its gate is not the
+ *    tab's shape but the copy's `stock_version` stamp (owner answer C5): the step runs on a copy
+ *    stamped below 5 or not at all, then stamps it 5, so a strip an administrator deletes stays
+ *    deleted. A fresh copy is stamped at insert with its template's stock version.
  *
  * A copy stores no widget key, so a widget is known by its tab key, widget type and title
  * ({@link siteWidgetIdentity}), which is unique per tab.
@@ -71,7 +80,8 @@ export { type GridRect, siteTemplateRects, siteWidgetIdentity } from "./site-lay
  * newer row — an administrator's draft or version — leaves both alone. The copies keep their
  * `template_id` stamp.
  *
- * **Idempotent.** Each step's gate is the exact shape its own previous step wrote, so a second
+ * **Idempotent.** Each step's gate (v1–v4) is the exact shape its own previous step wrote, and the
+ * v5 step's is the copy's stamp, so a second
  * run finds nothing to do and writes nothing. Every write runs in the caller's
  * `withOrganization` bracket, holds the read values in its predicate and checks its row count: a
  * FORCE-RLS write can drop a row without raising.
@@ -360,7 +370,7 @@ export async function upgradeSeedSiteTemplate(
  * `smoc-standard` template. Params: `[organizationId, locationIds, prefix, code]`.
  */
 const SEEDED_COPIES_SQL = `
-  SELECT d.id, d.description
+  SELECT d.id, d.description, d.stock_version
     FROM bms.dashboards d
     JOIN bms.locations l ON l.id = d.location_id
     JOIN bms.dashboard_templates t ON t.id = d.template_id
@@ -400,7 +410,19 @@ const PACK_WIDGETS_SQL = `
     JOIN bms.dashboard_tabs t ON t.id = w.tab_id
    WHERE w.dashboard_id = $1 AND w.organization_id = $2
 `;
-const COPY_TABS_SQL = `SELECT id, tab_key FROM bms.dashboard_tabs WHERE dashboard_id = $1 AND organization_id = $2`;
+const COPY_TABS_SQL = `
+  SELECT id, tab_key, asset_group_id FROM bms.dashboard_tabs WHERE dashboard_id = $1 AND organization_id = $2
+`;
+/**
+ * The v5 step's stamp (owner answer C5): the read value is in the predicate (`IS NOT DISTINCT
+ * FROM`, it may be `NULL`), and the row count is checked, so a copy another seed stamped since
+ * the read — or a FORCE-RLS write that dropped the row — throws. Params: `[dashboardId,
+ * organizationId, stockVersion, readStockVersion]`.
+ */
+export const COPY_STAMP_SQL = `
+  UPDATE bms.dashboards SET stock_version = $3, updated_at = now()
+   WHERE id = $1 AND organization_id = $2 AND stock_version IS NOT DISTINCT FROM $4::int
+`;
 /**
  * A tab step's insert: the copy's own insert shape (`site-layout-seed.ts`), the widget row only,
  * and only while the tab holds no widget of that type and title (`IS NOT DISTINCT FROM`: the
@@ -462,6 +484,8 @@ export type SiteLayoutCopyUpgrade = {
   readonly overviewsV4: number;
   /** Electrical tabs the v3 → v4 step moved (`lv_single_line` and the breaker table). */
   readonly electricalTabs: number;
+  /** Trend strips the v4 → v5 step inserted, one per tab of a copy stamped below 5. */
+  readonly trendStrips: number;
 };
 
 type PackWidgetRow = {
@@ -483,9 +507,17 @@ async function readCopy(
   pool: Pick<pg.Pool, "query">,
   organizationId: string,
   dashboardId: string,
-): Promise<{ widgets: TabCopyWidget[]; tabKeys: string[]; tabIds: Map<string, string> }> {
+): Promise<{
+  widgets: TabCopyWidget[];
+  tabKeys: string[];
+  tabIds: Map<string, string>;
+  tabs: { key: string; assetGroupId: string | null }[];
+}> {
   const stored = await pool.query<PackWidgetRow>(PACK_WIDGETS_SQL, [dashboardId, organizationId]);
-  const tabs = await pool.query<{ id: string; tab_key: string }>(COPY_TABS_SQL, [dashboardId, organizationId]);
+  const tabs = await pool.query<{ id: string; tab_key: string; asset_group_id: string | null }>(COPY_TABS_SQL, [
+    dashboardId,
+    organizationId,
+  ]);
   return {
     widgets: stored.rows.map((row) => ({
       id: row.id,
@@ -502,6 +534,7 @@ async function readCopy(
     })),
     tabKeys: tabs.rows.map((row) => row.tab_key),
     tabIds: new Map(tabs.rows.map((row) => [row.tab_key, row.id])),
+    tabs: tabs.rows.map((row) => ({ key: row.tab_key, assetGroupId: row.asset_group_id ?? null })),
   };
 }
 
@@ -635,6 +668,33 @@ async function upgradeElectricalV4(
   return writes(plan) ? 1 : 0;
 }
 
+/**
+ * The v4 → v5 step on one copy (`planTrendStripV5Upgrade`), last in the chain: only while the
+ * copy's stamp read below {@link TREND_STRIP_STOCK_VERSION} (or `NULL`), then the stamp, checked.
+ * Every tab is planned, edited or not; a tab already holding a `trend_strip` is left whole.
+ * Returns the number of strips inserted.
+ */
+async function upgradeTrendStripV5(
+  pool: Pick<pg.Pool, "query">,
+  organizationId: string,
+  dashboardId: string,
+  stockVersion: number | null,
+): Promise<number> {
+  if (stockVersion !== null && stockVersion >= TREND_STRIP_STOCK_VERSION) return 0;
+  const copy = await readCopy(pool, organizationId, dashboardId);
+  const plan = planTrendStripV5Upgrade(copy.widgets, copy.tabs);
+  await applyTabPlan(pool, organizationId, dashboardId, copy.tabIds, { deletes: [], updates: [], ...plan }, "trend strip");
+  const res = await pool.query(COPY_STAMP_SQL, [dashboardId, organizationId, TREND_STRIP_STOCK_VERSION, stockVersion]);
+  if (res.rowCount !== 1) {
+    throw new Error(
+      `upgradeSeededSiteLayoutCopies: the stock stamp of ${dashboardId} updated ${res.rowCount} of 1 rows. ` +
+        "Either another seed stamped it since this one read it, or a FORCE-RLS write dropped the row without " +
+        "raising: check this runs inside the organization's tenant bracket.",
+    );
+  }
+  return plan.inserts.length;
+}
+
 const SLD_TAB_GROUP_SQL = `
   SELECT asset_group_id FROM bms.dashboard_tabs WHERE dashboard_id = $1 AND organization_id = $2 AND tab_key = $3
 `;
@@ -717,7 +777,8 @@ async function packCopy(
  * Moves each seed-owned copy at `locationIds` along the chain: to v2 where it still holds the v1
  * seed's values, then packs each tab still exactly as the seed wrote it ({@link planCopyPackUpgrade}),
  * then moves an Overview still at its packed v2 plan to v3 ({@link planOverviewUpgrade}), then
- * moves an Overview and an electrical tab still at v3 to v4, each on its own gate.
+ * moves an Overview and an electrical tab still at v3 to v4, each on its own gate, then gives a
+ * copy stamped below v5 one trend strip per tab and stamps it ({@link upgradeTrendStripV5}).
  */
 export async function upgradeSeededSiteLayoutCopies(
   pool: Pick<pg.Pool, "query">,
@@ -725,7 +786,7 @@ export async function upgradeSeededSiteLayoutCopies(
   locationIds: readonly string[],
   slugPrefix: string,
 ): Promise<SiteLayoutCopyUpgrade> {
-  const copies = await pool.query<{ id: string; description: string | null }>(SEEDED_COPIES_SQL, [
+  const copies = await pool.query<{ id: string; description: string | null; stock_version: number | null }>(SEEDED_COPIES_SQL, [
     organizationId,
     locationIds,
     slugPrefix,
@@ -738,6 +799,7 @@ export async function upgradeSeededSiteLayoutCopies(
   let overviews = 0;
   let overviewsV4 = 0;
   let electricalTabs = 0;
+  let trendStrips = 0;
   for (const copy of copies.rows) {
     const description = upgradedCopyDescription(copy.description);
     if (description !== null) {
@@ -787,6 +849,8 @@ export async function upgradeSeededSiteLayoutCopies(
     // After the v2 → v3 step, so a copy still at v1 or v2 reaches v4 in the same boot.
     overviewsV4 += await upgradeOverviewV4(pool, organizationId, copy.id);
     electricalTabs += await upgradeElectricalV4(pool, organizationId, copy.id);
+    // Last: the strip goes under the tile row the earlier steps left, and the stamp closes the copy.
+    trendStrips += await upgradeTrendStripV5(pool, organizationId, copy.id, copy.stock_version ?? null);
   }
-  return { descriptions, widgets, packed, omittedTiles, overviews, overviewsV4, electricalTabs };
+  return { descriptions, widgets, packed, omittedTiles, overviews, overviewsV4, electricalTabs, trendStrips };
 }

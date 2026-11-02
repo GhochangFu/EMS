@@ -131,6 +131,8 @@ type SiteTemplate = {
   version: number;
   name: string;
   content: SectionTemplateContent;
+  /** The template's stock stamp (`null`: not a stock import), stamped on the copy (`F4.305`). */
+  stockVersion: number | null;
 };
 
 type TemplateRow = typeof dashboardTemplates.$inferSelect;
@@ -347,6 +349,9 @@ export class SiteLayoutService {
             locationId: site.id,
             // ADR 0049 decision 2 — the version stamp; the web knows a copy by it (ruling Q5).
             templateId: template.id,
+            // F4.305 (owner answer C5) — the stock version the copy holds, so the seed's v5 step
+            // does not add a second trend strip to a copy made from a v5 template.
+            stockVersion: template.stockVersion,
           })
           .returning({ id: dashboards.id });
         const dashboardId = dashboardRow?.id as string;
@@ -604,6 +609,7 @@ export class SiteLayoutService {
       version: row.version,
       name: row.name,
       content,
+      stockVersion: row.stockVersion ?? null,
     };
   }
 

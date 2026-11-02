@@ -170,13 +170,13 @@ export function pheReportsTheFourDroppedCards(): void {
 
 /**
  * `F3.77` plan D1 — the stock Overview holds no card, so a PHE copy drops none. The kept
- * Overview still carries its nine widgets (v4 adds the compact diagram, `F3.74`): the adjacent
- * positive, so an empty plan cannot pass.
+ * Overview still carries its ten widgets (v4 adds the compact diagram, `F3.74`; v5 the trend
+ * strip, `F4.305`): the adjacent positive, so an empty plan cannot pass.
  */
 export function theSmocOverviewHasNoCardToDrop(): void {
   const plan = planned(planSiteLayout(SMOC_TABS, PHE_GROUPS));
   const overview = plan.tabs.find((row) => row.tab.key === "overview");
-  assert(overview?.tab.widgets.length === 9, `PHE Overview widgets: got ${overview?.tab.widgets.length}`);
+  assert(overview?.tab.widgets.length === 10, `PHE Overview widgets: got ${overview?.tab.widgets.length}`);
   assert(plan.droppedCards.length === 0, `PHE dropped cards: got ${JSON.stringify(plan.droppedCards)}`);
 }
 
@@ -456,7 +456,8 @@ export function aTileWhoseMemberLacksThePointKeyIsOmitted(): void {
 export function aBoundTileAndEveryUnboundWidgetAreKept(): void {
   const { plans } = omitUnboundTiles("sld", sldPlans(["kw"]));
   assert(
-    keysOf(plans) === "sld-incomer-kw-tile,sld-mimic,sld-breaker-table,sld-alarms-rail,sld-assets-table",
+    keysOf(plans) ===
+      "sld-incomer-kw-tile,sld-trend-strip,sld-mimic,sld-breaker-table,sld-alarms-rail,sld-assets-table",
     `kept widgets: got ${keysOf(plans)}`,
   );
 }
@@ -473,10 +474,19 @@ export function theKeptTilesArePackedLeft(): void {
   assert(tile?.widget.gridX === 0 && tile.widget.gridY === 0, `pf tile at ${tile?.widget.gridX},${tile?.widget.gridY}`);
 }
 
+/**
+ * A tab whose tiles are all omitted lifts its body by the tile row: the trend strip (stock v5,
+ * `F4.305`) to `y0`, where the seed's v5 step puts it on a copy with no tile, and the mimic under
+ * it to `y4`.
+ */
 export function aTabThatLosesEveryTileLiftsItsBody(): void {
   const { plans } = omitUnboundTiles("sld", sldPlans([]));
-  const mimic = plans.find((plan) => plan.widget.key === "sld-mimic");
-  assert(mimic?.widget.gridY === 0, `sld mimic with no tile at y ${mimic?.widget.gridY}`);
+  const rectOf = (key: string): string => {
+    const widget = plans.find((plan) => plan.widget.key === key)?.widget;
+    return widget === undefined ? "none" : `${widget.gridX},${widget.gridY},${widget.gridW},${widget.gridH}`;
+  };
+  const got = `${rectOf("sld-trend-strip")};${rectOf("sld-mimic")}`;
+  assert(got === "0,0,12,4;0,4,12,7", `sld strip;mimic with no tile: got ${got}`);
 }
 
 // ---- F3.74: an Overview mimic that names an omitted tab (plan D7) ------------------------------

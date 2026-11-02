@@ -56,6 +56,7 @@ const dashboardRow = {
   // organization-wide.
   assetId: null,
   assetTemplateId: null,
+  stockVersion: null,
   createdAt: new Date("2026-08-01T00:00:00.000Z"),
   updatedAt: new Date("2026-08-02T00:00:00.000Z"),
 };

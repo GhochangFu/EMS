@@ -7,6 +7,7 @@ import {
   gaugeRangeIsOrdered,
   isTemplateAuthorableWidgetType,
   pointAggregateFunctionSchema,
+  trendStripRangeSchema,
   widgetIconSchema,
   widgetToneSchema,
   widgetTypeSchema,
@@ -18,6 +19,7 @@ import type {
   MimicPreset,
   PointAggregateFunction,
   TemplateAuthorableWidgetType,
+  TrendStripRange,
   WidgetIcon,
   WidgetType,
 } from "@bms/shared";
@@ -259,6 +261,12 @@ export type WidgetConfigRow = {
   // module_summary_card — `F3.73`. The tab the card links to. Absent is "not chosen": there is no
   // default, because any key would name a tab the author never picked.
   targetTabKey?: string;
+  // trend_strip — `F4.305`. `config.tabKey`: the tab whose bound group scopes the strip; absent is the
+  // whole site. Optional, the mimic idiom, because a template can never hold a trend strip.
+  stripTabKey?: string;
+  // trend_strip — `F4.305`. `config.defaultRange`; absent or "" is "not chosen" and refused. A blank
+  // row sets "24h" (`blankDashboardWidgetRow`).
+  stripRange?: TrendStripRange | "";
 };
 
 export function blankConfigRow(): WidgetConfigRow {
@@ -380,6 +388,12 @@ export function widgetConfigErrors(
     if ((config.targetTabKey ?? "") === "") {
       push("targetTabKey", "Choose the tab this card links to.");
     }
+  } else if (widget.widgetType === "trend_strip") {
+    // `F4.305` — the range is required (the stored config is canonical); the tab is optional, and
+    // that it names a tab of THIS dashboard is the API rule (`tabRulesHold`) and the builder's.
+    if (!trendStripRangeSchema.safeParse(config.stripRange).success) {
+      push("stripRange", "Choose the default range of the strip.");
+    }
   } else if (widget.widgetType === "mimic") {
     // `F3.32c` — the source select decides which of the two checks applies. `mimicSource`
     // defaults to `"preset"` on every row `blankDashboardWidgetRow` or `configRowFromDto`
@@ -403,6 +417,7 @@ type ChartConfig = Extract<DashboardWidgetSpec, { widgetType: "chart" }>["config
 type TableConfig = Extract<DashboardWidgetSpec, { widgetType: "table" }>["config"];
 type MimicConfig = Extract<DashboardWidgetSpec, { widgetType: "mimic" }>["config"];
 type ActiveAlarmsRailConfig = Extract<DashboardWidgetSpec, { widgetType: "active_alarms_rail" }>["config"];
+type TrendStripConfig = Extract<DashboardWidgetSpec, { widgetType: "trend_strip" }>["config"];
 type ModuleSummaryCardConfig = Extract<DashboardWidgetSpec, { widgetType: "module_summary_card" }>["config"];
 
 /** `unit`/`decimals` are common to every arm's config and are added only when
@@ -598,4 +613,20 @@ export function buildModuleSummaryCardConfig(config: WidgetConfigRow): ModuleSum
     throw new Error("A module summary card has no tab chosen; validate the row before building its payload.");
   }
   return { targetTabKey: config.targetTabKey };
+}
+
+/**
+ * The `trend_strip` config (`F4.305`). **No `buildCommonConfig` spread**: the schema has no unit or
+ * decimals. `tabKey` is written only when chosen. **Throws on an unchosen range**, the
+ * `buildMimicConfig` rule: `widgetConfigErrors` refuses that row first.
+ */
+export function buildTrendStripConfig(config: WidgetConfigRow): TrendStripConfig {
+  const parsed = trendStripRangeSchema.safeParse(config.stripRange);
+  if (!parsed.success) {
+    throw new Error("A trend strip has no default range chosen; validate the row before building its payload.");
+  }
+  return {
+    ...(config.stripTabKey !== undefined && config.stripTabKey !== "" ? { tabKey: config.stripTabKey } : {}),
+    defaultRange: parsed.data,
+  };
 }

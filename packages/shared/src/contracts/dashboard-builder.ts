@@ -10,6 +10,7 @@ import {
   moduleSummaryCardConfigSchema,
   stateLegendConfigSchema,
 } from "./site-widgets";
+import { trendStripWidgetConfigSchema } from "./trend-strip-widget";
 
 /**
  * `F3.1a` — the configurable-dashboard contract (ADR 0047).
@@ -78,9 +79,10 @@ import {
  */
 
 /**
- * The twelve widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5;
+ * The thirteen widget types, closed (ADR 0047 decision 2; `"table"` added by ADR 0048 decision 5;
  * `"mimic"` by ADR 0079 decision 1; five site widgets by `F3.73`, ADR 0087 decision 11;
- * `"breaker_table"` by `F3.74`, ADR 0088 decision 10).
+ * `"breaker_table"` by `F3.74`, ADR 0088 decision 10; `"trend_strip"` by `F4.305`, ADR 0108
+ * Amendment 3).
  *
  * No comment may sit inside the `z.enum` array: the repo gates parse it with a split on commas,
  * and a comment line would swallow the value after it.
@@ -88,12 +90,12 @@ import {
  * **Five migrations declare this list, and only the last is current.** `0050` froze the
  * original four in `dashboard_widgets_widget_type_check`; `F3.35` Stage B's `0055` dropped and
  * re-added that constraint with `table`; `F3.32`'s `0086` does the same with `mimic`; `F3.73`'s
- * `0096` adds the five site widgets; `F3.74`'s `0099` adds `breaker_table`. A committed migration
+ * `0096` adds the five site widgets; `F3.74`'s `0099` adds `breaker_table`; `F4.305`'s `0118` adds `trend_strip`. A committed migration
  * is frozen by the pre-commit hook, so `0050` still reads four, `0055` five, `0086` six and
  * `0096` eleven, and always will.
  *
  * `tests/f3.73-site-widget-types.test.ts` and `tests/f3.74-breaker-table-widget-type.test.ts`
- * compare this enum against `0099`'s list;
+ * compare this enum against `0118`'s list;
  * `tests/f3.32-mimic-widget.test.ts` pins `0086` to its six,
  * `tests/f3.35-table-widget-schema.test.ts` pins `0055` to its five and
  * `tests/f3.1a-dashboard-schema.test.ts` pins `0050` to its four. All are correct at once: the
@@ -112,6 +114,7 @@ export const widgetTypeSchema = z.enum([
   "module_summary_card",
   "critical_systems_list",
   "breaker_table",
+  "trend_strip",
 ]);
 
 /**
@@ -420,6 +423,7 @@ export const dashboardWidgetSpecSchema = z.discriminatedUnion("widgetType", [
     config: criticalSystemsListConfigSchema,
   }),
   z.object({ widgetType: z.literal("breaker_table"), config: breakerTableConfigSchema }),
+  z.object({ widgetType: z.literal("trend_strip"), config: trendStripWidgetConfigSchema }),
 ]);
 
 /**
@@ -499,6 +503,7 @@ export const WIDGET_POINT_CARDINALITY: Record<
   module_summary_card: { min: 0, max: 0 },
   critical_systems_list: { min: 0, max: 0 },
   breaker_table: { min: 0, max: 0 },
+  trend_strip: { min: 0, max: 0 },
 };
 
 /**
@@ -538,6 +543,7 @@ export const WIDGET_SOURCE_CARDINALITY: Record<
   module_summary_card: { min: 0, max: 0 },
   critical_systems_list: { min: 0, max: 0 },
   breaker_table: { min: 0, max: 0 },
+  trend_strip: { min: 0, max: 0 },
 };
 
 /**
@@ -796,6 +802,8 @@ export const WIDGET_SOURCE_SHAPES: Record<
   critical_systems_list: [],
   // `F3.74` — nor does the breaker table.
   breaker_table: [],
+  // `F4.305` — nor does the trend strip.
+  trend_strip: [],
 };
 
 /**

@@ -2,6 +2,9 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aDashboardWithoutAStripWidgetMakesNoStripRead,
+  oneStripWidgetMakesExactlyOneRead,
+  theWallRendersTheStripWidget,
   aGroupTabLinkIsNamedByItsStatus,
   aPendingMarkersReadDrawsNoMarker,
   aTabOutsideScopeSaysSoNeverAZero,
@@ -35,11 +38,6 @@ import {
   theWallHidesTheTitle,
   theWallKeepsTheTabStrip,
   theWallShowsNoOpenLink,
-  aGroupTabNarrowsTheStrip,
-  theBarePathStripFollowsTheFirstTab,
-  theStockOverviewStripIsTheWholeSite,
-  theStripRendersUnderTheCanvas,
-  theWallRendersNoStrip,
 } from "./site-dashboard-view.spec";
 
 /**
@@ -187,28 +185,20 @@ describe("F3.73 D10 SiteDashboardView tabs", () => {
   });
 });
 
-describe("F4.301 U5 SiteDashboardView trend strip", () => {
+describe("F4.305 SiteDashboardView draws no fixed trend strip", () => {
   afterEach(() => {
     cleanupView();
   });
 
-  it("U5a a selected group tab passes its asset group to the strip", async () => {
-    await aGroupTabNarrowsTheStrip();
+  it("U5a a dashboard with no strip widget makes no strip read", async () => {
+    await aDashboardWithoutAStripWidgetMakesNoStripRead();
   });
 
-  it("U5b the bare path passes the first tab's asset group", async () => {
-    await theBarePathStripFollowsTheFirstTab();
+  it("U5b one strip widget makes exactly one strip read", async () => {
+    await oneStripWidgetMakesExactlyOneRead();
   });
 
-  it("U5c the bare path on a stock Overview passes null", async () => {
-    await theStockOverviewStripIsTheWholeSite();
-  });
-
-  it("U5d renders the strip under the canvas", async () => {
-    await theStripRendersUnderTheCanvas();
-  });
-
-  it("U5e the wall renders no strip", async () => {
-    await theWallRendersNoStrip();
+  it("U5c the wall renders the strip widget", async () => {
+    await theWallRendersTheStripWidget();
   });
 });

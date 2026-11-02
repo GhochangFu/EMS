@@ -12,6 +12,7 @@ import {
   theCanvasReportsTheNewerCatalogRead,
   theCanvasReportsTheNewerSample,
   theCanvasReportsTheSiteWidgetsRead,
+  aTrendStripWidgetDrawsOneStripWithItsTabsGroup,
 } from "./dashboard-live-canvas.spec";
 
 /**
@@ -63,5 +64,9 @@ describe("F3.69 U1 DashboardLiveCanvas", () => {
 
   it("L9 reports the tab's site-widgets read when there is no sample and no catalog read (F3.77 D9)", async () => {
     await theCanvasReportsTheSiteWidgetsRead();
+  });
+
+  it("L10 draws one trend strip for a trend_strip widget, reading its tab's group (F4.305)", async () => {
+    await aTrendStripWidgetDrawsOneStripWithItsTabsGroup();
   });
 });

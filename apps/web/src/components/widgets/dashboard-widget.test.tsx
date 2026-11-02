@@ -22,6 +22,7 @@ import {
   aLayoutMimicDispatchedWithoutItsReadDrawsNothing,
   aNonReadySiteWidgetDrawsThePlaceholderNotItsBody,
   theFiveSiteWidgetsDispatchedWithoutTheirReadDrawTheirOwnEmptyState,
+  aTrendStripDispatchedWithoutItsReadDrawsItsFrameAndReadsNothing,
 } from "./dashboard-widget.spec";
 
 /**
@@ -97,6 +98,10 @@ describe("F3.1c widget rendering", () => {
 
   it("F3.73 draws the frame placeholder, not the body, for a non-ready site widget", () => {
     aNonReadySiteWidgetDrawsThePlaceholderNotItsBody();
+  });
+
+  it("F4.305 draws a trend strip dispatched without its read as its static frame, reading nothing", async () => {
+    await aTrendStripDispatchedWithoutItsReadDrawsItsFrameAndReadsNothing();
   });
 });
 

@@ -820,6 +820,13 @@
       "when": 1793466617000,
       "tag": "0117_trend_points",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1793500000000,
+      "tag": "0118_trend_strip_widget_type",
+      "breakpoints": true
     }
   ]
 }

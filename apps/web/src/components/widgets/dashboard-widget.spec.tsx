@@ -8,6 +8,7 @@ import type { DashboardWidgetDto, WidgetType } from "@bms/shared";
 
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 import { DashboardWidget, type WidgetData } from "./dashboard-widget";
+import { TREND_STRIP_STATIC_SENTENCE } from "./trend-strip-widget-preview";
 
 /**
  * `F3.1c` — what a person actually sees when a widget renders (ADR 0042
@@ -121,6 +122,9 @@ function sampleWidget(widgetType: WidgetType, title: string | null = "Feed pump 
     // `F3.74` — the breaker table binds nothing either.
     case "breaker_table":
       return { ...IDENTITY, title, widgetType, config: {} };
+    // `F4.305` — the trend strip binds nothing; `defaultRange` is its one required key.
+    case "trend_strip":
+      return { ...IDENTITY, title, widgetType, config: { defaultRange: "24h" } };
     default: {
       const unreachable: never = widgetType;
       return unreachable;
@@ -141,11 +145,11 @@ const WIDGET_TYPES = Object.keys(WIDGET_CATALOG) as WidgetType[];
 export function everyCatalogTypeDrawsItsTitle(): void {
   expect(
     WIDGET_TYPES.length,
-    "the catalog holds twelve widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
+    "the catalog holds thirteen widget types (ADR 0047 decision 2; `table` added by ADR 0048 " +
       "decision 5, `F3.35` Stage B; `mimic` by ADR 0079 decision 1, `F3.32`; the five site " +
-      "widgets by `F3.73`; `breaker_table` by `F3.74`). A zero means the walk is broken and the loop below asserts nothing; a " +
-      "thirteen means a type was added — widen this number and say so.",
-  ).toBe(12);
+      "widgets by `F3.73`; `breaker_table` by `F3.74`; `trend_strip` by `F4.305`). A zero means the walk is broken and the loop " +
+      "below asserts nothing; a fourteen means a type was added — widen this number and say so.",
+  ).toBe(13);
 
   for (const widgetType of WIDGET_TYPES) {
     const { unmount } = render(
@@ -472,4 +476,21 @@ export function aNonReadySiteWidgetDrawsThePlaceholderNotItsBody(): void {
   );
   expect(screen.getByText("Loading…")).toBeInTheDocument();
   expect(screen.queryByText("No active alarms")).not.toBeInTheDocument();
+}
+
+/**
+ * `F4.305` — this dispatcher has no site and no tabs, so a `trend_strip` drawn here is the static
+ * preview: its frame and title, the fixed sentence, and no read (the spec's `fetch` is a rejecting
+ * spy, so a read would fail the case). The live canvas branches to `TrendStripWidgetLive` first.
+ */
+export async function aTrendStripDispatchedWithoutItsReadDrawsItsFrameAndReadsNothing(): Promise<void> {
+  const fetchSpy = vi.fn(() => Promise.reject(new Error("dashboard-widget spec: a trend strip reached fetch")));
+  vi.stubGlobal("fetch", fetchSpy);
+  render(withSiteProviders(<DashboardWidget widget={sampleWidget("trend_strip", "Site trends")} data={READY_AT_750} />));
+  expect(screen.getByRole("heading", { name: "Site trends" })).toBeInTheDocument();
+  expect(screen.getByText(TREND_STRIP_STATIC_SENTENCE)).toBeInTheDocument();
+  expect(screen.queryByRole("navigation", { name: "Trend range" })).toBeNull();
+  await Promise.resolve();
+  expect(fetchSpy).not.toHaveBeenCalled();
+  vi.unstubAllGlobals();
 }

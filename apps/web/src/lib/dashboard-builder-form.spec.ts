@@ -1,4 +1,4 @@
-import { DASHBOARD_GRID, MAX_DASHBOARD_WIDGETS } from "@bms/shared";
+import { DASHBOARD_GRID, MAX_DASHBOARD_WIDGETS, TREND_STRIP_TAB_UNKNOWN_MESSAGE, TREND_STRIP_WIDGET_ROWS } from "@bms/shared";
 import type { DashboardDto, DashboardWidgetDto, DashboardWidgetPointDto } from "@bms/shared";
 
 import { WIDGET_CATALOG } from "./widget-catalog";
@@ -16,6 +16,7 @@ import {
   unselectedDashboardBuilderProblems,
   BREAKER_TABLE_NEEDS_ASSET_GROUP_MESSAGE,
   MIMIC_NEEDS_ASSET_GROUP_MESSAGE,
+  TREND_STRIP_NEEDS_SITE_MESSAGE,
   SCOPE_PROBLEM_FIELD,
   type DashboardWidgetRow,
 } from "./dashboard-builder-form";
@@ -893,4 +894,73 @@ export function runSiteWidgetsRoundTripTests(): void {
     assert(widget.points.length === 0 && widget.sources.length === 0, `${type} binds nothing`);
   });
   assert(!builderHasChanged(dashboardRowsFromDto(dto), dto), "an unedited set of site widgets is no change");
+}
+
+// -------------------------------------------------------------------------------------------
+// `F4.305` (ADR 0108 Amendment 3) — the trend strip in the builder's row model.
+// -------------------------------------------------------------------------------------------
+
+/** A new strip is 12 x TREND_STRIP_WIDGET_ROWS, on 24h, with no tab (the whole site). */
+export function runBlankTrendStripRowTests(): void {
+  const row = blankDashboardWidgetRow("trend_strip");
+  assert(row.gridW === 12 && row.gridH === TREND_STRIP_WIDGET_ROWS, `got ${row.gridW}x${row.gridH}`);
+  assert(row.config.stripRange === "24h" && row.config.stripTabKey === undefined, JSON.stringify(row.config));
+  assert(row.points.length === 0 && row.sources.length === 0, "binds nothing");
+}
+
+/** Offered on every scope kind (the route is gated by the dashboard's site, not by the picker). */
+export function runTrendStripOfferedOnEveryScopeTests(): void {
+  for (const kind of ["organization", "location", "asset", "assetGroup"] as const) {
+    assert(offerableWidgetTypes(kind).includes("trend_strip"), `a ${kind} dashboard offers trend_strip`);
+  }
+}
+
+/** Both stored configs re-save unchanged, and an unedited set is no change. Mutation: drop the read-back
+ * arm => `stripRange` is lost and the re-save throws or changes the config. */
+export function runTrendStripRoundTripTests(): void {
+  const stored: unknown[] = [{ defaultRange: "7d" }, { tabKey: "hvac", defaultRange: "30d" }];
+  const dto = dashboardDto(stored.map((config, index) => siteDto("trend_strip", config, `strip-${index}`)));
+  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dto), []);
+  stored.forEach((config, index) => {
+    const widget = payload.widgets[index]!;
+    assert(
+      widget.widgetType === "trend_strip" && JSON.stringify(widget.config) === JSON.stringify(config),
+      `a stored trend strip re-saves its own config — got ${JSON.stringify(widget)}`,
+    );
+  });
+  assert(!builderHasChanged(dashboardRowsFromDto(dto), dto), "an unedited set of strips is no change");
+}
+
+/** The strip reads the site of the dashboard: a non-location scope is flagged on the scope field; a
+ * location dashboard is clean; an unknown `tabKey` is the API's sentence on `stripTabKey`. */
+export function runTrendStripNeedsASiteTests(): void {
+  const tabs = [
+    { key: "overview", label: "Overview", assetGroupId: null },
+    { key: "hvac", label: "HVAC", assetGroupId: "g-1" },
+  ];
+  const strip = (tabKey?: string) => {
+    const row = { ...blankDashboardWidgetRow("trend_strip"), tabKey: "overview" };
+    if (tabKey !== undefined) {
+      row.config.stripTabKey = tabKey;
+    }
+    return row;
+  };
+  const clean = dashboardBuilderErrors([strip()], "location", tabs);
+  assert(clean.length === 0, `a strip on a location dashboard is clean — got ${JSON.stringify(clean)}`);
+  const named = dashboardBuilderErrors([strip("hvac")], "location", tabs);
+  assert(named.length === 0, `a strip naming a tab is clean — got ${JSON.stringify(named)}`);
+  for (const kind of ["organization", "assetGroup", "asset"] as const) {
+    const flagged = dashboardBuilderErrors([strip()], kind, [tabs[0]!]);
+    assert(
+      JSON.stringify(flagged) ===
+        JSON.stringify([{ widget: 0, field: SCOPE_PROBLEM_FIELD, message: TREND_STRIP_NEEDS_SITE_MESSAGE }]),
+      `a strip on a ${kind} dashboard is flagged — got ${JSON.stringify(flagged)}`,
+    );
+  }
+  const unknown = dashboardBuilderErrors([strip("nope")], "location", tabs);
+  assert(
+    JSON.stringify(unknown) ===
+      JSON.stringify([{ widget: 0, field: "stripTabKey", message: TREND_STRIP_TAB_UNKNOWN_MESSAGE }]),
+    `an unknown tabKey is flagged — got ${JSON.stringify(unknown)}`,
+  );
 }

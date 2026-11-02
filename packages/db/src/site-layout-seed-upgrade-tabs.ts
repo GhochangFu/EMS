@@ -7,8 +7,6 @@ import {
   type SectionTemplateContent,
   type SectionTemplateWidget,
 } from "@bms/shared";
-import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
-
 import {
   canonicalJson,
   type GridRect,
@@ -17,6 +15,7 @@ import {
   siteWidgetIdentity,
   smocStandardV2Content,
   smocStandardV3Content,
+  smocStandardV4Content,
 } from "./site-layout-stock-history";
 
 /**
@@ -191,7 +190,7 @@ export type OverviewV3UpgradePlan = Pick<TabUpgradePlan, "deletes" | "updates" |
 
 /**
  * The v2 → v3 Overview step (`F3.77` plan D5, ADR 0087 Amendment 3): `from` defaults to the frozen
- * v2, `to` to the frozen v3, never the live entry (v4 since `F3.74`). In a matching Overview, v3
+ * v2, `to` to the frozen v3, never the live entry (v5 since `F4.305`). In a matching Overview, v3
  * deletes every module card and updates everything else; a rect-only change is an update here,
  * and the updates keep `from`'s template order, as the step always wrote them.
  */
@@ -230,7 +229,8 @@ export function planOverviewV3Upgrade(
 }
 
 /**
- * The v3 → v4 Overview step (ADR 0088 Amendment 2): one insert, the compact electrical diagram at
+ * The v3 → v4 Overview step (ADR 0088 Amendment 2): `to` defaults to the frozen v4, never the
+ * live entry (v5 since `F4.305`). One insert, the compact electrical diagram at
  * `(0, 9)`, and one move, the class strip from `(0, 9, 12, 2)` to `(6, 9, 6, 2)`. A copy with no
  * `sld` tab gets no diagram, and its strip is packed to `(0, 9, 6, 2)`, as a fresh copy has it.
  */
@@ -238,7 +238,7 @@ export function planOverviewV4Upgrade(
   widgets: readonly TabCopyWidget[],
   copyTabKeys: readonly string[],
   from: SectionTemplateContent = smocStandardV3Content(),
-  to: SectionTemplateContent = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent,
+  to: SectionTemplateContent = smocStandardV4Content(),
 ): TabUpgradePlan {
   return planOverview(widgets, copyTabKeys, from, to);
 }
@@ -287,7 +287,7 @@ export function planElectricalV4Upgrade(
   widgets: readonly TabCopyWidget[],
   bindableTiles: ReadonlySet<string>,
   from: SectionTemplateContent = smocStandardV3Content(),
-  to: SectionTemplateContent = SMOC_STANDARD_SITE_TEMPLATE.content as SectionTemplateContent,
+  to: SectionTemplateContent = smocStandardV4Content(),
 ): TabUpgradePlan {
   const fromTab = tabOf(from, SLD_TAB_KEY);
   const toTab = tabOf(to, SLD_TAB_KEY);
