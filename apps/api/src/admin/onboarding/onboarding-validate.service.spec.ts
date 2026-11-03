@@ -97,6 +97,35 @@ export function assertTypedLocationLeavesTheLocationPhase(): void {
   assert(phase === "review", `the fixture with a type must reach review, got ${phase}`);
 }
 
+/** `F4.304`: the complete typed draft with a floor area of `value`. */
+function draftWithFloorArea(value: number): OnboardingDraft {
+  const draft = completeDraft("pump_station");
+  return { ...draft, location: { ...draft.location!, floorArea: { value, unit: "m2" } } };
+}
+
+/** FA1 (`F4.304`, ADR 0108 Amendment 5 item 6) — an area over the bound is a `location.floorArea.value` error. */
+export function assertFloorAreaOverTheBoundIsAFieldError(): void {
+  const result = new OnboardingValidateService().validate(draftWithFloorArea(100_000_001), CODES, EMPTY_TEMPLATE_CONTEXT, EMPTY_PLACEMENT);
+  const paths = result.errors.map((error) => error.path);
+  assert(
+    JSON.stringify(paths) === JSON.stringify(["location.floorArea.value"]),
+    `an area of 100 000 001 must be the one error, at location.floorArea.value, got ${JSON.stringify(paths)}`,
+  );
+}
+
+/** FA2 — the same draft is not ready to commit. */
+export function assertFloorAreaOverTheBoundIsNotReadyToCommit(): void {
+  const result = new OnboardingValidateService().validate(draftWithFloorArea(100_000_001), CODES, EMPTY_TEMPLATE_CONTEXT, EMPTY_PLACEMENT);
+  assert(result.readyToCommit === false, "a draft whose area is over the bound must never be ready to commit");
+}
+
+/** FA3 — the positive control: an area within the bound adds no error and the draft is ready. */
+export function assertFloorAreaWithinTheBoundIsReadyToCommit(): void {
+  const result = new OnboardingValidateService().validate(draftWithFloorArea(1200), CODES, EMPTY_TEMPLATE_CONTEXT, EMPTY_PLACEMENT);
+  assert(result.errors.length === 0, `an area of 1200 must be clean, got ${JSON.stringify(result.errors)}`);
+  assert(result.readyToCommit === true, "an area of 1200 must leave the draft ready to commit");
+}
+
 /**
  * N3 — a type that is set and not an active code is a `location.type` error
  * whose message names every active code, so the operator is told what to pick.

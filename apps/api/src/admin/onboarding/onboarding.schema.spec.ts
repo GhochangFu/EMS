@@ -1,4 +1,5 @@
 import {
+  FLOOR_AREA_M2_MIN_MESSAGE,
   MAX_ONBOARDING_ASSET_POINTS,
   MAX_ONBOARDING_ASSETS,
   MAX_ONBOARDING_POINT_KEYS,
@@ -482,6 +483,84 @@ export function assertApiDraftLocationParsesWithoutType(): void {
     `a draft location without type must parse, got: ${
       parsed.success ? "" : JSON.stringify(parsed.error.issues)
     }`,
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* F4.304 (ADR 0108 Amendment 5 item 6, plan C8) — the draft's floor area      */
+/* -------------------------------------------------------------------------- */
+
+const DRAFT_LOCATION_BASE = {
+  code: "DEMO_LOC",
+  slug: "demo-loc",
+  name: "Demo Location",
+  latitude: -25.7,
+  longitude: 28.2,
+} as const;
+
+/** The bounded draft refuses an area below the bound, at `floorArea.value`. */
+export function assertDraftFloorAreaRefusesBelowTheBound(): void {
+  const parsed = draftLocationSchema.safeParse({ ...DRAFT_LOCATION_BASE, floorArea: { value: 0.5 } });
+  assert(!parsed.success, "a draft floorArea of 0.5 must be refused");
+  const paths = parsed.success ? [] : parsed.error.issues.map((i) => i.path.join("."));
+  assert(
+    paths.length === 1 && paths[0] === "floorArea.value",
+    `the refusal must be at floorArea.value only, got: ${JSON.stringify(paths)}`,
+  );
+}
+
+/** The draft's area parse: the issues as `path: message`, or `[]` when it parses. */
+function draftAreaIssues(floorArea: unknown): string[] {
+  const parsed = draftLocationSchema.safeParse({ ...DRAFT_LOCATION_BASE, floorArea });
+  return parsed.success ? [] : parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`);
+}
+
+/**
+ * Owner ruling 2026-11-03 ("Also bound the m²"): 10.76 ft² is 0.9997 m², so
+ * the draft refuses it, once, at `floorArea.value`, with the m² message.
+ */
+export function assertDraftFloorAreaRefusesFt2BelowOneSquareMetre(): void {
+  const got = draftAreaIssues({ value: 10.76, unit: "ft2" });
+  const want = [`floorArea.value: ${FLOOR_AREA_M2_MIN_MESSAGE}`];
+  assert(JSON.stringify(got) === JSON.stringify(want), `10.76 ft2 must be refused once with the m2 message, got: ${JSON.stringify(got)}`);
+}
+
+/** Owner ruling 2026-11-03: 10.77 ft² (1.0006 m²) and 1 m² are both admitted by the draft. */
+export function assertDraftFloorAreaAdmitsTheSquareMetreBound(): void {
+  for (const area of [{ value: 10.77, unit: "ft2" }, { value: 1, unit: "m2" }]) {
+    const got = draftAreaIssues(area);
+    assert(got.length === 0, `${JSON.stringify(area)} must parse, got: ${JSON.stringify(got)}`);
+  }
+}
+
+/** A value with no unit parses, and the parse carries the default `m2`. */
+export function assertDraftFloorAreaDefaultsTheUnitToM2(): void {
+  const parsed = draftLocationSchema.safeParse({ ...DRAFT_LOCATION_BASE, floorArea: { value: 1200 } });
+  assert(parsed.success, `{ value: 1200 } must parse, got: ${parsed.success ? "" : JSON.stringify(parsed.error.issues)}`);
+  const area = parsed.success ? parsed.data.floorArea : undefined;
+  assert(
+    JSON.stringify(area) === JSON.stringify({ value: 1200, unit: "m2" }),
+    `the parsed area must be { value: 1200, unit: "m2" }, got: ${JSON.stringify(area)}`,
+  );
+}
+
+/**
+ * C8 (owner, 2026-11-02): the draft node is open — an unknown key inside the
+ * area is dropped, never a refusal of the operator's whole turn. Mutation:
+ * `.strict()` instead of `.strip()`.
+ */
+export function assertDraftFloorAreaDropsAnUnknownKey(): void {
+  const parsed = draftLocationSchema.safeParse({
+    ...DRAFT_LOCATION_BASE,
+    floorArea: { value: 1, note: "x" },
+  });
+  assert(parsed.success, `an unknown key inside floorArea must not refuse, got: ${
+    parsed.success ? "" : JSON.stringify(parsed.error.issues)
+  }`);
+  const area = (parsed.success ? parsed.data.floorArea : null) as Record<string, unknown> | null | undefined;
+  assert(
+    area !== null && area !== undefined && area.value === 1 && !("note" in area),
+    `the unknown key must be absent from the parse, got: ${JSON.stringify(area)}`,
   );
 }
 

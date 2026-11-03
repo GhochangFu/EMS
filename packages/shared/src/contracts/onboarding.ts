@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 import { locationTypeCodeSchema } from "./location-types";
+import { floorAreaUnitSchema } from "./location-writes";
 import { onboardingDiscoveryResultDtoSchema } from "./onboarding-discovery";
 import { assetDomainCodeSchema } from "./operations";
 
@@ -226,6 +227,11 @@ export const onboardingDraftLocationSchema = z.object({
   // F4.243 (ADR 0098 Amendment 2, B2): absent = not chosen yet, `null` = a
   // root by choice, a code = the parent. Resolved to an id only at commit.
   parentCode: z.string().min(1).max(ONBOARDING_DRAFT_STRING_MAX["location.parentCode"]).nullable().optional(),
+  // F4.304 (ADR 0108 Amendment 5 item 6): lenient copy, bounds are the api draft's.
+  floorArea: z
+    .object({ value: z.number(), unit: floorAreaUnitSchema.default("m2") })
+    .nullable()
+    .optional(),
   // `F4.170` owner ruling 20 (compliance review B1).
   meta: z
     .record(z.unknown())

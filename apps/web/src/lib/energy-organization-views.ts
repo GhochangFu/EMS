@@ -24,7 +24,16 @@ export function percentChange(now: number, before: number): number | null {
   return ((now - before) / before) * 100;
 }
 
-export type SiteRankingSort = "kwh" | "peakKw";
+export type SiteRankingSort = "kwh" | "peakKw" | "kwhPerM2";
+
+/**
+ * `F4.304` (ADR 0108 Amendment 5 item 7) — a kWh per m² figure as the ranking
+ * column and the site tile show it: two places, `< 0.01` for a positive figure
+ * below that. The server computed it; the browser never divides.
+ */
+export function formatKwhPerM2(value: number): string {
+  return value > 0 && value < 0.01 ? "< 0.01" : value.toFixed(2);
+}
 
 /** Ruling 4.6: a percent only when the site is in both lists and the previous kWh is above zero. */
 export type SiteChange =
@@ -38,7 +47,21 @@ export type SiteRankingRow = {
   change: SiteChange;
 };
 
-/** The ranking rows, sorted by the chosen figure (largest first; ties by name). */
+/** A tie on the figure falls to the name, then to the location id. */
+function byNameThenId(a: SiteRankingRow, b: SiteRankingRow): number {
+  const byName = a.site.name.localeCompare(b.site.name);
+  if (byName !== 0) {
+    return byName;
+  }
+  return a.site.locationId < b.site.locationId ? -1 : a.site.locationId > b.site.locationId ? 1 : 0;
+}
+
+/**
+ * The ranking rows, sorted by the chosen figure (largest first; ties by name).
+ * `kwhPerM2` (`F4.304`): the sites with a figure first, ties by name then id;
+ * then the sites with no area in the server's order (kWh descending). A `null`
+ * is never compared as a number — it is never a zero and never a rank.
+ */
 export function rankingRows(
   current: readonly EnergySiteEnergy[],
   compare: readonly EnergySiteEnergy[] | null,
@@ -58,6 +81,19 @@ export function rankingRows(
     const pct = percentChange(site.kwh, previous.kwh) as number;
     return { site, previous, change: { kind: "change", pct } };
   });
+  if (sort === "kwhPerM2") {
+    const ranked: { row: SiteRankingRow; value: number }[] = [];
+    const noArea: SiteRankingRow[] = [];
+    for (const row of rows) {
+      if (row.site.kwhPerM2 === null) {
+        noArea.push(row);
+      } else {
+        ranked.push({ row, value: row.site.kwhPerM2 });
+      }
+    }
+    ranked.sort((a, b) => b.value - a.value || byNameThenId(a.row, b.row));
+    return [...ranked.map((r) => r.row), ...noArea];
+  }
   return rows.sort((a, b) => b.site[sort] - a.site[sort] || a.site.name.localeCompare(b.site.name));
 }
 

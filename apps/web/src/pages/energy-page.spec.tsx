@@ -89,6 +89,7 @@ function period(overrides: Partial<EnergyViewPeriod> = {}): EnergyViewPeriod {
     currency: "ZAR",
     sourceTotals: { gridKwh: 2000, solarKwh: 200, dgKwh: 50 },
     series: [],
+    kwhPerM2: null,
     ...overrides,
   };
 }
@@ -104,6 +105,7 @@ function view(overrides: Partial<EnergyView> = {}): EnergyView {
     compare: null,
     topConsumers: [],
     partial: null,
+    floorArea: null,
     ...overrides,
   };
 }
@@ -128,7 +130,16 @@ function organizationViews(overrides: Partial<EnergyOrganizationViews> = {}): En
     compare: null,
     sites: {
       current: [
-        { locationId: SITE_A, name: "Alpha site", assetCount: 2, kwh: 1800, peakKw: 300, peakAt: "2026-10-31T11:12:00.000Z" },
+        {
+          locationId: SITE_A,
+          name: "Alpha site",
+          assetCount: 2,
+          kwh: 1800,
+          peakKw: 300,
+          peakAt: "2026-10-31T11:12:00.000Z",
+          floorAreaM2: null,
+          kwhPerM2: null,
+        },
       ],
       compare: null,
       totalSites: 1,
@@ -449,7 +460,16 @@ export async function theOrganizationSectionsWaitWhileOnlyTheViewIsNew(): Promis
   expect(await screen.findByText("Loading the sites…")).toBeInTheDocument();
   expect(screen.queryByTestId("site-ranking-row")).toBeNull();
 
-  const bravo = { locationId: SITE_A, name: "Bravo site", assetCount: 2, kwh: 900, peakKw: 150, peakAt: null };
+  const bravo = {
+    locationId: SITE_A,
+    name: "Bravo site",
+    assetCount: 2,
+    kwh: 900,
+    peakKw: 150,
+    peakAt: null,
+    floorAreaM2: null,
+    kwhPerM2: null,
+  };
   resolveCompare(organizationViews({ sites: { current: [bravo], compare: [bravo], totalSites: 1 } }));
   expect(await screen.findByTestId("site-ranking-row")).toHaveTextContent("Bravo site");
 }

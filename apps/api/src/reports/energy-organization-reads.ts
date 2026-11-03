@@ -64,9 +64,16 @@ export type SiteEnergyReadInput = {
   readonly locationIds?: readonly string[];
 };
 
+/**
+ * One site as the read returns it: unrounded, with its stored floor area
+ * (`F4.304`) and without `kwhPerM2`, which the service computes on the
+ * unrounded kWh (`kwhPerSquareMetre`).
+ */
+export type SiteEnergyRow = Omit<EnergySiteEnergy, "kwhPerM2">;
+
 export type SiteEnergyRead = {
   /** By kWh desc, then name, then id; at most `limit`. */
-  readonly sites: EnergySiteEnergy[];
+  readonly sites: SiteEnergyRow[];
   /** The sites with a `kw` row in the period, before the cut. */
   readonly totalSites: number;
 };
@@ -101,6 +108,7 @@ export async function siteEnergyRead(pool: Queryable, input: SiteEnergyReadInput
     kwh: number | string;
     peak_kw: number | string;
     peak_at: Date | string | null;
+    floor_area_m2: number | null;
     total_sites: number | string;
   }>(
     `
@@ -145,6 +153,7 @@ export async function siteEnergyRead(pool: Queryable, input: SiteEnergyReadInput
       s.kwh,
       s.peak_kw,
       s.peak_at,
+      l.floor_area_m2::float8 AS floor_area_m2,
       (count(*) OVER ())::int AS total_sites
     FROM site s
     INNER JOIN bms.locations l ON l.id = s.location_id
@@ -162,6 +171,7 @@ export async function siteEnergyRead(pool: Queryable, input: SiteEnergyReadInput
       kwh: Number(row.kwh),
       peakKw: Number(row.peak_kw),
       peakAt: row.peak_at === null ? null : isoOf(row.peak_at),
+      floorAreaM2: row.floor_area_m2 === null ? null : Number(row.floor_area_m2),
     })),
     totalSites: Number(r.rows[0]?.total_sites ?? 0),
   };

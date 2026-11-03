@@ -2,6 +2,10 @@ import { describe, it } from "vitest";
 
 import {
   aFrameRefusalPropagatesBeforeAnyRead,
+  aSiteWithNoAreaIsNull,
+  kwhPerM2IsComputedOnTheUnroundedKwh,
+  theCompareRowsCarryTheirOwnFigure,
+  theRowCarriesItsArea,
   anEmptyScopeTouchesNoRead,
   aNonEmptyScopeReadsEverySection,
   aRecentPeriodReadsAllFourWindows,
@@ -34,4 +38,11 @@ describe("F4.299 — EnergyOrganizationViewsService (ADR 0108 Amendment 1, 7)", 
   it("normal entities are counted, not sent", () => normalEntitiesAreCountedNotSent());
   it("the abnormal list is cut at the max with truncated", () => theAbnormalListIsCutAtTheMaxWithTruncated());
   it("figures are rounded on the way out", () => figuresAreRoundedOnTheWayOut());
+});
+
+describe("F4.304 — kWh per m² on the site ranking (ADR 0108 Amendment 5, item 7)", () => {
+  it("O1 kWh per m² is computed on the unrounded kWh", () => kwhPerM2IsComputedOnTheUnroundedKwh());
+  it("O1' the row carries its area", () => theRowCarriesItsArea());
+  it("O2 a site with no area is null", () => aSiteWithNoAreaIsNull());
+  it("O3 the compare rows carry their own figure", () => theCompareRowsCarryTheirOwnFigure());
 });

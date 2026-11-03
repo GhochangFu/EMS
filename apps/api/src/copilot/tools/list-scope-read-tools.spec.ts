@@ -99,6 +99,7 @@ function locationRow(i: number, organizationId: string) {
     timezone: null,
     latitude: 0,
     longitude: 0,
+    floorAreaM2: null,
     active: true,
     meta: null,
     createdAt: "2026-01-01T00:00:00.000Z",

@@ -11,3 +11,13 @@ describe("F4.299 — the organization views contract (ADR 0108 Amendment 1, ADR 
   it("parses null compare and partial", () => spec.assertNullCompareAndPartialParse());
   it("types trend kw as a number array", () => spec.assertTrendKwIsANumberArray());
 });
+
+describe("F4.304 — kWh per m² on the site ranking (ADR 0108 Amendment 5, item 7)", () => {
+  it("divides kWh by the area", () => spec.assertKwhPerSquareMetreDivides());
+  it("keeps a zero kWh as 0", () => spec.assertZeroKwhIsAZeroNotANull());
+  it("gives null with no area", () => spec.assertNoAreaIsNull());
+  it("gives null for an area of 0 (fail closed)", () => spec.assertAZeroAreaFailsClosed());
+  it("gives null for an area of NaN (fail closed)", () => spec.assertANaNAreaFailsClosed());
+  it("parses a site with no area", () => spec.assertASiteWithNoAreaParses());
+  it("refuses a string area", () => spec.assertAStringAreaIsRefused());
+});

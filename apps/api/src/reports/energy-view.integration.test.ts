@@ -27,6 +27,8 @@ import {
   organizationViewsTrendHoldsReadableSitesOnly,
   ownOrganizationWithAForeignSiteIsA403,
   recordingPool,
+  theChildrensAreasChangeNothing,
+  theTileEqualsTheSitesRankingRow,
   type EnergyViewHarness,
 } from "./energy-view.integration.spec";
 import { EnergyOrganizationViewsService } from "./energy-organization-views.service";
@@ -102,4 +104,8 @@ describe.skipIf(!connectionString)("F4.298 — the energy view reads only the ca
   it("organization-views: the heatmap holds the readable kWh only", () => organizationViewsHeatmapHoldsReadableKwhOnly(h));
   it("organization-views: the abnormal list holds readable entities only", () =>
     organizationViewsAbnormalHoldsReadableEntitiesOnly(h));
+  it("F4.304 T1: the site tile's kWh per m² equals the site's ranking row, not the subtree over the area", () =>
+    theTileEqualsTheSitesRankingRow(h, pool as pg.Pool));
+  it("F4.304 T2: the children's areas change neither the tile nor the row", () =>
+    theChildrensAreasChangeNothing(h, pool as pg.Pool));
 });

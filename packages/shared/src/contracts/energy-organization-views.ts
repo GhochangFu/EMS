@@ -34,7 +34,23 @@ export const energySiteEnergySchema = z.object({
   kwh: z.number(),
   peakKw: z.number(),
   peakAt: z.string().nullable(),
+  /** `F4.304`: the site's own `bms.locations.floor_area_m2`; `null` is "no area", never a zero. */
+  floorAreaM2: z.number().nullable(),
+  /** `kwhPerSquareMetre(kwh, floorAreaM2)` on the unrounded kWh, rounded to 3; `null` with no area. */
+  kwhPerM2: z.number().nullable(),
 });
+
+/**
+ * `F4.304` (ADR 0108 Amendment 5, item 7) — the one declaration of kWh per m²:
+ * the kWh of the period over the location's own floor area, not annualised.
+ * `null` unless the area is a positive number, so a `0` or a `NaN` from a
+ * writer that bypassed the CHECK fails closed rather than dividing. The server
+ * calls it on the unrounded kWh and rounds the result; the browser never divides.
+ */
+export function kwhPerSquareMetre(kwh: number, areaM2: number | null): number | null {
+  if (areaM2 === null || !(areaM2 > 0)) return null;
+  return kwh / areaM2;
+}
 
 export const energySiteRankingSchema = z.object({
   current: z.array(energySiteEnergySchema),

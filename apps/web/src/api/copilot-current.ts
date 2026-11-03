@@ -97,6 +97,8 @@ export async function fetchCopilotCurrent(change: CopilotPendingChangeDto): Prom
             latitude: found.latitude,
             longitude: found.longitude,
             timezone: found.timezone,
+            // `F4.304` review: the stored m² in the body's own shape, as the edit wizard's `current`.
+            floorArea: found.floorAreaM2 === null ? null : { value: found.floorAreaM2, unit: "m2" },
             meta: found.meta,
           }
         : null;

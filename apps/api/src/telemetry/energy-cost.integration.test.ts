@@ -16,6 +16,7 @@ import {
   assertOrphanTelemetryIsNotInTheSourceMix,
   assertOrphanTelemetryIsNotInTheTotal,
   assertOrphanTelemetryIsNotInTheTrend,
+  assertPerAssetEnergyCarriesEachAssetsLocation,
   assertReportPricesTheTotal,
   assertReportSourceTotalsIgnoreOrphanTelemetry,
   assertReportTotalIgnoresOrphanTelemetry,
@@ -135,6 +136,13 @@ describe.skipIf(!connectionString)("E4.1c — the tariff is a parameter (ADR 007
     it("R6 leaves orphan telemetry out of the report's source totals (F4.159)", async () => {
       if (!pool) throw new Error("pool required");
       await assertReportSourceTotalsIgnoreOrphanTelemetry(pool, fx);
+    }, 30_000);
+  });
+
+  describe("perAssetEnergy — the asset's location (F4.304, ADR 0108 Amendment 5 item 8)", () => {
+    it("L1 returns each asset's bms.assets.location_id", async () => {
+      if (!pool) throw new Error("pool required");
+      await assertPerAssetEnergyCarriesEachAssetsLocation(pool, fx);
     }, 30_000);
   });
 });

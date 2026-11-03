@@ -371,6 +371,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   createEscalationProfileBodySchema: STRICT(CALLER_ERROR),
   "createEscalationProfileBodySchema/steps[]": STRICT(ESCALATION_STEP),
   createLocationBodySchema: STRICT(CALLER_ERROR),
+  // `F4.304`: a typo inside the area is a 400, not a stored default.
+  "createLocationBodySchema/floorArea": STRICT(CALLER_ERROR),
   // `F4.162`. A global vocabulary: a caller sending `organizationId` must get a
   // 400, not believe they scoped a fleet-wide type.
   createLocationTypeBodySchema: STRICT(CALLER_ERROR),
@@ -417,6 +419,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "patchDraftBodySchema/draft/templates[]|1": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/templates[]|1/points[]": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/location": { strict: false, because: THREE_PRODUCERS },
+  // `F4.304` (plan C8, owner 2026-11-02): open on its parent's terms.
+  "patchDraftBodySchema/draft/location/floorArea": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/onboardingMeta": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/pointKeys[]": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/rtus[]": { strict: false, because: THREE_PRODUCERS },
@@ -597,6 +601,7 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   updateEscalationProfileBodySchema: STRICT(ESCALATION_PATCH),
   "updateEscalationProfileBodySchema/steps[]": STRICT(ESCALATION_STEP),
   updateLocationBodySchema: STRICT(CALLER_ERROR),
+  "updateLocationBodySchema/floorArea": STRICT(CALLER_ERROR),
   // `F4.162`. `code` is the primary key; a PATCH naming it is a 400.
   updateLocationTypeBodySchema: STRICT(CALLER_ERROR),
   updateMaintenanceScheduleBodySchema: STRICT(CALLER_ERROR),

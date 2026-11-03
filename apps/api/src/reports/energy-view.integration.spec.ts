@@ -304,3 +304,86 @@ export async function filterOptionsNeverListsAnotherOrganization(h: EnergyViewHa
   const a = options.locations.find((l) => l.id === h.fx.nodes.A);
   if (a?.parentId !== null) fail(`A's parent R is not readable, so its parentId must be null, got ${a?.parentId}`);
 }
+
+// ---------------------------------------------------------------------------
+// `F4.304` U5 (ADR 0108 Amendment 5 items 2, 7, 8) — the site tile's kWh per
+// m² is the figure of the site's row in the ranking: the site's own assets'
+// kWh over its own area, never the subtree's total and never a child's area.
+// ---------------------------------------------------------------------------
+
+/** A1's figure: a readable child of A with data, so A's own kWh and the view's total differ. */
+export const CHILD_KW = 30;
+/** A's area for these cases: small, so the 3-place figure keeps its digits at a 70-minute range. */
+const A_AREA = 0.5;
+
+/**
+ * Runs `body` with A at `A_AREA` m² and a future `kw` sample on A1's asset at
+ * `CHILD_KW`, inside the suite's transaction; both are undone in `finally`.
+ */
+async function withAnAreaAndAChildWithData(h: EnergyViewHarness, pool: pg.Pool, body: () => Promise<void>): Promise<void> {
+  const at = new Date(Date.now() + 2 * MINUTE_MS);
+  await pool.query("UPDATE bms.locations SET floor_area_m2 = $2 WHERE id = $1", [h.fx.nodes.A, A_AREA]);
+  await pool.query(
+    `INSERT INTO telemetry.point_values (time, asset_id, point_key, value, unit) VALUES ($1, $2, 'kw', $3, 'kW')`,
+    [at, h.fx.assets.A1, CHILD_KW],
+  );
+  try {
+    await body();
+  } finally {
+    await pool.query("DELETE FROM telemetry.point_values WHERE asset_id = $1 AND time >= $2", [
+      h.fx.assets.A1,
+      new Date(at.getTime() - MINUTE_MS),
+    ]);
+    await pool.query("UPDATE bms.locations SET floor_area_m2 = NULL WHERE id = ANY($1::uuid[])", [
+      [h.fx.nodes.A, h.fx.nodes.A1, h.fx.nodes.A1a],
+    ]);
+  }
+}
+
+async function tileAndRowOfA(h: EnergyViewHarness): Promise<{ view: EnergyView; row: number | null | undefined }> {
+  const query = { ...aroundNow(), locationIds: [h.fx.nodes.A] };
+  const view = (await h.controller.energyView(h.fx.grantee, query)) as EnergyView;
+  const views = (await h.controller.energyOrganizationViews(h.fx.grantee, query)) as EnergyOrganizationViews;
+  return { view, row: views.sites.current.find((s) => s.locationId === h.fx.nodes.A)?.kwhPerM2 };
+}
+
+/**
+ * T1 — naming A (own asset at `READABLE_KW`, readable child A1 at
+ * `CHILD_KW`): the tile's `kwhPerM2` equals A's ranking row, and is not the
+ * view's total over A's area (the child's kWh is in the total, not in A's own).
+ */
+export async function theTileEqualsTheSitesRankingRow(h: EnergyViewHarness, pool: pg.Pool): Promise<void> {
+  await withAnAreaAndAChildWithData(h, pool, async () => {
+    const { view, row } = await tileAndRowOfA(h);
+    if (JSON.stringify(view.floorArea) !== JSON.stringify({ locationId: h.fx.nodes.A, floorAreaM2: A_AREA })) {
+      fail(`floorArea: ${JSON.stringify(view.floorArea)}, expected A at ${A_AREA} m²`);
+    }
+    const tile = view.current.kwhPerM2;
+    if (tile === null || !(tile > 0)) fail(`the tile's kwhPerM2: ${String(tile)}, expected a positive figure`);
+    if (row !== tile) fail(`the tile ${String(tile)} ≠ A's ranking row ${String(row)}`);
+    const subtree = Math.round((view.current.totalKwh / A_AREA) * 1000) / 1000;
+    if (!(view.current.totalKwh > 0) || subtree === tile) {
+      fail(`the tile ${String(tile)} must not be the view's total over the area (${subtree}): A1's kWh is not A's own`);
+    }
+  });
+}
+
+/**
+ * T2 — A's own area only: setting A1's and A1a's areas to 1 m² changes
+ * neither the tile nor A's row (no sum of the children's areas).
+ */
+export async function theChildrensAreasChangeNothing(h: EnergyViewHarness, pool: pg.Pool): Promise<void> {
+  await withAnAreaAndAChildWithData(h, pool, async () => {
+    const before = await tileAndRowOfA(h);
+    if (before.view.current.kwhPerM2 === null) fail("the tile has no figure before the children's areas — the fixture is not visible");
+    await pool.query("UPDATE bms.locations SET floor_area_m2 = 1 WHERE id = ANY($1::uuid[])", [[h.fx.nodes.A1, h.fx.nodes.A1a]]);
+    const after = await tileAndRowOfA(h);
+    if (after.view.current.kwhPerM2 !== before.view.current.kwhPerM2) {
+      fail(`the tile moved with the children's areas: ${String(before.view.current.kwhPerM2)} → ${String(after.view.current.kwhPerM2)}`);
+    }
+    if (after.row !== before.row) fail(`A's row moved with the children's areas: ${String(before.row)} → ${String(after.row)}`);
+    if (JSON.stringify(after.view.floorArea) !== JSON.stringify({ locationId: h.fx.nodes.A, floorAreaM2: A_AREA })) {
+      fail(`floorArea: ${JSON.stringify(after.view.floorArea)}, expected A's own ${A_AREA} m²`);
+    }
+  });
+}

@@ -9,6 +9,11 @@ import {
   assertTemplateVarKeyMustMatchTheTokenGrammar,
   assertTemplateVarKeyRefusesTheReservedName,
   assertDraftLocationMetaDescribesTheSeedKey,
+  assertDraftFloorAreaAdmitsTheSquareMetreBound,
+  assertDraftFloorAreaDefaultsTheUnitToM2,
+  assertDraftFloorAreaDropsAnUnknownKey,
+  assertDraftFloorAreaRefusesBelowTheBound,
+  assertDraftFloorAreaRefusesFt2BelowOneSquareMetre,
   assertDraftDepthFixturesSitExactlyAtTheBound,
   assertOnboardingDraftSchemaCoversTheModelProducer,
   assertPatchDraftBodyAcceptsADraftAtTheBound,
@@ -69,6 +74,28 @@ describe("onboarding.schema — the draft's nesting depth (F4.115)", () => {
 describe("onboarding.schema — draftLocationSchema.type is optional (F4.157, ADR 0077 D4)", () => {
   it("C6 — parses a draft location without type", () => {
     assertApiDraftLocationParsesWithoutType();
+  });
+});
+
+describe("onboarding.schema — the draft location's floorArea (F4.304, ADR 0108 Amendment 5 item 6)", () => {
+  it("refuses { value: 0.5 } at floorArea.value", () => {
+    assertDraftFloorAreaRefusesBelowTheBound();
+  });
+
+  it("refuses 10.76 ft2 (0.9997 m2) at floorArea.value with the m2 message (owner ruling 2026-11-03)", () => {
+    assertDraftFloorAreaRefusesFt2BelowOneSquareMetre();
+  });
+
+  it("admits 10.77 ft2 and 1 m2 (owner ruling 2026-11-03)", () => {
+    assertDraftFloorAreaAdmitsTheSquareMetreBound();
+  });
+
+  it("admits { value: 1200 } and the parse carries unit m2", () => {
+    assertDraftFloorAreaDefaultsTheUnitToM2();
+  });
+
+  it("drops an unknown key inside floorArea without refusing (C8, open node)", () => {
+    assertDraftFloorAreaDropsAnUnknownKey();
   });
 });
 

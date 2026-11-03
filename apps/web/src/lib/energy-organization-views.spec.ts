@@ -26,6 +26,8 @@ function site(name: string, kwh: number, peakKw = 1): EnergySiteEnergy {
     kwh,
     peakKw,
     peakAt: null,
+    floorAreaM2: null,
+    kwhPerM2: null,
   };
 }
 
@@ -41,6 +43,69 @@ export function rankingRowsSortByKwhDescending(): void {
 
 export function rankingRowsSortByPeakKw(): void {
   const rows = rankingRows([site("A", 30, 1), site("B", 10, 9), site("C", 20, 5)], null, "peakKw");
+  expect(rows.map((r) => r.site.name)).toEqual(["B", "C", "A"]);
+}
+
+/**
+ * `F4.304` U7 (ADR 0108 Amendment 5 item 7) — a site with a floor area. `id`
+ * overrides the name-derived id, so two sites can share a name.
+ */
+function sited(name: string, kwh: number, floorAreaM2: number | null, id?: string): EnergySiteEnergy {
+  return {
+    ...site(name, kwh),
+    ...(id === undefined ? {} : { locationId: id }),
+    floorAreaM2,
+    kwhPerM2: floorAreaM2 === null ? null : kwh / floorAreaM2,
+  };
+}
+
+/** K1: ranked by kWh per m², largest first, then the sites with no area. */
+export function rankingRowsSortByKwhPerM2WithNoAreaLast(): void {
+  const rows = rankingRows([sited("A", 500, 100), sited("N", 900, null), sited("B", 400, 50)], null, "kwhPerM2");
+  expect(rows.map((r) => r.site.name)).toEqual(["B", "A", "N"]);
+}
+
+/** K2: never a zero — a ranked `0` comes before a no-area site whose name sorts first. */
+export function aNoAreaSiteIsNeverRankedAsZero(): void {
+  const rows = rankingRows([sited("Alpha", 900, null), sited("Zulu", 0, 100)], null, "kwhPerM2");
+  expect(rows.map((r) => r.site.name)).toEqual(["Zulu", "Alpha"]);
+}
+
+/** K3: a tie in kWh per m² falls to the name, then to the location id. */
+export function aKwhPerM2TieFallsToTheNameThenTheId(): void {
+  const first = "00000000-0000-4000-8000-000000000001";
+  const second = "00000000-0000-4000-8000-000000000002";
+  const rows = rankingRows(
+    [sited("Same", 100, 10, second), sited("Bravo", 50, 5), sited("Same", 200, 20, first), sited("Alpha", 30, 3)],
+    null,
+    "kwhPerM2",
+  );
+  expect(rows.map((r) => [r.site.name, r.site.locationId])).toEqual([
+    ["Alpha", site("Alpha", 0).locationId],
+    ["Bravo", site("Bravo", 0).locationId],
+    ["Same", first],
+    ["Same", second],
+  ]);
+}
+
+/** K4: the no-area sites keep the server's order (kWh descending), whatever their names. */
+export function theNoAreaSitesKeepTheServersOrder(): void {
+  const rows = rankingRows([sited("Zed", 900, null), sited("Alpha", 100, null), sited("Mid", 10, 1)], null, "kwhPerM2");
+  expect(rows.map((r) => r.site.name)).toEqual(["Mid", "Zed", "Alpha"]);
+}
+
+/** K5: the kWh and peak kW modes ignore the area. */
+export function theKwhModeIgnoresTheArea(): void {
+  const rows = rankingRows([sited("A", 100, 1), sited("B", 300, 1000), sited("C", 200, null)], null, "kwh");
+  expect(rows.map((r) => r.site.name)).toEqual(["B", "C", "A"]);
+}
+
+export function thePeakKwModeIgnoresTheArea(): void {
+  const rows = rankingRows(
+    [{ ...sited("A", 100, 1), peakKw: 2 }, { ...sited("B", 300, 1000), peakKw: 9 }, { ...sited("C", 200, null), peakKw: 5 }],
+    null,
+    "peakKw",
+  );
   expect(rows.map((r) => r.site.name)).toEqual(["B", "C", "A"]);
 }
 

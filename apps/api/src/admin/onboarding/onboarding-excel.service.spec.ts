@@ -112,19 +112,20 @@ export function assertTemplateRoundTripsUnchanged(): void {
     `the template's two display names are distinct, so nothing is adjusted, got ${JSON.stringify(parsed.displayNameFixes)}`,
   );
 
-  // The width the 64-column bound is measured against. The widest of the three
-  // sections is `RTU_HEADERS` (rtu_code, rtu_name, protocol, host, port, topic,
-  // tls, username, password) — nine columns, so `MAX_HEADER_COLUMNS` leaves
-  // roughly 7× headroom over the sheet this system itself produces. The literal
-  // is used rather than the constant on purpose: `RTU_HEADERS` is module-private
-  // and widening a module's surface for a test is worse than restating nine.
+  // The width the 64-column bound is measured against. Since `F4.304` the
+  // widest of the three sections is `LOCATION_HEADERS` (name, code, slug, type,
+  // latitude, longitude, province, parent_code, floor_area, floor_area_unit) —
+  // ten columns, so `MAX_HEADER_COLUMNS` leaves roughly 6× headroom over the
+  // sheet this system itself produces. The literal is used rather than the
+  // constant on purpose: `LOCATION_HEADERS` is module-private and widening a
+  // module's surface for a test is worse than restating ten.
   const book = XLSX.read(buffer, { type: "buffer" });
   const ref = book.Sheets[book.SheetNames[0]]["!ref"];
   assert(ref !== undefined, "the generated template declares a used range");
   const range = XLSX.utils.decode_range(String(ref));
   assert(
-    range.e.c - range.s.c + 1 === 9,
-    `the template is nine columns wide (RTU_HEADERS.length), got ${range.e.c - range.s.c + 1} from '${String(ref)}'`,
+    range.e.c - range.s.c + 1 === 10,
+    `the template is ten columns wide (LOCATION_HEADERS.length), got ${range.e.c - range.s.c + 1} from '${String(ref)}'`,
   );
 }
 

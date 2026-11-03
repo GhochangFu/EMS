@@ -5,9 +5,14 @@ import { afterEach, describe, it } from "vitest";
 import {
   aCutListSaysHowManySites,
   aWholeListSaysNothing,
+  kwhPerM2IsAThirdPressableSort,
   peakKwReSortsAndIsPressed,
   rowsAreInKwhOrder,
   theChangeColumnFollowsRuling46,
+  theIntensityColumnFormatsEachState,
+  theIntensityModeSaysItRanksTheTopFiftyByKwh,
+  theKwhModeDoesNotSayTopFifty,
+  theNoAreaRowIsLast,
   thePeakTimeIsInTheViewsZone,
   withoutCompareTheChangeIsADash,
 } from "./site-ranking-table.spec";
@@ -38,5 +43,20 @@ describe("F4.299 site ranking table", () => {
   });
   it("says nothing for a whole list", () => {
     aWholeListSaysNothing();
+  });
+  it("F4.304 S1: offers kWh per m² as a third pressable sort", async () => {
+    await kwhPerM2IsAThirdPressableSort();
+  });
+  it("F4.304 S2: formats the kWh/m² column — two places, < 0.01, no area", () => {
+    theIntensityColumnFormatsEachState();
+  });
+  it("F4.304 S3: the kWh per m² mode says it ranks the top 50 by kWh", async () => {
+    await theIntensityModeSaysItRanksTheTopFiftyByKwh();
+  });
+  it("F4.304 S3: the kWh mode does not say so", () => {
+    theKwhModeDoesNotSayTopFifty();
+  });
+  it("F4.304 S4: puts the no-area row last", async () => {
+    await theNoAreaRowIsLast();
   });
 });

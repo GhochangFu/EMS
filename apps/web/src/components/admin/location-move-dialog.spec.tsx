@@ -36,6 +36,7 @@ function location(id: string, name: string, parentId: string | null): AdminLocat
     province: null,
     capital: null,
     timezone: null,
+    floorAreaM2: null,
     latitude: 0,
     longitude: 0,
     active: true,

@@ -16,6 +16,9 @@ import {
   assertDraftSummaryRefusesTheDraftKey,
   assertLegacyDraftSummaryParses,
   assertDraftLocationMetaDescribesTheSeedKey,
+  assertLenientDraftFloorAreaAbsent,
+  assertLenientDraftFloorAreaDefaultsUnit,
+  assertLenientDraftFloorAreaNull,
   assertDraftLocationParsesWithoutType,
   assertDraftStringBoundsAreDeclaredOnce,
   assertDraftStringBoundsAreEnforced,
@@ -139,5 +142,17 @@ describe("F4.255 — the organization's onboarding draft list (ADR 0099 Amendmen
 
   it("wraps summaries in items and refuses a leaked draft there", () => {
     assertDraftListCarriesSummaries();
+  });
+});
+
+describe("F4.304 — the lenient draft location carries floorArea (ADR 0108 Amendment 5 item 6)", () => {
+  it("A — { value: 0.5 } parses with unit m2 (no bound here)", () => {
+    assertLenientDraftFloorAreaDefaultsUnit();
+  });
+  it("B — null parses", () => {
+    assertLenientDraftFloorAreaNull();
+  });
+  it("C — absent parses", () => {
+    assertLenientDraftFloorAreaAbsent();
   });
 });

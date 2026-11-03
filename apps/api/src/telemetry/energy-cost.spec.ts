@@ -31,7 +31,7 @@ const A1 = "a1";
 const A2 = "a2";
 
 function rows(...entries: readonly (readonly [string, number, string | null])[]): PerAssetEnergy[] {
-  return entries.map(([assetId, kwh, currency]) => ({ assetId, kwh, currency }));
+  return entries.map(([assetId, kwh, currency]) => ({ assetId, kwh, currency, locationId: "l1" }));
 }
 
 function tariffs(entries: Record<string, number>): ReadonlyMap<string, number> {

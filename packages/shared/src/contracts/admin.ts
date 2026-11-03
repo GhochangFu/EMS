@@ -41,6 +41,8 @@ export const adminLocationDtoSchema = z.object({
   province: z.string().nullable(),
   capital: z.string().nullable(),
   timezone: z.string().nullable(),
+  /** `F4.304` (ADR 0108 Amendment 5): the location's own floor area in square metres; null = no area. */
+  floorAreaM2: z.number().nullable(),
   latitude: z.number(),
   longitude: z.number(),
   active: z.boolean(),

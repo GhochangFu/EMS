@@ -3,6 +3,8 @@ import {
   // F2.23 / ADR 0065 decision 1: the one catalog character class and its sentence.
   CATALOG_CODE_MESSAGE,
   CATALOG_CODE_PATTERN,
+  // F4.304: the location write body's area object and its m² refine, read by reference.
+  floorAreaInputObjectSchema,
   // F4.103: the four draft count caps, imported rather than restated. The
   // numbers and their derivation live once, beside the shared contract's copy
   // of this schema (§4.8 — "a vocabulary is declared once and everything else
@@ -25,6 +27,7 @@ import {
   // the `@bms/db` column it came from, which `packages/shared` cannot do.
   ONBOARDING_DRAFT_STRING_MAX,
   locationTypeCodeSchema,
+  refineFloorAreaM2,
   SOURCE_KEY_RESERVED_VAR,
 } from "@bms/shared";
 import { z } from "zod";
@@ -82,6 +85,15 @@ export const draftLocationSchema = z
       .max(ONBOARDING_DRAFT_STRING_MAX["location.parentCode"])
       .nullable()
       .optional(),
+    // F4.304 (ADR 0108 Amendment 5 item 6, plan C8 — owner, 2026-11-02): the
+    // HTTP body's area schema by reference, same bounds, but **open**: the
+    // parent node is open for its three producers (`THREE_PRODUCERS` in the
+    // strict-body ledger), so an invented key inside the area from the model's
+    // `draftPatch` drops that key, not the operator's whole turn. A value out of
+    // bounds is validate's `location.floorArea.value` field error — the typed
+    // bounds and, by the shared refine, the converted square metres (owner
+    // ruling 2026-11-03, "Also bound the m²").
+    floorArea: refineFloorAreaM2(floorAreaInputObjectSchema.strip()).nullable().optional(),
     // `F4.170` owner ruling 20 (compliance review B1).
     meta: z
       .record(z.unknown())

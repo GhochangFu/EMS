@@ -5,7 +5,7 @@
  */
 import type { OnboardingDraft } from "@bms/shared";
 
-import { runTool, type ToolContext, type ToolState } from "./onboarding-agent-tools";
+import { runTool, TOOL_DEFINITIONS, type ToolContext, type ToolState } from "./onboarding-agent-tools";
 import { deriveLocationPatch } from "./onboarding-location-derive";
 import type { ParentCandidate } from "./onboarding-location-parent";
 import { EMPTY_TEMPLATE_CONTEXT } from "./onboarding-template-refs";
@@ -158,6 +158,73 @@ export async function assertACodeInAnotherCaseStoresTheCandidatesCode(): Promise
   assert(
     out.ok && state.working.location?.parentCode === "CAMPUS-1",
     `the candidate's own code is stored, got ${JSON.stringify(state.working.location)}`,
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* F4.304 (ADR 0108 Amendment 5 item 6) — set_location carries the floor area  */
+/* -------------------------------------------------------------------------- */
+
+/** FA1 — `set_location` stores the area as given; the conversion to m² is the commit's. */
+export async function assertSetLocationStoresTheAreaAsGiven(): Promise<void> {
+  const state: ToolState = { working: {} };
+  const out = await runTool(
+    call({ name: "Thane Pump", type: "pump_station", floorArea: { value: 300, unit: "ft2" } }),
+    state,
+    context(),
+  );
+  assert(
+    out.ok && JSON.stringify(state.working.location?.floorArea) === JSON.stringify({ value: 300, unit: "ft2" }),
+    `the area is stored as given, got ${JSON.stringify(out)} / ${JSON.stringify(state.working.location)}`,
+  );
+}
+
+/**
+ * FA2 — a second `set_location` that names only `name` keeps the stored area.
+ * The draft merge holds this too (absent keeps stored), so FA3 is the carry's
+ * own gate, as A5b is for the parent.
+ */
+export async function assertARenameKeepsTheStoredArea(): Promise<void> {
+  const state: ToolState = { working: {} };
+  await runTool(call({ name: "Thane Pump", type: "pump_station", floorArea: { value: 300, unit: "ft2" } }), state, context());
+  const out = await runTool(call({ name: "Thane Pump Station" }), state, context());
+  assert(
+    out.ok &&
+      state.working.location?.name === "Thane Pump Station" &&
+      JSON.stringify(state.working.location?.floorArea) === JSON.stringify({ value: 300, unit: "ft2" }),
+    `the stored area survives the rename, got ${JSON.stringify(state.working.location)}`,
+  );
+}
+
+/** FA3 — `deriveLocationPatch` carries the stored area. Mutation: drop `floorArea: stored?.floorArea`. */
+export function assertTheDerivedPatchCarriesTheStoredArea(): void {
+  const derived = deriveLocationPatch({ name: "Thane Pump Station", stored: { floorArea: { value: 120, unit: "m2" } } });
+  assert(
+    JSON.stringify(derived.floorArea) === JSON.stringify({ value: 120, unit: "m2" }),
+    `the derived patch carries the area, got ${JSON.stringify(derived)}`,
+  );
+}
+
+/** FA4 — the call's own area (in `kept`) wins over the stored one. */
+export function assertTheCallsOwnAreaWins(): void {
+  const derived = deriveLocationPatch({
+    name: "Thane Pump Station",
+    stored: { floorArea: { value: 120, unit: "m2" } },
+    kept: { floorArea: { value: 50, unit: "ft2" } },
+  });
+  assert(
+    JSON.stringify(derived.floorArea) === JSON.stringify({ value: 50, unit: "ft2" }),
+    `the call's own area wins, got ${JSON.stringify(derived)}`,
+  );
+}
+
+/** FA5 — the `set_location` description tells the model the shape and that the commit stores square metres. */
+export function assertTheSetLocationDescriptionNamesTheArea(): void {
+  const definition = TOOL_DEFINITIONS.find((d) => d.name === "set_location");
+  const description = definition?.description ?? "";
+  assert(
+    description.includes("`floorArea` is `{ value, unit }`") && description.includes("square metres"),
+    `the description must name floorArea and square metres, got ${JSON.stringify(description)}`,
   );
 }
 

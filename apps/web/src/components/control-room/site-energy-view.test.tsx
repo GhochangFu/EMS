@@ -4,10 +4,13 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aFailedOrganizationReadIsAFixedSentence,
+  aFlatSiteShowsNoOwnAssetsHint,
   aFlatSiteShowsNoSiteRanking,
+  aParentSiteShowsTheOwnAssetsHint,
   aParentSiteShowsTheSiteRanking,
   bothReadsAreLockedToTheSite,
   theKpiTilesRender,
+  theSiteTabShowsTheKwhPerM2Tile,
 } from "./site-energy-view.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014, ADR 0042 decision 2). */
@@ -35,5 +38,17 @@ describe("F4.302 the site's Energy sub-tab", () => {
 
   it("renders the KPI tiles from the view read", async () => {
     await theKpiTilesRender();
+  });
+
+  it("F4.304: shows the kWh per m² tile on the site tab", async () => {
+    await theSiteTabShowsTheKwhPerM2Tile();
+  });
+
+  it("F4.304: a parent with readable children shows the own-assets hint", async () => {
+    await aParentSiteShowsTheOwnAssetsHint();
+  });
+
+  it("F4.304: a flat site shows no own-assets hint", async () => {
+    await aFlatSiteShowsNoOwnAssetsHint();
   });
 });

@@ -42,11 +42,21 @@ export function assertAParentCodeCellIsRead(): void {
   assert(got === "CAMPUS-1", `the cell is the parent code, got ${JSON.stringify(got)}`);
 }
 
-/** X2 — the generated template names `parent_code` as the last `LOCATION` header. */
+/**
+ * X2 — the generated template names `parent_code` at column 7, followed only
+ * by `F4.304`'s trailing pair `floor_area`, `floor_area_unit` (ADR 0108
+ * Amendment 5 item 6).
+ */
 export function assertTheTemplateHeaderEndsWithParentCode(): void {
-  // `sheet_to_json` pads every row to the widest one (`RTUS`), so the blanks are dropped first.
+  // `sheet_to_json` pads every row to the widest one, so the blanks are dropped first.
   const header = templateRows()[1].filter((cell) => cell !== "");
-  assert(header[PARENT_COLUMN] === "parent_code" && header.length === PARENT_COLUMN + 1, `header: ${JSON.stringify(header)}`);
+  assert(
+    header[PARENT_COLUMN] === "parent_code" &&
+      header[PARENT_COLUMN + 1] === "floor_area" &&
+      header[PARENT_COLUMN + 2] === "floor_area_unit" &&
+      header.length === PARENT_COLUMN + 3,
+    `header: ${JSON.stringify(header)}`,
+  );
 }
 
 /** X3 — an empty cell is `null`, a root by choice. Mutation 7 (`parentCode || undefined`) reddens it. */

@@ -301,7 +301,8 @@ const DESCRIPTIONS: Record<ToolName, string> = {
     "the required and optional config fields and an example config. Call it before add_rtu for any protocol other than mqtt.",
   set_location:
     "Sets the location. `name` is required; `slug` and `code` are derived from it when omitted. `type` must be an active location type code. " +
-    "`parentCode` is the code of the existing location the new one is under (from find_existing), or null for a top-level location.",
+    "`parentCode` is the code of the existing location the new one is under (from find_existing), or null for a top-level location. " +
+    "`floorArea` is `{ value, unit }` with unit `m2` or `ft2` (default `m2`); the commit stores square metres; `null` clears it.",
   add_rtu:
     "Adds an RTU. Never put a username, password, token or key in `config`: credentials are set on the RTU step only. " +
     "A config that fails the protocol's schema is refused with the field path.",
