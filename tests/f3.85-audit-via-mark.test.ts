@@ -134,6 +134,13 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     route: { method: "POST", path: "/admin/asset-templates/:id/default-dashboards" },
     auditMethods: ["backfill"],
   },
+  {
+    // `F4.303` (ADR 0108 Amendment 6 item 5): the Pin of a trend view; the copilot edits a
+    // dashboard through `PUT :id/widgets`, so this route is catalog-excluded.
+    file: "apps/api/src/dashboard-builder/dashboard-widget-append.service.ts",
+    route: { method: "POST", path: "/dashboards/:id/widgets/append" },
+    auditMethods: ["append"],
+  },
 ];
 
 /** Directories whose write routes the release-1 catalog covers; no file in them may insert into the audit log itself. */
