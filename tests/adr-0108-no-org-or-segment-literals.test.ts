@@ -153,8 +153,19 @@ const MODULES: readonly string[] = [
  * `F4.302` (Amendment 4 item 10): U4 moved the last eight web modules to {@link MODULES}, so the
  * list is empty again. `site-page.tsx` pre-dates this record and gains one entry and one branch,
  * so it is not listed.
+ *
+ * `F4.303` (Amendment 6 item 10; `docs/plans/f4.303-view-actions.md` C24): PR 1's seven new
+ * runtime modules, listed in U1 and moved to {@link MODULES} by the unit that creates each.
  */
-const PENDING_MODULES: readonly string[] = [];
+const PENDING_MODULES: readonly string[] = [
+  "apps/web/src/lib/view-links.ts",
+  "apps/web/src/api/view-exports.ts",
+  "apps/web/src/components/view-actions/copy-link-button.tsx",
+  "apps/web/src/components/view-actions/export-menu.tsx",
+  "apps/api/src/reports/view-export.serialise.ts",
+  "apps/api/src/reports/energy-view-export.service.ts",
+  "apps/api/src/telemetry/asset-history-export.service.ts",
+];
 
 /**
  * Files that are never scanned, each with its reason, so a later row does not
