@@ -397,7 +397,7 @@ export function ReportScheduleWizard({ user, schedule, onCancel, onDone, prefill
   };
   if (inline && schedule === null) {
     return (
-      <section aria-label="Create a report schedule" className="surface-raised grid gap-3 rounded border border-line-strong p-3">
+      <section aria-label="Create a report schedule" className="surface-raised grid gap-3 p-3">
         <h2 className="font-condensed text-lg font-bold">Create a report schedule</h2>
         <WizardShell entry={reportScheduleWizardEntry("reportSchedule.create")} {...shared} params={{}} />
       </section>

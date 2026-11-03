@@ -173,7 +173,7 @@ function PinDialog({ source, onClose }: { source: PinSource; onClose: () => void
     <div
       role="dialog"
       aria-label="Pin to a dashboard"
-      className="surface-raised mt-2 grid w-full max-w-md gap-2 rounded border border-line-strong p-3 text-sm"
+      className="surface-raised mt-2 grid w-full max-w-md gap-2 p-3 text-sm"
     >
       {listQ.isError ? (
         <p role="alert" className="text-xs text-critical-ink">
