@@ -152,6 +152,8 @@ const MODULES: readonly string[] = [
   // F4.303 PR 2 U13: the trend_points report service and its pure rows and PDF.
   "apps/api/src/reports/trend-points-report.service.ts",
   "apps/api/src/reports/trend-points-pdf.ts",
+  // F4.303 PR 2 U14: the widget-append service.
+  "apps/api/src/dashboard-builder/dashboard-widget-append.service.ts",
 ];
 
 /**
@@ -184,7 +186,6 @@ const MODULES: readonly string[] = [
  * last two web files).
  */
 const PENDING_MODULES: readonly string[] = [
-  "apps/api/src/dashboard-builder/dashboard-widget-append.service.ts",
   "apps/web/src/components/view-actions/pin-dialog.tsx",
   "apps/web/src/components/view-actions/schedule-button.tsx",
   "apps/web/src/lib/schedule-from-view.ts",

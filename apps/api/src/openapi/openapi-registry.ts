@@ -24,6 +24,8 @@ import {
   listDashboardsQuerySchema,
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
+  // `F4.303` U14 (ADR 0108 Amendment 6 item 5): the widget-append body.
+  appendChartWidgetBodySchema,
   createAssetRoleBodySchema,
   updateAssetRoleBodySchema,
   createLocationTypeBodySchema,
@@ -273,6 +275,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AuditAdminController_export: auditExportQuerySchema,
   AuditAdminController_list: auditListQuerySchema,
   AuthController_login: loginBodySchema,
+  // `F4.303` U14 (ADR 0108 Amendment 6 item 5): `POST /dashboards/:id/widgets/append`.
+  DashboardBuilderController_appendWidget: appendChartWidgetBodySchema,
   DashboardBuilderController_create: createDashboardBodySchema,
   DashboardBuilderController_getBySlug: getDashboardQuerySchema,
   DashboardBuilderController_list: listDashboardsQuerySchema,

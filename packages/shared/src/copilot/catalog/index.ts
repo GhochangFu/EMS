@@ -93,6 +93,12 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   { method: "POST", path: "/copilot/changes/:id/reject", reason: COPILOT_OWN },
   // A temporary password is typed by a person, never proposed.
   { method: "POST", path: "/admin/users/:id/temporary-password", reason: "a credential route" },
+  // `F4.303` (ADR 0108 Amendment 6 item 5): the Pin of a trend view.
+  {
+    method: "POST",
+    path: "/dashboards/:id/widgets/append",
+    reason: "a view action; the copilot edits a dashboard through PUT :id/widgets",
+  },
   // Every DELETE in the in-release controllers.
   { method: "DELETE", path: "/dashboards/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/dashboard-templates/:id", reason: NO_DELETE },

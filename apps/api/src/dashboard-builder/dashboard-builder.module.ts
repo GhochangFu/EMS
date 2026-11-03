@@ -6,6 +6,7 @@ import { AssetRoleSummaryService } from "../assets/asset-role-summary.service";
 import { AuthModule } from "../auth/auth.module";
 import { DatabaseModule } from "../database/database.module";
 import { DashboardBuilderController } from "./dashboard-builder.controller";
+import { DashboardWidgetAppendService } from "./dashboard-widget-append.service";
 import { DashboardsService } from "./dashboards.service";
 import { MetricCatalogService } from "./metric-catalog.service";
 import { MimicNodesService } from "./mimic-nodes.service";
@@ -47,6 +48,8 @@ import { SiteWidgetsService } from "./site-widgets.service";
     MimicNodesService,
     SiteWidgetsService,
     AssetRoleSummaryService,
+    // `F4.303` U14 (ADR 0108 Amendment 6 item 5): `POST :id/widgets/append`.
+    DashboardWidgetAppendService,
   ],
   // `F3.85` PR 7: the copilot's `list_dashboards` read tool.
   exports: [DashboardsService],

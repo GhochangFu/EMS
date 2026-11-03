@@ -885,7 +885,7 @@ export class DashboardsService {
    * pre-GUC shape `assets.service.ts:189-191` uses. `canManageDashboard` (called by every
    * caller of this method) is the isolation control for the row this returns.
    */
-  private async fetchRowForWrite(id: string): Promise<DashboardRow> {
+  async fetchRowForWrite(id: string): Promise<DashboardRow> {
     const [row] = await this.fleetDb.select().from(dashboards).where(eq(dashboards.id, id)).limit(1);
     if (!row) {
       throw new NotFoundException("Dashboard not found");

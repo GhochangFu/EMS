@@ -11,6 +11,7 @@ import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "../database/database.
 import { repoRoot } from "../testing/repo-root";
 import { DashboardBuilderController } from "./dashboard-builder.controller";
 import { DashboardBuilderModule } from "./dashboard-builder.module";
+import { DashboardWidgetAppendService } from "./dashboard-widget-append.service";
 import { MimicNodesService } from "./mimic-nodes.service";
 import { SiteWidgetsService } from "./site-widgets.service";
 
@@ -141,5 +142,31 @@ export function assertSiteWidgetsServiceDepsResolveWithinTheModule(): void {
 export function assertControllerTakesSiteWidgetsService(): void {
   expect(classTypedParams("dashboard-builder.controller.ts", "DashboardBuilderController")).toContain(
     "SiteWidgetsService",
+  );
+}
+
+/**
+ * `F4.303` U14 (ADR 0108 Amendment 6 item 5) — `DashboardWidgetAppendService`. The same three
+ * facts: the module provides it, its one `@Inject` token resolves, and its class-typed parameters
+ * resolve by name — a missing provider breaks the boot with the build green.
+ */
+export function assertModuleProvidesDashboardWidgetAppendService(): void {
+  expect(moduleList(DashboardBuilderModule, "providers").map(tokenOf)).toContain(DashboardWidgetAppendService);
+}
+
+export function assertDashboardWidgetAppendServiceDepsResolveWithinTheModule(): void {
+  const { byIdentity, byName } = resolvableTokens();
+  expect(injectedTokens(DashboardWidgetAppendService)).toEqual([TENANT_DRIZZLE]);
+  const missingTokens = injectedTokens(DashboardWidgetAppendService).filter((token) => !byIdentity.has(token));
+  expect(missingTokens.map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
+  const classes = classTypedParams("dashboard-widget-append.service.ts", "DashboardWidgetAppendService");
+  expect(classes).toEqual(["DashboardsService", "AccessControlService", "MasterDataAuditService"]);
+  expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+/** Positive control: the controller's constructor carries the append service. */
+export function assertControllerTakesDashboardWidgetAppendService(): void {
+  expect(classTypedParams("dashboard-builder.controller.ts", "DashboardBuilderController")).toContain(
+    "DashboardWidgetAppendService",
   );
 }

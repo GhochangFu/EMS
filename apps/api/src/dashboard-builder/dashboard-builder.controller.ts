@@ -23,12 +23,14 @@ import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { parseIfMatchHeader } from "../common/if-match";
 import {
+  appendChartWidgetBodySchema,
   createDashboardBodySchema,
   getDashboardQuerySchema,
   listDashboardsQuerySchema,
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
 } from "@bms/shared";
+import { DashboardWidgetAppendService } from "./dashboard-widget-append.service";
 import { DashboardsService } from "./dashboards.service";
 import { MetricCatalogService } from "./metric-catalog.service";
 import { MimicNodesService } from "./mimic-nodes.service";
@@ -63,6 +65,7 @@ export class DashboardBuilderController {
     private readonly accessControl: AccessControlService,
     private readonly mimicNodes: MimicNodesService,
     private readonly siteWidgets: SiteWidgetsService,
+    private readonly widgetAppend: DashboardWidgetAppendService,
   ) {}
 
   @Get()
@@ -172,6 +175,20 @@ export class DashboardBuilderController {
       parse(putDashboardWidgetsBodySchema, body),
       parseIfMatchHeader(ifMatch),
     );
+  }
+
+  /**
+   * `F4.303` U14 (ADR 0108 Amendment 6 item 5) — one `chart` widget at the foot of one tab, from
+   * a view's Pin. The id (400), the write role (403) and the body (400) here, in that order; the
+   * 404, the 403 per asset, the tab 400s and the 409 inside the service. Declared after
+   * `putWidgets`: a three-segment path never meets `:slug`.
+   */
+  @Post(":id/widgets/append")
+  @HttpCode(HttpStatus.CREATED)
+  async appendWidget(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Body() body: unknown) {
+    const dashboardId = parse(idParamSchema, id);
+    await this.accessControl.assertOperationsWriteRole(user, "configuration");
+    return this.widgetAppend.append(user, dashboardId, parse(appendChartWidgetBodySchema, body));
   }
 }
 
