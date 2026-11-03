@@ -25,6 +25,8 @@ describe("F4.303 — the pure view export module (ADR 0108 Amendment 6 item 3)",
   it("segment rows hold only drawn entries", () => spec.segmentRowsHoldOnlyDrawnEntries());
   it("strip rows open with the header block", () => spec.stripRowsOpenWithTheHeaderBlock());
   it("strip rows hold one per segment, point, asset and bucket", () => spec.stripRowsHoldOnePerSegmentPointAssetBucket());
+  it("the strip header's bucket is the fold width, the gap between rows", () => spec.stripHeaderBucketIsTheFoldWidth());
+  it("the strip header names a fold width in hours and days", () => spec.stripHeaderBucketNamesHoursAndDays());
   it("history rows open with the header block", () => spec.historyRowsOpenWithTheHeaderBlock());
   it("history rows carry the bucket statistics", () => spec.historyRowsCarryTheBucketStatistics());
   it("a null history value is a null cell, never zero", () => spec.aNullValueIsANullCellNotZero());

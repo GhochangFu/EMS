@@ -235,6 +235,47 @@ export function stripRowsHoldOnePerSegmentPointAssetBucket(): void {
   ]);
 }
 
+/**
+ * The strip reads at one level and folds into wider buckets (`TREND_STRIP_RANGES`: 24 h reads
+ * `5m` into 1 800 s), so the header's `bucket` is the fold width, never the read level: it must
+ * equal the gap between consecutive `bucket_start` values.
+ */
+export function stripHeaderBucketIsTheFoldWidth(): void {
+  const t0 = "2026-11-03T00:00:00.000Z";
+  const t1 = "2026-11-03T00:30:00.000Z";
+  const rows = trendStripExportRows({
+    ...strip(),
+    level: "5m",
+    bucketSeconds: 1800,
+    segments: [
+      {
+        domain: "hvac",
+        points: [
+          {
+            code: "temp",
+            assets: [{ assetCode: "A1", assetName: "One", unit: "C", buckets: [{ t: t0, v: 1 }, { t: t1, v: 2 }] }],
+          },
+        ],
+      },
+    ],
+  } as unknown as StripArg);
+  const gapSeconds = (Date.parse(String(rows[8]?.[5])) - Date.parse(String(rows[7]?.[5]))) / 1000;
+  expect(gapSeconds).toBe(1800);
+  expect(rows[2]).toEqual(["bucket", "30m"]);
+}
+
+/** The fold width is written in the level's own units: minutes, hours, days, else seconds. */
+export function stripHeaderBucketNamesHoursAndDays(): void {
+  const header = (bucketSeconds: number) =>
+    trendStripExportRows({ ...strip(), bucketSeconds, segments: [] } as unknown as StripArg)[2];
+  expect([header(10_800), header(43_200), header(86_400), header(90)]).toEqual([
+    ["bucket", "3h"],
+    ["bucket", "12h"],
+    ["bucket", "1d"],
+    ["bucket", "90s"],
+  ]);
+}
+
 const META = { zone: "Etc/UTC", level: "1h", bucket: "1h", from: T1, to: T2 } as const;
 
 export function historyRowsOpenWithTheHeaderBlock(): void {

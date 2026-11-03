@@ -39,13 +39,31 @@ export type ViewExportCell = string | number | null;
 /** One row of the file. */
 export type ViewExportRow = ViewExportCell[];
 
-/** The five facts every file's header block states. */
+/**
+ * The five facts every file's header block states. `bucket` is the width between two
+ * `bucket_start` values: an aggregate level, or a fold width (`foldWidthLabel`) where the read
+ * level and the bucket differ (the trend strip).
+ */
 export interface ViewExportMeta {
   zone: string;
   level: AggregateLevel;
-  bucket: AggregateLevel;
+  bucket: string;
   from: string;
   to: string;
+}
+
+/** A fold width in the level's own units: `30m`, `3h`, `1d`, else `<n>s`. */
+export function foldWidthLabel(seconds: number): string {
+  if (seconds % 86_400 === 0) {
+    return `${seconds / 86_400}d`;
+  }
+  if (seconds % 3_600 === 0) {
+    return `${seconds / 3_600}h`;
+  }
+  if (seconds % 60 === 0) {
+    return `${seconds / 60}m`;
+  }
+  return `${seconds}s`;
 }
 
 /** One plotted bucket with the optional per-bucket statistics. */
@@ -192,13 +210,16 @@ export function segmentViewExportRows(
   return rows;
 }
 
-/** Trend strip: one row per (segment, point, asset) per bucket. */
+/**
+ * Trend strip: one row per (segment, point, asset) per bucket. The strip reads at `level` and
+ * folds into `bucketSeconds` (`TREND_STRIP_RANGES`), so the header's `bucket` is the fold width.
+ */
 export function trendStripExportRows(
-  strip: Pick<SiteTrendStripDto, "timeZone" | "level" | "from" | "to" | "segments">,
+  strip: Pick<SiteTrendStripDto, "timeZone" | "level" | "bucketSeconds" | "from" | "to" | "segments">,
 ): ViewExportRow[] {
   const zone = strip.timeZone;
   const rows = headerBlock(
-    { zone, level: strip.level, bucket: strip.level, from: strip.from, to: strip.to },
+    { zone, level: strip.level, bucket: foldWidthLabel(strip.bucketSeconds), from: strip.from, to: strip.to },
     ["segment", "point", "asset_code", "asset_name", "unit", "bucket_start", "mean"],
   );
   for (const segment of strip.segments) {
