@@ -3,10 +3,13 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Header,
   Param,
   Query,
+  Res,
   UseGuards,
 } from "@nestjs/common";
+import type { Response } from "express";
 import {
   decodePointRefParam,
   type JwtPayload,
@@ -21,6 +24,7 @@ import { z } from "zod";
 import { AccessControlService } from "../auth/access-control.service";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { AssetHistoryExportService } from "./asset-history-export.service";
 import {
   pointsLatestQuerySchema,
   pointValuesAtQuerySchema,
@@ -57,6 +61,7 @@ export class TelemetryController {
   constructor(
     private readonly telemetry: TelemetryService,
     private readonly accessControl: AccessControlService,
+    private readonly historyExport: AssetHistoryExportService,
   ) {}
 
   /**
@@ -278,5 +283,46 @@ export class TelemetryController {
       limit,
       before: before === undefined ? undefined : new Date(before),
     });
+  }
+
+  /**
+   * `F4.303` (ADR 0108 Amendment 6 item 3) — the asset history page's state as
+   * CSV: `points` (1 to 8 codes), the aggregate read's range, `compare` and
+   * `bucketFunction`, on `assetHistoryExportQuerySchema`. Long format, every
+   * bucket with min, average, max and samples, the F4.29 guard on every cell, at
+   * most `MAX_EXPORT_ROWS` rows. `AssetHistoryExportService` owns the order: the
+   * UUID (400), `canReadAsset` (403), the query (400), the registrations (404),
+   * the cap (400), then `pointAggregate` per point.
+   *
+   * Four segments under `assets/`, so no `points/...` route can collide.
+   * `no-store`: the answer depends on the caller's scope. The file name is
+   * fixed: no id, code or name. Registry key `TelemetryController_historyCsv`.
+   */
+  @Get("assets/:assetId/history/export.csv")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="asset-history.csv"')
+  @Header("Cache-Control", "no-store")
+  async historyCsv(
+    @CurrentUser() user: JwtPayload,
+    @Param("assetId") assetId: string,
+    @Query() query: Record<string, unknown>,
+  ): Promise<string> {
+    return this.historyExport.exportCsv(user, assetId, query);
+  }
+
+  /** `F4.303` — the same rows as `xlsx`, one sheet. `@Res()`: the body is a `Buffer`. */
+  @Get("assets/:assetId/history/export.xlsx")
+  async historyXlsx(
+    @CurrentUser() user: JwtPayload,
+    @Param("assetId") assetId: string,
+    @Query() query: Record<string, unknown>,
+    @Res() res: Response,
+  ): Promise<void> {
+    const body = await this.historyExport.exportXlsx(user, assetId, query);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="asset-history.xlsx"');
+    // Scope-filtered per caller, exactly as on the CSV route.
+    res.setHeader("Cache-Control", "no-store");
+    res.send(body);
   }
 }

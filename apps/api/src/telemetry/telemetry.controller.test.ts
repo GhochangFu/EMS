@@ -36,6 +36,13 @@ import {
   assertQueryBoundsAreEnforced,
   assertTheCompareFlagReadsItsOwnNegative,
   assertTheDefaultsAreATileRequest,
+  assertARefusedHistoryXlsxSendsNothing,
+  assertTheHistoryCsvIsTheExportOfTheQuery,
+  assertTheHistoryCsvSendsItsThreeHeaders,
+  assertTheHistoryExportChecksScopeBeforeTheQuery,
+  assertTheHistoryExportKeysAreRegistered,
+  assertTheHistoryExportParsesItsQuery,
+  assertTheHistoryXlsxSetsItsThreeHeaders,
 } from "./telemetry.controller.spec";
 
 /** `F3.35` Stage A — Vitest wrapper for the aggregate endpoint's assertions (ADR 0014). */
@@ -191,4 +198,18 @@ describe("F4.176 — the latest-value endpoint (ADR 0074 Amendment 2)", () => {
   it("hands an explicit window to the service as a number", async () => {
     await assertLatestPassesAnExplicitWindow();
   });
+});
+
+describe("F4.303 — the asset history export routes (ADR 0108 Amendment 6 item 3)", () => {
+  it("the CSV route returns the export of the parsed query after scope and the select", () =>
+    assertTheHistoryCsvIsTheExportOfTheQuery());
+  it("scope runs before the query: a bad query on a foreign asset is a 403", () =>
+    assertTheHistoryExportChecksScopeBeforeTheQuery());
+  it("the query is assetHistoryExportQuerySchema: an empty points is a 400 with flatten()", () =>
+    assertTheHistoryExportParsesItsQuery());
+  it("the CSV route sends its three headers", () => assertTheHistoryCsvSendsItsThreeHeaders());
+  it("the XLSX route sets its three headers and sends the workbook", () => assertTheHistoryXlsxSetsItsThreeHeaders());
+  it("a refused XLSX export sends nothing", () => assertARefusedHistoryXlsxSendsNothing());
+  it("the registry holds both keys on assetHistoryExportQuerySchema by identity", () =>
+    assertTheHistoryExportKeysAreRegistered());
 });

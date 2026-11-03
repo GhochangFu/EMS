@@ -11,6 +11,7 @@ import {
   energyViewQuerySchema,
   siteTrendStripQuerySchema,
   siteSegmentViewsQuerySchema,
+  assetHistoryExportQuerySchema,
 } from "@bms/shared";
 import {
   mappingSheetQuerySchema,
@@ -142,6 +143,8 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   // 29 -> 30: F4.301 registered siteTrendStripQuerySchema (GET /control-room/sites/:locationId/trend-strip) — .strict(), no body, no ledger entry, the same precedent.
   siteTrendStripQuerySchema,
   siteSegmentViewsQuerySchema, // 30 -> 31: F4.302 (GET .../segment-views, Amendment 4 item 4) — .strict(), no body, no ledger entry.
+  // 31 -> 32: F4.303 registered assetHistoryExportQuerySchema (GET /telemetry/assets/:assetId/history/export.*) — .strict(), no body, no ledger entry, the same precedent.
+  assetHistoryExportQuerySchema,
   mappingSheetQuerySchema,
   // `E4.1a`: `GET /admin/calc-parameters?organizationId=&key=` — `.strict()`,
   // no ledger entry, the `mappingSheetQuerySchema` precedent.

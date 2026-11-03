@@ -9,6 +9,7 @@ import {
   loadExistingAssetIds,
 } from "./existing-asset-ids";
 
+import { AssetHistoryExportService } from "./asset-history-export.service";
 import { TelemetryBroadcastHub } from "./telemetry-broadcast.hub";
 import { TelemetryController } from "./telemetry.controller";
 import { TelemetryGateway } from "./telemetry.gateway";
@@ -19,6 +20,8 @@ import { TelemetryService } from "./telemetry.service";
   controllers: [TelemetryController],
   providers: [
     TelemetryService,
+    // `F4.303` (ADR 0108 Amendment 6 item 3): the asset history export behind `TelemetryController`.
+    AssetHistoryExportService,
     TelemetryBroadcastHub,
     TelemetryNotifyService,
     TelemetryGateway,

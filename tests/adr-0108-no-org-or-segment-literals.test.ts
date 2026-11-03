@@ -54,6 +54,7 @@ const MODULES: readonly string[] = [
   "apps/api/src/reports/energy-view.service.ts",
   "apps/api/src/reports/view-export.serialise.ts",
   "apps/api/src/reports/energy-view-export.service.ts",
+  "apps/api/src/telemetry/asset-history-export.service.ts",
   "apps/api/src/reports/energy-filter-options.ts",
   "apps/web/src/api/energy-view.ts",
   "apps/web/src/lib/energy-view-filter.ts",
@@ -164,7 +165,6 @@ const PENDING_MODULES: readonly string[] = [
   "apps/web/src/api/view-exports.ts",
   "apps/web/src/components/view-actions/copy-link-button.tsx",
   "apps/web/src/components/view-actions/export-menu.tsx",
-  "apps/api/src/telemetry/asset-history-export.service.ts",
 ];
 
 /**

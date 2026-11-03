@@ -50,6 +50,7 @@ import {
   updateMaintenanceScheduleBodySchema,
   pointAggregateQuerySchema,
   pointRawQuerySchema,
+  assetHistoryExportQuerySchema,
   // `F4.300` (ADR 0108 decision 3.7): the replace-all trend-point body.
   putOrgTrendPointsBodySchema,
   siteTrendStripQuerySchema,
@@ -412,6 +413,11 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F4.297` (ADR 0108 decision 1.6) — the raw records page: a bounded `limit`
   // and an optional `before` cursor, `.strict()`, no body.
   TelemetryController_raw: pointRawQuerySchema,
+  // `F4.303` (ADR 0108 Amendment 6 item 3): the asset history export's CSV and XLSX — the
+  // history page's state in one `.strict()` query (`points`, the aggregate range, compare,
+  // the bucket function), no body.
+  TelemetryController_historyCsv: assetHistoryExportQuerySchema,
+  TelemetryController_historyXlsx: assetHistoryExportQuerySchema,
   // `F3.78` (ADR 0089 decisions 1 and 3) — the user-administration bodies. `UsersAdminController_list`,
   // `_deactivate` and `_reactivate`, and `UserGrantsAdminController_list` and `_remove`, are absent:
   // no body and no query, at most path parameters.
