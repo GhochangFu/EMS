@@ -1,4 +1,4 @@
-import { boolean, text, time, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, jsonb, text, time, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 
 import { bmsSchema, organizations, users } from "./bms-schema";
 import { notificationChannels } from "./alarms-schema";
@@ -45,6 +45,9 @@ export const reportSchedules = bmsSchema.table("report_schedules", {
   locationIds: uuid("location_ids").array().notNull().default([]),
   channelId: uuid("channel_id").references(() => notificationChannels.id, { onDelete: "set null" }),
   enabled: boolean("enabled").notNull().default(true),
+  // F4.303, migration 0122: `{ compare }` or `{ points, compare }`; NULL = none. The object CHECK
+  // is the migration's; the Zod `reportScheduleParamsSchema` owns the shape.
+  params: jsonb("params"),
   nextRunAt: timestamp("next_run_at", { withTimezone: true }).notNull(),
   lastRunAt: timestamp("last_run_at", { withTimezone: true }),
   createdBy: uuid("created_by").references(() => users.id),

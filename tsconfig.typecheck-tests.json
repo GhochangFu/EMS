@@ -207,6 +207,8 @@
     "tests/f4.302-dashboard-tab-key-trends.integration.test.ts",
     "tests/f4.302-energy-domain-code-reserved.integration.test.ts",
     "tests/f4.302-widget-tab-key-0120.integration.test.ts",
+    "tests/f4.303-report-schedule-params.test.ts",
+    "tests/f4.303-report-schedule-params.integration.test.ts",
     "tests/f4.305-site-layout-v5-upgrade.integration.test.ts",
     "tests/f3.74-site-layout-v4-upgrade.integration.test.ts",
     "tests/f3.74-breaker-demo-seed.integration.test.ts",
