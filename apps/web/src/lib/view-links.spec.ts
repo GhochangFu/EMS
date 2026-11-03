@@ -124,13 +124,31 @@ export function aCustomRangeWritesIsoInstantsOnly(): void {
 
 /**
  * A custom range with one end missing (a picker being cleared) keeps `range=custom` and the end
- * it has, so the pickers stay; a bare `range=custom` with neither end is the default.
+ * it has, so the pickers stay.
  */
 export function aHalfCustomRangeStaysCustom(): void {
   const search = energyLinkToSearch({ ...defaultEnergyLink(), range: "custom", to: TO });
   expect(search.toString()).toBe(new URLSearchParams({ range: "custom", to: TO }).toString());
   expect(energyLinkFromSearch(search)).toEqual({ ...defaultEnergyLink(), range: "custom", to: TO });
-  expect(read("range=custom")).toEqual(defaultEnergyLink());
+}
+
+/**
+ * A custom range with both ends cleared (a `datetime-local` reports `""` while a segment is
+ * incomplete) is written as a bare `range=custom` and read back as custom, so the view keeps its
+ * pickers and does not jump to the `24h` default.
+ */
+export function anEmptyCustomRangeStaysCustom(): void {
+  const search = energyLinkToSearch({ ...defaultEnergyLink(), range: "custom" });
+  expect(search.toString()).toBe("range=custom");
+  expect(energyLinkFromSearch(search)).toEqual({ ...defaultEnergyLink(), range: "custom" });
+}
+
+/** The same for the Trends & Energy section: an empty custom range survives the URL. */
+export function anEmptyTrendsCustomRangeStaysCustom(): void {
+  const link: TrendsLink = { view: ENERGY_VIEW, value: { range: "custom" }, rankBy: "kwh" };
+  const search = trendsLinkToSearch(link);
+  expect(search).toBe("?range=custom");
+  expect(trendsLinkFromSearch(new URLSearchParams(search))).toEqual(link);
 }
 
 /** The link's filter: the listed organization and sites, the range and compare. */

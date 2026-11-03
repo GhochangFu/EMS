@@ -15,8 +15,9 @@ import { ENERGY_VIEW, pointFromSearch, viewFromSearch } from "./site-trends";
  *
  * Ids and codes only: organization and location ids, point and segment codes, enum values and
  * ISO instants — no name and no personal data. A custom range is written as `from` and `to`
- * (`toISOString()` form) with no `range` key; while one end is missing (a picker being
- * cleared) it is written as `range=custom` and the end it has, so the pickers stay on screen.
+ * (`toISOString()` form) with no `range` key; while an end is missing (a picker being
+ * cleared) it is written as `range=custom` and the ends it has — none, one or two — so the
+ * pickers stay on screen and the view does not jump to the `24h` default.
  */
 
 /** How the Energy page stacks its load profile. */
@@ -44,7 +45,8 @@ export type TrendsLink = {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})$/;
-const DEFAULT_RANGE: EnergyViewRange = "24h";const DEFAULT_STACK_BY: StackBy = "site";
+const DEFAULT_RANGE: EnergyViewRange = "24h";
+const DEFAULT_STACK_BY: StackBy = "site";
 const DEFAULT_RANK_BY: SiteRankingSort = "kwh";
 
 // Records, so a new sort or stack key that is not listed here fails the type check.
@@ -77,7 +79,8 @@ function readRange(params: URLSearchParams): RangePart {
   if (range.success && range.data !== "custom") {
     return { range: range.data };
   }
-  if ((from !== undefined && to !== undefined) || (range.success && (from !== undefined || to !== undefined))) {
+  // Both ends, or an explicit `range=custom` with none, one or two of them.
+  if ((from !== undefined && to !== undefined) || range.success) {
     return { range: "custom", ...(from !== undefined ? { from } : {}), ...(to !== undefined ? { to } : {}) };
   }
   return {};
@@ -93,9 +96,6 @@ function writeRange(params: URLSearchParams, part: RangePart): void {
   const from = instantOf(part.from);
   const to = instantOf(part.to);
   if (from === undefined || to === undefined) {
-    if (from === undefined && to === undefined) {
-      return;
-    }
     params.set("range", "custom");
   }
   if (from !== undefined) {

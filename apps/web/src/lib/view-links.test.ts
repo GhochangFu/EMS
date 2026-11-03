@@ -9,6 +9,8 @@ import {
   aHalfCustomRangeStaysCustom,
   aListedLinkIsTheFilter,
   aNonIsoInstantDropsTheCustomRange,
+  anEmptyCustomRangeStaysCustom,
+  anEmptyTrendsCustomRangeStaysCustom,
   aPresetTrendsStateRoundTrips,
   aSegmentSubTabWritesItsViewAndPoint,
   aTrendsCustomRangeWritesIsoInstantsOnly,
@@ -55,6 +57,12 @@ describe("F4.303 view links: the Energy page's state in the URL", () => {
   });
   it("keeps a half-entered custom range custom", () => {
     aHalfCustomRangeStaysCustom();
+  });
+  it("keeps a custom range with both ends cleared custom", () => {
+    anEmptyCustomRangeStaysCustom();
+  });
+  it("keeps the section's custom range with both ends cleared custom", () => {
+    anEmptyTrendsCustomRangeStaysCustom();
   });
   it("turns a listed link into the filter", () => {
     aListedLinkIsTheFilter();
