@@ -559,32 +559,34 @@ function trendOverrides(fx: ScheduleIntegrationFixtures, point: { assetId: strin
 }
 
 /**
- * The cap counts both templates: ESKOM is filled to 49 with disabled `energy_consumption` rows
- * (as `bms_fleet`), the 50th — a `trend_points` schedule — is admitted (the positive control,
- * which also proves its point passed the check), and the 51st `trend_points` is a 409. The
- * fillers are deleted here, by id, whatever the outcome.
+ * The cap counts both templates. It runs in this open's own cap organization (`F4.71` U4), which
+ * holds no other row: in ESKOM a sibling file's create landing between a count read and the
+ * service's locked re-count turned the 50th into a 409. The organization is filled to 49 with
+ * disabled `trend_points` rows (as `bms_fleet`), the 50th — an `energy_consumption` schedule — is
+ * admitted (the positive control), and the 51st is a 409; a count that skips either template
+ * admits it. The fillers are deleted here, by id, whatever the outcome.
  */
-export async function theFiftyFirstTrendPointsScheduleIs409(fx: ScheduleIntegrationFixtures): Promise<void> {
-  await withWcPoint(fx, (point) => fiftyFirstTrendPoints(fx, point));
-}
-
-async function fiftyFirstTrendPoints(fx: ScheduleIntegrationFixtures, point: { assetId: string; pointKey: string }): Promise<void> {
+export async function theFiftyFirstScheduleCountsTrendPointsRows(fx: ScheduleIntegrationFixtures): Promise<void> {
+  const organizationId = fx.base.capOrganizationId;
+  // Only this open writes here, so the count cannot move before the service's locked re-count.
   const counted = await fx.base.fleetDb.execute<{ n: string }>(
-    sql`select count(*)::text as n from bms.report_schedules where organization_id = ${fx.base.eskomId}::uuid`,
+    sql`select count(*)::text as n from bms.report_schedules where organization_id = ${organizationId}::uuid`,
   );
   const fillers = Array.from({ length: Math.max(0, 49 - Number(counted.rows[0]?.n ?? "0")) }, () => randomUUID());
+  const params = JSON.stringify({ points: [{ assetId: randomUUID(), pointKey: "kw" }], compare: false });
   try {
     for (const id of fillers) {
       await fx.base.fleetDb.execute(sql`
         insert into bms.report_schedules
-          (id, organization_id, name, template_id, formats, cadence, run_at_local, timezone, location_ids, enabled, next_run_at)
+          (id, organization_id, name, template_id, params, formats, cadence, run_at_local, timezone, location_ids, enabled, next_run_at)
         values
-          (${id}::uuid, ${fx.base.eskomId}::uuid, ${`f4.303-filler-${id}`}, 'energy_consumption', '{pdf}', 'daily', '07:00',
-           'Asia/Kolkata', '{}'::uuid[], false, now() + interval '365 days')`);
+          (${id}::uuid, ${organizationId}::uuid, ${`f4.303-filler-${id}`}, 'trend_points', ${params}::jsonb, '{pdf}', 'daily',
+           '07:00', 'Asia/Kolkata', '{}'::uuid[], false, now() + interval '365 days')`);
     }
-    const fiftieth = await createAs(fx, admin(), trendOverrides(fx, point));
-    assert(fiftieth.templateId === "trend_points", `the 50th must be admitted as trend_points; got ${fiftieth.templateId}`);
-    const err = await captureRejection(() => fx.service.create(admin(), body(fx, trendOverrides(fx, point))));
+    const fiftieth = await createAs(fx, admin(), { organizationId });
+    assert(fiftieth.organizationId === organizationId, `the 50th must be admitted in the cap organization; got ${fiftieth.organizationId}`);
+    // `createAs` records a 51st that is wrongly admitted, so the sweep still empties the organization.
+    const err = await captureRejection(() => createAs(fx, admin(), { organizationId }));
     assert(errorName(err) === "ConflictException", `the 51st must be 409; got ${errorName(err)}: ${errorMessage(err)}`);
   } finally {
     if (fillers.length > 0) {

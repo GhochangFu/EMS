@@ -20,7 +20,7 @@ import {
   reenableMovesNextRunAtOnARealRow,
   patchMovingATrendPointsScheduleAwayIs400,
   patchMovingAnEnergyScheduleIsAdmitted,
-  theFiftyFirstTrendPointsScheduleIs409,
+  theFiftyFirstScheduleCountsTrendPointsRows,
   openScheduleFixtures,
   type OpenScheduleFixtures,
   type ScheduleIntegrationFixtures,
@@ -148,8 +148,8 @@ describe.skipIf(!connectionString || !storageConfig)("F3.5b — the schedule rou
     await patchMovingAnEnergyScheduleIsAdmitted(fx);
   });
 
-  // Last: it fills ESKOM to the cap for its own duration (and deletes the fillers itself).
-  it("F4.303 the 51st schedule of trend_points is a 409 (the cap counts both templates)", async () => {
-    await theFiftyFirstTrendPointsScheduleIs409(fx);
+  // It fills this open's cap organization to the cap for its own duration (and deletes the fillers itself).
+  it("F4.303 the cap counts trend_points rows: the 51st schedule is a 409", async () => {
+    await theFiftyFirstScheduleCountsTrendPointsRows(fx);
   });
 });
