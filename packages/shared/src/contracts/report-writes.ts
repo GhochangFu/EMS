@@ -6,8 +6,10 @@ import {
   MAX_REPORT_SCHEDULE_NAME_CHARS,
   reportCadenceSchema,
   reportFileFormatSchema,
+  reportTemplateIdSchema,
   RUN_AT_LOCAL_PATTERN,
 } from "./reports";
+import { reportScheduleParamsSchema } from "./trend-points-report";
 
 /**
  * `F4.280` (ADR 0099 Amendment 8, ADR 0030) — the request bodies of the report
@@ -172,6 +174,10 @@ export const createReportScheduleBodySchema = z
     channelId: channelIdSchema,
     enabled: z.boolean().optional(),
     organizationId: optionalOrganizationIdSchema,
+    // `F4.303` (Amendment 6 item 6): absent means `energy_consumption`; `params` must match the template
+    // (the service's pairing check, not a refine here: the 400 must name the sentence).
+    templateId: reportTemplateIdSchema.default("energy_consumption"),
+    params: reportScheduleParamsSchema.optional(),
   })
   .strict();
 

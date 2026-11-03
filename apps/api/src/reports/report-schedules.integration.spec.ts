@@ -177,6 +177,7 @@ export async function openScheduleFixtures(
 export function body(fx: ScheduleIntegrationFixtures, overrides: Partial<CreateReportScheduleBodyInput> = {}): CreateReportScheduleBodyInput {
   return {
     name: `f3.5b-sched-${randomUUID()}`,
+    templateId: "energy_consumption",
     formats: ["pdf"],
     cadence: "daily",
     runAtLocal: "07:00",

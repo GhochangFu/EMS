@@ -336,7 +336,7 @@ export function harness(scenario: Scenario = {}): Harness {
       let offsetArg: unknown;
       return chain(
         async () => {
-          if (shape === "channelId,enabled,formats,locationIds,name,scheduleId") {
+          if (shape === "cadence,channelId,enabled,formats,locationIds,name,params,scheduleId,templateId,timezone") {
             calls.push("tx:selectSchedule");
             scheduleWheres.push(renderWhere(whereArg));
             return scheduleRow === null ? [] : [scheduleRow];

@@ -63,6 +63,7 @@ const ROW: ReportScheduleDto = {
   organizationId: ORG_ID,
   name: "Weekly energy",
   templateId: "energy_consumption",
+  params: null,
   formats: ["pdf"],
   cadence: "weekly",
   runAtLocal: "07:00",
@@ -85,6 +86,8 @@ export const VALID_CREATE_BODY = {
   timezone: "Asia/Kolkata",
   locationIds: [],
   organizationId: ORG_ID,
+  // The parse's default (F4.303): the handed-on body carries it, in the schema's key order.
+  templateId: "energy_consumption",
 };
 
 type Call = { method: string; args: unknown[] };

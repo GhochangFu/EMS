@@ -68,6 +68,8 @@ export const REPORT_ENTRIES: readonly CatalogEntry[] = [
     params: {},
     body: createReportScheduleBodySchema,
     bodyName: "createReportScheduleBodySchema",
+    // `F4.303`: set by a view's Schedule button (the wizard's prefill), never proposed by the model.
+    clientOnly: ["templateId", "params"],
     modelBody: copilotCreateReportScheduleModelBodySchema,
     modelBodyName: "copilotCreateReportScheduleModelBodySchema",
     bodyGuide: EMAIL_GUIDE,

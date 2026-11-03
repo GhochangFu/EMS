@@ -58,6 +58,7 @@ const SCHEDULE_DTO: ReportScheduleDto = reportScheduleDtoSchema.parse({
   organizationId: ORGANIZATION_ID,
   name: "Weekly summary",
   templateId: "energy_consumption",
+  params: null,
   formats: ["pdf"],
   cadence: "weekly",
   runAtLocal: "07:00",
@@ -275,6 +276,7 @@ export async function fetchReportSchedulesReturnsTheList(): Promise<void> {
 
 const CREATE_BODY: CreateReportScheduleBody = {
   name: "Weekly summary",
+  templateId: "energy_consumption",
   formats: ["pdf"],
   cadence: "weekly",
   runAtLocal: "07:00",

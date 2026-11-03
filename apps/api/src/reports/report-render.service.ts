@@ -5,7 +5,7 @@ import type { Readable } from "node:stream";
 
 import { assets, notificationChannels, reportFiles, reportSchedules } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { REPORT_FILE_FORMATS, reportTemplateIdSchema } from "@bms/shared";
+import { energyReportTemplateSchema, REPORT_FILE_FORMATS } from "@bms/shared";
 import type { EnergyReportPreview, ReportDeliveryStatus, ReportFileFormat } from "@bms/shared";
 
 import { requireStorageConfigured } from "../assets/require-storage";
@@ -196,6 +196,10 @@ export class ReportRenderService {
         locationIds: reportSchedules.locationIds,
         channelId: reportSchedules.channelId,
         enabled: reportSchedules.enabled,
+        templateId: reportSchedules.templateId,
+        params: reportSchedules.params,
+        cadence: reportSchedules.cadence,
+        timezone: reportSchedules.timezone,
       })
       .from(reportSchedules)
       .where(eq(reportSchedules.id, scheduleId))
@@ -254,7 +258,8 @@ export class ReportRenderService {
         await tx.insert(reportFiles).values({
           id: fileId,
           organizationId,
-          templateId: reportTemplateIdSchema.value,
+          // F4.303 U12/U13 replace this with the stored template, parsed (the render still writes energy only).
+          templateId: energyReportTemplateSchema.shape.id.value,
           format,
           periodStart,
           periodEnd,

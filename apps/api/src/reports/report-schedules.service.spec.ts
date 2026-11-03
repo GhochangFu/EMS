@@ -143,6 +143,7 @@ export type StoredScheduleFixture = {
   organizationId: string;
   name: string;
   templateId: string;
+  params: unknown;
   formats: string[];
   cadence: string;
   runAtLocal: string;
@@ -162,7 +163,7 @@ export function storedSchedule(overrides: Partial<StoredScheduleFixture> = {}): 
     id: SCHEDULE_ID,
     organizationId: ORG_ID,
     name: FIXTURE_NAME,
-    templateId: "energy_consumption",
+    templateId: "energy_consumption", params: null,
     formats: ["pdf"],
     cadence: "daily",
     // What drizzle's `time()` column returns (measured 2026-09-22 on a real row).
@@ -468,6 +469,7 @@ export function harness(scenario: Scenario = {}, now: Date = NOW): Harness {
 
 export const CREATE_BODY: CreateReportScheduleBodyInput = {
   name: FIXTURE_NAME,
+  templateId: "energy_consumption",
   formats: ["pdf", "xlsx"],
   cadence: "daily",
   runAtLocal: "00:30",

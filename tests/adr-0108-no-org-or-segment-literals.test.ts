@@ -142,6 +142,11 @@ const MODULES: readonly string[] = [
   // F4.303 U7: the export client and "Export".
   "apps/web/src/api/view-exports.ts",
   "apps/web/src/components/view-actions/export-menu.tsx",
+  // F4.303 PR 2 U10: the report-params and widget-append contracts and their types.
+  "packages/shared/src/contracts/dashboard-widget-append.ts",
+  "packages/shared/src/contracts/trend-points-report.ts",
+  "packages/shared/src/types/dashboard-widget-append.ts",
+  "packages/shared/src/types/trend-points-report.ts",
 ];
 
 /**
@@ -173,10 +178,6 @@ const MODULES: readonly string[] = [
  * files, U14 the append service, U15 `pin-dialog.tsx`, U16 the last two web files).
  */
 const PENDING_MODULES: readonly string[] = [
-  "packages/shared/src/contracts/dashboard-widget-append.ts",
-  "packages/shared/src/contracts/trend-points-report.ts",
-  "packages/shared/src/types/dashboard-widget-append.ts",
-  "packages/shared/src/types/trend-points-report.ts",
   "apps/api/src/dashboard-builder/dashboard-widget-append.service.ts",
   "apps/api/src/reports/trend-points-report.service.ts",
   "apps/api/src/reports/trend-points-pdf.ts",

@@ -13,8 +13,8 @@ import { randomUUID } from "node:crypto";
 
 import { notificationChannels, reportFiles, reportSchedules } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { MAX_REPORT_SCHEDULES_PER_ORGANIZATION, reportScheduleDtoSchema, reportTemplateIdSchema } from "@bms/shared";
-import type { JwtPayload, ReportCadence, ReportScheduleDto } from "@bms/shared";
+import { MAX_REPORT_SCHEDULES_PER_ORGANIZATION, reportScheduleDtoSchema } from "@bms/shared";
+import type { JwtPayload, ReportCadence, ReportScheduleDto, ReportScheduleParams } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { requireStorageConfigured } from "../assets/require-storage";
@@ -40,6 +40,15 @@ export const SCHEDULE_OUT_OF_SCOPE_SENTENCE = "Report schedule is outside your a
 
 /** One row of `bms.report_schedules` as drizzle selects it; `runAtLocal` is `pg`'s `HH:MM:SS`. */
 type StoredRow = typeof reportSchedules.$inferSelect;
+
+/**
+ * `F4.303` (Amendment 6 item 6): the trend arm as given; the energy arm only when `compare` is on,
+ * else `NULL` — a schedule with nothing to carry stores nothing.
+ */
+function storedParams(params: ReportScheduleParams | undefined): ReportScheduleParams | null {
+  if (params === undefined) return null;
+  return "points" in params || params.compare ? params : null;
+}
 
 /**
  * `F3.5b` (ADR 0071 decisions 7, 8, 11; plan R-8, R-10, R-12, R-16; owner
@@ -152,7 +161,8 @@ export class ReportSchedulesService {
           id: scheduleId,
           organizationId,
           name: body.name,
-          templateId: reportTemplateIdSchema.value,
+          templateId: body.templateId,
+          params: storedParams(body.params),
           formats: [...body.formats],
           cadence: body.cadence,
           runAtLocal: body.runAtLocal,
@@ -467,6 +477,7 @@ export function toReportScheduleDto(row: StoredRow): ReportScheduleDto {
     locationIds: row.locationIds,
     channelId: row.channelId,
     enabled: row.enabled,
+    params: row.params,
     nextRunAt: row.nextRunAt.toISOString(),
     lastRunAt: row.lastRunAt === null ? null : row.lastRunAt.toISOString(),
     createdBy: row.createdBy,
