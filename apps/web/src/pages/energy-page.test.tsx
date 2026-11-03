@@ -13,6 +13,7 @@ import {
   copyLinkEndsTheFilterBar,
   exportDownloadsTheViewsCurrentQuery,
   exportSitsBeforeCopyLinkInTheFilterBar,
+  scheduleOpensTheEnergyReportWithTheCompare,
   theEnergyPageHasNoPin,
   theDefaultFilterWritesAnEmptySearch,
   theStackChoiceIsWrittenToTheUrl,
@@ -187,6 +188,10 @@ describe("F4.303 the Energy page's state in the URL", () => {
 
   it("F4.303 U7: Export downloads the query the page is showing", async () => {
     await exportDownloadsTheViewsCurrentQuery();
+  });
+
+  it("F4.303 U16: Schedule opens the energy report with the compare", async () => {
+    await scheduleOpensTheEnergyReportWithTheCompare();
   });
 
   it("F4.303 U15: the Energy page has no Pin", async () => {

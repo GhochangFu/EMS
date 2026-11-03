@@ -9,6 +9,7 @@ import * as dashboardsApi from "../../api/dashboards";
 import { APPEND_ANSWER } from "../../api/dashboards.spec";
 import { SEGMENT_VIEWS_BODY } from "../../api/segment-views.spec";
 import { useAuthStore } from "../../stores/auth-store";
+import { stubScheduleWizardApis } from "../view-actions/schedule-button.spec";
 import { SegmentView } from "./segment-view";
 
 /**
@@ -29,10 +30,14 @@ const BODY = {
 } as SiteSegmentViewsDto;
 
 function renderView(data: SiteSegmentViewsDto, onPoint = vi.fn()): typeof onPoint {
+  // The Schedule wizard reads through React Query once opened, so the tree always has a client.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
-    <MemoryRouter>
-      <SegmentView data={data} onPoint={onPoint} />
-    </MemoryRouter>,
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <SegmentView data={data} onPoint={onPoint} />
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
   return onPoint;
 }
@@ -178,4 +183,30 @@ export async function pinSendsTheDrawnSeriesAndTheUrlsPreset(): Promise<void> {
 export function aTrimmedChartNamesTheCap(): void {
   renderView({ ...BODY, trimmed: true, seriesCount: 8 });
   expect(screen.getByText("The chart draws the top 8 assets by mean.")).toBeInTheDocument();
+}
+
+/** `F4.303` U16 (ADR 0108 Amendment 6 item 6): Schedule sits in the sub-tab's control row, after Pin. */
+export function scheduleSitsAfterPinInTheSubTabsControlRow(): void {
+  signInAs("location_admin");
+  renderView(RANKED_BODY);
+  const pin = screen.getByRole("button", { name: "Pin" });
+  const schedule = screen.getByRole("button", { name: "Schedule" });
+  expect(pin.compareDocumentPosition(schedule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+/** `F4.303` U16: an `asset_group_admin` may pin but not schedule (Pin is the adjacent positive claim). */
+export function anAssetGroupAdminSeesNoSchedule(): void {
+  signInAs("asset_group_admin");
+  renderView(RANKED_BODY);
+  screen.getByRole("button", { name: "Pin" });
+  expect(screen.queryByRole("button", { name: "Schedule" })).toBeNull();
+}
+
+/** `F4.303` U16: the wizard opens with the sub-tab's drawn series only (one of the two ranked). */
+export async function scheduleOpensWithTheDrawnSeriesOnly(): Promise<void> {
+  stubScheduleWizardApis();
+  signInAs("location_admin");
+  renderView(RANKED_BODY);
+  fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
+  expect(await screen.findByText("Template: Trend points · 1 point")).toBeInTheDocument();
 }

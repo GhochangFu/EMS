@@ -12,6 +12,7 @@ import * as notificationsApi from "../api/notifications";
 import * as reportsApi from "../api/reports";
 import { ApiError } from "../lib/api-error";
 import type { AuthUser } from "../stores/auth-store";
+import type { SchedulePrefill } from "../lib/schedule-from-view";
 import { ReportScheduleWizard, SCHEDULE_CHANNEL_SENTENCE } from "./report-schedule-wizard";
 
 /**
@@ -96,7 +97,7 @@ const FIRST: ReportScheduleDto = {
 
 const user = (role: AuthUser["role"]): AuthUser => ({ id: "9b1d2c3e-0000-4a5b-8c4d-000000000001", email: "someone@bms.local", displayName: "Someone", role });
 
-function renderWizard(role: AuthUser["role"], schedule: ReportScheduleDto | null = null) {
+function renderWizard(role: AuthUser["role"], schedule: ReportScheduleDto | null = null, prefill?: SchedulePrefill) {
   const locations = vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [WESTERN_CAPE, GAUTENG] });
   vi.spyOn(notificationsApi, "fetchNotificationChannels").mockResolvedValue({ items: [EMAIL_CHANNEL, WEBHOOK_CHANNEL] });
   vi.spyOn(organizationsApi, "fetchAdminOrganizations").mockResolvedValue({ items: [ESKOM] });
@@ -104,7 +105,7 @@ function renderWizard(role: AuthUser["role"], schedule: ReportScheduleDto | null
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <ReportScheduleWizard user={user(role)} schedule={schedule} onCancel={() => undefined} onDone={() => undefined} />
+        <ReportScheduleWizard user={user(role)} schedule={schedule} prefill={prefill} onCancel={() => undefined} onDone={() => undefined} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -363,3 +364,108 @@ export async function aRefusedCreateRendersTheApiSentence(): Promise<void> {
   await submit();
   expect(await screen.findByText("Report schedule cap reached for this organization")).toBeInTheDocument();
 }
+
+const ASSET_ID = "aaaaaaaa-5555-4a5b-8c4d-000000000001";
+const TREND_PREFILL: SchedulePrefill = {
+  templateId: "trend_points",
+  params: {
+    points: [
+      { assetId: ASSET_ID, pointKey: "kw" },
+      { assetId: ASSET_ID, pointKey: "pf" },
+    ],
+    compare: true,
+  },
+  locationIds: [WESTERN_CAPE.id],
+};
+const ENERGY_PREFILL: SchedulePrefill = {
+  templateId: "energy_consumption",
+  params: { compare: true },
+  locationIds: [WESTERN_CAPE.id],
+};
+
+/** Walks a `location_admin` create to the end and returns the body sent. */
+async function createdBody(prefill: SchedulePrefill | undefined): Promise<Record<string, unknown>> {
+  const create = vi.spyOn(reportsApi, "createReportSchedule").mockResolvedValue(FIRST);
+  renderWizard("location_admin", null, prefill);
+  await userEvent.type(await screen.findByLabelText("Name"), "Site digest");
+  await next();
+  if (prefill === undefined) await userEvent.selectOptions(await locationsSelect(), WESTERN_CAPE.id);
+  else await within(await locationsSelect()).findByRole("option", { name: WESTERN_CAPE.name });
+  await next();
+  await next();
+  await submit();
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  return create.mock.calls[0]?.[0] as unknown as Record<string, unknown>;
+}
+
+/** The Schedule step shows the prefilled template, read only (no input names it). */
+export async function aTrendPrefillShowsItsTemplateLine(): Promise<void> {
+  renderWizard("location_admin", null, TREND_PREFILL);
+  expect(await screen.findByText("Template: Trend points · 2 points")).toBeInTheDocument();
+}
+
+/** An energy prefill names compare. */
+export async function anEnergyPrefillShowsItsTemplateLine(): Promise<void> {
+  renderWizard("location_admin", null, ENERGY_PREFILL);
+  expect(await screen.findByText("Template: Energy consumption · compare on")).toBeInTheDocument();
+}
+
+/** The Review step lists the template, and not as raw `templateId` / `params` rows. */
+export async function theReviewListsTheTemplate(): Promise<void> {
+  renderWizard("location_admin", null, TREND_PREFILL);
+  await userEvent.type(await screen.findByLabelText("Name"), "Site digest");
+  await next();
+  await within(await locationsSelect()).findByRole("option", { name: WESTERN_CAPE.name });
+  await next();
+  await next();
+  expect(screen.getAllByText("Template: Trend points · 2 points")).toHaveLength(1);
+  expect([screen.queryByText("templateId"), screen.queryByText("params")]).toEqual([null, null]);
+}
+
+/** The create body carries `templateId` and `params` as given. */
+export async function theCreateBodyCarriesTheTemplateAndParams(): Promise<void> {
+  const body = await createdBody(TREND_PREFILL);
+  expect([body.templateId, body.params, body.locationIds]).toEqual([
+    "trend_points",
+    TREND_PREFILL.params,
+    [WESTERN_CAPE.id],
+  ]);
+}
+
+/** With no prefill the body has neither key: byte-identical to the one before F4.303. */
+export async function withNoPrefillTheBodyHasNeitherKey(): Promise<void> {
+  const body = await createdBody(undefined);
+  expect(Object.keys(body).sort()).toEqual(["cadence", "enabled", "formats", "locationIds", "name", "runAtLocal", "timezone"]);
+}
+
+/** An edit never sends `templateId` or `params`, whatever the row holds. */
+export async function anEditNeverSendsTheTemplateOrParams(): Promise<void> {
+  const update = vi.spyOn(reportsApi, "updateReportSchedule").mockResolvedValue(FIRST);
+  renderWizard("admin", { ...FIRST, templateId: "trend_points", params: TREND_PREFILL.params });
+  const name = await screen.findByLabelText("Name");
+  await userEvent.clear(name);
+  await userEvent.type(name, "Renamed");
+  await next();
+  await next();
+  await next();
+  await submit();
+  await waitFor(() => expect(update).toHaveBeenCalledTimes(1));
+  expect(update.mock.calls[0]?.[1]).toEqual({ name: "Renamed" });
+}
+
+const ORG_PREFILL: SchedulePrefill = { ...ENERGY_PREFILL, organizationId: ESKOM_ID };
+
+/** A scoped user's body never carries the prefilled organization (the route refuses the key). */
+export async function aScopedUsersBodyNeverCarriesThePrefilledOrganization(): Promise<void> {
+  const body = await createdBody(ORG_PREFILL);
+  expect("organizationId" in body).toBe(false);
+}
+
+/** The global admin starts on the prefilled organization, with its sites kept. */
+export async function anAdminStartsOnThePrefilledOrganization(): Promise<void> {
+  renderWizard("admin", null, ORG_PREFILL);
+  const select = await screen.findByLabelText("Schedule organization");
+  await within(select).findByRole("option", { name: "ESKOM · Eskom SMOC" });
+  expect(select).toHaveValue(ESKOM_ID);
+}
+

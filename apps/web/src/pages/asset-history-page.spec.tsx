@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi, type MockInstance } from "vitest";
@@ -23,6 +23,7 @@ import { APPEND_ANSWER } from "../api/dashboards.spec";
 import * as systemStatusApi from "../api/system-status";
 import * as telemetryApi from "../api/telemetry";
 import * as exportsApi from "../api/view-exports";
+import { stubScheduleWizardApis } from "../components/view-actions/schedule-button.spec";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import { formatBucketWidth } from "../lib/widget-value";
 import type { AuthUser } from "../stores/auth-store";
@@ -445,6 +446,34 @@ export async function pinSendsTheChartedPoints(): Promise<void> {
       { assetId: ASSET_ID, pointKey: "pf" },
     ],
   });
+}
+
+/** `F4.303` U16 (ADR 0108 Amendment 6 item 6): "Schedule" follows "Pin" in the control row. */
+export async function scheduleFollowsPinInTheControlRow(): Promise<void> {
+  stubApis();
+  renderHistoryPage();
+  const row = screen.getByTestId("asset-history-controls");
+  const pin = await within(row).findByRole("button", { name: "Pin" });
+  const schedule = await within(row).findByRole("button", { name: "Schedule" });
+  expect(pin.compareDocumentPosition(schedule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+/** `F4.303` U16: an `operator` sees no "Schedule" (Export is the adjacent positive claim). */
+export async function anOperatorSeesNoSchedule(): Promise<void> {
+  stubApis();
+  renderHistoryPage("", "operator");
+  await screen.findByRole("group", { name: "Export" });
+  expect(screen.queryByRole("button", { name: "Schedule" })).toBeNull();
+}
+
+/** `F4.303` U16: the wizard opens as `trend_points` with the two charted points. */
+export async function scheduleOpensWithTheChartedPoints(): Promise<void> {
+  stubApis({ points: [point("kw"), point("pf", null)] });
+  stubScheduleWizardApis();
+  renderHistoryPage("?range=7d&points=kw,pf");
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "Chart pf" })).toBeChecked());
+  fireEvent.click(await screen.findByRole("button", { name: "Schedule" }));
+  expect(await screen.findByText("Template: Trend points · 2 points")).toBeInTheDocument();
 }
 
 /** `F4.303` U7: with no point to chart there is nothing to export, so no group is drawn. */

@@ -156,6 +156,9 @@ const MODULES: readonly string[] = [
   "apps/api/src/dashboard-builder/dashboard-widget-append.service.ts",
   // F4.303 PR 2 U15: the Pin dialog.
   "apps/web/src/components/view-actions/pin-dialog.tsx",
+  // F4.303 PR 2 U16: the Schedule button and the prefill it hands the wizard.
+  "apps/web/src/components/view-actions/schedule-button.tsx",
+  "apps/web/src/lib/schedule-from-view.ts",
 ];
 
 /**
@@ -185,12 +188,9 @@ const MODULES: readonly string[] = [
  * `F4.303` PR 2 (same plan, C24): the eleven new runtime modules, listed in U9 and moved to
  * {@link MODULES} by the unit that creates each (U10 the four shared files, U11 the schedule's
  * point check, U13 the two report files, U14 the append service, U15 `pin-dialog.tsx`, U16 the
- * last two web files).
+ * last two web files), so the list is empty again.
  */
-const PENDING_MODULES: readonly string[] = [
-  "apps/web/src/components/view-actions/schedule-button.tsx",
-  "apps/web/src/lib/schedule-from-view.ts",
-];
+const PENDING_MODULES: readonly string[] = [];
 
 /**
  * Files that are never scanned, each with its reason, so a later row does not

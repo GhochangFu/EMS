@@ -9,6 +9,9 @@ import {
   aThirdUnitFromTheUrlIsNotCharted,
   anUnalignedCustomCompareFillsThePreviousColumn,
   anOperatorSeesNoPin,
+  anOperatorSeesNoSchedule,
+  scheduleFollowsPinInTheControlRow,
+  scheduleOpensWithTheChartedPoints,
   copyLinkFollowsTheRangePicker,
   exportDownloadsThePagesQuery,
   pinSendsTheChartedPoints,
@@ -125,6 +128,18 @@ describe("F4.297 asset history page", () => {
 
   it("F4.303 U15: puts Pin in the control row, before Copy link", async () => {
     await pinSitsInTheControlRow();
+  });
+
+  it("F4.303 U16: puts Schedule after Pin in the control row", async () => {
+    await scheduleFollowsPinInTheControlRow();
+  });
+
+  it("F4.303 U16: draws no Schedule for an operator", async () => {
+    await anOperatorSeesNoSchedule();
+  });
+
+  it("F4.303 U16: Schedule opens with the charted points", async () => {
+    await scheduleOpensWithTheChartedPoints();
   });
 
   it("F4.303 U15: draws no Pin for an operator", async () => {

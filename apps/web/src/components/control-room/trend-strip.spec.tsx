@@ -405,6 +405,16 @@ export async function theStripHasNoPin(): Promise<void> {
   expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
 }
 
+/** `F4.303` U16 (Amendment 6 item 1): the strip has Export only, and no Schedule either. */
+export async function theStripHasNoSchedule(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderStrip();
+
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  screen.getByRole("group", { name: "Export" });
+  expect(screen.queryByRole("button", { name: "Schedule" })).toBeNull();
+}
+
 export function cleanupStrip(): void {
   const reached = fetchSpy.mock.calls.length;
   cleanup();

@@ -25,6 +25,7 @@ import {
   theLinksFollowTheSelectedRange,
   theFixedMountOffersExport,
   theStripHasNoPin,
+  theStripHasNoSchedule,
   theSubtitleNamesTheListSource,
   theWallDrawsNoExport,
   theWindowLinePrintsTheResponseZone,
@@ -137,5 +138,9 @@ describe("F4.301 U4 TrendStrip", () => {
 
   it("F4.303 U15: the strip has no Pin", async () => {
     await theStripHasNoPin();
+  });
+
+  it("F4.303 U16: the strip has no Schedule", async () => {
+    await theStripHasNoSchedule();
   });
 });

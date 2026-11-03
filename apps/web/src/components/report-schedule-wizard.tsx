@@ -17,6 +17,7 @@ import { apiErrorMessage } from "../lib/api-error-message";
 import { locationTreeOptions } from "../lib/location-tree";
 import { formatLabel } from "../lib/report-files-view";
 import { cadenceLabel, defaultTimezone, emailChannelOptions, scheduleBlockedReason } from "../lib/report-schedules-view";
+import { type SchedulePrefill, scheduleTemplateLine } from "../lib/schedule-from-view";
 import type { AuthUser } from "../stores/auth-store";
 import { AdminWizardFrame, fieldClass, labelClass } from "./admin/admin-wizard-frame";
 import { WizardShell } from "./wizard/wizard-shell";
@@ -70,7 +71,12 @@ export function schedulePatchFor(
 }
 
 /** The values a schedule's wizard starts from: the route's body keys. */
-function initialValues(schedule: ReportScheduleDto | null, offersChannel: boolean): Record<string, unknown> {
+function initialValues(
+  schedule: ReportScheduleDto | null,
+  offersChannel: boolean,
+  prefill?: SchedulePrefill,
+  isGlobalAdmin = false,
+): Record<string, unknown> {
   if (schedule !== null) {
     return {
       name: schedule.name,
@@ -84,15 +90,19 @@ function initialValues(schedule: ReportScheduleDto | null, offersChannel: boolea
     };
   }
   return {
-    organizationId: undefined,
+    // Only the global `admin` names an organization (a scoped user's body never carries the key).
+    organizationId: isGlobalAdmin ? prefill?.organizationId : undefined,
     name: "",
     formats: ["pdf"],
     cadence: "daily",
     runAtLocal: "06:00",
     timezone: defaultTimezone([], []),
     enabled: true,
-    locationIds: [],
+    locationIds: prefill === undefined ? [] : [...prefill.locationIds],
     ...(offersChannel ? { channelId: null } : {}),
+    // `F4.303` U16: set by a view's Schedule button, never asked by a step (both `clientOnly`).
+    ...(prefill === undefined ? {} : { templateId: prefill.templateId }),
+    ...(prefill === undefined || prefill.params === null ? {} : { params: prefill.params }),
   };
 }
 
@@ -102,6 +112,16 @@ export type ReportScheduleWizardProps = {
   schedule: ReportScheduleDto | null;
   onCancel: () => void;
   onDone: (row: ReportScheduleDto) => Promise<void> | void;
+  /**
+   * `F4.303` U16 (ADR 0108 Amendment 6 item 6): a view's Schedule button hands over the template,
+   * its params, the sites and (the Energy page) the organization. Create only; an edit ignores it.
+   */
+  prefill?: SchedulePrefill;
+  /**
+   * `F4.303` U16 (owner Q-C): render under the caller's control row instead of in the modal frame
+   * the Reports page uses. The steps, sentences and body are the same.
+   */
+  inline?: boolean;
 };
 
 /**
@@ -115,13 +135,14 @@ export type ReportScheduleWizardProps = {
  * (Q-6) has neither the "Whole organization" option nor the channel select;
  * the timezone follows the first chosen location until the user types one.
  */
-export function ReportScheduleWizard({ user, schedule, onCancel, onDone }: ReportScheduleWizardProps) {
+export function ReportScheduleWizard({ user, schedule, onCancel, onDone, prefill, inline = false }: ReportScheduleWizardProps) {
+  const fill = schedule === null ? prefill : undefined;
   const isGlobalAdmin = user.role === "admin";
   const offersChannel = user.role !== "location_admin";
   const offersWholeOrganization = user.role !== "location_admin";
   const needsOrganization = isGlobalAdmin && schedule === null;
   const timezones = useMemo(browserTimezones, []);
-  const [values, setValues] = useState<Record<string, unknown>>(() => initialValues(schedule, offersChannel));
+  const [values, setValues] = useState<Record<string, unknown>>(() => initialValues(schedule, offersChannel, fill, isGlobalAdmin));
   // The user typed a zone (or the row has one): the location-driven default no longer overwrites it.
   const [timezoneTouched, setTimezoneTouched] = useState(schedule !== null);
 
@@ -199,7 +220,8 @@ export function ReportScheduleWizard({ user, schedule, onCancel, onDone }: Repor
               setValues({
                 ...values,
                 organizationId: event.target.value === "" ? undefined : event.target.value,
-                locationIds: [],
+                // The prefilled sites belong to the prefilled organization only.
+                locationIds: fill !== undefined && event.target.value === fill.organizationId ? [...fill.locationIds] : [],
                 ...(offersChannel ? { channelId: null } : {}),
               })
             }
@@ -213,6 +235,7 @@ export function ReportScheduleWizard({ user, schedule, onCancel, onDone }: Repor
           </select>
         </label>
       ) : null}
+      {fill === undefined ? null : <p className="text-xs text-ink-muted">{scheduleTemplateLine(fill)}</p>}
       <label className={labelClass}>
         Name
         <input className={fieldClass} value={textOf(values.name)} onChange={(event) => setValues({ ...values, name: event.target.value })} />
@@ -331,6 +354,10 @@ export function ReportScheduleWizard({ user, schedule, onCancel, onDone }: Repor
       if (blocked === null) save.mutate(body);
     },
     onCancel,
+    review:
+      fill === undefined
+        ? undefined
+        : { omit: ["templateId", "params"], detail: <p className="text-xs text-ink-muted">{scheduleTemplateLine(fill)}</p> },
     submitting: save.isPending,
     submitError: blocked ?? (save.error ? apiErrorMessage(save.error) : null),
     summary: reportScheduleWizardEntry(id).summary({
@@ -340,6 +367,14 @@ export function ReportScheduleWizard({ user, schedule, onCancel, onDone }: Repor
       organizationName,
     }),
   };
+  if (inline && schedule === null) {
+    return (
+      <section aria-label="Create a report schedule" className="surface-raised grid gap-3 rounded border border-line-strong p-3">
+        <h2 className="font-condensed text-lg font-bold">Create a report schedule</h2>
+        <WizardShell entry={reportScheduleWizardEntry("reportSchedule.create")} {...shared} params={{}} />
+      </section>
+    );
+  }
   return schedule !== null ? (
     <AdminWizardFrame title="Edit a report schedule">
       <WizardShell

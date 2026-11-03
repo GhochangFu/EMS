@@ -22,6 +22,8 @@ import {
   theRangeControlReachesTheEnergySubTab,
   theSectionStateIsReadFromTheUrl,
   aSegmentSubTabOffersPin,
+  aSegmentSubTabOffersSchedule,
+  theEnergySubTabSchedulesTheSitesEnergyReport,
   theEnergySubTabHasNoPin,
 } from "./site-trends-view.spec";
 
@@ -35,6 +37,14 @@ describe("F4.302 the Trends & Energy section", () => {
 
   it("F4.303 U15: a segment sub-tab offers Pin", async () => {
     await aSegmentSubTabOffersPin();
+  });
+
+  it("F4.303 U16: the Energy sub-tab schedules the site energy report", async () => {
+    await theEnergySubTabSchedulesTheSitesEnergyReport();
+  });
+
+  it("F4.303 U16: a segment sub-tab offers one Schedule", async () => {
+    await aSegmentSubTabOffersSchedule();
   });
 
   it("F4.303 U15: the Energy sub-tab has no Pin", async () => {

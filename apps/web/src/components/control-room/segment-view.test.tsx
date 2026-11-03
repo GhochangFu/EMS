@@ -6,6 +6,9 @@ import { useAuthStore } from "../../stores/auth-store";
 import {
   aSegmentWithNoPointsSaysWhereToAddThem,
   aTrimmedChartNamesTheCap,
+  anAssetGroupAdminSeesNoSchedule,
+  scheduleOpensWithTheDrawnSeriesOnly,
+  scheduleSitsAfterPinInTheSubTabsControlRow,
   anOperatorSeesNoPinOnASubTab,
   pinSendsTheDrawnSeriesAndTheUrlsPreset,
   pinSitsInTheSubTabsControlRow,
@@ -39,6 +42,18 @@ describe("F4.302 one segment sub-tab", () => {
 
   it("F4.303 U15: puts Pin in the sub-tab's control row for an author", () => {
     pinSitsInTheSubTabsControlRow();
+  });
+
+  it("F4.303 U16: puts Schedule after Pin in the control row", () => {
+    scheduleSitsAfterPinInTheSubTabsControlRow();
+  });
+
+  it("F4.303 U16: draws no Schedule for an asset-group admin", () => {
+    anAssetGroupAdminSeesNoSchedule();
+  });
+
+  it("F4.303 U16: Schedule opens with the drawn series only", async () => {
+    await scheduleOpensWithTheDrawnSeriesOnly();
   });
 
   it("F4.303 U15: draws no Pin for an operator", () => {

@@ -5,6 +5,14 @@ import { afterEach, describe, it, vi } from "vitest";
 import { resetWizardStore } from "../stores/wizard-store";
 import {
   aLocationAdminCreateBodyHasNoOrganizationIdKey,
+  aScopedUsersBodyNeverCarriesThePrefilledOrganization,
+  aTrendPrefillShowsItsTemplateLine,
+  anAdminStartsOnThePrefilledOrganization,
+  anEditNeverSendsTheTemplateOrParams,
+  anEnergyPrefillShowsItsTemplateLine,
+  theCreateBodyCarriesTheTemplateAndParams,
+  theReviewListsTheTemplate,
+  withNoPrefillTheBodyHasNeitherKey,
   aLocationAdminHasNoOrganizationSelect,
   aLocationAdminHasNoWholeOrganizationOption,
   aLocationAdminReadsTheChannelSentenceInsteadOfTheSelect,
@@ -54,4 +62,14 @@ describe("F4.280 — the report schedule wizard (ADR 0099 decision 6)", () => {
   it("a rename PATCHes only the name key", () => updateSendsOnlyTheChangedKey());
   it("an unchanged edit says Nothing changed yet and sends nothing", () => anUnchangedEditSaysNothingChanged());
   it("a refused create renders the API's sentence", () => aRefusedCreateRendersTheApiSentence());
+
+  // F4.303 U16 (ADR 0108 Amendment 6 item 6): the wizard prefilled from a view.
+  it("a trend prefill shows its template line", () => aTrendPrefillShowsItsTemplateLine());
+  it("an energy prefill shows its template line", () => anEnergyPrefillShowsItsTemplateLine());
+  it("the Review step lists the template", () => theReviewListsTheTemplate());
+  it("the create body carries the template and params", () => theCreateBodyCarriesTheTemplateAndParams());
+  it("with no prefill the body has neither key", () => withNoPrefillTheBodyHasNeitherKey());
+  it("an edit never sends the template or params", () => anEditNeverSendsTheTemplateOrParams());
+  it("a scoped user's body never carries the prefilled organization", () => aScopedUsersBodyNeverCarriesThePrefilledOrganization());
+  it("an admin starts on the prefilled organization", () => anAdminStartsOnThePrefilledOrganization());
 });

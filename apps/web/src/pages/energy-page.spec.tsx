@@ -15,6 +15,7 @@ import type {
 import * as energyApi from "../api/energy-view";
 import * as exportsApi from "../api/view-exports";
 import { STACK_ID } from "../lib/energy-stack-option";
+import { stubScheduleWizardApis } from "../components/view-actions/schedule-button.spec";
 import type { AuthUser } from "../stores/auth-store";
 import { EnergyPage } from "./energy-page";
 import * as copilotApi from "../api/copilot";
@@ -614,6 +615,22 @@ export async function theEnergyPageHasNoPin(): Promise<void> {
   const bar = await screen.findByTestId("energy-filter-bar");
   within(bar).getByRole("group", { name: "Export" });
   expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+}
+
+/**
+ * `F4.303` U16 (ADR 0108 Amendment 6 item 6): Schedule follows Export in the filter bar, and the
+ * wizard opens for `energy_consumption` with the page's compare.
+ */
+export async function scheduleOpensTheEnergyReportWithTheCompare(): Promise<void> {
+  stubWithSites();
+  stubScheduleWizardApis();
+  renderPage(FULL_LINK);
+  const bar = await screen.findByTestId("energy-filter-bar");
+  const exportGroup = within(bar).getByRole("group", { name: "Export" });
+  const schedule = await within(bar).findByRole("button", { name: "Schedule" });
+  expect(exportGroup.compareDocumentPosition(schedule) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  fireEvent.click(schedule);
+  expect(await screen.findByText("Template: Energy consumption · compare on")).toBeInTheDocument();
 }
 
 /** `F4.303` U7: a click downloads the energy view for the query the page is showing. */
