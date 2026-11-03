@@ -4,10 +4,12 @@ import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 import { fetchSiteTrendStrip } from "../../api/trend-strip";
+import { downloadTrendStripExport } from "../../api/view-exports";
 import { formatPointValue } from "../../lib/generated-site-view";
 import { siteAssetsPath } from "../../lib/smoc-pages";
 import { historyHref, lastValue, stripWindowLabel } from "../../lib/trend-strip";
 import { SectionCard } from "../section-card";
+import { ExportMenu } from "../view-actions/export-menu";
 import { Sparkline } from "./sparkline";
 
 /**
@@ -134,6 +136,11 @@ type TrendStripBodyProps = {
   defaultRange: TrendStripRange;
   /** Drawn at the left of the range switch: the fixed mount's `h2`; a widget's frame has its own. */
   heading?: ReactNode;
+  /**
+   * `F4.303` U7 (ADR 0108 Amendment 6 item 3): draws the Export group. The fixed mount and the
+   * widget pass `!wall` (a wall screen has no actions); no Link, Pin or Schedule on the strip.
+   */
+  exportable: boolean;
 };
 
 /**
@@ -142,7 +149,7 @@ type TrendStripBodyProps = {
  * `trend_strip` dashboard widget (`widgets/trend-strip-widget.tsx`) both draw this, so the read,
  * the click target and the fixed failure sentences are written once.
  */
-export function TrendStripBody({ locationId, assetGroupId, defaultRange, heading }: TrendStripBodyProps) {
+export function TrendStripBody({ locationId, assetGroupId, defaultRange, heading, exportable }: TrendStripBodyProps) {
   const [range, setRange] = useState<TrendStripRange>(defaultRange);
   const query = useQuery({
     queryKey: ["control-room", "trend-strip", locationId, assetGroupId, range],
@@ -157,6 +164,9 @@ export function TrendStripBody({ locationId, assetGroupId, defaultRange, heading
         className={`flex flex-wrap items-center gap-3 ${heading === undefined ? "justify-end" : "justify-between"}`}
       >
         {heading}
+        {exportable ? (
+          <ExportMenu onExport={(format) => downloadTrendStripExport(format, locationId, { range, assetGroupId })} />
+        ) : null}
         <nav aria-label="Trend range" className="flex gap-1">
           {RANGES.map((r) => (
             <button

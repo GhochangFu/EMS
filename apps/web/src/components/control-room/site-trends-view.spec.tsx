@@ -6,6 +6,7 @@ import { expect, vi } from "vitest";
 import type { SiteSegmentViewsDto } from "@bms/shared";
 
 import * as segmentApi from "../../api/segment-views";
+import * as exportsApi from "../../api/view-exports";
 import { SEGMENT_VIEWS_BODY } from "../../api/segment-views.spec";
 import { ApiError } from "../../lib/api-error";
 import { SiteTrendsView } from "./site-trends-view";
@@ -282,4 +283,43 @@ export async function copyLinkSitsBesideTheRangeControls(): Promise<void> {
   expect(row).not.toBeNull();
   expect(row?.contains(copy)).toBe(true);
   expect(row?.lastElementChild?.contains(copy)).toBe(true);
+}
+
+/** `F4.303` U7: the Export group sits in the control row, before "Copy link". */
+export async function exportSitsBesideCopyLink(): Promise<void> {
+  stubSegments(BODY);
+  renderAt("");
+  const copy = await screen.findByRole("button", { name: "Copy link" });
+  const exportGroup = screen.getByRole("group", { name: "Export" });
+  const row = screen.getByTestId("site-trends-controls");
+  expect(row.contains(exportGroup)).toBe(true);
+  expect(exportGroup.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+/** `F4.303` U7: on the Energy sub-tab Export downloads the energy view of the site and the range. */
+export async function theEnergySubTabExportsTheSiteEnergyView(): Promise<void> {
+  stubSegments(BODY);
+  const download = vi.spyOn(exportsApi, "downloadEnergyViewExport").mockResolvedValue();
+  const segment = vi.spyOn(exportsApi, "downloadSegmentViewExport").mockResolvedValue();
+  renderAt("?range=7d&compare=1");
+  await screen.findByTestId("site-energy-view");
+  fireEvent.click(within(screen.getByRole("group", { name: "Export" })).getByRole("button", { name: "CSV" }));
+  await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+  expect(download).toHaveBeenCalledWith("csv", { range: "7d", locationIds: [SITE], compare: "previous" });
+  expect(segment).not.toHaveBeenCalled();
+}
+
+/** `F4.303` U7: on a segment sub-tab Export downloads the segment view with the query the read sent. */
+export async function aSegmentSubTabExportsItsSegmentView(): Promise<void> {
+  const read = stubSegments(BODY);
+  const download = vi.spyOn(exportsApi, "downloadSegmentViewExport").mockResolvedValue();
+  const energy = vi.spyOn(exportsApi, "downloadEnergyViewExport").mockResolvedValue();
+  renderAt("?view=chillers&point=pf&range=7d");
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  const sent = read.mock.calls[0]?.[1];
+  fireEvent.click(within(screen.getByRole("group", { name: "Export" })).getByRole("button", { name: "XLSX" }));
+  await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+  expect(download).toHaveBeenCalledWith("xlsx", SITE, sent);
+  expect(sent).toEqual({ range: "7d", segment: "chillers", point: "pf" });
+  expect(energy).not.toHaveBeenCalled();
 }

@@ -3,6 +3,8 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aFailedReadNeverRendersTheErrorMessage,
+  aNonExportableWidgetDrawsNoExport,
+  anExportableWidgetOffersExport,
   aRangeClickReadsAgain,
   aSparklineLinksToTheHistoryPage,
   cleanupTrendStripWidget,
@@ -10,6 +12,7 @@ import {
   theFrameCarriesTheWidgetTitle,
   theGroupGoesToTheRead,
   thePreviewDrawsItsSentenceAndReadsNothing,
+  thePreviewDrawsNoExport,
   theRangeStartsOnTheDefaultRange,
   theTwoSentencesDiffer,
 } from "./trend-strip-widget.spec";
@@ -21,6 +24,18 @@ import {
 describe("F4.305 U4 TrendStripWidget", () => {
   afterEach(() => {
     cleanupTrendStripWidget();
+  });
+
+  it("F4.303: an exportable widget offers Export for its group and range", async () => {
+    await anExportableWidgetOffersExport();
+  });
+
+  it("F4.303: a non-exportable widget draws no Export group", async () => {
+    await aNonExportableWidgetDrawsNoExport();
+  });
+
+  it("F4.303: the preview draws no Export group", () => {
+    thePreviewDrawsNoExport();
   });
 
   it("carries the widget title on its frame and draws the strip inside", async () => {

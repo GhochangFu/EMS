@@ -12,6 +12,7 @@ import * as assetsApi from "../api/assets";
 import * as copilotApi from "../api/copilot";
 import * as systemStatusApi from "../api/system-status";
 import * as telemetryApi from "../api/telemetry";
+import * as exportsApi from "../api/view-exports";
 import { OPERATIONAL } from "../components/system-status-indicator.spec";
 import { formatBucketWidth } from "../lib/widget-value";
 import type { AuthUser } from "../stores/auth-store";
@@ -325,4 +326,39 @@ export async function copyLinkFollowsTheRangePicker(): Promise<void> {
   expect(row.contains(range)).toBe(true);
   expect(row.lastElementChild?.contains(copy)).toBe(true);
   expect(range.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+/** `F4.303` U7: the Export group sits in the control row, before "Copy link". */
+export async function exportSitsBeforeCopyLinkInTheControlRow(): Promise<void> {
+  stubApis();
+  renderHistoryPage();
+  const copy = await screen.findByRole("button", { name: "Copy link" });
+  const row = screen.getByTestId("asset-history-controls");
+  const exportGroup = await within(row).findByRole("group", { name: "Export" });
+  expect(exportGroup.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+/** `F4.303` U7: a click downloads the page's range, function, compare and charted points. */
+export async function exportDownloadsThePagesQuery(): Promise<void> {
+  stubApis({ points: [point("kw"), point("pf", null)] });
+  const download = vi.spyOn(exportsApi, "downloadAssetHistoryExport").mockResolvedValue();
+  renderHistoryPage("?range=7d&compare=1&points=kw,pf&fn=max");
+  const group = await screen.findByRole("group", { name: "Export" });
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "Chart pf" })).toBeChecked());
+  await userEvent.click(within(group).getByRole("button", { name: "CSV" }));
+  await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+  expect(download).toHaveBeenCalledWith(
+    "csv",
+    ASSET_ID,
+    { range: "7d", compare: true, points: ["kw", "pf"], fn: "max" },
+    ["kw", "pf"],
+  );
+}
+
+/** `F4.303` U7: with no point to chart there is nothing to export, so no group is drawn. */
+export async function noPointsMeansNoExport(): Promise<void> {
+  stubApis({ points: [] });
+  renderHistoryPage();
+  await screen.findByRole("button", { name: "Copy link" });
+  expect(screen.queryByRole("group", { name: "Export" })).toBeNull();
 }

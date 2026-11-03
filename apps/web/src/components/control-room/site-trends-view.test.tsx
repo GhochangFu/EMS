@@ -4,6 +4,9 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aFailedSegmentReadIsAFixedSentence,
+  aSegmentSubTabExportsItsSegmentView,
+  exportSitsBesideCopyLink,
+  theEnergySubTabExportsTheSiteEnergyView,
   aMissingSegmentHasItsOwnSentence,
   aRangeChangeIsWrittenToTheUrl,
   aSegmentSubTabAsksItsSegmentAndPoint,
@@ -80,5 +83,17 @@ describe("F4.302 the Trends & Energy section", () => {
 
   it("F4.303 T3: puts Copy link at the end of the control row", async () => {
     await copyLinkSitsBesideTheRangeControls();
+  });
+
+  it("F4.303 U7: puts Export before Copy link in the control row", async () => {
+    await exportSitsBesideCopyLink();
+  });
+
+  it("F4.303 U7: the Energy sub-tab exports the site's energy view", async () => {
+    await theEnergySubTabExportsTheSiteEnergyView();
+  });
+
+  it("F4.303 U7: a segment sub-tab exports its segment view", async () => {
+    await aSegmentSubTabExportsItsSegmentView();
   });
 });

@@ -2,6 +2,7 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aDashboardOffersExport,
   aGroupLessOrUnknownTabResolvesToNull,
   aLocationReadsOnce,
   aRangeClickReadsOnceMore,
@@ -9,6 +10,7 @@ import {
   cleanupTrendStripWidgetLive,
   noLocationReadsNothing,
   noTabKeySendsTheWholeSite,
+  theWallDrawsNoExport,
 } from "./trend-strip-widget-live.spec";
 
 /**
@@ -38,6 +40,14 @@ describe("F4.305 U4 TrendStripWidgetLive", () => {
 
   it("reads once on a dashboard with a location", async () => {
     await aLocationReadsOnce();
+  });
+
+  it("F4.303: a dashboard offers Export", async () => {
+    await aDashboardOffersExport();
+  });
+
+  it("F4.303: the wall draws no Export group", async () => {
+    await theWallDrawsNoExport();
   });
 
   it("reads once more, with the same group, on a range click", async () => {

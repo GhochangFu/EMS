@@ -139,6 +139,9 @@ const MODULES: readonly string[] = [
   // F4.303 (ADR 0108 Amendment 6 item 10) — U6: the link state and "Copy link".
   "apps/web/src/lib/view-links.ts",
   "apps/web/src/components/view-actions/copy-link-button.tsx",
+  // F4.303 U7: the export client and "Export".
+  "apps/web/src/api/view-exports.ts",
+  "apps/web/src/components/view-actions/export-menu.tsx",
 ];
 
 /**
@@ -162,12 +165,10 @@ const MODULES: readonly string[] = [
  *
  * `F4.303` (Amendment 6 item 10; `docs/plans/f4.303-view-actions.md` C24): PR 1's seven new
  * runtime modules, listed in U1 and moved to {@link MODULES} by the unit that creates each. U6
- * moved `view-links.ts` and `copy-link-button.tsx`; U7 moves the last two.
+ * moved `view-links.ts` and `copy-link-button.tsx`; U7 moved the last two
+ * (`view-exports.ts`, `export-menu.tsx`), so the list is empty again.
  */
-const PENDING_MODULES: readonly string[] = [
-  "apps/web/src/api/view-exports.ts",
-  "apps/web/src/components/view-actions/export-menu.tsx",
-];
+const PENDING_MODULES: readonly string[] = [];
 
 /**
  * Files that are never scanned, each with its reason, so a later row does not

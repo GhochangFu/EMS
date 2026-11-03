@@ -11,6 +11,7 @@ import type {
 } from "@bms/shared";
 
 import { fetchEnergyFilterOptions, fetchEnergyOrganizationViews, fetchEnergyView } from "../api/energy-view";
+import { downloadEnergyViewExport } from "../api/view-exports";
 import { AbnormalList } from "../components/energy/abnormal-list";
 import { EnergyKpiTiles } from "../components/energy/energy-kpi-tiles";
 import { EnergyHeatmap } from "../components/energy/energy-heatmap";
@@ -23,6 +24,7 @@ import { type KpiTileStatus } from "../components/kpi-tile";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 import { CopyLinkButton } from "../components/view-actions/copy-link-button";
+import { ExportMenu } from "../components/view-actions/export-menu";
 import { AppShell } from "../layouts/app-shell";
 import { useChartTheme } from "../lib/chart-theme";
 import { type SiteRankingSort, siteStacks } from "../lib/energy-organization-views";
@@ -208,7 +210,14 @@ export function EnergyPage({ user }: EnergyPageProps) {
                 value={filter}
                 onChange={(next) => writeState(next, stackBy, rankBy)}
                 timeZone={viewQ.data?.timeZone ?? null}
-                actions={<CopyLinkButton />}
+                actions={
+                  <>
+                    {query === null ? null : (
+                      <ExportMenu onExport={(format) => downloadEnergyViewExport(format, query)} />
+                    )}
+                    <CopyLinkButton />
+                  </>
+                }
               />
             ) : null
           }

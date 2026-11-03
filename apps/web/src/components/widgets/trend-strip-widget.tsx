@@ -14,6 +14,8 @@ type TrendStripWidgetProps = {
   /** The group the widget's `config.tabKey` resolves to; `null` is the whole site. */
   assetGroupId: string | null;
   defaultRange: TrendStripRange;
+  /** `F4.303` U7: the Export group; false on a wall screen. The builder preview is a separate component and draws none. */
+  exportable: boolean;
 };
 
 /**
@@ -25,7 +27,7 @@ type TrendStripWidgetProps = {
  *
  * The body is keyed on the default range, so an edited `defaultRange` restarts the switch on it.
  */
-export function TrendStripWidget({ title, locationId, assetGroupId, defaultRange }: TrendStripWidgetProps) {
+export function TrendStripWidget({ title, locationId, assetGroupId, defaultRange, exportable }: TrendStripWidgetProps) {
   return (
     <WidgetFrame title={title} status="ready">
       <div className={SITE_WIDGET_BODY_CLASS}>
@@ -37,6 +39,7 @@ export function TrendStripWidget({ title, locationId, assetGroupId, defaultRange
             locationId={locationId}
             assetGroupId={assetGroupId}
             defaultRange={defaultRange}
+            exportable={exportable}
           />
         )}
       </div>

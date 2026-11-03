@@ -13,6 +13,7 @@ import type {
 } from "@bms/shared";
 
 import * as energyApi from "../api/energy-view";
+import * as exportsApi from "../api/view-exports";
 import { STACK_ID } from "../lib/energy-stack-option";
 import type { AuthUser } from "../stores/auth-store";
 import { EnergyPage } from "./energy-page";
@@ -591,4 +592,27 @@ export async function copyLinkEndsTheFilterBar(): Promise<void> {
   const bar = await screen.findByTestId("energy-filter-bar");
   const copy = within(bar).getByRole("button", { name: "Copy link" });
   expect(bar.lastElementChild?.contains(copy)).toBe(true);
+}
+
+/** `F4.303` U7: the Export group sits in the filter bar, before "Copy link". */
+export async function exportSitsBeforeCopyLinkInTheFilterBar(): Promise<void> {
+  stubEnergyApi();
+  renderPage();
+  const bar = await screen.findByTestId("energy-filter-bar");
+  const exportGroup = within(bar).getByRole("group", { name: "Export" });
+  const copy = within(bar).getByRole("button", { name: "Copy link" });
+  expect(exportGroup.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+/** `F4.303` U7: a click downloads the energy view for the query the page is showing. */
+export async function exportDownloadsTheViewsCurrentQuery(): Promise<void> {
+  const { viewSpy } = stubWithSites();
+  const download = vi.spyOn(exportsApi, "downloadEnergyViewExport").mockResolvedValue();
+  renderPage(FULL_LINK);
+  await waitFor(() => expect(viewSpy).toHaveBeenCalled());
+  const shown = viewSpy.mock.calls[0]?.[0];
+  fireEvent.click(within(await screen.findByRole("group", { name: "Export" })).getByRole("button", { name: "XLSX" }));
+  await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+  expect(download).toHaveBeenCalledWith("xlsx", shown);
+  expect(shown).toEqual({ range: "7d", organizationId: ORG, locationIds: [SITE_A, SITE_B], compare: "previous" });
 }

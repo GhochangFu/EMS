@@ -9,6 +9,9 @@ import {
   aThirdUnitFromTheUrlIsNotCharted,
   anUnalignedCustomCompareFillsThePreviousColumn,
   copyLinkFollowsTheRangePicker,
+  exportDownloadsThePagesQuery,
+  exportSitsBeforeCopyLinkInTheControlRow,
+  noPointsMeansNoExport,
   aForbiddenAssetRendersTheAccessSentence,
   aNinthPointIsRefused,
   aPresetAndCompareInTheUrlReachTheRead,
@@ -103,5 +106,17 @@ describe("F4.297 asset history page", () => {
 
   it("F4.303: puts Copy link after the range controls", async () => {
     await copyLinkFollowsTheRangePicker();
+  });
+
+  it("F4.303 U7: puts Export before Copy link in the control row", async () => {
+    await exportSitsBeforeCopyLinkInTheControlRow();
+  });
+
+  it("F4.303 U7: Export downloads the page's range, function, compare and points", async () => {
+    await exportDownloadsThePagesQuery();
+  });
+
+  it("F4.303 U7: draws no Export group without a charted point", async () => {
+    await noPointsMeansNoExport();
   });
 });

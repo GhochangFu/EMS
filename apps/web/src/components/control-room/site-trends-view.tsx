@@ -4,11 +4,13 @@ import { Link, useSearchParams } from "react-router-dom";
 import type { SiteSegmentViewsDto, SiteSegmentViewsQuery } from "@bms/shared";
 
 import { fetchSiteSegmentViews, isSegmentNotFound, segmentViewsQueryKey } from "../../api/segment-views";
-import { ENERGY_VIEW, segmentViewsQueryOf } from "../../lib/site-trends";
+import { downloadEnergyViewExport, downloadSegmentViewExport, type ViewExportFormat } from "../../api/view-exports";
+import { ENERGY_VIEW, segmentViewsQueryOf, siteEnergyQueryOf } from "../../lib/site-trends";
 import { siteTrendsPath } from "../../lib/smoc-pages";
 import { type TrendsLink, trendsLinkFromSearch, trendsLinkToSearch } from "../../lib/view-links";
 import { RangeCompareControls } from "../energy/range-compare-controls";
 import { CopyLinkButton } from "../view-actions/copy-link-button";
+import { ExportMenu } from "../view-actions/export-menu";
 import { SegmentView } from "./segment-view";
 import { SiteEnergyView } from "./site-energy-view";
 
@@ -53,6 +55,15 @@ export function SiteTrendsView({ locationId }: Props) {
     refetchInterval: 60_000,
   });
   const data = segmentQ.data;
+  // `F4.303` U7: Export sends the sub-tab's own query — the site's energy view on the Energy
+  // sub-tab, the segment view on a segment one. No menu while the range is an unfinished custom pair.
+  const energyQuery = view === ENERGY_VIEW ? siteEnergyQueryOf(locationId, value) : null;
+  const exportView: ((format: ViewExportFormat) => Promise<void>) | null =
+    energyQuery !== null
+      ? (format) => downloadEnergyViewExport(format, energyQuery)
+      : view !== ENERGY_VIEW && query !== null
+        ? (format) => downloadSegmentViewExport(format, locationId, query)
+        : null;
   const sectionPath = siteTrendsPath(locationId);
   const entries = [
     { key: ENERGY_VIEW, label: "Energy" },
@@ -80,6 +91,11 @@ export function SiteTrendsView({ locationId }: Props) {
             onChange={(next) => write({ ...link, value: next })}
             timeZone={data?.timeZone ?? null}
           />
+          {exportView === null ? null : (
+            <div className="pb-1">
+              <ExportMenu onExport={exportView} />
+            </div>
+          )}
           <div className="pb-1">
             <CopyLinkButton />
           </div>

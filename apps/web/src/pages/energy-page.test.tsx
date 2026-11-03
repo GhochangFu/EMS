@@ -11,6 +11,8 @@ import {
   aFullLinkPressesItsStackAndSort,
   aFullScopeRendersNoNote,
   copyLinkEndsTheFilterBar,
+  exportDownloadsTheViewsCurrentQuery,
+  exportSitsBeforeCopyLinkInTheFilterBar,
   theDefaultFilterWritesAnEmptySearch,
   theStackChoiceIsWrittenToTheUrl,
   useMyDefaultFilterClearsTheLink,
@@ -176,5 +178,13 @@ describe("F4.303 the Energy page's state in the URL", () => {
 
   it("P4: ends the filter bar with Copy link", async () => {
     await copyLinkEndsTheFilterBar();
+  });
+
+  it("F4.303 U7: puts Export before Copy link in the filter bar", async () => {
+    await exportSitsBeforeCopyLinkInTheFilterBar();
+  });
+
+  it("F4.303 U7: Export downloads the query the page is showing", async () => {
+    await exportDownloadsTheViewsCurrentQuery();
   });
 });

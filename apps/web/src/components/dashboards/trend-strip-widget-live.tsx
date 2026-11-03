@@ -1,5 +1,8 @@
 import type { DashboardWidgetDto, TrendStripWidgetConfig } from "@bms/shared";
 
+import { useLocation } from "react-router-dom";
+
+import { parseWallParams } from "../../lib/wall-mode";
 import { widgetTitle } from "../../lib/widget-value";
 import { TrendStripWidget } from "../widgets/trend-strip-widget";
 
@@ -35,12 +38,15 @@ type TrendStripWidgetLiveProps = {
  * The read itself is the `F4.301` strip's (`TrendStripBody`), so there is one read and one click.
  */
 export function TrendStripWidgetLive({ widget, locationId, tabs }: TrendStripWidgetLiveProps) {
+  // `F4.303` U7: a wall screen (`?wall=1`) has no actions, so the widget offers no Export there.
+  const wall = parseWallParams(useLocation().search).on;
   return (
     <TrendStripWidget
       title={widgetTitle(widget.title, widget.widgetType)}
       locationId={locationId}
       assetGroupId={trendStripGroupFor(widget.config, tabs)}
       defaultRange={widget.config.defaultRange}
+      exportable={!wall}
     />
   );
 }

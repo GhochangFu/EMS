@@ -16,7 +16,7 @@ const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
  */
 
 /** The search, one key per set field, in the contract's order; an absent field sends no key. */
-function segmentSearch(query: SiteSegmentViewsQuery): URLSearchParams {
+export function segmentSearch(query: SiteSegmentViewsQuery): URLSearchParams {
   const params = new URLSearchParams({ range: query.range });
   for (const key of ["segment", "point", "from", "to", "compare"] as const) {
     const value = query[key];

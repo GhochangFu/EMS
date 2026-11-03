@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import { fetchSiteTrendStrip } from "../../api/trend-strip";
+import { downloadTrendStripExport } from "../../api/view-exports";
 import { siteAssetsPath } from "../../lib/smoc-pages";
 import { historyHref, stripWindowLabel } from "../../lib/trend-strip";
 import { TrendStrip } from "./trend-strip";
@@ -23,8 +24,13 @@ import { TrendStrip } from "./trend-strip";
  */
 
 vi.mock("../../api/trend-strip", () => ({ fetchSiteTrendStrip: vi.fn() }));
+vi.mock("../../api/view-exports", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../api/view-exports")>()),
+  downloadTrendStripExport: vi.fn(() => Promise.resolve()),
+}));
 
 const fetchStrip = vi.mocked(fetchSiteTrendStrip);
+const downloadStrip = vi.mocked(downloadTrendStripExport);
 let fetchSpy: ReturnType<typeof vi.fn> = vi.fn();
 
 const LOCATION_ID = "0b7e2f4a-1c3d-4e5f-8a9b-0c1d2e3f4a5b";
@@ -96,13 +102,13 @@ function strip(overrides: Partial<SiteTrendStripDto> = {}): SiteTrendStripDto {
   };
 }
 
-function renderStrip(assetGroupId: string | null = null): QueryClient {
+function renderStrip(assetGroupId: string | null = null, entry = "/"): QueryClient {
   fetchSpy = vi.fn(() => Promise.reject(new Error("trend-strip spec: an unmocked read reached fetch")));
   vi.stubGlobal("fetch", fetchSpy);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[entry]}>
         <TrendStrip locationId={LOCATION_ID} assetGroupId={assetGroupId} />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -353,10 +359,44 @@ export async function aPendingReadShowsTheLoadingStatus(): Promise<void> {
   expect(await screen.findByRole("status")).toHaveTextContent("Loading trends…");
 }
 
+/** `F4.303` U7: the fixed mount offers the Export group once the strip has loaded. */
+export async function theFixedMountOffersExport(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderStrip();
+
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  expect(screen.getByRole("group", { name: "Export" })).toBeInTheDocument();
+}
+
+/** `F4.303` U7: a click downloads the strip's current range and group, in the chosen format. */
+export async function exportDownloadsTheCurrentQuery(): Promise<void> {
+  fetchStrip.mockImplementation((_id, { range }) => Promise.resolve(strip({ range })));
+  renderStrip(GROUP_ID);
+
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  await userEvent.click(screen.getByRole("button", { name: "7 d" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "7 d" })).toHaveAttribute("aria-pressed", "true"));
+  await userEvent.click(within(screen.getByRole("group", { name: "Export" })).getByRole("button", { name: "XLSX" }));
+
+  await waitFor(() =>
+    expect(downloadStrip).toHaveBeenCalledWith("xlsx", LOCATION_ID, { range: "7d", assetGroupId: GROUP_ID }),
+  );
+}
+
+/** `F4.303` U7: on a wall screen (`?wall=1`) the strip draws no Export group. */
+export async function theWallDrawsNoExport(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderStrip(null, "/?wall=1&every=30");
+
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  expect(screen.queryByRole("group", { name: "Export" })).toBeNull();
+}
+
 export function cleanupStrip(): void {
   const reached = fetchSpy.mock.calls.length;
   cleanup();
   fetchStrip.mockReset();
+  downloadStrip.mockClear();
   vi.unstubAllGlobals();
   expect(reached, "a read reached the real fetch").toBe(0);
 }
