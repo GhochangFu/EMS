@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
-import { reportSchedules } from "@bms/db";
+import { assets, reportSchedules } from "@bms/db";
 import type { JwtPayload, ReportScheduleDto } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
@@ -14,6 +14,7 @@ import { ChannelsService } from "../notifications/channels.service";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { buildReportObjectKey } from "../storage/object-key";
 import { headObject, putObject } from "../storage/storage-client";
+import { createFixtureAssets } from "../testing/integration-fixtures";
 import type { ConfiguredStorageConfig } from "../testing/integration-storage-gate";
 import { withRollback } from "../testing/with-rollback";
 import {
@@ -523,16 +524,34 @@ export async function reenableMovesNextRunAtOnARealRow(fx: ScheduleIntegrationFi
 // F4.303 U11 (ADR 0108 Amendment 6 item 6) — trend_points schedules
 // ---------------------------------------------------------------------------
 
-/** One seeded ESKOM asset at `RSMOC-WC` and one of its active point codes, by the fleet pool. */
-async function wcPoint(fx: ScheduleIntegrationFixtures): Promise<{ assetId: string; pointKey: string }> {
-  const result = await fx.base.fleetDb.execute<{ asset_id: string; point_key: string }>(sql`
-    select a.id::text as asset_id, p.point_key
-      from bms.assets a join bms.asset_points p on p.asset_id = a.id and p.active
-     where a.organization_id = ${fx.base.eskomId}::uuid and a.location_id = ${fx.base.wcId}::uuid
-     order by a.created_at, a.id, p.point_key limit 1`);
-  const row = result.rows[0];
-  if (!row) throw new Error("F4.303: no active point on an asset at RSMOC-WC — run pnpm db:seed");
-  return { assetId: row.asset_id, pointKey: row.point_key };
+/**
+ * Runs `fn` with one active point on a fixture asset this run commits at ESKOM's `RSMOC-WC` (by
+ * the fleet pool), and deletes the point and the asset again, by id, whatever the outcome. The
+ * suite commits (the service opens `withTenant` itself), so the asset cannot live in a rolled-back
+ * transaction; it is built here rather than read off the seed, so no other suite's fixture cleanup
+ * can remove it mid-case (`tests/integration-fixture-isolation.test.ts`).
+ */
+async function withWcPoint(
+  fx: ScheduleIntegrationFixtures,
+  fn: (point: { assetId: string; pointKey: string }) => Promise<void>,
+): Promise<void> {
+  const [assetId] = await createFixtureAssets(fx.base.fleetDb, 1, "f4303", {
+    locationId: fx.base.wcId,
+    organizationId: fx.base.eskomId,
+  });
+  if (!assetId) throw new Error("F4.303: createFixtureAssets returned no id");
+  const pointKey = "kw";
+  try {
+    await fx.base.fleetDb.execute(sql`
+      insert into bms.asset_points (organization_id, asset_id, point_key, source_data_key, active)
+      values (${fx.base.eskomId}::uuid, ${assetId}::uuid, ${pointKey}, ${pointKey}, true)`);
+    await fn({ assetId, pointKey });
+  } finally {
+    const points = await fx.base.fleetDb.execute(sql`delete from bms.asset_points where asset_id = ${assetId}::uuid`);
+    assert(points.rowCount === 1, `expected to delete 1 fixture point, got ${points.rowCount}`);
+    const deleted = await fx.base.fleetDb.delete(assets).where(eq(assets.id, assetId)).returning({ id: assets.id });
+    assert(deleted.length === 1, `expected to delete 1 fixture asset, got ${deleted.length}`);
+  }
 }
 
 function trendOverrides(fx: ScheduleIntegrationFixtures, point: { assetId: string; pointKey: string }): Partial<CreateReportScheduleBodyInput> {
@@ -546,7 +565,10 @@ function trendOverrides(fx: ScheduleIntegrationFixtures, point: { assetId: strin
  * fillers are deleted here, by id, whatever the outcome.
  */
 export async function theFiftyFirstTrendPointsScheduleIs409(fx: ScheduleIntegrationFixtures): Promise<void> {
-  const point = await wcPoint(fx);
+  await withWcPoint(fx, (point) => fiftyFirstTrendPoints(fx, point));
+}
+
+async function fiftyFirstTrendPoints(fx: ScheduleIntegrationFixtures, point: { assetId: string; pointKey: string }): Promise<void> {
   const counted = await fx.base.fleetDb.execute<{ n: string }>(
     sql`select count(*)::text as n from bms.report_schedules where organization_id = ${fx.base.eskomId}::uuid`,
   );
@@ -574,12 +596,14 @@ export async function theFiftyFirstTrendPointsScheduleIs409(fx: ScheduleIntegrat
 
 /** A `PATCH locationIds` that moves a `trend_points` schedule away from its point's site is a 400; the row keeps `[WC]`. */
 export async function patchMovingATrendPointsScheduleAwayIs400(fx: ScheduleIntegrationFixtures): Promise<void> {
-  const created = await createAs(fx, admin(), trendOverrides(fx, await wcPoint(fx)));
-  const err = await captureRejection(() => fx.service.update(admin(), created.id, { locationIds: [fx.ecId] }));
-  assert(errorName(err) === "BadRequestException", `expected 400; got ${errorName(err)}: ${errorMessage(err)}`);
-  assert(errorMessage(err) === "point 0 is not at a location of this schedule", `got "${errorMessage(err)}"`);
-  const after = await fx.service.get(admin(), created.id);
-  assert(JSON.stringify(after.locationIds) === JSON.stringify([fx.base.wcId]), `the row must still carry [WC]; got ${JSON.stringify(after.locationIds)}`);
+  await withWcPoint(fx, async (point) => {
+    const created = await createAs(fx, admin(), trendOverrides(fx, point));
+    const err = await captureRejection(() => fx.service.update(admin(), created.id, { locationIds: [fx.ecId] }));
+    assert(errorName(err) === "BadRequestException", `expected 400; got ${errorName(err)}: ${errorMessage(err)}`);
+    assert(errorMessage(err) === "point 0 is not at a location of this schedule", `got "${errorMessage(err)}"`);
+    const after = await fx.service.get(admin(), created.id);
+    assert(JSON.stringify(after.locationIds) === JSON.stringify([fx.base.wcId]), `the row must still carry [WC]; got ${JSON.stringify(after.locationIds)}`);
+  });
 }
 
 /** The same PATCH on an `energy_consumption` schedule runs no point check and is admitted. */
