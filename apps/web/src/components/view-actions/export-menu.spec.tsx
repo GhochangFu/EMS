@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, vi } from "vitest";
 
 import { ViewExportError } from "../../api/view-exports";
-import { ExportMenu, EXPORT_FAILED_SENTENCE, EXPORT_OVER_LIMIT_SENTENCE } from "./export-menu";
+import { ExportMenu, EXPORT_FAILED_SENTENCE, EXPORT_REFUSED_SENTENCE } from "./export-menu";
 
 /**
  * `F4.303` U7 (ADR 0108 Amendment 6 item 3) — `ExportMenu`: a labelled "Export" group of a CSV
@@ -55,14 +55,18 @@ export async function aSecondClickWhilePendingStartsNothing(): Promise<void> {
   expect(onExport).toHaveBeenCalledTimes(1);
 }
 
-/** M3: a `ViewExportError(400)` is the row-limit sentence. */
-export async function aFourHundredIsTheRowLimitSentence(): Promise<void> {
+/**
+ * M3: a `ViewExportError(400)` is the refusal sentence. A 400 is a query refusal (`from` after
+ * `to`, a span over 365 days, a bad point list) or the row cap, so the sentence names neither
+ * alone — no PR 1 route reaches the cap with today's bounds.
+ */
+export async function aFourHundredIsTheRefusalSentence(): Promise<void> {
   render(<ExportMenu onExport={() => Promise.reject(new ViewExportError(400))} />);
   await userEvent.click(screen.getByRole("button", { name: "CSV" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
-    "The export is above the row limit. Narrow the range or the points.",
+    /^The export was refused\. Check the range and the points\.$/,
   );
-  expect(EXPORT_OVER_LIMIT_SENTENCE).toBe("The export is above the row limit. Narrow the range or the points.");
+  expect(EXPORT_REFUSED_SENTENCE).toBe("The export was refused. Check the range and the points.");
 }
 
 /** M3: any other status is "Export failed.". */

@@ -2,8 +2,12 @@ import { useState } from "react";
 
 import { ViewExportError, type ViewExportFormat } from "../../api/view-exports";
 
-/** A 400 from an export route: the row cap (`MAX_EXPORT_ROWS`) or a refused range. */
-export const EXPORT_OVER_LIMIT_SENTENCE = "The export is above the row limit. Narrow the range or the points.";
+/**
+ * A 400 from an export route: a refused query (`from` after `to`, a span over 365 days, a bad
+ * point list) or the row cap (`MAX_EXPORT_ROWS`). The status alone cannot tell them apart and no
+ * route reaches the cap with today's bounds, so the sentence names neither alone.
+ */
+export const EXPORT_REFUSED_SENTENCE = "The export was refused. Check the range and the points.";
 /** Every other failure. */
 export const EXPORT_FAILED_SENTENCE = "Export failed.";
 
@@ -20,8 +24,8 @@ const FORMATS: readonly { key: ViewExportFormat; label: string }[] = [
 /**
  * `F4.303` U7 (ADR 0108 Amendment 6 item 3) — "Export" on a view: a CSV and an XLSX button. Both
  * are `aria-busy` while a download runs, and a second click is ignored until it ends. A failure is
- * one of two fixed sentences picked by status — a 400 is the row limit, anything else "Export
- * failed." — and never the error's message (`F4.204`).
+ * one of two fixed sentences picked by status — a 400 is the refusal sentence, anything else
+ * "Export failed." — and never the error's message (`F4.204`).
  */
 export function ExportMenu({ onExport }: ExportMenuProps) {
   const [pending, setPending] = useState(false);
@@ -36,7 +40,7 @@ export function ExportMenu({ onExport }: ExportMenuProps) {
     try {
       await onExport(format);
     } catch (err) {
-      setFailure(err instanceof ViewExportError && err.status === 400 ? EXPORT_OVER_LIMIT_SENTENCE : EXPORT_FAILED_SENTENCE);
+      setFailure(err instanceof ViewExportError && err.status === 400 ? EXPORT_REFUSED_SENTENCE : EXPORT_FAILED_SENTENCE);
     } finally {
       setPending(false);
     }

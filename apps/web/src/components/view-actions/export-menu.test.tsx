@@ -3,7 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
-  aFourHundredIsTheRowLimitSentence,
+  aFourHundredIsTheRefusalSentence,
   aNewAttemptClearsTheSentence,
   aSecondClickWhilePendingStartsNothing,
   anyOtherStatusIsExportFailed,
@@ -32,8 +32,8 @@ describe("F4.303 ExportMenu", () => {
   it("M2: a second click while pending starts nothing", async () => {
     await aSecondClickWhilePendingStartsNothing();
   });
-  it("M3: a 400 is the row-limit sentence", async () => {
-    await aFourHundredIsTheRowLimitSentence();
+  it("M3: a 400 is the refusal sentence", async () => {
+    await aFourHundredIsTheRefusalSentence();
   });
   it("M3: any other status is Export failed.", async () => {
     await anyOtherStatusIsExportFailed();
