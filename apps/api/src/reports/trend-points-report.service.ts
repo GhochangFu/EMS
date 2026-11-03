@@ -192,11 +192,11 @@ export class TrendPointsReportService {
     return renderPdf(trendPointsPdfDefinition(rows));
   }
 
-  /** The XLSX over the rows: one sheet `Points`, a gap an empty cell, through `assertFiniteCells`. */
+  /** The XLSX over the rows: one sheet `Points`, a gap an empty cell, through `assertFiniteCells`; deflated (U17, plan C25). */
   xlsx(rows: TrendPointsReportRows): Buffer {
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, XLSX.utils.aoa_to_sheet(finiteSheet(rows)), "Points");
-    return XLSX.write(book, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    return XLSX.write(book, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
   }
 }
 

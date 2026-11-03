@@ -117,9 +117,9 @@ export function assertComparePutsThePreviousPeriodAfter(): void {
   assert(JSON.stringify(periods) === JSON.stringify(expected), `expected ${JSON.stringify(expected)}, got ${JSON.stringify(periods)}`);
 }
 
-/** P2 — a gap is `—` in the PDF cell. */
+/** P2 — a gap is `—` in the PDF cell (a `5m` read, which the PDF does not fold). */
 export function assertAGapIsADashInThePdf(): void {
-  const definition = trendPointsPdfDefinition(trendPointsReportRows(input()));
+  const definition = trendPointsPdfDefinition(trendPointsReportRows(input({ level: "5m" })));
   const [table] = tables(definition.content as Content[]);
   const gapRow = (table?.table.body ?? [])[3] as { text: string }[] | undefined;
   const cells = (gapRow ?? []).map((cell) => cell.text);
@@ -161,7 +161,7 @@ export function assertEveryPointDroppedLeavesNoTable(): void {
   );
   const content = definition.content as Content[];
   const all = texts(content);
-  const wanted = ["Daily kW", "Period: 2026-11-01 to 2026-11-01 (Asia/Kolkata)", "Level: 1m", "1 of 1 points were left out: a deleted asset · kw"];
+  const wanted = ["Daily kW", "Period: 2026-11-01 to 2026-11-01 (Asia/Kolkata)", FOLDED_LEVEL, "1 of 1 points were left out: a deleted asset · kw"];
   const missing = wanted.filter((text) => !all.includes(text));
   assert(missing.length === 0 && tables(content).length === 0, `expected ${JSON.stringify(wanted)} and no table, got ${JSON.stringify(all)}`);
 }
@@ -186,6 +186,55 @@ export function assertTheSheetReadsTheTablesRows(): void {
   const headerAt = rows.sheet.findIndex((row) => row[0] === "asset");
   const data = rows.sheet.slice(headerAt + 1);
   assert(headerAt > 0 && JSON.stringify(data) === JSON.stringify(fromTables), `the sheet's rows differ from the tables': ${JSON.stringify(data)}`);
+}
+
+/** U17 (plan C25, owner Q-D): the sentence a folded PDF prints for its level. */
+const FOLDED_LEVEL = "Level: 1m, folded to 1h in this PDF (the XLSX keeps every 1m bucket)";
+
+/**
+ * Two hours of minute buckets from the period's start (00:00 in the zone): minute 0 holds 3 samples
+ * (5, 10, 15), minute 1 one sample (2, 20, 30), every other minute is a gap.
+ */
+function twoHoursOfMinutes(): TrendPointsReportPoint {
+  const start = Date.parse("2026-10-31T18:30:00.000Z");
+  const buckets = Array.from({ length: 120 }, (_, i) => {
+    const t = new Date(start + i * 60_000).toISOString();
+    if (i === 0) return { t, v: 10, min: 5, average: 10, max: 15, sampleCount: 3 };
+    if (i === 1) return { t, v: 20, min: 2, average: 20, max: 30, sampleCount: 1 };
+    return { t, v: null, min: null, average: null, max: null, sampleCount: 0 };
+  });
+  return point({ current: { stats: STATS, buckets } });
+}
+
+/** U17 F1 — a `1m` read's PDF rows are one per hour: min of mins, sample-weighted average, max of maxes, summed samples; an hour of gaps is a gap. */
+export function assertA1mReadFoldsToHoursInThePdf(): void {
+  const [table] = trendPointsReportRows(input({ points: [twoHoursOfMinutes()] })).tables;
+  const expected = [
+    ["current", "summary", 5, 10, 15, 3],
+    ["current", "2026-11-01T00:00:00+05:30", 2, 12.5, 30, 4],
+    ["current", "2026-11-01T01:00:00+05:30", null, null, null, 0],
+  ];
+  assert(JSON.stringify(table?.pdfRows) === JSON.stringify(expected), `expected ${JSON.stringify(expected)}, got ${JSON.stringify(table?.pdfRows)}`);
+}
+
+/** U17 F2 — the table rows and the XLSX sheet keep every minute bucket (Q-D: the XLSX keeps every bucket). */
+export function assertTheSheetKeepsEveryMinuteBucket(): void {
+  const rows = trendPointsReportRows(input({ points: [twoHoursOfMinutes()] }));
+  const bucketRows = rows.sheet.filter((row) => row[4] === "bucket").length;
+  assert(rows.tables[0]?.rows.length === 121 && bucketRows === 120, `expected 121 table rows and 120 bucket rows, got ${rows.tables[0]?.rows.length} and ${bucketRows}`);
+}
+
+/** U17 F3 — positive control: a `5m` read is not folded; the PDF rows are the table rows. */
+export function assertA5mReadIsNotFolded(): void {
+  const [table] = trendPointsReportRows(input({ level: "5m", points: [twoHoursOfMinutes()] })).tables;
+  assert(JSON.stringify(table?.pdfRows) === JSON.stringify(table?.rows), `expected the PDF rows to be the table rows, got ${table?.pdfRows.length} of ${table?.rows.length}`);
+}
+
+/** U17 F4 — the folded PDF draws the hour rows and says so on its level line. */
+export function assertTheFoldedPdfSaysSo(): void {
+  const content = trendPointsPdfDefinition(trendPointsReportRows(input({ points: [twoHoursOfMinutes()] }))).content as Content[];
+  const body = tables(content)[0]?.table.body ?? [];
+  assert(texts(content).includes(FOLDED_LEVEL) && body.length === 4, `expected the folded level line and 1 + 3 rows, got ${body.length} rows`);
 }
 
 const PDF_SOURCE = join(repoRoot(), "apps/api/src/reports/trend-points-pdf.ts");

@@ -65,6 +65,8 @@ export interface TrendPointsTable {
   readonly pointKey: string;
   readonly unit: string | null;
   readonly rows: TrendPointsCell[][];
+  /** The rows the PDF draws: `rows`, with a `1m` read's buckets folded to one row per hour (U17, plan C25). */
+  readonly pdfRows: TrendPointsCell[][];
 }
 
 /** The report, once: what both the PDF and the XLSX read. */
@@ -105,11 +107,55 @@ function heading(point: TrendPointsReportPoint): string {
   return point.unit === null ? pair : `${pair} (${point.unit})`;
 }
 
-function periodRows(period: "current" | "previous", read: TrendPointsReportPeriodRead, zone: string): TrendPointsCell[][] {
+/**
+ * U17 (plan C25, owner Q-D): the measured daily 8-point compare render took over 10 s, so a `1m`
+ * read's PDF folds its buckets to one per hour from the period's start — min of the mins, the
+ * sample-weighted average, max of the maxes, the summed samples; an hour with no samples is a gap.
+ * The summary rows and the XLSX keep every bucket.
+ */
+const FOLD_LEVEL: AggregateLevel = "1m";
+const HOUR_MS = 3_600_000;
+
+function foldToHours(buckets: readonly PointAggregateBucket[]): PointAggregateBucket[] {
+  const first = buckets[0];
+  if (first === undefined) return [];
+  const start = Date.parse(first.t);
+  const hours = new Map<number, PointAggregateBucket[]>();
+  for (const bucket of buckets) {
+    const hour = Math.floor((Date.parse(bucket.t) - start) / HOUR_MS);
+    const group = hours.get(hour);
+    if (group === undefined) hours.set(hour, [bucket]);
+    else group.push(bucket);
+  }
+  return [...hours.values()].map((group): PointAggregateBucket => {
+    const measured = group.filter((bucket) => (bucket.sampleCount ?? 0) > 0);
+    const samples = measured.reduce((total, bucket) => total + (bucket.sampleCount ?? 0), 0);
+    const t = group[0]?.t ?? first.t;
+    if (samples === 0) return { t, v: null, min: null, average: null, max: null, sampleCount: 0 };
+    const weighted = measured.reduce((total, bucket) => total + (bucket.average ?? 0) * (bucket.sampleCount ?? 0), 0);
+    const average = weighted / samples;
+    return {
+      t,
+      v: average,
+      min: Math.min(...measured.map((bucket) => bucket.min ?? Infinity)),
+      average,
+      max: Math.max(...measured.map((bucket) => bucket.max ?? -Infinity)),
+      sampleCount: samples,
+    };
+  });
+}
+
+function periodRows(
+  period: "current" | "previous",
+  read: TrendPointsReportPeriodRead,
+  zone: string,
+  fold = false,
+): TrendPointsCell[][] {
   const { stats } = read;
+  const buckets = fold ? foldToHours(read.buckets) : read.buckets;
   return [
     [period, SUMMARY, stats.min, stats.average, stats.max, stats.sampleCount],
-    ...read.buckets.map((bucket): TrendPointsCell[] => [
+    ...buckets.map((bucket): TrendPointsCell[] => [
       period,
       isoInZone(bucket.t, zone),
       bucket.min ?? null,
@@ -127,18 +173,22 @@ export function trendPointsReportRows(input: TrendPointsReportInput): TrendPoint
       ? null
       : `${input.dropped.length} of ${input.total} points were left out: ${input.dropped.join(", ")}`;
   const period = `Period: ${input.periodStart} to ${input.periodEnd} (${input.timeZone})`;
-  const tables = input.points.map(
-    (point): TrendPointsTable => ({
+  const fold = input.level === FOLD_LEVEL;
+  const tableRows = (point: TrendPointsReportPoint, folded: boolean): TrendPointsCell[][] => [
+    ...periodRows("current", point.current, input.timeZone, folded),
+    ...(point.previous === null ? [] : periodRows("previous", point.previous, input.timeZone, folded)),
+  ];
+  const tables = input.points.map((point): TrendPointsTable => {
+    const rows = tableRows(point, false);
+    return {
       heading: heading(point),
       assetCode: point.assetCode,
       pointKey: point.pointKey,
       unit: point.unit,
-      rows: [
-        ...periodRows("current", point.current, input.timeZone),
-        ...(point.previous === null ? [] : periodRows("previous", point.previous, input.timeZone)),
-      ],
-    }),
-  );
+      rows,
+      pdfRows: fold ? tableRows(point, true) : rows,
+    };
+  });
   const sheet: TrendPointsCell[][] = [
     ["Report", input.title],
     ["Period", `${input.periodStart} to ${input.periodEnd}`],
@@ -184,11 +234,15 @@ function pdfTable(table: TrendPointsTable): Content[] {
       table: {
         headerRows: 1,
         widths: ["auto", "*", "auto", "auto", "auto", "auto"],
-        body: [TREND_POINTS_TABLE_HEADER.map((text): TableCell => ({ text, bold: true })), ...table.rows.map((row) => row.map(pdfCell))],
+        body: [TREND_POINTS_TABLE_HEADER.map((text): TableCell => ({ text, bold: true })), ...table.pdfRows.map((row) => row.map(pdfCell))],
       },
       margin: [0, 0, 0, 10],
     },
   ];
+}
+
+function levelLine(level: AggregateLevel): string {
+  return level === FOLD_LEVEL ? `Level: ${level}, folded to 1h in this PDF (the XLSX keeps every ${level} bucket)` : `Level: ${level}`;
 }
 
 /** Pure — the PDF definition over the one row builder's result (Standard-14 Helvetica, rendered by `renderPdf`). */
@@ -196,7 +250,7 @@ export function trendPointsPdfDefinition(rows: TrendPointsReportRows): TDocument
   const content: Content[] = [
     { text: rows.title, fontSize: 16, bold: true, margin: [0, 0, 0, 2] },
     { text: rows.period, fontSize: 9, margin: [0, 0, 0, 2] },
-    { text: `Level: ${rows.level}`, fontSize: 9, margin: [0, 0, 0, rows.dropped === null ? 10 : 2] },
+    { text: levelLine(rows.level), fontSize: 9, margin: [0, 0, 0, rows.dropped === null ? 10 : 2] },
     ...(rows.dropped === null ? [] : [{ text: rows.dropped, fontSize: 9, margin: [0, 0, 0, 10] } as Content]),
     ...rows.tables.flatMap(pdfTable),
   ];

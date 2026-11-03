@@ -19,4 +19,5 @@ describe("F4.303 TrendPointsReportService (ADR 0108 Amendment 6 item 8)", () => 
   it("every read asks for avg buckets with stats", spec.assertEveryReadAsksForAverageBucketsWithStats);
   it("the kept points become tables", spec.assertTheKeptPointsBecomeTables);
   it("the workbook's one sheet is Points", spec.assertTheWorkbookSheetIsPoints);
+  it("the workbook is deflated", spec.assertTheWorkbookIsDeflated);
 });

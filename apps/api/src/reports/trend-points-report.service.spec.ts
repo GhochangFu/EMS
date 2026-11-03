@@ -246,3 +246,14 @@ export async function assertTheWorkbookSheetIsPoints(): Promise<void> {
   const book = XLSX.read(h.service.xlsx(rows), { type: "buffer" });
   assert(JSON.stringify(book.SheetNames) === JSON.stringify(["Points"]), `expected one sheet Points, got ${JSON.stringify(book.SheetNames)}`);
 }
+
+/**
+ * `F4.303` U17 (plan C25): the workbook is deflated. Uncompressed, the daily 8-point compare run
+ * measured 9.9 MB beside a 3.1 MB PDF — over the 10 MB mail ceiling, so the mail dropped both
+ * attachments. The first zip entry's method field (offset 8) is 8, deflate, not 0, stored.
+ */
+export async function assertTheWorkbookIsDeflated(): Promise<void> {
+  const { h, rows } = await readAll({});
+  const buffer = h.service.xlsx(rows);
+  assert(buffer.readUInt16LE(8) === 8, `expected zip method 8 (deflate), got ${buffer.readUInt16LE(8)}`);
+}
