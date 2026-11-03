@@ -221,7 +221,7 @@ export class ReportFilesService {
 
     // R-3: the buffer is the only size and hash authority.
     const { sha256, byteSize } = describeBuffer(buffer);
-    const filename = reportFilename(body.startDate, body.endDate, body.format);
+    const filename = reportFilename(energyReportTemplateSchema.shape.id.value, body.startDate, body.endDate, body.format);
     const contentType = CONTENT_TYPES[body.format];
     const createdBy = await this.resolveActorId(jwt);
 

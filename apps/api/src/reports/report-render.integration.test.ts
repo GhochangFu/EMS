@@ -21,6 +21,7 @@ import {
   overTheCeilingSendsNoAttachmentAndSaysSo,
   aFailedFinishLeavesRowsAtNoneForTheRetry,
   theCountersMoved,
+  aTrendPointsScheduleWritesTwoTrendFiles,
   openRenderFixtures,
   type OpenRenderFixtures,
   type RenderIntegrationFixtures,
@@ -141,5 +142,9 @@ describe.skipIf(!connectionString || !storageConfig)("F3.5b — the render job a
 
   it("theCountersMoved", async () => {
     await theCountersMoved(fx);
+  });
+
+  it("aTrendPointsScheduleWritesTwoTrendFiles (F4.303)", async () => {
+    await aTrendPointsScheduleWritesTwoTrendFiles(fx);
   });
 });

@@ -42,6 +42,9 @@ import type { ReportFilesConfig } from "./report-files-config";
 import { REPORT_FILES_CONFIG } from "./report-files.tokens";
 import { previousReportPeriod } from "./report-period";
 import { ReportsService } from "./reports.service";
+import type { TrendPointsReportRows } from "./trend-points-pdf";
+import { TrendPointsReportService } from "./trend-points-report.service";
+import type { TrendPointsPlan } from "./trend-points-report.service";
 
 export type RenderPayload = PayloadOf<typeof reportsRenderQueue>;
 
@@ -57,6 +60,9 @@ export type RenderPayload = PayloadOf<typeof reportsRenderQueue>;
  * stored row's, parsed; `previousPeriod` is the cadence period before the one
  * rendered when `params.compare` is true (else `null`), so `finish` reads the
  * mail's second preview over exactly the period the files compared against.
+ * `trendSummary` (U13) is a `trend_points` render's counts and level for the
+ * mail — `null` for an energy render — read from the plan, so a retry whose
+ * files already exist still mails them without a telemetry read.
  */
 export type RenderOutcome =
   | { readonly kind: "skipped"; readonly reason: "absent" | "disabled" }
@@ -76,7 +82,11 @@ export type RenderOutcome =
       readonly templateId: ReportTemplateId;
       readonly params: ReportScheduleParams | null;
       readonly previousPeriod: { readonly startDate: string; readonly endDate: string } | null;
+      readonly trendSummary: TrendPointsSummary | null;
     };
+
+/** A `trend_points` render's mail facts: the points reported, the points left out, the level read. */
+export type TrendPointsSummary = { readonly points: number; readonly leftOut: number; readonly level: string };
 
 /** The four fixed delivery sentences this service composes (R-11). None carries an address, a filename or the schedule name. */
 export const NO_CHANNEL_SENTENCE = "no channel configured";
@@ -122,9 +132,10 @@ type DeliverableRow = {
  * `skippedExisting` (decision 9's idempotency); else the renderer runs on
  * the fleet pool with those asset ids exactly as the controller does, the
  * buffer is hashed and sized (`describeBuffer`), the filename comes from
- * `reportFilename(periodStart, periodEnd, format)` — **never the schedule
- * name** (Amendment 1 item 12: the `Content-Disposition` filename is quoted,
- * not escaped, so its only inputs are two bounded dates and an enum) — the
+ * `reportFilename(templateId, periodStart, periodEnd, format)` — **never the
+ * schedule name** (Amendment 1 item 12: the `Content-Disposition` filename is
+ * quoted, not escaped, so its only inputs are two bounded dates and two enums;
+ * `F4.303` owner Q-A added the template id) — the
  * object is put under `buildReportObjectKey`, the row inserted on `tx` with
  * `created_by = NULL` (a schedule runs as the system, not as its author),
  * `schedule_id`, the row's `location_ids` copied (the stored nodes, never
@@ -195,6 +206,8 @@ export class ReportRenderService {
     // service's `CredentialCryptoService` and warns through its logger), so
     // the channel read cannot map without the service.
     private readonly channels: ChannelsService,
+    // Slot 7, appended last (`F4.303` U13) so slots 0, 1 and 6 do not move.
+    private readonly trendPoints: TrendPointsReportService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -236,17 +249,32 @@ export class ReportRenderService {
     // params fails the job here, so no object is put and no row is written.
     const templateId = parseStoredContract(reportTemplateIdSchema, schedule.templateId, "report_schedules.render.template_id");
     const params = parseStoredContract(reportScheduleParamsSchema.nullable(), schedule.params, "report_schedules.render.params");
-    if (templateId !== "energy_consumption") {
-      // F4.303 U13 adds the `trend_points` render; until then nothing is put for it.
-      throw new Error(`report schedule ${scheduleId}: template ${templateId} has no renderer`);
+    // A `trend_points` row must carry the trend arm (the create's pairing rule, U11); a row
+    // written around the API that does not fails here, before any read or put.
+    const trendParams = templateId === "trend_points" ? (params !== null && "points" in params ? params : null) : undefined;
+    if (trendParams === null) {
+      throw new Error(`report schedule ${scheduleId}: a trend_points schedule has no stored points`);
     }
-    const previousPeriod = params?.compare ? toQuery(previousReportPeriod(schedule.cadence as ReportCadence, periodStart)) : null;
+    const previousPeriod =
+      templateId === "energy_consumption" && params?.compare
+        ? toQuery(previousReportPeriod(schedule.cadence as ReportCadence, periodStart))
+        : null;
 
     const assetIds = await resolveAssetIds(tx, { organizationIds: [organizationId], ids: schedule.locationIds });
     const formats = REPORT_FILE_FORMATS.filter((format) => schedule.formats.includes(format));
     const query = { startDate: periodStart, endDate: periodEnd };
     // Without compare the renderers get exactly two arguments, as before.
     const compareArgs: [] | [{ startDate: string; endDate: string }] = previousPeriod === null ? [] : [previousPeriod];
+    // `F4.303` U13: the `trend_points` plan (no telemetry read) always runs, for the mail's
+    // counts; its reads run once, only when a format still needs rendering.
+    const trendPlan: TrendPointsPlan | null =
+      trendParams === undefined
+        ? null
+        : await this.trendPoints.plan(
+            { scheduleName: schedule.name, timezone: schedule.timezone, periodStart, periodEnd, params: trendParams, assetIds, now: new Date() },
+            tx,
+          );
+    let trendRows: TrendPointsReportRows | null = null;
 
     /** File id → key of every object this run put; discarded on a throw. */
     const putKeys = new Map<string, string>();
@@ -272,12 +300,18 @@ export class ReportRenderService {
           continue;
         }
 
-        const buffer =
-          format === "pdf"
-            ? await this.reports.energyPdf(query, assetIds, ...compareArgs)
-            : await this.reports.energyXlsx(query, assetIds, ...compareArgs);
+        let buffer: Buffer;
+        if (trendPlan === null) {
+          buffer =
+            format === "pdf"
+              ? await this.reports.energyPdf(query, assetIds, ...compareArgs)
+              : await this.reports.energyXlsx(query, assetIds, ...compareArgs);
+        } else {
+          trendRows ??= await this.trendPoints.read(trendPlan);
+          buffer = format === "pdf" ? await this.trendPoints.pdf(trendRows) : this.trendPoints.xlsx(trendRows);
+        }
         const { sha256, byteSize } = describeBuffer(buffer);
-        const filename = reportFilename(periodStart, periodEnd, format);
+        const filename = reportFilename(templateId, periodStart, periodEnd, format);
         const contentType = CONTENT_TYPES[format];
         const fileId = randomUUID();
         const key = buildReportObjectKey({ organizationId, fileId });
@@ -351,6 +385,8 @@ export class ReportRenderService {
       templateId,
       params,
       previousPeriod,
+      trendSummary:
+        trendPlan === null ? null : { points: trendPlan.kept.length, leftOut: trendPlan.dropped.length, level: trendPlan.level },
     };
   }
 
@@ -433,18 +469,11 @@ export class ReportRenderService {
     const overCeiling = totalBytes > this.config.emailMaxBytes;
     const attachments: NotificationAttachment[] = overCeiling ? [] : await this.readBack(rows);
 
-    const preview = await this.reports.energyPreview(
-      { startDate: outcome.periodStart, endDate: outcome.periodEnd },
-      [...outcome.assetIds],
-    );
-    // `F4.303`: with compare, one line over the period the files compared against.
-    const previousLine =
-      outcome.previousPeriod === null
-        ? []
-        : [previousPeriodLine(await this.reports.energyPreview(outcome.previousPeriod, [...outcome.assetIds]))];
+    // `F4.303` U13: a `trend_points` mail carries its counts and level and reads no energy preview.
+    const reportLines =
+      outcome.trendSummary === null ? await this.energyLines(outcome) : trendPointsSummaryLines(outcome.trendSummary);
     const bodyLines = [
-      ...summaryLines(preview),
-      ...previousLine,
+      ...reportLines,
       this.config.historyUrl === null
         ? NO_HISTORY_URL_SENTENCE
         : `Open Reports & Analytics: ${this.config.historyUrl}/reports`,
@@ -475,6 +504,20 @@ export class ReportRenderService {
     // Never the transport's own sentence — it may quote server text.
     const recipients = readRecipients(channelRow.config).length;
     return { status: "failed", error: sendFailedSentence(recipients, attachments.length) };
+  }
+
+  /** The energy mail's summary lines over the same asset scope as the files, and with compare the previous period's line. */
+  private async energyLines(outcome: Extract<RenderOutcome, { kind: "rendered" }>): Promise<string[]> {
+    const preview = await this.reports.energyPreview(
+      { startDate: outcome.periodStart, endDate: outcome.periodEnd },
+      [...outcome.assetIds],
+    );
+    // `F4.303`: with compare, one line over the period the files compared against.
+    const previousLine =
+      outcome.previousPeriod === null
+        ? []
+        : [previousPeriodLine(await this.reports.energyPreview(outcome.previousPeriod, [...outcome.assetIds]))];
+    return [...summaryLines(preview), ...previousLine];
   }
 
   /** One attachment per row, read back from the object store by key — the same path for a first run and a retry. */
@@ -566,7 +609,12 @@ export function previousPeriodLine(previous: EnergyReportPreview): string {
   return `Previous period: ${previous.summary.totalKwh} kWh`;
 }
 
-function toQuery(period: { periodStart: string; periodEnd: string }): { startDate: string; endDate: string } {
+/** `F4.303` U13 (ADR 0108 Amendment 6 item 8, "The mail") — a `trend_points` mail's two lines: the counts, then the level. */
+export function trendPointsSummaryLines(summary: TrendPointsSummary): string[] {
+  return [`Points: ${summary.points}, left out: ${summary.leftOut}`, `Level: ${summary.level}`];
+}
+
+function toQuery(period:{ periodStart: string; periodEnd: string }): { startDate: string; endDate: string } {
   return { startDate: period.periodStart, endDate: period.periodEnd };
 }
 

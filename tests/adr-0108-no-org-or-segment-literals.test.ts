@@ -149,6 +149,9 @@ const MODULES: readonly string[] = [
   "packages/shared/src/types/trend-points-report.ts",
   // F4.303 PR 2 U11: the trend_points schedule's point check.
   "apps/api/src/reports/trend-points-schedule-check.ts",
+  // F4.303 PR 2 U13: the trend_points report service and its pure rows and PDF.
+  "apps/api/src/reports/trend-points-report.service.ts",
+  "apps/api/src/reports/trend-points-pdf.ts",
 ];
 
 /**
@@ -182,8 +185,6 @@ const MODULES: readonly string[] = [
  */
 const PENDING_MODULES: readonly string[] = [
   "apps/api/src/dashboard-builder/dashboard-widget-append.service.ts",
-  "apps/api/src/reports/trend-points-report.service.ts",
-  "apps/api/src/reports/trend-points-pdf.ts",
   "apps/web/src/components/view-actions/pin-dialog.tsx",
   "apps/web/src/components/view-actions/schedule-button.tsx",
   "apps/web/src/lib/schedule-from-view.ts",

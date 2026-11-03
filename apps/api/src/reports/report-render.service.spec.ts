@@ -19,6 +19,7 @@ import { ReportRenderService } from "./report-render.service";
 import type { RenderOutcome, RenderPayload } from "./report-render.service";
 import type { ReportFilesConfig } from "./report-files-config";
 import type { ReportsService } from "./reports.service";
+import type { TrendPointsPlan, TrendPointsReportService } from "./trend-points-report.service";
 
 /**
  * `F3.5b` (ADR 0071 decisions 8–10; plan R-9, R-11) — `ReportRenderService`
@@ -294,6 +295,8 @@ export type Scenario = {
   channel?: ChannelFixture | null;
   emailResult?: DeliveryResult;
   deleteObject?: () => Promise<void>;
+  /** `F4.303` U13 — what the `trend_points` plan fake answers: kept and dropped counts and the level. */
+  trendPlan?: { kept: number; dropped: number; level: string };
 };
 
 export type Harness = {
@@ -313,6 +316,8 @@ export type Harness = {
   executed: { sql: string; params: unknown[] }[];
   /** `rest` is every argument after the asset ids — `F4.303`'s `previous`, or none. */
   reports: { calls: { method: string; query: unknown; assetIds: unknown; rest: unknown[] }[] };
+  /** `F4.303` U13 — every `TrendPointsReportService` call, by method, with its first argument. */
+  trendPoints: { calls: { method: string; arg: unknown }[] };
   email: { messages: NotificationMessage[] };
   metrics: { written: string[]; deliveries: string[] };
   tenantTransactions: () => number;
@@ -534,7 +539,36 @@ export function harness(scenario: Scenario = {}): Harness {
     historyUrl: null,
     ...scenario.config,
   };
-  const service = new ReportRenderService(tenant, client, config, reportsFake, emailFake, metricsFake, channelsFake);
+  const trendPoints: Harness["trendPoints"] = { calls: [] };
+  const plan = scenario.trendPlan ?? { kept: 3, dropped: 1, level: "1m" };
+  const trendPointsFake = {
+    plan: async (input: unknown) => {
+      calls.push("trendPoints:plan");
+      trendPoints.calls.push({ method: "plan", arg: input });
+      return {
+        kept: Array.from({ length: plan.kept }, (_, i) => ({ assetId: ASSET_A, pointKey: `p${i}`, unit: null, assetCode: "A1" })),
+        dropped: Array.from({ length: plan.dropped }, () => "a deleted asset · kw"),
+        level: plan.level,
+      } as unknown as TrendPointsPlan;
+    },
+    read: async (arg: unknown) => {
+      calls.push("trendPoints:read");
+      trendPoints.calls.push({ method: "read", arg });
+      return { sheet: [] };
+    },
+    pdf: async (arg: unknown) => {
+      calls.push("render");
+      trendPoints.calls.push({ method: "pdf", arg });
+      return PDF_BYTES;
+    },
+    xlsx: (arg: unknown) => {
+      calls.push("render");
+      trendPoints.calls.push({ method: "xlsx", arg });
+      return XLSX_BYTES;
+    },
+  } as unknown as TrendPointsReportService;
+
+  const service = new ReportRenderService(tenant, client, config, reportsFake, emailFake, metricsFake, channelsFake, trendPointsFake);
   return {
     service,
     calls,
@@ -551,6 +585,7 @@ export function harness(scenario: Scenario = {}): Harness {
     deliverableWheres,
     executed,
     reports,
+    trendPoints,
     email,
     metrics,
     tenantTransactions: () => tenantTransactions,
@@ -585,6 +620,7 @@ export function renderedOutcome(overrides: Partial<Extract<RenderOutcome, { kind
     templateId: "energy_consumption",
     params: null,
     previousPeriod: null,
+    trendSummary: null,
     ...overrides,
   };
 }
