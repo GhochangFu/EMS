@@ -1,10 +1,14 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { SiteSegmentViewsDto } from "@bms/shared";
+import type { AppendChartWidgetResponse, DashboardDto, SiteSegmentViewsDto, UserRole } from "@bms/shared";
 
+import * as dashboardsApi from "../../api/dashboards";
+import { APPEND_ANSWER } from "../../api/dashboards.spec";
 import { SEGMENT_VIEWS_BODY } from "../../api/segment-views.spec";
+import { useAuthStore } from "../../stores/auth-store";
 import { SegmentView } from "./segment-view";
 
 /**
@@ -59,6 +63,115 @@ export function aSegmentWithNoPointsSaysWhereToAddThem(): void {
     screen.getByText("No trend point is listed for this segment. Add one in Reference Data → Trend Points."),
   ).toBeInTheDocument();
   expect(screen.queryByRole("combobox", { name: "Trend point" })).toBeNull();
+}
+
+const DRAWN_ASSET = "33333333-3333-4333-8333-333333333331";
+const UNDRAWN_ASSET = "33333333-3333-4333-8333-333333333332";
+
+function rankingEntry(assetId: string, drawn: boolean): SiteSegmentViewsDto["ranking"][number] {
+  const stats = { mean: 10, max: 12, maxAt: null, sampleCount: 5 };
+  return {
+    assetId,
+    assetCode: assetId.slice(-2),
+    assetName: "Chiller",
+    unit: "kW",
+    current: stats,
+    compare: null,
+    buckets: drawn ? [{ t: "2026-10-30T00:00:00.000Z", v: 10 }] : null,
+    compareBuckets: null,
+  };
+}
+
+/** A sub-tab with one drawn series and one ranked past the chart cap. */
+export const RANKED_BODY = {
+  ...BODY,
+  ranking: [rankingEntry(DRAWN_ASSET, true), rankingEntry(UNDRAWN_ASSET, false)],
+} as SiteSegmentViewsDto;
+
+/** Puts a signed-in user of `role` in the auth store; the test's `afterEach` clears it. */
+export function signInAs(role: UserRole): void {
+  useAuthStore.setState({ user: { id: "u1", email: `${role}@bms.local`, displayName: role, role } });
+}
+
+/** `F4.303` U15 — the Pin button sits in the sub-tab's control row for a role that may author dashboards. */
+export function pinSitsInTheSubTabsControlRow(): void {
+  signInAs("location_admin");
+  renderView(RANKED_BODY);
+  const select = screen.getByRole("combobox", { name: "Trend point" });
+  const pin = screen.getByRole("button", { name: "Pin" });
+  expect(select.compareDocumentPosition(pin) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+/** `F4.303` U15 — an `operator` sees no Pin. */
+export function anOperatorSeesNoPinOnASubTab(): void {
+  signInAs("operator");
+  renderView(RANKED_BODY);
+  screen.getByRole("combobox", { name: "Trend point" });
+  expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+}
+
+const PIN_TARGET: DashboardDto = {
+  id: "88888888-8888-4888-8888-888888888888",
+  organizationId: "99999999-9999-4999-8999-999999999999",
+  slug: "plant",
+  name: "Plant overview",
+  description: null,
+  locationId: null,
+  assetGroupId: null,
+  assetId: null,
+  assetTemplateId: null,
+  templateId: null,
+  createdAt: "2026-11-01T00:00:00.000Z",
+  updatedAt: "2026-11-01T00:00:00.000Z",
+  tabs: [],
+  widgets: [],
+};
+
+const PIN_TARGET_SUMMARY = {
+  id: PIN_TARGET.id,
+  organizationId: PIN_TARGET.organizationId,
+  slug: PIN_TARGET.slug,
+  name: PIN_TARGET.name,
+  description: null,
+  locationId: null,
+  assetGroupId: null,
+  assetId: null,
+  assetTemplateId: null,
+  assetCode: null,
+  createdAt: PIN_TARGET.createdAt,
+  updatedAt: PIN_TARGET.updatedAt,
+  widgetCount: 0,
+};
+
+/** `F4.303` U15 — the sub-tab pins its drawn series, `avg`, and the URL's preset length. */
+export async function pinSendsTheDrawnSeriesAndTheUrlsPreset(): Promise<void> {
+  signInAs("admin");
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({ items: [PIN_TARGET_SUMMARY] });
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(PIN_TARGET);
+  const append = vi
+    .spyOn(dashboardsApi, "appendChartWidget")
+    .mockResolvedValue(APPEND_ANSWER as AppendChartWidgetResponse);
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/trends?view=chillers&range=7d"]}>
+        <SegmentView data={RANKED_BODY} onPoint={vi.fn()} />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Pin" }));
+  const dialog = await screen.findByRole("dialog", { name: "Pin to a dashboard" });
+  const select = within(dialog).getByRole("combobox", { name: "Dashboard" });
+  await within(select).findByRole("option", { name: PIN_TARGET.name });
+  fireEvent.change(select, { target: { value: PIN_TARGET.id } });
+  const submit = within(dialog).getByRole("button", { name: "Pin to dashboard" });
+  await waitFor(() => expect(submit).toBeEnabled());
+  fireEvent.click(submit);
+  await waitFor(() => expect(append).toHaveBeenCalledTimes(1));
+  expect(append.mock.calls[0]?.[1]).toMatchObject({
+    config: { windowMinutes: 10080, aggregate: "avg" },
+    points: [{ assetId: DRAWN_ASSET, pointKey: "kw" }],
+  });
 }
 
 /** A trimmed chart names the cap. */

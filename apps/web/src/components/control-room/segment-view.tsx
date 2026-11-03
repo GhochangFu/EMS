@@ -1,7 +1,12 @@
+import { useSearchParams } from "react-router-dom";
+
 import { SEGMENT_VIEW_SERIES_MAX, type SiteSegmentViewsDto } from "@bms/shared";
 
 import { levelLabel } from "../../lib/energy-view-filter";
+import { trendsLinkFromSearch } from "../../lib/view-links";
+import { useAuthStore } from "../../stores/auth-store";
 import { SectionCard } from "../section-card";
+import { PinButton, segmentPinSource } from "../view-actions/pin-dialog";
 import { SegmentAbnormalList } from "./segment-abnormal-list";
 import { SegmentRankingTable } from "./segment-ranking-table";
 import { SegmentTrendChart } from "./segment-trend-chart";
@@ -19,6 +24,11 @@ type Props = {
  * response; a segment whose effective list holds no point says where to add one.
  */
 export function SegmentView({ data, onPoint }: Props) {
+  // `F4.303` U15 (ADR 0108 Amendment 6 item 4): Pin reads the section's range key from the URL
+  // (a preset pins its own length) and the signed-in role from the store.
+  const [searchParams] = useSearchParams();
+  const range = trendsLinkFromSearch(searchParams).value.range;
+  const role = useAuthStore((state) => state.user?.role);
   const point = data.point;
   if (point === null || data.points.length === 0) {
     return (
@@ -46,7 +56,10 @@ export function SegmentView({ data, onPoint }: Props) {
             ))}
           </select>
         </label>
-        <span className="text-xs text-ink-muted">{levelLabel(data.level, data.bucket, data.timeZone)}</span>
+        <span className="inline-flex flex-wrap items-start gap-3">
+          <span className="text-xs text-ink-muted">{levelLabel(data.level, data.bucket, data.timeZone)}</span>
+          <PinButton role={role} source={segmentPinSource(data, range)} />
+        </span>
       </div>
 
       <SectionCard

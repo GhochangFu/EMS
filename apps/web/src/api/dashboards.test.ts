@@ -1,6 +1,10 @@
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  appendChartWidgetAnswersTheParsedResponse,
+  appendChartWidgetPostsToTheAppendRoute,
+  appendChartWidgetRefusesAnAnswerWithoutTheStamp,
+  appendChartWidgetSendsTheBody,
   fetchDashboardsSendsAllThreeKeysInOrder,
   fetchDashboardsSendsAssetIdAlone,
   fetchDashboardsSendsLocationIdAlone,
@@ -47,5 +51,28 @@ describe("F3.31 dashboards web client — assetId reaches the wire", () => {
 
   it("sends ?organizationId=&locationId= in that order when both are given (F3.72)", async () => {
     await fetchDashboardsSendsOrganizationIdThenLocationId();
+  });
+});
+
+describe("F4.303 U15 appendChartWidget", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("posts to /dashboards/:id/widgets/append", async () => {
+    await appendChartWidgetPostsToTheAppendRoute();
+  });
+
+  it("sends the body as given", async () => {
+    await appendChartWidgetSendsTheBody();
+  });
+
+  it("answers the parsed widget and stamp", async () => {
+    await appendChartWidgetAnswersTheParsedResponse();
+  });
+
+  it("refuses an answer the response schema does not admit", async () => {
+    await appendChartWidgetRefusesAnAnswerWithoutTheStamp();
   });
 });

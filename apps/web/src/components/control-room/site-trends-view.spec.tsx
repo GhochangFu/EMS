@@ -9,6 +9,7 @@ import * as segmentApi from "../../api/segment-views";
 import * as exportsApi from "../../api/view-exports";
 import { SEGMENT_VIEWS_BODY } from "../../api/segment-views.spec";
 import { ApiError } from "../../lib/api-error";
+import { useAuthStore } from "../../stores/auth-store";
 import { SiteTrendsView } from "./site-trends-view";
 
 /**
@@ -307,6 +308,45 @@ export async function theEnergySubTabExportsTheSiteEnergyView(): Promise<void> {
   await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
   expect(download).toHaveBeenCalledWith("csv", { range: "7d", locationIds: [SITE], compare: "previous" });
   expect(segment).not.toHaveBeenCalled();
+}
+
+/** A segment answer with one drawn series, so a segment sub-tab has something to pin. */
+const DRAWN_BODY = {
+  ...BODY,
+  ranking: [
+    {
+      assetId: "33333333-3333-4333-8333-333333333331",
+      assetCode: "CH-1",
+      assetName: "Chiller 1",
+      unit: "kW",
+      current: { mean: 10, max: 12, maxAt: null, sampleCount: 5 },
+      compare: null,
+      buckets: [{ t: "2026-10-30T00:00:00.000Z", v: 10 }],
+      compareBuckets: null,
+    },
+  ],
+} as SiteSegmentViewsDto;
+
+function signInAsAdmin(): void {
+  useAuthStore.setState({ user: { id: "u1", email: "admin@bms.local", displayName: "admin", role: "admin" } });
+}
+
+/** `F4.303` U15 (ADR 0108 Amendment 6 item 4): a segment sub-tab offers Pin to an author. */
+export async function aSegmentSubTabOffersPin(): Promise<void> {
+  signInAsAdmin();
+  stubSegments(DRAWN_BODY);
+  renderAt("?view=chillers&point=kw&range=7d");
+  expect(await screen.findByRole("button", { name: "Pin" })).toBeInTheDocument();
+}
+
+/** `F4.303` U15: the Energy sub-tab has no Pin, for the same author and the same answer. */
+export async function theEnergySubTabHasNoPin(): Promise<void> {
+  signInAsAdmin();
+  stubSegments(DRAWN_BODY);
+  renderAt("?range=7d");
+  await screen.findByTestId("site-energy-view");
+  await screen.findByRole("group", { name: "Export" });
+  expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
 }
 
 /** `F4.303` U7: on a segment sub-tab Export downloads the segment view with the query the read sent. */

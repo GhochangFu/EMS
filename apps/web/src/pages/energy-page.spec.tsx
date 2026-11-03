@@ -604,6 +604,18 @@ export async function exportSitsBeforeCopyLinkInTheFilterBar(): Promise<void> {
   expect(exportGroup.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
 }
 
+/**
+ * `F4.303` U15 (ADR 0108 Amendment 6 item 4): the Energy views have no Pin. The page renders as
+ * `admin`, a role Pin would show for, and the bar's Export group is the adjacent positive claim.
+ */
+export async function theEnergyPageHasNoPin(): Promise<void> {
+  stubEnergyApi();
+  renderPage();
+  const bar = await screen.findByTestId("energy-filter-bar");
+  within(bar).getByRole("group", { name: "Export" });
+  expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+}
+
 /** `F4.303` U7: a click downloads the energy view for the query the page is showing. */
 export async function exportDownloadsTheViewsCurrentQuery(): Promise<void> {
   const { viewSpy } = stubWithSites();

@@ -154,6 +154,8 @@ const MODULES: readonly string[] = [
   "apps/api/src/reports/trend-points-pdf.ts",
   // F4.303 PR 2 U14: the widget-append service.
   "apps/api/src/dashboard-builder/dashboard-widget-append.service.ts",
+  // F4.303 PR 2 U15: the Pin dialog.
+  "apps/web/src/components/view-actions/pin-dialog.tsx",
 ];
 
 /**
@@ -186,7 +188,6 @@ const MODULES: readonly string[] = [
  * last two web files).
  */
 const PENDING_MODULES: readonly string[] = [
-  "apps/web/src/components/view-actions/pin-dialog.tsx",
   "apps/web/src/components/view-actions/schedule-button.tsx",
   "apps/web/src/lib/schedule-from-view.ts",
 ];

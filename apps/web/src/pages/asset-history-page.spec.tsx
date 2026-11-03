@@ -6,10 +6,20 @@ import { expect, vi, type MockInstance } from "vitest";
 
 import { assetListRowSchema, pointAggregateResponseSchema } from "@bms/shared/contracts";
 import { encodePointRef } from "@bms/shared";
-import type { AssetListRow, AssetPointPickerRow, PointAggregateResponse, PointRawRecordsResponse } from "@bms/shared";
+import type {
+  AppendChartWidgetResponse,
+  AssetListRow,
+  AssetPointPickerRow,
+  DashboardDto,
+  PointAggregateResponse,
+  PointRawRecordsResponse,
+  UserRole,
+} from "@bms/shared";
 
 import * as assetsApi from "../api/assets";
 import * as copilotApi from "../api/copilot";
+import * as dashboardsApi from "../api/dashboards";
+import { APPEND_ANSWER } from "../api/dashboards.spec";
 import * as systemStatusApi from "../api/system-status";
 import * as telemetryApi from "../api/telemetry";
 import * as exportsApi from "../api/view-exports";
@@ -78,8 +88,8 @@ const RAW_PAGE_2: PointRawRecordsResponse = {
   nextBefore: null,
 };
 
-function asUser(): AuthUser {
-  return { id: "u1", email: "admin@bms.local", displayName: "admin", role: "admin" } as unknown as AuthUser;
+function asUser(role: UserRole = "admin"): AuthUser {
+  return { id: "u1", email: `${role}@bms.local`, displayName: role, role } as unknown as AuthUser;
 }
 
 interface Stubs {
@@ -114,13 +124,13 @@ export function stubApis(
   return { aggregateSpy, rawSpy };
 }
 
-export function renderHistoryPage(search = ""): void {
+export function renderHistoryPage(search = "", role: UserRole = "admin"): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={[`/asset-history/${ASSET_ID}${search}`]}>
         <Routes>
-          <Route path="/asset-history/:assetId" element={<AssetHistoryPage user={asUser()} />} />
+          <Route path="/asset-history/:assetId" element={<AssetHistoryPage user={asUser(role)} />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -353,6 +363,88 @@ export async function exportDownloadsThePagesQuery(): Promise<void> {
     { range: "7d", compare: true, points: ["kw", "pf"], fn: "max" },
     ["kw", "pf"],
   );
+}
+
+/** `F4.303` U15 (ADR 0108 Amendment 6 item 4): "Pin" sits in the control row, before "Copy link". */
+export async function pinSitsInTheControlRow(): Promise<void> {
+  stubApis();
+  renderHistoryPage();
+  const copy = await screen.findByRole("button", { name: "Copy link" });
+  const row = screen.getByTestId("asset-history-controls");
+  const pin = await within(row).findByRole("button", { name: "Pin" });
+  expect(pin.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+/** `F4.303` U15: an `operator` may not author dashboards, so the row has no "Pin". */
+export async function anOperatorSeesNoPin(): Promise<void> {
+  stubApis();
+  renderHistoryPage("", "operator");
+  await screen.findByRole("group", { name: "Export" });
+  expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+}
+
+const DASHBOARD_ORG = "99999999-9999-4999-8999-999999999999";
+const DASHBOARD: DashboardDto = {
+  id: "88888888-8888-4888-8888-888888888888",
+  organizationId: DASHBOARD_ORG,
+  slug: "plant",
+  name: "Plant overview",
+  description: null,
+  locationId: null,
+  assetGroupId: null,
+  assetId: null,
+  assetTemplateId: null,
+  templateId: null,
+  createdAt: "2026-11-01T00:00:00.000Z",
+  updatedAt: "2026-11-01T00:00:00.000Z",
+  tabs: [],
+  widgets: [],
+};
+
+/** `F4.303` U15: the dialog pins the charted points on this asset with the page's function and preset. */
+export async function pinSendsTheChartedPoints(): Promise<void> {
+  stubApis({ points: [point("kw"), point("pf", null)] });
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({
+    items: [
+      {
+        id: DASHBOARD.id,
+        organizationId: DASHBOARD_ORG,
+        slug: DASHBOARD.slug,
+        name: DASHBOARD.name,
+        description: null,
+        locationId: null,
+        assetGroupId: null,
+        assetId: null,
+        assetTemplateId: null,
+        assetCode: null,
+        createdAt: DASHBOARD.createdAt,
+        updatedAt: DASHBOARD.updatedAt,
+        widgetCount: 0,
+      },
+    ],
+  });
+  vi.spyOn(dashboardsApi, "fetchDashboard").mockResolvedValue(DASHBOARD);
+  const append = vi
+    .spyOn(dashboardsApi, "appendChartWidget")
+    .mockResolvedValue(APPEND_ANSWER as AppendChartWidgetResponse);
+  renderHistoryPage("?range=7d&points=kw,pf&fn=max");
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "Chart pf" })).toBeChecked());
+  await userEvent.click(await screen.findByRole("button", { name: "Pin" }));
+  const dialog = await screen.findByRole("dialog", { name: "Pin to a dashboard" });
+  const select = within(dialog).getByRole("combobox", { name: "Dashboard" });
+  await within(select).findByRole("option", { name: DASHBOARD.name });
+  await userEvent.selectOptions(select, DASHBOARD.id);
+  const submit = within(dialog).getByRole("button", { name: "Pin to dashboard" });
+  await waitFor(() => expect(submit).toBeEnabled());
+  await userEvent.click(submit);
+  await waitFor(() => expect(append).toHaveBeenCalledTimes(1));
+  expect(append.mock.calls[0]?.[1]).toMatchObject({
+    config: { windowMinutes: 10080, aggregate: "max" },
+    points: [
+      { assetId: ASSET_ID, pointKey: "kw" },
+      { assetId: ASSET_ID, pointKey: "pf" },
+    ],
+  });
 }
 
 /** `F4.303` U7: with no point to chart there is nothing to export, so no group is drawn. */

@@ -392,6 +392,19 @@ export async function theWallDrawsNoExport(): Promise<void> {
   expect(screen.queryByRole("group", { name: "Export" })).toBeNull();
 }
 
+/**
+ * `F4.303` U15 (ADR 0108 Amendment 6 item 1): the strip has Export only — no Pin. The Export
+ * group is the adjacent positive claim.
+ */
+export async function theStripHasNoPin(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderStrip();
+
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  screen.getByRole("group", { name: "Export" });
+  expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+}
+
 export function cleanupStrip(): void {
   const reached = fetchSpy.mock.calls.length;
   cleanup();

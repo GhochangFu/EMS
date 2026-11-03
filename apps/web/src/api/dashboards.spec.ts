@@ -1,6 +1,9 @@
 import { expect, vi } from "vitest";
 
-import { fetchDashboards } from "./dashboards";
+import type { AppendChartWidgetBody } from "@bms/shared";
+
+import { appendChartWidget, fetchDashboards } from "./dashboards";
+import { ResponseContractError } from "./validate";
 
 /**
  * `F3.31` Task 3 — the dashboards web client's `assetId` argument (ADR 0068 decision 4).
@@ -101,4 +104,85 @@ export async function fetchDashboardsSendsOrganizationIdThenLocationId(): Promis
   const seen = captureUrl();
   await fetchDashboards(ORG_ID, undefined, undefined, LOCATION_ID);
   expect(seen()).toBe(`${BASE}/api/v1/dashboards?organizationId=${ORG_ID}&locationId=${LOCATION_ID}`);
+}
+
+const DASHBOARD_ID = "44444444-4444-4444-8444-444444444444";
+
+const APPEND_BODY: AppendChartWidgetBody = {
+  tabKey: "ops",
+  title: "CHL-01 · kw",
+  gridW: 6,
+  gridH: 4,
+  config: { windowMinutes: 1440, aggregate: "avg" },
+  points: [{ assetId: ASSET_ID, pointKey: "kw" }],
+};
+
+/** A contract-valid append answer: the new widget and the dashboard's new stamp. */
+export const APPEND_ANSWER = {
+  widget: {
+    id: "55555555-5555-4555-8555-555555555555",
+    dashboardId: DASHBOARD_ID,
+    organizationId: ORG_ID,
+    tabId: null,
+    title: "CHL-01 · kw",
+    gridX: 0,
+    gridY: 6,
+    gridW: 6,
+    gridH: 4,
+    points: [
+      {
+        id: "66666666-6666-4666-8666-666666666666",
+        pointId: "77777777-7777-4777-8777-777777777777",
+        role: "series",
+        sortOrder: 0,
+        assetId: ASSET_ID,
+        assetCode: "CHL-01",
+        pointKey: "kw",
+        unit: "kW",
+      },
+    ],
+    sources: [],
+    widgetType: "chart",
+    config: { series: "line", windowMinutes: 1440, aggregate: "avg" },
+  },
+  updatedAt: "2026-11-03T10:00:00.000+00:00",
+};
+
+/** Captures the one request's URL and init, and answers with `answer`. Per-call state. */
+function captureRequest(answer: unknown): () => { url: string; init: RequestInit | undefined } {
+  let seen: { url: string; init: RequestInit | undefined } = { url: "", init: undefined };
+  vi.stubGlobal("fetch", async (url: string, init?: RequestInit) => {
+    seen = { url, init };
+    return new Response(JSON.stringify(answer), { status: 201 });
+  });
+  return () => seen;
+}
+
+/** `F4.303` U15 — `appendChartWidget` posts to the append route of the dashboard id. */
+export async function appendChartWidgetPostsToTheAppendRoute(): Promise<void> {
+  const seen = captureRequest(APPEND_ANSWER);
+  await appendChartWidget(DASHBOARD_ID, APPEND_BODY);
+  expect(seen().url).toBe(`${BASE}/api/v1/dashboards/${DASHBOARD_ID}/widgets/append`);
+  expect(seen().init?.method).toBe("POST");
+}
+
+/** `F4.303` U15 — the body is sent as given, JSON. */
+export async function appendChartWidgetSendsTheBody(): Promise<void> {
+  const seen = captureRequest(APPEND_ANSWER);
+  await appendChartWidget(DASHBOARD_ID, APPEND_BODY);
+  expect(JSON.parse(String(seen().init?.body))).toEqual(APPEND_BODY);
+}
+
+/** `F4.303` U15 — the answer is the parsed response: the widget and the stamp. */
+export async function appendChartWidgetAnswersTheParsedResponse(): Promise<void> {
+  captureRequest(APPEND_ANSWER);
+  const answer = await appendChartWidget(DASHBOARD_ID, APPEND_BODY);
+  expect(answer.updatedAt).toBe(APPEND_ANSWER.updatedAt);
+  expect(answer.widget.id).toBe(APPEND_ANSWER.widget.id);
+}
+
+/** `F4.303` U15 — the answer goes through `appendChartWidgetResponseSchema`: one without the stamp is refused. */
+export async function appendChartWidgetRefusesAnAnswerWithoutTheStamp(): Promise<void> {
+  captureRequest({ widget: APPEND_ANSWER.widget });
+  await expect(appendChartWidget(DASHBOARD_ID, APPEND_BODY)).rejects.toBeInstanceOf(ResponseContractError);
 }

@@ -8,8 +8,11 @@ import {
   aFilledPreviousPeriodDoesNotSaySo,
   aThirdUnitFromTheUrlIsNotCharted,
   anUnalignedCustomCompareFillsThePreviousColumn,
+  anOperatorSeesNoPin,
   copyLinkFollowsTheRangePicker,
   exportDownloadsThePagesQuery,
+  pinSendsTheChartedPoints,
+  pinSitsInTheControlRow,
   exportSitsBeforeCopyLinkInTheControlRow,
   noPointsMeansNoExport,
   aForbiddenAssetRendersTheAccessSentence,
@@ -118,5 +121,17 @@ describe("F4.297 asset history page", () => {
 
   it("F4.303 U7: draws no Export group without a charted point", async () => {
     await noPointsMeansNoExport();
+  });
+
+  it("F4.303 U15: puts Pin in the control row, before Copy link", async () => {
+    await pinSitsInTheControlRow();
+  });
+
+  it("F4.303 U15: draws no Pin for an operator", async () => {
+    await anOperatorSeesNoPin();
+  });
+
+  it("F4.303 U15: Pin sends the charted points with the page's function and preset", async () => {
+    await pinSendsTheChartedPoints();
   });
 });

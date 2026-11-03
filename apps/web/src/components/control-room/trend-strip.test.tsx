@@ -24,6 +24,7 @@ import {
   sixSparklineLinksToTheHistoryPage,
   theLinksFollowTheSelectedRange,
   theFixedMountOffersExport,
+  theStripHasNoPin,
   theSubtitleNamesTheListSource,
   theWallDrawsNoExport,
   theWindowLinePrintsTheResponseZone,
@@ -132,5 +133,9 @@ describe("F4.301 U4 TrendStrip", () => {
 
   it("F4.303: the wall draws no Export group", async () => {
     await theWallDrawsNoExport();
+  });
+
+  it("F4.303 U15: the strip has no Pin", async () => {
+    await theStripHasNoPin();
   });
 });
