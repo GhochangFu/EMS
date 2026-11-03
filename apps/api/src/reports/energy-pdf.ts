@@ -120,9 +120,15 @@ function blockToTable(block: (string | number)[][]): Content {
  * shape — the ISO currency code sits in the adjacent Unit cell, never a
  * symbol — and a null cost is already the table's U+2014 by the time this
  * function sees it (`reports.serialise.ts`).
+ *
+ * `F4.303` (ADR 0108 Amendment 6 item 8) — `previous`, given only by a
+ * schedule with compare, passes to `energyTable`; `splitIntoBlocks` sizes each
+ * block by its widest row, so the metric and source tables gain the `Previous`
+ * and `Change` columns only when it is given, and without it the definition is
+ * the one before (`energy-pdf.spec.ts` pins it and the bytes).
  */
-export function energyPdfDefinition(preview: EnergyReportPreview): TDocumentDefinitions {
-  const blocks = splitIntoBlocks(energyTable(preview));
+export function energyPdfDefinition(preview: EnergyReportPreview, previous?: EnergyReportPreview): TDocumentDefinitions {
+  const blocks = splitIntoBlocks(energyTable(preview, previous));
   const content: Content[] = [
     { text: "Energy Consumption", fontSize: 16, bold: true, margin: [0, 0, 0, 2] },
     { text: `${preview.range.startDate} to ${preview.range.endDate}`, fontSize: 9, margin: [0, 0, 0, 2] },

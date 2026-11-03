@@ -5,11 +5,19 @@ import type { Readable } from "node:stream";
 
 import { assets, notificationChannels, reportFiles, reportSchedules } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { energyReportTemplateSchema, REPORT_FILE_FORMATS } from "@bms/shared";
-import type { EnergyReportPreview, ReportDeliveryStatus, ReportFileFormat } from "@bms/shared";
+import { REPORT_FILE_FORMATS, reportScheduleParamsSchema, reportTemplateIdSchema } from "@bms/shared";
+import type {
+  EnergyReportPreview,
+  ReportCadence,
+  ReportDeliveryStatus,
+  ReportFileFormat,
+  ReportScheduleParams,
+  ReportTemplateId,
+} from "@bms/shared";
 
 import { requireStorageConfigured } from "../assets/require-storage";
 import { expandLocationSubtrees, type TreeAnchors } from "../auth/location-tree";
+import { parseStoredContract } from "../common/parse-stored-contract";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant } from "../database/tenant-context";
 import type { BmsTx } from "../database/tenant-context";
@@ -32,6 +40,7 @@ import {
 } from "./report-file-store";
 import type { ReportFilesConfig } from "./report-files-config";
 import { REPORT_FILES_CONFIG } from "./report-files.tokens";
+import { previousReportPeriod } from "./report-period";
 import { ReportsService } from "./reports.service";
 
 export type RenderPayload = PayloadOf<typeof reportsRenderQueue>;
@@ -43,6 +52,11 @@ export type RenderPayload = PayloadOf<typeof reportsRenderQueue>;
  * (the scope `energyPreview` summarises — the same ids the files were
  * rendered under). `prunedKeys` is keyed by file id so the best-effort
  * discard can name the id, never the key, in its warn (§9.6).
+ *
+ * `F4.303` (ADR 0108 Amendment 6 item 8) — `templateId` and `params` are the
+ * stored row's, parsed; `previousPeriod` is the cadence period before the one
+ * rendered when `params.compare` is true (else `null`), so `finish` reads the
+ * mail's second preview over exactly the period the files compared against.
  */
 export type RenderOutcome =
   | { readonly kind: "skipped"; readonly reason: "absent" | "disabled" }
@@ -59,6 +73,9 @@ export type RenderOutcome =
       readonly prunedKeys: ReadonlyMap<string, string>;
       readonly channelId: string | null;
       readonly assetIds: readonly string[];
+      readonly templateId: ReportTemplateId;
+      readonly params: ReportScheduleParams | null;
+      readonly previousPeriod: { readonly startDate: string; readonly endDate: string } | null;
     };
 
 /** The four fixed delivery sentences this service composes (R-11). None carries an address, a filename or the schedule name. */
@@ -214,9 +231,22 @@ export class ReportRenderService {
       return { kind: "skipped", reason: "disabled" };
     }
 
+    // `F4.303` (ADR 0108 Amendment 6 items 6, 8): the stored template and params
+    // are parsed before any read or put — an unknown template or a malformed
+    // params fails the job here, so no object is put and no row is written.
+    const templateId = parseStoredContract(reportTemplateIdSchema, schedule.templateId, "report_schedules.render.template_id");
+    const params = parseStoredContract(reportScheduleParamsSchema.nullable(), schedule.params, "report_schedules.render.params");
+    if (templateId !== "energy_consumption") {
+      // F4.303 U13 adds the `trend_points` render; until then nothing is put for it.
+      throw new Error(`report schedule ${scheduleId}: template ${templateId} has no renderer`);
+    }
+    const previousPeriod = params?.compare ? toQuery(previousReportPeriod(schedule.cadence as ReportCadence, periodStart)) : null;
+
     const assetIds = await resolveAssetIds(tx, { organizationIds: [organizationId], ids: schedule.locationIds });
     const formats = REPORT_FILE_FORMATS.filter((format) => schedule.formats.includes(format));
     const query = { startDate: periodStart, endDate: periodEnd };
+    // Without compare the renderers get exactly two arguments, as before.
+    const compareArgs: [] | [{ startDate: string; endDate: string }] = previousPeriod === null ? [] : [previousPeriod];
 
     /** File id → key of every object this run put; discarded on a throw. */
     const putKeys = new Map<string, string>();
@@ -244,8 +274,8 @@ export class ReportRenderService {
 
         const buffer =
           format === "pdf"
-            ? await this.reports.energyPdf(query, assetIds)
-            : await this.reports.energyXlsx(query, assetIds);
+            ? await this.reports.energyPdf(query, assetIds, ...compareArgs)
+            : await this.reports.energyXlsx(query, assetIds, ...compareArgs);
         const { sha256, byteSize } = describeBuffer(buffer);
         const filename = reportFilename(periodStart, periodEnd, format);
         const contentType = CONTENT_TYPES[format];
@@ -258,8 +288,7 @@ export class ReportRenderService {
         await tx.insert(reportFiles).values({
           id: fileId,
           organizationId,
-          // F4.303 U12/U13 replace this with the stored template, parsed (the render still writes energy only).
-          templateId: energyReportTemplateSchema.shape.id.value,
+          templateId,
           format,
           periodStart,
           periodEnd,
@@ -319,6 +348,9 @@ export class ReportRenderService {
       prunedKeys,
       channelId: schedule.channelId,
       assetIds,
+      templateId,
+      params,
+      previousPeriod,
     };
   }
 
@@ -405,8 +437,14 @@ export class ReportRenderService {
       { startDate: outcome.periodStart, endDate: outcome.periodEnd },
       [...outcome.assetIds],
     );
+    // `F4.303`: with compare, one line over the period the files compared against.
+    const previousLine =
+      outcome.previousPeriod === null
+        ? []
+        : [previousPeriodLine(await this.reports.energyPreview(outcome.previousPeriod, [...outcome.assetIds]))];
     const bodyLines = [
       ...summaryLines(preview),
+      ...previousLine,
       this.config.historyUrl === null
         ? NO_HISTORY_URL_SENTENCE
         : `Open Reports & Analytics: ${this.config.historyUrl}/reports`,
@@ -521,6 +559,15 @@ export function summaryLines(preview: EnergyReportPreview): string[] {
     `PUE estimate: ${pueEstimate ?? "—"}`,
     `Indicative cost: ${indicativeCost === null ? "—" : `${currency ?? ""} ${indicativeCost}`.trim()}`,
   ];
+}
+
+/** `F4.303` (ADR 0108 Amendment 6 item 8) — the mail's compare line, after the four summary lines. */
+export function previousPeriodLine(previous: EnergyReportPreview): string {
+  return `Previous period: ${previous.summary.totalKwh} kWh`;
+}
+
+function toQuery(period: { periodStart: string; periodEnd: string }): { startDate: string; endDate: string } {
+  return { startDate: period.periodStart, endDate: period.periodEnd };
 }
 
 async function readAll(stream: Readable): Promise<Buffer> {

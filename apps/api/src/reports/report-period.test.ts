@@ -18,6 +18,7 @@ import {
   assertParseRunAtLocalRefusesNonZeroSeconds,
   assertParseRunAtLocalRefusesOneDigitHour,
   assertPeriodForRow,
+  assertPreviousPeriodRow,
   assertTimeZoneRow,
   assertToInstantRow,
   assertUnknownZoneMessageNamesTheFieldNotTheZone,
@@ -25,6 +26,7 @@ import {
   assertWeekdayOfMonday,
   NEXT_RUN_AT_ROWS,
   PERIOD_FOR_ROWS,
+  PREVIOUS_PERIOD_ROWS,
   TIME_ZONE_ROWS,
   TO_INSTANT_ROWS,
   UTC_OFFSET_ROWS,
@@ -52,6 +54,14 @@ describe("report-period (F3.5b U3, ADR 0071 decision 7, plan R-6/R-7)", () => {
     for (const row of PERIOD_FOR_ROWS) {
       it(row[0], () => {
         assertPeriodForRow(row);
+      });
+    }
+  });
+
+  describe("previousReportPeriod (F4.303, ADR 0108 Amendment 6 item 8)", () => {
+    for (const row of PREVIOUS_PERIOD_ROWS) {
+      it(row[0], () => {
+        assertPreviousPeriodRow(row);
       });
     }
   });

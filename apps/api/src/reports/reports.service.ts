@@ -136,14 +136,21 @@ export class ReportsService {
    * The CSV route is untouched. Its bytes are a client deliverable, which is the
    * reason ADR 0026 exists, and its residual is documented rather than silently
    * patched.
+   *
+   * `F4.303` (ADR 0108 Amendment 6 item 8) — `previous`, the cadence period
+   * before, is passed only by a schedule with compare; it is read by a second
+   * `energyPreview` over the same asset ids, and the sheet gains the `Previous`
+   * and `Change` columns. Without it the bytes are the ones before
+   * (`reports.service.spec.ts`).
    */
   async energyXlsx(
     query: EnergyReportQuery,
     assetIds?: string[] | null,
+    previous?: EnergyReportQuery,
   ): Promise<Buffer> {
-    const rows = assertFiniteCells(
-      energySheetRows(await this.energyPreview(query, assetIds)),
-    );
+    const preview = await this.energyPreview(query, assetIds);
+    const before = previous === undefined ? undefined : await this.energyPreview(previous, assetIds);
+    const rows = assertFiniteCells(energySheetRows(preview, before));
     const sheet = XLSX.utils.aoa_to_sheet(rows);
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, "Energy");
@@ -158,10 +165,12 @@ export class ReportsService {
   async energyPdf(
     query: EnergyReportQuery,
     assetIds?: string[] | null,
+    previous?: EnergyReportQuery,
   ): Promise<Buffer> {
     const preview = await this.energyPreview(query, assetIds);
-    assertFiniteCells(energySheetRows(preview));
-    return renderPdf(energyPdfDefinition(preview));
+    const before = previous === undefined ? undefined : await this.energyPreview(previous, assetIds);
+    assertFiniteCells(energySheetRows(preview, before));
+    return renderPdf(energyPdfDefinition(preview, before));
   }
 
   private parseRange(query: EnergyReportQuery): ReportRange {

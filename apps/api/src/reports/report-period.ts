@@ -241,6 +241,19 @@ export function nextRunAt(
 }
 
 /**
+ * `F4.303` (ADR 0108 Amendment 6 item 8) — the cadence period before the one a
+ * run reported (the day, the Monday..Sunday week, the calendar month before).
+ * `periodFor` reads only the local date of its instant, so noon UTC under
+ * `Etc/UTC` is exactly `periodStart`'s date, and the one rule serves both.
+ */
+export function previousReportPeriod(
+  cadence: ReportCadence,
+  periodStart: string,
+): { periodStart: string; periodEnd: string } {
+  return periodFor(cadence, new Date(`${periodStart}T12:00:00Z`), "Etc/UTC");
+}
+
+/**
  * The previous complete unit before `runAt`'s local date, as ISO dates:
  * daily → the local day before; weekly → the Monday..Sunday week strictly
  * before (the seven local days ending the previous Sunday); monthly → the

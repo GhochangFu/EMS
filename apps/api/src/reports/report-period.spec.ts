@@ -5,6 +5,7 @@ import {
   nextRunAt,
   parseRunAtLocal,
   periodFor,
+  previousReportPeriod,
   ReportPeriodError,
   toInstant,
   utcOffsetMinutes,
@@ -128,6 +129,34 @@ export const PERIOD_FOR_ROWS: readonly PeriodForRow[] = [
     { periodStart: "2028-02-01", periodEnd: "2028-02-29" },
   ],
 ];
+
+/**
+ * `F4.303` U12 (ADR 0108 Amendment 6 item 8) — `previousReportPeriod` rows: the cadence period
+ * before the one a run reported, by the same `periodFor` rule. `[label, cadence, periodStart,
+ * expected]`.
+ */
+export type PreviousPeriodRow = readonly [
+  label: string,
+  cadence: ReportCadence,
+  periodStart: string,
+  expected: { periodStart: string; periodEnd: string },
+];
+
+export const PREVIOUS_PERIOD_ROWS: readonly PreviousPeriodRow[] = [
+  ['previousReportPeriod("daily", "2026-11-03") is 2026-11-02..2026-11-02', "daily", "2026-11-03", { periodStart: "2026-11-02", periodEnd: "2026-11-02" }],
+  ['previousReportPeriod("weekly", "2026-11-02") (a Monday) is 2026-10-26..2026-11-01', "weekly", "2026-11-02", { periodStart: "2026-10-26", periodEnd: "2026-11-01" }],
+  ['previousReportPeriod("monthly", "2026-11-01") is 2026-10-01..2026-10-31', "monthly", "2026-11-01", { periodStart: "2026-10-01", periodEnd: "2026-10-31" }],
+  ['previousReportPeriod("monthly", "2026-03-01") is February with 28 days, 2026-02-01..2026-02-28', "monthly", "2026-03-01", { periodStart: "2026-02-01", periodEnd: "2026-02-28" }],
+];
+
+export function assertPreviousPeriodRow(row: PreviousPeriodRow): void {
+  const [label, cadence, periodStart, expected] = row;
+  const actual = previousReportPeriod(cadence, periodStart);
+  assert(
+    actual.periodStart === expected.periodStart && actual.periodEnd === expected.periodEnd,
+    `${label}: expected ${expected.periodStart}..${expected.periodEnd}, got ${actual.periodStart}..${actual.periodEnd}`,
+  );
+}
 
 export type OffsetRow = readonly [label: string, instant: string, zone: string, expectedMinutes: number];
 

@@ -169,6 +169,11 @@ type ScheduleFixture = {
   locationIds: string[];
   channelId: string | null;
   enabled: boolean;
+  /** `F4.303` — the stored template and params the render parses before the format loop. */
+  templateId: string;
+  params: unknown;
+  cadence: string;
+  timezone: string;
 };
 
 type ChannelFixture = {
@@ -202,6 +207,10 @@ export function schedule(overrides: Partial<ScheduleFixture> = {}): ScheduleFixt
     locationIds: [],
     channelId: CHANNEL_ID,
     enabled: true,
+    templateId: "energy_consumption",
+    params: null,
+    cadence: "monthly",
+    timezone: "Asia/Kolkata",
     ...overrides,
   };
 }
@@ -247,6 +256,12 @@ export function deliverableRows(): DeliverableFixture[] {
 
 const PREVIEW = {
   summary: { window: "7d", totalKwh: 2345.17, peakKw: 414.66, pueEstimate: 1.25, indicativeCost: 5042.12, tariffPerKwh: 2.15, currency: "ZAR", asOf: "2026-09-08T00:00:00.000Z" },
+} as unknown as EnergyReportPreview;
+
+/** `F4.303` — what the preview fake answers for any period but the payload's (the compare's previous period). */
+export const PREVIOUS_TOTAL_KWH = 2000.5;
+const PREVIOUS_PREVIEW = {
+  summary: { ...PREVIEW.summary, totalKwh: PREVIOUS_TOTAL_KWH },
 } as unknown as EnergyReportPreview;
 
 export type Scenario = {
@@ -296,7 +311,8 @@ export type Harness = {
   pruneSelects: { where: { sql: string; params: unknown[] }; offset: unknown }[];
   deliverableWheres: { sql: string; params: unknown[] }[];
   executed: { sql: string; params: unknown[] }[];
-  reports: { calls: { method: string; query: unknown; assetIds: unknown }[] };
+  /** `rest` is every argument after the asset ids — `F4.303`'s `previous`, or none. */
+  reports: { calls: { method: string; query: unknown; assetIds: unknown; rest: unknown[] }[] };
   email: { messages: NotificationMessage[] };
   metrics: { written: string[]; deliveries: string[] };
   tenantTransactions: () => number;
@@ -465,22 +481,22 @@ export function harness(scenario: Scenario = {}): Harness {
   };
   const client: StorageClient = scenario.client ?? { kind: "configured", bucket: "bms-asset-images", ops };
 
-  const reports = { calls: [] as { method: string; query: unknown; assetIds: unknown }[] };
+  const reports: Harness["reports"] = { calls: [] };
   const reportsFake = {
-    energyPdf: async (query: unknown, assetIds: unknown) => {
+    energyPdf: async (query: unknown, assetIds: unknown, ...rest: unknown[]) => {
       calls.push("render");
-      reports.calls.push({ method: "energyPdf", query, assetIds });
+      reports.calls.push({ method: "energyPdf", query, assetIds, rest });
       return PDF_BYTES;
     },
-    energyXlsx: async (query: unknown, assetIds: unknown) => {
+    energyXlsx: async (query: unknown, assetIds: unknown, ...rest: unknown[]) => {
       calls.push("render");
-      reports.calls.push({ method: "energyXlsx", query, assetIds });
+      reports.calls.push({ method: "energyXlsx", query, assetIds, rest });
       return XLSX_BYTES;
     },
-    energyPreview: async (query: unknown, assetIds: unknown) => {
+    energyPreview: async (query: { startDate?: unknown }, assetIds: unknown, ...rest: unknown[]) => {
       calls.push("preview");
-      reports.calls.push({ method: "energyPreview", query, assetIds });
-      return PREVIEW;
+      reports.calls.push({ method: "energyPreview", query, assetIds, rest });
+      return query.startDate === PAYLOAD.periodStart ? PREVIEW : PREVIOUS_PREVIEW;
     },
   } as unknown as ReportsService;
 
@@ -543,7 +559,7 @@ export function harness(scenario: Scenario = {}): Harness {
 }
 
 /** Phase A on the harness's own `tx` fake, as `runProcessor` would hand it. */
-async function render(h: Harness): Promise<RenderOutcome> {
+export async function render(h: Harness): Promise<RenderOutcome> {
   return h.service.render(PAYLOAD, h.tx as never);
 }
 
@@ -566,6 +582,9 @@ export function renderedOutcome(overrides: Partial<Extract<RenderOutcome, { kind
     prunedKeys: new Map(),
     channelId: CHANNEL_ID,
     assetIds: [ASSET_A, ASSET_B],
+    templateId: "energy_consumption",
+    params: null,
+    previousPeriod: null,
     ...overrides,
   };
 }

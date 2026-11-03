@@ -68,42 +68,101 @@ import type { CsvField } from "../serialise/csv";
 /** A cell before either renderer sees it: a `string` is text, a `number` is numeric. */
 type ReportCell = string | number;
 
+/** The ruling 4.6 sentence, written where a previous period read zero. */
+export const NO_PREVIOUS_DATA = "no data for the previous period";
+
+/**
+ * `F4.303` (ADR 0108 Amendment 6 item 8) — the `Change` cell: the percent change
+ * of the unrounded values to one decimal when the previous value is above zero,
+ * the ruling 4.6 sentence when it is zero, and the U+2014 dash when either side
+ * is `null` (or the previous value is below zero, where a percent means nothing).
+ */
+function changeCell(now: number | null, before: number | null): ReportCell {
+  if (now === null || before === null) {
+    return "—";
+  }
+  if (before === 0) {
+    return NO_PREVIOUS_DATA;
+  }
+  if (before < 0) {
+    return "—";
+  }
+  return Math.round(((now - before) / before) * 100 * 10) / 10;
+}
+
+/**
+ * Appends `Previous` and `Change` to a metric or source row when a previous
+ * period is given; returns the row as it is otherwise, so the no-compare table
+ * is today's array.
+ */
+function withPrevious(
+  row: ReportCell[],
+  now: number | null,
+  before: number | null | undefined,
+): ReportCell[] {
+  if (before === undefined) {
+    return row;
+  }
+  return [...row, before ?? "—", changeCell(now, before)];
+}
+
 /**
  * The report as a table: a header block, a metric block, a source block, and the
  * top-consumers table, separated by blank rows.
+ *
+ * `F4.303` (ADR 0108 Amendment 6 item 8, owner Q9) — `previous`, the cadence
+ * period before, is given only by a schedule with compare. Absent, the rows are
+ * exactly today's (the CSV golden in `reports.serialise.spec.ts` gates it, and
+ * `energyCsvDocument` never passes it). Present, the head block gains a
+ * `Previous period` row, and the metric and source blocks gain `Previous` and
+ * `Change`; the top-consumers block stays the current period's (its asset set
+ * differs between periods).
  */
-export function energyTable(preview: EnergyReportPreview): ReportCell[][] {
+export function energyTable(preview: EnergyReportPreview, previous?: EnergyReportPreview): ReportCell[][] {
+  const was = previous?.summary;
+  const wasSource = previous?.sourceTotals;
   return [
     ["Report", preview.template.title],
     ["Start date", preview.range.startDate],
     ["End date", preview.range.endDate],
+    ...(previous === undefined
+      ? []
+      : [["Previous period", `${previous.range.startDate} to ${previous.range.endDate}`]]),
     ["Generated at", preview.generatedAt],
     [],
-    ["Metric", "Value", "Unit"],
+    previous === undefined ? ["Metric", "Value", "Unit"] : ["Metric", "Value", "Unit", "Previous", "Change"],
     // Numbers stay `number` here and take `csvNumberCell` below, which does NOT
     // apostrophe-guard — Excel's formula reading of `-5` is -5, so guarding would
     // import these as text and break the client's arithmetic (ADR 0026 decision 2).
     // The cell type is what enforces the split; there is no regex deciding it.
-    ["Total energy", preview.summary.totalKwh, "kWh"],
-    ["Peak demand", preview.summary.peakKw, "kW"],
+    withPrevious(["Total energy", preview.summary.totalKwh, "kWh"], preview.summary.totalKwh, was?.totalKwh),
+    withPrevious(["Peak demand", preview.summary.peakKw, "kW"], preview.summary.peakKw, was?.peakKw),
     // `pueEstimate` is nullable from `F2.8`. The dash is **U+2014**, the glyph
     // `KpiTile` renders for an empty tile, so the export and the screen agree.
     // Not U+002D: that is an ADR 0026 formula leader and would arrive guarded as
     // `'-`. As a string it routes to `csvTextCell` and is outside
     // `assertFiniteCells`, which is typed on `number`.
-    ["PUE estimate", preview.summary.pueEstimate ?? "—", ""],
+    withPrevious(["PUE estimate", preview.summary.pueEstimate ?? "—", ""], preview.summary.pueEstimate, was?.pueEstimate),
     // `E4.1c` (ADR 0070 decision 7) — the cost and the tariff are nullable and
     // the unit column is the organization's own currency, not a spelled one:
     // `null` writes the same U+2014 as `pueEstimate` (text, outside
     // `assertFiniteCells`) with an empty unit. For a ZAR organization the
     // three cells are byte-identical to what they were.
-    ["Indicative cost", preview.summary.indicativeCost ?? "—", preview.summary.currency ?? ""],
-    ["Tariff", preview.summary.tariffPerKwh ?? "—", preview.summary.currency ? `${preview.summary.currency}/kWh` : ""],
+    withPrevious(
+      ["Indicative cost", preview.summary.indicativeCost ?? "—", preview.summary.currency ?? ""],
+      preview.summary.indicativeCost,
+      was?.indicativeCost,
+    ),
+    withPrevious(
+      ["Tariff", preview.summary.tariffPerKwh ?? "—", preview.summary.currency ? `${preview.summary.currency}/kWh` : ""],
+      preview.summary.tariffPerKwh,
+      was?.tariffPerKwh,
+    ),
     [],
-    ["Source", "Energy", "Unit"],
-    ["Grid", preview.sourceTotals.gridKwh, "kWh"],
-    ["Solar", preview.sourceTotals.solarKwh, "kWh"],
-    ["Nominal DG", preview.sourceTotals.dgKwh, "kWh"],
+    previous === undefined ? ["Source", "Energy", "Unit"] : ["Source", "Energy", "Unit", "Previous", "Change"],
+    withPrevious(["Grid", preview.sourceTotals.gridKwh, "kWh"], preview.sourceTotals.gridKwh, wasSource?.gridKwh),
+    withPrevious(["Solar", preview.sourceTotals.solarKwh, "kWh"], preview.sourceTotals.solarKwh, wasSource?.solarKwh),
+    withPrevious(["Nominal DG", preview.sourceTotals.dgKwh, "kWh"], preview.sourceTotals.dgKwh, wasSource?.dgKwh),
     [],
     ["Asset code", "Asset name", "Site", "Avg kW", "Estimated kWh"],
     ...preview.topConsumers.map((consumer): ReportCell[] => [
@@ -172,6 +231,6 @@ export function assertFiniteCells(rows: ReportCell[][]): ReportCell[][] {
  * So an apostrophe here would corrupt the operator's data and close nothing. The
  * spec pins that intent rather than leaving it to a comment.
  */
-export function energySheetRows(preview: EnergyReportPreview): ReportCell[][] {
-  return energyTable(preview);
+export function energySheetRows(preview: EnergyReportPreview, previous?: EnergyReportPreview): ReportCell[][] {
+  return energyTable(preview, previous);
 }

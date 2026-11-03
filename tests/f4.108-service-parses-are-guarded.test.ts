@@ -81,6 +81,8 @@ const INSTANTIATE_SERVICE =
 const ASSET_IMAGES_SERVICE = "apps/api/src/assets/asset-images.service.ts";
 const REPORT_FILES_SERVICE = "apps/api/src/reports/report-files.service.ts";
 const REPORT_SCHEDULES_SERVICE = "apps/api/src/reports/report-schedules.service.ts";
+/** `F4.303` (ADR 0108 Amendment 6 items 6, 8): the render's parses of the stored template and params. */
+const REPORT_RENDER_SERVICE = "apps/api/src/reports/report-render.service.ts";
 const SITE_LAYOUT_SERVICE = "apps/api/src/control-room/site-layout.service.ts";
 /** `F4.255`: the onboarding draft list's whole-DTO parse (`.strict()`, so a leaked `draft` is a 500). */
 const ONBOARDING_SERVICE = "apps/api/src/admin/onboarding/onboarding.service.ts";
@@ -596,6 +598,7 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         assetImages: occurrences(ASSET_IMAGES_SERVICE),
         reportFiles: occurrences(REPORT_FILES_SERVICE),
         reportSchedules: occurrences(REPORT_SCHEDULES_SERVICE),
+        reportRender: occurrences(REPORT_RENDER_SERVICE),
         siteLayout: occurrences(SITE_LAYOUT_SERVICE),
         onboarding: occurrences(ONBOARDING_SERVICE),
         ...Object.fromEntries(
@@ -615,7 +618,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         "read tools; F4.284 two more, the work-order and user read tools, and one more, the " +
         "alarm skill read tool (owner ruling 2026-10-25); F4.288 one more, the site point " +
         "inventory read tool; F4.296 one more in each of the point statistics and site point " +
-        "inventory read tools, the site summary and the unruled read. " +
+        "inventory read tools, the site summary and the unruled read; F4.303 two in " +
+        "report-render.service.ts, the stored template and params. " +
         "A site reverted to " +
         "a bare .parse() answers 400 under the filter, which is ruling 2's failure mode " +
         "exactly.",
@@ -626,6 +630,7 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       assetImages: 1,
       reportFiles: 1,
       reportSchedules: 1,
+      reportRender: 2,
       siteLayout: 1,
       onboarding: 1,
       ...Object.fromEntries(Object.keys(COPILOT_TOOL_FILES).map((key) => [key, 1])),
@@ -660,8 +665,9 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       // `F4.281`: + the maintenance-schedule read tool; `F4.284`: + the work-order and user read tools,
       // and (owner ruling 2026-10-25) the alarm skill read tool; `F4.291` PR 2: + the alarm
       // statistics read tool; `F4.291` PR 3: + the point statistics read tool; `F4.288`: + the
-      // site point inventory read tool; `F4.296`: + the site summary and the unruled rules read.
-    ).toBe(51);
+      // site point inventory read tool; `F4.296`: + the site summary and the unruled rules read;
+      // `F4.303`: + the render's stored template and params.
+    ).toBe(53);
 
     const callSites = [
       STOCK_SERVICE,
@@ -670,6 +676,7 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       ASSET_IMAGES_SERVICE,
       REPORT_FILES_SERVICE,
       REPORT_SCHEDULES_SERVICE,
+      REPORT_RENDER_SERVICE,
       SITE_LAYOUT_SERVICE,
       ONBOARDING_SERVICE,
       ...Object.values(COPILOT_TOOL_FILES),
