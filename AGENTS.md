@@ -964,10 +964,10 @@
 > alarms at RSMOC-WC while the simulator runs; a skip list needs an ADR 0101
 > amendment. Still out: free shapes and lines, an API refusal of a bad graph,
 > and the tones `earthed` and `racked_out` until a device sends them.
-> And **trend and energy views** (**ADR 0108** with Amendments 1–4; rows
-> `F4.297`–`F4.302` and `F4.305`, merged 2026-10-31 to 2026-11-02 in #967
-> to #969, #971 to #973, #975 `800a773a` and #979 `63358d72`; the ADR in
-> #966, #970, #974 and #978). Nothing is coded per organization or segment:
+> And **trend and energy views** (**ADR 0108** with Amendments 1–5; rows
+> `F4.297`–`F4.302`, `F4.304` and `F4.305`, merged 2026-10-31 to 2026-11-03
+> in #967 to #969, #971 to #973, #975 `800a773a`, #979 `63358d72` and #982
+> `67b74192`; the ADR in #966, #970, #974, #978 and #981). Nothing is coded per organization or segment:
 > `tests/adr-0108-no-org-or-segment-literals.test.ts` scans every runtime
 > module the ADR adds. **`F4.305` makes the `F4.301` trend strip a widget
 > type**: migration `0118` widens the widget-type `CHECK` with `trend_strip`,
@@ -990,8 +990,19 @@
 > a ranking, a series and a two-sided abnormal list, `above` at ratio ≥ 1.5
 > and `below` at ratio ≤ 0.5, advisory only; the near-zero floor reads the
 > counting windows only. Migration `0119` renames an existing `trends` tab
-> to `trends-<8>` and `0120` moves its widgets' `tabKey`. Next: `F4.304`,
-> `F4.303` and `F4.306`.
+> to `trends-<8>` and `0120` moves its widgets' `tabKey`. **`F4.304` adds a
+> floor area**: migration `0121` adds `bms.locations.floor_area_m2
+> numeric(12,2)`, nullable, `CHECK (> 0 AND <> 'NaN')`. The location
+> bodies and the onboarding draft take `floorArea: { value, unit: m2 | ft2 =
+> m2 } | null` (`floorAreaInputSchema`, `FT2_TO_M2`); the typed value is 1 to
+> 100 000 000 and the converted value at least 1 m² (10.77 ft²); the column
+> stores m² and the DTO returns `floorAreaM2`. A site uses only its own area,
+> never a sum of its children's. `kwhPerM2` is on the site ranking ("Rank by:
+> kWh per m²" over the same top 50 by kWh, no-area sites last, never zero)
+> and on `energy/view` (the named site's own assets' kWh through
+> `perAssetEnergy`, no new statement), for the selected period, not
+> annualised. No route is added; `QUERY_SCHEMAS` and the tool registry stay
+> 31. Next: `F4.303` and `F4.306`.
 > And **the tool-calling onboarding agent loop** (**ADR 0090** with
 > **Amendment 1**; row `F3.21`, merged 2026-10-03 in #705, squash `9ff272e1`;
 > the ADR in #702 and the amendment in #703). It amends ADR 0011 decision 1:
