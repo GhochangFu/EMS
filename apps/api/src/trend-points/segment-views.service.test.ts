@@ -18,6 +18,13 @@ import {
   theDefaultSegmentIsTheFirstPresent,
   theResponseParses,
   withoutCompareEveryEntryCompareIsNull,
+  aSegmentExportOfAForeignSiteIsA404WithNoStatement,
+  aSegmentExportOfAnUnknownSegmentIsA404,
+  aLoweredCapRefusesTheSegmentExportBeforeTelemetry,
+  theRealCapAdmitsTheSegmentExport,
+  onlyTheDrawnEntriesAreExported,
+  theSegmentRowCountIsSeriesTimesBucketsTimesPeriods,
+  theSegmentCsvOpensWithTheZoneRow,
 } from "./segment-views.service.spec";
 
 /** `F4.302` U2 — Vitest entry point for `SiteSegmentViewsService`. Assertions live in the sibling `.spec` (§4.6). */
@@ -46,5 +53,15 @@ describe("F4.302 — SiteSegmentViewsService (ADR 0108 Amendment 4 items 4–5)"
     it("the default segment is the first present, in forSite order", () => theDefaultSegmentIsTheFirstPresent());
     it("the abnormal list judges statement A's rows", () => theAbnormalListJudgesStatementA());
     it("the response parses, in the site zone", () => theResponseParses());
+  });
+
+  describe("F4.303 — the export (ADR 0108 Amendment 6 item 3)", () => {
+    it("a foreign site is a 404 with no statement", () => aSegmentExportOfAForeignSiteIsA404WithNoStatement());
+    it("an unknown segment is a 404 before the scope", () => aSegmentExportOfAnUnknownSegmentIsA404());
+    it("a lowered cap refuses before statement A", () => aLoweredCapRefusesTheSegmentExportBeforeTelemetry());
+    it("the real cap admits the export and the read's two statements run", () => theRealCapAdmitsTheSegmentExport());
+    it("G3 only the drawn entries are exported", () => onlyTheDrawnEntriesAreExported());
+    it("the row count is series max × buckets × periods", () => theSegmentRowCountIsSeriesTimesBucketsTimesPeriods());
+    it("the CSV opens with the zone row", () => theSegmentCsvOpensWithTheZoneRow());
   });
 });

@@ -20,6 +20,10 @@ import { TrendStripWidgetLive, trendStripGroupFor, type TrendStripTabScope } fro
  */
 
 vi.mock("../../api/trend-strip", () => ({ fetchSiteTrendStrip: vi.fn() }));
+vi.mock("../../api/view-exports", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../api/view-exports")>()),
+  downloadTrendStripExport: vi.fn(() => Promise.resolve()),
+}));
 
 const fetchStrip = vi.mocked(fetchSiteTrendStrip);
 let fetchSpy: ReturnType<typeof vi.fn> = vi.fn();
@@ -70,14 +74,14 @@ function strip(range: SiteTrendStripDto["range"]): SiteTrendStripDto {
   };
 }
 
-function renderLive(config: TrendStripWidgetConfig, locationId: string | null = LOCATION_ID): void {
+function renderLive(config: TrendStripWidgetConfig, locationId: string | null = LOCATION_ID, entry = "/"): void {
   fetchSpy = vi.fn(() => Promise.reject(new Error("trend-strip-widget-live spec: an unmocked read reached fetch")));
   vi.stubGlobal("fetch", fetchSpy);
   fetchStrip.mockImplementation((_id, { range }) => Promise.resolve(strip(range)));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[entry]}>
         <TrendStripWidgetLive widget={widget(config)} locationId={locationId} tabs={TABS} />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -91,6 +95,20 @@ export function cleanupTrendStripWidgetLive(): void {
   vi.unstubAllGlobals();
   fetchStrip.mockReset();
   expect(calls, "an unmocked read reached fetch").toBe(0);
+}
+
+/** `F4.303` U7: on a dashboard that is not on the wall the widget offers Export. */
+export async function aDashboardOffersExport(): Promise<void> {
+  renderLive({ defaultRange: "24h" });
+  await screen.findByText("No trend points for the assets on this tab.");
+  expect(screen.getByRole("group", { name: "Export" })).toBeInTheDocument();
+}
+
+/** `F4.303` U7: with `?wall=1` the same widget draws no Export group. */
+export async function theWallDrawsNoExport(): Promise<void> {
+  renderLive({ defaultRange: "24h" }, LOCATION_ID, "/?wall=1&every=30");
+  await screen.findByText("No trend points for the assets on this tab.");
+  expect(screen.queryByRole("group", { name: "Export" })).toBeNull();
 }
 
 /** A `tabKey` naming a group-bound tab sends that tab's group, at the dashboard's location. */

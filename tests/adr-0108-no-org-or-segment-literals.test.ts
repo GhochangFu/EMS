@@ -52,6 +52,9 @@ const MODULES: readonly string[] = [
   "apps/api/src/reports/energy-view-read.ts",
   "apps/api/src/telemetry/energy-sources.ts",
   "apps/api/src/reports/energy-view.service.ts",
+  "apps/api/src/reports/view-export.serialise.ts",
+  "apps/api/src/reports/energy-view-export.service.ts",
+  "apps/api/src/telemetry/asset-history-export.service.ts",
   "apps/api/src/reports/energy-filter-options.ts",
   "apps/web/src/api/energy-view.ts",
   "apps/web/src/lib/energy-view-filter.ts",
@@ -133,6 +136,12 @@ const MODULES: readonly string[] = [
   "apps/web/src/components/control-room/segment-trend-chart.tsx",
   "apps/web/src/components/control-room/segment-ranking-table.tsx",
   "apps/web/src/components/control-room/segment-abnormal-list.tsx",
+  // F4.303 (ADR 0108 Amendment 6 item 10) — U6: the link state and "Copy link".
+  "apps/web/src/lib/view-links.ts",
+  "apps/web/src/components/view-actions/copy-link-button.tsx",
+  // F4.303 U7: the export client and "Export".
+  "apps/web/src/api/view-exports.ts",
+  "apps/web/src/components/view-actions/export-menu.tsx",
 ];
 
 /**
@@ -153,6 +162,11 @@ const MODULES: readonly string[] = [
  * `F4.302` (Amendment 4 item 10): U4 moved the last eight web modules to {@link MODULES}, so the
  * list is empty again. `site-page.tsx` pre-dates this record and gains one entry and one branch,
  * so it is not listed.
+ *
+ * `F4.303` (Amendment 6 item 10; `docs/plans/f4.303-view-actions.md` C24): PR 1's seven new
+ * runtime modules, listed in U1 and moved to {@link MODULES} by the unit that creates each. U6
+ * moved `view-links.ts` and `copy-link-button.tsx`; U7 moved the last two
+ * (`view-exports.ts`, `export-menu.tsx`), so the list is empty again.
  */
 const PENDING_MODULES: readonly string[] = [];
 

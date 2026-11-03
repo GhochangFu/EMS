@@ -15,6 +15,7 @@ import type { EnergyFilterOptions, EnergyOrganizationViews, EnergyView, JwtPaylo
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { EnergyOrganizationViewsService } from "./energy-organization-views.service";
+import { EnergyViewExportService } from "./energy-view-export.service";
 import { EnergyViewService } from "./energy-view.service";
 import { ReportScopeService } from "./report-scope";
 import { energyReportQuerySchema } from "./reports.schema";
@@ -35,6 +36,7 @@ export class ReportsController {
     private readonly scope: ReportScopeService,
     private readonly energyViews: EnergyViewService,
     private readonly organizationViews: EnergyOrganizationViewsService,
+    private readonly viewExport: EnergyViewExportService,
   ) {}
 
   @Get("energy/preview")
@@ -188,6 +190,51 @@ export class ReportsController {
       }
       throw err;
     }
+  }
+
+  /**
+   * `F4.303` (ADR 0108 Amendment 6 item 3) — the Energy view's bucketed data as
+   * CSV, beside the read and on its query schema by identity, so the file
+   * answers for exactly the state the screen shows. Long format, the F4.29
+   * guard on every cell, at most `MAX_EXPORT_ROWS` rows (a 400 above, before
+   * any telemetry statement). `no-store`: the answer depends on the caller's
+   * scope. The file name is fixed: no id, code or name.
+   */
+  @Get("energy/view/export.csv")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="energy-view.csv"')
+  @Header("Cache-Control", "no-store")
+  async energyViewCsv(@CurrentUser() user: JwtPayload, @Query() query: unknown): Promise<string> {
+    try {
+      const dto = energyViewQuerySchema.parse(query);
+      return await this.viewExport.csv(user, dto);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /** `F4.303` — the same rows as `xlsx`, one sheet. `@Res()` for `energyXlsx`'s reason: the body is a `Buffer`. */
+  @Get("energy/view/export.xlsx")
+  async energyViewXlsx(@CurrentUser() user: JwtPayload, @Query() query: unknown, @Res() res: Response): Promise<void> {
+    let body: Buffer;
+    try {
+      const dto = energyViewQuerySchema.parse(query);
+      body = await this.viewExport.xlsx(user, dto);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="energy-view.xlsx"');
+    // Scope-filtered per caller, exactly as on the CSV route.
+    res.setHeader("Cache-Control", "no-store");
+    res.send(body);
   }
 
   /**

@@ -6,6 +6,7 @@ import { expect, vi } from "vitest";
 import type { SiteSegmentViewsDto } from "@bms/shared";
 
 import * as segmentApi from "../../api/segment-views";
+import * as exportsApi from "../../api/view-exports";
 import { SEGMENT_VIEWS_BODY } from "../../api/segment-views.spec";
 import { ApiError } from "../../lib/api-error";
 import { SiteTrendsView } from "./site-trends-view";
@@ -21,8 +22,30 @@ import { SiteTrendsView } from "./site-trends-view";
 vi.mock("echarts-for-react", () => ({ default: () => null }));
 
 vi.mock("./site-energy-view", () => ({
-  SiteEnergyView: ({ locationId, value }: { locationId: string; value: { range: string } }) => (
-    <div data-testid="site-energy-view" data-location-id={locationId} data-range={value.range} />
+  SiteEnergyView: ({
+    locationId,
+    value,
+    rankBy,
+    onRankBy,
+  }: {
+    locationId: string;
+    value: { range: string; from?: string; to?: string; compare?: string };
+    rankBy: string;
+    onRankBy: (next: string) => void;
+  }) => (
+    <div
+      data-testid="site-energy-view"
+      data-location-id={locationId}
+      data-range={value.range}
+      data-from={value.from ?? ""}
+      data-to={value.to ?? ""}
+      data-compare={value.compare ?? ""}
+      data-rank-by={rankBy}
+    >
+      <button type="button" onClick={() => onRankBy("kwhPerM2")}>
+        rank by intensity
+      </button>
+    </div>
   ),
 }));
 
@@ -201,4 +224,102 @@ export async function aMissingSegmentHasItsOwnSentence(): Promise<void> {
   stubSegments(new ApiError("control-room/sites/:id/segment-views 404", 404));
   renderAt("?view=nope");
   expect(await screen.findByText("This segment or point is not at this site.")).toBeInTheDocument();
+}
+
+const FROM = "2026-11-01T00:00:00.000Z";
+const TO = "2026-11-02T00:00:00.000Z";
+
+/** `F4.303` T1: the range, the custom instants, compare and `rankBy` are read from the URL. */
+export async function theSectionStateIsReadFromTheUrl(): Promise<void> {
+  const spy = stubSegments(BODY);
+  renderAt(`?from=${FROM}&to=${TO}&compare=1&rankBy=peakKw`);
+  const energy = await screen.findByTestId("site-energy-view");
+  expect([energy.dataset.range, energy.dataset.from, energy.dataset.to, energy.dataset.compare, energy.dataset.rankBy]).toEqual([
+    "custom",
+    FROM,
+    TO,
+    "previous",
+    "peakKw",
+  ]);
+  expect(spy).toHaveBeenCalledWith(SITE, { range: "custom", from: FROM, to: TO, compare: "previous" });
+}
+
+/** `F4.303` T1: a range change is written to the URL, keeping the compare and the sort. */
+export async function aRangeChangeIsWrittenToTheUrl(): Promise<void> {
+  stubSegments(BODY);
+  renderAt("?compare=1&rankBy=peakKw");
+  await screen.findByTestId("site-energy-view");
+  fireEvent.change(screen.getByRole("combobox", { name: "Range" }), { target: { value: "7d" } });
+  expect(screen.getByTestId("location").textContent).toBe(`${PATH}?range=7d&compare=1&rankBy=peakKw`);
+}
+
+/** `F4.303` T1: the site ranking's sort is written to the URL as `rankBy`. */
+export async function aSortChangeIsWrittenToTheUrl(): Promise<void> {
+  stubSegments(BODY);
+  renderAt("?range=7d");
+  fireEvent.click(await screen.findByRole("button", { name: "rank by intensity" }));
+  expect(screen.getByTestId("location").textContent).toBe(`${PATH}?range=7d&rankBy=kwhPerM2`);
+}
+
+/** `F4.303` T2: every nav entry keeps the range, and a segment entry drops the point. */
+export async function theNavKeepsTheRange(): Promise<void> {
+  stubSegments(BODY);
+  renderAt("?view=chillers&point=pf&range=7d");
+  const nav = await sectionNav();
+  await waitFor(() => expect(within(nav).getAllByRole("link")).toHaveLength(3));
+  expect(within(nav).getAllByRole("link").map((a) => a.getAttribute("href"))).toEqual([
+    `${PATH}?range=7d`,
+    `${PATH}?view=chillers&range=7d`,
+    `${PATH}?view=pumps&range=7d`,
+  ]);
+}
+
+/** `F4.303` T3: "Copy link" sits in the control row, after the range controls. */
+export async function copyLinkSitsBesideTheRangeControls(): Promise<void> {
+  stubSegments(BODY);
+  renderAt("");
+  const copy = await screen.findByRole("button", { name: "Copy link" });
+  const row = screen.getByRole("combobox", { name: "Range" }).closest("[data-testid=site-trends-controls]");
+  expect(row).not.toBeNull();
+  expect(row?.contains(copy)).toBe(true);
+  expect(row?.lastElementChild?.contains(copy)).toBe(true);
+}
+
+/** `F4.303` U7: the Export group sits in the control row, before "Copy link". */
+export async function exportSitsBesideCopyLink(): Promise<void> {
+  stubSegments(BODY);
+  renderAt("");
+  const copy = await screen.findByRole("button", { name: "Copy link" });
+  const exportGroup = screen.getByRole("group", { name: "Export" });
+  const row = screen.getByTestId("site-trends-controls");
+  expect(row.contains(exportGroup)).toBe(true);
+  expect(exportGroup.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}
+
+/** `F4.303` U7: on the Energy sub-tab Export downloads the energy view of the site and the range. */
+export async function theEnergySubTabExportsTheSiteEnergyView(): Promise<void> {
+  stubSegments(BODY);
+  const download = vi.spyOn(exportsApi, "downloadEnergyViewExport").mockResolvedValue();
+  const segment = vi.spyOn(exportsApi, "downloadSegmentViewExport").mockResolvedValue();
+  renderAt("?range=7d&compare=1");
+  await screen.findByTestId("site-energy-view");
+  fireEvent.click(within(screen.getByRole("group", { name: "Export" })).getByRole("button", { name: "CSV" }));
+  await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+  expect(download).toHaveBeenCalledWith("csv", { range: "7d", locationIds: [SITE], compare: "previous" });
+  expect(segment).not.toHaveBeenCalled();
+}
+
+/** `F4.303` U7: on a segment sub-tab Export downloads the segment view with the query the read sent. */
+export async function aSegmentSubTabExportsItsSegmentView(): Promise<void> {
+  const read = stubSegments(BODY);
+  const download = vi.spyOn(exportsApi, "downloadSegmentViewExport").mockResolvedValue();
+  const energy = vi.spyOn(exportsApi, "downloadEnergyViewExport").mockResolvedValue();
+  renderAt("?view=chillers&point=pf&range=7d");
+  await waitFor(() => expect(read).toHaveBeenCalled());
+  const sent = read.mock.calls[0]?.[1];
+  fireEvent.click(within(screen.getByRole("group", { name: "Export" })).getByRole("button", { name: "XLSX" }));
+  await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
+  expect(download).toHaveBeenCalledWith("xlsx", SITE, sent);
+  expect(sent).toEqual({ range: "7d", segment: "chillers", point: "pf" });
+  expect(energy).not.toHaveBeenCalled();
 }

@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { EnergyOrganizationViews, EnergyView, EnergyViewPeriod, EnergyViewQuery, PointAggregateBucket } from "@bms/shared";
 
 import { fetchEnergyOrganizationViews, fetchEnergyView } from "../../api/energy-view";
+import type { SiteRankingSort } from "../../lib/energy-organization-views";
 import { partialNote } from "../../lib/energy-view-filter";
 import { siteEnergyQueryOf } from "../../lib/site-trends";
 import { AbnormalList } from "../energy/abnormal-list";
@@ -20,6 +21,9 @@ type Props = {
   locationId: string;
   /** The section's range and compare, owned by `SiteTrendsView`. */
   value: RangeCompareValue;
+  /** The site ranking's sort, the section's `rankBy` in the URL (`F4.303`). */
+  rankBy: SiteRankingSort;
+  onRankBy: (next: SiteRankingSort) => void;
 };
 
 function viewOf(query: EnergyViewQuery | null): Promise<EnergyView> {
@@ -49,7 +53,7 @@ function compareTotalOf(compare: EnergyViewPeriod | null): PointAggregateBucket[
  * advisory abnormal list. The site ranking shows only when the site has readable children
  * (`sites.totalSites > 1`, owner 2026-11-02); on a flat site it is omitted.
  */
-export function SiteEnergyView({ locationId, value }: Props) {
+export function SiteEnergyView({ locationId, value, rankBy, onRankBy }: Props) {
   const query = siteEnergyQueryOf(locationId, value);
 
   const viewQ = useQuery({
@@ -133,6 +137,8 @@ export function SiteEnergyView({ locationId, value }: Props) {
               sites={ov.sites}
               timeZone={ov.timeZone}
               status={sectionStatus(ov.sites.current.length)}
+              sort={rankBy}
+              onSort={onRankBy}
             />
           </SectionCard>
         ) : null}

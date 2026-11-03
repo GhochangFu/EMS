@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { encodePointRef } from "@bms/shared";
 
 import { fetchAssetPoints, fetchAssets } from "../api/assets";
+import { downloadAssetHistoryExport } from "../api/view-exports";
 import { BucketTable } from "../components/asset-history/bucket-table";
 import { ACCESS_SENTENCE, isForbidden, retryUnlessForbidden, siteZoneOf } from "../components/asset-history/history-format";
 import { PointList } from "../components/asset-history/point-list";
@@ -12,6 +13,8 @@ import { RangePicker } from "../components/asset-history/range-picker";
 import { RawRecordsTable } from "../components/asset-history/raw-records-table";
 import { TrendChart, type TrendSeries } from "../components/asset-history/trend-chart";
 import { PageHeader } from "../components/page-header";
+import { CopyLinkButton } from "../components/view-actions/copy-link-button";
+import { ExportMenu } from "../components/view-actions/export-menu";
 import { useAssetHistory } from "../hooks/use-asset-history";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { chartablePoints, rangeFromSearch, rangeToSearch, type HistoryRange } from "../lib/asset-history-range";
@@ -101,7 +104,16 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
               </p>
             ) : null}
 
-            <RangePicker range={range} zone={siteZone.zone} zoneLabel={siteZone.label} onChange={setRange} />
+            {/* `F4.303` (ADR 0108 Amendment 6 item 2): the state is already in the URL; "Copy link" ends the row. */}
+            <div data-testid="asset-history-controls" className="flex flex-wrap items-start justify-between gap-2">
+              <RangePicker range={range} zone={siteZone.zone} zoneLabel={siteZone.label} onChange={setRange} />
+              <span className="inline-flex flex-wrap items-center gap-3">
+                {selected.length === 0 ? null : (
+                  <ExportMenu onExport={(format) => downloadAssetHistoryExport(format, assetId, range, selected)} />
+                )}
+                <CopyLinkButton />
+              </span>
+            </div>
 
             <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
               <PointList

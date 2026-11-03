@@ -6,6 +6,7 @@ import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import { fetchSiteTrendStrip } from "../../api/trend-strip";
+import { downloadTrendStripExport } from "../../api/view-exports";
 import { TREND_STRIP_NO_SITE_SENTENCE, TrendStripWidget } from "./trend-strip-widget";
 import { TREND_STRIP_STATIC_SENTENCE, TrendStripWidgetPreview } from "./trend-strip-widget-preview";
 
@@ -19,8 +20,13 @@ import { TREND_STRIP_STATIC_SENTENCE, TrendStripWidgetPreview } from "./trend-st
  */
 
 vi.mock("../../api/trend-strip", () => ({ fetchSiteTrendStrip: vi.fn() }));
+vi.mock("../../api/view-exports", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../api/view-exports")>()),
+  downloadTrendStripExport: vi.fn(() => Promise.resolve()),
+}));
 
 const fetchStrip = vi.mocked(fetchSiteTrendStrip);
+const downloadStrip = vi.mocked(downloadTrendStripExport);
 let fetchSpy: ReturnType<typeof vi.fn> = vi.fn();
 
 const LOCATION_ID = "0b7e2f4a-1c3d-4e5f-8a9b-0c1d2e3f4a5b";
@@ -86,6 +92,7 @@ function renderWidget(overrides: Partial<WidgetProps> = {}): void {
           locationId={LOCATION_ID}
           assetGroupId={null}
           defaultRange="24h"
+          exportable
           {...overrides}
         />
       </MemoryRouter>
@@ -99,7 +106,34 @@ export function cleanupTrendStripWidget(): void {
   const calls = fetchSpy.mock.calls.length;
   vi.unstubAllGlobals();
   fetchStrip.mockReset();
+  downloadStrip.mockClear();
   expect(calls, "an unmocked read reached fetch").toBe(0);
+}
+
+/** `F4.303` U7: an exportable widget offers Export, and a click downloads its group and range. */
+export async function anExportableWidgetOffersExport(): Promise<void> {
+  fetchStrip.mockImplementation((_id, { range }) => Promise.resolve(strip(range)));
+  renderWidget({ assetGroupId: GROUP_ID, defaultRange: "7d" });
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  await userEvent.click(within(screen.getByRole("group", { name: "Export" })).getByRole("button", { name: "CSV" }));
+  await waitFor(() =>
+    expect(downloadStrip).toHaveBeenCalledWith("csv", LOCATION_ID, { range: "7d", assetGroupId: GROUP_ID }),
+  );
+}
+
+/** `F4.303` U7: a widget that is not exportable (the wall) draws no Export group, beside the strip. */
+export async function aNonExportableWidgetDrawsNoExport(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip("24h"));
+  renderWidget({ exportable: false });
+  expect(await screen.findByRole("heading", { name: "Segment One Label" })).toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Export" })).toBeNull();
+}
+
+/** `F4.303` U7: the builder preview draws no Export group. */
+export function thePreviewDrawsNoExport(): void {
+  render(<TrendStripWidgetPreview title="Site trends" status="ready" />);
+  expect(screen.queryByRole("group", { name: "Export" })).toBeNull();
+  expect(screen.getByText(TREND_STRIP_STATIC_SENTENCE)).toBeInTheDocument();
 }
 
 /** The frame carries the widget's title as its heading, and the strip draws inside it. */

@@ -4,7 +4,18 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 
 import {
   aCostRendersInTheOrganizationsCurrency,
+  aFilterChangeIsWrittenToTheUrl,
+  aForeignOrganizationIsNeverSent,
+  aForeignSiteIsNeverSent,
+  aFullLinkIsTheFirstQuery,
+  aFullLinkPressesItsStackAndSort,
   aFullScopeRendersNoNote,
+  copyLinkEndsTheFilterBar,
+  exportDownloadsTheViewsCurrentQuery,
+  exportSitsBeforeCopyLinkInTheFilterBar,
+  theDefaultFilterWritesAnEmptySearch,
+  theStackChoiceIsWrittenToTheUrl,
+  useMyDefaultFilterClearsTheLink,
   aMissingPreviousPowerFactorIsNotCalledZero,
   aMeasuredRatioRendersOnTheEnergyPage,
   aNullCostRendersTheDashWithoutThrowing,
@@ -129,5 +140,51 @@ describe("F4.299 the organization views on the Energy page", () => {
 
   it("keeps the KPI tiles when the organization views fail", async () => {
     await aFailedOrganizationViewsReadLeavesTheTiles();
+  });
+});
+
+describe("F4.303 the Energy page's state in the URL", () => {
+  it("P1: sends a full link as the first query, exactly", async () => {
+    await aFullLinkIsTheFirstQuery();
+  });
+
+  it("P1: presses the link's stack and sort", async () => {
+    await aFullLinkPressesItsStackAndSort();
+  });
+
+  it("P2: never sends an organization the reader cannot open, and says so", async () => {
+    await aForeignOrganizationIsNeverSent();
+  });
+
+  it("P2: never sends a site the reader cannot open", async () => {
+    await aForeignSiteIsNeverSent();
+  });
+
+  it("P2: Use my default filter clears the search and sends the default query", async () => {
+    await useMyDefaultFilterClearsTheLink();
+  });
+
+  it("P3: writes a filter change to the URL", async () => {
+    await aFilterChangeIsWrittenToTheUrl();
+  });
+
+  it("P3: writes the stack choice to the URL", async () => {
+    await theStackChoiceIsWrittenToTheUrl();
+  });
+
+  it("P3: writes an empty search for the default filter", async () => {
+    await theDefaultFilterWritesAnEmptySearch();
+  });
+
+  it("P4: ends the filter bar with Copy link", async () => {
+    await copyLinkEndsTheFilterBar();
+  });
+
+  it("F4.303 U7: puts Export before Copy link in the filter bar", async () => {
+    await exportSitsBeforeCopyLinkInTheFilterBar();
+  });
+
+  it("F4.303 U7: Export downloads the query the page is showing", async () => {
+    await exportDownloadsTheViewsCurrentQuery();
   });
 });

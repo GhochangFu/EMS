@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import type pg from "pg";
 import { expect } from "vitest";
 
@@ -231,4 +231,87 @@ export async function assertA46DayRangeIsHourLevelDayBucket(ctx: SegmentViewsCtx
   expect([dto.level, dto.bucket]).toEqual(["1h", "1d"]);
   expect(dto.abnormal.baseline.windowsConsulted).toBe(4);
   expect(telemetry(ctx).every((s) => s.text.includes("telemetry.point_values_1h"))).toBe(true);
+}
+
+// ---------------------------------------------------------------------------
+// `F4.303` U4 (ADR 0108 Amendment 6 item 3) — the segment export over the same
+// forwarding pool. Data rows start after the five header rows, the blank row
+// and the column header; columns: asset_code, asset_name, point, unit, period,
+// bucket_start, mean.
+// ---------------------------------------------------------------------------
+
+const HEADER_ROWS = 7;
+
+async function exportRun(
+  ctx: SegmentViewsCtx,
+  jwt: JwtPayload,
+  siteId: string,
+  query: SiteSegmentViewsQuery,
+  now: Date,
+  cap?: number,
+) {
+  ctx.statements.length = 0;
+  return ctx.svc.exportRows(jwt, siteId, query, now, cap);
+}
+
+/** The read and the export at one instant, so both resolve the same frame. */
+async function readThenExport(ctx: SegmentViewsCtx, query: SiteSegmentViewsQuery) {
+  const now = new Date();
+  const dto = await ctx.svc.forSite(admin(), ctx.fixture.siteId, query, now);
+  const rows = await exportRun(ctx, admin(), ctx.fixture.siteId, query, now);
+  return { dto, rows };
+}
+
+/** `[asset_code, mean]` of the `period` rows of an export. */
+function meansOf(rows: readonly (string | number | null)[][], period: "current" | "previous") {
+  return rows
+    .slice(HEADER_ROWS)
+    .filter((row) => row[4] === period)
+    .map((row) => [row[0], row[6]]);
+}
+
+/** G1 — `wc-admin`'s export of a PHEWB site is the read's 404, with no `telemetry.*` statement; its own site exports. */
+export async function assertAForeignSiteExportIsA404WithNoTelemetry(ctx: SegmentViewsCtx): Promise<void> {
+  const now = new Date();
+  const err = await rejection(exportRun(ctx, wcAdmin(), ctx.pheSiteId, Q, now));
+  expect(err).toBeInstanceOf(NotFoundException);
+  expect(telemetry(ctx)).toEqual([]);
+
+  const own = await exportRun(ctx, wcAdmin(), ctx.rsmocWcId, Q, now);
+  expect(own[0]?.[0], "adjacent positive: its own site exports").toBe("zone");
+}
+
+/** G2 — each current `mean` is `forSite(...).ranking[k].buckets[i].v` for the same query and instant. */
+export async function assertTheExportMeansAreForSitesBuckets(ctx: SegmentViewsCtx): Promise<void> {
+  const { dto, rows } = await readThenExport(ctx, Q);
+  const expected = dto.ranking.flatMap((e) => (e.buckets ?? []).map((b) => [e.assetCode, b.v]));
+  expect(expected.some((row) => typeof row[1] === "number"), "precondition: a drawn bucket carries a value").toBe(true);
+  expect(meansOf(rows, "current")).toEqual(expected);
+}
+
+/** G3 — only the drawn entries (`buckets !== null`, 8 of the 50 ranked) are in the file. */
+export async function assertOnlyTheDrawnSeriesAreExported(ctx: SegmentViewsCtx): Promise<void> {
+  const { dto, rows } = await readThenExport(ctx, Q);
+  const drawn = dto.ranking.filter((e) => e.buckets !== null).map((e) => e.assetCode);
+  expect(drawn, "precondition: 8 of 50 ranked are drawn").toHaveLength(8);
+  expect([...new Set(rows.slice(HEADER_ROWS).map((row) => row[0]))]).toEqual(drawn);
+}
+
+/** G4 — with `compare=previous` the `previous` rows are `compareBuckets`. */
+export async function assertThePreviousRowsAreCompareBuckets(ctx: SegmentViewsCtx): Promise<void> {
+  const { dto, rows } = await readThenExport(ctx, { ...Q, compare: "previous" });
+  const expected = dto.ranking.flatMap((e) => (e.compareBuckets ?? []).map((b) => [e.assetCode, b.v]));
+  expect(expected.length, "precondition: the compare period has buckets").toBeGreaterThan(0);
+  expect(meansOf(rows, "previous")).toEqual(expected);
+}
+
+/** G5 — a lowered cap refuses before statement A and statement B: no `telemetry.*` statement is sent. */
+export async function assertALoweredCapRefusesBeforeTelemetry(ctx: SegmentViewsCtx): Promise<void> {
+  const err = await rejection(exportRun(ctx, admin(), ctx.fixture.siteId, Q, new Date(), 10));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect(err.message).toMatch(/^Export would hold \d+ rows, above the 10 row limit\. Narrow the range or the points\.$/);
+  expect(telemetry(ctx)).toEqual([]);
+
+  await exportRun(ctx, admin(), ctx.fixture.siteId, Q, new Date());
+  expect(telemetry(ctx), "adjacent positive: the real cap sends the read's two statements").toHaveLength(2);
 }

@@ -1,8 +1,19 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
+import { HEADERS_METADATA } from "@nestjs/common/constants";
+import type { Response } from "express";
+import type { Pool } from "pg";
+import { expect } from "vitest";
 
-import { encodePointRef, type JwtPayload, type PointAggregateResponse } from "@bms/shared";
+import {
+  assetHistoryExportQuerySchema,
+  encodePointRef,
+  type JwtPayload,
+  type PointAggregateResponse,
+} from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
+import { REQUEST_SCHEMAS } from "../openapi/openapi-registry";
+import { AssetHistoryExportService } from "./asset-history-export.service";
 import { TelemetryController } from "./telemetry.controller";
 import type { TelemetryService } from "./telemetry.service";
 
@@ -86,7 +97,7 @@ function accessStub(allow: boolean) {
 
 function controllerWith(allow: boolean) {
   const { service, calls, recentCalls, rawCalls } = serviceStub();
-  return { controller: new TelemetryController(service, accessStub(allow)), calls, recentCalls, rawCalls };
+  return { controller: new TelemetryController(service, accessStub(allow), {} as never), calls, recentCalls, rawCalls };
 }
 
 /**
@@ -487,7 +498,7 @@ function atInstantStubs(readable: string[] | null) {
   const access = {
     readableAssetIds: async () => readable,
   } as unknown as AccessControlService;
-  return { controller: new TelemetryController(service, access), calls };
+  return { controller: new TelemetryController(service, access, {} as never), calls };
 }
 
 /**
@@ -677,7 +688,7 @@ function latestStubs(readable: string[] | null) {
   const access = {
     readableAssetIds: async () => readable,
   } as unknown as AccessControlService;
-  return { controller: new TelemetryController(service, access), calls };
+  return { controller: new TelemetryController(service, access, {} as never), calls };
 }
 
 /**
@@ -766,4 +777,133 @@ export async function assertLatestPassesAnExplicitWindow(): Promise<void> {
   const { controller, calls } = latestStubs(null);
   await controller.latest(USER, { assetIds: [ASSET_ID], pointKeys: ["kw"], windowMinutes: "60" });
   assert(calls[0]?.windowMinutes === 60, `expected windowMinutes 60, got ${calls[0]?.windowMinutes}`);
+}
+
+// ---------------------------------------------------------------------------
+// `F4.303` U5 (ADR 0108 Amendment 6 item 3) — `GET /telemetry/assets/:assetId/
+// history/export.csv|.xlsx`. The controller is built over the REAL
+// `AssetHistoryExportService` with recording fakes beneath it, so the order the
+// route answers in (scope before the query) is the order a request meets.
+// ---------------------------------------------------------------------------
+
+function historyExportStubs(allow: boolean) {
+  const order: string[] = [];
+  const aggregateCalls: unknown[] = [];
+  const service = {
+    pointAggregate: async (point: { assetId: string; pointKey: string }, options: unknown) => {
+      order.push("aggregate");
+      aggregateCalls.push({ point, options });
+      return { ...RESPONSE, timeZone: "Asia/Kolkata", buckets: [{ t: RESPONSE.from, v: 3 }] };
+    },
+  } as unknown as TelemetryService;
+  const access = {
+    canReadAsset: async () => {
+      order.push("canReadAsset");
+      return allow;
+    },
+  } as unknown as AccessControlService;
+  const pool = {
+    query: async () => {
+      order.push("select");
+      return { rows: [{ point_key: "kw", unit: "kW" }] };
+    },
+  } as unknown as Pool;
+  const historyExport = new AssetHistoryExportService(service, access, pool);
+  return { controller: new TelemetryController(service, access, historyExport), order, aggregateCalls };
+}
+
+function fakeResponse() {
+  const headers: Array<[string, string]> = [];
+  const sent: unknown[] = [];
+  const res = {
+    setHeader: (name: string, value: string) => {
+      headers.push([name, value]);
+      return res;
+    },
+    send: (body: unknown) => {
+      sent.push(body);
+      return res;
+    },
+  };
+  return { res: res as unknown as Response, headers, sent };
+}
+
+async function caught(run: Promise<unknown>): Promise<unknown> {
+  try {
+    await run;
+  } catch (err) {
+    return err;
+  }
+  throw new Error("resolved, expected a refusal");
+}
+
+/** The CSV route returns the export's CSV for the parsed query, after scope, select, then the read. */
+export async function assertTheHistoryCsvIsTheExportOfTheQuery(): Promise<void> {
+  const { controller, order } = historyExportStubs(true);
+  const csv = await controller.historyCsv(USER, ASSET_ID, { points: "kw", windowMinutes: "60" });
+  expect(order).toEqual(["canReadAsset", "select", "aggregate"]);
+  expect(csv.startsWith("zone,Asia/Kolkata\n")).toBe(true);
+  expect(csv).toContain("\nkw,kW,current,");
+}
+
+/** Scope before the query: a bad query on a foreign asset is the 403, not the 400. */
+export async function assertTheHistoryExportChecksScopeBeforeTheQuery(): Promise<void> {
+  const foreign = historyExportStubs(false);
+  const err = await caught(foreign.controller.historyCsv(USER, ASSET_ID, { points: "" }));
+  expect(err).toBeInstanceOf(ForbiddenException);
+  expect(foreign.order).toEqual(["canReadAsset"]);
+}
+
+/** The query is `assetHistoryExportQuerySchema`: an empty `points` is a 400 with `flatten()`, and nothing is read. */
+export async function assertTheHistoryExportParsesItsQuery(): Promise<void> {
+  const own = historyExportStubs(true);
+  const err = await caught(own.controller.historyCsv(USER, ASSET_ID, { points: "" }));
+  expect(err).toBeInstanceOf(BadRequestException);
+  const body = (err as BadRequestException).getResponse() as { fieldErrors?: Record<string, unknown> };
+  expect(Object.keys(body.fieldErrors ?? {})).toEqual(["points"]);
+  expect(own.order).toEqual(["canReadAsset"]);
+}
+
+/** The CSV route's three headers: the CSV type, the fixed file name, `no-store`. */
+export function assertTheHistoryCsvSendsItsThreeHeaders(): void {
+  const headers =
+    (Reflect.getMetadata(HEADERS_METADATA, TelemetryController.prototype.historyCsv) as
+      | Array<{ name: string; value: string }>
+      | undefined) ?? [];
+  expect([...headers].sort((a, b) => a.name.localeCompare(b.name))).toEqual([
+    { name: "Cache-Control", value: "no-store" },
+    { name: "Content-Disposition", value: 'attachment; filename="asset-history.csv"' },
+    { name: "Content-Type", value: "text/csv; charset=utf-8" },
+  ]);
+}
+
+/** The XLSX route sends the workbook with the sheet type, the fixed file name and `no-store`. */
+export async function assertTheHistoryXlsxSetsItsThreeHeaders(): Promise<void> {
+  const { controller } = historyExportStubs(true);
+  const r = fakeResponse();
+  await controller.historyXlsx(USER, ASSET_ID, { points: "kw" }, r.res);
+  expect(r.headers).toEqual([
+    ["Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
+    ["Content-Disposition", 'attachment; filename="asset-history.xlsx"'],
+    ["Cache-Control", "no-store"],
+  ]);
+  expect(r.sent).toHaveLength(1);
+  expect((r.sent[0] as Buffer).subarray(0, 2).toString("latin1")).toBe("PK");
+}
+
+/** A refused XLSX export sends nothing and sets no header. */
+export async function assertARefusedHistoryXlsxSendsNothing(): Promise<void> {
+  const { controller } = historyExportStubs(false);
+  const r = fakeResponse();
+  expect(await caught(controller.historyXlsx(USER, ASSET_ID, { points: "kw" }, r.res))).toBeInstanceOf(
+    ForbiddenException,
+  );
+  expect(r.sent).toEqual([]);
+  expect(r.headers).toEqual([]);
+}
+
+/** The registry holds both keys on `assetHistoryExportQuerySchema` by identity. */
+export function assertTheHistoryExportKeysAreRegistered(): void {
+  expect(REQUEST_SCHEMAS.TelemetryController_historyCsv).toBe(assetHistoryExportQuerySchema);
+  expect(REQUEST_SCHEMAS.TelemetryController_historyXlsx).toBe(assetHistoryExportQuerySchema);
 }

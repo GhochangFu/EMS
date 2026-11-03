@@ -14,6 +14,7 @@ import {
   anUntrimmedStripPrintsNoTrimLine,
   cleanupStrip,
   eachAssetPrintsItsLastValueWithItsUnit,
+  exportDownloadsTheCurrentQuery,
   moreAssetsLinksToTheAssetsTab,
   noMoreLinkWhenNoneBeyondTheCap,
   noSegmentsRendersTheEmptySentence,
@@ -22,7 +23,9 @@ import {
   pressing7dRefetchesAndMarksIt,
   sixSparklineLinksToTheHistoryPage,
   theLinksFollowTheSelectedRange,
+  theFixedMountOffersExport,
   theSubtitleNamesTheListSource,
+  theWallDrawsNoExport,
   theWindowLinePrintsTheResponseZone,
 } from "./trend-strip.spec";
 
@@ -117,5 +120,17 @@ describe("F4.301 U4 TrendStrip", () => {
 
   it("shows the loading status while the read is pending", async () => {
     await aPendingReadShowsTheLoadingStatus();
+  });
+
+  it("F4.303: the fixed mount offers the Export group", async () => {
+    await theFixedMountOffersExport();
+  });
+
+  it("F4.303: Export downloads the strip's current range and group", async () => {
+    await exportDownloadsTheCurrentQuery();
+  });
+
+  it("F4.303: the wall draws no Export group", async () => {
+    await theWallDrawsNoExport();
   });
 });

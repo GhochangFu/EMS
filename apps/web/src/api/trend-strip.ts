@@ -18,15 +18,21 @@ export interface TrendStripRequest {
   readonly assetGroupId: string | null;
 }
 
-/** GET /api/v1/control-room/sites/:locationId/trend-strip */
-export async function fetchSiteTrendStrip(
-  locationId: string,
-  { range, assetGroupId }: TrendStripRequest,
-): Promise<SiteTrendStripDto> {
+/** The search of one strip request; the whole site (`assetGroupId: null`) sends no group key. */
+export function trendStripSearch({ range, assetGroupId }: TrendStripRequest): URLSearchParams {
   const params = new URLSearchParams({ range });
   if (assetGroupId !== null) {
     params.append("assetGroupId", assetGroupId);
   }
+  return params;
+}
+
+/** GET /api/v1/control-room/sites/:locationId/trend-strip */
+export async function fetchSiteTrendStrip(
+  locationId: string,
+  request: TrendStripRequest,
+): Promise<SiteTrendStripDto> {
+  const params = trendStripSearch(request);
   const sent = withAuth();
   const res = await fetch(
     `${base}/api/v1/control-room/sites/${encodeURIComponent(locationId)}/trend-strip?${params}`,

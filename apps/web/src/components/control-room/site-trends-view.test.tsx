@@ -4,14 +4,22 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aFailedSegmentReadIsAFixedSentence,
+  aSegmentSubTabExportsItsSegmentView,
+  exportSitsBesideCopyLink,
+  theEnergySubTabExportsTheSiteEnergyView,
   aMissingSegmentHasItsOwnSentence,
+  aRangeChangeIsWrittenToTheUrl,
   aSegmentSubTabAsksItsSegmentAndPoint,
+  aSortChangeIsWrittenToTheUrl,
   anotherPointKeepsTheSegmentNavWhileItLoads,
   anotherSitesSegmentsDoNotShowWhileItLoads,
   choosingAPointWritesTheSearch,
+  copyLinkSitsBesideTheRangeControls,
   theBareSectionShowsEnergy,
+  theNavKeepsTheRange,
   theNavListsOneEntryPerSegment,
   theRangeControlReachesTheEnergySubTab,
+  theSectionStateIsReadFromTheUrl,
 } from "./site-trends-view.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014, ADR 0042 decision 2). */
@@ -55,5 +63,37 @@ describe("F4.302 the Trends & Energy section", () => {
 
   it("keeps the segment nav while another point of the same site loads", async () => {
     await anotherPointKeepsTheSegmentNavWhileItLoads();
+  });
+
+  it("F4.303 T1: reads the range, the custom instants, compare and rankBy from the URL", async () => {
+    await theSectionStateIsReadFromTheUrl();
+  });
+
+  it("F4.303 T1: writes a range change to the URL", async () => {
+    await aRangeChangeIsWrittenToTheUrl();
+  });
+
+  it("F4.303 T1: writes the ranking sort to the URL", async () => {
+    await aSortChangeIsWrittenToTheUrl();
+  });
+
+  it("F4.303 T2: keeps the range on every nav entry", async () => {
+    await theNavKeepsTheRange();
+  });
+
+  it("F4.303 T3: puts Copy link at the end of the control row", async () => {
+    await copyLinkSitsBesideTheRangeControls();
+  });
+
+  it("F4.303 U7: puts Export before Copy link in the control row", async () => {
+    await exportSitsBesideCopyLink();
+  });
+
+  it("F4.303 U7: the Energy sub-tab exports the site's energy view", async () => {
+    await theEnergySubTabExportsTheSiteEnergyView();
+  });
+
+  it("F4.303 U7: a segment sub-tab exports its segment view", async () => {
+    await aSegmentSubTabExportsItsSegmentView();
   });
 });

@@ -1,5 +1,3 @@
-import { useState } from "react";
-
 import { SITE_RANKING_MAX, type EnergySiteRanking } from "@bms/shared";
 
 import {
@@ -15,6 +13,9 @@ type Props = {
   /** The view's zone: the peak time is wall time there, never the browser's. */
   timeZone: string;
   status: EnergySectionStatus;
+  /** The sort, owned by the caller: the URL's `rankBy` (`F4.303`, ADR 0108 Amendment 6 item 2). */
+  sort: SiteRankingSort;
+  onSort: (next: SiteRankingSort) => void;
 };
 
 const SORTS: readonly { key: SiteRankingSort; label: string }[] = [
@@ -58,10 +59,9 @@ function wholeNumber(value: number): string {
  * `F4.299` U6 (ADR 0108 Amendment 1, 7.4) — the sites ranked by kWh or by peak
  * kW, with the change against the previous period when compare is on. The
  * server sends at most `SITE_RANKING_MAX` sites and the count before the cut.
+ * The sort is a prop since `F4.303`: the page keeps it in the URL, so a link carries it.
  */
-export function SiteRankingTable({ sites, timeZone, status }: Props) {
-  const [sort, setSort] = useState<SiteRankingSort>("kwh");
-
+export function SiteRankingTable({ sites, timeZone, status, sort, onSort }: Props) {
   if (status === "loading") {
     return <p className="px-1 py-4 text-sm text-ink-muted">Loading the sites…</p>;
   }
@@ -86,7 +86,7 @@ export function SiteRankingTable({ sites, timeZone, status }: Props) {
             className={`rounded border px-2 py-1 text-xs ${
               sort === option.key ? "border-accent bg-accent text-on-accent font-semibold" : "border-line-strong"
             }`}
-            onClick={() => setSort(option.key)}
+            onClick={() => onSort(option.key)}
           >
             {option.label}
           </button>

@@ -14,7 +14,7 @@ const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
  */
 
 /** One `locationIds` key per id (the server folds the repeats); an absent value sends no key. */
-function viewSearch(query: EnergyViewQuery): URLSearchParams {
+export function viewSearch(query: EnergyViewQuery): URLSearchParams {
   const params = new URLSearchParams({ range: query.range });
   if (query.organizationId !== undefined) {
     params.append("organizationId", query.organizationId);

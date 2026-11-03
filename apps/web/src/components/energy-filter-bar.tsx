@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import type { EnergyFilterOptions } from "@bms/shared";
 
 import { type EnergyFilterValue, locationsOfOrganization } from "../lib/energy-view-filter";
@@ -20,6 +22,8 @@ type EnergyFilterBarProps = {
   timeZone: string | null;
   /** Injected for tests; seeds a new custom range with the last 24 h. */
   now?: () => Date;
+  /** `F4.303`: the view's actions ("Copy link"), rendered at the end of the bar. */
+  actions?: ReactNode;
 };
 
 /**
@@ -33,7 +37,14 @@ type EnergyFilterBarProps = {
  * (`locationTreeOptions`). The range select sits where the `ESKOM_SMOC.html`
  * `#/energy` header carries its one range control.
  */
-export function EnergyFilterBar({ options, value, onChange, timeZone, now = () => new Date() }: EnergyFilterBarProps) {
+export function EnergyFilterBar({
+  options,
+  value,
+  onChange,
+  timeZone,
+  now = () => new Date(),
+  actions,
+}: EnergyFilterBarProps) {
   const locations = locationTreeOptions(locationsOfOrganization(options, value.organizationId));
 
   const onRangeCompare = (next: RangeCompareValue): void => {
@@ -88,6 +99,7 @@ export function EnergyFilterBar({ options, value, onChange, timeZone, now = () =
         timeZone={timeZone}
         now={now}
       />
+      {actions !== undefined ? <div className="pb-1">{actions}</div> : null}
     </div>
   );
 }

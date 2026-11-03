@@ -52,7 +52,7 @@ export async function fetchEnergyReportPreview(
 /**
  * Triggers a browser save of `blob` under `filename`.
  *
- * `F3.5a` Unit 10 — extracted from `saveExport` with no behaviour change so
+ * `F3.5a` Unit 10 — extracted from `downloadExport` with no behaviour change so
  * `downloadReportFile` can reach the same anchor-download shape for a file
  * that did not come from a query-scoped export route.
  */
@@ -67,18 +67,25 @@ function saveBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-/** Fetches an export response and triggers a browser save under `filename`. */
-async function saveExport(
+/**
+ * Fetches an export response and triggers a browser save under `filename`.
+ *
+ * `F4.303` U7 (ADR 0108 Amendment 6 item 3): exported, and takes the search itself, so the energy
+ * report's three downloads and the view exports (`view-exports.ts`) share one fetch-and-save. A
+ * refusal throws an `ApiError` whose message is `<label> <status>` (the text the plain `Error`
+ * carried) and whose `status` the view export reads to pick a fixed sentence.
+ */
+export async function downloadExport(
   path: string,
-  input: EnergyReportInput,
+  search: URLSearchParams,
   filename: string,
   label: string,
 ): Promise<void> {
   const sent = withAuth();
-  const res = await fetch(`${base}${path}?${query(input)}`, sent);
+  const res = await fetch(`${base}${path}?${search}`, sent);
   if (!res.ok) {
     clearSessionOnAuthFailure(res, sent);
-    throw new Error(`${label} ${res.status}`);
+    throw new ApiError(`${label} ${res.status}`, res.status);
   }
   const blob = await res.blob();
   saveBlob(blob, filename);
@@ -88,9 +95,9 @@ async function saveExport(
 export async function downloadEnergyReportCsv(
   input: EnergyReportInput,
 ): Promise<void> {
-  return saveExport(
+  return downloadExport(
     "/api/v1/reports/energy/export.csv",
-    input,
+    query(input),
     `energy-consumption-${input.startDate}-to-${input.endDate}.csv`,
     "energy-report-csv",
   );
@@ -107,9 +114,9 @@ export async function downloadEnergyReportCsv(
 export async function downloadEnergyReportXlsx(
   input: EnergyReportInput,
 ): Promise<void> {
-  return saveExport(
+  return downloadExport(
     "/api/v1/reports/energy/export.xlsx",
-    input,
+    query(input),
     `energy-consumption-${input.startDate}-to-${input.endDate}.xlsx`,
     "energy-report-xlsx",
   );
@@ -119,9 +126,9 @@ export async function downloadEnergyReportXlsx(
 export async function downloadEnergyReportPdf(
   input: EnergyReportInput,
 ): Promise<void> {
-  return saveExport(
+  return downloadExport(
     "/api/v1/reports/energy/export.pdf",
-    input,
+    query(input),
     `energy-consumption-${input.startDate}-to-${input.endDate}.pdf`,
     "energy-report-pdf",
   );

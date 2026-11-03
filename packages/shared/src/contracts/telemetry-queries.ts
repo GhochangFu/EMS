@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import { MAX_WIDGET_WINDOW_MINUTES, pointAggregateFunctionSchema } from "./dashboard-builder";
+import { CATALOG_CODE_PATTERN } from "../constants";
+import {
+  MAX_WIDGET_POINTS,
+  MAX_WIDGET_WINDOW_MINUTES,
+  pointAggregateFunctionSchema,
+} from "./dashboard-builder";
 import { DEFAULT_RAW_RECORDS_LIMIT, MAX_RAW_RECORDS_LIMIT } from "./envelopes";
 
 /**
@@ -64,6 +69,59 @@ function aggregateInstant(name: "from" | "to") {
     .optional();
 }
 
+/**
+ * `F4.303` (ADR 0108 Amendment 6 item 3) — the custom-range rules of the aggregate
+ * read, in one function so the history export query shares them instead of copying
+ * them: both ends or neither; exclusive with `windowMinutes`; each end inside the
+ * at-instant range; `to > from`; a span of at most `MAX_WIDGET_WINDOW_MINUTES`.
+ * Each fault is one issue, the first found.
+ */
+export function aggregateRangeRules(
+  query: { from?: string; to?: string; windowMinutes?: number },
+  ctx: z.RefinementCtx,
+): void {
+  const { from, to, windowMinutes } = query;
+  if (from === undefined && to === undefined) {
+    return;
+  }
+  if (from === undefined || to === undefined) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "from and to must be given together" });
+    return;
+  }
+  if (windowMinutes !== undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "from/to and windowMinutes are exclusive; give one or the other",
+    });
+    return;
+  }
+  for (const [name, at] of [
+    ["from", from],
+    ["to", to],
+  ] as const) {
+    if (!atInstantIsInRange(at)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [name],
+        message: `${name} must lie between 1970-01-01T00:00:00Z and one day after now`,
+      });
+      return;
+    }
+  }
+  const spanMs = new Date(to).getTime() - new Date(from).getTime();
+  if (!(spanMs > 0)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "to must be after from" });
+    return;
+  }
+  if (spanMs > MAX_AGGREGATE_SPAN_MS) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["to"],
+      message: `the from/to span must not exceed ${MAX_WIDGET_WINDOW_MINUTES} minutes`,
+    });
+  }
+}
+
 export const pointAggregateQuerySchema = z
   .object({
     windowMinutes: z.coerce.number().int().positive().max(MAX_WIDGET_WINDOW_MINUTES).optional(),
@@ -90,48 +148,7 @@ export const pointAggregateQuerySchema = z
       .optional()
       .transform((value) => value === "true"),
   })
-  .superRefine((query, ctx) => {
-    const { from, to, windowMinutes } = query;
-    if (from === undefined && to === undefined) {
-      return;
-    }
-    if (from === undefined || to === undefined) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "from and to must be given together" });
-      return;
-    }
-    if (windowMinutes !== undefined) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "from/to and windowMinutes are exclusive; give one or the other",
-      });
-      return;
-    }
-    for (const [name, at] of [
-      ["from", from],
-      ["to", to],
-    ] as const) {
-      if (!atInstantIsInRange(at)) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [name],
-          message: `${name} must lie between 1970-01-01T00:00:00Z and one day after now`,
-        });
-        return;
-      }
-    }
-    const spanMs = new Date(to).getTime() - new Date(from).getTime();
-    if (!(spanMs > 0)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["to"], message: "to must be after from" });
-      return;
-    }
-    if (spanMs > MAX_AGGREGATE_SPAN_MS) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["to"],
-        message: `the from/to span must not exceed ${MAX_WIDGET_WINDOW_MINUTES} minutes`,
-      });
-    }
-  })
+  .superRefine(aggregateRangeRules)
   .describe(
     "A trailing window (`windowMinutes`, default 1440, ending now) or a custom window (`from` " +
       "and `to`, ISO 8601 with an offset, both or neither, never with `windowMinutes`). Each " +
@@ -170,3 +187,69 @@ export const pointRawQuerySchema = z
       .optional(),
   })
   .strict();
+
+/**
+ * `F4.303` (ADR 0108 Amendment 6 item 3) — the points list of the history export:
+ * `points=kw,pf`, the wire shape of the history URL. Pure; adds an issue at
+ * `["points"]` when the list is empty, longer than `MAX_WIDGET_POINTS`, holds a
+ * code that fails `CATALOG_CODE_PATTERN`, or names a code twice.
+ */
+export function pointsListRules(points: string, ctx: z.RefinementCtx): void {
+  const codes = parsePointsList(points);
+  const fault = (message: string): void => {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["points"], message });
+  };
+  if (codes.length === 0) {
+    fault("points must name at least one catalog code");
+    return;
+  }
+  if (codes.length > MAX_WIDGET_POINTS) {
+    fault(`points must name at most ${MAX_WIDGET_POINTS} catalog codes`);
+    return;
+  }
+  if (codes.some((code) => !CATALOG_CODE_PATTERN.test(code))) {
+    fault("points holds a code that is not a catalog code");
+    return;
+  }
+  if (new Set(codes).size !== codes.length) {
+    fault("points names a catalog code more than once");
+  }
+}
+
+/** Splits a `points` value on `,` and trims each entry; an empty value gives `[]`. */
+export function parsePointsList(points: string): string[] {
+  return points
+    .split(",")
+    .map((code) => code.trim())
+    .filter((code) => code.length > 0);
+}
+
+/**
+ * `F4.303` (ADR 0108 Amendment 6 item 3) — the query of
+ * `GET /telemetry/assets/:assetId/history/export.csv|.xlsx`. The range rules are
+ * `aggregateRangeRules`, the same function the aggregate read runs, so the two
+ * cannot drift. `bucketStats` is absent because the export always asks for it.
+ * ONE `.superRefine`: a second one would discard the `.describe()` (ADR 0029).
+ */
+export const assetHistoryExportQuerySchema = z
+  .object({
+    points: z.string().min(1).describe("Comma-separated catalog codes, 1 to 8, each once."),
+    windowMinutes: z.coerce.number().int().positive().max(MAX_WIDGET_WINDOW_MINUTES).optional(),
+    from: aggregateInstant("from"),
+    to: aggregateInstant("to"),
+    compare: z
+      .enum(["true", "false"])
+      .optional()
+      .transform((value) => value === "true"),
+    bucketFunction: pointAggregateFunctionSchema.default("avg"),
+  })
+  .strict()
+  .superRefine((query, ctx) => {
+    aggregateRangeRules(query, ctx);
+    pointsListRules(query.points, ctx);
+  })
+  .describe(
+    "The history view's own query: `points` (1 to 8 catalog codes, comma-separated) and the " +
+      "aggregate read's range (a trailing `windowMinutes` or a custom `from` and `to`), `compare` " +
+      "and `bucketFunction` (default avg). Every bucket carries min, average, max and sample count.",
+  );
