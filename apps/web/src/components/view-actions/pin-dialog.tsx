@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import { MAX_DASHBOARD_WIDGETS, MAX_WIDGET_POINTS } from "@bms/shared";
+import { MAX_DASHBOARD_WIDGETS, MAX_WIDGET_POINTS, MAX_WIDGET_WINDOW_MINUTES } from "@bms/shared";
 import type {
   AppendChartWidgetBody,
   EnergyViewRange,
@@ -41,7 +41,8 @@ export type PinSource = {
 /**
  * The trailing window a pin stores, in minutes. A preset pins its own length; a custom range,
  * `today` and `this_month` pin a window as long as the span shown, `ceil((to − from) / 60 000)`,
- * and `spanned` says so (the dialog then names the window). `null` without a readable span.
+ * and `spanned` says so (the dialog then names the window). `null` without a readable span, or
+ * with one past `MAX_WIDGET_WINDOW_MINUTES` (the append route refuses it; Pin stays disabled).
  */
 export function pinWindow(source: PinSource): { minutes: number; spanned: boolean } | null {
   const preset = HISTORY_PRESETS.find((p) => p.key === source.range);
@@ -52,7 +53,8 @@ export function pinWindow(source: PinSource): { minutes: number; spanned: boolea
   if (!Number.isFinite(ms) || ms <= 0) {
     return null;
   }
-  return { minutes: Math.ceil(ms / 60_000), spanned: true };
+  const minutes = Math.ceil(ms / 60_000);
+  return minutes > MAX_WIDGET_WINDOW_MINUTES ? null : { minutes, spanned: true };
 }
 
 /** `2190` → `36 h 30 min`; `45` → `45 min`; `1440` → `24 h`. */
@@ -138,7 +140,8 @@ function PinDialog({ source, onClose }: { source: PinSource; onClose: () => void
   const tabs = [...(detailQ.data?.tabs ?? [])].sort((a, b) => a.sortOrder - b.sortOrder);
   const effectiveTab = tabs.some((t) => t.key === tabKey) ? tabKey : (tabs[0]?.key ?? "");
   const span = pinWindow(source);
-  const ready = chosen !== undefined && detailQ.isSuccess && span !== null && source.pairs.length > 0;
+  // Done once pinned: a second click would append a duplicate. Another dashboard or tab clears it.
+  const ready = chosen !== undefined && detailQ.isSuccess && span !== null && source.pairs.length > 0 && pinned === null;
 
   const submit = async (): Promise<void> => {
     if (pending || !ready || chosen === undefined || span === null) {
@@ -204,7 +207,10 @@ function PinDialog({ source, onClose }: { source: PinSource; onClose: () => void
           <select
             className="surface-field px-2 py-1.5 text-sm"
             value={effectiveTab}
-            onChange={(event) => setTabKey(event.target.value)}
+            onChange={(event) => {
+              setTabKey(event.target.value);
+              setPinned(null);
+            }}
           >
             {tabs.map((t) => (
               <option key={t.key} value={t.key}>

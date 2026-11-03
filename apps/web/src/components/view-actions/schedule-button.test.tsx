@@ -4,6 +4,7 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import { resetWizardStore } from "../../stores/wizard-store";
 import {
+  aPrefillChangedWhileOpenIsTheOneSent,
   clickingOpensTheWizardInline,
   createdShowsTheSentenceAndClosesTheWizard,
   theButtonIsAbsentForAnAssetGroupAdmin,
@@ -24,4 +25,5 @@ describe("F4.303 U16 Schedule", () => {
   it("the button is absent without a prefill", () => theButtonIsAbsentWithoutAPrefill());
   it("clicking opens the wizard inline, prefilled", () => clickingOpensTheWizardInline());
   it("created shows the sentence and closes the wizard", () => createdShowsTheSentenceAndClosesTheWizard());
+  it("review: a prefill changed while open is the one sent", () => aPrefillChangedWhileOpenIsTheOneSent());
 });

@@ -8,6 +8,9 @@ import {
   aScopedUsersBodyNeverCarriesThePrefilledOrganization,
   aTrendPrefillShowsItsTemplateLine,
   anAdminStartsOnThePrefilledOrganization,
+  anAdminStartsOnThePrefilledSitesOrganization,
+  anAdminBodyKeepsThePrefilledSiteWithNoPrefilledOrganization,
+  choosingTheSitesOrganizationByHandKeepsThePrefilledSite,
   anEditNeverSendsTheTemplateOrParams,
   anEnergyPrefillShowsItsTemplateLine,
   theCreateBodyCarriesTheTemplateAndParams,
@@ -72,4 +75,9 @@ describe("F4.280 — the report schedule wizard (ADR 0099 decision 6)", () => {
   it("an edit never sends the template or params", () => anEditNeverSendsTheTemplateOrParams());
   it("a scoped user's body never carries the prefilled organization", () => aScopedUsersBodyNeverCarriesThePrefilledOrganization());
   it("an admin starts on the prefilled organization", () => anAdminStartsOnThePrefilledOrganization());
+  it("review: an admin starts on the prefilled sites' organization", () => anAdminStartsOnThePrefilledSitesOrganization());
+  it("review: an admin body keeps the prefilled site with no prefilled organization", () =>
+    anAdminBodyKeepsThePrefilledSiteWithNoPrefilledOrganization());
+  it("review: choosing the sites' organization by hand keeps the prefilled site", () =>
+    choosingTheSitesOrganizationByHandKeepsThePrefilledSite());
 });

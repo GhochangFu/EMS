@@ -106,6 +106,13 @@ function initialValues(
   };
 }
 
+/** The one organization every site in `ids` belongs to; `undefined` when one is unlisted or they differ. */
+function organizationOfSites(locations: readonly { id: string; organizationId: string }[], ids: readonly string[]): string | undefined {
+  const owners = new Set(ids.map((id) => locations.find((location) => location.id === id)?.organizationId));
+  const [only] = [...owners];
+  return owners.size === 1 ? only : undefined;
+}
+
 export type ReportScheduleWizardProps = {
   user: AuthUser;
   /** The schedule to edit; `null` for a new one. */
@@ -145,6 +152,8 @@ export function ReportScheduleWizard({ user, schedule, onCancel, onDone, prefill
   const [values, setValues] = useState<Record<string, unknown>>(() => initialValues(schedule, offersChannel, fill, isGlobalAdmin));
   // The user typed a zone (or the row has one): the location-driven default no longer overwrites it.
   const [timezoneTouched, setTimezoneTouched] = useState(schedule !== null);
+  // The admin picked an organization by hand: the prefill's organization no longer overwrites it.
+  const [organizationTouched, setOrganizationTouched] = useState(false);
 
   const chosenOrganizationId = typeof values.organizationId === "string" ? values.organizationId : undefined;
   const organizationId = schedule !== null ? schedule.organizationId : isGlobalAdmin ? chosenOrganizationId : undefined;
@@ -160,6 +169,23 @@ export function ReportScheduleWizard({ user, schedule, onCancel, onDone, prefill
     queryFn: () => fetchAdminLocations("true", organizationId),
     enabled: !isGlobalAdmin || organizationId !== undefined,
   });
+  // A prefill that names no organization (the site section, a sub-tab, asset history): the admin
+  // starts on the one its sites belong to, read from the unscoped list, so the sites are kept.
+  const resolvesOrganization = needsOrganization && fill !== undefined && fill.organizationId === undefined && fill.locationIds.length > 0;
+  const allLocationsQ = useQuery({
+    queryKey: ["admin", "locations", "true", null],
+    queryFn: () => fetchAdminLocations("true"),
+    enabled: resolvesOrganization,
+  });
+  // Only the global `admin` names an organization (a scoped user's body never carries the key).
+  const prefillOrganizationId = !needsOrganization
+    ? undefined
+    : (fill?.organizationId ??
+      (fill !== undefined && resolvesOrganization ? organizationOfSites(allLocationsQ.data?.items ?? [], fill.locationIds) : undefined));
+  useEffect(() => {
+    if (organizationTouched || prefillOrganizationId === undefined || chosenOrganizationId !== undefined) return;
+    setValues((current) => ({ ...current, organizationId: prefillOrganizationId }));
+  }, [prefillOrganizationId, organizationTouched, chosenOrganizationId]);
   const channelsQ = useQuery({ queryKey: ["notification-channels"], queryFn: fetchNotificationChannels, enabled: offersChannel });
 
   const locations = useMemo(() => locationsQ.data?.items ?? [], [locationsQ.data]);
@@ -216,15 +242,17 @@ export function ReportScheduleWizard({ user, schedule, onCancel, onDone, prefill
           <select
             className={fieldClass}
             value={chosenOrganizationId ?? ""}
-            onChange={(event) =>
+            onChange={(event) => {
+              setOrganizationTouched(true);
               setValues({
                 ...values,
                 organizationId: event.target.value === "" ? undefined : event.target.value,
-                // The prefilled sites belong to the prefilled organization only.
-                locationIds: fill !== undefined && event.target.value === fill.organizationId ? [...fill.locationIds] : [],
+                // The prefilled sites belong to the prefilled (or resolved) organization only.
+                locationIds:
+                  fill !== undefined && event.target.value !== "" && event.target.value === prefillOrganizationId ? [...fill.locationIds] : [],
                 ...(offersChannel ? { channelId: null } : {}),
-              })
-            }
+              });
+            }}
           >
             <option value="">Choose an organization</option>
             {(organizationsQ.data?.items ?? []).map((organization) => (

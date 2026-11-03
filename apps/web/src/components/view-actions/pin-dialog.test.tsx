@@ -4,6 +4,10 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aConflictIsTheFullTabSentence,
+  aPinnedDialogDisablesTheSubmit,
+  aSpanOfOneYearPins,
+  aSpanPastOneYearCannotBePinned,
+  anotherTabAfterAPinEnablesTheSubmit,
   aCustomRangeNamesTheWindow,
   aCustomRangePinsItsSpan,
   aForbiddenIsTheRefusedSentence,
@@ -115,5 +119,17 @@ describe("F4.303 U15 Pin", () => {
   });
   it("D9: success links to the dashboard", async () => {
     await successLinksToTheDashboard();
+  });
+  it("review: a pinned dialog disables the submit", async () => {
+    await aPinnedDialogDisablesTheSubmit();
+  });
+  it("review: another tab after a pin enables the submit", async () => {
+    await anotherTabAfterAPinEnablesTheSubmit();
+  });
+  it("review: a span of one year pins", () => {
+    aSpanOfOneYearPins();
+  });
+  it("review: a span past one year cannot be pinned", () => {
+    aSpanPastOneYearCannotBePinned();
   });
 });

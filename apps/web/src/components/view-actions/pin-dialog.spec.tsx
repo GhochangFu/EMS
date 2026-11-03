@@ -17,7 +17,7 @@ import { APPEND_ANSWER } from "../../api/dashboards.spec";
 import { SEGMENT_VIEWS_BODY } from "../../api/segment-views.spec";
 import { ApiError } from "../../lib/api-error";
 import type { HistoryRange } from "../../lib/asset-history-range";
-import { historyPinSource, PinButton, type PinSource, segmentPinSource } from "./pin-dialog";
+import { historyPinSource, PinButton, type PinSource, pinWindow, segmentPinSource } from "./pin-dialog";
 
 /**
  * `F4.303` U15 (ADR 0108 Amendment 6 item 4) — Pin on a point view: the button shows for a role
@@ -397,4 +397,39 @@ export async function successLinksToTheDashboard(): Promise<void> {
     "href",
     `/dashboards/chillers?organizationId=${ORG}`,
   );
+}
+
+/** Review fix — after a pin the submit is disabled, so a second click appends no duplicate. */
+export async function aPinnedDialogDisablesTheSubmit(): Promise<void> {
+  stubDashboards();
+  renderPin(historySource(PRESET_7D));
+  const dialog = await chooseDashboard(PLAIN_ID);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Pin to dashboard" }));
+  await within(dialog).findByRole("status");
+  expect(within(dialog).getByRole("button", { name: "Pin to dashboard" })).toBeDisabled();
+}
+
+/** Review fix — another tab after a pin enables the submit again (the positive beside the one above). */
+export async function anotherTabAfterAPinEnablesTheSubmit(): Promise<void> {
+  stubDashboards();
+  renderPin(historySource(PRESET_7D));
+  const dialog = await chooseDashboard(TABBED_ID);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Pin to dashboard" }));
+  await within(dialog).findByRole("status");
+  fireEvent.change(within(dialog).getByRole("combobox", { name: "Tab" }), { target: { value: "energy" } });
+  expect(within(dialog).getByRole("button", { name: "Pin to dashboard" })).toBeEnabled();
+}
+
+const YEAR_MS = 525_600 * 60_000;
+
+/** Review fix — a span of exactly `MAX_WIDGET_WINDOW_MINUTES` still pins. */
+export function aSpanOfOneYearPins(): void {
+  const to = new Date(Date.parse(CUSTOM_36H30.from ?? "") + YEAR_MS).toISOString();
+  expect(pinWindow(historySource({ ...CUSTOM_36H30, to }))).toEqual({ minutes: 525_600, spanned: true });
+}
+
+/** Review fix — a span past `MAX_WIDGET_WINDOW_MINUTES` cannot be pinned (the route would refuse it). */
+export function aSpanPastOneYearCannotBePinned(): void {
+  const to = new Date(Date.parse(CUSTOM_36H30.from ?? "") + YEAR_MS + 60_000).toISOString();
+  expect(pinWindow(historySource({ ...CUSTOM_36H30, to }))).toBeNull();
 }

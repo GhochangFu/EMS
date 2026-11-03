@@ -44,7 +44,10 @@ export function ScheduleButton({ user, prefill }: ScheduleButtonProps) {
       ) : null}
       {open ? (
         <div className="mt-2 w-full basis-full">
+          {/* Keyed on the prefill: a view that changes under the open wizard (points, compare, a
+              refetched sub-tab) starts it again, so the create sends what the template line shows. */}
           <ReportScheduleWizard
+            key={JSON.stringify(prefill)}
             user={user}
             schedule={null}
             prefill={prefill}

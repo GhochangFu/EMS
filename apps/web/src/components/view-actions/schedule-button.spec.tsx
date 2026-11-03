@@ -125,3 +125,34 @@ export async function createdShowsTheSentenceAndClosesTheWizard(): Promise<void>
   expect(await screen.findByText("Schedule created")).toBeInTheDocument();
   expect(screen.queryByText("Template: Trend points · 1 point")).toBeNull();
 }
+
+/** Review fix — the view changes while the wizard is open: the create sends the view's new points. */
+export async function aPrefillChangedWhileOpenIsTheOneSent(): Promise<void> {
+  const create = vi.spyOn(reportsApi, "createReportSchedule").mockResolvedValue(CREATED);
+  stubScheduleWizardApis();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (prefill: SchedulePrefill) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <ScheduleButton user={userOf("location_admin")} prefill={prefill} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  const { rerender } = render(tree(PREFILL));
+  fireEvent.click(screen.getByRole("button", { name: "Schedule" }));
+  await screen.findByText("Template: Trend points · 1 point");
+  const changed: SchedulePrefill = {
+    ...PREFILL,
+    params: { points: [{ assetId: ASSET, pointKey: "kw" }, { assetId: ASSET, pointKey: "pf" }], compare: true },
+  };
+  rerender(tree(changed));
+  await userEvent.type(await screen.findByLabelText("Name"), "Site digest");
+  const next = () => userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await next();
+  await within(await screen.findByLabelText("Locations")).findByRole("option", { name: LOCATION.name });
+  await next();
+  await next();
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  expect((create.mock.calls[0]?.[0] as unknown as Record<string, unknown>).params).toEqual(changed.params);
+}

@@ -469,3 +469,44 @@ export async function anAdminStartsOnThePrefilledOrganization(): Promise<void> {
   expect(select).toHaveValue(ESKOM_ID);
 }
 
+
+/** Review fix — a prefill that names no organization (the site section, a sub-tab, asset history): the admin starts on its sites' organization. */
+export async function anAdminStartsOnThePrefilledSitesOrganization(): Promise<void> {
+  renderWizard("admin", null, ENERGY_PREFILL);
+  const select = await screen.findByLabelText("Schedule organization");
+  await within(select).findByRole("option", { name: "ESKOM · Eskom SMOC" });
+  await waitFor(() => expect(select).toHaveValue(ESKOM_ID));
+}
+
+/** Walks an admin create from the Schedule step to the end and returns the body sent. */
+async function adminCreatedBody(): Promise<Record<string, unknown>> {
+  const create = vi.spyOn(reportsApi, "createReportSchedule").mockResolvedValue(FIRST);
+  await userEvent.type(screen.getByLabelText("Name"), "Site digest");
+  await next();
+  await locationsSelect();
+  await next();
+  await next();
+  await submit();
+  await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+  return create.mock.calls[0]?.[0] as unknown as Record<string, unknown>;
+}
+
+/** Review fix — that admin's body keeps the prefilled site, not the whole organization. */
+export async function anAdminBodyKeepsThePrefilledSiteWithNoPrefilledOrganization(): Promise<void> {
+  renderWizard("admin", null, ENERGY_PREFILL);
+  await waitFor(() => expect(screen.getByLabelText("Schedule organization")).toHaveValue(ESKOM_ID));
+  const body = await adminCreatedBody();
+  expect([body.organizationId, body.locationIds]).toEqual([ESKOM_ID, [WESTERN_CAPE.id]]);
+}
+
+/** Review fix — choosing the sites' organization by hand keeps the prefilled site too. */
+export async function choosingTheSitesOrganizationByHandKeepsThePrefilledSite(): Promise<void> {
+  renderWizard("admin", null, ENERGY_PREFILL);
+  const select = await screen.findByLabelText("Schedule organization");
+  await within(select).findByRole("option", { name: "ESKOM · Eskom SMOC" });
+  await waitFor(() => expect(select).toHaveValue(ESKOM_ID));
+  await userEvent.selectOptions(select, "");
+  await userEvent.selectOptions(select, ESKOM_ID);
+  const body = await adminCreatedBody();
+  expect(body.locationIds).toEqual([WESTERN_CAPE.id]);
+}
