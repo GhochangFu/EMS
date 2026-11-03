@@ -8,14 +8,24 @@ import {
   TREND_STRIP_MAX_SERIES,
 } from "@bms/shared";
 
+import { MAX_EXPORT_ROWS } from "../admin/audit/audit.limits";
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_POOL } from "../database/database.tokens";
+import {
+  type ViewExportRow,
+  assertViewExportWithinCap,
+  trendStripExportRows,
+  viewExportCsv,
+  viewExportXlsx,
+} from "../reports/view-export.serialise";
 import { siteAssetRows, siteTimeZone } from "./site-asset-rows";
 import { TrendPointsService } from "./trend-points.service";
 import { trendStripRead } from "./trend-strip-read";
 import {
   type StripAsset,
+  type StripPlan,
   type StripRegistration,
+  type StripWindow,
   fitSeries,
   groupSeries,
   pairsFor,
@@ -24,6 +34,32 @@ import {
 } from "./trend-strip.pure";
 
 export const TREND_STRIP_GROUP_NOT_FOUND = "Asset group not found at this site";
+
+/**
+ * `F4.303` U4 — what `frameFor` resolves before the telemetry statement: the
+ * window, the zone, the series plan and its (asset, point) pairs.
+ */
+export type TrendStripReadFrame = {
+  readonly locationId: string;
+  readonly assetGroupId: string | null;
+  readonly range: SiteTrendStripQuery["range"];
+  readonly window: StripWindow;
+  readonly timeZone: string;
+  readonly plan: StripPlan;
+  readonly pairs: { assetId: string; pointKey: string }[];
+};
+
+/**
+ * `F4.303` U4 (ADR 0108 Amendment 6 item 3; plan C4) — the rows the strip
+ * export can hold, before the telemetry statement: one per planned pair per
+ * window bucket.
+ */
+export function trendStripExportRowCount(
+  pairs: readonly unknown[],
+  window: Pick<StripWindow, "buckets">,
+): number {
+  return pairs.length * window.buckets;
+}
 
 /**
  * `F4.301` / ADR 0108 Amendment 2 — the Control Room trend strip for one site
@@ -61,6 +97,47 @@ export class SiteTrendStripService {
     query: SiteTrendStripQuery,
     now: Date = new Date(),
   ): Promise<SiteTrendStripDto> {
+    return this.readFrame(await this.frameFor(jwt, locationId, query, now));
+  }
+
+  /**
+   * `F4.303` U4 (ADR 0108 Amendment 6 item 3; plan C4) — the export's rows:
+   * `frameFor` (every refusal and the planned pairs), then the cap over
+   * pairs × buckets, then `readFrame` — the read the strip runs — so the cap
+   * sits between the guards and the one telemetry statement. `cap` is a seam
+   * for the specs; the routes pass nothing.
+   */
+  async exportRows(
+    jwt: JwtPayload,
+    locationId: string,
+    query: SiteTrendStripQuery,
+    now: Date = new Date(),
+    cap: number = MAX_EXPORT_ROWS,
+  ): Promise<ViewExportRow[]> {
+    const resolved = await this.frameFor(jwt, locationId, query, now);
+    assertViewExportWithinCap(trendStripExportRowCount(resolved.pairs, resolved.window), cap);
+    return trendStripExportRows(await this.readFrame(resolved));
+  }
+
+  async exportCsv(jwt: JwtPayload, locationId: string, query: SiteTrendStripQuery): Promise<string> {
+    return viewExportCsv(await this.exportRows(jwt, locationId, query));
+  }
+
+  async exportXlsx(jwt: JwtPayload, locationId: string, query: SiteTrendStripQuery): Promise<Buffer> {
+    return viewExportXlsx(await this.exportRows(jwt, locationId, query));
+  }
+
+  /**
+   * Everything before the telemetry statement: the site's 404, the group's
+   * 404, the window, the scope, the zone and the planned pairs. No
+   * `telemetry.*` statement runs here.
+   */
+  async frameFor(
+    jwt: JwtPayload,
+    locationId: string,
+    query: SiteTrendStripQuery,
+    now: Date,
+  ): Promise<TrendStripReadFrame> {
     const site = await this.trendPoints.forSite(jwt, locationId);
     const assetGroupId = query.assetGroupId ?? null;
     if (assetGroupId !== null) {
@@ -95,6 +172,12 @@ export class SiteTrendStripService {
       TREND_STRIP_MAX_SERIES,
     );
     const pairs = planPairs(plan);
+    return { locationId, assetGroupId, range: query.range, window, timeZone, plan, pairs };
+  }
+
+  /** The one telemetry statement over a resolved frame, and the DTO. */
+  async readFrame(resolved: TrendStripReadFrame): Promise<SiteTrendStripDto> {
+    const { locationId, assetGroupId, range, window, timeZone, plan, pairs } = resolved;
     const series =
       pairs.length === 0
         ? []
@@ -109,7 +192,7 @@ export class SiteTrendStripService {
     return {
       locationId,
       assetGroupId,
-      range: query.range,
+      range,
       from: window.from.toISOString(),
       to: window.to.toISOString(),
       level: window.level,

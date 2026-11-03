@@ -343,8 +343,14 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   OrgTrendPointsAdminController_putSegment: putOrgTrendPointsBodySchema,
   // `F4.301` (ADR 0108 Amendment 2 item 3): the trend strip's `.strict()` query.
   SiteTrendStripController_forSite: siteTrendStripQuerySchema,
+  // `F4.303` (ADR 0108 Amendment 6 item 3): the strip's CSV and XLSX, on its query by identity.
+  SiteTrendStripController_exportCsv: siteTrendStripQuerySchema,
+  SiteTrendStripController_exportXlsx: siteTrendStripQuerySchema,
   // `F4.302` (ADR 0108 Amendment 4 item 4): the segment view's `.strict()` query.
   SiteSegmentViewsController_forSite: siteSegmentViewsQuerySchema,
+  // `F4.303` (ADR 0108 Amendment 6 item 3): the segment view's CSV and XLSX, on its query by identity.
+  SiteSegmentViewsController_exportCsv: siteSegmentViewsQuerySchema,
+  SiteSegmentViewsController_exportXlsx: siteSegmentViewsQuerySchema,
   // `F3.21` (ADR 0090 Amendment 1 A5). `_get` and `_remove` take no body.
   AiAssistantSettingsController_put: putAiAssistantSettingsBodySchema,
   AiAssistantSettingsController_test: testAiAssistantBodySchema,

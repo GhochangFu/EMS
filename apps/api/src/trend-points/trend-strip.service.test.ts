@@ -6,15 +6,21 @@ import {
   aGroupIntersectsWithReadable,
   aGroupOfAnotherSiteIsA404,
   aGroupStripIsTheFullList,
+  aLoweredCapRefusesTheStripExportBeforeTelemetry,
   aNonEmptyIntersectionReadsTelemetryOnce,
   aScopedCallerReadsTheIntersection,
   aStoredUtcReportsUtc,
+  aStripExportOnAGroupOfAnotherSiteIsA404,
   aWholeSiteStripIsTheOverview,
   anEmptyIntersectionReadsNoTelemetry,
   anUnreadableSiteIsA404WithNoPoolRead,
   everySeriesHasTheWindowsBuckets,
   forSiteRunsBeforeAnyPoolRead,
   noLocationZoneUsesTheOrganizations,
+  theRealCapAdmitsTheStripExport,
+  theStripCsvOpensWithTheZoneRow,
+  theStripExportMeansAreForSitesBuckets,
+  theStripRowCountIsPairsTimesBuckets,
   theWindowIsStripWindows,
 } from "./trend-strip.service.spec";
 
@@ -42,5 +48,14 @@ describe("F4.301 — SiteTrendStripService (ADR 0108 Amendment 2)", () => {
     it("no location zone falls to the organization's", () => noLocationZoneUsesTheOrganizations());
     it("from, to, level and bucketSeconds are stripWindow's and reach the statement", () => theWindowIsStripWindows());
     it("every series is gap-filled to the window's buckets", () => everySeriesHasTheWindowsBuckets());
+  });
+
+  describe("F4.303 — the export (ADR 0108 Amendment 6 item 3)", () => {
+    it("G6 each exported mean is forSite's bucket v for the same query", () => theStripExportMeansAreForSitesBuckets());
+    it("G7 a group of another site is a 404 with no telemetry statement", () => aStripExportOnAGroupOfAnotherSiteIsA404());
+    it("a lowered cap refuses before the telemetry statement", () => aLoweredCapRefusesTheStripExportBeforeTelemetry());
+    it("the real cap admits the export and its one telemetry statement runs", () => theRealCapAdmitsTheStripExport());
+    it("the row count is pairs × the window's buckets", () => theStripRowCountIsPairsTimesBuckets());
+    it("the CSV opens with the zone row", () => theStripCsvOpensWithTheZoneRow());
   });
 });

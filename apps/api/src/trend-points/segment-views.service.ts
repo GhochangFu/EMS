@@ -8,15 +8,28 @@ import {
   ABNORMAL_RATIO,
   BASELINE_WINDOWS,
   type JwtPayload,
+  type ResolvedSiteTimeZone,
+  SEGMENT_VIEW_SERIES_MAX,
   type SegmentViewRankingEntryDto,
+  type SegmentViewSegmentRefDto,
   type SiteSegmentViewsDto,
   type SiteSegmentViewsQuery,
+  type TrendPointSegmentDto,
 } from "@bms/shared";
 
+import { MAX_EXPORT_ROWS } from "../admin/audit/audit.limits";
 import { AccessControlService } from "../auth/access-control.service";
 import { FLEET_POOL } from "../database/database.tokens";
 import type { EnergyViewPeriodRange } from "../reports/energy-view-range";
-import { orderAndTrimSegment, segmentAbnormalEntries } from "./segment-abnormal";
+import {
+  type ViewExportRow,
+  assertViewExportWithinCap,
+  segmentViewExportRows,
+  viewExportCsv,
+  viewExportXlsx,
+} from "../reports/view-export.serialise";
+import { bucketSeconds } from "../telemetry/point-aggregates";
+import { type SegmentAsset, orderAndTrimSegment, segmentAbnormalEntries } from "./segment-abnormal";
 import { type SegmentSeriesRow, segmentSeriesRead, segmentWindowReads } from "./segment-views-read";
 import {
   candidatesFor,
@@ -25,6 +38,7 @@ import {
   pickSegment,
   rankingOf,
   readWindows,
+  type SegmentFrame,
   segmentFrame,
   segmentsPresent,
 } from "./segment-views.pure";
@@ -33,6 +47,34 @@ import { TrendPointsService } from "./trend-points.service";
 
 function bounds(range: EnergyViewPeriodRange): { from: string; to: string; durationHours: number } {
   return { from: range.start.toISOString(), to: range.end.toISOString(), durationHours: range.durationHours };
+}
+
+/**
+ * `F4.303` U4 — what `frameFor` resolves before the first telemetry statement:
+ * the site's zone and range frame, the segments in scope, the chosen segment
+ * and point, and the candidate assets.
+ */
+export type SegmentViewsReadFrame = {
+  readonly locationId: string;
+  readonly now: Date;
+  readonly zone: ResolvedSiteTimeZone;
+  readonly frame: SegmentFrame;
+  readonly segments: SegmentViewSegmentRefDto[];
+  readonly segment: TrendPointSegmentDto | null;
+  readonly point: TrendPointSegmentDto["points"][number] | null;
+  readonly candidates: SegmentAsset[];
+};
+
+/**
+ * `F4.303` U4 (ADR 0108 Amendment 6 item 3; plan C4) — the rows the segment
+ * export can hold, from the frame alone, before any telemetry statement: at
+ * most `SEGMENT_VIEW_SERIES_MAX` drawn series × the display buckets × the
+ * periods.
+ */
+export function segmentViewExportRowCount(frame: Pick<SegmentFrame, "current" | "previous" | "bucket">): number {
+  const buckets = Math.ceil((frame.current.durationHours * 3600) / bucketSeconds(frame.bucket));
+  const periods = frame.previous === null ? 1 : 2;
+  return SEGMENT_VIEW_SERIES_MAX * buckets * periods;
 }
 
 /**
@@ -76,6 +118,47 @@ export class SiteSegmentViewsService {
     query: SiteSegmentViewsQuery,
     now: Date = new Date(),
   ): Promise<SiteSegmentViewsDto> {
+    return this.readFrame(await this.frameFor(jwt, locationId, query, now));
+  }
+
+  /**
+   * `F4.303` U4 (ADR 0108 Amendment 6 item 3; plan C4) — the export's rows:
+   * `frameFor` (every refusal), then the cap over the frame's arithmetic, then
+   * `readFrame` — the read the screen runs — so the cap sits between the
+   * guards and the first telemetry statement. Only the drawn series are in the
+   * file. `cap` is a seam for the specs; the routes pass nothing.
+   */
+  async exportRows(
+    jwt: JwtPayload,
+    locationId: string,
+    query: SiteSegmentViewsQuery,
+    now: Date = new Date(),
+    cap: number = MAX_EXPORT_ROWS,
+  ): Promise<ViewExportRow[]> {
+    const resolved = await this.frameFor(jwt, locationId, query, now);
+    assertViewExportWithinCap(segmentViewExportRowCount(resolved.frame), cap);
+    return segmentViewExportRows(await this.readFrame(resolved));
+  }
+
+  async exportCsv(jwt: JwtPayload, locationId: string, query: SiteSegmentViewsQuery): Promise<string> {
+    return viewExportCsv(await this.exportRows(jwt, locationId, query));
+  }
+
+  async exportXlsx(jwt: JwtPayload, locationId: string, query: SiteSegmentViewsQuery): Promise<Buffer> {
+    return viewExportXlsx(await this.exportRows(jwt, locationId, query));
+  }
+
+  /**
+   * Everything before the first telemetry statement: the site's 404, the
+   * segment and point 404s, the zone, the range frame (its 400s), the scope
+   * and the candidates. No `telemetry.*` statement runs here.
+   */
+  async frameFor(
+    jwt: JwtPayload,
+    locationId: string,
+    query: SiteSegmentViewsQuery,
+    now: Date,
+  ): Promise<SegmentViewsReadFrame> {
     const site = await this.trendPoints.forSite(jwt, locationId);
     // An asked segment or point is checked against the organization's list before any scope read.
     if (query.segment !== undefined) {
@@ -94,7 +177,12 @@ export class SiteSegmentViewsService {
     const segment = pickSegment(site.segments, segments, query.segment);
     const point = pickPoint(segment, query.point);
     const candidates = segment && point ? candidatesFor(inScope, segment.domain, point.code) : [];
+    return { locationId, now, zone, frame, segments, segment, point, candidates };
+  }
 
+  /** The two telemetry statements (A windows, B series) over a resolved frame, and the DTO. */
+  async readFrame(resolved: SegmentViewsReadFrame): Promise<SiteSegmentViewsDto> {
+    const { locationId, now, zone, frame, segments, segment, point, candidates } = resolved;
     const windowRows =
       candidates.length === 0 || point === null
         ? []

@@ -1,9 +1,9 @@
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { expect } from "vitest";
 
 import type { JwtPayload, SiteTrendPointsDto, SiteTrendStripQuery } from "@bms/shared";
 
-import { SiteTrendStripService } from "./trend-strip.service";
+import { SiteTrendStripService, trendStripExportRowCount } from "./trend-strip.service";
 import { stripWindow } from "./trend-strip.pure";
 
 /**
@@ -48,6 +48,8 @@ type Options = {
   assetRows?: AssetRow[];
   locationZone?: string | null;
   organizationZone?: string | null;
+  /** `F4.303` U4: the telemetry statement answers one sample per bound pair at `from`, so a bucket carries a value. */
+  withSamples?: boolean;
 };
 
 type Statement = { text: string; params: unknown[] };
@@ -101,7 +103,10 @@ function fake(options: Options = {}) {
       statements.push({ text, params });
       if (text.includes("telemetry.")) {
         calls.push("pool:telemetry");
-        return { rows: [] };
+        if (!options.withSamples) return { rows: [] };
+        const ids = params[0] as string[];
+        const keys = params[1] as string[];
+        return { rows: ids.map((id, i) => ({ asset_id: id, point_key: keys[i], t: params[2], v: i + 1.5 })) };
       }
       if (text.includes("bms.asset_points")) {
         calls.push("pool:assets");
@@ -280,4 +285,63 @@ export async function everySeriesHasTheWindowsBuckets(): Promise<void> {
   const lengths = out.segments.flatMap((s) => s.points.flatMap((p) => p.assets.map((a) => a.buckets.length)));
   expect(lengths.length).toBeGreaterThan(0);
   expect(new Set(lengths)).toEqual(new Set([48]));
+}
+
+// ---------------------------------------------------------------------------
+// `F4.303` U4 (ADR 0108 Amendment 6 item 3) — the strip export: `frameFor`
+// (every refusal and the planned pairs), the cap over its arithmetic, then
+// `readFrame`'s one telemetry statement. Data rows start after the five header
+// rows, the blank row and the column header.
+// ---------------------------------------------------------------------------
+
+const HEADER_ROWS = 7;
+
+/** G6: each exported `mean` per (segment, point, asset, bucket) is `forSite`'s bucket `v` for the same query. */
+export async function theStripExportMeansAreForSitesBuckets(): Promise<void> {
+  const f = fake({ withSamples: true });
+  const dto = await f.service.forSite(USER, SITE, WHOLE_SITE, NOW);
+  const rows = await f.service.exportRows(USER, SITE, WHOLE_SITE, NOW);
+  const expected = dto.segments.flatMap((s) =>
+    s.points.flatMap((p) => p.assets.flatMap((a) => a.buckets.map((b) => [s.domain, p.code, a.assetCode, b.v]))),
+  );
+  expect(expected.some((row) => typeof row[3] === "number"), "precondition: a bucket carries a value").toBe(true);
+  expect(rows.slice(HEADER_ROWS).map((row) => [row[0], row[1], row[2], row[6]])).toEqual(expected);
+}
+
+/** G7: a group not at the site is the read's 404 on the export, and no telemetry statement runs. */
+export async function aStripExportOnAGroupOfAnotherSiteIsA404(): Promise<void> {
+  const f = fake({ groupAtSite: false });
+  const err = await refusal(f.service.exportRows(USER, SITE, ON_GROUP, NOW));
+  expect(err).toBeInstanceOf(NotFoundException);
+  expect(err.message).toBe("Asset group not found at this site");
+  expect(telemetry(f.statements)).toEqual([]);
+}
+
+/** The cap: a lowered cap refuses with the owner's sentence before the telemetry statement. */
+export async function aLoweredCapRefusesTheStripExportBeforeTelemetry(): Promise<void> {
+  const f = fake();
+  const err = await refusal(f.service.exportRows(USER, SITE, WHOLE_SITE, NOW, 10));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect(err.message).toBe("Export would hold 288 rows, above the 10 row limit. Narrow the range or the points.");
+  expect(telemetry(f.statements)).toEqual([]);
+}
+
+/** The adjacent positive: the real cap admits the same export, and its one telemetry statement runs. */
+export async function theRealCapAdmitsTheStripExport(): Promise<void> {
+  const f = fake();
+  await f.service.exportRows(USER, SITE, WHOLE_SITE, NOW);
+  expect(telemetry(f.statements)).toHaveLength(1);
+}
+
+/** The row count is pairs × the window's buckets: 6 pairs over 24 h of 30-minute buckets is 288. */
+export function theStripRowCountIsPairsTimesBuckets(): void {
+  const pairs = Array.from({ length: 6 }, (_, i) => ({ assetId: ASSET_1, pointKey: `p${i}` }));
+  expect(trendStripExportRowCount(pairs, stripWindow("24h", NOW))).toBe(288);
+}
+
+/** The CSV is the rows through the F4.29 writer: its first line is the zone row. */
+export async function theStripCsvOpensWithTheZoneRow(): Promise<void> {
+  const f = fake();
+  const csv = await f.service.exportCsv(USER, SITE, WHOLE_SITE);
+  expect(csv.split("\n")[0]).toBe("zone,Asia/Kolkata");
 }

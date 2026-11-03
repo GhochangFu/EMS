@@ -24,6 +24,11 @@ import {
   assertTwoStatementsWithCompare,
   assertTwoStatementsWithoutCompare,
   assertUpsAssetsAppearUnderUpsOnly,
+  assertAForeignSiteExportIsA404WithNoTelemetry,
+  assertTheExportMeansAreForSitesBuckets,
+  assertOnlyTheDrawnSeriesAreExported,
+  assertThePreviousRowsAreCompareBuckets,
+  assertALoweredCapRefusesBeforeTelemetry,
 } from "./segment-views.integration.spec";
 import { SiteSegmentViewsService } from "./segment-views.service";
 import { TrendPointsService } from "./trend-points.service";
@@ -256,4 +261,11 @@ describe.skipIf(!connectionString)("F4.302 — SiteSegmentViewsService against r
   it("V7 a seeded ups asset appears under ups only", run(assertUpsAssetsAppearUnderUpsOnly));
   it("V8 60 candidates rank 50, moreAssets 10, 8 series, trimmed", run(assertSixtyCandidatesAreCapped));
   it("V9 a 46-day custom range is 1h level, 1d bucket", run(assertA46DayRangeIsHourLevelDayBucket));
+
+  // `F4.303` U4 (ADR 0108 Amendment 6 item 3) — the export.
+  it("G1 wc-admin's export of a PHEWB site is a 404 with no telemetry statement", run(assertAForeignSiteExportIsA404WithNoTelemetry));
+  it("G2 each exported mean is forSite's bucket v for the same query", run(assertTheExportMeansAreForSitesBuckets));
+  it("G3 only the drawn series are exported", run(assertOnlyTheDrawnSeriesAreExported));
+  it("G4 with compare the previous rows are compareBuckets", run(assertThePreviousRowsAreCompareBuckets));
+  it("G5 a lowered cap refuses before any telemetry statement", run(assertALoweredCapRefusesBeforeTelemetry));
 });

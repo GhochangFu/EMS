@@ -1,11 +1,11 @@
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { expect } from "vitest";
 
 import type { JwtPayload, SiteSegmentViewsQuery, SiteTrendPointsDto } from "@bms/shared";
 import { siteSegmentViewsSchema } from "@bms/shared";
 
 import { SEGMENT_NOT_FOUND, SEGMENT_POINT_NOT_FOUND } from "./segment-views.pure";
-import { SiteSegmentViewsService } from "./segment-views.service";
+import { SiteSegmentViewsService, segmentViewExportRowCount } from "./segment-views.service";
 import type { SiteAssetRow } from "./site-asset-rows";
 
 /**
@@ -314,4 +314,68 @@ export async function theResponseParses(): Promise<void> {
   const dto = await f.service.forSite(USER, SITE, { ...Q, compare: "previous" }, NOW);
   expect(siteSegmentViewsSchema.safeParse(dto).success).toBe(true);
   expect(dto.timeZone).toBe("Asia/Kolkata");
+}
+
+// ---------------------------------------------------------------------------
+// `F4.303` U4 (ADR 0108 Amendment 6 item 3) — the segment export: `frameFor`
+// (every refusal, the frame and the candidates), the cap over its arithmetic,
+// then `readFrame`'s two telemetry statements. Data rows start after the five
+// header rows, the blank row and the column header.
+// ---------------------------------------------------------------------------
+
+const HEADER_ROWS = 7;
+
+/** A foreign site's 404 propagates from the export, and no statement at all is sent. */
+export async function aSegmentExportOfAForeignSiteIsA404WithNoStatement(): Promise<void> {
+  const f = fake({ siteRefusal: new NotFoundException("Location not found or outside your access scope") });
+  expect(await refusal(f.service.exportRows(USER, SITE, Q, NOW))).toBeInstanceOf(NotFoundException);
+  expect(f.statements).toEqual([]);
+}
+
+/** An unknown segment is the export's 404 before the scope, as on the read. */
+export async function aSegmentExportOfAnUnknownSegmentIsA404(): Promise<void> {
+  const f = fake();
+  const err = await refusal(f.service.exportRows(USER, SITE, { ...Q, segment: "nope" }, NOW));
+  expect(err.message).toBe(SEGMENT_NOT_FOUND);
+  expect(f.calls).toEqual([`forSite:${SITE}`]);
+}
+
+/** A lowered cap refuses with the owner's sentence before statement A: 8 series × 288 buckets is 2304 rows. */
+export async function aLoweredCapRefusesTheSegmentExportBeforeTelemetry(): Promise<void> {
+  const f = fake();
+  const err = await refusal(f.service.exportRows(USER, SITE, Q, NOW, 10));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect(err.message).toBe("Export would hold 2304 rows, above the 10 row limit. Narrow the range or the points.");
+  expect(f.telemetry()).toEqual([]);
+}
+
+/** The adjacent positive: the real cap admits the same export, and the read's two statements run. */
+export async function theRealCapAdmitsTheSegmentExport(): Promise<void> {
+  const f = fake();
+  await f.service.exportRows(USER, SITE, Q, NOW);
+  expect(f.telemetry()).toHaveLength(2);
+}
+
+/** G3: only the drawn entries (`buckets !== null`, at most 8) are in the file. */
+export async function onlyTheDrawnEntriesAreExported(): Promise<void> {
+  const f = fake({ assetRows: hvacRows(10) });
+  const dto = await f.service.forSite(USER, SITE, Q, NOW);
+  const rows = await f.service.exportRows(USER, SITE, Q, NOW);
+  const drawn = dto.ranking.filter((r) => r.buckets !== null).map((r) => r.assetCode);
+  expect(drawn, "precondition: two ranked entries are not drawn").toHaveLength(8);
+  expect([...new Set(rows.slice(HEADER_ROWS).map((row) => row[0]))]).toEqual(drawn);
+}
+
+/** The row count is series max × display buckets × periods: 24 h of 5-minute buckets with compare is 4608. */
+export function theSegmentRowCountIsSeriesTimesBucketsTimesPeriods(): void {
+  const current = { durationHours: 24 } as never;
+  expect(segmentViewExportRowCount({ current, previous: current, bucket: "5m" })).toBe(4608);
+  expect(segmentViewExportRowCount({ current, previous: null, bucket: "5m" })).toBe(2304);
+}
+
+/** The CSV is the rows through the F4.29 writer: its first line is the zone row. */
+export async function theSegmentCsvOpensWithTheZoneRow(): Promise<void> {
+  const f = fake();
+  const csv = await f.service.exportCsv(USER, SITE, Q);
+  expect(csv.split("\n")[0]).toBe("zone,Asia/Kolkata");
 }
