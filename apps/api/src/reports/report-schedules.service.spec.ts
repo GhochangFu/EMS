@@ -965,11 +965,11 @@ export async function auditPayloadsCarryIdsAndEnumsNeverTheName(route: "create" 
   assert(h.audit.executors[0] !== undefined && h.audit.executors[0] !== null, "the audit row must be written on the transaction");
 }
 
-export async function theCreateAuditPayloadCarriesTheSevenKeys(): Promise<void> {
+export async function theCreateAuditPayloadCarriesTheNineKeys(): Promise<void> {
   const h = harness({ channel: channelRow() });
   await h.service.create(JWT, { ...CREATE_BODY, channelId: CHANNEL_ID });
   const keys = Object.keys(h.audit.inputs[0]?.payload ?? {}).sort();
-  const expected = ["cadence", "channelId", "enabled", "formats", "locationIds", "organizationId", "scheduleId"];
+  const expected = ["cadence", "channelId", "enabled", "formats", "locationIds", "organizationId", "pointCount", "scheduleId", "templateId"];
   assert(JSON.stringify(keys) === JSON.stringify(expected), `expected ${JSON.stringify(expected)}, got ${JSON.stringify(keys)}`);
 }
 

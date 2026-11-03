@@ -518,3 +518,73 @@ export async function reenableMovesNextRunAtOnARealRow(fx: ScheduleIntegrationFi
   assert(new Date(enabled.nextRunAt).getTime() > before, `re-enabling must move next_run_at after now; got ${enabled.nextRunAt}`);
   assert(enabled.updatedAt !== dto.updatedAt, "updated_at must move on a PATCH");
 }
+
+// ---------------------------------------------------------------------------
+// F4.303 U11 (ADR 0108 Amendment 6 item 6) — trend_points schedules
+// ---------------------------------------------------------------------------
+
+/** One seeded ESKOM asset at `RSMOC-WC` and one of its active point codes, by the fleet pool. */
+async function wcPoint(fx: ScheduleIntegrationFixtures): Promise<{ assetId: string; pointKey: string }> {
+  const result = await fx.base.fleetDb.execute<{ asset_id: string; point_key: string }>(sql`
+    select a.id::text as asset_id, p.point_key
+      from bms.assets a join bms.asset_points p on p.asset_id = a.id and p.active
+     where a.organization_id = ${fx.base.eskomId}::uuid and a.location_id = ${fx.base.wcId}::uuid
+     order by a.created_at, a.id, p.point_key limit 1`);
+  const row = result.rows[0];
+  if (!row) throw new Error("F4.303: no active point on an asset at RSMOC-WC — run pnpm db:seed");
+  return { assetId: row.asset_id, pointKey: row.point_key };
+}
+
+function trendOverrides(fx: ScheduleIntegrationFixtures, point: { assetId: string; pointKey: string }): Partial<CreateReportScheduleBodyInput> {
+  return { templateId: "trend_points", params: { points: [point], compare: false }, locationIds: [fx.base.wcId] };
+}
+
+/**
+ * The cap counts both templates: ESKOM is filled to 49 with disabled `energy_consumption` rows
+ * (as `bms_fleet`), the 50th — a `trend_points` schedule — is admitted (the positive control,
+ * which also proves its point passed the check), and the 51st `trend_points` is a 409. The
+ * fillers are deleted here, by id, whatever the outcome.
+ */
+export async function theFiftyFirstTrendPointsScheduleIs409(fx: ScheduleIntegrationFixtures): Promise<void> {
+  const point = await wcPoint(fx);
+  const counted = await fx.base.fleetDb.execute<{ n: string }>(
+    sql`select count(*)::text as n from bms.report_schedules where organization_id = ${fx.base.eskomId}::uuid`,
+  );
+  const fillers = Array.from({ length: Math.max(0, 49 - Number(counted.rows[0]?.n ?? "0")) }, () => randomUUID());
+  try {
+    for (const id of fillers) {
+      await fx.base.fleetDb.execute(sql`
+        insert into bms.report_schedules
+          (id, organization_id, name, template_id, formats, cadence, run_at_local, timezone, location_ids, enabled, next_run_at)
+        values
+          (${id}::uuid, ${fx.base.eskomId}::uuid, ${`f4.303-filler-${id}`}, 'energy_consumption', '{pdf}', 'daily', '07:00',
+           'Asia/Kolkata', '{}'::uuid[], false, now() + interval '365 days')`);
+    }
+    const fiftieth = await createAs(fx, admin(), trendOverrides(fx, point));
+    assert(fiftieth.templateId === "trend_points", `the 50th must be admitted as trend_points; got ${fiftieth.templateId}`);
+    const err = await captureRejection(() => fx.service.create(admin(), body(fx, trendOverrides(fx, point))));
+    assert(errorName(err) === "ConflictException", `the 51st must be 409; got ${errorName(err)}: ${errorMessage(err)}`);
+  } finally {
+    if (fillers.length > 0) {
+      const deleted = await fx.base.fleetDb.execute(sql`delete from bms.report_schedules where id = any(${pgArray(fillers)}::uuid[])`);
+      assert(deleted.rowCount === fillers.length, `expected to delete ${fillers.length} filler(s), got ${deleted.rowCount}`);
+    }
+  }
+}
+
+/** A `PATCH locationIds` that moves a `trend_points` schedule away from its point's site is a 400; the row keeps `[WC]`. */
+export async function patchMovingATrendPointsScheduleAwayIs400(fx: ScheduleIntegrationFixtures): Promise<void> {
+  const created = await createAs(fx, admin(), trendOverrides(fx, await wcPoint(fx)));
+  const err = await captureRejection(() => fx.service.update(admin(), created.id, { locationIds: [fx.ecId] }));
+  assert(errorName(err) === "BadRequestException", `expected 400; got ${errorName(err)}: ${errorMessage(err)}`);
+  assert(errorMessage(err) === "point 0 is not at a location of this schedule", `got "${errorMessage(err)}"`);
+  const after = await fx.service.get(admin(), created.id);
+  assert(JSON.stringify(after.locationIds) === JSON.stringify([fx.base.wcId]), `the row must still carry [WC]; got ${JSON.stringify(after.locationIds)}`);
+}
+
+/** The same PATCH on an `energy_consumption` schedule runs no point check and is admitted. */
+export async function patchMovingAnEnergyScheduleIsAdmitted(fx: ScheduleIntegrationFixtures): Promise<void> {
+  const created = await createAs(fx, admin(), { locationIds: [fx.base.wcId] });
+  const after = await fx.service.update(admin(), created.id, { locationIds: [fx.ecId] });
+  assert(JSON.stringify(after.locationIds) === JSON.stringify([fx.ecId]), `the row must carry [EC]; got ${JSON.stringify(after.locationIds)}`);
+}

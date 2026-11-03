@@ -70,7 +70,7 @@ describe("F3.5b ReportSchedulesService — audit (R-10) and DTO (R-16)", () => {
   it("auditPayloadsCarryIdsAndEnumsNeverTheName — create", () => spec.auditPayloadsCarryIdsAndEnumsNeverTheName("create"));
   it("auditPayloadsCarryIdsAndEnumsNeverTheName — update", () => spec.auditPayloadsCarryIdsAndEnumsNeverTheName("update"));
   it("auditPayloadsCarryIdsAndEnumsNeverTheName — remove", () => spec.auditPayloadsCarryIdsAndEnumsNeverTheName("remove"));
-  it("the create audit payload carries the seven R-10 keys", spec.theCreateAuditPayloadCarriesTheSevenKeys);
+  it("the create audit payload carries the nine R-10 keys (F4.303: templateId, pointCount)", spec.theCreateAuditPayloadCarriesTheNineKeys);
   it("dtoNeverCarriesNextRunAtAsADate", spec.dtoNeverCarriesNextRunAtAsADate);
   it("runAtLocalIsSlicedToMinutes", spec.runAtLocalIsSlicedToMinutes);
   it("a broken row is a 500, never a 400", spec.aBrokenRowIs500NotA400);

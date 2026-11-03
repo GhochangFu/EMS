@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from "@nestjs/common";
@@ -14,7 +15,7 @@ import { randomUUID } from "node:crypto";
 import { notificationChannels, reportFiles, reportSchedules } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { MAX_REPORT_SCHEDULES_PER_ORGANIZATION, reportScheduleDtoSchema } from "@bms/shared";
-import type { JwtPayload, ReportCadence, ReportScheduleDto, ReportScheduleParams } from "@bms/shared";
+import type { JwtPayload, ReportCadence, ReportScheduleDto, ReportScheduleParams, TrendPointsReportParams } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { requireStorageConfigured } from "../assets/require-storage";
@@ -34,6 +35,7 @@ import { resolveReportOrganization } from "./report-organization";
 import { nextRunAt } from "./report-period";
 import { assertLocationIdsInScope } from "./report-scope";
 import type { CreateReportScheduleBodyInput, UpdateReportScheduleBodyInput } from "./report-schedules.schema";
+import { assertParamsMatchTemplate, assertTrendPointsSchedulable } from "./trend-points-schedule-check";
 
 /** The one sentence a covered role gets for a schedule its scope does not cover (R-12). */
 export const SCHEDULE_OUT_OF_SCOPE_SENTENCE = "Report schedule is outside your access scope";
@@ -72,6 +74,14 @@ function storedParams(params: ReportScheduleParams | undefined): ReportScheduleP
  * || org, 0))`, the count, `!(n < cap)` fail-closed (Q-5: 50, a contracts
  * constant; 409 before any write), the insert with `next_run_at =
  * nextRunAt(body, now)`, the `report_schedule.create` audit row → DTO.
+ *
+ * **`F4.303` (ADR 0108 Amendment 6 item 6; plan C17).** Right after the role
+ * gate, `assertParamsMatchTemplate` (pure, 400): `trend_points` needs the
+ * trend arm, `energy_consumption` takes the energy arm or nothing. After
+ * `checkWriteScope`, a `trend_points` body's pairs go through
+ * `assertTrendPointsSchedulable` before the transaction. A PATCH carrying
+ * `locationIds` on a `trend_points` row re-runs that check with the stored
+ * points against the new list; the template and points never change on PATCH.
  *
  * **`update` (Q-3, R-8).** The row is read on the fleet handle by id (404),
  * `canReadReportFile` decides with the row's `organization_id` and
@@ -133,6 +143,8 @@ export class ReportSchedulesService {
   async create(jwt: JwtPayload, body: CreateReportScheduleBodyInput): Promise<ReportScheduleDto> {
     // R-12: the role gate, before any other read.
     const writableLocations = await this.accessControl.writableLocationIds(jwt);
+    // F4.303 (Amendment 6 item 6): the template and its arm must match — pure, so before any read it does not need.
+    assertParamsMatchTemplate(body.templateId, body.params);
     const organizationId = await resolveReportOrganization(
       { accessControl: this.accessControl, fleetDb: this.fleetDb },
       jwt,
@@ -140,6 +152,10 @@ export class ReportSchedulesService {
     );
     const channelId = body.channelId ?? null;
     await this.checkWriteScope(jwt, organizationId, body.locationIds, channelId, writableLocations);
+    if (body.params !== undefined && "points" in body.params) {
+      // F4.303: every pair against the organization, the sites and the author's scope, before the transaction.
+      await this.checkTrendPoints(jwt, organizationId, body.locationIds, body.params.points);
+    }
 
     const createdBy = await this.resolveActorId(jwt);
     const scheduleId = randomUUID();
@@ -234,6 +250,10 @@ export class ReportSchedulesService {
     const writableLocations = await this.accessControl.writableLocationIds(jwt);
     const row = await this.readRowForVerdict(jwt, id);
     await this.checkWriteScope(jwt, row.organizationId, body.locationIds, body.channelId, writableLocations);
+    if (body.locationIds !== undefined && row.templateId === "trend_points") {
+      // F4.303 (Amendment 6 item 6): the stored points against the new list — the template and points never change on PATCH.
+      await this.checkTrendPoints(jwt, row.organizationId, body.locationIds, storedTrendPoints(row));
+    }
 
     // The stored cadence is CHECK-constrained to the enum (`0078`) and the DTO parse re-validates it on the way out.
     const cadence: ReportCadence = body.cadence ?? (row.cadence as ReportCadence);
@@ -417,6 +437,16 @@ export class ReportSchedulesService {
     return row;
   }
 
+  /** `F4.303` U11: the point check on the service's own fleet handle and access control. */
+  private async checkTrendPoints(
+    jwt: JwtPayload,
+    organizationId: string,
+    locationIds: readonly string[],
+    points: TrendPointsReportParams["points"],
+  ): Promise<void> {
+    await assertTrendPointsSchedulable({ fleetDb: this.fleetDb, accessControl: this.accessControl }, jwt, organizationId, locationIds, points);
+  }
+
   /** `created_by`: the `bms.users.id` by subject (or local id), never by email — the shared resolver on the fleet pool, `null` when absent (F3.78). */
   private async resolveActorId(jwt: JwtPayload): Promise<string | null> {
     return resolveActorId(this.fleetDb, jwt);
@@ -442,8 +472,22 @@ async function countSchedules(tx: BmsTx, organizationId: string): Promise<number
   return Number(row?.count);
 }
 
-/** R-10: ids and enums, never `name`. */
+/**
+ * `F4.303`: a `trend_points` row's stored points, read through the DTO's one guarded parse
+ * (`tests/f4.108` counts `reportSchedules: 1`) — a row whose `params` break the contract is the
+ * same 500 as any broken row; a `trend_points` row without the trend arm is a 500 too.
+ */
+function storedTrendPoints(row: StoredRow): TrendPointsReportParams["points"] {
+  const params = toReportScheduleDto(row).params;
+  if (params === null || !("points" in params)) {
+    throw new InternalServerErrorException("A trend_points report schedule is stored without its points");
+  }
+  return params.points;
+}
+
+/** R-10: ids and enums, never `name`. `F4.303`: the template and the point count, never a point. */
 function auditPayload(row: StoredRow): Record<string, unknown> {
+  const params = row.params as ReportScheduleParams | null;
   return {
     scheduleId: row.id,
     organizationId: row.organizationId,
@@ -452,6 +496,8 @@ function auditPayload(row: StoredRow): Record<string, unknown> {
     enabled: row.enabled,
     locationIds: row.locationIds,
     channelId: row.channelId,
+    templateId: row.templateId,
+    pointCount: params !== null && "points" in params ? params.points.length : 0,
   };
 }
 

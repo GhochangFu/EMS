@@ -220,6 +220,44 @@ export async function assertCreateHandsTheParsedBodyAndTheJwtToTheService(): Pro
 }
 
 // ---------------------------------------------------------------------------
+// create: the template and params (F4.303 U11, ADR 0108 Amendment 6 item 6)
+// ---------------------------------------------------------------------------
+
+const PAIR = { assetId: "66666666-6666-4666-8666-666666666666", pointKey: "kw" };
+
+/** An arm that is neither the energy nor the trend shape is a 400 whose `fieldErrors` name `params`. */
+export async function assertCreateRefusesABadArmNamingParams(): Promise<void> {
+  const { schedules, calls } = serviceStub();
+  const controller = new ReportSchedulesController(schedules);
+  const err = await rejects(() => controller.create(USER, { ...VALID_CREATE_BODY, params: { compare: "yes" } }));
+  assert(errorName(err) === "BadRequestException", `a bad arm threw ${errorName(err)}, not a 400`);
+  assert(fieldErrorsOf(err).params !== undefined, `the 400 must name params; got ${JSON.stringify(fieldErrorsOf(err))}`);
+  assert(calls.length === 0, `a bad arm reached the service: ${JSON.stringify(calls)}`);
+}
+
+/** K7: nine points never reach the service, so never reach its point check (the contract's 400). */
+export async function assertCreateRefusesNinePointsBeforeTheService(): Promise<void> {
+  const { schedules, calls } = serviceStub();
+  const controller = new ReportSchedulesController(schedules);
+  const points = Array.from({ length: 9 }, (_, i) => ({ ...PAIR, pointKey: `p${i}` }));
+  const body = { ...VALID_CREATE_BODY, templateId: "trend_points", params: { points, compare: false } };
+  const err = await rejects(() => controller.create(USER, body));
+  assert(errorName(err) === "BadRequestException", `nine points threw ${errorName(err)}, not a 400`);
+  assert(calls.length === 0, `nine points reached the service: ${JSON.stringify(calls)}`);
+}
+
+/** The positive control: a `trend_points` body reaches the service with its template and params. */
+export async function assertCreateHandsTheTemplateAndParamsToTheService(): Promise<void> {
+  const { schedules, calls } = serviceStub();
+  const controller = new ReportSchedulesController(schedules);
+  const params = { points: [PAIR], compare: true };
+  await controller.create(USER, { ...VALID_CREATE_BODY, templateId: "trend_points", params });
+  const handed = calls[0]?.args[1] as { templateId?: unknown; params?: unknown } | undefined;
+  assert(handed?.templateId === "trend_points", `templateId: got ${JSON.stringify(handed?.templateId)}`);
+  assert(JSON.stringify(handed?.params) === JSON.stringify(params), `params: got ${JSON.stringify(handed?.params)}`);
+}
+
+// ---------------------------------------------------------------------------
 // update: the empty PATCH and the parsed id
 // ---------------------------------------------------------------------------
 

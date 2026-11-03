@@ -13,6 +13,12 @@ describe("F3.5b ReportSchedulesController — create: the parse is the gate", ()
   it("create answers 201", spec.assertCreateAnswers201);
 });
 
+describe("F4.303 ReportSchedulesController — create: the template and params", () => {
+  it("a bad params arm is a 400 naming params", spec.assertCreateRefusesABadArmNamingParams);
+  it("K7 nine points are a 400 before the service", spec.assertCreateRefusesNinePointsBeforeTheService);
+  it("a trend_points body reaches the service with its template and params", spec.assertCreateHandsTheTemplateAndParamsToTheService);
+});
+
 describe("F3.5b ReportSchedulesController — update and get", () => {
   it("an empty PATCH is a 400 before the service", spec.assertUpdateRefusesAnEmptyBody);
   it("organizationId on PATCH is an unknown key", spec.assertUpdateRefusesOrganizationId);
