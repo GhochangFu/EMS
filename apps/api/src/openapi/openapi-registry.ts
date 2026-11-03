@@ -376,6 +376,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F4.298` (ADR 0108 decision 2.2). `_energyFilterOptions` is absent — no
   // body and no query; the docblock above says why.
   ReportsController_energyView: energyViewQuerySchema,
+  // `F4.303` (ADR 0108 Amendment 6 item 3): the view's CSV and XLSX, on its query by identity.
+  ReportsController_energyViewCsv: energyViewQuerySchema,
+  ReportsController_energyViewXlsx: energyViewQuerySchema,
   ReportsController_energyXlsx: energyReportQuerySchema,
   RtusAdminController_create: createRtuBodySchema,
   RtusAdminController_update: updateRtuBodySchema,

@@ -5,6 +5,7 @@ import type {
   AggregateLevel,
   EnergySiteTrend,
   EnergyView,
+  EnergyViewPeriod,
   SiteSegmentViewsDto,
   SiteTrendStripDto,
 } from "@bms/shared";
@@ -127,9 +128,19 @@ function headerBlock(meta: ViewExportMeta, columns: string[]): ViewExportRow[] {
   ];
 }
 
-/** Energy view: by source (grid, solar, dg) for each period, and by site for the current one. */
+/** The part of one `EnergyViewPeriod` the export reads: its bounds and its source-mix series. */
+export type EnergyExportPeriod = Pick<EnergyViewPeriod, "from" | "to" | "series">;
+
+/**
+ * Energy view: by source (grid, solar, dg) for each period, and by site for the current one.
+ * `F4.303` U3: the periods are {@link EnergyExportPeriod}, not whole `EnergyViewPeriod`s — the
+ * export reads the series and the trend only, never the KPIs.
+ */
 export function energyViewExportRows(
-  view: Pick<EnergyView, "timeZone" | "level" | "bucket" | "current" | "compare">,
+  view: Pick<EnergyView, "timeZone" | "level" | "bucket"> & {
+    current: EnergyExportPeriod;
+    compare: EnergyExportPeriod | null;
+  },
   trend: EnergySiteTrend,
 ): ViewExportRow[] {
   const zone = view.timeZone;

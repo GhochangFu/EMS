@@ -38,6 +38,8 @@ function harness() {
     {} as never,
     // `F4.299`: the organization views service; likewise never reached.
     {} as never,
+    // `F4.303`: the energy view export service; these routes never reach it.
+    {} as never,
   );
   const res = { setHeader: () => undefined, send: () => undefined };
   const call = (route: Route, query: unknown) =>

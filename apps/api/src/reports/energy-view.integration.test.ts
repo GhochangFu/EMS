@@ -28,10 +28,14 @@ import {
   ownOrganizationWithAForeignSiteIsA403,
   recordingPool,
   theChildrensAreasChangeNothing,
+  theExportOfAnotherOrganizationIsA403WithNoTelemetry,
+  theExportsGridKwEqualsTheViewsSeries,
+  theExportsSitesAreTheScreensTrendColumns,
   theTileEqualsTheSitesRankingRow,
   type EnergyViewHarness,
 } from "./energy-view.integration.spec";
 import { EnergyOrganizationViewsService } from "./energy-organization-views.service";
+import { EnergyViewExportService } from "./energy-view-export.service";
 import { EnergyViewService } from "./energy-view.service";
 import { ReportScopeService } from "./report-scope";
 import { ReportsController } from "./reports.controller";
@@ -72,7 +76,8 @@ describe.skipIf(!connectionString)("F4.298 — the energy view reads only the ca
       scope,
     );
     const organizationViews = new EnergyOrganizationViewsService(recorded.pool, energyView);
-    const controller = new ReportsController({} as never, scope, energyView, organizationViews);
+    const viewExport = new EnergyViewExportService(recorded.pool, energyView);
+    const controller = new ReportsController({} as never, scope, energyView, organizationViews, viewExport);
     await pool.query("BEGIN");
     await pool.query("SET LOCAL lock_timeout = '10s'");
     const fx: TreeFixture = await buildTreeFixture(pool, run);
@@ -108,4 +113,9 @@ describe.skipIf(!connectionString)("F4.298 — the energy view reads only the ca
     theTileEqualsTheSitesRankingRow(h, pool as pg.Pool));
   it("F4.304 T2: the children's areas change neither the tile nor the row", () =>
     theChildrensAreasChangeNothing(h, pool as pg.Pool));
+  it("F4.303 I1: the export of another organization is a 403 with no telemetry read", () =>
+    theExportOfAnotherOrganizationIsA403WithNoTelemetry(h));
+  it("F4.303 I2: the export's grid kW equals the view's series", () => theExportsGridKwEqualsTheViewsSeries(h));
+  it("F4.303 I3: the export's sites are the screen's trend columns, readable only", () =>
+    theExportsSitesAreTheScreensTrendColumns(h));
 });

@@ -4,6 +4,7 @@ import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { NotificationsCoreModule } from "../notifications/notifications-core.module";
 import { EnergyOrganizationViewsService } from "./energy-organization-views.service";
+import { EnergyViewExportService } from "./energy-view-export.service";
 import { EnergyViewService } from "./energy-view.service";
 import { ReportFilesController } from "./report-files.controller";
 import { ReportFilesService } from "./report-files.service";
@@ -58,6 +59,10 @@ import { ReportsCoreModule } from "./reports-core.module";
  * `F4.299` (ADR 0108 Amendment 1, 7.2) — `EnergyOrganizationViewsService` (the
  * Energy page's four organization views) is provided here too: it injects
  * `EnergyViewService` for the one frame, so it follows it out of the core.
+ *
+ * `F4.303` (ADR 0108 Amendment 6 item 3) — `EnergyViewExportService` (the
+ * Energy view's CSV and XLSX) is provided here for the same reason: it injects
+ * `EnergyViewService`.
  */
 @Module({
   imports: [ReportsCoreModule, NotificationsCoreModule],
@@ -69,6 +74,7 @@ import { ReportsCoreModule } from "./reports-core.module";
     ReportScopeService,
     EnergyViewService,
     EnergyOrganizationViewsService,
+    EnergyViewExportService,
     MasterDataAuditService,
     JwtAuthGuard,
   ],

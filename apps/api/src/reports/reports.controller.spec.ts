@@ -112,6 +112,8 @@ export async function runReportsXlsxHeaderTests(): Promise<void> {
     { assetIdsForCaller: async () => null } as never,
     {} as never,
     {} as never,
+    // `F4.303`: the energy view export service; these routes never reach it.
+    {} as never,
   );
 
   const out = stubResponse();
@@ -165,6 +167,8 @@ export async function runReportsPdfHeaderTests(): Promise<void> {
     } as never,
     { assetIdsForCaller: async () => null } as never,
     {} as never,
+    {} as never,
+    // `F4.303`: the energy view export service; these routes never reach it.
     {} as never,
   );
 

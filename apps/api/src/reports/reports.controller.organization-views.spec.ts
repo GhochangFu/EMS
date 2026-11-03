@@ -37,6 +37,8 @@ function harness() {
         return answer;
       },
     } as never,
+    // `F4.303`: the energy view export service; these routes never reach it.
+    {} as never,
   );
   return { controller, calls, viewCalls, answer };
 }
@@ -83,6 +85,8 @@ export async function aServiceErrorIsRethrown(): Promise<void> {
         throw failure;
       },
     } as never,
+    // `F4.303`: the energy view export service; these routes never reach it.
+    {} as never,
   );
   await expect(controller.energyOrganizationViews(USER, { range: "7d", organizationId: ORG })).rejects.toBe(failure);
 }

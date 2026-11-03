@@ -387,3 +387,67 @@ export async function theChildrensAreasChangeNothing(h: EnergyViewHarness, pool:
     }
   });
 }
+
+// ---------------------------------------------------------------------------
+// `F4.303` U3 (ADR 0108 Amendment 6 item 3, "Verification owed") — the energy
+// view export on the same fixture and recorder: a foreign organization is the
+// view's 403 with no telemetry statement, and the file's figures are the
+// screen's.
+// ---------------------------------------------------------------------------
+
+/** The CSV's data rows (after the five header rows, the blank row and the column header), split on commas. */
+function csvBody(csv: string): string[][] {
+  return csv
+    .split(/\r?\n/)
+    .slice(7)
+    .filter((line) => line !== "")
+    .map((line) => line.split(","));
+}
+
+/** I1: the export with `organizationId` of B for a caller scoped to A is a 403, and no telemetry is read. */
+export async function theExportOfAnotherOrganizationIsA403WithNoTelemetry(h: EnergyViewHarness): Promise<void> {
+  h.recorder.statements.length = 0;
+  const err = await refusal(
+    h.controller.energyViewCsv(h.fx.grantee, { range: "today", organizationId: h.fx.orgB }),
+    "export, organizationId=B",
+  );
+  if (!(err instanceof ForbiddenException)) fail(`export organizationId=B: ${err.name} ${err.message}, expected a 403`);
+  if (telemetryStatements(h.recorder).length !== 0) fail(`telemetry read on a refusal: ${telemetryStatements(h.recorder).length}`);
+}
+
+/** I2: the CSV's `current` `grid` kW at each bucket equals `energy/view`'s `current.series[i].gridKw`. */
+export async function theExportsGridKwEqualsTheViewsSeries(h: EnergyViewHarness): Promise<void> {
+  h.recorder.statements.length = 0;
+  const query = { ...aroundNow(), locationIds: [h.fx.nodes.R] };
+  const view = (await h.controller.energyView(h.fx.grantee, query)) as EnergyView;
+  if (view.current.series.length === 0) fail("the view has no series — the fixture is not visible");
+  const csv = await h.controller.energyViewCsv(h.fx.grantee, query);
+  if (telemetryStatements(h.recorder).length === 0) fail("no telemetry statement was recorded — the recorder is dead");
+  const grid = csvBody(csv)
+    .filter((row) => row[0] === "source" && row[1] === "grid" && row[2] === "current")
+    .map((row) => Number(row[4]));
+  const expected = view.current.series.map((point) => point.gridKw);
+  if (JSON.stringify(grid) !== JSON.stringify(expected)) {
+    fail(`the export's grid kW ${JSON.stringify(grid)} ≠ the view's ${JSON.stringify(expected)}`);
+  }
+}
+
+/**
+ * I3: the export of R holds by-site rows for exactly the screen's trend
+ * columns (`organization-views`), and its by-site kW holds A's figure only —
+ * B's far larger one, inside R and outside the grant, is absent.
+ */
+export async function theExportsSitesAreTheScreensTrendColumns(h: EnergyViewHarness): Promise<void> {
+  const query = { ...aroundNow(), locationIds: [h.fx.nodes.R] };
+  const views = (await h.controller.energyOrganizationViews(h.fx.grantee, query)) as EnergyOrganizationViews;
+  const csv = await h.controller.energyViewCsv(h.fx.grantee, query);
+  const sites = csvBody(csv).filter((row) => row[0] === "site");
+  if (sites.length === 0) fail("the export holds no by-site row — the fixture is not visible");
+  const names = [...new Set(sites.map((row) => row[1]))].sort();
+  const columns = views.trend.columns.map((c) => (c.kind === "site" ? c.name : "other")).sort();
+  if (JSON.stringify(names) !== JSON.stringify(columns)) {
+    fail(`the export's sites ${JSON.stringify(names)} ≠ the screen's trend columns ${JSON.stringify(columns)}`);
+  }
+  const peak = Math.max(...sites.map((row) => Number(row[4])));
+  if (peak >= UNREADABLE_KW) fail(`a by-site kW of ${peak} holds B's figure, which the grantee cannot read`);
+}
