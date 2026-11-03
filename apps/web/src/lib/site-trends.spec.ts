@@ -14,7 +14,6 @@ import {
   segmentViewsQueryOf,
   siteEnergyQueryOf,
   sortRanking,
-  trendsSearch,
   viewFromSearch,
 } from "./site-trends";
 
@@ -96,13 +95,6 @@ export function pointFromSearchReadsACatalogCode(): void {
   expect(pointFromSearch(new URLSearchParams("point=kw"))).toBe("kw");
   expect(pointFromSearch(new URLSearchParams("point=a%20b"))).toBeUndefined();
   expect(pointFromSearch(new URLSearchParams(""))).toBeUndefined();
-}
-
-/** The sub-tab search: none for Energy, the view then the point for a segment. */
-export function trendsSearchHoldsIdsAndCodesOnly(): void {
-  expect(trendsSearch(ENERGY_VIEW)).toBe("");
-  expect(trendsSearch("chillers")).toBe("?view=chillers");
-  expect(trendsSearch("chillers", "kw")).toBe("?view=chillers&point=kw");
 }
 
 /** On Energy the segment read asks the default segment, so the nav is known (plan C9). */

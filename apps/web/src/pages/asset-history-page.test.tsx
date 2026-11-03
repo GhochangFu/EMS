@@ -8,6 +8,7 @@ import {
   aFilledPreviousPeriodDoesNotSaySo,
   aThirdUnitFromTheUrlIsNotCharted,
   anUnalignedCustomCompareFillsThePreviousColumn,
+  copyLinkFollowsTheRangePicker,
   aForbiddenAssetRendersTheAccessSentence,
   aNinthPointIsRefused,
   aPresetAndCompareInTheUrlReachTheRead,
@@ -98,5 +99,9 @@ describe("F4.297 asset history page", () => {
 
   it("does not chart a URL point whose unit needs a third axis", async () => {
     await aThirdUnitFromTheUrlIsNotCharted();
+  });
+
+  it("F4.303: puts Copy link after the range controls", async () => {
+    await copyLinkFollowsTheRangePicker();
   });
 });

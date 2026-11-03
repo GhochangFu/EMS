@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type { EnergyOrganizationViews, EnergyView } from "@bms/shared";
 
 import * as energyApi from "../../api/energy-view";
+import type { SiteRankingSort } from "../../lib/energy-organization-views";
 import { SiteEnergyView } from "./site-energy-view";
 
 /**
@@ -98,15 +99,25 @@ function stubEnergy(orgAnswer: EnergyOrganizationViews | Error, viewAnswer: Ener
   return { viewSpy, orgSpy };
 }
 
-function renderView(): void {
+function renderView(rankBy: SiteRankingSort = "kwh", onRankBy: (next: SiteRankingSort) => void = () => undefined): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <SiteEnergyView locationId={SITE} value={{ range: "7d", compare: "previous" }} />
+        <SiteEnergyView locationId={SITE} value={{ range: "7d", compare: "previous" }} rankBy={rankBy} onRankBy={onRankBy} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
+}
+
+/** `F4.303` U6: the site ranking takes the section's `rankBy`, and a click hands the new key back. */
+export async function theSiteRankingTakesTheSectionsRankBy(): Promise<void> {
+  stubEnergy(orgViews(2));
+  const onRankBy = vi.fn();
+  renderView("peakKw", onRankBy);
+  expect(await screen.findByRole("button", { name: "Peak kW" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "kWh per m²" }));
+  expect(onRankBy).toHaveBeenCalledWith("kwhPerM2");
 }
 
 /** Both reads name the site in `locationIds` and send no `organizationId`. */

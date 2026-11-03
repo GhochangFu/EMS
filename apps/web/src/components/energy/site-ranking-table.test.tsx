@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aClickCallsOnSortAndChangesNothing,
   aCutListSaysHowManySites,
   aWholeListSaysNothing,
   kwhPerM2IsAThirdPressableSort,
@@ -14,6 +15,7 @@ import {
   theKwhModeDoesNotSayTopFifty,
   theNoAreaRowIsLast,
   thePeakTimeIsInTheViewsZone,
+  theSortPropOrdersTheRows,
   withoutCompareTheChangeIsADash,
 } from "./site-ranking-table.spec";
 
@@ -58,5 +60,11 @@ describe("F4.299 site ranking table", () => {
   });
   it("F4.304 S4: puts the no-area row last", async () => {
     await theNoAreaRowIsLast();
+  });
+  it("F4.303: a click calls onSort and changes nothing by itself", async () => {
+    await aClickCallsOnSortAndChangesNothing();
+  });
+  it("F4.303: the sort prop orders the rows and presses its button", () => {
+    theSortPropOrdersTheRows();
   });
 });

@@ -16,8 +16,8 @@ import { assetHistoryPath, shiftCompareBuckets } from "./asset-history-range";
 
 /**
  * `F4.302` U4 (ADR 0108 Amendment 4 items 3, 7, 8) — the Trends & Energy section's pure rules:
- * the two queries it sends, the sub-tab search (`?view=energy|<domain>&point=<code>`, ids and
- * codes only), the history link, the chart series, the ranking sort and change, and the abnormal
+ * the two queries it sends, the sub-tab search's `view` and `point` readers (ids and codes only;
+ * since `F4.303` the one writer of the section's search is `view-links.ts`), the history link, the chart series, the ranking sort and change, and the abnormal
  * sentences. No segment is named here: a sub-tab is whatever domain the segment read returns.
  */
 
@@ -36,18 +36,6 @@ export function viewFromSearch(params: URLSearchParams): string {
 /** `?point=`: a catalog code, or `undefined` (the segment's first point). */
 export function pointFromSearch(params: URLSearchParams): string | undefined {
   return catalogCode(params.get("point"));
-}
-
-/** The sub-tab's search: empty for Energy, else the view and the point when chosen. */
-export function trendsSearch(view: string, point?: string): string {
-  if (view === ENERGY_VIEW) {
-    return "";
-  }
-  const params = new URLSearchParams({ view });
-  if (point !== undefined) {
-    params.set("point", point);
-  }
-  return `?${params}`;
 }
 
 /** The range part both queries share, or `null` for a custom range without both ends. */

@@ -136,6 +136,9 @@ const MODULES: readonly string[] = [
   "apps/web/src/components/control-room/segment-trend-chart.tsx",
   "apps/web/src/components/control-room/segment-ranking-table.tsx",
   "apps/web/src/components/control-room/segment-abnormal-list.tsx",
+  // F4.303 (ADR 0108 Amendment 6 item 10) — U6: the link state and "Copy link".
+  "apps/web/src/lib/view-links.ts",
+  "apps/web/src/components/view-actions/copy-link-button.tsx",
 ];
 
 /**
@@ -158,12 +161,11 @@ const MODULES: readonly string[] = [
  * so it is not listed.
  *
  * `F4.303` (Amendment 6 item 10; `docs/plans/f4.303-view-actions.md` C24): PR 1's seven new
- * runtime modules, listed in U1 and moved to {@link MODULES} by the unit that creates each.
+ * runtime modules, listed in U1 and moved to {@link MODULES} by the unit that creates each. U6
+ * moved `view-links.ts` and `copy-link-button.tsx`; U7 moves the last two.
  */
 const PENDING_MODULES: readonly string[] = [
-  "apps/web/src/lib/view-links.ts",
   "apps/web/src/api/view-exports.ts",
-  "apps/web/src/components/view-actions/copy-link-button.tsx",
   "apps/web/src/components/view-actions/export-menu.tsx",
 ];
 

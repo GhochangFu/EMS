@@ -12,7 +12,6 @@ import {
   siteEnergyQueryCarriesACustomRangeOrNothing,
   siteEnergyQueryNamesTheSiteOnly,
   sortRankingByMeanOrMax,
-  trendsSearchHoldsIdsAndCodesOnly,
   verdictSentencesNameTheVerdict,
   viewFromSearchDefaultsToEnergy,
 } from "./site-trends.spec";
@@ -33,10 +32,6 @@ describe("F4.302 the Trends & Energy section's pure rules", () => {
 
   it("reads ?point= as a catalog code or nothing", () => {
     pointFromSearchReadsACatalogCode();
-  });
-
-  it("writes the sub-tab search with ids and codes only", () => {
-    trendsSearchHoldsIdsAndCodesOnly();
   });
 
   it("asks the default segment on the Energy sub-tab", () => {

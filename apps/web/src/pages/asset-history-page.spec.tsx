@@ -314,3 +314,15 @@ export async function aThirdUnitFromTheUrlIsNotCharted(): Promise<void> {
   expect((screen.getByRole("checkbox", { name: "Chart temp" }) as HTMLInputElement).checked).toBe(false);
   expect(aggregateSpy.mock.calls.map((call) => call[0])).not.toContain(encodePointRef(ASSET_ID, "temp"));
 }
+
+/** `F4.303` U6 (ADR 0108 Amendment 6 item 2): "Copy link" ends the range controls' row. */
+export async function copyLinkFollowsTheRangePicker(): Promise<void> {
+  stubApis();
+  renderHistoryPage();
+  const copy = await screen.findByRole("button", { name: "Copy link" });
+  const range = screen.getByRole("group", { name: "Range" });
+  const row = screen.getByTestId("asset-history-controls");
+  expect(row.contains(range)).toBe(true);
+  expect(row.lastElementChild?.contains(copy)).toBe(true);
+  expect(range.compareDocumentPosition(copy) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+}

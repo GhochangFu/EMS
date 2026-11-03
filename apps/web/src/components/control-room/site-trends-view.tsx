@@ -1,19 +1,14 @@
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 
 import type { SiteSegmentViewsDto, SiteSegmentViewsQuery } from "@bms/shared";
 
 import { fetchSiteSegmentViews, isSegmentNotFound, segmentViewsQueryKey } from "../../api/segment-views";
-import {
-  ENERGY_VIEW,
-  pointFromSearch,
-  segmentViewsQueryOf,
-  trendsSearch,
-  viewFromSearch,
-} from "../../lib/site-trends";
+import { ENERGY_VIEW, segmentViewsQueryOf } from "../../lib/site-trends";
 import { siteTrendsPath } from "../../lib/smoc-pages";
-import { RangeCompareControls, type RangeCompareValue } from "../energy/range-compare-controls";
+import { type TrendsLink, trendsLinkFromSearch, trendsLinkToSearch } from "../../lib/view-links";
+import { RangeCompareControls } from "../energy/range-compare-controls";
+import { CopyLinkButton } from "../view-actions/copy-link-button";
 import { SegmentView } from "./segment-view";
 import { SiteEnergyView } from "./site-energy-view";
 
@@ -33,12 +28,18 @@ function segmentViewsOf(locationId: string, query: SiteSegmentViewsQuery | null)
  * with the default segment, and no code names a segment. `?view=energy|<domain>` and `&point=`
  * hold the selection (ids and codes only); the range and compare are the section's state, shared
  * by both kinds of sub-tab and read in the site's zone. Every failure is a fixed sentence.
+ *
+ * `F4.303` U6 (ADR 0108 Amendment 6 item 2): the range, its custom ends, compare and the site
+ * ranking's `rankBy` live in the URL too (`trendsLinkFromSearch` / `trendsLinkToSearch`, the one
+ * writer of this search), so the nav keeps them across sub-tabs and "Copy link" copies the view.
  */
 export function SiteTrendsView({ locationId }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
-  const view = viewFromSearch(searchParams);
-  const point = pointFromSearch(searchParams);
-  const [value, setValue] = useState<RangeCompareValue>({ range: "24h" });
+  const link = trendsLinkFromSearch(searchParams);
+  const { view, point, value, rankBy } = link;
+  const write = (next: TrendsLink): void => {
+    setSearchParams(new URLSearchParams(trendsLinkToSearch(next)), { replace: true });
+  };
 
   const query = segmentViewsQueryOf(view, point, value);
   const segmentQ = useQuery({
@@ -65,7 +66,7 @@ export function SiteTrendsView({ locationId }: Props) {
           {entries.map((entry) => (
             <Link
               key={entry.key}
-              to={`${sectionPath}${trendsSearch(entry.key)}`}
+              to={`${sectionPath}${trendsLinkToSearch({ view: entry.key, value, rankBy })}`}
               aria-current={entry.key === view ? "page" : undefined}
               className={`surface-tab px-3 py-1.5 ${entry.key === view ? "surface-tab-selected" : ""}`}
             >
@@ -73,13 +74,25 @@ export function SiteTrendsView({ locationId }: Props) {
             </Link>
           ))}
         </nav>
-        <div className="flex flex-wrap items-end gap-3">
-          <RangeCompareControls value={value} onChange={setValue} timeZone={data?.timeZone ?? null} />
+        <div data-testid="site-trends-controls" className="flex flex-wrap items-end gap-3">
+          <RangeCompareControls
+            value={value}
+            onChange={(next) => write({ ...link, value: next })}
+            timeZone={data?.timeZone ?? null}
+          />
+          <div className="pb-1">
+            <CopyLinkButton />
+          </div>
         </div>
       </div>
 
       {view === ENERGY_VIEW ? (
-        <SiteEnergyView locationId={locationId} value={value} />
+        <SiteEnergyView
+          locationId={locationId}
+          value={value}
+          rankBy={rankBy}
+          onRankBy={(next) => write({ ...link, rankBy: next })}
+        />
       ) : segmentQ.isError && (data === undefined || segmentQ.isPlaceholderData) ? (
         <p role="alert" className="text-sm text-critical-ink">
           {isSegmentNotFound(segmentQ.error)
@@ -93,7 +106,7 @@ export function SiteTrendsView({ locationId }: Props) {
       ) : (
         <SegmentView
           data={data}
-          onPoint={(code) => setSearchParams(new URLSearchParams(trendsSearch(view, code)))}
+          onPoint={(code) => write({ ...link, point: code })}
         />
       )}
     </div>

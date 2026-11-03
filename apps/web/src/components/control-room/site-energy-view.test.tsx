@@ -10,6 +10,7 @@ import {
   aParentSiteShowsTheSiteRanking,
   bothReadsAreLockedToTheSite,
   theKpiTilesRender,
+  theSiteRankingTakesTheSectionsRankBy,
   theSiteTabShowsTheKwhPerM2Tile,
 } from "./site-energy-view.spec";
 
@@ -50,5 +51,9 @@ describe("F4.302 the site's Energy sub-tab", () => {
 
   it("F4.304: a flat site shows no own-assets hint", async () => {
     await aFlatSiteShowsNoOwnAssetsHint();
+  });
+
+  it("F4.303: the site ranking takes the section's rankBy and hands a click back", async () => {
+    await theSiteRankingTakesTheSectionsRankBy();
   });
 });

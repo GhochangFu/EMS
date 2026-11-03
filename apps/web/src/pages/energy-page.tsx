@@ -1,5 +1,6 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import type {
   EnergyOrganizationViews,
@@ -21,11 +22,20 @@ import { EnergyTopBarChart } from "../components/energy-top-bar-chart";
 import { type KpiTileStatus } from "../components/kpi-tile";
 import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
+import { CopyLinkButton } from "../components/view-actions/copy-link-button";
 import { AppShell } from "../layouts/app-shell";
 import { useChartTheme } from "../lib/chart-theme";
-import { siteStacks } from "../lib/energy-organization-views";
-import { type EnergyFilterValue, defaultFilter, energyViewQueryOf, partialNote } from "../lib/energy-view-filter";
+import { type SiteRankingSort, siteStacks } from "../lib/energy-organization-views";
+import { type EnergyFilterValue, energyViewQueryOf, partialNote } from "../lib/energy-view-filter";
 import { formatMoney } from "../lib/money";
+import {
+  type EnergyLink,
+  type StackBy,
+  energyFilterOfLink,
+  energyLinkFromSearch,
+  energyLinkOfFilter,
+  energyLinkToSearch,
+} from "../lib/view-links";
 import type { AuthUser } from "../stores/auth-store";
 
 type EnergyPageProps = {
@@ -50,12 +60,13 @@ function compareTotalOf(compare: EnergyViewPeriod | null): PointAggregateBucket[
   return compare.series.map((p) => ({ t: p.t, v: p.gridKw + p.dgKw + p.solarKw }));
 }
 
-type StackBy = "site" | "source";
-
 const STACK_BY: readonly { key: StackBy; label: string }[] = [
   { key: "site", label: "Site" },
   { key: "source", label: "Source" },
 ];
+
+/** A link that names an organization or a site the reader's filter options do not list. */
+const FOREIGN_LINK_SENTENCE = "This link names an organization or a site you cannot open.";
 
 /**
  * `F4.298` U6 (ADR 0108 decision 2) — the Energy Centre on
@@ -74,10 +85,17 @@ const STACK_BY: readonly { key: StackBy; label: string }[] = [
  * owner answer Q3), and no view is asked while no organization is chosen —
  * there is no fleet-wide view. The previous answer stays on screen while a new
  * filter loads, so the custom pickers keep the view's zone.
+ *
+ * `F4.303` U6 (ADR 0108 Amendment 6 item 2) — the filter, the stack choice and
+ * the ranking sort live in the URL (`view-links.ts`), so the address bar is the
+ * link and "Copy link" ends the filter bar. A link never widens access: an
+ * organization or a site that `energy/filter-options` does not list for the
+ * reader is not sent; the page says so and offers the reader's default filter.
  */
 export function EnergyPage({ user }: EnergyPageProps) {
-  const [chosen, setChosen] = useState<EnergyFilterValue | null>(null);
-  const [stackBy, setStackBy] = useState<StackBy>("site");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const link = useMemo(() => energyLinkFromSearch(searchParams), [searchParams]);
+  const { stackBy, rankBy } = link;
   const { roles } = useChartTheme();
 
   const optionsQ = useQuery({
@@ -86,8 +104,21 @@ export function EnergyPage({ user }: EnergyPageProps) {
   });
 
   const options = optionsQ.data;
-  const filter = chosen ?? (options !== undefined ? defaultFilter(options) : null);
+  const noOrganization = options !== undefined && options.organizations.length === 0;
+  const filter = options !== undefined ? energyFilterOfLink(link, options) : null;
+  const foreignLink = options !== undefined && !noOrganization && filter === null;
   const query = filter === null ? null : energyViewQueryOf(filter);
+
+  const writeLink = (next: EnergyLink): void => {
+    setSearchParams(energyLinkToSearch(next), { replace: true });
+  };
+  const writeState = (nextFilter: EnergyFilterValue | null, nextStackBy: StackBy, nextRankBy: SiteRankingSort): void => {
+    writeLink(
+      options !== undefined && nextFilter !== null
+        ? energyLinkOfFilter(nextFilter, options, nextStackBy, nextRankBy)
+        : { ...link, stackBy: nextStackBy, rankBy: nextRankBy },
+    );
+  };
 
   const viewQ = useQuery({
     queryKey: ["energy", "view", query],
@@ -105,7 +136,6 @@ export function EnergyPage({ user }: EnergyPageProps) {
     refetchInterval: 60_000,
   });
 
-  const noOrganization = options !== undefined && options.organizations.length === 0;
   const status: KpiTileStatus =
     optionsQ.isError || viewQ.isError
       ? "error"
@@ -176,8 +206,9 @@ export function EnergyPage({ user }: EnergyPageProps) {
               <EnergyFilterBar
                 options={options}
                 value={filter}
-                onChange={setChosen}
+                onChange={(next) => writeState(next, stackBy, rankBy)}
                 timeZone={viewQ.data?.timeZone ?? null}
+                actions={<CopyLinkButton />}
               />
             ) : null
           }
@@ -188,104 +219,122 @@ export function EnergyPage({ user }: EnergyPageProps) {
             No organization is in your access.
           </p>
         ) : null}
+        {foreignLink ? (
+          <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-critical-ink">
+            <span>{FOREIGN_LINK_SENTENCE}</span>
+            <button
+              type="button"
+              className="rounded border border-line-strong px-2 py-1 text-xs text-ink"
+              onClick={() => setSearchParams(new URLSearchParams(), { replace: true })}
+            >
+              Use my default filter
+            </button>
+          </div>
+        ) : null}
         {note !== null ? (
           <p role="note" className="text-sm font-medium text-warning-ink">
             {note}
           </p>
         ) : null}
 
-        <EnergyKpiTiles status={status} view={v} />
-
-        {/*
-          `ESKOM_SMOC.html` `#/energy` load profile card: the total stacked by
-          site (the server's top sites plus "Other sites") or by source, the
-          previous period's total dashed when compare is on.
-        */}
-        <SectionCard
-          title={stackBy === "site" ? "Load profile · total kW by site" : "Source mix · grid / solar / nominal DG"}
-          subtitle={
-            stackBy === "site"
-              ? "The largest sites by kWh, the rest as Other sites; the previous period dashed when compare is on"
-              : "Solar from assets with code PV*; DG remains a narrative slice until metered"
-          }
-          actions={
-            <div role="group" aria-label="Stack by" className="flex items-center gap-1 text-xs">
-              <span className="text-ink-muted">Stack by:</span>
-              {STACK_BY.map((option) => (
-                <button
-                  key={option.key}
-                  type="button"
-                  aria-pressed={stackBy === option.key}
-                  className={`rounded border px-2 py-1 text-xs ${
-                    stackBy === option.key ? "border-accent bg-accent text-on-accent font-semibold" : "border-line-strong"
-                  }`}
-                  onClick={() => setStackBy(option.key)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          }
-        >
-          {stackBy === "site" ? (
-            <EnergyStackChart
-              stacks={bySite}
-              compareTotal={compareTotal}
-              spanMs={spanMs}
-              status={sectionStatus(ov?.trend.points.length)}
-            />
-          ) : (
-            <EnergySourceStackChart
-              points={current?.series ?? []}
-              status={chartStatus(current?.series.length)}
-              compareTotal={compareTotal}
-              spanMs={spanMs}
-            />
-          )}
-        </SectionCard>
-
-        {orgViewsQ.isError ? (
-          <p role="alert" className="text-sm text-critical-ink">
-            Could not load the organization views.
-          </p>
-        ) : null}
-
-        <div className="grid gap-4 lg:grid-cols-2">
-          {orgViewsQ.isError ? null : (
-            <SectionCard
-              title="Top consuming sites"
-              subtitle="Ranked by kWh, peak kW or kWh per m²; the change against the previous period when compare is on"
-            >
-              <SiteRankingTable
-                sites={ov?.sites}
-                timeZone={ov?.timeZone ?? "Etc/UTC"}
-                status={sectionStatus(ov?.sites.current.length)}
-              />
-            </SectionCard>
-          )}
-          <SectionCard
-            title="Top consuming assets"
-            subtitle="Ranked by average kW; bar length approximates energy over the selected period"
-          >
-            <EnergyTopBarChart consumers={v?.topConsumers ?? []} status={chartStatus(v?.topConsumers.length)} />
-          </SectionCard>
-        </div>
-
-        {orgViewsQ.isError ? null : (
+        {foreignLink ? null : (
           <>
+            <EnergyKpiTiles status={status} view={v} />
+
+            {/*
+              `ESKOM_SMOC.html` `#/energy` load profile card: the total stacked by
+              site (the server's top sites plus "Other sites") or by source, the
+              previous period's total dashed when compare is on.
+            */}
             <SectionCard
-              title="Consumption heatmap · kWh by day and hour"
-              subtitle={ov ? `Local days and hours in ${ov.timeZone}` : undefined}
+              title={stackBy === "site" ? "Load profile · total kW by site" : "Source mix · grid / solar / nominal DG"}
+              subtitle={
+                stackBy === "site"
+                  ? "The largest sites by kWh, the rest as Other sites; the previous period dashed when compare is on"
+                  : "Solar from assets with code PV*; DG remains a narrative slice until metered"
+              }
+              actions={
+                <div role="group" aria-label="Stack by" className="flex items-center gap-1 text-xs">
+                  <span className="text-ink-muted">Stack by:</span>
+                  {STACK_BY.map((option) => (
+                    <button
+                      key={option.key}
+                      type="button"
+                      aria-pressed={stackBy === option.key}
+                      className={`rounded border px-2 py-1 text-xs ${
+                        stackBy === option.key ? "border-accent bg-accent text-on-accent font-semibold" : "border-line-strong"
+                      }`}
+                      onClick={() => writeState(filter, option.key, rankBy)}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              }
             >
-              <EnergyHeatmap cells={ov?.heatmap.cells ?? []} status={sectionStatus(ov?.heatmap.cells.length)} />
+              {stackBy === "site" ? (
+                <EnergyStackChart
+                  stacks={bySite}
+                  compareTotal={compareTotal}
+                  spanMs={spanMs}
+                  status={sectionStatus(ov?.trend.points.length)}
+                />
+              ) : (
+                <EnergySourceStackChart
+                  points={current?.series ?? []}
+                  status={chartStatus(current?.series.length)}
+                  compareTotal={compareTotal}
+                  spanMs={spanMs}
+                />
+              )}
             </SectionCard>
 
-            <SectionCard
-              title="Abnormal consumption · advisory"
-              subtitle="Sites and assets far above their own recent baseline; never an alarm"
-            >
-              <AbnormalList abnormal={ov?.abnormal} status={orgStatus} />
-            </SectionCard>
+            {orgViewsQ.isError ? (
+              <p role="alert" className="text-sm text-critical-ink">
+                Could not load the organization views.
+              </p>
+            ) : null}
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              {orgViewsQ.isError ? null : (
+                <SectionCard
+                  title="Top consuming sites"
+                  subtitle="Ranked by kWh, peak kW or kWh per m²; the change against the previous period when compare is on"
+                >
+                  <SiteRankingTable
+                    sites={ov?.sites}
+                    timeZone={ov?.timeZone ?? "Etc/UTC"}
+                    status={sectionStatus(ov?.sites.current.length)}
+                    sort={rankBy}
+                    onSort={(next) => writeState(filter, stackBy, next)}
+                  />
+                </SectionCard>
+              )}
+              <SectionCard
+                title="Top consuming assets"
+                subtitle="Ranked by average kW; bar length approximates energy over the selected period"
+              >
+                <EnergyTopBarChart consumers={v?.topConsumers ?? []} status={chartStatus(v?.topConsumers.length)} />
+              </SectionCard>
+            </div>
+
+            {orgViewsQ.isError ? null : (
+              <>
+                <SectionCard
+                  title="Consumption heatmap · kWh by day and hour"
+                  subtitle={ov ? `Local days and hours in ${ov.timeZone}` : undefined}
+                >
+                  <EnergyHeatmap cells={ov?.heatmap.cells ?? []} status={sectionStatus(ov?.heatmap.cells.length)} />
+                </SectionCard>
+
+                <SectionCard
+                  title="Abnormal consumption · advisory"
+                  subtitle="Sites and assets far above their own recent baseline; never an alarm"
+                >
+                  <AbnormalList abnormal={ov?.abnormal} status={orgStatus} />
+                </SectionCard>
+              </>
+            )}
           </>
         )}
       </div>

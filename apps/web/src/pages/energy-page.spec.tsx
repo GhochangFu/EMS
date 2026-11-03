@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, useLocation } from "react-router-dom";
 import { expect, vi } from "vitest";
 
 import type {
@@ -190,13 +190,19 @@ function stubEnergyApi(
   return { viewSpy, optionsSpy, orgViewsSpy };
 }
 
-function renderPage(): void {
+/** `F4.303` U6: the router's search, so a claim reads what the page wrote to the URL. */
+function SearchProbe() {
+  return <output data-testid="search">{useLocation().search}</output>;
+}
+
+function renderPage(search = ""): void {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter>
+      <MemoryRouter initialEntries={[`/energy${search}`]}>
         <EnergyPage user={asUser("admin")} />
+        <SearchProbe />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -481,4 +487,108 @@ export async function theOnlyOrganizationIsPreselectedAndFetched(): Promise<void
 
   await waitFor(() => expect(viewSpy).toHaveBeenCalled());
   expect(viewSpy.mock.calls[0]?.[0]).toEqual({ range: "24h", organizationId: ORG });
+}
+
+const SITE_B = "6f1d2a3b-0000-4000-8000-0000000000b2";
+const FOREIGN = "6f1d2a3b-0000-4000-8000-0000000000ff";
+const FOREIGN_SENTENCE = "This link names an organization or a site you cannot open.";
+const FULL_LINK = `?organizationId=${ORG}&locationIds=${SITE_A},${SITE_B}&range=7d&compare=1&stackBy=source&rankBy=peakKw`;
+
+/** `F4.303` U6: the options list two sites of the one organization. */
+function stubWithSites() {
+  const stubs = stubEnergyApi();
+  stubs.optionsSpy.mockResolvedValue({
+    ...options(1),
+    locations: [
+      { id: SITE_A, name: "Alpha site", parentId: null, organizationId: ORG },
+      { id: SITE_B, name: "Bravo site", parentId: null, organizationId: ORG },
+    ],
+  });
+  return stubs;
+}
+
+/** `F4.303` P1: a full link is the first query, exactly. */
+export async function aFullLinkIsTheFirstQuery(): Promise<void> {
+  const { viewSpy } = stubWithSites();
+  renderPage(FULL_LINK);
+  await waitFor(() => expect(viewSpy).toHaveBeenCalled());
+  expect(viewSpy.mock.calls[0]?.[0]).toEqual({
+    range: "7d",
+    organizationId: ORG,
+    locationIds: [SITE_A, SITE_B],
+    compare: "previous",
+  });
+}
+
+/** `F4.303` P1: a full link presses "Source" and "Peak kW". */
+export async function aFullLinkPressesItsStackAndSort(): Promise<void> {
+  stubWithSites();
+  renderPage(FULL_LINK);
+  expect(await screen.findByRole("button", { name: "Peak kW" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "Source" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "kWh" })).toHaveAttribute("aria-pressed", "false");
+}
+
+/** `F4.303` P2: an organization the reader cannot open is never sent; the page says so. */
+export async function aForeignOrganizationIsNeverSent(): Promise<void> {
+  const { viewSpy, orgViewsSpy, optionsSpy } = stubEnergyApi();
+  renderPage(`?organizationId=${FOREIGN}&range=7d`);
+  expect(await screen.findByText(FOREIGN_SENTENCE)).toBeInTheDocument();
+  expect(optionsSpy).toHaveBeenCalled();
+  expect(viewSpy).not.toHaveBeenCalled();
+  expect(orgViewsSpy).not.toHaveBeenCalled();
+}
+
+/** `F4.303` P2: a site the reader cannot open is never sent either. */
+export async function aForeignSiteIsNeverSent(): Promise<void> {
+  const { viewSpy } = stubWithSites();
+  renderPage(`?organizationId=${ORG}&locationIds=${SITE_A},${FOREIGN}`);
+  expect(await screen.findByText(FOREIGN_SENTENCE)).toBeInTheDocument();
+  expect(viewSpy).not.toHaveBeenCalled();
+}
+
+/** `F4.303` P2, the positive half: "Use my default filter" clears the search and sends the default query. */
+export async function useMyDefaultFilterClearsTheLink(): Promise<void> {
+  const { viewSpy } = stubEnergyApi();
+  renderPage(`?organizationId=${FOREIGN}&range=7d`);
+  await userEvent.click(await screen.findByRole("button", { name: "Use my default filter" }));
+  expect(screen.getByTestId("search").textContent).toBe("");
+  await waitFor(() => expect(viewSpy).toHaveBeenCalled());
+  expect(viewSpy.mock.calls[0]?.[0]).toEqual({ range: "24h", organizationId: ORG });
+  expect(screen.queryByText(FOREIGN_SENTENCE)).toBeNull();
+}
+
+/** `F4.303` P3: a filter change is written to the URL, naming the organization. */
+export async function aFilterChangeIsWrittenToTheUrl(): Promise<void> {
+  stubEnergyApi();
+  renderPage();
+  await userEvent.click(await screen.findByLabelText("Compare with previous period"));
+  expect(screen.getByTestId("search").textContent).toBe(`?organizationId=${ORG}&compare=1`);
+}
+
+/** `F4.303` P3: the stack choice is written to the URL. */
+export async function theStackChoiceIsWrittenToTheUrl(): Promise<void> {
+  stubEnergyApi();
+  renderPage();
+  await screen.findByTestId("energy-filter-bar");
+  await userEvent.click(screen.getByRole("button", { name: "Source" }));
+  expect(screen.getByTestId("search").textContent).toBe(`?organizationId=${ORG}&stackBy=source`);
+}
+
+/** `F4.303` P3: going back to the default filter writes an empty search. */
+export async function theDefaultFilterWritesAnEmptySearch(): Promise<void> {
+  stubEnergyApi();
+  renderPage(`?organizationId=${ORG}&range=7d`);
+  await screen.findByTestId("energy-filter-bar");
+  fireEvent.change(screen.getByRole("combobox", { name: "Range" }), { target: { value: "24h" } });
+  expect(screen.getByTestId("search").textContent).toBe("");
+}
+
+/** `F4.303` P4: "Copy link" is the last control of the filter bar. */
+export async function copyLinkEndsTheFilterBar(): Promise<void> {
+  stubEnergyApi();
+  renderPage();
+  const bar = await screen.findByTestId("energy-filter-bar");
+  const copy = within(bar).getByRole("button", { name: "Copy link" });
+  expect(bar.lastElementChild?.contains(copy)).toBe(true);
 }
