@@ -5,6 +5,7 @@ import type {
   AdminAssetPointDto,
   AssetPointCalcConfigDto,
   AssetPointCalcOverrideFields,
+  CalcPointSetBody,
   MasterDataActiveFilter,
 } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
@@ -13,9 +14,11 @@ import {
   clearAdminAssetPointCalcOverride,
   createAdminAssetPoint,
   deactivateAdminAssetPoint,
+  deleteAdminAssetCalcPoint,
   fetchAdminAssetCalcPoints,
   fetchAdminAssetPoints,
   reactivateAdminAssetPoint,
+  setAdminAssetCalcPoint,
   setAdminAssetPointCalcOverride,
   updateAdminAssetPoint,
 } from "../../api/admin/asset-points";
@@ -30,6 +33,7 @@ import {
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { AssetPointBulkEditPanel } from "../../components/assets/asset-point-bulk-edit-panel";
+import { CalcPointDeleteWizard, CalcPointPanel } from "../../components/assets/calc-point-panel";
 import { MappingSheetPanel } from "../../components/assets/mapping-sheet-panel";
 import {
   PointCalcDraftProblems,
@@ -321,7 +325,14 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     queryFn: () => fetchAdminAssetCalcPoints(assetId ?? ""),
     enabled: Boolean(assetId),
   });
-  const calcPoints = calcPointsQ.data?.items ?? [];
+  // `F4.311` PR 6a (ADR 0109 decision 5): an asset with no template lists its
+  // own calculated points in their own card below; the override card lists a
+  // pinned asset's only, so its branch is unchanged.
+  const standalone = calcPointsQ.data?.mode === "standalone";
+  const calcPoints = standalone ? [] : (calcPointsQ.data?.items ?? []);
+  const standalonePoints = standalone ? (calcPointsQ.data?.items ?? []) : [];
+  const [addingCalcPoint, setAddingCalcPoint] = useState(false);
+  const [deletingPointKey, setDeletingPointKey] = useState<string | null>(null);
 
   function afterOverride() {
     setOpenPointKey(null);
@@ -348,6 +359,36 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     mutationFn: (pointKey: string) => clearAdminAssetPointCalcOverride(assetId ?? "", pointKey),
     onSuccess: afterOverride,
     onError: (cause: Error) => setOverrideError(apiErrorMessage(cause)),
+  });
+
+  /** `F4.311` PR 6a — opens one standalone form (or none) and drops every stale refusal. */
+  function openStandalone(next: { add?: boolean; edit?: string; remove?: string }) {
+    setAddingCalcPoint(next.add === true);
+    setOpenPointKey(next.edit ?? null);
+    setDeletingPointKey(next.remove ?? null);
+    setOverrideSaveError(null);
+  }
+
+  // A standalone write adds or removes an `asset_points` row, so both lists
+  // are stale after it (`afterOverride`'s two invalidations).
+  const setCalcPointM = useMutation({
+    mutationFn: ({ pointKey, body }: { pointKey: string; body: CalcPointSetBody }) =>
+      setAdminAssetCalcPoint(assetId ?? "", pointKey, body),
+    onSuccess: () => {
+      openStandalone({});
+      afterOverride();
+    },
+    onError: (cause: Error) => setOverrideSaveError(apiErrorMessage(cause)),
+  });
+
+  // A `409` (a dashboard widget shows the point) is the Review card's error, in the server's words.
+  const deleteCalcPointM = useMutation({
+    mutationFn: (pointKey: string) => deleteAdminAssetCalcPoint(assetId ?? "", pointKey),
+    onSuccess: () => {
+      openStandalone({});
+      afterOverride();
+    },
+    onError: (cause: Error) => setOverrideSaveError(apiErrorMessage(cause)),
   });
 
   const listQ = useQuery({
@@ -674,6 +715,98 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     className="surface-button px-3 py-1"
                   >
                     {hasAnyOverride(config) ? "Edit override" : "Override"}
+                  </button>
+                </span>
+              </div>
+            ),
+          )}
+        </SectionCard>
+      ) : null}
+
+      {/* `F4.311` PR 6a (ADR 0109 decision 5): an asset with no template —
+          the card renders even when empty, since Add is how the first point
+          arrives. */}
+      {assetId && standalone ? (
+        <SectionCard title="Calculated points" bodyClassName="p-3 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-ink-muted">
+              This asset has no template. A calculated point you add here is its own formula.
+            </p>
+            <button
+              type="button"
+              className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent"
+              onClick={() => openStandalone({ add: true })}
+            >
+              Add calculated point
+            </button>
+          </div>
+          {addingCalcPoint ? (
+            <CalcPointPanel
+              assetId={assetId}
+              config={null}
+              saving={setCalcPointM.isPending}
+              saveError={overrideSaveError}
+              onEdited={() => setOverrideSaveError(null)}
+              onSubmit={(pointKey, body) => setCalcPointM.mutate({ pointKey, body })}
+              onDelete={null}
+              onCancel={() => openStandalone({})}
+            />
+          ) : null}
+          {standalonePoints.map((config) =>
+            openPointKey === config.pointKey ? (
+              <CalcPointPanel
+                key={config.pointKey}
+                assetId={assetId}
+                config={config}
+                saving={setCalcPointM.isPending}
+                saveError={overrideSaveError}
+                onEdited={() => setOverrideSaveError(null)}
+                onSubmit={(pointKey, body) => setCalcPointM.mutate({ pointKey, body })}
+                onDelete={() => openStandalone({ remove: config.pointKey })}
+                onCancel={() => openStandalone({})}
+              />
+            ) : deletingPointKey === config.pointKey ? (
+              <CalcPointDeleteWizard
+                key={config.pointKey}
+                assetId={assetId}
+                pointKey={config.pointKey}
+                assetLabel={assetSummaryQ.data?.code ?? assetId}
+                deleting={deleteCalcPointM.isPending}
+                error={overrideSaveError}
+                onSubmit={() => deleteCalcPointM.mutate(config.pointKey)}
+                onCancel={() => openStandalone({})}
+              />
+            ) : (
+              <div
+                key={config.pointKey}
+                className="flex flex-wrap items-center justify-between gap-2 surface-raised-sm px-3 py-2"
+              >
+                <span className="text-sm">
+                  {config.label ?? config.pointKey}{" "}
+                  <span className="font-mono text-xs text-ink-muted">{config.pointKey}</span>
+                </span>
+                <span className="flex items-center gap-3 text-xs text-ink-muted">
+                  <span className="font-mono">{config.effective.formula}</span>
+                  <span>
+                    {config.effective.calcTrigger ?? "no trigger"}
+                    {config.effective.calcIntervalSeconds === null
+                      ? ""
+                      : ` · every ${config.effective.calcIntervalSeconds}s`}
+                  </span>
+                  <CalcRuntimePill runtime={config.runtime} />
+                  <button
+                    type="button"
+                    onClick={() => openStandalone({ edit: config.pointKey })}
+                    className="surface-button px-3 py-1"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openStandalone({ remove: config.pointKey })}
+                    className="surface-button border border-critical-line px-3 py-1 text-critical-ink"
+                  >
+                    Delete
                   </button>
                 </span>
               </div>
