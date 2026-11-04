@@ -1021,6 +1021,31 @@
 > folds a `1m` read to `1h` rows (plan C25: the measured run was over 10 s);
 > its XLSX keeps every bucket, deflated. The tool registry stays 31. Next:
 > `F4.306`.
+> And **calculated points on an asset with no template** (**ADR 0109**; row
+> `F4.311`; PR 1 #993, PR 4 #994, PR 2 #995, PR 5 #996, PR 3 #997, PR 6a
+> #998, PR 6b #999; this sweep merges last). An asset with
+> `template_id` NULL (the PHE estate) can carry a standalone `computed`
+> `asset_points` row with its own formula, read by `CalcDefinitionsService`
+> in a second, separate select beside the template query. The routes are the
+> override routes, extended: `GET`, `PUT` and `DELETE`
+> `/admin/assets/:assetId/calc-points[/:pointKey]` serve the standalone point
+> on a template-less asset and the override on a pinned one (the list
+> carries `mode`, each item `kind`); a `DELETE` of a standalone point a
+> dashboard widget shows answers 409 (on a pinned asset it clears the override
+> and keeps the row). `POST /admin/calc-points/batch` writes one point on up to
+> 25 template-less assets of one organization, all or nothing. A `PUT` and the
+> batch accept `backfillDays` (1–31): migration `0123` adds
+> `bms.calc_backfill_runs` (forced RLS, one active run per point), and a
+> further BullMQ queue, `calc-backfill` (declared in `queue/calc-backfill.ts`,
+> registered in `queue/queues.ts`), runs it on the worker through the leaf
+> module `apps/api/src/calc-backfill/`. The asset points page gains
+> **Add calculated point** and the asset list a bulk action
+> (PR 6a). Copilot, **per ADR 0099 Amendment 11** (PR 3): `calcPoint.set`,
+> `calcPoint.createBatch` and `calcPoint.delete`, each a red Confirm card on
+> the same routes; `DELETE_ALLOWANCE` widens from two removals to three, the
+> third being `calcPoint.delete` on a template-less asset only. Adopting an
+> unpinned asset onto a template version (ADR 0109 ruling 1) is not built;
+> it is `F4.312`.
 > And **the tool-calling onboarding agent loop** (**ADR 0090** with
 > **Amendment 1**; row `F3.21`, merged 2026-10-03 in #705, squash `9ff272e1`;
 > the ADR in #702 and the amendment in #703). It amends ADR 0011 decision 1:
@@ -1332,7 +1357,8 @@
 > real REST call with the user's own token (`X-Copilot-Change`, claimed
 > atomically by a global interceptor), so every controller check, RLS policy
 > and audit write runs unchanged. One API write = one Confirm; no hard delete
-> except a grant revoke or a group-member removal; never the global `admin`
+> except a grant revoke, a group-member removal or (Amendment 11) a standalone
+> calculated point's `calcPoint.delete`; never the global `admin`
 > role. Per-user history (30 days, per-user RLS, no `bms_fleet` grant), an
 > availability chain (organization switch → role switches → named exceptions;
 > a new organization starts off), daily usage limits, and ADR 0090
@@ -4311,7 +4337,10 @@ These are intentionally deferred. Do not implement them yet:
   (content and publish since `F3.85`; ADR 0099 decision 3, the scope source).
   Migrate, seeded-rules reapply, default dashboards and migration preview stay
   manual for good (`F4.254` plan-gate ruling 2); the asset-point bulk update
-  stays on the page (ruling 3). Also still out: a copilot conversation list or
+  stays on the page (ruling 3). The calculated-point entries for a
+  template-less asset (ADR 0099 Amendment 11, `F4.311`) are catalogued; the
+  third `DELETE` allowed beside ruling 19's two is `calcPoint.delete` alone.
+  Also still out: a copilot conversation list or
   history page (ADR 0099 Amendment 6), and an `ETag` header or `If-Match` for
   any other catalog entry (Amendment 5).
   Live device discovery over MQTT is promoted by ADR 0103 (`F3.24b`); OPC-UA,
@@ -4441,7 +4470,9 @@ narrowed the row rather than the bundle**: EMQX and Traefik stay in the list
 above with no row and no dependant; MinIO was `F3.3`'s ADR and **ADR 0066
 promoted it on 2026-09-15**. The three
 in-process sweeps stay in the API process (`F4.128` records their doubling
-under `api-replica`).
+under `api-replica`). **`calc-backfill`** (ADR 0109 decision 7,
+`F4.311`) is a further queue on the worker: one job per calculated-point
+backfill run, in the leaf module `apps/api/src/calc-backfill/`.
 Application-layer encryption at rest
 is in scope (ADR 0012); **full-disk / volume / KMS encryption is a deployer
 action and not implementable in this repo**. Object-storage bucket encryption
