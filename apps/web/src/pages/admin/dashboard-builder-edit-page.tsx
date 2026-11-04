@@ -61,6 +61,7 @@ import {
 import { DashboardTabStrip } from "../../components/dashboards/dashboard-tab-strip";
 import { DashboardTabsPanel, type TabGroups } from "../../components/dashboards/dashboard-tabs-panel";
 import { DuplicateDashboardDialog } from "../../components/dashboards/duplicate-dashboard-dialog";
+import { TrendStripWizard } from "../../components/dashboards/trend-strip-wizard";
 import { WidgetInspector } from "../../components/dashboards/widget-inspector";
 import { WizardShell } from "../../components/wizard/wizard-shell";
 import type { AuthUser } from "../../stores/auth-store";
@@ -154,6 +155,8 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
   // plant. A dialog no page renders satisfies none of that, so the entry point is part of the
   // obligation rather than a nicety on top of it.
   const [duplicating, setDuplicating] = useState(false);
+  // `F4.306` U13 (owner OQ5) — the trend strip wizard, in `draft` mode: Finish edits the rows only.
+  const [stripWizard, setStripWizard] = useState(false);
   // `F3.85` PR 9 — bumped by a save or a Cancel: that wizard remounts on its first step.
   const [detailsRound, setDetailsRound] = useState(0);
   const [widgetsRound, setWidgetsRound] = useState(0);
@@ -708,6 +711,20 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
                   + {WIDGET_CATALOG[type].label}
                 </button>
               ))}
+              {/* `F4.306` U13 (plan D5) — a site's lists need a location scope; an unsaved scope
+                  change disables it, the widgets wizard's own rule. */}
+              {siteLocationId !== null ? (
+                <button
+                  type="button"
+                  aria-expanded={stripWizard}
+                  disabled={scopeIsUnsaved}
+                  title={scopeIsUnsaved ? UNSAVED_SCOPE_REASON : undefined}
+                  onClick={() => setStripWizard(true)}
+                  className="surface-button px-2 py-1"
+                >
+                  Trend strip wizard
+                </button>
+              ) : null}
             </div>
           }
         >
@@ -720,6 +737,21 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
             canvas
           )}
         </SectionCard>
+
+        {stripWizard && dto && siteLocationId !== null ? (
+          <TrendStripWizard
+            dashboard={{ id: dto.id, locationId: siteLocationId, tabs, widgets: rows }}
+            mode={{
+              kind: "draft",
+              rows,
+              onApply: (next) => {
+                setRows(next);
+                setSelected(null);
+              },
+            }}
+            onClose={() => setStripWizard(false)}
+          />
+        ) : null}
 
         {selected !== null && selectedRow && dto ? (
           <WidgetInspector
