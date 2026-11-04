@@ -1,6 +1,13 @@
 import "reflect-metadata";
 
-import { BadRequestException, ForbiddenException, HttpStatus, NotFoundException, RequestMethod } from "@nestjs/common";
+import {
+  BadRequestException,
+  ForbiddenException,
+  HttpStatus,
+  NotFoundException,
+  NotImplementedException,
+  RequestMethod,
+} from "@nestjs/common";
 import { HTTP_CODE_METADATA, METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants";
 
 import type { DashboardDto, JwtPayload } from "@bms/shared";
@@ -597,4 +604,50 @@ export function appendWidgetIsDeclaredAfterPutWidgets(): void {
   const appendAt = names.indexOf("appendWidget");
   assert(putAt > -1 && appendAt > -1, `both handlers must exist; got ${JSON.stringify(names)}`);
   assert(appendAt > putAt, `appendWidget (at ${appendAt}) must be declared after putWidgets (at ${putAt})`);
+}
+
+// ---------------------------------------------------------------------------
+// `F4.306` U6 (ADR 0108 Amendment 7) — the body is `appendWidgetBodySchema`'s two arms. The
+// controller picks the arm by `widgetType`, so a refusal keeps the arm's `flatten()` field
+// errors; until U7 builds the service's trend arm, a valid trend body is a 501 that never
+// reaches the chart service.
+// ---------------------------------------------------------------------------
+
+const validTrendBody = { widgetType: "trend_strip", strips: [{ tabKey: "ops", config: { defaultRange: "24h" } }] };
+
+async function appendCaught(body: unknown): Promise<{ err: unknown; append: AppendRecorder }> {
+  const { controller, append } = controllerWith({});
+  try {
+    await controller.appendWidget(ADMIN, DASHBOARD_ID, body);
+  } catch (err) {
+    return { err, append };
+  }
+  return { err: null, append };
+}
+
+/** A trend body with nine strips is a 400 whose `flatten()` names `strips`; no service runs. */
+export async function appendWidgetRefusesNineStripsWithAFieldError(): Promise<void> {
+  const nine = { ...validTrendBody, strips: Array.from({ length: 9 }, () => validTrendBody.strips[0]) };
+  const { err, append } = await appendCaught(nine);
+  assert(err instanceof BadRequestException, `nine strips must be a 400; got ${String(err)}`);
+  const response = (err as BadRequestException).getResponse() as { fieldErrors?: Record<string, unknown> };
+  assert(
+    response.fieldErrors !== undefined && "strips" in response.fieldErrors,
+    `the 400 must be the trend arm's flatten() naming strips; got ${JSON.stringify(response)}`,
+  );
+  assert(append.seen.length === 0, "a refused trend body must never reach the service");
+}
+
+/** `widgetType` beside a chart's `points` parses as neither arm: a 400, and no service runs. */
+export async function appendWidgetRefusesWidgetTypeWithPoints(): Promise<void> {
+  const { err, append } = await appendCaught({ ...validAppendBody, widgetType: "trend_strip" });
+  assert(err instanceof BadRequestException, `widgetType plus points must be a 400; got ${String(err)}`);
+  assert(append.seen.length === 0, "a body neither arm admits must never reach the service");
+}
+
+/** A valid trend body passes the body parse and is a 501 (U7 owns its service), never the chart service. */
+export async function appendWidgetSendsAValidTrendBodyPastTheParse(): Promise<void> {
+  const { err, append } = await appendCaught(validTrendBody);
+  assert(err instanceof NotImplementedException, `a valid trend body must pass the parse; got ${String(err)}`);
+  assert(append.seen.length === 0, "a trend body must never reach the chart arm's service");
 }

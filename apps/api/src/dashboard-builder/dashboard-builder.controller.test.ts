@@ -6,6 +6,9 @@ import {
   appendWidgetRefusesAMalformedBodyWith400,
   appendWidgetRefusesANonUuidIdWith400,
   appendWidgetRefusesAnOperatorWith403BeforeTheService,
+  appendWidgetRefusesNineStripsWithAFieldError,
+  appendWidgetRefusesWidgetTypeWithPoints,
+  appendWidgetSendsAValidTrendBodyPastTheParse,
   appendWidgetReturnsTheServiceAnswer,
   listForwardsTheLocationIdQueryToTheService,
   listForwardsTheSectionQueryToTheService,
@@ -79,5 +82,14 @@ describe("F3.1b — DashboardBuilderController (stubbed service)", () => {
   });
   it("declares appendWidget after putWidgets (F4.303)", () => {
     appendWidgetIsDeclaredAfterPutWidgets();
+  });
+  it("refuses nine trend strips with the trend arm's flatten() 400 (F4.306)", async () => {
+    await appendWidgetRefusesNineStripsWithAFieldError();
+  });
+  it("refuses widgetType beside a chart's points with 400 (F4.306)", async () => {
+    await appendWidgetRefusesWidgetTypeWithPoints();
+  });
+  it("passes a valid trend body through the parse, never to the chart service (F4.306)", async () => {
+    await appendWidgetSendsAValidTrendBodyPastTheParse();
   });
 });
