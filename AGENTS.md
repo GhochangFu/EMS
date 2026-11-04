@@ -1022,8 +1022,8 @@
 > its XLSX keeps every bucket, deflated. The tool registry stays 31. Next:
 > `F4.306`.
 > And **calculated points on an asset with no template** (**ADR 0109**; row
-> `F4.311`; PR 1 #993, PR 4 #994, PR 2 #995, PR 5 #996, PR 3 and PR 6a open
-> when this was drafted, so this paragraph merges last). An asset with
+> `F4.311`; PR 1 #993, PR 4 #994, PR 2 #995, PR 5 #996, PR 3 #997, PR 6a
+> #998, PR 6b #999; this sweep merges last). An asset with
 > `template_id` NULL (the PHE estate) can carry a standalone `computed`
 > `asset_points` row with its own formula, read by `CalcDefinitionsService`
 > in a second, separate select beside the template query. The routes are the
