@@ -42,6 +42,12 @@ vi.mock("../../api/mimic-layouts", () => ({
   fetchMimicLayouts: mimicLayoutsMocks.fetchMimicLayouts,
 }));
 
+// `F4.306` U10 — the trend strip selection summary's read; every case that mounts it says what it answers.
+const siteTrendPointsMocks = vi.hoisted(() => ({ fetchSiteTrendPoints: vi.fn() }));
+vi.mock("../../api/site-trend-points", () => ({
+  fetchSiteTrendPoints: siteTrendPointsMocks.fetchSiteTrendPoints,
+}));
+
 const EMPTY_LAYOUTS: MimicLayoutsListResponse = { items: [] };
 
 /** The default every case not testing the library list itself gets — an empty library, so the
@@ -75,6 +81,7 @@ function renderInspector(
     problems?: DashboardBuilderProblem[];
     onChange?: (patch: Partial<DashboardWidgetRow>) => void;
     tabs?: readonly { key: string; label: string; assetGroupId: string | null }[];
+    locationId?: string | null;
   } = {},
 ): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -86,6 +93,7 @@ function renderInspector(
         role="admin"
         organizationId="org-1"
         tabs={options.tabs ?? []}
+        locationId={options.locationId ?? null}
         onChange={options.onChange ?? (() => {})}
         onRemove={() => {}}
       />
@@ -291,6 +299,7 @@ export function aSiteWidgetHidesUnitDecimalsAndBoundPoints(): void {
           role="admin"
           organizationId="org-1"
           tabs={[]}
+          locationId={null}
           onChange={() => {}}
           onRemove={() => {}}
         />
@@ -534,4 +543,53 @@ export function aValueTileHasNoStripFields(): void {
   renderInspector(blankDashboardWidgetRow("value_tile"), { tabs: GROUP_TABS });
   expect(screen.queryByText("Default range", { exact: true })).toBeNull();
   expect(screen.queryByText("Scope", { exact: true })).toBeNull();
+}
+
+/**
+ * `F4.306` U10 (owner OQ2) — the stored selection's summary mounts only on a `trend_strip` row
+ * that holds one, and reads the site's lists only then. Each absence sits beside its positive.
+ */
+const STRIP_LOCATION = "0b7e2f4a-1c3d-4e5f-8a9b-0c1d2e3f4a5b";
+
+function answerSiteTrendPoints(): void {
+  siteTrendPointsMocks.fetchSiteTrendPoints.mockReset();
+  siteTrendPointsMocks.fetchSiteTrendPoints.mockResolvedValue({
+    locationId: STRIP_LOCATION,
+    organizationId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    segments: [],
+  });
+}
+
+export async function aTrendStripWithoutSelectionMountsNoSummaryAndReadsNothing(): Promise<void> {
+  answerSiteTrendPoints();
+  renderInspector(blankDashboardWidgetRow("trend_strip"), { tabs: GROUP_TABS, locationId: STRIP_LOCATION });
+  expect(screen.getByRole("combobox", { name: /^Scope/ })).toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "Trend strip selection" })).toBeNull();
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(siteTrendPointsMocks.fetchSiteTrendPoints).not.toHaveBeenCalled();
+}
+
+export async function aTrendStripWithASelectionMountsTheSummaryAndReadsTheSite(): Promise<void> {
+  answerSiteTrendPoints();
+  const row = blankDashboardWidgetRow("trend_strip");
+  row.config.stripPoints = ["seg_a:pt_x"];
+  renderInspector(row, { tabs: GROUP_TABS, locationId: STRIP_LOCATION });
+  expect(screen.getByRole("region", { name: "Trend strip selection" })).toBeInTheDocument();
+  await waitFor(() => expect(siteTrendPointsMocks.fetchSiteTrendPoints).toHaveBeenCalledWith(STRIP_LOCATION));
+}
+
+export async function clearingTheSelectionWritesThroughTheConfig(): Promise<void> {
+  answerSiteTrendPoints();
+  const onChange = vi.fn();
+  const row = blankDashboardWidgetRow("trend_strip");
+  row.config.stripSegments = ["seg_a"];
+  row.config.stripPoints = ["seg_a:pt_x"];
+  row.config.stripColors = { "seg_a:pt_x": "series-1" };
+  renderInspector(row, { tabs: GROUP_TABS, locationId: STRIP_LOCATION, onChange });
+  await userEvent.click(screen.getByRole("button", { name: "Clear selection" }));
+  expect(onChange).toHaveBeenLastCalledWith({
+    config: { ...row.config, stripSegments: undefined, stripPoints: undefined, stripColors: undefined },
+  });
+  const written = (onChange.mock.calls.at(-1)?.[0] as { config: Record<string, unknown> }).config;
+  expect([written.stripSegments, written.stripPoints, written.stripColors]).toEqual([undefined, undefined, undefined]);
 }

@@ -164,8 +164,9 @@ const MODULES: readonly string[] = [
   // F4.306 PR 1 U7: the placement rule and the append route's trend arm.
   "packages/shared/src/trend-strip-placement.ts",
   "apps/api/src/dashboard-builder/dashboard-widget-append-strips.ts",
-  // F4.306 PR 2 U10: the site trend-points client.
+  // F4.306 PR 2 U10: the site trend-points client and the builder's selection summary.
   "apps/web/src/api/site-trend-points.ts",
+  "apps/web/src/components/dashboards/trend-strip-selection-summary.tsx",
 ];
 
 /**
@@ -203,7 +204,6 @@ const MODULES: readonly string[] = [
  * wizard dialog), so the list is empty again by U12.
  */
 const PENDING_MODULES: readonly string[] = [
-  "apps/web/src/components/dashboards/trend-strip-selection-summary.tsx",
   "apps/web/src/lib/trend-strip-wizard.ts",
   "apps/web/src/components/dashboards/trend-strip-wizard.tsx",
 ];

@@ -11,6 +11,9 @@ import {
   choosingARangeWritesItToTheConfig,
   aStripTabProblemRendersUnderTheScope,
   aValueTileHasNoStripFields,
+  aTrendStripWithoutSelectionMountsNoSummaryAndReadsNothing,
+  aTrendStripWithASelectionMountsTheSummaryAndReadsTheSite,
+  clearingTheSelectionWritesThroughTheConfig,
   aModuleCardOffersTheDashboardsTabs,
   aMimicOnAGroupBoundTabHasNoMimicTabSelect,
   aMimicWithNoGroupTabAnywhereHasNoMimicTabSelect,
@@ -289,5 +292,17 @@ describe("F3.73 widget inspector — the site widgets", () => {
 
   it("F4.305: a value tile has no strip fields", () => {
     aValueTileHasNoStripFields();
+  });
+
+  it("F4.306: a trend strip without a selection mounts no summary and reads nothing", async () => {
+    await aTrendStripWithoutSelectionMountsNoSummaryAndReadsNothing();
+  });
+
+  it("F4.306: a trend strip with a selection mounts the summary and reads the site's lists", async () => {
+    await aTrendStripWithASelectionMountsTheSummaryAndReadsTheSite();
+  });
+
+  it("F4.306: Clear selection writes the three fields undefined through the config", async () => {
+    await clearingTheSelectionWritesThroughTheConfig();
   });
 });
