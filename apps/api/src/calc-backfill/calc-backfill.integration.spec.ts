@@ -5,6 +5,7 @@ import { expect } from "vitest";
 
 import { assetPoints, assets, calcBackfillRuns, createDb, refreshAggregatesFrom } from "@bms/db";
 
+import { inputKey } from "../calc/calc-batch";
 import type { Fixtures } from "../admin/asset-templates/asset-templates.instantiate.integration.spec";
 import { CalcDefinitionsService } from "../calc/calc-definitions.service";
 import { CalcParametersService } from "../calc/calc-parameters.service";
@@ -16,7 +17,7 @@ import { calcBackfillQueue } from "../queue/calc-backfill";
 import { runProcessor } from "../queue/queue-processor";
 import { retryOnConcurrentRefresh } from "../testing/cagg-materialize";
 import { CalcBackfillReads } from "./calc-backfill-reads";
-import { CalcBackfillRunStore } from "./calc-backfill-run-store";
+import { BACKFILL_STALE_MINUTES, CalcBackfillRunStore } from "./calc-backfill-run-store";
 import { CalcBackfillService } from "./calc-backfill.service";
 
 /**
@@ -37,6 +38,19 @@ import { CalcBackfillService } from "./calc-backfill.service";
  * at minute 30 (`-1`): the backfill must not overwrite it — the gate itself
  * is `calc-write.integration.spec.ts`'s; this spec proves the walk reaches it.
  *
+ * **Row-level security is exercised** (`F4.311` PR 5 review): the claim, the
+ * store's `current` / `progress` / `finish`, the reads and the value writes
+ * run on a **`bms_tenant`** pool, as the worker's `TENANT_DRIZZLE` /
+ * `TENANT_POOL` do, so migration `0123`'s policy (its parent-`asset_points`
+ * half included) binds every run-store statement. The `bms_fleet` pool
+ * (BYPASSRLS) seeds, reads the outcome, and serves the fleet reads the
+ * worker also makes on `FLEET_DRIZZLE`.
+ *
+ * Three more scheduled points over `M` serve the review's claims, each its
+ * own so their rows never meet: `QUIET` (no NOTIFY for history), `STALE` (a
+ * `running` run with no heartbeat is re-claimed and resumes) and `LIVE` (a
+ * `running` run with a fresh heartbeat is left alone).
+ *
  * **Why the final refresh is asserted in the fakes spec, not here.**
  * `writeValues` refreshes each chunk's span itself, so dropping the walk's
  * last `refreshAggregates(from, to)` leaves the `_1h` claim below green. The
@@ -48,6 +62,12 @@ const TEST_ASSET_PREFIX = `F4311-BF-${randomUUID().replace(/-/g, "").slice(0, 10
 
 export const SCHED_KEY = "F4311_BACKFILL_SCHED";
 export const STREAM_KEY = "F4311_BACKFILL_STREAM";
+export const QUIET_KEY = "F4311_BACKFILL_QUIET";
+export const STALE_KEY = "F4311_BACKFILL_STALE";
+export const LIVE_KEY = "F4311_BACKFILL_LIVE";
+
+/** The fleet pool (seeding, outcomes, the worker's fleet reads) and the tenant pool (everything RLS binds). */
+export type BackfillPools = { readonly fleet: pg.Pool; readonly tenant: pg.Pool };
 
 const MINUTE = 60_000;
 const BUCKETS = 180;
@@ -58,6 +78,9 @@ export type BackfillFixture = {
   readonly measuredKey: string;
   readonly schedPointId: string;
   readonly streamPointId: string;
+  readonly quietPointId: string;
+  readonly stalePointId: string;
+  readonly livePointId: string;
   readonly fromMs: number;
   readonly toMs: number;
 };
@@ -119,6 +142,9 @@ export async function seed(pool: pg.Pool, fx: Fixtures): Promise<BackfillFixture
     .values([
       point(SCHED_KEY, `{${measuredKey}} * 2`, "scheduled"),
       point(STREAM_KEY, `{${measuredKey}} + 1`, "streaming"),
+      point(QUIET_KEY, `{${measuredKey}} * 4`, "scheduled"),
+      point(STALE_KEY, `{${measuredKey}} * 5`, "scheduled"),
+      point(LIVE_KEY, `{${measuredKey}} * 6`, "scheduled"),
     ])
     .returning({ id: assetPoints.id, pointKey: assetPoints.pointKey });
   const idOf = (key: string) => rows.find((row) => row.pointKey === key)?.id as string;
@@ -139,13 +165,22 @@ export async function seed(pool: pg.Pool, fx: Fixtures): Promise<BackfillFixture
     `INSERT INTO telemetry.point_values (time, asset_id, point_key, value) VALUES ($1, $2, $3, -1)`,
     [new Date(fromMs + KEPT_MINUTE * MINUTE), assetId, SCHED_KEY],
   );
-  return { assetId, measuredKey, schedPointId: idOf(SCHED_KEY), streamPointId: idOf(STREAM_KEY), fromMs, toMs };
+  return {
+    assetId,
+    measuredKey,
+    schedPointId: idOf(SCHED_KEY),
+    streamPointId: idOf(STREAM_KEY),
+    quietPointId: idOf(QUIET_KEY),
+    stalePointId: idOf(STALE_KEY),
+    livePointId: idOf(LIVE_KEY),
+    fromMs,
+    toMs,
+  };
 }
 
-/** Creates a `queued` run for the point and runs the processor on it, as the worker would. */
-export async function runBackfill(pool: pg.Pool, fx: Fixtures, fixture: BackfillFixture, assetPointId: string): Promise<string> {
-  const db = createDb(pool);
-  const [run] = await db
+/** Inserts a `queued` run for the point over the fixture's window (on the fleet pool — a fixture write). */
+async function createRun(pools: BackfillPools, fx: Fixtures, fixture: BackfillFixture, assetPointId: string): Promise<string> {
+  const [run] = await createDb(pools.fleet)
     .insert(calcBackfillRuns)
     .values({
       organizationId: fx.organizationId,
@@ -154,21 +189,43 @@ export async function runBackfill(pool: pg.Pool, fx: Fixtures, fixture: Backfill
       toAt: new Date(fixture.toMs),
     })
     .returning({ id: calcBackfillRuns.id });
-  const runId = (run as { id: string }).id;
+  return (run as { id: string }).id;
+}
+
+/** The worker's wiring: tenant handles where the worker injects `TENANT_*`, fleet where it injects `FLEET_DRIZZLE`. */
+function backfillReads(pools: BackfillPools): CalcBackfillReads {
+  return new CalcBackfillReads(pools.tenant);
+}
+
+/** Runs the processor on an existing run, as the worker would. */
+export async function processRun(pools: BackfillPools, fx: Fixtures, runId: string, assetPointId: string): Promise<void> {
+  const tenantDb = createDb(pools.tenant);
+  const fleetDb = createDb(pools.fleet);
   const metrics = new MetricsService();
   const service = new CalcBackfillService(
-    new CalcBackfillRunStore(db, db),
-    new CalcDefinitionsService(db, metrics),
-    new CalcScopeService(db),
-    new CalcParametersService(db),
-    new CalcWindowsService(pool, db),
-    new CalcBackfillReads(pool),
-    new CalcWriteService(db, db, pool, metrics),
+    new CalcBackfillRunStore(tenantDb, fleetDb),
+    new CalcDefinitionsService(fleetDb, metrics),
+    new CalcScopeService(fleetDb),
+    new CalcParametersService(fleetDb),
+    new CalcWindowsService(pools.tenant, fleetDb),
+    backfillReads(pools),
+    new CalcWriteService(tenantDb, fleetDb, pools.tenant, metrics),
   );
-  const registration = runProcessor(calcBackfillQueue, { tenantDb: db, fleetDb: db }, (payload, ctx) =>
+  const registration = runProcessor(calcBackfillQueue, { tenantDb, fleetDb }, (payload, ctx) =>
     service.run(payload, ctx.tx),
   );
   await registration.process({ data: { organizationId: fx.organizationId, runId, assetPointId } });
+}
+
+/** Creates a `queued` run for the point and runs the processor on it, as the worker would. */
+export async function runBackfill(
+  pools: BackfillPools,
+  fx: Fixtures,
+  fixture: BackfillFixture,
+  assetPointId: string,
+): Promise<string> {
+  const runId = await createRun(pools, fx, fixture, assetPointId);
+  await processRun(pools, fx, runId, assetPointId);
   return runId;
 }
 
@@ -223,12 +280,142 @@ export async function assertTheHourlyAggregateHasTheBucket(pool: pg.Pool, fixtur
 
 /** A streaming point is written at its input's stored times inside the window. */
 export async function assertAStreamingPointWritesAtTheInputTimes(
-  pool: pg.Pool,
+  pools: BackfillPools,
   fx: Fixtures,
   fixture: BackfillFixture,
 ): Promise<void> {
-  await runBackfill(pool, fx, fixture, fixture.streamPointId);
-  const written = (await storedRows(pool, fixture, STREAM_KEY)).map((row) => row.minute * MINUTE);
+  await runBackfill(pools, fx, fixture, fixture.streamPointId);
+  const written = (await storedRows(pools.fleet, fixture, STREAM_KEY)).map((row) => row.minute * MINUTE);
   const expected = Array.from({ length: BUCKETS }, (_, i) => (i + 1) * MINUTE - 53_000);
   expect(written).toEqual(expected);
+}
+
+// ---- PR 5 review ----------------------------------------------------------
+
+/**
+ * A backfill issues no `bms_telemetry` NOTIFY for its rows. A dedicated
+ * session LISTENs during the `QUIET` run; any payload naming the fixture's
+ * asset is a failure (other suites may notify concurrently, so the filter is
+ * the asset, never a count). The anti-vacuity half: the run did write rows.
+ */
+export async function assertABackfillNotifiesNothing(
+  pools: BackfillPools,
+  fx: Fixtures,
+  fixture: BackfillFixture,
+): Promise<void> {
+  const listener = await pools.fleet.connect();
+  const heard: string[] = [];
+  try {
+    listener.on("notification", (message) => {
+      if (message.channel === "bms_telemetry" && message.payload?.includes(fixture.assetId)) {
+        heard.push(message.payload);
+      }
+    });
+    await listener.query("LISTEN bms_telemetry");
+    await runBackfill(pools, fx, fixture, fixture.quietPointId);
+    // A NOTIFY is delivered at its transaction's commit; give the socket a beat.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await listener.query("UNLISTEN bms_telemetry");
+  } finally {
+    listener.release();
+  }
+  expect((await storedRows(pools.fleet, fixture, QUIET_KEY)).length, "anti-vacuity: the run wrote rows").toBe(BUCKETS);
+  expect(heard).toEqual([]);
+}
+
+const STALE_DONE_THROUGH_MINUTE = 89;
+
+/** Inserts a `running` run whose heartbeat (`updated_at`) is `ageMinutes` old, walked through minute 89. */
+async function runningRun(
+  pools: BackfillPools,
+  fx: Fixtures,
+  fixture: BackfillFixture,
+  assetPointId: string,
+  ageMinutes: number,
+): Promise<string> {
+  const { rows } = await pools.fleet.query<{ id: string }>(
+    `INSERT INTO bms.calc_backfill_runs
+       (organization_id, asset_point_id, from_at, to_at, status, done_through, started_at, updated_at)
+     VALUES ($1, $2, $3, $4, 'running', $5, now() - make_interval(mins => $6), now() - make_interval(mins => $6))
+     RETURNING id`,
+    [
+      fx.organizationId,
+      assetPointId,
+      new Date(fixture.fromMs),
+      new Date(fixture.toMs),
+      new Date(fixture.fromMs + STALE_DONE_THROUGH_MINUTE * MINUTE),
+      ageMinutes,
+    ],
+  );
+  return (rows[0] as { id: string }).id;
+}
+
+async function statusOf(pool: pg.Pool, runId: string): Promise<string | undefined> {
+  const { rows } = await pool.query<{ status: string }>(`SELECT status FROM bms.calc_backfill_runs WHERE id = $1`, [runId]);
+  return rows[0]?.status;
+}
+
+/**
+ * A `running` run whose heartbeat is one minute past the stale bound — a
+ * worker that died mid-walk — and its re-delivered job, processed. Returns
+ * the run's id; the claims below read the outcome.
+ */
+export async function reclaimAStaleRun(pools: BackfillPools, fx: Fixtures, fixture: BackfillFixture): Promise<string> {
+  const runId = await runningRun(pools, fx, fixture, fixture.stalePointId, BACKFILL_STALE_MINUTES + 1);
+  await processRun(pools, fx, runId, fixture.stalePointId);
+  return runId;
+}
+
+/** The stale run was re-claimed by its re-delivered job and ended `done`. */
+export async function assertAStaleRunningRunIsReclaimed(fleet: pg.Pool, staleRunId: string): Promise<void> {
+  expect(await statusOf(fleet, staleRunId)).toBe("done");
+}
+
+/** …and resumes after `done_through`: the walk wrote minutes 90…179 and nothing at or before 89. */
+export async function assertAReclaimedRunResumesAfterDoneThrough(fleet: pg.Pool, fixture: BackfillFixture): Promise<void> {
+  const minutes = (await storedRows(fleet, fixture, STALE_KEY)).map((row) => row.minute);
+  expect(minutes).toEqual(
+    Array.from({ length: BUCKETS - STALE_DONE_THROUGH_MINUTE - 1 }, (_, i) => STALE_DONE_THROUGH_MINUTE + 1 + i),
+  );
+}
+
+/** A `running` run with a fresh heartbeat is not claimed: it stays `running` and nothing is written. */
+export async function assertALiveRunningRunIsNotClaimed(
+  pools: BackfillPools,
+  fx: Fixtures,
+  fixture: BackfillFixture,
+): Promise<void> {
+  const runId = await runningRun(pools, fx, fixture, fixture.livePointId, 1);
+  await processRun(pools, fx, runId, fixture.livePointId);
+  expect({ status: await statusOf(pools.fleet, runId), rows: (await storedRows(pools.fleet, fixture, LIVE_KEY)).length }).toEqual({
+    status: "running",
+    rows: 0,
+  });
+}
+
+/**
+ * An input stored with sub-millisecond precision is read at the instant
+ * `readInputTimes` truncated it to: stored at `t + 500 µs`, read as of `t`.
+ * Placed 30 minutes before the window, where `M` has no other sample.
+ */
+export async function assertASubMillisecondSampleIsReadAtItsInstant(
+  pools: BackfillPools,
+  fixture: BackfillFixture,
+): Promise<void> {
+  const at = new Date(fixture.fromMs - 30 * MINUTE);
+  await pools.fleet.query(
+    `INSERT INTO telemetry.point_values (time, asset_id, point_key, value)
+     VALUES ($1::timestamptz + interval '500 microseconds', $2, $3, 4242)`,
+    [at, fixture.assetId, fixture.measuredKey],
+  );
+  const reads = backfillReads(pools);
+  const instants = await reads.readInputTimes(
+    fixture.assetId,
+    [fixture.measuredKey],
+    at.getTime() - MINUTE,
+    at.getTime() + MINUTE,
+    10,
+  );
+  const samples = await reads.readSamples([{ assetId: fixture.assetId, pointKey: fixture.measuredKey }], instants, 300);
+  expect((samples.get(inputKey(fixture.assetId, fixture.measuredKey)) ?? []).map((sample) => Number(sample.value))).toEqual([4242]);
 }

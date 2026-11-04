@@ -23,6 +23,29 @@ import { parameterValueAt, type ParameterSeriesRow } from "../calc/calc-paramete
 export const BACKFILL_CHUNK_BUCKETS = 500;
 
 /**
+ * The most sample rows one chunk's input read may return (`F4.311` PR 5
+ * review). `CalcBackfillReads.readSamples` returns at most one sample per
+ * `(input pair, instant)` — the newest at or before it — so a chunk reads at
+ * most `pairs × instants` rows, whatever the input's sampling rate or
+ * `max_input_age_seconds`. {@link bucketsPerChunk} shrinks the chunk so that
+ * product stays within this cap: 100,000 rows of `{ value, timeMs }` plus the
+ * row objects `pg` builds is tens of MB of worker heap, not the millions of
+ * rows a range read of 31 dense days could hold.
+ */
+export const BACKFILL_MAX_SAMPLE_ROWS = 100_000;
+
+/**
+ * Instants per chunk for a definition reading `pairs` input pairs: the full
+ * {@link BACKFILL_CHUNK_BUCKETS} while `pairs × 500` fits the cap, fewer
+ * beyond it, and never fewer than one. Past `BACKFILL_MAX_SAMPLE_ROWS` pairs a
+ * single instant already exceeds the cap; the read refuses that by name
+ * rather than load it.
+ */
+export function bucketsPerChunk(pairs: number): number {
+  return Math.max(1, Math.min(BACKFILL_CHUNK_BUCKETS, Math.floor(BACKFILL_MAX_SAMPLE_ROWS / Math.max(1, pairs))));
+}
+
+/**
  * The scheduled grid over `[fromMs, toMs)`: every multiple of the interval —
  * the instants `bucketTimeMs` produces, so a backfilled row lands on the same
  * timestamps the sweep writes — from the first at or after `fromMs` to the

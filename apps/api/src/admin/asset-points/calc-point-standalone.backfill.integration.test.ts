@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 
+import type pg from "pg";
+
 import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 
 import { createDb } from "@bms/db";
@@ -14,6 +16,7 @@ import { CalcStatusRegistry } from "../../calc/calc-status.registry";
 import { MetricsService } from "../../observability/metrics.service";
 import { calcBackfillQueue } from "../../queue/calc-backfill";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
+import { asRole } from "../../testing/role-urls";
 import { registerFixturePointKeys } from "../../testing/integration-fixtures";
 import {
   openIntegrationQueueClient,
@@ -24,11 +27,14 @@ import { loadFixtures } from "../asset-templates/asset-templates.instantiate.int
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { CalcBackfillRequestService } from "./calc-backfill-request.service";
 import {
+  assertABatchCreatesOneRunPerPoint,
   assertAPutCreatesAQueuedSevenDayRun,
   assertAPutWithoutBackfillDaysStartsNoRun,
   assertASecondBackfillWhileQueuedIs409,
   assertThe409StillSavedTheFormula,
   assertTheListShowsTheRunsStatus,
+  assertTheBatch409NamesTheBusyAsset,
+  assertTheBatchStillStartsTheFreeAssetsRun,
   assertTheRunsJobIsEnqueued,
   CALC_KEY,
   cleanup,
@@ -61,6 +67,7 @@ describe.skipIf(!connectionString || !redisUrl)("F4.311 — backfillDays on the 
   let suite: BackfillSuite | undefined;
   let queueClient: IntegrationQueueClient | undefined;
   let releasePointKeys: (() => Promise<void>) | undefined;
+  let tenantPool: pg.Pool | undefined;
 
   const run = (claim: (suite: BackfillSuite) => Promise<void>) => async () => {
     if (!suite) throw new Error("suite required");
@@ -78,6 +85,13 @@ describe.skipIf(!connectionString || !redisUrl)("F4.311 — backfillDays on the 
       `bms-f4311-${randomUUID().slice(0, 8)}`,
     );
     const db = createDb(pool);
+    // The run rows are written as the API writes them: on the tenant role, so
+    // the `0123` policy binds the insert (PR 5 review).
+    tenantPool = await openIntegrationPool(
+      process.env.DATABASE_URL_TENANT ?? asRole(connectionString as string, "bms_tenant", "bms_tenant_dev"),
+      "F4.311",
+    );
+    const tenantDb = createDb(tenantPool);
     const scope = new CalcScopeService(db);
     const svc = new CalcPointStandaloneService(
       db,
@@ -88,7 +102,7 @@ describe.skipIf(!connectionString || !redisUrl)("F4.311 — backfillDays on the 
       new CalcParametersService(db),
       scope,
       new CalcStatusRegistry(),
-      new CalcBackfillRequestService(db, queueClient.client, new CalcBackfillRunStore(db, db)),
+      new CalcBackfillRequestService(tenantDb, queueClient.client, new CalcBackfillRunStore(tenantDb, db)),
     );
     const queue = queueClient.queues.get(calcBackfillQueue.name);
     if (!queue) throw new Error("the calc-backfill queue was not opened");
@@ -102,6 +116,7 @@ describe.skipIf(!connectionString || !redisUrl)("F4.311 — backfillDays on the 
       await releasePointKeys?.();
       await suite.pool.end();
     }
+    await tenantPool?.end();
     if (queueClient) {
       for (const queue of queueClient.queues.values()) {
         await queue.obliterate({ force: true });
@@ -120,4 +135,7 @@ describe.skipIf(!connectionString || !redisUrl)("F4.311 — backfillDays on the 
   it("still saves the formula on that 409 (ruling 4)", run(assertThe409StillSavedTheFormula));
   it("shows the run's status on the list", run(assertTheListShowsTheRunsStatus));
   it("starts no run without backfillDays", run(assertAPutWithoutBackfillDaysStartsNoRun));
+  it("creates one run per point for a batch with backfillDays", run(assertABatchCreatesOneRunPerPoint));
+  it("names the busy asset in the batch's 409", run(assertTheBatch409NamesTheBusyAsset));
+  it("still starts the free asset's run in that batch", run(assertTheBatchStillStartsTheFreeAssetsRun));
 });

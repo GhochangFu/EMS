@@ -2,6 +2,15 @@ import { describe, it } from "vitest";
 
 import {
   aDeletedRunStopsAtTheNextChunk,
+  aFailedFinalRefreshFailsTheRun,
+  aFailedFinalRefreshIsRethrown,
+  aFailedFinalRefreshLeavesDoneThroughAtTheLastBucket,
+  aRetryAfterTheLastChunkOnlyRefreshes,
+  aWideStreamingPointPagesItsInputTimes,
+  everyChunkIsWrittenWithoutNotify,
+  manyInputsPageTheSampleRead,
+  noSampleReadExceedsTheCap,
+  theDefinitionReadLeavesTheGaugeAlone,
   aFinishedWalkMarksTheRunDone,
   aPayloadNamingAnotherPointIsRefused,
   aPointWithNoDefinitionFails,
@@ -37,4 +46,14 @@ describe("F4.311 — the calc backfill walk", () => {
   it("rethrows without the original message", () => aThrowIsRethrownWithoutItsMessage());
   it("fails a point with no active definition", () => aPointWithNoDefinitionFails());
   it("writes a streaming point at its inputs' stored times", () => aStreamingPointWritesAtItsInputTimes());
+  it("writes every chunk with { notify: false }", () => everyChunkIsWrittenWithoutNotify());
+  it("reads its definition without moving the active-formulas gauge", () => theDefinitionReadLeavesTheGaugeAlone());
+  it("fails the run by name when the final refresh fails", () => aFailedFinalRefreshFailsTheRun());
+  it("rethrows a failed final refresh so BullMQ retries", () => aFailedFinalRefreshIsRethrown());
+  it("leaves done_through at the last bucket when the final refresh fails", () =>
+    aFailedFinalRefreshLeavesDoneThroughAtTheLastBucket());
+  it("only refreshes on a retry after the last chunk", () => aRetryAfterTheLastChunkOnlyRefreshes());
+  it("pages the sample read by the input count", () => manyInputsPageTheSampleRead());
+  it("never asks one sample read for more than the cap", () => noSampleReadExceedsTheCap());
+  it("pages a wide streaming point's input times", () => aWideStreamingPointPagesItsInputTimes());
 });

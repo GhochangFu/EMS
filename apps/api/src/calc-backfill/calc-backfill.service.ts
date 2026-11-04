@@ -17,7 +17,7 @@ import type { BmsTx } from "../database/tenant-context";
 import type { calcBackfillQueue } from "../queue/calc-backfill";
 import type { ProcessorContinuation } from "../queue/queue-processor";
 import type { PayloadOf } from "../queue/queue-registry";
-import { asOfIndex, asOfInputs, BACKFILL_CHUNK_BUCKETS, bucketGrid, chunk, parametersAt } from "./calc-backfill-plan";
+import { asOfIndex, asOfInputs, bucketGrid, bucketsPerChunk, chunk, parametersAt } from "./calc-backfill-plan";
 import { CalcBackfillReads, type BackfillPair } from "./calc-backfill-reads";
 import { CalcBackfillRunStore, type ClaimedRun } from "./calc-backfill-run-store";
 
@@ -64,7 +64,8 @@ const EMPTY_WINDOWS: ReadonlyMap<string, WindowReadResult> = new Map();
 
 /**
  * Phase A, on `runProcessor`'s tenant transaction: claim the run. A run that
- * is not claimable (gone, `running`, `done`, failed for want of a worker)
+ * is not claimable (gone, live `running`, `done`, failed for a reason no
+ * retry mends)
  * returns no continuation — the job did nothing and completes. The walk is
  * the continuation, so it runs after the claim committed and holds no tenant
  * backend while it computes.
@@ -95,31 +96,45 @@ export async function claimBackfill(
  * 2. Membership, **once**: a backfill of an aggregate uses today's members at
  *    every past bucket (owner ruling 3, an accepted limit — membership is
  *    configuration, not an input, and its history is not stored).
- * 3. Chunks of at most {@link BACKFILL_CHUNK_BUCKETS}: a scheduled point
- *    walks its own bucket grid; a streaming point walks the stored times of
- *    its inputs. Each chunk is one range read, one evaluation per instant
- *    through the live engine's `assembleInputs` (as of that instant), one
- *    `writeValues` — which never overwrites, so a stored value survives — and
- *    then the progress write. **Progress follows the write**, so
+ * 3. Chunks of at most `bucketsPerChunk(pairs)` instants — 500, fewer when
+ *    the definition reads so many input pairs that `pairs × instants` would
+ *    pass `BACKFILL_MAX_SAMPLE_ROWS` (100,000): **the bound is on the rows a
+ *    chunk reads**, not only on its buckets, because each read returns at most
+ *    one sample per (pair, instant). A scheduled point walks its own bucket
+ *    grid; a streaming point walks the stored times of its inputs. Each chunk
+ *    is one bounded read, one evaluation per instant through the live
+ *    engine's `assembleInputs` (as of that instant), one `writeValues` with
+ *    `{ notify: false }` — history never reaches `bms_telemetry`'s live
+ *    consumers (the alarm engine, the streaming host, the sockets) — which
+ *    never overwrites, so a stored value survives, and then the progress
+ *    write. `progress` also bumps `updated_at`, the heartbeat the run store's
+ *    stale bound reads. **Progress follows the write**, so
  *    `done_through` never claims a bucket that is not stored; a retry resumes
  *    there. Before each later chunk the run is re-read, and the walk stops
  *    when it is gone (the point was deleted, the run cascaded) or no longer
  *    `running`.
  * 4. One `refreshAggregates(from, to)` over the run's whole window, then
- *    `done`. `writeValues` already refreshes each chunk's span, so the final
- *    call is the decision's guarantee rather than the only refresh; a
- *    failure there is a warning, as it is in `CalcWriteService`.
+ *    `done`. `writeValues` already refreshes each chunk's span, but only as a
+ *    warning-on-failure; this call is decision 7's guarantee, so **its
+ *    failure fails the run** like any other throw. `done_through` is then the
+ *    last bucket, so BullMQ's retry walks no chunk and repeats only the
+ *    refresh — the run is `done` only once the rollups hold the history.
  *
  * A refusal at an instant (stale, missing, unset, …) writes nothing there and
  * is tallied; the tally is logged at the end, never counted in
  * `bms_api_calc_skipped_total`, which is the sweep's. Any throw marks the run
  * `failed` with the error's name and rethrows {@link CalcBackfillFailedError}.
+ * If that `failed` write itself throws, the row stays `running` with its
+ * last heartbeat, and the retry re-claims it once the run store's stale bound
+ * (`BACKFILL_STALE_MINUTES`) has passed — resuming at `done_through`.
  * Logs carry ids and counts only — never a formula or a value.
  */
 export async function walkBackfill(deps: CalcBackfillDeps, run: ClaimedRun): Promise<void> {
   const ids = `runId=${run.runId} assetPointId=${run.assetPointId}`;
   try {
-    const def = (await deps.definitions.getAllDefinitionsFresh()).find(
+    // `reportGauge: false`: this read runs on the worker, whose registry must
+    // not carry a second, frozen `bms_api_calc_active_formulas` series.
+    const def = (await deps.definitions.getAllDefinitionsFresh({ reportGauge: false })).find(
       (candidate) => candidate.assetId === run.assetId && candidate.pointKey === run.pointKey,
     );
     if (def === undefined || (def.trigger === "scheduled" && !(def.intervalSeconds && def.intervalSeconds > 0))) {
@@ -128,20 +143,15 @@ export async function walkBackfill(deps: CalcBackfillDeps, run: ClaimedRun): Pro
       return;
     }
     const membership = await deps.scope.resolveMembership([def]);
+    const walk: Walk = { def, membership, pairs: inputPairs(def, membership) };
     const state: WalkState = { written: run.writtenRows, chunks: 0, refused: new Map() };
     const finished =
-      def.trigger === "scheduled"
-        ? await walkScheduled(deps, run, def, membership, state)
-        : await walkStreaming(deps, run, def, membership, state);
+      def.trigger === "scheduled" ? await walkScheduled(deps, run, walk, state) : await walkStreaming(deps, run, walk, state);
     if (!finished) {
       deps.logger.log(`calc-backfill stopped: the run is gone or no longer running ${ids} chunks=${state.chunks}`);
       return;
     }
-    try {
-      await deps.reads.refreshAggregates(new Date(run.fromMs), new Date(run.toMs));
-    } catch (err) {
-      deps.logger.warn(`calc-backfill aggregate refresh failed: ${errorName(err)} ${ids}`);
-    }
+    await deps.reads.refreshAggregates(new Date(run.fromMs), new Date(run.toMs));
     await deps.store.finish(run.organizationId, run.runId, { status: "done" });
     deps.logger.log(
       `calc-backfill done ${ids} chunks=${state.chunks} written=${state.written} refused=${tallyText(state.refused)}`,
@@ -180,6 +190,9 @@ function inputPairs(def: CalcDefinition, membership: Membership): BackfillPair[]
   return [...pairs.values()];
 }
 
+/** What every chunk of one walk shares: the definition, today's membership, and the input pairs they imply. */
+type Walk = { readonly def: CalcDefinition; readonly membership: Membership; readonly pairs: readonly BackfillPair[] };
+
 /** True while the run row still exists and is `running`. */
 async function stillRunning(deps: CalcBackfillDeps, run: ClaimedRun): Promise<boolean> {
   return (await deps.store.current(run.organizationId, run.runId)) === "running";
@@ -189,17 +202,14 @@ async function stillRunning(deps: CalcBackfillDeps, run: ClaimedRun): Promise<bo
 async function runChunk(
   deps: CalcBackfillDeps,
   run: ClaimedRun,
-  def: CalcDefinition,
-  membership: Membership,
+  { def, membership, pairs }: Walk,
   instants: readonly number[],
   state: WalkState,
 ): Promise<void> {
   const first = instants[0] as number;
   const last = instants[instants.length - 1] as number;
   const interval = def.intervalSeconds ?? 0;
-  const index = asOfIndex(
-    await deps.reads.readSamples(inputPairs(def, membership), first - def.maxInputAgeSeconds * 1000, last),
-  );
+  const index = asOfIndex(await deps.reads.readSamples(pairs, instants, def.maxInputAgeSeconds));
   const series =
     def.paramRefs.length > 0
       ? await deps.parameters.resolveSeriesForAssets(
@@ -237,27 +247,21 @@ async function runChunk(
     rows.push({ assetId: def.assetId, pointKey: def.pointKey, time: new Date(t), value: result.value });
   }
 
-  const { written } = await deps.writer.writeValues(rows);
+  const { written } = await deps.writer.writeValues(rows, { notify: false });
   state.written += written;
   state.chunks += 1;
   await deps.store.progress(run.organizationId, run.runId, new Date(last), state.written);
 }
 
 /** A scheduled point: its bucket grid over the run's window, from `done_through` on a retry. Returns `false` when stopped. */
-async function walkScheduled(
-  deps: CalcBackfillDeps,
-  run: ClaimedRun,
-  def: CalcDefinition,
-  membership: Membership,
-  state: WalkState,
-): Promise<boolean> {
+async function walkScheduled(deps: CalcBackfillDeps, run: ClaimedRun, walk: Walk, state: WalkState): Promise<boolean> {
   const startMs = run.doneThroughMs === null ? run.fromMs : run.doneThroughMs + 1;
-  const chunks = chunk(bucketGrid(startMs, run.toMs, def.intervalSeconds as number), BACKFILL_CHUNK_BUCKETS);
-  for (const [i, buckets] of chunks.entries()) {
+  const grid = bucketGrid(startMs, run.toMs, walk.def.intervalSeconds as number);
+  for (const [i, buckets] of chunk(grid, bucketsPerChunk(walk.pairs.length)).entries()) {
     if (i > 0 && !(await stillRunning(deps, run))) {
       return false;
     }
-    await runChunk(deps, run, def, membership, buckets, state);
+    await runChunk(deps, run, walk, buckets, state);
   }
   return true;
 }
@@ -269,25 +273,20 @@ async function walkScheduled(
  * and written at that time — the streaming host's own rule (the newest input
  * used, which is the instant itself). Returns `false` when stopped.
  */
-async function walkStreaming(
-  deps: CalcBackfillDeps,
-  run: ClaimedRun,
-  def: CalcDefinition,
-  membership: Membership,
-  state: WalkState,
-): Promise<boolean> {
+async function walkStreaming(deps: CalcBackfillDeps, run: ClaimedRun, walk: Walk, state: WalkState): Promise<boolean> {
+  const size = bucketsPerChunk(walk.pairs.length);
   let fromMs = run.doneThroughMs === null ? run.fromMs : run.doneThroughMs + 1;
   for (let i = 0; ; i += 1) {
     if (i > 0 && !(await stillRunning(deps, run))) {
       return false;
     }
-    const instants = await deps.reads.readInputTimes(def.assetId, def.refs, fromMs, run.toMs, BACKFILL_CHUNK_BUCKETS);
+    const instants = await deps.reads.readInputTimes(walk.def.assetId, walk.def.refs, fromMs, run.toMs, size);
     if (instants.length === 0) {
       return true;
     }
-    await runChunk(deps, run, def, membership, instants, state);
+    await runChunk(deps, run, walk, instants, state);
     fromMs = (instants[instants.length - 1] as number) + 1;
-    if (instants.length < BACKFILL_CHUNK_BUCKETS) {
+    if (instants.length < size) {
       return true;
     }
   }

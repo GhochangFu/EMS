@@ -6,7 +6,11 @@ import {
   latestAtOrBeforeIncludesASampleAtTheSameInstant,
   latestAtOrBeforeNeverServesALaterSample,
   latestAtOrBeforeReturnsTheNewestOlderSample,
+  manyInputsShrinkTheChunk,
+  morePairsThanTheCapWalkOneBucketAtATime,
   noChunkExceedsItsSize,
+  oneInputKeepsTheFullChunk,
+  pairsTimesBucketsNeverExceedsTheCap,
   parametersAtOmitsAnUncoveredPair,
   theGridIsAlignedWithBucketTimeMs,
   theGridIsHalfOpen,
@@ -21,6 +25,10 @@ describe("F4.311 — the backfill plan (pure)", () => {
   it("holds 267,840 buckets for 31 days at 10 s", theWorstCaseIs267840Buckets);
   it("splits the worst case into 536 chunks", theWorstCaseIs536Chunks);
   it("never puts more than 500 buckets in a chunk", noChunkExceedsItsSize);
+  it("keeps the full chunk for one input pair", oneInputKeepsTheFullChunk);
+  it("shrinks the chunk for many input pairs", manyInputsShrinkTheChunk);
+  it("keeps pairs × buckets within the sample-row cap", pairsTimesBucketsNeverExceedsTheCap);
+  it("walks one bucket at a time past the cap", morePairsThanTheCapWalkOneBucketAtATime);
   it("serves the newest sample older than t", latestAtOrBeforeReturnsTheNewestOlderSample);
   it("serves a sample stamped exactly at t", latestAtOrBeforeIncludesASampleAtTheSameInstant);
   it("never serves a sample after t", latestAtOrBeforeNeverServesALaterSample);

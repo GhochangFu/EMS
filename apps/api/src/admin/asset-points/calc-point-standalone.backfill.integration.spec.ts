@@ -5,7 +5,7 @@ import type { Queue } from "bullmq";
 import { expect } from "vitest";
 
 import { assetPoints, assets, createDb } from "@bms/db";
-import type { CalcPointSetBody } from "@bms/shared";
+import type { CalcPointBatchBody, CalcPointSetBody } from "@bms/shared";
 
 import { calcBackfillJobId } from "../../queue/calc-backfill";
 import type { Fixtures } from "../asset-templates/asset-templates.instantiate.integration.spec";
@@ -25,6 +25,12 @@ import type { CalcPointStandaloneService } from "./calc-point-standalone.service
  * **Ruling 4 is the point of claim 4**: the point write and the run creation
  * are split, so a second `PUT` while a run is active changes the formula and
  * refuses only the new backfill.
+ *
+ * Claims 7–9 are the batch (`POST /admin/calc-points/batch`): one run per
+ * point, and a point whose backfill is busy named in the 409 by its asset's
+ * code while the other assets still get theirs. The run rows are written by
+ * `CalcBackfillRequestService` on a **`bms_tenant`** connection (PR 5
+ * review), so migration `0123`'s policy binds the insert.
  */
 
 /** Per-run, so two instances of this file never sweep each other's rows (`tests/integration-fixture-isolation.test.ts`). */
@@ -176,4 +182,51 @@ export async function assertAPutWithoutBackfillDaysStartsNoRun(suite: BackfillSu
   const { backfillDays: _days, ...withoutDays } = BODY;
   await suite.svc.set(suite.fx.adminJwt, assetId, CALC_KEY, withoutDays);
   expect(await runsOf(suite.pool, assetId)).toEqual([]);
+}
+
+async function codeOf(pool: pg.Pool, assetId: string): Promise<string> {
+  const { rows } = await pool.query<{ code: string }>(`SELECT code FROM bms.assets WHERE id = $1`, [assetId]);
+  return (rows[0] as { code: string }).code;
+}
+
+function batchBody(assetIds: readonly string[]): CalcPointBatchBody {
+  const { backfillDays: _days, ...set } = BODY;
+  return { ...set, assetIds: [...assetIds], pointKey: CALC_KEY, backfillDays: 7 };
+}
+
+/** Claim 7 — a batch with `backfillDays` creates one `queued` run per point. */
+export async function assertABatchCreatesOneRunPerPoint(suite: BackfillSuite): Promise<void> {
+  const first = await seedBare(suite);
+  const second = await seedBare(suite);
+  await suite.svc.setBatch(suite.fx.adminJwt, batchBody([first, second]));
+  const statuses = [...(await runsOf(suite.pool, first)), ...(await runsOf(suite.pool, second))].map((run) => run.status);
+  expect(statuses).toEqual(["queued", "queued"]);
+}
+
+/** The batch's answer when one asset's point already has an active backfill. */
+async function batchOverABusyPoint(suite: BackfillSuite): Promise<{ busy: string; free: string; refusal: unknown }> {
+  const busy = await seedBare(suite);
+  const free = await seedBare(suite);
+  await suite.svc.set(suite.fx.adminJwt, busy, CALC_KEY, BODY);
+  const refusal = await suite.svc.setBatch(suite.fx.adminJwt, batchBody([busy, free])).then(
+    () => null,
+    (err: unknown) => err,
+  );
+  return { busy, free, refusal };
+}
+
+/** Claim 8 — the 409 names the busy asset by its code. */
+export async function assertTheBatch409NamesTheBusyAsset(suite: BackfillSuite): Promise<void> {
+  const { busy, refusal } = await batchOverABusyPoint(suite);
+  const status = (refusal as { getStatus?: () => number } | null)?.getStatus?.();
+  expect({ status, names: String((refusal as Error | null)?.message).includes(await codeOf(suite.pool, busy)) }).toEqual({
+    status: 409,
+    names: true,
+  });
+}
+
+/** Claim 9 — the free asset in that batch still gets its run. */
+export async function assertTheBatchStillStartsTheFreeAssetsRun(suite: BackfillSuite): Promise<void> {
+  const { free } = await batchOverABusyPoint(suite);
+  expect((await runsOf(suite.pool, free)).map((run) => run.status)).toEqual(["queued"]);
 }

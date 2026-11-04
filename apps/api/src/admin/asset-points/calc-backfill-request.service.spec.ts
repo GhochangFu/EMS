@@ -25,27 +25,48 @@ const runId = (n: number): string => `00000000-0000-4000-8000-00000000000${n}`;
 type Probe = {
   readonly service: CalcBackfillRequestService;
   readonly created: NewRun[];
+  /** `failStale:<point>` and `create:<point>`, in order, each with the transaction it ran on. */
+  readonly calls: { call: string; tx: unknown }[];
   readonly jobs: { name: string; data: unknown; jobId: string }[];
   readonly finished: { runId: string; outcome: unknown }[];
 };
 
+/** Anything but a unique violation — a dropped connection, a statement timeout. */
+const connectionLost = Object.assign(new Error("Connection terminated unexpectedly"), { name: "ConnectionError" });
+
 /** A unique violation as `pg` raises it. */
 const uniqueViolation = Object.assign(new Error("duplicate key"), { code: "23505" });
 
-function probe(options: { busy?: readonly string[]; queue?: "configured" | "unconfigured" } = {}): Probe {
+function probe(
+  options: {
+    busy?: readonly string[];
+    broken?: readonly string[];
+    queue?: "configured" | "unconfigured";
+    /** Run ids whose `finish` throws. */
+    finishThrows?: readonly string[];
+  } = {},
+): Probe {
   const created: NewRun[] = [];
+  const calls: { call: string; tx: unknown }[] = [];
   const jobs: { name: string; data: unknown; jobId: string }[] = [];
   const finished: { runId: string; outcome: unknown }[] = [];
   const db = {
+    // A fresh transaction object per `withTenant`, so a claim can tell two apart.
     transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({ execute: async () => undefined }),
   } as unknown as BmsDb;
   const store = {
-    create: async (_tx: unknown, run: NewRun) => {
+    failStale: async (tx: unknown, assetPointId: string) => {
+      calls.push({ call: `failStale:${assetPointId}`, tx });
+    },
+    create: async (tx: unknown, run: NewRun) => {
+      calls.push({ call: `create:${run.assetPointId}`, tx });
       if (options.busy?.includes(run.assetPointId)) throw uniqueViolation;
+      if (options.broken?.includes(run.assetPointId)) throw connectionLost;
       created.push(run);
       return runId(created.length);
     },
     finish: async (_org: string, runId: string, outcome: unknown) => {
+      if (options.finishThrows?.includes(runId)) throw connectionLost;
       finished.push({ runId, outcome });
     },
     latestForPoints: async () => new Map(),
@@ -65,7 +86,7 @@ function probe(options: { busy?: readonly string[]; queue?: "configured" | "unco
           queues: new Map([["calc-backfill", handle]]),
           close: async () => undefined,
         };
-  return { service: new CalcBackfillRequestService(db, queue, store), created, jobs, finished };
+  return { service: new CalcBackfillRequestService(db, queue, store), created, calls, jobs, finished };
 }
 
 const REQUEST = {
@@ -140,4 +161,61 @@ export async function anUnqueuedRunIsMarkedNoWorker(): Promise<void> {
   const p = probe({ queue: "unconfigured" });
   await refusal(p.service.start(REQUEST, NOW));
   expect(p.finished).toEqual([{ runId: runId(1), outcome: { status: "failed", error: "no worker" } }]);
+}
+
+// ---- PR 5 review ----------------------------------------------------------
+
+const TWO_TARGETS = {
+  ...REQUEST,
+  targets: [
+    { assetPointId: POINT_A, label: "A-1" },
+    { assetPointId: POINT_B, label: "B-1" },
+  ],
+};
+
+/** A stale `running` run of the point is failed before the new run is created. */
+export async function aStaleRunIsFailedBeforeTheNewRunIsCreated(): Promise<void> {
+  const p = probe();
+  await p.service.start(REQUEST, NOW);
+  expect(p.calls.map((c) => c.call)).toEqual([`failStale:${POINT_A}`, `create:${POINT_A}`]);
+}
+
+/** …inside the same tenant transaction, so a refused create rolls the release back with it. */
+export async function theStaleReleaseSharesTheCreatesTransaction(): Promise<void> {
+  const p = probe();
+  await p.service.start(REQUEST, NOW);
+  expect(p.calls[0]?.tx).toBe(p.calls[1]?.tx);
+}
+
+/** A non-unique throw on target k marks the runs already created `failed` / 'not started'. */
+export async function aBrokenCreateFailsTheRunsAlreadyCreated(): Promise<void> {
+  const p = probe({ broken: [POINT_B] });
+  await refusal(p.service.start(TWO_TARGETS, NOW));
+  expect(p.finished).toEqual([{ runId: runId(1), outcome: { status: "failed", error: "not started" } }]);
+}
+
+/** …enqueues nothing. */
+export async function aBrokenCreateEnqueuesNothing(): Promise<void> {
+  const p = probe({ broken: [POINT_B] });
+  await refusal(p.service.start(TWO_TARGETS, NOW));
+  expect(p.jobs).toEqual([]);
+}
+
+/** …and rethrows the original error. */
+export async function aBrokenCreateIsRethrown(): Promise<void> {
+  const p = probe({ broken: [POINT_B] });
+  expect(await refusal(p.service.start(TWO_TARGETS, NOW))).toBe(connectionLost);
+}
+
+/** A release that throws in the 503 path does not stop the later runs' release. */
+export async function aFailedReleaseDoesNotStopTheOthers(): Promise<void> {
+  const p = probe({ queue: "unconfigured", finishThrows: [runId(1)] });
+  await refusal(p.service.start(TWO_TARGETS, NOW));
+  expect(p.finished).toEqual([{ runId: runId(2), outcome: { status: "failed", error: "no worker" } }]);
+}
+
+/** …and the answer is still the 503, not the release's error. */
+export async function aFailedReleaseStillAnswers503(): Promise<void> {
+  const p = probe({ queue: "unconfigured", finishThrows: [runId(1)] });
+  expect(await refusal(p.service.start(TWO_TARGETS, NOW))).toBeInstanceOf(ServiceUnavailableException);
 }

@@ -3,7 +3,11 @@ import { ConflictException, Inject, Injectable, Logger, ServiceUnavailableExcept
 import type { BmsDb } from "@bms/db";
 import type { CalcBackfillRunDto } from "@bms/shared";
 
-import { BACKFILL_NO_WORKER, CalcBackfillRunStore } from "../../calc-backfill/calc-backfill-run-store";
+import {
+  BACKFILL_NO_WORKER,
+  BACKFILL_NOT_STARTED,
+  CalcBackfillRunStore,
+} from "../../calc-backfill/calc-backfill-run-store";
 import { TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { calcBackfillJobId, calcBackfillQueue } from "../../queue/calc-backfill";
@@ -52,6 +56,13 @@ function isUniqueViolation(err: unknown): boolean {
  *   formula was saved ({@link backfillAlreadyRunningMessage}). Each run is its
  *   own short `withTenant`, so one busy point in a batch does not stop the
  *   others' runs.
+ * - **A stale run does not hold the point.** Before each insert, in the same
+ *   `withTenant`, a `running` run whose heartbeat stopped is marked `failed`
+ *   / `stale` (`CalcBackfillRunStore.failStale`), so a dead worker never
+ *   turns every later request into a 409.
+ * - **A create that throws** anything but `23505` marks the runs this call
+ *   already created `failed` / `not started` before it rethrows: they have no
+ *   job, and left `queued` they would hold the partial index for good.
  * - **Enqueue after commit**, as the discovery route does: a job must never
  *   name a run row that was rolled back. An enqueue failure marks that run
  *   and every later one `failed` / `no worker` (so the partial index does not
@@ -82,18 +93,24 @@ export class CalcBackfillRequestService {
     const busy: string[] = [];
     for (const target of request.targets) {
       try {
-        const runId = await withTenant(this.db, request.organizationId, (tx) =>
-          this.store.create(tx, {
+        const runId = await withTenant(this.db, request.organizationId, async (tx) => {
+          await this.store.failStale(tx, target.assetPointId);
+          return this.store.create(tx, {
             organizationId: request.organizationId,
             assetPointId: target.assetPointId,
             fromAt,
             toAt,
             requestedBy: request.requestedBy,
-          }),
-        );
+          });
+        });
         created.push({ runId, assetPointId: target.assetPointId });
       } catch (err) {
-        if (!isUniqueViolation(err)) throw err;
+        if (!isUniqueViolation(err)) {
+          // No job will ever name these runs; left `queued` they would hold
+          // `calc_backfill_runs_one_active` for good.
+          await this.release(request.organizationId, created, BACKFILL_NOT_STARTED);
+          throw err;
+        }
         busy.push(target.label);
       }
     }
@@ -109,15 +126,32 @@ export class CalcBackfillRequestService {
       } catch (err) {
         // The name only: a Redis error message can carry an address (§9.6).
         this.logger.warn(`calc-backfill enqueue failed: ${(err as Error)?.name ?? "Error"} runId=${run.runId}`);
-        for (const unqueued of created.slice(index)) {
-          await this.store.finish(request.organizationId, unqueued.runId, { status: "failed", error: BACKFILL_NO_WORKER });
-        }
+        await this.release(request.organizationId, created.slice(index), BACKFILL_NO_WORKER);
         throw new ServiceUnavailableException(BACKFILL_NO_WORKER_MESSAGE);
       }
     }
 
     if (busy.length > 0) {
       throw new ConflictException(backfillAlreadyRunningMessage(busy));
+    }
+  }
+
+  /**
+   * Marks runs that will never have a job `failed` with `error`, so the
+   * partial index does not hold their points. Each release is attempted even
+   * when an earlier one throws, and a throw is logged rather than raised: the
+   * caller's own error is the answer. A run left `queued` here is the one
+   * case the stale bound does not cover, so the log names it.
+   */
+  private async release(organizationId: string, runs: readonly { runId: string }[], error: string): Promise<void> {
+    for (const run of runs) {
+      try {
+        await this.store.finish(organizationId, run.runId, { status: "failed", error });
+      } catch (finishErr) {
+        this.logger.error(
+          `calc-backfill run not released: ${(finishErr as Error)?.name ?? "Error"} runId=${run.runId}`,
+        );
+      }
     }
   }
 }

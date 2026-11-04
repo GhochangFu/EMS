@@ -6,7 +6,9 @@ import {
   asOfIndex,
   asOfInputs,
   BACKFILL_CHUNK_BUCKETS,
+  BACKFILL_MAX_SAMPLE_ROWS,
   bucketGrid,
+  bucketsPerChunk,
   chunk,
   parametersAt,
 } from "./calc-backfill-plan";
@@ -47,6 +49,29 @@ export function noChunkExceedsItsSize(): void {
   expect(Math.max(...chunk(bucketGrid(T0, T0 + DAY_MS, 10), BACKFILL_CHUNK_BUCKETS).map((c) => c.length))).toBe(
     BACKFILL_CHUNK_BUCKETS,
   );
+}
+
+/** One input pair keeps the full chunk of 500. */
+export function oneInputKeepsTheFullChunk(): void {
+  expect(bucketsPerChunk(1)).toBe(BACKFILL_CHUNK_BUCKETS);
+}
+
+/** 300 input pairs shrink the chunk to ⌊100,000 / 300⌋ = 333, so a chunk reads at most the cap. */
+export function manyInputsShrinkTheChunk(): void {
+  expect(bucketsPerChunk(300)).toBe(Math.floor(BACKFILL_MAX_SAMPLE_ROWS / 300));
+}
+
+/** For every pair count up to the cap, pairs × buckets stays within the cap. */
+export function pairsTimesBucketsNeverExceedsTheCap(): void {
+  const over = [1, 2, 199, 200, 201, 333, 1_000, 99_999, BACKFILL_MAX_SAMPLE_ROWS].filter(
+    (pairs) => pairs * bucketsPerChunk(pairs) > BACKFILL_MAX_SAMPLE_ROWS,
+  );
+  expect(over).toEqual([]);
+}
+
+/** More pairs than the cap still walk, one bucket at a time (the read itself refuses past the cap). */
+export function morePairsThanTheCapWalkOneBucketAtATime(): void {
+  expect(bucketsPerChunk(BACKFILL_MAX_SAMPLE_ROWS * 2)).toBe(1);
 }
 
 const SAMPLES = new Map([
