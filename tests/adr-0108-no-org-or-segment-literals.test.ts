@@ -194,8 +194,18 @@ const MODULES: readonly string[] = [
  * {@link MODULES} by the unit that creates each (U10 the four shared files, U11 the schedule's
  * point check, U13 the two report files, U14 the append service, U15 `pin-dialog.tsx`, U16 the
  * last two web files), so the list is empty again.
+ *
+ * `F4.306` PR 2 (Amendment 7 item 10; `docs/plans/f4.306-trend-strip-wizard.md` PR 2 U8): the four
+ * new web modules, listed in U8 and moved to {@link MODULES} by the unit that creates each (U10
+ * the site trend-points client and the selection summary, U11 the pure wizard module, U12 the
+ * wizard dialog), so the list is empty again by U12.
  */
-const PENDING_MODULES: readonly string[] = [];
+const PENDING_MODULES: readonly string[] = [
+  "apps/web/src/api/site-trend-points.ts",
+  "apps/web/src/components/dashboards/trend-strip-selection-summary.tsx",
+  "apps/web/src/lib/trend-strip-wizard.ts",
+  "apps/web/src/components/dashboards/trend-strip-wizard.tsx",
+];
 
 /**
  * Files that are never scanned, each with its reason, so a later row does not

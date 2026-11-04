@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { repoRoot } from "./support/source-scan";
-import { blendOver, contrastRatio, parseTokenBlocks, type Channels, channelsToHex } from "./support/colour-tokens";
+import { blendOver, contrastRatio, deltaE2000, parseTokenBlocks, type Channels, channelsToHex } from "./support/colour-tokens";
 
 /**
  * `F3.65a` — every declared colour pair in `docs/plans/f3.65a-colour-tokens.md` §2.4 holds its
@@ -207,6 +207,16 @@ const UI_PAIRS: Pair[] = [
   // F3.71 (ADR 0085 decision 4) — a neumorphic form field's 1px `ink-faint` edge on `canvas`: the
   // control's boundary, so WCAG 1.4.11 applies (4.32 light, 5.46 dark).
   { fg: "ink-faint", bg: "canvas" },
+  // ADR 0078 Amendment 4 (F4.306) — the trend strip's per-point series colours are a graphic line
+  // on the `surface` card (WCAG 1.4.11). The measured ratios are recorded in the amendment.
+  { fg: "series-1", bg: "surface" },
+  { fg: "series-2", bg: "surface" },
+  { fg: "series-3", bg: "surface" },
+  { fg: "series-4", bg: "surface" },
+  { fg: "series-5", bg: "surface" },
+  { fg: "series-6", bg: "surface" },
+  { fg: "series-7", bg: "surface" },
+  { fg: "series-8", bg: "surface" },
 ];
 
 /**
@@ -430,5 +440,77 @@ describe("F3.65a: every declared colour pair holds its contrast threshold in bot
     }
     const unknown = [...names].filter((n) => !roles.has(n));
     expect(unknown).toEqual([]);
+  });
+});
+
+/**
+ * ADR 0078 Amendment 4 item 2 (F4.306) — the eight `series-*` roles. A series line must not read
+ * as an alarm, so each role sits far from `warning` and `critical` in its own theme (CIEDE2000,
+ * the distance the mapping table uses), and the eight are told apart from one another. The
+ * thresholds are the plan's (`docs/plans/f4.306-trend-strip-wizard.md` PR 2 §7 D2): 20 from an
+ * alarm colour (measured minimum 35.73, dark `series-7` vs `warning`) and 10 between two series
+ * (measured minima 11.73 light, 10.66 dark). The 3:1 rule on `surface` is C3/C4 above.
+ *
+ * The role list is read from the token file, not typed here, and S3 holds it to exactly
+ * `series-1` … `series-8` — so S1/S2 cannot skip a role the file defines.
+ */
+const SERIES_EXPECTED = ["series-1", "series-2", "series-3", "series-4", "series-5", "series-6", "series-7", "series-8"];
+const ALARM_ROLES = ["warning", "critical"] as const;
+const MIN_ALARM_DELTA_E = 20;
+const MIN_SERIES_DELTA_E = 10;
+
+function seriesRolesOf(theme: Theme, tokens: ReturnType<typeof loadTokens>): string[] {
+  const map = theme === "light" ? tokens.light : tokens.dark;
+  return [...map.keys()].filter((role) => role.startsWith("series-"));
+}
+
+function alarmOffenders(theme: Theme, tokens: ReturnType<typeof loadTokens>): string[] {
+  const out: string[] = [];
+  for (const role of seriesRolesOf(theme, tokens)) {
+    for (const alarm of ALARM_ROLES) {
+      const d = deltaE2000(hexOf(role, theme, tokens), hexOf(alarm, theme, tokens));
+      if (!(d >= MIN_ALARM_DELTA_E)) out.push(`${role} vs ${alarm} (${theme}): ΔE2000 ${d.toFixed(2)} < ${MIN_ALARM_DELTA_E}`);
+    }
+  }
+  return out;
+}
+
+function pairOffenders(theme: Theme, tokens: ReturnType<typeof loadTokens>): string[] {
+  const roles = seriesRolesOf(theme, tokens);
+  const out: string[] = [];
+  for (let i = 0; i < roles.length; i++) {
+    for (let j = i + 1; j < roles.length; j++) {
+      const d = deltaE2000(hexOf(roles[i], theme, tokens), hexOf(roles[j], theme, tokens));
+      if (!(d >= MIN_SERIES_DELTA_E)) out.push(`${roles[i]} vs ${roles[j]} (${theme}): ΔE2000 ${d.toFixed(2)} < ${MIN_SERIES_DELTA_E}`);
+    }
+  }
+  return out;
+}
+
+describe("F4.306 series roles (ADR 0078 Amendment 4): far from the alarm colours, apart from each other", () => {
+  const tokens = loadTokens();
+
+  it("S1 every series role is at least ΔE2000 20 from warning and critical in light", () => {
+    expect(alarmOffenders("light", tokens)).toEqual([]);
+  });
+
+  it("S1 every series role is at least ΔE2000 20 from warning and critical in dark", () => {
+    expect(alarmOffenders("dark", tokens)).toEqual([]);
+  });
+
+  it("S2 every pair of series roles is at least ΔE2000 10 apart in light", () => {
+    expect(pairOffenders("light", tokens)).toEqual([]);
+  });
+
+  it("S2 every pair of series roles is at least ΔE2000 10 apart in dark", () => {
+    expect(pairOffenders("dark", tokens)).toEqual([]);
+  });
+
+  it("S3 the light block's series roles are exactly series-1 … series-8", () => {
+    expect(seriesRolesOf("light", tokens).sort()).toEqual(SERIES_EXPECTED);
+  });
+
+  it("S3 the dark block's series roles are exactly series-1 … series-8", () => {
+    expect(seriesRolesOf("dark", tokens).sort()).toEqual(SERIES_EXPECTED);
   });
 });

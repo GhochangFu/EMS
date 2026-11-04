@@ -20,7 +20,7 @@ import { repoRoot } from "./support/source-scan";
  *    run with `node:vm` in a sandbox, like `f3.65a-theme-boot.test.ts`.
  *  - **T1–T3** the shadow tokens live in exactly two `index.css` blocks keyed on
  *    `:not([data-surface="flat"])`, declare the same names, and hold no colour but
- *    `rgb(var(--<role>) / <alpha>)` of a real role — so the palette stays the 41 roles.
+ *    `rgb(var(--<role>) / <alpha>)` of a real role — so the palette stays the 49 roles.
  *  - **V2–V6** the vocabulary: no `data-surface` arbitrary variant in a class; no class string mixes
  *    a `surface-*` token with the colour utilities it replaces; every used `surface-*` class has a
  *    neumorphic and a flat rule, every defined one is used; the chrome carries none.

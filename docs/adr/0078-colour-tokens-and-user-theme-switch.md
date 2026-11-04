@@ -576,6 +576,30 @@ ruled for a new palette rather than a subset of the old one *(owner, Q9)*.
    in both themes. The plan records the sixteen values and their measured
    ratios here, in this amendment, before the build merges — decision 3's rule
    for an adjusted value.
+
+   **The sixteen values** (`F4.306` PR 2 U8; `series-3` kept by the owner,
+   plan OQ3). Contrast is against `surface` in the same theme (`#FFFFFF` light,
+   `#1A222D` dark), measured with `tests/support/colour-tokens.ts`:
+
+   | role | light | ratio | dark | ratio |
+   |---|---|---|---|---|
+   | `series-1` | `#1D4ED8` | 6.70 | `#60A5FA` | 6.30 |
+   | `series-2` | `#0F766E` | 5.47 | `#2DD4BF` | 8.61 |
+   | `series-3` | `#6B21A8` | 8.72 | `#C084FC` | 6.06 |
+   | `series-4` | `#C026D3` | 4.71 | `#F5D0FE` | 11.70 |
+   | `series-5` | `#0369A1` | 5.93 | `#7DD3FC` | 9.61 |
+   | `series-6` | `#4D7C0F` | 4.99 | `#A3E635` | 10.63 |
+   | `series-7` (neutral) | `#475569` | 7.58 | `#CBD5E1` | 10.79 |
+   | `series-8` | `#312E81` | 11.42 | `#C7D2FE` | 10.74 |
+
+   The distance the plan uses is CIEDE2000. From `warning` (`#F59E0B`) and
+   `critical` (`#DC2626`) the smallest is 35.73 (dark `series-7` against
+   `warning`); the gate is ≥ 20 in both themes. Between two series roles the
+   smallest is 11.73 light (`series-3` / `series-8`) and 10.66 dark
+   (`series-7` / `series-8`); the gate is ≥ 10. The rules are
+   `tests/f3.65a-colour-contrast.test.ts` C3/C4 (3:1 on `surface`) and S1–S3,
+   and `tests/f3.65a-colour-tokens.test.ts` T9/T10 hold `index.css` to this
+   table.
 3. **Where they are used.** Only the trend strip's per-point colour in this
    row. A point with no chosen colour keeps `accent` *(owner, Q10)*.
    `SERIES_PALETTE` and the charts that read it do not change.

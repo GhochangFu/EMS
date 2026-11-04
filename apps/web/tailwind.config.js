@@ -89,6 +89,14 @@ export default {
         line: "rgb(var(--info-line) / <alpha-value>)",
       },
       "simulated-ink": "rgb(var(--simulated-ink) / <alpha-value>)",
+      "series-1": "rgb(var(--series-1) / <alpha-value>)",
+      "series-2": "rgb(var(--series-2) / <alpha-value>)",
+      "series-3": "rgb(var(--series-3) / <alpha-value>)",
+      "series-4": "rgb(var(--series-4) / <alpha-value>)",
+      "series-5": "rgb(var(--series-5) / <alpha-value>)",
+      "series-6": "rgb(var(--series-6) / <alpha-value>)",
+      "series-7": "rgb(var(--series-7) / <alpha-value>)",
+      "series-8": "rgb(var(--series-8) / <alpha-value>)",
     },
     extend: {
       // F3.65b review: preflight's `border-color` on every element and the `--tw-ring-offset-color`

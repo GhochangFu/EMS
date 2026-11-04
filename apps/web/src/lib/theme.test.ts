@@ -12,6 +12,8 @@ import {
   r5CapitalisedDarkReadsLight,
   r5DarkAttributeReadsDark,
   r5MissingAttributeReadsLight,
+  r6EverySeriesRoleIsAResolvedRole,
+  r6TheSeriesRolesResolveInBothThemes,
 } from "./theme.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014); jsdom for R5. */
@@ -58,5 +60,13 @@ describe("F3.65c role resolver", () => {
 
   it("R5 a missing data-theme reads light", () => {
     r5MissingAttributeReadsLight();
+  });
+
+  it("R6 every @bms/shared series role name is in ROLE_NAMES (F4.306, ADR 0078 Amendment 4)", () => {
+    r6EverySeriesRoleIsAResolvedRole();
+  });
+
+  it("R6 series-2 resolves to its Amendment 4 value in light and in dark", () => {
+    r6TheSeriesRolesResolveInBothThemes();
   });
 });
