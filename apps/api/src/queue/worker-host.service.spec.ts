@@ -3,6 +3,7 @@ import "reflect-metadata";
 import type { BmsDb } from "@bms/db";
 import type { RuleSweepSummary } from "@bms/shared";
 
+import type { CalcBackfillService } from "../calc-backfill/calc-backfill.service";
 import type { CopilotPurgeService, CopilotPurgeSummary } from "../copilot/copilot-purge.service";
 import type { BmsTx } from "../database/tenant-context";
 import type { MetricsService } from "../observability/metrics.service";
@@ -10,6 +11,7 @@ import type { DiscoveryJobService } from "../onboarding-discovery/discovery-job.
 import type { ReportDispatchService, ReportDispatchSummary } from "../reports/report-dispatch.service";
 import type { RenderOutcome, ReportRenderService } from "../reports/report-render.service";
 import type { RuleSweepService } from "../rules/rule-sweep.service";
+import { calcBackfillQueue } from "./calc-backfill";
 import { copilotPurgeQueue } from "./copilot-purge";
 import { onboardingDiscoveryQueue } from "./onboarding-discovery";
 import type { ProcessorContinuation, ProcessorDbs, ProcessorHandler } from "./queue-processor";
@@ -182,6 +184,8 @@ export type WorkerHostProbe = {
   readonly purgeRuns: () => number;
   /** Every `(payload, tx)` handed to the fake `DiscoveryJobService.run`. */
   readonly discoveryRuns: readonly (readonly [payload: unknown, tx: unknown])[];
+  /** Every `(payload, tx)` handed to the fake `CalcBackfillService.run` (`F4.311` PR 5). */
+  readonly backfillRuns: readonly (readonly [payload: unknown, tx: unknown])[];
 };
 
 /** A `QueueHandle` whose `client` resolves to a Redis fake that records `set`. */
@@ -204,6 +208,7 @@ export async function initWorkerHost(): Promise<WorkerHostProbe> {
   const finishedOutcomes: unknown[] = [];
   let purgeRuns = 0;
   const discoveryRuns: (readonly [unknown, unknown])[] = [];
+  const backfillRuns: (readonly [unknown, unknown])[] = [];
   const client: QueueClient = {
     kind: "configured",
     prefix: PREFIX,
@@ -261,9 +266,24 @@ export async function initWorkerHost(): Promise<WorkerHostProbe> {
         return DISCOVERY_CONTINUATION;
       },
     } as unknown as DiscoveryJobService,
+    {
+      run: async (payload: unknown, tx: unknown) => {
+        backfillRuns.push([payload, tx]);
+        return BACKFILL_CONTINUATION;
+      },
+    } as unknown as CalcBackfillService,
   );
   await service.onModuleInit();
-  return { sweepRuns, keyWrites, dispatchTicks, renderTxs, finishedOutcomes, purgeRuns: () => purgeRuns, discoveryRuns };
+  return {
+    sweepRuns,
+    keyWrites,
+    dispatchTicks,
+    renderTxs,
+    finishedOutcomes,
+    purgeRuns: () => purgeRuns,
+    discoveryRuns,
+    backfillRuns,
+  };
 }
 
 function declNameOf(call: RecordedRunProcessorCall): string {
@@ -491,6 +511,7 @@ export function assertPurgeScheduleUpsertedAtTheConfiguredInterval(
 
 /** The continuation the fake `DiscoveryJobService.run` resolves — the handler must hand it back unchanged. */
 const DISCOVERY_CONTINUATION = { afterCommit: async () => undefined };
+const BACKFILL_CONTINUATION = { afterCommit: async () => undefined };
 
 const DISCOVERY_PAYLOAD = {
   organizationId: "11111111-1111-4111-8111-111111111111",
@@ -538,5 +559,36 @@ export function assertPurgeHandlerRanThePurgeOnce(probe: WorkerHostProbe): void 
   assert(
     probe.purgeRuns() === 1,
     `expected CopilotPurgeService.purge to run exactly once per tick — the handler never purges, or another queue's body is registered against copilot-purge; runs=${probe.purgeRuns()}`,
+  );
+}
+
+const BACKFILL_PAYLOAD = {
+  organizationId: "11111111-1111-4111-8111-111111111111",
+  runId: "44444444-4444-4444-8444-444444444444",
+  assetPointId: "55555555-5555-4555-8555-555555555555",
+};
+
+/** Runs the recorded `calc-backfill` handler the way `runProcessor` would for a `tenant` queue. */
+export async function invokeBackfillHandler(
+  calls: readonly RecordedRunProcessorCall[],
+): Promise<void | ProcessorContinuation> {
+  const handler = registrationOf(calls, calcBackfillQueue.name)[2] as ProcessorHandler<typeof calcBackfillQueue>;
+  return handler(BACKFILL_PAYLOAD, { tx: TX_SENTINEL });
+}
+
+/** `F4.311` PR 5: the backfill handler claims the run on ctx.tx with the payload it was given, once. */
+export function assertBackfillHandlerRanTheJobOnTheTransactionItWasGiven(probe: WorkerHostProbe): void {
+  const [only] = probe.backfillRuns;
+  assert(
+    probe.backfillRuns.length === 1 && only?.[0] === BACKFILL_PAYLOAD && only[1] === TX_SENTINEL,
+    `expected CalcBackfillService.run(payload, ctx.tx) exactly once — the handler hands a different handle or payload; runs=${probe.backfillRuns.length}`,
+  );
+}
+
+/** `F4.311` PR 5: the walk is the job's continuation, handed back so it runs after the claim committed. */
+export function assertBackfillHandlerReturnsTheJobsContinuation(resolved: void | ProcessorContinuation): void {
+  assert(
+    resolved === BACKFILL_CONTINUATION,
+    "expected the backfill handler to return the job's continuation unchanged — dropped, the walk would never run; awaited inline, it would hold the tenant transaction for the whole backfill",
   );
 }

@@ -24,6 +24,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { resolveActorId } from "../../auth/identity-resolver";
 import { CalcDependencyService, type CalcCandidate } from "../../calc/calc-dependency.service";
 import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { CalcScopeService } from "../../calc/calc-scope.service";
@@ -34,6 +35,7 @@ import { withTenant, type BmsTx } from "../../database/tenant-context";
 import { unknownParameterKeysMessage } from "../asset-templates/asset-templates-param-refs";
 import { MasterDataAuditService, type AuditInput } from "../master-data-audit.service";
 import { changedColumns, dependencyCycleMessage, EMPTY_FIELDS, toFields } from "./asset-point-calc-override.service";
+import { CalcBackfillRequestService, type BackfillTarget } from "./calc-backfill-request.service";
 import {
   echoedAssetCode,
   mappingRowConflictMessage,
@@ -127,6 +129,13 @@ const NOT_STANDALONE =
  * precedes any tenant context and stands behind `canManageAsset`; the write
  * and its audit row share one `withTenant` transaction on the tenant pool.
  * Audit payloads name columns, never formula text (§9.6).
+ *
+ * ## `backfillDays` (PR 5, owner ruling 4)
+ *
+ * The point write commits first; the backfill runs are created after it by
+ * `CalcBackfillRequestService`. A point whose backfill is already running
+ * keeps the formula just written and answers 409 for the new backfill only;
+ * no reachable worker answers 503 with the point still written.
  */
 @Injectable()
 export class CalcPointStandaloneService {
@@ -139,6 +148,7 @@ export class CalcPointStandaloneService {
     private readonly calcParameters: CalcParametersService,
     private readonly scope: CalcScopeService,
     private readonly status: CalcStatusRegistry,
+    private readonly backfill: CalcBackfillRequestService,
   ) {}
 
   /**
@@ -189,17 +199,14 @@ export class CalcPointStandaloneService {
       }
     }
 
-    // `body.backfillDays` is accepted by the schema and deliberately unused
-    // here: F4.311 PR 5 wires it (the run is created after this write, and a
-    // running backfill refuses only the new run — ruling 4).
-    await withTenant(this.db, prepared.organizationId, async (tx) => {
-      const rowId = await this.writeRow(tx, prepared);
+    const rowId = await withTenant(this.db, prepared.organizationId, async (tx) => {
+      const written = await this.writeRow(tx, prepared);
       await this.audit.write(
         {
           actor: jwt,
           action: "master.asset_point.calc_point_set",
           entityType: "asset_point",
-          entityId: rowId,
+          entityId: written,
           organizationId: prepared.organizationId,
           payload: {
             assetId,
@@ -210,8 +217,11 @@ export class CalcPointStandaloneService {
         },
         tx,
       );
+      return written;
     });
 
+    // Ruling 4: after the write's commit, so a refused backfill never undoes it.
+    await this.startBackfill(jwt, prepared.organizationId, body.backfillDays, [{ assetPointId: rowId, label: pointKey }]);
     return this.readOne(assetId, pointKey);
   }
 
@@ -348,11 +358,12 @@ export class CalcPointStandaloneService {
     }
 
     const organizationId = batchOrganization as string;
-    // PR 5 wires `body.backfillDays`; no run is created here yet.
+    const targets: BackfillTarget[] = [];
     await withTenant(this.db, organizationId, async (tx) => {
       const audits: AuditInput[] = [];
       for (const entry of prepared) {
         const rowId = await this.writeRow(tx, entry);
+        targets.push({ assetPointId: rowId, label: entry.assetCode });
         audits.push({
           actor: jwt,
           action: "master.asset_point.calc_point_batch",
@@ -371,6 +382,9 @@ export class CalcPointStandaloneService {
       await this.audit.writeMany(audits, tx);
     });
 
+    // Ruling 4: every point is written; a point whose backfill is running is
+    // named in the 409, and the others' runs are started.
+    await this.startBackfill(jwt, organizationId, body.backfillDays, targets);
     const items: AssetPointCalcConfigDto[] = [];
     for (const entry of prepared) {
       items.push(await this.readOne(entry.assetId, entry.pointKey));
@@ -379,6 +393,20 @@ export class CalcPointStandaloneService {
   }
 
   // -------------------------------------------------------------------------
+
+  /** One run per target when the body asked for a backfill; nothing otherwise. */
+  private async startBackfill(
+    jwt: JwtPayload,
+    organizationId: string,
+    days: number | undefined,
+    targets: readonly BackfillTarget[],
+  ): Promise<void> {
+    if (days === undefined || targets.length === 0) {
+      return;
+    }
+    const requestedBy = await resolveActorId(this.fleetDb, jwt);
+    await this.backfill.start({ organizationId, requestedBy, days, targets });
+  }
 
   /**
    * Rules 1–6 for one asset, in order, stopping at the first refusal. Rule 7
@@ -592,6 +620,7 @@ export class CalcPointStandaloneService {
       .leftJoin(pointKeys, eq(pointKeys.code, assetPoints.pointKey))
       .where(and(eq(assetPoints.assetId, assetId), eq(assetPoints.sourceKind, "computed")))
       .orderBy(asc(assetPoints.pointKey));
+    const runs = await this.backfill.latestForPoints(rows.map(({ row }) => row.id));
     return rows.map(({ row, label, catalogUnit }) => {
       const fields = toFields(row);
       // The engine keys a standalone definition on its `asset_points.id` (ADR 0109 decision 2).
@@ -611,6 +640,7 @@ export class CalcPointStandaloneService {
           runtime === null
             ? null
             : { lastOutcome: runtime.outcome, lastSkipReason: runtime.reason, at: new Date(runtime.atMs).toISOString() },
+        backfill: runs.get(row.id) ?? null,
       };
     });
   }

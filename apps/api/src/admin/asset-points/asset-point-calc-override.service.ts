@@ -25,6 +25,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { resolveActorId } from "../../auth/identity-resolver";
 import { CalcDependencyService, type CalcCycleMember } from "../../calc/calc-dependency.service";
 import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { CalcStatusRegistry } from "../../calc/calc-status.registry";
@@ -33,6 +34,7 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { unknownParameterKeysMessage } from "../asset-templates/asset-templates-param-refs";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { CalcBackfillRequestService } from "./calc-backfill-request.service";
 import {
   mappingRowConflictMessage,
   sourceDataKeyTooLongMessage,
@@ -105,6 +107,9 @@ export class AssetPointCalcOverrideService {
     // exported by `CalcModule`. Read-only here: this service reports what the
     // hosts recorded and never records anything itself.
     private readonly status: CalcStatusRegistry,
+    // `F4.311` PR 5 (owner ruling 1) — `backfillDays` on the override PUT, and
+    // the list's `backfill` field.
+    private readonly backfill: CalcBackfillRequestService,
   ) {}
 
   /**
@@ -149,6 +154,7 @@ export class AssetPointCalcOverrideService {
       .from(assetPoints)
       .where(eq(assetPoints.assetId, assetId));
     const rowByKey = new Map(rows.map((row) => [row.pointKey, row]));
+    const runs = await this.backfill.latestForPoints(rows.map((row) => row.id));
 
     const items: AssetPointCalcConfigDto[] = points.map((point) => {
       const row = rowByKey.get(point.pointKey);
@@ -176,6 +182,7 @@ export class AssetPointCalcOverrideService {
                 lastSkipReason: runtime.reason,
                 at: new Date(runtime.atMs).toISOString(),
               },
+        backfill: row ? (runs.get(row.id) ?? null) : null,
       };
     });
 
@@ -311,7 +318,7 @@ export class AssetPointCalcOverrideService {
       newSourceDataKey = formatted.sourceDataKey;
     }
 
-    await withTenant(this.db, ctx.organizationId, async (tx) => {
+    const savedRowId = await withTenant(this.db, ctx.organizationId, async (tx) => {
       let rowId = ctx.existingRowId;
       if (rowId !== null) {
         await tx.update(assetPoints).set(values).where(eq(assetPoints.id, rowId));
@@ -376,8 +383,19 @@ export class AssetPointCalcOverrideService {
         },
         tx,
       );
+      return rowId;
     });
 
+    // `F4.311` PR 5 (owner rulings 1 and 4): the run is created after the
+    // override committed, so a running backfill refuses only the new one.
+    if (body.backfillDays !== undefined) {
+      await this.backfill.start({
+        organizationId: ctx.organizationId,
+        requestedBy: await resolveActorId(this.fleetDb, jwt),
+        days: body.backfillDays,
+        targets: [{ assetPointId: savedRowId, label: pointKey }],
+      });
+    }
     return this.readOne(jwt, assetId, pointKey);
   }
 

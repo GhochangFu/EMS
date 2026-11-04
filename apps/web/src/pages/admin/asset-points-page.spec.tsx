@@ -485,6 +485,7 @@ function calcConfig(override: Partial<AssetPointCalcConfigDto["override"]> = {})
     },
     minCoverageRatio: null,
     runtime: null,
+    backfill: null,
   });
 }
 
@@ -501,23 +502,42 @@ async function next(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Next" }));
 }
 
-/** Types a formula on the Formula step and walks Schedule → Review. */
-async function formulaToReview(formula: string): Promise<void> {
+/**
+ * Types a formula on the Formula step and walks Schedule → Backfill → Review;
+ * `backfill` picks the Backfill step's days on the way (`F4.311` PR 5).
+ */
+async function formulaToReview(formula: string, backfill?: string): Promise<void> {
   fireEvent.change(screen.getByLabelText(`Formula for ${CALC_KEY}`), { target: { value: formula } });
   await next();
   await screen.findByLabelText(`Runs for ${CALC_KEY}`);
   await next();
+  const days = await screen.findByLabelText(`Backfill for ${CALC_KEY}`);
+  if (backfill !== undefined) {
+    await userEvent.selectOptions(days, backfill);
+  }
+  await next();
   await screen.findByRole("region", { name: OVERRIDE_TITLE });
 }
 
-/** The override wizard's steps are the catalog entry's — Formula, Schedule — then Review. */
+/** The override wizard's steps are the catalog entry's — Formula, Schedule, Backfill — then Review. */
 export async function theOverrideStepsAreFormulaScheduleReview(): Promise<void> {
   stubApi();
   await openOverrideWizard();
   const steps = within(screen.getByRole("list", { name: "Steps" }))
     .getAllByRole("listitem")
     .map((item) => item.textContent);
-  expect(steps).toEqual(["1. Formula", "2. Schedule", "3. Review"]);
+  expect(steps).toEqual(["1. Formula", "2. Schedule", "3. Backfill", "4. Review"]);
+}
+
+/** `F4.311` PR 5 (owner ruling 1): a Backfill choice rides on the PUT as `backfillDays`. */
+export async function theOverrideSendsTheBackfillChoice(): Promise<void> {
+  stubApi();
+  const set = vi.spyOn(api, "setAdminAssetPointCalcOverride").mockResolvedValue(calcConfig() as never);
+  await openOverrideWizard();
+  await formulaToReview("{KW} * 3", "7");
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+  expect((set.mock.calls[0]?.[2] as { backfillDays?: number }).backfillDays).toBe(7);
 }
 
 /** Submit sends the draft as the PUT body: every column, empty as `null` (`draftToBody`). */
@@ -575,6 +595,8 @@ export async function aD1DraftIsNamedAndNotSent(): Promise<void> {
   // elements are rebuilt inside `renderStep`.
   await userEvent.selectOptions(await screen.findByLabelText(`Runs for ${CALC_KEY}`), "streaming");
   await next();
+  await screen.findByLabelText(`Backfill for ${CALC_KEY}`);
+  await next();
   const card = await screen.findByRole("region", { name: OVERRIDE_TITLE });
   await userEvent.click(within(card).getByRole("button", { name: "Submit" }));
   expect(within(card).getByRole("alert").textContent).toMatch(/Runs is "streaming" but the interval is 300s/);
@@ -609,6 +631,66 @@ export async function theOverrideWizardSendsNoCopilotHeader(): Promise<void> {
     maxInputAgeSeconds: null,
   });
   expect(new Headers(put.init.headers).get("X-Copilot-Change")).toBeNull();
+}
+
+/**
+ * `F4.311` PR 5 review — under owner ruling 4 a 409 (a backfill already
+ * running) or a 503 (no worker) from the PUT arrives **after** the override
+ * committed: the sentence says it was saved. The page therefore treats it as
+ * a save — the wizard closes, both lists refetch, and the sentence stays
+ * beside the list — rather than leaving the pre-save card under a message
+ * that contradicts it.
+ */
+const SAVED_BUT_NOT_BACKFILLED =
+  "The calculated point was saved, but a backfill is already running for this point (KWH), so no new backfill " +
+  "was started. Ask again once the running one has finished.";
+
+/** The wizard on Review with a backfill chosen, its PUT set to refuse with `status` after the save. */
+async function reviewRefusedAfterTheSave(status: 409 | 503): Promise<void> {
+  stubApi();
+  vi.spyOn(api, "setAdminAssetPointCalcOverride").mockRejectedValue(
+    new ApiError(JSON.stringify({ statusCode: status, message: SAVED_BUT_NOT_BACKFILLED }), status),
+  );
+  await openOverrideWizard();
+  await formulaToReview("{KW} * 3", "7");
+}
+
+async function submit(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+}
+
+/** A 409 after the save refetches the calculated-points list. */
+export async function aSavedButRefusedBackfillRefetchesTheCalcPoints(): Promise<void> {
+  await reviewRefusedAfterTheSave(409);
+  const before = vi.mocked(api.fetchAdminAssetCalcPoints).mock.calls.length;
+  await submit();
+  await screen.findByText(SAVED_BUT_NOT_BACKFILLED);
+  await waitFor(() => expect(vi.mocked(api.fetchAdminAssetCalcPoints).mock.calls.length).toBeGreaterThan(before));
+}
+
+/** …and the mapping list, which the eager create may have grown. */
+export async function aSavedButRefusedBackfillRefetchesTheAssetPoints(): Promise<void> {
+  await reviewRefusedAfterTheSave(409);
+  const before = vi.mocked(api.fetchAdminAssetPoints).mock.calls.length;
+  await submit();
+  await screen.findByText(SAVED_BUT_NOT_BACKFILLED);
+  await waitFor(() => expect(vi.mocked(api.fetchAdminAssetPoints).mock.calls.length).toBeGreaterThan(before));
+}
+
+/** A 409 after the save closes the wizard and keeps its sentence on the page. */
+export async function aSavedButRefusedBackfillClosesTheWizardBesideItsSentence(): Promise<void> {
+  await reviewRefusedAfterTheSave(409);
+  await submit();
+  await screen.findByText(SAVED_BUT_NOT_BACKFILLED);
+  expect(screen.queryByRole("region", { name: OVERRIDE_TITLE })).toBeNull();
+}
+
+/** A 503 (no worker) is the same: the override was saved, so the wizard closes. */
+export async function aNoWorker503ClosesTheWizard(): Promise<void> {
+  await reviewRefusedAfterTheSave(503);
+  await submit();
+  await screen.findByText(SAVED_BUT_NOT_BACKFILLED);
+  expect(screen.queryByRole("region", { name: OVERRIDE_TITLE })).toBeNull();
 }
 
 /** Clear is not a catalog route and stays beside the wizard: it sends the DELETE for the point. */
@@ -646,6 +728,8 @@ export async function submitSendsNothingWhileAClearIsInFlight(): Promise<void> {
   await openOverrideWizard(calcConfig({ formula: "{KW} * 9" }));
   await next();
   await screen.findByLabelText(`Runs for ${CALC_KEY}`);
+  await next();
+  await screen.findByLabelText(`Backfill for ${CALC_KEY}`);
   await next();
   const card = await screen.findByRole("region", { name: OVERRIDE_TITLE });
   await userEvent.click(screen.getByRole("button", { name: "Clear override" }));

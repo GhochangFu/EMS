@@ -1,3 +1,4 @@
+import { calcBackfillQueue } from "./calc-backfill";
 import { copilotPurgeQueue } from "./copilot-purge";
 import { heartbeatQueue } from "./heartbeat";
 import { onboardingDiscoveryQueue } from "./onboarding-discovery";
@@ -11,7 +12,7 @@ import { rulesSweepQueue } from "./rules-sweep";
  * declares, in one place. `QueueModule` (Unit 4) builds a `QueueClient` from
  * it, and the worker host registers a processor for each entry.
  *
- * Six entries — `heartbeatQueue` (`./heartbeat`), the decision 10
+ * Seven entries — `heartbeatQueue` (`./heartbeat`), the decision 10
  * repeatable job; `rulesSweepQueue` (`./rules-sweep`, `F3.11`, ADR 0064
  * decision 2), the scheduled rule evaluation; `reportsDispatchQueue`
  * (`./reports-dispatch`, `F3.5b`, ADR 0071 decision 8), the scheduled
@@ -20,7 +21,9 @@ import { rulesSweepQueue } from "./rules-sweep";
  * `copilotPurgeQueue` (`./copilot-purge`, `F3.85`, ADR 0099 decision 8),
  * the copilot history's 30-day retention tick; and
  * `onboardingDiscoveryQueue` (`./onboarding-discovery`, `F3.24b`, ADR 0103
- * decision 1), one bounded MQTT listening job per confirmed discovery.
+ * decision 1), one bounded MQTT listening job per confirmed discovery; and
+ * `calcBackfillQueue` (`./calc-backfill`, `F4.311`, ADR 0109 decision 7), one
+ * job per calculated-point backfill run.
  * `F3.12` appends its
  * own here, with its own tenancy, payload schema and retry policy, and
  * nowhere else.
@@ -42,4 +45,5 @@ export const ALL_QUEUES = [
   reportsRenderQueue,
   copilotPurgeQueue,
   onboardingDiscoveryQueue,
+  calcBackfillQueue,
 ] as const satisfies readonly QueueDeclaration[];

@@ -79,6 +79,8 @@ export const KPI_ENTRIES: readonly CatalogEntry[] = [
     steps: [
       { id: "formula", title: "Formula", fields: ["formula", "formulaDialect"] },
       { id: "schedule", title: "Schedule", fields: ["calcTrigger", "calcIntervalSeconds", "maxInputAgeSeconds"] },
+      // F4.311 PR 5 (owner ruling 1): optional days of history to compute.
+      { id: "backfill", title: "Backfill", fields: ["backfillDays"] },
     ],
     summary: ({ params, targetName }) =>
       `Set the calculation override of the point ${quoted(params.pointKey ?? "")} on the asset ${quoted(targetName)}.`,

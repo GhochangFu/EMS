@@ -103,7 +103,8 @@ export class CalcDefinitionsService {
   private async reload({
     countSkips = true,
     stampCache = true,
-  }: { countSkips?: boolean; stampCache?: boolean } = {}): Promise<void> {
+    reportGauge = true,
+  }: { countSkips?: boolean; stampCache?: boolean; reportGauge?: boolean } = {}): Promise<void> {
     const rows = await this.fleetDb
       .select({
         templatePointId: templatePoints.id,
@@ -275,7 +276,9 @@ export class CalcDefinitionsService {
     if (stampCache) {
       this.cacheLoadedAt = Date.now();
     }
-    this.metrics.setCalcActiveFormulas(defs.length);
+    if (reportGauge) {
+      this.metrics.setCalcActiveFormulas(defs.length);
+    }
   }
 
   /**
@@ -333,9 +336,15 @@ export class CalcDefinitionsService {
    * window the next sweep would have spent on a counted one, so an author's
    * save would silence the skips the following sweep should have counted
    * (`F2.9` PR 2 review fix 3). Contents shared, window not.
+   *
+   * **`reportGauge: false`** is the backfill's (`F4.311` PR 5 review), which
+   * runs this read on the **worker**. The worker's registry is scraped too, so
+   * setting `bms_api_calc_active_formulas` there would add a second series,
+   * frozen at the last backfill, beside the API's live one — doubling any sum.
+   * The save-time detector runs on the API and keeps the default.
    */
-  async getAllDefinitionsFresh(): Promise<CalcDefinition[]> {
-    await this.reload({ countSkips: false, stampCache: false });
+  async getAllDefinitionsFresh({ reportGauge = true }: { reportGauge?: boolean } = {}): Promise<CalcDefinition[]> {
+    await this.reload({ countSkips: false, stampCache: false, reportGauge });
     return this.all;
   }
 }

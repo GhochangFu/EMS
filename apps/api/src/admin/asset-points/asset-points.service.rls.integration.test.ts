@@ -7,6 +7,7 @@ import { assetTemplates, assets, createDb, pointKeys, templatePoints } from "@bm
 import type { JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { CalcBackfillRunStore } from "../../calc-backfill/calc-backfill-run-store";
 import { CalcDefinitionsService } from "../../calc/calc-definitions.service";
 import { CalcDependencyService } from "../../calc/calc-dependency.service";
 import { CalcParametersService } from "../../calc/calc-parameters.service";
@@ -17,6 +18,7 @@ import { MetricsService } from "../../observability/metrics.service";
 import { registerFixturePointKeys } from "../../testing/integration-fixtures";
 import { openIntegrationPool, requireIntegrationDb } from "../../testing/integration-db-gate";
 import { asRole } from "../../testing/role-urls";
+import { CalcBackfillRequestService } from "./calc-backfill-request.service";
 import { AssetPointCalcOverrideService } from "./asset-point-calc-override.service";
 import { AssetPointsAdminService } from "./asset-points.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
@@ -290,6 +292,8 @@ describe.skipIf(!connectionString)("E7.1b — asset_points write funnels under r
         // suite: an unrecorded point reads `runtime: null`, so the registry
         // adds no database access and nothing for RLS to contain.
         new CalcStatusRegistry(),
+        // `F4.311` PR 5 — no queue: this suite never asks for a backfill.
+        new CalcBackfillRequestService(tenantDb, { kind: "unconfigured" }, new CalcBackfillRunStore(tenantDb, fleetDb)),
       ),
       ownerPool,
       organizationId,

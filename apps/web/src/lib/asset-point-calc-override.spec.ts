@@ -82,6 +82,7 @@ function config(
     // `F2.9` Task 16 — the panel's own rules do not read it, and the pill's
     // label is asserted on the field directly in `runRuntimePillLabelTests`.
     runtime: null,
+    backfill: null,
   };
 }
 
