@@ -6,6 +6,8 @@ import {
   assertTheBatchResolvesOnceForTheWholeBatch,
   assertTheCandidateReplacesItsOwnStoredNode,
   assertTheDetectorsReadDoesNotCountSkips,
+  assertExtraDeclaredPairsReachMembership,
+  assertNoExtraDeclaredByDefault,
   assertUnresolvedQualifiedCodesNamesOnlyTheNullEntries,
   assertUnresolvedQualifiedCodesReadsNothingWithoutAQualifiedReference,
 } from "./calc-dependency.service.spec";
@@ -38,5 +40,13 @@ describe("F2.9 — CalcDependencyService, the save-time cycle detector", () => {
 
   it("reads nothing when the formula holds no qualified reference (F2.22 item 9)", async () => {
     await assertUnresolvedQualifiedCodesReadsNothingWithoutAQualifiedReference();
+  });
+
+  it("F4.311 — forwards extra-declared pairs to membership, so a self-reading aggregate is a cycle", async () => {
+    await assertExtraDeclaredPairsReachMembership();
+  });
+
+  it("F4.311 — declares nothing extra when the option is absent", async () => {
+    await assertNoExtraDeclaredByDefault();
   });
 });

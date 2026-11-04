@@ -48,6 +48,8 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/admin/asset-templates/asset-templates.controller.ts", full: true },
   { file: "apps/api/src/admin/calc-parameters/calc-parameters.controller.ts", full: true },
   { file: "apps/api/src/admin/asset-points/asset-point-calc-override.controller.ts", full: true },
+  // `F4.311` (ADR 0109 decision 4): the standalone calc-point batch route.
+  { file: "apps/api/src/admin/asset-points/calc-point-batch.controller.ts", full: true },
   // The routes the exclusion list names outside them.
   { file: "apps/api/src/admin/ai-assistant/ai-assistant-settings.controller.ts", full: true },
   { file: "apps/api/src/copilot/copilot-access.controller.ts", full: true },

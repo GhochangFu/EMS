@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  assertADeclaredByLabelNamesTheDeclarer,
+  assertNoInheritanceDropsTheInheritedWording,
   assertADialectDowngradeCannotRelabelAV2Formula,
   assertADialectOnlyUpgradeOfAValidFormulaIsAccepted,
   assertAV2TemplateIsOverridableWithoutRestatingTheDialect,
@@ -13,6 +15,7 @@ import {
   assertFormulaIsValidatedAgainstDeclaredKeys,
   assertOverridingBothColumnsTogetherIsAccepted,
   assertScheduledWithoutIntervalIsRejected,
+  assertTheDefaultDeclaredByIsTheTemplateVersion,
   assertTriggerOnlyOverrideIsRejectedNamingTheInheritedInterval,
   assertV1OverrideStillRefusesADerivedSibling,
   assertV2InheritedDialectIsNamedWhenOnlyTheTriggerIsOverridden,
@@ -93,5 +96,17 @@ describe("F2.6 — asset point calc override contract", () => {
 
   it("still does not parse the stored formula for an override that states neither half", () => {
     assertAnUnrelatedOverrideStillDoesNotParseTheStoredFormula();
+  });
+
+  it("F4.311 — keeps the default unknown-reference sentence byte-identical", () => {
+    assertTheDefaultDeclaredByIsTheTemplateVersion();
+  });
+
+  it("F4.311 — names the declarer a declaredBy label gives", () => {
+    assertADeclaredByLabelNamesTheDeclarer();
+  });
+
+  it("F4.311 — inheritance: false drops the inherited-from-the-template wording", () => {
+    assertNoInheritanceDropsTheInheritedWording();
   });
 });

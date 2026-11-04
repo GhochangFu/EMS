@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 
 import type { BmsDb } from "@bms/db";
 import type { CalcAggregate, CalcScope } from "@bms/shared";
@@ -67,8 +67,19 @@ export class CalcScopeService {
    * Every `members` key is `crossRefKey(node)`; the aggregate function is part
    * of the key but not of the membership, so `sum` and `avg` over one scope
    * share a request and get separate entries.
+   *
+   * `options.extraDeclared` — `F4.311` (ADR 0109): `(assetId, pointKey)` pairs
+   * to treat as declaring their key, OR-ed into the disjunction below. A
+   * standalone point about to be **created** has no template and no row yet,
+   * so without this its own `sum({K} @site)` would not see itself and the
+   * save-time detector would admit a self-cycle the sweep then skips forever.
+   * The pair is still subject to every other predicate (active, location,
+   * scope). Default empty: the statement is then exactly what it was.
    */
-  async resolveMembership(defs: readonly MembershipDefinition[]): Promise<Membership> {
+  async resolveMembership(
+    defs: readonly MembershipDefinition[],
+    options: MembershipOptions = {},
+  ): Promise<Membership> {
     const qualified = new Map<AssetId, Map<AssetCode, AssetId | null>>();
     const members = new Map<AssetId, Map<CrossRefKey, readonly MemberPair[]>>();
 
@@ -97,7 +108,7 @@ export class CalcScopeService {
       }
     }
 
-    const membersByRequest = await this.readScopeMembers([...scopeRequests.values()]);
+    const membersByRequest = await this.readScopeMembers([...scopeRequests.values()], options.extraDeclared ?? []);
     const assetIdByCodeRequest = await this.readQualifiedCodes([...codeRequests.values()]);
 
     // Pass 2 — fan the answers out per owner, keyed by the owner's own
@@ -145,7 +156,10 @@ export class CalcScopeService {
    * uniqueness doing its work: a second `IT_LOAD` at another location is a
    * different group.
    */
-  private async readScopeMembers(requests: readonly ScopeRequest[]): Promise<Map<string, readonly MemberPair[]>> {
+  private async readScopeMembers(
+    requests: readonly ScopeRequest[],
+    extraDeclared: readonly MemberPair[],
+  ): Promise<Map<string, readonly MemberPair[]>> {
     const out = new Map<string, MemberPair[]>();
     for (const request of requests) {
       out.set(scopeRequestKey(request), []);
@@ -188,7 +202,7 @@ export class CalcScopeService {
                       SELECT 1 FROM bms.asset_points ap
                        WHERE ap.asset_id = a.id
                          AND ap.point_key = r.point_key
-                         AND ap.active)
+                         AND ap.active)${extraDeclaredPredicate(extraDeclared)}
                  )
            ORDER BY r.location_id, r.point_key, r.scope_kind, r.scope_code, a.id`,
     );
@@ -260,7 +274,32 @@ export class CalcScopeService {
  */
 export type MembershipDefinition = Pick<GraphDefinition, "assetId" | "crossRefs">;
 
-type MemberPair = { readonly assetId: AssetId; readonly pointKey: string };
+export type MemberPair = { readonly assetId: AssetId; readonly pointKey: string };
+
+/** See `resolveMembership`. */
+export type MembershipOptions = { readonly extraDeclared?: readonly MemberPair[] };
+
+/**
+ * A third disjunct for statement (1)'s "declares the key" predicate — the
+ * caller's extra-declared pairs — or nothing at all when there are none, so
+ * every existing caller sends the statement it always sent. Outside the class
+ * on purpose: `tests/adr-0055-calc-v2-invariants.test.ts` part (d) reads the
+ * first `sql` literal after `readScopeMembers(` as the statement.
+ */
+function extraDeclaredPredicate(pairs: readonly MemberPair[]): SQL {
+  if (pairs.length === 0) {
+    return sql.empty();
+  }
+  return sql`
+                OR EXISTS (
+                      SELECT 1
+                        FROM unnest(
+                          ${sql.param(pairs.map((pair) => pair.assetId))}::uuid[],
+                          ${sql.param(pairs.map((pair) => pair.pointKey))}::varchar[]
+                        ) AS x(asset_id, point_key)
+                       WHERE x.asset_id = a.id
+                         AND x.point_key = r.point_key)`;
+}
 
 type ScopeRequest = {
   readonly locationId: string;

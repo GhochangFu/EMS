@@ -245,6 +245,24 @@ export async function assertSiteIncludesAMappedHandCreatedAsset(pool: pg.Pool, f
   );
 }
 
+/**
+ * `F4.311` PR 2 review — an extra-declared pair is a member. V declares the key
+ * by neither template nor active row (the exact-set claim below excludes it),
+ * so only the option can put it in its own `@site` sum: the shape of a
+ * standalone point about to be created.
+ */
+export async function assertAnExtraDeclaredPairIsAMember(pool: pg.Pool, fixture: ScopeFixture): Promise<void> {
+  const svc = new CalcScopeService(createDb(pool));
+  const [ref] = crossRefsOf(`sum({${FIXTURE_POINT_KEY}} @site)`);
+  const membership = await svc.resolveMembership([{ assetId: fixture.v, crossRefs: [ref] }], {
+    extraDeclared: [{ assetId: fixture.v, pointKey: FIXTURE_POINT_KEY }],
+  });
+  assert(
+    memberIds(membership, fixture.v, ref).includes(fixture.v),
+    "@site on V with V's own pair extra-declared must include V — a standalone create's self-sum is a visible cycle",
+  );
+}
+
 /** Exactly the declarers at the owner's location, and nothing else. */
 export async function assertSiteIsExactlyTheDeclarersAtTheOwnersLocation(
   pool: pg.Pool,

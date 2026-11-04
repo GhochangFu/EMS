@@ -8,6 +8,8 @@ import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { AssetPointCalcOverrideController } from "./asset-points/asset-point-calc-override.controller";
 import { AssetPointCalcOverrideService } from "./asset-points/asset-point-calc-override.service";
+import { CalcPointBatchController } from "./asset-points/calc-point-batch.controller";
+import { CalcPointStandaloneService } from "./asset-points/calc-point-standalone.service";
 import { AssetPointsAdminController } from "./asset-points/asset-points.controller";
 import { AssetPointsAdminService } from "./asset-points/asset-points.service";
 import { MappingSheetService } from "./asset-points/mapping-sheet.service";
@@ -108,6 +110,8 @@ import { UsersService } from "./users/users.service";
     AssetsAdminController,
     AssetPointsAdminController,
     AssetPointCalcOverrideController,
+    // F4.311 / ADR 0109 decision 4 — POST admin/calc-points/batch.
+    CalcPointBatchController,
     PointKeysAdminController,
     // E4.1a / ADR 0070 decision 2 — the calc parameter store and its vocabulary read.
     CalcParametersAdminController,
@@ -151,6 +155,8 @@ import { UsersService } from "./users/users.service";
     AssetPointsAdminService,
     MappingSheetService,
     AssetPointCalcOverrideService,
+    // F4.311 / ADR 0109 decision 3 — the one write-rules service for a standalone calc point.
+    CalcPointStandaloneService,
     PointKeysAdminService,
     CalcParametersAdminService,
     AssetRolesAdminService,

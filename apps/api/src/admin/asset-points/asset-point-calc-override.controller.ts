@@ -17,8 +17,9 @@ import type { JwtPayload } from "@bms/shared";
 import { CurrentUser } from "../../auth/current-user.decorator";
 import { JwtAuthGuard } from "../../auth/jwt-auth.guard";
 import { idParamSchema } from "../admin.schema";
-import { assetPointCalcOverrideBodySchema, calcPointKeyParamSchema } from "@bms/shared";
+import { assetPointCalcOverrideBodySchema, calcPointKeyParamSchema, calcPointSetBodySchema } from "@bms/shared";
 import { AssetPointCalcOverrideService } from "./asset-point-calc-override.service";
+import { CalcPointStandaloneService } from "./calc-point-standalone.service";
 
 /**
  * `F2.6` — per-asset calc overrides (ADR 0039 decision 8: "two surfaces, each
@@ -28,22 +29,36 @@ import { AssetPointCalcOverrideService } from "./asset-point-calc-override.servi
  * A separate controller from `AssetPointsAdminController` for the same reason
  * the service is separate: that one is about telemetry mapping, this is about
  * calc configuration. They share a table, not a subject.
+ *
+ * **`F4.311` (ADR 0109 decision 4) — every route dispatches on the asset's
+ * kind.** An asset pinned to a template version keeps today's override
+ * meaning, unchanged; an asset with no template serves its standalone
+ * calculated points through `CalcPointStandaloneService`. Each kind parses its
+ * own body: the override's nullable "inherit" columns, or the standalone
+ * point's required ones.
  */
 @Controller("admin/assets")
 @UseGuards(JwtAuthGuard)
 export class AssetPointCalcOverrideController {
-  constructor(private readonly service: AssetPointCalcOverrideService) {}
+  constructor(
+    private readonly service: AssetPointCalcOverrideService,
+    private readonly standalone: CalcPointStandaloneService,
+  ) {}
 
-  /** Every derived point of this asset: template value, override, effective. */
+  /** Every calc point of this asset: template/override/effective, or the standalone points. */
   @Get(":assetId/calc-points")
   async list(@Param("assetId") assetId: string, @CurrentUser() user: JwtPayload) {
-    return this.service.listCalcPoints(user, idParamSchema.parse(assetId));
+    const id = idParamSchema.parse(assetId);
+    const { kind } = await this.standalone.kindOf(user, id);
+    return kind === "standalone" ? this.standalone.list(user, id) : this.service.listCalcPoints(user, id);
   }
 
   /**
    * `PUT`, not `PATCH`: the body states the whole override, and `null` per
    * column means "inherit". A partial update would need a second spelling of
    * "leave this alone" that the server could not tell from "clear this one".
+   * On a template-less asset it creates or replaces the standalone point, and
+   * every calc field is required (ADR 0109 decision 1).
    *
    * `200` rather than `201` even when it creates the `asset_points` row — the
    * subject is the override, which is being set either way, and a client that
@@ -59,12 +74,12 @@ export class AssetPointCalcOverrideController {
     @CurrentUser() user: JwtPayload,
   ) {
     try {
-      return await this.service.setOverride(
-        user,
-        idParamSchema.parse(assetId),
-        calcPointKeyParamSchema.parse(pointKey),
-        assetPointCalcOverrideBodySchema.parse(body),
-      );
+      const id = idParamSchema.parse(assetId);
+      const key = calcPointKeyParamSchema.parse(pointKey);
+      const { kind } = await this.standalone.kindOf(user, id);
+      return kind === "standalone"
+        ? await this.standalone.set(user, id, key, calcPointSetBodySchema.parse(body))
+        : await this.service.setOverride(user, id, key, assetPointCalcOverrideBodySchema.parse(body));
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
@@ -73,7 +88,11 @@ export class AssetPointCalcOverrideController {
     }
   }
 
-  /** Clears all five columns back to "inherit". Never deletes the row. */
+  /**
+   * Template asset: clears all five columns back to "inherit", never deleting
+   * the row. Template-less asset: removes the standalone point (its stored
+   * telemetry stays).
+   */
   @Delete(":assetId/calc-points/:pointKey")
   @HttpCode(HttpStatus.OK)
   async clear(
@@ -82,11 +101,12 @@ export class AssetPointCalcOverrideController {
     @CurrentUser() user: JwtPayload,
   ) {
     try {
-      return await this.service.clearOverride(
-        user,
-        idParamSchema.parse(assetId),
-        calcPointKeyParamSchema.parse(pointKey),
-      );
+      const id = idParamSchema.parse(assetId);
+      const key = calcPointKeyParamSchema.parse(pointKey);
+      const { kind } = await this.standalone.kindOf(user, id);
+      return kind === "standalone"
+        ? await this.standalone.remove(user, id, key)
+        : await this.service.clearOverride(user, id, key);
     } catch (err) {
       // Matches `set` above. Without it a malformed path parameter throws a
       // ZodError past the filter and surfaces as a 500, which would make this
