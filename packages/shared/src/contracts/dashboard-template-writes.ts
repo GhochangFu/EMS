@@ -59,6 +59,17 @@ export const TEMPLATE_MIMIC_TAB_MESSAGE =
   "a template mimic's tabKey must name one of the template's tabs that has a domain";
 
 /**
+ * `F4.306` / ADR 0108 Amendment 7 (owner ruling 2026-11-04, "Refuse in templates") — a trend
+ * strip's selection names one site's segments and points, so a template's strip holds none: it
+ * draws each copy's own defaults. The issue path names the widget's index and the field.
+ */
+export const TEMPLATE_TREND_STRIP_SELECTION_MESSAGE =
+  "a dashboard template's trend strip holds no segments, points or colors; a selection is site-specific";
+
+/** The three `F4.306` selection fields a template's trend strip may not carry. */
+const TREND_STRIP_SELECTION_KEYS = ["segments", "points", "colors"] as const;
+
+/**
  * The template's content, with the layout-arm refusal. The shared
  * `sectionTemplateContentSchema` takes both mimic arms because its widget spec
  * is the dashboard's too, so the refusal is added HERE, on the field both
@@ -88,6 +99,17 @@ const templateContentWriteSchema = sectionTemplateContentSchema
       ) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...path, "tabKey"], message: TEMPLATE_MIMIC_TAB_MESSAGE });
       }
+      if (widget.widgetType === "trend_strip") {
+        for (const key of TREND_STRIP_SELECTION_KEYS) {
+          if (widget.config[key] !== undefined) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: [...path, key],
+              message: TEMPLATE_TREND_STRIP_SELECTION_MESSAGE,
+            });
+          }
+        }
+      }
       if (widget.widgetType === "module_summary_card" && !tabKeys.has(widget.config.targetTabKey)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -109,7 +131,8 @@ const templateContentWriteSchema = sectionTemplateContentSchema
       "a layout is one organization's row, and a template carries no layout " +
       "reference in this stage. A module_summary_card's config.targetTabKey must name one of " +
       "content.tabs, so an asset-group template holds none. A mimic's config.tabKey must name " +
-      "one of content.tabs whose domain is not null.",
+      "one of content.tabs whose domain is not null. A trend_strip's config holds no " +
+      "segments, points or colors (ADR 0108 Amendment 7): a selection is site-specific.",
   );
 
 /**

@@ -11,9 +11,12 @@ import {
   TEMPLATE_MIMIC_LAYOUT_MESSAGE,
   TEMPLATE_MIMIC_TAB_MESSAGE,
   TEMPLATE_TARGET_BODY_MESSAGE,
+  TEMPLATE_TREND_STRIP_SELECTION_MESSAGE,
   templateTargetBodyMessage,
   updateDashboardTemplateBodySchema,
 } from "./dashboard-template-writes";
+
+import { SMOC_STANDARD_SITE_TEMPLATE } from "../site-templates/smoc-standard";
 
 /**
  * `F3.61` Task 2 — the `PATCH` request boundary reaches the shared contract's
@@ -503,5 +506,72 @@ export function acceptsAMimicTabKeyNamingADomainTab(): void {
       content: { widgets: [], tabs: [overviewWithMimicNaming("sld"), siteTab()] },
     }),
     "a site create body whose Overview mimic names the sld tab",
+  );
+}
+
+// ---------------------------------------------------------------- F4.306
+
+function trendStrip(config: Record<string, unknown>): unknown {
+  return widget({ key: "trend", widgetType: "trend_strip", gridW: 12, gridH: 4, config });
+}
+
+/** One field of the `F4.306` selection, with a value the widget contract accepts. */
+const TREND_STRIP_SELECTION_FIELDS: Record<"segments" | "points" | "colors", unknown> = {
+  segments: ["hvac"],
+  points: ["hvac:kw"],
+  colors: { "hvac:kw": "series-2" },
+};
+
+/**
+ * `F4.306` / ADR 0108 Amendment 7 (owner ruling 2026-11-04, "Refuse in templates") — a
+ * selection names one site's segments and points, so a template's trend strip holds none. Each
+ * field is refused at its own path, top-level on `PATCH` and in a tab on `POST`.
+ */
+export function rejectsATemplateTrendStripCarryingASelection(): void {
+  for (const [field, value] of Object.entries(TREND_STRIP_SELECTION_FIELDS)) {
+    expectRejectsAt(
+      updateDashboardTemplateBodySchema,
+      { content: { widgets: [trendStrip({ defaultRange: "24h", [field]: value })] } },
+      ["content", "widgets", 0, "config", field],
+      new RegExp(TEMPLATE_TREND_STRIP_SELECTION_MESSAGE),
+      `a PATCH body whose top-level trend strip carries ${field}`,
+    );
+    expectRejectsAt(
+      createDashboardTemplateBodySchema,
+      createBody({
+        target: "site",
+        content: { widgets: [], tabs: [siteTab({ widgets: [trendStrip({ defaultRange: "7d", [field]: value })] })] },
+      }),
+      ["content", "tabs", 0, "widgets", 0, "config", field],
+      new RegExp(TEMPLATE_TREND_STRIP_SELECTION_MESSAGE),
+      `a site POST body whose tab trend strip carries ${field}`,
+    );
+  }
+}
+
+/** The positive control: a template trend strip with only `tabKey` and `defaultRange` parses. */
+export function acceptsATemplateTrendStripWithoutASelection(): void {
+  expectAccepts(
+    updateDashboardTemplateBodySchema,
+    { content: { widgets: [trendStrip({ defaultRange: "24h" })] } },
+    "a PATCH body whose top-level trend strip has only defaultRange",
+  );
+  expectAccepts(
+    createDashboardTemplateBodySchema,
+    createBody({
+      target: "site",
+      content: { widgets: [], tabs: [siteTab({ widgets: [trendStrip({ tabKey: "sld", defaultRange: "30d" })] })] },
+    }),
+    "a site POST body whose tab trend strip has only tabKey and defaultRange",
+  );
+}
+
+/** The stock site template, whose every tab holds a trend strip with no selection, still
+ * parses through the create body's content. */
+export function theStockSiteTemplateStillParsesAsACreateBody(): void {
+  expectAccepts(
+    createDashboardTemplateBodySchema,
+    createBody({ target: "site", content: SMOC_STANDARD_SITE_TEMPLATE.content }),
+    "SMOC_STANDARD_SITE_TEMPLATE's content as a site create body",
   );
 }
