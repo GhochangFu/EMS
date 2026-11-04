@@ -264,6 +264,8 @@ export function CalcPointPanel({
           <button
             type="button"
             disabled={saving}
+            // Opens the delete wizard; it never pends itself, so it keeps its name while Save does.
+            data-pending-bystander="saving"
             onClick={onDelete}
             className="surface-button border border-critical-line px-3 py-1.5 text-xs text-critical-ink disabled:opacity-60"
           >
