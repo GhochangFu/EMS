@@ -25,7 +25,7 @@ import type {
 } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
-import { CalcDependencyService } from "../../calc/calc-dependency.service";
+import { CalcDependencyService, type CalcCycleMember } from "../../calc/calc-dependency.service";
 import { CalcParametersService } from "../../calc/calc-parameters.service";
 import { CalcStatusRegistry } from "../../calc/calc-status.registry";
 import { computedSourceDataKey } from "../../calc/computed-source-data-key";
@@ -33,6 +33,11 @@ import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
 import { unknownParameterKeysMessage } from "../asset-templates/asset-templates-param-refs";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import {
+  mappingRowConflictMessage,
+  sourceDataKeyTooLongMessage,
+  unresolvedQualifiedCodesMessage,
+} from "./calc-point-messages";
 
 /**
  * `F2.6` — per-asset calc overrides (ADR 0039 decisions 6, 7 and 8).
@@ -278,13 +283,7 @@ export class AssetPointCalcOverrideService {
           crossRefs: parsed.crossRefs,
         });
         if (cycle.length > 0) {
-          throw new BadRequestException(
-            "This formula would form a dependency cycle: " +
-              `${cycle.map((member) => `${member.assetCode}/${member.pointKey}`).join(" → ")}. ` +
-              "Every point on a cycle waits on another, so none of them ever computes. Break " +
-              "the loop — change this formula, or the aggregate scope that draws the other " +
-              "points in.",
-          );
+          throw new BadRequestException(dependencyCycleMessage(cycle));
         }
       }
     }
@@ -307,10 +306,7 @@ export class AssetPointCalcOverrideService {
     if (ctx.existingRowId === null) {
       const formatted = computedSourceDataKey(pointKey);
       if (!formatted.ok) {
-        throw new BadRequestException(
-          `Point key "${pointKey}" is too long: its synthesised source_data_key would be ` +
-            `${formatted.length} characters, over the column limit.`,
-        );
+        throw new BadRequestException(sourceDataKeyTooLongMessage(pointKey, formatted.length));
       }
       newSourceDataKey = formatted.sourceDataKey;
     }
@@ -480,10 +476,12 @@ export class AssetPointCalcOverrideService {
       throw new ForbiddenException("Asset is outside your access scope");
     }
     if (asset.templateId === null) {
-      throw new BadRequestException(
-        "This asset was created by hand and is pinned to no template version, so it has no " +
-          "calc configuration to override.",
-      );
+      // `F4.311` (ADR 0109 decision 4): a template-less asset's calc points are
+      // standalone, and `AssetPointCalcOverrideController` dispatches them to
+      // `CalcPointStandaloneService` on `kindOf` before this service is called.
+      // The 400 that used to stand here is unreachable from the routes; this is
+      // the invariant, not a response.
+      throw new Error(`override: asset ${assetId} has no template; its calc points are standalone`);
     }
 
     const points = await this.fleetDb
@@ -511,12 +509,7 @@ export class AssetPointCalcOverrideService {
       .limit(1);
 
     if (existing && existing.sourceKind !== "computed") {
-      throw new ConflictException(
-        `Point "${pointKey}" on this asset already has an asset_points row with ` +
-          `source_kind "${existing.sourceKind}", which belongs to a telemetry mapping. ` +
-          "Attaching calc configuration to it would make one point both ingest-fed and " +
-          "formula-fed. Remove the mapping first, or use a different point key.",
-      );
+      throw new ConflictException(mappingRowConflictMessage(pointKey, existing.sourceKind));
     }
 
     return {
@@ -597,7 +590,7 @@ const CALC_COLUMNS = [
   "maxInputAgeSeconds",
 ] as const;
 
-const EMPTY_FIELDS: AssetPointCalcOverrideFields = {
+export const EMPTY_FIELDS: AssetPointCalcOverrideFields = {
   formula: null,
   formulaDialect: null,
   calcTrigger: null,
@@ -606,7 +599,7 @@ const EMPTY_FIELDS: AssetPointCalcOverrideFields = {
 };
 
 /** Reads the five calc columns off either table — they are named identically. */
-function toFields(row: {
+export function toFields(row: {
   formula: string | null;
   formulaDialect: string | null;
   calcTrigger: string | null;
@@ -650,44 +643,23 @@ function mergeFields(
 }
 
 /** Which columns this request actually sets — the audit payload's `columns`. */
-function changedColumns(values: AssetPointCalcOverrideFields): string[] {
+export function changedColumns(values: AssetPointCalcOverrideFields): string[] {
   return CALC_COLUMNS.filter((column) => values[column] !== null);
 }
 
 /**
- * The longest asset code the item-9 refusal echoes. `bms.assets.code` is
- * `varchar(64)`, so a longer string cannot be a code — but it can be lifted
- * out of a formula, whose only bound is `MAX_FORMULA_LENGTH`, and the parser
- * accepts any text before the `.` as a code. Same reasoning and same shape as
- * `MAX_ECHOED_POINT_KEY_LENGTH` in `asset-templates-cross-refs.ts`: a value
- * the DTO already bounds is echoed in full, and only a formula-lifted one is
- * cut. The count is already bounded by `MAX_FORMULA_CROSS_REFS` at the parse.
+ * `F2.9` Task 12 — the candidate would lie on a dependency cycle. Codes and
+ * point keys only, never a formula. Exported for `CalcPointStandaloneService`
+ * (`F4.311`), so both write paths send this sentence; it stays in this file
+ * because `tests/f2.22-editor-mirrors-server-wording.test.ts` pair (f) finds
+ * it here.
  */
-const MAX_ECHOED_ASSET_CODE_LENGTH = 64;
-
-/**
- * The `F2.22` item-9 refusal. Names the codes, states decision 12's rule, and
- * offers the two ways out — and never says whether a code exists at another
- * location or in another organization (plan design decision 8; the sibling
- * integration case holds this by comparing the sentence for a code that
- * exists at another location, one in another organization, and one that
- * exists nowhere).
- *
- * `formulaInherited` is `body.formula === null`: the check runs on the merged
- * formula, and the clause is the one `validateMergedCalcOverride`'s
- * `inherited(...)` builds for a `null` half, word for word, so the two
- * refusals read as one voice (plan correction 46).
- */
-function unresolvedQualifiedCodesMessage(codes: readonly string[], formulaInherited: boolean): string {
-  const listed = codes.map((code) =>
-    code.length > MAX_ECHOED_ASSET_CODE_LENGTH
-      ? `${code.slice(0, MAX_ECHOED_ASSET_CODE_LENGTH)}… (truncated)`
-      : code,
-  );
-  const inherited = formulaInherited ? " (inherited from the template)" : "";
+export function dependencyCycleMessage(cycle: readonly CalcCycleMember[]): string {
   return (
-    `This formula${inherited} names asset code(s) that resolve to no active asset at this asset's ` +
-    `location: ${listed.join(", ")}. A qualified reference reaches only assets at the same ` +
-    "location as this asset (ADR 0055 decision 12). Check the code, or use an aggregate scope."
+    "This formula would form a dependency cycle: " +
+    `${cycle.map((member) => `${member.assetCode}/${member.pointKey}`).join(" → ")}. ` +
+    "Every point on a cycle waits on another, so none of them ever computes. Break " +
+    "the loop — change this formula, or the aggregate scope that draws the other " +
+    "points in."
   );
 }

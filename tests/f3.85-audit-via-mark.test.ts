@@ -52,6 +52,9 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/asset-templates/asset-templates-instantiate.service.ts",
   "apps/api/src/admin/calc-parameters/calc-parameters.service.ts",
   "apps/api/src/admin/asset-points/asset-point-calc-override.service.ts",
+  // `F4.311` (ADR 0109 decision 3): `calcOverride.set`'s handler dispatches a template-less
+  // asset here; PR 3's three `calcPoint.*` entries reach it too.
+  "apps/api/src/admin/asset-points/calc-point-standalone.service.ts",
   "apps/api/src/control-room/site-layout.service.ts",
   // `F3.86` PR 2 (plan §4.7): every service a release-2 entry's handler reaches.
   "apps/api/src/admin/locations/locations.service.ts",

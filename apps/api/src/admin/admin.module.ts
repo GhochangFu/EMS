@@ -8,6 +8,7 @@ import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { AssetPointCalcOverrideController } from "./asset-points/asset-point-calc-override.controller";
 import { AssetPointCalcOverrideService } from "./asset-points/asset-point-calc-override.service";
+import { CalcPointStandaloneService } from "./asset-points/calc-point-standalone.service";
 import { AssetPointsAdminController } from "./asset-points/asset-points.controller";
 import { AssetPointsAdminService } from "./asset-points/asset-points.service";
 import { MappingSheetService } from "./asset-points/mapping-sheet.service";
@@ -151,6 +152,8 @@ import { UsersService } from "./users/users.service";
     AssetPointsAdminService,
     MappingSheetService,
     AssetPointCalcOverrideService,
+    // F4.311 / ADR 0109 decision 3 — the one write-rules service for a standalone calc point.
+    CalcPointStandaloneService,
     PointKeysAdminService,
     CalcParametersAdminService,
     AssetRolesAdminService,
