@@ -3,7 +3,12 @@ import { expect } from "vitest";
 
 import type { JwtPayload, SiteTrendPointsDto, SiteTrendStripQuery } from "@bms/shared";
 
-import { SiteTrendStripService, trendStripExportRowCount } from "./trend-strip.service";
+import {
+  SiteTrendStripService,
+  TREND_STRIP_POINTS_NEED_SEGMENTS,
+  stripSelectionFor,
+  trendStripExportRowCount,
+} from "./trend-strip.service";
 import { stripWindow } from "./trend-strip.pure";
 
 /**
@@ -344,4 +349,139 @@ export async function theStripCsvOpensWithTheZoneRow(): Promise<void> {
   const f = fake();
   const csv = await f.service.exportCsv(USER, SITE, WHOLE_SITE);
   expect(csv.split("\n")[0]).toBe("zone,Asia/Kolkata");
+}
+
+const A1 = { assetId: ASSET_1, assetCode: "AHU-1", assetName: "Asset AHU-1", unit: "°C" };
+const A2 = { assetId: ASSET_2, assetCode: "AHU-2", assetName: "Asset AHU-2", unit: "°C" };
+
+/** Frozen from `frameFor` at `ca58ca39` (before `F4.306` U4): a query without a selection is today's frame. */
+const GOLDEN_FRAME = {
+  locationId: SITE,
+  assetGroupId: null,
+  range: "24h",
+  window: {
+    range: "24h",
+    from: "2026-10-31T10:30:00.000Z",
+    to: "2026-11-01T10:30:00.000Z",
+    level: "5m",
+    bucketSeconds: 1800,
+    buckets: 48,
+  },
+  timeZone: "Asia/Kolkata",
+  plan: {
+    segments: [
+      {
+        domain: "hvac",
+        label: "HVAC",
+        source: "catalog",
+        points: [
+          { code: "supply_air_temp_c", name: "Name supply_air_temp_c", unit: "°C", assets: [A1, A2], moreAssets: 0 },
+          { code: "return_air_temp_c", name: "Name return_air_temp_c", unit: "°C", assets: [A1, A2], moreAssets: 0 },
+          { code: "kw", name: "Name kw", unit: "°C", assets: [A1, A2], moreAssets: 0 },
+        ],
+      },
+    ],
+    assetsPerPoint: 6,
+    pointsPerSegment: 3,
+    trimmed: false,
+  },
+  pairs: [
+    { assetId: ASSET_1, pointKey: "supply_air_temp_c" },
+    { assetId: ASSET_2, pointKey: "supply_air_temp_c" },
+    { assetId: ASSET_1, pointKey: "return_air_temp_c" },
+    { assetId: ASSET_2, pointKey: "return_air_temp_c" },
+    { assetId: ASSET_1, pointKey: "kw" },
+    { assetId: ASSET_2, pointKey: "kw" },
+  ],
+};
+
+/** No `segments` and no `points`: `JSON.stringify` of the frame is the frozen golden, byte for byte. */
+export async function noSelectionFrameIsTheGolden(): Promise<void> {
+  const f = fake();
+  const frame = await f.service.frameFor(USER, SITE, WHOLE_SITE, NOW);
+  expect(JSON.stringify(frame)).toBe(JSON.stringify(GOLDEN_FRAME));
+}
+
+const POINTS_ONLY: SiteTrendStripQuery = { range: "24h", points: "hvac:chw_supply_temp_c" };
+const CHOSEN: SiteTrendStripQuery = { range: "24h", segments: "hvac", points: "hvac:chw_supply_temp_c" };
+
+/** `points` without `segments` is a 400 with the exported sentence, no code echoed, and no telemetry statement. */
+export async function pointsWithoutSegmentsIsA400BeforeTelemetry(): Promise<void> {
+  const f = fake();
+  const err = await refusal(f.service.forSite(USER, SITE, POINTS_ONLY, NOW));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect(err.message).toBe(TREND_STRIP_POINTS_NEED_SEGMENTS);
+  expect(err.message).not.toMatch(/hvac|chw_supply_temp_c/);
+  expect(telemetry(f.statements)).toEqual([]);
+}
+
+/** The adjacent positive: the same `points` beside `segments` reads telemetry once, over the chosen point only. */
+export async function pointsWithSegmentsReadsTheChosenPoint(): Promise<void> {
+  const f = fake();
+  const out = await f.service.forSite(USER, SITE, CHOSEN, NOW);
+  expect(telemetry(f.statements)).toHaveLength(1);
+  expect(out.segments.map((s) => s.points.map((p) => p.code))).toEqual([["chw_supply_temp_c"]]);
+  expect(out.pointsPerSegment).toBe(1);
+}
+
+/** The export route refuses `points` without `segments` the same way, through `frameFor`. */
+export async function theExportRefusesPointsWithoutSegments(): Promise<void> {
+  const f = fake();
+  const err = await refusal(f.service.exportRows(USER, SITE, POINTS_ONLY, NOW));
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect(err.message).toBe(TREND_STRIP_POINTS_NEED_SEGMENTS);
+  expect(telemetry(f.statements)).toEqual([]);
+}
+
+/** A scoped caller over a selection binds no foreign pair; the admin's positive case binds both site assets. */
+export async function aSelectionKeepsTheScope(): Promise<void> {
+  const admin = fake({ readable: null });
+  await admin.service.forSite(ADMIN, SITE, CHOSEN, NOW);
+  expect(boundAssetIds(admin.statements)).toEqual([ASSET_1, ASSET_2]);
+
+  const scoped = fake({ readable: [ASSET_1, ASSET_ELSEWHERE] });
+  await scoped.service.forSite(USER, SITE, CHOSEN, NOW);
+  expect(boundAssetIds(scoped.statements)).toEqual([ASSET_1]);
+  const [read] = telemetry(scoped.statements);
+  expect(read?.params[1]).toEqual(["chw_supply_temp_c"]);
+}
+
+/** The CSV export over a selection carries only the chosen point (a 4th code, past the overview's cut). */
+export async function theCsvOverASelectionCarriesOnlyTheChosenPoint(): Promise<void> {
+  const f = fake();
+  const csv = await f.service.exportCsv(USER, SITE, CHOSEN);
+  const data = csv
+    .split("\n")
+    .slice(HEADER_ROWS)
+    .filter((line) => line.length > 0);
+  expect(data.length, "precondition: the export holds data rows").toBe(2 * 48);
+  expect(new Set(data.map((line) => line.split(",")[1]))).toEqual(new Set(["chw_supply_temp_c"]));
+}
+
+/** A hand-typed repeat is not a 400: a duplicate segment and a duplicate entry count once. */
+export function aDuplicateEntryCountsOnce(): void {
+  const selection = stripSelectionFor({
+    segments: "hvac,power,hvac",
+    points: "hvac:kw,power:kw,hvac:kw,hvac:supply_air_temp_c",
+  });
+  expect([...(selection?.segments ?? [])]).toEqual(["hvac", "power"]);
+  expect(selection?.points.get("hvac")).toEqual(["kw", "supply_air_temp_c"]);
+  expect(selection?.points.get("power")).toEqual(["kw"]);
+}
+
+/** No `segments` is no selection (today's rule); `segments` alone is a selection with no entries. */
+export function noSegmentsIsNoSelection(): void {
+  expect(stripSelectionFor({})).toBeUndefined();
+  const selection = stripSelectionFor({ segments: "hvac" });
+  expect([...(selection?.segments ?? [])]).toEqual(["hvac"]);
+  expect(selection?.points.size).toBe(0);
+}
+
+/** Through the service, a duplicate entry binds each pair once. */
+export async function aDuplicateEntryBindsEachPairOnce(): Promise<void> {
+  const f = fake();
+  await f.service.forSite(USER, SITE, { range: "24h", segments: "hvac,hvac", points: "hvac:kw,hvac:kw" }, NOW);
+  const [read] = telemetry(f.statements);
+  expect(read?.params[1]).toEqual(["kw", "kw"]);
+  expect(read?.params[0]).toEqual([ASSET_1, ASSET_2]);
 }
