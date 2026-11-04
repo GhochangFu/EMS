@@ -161,6 +161,9 @@ const MODULES: readonly string[] = [
   "apps/web/src/lib/schedule-from-view.ts",
   // F4.306 (ADR 0108 Amendment 7) PR 1 U5: the trend strip selection's write-path check.
   "apps/api/src/dashboard-builder/trend-strip-selection.check.ts",
+  // F4.306 PR 1 U7: the placement rule and the append route's trend arm.
+  "packages/shared/src/trend-strip-placement.ts",
+  "apps/api/src/dashboard-builder/dashboard-widget-append-strips.ts",
 ];
 
 /**

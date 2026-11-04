@@ -7,7 +7,6 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
-  NotImplementedException,
   Param,
   Patch,
   Post,
@@ -195,9 +194,7 @@ export class DashboardBuilderController {
     // the trend arm requires it. Parsing the arm, not the union, keeps the arm's `flatten()` field
     // errors in the 400; a union failure flattens to one form error that names no field.
     if (namesWidgetType(body)) {
-      parse(appendTrendStripWidgetsBodySchema, body);
-      // U7 (the same PR) builds the trend arm in `DashboardWidgetAppendService`.
-      throw new NotImplementedException("the trend_strip append arm is not built yet");
+      return this.widgetAppend.appendStrips(user, dashboardId, parse(appendTrendStripWidgetsBodySchema, body));
     }
     return this.widgetAppend.append(user, dashboardId, parse(appendChartWidgetBodySchema, body));
   }

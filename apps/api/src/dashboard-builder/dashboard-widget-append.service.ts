@@ -16,13 +16,21 @@ import {
   TAB_KEY_UNKNOWN_MESSAGE,
   widgetCapMessage,
 } from "@bms/shared";
-import type { AppendChartWidgetBody, AppendChartWidgetResponse, JwtPayload } from "@bms/shared";
+import type {
+  AppendChartWidgetBody,
+  AppendChartWidgetResponse,
+  AppendTrendStripWidgetsBody,
+  AppendTrendStripWidgetsResponse,
+  JwtPayload,
+} from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
+import { TrendPointsService } from "../trend-points/trend-points.service";
 import { assertBoundPointsInOrganization, resolveBoundPoints } from "./dashboard-point-scope";
+import { appendTrendStrips, NO_TABS_MESSAGE } from "./dashboard-widget-append-strips";
 import { readDashboardTabs } from "./dashboard-tabs-write";
 import { DashboardsService } from "./dashboards.service";
 import { mapDashboardWidget } from "./dashboards.pure";
@@ -35,9 +43,6 @@ const DEFAULT_CHART_SIZE = { w: 6, h: 4 } as const;
 
 /** The one 403 sentence: it names no asset, so a refusal does not confirm what exists. */
 const ASSET_SCOPE_MESSAGE = "Asset is outside your access scope";
-
-/** The 400 for a `tabKey` on a dashboard that has none. */
-const NO_TABS_MESSAGE = "This dashboard has no tabs";
 
 /**
  * `F4.303` U14 / ADR 0108 Amendment 6 item 5 — `POST /dashboards/:id/widgets/append`: one
@@ -54,6 +59,9 @@ const NO_TABS_MESSAGE = "This dashboard has no tabs";
  * `assertBoundPointsInOrganization` over the resolved ids; (4) the tab's count against
  * `MAX_DASHBOARD_WIDGETS` (409) and its lowest edge; (5) the insert; (6) the audit row, ids and
  * counts only.
+ *
+ * `F4.306` U7 (ADR 0108 Amendment 7) — `appendStrips` is the route's `trend_strip` arm, built in
+ * `dashboard-widget-append-strips.ts`; `append` above is the chart arm, unchanged.
  */
 @Injectable()
 export class DashboardWidgetAppendService {
@@ -62,7 +70,24 @@ export class DashboardWidgetAppendService {
     private readonly dashboards: DashboardsService,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    private readonly trendPoints: TrendPointsService,
   ) {}
+
+  /** The `trend_strip` arm: one widget per strip, each replacing its tab's strip or at its foot. */
+  appendStrips(jwt: JwtPayload, id: string, body: AppendTrendStripWidgetsBody): Promise<AppendTrendStripWidgetsResponse> {
+    return appendTrendStrips(
+      {
+        tenantDb: this.tenantDb,
+        dashboards: this.dashboards,
+        accessControl: this.accessControl,
+        audit: this.audit,
+        trendPoints: this.trendPoints,
+      },
+      jwt,
+      id,
+      body,
+    );
+  }
 
   async append(jwt: JwtPayload, id: string, body: AppendChartWidgetBody): Promise<AppendChartWidgetResponse> {
     const existing = await this.dashboards.fetchRowForWrite(id);

@@ -89,7 +89,7 @@ describe("F3.1b — DashboardBuilderController (stubbed service)", () => {
   it("refuses widgetType beside a chart's points with 400 (F4.306)", async () => {
     await appendWidgetRefusesWidgetTypeWithPoints();
   });
-  it("passes a valid trend body through the parse, never to the chart service (F4.306)", async () => {
+  it("sends a valid trend body to the trend arm, never to the chart service (F4.306)", async () => {
     await appendWidgetSendsAValidTrendBodyPastTheParse();
   });
 });

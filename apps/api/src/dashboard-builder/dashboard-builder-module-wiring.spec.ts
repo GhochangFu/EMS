@@ -161,7 +161,8 @@ export function assertDashboardWidgetAppendServiceDepsResolveWithinTheModule(): 
   const missingTokens = injectedTokens(DashboardWidgetAppendService).filter((token) => !byIdentity.has(token));
   expect(missingTokens.map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
   const classes = classTypedParams("dashboard-widget-append.service.ts", "DashboardWidgetAppendService");
-  expect(classes).toEqual(["DashboardsService", "AccessControlService", "MasterDataAuditService"]);
+  // `F4.306` U7 — the trend arm's selection check reads `TrendPointsService`, which the module provides (U5).
+  expect(classes).toEqual(["DashboardsService", "AccessControlService", "MasterDataAuditService", "TrendPointsService"]);
   expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
 }
 

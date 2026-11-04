@@ -5,7 +5,6 @@ import {
   ForbiddenException,
   HttpStatus,
   NotFoundException,
-  NotImplementedException,
   RequestMethod,
 } from "@nestjs/common";
 import { HTTP_CODE_METADATA, METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants";
@@ -505,17 +504,30 @@ export async function putWidgetsRefusesANonInstantIfMatchWith400(): Promise<void
 // is the id (400), the write role (403), the body (400), then the service; one claim per function.
 // ---------------------------------------------------------------------------
 
-type AppendRecorder = { seen: unknown[][]; append: (...args: unknown[]) => Promise<unknown> };
+type AppendRecorder = {
+  seen: unknown[][];
+  append: (...args: unknown[]) => Promise<unknown>;
+  /** `F4.306` U7 — the trend arm's calls. */
+  stripsSeen: unknown[][];
+  appendStrips: (...args: unknown[]) => Promise<unknown>;
+};
 
 const APPEND_ANSWER = { widget: { id: "w1" }, updatedAt: new Date(0).toISOString() };
+const STRIPS_ANSWER = { widgets: [{ id: "w2" }], updatedAt: new Date(0).toISOString() };
 
 function appendRecorder(): AppendRecorder {
   const seen: unknown[][] = [];
+  const stripsSeen: unknown[][] = [];
   return {
     seen,
     append: (...args: unknown[]) => {
       seen.push(args);
       return Promise.resolve(APPEND_ANSWER);
+    },
+    stripsSeen,
+    appendStrips: (...args: unknown[]) => {
+      stripsSeen.push(args);
+      return Promise.resolve(STRIPS_ANSWER);
     },
   };
 }
@@ -609,8 +621,7 @@ export function appendWidgetIsDeclaredAfterPutWidgets(): void {
 // ---------------------------------------------------------------------------
 // `F4.306` U6 (ADR 0108 Amendment 7) — the body is `appendWidgetBodySchema`'s two arms. The
 // controller picks the arm by `widgetType`, so a refusal keeps the arm's `flatten()` field
-// errors; until U7 builds the service's trend arm, a valid trend body is a 501 that never
-// reaches the chart service.
+// errors; since U7 a valid trend body reaches the service's trend arm, never the chart arm.
 // ---------------------------------------------------------------------------
 
 const validTrendBody = { widgetType: "trend_strip", strips: [{ tabKey: "ops", config: { defaultRange: "24h" } }] };
@@ -635,19 +646,28 @@ export async function appendWidgetRefusesNineStripsWithAFieldError(): Promise<vo
     response.fieldErrors !== undefined && "strips" in response.fieldErrors,
     `the 400 must be the trend arm's flatten() naming strips; got ${JSON.stringify(response)}`,
   );
-  assert(append.seen.length === 0, "a refused trend body must never reach the service");
+  assert(append.seen.length === 0 && append.stripsSeen.length === 0, "a refused trend body must never reach the service");
 }
 
 /** `widgetType` beside a chart's `points` parses as neither arm: a 400, and no service runs. */
 export async function appendWidgetRefusesWidgetTypeWithPoints(): Promise<void> {
   const { err, append } = await appendCaught({ ...validAppendBody, widgetType: "trend_strip" });
   assert(err instanceof BadRequestException, `widgetType plus points must be a 400; got ${String(err)}`);
-  assert(append.seen.length === 0, "a body neither arm admits must never reach the service");
+  assert(append.seen.length === 0 && append.stripsSeen.length === 0, "a body neither arm admits must never reach the service");
 }
 
-/** A valid trend body passes the body parse and is a 501 (U7 owns its service), never the chart service. */
+/** A valid trend body reaches the trend arm with the user, the id and the parsed body, never the chart arm. */
 export async function appendWidgetSendsAValidTrendBodyPastTheParse(): Promise<void> {
-  const { err, append } = await appendCaught(validTrendBody);
-  assert(err instanceof NotImplementedException, `a valid trend body must pass the parse; got ${String(err)}`);
+  const { controller, append } = controllerWith({});
+  const answer = await controller.appendWidget(ADMIN, DASHBOARD_ID, validTrendBody);
+  assert(answer === STRIPS_ANSWER, "the controller must return the trend arm's answer unchanged");
+  assert(
+    append.stripsSeen.length === 1 && append.stripsSeen[0]?.[0] === ADMIN && append.stripsSeen[0]?.[1] === DASHBOARD_ID,
+    `the trend arm must receive the user and the id; got ${JSON.stringify(append.stripsSeen)}`,
+  );
+  assert(
+    JSON.stringify(append.stripsSeen[0]?.[2]) === JSON.stringify(validTrendBody),
+    `the trend arm must receive the parsed body; got ${JSON.stringify(append.stripsSeen[0]?.[2])}`,
+  );
   assert(append.seen.length === 0, "a trend body must never reach the chart arm's service");
 }

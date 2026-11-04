@@ -10,11 +10,25 @@ import { AccessControlService } from "../auth/access-control.service";
 import { openIntegrationPool, requireIntegrationDb, resolveIntegrationRoleUrl } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import { jwtFor, primeSeededSubjects, SEEDED } from "../testing/seeded-subjects";
+import { TrendPointsService } from "../trend-points/trend-points.service";
 import { DashboardsService } from "./dashboards.service";
 import { DashboardWidgetAppendService } from "./dashboard-widget-append.service";
 import {
+  aConfigTabKeyNamingNoTabIs400,
   aDashboardTheCallerCannotManageIs404,
   aFullTabIs409,
+  aFullTabRollsBackEveryStrip,
+  aFullTabStillReplacesItsStrip,
+  anOffListSelectionIs400WithTheStampUnchanged,
+  aRepeatedTabKeyIs400,
+  aSelectionOnTheListIsAppended,
+  aStripIsInsertedAtTheFootOfItsTab,
+  aTabsStripIsReplacedInPlace,
+  theStripAnswerParsesInBodyOrder,
+  theStripArmKeepsTheTabRules,
+  theStripArmMovesUpdatedAtAndAStaleSaveIs412,
+  theStripAuditRowCarriesIdsAndCountsOnly,
+  theTrendArm404PrecedesTheSelection400,
   anEmptyCanvasTakesTheWidgetAtTheTopWithTheDefaultSize,
   anUnknownTabKeyIs400,
   anUnreadableAssetIs403WithoutAnId,
@@ -81,7 +95,11 @@ describe.skipIf(!connectionString)("F4.303 — DashboardWidgetAppendService.appe
     const accessControl = new AccessControlService(createDb(authPool), fleetDb);
     const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
     const dashboards = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
-    const append = new DashboardWidgetAppendService(createDb(tenantPool), dashboards, accessControl, audit);
+    const trendPoints = new TrendPointsService(fleetDb, createDb(tenantPool), accessControl, audit);
+    const append = new DashboardWidgetAppendService(createDb(tenantPool), dashboards, accessControl, audit, trendPoints);
+    // `F4.306` U7 — a segment of ESKOM with an effective trend point, for the selection cases.
+    const listed = (await trendPoints.effective(eskomOrgId, {})).find((segment) => segment.points.length > 0);
+    if (!listed?.points[0]) throw new Error("F4.306: no segment of ESKOM has an effective trend point — run pnpm db:seed");
     const admin = jwtFor(SEEDED.globalAdmin, "admin");
     const locationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
 
@@ -120,6 +138,8 @@ describe.skipIf(!connectionString)("F4.303 — DashboardWidgetAppendService.appe
       readable: { assetId: readable.asset_id, pointKeys: [first.key, second.key], pointId: first.id },
       unreadable: { assetId: unreadable.asset_id, pointKey: unreadable.points[0].key },
       scopedLocationId: readable.location_id,
+      segment: listed.domain,
+      pointCode: listed.points[0].code,
       newDashboard: async (options = {}) => {
         n += 1;
         const created = await dashboards.create(admin, {
@@ -212,5 +232,57 @@ describe.skipIf(!connectionString)("F4.303 — DashboardWidgetAppendService.appe
 
   it("W14: the answer parses with appendChartWidgetResponseSchema and carries the pairs in order", async () => {
     await theAnswerParsesAndCarriesThePairs(ctx);
+  }, 60_000);
+
+  it("F4.306 T1: the trend arm's 404 precedes the selection's 400, and updated_at does not move", async () => {
+    await theTrendArm404PrecedesTheSelection400(ctx);
+  }, 60_000);
+
+  it("F4.306 T1: an off-list selection is a 400 naming indexes only, with updated_at unchanged", async () => {
+    await anOffListSelectionIs400WithTheStampUnchanged(ctx);
+  }, 60_000);
+
+  it("F4.306 T1 control: a selection on the list is appended and stored as sent", async () => {
+    await aSelectionOnTheListIsAppended(ctx);
+  }, 60_000);
+
+  it("F4.306 T2: a repeated tabKey is a 400 naming the strip index", async () => {
+    await aRepeatedTabKeyIs400(ctx);
+  }, 60_000);
+
+  it("F4.306 T3: the trend arm keeps the chart arm's tab rules", async () => {
+    await theStripArmKeepsTheTabRules(ctx);
+  }, 60_000);
+
+  it("F4.306 T3: a config.tabKey that names no tab is a 400", async () => {
+    await aConfigTabKeyNamingNoTabIs400(ctx);
+  }, 60_000);
+
+  it("F4.306 T4: a tab's strip is replaced in place, every other row byte-identical", async () => {
+    await aTabsStripIsReplacedInPlace(ctx);
+  }, 60_000);
+
+  it("F4.306 T5: a strip is inserted at gridX 0, the foot of its tab, 12 by 4", async () => {
+    await aStripIsInsertedAtTheFootOfItsTab(ctx);
+  }, 60_000);
+
+  it("F4.306 T6: a full tab is a 409 that rolls back every strip", async () => {
+    await aFullTabRollsBackEveryStrip(ctx);
+  }, 60_000);
+
+  it("F4.306 T6 control: a full tab still replaces its strip", async () => {
+    await aFullTabStillReplacesItsStrip(ctx);
+  }, 60_000);
+
+  it("F4.306 T7: the trend arm moves updated_at and a stale If-Match save is a 412", async () => {
+    await theStripArmMovesUpdatedAtAndAStaleSaveIs412(ctx);
+  }, 60_000);
+
+  it("F4.306 T8: one audit row with ids and counts only", async () => {
+    await theStripAuditRowCarriesIdsAndCountsOnly(ctx);
+  }, 60_000);
+
+  it("F4.306 T9: the answer parses and lists the widgets in body order", async () => {
+    await theStripAnswerParsesInBodyOrder(ctx);
   }, 60_000);
 });
