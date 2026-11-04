@@ -3,6 +3,7 @@ import {
   assetPointCalcConfigDtoSchema,
   assetPointCalcConfigListResponseSchema,
   assetPointsListResponseSchema,
+  calcPointBatchResponseSchema,
   mappingSheetCommitDtoSchema,
   mappingSheetPreviewDtoSchema,
 } from "@bms/shared/contracts";
@@ -11,6 +12,9 @@ import type {
   AssetPointCalcConfigDto,
   AssetPointCalcConfigListResponse,
   AssetPointCalcOverrideFields,
+  CalcPointBatchBody,
+  CalcPointBatchResponse,
+  CalcPointSetBody,
   MappingSheetCommitDto,
   MappingSheetPreviewDto,
   MasterDataActiveFilter,
@@ -166,6 +170,58 @@ export async function clearAdminAssetPointCalcOverride(
     assetPointCalcConfigDtoSchema,
     { method: "DELETE" },
   );
+}
+
+/**
+ * `F4.311` PR 6a (ADR 0109 decisions 1 and 4) — creates or replaces a
+ * calculated point on an asset with **no** template: the same `PUT` as the
+ * override, which the API dispatches on the asset's kind, with every calc
+ * field required (`calcPointSetBodySchema`).
+ */
+export async function setAdminAssetCalcPoint(
+  assetId: string,
+  pointKey: string,
+  body: CalcPointSetBody,
+): Promise<AssetPointCalcConfigDto> {
+  return adminFetch(
+    `/admin/assets/${assetId}/calc-points/${encodeURIComponent(pointKey)}`,
+    assetPointCalcConfigDtoSchema,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/**
+ * Removes a standalone calculated point: it stops computing; its stored
+ * readings stay. A `409` (the point is on a dashboard widget) is an `ApiError`
+ * carrying the server's sentence.
+ */
+export async function deleteAdminAssetCalcPoint(
+  assetId: string,
+  pointKey: string,
+): Promise<AssetPointCalcConfigDto> {
+  return adminFetch(
+    `/admin/assets/${assetId}/calc-points/${encodeURIComponent(pointKey)}`,
+    assetPointCalcConfigDtoSchema,
+    { method: "DELETE" },
+  );
+}
+
+/**
+ * `POST /admin/calc-points/batch` — one key, formula and timing on up to
+ * `CALC_POINT_BATCH_MAX_ASSETS` template-less assets, all or nothing. The
+ * `400`'s `refused[]` reaches the caller inside the `ApiError` message
+ * (`batchRefusals` in `lib/calc-point-draft.ts` reads it).
+ */
+export async function createAdminCalcPointBatch(body: CalcPointBatchBody): Promise<CalcPointBatchResponse> {
+  return adminFetch("/admin/calc-points/batch", calcPointBatchResponseSchema, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 /**
