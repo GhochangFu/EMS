@@ -1,6 +1,13 @@
 import { describe, it } from "vitest";
 
 import {
+  assertAChosenPointSubsetKeepsOnlyThosePoints,
+  assertAChosenSegmentWithoutEntriesKeepsTheFirstThree,
+  assertAnUnknownEntryIsDroppedWithoutAThrow,
+  assertASegmentNotChosenIsSkipped,
+  assertFiveChosenPointsOnTheOverviewAreAllKept,
+  assertNoSelectionKeepsTheGoldenPlan,
+  assertThirtyChosenPointsOfSixAssetsFitUntrimmed,
   assertACodeRegisteredOnAnotherDomainYieldsNothing,
   assertAGroupTabKeepsTheFullList,
   assertAnAbsurdPlanStillFitsWithEverySegment,
@@ -43,6 +50,16 @@ describe("F4.301 — pairsFor", () => {
   it("a segment with no pair is absent", assertASegmentWithNoPairIsAbsent);
   it("the input segment order is kept", assertTheInputSegmentOrderIsKept);
   it("the point carries the catalog unit and the series the registration unit", assertTheSeriesCarriesTheRegistrationUnit);
+});
+
+describe("F4.306 — pairsFor under a selection", () => {
+  it("no selection keeps the frozen golden plan", assertNoSelectionKeepsTheGoldenPlan);
+  it("a segment not chosen is skipped", assertASegmentNotChosenIsSkipped);
+  it("5 chosen points on a whole-site strip are all kept, in list order; pointsPerSegment 5", assertFiveChosenPointsOnTheOverviewAreAllKept);
+  it("a chosen segment with entries keeps only those points; pointsPerSegment is the widest kept list", assertAChosenPointSubsetKeepsOnlyThosePoints);
+  it("a chosen segment without entries keeps the first 3 on the overview", assertAChosenSegmentWithoutEntriesKeepsTheFirstThree);
+  it("an unknown entry is dropped without a throw", assertAnUnknownEntryIsDroppedWithoutAThrow);
+  it("30 chosen points x 6 assets fit 180 untrimmed", assertThirtyChosenPointsOfSixAssetsFitUntrimmed);
 });
 
 describe("F4.301 — fitSeries", () => {

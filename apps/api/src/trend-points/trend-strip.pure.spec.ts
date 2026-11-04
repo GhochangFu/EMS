@@ -1,7 +1,8 @@
-import type { TrendPointSegmentDto } from "@bms/shared";
+import { type TrendPointSegmentDto, TREND_STRIP_MAX_SERIES, TREND_STRIP_WIDGET_MAX_POINTS } from "@bms/shared";
 import { expect } from "vitest";
 
 import {
+  type PairsOptions,
   type StripAsset,
   type StripPlan,
   type StripRegistration,
@@ -274,4 +275,142 @@ export function assertGroupSeriesGapFillsEveryPair(): void {
   expect(assets[0]?.buckets[0]?.t).toBe(w.from.toISOString());
   expect(assets[0]?.buckets[3]?.v).toBe(2.5);
   expect(assets[1]?.buckets.every((b) => b.v === null)).toBe(true);
+}
+
+// ---------------------------------------------------------------------------
+// pairsFor — the F4.306 selection (ADR 0108 Amendment 7, OQ4)
+// ---------------------------------------------------------------------------
+
+/** A selection from plain arrays: `segments` codes and `points` as `[domain, codes]`. */
+function selection(
+  segments: readonly string[],
+  points: readonly (readonly [string, readonly string[]])[] = [],
+): NonNullable<PairsOptions["selection"]> {
+  return { segments: new Set(segments), points: new Map(points) };
+}
+
+/** Two segments on a whole-site strip: `x` lists five codes, `y` lists two. */
+function twoSegmentSite(): [StripAsset[], TrendPointSegmentDto[], StripRegistration[]] {
+  const xCodes = ["c1", "c2", "c3", "c4", "c5"];
+  return [
+    [asset("X2", "x"), asset("X1", "x"), asset("Y1", "y")],
+    [segment("x", xCodes), segment("y", ["t1", "t2"])],
+    [...xCodes.map((code) => reg("X1", code)), reg("X2", "c2"), reg("Y1", "t1"), reg("Y1", "t2", null)],
+  ];
+}
+
+export function assertNoSelectionKeepsTheGoldenPlan(): void {
+  const [assets, segments, registrations] = twoSegmentSite();
+  const result = pairsFor(assets, segments, registrations, { overview: true });
+  const x = (code: string, more: readonly string[] = []) => ({
+    code,
+    name: `${code} name`,
+    unit: `${code}-u`,
+    assets: [
+      { assetId: "id-X1", assetCode: "X1", assetName: "X1 name", unit: `${code}-u` },
+      ...more.map((c) => ({ assetId: `id-${c}`, assetCode: c, assetName: `${c} name`, unit: `${code}-u` })),
+    ],
+    moreAssets: 0,
+  });
+  expect(result).toStrictEqual({
+    segments: [
+      { domain: "x", label: "x label", source: "catalog", points: [x("c1"), x("c2", ["X2"]), x("c3")] },
+      {
+        domain: "y",
+        label: "y label",
+        source: "catalog",
+        points: [
+          {
+            code: "t1",
+            name: "t1 name",
+            unit: "t1-u",
+            assets: [{ assetId: "id-Y1", assetCode: "Y1", assetName: "Y1 name", unit: "t1-u" }],
+            moreAssets: 0,
+          },
+          {
+            code: "t2",
+            name: "t2 name",
+            unit: "t2-u",
+            assets: [{ assetId: "id-Y1", assetCode: "Y1", assetName: "Y1 name", unit: null }],
+            moreAssets: 0,
+          },
+        ],
+      },
+    ],
+    assetsPerPoint: 6,
+    pointsPerSegment: 3,
+    trimmed: false,
+  });
+}
+
+export function assertASegmentNotChosenIsSkipped(): void {
+  const [assets, segments, registrations] = twoSegmentSite();
+  const result = pairsFor(assets, segments, registrations, { overview: false, selection: selection(["y"]) });
+  expect(result.segments.map((s) => s.domain)).toEqual(["y"]);
+  expect(result.segments[0]?.points.map((p) => p.code)).toEqual(["t1", "t2"]);
+}
+
+export function assertFiveChosenPointsOnTheOverviewAreAllKept(): void {
+  const [assets, segments, registrations] = twoSegmentSite();
+  // Given out of list order: the kept points follow the list, not the selection.
+  const result = pairsFor(assets, segments, registrations, {
+    overview: true,
+    selection: selection(["x"], [["x", ["c5", "c1", "c4", "c2", "c3"]]]),
+  });
+  expect(result.segments.map((s) => s.domain)).toEqual(["x"]);
+  expect(result.segments[0]?.points.map((p) => p.code)).toEqual(["c1", "c2", "c3", "c4", "c5"]);
+  expect(result.pointsPerSegment).toBe(5);
+}
+
+export function assertAChosenPointSubsetKeepsOnlyThosePoints(): void {
+  const [assets, segments, registrations] = twoSegmentSite();
+  const result = pairsFor(assets, segments, registrations, {
+    overview: false,
+    selection: selection(["x", "y"], [["x", ["c4"]]]),
+  });
+  expect(result.segments.map((s) => [s.domain, s.points.map((p) => p.code)])).toEqual([
+    ["x", ["c4"]],
+    ["y", ["t1", "t2"]],
+  ]);
+  expect(result.pointsPerSegment).toBe(2);
+}
+
+export function assertAChosenSegmentWithoutEntriesKeepsTheFirstThree(): void {
+  const [assets, segments, registrations] = twoSegmentSite();
+  const result = pairsFor(assets, segments, registrations, {
+    overview: true,
+    selection: selection(["x", "y"], [["y", ["t2"]]]),
+  });
+  expect(result.segments.map((s) => [s.domain, s.points.map((p) => p.code)])).toEqual([
+    ["x", ["c1", "c2", "c3"]],
+    ["y", ["t2"]],
+  ]);
+  expect(result.pointsPerSegment).toBe(3);
+}
+
+export function assertAnUnknownEntryIsDroppedWithoutAThrow(): void {
+  const [assets, segments, registrations] = twoSegmentSite();
+  const result = pairsFor(assets, segments, registrations, {
+    overview: false,
+    selection: selection(["x", "gone"], [["x", ["c2", "nope"]], ["gone", ["c1"]]]),
+  });
+  expect(result.segments.map((s) => [s.domain, s.points.map((p) => p.code)])).toEqual([["x", ["c2"]]]);
+  expect(result.pointsPerSegment).toBe(1);
+}
+
+export function assertThirtyChosenPointsOfSixAssetsFitUntrimmed(): void {
+  const codes = Array.from({ length: TREND_STRIP_WIDGET_MAX_POINTS }, (_, i) => `p${String(i).padStart(2, "0")}`);
+  const assetCodes = ["A1", "A2", "A3", "A4", "A5", "A6"];
+  const result = pairsFor(
+    assetCodes.map((code) => asset(code, "x")),
+    [segment("x", codes)],
+    assetCodes.flatMap((a) => codes.map((code) => reg(a, code))),
+    { overview: true, selection: selection(["x"], [["x", codes]]) },
+  );
+  expect(seriesCount(result)).toBe(TREND_STRIP_MAX_SERIES);
+  expect(result.pointsPerSegment).toBe(TREND_STRIP_WIDGET_MAX_POINTS);
+  const fitted = fitSeries(result, TREND_STRIP_MAX_SERIES);
+  expect(fitted.trimmed).toBe(false);
+  expect(seriesCount(fitted)).toBe(TREND_STRIP_MAX_SERIES);
+  expect(fitted.segments[0]?.points).toHaveLength(TREND_STRIP_WIDGET_MAX_POINTS);
 }
