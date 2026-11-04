@@ -62,16 +62,29 @@ function row(overrides: Partial<TemplatePointCalcRow>): TemplatePointCalcRow {
 }
 
 /**
- * `reload()` awaits `select().from().innerJoin().leftJoin().where()`; the code
- * lookup goes through `execute`. Two disjoint surfaces, so one stub serves both
- * without either having to guess which call it is answering.
+ * `reload()` awaits `select().from().innerJoin().leftJoin().where()` for the
+ * template read, then `select().from().innerJoin().where()` for the standalone
+ * read (ADR 0109 decision 2); the code lookup goes through `execute`. The
+ * template read is the only chain with a `leftJoin`, so the stub answers it
+ * with `rows` and the standalone read with none — these cases are about
+ * template points, and answering both reads with the same rows would load
+ * every definition twice.
  */
 function stubDb(rows: TemplatePointCalcRow[]): BmsDb {
   const chain: Record<string, unknown> = {};
-  for (const method of ["select", "from", "innerJoin", "leftJoin"]) {
+  let leftJoined = false;
+  chain.select = () => {
+    leftJoined = false;
+    return chain;
+  };
+  for (const method of ["from", "innerJoin"]) {
     chain[method] = () => chain;
   }
-  chain.where = () => Promise.resolve(rows);
+  chain.leftJoin = () => {
+    leftJoined = true;
+    return chain;
+  };
+  chain.where = () => Promise.resolve(leftJoined ? rows : []);
   chain.execute = () => Promise.resolve({ rows: [{ id: ASSET, code: ASSET_CODE }] });
   return chain as unknown as BmsDb;
 }
