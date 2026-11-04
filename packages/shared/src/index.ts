@@ -665,6 +665,7 @@ export type * from "./types/trend-points";
 export type * from "./types/trend-points-report";
 export type * from "./types/dashboard-widget-append";
 export type * from "./types/trend-strip";
+export type * from "./types/calc-points";
 
 // ---------------------------------------------------------------------------
 // AI onboarding wizard (ADR 0011, ADR 0022)

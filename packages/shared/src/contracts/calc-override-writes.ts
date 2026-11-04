@@ -109,12 +109,17 @@ export type AssetPointCalcOverrideBody = z.infer<typeof assetPointCalcOverrideBo
  * @param template the pinned version's values for the same five columns
  * @param declared the point keys that version declares — `measured` is what a
  *   `v1` formula may reference, `all` what a `v2` one may
+ * @param options.declaredBy who declares the `declared` keys, for the
+ *   unknown-reference sentence — `F4.311` (ADR 0109): a standalone point on an
+ *   asset with no template passes `"this asset"`. Defaults to the override
+ *   path's own wording, byte-identical to before the option existed.
  * @returns the problems, most specific first; empty means the merge is usable
  */
 export function validateMergedCalcOverride(
   override: AssetPointCalcOverrideFields,
   template: AssetPointCalcOverrideFields,
   declared: { readonly measured: readonly string[]; readonly all: readonly string[] },
+  { declaredBy = "this asset's template version" }: { readonly declaredBy?: string } = {},
 ): string[] {
   const merged: AssetPointCalcOverrideFields = {
     formula: override.formula ?? template.formula,
@@ -181,7 +186,7 @@ export function validateMergedCalcOverride(
         `The formula${inherited("formula")} is not valid ` +
           `${dialect}${inherited("formulaDialect")}: ` +
           `${first ? formatCalcError(first) : "unparseable"}. It may reference only the ` +
-          `point keys this asset's template version declares: ${knownRefs.join(", ")}.`,
+          `point keys ${declaredBy} declares: ${knownRefs.join(", ")}.`,
       );
     }
   }

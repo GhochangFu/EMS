@@ -628,3 +628,35 @@ export function assertV3OverrideIsAdmittedScheduledOnly(): void {
   );
   assert(unknown.join(" ").includes("bms-calc-v3"), `the runnable-dialect list names v3, got: ${unknown.join(" ")}`);
 }
+
+/**
+ * `F4.311` PR 2 (task 2.3) — with no label, the unknown-reference sentence is
+ * byte-identical to the one this endpoint has always sent.
+ */
+export function assertTheDefaultDeclaredByIsTheTemplateVersion(): void {
+  const [problem] = validateMergedCalcOverride(
+    { ...NOTHING, formula: "{NOT_DECLARED} + 1", formulaDialect: "bms-calc-v1" },
+    SCHEDULED_TEMPLATE,
+    KEYS,
+  );
+  assert(
+    problem ===
+      "The formula is not valid bms-calc-v1: reference to an unknown point at character 0. " +
+        "It may reference only the point keys this asset's template version declares: KW, VOLTS, KWH.",
+    `the default sentence must not move, got: ${String(problem)}`,
+  );
+}
+
+/** `F4.311` PR 2 (task 2.3) — a standalone point names the asset, not a template version. */
+export function assertADeclaredByLabelNamesTheDeclarer(): void {
+  const [problem] = validateMergedCalcOverride(
+    { ...SCHEDULED_TEMPLATE, formula: "{NOT_DECLARED} + 1" },
+    NOTHING,
+    KEYS,
+    { declaredBy: "this asset" },
+  );
+  assert(
+    problem?.endsWith(". It may reference only the point keys this asset declares: KW, VOLTS, KWH.") === true,
+    `the label must reach the sentence, got: ${String(problem)}`,
+  );
+}
