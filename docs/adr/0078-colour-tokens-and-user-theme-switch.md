@@ -553,7 +553,8 @@ return whole literal strings for exactly this reason.
 ## Amendment 4 — eight series roles for the trend strip (`F4.306`, 2026-11-04)
 
 **Status: Drafted 2026-11-04; the owner answered its two questions in chat the
-same day, recorded as ADR 0108 Amendment 7 Q9 and Q10.** Code citations are to
+same day, recorded as ADR 0108 Amendment 7 Q9 and Q10. The sixteen values and
+the gates landed with `F4.306` PR 2 (unit U8).** Code citations are to
 `main` at `4619310a`. A line marked *(owner)* is a ruling; the others are
 drafter calls the `F4.306` plan may refine.
 
