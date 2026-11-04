@@ -448,7 +448,7 @@ export async function addPicksAnRtuOfTheAssetsLocation(): Promise<void> {
 const OVERRIDE_ASSET = "f3850000-0000-4000-8000-0000000000a1";
 const CALC_KEY = "KWH";
 const FORMULA_SENTENCE = 'Unknown point key "NOPE" in the formula for KWH';
-const OVERRIDE_TITLE = "Override an asset's calculated point";
+const OVERRIDE_TITLE = "Override a calculated point on an asset built from a template";
 
 /** A `v1` scheduled template point `KWH` (every 300 s), with `override` stored on this asset. */
 function calcConfig(override: Partial<AssetPointCalcConfigDto["override"]> = {}): AssetPointCalcConfigDto {

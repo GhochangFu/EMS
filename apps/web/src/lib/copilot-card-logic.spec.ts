@@ -42,6 +42,12 @@ export function everyEntryHasInvalidations(): void {
   expect(invalidationKeysFor("location.controlRoomView.set")).toEqual([["admin", "locations"], ["control-room", "site-view"]]);
   expect(invalidationKeysFor("location.siteLayout.make")).toContainEqual(["control-room", "site-view"]);
   expect(invalidationKeysFor("location.siteLayout.make")).toContainEqual(["dashboards"]);
+  // `F4.311` PR 3 (ADR 0099 Amendment 11): a standalone point is a calc point and an asset point; the batch's
+  // form is the assets list's bulk action, so it refreshes the list too.
+  for (const id of ["calcPoint.set", "calcPoint.delete"]) {
+    expect(invalidationKeysFor(id), id).toEqual([["admin", "asset-calc-points"], ["admin", "asset-points"]]);
+  }
+  expect(invalidationKeysFor("calcPoint.createBatch")).toEqual([["admin", "asset-calc-points"], ["admin", "asset-points"], ["admin", "assets"]]);
   // `F3.86` PR 3a: the pages' own keys (`locations-page.tsx`, `rtus-page.tsx`, `admin-breadcrumb.tsx`).
   for (const id of ["location.create", "location.update", "location.deactivate", "location.reactivate"]) {
     expect(invalidationKeysFor(id), id).toEqual([["admin", "locations"], ["admin", "location-summary"]]);

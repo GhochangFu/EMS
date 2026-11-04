@@ -23,7 +23,8 @@ export type CatalogRisk = "create" | "edit" | "deactivate" | "access" | "operati
 
 /**
  * `F3.86` PR 2: `DELETE` is a method a catalog entry may have, but only the
- * two removals of ADR 0099 decision 3 (ruling 19) are allowed one — the rule
+ * removals of ADR 0099 decision 3 (ruling 19; a third since Amendment 11,
+ * `calcPoint.delete`) are allowed one — the rule
  * is in the gates (`DELETE_ALLOWANCE`, `catalog.spec.ts`,
  * `tests/f3.85-catalog-coverage`), not in this type.
  */
@@ -39,7 +40,11 @@ export type CatalogMethod = "POST" | "PUT" | "PATCH" | "DELETE";
  * - `dashboard`, `dashboardTemplate`, `calcParameter`, `assetTemplate`: the
  *   row the path parameter `id` names (`assetTemplate` since `F3.85` PR 11a;
  *   the resolver also reads its stored content and point keys);
- * - `asset`: the asset the path parameter `assetId` (or `id`) names.
+ * - `asset`: the asset the path parameter `assetId` (or `id`) names. `F4.311`
+ *   PR 3 (ADR 0099 Amendment 11 G2): with `template`, only an asset of that
+ *   kind — `pinned` to a template version (an override, `calcOverride.set`) or
+ *   with `none` (a standalone calculated point) — because the calc-point
+ *   route dispatches on it, and a card must describe the write the route makes.
  *
  * `F3.86` PR 2 (release 2):
  *
@@ -104,7 +109,7 @@ export type CatalogTarget =
     }
   | { readonly kind: "mimicLayout" | "mimicLibrary"; readonly param: "id" }
   | { readonly kind: "dashboard" | "dashboardTemplate" | "calcParameter" | "assetTemplate"; readonly param: "id" }
-  | { readonly kind: "asset"; readonly param: "assetId" | "id" }
+  | { readonly kind: "asset"; readonly param: "assetId" | "id"; readonly template?: "pinned" | "none" }
   | {
       readonly kind:
         | "location"
@@ -141,6 +146,13 @@ export type CatalogTarget =
    * `configuration` role class, then every row's asset in the caller's **read** scope.
    */
   | { readonly kind: "ruleBatch"; readonly field: "rules" }
+  /**
+   * `F4.311` PR 3 (ADR 0099 Amendment 11 G3): a standalone calc-point batch — the assets the body's
+   * `assetIds` names, at most 25, no id twice, all in **one** allowed organization and every one with
+   * no template (the route refuses a pinned asset). The gate is the batch route's:
+   * `requireMasterDataUser`, then `canManageAsset` on each asset.
+   */
+  | { readonly kind: "calcPointBatch"; readonly field: "assetIds" }
   /**
    * `F4.279` (ADR 0099 Amendment 8 D2): a notification channel or an escalation profile, the row
    * the path parameter `id` names. Both mirror the routes' gate: `requireMasterDataUser`, then

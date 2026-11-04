@@ -41,7 +41,9 @@ const { CANVAS_ENTRY_IDS, COPILOT_CATALOG } = require_("@bms/shared/copilot") as
  * `wizardEntryIds`). The rows equal `CANVAS_ENTRY_IDS`, so the two lists cannot drift.
  *
  * The `NOT_YET` list PRs 9–11 kept while the wizards landed in parallel was emptied by PR 10b
- * (#815) and deleted with the closure (PR 12).
+ * (#815) and deleted with the closure (PR 12). `F4.311` PR 3 brings it back for the three
+ * standalone calc-point entries (ADR 0099 Amendment 11), whose page and bulk action are PR 6a:
+ * an id on it must be a catalog id that is **not** wired yet, so the list empties as PR 6a lands.
  *
  * Assertions inline (§4.6 carves out `tests/`).
  */
@@ -89,6 +91,17 @@ function wired(): Map<string, string[]> {
 }
 
 const CATALOG_IDS = COPILOT_CATALOG.map((entry) => entry.id);
+
+/**
+ * `F4.311` PR 3 — catalog entries whose wizard lands in a later PR of the same row. PR 6a (the
+ * page's Add calculated point panel, the assets list's bulk action) wires all three and deletes
+ * this list.
+ */
+const NOT_YET: readonly { id: string; reason: string }[] = [
+  { id: "calcPoint.set", reason: "F4.311 PR 6a: the asset points page's Add calculated point panel" },
+  { id: "calcPoint.createBatch", reason: "F4.311 PR 6a: the assets list's bulk action" },
+  { id: "calcPoint.delete", reason: "F4.311 PR 6a: the asset points page's panel" },
+];
 
 /** `F3.87` PR 5 / ruling Q1(a): each canvas entry, the editor page that is its form, and the write that page calls. */
 const CANVAS_ENTRIES: readonly { id: string; page: string; write: string }[] = [
@@ -152,8 +165,14 @@ describe("F3.85 stepper coverage — every catalog entry has a WizardShell (plan
   it("every catalog id is wired as a WizardShell entry, or is a canvas row whose page calls its write", () => {
     const found = wired();
     const canvas = new Set(CANVAS_ENTRIES.filter((row) => canvasRowResolves(row)).map((row) => row.id));
-    const missing = CATALOG_IDS.filter((id) => !found.has(id) && !canvas.has(id));
+    const notYet = new Set(NOT_YET.map((row) => row.id));
+    const missing = CATALOG_IDS.filter((id) => !found.has(id) && !canvas.has(id) && !notYet.has(id));
     expect(missing).toEqual([]);
+  });
+
+  it("F4.311 PR 3: every NOT_YET id is a catalog id that no page wires yet (the list only shrinks)", () => {
+    const found = wired();
+    expect(NOT_YET.filter((row) => !CATALOG_IDS.includes(row.id) || found.has(row.id))).toEqual([]);
   });
 
   it("F3.87 PR 5: the canvas rows are exactly CANVAS_ENTRY_IDS from packages/shared/dist", () => {

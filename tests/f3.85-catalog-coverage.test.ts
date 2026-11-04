@@ -300,7 +300,12 @@ describe("F3.85 PR 8 — the copilot action catalog covers the write routes (ADR
 
   it("allows a DELETE entry only on the allowance, and excludes every other DELETE walked", () => {
     const allowed = new Set(DELETE_ALLOWANCE.map(key));
-    expect([...allowed].sort()).toEqual(["DELETE /admin/asset-group-members/:id", "DELETE /admin/users/:id/grants/:kind/:grantId"]);
+    // `F4.311` PR 3: ADR 0109 decision 6 widens ruling 19 to a third removal (ADR 0099 Amendment 11 G4).
+    expect([...allowed].sort()).toEqual([
+      "DELETE /admin/asset-group-members/:id",
+      "DELETE /admin/assets/:assetId/calc-points/:pointKey",
+      "DELETE /admin/users/:id/grants/:kind/:grantId",
+    ]);
     // The allowance names routes that exist.
     for (const k of allowed) expect(byKey.has(k), k).toBe(true);
     const deleteEntries = COPILOT_CATALOG.filter((entry) => entry.method === "DELETE").map(key);
