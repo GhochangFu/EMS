@@ -158,3 +158,26 @@ export async function aRangeClickReadsOnceMore(): Promise<void> {
   await waitFor(() => expect(fetchStrip).toHaveBeenCalledTimes(2));
   expect(fetchStrip.mock.calls[1]).toEqual([LOCATION_ID, { range: "7d", assetGroupId: GROUP_G }]);
 }
+
+/** `F4.306` U9 (ADR 0108 Amendment 7): a stored selection reaches the strip's read. */
+export async function aStoredSelectionReachesTheRead(): Promise<void> {
+  renderLive({
+    tabKey: "hvac",
+    defaultRange: "24h",
+    segments: ["seg-one"],
+    points: ["seg-one:kw"],
+    colors: { "seg-one:kw": "series-3" },
+  });
+  await waitFor(() => expect(fetchStrip).toHaveBeenCalled());
+  expect(fetchStrip.mock.calls[0]).toEqual([
+    LOCATION_ID,
+    { range: "24h", assetGroupId: GROUP_G, segments: ["seg-one"], points: ["seg-one:kw"] },
+  ]);
+}
+
+/** The positive beside it: a config without a selection sends no selection key. */
+export async function aConfigWithoutSelectionSendsNone(): Promise<void> {
+  renderLive({ tabKey: "hvac", defaultRange: "24h" });
+  await waitFor(() => expect(fetchStrip).toHaveBeenCalled());
+  expect(Object.keys(fetchStrip.mock.calls[0][1]).sort()).toEqual(["assetGroupId", "range"]);
+}

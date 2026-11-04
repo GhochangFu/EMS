@@ -2,10 +2,12 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aConfigWithoutSelectionSendsNone,
   aDashboardOffersExport,
   aGroupLessOrUnknownTabResolvesToNull,
   aLocationReadsOnce,
   aRangeClickReadsOnceMore,
+  aStoredSelectionReachesTheRead,
   aTabKeySendsThatTabsGroup,
   cleanupTrendStripWidgetLive,
   noLocationReadsNothing,
@@ -52,5 +54,13 @@ describe("F4.305 U4 TrendStripWidgetLive", () => {
 
   it("reads once more, with the same group, on a range click", async () => {
     await aRangeClickReadsOnceMore();
+  });
+
+  it("F4.306 U9: sends a stored selection's segments and points", async () => {
+    await aStoredSelectionReachesTheRead();
+  });
+
+  it("F4.306 U9: sends no selection key for a config without one", async () => {
+    await aConfigWithoutSelectionSendsNone();
   });
 });

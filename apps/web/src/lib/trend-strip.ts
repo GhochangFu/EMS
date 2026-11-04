@@ -1,7 +1,8 @@
-import type { TrendStripRange } from "@bms/shared";
+import type { TrendStripRange, TrendStripWidgetConfig } from "@bms/shared";
 
 import { formatInZone, siteZoneOf } from "../components/asset-history/history-format";
 import { assetHistoryPath } from "./asset-history-range";
+import type { RoleName } from "./theme";
 import { formatBucketWidth } from "./widget-value";
 
 /**
@@ -79,4 +80,17 @@ export function lastValue(buckets: readonly SparklineBucket[]): number | null {
 export function stripWindowLabel(from: string, to: string, bucketSeconds: number, timeZone: string): string {
   const { zone } = siteZoneOf(timeZone);
   return `${formatInZone(from, zone)} – ${formatInZone(to, zone)} · ${formatBucketWidth(bucketSeconds)} buckets · ${timeZone}`;
+}
+
+/**
+ * `F4.306` U9 (ADR 0108 Amendment 7, item 4) — the stroke role of one point: the strip's `colors`
+ * entry for `<domain>:<code>`, else `accent`. The key is composed here once, from the response's
+ * segment domain and point code, so no component spells it.
+ */
+export function strokeRoleFor(
+  colors: TrendStripWidgetConfig["colors"] | undefined,
+  domain: string,
+  code: string,
+): RoleName {
+  return colors?.[`${domain}:${code}`] ?? "accent";
 }

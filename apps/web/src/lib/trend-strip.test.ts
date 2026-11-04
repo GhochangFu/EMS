@@ -1,7 +1,14 @@
 import { describe, it } from "vitest";
 
 import {
+  aColorsHitReturnsItsRole,
+  aColorsMissReturnsAccent,
   aNullBreaksThePolyline,
+  aSelectionSearchCarriesSegmentsAndPoints,
+  anEmptyListSendsNoKey,
+  anotherSegmentsKeyReturnsAccent,
+  noSelectionSearchIsTheF4305Bytes,
+  undefinedColorsReturnAccent,
   aUtcZoneIsReportedAsUtc,
   allNullDrawsNothing,
   equalValuesDrawAFlatMidLine,
@@ -53,5 +60,35 @@ describe("F4.301 trend strip helpers", () => {
 
   it("reports a stored UTC zone as UTC", () => {
     aUtcZoneIsReportedAsUtc();
+  });
+});
+
+describe("F4.306 U9 trend strip selection helpers", () => {
+  it("returns the colors entry's role for a hit", () => {
+    aColorsHitReturnsItsRole();
+  });
+
+  it("returns accent for a point with no entry", () => {
+    aColorsMissReturnsAccent();
+  });
+
+  it("returns accent with no colors", () => {
+    undefinedColorsReturnAccent();
+  });
+
+  it("returns accent for the same code in another segment", () => {
+    anotherSegmentsKeyReturnsAccent();
+  });
+
+  it("sends exactly range=24h with no selection", () => {
+    noSelectionSearchIsTheF4305Bytes();
+  });
+
+  it("sends segments and points comma-joined", () => {
+    aSelectionSearchCarriesSegmentsAndPoints();
+  });
+
+  it("sends no key for an empty list", () => {
+    anEmptyListSendsNoKey();
   });
 });

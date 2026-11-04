@@ -8,8 +8,10 @@ import { expect, vi } from "vitest";
 import { fetchSiteTrendStrip } from "../../api/trend-strip";
 import { downloadTrendStripExport } from "../../api/view-exports";
 import { siteAssetsPath } from "../../lib/smoc-pages";
+import { currentRoles } from "../../stores/theme-store";
 import { historyHref, stripWindowLabel } from "../../lib/trend-strip";
 import { TrendStrip } from "./trend-strip";
+import { TrendStripBody, type TrendStripSelection } from "./trend-strip-body";
 
 /**
  * `F4.301` U4 (ADR 0108 Amendment 2, items 5–9) — `TrendStrip`, the Control Room site page's
@@ -413,6 +415,107 @@ export async function theStripHasNoSchedule(): Promise<void> {
   await screen.findByRole("heading", { name: "Segment One Label" });
   screen.getByRole("group", { name: "Export" });
   expect(screen.queryByRole("button", { name: "Schedule" })).toBeNull();
+}
+
+// `F4.306` U9 (ADR 0108 Amendment 7, items 4 and 7) — `TrendStripBody` with a selection: the
+// stroke of each point and the two query keys the read sends.
+
+function renderBodies(selections: readonly (TrendStripSelection | undefined)[]): void {
+  fetchSpy = vi.fn(() => Promise.reject(new Error("trend-strip spec: an unmocked read reached fetch")));
+  vi.stubGlobal("fetch", fetchSpy);
+  // One client for every body, so a selection missing from the query key shares one cache entry.
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        {selections.map((selection, i) => (
+          <TrendStripBody
+            key={i}
+            locationId={LOCATION_ID}
+            assetGroupId={null}
+            defaultRange="24h"
+            exportable={false}
+            selection={selection}
+          />
+        ))}
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+}
+
+/** Every polyline stroke under the row of the point named `name`. */
+function strokesOf(name: string): string[] {
+  const rows = document.body.querySelectorAll(`li[aria-label="${name}"]`);
+  expect(rows.length).toBeGreaterThan(0);
+  const strokes = [...rows].flatMap((row) =>
+    [...row.querySelectorAll("polyline")].map((line) => line.getAttribute("stroke") ?? ""),
+  );
+  expect(strokes.length).toBeGreaterThan(0);
+  return strokes;
+}
+
+/** A `colors` entry strokes every polyline of that point with its role. */
+export async function aColoredPointStrokesWithItsRole(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderBodies([{ colors: { "seg-one:kw": "series-2" } }]);
+
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  const roles = currentRoles();
+  expect(roles["series-2"]).not.toBe(roles.accent);
+  expect(new Set(strokesOf("Active power"))).toEqual(new Set([roles["series-2"]]));
+}
+
+/** The adjacent positive: a point with no entry keeps `accent`. */
+export async function anUncoloredPointKeepsAccent(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderBodies([{ colors: { "seg-one:kw": "series-2" } }]);
+
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  expect(new Set(strokesOf("Temperature"))).toEqual(new Set([currentRoles().accent]));
+}
+
+/** No selection: every polyline is `accent` (the `F4.305` golden). */
+export async function noSelectionStrokesEveryPolylineAccent(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderBodies([undefined]);
+
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  const all = [...strokesOf("Active power"), ...strokesOf("Temperature")];
+  expect(new Set(all)).toEqual(new Set([currentRoles().accent]));
+}
+
+/** The read carries the selection's `segments` and `points`. */
+export async function theReadCarriesTheSelection(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderBodies([{ segments: ["seg-one"], points: ["seg-one:kw"], colors: { "seg-one:kw": "series-2" } }]);
+
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  expect(fetchStrip.mock.calls[0]).toEqual([
+    LOCATION_ID,
+    { range: "24h", assetGroupId: null, segments: ["seg-one"], points: ["seg-one:kw"] },
+  ]);
+}
+
+/** Without a selection the request holds exactly `range` and `assetGroupId`. */
+export async function noSelectionSendsNoSelectionKeys(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderBodies([undefined]);
+
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  expect(Object.keys(fetchStrip.mock.calls[0][1]).sort()).toEqual(["assetGroupId", "range"]);
+}
+
+/** Two bodies at one site, range and group, with different selections, are two reads. */
+export async function twoSelectionsAreTwoReads(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderBodies([
+    { segments: ["seg-one"], points: ["seg-one:kw"] },
+    { segments: ["seg-two"], points: ["seg-two:temp_c"] },
+  ]);
+
+  await waitFor(() => expect(screen.getAllByRole("heading", { name: "Segment One Label" })).toHaveLength(2));
+  expect(fetchStrip).toHaveBeenCalledTimes(2);
+  expect(fetchStrip.mock.calls.map((call) => call[1].segments)).toEqual([["seg-one"], ["seg-two"]]);
 }
 
 export function cleanupStrip(): void {

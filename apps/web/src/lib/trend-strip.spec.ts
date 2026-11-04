@@ -1,7 +1,8 @@
 import { expect } from "vitest";
 
 import { formatInZone } from "../components/asset-history/history-format";
-import { historyHref, lastValue, sparklinePolylines, stripWindowLabel } from "./trend-strip";
+import { trendStripSearch } from "../api/trend-strip";
+import { historyHref, lastValue, sparklinePolylines, strokeRoleFor, stripWindowLabel } from "./trend-strip";
 
 /**
  * `F4.301` U4 (ADR 0108 Amendment 2, items 5, 7 and 9) — the trend strip's pure helpers.
@@ -79,4 +80,51 @@ export function aUtcZoneIsReportedAsUtc(): void {
   expect(stripWindowLabel(FROM, TO, 1800, "UTC")).toBe(
     `${formatInZone(FROM, "Etc/UTC")} – ${formatInZone(TO, "Etc/UTC")} · 30 min buckets · UTC`,
   );
+}
+
+// `F4.306` U9 (ADR 0108 Amendment 7, items 4 and 7) — the selection: the stroke role of each point
+// and the two query keys the read carries.
+
+const COLORS = { "seg-one:kw": "series-2", "seg-two:temp_c": "series-7" } as const;
+
+/** A `colors` entry for `<domain>:<code>` is that point's stroke role. */
+export function aColorsHitReturnsItsRole(): void {
+  expect(strokeRoleFor(COLORS, "seg-one", "kw")).toBe("series-2");
+  expect(strokeRoleFor(COLORS, "seg-two", "temp_c")).toBe("series-7");
+}
+
+/** A point with no entry draws `accent`, the `F4.305` stroke. */
+export function aColorsMissReturnsAccent(): void {
+  expect(strokeRoleFor(COLORS, "seg-one", "kwh")).toBe("accent");
+}
+
+/** No `colors` at all draws `accent`. */
+export function undefinedColorsReturnAccent(): void {
+  expect(strokeRoleFor(undefined, "seg-one", "kw")).toBe("accent");
+}
+
+/** The key is the segment's own: the same code in another segment draws `accent`. */
+export function anotherSegmentsKeyReturnsAccent(): void {
+  expect(strokeRoleFor(COLORS, "seg-two", "kw")).toBe("accent");
+}
+
+/** No selection is exactly `range=24h`: the bytes every stored `F4.305` widget sends. */
+export function noSelectionSearchIsTheF4305Bytes(): void {
+  expect(trendStripSearch({ range: "24h", assetGroupId: null }).toString()).toBe("range=24h");
+}
+
+/** `segments` and `points` go comma-joined, one key each. */
+export function aSelectionSearchCarriesSegmentsAndPoints(): void {
+  const params = trendStripSearch({ range: "24h", assetGroupId: null, segments: ["a", "b"], points: ["a:x"] });
+  expect(params.toString()).toBe("range=24h&segments=a%2Cb&points=a%3Ax");
+  expect(params.get("segments")).toBe("a,b");
+  expect(params.get("points")).toBe("a:x");
+}
+
+/** An empty list sends no key: the route's `.min(1)` would refuse an empty one. */
+export function anEmptyListSendsNoKey(): void {
+  const params = trendStripSearch({ range: "7d", assetGroupId: null, segments: [], points: [] });
+  expect(params.has("segments")).toBe(false);
+  expect(params.has("points")).toBe(false);
+  expect(params.toString()).toBe("range=7d");
 }
