@@ -200,43 +200,55 @@ export async function assertTheStandaloneDefinitionIsLoaded(pool: pg.Pool, fx: F
 
 /** Claim 3 — a standalone row with no formula is a counted no_formula skip. */
 export async function assertANoFormulaRowIsACountedSkip(pool: pg.Pool, fx: Fixtures): Promise<void> {
-  const db = createDb(pool);
-  const { bareAssetId } = await seed(db, fx);
+  const { bareAssetId } = await seed(createDb(pool), fx);
 
-  // `getScheduledDefinitions` runs a **counted** reload; `getAllDefinitionsFresh`
-  // is the validation read and counts nothing (F2.9 finding 30). A fresh
-  // service and a fresh tally per reload: never a lifetime counter. The
-  // database is shared with other suites and the seed, so the claim is the
-  // **difference** one fixture row makes, not an absolute count.
-  async function noFormulaSkips(): Promise<{ count: number; defs: CalcDefinition[] }> {
-    const metrics = new MetricsService();
-    let count = 0;
-    metrics.countCalcSkipped = (reason) => {
-      if (reason === "no_formula") count += 1;
+  // The count is estate-wide, and other suites write no-formula computed rows
+  // on template-less assets while this runs (`calc-write.integration.spec.ts`
+  // auto-creates exactly those). So both reloads and the fixture insert run in
+  // **one** `REPEATABLE READ` snapshot on one client: other suites' commits are
+  // invisible to it, this insert is visible, and the difference is exactly this
+  // one row. Rolled back, so nothing is left behind.
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
+    const db = createDb(client as unknown as pg.Pool);
+
+    // `getScheduledDefinitions` runs a **counted** reload; `getAllDefinitionsFresh`
+    // is the validation read and counts nothing (F2.9 finding 30). A fresh
+    // service and a fresh tally per reload: never a lifetime counter.
+    const noFormulaSkips = async (): Promise<{ count: number; defs: CalcDefinition[] }> => {
+      const metrics = new MetricsService();
+      let count = 0;
+      metrics.countCalcSkipped = (reason) => {
+        if (reason === "no_formula") count += 1;
+      };
+      const defs = await new CalcDefinitionsService(db, metrics).getScheduledDefinitions();
+      return { count, defs };
     };
-    const defs = await new CalcDefinitionsService(db, metrics).getScheduledDefinitions();
-    return { count, defs };
+
+    const before = await noFormulaSkips();
+    await db.insert(assetPoints).values({
+      organizationId: fx.organizationId,
+      assetId: bareAssetId,
+      pointKey: NO_FORMULA_KEY,
+      sourceDataKey: `computed:${NO_FORMULA_KEY}`,
+      sourceKind: "computed",
+      rtuId: null,
+    });
+    const after = await noFormulaSkips();
+
+    assert(
+      !after.defs.some((d) => d.assetId === bareAssetId && d.pointKey === NO_FORMULA_KEY),
+      "a computed row with no formula must not become a definition",
+    );
+    assert(
+      after.count === before.count + 1,
+      `the no-formula standalone row must be counted once as no_formula: before ${before.count}, after ${after.count}`,
+    );
+  } finally {
+    await client.query("ROLLBACK").catch(() => undefined);
+    client.release();
   }
-
-  const before = await noFormulaSkips();
-  await db.insert(assetPoints).values({
-    organizationId: fx.organizationId,
-    assetId: bareAssetId,
-    pointKey: NO_FORMULA_KEY,
-    sourceDataKey: `computed:${NO_FORMULA_KEY}`,
-    sourceKind: "computed",
-    rtuId: null,
-  });
-  const after = await noFormulaSkips();
-
-  assert(
-    !after.defs.some((d) => d.assetId === bareAssetId && d.pointKey === NO_FORMULA_KEY),
-    "a computed row with no formula must not become a definition",
-  );
-  assert(
-    after.count === before.count + 1,
-    `the no-formula standalone row must be counted once as no_formula: before ${before.count}, after ${after.count}`,
-  );
 }
 
 /** Claim 4 — the override row of a pinned asset is read once, through the merge. */

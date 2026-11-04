@@ -193,9 +193,10 @@ export async function assertHandCreatedAssetContributesNothing(
   await seedTemplate(db, fx);
 
   // A hand-created asset — templateId: null, "every seeded asset is" per the
-  // column's own comment — must join to no template_points row at all, so it
-  // must never appear in the loader's output regardless of what point keys
-  // its own (unrelated) asset_points carry.
+  // column's own comment — joins to no template_points row at all. With no
+  // computed asset_points row it contributes nothing to the loader's output.
+  // (Its computed rows, if it had any, are ADR 0109 standalone points, gated
+  // in calc-definitions.standalone.integration.spec.ts.)
   const [handCreated] = await db
     .insert(assets)
     .values({
@@ -214,7 +215,7 @@ export async function assertHandCreatedAssetContributesNothing(
   const forHandCreated = await svc.getDefinitionsForInput(handCreated.id, fx.pointKeys[0].code);
   assert(
     forHandCreated.length === 0,
-    "a hand-created asset (templateId: null) must never resolve to a calc definition",
+    "a hand-created asset (templateId: null) with no computed asset_points row must resolve to no calc definition",
   );
 }
 

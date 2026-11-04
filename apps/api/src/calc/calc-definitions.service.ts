@@ -15,7 +15,9 @@ const CACHE_TTL_MS = 60_000;
 
 /**
  * Loads and caches active calc definitions: `asset → assets.templateId →
- * template_points ⟕ asset_points` for every `kind = 'derived'` row, resolved
+ * template_points ⟕ asset_points` for every `kind = 'derived'` row — plus,
+ * since ADR 0109 decision 2, every `computed` `asset_points` row of an asset
+ * with **no** template (a standalone calculated point) — resolved
  * through `toActiveDefinition` so an unusable stored row is a counted skip
  * rather than a throw (ADR 0037 decision 9). Template lifecycle status is
  * never consulted (decision 12) — instantiation already refuses a

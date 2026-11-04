@@ -156,8 +156,7 @@ export const templateDraftDeletedResponseSchema = z.object({ deleted: z.literal(
  * would leave the next reader guessing which file to look in. The DTOs
  * themselves are in `asset-templates.ts` and `template-migration.ts` now —
  * both moved out of `admin.ts` on §4.5 grounds (`F4.150`, `F2.24`).
- */
-/**
+ *
  * `mode` is list-level (ADR 0109 decision 4): `template` when the asset is
  * pinned to a template version (every item is an `override`), `standalone`
  * when it has none. An empty standalone list has no item to read `kind`
