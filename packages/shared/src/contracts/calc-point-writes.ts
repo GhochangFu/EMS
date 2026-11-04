@@ -8,6 +8,7 @@ import {
   MIN_CALC_INTERVAL_SECONDS,
 } from "../calc-dsl/limits";
 import { assetPointCalcConfigDtoSchema, calcDialectSchema } from "./asset-templates";
+import { backfillDaysSchema } from "./calc-backfill";
 import { calcPointKeyParamSchema } from "./calc-override-writes";
 
 /**
@@ -30,9 +31,6 @@ import { calcPointKeyParamSchema } from "./calc-override-writes";
 
 /** ADR 0109 ruling 4 — the batch cap, the same shape as `RULE_BATCH_MAX_ROWS`. */
 export const CALC_POINT_BATCH_MAX_ASSETS = 25;
-
-/** The longest backfill a write may ask for, in days (ADR 0109 decision 7). */
-export const CALC_POINT_MAX_BACKFILL_DAYS = 31;
 
 /**
  * The fields both bodies share, as a plain record and **spread** into each
@@ -58,10 +56,11 @@ const calcPointSetFields = {
     .nullable(),
   maxInputAgeSeconds: z.number().int().min(1).max(MAX_INPUT_AGE_SECONDS_BOUND),
   /**
-   * Days of history to compute on save (ADR 0109 decision 7). Accepted from
-   * PR 2; the run itself is created by PR 5.
+   * Days of history to compute on save (ADR 0109 decision 7). The point is
+   * written first; the run is created after, and only the run creation is
+   * refused while another backfill of the point is active (owner ruling 4).
    */
-  backfillDays: z.number().int().min(1).max(CALC_POINT_MAX_BACKFILL_DAYS).optional(),
+  backfillDays: backfillDaysSchema,
 };
 
 /** `PUT /admin/assets/:assetId/calc-points/:pointKey` on an asset with no template. */

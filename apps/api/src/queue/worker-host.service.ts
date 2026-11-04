@@ -8,6 +8,7 @@ import {
 } from "@nestjs/common";
 import { Worker } from "bullmq";
 
+import { CalcBackfillService } from "../calc-backfill/calc-backfill.service";
 import { CopilotPurgeService } from "../copilot/copilot-purge.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { MetricsService } from "../observability/metrics.service";
@@ -15,6 +16,7 @@ import { DiscoveryJobService } from "../onboarding-discovery/discovery-job.servi
 import { ReportDispatchService } from "../reports/report-dispatch.service";
 import { ReportRenderService } from "../reports/report-render.service";
 import { RuleSweepService } from "../rules/rule-sweep.service";
+import { calcBackfillQueue } from "./calc-backfill";
 import { COPILOT_PURGE_SCHEDULER_ID, copilotPurgeQueue } from "./copilot-purge";
 import {
   HEARTBEAT_EVERY_MS,
@@ -58,14 +60,15 @@ import { QUEUE_CLIENT, WORKER_CONFIG } from "./queue.tokens";
  *
  * **Constructor order is a contract**: `(client, tenantDb, fleetDb,
  * metrics, ruleSweep, config, reportDispatch, reportRender, copilotPurge,
- * discovery)`. `runProcessor`
+ * discovery, backfill)`. `runProcessor`
  * receives `{ tenantDb, fleetDb }` and a `tenant` queue's handler runs
  * inside `withTenant(tenantDb, …)` — swap the two pools and every tenant job
  * runs on the BYPASSRLS pool with a GUC nobody reads. No test boots
  * `WorkerModule` (Amendment 1), so `database/fleet-read-wiring.spec.ts` pins
  * slots 1 and 2 by token; `F3.11` **appended** slots 4 and 5 and `F3.5b`
  * **appended** slots 6 and 7, `F3.85` PR 5 **appended** slot 8, and `F3.24b` **appended** slot 10
- * (`DiscoveryJobService`), each moving nothing before them.
+ * (`DiscoveryJobService`), and `F4.311` PR 5 **appended** slot 11
+ * (`CalcBackfillService`), each moving nothing before them.
  *
  * **Every consumer is registered here, beside `ALL_QUEUES`'s declarations,
  * and not in a host of its own inside the module that owns the body.** One
@@ -142,6 +145,7 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
     private readonly reportRender: ReportRenderService,
     private readonly copilotPurge: CopilotPurgeService,
     private readonly discovery: DiscoveryJobService,
+    private readonly backfill: CalcBackfillService,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -214,7 +218,11 @@ export class WorkerHostService implements OnModuleInit, OnModuleDestroy {
       this.discovery.run(payload, ctx.tx),
     );
 
-    this.host = startQueueWorkers(this.client, [heartbeat, sweep, dispatch, render, purge, discovery], {
+    // `F4.311` PR 5 (ADR 0109 decision 7): the claim on ctx.tx, the chunked
+    // walk after its commit — the discovery shape again.
+    const backfill = runProcessor(calcBackfillQueue, dbs, (payload, ctx) => this.backfill.run(payload, ctx.tx));
+
+    this.host = startQueueWorkers(this.client, [heartbeat, sweep, dispatch, render, purge, discovery, backfill], {
       createWorker: (name, process, opts) => new Worker(name, process, opts),
       metrics: this.metrics,
       logger: this.logger,

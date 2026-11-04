@@ -13,6 +13,7 @@ import {
   validateFormula,
 } from "../calc-dsl";
 import { calcDialectSchema } from "./asset-templates";
+import { backfillDaysSchema } from "./calc-backfill";
 import type { AssetPointCalcOverrideFields } from "../types/template-migration";
 
 /**
@@ -62,6 +63,13 @@ export const assetPointCalcOverrideBodySchema = z
       .max(MAX_CALC_INTERVAL_SECONDS)
       .nullable(),
     maxInputAgeSeconds: z.number().int().min(1).max(MAX_INPUT_AGE_SECONDS_BOUND).nullable(),
+    /**
+     * `F4.311` PR 5 (ADR 0109 decision 7, widened by owner ruling 1) — days
+     * of history to compute once the override is saved. Optional, and not a
+     * calc column: it never reaches the row, and an all-null body with only
+     * `backfillDays` still says "override nothing".
+     */
+    backfillDays: backfillDaysSchema,
   })
   .strict();
 

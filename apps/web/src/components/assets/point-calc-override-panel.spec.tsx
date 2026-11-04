@@ -79,6 +79,7 @@ function config(
     },
     minCoverageRatio,
     runtime: null,
+    backfill: null,
   });
 }
 

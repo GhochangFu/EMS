@@ -100,7 +100,8 @@ export const KPI_ENTRIES: readonly CatalogEntry[] = [
     target: { kind: "asset", param: "assetId", template: "pinned" },
     refs: [],
     formulas: [{ field: "formula", dialectField: "formulaDialect" }],
-    steps: [FORMULA_STEP, SCHEDULE_STEP],
+    // F4.311 PR 5 (owner ruling 1): optional days of history to compute.
+    steps: [FORMULA_STEP, SCHEDULE_STEP, BACKFILL_STEP],
     summary: ({ params, targetName }) =>
       `Set the calculation override of the point ${quoted(params.pointKey ?? "")} on the asset ${quoted(targetName)}.`,
   },

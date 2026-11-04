@@ -4,7 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import type {
   AdminAssetPointDto,
   AssetPointCalcConfigDto,
-  AssetPointCalcOverrideFields,
+  AssetPointCalcOverrideBody,
   MasterDataActiveFilter,
 } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
@@ -32,6 +32,7 @@ import { PageHeader } from "../../components/page-header";
 import { AssetPointBulkEditPanel } from "../../components/assets/asset-point-bulk-edit-panel";
 import { MappingSheetPanel } from "../../components/assets/mapping-sheet-panel";
 import {
+  PointCalcBackfillField,
   PointCalcDraftProblems,
   PointCalcFormulaFields,
   PointCalcHeading,
@@ -40,6 +41,7 @@ import {
 } from "../../components/assets/point-calc-override-panel";
 import { SectionCard } from "../../components/section-card";
 import { WizardShell } from "../../components/wizard/wizard-shell";
+import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { emptyAssetPointForm, type AssetPointForm } from "../../lib/asset-point-form";
 import {
@@ -212,6 +214,12 @@ function CalcOverrideWizard({
       <PointCalcDraftProblems problems={problems} />
     </>
   );
+  // `F4.311` PR 5 (owner ruling 1): the catalog entry's Backfill step.
+  const backfillStep = (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <PointCalcBackfillField {...fields} />
+    </div>
+  );
   return (
     <div className="surface-raised-sm flex flex-col gap-3 p-3">
       <div>
@@ -223,7 +231,9 @@ function CalcOverrideWizard({
         params={{ assetId, pointKey: config.pointKey }}
         values={draftToBody(draft)}
         onChange={(values) => onDraftChange(draftFromFields(values))}
-        renderStep={(step) => (step.id === "formula" ? formulaStep : scheduleStep)}
+        renderStep={(step) =>
+          step.id === "formula" ? formulaStep : step.id === "backfill" ? backfillStep : scheduleStep
+        }
         // A Clear in flight refuses Submit, and a request in flight refuses
         // Cancel: the old panel disabled Save and Close under the shared `busy`
         // (F4.168 OQ-3). The shell is shared, so the guard is here, and Submit
@@ -339,9 +349,21 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
   // `X-Copilot-Change`: a wizard used alone is not a copilot change.
   const setOverrideM = useMutation({
     mutationFn: ({ pointKey, body }: { pointKey: string; body: Record<string, unknown> }) =>
-      setAdminAssetPointCalcOverride(assetId ?? "", pointKey, body as AssetPointCalcOverrideFields),
+      setAdminAssetPointCalcOverride(assetId ?? "", pointKey, body as AssetPointCalcOverrideBody),
     onSuccess: afterOverride,
-    onError: (cause: Error) => setOverrideSaveError(apiErrorMessage(cause)),
+    onError: (cause: Error) => {
+      // `F4.311` PR 5 (owner ruling 4): a 409 (a backfill already running) or
+      // a 503 (no worker) arrives after the override committed, and its
+      // sentence says so. It is a save: close the wizard and refetch both
+      // lists, and keep the sentence beside the list, so the card shows the
+      // saved state rather than the pre-save one under a "was saved" message.
+      if (cause instanceof ApiError && (cause.status === 409 || cause.status === 503)) {
+        afterOverride();
+        setOverrideError(apiErrorMessage(cause));
+        return;
+      }
+      setOverrideSaveError(apiErrorMessage(cause));
+    },
   });
 
   const clearOverrideM = useMutation({

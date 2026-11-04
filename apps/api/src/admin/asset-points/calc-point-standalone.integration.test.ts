@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import { createDb } from "@bms/db";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { CalcBackfillRunStore } from "../../calc-backfill/calc-backfill-run-store";
 import { CalcDefinitionsService } from "../../calc/calc-definitions.service";
 import { CalcDependencyService } from "../../calc/calc-dependency.service";
 import { CalcParametersService } from "../../calc/calc-parameters.service";
@@ -45,6 +46,7 @@ import {
   cleanup,
   MEASURED_KEY,
 } from "./calc-point-standalone.integration.spec";
+import { CalcBackfillRequestService } from "./calc-backfill-request.service";
 import { CalcPointStandaloneService } from "./calc-point-standalone.service";
 
 /**
@@ -94,6 +96,8 @@ describe.skipIf(!connectionString)("F4.311 — standalone calculated points (ADR
       new CalcParametersService(db),
       scope,
       new CalcStatusRegistry(),
+      // `F4.311` PR 5 — no queue: this suite never asks for a backfill.
+      new CalcBackfillRequestService(db, { kind: "unconfigured" }, new CalcBackfillRunStore(db, db)),
     );
     fx = await loadFixtures(created);
     await cleanup(created);
