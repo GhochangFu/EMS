@@ -29,6 +29,7 @@ import { ChartSeriesPicker } from "./chart-series-picker";
 import { MetricSourcePicker } from "./metric-source-picker";
 import { PointPicker } from "./point-picker";
 import { TableColumnPicker } from "./table-column-picker";
+import { TrendStripSelectionSummary } from "./trend-strip-selection-summary";
 
 type WidgetInspectorProps = {
   row: DashboardWidgetRow;
@@ -44,6 +45,9 @@ type WidgetInspectorProps = {
    * host that forgets it fails `tsc` rather than silently disabling the select; `[]` is a
    * dashboard with no tabs (a new one, or a legacy canvas), where the select says so. */
   tabs: readonly { readonly key: string; readonly label: string; readonly assetGroupId: string | null }[];
+  /** `F4.306` — the dashboard's site, the trend strip selection summary's read; `null` is no site.
+   * Required, so a host that forgets it fails `tsc` rather than silently skipping the check. */
+  locationId: string | null;
   onChange: (patch: Partial<DashboardWidgetRow>) => void;
   onRemove: () => void;
 };
@@ -66,7 +70,7 @@ type WidgetInspectorProps = {
  * mix of both roles, so a role selector would only ever offer one correct
  * answer — not a control worth adding.
  */
-export function WidgetInspector({ row, problems, role, organizationId, tabs, onChange, onRemove }: WidgetInspectorProps) {
+export function WidgetInspector({ row, problems, role, organizationId, tabs, locationId, onChange, onRemove }: WidgetInspectorProps) {
   const problemFor = (field: string): string | undefined =>
     problems.find((problem) => problem.field === field)?.message;
   const cardinality = WIDGET_CATALOG[row.widgetType].points;
@@ -419,6 +423,16 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, onC
               ))}
             </select>
           </Field>
+          {/* `F4.306` (owner OQ2) — a stored selection, read against the site's lists. */}
+          {row.config.stripSegments !== undefined || row.config.stripPoints !== undefined ? (
+            <TrendStripSelectionSummary
+              locationId={locationId}
+              segments={row.config.stripSegments}
+              points={row.config.stripPoints}
+              colors={row.config.stripColors}
+              onChange={updateConfig}
+            />
+          ) : null}
         </div>
       ) : null}
 

@@ -1,7 +1,8 @@
+import { SERIES_ROLE_NAMES } from "@bms/shared";
 import { expect } from "vitest";
 
 import { ROLE_TOKENS, fromTokenMap } from "../test-role-tokens";
-import { readDocumentTheme, resolveRoles, withAlpha, type RoleName } from "./theme";
+import { ROLE_NAMES, readDocumentTheme, resolveRoles, withAlpha, type RoleName } from "./theme";
 
 /**
  * `F3.65c` U1 — the role resolver (plan D1). The source is injected (`fromTokenMap` over the real
@@ -55,4 +56,22 @@ export function r5CapitalisedDarkReadsLight(): void {
 export function r5MissingAttributeReadsLight(): void {
   document.documentElement.removeAttribute("data-theme");
   expect(readDocumentTheme()).toBe("light");
+}
+
+/**
+ * `F4.306` (ADR 0078 Amendment 4) — a widget config stores a series colour by its
+ * `@bms/shared` name (`seriesRoleSchema`), and the strip strokes `roles[name]`, so every name the
+ * contract accepts must be a role the resolver resolves.
+ */
+export function r6EverySeriesRoleIsAResolvedRole(): void {
+  const roleNames: readonly string[] = ROLE_NAMES;
+  expect(SERIES_ROLE_NAMES.filter((name) => !roleNames.includes(name))).toEqual([]);
+}
+
+/** The adjacent positive: the token file gives `series-2` its Amendment 4 value in each theme. */
+export function r6TheSeriesRolesResolveInBothThemes(): void {
+  expect([
+    resolveRoles(fromTokenMap(ROLE_TOKENS.light))["series-2"],
+    resolveRoles(fromTokenMap(ROLE_TOKENS.dark))["series-2"],
+  ]).toEqual(["rgb(15, 118, 110)", "rgb(45, 212, 191)"]);
 }

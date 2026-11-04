@@ -110,6 +110,7 @@ const TAILWIND_CONFIG_PATH = join(repoRoot, "apps/web/tailwind.config.js");
  * 41st role `simulated-ink` (owner ruling 2026-09-28, ADR 0078 Amendment 1 §1, added after the
  * plan's gate — see `tests/support/colour-role-map.ts`'s docblock for the derivation). The 40 §2.2 rows are the
  * plan's table transcribed, not derived; `simulated-ink` is not in the plan and is derived here.
+ * Roles 42–49, `series-1` … `series-8`, are ADR 0078 Amendment 4's table transcribed (F4.306).
  * T9/T10 are the check that `index.css` matches this table.
  */
 const ROLE_HEX: Record<string, { light: string; dark: string }> = {
@@ -159,6 +160,17 @@ const ROLE_HEX: Record<string, { light: string; dark: string }> = {
   // raised in 0.5% steps) to clear 4.5:1 on sheet, paper and `well` (the declared pairs below) —
   // 5.13 / 5.54 / 4.59.
   "simulated-ink": { light: "#6D28D9", dark: "#A67DE8" },
+  // Roles 42–49 (ADR 0078 Amendment 4, F4.306): the trend strip's per-point series colours. The
+  // sixteen values and their ratios on `surface` are recorded in the amendment; the contrast and
+  // distance rules are `tests/f3.65a-colour-contrast.test.ts` C3/C4 and S1–S3.
+  "series-1": { light: "#1D4ED8", dark: "#60A5FA" },
+  "series-2": { light: "#0F766E", dark: "#2DD4BF" },
+  "series-3": { light: "#6B21A8", dark: "#C084FC" },
+  "series-4": { light: "#C026D3", dark: "#F5D0FE" },
+  "series-5": { light: "#0369A1", dark: "#7DD3FC" },
+  "series-6": { light: "#4D7C0F", dark: "#A3E635" },
+  "series-7": { light: "#475569", dark: "#CBD5E1" },
+  "series-8": { light: "#312E81", dark: "#C7D2FE" },
 };
 
 /**
@@ -214,11 +226,11 @@ const stockColours = createRequire(join(repoRoot, "apps/web/package.json"))("tai
 describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
   const css = () => readFileSync(INDEX_CSS_PATH, "utf8");
 
-  it("T7 the light block defines exactly the 40 role names of §2.2 plus simulated-ink (41 total)", () => {
+  it("T7 the light block defines exactly the 40 role names of §2.2, simulated-ink and series-1…8 (49 total)", () => {
     expect([...parseTokenBlocks(css()).light.keys()].sort()).toEqual(Object.keys(ROLE_HEX).sort());
   });
 
-  it("T7 the dark block defines exactly the 40 role names of §2.2 plus simulated-ink (41 total)", () => {
+  it("T7 the dark block defines exactly the 40 role names of §2.2, simulated-ink and series-1…8 (49 total)", () => {
     expect([...parseTokenBlocks(css()).dark.keys()].sort()).toEqual(Object.keys(ROLE_HEX).sort());
   });
 
@@ -251,7 +263,7 @@ describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
     expect(mismatches).toEqual([]);
   });
 
-  it("T11 the role stems of theme.colors (outside the three keywords) are exactly the 41 roles", () => {
+  it("T11 the role stems of theme.colors (outside the three keywords) are exactly the 49 roles", () => {
     expect([...configColourLeaves.keys()].sort()).toEqual(Object.keys(ROLE_HEX).sort());
   });
 

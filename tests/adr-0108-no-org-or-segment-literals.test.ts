@@ -164,6 +164,13 @@ const MODULES: readonly string[] = [
   // F4.306 PR 1 U7: the placement rule and the append route's trend arm.
   "packages/shared/src/trend-strip-placement.ts",
   "apps/api/src/dashboard-builder/dashboard-widget-append-strips.ts",
+  // F4.306 PR 2 U10: the site trend-points client and the builder's selection summary.
+  "apps/web/src/api/site-trend-points.ts",
+  "apps/web/src/components/dashboards/trend-strip-selection-summary.tsx",
+  // F4.306 PR 2 U11: the wizard's pure module.
+  "apps/web/src/lib/trend-strip-wizard.ts",
+  // F4.306 PR 2 U12: the wizard dialog.
+  "apps/web/src/components/dashboards/trend-strip-wizard.tsx",
 ];
 
 /**
@@ -194,6 +201,11 @@ const MODULES: readonly string[] = [
  * {@link MODULES} by the unit that creates each (U10 the four shared files, U11 the schedule's
  * point check, U13 the two report files, U14 the append service, U15 `pin-dialog.tsx`, U16 the
  * last two web files), so the list is empty again.
+ *
+ * `F4.306` PR 2 (Amendment 7 item 10; `docs/plans/f4.306-trend-strip-wizard.md` PR 2 U8): the four
+ * new web modules, listed in U8 and moved to {@link MODULES} by the unit that creates each (U10
+ * the site trend-points client and the selection summary, U11 the pure wizard module, U12 the
+ * wizard dialog), so the list is empty again by U12.
  */
 const PENDING_MODULES: readonly string[] = [];
 

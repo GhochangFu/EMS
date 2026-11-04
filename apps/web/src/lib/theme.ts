@@ -4,7 +4,7 @@
  *
  * JSX-owned markup paints with role classes (`fill-accent`, `stroke-ink-hint`). A surface a
  * library paints — ECharts, Leaflet, the CodeMirror theme — cannot take a class, so it reads the
- * 41 roles here, as `rgb(r, g, b)` strings resolved from the `--role` custom properties on
+ * 49 roles here, as `rgb(r, g, b)` strings resolved from the `--role` custom properties on
  * `<html>`. That read happens in this file only (`tests/f3.65c-theme-gates.test.ts` G3), and the
  * role list is `index.css`'s light block exactly (G1).
  *
@@ -15,7 +15,7 @@
 /** The `localStorage` key the boot script in `index.html` reads (G2). */
 export const THEME_STORAGE_KEY = "bms.theme";
 
-/** The 41 roles of `index.css`, in its order. */
+/** The 49 roles of `index.css`, in its order. */
 export const ROLE_NAMES = [
   "canvas",
   "surface",
@@ -58,6 +58,14 @@ export const ROLE_NAMES = [
   "info-wash",
   "info-line",
   "simulated-ink",
+  "series-1",
+  "series-2",
+  "series-3",
+  "series-4",
+  "series-5",
+  "series-6",
+  "series-7",
+  "series-8",
 ] as const;
 
 export type RoleName = (typeof ROLE_NAMES)[number];

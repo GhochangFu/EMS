@@ -79,11 +79,13 @@ vi.mock("../../components/control-room/site-dashboard-view", () => ({
     organizationId,
     locationId,
     tab,
+    role,
   }: {
     slug: string;
     organizationId: string;
     locationId: string;
     tab: string | undefined;
+    role?: string;
   }) => (
     <div
       data-testid="site-dashboard-view"
@@ -91,6 +93,7 @@ vi.mock("../../components/control-room/site-dashboard-view", () => ({
       data-organization-id={organizationId}
       data-location-id={locationId}
       data-tab={tab ?? "(bare)"}
+      data-role={role ?? "(none)"}
     />
   ),
 }));
@@ -381,6 +384,15 @@ export async function dashboardRendersSiteDashboardView(): Promise<void> {
   const mount = await screen.findByTestId("site-dashboard-view");
   expect(mount.getAttribute("data-slug")).toBe("phe-lotapata");
   expect(mount.getAttribute("data-organization-id")).toBe(ORG_PHE.id);
+}
+
+/** V7e — `F4.306` U13: the page hands the user's role to the view, which gates its wizard button. */
+export async function dashboardViewGetsTheRole(): Promise<void> {
+  stubReads(PHE_SITES, view("p1", { kind: "dashboard", dashboardId: "d1", dashboardSlug: "phe-lotapata" }));
+  renderAt("p1");
+
+  const mount = await screen.findByTestId("site-dashboard-view");
+  expect(mount.getAttribute("data-role")).toBe(USER.role);
 }
 
 /**

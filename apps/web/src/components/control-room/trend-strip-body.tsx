@@ -1,13 +1,19 @@
-import type { SiteTrendStripDto, TrendStripPointDto, TrendStripRange, TrendStripSegmentDto } from "@bms/shared";
+import type {
+  SiteTrendStripDto,
+  TrendStripPointDto,
+  TrendStripRange,
+  TrendStripSegmentDto,
+  TrendStripWidgetConfig,
+} from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
-import { fetchSiteTrendStrip } from "../../api/trend-strip";
+import { fetchSiteTrendStrip, type TrendStripRequest } from "../../api/trend-strip";
 import { downloadTrendStripExport } from "../../api/view-exports";
 import { formatPointValue } from "../../lib/generated-site-view";
 import { siteAssetsPath } from "../../lib/smoc-pages";
-import { historyHref, lastValue, stripWindowLabel } from "../../lib/trend-strip";
+import { historyHref, lastValue, strokeRoleFor, stripWindowLabel } from "../../lib/trend-strip";
 import { SectionCard } from "../section-card";
 import { ExportMenu } from "../view-actions/export-menu";
 import { Sparkline } from "./sparkline";
@@ -47,15 +53,38 @@ function trimLine(strip: SiteTrendStripDto): string {
     : points;
 }
 
+/** `F4.306` (ADR 0108 Amendment 7): a stored strip's selection; absent is the `F4.305` strip. */
+export type TrendStripSelection = Pick<TrendStripWidgetConfig, "segments" | "points" | "colors">;
+
+/** The read's request: the selection's two lists only when present, so no selection is the `F4.305` request. */
+function stripRequest(
+  range: TrendStripRange,
+  assetGroupId: string | null,
+  selection: TrendStripSelection | undefined,
+): TrendStripRequest {
+  return {
+    range,
+    assetGroupId,
+    ...(selection?.segments !== undefined ? { segments: selection.segments } : {}),
+    ...(selection?.points !== undefined ? { points: selection.points } : {}),
+  };
+}
+
 function PointRow({
   point,
+  domain,
+  colors,
   range,
   locationId,
 }: {
   point: TrendStripPointDto;
+  /** The segment the point is in: with the point's code, the `colors` key. */
+  domain: string;
+  colors: TrendStripSelection["colors"];
   range: TrendStripRange;
   locationId: string;
 }) {
+  const stroke = strokeRoleFor(colors, domain, point.code);
   return (
     <li aria-label={point.name} className="flex flex-col gap-2 border-t border-well-deep pt-3 first:border-t-0 first:pt-0">
       <div className="flex items-baseline gap-2">
@@ -77,7 +106,7 @@ function PointRow({
                 title={asset.assetName}
                 className="rounded hover:bg-well focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               >
-                <Sparkline buckets={asset.buckets} label={`${asset.assetCode} ${point.name}`} />
+                <Sparkline buckets={asset.buckets} label={`${asset.assetCode} ${point.name}`} stroke={stroke} />
               </Link>
               <span className="flex justify-between gap-2 text-[11px]">
                 <span className="font-semibold text-ink-muted">{asset.assetCode}</span>
@@ -107,10 +136,12 @@ function PointRow({
 
 function SegmentCard({
   segment,
+  colors,
   range,
   locationId,
 }: {
   segment: TrendStripSegmentDto;
+  colors: TrendStripSelection["colors"];
   range: TrendStripRange;
   locationId: string;
 }) {
@@ -121,7 +152,14 @@ function SegmentCard({
     >
       <ul className="flex flex-col gap-3">
         {segment.points.map((point) => (
-          <PointRow key={point.code} point={point} range={range} locationId={locationId} />
+          <PointRow
+            key={point.code}
+            point={point}
+            domain={segment.domain}
+            colors={colors}
+            range={range}
+            locationId={locationId}
+          />
         ))}
       </ul>
     </SectionCard>
@@ -141,6 +179,11 @@ type TrendStripBodyProps = {
    * widget pass `!wall` (a wall screen has no actions); no Link, Pin or Schedule on the strip.
    */
   exportable: boolean;
+  /**
+   * `F4.306` U9 (ADR 0108 Amendment 7, items 4 and 7): a stored strip's selection. `segments` and
+   * `points` go in the read and its query key; `colors` strokes each point. Absent is `F4.305`.
+   */
+  selection?: TrendStripSelection;
 };
 
 /**
@@ -149,11 +192,26 @@ type TrendStripBodyProps = {
  * `trend_strip` dashboard widget (`widgets/trend-strip-widget.tsx`) both draw this, so the read,
  * the click target and the fixed failure sentences are written once.
  */
-export function TrendStripBody({ locationId, assetGroupId, defaultRange, heading, exportable }: TrendStripBodyProps) {
+export function TrendStripBody({
+  locationId,
+  assetGroupId,
+  defaultRange,
+  heading,
+  exportable,
+  selection,
+}: TrendStripBodyProps) {
   const [range, setRange] = useState<TrendStripRange>(defaultRange);
   const query = useQuery({
-    queryKey: ["control-room", "trend-strip", locationId, assetGroupId, range],
-    queryFn: () => fetchSiteTrendStrip(locationId, { range, assetGroupId }),
+    queryKey: [
+      "control-room",
+      "trend-strip",
+      locationId,
+      assetGroupId,
+      range,
+      selection?.segments ?? null,
+      selection?.points ?? null,
+    ],
+    queryFn: () => fetchSiteTrendStrip(locationId, stripRequest(range, assetGroupId, selection)),
     refetchInterval: 60_000,
   });
   const strip = query.data;
@@ -165,7 +223,7 @@ export function TrendStripBody({ locationId, assetGroupId, defaultRange, heading
       >
         {heading}
         {exportable ? (
-          <ExportMenu onExport={(format) => downloadTrendStripExport(format, locationId, { range, assetGroupId })} />
+          <ExportMenu onExport={(format) => downloadTrendStripExport(format, locationId, stripRequest(range, assetGroupId, selection))} />
         ) : null}
         <nav aria-label="Trend range" className="flex gap-1">
           {RANGES.map((r) => (
@@ -202,7 +260,13 @@ export function TrendStripBody({ locationId, assetGroupId, defaultRange, heading
             <p className="text-xs text-ink-muted">No trend points for the assets on this tab.</p>
           ) : (
             strip.segments.map((segment) => (
-              <SegmentCard key={segment.domain} segment={segment} range={strip.range} locationId={locationId} />
+              <SegmentCard
+                key={segment.domain}
+                segment={segment}
+                colors={selection?.colors}
+                range={strip.range}
+                locationId={locationId}
+              />
             ))
           )}
           {strip.trimmed ? (

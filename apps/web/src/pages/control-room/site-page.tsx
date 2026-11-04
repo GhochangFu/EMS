@@ -344,6 +344,8 @@ function SiteViewBody({ view, site, scope, tab, tabParam, role }: SiteViewBodyPr
           organizationId={site.organization.id}
           locationId={site.id}
           tab={tabParam}
+          role={role}
+          siteName={site.name}
         />
       ) : (
         <GeneratedSiteView locationId={site.id} />

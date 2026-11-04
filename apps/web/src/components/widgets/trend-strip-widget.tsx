@@ -1,6 +1,6 @@
 import type { TrendStripRange } from "@bms/shared";
 
-import { TrendStripBody } from "../control-room/trend-strip-body";
+import { TrendStripBody, type TrendStripSelection } from "../control-room/trend-strip-body";
 import { SITE_WIDGET_BODY_CLASS } from "./site-widget-parts";
 import { WidgetFrame } from "./widget-frame";
 
@@ -16,6 +16,8 @@ type TrendStripWidgetProps = {
   defaultRange: TrendStripRange;
   /** `F4.303` U7: the Export group; false on a wall screen. The builder preview is a separate component and draws none. */
   exportable: boolean;
+  /** `F4.306` U9: the stored selection, passed to the body; absent is the `F4.305` strip. */
+  selection?: TrendStripSelection;
 };
 
 /**
@@ -27,7 +29,14 @@ type TrendStripWidgetProps = {
  *
  * The body is keyed on the default range, so an edited `defaultRange` restarts the switch on it.
  */
-export function TrendStripWidget({ title, locationId, assetGroupId, defaultRange, exportable }: TrendStripWidgetProps) {
+export function TrendStripWidget({
+  title,
+  locationId,
+  assetGroupId,
+  defaultRange,
+  exportable,
+  selection,
+}: TrendStripWidgetProps) {
   return (
     <WidgetFrame title={title} status="ready">
       <div className={SITE_WIDGET_BODY_CLASS}>
@@ -40,6 +49,7 @@ export function TrendStripWidget({ title, locationId, assetGroupId, defaultRange
             assetGroupId={assetGroupId}
             defaultRange={defaultRange}
             exportable={exportable}
+            selection={selection}
           />
         )}
       </div>

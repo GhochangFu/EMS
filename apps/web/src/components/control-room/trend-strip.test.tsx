@@ -2,6 +2,7 @@
 import { afterEach, describe, it } from "vitest";
 
 import {
+  aColoredPointStrokesWithItsRole,
   aFailedReadRendersAFixedSentence,
   aFailedRefetchKeepsTheSparklines,
   aGroupStripSendsItsGroupId,
@@ -11,6 +12,7 @@ import {
   aStripWithADroppedSegmentSaysPointsAreHidden,
   aTrimmedStripSaysSo,
   aWholeSiteStripSendsANullGroup,
+  anUncoloredPointKeepsAccent,
   anUntrimmedStripPrintsNoTrimLine,
   cleanupStrip,
   eachAssetPrintsItsLastValueWithItsUnit,
@@ -18,6 +20,8 @@ import {
   moreAssetsLinksToTheAssetsTab,
   noMoreLinkWhenNoneBeyondTheCap,
   noSegmentsRendersTheEmptySentence,
+  noSelectionSendsNoSelectionKeys,
+  noSelectionStrokesEveryPolylineAccent,
   oneRowPerPointWithNameAndUnit,
   oneSectionPerSegmentWithItsLabel,
   pressing7dRefetchesAndMarksIt,
@@ -28,7 +32,9 @@ import {
   theStripHasNoSchedule,
   theSubtitleNamesTheListSource,
   theWallDrawsNoExport,
+  theReadCarriesTheSelection,
   theWindowLinePrintsTheResponseZone,
+  twoSelectionsAreTwoReads,
 } from "./trend-strip.spec";
 
 /**
@@ -142,5 +148,35 @@ describe("F4.301 U4 TrendStrip", () => {
 
   it("F4.303 U16: the strip has no Schedule", async () => {
     await theStripHasNoSchedule();
+  });
+});
+
+describe("F4.306 U9 TrendStripBody selection", () => {
+  afterEach(() => {
+    cleanupStrip();
+  });
+
+  it("strokes a coloured point's polylines with its role", async () => {
+    await aColoredPointStrokesWithItsRole();
+  });
+
+  it("keeps accent on a point with no colour", async () => {
+    await anUncoloredPointKeepsAccent();
+  });
+
+  it("strokes every polyline accent with no selection", async () => {
+    await noSelectionStrokesEveryPolylineAccent();
+  });
+
+  it("sends the selection's segments and points", async () => {
+    await theReadCarriesTheSelection();
+  });
+
+  it("sends only range and group with no selection", async () => {
+    await noSelectionSendsNoSelectionKeys();
+  });
+
+  it("reads twice for two selections in one query client", async () => {
+    await twoSelectionsAreTwoReads();
   });
 });

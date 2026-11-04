@@ -16,13 +16,27 @@ export interface TrendStripRequest {
   readonly range: TrendStripRange;
   /** The tab's asset group; `null` is the whole site and sends no key. */
   readonly assetGroupId: string | null;
+  /** `F4.306` (ADR 0108 Amendment 7): the segment codes the strip draws; absent is every segment. */
+  readonly segments?: readonly string[];
+  /** `F4.306`: the `<segment>:<point code>` entries the strip draws; absent is each segment's default. */
+  readonly points?: readonly string[];
 }
 
-/** The search of one strip request; the whole site (`assetGroupId: null`) sends no group key. */
-export function trendStripSearch({ range, assetGroupId }: TrendStripRequest): URLSearchParams {
+/**
+ * The search of one strip request; the whole site (`assetGroupId: null`) sends no group key. A
+ * selection list goes comma-joined, and only when it holds an entry: the route refuses an empty
+ * one (`.min(1)`), and no selection is exactly the `F4.305` bytes.
+ */
+export function trendStripSearch({ range, assetGroupId, segments, points }: TrendStripRequest): URLSearchParams {
   const params = new URLSearchParams({ range });
   if (assetGroupId !== null) {
     params.append("assetGroupId", assetGroupId);
+  }
+  if (segments !== undefined && segments.length > 0) {
+    params.append("segments", segments.join(","));
+  }
+  if (points !== undefined && points.length > 0) {
+    params.append("points", points.join(","));
   }
   return params;
 }
