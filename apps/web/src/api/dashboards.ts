@@ -1,5 +1,6 @@
 import {
   appendChartWidgetResponseSchema,
+  appendTrendStripWidgetsResponseSchema,
   dashboardCatalogValuesResponseSchema,
   dashboardDeletedResponseSchema,
   dashboardDtoSchema,
@@ -15,6 +16,8 @@ import type {
 import type {
   AppendChartWidgetBody,
   AppendChartWidgetResponse,
+  AppendTrendStripWidgetsBody,
+  AppendTrendStripWidgetsResponse,
   DashboardCatalogValuesResponse,
   DashboardDeletedResponse,
   DashboardDto,
@@ -171,6 +174,24 @@ export async function appendChartWidget(
   return dashboardsFetch(
     `/dashboards/${encodeURIComponent(id)}/widgets/append`,
     appendChartWidgetResponseSchema,
+    "dashboards/:id/widgets/append",
+    jsonInit("POST", body),
+  );
+}
+
+/**
+ * `F4.306` U12 (ADR 0108 Amendment 7 item 5) — the append route's trend arm: one `trend_strip` per
+ * strip, each replacing its tab's strip or added at its foot. The answer is the widgets in body
+ * order and the new `updatedAt`. Status meanings as {@link appendChartWidget}'s, plus a 400 for a
+ * selection the site's lists do not hold; the `ApiError` carries the status.
+ */
+export async function appendTrendStripWidgets(
+  id: string,
+  body: AppendTrendStripWidgetsBody,
+): Promise<AppendTrendStripWidgetsResponse> {
+  return dashboardsFetch(
+    `/dashboards/${encodeURIComponent(id)}/widgets/append`,
+    appendTrendStripWidgetsResponseSchema,
     "dashboards/:id/widgets/append",
     jsonInit("POST", body),
   );

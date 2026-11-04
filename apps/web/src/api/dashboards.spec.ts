@@ -1,8 +1,8 @@
 import { expect, vi } from "vitest";
 
-import type { AppendChartWidgetBody } from "@bms/shared";
+import type { AppendChartWidgetBody, AppendTrendStripWidgetsBody } from "@bms/shared";
 
-import { appendChartWidget, fetchDashboards } from "./dashboards";
+import { appendChartWidget, appendTrendStripWidgets, fetchDashboards } from "./dashboards";
 import { ResponseContractError } from "./validate";
 
 /**
@@ -185,4 +185,54 @@ export async function appendChartWidgetAnswersTheParsedResponse(): Promise<void>
 export async function appendChartWidgetRefusesAnAnswerWithoutTheStamp(): Promise<void> {
   captureRequest({ widget: APPEND_ANSWER.widget });
   await expect(appendChartWidget(DASHBOARD_ID, APPEND_BODY)).rejects.toBeInstanceOf(ResponseContractError);
+}
+
+const STRIPS_BODY: AppendTrendStripWidgetsBody = {
+  widgetType: "trend_strip",
+  strips: [
+    { config: { defaultRange: "24h", segments: ["seg_a"], points: ["seg_a:pt_x"], colors: { "seg_a:pt_x": "series-2" } } },
+  ],
+};
+
+/** A contract-valid trend arm answer: one widget per strip, and the stamp. */
+const STRIPS_ANSWER = {
+  widgets: [
+    {
+      ...APPEND_ANSWER.widget,
+      title: null,
+      points: [],
+      widgetType: "trend_strip",
+      config: { defaultRange: "24h", segments: ["seg_a"], points: ["seg_a:pt_x"], colors: { "seg_a:pt_x": "series-2" } },
+    },
+  ],
+  updatedAt: "2026-11-04T10:00:00.000+00:00",
+};
+
+/** `F4.306` U12 — `appendTrendStripWidgets` posts to the same append route of the dashboard id. */
+export async function appendTrendStripWidgetsPostsToTheAppendRoute(): Promise<void> {
+  const seen = captureRequest(STRIPS_ANSWER);
+  await appendTrendStripWidgets(DASHBOARD_ID, STRIPS_BODY);
+  expect(seen().url).toBe(`${BASE}/api/v1/dashboards/${DASHBOARD_ID}/widgets/append`);
+  expect(seen().init?.method).toBe("POST");
+}
+
+/** `F4.306` U12 — the trend arm's body is sent as given, JSON. */
+export async function appendTrendStripWidgetsSendsTheBody(): Promise<void> {
+  const seen = captureRequest(STRIPS_ANSWER);
+  await appendTrendStripWidgets(DASHBOARD_ID, STRIPS_BODY);
+  expect(JSON.parse(String(seen().init?.body))).toEqual(STRIPS_BODY);
+}
+
+/** `F4.306` U12 — the answer is the parsed `{ widgets, updatedAt }`. */
+export async function appendTrendStripWidgetsAnswersTheParsedResponse(): Promise<void> {
+  captureRequest(STRIPS_ANSWER);
+  const answer = await appendTrendStripWidgets(DASHBOARD_ID, STRIPS_BODY);
+  expect(answer.updatedAt).toBe(STRIPS_ANSWER.updatedAt);
+  expect(answer.widgets.map((widget) => widget.id)).toEqual([APPEND_ANSWER.widget.id]);
+}
+
+/** `F4.306` U12 — the chart arm's answer (`widget`, not `widgets`) is refused. */
+export async function appendTrendStripWidgetsRefusesTheChartAnswer(): Promise<void> {
+  captureRequest(APPEND_ANSWER);
+  await expect(appendTrendStripWidgets(DASHBOARD_ID, STRIPS_BODY)).rejects.toBeInstanceOf(ResponseContractError);
 }

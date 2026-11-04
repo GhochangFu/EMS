@@ -5,6 +5,10 @@ import {
   appendChartWidgetPostsToTheAppendRoute,
   appendChartWidgetRefusesAnAnswerWithoutTheStamp,
   appendChartWidgetSendsTheBody,
+  appendTrendStripWidgetsAnswersTheParsedResponse,
+  appendTrendStripWidgetsPostsToTheAppendRoute,
+  appendTrendStripWidgetsRefusesTheChartAnswer,
+  appendTrendStripWidgetsSendsTheBody,
   fetchDashboardsSendsAllThreeKeysInOrder,
   fetchDashboardsSendsAssetIdAlone,
   fetchDashboardsSendsLocationIdAlone,
@@ -74,5 +78,28 @@ describe("F4.303 U15 appendChartWidget", () => {
 
   it("refuses an answer the response schema does not admit", async () => {
     await appendChartWidgetRefusesAnAnswerWithoutTheStamp();
+  });
+});
+
+describe("F4.306 U12 appendTrendStripWidgets", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it("posts to /dashboards/:id/widgets/append", async () => {
+    await appendTrendStripWidgetsPostsToTheAppendRoute();
+  });
+
+  it("sends the body as given", async () => {
+    await appendTrendStripWidgetsSendsTheBody();
+  });
+
+  it("answers the parsed widgets and stamp", async () => {
+    await appendTrendStripWidgetsAnswersTheParsedResponse();
+  });
+
+  it("refuses the chart arm's answer (widget, not widgets)", async () => {
+    await appendTrendStripWidgetsRefusesTheChartAnswer();
   });
 });
