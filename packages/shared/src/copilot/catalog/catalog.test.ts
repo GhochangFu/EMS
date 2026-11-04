@@ -21,6 +21,7 @@ import {
   theCalcPointEntriesCarryTheRoutesOwnBodies,
   everyCalcPointEntryIsRed,
   theCalcTargetsNameTheAssetKindTheRouteWrites,
+  theCalcTitlesNameTheAssetKind,
   theCalcPointWritesOfferABackfillStep,
   aDeleteOutsideTheAllowanceIsRefused,
   noClientOnlyFieldReachesTheModelBody,
@@ -139,5 +140,6 @@ describe("F4.311 PR 3 — the standalone calc-point entries (ADR 0099 Amendment 
   it("carries the routes' own body exports, by identity", () => theCalcPointEntriesCarryTheRoutesOwnBodies());
   it("makes every calc-point card red (ADR 0109 decision 6)", () => everyCalcPointEntryIsRed());
   it("names the asset kind each route writes in its target", () => theCalcTargetsNameTheAssetKindTheRouteWrites());
+  it("names the asset kind each calc write acts on in its title", () => theCalcTitlesNameTheAssetKind());
   it("offers a Backfill step on both writes that compute history", () => theCalcPointWritesOfferABackfillStep());
 });

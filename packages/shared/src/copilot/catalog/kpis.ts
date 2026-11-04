@@ -88,7 +88,7 @@ export const KPI_ENTRIES: readonly CatalogEntry[] = [
   },
   {
     id: "calcOverride.set",
-    title: "Override an asset's calculated point",
+    title: "Override a calculated point on an asset built from a template",
     method: "PUT",
     path: "/admin/assets/:assetId/calc-points/:pointKey",
     params: { assetId: uuidParam, pointKey: pointKeyParam },
@@ -106,7 +106,7 @@ export const KPI_ENTRIES: readonly CatalogEntry[] = [
   },
   {
     id: "calcPoint.set",
-    title: "Set a calculated point on an asset",
+    title: "Set a calculated point on an asset with no template",
     method: "PUT",
     path: "/admin/assets/:assetId/calc-points/:pointKey",
     params: { assetId: uuidParam, pointKey: pointKeyParam },
@@ -125,7 +125,7 @@ export const KPI_ENTRIES: readonly CatalogEntry[] = [
   },
   {
     id: "calcPoint.createBatch",
-    title: "Add a calculated point to several assets",
+    title: "Add a calculated point to several assets with no template",
     method: "POST",
     path: "/admin/calc-points/batch",
     params: {},
@@ -155,7 +155,7 @@ export const KPI_ENTRIES: readonly CatalogEntry[] = [
   },
   {
     id: "calcPoint.delete",
-    title: "Remove a calculated point from an asset",
+    title: "Remove a calculated point from an asset with no template",
     method: "DELETE",
     path: "/admin/assets/:assetId/calc-points/:pointKey",
     params: { assetId: uuidParam, pointKey: pointKeyParam },

@@ -191,6 +191,20 @@ export function theCalcTargetsNameTheAssetKindTheRouteWrites(): void {
   ]);
 }
 
+/**
+ * Amendment 11 G2: `calcOverride.set` and `calcPoint.set` share a method and a path, so each card's
+ * title names the asset kind it writes — the reader cannot tell them apart by the route.
+ */
+export function theCalcTitlesNameTheAssetKind(): void {
+  const titles = ["calcOverride.set", ...CALC_POINT_IDS].map((id) => [id, catalogEntry(id)?.title]);
+  expect(titles).toEqual([
+    ["calcOverride.set", "Override a calculated point on an asset built from a template"],
+    ["calcPoint.set", "Set a calculated point on an asset with no template"],
+    ["calcPoint.createBatch", "Add a calculated point to several assets with no template"],
+    ["calcPoint.delete", "Remove a calculated point from an asset with no template"],
+  ]);
+}
+
 /** Amendment 11 G6: both writes that compute history offer the Backfill step (`backfillDays`). */
 export function theCalcPointWritesOfferABackfillStep(): void {
   for (const id of ["calcPoint.set", "calcPoint.createBatch"]) {

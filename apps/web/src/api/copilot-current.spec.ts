@@ -375,3 +375,57 @@ export async function theAssetTemplateCardReadsTheVersionsFields(): Promise<void
   });
   expect(read).toHaveBeenCalledWith(TEMPLATE_ID);
 }
+
+/*
+ * `F4.311` PR 3 review — the standalone calc-point card (`calcPoint.set`): a replace shows the
+ * five calc fields the point stores now; a new key has no record, so the card shows no "before".
+ */
+
+const STORED_CALC = {
+  formula: "{kw} * 2",
+  formulaDialect: "bms-calc-v1" as const,
+  calcTrigger: "scheduled" as const,
+  calcIntervalSeconds: 60,
+  maxInputAgeSeconds: 300,
+};
+const NO_CALC = { formula: null, formulaDialect: null, calcTrigger: null, calcIntervalSeconds: null, maxInputAgeSeconds: null };
+
+const STANDALONE_ITEM = {
+  pointKey: "kw_x2",
+  kind: "standalone" as const,
+  templatePointId: null,
+  label: "kW doubled",
+  unit: "kW",
+  assetPointId: POINT,
+  template: NO_CALC,
+  override: STORED_CALC,
+  effective: STORED_CALC,
+  minCoverageRatio: null,
+  runtime: null,
+};
+
+function calcPointSetChange(pointKey: string): CopilotPendingChangeDto {
+  return {
+    ...viewChange(`/api/v1/admin/assets/${ASSET}/calc-points/${pointKey}`),
+    catalogId: "calcPoint.set",
+    method: "PUT",
+    body: { ...STORED_CALC, formula: "{kw} * 3" },
+    summary: "Set.",
+    risk: "create",
+  };
+}
+
+/** A replace of a stored standalone point reads its five stored calc fields, through the asset's calc-point list. */
+export async function theCalcPointCardReadsTheStoredStandalonePoint(): Promise<void> {
+  const list = vi
+    .spyOn(assetPointsApi, "fetchAdminAssetCalcPoints")
+    .mockResolvedValue({ items: [STANDALONE_ITEM], mode: "standalone" });
+  expect(await fetchCopilotCurrent(calcPointSetChange("kw_x2"))).toEqual(STORED_CALC);
+  expect(list).toHaveBeenCalledWith(ASSET);
+}
+
+/** A key the asset does not hold yet is a create: there is no "before". */
+export async function aNewCalcPointKeyReadsNull(): Promise<void> {
+  vi.spyOn(assetPointsApi, "fetchAdminAssetCalcPoints").mockResolvedValue({ items: [STANDALONE_ITEM], mode: "standalone" });
+  expect(await fetchCopilotCurrent(calcPointSetChange("kw_x3"))).toBeNull();
+}

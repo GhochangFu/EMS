@@ -76,6 +76,13 @@ export async function fetchCopilotCurrent(change: CopilotPendingChangeDto): Prom
       const point = points.items.find((item) => item.pointKey === params.pointKey);
       return point ? { ...point.override } : null;
     }
+    // `F4.311` PR 3 review: a standalone point stores its five calc fields in the `override` role
+    // (`assetPointCalcConfigDtoSchema`); a key the asset does not hold yet is a create — no "before".
+    case "calcPoint.set": {
+      const points = await fetchAdminAssetCalcPoints(params.assetId as string);
+      const point = points.items.find((item) => item.kind === "standalone" && item.pointKey === params.pointKey);
+      return point ? { ...point.override } : null;
+    }
     // `F3.86` PR 3d: the stored setting, through the route the locations page reads it with.
     case "location.controlRoomView.set": {
       const setting = await fetchSiteControlRoomView(params.id as string);

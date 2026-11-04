@@ -46,7 +46,8 @@ import { proposeHarness } from "./copilot-propose-tools.spec";
  *   (`propose_rule_createBatch` is 2,185 of it); the bound is 87,000 (86,000 + 1,000).
  * - ADR 0099 Amendment 11 G7 (owner, approved with the text at the merge): F4.311 PR 3 measured 89,523 over
  *   108 definitions (`propose_calcPoint_set` 1,060, `_createBatch` 1,109, `_delete` 467); the bound is
- *   91,000 (90,000 + 1,000).
+ *   91,000 (90,000 + 1,000). Re-measured at the PR 3 review (the asset kind in the four calc titles):
+ *   89,599 (`propose_calcPoint_set` 1,077, `_createBatch` 1,126, `_delete` 484), under the bound, so it is unchanged.
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();

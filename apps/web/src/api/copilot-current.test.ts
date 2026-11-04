@@ -1,12 +1,14 @@
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aNewCalcPointKeyReadsNull,
   anUnknownAssetReadsNull,
   anUnknownLocationReadsNull,
   anUnknownPointReadsNull,
   anUnknownRtuReadsNull,
   theAssetCardReadsTheListedRow,
   theAssetTemplateCardReadsTheVersionsFields,
+  theCalcPointCardReadsTheStoredStandalonePoint,
   theLocationCardReadsNoAreaAsNull,
   theLocationCardReadsTheListedRow,
   theLocationCardReadsTheStoredArea,
@@ -55,4 +57,14 @@ describe("F4.246 — the asset-template edit card's Now values", () => {
 
   it("maps the version's detail read to the update body's fields, points in the write shape", () =>
     theAssetTemplateCardReadsTheVersionsFields());
+});
+
+describe("F4.311 PR 3 review — the standalone calc-point card's Now values", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("reads the five stored calc fields of the standalone point the key names", () =>
+    theCalcPointCardReadsTheStoredStandalonePoint());
+  it("reads null for a key the asset does not hold yet", () => aNewCalcPointKeyReadsNull());
 });
