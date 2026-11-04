@@ -549,3 +549,42 @@ colour (stock `#9ca3af`, an unchanged pixel), third-party CSS
 (`leaflet.css`), and a class name built by string concatenation — the
 scanner needs a literal class and D4's status functions were written to
 return whole literal strings for exactly this reason.
+
+## Amendment 4 — eight series roles for the trend strip (`F4.306`, 2026-11-04)
+
+**Status: Drafted 2026-11-04; the owner answered its two questions in chat the
+same day, recorded as ADR 0108 Amendment 7 Q9 and Q10.** Code citations are to
+`main` at `4619310a`. A line marked *(owner)* is a ruling; the others are
+drafter calls the `F4.306` plan may refine.
+
+**Why.** `F4.306` lets an administrator give each trend strip point its own
+colour (ADR 0108 Amendment 7 item 9). The chart series palette
+(`apps/web/src/lib/chart-theme.ts:20`) holds `warning` and `critical`, the
+alarm colours, so a red or amber sparkline could read as an alarm. The owner
+ruled for a new palette rather than a subset of the old one *(owner, Q9)*.
+
+1. **Eight new roles, `series-1` … `series-8`** *(owner, Q10)*. The 41 roles
+   become 49. Each new role has a light value in `:root` and a dark value in
+   `:root[data-theme="dark"]` of `apps/web/src/index.css`, and joins
+   `ROLE_NAMES` (`apps/web/src/lib/theme.ts:19`) and the Tailwind role map in
+   the same order. **No existing role changes its value**, so no pixel of the
+   current UI moves.
+2. **The rule each value meets.** At least 3:1 contrast against `surface` in
+   its own theme (WCAG 1.4.11 — a line is a graphic, not text). Not close to
+   `warning` or `critical` in either theme (the plan states the hue distance
+   it uses and measures each pair). The eight are told apart from one another
+   in both themes. The plan records the sixteen values and their measured
+   ratios here, in this amendment, before the build merges — decision 3's rule
+   for an adjusted value.
+3. **Where they are used.** Only the trend strip's per-point colour in this
+   row. A point with no chosen colour keeps `accent` *(owner, Q10)*.
+   `SERIES_PALETTE` and the charts that read it do not change.
+4. **The gates.** `tests/f3.65a-colour-mapping-table.test.ts`,
+   `tests/f3.65c-theme-gates.test.ts` and the `theme.ts` role-count comments
+   follow 41 → 49; the hard zeros for `palette`, `hex` and `func` (Amendment 3)
+   stay zero — the strip reads the roles through `useChartTheme`, never a hex
+   value.
+5. **Later colour profiles.** A per-organization colour profile is not decided
+   here; it is a separate row with its own record. The roles are stored by
+   name in a widget config, never as a value, so a later profile can give them
+   new values without a data change.
