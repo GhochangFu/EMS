@@ -206,7 +206,6 @@ export function PointCalcFormulaFields({ config, draft, busy, onDraftChange }: F
   );
 }
 
-/** Runs, Every and Inputs valid for — the wizard's Schedule step. */
 /** `F4.311` PR 5 — the Backfill step's choices, bounded 1..31 (ADR 0109 decision 7). */
 const BACKFILL_DAY_CHOICES = [1, 7, 14, 31] as const;
 
@@ -237,6 +236,7 @@ export function PointCalcBackfillField({ config, draft, busy, onDraftChange }: F
   );
 }
 
+/** Runs, Every and Inputs valid for — the wizard's Schedule step. */
 export function PointCalcScheduleFields({ config, draft, busy, onDraftChange }: FieldsProps) {
   const set = (patch: Partial<OverrideDraft>) => onDraftChange({ ...draft, ...patch });
   const merged = mergedDialect(draft, config);

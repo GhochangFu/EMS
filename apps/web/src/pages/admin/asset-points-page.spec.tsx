@@ -633,6 +633,66 @@ export async function theOverrideWizardSendsNoCopilotHeader(): Promise<void> {
   expect(new Headers(put.init.headers).get("X-Copilot-Change")).toBeNull();
 }
 
+/**
+ * `F4.311` PR 5 review — under owner ruling 4 a 409 (a backfill already
+ * running) or a 503 (no worker) from the PUT arrives **after** the override
+ * committed: the sentence says it was saved. The page therefore treats it as
+ * a save — the wizard closes, both lists refetch, and the sentence stays
+ * beside the list — rather than leaving the pre-save card under a message
+ * that contradicts it.
+ */
+const SAVED_BUT_NOT_BACKFILLED =
+  "The calculated point was saved, but a backfill is already running for this point (KWH), so no new backfill " +
+  "was started. Ask again once the running one has finished.";
+
+/** The wizard on Review with a backfill chosen, its PUT set to refuse with `status` after the save. */
+async function reviewRefusedAfterTheSave(status: 409 | 503): Promise<void> {
+  stubApi();
+  vi.spyOn(api, "setAdminAssetPointCalcOverride").mockRejectedValue(
+    new ApiError(JSON.stringify({ statusCode: status, message: SAVED_BUT_NOT_BACKFILLED }), status),
+  );
+  await openOverrideWizard();
+  await formulaToReview("{KW} * 3", "7");
+}
+
+async function submit(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+}
+
+/** A 409 after the save refetches the calculated-points list. */
+export async function aSavedButRefusedBackfillRefetchesTheCalcPoints(): Promise<void> {
+  await reviewRefusedAfterTheSave(409);
+  const before = vi.mocked(api.fetchAdminAssetCalcPoints).mock.calls.length;
+  await submit();
+  await screen.findByText(SAVED_BUT_NOT_BACKFILLED);
+  await waitFor(() => expect(vi.mocked(api.fetchAdminAssetCalcPoints).mock.calls.length).toBeGreaterThan(before));
+}
+
+/** …and the mapping list, which the eager create may have grown. */
+export async function aSavedButRefusedBackfillRefetchesTheAssetPoints(): Promise<void> {
+  await reviewRefusedAfterTheSave(409);
+  const before = vi.mocked(api.fetchAdminAssetPoints).mock.calls.length;
+  await submit();
+  await screen.findByText(SAVED_BUT_NOT_BACKFILLED);
+  await waitFor(() => expect(vi.mocked(api.fetchAdminAssetPoints).mock.calls.length).toBeGreaterThan(before));
+}
+
+/** A 409 after the save closes the wizard and keeps its sentence on the page. */
+export async function aSavedButRefusedBackfillClosesTheWizardBesideItsSentence(): Promise<void> {
+  await reviewRefusedAfterTheSave(409);
+  await submit();
+  await screen.findByText(SAVED_BUT_NOT_BACKFILLED);
+  expect(screen.queryByRole("region", { name: OVERRIDE_TITLE })).toBeNull();
+}
+
+/** A 503 (no worker) is the same: the override was saved, so the wizard closes. */
+export async function aNoWorker503ClosesTheWizard(): Promise<void> {
+  await reviewRefusedAfterTheSave(503);
+  await submit();
+  await screen.findByText(SAVED_BUT_NOT_BACKFILLED);
+  expect(screen.queryByRole("region", { name: OVERRIDE_TITLE })).toBeNull();
+}
+
 /** Clear is not a catalog route and stays beside the wizard: it sends the DELETE for the point. */
 export async function clearOverrideStaysBesideTheWizard(): Promise<void> {
   stubApi();
