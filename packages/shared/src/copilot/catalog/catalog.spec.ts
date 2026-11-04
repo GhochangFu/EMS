@@ -132,21 +132,70 @@ function deletesOutsideTheAllowance(entries: readonly Pick<CatalogEntry, "id" | 
 }
 
 /**
- * Decision 3, ruling 19 (`F3.86` PR 2): the allowance names exactly the two
+ * Decision 3, ruling 19 (`F3.86` PR 2): the allowance names exactly the
  * removals; no `DELETE` entry is outside it. PR 3c adds the member removal;
- * PR 4 adds `userGrant.remove` beside it.
+ * PR 4 adds `userGrant.remove` beside it. `F4.311` PR 3: ADR 0109 decision 6
+ * widens ruling 19 to a third removal, `calcPoint.delete` (ADR 0099
+ * Amendment 11 G4).
  */
-export function theOnlyDeleteEntriesAreTheTwoRemovals(): void {
+export function theOnlyDeleteEntriesAreTheThreeRemovals(): void {
   expect(DELETE_ALLOWANCE.map((route) => route.path).sort()).toEqual([
     "/admin/asset-group-members/:id",
+    "/admin/assets/:assetId/calc-points/:pointKey",
     "/admin/users/:id/grants/:kind/:grantId",
   ]);
   expect(deletesOutsideTheAllowance(COPILOT_CATALOG)).toEqual([]);
-  // PR 4 adds the grant revoke; PR 3c adds the member removal.
+  // PR 4 adds the grant revoke; PR 3c adds the member removal; `F4.311` PR 3 the standalone point.
   expect(COPILOT_CATALOG.filter((entry) => entry.method === "DELETE").map((entry) => entry.id).sort()).toEqual([
     "assetGroup.member.remove",
+    "calcPoint.delete",
     "userGrant.remove",
   ]);
+}
+
+const CALC_POINT_IDS = ["calcPoint.set", "calcPoint.createBatch", "calcPoint.delete"] as const;
+
+/** `F4.311` PR 3 (Amendment 11 G1): the three calc-point entries carry the routes' own bodies, by identity. */
+export function theCalcPointEntriesCarryTheRoutesOwnBodies(): void {
+  const [set, batch, remove] = CALC_POINT_IDS.map((id) => {
+    const entry = catalogEntry(id);
+    if (!entry) throw new Error(id);
+    return entry;
+  }) as [CatalogEntry, CatalogEntry, CatalogEntry];
+  expect(set.body).toBe(contracts.calcPointSetBodySchema);
+  expect(batch.body).toBe(contracts.calcPointBatchBodySchema);
+  expect(remove.body).toBe(emptyBody);
+  expect([set, batch, remove].map((entry) => [entry.method, entry.path, entry.bodyName, entry.risk])).toEqual([
+    ["PUT", "/admin/assets/:assetId/calc-points/:pointKey", "calcPointSetBodySchema", "create"],
+    ["POST", "/admin/calc-points/batch", "calcPointBatchBodySchema", "create"],
+    ["DELETE", "/admin/assets/:assetId/calc-points/:pointKey", null, "deactivate"],
+  ]);
+}
+
+/** ADR 0109 decision 6: each of the three is a red Confirm card. */
+export function everyCalcPointEntryIsRed(): void {
+  expect(CALC_POINT_IDS.map((id) => [id, catalogEntry(id)?.red])).toEqual(CALC_POINT_IDS.map((id) => [id, true]));
+}
+
+/**
+ * Amendment 11 G2/G3: the target names the asset kind the route will write — a pinned asset for
+ * the override, a template-less one for a standalone point — and the batch is its own kind.
+ */
+export function theCalcTargetsNameTheAssetKindTheRouteWrites(): void {
+  const targets = ["calcOverride.set", ...CALC_POINT_IDS].map((id) => catalogEntry(id)?.target);
+  expect(targets).toEqual([
+    { kind: "asset", param: "assetId", template: "pinned" },
+    { kind: "asset", param: "assetId", template: "none" },
+    { kind: "calcPointBatch", field: "assetIds" },
+    { kind: "asset", param: "assetId", template: "none" },
+  ]);
+}
+
+/** Amendment 11 G6: both writes that compute history offer the Backfill step (`backfillDays`). */
+export function theCalcPointWritesOfferABackfillStep(): void {
+  for (const id of ["calcPoint.set", "calcPoint.createBatch"]) {
+    expect(catalogEntry(id)?.steps.find((step) => step.id === "backfill")?.fields, id).toEqual(["backfillDays"]);
+  }
 }
 
 /** Decision 3, ruling 19 (`F3.86` PR 3c): a removal is red on the card — its risk is `deactivate` — and takes no body. */
@@ -179,6 +228,7 @@ export function thePointKeyEntriesAreFleetTargets(): void {
 export function aDeleteOutsideTheAllowanceIsRefused(): void {
   expect(deletesOutsideTheAllowance([{ id: "userGrant.remove", method: "DELETE", path: "/admin/users/:id/grants/:kind/:grantId" }])).toEqual([]);
   expect(deletesOutsideTheAllowance([{ id: "assetGroup.member.remove", method: "DELETE", path: "/admin/asset-group-members/:id" }])).toEqual([]);
+  expect(deletesOutsideTheAllowance([{ id: "calcPoint.delete", method: "DELETE", path: "/admin/assets/:assetId/calc-points/:pointKey" }])).toEqual([]);
   expect(deletesOutsideTheAllowance([{ id: "dashboard.delete", method: "DELETE", path: "/dashboards/:id" }])).toEqual(["dashboard.delete"]);
 }
 

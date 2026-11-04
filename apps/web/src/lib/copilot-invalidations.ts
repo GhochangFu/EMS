@@ -105,6 +105,11 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "calcParameter.create": [CALC_PARAMETERS],
   "calcParameter.update": [CALC_PARAMETERS],
   "calcOverride.set": [ASSET_CALC_POINTS],
+  // `F4.311` PR 3 (ADR 0099 Amendment 11): a standalone point is an `asset_points` row the points page lists
+  // too; the batch's form is the assets list's bulk action.
+  "calcPoint.set": [ASSET_CALC_POINTS, ASSET_POINTS],
+  "calcPoint.createBatch": [ASSET_CALC_POINTS, ASSET_POINTS, ASSETS],
+  "calcPoint.delete": [ASSET_CALC_POINTS, ASSET_POINTS],
   "assetTemplate.create": [ASSET_TEMPLATES],
   "assetTemplate.update": [ASSET_TEMPLATES, ASSET_TEMPLATE],
   "assetTemplate.publish": [ASSET_TEMPLATES, ASSET_TEMPLATE],

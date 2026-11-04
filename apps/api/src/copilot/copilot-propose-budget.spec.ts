@@ -44,8 +44,11 @@ import { proposeHarness } from "./copilot-propose-tools.spec";
  *   bound, so it is unchanged.
  * - Owner ruling P4 2026-10-27 (release 5): F4.289 PR 2 measured 85,419 over 105 definitions
  *   (`propose_rule_createBatch` is 2,185 of it); the bound is 87,000 (86,000 + 1,000).
+ * - ADR 0099 Amendment 11 G7 (owner, approved with the text at the merge): F4.311 PR 3 measured 89,523 over
+ *   108 definitions (`propose_calcPoint_set` 1,060, `_createBatch` 1,109, `_delete` 467); the bound is
+ *   91,000 (90,000 + 1,000).
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();
-  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(87_000);
+  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(91_000);
 }
