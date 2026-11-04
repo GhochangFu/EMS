@@ -964,10 +964,11 @@
 > alarms at RSMOC-WC while the simulator runs; a skip list needs an ADR 0101
 > amendment. Still out: free shapes and lines, an API refusal of a bad graph,
 > and the tones `earthed` and `racked_out` until a device sends them.
-> And **trend and energy views** (**ADR 0108** with Amendments 1–5; rows
-> `F4.297`–`F4.302`, `F4.304` and `F4.305`, merged 2026-10-31 to 2026-11-03
-> in #967 to #969, #971 to #973, #975 `800a773a`, #979 `63358d72` and #982
-> `67b74192`; the ADR in #966, #970, #974, #978 and #981). Nothing is coded per organization or segment:
+> And **trend and energy views** (**ADR 0108** with Amendments 1–6; rows
+> `F4.297`–`F4.305`, merged 2026-10-31 to 2026-11-04 in #967 to #969, #971
+> to #973, #975 `800a773a`, #979 `63358d72`, #982 `67b74192`, #985
+> `970bf34c` and #986 `6dc2a899`; the ADR in #966, #970, #974, #978, #981
+> and #984). Nothing is coded per organization or segment:
 > `tests/adr-0108-no-org-or-segment-literals.test.ts` scans every runtime
 > module the ADR adds. **`F4.305` makes the `F4.301` trend strip a widget
 > type**: migration `0118` widens the widget-type `CHECK` with `trend_strip`,
@@ -1002,7 +1003,24 @@
 > and on `energy/view` (the named site's own assets' kWh through
 > `perAssetEnergy`, no new statement), for the selected period, not
 > annualised. No route is added; `QUERY_SCHEMAS` and the tool registry stay
-> 31. Next: `F4.303` and `F4.306`.
+> 31. **`F4.303` adds the view actions** on asset history, the Energy page,
+> the Trends & Energy section and the trend strip. *Link*: the view state
+> lives in the URL; a link naming an organization or site the user cannot
+> open says so and offers "Use my default filter". *Export*: eight CSV/XLSX
+> routes (`energy/view`, `segment-views`, `trend-strip`,
+> `assets/:assetId/history`, each `export.csv|.xlsx`) on the read's own query
+> schema and guards, then the 50 000-row cap, with the `F4.29` formula guard
+> (`QUERY_SCHEMAS` is **32**). *Pin*: `POST /dashboards/:id/widgets/append`
+> adds one chart widget at the foot of a tab, a trailing window, never fixed
+> dates (excluded from the copilot catalog). *Schedule*: migration `0122`
+> adds `bms.report_schedules.params jsonb` (object `CHECK`);
+> `reportTemplateIdSchema` is `energy_consumption | trend_points`; a
+> `trend_points` schedule's points are checked against the organization, its
+> sites and the author's scope, and again on a `PATCH locationIds`; compare
+> adds Previous and Change to `energy_consumption`. The `trend_points` PDF
+> folds a `1m` read to `1h` rows (plan C25: the measured run was over 10 s);
+> its XLSX keeps every bucket, deflated. The tool registry stays 31. Next:
+> `F4.306`.
 > And **the tool-calling onboarding agent loop** (**ADR 0090** with
 > **Amendment 1**; row `F3.21`, merged 2026-10-03 in #705, squash `9ff272e1`;
 > the ADR in #702 and the amendment in #703). It amends ADR 0011 decision 1:
