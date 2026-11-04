@@ -23,10 +23,12 @@ import {
 } from "../../components/admin/hierarchy-filter-bar";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { AssetImagesPanel } from "../../components/assets/asset-images-panel";
+import { CalcPointBatchWizard } from "../../components/assets/calc-point-batch-wizard";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { batchCapProblem } from "../../lib/calc-point-draft";
 import type { AuthUser } from "../../stores/auth-store";
 
 type AssetsAdminPageProps = { user: AuthUser };
@@ -57,6 +59,9 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
   /** `F3.86` PR 3b — the asset whose deactivate or reactivate wizard is open. */
   const [statusTarget, setStatusTarget] = useState<AdminAssetDto | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // `F4.311` PR 6a (ADR 0109 decision 5) — the rows the batch action applies to.
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [batchOpen, setBatchOpen] = useState(false);
 
   // ADR 0031 Amendment 1 — the plant vocabulary is data; a create opens on its first domain.
   const vocabQ = useQuery({
@@ -110,6 +115,30 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
       (item) => item.code.toLowerCase().includes(q) || item.name.toLowerCase().includes(q),
     );
   }, [listQ.data?.items, search]);
+
+  /**
+   * The selection is cleared whenever the row set under it changes — the
+   * asset-points page's rule: a selection that survived a filter would send
+   * ids no longer on screen.
+   */
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setBatchOpen(false);
+  }, [activeFilter, search, locationId, rtuId, selection.locationId, selection.rtuId]);
+
+  // Derived from `filtered`, never from the raw id set (the asset-points page's rule).
+  const selectedRows = useMemo(() => filtered.filter((item) => selectedIds.has(item.id)), [filtered, selectedIds]);
+  const allFilteredSelected = filtered.length > 0 && selectedRows.length === filtered.length;
+  const capProblem = batchCapProblem(selectedRows.length);
+
+  function toggleRow(id: string, checked: boolean): void {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
 
   function close(): void {
     setOpened(null);
@@ -179,10 +208,33 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
             value={search}
             onChange={(event) => setSearch(event.target.value)}
           />
+          <button
+            type="button"
+            className="surface-button px-3 py-1.5 disabled:opacity-50"
+            disabled={selectedRows.length === 0 || capProblem !== null}
+            onClick={() => setBatchOpen(true)}
+          >
+            Add calculated point to {selectedRows.length} selected
+          </button>
         </div>
+        {capProblem ? (
+          <p role="alert" className="text-xs text-critical-ink">
+            {capProblem}
+          </p>
+        ) : null}
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b text-left text-xs uppercase text-ink-muted">
+              <th className="px-2 py-2">
+                <input
+                  type="checkbox"
+                  aria-label="Select all rows"
+                  checked={allFilteredSelected}
+                  onChange={(event) =>
+                    setSelectedIds(event.target.checked ? new Set(filtered.map((item) => item.id)) : new Set())
+                  }
+                />
+              </th>
               <th className="px-2 py-2">Code</th>
               <th className="px-2 py-2">Name</th>
               <th className="px-2 py-2">Location</th>
@@ -200,6 +252,15 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                 className="cursor-pointer border-b border-well-deep hover:bg-well"
                 onClick={() => navigate(`/admin/assets/${item.id}/points`)}
               >
+                {/* Inside a cell that stops the row's navigation, as the Actions cell does. */}
+                <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${item.code}`}
+                    checked={selectedIds.has(item.id)}
+                    onChange={(event) => toggleRow(item.id, event.target.checked)}
+                  />
+                </td>
                 <td className="px-2 py-2 font-mono">{item.code}</td>
                 <td className="px-2 py-2 font-semibold text-accent-strong">{item.name}</td>
                 <td className="px-2 py-2">{item.locationName}</td>
@@ -251,6 +312,17 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
           </tbody>
         </table>
       </SectionCard>
+
+      {batchOpen && selectedRows.length > 0 ? (
+        <CalcPointBatchWizard
+          assets={selectedRows}
+          onCancel={() => setBatchOpen(false)}
+          onDone={() => {
+            setBatchOpen(false);
+            setSelectedIds(new Set());
+          }}
+        />
+      ) : null}
 
       {imagesFor !== null ? (
         <AssetImagesPanel asset={imagesFor} onClose={() => setImagesFor(null)} />

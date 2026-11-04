@@ -175,5 +175,11 @@ test.describe("path 4 — master data", () => {
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({ assetId, pointKey: POINT_KEY, sourceDataKey: SOURCE_KEY });
     });
+
+    // `F4.311` PR 6a (ADR 0109 decision 5): an asset made on this page has no template, so its
+    // points page offers a calculated point of its own.
+    await test.step("offer Add calculated point on the template-less asset", async () => {
+      await expect(page.getByRole("button", { name: "Add calculated point", exact: true })).toBeVisible();
+    });
   });
 });

@@ -96,12 +96,13 @@ const CATALOG_IDS = COPILOT_CATALOG.map((entry) => entry.id);
  * `F4.311` PR 3 — catalog entries whose wizard lands in a later PR of the same row. PR 6a (the
  * page's Add calculated point panel, the assets list's bulk action) wires all three and deletes
  * this list.
+ *
+ * `F4.311` PR 6a wired all three (`components/assets/calc-point-panel.tsx`: `calcPoint.set` and
+ * `calcPoint.delete`; `components/assets/calc-point-batch-wizard.tsx`: `calcPoint.createBatch`),
+ * so the list is empty. It stays, with its gate, for the next row that lands a catalog entry
+ * ahead of its wizard.
  */
-const NOT_YET: readonly { id: string; reason: string }[] = [
-  { id: "calcPoint.set", reason: "F4.311 PR 6a: the asset points page's Add calculated point panel" },
-  { id: "calcPoint.createBatch", reason: "F4.311 PR 6a: the assets list's bulk action" },
-  { id: "calcPoint.delete", reason: "F4.311 PR 6a: the asset points page's panel" },
-];
+const NOT_YET: readonly { id: string; reason: string }[] = [];
 
 /** `F3.87` PR 5 / ruling Q1(a): each canvas entry, the editor page that is its form, and the write that page calls. */
 const CANVAS_ENTRIES: readonly { id: string; page: string; write: string }[] = [
