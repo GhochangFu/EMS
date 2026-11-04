@@ -48,6 +48,7 @@ import {
   V3_WINDOW_HELP,
   dialectOptions,
 } from "../../lib/template-calc-config";
+import { BackfillDaysSelect } from "./backfill-days-select";
 
 type Props = {
   config: AssetPointCalcConfigDto;
@@ -223,6 +224,22 @@ export function PointCalcFormulaFields({
         </ul>
       ) : null}
     </>
+  );
+}
+
+/**
+ * `F4.311` PR 5 (owner ruling 1) — the `calcOverride.set` wizard's Backfill
+ * step: optional days of history to compute once the override is saved. The
+ * select is PR 6a's shared `BackfillDaysSelect`, named after the point.
+ */
+export function PointCalcBackfillField({ config, draft, busy, onDraftChange }: FieldsProps) {
+  return (
+    <BackfillDaysSelect
+      label={`Backfill for ${config.pointKey}`}
+      value={draft.backfillDays ?? ""}
+      disabled={busy}
+      onChange={(days) => onDraftChange({ ...draft, backfillDays: days })}
+    />
   );
 }
 

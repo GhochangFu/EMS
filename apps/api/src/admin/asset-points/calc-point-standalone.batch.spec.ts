@@ -60,6 +60,7 @@ async function refusals(): Promise<CalcPointRefusal[]> {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   try {
     await svc.setBatch(JWT, BODY);

@@ -11,7 +11,7 @@ import type {
   AdminAssetPointDto,
   AssetPointCalcConfigDto,
   AssetPointCalcConfigListResponse,
-  AssetPointCalcOverrideFields,
+  AssetPointCalcOverrideBody,
   CalcPointBatchBody,
   CalcPointBatchResponse,
   CalcPointSetBody,
@@ -147,7 +147,7 @@ export async function fetchAdminAssetCalcPoints(
 export async function setAdminAssetPointCalcOverride(
   assetId: string,
   pointKey: string,
-  body: AssetPointCalcOverrideFields,
+  body: AssetPointCalcOverrideBody,
 ): Promise<AssetPointCalcConfigDto> {
   return adminFetch(
     `/admin/assets/${assetId}/calc-points/${encodeURIComponent(pointKey)}`,

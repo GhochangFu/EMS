@@ -1,4 +1,6 @@
 import { assetPointCalcConfigDtoSchema } from "./asset-templates";
+import { calcBackfillRunDtoSchema } from "./calc-backfill";
+import { assetPointCalcOverrideBodySchema } from "./calc-override-writes";
 import { assetPointCalcConfigListResponseSchema } from "./envelopes";
 
 /**
@@ -43,6 +45,7 @@ export const STANDALONE_ITEM = {
   effective: STORED,
   minCoverageRatio: null,
   runtime: null,
+  backfill: null,
 };
 
 export function assertAnItemWithoutKindFailsToParse(): void {
@@ -71,4 +74,51 @@ export function assertAListWithoutModeFailsToParse(): void {
 export function assertAnEmptyStandaloneListParses(): void {
   const result = assetPointCalcConfigListResponseSchema.safeParse({ items: [], mode: "standalone" });
   assert(result.success, `an empty standalone list must parse: ${JSON.stringify(result.error?.issues)}`);
+}
+
+// --- F4.311 PR 5b: the latest backfill run on each item (ADR 0109 decision 7) ---
+
+const RUN = {
+  id: "5d9c4f43-6a0b-4d0e-9a7f-3f3a1f1f0a02",
+  status: "running",
+  fromAt: "2026-10-04T00:00:00.000Z",
+  toAt: "2026-11-04T00:00:00.000Z",
+  doneThrough: "2026-10-07T00:00:00.000Z",
+  writtenRows: 4320,
+  error: null,
+  createdAt: "2026-11-04T00:00:00.000Z",
+  finishedAt: null,
+};
+
+export function assertAnItemWithoutBackfillFailsToParse(): void {
+  const { backfill: _backfill, ...withoutBackfill } = STANDALONE_ITEM;
+  assert(
+    !assetPointCalcConfigDtoSchema.safeParse(withoutBackfill).success,
+    "an item with no `backfill` must fail to parse — `null` is how a point with no run says so",
+  );
+}
+
+export function assertAnItemWithARunParses(): void {
+  const result = assetPointCalcConfigDtoSchema.safeParse({ ...STANDALONE_ITEM, backfill: RUN });
+  assert(result.success, `an item carrying its latest run must parse: ${JSON.stringify(result.error?.issues)}`);
+}
+
+export function assertARunWithAnUnknownStatusFailsToParse(): void {
+  assert(
+    !calcBackfillRunDtoSchema.safeParse({ ...RUN, status: "paused" }).success,
+    "a run status outside queued/running/done/failed must fail to parse — the vocabulary is closed",
+  );
+}
+
+export function assertTheOverrideBodyAcceptsBackfillDays(): void {
+  const body = { ...EMPTY, formula: "{KW} * 3", backfillDays: 31 };
+  assert(
+    assetPointCalcOverrideBodySchema.safeParse(body).success,
+    "the override PUT accepts backfillDays up to 31 (owner ruling 1)",
+  );
+}
+
+export function assertTheOverrideBodyRefuses32BackfillDays(): void {
+  const body = { ...EMPTY, formula: "{KW} * 3", backfillDays: 32 };
+  assert(!assetPointCalcOverrideBodySchema.safeParse(body).success, "the override PUT refuses backfillDays 32");
 }

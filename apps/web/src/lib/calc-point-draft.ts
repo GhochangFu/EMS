@@ -178,6 +178,7 @@ export function standaloneConfigFor(pointKey: string): AssetPointCalcConfigDto {
     effective: NO_TEMPLATE,
     minCoverageRatio: null,
     runtime: null,
+    backfill: null,
   };
 }
 

@@ -200,6 +200,31 @@ const WORKER_LEAVES = [
   "security/credential-detect.ts",
   "admin/onboarding/onboarding-redaction.ts",
   "admin/onboarding/onboarding-locked-writes.ts",
+  // F4.311 PR 5 (ADR 0109 decision 7): the calc backfill — the queue
+  // declaration, the leaf module and its four files, and the calc files the
+  // walk reaches as providers and pure helpers, never calc/calc.module.ts.
+  // Measured at build as the closure's difference with and without the three
+  // new edges: these eighteen files are new; calc-batch, calc-definition,
+  // calc-parameters.service, computed-source-data-key and
+  // telemetry/point-aggregates were already reached through the reports core.
+  "queue/calc-backfill.ts",
+  "calc-backfill/calc-backfill.module.ts",
+  "calc-backfill/calc-backfill.service.ts",
+  "calc-backfill/calc-backfill-plan.ts",
+  "calc-backfill/calc-backfill-reads.ts",
+  "calc-backfill/calc-backfill-run-store.ts",
+  "calc/calc-definitions.service.ts",
+  "calc/calc-scope.service.ts",
+  "calc/calc-graph.ts",
+  "calc/calc-windows.service.ts",
+  "calc/calc-window-plan.ts",
+  "calc/calc-write.service.ts",
+  "calc/calc-input-assembly.ts",
+  "calc/calc-inputs.ts",
+  "calc/calc-inputs.service.ts",
+  "calc/calc-aggregate.ts",
+  "calc/calc-schedule.ts",
+  "admin/telemetry-entry/notify-chunk.ts",
 ] as const;
 
 /** Rule 8: the only `copilot/` files the worker's closure may hold. */
@@ -370,7 +395,7 @@ describe("F4.24 — the worker imports no API loop (ADR 0063 decision 3, Amendme
     it("WORKER_LEAVES names every leaf file: the count is pinned here so the docblock carries no number that can drift", () => {
       // F3.5b post-merge sweep (ADR 0071 Amendment 2 item 7 F): the docblock
       // once said "the nine files" against a list of twenty-six.
-      expect(WORKER_LEAVES.length).toBe(42);
+      expect(WORKER_LEAVES.length).toBe(60);
     });
 
     it("reaches the modules WorkerModule is built from (the walker follows something)", () => {

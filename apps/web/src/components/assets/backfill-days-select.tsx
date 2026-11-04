@@ -1,7 +1,9 @@
 /**
  * `F4.311` PR 6a (ADR 0109 decision 7) — days of history to compute when a
- * standalone calculated point is saved; "None" sends no field. Shared by the
- * Add/Edit panel and the asset list's batch wizard.
+ * calculated point is saved; "None" sends no field. Shared by the standalone
+ * Add/Edit panel, the asset list's batch wizard and (`F4.311` PR 5, owner
+ * ruling 1) the override wizard's Backfill step, which names its select after
+ * the point through `label`.
  */
 import { BACKFILL_DAY_CHOICES } from "../../lib/calc-point-draft";
 
@@ -9,16 +11,19 @@ export function BackfillDaysSelect({
   value,
   disabled,
   onChange,
+  label = "Backfill history",
 }: {
   value: string;
   disabled: boolean;
   onChange: (days: string) => void;
+  /** The select's accessible name; the visible caption stays "Backfill history". */
+  label?: string;
 }) {
   return (
     <label className="block text-xs">
       <span className="text-ink-muted">Backfill history</span>
       <select
-        aria-label="Backfill history"
+        aria-label={label}
         value={value}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}

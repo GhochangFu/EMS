@@ -50,6 +50,8 @@ vi.mock("./worker-host", () => ({
 
 import type { ProcessorContinuation } from "./queue-processor";
 import {
+  assertBackfillHandlerRanTheJobOnTheTransactionItWasGiven,
+  assertBackfillHandlerReturnsTheJobsContinuation,
   assertDiscoveryHandlerRanTheJobOnTheTransactionItWasGiven,
   assertDiscoveryHandlerReturnsTheJobsContinuation,
   assertDispatchHandlerRanTheTickOnTheHandleItWasGiven,
@@ -68,6 +70,7 @@ import {
   assertSweepRegistrationReceivedTheTenantSentinelAsTenantDb,
   assertSweepScheduleUpsertedAtTheConfiguredInterval,
   initWorkerHost,
+  invokeBackfillHandler,
   invokeDiscoveryHandler,
   invokeDispatchHandler,
   invokePurgeHandler,
@@ -182,6 +185,22 @@ describe("F4.24 / F3.11 / F3.5b / F3.85 / F3.24b — WorkerHostService registers
 
     it("returns the job's continuation unchanged", () => {
       assertDiscoveryHandlerReturnsTheJobsContinuation(resolved);
+    });
+  });
+
+  describe("the calc-backfill handler, invoked with (payload, { tx: TX_SENTINEL }) as runProcessor would for a tenant queue", () => {
+    let resolved: void | ProcessorContinuation;
+
+    beforeAll(async () => {
+      resolved = await invokeBackfillHandler(recorded.runProcessorCalls);
+    });
+
+    it("hands the payload and ctx.tx to CalcBackfillService.run", () => {
+      assertBackfillHandlerRanTheJobOnTheTransactionItWasGiven(probe);
+    });
+
+    it("returns the job's continuation unchanged", () => {
+      assertBackfillHandlerReturnsTheJobsContinuation(resolved);
     });
   });
 });

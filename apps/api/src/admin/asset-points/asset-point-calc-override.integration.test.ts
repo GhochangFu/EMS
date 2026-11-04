@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, it } from "vitest";
 import { createDb } from "@bms/db";
 
 import { AccessControlService } from "../../auth/access-control.service";
+import { CalcBackfillRunStore } from "../../calc-backfill/calc-backfill-run-store";
 import { CalcDefinitionsService } from "../../calc/calc-definitions.service";
 import { CalcDependencyService } from "../../calc/calc-dependency.service";
 import { CalcParametersService } from "../../calc/calc-parameters.service";
@@ -15,6 +16,7 @@ import { openIntegrationPool, requireIntegrationDb } from "../../testing/integra
 import { registerFixturePointKeys } from "../../testing/integration-fixtures";
 import { loadFixtures, type Fixtures } from "../asset-templates/asset-templates.instantiate.integration.spec";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { CalcBackfillRequestService } from "./calc-backfill-request.service";
 import { AssetPointCalcOverrideService } from "./asset-point-calc-override.service";
 import {
   assertAnExistingMappingRowIsNeverOverridden,
@@ -82,6 +84,8 @@ describe.skipIf(!connectionString)("F2.6 — asset point calc overrides", () => 
       // The recorded case lives in the `.cycles` sibling, beside the refusal
       // that produces it.
       new CalcStatusRegistry(),
+      // `F4.311` PR 5 — no queue: this suite never asks for a backfill.
+      new CalcBackfillRequestService(db, { kind: "unconfigured" }, new CalcBackfillRunStore(db, db)),
     );
     fx = await loadFixtures(created);
     await cleanup(created);
