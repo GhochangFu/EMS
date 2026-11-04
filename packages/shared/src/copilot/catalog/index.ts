@@ -135,6 +135,9 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   // F4.281 (Amendment 8) excluded the maintenance convert; F4.284 (ADR 0106 Q6) made it an entry.
   // F4.283 (Amendment 8): the import preview runs inside the propose step; the image DELETE stays manual.
   ...FILE_DATA_PENDING,
+  // `F4.311` PR 2 (ADR 0109 decision 6): the standalone calc-point batch route. PR 3 replaces this
+  // row with the `calcPoint.createBatch` entry (ADR 0099 Amendment 11).
+  { method: "POST", path: "/admin/calc-points/batch", reason: "entry lands in PR 3" },
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */
