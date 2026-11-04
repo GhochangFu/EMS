@@ -67,11 +67,16 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
 /**
  * `F3.86` PR 2 / ADR 0099 decision 3, ruling 19 — the only `DELETE` routes a
  * catalog entry may name: revoking a grant and removing an asset-group member,
- * each with its own red Confirm. Every other `DELETE` stays manual.
+ * each with its own red Confirm. `F4.311` PR 3: ADR 0109 decision 6 widens
+ * ruling 19 to a third removal (ADR 0099 Amendment 11 G4) — a standalone
+ * calculated point, `calcPoint.delete`, whose target refuses a pinned asset,
+ * so clearing an override through the same path stays manual. Every other
+ * `DELETE` stays manual.
  */
 export const DELETE_ALLOWANCE: readonly { readonly method: "DELETE"; readonly path: string }[] = [
   { method: "DELETE", path: "/admin/users/:id/grants/:kind/:grantId" },
   { method: "DELETE", path: "/admin/asset-group-members/:id" },
+  { method: "DELETE", path: "/admin/assets/:assetId/calc-points/:pointKey" },
 ];
 
 const NO_DELETE = "a hard DELETE is never in the catalog (decision 3)";
@@ -104,7 +109,6 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   { method: "DELETE", path: "/admin/dashboard-templates/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/asset-templates/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/calc-parameters/:id", reason: NO_DELETE },
-  { method: "DELETE", path: "/admin/assets/:assetId/calc-points/:pointKey", reason: NO_DELETE },
   // `F3.87` (Amendment 3 A1): the layout DELETE. The unit-role edit and retire are entries since
   // `F4.282` (Amendment 8, Q17 withdraws A1's exclusion).
   { method: "DELETE", path: "/mimic-layouts/:id", reason: NO_DELETE },
@@ -131,9 +135,6 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   // F4.281 (Amendment 8) excluded the maintenance convert; F4.284 (ADR 0106 Q6) made it an entry.
   // F4.283 (Amendment 8): the import preview runs inside the propose step; the image DELETE stays manual.
   ...FILE_DATA_PENDING,
-  // `F4.311` PR 2 (ADR 0109 decision 6): the standalone calc-point batch route. PR 3 replaces this
-  // row with the `calcPoint.createBatch` entry (ADR 0099 Amendment 11).
-  { method: "POST", path: "/admin/calc-points/batch", reason: "entry lands in PR 3" },
 ];
 
 /** The API's global prefix; a stored change's path starts with it (`copilotPendingChangeDtoSchema`). */

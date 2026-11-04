@@ -61,6 +61,33 @@ export const FIXTURES: Readonly<
     params: { assetId: ROW, pointKey: "kw_total" },
     names: TARGET_NAME,
   },
+  // `F4.311` PR 3 (Amendment 11) — the standalone point: every calc field, and an optional backfill.
+  "calcPoint.set": {
+    body: {
+      formula: "{kw} * 2",
+      formulaDialect: "bms-calc-v1",
+      calcTrigger: "scheduled",
+      calcIntervalSeconds: 60,
+      maxInputAgeSeconds: 300,
+      backfillDays: 7,
+    },
+    params: { assetId: ROW, pointKey: "kw_x2" },
+    names: TARGET_NAME,
+  },
+  "calcPoint.createBatch": {
+    body: {
+      assetIds: [ROW],
+      pointKey: "kw_x2",
+      formula: "{kw} * 2",
+      formulaDialect: "bms-calc-v1",
+      calcTrigger: "streaming",
+      calcIntervalSeconds: null,
+      maxInputAgeSeconds: 300,
+    },
+    params: {},
+    names: ORG_NAME,
+  },
+  "calcPoint.delete": { body: {}, params: { assetId: ROW, pointKey: "kw_x2" }, names: TARGET_NAME },
   "assetTemplate.update": {
     body: {
       points: [

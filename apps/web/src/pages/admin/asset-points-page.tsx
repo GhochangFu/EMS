@@ -5,6 +5,7 @@ import type {
   AdminAssetPointDto,
   AssetPointCalcConfigDto,
   AssetPointCalcOverrideBody,
+  CalcPointSetBody,
   MasterDataActiveFilter,
 } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
@@ -13,9 +14,11 @@ import {
   clearAdminAssetPointCalcOverride,
   createAdminAssetPoint,
   deactivateAdminAssetPoint,
+  deleteAdminAssetCalcPoint,
   fetchAdminAssetCalcPoints,
   fetchAdminAssetPoints,
   reactivateAdminAssetPoint,
+  setAdminAssetCalcPoint,
   setAdminAssetPointCalcOverride,
   updateAdminAssetPoint,
 } from "../../api/admin/asset-points";
@@ -30,6 +33,8 @@ import {
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { AssetPointBulkEditPanel } from "../../components/assets/asset-point-bulk-edit-panel";
+import { CalcPointDeleteWizard } from "../../components/assets/calc-point-delete-wizard";
+import { CalcPointPanel } from "../../components/assets/calc-point-panel";
 import { MappingSheetPanel } from "../../components/assets/mapping-sheet-panel";
 import {
   PointCalcBackfillField,
@@ -68,6 +73,7 @@ import {
   EMPTY_DRAFT,
   type OverrideDraft,
 } from "../../lib/asset-point-calc-override";
+import { backfillPollInterval, backfillProgressLabel } from "../../lib/calc-point-draft";
 import { StatusPill } from "../../components/status-pill";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -330,8 +336,20 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     queryKey: ["admin", "asset-calc-points", assetId],
     queryFn: () => fetchAdminAssetCalcPoints(assetId ?? ""),
     enabled: Boolean(assetId),
+    // `F4.311` PR 6b: re-read every 5 s while a backfill is queued, running or
+    // retrying, never otherwise — and never after a failed read, whose kept
+    // data would otherwise poll a dead endpoint forever.
+    refetchInterval: (query) =>
+      query.state.status === "error" ? false : backfillPollInterval(query.state.data?.items, Date.now()),
   });
-  const calcPoints = calcPointsQ.data?.items ?? [];
+  // `F4.311` PR 6a (ADR 0109 decision 5): an asset with no template lists its
+  // own calculated points in their own card below; the override card lists a
+  // pinned asset's only, so its branch is unchanged.
+  const standalone = calcPointsQ.data?.mode === "standalone";
+  const calcPoints = standalone ? [] : (calcPointsQ.data?.items ?? []);
+  const standalonePoints = standalone ? (calcPointsQ.data?.items ?? []) : [];
+  const [addingCalcPoint, setAddingCalcPoint] = useState(false);
+  const [deletingPointKey, setDeletingPointKey] = useState<string | null>(null);
 
   function afterOverride() {
     setOpenPointKey(null);
@@ -371,6 +389,53 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     onSuccess: afterOverride,
     onError: (cause: Error) => setOverrideError(apiErrorMessage(cause)),
   });
+
+  /** `F4.311` PR 6a — opens one standalone form (or none) and drops every stale refusal. */
+  function openStandalone(next: { add?: boolean; edit?: string; remove?: string }) {
+    setAddingCalcPoint(next.add === true);
+    setOpenPointKey(next.edit ?? null);
+    setDeletingPointKey(next.remove ?? null);
+    setOverrideSaveError(null);
+  }
+
+  /**
+   * A refused standalone write re-reads both lists and keeps its form open on
+   * the server's sentence. Under ruling 4 the point row is committed before
+   * the backfill run is created, so a `409` (a backfill is already running)
+   * or a `503` (no worker) arrives with the formula already saved; a re-read
+   * after a refusal that wrote nothing costs one request.
+   */
+  function afterStandaloneRefusal(cause: Error) {
+    setOverrideSaveError(apiErrorMessage(cause));
+    void queryClient.invalidateQueries({ queryKey: ["admin", "asset-calc-points"] });
+    void queryClient.invalidateQueries({ queryKey: ["admin", "asset-points"] });
+  }
+
+  // A standalone write adds or removes an `asset_points` row, so both lists
+  // are stale after it (`afterOverride`'s two invalidations).
+  const setCalcPointM = useMutation({
+    mutationFn: ({ pointKey, body }: { pointKey: string; body: CalcPointSetBody }) =>
+      setAdminAssetCalcPoint(assetId ?? "", pointKey, body),
+    onSuccess: () => {
+      openStandalone({});
+      afterOverride();
+    },
+    onError: afterStandaloneRefusal,
+  });
+
+  // A `409` (a dashboard widget shows the point) is the Review card's error, in the server's words.
+  const deleteCalcPointM = useMutation({
+    mutationFn: (pointKey: string) => deleteAdminAssetCalcPoint(assetId ?? "", pointKey),
+    onSuccess: () => {
+      openStandalone({});
+      afterOverride();
+    },
+    onError: (cause: Error) => setOverrideSaveError(apiErrorMessage(cause)),
+  });
+
+  // Opening another form mid-write would unmount the pending one, and its
+  // settle would close (or put its refusal under) the form just opened.
+  const standaloneBusy = setCalcPointM.isPending || deleteCalcPointM.isPending;
 
   const listQ = useQuery({
     queryKey: ["admin", "asset-points", activeFilter, assetId, selection.locationId],
@@ -675,6 +740,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                       : ` · every ${config.effective.calcIntervalSeconds}s`}
                   </span>
                   <CalcRuntimePill runtime={config.runtime} />
+                  {config.backfill ? <span>{backfillProgressLabel(config.backfill, Date.now())}</span> : null}
                   {hasAnyOverride(config) ? (
                     <span className="rounded bg-warning-wash-strong px-2 py-0.5 font-semibold text-warning-ink">
                       overridden
@@ -696,6 +762,106 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     className="surface-button px-3 py-1"
                   >
                     {hasAnyOverride(config) ? "Edit override" : "Override"}
+                  </button>
+                </span>
+              </div>
+            ),
+          )}
+        </SectionCard>
+      ) : null}
+
+      {/* `F4.311` PR 6a (ADR 0109 decision 5): an asset with no template —
+          the card renders even when empty, since Add is how the first point
+          arrives. */}
+      {assetId && standalone ? (
+        <SectionCard title="Calculated points" bodyClassName="p-3 space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-ink-muted">
+              This asset has no template. A calculated point you add here is its own formula.
+            </p>
+            <button
+              type="button"
+              className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+              disabled={standaloneBusy}
+              // Opens a form; it never pends itself, so it keeps its name while a write does.
+              data-pending-bystander="standaloneBusy"
+              onClick={() => openStandalone({ add: true })}
+            >
+              Add calculated point
+            </button>
+          </div>
+          {addingCalcPoint ? (
+            <CalcPointPanel
+              assetId={assetId}
+              config={null}
+              saving={setCalcPointM.isPending}
+              saveError={overrideSaveError}
+              onEdited={() => setOverrideSaveError(null)}
+              onSubmit={(pointKey, body) => setCalcPointM.mutate({ pointKey, body })}
+              onDelete={null}
+              onCancel={() => openStandalone({})}
+            />
+          ) : null}
+          {standalonePoints.map((config) =>
+            openPointKey === config.pointKey ? (
+              <CalcPointPanel
+                key={config.pointKey}
+                assetId={assetId}
+                config={config}
+                saving={setCalcPointM.isPending}
+                saveError={overrideSaveError}
+                onEdited={() => setOverrideSaveError(null)}
+                onSubmit={(pointKey, body) => setCalcPointM.mutate({ pointKey, body })}
+                onDelete={() => openStandalone({ remove: config.pointKey })}
+                onCancel={() => openStandalone({})}
+              />
+            ) : deletingPointKey === config.pointKey ? (
+              <CalcPointDeleteWizard
+                key={config.pointKey}
+                assetId={assetId}
+                pointKey={config.pointKey}
+                assetLabel={assetSummaryQ.data?.code ?? assetId}
+                deleting={deleteCalcPointM.isPending}
+                error={overrideSaveError}
+                onSubmit={() => deleteCalcPointM.mutate(config.pointKey)}
+                onCancel={() => openStandalone({})}
+              />
+            ) : (
+              <div
+                key={config.pointKey}
+                className="flex flex-wrap items-center justify-between gap-2 surface-raised-sm px-3 py-2"
+              >
+                <span className="text-sm">
+                  {config.label ?? config.pointKey}{" "}
+                  <span className="font-mono text-xs text-ink-muted">{config.pointKey}</span>
+                </span>
+                <span className="flex items-center gap-3 text-xs text-ink-muted">
+                  <span className="font-mono">{config.effective.formula}</span>
+                  <span>
+                    {config.effective.calcTrigger ?? "no trigger"}
+                    {config.effective.calcIntervalSeconds === null
+                      ? ""
+                      : ` · every ${config.effective.calcIntervalSeconds}s`}
+                  </span>
+                  <CalcRuntimePill runtime={config.runtime} />
+                  {config.backfill ? <span>{backfillProgressLabel(config.backfill, Date.now())}</span> : null}
+                  <button
+                    type="button"
+                    disabled={standaloneBusy}
+                    data-pending-bystander="standaloneBusy"
+                    onClick={() => openStandalone({ edit: config.pointKey })}
+                    className="surface-button px-3 py-1 disabled:opacity-60"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    disabled={standaloneBusy}
+                    data-pending-bystander="standaloneBusy"
+                    onClick={() => openStandalone({ remove: config.pointKey })}
+                    className="surface-button border border-critical-line px-3 py-1 text-critical-ink disabled:opacity-60"
+                  >
+                    Delete
                   </button>
                 </span>
               </div>

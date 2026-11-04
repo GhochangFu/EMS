@@ -2,19 +2,19 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { calcBackfillRuns, type BmsDb } from "@bms/db";
-import type { CalcBackfillRunDto } from "@bms/shared";
+import {
+  BACKFILL_NOT_RETRIABLE,
+  BACKFILL_NOT_STARTED,
+  BACKFILL_STALE,
+  type CalcBackfillRunDto,
+} from "@bms/shared";
 
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 
-/** The error a run carries when its job never reached a worker (the enqueue failed). */
-export const BACKFILL_NO_WORKER = "no worker";
-
-/** The error of a run created in a request whose later create threw: it was never enqueued. */
-export const BACKFILL_NOT_STARTED = "not started";
-
-/** The error of a `running` run whose heartbeat stopped, released by a new request for its point. */
-export const BACKFILL_STALE = "stale";
+// The three fixed reasons live in the shared contract (`F4.311` PR 6b review), so
+// the page's poll reads the same not-retriable list `claim` does.
+export { BACKFILL_NO_WORKER, BACKFILL_NOT_STARTED, BACKFILL_STALE } from "@bms/shared";
 
 /**
  * Minutes without a heartbeat after which a `running` run is presumed dead
@@ -27,8 +27,10 @@ export const BACKFILL_STALE = "stale";
  */
 export const BACKFILL_STALE_MINUTES = 30;
 
-/** Failed runs no job will ever retry: the job never existed, or the run was superseded. */
-const NOT_RETRIABLE = [BACKFILL_NO_WORKER, BACKFILL_NOT_STARTED, BACKFILL_STALE] as const;
+/** Failed runs no job will ever retry: the job never existed, or the run was superseded (the shared list). */
+const NOT_RETRIABLE = BACKFILL_NOT_RETRIABLE;
+
+const STALE_MS = BACKFILL_STALE_MINUTES * 60_000;
 
 /** A run the worker has claimed, with the point it computes. */
 export type ClaimedRun = {
@@ -65,6 +67,32 @@ type ClaimRow = {
 };
 
 const ms = (value: Date | string): number => new Date(value).getTime();
+
+type RunRow = typeof calcBackfillRuns.$inferSelect;
+
+/**
+ * A run row as the list shows it. An **orphaned** run — `running` with no
+ * heartbeat for {@link BACKFILL_STALE_MINUTES}, or `queued` that long with no
+ * worker picking it up — reads as `failed` ({@link BACKFILL_STALE} /
+ * {@link BACKFILL_NOT_STARTED}), finished at the moment the bound passed, so
+ * the page's poll stops on it (`F4.311` PR 6b review). Read-side only: the row
+ * is not written; `claim` and `failStale` still act on its stored status.
+ */
+function toRunDto(row: RunRow, nowMs: number): CalcBackfillRunDto {
+  const heartbeatMs = row.status === "running" ? row.updatedAt.getTime() : row.createdAt.getTime();
+  const orphaned = (row.status === "running" || row.status === "queued") && heartbeatMs < nowMs - STALE_MS;
+  return {
+    id: row.id,
+    status: orphaned ? "failed" : (row.status as CalcBackfillRunDto["status"]),
+    fromAt: row.fromAt.toISOString(),
+    toAt: row.toAt.toISOString(),
+    doneThrough: row.doneThrough?.toISOString() ?? null,
+    writtenRows: row.writtenRows,
+    error: orphaned ? (row.status === "running" ? BACKFILL_STALE : BACKFILL_NOT_STARTED) : row.error,
+    createdAt: row.createdAt.toISOString(),
+    finishedAt: orphaned ? new Date(heartbeatMs + STALE_MS).toISOString() : (row.finishedAt?.toISOString() ?? null),
+  };
+}
 
 /**
  * `F4.311` PR 5 (ADR 0109 decision 7) — every write to
@@ -107,8 +135,13 @@ export class CalcBackfillRunStore {
    * Each point's latest run (by `created_at`), keyed by `asset_point_id` — the
    * `backfill` field of the calc-points list. A point with no run is absent.
    * The caller has already checked access to the asset these points belong to.
+   * An orphaned run reads as failed ({@link toRunDto}); `nowMs` is the clock it
+   * is judged by.
    */
-  async latestForPoints(assetPointIds: readonly string[]): Promise<Map<string, CalcBackfillRunDto>> {
+  async latestForPoints(
+    assetPointIds: readonly string[],
+    nowMs: number = Date.now(),
+  ): Promise<Map<string, CalcBackfillRunDto>> {
     const out = new Map<string, CalcBackfillRunDto>();
     if (assetPointIds.length === 0) {
       return out;
@@ -119,17 +152,7 @@ export class CalcBackfillRunStore {
       .where(inArray(calcBackfillRuns.assetPointId, [...assetPointIds]))
       .orderBy(calcBackfillRuns.assetPointId, desc(calcBackfillRuns.createdAt));
     for (const row of rows) {
-      out.set(row.assetPointId, {
-        id: row.id,
-        status: row.status as CalcBackfillRunDto["status"],
-        fromAt: row.fromAt.toISOString(),
-        toAt: row.toAt.toISOString(),
-        doneThrough: row.doneThrough?.toISOString() ?? null,
-        writtenRows: row.writtenRows,
-        error: row.error,
-        createdAt: row.createdAt.toISOString(),
-        finishedAt: row.finishedAt?.toISOString() ?? null,
-      });
+      out.set(row.assetPointId, toRunDto(row, nowMs));
     }
     return out;
   }

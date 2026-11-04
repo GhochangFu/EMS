@@ -30,14 +30,8 @@ import {
   siteControlRoomViews,
   templatePoints,
 } from "@bms/db";
-import {
-  type JwtPayload,
-  type TemplateLifecycleStatus,
-  templateLifecycleStatusSchema,
-  userGrantKindSchema,
-  userRoleSchema,
-} from "@bms/shared";
-import type { CatalogEntry, CatalogRef, CatalogRefKind } from "@bms/shared/copilot";
+import { type JwtPayload, type TemplateLifecycleStatus, userGrantKindSchema, userRoleSchema } from "@bms/shared";
+import type { CatalogEntry, CatalogRefKind } from "@bms/shared/copilot";
 
 import { UserGrantsService } from "../admin/users/user-grants.service";
 import { mayAssignRole } from "../admin/users/user-management-rules";
@@ -45,7 +39,9 @@ import { UsersService } from "../admin/users/users.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
+import { assetKindAdmits, findCalcPointBatch, mayWriteCalcPointBatch } from "./copilot-calc-point-targets";
 import { findRuleBatch } from "./copilot-rule-targets";
+import { lifecycleStatusOf, refKindOf } from "./copilot-target-kinds";
 import { CopilotTargetRefusal, mayWriteTelemetry, telemetryRowRefusal } from "./copilot-telemetry-targets";
 // prettier-ignore
 import { findWorkOrderBatch, isActiveAlarmSkill, mayWriteOperationalAssets, type OperationsAlarm, type OperationsBatchRow, type OperationsWorkOrder, readAlarmRow, readConvertibleSchedule, readOrganizationUserName, readWorkOrderRow, unknownAlarmSkillMessage } from "./copilot-operations-targets";
@@ -131,6 +127,7 @@ export interface CopilotTargets {
 export type CopilotResolveMode = "propose" | "record";
 
 export const COPILOT_TARGETS = Symbol("COPILOT_TARGETS");
+export { refKindOf };
 
 type Found = {
   organizationId: string;
@@ -138,8 +135,9 @@ type Found = {
   scope?: Scope;
   /** `rtu`, `assetGroup`, `assetGroupMember`: the site the row is at. */
   locationId?: string;
-  /** `assetPoint`: the asset the point maps. */
+  /** `assetPoint`: the asset the point maps. `asset`: `templateId`, its pinned version (`F4.311`, Amendment 11 G2). */
   assetId?: string;
+  templateId?: string | null;
   /** `siteControlRoomView`: the stored view's `kind`, or `null` when the site has none. */
   storedKind?: string | null;
   refName?: string;
@@ -160,7 +158,7 @@ type Found = {
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
 type RowKind = Exclude<
   CatalogEntry["target"]["kind"],
-  "organization" | "parent" | "fleet" | "vocabulary" | "telemetry" | "onboardingSession" | "workOrderBatch" | "ruleBatch" | UserKind
+  "organization" | "parent" | "fleet" | "vocabulary" | "telemetry" | "onboardingSession" | "workOrderBatch" | "ruleBatch" | "calcPointBatch" | UserKind
 >;
 type UserKind = "user" | "userGrantAdd" | "userGrant";
 type UserTarget = Extract<CatalogEntry["target"], { kind: UserKind }>;
@@ -281,11 +279,19 @@ export class CopilotTargetResolver implements CopilotTargets {
       const assetIds = batch === null ? [] : "rows" in batch ? batch.rows.map((row) => row.assetId) : batch.assetIds;
       const gate = rule ? () => this.mayWriteConfiguration(user, ...assetIds) : () => this.mayWriteOperational(user, ...assetIds);
       if (found !== null && !(await this.safely(gate))) found = null;
+    } else if (target.kind === "calcPointBatch") {
+      // `F4.311` PR 3 (Amendment 11 G3): one organization's template-less assets, the batch route's gate on each.
+      const batch = await findCalcPointBatch(this.tenantDb, body[target.field], allowedOrganizationIds);
+      const name = batch === null ? null : await this.organizationName(batch.organizationId);
+      found = batch === null || name === null ? null : { organizationId: batch.organizationId, name, pointKeys: batch.pointKeys };
+      if (batch !== null && !(await this.safely(() => mayWriteCalcPointBatch(this.access, user, batch.assetIds)))) found = null;
     } else {
       const id = params[target.param];
       if (id === undefined) return null;
       const kind = target.kind;
       found = await this.findRow(kind, id, allowedOrganizationIds);
+      // `F4.311` PR 3 (Amendment 11 G2): an asset of the other kind gets the other write from the route.
+      if (found !== null && !assetKindAdmits(target, found.templateId)) found = null;
       if (found !== null && !(await this.safely(() => this.mayManage(kind, id, found as Found, user, body, mode)))) found = null;
     }
     if (found === null) return null;
@@ -678,7 +684,7 @@ export class CopilotTargetResolver implements CopilotTargets {
       }
       case "asset": {
         const [row] = await tx
-          .select({ name: assets.name })
+          .select({ name: assets.name, templateId: assets.templateId })
           .from(assets)
           .where(and(eq(assets.id, id), eq(assets.organizationId, organizationId)))
           .limit(1);
@@ -687,7 +693,7 @@ export class CopilotTargetResolver implements CopilotTargets {
           .select({ pointKey: assetPoints.pointKey })
           .from(assetPoints)
           .where(and(eq(assetPoints.assetId, id), eq(assetPoints.organizationId, organizationId)));
-        return { organizationId, name: row.name, pointKeys: points.map((point) => point.pointKey) };
+        return { organizationId, name: row.name, templateId: row.templateId, pointKeys: points.map((point) => point.pointKey) };
       }
       // `F4.254` PR 3: the deploy kind reads the same row; only its authority differs (`mayManage`).
       case "assetTemplate":
@@ -974,26 +980,4 @@ export class CopilotTargetResolver implements CopilotTargets {
     );
     return rows.length === 1;
   }
-}
-
-/**
- * `F3.86` PR 2 — the row kind a ref names: its own, or, for a field whose kind
- * depends on another field (a grant's `targetId` and `kind`), the one the map
- * gives that field's value. `null` when the map does not name the value: the
- * proposal is refused.
- */
-export function refKindOf(ref: CatalogRef, body: Readonly<Record<string, unknown>>): CatalogRefKind | null {
-  if ("kind" in ref) return ref.kind;
-  const value = body[ref.kindField];
-  return typeof value === "string" && Object.prototype.hasOwnProperty.call(ref.kinds, value) ? (ref.kinds[value] ?? null) : null;
-}
-
-/**
- * `F4.246` — a template row's `status` column as the lifecycle vocabulary. A
- * value outside it is left off, so the propose tool's mirror fails closed on
- * it rather than reading an unknown state as admissible.
- */
-function lifecycleStatusOf(status: string): { status?: TemplateLifecycleStatus } {
-  const parsed = templateLifecycleStatusSchema.safeParse(status);
-  return parsed.success ? { status: parsed.data } : {};
 }

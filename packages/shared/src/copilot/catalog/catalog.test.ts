@@ -17,7 +17,12 @@ import {
   everyFixtureBodyAndPathParses,
   everySummaryNamesItsTarget,
   idsAndToolNamesAreUniqueAndProviderSafe,
-  theOnlyDeleteEntriesAreTheTwoRemovals,
+  theOnlyDeleteEntriesAreTheThreeRemovals,
+  theCalcPointEntriesCarryTheRoutesOwnBodies,
+  everyCalcPointEntryIsRed,
+  theCalcTargetsNameTheAssetKindTheRouteWrites,
+  theCalcTitlesNameTheAssetKind,
+  theCalcPointWritesOfferABackfillStep,
   aDeleteOutsideTheAllowanceIsRefused,
   noClientOnlyFieldReachesTheModelBody,
   aModelBodyThatKeepsAClientOnlyFieldIsRefused,
@@ -62,7 +67,7 @@ describe("F3.85 PR 8 — the copilot action catalog (ADR 0099 decisions 2, 3, 6)
   it("parses every fixture body and path parameter", () => everyFixtureBodyAndPathParses());
   it("names the target in every summary", () => everySummaryNamesItsTarget());
   it("has unique ids and provider-safe tool names", () => idsAndToolNamesAreUniqueAndProviderSafe());
-  it("allows a DELETE only for the two removals", () => theOnlyDeleteEntriesAreTheTwoRemovals());
+  it("allows a DELETE only for the three removals", () => theOnlyDeleteEntriesAreTheThreeRemovals());
   it("declares one schema per path parameter", () => pathParamsAndTheirSchemasAgree());
   it("puts every body field in exactly one step", () => everyBodyFieldIsInExactlyOneStep());
   it("names body fields in refs and formulas", () => refsAndFormulasNameBodyFields());
@@ -129,4 +134,12 @@ describe("F3.87 PR 6 — the library, symbol and role entries (ADR 0099 Amendmen
 describe("F4.247 — the If-Match precondition (ADR 0099 Amendment 5 C1)", () => {
   it("flags exactly dashboard.widgets.replace, assetTemplate.update and escalationProfile.update", () =>
     exactlyTheThreeListWritesTakeAPrecondition());
+});
+
+describe("F4.311 PR 3 — the standalone calc-point entries (ADR 0099 Amendment 11)", () => {
+  it("carries the routes' own body exports, by identity", () => theCalcPointEntriesCarryTheRoutesOwnBodies());
+  it("makes every calc-point card red (ADR 0109 decision 6)", () => everyCalcPointEntryIsRed());
+  it("names the asset kind each route writes in its target", () => theCalcTargetsNameTheAssetKindTheRouteWrites());
+  it("names the asset kind each calc write acts on in its title", () => theCalcTitlesNameTheAssetKind());
+  it("offers a Backfill step on both writes that compute history", () => theCalcPointWritesOfferABackfillStep());
 });
