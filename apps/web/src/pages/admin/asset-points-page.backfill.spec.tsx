@@ -187,3 +187,21 @@ export async function thePollStopsOnceTheRunIsDone(): Promise<void> {
   await screen.findByText("Backfill done: 31 days, 12,480 rows");
   await waitFor(() => expect(pollOf(client)).toBe(false));
 }
+
+/**
+ * `F4.311` PR 6b review — a read that fails stops the poll, even though the
+ * query keeps the last list (whose run is still `running`): a dead endpoint
+ * is not re-read every 5 s forever.
+ */
+export async function aFailedReadStopsThePoll(): Promise<void> {
+  stubApi({ mode: "standalone", items: [standaloneItem(RUNNING)] });
+  const client = renderPage();
+  await rowOf("Power factor");
+  expect(pollOf(client), "control: polling while running").toBe(5000);
+  vi.mocked(api.fetchAdminAssetCalcPoints).mockRejectedValue(new Error("not under test"));
+  await client.refetchQueries({ queryKey: ["admin", "asset-calc-points", ASSET] });
+  await waitFor(() =>
+    expect(client.getQueryState(["admin", "asset-calc-points", ASSET])?.status, "control: the read failed").toBe("error"),
+  );
+  expect(pollOf(client)).toBe(false);
+}

@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aDoneOverrideRunSaysDone,
+  aFailedReadStopsThePoll,
   aFailedOverrideRunShowsItsStoredError,
   aPointWithNoRunHasNoBackfillLine,
   aQueuedStandaloneRunSaysQueued,
@@ -50,5 +51,9 @@ describe("F4.311 PR 6b — the asset points page's backfill progress", () => {
 
   it("the poll stops once the run is done", async () => {
     await thePollStopsOnceTheRunIsDone();
+  });
+
+  it("a failed read stops the poll", async () => {
+    await aFailedReadStopsThePoll();
   });
 });

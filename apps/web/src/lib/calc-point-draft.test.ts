@@ -5,6 +5,13 @@ import {
   aDoneRunSaysDoneWithItsDaysAndRows,
   aFailedRunShowsItsStoredError,
   aFailedRunWithNoStoredErrorSaysSo,
+  aJustFailedRetriableRunIsStillPolled,
+  aJustFailedRetriableRunSaysRetrying,
+  aJustFailedRunWithNoStoredErrorIsStillPolled,
+  anOldFailedRetriableRunIsNotPolled,
+  anOldFailedRetriableRunSaysFailed,
+  aOneDayDoneRunIsSingular,
+  aOneDayRunningRunIsSingular,
   aPartDayCountsOnlyTheWholeDaysStored,
   aQueuedOrRunningItemPollsEveryFiveSeconds,
   aRunNotYetStartedIsQueued,
@@ -140,6 +147,22 @@ describe("F4.311 PR 6b — a backfill run's progress line and the list's poll", 
     aFailedRunShowsItsStoredError();
   });
 
+  it("a 1-day done run says 1 day", () => {
+    aOneDayDoneRunIsSingular();
+  });
+
+  it("a 1-day running run says 1 day", () => {
+    aOneDayRunningRunIsSingular();
+  });
+
+  it("a just-failed retriable run says it is retrying", () => {
+    aJustFailedRetriableRunSaysRetrying();
+  });
+
+  it("a failed retriable run past the retry window says failed", () => {
+    anOldFailedRetriableRunSaysFailed();
+  });
+
   it("a failed run with no stored error says so", () => {
     aFailedRunWithNoStoredErrorSaysSo();
   });
@@ -148,7 +171,19 @@ describe("F4.311 PR 6b — a backfill run's progress line and the list's poll", 
     aQueuedOrRunningItemPollsEveryFiveSeconds();
   });
 
-  it("no queued or running item polls never", () => {
+  it("no queued, running or retriable-failed item polls never", () => {
     noActiveRunPollsNever();
+  });
+
+  it("a just-failed retriable run is still polled", () => {
+    aJustFailedRetriableRunIsStillPolled();
+  });
+
+  it("a just-failed run with no stored error is still polled", () => {
+    aJustFailedRunWithNoStoredErrorIsStillPolled();
+  });
+
+  it("a failed retriable run past the retry window is not polled", () => {
+    anOldFailedRetriableRunIsNotPolled();
   });
 });

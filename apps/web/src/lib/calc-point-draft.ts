@@ -33,7 +33,7 @@ import type {
   CalcBackfillRunDto,
   CalcPointSetBody,
 } from "@bms/shared";
-import { calcPointBatchRefusedResponseSchema } from "@bms/shared/contracts";
+import { BACKFILL_NOT_RETRIABLE, calcPointBatchRefusedResponseSchema } from "@bms/shared/contracts";
 
 import { draftFromFields, type OverrideDraft } from "./asset-point-calc-override";
 import type { FormulaPoint } from "./template-formula-validation";
@@ -231,8 +231,18 @@ export function batchRefusals(cause: unknown): BatchRefusal[] | null {
 
 // ---- backfill progress (`F4.311` PR 6b, ADR 0109 decision 7) ---------------
 
-/** How often the calc-points list re-reads while a backfill is queued or running. */
+/** How often the calc-points list re-reads while a backfill is queued, running or retrying. */
 export const BACKFILL_POLL_MS = 5000;
+
+/**
+ * How long after a retriable failure the list keeps polling (`F4.311` PR 6b
+ * review). BullMQ retries a thrown chunk 3 times with a 1 s exponential
+ * backoff (1 s, 2 s, 4 s), and `CalcBackfillRunStore.claim` re-claims the
+ * failed run, so the run turns `running` again within seconds; 30 s covers the
+ * backoff and a worker's pick-up with room, and bounds the poll of a run whose
+ * attempts are in fact exhausted.
+ */
+export const BACKFILL_RETRY_WINDOW_MS = 30_000;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -241,31 +251,61 @@ function wholeDays(fromIso: string, toIso: string): number {
   return Math.max(0, Math.floor((Date.parse(toIso) - Date.parse(fromIso)) / DAY_MS));
 }
 
+/** "1 day" / "n days" — the rule `backfill-days-select.tsx` labels its choices by. */
+function daysText(days: number): string {
+  return `${days} ${days === 1 ? "day" : "days"}`;
+}
+
 function rowsText(rows: number): string {
   return `${rows.toLocaleString("en-US")} ${rows === 1 ? "row" : "rows"}`;
 }
 
 /**
- * One line for a point's latest backfill run. Days are counted from the
- * run's window start (`fromAt`), never from when it was asked for
- * (`createdAt`): a run asked for now covers the days before now. A failed
- * run shows its stored `error` as the server wrote it (a fixed sentence or
- * an error's name, never a raw response body); it is concatenated rather
- * than templated, which is what the F4.204 scan reads as a raw render.
+ * A `failed` run BullMQ may still retry: its `error` is not one of the shared
+ * {@link BACKFILL_NOT_RETRIABLE} reasons (the list `claim` refuses to
+ * re-claim), and it failed within {@link BACKFILL_RETRY_WINDOW_MS} of `nowMs`.
  */
-export function backfillProgressLabel(run: CalcBackfillRunDto): string {
-  if (run.status === "failed") return "Backfill failed: " + (run.error ?? "no reason was recorded");
-  const total = wholeDays(run.fromAt, run.toAt);
-  if (run.status === "done") return `Backfill done: ${total} days, ${rowsText(run.writtenRows)}`;
-  if (run.doneThrough === null) return "Backfill: queued";
-  const done = Math.min(total, wholeDays(run.fromAt, run.doneThrough));
-  return `Backfill: ${done} of ${total} days, ${rowsText(run.writtenRows)}`;
+function mayStillRetry(run: CalcBackfillRunDto, nowMs: number): boolean {
+  if (run.status !== "failed" || run.finishedAt === null) return false;
+  if (run.error !== null && BACKFILL_NOT_RETRIABLE.includes(run.error)) return false;
+  return nowMs - Date.parse(run.finishedAt) <= BACKFILL_RETRY_WINDOW_MS;
 }
 
-/** The calc-points list's `refetchInterval`: {@link BACKFILL_POLL_MS} while any run is queued or running, else off. */
-export function backfillPollInterval(items: readonly AssetPointCalcConfigDto[] | undefined): number | false {
+/**
+ * One line for a point's latest backfill run, as of `nowMs`. Days are counted
+ * from the run's window start (`fromAt`), never from when it was asked for
+ * (`createdAt`): a run asked for now covers the days before now. A failed run
+ * shows its stored `error` as is, which is safe to render because the server
+ * only ever stores a fixed reason or an error's `name`, never a message:
+ * `CalcBackfillRunStore.finish` and `failStale` (`stale`), the calc-backfill
+ * service (`errorName(...)`, or its fixed no-active-definition reason), and
+ * the request service's release (`no worker`, `not started`).
+ */
+export function backfillProgressLabel(run: CalcBackfillRunDto, nowMs: number): string {
+  if (run.status === "failed") {
+    const reason = run.error ?? "no reason was recorded";
+    return mayStillRetry(run, nowMs) ? `Backfill failed, retrying: ${reason}` : `Backfill failed: ${reason}`;
+  }
+  const total = wholeDays(run.fromAt, run.toAt);
+  if (run.status === "done") return `Backfill done: ${daysText(total)}, ${rowsText(run.writtenRows)}`;
+  if (run.doneThrough === null) return "Backfill: queued";
+  const done = Math.min(total, wholeDays(run.fromAt, run.doneThrough));
+  return `Backfill: ${done} of ${daysText(total)}, ${rowsText(run.writtenRows)}`;
+}
+
+/**
+ * The calc-points list's `refetchInterval` as of `nowMs`:
+ * {@link BACKFILL_POLL_MS} while any run is queued, running, or failed but
+ * still retriable (within {@link BACKFILL_RETRY_WINDOW_MS}), else off.
+ */
+export function backfillPollInterval(
+  items: readonly AssetPointCalcConfigDto[] | undefined,
+  nowMs: number,
+): number | false {
   const active = (items ?? []).some(
-    (item) => item.backfill !== null && (item.backfill.status === "queued" || item.backfill.status === "running"),
+    ({ backfill }) =>
+      backfill !== null &&
+      (backfill.status === "queued" || backfill.status === "running" || mayStillRetry(backfill, nowMs)),
   );
   return active ? BACKFILL_POLL_MS : false;
 }
