@@ -73,6 +73,7 @@ import {
   EMPTY_DRAFT,
   type OverrideDraft,
 } from "../../lib/asset-point-calc-override";
+import { backfillPollInterval, backfillProgressLabel } from "../../lib/calc-point-draft";
 import { StatusPill } from "../../components/status-pill";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -335,6 +336,11 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     queryKey: ["admin", "asset-calc-points", assetId],
     queryFn: () => fetchAdminAssetCalcPoints(assetId ?? ""),
     enabled: Boolean(assetId),
+    // `F4.311` PR 6b: re-read every 5 s while a backfill is queued, running or
+    // retrying, never otherwise — and never after a failed read, whose kept
+    // data would otherwise poll a dead endpoint forever.
+    refetchInterval: (query) =>
+      query.state.status === "error" ? false : backfillPollInterval(query.state.data?.items, Date.now()),
   });
   // `F4.311` PR 6a (ADR 0109 decision 5): an asset with no template lists its
   // own calculated points in their own card below; the override card lists a
@@ -734,6 +740,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                       : ` · every ${config.effective.calcIntervalSeconds}s`}
                   </span>
                   <CalcRuntimePill runtime={config.runtime} />
+                  {config.backfill ? <span>{backfillProgressLabel(config.backfill, Date.now())}</span> : null}
                   {hasAnyOverride(config) ? (
                     <span className="rounded bg-warning-wash-strong px-2 py-0.5 font-semibold text-warning-ink">
                       overridden
@@ -837,6 +844,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                       : ` · every ${config.effective.calcIntervalSeconds}s`}
                   </span>
                   <CalcRuntimePill runtime={config.runtime} />
+                  {config.backfill ? <span>{backfillProgressLabel(config.backfill, Date.now())}</span> : null}
                   <button
                     type="button"
                     disabled={standaloneBusy}

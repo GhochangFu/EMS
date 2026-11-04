@@ -42,3 +42,21 @@ export const calcBackfillRunDtoSchema = z
     finishedAt: z.string().nullable(),
   })
   .readonly();
+
+/** A failed run's `error` when its job never reached a worker (the enqueue failed). */
+export const BACKFILL_NO_WORKER = "no worker";
+
+/** A failed run's `error` when it was created in a request whose later create threw — or, read-side, a `queued` run no worker picked up. */
+export const BACKFILL_NOT_STARTED = "not started";
+
+/** A failed run's `error` when its `running` heartbeat stopped. */
+export const BACKFILL_STALE = "stale";
+
+/**
+ * `F4.311` PR 6b review — failed runs no job will ever retry: the job never
+ * existed, or the run was superseded. Any other `failed` run (an error's name,
+ * or no error) is one BullMQ may still retry, and `CalcBackfillRunStore.claim`
+ * re-claims it. One list for the API's claim and the page's poll, so the two
+ * cannot disagree about which failures are final.
+ */
+export const BACKFILL_NOT_RETRIABLE: readonly string[] = [BACKFILL_NO_WORKER, BACKFILL_NOT_STARTED, BACKFILL_STALE];

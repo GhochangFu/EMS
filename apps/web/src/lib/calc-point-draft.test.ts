@@ -2,6 +2,23 @@ import { describe, it } from "vitest";
 
 import {
   aCalculatedRowIsADerivedFormulaPoint,
+  aDoneRunSaysDoneWithItsDaysAndRows,
+  aFailedRunShowsItsStoredError,
+  aFailedRunWithNoStoredErrorSaysSo,
+  aJustFailedRetriableRunIsStillPolled,
+  aJustFailedRetriableRunSaysRetrying,
+  aJustFailedRunWithNoStoredErrorIsStillPolled,
+  anOldFailedRetriableRunIsNotPolled,
+  anOldFailedRetriableRunSaysFailed,
+  aOneDayDoneRunIsSingular,
+  aOneDayRunningRunIsSingular,
+  aPartDayCountsOnlyTheWholeDaysStored,
+  aQueuedOrRunningItemPollsEveryFiveSeconds,
+  aRunNotYetStartedIsQueued,
+  aRunningRunCountsDaysFromItsWindowStartAndItsRows,
+  aRunningRunWithNoBucketStoredYetIsQueued,
+  noActiveRunPollsNever,
+  oneRowIsSingular,
   aDraftEqualToItsStartIsUnchanged,
   aFormulaOnlyEditIsAChange,
   aCompleteDraftIsTheBodyTheSchemaParses,
@@ -98,5 +115,75 @@ describe("F4.311 PR 6a — the standalone calculated point's draft and batch rul
 
   it("a formula-only edit is a change", () => {
     aFormulaOnlyEditIsAChange();
+  });
+});
+
+describe("F4.311 PR 6b — a backfill run's progress line and the list's poll", () => {
+  it("a run not yet started is queued", () => {
+    aRunNotYetStartedIsQueued();
+  });
+
+  it("a running run with no bucket stored yet is queued", () => {
+    aRunningRunWithNoBucketStoredYetIsQueued();
+  });
+
+  it("a running run counts days from its window start (fromAt, not createdAt) and its rows", () => {
+    aRunningRunCountsDaysFromItsWindowStartAndItsRows();
+  });
+
+  it("a part day counts only the whole days stored", () => {
+    aPartDayCountsOnlyTheWholeDaysStored();
+  });
+
+  it("one row is singular", () => {
+    oneRowIsSingular();
+  });
+
+  it("a done run says done, with its days and rows", () => {
+    aDoneRunSaysDoneWithItsDaysAndRows();
+  });
+
+  it("a failed run shows its stored error in the server's words", () => {
+    aFailedRunShowsItsStoredError();
+  });
+
+  it("a 1-day done run says 1 day", () => {
+    aOneDayDoneRunIsSingular();
+  });
+
+  it("a 1-day running run says 1 day", () => {
+    aOneDayRunningRunIsSingular();
+  });
+
+  it("a just-failed retriable run says it is retrying", () => {
+    aJustFailedRetriableRunSaysRetrying();
+  });
+
+  it("a failed retriable run past the retry window says failed", () => {
+    anOldFailedRetriableRunSaysFailed();
+  });
+
+  it("a failed run with no stored error says so", () => {
+    aFailedRunWithNoStoredErrorSaysSo();
+  });
+
+  it("a queued or running item polls every five seconds", () => {
+    aQueuedOrRunningItemPollsEveryFiveSeconds();
+  });
+
+  it("no queued, running or retriable-failed item polls never", () => {
+    noActiveRunPollsNever();
+  });
+
+  it("a just-failed retriable run is still polled", () => {
+    aJustFailedRetriableRunIsStillPolled();
+  });
+
+  it("a just-failed run with no stored error is still polled", () => {
+    aJustFailedRunWithNoStoredErrorIsStillPolled();
+  });
+
+  it("a failed retriable run past the retry window is not polled", () => {
+    anOldFailedRetriableRunIsNotPolled();
   });
 });

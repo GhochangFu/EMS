@@ -1,10 +1,15 @@
 import { expect } from "vitest";
-import { CALC_POINT_BATCH_MAX_ASSETS } from "@bms/shared";
+import { BACKFILL_NO_WORKER, CALC_POINT_BATCH_MAX_ASSETS } from "@bms/shared";
+import type { AssetPointCalcConfigDto, CalcBackfillRunDto } from "@bms/shared";
 import { assetPointCalcConfigDtoSchema, calcPointSetBodySchema } from "@bms/shared/contracts";
 
 import { ApiError } from "./api-error";
 import {
+  BACKFILL_POLL_MS,
+  BACKFILL_RETRY_WINDOW_MS,
   BATCH_TEMPLATE_EXCLUSION,
+  backfillPollInterval,
+  backfillProgressLabel,
   batchCapProblem,
   batchEligibility,
   batchRefusals,
@@ -178,4 +183,139 @@ export function aDraftEqualToItsStartIsUnchanged(): void {
 
 export function aFormulaOnlyEditIsAChange(): void {
   expect(calcPointDraftChanged(draft({ formula: "{kw} * 3" }), draft())).toBe(true);
+}
+
+// ---- `F4.311` PR 6b — backfill progress ------------------------------------
+
+/**
+ * A 31-day run asked for at 2026-11-01T00:05Z: its window starts 31 days
+ * before. `createdAt` is far from `fromAt` on purpose, so a count taken from
+ * the wrong one cannot pass.
+ */
+/** The clock every claim reads: a day after the fixture run was asked for. */
+const NOW_MS = Date.parse("2026-11-02T00:00:00.000Z");
+
+function run(patch: Partial<CalcBackfillRunDto> = {}): CalcBackfillRunDto {
+  return {
+    id: "run-1",
+    status: "running",
+    fromAt: "2026-10-01T00:00:00.000Z",
+    toAt: "2026-11-01T00:00:00.000Z",
+    doneThrough: "2026-10-04T00:00:00.000Z",
+    writtenRows: 12480,
+    error: null,
+    createdAt: "2026-11-01T00:05:00.000Z",
+    finishedAt: null,
+    ...patch,
+  };
+}
+
+export function aRunNotYetStartedIsQueued(): void {
+  expect(backfillProgressLabel(run({ status: "queued", doneThrough: null, writtenRows: 0 }), NOW_MS)).toBe("Backfill: queued");
+}
+
+export function aRunningRunWithNoBucketStoredYetIsQueued(): void {
+  expect(backfillProgressLabel(run({ doneThrough: null, writtenRows: 0 }), NOW_MS)).toBe("Backfill: queued");
+}
+
+export function aRunningRunCountsDaysFromItsWindowStartAndItsRows(): void {
+  expect(backfillProgressLabel(run(), NOW_MS)).toBe("Backfill: 3 of 31 days, 12,480 rows");
+}
+
+export function aPartDayCountsOnlyTheWholeDaysStored(): void {
+  expect(backfillProgressLabel(run({ doneThrough: "2026-10-04T23:00:00.000Z" }), NOW_MS)).toBe(
+    "Backfill: 3 of 31 days, 12,480 rows",
+  );
+}
+
+export function oneRowIsSingular(): void {
+  expect(backfillProgressLabel(run({ writtenRows: 1 }), NOW_MS)).toBe("Backfill: 3 of 31 days, 1 row");
+}
+
+export function aDoneRunSaysDoneWithItsDaysAndRows(): void {
+  expect(
+    backfillProgressLabel(run({ status: "done", doneThrough: "2026-11-01T00:00:00.000Z", finishedAt: "2026-11-01T00:09:00.000Z" }), NOW_MS),
+  ).toBe("Backfill done: 31 days, 12,480 rows");
+}
+
+export function aFailedRunShowsItsStoredError(): void {
+  expect(backfillProgressLabel(run({ status: "failed", error: "no worker" }), NOW_MS)).toBe("Backfill failed: no worker");
+}
+
+export function aOneDayDoneRunIsSingular(): void {
+  expect(
+    backfillProgressLabel(
+      run({ status: "done", fromAt: "2026-10-31T00:00:00.000Z", doneThrough: "2026-11-01T00:00:00.000Z" }),
+      NOW_MS,
+    ),
+  ).toBe("Backfill done: 1 day, 12,480 rows");
+}
+
+export function aOneDayRunningRunIsSingular(): void {
+  expect(backfillProgressLabel(run({ fromAt: "2026-10-31T00:00:00.000Z", doneThrough: "2026-10-31T06:00:00.000Z" }), NOW_MS)).toBe(
+    "Backfill: 0 of 1 day, 12,480 rows",
+  );
+}
+
+/** A failure BullMQ may still retry (an error's name), finished `agoMs` before {@link NOW_MS}. */
+function retriableFailure(agoMs: number): CalcBackfillRunDto {
+  return run({ status: "failed", error: "TypeError", finishedAt: new Date(NOW_MS - agoMs).toISOString() });
+}
+
+export function aJustFailedRetriableRunSaysRetrying(): void {
+  expect(backfillProgressLabel(retriableFailure(5000), NOW_MS)).toBe("Backfill failed, retrying: TypeError");
+}
+
+export function anOldFailedRetriableRunSaysFailed(): void {
+  expect(backfillProgressLabel(retriableFailure(BACKFILL_RETRY_WINDOW_MS + 1000), NOW_MS)).toBe(
+    "Backfill failed: TypeError",
+  );
+}
+
+export function aFailedRunWithNoStoredErrorSaysSo(): void {
+  expect(backfillProgressLabel(run({ status: "failed", doneThrough: null, error: null }), NOW_MS)).toBe(
+    "Backfill failed: no reason was recorded",
+  );
+}
+
+function item(backfill: CalcBackfillRunDto | null): AssetPointCalcConfigDto {
+  return { ...standaloneConfigFor("pf"), backfill };
+}
+
+export function aQueuedOrRunningItemPollsEveryFiveSeconds(): void {
+  expect([
+    backfillPollInterval([item(null), item(run({ status: "queued", doneThrough: null }))], NOW_MS),
+    backfillPollInterval([item(run())], NOW_MS),
+  ]).toEqual([BACKFILL_POLL_MS, BACKFILL_POLL_MS]);
+  expect(BACKFILL_POLL_MS).toBe(5000);
+}
+
+export function noActiveRunPollsNever(): void {
+  expect([
+    backfillPollInterval(undefined, NOW_MS),
+    backfillPollInterval([], NOW_MS),
+    backfillPollInterval(
+      [
+        item(null),
+        item(run({ status: "done" })),
+        // A failure no retry can mend, even one that just happened.
+        item(run({ status: "failed", error: BACKFILL_NO_WORKER, finishedAt: new Date(NOW_MS - 1000).toISOString() })),
+      ],
+      NOW_MS,
+    ),
+  ]).toEqual([false, false, false]);
+}
+
+export function aJustFailedRetriableRunIsStillPolled(): void {
+  expect(backfillPollInterval([item(retriableFailure(5000))], NOW_MS)).toBe(BACKFILL_POLL_MS);
+}
+
+export function aJustFailedRunWithNoStoredErrorIsStillPolled(): void {
+  expect(
+    backfillPollInterval([item(run({ status: "failed", error: null, finishedAt: new Date(NOW_MS - 5000).toISOString() }))], NOW_MS),
+  ).toBe(BACKFILL_POLL_MS);
+}
+
+export function anOldFailedRetriableRunIsNotPolled(): void {
+  expect(backfillPollInterval([item(retriableFailure(BACKFILL_RETRY_WINDOW_MS + 1000))], NOW_MS)).toBe(false);
 }
