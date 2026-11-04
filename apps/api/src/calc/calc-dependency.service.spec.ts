@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 
 import type { BmsDb } from "@bms/db";
-import { CALC_DIALECT_V2 } from "@bms/shared";
+import { CALC_DIALECT_V2, crossRefKey } from "@bms/shared";
 import type { CalcCrossRef } from "@bms/shared";
 
 import { MetricsService } from "../observability/metrics.service";
@@ -518,4 +518,70 @@ export async function assertUnresolvedQualifiedCodesReadsNothingWithoutAQualifie
   const none = await detector.unresolvedQualifiedCodes(ASSET, []);
   expect(none).toEqual([]);
   expect(calls.length, "no cross references, no read").toBe(0);
+}
+
+/**
+ * `F4.311` PR 2 review — a `CalcScopeService` whose aggregate members are
+ * exactly the extra-declared pairs it is handed, so an answer can only have
+ * come through the option the detector forwards. The database underneath
+ * throws, as in `scopeOverNoDatabase`.
+ */
+function extraDeclaredScope(): CalcScopeService {
+  const scope = scopeOverNoDatabase();
+  scope.resolveMembership = async (definitions, options) => {
+    const members = new Map<string, Map<string, readonly { assetId: string; pointKey: string }[]>>();
+    for (const def of definitions) {
+      for (const ref of def.crossRefs) {
+        if (ref.kind !== "aggregate") continue;
+        const forOwner = members.get(def.assetId) ?? new Map();
+        forOwner.set(
+          crossRefKey(ref),
+          (options?.extraDeclared ?? []).filter((pair) => pair.pointKey === ref.pointKey),
+        );
+        members.set(def.assetId, forOwner);
+      }
+    }
+    return { qualified: new Map(), members };
+  };
+  return scope;
+}
+
+/** `sum({SELF} @site)` on a bare asset — it declares `SELF` only by being written. */
+function selfAggregateCandidate(): CalcCandidate {
+  return {
+    assetId: ASSET,
+    pointKey: "SELF",
+    templatePointId: "standalone:self",
+    dialect: CALC_DIALECT_V2,
+    localRefs: [],
+    crossRefs: [{ kind: "aggregate", fn: "sum", pointKey: "SELF", scope: { kind: "site" }, position: 0 }],
+  };
+}
+
+/**
+ * **The candidate's own pair, passed as extra-declared, reaches membership** —
+ * so a self-reading aggregate on an asset that declares the key by neither
+ * template nor row is the one-edge cycle it will be once written.
+ */
+export async function assertExtraDeclaredPairsReachMembership(): Promise<void> {
+  const detector = new CalcDependencyService(
+    stubDb([]),
+    new CalcDefinitionsService(stubDb([]), recordingMetrics().metrics),
+    extraDeclaredScope(),
+  );
+  const [members] = await detector.checkCandidates([selfAggregateCandidate()], {
+    extraDeclared: [{ assetId: ASSET, pointKey: "SELF" }],
+  });
+  expect(members.map((member) => member.pointKey)).toEqual(["SELF"]);
+}
+
+/** Without the option nothing extra is declared — existing callers are unchanged. */
+export async function assertNoExtraDeclaredByDefault(): Promise<void> {
+  const detector = new CalcDependencyService(
+    stubDb([]),
+    new CalcDefinitionsService(stubDb([]), recordingMetrics().metrics),
+    extraDeclaredScope(),
+  );
+  const [members] = await detector.checkCandidates([selfAggregateCandidate()]);
+  expect(members).toEqual([]);
 }

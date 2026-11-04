@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type pg from "pg";
 
-import { assetPoints, assets, createDb } from "@bms/db";
+import { assetPoints, assets, assetTemplates, createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { CalcPointSetBody } from "@bms/shared";
 
@@ -65,7 +65,15 @@ async function expectRefusal(run: () => Promise<unknown>, status: number, match:
   assert(match.test(got.message), `${what}: "${got.message}" does not match ${match}`);
 }
 
+/** Per-run dashboard slug prefix — the widget-binding fixture's dashboards. */
+const TEST_DASHBOARD_SLUG_PREFIX = TEST_ASSET_PREFIX.toLowerCase();
+
+/** The catalog unit the `.test.ts` wrapper stamps on `CALC_KEY` for the run. */
+export const CALC_KEY_UNIT = "kW";
+
 export async function cleanup(pool: pg.Pool): Promise<void> {
+  // Widgets and their bindings cascade from the dashboard.
+  await pool.query(`DELETE FROM bms.dashboards WHERE slug LIKE $1`, [`${TEST_DASHBOARD_SLUG_PREFIX}%`]);
   // By payload as well as by row: a deleted point's audit row outlives it.
   await pool.query(
     `DELETE FROM bms.audit_log
@@ -77,6 +85,7 @@ export async function cleanup(pool: pg.Pool): Promise<void> {
     [`${TEST_ASSET_PREFIX}%`],
   );
   await pool.query(`DELETE FROM bms.assets WHERE code LIKE $1`, [`${TEST_ASSET_PREFIX}%`]);
+  await pool.query(`DELETE FROM bms.asset_templates WHERE code LIKE $1`, [`${TEST_ASSET_PREFIX}%`]);
 }
 
 /** A template-less asset with one unmapped (telemetry) row on `MEASURED_KEY`. */
@@ -84,7 +93,7 @@ async function seedBare(
   db: BmsDb,
   fx: Fixtures,
   suffix: string,
-  opts: { organizationId?: string; locationId?: string } = {},
+  opts: { organizationId?: string; locationId?: string; templateId?: string } = {},
 ): Promise<{ id: string; code: string }> {
   const code = `${TEST_ASSET_PREFIX}${suffix}`;
   const organizationId = opts.organizationId ?? fx.organizationId;
@@ -97,7 +106,7 @@ async function seedBare(
       siteName: "Fixture Site",
       locationId: opts.locationId ?? fx.otherLocationId,
       domain: "electrical",
-      templateId: null,
+      templateId: opts.templateId ?? null,
     })
     .returning({ id: assets.id });
   await db.insert(assetPoints).values({
@@ -151,11 +160,6 @@ async function auditActions(pool: pg.Pool, assetId: string): Promise<{ action: s
   return rows;
 }
 
-async function catalogUnit(pool: pg.Pool, code: string): Promise<string | null> {
-  const { rows } = await pool.query<{ unit: string | null }>(`SELECT unit FROM bms.point_keys WHERE code = $1`, [code]);
-  return rows[0]?.unit ?? null;
-}
-
 async function expectNoRow(pool: pg.Pool, assetId: string, pointKey: string, what: string): Promise<void> {
   assert((await rowFor(pool, assetId, pointKey)) === undefined, `${what}: nothing may be written`);
 }
@@ -178,7 +182,7 @@ export async function assertSetCreatesAComputedRow(pool: pg.Pool, svc: CalcPoint
       row?.max_input_age_seconds === 600,
     "all five calc columns are stored as sent",
   );
-  assert(row?.unit === (await catalogUnit(pool, CALC_KEY)), `the catalog unit is stamped, got ${String(row?.unit)}`);
+  assert(row?.unit === CALC_KEY_UNIT, `the catalog unit is stamped, got ${String(row?.unit)}`);
 }
 
 /** The set is audited `calc_point_set`, naming columns and never the formula. */
@@ -416,4 +420,171 @@ export async function assertABatchAcrossOrganizationsWritesNothing(pool: pg.Pool
   assert(got.status === 400 && refused.length === 1 && refused[0]?.assetId === b.id, `the foreign asset is refused, got ${JSON.stringify(refused)}`);
   assert(/different one/.test(refused[0]?.reason ?? ""), `the reason names the organization rule, got ${refused[0]?.reason}`);
   await expectNoRow(pool, a.id, CALC_KEY_2, "the cross-organization batch");
+}
+
+// --- review fixes ----------------------------------------------------------------
+
+/** A scheduled `v2` body whose aggregate reads `pointKey` itself across the site. */
+function selfAggregate(fn: "sum" | "avg", pointKey: string): CalcPointSetBody {
+  return {
+    formula: `${fn}({${pointKey}} @site)`,
+    formulaDialect: "bms-calc-v2",
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 60,
+    maxInputAgeSeconds: 600,
+  };
+}
+
+type Refused = { assetId: string; assetCode: string | null; reason: string };
+
+function refusedOf(body: unknown): Refused[] {
+  return (body as { refused?: Refused[] } | null)?.refused ?? [];
+}
+
+/**
+ * Rule 7 on create — a bare asset declares the key by neither template nor
+ * row until the write, so the detector must count the candidate's own pair, or
+ * `K = sum({K} @site)` is written and then skipped as a cycle forever.
+ */
+export async function assertASelfReadingAggregateIsRefusedOnCreate(
+  pool: pg.Pool,
+  svc: CalcPointStandaloneService,
+  fx: Fixtures,
+): Promise<void> {
+  const asset = await seedBare(createDb(pool), fx, "R7-SELF");
+  await expectRefusal(
+    () => svc.set(fx.adminJwt, asset.id, CALC_KEY, selfAggregate("sum", CALC_KEY)),
+    400,
+    /dependency cycle/,
+    "a self-reading site sum on create",
+  );
+  await expectNoRow(pool, asset.id, CALC_KEY, "a self-reading site sum on create");
+}
+
+/** The batch form: two bare assets at one site, each averaging the batch key — every one refused, nothing written. */
+export async function assertABatchOfSelfReadingAggregatesWritesNothing(
+  pool: pg.Pool,
+  svc: CalcPointStandaloneService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const a = await seedBare(db, fx, "B-SELF-A");
+  const b = await seedBare(db, fx, "B-SELF-B");
+  const got = await rejection(() =>
+    svc.setBatch(fx.adminJwt, { assetIds: [a.id, b.id], pointKey: CALC_KEY_2, ...selfAggregate("avg", CALC_KEY_2) }),
+  );
+  const refused = refusedOf(got.body);
+  assert(got.status === 400, `a 400, got ${String(got.status)} (${got.message})`);
+  assert(
+    refused.map((r) => r.assetId).join(",") === [a.id, b.id].join(",") &&
+      refused.every((r) => /dependency cycle/.test(r.reason)),
+    `both assets refused as a dependency cycle, got ${JSON.stringify(refused)}`,
+  );
+  await expectNoRow(pool, a.id, CALC_KEY_2, "the first self-reading batch asset");
+  await expectNoRow(pool, b.id, CALC_KEY_2, "the second self-reading batch asset");
+}
+
+/** Binds `pointId` to one value tile on a fresh per-run dashboard. */
+async function bindToAWidget(pool: pg.Pool, fx: Fixtures, pointId: string, suffix: string): Promise<void> {
+  const { rows: dashboards } = await pool.query<{ id: string }>(
+    `INSERT INTO bms.dashboards (organization_id, slug, name) VALUES ($1, $2, $3) RETURNING id`,
+    [fx.organizationId, `${TEST_DASHBOARD_SLUG_PREFIX}${suffix.toLowerCase()}`, `F4.311 widget fixture ${suffix}`],
+  );
+  const { rows: widgets } = await pool.query<{ id: string }>(
+    `INSERT INTO bms.dashboard_widgets (organization_id, dashboard_id, widget_type, grid_x, grid_y, grid_w, grid_h)
+     VALUES ($1, $2, 'value_tile', 0, 0, 3, 2) RETURNING id`,
+    [fx.organizationId, dashboards[0]?.id],
+  );
+  await pool.query(
+    `INSERT INTO bms.dashboard_widget_points (organization_id, widget_id, point_id) VALUES ($1, $2, $3)`,
+    [fx.organizationId, widgets[0]?.id, pointId],
+  );
+}
+
+/**
+ * DELETE of a point a dashboard widget shows is refused — the binding's
+ * foreign key cascades, so deleting would silently empty the widget.
+ */
+export async function assertAWidgetBoundPointIsNotDeleted(
+  pool: pg.Pool,
+  svc: CalcPointStandaloneService,
+  fx: Fixtures,
+): Promise<void> {
+  const asset = await seedBare(createDb(pool), fx, "REMOVE-W");
+  await svc.set(fx.adminJwt, asset.id, CALC_KEY, V1_BODY);
+  const row = await rowFor(pool, asset.id, CALC_KEY);
+  assert(row !== undefined, "fixture: the point must exist before it is bound");
+  await bindToAWidget(pool, fx, (row as Row).id, "REMOVE-W");
+  await expectRefusal(
+    () => svc.remove(fx.adminJwt, asset.id, CALC_KEY),
+    409,
+    /shown on 1 dashboard widget\(s\)\. Remove it from those widgets first/,
+    "DELETE of a widget-bound point",
+  );
+  assert((await rowFor(pool, asset.id, CALC_KEY))?.id === row?.id, "the bound point's row stays");
+  const actions = (await auditActions(pool, asset.id)).map((a) => a.action);
+  assert(!actions.includes("master.asset_point.calc_point_delete"), `no delete audit row, got ${actions.join(",")}`);
+}
+
+/**
+ * The batch's "asset has a template" refusal — a bare asset beside a
+ * template-pinned one: only the pinned one is refused, and neither is written.
+ */
+export async function assertABatchRefusesOnlyTheTemplatedAsset(
+  pool: pg.Pool,
+  svc: CalcPointStandaloneService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const [template] = await db
+    .insert(assetTemplates)
+    .values({
+      organizationId: fx.organizationId,
+      code: `${TEST_ASSET_PREFIX}TPL`,
+      version: 1,
+      name: "Standalone batch template fixture",
+      assetType: "test_rig",
+      domain: "electrical",
+      status: "published",
+      publishedAt: new Date(),
+    })
+    .returning({ id: assetTemplates.id });
+  const bare = await seedBare(db, fx, "B-TPL-BARE");
+  const pinned = await seedBare(db, fx, "B-TPL-PINNED", { templateId: template.id });
+  const got = await rejection(() =>
+    svc.setBatch(fx.adminJwt, { assetIds: [bare.id, pinned.id], pointKey: CALC_KEY_2, ...V1_BODY }),
+  );
+  const refused = refusedOf(got.body);
+  assert(got.status === 400, `a 400, got ${String(got.status)} (${got.message})`);
+  assert(
+    refused.length === 1 &&
+      refused[0]?.assetId === pinned.id &&
+      refused[0]?.assetCode === pinned.code &&
+      /pinned to a template version/.test(refused[0]?.reason ?? ""),
+    `refused[] names only the templated asset, with its reason, got ${JSON.stringify(refused)}`,
+  );
+  await expectNoRow(pool, bare.id, CALC_KEY_2, "the bare asset beside a templated one");
+  await expectNoRow(pool, pinned.id, CALC_KEY_2, "the templated asset");
+}
+
+/** A missing id and an out-of-scope asset get one sentence and no code — the batch is no existence oracle. */
+export async function assertABatchRefusesMissingAndOutOfScopeAlike(
+  pool: pg.Pool,
+  svc: CalcPointStandaloneService,
+  fx: Fixtures,
+): Promise<void> {
+  const outOfScope = await seedBare(createDb(pool), fx, "B-ORACLE");
+  const missing = randomUUID();
+  const got = await rejection(() =>
+    svc.setBatch(fx.locationAdminJwt, { assetIds: [missing, outOfScope.id], pointKey: CALC_KEY_2, ...V1_BODY }),
+  );
+  const refused = refusedOf(got.body);
+  assert(got.status === 400 && refused.length === 2, `both refused, got ${String(got.status)} ${JSON.stringify(refused)}`);
+  assert(
+    refused[0]?.reason === "Asset not found or outside your access scope" && refused[1]?.reason === refused[0]?.reason,
+    `one sentence for both, got ${JSON.stringify(refused)}`,
+  );
+  assert(refused[0]?.assetCode === null && refused[1]?.assetCode === null, `no code for either, got ${JSON.stringify(refused)}`);
+  assert(!JSON.stringify(got.body).includes(outOfScope.code), "the out-of-scope asset's code is never echoed");
+  await expectNoRow(pool, outOfScope.id, CALC_KEY_2, "the out-of-scope asset");
 }

@@ -113,13 +113,21 @@ export type AssetPointCalcOverrideBody = z.infer<typeof assetPointCalcOverrideBo
  *   unknown-reference sentence — `F4.311` (ADR 0109): a standalone point on an
  *   asset with no template passes `"this asset"`. Defaults to the override
  *   path's own wording, byte-identical to before the option existed.
+ * @param options.inheritance whether a null override field is inherited —
+ *   `true` (the default) appends "(inherited from the template)" to the field
+ *   it names, byte-identical to before the option existed; a standalone point
+ *   (`F4.311`) has nothing to inherit and passes `false`, so a null field is
+ *   named as the author's own omission.
  * @returns the problems, most specific first; empty means the merge is usable
  */
 export function validateMergedCalcOverride(
   override: AssetPointCalcOverrideFields,
   template: AssetPointCalcOverrideFields,
   declared: { readonly measured: readonly string[]; readonly all: readonly string[] },
-  { declaredBy = "this asset's template version" }: { readonly declaredBy?: string } = {},
+  {
+    declaredBy = "this asset's template version",
+    inheritance = true,
+  }: { readonly declaredBy?: string; readonly inheritance?: boolean } = {},
 ): string[] {
   const merged: AssetPointCalcOverrideFields = {
     formula: override.formula ?? template.formula,
@@ -129,7 +137,7 @@ export function validateMergedCalcOverride(
     maxInputAgeSeconds: override.maxInputAgeSeconds ?? template.maxInputAgeSeconds,
   };
   const inherited = (field: keyof AssetPointCalcOverrideFields): string =>
-    override[field] === null ? " (inherited from the template)" : "";
+    inheritance && override[field] === null ? " (inherited from the template)" : "";
 
   const problems: string[] = [];
   const dialect = merged.formulaDialect;

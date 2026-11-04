@@ -660,3 +660,21 @@ export function assertADeclaredByLabelNamesTheDeclarer(): void {
     `the label must reach the sentence, got: ${String(problem)}`,
   );
 }
+
+/**
+ * `F4.311` PR 2 review — a standalone point inherits nothing, so a null field
+ * is the author's own omission and the sentence must not blame a template.
+ */
+export function assertNoInheritanceDropsTheInheritedWording(): void {
+  const [problem] = validateMergedCalcOverride(
+    { ...SCHEDULED_TEMPLATE, calcIntervalSeconds: null },
+    NOTHING,
+    KEYS,
+    { declaredBy: "this asset", inheritance: false },
+  );
+  assert(problem !== undefined, "anti-vacuity: a scheduled body with no interval must be refused");
+  assert(
+    !/inherited|template/.test(problem as string),
+    `a standalone sentence names no inheritance and no template, got: ${String(problem)}`,
+  );
+}

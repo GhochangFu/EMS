@@ -17,6 +17,9 @@ import { loadFixtures, type Fixtures } from "../asset-templates/asset-templates.
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   assertABatchAcrossOrganizationsWritesNothing,
+  assertABatchOfSelfReadingAggregatesWritesNothing,
+  assertABatchRefusesMissingAndOutOfScopeAlike,
+  assertABatchRefusesOnlyTheTemplatedAsset,
   assertABatchWithOneRefusalWritesNothing,
   assertABatchWritesEveryAsset,
   assertACycleIsRefused,
@@ -25,6 +28,8 @@ import {
   assertAnUnknownCatalogKeyIsRefused,
   assertAnUnknownParameterIsRefused,
   assertAnUnresolvedCodeIsRefused,
+  assertASelfReadingAggregateIsRefusedOnCreate,
+  assertAWidgetBoundPointIsNotDeleted,
   assertKindOfABareAssetIsStandalone,
   assertListServesStandaloneItems,
   assertOutOfScopeAssetIsRefused,
@@ -36,6 +41,7 @@ import {
   assertTheEngineRulesAreEnforced,
   CALC_KEY,
   CALC_KEY_2,
+  CALC_KEY_UNIT,
   cleanup,
   MEASURED_KEY,
 } from "./calc-point-standalone.integration.spec";
@@ -59,6 +65,7 @@ describe.skipIf(!connectionString)("F4.311 — standalone calculated points (ADR
   let svc: CalcPointStandaloneService;
   let fx: Fixtures;
   let releasePointKeys: (() => Promise<void>) | undefined;
+  let previousCalcKeyUnit: string | null = null;
 
   const run = (claim: (pool: pg.Pool, svc: CalcPointStandaloneService, fx: Fixtures) => Promise<void>) => async () => {
     if (!pool) throw new Error("pool required");
@@ -69,6 +76,13 @@ describe.skipIf(!connectionString)("F4.311 — standalone calculated points (ADR
     const created = await openIntegrationPool(connectionString as string, "F4.311");
     pool = created;
     releasePointKeys = await registerFixturePointKeys(created, [MEASURED_KEY, CALC_KEY, CALC_KEY_2]);
+    // A real catalog unit, so the "unit is stamped" claim is not `null === null`.
+    const { rows: unitRows } = await created.query<{ unit: string | null }>(
+      `SELECT unit FROM bms.point_keys WHERE code = $1`,
+      [CALC_KEY],
+    );
+    previousCalcKeyUnit = unitRows[0]?.unit ?? null;
+    await created.query(`UPDATE bms.point_keys SET unit = $2 WHERE code = $1`, [CALC_KEY, CALC_KEY_UNIT]);
     const db = createDb(created);
     const scope = new CalcScopeService(db);
     svc = new CalcPointStandaloneService(
@@ -88,6 +102,7 @@ describe.skipIf(!connectionString)("F4.311 — standalone calculated points (ADR
   afterAll(async () => {
     if (pool) {
       await cleanup(pool);
+      await pool.query(`UPDATE bms.point_keys SET unit = $2 WHERE code = $1`, [CALC_KEY, previousCalcKeyUnit]);
       await releasePointKeys?.();
       await pool.end();
     }
@@ -117,4 +132,9 @@ describe.skipIf(!connectionString)("F4.311 — standalone calculated points (ADR
   it("batch — writes every asset when none is refused", run(assertABatchWritesEveryAsset));
   it("batch — writes nothing when one asset is refused", run(assertABatchWithOneRefusalWritesNothing));
   it("batch — refuses an asset in a second organization and writes nothing", run(assertABatchAcrossOrganizationsWritesNothing));
+  it("rule 7 on create — refuses a bare asset's self-reading site sum", run(assertASelfReadingAggregateIsRefusedOnCreate));
+  it("batch — refuses every self-reading aggregate at one site and writes nothing", run(assertABatchOfSelfReadingAggregatesWritesNothing));
+  it("refuses to delete a point a dashboard widget shows", run(assertAWidgetBoundPointIsNotDeleted));
+  it("batch — refuses only the templated asset and writes neither", run(assertABatchRefusesOnlyTheTemplatedAsset));
+  it("batch — refuses a missing id and an out-of-scope asset with one sentence and no code", run(assertABatchRefusesMissingAndOutOfScopeAlike));
 });

@@ -10,6 +10,7 @@ import { CalcDefinitionsService } from "./calc-definitions.service";
 import { buildCalcGraph, topologicalOrder } from "./calc-graph";
 import type { AssetId, GraphDefinition, NodeId } from "./calc-graph";
 import { CalcScopeService } from "./calc-scope.service";
+import type { MembershipOptions } from "./calc-scope.service";
 
 /**
  * A formula an author is trying to save, in the shape the graph needs. Not a
@@ -163,11 +164,18 @@ export class CalcDependencyService {
    * cost.
    *
    * @param candidates the formulas about to be written, already parsed
+   * @param options.extraDeclared `(assetId, pointKey)` pairs membership treats
+   *   as declaring their key (`CalcScopeService.resolveMembership`) — `F4.311`:
+   *   a standalone write passes each candidate's own pair, which exists only
+   *   once written. Default none.
    * @returns one entry per candidate, **in the caller's order** — each point on
    *   that candidate's cycle, the candidate included; empty when the merged
    *   graph is acyclic through it
    */
-  async checkCandidates(candidates: readonly CalcCandidate[]): Promise<CalcCycleMember[][]> {
+  async checkCandidates(
+    candidates: readonly CalcCandidate[],
+    options: MembershipOptions = {},
+  ): Promise<CalcCycleMember[][]> {
     if (candidates.length === 0) {
       // Before the read, not after. Most migrations carry no `v2` override at
       // all, and this service does not reload the estate to answer nothing.
@@ -182,7 +190,7 @@ export class CalcDependencyService {
       refs: [...candidate.localRefs],
       crossRefs: [...candidate.crossRefs],
     }));
-    const membership = await this.scope.resolveMembership([...stored, ...candidateDefinitions]);
+    const membership = await this.scope.resolveMembership([...stored, ...candidateDefinitions], options);
 
     const membersByCandidate = candidates.map((candidate, index) => {
       const candidateDefinition = candidateDefinitions[index];
@@ -247,8 +255,8 @@ export class CalcDependencyService {
    * @returns each point on the candidate's cycle, the candidate included;
    *   empty when the merged graph is acyclic through it
    */
-  async checkCandidate(candidate: CalcCandidate): Promise<CalcCycleMember[]> {
-    const [members] = await this.checkCandidates([candidate]);
+  async checkCandidate(candidate: CalcCandidate, options: MembershipOptions = {}): Promise<CalcCycleMember[]> {
+    const [members] = await this.checkCandidates([candidate], options);
     return members;
   }
 

@@ -6,6 +6,7 @@ import { loadFixtures, type Fixtures } from "../admin/asset-templates/asset-temp
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { registerFixturePointKeys } from "../testing/integration-fixtures";
 import {
+  assertAnExtraDeclaredPairIsAMember,
   assertAnUnknownOwnerResolvesToNullAndEmpty,
   assertAQualifiedCodeDoesNotResolveToAnInactiveAsset,
   assertDomainNarrowsToTheDeclarersInThatDomain,
@@ -72,6 +73,11 @@ describe.skipIf(!connectionString)("F2.9 — calc scope resolver", () => {
   it("@site on X includes Z, declared only by an active asset_points row", async () => {
     if (!pool) throw new Error("pool required");
     await assertSiteIncludesAMappedHandCreatedAsset(pool, fixture);
+  });
+
+  it("F4.311 — an extra-declared pair is a member: @site on V with V's own pair includes V", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertAnExtraDeclaredPairIsAMember(pool, fixture);
   });
 
   it("@site on X is exactly {X, Y, Z}: W (location 2), F (foreign org), V (no declaration) and I (inactive) excluded", async () => {

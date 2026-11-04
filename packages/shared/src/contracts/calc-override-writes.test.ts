@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   assertADeclaredByLabelNamesTheDeclarer,
+  assertNoInheritanceDropsTheInheritedWording,
   assertADialectDowngradeCannotRelabelAV2Formula,
   assertADialectOnlyUpgradeOfAValidFormulaIsAccepted,
   assertAV2TemplateIsOverridableWithoutRestatingTheDialect,
@@ -103,5 +104,9 @@ describe("F2.6 — asset point calc override contract", () => {
 
   it("F4.311 — names the declarer a declaredBy label gives", () => {
     assertADeclaredByLabelNamesTheDeclarer();
+  });
+
+  it("F4.311 — inheritance: false drops the inherited-from-the-template wording", () => {
+    assertNoInheritanceDropsTheInheritedWording();
   });
 });

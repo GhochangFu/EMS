@@ -111,3 +111,20 @@ export async function onlyTheRefusedCodeIsNamed(): Promise<void> {
   );
   expect(message).not.toContain("SAME-01");
 }
+
+/** No answer from the resolver for the owner is not a pass: every typed code is refused (fail closed). */
+export async function anUnansweredResolverRefusesEveryCode(): Promise<void> {
+  const unanswered: ScopeGuardDeps = { ...deps({ resolved: {}, orgs: {} }), resolveQualified: async () => undefined };
+  const message = await refuseOutOfScopeReferences(unanswered, OWNER, crossRefsOf("{SAME-01.kw} + {OTHER-01.kw}"));
+  expect(message).toMatch(/SAME-01[\s\S]*OTHER-01/);
+}
+
+/** A code the resolver answers `null` for is refused here too, not passed as "nothing to check". */
+export async function aNullResolutionIsRefused(): Promise<void> {
+  const message = await refuseOutOfScopeReferences(
+    deps({ resolved: { "GONE-01": null }, orgs: {} }),
+    OWNER,
+    crossRefsOf("{GONE-01.kw} * 2"),
+  );
+  expect(message).toContain("GONE-01");
+}

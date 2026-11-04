@@ -7,9 +7,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, eq, inArray } from "drizzle-orm";
 
-import { assetPoints, assets, pointKeys } from "@bms/db";
+import { assetPoints, assets, dashboardWidgetPoints, pointKeys } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { isCrossAssetDialect, parseFormula, validateMergedCalcOverride } from "@bms/shared";
 import type {
@@ -90,6 +90,9 @@ function toHttp(refusal: Refusal): HttpException {
   if (refusal.status === 409) return new ConflictException(refusal.reason);
   return new BadRequestException(refusal.reason);
 }
+
+/** The batch's one refusal for an asset the caller may not see — missing or out of scope alike. */
+const NOT_FOUND_OR_OUT_OF_SCOPE = "Asset not found or outside your access scope";
 
 const NOT_STANDALONE =
   "This asset is pinned to a template version, so its calculated points are overrides of " +
@@ -175,7 +178,12 @@ export class CalcPointStandaloneService {
     }
     const prepared = result.prepared;
     if (prepared.candidate !== null) {
-      const [cycle] = await this.dependencies.checkCandidates([prepared.candidate]);
+      // The candidate's own pair is declared: a template-less asset has no
+      // template and (on create) no row, so without it `K = sum({K} @site)`
+      // would not see itself, be written, and skip as a cycle forever.
+      const [cycle] = await this.dependencies.checkCandidates([prepared.candidate], {
+        extraDeclared: [{ assetId: prepared.assetId, pointKey: prepared.pointKey }],
+      });
       if (cycle && cycle.length > 0) {
         throw new BadRequestException(dependencyCycleMessage(cycle));
       }
@@ -207,7 +215,10 @@ export class CalcPointStandaloneService {
     return this.readOne(assetId, pointKey);
   }
 
-  /** Removes the row (decision 4): the point stops computing; its stored telemetry stays. */
+  /**
+   * Removes the row (decision 4): the point stops computing; its stored
+   * telemetry stays. Refused (409) while a dashboard widget shows the point.
+   */
   async remove(jwt: JwtPayload, assetId: string, pointKey: string): Promise<AssetPointCalcConfigDto> {
     const asset = await this.requireWritableStandalone(jwt, assetId);
     const organizationId = asset.organizationId as string;
@@ -218,6 +229,17 @@ export class CalcPointStandaloneService {
     const rowId = before.assetPointId;
 
     await withTenant(this.db, organizationId, async (tx) => {
+      // `dashboard_widget_points.point_id` cascades ON DELETE, so a delete
+      // here would silently empty every widget that shows the point. Refuse
+      // instead (no write, no audit row); the operator unbinds it first.
+      const [bound] = await tx
+        .select({ widgets: count() })
+        .from(dashboardWidgetPoints)
+        .where(eq(dashboardWidgetPoints.pointId, rowId));
+      const widgets = Number(bound?.widgets ?? 0);
+      if (widgets > 0) {
+        throw new ConflictException(widgetBoundMessage(widgets));
+      }
       const deleted = await tx
         .delete(assetPoints)
         .where(and(eq(assetPoints.id, rowId), eq(assetPoints.sourceKind, "computed")))
@@ -263,13 +285,10 @@ export class CalcPointStandaloneService {
 
     for (const assetId of body.assetIds) {
       const asset = byId.get(assetId);
-      // Missing or out of scope: no code, because the caller may not see it.
-      if (!asset) {
-        refused.push({ assetId, assetCode: null, reason: "Asset not found" });
-        continue;
-      }
-      if (!(await this.accessControl.canManageAsset(jwt, assetId))) {
-        refused.push({ assetId, assetCode: null, reason: "Asset is outside your access scope" });
+      // Missing or out of scope: one sentence and no code for both, so a typed
+      // id never reveals whether an asset exists outside the caller's scope.
+      if (!asset || !(await this.accessControl.canManageAsset(jwt, assetId))) {
+        refused.push({ assetId, assetCode: null, reason: NOT_FOUND_OR_OUT_OF_SCOPE });
         continue;
       }
       if (seen.has(assetId)) {
@@ -305,8 +324,11 @@ export class CalcPointStandaloneService {
     // Rule 7, once for the batch. Each candidate is checked against the
     // stored estate plus itself (`checkCandidates`' per-candidate graph).
     const withCandidate = prepared.filter((entry) => entry.candidate !== null);
+    // Every candidate's pair is declared, so siblings at one site are members
+    // of each other's aggregate, as they will be once the batch is written.
     const cycles = await this.dependencies.checkCandidates(
       withCandidate.map((entry) => entry.candidate as CalcCandidate),
+      { extraDeclared: withCandidate.map((entry) => ({ assetId: entry.assetId, pointKey: entry.pointKey })) },
     );
     withCandidate.forEach((entry, index) => {
       const cycle = cycles[index];
@@ -393,7 +415,10 @@ export class CalcPointStandaloneService {
       all: [...new Set([...rows.map((row) => row.pointKey), pointKey])],
     };
     const values = calcValues(body);
-    const problems = validateMergedCalcOverride(values, EMPTY_FIELDS, declared, { declaredBy: "this asset" });
+    const problems = validateMergedCalcOverride(values, EMPTY_FIELDS, declared, {
+      declaredBy: "this asset",
+      inheritance: false,
+    });
     if (problems.length > 0) {
       return refuse(400, problems.join(" "));
     }
@@ -599,6 +624,13 @@ export class CalcPointStandaloneService {
   }
 }
 
+function widgetBoundMessage(widgets: number): string {
+  return (
+    `This calculated point is shown on ${widgets} dashboard widget(s). ` +
+    "Remove it from those widgets first, then delete it."
+  );
+}
+
 function raceMessage(pointKey: string): string {
   return (
     `Point "${pointKey}" on this asset gained an asset_points row that is not a computed point ` +
@@ -634,29 +666,40 @@ export type ScopeGuardDeps = {
  * **The sentence names the codes the author typed, and nothing else** — never
  * an id, never which half failed (scope or organization), so it confirms
  * nothing about another tenant beyond the text already in the formula. An
- * unresolved code is rule 5's refusal and is not reported here.
+ * unresolved code is rule 5's refusal first; if one reaches this guard anyway
+ * (no answer for the owner, or a `null` resolution) it is refused here too —
+ * the guard fails closed rather than passing what it could not check.
  */
 export async function refuseOutOfScopeReferences(
   deps: ScopeGuardDeps,
   owner: { id: string; organizationId: string },
   crossRefs: readonly CalcCrossRef[],
 ): Promise<string | null> {
-  if (!crossRefs.some((ref) => ref.kind === "qref")) {
+  const typedCodes: string[] = [];
+  for (const ref of crossRefs) {
+    if (ref.kind === "qref" && !typedCodes.includes(ref.assetCode)) {
+      typedCodes.push(ref.assetCode);
+    }
+  }
+  if (typedCodes.length === 0) {
     return null;
   }
   const resolved = await deps.resolveQualified(owner.id, crossRefs);
+  // Fail closed: no answer for the owner, or no asset for a code, is not a
+  // pass. Rule 5 normally refuses an unresolved code first; this guard does
+  // not lean on that ordering.
+  const refusedCodes: string[] = [];
   const codeById = new Map<string, string[]>();
-  for (const [code, id] of resolved ?? []) {
-    if (id !== null) {
+  for (const code of typedCodes) {
+    const id = resolved?.get(code) ?? null;
+    if (id === null) {
+      refusedCodes.push(code);
+    } else {
       codeById.set(id, [...(codeById.get(id) ?? []), code]);
     }
   }
-  if (codeById.size === 0) {
-    return null;
-  }
-  const rows = await deps.readAssets([...codeById.keys()]);
+  const rows = codeById.size === 0 ? [] : await deps.readAssets([...codeById.keys()]);
   const orgById = new Map(rows.map((row) => [row.id, row.organizationId]));
-  const refusedCodes: string[] = [];
   for (const [id, codes] of codeById) {
     const sameOrganization = orgById.has(id) && orgById.get(id) === owner.organizationId;
     if (!sameOrganization || !(await deps.canManageAsset(id))) {
