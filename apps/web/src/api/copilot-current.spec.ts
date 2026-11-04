@@ -402,6 +402,7 @@ const STANDALONE_ITEM = {
   effective: STORED_CALC,
   minCoverageRatio: null,
   runtime: null,
+  backfill: null,
 };
 
 function calcPointSetChange(pointKey: string): CopilotPendingChangeDto {
