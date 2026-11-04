@@ -169,6 +169,8 @@ const MODULES: readonly string[] = [
   "apps/web/src/components/dashboards/trend-strip-selection-summary.tsx",
   // F4.306 PR 2 U11: the wizard's pure module.
   "apps/web/src/lib/trend-strip-wizard.ts",
+  // F4.306 PR 2 U12: the wizard dialog.
+  "apps/web/src/components/dashboards/trend-strip-wizard.tsx",
 ];
 
 /**
@@ -205,9 +207,7 @@ const MODULES: readonly string[] = [
  * the site trend-points client and the selection summary, U11 the pure wizard module, U12 the
  * wizard dialog), so the list is empty again by U12.
  */
-const PENDING_MODULES: readonly string[] = [
-  "apps/web/src/components/dashboards/trend-strip-wizard.tsx",
-];
+const PENDING_MODULES: readonly string[] = [];
 
 /**
  * Files that are never scanned, each with its reason, so a later row does not

@@ -1,0 +1,81 @@
+// @vitest-environment jsdom
+import { afterEach, describe, it } from "vitest";
+
+import {
+  aBadRequestShowsTheListsSentence,
+  aConflictShowsTheFullSentence,
+  appendFinishPostsOneBodyInTabOrder,
+  cleanupTrendStripWizard,
+  draftFinishAppliesRowsAndRequestsNothing,
+  theColourSelectWritesTheRole,
+  theDefaultOptionDeletesTheKey,
+  theFinishButtonIsBusyWhilePending,
+  thePointsStepPreselectsThreePerSegment,
+  thePreviewReadsTheStripWithTheSelection,
+  theSegmentsStepListsTheDtoLabels,
+  theTabsStepDisablesTheFullTab,
+  theTabsStepMarksTheTabWithAStrip,
+  theThirtyFirstBoxIsDisabled,
+} from "./trend-strip-wizard.spec";
+
+/**
+ * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and the jsdom
+ * docblock is here because this is the file Vitest collects (ADR 0042 decision 2).
+ */
+describe("F4.306 U12 TrendStripWizard", () => {
+  afterEach(() => {
+    cleanupTrendStripWizard();
+  });
+
+  it("marks the tab that holds a strip on the Tabs step", async () => {
+    await theTabsStepMarksTheTabWithAStrip();
+  });
+
+  it("disables the tab at the widget cap and no other", async () => {
+    await theTabsStepDisablesTheFullTab();
+  });
+
+  it("lists the site's segments by the DTO's labels", async () => {
+    await theSegmentsStepListsTheDtoLabels();
+  });
+
+  it("preselects the first 3 points of each chosen segment", async () => {
+    await thePointsStepPreselectsThreePerSegment();
+  });
+
+  it("disables an unchecked box at 30 points and keeps a checked one enabled", async () => {
+    await theThirtyFirstBoxIsDisabled();
+  });
+
+  it("writes the chosen colour role to colors[key]", async () => {
+    await theColourSelectWritesTheRole();
+  });
+
+  it("deletes the colour key on Default", async () => {
+    await theDefaultOptionDeletesTheKey();
+  });
+
+  it("previews the strip over the chosen tab's group with the selection", async () => {
+    await thePreviewReadsTheStripWithTheSelection();
+  });
+
+  it("applies the draft rows on Finish in the builder and makes no request", async () => {
+    await draftFinishAppliesRowsAndRequestsNothing();
+  });
+
+  it("posts one append body with one strip per chosen tab in tab order, then calls onDone", async () => {
+    await appendFinishPostsOneBodyInTabOrder();
+  });
+
+  it("shows the full-tab sentence on a 409", async () => {
+    await aConflictShowsTheFullSentence();
+  });
+
+  it("shows the lists-changed sentence on a 400", async () => {
+    await aBadRequestShowsTheListsSentence();
+  });
+
+  it("marks Finish aria-busy and disabled while the append is pending", async () => {
+    await theFinishButtonIsBusyWhilePending();
+  });
+});
