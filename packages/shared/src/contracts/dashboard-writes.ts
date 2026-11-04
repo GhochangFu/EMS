@@ -40,6 +40,7 @@ import {
 import { CATALOG_CODE_MESSAGE, CATALOG_CODE_PATTERN } from "../constants";
 import { dashboardSectionCodeSchema, waterBalanceRoleCodeSchema } from "./operations";
 import { dashboardTabKeySchema, MAX_DASHBOARD_TABS } from "./dashboard-tabs";
+import { widgetCapMessage } from "./dashboard-widget-append";
 import { LOCATION_TREE_MAX_DEPTH } from "../location-tree";
 import { mimicLayoutConfigSchema, mimicPresetConfigSchema } from "./mimic-config";
 
@@ -970,10 +971,7 @@ const tabRulesHold = (
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["widgets"],
-        message:
-          canvas === ""
-            ? `a dashboard without tabs holds at most ${MAX_DASHBOARD_WIDGETS} widgets`
-            : `the tab "${canvas}" holds at most ${MAX_DASHBOARD_WIDGETS} widgets`,
+        message: widgetCapMessage(canvas),
       });
     }
   }

@@ -25,11 +25,13 @@ import { PageHeader } from "../components/page-header";
 import { SectionCard } from "../components/section-card";
 import { CopyLinkButton } from "../components/view-actions/copy-link-button";
 import { ExportMenu } from "../components/view-actions/export-menu";
+import { ScheduleButton } from "../components/view-actions/schedule-button";
 import { AppShell } from "../layouts/app-shell";
 import { useChartTheme } from "../lib/chart-theme";
 import { type SiteRankingSort, siteStacks } from "../lib/energy-organization-views";
 import { type EnergyFilterValue, energyViewQueryOf, partialNote } from "../lib/energy-view-filter";
 import { formatMoney } from "../lib/money";
+import { energySchedulePrefill } from "../lib/schedule-from-view";
 import {
   type EnergyLink,
   type StackBy,
@@ -215,6 +217,8 @@ export function EnergyPage({ user }: EnergyPageProps) {
                     {query === null ? null : (
                       <ExportMenu onExport={(format) => downloadEnergyViewExport(format, query)} />
                     )}
+                    {/* `F4.303` U16 (Amendment 6 item 6): schedules `energy_consumption` for this filter. */}
+                    <ScheduleButton user={user} prefill={energySchedulePrefill(filter)} />
                     <CopyLinkButton />
                   </>
                 }

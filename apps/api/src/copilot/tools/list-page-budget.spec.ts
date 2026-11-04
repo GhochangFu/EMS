@@ -238,6 +238,7 @@ function reportSchedule(i: number): ReportScheduleDto {
     organizationId: ORG,
     name: `Weekly energy consumption, RSMOC KwaZulu-Natal ${i}`,
     templateId: "energy_consumption",
+    params: null,
     formats: ["pdf", "xlsx"],
     cadence: "weekly",
     runAtLocal: "07:00",

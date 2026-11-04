@@ -2,6 +2,10 @@ import { describe, it } from "vitest";
 
 import {
   assertDefinitionCarriesEveryTableCell,
+  assertDefinitionWithoutPreviousIsMain,
+  assertDefinitionWithPreviousCarriesFiveColumnMetricTable,
+  assertDefinitionWithPreviousCarriesTheHeadRow,
+  assertPdfBytesWithoutPreviousAreMain,
   assertFontsAreTheStandardFourWithNoFile,
   assertLocalPolicyAllowsExactlyTheStandardFour,
   assertMoneyCarriesTheCodeAndNoSymbol,
@@ -53,5 +57,23 @@ describe("energy report PDF (ADR 0071 decision 2)", () => {
 
   it("refuses a definition naming a local file path through the policy, not ENOENT", async () => {
     await assertRenderRefusesALocalFilePath();
+  });
+
+  describe("F4.303 — compare on the energy report (ADR 0108 Amendment 6 item 8, owner Q-B)", () => {
+    it("without a previous period the definition is main's", () => {
+      assertDefinitionWithoutPreviousIsMain();
+    });
+
+    it("without a previous period the PDF bytes, creation date pinned, are main's", async () => {
+      await assertPdfBytesWithoutPreviousAreMain();
+    });
+
+    it("with a previous period the metric table is five columns with Previous and Change", () => {
+      assertDefinitionWithPreviousCarriesFiveColumnMetricTable();
+    });
+
+    it("with a previous period the head table carries the Previous period row", () => {
+      assertDefinitionWithPreviousCarriesTheHeadRow();
+    });
   });
 });

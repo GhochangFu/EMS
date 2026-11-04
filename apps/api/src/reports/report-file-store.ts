@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 
 import { reportFiles } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { ReportFileDto, ReportFileFormat } from "@bms/shared";
+import type { ReportFileDto, ReportFileFormat, ReportTemplateId } from "@bms/shared";
 
 import { deleteObject } from "../storage/storage-client";
 import type { StorageClient } from "../storage/storage-client";
@@ -24,10 +24,13 @@ export const CONTENT_TYPES: Record<ReportFileFormat, ReportFileDto["contentType"
 /**
  * The stored filename. ADR 0071 Amendment 1 item 12: the parameters are two
  * dates and a format and nothing else — a schedule's name never reaches the
- * filename (`report-file-store.spec.ts` scans this signature).
+ * filename (`report-file-store.spec.ts` scans this signature). `F4.303` U13
+ * (ADR 0108 Amendment 6 item 8, owner Q-A): the template id enum joins them,
+ * so a `trend_points` file is `trend-points-<start>-to-<end>.<format>`; it is
+ * an enum value, never a name, and its `_` becomes `-`.
  */
-export function reportFilename(periodStart: string, periodEnd: string, format: ReportFileFormat): string {
-  return `energy-consumption-${periodStart}-to-${periodEnd}.${format}`;
+export function reportFilename(templateId: ReportTemplateId, periodStart: string, periodEnd: string, format: ReportFileFormat): string {
+  return `${templateId.replace(/_/g, "-")}-${periodStart}-to-${periodEnd}.${format}`;
 }
 
 /** R-3: the buffer is the only size and hash authority — never a header. */

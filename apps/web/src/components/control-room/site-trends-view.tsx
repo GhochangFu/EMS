@@ -6,11 +6,14 @@ import type { SiteSegmentViewsDto, SiteSegmentViewsQuery } from "@bms/shared";
 import { fetchSiteSegmentViews, isSegmentNotFound, segmentViewsQueryKey } from "../../api/segment-views";
 import { downloadEnergyViewExport, downloadSegmentViewExport, type ViewExportFormat } from "../../api/view-exports";
 import { ENERGY_VIEW, segmentViewsQueryOf, siteEnergyQueryOf } from "../../lib/site-trends";
+import { energySchedulePrefill } from "../../lib/schedule-from-view";
 import { siteTrendsPath } from "../../lib/smoc-pages";
 import { type TrendsLink, trendsLinkFromSearch, trendsLinkToSearch } from "../../lib/view-links";
+import { useAuthStore } from "../../stores/auth-store";
 import { RangeCompareControls } from "../energy/range-compare-controls";
 import { CopyLinkButton } from "../view-actions/copy-link-button";
 import { ExportMenu } from "../view-actions/export-menu";
+import { ScheduleButton } from "../view-actions/schedule-button";
 import { SegmentView } from "./segment-view";
 import { SiteEnergyView } from "./site-energy-view";
 
@@ -39,6 +42,7 @@ export function SiteTrendsView({ locationId }: Props) {
   const [searchParams, setSearchParams] = useSearchParams();
   const link = trendsLinkFromSearch(searchParams);
   const { view, point, value, rankBy } = link;
+  const user = useAuthStore((state) => state.user);
   const write = (next: TrendsLink): void => {
     setSearchParams(new URLSearchParams(trendsLinkToSearch(next)), { replace: true });
   };
@@ -96,6 +100,15 @@ export function SiteTrendsView({ locationId }: Props) {
               <ExportMenu onExport={exportView} />
             </div>
           )}
+          {view === ENERGY_VIEW ? (
+            <div className="pb-1">
+              {/* `F4.303` U16 (Amendment 6 item 6): schedules `energy_consumption` for this site; a segment sub-tab brings its own. */}
+              <ScheduleButton
+                user={user}
+                prefill={energySchedulePrefill({ locationIds: [locationId], compare: value.compare })}
+              />
+            </div>
+          ) : null}
           <div className="pb-1">
             <CopyLinkButton />
           </div>

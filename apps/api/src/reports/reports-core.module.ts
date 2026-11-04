@@ -2,12 +2,14 @@ import { Module } from "@nestjs/common";
 
 import { CalcParametersService } from "../calc/calc-parameters.service";
 import { NotificationsCoreModule } from "../notifications/notifications-core.module";
+import { TelemetryService } from "../telemetry/telemetry.service";
 import { LocationSummaryService } from "./location-summary.service";
 import { ReportDispatchService } from "./report-dispatch.service";
 import { ReportRenderService } from "./report-render.service";
 import { readReportFilesConfig } from "./report-files-config";
 import { REPORT_FILES_CONFIG } from "./report-files.tokens";
 import { ReportsService } from "./reports.service";
+import { TrendPointsReportService } from "./trend-points-report.service";
 
 /**
  * `F3.5b` (ADR 0071 decision 9; plan R-14) — the loop-free core of the
@@ -58,6 +60,15 @@ import { ReportsService } from "./reports.service";
  * the same `resolveForAssets` as the preview). Exporting the stateless provider adds no
  * import, so the worker's closure is unchanged.
  *
+ * `F4.303` U13 (ADR 0108 Amendment 6 item 8; plan C19): `TrendPointsReportService` (the
+ * `trend_points` render) and — **as a provider, never by importing `TelemetryModule`**, the
+ * `CalcParametersService` reasoning above — `TelemetryService`, whose three `@Inject` tokens
+ * (`TENANT_DRIZZLE`, `TENANT_POOL`, `FLEET_POOL`) come from the `@Global()` `DatabaseModule`.
+ * `TelemetryModule` provides the telemetry `LISTEN` loop (a loop module ADR 0063 decision 3
+ * forbids the worker); `telemetry.service.ts` is not a loop host, and the second instance the API
+ * process carries is stateless. `reports-core-module-wiring.spec.ts` pins the graph; the worker
+ * boot on the compose stack is still the DI gate.
+ *
  * Nest wiring, uncovered like `main.ts`. The compose worker boot (U10) is
  * the DI gate — `pnpm build` is not.
  */
@@ -69,8 +80,10 @@ import { ReportsService } from "./reports.service";
     ReportRenderService,
     ReportDispatchService,
     LocationSummaryService,
+    TelemetryService,
+    TrendPointsReportService,
     { provide: REPORT_FILES_CONFIG, useFactory: () => readReportFilesConfig(process.env) },
   ],
-  exports: [ReportsService, CalcParametersService, ReportRenderService, ReportDispatchService, LocationSummaryService, REPORT_FILES_CONFIG],
+  exports: [ReportsService, CalcParametersService, ReportRenderService, ReportDispatchService, LocationSummaryService, TrendPointsReportService, REPORT_FILES_CONFIG],
 })
 export class ReportsCoreModule {}

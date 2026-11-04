@@ -85,6 +85,31 @@ export interface HistoryExportPoint {
 }
 
 /**
+ * One formatter per zone: building an `Intl.DateTimeFormat` costs far more than formatting with it,
+ * and a daily 8-point compare `trend_points` run formats 23 000 bucket starts (`F4.303` U17).
+ */
+const ZONE_FORMATS = new Map<string, Intl.DateTimeFormat>();
+
+function zoneFormat(zone: string): Intl.DateTimeFormat {
+  let format = ZONE_FORMATS.get(zone);
+  if (format === undefined) {
+    format = new Intl.DateTimeFormat("en-CA", {
+      timeZone: zone,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      timeZoneName: "longOffset",
+    });
+    ZONE_FORMATS.set(zone, format);
+  }
+  return format;
+}
+
+/**
  * `YYYY-MM-DDTHH:mm:ss±HH:MM` for the instant `iso` in the IANA zone `zone`.
  * `Intl` gives the offset as `GMT`, `GMT+05:30` or `GMT-5`; `GMT` becomes `+00:00`.
  */
@@ -93,17 +118,7 @@ export function isoInZone(iso: string, zone: string): string {
   if (!Number.isFinite(at.getTime())) {
     throw new Error(`isoInZone received an unparseable instant: ${iso}`);
   }
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: zone,
-    hourCycle: "h23",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    timeZoneName: "longOffset",
-  }).formatToParts(at);
+  const parts = zoneFormat(zone).formatToParts(at);
   const part = (type: Intl.DateTimeFormatPartTypes): string =>
     parts.find((candidate) => candidate.type === type)?.value ?? "";
   const rawOffset = part("timeZoneName").replace("GMT", "");

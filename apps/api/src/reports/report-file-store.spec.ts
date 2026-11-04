@@ -24,7 +24,7 @@ const STORE = join(repoRoot(), "apps/api/src/reports/report-file-store.ts");
 const SHA256_OF_ABC = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
 export function assertPdfFilename(): void {
-  const filename = reportFilename("2026-09-01", "2026-09-07", "pdf");
+  const filename = reportFilename("energy_consumption", "2026-09-01", "2026-09-07", "pdf");
   assert(
     filename === "energy-consumption-2026-09-01-to-2026-09-07.pdf",
     `pdf filename was ${filename}`,
@@ -32,10 +32,19 @@ export function assertPdfFilename(): void {
 }
 
 export function assertXlsxFilename(): void {
-  const filename = reportFilename("2026-09-01", "2026-09-07", "xlsx");
+  const filename = reportFilename("energy_consumption", "2026-09-01", "2026-09-07", "xlsx");
   assert(
     filename === "energy-consumption-2026-09-01-to-2026-09-07.xlsx",
     `xlsx filename was ${filename}`,
+  );
+}
+
+/** `F4.303` U13 (ADR 0108 Amendment 6 item 8, owner Q-A) — a `trend_points` file is named for its template. */
+export function assertTrendPointsFilename(): void {
+  const filename = reportFilename("trend_points", "2026-11-01", "2026-11-01", "xlsx");
+  assert(
+    filename === "trend-points-2026-11-01-to-2026-11-01.xlsx",
+    `trend_points filename was ${filename}`,
   );
 }
 
@@ -55,23 +64,34 @@ function reportFilenameParameters(): string {
   return match![1]!;
 }
 
-/** Positive control for the scan below: the three parameters the plan names, in order. */
+/**
+ * Positive control for the scan below: the four parameters, in order — the
+ * template id enum, two dates and a format (`F4.303` U13, owner Q-A: the
+ * template id is an enum value, never a name). The template parameter is
+ * typed `ReportTemplateId`, so a free string cannot reach it.
+ */
 export function assertReportFilenameTakesTwoDatesAndAFormat(): void {
-  const names = reportFilenameParameters()
+  const parameters = reportFilenameParameters()
     .split(",")
-    .map((parameter) => parameter.trim().split(":")[0]!.trim())
+    .map((parameter) => parameter.trim())
     .filter((parameter) => parameter.length > 0);
+  const names = parameters.map((parameter) => parameter.split(":")[0]!.trim());
   assert(
-    names.length === 3 && names[0] === "periodStart" && names[1] === "periodEnd" && names[2] === "format",
-    `reportFilename parameters were [${names.join(", ")}]`,
+    names.length === 4 &&
+      names[0] === "templateId" &&
+      names[1] === "periodStart" &&
+      names[2] === "periodEnd" &&
+      names[3] === "format" &&
+      parameters[0] === "templateId: ReportTemplateId",
+    `reportFilename parameters were [${parameters.join(", ")}]`,
   );
 }
 
 /**
- * ADR 0071 Amendment 1 item 12 — the filename is built from the period and
- * the format only; a schedule's name (or any title) never reaches it. The
- * scan is scoped to the parameter list, not the file, so prose stating this
- * rule cannot redden it.
+ * ADR 0071 Amendment 1 item 12 (and owner Q-A, F4.303) — the filename is
+ * built from the template id enum, the period and the format only; a
+ * schedule's name (or any title) never reaches it. The scan is scoped to the
+ * parameter list, not the file, so prose stating this rule cannot redden it.
  */
 export function assertReportFilenameSignatureCarriesNoName(): void {
   const parameters = reportFilenameParameters();

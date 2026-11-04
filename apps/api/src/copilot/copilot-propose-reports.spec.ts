@@ -180,11 +180,17 @@ export async function theStoredBodyCarriesTheRecipients(): Promise<void> {
   expect(h.stored[0]?.body).toEqual({ ...EMAILED, recipients: RECIPIENTS });
 }
 
-/** D5: the hash leaves the recipients out. */
+/**
+ * D5: the hash leaves the recipients out. `F4.303`: the entry's `clientOnly` keys (`templateId`,
+ * `params`, set by a view's Schedule button, never proposed by the model) are left out too.
+ */
 export async function theHashLeavesTheRecipientsOut(): Promise<void> {
   const h = harness();
   await h.call(CREATE_TOOL, { body: EMAILED }, ASKED);
-  expect([h.stored[0]?.bodyHash, hashExcludedKeysFor("reportSchedule.create")]).toEqual([bodyHash(EMAILED), ["recipients"]]);
+  expect([h.stored[0]?.bodyHash, hashExcludedKeysFor("reportSchedule.create")]).toEqual([
+    bodyHash(EMAILED),
+    ["templateId", "params", "recipients"],
+  ]);
 }
 
 /** D5: the stored summary carries the note and names no address. */

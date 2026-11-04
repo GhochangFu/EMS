@@ -63,6 +63,7 @@ function schedule(name: string, locationIds: string[], organizationId = ORG): Re
     organizationId,
     name,
     templateId: "energy_consumption",
+    params: null,
     formats: ["pdf"],
     cadence: "daily",
     runAtLocal: "06:00",

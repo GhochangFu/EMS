@@ -2,7 +2,10 @@ import { describe, it } from "vitest";
 
 import {
   assertControllerDepsResolveWithinTheModule,
+  assertControllerTakesDashboardWidgetAppendService,
   assertControllerTakesMimicNodesService,
+  assertDashboardWidgetAppendServiceDepsResolveWithinTheModule,
+  assertModuleProvidesDashboardWidgetAppendService,
   assertMimicNodesServiceDepsResolveWithinTheModule,
   assertMimicNodesServiceInjectsFleetDrizzleThenFleetPool,
   assertModuleProvidesMimicNodesService,
@@ -43,5 +46,17 @@ describe("F3.32 — DashboardBuilderModule wiring", () => {
 
   it("positive control — DashboardBuilderController takes a SiteWidgetsService parameter (F3.73)", () => {
     assertControllerTakesSiteWidgetsService();
+  });
+
+  it("provides DashboardWidgetAppendService (F4.303)", () => {
+    assertModuleProvidesDashboardWidgetAppendService();
+  });
+
+  it("DashboardWidgetAppendService's dependencies resolve inside the module's scope (F4.303)", () => {
+    assertDashboardWidgetAppendServiceDepsResolveWithinTheModule();
+  });
+
+  it("positive control — DashboardBuilderController takes a DashboardWidgetAppendService parameter (F4.303)", () => {
+    assertControllerTakesDashboardWidgetAppendService();
   });
 });

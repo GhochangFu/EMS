@@ -15,9 +15,12 @@ import { TrendChart, type TrendSeries } from "../components/asset-history/trend-
 import { PageHeader } from "../components/page-header";
 import { CopyLinkButton } from "../components/view-actions/copy-link-button";
 import { ExportMenu } from "../components/view-actions/export-menu";
+import { historyPinSource, PinButton } from "../components/view-actions/pin-dialog";
+import { ScheduleButton } from "../components/view-actions/schedule-button";
 import { useAssetHistory } from "../hooks/use-asset-history";
 import { apiErrorMessage } from "../lib/api-error-message";
 import { chartablePoints, rangeFromSearch, rangeToSearch, type HistoryRange } from "../lib/asset-history-range";
+import { historySchedulePrefill } from "../lib/schedule-from-view";
 import { AppShell } from "../layouts/app-shell";
 import type { AuthUser } from "../stores/auth-store";
 
@@ -110,6 +113,14 @@ export function AssetHistoryPage({ user }: AssetHistoryPageProps) {
               <span className="inline-flex flex-wrap items-center gap-3">
                 {selected.length === 0 ? null : (
                   <ExportMenu onExport={(format) => downloadAssetHistoryExport(format, assetId, range, selected)} />
+                )}
+                {/* `F4.303` U15 (Amendment 6 item 4): pins the charted points with the page's function. */}
+                {asset === undefined ? null : (
+                  <PinButton role={user.role} source={historyPinSource(asset.code, assetId, range, selected)} />
+                )}
+                {/* `F4.303` U16 (Amendment 6 item 6): schedules `trend_points` for the charted points. */}
+                {asset === undefined || selected.length === 0 ? null : (
+                  <ScheduleButton user={user} prefill={historySchedulePrefill(asset, range, selected)} />
                 )}
                 <CopyLinkButton />
               </span>

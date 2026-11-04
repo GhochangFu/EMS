@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { MAX_ASSET_IMAGE_FILENAME_CHARS, NO_CONTROL_CHARACTERS } from "./asset-images";
 import { energyReportTemplateSchema } from "./operations";
+import { reportScheduleParamsSchema, trendPointsReportTemplateSchema } from "./trend-points-report";
 
 /**
  * `F3.5a` — the stored report file contracts (ADR 0071 decisions 4, 6, 11;
@@ -36,10 +37,13 @@ export const REPORT_FILE_FORMATS = reportFileFormatSchema.options;
 export const reportDeliveryStatusSchema = z.enum(["none", "sent", "skipped_unconfigured", "failed"]);
 
 /**
- * Derived by identity from the energy report template's own `id` literal
- * (§4.8) — never restated. Today the only report template.
+ * Derived from the two report templates' own `id` literals (§4.8) — never restated.
+ * `F4.303` added `trend_points` beside `energy_consumption`.
  */
-export const reportTemplateIdSchema = energyReportTemplateSchema.shape.id;
+export const reportTemplateIdSchema = z.enum([
+  energyReportTemplateSchema.shape.id.value,
+  trendPointsReportTemplateSchema.shape.id.value,
+]);
 
 /**
  * Annotated `: number` rather than left as a literal type — the
@@ -135,6 +139,8 @@ export const reportScheduleDtoSchema = z
     locationIds: z.array(z.string().uuid()),
     channelId: z.string().uuid().nullable(),
     enabled: z.boolean(),
+    // `F4.303` (migration 0122): NULL for a schedule with no params, or an energy schedule without compare.
+    params: reportScheduleParamsSchema.nullable(),
     nextRunAt: z.string().datetime({ offset: true }),
     lastRunAt: z.string().datetime({ offset: true }).nullable(),
     createdBy: z.string().uuid().nullable(),

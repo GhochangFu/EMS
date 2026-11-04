@@ -1,6 +1,7 @@
 import "reflect-metadata";
 
-import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, HttpStatus, NotFoundException, RequestMethod } from "@nestjs/common";
+import { HTTP_CODE_METADATA, METHOD_METADATA, PATH_METADATA } from "@nestjs/common/constants";
 
 import type { DashboardDto, JwtPayload } from "@bms/shared";
 
@@ -77,11 +78,15 @@ function controllerWith(options: {
   writeRoleRejects?: boolean;
   /** `F3.73` — the site-widgets service stub; `{}` for every case that never reaches it. */
   siteWidgets?: { forUser: (...args: unknown[]) => Promise<unknown> };
+  /** `F4.303` U14 — the widget-append service stub; a recorder for every case. */
+  append?: AppendRecorder;
 }): {
   controller: DashboardBuilderController;
   service: ServiceStub;
   metricCatalog: { catalogValues: ReturnType<typeof callCounter> };
+  append: AppendRecorder;
 } {
+  const append = options.append ?? appendRecorder();
   const service: ServiceStub = {
     list: callCounter({ items: [] }),
     getBySlug: callCounter(dto),
@@ -115,8 +120,9 @@ function controllerWith(options: {
     // `F3.32` — no case here reaches the mimic-nodes route; its own suite covers it.
     {} as unknown as ConstructorParameters<typeof DashboardBuilderController>[3],
     (options.siteWidgets ?? {}) as unknown as ConstructorParameters<typeof DashboardBuilderController>[4],
+    append as unknown as ConstructorParameters<typeof DashboardBuilderController>[5],
   );
-  return { controller, service, metricCatalog };
+  return { controller, service, metricCatalog, append };
 }
 
 const validCreateBody = { organizationId: ORG_ID, slug: "overview", name: "Overview" };
@@ -485,4 +491,110 @@ export async function putWidgetsRefusesANonInstantIfMatchWith400(): Promise<void
     "a non-instant If-Match",
   );
   assert(service.putWidgets.calls === 0, "a non-instant If-Match must never reach the service");
+}
+
+// ---------------------------------------------------------------------------
+// `F4.303` U14 (ADR 0108 Amendment 6 item 5) — `POST :id/widgets/append`. The controller's order
+// is the id (400), the write role (403), the body (400), then the service; one claim per function.
+// ---------------------------------------------------------------------------
+
+type AppendRecorder = { seen: unknown[][]; append: (...args: unknown[]) => Promise<unknown> };
+
+const APPEND_ANSWER = { widget: { id: "w1" }, updatedAt: new Date(0).toISOString() };
+
+function appendRecorder(): AppendRecorder {
+  const seen: unknown[][] = [];
+  return {
+    seen,
+    append: (...args: unknown[]) => {
+      seen.push(args);
+      return Promise.resolve(APPEND_ANSWER);
+    },
+  };
+}
+
+const validAppendBody = {
+  tabKey: "ops",
+  config: { windowMinutes: 1440, aggregate: "avg" },
+  points: [{ assetId: "33333333-3333-4333-8333-333333333333", pointKey: "kw" }],
+};
+
+const OPERATOR: JwtPayload = { sub: "u3", email: "operator@bms.local", name: "Operator", role: "operator" };
+
+/** An operator is a 403 and the service never runs. Mutation: move the role gate after the call. */
+export async function appendWidgetRefusesAnOperatorWith403BeforeTheService(): Promise<void> {
+  const { controller, append } = controllerWith({ writeRoleRejects: true });
+  await rejects(
+    () => controller.appendWidget(OPERATOR, DASHBOARD_ID, validAppendBody),
+    (e) => e instanceof ForbiddenException,
+    "an operator appending a widget",
+  );
+  assert(append.seen.length === 0, `a refused role must never reach the service; it ran ${append.seen.length} time(s)`);
+}
+
+/** A body the schema refuses is a 400 carrying `flatten()`, and the service never runs. */
+export async function appendWidgetRefusesAMalformedBodyWith400(): Promise<void> {
+  const { controller, append } = controllerWith({});
+  let caughtErr: unknown = null;
+  try {
+    await controller.appendWidget(ADMIN, DASHBOARD_ID, { ...validAppendBody, config: { windowMinutes: 1440 } });
+  } catch (err) {
+    caughtErr = err;
+  }
+  assert(caughtErr instanceof BadRequestException, `a body without aggregate must be a 400; got ${String(caughtErr)}`);
+  const response = (caughtErr as BadRequestException).getResponse() as { fieldErrors?: Record<string, unknown> };
+  assert(
+    response.fieldErrors !== undefined && "config" in response.fieldErrors,
+    `the 400 must be the flatten() shape naming config; got ${JSON.stringify(response)}`,
+  );
+  assert(append.seen.length === 0, "a malformed body must never reach the service");
+}
+
+/** A non-uuid id is a 400 before the service. */
+export async function appendWidgetRefusesANonUuidIdWith400(): Promise<void> {
+  const { controller, append } = controllerWith({});
+  await rejects(
+    () => controller.appendWidget(ADMIN, "not-a-uuid", validAppendBody),
+    (e) => e instanceof BadRequestException,
+    "a non-uuid dashboard id",
+  );
+  assert(append.seen.length === 0, "a non-uuid id must never reach the service");
+}
+
+/** A valid request reaches the service with the user, the id and the parsed body, and returns its answer. */
+export async function appendWidgetReturnsTheServiceAnswer(): Promise<void> {
+  const { controller, append } = controllerWith({});
+  const answer = await controller.appendWidget(ADMIN, DASHBOARD_ID, validAppendBody);
+  assert(answer === APPEND_ANSWER, "the controller must return the service's answer unchanged");
+  assert(
+    append.seen.length === 1 && append.seen[0]?.[0] === ADMIN && append.seen[0]?.[1] === DASHBOARD_ID,
+    `the service must receive the user and the id; got ${JSON.stringify(append.seen)}`,
+  );
+  assert(
+    JSON.stringify(append.seen[0]?.[2]) === JSON.stringify(validAppendBody),
+    `the service must receive the parsed body; got ${JSON.stringify(append.seen[0]?.[2])}`,
+  );
+}
+
+/** The route answers 201 (`@HttpCode`) on `POST :id/widgets/append`. */
+export function appendWidgetAnswers201OnItsPath(): void {
+  const handler = DashboardBuilderController.prototype.appendWidget as unknown as object;
+  assert(
+    Reflect.getMetadata(HTTP_CODE_METADATA, handler) === HttpStatus.CREATED,
+    `appendWidget must answer 201; got ${String(Reflect.getMetadata(HTTP_CODE_METADATA, handler))}`,
+  );
+  assert(
+    Reflect.getMetadata(PATH_METADATA, handler) === ":id/widgets/append",
+    `appendWidget's path; got ${String(Reflect.getMetadata(PATH_METADATA, handler))}`,
+  );
+  assert(Reflect.getMetadata(METHOD_METADATA, handler) === RequestMethod.POST, "appendWidget must be a POST");
+}
+
+/** `appendWidget` is declared after `putWidgets` (the plan's order scan). */
+export function appendWidgetIsDeclaredAfterPutWidgets(): void {
+  const names = Object.getOwnPropertyNames(DashboardBuilderController.prototype);
+  const putAt = names.indexOf("putWidgets");
+  const appendAt = names.indexOf("appendWidget");
+  assert(putAt > -1 && appendAt > -1, `both handlers must exist; got ${JSON.stringify(names)}`);
+  assert(appendAt > putAt, `appendWidget (at ${appendAt}) must be declared after putWidgets (at ${putAt})`);
 }

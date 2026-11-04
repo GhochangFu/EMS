@@ -46,6 +46,7 @@ const VALID_REPORT_SCHEDULE = {
   locationIds: [],
   channelId: null,
   enabled: true,
+  params: null,
   nextRunAt: "2026-09-28T01:30:00.000Z",
   lastRunAt: null,
   createdBy: null,
@@ -96,8 +97,8 @@ export function assertDeliveryStatusesAreTheFour(): void {
 
 export function assertTemplateIdIsDerivedFromTheEnergyTemplate(): void {
   assert(
-    (reportTemplateIdSchema as unknown) === (energyReportTemplateSchema.shape.id as unknown),
-    "reportTemplateIdSchema must be the same schema object as energyReportTemplateSchema.shape.id (§4.8 — derived, not restated)",
+    reportTemplateIdSchema.options.includes(energyReportTemplateSchema.shape.id.value),
+    "reportTemplateIdSchema must carry energyReportTemplateSchema.shape.id's literal (§4.8 — derived, not restated; F4.303 widened it to an enum)",
   );
 }
 

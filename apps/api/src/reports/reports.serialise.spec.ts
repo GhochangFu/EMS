@@ -1,9 +1,14 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import type { EnergyReportPreview, EnergyTopConsumer } from "@bms/shared";
 
+import { repoRoot } from "../testing/repo-root";
 import {
   assertFiniteCells,
   energyCsvDocument,
   energySheetRows,
+  energyTable,
 } from "./reports.serialise";
 
 function assert(condition: boolean, message: string): void {
@@ -373,5 +378,184 @@ export function runReportsSheetTests(): void {
   assert(
     assertFiniteCells(nullPueRows).length === nullPueRows.length,
     "the finiteness guard must pass a text cell through — it is typed on `number`",
+  );
+}
+
+// ---------------------------------------------------------------------------
+// `F4.303` U12 (ADR 0108 Amendment 6 item 8, owner Q9) — compare on the energy report.
+// One claim per exported function; the `.test.ts` wrapper gives each its own `it()`.
+// ---------------------------------------------------------------------------
+
+/** `energyTable(preview())` on `main` before `F4.303`, written out so the no-compare path is pinned as an array too. */
+const TODAY_TABLE: (string | number)[][] = [
+  ["Report", "Energy Consumption"],
+  ["Start date", "2026-08-01"],
+  ["End date", "2026-08-07"],
+  ["Generated at", "2026-08-10T12:00:00.000Z"],
+  [],
+  ["Metric", "Value", "Unit"],
+  ["Total energy", 2345.17, "kWh"],
+  ["Peak demand", 414.66, "kW"],
+  ["PUE estimate", 1.25, ""],
+  ["Indicative cost", 5042.12, "ZAR"],
+  ["Tariff", 2.15, "ZAR/kWh"],
+  [],
+  ["Source", "Energy", "Unit"],
+  ["Grid", 2130.37, "kWh"],
+  ["Solar", 126.04, "kWh"],
+  ["Nominal DG", 88.76, "kWh"],
+  [],
+  ["Asset code", "Asset name", "Site", "Avg kW", "Estimated kWh"],
+  ["CH-01", "Chiller 1", "Plant B", 383.57, 870.6],
+];
+
+/** A current period of 120 kWh against a previous one of 100 kWh — the plan's T2 fixture. */
+function comparePair(
+  nowSummary: Partial<EnergyReportPreview["summary"]> = {},
+  beforeSummary: Partial<EnergyReportPreview["summary"]> = {},
+): { now: EnergyReportPreview; before: EnergyReportPreview } {
+  const now = preview({
+    summary: { ...preview().summary, totalKwh: 120, peakKw: 50, pueEstimate: 1.5, indicativeCost: 240, tariffPerKwh: 2, ...nowSummary },
+    sourceTotals: { gridKwh: 90, solarKwh: 20, dgKwh: 10 },
+  });
+  const before = preview({
+    range: { startDate: "2026-07-25", endDate: "2026-07-31", durationHours: 168 },
+    summary: { ...preview().summary, totalKwh: 100, peakKw: 40, pueEstimate: 1.25, indicativeCost: 200, tariffPerKwh: 2, ...beforeSummary },
+    sourceTotals: { gridKwh: 80, solarKwh: 0, dgKwh: 20 },
+    topConsumers: [consumer({ code: "OLD-01" }), consumer({ code: "OLD-02" })],
+  });
+  return { now, before };
+}
+
+function rowOf(rows: (string | number)[][], label: string): (string | number)[] | undefined {
+  return rows.find((row) => row[0] === label);
+}
+
+/** T1 — no second argument is today's array, and an explicit `undefined` is the same. */
+export function assertTableWithoutPreviousIsToday(): void {
+  const json = JSON.stringify(energyTable(preview()));
+  assert(json === JSON.stringify(TODAY_TABLE), `energyTable(preview) must be today's array, got ${json}`);
+  assert(
+    JSON.stringify(energyTable(preview(), undefined)) === json,
+    "energyTable(preview, undefined) must equal energyTable(preview)",
+  );
+}
+
+/** T2a — the head block gains the `Previous period` row directly after `End date`. */
+export function assertHeadBlockGainsThePreviousPeriodRow(): void {
+  const { now, before } = comparePair();
+  const rows = energyTable(now, before);
+  const end = rows.findIndex((row) => row[0] === "End date");
+  assert(
+    JSON.stringify(rows[end + 1]) === JSON.stringify(["Previous period", "2026-07-25 to 2026-07-31"]),
+    `the row after End date must be the previous period, got ${JSON.stringify(rows[end + 1])}`,
+  );
+}
+
+/** T2b — the metric header is five cells and each metric row carries the previous value and the change. */
+export function assertMetricBlockGainsPreviousAndChange(): void {
+  const { now, before } = comparePair();
+  const rows = energyTable(now, before);
+  const expected: (string | number)[][] = [
+    ["Metric", "Value", "Unit", "Previous", "Change"],
+    ["Total energy", 120, "kWh", 100, 20],
+    ["Peak demand", 50, "kW", 40, 25],
+    ["PUE estimate", 1.5, "", 1.25, 20],
+    ["Indicative cost", 240, "ZAR", 200, 20],
+    ["Tariff", 2, "ZAR/kWh", 2, 0],
+  ];
+  const start = rows.findIndex((row) => row[0] === "Metric");
+  const actual = rows.slice(start, start + expected.length);
+  assert(
+    JSON.stringify(actual) === JSON.stringify(expected),
+    `the metric block must carry Previous and Change, got ${JSON.stringify(actual)}`,
+  );
+}
+
+/** T2c — the change is computed on the unrounded values: 120.4 against 100 is 20.4, never 20. */
+export function assertChangeReadsTheUnroundedValues(): void {
+  const { now, before } = comparePair({ totalKwh: 120.4 });
+  const total = rowOf(energyTable(now, before), "Total energy");
+  assert(total?.[4] === 20.4, `the change of 120.4 against 100 must be 20.4, got ${JSON.stringify(total?.[4])}`);
+}
+
+/** T2d — the source block carries the same two columns; a previous of 0 there is the text. */
+export function assertSourceBlockGainsPreviousAndChange(): void {
+  const { now, before } = comparePair();
+  const rows = energyTable(now, before);
+  const expected: (string | number)[][] = [
+    ["Source", "Energy", "Unit", "Previous", "Change"],
+    ["Grid", 90, "kWh", 80, 12.5],
+    ["Solar", 20, "kWh", 0, "no data for the previous period"],
+    ["Nominal DG", 10, "kWh", 20, -50],
+  ];
+  const start = rows.findIndex((row) => row[0] === "Source");
+  const actual = rows.slice(start, start + expected.length);
+  assert(
+    JSON.stringify(actual) === JSON.stringify(expected),
+    `the source block must carry Previous and Change, got ${JSON.stringify(actual)}`,
+  );
+}
+
+/** T2e — the top-consumers block is the current period's only, unchanged in width and rows. */
+export function assertTopConsumersBlockIsUnchanged(): void {
+  const { now, before } = comparePair();
+  const tail = (rows: (string | number)[][]) => rows.slice(rows.findIndex((row) => row[0] === "Asset code"));
+  const withPrevious = tail(energyTable(now, before));
+  assert(
+    JSON.stringify(withPrevious) === JSON.stringify(tail(energyTable(now))) && withPrevious.length === 2,
+    `the top-consumers block must not change with a previous period, got ${JSON.stringify(withPrevious)}`,
+  );
+}
+
+/** T3 — a previous period of 0 kWh: the previous value is 0 and the change is the ruling 4.6 sentence. */
+export function assertZeroPreviousIsNoData(): void {
+  const { now, before } = comparePair({}, { totalKwh: 0 });
+  const total = rowOf(energyTable(now, before), "Total energy");
+  assert(
+    JSON.stringify(total) === JSON.stringify(["Total energy", 120, "kWh", 0, "no data for the previous period"]),
+    `a previous of 0 must read "no data for the previous period", got ${JSON.stringify(total)}`,
+  );
+}
+
+/** T4a — a `null` PUE in the previous period: both new cells are the em dash. */
+export function assertNullPreviousPueIsTheDash(): void {
+  const { now, before } = comparePair({}, { pueEstimate: null });
+  const pue = rowOf(energyTable(now, before), "PUE estimate");
+  assert(
+    JSON.stringify(pue) === JSON.stringify(["PUE estimate", 1.5, "", "—", "—"]),
+    `a null previous PUE must write the dash in both new cells, got ${JSON.stringify(pue)}`,
+  );
+}
+
+/** T4b — a `null` PUE in the current period: the previous value is kept, the change is the em dash. */
+export function assertNullCurrentPueIsTheDash(): void {
+  const { now, before } = comparePair({ pueEstimate: null });
+  const pue = rowOf(energyTable(now, before), "PUE estimate");
+  assert(
+    JSON.stringify(pue) === JSON.stringify(["PUE estimate", "—", "", 1.25, "—"]),
+    `a null current PUE must write the dash as the value and the change, got ${JSON.stringify(pue)}`,
+  );
+}
+
+/** T5 — the sheet rows are `energyTable`'s rows with the same previous period. */
+export function assertSheetRowsCarryThePreviousPeriod(): void {
+  const { now, before } = comparePair();
+  const sheet = energySheetRows(now, before);
+  assert(
+    JSON.stringify(sheet) === JSON.stringify(energyTable(now, before)) && rowOf(sheet, "Previous period") !== undefined,
+    "energySheetRows(preview, previous) must be energyTable(preview, previous), Previous period row included",
+  );
+}
+
+/** T6 — the CSV takes no previous period: `energyCsvDocument` declares one parameter (a source scan). */
+export function assertCsvDocumentTakesOneParameter(): void {
+  const source = readFileSync(join(repoRoot(), "apps/api/src/reports/reports.serialise.ts"), "utf8");
+  const match = /export function energyCsvDocument\(([^)]*)\)/.exec(source);
+  assert(match !== null, "energyCsvDocument's declaration must be found — the scan is otherwise vacuous");
+  const params = (match?.[1] ?? "").split(",").map((part) => part.trim()).filter((part) => part.length > 0);
+  assert(
+    params.length === 1 && params[0] === "preview: EnergyReportPreview",
+    `energyCsvDocument must take the preview only (ADR 0108 Amendment 6: the CSV takes no compare), got ${JSON.stringify(params)}`,
   );
 }

@@ -2,6 +2,7 @@
 import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
+import { useAuthStore } from "../../stores/auth-store";
 import {
   aFailedSegmentReadIsAFixedSentence,
   aSegmentSubTabExportsItsSegmentView,
@@ -20,6 +21,10 @@ import {
   theNavListsOneEntryPerSegment,
   theRangeControlReachesTheEnergySubTab,
   theSectionStateIsReadFromTheUrl,
+  aSegmentSubTabOffersPin,
+  aSegmentSubTabOffersSchedule,
+  theEnergySubTabSchedulesTheSitesEnergyReport,
+  theEnergySubTabHasNoPin,
 } from "./site-trends-view.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014, ADR 0042 decision 2). */
@@ -27,6 +32,23 @@ describe("F4.302 the Trends & Energy section", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    useAuthStore.setState({ user: null });
+  });
+
+  it("F4.303 U15: a segment sub-tab offers Pin", async () => {
+    await aSegmentSubTabOffersPin();
+  });
+
+  it("F4.303 U16: the Energy sub-tab schedules the site energy report", async () => {
+    await theEnergySubTabSchedulesTheSitesEnergyReport();
+  });
+
+  it("F4.303 U16: a segment sub-tab offers one Schedule", async () => {
+    await aSegmentSubTabOffersSchedule();
+  });
+
+  it("F4.303 U15: the Energy sub-tab has no Pin", async () => {
+    await theEnergySubTabHasNoPin();
   });
 
   it("shows Energy at the bare section and asks the default segment", async () => {

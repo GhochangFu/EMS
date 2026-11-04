@@ -509,6 +509,17 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // (R-8): stripped and answered 201, it would read as accepted, and the
   // schedule would run at a different instant than the one the client sent.
   createReportScheduleBodySchema: STRICT(CALLER_ERROR),
+  // `F4.303` U10 (Amendment 6 item 6): the two `params` arms. Strict so `{ compare, points }`
+  // parses as the trend arm only and `{ compare, note }` is a 400, not an energy schedule.
+  "createReportScheduleBodySchema/params|0": STRICT(CALLER_ERROR),
+  "createReportScheduleBodySchema/params|1": STRICT(CALLER_ERROR),
+  "createReportScheduleBodySchema/params|1/points[]": STRICT(CALLER_ERROR),
+  // `F4.303` U10 (Amendment 6 item 5): the append body. One producer (the Pin dialog); the key a
+  // client would try is `widgetType` or `gridX`/`gridY`, which the server fixes: dropped and
+  // answered 201, it would read as accepted.
+  appendChartWidgetBodySchema: STRICT(CALLER_ERROR),
+  "appendChartWidgetBodySchema/config": STRICT(CALLER_ERROR),
+  "appendChartWidgetBodySchema/points[]": STRICT(CALLER_ERROR),
   // The same producer and the same key; a PATCH that names `nextRunAt` is a
   // client trying to move a run by hand, which only the three period fields
   // and a re-enable can do (Q-3). `{}` is refused by the schema's own refine.

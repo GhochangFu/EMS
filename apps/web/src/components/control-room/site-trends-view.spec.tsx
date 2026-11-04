@@ -3,12 +3,14 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { MemoryRouter, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { SiteSegmentViewsDto } from "@bms/shared";
+import type { SiteSegmentViewsDto, UserRole } from "@bms/shared";
 
 import * as segmentApi from "../../api/segment-views";
 import * as exportsApi from "../../api/view-exports";
 import { SEGMENT_VIEWS_BODY } from "../../api/segment-views.spec";
 import { ApiError } from "../../lib/api-error";
+import { useAuthStore } from "../../stores/auth-store";
+import { stubScheduleWizardApis } from "../view-actions/schedule-button.spec";
 import { SiteTrendsView } from "./site-trends-view";
 
 /**
@@ -307,6 +309,69 @@ export async function theEnergySubTabExportsTheSiteEnergyView(): Promise<void> {
   await waitFor(() => expect(download).toHaveBeenCalledTimes(1));
   expect(download).toHaveBeenCalledWith("csv", { range: "7d", locationIds: [SITE], compare: "previous" });
   expect(segment).not.toHaveBeenCalled();
+}
+
+/** A segment answer with one drawn series, so a segment sub-tab has something to pin. */
+const DRAWN_BODY = {
+  ...BODY,
+  ranking: [
+    {
+      assetId: "33333333-3333-4333-8333-333333333331",
+      assetCode: "CH-1",
+      assetName: "Chiller 1",
+      unit: "kW",
+      current: { mean: 10, max: 12, maxAt: null, sampleCount: 5 },
+      compare: null,
+      buckets: [{ t: "2026-10-30T00:00:00.000Z", v: 10 }],
+      compareBuckets: null,
+    },
+  ],
+} as SiteSegmentViewsDto;
+
+function signInAsAdmin(): void {
+  signInAs("admin");
+}
+
+function signInAs(role: UserRole): void {
+  useAuthStore.setState({ user: { id: "u1", email: `${role}@bms.local`, displayName: role, role } });
+}
+
+/** `F4.303` U15 (ADR 0108 Amendment 6 item 4): a segment sub-tab offers Pin to an author. */
+export async function aSegmentSubTabOffersPin(): Promise<void> {
+  signInAsAdmin();
+  stubSegments(DRAWN_BODY);
+  renderAt("?view=chillers&point=kw&range=7d");
+  expect(await screen.findByRole("button", { name: "Pin" })).toBeInTheDocument();
+}
+
+/** `F4.303` U15: the Energy sub-tab has no Pin, for the same author and the same answer. */
+export async function theEnergySubTabHasNoPin(): Promise<void> {
+  signInAsAdmin();
+  stubSegments(DRAWN_BODY);
+  renderAt("?range=7d");
+  await screen.findByTestId("site-energy-view");
+  await screen.findByRole("group", { name: "Export" });
+  expect(screen.queryByRole("button", { name: "Pin" })).toBeNull();
+}
+
+/** `F4.303` U16 (ADR 0108 Amendment 6 item 6): the Energy sub-tab schedules `energy_consumption` for the site, compare as shown. */
+export async function theEnergySubTabSchedulesTheSitesEnergyReport(): Promise<void> {
+  signInAs("admin");
+  stubSegments(DRAWN_BODY);
+  stubScheduleWizardApis();
+  renderAt("?range=7d&compare=1");
+  await screen.findByTestId("site-energy-view");
+  fireEvent.click(await screen.findByRole("button", { name: "Schedule" }));
+  expect(await screen.findByText("Template: Energy consumption · compare on")).toBeInTheDocument();
+}
+
+/** `F4.303` U16: a segment sub-tab offers exactly one Schedule (the segment view's own). */
+export async function aSegmentSubTabOffersSchedule(): Promise<void> {
+  signInAs("admin");
+  stubSegments(DRAWN_BODY);
+  renderAt("?view=chillers&point=kw&range=7d");
+  expect(await screen.findByRole("button", { name: "Schedule" })).toBeInTheDocument();
+  expect(screen.getAllByRole("button", { name: "Schedule" })).toHaveLength(1);
 }
 
 /** `F4.303` U7: on a segment sub-tab Export downloads the segment view with the query the read sent. */

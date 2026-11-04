@@ -103,6 +103,9 @@ export type StoredContractContext =
   | "asset_images.to_dto.row"
   | "report_files.to_dto.row"
   | "report_schedules.to_dto.row"
+  // `F4.303` (ADR 0108 Amendment 6 items 6, 8): the render's own reads of the stored template and params.
+  | "report_schedules.render.template_id"
+  | "report_schedules.render.params"
   | "site_layout.read_template.content"
   | "copilot_tools.get_asset_kpis.result"
   | "copilot_tools.get_health_summary.result"

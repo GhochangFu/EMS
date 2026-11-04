@@ -19,6 +19,7 @@ import { ReportRenderService } from "./report-render.service";
 import type { RenderOutcome, RenderPayload } from "./report-render.service";
 import type { ReportFilesConfig } from "./report-files-config";
 import type { ReportsService } from "./reports.service";
+import type { TrendPointsPlan, TrendPointsReportService } from "./trend-points-report.service";
 
 /**
  * `F3.5b` (ADR 0071 decisions 8–10; plan R-9, R-11) — `ReportRenderService`
@@ -169,6 +170,11 @@ type ScheduleFixture = {
   locationIds: string[];
   channelId: string | null;
   enabled: boolean;
+  /** `F4.303` — the stored template and params the render parses before the format loop. */
+  templateId: string;
+  params: unknown;
+  cadence: string;
+  timezone: string;
 };
 
 type ChannelFixture = {
@@ -202,6 +208,10 @@ export function schedule(overrides: Partial<ScheduleFixture> = {}): ScheduleFixt
     locationIds: [],
     channelId: CHANNEL_ID,
     enabled: true,
+    templateId: "energy_consumption",
+    params: null,
+    cadence: "monthly",
+    timezone: "Asia/Kolkata",
     ...overrides,
   };
 }
@@ -249,6 +259,12 @@ const PREVIEW = {
   summary: { window: "7d", totalKwh: 2345.17, peakKw: 414.66, pueEstimate: 1.25, indicativeCost: 5042.12, tariffPerKwh: 2.15, currency: "ZAR", asOf: "2026-09-08T00:00:00.000Z" },
 } as unknown as EnergyReportPreview;
 
+/** `F4.303` — what the preview fake answers for any period but the payload's (the compare's previous period). */
+export const PREVIOUS_TOTAL_KWH = 2000.5;
+const PREVIOUS_PREVIEW = {
+  summary: { ...PREVIEW.summary, totalKwh: PREVIOUS_TOTAL_KWH },
+} as unknown as EnergyReportPreview;
+
 export type Scenario = {
   client?: StorageClient;
   config?: Partial<ReportFilesConfig>;
@@ -279,6 +295,8 @@ export type Scenario = {
   channel?: ChannelFixture | null;
   emailResult?: DeliveryResult;
   deleteObject?: () => Promise<void>;
+  /** `F4.303` U13 — what the `trend_points` plan fake answers: kept and dropped counts and the level. */
+  trendPlan?: { kept: number; dropped: number; level: string };
 };
 
 export type Harness = {
@@ -296,7 +314,10 @@ export type Harness = {
   pruneSelects: { where: { sql: string; params: unknown[] }; offset: unknown }[];
   deliverableWheres: { sql: string; params: unknown[] }[];
   executed: { sql: string; params: unknown[] }[];
-  reports: { calls: { method: string; query: unknown; assetIds: unknown }[] };
+  /** `rest` is every argument after the asset ids — `F4.303`'s `previous`, or none. */
+  reports: { calls: { method: string; query: unknown; assetIds: unknown; rest: unknown[] }[] };
+  /** `F4.303` U13 — every `TrendPointsReportService` call, by method, with its first argument. */
+  trendPoints: { calls: { method: string; arg: unknown }[] };
   email: { messages: NotificationMessage[] };
   metrics: { written: string[]; deliveries: string[] };
   tenantTransactions: () => number;
@@ -336,7 +357,7 @@ export function harness(scenario: Scenario = {}): Harness {
       let offsetArg: unknown;
       return chain(
         async () => {
-          if (shape === "channelId,enabled,formats,locationIds,name,scheduleId") {
+          if (shape === "cadence,channelId,enabled,formats,locationIds,name,params,scheduleId,templateId,timezone") {
             calls.push("tx:selectSchedule");
             scheduleWheres.push(renderWhere(whereArg));
             return scheduleRow === null ? [] : [scheduleRow];
@@ -465,22 +486,22 @@ export function harness(scenario: Scenario = {}): Harness {
   };
   const client: StorageClient = scenario.client ?? { kind: "configured", bucket: "bms-asset-images", ops };
 
-  const reports = { calls: [] as { method: string; query: unknown; assetIds: unknown }[] };
+  const reports: Harness["reports"] = { calls: [] };
   const reportsFake = {
-    energyPdf: async (query: unknown, assetIds: unknown) => {
+    energyPdf: async (query: unknown, assetIds: unknown, ...rest: unknown[]) => {
       calls.push("render");
-      reports.calls.push({ method: "energyPdf", query, assetIds });
+      reports.calls.push({ method: "energyPdf", query, assetIds, rest });
       return PDF_BYTES;
     },
-    energyXlsx: async (query: unknown, assetIds: unknown) => {
+    energyXlsx: async (query: unknown, assetIds: unknown, ...rest: unknown[]) => {
       calls.push("render");
-      reports.calls.push({ method: "energyXlsx", query, assetIds });
+      reports.calls.push({ method: "energyXlsx", query, assetIds, rest });
       return XLSX_BYTES;
     },
-    energyPreview: async (query: unknown, assetIds: unknown) => {
+    energyPreview: async (query: { startDate?: unknown }, assetIds: unknown, ...rest: unknown[]) => {
       calls.push("preview");
-      reports.calls.push({ method: "energyPreview", query, assetIds });
-      return PREVIEW;
+      reports.calls.push({ method: "energyPreview", query, assetIds, rest });
+      return query.startDate === PAYLOAD.periodStart ? PREVIEW : PREVIOUS_PREVIEW;
     },
   } as unknown as ReportsService;
 
@@ -518,7 +539,36 @@ export function harness(scenario: Scenario = {}): Harness {
     historyUrl: null,
     ...scenario.config,
   };
-  const service = new ReportRenderService(tenant, client, config, reportsFake, emailFake, metricsFake, channelsFake);
+  const trendPoints: Harness["trendPoints"] = { calls: [] };
+  const plan = scenario.trendPlan ?? { kept: 3, dropped: 1, level: "1m" };
+  const trendPointsFake = {
+    plan: async (input: unknown) => {
+      calls.push("trendPoints:plan");
+      trendPoints.calls.push({ method: "plan", arg: input });
+      return {
+        kept: Array.from({ length: plan.kept }, (_, i) => ({ assetId: ASSET_A, pointKey: `p${i}`, unit: null, assetCode: "A1" })),
+        dropped: Array.from({ length: plan.dropped }, () => "a deleted asset · kw"),
+        level: plan.level,
+      } as unknown as TrendPointsPlan;
+    },
+    read: async (arg: unknown) => {
+      calls.push("trendPoints:read");
+      trendPoints.calls.push({ method: "read", arg });
+      return { sheet: [] };
+    },
+    pdf: async (arg: unknown) => {
+      calls.push("render");
+      trendPoints.calls.push({ method: "pdf", arg });
+      return PDF_BYTES;
+    },
+    xlsx: (arg: unknown) => {
+      calls.push("render");
+      trendPoints.calls.push({ method: "xlsx", arg });
+      return XLSX_BYTES;
+    },
+  } as unknown as TrendPointsReportService;
+
+  const service = new ReportRenderService(tenant, client, config, reportsFake, emailFake, metricsFake, channelsFake, trendPointsFake);
   return {
     service,
     calls,
@@ -535,6 +585,7 @@ export function harness(scenario: Scenario = {}): Harness {
     deliverableWheres,
     executed,
     reports,
+    trendPoints,
     email,
     metrics,
     tenantTransactions: () => tenantTransactions,
@@ -543,7 +594,7 @@ export function harness(scenario: Scenario = {}): Harness {
 }
 
 /** Phase A on the harness's own `tx` fake, as `runProcessor` would hand it. */
-async function render(h: Harness): Promise<RenderOutcome> {
+export async function render(h: Harness): Promise<RenderOutcome> {
   return h.service.render(PAYLOAD, h.tx as never);
 }
 
@@ -566,6 +617,10 @@ export function renderedOutcome(overrides: Partial<Extract<RenderOutcome, { kind
     prunedKeys: new Map(),
     channelId: CHANNEL_ID,
     assetIds: [ASSET_A, ASSET_B],
+    templateId: "energy_consumption",
+    params: null,
+    previousPeriod: null,
+    trendSummary: null,
     ...overrides,
   };
 }

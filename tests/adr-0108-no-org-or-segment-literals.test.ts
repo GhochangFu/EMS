@@ -142,6 +142,23 @@ const MODULES: readonly string[] = [
   // F4.303 U7: the export client and "Export".
   "apps/web/src/api/view-exports.ts",
   "apps/web/src/components/view-actions/export-menu.tsx",
+  // F4.303 PR 2 U10: the report-params and widget-append contracts and their types.
+  "packages/shared/src/contracts/dashboard-widget-append.ts",
+  "packages/shared/src/contracts/trend-points-report.ts",
+  "packages/shared/src/types/dashboard-widget-append.ts",
+  "packages/shared/src/types/trend-points-report.ts",
+  // F4.303 PR 2 U11: the trend_points schedule's point check.
+  "apps/api/src/reports/trend-points-schedule-check.ts",
+  // F4.303 PR 2 U13: the trend_points report service and its pure rows and PDF.
+  "apps/api/src/reports/trend-points-report.service.ts",
+  "apps/api/src/reports/trend-points-pdf.ts",
+  // F4.303 PR 2 U14: the widget-append service.
+  "apps/api/src/dashboard-builder/dashboard-widget-append.service.ts",
+  // F4.303 PR 2 U15: the Pin dialog.
+  "apps/web/src/components/view-actions/pin-dialog.tsx",
+  // F4.303 PR 2 U16: the Schedule button and the prefill it hands the wizard.
+  "apps/web/src/components/view-actions/schedule-button.tsx",
+  "apps/web/src/lib/schedule-from-view.ts",
 ];
 
 /**
@@ -167,6 +184,11 @@ const MODULES: readonly string[] = [
  * runtime modules, listed in U1 and moved to {@link MODULES} by the unit that creates each. U6
  * moved `view-links.ts` and `copy-link-button.tsx`; U7 moved the last two
  * (`view-exports.ts`, `export-menu.tsx`), so the list is empty again.
+ *
+ * `F4.303` PR 2 (same plan, C24): the eleven new runtime modules, listed in U9 and moved to
+ * {@link MODULES} by the unit that creates each (U10 the four shared files, U11 the schedule's
+ * point check, U13 the two report files, U14 the append service, U15 `pin-dialog.tsx`, U16 the
+ * last two web files), so the list is empty again.
  */
 const PENDING_MODULES: readonly string[] = [];
 

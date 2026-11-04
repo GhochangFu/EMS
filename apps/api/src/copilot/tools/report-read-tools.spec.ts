@@ -40,6 +40,7 @@ function schedule(index: number, organizationId: string, over: Partial<ReportSch
     organizationId,
     name: `Schedule ${index}`,
     templateId: "energy_consumption",
+    params: null,
     formats: ["pdf"],
     cadence: "weekly",
     runAtLocal: "07:00",

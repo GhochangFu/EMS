@@ -100,6 +100,8 @@ export * from "./calc-override-writes";
 export * from "./calc-parameter-writes";
 export * from "./dashboard-template-writes";
 export * from "./dashboard-writes";
+export * from "./dashboard-widget-append";
+export * from "./trend-points-report";
 export * from "./site-layout";
 export * from "./site-widgets";
 export * from "./system-status";

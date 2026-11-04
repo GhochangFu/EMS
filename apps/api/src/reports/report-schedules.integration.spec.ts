@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 
-import { reportSchedules } from "@bms/db";
+import { assets, reportSchedules } from "@bms/db";
 import type { JwtPayload, ReportScheduleDto } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
@@ -14,6 +14,7 @@ import { ChannelsService } from "../notifications/channels.service";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { buildReportObjectKey } from "../storage/object-key";
 import { headObject, putObject } from "../storage/storage-client";
+import { createFixtureAssets } from "../testing/integration-fixtures";
 import type { ConfiguredStorageConfig } from "../testing/integration-storage-gate";
 import { withRollback } from "../testing/with-rollback";
 import {
@@ -177,6 +178,7 @@ export async function openScheduleFixtures(
 export function body(fx: ScheduleIntegrationFixtures, overrides: Partial<CreateReportScheduleBodyInput> = {}): CreateReportScheduleBodyInput {
   return {
     name: `f3.5b-sched-${randomUUID()}`,
+    templateId: "energy_consumption",
     formats: ["pdf"],
     cadence: "daily",
     runAtLocal: "07:00",
@@ -516,4 +518,99 @@ export async function reenableMovesNextRunAtOnARealRow(fx: ScheduleIntegrationFi
   const enabled = await fx.service.update(admin(), dto.id, { enabled: true });
   assert(new Date(enabled.nextRunAt).getTime() > before, `re-enabling must move next_run_at after now; got ${enabled.nextRunAt}`);
   assert(enabled.updatedAt !== dto.updatedAt, "updated_at must move on a PATCH");
+}
+
+// ---------------------------------------------------------------------------
+// F4.303 U11 (ADR 0108 Amendment 6 item 6) — trend_points schedules
+// ---------------------------------------------------------------------------
+
+/**
+ * Runs `fn` with one active point on a fixture asset this run commits at ESKOM's `RSMOC-WC` (by
+ * the fleet pool), and deletes the point and the asset again, by id, whatever the outcome. The
+ * suite commits (the service opens `withTenant` itself), so the asset cannot live in a rolled-back
+ * transaction; it is built here rather than read off the seed, so no other suite's fixture cleanup
+ * can remove it mid-case (`tests/integration-fixture-isolation.test.ts`).
+ */
+async function withWcPoint(
+  fx: ScheduleIntegrationFixtures,
+  fn: (point: { assetId: string; pointKey: string }) => Promise<void>,
+): Promise<void> {
+  const [assetId] = await createFixtureAssets(fx.base.fleetDb, 1, "f4303", {
+    locationId: fx.base.wcId,
+    organizationId: fx.base.eskomId,
+  });
+  if (!assetId) throw new Error("F4.303: createFixtureAssets returned no id");
+  const pointKey = "kw";
+  try {
+    await fx.base.fleetDb.execute(sql`
+      insert into bms.asset_points (organization_id, asset_id, point_key, source_data_key, active)
+      values (${fx.base.eskomId}::uuid, ${assetId}::uuid, ${pointKey}, ${pointKey}, true)`);
+    await fn({ assetId, pointKey });
+  } finally {
+    const points = await fx.base.fleetDb.execute(sql`delete from bms.asset_points where asset_id = ${assetId}::uuid`);
+    assert(points.rowCount === 1, `expected to delete 1 fixture point, got ${points.rowCount}`);
+    const deleted = await fx.base.fleetDb.delete(assets).where(eq(assets.id, assetId)).returning({ id: assets.id });
+    assert(deleted.length === 1, `expected to delete 1 fixture asset, got ${deleted.length}`);
+  }
+}
+
+function trendOverrides(fx: ScheduleIntegrationFixtures, point: { assetId: string; pointKey: string }): Partial<CreateReportScheduleBodyInput> {
+  return { templateId: "trend_points", params: { points: [point], compare: false }, locationIds: [fx.base.wcId] };
+}
+
+/**
+ * The cap counts both templates. It runs in this open's own cap organization (`F4.71` U4), which
+ * holds no other row: in ESKOM a sibling file's create landing between a count read and the
+ * service's locked re-count turned the 50th into a 409. The organization is filled to 49 with
+ * disabled `trend_points` rows (as `bms_fleet`), the 50th — an `energy_consumption` schedule — is
+ * admitted (the positive control), and the 51st is a 409; a count that skips either template
+ * admits it. The fillers are deleted here, by id, whatever the outcome.
+ */
+export async function theFiftyFirstScheduleCountsTrendPointsRows(fx: ScheduleIntegrationFixtures): Promise<void> {
+  const organizationId = fx.base.capOrganizationId;
+  // Only this open writes here, so the count cannot move before the service's locked re-count.
+  const counted = await fx.base.fleetDb.execute<{ n: string }>(
+    sql`select count(*)::text as n from bms.report_schedules where organization_id = ${organizationId}::uuid`,
+  );
+  const fillers = Array.from({ length: Math.max(0, 49 - Number(counted.rows[0]?.n ?? "0")) }, () => randomUUID());
+  const params = JSON.stringify({ points: [{ assetId: randomUUID(), pointKey: "kw" }], compare: false });
+  try {
+    for (const id of fillers) {
+      await fx.base.fleetDb.execute(sql`
+        insert into bms.report_schedules
+          (id, organization_id, name, template_id, params, formats, cadence, run_at_local, timezone, location_ids, enabled, next_run_at)
+        values
+          (${id}::uuid, ${organizationId}::uuid, ${`f4.303-filler-${id}`}, 'trend_points', ${params}::jsonb, '{pdf}', 'daily',
+           '07:00', 'Asia/Kolkata', '{}'::uuid[], false, now() + interval '365 days')`);
+    }
+    const fiftieth = await createAs(fx, admin(), { organizationId });
+    assert(fiftieth.organizationId === organizationId, `the 50th must be admitted in the cap organization; got ${fiftieth.organizationId}`);
+    // `createAs` records a 51st that is wrongly admitted, so the sweep still empties the organization.
+    const err = await captureRejection(() => createAs(fx, admin(), { organizationId }));
+    assert(errorName(err) === "ConflictException", `the 51st must be 409; got ${errorName(err)}: ${errorMessage(err)}`);
+  } finally {
+    if (fillers.length > 0) {
+      const deleted = await fx.base.fleetDb.execute(sql`delete from bms.report_schedules where id = any(${pgArray(fillers)}::uuid[])`);
+      assert(deleted.rowCount === fillers.length, `expected to delete ${fillers.length} filler(s), got ${deleted.rowCount}`);
+    }
+  }
+}
+
+/** A `PATCH locationIds` that moves a `trend_points` schedule away from its point's site is a 400; the row keeps `[WC]`. */
+export async function patchMovingATrendPointsScheduleAwayIs400(fx: ScheduleIntegrationFixtures): Promise<void> {
+  await withWcPoint(fx, async (point) => {
+    const created = await createAs(fx, admin(), trendOverrides(fx, point));
+    const err = await captureRejection(() => fx.service.update(admin(), created.id, { locationIds: [fx.ecId] }));
+    assert(errorName(err) === "BadRequestException", `expected 400; got ${errorName(err)}: ${errorMessage(err)}`);
+    assert(errorMessage(err) === "point 0 is not at a location of this schedule", `got "${errorMessage(err)}"`);
+    const after = await fx.service.get(admin(), created.id);
+    assert(JSON.stringify(after.locationIds) === JSON.stringify([fx.base.wcId]), `the row must still carry [WC]; got ${JSON.stringify(after.locationIds)}`);
+  });
+}
+
+/** The same PATCH on an `energy_consumption` schedule runs no point check and is admitted. */
+export async function patchMovingAnEnergyScheduleIsAdmitted(fx: ScheduleIntegrationFixtures): Promise<void> {
+  const created = await createAs(fx, admin(), { locationIds: [fx.base.wcId] });
+  const after = await fx.service.update(admin(), created.id, { locationIds: [fx.ecId] });
+  assert(JSON.stringify(after.locationIds) === JSON.stringify([fx.ecId]), `the row must carry [EC]; got ${JSON.stringify(after.locationIds)}`);
 }

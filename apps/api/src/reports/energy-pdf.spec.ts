@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import type { EnergyReportPreview, EnergyTopConsumer } from "@bms/shared";
 
 import { energyPdfDefinition, LOCAL_ACCESS_POLICY, renderPdf, STANDARD_FONTS } from "./energy-pdf";
@@ -233,3 +235,90 @@ export async function assertRenderRefusesALocalFilePath(): Promise<void> {
   );
   assert(!message.includes("Invalid image"), "the refusal must precede the image open, not be its ENOENT");
 }
+
+// ---------------------------------------------------------------------------
+// `F4.303` U12 (ADR 0108 Amendment 6 item 8, owner Q9; owner ruling Q-B) — compare on the PDF.
+// ---------------------------------------------------------------------------
+
+/**
+ * `energyPdfDefinition(preview())` on `main` before `F4.303` (captured at `550dfecc`,
+ * `JSON.stringify` — the footer is a function and is pinned by its own output below).
+ */
+const MAIN_DEFINITION_JSON =
+  '{"pageSize":"A4","pageOrientation":"portrait","pageMargins":40,"defaultStyle":{"font":"Helvetica","fontSize":9},"content":[{"text":"Energy Consumption","fontSize":16,"bold":true,"margin":[0,0,0,2]},{"text":"2026-08-01 to 2026-08-07","fontSize":9,"margin":[0,0,0,2]},{"text":"Generated at 2026-08-10T12:00:00.000Z","fontSize":8,"margin":[0,0,0,10]},{"table":{"headerRows":1,"widths":["*","*"],"body":[[{"text":"Report"},{"text":"Energy Consumption"}],[{"text":"Start date"},{"text":"2026-08-01"}],[{"text":"End date"},{"text":"2026-08-07"}],[{"text":"Generated at"},{"text":"2026-08-10T12:00:00.000Z"}]]},"margin":[0,0,0,10]},{"table":{"headerRows":1,"widths":["*","*","*"],"body":[[{"text":"Metric"},{"text":"Value"},{"text":"Unit"}],[{"text":"Total energy"},{"text":"2,345.17","alignment":"right"},{"text":"kWh"}],[{"text":"Peak demand"},{"text":"414.66","alignment":"right"},{"text":"kW"}],[{"text":"PUE estimate"},{"text":"1.25","alignment":"right"},{"text":""}],[{"text":"Indicative cost"},{"text":"5,042.12","alignment":"right"},{"text":"ZAR"}],[{"text":"Tariff"},{"text":"2.15","alignment":"right"},{"text":"ZAR/kWh"}]]},"margin":[0,0,0,10]},{"table":{"headerRows":1,"widths":["*","*","*"],"body":[[{"text":"Source"},{"text":"Energy"},{"text":"Unit"}],[{"text":"Grid"},{"text":"2,130.37","alignment":"right"},{"text":"kWh"}],[{"text":"Solar"},{"text":"126.04","alignment":"right"},{"text":"kWh"}],[{"text":"Nominal DG"},{"text":"88.76","alignment":"right"},{"text":"kWh"}]]},"margin":[0,0,0,10]},{"table":{"headerRows":1,"widths":["*","*","*","*","*"],"body":[[{"text":"Asset code"},{"text":"Asset name"},{"text":"Site"},{"text":"Avg kW"},{"text":"Estimated kWh"}],[{"text":"CH-01"},{"text":"Chiller 1"},{"text":"Plant B"},{"text":"383.57","alignment":"right"},{"text":"870.6","alignment":"right"}]]},"margin":[0,0,0,10]}]}';
+
+/**
+ * The SHA-256 of `renderPdf` over that definition with `info.creationDate` pinned to the
+ * epoch, on `main` before `F4.303` (owner ruling Q-B: pdfmake's creation date proved pinnable,
+ * so the byte claim is made as well as the definition claim).
+ */
+export const MAIN_PDF_SHA256 = "8ba5d430b815c87cc4208ab6ca8c638565cdf3e798832aabc367abea7d827c68";
+
+/** The previous period the compare claims read: 100 kWh against the fixture's 2345.17. */
+export function previousPreview(): EnergyReportPreview {
+  return preview({
+    range: { startDate: "2026-07-25", endDate: "2026-07-31", durationHours: 168 },
+    summary: { ...preview().summary, totalKwh: 100 },
+  });
+}
+
+/** Without a previous period the definition is `main`'s, the footer included. */
+export function assertDefinitionWithoutPreviousIsMain(): void {
+  const definition = energyPdfDefinition(preview());
+  const json = JSON.stringify(definition);
+  assert(json === MAIN_DEFINITION_JSON, `the no-compare definition must be main's, got ${json}`);
+  assert(
+    JSON.stringify(energyPdfDefinition(preview(), undefined)) === json,
+    "energyPdfDefinition(preview, undefined) must equal energyPdfDefinition(preview)",
+  );
+  const footer = definition.footer as (page: number, pages: number) => unknown;
+  assert(
+    JSON.stringify(footer(1, 2)) === JSON.stringify({ text: "1 / 2", alignment: "center", fontSize: 8 }),
+    "the footer must be main's",
+  );
+}
+
+/** Without a previous period, the PDF bytes (creation date pinned) are `main`'s. */
+export async function assertPdfBytesWithoutPreviousAreMain(): Promise<void> {
+  const buffer = await renderPdf({ ...energyPdfDefinition(preview()), info: { creationDate: new Date(0) } });
+  const sha = createHash("sha256").update(buffer).digest("hex");
+  assert(sha === MAIN_PDF_SHA256, `the no-compare PDF bytes must be main's, got sha256 ${sha}`);
+}
+
+function tablesOf(definition: ReturnType<typeof energyPdfDefinition>): { body: { text: string }[][]; widths: unknown[] }[] {
+  return (definition.content as { table?: { body: { text: string }[][]; widths: unknown[] } }[])
+    .flatMap((node) => (node.table === undefined ? [] : [node.table]));
+}
+
+/** With a previous period, the metric table is five columns wide with the Previous and Change cells. */
+export function assertDefinitionWithPreviousCarriesFiveColumnMetricTable(): void {
+  const metric = tablesOf(energyPdfDefinition(preview(), previousPreview())).find(
+    (table) => table.body[0]?.[0]?.text === "Metric",
+  );
+  assert(metric !== undefined, "the metric table must be present");
+  assert(metric?.widths.length === 5, `the metric table must be five columns wide, got ${metric?.widths.length}`);
+  assert(
+    JSON.stringify(metric?.body[0]?.map((cell) => cell.text)) === JSON.stringify(["Metric", "Value", "Unit", "Previous", "Change"]),
+    `the metric header must carry Previous and Change, got ${JSON.stringify(metric?.body[0])}`,
+  );
+  assert(
+    JSON.stringify(metric?.body[1]?.map((cell) => cell.text)) === JSON.stringify(["Total energy", "2,345.17", "kWh", "100", "2,245.2"]),
+    `the total energy row must carry the previous value and the change, got ${JSON.stringify(metric?.body[1])}`,
+  );
+}
+
+/** With a previous period, the head table carries the `Previous period` row after `End date`. */
+export function assertDefinitionWithPreviousCarriesTheHeadRow(): void {
+  const head = tablesOf(energyPdfDefinition(preview(), previousPreview())).find(
+    (table) => table.body[0]?.[0]?.text === "Report",
+  );
+  const texts = head?.body.map((row) => row.map((cell) => cell.text)) ?? [];
+  const end = texts.findIndex((row) => row[0] === "End date");
+  assert(
+    JSON.stringify(texts[end + 1]) === JSON.stringify(["Previous period", "2026-07-25 to 2026-07-31"]),
+    `the head table must carry the previous period after End date, got ${JSON.stringify(texts[end + 1])}`,
+  );
+}
+
+/** The base fixture, for `reports.service.spec.ts`'s byte claims over the same preview. */
+export { preview as energyPreviewFixture };

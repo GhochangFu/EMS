@@ -848,6 +848,13 @@
       "when": 1793620000000,
       "tag": "0121_location_floor_area",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1793640000000,
+      "tag": "0122_report_schedule_params",
+      "breakpoints": true
     }
   ]
 }

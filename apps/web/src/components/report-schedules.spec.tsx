@@ -114,6 +114,7 @@ export const FIRST: ReportScheduleDto = {
   organizationId: ESKOM_ID,
   name: "Weekly energy digest",
   templateId: "energy_consumption",
+  params: null,
   formats: ["pdf", "xlsx"],
   cadence: "weekly",
   runAtLocal: "07:00",

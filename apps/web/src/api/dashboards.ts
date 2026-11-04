@@ -1,4 +1,5 @@
 import {
+  appendChartWidgetResponseSchema,
   dashboardCatalogValuesResponseSchema,
   dashboardDeletedResponseSchema,
   dashboardDtoSchema,
@@ -12,6 +13,8 @@ import type {
   UpdateDashboardBody,
 } from "@bms/shared/contracts";
 import type {
+  AppendChartWidgetBody,
+  AppendChartWidgetResponse,
   DashboardCatalogValuesResponse,
   DashboardDeletedResponse,
   DashboardDto,
@@ -153,6 +156,23 @@ export async function deleteDashboard(id: string): Promise<DashboardDeletedRespo
     dashboardDeletedResponseSchema,
     "dashboards/:id",
     { method: "DELETE" },
+  );
+}
+
+/**
+ * `F4.303` U15 (ADR 0108 Amendment 6 item 5) — `POST /dashboards/:id/widgets/append`: one `chart`
+ * widget at the foot of a tab. The answer is the new widget and the dashboard's new `updatedAt`. A
+ * 409 is a full tab, a 404 a dashboard the caller cannot manage; the `ApiError` carries the status.
+ */
+export async function appendChartWidget(
+  id: string,
+  body: AppendChartWidgetBody,
+): Promise<AppendChartWidgetResponse> {
+  return dashboardsFetch(
+    `/dashboards/${encodeURIComponent(id)}/widgets/append`,
+    appendChartWidgetResponseSchema,
+    "dashboards/:id/widgets/append",
+    jsonInit("POST", body),
   );
 }
 

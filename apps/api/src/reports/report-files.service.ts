@@ -14,7 +14,7 @@ import type { Readable } from "node:stream";
 
 import { locations, reportFiles } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { reportFileDtoSchema, reportTemplateIdSchema } from "@bms/shared";
+import { energyReportTemplateSchema, reportFileDtoSchema } from "@bms/shared";
 import type { JwtPayload, ReportFileDto, ReportFileFormat } from "@bms/shared";
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
@@ -221,7 +221,7 @@ export class ReportFilesService {
 
     // R-3: the buffer is the only size and hash authority.
     const { sha256, byteSize } = describeBuffer(buffer);
-    const filename = reportFilename(body.startDate, body.endDate, body.format);
+    const filename = reportFilename(energyReportTemplateSchema.shape.id.value, body.startDate, body.endDate, body.format);
     const contentType = CONTENT_TYPES[body.format];
     const createdBy = await this.resolveActorId(jwt);
 
@@ -247,7 +247,7 @@ export class ReportFilesService {
         const inserted = await insertRow(tx, {
           id: fileId,
           organizationId,
-          templateId: reportTemplateIdSchema.value,
+          templateId: energyReportTemplateSchema.shape.id.value,
           format: body.format,
           periodStart: body.startDate,
           periodEnd: body.endDate,

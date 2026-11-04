@@ -13,6 +13,7 @@ import { buildConfig } from "../notifications/notifications.config";
 import { MetricsService } from "../observability/metrics.service";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { getObject, headObject, type S3Ops, type StorageClient } from "../storage/storage-client";
+import { TelemetryService } from "../telemetry/telemetry.service";
 import type { ConfiguredStorageConfig } from "../testing/integration-storage-gate";
 import {
   sameSet,
@@ -40,6 +41,7 @@ import {
   type RenderOutcome,
   type RenderPayload,
 } from "./report-render.service";
+import { TrendPointsReportService } from "./trend-points-report.service";
 
 /**
  * `F3.5b` U10 (ADR 0071 decisions 8, 9, 10; plan R-9, R-11) — the render job
@@ -232,6 +234,9 @@ type ScheduleOptions = {
   locationIds?: readonly string[];
   channelId?: string | null;
   enabled?: boolean;
+  /** `F4.303` U13 — the stored template and params; default `energy_consumption` with `params` NULL. */
+  templateId?: "energy_consumption" | "trend_points";
+  params?: Record<string, unknown> | null;
 };
 
 /**
@@ -265,12 +270,14 @@ export async function insertSchedule(fx: RenderIntegrationFixtures, options: Sch
   const locationIds = pgArray(options.locationIds ?? []);
   const channelId = options.channelId ?? null;
   const enabled = options.enabled ?? true;
+  const templateId = options.templateId ?? "energy_consumption";
+  const params = options.params === undefined || options.params === null ? null : JSON.stringify(options.params);
   await fx.base.fleetDb.execute(sql`
     insert into bms.report_schedules
-      (id, organization_id, name, template_id, formats, cadence, run_at_local, timezone, location_ids, channel_id, enabled, next_run_at)
+      (id, organization_id, name, template_id, formats, cadence, run_at_local, timezone, location_ids, channel_id, enabled, next_run_at, params)
     values
-      (${id}, ${organizationId}, ${`f3.5b-render-${id}`}, 'energy_consumption', ${formats}::text[], 'daily', '00:30:00',
-       'Asia/Kolkata', ${locationIds}::uuid[], ${channelId}, ${enabled}, now() + interval '10 years')
+      (${id}, ${organizationId}, ${`f3.5b-render-${id}`}, ${templateId}, ${formats}::text[], 'daily', '00:30:00',
+       'Asia/Kolkata', ${locationIds}::uuid[], ${channelId}, ${enabled}, now() + interval '10 years', ${params}::jsonb)
   `);
   fx.scheduleIds.push(id);
   return id;
@@ -351,6 +358,15 @@ type ServiceOptions = {
   sender?: MailSender;
 };
 
+/**
+ * `F4.303` U13 — the telemetry pools the `trend_points` reads would use. This suite's trend case
+ * leaves every point out, so no telemetry statement may run: a query here rejects, and the case
+ * reddens rather than reading. The energy cases never reach `TrendPointsReportService`.
+ */
+const NO_TELEMETRY_POOL = {
+  query: () => Promise.reject(new Error("the render integration suite runs no telemetry read")),
+} as never;
+
 /** The real service over the real client, a fake sender and the shared metrics. */
 export function service(
   fx: RenderIntegrationFixtures,
@@ -369,6 +385,7 @@ export function service(
     email,
     fx.metrics,
     fx.channels,
+    new TrendPointsReportService(new TelemetryService(null as never, NO_TELEMETRY_POOL, NO_TELEMETRY_POOL)),
   );
   return { svc, sent: fake.sent };
 }
@@ -837,4 +854,39 @@ export async function theCountersMoved(fx: RenderIntegrationFixtures): Promise<v
     Number(sentAfter) === Number(sentBefore) + 1,
     `bms_report_deliveries_total{status="sent"} must move by +1; before "${sentBefore}", after "${sentAfter}"`,
   );
+}
+
+/**
+ * `F4.303` U13 (ADR 0108 Amendment 6 item 8) — a `trend_points` schedule whose one point has no
+ * active registration: the run still writes both files (never a silent skip), each row carries
+ * `template_id = 'trend_points'` and the template's filename, and the PDF object is a PDF. The
+ * point is left out, so no telemetry statement runs (`NO_TELEMETRY_POOL` would reject).
+ */
+export async function aTrendPointsScheduleWritesTwoTrendFiles(fx: RenderIntegrationFixtures): Promise<void> {
+  const tree = await treeOrganization(fx);
+  const asset = await treeAsset(fx, tree, await treeLocation(fx, tree, null));
+  const scheduleId = await insertSchedule(fx, {
+    organizationId: tree.organizationId,
+    formats: ["pdf", "xlsx"],
+    templateId: "trend_points",
+    params: { points: [{ assetId: asset, pointKey: "kw" }], compare: false },
+  });
+  const { svc } = service(fx);
+  const outcome = rendered(await run(fx, svc, payloadFor(scheduleId, PERIOD_1, tree.organizationId)));
+  assert(
+    outcome.written === 2 && JSON.stringify(outcome.trendSummary) === JSON.stringify({ points: 0, leftOut: 1, level: "1h" }),
+    `expected two files and the summary 0 kept, 1 left out at 1h (PERIOD_1 is a week); got ${outcome.written} and ${JSON.stringify(outcome.trendSummary)}`,
+  );
+  const templates = await fx.base.fleetDb.execute<{ template_id: string; filename: string }>(
+    sql`select template_id, filename from bms.report_files where schedule_id = ${scheduleId}::uuid order by format`,
+  );
+  const expected = [
+    { template_id: "trend_points", filename: `trend-points-${PERIOD_1.periodStart}-to-${PERIOD_1.periodEnd}.pdf` },
+    { template_id: "trend_points", filename: `trend-points-${PERIOD_1.periodStart}-to-${PERIOD_1.periodEnd}.xlsx` },
+  ];
+  assert(JSON.stringify(templates.rows) === JSON.stringify(expected), `expected ${JSON.stringify(expected)}; got ${JSON.stringify(templates.rows)}`);
+  const [pdfRow] = await readFileRows(fx.base.fleetDb, scheduleId);
+  assert(pdfRow !== undefined && pdfRow.format === "pdf", "the positive control failed: no pdf row was read back");
+  const bytes = await fetchObject(fx.base.client, pdfRow as FileRow);
+  assert(bytes.subarray(0, 4).toString("latin1") === "%PDF", `the trend_points PDF object must begin %PDF; it began ${JSON.stringify(bytes.subarray(0, 4).toString("latin1"))}`);
 }

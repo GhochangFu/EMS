@@ -1,6 +1,12 @@
 import { describe, it } from "vitest";
 
 import {
+  appendWidgetAnswers201OnItsPath,
+  appendWidgetIsDeclaredAfterPutWidgets,
+  appendWidgetRefusesAMalformedBodyWith400,
+  appendWidgetRefusesANonUuidIdWith400,
+  appendWidgetRefusesAnOperatorWith403BeforeTheService,
+  appendWidgetReturnsTheServiceAnswer,
   listForwardsTheLocationIdQueryToTheService,
   listForwardsTheSectionQueryToTheService,
   listRefusesAMalformedLocationIdWith400,
@@ -55,5 +61,23 @@ describe("F3.1b — DashboardBuilderController (stubbed service)", () => {
   });
   it("refuses a non-instant If-Match with 400 before the service (F4.247)", async () => {
     await putWidgetsRefusesANonInstantIfMatchWith400();
+  });
+  it("refuses an operator's append with 403 before the service (F4.303)", async () => {
+    await appendWidgetRefusesAnOperatorWith403BeforeTheService();
+  });
+  it("refuses a malformed append body with a flatten() 400 before the service (F4.303)", async () => {
+    await appendWidgetRefusesAMalformedBodyWith400();
+  });
+  it("refuses a non-uuid append id with 400 before the service (F4.303)", async () => {
+    await appendWidgetRefusesANonUuidIdWith400();
+  });
+  it("hands the user, the id and the parsed body to the append service and returns its answer (F4.303)", async () => {
+    await appendWidgetReturnsTheServiceAnswer();
+  });
+  it("answers 201 on POST :id/widgets/append (F4.303)", () => {
+    appendWidgetAnswers201OnItsPath();
+  });
+  it("declares appendWidget after putWidgets (F4.303)", () => {
+    appendWidgetIsDeclaredAfterPutWidgets();
   });
 });

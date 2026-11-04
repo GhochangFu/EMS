@@ -18,6 +18,9 @@ import {
   auditRowsCarryIdsOnly,
   runAtLocalRoundTripsAsHHMM,
   reenableMovesNextRunAtOnARealRow,
+  patchMovingATrendPointsScheduleAwayIs400,
+  patchMovingAnEnergyScheduleIsAdmitted,
+  theFiftyFirstScheduleCountsTrendPointsRows,
   openScheduleFixtures,
   type OpenScheduleFixtures,
   type ScheduleIntegrationFixtures,
@@ -135,5 +138,18 @@ describe.skipIf(!connectionString || !storageConfig)("F3.5b — the schedule rou
 
   it("reenableMovesNextRunAtOnARealRow", async () => {
     await reenableMovesNextRunAtOnARealRow(fx);
+  });
+
+  it("F4.303 a PATCH moving a trend_points schedule away from its point's site is a 400", async () => {
+    await patchMovingATrendPointsScheduleAwayIs400(fx);
+  });
+
+  it("F4.303 the same PATCH on an energy_consumption schedule is admitted", async () => {
+    await patchMovingAnEnergyScheduleIsAdmitted(fx);
+  });
+
+  // It fills this open's cap organization to the cap for its own duration (and deletes the fillers itself).
+  it("F4.303 the cap counts trend_points rows: the 51st schedule is a 409", async () => {
+    await theFiftyFirstScheduleCountsTrendPointsRows(fx);
   });
 });
