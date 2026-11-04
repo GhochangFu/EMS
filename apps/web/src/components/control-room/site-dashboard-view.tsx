@@ -1,12 +1,15 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { DashboardDto } from "@bms/shared";
+import { useState } from "react";
+import type { DashboardDto, UserRole } from "@bms/shared";
 import { Link, Navigate, useLocation } from "react-router-dom";
 
 import { fetchDashboard } from "../../api/dashboards";
 import { useTabMarkers } from "../../hooks/use-tab-markers";
+import { canAuthorDashboards } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { FOCUS_OUTLINE_CLASS } from "../../lib/focus-classes";
 import { DashboardLiveCanvas } from "../dashboards/dashboard-live-canvas";
+import { TrendStripWizard } from "../dashboards/trend-strip-wizard";
 import { TabStatusMarker } from "../dashboards/tab-status-marker";
 import { SectionCard } from "../section-card";
 import { siteTabHref, tabAccessibleName } from "../widgets/site-widget-parts";
@@ -20,6 +23,8 @@ type SiteDashboardViewProps = {
   tab: string | undefined;
   /** `F3.77` follow-up (plan D6): rendered inside `WallFrame` — no visible section title, no `Open in Dashboards`. */
   wall?: boolean;
+  /** `F4.306` U13 — the user's role; an authoring role sees `Set up trend strips`. The wall passes none. */
+  role?: UserRole;
 };
 
 /**
@@ -75,14 +80,22 @@ const SITE_VIEW_RESOLVE_PREFIX = ["control-room", "site-view"] as const;
  * plain `<section>` whose `h2` (the dashboard's name) is `sr-only`, so the heading order holds
  * (the bar's `h1`, this `h2`, the widgets' `h3`) while the screen does not repeat the site name;
  * there is no `Open in Dashboards` link. The tab strip stays: a tab is still chosen by hand.
+ *
+ * **Trend strips (`F4.306` U13, ADR 0108 Amendment 7 item 5).** Off the wall, an authoring role
+ * (`canAuthorDashboards`, the Pin gate; owner PR 2 Q1) on a dashboard with a site sees
+ * `Set up trend strips` beside `Open in Dashboards`. It opens the wizard in `append` mode: Finish
+ * posts once through the trend arm, then this view's read is invalidated, so the canvas draws the
+ * stored strips. The server decides the dashboard; a refused user sees the wizard's fixed sentence.
  */
-export function SiteDashboardView({ slug, organizationId, locationId, tab, wall = false }: SiteDashboardViewProps) {
+export function SiteDashboardView({ slug, organizationId, locationId, tab, wall = false, role }: SiteDashboardViewProps) {
   const queryClient = useQueryClient();
   const { search } = useLocation();
+  const detailKey = ["dashboards", "detail", slug, organizationId] as const;
   const dashboardQ = useQuery({
-    queryKey: ["dashboards", "detail", slug, organizationId],
+    queryKey: detailKey,
     queryFn: () => fetchDashboard(slug, organizationId),
   });
+  const [stripWizard, setStripWizard] = useState(false);
 
   const tryAgain = () => {
     void queryClient.invalidateQueries({ queryKey: [...SITE_VIEW_RESOLVE_PREFIX] });
@@ -153,18 +166,48 @@ export function SiteDashboardView({ slug, organizationId, locationId, tab, wall 
     );
   }
 
+  const dashboard = dashboardQ.data;
+  const stripSite = dashboard !== undefined && role !== undefined && canAuthorDashboards(role) ? dashboard.locationId : null;
+
   return (
     <SectionCard
       title={name}
       actions={
-        <Link
-          to={`/dashboards/${encodeURIComponent(slug)}?organizationId=${encodeURIComponent(organizationId)}`}
-          className="text-sm font-semibold text-accent-strong hover:underline"
-        >
-          Open in Dashboards
-        </Link>
+        <div className="flex flex-wrap items-center gap-3">
+          {stripSite !== null ? (
+            <button
+              type="button"
+              aria-expanded={stripWizard}
+              onClick={() => setStripWizard((open) => !open)}
+              className="surface-button px-2 py-1 text-xs"
+            >
+              Set up trend strips
+            </button>
+          ) : null}
+          <Link
+            to={`/dashboards/${encodeURIComponent(slug)}?organizationId=${encodeURIComponent(organizationId)}`}
+            className="text-sm font-semibold text-accent-strong hover:underline"
+          >
+            Open in Dashboards
+          </Link>
+        </div>
       }
     >
+      {stripWizard && dashboard !== undefined && stripSite !== null ? (
+        <div className="mb-3">
+          <TrendStripWizard
+            dashboard={{ id: dashboard.id, locationId: stripSite, tabs: dashboard.tabs, widgets: dashboard.widgets }}
+            mode={{
+              kind: "append",
+              onDone: () => {
+                void queryClient.invalidateQueries({ queryKey: [...detailKey] });
+                setStripWizard(false);
+              },
+            }}
+            onClose={() => setStripWizard(false)}
+          />
+        </div>
+      ) : null}
       {body}
     </SectionCard>
   );

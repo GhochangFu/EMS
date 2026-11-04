@@ -32,6 +32,7 @@ import {
   dashboardOutOfScopeShowsItsBanner,
   dashboardRemovedShowsItsBanner,
   dashboardRendersSiteDashboardView,
+  dashboardViewGetsTheRole,
   dashboardShowsNoInterimCard,
   dashboardShowsNoNoticeBanner,
   generatedRendersTheComponentWithLocationId,
@@ -96,6 +97,10 @@ describe("F3.66 U4 ControlRoomSitePage", () => {
 
   it("V7 hosts SiteDashboardView with the slug and the site's organization id", async () => {
     await dashboardRendersSiteDashboardView();
+  });
+
+  it("V7e hands the user's role to SiteDashboardView (F4.306 U13)", async () => {
+    await dashboardViewGetsTheRole();
   });
 
   it("V7b shows no interim card and no real dashboards link", async () => {
