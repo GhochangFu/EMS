@@ -167,6 +167,8 @@ const MODULES: readonly string[] = [
   // F4.306 PR 2 U10: the site trend-points client and the builder's selection summary.
   "apps/web/src/api/site-trend-points.ts",
   "apps/web/src/components/dashboards/trend-strip-selection-summary.tsx",
+  // F4.306 PR 2 U11: the wizard's pure module.
+  "apps/web/src/lib/trend-strip-wizard.ts",
 ];
 
 /**
@@ -204,7 +206,6 @@ const MODULES: readonly string[] = [
  * wizard dialog), so the list is empty again by U12.
  */
 const PENDING_MODULES: readonly string[] = [
-  "apps/web/src/lib/trend-strip-wizard.ts",
   "apps/web/src/components/dashboards/trend-strip-wizard.tsx",
 ];
 
