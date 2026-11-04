@@ -4,9 +4,12 @@ import {
   TREND_STRIP_MAX_SERIES,
   TREND_STRIP_OVERVIEW_POINTS_PER_SEGMENT,
   TREND_STRIP_RANGES,
+  TREND_STRIP_QUERY_POINTS_MAX,
+  TREND_STRIP_QUERY_SEGMENTS_MAX,
   siteTrendStripQuerySchema,
   siteTrendStripSchema,
 } from "./trend-strip";
+import { TREND_STRIP_POINT_CODE_MAX, TREND_STRIP_SEGMENT_CODE_MAX } from "./trend-strip-widget";
 
 /**
  * `F4.301` U1 (ADR 0108 Amendment 2, items 3, 5 and 8) — the Control Room
@@ -90,7 +93,7 @@ export function assertANonUuidAssetGroupIdIsRefused(): void {
 export function assertAnUnknownKeyIsRefused(): void {
   assert(siteTrendStripQuerySchema.safeParse({ range: "24h" }).success, "the positive neighbour must parse");
   assert(
-    !siteTrendStripQuerySchema.safeParse({ range: "24h", points: "kw" }).success,
+    !siteTrendStripQuerySchema.safeParse({ range: "24h", colors: "x" }).success,
     "the query is .strict(): an unknown key must be refused",
   );
 }
@@ -167,4 +170,93 @@ export function assertTheMaxSeriesIs180(): void {
 
 export function assertTheOverviewPointsPerSegmentIs3(): void {
   assert(TREND_STRIP_OVERVIEW_POINTS_PER_SEGMENT === 3, `got ${TREND_STRIP_OVERVIEW_POINTS_PER_SEGMENT}`);
+}
+
+/*
+ * `F4.306` U2 (ADR 0108 Amendment 7) — the selection on the route query: `segments` is
+ * `code(,code)*`, `points` is `code:code(,code:code)*`, each half a catalog code. The length
+ * bounds are built from the widget config's per-entry limits, so a stored point whose code is
+ * 128 characters long is a query the route accepts. "`points` without `segments`" parses here;
+ * the 400 is the service's (U4).
+ */
+
+function query(extra: Record<string, unknown>) {
+  return siteTrendStripQuerySchema.safeParse({ range: "24h", ...extra });
+}
+
+export function assertRange24hParsesToExactlyTheRange(): void {
+  const parsed = siteTrendStripQuerySchema.safeParse({ range: "24h" });
+  assert(parsed.success, "range=24h alone must parse");
+  assert(
+    JSON.stringify(parsed.data) === JSON.stringify({ range: "24h" }),
+    `range=24h must parse to exactly { range: "24h" }, got ${JSON.stringify(parsed.data)}`,
+  );
+}
+
+export function assertOneSegmentParses(): void {
+  const parsed = query({ segments: "hvac" });
+  assert(parsed.success, `segments=hvac must parse: ${JSON.stringify(parsed.error?.issues)}`);
+}
+
+export function assertTwoSegmentsParse(): void {
+  const parsed = query({ segments: "a,b" });
+  assert(parsed.success, `segments=a,b must parse: ${JSON.stringify(parsed.error?.issues)}`);
+  assert(parsed.data?.segments === "a,b", `segments must stay the raw string, got ${JSON.stringify(parsed.data?.segments)}`);
+}
+
+export function assertAnEmptySegmentEntryIsRefused(): void {
+  assert(query({ segments: "a,b" }).success, "the positive neighbour segments=a,b must parse");
+  assert(!query({ segments: "a,,b" }).success, "segments=a,,b must be refused");
+}
+
+export function assertATrailingSegmentCommaIsRefused(): void {
+  assert(query({ segments: "a" }).success, "the positive neighbour segments=a must parse");
+  assert(!query({ segments: "a," }).success, "segments=a, must be refused");
+}
+
+export function assertASegmentOutsideTheCatalogPatternIsRefused(): void {
+  assert(query({ segments: "a_b-1" }).success, "the positive neighbour segments=a_b-1 must parse");
+  assert(!query({ segments: "a.b" }).success, "segments=a.b must be refused (CATALOG_CODE_PATTERN)");
+}
+
+export function assertAnOverLongSegmentsIsRefused(): void {
+  const code = "s".repeat(TREND_STRIP_SEGMENT_CODE_MAX);
+  const list = Array.from({ length: 30 }, () => code).join(",");
+  assert(list.length <= TREND_STRIP_QUERY_SEGMENTS_MAX, `30 longest codes (${list.length}) must fit the bound`);
+  assert(query({ segments: list }).success, "30 segment codes of the longest length must parse");
+  const over = "s".repeat(TREND_STRIP_QUERY_SEGMENTS_MAX + 1);
+  assert(!query({ segments: over }).success, `a segments of ${over.length} characters must be refused`);
+}
+
+export function assertTwoPointsParse(): void {
+  const parsed = query({ segments: "hvac,ups", points: "hvac:kw,ups:soc" });
+  assert(parsed.success, `points=hvac:kw,ups:soc must parse: ${JSON.stringify(parsed.error?.issues)}`);
+}
+
+export function assertABarePointCodeIsRefused(): void {
+  assert(query({ segments: "hvac", points: "hvac:kw" }).success, "the positive neighbour points=hvac:kw must parse");
+  assert(!query({ segments: "hvac", points: "kw" }).success, "a bare code in points must be refused");
+  assert(!query({ segments: "hvac", points: "hvac:kw,kw" }).success, "a bare second code in points must be refused");
+}
+
+export function assertAnEmptyPointEntryIsRefused(): void {
+  assert(!query({ segments: "hvac", points: "hvac:kw,,hvac:kva" }).success, "an empty points entry must be refused");
+  assert(!query({ segments: "hvac", points: "hvac:kw," }).success, "a trailing points comma must be refused");
+}
+
+export function assertTheLongestStoredPointParses(): void {
+  const segment = "s".repeat(TREND_STRIP_SEGMENT_CODE_MAX);
+  const entry = `${segment}:${"p".repeat(TREND_STRIP_POINT_CODE_MAX)}`;
+  const list = Array.from({ length: 30 }, () => entry).join(",");
+  assert(list.length <= TREND_STRIP_QUERY_POINTS_MAX, `30 longest entries (${list.length}) must fit the bound`);
+  assert(query({ segments: segment, points: list }).success, "30 points of the longest stored length must parse");
+  assert(
+    !query({ segments: segment, points: "a:" + "p".repeat(TREND_STRIP_QUERY_POINTS_MAX) }).success,
+    "a points over the bound must be refused",
+  );
+}
+
+export function assertPointsWithoutSegmentsParses(): void {
+  const parsed = query({ points: "hvac:kw" });
+  assert(parsed.success, `points without segments must parse here (the 400 is the service's): ${JSON.stringify(parsed.error?.issues)}`);
 }
