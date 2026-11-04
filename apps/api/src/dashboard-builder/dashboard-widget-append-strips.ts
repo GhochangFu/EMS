@@ -20,9 +20,9 @@ import type {
   WidgetWriteBody,
 } from "@bms/shared";
 
-import type { MasterDataAuditService } from "../admin/master-data-audit.service";
+import type { AuditInput } from "../admin/master-data-audit.service";
 import type { AccessControlService } from "../auth/access-control.service";
-import { withTenant } from "../database/tenant-context";
+import { type BmsTx, withTenant } from "../database/tenant-context";
 import type { TrendPointsService } from "../trend-points/trend-points.service";
 import { readDashboardTabs } from "./dashboard-tabs-write";
 import { resolveBoundPoints } from "./dashboard-point-scope";
@@ -40,7 +40,12 @@ export type AppendStripsDeps = {
   readonly tenantDb: BmsDb;
   readonly dashboards: DashboardsService;
   readonly accessControl: AccessControlService;
-  readonly audit: MasterDataAuditService;
+  /**
+   * The audit write, inside the transaction. The service's `appendStrips` holds the
+   * `MasterDataAuditService` call, so the F3.85 ledger (`tests/f3.85-audit-via-mark.test.ts`)
+   * sees it in the method its row names.
+   */
+  readonly writeAudit: (input: AuditInput, tx: BmsTx) => Promise<void>;
   readonly trendPoints: TrendPointsService;
 };
 
@@ -179,7 +184,7 @@ export async function appendTrendStrips(
     }
 
     // (4) The audit row — ids and counts only.
-    await deps.audit.write(
+    await deps.writeAudit(
       {
         actor: jwt,
         action: "master.dashboard.widgets.append",

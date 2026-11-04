@@ -80,7 +80,7 @@ export class DashboardWidgetAppendService {
         tenantDb: this.tenantDb,
         dashboards: this.dashboards,
         accessControl: this.accessControl,
-        audit: this.audit,
+        writeAudit: (input, tx) => this.audit.write(input, tx),
         trendPoints: this.trendPoints,
       },
       jwt,

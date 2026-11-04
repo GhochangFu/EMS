@@ -262,7 +262,7 @@ describe.skipIf(!connectionString)("F4.303 — DashboardWidgetAppendService.appe
     await aTabsStripIsReplacedInPlace(ctx);
   }, 60_000);
 
-  it("F4.306 T5: a strip is inserted at gridX 0, the foot of its tab, 12 by 4", async () => {
+  it("F4.306 T5: a strip is inserted at gridX 0, the foot of its tab, full width, strip height", async () => {
     await aStripIsInsertedAtTheFootOfItsTab(ctx);
   }, 60_000);
 
