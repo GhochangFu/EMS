@@ -11,3 +11,4 @@ export * from "./site-control-room-views-schema";
 export * from "./mimic-layouts-schema";
 export * from "./copilot-schema";
 export * from "./trend-points-schema";
+export * from "./calc-backfill-schema";

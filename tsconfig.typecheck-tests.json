@@ -257,6 +257,8 @@
     "tests/f4.300-ups-assets-seed.integration.test.ts",
     "tests/f4.300-trend-points-admin-reachable.test.ts",
     "tests/f4.300-sim-ups-domain.test.ts",
-    "tests/f4.299-abnormal-is-advisory.test.ts"
+    "tests/f4.299-abnormal-is-advisory.test.ts",
+    "tests/f4.311-calc-backfill-runs-schema.test.ts",
+    "tests/f4.311-calc-backfill-runs-schema.integration.test.ts"
   ]
 }
