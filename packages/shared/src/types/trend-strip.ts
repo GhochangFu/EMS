@@ -17,3 +17,6 @@ export type SiteTrendStripDto = z.infer<typeof TS.siteTrendStripSchema>;
 
 /** `F4.305` — the `trend_strip` widget's stored config. */
 export type TrendStripWidgetConfig = z.infer<typeof TSW.trendStripWidgetConfigSchema>;
+
+/** `F4.306` — one of the eight series colour roles a selected point draws in. */
+export type SeriesRole = z.infer<typeof TSW.seriesRoleSchema>;

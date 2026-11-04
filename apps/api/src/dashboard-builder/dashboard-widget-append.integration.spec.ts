@@ -10,17 +10,25 @@ import { expect } from "vitest";
 
 import {
   appendChartWidgetResponseSchema,
+  appendTrendStripWidgetsBodySchema,
+  appendTrendStripWidgetsResponseSchema,
+  DASHBOARD_GRID,
   putDashboardWidgetsBodySchema,
   TAB_KEY_REQUIRED_MESSAGE,
   TAB_KEY_UNKNOWN_MESSAGE,
+  TREND_STRIP_TAB_UNKNOWN_MESSAGE,
+  TREND_STRIP_WIDGET_ROWS,
   widgetCapMessage,
   type AppendChartWidgetBody,
+  type AppendTrendStripWidgetsBody,
   type IfMatch,
   type JwtPayload,
 } from "@bms/shared";
 
 import type { DashboardsService } from "./dashboards.service";
+import { trendStripTabRepeatMessage } from "./dashboard-widget-append-strips";
 import type { DashboardWidgetAppendService } from "./dashboard-widget-append.service";
+import { trendStripPointOffListMessage } from "./trend-strip-selection.check";
 
 /**
  * `F4.303` U14 / ADR 0108 Amendment 6 item 5 — `POST /dashboards/:id/widgets/append` against a
@@ -52,6 +60,9 @@ export type AppendCtx = {
   scopedLocationId: string;
   /** A fresh dashboard for one case: organization-wide unless `locationId` is given. */
   newDashboard: (options?: { locationId?: string }) => Promise<string>;
+  /** `F4.306` U7 — a segment whose effective trend-point list has a point, and that point's code. */
+  segment: string;
+  pointCode: string;
 };
 
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -436,4 +447,259 @@ export async function theAnswerParsesAndCarriesThePairs(ctx: AppendCtx): Promise
     [ctx.readable.assetId, ctx.readable.pointKeys[1], "series", 0],
     [ctx.readable.assetId, ctx.readable.pointKeys[0], "series", 1],
   ]);
+}
+
+// ---------------------------------------------------------------------------
+// `F4.306` U7 (ADR 0108 Amendment 7) — the trend arm, `appendStrips`: the row and
+// `canManageDashboard` (404) → `assertTrendStripSelections` (400) → one tenant transaction (the
+// stamp, the tab rules per strip, `placeTrendStrip`, replace or insert, the 409 that rolls back
+// every strip, one audit row). The chart cases above run unchanged beside these.
+// ---------------------------------------------------------------------------
+
+/** A catalog-pattern code no seeded `point_keys` row carries. */
+const OFF_LIST = "f4306zzoff";
+
+const stripBody = (strips: { tabKey?: string; config?: Record<string, unknown> }[]): AppendTrendStripWidgetsBody =>
+  appendTrendStripWidgetsBodySchema.parse({
+    widgetType: "trend_strip",
+    strips: strips.map((strip) => ({ ...strip, config: { defaultRange: "24h", ...strip.config } })),
+  });
+
+/** Writes `tabs` and full write widgets through the real `PUT :id/widgets`. */
+async function seedRaw(ctx: AppendCtx, id: string, tabs: readonly string[], widgets: readonly unknown[]): Promise<void> {
+  await ctx.dashboards.putWidgets(
+    ctx.admin,
+    id,
+    putDashboardWidgetsBodySchema.parse({ tabs: tabs.map((key, sortOrder) => ({ key, label: key, sortOrder })), widgets }),
+  );
+}
+
+const storedStrip = (tabKey: string, gridY: number) => ({
+  widgetType: "trend_strip",
+  title: "F4.306 stored strip",
+  tabKey,
+  gridX: 0,
+  gridY,
+  gridW: 12,
+  gridH: 4,
+  config: { defaultRange: "7d" },
+  points: [],
+});
+
+const rail = (tabKey: string, gridY: number, gridH = 2) => ({
+  widgetType: "active_alarms_rail",
+  title: "F4.306 rail",
+  tabKey,
+  gridX: 0,
+  gridY,
+  gridW: 3,
+  gridH,
+  config: {},
+  points: [],
+});
+
+async function widgetRow(ctx: AppendCtx, widgetId: string): Promise<Record<string, unknown> | undefined> {
+  const { rows } = await ctx.superuserPool.query("SELECT * FROM bms.dashboard_widgets WHERE id = $1", [widgetId]);
+  return rows[0] as Record<string, unknown> | undefined;
+}
+
+/** T1 — a caller who cannot manage the dashboard is a 404 before the selection's 400, and `updated_at` does not move. */
+export async function theTrendArm404PrecedesTheSelection400(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard();
+  const before = await storedStamp(ctx, id);
+  const offList = stripBody([{ config: { segments: [ctx.segment], points: [`${ctx.segment}:${OFF_LIST}`] } }]);
+  const err = await caught(() => ctx.append.appendStrips(ctx.locationAdmin, id, offList));
+  expect(err).toBeInstanceOf(NotFoundException);
+  expect(await storedStamp(ctx, id)).toBe(before);
+}
+
+/** T1 — on a site dashboard, a point off its list is a 400 naming indexes only, with `updated_at` unchanged. */
+export async function anOffListSelectionIs400WithTheStampUnchanged(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard({ locationId: ctx.scopedLocationId });
+  const before = await storedStamp(ctx, id);
+  const err = await caught(() =>
+    ctx.append.appendStrips(
+      ctx.admin,
+      id,
+      stripBody([{ config: { segments: [ctx.segment], points: [`${ctx.segment}:${OFF_LIST}`] } }]),
+    ),
+  );
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect((err as Error).message).toBe(trendStripPointOffListMessage(0, 0));
+  expect((err as Error).message).not.toMatch(OFF_LIST);
+  expect(await storedStamp(ctx, id)).toBe(before);
+  expect(await widgetsOnTab(ctx, id, null)).toBe(0);
+}
+
+/** T1's positive neighbour — the same kind of dashboard takes a selection on its list, stored as sent. */
+export async function aSelectionOnTheListIsAppended(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard({ locationId: ctx.scopedLocationId });
+  const entry = `${ctx.segment}:${ctx.pointCode}`;
+  const config = { defaultRange: "24h", segments: [ctx.segment], points: [entry], colors: { [entry]: "series-3" } };
+  const answer = await ctx.append.appendStrips(ctx.admin, id, stripBody([{ config }]));
+  expect(answer.widgets).toHaveLength(1);
+  expect((await widgetRow(ctx, answer.widgets[0]?.id ?? ""))?.config).toStrictEqual(config);
+}
+
+/** T2 — two strips for one tab is a 400 naming the later strip's index, and the stamp does not move. */
+export async function aRepeatedTabKeyIs400(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard();
+  await seedWidgets(ctx, id, ["ops", "other"], []);
+  const before = await storedStamp(ctx, id);
+  const err = await caught(() =>
+    ctx.append.appendStrips(ctx.admin, id, stripBody([{ tabKey: "other" }, { tabKey: "ops" }, { tabKey: "other" }])),
+  );
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect((err as Error).message).toBe(trendStripTabRepeatMessage(2));
+  expect(await storedStamp(ctx, id)).toBe(before);
+  expect(await widgetsOnTab(ctx, id, "ops")).toBe(0);
+}
+
+/** T3 — the trend arm keeps the chart arm's tab rules: a missing `tabKey`, an unknown one, one on no tabs. */
+export async function theStripArmKeepsTheTabRules(ctx: AppendCtx): Promise<void> {
+  const tabbed = await ctx.newDashboard();
+  await seedWidgets(ctx, tabbed, ["ops"], []);
+  const missing = await caught(() => ctx.append.appendStrips(ctx.admin, tabbed, stripBody([{}])));
+  expect((missing as Error).message).toBe(TAB_KEY_REQUIRED_MESSAGE);
+  const unknown = await caught(() => ctx.append.appendStrips(ctx.admin, tabbed, stripBody([{ tabKey: "nope" }])));
+  expect((unknown as Error).message).toBe(TAB_KEY_UNKNOWN_MESSAGE);
+  const untabbed = await ctx.newDashboard();
+  const onNone = await caught(() => ctx.append.appendStrips(ctx.admin, untabbed, stripBody([{ tabKey: "ops" }])));
+  expect((onNone as Error).message).toBe("This dashboard has no tabs");
+}
+
+/** T3 — a strip's `config.tabKey` must name a tab of the dashboard; one that does is appended. */
+export async function aConfigTabKeyNamingNoTabIs400(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard();
+  await seedWidgets(ctx, id, ["ops"], []);
+  const err = await caught(() =>
+    ctx.append.appendStrips(ctx.admin, id, stripBody([{ tabKey: "ops", config: { tabKey: "elsewhere" } }])),
+  );
+  expect(err).toBeInstanceOf(BadRequestException);
+  expect((err as Error).message).toBe(TREND_STRIP_TAB_UNKNOWN_MESSAGE);
+  const ok = await ctx.append.appendStrips(ctx.admin, id, stripBody([{ tabKey: "ops", config: { tabKey: "ops" } }]));
+  expect(ok.widgets).toHaveLength(1);
+}
+
+/**
+ * T4 — a tab's strip is replaced: the row keeps its id, title and geometry, only `config` moves,
+ * and every other row of the dashboard is byte-identical.
+ */
+export async function aTabsStripIsReplacedInPlace(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard();
+  await seedRaw(ctx, id, ["ops", "other"], [rail("ops", 0), storedStrip("ops", 2), storedStrip("other", 0)]);
+  const { rows } = await ctx.superuserPool.query<{ id: string }>(
+    `SELECT w.id FROM bms.dashboard_widgets w JOIN bms.dashboard_tabs t ON t.id = w.tab_id
+      WHERE w.dashboard_id = $1 AND t.tab_key = 'ops' AND w.widget_type = 'trend_strip'`,
+    [id],
+  );
+  const stripId = rows[0]?.id ?? "";
+  const rowBefore = await widgetRow(ctx, stripId);
+  const othersBefore = await snapshotExcept(ctx, id, stripId);
+  const answer = await ctx.append.appendStrips(
+    ctx.admin,
+    id,
+    stripBody([{ tabKey: "ops", config: { defaultRange: "30d" } }]),
+  );
+  expect(answer.widgets.map((widget) => widget.id)).toEqual([stripId]);
+  expect(await widgetRow(ctx, stripId)).toEqual({ ...rowBefore, config: { defaultRange: "30d" } });
+  expect(await snapshotExcept(ctx, id, stripId)).toEqual(othersBefore);
+  expect(await widgetsOnTab(ctx, id, "ops")).toBe(2);
+}
+
+/** T5 — a tab without a strip takes one at `gridX 0`, its foot, the grid's full width and the strip's rows. */
+export async function aStripIsInsertedAtTheFootOfItsTab(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard();
+  await seedRaw(ctx, id, ["ops", "other"], [rail("ops", 0, 3), rail("ops", 1, 5), rail("other", 10, 5)]);
+  const answer = await ctx.append.appendStrips(ctx.admin, id, stripBody([{ tabKey: "ops" }]));
+  const row = await widgetRow(ctx, answer.widgets[0]?.id ?? "");
+  expect([row?.widget_type, row?.grid_x, row?.grid_y, row?.grid_w, row?.grid_h, row?.config]).toEqual([
+    "trend_strip",
+    0,
+    6,
+    DASHBOARD_GRID.columns,
+    TREND_STRIP_WIDGET_ROWS,
+    { defaultRange: "24h" },
+  ]);
+}
+
+/**
+ * T6 — 40 widgets on tab `b` and a valid strip for tab `a` first: the 409 names `b` and rolls back
+ * every strip, so tab `a` and the stamp are unchanged.
+ */
+export async function aFullTabRollsBackEveryStrip(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard();
+  await seedWidgets(ctx, id, ["a", "b"], [{ tabKey: "a", gridY: 0, gridH: 2 }, ...fillers("b", 40)]);
+  const before = await storedStamp(ctx, id);
+  const rowsBefore = await snapshotExcept(ctx, id, null);
+  const err = await caught(() =>
+    ctx.append.appendStrips(ctx.admin, id, stripBody([{ tabKey: "a" }, { tabKey: "b" }])),
+  );
+  expect(err).toBeInstanceOf(ConflictException);
+  expect((err as Error).message).toBe(widgetCapMessage("b"));
+  expect(await widgetsOnTab(ctx, id, "a")).toBe(1);
+  expect(await snapshotExcept(ctx, id, null)).toEqual(rowsBefore);
+  expect(await storedStamp(ctx, id)).toBe(before);
+}
+
+/** T6's positive neighbour — a full tab whose strip is replaced is not a 409: a replace adds no widget. */
+export async function aFullTabStillReplacesItsStrip(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard();
+  await seedRaw(ctx, id, ["b"], [storedStrip("b", 0), ...Array.from({ length: 39 }, (_, n) => rail("b", 4 + n, 1))]);
+  const answer = await ctx.append.appendStrips(ctx.admin, id, stripBody([{ tabKey: "b" }]));
+  expect(answer.widgets).toHaveLength(1);
+  expect(await widgetsOnTab(ctx, id, "b")).toBe(40);
+}
+
+/** T7 — the arm moves `updated_at`, answers the stored value, and a save with the old `If-Match` is the 412. */
+export async function theStripArmMovesUpdatedAtAndAStaleSaveIs412(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard();
+  await ctx.superuserPool.query("UPDATE bms.dashboards SET updated_at = '2026-10-20 10:00:00.123+00' WHERE id = $1", [id]);
+  const answer = await ctx.append.appendStrips(ctx.admin, id, stripBody([{}]));
+  const stored = await storedStamp(ctx, id);
+  expect(Date.parse(stored)).toBeGreaterThan(Date.parse("2026-10-20T10:00:00.123Z"));
+  expect(answer.updatedAt).toBe(stored);
+  const err = await caught(() =>
+    ctx.dashboards.putWidgets(
+      ctx.admin,
+      id,
+      putDashboardWidgetsBodySchema.parse({ widgets: [] }),
+      "2026-10-20T10:00:00.123Z" as IfMatch,
+    ),
+  );
+  expect(err).toBeInstanceOf(PreconditionFailedException);
+}
+
+/** T8 — one audit row, ids and counts only: no segment or point code of the selection. */
+export async function theStripAuditRowCarriesIdsAndCountsOnly(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard({ locationId: ctx.scopedLocationId });
+  await seedRaw(ctx, id, ["ops", "other"], [storedStrip("other", 0)]);
+  const entry = `${ctx.segment}:${ctx.pointCode}`;
+  await ctx.append.appendStrips(
+    ctx.admin,
+    id,
+    stripBody([{ tabKey: "ops", config: { segments: [ctx.segment], points: [entry] } }, { tabKey: "other" }]),
+  );
+  const { rows } = await ctx.superuserPool.query<{ payload: Record<string, unknown> }>(
+    "SELECT payload FROM bms.audit_log WHERE entity_id = $1 AND action = 'master.dashboard.widgets.append' ORDER BY created_at",
+    [id],
+  );
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.payload).toEqual({ dashboardId: id, tabKeys: ["ops", "other"], inserted: 1, updated: 1 });
+  expect(JSON.stringify(rows[0]?.payload)).not.toMatch(ctx.pointCode);
+}
+
+/** T9 — the answer parses with its contract and lists one widget per strip, in body order. */
+export async function theStripAnswerParsesInBodyOrder(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard();
+  await seedWidgets(ctx, id, ["a", "b"], []);
+  const answer = await ctx.append.appendStrips(ctx.admin, id, stripBody([{ tabKey: "b" }, { tabKey: "a" }]));
+  const parsed = appendTrendStripWidgetsResponseSchema.parse(answer);
+  const { rows } = await ctx.superuserPool.query<{ id: string; tab_key: string }>(
+    "SELECT id, tab_key FROM bms.dashboard_tabs WHERE dashboard_id = $1",
+    [id],
+  );
+  const tabIdOf = (key: string) => rows.find((row) => row.tab_key === key)?.id;
+  expect(parsed.widgets.map((widget) => widget.tabId)).toEqual([tabIdOf("b"), tabIdOf("a")]);
+  expect(parsed.widgets.map((widget) => widget.widgetType)).toEqual(["trend_strip", "trend_strip"]);
 }

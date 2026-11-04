@@ -516,10 +516,17 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   "createReportScheduleBodySchema/params|1/points[]": STRICT(CALLER_ERROR),
   // `F4.303` U10 (Amendment 6 item 5): the append body. One producer (the Pin dialog); the key a
   // client would try is `widgetType` or `gridX`/`gridY`, which the server fixes: dropped and
-  // answered 201, it would read as accepted.
-  appendChartWidgetBodySchema: STRICT(CALLER_ERROR),
-  "appendChartWidgetBodySchema/config": STRICT(CALLER_ERROR),
-  "appendChartWidgetBodySchema/points[]": STRICT(CALLER_ERROR),
+  // answered 201, it would read as accepted. `F4.306` U6 (Amendment 7): the body is now the union
+  // `appendWidgetBodySchema`; arm 0 is the chart body above, arm 1 the `trend_strip` body. Arm 1
+  // is strict for the same reason and one more: `widgetType` plus a chart key must parse as
+  // neither arm, and a strip's config key the server does not read (`series`) must be a 400,
+  // not a stored widget that silently draws today's strip.
+  "appendWidgetBodySchema|0": STRICT(CALLER_ERROR),
+  "appendWidgetBodySchema|0/config": STRICT(CALLER_ERROR),
+  "appendWidgetBodySchema|0/points[]": STRICT(CALLER_ERROR),
+  "appendWidgetBodySchema|1": STRICT(CALLER_ERROR),
+  "appendWidgetBodySchema|1/strips[]": STRICT(CALLER_ERROR),
+  "appendWidgetBodySchema|1/strips[]/config": STRICT(CALLER_ERROR),
   // The same producer and the same key; a PATCH that names `nextRunAt` is a
   // client trying to move a run by hand, which only the three period fields
   // and a re-enable can do (Q-3). `{}` is refused by the schema's own refine.

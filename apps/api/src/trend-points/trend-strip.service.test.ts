@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  aDuplicateEntryBindsEachPairOnce,
+  aDuplicateEntryCountsOnce,
   aGlobalAdminReadsTheSitesAssetIds,
   aGroupBindsTheAssetReadToItsMembers,
   aGroupIntersectsWithReadable,
@@ -9,6 +11,7 @@ import {
   aLoweredCapRefusesTheStripExportBeforeTelemetry,
   aNonEmptyIntersectionReadsTelemetryOnce,
   aScopedCallerReadsTheIntersection,
+  aSelectionKeepsTheScope,
   aStoredUtcReportsUtc,
   aStripExportOnAGroupOfAnotherSiteIsA404,
   aWholeSiteStripIsTheOverview,
@@ -17,7 +20,13 @@ import {
   everySeriesHasTheWindowsBuckets,
   forSiteRunsBeforeAnyPoolRead,
   noLocationZoneUsesTheOrganizations,
+  noSegmentsIsNoSelection,
+  noSelectionFrameIsTheGolden,
+  pointsWithSegmentsReadsTheChosenPoint,
+  pointsWithoutSegmentsIsA400BeforeTelemetry,
   theRealCapAdmitsTheStripExport,
+  theCsvOverASelectionCarriesOnlyTheChosenPoint,
+  theExportRefusesPointsWithoutSegments,
   theStripCsvOpensWithTheZoneRow,
   theStripExportMeansAreForSitesBuckets,
   theStripRowCountIsPairsTimesBuckets,
@@ -57,5 +66,18 @@ describe("F4.301 — SiteTrendStripService (ADR 0108 Amendment 2)", () => {
     it("the real cap admits the export and its one telemetry statement runs", () => theRealCapAdmitsTheStripExport());
     it("the row count is pairs × the window's buckets", () => theStripRowCountIsPairsTimesBuckets());
     it("the CSV opens with the zone row", () => theStripCsvOpensWithTheZoneRow());
+  });
+
+  describe("F4.306 — the widget selection (ADR 0108 Amendment 7)", () => {
+    it("no selection: JSON.stringify of the frame is the frozen golden", () => noSelectionFrameIsTheGolden());
+    it("points without segments is a 400 with no telemetry statement", () => pointsWithoutSegmentsIsA400BeforeTelemetry());
+    it("points with segments reads the chosen point once", () => pointsWithSegmentsReadsTheChosenPoint());
+    it("the export refuses points without segments", () => theExportRefusesPointsWithoutSegments());
+    it("a scoped caller gets no foreign pair beside the admin's both", () => aSelectionKeepsTheScope());
+    it("the CSV export over a selection carries only the chosen point", () =>
+      theCsvOverASelectionCarriesOnlyTheChosenPoint());
+    it("a duplicate segment or entry counts once", () => aDuplicateEntryCountsOnce());
+    it("no segments is no selection; segments alone has no entries", () => noSegmentsIsNoSelection());
+    it("a duplicate entry binds each pair once", () => aDuplicateEntryBindsEachPairOnce());
   });
 });

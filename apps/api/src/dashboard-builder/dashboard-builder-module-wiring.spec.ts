@@ -1,5 +1,6 @@
 import "reflect-metadata";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 
 import { expect } from "vitest";
@@ -14,6 +15,7 @@ import { DashboardBuilderModule } from "./dashboard-builder.module";
 import { DashboardWidgetAppendService } from "./dashboard-widget-append.service";
 import { MimicNodesService } from "./mimic-nodes.service";
 import { SiteWidgetsService } from "./site-widgets.service";
+import { TrendPointsService } from "../trend-points/trend-points.service";
 
 /**
  * `F3.32` U2 / ADR 0079 — the Nest module graph for `MimicNodesService`, which a green
@@ -160,7 +162,8 @@ export function assertDashboardWidgetAppendServiceDepsResolveWithinTheModule(): 
   const missingTokens = injectedTokens(DashboardWidgetAppendService).filter((token) => !byIdentity.has(token));
   expect(missingTokens.map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
   const classes = classTypedParams("dashboard-widget-append.service.ts", "DashboardWidgetAppendService");
-  expect(classes).toEqual(["DashboardsService", "AccessControlService", "MasterDataAuditService"]);
+  // `F4.306` U7 — the trend arm's selection check reads `TrendPointsService`, which the module provides (U5).
+  expect(classes).toEqual(["DashboardsService", "AccessControlService", "MasterDataAuditService", "TrendPointsService"]);
   expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
 }
 
@@ -169,4 +172,109 @@ export function assertControllerTakesDashboardWidgetAppendService(): void {
   expect(classTypedParams("dashboard-builder.controller.ts", "DashboardBuilderController")).toContain(
     "DashboardWidgetAppendService",
   );
+}
+
+/**
+ * `F4.306` U5 (ADR 0108 Amendment 7) — `DashboardsService` takes a `TrendPointsService` for the
+ * trend strip selection check. The module provides it, its two `@Inject` tokens resolve, and its
+ * class-typed parameters resolve by name; the positive control is that the scan finds the new
+ * parameter on `DashboardsService`, whose constructor default would otherwise hide a missing
+ * provider from every hand-built spec.
+ */
+export function assertModuleProvidesTrendPointsService(): void {
+  expect(moduleList(DashboardBuilderModule, "providers").map(tokenOf)).toContain(TrendPointsService);
+}
+
+export function assertTrendPointsServiceDepsResolveWithinTheModule(): void {
+  const { byIdentity, byName } = resolvableTokens();
+  expect(injectedTokens(TrendPointsService)).toEqual([FLEET_DRIZZLE, TENANT_DRIZZLE]);
+  const missingTokens = injectedTokens(TrendPointsService).filter((token) => !byIdentity.has(token));
+  expect(missingTokens.map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
+  const src = readFileSync(join(repoRoot(), "apps/api/src/trend-points/trend-points.service.ts"), "utf8");
+  const ctor = src.slice(src.indexOf("constructor("), src.indexOf(") {}", src.indexOf("constructor(")));
+  const classes = [...ctor.matchAll(/readonly\s+\w+\s*:\s*([A-Z]\w*)/g)].map((m) => m[1]).filter((c) => c !== "BmsDb");
+  expect(classes).toEqual(["AccessControlService", "MasterDataAuditService"]);
+  expect(classes.filter((cls) => !byName.has(cls as string)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+export function assertDashboardsServiceTakesTrendPointsService(): void {
+  const classes = classTypedParams("dashboards.service.ts", "DashboardsService");
+  expect(classes).toEqual(["AccessControlService", "MasterDataAuditService", "TrendPointsService"]);
+  const { byName } = resolvableTokens();
+  expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+// ---------------------------------------------------------------- the boot gate
+
+/** The compiled module graph, `nest build`'s output: `tsc` emits `design:paramtypes`, esbuild does not. */
+const DIST = "apps/api/dist";
+
+/** True when `apps/api/dist` holds the compiled module (CI's `pnpm typecheck` builds it before the tests). */
+export function compiledDashboardBuilderModuleExists(): boolean {
+  return existsSync(join(repoRoot(), DIST, "dashboard-builder/dashboard-builder.module.js"));
+}
+
+type Ctor = abstract new (...args: never[]) => unknown;
+
+/**
+ * `F4.306` review finding — a real Nest boot of `DashboardBuilderModule`, not a scan. It runs
+ * the steps `NestFactory.createApplicationContext` runs (scan, then instantiate every provider
+ * and controller through Nest's own `Injector`), with the six database tokens replaced by inert
+ * values the way `@nestjs/testing`'s `overrideProvider` does (`container.replace`), and without
+ * `init()`: lifecycle hooks such as `UserDisabledListenerService.onModuleInit` open a connection.
+ * `@nestjs/testing` is not a dependency (AGENTS.md §9.4), so its `compile()` steps are called
+ * directly. A missing provider throws Nest's `UnknownDependenciesException` here.
+ *
+ * It boots the **compiled** graph because the source graph cannot be booted under Vitest: esbuild
+ * emits no `design:paramtypes`, so every class-typed parameter would be unresolvable. A stale
+ * `apps/api/dist` boots stale code; `pnpm --filter api build` first.
+ */
+export async function bootDashboardBuilderModule(): Promise<{ get: (token: Ctor) => unknown; classes: Record<string, Ctor> }> {
+  const requireDist = createRequire(join(repoRoot(), DIST, "main.js"));
+  const core = (path: string): unknown => requireDist(`@nestjs/core/${path}`);
+  const { Logger } = requireDist("@nestjs/common") as { Logger: { overrideLogger: (v: false) => void } };
+  Logger.overrideLogger(false);
+  const tokens = requireDist("./database/database.tokens.js") as Record<string, symbol>;
+  const { DashboardBuilderModule: compiledModule } = requireDist("./dashboard-builder/dashboard-builder.module.js");
+  const classes = {
+    DashboardsService: requireDist("./dashboard-builder/dashboards.service.js").DashboardsService as Ctor,
+    DashboardWidgetAppendService: requireDist("./dashboard-builder/dashboard-widget-append.service.js")
+      .DashboardWidgetAppendService as Ctor,
+  };
+
+  const { ApplicationConfig } = core("application-config.js") as { ApplicationConfig: new () => unknown };
+  const { NestContainer } = core("injector/container.js") as {
+    NestContainer: new (config: unknown) => { replace: (token: unknown, options: unknown) => void };
+  };
+  const { Injector } = core("injector/injector.js") as { Injector: new (o: object) => unknown };
+  const { InstanceLoader } = core("injector/instance-loader.js") as {
+    InstanceLoader: new (...a: unknown[]) => { createInstancesOfDependencies: () => Promise<void> };
+  };
+  const { MetadataScanner } = core("metadata-scanner.js") as { MetadataScanner: new () => unknown };
+  const { DependenciesScanner } = core("scanner.js") as {
+    DependenciesScanner: new (...a: unknown[]) => { scan: (m: unknown) => Promise<void> };
+  };
+  const { NoopGraphInspector } = core("inspector/noop-graph-inspector.js") as { NoopGraphInspector: unknown };
+  const { NestApplicationContext } = core("nest-application-context.js") as {
+    NestApplicationContext: new (c: unknown, o: object, root: unknown) => { get: (t: unknown) => unknown };
+  };
+
+  const config = new ApplicationConfig();
+  const container = new NestContainer(config);
+  const scanner = new DependenciesScanner(container, new MetadataScanner(), NoopGraphInspector, config);
+  await scanner.scan(compiledModule);
+  for (const name of ["AUTH_POOL", "TENANT_POOL", "FLEET_POOL", "AUTH_DRIZZLE", "TENANT_DRIZZLE", "FLEET_DRIZZLE"]) {
+    container.replace(tokens[name], { useValue: {}, isProvider: true });
+  }
+  await new InstanceLoader(container, new Injector({ preview: false }), NoopGraphInspector).createInstancesOfDependencies();
+  const modules = (container as unknown as { getModules: () => Map<string, unknown> }).getModules().values();
+  const context = new NestApplicationContext(container, {}, modules.next().value);
+  return { get: (token) => context.get(token), classes };
+}
+
+/** The boot resolves both services the review named; each is an instance of its compiled class. */
+export async function assertTheModuleBootsAndResolvesTheTwoServices(): Promise<void> {
+  const { get, classes } = await bootDashboardBuilderModule();
+  expect(get(classes.DashboardsService)).toBeInstanceOf(classes.DashboardsService);
+  expect(get(classes.DashboardWidgetAppendService)).toBeInstanceOf(classes.DashboardWidgetAppendService);
 }

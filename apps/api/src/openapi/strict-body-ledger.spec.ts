@@ -19,7 +19,7 @@ import {
   updateCalcParameterBodySchema,
   createDashboardBodySchema,
   putDashboardWidgetsBodySchema,
-  appendChartWidgetBodySchema,
+  appendWidgetBodySchema,
   updateDashboardBodySchema,
   createAssetRoleBodySchema,
   updateAssetRoleBodySchema,
@@ -267,7 +267,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   migrateAssetsBodySchema,
   patchDraftBodySchema,
   putDashboardWidgetsBodySchema,
-  appendChartWidgetBodySchema,
+  appendWidgetBodySchema,
   // `F3.67` U4 (ADR 0076 decision 5, plan D4). `.strict()`: `kind` and
   // `builtinKey` are closed vocabularies with no `z.record` escape, and a PUT
   // states the whole kind — a stray field silently dropped is exactly the

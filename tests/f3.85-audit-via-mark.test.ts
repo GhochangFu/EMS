@@ -136,10 +136,12 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
   },
   {
     // `F4.303` (ADR 0108 Amendment 6 item 5): the Pin of a trend view; the copilot edits a
-    // dashboard through `PUT :id/widgets`, so this route is catalog-excluded.
+    // dashboard through `PUT :id/widgets`, so this route is catalog-excluded. `F4.306`
+    // (Amendment 7 item 6): `appendStrips` is the route's trend_strip arm; it holds the audit call
+    // and hands it to `dashboard-widget-append-strips.ts`.
     file: "apps/api/src/dashboard-builder/dashboard-widget-append.service.ts",
     route: { method: "POST", path: "/dashboards/:id/widgets/append" },
-    auditMethods: ["append"],
+    auditMethods: ["append", "appendStrips"],
   },
 ];
 

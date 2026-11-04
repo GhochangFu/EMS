@@ -1,6 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  acceptsATemplateTrendStripWithoutASelection,
+  rejectsATemplateTrendStripCarryingASelection,
+  theStockSiteTemplateStillParsesAsACreateBody,
   acceptsAMimicTabKeyNamingADomainTab,
   rejectsAMimicTabKeyNamingADomainlessTab,
   acceptsAnInstantiateBodyWithANullAssetGroup,
@@ -140,5 +143,21 @@ describe("F3.73 — the template target, content tabs and the instantiate site a
 
   it("accepts a mimic tabKey naming a domain tab", () => {
     acceptsAMimicTabKeyNamingADomainTab();
+  });
+});
+
+/** `F4.306` / ADR 0108 Amendment 7 (owner ruling 2026-11-04) — a template's trend strip holds
+ * no selection. */
+describe("F4.306 — a template body refuses a trend strip selection", () => {
+  it("refuses segments, points and colors, top-level and in a tab, each at its own path", () => {
+    rejectsATemplateTrendStripCarryingASelection();
+  });
+
+  it("accepts a trend strip with only tabKey and defaultRange (positive control)", () => {
+    acceptsATemplateTrendStripWithoutASelection();
+  });
+
+  it("the stock site template still parses as a create body", () => {
+    theStockSiteTemplateStillParsesAsACreateBody();
   });
 });

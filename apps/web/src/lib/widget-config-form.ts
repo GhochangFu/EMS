@@ -267,6 +267,11 @@ export type WidgetConfigRow = {
   // trend_strip — `F4.305`. `config.defaultRange`; absent or "" is "not chosen" and refused. A blank
   // row sets "24h" (`blankDashboardWidgetRow`).
   stripRange?: TrendStripRange | "";
+  // trend_strip — `F4.306` (ADR 0108 Amendment 7). The stored selection, carried through read-back
+  // and build unchanged; absent means the config holds none. PR 1 has no editor for them.
+  stripSegments?: TrendStripConfig["segments"];
+  stripPoints?: TrendStripConfig["points"];
+  stripColors?: TrendStripConfig["colors"];
 };
 
 export function blankConfigRow(): WidgetConfigRow {
@@ -628,5 +633,24 @@ export function buildTrendStripConfig(config: WidgetConfigRow): TrendStripConfig
   return {
     ...(config.stripTabKey !== undefined && config.stripTabKey !== "" ? { tabKey: config.stripTabKey } : {}),
     defaultRange: parsed.data,
+    // `F4.306` — the selection, in the schema's key order, each only when stored: a config without
+    // one stays byte-identical to its `F4.305` form.
+    ...(config.stripSegments !== undefined ? { segments: config.stripSegments } : {}),
+    ...(config.stripPoints !== undefined ? { points: config.stripPoints } : {}),
+    ...(config.stripColors !== undefined ? { colors: config.stripColors } : {}),
+  };
+}
+
+/**
+ * `F4.306` — the stored trend strip selection as row fields, only the keys the config holds. The
+ * read-back half of `buildTrendStripConfig`'s carry: a field built and not read back is lost on save.
+ */
+export function readTrendStripSelection(
+  config: TrendStripConfig,
+): Pick<WidgetConfigRow, "stripSegments" | "stripPoints" | "stripColors"> {
+  return {
+    ...(config.segments !== undefined ? { stripSegments: config.segments } : {}),
+    ...(config.points !== undefined ? { stripPoints: config.points } : {}),
+    ...(config.colors !== undefined ? { stripColors: config.colors } : {}),
   };
 }

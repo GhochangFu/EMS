@@ -42,9 +42,11 @@ import { noRowWritten, updatedAtMatches } from "../common/if-match";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { withOrganizationReadScope } from "../database/tenant-read-scope";
+import { TrendPointsService } from "../trend-points/trend-points.service";
 import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBoundPoint } from "./dashboard-point-scope";
 import { resolveWidgetSources, type ResolvedWidgetSource } from "./dashboard-source-scope";
 import { assertMimicLayoutsInOrganization } from "./dashboards.mimic-guards";
+import { assertTrendStripSelections, hasTrendStripSelection } from "./trend-strip-selection.check";
 import {
   assertTabGroupsAtSite,
   assertTabIdsStored,
@@ -111,6 +113,8 @@ export class DashboardsService {
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly audit: MasterDataAuditService,
+    // `F4.306` U5: Nest injects the module's instance; a hand-built service builds the same (stateless) one.
+    private readonly trendPoints: TrendPointsService = new TrendPointsService(fleetDb, tenantDb, accessControl, audit),
   ) {}
 
   // ---- reads ----------------------------------------------------------------
@@ -548,6 +552,10 @@ export class DashboardsService {
       if (widget.widgetType === "mimic" && mimicGroupFor(existing.assetGroupId, tabs, widget) === null) {
         throw new BadRequestException(widget.config.tabKey === undefined ? MIMIC_SCOPE_MESSAGE : MIMIC_TAB_MESSAGE);
       }
+    }
+    // `F4.306` U5 — a trend strip selection against the organization's lists, read only when one exists.
+    if (body.widgets.some(hasTrendStripSelection)) {
+      assertTrendStripSelections(await this.trendPoints.effective(existing.organizationId, {}), existing, body.widgets);
     }
 
     return withTenant(this.tenantDb, existing.organizationId, async (tx) => {

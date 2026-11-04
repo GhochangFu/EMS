@@ -24,8 +24,9 @@ import {
   listDashboardsQuerySchema,
   putDashboardWidgetsBodySchema,
   updateDashboardBodySchema,
-  // `F4.303` U14 (ADR 0108 Amendment 6 item 5): the widget-append body.
-  appendChartWidgetBodySchema,
+  // `F4.303` U14 (ADR 0108 Amendment 6 item 5): the widget-append body; `F4.306` U6 (ADR 0108
+  // Amendment 7) makes it the union of the `chart` arm and the `trend_strip` arm.
+  appendWidgetBodySchema,
   createAssetRoleBodySchema,
   updateAssetRoleBodySchema,
   createLocationTypeBodySchema,
@@ -275,8 +276,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AuditAdminController_export: auditExportQuerySchema,
   AuditAdminController_list: auditListQuerySchema,
   AuthController_login: loginBodySchema,
-  // `F4.303` U14 (ADR 0108 Amendment 6 item 5): `POST /dashboards/:id/widgets/append`.
-  DashboardBuilderController_appendWidget: appendChartWidgetBodySchema,
+  // `F4.303` U14 (ADR 0108 Amendment 6 item 5): `POST /dashboards/:id/widgets/append`; `F4.306`
+  // U6: both arms (`chart`, `trend_strip`).
+  DashboardBuilderController_appendWidget: appendWidgetBodySchema,
   DashboardBuilderController_create: createDashboardBodySchema,
   DashboardBuilderController_getBySlug: getDashboardQuerySchema,
   DashboardBuilderController_list: listDashboardsQuerySchema,

@@ -21,3 +21,18 @@ describe("F4.301 — the trend strip contract (ADR 0108 Amendment 2, ADR 0030)",
   it("bounds the series count at 180", () => spec.assertTheMaxSeriesIs180());
   it("shows 3 points per segment on a whole-site strip", () => spec.assertTheOverviewPointsPerSegmentIs3());
 });
+
+describe("F4.306 U2 — the selection on the trend strip query (ADR 0108 Amendment 7)", () => {
+  it("parses range=24h to exactly { range: \"24h\" }", () => spec.assertRange24hParsesToExactlyTheRange());
+  it("parses one segment", () => spec.assertOneSegmentParses());
+  it("parses two segments", () => spec.assertTwoSegmentsParse());
+  it("refuses an empty segment entry", () => spec.assertAnEmptySegmentEntryIsRefused());
+  it("refuses a trailing segment comma", () => spec.assertATrailingSegmentCommaIsRefused());
+  it("refuses a segment outside the catalog pattern", () => spec.assertASegmentOutsideTheCatalogPatternIsRefused());
+  it("refuses an over-long segments", () => spec.assertAnOverLongSegmentsIsRefused());
+  it("parses two points", () => spec.assertTwoPointsParse());
+  it("refuses a bare code in points", () => spec.assertABarePointCodeIsRefused());
+  it("refuses an empty points entry", () => spec.assertAnEmptyPointEntryIsRefused());
+  it("parses 30 points of the longest stored length", () => spec.assertTheLongestStoredPointParses());
+  it("parses points without segments (the 400 is the service's)", () => spec.assertPointsWithoutSegmentsParses());
+});

@@ -138,9 +138,21 @@ export type StripPlan = {
   readonly trimmed: boolean;
 };
 
+/**
+ * `F4.306` (ADR 0108 Amendment 7) — the widget's chosen segments and points,
+ * parsed and deduplicated by the caller. `points` maps a segment code to its
+ * chosen point codes; a chosen segment with no entry keeps today's rule.
+ */
+export type StripSelection = {
+  readonly segments: ReadonlySet<string>;
+  readonly points: ReadonlyMap<string, readonly string[]>;
+};
+
 export type PairsOptions = {
   /** A whole-site strip (`assetGroupId === null`): the first points per segment only. */
   readonly overview: boolean;
+  /** Absent: every segment, today's rule. */
+  readonly selection?: StripSelection;
 };
 
 function byCode<T extends { code: string }>(a: T, b: T): number {
@@ -155,6 +167,12 @@ function byCode<T extends { code: string }>(a: T, b: T): number {
  * places: the overview keeps the first points *that draw*. A segment with no
  * row is absent. `segments` keeps its input order (`forSite`'s
  * `sort_order`, then code); assets are cut by code.
+ *
+ * Under a `selection` (`F4.306`): a segment not chosen is skipped; a chosen
+ * segment with entries keeps exactly the drawing points on its list that the
+ * entries name, in list order, with no overview cut (an entry not on the list
+ * is dropped, never thrown); a chosen segment without entries keeps today's
+ * rule. `pointsPerSegment` is then the widest kept list (OQ4).
  */
 export function pairsFor(
   assets: readonly StripAsset[],
@@ -171,10 +189,15 @@ export function pairsFor(
 
   const planned: PlannedSegment[] = [];
   let widest = 0;
+  const selection = options.selection;
   for (const seg of segments) {
+    if (selection !== undefined && !selection.segments.has(seg.domain)) continue;
+    const entries = selection?.points.get(seg.domain);
+    const chosen = entries !== undefined && entries.length > 0 ? new Set(entries) : null;
     const members = sortedAssets.filter((a) => a.domain === seg.domain);
     const points: PlannedPoint[] = [];
     for (const point of seg.points) {
+      if (chosen !== null && !chosen.has(point.code)) continue;
       const registering = members.filter((a) => unitByPair.has(pairKey(a.id, point.code)));
       if (registering.length === 0) continue;
       points.push({
@@ -190,7 +213,7 @@ export function pairsFor(
         moreAssets: Math.max(0, registering.length - assetsPerPoint),
       });
     }
-    const kept = options.overview ? points.slice(0, TREND_STRIP_OVERVIEW_POINTS_PER_SEGMENT) : points;
+    const kept = options.overview && chosen === null ? points.slice(0, TREND_STRIP_OVERVIEW_POINTS_PER_SEGMENT) : points;
     if (kept.length === 0) continue;
     widest = Math.max(widest, kept.length);
     planned.push({ domain: seg.domain, label: seg.label, source: seg.source, points: kept });
@@ -198,7 +221,7 @@ export function pairsFor(
   return {
     segments: planned,
     assetsPerPoint,
-    pointsPerSegment: options.overview ? TREND_STRIP_OVERVIEW_POINTS_PER_SEGMENT : widest,
+    pointsPerSegment: options.overview && selection === undefined ? TREND_STRIP_OVERVIEW_POINTS_PER_SEGMENT : widest,
     trimmed: false,
   };
 }

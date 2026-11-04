@@ -5,6 +5,7 @@ import { AssetHealthModule } from "../asset-health/asset-health.module";
 import { AssetRoleSummaryService } from "../assets/asset-role-summary.service";
 import { AuthModule } from "../auth/auth.module";
 import { DatabaseModule } from "../database/database.module";
+import { TrendPointsService } from "../trend-points/trend-points.service";
 import { DashboardBuilderController } from "./dashboard-builder.controller";
 import { DashboardWidgetAppendService } from "./dashboard-widget-append.service";
 import { DashboardsService } from "./dashboards.service";
@@ -50,6 +51,10 @@ import { SiteWidgetsService } from "./site-widgets.service";
     AssetRoleSummaryService,
     // `F4.303` U14 (ADR 0108 Amendment 6 item 5): `POST :id/widgets/append`.
     DashboardWidgetAppendService,
+    // `F4.306` U5 (ADR 0108 Amendment 7): `putWidgets` checks a trend strip selection against
+    // `effective`. Provided, not imported: `TrendPointsModule` exports nothing, and the service is
+    // stateless the way `MasterDataAuditService` is (its handles come from `DatabaseModule`'s tokens).
+    TrendPointsService,
   ],
   // `F3.85` PR 7: the copilot's `list_dashboards` read tool.
   exports: [DashboardsService],
