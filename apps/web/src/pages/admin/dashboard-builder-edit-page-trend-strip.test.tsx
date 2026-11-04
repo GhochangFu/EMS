@@ -7,6 +7,7 @@ import { resetWizardStore } from "../../stores/wizard-store";
 import {
   cleanupBuilderTrendStrip,
   clickingTheButtonOpensTheWizard,
+  theSiteStepNamesTheLocation,
   finishMakesNoRequest,
   finishPutsTheStripOnTheCanvas,
   saveSendsTheSelectionInThePut,
@@ -29,6 +30,7 @@ describe("F4.306 U13 dashboard builder edit page — the trend strip wizard butt
   it("shows no button on an organization-scoped dashboard", () => theButtonIsAbsentOnAnOrganizationDashboard());
   it("disables the button while the scope has unsaved changes", () => theButtonIsDisabledWhileTheScopeIsUnsaved());
   it("opens the wizard on a click", () => clickingTheButtonOpensTheWizard());
+  it("names the location on the wizard's Site step", () => theSiteStepNamesTheLocation());
   it("puts the strip on the canvas at Finish", () => finishPutsTheStripOnTheCanvas());
   it("makes no request at Finish", () => finishMakesNoRequest());
   it("sends the selection in the widgets Save", () => saveSendsTheSelectionInThePut());

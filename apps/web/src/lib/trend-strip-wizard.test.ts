@@ -7,6 +7,7 @@ import {
   aFullTabWithAStripIsNotAtCap,
   aFullTabWithoutAStripIsAtCap,
   aGroupTabSetsTabKey,
+  aSecondVisitKeepsEditsAndDefaultsOnlyTheFresh,
   anEmptyTabInsertsAtTop,
   aTablessAppendBodyHasNoTabKey,
   aTablessDashboardIsOneRow,
@@ -17,6 +18,7 @@ import {
   noSelectionIsTheF4305Config,
   replaceKeepsTheRowAndEveryOther,
   replaceRemovesAStaleColors,
+  theAddedDefaultsStopAtThirty,
   theAppendBodyIsTheTrendArm,
   theBuilderRowShapeReadsByTabKey,
   theDefaultPicksThreeActivePerSegment,
@@ -58,6 +60,14 @@ describe("F4.306 U11 trend strip wizard — selection", () => {
 
   it("stops the default at 30 points", () => {
     theDefaultStopsAtThirty();
+  });
+
+  it("keeps the chosen points and colours on a second visit and defaults only the fresh segment", () => {
+    aSecondVisitKeepsEditsAndDefaultsOnlyTheFresh();
+  });
+
+  it("stops the added defaults at 30 points and never cuts a kept point", () => {
+    theAddedDefaultsStopAtThirty();
   });
 
   it("accepts the 30th point", () => {

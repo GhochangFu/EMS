@@ -150,6 +150,14 @@ export async function clickingTheButtonOpensTheWizard(): Promise<void> {
   expect(screen.getByRole("dialog", { name: "Trend strip setup" })).toBeInTheDocument();
 }
 
+/** The wizard's Site step names the dashboard's location from the loaded locations list. */
+export async function theSiteStepNamesTheLocation(): Promise<void> {
+  openThePage();
+  await waitForPrefill("Location");
+  await userEvent.click(within(widgetsWizard()).getByRole("button", { name: BUTTON }));
+  expect(within(dialog()).getByText(`The strips draw the trend points of ${LOCATION.name}.`)).toBeInTheDocument();
+}
+
 /** Finish puts the strip on the canvas and closes the wizard. */
 export async function finishPutsTheStripOnTheCanvas(): Promise<void> {
   openThePage();

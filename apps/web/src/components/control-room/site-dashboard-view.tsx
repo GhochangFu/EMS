@@ -25,6 +25,8 @@ type SiteDashboardViewProps = {
   wall?: boolean;
   /** `F4.306` U13 — the user's role; an authoring role sees `Set up trend strips`. The wall passes none. */
   role?: UserRole;
+  /** `F4.306` — the site's name, shown on the trend strip wizard's Site step. */
+  siteName?: string;
 };
 
 /**
@@ -87,7 +89,7 @@ const SITE_VIEW_RESOLVE_PREFIX = ["control-room", "site-view"] as const;
  * posts once through the trend arm, then this view's read is invalidated, so the canvas draws the
  * stored strips. The server decides the dashboard; a refused user sees the wizard's fixed sentence.
  */
-export function SiteDashboardView({ slug, organizationId, locationId, tab, wall = false, role }: SiteDashboardViewProps) {
+export function SiteDashboardView({ slug, organizationId, locationId, tab, wall = false, role, siteName }: SiteDashboardViewProps) {
   const queryClient = useQueryClient();
   const { search } = useLocation();
   const detailKey = ["dashboards", "detail", slug, organizationId] as const;
@@ -196,7 +198,13 @@ export function SiteDashboardView({ slug, organizationId, locationId, tab, wall 
       {stripWizard && dashboard !== undefined && stripSite !== null ? (
         <div className="mb-3">
           <TrendStripWizard
-            dashboard={{ id: dashboard.id, locationId: stripSite, tabs: dashboard.tabs, widgets: dashboard.widgets }}
+            dashboard={{
+              id: dashboard.id,
+              locationId: stripSite,
+              siteName: siteName ?? null,
+              tabs: dashboard.tabs,
+              widgets: dashboard.widgets,
+            }}
             mode={{
               kind: "append",
               onDone: () => {

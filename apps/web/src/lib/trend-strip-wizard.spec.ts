@@ -10,6 +10,7 @@ import type { SiteTrendPointsDto } from "@bms/shared";
 
 import { blankDashboardWidgetRow, type DashboardWidgetRow } from "./dashboard-builder-form";
 import {
+  addDefaultsFor,
   appendBodyFor,
   canAddPoint,
   defaultSelection,
@@ -150,6 +151,31 @@ export function theDefaultStopsAtThirty(): void {
   expect(selection.points).toHaveLength(TREND_STRIP_WIDGET_MAX_POINTS);
   expect(selection.points.at(-1)).toBe("seg-9:z");
   expect(selection.points.some((key) => key.startsWith("seg-10:"))).toBe(false);
+}
+
+/** A second visit keeps the chosen points and colours, and defaults only the fresh segment. */
+export function aSecondVisitKeepsEditsAndDefaultsOnlyTheFresh(): void {
+  const lists = [segment("seg-a", ["a1", "a2", "a3", "a4"]), segment("seg-b", ["b1", "b2", "b3", "b4"])];
+  const before: WizardSelection = {
+    segments: ["seg-a", "seg-b"],
+    points: ["seg-a:a2", "seg-a:a4"],
+    colors: { "seg-a:a4": "series-2" },
+  };
+  expect(addDefaultsFor(lists, before, ["seg-b"])).toEqual({
+    segments: ["seg-a", "seg-b"],
+    points: ["seg-a:a2", "seg-a:a4", "seg-b:b1", "seg-b:b2", "seg-b:b3"],
+    colors: { "seg-a:a4": "series-2" },
+  });
+}
+
+/** The added defaults stop at 30 points; the kept points are never cut. */
+export function theAddedDefaultsStopAtThirty(): void {
+  const lists = [segment("seg-a", ["a1", "a2", "a3", "a4"])];
+  const before = selectionOf(TREND_STRIP_WIDGET_MAX_POINTS - 1);
+  const after = addDefaultsFor(lists, before, ["seg-a"]);
+  expect(after.points).toHaveLength(TREND_STRIP_WIDGET_MAX_POINTS);
+  expect(after.points.slice(0, -1)).toEqual(before.points);
+  expect(after.points.at(-1)).toBe("seg-a:a1");
 }
 
 /** The 30th point is accepted. */

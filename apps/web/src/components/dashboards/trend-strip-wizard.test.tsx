@@ -4,6 +4,11 @@ import { afterEach, describe, it } from "vitest";
 import {
   aBadRequestShowsTheListsSentence,
   aConflictShowsTheFullSentence,
+  aForbiddenShowsTheRefusedSentence,
+  aNotFoundShowsTheRefusedSentence,
+  aRetickedSegmentGetsItsDefaultAgain,
+  aSecondVisitKeepsTheEditsAndDefaultsTheNewSegment,
+  aServerErrorShowsTheFallbackSentence,
   appendFinishPostsOneBodyInTabOrder,
   cleanupTrendStripWizard,
   draftFinishAppliesRowsAndRequestsNothing,
@@ -13,6 +18,7 @@ import {
   thePointsStepPreselectsThreePerSegment,
   thePreviewReadsTheStripWithTheSelection,
   theSegmentsStepListsTheDtoLabels,
+  theSiteStepNamesTheSite,
   theTabsStepDisablesTheFullTab,
   theTabsStepMarksTheTabWithAStrip,
   theThirtyFirstBoxIsDisabled,
@@ -25,6 +31,10 @@ import {
 describe("F4.306 U12 TrendStripWizard", () => {
   afterEach(() => {
     cleanupTrendStripWizard();
+  });
+
+  it("names the dashboard's site on the Site step", async () => {
+    await theSiteStepNamesTheSite();
   });
 
   it("marks the tab that holds a strip on the Tabs step", async () => {
@@ -41,6 +51,14 @@ describe("F4.306 U12 TrendStripWizard", () => {
 
   it("preselects the first 3 points of each chosen segment", async () => {
     await thePointsStepPreselectsThreePerSegment();
+  });
+
+  it("keeps the point and colour edits on a second visit and defaults the new segment", async () => {
+    await aSecondVisitKeepsTheEditsAndDefaultsTheNewSegment();
+  });
+
+  it("defaults a segment again after it is unticked and ticked on one visit", async () => {
+    await aRetickedSegmentGetsItsDefaultAgain();
   });
 
   it("disables an unchecked box at 30 points and keeps a checked one enabled", async () => {
@@ -73,6 +91,18 @@ describe("F4.306 U12 TrendStripWizard", () => {
 
   it("shows the lists-changed sentence on a 400", async () => {
     await aBadRequestShowsTheListsSentence();
+  });
+
+  it("shows the refused sentence on a 403", async () => {
+    await aForbiddenShowsTheRefusedSentence();
+  });
+
+  it("shows the refused sentence on a 404", async () => {
+    await aNotFoundShowsTheRefusedSentence();
+  });
+
+  it("shows the fallback sentence on a 500", async () => {
+    await aServerErrorShowsTheFallbackSentence();
   });
 
   it("marks Finish aria-busy and disabled while the append is pending", async () => {

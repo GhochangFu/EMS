@@ -10,9 +10,9 @@ import { fetchSiteTrendPoints } from "../../api/site-trend-points";
 import { ApiError } from "../../lib/api-error";
 import type { DashboardWidgetRow } from "../../lib/dashboard-builder-form";
 import {
+  addDefaultsFor,
   appendBodyFor,
   canAddPoint,
-  defaultSelection,
   placeInDraft,
   selectionKey,
   setPointColor,
@@ -61,8 +61,12 @@ export type TrendStripWizardMode =
   | { readonly kind: "append"; readonly onDone: () => void };
 
 type TrendStripWizardProps = {
-  /** The target dashboard: its id, its site (a dashboard without one is not offered the wizard). */
-  dashboard: WizardDashboard & { readonly id: string; readonly locationId: string; readonly siteName?: string };
+  /**
+   * The target dashboard: its id, its site (a dashboard without one is not offered the wizard), and
+   * the site name the Site step shows (Amendment 7 item 5: shown, not chosen). `null` only where the
+   * caller holds no name: the step then says "this dashboard's site".
+   */
+  dashboard: WizardDashboard & { readonly id: string; readonly locationId: string; readonly siteName: string | null };
   mode: TrendStripWizardMode;
   onClose: () => void;
 };
@@ -92,7 +96,8 @@ export function TrendStripWizard({ dashboard, mode, onClose }: TrendStripWizardP
   const [step, setStep] = useState(0);
   const [chosenTabs, setChosenTabs] = useState<readonly string[]>([]);
   const [selection, setSelection] = useState<WizardSelection>(EMPTY);
-  const [defaultedFor, setDefaultedFor] = useState<string | null>(null);
+  // The segments that have had their default points (plan D1); an unticked segment leaves the set.
+  const [defaulted, setDefaulted] = useState<readonly string[]>([]);
   const [range, setRange] = useState<TrendStripRange>(trendStripRangeSchema.options[0]);
   const [previewTab, setPreviewTab] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -112,11 +117,10 @@ export function TrendStripWizard({ dashboard, mode, onClose }: TrendStripWizardP
     step === 1 ? chosen.length > 0 : step === 2 ? selection.segments.length > 0 && listsQ.isSuccess : true;
 
   const goNext = (): void => {
-    // Entering Points: the default rule (plan D1) for the chosen segments, once per segment set.
-    const segmentsKey = selection.segments.join(",");
-    if (step === 2 && defaultedFor !== segmentsKey) {
-      setSelection(defaultSelection(lists, selection.segments));
-      setDefaultedFor(segmentsKey);
+    // Entering Points: keep every chosen point and colour; default only the segments new since the last visit.
+    if (step === 2) {
+      setSelection(addDefaultsFor(lists, selection, selection.segments.filter((code) => !defaulted.includes(code))));
+      setDefaulted(selection.segments);
     }
     setStep(step + 1);
   };
@@ -197,7 +201,10 @@ export function TrendStripWizard({ dashboard, mode, onClose }: TrendStripWizardP
                   <input
                     type="checkbox"
                     checked={selection.segments.includes(segment.domain)}
-                    onChange={() => setSelection((was) => toggleSegment(was, segment.domain))}
+                    onChange={() => {
+                      setSelection((was) => toggleSegment(was, segment.domain));
+                      setDefaulted((was) => was.filter((code) => code !== segment.domain));
+                    }}
                   />
                   {segment.label}
                 </label>

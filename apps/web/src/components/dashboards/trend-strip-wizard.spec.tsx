@@ -11,8 +11,10 @@ import { fetchSiteTrendStrip } from "../../api/trend-strip";
 import { ApiError } from "../../lib/api-error";
 import { blankDashboardWidgetRow, type DashboardWidgetRow } from "../../lib/dashboard-builder-form";
 import {
+  TREND_STRIP_WIZARD_FAILED_SENTENCE,
   TREND_STRIP_WIZARD_FULL_SENTENCE,
   TREND_STRIP_WIZARD_LISTS_CHANGED_SENTENCE,
+  TREND_STRIP_WIZARD_REFUSED_SENTENCE,
   TrendStripWizard,
   type TrendStripWizardMode,
 } from "./trend-strip-wizard";
@@ -40,6 +42,7 @@ let fetchSpy: ReturnType<typeof vi.fn> = vi.fn();
 const DASHBOARD_ID = "11111111-1111-4111-8111-111111111111";
 const LOCATION_ID = "22222222-2222-4222-8222-222222222222";
 const GROUP_ID = "33333333-3333-4333-8333-333333333333";
+const SITE_NAME = "Wizard Test Site";
 
 const TABS = [
   { id: "aaaaaaaa-0000-4000-8000-000000000001", key: "overview", label: "Overview", sortOrder: 0, assetGroupId: null },
@@ -114,7 +117,7 @@ function renderWizard(kind: "draft" | "append"): Rendered {
     <QueryClientProvider client={client}>
       <MemoryRouter>
         <TrendStripWizard
-          dashboard={{ id: DASHBOARD_ID, locationId: LOCATION_ID, tabs: TABS, widgets: ROWS }}
+          dashboard={{ id: DASHBOARD_ID, locationId: LOCATION_ID, siteName: SITE_NAME, tabs: TABS, widgets: ROWS }}
           mode={mode}
           onClose={onClose}
         />
@@ -154,6 +157,12 @@ async function toPoints(tabs: readonly string[], segments: readonly string[]): P
 async function toPreview(): Promise<void> {
   await next();
   await next();
+}
+
+/** The Site step names the dashboard's site (Amendment 7 item 5: shown, not chosen). */
+export async function theSiteStepNamesTheSite(): Promise<void> {
+  renderWizard("append");
+  expect(screen.getByText(`The strips draw the trend points of ${SITE_NAME}.`)).toBeTruthy();
 }
 
 /** The Tabs step marks the tab that holds a strip: it will be replaced. */
@@ -197,6 +206,49 @@ export async function thePointsStepPreselectsThreePerSegment(): Promise<void> {
   const fourth = screen.getByRole("checkbox", { name: "Segment 01 point 4" }) as HTMLInputElement;
   expect(fourth.checked).toBe(false);
   expect(fourth.disabled).toBe(false);
+  expect(screen.getByText("6 of 30")).toBeTruthy();
+}
+
+/**
+ * A second visit to Points keeps the user's point and colour edits on a segment still chosen, and
+ * gives a segment added since the last visit its default points.
+ */
+export async function aSecondVisitKeepsTheEditsAndDefaultsTheNewSegment(): Promise<void> {
+  renderWizard("append");
+  appendStrips.mockResolvedValue({ widgets: [], updatedAt: "2026-11-04T10:00:00.000+00:00" } as never);
+  await toPoints(["Tab B"], ["Segment 01"]);
+  await user().click(screen.getByRole("checkbox", { name: "Segment 01 point 1" }));
+  await user().click(screen.getByRole("checkbox", { name: "Segment 01 point 4" }));
+  await user().selectOptions(screen.getByRole("combobox", { name: "Colour of Segment 01 point 4" }), "series-2");
+  await user().click(screen.getByRole("button", { name: "Back" }));
+  await user().click(screen.getByRole("checkbox", { name: "Segment 02" }));
+  await next();
+  await toPreview();
+  await finish();
+  await waitFor(() => expect(appendStrips).toHaveBeenCalledTimes(1));
+  const config = appendStrips.mock.calls[0]?.[1].strips[0]?.config;
+  expect(config?.points).toEqual([
+    "seg_01:pt_2",
+    "seg_01:pt_3",
+    "seg_01:pt_4",
+    "seg_02:pt_1",
+    "seg_02:pt_2",
+    "seg_02:pt_3",
+  ]);
+  expect(config?.colors).toEqual({ "seg_01:pt_4": "series-2" });
+}
+
+/** A segment unticked and ticked again on one visit gets its default points again. */
+export async function aRetickedSegmentGetsItsDefaultAgain(): Promise<void> {
+  renderWizard("append");
+  await toPoints(["Tab B"], ["Segment 01", "Segment 02"]);
+  await user().click(screen.getByRole("button", { name: "Back" }));
+  await user().click(screen.getByRole("checkbox", { name: "Segment 02" }));
+  await user().click(screen.getByRole("checkbox", { name: "Segment 02" }));
+  await next();
+  for (const n of [1, 2, 3]) {
+    expect((screen.getByRole("checkbox", { name: `Segment 02 point ${n}` }) as HTMLInputElement).checked).toBe(true);
+  }
   expect(screen.getByText("6 of 30")).toBeTruthy();
 }
 
@@ -305,6 +357,24 @@ export async function aConflictShowsTheFullSentence(): Promise<void> {
 export async function aBadRequestShowsTheListsSentence(): Promise<void> {
   await failWith(400);
   expect((await screen.findByRole("alert")).textContent).toBe(TREND_STRIP_WIZARD_LISTS_CHANGED_SENTENCE);
+}
+
+/** A 403 shows the refused sentence, never the server's text. */
+export async function aForbiddenShowsTheRefusedSentence(): Promise<void> {
+  await failWith(403);
+  expect((await screen.findByRole("alert")).textContent).toBe(TREND_STRIP_WIZARD_REFUSED_SENTENCE);
+}
+
+/** A 404 (a dashboard the caller cannot see) shows the refused sentence, never the server's text. */
+export async function aNotFoundShowsTheRefusedSentence(): Promise<void> {
+  await failWith(404);
+  expect((await screen.findByRole("alert")).textContent).toBe(TREND_STRIP_WIZARD_REFUSED_SENTENCE);
+}
+
+/** Any other status shows the fixed fallback sentence, never the server's text (`F4.204`). */
+export async function aServerErrorShowsTheFallbackSentence(): Promise<void> {
+  await failWith(500);
+  expect((await screen.findByRole("alert")).textContent).toBe(TREND_STRIP_WIZARD_FAILED_SENTENCE);
 }
 
 /** While the append is pending the Finish button is `aria-busy` and disabled, labelled `Saving…`. */

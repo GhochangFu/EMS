@@ -4,6 +4,7 @@ import { afterEach, describe, it } from "vitest";
 import {
   cleanupSiteViewWizard,
   clickingTheButtonOpensTheWizard,
+  theSiteStepNamesTheSite,
   finishClosesTheWizard,
   finishPostsOnce,
   finishRefetchesTheDashboard,
@@ -26,6 +27,7 @@ describe("F4.306 U13 SiteDashboardView — the trend strip setup button", () => 
   it("shows no button on a dashboard without a site", () => theButtonIsAbsentWithoutASite());
   it("shows no button on the wall", () => theButtonIsAbsentOnTheWall());
   it("opens the wizard on a click", () => clickingTheButtonOpensTheWizard());
+  it("names the site on the wizard's Site step", () => theSiteStepNamesTheSite());
   it("posts once at Finish", () => finishPostsOnce());
   it("reads the dashboard again after Finish", () => finishRefetchesTheDashboard());
   it("closes the wizard after Finish", () => finishClosesTheWizard());

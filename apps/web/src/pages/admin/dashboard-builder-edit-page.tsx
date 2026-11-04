@@ -740,7 +740,13 @@ export function DashboardBuilderEditPage({ user }: DashboardBuilderEditPageProps
 
         {stripWizard && dto && siteLocationId !== null ? (
           <TrendStripWizard
-            dashboard={{ id: dto.id, locationId: siteLocationId, tabs, widgets: rows }}
+            dashboard={{
+              id: dto.id,
+              locationId: siteLocationId,
+              siteName: locations.find((option) => option.id === siteLocationId)?.name ?? null,
+              tabs,
+              widgets: rows,
+            }}
             mode={{
               kind: "draft",
               rows,

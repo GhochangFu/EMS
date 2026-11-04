@@ -56,6 +56,7 @@ const readStrip = vi.mocked(fetchSiteTrendStrip);
 let fetchSpy: Mock = vi.fn();
 
 const BUTTON = "Set up trend strips";
+const SITE_NAME = "Site View Test Site";
 const SLUG = "phe-lotapata";
 const ORG_ID = "44444444-4444-4444-8444-444444444444";
 const LOCATION_ID = "22222222-2222-4222-8222-222222222222";
@@ -111,6 +112,7 @@ function renderView({ role, wall = false, dto = DTO }: { role?: UserRole; wall?:
           locationId={LOCATION_ID}
           tab={undefined}
           wall={wall}
+          siteName={SITE_NAME}
           {...(role === undefined ? {} : { role })}
         />
       </MemoryRouter>
@@ -175,6 +177,13 @@ export async function clickingTheButtonOpensTheWizard(): Promise<void> {
   await userEvent.click(button);
   expect(screen.getByRole("dialog", { name: "Trend strip setup" })).toBeInTheDocument();
   expect(button.getAttribute("aria-expanded")).toBe("true");
+}
+
+/** The wizard's Site step names the site the page passes. */
+export async function theSiteStepNamesTheSite(): Promise<void> {
+  renderView({ role: "admin" });
+  await userEvent.click(await screen.findByRole("button", { name: BUTTON }));
+  expect(screen.getByText(`The strips draw the trend points of ${SITE_NAME}.`)).toBeInTheDocument();
 }
 
 async function next(): Promise<void> {

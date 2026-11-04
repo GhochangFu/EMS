@@ -137,6 +137,20 @@ export function defaultSelection(
   return { segments: [...segments], points: points.slice(0, TREND_STRIP_WIDGET_MAX_POINTS), colors: {} };
 }
 
+/**
+ * Entering the Points step again: keep every chosen point and colour, and add the default points
+ * ({@link defaultSelection}) only for `fresh` — the chosen segments that have not had their default
+ * yet. The added points go after the kept ones and stop at `TREND_STRIP_WIDGET_MAX_POINTS`.
+ */
+export function addDefaultsFor(
+  lists: SiteTrendPointsDto["segments"],
+  selection: WizardSelection,
+  fresh: readonly string[],
+): WizardSelection {
+  const added = defaultSelection(lists, fresh).points.filter((key) => !selection.points.includes(key));
+  return { ...selection, points: [...selection.points, ...added].slice(0, TREND_STRIP_WIDGET_MAX_POINTS) };
+}
+
 /** Whether one more point fits under the cap. */
 export function canAddPoint(selection: WizardSelection): boolean {
   return selection.points.length < TREND_STRIP_WIDGET_MAX_POINTS;
