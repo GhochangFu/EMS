@@ -79,6 +79,11 @@ export const FORCED_TABLES = [
   // `trend-points.integration.spec.ts` (U3) holds the non-vacuous half, and
   // `tests/f4.300-trend-points-schema.integration.test.ts` reads a PHEWB row as ESKOM.
   "org_trend_points",
+  // `F4.311` (ADR 0109 decision 7, migration `0123`). A strict tenant table. The
+  // count-0 check below is VACUOUS for it (the seed writes no run);
+  // `tests/f4.311-calc-backfill-runs-schema.integration.test.ts` holds the
+  // non-vacuous half (a cross-organization insert is refused).
+  "calc_backfill_runs",
 ] as const;
 
 function assert(condition: boolean, message: string): void {
