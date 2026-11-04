@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   aCalculatedRowIsADerivedFormulaPoint,
+  aDraftEqualToItsStartIsUnchanged,
+  aFormulaOnlyEditIsAChange,
   aCompleteDraftIsTheBodyTheSchemaParses,
   aMissingIntervalIsNamedWithoutAnInheritanceClause,
   aNewDraftOpensOnAGrammarAndATriggerNeverOnEmpty,
@@ -16,6 +18,7 @@ import {
   knownRefsMirrorTheServersRuleThree,
   theBatchRefusalBodyYieldsEveryRefusedAsset,
   theCapSentenceAppearsOnlyAboveTheCap,
+  theDialectIsTheDraftsKnownGrammarElseTheDefault,
   theStandInConfigParsesAsAStandaloneItem,
 } from "./calc-point-draft.spec";
 
@@ -83,5 +86,17 @@ describe("F4.311 PR 6a — the standalone calculated point's draft and batch rul
 
   it("any other error yields no refusals", () => {
     anyOtherErrorYieldsNoRefusals();
+  });
+
+  it("the dialect is the draft's known grammar, else the default", () => {
+    theDialectIsTheDraftsKnownGrammarElseTheDefault();
+  });
+
+  it("a draft equal to its starting value is unchanged", () => {
+    aDraftEqualToItsStartIsUnchanged();
+  });
+
+  it("a formula-only edit is a change", () => {
+    aFormulaOnlyEditIsAChange();
   });
 });

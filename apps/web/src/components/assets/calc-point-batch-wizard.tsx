@@ -27,7 +27,9 @@ import {
   batchCapProblem,
   batchEligibility,
   batchRefusals,
+  calcPointDraftChanged,
   calcPointDraftFromFields,
+  draftDialect,
   draftToCalcPointBody,
   emptyCalcPointDraft,
   standaloneConfigFor,
@@ -37,7 +39,8 @@ import {
 import { AdminWizardFrame } from "../admin/admin-wizard-frame";
 import { FormulaPreview } from "../asset-templates/formula-preview";
 import { WizardShell } from "../wizard/wizard-shell";
-import { BackfillDaysSelect, CatalogKeySelect, draftDialect } from "./calc-point-panel";
+import { BackfillDaysSelect } from "./backfill-days-select";
+import { CatalogKeySelect } from "./catalog-key-select";
 import { PointCalcFormulaFields, PointCalcScheduleFields } from "./point-calc-override-panel";
 
 function wizardEntry(id: string): CatalogEntry {
@@ -47,6 +50,9 @@ function wizardEntry(id: string): CatalogEntry {
 }
 
 const NOTHING_EXCLUDED: ReadonlySet<string> = new Set();
+
+/** What a fresh wizard holds: `dirty` is any difference from it. */
+const START = emptyCalcPointDraft();
 
 export function CalcPointBatchWizard({
   assets,
@@ -68,13 +74,17 @@ export function CalcPointBatchWizard({
     (eligible.length === 0 ? "None of the selected assets can take a calculated point of its own." : null);
   const codeOf = new Map(assets.map((asset) => [asset.id, asset.code]));
 
+  // Re-read on every outcome: under ruling 4 a `409` / `503` arrives with
+  // every point already written, so a refusal is no proof nothing changed.
+  // The wizard stays open on a refusal, with the server's sentence.
   const batchM = useMutation({
     mutationFn: (body: CalcPointBatchBody) => createAdminCalcPointBatch(body),
-    onSuccess: () => {
+    onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "asset-calc-points"] });
       void queryClient.invalidateQueries({ queryKey: ["admin", "asset-points"] });
-      onDone();
+      void queryClient.invalidateQueries({ queryKey: ["admin", "assets"] });
     },
+    onSuccess: () => onDone(),
     onError: (cause: unknown) => {
       setRefused(batchRefusals(cause) ?? []);
       setError(apiErrorMessage(cause));
@@ -179,6 +189,7 @@ export function CalcPointBatchWizard({
         }}
         submitting={busy}
         submitError={error}
+        dirty={calcPointDraftChanged(draft, START)}
         review={{
           omit: ["assetIds"],
           detail: (

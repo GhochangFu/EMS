@@ -33,7 +33,8 @@ import {
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
 import { AssetPointBulkEditPanel } from "../../components/assets/asset-point-bulk-edit-panel";
-import { CalcPointDeleteWizard, CalcPointPanel } from "../../components/assets/calc-point-panel";
+import { CalcPointDeleteWizard } from "../../components/assets/calc-point-delete-wizard";
+import { CalcPointPanel } from "../../components/assets/calc-point-panel";
 import { MappingSheetPanel } from "../../components/assets/mapping-sheet-panel";
 import {
   PointCalcDraftProblems,
@@ -369,6 +370,19 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     setOverrideSaveError(null);
   }
 
+  /**
+   * A refused standalone write re-reads both lists and keeps its form open on
+   * the server's sentence. Under ruling 4 the point row is committed before
+   * the backfill run is created, so a `409` (a backfill is already running)
+   * or a `503` (no worker) arrives with the formula already saved; a re-read
+   * after a refusal that wrote nothing costs one request.
+   */
+  function afterStandaloneRefusal(cause: Error) {
+    setOverrideSaveError(apiErrorMessage(cause));
+    void queryClient.invalidateQueries({ queryKey: ["admin", "asset-calc-points"] });
+    void queryClient.invalidateQueries({ queryKey: ["admin", "asset-points"] });
+  }
+
   // A standalone write adds or removes an `asset_points` row, so both lists
   // are stale after it (`afterOverride`'s two invalidations).
   const setCalcPointM = useMutation({
@@ -378,7 +392,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
       openStandalone({});
       afterOverride();
     },
-    onError: (cause: Error) => setOverrideSaveError(apiErrorMessage(cause)),
+    onError: afterStandaloneRefusal,
   });
 
   // A `409` (a dashboard widget shows the point) is the Review card's error, in the server's words.
@@ -390,6 +404,10 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
     },
     onError: (cause: Error) => setOverrideSaveError(apiErrorMessage(cause)),
   });
+
+  // Opening another form mid-write would unmount the pending one, and its
+  // settle would close (or put its refusal under) the form just opened.
+  const standaloneBusy = setCalcPointM.isPending || deleteCalcPointM.isPending;
 
   const listQ = useQuery({
     queryKey: ["admin", "asset-points", activeFilter, assetId, selection.locationId],
@@ -734,7 +752,10 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             </p>
             <button
               type="button"
-              className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent"
+              className="surface-button-primary bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
+              disabled={standaloneBusy}
+              // Opens a form; it never pends itself, so it keeps its name while a write does.
+              data-pending-bystander="standaloneBusy"
               onClick={() => openStandalone({ add: true })}
             >
               Add calculated point
@@ -796,15 +817,19 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                   <CalcRuntimePill runtime={config.runtime} />
                   <button
                     type="button"
+                    disabled={standaloneBusy}
+                    data-pending-bystander="standaloneBusy"
                     onClick={() => openStandalone({ edit: config.pointKey })}
-                    className="surface-button px-3 py-1"
+                    className="surface-button px-3 py-1 disabled:opacity-60"
                   >
                     Edit
                   </button>
                   <button
                     type="button"
+                    disabled={standaloneBusy}
+                    data-pending-bystander="standaloneBusy"
                     onClick={() => openStandalone({ remove: config.pointKey })}
-                    className="surface-button border border-critical-line px-3 py-1 text-critical-ink"
+                    className="surface-button border border-critical-line px-3 py-1 text-critical-ink disabled:opacity-60"
                   >
                     Delete
                   </button>

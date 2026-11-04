@@ -148,9 +148,8 @@ export async function eachStandaloneItemHasEditAndDelete(): Promise<void> {
   expect(within(row).getAllByRole("button").map((button) => button.textContent)).toEqual(["Edit", "Delete"]);
 }
 
-export async function addSendsTheChosenKeyAndBody(): Promise<void> {
-  stubApi("standalone");
-  renderPage();
+/** Opens Add, picks `pf`, fills every step and presses Submit. */
+async function submitAdd(): Promise<void> {
   await userEvent.click(await screen.findByRole("button", { name: "Add calculated point" }));
   const select = screen.getByLabelText("Point key");
   await within(select).findByText("pf · pf name");
@@ -161,6 +160,12 @@ export async function addSendsTheChosenKeyAndBody(): Promise<void> {
   await userEvent.type(screen.getByLabelText("Inputs valid for (seconds)"), "600");
   await next(2);
   await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+}
+
+export async function addSendsTheChosenKeyAndBody(): Promise<void> {
+  stubApi("standalone");
+  renderPage();
+  await submitAdd();
   await waitFor(() => expect(api.setAdminAssetCalcPoint).toHaveBeenCalledWith(ASSET, "pf", RUNS));
 }
 
@@ -198,4 +203,67 @@ export async function aRefusedDeleteShowsTheServersSentence(): Promise<void> {
   await userEvent.click(within(await pfRow()).getByRole("button", { name: "Delete" }));
   await userEvent.click(await screen.findByRole("button", { name: "Submit" }));
   expect(await screen.findByText(sentence)).toBeTruthy();
+}
+
+/** The server's `503` once the point row is written and no worker takes the backfill (ruling 4). */
+const NO_WORKER = "The point is saved, but no worker is running to backfill it. Start the worker, then save again.";
+/** The server's `409` once the point row is written and a backfill of it is already running. */
+const BACKFILL_RUNNING = "The point is saved, but a backfill of it is already running.";
+
+function refusal(status: number, message: string): ApiError {
+  return new ApiError(JSON.stringify({ statusCode: status, message }), status);
+}
+
+/** How often each list has been read so far: `[calc list, mapping list]`. */
+function reads(): [number, number] {
+  return [vi.mocked(api.fetchAdminAssetCalcPoints).mock.calls.length, vi.mocked(api.fetchAdminAssetPoints).mock.calls.length];
+}
+
+export async function aWriteRefusedWith503RereadsBothLists(): Promise<void> {
+  stubApi("standalone", [PF]);
+  vi.mocked(api.setAdminAssetCalcPoint).mockRejectedValue(refusal(503, NO_WORKER));
+  renderPage();
+  await userEvent.click(within(await pfRow()).getByRole("button", { name: "Edit" }));
+  await next(3);
+  const before = reads();
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(reads().map((count, list) => count > before[list]!)).toEqual([true, true]));
+}
+
+export async function anAddRefusedWith409RereadsBothLists(): Promise<void> {
+  stubApi("standalone");
+  vi.mocked(api.setAdminAssetCalcPoint).mockRejectedValue(refusal(409, BACKFILL_RUNNING));
+  renderPage();
+  await screen.findByText(INTRO);
+  await waitFor(() => expect(reads()[1]).toBeGreaterThan(0));
+  const before = reads();
+  await submitAdd();
+  await waitFor(() => expect(reads().map((count, list) => count > before[list]!)).toEqual([true, true]));
+}
+
+export async function aRefusedWriteKeepsTheServersSentenceAfterTheReread(): Promise<void> {
+  stubApi("standalone", [PF]);
+  vi.mocked(api.setAdminAssetCalcPoint).mockRejectedValue(refusal(503, NO_WORKER));
+  renderPage();
+  await userEvent.click(within(await pfRow()).getByRole("button", { name: "Edit" }));
+  await next(3);
+  const before = reads();
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(reads()[0]).toBeGreaterThan(before[0]));
+  expect(await screen.findByText(NO_WORKER)).toBeTruthy();
+}
+
+export async function whileAWriteIsPendingAddEditAndDeleteAreDisabled(): Promise<void> {
+  stubApi("standalone", [PF]);
+  vi.mocked(api.setAdminAssetCalcPoint).mockReturnValue(new Promise(() => undefined));
+  renderPage();
+  const row = await pfRow();
+  await submitAdd();
+  await waitFor(() => expect(api.setAdminAssetCalcPoint).toHaveBeenCalled());
+  const buttons = [
+    screen.getByRole("button", { name: "Add calculated point" }),
+    within(row).getByRole("button", { name: "Edit" }),
+    within(row).getByRole("button", { name: "Delete" }),
+  ] as HTMLButtonElement[];
+  expect(buttons.map((button) => button.disabled)).toEqual([true, true, true]);
 }

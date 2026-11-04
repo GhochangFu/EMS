@@ -8,9 +8,11 @@ import {
   batchCapProblem,
   batchEligibility,
   batchRefusals,
+  calcPointDraftChanged,
   calcPointDraftFromConfig,
   calcPointDraftFromFields,
   calcPointDraftProblems,
+  draftDialect,
   draftToCalcPointBody,
   emptyCalcPointDraft,
   formulaPointsFor,
@@ -161,4 +163,19 @@ export function anyOtherErrorYieldsNoRefusals(): void {
     batchRefusals(new ApiError(JSON.stringify({ message: "x" }), 400)),
     batchRefusals("not an error"),
   ]).toEqual([null, null, null]);
+}
+
+export function theDialectIsTheDraftsKnownGrammarElseTheDefault(): void {
+  expect([draftDialect(draft({ formulaDialect: "bms-calc-v2" })), draftDialect(draft({ formulaDialect: "" }))]).toEqual([
+    "bms-calc-v2",
+    "bms-calc-v1",
+  ]);
+}
+
+export function aDraftEqualToItsStartIsUnchanged(): void {
+  expect(calcPointDraftChanged(draft(), draft())).toBe(false);
+}
+
+export function aFormulaOnlyEditIsAChange(): void {
+  expect(calcPointDraftChanged(draft({ formula: "{kw} * 3" }), draft())).toBe(true);
 }

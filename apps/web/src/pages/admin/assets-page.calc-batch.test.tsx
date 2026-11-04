@@ -4,6 +4,8 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aCheckboxDoesNotOpenTheAssetsPoints,
+  aRefusedBatchRereadsTheAssetList,
+  aTemplatedAssetIsLeftOutOfTheRequestBody,
   aSearchClearsTheSelection,
   aTemplatedAssetIsMarkedAndLeftOut,
   reviewListsEveryRefusedAsset,
@@ -45,5 +47,13 @@ describe("F4.311 PR 6a — the asset list's Add calculated point bulk action", (
 
   it("checking a row checks it and stays on the list", async () => {
     await aCheckboxDoesNotOpenTheAssetsPoints();
+  });
+
+  it("a templated asset in the selection is left out of the request body", async () => {
+    await aTemplatedAssetIsLeftOutOfTheRequestBody();
+  });
+
+  it("a refused batch re-reads the asset list", async () => {
+    await aRefusedBatchRereadsTheAssetList();
   });
 });

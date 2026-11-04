@@ -4,12 +4,16 @@ import { cleanup } from "@testing-library/react";
 
 import {
   aPinnedAssetHasNoAddCalculatedPoint,
+  aRefusedWriteKeepsTheServersSentenceAfterTheReread,
+  aWriteRefusedWith503RereadsBothLists,
+  anAddRefusedWith409RereadsBothLists,
   aRefusedDeleteShowsTheServersSentence,
   aWriteRereadsBothLists,
   addSendsTheChosenKeyAndBody,
   anEmptyStandaloneListStillShowsTheCardAndAdd,
   deleteCallsTheDeleteClient,
   eachStandaloneItemHasEditAndDelete,
+  whileAWriteIsPendingAddEditAndDeleteAreDisabled,
 } from "./asset-points-page.calc-points.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014, ADR 0042 decision 2). */
@@ -45,5 +49,21 @@ describe("F4.311 PR 6a — the asset points page's Calculated points card on an 
 
   it("a refused Delete shows the server's sentence", async () => {
     await aRefusedDeleteShowsTheServersSentence();
+  });
+
+  it("a write refused with 503 re-reads both lists", async () => {
+    await aWriteRefusedWith503RereadsBothLists();
+  });
+
+  it("an Add refused with 409 re-reads both lists", async () => {
+    await anAddRefusedWith409RereadsBothLists();
+  });
+
+  it("a refused write keeps the server's sentence after the re-read", async () => {
+    await aRefusedWriteKeepsTheServersSentenceAfterTheReread();
+  });
+
+  it("while a write is pending, Add, Edit and Delete are disabled", async () => {
+    await whileAWriteIsPendingAddEditAndDeleteAreDisabled();
   });
 });

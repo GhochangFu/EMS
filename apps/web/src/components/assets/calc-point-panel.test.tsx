@@ -4,13 +4,15 @@ import { cleanup } from "@testing-library/react";
 
 import {
   addOffersNoKeyTheAssetAlreadyHas,
+  cancelAfterAFormulaOnlyEditOnAddAsks,
+  cancelAfterAFormulaOnlyEditOnEditAsks,
+  cancelOnAnUntouchedEditLeavesAtOnce,
   addOpensTheWizardOnlyOnceAKeyIsChosen,
   anUnknownReferenceIsListedBeforeSubmit,
   editOffersDeleteThatCallsOnDelete,
   inStandaloneModeNoFieldHasATemplatePlaceholder,
   inStandaloneModeNoOptionHasAnEmptyValue,
   submitSendsTheBackfillChosen,
-  theDeleteWizardShowsTheServersRefusal,
   thePreviewUpdatesOnAKeystroke,
 } from "./calc-point-panel.spec";
 
@@ -57,7 +59,15 @@ describe("F4.311 PR 6a — the standalone calculated point's panel", () => {
     await editOffersDeleteThatCallsOnDelete();
   });
 
-  it("the delete wizard shows the server's refusal", () => {
-    theDeleteWizardShowsTheServersRefusal();
+  it("Cancel after a formula-only edit on Edit asks before leaving", async () => {
+    await cancelAfterAFormulaOnlyEditOnEditAsks();
+  });
+
+  it("Cancel after a formula-only edit on Add asks before leaving", async () => {
+    await cancelAfterAFormulaOnlyEditOnAddAsks();
+  });
+
+  it("Cancel on an untouched Edit leaves at once", async () => {
+    await cancelOnAnUntouchedEditLeavesAtOnce();
   });
 });

@@ -10,7 +10,7 @@
  * option and no template placeholder, because there is no template. The
  * formula field is the lazy editor in its derived mode over the asset's own
  * points, with the live preview under it (ADR 0038 decision 5). Delete is the
- * `calcPoint.delete` wizard: Review alone.
+ * `calcPoint.delete` wizard (`calc-point-delete-wizard.tsx`): Review alone.
  *
  * Every rule is in `lib/calc-point-draft.ts` (the coverage gate reaches
  * `src/lib/**`); this file is presentation. The page owns the writes, so a
@@ -19,17 +19,16 @@
  */
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { CALC_DIALECT, CALC_DIALECTS } from "@bms/shared";
 import type { AssetPointCalcConfigDto, CalcPointSetBody } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import { fetchAdminAssetPoints } from "../../api/admin/asset-points";
-import { fetchAdminPointKeys } from "../../api/admin/point-keys";
 import {
-  BACKFILL_DAY_CHOICES,
+  calcPointDraftChanged,
   calcPointDraftFromConfig,
   calcPointDraftFromFields,
   calcPointDraftProblems,
+  draftDialect,
   draftToCalcPointBody,
   emptyCalcPointDraft,
   formulaPointsFor,
@@ -40,6 +39,8 @@ import {
 import { FormulaEditorLazy } from "../asset-templates/formula-editor-lazy";
 import { FormulaPreview } from "../asset-templates/formula-preview";
 import { WizardShell } from "../wizard/wizard-shell";
+import { BackfillDaysSelect } from "./backfill-days-select";
+import { CatalogKeySelect } from "./catalog-key-select";
 import {
   PointCalcDraftProblems,
   PointCalcFormulaFields,
@@ -52,82 +53,6 @@ function wizardEntry(id: string): CatalogEntry {
   const entry = catalogEntry(id);
   if (!entry) throw new Error(`F4.311: the catalog has no entry "${id}"`);
   return entry;
-}
-
-/** The dialect the draft is written in — the Grammar select's value, never `""` on a standalone point. */
-export function draftDialect(draft: CalcPointDraft) {
-  return CALC_DIALECTS.find((known) => known === draft.formulaDialect) ?? CALC_DIALECT;
-}
-
-/** The catalog key a new point writes (`fetchAdminPointKeys("true")`, the asset-point wizard's read). */
-export function CatalogKeySelect({
-  value,
-  exclude,
-  disabled,
-  onChange,
-}: {
-  value: string;
-  exclude: ReadonlySet<string>;
-  disabled: boolean;
-  onChange: (pointKey: string) => void;
-}) {
-  // `F3.39`: one fleet-wide catalog, so no organization in the key.
-  const catalogQ = useQuery({ queryKey: ["admin", "point-keys", "true"], queryFn: () => fetchAdminPointKeys("true") });
-  return (
-    <label className="block text-xs">
-      <span className="text-ink-muted">Point key</span>
-      <select
-        aria-label="Point key"
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full surface-field px-2 py-1"
-      >
-        <option value="">Select catalog point key</option>
-        {(catalogQ.data?.items ?? [])
-          .filter((item) => !exclude.has(item.code))
-          .map((item) => (
-            <option key={item.id} value={item.code}>
-              {item.code} · {item.name}
-            </option>
-          ))}
-      </select>
-    </label>
-  );
-}
-
-/** ADR 0109 decision 7 — days of history to compute on save; "None" sends no field. */
-export function BackfillDaysSelect({
-  value,
-  disabled,
-  onChange,
-}: {
-  value: string;
-  disabled: boolean;
-  onChange: (days: string) => void;
-}) {
-  return (
-    <label className="block text-xs">
-      <span className="text-ink-muted">Backfill history</span>
-      <select
-        aria-label="Backfill history"
-        value={value}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full surface-field px-2 py-1"
-      >
-        <option value="">None</option>
-        {BACKFILL_DAY_CHOICES.map((days) => (
-          <option key={days} value={String(days)}>
-            {days === 1 ? "1 day" : `${days} days`}
-          </option>
-        ))}
-      </select>
-      <span className="mt-1 block text-[11px] text-ink-muted">
-        Computes the point over this many past days when you save. Stored readings are never overwritten.
-      </span>
-    </label>
-  );
 }
 
 type CalcPointPanelProps = {
@@ -169,6 +94,12 @@ export function CalcPointPanel({
   };
   const problems = calcPointDraftProblems(draft, knownRefsFor(rows, draft.pointKey));
   const dialect = draftDialect(draft);
+  // The leave prompt's `dirty`: the shell never sees the CodeMirror formula's
+  // edits (no DOM `change`), and on Add the key select sits outside it.
+  const dirty = calcPointDraftChanged(
+    draft,
+    config ? calcPointDraftFromConfig(config) : emptyCalcPointDraft(draft.pointKey),
+  );
   const fieldsConfig = config ?? standaloneConfigFor(draft.pointKey);
   const fields = {
     config: fieldsConfig,
@@ -257,6 +188,7 @@ export function CalcPointPanel({
           submitting={saving}
           submitError={saveError ?? (problems.length > 0 ? problems.join(" ") : null)}
           current={config?.override ?? null}
+          dirty={dirty}
         />
       )}
       {onDelete ? (
@@ -273,56 +205,6 @@ export function CalcPointPanel({
           </button>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-/** A Review-only wizard has no field to fill. */
-const NO_VALUES: Record<string, unknown> = {};
-
-/**
- * `calcPoint.delete` — Review alone. Submit hands the `DELETE` to the page; a
- * refusal (`409`: the point is on a dashboard widget) is `error`, the
- * server's sentence.
- */
-export function CalcPointDeleteWizard({
-  assetId,
-  pointKey,
-  assetLabel,
-  deleting,
-  error,
-  onSubmit,
-  onCancel,
-}: {
-  assetId: string;
-  pointKey: string;
-  assetLabel: string;
-  deleting: boolean;
-  error: string | null;
-  onSubmit: () => void;
-  onCancel: () => void;
-}) {
-  const entry = wizardEntry("calcPoint.delete");
-  const params = { assetId, pointKey };
-  return (
-    <div className="surface-raised-sm flex flex-col gap-3 p-3">
-      <h3 className="text-sm font-semibold">Delete {pointKey}</h3>
-      <WizardShell
-        entry={wizardEntry("calcPoint.delete")}
-        params={params}
-        values={NO_VALUES}
-        onChange={() => undefined}
-        renderStep={() => null}
-        onSubmit={() => {
-          if (!deleting) onSubmit();
-        }}
-        onCancel={() => {
-          if (!deleting) onCancel();
-        }}
-        submitting={deleting}
-        submitError={error}
-        summary={entry.summary({ body: NO_VALUES, params, targetName: assetLabel, organizationName: "" })}
-      />
     </div>
   );
 }

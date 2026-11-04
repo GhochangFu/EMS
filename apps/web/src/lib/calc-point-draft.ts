@@ -60,6 +60,21 @@ export function emptyCalcPointDraft(pointKey = ""): CalcPointDraft {
   };
 }
 
+/** The dialect the draft is written in — the Grammar select's value, never `""` on a standalone point. */
+export function draftDialect(draft: CalcPointDraft): (typeof CALC_DIALECTS)[number] {
+  return CALC_DIALECTS.find((known) => known === draft.formulaDialect) ?? CALC_DIALECT;
+}
+
+/**
+ * The wizard's `dirty` (F3.85's leave prompt): the draft differs from the one
+ * the form opened on. The shell sees a bubbled `change` only from an input,
+ * a textarea or a select; the formula editor is CodeMirror's contenteditable,
+ * so a formula-only edit is caught here or nowhere.
+ */
+export function calcPointDraftChanged(draft: CalcPointDraft, start: CalcPointDraft): boolean {
+  return (Object.keys(start) as (keyof CalcPointDraft)[]).some((field) => draft[field] !== start[field]);
+}
+
 /** An edit opens on what the point runs (`effective` equals `override` on a standalone item). */
 export function calcPointDraftFromConfig(config: AssetPointCalcConfigDto): CalcPointDraft {
   return { ...draftFromFields(config.effective), pointKey: config.pointKey, backfillDays: "" };

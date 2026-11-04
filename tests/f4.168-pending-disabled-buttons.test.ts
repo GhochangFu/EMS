@@ -98,6 +98,10 @@ const BYSTANDER_ALLOWLIST: Bystander[] = [
   { file: "apps/web/src/components/assets/calc-point-panel.tsx", marker: "saving", name: "Delete calculated point" },
   { file: "apps/web/src/components/assets/point-calc-override-panel.tsx", marker: "busy", name: "Close" },
   { file: "apps/web/src/components/report-schedules.tsx", marker: "deleting", name: "Edit" },
+  // `F4.311` PR 6a: each opens a standalone form; disabled while a standalone write pends.
+  { file: "apps/web/src/pages/admin/asset-points-page.tsx", marker: "standaloneBusy", name: "Add calculated point" },
+  { file: "apps/web/src/pages/admin/asset-points-page.tsx", marker: "standaloneBusy", name: "Edit" },
+  { file: "apps/web/src/pages/admin/asset-points-page.tsx", marker: "standaloneBusy", name: "Delete" },
 ];
 
 /**

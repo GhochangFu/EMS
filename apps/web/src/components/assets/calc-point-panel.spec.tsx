@@ -10,7 +10,7 @@ import * as assetPointsApi from "../../api/admin/asset-points";
 import * as pointKeysApi from "../../api/admin/point-keys";
 import { emptyCalcPointDraft, standaloneConfigFor, type CalcPointDraft } from "../../lib/calc-point-draft";
 import type { FormulaEditorProps } from "../asset-templates/formula-editor-lazy";
-import { CalcPointDeleteWizard, CalcPointPanel } from "./calc-point-panel";
+import { CalcPointPanel } from "./calc-point-panel";
 import { PointCalcFormulaFields, PointCalcScheduleFields } from "./point-calc-override-panel";
 
 /**
@@ -22,17 +22,25 @@ import { PointCalcFormulaFields, PointCalcScheduleFields } from "./point-calc-ov
  * **The formula editor is a stand-in**, as in `calculations-tab.spec.tsx`:
  * the lazy chunk is CodeMirror, whose input handling in jsdom is a browser
  * claim, and a `<textarea>` carrying the props drives the panel's `onChange`
- * one keystroke at a time.
+ * one keystroke at a time. Beside it, a button edits the formula the way
+ * CodeMirror does — through `onChange` with no DOM `change` event — so the
+ * dirty-guard claims cannot pass on the shell's own bubbled `change`.
  */
 
 vi.mock("../asset-templates/formula-editor-lazy", () => ({
   FormulaEditorLazy: (props: FormulaEditorProps) => (
-    <textarea
-      aria-label={props.ariaLabel}
-      value={props.value}
-      readOnly={props.readOnly === true}
-      onChange={(event) => props.onChange(event.target.value)}
-    />
+    <>
+      <textarea
+        aria-label={props.ariaLabel}
+        value={props.value}
+        readOnly={props.readOnly === true}
+        onChange={(event) => props.onChange(event.target.value)}
+      />
+      {/* CodeMirror edits a contenteditable: no DOM `change` reaches the shell. */}
+      <button type="button" onClick={() => props.onChange(`${props.value} + 1`)}>
+        Edit the formula as CodeMirror does
+      </button>
+    </>
   ),
 }));
 
@@ -87,11 +95,15 @@ function withClient(children: ReactNode) {
   return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
 }
 
-type Spies = { onSubmit: ReturnType<typeof vi.fn>; onDelete: ReturnType<typeof vi.fn> };
+type Spies = {
+  onSubmit: ReturnType<typeof vi.fn>;
+  onDelete: ReturnType<typeof vi.fn>;
+  onCancel: ReturnType<typeof vi.fn>;
+};
 
 function renderPanel(config: AssetPointCalcConfigDto | null): Spies {
   stubApi();
-  const spies = { onSubmit: vi.fn(), onDelete: vi.fn() };
+  const spies = { onSubmit: vi.fn(), onDelete: vi.fn(), onCancel: vi.fn() };
   render(
     withClient(
       <CalcPointPanel
@@ -102,7 +114,7 @@ function renderPanel(config: AssetPointCalcConfigDto | null): Spies {
         onEdited={() => undefined}
         onSubmit={spies.onSubmit}
         onDelete={config ? spies.onDelete : null}
-        onCancel={() => undefined}
+        onCancel={spies.onCancel}
       />,
     ),
   );
@@ -209,18 +221,32 @@ export async function editOffersDeleteThatCallsOnDelete(): Promise<void> {
   expect(onDelete).toHaveBeenCalledTimes(1);
 }
 
-export async function theDeleteWizardShowsTheServersRefusal(): Promise<void> {
-  const sentence = "This calculated point is shown on 2 dashboard widget(s). Remove it from those widgets first, then delete it.";
-  render(
-    <CalcPointDeleteWizard
-      assetId={ASSET}
-      pointKey="pf"
-      assetLabel="PMP-1"
-      deleting={false}
-      error={sentence}
-      onSubmit={() => undefined}
-      onCancel={() => undefined}
-    />,
-  );
-  expect(screen.getByText(sentence)).toBeTruthy();
+/** The leave prompt is up and the panel did not close. */
+function askedBeforeLeaving(spies: Spies): [boolean, number] {
+  return [screen.queryByRole("alertdialog", { name: "Leave the wizard" }) !== null, spies.onCancel.mock.calls.length];
+}
+
+export async function cancelAfterAFormulaOnlyEditOnEditAsks(): Promise<void> {
+  const spies = renderPanel(STORED);
+  await screen.findByLabelText("Sample value for kw");
+  await userEvent.click(screen.getByRole("button", { name: "Edit the formula as CodeMirror does" }));
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(askedBeforeLeaving(spies)).toEqual([true, 0]);
+}
+
+export async function cancelAfterAFormulaOnlyEditOnAddAsks(): Promise<void> {
+  const spies = renderPanel(null);
+  const select = screen.getByLabelText("Point key");
+  await within(select).findByText("pf · pf name");
+  await userEvent.selectOptions(select, "pf");
+  await userEvent.click(screen.getByRole("button", { name: "Edit the formula as CodeMirror does" }));
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(askedBeforeLeaving(spies)).toEqual([true, 0]);
+}
+
+export async function cancelOnAnUntouchedEditLeavesAtOnce(): Promise<void> {
+  const spies = renderPanel(STORED);
+  await screen.findByLabelText("Sample value for kw");
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(askedBeforeLeaving(spies)).toEqual([false, 1]);
 }

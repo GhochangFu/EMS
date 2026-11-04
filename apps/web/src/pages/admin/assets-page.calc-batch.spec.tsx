@@ -210,3 +210,28 @@ export async function aCheckboxDoesNotOpenTheAssetsPoints(): Promise<void> {
     null,
   ]);
 }
+
+export async function aTemplatedAssetIsLeftOutOfTheRequestBody(): Promise<void> {
+  stubApi([ONE, PINNED]);
+  renderPage();
+  await check("PMP-1", "PMP-4");
+  const dialog = await runToReview(2);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+  await waitFor(() =>
+    expect(vi.mocked(assetPointsApi.createAdminCalcPointBatch).mock.calls[0]?.[0].assetIds).toEqual([ONE.id]),
+  );
+}
+
+export async function aRefusedBatchRereadsTheAssetList(): Promise<void> {
+  stubApi([ONE, TWO]);
+  // Ruling 4: a batch `409` arrives with every point already written.
+  vi.mocked(assetPointsApi.createAdminCalcPointBatch).mockRejectedValue(
+    new ApiError(JSON.stringify({ statusCode: 409, message: "A backfill of pf on PMP-2 is already running." }), 409),
+  );
+  renderPage();
+  await check("PMP-1", "PMP-2");
+  const dialog = await runToReview(2);
+  const before = vi.mocked(assetsApi.fetchAdminAssets).mock.calls.length;
+  await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(vi.mocked(assetsApi.fetchAdminAssets).mock.calls.length).toBeGreaterThan(before));
+}
