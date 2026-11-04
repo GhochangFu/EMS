@@ -159,6 +159,8 @@ const MODULES: readonly string[] = [
   // F4.303 PR 2 U16: the Schedule button and the prefill it hands the wizard.
   "apps/web/src/components/view-actions/schedule-button.tsx",
   "apps/web/src/lib/schedule-from-view.ts",
+  // F4.306 (ADR 0108 Amendment 7) PR 1 U5: the trend strip selection's write-path check.
+  "apps/api/src/dashboard-builder/trend-strip-selection.check.ts",
 ];
 
 /**

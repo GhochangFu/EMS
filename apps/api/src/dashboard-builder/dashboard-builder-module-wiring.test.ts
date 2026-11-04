@@ -12,6 +12,9 @@ import {
   assertModuleProvidesSiteWidgetsService,
   assertControllerTakesSiteWidgetsService,
   assertSiteWidgetsServiceDepsResolveWithinTheModule,
+  assertDashboardsServiceTakesTrendPointsService,
+  assertModuleProvidesTrendPointsService,
+  assertTrendPointsServiceDepsResolveWithinTheModule,
 } from "./dashboard-builder-module-wiring.spec";
 
 /** `F3.32` U2 — `DashboardBuilderModule` wiring for `MimicNodesService` (ADR 0079, plan D1). */
@@ -58,5 +61,17 @@ describe("F3.32 — DashboardBuilderModule wiring", () => {
 
   it("positive control — DashboardBuilderController takes a DashboardWidgetAppendService parameter (F4.303)", () => {
     assertControllerTakesDashboardWidgetAppendService();
+  });
+
+  it("provides TrendPointsService (F4.306)", () => {
+    assertModuleProvidesTrendPointsService();
+  });
+
+  it("TrendPointsService's dependencies resolve inside the module's scope (F4.306)", () => {
+    assertTrendPointsServiceDepsResolveWithinTheModule();
+  });
+
+  it("positive control — DashboardsService takes a TrendPointsService parameter that resolves (F4.306)", () => {
+    assertDashboardsServiceTakesTrendPointsService();
   });
 });

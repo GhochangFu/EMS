@@ -14,6 +14,7 @@ import { DashboardBuilderModule } from "./dashboard-builder.module";
 import { DashboardWidgetAppendService } from "./dashboard-widget-append.service";
 import { MimicNodesService } from "./mimic-nodes.service";
 import { SiteWidgetsService } from "./site-widgets.service";
+import { TrendPointsService } from "../trend-points/trend-points.service";
 
 /**
  * `F3.32` U2 / ADR 0079 — the Nest module graph for `MimicNodesService`, which a green
@@ -169,4 +170,34 @@ export function assertControllerTakesDashboardWidgetAppendService(): void {
   expect(classTypedParams("dashboard-builder.controller.ts", "DashboardBuilderController")).toContain(
     "DashboardWidgetAppendService",
   );
+}
+
+/**
+ * `F4.306` U5 (ADR 0108 Amendment 7) — `DashboardsService` takes a `TrendPointsService` for the
+ * trend strip selection check. The module provides it, its two `@Inject` tokens resolve, and its
+ * class-typed parameters resolve by name; the positive control is that the scan finds the new
+ * parameter on `DashboardsService`, whose constructor default would otherwise hide a missing
+ * provider from every hand-built spec.
+ */
+export function assertModuleProvidesTrendPointsService(): void {
+  expect(moduleList(DashboardBuilderModule, "providers").map(tokenOf)).toContain(TrendPointsService);
+}
+
+export function assertTrendPointsServiceDepsResolveWithinTheModule(): void {
+  const { byIdentity, byName } = resolvableTokens();
+  expect(injectedTokens(TrendPointsService)).toEqual([FLEET_DRIZZLE, TENANT_DRIZZLE]);
+  const missingTokens = injectedTokens(TrendPointsService).filter((token) => !byIdentity.has(token));
+  expect(missingTokens.map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
+  const src = readFileSync(join(repoRoot(), "apps/api/src/trend-points/trend-points.service.ts"), "utf8");
+  const ctor = src.slice(src.indexOf("constructor("), src.indexOf(") {}", src.indexOf("constructor(")));
+  const classes = [...ctor.matchAll(/readonly\s+\w+\s*:\s*([A-Z]\w*)/g)].map((m) => m[1]).filter((c) => c !== "BmsDb");
+  expect(classes).toEqual(["AccessControlService", "MasterDataAuditService"]);
+  expect(classes.filter((cls) => !byName.has(cls as string)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+export function assertDashboardsServiceTakesTrendPointsService(): void {
+  const classes = classTypedParams("dashboards.service.ts", "DashboardsService");
+  expect(classes).toEqual(["AccessControlService", "MasterDataAuditService", "TrendPointsService"]);
+  const { byName } = resolvableTokens();
+  expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
 }
