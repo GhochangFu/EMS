@@ -778,3 +778,32 @@ export async function assertComputedRowCannotBeReKeyed(
     "the row must still be computed after an update that only touches the sensor code",
   );
 }
+
+/**
+ * `F4.311` PR 1 (ADR 0109 decision 4) — an asset with no template lists in
+ * `standalone` mode, with no items. The page reads `mode` to offer *Add
+ * calculated point*; an empty list has no item to read `kind` from.
+ */
+export async function assertATemplateLessAssetListsInStandaloneMode(
+  pool: pg.Pool,
+  svc: AssetPointCalcOverrideService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const [asset] = await db
+    .insert(assets)
+    .values({
+      code: `${TEST_ASSET_PREFIX}BARE`,
+      name: "Override Fixture Bare Asset",
+      siteName: "Fixture Site",
+      organizationId: fx.organizationId,
+      locationId: fx.otherLocationId,
+      domain: "electrical",
+      templateId: null,
+    })
+    .returning({ id: assets.id });
+
+  const list = assetPointCalcConfigListResponseSchema.parse(await svc.listCalcPoints(fx.adminJwt, asset.id));
+  assert(list.mode === "standalone", `a template-less asset must list in standalone mode, got ${list.mode}`);
+  assert(list.items.length === 0, `and with no items yet, got ${list.items.length}`);
+}

@@ -157,7 +157,17 @@ export const templateDraftDeletedResponseSchema = z.object({ deleted: z.literal(
  * themselves are in `asset-templates.ts` and `template-migration.ts` now —
  * both moved out of `admin.ts` on §4.5 grounds (`F4.150`, `F2.24`).
  */
-export const assetPointCalcConfigListResponseSchema = itemsOf(assetPointCalcConfigDtoSchema);
+/**
+ * `mode` is list-level (ADR 0109 decision 4): `template` when the asset is
+ * pinned to a template version (every item is an `override`), `standalone`
+ * when it has none. An empty standalone list has no item to read `kind`
+ * from, and the page needs `mode` to offer *Add calculated point*. An
+ * intersection, not `.extend()` (§4.8).
+ */
+export const assetPointCalcConfigListResponseSchema = z.intersection(
+  itemsOf(assetPointCalcConfigDtoSchema),
+  z.object({ mode: z.enum(["template", "standalone"]) }),
+);
 export const templateVersionsListResponseSchema = itemsOf(templateVersionSummaryDtoSchema);
 
 /**

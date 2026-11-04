@@ -62,6 +62,7 @@ function config(
   const ov = { ...NOTHING, ...override };
   return {
     pointKey: "KWH",
+    kind: "override",
     templatePointId: "tp-1",
     label: "Energy",
     unit: "kWh",

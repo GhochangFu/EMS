@@ -128,7 +128,9 @@ export class AssetPointCalcOverrideService {
     if (asset.templateId === null) {
       // A hand-created asset has no template to inherit from. An empty list is
       // the honest answer, not an error: nothing is wrong with the asset.
-      return { items: [] };
+      // `mode: "standalone"` (ADR 0109 decision 4) tells the page this asset
+      // can carry calculated points of its own.
+      return { items: [], mode: "standalone" };
     }
 
     const points = await this.fleetDb
@@ -150,6 +152,7 @@ export class AssetPointCalcOverrideService {
       const runtime = this.status.get(assetId, point.id);
       return {
         pointKey: point.pointKey,
+        kind: "override",
         templatePointId: point.id,
         label: point.label,
         unit: point.unit,
@@ -171,7 +174,7 @@ export class AssetPointCalcOverrideService {
       };
     });
 
-    return { items };
+    return { items, mode: "template" };
   }
 
   /**

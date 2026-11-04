@@ -63,6 +63,7 @@ function config(
   const overridden = Object.values(stored).some((value) => value !== null);
   return assetPointCalcConfigDtoSchema.parse({
     pointKey: "KWH",
+    kind: "override",
     templatePointId: "tp-1",
     label: "Energy",
     unit: "kWh",

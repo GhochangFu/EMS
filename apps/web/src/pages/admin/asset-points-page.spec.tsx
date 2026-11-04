@@ -49,7 +49,7 @@ function stubApi() {
   vi.spyOn(rtusApi, "fetchAdminRtus").mockResolvedValue({ items: [] } as never);
   vi.spyOn(assetsAdminApi, "fetchAdminAssets").mockResolvedValue({ items: [] } as never);
   vi.spyOn(assetsAdminApi, "fetchAdminAssetSummary").mockRejectedValue(new Error("not under test"));
-  vi.spyOn(api, "fetchAdminAssetCalcPoints").mockResolvedValue({ items: [] } as never);
+  vi.spyOn(api, "fetchAdminAssetCalcPoints").mockResolvedValue({ items: [], mode: "template" } as never);
   vi.spyOn(api, "fetchAdminAssetPoints").mockResolvedValue({ items: [] } as never);
   vi.spyOn(pointKeysApi, "fetchAdminPointKeys").mockResolvedValue({
     items: [
@@ -469,6 +469,7 @@ function calcConfig(override: Partial<AssetPointCalcConfigDto["override"]> = {})
   };
   return assetPointCalcConfigDtoSchema.parse({
     pointKey: CALC_KEY,
+    kind: "override",
     templatePointId: "tp-1",
     label: "Energy",
     unit: "kWh",
@@ -489,7 +490,7 @@ function calcConfig(override: Partial<AssetPointCalcConfigDto["override"]> = {})
 
 /** The asset drill-down with one derived point, and its override wizard open on Formula. */
 async function openOverrideWizard(config: AssetPointCalcConfigDto = calcConfig()): Promise<void> {
-  vi.mocked(api.fetchAdminAssetCalcPoints).mockResolvedValue({ items: [config] } as never);
+  vi.mocked(api.fetchAdminAssetCalcPoints).mockResolvedValue({ items: [config], mode: "template" } as never);
   renderPage(`/admin/assets/${OVERRIDE_ASSET}/points`);
   const open = await screen.findByRole("button", { name: /^(Override|Edit override)$/ });
   await userEvent.click(open);

@@ -371,8 +371,20 @@ export const assetPointCalcOverrideFieldsSchema = z.object({
  */
 export const assetPointCalcConfigDtoSchema = z.object({
   pointKey: z.string(),
-  /** The `template_points` row this resolves against, on the version pinned now. */
-  templatePointId: z.string(),
+  /**
+   * Which kind of calculated point this item is (ADR 0109 decision 4).
+   * `override` is the ADR 0039 meaning: an asset pinned to a template
+   * version overrides a derived point that version declares. `standalone` is
+   * a computed `asset_points` row on an asset with **no** template, a
+   * calculated point in its own right: `template` is all-null, `override`
+   * holds the five stored columns, and `effective` equals `override`.
+   */
+  kind: z.enum(["override", "standalone"]),
+  /**
+   * The `template_points` row this resolves against, on the version pinned
+   * now. `null` on a `standalone` item: such a point has no template row.
+   */
+  templatePointId: z.string().nullable(),
   label: z.string().nullable(),
   unit: z.string().nullable(),
   assetPointId: z.string().nullable(),

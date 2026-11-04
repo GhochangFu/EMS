@@ -18,6 +18,7 @@ import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetPointCalcOverrideService } from "./asset-point-calc-override.service";
 import {
   assertAnExistingMappingRowIsNeverOverridden,
+  assertATemplateLessAssetListsInStandaloneMode,
   assertClearNullsEveryColumnAndKeepsTheRow,
   assertD1IsEnforcedOnTheWritePath,
   assertOnlyDeclaredDerivedPointsAreOverridable,
@@ -158,5 +159,10 @@ describe.skipIf(!connectionString)("F2.6 — asset point calc overrides", () => 
   it("refuses to re-key a computed row from the mapping surface", async () => {
     if (!pool) throw new Error("pool required");
     await assertComputedRowCannotBeReKeyed(pool, fx, svc);
+  });
+
+  it("F4.311 — lists a template-less asset in standalone mode", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertATemplateLessAssetListsInStandaloneMode(pool, svc, fx);
   });
 });
