@@ -30,6 +30,7 @@ import type {
   AdminAssetPointDto,
   AssetPointCalcConfigDto,
   AssetPointCalcOverrideFields,
+  CalcBackfillRunDto,
   CalcPointSetBody,
 } from "@bms/shared";
 import { calcPointBatchRefusedResponseSchema } from "@bms/shared/contracts";
@@ -226,4 +227,45 @@ export function batchRefusals(cause: unknown): BatchRefusal[] | null {
   }
   const result = calcPointBatchRefusedResponseSchema.safeParse(parsed);
   return result.success ? result.data.refused : null;
+}
+
+// ---- backfill progress (`F4.311` PR 6b, ADR 0109 decision 7) ---------------
+
+/** How often the calc-points list re-reads while a backfill is queued or running. */
+export const BACKFILL_POLL_MS = 5000;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Whole days between two ISO instants, never negative. */
+function wholeDays(fromIso: string, toIso: string): number {
+  return Math.max(0, Math.floor((Date.parse(toIso) - Date.parse(fromIso)) / DAY_MS));
+}
+
+function rowsText(rows: number): string {
+  return `${rows.toLocaleString("en-US")} ${rows === 1 ? "row" : "rows"}`;
+}
+
+/**
+ * One line for a point's latest backfill run. Days are counted from the
+ * run's window start (`fromAt`), never from when it was asked for
+ * (`createdAt`): a run asked for now covers the days before now. A failed
+ * run shows its stored `error` as the server wrote it (a fixed sentence or
+ * an error's name, never a raw response body); it is concatenated rather
+ * than templated, which is what the F4.204 scan reads as a raw render.
+ */
+export function backfillProgressLabel(run: CalcBackfillRunDto): string {
+  if (run.status === "failed") return "Backfill failed: " + (run.error ?? "no reason was recorded");
+  const total = wholeDays(run.fromAt, run.toAt);
+  if (run.status === "done") return `Backfill done: ${total} days, ${rowsText(run.writtenRows)}`;
+  if (run.doneThrough === null) return "Backfill: queued";
+  const done = Math.min(total, wholeDays(run.fromAt, run.doneThrough));
+  return `Backfill: ${done} of ${total} days, ${rowsText(run.writtenRows)}`;
+}
+
+/** The calc-points list's `refetchInterval`: {@link BACKFILL_POLL_MS} while any run is queued or running, else off. */
+export function backfillPollInterval(items: readonly AssetPointCalcConfigDto[] | undefined): number | false {
+  const active = (items ?? []).some(
+    (item) => item.backfill !== null && (item.backfill.status === "queued" || item.backfill.status === "running"),
+  );
+  return active ? BACKFILL_POLL_MS : false;
 }

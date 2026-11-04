@@ -1,10 +1,14 @@
 import { expect } from "vitest";
 import { CALC_POINT_BATCH_MAX_ASSETS } from "@bms/shared";
+import type { AssetPointCalcConfigDto, CalcBackfillRunDto } from "@bms/shared";
 import { assetPointCalcConfigDtoSchema, calcPointSetBodySchema } from "@bms/shared/contracts";
 
 import { ApiError } from "./api-error";
 import {
+  BACKFILL_POLL_MS,
   BATCH_TEMPLATE_EXCLUSION,
+  backfillPollInterval,
+  backfillProgressLabel,
   batchCapProblem,
   batchEligibility,
   batchRefusals,
@@ -178,4 +182,84 @@ export function aDraftEqualToItsStartIsUnchanged(): void {
 
 export function aFormulaOnlyEditIsAChange(): void {
   expect(calcPointDraftChanged(draft({ formula: "{kw} * 3" }), draft())).toBe(true);
+}
+
+// ---- `F4.311` PR 6b — backfill progress ------------------------------------
+
+/**
+ * A 31-day run asked for at 2026-11-01T00:05Z: its window starts 31 days
+ * before. `createdAt` is far from `fromAt` on purpose, so a count taken from
+ * the wrong one cannot pass.
+ */
+function run(patch: Partial<CalcBackfillRunDto> = {}): CalcBackfillRunDto {
+  return {
+    id: "run-1",
+    status: "running",
+    fromAt: "2026-10-01T00:00:00.000Z",
+    toAt: "2026-11-01T00:00:00.000Z",
+    doneThrough: "2026-10-04T00:00:00.000Z",
+    writtenRows: 12480,
+    error: null,
+    createdAt: "2026-11-01T00:05:00.000Z",
+    finishedAt: null,
+    ...patch,
+  };
+}
+
+export function aRunNotYetStartedIsQueued(): void {
+  expect(backfillProgressLabel(run({ status: "queued", doneThrough: null, writtenRows: 0 }))).toBe("Backfill: queued");
+}
+
+export function aRunningRunWithNoBucketStoredYetIsQueued(): void {
+  expect(backfillProgressLabel(run({ doneThrough: null, writtenRows: 0 }))).toBe("Backfill: queued");
+}
+
+export function aRunningRunCountsDaysFromItsWindowStartAndItsRows(): void {
+  expect(backfillProgressLabel(run())).toBe("Backfill: 3 of 31 days, 12,480 rows");
+}
+
+export function aPartDayCountsOnlyTheWholeDaysStored(): void {
+  expect(backfillProgressLabel(run({ doneThrough: "2026-10-04T23:00:00.000Z" }))).toBe(
+    "Backfill: 3 of 31 days, 12,480 rows",
+  );
+}
+
+export function oneRowIsSingular(): void {
+  expect(backfillProgressLabel(run({ writtenRows: 1 }))).toBe("Backfill: 3 of 31 days, 1 row");
+}
+
+export function aDoneRunSaysDoneWithItsDaysAndRows(): void {
+  expect(
+    backfillProgressLabel(run({ status: "done", doneThrough: "2026-11-01T00:00:00.000Z", finishedAt: "2026-11-01T00:09:00.000Z" })),
+  ).toBe("Backfill done: 31 days, 12,480 rows");
+}
+
+export function aFailedRunShowsItsStoredError(): void {
+  expect(backfillProgressLabel(run({ status: "failed", error: "no worker" }))).toBe("Backfill failed: no worker");
+}
+
+export function aFailedRunWithNoStoredErrorSaysSo(): void {
+  expect(backfillProgressLabel(run({ status: "failed", doneThrough: null, error: null }))).toBe(
+    "Backfill failed: no reason was recorded",
+  );
+}
+
+function item(backfill: CalcBackfillRunDto | null): AssetPointCalcConfigDto {
+  return { ...standaloneConfigFor("pf"), backfill };
+}
+
+export function aQueuedOrRunningItemPollsEveryFiveSeconds(): void {
+  expect([
+    backfillPollInterval([item(null), item(run({ status: "queued", doneThrough: null }))]),
+    backfillPollInterval([item(run())]),
+  ]).toEqual([BACKFILL_POLL_MS, BACKFILL_POLL_MS]);
+  expect(BACKFILL_POLL_MS).toBe(5000);
+}
+
+export function noActiveRunPollsNever(): void {
+  expect([
+    backfillPollInterval(undefined),
+    backfillPollInterval([]),
+    backfillPollInterval([item(null), item(run({ status: "done" })), item(run({ status: "failed", error: "x" }))]),
+  ]).toEqual([false, false, false]);
 }

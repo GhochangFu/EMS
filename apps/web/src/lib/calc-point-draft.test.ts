@@ -2,6 +2,16 @@ import { describe, it } from "vitest";
 
 import {
   aCalculatedRowIsADerivedFormulaPoint,
+  aDoneRunSaysDoneWithItsDaysAndRows,
+  aFailedRunShowsItsStoredError,
+  aFailedRunWithNoStoredErrorSaysSo,
+  aPartDayCountsOnlyTheWholeDaysStored,
+  aQueuedOrRunningItemPollsEveryFiveSeconds,
+  aRunNotYetStartedIsQueued,
+  aRunningRunCountsDaysFromItsWindowStartAndItsRows,
+  aRunningRunWithNoBucketStoredYetIsQueued,
+  noActiveRunPollsNever,
+  oneRowIsSingular,
   aDraftEqualToItsStartIsUnchanged,
   aFormulaOnlyEditIsAChange,
   aCompleteDraftIsTheBodyTheSchemaParses,
@@ -98,5 +108,47 @@ describe("F4.311 PR 6a — the standalone calculated point's draft and batch rul
 
   it("a formula-only edit is a change", () => {
     aFormulaOnlyEditIsAChange();
+  });
+});
+
+describe("F4.311 PR 6b — a backfill run's progress line and the list's poll", () => {
+  it("a run not yet started is queued", () => {
+    aRunNotYetStartedIsQueued();
+  });
+
+  it("a running run with no bucket stored yet is queued", () => {
+    aRunningRunWithNoBucketStoredYetIsQueued();
+  });
+
+  it("a running run counts days from its window start (fromAt, not createdAt) and its rows", () => {
+    aRunningRunCountsDaysFromItsWindowStartAndItsRows();
+  });
+
+  it("a part day counts only the whole days stored", () => {
+    aPartDayCountsOnlyTheWholeDaysStored();
+  });
+
+  it("one row is singular", () => {
+    oneRowIsSingular();
+  });
+
+  it("a done run says done, with its days and rows", () => {
+    aDoneRunSaysDoneWithItsDaysAndRows();
+  });
+
+  it("a failed run shows its stored error in the server's words", () => {
+    aFailedRunShowsItsStoredError();
+  });
+
+  it("a failed run with no stored error says so", () => {
+    aFailedRunWithNoStoredErrorSaysSo();
+  });
+
+  it("a queued or running item polls every five seconds", () => {
+    aQueuedOrRunningItemPollsEveryFiveSeconds();
+  });
+
+  it("no queued or running item polls never", () => {
+    noActiveRunPollsNever();
   });
 });
