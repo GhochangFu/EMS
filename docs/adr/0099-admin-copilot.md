@@ -1805,9 +1805,11 @@ The owner ruled the grouped shape; F2 above is amended in place.
 the four rulings on `F4.311`'s open questions, each put one at a time); the
 merge approves the text.** A line marked *(ADR 0109 n)* states that record's
 decision; *(Rn)* states the plan's ruling n. Lines marked *drafter choice* were
-not asked. Code citations are to `feat/f4-311-pr2-calc-writes` at `539d2a60`
-(`F4.311` PR 2). Backlog row `F4.311`; the code follows in the same PR, in the
-commit after this one.
+not asked. Code citations are to `main` at `6d7a5295` (`F4.311` PR 2, #995).
+Backlog row `F4.311`; the code follows in the same PR, in the commit after
+this one. Rulings R1, R2 and R4 on `F4.311`'s open questions are recorded with
+PR 5's note on ADR 0109; the table below repeats R1, which this amendment
+touches, and R3.
 
 ### Facts the amendment rests on
 
@@ -1819,7 +1821,7 @@ commit after this one.
   calculated point, with every calc field required
   (`calcPointSetBodySchema`, `packages/shared/src/contracts/calc-point-writes.ts`).
 - **`calcOverride.set` already names that path**
-  (`packages/shared/src/copilot/catalog/kpis.ts:67`) with the override body,
+  (`packages/shared/src/copilot/catalog/kpis.ts:70`) with the override body,
   and its `asset` target resolves any asset: a card for it on a template-less
   asset would describe an override while the route writes a standalone point.
 - **The batch route exists and is excluded.** `POST /admin/calc-points/batch`
@@ -1862,15 +1864,21 @@ commit after this one.
   body, path and summary are otherwise unchanged — now resolves only an asset
   **pinned** to a template. A proposal for the other kind is refused before
   the card, the same one refusal as a row outside the turn's scope (decision
-  10). The route's own dispatch still decides on Confirm.
+  10; *drafter choice*: the refusal does not say the asset is the wrong kind,
+  for the owner to rule on). The route's own dispatch still decides on
+  Confirm. Each title names the asset kind it writes, since the two `PUT`s
+  share a path: "Override a calculated point on an asset built from a
+  template" and "Set a calculated point on an asset with no template".
 - **G3 — The batch target** mirrors the route: at most 25 ids, no id twice,
   every asset in **one** allowed organization (the first that holds any must
   hold all), **every asset with `template_id IS NULL`**, and `canManageAsset`
   on each after `requireMasterDataUser`. Any failure is the one refusal
   (`null`); the route names each refused asset on Confirm. The formula is
-  parsed against the point keys **every** listed asset has (drafter choice:
-  the intersection, so the card never shows a formula one asset cannot
-  compute).
+  parsed against the point keys every listed asset has (drafter choice: the
+  intersection, so the card never shows a formula no asset could reference).
+  That check is wider than the route's: for `bms-calc-v1` the route admits
+  only a non-computed key as an input (v1's measured-only rule), and that rule
+  still decides on Confirm.
 - **G4 — Ruling 19 is widened to a third removal** *(ADR 0109 6)*:
   `DELETE /admin/assets/:assetId/calc-points/:pointKey` joins
   `DELETE_ALLOWANCE`, for `calcPoint.delete` only, and only on a
@@ -1892,12 +1900,17 @@ commit after this one.
   This is an accepted limit, recorded here and in `F4.311`'s closure. The
   Backfill step on `calcOverride.set` *(R1)* is not in this amendment's code:
   PR 5 adds `backfillDays` to the override body and the step with it.
-
+  **Merge order** *(owner point)*: the two summaries say "It computes the last
+  N days of history." and both cards show the Backfill step, but the routes
+  start that run only once PR 5 wires `backfillDays` into it. This PR
+  therefore merges **after** `F4.311` PR 5, so a card never promises a
+  backfill the route does not run.
 - **G7 — Bounds.** The three propose tools count against the propose
   registry's per-turn budget (`copilot-propose-budget.spec.ts:50`, 87,000
-  since `F4.289`). Measured at this PR: 89,523 characters over 108 definitions
-  (`propose_calcPoint_set` 1,060, `propose_calcPoint_createBatch` 1,109,
-  `propose_calcPoint_delete` 467). The bound rises to **91,000** by release
+  since `F4.289`). Measured at this PR: 89,599 characters over 108 definitions
+  (`propose_calcPoint_set` 1,077, `propose_calcPoint_createBatch` 1,126,
+  `propose_calcPoint_delete` 484), after the review put the asset kind in the
+  four calc titles (89,523 before). The bound rises to **91,000** by release
   4's rule — the measured size rounded up to the next thousand, plus 1,000
   (drafter choice; the merge approves it with this text).
 - **G8 — The wizards follow.** The stepper coverage gate
