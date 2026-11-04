@@ -26,6 +26,7 @@
  * renders them in its Formula and Schedule steps. The panel composes the same
  * parts, so its DOM is unchanged.
  */
+import type { ReactNode } from "react";
 import { CALC_TRIGGERS, isCrossAssetDialect, isParameterDialect } from "@bms/shared";
 import type { AssetPointCalcConfigDto } from "@bms/shared";
 
@@ -47,6 +48,7 @@ import {
   V3_WINDOW_HELP,
   dialectOptions,
 } from "../../lib/template-calc-config";
+import { BackfillDaysSelect } from "./backfill-days-select";
 
 type Props = {
   config: AssetPointCalcConfigDto;
@@ -78,6 +80,14 @@ type FieldsProps = {
   draft: OverrideDraft;
   busy: boolean;
   onDraftChange: (next: OverrideDraft) => void;
+  /**
+   * `F4.311` PR 6a (ADR 0109 decision 1): a calculated point on an asset with
+   * no template has nothing to inherit, so the `inherit (…)` options and the
+   * template placeholders are dropped. Absent, the override's DOM is unchanged.
+   */
+  standalone?: boolean;
+  /** `F4.311` PR 6a: the formula control in place of the plain input (the standalone panel's lazy editor). */
+  formulaEditor?: ReactNode;
 };
 
 /** The point's name and key — the panel's heading. */
@@ -132,7 +142,14 @@ export function PointCalcSettingsTable({ config }: { config: AssetPointCalcConfi
 }
 
 /** Grammar, Formula and the `v2`/`v3` teaching list — the wizard's Formula step. */
-export function PointCalcFormulaFields({ config, draft, busy, onDraftChange }: FieldsProps) {
+export function PointCalcFormulaFields({
+  config,
+  draft,
+  busy,
+  onDraftChange,
+  standalone = false,
+  formulaEditor,
+}: FieldsProps) {
   const set = (patch: Partial<OverrideDraft>) => onDraftChange({ ...draft, ...patch });
   // The grammar in force after the save — the draft's when chosen, the
   // template's when inheriting — from the same function `draftProblems` reads,
@@ -158,7 +175,9 @@ export function PointCalcFormulaFields({ config, draft, busy, onDraftChange }: F
           onChange={(event) => set({ formulaDialect: event.target.value })}
           className="mt-1 w-full surface-field px-2 py-1"
         >
-          <option value="">inherit ({config.template.formulaDialect ?? "not set"})</option>
+          {standalone ? null : (
+            <option value="">inherit ({config.template.formulaDialect ?? "not set"})</option>
+          )}
           {dialectOptions().map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -167,16 +186,18 @@ export function PointCalcFormulaFields({ config, draft, busy, onDraftChange }: F
         </select>
       </label>
       <label className="text-xs sm:col-span-2">
-        <span className="text-ink-muted">Formula — leave empty to inherit</span>
-        <input
-          type="text"
-          aria-label={`Formula for ${config.pointKey}`}
-          value={draft.formula}
-          disabled={busy}
-          onChange={(event) => set({ formula: event.target.value })}
-          className="mt-1 w-full surface-field px-2 py-1 font-mono"
-          placeholder={config.template.formula ?? ""}
-        />
+        <span className="text-ink-muted">{standalone ? "Formula" : "Formula — leave empty to inherit"}</span>
+        {formulaEditor ?? (
+          <input
+            type="text"
+            aria-label={`Formula for ${config.pointKey}`}
+            value={draft.formula}
+            disabled={busy}
+            onChange={(event) => set({ formula: event.target.value })}
+            className="mt-1 w-full surface-field px-2 py-1 font-mono"
+            placeholder={standalone ? undefined : (config.template.formula ?? "")}
+          />
+        )}
       </label>
       {isV2 ? (
         // The teaching ADR 0055 decision 6 buys, as the Calculations tab
@@ -206,38 +227,24 @@ export function PointCalcFormulaFields({ config, draft, busy, onDraftChange }: F
   );
 }
 
-/** `F4.311` PR 5 — the Backfill step's choices, bounded 1..31 (ADR 0109 decision 7). */
-const BACKFILL_DAY_CHOICES = [1, 7, 14, 31] as const;
-
 /**
  * `F4.311` PR 5 (owner ruling 1) — the `calcOverride.set` wizard's Backfill
- * step: optional days of history to compute once the override is saved.
- * The progress of a run is PR 6b's.
+ * step: optional days of history to compute once the override is saved. The
+ * select is PR 6a's shared `BackfillDaysSelect`, named after the point.
  */
 export function PointCalcBackfillField({ config, draft, busy, onDraftChange }: FieldsProps) {
   return (
-    <label className="text-xs">
-      <span className="text-ink-muted">Backfill</span>
-      <select
-        aria-label={`Backfill for ${config.pointKey}`}
-        value={draft.backfillDays ?? ""}
-        disabled={busy}
-        onChange={(event) => onDraftChange({ ...draft, backfillDays: event.target.value })}
-        className="mt-1 w-full surface-field px-2 py-1"
-      >
-        <option value="">none</option>
-        {BACKFILL_DAY_CHOICES.map((days) => (
-          <option key={days} value={String(days)}>
-            last {days} day{days === 1 ? "" : "s"}
-          </option>
-        ))}
-      </select>
-    </label>
+    <BackfillDaysSelect
+      label={`Backfill for ${config.pointKey}`}
+      value={draft.backfillDays ?? ""}
+      disabled={busy}
+      onChange={(days) => onDraftChange({ ...draft, backfillDays: days })}
+    />
   );
 }
 
 /** Runs, Every and Inputs valid for — the wizard's Schedule step. */
-export function PointCalcScheduleFields({ config, draft, busy, onDraftChange }: FieldsProps) {
+export function PointCalcScheduleFields({ config, draft, busy, onDraftChange, standalone = false }: FieldsProps) {
   const set = (patch: Partial<OverrideDraft>) => onDraftChange({ ...draft, ...patch });
   const merged = mergedDialect(draft, config);
   const isV2 = merged !== null && isCrossAssetDialect(merged);
@@ -253,7 +260,7 @@ export function PointCalcScheduleFields({ config, draft, busy, onDraftChange }: 
           onChange={(event) => set({ calcTrigger: event.target.value })}
           className="mt-1 w-full surface-field px-2 py-1"
         >
-          <option value="">inherit ({config.template.calcTrigger ?? "not set"})</option>
+          {standalone ? null : <option value="">inherit ({config.template.calcTrigger ?? "not set"})</option>}
           {/* Disabled under a merged `v2`, not hidden (design decision 5):
               a stored streaming override keeps its value visible while
               `draftProblems`' server sentence names the problem. */}
@@ -278,7 +285,11 @@ export function PointCalcScheduleFields({ config, draft, busy, onDraftChange }: 
           onChange={(event) => set({ calcIntervalSeconds: event.target.value })}
           className="mt-1 w-full surface-field px-2 py-1"
           placeholder={
-            config.template.calcIntervalSeconds === null ? "inherit" : String(config.template.calcIntervalSeconds)
+            standalone
+              ? undefined
+              : config.template.calcIntervalSeconds === null
+                ? "inherit"
+                : String(config.template.calcIntervalSeconds)
           }
         />
       </label>
@@ -291,7 +302,11 @@ export function PointCalcScheduleFields({ config, draft, busy, onDraftChange }: 
           onChange={(event) => set({ maxInputAgeSeconds: event.target.value })}
           className="mt-1 w-full surface-field px-2 py-1"
           placeholder={
-            config.template.maxInputAgeSeconds === null ? "inherit" : String(config.template.maxInputAgeSeconds)
+            standalone
+              ? undefined
+              : config.template.maxInputAgeSeconds === null
+                ? "inherit"
+                : String(config.template.maxInputAgeSeconds)
           }
         />
       </label>
