@@ -2,9 +2,9 @@
 
 ## Status
 
-**Proposed — 2026-11-04.** Raised by `F4.311`. The owner gave seven rulings in
-chat, one at a time, before this record was written (listed under *Rulings*).
-The merge of this record is the acceptance.
+**Accepted — 2026-11-04** (owner, in chat; the merge of this record is the
+acceptance). Raised by `F4.311`. The owner gave eight rulings in chat, one at a
+time, before this record was written (listed under *Rulings*).
 
 ## Context
 
