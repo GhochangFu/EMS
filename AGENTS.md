@@ -1038,7 +1038,8 @@
 > `bms.calc_backfill_runs` (forced RLS, one active run per point), and a
 > further BullMQ queue, `calc-backfill` (declared in `queue/calc-backfill.ts`,
 > registered in `queue/queues.ts`), runs it on the worker through the leaf
-> module `apps/api/src/calc-backfill/`. The asset points page gains **Add calculated point** and the asset list a bulk action
+> module `apps/api/src/calc-backfill/`. The asset points page gains
+> **Add calculated point** and the asset list a bulk action
 > (PR 6a). Copilot, **per ADR 0099 Amendment 11** (PR 3): `calcPoint.set`,
 > `calcPoint.createBatch` and `calcPoint.delete`, each a red Confirm card on
 > the same routes; `DELETE_ALLOWANCE` widens from two removals to three, the
