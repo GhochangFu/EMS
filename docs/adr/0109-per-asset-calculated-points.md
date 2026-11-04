@@ -142,3 +142,30 @@ None. BullMQ and the worker exist (ADR 0063).
 - Deferred to the adopt amendment: pinning an existing asset to a template
   version, and turning a per-asset row into an override (ruling 8).
 - `AGENTS.md` is updated in a separate `chore(agents):` PR (§9.10).
+
+## Note — 2026-11-04: backfill on the override PUT too (owner ruling 1)
+
+Recorded with `F4.311` PR 5, from the owner's rulings on the plan's open
+questions (`docs/plans/f4.311-per-asset-calc-points.md`, "Owner rulings").
+This **widens decision 7**, which named the standalone `PUT` and the batch
+route only:
+
+1. **`backfillDays` (1–31, optional) is accepted on the override `PUT` too**
+   (`assetPointCalcOverrideBodySchema`), so a templated asset's overridden
+   derived point can be backfilled the same way. The `calcOverride.set`
+   copilot entry gains a "Backfill" step for the field. An override item's
+   `backfill` on the calc-points list is read from the run table like a
+   standalone item's, never always `null`.
+2. **A `$parameter` formula backfills with the value in force at each
+   bucket** (ruling 2): one range read of the parameter rows per chunk
+   (`CalcParametersService.resolveSeriesForAssets`), held equal to the point
+   read on a grid by its integration spec.
+3. **Aggregate membership during a backfill is today's membership** (ruling
+   3) — an accepted limit: membership is configuration, its history is not
+   stored, and the walk resolves it once per run.
+4. **A running backfill refuses only the new backfill** (ruling 4). The point
+   write commits first and the run is created after it; only the run
+   creation answers 409 ("the calculated point was saved, but a backfill is
+   already running for this point"). An enqueue failure marks the run
+   `failed` with `error = 'no worker'` and answers 503; the point stays
+   written.
