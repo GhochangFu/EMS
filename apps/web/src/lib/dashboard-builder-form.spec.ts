@@ -931,6 +931,33 @@ export function runTrendStripRoundTripTests(): void {
   assert(!builderHasChanged(dashboardRowsFromDto(dto), dto), "an unedited set of strips is no change");
 }
 
+/** `F4.306` (ADR 0108 Amendment 7) — a stored selection is carried through read-back and build
+ * unchanged, each field alone and all three together; a config without one gains no key. No editor
+ * exists in PR 1, so an edit-and-resave must not drop it. Mutation: drop one field from the carry
+ * => that config re-saves without it. */
+export function runTrendStripSelectionRoundTripTests(): void {
+  const segments = ["hvac", "electrical"];
+  const points = ["hvac:supply_temp_c", "electrical:kw_total"];
+  const colors = { "hvac:supply_temp_c": "series-8", "electrical:kw_total": "series-2" };
+  const stored: unknown[] = [
+    { tabKey: "hvac", defaultRange: "7d", segments, points, colors },
+    { defaultRange: "24h", segments },
+    { defaultRange: "24h", points },
+    { defaultRange: "30d", colors },
+    { defaultRange: "24h" },
+  ];
+  const dto = dashboardDto(stored.map((config, index) => siteDto("trend_strip", config, `strip-${index}`)));
+  const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dto), []);
+  stored.forEach((config, index) => {
+    const widget = payload.widgets[index]!;
+    assert(
+      widget.widgetType === "trend_strip" && JSON.stringify(widget.config) === JSON.stringify(config),
+      `stored config ${index} re-saves byte-equal: want ${JSON.stringify(config)}, got ${JSON.stringify(widget.config)}`,
+    );
+  });
+  assert(!builderHasChanged(dashboardRowsFromDto(dto), dto), "an unedited set of selected strips is no change");
+}
+
 /** The strip reads the site of the dashboard: a non-location scope is flagged on the scope field; a
  * location dashboard is clean; an unknown `tabKey` is the API's sentence on `stripTabKey`. */
 export function runTrendStripNeedsASiteTests(): void {

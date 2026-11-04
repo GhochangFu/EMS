@@ -36,6 +36,7 @@ import {
   buildTankConfig,
   buildTileConfig,
   buildTrendStripConfig,
+  readTrendStripSelection,
   widgetConfigErrors,
   type WidgetConfigRow,
 } from "./widget-config-form";
@@ -344,6 +345,7 @@ export function configRowFromDto(widget: DashboardWidgetSpec): WidgetConfigRow {
       if (widget.config.tabKey !== undefined) {
         row.stripTabKey = widget.config.tabKey;
       }
+      Object.assign(row, readTrendStripSelection(widget.config)); // `F4.306` — the stored selection
       break;
     case "state_legend":
     case "asset_class_strip":
