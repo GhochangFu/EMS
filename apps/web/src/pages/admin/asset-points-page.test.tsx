@@ -9,6 +9,7 @@ import {
   clearIsDisabledWhileTheSaveIsInFlight,
   clearOverrideStaysBesideTheWizard,
   submitSendsNothingWhileAClearIsInFlight,
+  theOverrideSendsTheBackfillChoice,
   theOverrideStepsAreFormulaScheduleReview,
   theOverrideSubmitsTheDraftAsTheBody,
   theOverrideWizardSendsNoCopilotHeader,
@@ -101,8 +102,12 @@ describe("F3.85 PR 11b asset points — the calc override is the calcOverride.se
     vi.unstubAllGlobals();
   });
 
-  it("the steps are Formula, Schedule, Review", async () => {
+  it("the steps are Formula, Schedule, Backfill, Review", async () => {
     await theOverrideStepsAreFormulaScheduleReview();
+  }, CASE_TIMEOUT_MS);
+
+  it("a Backfill choice is sent as backfillDays (F4.311 PR 5, owner ruling 1)", async () => {
+    await theOverrideSendsTheBackfillChoice();
   }, CASE_TIMEOUT_MS);
 
   it("Submit sends the draft as the PUT body, empty columns as null", async () => {

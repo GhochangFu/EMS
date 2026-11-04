@@ -207,6 +207,36 @@ export function PointCalcFormulaFields({ config, draft, busy, onDraftChange }: F
 }
 
 /** Runs, Every and Inputs valid for — the wizard's Schedule step. */
+/** `F4.311` PR 5 — the Backfill step's choices, bounded 1..31 (ADR 0109 decision 7). */
+const BACKFILL_DAY_CHOICES = [1, 7, 14, 31] as const;
+
+/**
+ * `F4.311` PR 5 (owner ruling 1) — the `calcOverride.set` wizard's Backfill
+ * step: optional days of history to compute once the override is saved.
+ * The progress of a run is PR 6b's.
+ */
+export function PointCalcBackfillField({ config, draft, busy, onDraftChange }: FieldsProps) {
+  return (
+    <label className="text-xs">
+      <span className="text-ink-muted">Backfill</span>
+      <select
+        aria-label={`Backfill for ${config.pointKey}`}
+        value={draft.backfillDays ?? ""}
+        disabled={busy}
+        onChange={(event) => onDraftChange({ ...draft, backfillDays: event.target.value })}
+        className="mt-1 w-full surface-field px-2 py-1"
+      >
+        <option value="">none</option>
+        {BACKFILL_DAY_CHOICES.map((days) => (
+          <option key={days} value={String(days)}>
+            last {days} day{days === 1 ? "" : "s"}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
 export function PointCalcScheduleFields({ config, draft, busy, onDraftChange }: FieldsProps) {
   const set = (patch: Partial<OverrideDraft>) => onDraftChange({ ...draft, ...patch });
   const merged = mergedDialect(draft, config);

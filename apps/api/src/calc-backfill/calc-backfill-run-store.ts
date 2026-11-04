@@ -1,9 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 
 import { calcBackfillRuns, type BmsDb } from "@bms/db";
+import type { CalcBackfillRunDto } from "@bms/shared";
 
-import { TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 
 /** The error a run carries when its job never reached a worker (the enqueue failed). */
@@ -67,7 +68,43 @@ const ms = (value: Date | string): number => new Date(value).getTime();
  */
 @Injectable()
 export class CalcBackfillRunStore {
-  constructor(@Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb) {}
+  constructor(
+    @Inject(TENANT_DRIZZLE) private readonly tenantDb: BmsDb,
+    // The list read only (`latestForPoints`), behind the caller's `canManageAsset`
+    // — the same fleet-read-then-check shape as every calc-points read.
+    @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
+  ) {}
+
+  /**
+   * Each point's latest run (by `created_at`), keyed by `asset_point_id` — the
+   * `backfill` field of the calc-points list. A point with no run is absent.
+   * The caller has already checked access to the asset these points belong to.
+   */
+  async latestForPoints(assetPointIds: readonly string[]): Promise<Map<string, CalcBackfillRunDto>> {
+    const out = new Map<string, CalcBackfillRunDto>();
+    if (assetPointIds.length === 0) {
+      return out;
+    }
+    const rows = await this.fleetDb
+      .selectDistinctOn([calcBackfillRuns.assetPointId])
+      .from(calcBackfillRuns)
+      .where(inArray(calcBackfillRuns.assetPointId, [...assetPointIds]))
+      .orderBy(calcBackfillRuns.assetPointId, desc(calcBackfillRuns.createdAt));
+    for (const row of rows) {
+      out.set(row.assetPointId, {
+        id: row.id,
+        status: row.status as CalcBackfillRunDto["status"],
+        fromAt: row.fromAt.toISOString(),
+        toAt: row.toAt.toISOString(),
+        doneThrough: row.doneThrough?.toISOString() ?? null,
+        writtenRows: row.writtenRows,
+        error: row.error,
+        createdAt: row.createdAt.toISOString(),
+        finishedAt: row.finishedAt?.toISOString() ?? null,
+      });
+    }
+    return out;
+  }
 
   /** Inserts a `queued` run inside the caller's tenant transaction; a second active run is `23505`. */
   async create(tx: BmsTx, run: NewRun): Promise<string> {

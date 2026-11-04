@@ -485,6 +485,7 @@ function calcConfig(override: Partial<AssetPointCalcConfigDto["override"]> = {})
     },
     minCoverageRatio: null,
     runtime: null,
+    backfill: null,
   });
 }
 
@@ -501,23 +502,42 @@ async function next(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Next" }));
 }
 
-/** Types a formula on the Formula step and walks Schedule → Review. */
-async function formulaToReview(formula: string): Promise<void> {
+/**
+ * Types a formula on the Formula step and walks Schedule → Backfill → Review;
+ * `backfill` picks the Backfill step's days on the way (`F4.311` PR 5).
+ */
+async function formulaToReview(formula: string, backfill?: string): Promise<void> {
   fireEvent.change(screen.getByLabelText(`Formula for ${CALC_KEY}`), { target: { value: formula } });
   await next();
   await screen.findByLabelText(`Runs for ${CALC_KEY}`);
   await next();
+  const days = await screen.findByLabelText(`Backfill for ${CALC_KEY}`);
+  if (backfill !== undefined) {
+    await userEvent.selectOptions(days, backfill);
+  }
+  await next();
   await screen.findByRole("region", { name: OVERRIDE_TITLE });
 }
 
-/** The override wizard's steps are the catalog entry's — Formula, Schedule — then Review. */
+/** The override wizard's steps are the catalog entry's — Formula, Schedule, Backfill — then Review. */
 export async function theOverrideStepsAreFormulaScheduleReview(): Promise<void> {
   stubApi();
   await openOverrideWizard();
   const steps = within(screen.getByRole("list", { name: "Steps" }))
     .getAllByRole("listitem")
     .map((item) => item.textContent);
-  expect(steps).toEqual(["1. Formula", "2. Schedule", "3. Review"]);
+  expect(steps).toEqual(["1. Formula", "2. Schedule", "3. Backfill", "4. Review"]);
+}
+
+/** `F4.311` PR 5 (owner ruling 1): a Backfill choice rides on the PUT as `backfillDays`. */
+export async function theOverrideSendsTheBackfillChoice(): Promise<void> {
+  stubApi();
+  const set = vi.spyOn(api, "setAdminAssetPointCalcOverride").mockResolvedValue(calcConfig() as never);
+  await openOverrideWizard();
+  await formulaToReview("{KW} * 3", "7");
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(set).toHaveBeenCalledTimes(1));
+  expect((set.mock.calls[0]?.[2] as { backfillDays?: number }).backfillDays).toBe(7);
 }
 
 /** Submit sends the draft as the PUT body: every column, empty as `null` (`draftToBody`). */
@@ -574,6 +594,8 @@ export async function aD1DraftIsNamedAndNotSent(): Promise<void> {
   // pick in a clean wizard is the case that loses its value when the step's
   // elements are rebuilt inside `renderStep`.
   await userEvent.selectOptions(await screen.findByLabelText(`Runs for ${CALC_KEY}`), "streaming");
+  await next();
+  await screen.findByLabelText(`Backfill for ${CALC_KEY}`);
   await next();
   const card = await screen.findByRole("region", { name: OVERRIDE_TITLE });
   await userEvent.click(within(card).getByRole("button", { name: "Submit" }));
@@ -646,6 +668,8 @@ export async function submitSendsNothingWhileAClearIsInFlight(): Promise<void> {
   await openOverrideWizard(calcConfig({ formula: "{KW} * 9" }));
   await next();
   await screen.findByLabelText(`Runs for ${CALC_KEY}`);
+  await next();
+  await screen.findByLabelText(`Backfill for ${CALC_KEY}`);
   await next();
   const card = await screen.findByRole("region", { name: OVERRIDE_TITLE });
   await userEvent.click(screen.getByRole("button", { name: "Clear override" }));

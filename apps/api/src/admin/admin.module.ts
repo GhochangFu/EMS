@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 
+import { CalcBackfillRunStore } from "../calc-backfill/calc-backfill-run-store";
 import { CalcModule } from "../calc/calc.module";
 import { ControlRoomModule } from "../control-room/control-room.module";
 import { SiteLayoutService, siteTemplateArmOf } from "../control-room/site-layout.service";
@@ -8,6 +9,7 @@ import { CredentialCryptoService } from "../security/credential-crypto.service";
 import { VocabulariesModule } from "../vocabularies/vocabularies.module";
 import { AssetPointCalcOverrideController } from "./asset-points/asset-point-calc-override.controller";
 import { AssetPointCalcOverrideService } from "./asset-points/asset-point-calc-override.service";
+import { CalcBackfillRequestService } from "./asset-points/calc-backfill-request.service";
 import { CalcPointBatchController } from "./asset-points/calc-point-batch.controller";
 import { CalcPointStandaloneService } from "./asset-points/calc-point-standalone.service";
 import { AssetPointsAdminController } from "./asset-points/asset-points.controller";
@@ -157,6 +159,10 @@ import { UsersService } from "./users/users.service";
     AssetPointCalcOverrideService,
     // F4.311 / ADR 0109 decision 3 — the one write-rules service for a standalone calc point.
     CalcPointStandaloneService,
+    // F4.311 PR 5 (ADR 0109 decision 7) — the API half of a backfill: the run
+    // rows and the enqueue (QUEUE_CLIENT from the global QueueModule).
+    CalcBackfillRunStore,
+    CalcBackfillRequestService,
     PointKeysAdminService,
     CalcParametersAdminService,
     AssetRolesAdminService,

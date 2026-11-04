@@ -32,6 +32,7 @@ import { PageHeader } from "../../components/page-header";
 import { AssetPointBulkEditPanel } from "../../components/assets/asset-point-bulk-edit-panel";
 import { MappingSheetPanel } from "../../components/assets/mapping-sheet-panel";
 import {
+  PointCalcBackfillField,
   PointCalcDraftProblems,
   PointCalcFormulaFields,
   PointCalcHeading,
@@ -212,6 +213,12 @@ function CalcOverrideWizard({
       <PointCalcDraftProblems problems={problems} />
     </>
   );
+  // `F4.311` PR 5 (owner ruling 1): the catalog entry's Backfill step.
+  const backfillStep = (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <PointCalcBackfillField {...fields} />
+    </div>
+  );
   return (
     <div className="surface-raised-sm flex flex-col gap-3 p-3">
       <div>
@@ -223,7 +230,9 @@ function CalcOverrideWizard({
         params={{ assetId, pointKey: config.pointKey }}
         values={draftToBody(draft)}
         onChange={(values) => onDraftChange(draftFromFields(values))}
-        renderStep={(step) => (step.id === "formula" ? formulaStep : scheduleStep)}
+        renderStep={(step) =>
+          step.id === "formula" ? formulaStep : step.id === "backfill" ? backfillStep : scheduleStep
+        }
         // A Clear in flight refuses Submit, and a request in flight refuses
         // Cancel: the old panel disabled Save and Close under the shared `busy`
         // (F4.168 OQ-3). The shell is shared, so the guard is here, and Submit

@@ -157,7 +157,7 @@ export async function runBackfill(pool: pg.Pool, fx: Fixtures, fixture: Backfill
   const runId = (run as { id: string }).id;
   const metrics = new MetricsService();
   const service = new CalcBackfillService(
-    new CalcBackfillRunStore(db),
+    new CalcBackfillRunStore(db, db),
     new CalcDefinitionsService(db, metrics),
     new CalcScopeService(db),
     new CalcParametersService(db),
