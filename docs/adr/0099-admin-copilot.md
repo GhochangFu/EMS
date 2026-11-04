@@ -1798,3 +1798,132 @@ The owner ruled the grouped shape; F2 above is amended in place.
 | Q2 | How the amendment and the code land | ADR PR first, then the code PR | as recommended |
 | Q3 | Who writes the partial line | the server appends one fixed sentence | as recommended |
 | Q4 | The `unruled` shape after the live check needed two pages | one entry per point set, asset codes only | as recommended (2026-10-31) |
+
+## Amendment 11 — `calcPoint.set`, `calcPoint.createBatch`, `calcPoint.delete` (ADR 0109 decision 6, owner, 2026-11-04)
+
+**Status: Proposed — owner ruled 2026-11-04 (ADR 0109's eight rulings and
+the four rulings on `F4.311`'s open questions, each put one at a time); the
+merge approves the text.** A line marked *(ADR 0109 n)* states that record's
+decision; *(Rn)* states the plan's ruling n. Lines marked *drafter choice* were
+not asked. Code citations are to `feat/f4-311-pr2-calc-writes` at `539d2a60`
+(`F4.311` PR 2). Backlog row `F4.311`; the code follows in the same PR, in the
+commit after this one.
+
+### Facts the amendment rests on
+
+- **One path, two writes.** `PUT` and `DELETE
+  /admin/assets/:assetId/calc-points/:pointKey` dispatch on the asset's kind
+  (`asset-point-calc-override.controller.ts:79,106`, `kindOf`): on an asset
+  pinned to a template version they set or clear an override, as before; on an
+  asset with no template they create, replace or remove a standalone
+  calculated point, with every calc field required
+  (`calcPointSetBodySchema`, `packages/shared/src/contracts/calc-point-writes.ts`).
+- **`calcOverride.set` already names that path**
+  (`packages/shared/src/copilot/catalog/kpis.ts:67`) with the override body,
+  and its `asset` target resolves any asset: a card for it on a template-less
+  asset would describe an override while the route writes a standalone point.
+- **The batch route exists and is excluded.** `POST /admin/calc-points/batch`
+  writes one key, formula and timing on up to 25 template-less assets of one
+  organization, all or nothing; it refuses a pinned asset, a repeated id and a
+  second organization, and its gate is `requireMasterDataUser` then
+  `canManageAsset` on each asset (`calc-point-standalone.service.ts:273-315`).
+  `F4.311` PR 2 put it on `EXCLUDED_ROUTES` until this amendment
+  (`packages/shared/src/copilot/catalog/index.ts:136`).
+- **The `DELETE` is excluded as a hard delete**
+  (`index.ts:107`, `NO_DELETE`). Ruling 19 allows two removals only
+  (`DELETE_ALLOWANCE`, `index.ts:72`).
+- **A standalone point a dashboard widget shows cannot be removed.**
+  `dashboard_widget_points.point_id` cascades on delete, so PR 2's `remove`
+  answers 409 with the widget count and writes nothing
+  (`calc-point-standalone.service.ts:241`).
+
+### Decisions
+
+- **G1 — Three entries** *(ADR 0109 6)*, in `catalog/kpis.ts` beside
+  `calcOverride.set`, each with a **red** Confirm card (`red: true`; drafter
+  choice: on `calcPoint.delete` too, although `deactivate` is red already, so
+  the three read alike):
+  - `calcPoint.set` — `PUT /admin/assets/:assetId/calc-points/:pointKey`,
+    body `calcPointSetBodySchema`, `risk: "create"`, target the asset; the
+    formula is parsed against the asset's point keys before the card shows
+    (decision 3); steps Formula, Schedule and Backfill (`backfillDays`).
+  - `calcPoint.createBatch` — `POST /admin/calc-points/batch`, body
+    `calcPointBatchBodySchema`, `risk: "create"`, a new target kind
+    `calcPointBatch` on the body's `assetIds`; steps Assets, Point, Formula,
+    Schedule and Backfill.
+  - `calcPoint.delete` — the `DELETE` of the same path, no body,
+    `risk: "deactivate"`, no steps.
+  The model proposes no write the page could not make and writes no SQL
+  *(ADR 0109 6)*. The batch route leaves `EXCLUDED_ROUTES`; so does the
+  `DELETE`.
+- **G2 — The card describes the write the route performs.** The `asset`
+  target gains an optional asset kind: `calcPoint.set` and `calcPoint.delete`
+  resolve only an asset with **no** template, and `calcOverride.set` — whose
+  body, path and summary are otherwise unchanged — now resolves only an asset
+  **pinned** to a template. A proposal for the other kind is refused before
+  the card, the same one refusal as a row outside the turn's scope (decision
+  10). The route's own dispatch still decides on Confirm.
+- **G3 — The batch target** mirrors the route: at most 25 ids, no id twice,
+  every asset in **one** allowed organization (the first that holds any must
+  hold all), **every asset with `template_id IS NULL`**, and `canManageAsset`
+  on each after `requireMasterDataUser`. Any failure is the one refusal
+  (`null`); the route names each refused asset on Confirm. The formula is
+  parsed against the point keys **every** listed asset has (drafter choice:
+  the intersection, so the card never shows a formula one asset cannot
+  compute).
+- **G4 — Ruling 19 is widened to a third removal** *(ADR 0109 6)*:
+  `DELETE /admin/assets/:assetId/calc-points/:pointKey` joins
+  `DELETE_ALLOWANCE`, for `calcPoint.delete` only, and only on a
+  template-less asset (G2): it removes a standalone calculated point (the
+  point stops computing; its stored telemetry stays). Clearing an override on
+  a pinned asset through the same path stays manual, and every other `DELETE`
+  stays manual as decision 3 says.
+- **G5 — A widget-bound point is not removed.** A `calcPoint.delete` Confirm
+  on a point a dashboard widget shows answers **409** and writes nothing
+  (`F4.311` PR 2's conservative choice over the cascade); the operator unbinds
+  the widget first. The card is not refused at propose time (drafter choice:
+  the route's 409 names the widget count, and a propose-time read would only
+  copy it).
+- **G6 — Backfill** *(ADR 0109 7; R1, R3)*. `calcPoint.set` and
+  `calcPoint.createBatch` carry `backfillDays` (1–31) as a step field; the run
+  itself is `F4.311` PR 5's. **Aggregate membership during a backfill is
+  today's membership** *(R3)*: a backfilled bucket of `sum({K} @site)` sums the
+  assets that are members now, not the ones that were members at that bucket.
+  This is an accepted limit, recorded here and in `F4.311`'s closure. The
+  Backfill step on `calcOverride.set` *(R1)* is not in this amendment's code:
+  PR 5 adds `backfillDays` to the override body and the step with it.
+
+- **G7 — Bounds.** The three propose tools count against the propose
+  registry's per-turn budget (`copilot-propose-budget.spec.ts:50`, 87,000
+  since `F4.289`). Measured at this PR: 89,523 characters over 108 definitions
+  (`propose_calcPoint_set` 1,060, `propose_calcPoint_createBatch` 1,109,
+  `propose_calcPoint_delete` 467). The bound rises to **91,000** by release
+  4's rule — the measured size rounded up to the next thousand, plus 1,000
+  (drafter choice; the merge approves it with this text).
+- **G8 — The wizards follow.** The stepper coverage gate
+  (`tests/f3.85-stepper-coverage.test.ts`) requires every entry to be a
+  `WizardShell` entry; the three are on its `NOT_YET` list, which accepts only
+  a catalog id no page wires yet, until `F4.311` PR 6a wires them and deletes
+  the list (drafter choice; the precedent is PRs 9–11's list).
+
+**Not in this amendment.** The web wizards for the three entries (`F4.311`
+PR 6a: the page and the bulk action), the backfill run (PR 5), adopting a
+standalone point into a template (ADR 0109 ruling 8).
+
+**Verification owed (this PR).** `catalog.spec.ts`: each body is its shared
+export by identity, all three are red, and the `DELETE` allowance names
+exactly the three removals. Resolver unit specs: `calcOverride.set` refuses a
+template-less asset, `calcPoint.set` and `calcPoint.delete` refuse a pinned
+one. An integration spec on a real database: the batch target refuses a
+pinned asset in the list, 26 ids and two organizations' assets (mutation: drop
+the `template_id IS NULL` filter and the first reddens).
+`tests/f3.85-catalog-coverage.test.ts` passes with the batch route covered by
+its entry. Live: `propose_calcPoint_set` is in the tool list of an admin
+conversation, and its Confirm card is red.
+
+### Gate questions
+
+| # | Question | Recommended | Ruled |
+| --- | --- | --- | --- |
+| R1 | `backfillDays` on the override `PUT` too | the standalone `PUT` and the batch only | **on both**, with a Backfill step on `calcOverride.set` (2026-11-04; widens ADR 0109 decision 7; the step lands with PR 5) |
+| R3 | Aggregate membership during a backfill | today's membership, an accepted limit | as proposed (2026-11-04) |
