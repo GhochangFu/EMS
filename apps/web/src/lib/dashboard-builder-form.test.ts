@@ -45,6 +45,7 @@ import {
   runTrendStripNeedsASiteTests,
   runTrendStripOfferedOnEveryScopeTests,
   runTrendStripRoundTripTests,
+  runTrendStripSelectionRoundTripTests,
 } from "./dashboard-builder-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -219,6 +220,10 @@ describe("dashboard builder form", () => {
 
   it("F4.305: stored trend strips re-save their own config and an unedited set is no change", () => {
     runTrendStripRoundTripTests();
+  });
+
+  it("F4.306: a stored selection (segments, points, colors) survives read-back and build byte-equal", () => {
+    runTrendStripSelectionRoundTripTests();
   });
 
   it("F4.305: a strip needs a location scope and a tabKey that names a tab", () => {

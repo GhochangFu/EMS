@@ -14,9 +14,16 @@
  */
 import { z } from "zod";
 
+import { CATALOG_CODE_PATTERN } from "../constants";
+
 import { aggregateLevelSchema } from "./aggregate-level";
 import { pointAggregateBucketSchema } from "./envelopes";
 import { trendPointSourceSchema } from "./trend-points";
+import {
+  TREND_STRIP_POINT_CODE_MAX,
+  TREND_STRIP_SEGMENT_CODE_MAX,
+  TREND_STRIP_WIDGET_MAX_POINTS,
+} from "./trend-strip-widget";
 
 /**
  * The strip's own read level per range (Amendment 2 item 5). The widget ladder
@@ -41,11 +48,49 @@ export const TREND_STRIP_OVERVIEW_POINTS_PER_SEGMENT = 3;
 /** Server bound on the series in one response, met by a deterministic trim — never a 500. */
 export const TREND_STRIP_MAX_SERIES = 180;
 
-/** `.strict()` and no refinement, so the OpenAPI document expresses it whole. */
+/** `CATALOG_CODE_PATTERN` without its anchors, so the selection patterns restate nothing. */
+const CODE = CATALOG_CODE_PATTERN.source.slice(1, -1);
+
+/**
+ * `F4.306` / ADR 0108 Amendment 7 — the longest `segments` query value: 30 of the longest
+ * segment codes, each with its separator. Built from the widget config's per-entry limits, so
+ * every stored selection is a query this route accepts.
+ */
+export const TREND_STRIP_QUERY_SEGMENTS_MAX = TREND_STRIP_WIDGET_MAX_POINTS * (TREND_STRIP_SEGMENT_CODE_MAX + 1);
+
+/** The longest `points` query value: 30 of the longest `<segment>:<point code>` entries, each with its separator. */
+export const TREND_STRIP_QUERY_POINTS_MAX =
+  TREND_STRIP_WIDGET_MAX_POINTS * (TREND_STRIP_SEGMENT_CODE_MAX + 1 + TREND_STRIP_POINT_CODE_MAX + 1);
+
+/** `code(,code)*` — the segment codes, comma-separated. */
+const segmentsQueryPattern = new RegExp(`^${CODE}(,${CODE})*$`);
+
+/** `code:code(,code:code)*` — the `<segment>:<point code>` entries, comma-separated. */
+const pointsQueryPattern = new RegExp(`^${CODE}:${CODE}(,${CODE}:${CODE})*$`);
+
+/**
+ * `.strict()` and no refinement, so the OpenAPI document expresses it whole. `points` without
+ * `segments` parses here; the service refuses it (a 400), and parses, dedupes and applies both.
+ */
 export const siteTrendStripQuerySchema = z
   .object({
     range: trendStripRangeSchema,
     assetGroupId: z.string().uuid().optional(),
+    segments: z
+      .string()
+      .max(TREND_STRIP_QUERY_SEGMENTS_MAX)
+      .regex(segmentsQueryPattern)
+      .describe("Comma-separated segment (asset domain) codes the strip draws; absent means every segment.")
+      .optional(),
+    points: z
+      .string()
+      .max(TREND_STRIP_QUERY_POINTS_MAX)
+      .regex(pointsQueryPattern)
+      .describe(
+        "Comma-separated `<segment>:<point code>` entries the strip draws; requires `segments`. " +
+          "Absent means each chosen segment's default points.",
+      )
+      .optional(),
   })
   .strict();
 

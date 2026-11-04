@@ -167,7 +167,8 @@ export class TrendPointsService {
     return written;
   }
 
-  private async effective(organizationId: string, options: ResolveOptions): Promise<TrendPointSegmentDto[]> {
+  /** Public since `F4.306` U5: `DashboardsService.putWidgets` checks a trend strip selection against it. */
+  async effective(organizationId: string, options: ResolveOptions): Promise<TrendPointSegmentDto[]> {
     const [domains, catalog, overrides] = await Promise.all([
       this.fleetDb
         .select({

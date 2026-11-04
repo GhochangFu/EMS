@@ -980,6 +980,9 @@ export * from "./mimic-symbol-libraries";
  */
 export * from "./site-layout-planner";
 
+/** `F4.306` / ADR 0108 Amendment 7 — where a trend strip goes on a tab (the route and the draft). */
+export * from "./trend-strip-placement";
+
 /**
  * Ingest data contracts (ADR 0016 §8). Re-exported here, not only under the
  * `./ingest` subpath, because `apps/api` compiles with `moduleResolution:

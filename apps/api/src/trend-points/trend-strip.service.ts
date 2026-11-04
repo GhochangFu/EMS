@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import type { Pool } from "pg";
 
 import {
@@ -25,6 +25,7 @@ import {
   type StripAsset,
   type StripPlan,
   type StripRegistration,
+  type StripSelection,
   type StripWindow,
   fitSeries,
   groupSeries,
@@ -34,6 +35,32 @@ import {
 } from "./trend-strip.pure";
 
 export const TREND_STRIP_GROUP_NOT_FOUND = "Asset group not found at this site";
+
+/** `F4.306` (ADR 0108 Amendment 7) — `points` names entries of chosen segments, so it needs `segments`. No code is echoed. */
+export const TREND_STRIP_POINTS_NEED_SEGMENTS = "points requires segments";
+
+/**
+ * `F4.306` (ADR 0108 Amendment 7) — the query's selection, parsed and
+ * deduplicated in first-seen order: a hand-typed repeat is not a 400 (a stored
+ * config never has one; the write path refuses it). No `segments` is no
+ * selection, today's rule. The query schema has already checked both patterns,
+ * so every `points` entry holds exactly one `:`. The caller refuses `points`
+ * without `segments` first.
+ */
+export function stripSelectionFor(query: Pick<SiteTrendStripQuery, "segments" | "points">): StripSelection | undefined {
+  if (query.segments === undefined) return undefined;
+  const segments = new Set(query.segments.split(","));
+  const points = new Map<string, string[]>();
+  for (const entry of query.points?.split(",") ?? []) {
+    const at = entry.indexOf(":");
+    const segment = entry.slice(0, at);
+    const code = entry.slice(at + 1);
+    const codes = points.get(segment) ?? [];
+    if (!codes.includes(code)) codes.push(code);
+    points.set(segment, codes);
+  }
+  return { segments, points };
+}
 
 /**
  * `F4.303` U4 — what `frameFor` resolves before the telemetry statement: the
@@ -129,8 +156,10 @@ export class SiteTrendStripService {
 
   /**
    * Everything before the telemetry statement: the site's 404, the group's
-   * 404, the window, the scope, the zone and the planned pairs. No
-   * `telemetry.*` statement runs here.
+   * 404, `points` without `segments` (a 400, `F4.306`), the window, the scope,
+   * the zone and the planned pairs under the query's selection. No
+   * `telemetry.*` statement runs here, and the export routes inherit every
+   * refusal.
    */
   async frameFor(
     jwt: JwtPayload,
@@ -149,6 +178,10 @@ export class SiteTrendStripService {
         throw new NotFoundException(TREND_STRIP_GROUP_NOT_FOUND);
       }
     }
+    if (query.points !== undefined && query.segments === undefined) {
+      throw new BadRequestException(TREND_STRIP_POINTS_NEED_SEGMENTS);
+    }
+    const selection = stripSelectionFor(query);
 
     const window = stripWindow(query.range, now);
     const readable = await this.accessControl.readableAssetIds(jwt);
@@ -168,7 +201,10 @@ export class SiteTrendStripService {
     }
 
     const plan = fitSeries(
-      pairsFor([...assets.values()], site.segments, registrations, { overview: assetGroupId === null }),
+      pairsFor([...assets.values()], site.segments, registrations, {
+        overview: assetGroupId === null,
+        ...(selection === undefined ? {} : { selection }),
+      }),
       TREND_STRIP_MAX_SERIES,
     );
     const pairs = planPairs(plan);

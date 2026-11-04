@@ -24,6 +24,7 @@ import { JwtAuthGuard } from "../auth/jwt-auth.guard";
 import { parseIfMatchHeader } from "../common/if-match";
 import {
   appendChartWidgetBodySchema,
+  appendTrendStripWidgetsBodySchema,
   createDashboardBodySchema,
   getDashboardQuerySchema,
   listDashboardsQuerySchema,
@@ -188,8 +189,20 @@ export class DashboardBuilderController {
   async appendWidget(@CurrentUser() user: JwtPayload, @Param("id") id: string, @Body() body: unknown) {
     const dashboardId = parse(idParamSchema, id);
     await this.accessControl.assertOperationsWriteRole(user, "configuration");
+    // `F4.306` U6 — the body is `appendWidgetBodySchema` (the registered union). The arm is picked
+    // by `widgetType`, which is the union's own split: the chart arm is `.strict()` without it and
+    // the trend arm requires it. Parsing the arm, not the union, keeps the arm's `flatten()` field
+    // errors in the 400; a union failure flattens to one form error that names no field.
+    if (namesWidgetType(body)) {
+      return this.widgetAppend.appendStrips(user, dashboardId, parse(appendTrendStripWidgetsBodySchema, body));
+    }
     return this.widgetAppend.append(user, dashboardId, parse(appendChartWidgetBodySchema, body));
   }
+}
+
+/** `F4.306` U6 — a body object that carries a `widgetType` key belongs to the trend arm. */
+function namesWidgetType(body: unknown): boolean {
+  return typeof body === "object" && body !== null && Object.prototype.hasOwnProperty.call(body, "widgetType");
 }
 
 /** `.parse()` with the repo's `ZodError → BadRequestException(flatten())` shape, matching
