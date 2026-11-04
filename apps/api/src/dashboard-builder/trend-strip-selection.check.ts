@@ -65,6 +65,7 @@ function firstRepeat(entries: readonly string[]): number {
   return -1;
 }
 
+/** Throws a 400 for the first trend strip selection that the effective trend-point lists refuse. */
 export function assertTrendStripSelections(
   lists: readonly TrendPointSegmentDto[],
   dashboard: { readonly locationId: string | null },

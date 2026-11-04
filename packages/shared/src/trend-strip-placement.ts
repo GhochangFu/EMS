@@ -23,6 +23,7 @@ export type TrendStripPlacement =
   | { readonly kind: "replace"; readonly index: number }
   | { readonly kind: "insert"; readonly gridY: number };
 
+/** Where a trend strip goes on one tab: replace its first `trend_strip`, or insert at the tab's foot. */
 export function placeTrendStrip(tabWidgets: readonly TrendStripPlacementWidget[]): TrendStripPlacement {
   let best = -1;
   let foot = 0;
