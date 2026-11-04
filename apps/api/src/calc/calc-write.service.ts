@@ -23,6 +23,19 @@ export interface CalcWriteInput {
   time: Date;
 }
 
+export interface CalcWriteOptions {
+  /**
+   * `false` writes the rows without `pg_notify('bms_telemetry', …)`. Only the
+   * backfill (`F4.311`, ADR 0109 decision 7) passes it: its rows are history,
+   * and a NOTIFY reaches every consumer that treats a reading as live — the
+   * alarm engine (which would raise, and notify on, a weeks-old breach), the
+   * streaming host, and the WebSocket gateway. `TelemetryWriteService`'s
+   * `NOTIFY_LIVE_WINDOW_MS` holds the same line for a backdated manual entry.
+   * Default `true`: the sweep and the streaming host write current instants.
+   */
+  readonly notify?: boolean;
+}
+
 export interface CalcWriteResult {
   written: number;
   assetPointsCreated: number;
@@ -50,7 +63,8 @@ function valueKey(time: Date | string, assetId: string, pointKey: string): strin
  * `pg_notify`s like any other write: it returns through
  * `TelemetryBroadcastHub`, which is decision 11's re-entrancy argument —
  * the streaming host's own input filter is what stops that from looping,
- * not an absence of notification here.
+ * not an absence of notification here. The one exception is the backfill's
+ * history, written with `{ notify: false }` ({@link CalcWriteOptions}).
  *
  * **E7.1b (ADR 0043 §5).** `asset_points` is a policied tenant table. Having
  * no tenant actor, the auto-provision runs on `fleetDb` (BYPASSRLS) and stamps
@@ -75,7 +89,8 @@ export class CalcWriteService {
     private readonly metrics: MetricsService,
   ) {}
 
-  async writeValues(values: readonly CalcWriteInput[]): Promise<CalcWriteResult> {
+  async writeValues(values: readonly CalcWriteInput[], options: CalcWriteOptions = {}): Promise<CalcWriteResult> {
+    const notify = options.notify ?? true;
     if (values.length === 0) {
       return { written: 0, assetPointsCreated: 0 };
     }
@@ -207,6 +222,9 @@ export class CalcWriteService {
 
       // ---- notify --------------------------------------------------------
 
+      if (!notify) {
+        return { written: writtenRows.length, writtenRows };
+      }
       const liveReadings: NotifyReading[] = writtenRows.map((v) => ({
         time: v.time.toISOString(),
         assetId: v.assetId,

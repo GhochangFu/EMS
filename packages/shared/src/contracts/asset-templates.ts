@@ -15,6 +15,7 @@ import { z } from "zod";
 
 import { CALC_DIALECTS, CALC_TRIGGERS } from "../calc-dsl";
 import { instantiatedDashboardDtoSchema } from "./asset-dashboards";
+import { calcBackfillRunDtoSchema } from "./calc-backfill";
 import { templateLifecycleStatusSchema } from "./template-lifecycle";
 import { pointMetadataFieldsSchema, pointMetadataShape } from "./point-metadata";
 import { pointSourceKindSchema } from "./telemetry-entry";
@@ -433,4 +434,12 @@ export const assetPointCalcConfigDtoSchema = z.object({
       at: z.string(),
     })
     .nullable(),
+  /**
+   * This point's latest backfill run (`F4.311` PR 5, ADR 0109 decision 7),
+   * or `null` when it never had one. Read from `bms.calc_backfill_runs`, so —
+   * unlike `runtime` — it survives a restart and is the same on every API
+   * instance. Both kinds carry it: a backfill may be asked for on the
+   * override `PUT` too (owner ruling 1).
+   */
+  backfill: calcBackfillRunDtoSchema.nullable(),
 });

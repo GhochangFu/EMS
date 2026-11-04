@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { LoggerModule } from "nestjs-pino";
 
 import { AccessControlModule } from "./auth/access-control.module";
+import { CalcBackfillModule } from "./calc-backfill/calc-backfill.module";
 import { CopilotPurgeModule } from "./copilot/copilot-purge.module";
 import { DatabaseModule } from "./database/database.module";
 import { HealthModule } from "./health/health.module";
@@ -57,6 +58,13 @@ import { StorageModule } from "./storage/storage.module";
  * `onboarding-redaction.ts` — pure helpers — and no `admin/` module, and
  * the worker process now loads `mqtt` at start.
  *
+ * **`F4.311` PR 5 (ADR 0109 decision 7) adds `CalcBackfillModule`**, the
+ * calculated-point backfill: a leaf that provides `CalcDefinitionsService`,
+ * `CalcScopeService`, `CalcParametersService`, `CalcWindowsService` and
+ * `CalcWriteService` as providers and never imports `CalcModule`. Its closure
+ * reaches the pure calc helpers and `telemetry/point-aggregates.ts` (the
+ * window reads' view names), and no loop site or host.
+ *
  * **`WORKER_CONFIG` is a second, deterministic read of the environment
  * `worker.ts` already validated.** `readWorkerConfig` ran before any Nest
  * context existed and refused a bad `REDIS_URL`, `WORKER_PORT` or
@@ -96,6 +104,9 @@ import { StorageModule } from "./storage/storage.module";
     CopilotPurgeModule,
     // `F3.24b` (ADR 0103 decision 1) — the MQTT discovery job, a leaf on DatabaseModule.
     OnboardingDiscoveryModule,
+    // `F4.311` PR 5 (ADR 0109 decision 7) — the calc backfill walk, a leaf on
+    // DatabaseModule and ObservabilityModule; never CalcModule.
+    CalcBackfillModule,
   ],
   providers: [
     WorkerHostService,

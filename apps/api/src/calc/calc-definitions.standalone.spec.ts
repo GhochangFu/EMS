@@ -104,3 +104,32 @@ export async function assertTheRefusalIsCountedAsV1ReferencesDerived(): Promise<
     `the refusal must be one counted v1_references_derived skip, got [${skips.join(", ")}]`,
   );
 }
+
+/**
+ * `F4.311` PR 5 review — the backfill's read on the **worker** leaves
+ * `bms_api_calc_active_formulas` alone. The worker's registry is scraped too
+ * (`bms-worker`), so a gauge set there would be a second series frozen at the
+ * last backfill, doubling any sum over the API's live one. Returns the gauge
+ * values the read set.
+ */
+async function gaugeWritesOf(read: (defs: CalcDefinitionsService) => Promise<unknown>): Promise<number[]> {
+  const gauge: number[] = [];
+  const metrics = new MetricsService();
+  metrics.setCalcActiveFormulas = (count) => {
+    gauge.push(count);
+  };
+  await read(new CalcDefinitionsService(stubDb([standalone("B", "{M} * 2")]), metrics));
+  return gauge;
+}
+
+/** `getAllDefinitionsFresh({ reportGauge: false })` sets no gauge value. */
+export async function assertTheBackfillsReadLeavesTheGaugeAlone(): Promise<void> {
+  const gauge = await gaugeWritesOf((defs) => defs.getAllDefinitionsFresh({ reportGauge: false }));
+  assert(gauge.length === 0, `the backfill's read must not set the gauge, got [${gauge.join(", ")}]`);
+}
+
+/** Anti-vacuity: the default read (the save-time detector's, on the API) still sets it. */
+export async function assertTheDefaultFreshReadStillSetsTheGauge(): Promise<void> {
+  const gauge = await gaugeWritesOf((defs) => defs.getAllDefinitionsFresh());
+  assert(gauge.length === 1 && gauge[0] === 1, `the default fresh read sets the gauge once, got [${gauge.join(", ")}]`);
+}

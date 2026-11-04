@@ -4,11 +4,16 @@ import { afterEach, describe, it, vi } from "vitest";
 
 import {
   aD1DraftIsNamedAndNotSent,
+  aNoWorker503ClosesTheWizard,
+  aSavedButRefusedBackfillClosesTheWizardBesideItsSentence,
+  aSavedButRefusedBackfillRefetchesTheAssetPoints,
+  aSavedButRefusedBackfillRefetchesTheCalcPoints,
   aRefusedFormulaShowsTheServerSentence,
   cancelWhileTheSaveIsInFlightKeepsTheWizard,
   clearIsDisabledWhileTheSaveIsInFlight,
   clearOverrideStaysBesideTheWizard,
   submitSendsNothingWhileAClearIsInFlight,
+  theOverrideSendsTheBackfillChoice,
   theOverrideStepsAreFormulaScheduleReview,
   theOverrideSubmitsTheDraftAsTheBody,
   theOverrideWizardSendsNoCopilotHeader,
@@ -101,8 +106,28 @@ describe("F3.85 PR 11b asset points — the calc override is the calcOverride.se
     vi.unstubAllGlobals();
   });
 
-  it("the steps are Formula, Schedule, Review", async () => {
+  it("the steps are Formula, Schedule, Backfill, Review", async () => {
     await theOverrideStepsAreFormulaScheduleReview();
+  }, CASE_TIMEOUT_MS);
+
+  it("a Backfill choice is sent as backfillDays (F4.311 PR 5, owner ruling 1)", async () => {
+    await theOverrideSendsTheBackfillChoice();
+  }, CASE_TIMEOUT_MS);
+
+  it("F4.311 a 409 after the override was saved refetches the calculated points", async () => {
+    await aSavedButRefusedBackfillRefetchesTheCalcPoints();
+  }, CASE_TIMEOUT_MS);
+
+  it("F4.311 a 409 after the override was saved refetches the mapping list", async () => {
+    await aSavedButRefusedBackfillRefetchesTheAssetPoints();
+  }, CASE_TIMEOUT_MS);
+
+  it("F4.311 a 409 after the override was saved closes the wizard beside its sentence", async () => {
+    await aSavedButRefusedBackfillClosesTheWizardBesideItsSentence();
+  }, CASE_TIMEOUT_MS);
+
+  it("F4.311 a 503 after the override was saved closes the wizard", async () => {
+    await aNoWorker503ClosesTheWizard();
   }, CASE_TIMEOUT_MS);
 
   it("Submit sends the draft as the PUT body, empty columns as null", async () => {

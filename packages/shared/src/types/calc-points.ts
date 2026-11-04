@@ -6,6 +6,7 @@
  */
 import type { z } from "zod";
 
+import type * as CB from "../contracts/calc-backfill";
 import type * as CP from "../contracts/calc-point-writes";
 
 export type CalcPointSetBody = z.infer<typeof CP.calcPointSetBodySchema>;
@@ -13,3 +14,4 @@ export type CalcPointBatchBody = z.infer<typeof CP.calcPointBatchBodySchema>;
 export type CalcPointBatchResponse = z.infer<typeof CP.calcPointBatchResponseSchema>;
 export type CalcPointRefusal = z.infer<typeof CP.calcPointRefusalSchema>;
 export type CalcPointBatchRefusedResponse = z.infer<typeof CP.calcPointBatchRefusedResponseSchema>;
+export type CalcBackfillRunDto = z.infer<typeof CB.calcBackfillRunDtoSchema>;

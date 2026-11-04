@@ -7,7 +7,12 @@ import {
   formatCalcError,
   parseFormula,
 } from "@bms/shared";
-import type { AssetPointCalcConfigDto, AssetPointCalcOverrideFields, CalcDialect } from "@bms/shared";
+import type {
+  AssetPointCalcConfigDto,
+  AssetPointCalcOverrideBody,
+  AssetPointCalcOverrideFields,
+  CalcDialect,
+} from "@bms/shared";
 
 /**
  * The rules behind the per-point calc override panel (`F2.6`, ADR 0039
@@ -135,6 +140,12 @@ export type OverrideDraft = {
   calcTrigger: string;
   calcIntervalSeconds: string;
   maxInputAgeSeconds: string;
+  /**
+   * `F4.311` PR 5 (owner ruling 1) — the Backfill step's days, `""` for none.
+   * Not a column: it rides on the PUT and is never read back from the row,
+   * so a draft seeded from the stored override always starts at none.
+   */
+  backfillDays?: string;
 };
 
 export const EMPTY_DRAFT: OverrideDraft = {
@@ -168,6 +179,9 @@ export function draftFromFields(fields: Readonly<Record<string, unknown>>): Over
     calcTrigger: text(fields.calcTrigger),
     calcIntervalSeconds: seconds(fields.calcIntervalSeconds),
     maxInputAgeSeconds: seconds(fields.maxInputAgeSeconds),
+    // Present only when a number was filled, so a draft with no backfill
+    // round-trips through `draftToBody` unchanged.
+    ...(typeof fields.backfillDays === "number" ? { backfillDays: seconds(fields.backfillDays) } : {}),
   };
 }
 
@@ -183,11 +197,14 @@ export function draftFromFields(fields: Readonly<Record<string, unknown>>): Over
  * parses the merged pair whichever half is stated, so a formula alone inherits
  * the template's label and a label alone re-reads the template's formula.
  */
-export function draftToBody(draft: OverrideDraft): AssetPointCalcOverrideFields {
+export function draftToBody(draft: OverrideDraft): AssetPointCalcOverrideBody {
   const formula = draft.formula.trim();
   const interval = draft.calcIntervalSeconds.trim();
   const maxAge = draft.maxInputAgeSeconds.trim();
+  const days = (draft.backfillDays ?? "").trim();
   return {
+    // Absent, not `null`, when no backfill is asked for: the field is optional.
+    ...(days === "" ? {} : { backfillDays: Number(days) }),
     formula: formula === "" ? null : formula,
     formulaDialect:
       draft.formulaDialect === "" ? null : (draft.formulaDialect as AssetPointCalcOverrideFields["formulaDialect"]),
