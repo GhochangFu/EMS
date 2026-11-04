@@ -198,3 +198,56 @@ describe("ADR 0039 decision 5 — a migration never touches history", () => {
     }
   });
 });
+
+/**
+ * ADR 0109 decision 2 (`F4.311` PR 1) — the loader reads **two** sources.
+ *
+ * The template read above is unchanged. A second, separate select reads the
+ * `computed` rows of assets with no template: a calculated point in its own
+ * right. Both reads are scanned for the same reason the merge is: every calc
+ * unit test builds its definitions by hand, so deleting either read leaves the
+ * unit suite green and, without `DATABASE_URL`, a local run green too. The
+ * behavioural proof is `calc-definitions.standalone.integration.spec.ts`.
+ */
+describe("ADR 0109 decision 2 — the loader reads two sources", () => {
+  it("keeps the template read", () => {
+    expect(
+      source,
+      "the template read must stay — dropping it stops every template-derived point computing",
+    ).toContain("innerJoin(templatePoints, eq(templatePoints.templateId, assets.templateId))");
+  });
+
+  it("adds the standalone read on template-less assets", () => {
+    expect(
+      source,
+      "the second read must select assets with no template — without it a standalone " +
+        "calculated point is never computed, and a template-pinned asset's override row " +
+        "would be loaded twice",
+    ).toContain("isNull(assets.templateId)");
+  });
+
+  it("joins the standalone read on computed rows only", () => {
+    const occurrences = source.split('eq(assetPoints.sourceKind, "computed")').length - 1;
+    expect(
+      occurrences,
+      "both reads must filter asset_points on source_kind = 'computed' — a measured, manual " +
+        "or unmapped row on a template-less asset is wiring, never a formula",
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("keys a standalone definition on its asset_points row", () => {
+    expect(
+      source,
+      "a standalone point has no template_points row; its engine identity is its " +
+        "asset_points.id, unique and stable while the row lives",
+    ).toContain("templatePointId: assetPoints.id");
+  });
+
+  it("never filters a standalone row on formula", () => {
+    expect(
+      source,
+      "a computed row with no formula on a template-less asset must reach toActiveDefinition " +
+        "and be a counted no_formula skip (ADR 0037 decision 9), never filtered out silently",
+    ).not.toContain("isNotNull(assetPoints.formula)");
+  });
+});

@@ -82,7 +82,7 @@ function stubApi(rows: AdminAssetPointDto[] = [ROW]): void {
     organizationId: null,
     organizationCode: null,
   });
-  vi.spyOn(api, "fetchAdminAssetCalcPoints").mockResolvedValue({ items: [] } as never);
+  vi.spyOn(api, "fetchAdminAssetCalcPoints").mockResolvedValue({ items: [], mode: "template" } as never);
   vi.spyOn(api, "fetchAdminAssetPoints").mockResolvedValue({ items: rows } as never);
   vi.spyOn(pointKeysApi, "fetchAdminPointKeys").mockResolvedValue({
     items: [pointKey("f3860000-0000-4000-8000-0000000000e1", "kw", "kW"), pointKey("f3860000-0000-4000-8000-0000000000e2", "pf", "")],

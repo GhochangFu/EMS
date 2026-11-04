@@ -63,6 +63,9 @@ export type CalcSkipReason =
   | "coverage_ratio_out_of_range";
 
 export interface CalcDefinition {
+  /** The engine's identity for this point. A template-derived point carries
+   * its `template_points.id`; a standalone point (ADR 0109) carries its
+   * `asset_points.id` here, since it has no template row. */
   templatePointId: string;
   assetId: string;
   pointKey: string;
@@ -128,6 +131,9 @@ export interface CalcDefinition {
  * unusable is the same counted skip a template-only row was. `kind` is the
  * exception and is never merged: an asset cannot make a measured point
  * derived, so `not_derived` still fires on the template's own value.
+ *
+ * The standalone read (ADR 0109 decision 2) passes `kind: "derived"`,
+ * `minCoverageRatio: null` and its `asset_points.id` as `templatePointId`.
  */
 export interface TemplatePointCalcRow {
   templatePointId: string;

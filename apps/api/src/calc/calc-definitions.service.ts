@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 
 import { assetPoints, assets, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -15,7 +15,9 @@ const CACHE_TTL_MS = 60_000;
 
 /**
  * Loads and caches active calc definitions: `asset → assets.templateId →
- * template_points ⟕ asset_points` for every `kind = 'derived'` row, resolved
+ * template_points ⟕ asset_points` for every `kind = 'derived'` row — plus,
+ * since ADR 0109 decision 2, every `computed` `asset_points` row of an asset
+ * with **no** template (a standalone calculated point) — resolved
  * through `toActiveDefinition` so an unusable stored row is a counted skip
  * rather than a throw (ADR 0037 decision 9). Template lifecycle status is
  * never consulted (decision 12) — instantiation already refuses a
@@ -159,6 +161,44 @@ export class CalcDefinitionsService {
       )
       .where(eq(templatePoints.kind, "derived"));
 
+    // ADR 0109 decision 2 (`F4.311`) — the **second** source: a `computed`
+    // `asset_points` row on an asset with **no** template is a calculated
+    // point in its own right. A separate select, never a UNION folded into
+    // the query above: `tests/adr-0039-resolution-merge.test.ts` pins that
+    // query's text, and this one is gated beside it.
+    //
+    // - `isNull(assets.templateId)` is what keeps the two sources disjoint. On
+    //   a pinned asset a computed row is the override, already read once
+    //   through the merge; reading it here too would load it twice.
+    // - Keyed on `asset_points.id`: a standalone point has no
+    //   `template_points` row, and the engine's identity (`defKey`, the status
+    //   registry, the graph) needs one unique, stable id per point.
+    // - No `formula IS NOT NULL` filter: a computed row with no formula is a
+    //   counted `no_formula` skip in `toActiveDefinition` (ADR 0037 decision
+    //   9), not a silent absence. No `active` filter either (D-2, as above).
+    const standaloneRows = await this.fleetDb
+      .select({
+        templatePointId: assetPoints.id,
+        assetId: assets.id,
+        pointKey: assetPoints.pointKey,
+        formula: assetPoints.formula,
+        formulaDialect: assetPoints.formulaDialect,
+        calcTrigger: assetPoints.calcTrigger,
+        calcIntervalSeconds: assetPoints.calcIntervalSeconds,
+        maxInputAgeSeconds: assetPoints.maxInputAgeSeconds,
+      })
+      .from(assets)
+      .innerJoin(assetPoints, and(eq(assetPoints.assetId, assets.id), eq(assetPoints.sourceKind, "computed")))
+      .where(isNull(assets.templateId));
+
+    // Both sources through one loop. A standalone row is `derived` by
+    // construction and carries no coverage ratio (ADR 0055 puts that on the
+    // template point only), so it passes `"derived"` and `null`.
+    const allRows = [
+      ...rows,
+      ...standaloneRows.map((row) => ({ ...row, kind: "derived", minCoverageRatio: null })),
+    ];
+
     const candidates: CalcDefinition[] = [];
     // Every row this query returns is `kind = 'derived'` (the WHERE above), so
     // the asset's derived point keys are already in hand and the post-pass
@@ -167,8 +207,13 @@ export class CalcDefinitionsService {
     // trigger, unparseable — is still a derived point, and referencing it is
     // what ADR 0036 decision 7 bans. That is also the write-side guard's own
     // reading: `asset-templates.schema.ts` tests `kind`, never usability.
+    //
+    // The standalone rows are in this map too, built in the same loop and so
+    // **before** the post-pass below: a `v1` standalone formula that reads
+    // another standalone point on the same asset is the same
+    // `v1_references_derived` skip (ADR 0036 decision 7).
     const derivedPointKeysByAsset = new Map<string, Set<string>>();
-    for (const row of rows) {
+    for (const row of allRows) {
       const forAsset = derivedPointKeysByAsset.get(row.assetId);
       if (forAsset) {
         forAsset.add(row.pointKey);
