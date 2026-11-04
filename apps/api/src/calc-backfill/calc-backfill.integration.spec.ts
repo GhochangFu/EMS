@@ -235,7 +235,13 @@ async function storedRows(pool: pg.Pool, fixture: BackfillFixture, pointKey: str
       WHERE asset_id = $1 AND point_key = $2 AND time >= $3 AND time < $4 ORDER BY time`,
     [fixture.assetId, pointKey, new Date(fixture.fromMs), new Date(fixture.toMs)],
   );
-  return rows.map((row) => ({ minute: (new Date(row.time).getTime() - fixture.fromMs) / MINUTE, value: Number(row.value) }));
+  return rows.map((row) => {
+    // `offsetMs` is exact; `minute` is offsetMs / MINUTE and is fractional for a
+    // time off the minute grid — multiplying it back by MINUTE adds float noise
+    // (246999.99999999997 for 247000), so a claim about exact times reads offsetMs.
+    const offsetMs = new Date(row.time).getTime() - fixture.fromMs;
+    return { offsetMs, minute: offsetMs / MINUTE, value: Number(row.value) };
+  });
 }
 
 /** One stored row per bucket of the window. */
@@ -285,7 +291,7 @@ export async function assertAStreamingPointWritesAtTheInputTimes(
   fixture: BackfillFixture,
 ): Promise<void> {
   await runBackfill(pools, fx, fixture, fixture.streamPointId);
-  const written = (await storedRows(pools.fleet, fixture, STREAM_KEY)).map((row) => row.minute * MINUTE);
+  const written = (await storedRows(pools.fleet, fixture, STREAM_KEY)).map((row) => row.offsetMs);
   const expected = Array.from({ length: BUCKETS }, (_, i) => (i + 1) * MINUTE - 53_000);
   expect(written).toEqual(expected);
 }
