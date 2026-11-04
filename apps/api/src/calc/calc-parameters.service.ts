@@ -6,6 +6,7 @@ import type { BmsDb } from "@bms/db";
 import { ancestorChainsCte } from "../auth/location-tree";
 import { FLEET_DRIZZLE } from "../database/database.tokens";
 import { inputKey } from "./calc-batch";
+import { ORGANIZATION_RANK, type ParameterSeriesRow } from "./calc-parameter-series";
 
 /** One `(asset, $key)` question the sweep asks per parameter reference. */
 export type ParameterPair = { readonly assetId: string; readonly key: string };
@@ -130,6 +131,80 @@ export class CalcParametersService {
       // `double precision` arrives as a JS number through `pg`; the string arm
       // is defensive against a driver type-parser change, never a default.
       out.set(inputKey(row.asset_id, row.key), typeof row.value === "number" ? row.value : Number(row.value));
+    }
+    return out;
+  }
+
+  /**
+   * `F4.311` task 5.4 (ADR 0109 decision 7, owner ruling 2) — every row that
+   * could serve each pair at some instant of `[from, to]`, keyed by
+   * `inputKey(assetId, key)`, so a backfill resolves the value **in force at
+   * each bucket** with one statement per chunk instead of one per bucket.
+   *
+   * The same containment, scope and ancestor walk as {@link resolveForAssets}
+   * — the same predicates, with the instant replaced by the range: a row
+   * qualifies when `[effective_from, effective_to)` intersects `[from, to]`.
+   * The precedence that statement expresses as an `ORDER BY` … `LIMIT 1` is
+   * carried out as `rank` (see `calc-parameter-series.ts`), and
+   * `parameterValueAt` picks per instant. The integration spec holds the two
+   * reads equal on a grid, with the point read as the oracle.
+   */
+  async resolveSeriesForAssets(
+    pairs: readonly ParameterPair[],
+    from: Date,
+    to: Date,
+  ): Promise<Map<string, ParameterSeriesRow[]>> {
+    const out = new Map<string, ParameterSeriesRow[]>();
+    const distinct = new Map<string, ParameterPair>();
+    for (const pair of pairs) {
+      distinct.set(inputKey(pair.assetId, pair.key), pair);
+    }
+    if (distinct.size === 0) {
+      return out;
+    }
+    const wanted = [...distinct.values()];
+    const chains = chainsOfAssets(wanted.map((p) => p.assetId));
+    const result = await this.fleetDb.execute<{
+      asset_id: string;
+      key: string;
+      value: number | string;
+      effective_from: Date | string;
+      effective_to: Date | string | null;
+      rank: number | string;
+    }>(
+      sql`${chains}
+          SELECT p.asset_id, p.key, cp.value, cp.effective_from, cp.effective_to,
+                 CASE WHEN cp.asset_id IS NOT NULL THEN 0
+                      WHEN cp.location_id IS NOT NULL THEN 1 + anc.steps
+                      ELSE ${sql.raw(String(ORGANIZATION_RANK))} END AS rank
+            FROM unnest(
+                   ${sql.param(wanted.map((p) => p.assetId))}::uuid[],
+                   ${sql.param(wanted.map((p) => p.key))}::varchar[]
+                 ) AS p(asset_id, key)
+            JOIN bms.assets a ON a.id = p.asset_id
+            JOIN bms.calc_parameters cp
+              ON cp.organization_id = a.organization_id
+             AND cp.key = p.key
+            LEFT JOIN anc ON anc.node_id = a.location_id AND anc.ancestor_id = cp.location_id
+           WHERE cp.organization_id = a.organization_id
+             AND cp.effective_from <= ${sql.param(to.toISOString())}::timestamptz
+             AND (cp.effective_to IS NULL OR cp.effective_to > ${sql.param(from.toISOString())}::timestamptz)
+             AND (cp.asset_id = a.id
+                  OR (cp.asset_id IS NULL AND anc.ancestor_id IS NOT NULL)
+                  OR (cp.asset_id IS NULL AND cp.location_id IS NULL))
+           ORDER BY p.asset_id, p.key, rank ASC, cp.effective_from DESC`,
+    );
+    for (const row of result.rows) {
+      const k = inputKey(row.asset_id, row.key);
+      const series = out.get(k) ?? [];
+      series.push({
+        fromMs: new Date(row.effective_from).getTime(),
+        toMs: row.effective_to === null ? null : new Date(row.effective_to).getTime(),
+        // As in `resolveForAssets`: the string arm is defensive, never a default.
+        value: typeof row.value === "number" ? row.value : Number(row.value),
+        rank: Number(row.rank),
+      });
+      out.set(k, series);
     }
     return out;
   }
