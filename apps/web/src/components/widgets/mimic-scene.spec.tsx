@@ -156,6 +156,37 @@ export function resolvedUnitShowsItsAsset(): void {
   expect(screen.getAllByTestId("mimic-flow").map((f) => f.getAttribute("data-flow-from"))).toEqual(["tank_a"]);
 }
 
+/**
+ * S4b — `F4.307` (plan C5, C6): a unit listing `["temp", "flow", "ph"]` answers those rows in list
+ * order (not the headline `flow` first). `ph` is a listed key the asset does not hold: the
+ * resolver answers its catalog name and `latest: null`, and no reading arrives for it, so the row
+ * draws "pH" and "—" with no unit.
+ */
+export function listedRowsDrawInOrderAndAMissingKeyReadsADash(): void {
+  const listed: MimicNodeDto = {
+    ...TANK_NODE,
+    asset: {
+      ...TANK,
+      points: [
+        { pointKey: "temp", name: "Temperature", unit: "°C", headlineRank: 4, latest: null },
+        { pointKey: "flow", name: "Flow", unit: "m3/h", headlineRank: 1, latest: null },
+        { pointKey: "ph", name: "pH", unit: null, headlineRank: null, latest: null },
+      ],
+    },
+  };
+  const readings: SiteLiveReadings = {
+    ...FRESH,
+    pointLatest: (_assetId, point) => (point.pointKey === "ph" ? null : { value: 12, time: "t", atMs: NOW - 1_000 }),
+  };
+  renderScene([listed], readings);
+  const rows = within(unitEl("tank_a")).getAllByTestId("mimic-point");
+  expect(rows.map((row) => [row.getAttribute("data-point-key"), row.textContent])).toEqual([
+    ["temp", "Temperature12 °C"],
+    ["flow", "Flow12 m3/h"],
+    ["ph", "pH—"],
+  ]);
+}
+
 /** S5 — the panel frame, the free label and the two pipes draw; a layout draws no pump and no sink. */
 export function drawsPanelLabelAndPipes(): void {
   renderScene();
