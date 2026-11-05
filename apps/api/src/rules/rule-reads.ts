@@ -1,7 +1,7 @@
 import { desc, eq, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 
-import { assets, automationRules, ruleExecutions } from "@bms/db";
+import { assets, automationRules, locations, rtus, ruleExecutions } from "@bms/db";
 
 import type { BmsTx } from "../database/tenant-context";
 import type { RuleRow } from "./rules.types";
@@ -49,7 +49,9 @@ export function traceProjection(redactEvaluatedBy: boolean): SQL<unknown> {
  * The `automation_rules ⋈ assets` list projection, shared by `selectRuleRows`
  * (all rows) and `selectRuleRowById` (one row). The rule's own org and its
  * asset's org both ride the LEFT JOIN; the asset columns are null exactly when
- * the rule targets no asset.
+ * the rule targets no asset. `F4.316` (ADR 0111): the asset's RTU and location
+ * names ride two more LEFT JOINs (no predicate); `assetRtuName` is also null
+ * for an asset with no RTU.
  */
 const ruleRowColumns = {
   id: automationRules.id,
@@ -64,6 +66,8 @@ const ruleRowColumns = {
   assetOrganizationId: assets.organizationId,
   assetId: automationRules.assetId,
   assetCode: assets.code,
+  assetRtuName: rtus.displayName,
+  assetLocationName: locations.name,
   assetName: assets.name,
   siteName: assets.siteName,
   assetDomain: assets.domain,
@@ -100,6 +104,8 @@ export async function selectRuleRows(db: BmsTx): Promise<RuleRow[]> {
     .select(ruleRowColumns)
     .from(automationRules)
     .leftJoin(assets, eq(automationRules.assetId, assets.id))
+    .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+    .leftJoin(locations, eq(assets.locationId, locations.id))
     .orderBy(desc(automationRules.enabled), automationRules.category, automationRules.name);
 }
 
@@ -125,6 +131,8 @@ export async function selectRuleRowById(db: BmsTx, id: string): Promise<RuleRow 
     .select(ruleRowColumns)
     .from(automationRules)
     .leftJoin(assets, eq(automationRules.assetId, assets.id))
+    .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+    .leftJoin(locations, eq(assets.locationId, locations.id))
     .where(eq(automationRules.id, id))
     .limit(1);
   return row;

@@ -655,6 +655,43 @@ export async function assertADomainMismatchRefuses(
   );
 }
 
+/**
+ * `F4.316` PR 8 (ADR 0111). Mutation: either `LEFT JOIN` dropped from the selection
+ * (the drizzle select reddens) or an `INNER JOIN` (the RTU-less twin vanishes).
+ * The preview names an asset with an RTU by that RTU, and one with `rtu_id IS NULL`
+ * by `null` plus its location.
+ */
+export async function assertThePreviewNamesTheRtuAndTheLocation(
+  pool: pg.Pool,
+  svc: Services,
+  fx: AdoptFixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const templateId = await seedVersion(db, fx);
+  const withRtu = await seedAsset(db, fx, "LBLRTU");
+  const rtuLess = await seedAsset(db, fx, "LBLNONE", { locationId: fx.otherLocationId });
+  const preview = templateAdoptionPreviewResponseSchema.parse(
+    await svc.adoption.preview(fx.adminJwt, templateId, { assetIds: [withRtu, rtuLess] }),
+  );
+  const one = async (sql: string, id: string): Promise<string> =>
+    (await pool.query<{ n: string }>(sql, [id])).rows[0]?.n ?? "";
+  const rtuName = await one(`SELECT display_name AS n FROM bms.rtus WHERE id = $1`, fx.rtuId);
+  const rtuLocation = await one(`SELECT name AS n FROM bms.locations WHERE id = $1`, fx.rtuLocationId);
+  const otherLocation = await one(`SELECT name AS n FROM bms.locations WHERE id = $1`, fx.otherLocationId);
+  const got = [withRtu, rtuLess].map((id) => {
+    const row = preview.assets.find((a) => a.assetId === id);
+    return [id, row?.assetRtuName, row?.assetLocationName];
+  });
+  const want = [
+    [withRtu, rtuName, rtuLocation],
+    [rtuLess, null, otherLocation],
+  ];
+  assert(
+    JSON.stringify(got) === JSON.stringify(want),
+    `the plan rows must name the RTU and location, got ${JSON.stringify(got)} want ${JSON.stringify(want)}`,
+  );
+}
+
 /** Owner ruling 1. Mutation: `adopt` trusts a cached or echoed plan instead of rebuilding it. */
 export async function assertApplyRecomputesAfterACleanPreview(
   pool: pg.Pool,

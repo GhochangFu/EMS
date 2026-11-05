@@ -298,6 +298,8 @@ export const templateVersionDeltaDtoSchema = z.object({
 export const templateMigrationAssetDtoSchema = z.object({
   assetId: z.string(),
   assetCode: z.string(),
+  assetRtuName: z.string().nullable(),
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   fromVersionId: z.string(),
   fromVersion: z.number(),

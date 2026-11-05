@@ -49,6 +49,10 @@ export const seededRuleDtoSchema = z.object({
   enabled: z.boolean(),
   assetId: z.string(),
   assetCode: z.string(),
+  /** F4.316 / ADR 0111 — the asset's RTU display name; `null` when it has none. */
+  assetRtuName: z.string().nullable(),
+  /** F4.316 / ADR 0111 — the asset's location name (every asset has a location). */
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   locationId: z.string(),
   sourceTemplateId: z.string(),

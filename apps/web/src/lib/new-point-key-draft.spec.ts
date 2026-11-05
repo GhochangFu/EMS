@@ -15,7 +15,9 @@ import {
   keyCreatedPointRefusedMessage,
   newKeyClashProblem,
   newPointKeyBody,
+  newPointKeyDraftChanged,
   newPointKeyProblems,
+  withLateDomain,
   pointWriteCause,
 } from "./new-point-key-draft";
 
@@ -38,21 +40,59 @@ export function theSentinelIsNoCatalogCode(): void {
 
 // Catches: a blank unit sent as `""` rather than left absent, or untrimmed text.
 export function theBodyTrimsAndLeavesABlankUnitAbsent(): void {
-  expect(newPointKeyBody({ code: " kvar ", name: " Reactive ", unit: "  " })).toEqual({ code: "kvar", name: "Reactive" });
+  expect(newPointKeyBody({ code: " kvar ", name: " Reactive ", unit: "  ", domain: "", openedDomain: "" })).toEqual({ code: "kvar", name: "Reactive" });
 }
 
 // Catches: a unit dropped from the body when one is typed.
 export function aTypedUnitIsSent(): void {
-  expect(newPointKeyBody({ code: "kvar", name: "Reactive", unit: "kVAr" })).toEqual({
+  expect(newPointKeyBody({ code: "kvar", name: "Reactive", unit: "kVAr", domain: "", openedDomain: "" })).toEqual({
     code: "kvar",
     name: "Reactive",
     unit: "kVAr",
   });
 }
 
+// Catches: the pre-filled domain not sent (the parameter ignored), or a blank domain sent as `""`.
+export function aPrefilledDomainIsSent(): void {
+  const body = newPointKeyBody({ ...emptyNewPointKeyDraft("electrical"), code: "kvar", name: "Reactive" });
+  expect(body).toEqual({ code: "kvar", name: "Reactive", domain: "electrical" });
+}
+
+// Catches: a cleared domain sent as `""` (the key written with an empty domain).
+export function aClearedDomainIsAbsentFromTheBody(): void {
+  const body = newPointKeyBody({ ...emptyNewPointKeyDraft("electrical"), code: "kvar", name: "Reactive", domain: "  " });
+  expect(body).not.toHaveProperty("domain");
+}
+
+// Catches: `null` read as the text "null", or a missing domain not blank.
+export function noDomainOpensBlank(): void {
+  expect(emptyNewPointKeyDraft(null).domain).toBe("");
+  expect(emptyNewPointKeyDraft().domain).toBe("");
+}
+
+// Catches: the leave prompt firing on a draft nobody has touched.
+export function anUntouchedPrefilledDraftIsNotAChange(): void {
+  expect(newPointKeyDraftChanged(emptyNewPointKeyDraft("electrical"))).toBe(false);
+}
+
+// Catches: an edited or cleared Domain not counting as a change.
+export function anEditedDomainIsAChange(): void {
+  expect(newPointKeyDraftChanged({ ...emptyNewPointKeyDraft("electrical"), domain: "" })).toBe(true);
+  expect(newPointKeyDraftChanged({ ...emptyNewPointKeyDraft("electrical"), domain: "water" })).toBe(true);
+}
+
+// Catches: a late-arriving domain ignored (blank stays blank), or overwriting what the admin typed.
+export function aLateDomainFillsAnUntouchedFieldOnly(): void {
+  const late = withLateDomain(emptyNewPointKeyDraft(null), "electrical");
+  expect(late).toMatchObject({ domain: "electrical", openedDomain: "electrical" });
+  expect(newPointKeyDraftChanged(late)).toBe(false);
+  const typed = { ...emptyNewPointKeyDraft(null), domain: "water" };
+  expect(withLateDomain(typed, "electrical")).toBe(typed);
+}
+
 // Catches: a restated rule that lets a code outside the catalog class through.
 export function aCodeOutsideTheCatalogClassIsRefused(): void {
-  expect(newPointKeyProblems({ code: "kv ar", name: "Reactive", unit: "" })).toEqual([
+  expect(newPointKeyProblems({ code: "kv ar", name: "Reactive", unit: "", domain: "", openedDomain: "" })).toEqual([
     "code: letters, digits, '_' and '-' only — like TX_01 or kwh_total",
   ]);
 }
@@ -68,12 +108,12 @@ export function anEmptyDraftNamesTheCodeAndTheLabel(): void {
 
 // Catches: the schema's unit bound (32) not applied.
 export function aUnitLongerThanTheSchemaAllowsIsRefused(): void {
-  expect(newPointKeyProblems({ code: "kvar", name: "Reactive", unit: "u".repeat(33) }).length).toBe(1);
+  expect(newPointKeyProblems({ code: "kvar", name: "Reactive", unit: "u".repeat(33), domain: "", openedDomain: "" }).length).toBe(1);
 }
 
 // Catches: a usable draft reported as a problem.
 export function aCompleteDraftHasNoProblem(): void {
-  expect(newPointKeyProblems({ code: "kvar", name: "Reactive", unit: "kVAr" })).toEqual([]);
+  expect(newPointKeyProblems({ code: "kvar", name: "Reactive", unit: "kVAr", domain: "", openedDomain: "" })).toEqual([]);
 }
 
 // Catches: "already exists" read from anything other than the 409 status.

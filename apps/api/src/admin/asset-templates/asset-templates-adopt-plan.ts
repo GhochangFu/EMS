@@ -85,6 +85,10 @@ export type AdoptionAsset = {
   readonly id: string;
   readonly code: string;
   readonly name: string;
+  /** `rtus.display_name` of the asset's RTU; null when it has none (ADR 0111). */
+  readonly rtuName: string | null;
+  /** `locations.name`; null when the asset has no location. */
+  readonly locationName: string | null;
   readonly organizationId: string;
   readonly domain: string;
   readonly templateId: string | null;
@@ -173,6 +177,8 @@ function planOne(
   const dto = {
     assetId: asset.id,
     assetCode: asset.code,
+    assetRtuName: asset.rtuName,
+    assetLocationName: asset.locationName,
     assetName: asset.name,
     kept: [] as string[],
     added: [] as TemplateAdoptionAddedPointDto[],

@@ -47,6 +47,8 @@ function asset(id: string, fromVersion = 1) {
   return {
     assetId: id,
     assetCode: `CODE-${id}`,
+    assetRtuName: null,
+    assetLocationName: null,
     assetName: `Asset ${id}`,
     fromVersionId: `v${fromVersion}`,
     fromVersion,

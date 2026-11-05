@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import pg from "pg";
 import { afterAll, beforeAll, describe, it } from "vitest";
 
-import { assets, automationRules, createDb, ruleExecutions } from "@bms/db";
+import { assets, automationRules, createDb, rtus, ruleExecutions } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { DEFAULT_RULE_CATEGORY_CODE } from "@bms/shared";
 
@@ -31,6 +31,7 @@ import {
   assertSingleOrgRuleExecutionListReturnsOwnRow,
   assertSingleOrgRuleExecutionListRunsOnTenantTransaction,
   assertSingleOrgRuleListReturnsOwnRow,
+  assertRuleRowsCarryAssetLabelParts,
   assertSingleOrgRuleListRunsOnTenantTransaction,
   assertUpdateRuleReadsBackInTenantTransaction,
   EVALUATOR_SUBJECT,
@@ -78,6 +79,8 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
   let assetId: string;
   let foreignAssetId = "";
   let decoyAssetId = "";
+  let rtuAssetId = "";
+  let labelRtuId = "";
 
   beforeAll(async () => {
     const url = connectionString as string;
@@ -148,7 +151,7 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
 
     // Seeds a disabled draft rule on an asset, under that org's GUC so the FORCE
     // WITH CHECK passes. Returns the rule id.
-    const seedRule = async (orgId: string, aId: string, ruleCode: string): Promise<string> =>
+    const seedRule = async (orgId: string, aId: string | null, ruleCode: string): Promise<string> =>
       withTenant(tenantDb, orgId, async (tx) => {
         const [row] = await tx
           .insert(automationRules)
@@ -158,15 +161,16 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
             name: `E7.1b read-path rule ${ruleCode}`,
             description: null,
             category: DEFAULT_RULE_CATEGORY_CODE,
-            ruleType: "threshold",
+            ruleType: aId === null ? "time_window" : "threshold",
             source: "operator_rule",
             enabled: false,
             assetId: aId,
-            pointKey: "PWR",
-            operator: "gt",
-            thresholdValue: 1,
+            pointKey: aId === null ? null : "PWR",
+            operator: aId === null ? null : "gt",
+            thresholdValue: aId === null ? null : 1,
             severity: null,
-            condition: { window: "latest" },
+            condition:
+              aId === null ? { days: ["mon"], startTime: "09:00", endTime: "17:00" } : { window: "latest" },
             action: { type: "trace_only", target: "Operations" },
             lifecycleStatus: "draft",
             publishedAt: null,
@@ -265,6 +269,35 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
     const decoyRuleId = await seedRule(organizationId, decoyAssetId, `${PREFIX}READC`);
     const decoyExecutionId = await seedExecution(organizationId, decoyRuleId);
 
+    // `F4.316` PR 4b (ADR 0111): an asset WITH an RTU (the twin of `assetId`, which has none), and
+    // an asset-less rule whose three label columns must all stay null.
+    const [labelRtu] = await fleetDb
+      .insert(rtus)
+      .values({
+        organizationId,
+        locationId,
+        code: `${PREFIX}RTU`,
+        displayName: `${PREFIX}RTU display`,
+      })
+      .returning({ id: rtus.id });
+    labelRtuId = labelRtu.id;
+    const [rtuAsset] = await fleetDb
+      .insert(assets)
+      .values({
+        organizationId,
+        code: `${PREFIX}ASSETR`,
+        name: "E7.1b rules RLS RTU asset",
+        siteName: "E7.1b Site",
+        locationId,
+        rtuId: labelRtuId,
+        domain,
+        active: true,
+      })
+      .returning({ id: assets.id });
+    rtuAssetId = rtuAsset.id;
+    const rtuRuleId = await seedRule(organizationId, rtuAssetId, `${PREFIX}READR`);
+    const assetlessRuleId = await seedRule(organizationId, null, `${PREFIX}READN`);
+
     // `F3.7`: no assertion in this suite reaches `evaluateEnabledRules`, the
     // one method that dispatches, so the fifth slot is an inert stand-in.
     const notifications = {
@@ -303,6 +336,10 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
       inScopeExecutionId,
       foreignExecutionId,
       decoyExecutionId,
+      rtuAssetId,
+      rtuRuleId,
+      assetlessRuleId,
+      labelRtuId,
     };
   });
 
@@ -320,9 +357,12 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
         await ownerPool.query(`DELETE FROM bms.automation_rules WHERE id = ANY($1)`, [createdRuleIds]);
       }
       await ownerPool.query(`DELETE FROM bms.automation_rules WHERE code LIKE $1`, [`${PREFIX}%`]);
-      const assetIdsToDelete = [assetId, foreignAssetId, decoyAssetId].filter(Boolean);
+      const assetIdsToDelete = [assetId, foreignAssetId, decoyAssetId, rtuAssetId].filter(Boolean);
       if (assetIdsToDelete.length > 0) {
         await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1)`, [assetIdsToDelete]);
+      }
+      if (labelRtuId) {
+        await ownerPool.query(`DELETE FROM bms.rtus WHERE id = $1`, [labelRtuId]);
       }
     }
     await Promise.all([ownerPool, tenantPool].filter(Boolean).map((p) => p.end()));
@@ -370,6 +410,10 @@ describe.skipIf(!connectionString)("E7.1b — RulesService.createDraft under rea
 
   it("returns both orgs' rules, and only those, for a two-organization actor (decision 3)", async () => {
     await assertRuleListReturnsBothOrgsForTwoOrgActor(ctx);
+  });
+
+  it("names each rule's asset RTU and location; an asset-less rule keeps all three nulls (F4.316 PR 4b)", async () => {
+    await assertRuleRowsCarryAssetLabelParts(ctx);
   });
 
   it("runs a single-org listRules on the tenant pool (one tenant transaction, no fleet)", async () => {

@@ -28,6 +28,8 @@ const RULE: RuleListItem = {
   enabled: true,
   assetId: "55555555-5555-4555-8555-555555555555",
   assetCode: "CH-01",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
   assetName: "Chiller 1",
   siteName: "West Campus",
   assetDomain: "hvac",

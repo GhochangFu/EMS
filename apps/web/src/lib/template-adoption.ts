@@ -26,7 +26,10 @@ type VersionRow = AssetTemplatesListResponse["items"][number];
  * (`AdminAssetDto`) carries it, and the points page builds it from the asset
  * summary with `templateId: null` (its standalone mode is the server's word).
  */
-export type AdoptingAsset = Pick<AdminAssetDto, "id" | "code" | "organizationCode" | "domain" | "templateId">;
+export type AdoptingAsset = Pick<
+  AdminAssetDto,
+  "id" | "code" | "organizationCode" | "domain" | "templateId" | "rtuDisplayName" | "locationName"
+>;
 
 function distinct(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
