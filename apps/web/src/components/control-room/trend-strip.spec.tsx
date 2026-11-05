@@ -198,6 +198,18 @@ export async function theTilePrintsTheAssetLabel(): Promise<void> {
   expect(tile?.textContent).toBe("A-07 · RTU 7");
 }
 
+/** `F4.316` (ADR 0111) — the tile's label never truncates and may wrap. */
+export async function theTileLabelIsNeverTruncated(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderStrip();
+
+  const row = await screen.findByRole("listitem", { name: "Temperature" });
+  const tile = row.querySelector("[data-role='asset-label']");
+  expect(tile).not.toBeNull();
+  expect(tile).not.toHaveClass("truncate");
+  expect(tile).not.toHaveClass("whitespace-nowrap");
+}
+
 /** Each asset prints its last value with its own unit, not the catalog unit. */
 export async function eachAssetPrintsItsLastValueWithItsUnit(): Promise<void> {
   fetchStrip.mockResolvedValue(strip());

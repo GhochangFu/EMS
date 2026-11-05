@@ -6,6 +6,7 @@ import {
   linksEachAssetToItsHistory,
   namesTheMoreAssetsCount,
   namesEachAssetByItsLabel,
+  theLabelCellIsNeverTruncated,
   noChangeColumnWithoutCompare,
   showsTheChangeOnlyWithACompareRow,
   sortsByMeanThenByMax,
@@ -39,5 +40,9 @@ describe("F4.302 the segment ranking table", () => {
 
   it("names each asset <code> · <RTU>, or <code> · <location> without an RTU (F4.316)", () => {
     namesEachAssetByItsLabel();
+  });
+
+  it("never truncates the asset label cell (F4.316)", () => {
+    theLabelCellIsNeverTruncated();
   });
 });

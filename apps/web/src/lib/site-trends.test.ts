@@ -69,7 +69,7 @@ describe("F4.302 the Trends & Energy section's pure rules", () => {
     chartSeriesLabelAnRtuLessAssetByItsLocation();
   });
 
-  it("keeps a max tie in code order whatever the RTU names (F4.316)", () => {
+  it("keeps a max tie on one code in the server's order, not by RTU name (F4.316)", () => {
     sortRankingTieStaysByCode();
   });
 

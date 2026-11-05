@@ -177,13 +177,18 @@ export function chartSeriesLabelAnRtuLessAssetByItsLocation(): void {
   expect(segmentChartSeries([drawn], 0).map((s) => s.label)).toEqual(["A1 · Site 1"]);
 }
 
-/** `F4.316` (ADR 0111) — a max tie still sorts by code, not by the label's RTU name. */
+/**
+ * `F4.316` (ADR 0111) — the sort key is the code, never the label. A label starts with its code,
+ * so two different codes order the same either way; the case that tells them apart is ADR 0111's
+ * own: ONE code on two RTUs. Tied on max and code, the rows keep the server's order (`RTU Z`
+ * first); a sort by label would put `A1 · RTU A` first.
+ */
 export function sortRankingTieStaysByCode(): void {
   const rows = [
-    entry(ASSET_B, "B1", 1, 7, { assetRtuName: "RTU A" }),
     entry(ASSET_A, "A1", 2, 7, { assetRtuName: "RTU Z" }),
+    entry(ASSET_B, "A1", 1, 7, { assetRtuName: "RTU A" }),
   ];
-  expect(sortRanking(rows, "max").map((r) => r.assetCode)).toEqual(["A1", "B1"]);
+  expect(sortRanking(rows, "max").map((r) => r.assetRtuName)).toEqual(["RTU Z", "RTU A"]);
 }
 
 /** Mean is the server's order kept; max sorts by max descending, ties by code. */

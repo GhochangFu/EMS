@@ -9,6 +9,7 @@ import {
   aLinkNamesTheAssetAndThePoint,
   anRtuLessLinkNamesTheLocation,
   theTilePrintsTheAssetLabel,
+  theTileLabelIsNeverTruncated,
   aPendingReadShowsTheLoadingStatus,
   aStripTrimmedToOneAssetNamesThePointsCap,
   aStripWithADroppedSegmentSaysPointsAreHidden,
@@ -74,6 +75,10 @@ describe("F4.301 U4 TrendStrip", () => {
 
   it("prints the asset label under each sparkline (F4.316)", async () => {
     await theTilePrintsTheAssetLabel();
+  });
+
+  it("never truncates the tile's asset label (F4.316)", async () => {
+    await theTileLabelIsNeverTruncated();
   });
 
   it("prints each asset's last value with its own unit", async () => {

@@ -124,7 +124,6 @@ export function compareSpanMs(current: SegmentViewPeriodDto, compare: SegmentVie
 /** One line of the segment chart; `dashed` is the asset's previous period. */
 export type SegmentChartSeries = {
   readonly assetId: string;
-  readonly assetCode: string;
   /** `F4.316` (ADR 0111) — `assetLabelOf(entry)`, `<code> · <RTU>` (or the location without one). */
   readonly label: string;
   readonly dashed: boolean;
@@ -145,7 +144,6 @@ export function segmentChartSeries(
     }
     const own: SegmentChartSeries = {
       assetId: entry.assetId,
-      assetCode: entry.assetCode,
       label: assetLabelOf(entry),
       dashed: false,
       data: entry.buckets.map((b) => [b.t, b.v]),
@@ -155,7 +153,6 @@ export function segmentChartSeries(
     }
     const previous: SegmentChartSeries = {
       assetId: entry.assetId,
-      assetCode: entry.assetCode,
       label: own.label,
       dashed: true,
       data: shiftCompareBuckets(entry.compareBuckets, spanMs).map((b) => [b.t, b.v]),

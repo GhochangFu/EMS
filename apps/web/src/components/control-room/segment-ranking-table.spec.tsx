@@ -102,3 +102,11 @@ export function namesEachAssetByItsLabel(): void {
   expect(within(first as HTMLElement).getByText("A1 · RTU 1")).toBeInTheDocument();
   expect(within(second as HTMLElement).getByText("B1 · Site 1")).toBeInTheDocument();
 }
+
+/** `F4.316` (ADR 0111) — the label cell never truncates and may wrap. */
+export function theLabelCellIsNeverTruncated(): void {
+  renderTable(0, true, [{ ...row(A, "A1", 10, 12, 8), assetRtuName: "RTU 1", assetLocationName: "Site 1" }]);
+  const cell = screen.getByText("A1 · RTU 1");
+  expect(cell).not.toHaveClass("truncate");
+  expect(cell).not.toHaveClass("whitespace-nowrap");
+}
