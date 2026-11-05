@@ -301,3 +301,15 @@ export function theFocusRingIsTheFocusRoleTokenAsAStroke(): void {
     expect(r.getAttribute("stroke")).toBeNull();
   }
 }
+
+/**
+ * P18 — the focus ring's width is in screen pixels, not `viewBox` units. The canvas draws a
+ * 2400-unit-wide layout in a few hundred pixels (scale ≈ 0.17 in the editor), so a scaling
+ * `stroke-2` rendered about 0.34 px wide, too thin to see (browser check of #1029, 2026-11-05).
+ */
+export function theFocusRingKeepsItsScreenWidthAtAnyCanvasScale(): void {
+  renderCanvas();
+  for (const r of screen.getAllByTestId("mimic-preview-hit")) {
+    expect(r).toHaveAttribute("vector-effect", "non-scaling-stroke");
+  }
+}

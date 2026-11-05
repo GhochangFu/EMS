@@ -27,7 +27,9 @@ export type MimicPreviewCanvasProps = {
  *
  * **Keyboard (WCAG 2.1.1).** Each hit rect is a `role="button"` in the Tab order, named by its
  * unit's label, `aria-pressed` when selected: Enter or Space selects it, Escape clears. The focus
- * ring is the `--focus` role token as a stroke — an SVG rect has no reliable outline. The hit
+ * ring is the `--focus` role token as a stroke — an SVG rect has no reliable outline — with
+ * `vector-effect="non-scaling-stroke"`, so its 2 px is screen pixels: the canvas draws the layout
+ * at a scale far below 1, and a scaling stroke rendered under half a pixel wide. The hit
  * rects sit in their own overlay `<svg>` over the scene (same `viewBox`, same aspect fit), not
  * inside `MimicScene`'s `role="img"`: an image's children are presentational, so a button there
  * would never reach the accessibility tree.
@@ -87,6 +89,7 @@ export function MimicPreviewCanvas({ entry, readings, stateMaps, selected, onSel
               height={unit.box.h}
               fill="none"
               pointerEvents="all"
+              vectorEffect="non-scaling-stroke"
               className="cursor-pointer outline-none focus-visible:stroke-focus focus-visible:stroke-2"
               onClick={(event) => {
                 event.stopPropagation();
