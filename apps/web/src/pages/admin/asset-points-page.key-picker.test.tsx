@@ -20,7 +20,7 @@ describe("F4.313 follow-up — the Add calculated point key picker lists the ass
     vi.restoreAllMocks();
   });
 
-  it("by default lists only the keys of the asset's domain, plus keys with no domain", async () => {
+  it("by default lists only the keys of the asset's domain", async () => {
     await theDefaultListsOnlyTheAssetsDomain();
   });
 

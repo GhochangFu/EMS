@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aLeftOutAssetOfAnotherDomainDoesNotLiftTheFilter,
   aSharedDomainFiltersTheKeys,
   mixedDomainsListEveryKey,
   newKeyIsStillOfferedUnderASharedDomain,
@@ -21,6 +22,10 @@ describe("F4.313 follow-up — the bulk calculated-point wizard lists the select
 
   it("lists every key when the selected assets' domains differ", async () => {
     await mixedDomainsListEveryKey();
+  });
+
+  it("a left-out asset of another domain does not lift the eligible assets' shared domain", async () => {
+    await aLeftOutAssetOfAnotherDomainDoesNotLiftTheFilter();
   });
 
   it("New key is still offered under a shared domain", async () => {

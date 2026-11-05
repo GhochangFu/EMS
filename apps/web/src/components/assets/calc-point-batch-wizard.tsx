@@ -21,8 +21,9 @@
  * clean check creates the key and then writes the batch. A refused batch
  * after the key says the key stays, and the picker re-reads the catalog.
  *
- * `F4.313` follow-up (owner ruling 2026-11-05): the picker lists the selected
- * assets' domain first when they all share one, and every key when they do not.
+ * `F4.313` follow-up (owner ruling 2026-11-05): the picker lists the eligible
+ * assets' domain first when they all share one, and every key when they do not
+ * (a left-out asset with a template does not count).
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -223,7 +224,7 @@ export function CalcPointBatchWizard({
         exclude={NOTHING_EXCLUDED}
         disabled={busy}
         allowNew={allowNewKey}
-        domain={sharedDomain(assets.map((asset) => asset.domain))}
+        domain={sharedDomain(eligible.map((asset) => asset.domain))}
         onChange={pickKey}
       />
       {newKey ? <NewPointKeyFields draft={newKey} disabled={busy} onChange={editNewKey} /> : null}

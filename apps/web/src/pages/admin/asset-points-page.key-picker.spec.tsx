@@ -159,6 +159,8 @@ export async function aKeyTheAssetHasStaysOutByDefault(): Promise<void> {
 export async function aKeyTheAssetHasStaysOutUnderShowAll(): Promise<void> {
   const select = await openAdd();
   await userEvent.click(screen.getByLabelText("Show all keys"));
+  // The toggle took effect: a key of another domain is listed now.
+  expect(within(select).getByText("flow · Flow rate")).toBeTruthy();
   expect(within(select).queryByText("tds · Dissolved solids")).toBeNull();
 }
 

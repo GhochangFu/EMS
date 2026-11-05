@@ -29,7 +29,7 @@ const globalAdmin = { id: "u1", email: "admin@bms.local", displayName: "Admin", 
 const SITE = "11111111-1111-4111-8111-111111111111";
 const NEW_KEY_OPTION = "New key…";
 
-function asset(index: number, domain: string): AdminAssetDto {
+function asset(index: number, domain: string, templateId: string | null = null): AdminAssetDto {
   const suffix = String(index).padStart(12, "0");
   return adminAssetDtoSchema.parse({
     id: `22222222-2222-4222-8222-${suffix}`,
@@ -46,9 +46,9 @@ function asset(index: number, domain: string): AdminAssetDto {
     rating: null,
     tripCause: null,
     active: true,
-    templateId: null,
-    templateCode: null,
-    templateVersion: null,
+    templateId,
+    templateCode: templateId === null ? null : "PUMP",
+    templateVersion: templateId === null ? null : 1,
     meta: null,
     createdAt: new Date(0).toISOString(),
   });
@@ -57,6 +57,8 @@ function asset(index: number, domain: string): AdminAssetDto {
 const ONE = asset(1, "electrical");
 const TWO = asset(2, "electrical");
 const THREE = asset(3, "water");
+/** Pinned to a template, so the wizard leaves it out. */
+const FOUR = asset(4, "water", "33333333-3333-4333-8333-333333333333");
 
 function pointKey(code: string, name: string, domain: string | null) {
   return {
@@ -80,7 +82,7 @@ function stubApi(): void {
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue({ assetDomains: [] } as never);
   vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [] } as never);
   vi.spyOn(rtusApi, "fetchAdminRtus").mockResolvedValue({ items: [] } as never);
-  vi.spyOn(assetsApi, "fetchAdminAssets").mockResolvedValue({ items: [ONE, TWO, THREE] } as never);
+  vi.spyOn(assetsApi, "fetchAdminAssets").mockResolvedValue({ items: [ONE, TWO, THREE, FOUR] } as never);
   vi.spyOn(pointKeysApi, "fetchAdminPointKeys").mockResolvedValue({
     items: [pointKey("pf", "Power factor", "electrical"), pointKey("flow", "Flow rate", "water")],
   });
@@ -118,6 +120,12 @@ export async function aSharedDomainFiltersTheKeys(): Promise<void> {
 export async function mixedDomainsListEveryKey(): Promise<void> {
   const select = await openPointStep(["PMP-1", "PMP-3"]);
   expect(within(select).getByText("flow · Flow rate")).toBeTruthy();
+}
+
+// Catches: the domain taken from every selected asset, not the eligible ones the point goes to.
+export async function aLeftOutAssetOfAnotherDomainDoesNotLiftTheFilter(): Promise<void> {
+  const select = await openPointStep(["PMP-1", "PMP-2", "PMP-4"]);
+  expect(within(select).queryByText("flow · Flow rate")).toBeNull();
 }
 
 // Catches: New key dropped from the bulk wizard once the picker filters by domain.
