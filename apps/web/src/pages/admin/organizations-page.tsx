@@ -13,6 +13,7 @@ import {
 } from "../../api/admin/organizations";
 import { fetchCopilotStatus } from "../../api/copilot";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
+import { COLOUR_PROFILE_LABELS, ColourProfileDialog } from "../../components/admin/colour-profile-dialog";
 import { CopilotOrgSwitch } from "../../components/admin/copilot-org-switch";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { PageHeader } from "../../components/page-header";
@@ -20,6 +21,7 @@ import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import {
   canAccessOnboarding,
+  canChooseColourProfile,
   canManageAiAssistant,
   canWriteOrganizations,
   isGlobalAdmin,
@@ -64,6 +66,9 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
   const canOnboard = canAccessOnboarding(user.role);
   const canManageAi = canManageAiAssistant(user.role);
   const canSwitchCopilot = isGlobalAdmin(user.role);
+  // `F4.310` (ADR 0110 decision 8): the organization whose colour-profile chooser is open.
+  const canChooseProfile = canChooseColourProfile(user.role);
+  const [profileFor, setProfileFor] = useState<AdminOrganizationDto | null>(null);
   // `F3.86` PR 7 (ruling Q4): below the global administrator the dock mounts only when its home
   // status is available (`copilot-dock.tsx` `AvailableDock`, the same query key), so the button
   // shows only then — otherwise no dock would take the request. The global administrator's
@@ -209,6 +214,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                     <th className="px-2 py-2">Name</th>
                     <th className="px-2 py-2">Currency</th>
                     <th className="px-2 py-2">Time zone</th>
+                    <th className="px-2 py-2">Colour profile</th>
                     <th className="px-2 py-2">Status</th>
                     <th className="px-2 py-2">Actions</th>
                   </tr>
@@ -224,6 +230,7 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                       <td className="px-2 py-2 font-semibold text-accent-strong">{item.name}</td>
                       <td className="px-2 py-2 font-mono text-xs">{item.currency}</td>
                       <td className="px-2 py-2 font-mono text-xs">{item.timezone}</td>
+                      <td className="px-2 py-2 text-xs">{COLOUR_PROFILE_LABELS[item.colourProfile].label}</td>
                       <td className="px-2 py-2">
                         <StatusPill
                           label={item.active ? "Active" : "Inactive"}
@@ -253,6 +260,15 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                             </button>
                           ) : null}
                           {canSwitchCopilot ? <CopilotOrgSwitch orgId={item.id} orgName={item.name} /> : null}
+                          {canChooseProfile ? (
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-accent-strong"
+                              onClick={() => setProfileFor(item)}
+                            >
+                              Colour profile
+                            </button>
+                          ) : null}
                           {canWrite ? (
                             <>
                               <button
@@ -282,6 +298,8 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
             </div>
           )}
         </SectionCard>
+
+      {profileFor ? <ColourProfileDialog organization={profileFor} onClose={() => setProfileFor(null)} /> : null}
 
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">

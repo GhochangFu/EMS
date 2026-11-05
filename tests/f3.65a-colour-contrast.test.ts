@@ -625,6 +625,10 @@ function accentOffenders(theme: Theme, tokens: ReturnType<typeof loadTokens>): s
 }
 
 describe("F4.310: every colour profile holds the default's rules on its own values (ADR 0110 decision 5)", () => {
+  it("Q5 index.css defines every non-default profile of the contract, so Q1–Q4 are not vacuous (PR D)", () => {
+    expect(profilesOf().map(([name]) => name)).toEqual([...COLOUR_PROFILES]);
+  });
+
   it("Q0 every carry-over entry is an entry of the default's allowlist", () => {
     const missing = CARRY_OVER.filter((c) => allowlistEntryFor(c, c.theme, c.threshold) === undefined).map((c) => `${c.fg} on ${c.bg} (${c.theme})`);
     expect(missing).toEqual([]);

@@ -5,6 +5,7 @@ import {
 } from "@bms/shared/contracts";
 import type {
   AdminOrganizationDto,
+  ColourProfile,
   AdminOrganizationSummaryDto,
   MasterDataActiveFilter,
   OrganizationsListResponse,
@@ -68,5 +69,20 @@ export async function reactivateAdminOrganization(
 ): Promise<AdminOrganizationDto> {
   return adminFetch(`/admin/organizations/${id}/reactivate`, adminOrganizationDtoSchema, {
     method: "POST",
+  });
+}
+
+/**
+ * `F4.310` (ADR 0110 decision 7) — `PUT /admin/organizations/:id/colour-profile`. The global admin
+ * may set any organization; an organization admin only one it holds a direct grant on (else 403).
+ */
+export async function setOrganizationColourProfile(
+  id: string,
+  colourProfile: ColourProfile,
+): Promise<AdminOrganizationDto> {
+  return adminFetch(`/admin/organizations/${id}/colour-profile`, adminOrganizationDtoSchema, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ colourProfile }),
   });
 }
