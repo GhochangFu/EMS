@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useReducer, useState } from "react";
+import { useEffect, useMemo, useReducer, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import type {
   MimicLayoutDto,
+  MimicLayoutWidgetNodesDto,
   MimicOrgSymbolDto,
   MimicSymbolLibrariesResponse,
   MimicSymbolLibrarySelection,
@@ -14,19 +15,28 @@ import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { MimicEditorCanvas } from "../../components/mimic-editor/canvas";
 import { MimicEditorInspector } from "../../components/mimic-editor/inspector";
 import { MimicEditorPalette } from "../../components/mimic-editor/palette";
+import { MimicPreviewCanvas } from "../../components/mimic-editor/mimic-preview-canvas";
+import { MimicPreviewInspector } from "../../components/mimic-editor/mimic-preview-inspector";
+import { MimicPreviewPicker, type PreviewChoice } from "../../components/mimic-editor/preview-picker";
+import { NO_STATE_MAPS } from "../../components/widgets/mimic-scene";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
+import { mimicLayoutPreviewQueryKey, useMimicLayoutPreview } from "../../hooks/use-mimic-layout-preview";
 import { useMimicSymbolLibraries } from "../../hooks/use-mimic-symbol-libraries";
 import { useOrganizationChoice } from "../../hooks/use-organization-choice";
+import { useSiteLiveReadings } from "../../hooks/use-site-live-readings";
 import { canManageMimicLayouts } from "../../lib/admin-access";
 import { ApiError } from "../../lib/api-error";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { mimicViewFor } from "../../lib/mimic";
 import { layoutWarnings } from "../../lib/mimic-editor-warnings";
 import { catalogOrgSymbols } from "../../lib/mimic-symbols";
+import { NO_READINGS } from "../../lib/mimic-no-readings";
 import {
   editorReducer,
   emptyEditorLayout,
   fromPreset,
+  hasUnsavedEdits,
   initialEditorState,
   keyboardAction,
   layoutFromDto,
@@ -115,6 +125,7 @@ function NewLayoutEditor() {
       catalog={catalogQ.data ?? null}
       storedOrgSymbols={NO_ORG_SYMBOLS}
       storedLibraries={NO_LIBRARIES}
+      saved={null}
       organization={{
         options: organizations.map((org) => ({ id: org.id, label: `${org.code} — ${org.name}` })),
         value: organizationId,
@@ -157,6 +168,8 @@ function StoredLayoutEditor({ layoutId }: { layoutId: string }) {
       // pre-save DTO and takes ITS version, and the next PUT answers a false stale 409.
       queryClient.setQueryData(["mimic-layouts", layoutId], saved);
       await queryClient.invalidateQueries({ queryKey: MIMIC_LAYOUTS_QUERY_KEY, exact: true });
+      // F4.308 (plan C8): the preview draws the saved layout, so a save redraws it.
+      await queryClient.invalidateQueries({ queryKey: mimicLayoutPreviewQueryKey(layoutId) });
     },
     onError: (cause: Error) => {
       // A PUT answers 409 for two reasons: a stale version, and a slug another layout of the
@@ -214,6 +227,7 @@ function StoredLayoutEditor({ layoutId }: { layoutId: string }) {
         catalog={catalogQ.data ?? null}
         storedOrgSymbols={layoutQ.data.orgSymbols}
         storedLibraries={layoutQ.data.symbolLibraries}
+        saved={layoutQ.data}
       />
     </>
   );
@@ -239,6 +253,11 @@ type LayoutEditorProps = {
   storedOrgSymbols: readonly MimicOrgSymbolDto[];
   /** The stored layout's `symbolLibraries`: the only non-live ones the inspector locks. */
   storedLibraries: readonly MimicSymbolLibrarySelection[];
+  /**
+   * `F4.308` — the last save (the detail cache, which a save replaces), which "Preview with site"
+   * draws; `null` for a new layout, whose preview toggle is disabled.
+   */
+  saved: MimicLayoutDto | null;
 };
 
 /**
@@ -267,15 +286,23 @@ function LayoutEditor({
   catalog,
   storedOrgSymbols,
   storedLibraries,
+  saved,
 }: LayoutEditorProps) {
   const [state, dispatch] = useReducer(editorReducer, initial, initialEditorState);
   const [pipeMode, setPipeMode] = useState(false);
+  // F4.308 (ADR 0081 Amendment 2 decision 5) — while the preview is on, the editor is read-only.
+  const [preview, setPreview] = useState<PreviewChoice | null>(null);
+  const previewOn = preview !== null;
   // Memoised: a new array each render would re-run the canvas's own geometry memo every time.
   const orgSymbols = useMemo(() => mergeOrgSymbols(storedOrgSymbols, catalog), [storedOrgSymbols, catalog]);
 
   // Keyboard (ADR 0081 decision 7). `keyboardAction` yields to inputs, selects and textareas,
   // so typing in the inspector never moves a node.
+  // F4.308: no keyboard edit while the preview is on — the listener is not even registered.
   useEffect(() => {
+    if (previewOn) {
+      return undefined;
+    }
     function onKeyDown(event: KeyboardEvent): void {
       const target = event.target instanceof HTMLElement ? event.target : null;
       const action = keyboardAction(
@@ -289,70 +316,156 @@ function LayoutEditor({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [state]);
+  }, [state, previewOn]);
 
   const warnings = useMemo(() => layoutWarnings(state.layout), [state.layout]);
   const selected = state.selected === null ? null : (state.layout.nodes.find((n) => n.key === state.selected) ?? null);
 
+  const unsaved = previewOn && saved !== null && hasUnsavedEdits(state.layout, saved);
+
+  const toolbar = (
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <Link to="/admin/mimic-layouts" className="text-xs font-semibold text-accent-strong">
+          Back to the library
+        </Link>
+        <button
+          type="button"
+          disabled={saving || stale || !canSave}
+          aria-busy={saving}
+          onClick={() => onSave(state.layout)}
+          className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
+        >
+          {saving ? "Saving…" : "Save"}
+        </button>
+      </div>
+      {saveError !== null ? (
+        <p role="alert" className="text-xs text-critical-ink">
+          {saveError}
+        </p>
+      ) : null}
+      {warnings.length > 0 ? (
+        <ul role="status" aria-label="Layout warnings" className="list-disc space-y-1 pl-4 text-xs text-warning-ink">
+          {warnings.map((w) => (
+            <li key={w.key}>{w.text}</li>
+          ))}
+        </ul>
+      ) : null}
+      <MimicPreviewPicker organizationId={saved?.organizationId ?? null} value={preview} onChange={setPreview} />
+      {unsaved ? (
+        <p role="status" className="text-xs text-warning-ink">
+          Save to refresh the preview
+        </p>
+      ) : null}
+    </>
+  );
+
   return (
     <div className="grid gap-3 lg:grid-cols-[14rem_minmax(0,1fr)_16rem]">
       <SectionCard title="Palette" bodyClassName="p-3">
-        <MimicEditorPalette
-          onAddUnit={(symbol, label) => dispatch({ type: "add-unit", symbol, label })}
-          onAddPanel={() => dispatch({ type: "add-panel" })}
-          onAddLabel={() => dispatch({ type: "add-label" })}
-          pipeMode={pipeMode}
-          onTogglePipeMode={() => setPipeMode((on) => !on)}
-          canUndo={state.past.length > 0}
-          canRedo={state.future.length > 0}
-          onUndo={() => dispatch({ type: "undo" })}
-          onRedo={() => dispatch({ type: "redo" })}
-          canDelete={selected !== null}
-          onDelete={() => dispatch({ type: "delete" })}
-          libraries={state.layout.symbolLibraries}
-          catalog={catalog}
-        />
-      </SectionCard>
-      <SectionCard title={state.layout.name} bodyClassName="p-3 space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <Link to="/admin/mimic-layouts" className="text-xs font-semibold text-accent-strong">
-            Back to the library
-          </Link>
-          <button
-            type="button"
-            disabled={saving || stale || !canSave}
-            aria-busy={saving}
-            onClick={() => onSave(state.layout)}
-            className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
-        {saveError !== null ? (
-          <p role="alert" className="text-xs text-critical-ink">
-            {saveError}
+        {previewOn ? (
+          <p role="status" className="text-xs text-ink-muted">
+            Preview is read-only. Turn it off to edit.
           </p>
-        ) : null}
-        {warnings.length > 0 ? (
-          <ul role="status" aria-label="Layout warnings" className="list-disc space-y-1 pl-4 text-xs text-warning-ink">
-            {warnings.map((w) => (
-              <li key={w.key}>{w.text}</li>
-            ))}
-          </ul>
-        ) : null}
-        <MimicEditorCanvas state={state} dispatch={dispatch} pipeMode={pipeMode} orgSymbols={orgSymbols} />
+        ) : (
+          <MimicEditorPalette
+            onAddUnit={(symbol, label) => dispatch({ type: "add-unit", symbol, label })}
+            onAddPanel={() => dispatch({ type: "add-panel" })}
+            onAddLabel={() => dispatch({ type: "add-label" })}
+            pipeMode={pipeMode}
+            onTogglePipeMode={() => setPipeMode((on) => !on)}
+            canUndo={state.past.length > 0}
+            canRedo={state.future.length > 0}
+            onUndo={() => dispatch({ type: "undo" })}
+            onRedo={() => dispatch({ type: "redo" })}
+            canDelete={selected !== null}
+            onDelete={() => dispatch({ type: "delete" })}
+            libraries={state.layout.symbolLibraries}
+            catalog={catalog}
+          />
+        )}
+      </SectionCard>
+      {preview !== null && preview.groupId !== "" && saved !== null ? (
+        <LayoutPreview key={preview.groupId} layoutId={saved.id} groupId={preview.groupId} title={state.layout.name} toolbar={toolbar} />
+      ) : (
+        <>
+          <SectionCard title={state.layout.name} bodyClassName="p-3 space-y-3">
+            {toolbar}
+            {previewOn ? (
+              <p className="text-sm text-ink-muted">Choose a site and an asset group to preview the saved layout.</p>
+            ) : (
+              <MimicEditorCanvas state={state} dispatch={dispatch} pipeMode={pipeMode} orgSymbols={orgSymbols} />
+            )}
+          </SectionCard>
+          <SectionCard title="Inspector" bodyClassName="p-3">
+            {previewOn ? (
+              <MimicPreviewInspector selection={null} readings={NO_READINGS} stateMaps={NO_STATE_MAPS} />
+            ) : (
+              <MimicEditorInspector
+                layout={state.layout}
+                selected={selected}
+                onLayoutChange={(patch) => dispatch({ type: "update-layout", patch })}
+                onNodeChange={(key, patch) => dispatch({ type: "update-node", key, patch })}
+                organization={organization}
+                catalog={catalog}
+                storedLibraries={storedLibraries}
+              />
+            )}
+          </SectionCard>
+        </>
+      )}
+    </div>
+  );
+}
+
+type LayoutPreviewProps = {
+  layoutId: string;
+  groupId: string;
+  /** The middle card's title: the layout's name, as in the editor. */
+  title: string;
+  /** The editor's Save row, warnings and picker, kept above the preview. */
+  toolbar: ReactNode;
+};
+
+/**
+ * `F4.308` (ADR 0081 Amendment 2 decisions 1, 5, 6; plan C9, C10) — the preview's canvas and
+ * inspector cards. Mounted only while a group is chosen, so the editor opens no socket: the read
+ * (`useMimicLayoutPreview`) and the dashboard's live overlay (`useSiteLiveReadings` over
+ * `mimicViewFor`, the `MimicWidgetLive` recipe) live here. The selection is this component's own
+ * `previewKey`, never the editor reducer's; it is keyed on the group, so a new group starts with
+ * none.
+ */
+function LayoutPreview({ layoutId, groupId, title, toolbar }: LayoutPreviewProps) {
+  const query = useMimicLayoutPreview(layoutId, groupId);
+  const entry = query.data?.widgets.find((w): w is MimicLayoutWidgetNodesDto => w.source === "layout");
+  const resolvedAt = query.data?.resolvedAt ?? "";
+  const view = useMemo(() => mimicViewFor(entry, resolvedAt), [entry, resolvedAt]);
+  const readings = useSiteLiveReadings(`preview:${layoutId}:${groupId}`, view, query.dataUpdatedAt);
+  const stateMaps = query.data?.stateMaps ?? NO_STATE_MAPS;
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const label = previewKey === null ? undefined : entry?.layout.nodes.find((n) => n.key === previewKey)?.label;
+
+  return (
+    <>
+      <SectionCard title={title} bodyClassName="p-3 space-y-3">
+        {toolbar}
+        {entry !== undefined ? (
+          <MimicPreviewCanvas entry={entry} readings={readings} stateMaps={stateMaps} selected={previewKey} onSelect={setPreviewKey} />
+        ) : query.isError ? (
+          <p role="alert" className="text-sm text-critical-ink">
+            {apiErrorMessage(query.error)}
+          </p>
+        ) : (
+          <p className="text-sm text-ink-muted">Loading the preview…</p>
+        )}
       </SectionCard>
       <SectionCard title="Inspector" bodyClassName="p-3">
-        <MimicEditorInspector
-          layout={state.layout}
-          selected={selected}
-          onLayoutChange={(patch) => dispatch({ type: "update-layout", patch })}
-          onNodeChange={(key, patch) => dispatch({ type: "update-node", key, patch })}
-          organization={organization}
-          catalog={catalog}
-          storedLibraries={storedLibraries}
+        <MimicPreviewInspector
+          selection={label === undefined || previewKey === null ? null : { label, node: entry?.nodes.find((n) => n.key === previewKey) }}
+          readings={readings}
+          stateMaps={stateMaps}
         />
       </SectionCard>
-    </div>
+    </>
   );
 }
