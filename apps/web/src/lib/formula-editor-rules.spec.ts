@@ -6,7 +6,14 @@
  * `apps/web` Vitest project runs `environment: "node"` over
  * `src/**\/*.test.ts`, and the coverage gate does not look above `src/lib`.
  */
-import { CALC_DIALECT, CALC_DIALECT_V2, CALC_SCOPE_KINDS, parseFormula } from "@bms/shared";
+import {
+  CALC_DIALECT,
+  CALC_DIALECT_V2,
+  CALC_DIALECT_V3,
+  CALC_FUNCTION_ARITY,
+  CALC_SCOPE_KINDS,
+  parseFormula,
+} from "@bms/shared";
 import type { TemplateKpi } from "@bms/shared";
 
 import {
@@ -17,6 +24,7 @@ import {
   decorationDialect,
   editorDiagnosticRanges,
   flattenNewlines,
+  functionCompletions,
   isCheckedDialect,
   scopeCompletions,
   validateEditorFormula,
@@ -351,6 +359,59 @@ export function runKpiScopeCompletionTests(): void {
   );
   const v1 = scopeCompletions(kpi(CALC_DIALECT));
   assert(v1.length === 0, `a v1 KPI has no @ scopes, got ${JSON.stringify(v1)}`);
+}
+
+/** The labels `functionCompletions` offers on a surface, in order. */
+function functionLabels(rules: FormulaEditorRules): string {
+  return functionCompletions(rules)
+    .map((entry) => entry.label)
+    .join(",");
+}
+
+/**
+ * `F4.314` (ADR 0038 Amendment 6 decision A2): a `v1` field completes exactly
+ * the five `CALC_FUNCTION_ARITY` names, each applying its opening parenthesis.
+ *
+ * Mutation: offer the `v3` list on every surface.
+ */
+export function runV1FunctionCompletionTests(): void {
+  const expected = Object.keys(CALC_FUNCTION_ARITY).join(",");
+  const applies = functionCompletions(DERIVED).every((entry) => entry.apply === `${entry.label}(`);
+  assert(functionLabels(DERIVED) === expected && applies, `v1 must offer ${expected}, got ${functionLabels(DERIVED)}`);
+}
+
+/**
+ * A `v2` field adds the aggregates `sum` and `avg` to the `v1` names.
+ *
+ * Mutation: hard-code the `v1` list in `functionCompletions`.
+ */
+export function runV2FunctionCompletionTests(): void {
+  const expected = `${Object.keys(CALC_FUNCTION_ARITY).join(",")},sum,avg`;
+  const got = functionLabels({ ...DERIVED, dialect: CALC_DIALECT_V2 });
+  assert(got === expected, `v2 must offer ${expected}, got ${got}`);
+}
+
+/**
+ * A `v3` field adds `delta` and `hours`, and offers no name twice although
+ * `sum`/`avg`/`min`/`max` are both a function and a window there.
+ *
+ * Mutation: drop the de-duplication in `functionCompletions`.
+ */
+export function runV3FunctionCompletionTests(): void {
+  const expected = `${Object.keys(CALC_FUNCTION_ARITY).join(",")},sum,avg,delta,hours`;
+  const got = functionLabels({ ...DERIVED, dialect: CALC_DIALECT_V3 });
+  assert(got === expected, `v3 must offer ${expected}, got ${got}`);
+}
+
+/**
+ * An `"unvalidated"` KPI completes under `v1`, through `decorationDialect`,
+ * as its scopes do.
+ *
+ * Mutation: read `rules.dialect` and fall back to the `v3` list.
+ */
+export function runUnvalidatedKpiFunctionCompletionTests(): void {
+  const got = functionLabels(kpi("unvalidated"));
+  assert(got === functionLabels(DERIVED), `an "unvalidated" KPI must complete as v1, got ${got}`);
 }
 
 /**

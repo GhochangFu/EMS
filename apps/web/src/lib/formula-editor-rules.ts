@@ -23,6 +23,7 @@ import {
   type FormulaPoint,
   type FormulaValidation,
 } from "./template-formula-validation";
+import { formulaHelpEntries } from "./formula-help";
 
 /**
  * Which surface is being edited, and what it needs.
@@ -270,6 +271,42 @@ export function scopeCompletions(rules: FormulaEditorRules): ScopeCompletion[] {
       info: shape.info,
     };
   });
+}
+
+/**
+ * One function-name completion entry, typed by hand for the reason
+ * {@link ScopeCompletion} gives.
+ */
+export type FunctionCompletion = {
+  /** The function's name — what the popup shows and matches the typed prefix against. */
+  label: string;
+  /** The name and its opening parenthesis. */
+  apply: string;
+  /** One line: what the help says of it. */
+  info: string;
+};
+
+/**
+ * The function names the editor completes (`F4.314`, ADR 0038 Amendment 6
+ * decision A2): the `function` and `window` entries of the help list for the
+ * surface's dialect, so the completion and the help cannot disagree.
+ *
+ * Read through {@link decorationDialect}, as {@link scopeCompletions} is: an
+ * `"unvalidated"` KPI completes under `v1`. A name that is both a function and
+ * a window under `v3` (`sum`, `avg`, `min`, `max`) is offered once, with the
+ * first entry's text.
+ */
+export function functionCompletions(rules: FormulaEditorRules): FunctionCompletion[] {
+  const offered = new Map<string, FunctionCompletion>();
+  for (const entry of formulaHelpEntries(decorationDialect(rules))) {
+    if ((entry.group === "function" || entry.group === "window") && entry.insert.endsWith("(")) {
+      const label = entry.insert.slice(0, -1);
+      if (!offered.has(label)) {
+        offered.set(label, { label, apply: entry.insert, info: entry.says });
+      }
+    }
+  }
+  return [...offered.values()];
 }
 
 /**

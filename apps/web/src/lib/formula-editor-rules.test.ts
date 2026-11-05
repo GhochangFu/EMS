@@ -7,6 +7,10 @@ import {
   runEmptyDerivedFormulaTests,
   runEmptyKpiExpressionTests,
   runFlattenNewlinesTests,
+  runUnvalidatedKpiFunctionCompletionTests,
+  runV1FunctionCompletionTests,
+  runV2FunctionCompletionTests,
+  runV3FunctionCompletionTests,
   runKpiScopeCompletionTests,
   runReferenceFormsTests,
   runRoutesToTheRightValidatorTests,
@@ -51,6 +55,22 @@ describe("formula editor rules", () => {
 
   it("gates @ scopes on the KPI's dialect, not on the surface", () => {
     runKpiScopeCompletionTests();
+  });
+
+  it("completes exactly the five CALC_FUNCTION_ARITY names under v1", () => {
+    runV1FunctionCompletionTests();
+  });
+
+  it("adds sum and avg to the function completions under v2", () => {
+    runV2FunctionCompletionTests();
+  });
+
+  it("adds delta and hours under v3 and offers no name twice", () => {
+    runV3FunctionCompletionTests();
+  });
+
+  it("completes an unvalidated KPI's functions as v1", () => {
+    runUnvalidatedKpiFunctionCompletionTests();
   });
 
   it("teaches exactly two v2 reference forms, and each example parses under v2 only", () => {

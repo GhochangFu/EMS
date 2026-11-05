@@ -48,6 +48,7 @@ import {
   decorationDialect,
   editorDiagnosticRanges,
   flattenNewlines,
+  functionCompletions,
   isCheckedDialect,
   scopeCompletions,
   validateEditorFormula,
@@ -329,10 +330,37 @@ function buildExtensions(
     };
   };
 
+  // `F4.314` (ADR 0038 Amendment 6 decision A2): the function-name source.
+  // `functionCompletions` reads the help list, so the popup and the Formula
+  // help offer the same names. Nothing inside a `{…}` run (a point key may
+  // hold letters), a `$…` run (a parameter key is letters too) or an `@…` run
+  // (the scope source's), where another source or nothing is right. Whether
+  // the popup opens where an author types `ro` is a browser claim (T10's
+  // rule), like the two sources above.
+  const functions = (context: CompletionContext): CompletionResult | null => {
+    const opened = context.matchBefore(/[a-z_]+/);
+    const insideAnotherRun =
+      context.matchBefore(/\{[^{}]*/) !== null ||
+      context.matchBefore(/\$[A-Za-z0-9_]*/) !== null ||
+      context.matchBefore(/@[a-z]*/) !== null;
+    if (!opened || insideAnotherRun) {
+      return null;
+    }
+    return {
+      from: opened.from,
+      options: functionCompletions(propsRef.current).map((entry) => ({
+        label: entry.label,
+        type: "function",
+        apply: entry.apply,
+        info: entry.info,
+      })),
+    };
+  };
+
   return [
     ...singleLine,
     minimalSetup,
-    autocompletion({ override: [completions, scopes] }),
+    autocompletion({ override: [completions, scopes, functions] }),
     linter(lintSource),
     highlight,
     calcTheme,
