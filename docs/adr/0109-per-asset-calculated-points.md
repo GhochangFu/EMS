@@ -282,3 +282,61 @@ ruling n below; lines marked *drafter choice* were not asked. Backlog rows
   this against the schema.
 - ADR 0099 gains `assetTemplate.adopt` in its next amendment.
 - `AGENTS.md` is updated in a separate `chore(agents):` PR (§9.10).
+
+
+## Amendment 2 — the input age of a calculated point, and the domain of a key made by New key (`F4.315`) (owner, 2026-11-06)
+
+**Status: proposed.** Drafted on 2026-11-06 against `main` at `9d86d25`. Raised
+by `F4.315` items (3)–(5) after the `F4.312`–`F4.314` live checks (2026-11-05).
+The owner ruled three gate questions one at a time on 2026-11-06 (listed under
+*Rulings*). The merge of this amendment approves it.
+
+### Facts the amendment rests on
+
+- `maxInputAgeSeconds` is required for a standalone calculated point
+  (`calcPointSetFields`, decision 1). In the Add calculated point panel and the
+  bulk wizard, the Schedule step lets **Next** pass with "Inputs valid for"
+  empty; the field error shows only at Review. A suggested stock formula
+  (`F4.314`) whose stock point has no input age leaves the field empty.
+- Decision 7 of Amendment 1 gives **New key** a code, a label and a unit only,
+  so the key is written with no `domain`. The domain-first picker
+  (`F4.313` follow-up) lists a key with no domain in every domain's default
+  view. `createPointKeyBodySchema` already accepts an optional `domain`.
+- On the Calculations tab of a published or archived template version,
+  Suggested formulas is hidden; the `F4.314` notes say it is disabled.
+
+### Rulings (owner, 2026-11-06)
+
+| # | Question | Ruling |
+| - | -------- | ------ |
+| B1 | An empty "Inputs valid for" | **Both**: fill a default when a new point or a suggestion leaves the field empty, and refuse on the Schedule step when the field is empty. |
+| B2 | The domain of a key made by New key | **The asset's domain, editable**: the form gains a Domain field. |
+| B3 | Suggested formulas on a published version | **Show it disabled**, as the formula help is. |
+
+### Decisions
+
+1. **The default input age** (B1). When a new standalone point, a bulk batch,
+   or a suggestion that carries no input age leaves "Inputs valid for" empty,
+   the field is filled with **300 s for a streaming point** and **twice the
+   interval for a scheduled point** (bounded by `MAX_INPUT_AGE_SECONDS_BOUND`).
+   A value the user typed, or a suggestion's own value, is never replaced. A
+   change of trigger or interval moves the default only while the user has not
+   typed a value. The two numbers are the ones put to the owner with B1.
+2. **The step refuses an empty age** (B1). On the Schedule step, **Next** is
+   disabled while "Inputs valid for" is empty, and the step names the field.
+   The override wizard is unchanged: an empty field there means "inherit".
+3. **New key has a Domain field** (B2), after the unit. It is filled with the
+   asset's domain; in the bulk wizard, with the eligible assets' shared domain,
+   and left empty when they are mixed. The global administrator can change or
+   clear it. It is sent as `domain` on the existing `POST /admin/point-keys`
+   (no contract change). The copilot path (`pointKey.create`) is unchanged.
+4. **Suggested formulas on a published or archived version** (B3) render as on
+   a draft, with **Use this formula** disabled and the reason given, as the
+   formula help already is.
+
+### Consequences
+
+- Web only: the `F4.315` plan changes the shared calc-point fields, the New key
+  form and the Calculations tab, with their specs. No route, contract or
+  migration change.
+- Decision 7 of Amendment 1 reads "code, label, unit and domain" from here on.

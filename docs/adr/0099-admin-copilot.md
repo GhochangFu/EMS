@@ -2149,3 +2149,68 @@ were ruled as recommended. The merge of this amendment approves it.
    result is cut at 8,000 characters, and a cut list is broken JSON, so the
    tool has no fixed row count; the model filters by `pointKey` when the list
    is truncated.
+
+
+## Amendment 14 — `list_asset_templates`, and adoption refusals that name their cause (`F4.315`)
+
+**Status: proposed.** Drafted on 2026-11-06 against `main` at `9d86d25`. Raised
+by `F4.315` items (2) after the `F4.312` live check on the AWS demo
+(2026-11-05). The owner ruled two gate questions one at a time on 2026-11-06,
+both as recommended (listed under *Gate questions*). The merge of this
+amendment approves it.
+
+### Facts the amendment rests on
+
+- The copilot has about forty read tools (`list_assets`, `list_dashboards`,
+  `list_point_key_states`, …) and **none for asset templates**. So to propose
+  `assetTemplate.adopt` (Amendment 12) the model needs the version id, which
+  it cannot look up: in the live check it asked the user to paste it.
+- `resolveAdoptTarget` (`apps/api/src/copilot/copilot-adopt-targets.ts`)
+  returns `null` for every failure — an id that is not a UUID, an unknown or
+  out-of-scope version, an asset of another organization or domain, an asset
+  that is already pinned, an asset outside the caller's write scope. The tool
+  then answers one sentence for all of them ("not found among the
+  organizations this conversation may change, or you may not change it").
+- In the live check an already-pinned asset and a correct id got that same
+  sentence, and on a later turn the model invented the owning organization.
+- The route itself names each cause per asset (`already_pinned`,
+  `domain_mismatch`, …) in its preview and its 409.
+
+### Decisions
+
+1. **A read tool `list_asset_templates`** (Q1). It answers the asset template
+   versions of the conversation's allowed organizations: `id`, `code`,
+   `version`, `name`, `domain`, `assetType`, `status`, `organizationCode`.
+   Optional filters: `code` (exact or prefix), `domain`, `status` (default
+   `published`). It reads on the admin list's path and scope, writes nothing
+   and writes no audit row. Its result is cut at the house limit, as the other
+   list tools'.
+2. **The adopt target names the cause when the caller may see the records**
+   (Q2). The resolver returns a reason instead of `null`, and the tool words
+   it, for: a published version and listed assets that are all in the caller's
+   scope, where an asset is **already pinned**, is of **another domain**, or is
+   of **another organization than the version**; and a version in scope that
+   is **not published** (the lifecycle mirror's sentence, as today). Each
+   sentence names the asset code and the version's code and number.
+3. **What stays one sentence.** A version id or an asset id that does not
+   exist, or that is outside the caller's organizations or write scope, keeps
+   today's general sentence, so the copilot never shows that a record it may
+   not see exists. A malformed id (not a UUID) gets a sentence that says the
+   id is not a record id and to look it up with `list_asset_templates` or
+   `list_assets`.
+4. **No catalog change.** `assetTemplate.adopt` keeps its path, body, risk and
+   `red: true`; the route's own checks at Confirm are unchanged.
+
+### Gate questions
+
+| # | Question | Ruling (owner, 2026-11-06) |
+| - | -------- | -------------------------- |
+| Q1 | Add a read tool so the copilot can find a version by code? | **Yes** — `list_asset_templates` (decision 1). |
+| Q2 | Word an adoption refusal by its cause? | **Name the cause in scope**; out-of-scope and unknown records keep the general sentence (decisions 2–3). |
+
+### Consequences
+
+- The `F4.315` plan adds the tool beside the other list tools and its spec,
+  and changes `resolveAdoptTarget` to return a reason; the propose tool's
+  wording table gains one sentence per reason.
+- No route, contract or migration changes.
