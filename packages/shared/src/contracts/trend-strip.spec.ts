@@ -55,6 +55,8 @@ export const TREND_STRIP_FIXTURE = {
             {
               assetId: ASSET,
               assetCode: "EM-1",
+              assetRtuName: "RTU 1",
+              assetLocationName: "Site 1",
               assetName: "Meter 1",
               unit: "kW",
               buckets: [
@@ -259,4 +261,30 @@ export function assertTheLongestStoredPointParses(): void {
 export function assertPointsWithoutSegmentsParses(): void {
   const parsed = query({ points: "hvac:kw" });
   assert(parsed.success, `points without segments must parse here (the 400 is the service's): ${JSON.stringify(parsed.error?.issues)}`);
+}
+
+/** `F4.316` (ADR 0111) — a series without `assetRtuName` is refused: the field is required. */
+export function assertASeriesWithoutTheRtuNameIsRefused(): void {
+  const [segment] = TREND_STRIP_FIXTURE.segments;
+  const [point] = segment.points;
+  const [series] = point.assets;
+  const { assetRtuName: _dropped, ...withoutRtu } = series;
+  const bad = {
+    ...TREND_STRIP_FIXTURE,
+    segments: [{ ...segment, points: [{ ...point, assets: [withoutRtu] }] }],
+  };
+  assert(!siteTrendStripSchema.safeParse(bad).success, "a series without assetRtuName must be refused");
+}
+
+/** `F4.316` (ADR 0111) — an RTU-less asset's series parses with `assetRtuName: null`. */
+export function assertAnRtuLessSeriesParses(): void {
+  const [segment] = TREND_STRIP_FIXTURE.segments;
+  const [point] = segment.points;
+  const [series] = point.assets;
+  const rtuLess = {
+    ...TREND_STRIP_FIXTURE,
+    segments: [{ ...segment, points: [{ ...point, assets: [{ ...series, assetRtuName: null }] }] }],
+  };
+  const parsed = siteTrendStripSchema.safeParse(rtuLess);
+  assert(parsed.success, `an RTU-less series must parse: ${JSON.stringify(parsed.error?.issues)}`);
 }

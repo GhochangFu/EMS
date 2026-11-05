@@ -21,6 +21,7 @@ import {
   assertANewSegmentAppears,
   assertNoCandidateSendsNoTelemetry,
   assertSixtyCandidatesAreCapped,
+  assertARankingEntryNamesItsRtuAndLocation,
   assertTwoStatementsWithCompare,
   assertTwoStatementsWithoutCompare,
   assertUpsAssetsAppearUnderUpsOnly,
@@ -72,6 +73,7 @@ async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
     await pool.query(`DELETE FROM bms.org_trend_points WHERE domain IN (${staleDomains})`);
     await pool.query(`DELETE FROM bms.point_keys WHERE domain IN (${staleDomains})`);
     await pool.query(`DELETE FROM bms.asset_domains WHERE code IN (${staleDomains})`);
+    await pool.query(`DELETE FROM bms.rtus WHERE organization_id IN (${staleOrgs})`, [PATTERN]);
     await pool.query(`DELETE FROM bms.locations WHERE organization_id IN (${staleOrgs})`, [PATTERN]);
     await pool.query(`DELETE FROM bms.organizations WHERE id IN (${staleOrgs})`, [PATTERN]);
   } catch (err) {
@@ -184,6 +186,14 @@ describe.skipIf(!connectionString)("F4.302 — SiteSegmentViewsService against r
         ),
       );
     }
+    // `F4.316` (ADR 0111): the top-ranked asset (A060) sits on an RTU; the rest are RTU-less.
+    const rtuName = "F4.302 fixture RTU";
+    const rtuId = await one(
+      `INSERT INTO bms.rtus (organization_id, location_id, code, display_name) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [organizationId, siteId, `F4302-${run}-RTU`, rtuName],
+      "fixture RTU",
+    );
+    await fleetPool.query(`UPDATE bms.assets SET rtu_id = $1 WHERE id = $2`, [rtuId, assetIds[ASSETS - 1]]);
     await fleetPool.query(
       `INSERT INTO bms.asset_points (organization_id, asset_id, point_key, source_data_key)
        SELECT $1, a, $2, $2 FROM unnest($3::uuid[]) AS a`,
@@ -218,7 +228,7 @@ describe.skipIf(!connectionString)("F4.302 — SiteSegmentViewsService against r
       rsmocWcId,
       pheSiteId,
       upsSiteId,
-      fixture: { siteId, emptySiteId, domain, pointKey, assetIds },
+      fixture: { siteId, emptySiteId, siteName: "F4.302 fixture SITE", rtuName, domain, pointKey, assetIds },
     };
   }, 180_000);
 
@@ -238,6 +248,7 @@ describe.skipIf(!connectionString)("F4.302 — SiteSegmentViewsService against r
         await fleetPool.query(`DELETE FROM bms.asset_domains WHERE code = $1`, [domain]);
       }
       if (organizationId) {
+        await fleetPool.query(`DELETE FROM bms.rtus WHERE organization_id = $1`, [organizationId]);
         await fleetPool.query(`DELETE FROM bms.locations WHERE organization_id = $1`, [organizationId]);
         await fleetPool.query(`DELETE FROM bms.organizations WHERE id = $1`, [organizationId]);
       }
@@ -261,6 +272,7 @@ describe.skipIf(!connectionString)("F4.302 — SiteSegmentViewsService against r
   it("V7 a seeded ups asset appears under ups only", run(assertUpsAssetsAppearUnderUpsOnly));
   it("V8 60 candidates rank 50, moreAssets 10, 8 series, trimmed", run(assertSixtyCandidatesAreCapped));
   it("V9 a 46-day custom range is 1h level, 1d bucket", run(assertA46DayRangeIsHourLevelDayBucket));
+  it("V10 a ranking entry names its RTU and location; the RTU-less twin has a null RTU name (F4.316)", run(assertARankingEntryNamesItsRtuAndLocation));
 
   // `F4.303` U4 (ADR 0108 Amendment 6 item 3) — the export.
   it("G1 wc-admin's export of a PHEWB site is a 404 with no telemetry statement", run(assertAForeignSiteExportIsA404WithNoTelemetry));

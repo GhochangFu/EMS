@@ -115,6 +115,8 @@ export function candidatesFor(rows: readonly SiteAssetRow[], domain: string, poi
       assetId: row.asset_id,
       assetCode: row.asset_code,
       assetName: row.asset_name,
+      assetRtuName: row.asset_rtu_name,
+      assetLocationName: row.asset_location_name,
       unit: row.unit,
     });
   }

@@ -15,3 +15,10 @@ describe("F4.302 — the segment-views contract (ADR 0108 Amendment 4, ADR 0030)
   it("pins the four constants", () => spec.assertTheConstantsArePinned());
   it("keeps the below ratio under 1 and the above ratio over it", () => spec.assertTheRatiosStraddleOne());
 });
+
+describe("F4.316 — a ranking and an abnormal entry name the RTU and location (ADR 0111)", () => {
+  it("refuses a ranking entry without assetLocationName", () =>
+    spec.assertARankingEntryWithoutTheLocationNameIsRefused());
+  it("refuses an abnormal entry without assetRtuName", () => spec.assertAnAbnormalEntryWithoutTheRtuNameIsRefused());
+  it("parses an RTU-less asset in both lists", () => spec.assertAnRtuLessAssetParsesInBothLists());
+});

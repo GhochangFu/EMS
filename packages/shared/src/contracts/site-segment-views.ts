@@ -86,6 +86,10 @@ export const segmentViewStatsSchema = z.object({
 export const segmentViewRankingEntrySchema = z.object({
   assetId: z.string().uuid(),
   assetCode: z.string(),
+  /** `F4.316` (ADR 0111) — the asset's RTU display name, `null` when it has none. */
+  assetRtuName: z.string().nullable(),
+  /** `F4.316` (ADR 0111) — the asset's location name; the label's `where` when there is no RTU. */
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   /** The registration's effective unit, `COALESCE(asset_points.unit, point_keys.unit)`. */
   unit: z.string().nullable(),
@@ -101,6 +105,10 @@ export const segmentAbnormalVerdictSchema = z.enum(["above", "below", "not_compa
 export const segmentAbnormalEntrySchema = z.object({
   assetId: z.string().uuid(),
   assetCode: z.string(),
+  /** `F4.316` (ADR 0111) — the asset's RTU display name, `null` when it has none. */
+  assetRtuName: z.string().nullable(),
+  /** `F4.316` (ADR 0111) — the asset's location name; the label's `where` when there is no RTU. */
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   unit: z.string().nullable(),
   currentMean: z.number(),

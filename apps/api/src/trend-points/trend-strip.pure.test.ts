@@ -19,6 +19,9 @@ import {
   assertASegmentWithNoPairIsAbsent,
   assertEveryWindowEdgeIsABucketMultiple,
   assertGroupSeriesGapFillsEveryPair,
+  assertGroupSeriesEmitsTheRtuAndLocationNames,
+  assertAPlannedAssetCarriesItsRtuAndLocationNames,
+  assertAnRtuLessPlannedAssetKeepsItsLocationName,
   assertTheDayWindowIsAlignedToHalfHours,
   assertTheDayWindowReadsFiveMinuteRows,
   assertTheInputSegmentOrderIsKept,
@@ -50,6 +53,8 @@ describe("F4.301 — pairsFor", () => {
   it("a segment with no pair is absent", assertASegmentWithNoPairIsAbsent);
   it("the input segment order is kept", assertTheInputSegmentOrderIsKept);
   it("the point carries the catalog unit and the series the registration unit", assertTheSeriesCarriesTheRegistrationUnit);
+  it("a planned asset carries its RTU and location names (F4.316)", assertAPlannedAssetCarriesItsRtuAndLocationNames);
+  it("an RTU-less planned asset has a null RTU name and its location name (F4.316)", assertAnRtuLessPlannedAssetKeepsItsLocationName);
 });
 
 describe("F4.306 — pairsFor under a selection", () => {
@@ -72,4 +77,5 @@ describe("F4.301 — row bound and grouping", () => {
   it("a row count past the bound throws", assertARowPastTheBoundThrows);
   it("a row count at the bound passes", assertARowCountAtTheBoundPasses);
   it("groupSeries gap-fills every pair to the window's bucket count", assertGroupSeriesGapFillsEveryPair);
+  it("groupSeries emits the RTU and location names (F4.316)", assertGroupSeriesEmitsTheRtuAndLocationNames);
 });

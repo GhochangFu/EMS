@@ -187,6 +187,8 @@ function planOf(fx: TrendStripReadFixture): StripPlan {
               assetId,
               assetCode: `A${i}`,
               assetName: `A${i}`,
+              assetRtuName: null,
+              assetLocationName: null,
               unit: "kW",
             })),
           },
