@@ -18,6 +18,7 @@ import { asRole } from "../testing/role-urls";
 import * as spec from "./mimic-layouts.service.integration.spec";
 import type { Ctx } from "./mimic-layouts.service.integration.spec";
 import { MimicLayoutsController } from "./mimic-layouts.controller";
+import type { MimicLayoutPreviewService } from "./mimic-layout-preview.service";
 import { MimicLayoutsService } from "./mimic-layouts.service";
 import { primeSeededSubjects } from "../testing/seeded-subjects";
 
@@ -86,7 +87,8 @@ describe.skipIf(!connectionString)("F3.32c — MimicLayoutsService against a liv
     const service = new MimicLayoutsService(fleetDb, tenantDb, accessControl, audit);
     ctx = {
       service,
-      controller: new MimicLayoutsController(service),
+      // `F4.308`: no case here reaches the preview route; `mimic-layout-preview.integration.*` covers it.
+      controller: new MimicLayoutsController(service, {} as MimicLayoutPreviewService),
       ownerPool,
       eskomOrgId,
       phewbOrgId,

@@ -2,7 +2,7 @@ import { expect } from "vitest";
 
 import type { GeneratedSitePointDto } from "@bms/shared";
 
-import { assetOf } from "./mimic-nodes.service";
+import { assetOf } from "./mimic-nodes.pure";
 
 /**
  * `F4.307` review fix — a listed unit's freshness is its ASSET's, not its shown rows'. `assetOf`

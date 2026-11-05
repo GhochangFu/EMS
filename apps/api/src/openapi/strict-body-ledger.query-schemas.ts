@@ -30,6 +30,9 @@ import {
   siteWidgetsQuerySchema,
 } from "../dashboard-builder/site-widgets.schema";
 import {
+  mimicLayoutPreviewQuerySchema,
+} from "../mimic-layouts/mimic-layouts.schema";
+import {
   listMaintenanceQuerySchema,
 } from "../maintenance/maintenance.schema";
 import {
@@ -145,6 +148,8 @@ export const QUERY_SCHEMAS: Record<string, ZodTypeAny> = {
   siteSegmentViewsQuerySchema, // 30 -> 31: F4.302 (GET .../segment-views, Amendment 4 item 4) — .strict(), no body, no ledger entry.
   // 31 -> 32: F4.303 registered assetHistoryExportQuerySchema (GET /telemetry/assets/:assetId/history/export.*) — .strict(), no body, no ledger entry, the same precedent.
   assetHistoryExportQuerySchema,
+  // 32 -> 33: F4.308 registered mimicLayoutPreviewQuerySchema (GET /mimic-layouts/:id/preview?assetGroupId=, ADR 0081 Amendment 2) — .strict(), no body, no ledger entry, the same precedent.
+  mimicLayoutPreviewQuerySchema,
   mappingSheetQuerySchema,
   // `E4.1a`: `GET /admin/calc-parameters?organizationId=&key=` — `.strict()`,
   // no ledger entry, the `mappingSheetQuerySchema` precedent.

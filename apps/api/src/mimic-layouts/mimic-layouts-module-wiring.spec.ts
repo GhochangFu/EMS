@@ -8,11 +8,13 @@ import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlModule } from "../auth/access-control.module";
 import { AuthModule } from "../auth/auth.module";
 import { DatabaseModule } from "../database/database.module";
-import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "../database/database.tokens";
+import { MimicNodesService } from "../dashboard-builder/mimic-nodes.service";
 import { MimicSymbolLibrariesController } from "../mimic-symbol-libraries/mimic-symbol-libraries.controller";
 import { MimicSymbolLibrariesModule } from "../mimic-symbol-libraries/mimic-symbol-libraries.module";
 import { MimicSymbolLibrariesService } from "../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import { repoRoot } from "../testing/repo-root";
+import { MimicLayoutPreviewService } from "./mimic-layout-preview.service";
 import { MimicLayoutsController } from "./mimic-layouts.controller";
 import { MimicLayoutsModule } from "./mimic-layouts.module";
 import { MimicLayoutsService } from "./mimic-layouts.service";
@@ -76,6 +78,34 @@ export function assertModuleDeclaresItsMembers(): void {
 }
 
 /**
+ * `F4.308` (plan C3, owner ruling Q4 a) — the preview: the module provides
+ * `MimicLayoutPreviewService` and its OWN stateless `MimicNodesService` (the `TrendPointsService`
+ * idiom), imports no `DashboardBuilderModule`, and still exports only `MimicLayoutsService`, so
+ * `CopilotModule`'s view of it is unchanged.
+ */
+export function assertModuleProvidesThePreview(): void {
+  expect(moduleList(MimicLayoutsModule, "providers").map(tokenOf)).toEqual(
+    expect.arrayContaining([MimicLayoutPreviewService, MimicNodesService]),
+  );
+  expect(moduleList(MimicLayoutsModule, "imports").map(nameOf)).not.toContain("DashboardBuilderModule");
+  expect(moduleList(MimicLayoutsModule, "exports")).toEqual([MimicLayoutsService]);
+}
+
+/** `F4.308` — the preview service's and the module's own resolver's dependencies resolve inside the module. */
+export function assertPreviewDepsResolve(): void {
+  const { byIdentity, byName } = resolvable();
+  const tokensOf = (cls: object): Token[] =>
+    ((Reflect.getMetadata(SELF_DECLARED_DEPS_METADATA, cls) as { param: Token }[] | undefined) ?? []).map((d) => d.param);
+  expect(tokensOf(MimicLayoutPreviewService)).toEqual([TENANT_DRIZZLE]);
+  expect(tokensOf(MimicNodesService)).toEqual(expect.arrayContaining([FLEET_DRIZZLE, FLEET_POOL]));
+  const unresolved = [...tokensOf(MimicLayoutPreviewService), ...tokensOf(MimicNodesService)].filter((t) => !byIdentity.has(t));
+  expect(unresolved.map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
+  const classes = classTypedParams("mimic-layout-preview.service.ts", "MimicLayoutPreviewService");
+  expect(classes).toEqual(["MimicLayoutsService", "MimicNodesService", "AccessControlService"]);
+  expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+/**
  * Read from `app.module.ts`'s text, not its metadata: importing `AppModule`
  * loads every module of the API, so this case would fail on any unrelated
  * module's load error rather than on the edge it names. The scan reads the
@@ -92,7 +122,8 @@ export function assertAppModuleImportsTheModule(): void {
 
 export function assertControllerDepsResolve(): void {
   const classes = classTypedParams("mimic-layouts.controller.ts", "MimicLayoutsController");
-  expect(classes).toEqual(["MimicLayoutsService"]);
+  // `F4.308`: the preview route's service beside the library's.
+  expect(classes).toEqual(["MimicLayoutsService", "MimicLayoutPreviewService"]);
   const { byName } = resolvable();
   expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
 }
