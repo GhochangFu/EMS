@@ -1,5 +1,5 @@
 import type { MimicLayoutWidgetNodesDto, PointKeyStateMapDto } from "@bms/shared";
-import { useMemo } from "react";
+import { useMemo, type KeyboardEvent } from "react";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import { layoutGeometry } from "../../lib/mimic-geometry";
@@ -24,11 +24,30 @@ export type MimicPreviewCanvasProps = {
  * inspect): a click selects, a background click clears. No pointer capture, no drag, no resize
  * handle, no pipe mode — nothing here can change the layout. Hit rects are `fill="none"` with
  * `pointerEvents="all"`, as the editor canvas's are (the F3.65 gate refuses a named colour).
+ *
+ * **Keyboard (WCAG 2.1.1).** Each hit rect is a `role="button"` in the Tab order, named by its
+ * unit's label, `aria-pressed` when selected: Enter or Space selects it, Escape clears. The focus
+ * ring is the `--focus` role token as a stroke — an SVG rect has no reliable outline — with
+ * `vector-effect="non-scaling-stroke"`, so its 2 px is screen pixels: the canvas draws the layout
+ * at a scale far below 1, and a scaling stroke rendered under half a pixel wide. The hit
+ * rects sit in their own overlay `<svg>` over the scene (same `viewBox`, same aspect fit), not
+ * inside `MimicScene`'s `role="img"`: an image's children are presentational, so a button there
+ * would never reach the accessibility tree.
  */
 export function MimicPreviewCanvas({ entry, readings, stateMaps, selected, onSelect }: MimicPreviewCanvasProps) {
   const geometry = useMemo(() => layoutGeometry(entry.layout), [entry.layout]);
   const roled = geometry.units.filter((unit) => unit.roleCode !== null);
   const selectedUnit = selected === null ? undefined : roled.find((unit) => unit.key === selected);
+
+  function onUnitKeyDown(event: KeyboardEvent<SVGRectElement>, key: string): void {
+    if (event.key === "Enter" || event.key === " ") {
+      // Space would otherwise scroll the page.
+      event.preventDefault();
+      onSelect(key);
+    } else if (event.key === "Escape") {
+      onSelect(null);
+    }
+  }
 
   return (
     <div
@@ -36,7 +55,14 @@ export function MimicPreviewCanvas({ entry, readings, stateMaps, selected, onSel
       className="surface-pressed relative w-full"
       style={{ aspectRatio: `${entry.layout.canvasW} / ${entry.layout.canvasH}` }}
     >
-      <MimicScene title="Layout preview" geometry={geometry} nodes={entry.nodes} readings={readings} stateMaps={stateMaps}>
+      <MimicScene title="Layout preview" geometry={geometry} nodes={entry.nodes} readings={readings} stateMaps={stateMaps} />
+      <svg
+        viewBox={geometry.viewBox}
+        preserveAspectRatio="xMidYMid meet"
+        role="group"
+        aria-label="Units in the layout preview"
+        className="absolute inset-0 h-full w-full"
+      >
         <g data-testid="mimic-preview-overlay">
           <rect
             data-testid="mimic-preview-background"
@@ -53,17 +79,23 @@ export function MimicPreviewCanvas({ entry, readings, stateMaps, selected, onSel
               key={unit.key}
               data-testid="mimic-preview-hit"
               data-node-key={unit.key}
+              role="button"
+              tabIndex={0}
+              aria-label={unit.label}
+              aria-pressed={unit.key === selected}
               x={unit.box.x}
               y={unit.box.y}
               width={unit.box.w}
               height={unit.box.h}
               fill="none"
               pointerEvents="all"
-              className="cursor-pointer"
+              vectorEffect="non-scaling-stroke"
+              className="cursor-pointer outline-none focus-visible:stroke-focus focus-visible:stroke-2"
               onClick={(event) => {
                 event.stopPropagation();
                 onSelect(unit.key);
               }}
+              onKeyDown={(event) => onUnitKeyDown(event, unit.key)}
             />
           ))}
           {selectedUnit !== undefined ? (
@@ -81,7 +113,7 @@ export function MimicPreviewCanvas({ entry, readings, stateMaps, selected, onSel
             />
           ) : null}
         </g>
-      </MimicScene>
+      </svg>
     </div>
   );
 }

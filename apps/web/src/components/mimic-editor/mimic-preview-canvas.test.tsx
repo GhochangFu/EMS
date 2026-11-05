@@ -17,8 +17,8 @@ describe("F4.308 mimic preview canvas", () => {
   const cases = Object.entries(spec).filter(([name]) => !name.endsWith("Fixture") && !name.startsWith("PREVIEW_"));
 
   it("has its claims", () => {
-    if (cases.length < 9) {
-      throw new Error(`expected at least 9 claims, found ${cases.length}`);
+    if (cases.length < 18) {
+      throw new Error(`expected at least 18 claims, found ${cases.length}`);
     }
   });
 
