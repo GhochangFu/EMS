@@ -115,9 +115,18 @@ export type OverrideSurvivalInput = {
    * refuses to share.
    */
   readonly dependencies: Pick<CalcDependencyService, "checkCandidates">;
-  /** `buildPlan`'s own capped collector — the count keeps rising after the list stops. */
-  readonly refuse: (refusal: TemplateMigrationRefusalDto) => void;
+  /**
+   * `buildPlan`'s own capped collector — the count keeps rising after the list stops.
+   *
+   * `F4.312` (plan task 1.4): the refused asset rides as the second argument, so
+   * adoption's refusals carry `assetId`/`assetCode` as fields. Migrate ignores it —
+   * its refusal DTO counts assets rather than naming them.
+   */
+  readonly refuse: (refusal: TemplateMigrationRefusalDto, asset: RefusedAsset) => void;
 };
+
+/** `F4.312` — the asset a refusal is about, handed to `refuse` beside the refusal. */
+export type RefusedAsset = { readonly assetId: string; readonly assetCode: string };
 
 /**
  * One decision the row-order pass has already reached: a refusal ready to
@@ -131,9 +140,14 @@ export type OverrideSurvivalInput = {
  * which is the order the per-row `await` used to emit them in.
  */
 type PlannedOutcome =
-  | { readonly kind: "refuse"; readonly refusal: TemplateMigrationRefusalDto }
+  | {
+      readonly kind: "refuse";
+      readonly refusal: TemplateMigrationRefusalDto;
+      readonly asset: RefusedAsset;
+    }
   | {
       readonly kind: "cycle-check";
+      readonly assetId: string;
       readonly assetCode: string;
       readonly pointKey: string;
       /** Index into the batch handed to `checkCandidates`, whose answers come back in order. */
@@ -196,6 +210,7 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
       if (problems.length > 0) {
         planned.push({
           kind: "refuse",
+          asset: { assetId: asset.assetId, assetCode: asset.assetCode },
           refusal: {
             reason: "calc_override_invalid_on_target",
             pointKey,
@@ -251,6 +266,7 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
       });
       planned.push({
         kind: "cycle-check",
+        assetId: asset.assetId,
         assetCode: asset.assetCode,
         pointKey,
         candidateIndex: candidates.length - 1,
@@ -272,14 +288,14 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
   // list holds the same rows it held when each row was checked in place.
   for (const item of planned) {
     if (item.kind === "refuse") {
-      refuse(item.refusal);
+      refuse(item.refusal, item.asset);
       continue;
     }
     const cycle = cycles[item.candidateIndex];
     if (cycle.length === 0) {
       continue;
     }
-    refuse({
+    const refusal: TemplateMigrationRefusalDto = {
       reason: "calc_override_invalid_on_target",
       pointKey: item.pointKey,
       assetCount: 1,
@@ -292,6 +308,7 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
         "repointing the asset onto a formula that would stop (ADR 0055 decision 8). Break " +
         "the loop — change the override, or the aggregate scope that draws the other points " +
         "in — then migrate.",
-    });
+    };
+    refuse(refusal, { assetId: item.assetId, assetCode: item.assetCode });
   }
 }

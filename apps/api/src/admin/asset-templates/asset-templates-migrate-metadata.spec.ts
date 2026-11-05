@@ -57,7 +57,11 @@ function run(
 ): TemplateMigrationRefusalDto[] {
   const refusals: TemplateMigrationRefusalDto[] = [];
   refuseMetadataOverridesThatDoNotSurvive({
-    assets: assets.map((a) => ({ assetCode: a.assetCode, rows: new Map(Object.entries(a.rows)) })),
+    assets: assets.map((a) => ({
+      assetId: `id-${a.assetCode}`,
+      assetCode: a.assetCode,
+      rows: new Map(Object.entries(a.rows)),
+    })),
     targetPoints,
     targetVersion: 2,
     refuse: (refusal) => refusals.push(refusal),
@@ -178,5 +182,27 @@ export function assertEachAssetIsCheckedOnItsOwn(): void {
     refusals[0]?.message.includes('"PUMP-BAD"') === true &&
       refusals[0]?.message.includes("PUMP-GOOD") === false,
     `the refusal must name the bad asset alone, got "${refusals[0]?.message}"`,
+  );
+}
+
+/**
+ * `F4.312` (plan task 1.4) — `refuse` receives the refused asset as its second
+ * argument, so adoption's refusals carry `assetId`/`assetCode` as fields.
+ * Mutation: the second argument dropped, or another asset's passed.
+ */
+export function assertRefuseReceivesTheRefusedAsset(): void {
+  const seen: { assetId: string; assetCode: string }[] = [];
+  refuseMetadataOverridesThatDoNotSurvive({
+    assets: [
+      { assetId: "id-good", assetCode: "PUMP-GOOD", rows: new Map([["KW", row({ engMin: 50 })]]) },
+      { assetId: "id-bad", assetCode: "PUMP-BAD", rows: new Map([["KW", row({ engMin: 150 })]]) },
+    ],
+    targetPoints: CAPPED,
+    targetVersion: 2,
+    refuse: (_refusal, asset) => seen.push({ assetId: asset.assetId, assetCode: asset.assetCode }),
+  });
+  assert(
+    JSON.stringify(seen) === JSON.stringify([{ assetId: "id-bad", assetCode: "PUMP-BAD" }]),
+    `refuse must receive the refused asset, got ${JSON.stringify(seen)}`,
   );
 }

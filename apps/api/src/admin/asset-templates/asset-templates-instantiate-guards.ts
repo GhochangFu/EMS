@@ -288,7 +288,9 @@ export function assertBatchFits(
 export async function assertRuleCodesFree(
   db: BmsDb,
   organizationId: string,
-  entries: InstantiateAssetBody[],
+  // `F4.312` (plan task 1.3): widened from `InstantiateAssetBody[]` to the one
+  // field it reads, so adoption checks existing assets by code with the same rule.
+  entries: readonly { readonly code: string }[],
   alarms: TemplateAlarm[],
 ): Promise<void> {
   if (alarms.length === 0) {

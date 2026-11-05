@@ -2,6 +2,7 @@ import { POINT_METADATA_FIELDS } from "@bms/shared";
 import type { TemplateMigrationRefusalDto } from "@bms/shared";
 
 import { findEmptyEngineeringRange } from "../asset-points/point-metadata.schema";
+import type { RefusedAsset } from "./asset-templates-migrate-calc";
 import { pointMetadataOf, type StoredTemplatePoint } from "./template-version-delta";
 
 /**
@@ -50,6 +51,8 @@ export type MigratingMetadataRow = {
 
 /** One migrating asset and its existing `asset_points` rows, keyed by point key. */
 export type MigratingAssetMetadata = {
+  /** `F4.312` — handed to `refuse` beside the refusal (plan task 1.4). */
+  readonly assetId: string;
   readonly assetCode: string;
   readonly rows: ReadonlyMap<string, MigratingMetadataRow>;
 };
@@ -62,8 +65,11 @@ export type MetadataSurvivalInput = {
   readonly targetPoints: readonly StoredTemplatePoint[];
   /** The target version number, named in every refusal message. */
   readonly targetVersion: number;
-  /** `buildPlan`'s own capped collector — the count keeps rising after the list stops. */
-  readonly refuse: (refusal: TemplateMigrationRefusalDto) => void;
+  /**
+   * `buildPlan`'s own capped collector — the count keeps rising after the list stops.
+   * `F4.312`: the refused asset is the second argument; migrate ignores it.
+   */
+  readonly refuse: (refusal: TemplateMigrationRefusalDto, asset: RefusedAsset) => void;
 };
 
 /**
@@ -97,7 +103,7 @@ export function refuseMetadataOverridesThatDoNotSurvive(input: MetadataSurvivalI
 
       const empty = findEmptyEngineeringRange(pointMetadataOf(row), pointMetadataOf(target));
       if (empty === null) continue;
-      refuse({
+      const refusal: TemplateMigrationRefusalDto = {
         reason: "metadata_override_invalid_on_target",
         pointKey,
         assetCount: 1,
@@ -107,7 +113,8 @@ export function refuseMetadataOverridesThatDoNotSurvive(input: MetadataSurvivalI
           `eng_max ${empty.engMax}${source(empty.engMaxInherited)}. The ingest host would ` +
           "discard every reading of the point. Clear or restate the override on the asset " +
           `(Asset Points, bulk editor), then migrate to version ${targetVersion}.`,
-      });
+      };
+      refuse(refusal, { assetId: asset.assetId, assetCode: asset.assetCode });
     }
   }
 }
