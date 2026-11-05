@@ -8,6 +8,7 @@ import {
   AssetImagesRow,
   AssetImagesToggleButton,
 } from "../assets/asset-images-row-toggle";
+import { AssetWhere } from "../assets/asset-where";
 import { AssetHistoryLink } from "../assets/asset-history-link";
 import { KpiTile } from "../kpi-tile";
 import { SectionCard } from "../section-card";
@@ -360,9 +361,7 @@ export function SiteAssetsView({ locationId, siteName }: SiteAssetsViewProps) {
                             {asset.code}{" "}
                             <AssetHistoryLink assetId={asset.id} code={asset.code} />
                           </div>
-                          <div className="break-words text-[11px] text-ink-muted">
-                            {`· ${asset.rtuDisplayName ?? siteName}`}
-                          </div>
+                          <AssetWhere code={asset.code} rtuName={asset.rtuDisplayName} locationName={siteName} />
                           <div className="mt-1 text-[11px] uppercase tracking-wide text-ink-muted">
                             {asset.domain}
                           </div>
