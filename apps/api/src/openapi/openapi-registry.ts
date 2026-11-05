@@ -131,6 +131,7 @@ import { loginBodySchema } from "../auth/login.schema";
 import { mapSitesQuerySchema } from "../map/map.schema";
 import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import { siteWidgetsQuerySchema } from "../dashboard-builder/site-widgets.schema";
+import { mimicLayoutPreviewQuerySchema } from "../mimic-layouts/mimic-layouts.schema";
 import { listMaintenanceQuerySchema } from "../maintenance/maintenance.schema";
 import { listReportFilesQuerySchema } from "../reports/report-files.schema";
 // `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`;
@@ -325,6 +326,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.32c` (ADR 0081 decision 3) — the mimic layout library's two write bodies.
   MimicLayoutsController_create: createMimicLayoutBodySchema,
   MimicLayoutsController_replace: putMimicLayoutBodySchema,
+  // `F4.308` (ADR 0081 Amendment 2 decision 2) — the preview's one `.strict()` query key, `assetGroupId`.
+  MimicLayoutsController_preview: mimicLayoutPreviewQuerySchema,
   // `F3.32f` slice 3 (ADR 0086 decisions 4, 6, 7) — the four JSON bodies. `_list` (a query) and
   // `_uploadSymbol` (multipart: the generator hard-codes application/json) are deliberately absent.
   MimicSymbolLibrariesController_create: createMimicOrgSymbolLibraryBodySchema,

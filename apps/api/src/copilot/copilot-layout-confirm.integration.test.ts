@@ -11,6 +11,7 @@ import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { rememberIdentity, type ResolvedIdentity } from "../auth/identity-resolver";
 import { MimicLayoutsController } from "../mimic-layouts/mimic-layouts.controller";
+import type { MimicLayoutPreviewService } from "../mimic-layouts/mimic-layout-preview.service";
 import { MimicLayoutsService } from "../mimic-layouts/mimic-layouts.service";
 import { openIntegrationPool, requireIntegrationDb, resolveIntegrationRoleUrl } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
@@ -90,7 +91,8 @@ describe.skipIf(!connectionString)("F3.87 PR 5 — a mimic layout card confirmed
     ctx = {
       superPool,
       service,
-      controller: new MimicLayoutsController(service),
+      // `F4.308`: no case here reaches the preview route; `mimic-layout-preview.integration.*` covers it.
+      controller: new MimicLayoutsController(service, {} as MimicLayoutPreviewService),
       pending,
       interceptor,
       followUps,

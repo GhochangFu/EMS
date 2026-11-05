@@ -844,6 +844,10 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // Amendment 2 item 3): a range and an optional group uuid, `.strict()`, no body —
   // the same precedent.
   //
+  // 32 -> 33: `F4.308` registered `mimicLayoutPreviewQuerySchema`
+  // (`GET /mimic-layouts/:id/preview?assetGroupId=`, ADR 0081 Amendment 2 decision 2):
+  // one required group uuid, `.strict()`, no body — the same precedent.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -853,7 +857,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(32);
+  ).toBe(33);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

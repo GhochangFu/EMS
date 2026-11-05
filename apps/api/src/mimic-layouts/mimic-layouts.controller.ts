@@ -7,6 +7,7 @@ import {
   Param,
   Post,
   Put,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { ZodError } from "zod";
@@ -17,6 +18,8 @@ import type { JwtPayload } from "@bms/shared";
 import { idParamSchema } from "../admin/admin.schema";
 import { CurrentUser } from "../auth/current-user.decorator";
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { MimicLayoutPreviewService } from "./mimic-layout-preview.service";
+import { mimicLayoutPreviewQuerySchema } from "./mimic-layouts.schema";
 import { MimicLayoutsService } from "./mimic-layouts.service";
 
 /** A body refused by Zod is the caller's 400, with the flattened issues. */
@@ -35,11 +38,16 @@ function parseBody<T>(parse: () => T): T {
  * `/api/v1/mimic-layouts` — the organization's plant mimic library (`F3.32c`,
  * ADR 0081 decision 3). Any authenticated role reads; `admin` and
  * `organization_admin` write. The service owns every access decision.
+ * `F4.308`: `GET :id/preview` is read-only and for those two writer roles only
+ * (ADR 0081 Amendment 2); `MimicLayoutPreviewService` owns its checks.
  */
 @Controller("mimic-layouts")
 @UseGuards(JwtAuthGuard)
 export class MimicLayoutsController {
-  constructor(private readonly service: MimicLayoutsService) {}
+  constructor(
+    private readonly service: MimicLayoutsService,
+    private readonly previews: MimicLayoutPreviewService,
+  ) {}
 
   @Get()
   async list(@CurrentUser() user: JwtPayload) {
@@ -49,6 +57,17 @@ export class MimicLayoutsController {
   @Get(":id")
   async get(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
     return this.service.get(user, parseBody(() => idParamSchema.parse(id)));
+  }
+
+  /**
+   * `F4.308` (plan C1) — the stored layout resolved against one asset group, in the
+   * `mimic-nodes` shape. `:id` and the `.strict()` query are each a 400 before any read.
+   */
+  @Get(":id/preview")
+  async preview(@Param("id") id: string, @Query() query: unknown, @CurrentUser() user: JwtPayload) {
+    const layoutId = parseBody(() => idParamSchema.parse(id));
+    const { assetGroupId } = parseBody(() => mimicLayoutPreviewQuerySchema.parse(query));
+    return this.previews.preview(user, layoutId, assetGroupId);
   }
 
   @Post()
