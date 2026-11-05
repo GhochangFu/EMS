@@ -67,6 +67,12 @@ type WizardShellProps = {
    */
   formatProblem?: (problem: string) => string;
   /**
+   * `F4.315` B4 (ADR 0109 Amendment 2): a sentence while a field step cannot be left — for
+   * example a value the schema requires but `stepProblems` does not check because it is empty.
+   * Next is disabled and the sentence is listed in the step's alert; `null` lets the step pass.
+   */
+  stepBlocker?: (step: WizardStep) => string | null;
+  /**
    * `F4.289`: a body field the Review shows in the page's own form — for example a table of
    * rows — instead of a field row; `omit` lists the fields `detail` replaces.
    */
@@ -132,6 +138,8 @@ export function WizardShell(props: WizardShellProps) {
   const index = steps.indexOf(step);
   const body = wizardBody(values);
   const reviewProblems = step.id === REVIEW_STEP.id ? bodyProblems(entry, body) : [];
+  const blocker = step.id === REVIEW_STEP.id ? null : (props.stepBlocker?.(step) ?? null);
+  const shown = blocker === null ? problems : [blocker, ...problems.filter((problem) => problem !== blocker)];
 
   function goNext(): void {
     const found = stepProblems(entry, step, values).map((problem) => props.formatProblem?.(problem) ?? problem);
@@ -192,9 +200,9 @@ export function WizardShell(props: WizardShellProps) {
       ) : (
         <section aria-label={step.title} className="flex flex-col gap-2">
           {props.renderStep(step)}
-          {problems.length > 0 && (
+          {shown.length > 0 && (
             <ul role="alert" className="rounded border border-critical-line bg-critical-wash px-3 py-2 text-xs text-critical-ink">
-              {problems.map((problem) => (
+              {shown.map((problem) => (
                 <li key={problem}>{problem}</li>
               ))}
             </ul>
@@ -208,7 +216,7 @@ export function WizardShell(props: WizardShellProps) {
             <button
               type="button"
               onClick={goNext}
-              disabled={props.nextDisabled === true}
+              disabled={props.nextDisabled === true || blocker !== null}
               className="surface-button-primary px-3 py-1 text-xs disabled:opacity-50"
             >
               Next
