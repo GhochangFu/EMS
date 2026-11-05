@@ -35,3 +35,8 @@ export function everyToolTheRuleNamesExists(): void {
 export function thePromptNamesAnAssetByItsLabel(): void {
   expect(COPILOT_SYSTEM_PROMPT).toContain("assetRtuName");
 }
+
+/** `F4.316` PR 7: the prompt names `list_assets`' own field, which a model builds the label from today. */
+export function thePromptNamesTheListAssetsField(): void {
+  expect(COPILOT_SYSTEM_PROMPT).toContain("rtuDisplayName");
+}

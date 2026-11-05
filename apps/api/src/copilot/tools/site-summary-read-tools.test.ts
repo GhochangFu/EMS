@@ -18,6 +18,7 @@ describe("F4.296 — a site-wide read inside one turn", () => {
   it("unruled lists only the unwatched points, grouped by point set, with the counts", spec.unruledListsOnlyTheUnwatchedPoints);
   it("unruled names each asset by its label (F4.316)", spec.unruledNamesEachAssetByItsLabel);
   it("unruled reads the labels for the page's assets once (F4.316)", spec.unruledReadsTheLabelsForThePageAssets);
+  it("unruled names an asset the label read misses by its code (F4.316)", spec.unruledNamesAnUnlistedAssetByItsCode);
   it("unruled groups merge assets that are not adjacent", spec.unruledGroupsMergeAssetsThatAreNotAdjacent);
   it("unruled reads the rules once and units for the page, no statistics", spec.unruledReadsTheRulesOnceAndUnitsForThePage);
   it("unruled resumes after the last kept point", spec.unruledResumesAfterTheLastKeptPoint);

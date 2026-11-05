@@ -71,12 +71,14 @@ type FakeOptions = {
   /** Pairs a rule watches; the default: the first key of every asset. */
   readonly watched?: (pair: InventoryPair) => boolean;
   readonly unit?: string | null;
+  /** `F4.316`: asset ids `listAll` does not return (an asset the label read misses). */
+  readonly unlisted?: readonly string[];
 };
 
 function fake(options: FakeOptions = {}) {
   const log = {
     summary: [] as Array<{ assetIds: readonly string[]; pointKey: string; from: Date; to: Date }>,
-    listAll: [] as Array<readonly string[]>,
+    listAll: [] as Array<[readonly string[], string | undefined]>,
     stats: [] as Array<readonly InventoryPair[]>,
     units: [] as Array<readonly InventoryPair[]>,
     rules: [] as Array<readonly string[]>,
@@ -86,10 +88,10 @@ function fake(options: FakeOptions = {}) {
     access: { readableAssetIdsInOrganization: async () => ASSETS.map((asset) => asset.id) },
     locationScope: { readableAssetIdsInLocations: async () => ({ ok: true, organizationId: ORG_X, assetIds: ASSETS.map((asset) => asset.id) }) },
     assets: {
-      listAll: async (assetIds: string[]) => {
-        log.listAll.push(assetIds);
-        return ASSETS.map((asset, i) => ({ id: asset.id, code: asset.code, name: asset.name, rtuDisplayName: rtuOf(i), locationName: SITE_NAME })).filter((asset) =>
-          assetIds.includes(asset.id),
+      listAll: async (assetIds: string[], organizationId?: string) => {
+        log.listAll.push([assetIds, organizationId]);
+        return ASSETS.map((asset, i) => ({ id: asset.id, code: asset.code, name: asset.name, rtuDisplayName: rtuOf(i), locationName: SITE_NAME })).filter(
+          (asset) => assetIds.includes(asset.id) && !options.unlisted?.includes(asset.id),
         );
       },
     },
@@ -198,7 +200,7 @@ export async function aSummaryNamesTheAssetsWithNoData(): Promise<void> {
   expect(entry.assetsWithNoData).toBe(22);
   expect(entry.noData).toEqual(ASSETS.slice(30, 40).map((asset) => LABEL_OF.get(asset.id)));
   expect(log.listAll).toHaveLength(1);
-  expect(log.listAll[0]).toHaveLength(20);
+  expect(log.listAll[0]?.[0]).toHaveLength(20);
 }
 
 /** `F4.316` PR 7 (ADR 0111): a named asset carries its label beside its code — `<code> · <RTU>`, else `<code> · <site>`. */
@@ -307,7 +309,14 @@ export async function unruledNamesEachAssetByItsLabel(): Promise<void> {
 export async function unruledReadsTheLabelsForThePageAssets(): Promise<void> {
   const { tools, log } = fake();
   await unruled(tools);
-  expect(log.listAll).toEqual([ASSETS.map((asset) => asset.id)]);
+  expect(log.listAll).toEqual([[ASSETS.map((asset) => asset.id), ORG_X]]);
+}
+
+/** An asset the label read misses is named by its bare code, never by its id. */
+export async function unruledNamesAnUnlistedAssetByItsCode(): Promise<void> {
+  const { tools } = fake({ unlisted: [ASSETS[3]!.id] });
+  const items = result(await unruled(tools)).organizations[0]!.items as Array<{ codes: string[] }>;
+  expect(items[0]?.codes.slice(0, 2)).toEqual([`${ASSETS[0]!.code} · WC RTU 0`, ASSETS[3]!.code]);
 }
 
 /**

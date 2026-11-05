@@ -425,6 +425,8 @@ export async function assertTheTurnAnswersTheLast24HoursFromATool(): Promise<voi
  * F4.288 review: 20,334 (the description says a row's asset is its index in assets), under the bound; propose 82,991.
  * Owner ruling P4 2026-10-27 (release 5, the release-4 rule per PR): F4.290 PR 2 measured 21,423 (38 tools;
  * get_location_summary), so the bound is 23,000. The propose registry measured 83,195 (under 84,000).
+ * F4.316 PR 7 measured 22,979 (40 tools; list_assets names the label rule, the unruled inventory says labels),
+ * under the bound, so it is unchanged.
  */
 export function assertTheReadRegistryStaysInItsBudget(): void {
   const { tools } = fakeTelemetryServices();
