@@ -4,7 +4,7 @@ import { userEvent } from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { EnergyReportPreview, ReportFileDto } from "@bms/shared";
+import type { EnergyReportPreview, EnergyTopConsumer, ReportFileDto } from "@bms/shared";
 
 import * as locationsApi from "../api/admin/locations";
 import * as organizationsApi from "../api/admin/organizations";
@@ -76,6 +76,7 @@ const SAVED: ReportFileDto = {
 function preview(
   pueEstimate: number | null,
   cost: Partial<EnergyReportPreview["summary"]> = {},
+  topConsumers: EnergyTopConsumer[] = [],
 ): EnergyReportPreview {
   return {
     template: {
@@ -100,7 +101,7 @@ function preview(
       ...cost,
     },
     sourceTotals: { gridKwh: 2130.37, solarKwh: 126.04, dgKwh: 88.76 },
-    topConsumers: [],
+    topConsumers,
     notes: [],
   };
 }
@@ -109,8 +110,9 @@ function renderPanel(
   pueEstimate: number | null,
   cost: Partial<EnergyReportPreview["summary"]> = {},
   user: AuthUser = VIEWER,
+  topConsumers: EnergyTopConsumer[] = [],
 ): void {
-  vi.spyOn(reportsApi, "fetchEnergyReportPreview").mockResolvedValue(preview(pueEstimate, cost));
+  vi.spyOn(reportsApi, "fetchEnergyReportPreview").mockResolvedValue(preview(pueEstimate, cost, topConsumers));
   // The History list and the organization select fetch on mount for the
   // admin roles; stubbed so no row here depends on the network.
   vi.spyOn(reportsApi, "fetchReportFiles").mockResolvedValue([]);
@@ -290,4 +292,39 @@ export async function aSaveFromThePanelPostsThePreviewRange(): Promise<void> {
   await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
   // F4.290: the fourth argument is the site filter; a panel save names none.
   expect(save.mock.calls[0]).toEqual([rangeSentToThePreview(), "pdf", undefined, undefined]);
+}
+
+// `F4.316` (ADR 0111) — the top-consumers table names each asset by its label: the code on one
+// line, then the `· <RTU>` (else `· <location>`) part in a span that may wrap.
+
+function consumer(overrides: Partial<EnergyTopConsumer> = {}): EnergyTopConsumer {
+  return {
+    assetId: "30000000-0000-4000-8000-000000000001",
+    code: "PHE-MFM-000000003",
+    assetRtuName: "Lotapata I",
+    assetLocationName: "Lotapata",
+    name: "Main meter",
+    siteName: "Lotapata",
+    avgKw: 40,
+    estimatedKwh: 960,
+    ...overrides,
+  };
+}
+
+async function consumerCodeCell(overrides: Partial<EnergyTopConsumer> = {}): Promise<HTMLElement> {
+  renderPanel(1.25, {}, VIEWER, [consumer(overrides)]);
+  const name = await screen.findByText("Main meter");
+  const cell = name.closest("td");
+  expect(cell, "the consumer's name sits in a table cell").toBeTruthy();
+  return cell as HTMLElement;
+}
+
+/** A consumer under an RTU: `<code> · <RTU>`, then its name. */
+export async function aConsumerUnderAnRtuIsNamedByTheLabel(): Promise<void> {
+  expect((await consumerCodeCell()).textContent).toBe("PHE-MFM-000000003 · Lotapata IMain meter");
+}
+
+/** The RTU-less twin: `<code> · <location>`. */
+export async function aConsumerWithNoRtuIsNamedByItsLocation(): Promise<void> {
+  expect((await consumerCodeCell({ assetRtuName: null })).textContent).toBe("PHE-MFM-000000003 · LotapataMain meter");
 }

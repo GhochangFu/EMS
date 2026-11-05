@@ -18,7 +18,7 @@ import type { CsvField } from "../serialise/csv";
  * `csvTextCell`'s guard like the other three. Everything else is a literal in this file, a
  * Zod-validated `YYYY-MM-DD`, an ISO timestamp this process produced, or a number.
  *
- * **The write paths that reach those three are wider than this comment used to
+ * **The write paths that reach those four are wider than this comment used to
  * claim, and the correction matters.** It said "neither write path into
  * `bms.assets`" and cited two files with line numbers that have since moved.
  * `F4.51` enumerated them: `assets.schema.ts`, `asset-templates.schema.ts`,

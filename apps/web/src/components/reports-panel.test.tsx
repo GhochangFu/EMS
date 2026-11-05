@@ -3,6 +3,8 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  aConsumerUnderAnRtuIsNamedByTheLabel,
+  aConsumerWithNoRtuIsNamedByItsLocation,
   aCostRendersInTheReportsPanel,
   aFailedPdfExportRendersItsOwnLine,
   aMeasuredRatioRendersInTheReportsPanel,
@@ -81,5 +83,20 @@ describe("F3.5a reports panel — PDF export, Save to history, role gate", () =>
 
   it("F3.5b — an admin sees the Schedules heading", async () => {
     await anAdminSeesTheSchedulesHeading();
+  });
+});
+
+describe("F4.316 — the top-consumers table names each asset by its label (ADR 0111)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("a consumer under an RTU is <code> · <RTU>", async () => {
+    await aConsumerUnderAnRtuIsNamedByTheLabel();
+  });
+
+  it("a consumer with no RTU is <code> · <location>", async () => {
+    await aConsumerWithNoRtuIsNamedByItsLocation();
   });
 });

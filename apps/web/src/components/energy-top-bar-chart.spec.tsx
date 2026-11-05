@@ -12,7 +12,12 @@ import { EnergyTopBarChart } from "./energy-top-bar-chart";
  * `charts-follow-theme.spec.tsx` shape). Entry point: `energy-top-bar-chart.test.tsx`.
  */
 
-type RecordedProps = { option: { yAxis: { data: string[] } } };
+type RecordedProps = {
+  option: {
+    grid: { containLabel?: boolean };
+    yAxis: { data: string[]; axisLabel: { overflow?: string; width?: number } };
+  };
+};
 
 const recorded = vi.hoisted(() => [] as RecordedProps[]);
 
@@ -41,11 +46,15 @@ function consumer(overrides: Partial<EnergyTopConsumer> = {}): EnergyTopConsumer
   };
 }
 
-function axisLabels(consumers: EnergyTopConsumer[]): string[] {
+function optionFor(consumers: EnergyTopConsumer[]): RecordedProps["option"] {
   render(<EnergyTopBarChart consumers={consumers} status="ready" />);
   const props = recorded.at(-1);
   if (!props) throw new Error("the chart rendered no <ReactECharts>");
-  return props.option.yAxis.data;
+  return props.option;
+}
+
+function axisLabels(consumers: EnergyTopConsumer[]): string[] {
+  return optionFor(consumers).yAxis.data;
 }
 
 /** A consumer under an RTU: `<code> · <RTU> · <name, 18 characters>`. */
@@ -56,4 +65,10 @@ export function aBarUnderAnRtuIsNamedByTheLabel(): void {
 /** The RTU-less twin: `<code> · <location> · <name, 18 characters>`. */
 export function aBarWithNoRtuIsNamedByItsLocation(): void {
   expect(axisLabels([consumer({ assetRtuName: null })])).toEqual(["PHE-MFM-000000003 · Lotapata · Main incomer energ"]);
+}
+
+/** ADR 0111 C4 — the long label is never clipped: the grid contains it and the axis label breaks onto a new line. */
+export function theLabelIsContainedAndBreaksRatherThanClips(): void {
+  const option = optionFor([consumer()]);
+  expect([option.grid.containLabel, option.yAxis.axisLabel.overflow]).toEqual([true, "break"]);
 }
