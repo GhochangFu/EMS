@@ -3,6 +3,11 @@ import { expect } from "vitest";
 import type { TemplateAdoptionRefusalDto } from "@bms/shared";
 
 import {
+  alreadyPinnedMessage,
+  domainMismatchMessage,
+  organizationMismatchMessage,
+} from "./asset-templates-adopt-messages";
+import {
   planAdoption,
   type AdoptionAsset,
   type AdoptionExistingRow,
@@ -141,6 +146,24 @@ export function anAssetOfAnotherOrganizationIsRefused(): void {
   expect(reasons(run([point("KW")], [], { asset: { organizationId: "org-2" } }))).toEqual([
     "organization_mismatch",
   ]);
+}
+
+/** `F4.315` PR A: the route's pinned sentence is the shared builder's, the copilot's text (Amendment 14 decision 2). */
+export function thePinnedSentenceIsTheSharedOne(): void {
+  const r = run([point("KW")], [], { asset: { templateId: "tpl-0" } });
+  expect(r.refusals[0]?.message).toBe(alreadyPinnedMessage(asset(), TARGET));
+}
+
+/** `F4.315` PR A: the route's organization sentence is the shared builder's. */
+export function theOrganizationSentenceIsTheSharedOne(): void {
+  const r = run([point("KW")], [], { asset: { organizationId: "org-2" } });
+  expect(r.refusals[0]?.message).toBe(organizationMismatchMessage(asset(), TARGET));
+}
+
+/** `F4.315` PR A: the route's domain sentence is the shared builder's. */
+export function theDomainSentenceIsTheSharedOne(): void {
+  const r = run([point("KW")], [], { asset: { domain: "electrical" } });
+  expect(r.refusals[0]?.message).toBe(domainMismatchMessage(asset({ domain: "electrical" }), TARGET));
 }
 
 /** Mutation: the domain comparison removed (A1). */
