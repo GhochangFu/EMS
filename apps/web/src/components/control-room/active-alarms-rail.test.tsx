@@ -23,6 +23,9 @@ import {
   socketEventRefetchesTheSummary,
   summaryTabListsCountsMostUrgentFirst,
   summaryTabShowsTheTotal,
+  theAssetCellFallsBackToTheLocation,
+  theAssetCellNamesTheRtu,
+  theAssetCellsWherePartWraps,
   viewAllLinksToTheAlarmsPage,
 } from "./active-alarms-rail.spec";
 
@@ -121,5 +124,17 @@ describe("F3.28 active alarms rail", () => {
 
   it("F3.66 refetches the organization's active list on a socket event", async () => {
     await socketEventRefetchesTheOrganizationsActiveList();
+  });
+
+  it("F4.316 the Asset cell reads code · RTU", async () => {
+    await theAssetCellNamesTheRtu();
+  });
+
+  it("F4.316 the Asset cell falls back to the location with no RTU", async () => {
+    await theAssetCellFallsBackToTheLocation();
+  });
+
+  it("F4.316 the Asset cell's where part wraps, never truncates", async () => {
+    await theAssetCellsWherePartWraps();
   });
 });

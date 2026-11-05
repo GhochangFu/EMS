@@ -10,6 +10,9 @@ import {
   rendersAllFourLifecycleStates,
   searchingClearedKeepsBothClearedRows,
   theAckSendsTheTrimmedReason,
+  theAssetCellFallsBackToTheLocation,
+  theAssetCellNamesTheRtu,
+  theAssetCellsWherePartWraps,
 } from "./alarms-page.spec";
 
 /**
@@ -50,5 +53,17 @@ describe("F3.10 alarm lifecycle on the alarms page", () => {
 
   it("F4.284 sends the trimmed reason the Review card shows", async () => {
     await theAckSendsTheTrimmedReason();
+  });
+
+  it("F4.316 the Asset cell reads code · RTU", async () => {
+    await theAssetCellNamesTheRtu();
+  });
+
+  it("F4.316 the Asset cell falls back to the location with no RTU", async () => {
+    await theAssetCellFallsBackToTheLocation();
+  });
+
+  it("F4.316 the Asset cell's where part wraps, never truncates", async () => {
+    await theAssetCellsWherePartWraps();
   });
 });

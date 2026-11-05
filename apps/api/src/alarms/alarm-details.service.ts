@@ -11,6 +11,7 @@ import {
   automationRules,
   locations,
   pointValues,
+  rtus,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AlarmDetailsResponse, AutomationRuleOperator } from "@bms/shared";
@@ -81,6 +82,8 @@ export class AlarmDetailsService {
         clearedAt: alarms.clearedAt,
         ruleId: alarms.ruleId,
         assetCode: assets.code,
+        // `F4.316` / ADR 0111: the label's parts; null RTU for an RTU-less asset.
+        assetRtuName: rtus.displayName,
         assetName: assets.name,
         assetDomain: assets.domain,
         siteName: assets.siteName,
@@ -119,6 +122,7 @@ export class AlarmDetailsService {
       .from(alarms)
       .innerJoin(assets, eq(alarms.assetId, assets.id))
       .innerJoin(locations, eq(assets.locationId, locations.id))
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
       .leftJoin(automationRules, eq(alarms.ruleId, automationRules.id))
       .leftJoin(alarmEnrichments, eq(alarmEnrichments.alarmId, alarms.id))
       // ADR 0059 decision 9. This service runs on `bms_fleet`, which carries
@@ -169,10 +173,14 @@ export class AlarmDetailsService {
           .select({
             assetId: assets.id,
             assetCode: assets.code,
+            assetRtuName: rtus.displayName,
+            assetLocationName: locations.name,
             assetName: assets.name,
           })
           .from(alarmAffectedAssets)
           .innerJoin(assets, eq(alarmAffectedAssets.assetId, assets.id))
+          .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+          .leftJoin(locations, eq(assets.locationId, locations.id))
           .where(
             and(
               eq(alarmAffectedAssets.enrichmentId, row.enrichmentId),
@@ -210,6 +218,8 @@ export class AlarmDetailsService {
       assetId: row.assetId,
       organizationId: row.organizationId,
       assetCode: row.assetCode,
+      assetRtuName: row.assetRtuName,
+      assetLocationName: row.locationName,
       assetName: row.assetName,
       assetDomain: row.assetDomain,
       locationName: row.locationName,

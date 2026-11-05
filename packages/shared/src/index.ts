@@ -112,6 +112,9 @@ export * from "./calc-dsl";
  */
 export * from "./source-key-pattern";
 
+/** `F4.316` / ADR 0111 — the asset label (`<code> · <RTU>`), pure and zod-free. */
+export * from "./asset-label";
+
 /**
  * The credential encryption key window (`E8.4`, ADR 0062 decision 2) —
  * `resolveCredentialKeys`, `keyForVersion` and the two named errors. Published

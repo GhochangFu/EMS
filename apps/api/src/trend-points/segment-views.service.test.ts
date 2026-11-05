@@ -17,6 +17,7 @@ import {
   theAbnormalListJudgesStatementA,
   theDefaultSegmentIsTheFirstPresent,
   theResponseParses,
+  theRankingCarriesTheRtuAndLocationNames,
   withoutCompareEveryEntryCompareIsNull,
   aSegmentExportOfAForeignSiteIsA404WithNoStatement,
   aSegmentExportOfAnUnknownSegmentIsA404,
@@ -53,6 +54,7 @@ describe("F4.302 — SiteSegmentViewsService (ADR 0108 Amendment 4 items 4–5)"
     it("the default segment is the first present, in forSite order", () => theDefaultSegmentIsTheFirstPresent());
     it("the abnormal list judges statement A's rows", () => theAbnormalListJudgesStatementA());
     it("the response parses, in the site zone", () => theResponseParses());
+    it("a ranking entry carries the RTU and location names (F4.316)", () => theRankingCarriesTheRtuAndLocationNames());
   });
 
   describe("F4.303 — the export (ADR 0108 Amendment 6 item 3)", () => {

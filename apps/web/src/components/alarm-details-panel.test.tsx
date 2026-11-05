@@ -11,6 +11,11 @@ import {
   omitsTheClassBlockEntirelyWhenThereIsNoProvenance,
   showsTheClassPhilosophyToAViewer,
   showsTheClassPhilosophyWithItsTemplateAndVersion,
+  theAffectedAssetsListTheirLabels,
+  theHeaderFallsBackToTheLocation,
+  theHeaderNamesTheRtu,
+  theHeadersWherePartWraps,
+  theHistoryLinkKeepsTheCode,
 } from "./alarm-details-panel.spec";
 
 /**
@@ -55,5 +60,25 @@ describe("E2.2 — the class philosophy on the Alarm Details panel", () => {
 
   it("F4.297 links the asset to its history page", async () => {
     await linksTheAssetToItsHistory();
+  });
+
+  it("F4.316 the header names the asset as code · RTU", async () => {
+    await theHeaderNamesTheRtu();
+  });
+
+  it("F4.316 the header falls back to the location with no RTU", async () => {
+    await theHeaderFallsBackToTheLocation();
+  });
+
+  it("F4.316 the header's where part wraps, never truncates", async () => {
+    await theHeadersWherePartWraps();
+  });
+
+  it("F4.316 the history link keeps the bare asset code", async () => {
+    await theHistoryLinkKeepsTheCode();
+  });
+
+  it("F4.316 the affected assets list their labels", async () => {
+    await theAffectedAssetsListTheirLabels();
   });
 });

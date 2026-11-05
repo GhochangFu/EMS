@@ -15,7 +15,7 @@ import {
   pointValues,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { JwtPayload } from "@bms/shared";
+import type { AlarmListItem, JwtPayload } from "@bms/shared";
 
 import { ChannelsService } from "../notifications/channels.service";
 import { ClosedCeilings } from "../notifications/closed-ceilings";
@@ -113,6 +113,8 @@ export type Harness = {
   sent: NotificationMessage[];
   /** Every alarm id `broadcastCleared` was called with, in order. */
   clearedBroadcasts: string[];
+  /** `F4.316`: the same broadcasts' whole payloads — the socket's `cleared` event body. */
+  clearedAlarms: AlarmListItem[];
 };
 
 /**
@@ -173,10 +175,12 @@ export function buildHarness(db: BmsDb, options: HarnessOptions = {}): Harness {
     },
   );
   const clearedBroadcasts: string[] = [];
+  const clearedAlarms: AlarmListItem[] = [];
   const gateway = {
     broadcastAcknowledged: () => undefined,
-    broadcastCleared: (alarm: { id: string }) => {
+    broadcastCleared: (alarm: AlarmListItem) => {
       clearedBroadcasts.push(alarm.id);
+      clearedAlarms.push(alarm);
     },
   } as unknown as AlarmsGateway;
 
@@ -187,6 +191,7 @@ export function buildHarness(db: BmsDb, options: HarnessOptions = {}): Harness {
     notifications,
     sent,
     clearedBroadcasts,
+    clearedAlarms,
   };
 }
 

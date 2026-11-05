@@ -41,6 +41,8 @@ export const alarmStatsLocationRowSchema = z.object({
 export const alarmStatsAssetRowSchema = z.object({
   assetId: z.string().uuid(),
   assetCode: z.string(),
+  assetRtuName: z.string().nullable(), // F4.316 / ADR 0111
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   raised: countSchema,
 });

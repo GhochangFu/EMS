@@ -37,6 +37,8 @@ type AssetRow = {
   asset_id: string;
   asset_code: string;
   asset_name: string;
+  asset_rtu_name: string | null;
+  asset_location_name: string | null;
   domain: string;
   point_key: string;
   unit: string | null;
@@ -81,6 +83,8 @@ function rowsFor(assetId: string, assetCode: string): AssetRow[] {
     asset_id: assetId,
     asset_code: assetCode,
     asset_name: `Asset ${assetCode}`,
+    asset_rtu_name: assetCode === "AHU-2" ? null : "RTU 1",
+    asset_location_name: "Site 1",
     domain: "hvac",
     point_key,
     unit: "°C",
@@ -301,6 +305,17 @@ export async function everySeriesHasTheWindowsBuckets(): Promise<void> {
 
 const HEADER_ROWS = 7;
 
+/** `F4.316` (ADR 0111) — each series names the row's RTU and location; the RTU-less AHU-2 has a null RTU name. */
+export async function theStripSeriesCarryTheRtuAndLocationNames(): Promise<void> {
+  const f = fake();
+  const dto = await f.service.forSite(USER, SITE, WHOLE_SITE, NOW);
+  const [first] = dto.segments[0]?.points ?? [];
+  expect(first?.assets.map((a) => [a.assetCode, a.assetRtuName, a.assetLocationName])).toEqual([
+    ["AHU-1", "RTU 1", "Site 1"],
+    ["AHU-2", null, "Site 1"],
+  ]);
+}
+
 /** G6: each exported `mean` per (segment, point, asset, bucket) is `forSite`'s bucket `v` for the same query. */
 export async function theStripExportMeansAreForSitesBuckets(): Promise<void> {
   const f = fake({ withSamples: true });
@@ -351,8 +366,22 @@ export async function theStripCsvOpensWithTheZoneRow(): Promise<void> {
   expect(csv.split("\n")[0]).toBe("zone,Asia/Kolkata");
 }
 
-const A1 = { assetId: ASSET_1, assetCode: "AHU-1", assetName: "Asset AHU-1", unit: "°C" };
-const A2 = { assetId: ASSET_2, assetCode: "AHU-2", assetName: "Asset AHU-2", unit: "°C" };
+const A1 = {
+  assetId: ASSET_1,
+  assetCode: "AHU-1",
+  assetName: "Asset AHU-1",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Site 1",
+  unit: "°C",
+};
+const A2 = {
+  assetId: ASSET_2,
+  assetCode: "AHU-2",
+  assetName: "Asset AHU-2",
+  assetRtuName: null,
+  assetLocationName: "Site 1",
+  unit: "°C",
+};
 
 /** Frozen from `frameFor` at `ca58ca39` (before `F4.306` U4): a query without a selection is today's frame. */
 const GOLDEN_FRAME = {

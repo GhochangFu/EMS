@@ -3,6 +3,9 @@ import { describe, it } from "vitest";
 import {
   baselineSentenceNamesBothSides,
   chartSeriesShiftTheCompareBySpan,
+  chartSeriesCarryTheAssetLabel,
+  chartSeriesLabelAnRtuLessAssetByItsLocation,
+  sortRankingTieStaysByCode,
   compareSpanIsTheGapBetweenTheStarts,
   historyHrefCarriesTheWindowThePointAndCompare,
   meanChangeNeedsACompareRow,
@@ -56,6 +59,18 @@ describe("F4.302 the Trends & Energy section's pure rules", () => {
 
   it("sorts the ranking by mean or by max, ties by code", () => {
     sortRankingByMeanOrMax();
+  });
+
+  it("labels a line and its previous period <code> · <RTU> (F4.316)", () => {
+    chartSeriesCarryTheAssetLabel();
+  });
+
+  it("labels an RTU-less asset's line <code> · <location> (F4.316)", () => {
+    chartSeriesLabelAnRtuLessAssetByItsLocation();
+  });
+
+  it("keeps a max tie on one code in the server's order, not by RTU name (F4.316)", () => {
+    sortRankingTieStaysByCode();
   });
 
   it("shows a change only with a previous-period row", () => {
