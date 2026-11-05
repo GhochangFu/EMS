@@ -105,7 +105,7 @@ export async function theReadToolListsTheRowsAndWritesNoAudit(ctx: PointKeyState
       (await ctx.observer.query<{ n: string }>("SELECT count(*) AS n FROM bms.audit_log WHERE entity_id = $1", [ctx.rowId])).rows[0]?.n,
     );
   const before = await audits();
-  // One call per key (`pointKey`), so rows other suites add can never push a seeded one past the cap.
+  // One call per key (`pointKey`), so rows other suites add can never push a seeded one out of the fitted answer.
   type Item = { id: string; pointKey: string; value: number; seeded: boolean };
   const list = async (pointKey: string): Promise<Item[]> => {
     const out = await ctx.tools.dispatch("list_point_key_states", { pointKey }, toolCtx(ctx, ctx.admin, "admin"));

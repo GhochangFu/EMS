@@ -2133,3 +2133,19 @@ were ruled as recommended. The merge of this amendment approves it.
    recommended.
 2. **Q2 (a) — refused at propose and at apply.** Ruled 2026-11-05, as
    recommended.
+
+### Owner rulings at the build (2026-11-05, F4.309 PR 3)
+
+1. **The propose budget.** The two propose tools count against the per-turn
+   budget (`copilot-propose-budget.spec.ts`, 91,000 since Amendment 11 G7).
+   Measured at PR 3: 92,068 characters over 111 definitions
+   (`propose_pointKeyState_create` 667, `propose_pointKeyState_update` 554,
+   and their ids in `fill_step` and `describe_change`). That is over the
+   bound, so the bound rises to 94,000 by release 4's rule (the measured size
+   rounded up to the next thousand, plus 1,000). The owner accepted it.
+2. **Decision 3, clarified.** `list_point_key_states` takes an optional
+   `pointKey` filter and answers as many rows as fit the tool-result budget
+   (`fitListResult`'s loop), with `truncated` when rows were left out. A tool
+   result is cut at 8,000 characters, and a cut list is broken JSON, so the
+   tool has no fixed row count; the model filters by `pointKey` when the list
+   is truncated.

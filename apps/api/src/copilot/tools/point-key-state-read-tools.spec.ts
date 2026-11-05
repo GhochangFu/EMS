@@ -3,10 +3,12 @@ import { expect } from "vitest";
 import type { AdminPointKeyStateDto, JwtPayload } from "@bms/shared";
 
 import type { ResolvedIdentity } from "../../auth/identity-resolver";
+import { succeed, TOOL_RESULT_MAX_CHARS } from "../../llm/tool-result";
+import { scrubToolResult } from "../copilot-secret-scrub";
 import type { CopilotToolContext } from "../copilot-read-tools";
-import { COPILOT_TOOL_RESULT_BUDGET_CHARS, type CopilotReadServices } from "./copilot-read-tool";
+import type { CopilotReadServices } from "./copilot-read-tool";
 import { createCopilotReadTools } from "./copilot-read-tool-set";
-import { COPILOT_POINT_KEY_STATES_ROLE_REFUSAL, POINT_KEY_STATES_TOOL_MAX_ITEMS } from "./list-point-key-states.tool";
+import { COPILOT_POINT_KEY_STATES_ROLE_REFUSAL } from "./list-point-key-states.tool";
 
 /**
  * `F4.309` PR 3 (ADR 0099 Amendment 13 decision 3, ruling Q1; plan T15) — `list_point_key_states`
@@ -84,29 +86,55 @@ export async function aTenantAdministratorIsRefusedBeforeTheRead(): Promise<void
   }
 }
 
-/** `pointKey` narrows to one key's rows before the cap. */
+/** `pointKey` narrows to one key's rows before the fit. */
 export async function aPointKeyNarrowsTheList(): Promise<void> {
   const { tools } = fake([row(1, "breaker_main", 1, true), row(2, "isolator_pos", 2)]);
   const out = await tools.dispatch("list_point_key_states", { pointKey: "isolator_pos" }, ADMIN);
   expect(out.ok && (out.result.items as { pointKey: string }[]).map((item) => item.pointKey)).toEqual(["isolator_pos"]);
 }
 
-/** More rows than the cap: the first ones by key then value, and `truncated` says there are more. */
-export async function theListIsCutAtTheCap(): Promise<void> {
-  const many = Array.from({ length: POINT_KEY_STATES_TOOL_MAX_ITEMS + 3 }, (_, i) => row(i + 1, "isolator_pos", i));
-  const { tools } = fake(many);
-  const out = await tools.dispatch("list_point_key_states", {}, ADMIN);
+/** What the model receives: the turn service's scrub, then `succeed`'s content with its 8,000-character cut. */
+async function received(items: unknown[]) {
+  const out = await fake(items).tools.dispatch("list_point_key_states", {}, ADMIN);
   if (!out.ok) throw new Error(out.error);
-  expect((out.result.items as unknown[]).length).toBe(POINT_KEY_STATES_TOOL_MAX_ITEMS);
-  expect(out.result.truncated).toBe(true);
-  // The cap keeps the longest rows the contract allows inside the result budget (a 128-character key, a 32-character label).
-  const longest = Array.from({ length: POINT_KEY_STATES_TOOL_MAX_ITEMS + 1 }, (_, i) => ({
-    ...row(i + 1, "k".repeat(128), -1.2345678901234567e-300 * (i + 1)),
-    label: "L".repeat(32),
-    tone: "flowing",
-  }));
-  const big = await fake(longest).tools.dispatch("list_point_key_states", {}, ADMIN);
-  expect(JSON.stringify(big).length).toBeLessThan(COPILOT_TOOL_RESULT_BUDGET_CHARS);
+  const content = succeed(scrubToolResult(out.result)).content;
+  return { content, parsed: JSON.parse(content) as { truncated: boolean; items: unknown[] } };
+}
+
+/** The longest key the contract allows, so a row is as long as it can be. */
+const LONG_KEY = "k".repeat(128);
+
+/** A small list fits whole: every row, `truncated: false` (no fixed row cap). */
+export async function aSmallListAnswersEveryRow(): Promise<void> {
+  const { parsed } = await received(Array.from({ length: 40 }, (_, i) => row(i + 1, "isolator_pos", i)));
+  expect([parsed.items.length, parsed.truncated]).toEqual([40, false]);
+  const few = await received([row(1, "breaker_main", 1, true), row(2, "isolator_pos", 2)]);
+  expect([few.parsed.items.length, few.parsed.truncated]).toEqual([2, false]);
+}
+
+/**
+ * 60 rows whose labels are 32 `"` characters (each escaped to two in JSON): the answer keeps as
+ * many rows as fit the budget — more than a fixed 25 — stays parseable JSON under the 8,000 cut,
+ * and says `truncated`.
+ */
+export async function quotedLabelsFitTheBudgetAndSayTruncated(): Promise<void> {
+  const rows = Array.from({ length: 60 }, (_, i) => ({ ...row(i + 1, "isolator_pos", i), label: '"'.repeat(32) }));
+  const { content, parsed } = await received(rows);
+  expect(content.length).toBeLessThan(TOOL_RESULT_MAX_CHARS);
+  expect(parsed.truncated).toBe(true);
+  expect(parsed.items.length).toBeGreaterThan(25);
+  expect(parsed.items.length).toBeLessThan(60);
+}
+
+/** Labels of 32 control characters (each escaped to six) on the longest key: still parseable, under the cut, `truncated`. */
+export async function controlCharacterLabelsFitTheBudget(): Promise<void> {
+  const rows = Array.from({ length: 45 }, (_, i) => ({ ...row(i + 1, LONG_KEY, i), label: "\u0001".repeat(32), tone: "flowing" }));
+  const { content, parsed } = await received(rows);
+  expect(content.length).toBeLessThan(TOOL_RESULT_MAX_CHARS);
+  expect(parsed.truncated).toBe(true);
+  expect(parsed.items.length).toBeGreaterThan(0);
+  // `truncated` is serialized first, so no cut could ever take it.
+  expect(content.indexOf('"truncated"')).toBeLessThan(content.indexOf('"items"'));
 }
 
 /** The service's rows go through the guarded parse: a row off its contract is a refusal, never a pass-through. */
@@ -127,4 +155,7 @@ export function theDescriptionSaysASeededRowIsReadOnly(): void {
   expect(definition?.description).toContain("seeded");
   expect(definition?.description).toContain("read-only");
   expect(definition?.description).toContain("pointKeyState.update");
+  // The fit (owner ruling 2026-11-05): the list can be cut, and `pointKey` narrows it.
+  expect(definition?.description).toContain("truncated");
+  expect(definition?.description).toContain("filter by pointKey");
 }

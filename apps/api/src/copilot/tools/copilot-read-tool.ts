@@ -272,6 +272,25 @@ export function fitListResult<K>(
   return { ok: true, result, organizationIds: read };
 }
 
+/**
+ * `F4.309` PR 3 (owner ruling 2026-11-05) — {@link fitListResult}'s loop for a fleet list, whose
+ * rows belong to no organization (`list_point_key_states`): the result is `{ truncated, items }`,
+ * `truncated` first, measured after the same scrub against the same
+ * {@link COPILOT_TOOL_RESULT_BUDGET_CHARS}. While it is longer, the last item is dropped and the
+ * result is `truncated`. It names no organization.
+ */
+export function fitFleetListResult(items: unknown[], truncated = false): CopilotToolResult {
+  const kept = [...items];
+  const assemble = (): Record<string, unknown> => ({ truncated, items: kept });
+  let result = assemble();
+  while (kept.length > 0 && JSON.stringify(scrubToolResult(result)).length > COPILOT_TOOL_RESULT_BUDGET_CHARS) {
+    kept.pop();
+    truncated = true;
+    result = assemble();
+  }
+  return { ok: true, result, organizationIds: [] };
+}
+
 /** `F4.291` live check: an unpaged list's result, `truncated` first and fitted to the budget (`head`: see {@link fitListResult}). */
 export function listResult(out: { organizations: ListEntry[]; read: string[] }, truncated: boolean, head?: Record<string, unknown>): CopilotToolResult {
   return fitListResult<never>(out.organizations, out.read, { truncated, next: null }, undefined, head);
