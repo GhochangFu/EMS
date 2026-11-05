@@ -123,3 +123,19 @@ export async function aPublishedVersionDisablesUse(): Promise<void> {
   renderTab("published");
   expect(await screen.findByRole("button", { name: USE })).toBeDisabled();
 }
+
+const FROZEN_REASON = "A published or archived version is frozen; open a draft to take a formula.";
+
+/** On a published version the reason is given under the list. Mutation: pass `disabledReason` only on draft. */
+export async function aPublishedVersionGivesTheReason(): Promise<void> {
+  renderTab("published");
+  await screen.findByRole("button", { name: USE });
+  expect(screen.getByText(FROZEN_REASON)).toBeTruthy();
+}
+
+/** The twin: a draft is enabled and says nothing. Mutation: always pass the reason. */
+export async function aDraftTakesAFormulaAndGivesNoReason(): Promise<void> {
+  renderTab("draft");
+  expect(await screen.findByRole("button", { name: USE })).toBeEnabled();
+  expect(screen.queryByText(FROZEN_REASON)).toBeNull();
+}

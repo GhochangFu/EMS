@@ -50,6 +50,7 @@ function stubReads(reads: Reads = {}) {
 type Options = {
   organizationCode?: string | null;
   disabled?: boolean;
+  disabledReason?: string;
   pointKey?: string;
   /** Seed the published list's cache, as another page that read it would leave it. */
   warmList?: boolean;
@@ -71,6 +72,7 @@ function renderSuggestions(options: Options = {}) {
         domain="electrical"
         assetKeys={["current_l1_a"]}
         disabled={options.disabled ?? false}
+        disabledReason={options.disabledReason}
         onTake={onTake}
       />
     </QueryClientProvider>,
@@ -164,6 +166,22 @@ export async function disabledDisablesUse(): Promise<void> {
   stubReads();
   renderSuggestions({ disabled: true });
   expect(await screen.findByRole("button", { name: "Use this formula from Stock · Electrical feeder" })).toBeDisabled();
+}
+
+/** `F4.315` C3: a disabled list gives its reason. Mutation: drop the reason line. */
+export async function aDisabledListGivesItsReason(): Promise<void> {
+  stubReads();
+  renderSuggestions({ disabled: true, disabledReason: "Frozen." });
+  await screen.findByRole("button", { name: "Use this formula from Stock · Electrical feeder" });
+  expect(screen.getByText("Frozen.")).toBeInTheDocument();
+}
+
+/** An enabled list says nothing even when handed a reason. Mutation: drop the `disabled &&` guard. */
+export async function anEnabledListGivesNoReason(): Promise<void> {
+  stubReads();
+  renderSuggestions({ disabled: false, disabledReason: "Frozen." });
+  await screen.findByRole("button", { name: "Use this formula from Stock · Electrical feeder" });
+  expect(screen.queryByText("Frozen.")).toBeNull();
 }
 
 /**

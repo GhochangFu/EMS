@@ -58,6 +58,9 @@ import {
   type TemplatePointRow,
 } from "../../lib/template-points-grid";
 import { FormulaSuggestions } from "../assets/formula-suggestions";
+
+/** `F4.315` C3: why Suggested formulas is disabled on a published or archived version. */
+const FROZEN_SUGGESTIONS_REASON = "A published or archived version is frozen; open a draft to take a formula.";
 import { FormulaEditorLazy } from "./formula-editor-lazy";
 import { FormulaHelp } from "./formula-help";
 import { FormulaPreview } from "./formula-preview";
@@ -269,6 +272,9 @@ export function CalculationsTab({
               keysOf="this template"
               excludeTemplateId={template.id}
               disabled={!editable || formulaFieldsAreReadOnly(template.status)}
+              disabledReason={
+                formulaFieldsAreReadOnly(template.status) ? FROZEN_SUGGESTIONS_REASON : undefined
+              }
               onTake={(suggestion) =>
                 setRows((current) =>
                   current.map((entry, position) => (position === index ? suggestionRow(entry, suggestion) : entry)),

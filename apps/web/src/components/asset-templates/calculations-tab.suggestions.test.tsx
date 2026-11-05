@@ -3,7 +3,9 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aDraftTakesAFormulaAndGivesNoReason,
   aPublishedVersionDisablesUse,
+  aPublishedVersionGivesTheReason,
   takingFillsTheRowsFormula,
   takingSetsTheRowsEvery,
   takingSetsTheRowsGrammar,
@@ -49,5 +51,13 @@ describe("F4.314 PR 2 — Suggested formulas on the Calculations tab", () => {
 
   it("disables Use this formula on a published version", async () => {
     await aPublishedVersionDisablesUse();
+  });
+
+  it("gives the reason under the list on a published version", async () => {
+    await aPublishedVersionGivesTheReason();
+  });
+
+  it("a draft takes a formula and gives no reason", async () => {
+    await aDraftTakesAFormulaAndGivesNoReason();
   });
 });
