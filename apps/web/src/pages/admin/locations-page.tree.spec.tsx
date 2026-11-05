@@ -93,6 +93,7 @@ function stubApi(): ReturnType<typeof vi.fn> {
             JSON.stringify({
               user: { id: "u1", email: "admin@bms.local", displayName: "Admin", role: "admin" },
               scope: FRESH_SCOPE,
+              colourProfile: "nexus",
             }),
             { status: 200, headers: { "Content-Type": "application/json" } },
           ),

@@ -56,7 +56,7 @@ function asUser(role: UserRole): AuthUser {
 }
 
 const ORGANIZATIONS = [
-  { id: ORG_1, code: "IONX", name: "Ion Exchange", active: true, currency: "INR", timezone: "Asia/Kolkata", meta: null, createdAt: new Date(0).toISOString() },
+  { id: ORG_1, code: "IONX", name: "Ion Exchange", active: true, currency: "INR", timezone: "Asia/Kolkata", colourProfile: "nexus" as const, meta: null, createdAt: new Date(0).toISOString() },
 ];
 
 const LOCATION = {

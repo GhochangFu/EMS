@@ -660,8 +660,8 @@ export async function dropsTheChosenFilesOnAPickOfAnotherOrganization(): Promise
   const stubs = stub(READY_WITH_FILES);
   stubs.organizations.mockResolvedValue({
     items: [
-      { id: ORG_ID, code: "PHE", name: "PHE Water", active: true, currency: "INR", timezone: "Asia/Kolkata", meta: null },
-      { id: ORG_2, code: "ION", name: "Ion Plant", active: true, currency: "INR", timezone: "Asia/Kolkata", meta: null },
+      { id: ORG_ID, code: "PHE", name: "PHE Water", active: true, currency: "INR", timezone: "Asia/Kolkata", colourProfile: "nexus", meta: null },
+      { id: ORG_2, code: "ION", name: "Ion Plant", active: true, currency: "INR", timezone: "Asia/Kolkata", colourProfile: "nexus", meta: null },
     ],
   } as never);
   renderDock("admin");

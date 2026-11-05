@@ -48,6 +48,7 @@ import {
   // `F4.300` (ADR 0108 decision 3.7): the replace-all trend-point body.
   putOrgTrendPointsBodySchema,
   adoptAssetsBodySchema,
+  setOrganizationColourProfileBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -333,6 +334,8 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   updateMaintenanceScheduleBodySchema,
   updateNotificationChannelBodySchema,
   updateOrganizationBodySchema,
+  // `F4.310` (ADR 0110 decision 7): `.strict()`, so a stray field is a 400.
+  setOrganizationColourProfileBodySchema,
   updatePointKeyBodySchema,
   updateRtuBodySchema,
   updateWorkOrderStatusBodySchema,

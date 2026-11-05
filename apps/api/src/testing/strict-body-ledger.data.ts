@@ -637,6 +637,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   ),
   updateCalcParameterBodySchema: STRICT(CALLER_ERROR),
   updateOrganizationBodySchema: STRICT(CALLER_ERROR),
+  // `F4.310` (ADR 0110 decision 7): one key, `colourProfile`; a stray key is a caller error.
+  setOrganizationColourProfileBodySchema: STRICT(CALLER_ERROR),
   updatePointKeyBodySchema: STRICT(CALLER_ERROR),
   // `F3.40`. `code` is deliberately absent from this body — it is the primary
   // key and the target of `asset_group_members_role_fkey` — so a caller sending

@@ -51,6 +51,10 @@ export const organizations = bmsSchema.table("organizations", {
   // calendar date keys the copilot daily turn counters. Validated on write
   // against the runtime zone list; UTC unless an administrator sets it.
   timezone: varchar("timezone", { length: 64 }).notNull().default("UTC"),
+  // F4.310 / ADR 0110 decision 6 (migration 0125): one of the six
+  // `colourProfileSchema` names, held by a CHECK; `nexus` (today's colours) by
+  // default. The API's colour-profile route is the only writer.
+  colourProfile: varchar("colour_profile", { length: 32 }).notNull().default("nexus"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

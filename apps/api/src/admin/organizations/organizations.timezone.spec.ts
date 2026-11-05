@@ -64,6 +64,7 @@ export function theDtoContractRequiresTimezone(): void {
     active: true,
     currency: "INR",
     timezone: "Asia/Kolkata",
+    colourProfile: "nexus",
     meta: null,
     createdAt: new Date(0).toISOString(),
   };

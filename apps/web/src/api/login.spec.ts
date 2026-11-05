@@ -307,6 +307,7 @@ export async function runRefreshScopeReplacesTheStoredScope(): Promise<void> {
         JSON.stringify({
           user: { id: "id-tok-r", email: "r@example.test", displayName: "r", role: "location_admin" },
           scope: fresh,
+          colourProfile: "nexus",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       ),

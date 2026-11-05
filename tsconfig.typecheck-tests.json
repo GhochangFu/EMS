@@ -263,6 +263,7 @@
     "tests/f4.310-ok-state-gate.test.ts",
     "tests/f4.310-role-lists.test.ts",
     "tests/f4.307-mimic-layout-node-points-schema.test.ts",
-    "tests/f4.307-mimic-layout-node-points-schema.integration.test.ts"
+    "tests/f4.307-mimic-layout-node-points-schema.integration.test.ts",
+    "tests/f4.310-organization-colour-profile-schema.test.ts"
   ]
 }

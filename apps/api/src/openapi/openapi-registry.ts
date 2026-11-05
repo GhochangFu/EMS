@@ -60,6 +60,7 @@ import {
   siteSegmentViewsQuerySchema,
   // `F4.312` (ADR 0109 Amendment 1): the adoption body, shared by preview and apply.
   adoptAssetsBodySchema,
+  setOrganizationColourProfileBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -350,6 +351,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   OnboardingController_setCredentials: setCredentialsBodySchema,
   OrganizationsAdminController_create: createOrganizationBodySchema,
   OrganizationsAdminController_update: updateOrganizationBodySchema,
+  // `F4.310` (ADR 0110 decision 7) — the colour-profile body, `.strict()`.
+  OrganizationsAdminController_setColourProfile: setOrganizationColourProfileBodySchema,
   // `F4.300` (ADR 0108 decision 3.7). `_forOrganization` and `SiteTrendPointsController_forSite`
   // are absent: path parameters only, no body, no query.
   OrgTrendPointsAdminController_putSegment: putOrgTrendPointsBodySchema,

@@ -7,6 +7,7 @@
  */
 import { z } from "zod";
 
+import { colourProfileSchema } from "./colour-profile";
 import { locationTypeCodeSchema } from "./location-types";
 import { assetRoleCodeSchema } from "./operations";
 import { pointMetadataFieldsSchema, pointMetadataShape } from "./point-metadata";
@@ -22,6 +23,8 @@ export const adminOrganizationDtoSchema = z.object({
   currency: z.string(),
   /** F3.85 (ADR 0099 A2): an IANA zone name or "UTC"; governs the copilot's usage-day boundary. */
   timezone: z.string(),
+  /** F4.310 (ADR 0110 decision 6): the organization's colour profile; `nexus` unless an admin chose one. */
+  colourProfile: colourProfileSchema,
   meta: z.record(z.unknown()).nullable(),
   createdAt: z.string(),
 });
