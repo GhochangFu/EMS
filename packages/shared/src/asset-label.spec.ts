@@ -19,22 +19,25 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
+/** The separator is exactly space, U+00B7, space. */
 export function separatorIsMiddleDot(): void {
   assert(
-    ASSET_LABEL_SEPARATOR === " · ",
+    ASSET_LABEL_SEPARATOR === " \u00b7 ",
     `separator is ${JSON.stringify(ASSET_LABEL_SEPARATOR)}`,
   );
 }
 
+/** An RTU name follows the code. */
 export function rtuNameIsAppended(): void {
   const label = assetLabel({
     code: "PHE-MFM-000000003",
     rtuName: "Lotapata I",
-    locationName: "Lotapata",
+    locationName: null,
   });
   assert(label === "PHE-MFM-000000003 · Lotapata I", label);
 }
 
+/** With no RTU the location name follows the code. */
 export function locationNameIsTheFallback(): void {
   const label = assetLabel({
     code: "WTR-WTP-01",
@@ -44,6 +47,7 @@ export function locationNameIsTheFallback(): void {
   assert(label === "WTR-WTP-01 · Lotapata", label);
 }
 
+/** With neither, the label is the bare code and has no separator. */
 export function bareCodeWhenNeitherIsKnown(): void {
   const label = assetLabel({
     code: "WTR-WTP-01",
@@ -53,6 +57,7 @@ export function bareCodeWhenNeitherIsKnown(): void {
   assert(label === "WTR-WTP-01", label);
 }
 
+/** When both are set the RTU wins. */
 export function rtuWinsOverLocation(): void {
   const label = assetLabel({
     code: "A-1",
@@ -62,6 +67,7 @@ export function rtuWinsOverLocation(): void {
   assert(label === "A-1 · RTU One", label);
 }
 
+/** `assetLabelOf` agrees with `assetLabel` on the same parts. */
 export function labelOfReadsTheDtoShape(): void {
   const parts = { code: "A-1", rtuName: "RTU One", locationName: "Site One" };
   const row = {
@@ -78,26 +84,35 @@ export function labelOfReadsTheDtoShape(): void {
   assert(assetLabelOf(bare) === "A-2", assetLabelOf(bare));
 }
 
-export function partsSplitCodeFromWhere(): void {
-  const withRtu = assetLabelParts({
+/** `where` is the RTU name when there is one. */
+export function partsWhereIsTheRtuName(): void {
+  const parts = assetLabelParts({
     code: "A-1",
     rtuName: "RTU One",
     locationName: "Site One",
   });
   assert(
-    withRtu.code === "A-1" && withRtu.where === "RTU One",
-    JSON.stringify(withRtu),
+    parts.code === "A-1" && parts.where === "RTU One",
+    JSON.stringify(parts),
   );
-  const withSite = assetLabelParts({
+}
+
+/** `where` is the location name when there is no RTU. */
+export function partsWhereFallsBackToTheLocation(): void {
+  const parts = assetLabelParts({
     code: "A-1",
     rtuName: null,
     locationName: "Site One",
   });
-  assert(withSite.where === "Site One", JSON.stringify(withSite));
-  const bare = assetLabelParts({
+  assert(parts.where === "Site One", JSON.stringify(parts));
+}
+
+/** `where` is null when neither is known. */
+export function partsWhereIsNullWhenNeitherIsKnown(): void {
+  const parts = assetLabelParts({
     code: "A-1",
     rtuName: null,
     locationName: null,
   });
-  assert(bare.code === "A-1" && bare.where === null, JSON.stringify(bare));
+  assert(parts.code === "A-1" && parts.where === null, JSON.stringify(parts));
 }

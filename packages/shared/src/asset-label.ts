@@ -9,6 +9,7 @@
  */
 export const ASSET_LABEL_SEPARATOR = " · ";
 
+/** The three facts a label is built from. */
 export interface AssetLabelParts {
   readonly code: string;
   readonly rtuName: string | null;
@@ -22,6 +23,7 @@ export interface AssetLabelRow {
   readonly assetLocationName: string | null;
 }
 
+/** The code and its `where` (RTU name, else location name, else null), for a screen that styles them apart. */
 export function assetLabelParts(parts: AssetLabelParts): {
   code: string;
   where: string | null;
@@ -29,11 +31,13 @@ export function assetLabelParts(parts: AssetLabelParts): {
   return { code: parts.code, where: parts.rtuName ?? parts.locationName };
 }
 
+/** `<code> · <RTU>`, `<code> · <location>` when there is no RTU, else the bare code. */
 export function assetLabel(parts: AssetLabelParts): string {
   const { code, where } = assetLabelParts(parts);
   return where === null ? code : `${code}${ASSET_LABEL_SEPARATOR}${where}`;
 }
 
+/** `assetLabel` over a DTO row's `assetCode` / `assetRtuName` / `assetLocationName`. */
 export function assetLabelOf(row: AssetLabelRow): string {
   return assetLabel({
     code: row.assetCode,

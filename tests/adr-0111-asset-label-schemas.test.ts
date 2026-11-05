@@ -12,8 +12,8 @@ import { describe, expect, it } from "vitest";
  *
  * ## How the walk finds a schema
  *
- * It reads every `packages/shared/src/contracts/*.ts`, strips comments, and for each `z.object(`
- * takes the balanced `( … )` span. A block's OWN text is that span with nested `z.object(` spans
+ * It reads every `packages/shared/src/contracts/*.ts`, strips comments, and for each `z.object(`, `z.strictObject(`,
+ * `.extend(` and `.safeExtend(` takes the balanced `( … )` span. A block's OWN text is that span with nested such spans
  * cut out, so a parent is not blamed for its child's field. A block is named by the nearest
  * `const <name> =` above it, so an inline object inside a schema (the copilot import preview's
  * `mappingsToCreate` rows) is named by the schema that holds it.
@@ -45,9 +45,6 @@ const contractsDir = join(
  * of `F4.316` widens the schema, its producers and its screens, and deletes ITS lines here — the
  * "every entry is a live candidate" check fails if it forgets, and the main check fails if it
  * deletes a line without widening. Each line stands alone so two PRs never touch the same line.
- *
- * Not listed because they do not exist on `main` yet: `templateAdoptionAssetPlanDtoSchema` (PR 8)
- * and the N/A refusal rows `templateAdoptionRefusalDtoSchema` and `calcPointRefusalSchema`.
  */
 const NOT_YET_WIDENED: readonly string[] = [
   "operations.ts#alarmListItemSchema", // removed by PR 2 (also covers alarmSocketEventSchema, which wraps it)
@@ -137,13 +134,19 @@ function closeOf(source: string, open: number): number {
 
 function blocksOf(file: string, raw: string): Block[] {
   const source = stripComments(raw);
-  const names = [...source.matchAll(/^(?:export\s+)?const\s+(\w+)\s*=/gm)].map(
-    (m) => ({
-      at: m.index ?? 0,
-      name: m[1] as string,
-    }),
-  );
-  const spans = [...source.matchAll(/\bz\s*\.object\s*\(/g)].map((m) => {
+  const names = [
+    ...source.matchAll(
+      /^\s*(?:export\s+)?const\s+(\w+)\s*(?::[^=]*?)?=(?!>)/gm,
+    ),
+  ].map((m) => ({
+    at: m.index ?? 0,
+    name: m[1] as string,
+  }));
+  const spans = [
+    ...source.matchAll(
+      /\bz\s*\.(?:object|strictObject)\s*\(|\.(?:extend|safeExtend)\s*\(/g,
+    ),
+  ].map((m) => {
     const open = (m.index ?? 0) + m[0].length - 1;
     return { start: open, end: closeOf(source, open) };
   });
@@ -214,7 +217,7 @@ describe("ADR 0111 — a schema that names an asset code names its RTU and locat
     const stale = [...exempt].filter((key) => !live.has(key));
     expect(
       stale,
-      "stale allow-list entries — a schema was renamed, removed, or widened",
+      "stale allow-list entries — a schema was renamed or removed",
     ).toEqual([]);
   });
 
@@ -236,6 +239,12 @@ describe("ADR 0111 — a schema that names an asset code names its RTU and locat
     expect(ASSET_ROWS_WITH_A_BARE_CODE.filter((key) => !live.has(key))).toEqual(
       [],
     );
+  });
+
+  it("names each candidate block once (a block that inherits a neighbour's name hides it)", () => {
+    const keys = candidates.map((b) => b.key);
+    const repeated = keys.filter((key, i) => keys.indexOf(key) !== i);
+    expect(repeated).toEqual([]);
   });
 
   it("lists no entry twice", () => {

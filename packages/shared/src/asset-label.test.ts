@@ -4,7 +4,9 @@ import {
   bareCodeWhenNeitherIsKnown,
   labelOfReadsTheDtoShape,
   locationNameIsTheFallback,
-  partsSplitCodeFromWhere,
+  partsWhereFallsBackToTheLocation,
+  partsWhereIsNullWhenNeitherIsKnown,
+  partsWhereIsTheRtuName,
   rtuNameIsAppended,
   rtuWinsOverLocation,
   separatorIsMiddleDot,
@@ -36,7 +38,15 @@ describe("F4.316 — assetLabel (ADR 0111)", () => {
     labelOfReadsTheDtoShape();
   });
 
-  it("assetLabelParts splits the code from the where", () => {
-    partsSplitCodeFromWhere();
+  it("assetLabelParts answers the RTU name as where", () => {
+    partsWhereIsTheRtuName();
+  });
+
+  it("assetLabelParts falls back to the location name as where", () => {
+    partsWhereFallsBackToTheLocation();
+  });
+
+  it("assetLabelParts answers null as where when neither is known", () => {
+    partsWhereIsNullWhenNeitherIsKnown();
   });
 });
