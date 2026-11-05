@@ -320,7 +320,8 @@ export async function assertATemplateLessMeasuredRowGetsNoCalcValue(pool: pg.Poo
     sourceDataKey: "calcwrite-h-measured",
     unit: null,
     active: true,
-    rtuId: null,
+    // `asset_points_source_ref_check`: a measured row names its RTU.
+    rtuId: fx.rtuId,
     sourceKind: "measured",
   });
   const svc = new CalcWriteService(db, db, pool, new MetricsService());
