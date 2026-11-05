@@ -154,6 +154,15 @@ export type CatalogTarget =
    */
   | { readonly kind: "calcPointBatch"; readonly field: "assetIds" }
   /**
+   * `F4.312` PR 2 (ADR 0099 Amendment 12): an adoption — the template version the path parameter
+   * `id` names, **published**, and the assets the body's `assetIds` names: at most 25, no id twice,
+   * every one of the version's organization **and** domain, with **no** template, and inside the
+   * caller's write scope. The gate is the adopt route's (migrate's, ADR 0109 Amendment 1 A10):
+   * `requireMasterDataUser`, `canManageOrganization` on the version's organization, then each
+   * asset's site in `writableLocationIds`.
+   */
+  | { readonly kind: "assetTemplateAdopt"; readonly param: "id"; readonly field: "assetIds" }
+  /**
    * `F4.279` (ADR 0099 Amendment 8 D2): a notification channel or an escalation profile, the row
    * the path parameter `id` names. Both mirror the routes' gate: `requireMasterDataUser`, then
    * `canManageNotificationChannel` on the row's organization; a fleet-wide (NULL-organization)

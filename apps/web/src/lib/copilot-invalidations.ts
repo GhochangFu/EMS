@@ -119,6 +119,9 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "assetTemplate.importStock": [ASSET_TEMPLATES],
   // `F4.254` PR 3: instantiating builds assets and their default dashboards (ADR 0067).
   "assetTemplate.instantiate": [ASSETS, ASSET_SUMMARY, DASHBOARDS],
+  // `F4.312` PR 2 (ADR 0099 Amendment 12): adoption pins the assets, adds `unmapped` rows, turns a
+  // standalone point into the template's override, and seeds alarm rules and default dashboards.
+  "assetTemplate.adopt": [ASSETS, ASSET_SUMMARY, ASSET_POINTS, ASSET_CALC_POINTS, DASHBOARDS, RULES],
   "user.create": [USERS],
   "user.update": [USERS],
   "user.deactivate": [USERS],

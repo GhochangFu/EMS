@@ -50,6 +50,8 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/asset-templates/asset-templates-instantiate-core.ts",
   // `F4.254` PR 3: `assetTemplate.instantiate`'s handler reaches the core through this service.
   "apps/api/src/admin/asset-templates/asset-templates-instantiate.service.ts",
+  // `F4.312` PR 2 (ADR 0099 Amendment 12): `assetTemplate.adopt`'s handler reaches this service.
+  "apps/api/src/admin/asset-templates/asset-templates-adopt.service.ts",
   "apps/api/src/admin/calc-parameters/calc-parameters.service.ts",
   "apps/api/src/admin/asset-points/asset-point-calc-override.service.ts",
   // `F4.311` (ADR 0109 decision 3): `calcOverride.set`'s handler dispatches a template-less
@@ -126,13 +128,6 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     file: "apps/api/src/admin/asset-templates/asset-templates-migrate.service.ts",
     route: { method: "POST", path: "/admin/asset-templates/:id/migrate" },
     auditMethods: ["migrate"],
-  },
-  {
-    // `F4.312` PR 1 (ADR 0109 Amendment 1): the adopt route is on `ASSET_TEMPLATE_PENDING` until
-    // PR 2 adds the `assetTemplate.adopt` entry, which moves this file to `CATALOG_WRITERS`.
-    file: "apps/api/src/admin/asset-templates/asset-templates-adopt.service.ts",
-    route: { method: "POST", path: "/admin/asset-templates/:id/adopt" },
-    auditMethods: ["adopt"],
   },
   {
     file: "apps/api/src/admin/asset-templates/asset-templates-seeded-rules.service.ts",
