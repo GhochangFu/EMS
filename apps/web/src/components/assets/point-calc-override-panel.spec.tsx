@@ -6,6 +6,7 @@ import { assetPointCalcConfigDtoSchema } from "@bms/shared/contracts";
 import type { AssetPointCalcConfigDto } from "@bms/shared";
 
 import { EMPTY_DRAFT, type OverrideDraft } from "../../lib/asset-point-calc-override";
+import { formulaHelpEntries } from "../../lib/formula-help";
 import { V2_TRIGGER_LATENCY_HINT } from "../../lib/template-calc-config";
 import { PointCalcOverridePanel } from "./point-calc-override-panel";
 
@@ -220,7 +221,9 @@ export async function busyDisablesEveryControl(): Promise<void> {
   const { container, unmount } = render(<Harness config={stored} initialDraft={submittable} saving />);
 
   const controls = container.querySelectorAll("input, select, textarea, button");
-  expect(controls).toHaveLength(8);
+  // `F4.314`: the eight field controls, plus one Formula help button per
+  // entry of the merged `v2` list — each held by `busy` like the rest.
+  expect(controls).toHaveLength(8 + formulaHelpEntries(V2).length);
   controls.forEach((control) => expect(control).toBeDisabled());
   unmount();
 

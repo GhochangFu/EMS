@@ -11,12 +11,18 @@ import {
   CALENDAR_WINDOW_WARNING,
   COVERAGE_RATIO_HINT,
   V2_TRIGGER_LATENCY_HINT,
-  V3_PARAMETER_HELP,
   V3_TRIGGER_LATENCY_HINT,
   V3_WINDOW_HELP,
 } from "../../lib/template-calc-config";
 import { CalculationsTab } from "./calculations-tab";
 import type { FormulaEditorProps } from "./formula-editor-lazy";
+
+/**
+ * `F4.314`: the `$key` entry's text in the Formula help, as a fixed phrase of
+ * `V3_PARAMETER_HELP` rather than read off the list under test — so a help
+ * that dropped or garbled the text reddens the claims below.
+ */
+const PARAMETER_HELP = /a named parameter \(tariff, factor, baseline, rating\) from \/admin\/calc-parameters/;
 
 /**
  * `F2.22` T6 — the Calculations tab's `bms-calc-v2` controls: Grammar, the
@@ -245,14 +251,14 @@ export async function choosingV2FlipsAStreamingRowToScheduled(): Promise<void> {
 export async function choosingV3TeachesTheParameterFormAndItsLatency(): Promise<void> {
   renderTab(fixture(), true);
 
-  expect(screen.queryByText(V3_PARAMETER_HELP)).toBeNull();
+  expect(screen.queryByText(PARAMETER_HELP)).toBeNull();
   expect(screen.queryByText(V3_TRIGGER_LATENCY_HINT)).toBeNull();
   await userEvent.selectOptions(grammarFor("d1"), V3);
 
   expect(grammarFor("d1").value).toBe(V3);
   expect(runsFor("d1").value).toBe("scheduled");
   expect(streamingOptionOf(runsFor("d1"))).toBeDisabled();
-  expect(screen.getByText(V3_PARAMETER_HELP)).toBeInTheDocument();
+  expect(screen.getByText(PARAMETER_HELP)).toBeInTheDocument();
   expect(screen.getByText(V3_TRIGGER_LATENCY_HINT)).toBeInTheDocument();
   // the v2 row keeps its own hint, and exactly one of each hint is on the page
   expect(screen.getAllByText(V2_TRIGGER_LATENCY_HINT)).toHaveLength(1);
@@ -270,7 +276,7 @@ export async function choosingV3TeachesTheWindowForms(): Promise<void> {
   expect(screen.queryByText(V3_WINDOW_HELP)).toBeNull();
   await userEvent.selectOptions(grammarFor("d1"), V3);
 
-  expect(screen.getByText(V3_PARAMETER_HELP)).toBeInTheDocument();
+  expect(screen.getByText(PARAMETER_HELP)).toBeInTheDocument();
   expect(screen.getByText(V3_WINDOW_HELP)).toBeInTheDocument();
   expect(screen.getAllByText(V3_WINDOW_HELP)).toHaveLength(1);
 }
@@ -390,6 +396,40 @@ export async function aFrozenVersionDisablesEveryControl(): Promise<void> {
   expect(formulaFor("d1")).toHaveAttribute("readonly");
   expect(formulaFor("site_kw")).toHaveAttribute("readonly");
   expect(screen.queryByRole("button", { name: "Save calculations" })).toBeNull();
+}
+
+/**
+ * `F4.314` (ADR 0038 Amendment 6 A6) — on a published version every Formula
+ * help entry renders disabled, not absent: the help is read-only there, as
+ * every other authoring control is (decision 3). Rendered with
+ * `editable=true`, so the version's status — `formulaFieldsAreReadOnly` — is
+ * what disables it, not the tab's `editable` prop.
+ *
+ * Mutation: drop the `formulaFieldsAreReadOnly(template.status)` half of the
+ * tab's `FormulaHelp` `disabled`.
+ */
+export async function aFrozenVersionDisablesTheFormulaHelp(): Promise<void> {
+  renderTab(fixture("published"), true);
+  const entries = screen.getAllByRole("button", { name: /^Insert / });
+  expect([entries.length > 0, entries.filter((entry) => !(entry as HTMLButtonElement).disabled).length]).toEqual([
+    true,
+    0,
+  ]);
+}
+
+/**
+ * `F4.314` (ADR 0038 Amendment 6 A1, ruling 3) — a Formula help entry appends
+ * its text to its own row's formula, through the editor's change path.
+ *
+ * Mutation: replace the row's formula with the entry's text instead of
+ * appending it.
+ */
+export async function aHelpEntryAppendsToItsRowsFormula(): Promise<void> {
+  renderTab(fixture(), true);
+  const before = formulaFor("d1").value;
+  const row = formulaFor("d1").closest("section") as HTMLElement;
+  await userEvent.click(within(row).getByRole("button", { name: "Insert abs" }));
+  expect(formulaFor("d1").value).toBe(`${before}abs(`);
 }
 
 /**

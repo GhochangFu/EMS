@@ -6,7 +6,14 @@
  * `apps/web` Vitest project runs `environment: "node"` over
  * `src/**\/*.test.ts`, and the coverage gate does not look above `src/lib`.
  */
-import { CALC_DIALECT, CALC_DIALECT_V2, CALC_SCOPE_KINDS, parseFormula } from "@bms/shared";
+import {
+  CALC_DIALECT,
+  CALC_DIALECT_V2,
+  CALC_DIALECT_V3,
+  CALC_FUNCTION_ARITY,
+  CALC_SCOPE_KINDS,
+  parseFormula,
+} from "@bms/shared";
 import type { TemplateKpi } from "@bms/shared";
 
 import {
@@ -17,6 +24,8 @@ import {
   decorationDialect,
   editorDiagnosticRanges,
   flattenNewlines,
+  functionCompletionAllowed,
+  functionCompletions,
   isCheckedDialect,
   scopeCompletions,
   validateEditorFormula,
@@ -351,6 +360,170 @@ export function runKpiScopeCompletionTests(): void {
   );
   const v1 = scopeCompletions(kpi(CALC_DIALECT));
   assert(v1.length === 0, `a v1 KPI has no @ scopes, got ${JSON.stringify(v1)}`);
+}
+
+/** The labels `functionCompletions` offers on a surface, in order. */
+function functionLabels(rules: FormulaEditorRules): string {
+  return functionCompletions(rules)
+    .map((entry) => entry.label)
+    .join(",");
+}
+
+/**
+ * `F4.314` (ADR 0038 Amendment 6 decision A2): a `v1` field completes exactly
+ * the five `CALC_FUNCTION_ARITY` names.
+ *
+ * Mutation: offer the `v3` list on every surface.
+ */
+export function runV1FunctionCompletionTests(): void {
+  const expected = Object.keys(CALC_FUNCTION_ARITY).join(",");
+  assert(functionLabels(DERIVED) === expected, `v1 must offer ${expected}, got ${functionLabels(DERIVED)}`);
+}
+
+/**
+ * Each completion applies its name and an opening parenthesis.
+ *
+ * Mutation: apply the bare label.
+ */
+export function runFunctionCompletionApplyTests(): void {
+  const wrong = functionCompletions({ ...DERIVED, dialect: CALC_DIALECT_V3 }).filter(
+    (entry) => entry.apply !== `${entry.label}(`,
+  );
+  assert(wrong.length === 0, `every completion must apply "<name>(", got ${JSON.stringify(wrong)}`);
+}
+
+/**
+ * A `v2` field adds the aggregates `sum` and `avg` to the `v1` names.
+ *
+ * Mutation: hard-code the `v1` list in `functionCompletions`.
+ */
+export function runV2FunctionCompletionTests(): void {
+  const expected = `${Object.keys(CALC_FUNCTION_ARITY).join(",")},sum,avg`;
+  const got = functionLabels({ ...DERIVED, dialect: CALC_DIALECT_V2 });
+  assert(got === expected, `v2 must offer ${expected}, got ${got}`);
+}
+
+/**
+ * A `v3` field adds `delta` and `hours`, and offers no name twice although
+ * `sum`/`avg`/`min`/`max` are both a function and a window there.
+ *
+ * Mutation: drop the de-duplication in `functionCompletions`.
+ */
+export function runV3FunctionCompletionTests(): void {
+  const expected = `${Object.keys(CALC_FUNCTION_ARITY).join(",")},sum,avg,delta,hours`;
+  const got = functionLabels({ ...DERIVED, dialect: CALC_DIALECT_V3 });
+  assert(got === expected, `v3 must offer ${expected}, got ${got}`);
+}
+
+/**
+ * An `"unvalidated"` KPI completes under `v1`, through `decorationDialect`,
+ * as its scopes do.
+ *
+ * Mutation: read `rules.dialect` and fall back to the `v3` list.
+ */
+export function runUnvalidatedKpiFunctionCompletionTests(): void {
+  const got = functionLabels(kpi("unvalidated"));
+  assert(got === functionLabels(DERIVED), `an "unvalidated" KPI must complete as v1, got ${got}`);
+}
+
+/**
+ * `F4.314` review: function-name completion is refused after `15m` — the `m` is a window unit, not the start of `min(`.
+ *
+ * Mutation: drop the glued-character check (`/[\\w.']$/`).
+ */
+export function runFunctionCompletionAfterARollingMinuteUnitTests(): void {
+  const text = "sum({kw}, 15m";
+  assert(functionCompletionAllowed(text) === false, `completion must be refused at ${JSON.stringify(text)}`);
+}
+
+/**
+ * `F4.314` review: function-name completion is refused after `24h` — the `h` is a window unit, not the start of `hours(`.
+ *
+ * Mutation: narrow the glued-character class to `[.']`.
+ */
+export function runFunctionCompletionAfterARollingHourUnitTests(): void {
+  const text = "sum({kw}, 24h";
+  assert(functionCompletionAllowed(text) === false, `completion must be refused at ${JSON.stringify(text)}`);
+}
+
+/**
+ * `F4.314` review: function-name completion is refused inside an open `@group('…` code.
+ *
+ * Mutation: drop the open-quote check.
+ */
+export function runFunctionCompletionInsideAnOpenQuoteTests(): void {
+  const text = "sum({kw} @group('pump ro";
+  assert(functionCompletionAllowed(text) === false, `completion must be refused at ${JSON.stringify(text)}`);
+}
+
+/**
+ * `F4.314` review: function-name completion is allowed after a closed `'…'` code.
+ *
+ * Mutation: test for any quote before the run (`/'[^']*$/`) instead of an odd count.
+ */
+export function runFunctionCompletionAfterAClosedQuoteTests(): void {
+  const text = "sum({kw} @group('a')) + ro";
+  assert(functionCompletionAllowed(text) === true, `completion must be allowed at ${JSON.stringify(text)}`);
+}
+
+/**
+ * `F4.314` review: function-name completion is refused inside a `{…}` point key.
+ *
+ * Mutation: drop the `{…}` check.
+ */
+export function runFunctionCompletionInsideAPointKeyTests(): void {
+  const text = "{pump ro";
+  assert(functionCompletionAllowed(text) === false, `completion must be refused at ${JSON.stringify(text)}`);
+}
+
+/**
+ * `F4.314` review: function-name completion is refused inside a `$…` parameter.
+ *
+ * Mutation: drop the `$…` check.
+ */
+export function runFunctionCompletionInsideAParameterTests(): void {
+  const text = "{kw} * $ro";
+  assert(functionCompletionAllowed(text) === false, `completion must be refused at ${JSON.stringify(text)}`);
+}
+
+/**
+ * `F4.314` review: function-name completion is refused inside an `@…` scope.
+ *
+ * Mutation: drop the `@…` check.
+ */
+export function runFunctionCompletionInsideAScopeTests(): void {
+  const text = "sum({kw} @si";
+  assert(functionCompletionAllowed(text) === false, `completion must be refused at ${JSON.stringify(text)}`);
+}
+
+/**
+ * `F4.314` review: function-name completion is allowed at a plain `ro` start.
+ *
+ * Mutation: return `false` for every run.
+ */
+export function runFunctionCompletionAtAPlainStartTests(): void {
+  const text = "ro";
+  assert(functionCompletionAllowed(text) === true, `completion must be allowed at ${JSON.stringify(text)}`);
+}
+
+/**
+ * `F4.314` review: function-name completion is allowed after `(`.
+ *
+ * Mutation: add `(` to the glued-character class.
+ */
+export function runFunctionCompletionAfterAParenthesisTests(): void {
+  const text = "abs(ro";
+  assert(functionCompletionAllowed(text) === true, `completion must be allowed at ${JSON.stringify(text)}`);
+}
+
+/**
+ * `F4.314` review: function-name completion is allowed after an operator following a closed point key.
+ *
+ * Mutation: refuse whenever a `{` appears anywhere before the run.
+ */
+export function runFunctionCompletionAfterAnOperatorTests(): void {
+  const text = "{kw} * ro";
+  assert(functionCompletionAllowed(text) === true, `completion must be allowed at ${JSON.stringify(text)}`);
 }
 
 /**

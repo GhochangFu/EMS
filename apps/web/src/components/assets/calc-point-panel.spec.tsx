@@ -251,3 +251,19 @@ export async function cancelOnAnUntouchedEditLeavesAtOnce(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(askedBeforeLeaving(spies)).toEqual([false, 1]);
 }
+
+/**
+ * `F4.314` (ADR 0038 Amendment 6 A1, ruling 3) — on the Add calculated point
+ * panel a Formula help entry appends to the editor's text, through
+ * `PointCalcFormulaFields`' draft setter.
+ *
+ * Mutation: replace the draft's formula with the entry's text instead of
+ * appending it.
+ */
+export async function aHelpEntryAppendsToTheEditorsFormula(): Promise<void> {
+  renderPanel(STORED);
+  const formula = (await screen.findByRole("textbox", { name: "Formula for pf" })) as HTMLTextAreaElement;
+  await screen.findByLabelText("Sample value for kw");
+  await userEvent.click(screen.getByRole("button", { name: "Insert abs" }));
+  expect(formula.value).toBe("{kw} * 2abs(");
+}
