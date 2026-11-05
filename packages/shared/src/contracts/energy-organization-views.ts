@@ -82,6 +82,10 @@ export const energyAbnormalEntrySchema = z.object({
   kind: z.enum(["site", "asset"]),
   id: z.string().uuid(),
   code: z.string().nullable(),
+  /** `F4.316` (ADR 0111, Q1) — the asset's RTU display name; `null` for a site row or an asset with no RTU. */
+  assetRtuName: z.string().nullable(),
+  /** `F4.316` (ADR 0111, Q1) — the asset's location name; `null` for a site row (its `name` is the location). */
+  assetLocationName: z.string().nullable(),
   name: z.string(),
   siteName: z.string().nullable(),
   currentKwh: z.number(),

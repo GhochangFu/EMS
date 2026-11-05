@@ -47,8 +47,6 @@ const contractsDir = join(
  * deletes a line without widening. Each line stands alone so two PRs never touch the same line.
  */
 const NOT_YET_WIDENED: readonly string[] = [
-  "operations.ts#energyTopConsumerSchema", // removed by PR 6 (code field is `code`, Q1)
-  "energy-organization-views.ts#energyAbnormalEntrySchema", // removed by PR 6 (code field is `code`, Q1)
 ];
 
 /**

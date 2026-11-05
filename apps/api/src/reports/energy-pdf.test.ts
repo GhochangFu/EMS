@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  assertConsumersTableCarriesTheAssetLabel,
   assertDefinitionCarriesEveryTableCell,
   assertDefinitionWithoutPreviousIsMain,
   assertDefinitionWithPreviousCarriesFiveColumnMetricTable,
@@ -21,6 +22,10 @@ import {
 describe("energy report PDF (ADR 0071 decision 2)", () => {
   it("carries every energyTable cell into the PDF definition", () => {
     assertDefinitionCarriesEveryTableCell();
+  });
+
+  it("F4.316 (Q6) — the consumers table carries the Asset label beside Asset code", () => {
+    assertConsumersTableCarriesTheAssetLabel();
   });
 
   it("carries the ISO currency code beside the amount and never a symbol", () => {

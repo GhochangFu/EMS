@@ -100,6 +100,8 @@ function consumer(i: number, assetId: string) {
   return {
     assetId,
     code: `C${i}`,
+    assetRtuName: i === 0 ? "RTU A" : null,
+    assetLocationName: i === 0 ? "Site A" : "Site B",
     name: `Meter ${i}`,
     siteName: i === 0 ? "Site A" : "Site B",
     avgKw: 100 - i,
@@ -473,6 +475,20 @@ export async function assertTopConsumersDefaultsToTenAndSharesTheRoom(): Promise
   expect(organizationsOf(result).map((o) => o.items.length)).toEqual([25]);
   expect(result.truncated).toBe(true);
   expect(out.ok && out.organizationIds).toEqual([ORG_X]);
+}
+
+/**
+ * `F4.316` PR 6 (ADR 0111) — `get_energy_top_consumers` passes the two label parts through: an
+ * asset under an RTU carries its RTU and location names, the RTU-less twin a null RTU name.
+ */
+export async function assertTopConsumersPassTheLabelPartsThrough(): Promise<void> {
+  const { tools } = fakeEnergyServices();
+  const [first, second] = (organizationsOf(okResult(await tools.dispatch("get_energy_top_consumers", { limit: 2 }, ctx([ORG_X]))))[0]
+    ?.items ?? []) as { code: string; assetRtuName: string | null; assetLocationName: string | null }[];
+  expect([first, second].map((c) => [c?.code, c?.assetRtuName, c?.assetLocationName])).toEqual([
+    ["C0", "RTU A", "Site A"],
+    ["C1", null, "Site B"],
+  ]);
 }
 
 /** A bad date, a reversed range and a 32-day span are refused before any read; a month reads once. */

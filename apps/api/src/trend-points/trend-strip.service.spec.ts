@@ -325,7 +325,7 @@ export async function theStripExportMeansAreForSitesBuckets(): Promise<void> {
     s.points.flatMap((p) => p.assets.flatMap((a) => a.buckets.map((b) => [s.domain, p.code, a.assetCode, b.v]))),
   );
   expect(expected.some((row) => typeof row[3] === "number"), "precondition: a bucket carries a value").toBe(true);
-  expect(rows.slice(HEADER_ROWS).map((row) => [row[0], row[1], row[2], row[6]])).toEqual(expected);
+  expect(rows.slice(HEADER_ROWS).map((row) => [row[0], row[1], row[2], row[7]])).toEqual(expected);
 }
 
 /** G7: a group not at the site is the read's 404 on the export, and no telemetry statement runs. */

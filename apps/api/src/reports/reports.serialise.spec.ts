@@ -24,6 +24,8 @@ function consumer(overrides: Partial<EnergyTopConsumer> = {}): EnergyTopConsumer
   return {
     assetId: "00000000-0000-4000-8000-000000000001",
     code: "CH-01",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Plant B",
     name: "Chiller 1",
     siteName: "Plant B",
     avgKw: 383.57,
@@ -90,8 +92,8 @@ const UNCHANGED_OUTPUT = [
   "Solar,126.04,kWh",
   "Nominal DG,88.76,kWh",
   "",
-  "Asset code,Asset name,Site,Avg kW,Estimated kWh",
-  "CH-01,Chiller 1,Plant B,383.57,870.6",
+  "Asset code,Asset,Asset name,Site,Avg kW,Estimated kWh",
+  "CH-01,CH-01 · RTU 1,Chiller 1,Plant B,383.57,870.6",
   "",
 ].join("\n");
 
@@ -205,7 +207,7 @@ export function runReportsSerialiseTests(): void {
   assert(doc.split("\n\n").length === 4, "three blank-line separated sections plus the header block");
   assert(
     energyCsvDocument(preview({ topConsumers: [] })).endsWith(
-      "Asset code,Asset name,Site,Avg kW,Estimated kWh\n",
+      "Asset code,Asset,Asset name,Site,Avg kW,Estimated kWh\n",
     ),
     "with no consumers the table header is still emitted, as it was before the fix",
   );
@@ -282,7 +284,7 @@ export function runReportsSheetTests(): void {
   // chooses. That is the whole difference between the two formats.
   const residual = cellsOf(energySheetRows(preview({ topConsumers: [consumer({ name: "foo;=1+1;bar" })] })));
   assert(
-    residual[1] === "foo;=1+1;bar",
+    residual[2] === "foo;=1+1;bar",
     "the multi-separator payload must occupy exactly one cell — the property no CSV escaping gives",
   );
 
@@ -294,8 +296,8 @@ export function runReportsSheetTests(): void {
   // by a different route. A negative value is the case that matters: `kvar` has 750
   // negative rows today (ADR 0026 fact 8).
   const numeric = cellsOf(energySheetRows(preview({ topConsumers: [consumer({ avgKw: -5, estimatedKwh: -840 })] })));
-  assert(numeric[3] === -5, `avgKw must stay a JS number, got ${JSON.stringify(numeric[3])}`);
-  assert(numeric[4] === -840, `estimatedKwh must stay a JS number, got ${JSON.stringify(numeric[4])}`);
+  assert(numeric[4] === -5, `avgKw must stay a JS number, got ${JSON.stringify(numeric[4])}`);
+  assert(numeric[5] === -840, `estimatedKwh must stay a JS number, got ${JSON.stringify(numeric[5])}`);
   assert(
     !numeric.some((cell) => typeof cell === "string" && cell.startsWith("'")),
     "no apostrophe reaches any cell in the sheet path",
@@ -405,8 +407,8 @@ const TODAY_TABLE: (string | number)[][] = [
   ["Solar", 126.04, "kWh"],
   ["Nominal DG", 88.76, "kWh"],
   [],
-  ["Asset code", "Asset name", "Site", "Avg kW", "Estimated kWh"],
-  ["CH-01", "Chiller 1", "Plant B", 383.57, 870.6],
+  ["Asset code", "Asset", "Asset name", "Site", "Avg kW", "Estimated kWh"],
+  ["CH-01", "CH-01 · RTU 1", "Chiller 1", "Plant B", 383.57, 870.6],
 ];
 
 /** A current period of 120 kWh against a previous one of 100 kWh — the plan's T2 fixture. */
@@ -558,4 +560,57 @@ export function assertCsvDocumentTakesOneParameter(): void {
     params.length === 1 && params[0] === "preview: EnergyReportPreview",
     `energyCsvDocument must take the preview only (ADR 0108 Amendment 6: the CSV takes no compare), got ${JSON.stringify(params)}`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// `F4.316` PR 6 (ADR 0111 decision 4) — the top-consumers block keeps "Asset code" and adds
+// "Asset", the label `<code> · <RTU>` (else `<code> · <location>`), after it. One claim each.
+// ---------------------------------------------------------------------------
+
+function consumerHeader(rows: (string | number)[][]): (string | number)[] | undefined {
+  return rows.find((row) => row[0] === "Asset code");
+}
+
+/** L1 — the header keeps "Asset code" first and adds "Asset" right after it. */
+export function assertConsumerHeaderAddsAssetAfterAssetCode(): void {
+  const header = consumerHeader(energyTable(preview()));
+  assert(
+    JSON.stringify(header) === JSON.stringify(["Asset code", "Asset", "Asset name", "Site", "Avg kW", "Estimated kWh"]),
+    `the consumer header must be Asset code, Asset, …, got ${JSON.stringify(header)}`,
+  );
+}
+
+/** L2 — a consumer under an RTU: the code stays in its own cell, the label is `<code> · <RTU>`. */
+export function assertConsumerRowCarriesTheRtuLabel(): void {
+  const row = energyTable(preview()).at(-1);
+  assert(
+    row?.[0] === "CH-01" && row?.[1] === "CH-01 · RTU 1",
+    `the consumer row must carry the code and then the label, got ${JSON.stringify(row)}`,
+  );
+}
+
+/** L3 — the RTU-less twin: the label falls back to the location, `<code> · <location>`. */
+export function assertConsumerWithNoRtuIsLabelledByItsLocation(): void {
+  const row = energyTable(preview({ topConsumers: [consumer({ assetRtuName: null })] })).at(-1);
+  assert(row?.[1] === "CH-01 · Plant B", `an RTU-less consumer must be labelled by its location, got ${JSON.stringify(row?.[1])}`);
+}
+
+/**
+ * L4 (security) — the label is tenant text (the asset code, an RTU or location display name), so
+ * its CSV cell takes the same `csvTextCell` guard as the code: a label led by `=` arrives with the
+ * apostrophe, never as a live formula.
+ */
+export function assertACsvLabelLedByAFormulaLeaderIsGuarded(): void {
+  const line = consumerLine({ code: "=1+1", assetRtuName: "RTU 1" });
+  const cells = line.split(",");
+  assert(
+    cells[1] === "'=1+1 · RTU 1",
+    `the label cell must be apostrophe-guarded, got ${JSON.stringify(cells[1])} in ${JSON.stringify(line)}`,
+  );
+}
+
+/** L5 — the sheet path keeps the label verbatim: the writer emits no `<f>`, so an apostrophe would only corrupt it. */
+export function assertASheetLabelLedByAFormulaLeaderIsVerbatim(): void {
+  const row = energySheetRows(preview({ topConsumers: [consumer({ code: "=1+1" })] })).at(-1);
+  assert(row?.[1] === "=1+1 · RTU 1", `the sheet's label cell must be verbatim, got ${JSON.stringify(row?.[1])}`);
 }

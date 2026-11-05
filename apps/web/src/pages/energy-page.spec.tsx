@@ -158,6 +158,8 @@ function organizationViews(overrides: Partial<EnergyOrganizationViews> = {}): En
           kind: "asset",
           id: "6f1d2a3b-0000-4000-8000-0000000000e1",
           code: "CH-01",
+          assetRtuName: null,
+          assetLocationName: "Alpha site",
           name: "Chiller 1",
           siteName: "Alpha site",
           currentKwh: 150,

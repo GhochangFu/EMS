@@ -27,6 +27,7 @@ import {
   assertTheDescriptionsMatchTheContracts,
   assertTheTurnAnswersWhichSiteUsedTheMostKwhLastMonth,
   assertTopConsumersDefaultsToTenAndSharesTheRoom,
+  assertTopConsumersPassTheLabelPartsThrough,
 } from "./energy-read-tools.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). One `it()` per claim. */
@@ -41,6 +42,7 @@ describe("F4.275 — the copilot's energy and portfolio read tools", () => {
   it("get_load_trend resamples to 24 buckets with stats over the full series, and refuses 0 or 169 hours", assertLoadTrendIsResampledAndBoundedWithStats);
   it("get_energy_source_mix resamples, averages every point, and shares the item room", assertSourceMixIsResampledWithAverageKwPerSource);
   it("get_energy_top_consumers defaults to ten, refuses 26, and stops when the room is full", assertTopConsumersDefaultsToTenAndSharesTheRoom);
+  it("F4.316 — get_energy_top_consumers passes assetRtuName and assetLocationName through", assertTopConsumersPassTheLabelPartsThrough);
   it("get_energy_report_preview refuses a bad or over-long range before any read", assertReportPreviewValidatesTheRangeBeforeAnyRead);
   it("a turn answers which site used the most kWh last month, and refuses an own-key organization", assertTheTurnAnswersWhichSiteUsedTheMostKwhLastMonth);
   it("readPerOrganization flags truncated when the room slices an answer", assertReadPerOrganizationFlagsTruncatedWhenTheRoomSlicesAnAnswer);

@@ -1,7 +1,12 @@
 import { describe, it } from "vitest";
 
 import {
+  assertACsvLabelLedByAFormulaLeaderIsGuarded,
+  assertASheetLabelLedByAFormulaLeaderIsVerbatim,
   assertChangeReadsTheUnroundedValues,
+  assertConsumerHeaderAddsAssetAfterAssetCode,
+  assertConsumerRowCarriesTheRtuLabel,
+  assertConsumerWithNoRtuIsLabelledByItsLocation,
   assertCsvDocumentTakesOneParameter,
   assertHeadBlockGainsThePreviousPeriodRow,
   assertMetricBlockGainsPreviousAndChange,
@@ -74,6 +79,28 @@ describe("energy report serialise (ADR 0026)", () => {
 
     it("T6 — energyCsvDocument takes the preview only", () => {
       assertCsvDocumentTakesOneParameter();
+    });
+  });
+
+  describe("F4.316 PR 6 — the top consumers carry the asset label (ADR 0111 decision 4)", () => {
+    it("L1 — the header keeps Asset code and adds Asset after it", () => {
+      assertConsumerHeaderAddsAssetAfterAssetCode();
+    });
+
+    it("L2 — a consumer under an RTU is labelled <code> · <RTU>", () => {
+      assertConsumerRowCarriesTheRtuLabel();
+    });
+
+    it("L3 — a consumer with no RTU is labelled <code> · <location>", () => {
+      assertConsumerWithNoRtuIsLabelledByItsLocation();
+    });
+
+    it("L4 — a CSV label led by = is apostrophe-guarded", () => {
+      assertACsvLabelLedByAFormulaLeaderIsGuarded();
+    });
+
+    it("L5 — a sheet label led by = arrives verbatim (no <f> is written)", () => {
+      assertASheetLabelLedByAFormulaLeaderIsVerbatim();
     });
   });
 });

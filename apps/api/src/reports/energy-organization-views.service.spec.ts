@@ -133,6 +133,8 @@ function entityRows(kind: "site" | "asset", id: string, name: string, currentKwh
     id,
     locationId: kind === "site" ? id : SITE_1,
     code: kind === "site" ? null : `C-${name}`,
+    assetRtuName: null,
+    assetLocationName: kind === "site" ? null : "Site 1",
     name,
     siteName: kind === "site" ? null : "Site 1",
     idx,

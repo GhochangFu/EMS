@@ -44,7 +44,7 @@ export const ENERGY_VIEW_FIXTURE = {
   current: PERIOD,
   compare: null,
   topConsumers: [
-    { assetId: "30000000-0000-4000-8000-000000000001", code: "EM-1", name: "Meter 1", siteName: "Plant A", avgKw: 120, estimatedKwh: 1260 },
+    { assetId: "30000000-0000-4000-8000-000000000001", code: "EM-1", assetRtuName: "RTU 1", assetLocationName: "Plant A", name: "Meter 1", siteName: "Plant A", avgKw: 120, estimatedKwh: 1260 },
   ],
   partial: null,
   floorArea: null,

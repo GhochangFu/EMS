@@ -71,3 +71,9 @@ describe("rule rows name the asset's RTU and location (F4.316 PR 4b, ADR 0111)",
   it("ruleListItemSchema refuses a row with no assetLocationName", () => spec.assertRuleRequiresAssetLocationName());
   it("ruleListItemSchema accepts null RTU and location names", () => spec.assertRuleAcceptsNullParts());
 });
+
+describe("energy top consumers name the asset's RTU and location (F4.316 PR 6, ADR 0111)", () => {
+  it("energyTopConsumerSchema refuses a row with no assetRtuName", () => spec.assertTopConsumerRequiresAssetRtuName());
+  it("energyTopConsumerSchema refuses a row with no assetLocationName", () => spec.assertTopConsumerRequiresAssetLocationName());
+  it("energyTopConsumerSchema accepts null RTU and location names", () => spec.assertTopConsumerAcceptsNullParts());
+});

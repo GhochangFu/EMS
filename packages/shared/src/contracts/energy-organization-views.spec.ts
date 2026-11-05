@@ -1,4 +1,9 @@
-import { energyOrganizationViewsSchema, energySiteEnergySchema, kwhPerSquareMetre } from "./energy-organization-views";
+import {
+  energyAbnormalEntrySchema,
+  energyOrganizationViewsSchema,
+  energySiteEnergySchema,
+  kwhPerSquareMetre,
+} from "./energy-organization-views";
 
 /**
  * `F4.299` U1 (ADR 0108 Amendment 1, 7.3) — the organization-views contract.
@@ -54,6 +59,8 @@ export const ORGANIZATION_VIEWS_FIXTURE = {
         kind: "site",
         id: SITE_A,
         code: null,
+        assetRtuName: null,
+        assetLocationName: null,
         name: "Plant A",
         siteName: null,
         currentKwh: 300,
@@ -181,4 +188,40 @@ export function assertAStringAreaIsRefused(): void {
   assert(!parsed.success, "a string floorAreaM2 must be refused");
   const paths = (parsed.error?.issues ?? []).map((i) => i.path.join("."));
   assert(JSON.stringify(paths) === JSON.stringify(["floorAreaM2"]), `the issue must name floorAreaM2, got ${JSON.stringify(paths)}`);
+}
+
+/** `F4.316` PR 6 (ADR 0111, Q1) — an asset row of the abnormal list, with the label parts. */
+const ABNORMAL_ASSET_ENTRY = {
+  kind: "asset",
+  id: "30000000-0000-4000-8000-000000000001",
+  code: "PHE-MFM-000000003",
+  assetRtuName: "Lotapata I",
+  assetLocationName: "Lotapata",
+  name: "Main meter",
+  siteName: "Lotapata",
+  currentKwh: 300,
+  baselineKwh: 200,
+  ratio: 1.5,
+  verdict: "above",
+  baselineWindows: 4,
+};
+
+function assertEntryRefusesWithout(key: "assetRtuName" | "assetLocationName"): void {
+  const positive = energyAbnormalEntrySchema.safeParse(ABNORMAL_ASSET_ENTRY);
+  assert(positive.success, `the asset entry must parse: ${JSON.stringify(positive.error?.issues)}`);
+  const { [key]: _dropped, ...without } = ABNORMAL_ASSET_ENTRY;
+  assert(!energyAbnormalEntrySchema.safeParse(without).success, `an abnormal entry with no ${key} must be refused`);
+}
+
+export const assertAbnormalEntryRequiresAssetRtuName = (): void => assertEntryRefusesWithout("assetRtuName");
+export const assertAbnormalEntryRequiresAssetLocationName = (): void => assertEntryRefusesWithout("assetLocationName");
+
+/** A site row carries no asset, so both parts are `null` — the fixture's site entry is the positive twin. */
+export function assertASiteEntryParsesWithNullParts(): void {
+  const site = ORGANIZATION_VIEWS_FIXTURE.abnormal.entries[0];
+  const parsed = energyAbnormalEntrySchema.safeParse(site);
+  assert(
+    parsed.success && site.kind === "site" && site.assetRtuName === null && site.assetLocationName === null,
+    `a site entry with null assetRtuName/assetLocationName must parse: ${JSON.stringify(parsed.error?.issues)}`,
+  );
 }

@@ -4,6 +4,7 @@ import { refreshAggregatesFrom } from "@bms/db";
 import type pg from "pg";
 import { expect } from "vitest";
 
+import { energyTopConsumers } from "../dashboard/energy-centre";
 import { retryOnConcurrentRefresh } from "../testing/cagg-materialize";
 import { type Recorded, recordingPool } from "../testing/recording-pool";
 import { previousPeriod } from "./energy-view-range";
@@ -88,6 +89,11 @@ export interface EnergyViewReadFixture {
   readonly locationIds: { readonly a1: string; readonly a2: string };
   /** `F4.299` U3: organization B's location (the foreign asset's). */
   readonly foreignLocationId: string;
+  /**
+   * `F4.316` PR 6 (ADR 0111): the display name of the RTU the grid asset sits under, in `a1`. The
+   * `PV` asset has no RTU — the RTU-less twin of every label claim.
+   */
+  readonly gridRtuName: string;
   /** `18:30Z` of day D: the start of the fixture's `Asia/Kolkata` day. */
   readonly localDayStart: Date;
   readonly organizationIds: readonly string[];
@@ -124,6 +130,7 @@ function utcDate(fx: EnergyViewReadFixture, offset: number): string {
 async function dropOrganizations(superuser: pg.Pool, organizationIds: readonly string[]): Promise<void> {
   for (const id of organizationIds) {
     await superuser.query(`DELETE FROM bms.assets WHERE organization_id = $1`, [id]);
+    await superuser.query(`DELETE FROM bms.rtus WHERE organization_id = $1`, [id]);
     await superuser.query(`DELETE FROM bms.locations WHERE organization_id = $1`, [id]);
     await superuser.query(`DELETE FROM bms.organizations WHERE id = $1`, [id]);
   }
@@ -169,12 +176,16 @@ export async function setUpEnergyViewReadFixture(
     );
     return rows[0]?.id ?? fail(`second location of ${code} was not inserted`);
   };
-  const asset = async (place: { organizationId: string; locationId: string }, code: string): Promise<string> => {
+  const asset = async (
+    place: { organizationId: string; locationId: string },
+    code: string,
+    rtuId: string | null = null,
+  ): Promise<string> => {
     const { rows } = await superuser.query<{ id: string }>(
-      `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain)
-       VALUES ($1, $2, $3, $3, 'F4.298 energy view read', (SELECT code FROM bms.asset_domains ORDER BY code LIMIT 1))
+      `INSERT INTO bms.assets (organization_id, location_id, code, name, site_name, domain, rtu_id)
+       VALUES ($1, $2, $3, $3, 'F4.298 energy view read', (SELECT code FROM bms.asset_domains ORDER BY code LIMIT 1), $4)
        RETURNING id`,
-      [place.organizationId, place.locationId, code],
+      [place.organizationId, place.locationId, code, rtuId],
     );
     return rows[0]?.id ?? fail(`asset ${code} was not inserted`);
   };
@@ -182,7 +193,13 @@ export async function setUpEnergyViewReadFixture(
   try {
     const a = await organization("A");
     const b = await organization("B");
-    const gridAssetId = await asset(a, `EVR-${run}-GRID`);
+    // `F4.316` PR 6: the grid asset sits under an RTU; the `PV` asset has none.
+    const gridRtuName = `F4.316 ${run} RTU`;
+    const { rows: rtu } = await superuser.query<{ id: string }>(
+      `INSERT INTO bms.rtus (organization_id, location_id, code, display_name) VALUES ($1, $2, $3, $4) RETURNING id`,
+      [a.organizationId, a.locationId, `EVR-${run}-RTU`, gridRtuName],
+    );
+    const gridAssetId = await asset(a, `EVR-${run}-GRID`, rtu[0]?.id ?? fail("the grid RTU was not inserted"));
     const pvAssetId = await asset(a, `PV-EVR-${run}`);
     const foreignAssetId = await asset(b, `EVR-${run}-FOREIGN`);
     const a2 = await secondLocation(a.organizationId, "A");
@@ -194,6 +211,7 @@ export async function setUpEnergyViewReadFixture(
       siteTwoAssetId,
       locationIds: { a1: a.locationId, a2 },
       foreignLocationId: b.locationId,
+      gridRtuName,
       localDayStart,
       organizationIds,
       refreshFrom,
@@ -428,6 +446,36 @@ export async function assertTopConsumersMatchThePreview(fleet: pg.Pool, fx: Ener
   });
   expect(read).toHaveLength(2);
   expect(read).toEqual(preview.topConsumers);
+}
+
+/** The location's name, read on the fleet pool. */
+export async function locationNameOf(fleet: pg.Pool, id: string): Promise<string> {
+  const { rows } = await fleet.query<{ name: string }>(`SELECT name FROM bms.locations WHERE id = $1`, [id]);
+  return rows[0]?.name ?? fail(`location ${id} not found`);
+}
+
+/** `F4.316` PR 6 (ADR 0111) — a consumer under an RTU carries the RTU's display name and its location's name. */
+export async function assertATopConsumerCarriesItsRtuAndLocation(fleet: pg.Pool, fx: EnergyViewReadFixture): Promise<void> {
+  const window = { level: "1h", start: bucketStart(fx, 0), end: bucketStart(fx, BUCKETS - 1), durationHours: 25, limit: 10 } as const;
+  const read = await viewTopConsumers(fleet, { ...window, assetIds: scope(fx) });
+  const grid = read.find((c) => c.assetId === fx.gridAssetId) ?? fail("the grid consumer is missing");
+  expect([grid.assetRtuName, grid.assetLocationName]).toEqual([fx.gridRtuName, await locationNameOf(fleet, fx.locationIds.a1)]);
+}
+
+/** `F4.316` PR 6 — the RTU-less twin: no RTU is `assetRtuName: null`, and the location name is still there. */
+export async function assertATopConsumerWithNoRtuCarriesItsLocation(fleet: pg.Pool, fx: EnergyViewReadFixture): Promise<void> {
+  const window = { level: "1h", start: bucketStart(fx, 0), end: bucketStart(fx, BUCKETS - 1), durationHours: 25, limit: 10 } as const;
+  const read = await viewTopConsumers(fleet, { ...window, assetIds: scope(fx) });
+  const pv = read.find((c) => c.assetId === fx.pvAssetId) ?? fail("the PV consumer is missing");
+  expect([pv.assetRtuName, pv.assetLocationName]).toEqual([null, await locationNameOf(fleet, fx.locationIds.a1)]);
+}
+
+/** `F4.316` PR 6 — the dashboard's trailing-window top consumers (`GET /dashboard/energy/top-consumers`) carry the same parts. */
+export async function assertTheDashboardTopConsumersCarryTheParts(fleet: pg.Pool, fx: EnergyViewReadFixture): Promise<void> {
+  const { consumers } = await energyTopConsumers(fleet, "7d", 10, scope(fx));
+  const site = await locationNameOf(fleet, fx.locationIds.a1);
+  const parts = Object.fromEntries(consumers.map((c) => [c.assetId, [c.assetRtuName, c.assetLocationName]]));
+  expect(parts).toEqual({ [fx.gridAssetId]: [fx.gridRtuName, site], [fx.pvAssetId]: [null, site] });
 }
 
 // ---------------------------------------------------------------------------

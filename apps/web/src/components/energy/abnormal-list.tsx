@@ -1,4 +1,10 @@
-import { ABNORMAL_LIST_MAX, type EnergyAbnormalEntry, type EnergyOrganizationViews } from "@bms/shared";
+import {
+  ABNORMAL_LIST_MAX,
+  ASSET_LABEL_SEPARATOR,
+  assetLabelParts,
+  type EnergyAbnormalEntry,
+  type EnergyOrganizationViews,
+} from "@bms/shared";
 
 import { abnormalGroups, baselineSentence } from "../../lib/energy-organization-views";
 import type { EnergySectionStatus } from "./energy-stack-chart";
@@ -12,13 +18,34 @@ function kwh(value: number | null): string {
   return value === null ? "—" : value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
+/**
+ * `F4.316` (ADR 0111 C4) — an asset row names the asset by its label: the code on one line, the
+ * `· <RTU>` (else `· <location>`) part in its own span that may wrap, never truncated. A site row has
+ * no code and so no label.
+ */
+function AssetLabel({ entry }: { entry: EnergyAbnormalEntry }) {
+  if (entry.code === null) return null;
+  const { code, where } = assetLabelParts({ code: entry.code, rtuName: entry.assetRtuName, locationName: entry.assetLocationName });
+  return (
+    <span className="ml-1 text-ink-muted">
+      <span className="whitespace-nowrap">{code}</span>
+      {where === null ? null : (
+        <span className="whitespace-normal">
+          {ASSET_LABEL_SEPARATOR}
+          {where}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function Row({ entry }: { entry: EnergyAbnormalEntry }) {
   return (
     <tr data-testid="abnormal-row" className="border-b border-well-deep">
       <td className="px-3 py-1.5 text-xs">{entry.kind === "site" ? "Site" : "Asset"}</td>
       <td className="px-3 py-1.5 text-xs">
         {entry.name}
-        {entry.code !== null ? <span className="ml-1 text-ink-muted">{entry.code}</span> : null}
+        <AssetLabel entry={entry} />
       </td>
       <td className="px-3 py-1.5 text-xs">{entry.kind === "asset" ? (entry.siteName ?? "—") : "—"}</td>
       <td className="px-3 py-1.5 text-right text-xs tabular-nums">{kwh(entry.currentKwh)}</td>

@@ -299,6 +299,27 @@ export async function assertASiteCountsDistinctBuckets(fleet: pg.Pool, fx: Energ
   expect(site.name).toBe(await locationName(fleet, fx.locationIds.a1));
 }
 
+/** `F4.316` PR 6 (ADR 0111) — an asset row under an RTU carries the RTU's display name and its location's name. */
+export async function assertAnAssetWindowRowCarriesItsRtuAndLocation(fleet: pg.Pool, fx: EnergyViewReadFixture): Promise<void> {
+  const rows = await entityWindowReads(fleet, { level: "1h", windows: windowsOf(fx), assetIds: scopeA(fx) });
+  const grid = rows.find((r) => r.kind === "asset" && r.id === fx.gridAssetId && r.idx === 0) ?? fail("grid row missing");
+  expect([grid.assetRtuName, grid.assetLocationName]).toEqual([fx.gridRtuName, await locationName(fleet, fx.locationIds.a1)]);
+}
+
+/** `F4.316` PR 6 — the RTU-less twin: an asset with no RTU is `assetRtuName: null` beside its location name. */
+export async function assertAnAssetWindowRowWithNoRtuCarriesItsLocation(fleet: pg.Pool, fx: EnergyViewReadFixture): Promise<void> {
+  const rows = await entityWindowReads(fleet, { level: "1h", windows: windowsOf(fx), assetIds: scopeA(fx) });
+  const pv = rows.find((r) => r.kind === "asset" && r.id === fx.pvAssetId && r.idx === 0) ?? fail("PV row missing");
+  expect([pv.assetRtuName, pv.assetLocationName]).toEqual([null, await locationName(fleet, fx.locationIds.a1)]);
+}
+
+/** `F4.316` PR 6 — a site row names no asset, so both parts are `null` even where one of its assets has an RTU. */
+export async function assertASiteWindowRowHasNullParts(fleet: pg.Pool, fx: EnergyViewReadFixture): Promise<void> {
+  const rows = await entityWindowReads(fleet, { level: "1h", windows: windowsOf(fx), assetIds: scopeA(fx) });
+  const site = rows.find((r) => r.kind === "site" && r.id === fx.locationIds.a1 && r.idx === 0) ?? fail("site a1 row missing");
+  expect([site.assetRtuName, site.assetLocationName]).toEqual([null, null]);
+}
+
 /** 4 — a window with no data has no row; the windows with data have theirs. */
 export async function assertAnEmptyWindowIsAbsent(fleet: pg.Pool, fx: EnergyViewReadFixture): Promise<void> {
   const rows = await entityWindowReads(fleet, { level: "1h", windows: windowsOf(fx), assetIds: scopeA(fx) });

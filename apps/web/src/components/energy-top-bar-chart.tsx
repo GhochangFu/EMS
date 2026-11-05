@@ -2,7 +2,7 @@ import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
 import { useMemo } from "react";
 
-import type { EnergyTopConsumer } from "@bms/shared";
+import { assetLabel, type EnergyTopConsumer } from "@bms/shared";
 
 import { useChartTheme } from "../lib/chart-theme";
 
@@ -18,11 +18,17 @@ type Props = {
 export function EnergyTopBarChart({ consumers, status }: Props) {
   const { roles, theme } = useChartTheme();
   const option = useMemo<EChartsOption>(() => {
-    const labels = consumers.map((c) => `${c.code} · ${c.name.slice(0, 18)}`);
+    // `F4.316` (ADR 0111): the bar names the asset by its label, `<code> · <RTU>` (else
+    // `<code> · <location>`), never shortened; only the free-text name is cut to 18 characters.
+    const labels = consumers.map(
+      (c) => `${assetLabel({ code: c.code, rtuName: c.assetRtuName, locationName: c.assetLocationName })} · ${c.name.slice(0, 18)}`,
+    );
     const values = consumers.map((c) => c.estimatedKwh);
     return {
       color: [roles.info],
-      grid: { left: 140, right: 28, top: 16, bottom: 24 },
+      // `F4.316`: the label is ~50 characters, so the grid makes room for it (`containLabel`) and
+      // the axis label breaks onto a second line rather than being clipped or truncated (ADR 0111 C4).
+      grid: { left: 8, right: 28, top: 16, bottom: 24, containLabel: true },
       tooltip: {
         trigger: "axis",
         axisPointer: { type: "shadow" },
@@ -37,7 +43,7 @@ export function EnergyTopBarChart({ consumers, status }: Props) {
       yAxis: {
         type: "category",
         data: labels,
-        axisLabel: { fontSize: 10 },
+        axisLabel: { fontSize: 10, width: 220, overflow: "break" },
       },
       series: [
         {

@@ -172,6 +172,8 @@ function fake(options: FakeOptions = {}) {
         consumers: Array.from({ length: limit }, (_, i) => ({
           assetId: ids[0],
           code: `C${i}`,
+          assetRtuName: null,
+          assetLocationName: "Site",
           name: `Meter ${i}`,
           siteName: "Site",
           avgKw: 10,

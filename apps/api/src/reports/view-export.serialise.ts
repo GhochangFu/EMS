@@ -1,13 +1,14 @@
 import { BadRequestException } from "@nestjs/common";
 import * as XLSX from "xlsx";
 
-import type {
-  AggregateLevel,
-  EnergySiteTrend,
-  EnergyView,
-  EnergyViewPeriod,
-  SiteSegmentViewsDto,
-  SiteTrendStripDto,
+import {
+  assetLabelOf,
+  type AggregateLevel,
+  type EnergySiteTrend,
+  type EnergyView,
+  type EnergyViewPeriod,
+  type SiteSegmentViewsDto,
+  type SiteTrendStripDto,
 } from "@bms/shared";
 
 import { MAX_EXPORT_ROWS } from "../admin/audit/audit.limits";
@@ -31,6 +32,11 @@ import { assertFiniteCells } from "./reports.serialise";
  * `csvNumberCell` (it throws on `NaN`). XLSX: `aoa_to_sheet` writes no `<f>`
  * element, and the table passes `assertFiniteCells`. A `null` is an empty cell,
  * never `0`: a bucket with no samples must not read as a measured zero.
+ *
+ * **`F4.316` (ADR 0111 decision 4).** The segment and trend-strip rows keep `asset_code`, so a
+ * sheet still filters by code, and add `asset_label` (`assetLabelOf`: `<code> · <RTU>`, else
+ * `<code> · <location>`) after `asset_name`. The label is tenant text and a string, so it takes the
+ * same `csvTextCell` guard as every other string cell.
  */
 
 /** One cell. `null` is an empty cell. */
@@ -209,7 +215,7 @@ export function segmentViewExportRows(
   const zone = view.timeZone;
   const rows = headerBlock(
     { zone, level: view.level, bucket: view.bucket, from: view.current.from, to: view.current.to },
-    ["asset_code", "asset_name", "point", "unit", "period", "bucket_start", "mean"],
+    ["asset_code", "asset_name", "asset_label", "point", "unit", "period", "bucket_start", "mean"],
   );
   const pointCode = view.point?.code ?? "";
   for (const entry of view.ranking) {
@@ -218,7 +224,16 @@ export function segmentViewExportRows(
       ["previous", entry.compareBuckets],
     ] as const) {
       for (const bucket of buckets ?? []) {
-        rows.push([entry.assetCode, entry.assetName, pointCode, entry.unit, period, isoInZone(bucket.t, zone), bucket.v]);
+        rows.push([
+          entry.assetCode,
+          entry.assetName,
+          assetLabelOf(entry),
+          pointCode,
+          entry.unit,
+          period,
+          isoInZone(bucket.t, zone),
+          bucket.v,
+        ]);
       }
     }
   }
@@ -235,7 +250,7 @@ export function trendStripExportRows(
   const zone = strip.timeZone;
   const rows = headerBlock(
     { zone, level: strip.level, bucket: foldWidthLabel(strip.bucketSeconds), from: strip.from, to: strip.to },
-    ["segment", "point", "asset_code", "asset_name", "unit", "bucket_start", "mean"],
+    ["segment", "point", "asset_code", "asset_name", "asset_label", "unit", "bucket_start", "mean"],
   );
   for (const segment of strip.segments) {
     for (const point of segment.points) {
@@ -246,6 +261,7 @@ export function trendStripExportRows(
             point.code,
             asset.assetCode,
             asset.assetName,
+            assetLabelOf(asset),
             asset.unit,
             isoInZone(bucket.t, zone),
             bucket.v,

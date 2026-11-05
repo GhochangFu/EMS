@@ -253,8 +253,8 @@ export async function assertA46DayRangeIsHourLevelDayBucket(ctx: SegmentViewsCtx
 // ---------------------------------------------------------------------------
 // `F4.303` U4 (ADR 0108 Amendment 6 item 3) — the segment export over the same
 // forwarding pool. Data rows start after the five header rows, the blank row
-// and the column header; columns: asset_code, asset_name, point, unit, period,
-// bucket_start, mean.
+// and the column header; columns: asset_code, asset_name, asset_label, point,
+// unit, period, bucket_start, mean.
 // ---------------------------------------------------------------------------
 
 const HEADER_ROWS = 7;
@@ -283,8 +283,8 @@ async function readThenExport(ctx: SegmentViewsCtx, query: SiteSegmentViewsQuery
 function meansOf(rows: readonly (string | number | null)[][], period: "current" | "previous") {
   return rows
     .slice(HEADER_ROWS)
-    .filter((row) => row[4] === period)
-    .map((row) => [row[0], row[6]]);
+    .filter((row) => row[5] === period)
+    .map((row) => [row[0], row[7]]);
 }
 
 /** G1 — `wc-admin`'s export of a PHEWB site is the read's 404, with no `telemetry.*` statement; its own site exports. */

@@ -8,6 +8,8 @@ import {
 } from "../testing/integration-db-gate";
 import {
   assertADayBucketIsTheLocalDay,
+  assertATopConsumerCarriesItsRtuAndLocation,
+  assertATopConsumerWithNoRtuCarriesItsLocation,
   assertADayBucketNeverNamesTheUtcDayRelation,
   assertAnEmptyPeriodHasNoData,
   assertAnEmptyScopeSendsNoStatement,
@@ -17,6 +19,7 @@ import {
   assertAveragePfIsSampleWeighted,
   assertOneIdSendsOneStatementPerRead,
   assertTheComparePeriodStopsBeforeTheStart,
+  assertTheDashboardTopConsumersCarryTheParts,
   assertTheForeignAssetIsOutsideAveragePf,
   assertTheForeignAssetIsOutsideThePeriodRead,
   assertTheForeignAssetIsOutsideTopConsumers,
@@ -89,6 +92,9 @@ describe.skipIf(!connectionString)("F4.298 U3 — the energy view reads against 
   it("an asset of another organization changes nothing in averagePf", run(assertTheForeignAssetIsOutsideAveragePf));
   it("an asset of another organization is never listed by viewTopConsumers", run(assertTheForeignAssetIsOutsideTopConsumers));
   it("the moved top-consumers read equals the preview's", run(assertTopConsumersMatchThePreview));
+  it("F4.316 — a top consumer under an RTU carries the RTU and location names", run(assertATopConsumerCarriesItsRtuAndLocation));
+  it("F4.316 — a top consumer with no RTU carries a null RTU name and its location name", run(assertATopConsumerWithNoRtuCarriesItsLocation));
+  it("F4.316 — the dashboard's top consumers carry the same two parts", run(assertTheDashboardTopConsumersCarryTheParts));
 });
 
 /** Statement text and parameters, through a recording pool. Ungated: no database. */

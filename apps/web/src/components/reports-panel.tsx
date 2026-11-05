@@ -1,6 +1,11 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import type { EnergyReportPreview, EnergyTopConsumer } from "@bms/shared";
+import {
+  ASSET_LABEL_SEPARATOR,
+  assetLabelParts,
+  type EnergyReportPreview,
+  type EnergyTopConsumer,
+} from "@bms/shared";
 
 import {
   downloadEnergyReportCsv,
@@ -392,11 +397,28 @@ function SourcePill({
   );
 }
 
+/**
+ * `F4.316` (ADR 0111 C4) — the asset is named by its label: the code on one line, then the
+ * `· <RTU>` (else `· <location>`) part in a span that may wrap; nothing is truncated.
+ */
 function ConsumerRow({ consumer }: { consumer: EnergyTopConsumer }) {
+  const { code, where } = assetLabelParts({
+    code: consumer.code,
+    rtuName: consumer.assetRtuName,
+    locationName: consumer.assetLocationName,
+  });
   return (
     <tr>
       <td className="px-3 py-2">
-        <div className="font-medium text-ink">{consumer.code}</div>
+        <div className="font-medium text-ink">
+          <span className="whitespace-nowrap">{code}</span>
+          {where === null ? null : (
+            <span className="whitespace-normal">
+              {ASSET_LABEL_SEPARATOR}
+              {where}
+            </span>
+          )}
+        </div>
         <div className="text-xs text-ink-muted">{consumer.name}</div>
       </td>
       <td className="px-3 py-2 text-ink-muted">{consumer.siteName}</td>
