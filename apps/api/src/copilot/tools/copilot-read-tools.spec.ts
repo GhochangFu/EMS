@@ -150,6 +150,8 @@ function alarmRow(message: string) {
     acknowledgedBy: null,
     clearedAt: null,
     assetCode: "AHU-7",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Site",
     assetName: "AHU 7",
     siteName: "Site",
   };
