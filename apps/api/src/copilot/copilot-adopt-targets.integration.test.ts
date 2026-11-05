@@ -12,6 +12,8 @@ import {
   anAssetOfTheOtherOrganizationIsRefused,
   aPinnedAssetIsRefused,
   aTemplateLessAssetOfTheVersionsOrganizationResolves,
+  anAssetFoundNowhereKeepsTheGeneralRefusal,
+  aMalformedVersionIdIsTheMalformedSentence,
 } from "./copilot-adopt-targets.integration.spec";
 
 /**
@@ -102,9 +104,12 @@ describe.skipIf(!connectionString)("F4.312 PR 2 — the assetTemplateAdopt targe
       orgA: orgA.id,
       orgB: orgB.id,
       versionA,
+      versionCode: `${PREFIX}TPL`,
       bareA: await seedAsset(orgA.id, "A"),
       pinnedA: await seedAsset(orgA.id, "AP", versionA),
+      pinnedACode: `${PREFIX}AP`,
       bareB: await seedAsset(orgB.id, "B"),
+      bareBCode: `${PREFIX}B`,
     };
   });
 
@@ -120,6 +125,9 @@ describe.skipIf(!connectionString)("F4.312 PR 2 — the assetTemplateAdopt targe
 
   it("a template-less asset of the version's organization resolves to it", () =>
     aTemplateLessAssetOfTheVersionsOrganizationResolves(ctx));
-  it("an asset of the other organization is refused", () => anAssetOfTheOtherOrganizationIsRefused(ctx));
-  it("a pinned asset in the list is refused", () => aPinnedAssetIsRefused(ctx));
+  it("an asset of the other organization is refused by the organization sentence", () => anAssetOfTheOtherOrganizationIsRefused(ctx));
+  it("a pinned asset in the list is refused by the pinned sentence", () => aPinnedAssetIsRefused(ctx));
+  it("an asset found in no allowed organization keeps the general refusal", () =>
+    anAssetFoundNowhereKeepsTheGeneralRefusal(ctx, randomUUID()));
+  it("a non-UUID version id is the malformed sentence", () => aMalformedVersionIdIsTheMalformedSentence(ctx));
 });

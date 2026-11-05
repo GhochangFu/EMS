@@ -195,7 +195,14 @@ export class SiteTrendStripService {
     const registrations: StripRegistration[] = [];
     for (const row of inScope) {
       if (!assets.has(row.asset_id)) {
-        assets.set(row.asset_id, { id: row.asset_id, code: row.asset_code, name: row.asset_name, domain: row.domain });
+        assets.set(row.asset_id, {
+          id: row.asset_id,
+          code: row.asset_code,
+          name: row.asset_name,
+          domain: row.domain,
+          rtuName: row.asset_rtu_name,
+          locationName: row.asset_location_name,
+        });
       }
       registrations.push({ assetId: row.asset_id, pointKey: row.point_key, unit: row.unit });
     }

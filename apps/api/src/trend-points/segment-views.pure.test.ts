@@ -9,6 +9,7 @@ import {
   assertAnAssetWithoutACurrentRowIsNotRanked,
   assertAnUnknownSegmentIsA404,
   assertCandidatesAreTheSegmentsRegistrations,
+  assertACandidateCarriesItsRtuAndLocationNames,
   assertCompareIsNullWithoutAPreviousRow,
   assertEightAssetsAreNotTrimmed,
   assertNoSegmentPresentIsNull,
@@ -34,6 +35,8 @@ describe("F4.302 — the segment view's pure rules (ADR 0108 Amendment 4 items 2
     it("a point outside the segment's list is the 404", () => assertAPointOutsideTheListIsA404());
     it("the candidates are the segment's assets registering the point", () =>
       assertCandidatesAreTheSegmentsRegistrations());
+    it("a candidate carries its row's RTU and location names (F4.316)", () =>
+      assertACandidateCarriesItsRtuAndLocationNames());
   });
 
   describe("the ranking", () => {

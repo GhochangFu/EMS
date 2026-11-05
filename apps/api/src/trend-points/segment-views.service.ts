@@ -222,6 +222,8 @@ export class SiteSegmentViewsService {
       assetId: asset.assetId,
       assetCode: asset.assetCode,
       assetName: asset.assetName,
+      assetRtuName: asset.assetRtuName,
+      assetLocationName: asset.assetLocationName,
       unit: asset.unit,
       current: asset.current,
       compare: asset.compare,

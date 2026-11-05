@@ -11,7 +11,15 @@ import { withTenant } from "../database/tenant-context";
  * A target refusal whose sentence reaches the model — the propose tool returns its message
  * and stores no card. Every other resolver refusal stays the one `null` (`PROPOSE_TARGET_ERROR`).
  */
-export class CopilotTargetRefusal extends Error {}
+export class CopilotTargetRefusal extends Error {
+  /** `F4.315` PR A review: `organizationIds` are the organizations whose records the sentence names (the turn's provenance). */
+  constructor(
+    message: string,
+    readonly organizationIds: readonly string[] = [],
+  ) {
+    super(message);
+  }
+}
 
 /**
  * `F4.283` (Amendment 8 D2): the telemetry import and manual-reading routes' gate,

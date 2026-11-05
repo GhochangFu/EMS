@@ -22,6 +22,7 @@ import {
   theRangeControlReachesTheEnergySubTab,
   theSectionStateIsReadFromTheUrl,
   aSegmentSubTabOffersPin,
+  aSegmentSubTabLegendReadsTheAssetLabel,
   aSegmentSubTabOffersSchedule,
   theEnergySubTabSchedulesTheSitesEnergyReport,
   theEnergySubTabHasNoPin,
@@ -37,6 +38,10 @@ describe("F4.302 the Trends & Energy section", () => {
 
   it("F4.303 U15: a segment sub-tab offers Pin", async () => {
     await aSegmentSubTabOffersPin();
+  });
+
+  it("F4.316: a segment sub-tab's legend reads <code> · <RTU>", async () => {
+    await aSegmentSubTabLegendReadsTheAssetLabel();
   });
 
   it("F4.303 U16: the Energy sub-tab schedules the site energy report", async () => {

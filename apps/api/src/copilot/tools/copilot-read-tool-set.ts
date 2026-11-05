@@ -1,6 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { ZodTypeAny } from "zod";
 
+import { AssetTemplatesAdminService } from "../../admin/asset-templates/asset-templates.service";
 import { AuditAdminService } from "../../admin/audit/audit.service";
 import { LocationsAdminService } from "../../admin/locations/locations.service";
 import { PointKeyStatesAdminService } from "../../admin/point-key-states/point-key-states.service";
@@ -58,6 +59,7 @@ import { listAlarmsTool } from "./list-alarms.tool";
 import { listAssetPointsTool } from "./list-asset-points.tool";
 import { listAssetRolesTool } from "./list-asset-roles.tool";
 import { listAssetsTool } from "./list-assets.tool";
+import { listAssetTemplatesTool } from "./list-asset-templates.tool";
 import { listAuditLogTool } from "./list-audit-log.tool";
 import { listDashboardsTool } from "./list-dashboards.tool";
 import { listLocationsTool } from "./list-locations.tool";
@@ -85,7 +87,8 @@ import { openPageTool } from "./open-page.tool";
  * after `get_point_aggregate`. `F4.288` adds `get_site_point_inventory` after
  * `list_rules`. `F4.290` PR 2 adds `get_location_summary` after
  * `get_energy_report_preview`. `F4.309` PR 3 adds `list_point_key_states` after
- * `list_alarm_skills`.
+ * `list_alarm_skills`. `F4.315` PR A adds `list_asset_templates` after
+ * `list_point_key_states`.
  */
 export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[] = [
   listAlarmsTool,
@@ -135,6 +138,8 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   listAlarmSkillsTool,
   // `F4.309` PR 3 (ADR 0099 Amendment 13 ruling Q1): the state labels a pointKeyState.update names.
   listPointKeyStatesTool,
+  // `F4.315` PR A (ADR 0099 Amendment 14 decision 1): the version ids an assetTemplate.adopt names.
+  listAssetTemplatesTool,
   openPageTool,
 ];
 
@@ -219,6 +224,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
     @Inject(LocationSummaryService) locationSummary: LocationSummaryService,
     // `F4.309` PR 3: appended last (slot 28), the same reason. `AdminModule` exports it.
     @Inject(PointKeyStatesAdminService) pointKeyStates: PointKeyStatesAdminService,
+    // `F4.315` PR A: appended last (slot 29), the same reason. `AdminModule` exports it.
+    @Inject(AssetTemplatesAdminService) assetTemplates: AssetTemplatesAdminService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -250,6 +257,7 @@ export class CopilotReadToolSet implements CopilotReadTools {
       inventory,
       locationSummary,
       pointKeyStates,
+      assetTemplates,
     });
   }
 
