@@ -28,6 +28,8 @@ import {
   assertSingleOrgMaintenanceListRunsOnTenantTransaction,
   assertUpdateScheduleReadsBackInTenantTransaction,
   type MaintenanceRlsFixtures,
+  assertScheduleRowKeepsAnRtuLessAsset,
+  assertScheduleRowNamesTheAssetsRtu,
 } from "./maintenance.service.rls.integration.spec";
 
 /**
@@ -326,5 +328,13 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
 
   it("F4.281: titleSearch narrows in the query", async () => {
     await assertTitleSearchNarrowsInTheQuery(ctx);
+  });
+
+  it("F4.316: an RTU-less asset's schedule keeps its row, named by its location", async () => {
+    await assertScheduleRowKeepsAnRtuLessAsset(ctx);
+  });
+
+  it("F4.316: a schedule names its asset's RTU and location", async () => {
+    await assertScheduleRowNamesTheAssetsRtu(ctx, `${PREFIX}RTU-${RUN}`);
   });
 });

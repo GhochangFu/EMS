@@ -8,9 +8,11 @@ import { and, asc, desc, eq, ilike, inArray, lte, ne, or } from "drizzle-orm";
 
 import {
   assets,
+  locations,
   maintenanceHistory,
   maintenanceSchedules,
   maintenanceTaskTemplates,
+  rtus,
   workOrders,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -113,6 +115,8 @@ export class MaintenanceService {
     createdAt: Date;
     updatedAt: Date;
     assetCode: string;
+    assetRtuName: string | null;
+    assetLocationName: string | null;
     assetName: string;
     siteName: string;
   }): WorkOrderListItem {
@@ -133,6 +137,8 @@ export class MaintenanceService {
       createdAt: r.createdAt.toISOString(),
       updatedAt: r.updatedAt.toISOString(),
       assetCode: r.assetCode,
+      assetRtuName: r.assetRtuName,
+      assetLocationName: r.assetLocationName,
       assetName: r.assetName,
       siteName: r.siteName,
     };
@@ -158,6 +164,8 @@ export class MaintenanceService {
       nextDueAt: Date;
       lastCompletedAt: Date | null;
       assetCode: string;
+      assetRtuName: string | null;
+      assetLocationName: string | null;
       assetName: string;
       siteName: string;
       active: boolean;
@@ -184,6 +192,8 @@ export class MaintenanceService {
       lastCompletedAt: r.lastCompletedAt?.toISOString() ?? null,
       dueState: r.nextDueAt.getTime() < Date.now() ? "overdue" : "upcoming",
       assetCode: r.assetCode,
+      assetRtuName: r.assetRtuName,
+      assetLocationName: r.assetLocationName,
       assetName: r.assetName,
       siteName: r.siteName,
       activeWorkOrderId,
@@ -374,6 +384,8 @@ export class MaintenanceService {
             nextDueAt: maintenanceSchedules.nextDueAt,
             lastCompletedAt: maintenanceSchedules.lastCompletedAt,
             assetCode: assets.code,
+            assetRtuName: rtus.displayName,
+            assetLocationName: locations.name,
             assetName: assets.name,
             siteName: assets.siteName,
             active: maintenanceSchedules.active,
@@ -384,6 +396,8 @@ export class MaintenanceService {
             eq(maintenanceSchedules.templateId, maintenanceTaskTemplates.id),
           )
           .innerJoin(assets, eq(maintenanceTaskTemplates.assetId, assets.id))
+          .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+          .leftJoin(locations, eq(assets.locationId, locations.id))
           .where(and(...filters))
           .orderBy(asc(maintenanceSchedules.nextDueAt), asc(assets.code))
           .limit(MAINTENANCE_LIST_LIMIT);
@@ -530,6 +544,8 @@ export class MaintenanceService {
         nextDueAt: maintenanceSchedules.nextDueAt,
         lastCompletedAt: maintenanceSchedules.lastCompletedAt,
         assetCode: assets.code,
+        assetRtuName: rtus.displayName,
+        assetLocationName: locations.name,
         assetName: assets.name,
         siteName: assets.siteName,
         active: maintenanceSchedules.active,
@@ -540,6 +556,8 @@ export class MaintenanceService {
         eq(maintenanceSchedules.templateId, maintenanceTaskTemplates.id),
       )
       .innerJoin(assets, eq(maintenanceTaskTemplates.assetId, assets.id))
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+      .leftJoin(locations, eq(assets.locationId, locations.id))
       .where(
         and(
           eq(maintenanceSchedules.id, id),
@@ -766,11 +784,15 @@ export class MaintenanceService {
         createdAt: workOrders.createdAt,
         updatedAt: workOrders.updatedAt,
         assetCode: assets.code,
+        assetRtuName: rtus.displayName,
+        assetLocationName: locations.name,
         assetName: assets.name,
         siteName: assets.siteName,
       })
       .from(workOrders)
       .innerJoin(assets, eq(workOrders.assetId, assets.id))
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+      .leftJoin(locations, eq(assets.locationId, locations.id))
       .where(
         and(
           eq(workOrders.id, id),
