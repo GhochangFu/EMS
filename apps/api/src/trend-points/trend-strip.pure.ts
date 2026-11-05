@@ -93,6 +93,10 @@ export type StripAsset = {
   readonly name: string;
   /** `assets.domain` — the segment the asset's trend points come from. */
   readonly domain: string;
+  /** `F4.316` (ADR 0111) — the asset's RTU display name, `null` when it has none. */
+  readonly rtuName: string | null;
+  /** `F4.316` (ADR 0111) — the asset's location name. */
+  readonly locationName: string | null;
 };
 
 /** An active `asset_points` registration, with its effective unit. */
@@ -107,6 +111,8 @@ export type PlannedAsset = {
   readonly assetId: string;
   readonly assetCode: string;
   readonly assetName: string;
+  readonly assetRtuName: string | null;
+  readonly assetLocationName: string | null;
   readonly unit: string | null;
 };
 
@@ -208,6 +214,8 @@ export function pairsFor(
           assetId: a.id,
           assetCode: a.code,
           assetName: a.name,
+          assetRtuName: a.rtuName,
+          assetLocationName: a.locationName,
           unit: unitByPair.get(pairKey(a.id, point.code)) ?? null,
         })),
         moreAssets: Math.max(0, registering.length - assetsPerPoint),
@@ -352,6 +360,8 @@ export function groupSeries(plan: StripPlan, rows: readonly StripRow[], window: 
         assetId: a.assetId,
         assetCode: a.assetCode,
         assetName: a.assetName,
+        assetRtuName: a.assetRtuName,
+        assetLocationName: a.assetLocationName,
         unit: a.unit,
         buckets: fillBucketGaps(byPair.get(pairKey(a.assetId, point.code)) ?? [], window.from, window.to, window.bucketSeconds),
       })),

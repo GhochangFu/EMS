@@ -123,7 +123,16 @@ export type CopilotToolResult =
       /** `fill_step` only (`F3.85` PR 8): the values for an open wizard step. */
       readonly fillStep?: CopilotFillStepDto;
     }
-  | { readonly ok: false; readonly error: string };
+  | {
+      readonly ok: false;
+      readonly error: string;
+      /**
+       * `F4.315` PR A review (decision 10): the organizations whose records the `error` sentence
+       * names (an adopt refusal's version and asset), recorded in the turn's provenance like a
+       * result's. Each must be in the allowed set. Absent: the sentence names no record.
+       */
+      readonly organizationIds?: readonly string[];
+    };
 
 export interface CopilotReadTools {
   readonly registry: ToolRegistry<string>;

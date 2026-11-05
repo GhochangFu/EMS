@@ -51,7 +51,16 @@ function hvacRows(count: number, first = 1): SiteAssetRow[] {
   return Array.from({ length: count }, (_, i) => {
     const n = first + i;
     const code = `AHU-${String(n).padStart(3, "0")}`;
-    return { asset_id: uuid(n), asset_code: code, asset_name: `Asset ${code}`, domain: "hvac", point_key: "kw", unit: "kW" };
+    return {
+      asset_id: uuid(n),
+      asset_code: code,
+      asset_name: `Asset ${code}`,
+      asset_rtu_name: n === 2 ? null : "RTU 1",
+      asset_location_name: "Site 1",
+      domain: "hvac",
+      point_key: "kw",
+      unit: "kW",
+    };
   });
 }
 
@@ -60,6 +69,8 @@ const UPS_ROW: SiteAssetRow = {
   asset_id: uuid(900),
   asset_code: "AAA-UPS",
   asset_name: "UPS",
+  asset_rtu_name: "RTU 9",
+  asset_location_name: "Site 1",
   domain: "ups",
   point_key: "backup_min",
   unit: "min",
@@ -314,6 +325,16 @@ export async function theResponseParses(): Promise<void> {
   const dto = await f.service.forSite(USER, SITE, { ...Q, compare: "previous" }, NOW);
   expect(siteSegmentViewsSchema.safeParse(dto).success).toBe(true);
   expect(dto.timeZone).toBe("Asia/Kolkata");
+}
+
+/** `F4.316` (ADR 0111) — a ranking entry names the row's RTU and location; the RTU-less AHU-002 has a null RTU name. */
+export async function theRankingCarriesTheRtuAndLocationNames(): Promise<void> {
+  const f = fake({ assetRows: hvacRows(2) });
+  const dto = await f.service.forSite(USER, SITE, Q, NOW);
+  expect(dto.ranking.map((r) => [r.assetCode, r.assetRtuName, r.assetLocationName])).toEqual([
+    ["AHU-001", "RTU 1", "Site 1"],
+    ["AHU-002", null, "Site 1"],
+  ]);
 }
 
 // ---------------------------------------------------------------------------

@@ -47,9 +47,6 @@ const contractsDir = join(
  * deletes a line without widening. Each line stands alone so two PRs never touch the same line.
  */
 const NOT_YET_WIDENED: readonly string[] = [
-  "trend-strip.ts#trendStripAssetSeriesSchema", // removed by PR 3a
-  "site-segment-views.ts#segmentViewRankingEntrySchema", // removed by PR 3a
-  "site-segment-views.ts#segmentAbnormalEntrySchema", // removed by PR 3a
   "generated-site-view.ts#generatedSiteAssetSchema", // removed by PR 3b (code field is `code`, Q1)
   "operations.ts#workOrderListItemSchema", // removed by PR 4a
   "operations.ts#maintenanceScheduleItemSchema", // removed by PR 4a

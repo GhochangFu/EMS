@@ -740,6 +740,10 @@ export class CopilotTurnService {
           async (name, args) => {
             const tools = this.tools.registry.isToolName(name) ? this.tools : this.proposeTools;
             const out = await tools.dispatch(name, args, ctx);
+            // `F4.315` PR A review (decision 10): a refusal naming records carries their organizations, as a result does.
+            const failedIn = out.ok ? [] : (out.organizationIds ?? []);
+            if (failedIn.some((id) => !allowed.has(id))) return fail(COPILOT_OUT_OF_SCOPE_TOOL_ERROR);
+            for (const id of failedIn) read.add(id);
             if (!out.ok) return fail(out.error);
             if (out.organizationIds.some((id) => !allowed.has(id))) return fail(COPILOT_OUT_OF_SCOPE_TOOL_ERROR);
             let result = out.result;

@@ -6,6 +6,12 @@ import type {
   TemplateAdoptionRefusalDto,
 } from "@bms/shared";
 
+import {
+  adoptVersionLabel,
+  alreadyPinnedMessage,
+  domainMismatchMessage,
+  organizationMismatchMessage,
+} from "./asset-templates-adopt-messages";
 import { SOURCE_DATA_KEY_MAX_LENGTH } from "../../calc/computed-source-data-key";
 import {
   resolveAdditionSourceDataKey,
@@ -180,34 +186,18 @@ function planOne(
     message: string,
   ): void => input.refuse({ reason, assetId: asset.id, assetCode: asset.code, pointKey, message });
   const label = `Asset "${asset.code}"`;
-  const versionLabel = `"${target.code}" v${target.version}`;
+  const versionLabel = adoptVersionLabel(target);
 
   if (asset.templateId !== null) {
-    refuse(
-      "already_pinned",
-      null,
-      `${label} is already pinned to a template version, so there is nothing to adopt. ` +
-        "Adoption is for an asset built without a template; move a pinned asset between " +
-        "versions with migrate.",
-    );
+    refuse("already_pinned", null, alreadyPinnedMessage(asset, target));
     return { dto, eligible: false };
   }
   if (asset.organizationId !== target.organizationId) {
-    refuse(
-      "organization_mismatch",
-      null,
-      `${label} belongs to another organization than template ${versionLabel}. An asset ` +
-        "adopts a version of its own organization only.",
-    );
+    refuse("organization_mismatch", null, organizationMismatchMessage(asset, target));
     return { dto, eligible: false };
   }
   if (asset.domain !== target.domain) {
-    refuse(
-      "domain_mismatch",
-      null,
-      `${label} has domain "${asset.domain}" and template ${versionLabel} declares ` +
-        `"${target.domain}". An asset adopts a version of its own domain only.`,
-    );
+    refuse("domain_mismatch", null, domainMismatchMessage(asset, target));
     return { dto, eligible: false };
   }
 

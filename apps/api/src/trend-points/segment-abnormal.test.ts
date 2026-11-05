@@ -7,6 +7,7 @@ import {
   assertAnAllZeroPointIsNotComparable,
   assertNormalIsCountedNotSent,
   assertOnlyAssetsWithACurrentRowAreJudged,
+  assertAnEntryCarriesItsAssetsRtuAndLocationNames,
   assertOppositeSignsAreNotComparable,
   assertRatioOfOneHalfIsBelow,
   assertRatioOfOnePointFiveIsAbove,
@@ -40,6 +41,8 @@ describe("F4.302 — the segment view's two-sided abnormal verdict (ADR 0108 Ame
   describe("the entries", () => {
     it("the compare row (idx -1) is not a baseline window", () => assertTheCompareRowIsNotABaselineWindow());
     it("only assets with a current row are judged", () => assertOnlyAssetsWithACurrentRowAreJudged());
+    it("an entry carries its asset's RTU and location names (F4.316)", () =>
+      assertAnEntryCarriesItsAssetsRtuAndLocationNames());
   });
 
   describe("the list", () => {

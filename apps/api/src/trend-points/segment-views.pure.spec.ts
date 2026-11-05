@@ -64,7 +64,17 @@ function uuid(n: number): string {
 }
 
 function assetRow(n: number, domain: string, pointKey: string, code = `A${String(n).padStart(3, "0")}`): SiteAssetRow {
-  return { asset_id: uuid(n), asset_code: code, asset_name: `Asset ${code}`, domain, point_key: pointKey, unit: "kW" };
+  return {
+    asset_id: uuid(n),
+    asset_code: code,
+    asset_name: `Asset ${code}`,
+    // C1 has no RTU (ADR 0111's RTU-less twin); the others sit on RTU <n>.
+    asset_rtu_name: code === "C1" ? null : `RTU ${n}`,
+    asset_location_name: "Site 1",
+    domain,
+    point_key: pointKey,
+    unit: "kW",
+  };
 }
 
 /** Code order (the read's `ORDER BY a.code`): a `ups` asset first, two `hvac` assets, one in an inactive domain. */
@@ -122,6 +132,14 @@ export function assertCandidatesAreTheSegmentsRegistrations(): void {
   expect(candidatesFor(ROWS, "ups", "kw")).toEqual([]);
 }
 
+/** `F4.316` (ADR 0111) — a candidate carries its row's RTU and location names; the RTU-less C1 a null RTU name. */
+export function assertACandidateCarriesItsRtuAndLocationNames(): void {
+  expect(candidatesFor(ROWS, "hvac", "kw").map((a) => [a.assetCode, a.assetRtuName, a.assetLocationName])).toEqual([
+    ["B1", "RTU 2", "Site 1"],
+    ["C1", null, "Site 1"],
+  ]);
+}
+
 function stats(assetId: string, idx: number, mean: number, max = mean): SegmentWindowRow {
   return { assetId, idx, mean, max, maxAt: "2026-11-02T08:00:00.000Z", sampleCount: 10, bucketCount: 10 };
 }
@@ -131,6 +149,8 @@ function assets(count: number) {
     assetId: uuid(i + 1),
     assetCode: `A${String(i + 1).padStart(3, "0")}`,
     assetName: `Asset ${i + 1}`,
+    assetRtuName: null,
+    assetLocationName: null,
     unit: "kW",
   }));
 }
