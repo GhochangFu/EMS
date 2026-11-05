@@ -511,3 +511,94 @@ administrator binds the roles later.
 - No migration: PR5 writes data only. Migration `0099` already admits
   `breaker_table`; `0100` stays free for `F3.78`.
 - Effort: PR5 grows by 1 to 1.5 days; the row's estimate becomes 13–15 days.
+
+## Amendment 3 (2026-11-05, `F4.309`) — state labels managed in the portal
+
+**Status: proposed.** Drafted on 2026-11-05 against `main` at `46f705a`, before
+any implementation code. The gate questions below are put to the owner one at a
+time; all four were ruled on 2026-11-05 as recommended, and each ruling is
+recorded under *Rulings*. The merge of this amendment
+approves it. Promotes nothing out of `AGENTS.md` §6.
+
+### Context
+
+- `bms.point_key_states` (decision 2; Amendment 1 OQ1) is global master data
+  with no row-level security. `bms_tenant` holds no `INSERT`, `UPDATE` or
+  `DELETE` on it (migration `0097`, proved there).
+- The seed owns its 7 rows (`packages/db/src/point-key-states-seed.ts`:
+  `breaker_main` 0/1, `breaker_trip` 1, `valve_open` 0/1, `damper_open` 0/1)
+  and writes them `ON CONFLICT DO UPDATE`, so a hand edit returns to the seeded
+  value on the next `pnpm db:seed`.
+- `tone` is closed: five tones (`closed`, `open`, `tripped`, `flowing`,
+  `shut`) in `pointKeyStateToneSchema` and `point_key_states_tone_check`
+  (`0109`). Each tone is a drawing.
+- No route or page writes the table. A new switching point key draws
+  `unknown`.
+- `/admin/point-keys` (fleet-wide vocabulary) is the precedent: global `admin`
+  only, writes on `fleetDb` (`bms_fleet`) in a transaction with an
+  organization-less audit row.
+- The state legend (`components/control-room/state-legend.tsx`) shows Normal,
+  the alarm severities from `/vocabularies`, and Offline. It shows no
+  switching state.
+
+### Decision
+
+1. **An admin page under Reference Data**, beside Point keys:
+   `/admin/point-key-states`, with list, create, edit and delete. Routes
+   `GET|POST /api/v1/admin/point-key-states` and
+   `PATCH|DELETE /api/v1/admin/point-key-states/:id`.
+2. **Global `admin` only** (Q1). Every write runs on `fleetDb` in a
+   transaction with its audit row (`organizationId: null`), as
+   `PointKeysAdminService`. `bms_tenant` keeps no write grant; no migration
+   changes the grants. Other roles get 403 on writes.
+3. **The seeded rows are read-only** (Q2). The 7 rows of
+   `POINT_KEY_STATE_SEED` (matched by `(point_key_code, value)`) answer
+   `seeded: true` on the list, show "Seeded" with no edit or delete control,
+   and a `PATCH` or `DELETE` of one answers 409. A `POST` of a seeded pair is
+   409 too. The seed keeps `ON CONFLICT DO UPDATE`.
+4. **A row** names an active `bms.point_keys` code, a finite `value`, a
+   `label` (trimmed, 1–32 characters) and one of the five tones (Q3). The pair
+   `(point_key_code, value)` is unique (the existing constraint, 409 on a
+   clash). A key and a value cannot change on `PATCH`; delete and create
+   instead.
+5. **The legend reads the same rows** (Q4). `/vocabularies` gains the list of
+   switching states (key, value, label, tone), readable by any signed-in user,
+   and the state legend draws each distinct label and tone once.
+6. **The mimic is unchanged in code**: it already reads the rows at read time
+   (`stateMaps`), so a portal edit shows on the next refresh.
+7. **Out of this amendment:** organization overrides, new tones, editing the
+   seeded rows, and states on non-numeric values.
+
+### Gate questions
+
+1. **Q1 — who writes.** (a) Global `admin` only, one fleet-wide list, written
+   on `fleetDb` with an organization-less audit row, as `/admin/point-keys`;
+   `bms_tenant` keeps no write grant (0097 unchanged); (b) organization
+   overrides: a new tenant table that shadows the fleet rows per organization.
+   *Recommended: (a).*
+2. **Q2 — the seeded rows.** (a) The 7 seeded rows stay seed-owned and are
+   read-only on the page ("Seeded"); the admin creates, edits and deletes any
+   other row; (b) the seed inserts only missing rows (`DO NOTHING`), so an edit
+   stays, but a deleted seeded row comes back on the next seed; (c) the admin
+   owns every row; the seed writes only into an empty table.
+   *Recommended: (a).*
+3. **Q3 — tones.** (a) The admin picks one of the five closed tones; a new tone
+   stays a release (a `z.enum` member, a `CHECK`, a drawing); (b) a free tone.
+   *Recommended: (a).*
+4. **Q4 — the legend.** (a) The state legend also lists the switching states,
+   read from the same rows through `/vocabularies` (one more list in its
+   payload, readable by any signed-in user); (b) the legend does not change;
+   only the mimic reads the rows. *Recommended: (a).*
+
+### Rulings
+
+1. **Q1 (a) — global `admin` only**, one fleet-wide list on `fleetDb`, an
+   organization-less audit row; `bms_tenant` keeps no write. Ruled 2026-11-05,
+   as recommended.
+2. **Q2 (a) — seeded rows read-only.** The 7 seeded rows stay seed-owned and
+   show "Seeded"; the admin manages every other row. Ruled 2026-11-05, as
+   recommended.
+3. **Q3 (a) — the five closed tones.** A new tone stays a release. Ruled
+   2026-11-05, as recommended.
+4. **Q4 (a) — the legend adds the switching states**, read from the same rows
+   through `/vocabularies`. Ruled 2026-11-05, as recommended.
