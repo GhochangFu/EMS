@@ -6,10 +6,11 @@ import { catalogEntry, proposeToolName } from "@bms/shared/copilot";
 import { alreadyPinnedMessage } from "../admin/asset-templates/asset-templates-adopt-messages";
 import type { ResolvedIdentity } from "../auth/identity-resolver";
 import { runToolCall } from "../llm/tool-registry";
+import { adoptMalformedIdMessage } from "./copilot-adopt-targets";
 import { access, queuedDb } from "./copilot-adopt-targets.spec";
 import type { NewPendingChange } from "./copilot-pending-changes.service";
 import { createCopilotProposeTools, PROPOSE_TARGET_ERROR } from "./copilot-propose-tools";
-import type { CopilotToolContext } from "./copilot-read-tools";
+import type { CopilotToolContext, CopilotToolResult } from "./copilot-read-tools";
 import { CopilotTargetResolver } from "./copilot-target-resolver";
 import { COPILOT_TOOL_GUARDS } from "./copilot-turn.service";
 
@@ -18,12 +19,19 @@ import { COPILOT_TOOL_GUARDS } from "./copilot-turn.service";
  * end to end through the propose tool and the real `CopilotTargetResolver`
  * (over the `copilot-adopt-targets.spec.ts` fakes): a pinned asset in scope
  * answers the tool's `error` with the route's pinned sentence and stores no
- * change; an asset found nowhere keeps the general sentence; a non-UUID
- * version id is refused by the argument guard before any read.
+ * change, and the failure names the organizations whose records the sentence
+ * holds (the turn's provenance, ADR 0099 decision 10); an asset found nowhere
+ * keeps the general sentence; a non-UUID version or asset id is decision 3's
+ * malformed sentence, before any read.
+ *
+ * Mutations, each applied once and seen red: drop the refusal's
+ * `organizationIds` in the propose tool ({@link aPinnedRefusalNamesTheVersionsOrganization});
+ * restore `uuidParam` in the adopt guard schema ({@link aMalformedVersionIdAnswersTheMalformedSentence}).
  * Vitest entry point: the sibling `.test.ts` (ADR 0014).
  */
 
 const ORG = "11111111-1111-4111-8111-111111111111";
+const ORG_B = "55555555-5555-4555-8555-555555555555";
 const ASSET = "22222222-2222-4222-8222-222222222222";
 const TEMPLATE = "44444444-4444-4444-8444-444444444444";
 const USER = "77777777-7777-4777-8777-777777777777";
@@ -40,7 +48,7 @@ const asset = (over: Record<string, unknown> = {}) => ({
 });
 
 /** The propose tool over the real resolver, a database answering `results` in order, and a pending store that records. */
-function harness(results: unknown[][], reads: { count: number } = { count: 0 }) {
+function harness(results: unknown[][], reads: { count: number } = { count: 0 }, allowed: string[] = [ORG]) {
   const stored: NewPendingChange[] = [];
   const tools = createCopilotProposeTools(
     {
@@ -61,21 +69,23 @@ function harness(results: unknown[][], reads: { count: number } = { count: 0 }) 
     user: { sub: USER, role: "admin" } as JwtPayload,
     conversationId: "33333333-3333-4333-8333-333333333333",
     conversationOrganizationId: ORG,
-    allowedOrganizationIds: [ORG],
+    allowedOrganizationIds: allowed,
     turnKind: "user",
     now: new Date("2026-11-06T06:00:00Z"),
   };
-  const call = (id: string) =>
+  let last: CopilotToolResult | null = null;
+  const call = (id: string, assetIds: string[] = [ASSET]) =>
     runToolCall(
       tools.registry,
-      { id: "c1", name: proposeToolName(ENTRY), arguments: JSON.stringify({ id, body: { assetIds: [ASSET] } }) },
+      { id: "c1", name: proposeToolName(ENTRY), arguments: JSON.stringify({ id, body: { assetIds } }) },
       async (name, args) => {
         const out = await tools.dispatch(name, args, ctx);
+        last = out;
         return out.ok ? { ok: true, content: JSON.stringify(out.result) } : { ok: false, content: out.error, error: out.error };
       },
       COPILOT_TOOL_GUARDS,
     );
-  return { call, stored };
+  return { call, stored, last: () => last };
 }
 
 const VERSION = [{ name: "Pump", code: "PUMP-M", version: 1, domain: "electrical", status: "published" }];
@@ -99,14 +109,38 @@ export async function anAssetFoundNowhereAnswersTheGeneralSentence(): Promise<vo
   expect((await call(TEMPLATE)).error).toBe(PROPOSE_TARGET_ERROR);
 }
 
-/**
- * Measured at build: through the propose tool a non-UUID version id never reaches the resolver —
- * the catalog's `uuidParam` makes the registry's argument guard refuse it, with no read. The
- * resolver's own malformed sentence (`copilot-adopt-targets.spec.ts`) is the second line.
- */
-export async function aMalformedVersionIdIsRefusedByTheArgumentGuard(): Promise<void> {
+/** Decision 10: the pinned refusal's failure names the version's organization, whose records the sentence holds. */
+export async function aPinnedRefusalNamesTheVersionsOrganization(): Promise<void> {
+  const h = harness([VERSION, [asset({ templateId: TEMPLATE })]]);
+  await h.call(TEMPLATE);
+  expect(h.last()).toEqual({ ok: false, error: expect.any(String), organizationIds: [ORG] });
+}
+
+/** Decision 10: an organization refusal names the version's organization and the asset's. */
+export async function anOrganizationRefusalNamesBothOrganizations(): Promise<void> {
+  const h = harness([VERSION, [], [asset({ organizationId: ORG_B })]], undefined, [ORG, ORG_B]);
+  await h.call(TEMPLATE);
+  expect(h.last()).toEqual({ ok: false, error: expect.any(String), organizationIds: [ORG, ORG_B] });
+}
+
+/** Decision 3: a non-UUID version id answers the malformed sentence, reading nothing and storing nothing. */
+export async function aMalformedVersionIdAnswersTheMalformedSentence(): Promise<void> {
   const reads = { count: 0 };
   const { call, stored } = harness([VERSION, [asset()]], reads);
   const outcome = await call("PUMP-M");
-  expect([outcome.error, reads.count, stored]).toEqual(["Invalid arguments: id: Invalid uuid", 0, []]);
+  expect([outcome.error, reads.count, stored]).toEqual([adoptMalformedIdMessage("PUMP-M"), 0, []]);
+}
+
+/** Decision 3: a non-UUID asset id answers the malformed sentence, reading nothing and storing nothing. */
+export async function aMalformedAssetIdAnswersTheMalformedSentence(): Promise<void> {
+  const reads = { count: 0 };
+  const { call, stored } = harness([VERSION, [asset()]], reads);
+  const outcome = await call(TEMPLATE, [ASSET, "PHE-MFM-000000003"]);
+  expect([outcome.error, reads.count, stored]).toEqual([adoptMalformedIdMessage("PHE-MFM-000000003"), 0, []]);
+}
+
+/** The guard still refuses what is not a string id at all (an empty id), as the registry always did. */
+export async function anEmptyVersionIdIsStillAnArgumentError(): Promise<void> {
+  const { call } = harness([VERSION, [asset()]]);
+  expect((await call("")).error?.startsWith("Invalid arguments")).toBe(true);
 }

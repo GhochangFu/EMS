@@ -266,6 +266,19 @@ export async function anAssetOfAnotherAllowedOrganizationNamesItsCause(): Promis
   expect(sentence).toBe(organizationMismatchMessage({ code: "PHE-MFM-2" }, VERSION));
 }
 
+/** Review #4: the ids the version's organization lacks are looked for with one read per other allowed organization. */
+export async function theMissingIdsAreReadOncePerOtherOrganization(): Promise<void> {
+  const THIRD = "77777777-7777-4777-8777-777777777777";
+  const counted = { count: 0 };
+  const db = queuedDb(
+    [[versionRow("published")], [], [row(ASSET, { organizationId: OTHER_ORG }), row(OTHER, { organizationId: OTHER_ORG })]],
+    counted,
+  );
+  // The organization refusal throws once both are found in the second organization; the third is never asked.
+  await resolveAdoptTarget(db, access([]), JWT, TEMPLATE, [ASSET, OTHER], [ORG, OTHER_ORG, THIRD]).catch(() => undefined);
+  expect(counted.count).toBe(3);
+}
+
 /** (iv) An id found in no allowed organization keeps the general refusal (`null`), with no sentence. */
 export async function anIdFoundNowhereKeepsTheGeneralRefusal(): Promise<void> {
   const { resolved } = await resolveWith({ assets: [row(ASSET)], allowed: [ORG, OTHER_ORG], elsewhere: [[]] });

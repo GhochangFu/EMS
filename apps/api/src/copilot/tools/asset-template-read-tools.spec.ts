@@ -9,6 +9,7 @@ import { scrubToolResult } from "../copilot-secret-scrub";
 import type { CopilotToolContext } from "../copilot-read-tools";
 import type { CopilotReadServices } from "./copilot-read-tool";
 import { createCopilotReadTools } from "./copilot-read-tool-set";
+import { COPILOT_ASSET_TEMPLATES_REFUSAL } from "./list-asset-templates.tool";
 
 /**
  * `F4.315` PR A (ADR 0099 Amendment 14 decision 1, ruling Q1; plan task A2) —
@@ -22,7 +23,9 @@ import { createCopilotReadTools } from "./copilot-read-tool-set";
  * Mutations, each applied once and seen red: drop the default status
  * ({@link theDefaultStatusIsPublished}); drop the 403 catch
  * ({@link aForbiddenOrganizationIsSkipped}); return the raw summary row
- * ({@link aRowIsTheEightFields}).
+ * ({@link aRowIsTheEightFields}); answer the empty list when every organization
+ * is forbidden ({@link everyOrganizationForbiddenIsARefusal}); name every read
+ * organization rather than the kept rows' ({@link aCutOrganizationIsNotNamed}).
  * Vitest entry point: the sibling `.test.ts` (ADR 0014).
  */
 
@@ -126,6 +129,26 @@ export async function aForbiddenOrganizationIsSkipped(): Promise<void> {
   expect([out.ok, itemsOf(out).map((item) => item.code)]).toEqual([true, ["PUMP-M"]]);
 }
 
+/** Every allowed organization forbidden (the list's 403, or `requireMasterDataUser`'s): a refusal, not an empty list. */
+export async function everyOrganizationForbiddenIsARefusal(): Promise<void> {
+  const forbidden = new ForbiddenException("Organization is outside your access scope");
+  const { tools } = fake({ [ORG_A]: forbidden, [ORG_B]: forbidden });
+  expect(await tools.dispatch("list_asset_templates", {}, ctx([ORG_A, ORG_B]))).toEqual({
+    ok: false,
+    error: COPILOT_ASSET_TEMPLATES_REFUSAL,
+  });
+}
+
+/** The allowed twin: one readable organization with no versions is an empty list, not the refusal. */
+export async function aReadableOrganizationWithNoVersionsIsAnEmptyList(): Promise<void> {
+  const { tools } = fake({ [ORG_A]: [] });
+  expect(await tools.dispatch("list_asset_templates", {}, ctx())).toEqual({
+    ok: true,
+    result: { truncated: false, items: [] },
+    organizationIds: [],
+  });
+}
+
 /** Any other error of the list is not swallowed: the call fails (the registry's generic failure). */
 export async function anotherErrorIsRethrown(): Promise<void> {
   const { tools } = fake({ [ORG_A]: new Error("connection lost") });
@@ -161,6 +184,17 @@ export async function theResultNamesTheOrganizationsItHolds(): Promise<void> {
   const { tools } = fake({ [ORG_A]: [], [ORG_B]: [template(ORG_B, "AHU")] });
   const out = await tools.dispatch("list_asset_templates", {}, ctx([ORG_A, ORG_B]));
   expect(out.ok && out.organizationIds).toEqual([ORG_B]);
+}
+
+/** Organization B's rows sort last and are all cut by the budget: the result names organization A only. */
+export async function aCutOrganizationIsNotNamed(): Promise<void> {
+  const long = { name: "n".repeat(120) };
+  const { tools } = fake({
+    [ORG_A]: Array.from({ length: 200 }, (_, i) => template(ORG_A, `T${String(i).padStart(3, "0")}`, 1, long)),
+    [ORG_B]: [template(ORG_B, "AHU", 1, long)],
+  });
+  const out = await tools.dispatch("list_asset_templates", {}, ctx([ORG_A, ORG_B]));
+  expect(out.ok && [out.result.truncated, out.organizationIds]).toEqual([true, [ORG_A]]);
 }
 
 /** (vi) A list past the tool-result budget keeps what fits and says `truncated`, serialized first. */

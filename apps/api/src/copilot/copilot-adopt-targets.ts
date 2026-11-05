@@ -4,6 +4,7 @@ import { z } from "zod";
 import { assets, assetTemplates } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { canInstantiate, type JwtPayload, TEMPLATE_ADOPTION_MAX_ASSETS, type TemplateLifecycleStatus } from "@bms/shared";
+import type { CatalogEntry } from "@bms/shared/copilot";
 
 import {
   alreadyPinnedMessage,
@@ -71,6 +72,32 @@ const recordId = z.string().uuid();
 /** Throws {@link adoptMalformedIdMessage} for an id that is not a UUID. */
 function requireRecordId(id: string): void {
   if (!recordId.safeParse(id).success) throw new CopilotTargetRefusal(adoptMalformedIdMessage(id));
+}
+
+/**
+ * `F4.315` PR A review (decision 3) — the propose tool's *argument guard* for an
+ * adopt entry takes its path id as a bounded string rather than the catalog's
+ * `uuidParam`, so a non-UUID id reaches {@link adoptMalformedIdRefusal} and the
+ * model reads decision 3's sentence instead of "Invalid arguments: id: Invalid
+ * uuid". The catalog entry, the definition the model is shown (`format: uuid`)
+ * and the route are unchanged (decision 4); any other entry gets `{}`.
+ */
+export function adoptGuardParams(entry: CatalogEntry): Record<string, z.ZodTypeAny> {
+  return entry.target.kind === "assetTemplateAdopt" ? { [entry.target.param]: z.string().min(1).max(256) } : {};
+}
+
+/**
+ * `F4.315` PR A review (decision 3): for an adopt entry, the malformed sentence for
+ * the first path id or `assetIds` item that is a string but not a UUID — checked
+ * before the body parse, whose `.uuid()` would answer "Invalid body" first — or
+ * `null` (any other entry, or no such id).
+ */
+export function adoptMalformedIdRefusal(entry: CatalogEntry, params: Record<string, string>, body: unknown): string | null {
+  if (entry.target.kind !== "assetTemplateAdopt") return null;
+  const ids = (body as Record<string, unknown> | null)?.[entry.target.field];
+  const listed = Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string") : [];
+  const malformed = [params[entry.target.param], ...listed].find((id) => id !== undefined && !recordId.safeParse(id).success);
+  return malformed === undefined ? null : adoptMalformedIdMessage(malformed);
 }
 
 /**
@@ -184,28 +211,28 @@ async function readAdoptAssets(tenantDb: BmsDb, organizationId: string, assetIds
 }
 
 /**
- * Amendment 14 decision 2: a listed asset the version's organization does not
- * hold, looked for in each other allowed organization in turn (the
- * {@link findAdoptTemplate} loop), or `null` when none holds it.
+ * Amendment 14 decision 2: the listed assets the version's organization does
+ * not hold, looked for in each other allowed organization in turn (the
+ * {@link findAdoptTemplate} loop) with one read per organization over the ids
+ * still missing, until none is. Returns the rows found; an id no organization
+ * holds is absent from them.
  */
-export async function findAssetElsewhere(
+export async function findAssetsElsewhere(
   tenantDb: BmsDb,
-  assetId: string,
+  assetIds: readonly string[],
   allowed: readonly string[],
   except: string,
-): Promise<AdoptAssetRow | null> {
+): Promise<AdoptAssetRow[]> {
+  const found: AdoptAssetRow[] = [];
+  let missing = [...assetIds];
   for (const organizationId of allowed) {
+    if (missing.length === 0) break;
     if (organizationId === except) continue;
-    const [row] = await withTenant(tenantDb, organizationId, (tx) =>
-      tx
-        .select(adoptAssetColumns)
-        .from(assets)
-        .where(and(eq(assets.id, assetId), eq(assets.organizationId, organizationId)))
-        .limit(1),
-    );
-    if (row) return row;
+    const rows = await readAdoptAssets(tenantDb, organizationId, missing);
+    found.push(...rows);
+    missing = missing.filter((id) => !rows.some((row) => row.id === id));
   }
-  return null;
+  return found;
 }
 
 /** What the target resolves to: the version, its organization and its lifecycle status (when in the vocabulary). */
@@ -220,7 +247,7 @@ export type AdoptTarget = { organizationId: string; name: string; status?: Templ
  * set; `canManageOrganization` on the version's organization; then, on a
  * **published** version only, the listed assets ({@link adoptBatchRefusal},
  * with `writableLocationIds`; an id the version's organization does not hold
- * is looked for in the other allowed organizations, {@link findAssetElsewhere}).
+ * is looked for in the other allowed organizations, {@link findAssetsElsewhere}).
  *
  * The status is returned, not judged (`F4.246`): an in-scope draft or archived
  * version resolves with its status, and the propose tool's lifecycle mirror
@@ -253,15 +280,14 @@ export async function resolveAdoptTarget(
   const rows = await readAdoptAssets(tenantDb, template.organizationId, assetIds);
   const writable = await falseOnThrow(() => access.writableLocationIds(user));
   if (writable === false) return null;
-  for (const id of assetIds.filter((listed) => !rows.some((row) => row.id === listed))) {
-    const found = await findAssetElsewhere(tenantDb, id, allowed, template.organizationId);
-    if (found === null) return null;
-    rows.push(found);
-  }
+  const missing = assetIds.filter((listed) => !rows.some((row) => row.id === listed));
+  if (missing.length > 0) rows.push(...(await findAssetsElsewhere(tenantDb, missing, allowed, template.organizationId)));
   const refusal = adoptBatchRefusal(template, assetIds, rows, writable);
   if (refusal === null) return resolved;
   if (refusal.kind === "general") return null;
-  throw new CopilotTargetRefusal(adoptRefusalSentence(refusal, template));
+  // `F4.315` PR A review (decision 10): the version's organization, and the asset's when it is another.
+  const named = [...new Set([template.organizationId, refusal.asset.organizationId])];
+  throw new CopilotTargetRefusal(adoptRefusalSentence(refusal, template), named);
 }
 
 /** An access check's answer, or `false` when it throws (a 403 is the one refusal). */

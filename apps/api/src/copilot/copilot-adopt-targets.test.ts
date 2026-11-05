@@ -41,6 +41,7 @@ import {
   aMalformedVersionIdIsTheMalformedSentence,
   aMalformedVersionIdReadsNothing,
   theMalformedSentenceNamesTheReadTools,
+  theMissingIdsAreReadOncePerOtherOrganization,
 } from "./copilot-adopt-targets.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -70,6 +71,7 @@ describe("F4.315 PR A — the adopt target names its cause in scope (ADR 0099 Am
   it("words an asset of another domain with the domain sentence", () => anAssetOfAnotherDomainInScopeNamesItsCause());
   it("words an asset of another allowed organization with the organization sentence", () =>
     anAssetOfAnotherAllowedOrganizationNamesItsCause());
+  it("reads the missing ids once per other allowed organization", () => theMissingIdsAreReadOncePerOtherOrganization());
   it("keeps the general refusal for an id found nowhere", () => anIdFoundNowhereKeepsTheGeneralRefusal());
   it("names no cause for an asset outside the write scope", () => anAssetOutsideTheWriteScopeNamesNoCause());
   it("answers a non-UUID version id with the malformed sentence", () => aMalformedVersionIdIsTheMalformedSentence());
