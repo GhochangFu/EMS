@@ -16,10 +16,16 @@
  * `src/lib/**`); this file is presentation. The page owns the writes, so a
  * refusal — a `409` on Delete for a point a dashboard widget shows, included
  * — is the Review card's error in the server's words.
+ *
+ * `F4.313` (ADR 0109 Amendment 1, A11–A13) — on Add, a global administrator
+ * (`allowNewKey`) may pick **New key** and type its code, label and unit. The
+ * formula is then checked against the new code, with the key's own fields,
+ * and only a clean draft reaches `onSubmit` with the key to create; the page
+ * creates it and then writes the point (`createKeyThenWritePoint`).
  */
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import type { AssetPointCalcConfigDto, CalcPointSetBody } from "@bms/shared";
+import type { AssetPointCalcConfigDto, CalcPointSetBody, CreatePointKeyBody } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import { fetchAdminAssetPoints } from "../../api/admin/asset-points";
@@ -36,11 +42,20 @@ import {
   standaloneConfigFor,
   type CalcPointDraft,
 } from "../../lib/calc-point-draft";
+import {
+  NEW_KEY,
+  emptyNewPointKeyDraft,
+  newPointKeyBody,
+  newPointKeyDraftChanged,
+  newPointKeyProblems,
+  type NewPointKeyDraft,
+} from "../../lib/new-point-key-draft";
 import { FormulaEditorLazy } from "../asset-templates/formula-editor-lazy";
 import { FormulaPreview } from "../asset-templates/formula-preview";
 import { WizardShell } from "../wizard/wizard-shell";
 import { BackfillDaysSelect } from "./backfill-days-select";
 import { CatalogKeySelect } from "./catalog-key-select";
+import { NewPointKeyFields } from "./new-point-key-fields";
 import {
   PointCalcDraftProblems,
   PointCalcFormulaFields,
@@ -63,7 +78,13 @@ type CalcPointPanelProps = {
   saveError: string | null;
   /** The draft changed: a refusal of the previous one is stale. */
   onEdited: () => void;
-  onSubmit: (pointKey: string, body: CalcPointSetBody) => void;
+  /**
+   * `F4.313` (A13): `newKey` is the catalog key to create first, or `null`.
+   * Called only once the formula checks clean against the key it names.
+   */
+  onSubmit: (pointKey: string, body: CalcPointSetBody, newKey: CreatePointKeyBody | null) => void;
+  /** `F4.313` (A12): offer **New key** on Add — the page passes it for a global administrator only. */
+  allowNewKey?: boolean;
   /** Edit only: opens the `calcPoint.delete` wizard. */
   onDelete: (() => void) | null;
   onCancel: () => void;
@@ -77,12 +98,15 @@ export function CalcPointPanel({
   saveError,
   onEdited,
   onSubmit,
+  allowNewKey = false,
   onDelete,
   onCancel,
 }: CalcPointPanelProps) {
   const [draft, setDraft] = useState<CalcPointDraft>(() =>
     config ? calcPointDraftFromConfig(config) : emptyCalcPointDraft(),
   );
+  // `F4.313`: the New key fields while **New key** is picked; the draft's key mirrors their code.
+  const [newKey, setNewKey] = useState<NewPointKeyDraft | null>(null);
   const rowsQ = useQuery({
     queryKey: ["admin", "asset-points", "all", assetId],
     queryFn: () => fetchAdminAssetPoints("all", assetId),
@@ -92,14 +116,26 @@ export function CalcPointPanel({
     onEdited();
     setDraft(next);
   };
-  const problems = calcPointDraftProblems(draft, knownRefsFor(rows, draft.pointKey));
+  // A13: the formula is checked against the key it names — the new code on
+  // New key — and the new key's own fields, before any write.
+  const problems = [
+    ...(newKey ? newPointKeyProblems(newKey) : []),
+    ...calcPointDraftProblems(draft, knownRefsFor(rows, draft.pointKey)),
+  ];
   const dialect = draftDialect(draft);
   // The leave prompt's `dirty`: the shell never sees the CodeMirror formula's
   // edits (no DOM `change`), and on Add the key select sits outside it.
-  const dirty = calcPointDraftChanged(
-    draft,
-    config ? calcPointDraftFromConfig(config) : emptyCalcPointDraft(draft.pointKey),
-  );
+  const dirty =
+    calcPointDraftChanged(draft, config ? calcPointDraftFromConfig(config) : emptyCalcPointDraft(draft.pointKey)) ||
+    (newKey !== null && newPointKeyDraftChanged(newKey));
+  const pickKey = (picked: string) => {
+    setNewKey(picked === NEW_KEY ? emptyNewPointKeyDraft() : null);
+    change({ ...draft, pointKey: picked === NEW_KEY ? "" : picked });
+  };
+  const editNewKey = (next: NewPointKeyDraft) => {
+    setNewKey(next);
+    change({ ...draft, pointKey: next.code.trim() });
+  };
   const fieldsConfig = config ?? standaloneConfigFor(draft.pointKey);
   const fields = {
     config: fieldsConfig,
@@ -156,14 +192,16 @@ export function CalcPointPanel({
         <>
           <h3 className="text-sm font-semibold">Add calculated point</h3>
           <CatalogKeySelect
-            value={draft.pointKey}
+            value={newKey ? NEW_KEY : draft.pointKey}
             exclude={new Set(rows.map((row) => row.pointKey))}
             disabled={saving}
-            onChange={(pointKey) => change({ ...draft, pointKey })}
+            allowNew={allowNewKey}
+            onChange={pickKey}
           />
+          {newKey ? <NewPointKeyFields draft={newKey} disabled={saving} onChange={editNewKey} /> : null}
         </>
       )}
-      {draft.pointKey === "" ? (
+      {draft.pointKey === "" && newKey === null ? (
         <div className="flex justify-start">
           <button type="button" onClick={onCancel} className="text-xs text-ink-muted underline">
             Cancel
@@ -180,7 +218,8 @@ export function CalcPointPanel({
           }
           // The body Review parsed against `calcPointSetBodySchema`, sent as shown.
           onSubmit={(body) => {
-            if (problems.length === 0) onSubmit(draft.pointKey, body as CalcPointSetBody);
+            if (problems.length === 0)
+              onSubmit(draft.pointKey, body as CalcPointSetBody, newKey ? newPointKeyBody(newKey) : null);
           }}
           onCancel={() => {
             if (!saving) onCancel();

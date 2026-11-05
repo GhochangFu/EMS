@@ -4,20 +4,29 @@
  * (`fetchAdminPointKeys("true")`). The Add panel excludes the keys the asset
  * already has; the batch wizard excludes none (the server names a clash per
  * asset).
+ *
+ * `F4.313` (ADR 0109 Amendment 1, A11–A12) — with `allowNew`, a last
+ * **New key** option (`NEW_KEY`, a value no catalog code can equal). The
+ * callers pass it for a global administrator only, the catalog's own write
+ * rule; the code, label and unit fields are `NewPointKeyFields`.
  */
 import { useQuery } from "@tanstack/react-query";
 
 import { fetchAdminPointKeys } from "../../api/admin/point-keys";
+import { NEW_KEY } from "../../lib/new-point-key-draft";
 
 export function CatalogKeySelect({
   value,
   exclude,
   disabled,
+  allowNew = false,
   onChange,
 }: {
   value: string;
   exclude: ReadonlySet<string>;
   disabled: boolean;
+  /** Offer **New key** — a global administrator only (A12). */
+  allowNew?: boolean;
   onChange: (pointKey: string) => void;
 }) {
   // `F3.39`: one fleet-wide catalog, so no organization in the key.
@@ -40,6 +49,7 @@ export function CatalogKeySelect({
               {item.code} · {item.name}
             </option>
           ))}
+        {allowNew ? <option value={NEW_KEY}>New key…</option> : null}
       </select>
     </label>
   );
