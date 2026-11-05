@@ -176,7 +176,7 @@ function statusPillClass(status: EnvStatus): string {
     case "offline":
       return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent-strong";
+      return "border-ok/20 bg-ok/10 text-ok-strong";
   }
 }
 
@@ -189,7 +189,7 @@ function tileClass(status: EnvStatus): string {
     case "offline":
       return "border-line bg-well";
     case "normal":
-      return "border-accent/20 bg-accent/10";
+      return "border-ok/20 bg-ok/10";
   }
 }
 
@@ -214,7 +214,7 @@ function markerFill(status: EnvStatus): string {
   if (status === "offline") {
     return "fill-ink-hint";
   }
-  return "fill-accent";
+  return "fill-ok";
 }
 
 function leakFill(status: EnvStatus): string {

@@ -52,7 +52,7 @@ function statusPillClass(status: RackPowerStatus): string {
     case "offline":
       return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent-strong";
+      return "border-ok/20 bg-ok/10 text-ok-strong";
   }
 }
 
@@ -245,7 +245,7 @@ export function ControlRoomItContent() {
                   <td className="px-3 py-2">{server.type}</td>
                   <td className="px-3 py-2 text-right font-mono">{server.watts}</td>
                   <td className="px-3 py-2">
-                    <span className="surface-pill rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent-strong">
+                    <span className="surface-pill rounded-full border border-ok/20 bg-ok/10 px-2 py-0.5 text-[11px] font-semibold text-ok-strong">
                       ON
                     </span>
                   </td>
@@ -413,7 +413,7 @@ function UpsSourceMap({ rules }: { rules: RuleListItem[] }) {
         <svg viewBox="0 0 700 200" className="h-auto min-w-[700px]">
           <defs>
             <marker id="itArrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-              <path d="M0,0 L6,3 L0,6 Z" className="fill-accent" />
+              <path d="M0,0 L6,3 L0,6 Z" className="fill-ok" />
             </marker>
           </defs>
           {/* ADR 0027 decision 3 — these SVG labels sit inside boxes whose
@@ -465,7 +465,7 @@ function mapStroke(status: RackPowerStatus): string {
     case "offline":
       return "stroke-ink-hint";
     case "normal":
-      return "stroke-accent";
+      return "stroke-ok";
   }
 }
 
@@ -478,7 +478,7 @@ function mapBoxClasses(status: RackPowerStatus): { rect: string; text: string; s
     case "offline":
       return { rect: "fill-well-deep stroke-ink-hint", text: "fill-neutral-ink", sub: "fill-ink-faint" };
     case "normal":
-      return { rect: "fill-surface stroke-accent", text: "fill-ink", sub: "fill-ink-muted" };
+      return { rect: "fill-surface stroke-ok", text: "fill-ink", sub: "fill-ink-muted" };
   }
 }
 

@@ -160,7 +160,7 @@ function statusPillClass(status: HvacStatus): string {
     case "offline":
       return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent-strong";
+      return "border-ok/20 bg-ok/10 text-ok-strong";
   }
 }
 
@@ -184,7 +184,7 @@ function unitBoxClass(status: HvacStatus): string {
   if (status === "offline") {
     return "fill-well-deep stroke-ink-hint";
   }
-  return "fill-surface stroke-accent";
+  return "fill-surface stroke-ok";
 }
 
 export function ControlRoomHvacContent() {
@@ -416,8 +416,8 @@ function HvacDiagram({
       <line x1="86" y1="120" x2="114" y2="120" className={airStrokeClass} strokeWidth="1.6" />
       <line x1="100" y1="106" x2="100" y2="134" className={airStrokeClass} strokeWidth="1.6" />
       <text x="100" y="160" textAnchor="middle" className="fill-ink-muted font-mono text-[9px]">FAN {n(freshValue(slice.fanSpeedPct, status === "offline"), 0)}%</text>
-      <rect x="160" y="106" width="60" height="28" rx="4" className={status === "offline" ? "fill-line stroke-ink-hint" : slice.compressorOk === 0 ? "fill-critical-wash-strong stroke-critical" : "fill-ok-wash stroke-accent"} />
-      <text x="190" y="124" textAnchor="middle" className="fill-accent font-mono text-[10px] font-bold">COMP</text>
+      <rect x="160" y="106" width="60" height="28" rx="4" className={status === "offline" ? "fill-line stroke-ink-hint" : slice.compressorOk === 0 ? "fill-critical-wash-strong stroke-critical" : "fill-ok-wash stroke-ok"} />
+      <text x="190" y="124" textAnchor="middle" className="fill-ok font-mono text-[10px] font-bold">COMP</text>
       <line x1="240" y1="80" x2="320" y2="80" className="stroke-warning" strokeWidth="3" markerEnd={`url(#airArrow-${label})`} strokeDasharray={running ? "0" : "4 3"} />
       <text x="280" y="74" textAnchor="middle" className="fill-warning font-mono text-[9px]">RETURN {n(freshValue(slice.returnAirTempC, status === "offline"), 1)}C</text>
       <line x1="320" y1="120" x2="240" y2="120" className={airStrokeClass} strokeWidth="3" markerEnd={`url(#airArrow-${label})`} strokeDasharray={running ? "0" : "4 3"} />

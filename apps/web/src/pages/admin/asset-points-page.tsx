@@ -94,7 +94,7 @@ function CalcRuntimePill({ runtime }: { runtime: AssetPointCalcConfigDto["runtim
     return null;
   }
   const tone =
-    runtime?.lastOutcome === "skipped" ? "bg-critical-wash-strong text-critical-ink-strong" : "bg-accent/10 text-accent-strong";
+    runtime?.lastOutcome === "skipped" ? "bg-critical-wash-strong text-critical-ink-strong" : "bg-ok/10 text-ok-strong";
   return <span className={`rounded px-2 py-0.5 font-semibold ${tone}`}>{label}</span>;
 }
 

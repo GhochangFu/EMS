@@ -101,8 +101,17 @@ const TEXT_PAIRS: Pair[] = [
   { fg: "accent", bg: "canvas" },
   { fg: "accent", bg: "well" },
   { fg: "accent", bg: "surface", wash: { tint: "accent", alpha: 0.1 } },
-  // The app-shell wordmark and footer label (`text-accent` in `bg-chrome`): 4.88 light, 8.71 dark.
-  { fg: "accent", bg: "chrome" },
+  // The app-shell wordmark and footer label (`text-accent` in `bg-chrome` until F4.310): 4.88 light, 8.71 dark.
+  // F4.310 PR A (ADR 0110, plan OQ2): the wordmark "NEXUS" and the shell footer label move to
+  // `accent-on-chrome`; the footer's "good" system status is the fixed `ok` on chrome.
+  { fg: "accent-on-chrome", bg: "chrome" },
+  { fg: "ok", bg: "chrome" },
+  // F4.310 PR A: the OK pill (`border-ok/20 bg-ok/10 text-ok-strong`) on a flat card, and the brand
+  // pill that keeps `accent` (`bg-accent/10 text-accent-strong`). The same OK pill straight on
+  // `canvas` is 4.34 light — an existing pixel (`accent-strong` on `accent/10`), never declared;
+  // raised in the F4.310 PR A body, not declared here.
+  { fg: "ok-strong", bg: "surface", wash: { tint: "ok", alpha: 0.1 } },
+  { fg: "accent-strong", bg: "surface", wash: { tint: "accent", alpha: 0.1 } },
   { fg: "accent-strong", bg: "surface" },
   { fg: "critical-ink-soft", bg: "surface" },
   { fg: "critical-ink", bg: "surface" },
@@ -134,7 +143,8 @@ const TEXT_PAIRS: Pair[] = [
   { fg: "simulated-ink", bg: "well" },
   // F3.65c U4 — green text on the ok tint (D7): crac-schematic.tsx's chiller "Load … kW" label,
   // electrical-sld's UPS labels (already `#007C3C`, U5).
-  { fg: "accent-strong", bg: "ok-wash" },
+  // F4.310 PR A: the CRAC/SLD status labels on `ok-wash` read `ok-strong` (was `accent-strong`).
+  { fg: "ok-strong", bg: "ok-wash" },
   // F3.65c U4 — crac-schematic.tsx labels beside a `fill-well` panel (the fan hub, the compressor
   // bank frame).
   { fg: "info-ink", bg: "well" },
@@ -164,7 +174,7 @@ const TEXT_PAIRS: Pair[] = [
   // light), and the inks the sweeps move there — `critical-ink` for the retired
   // `critical-ink-soft` text, the status inks of the cards' notes.
   { fg: "accent-strong", bg: "canvas" },
-  { fg: "ok-ink", bg: "canvas", wash: { tint: "accent", alpha: 0.1 } },
+  { fg: "ok-ink", bg: "canvas", wash: { tint: "ok", alpha: 0.1 } },
   { fg: "critical-ink", bg: "canvas" },
   { fg: "warning-ink", bg: "canvas" },
   { fg: "info-ink", bg: "canvas" },
@@ -178,6 +188,11 @@ const TEXT_PAIRS: Pair[] = [
 const UI_PAIRS: Pair[] = [
   { fg: "accent", bg: "surface" },
   { fg: "focus", bg: "surface" },
+  // F4.310 PR A: the OK / normal / energised strokes and fills of the schematics, the map and the
+  // health donut move from `accent` to the fixed `ok` / `ok-strong`.
+  { fg: "ok", bg: "surface" },
+  { fg: "ok", bg: "canvas" },
+  { fg: "ok-strong", bg: "surface" },
   { fg: "accent", bg: "canvas" },
   { fg: "focus", bg: "canvas" },
   { fg: "on-dark", bg: "chrome-nav", alpha: 0.8 },
@@ -282,6 +297,16 @@ const ALLOWLIST: AllowlistEntry[] = [
     measured: 2.9,
     threshold: 3,
     reason: "the brand green as text or under white text; ADR 0078 decision 2 keeps the light theme",
+  },
+  {
+    // F4.310 PR A: the same pixel as `accent` on `canvas` above, now through the fixed `ok` role
+    // (the health donut's good slice and the schematic strokes on a neumorphic card).
+    fg: "ok",
+    bg: "canvas",
+    theme: "light",
+    measured: 2.9,
+    threshold: 3,
+    reason: "the OK state in today's brand green, existing pixel; the state is also named in text",
   },
   {
     fg: "warning",

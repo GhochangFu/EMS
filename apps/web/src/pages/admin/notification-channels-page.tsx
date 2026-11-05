@@ -179,7 +179,7 @@ export function NotificationChannelsPage({ user }: NotificationChannelsPageProps
           role="status"
           className={`rounded border px-3 py-2 text-sm ${
             testResult.status === "sent"
-              ? "border-accent/30 bg-accent/10 text-accent-strong"
+              ? "border-ok/30 bg-ok/10 text-ok-strong"
               : "border-warning-line bg-warning-wash text-warning-ink"
           }`}
         >

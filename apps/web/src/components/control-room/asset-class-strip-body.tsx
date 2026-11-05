@@ -8,7 +8,7 @@ const TONE_CLASSES: Record<PillTone, string> = {
   warning: "border-warning-line bg-warning-wash text-warning-ink",
   info: "border-info-line bg-info-wash text-info-ink",
   offline: "border-line bg-well text-neutral-ink",
-  ok: "border-accent/20 bg-accent/10 text-accent-strong",
+  ok: "border-ok/20 bg-ok/10 text-ok-strong",
 };
 
 /**

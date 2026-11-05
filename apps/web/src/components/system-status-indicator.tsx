@@ -9,7 +9,7 @@ import {
 const BAND_LABEL: Record<SystemQualityBand, string> = { good: "Good", fair: "Fair", poor: "Poor" };
 
 const BAND_CLASS: Record<SystemQualityBand, string> = {
-  good: "text-accent",
+  good: "text-ok",
   fair: "text-warning-on-dark",
   poor: "text-critical-on-dark",
 };

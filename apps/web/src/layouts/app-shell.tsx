@@ -416,7 +416,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
         </span>
         <span className="flex items-center gap-2">
           <span className="font-mono">v0.1</span>
-          <span className="text-accent">
+          <span className="text-accent-on-chrome">
             Powered By: <b className="text-on-dark">Euphoria Infotech India Limited</b>
           </span>
         </span>

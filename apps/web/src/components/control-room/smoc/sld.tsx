@@ -208,19 +208,19 @@ function CrSldSvg({ rules }: { rules: RuleListItem[] }) {
     <svg viewBox="0 0 1100 460" className="h-auto min-w-[1000px]">
       <defs>
         <marker id="crArrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-          <path d="M0,0 L6,3 L0,6 Z" className="fill-accent" />
+          <path d="M0,0 L6,3 L0,6 Z" className="fill-ok" />
         </marker>
       </defs>
       <SldBox x={20} y={200} w={100} h={60} title="UTILITY" sub={<StaticTspan kind="nameplate">11 kV INCOMER</StaticTspan>} />
       <Flow x1={120} y1={230} x2={160} y2={230} />
-      <circle cx={180} cy={220} r={13} className="fill-surface stroke-accent" strokeWidth={2} />
-      <circle cx={180} cy={240} r={13} className="fill-surface stroke-accent" strokeWidth={2} />
-      <text x={180} y={200} textAnchor="middle" className="fill-accent font-mono text-[9px]"><StaticTspan kind="nameplate">XFMR 100 kVA</StaticTspan></text>
+      <circle cx={180} cy={220} r={13} className="fill-surface stroke-ok" strokeWidth={2} />
+      <circle cx={180} cy={240} r={13} className="fill-surface stroke-ok" strokeWidth={2} />
+      <text x={180} y={200} textAnchor="middle" className="fill-ok font-mono text-[9px]"><StaticTspan kind="nameplate">XFMR 100 kVA</StaticTspan></text>
       <Flow x1={200} y1={230} x2={240} y2={230} />
       <Breaker cx={260} cy={230} label="Q1" code="CR-Q1" rules={rules} />
       <Flow x1={274} y1={230} x2={320} y2={230} />
-      <rect x={320} y={80} width={6} height={320} rx={2} className="fill-accent" />
-      <text x={323} y={74} textAnchor="middle" className="fill-accent font-condensed text-[11px] font-bold"><StaticTspan kind="nameplate">MAIN BUS 415V</StaticTspan></text>
+      <rect x={320} y={80} width={6} height={320} rx={2} className="fill-ok" />
+      <text x={323} y={74} textAnchor="middle" className="fill-ok font-condensed text-[11px] font-bold"><StaticTspan kind="nameplate">MAIN BUS 415V</StaticTspan></text>
       {/* `F4.39`: the UPS boxes used to read `ONLINE · 30 kVA`. "ONLINE" was a
           literal, and it is not a claim telemetry supports anyway — for a UPS
           it means running on mains rather than on battery, which is a fact
@@ -231,8 +231,8 @@ function CrSldSvg({ rules }: { rules: RuleListItem[] }) {
       <LoadBranch y={240} breaker="Q10" code="CR-Q10" title="HVAC-1 (4 TR)" unitCode="CR-HVAC-1" role="LEAD" rules={rules} />
       <LoadBranch y={290} breaker="Q11" code="CR-Q11" title="HVAC-2 (4 TR)" unitCode="CR-HVAC-2" role="STANDBY" rules={rules} />
       <LoadBranch y={340} breaker="Q12" code="CR-Q12" title="CR LIGHTS / AUX" rules={rules} />
-      <rect x={690} y={80} width={6} height={200} rx={2} className="fill-accent" />
-      <text x={693} y={74} textAnchor="middle" className="fill-accent font-condensed text-[11px] font-bold"><StaticTspan kind="nameplate">UPS OUT BUS 230V</StaticTspan></text>
+      <rect x={690} y={80} width={6} height={200} rx={2} className="fill-ok" />
+      <text x={693} y={74} textAnchor="middle" className="fill-ok font-condensed text-[11px] font-bold"><StaticTspan kind="nameplate">UPS OUT BUS 230V</StaticTspan></text>
       <Pdu y={105} breaker="Q6" code="CR-Q6" title="NET RACK · PDU-A" loadCode="CR-NET-RACK-PDU-A" rules={rules} />
       <Pdu y={148} breaker="Q7" code="CR-Q7" title="NET RACK · PDU-B" loadCode="CR-NET-RACK-PDU-B" rules={rules} />
       <Pdu y={195} breaker="Q8" code="CR-Q8" title="VW SRV · PDU-A" loadCode="CR-VW-RACK-PDU-A" rules={rules} />
@@ -253,7 +253,7 @@ function CrSldSvg({ rules }: { rules: RuleListItem[] }) {
 }
 
 function Flow({ x1, y1, x2, y2 }: { x1: number; y1: number; x2: number; y2: number }) {
-  return <line x1={x1} y1={y1} x2={x2} y2={y2} className="stroke-accent" strokeWidth={3} markerEnd="url(#crArrow)" />;
+  return <line x1={x1} y1={y1} x2={x2} y2={y2} className="stroke-ok" strokeWidth={3} markerEnd="url(#crArrow)" />;
 }
 
 /**
@@ -275,7 +275,7 @@ function SldBox({ x, y, w, h, title, sub, offline = false }: { x: number; y: num
         width={w}
         height={h}
         rx={6}
-        className={offline ? "fill-line stroke-ink-hint" : "fill-surface stroke-accent"}
+        className={offline ? "fill-line stroke-ink-hint" : "fill-surface stroke-ok"}
         strokeWidth={1.5}
       />
       <text x={x + w / 2} y={y + h / 2 - 2} textAnchor="middle" className={`font-condensed text-[12px] font-bold ${offline ? "fill-ink-muted" : "fill-ink"}`}>{title}</text>
@@ -317,7 +317,7 @@ function Breaker({ cx, cy, label, code, rules }: { cx: number; cy: number; label
           ? "fill-critical-wash stroke-critical"
           : state.status === "warning"
             ? "fill-warning-wash stroke-warning"
-            : "fill-surface stroke-accent";
+            : "fill-surface stroke-ok";
   const textClass =
     state.status === "offline"
       ? "fill-ink-faint font-mono text-[8px] font-bold"
@@ -327,7 +327,7 @@ function Breaker({ cx, cy, label, code, rules }: { cx: number; cy: number; label
           ? "fill-critical-ink font-mono text-[8px] font-bold"
           : state.status === "warning"
             ? "fill-warning-ink font-mono text-[8px] font-bold"
-            : "fill-accent font-mono text-[8px] font-bold";
+            : "fill-ok font-mono text-[8px] font-bold";
   return (
     <g>
       <circle cx={cx} cy={cy} r={12} className={circleClass} strokeWidth={2} />
@@ -424,7 +424,7 @@ function LoadBranch({ y, breaker, code, title, unitCode, role, rules }: { y: num
         : state.status === "critical"
           ? "stroke-critical"
           : closed
-            ? "stroke-accent"
+            ? "stroke-ok"
             : "stroke-ink-hint";
   return (
     <g>
@@ -462,13 +462,13 @@ function Pdu({ y, breaker, code, title, loadCode, rules }: { y: number; breaker:
   const warn = state.status === "warning";
   const critical = state.status === "critical";
   const dark = state.status === "offline";
-  const strokeClass = dark ? "stroke-ink-hint" : critical ? "stroke-critical" : warn ? "stroke-warning" : "stroke-accent";
+  const strokeClass = dark ? "stroke-ink-hint" : critical ? "stroke-critical" : warn ? "stroke-warning" : "stroke-ok";
   return (
     <g>
       <line x1={696} y1={y} x2={740} y2={y} className={strokeClass} strokeWidth={3} markerEnd={dark ? undefined : "url(#crArrow)"} />
       <Breaker cx={760} cy={y} label={breaker} code={code} rules={rules} />
       <line x1={770} y1={y} x2={810} y2={y} className={strokeClass} strokeWidth={3} markerEnd={dark ? undefined : "url(#crArrow)"} />
-      <rect x={810} y={y - 19} width={160} height={38} rx={6} className={dark ? "fill-line stroke-ink-hint" : critical ? "fill-critical-wash stroke-critical" : warn ? "fill-warning-wash stroke-warning" : "fill-surface stroke-accent"} />
+      <rect x={810} y={y - 19} width={160} height={38} rx={6} className={dark ? "fill-line stroke-ink-hint" : critical ? "fill-critical-wash stroke-critical" : warn ? "fill-warning-wash stroke-warning" : "fill-surface stroke-ok"} />
       <text x={890} y={y + 1} textAnchor="middle" className={dark ? "fill-ink-muted font-condensed text-[12px] font-bold" : critical ? "fill-critical-ink-strong font-condensed text-[12px] font-bold" : warn ? "fill-warning-ink font-condensed text-[12px] font-bold" : "fill-ink font-condensed text-[12px] font-bold"}>{title}</text>
       {/* Gated on the *load* asset's own freshness, not the breaker's: the two
           are different assets and either can die alone. */}

@@ -40,6 +40,8 @@ export default {
       accent: {
         DEFAULT: "rgb(var(--accent) / <alpha-value>)",
         strong: "rgb(var(--accent-strong) / <alpha-value>)",
+        // F4.310 (ADR 0110): the brand colour on the dark chrome — the wordmark.
+        "on-chrome": "rgb(var(--accent-on-chrome) / <alpha-value>)",
       },
       chrome: {
         DEFAULT: "rgb(var(--chrome) / <alpha-value>)",
@@ -79,6 +81,9 @@ export default {
         "on-dark": "rgb(var(--warning-on-dark) / <alpha-value>)",
       },
       ok: {
+        // F4.310 (ADR 0110): the fixed "OK / normal / energised" state, off `accent`.
+        DEFAULT: "rgb(var(--ok) / <alpha-value>)",
+        strong: "rgb(var(--ok-strong) / <alpha-value>)",
         ink: "rgb(var(--ok-ink) / <alpha-value>)",
         wash: "rgb(var(--ok-wash) / <alpha-value>)",
       },

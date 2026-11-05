@@ -85,9 +85,11 @@ export function areaSeriesIsLineWithAreaStyle(): void {
  * `F3.65c` (ADR 0078 decision 5, owner ruling OQ1) — a tone names a role, not a hex. Pinned
  * literally rather than "is some role": a shape-only check leaves `ok` and `critical` free to
  * swap, which is a green suite and a healthy gauge band (or a healthy tank fill) rendering red.
+ * `F4.310` (ADR 0110 decision 3): `ok` is the fixed `ok` role, not the brand `accent`, so a colour
+ * profile never recolours a healthy band.
  */
 export function toneRolesAreTheStatusQuartet(): void {
-  expect(WIDGET_TONE_ROLE).toEqual({ ok: "accent", info: "info", warning: "warning", critical: "critical" });
+  expect(WIDGET_TONE_ROLE).toEqual({ ok: "ok", info: "info", warning: "warning", critical: "critical" });
 }
 
 /**

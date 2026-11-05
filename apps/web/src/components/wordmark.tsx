@@ -1,7 +1,8 @@
 /**
  * `F3.33` (ADR 0083 decision 2) — the `IONSiTE NEXUS` text wordmark. "IONSiTE" is bold in `on-dark`,
- * "NEXUS" is in `accent`; two lines in the SOW lettering. Colours are ADR 0078 role classes only
- * (`{ on-dark on chrome }` and `{ accent on chrome }` are already declared contrast pairs). A real
+ * "NEXUS" is in `accent-on-chrome` (`F4.310`, ADR 0110: the brand colour on chrome, so a colour
+ * profile can keep it readable there); two lines in the SOW lettering. Colours are ADR 0078 role
+ * classes only (`{ on-dark on chrome }` and `{ accent-on-chrome on chrome }` are declared pairs). A real
  * logo is a later amendment (C22b).
  */
 export const WORDMARK_NAME = "IONSiTE NEXUS";
@@ -20,7 +21,7 @@ export function Wordmark({ variant }: { variant: keyof typeof SIZES }) {
       className={`inline-flex flex-col font-condensed tracking-tight ${SIZES[variant]}`}
     >
       <span className="font-bold text-on-dark">IONSiTE</span>{" "}
-      <span className="text-accent">NEXUS</span>
+      <span className="text-accent-on-chrome">NEXUS</span>
     </span>
   );
 }

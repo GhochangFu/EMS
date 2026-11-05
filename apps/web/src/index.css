@@ -14,7 +14,11 @@
  * `index.html` before first paint. The 40 roles and their light/dark values are
  * `docs/plans/f3.65a-colour-tokens.md` §2.2, ADR 0078 Amendment 1 records the arithmetic. A 41st
  * role, `simulated-ink`, was added by owner ruling 2026-09-28 during the build — see
- * `tests/support/colour-role-map.ts`'s docblock for why and its derivation.
+ * `tests/support/colour-role-map.ts`'s docblock for why and its derivation. Roles 42–49 are the
+ * `series-*` roles (ADR 0078 Amendment 4). Roles 50–52 (ADR 0078 Amendment 5, ADR 0110, F4.310):
+ * `ok` and `ok-strong` carry the "OK / normal / energised" state and stay fixed in every colour
+ * profile; `accent-on-chrome` is the brand colour on the dark chrome. Each copies `accent` /
+ * `accent-strong` exactly, so no pixel moves.
  */
 :root {
   color-scheme: light;
@@ -68,6 +72,9 @@
   --series-6: 77 124 15; /* #4D7C0F */
   --series-7: 71 85 105; /* #475569 */
   --series-8: 49 46 129; /* #312E81 */
+  --ok: 0 166 81; /* #00A651 */
+  --ok-strong: 0 124 60; /* #007C3C */
+  --accent-on-chrome: 0 166 81; /* #00A651 */
 }
 
 :root[data-theme="dark"] {
@@ -122,6 +129,9 @@
   --series-6: 163 230 53; /* #A3E635 */
   --series-7: 203 213 225; /* #CBD5E1 */
   --series-8: 199 210 254; /* #C7D2FE */
+  --ok: 61 205 88; /* #3DCD58 */
+  --ok-strong: 101 215 122; /* #65D77A */
+  --accent-on-chrome: 61 205 88; /* #3DCD58 */
 }
 
 /*
