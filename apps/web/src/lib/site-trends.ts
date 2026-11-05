@@ -3,6 +3,7 @@ import {
   CATALOG_CODE_PATTERN,
   MIN_BASELINE_WINDOWS,
   SITE_TRENDS_ENERGY_VIEW,
+  assetLabelOf,
   type EnergyViewQuery,
   type SegmentAbnormalBaselineDto,
   type SegmentAbnormalEntryDto,
@@ -124,6 +125,8 @@ export function compareSpanMs(current: SegmentViewPeriodDto, compare: SegmentVie
 export type SegmentChartSeries = {
   readonly assetId: string;
   readonly assetCode: string;
+  /** `F4.316` (ADR 0111) — `assetLabelOf(entry)`, `<code> · <RTU>` (or the location without one). */
+  readonly label: string;
   readonly dashed: boolean;
   readonly data: [string, number | null][];
 };
@@ -143,6 +146,7 @@ export function segmentChartSeries(
     const own: SegmentChartSeries = {
       assetId: entry.assetId,
       assetCode: entry.assetCode,
+      label: assetLabelOf(entry),
       dashed: false,
       data: entry.buckets.map((b) => [b.t, b.v]),
     };
@@ -152,6 +156,7 @@ export function segmentChartSeries(
     const previous: SegmentChartSeries = {
       assetId: entry.assetId,
       assetCode: entry.assetCode,
+      label: own.label,
       dashed: true,
       data: shiftCompareBuckets(entry.compareBuckets, spanMs).map((b) => [b.t, b.v]),
     };
@@ -161,7 +166,10 @@ export function segmentChartSeries(
 
 export type RankingSort = "mean" | "max";
 
-/** `mean` keeps the server's order (mean desc, ties by code); `max` sorts by max desc, ties by code. */
+/**
+ * `mean` keeps the server's order (mean desc, ties by code); `max` sorts by max desc, ties by code
+ * — the code, not the `F4.316` label, so an RTU's name never reorders a tie.
+ */
 export function sortRanking(
   ranking: readonly SegmentViewRankingEntryDto[],
   by: RankingSort,

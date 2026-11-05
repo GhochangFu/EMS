@@ -4,6 +4,7 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   anEmptyListSaysSo,
+  namesEachEntryByItsAssetLabel,
   countsNormalAndNamesTheTruncation,
   offersNoActionAndNoAlarmLink,
   rendersTheBaselineLine,
@@ -34,5 +35,9 @@ describe("F4.302 the segment abnormal list", () => {
 
   it("says so when no asset is outside its normal", () => {
     anEmptyListSaysSo();
+  });
+
+  it("names each entry <code> · <RTU>, or <code> · <location> without an RTU (F4.316)", () => {
+    namesEachEntryByItsAssetLabel();
   });
 });

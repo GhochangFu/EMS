@@ -38,6 +38,8 @@ function entry(
     assetId,
     assetCode,
     assetName: `Asset ${assetCode}`,
+    assetRtuName: null,
+    assetLocationName: null,
     unit: "kW",
     current: { mean, max, maxAt: null, sampleCount: 10 },
     compare: null,
@@ -52,6 +54,8 @@ function abnormal(fields: Partial<SegmentAbnormalEntryDto>): SegmentAbnormalEntr
     assetId: ASSET_A,
     assetCode: "A1",
     assetName: "Asset A1",
+    assetRtuName: null,
+    assetLocationName: null,
     unit: "kW",
     currentMean: 30,
     baselineMean: 20,
@@ -150,6 +154,36 @@ export function chartSeriesShiftTheCompareBySpan(): void {
     [ASSET_A, false, [["2026-10-30T00:00:00.000Z", 5]]],
     [ASSET_A, true, [["2026-10-30T00:00:00.000Z", 4]]],
   ]);
+}
+
+/** `F4.316` (ADR 0111) — a drawn line and its previous period both carry `<code> · <RTU>`. */
+export function chartSeriesCarryTheAssetLabel(): void {
+  const drawn = entry(ASSET_A, "A1", 5, 9, {
+    assetRtuName: "RTU 1",
+    assetLocationName: "Site 1",
+    buckets: [{ t: "2026-10-30T00:00:00.000Z", v: 5 }],
+    compareBuckets: [{ t: "2026-10-29T00:00:00.000Z", v: 4 }],
+  });
+  expect(segmentChartSeries([drawn], 86_400_000).map((s) => s.label)).toEqual(["A1 · RTU 1", "A1 · RTU 1"]);
+}
+
+/** `F4.316` (ADR 0111) — an RTU-less asset's line is labelled `<code> · <location>`. */
+export function chartSeriesLabelAnRtuLessAssetByItsLocation(): void {
+  const drawn = entry(ASSET_A, "A1", 5, 9, {
+    assetRtuName: null,
+    assetLocationName: "Site 1",
+    buckets: [{ t: "2026-10-30T00:00:00.000Z", v: 5 }],
+  });
+  expect(segmentChartSeries([drawn], 0).map((s) => s.label)).toEqual(["A1 · Site 1"]);
+}
+
+/** `F4.316` (ADR 0111) — a max tie still sorts by code, not by the label's RTU name. */
+export function sortRankingTieStaysByCode(): void {
+  const rows = [
+    entry(ASSET_B, "B1", 1, 7, { assetRtuName: "RTU A" }),
+    entry(ASSET_A, "A1", 2, 7, { assetRtuName: "RTU Z" }),
+  ];
+  expect(sortRanking(rows, "max").map((r) => r.assetCode)).toEqual(["A1", "B1"]);
 }
 
 /** Mean is the server's order kept; max sorts by max descending, ties by code. */

@@ -22,6 +22,8 @@ function row(assetId: string, code: string, mean: number, max: number, compareMe
     assetId,
     assetCode: code,
     assetName: `Asset ${code}`,
+    assetRtuName: null,
+    assetLocationName: null,
     unit: "kW",
     current: { mean, max, maxAt: "2026-10-30T06:30:00.000Z", sampleCount: 10 },
     compare: compareMean === null ? null : { mean: compareMean, max: compareMean, maxAt: null, sampleCount: 5 },
@@ -32,11 +34,11 @@ function row(assetId: string, code: string, mean: number, max: number, compareMe
 
 const RANKING = [row(A, "A1", 10, 12, 8), row(B, "B1", 4, 20, null)];
 
-function renderTable(moreAssets = 0, compare = true): void {
+function renderTable(moreAssets = 0, compare = true, ranking: readonly SegmentViewRankingEntryDto[] = RANKING): void {
   render(
     <MemoryRouter>
       <SegmentRankingTable
-        ranking={RANKING}
+        ranking={ranking}
         moreAssets={moreAssets}
         pointCode="kw"
         period={PERIOD}
@@ -88,4 +90,15 @@ export function linksEachAssetToItsHistory(): void {
   expect(link.getAttribute("href")).toBe(
     `/asset-history/${A}?from=${encodeURIComponent(PERIOD.from)}&to=${encodeURIComponent(PERIOD.to)}&points=kw&compare=1`,
   );
+}
+
+/** `F4.316` (ADR 0111) — a row names its asset `<code> · <RTU>`; the RTU-less twin `<code> · <location>`. */
+export function namesEachAssetByItsLabel(): void {
+  renderTable(0, true, [
+    { ...row(A, "A1", 10, 12, 8), assetRtuName: "RTU 1", assetLocationName: "Site 1" },
+    { ...row(B, "B1", 4, 20, null), assetRtuName: null, assetLocationName: "Site 1" },
+  ]);
+  const [first, second] = screen.getAllByTestId("segment-ranking-row");
+  expect(within(first as HTMLElement).getByText("A1 · RTU 1")).toBeInTheDocument();
+  expect(within(second as HTMLElement).getByText("B1 · Site 1")).toBeInTheDocument();
 }

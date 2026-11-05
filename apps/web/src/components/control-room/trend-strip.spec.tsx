@@ -49,6 +49,9 @@ function series(n: number, unit: string | null = "kW"): TrendStripAssetSeriesDto
     assetId: uuid(n),
     assetCode: `A-${String(n).padStart(2, "0")}`,
     assetName: `Asset ${n}`,
+    // `F4.316` (ADR 0111): asset 6 has no RTU, so its label falls back to the location.
+    assetRtuName: n === 6 ? null : `RTU ${n}`,
+    assetLocationName: "Site 1",
     unit,
     buckets: [
       { t: FROM, v: 1 },
@@ -163,15 +166,36 @@ export async function sixSparklineLinksToTheHistoryPage(): Promise<void> {
   );
 }
 
-/** A link's accessible name is `<assetCode> <point name>: open history`. */
+/** A link's accessible name is `<asset label> <point name>: open history` (`F4.316`, ADR 0111). */
 export async function aLinkNamesTheAssetAndThePoint(): Promise<void> {
   fetchStrip.mockResolvedValue(strip());
   renderStrip();
 
-  expect(await screen.findByRole("link", { name: "A-07 Temperature: open history" })).toHaveAttribute(
+  expect(await screen.findByRole("link", { name: "A-07 · RTU 7 Temperature: open history" })).toHaveAttribute(
     "href",
     historyHref(uuid(7), "24h", "temp_c"),
   );
+}
+
+/** `F4.316` (ADR 0111) — an RTU-less asset's link names it `<code> · <location>`. */
+export async function anRtuLessLinkNamesTheLocation(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderStrip();
+
+  expect(await screen.findByRole("link", { name: "A-06 · Site 1 Active power: open history" })).toHaveAttribute(
+    "href",
+    historyHref(uuid(6), "24h", "kw"),
+  );
+}
+
+/** `F4.316` (ADR 0111) — the tile under a sparkline prints the whole label, `<code> · <RTU>`. */
+export async function theTilePrintsTheAssetLabel(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderStrip();
+
+  const row = await screen.findByRole("listitem", { name: "Temperature" });
+  const tile = row.querySelector("[data-role='asset-label']");
+  expect(tile?.textContent).toBe("A-07 · RTU 7");
 }
 
 /** Each asset prints its last value with its own unit, not the catalog unit. */
@@ -226,7 +250,7 @@ export async function theLinksFollowTheSelectedRange(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "7 d" }));
 
   await waitFor(() =>
-    expect(screen.getByRole("link", { name: "A-07 Temperature: open history" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "A-07 · RTU 7 Temperature: open history" })).toHaveAttribute(
       "href",
       historyHref(uuid(7), "7d", "temp_c"),
     ),
