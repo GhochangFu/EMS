@@ -6,6 +6,7 @@
  */
 import { z } from "zod";
 
+import { colourProfileSchema } from "./colour-profile";
 import { locationTypeCodeSchema } from "./location-types";
 
 /** Prototype role slugs stored in `bms.users.role`. */
@@ -96,6 +97,11 @@ export const accessibleScopeSchema = z.object({
 export const currentUserResponseSchema = z.object({
   user: sessionUserSchema,
   scope: accessibleScopeSchema,
+  /**
+   * `F4.310` (ADR 0110 Q3, decision 4) — the colour profile of the user's home organization, or
+   * `nexus` for a user with no home organization (a global admin). The web sets `data-profile` from it.
+   */
+  colourProfile: colourProfileSchema,
 });
 
 /**

@@ -9,10 +9,12 @@ import { and, asc, eq, inArray, sql } from "drizzle-orm";
 
 import { locations, organizations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import type { AdminOrganizationDto, AdminOrganizationSummaryDto, JwtPayload } from "@bms/shared";
+import { colourProfileOrDefault } from "@bms/shared";
+import type { AdminOrganizationDto, AdminOrganizationSummaryDto, ColourProfile, JwtPayload } from "@bms/shared";
 
 import { AccessControlService } from "../../auth/access-control.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
+import { withTenant } from "../../database/tenant-context";
 import { translateConstraintErrors } from "../../database/translate-constraint-errors";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import type {
@@ -179,6 +181,54 @@ export class OrganizationsAdminService {
     return this.mapRow(updated);
   }
 
+  /**
+   * `F4.310` (ADR 0110 decision 7, plan OQ4) — sets the organization's colour profile. The global
+   * `admin` may set any organization; an `organization_admin` only one they hold a **direct**
+   * organization grant on (`isOrganizationLevelAdmin`, the gate a location move uses). Every other
+   * role, and an `organization_admin` without that grant, is a 403 before any read.
+   *
+   * Unlike the lifecycle writes above, this is the organization's own setting, so the write and
+   * its audit row run in one `withTenant` transaction and the audit row carries the organization
+   * id (the `locations.service.ts` shape): its own admins see it in their audit view.
+   */
+  async setColourProfile(jwt: JwtPayload, id: string, colourProfile: ColourProfile): Promise<AdminOrganizationDto> {
+    await this.accessControl.requireMasterDataUser(jwt);
+    if (!(await this.accessControl.isOrganizationLevelAdmin(jwt, id))) {
+      throw new ForbiddenException("Only an administrator of this organization can change its colour profile");
+    }
+
+    return withTenant(this.tenantDb, id, async (tx) => {
+      const [existing] = await tx
+        .select({ colourProfile: organizations.colourProfile })
+        .from(organizations)
+        .where(eq(organizations.id, id))
+        .limit(1);
+      if (!existing) {
+        throw new NotFoundException("Organization not found");
+      }
+
+      const [updated] = await tx
+        .update(organizations)
+        .set({ colourProfile })
+        .where(eq(organizations.id, id))
+        .returning();
+
+      await this.audit.write(
+        {
+          actor: jwt,
+          action: "master.organization.colour_profile.update",
+          entityType: "organization",
+          entityId: id,
+          organizationId: id,
+          payload: { from: existing.colourProfile, to: colourProfile },
+        },
+        tx,
+      );
+
+      return this.mapRow(updated);
+    });
+  }
+
   /** Deactivates an organization when no active locations remain. */
   async deactivate(jwt: JwtPayload, id: string): Promise<AdminOrganizationDto> {
     const user = await this.accessControl.requireMasterDataUser(jwt);
@@ -258,6 +308,7 @@ export class OrganizationsAdminService {
       active: row.active,
       currency: row.currency,
       timezone: row.timezone,
+      colourProfile: colourProfileOrDefault(row.colourProfile),
       meta: (row.meta as Record<string, unknown> | null) ?? null,
       createdAt: row.createdAt.toISOString(),
     };

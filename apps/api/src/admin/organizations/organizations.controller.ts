@@ -8,11 +8,13 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
 import { ZodError } from "zod";
 
+import { setOrganizationColourProfileBodySchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
@@ -63,6 +65,28 @@ export class OrganizationsAdminController {
         idParamSchema.parse(id),
         updateOrganizationBodySchema.parse(body),
       );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F4.310` (ADR 0110 decision 7) — the organization's colour profile. Its own route, not a
+   * `PATCH` field: an `organization_admin` may make this one write and no other organization
+   * write (`PATCH`'s strict body refuses `colourProfile`).
+   */
+  @Put(":id/colour-profile")
+  async setColourProfile(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      const parsed = setOrganizationColourProfileBodySchema.parse(body);
+      return await this.service.setColourProfile(user, idParamSchema.parse(id), parsed.colourProfile);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());
