@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 
 import {
   alarmEscalationProfiles,
@@ -7,7 +7,6 @@ import {
   assetGroupMembers,
   assetGroups,
   assetPoints,
-  assetRoles,
   assets,
   assetTemplates,
   automationRules,
@@ -17,14 +16,12 @@ import {
   dashboardTemplates,
   dashboardWidgets,
   locations,
-  locationTypes,
   maintenanceSchedules,
   maintenanceTaskTemplates,
   mimicLayouts,
   mimicOrgSymbolLibraries,
   notificationChannels,
   organizations,
-  pointKeys,
   reportSchedules,
   rtus,
   siteControlRoomViews,
@@ -41,9 +38,10 @@ import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
 import { resolveAdoptTarget } from "./copilot-adopt-targets";
 import { assetKindAdmits, findCalcPointBatch, mayWriteCalcPointBatch } from "./copilot-calc-point-targets";
+import { mayManageFleet, resolveFleetTarget } from "./copilot-fleet-targets";
 import { findRuleBatch } from "./copilot-rule-targets";
 import { lifecycleStatusOf, refKindOf } from "./copilot-target-kinds";
-import { CopilotTargetRefusal, mayWriteTelemetry, telemetryRowRefusal } from "./copilot-telemetry-targets";
+import { CopilotTargetRefusal } from "./copilot-telemetry-targets";
 // prettier-ignore
 import { findWorkOrderBatch, isActiveAlarmSkill, mayWriteOperationalAssets, type OperationsAlarm, type OperationsBatchRow, type OperationsWorkOrder, readAlarmRow, readConvertibleSchedule, readOrganizationUserName, readWorkOrderRow, unknownAlarmSkillMessage } from "./copilot-operations-targets";
 
@@ -235,30 +233,14 @@ export class CopilotTargetResolver implements CopilotTargets {
       found = await this.findUserTarget(asked, params, body, user, allowedOrganizationIds).catch(() => null);
       if (found !== null && !allowedOrganizationIds.includes(found.organizationId)) found = null;
     } else if (target.kind === "fleet" || target.kind === "pointKey" || target.kind === "vocabulary" || target.kind === "telemetry") {
-      // Ruling Q1: a row with no organization lives in the conversation's bound organization.
-      if (boundOrganizationId === null || !allowedOrganizationIds.includes(boundOrganizationId)) return null;
-      const organizationName = await this.organizationName(boundOrganizationId);
-      if (organizationName === null) return null;
-      if (target.kind === "fleet" || target.kind === "telemetry") {
-        found = { organizationId: boundOrganizationId, name: organizationName };
-      } else if (target.kind === "vocabulary") {
-        // `F4.282` (Amendment 8 D2): an unknown code is refused before the gate is asked.
-        const code = params[target.param];
-        if (code === undefined) return null;
-        found = await this.vocabularyRow(target.of, code, allowedOrganizationIds, boundOrganizationId);
-      } else {
-        const id = params[target.param];
-        if (id === undefined) return null;
-        const code = await this.pointKeyCode(id);
-        found = code === null ? null : { organizationId: boundOrganizationId, name: code };
-      }
-      // `F4.283` (Amendment 8 D2): the telemetry routes' gate is `requireMasterDataUser`; then (owner ruling
-      // 2026-10-25, Q2) every row's asset, as an asset target's, refused with its row numbers before the card.
-      const gate = target.kind === "telemetry" ? () => mayWriteTelemetry(this.access, user) : () => this.mayManageFleet(user);
-      if (found !== null && !(await this.safely(gate))) found = null;
-      const rowsIn = found !== null && target.kind === "telemetry" && mode === "propose" ? boundOrganizationId : null;
-      const refusal = rowsIn === null ? null : await telemetryRowRefusal(this.tenantDb, this.access, user, body, allowedOrganizationIds, rowsIn);
-      if (refusal !== null) throw new CopilotTargetRefusal(refusal);
+      // Ruling Q1, `F4.282`, `F4.283`: the bound organization's branch, in `copilot-fleet-targets.ts`.
+      const context = {
+        tenantDb: this.tenantDb,
+        access: this.access,
+        organizationName: (id: string) => this.organizationName(id),
+        safely: (check: () => Promise<boolean>) => this.safely(check),
+      };
+      found = await resolveFleetTarget(context, target, params, body, allowedOrganizationIds, user, boundOrganizationId, mode);
     } else if ((target.kind === "rule" || target.kind === "maintenanceSchedule") && "field" in target) {
       // `F4.278` / `F4.281` (Amendment 8 D2): a rule or maintenance schedule create — the organization
       // is its asset's, and the route's two gates run on the body's asset.
@@ -400,50 +382,6 @@ export class CopilotTargetResolver implements CopilotTargets {
       .where(eq(organizations.id, organizationId))
       .limit(1);
     return row?.name ?? null;
-  }
-
-  /** A point key's code (`bms.point_keys` is fleet-wide and carries no row-level security, migration 0057). */
-  private async pointKeyCode(id: string): Promise<string | null> {
-    const [row] = await this.tenantDb.select({ code: pointKeys.code }).from(pointKeys).where(eq(pointKeys.id, id)).limit(1);
-    return row?.code ?? null;
-  }
-
-  /**
-   * `F4.282` (ADR 0099 Amendment 8 D2) — a vocabulary row's label, by code. Both tables are
-   * fleet-wide with no row-level security (the `pointKeyCode` precedent; `VocabulariesService`
-   * reads them on the tenant pool). A location type also carries how many locations use it,
-   * inactive ones included, summed over the turn's allowed organizations under `withTenant` —
-   * never outside the turn's scope. A vocabulary target needs a bound conversation, so that is
-   * the bound organization's count alone, not the page's fleet-wide OQ4 count: the card names
-   * the organization it counted (`locationType.deactivate`'s summary).
-   */
-  private async vocabularyRow(
-    of: "locationType" | "assetRole",
-    code: string,
-    allowedOrganizationIds: readonly string[],
-    organizationId: string,
-  ): Promise<Found | null> {
-    if (of === "assetRole") {
-      const [role] = await this.tenantDb.select({ label: assetRoles.label }).from(assetRoles).where(eq(assetRoles.code, code)).limit(1);
-      return role ? { organizationId, name: role.label } : null;
-    }
-    const [type] = await this.tenantDb
-      .select({ label: locationTypes.label })
-      .from(locationTypes)
-      .where(eq(locationTypes.code, code))
-      .limit(1);
-    if (!type) return null;
-    let usageCount = 0;
-    for (const allowed of allowedOrganizationIds) {
-      const [row] = await withTenant(this.tenantDb, allowed, (tx) =>
-        tx
-          .select({ n: count(locations.id) })
-          .from(locations)
-          .where(and(eq(locations.type, code), eq(locations.organizationId, allowed))),
-      );
-      usageCount += Number(row?.n ?? 0);
-    }
-    return { organizationId, name: type.label, usageCount };
   }
 
   /**
@@ -749,15 +687,6 @@ export class CopilotTargetResolver implements CopilotTargets {
     }
   }
 
-  /**
-   * The point-key routes' check (`point-keys.service.ts` `requireGlobalAdmin`): a master-data user who is a global admin.
-   * `F4.282`: also the vocabulary routes' `requireGlobalAdmin` (location types, unit roles).
-   */
-  private async mayManageFleet(user: JwtPayload): Promise<boolean> {
-    await this.access.requireMasterDataUser(user);
-    return this.access.isGlobalAdmin(user);
-  }
-
   /** A create's authority: the route's own check, on the body's organization and scope. */
   private async mayCreate(
     manage: Extract<CatalogEntry["target"], { kind: "organization" }>["manage"],
@@ -867,7 +796,7 @@ export class CopilotTargetResolver implements CopilotTargets {
       case "assetPoint":
         return this.access.canManageAsset(user, found.assetId as string);
       case "pointKey":
-        return this.mayManageFleet(user);
+        return mayManageFleet(this.access, user);
       // `F3.87` PR 2: the layout or library row's organization, with the mimic authoring check.
       case "mimicLayout":
       case "mimicLibrary":
