@@ -187,3 +187,17 @@ export function instantiateRefusedMessage(status: TemplateLifecycleStatus, table
   const first = `Only a published template can be instantiated; this one is ${status}`;
   return table === "asset" ? `${first}. Publishing is what freezes the shape assets are built from.` : first;
 }
+
+/**
+ * `F4.312` PR 2 — refusal for adopting assets onto a version that is not
+ * published (`canInstantiate` is the same rule): a copy of the adopt route's
+ * own sentence (`AssetTemplateAdoptionService.buildPlan`), which keeps its
+ * literal as the instantiate routes do. The copilot's propose-time mirror
+ * reads it.
+ */
+export function adoptRefusedMessage(status: TemplateLifecycleStatus): string {
+  return (
+    `Assets can only adopt a published version; this one is ${status}. ` +
+    "Publishing is what freezes the shape assets are pinned to."
+  );
+}

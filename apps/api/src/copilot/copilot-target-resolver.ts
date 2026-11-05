@@ -39,6 +39,7 @@ import { UsersService } from "../admin/users/users.service";
 import { AccessControlService } from "../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
+import { resolveAdoptTarget } from "./copilot-adopt-targets";
 import { assetKindAdmits, findCalcPointBatch, mayWriteCalcPointBatch } from "./copilot-calc-point-targets";
 import { findRuleBatch } from "./copilot-rule-targets";
 import { lifecycleStatusOf, refKindOf } from "./copilot-target-kinds";
@@ -158,7 +159,8 @@ type Found = {
 type Scope = { locationId: string | null; assetGroupId: string | null; assetId: string | null };
 type RowKind = Exclude<
   CatalogEntry["target"]["kind"],
-  "organization" | "parent" | "fleet" | "vocabulary" | "telemetry" | "onboardingSession" | "workOrderBatch" | "ruleBatch" | "calcPointBatch" | UserKind
+  "organization" | "parent" | "fleet" | "vocabulary" | "telemetry" | "onboardingSession" | "workOrderBatch" | "ruleBatch" | "calcPointBatch"
+  | "assetTemplateAdopt" | UserKind
 >;
 type UserKind = "user" | "userGrantAdd" | "userGrant";
 type UserTarget = Extract<CatalogEntry["target"], { kind: UserKind }>;
@@ -285,6 +287,12 @@ export class CopilotTargetResolver implements CopilotTargets {
       const name = batch === null ? null : await this.organizationName(batch.organizationId);
       found = batch === null || name === null ? null : { organizationId: batch.organizationId, name, pointKeys: batch.pointKeys };
       if (batch !== null && !(await this.safely(() => mayWriteCalcPointBatch(this.access, user, batch.assetIds)))) found = null;
+    } else if (target.kind === "assetTemplateAdopt") {
+      // `F4.312` PR 2 (Amendment 12): a published version and its template-less assets, the adopt route's gate.
+      const id = params[target.param];
+      if (id === undefined) return null;
+      const ids = body[target.field];
+      found = await resolveAdoptTarget(this.tenantDb, this.access, user, id, ids, allowedOrganizationIds, mode === "propose");
     } else {
       const id = params[target.param];
       if (id === undefined) return null;

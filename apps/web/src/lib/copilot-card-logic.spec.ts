@@ -74,6 +74,25 @@ export function everyEntryHasInvalidations(): void {
 }
 
 /**
+ * `F4.312` PR 2 (ADR 0099 Amendment 12) — a confirmed adoption pins the assets (the lists and the
+ * summary name the template), adds `unmapped` rows (the points page), turns a standalone point into
+ * the template's override (the calc points), seeds alarm rules and default dashboards, and changes
+ * the version each asset pins (the template versions page).
+ * Mutation, applied once and seen red: drop `RULES` from the row.
+ */
+export function anAdoptionInvalidatesWhatItWrites(): void {
+  expect(invalidationKeysFor("assetTemplate.adopt")).toEqual([
+    ["admin", "assets"],
+    ["admin", "asset-summary"],
+    ["admin", "asset-points"],
+    ["admin", "asset-calc-points"],
+    ["dashboards"],
+    ["rules"],
+    ["admin", "asset-template-versions"],
+  ]);
+}
+
+/**
  * `F3.86` PR 3c — a confirmed asset-group or point-key change re-reads the
  * page's own lists: every key `asset-groups-page.tsx` reads (the groups, and
  * a group's members) starts with `["admin","asset-groups"]`, and every

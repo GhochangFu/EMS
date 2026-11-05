@@ -1,4 +1,4 @@
-import { canInstantiate, instantiateRefusedMessage } from "./template-lifecycle";
+import { adoptRefusedMessage, canInstantiate, instantiateRefusedMessage } from "./template-lifecycle";
 
 /**
  * `F4.246` — the instantiate rule, declared beside the other lifecycle rules
@@ -42,4 +42,13 @@ export function assertTheAssetRefusalIsTheAssetRoutesTwoSentences(): void {
     "Only a published template can be instantiated; this one is archived. " +
     "Publishing is what freezes the shape assets are built from.";
   assert(actual === expected, `asset sentence drifted: ${actual}`);
+}
+
+/** `F4.312` PR 2: the adopt route's two sentences (`asset-templates-adopt.service.ts`); its integration spec asserts equality. */
+export function assertTheAdoptRefusalIsTheAdoptRoutesTwoSentences(): void {
+  const actual = adoptRefusedMessage("draft");
+  const expected =
+    "Assets can only adopt a published version; this one is draft. " +
+    "Publishing is what freezes the shape assets are pinned to.";
+  assert(actual === expected, `adopt sentence drifted: ${actual}`);
 }

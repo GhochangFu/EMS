@@ -1940,3 +1940,135 @@ conversation, and its Confirm card is red.
 | --- | --- | --- | --- |
 | R1 | `backfillDays` on the override `PUT` too | the standalone `PUT` and the batch only | **on both**, with a Backfill step on `calcOverride.set` (2026-11-04; widens ADR 0109 decision 7; the step lands with PR 5) |
 | R3 | Aggregate membership during a backfill | today's membership, an accepted limit | as proposed (2026-11-04) |
+
+## Amendment 12 — `assetTemplate.adopt` (ADR 0109 Amendment 1 decision 5, `F4.312` PR 2)
+
+**Status: Proposed — the owner's merge of this PR approves it.** ADR 0109
+Amendment 1 (accepted 2026-11-05) decided the entry: "The copilot gains one
+catalog entry, `assetTemplate.adopt`, a red Confirm card that calls `adopt`
+with the same body; this amends ADR 0099's catalog (its next amendment
+records the entry)" (decision 5, ruling A6). This amendment records it. It was
+drafted in the build session for the owner's approval at the merge; the owner
+has not ruled on its text, so the heading names no owner date. A line
+marked *(0109 An)* states that record's ruling n; lines marked *drafter
+choice* were not asked. Code citations are to `main` at `f1e001d` (`F4.312`
+PR 1, #1017). Backlog row `F4.312`; the code follows in the same PR, in the
+commit after this one.
+
+### Facts the amendment rests on
+
+- **The route exists and is pending.** `POST
+  /admin/asset-templates/:id/adopt` pins 1–25 template-less assets to one
+  published version, all or nothing; it re-builds the plan at apply and
+  refuses (409, nothing written) on any refusal, so its body
+  (`adoptAssetsBodySchema`, `packages/shared/src/contracts/template-adoption.ts`)
+  carries no preview echo. PR 1 put it on `ASSET_TEMPLATE_PENDING`
+  (`packages/shared/src/copilot/catalog/asset-templates.ts`) until this
+  amendment.
+- **Its access chain is migrate's** *(0109 A10)*:
+  `requireMasterDataUser`, the version's organization in the caller's scope
+  (`canManageOrganization`, 403), published (409), then every listed asset's
+  site in `writableLocationIds` (one counted 403 that names no code)
+  (`AssetTemplateAdoptionService.buildPlan`,
+  `asset-templates-adopt.service.ts:308-368`).
+- **The batch-level refusals are the planner's**: an asset already pinned
+  (`already_pinned`), of another organization or another domain *(0109 A1)*.
+  Its point-level refusals (A4, A8, a taken rule code, …) need the version's
+  points and the asset's rows, and the route names each on Confirm.
+- **No existing target fits.** `assetTemplateDeploy` checks a target site from
+  the body, and `calcPointBatch` resolves its organization from the assets and
+  admits any template-less asset; neither checks a version's status, domain
+  or organization against the listed assets.
+- **The writes.** An adoption sets `assets.template_id`, inserts `unmapped`
+  `asset_points` rows, turns a standalone calculated point the version
+  declares into the asset's override (ADR 0109 ruling 8, no row write), and
+  writes the version's seeded alarm rules and default dashboards
+  *(0109 A5)*, under one audit row per adoption
+  (`master.asset_template.adopt`) through `MasterDataAuditService`.
+
+### Decisions
+
+- **H1 — One entry** *(0109 decision 5)*, in `catalog/asset-templates.ts`
+  after `assetTemplate.instantiate`: `assetTemplate.adopt`, `POST
+  /admin/asset-templates/:id/adopt`, body `adoptAssetsBodySchema` by identity,
+  `risk: "edit"` (it re-pins existing assets; nothing is created or removed
+  from the caller's view of the asset), **red** (`red: true`): adoption has no
+  undo *(0109 A7)*. One step, Assets (`assetIds`). The summary names the count,
+  the version and its organization, and says the change cannot be undone and
+  that later changes go through migrate (drafter choice). The route leaves
+  `ASSET_TEMPLATE_PENDING`.
+- **H2 — The preview stays pending.** `POST
+  /admin/asset-templates/:id/adoption-preview` writes nothing; it stays on
+  `ASSET_TEMPLATE_PENDING` as a read through `POST`, as
+  `migration-preview` does. The card carries no preview: the route
+  recomputes on Confirm (owner ruling 1 on the plan, 2026-11-05).
+- **H3 — A new target kind `assetTemplateAdopt`** `{ param: "id", field:
+  "assetIds" }`. The resolver mirrors the route, in its order; every failure
+  but the version's status is the one refusal (`null`, decision 10):
+  - the body's `assetIds` is a non-empty array of at most 25 strings, none
+    twice — refused **before any read**, as the body schema refuses it;
+  - `requireMasterDataUser` (a throw is the refusal), before the version is
+    read;
+  - the version is found in an allowed organization (under `withTenant`, with
+    an explicit organization filter);
+  - `canManageOrganization` on the version's organization;
+  - on a **published** version, every listed asset is read in the version's
+    organization, and each is found, of the version's organization **and
+    domain**, with **`template_id IS NULL`**, and at a site in
+    `writableLocationIds` (a global administrator, `null`, writes every site).
+
+  So **a pinned asset is refused before the card**. The card names the
+  version and its organization. **The status is the lifecycle mirror's**
+  (`F4.246`, `copilot-template-lifecycle.ts`): the target resolves an in-scope
+  version with its status and reads no asset of an unpublished one (the route
+  answers its 409 before it reads them); the mirror's `assetTemplate.adopt`
+  rule (`canInstantiate`) then refuses a draft or archived version with the
+  route's own sentence (`adoptRefusedMessage`, `@bms/shared`), so the model
+  reads why. In `"record"` mode (Amendment 4: an open wizard's record) the
+  target checks the gate and resolves the version, its organization and its
+  status without reading any asset, as `assetTemplateDeploy` resolves its
+  template row: the assets are what a fill sets (drafter choice). The point-level refusals stay a Confirm-time 409, which names each
+  asset code and point key (drafter choice: a propose-time copy of the
+  planner would duplicate the route's reads).
+- **H4 — Invalidations** after Confirm: the asset lists and summary
+  (`["admin","assets"]`, `["admin","asset-summary"]`), the asset points
+  (`["admin","asset-points"]`), the calculated points
+  (`["admin","asset-calc-points"]`), the dashboards (`["dashboards"]`), the
+  alarm rules (`["rules"]`) and the template versions page
+  (`["admin","asset-template-versions"]`, which lists each asset's pinned
+  version).
+- **H5 — The audit mark.** The adopt service moves from the audit gate's
+  `NOT_CATALOG_WRITERS` to `CATALOG_WRITERS`
+  (`tests/f3.85-audit-via-mark.test.ts`): a confirmed adoption's audit row
+  carries `via: "copilot"` through `MasterDataAuditService`.
+- **H6 — Bounds.** The propose tool counts against the per-turn budget
+  (`copilot-propose-budget.spec.ts`, 91,000 since Amendment 11 G7). Measured
+  at this PR: 90,753 characters over 109 definitions
+  (`propose_assetTemplate_adopt` 788; the id in `fill_step` and
+  `describe_change` 44). Under the bound, so it is unchanged.
+- **H7 — The wizard follows.** `assetTemplate.adopt` is on the stepper gate's
+  `NOT_YET` list (`tests/f3.85-stepper-coverage.test.ts`) until `F4.312` PR 3
+  wires the adopt wizard (the points page and the asset list's bulk action),
+  the Amendment 11 G8 precedent.
+- **H8 — `F4.313` adds no entry** *(0109 A11)*. A new catalog key and a
+  calculated point on it are two cards: the existing `pointKey.create`, then
+  `calcPoint.set` or `calcPoint.createBatch`. There is no combined card.
+
+**Not in this amendment.** The web adoption wizard and the bulk action
+(`F4.312` PR 3); releasing an asset back to no template *(0109 A7)*; any
+change to `migrate` or its pending entry.
+
+**Verification owed (this PR).** A catalog spec: the entry is the route,
+`risk: "edit"`, red, its body the shared export by identity, its target the
+new kind, and only the preview stays pending. Resolver unit specs: a pinned
+asset, an asset of another organization or domain, one outside the write
+scope, 26 ids, a repeated id and a version outside the caller's scope are
+each refused, beside the allowed twin; a draft or archived version resolves
+with its status and the lifecycle mirror refuses it with the route's sentence;
+record mode through the resolver resolves the version. An integration twin on
+a real database: another organization's asset and a pinned asset are refused,
+a template-less asset of the version's organization resolves. The
+invalidation row. `tests/f3.85-catalog-coverage.test.ts`, the stepper and audit gates and
+the budget pass. Live (owner's local session): `propose_assetTemplate_adopt`
+is in an admin conversation's tool list, its card is red, and a batch with a
+pinned asset is refused before the card.

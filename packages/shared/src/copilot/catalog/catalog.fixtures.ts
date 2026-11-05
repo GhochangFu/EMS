@@ -115,6 +115,8 @@ export const FIXTURES: Readonly<
     params: { id: ROW },
     names: TARGET_NAME,
   },
+  // `F4.312` PR 2 (ADR 0099 Amendment 12): the template version by path, its template-less assets by body.
+  "assetTemplate.adopt": { body: { assetIds: [ROW] }, params: { id: ROW }, names: TARGET_NAME },
   // `F3.86` PR 4: what the model proposes (`modelBodyOf`) — a create has no password.
   "user.create": {
     body: { email: "priya@example.test", displayName: "Priya Rao", role: "viewer", organizationId: ORG },

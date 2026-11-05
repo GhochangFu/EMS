@@ -48,6 +48,9 @@ import { proposeHarness } from "./copilot-propose-tools.spec";
  *   108 definitions (`propose_calcPoint_set` 1,060, `_createBatch` 1,109, `_delete` 467); the bound is
  *   91,000 (90,000 + 1,000). Re-measured at the PR 3 review (the asset kind in the four calc titles):
  *   89,599 (`propose_calcPoint_set` 1,077, `_createBatch` 1,126, `_delete` 484), under the bound, so it is unchanged.
+ * - ADR 0099 Amendment 12 (proposed; the merge approves): F4.312 PR 2 measured 90,753 over
+ *   109 definitions (`propose_assetTemplate_adopt` 788; its id in `fill_step` and `describe_change` 44), under
+ *   the bound, so it is unchanged.
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();

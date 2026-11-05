@@ -10,4 +10,6 @@ describe("F4.246 — the template instantiate rule (ADR 0049 decision 2)", () =>
     spec.assertTheDashboardRefusalIsTheDashboardRoutesSentence());
   it("refuses an asset template with the asset route's two sentences", () =>
     spec.assertTheAssetRefusalIsTheAssetRoutesTwoSentences());
+  it("refuses an adoption with the adopt route's two sentences", () =>
+    spec.assertTheAdoptRefusalIsTheAdoptRoutesTwoSentences());
 });
