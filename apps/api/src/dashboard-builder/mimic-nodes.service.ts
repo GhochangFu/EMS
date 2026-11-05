@@ -113,7 +113,7 @@ type ParsedWidget = { groupId: string | null } & (
  * asset code, and for a fan-out role every one up to `MIMIC_FANOUT_MAX` (`F3.74` plan D4) — with
  * its top alarm.
  */
-interface MemberRow {
+export interface MemberRow {
   asset_group_id: string;
   role: string;
   /** 1-based position among the role's readable members, by asset code. */
@@ -579,7 +579,7 @@ export class MimicNodesService {
       const memberOf = (row: MemberRow): MimicNodeMemberDto => {
         const statePoints = statePointsByAsset.get(row.asset_id) ?? [];
         return {
-          asset: assetOf(row, pointsOf(row.asset_id), statePoints, nowMs),
+          asset: assetOf(row, pointsOf(row.asset_id), statePoints, nowMs, pointsByAsset.get(row.asset_id) ?? []),
           activeAlarms: Number(row.active_alarms),
           topAlarm: topAlarmOf(row),
           statePoints,
@@ -862,17 +862,20 @@ function layoutNodeOf(row: LayoutNodeRow): MimicLayoutNodeDto | null {
 }
 
 /**
- * A shown member as F3.68's asset shape: freshness from the newest sample among its shown points
- * and (`F3.74` plan D4) its state points — a breaker reporting only its state is live.
+ * A shown member as F3.68's asset shape: freshness from the newest sample among its shown points,
+ * (`F3.74` plan D4) its state points — a breaker reporting only its state is live — and
+ * (`F4.307`) `liveness`, the asset's headline points: a unit listing only keys the asset lacks is
+ * still as fresh as its asset. `liveness` never joins `points`.
  */
-function assetOf(
+export function assetOf(
   member: MemberRow,
   points: GeneratedSitePointDto[],
   statePoints: GeneratedSitePointDto[],
   nowMs: number,
+  liveness: readonly GeneratedSitePointDto[] = [],
 ): GeneratedSiteAssetDto {
   let latestTelemetryAt: string | null = null;
-  for (const point of [...points, ...statePoints]) {
+  for (const point of [...points, ...statePoints, ...liveness]) {
     if (point.latest !== null && (latestTelemetryAt === null || Date.parse(point.latest.time) > Date.parse(latestTelemetryAt))) {
       latestTelemetryAt = point.latest.time;
     }

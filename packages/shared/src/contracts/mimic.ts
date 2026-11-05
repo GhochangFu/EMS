@@ -17,8 +17,11 @@ import { pointKeyStateMapSchema } from "./point-key-states";
  * synthetic `GeneratedSiteViewDto` and reuse the live-overlay machinery unchanged (plan D2).
  */
 
-/** How many of a node's points, ordered `headline_rank ASC NULLS LAST, point_key ASC`, a node
- * shows. The server's `LIMIT` reads this. */
+/**
+ * How many of a node's points, ordered `headline_rank ASC NULLS LAST, point_key ASC`, a node
+ * shows. The server's `LIMIT` reads this. `F4.307` (ADR 0081 Amendment 1): a layout unit with a
+ * point list answers its list instead, at most this many keys, in list order.
+ */
 export const MIMIC_HEADLINE_POINTS = 3;
 
 /**
@@ -65,6 +68,10 @@ export const mimicNodeMemberSchema = z.object({
  * read the member that does (plan D6) — both read "Not assigned". `memberCount` is how many
  * members carry the role; above one, the node shows the first by code and a `+N` badge.
  * `activeAlarms` counts the shown asset's open alarms, and drives the alarm status (plan D5).
+ *
+ * `asset.points` is the asset's top `MIMIC_HEADLINE_POINTS`; for a layout unit with a point list
+ * (`F4.307`), the list instead, in list order, a fan-out member's too — a key the asset does not
+ * hold active answers its catalog name and `latest: null`. `asset.freshness` stays the asset's.
  */
 export const mimicNodeSchema = z.object({
   key: z.string(),

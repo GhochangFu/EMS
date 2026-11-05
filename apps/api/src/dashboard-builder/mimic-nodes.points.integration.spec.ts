@@ -322,3 +322,108 @@ export async function assertPresetBesideAListedLayoutAnswersTheHeadline(client: 
     layout: [keys.r4, keys.r1],
   });
 }
+
+/**
+ * R7 — review fix: a unit listing ONLY a key the asset lacks still reads its asset's freshness
+ * from the headline samples (10 s old): `live`, and `latestTelemetryAt` the headline sample's
+ * instant — on the node and on each fan-out member — while its rows stay the list.
+ */
+export async function assertListedUnitFreshnessFollowsItsAsset(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedListSite(client);
+  const { keys } = fixture;
+  await seedListedLayout(client, fixture, [
+    { key: "w", roleCode: "wtp", pointKeys: [keys.catalog] },
+    { key: "r", roleCode: "ro", fanOut: true, pointKeys: [keys.catalog] },
+  ]);
+  const nowMs = await txNowMs(client);
+  const widget = layoutWidget(await readFixture(client, fixture));
+  const liveness = (asset: MimicNodeDto["asset"]) => [
+    asset?.freshness,
+    asset?.latestTelemetryAt,
+    keyValues(asset?.points),
+  ];
+  const sampledAt = new Date(nowMs - 10_000).toISOString();
+  const expected = ["live", sampledAt, [[keys.catalog, null]]];
+  expect({
+    w: liveness(unitOf(widget, "w").asset),
+    members: unitOf(widget, "r").members.map((member) => liveness(member.asset)),
+  }).toEqual({ w: expected, members: [expected, expected] });
+}
+
+/**
+ * R8 — review fix: two units on ONE asset with two DIFFERENT lists, `[r4, r2]` and `[r3, r4]`,
+ * each answer their own keys in their own order with names and values. A pair set that stopped
+ * after the first listed unit answers no `r3`.
+ */
+export async function assertTwoDifferentListsOnOneAssetEachAnswerTheirOwn(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedListSite(client);
+  const { keys } = fixture;
+  await seedListedLayout(client, fixture, [
+    { key: "w", roleCode: "wtp", pointKeys: [keys.r4, keys.r2] },
+    { key: "w2", roleCode: "wtp", pointKeys: [keys.r3, keys.r4] },
+  ]);
+  const widget = layoutWidget(await readFixture(client, fixture));
+  const rows = (key: string) =>
+    (unitOf(widget, key).asset?.points ?? []).map((point) => [point.pointKey, point.name, point.latest?.value ?? null]);
+  expect({ w: rows("w"), w2: rows("w2") }).toEqual({
+    w: [
+      [keys.r4, `F4.307 ${keys.r4}`, valueOf(4, 0)],
+      [keys.r2, `F4.307 ${keys.r2}`, valueOf(2, 0)],
+    ],
+    w2: [
+      [keys.r3, `F4.307 ${keys.r3}`, valueOf(3, 0)],
+      [keys.r4, `F4.307 ${keys.r4}`, valueOf(4, 0)],
+    ],
+  });
+}
+
+/**
+ * R9 — a scoped read (plan D6): a fan-out unit listing `[r4, r2]` whose readable set leaves out
+ * the second `ro` member answers the first member only, and the unreadable member's id and its
+ * samples appear nowhere in the answer.
+ */
+export async function assertScopedFanOutListNeverAnswersTheUnreadableMember(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedListSite(client);
+  const { keys } = fixture;
+  const [readable, unreadable] = fixture.roIds;
+  await seedListedLayout(client, fixture, [{ key: "r", roleCode: "ro", fanOut: true, pointKeys: [keys.r4, keys.r2] }]);
+  const dto = await readService(client as unknown as pg.Pool).read(
+    fixture.site.organizationId,
+    fixture.dashboardId,
+    [fixture.wtpId, readable],
+    await txNowMs(client),
+  );
+  const unit = unitOf(layoutWidget(dto), "r");
+  const answered = keyValues(unit.members.flatMap((member) => member.asset.points)).map(([, value]) => value);
+  expect({
+    members: unit.members.map((member) => member.asset.id),
+    memberCount: unit.memberCount,
+    leaksId: JSON.stringify(dto).includes(unreadable),
+    leaksSample: answered.some((value) => value === valueOf(4, 2) || value === valueOf(2, 2)),
+  }).toEqual({ members: [readable], memberCount: 1, leaksId: false, leaksSample: false });
+}
+
+/**
+ * R10 — ADR 0043 Amendment 3: a listed key the `wtp` asset holds only through an `asset_points`
+ * row stamped with ANOTHER organization (the fleet pool bypasses RLS, and the row's asset FK is
+ * single-column, so it is constructible), with a fresh sample, answers `latest: null`. The listed
+ * `r1` beside it, held by this organization, answers its value (the positive control).
+ */
+export async function assertForeignStampedAssetPointReadsNoSample(client: pg.PoolClient): Promise<void> {
+  const fixture = await seedListSite(client);
+  const { keys } = fixture;
+  const foreign = await seedSite(client);
+  const foreignKey = keys.r1.replace(/_r1$/, "_foreign");
+  await client.query("INSERT INTO bms.point_keys (code, name, unit, headline_rank, active) VALUES ($1, $2, 'u', NULL, true)", [
+    foreignKey,
+    `F4.307 ${foreignKey}`,
+  ]);
+  await registerPoint(client, foreign, fixture.wtpId, foreignKey);
+  await sample(client, fixture.wtpId, foreignKey, 94);
+  await seedListedLayout(client, fixture, [{ key: "w", roleCode: "wtp", pointKeys: [foreignKey, keys.r1] }]);
+  const unit = unitOf(layoutWidget(await readFixture(client, fixture)), "w");
+  expect(keyValues(unit.asset?.points)).toEqual([
+    [foreignKey, null],
+    [keys.r1, valueOf(1, 0)],
+  ]);
+}

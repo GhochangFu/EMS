@@ -5,10 +5,14 @@ import { inRolledBackTransaction } from "../dashboard/dashboard-freshness.integr
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import {
   assertFanOutListedUnitAnswersTheListOnEveryMember,
+  assertForeignStampedAssetPointReadsNoSample,
   assertKeyTheAssetDoesNotHoldReadsItsNameAndNoSample,
   assertListedLayoutIsStillFiveStatements,
   assertListedUnitAnswersItsListInOrder,
+  assertListedUnitFreshnessFollowsItsAsset,
   assertPresetBesideAListedLayoutAnswersTheHeadline,
+  assertScopedFanOutListNeverAnswersTheUnreadableMember,
+  assertTwoDifferentListsOnOneAssetEachAnswerTheirOwn,
   assertTwoUnitsOnOneAssetAnswerTheirOwnPoints,
 } from "./mimic-nodes.points.integration.spec";
 
@@ -60,6 +64,26 @@ describe.skipIf(!connectionString)("F4.307 — MimicNodesService listed points",
   it(
     "R6 a preset beside a listed layout answers the headline points unchanged",
     rolledBack(assertPresetBesideAListedLayoutAnswersTheHeadline),
+    60_000,
+  );
+  it(
+    "R7 a unit listing only a key the asset lacks reads its asset's freshness, on every member too",
+    rolledBack(assertListedUnitFreshnessFollowsItsAsset),
+    60_000,
+  );
+  it(
+    "R8 two different lists on one asset each answer their own keys in their own order",
+    rolledBack(assertTwoDifferentListsOnOneAssetEachAnswerTheirOwn),
+    60_000,
+  );
+  it(
+    "R9 a scoped fan-out list never answers the unreadable member or its samples",
+    rolledBack(assertScopedFanOutListNeverAnswersTheUnreadableMember),
+    60_000,
+  );
+  it(
+    "R10 a listed key held only by another organization's asset point answers latest: null",
+    rolledBack(assertForeignStampedAssetPointReadsNoSample),
     60_000,
   );
 });
