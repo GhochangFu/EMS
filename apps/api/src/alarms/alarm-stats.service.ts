@@ -91,13 +91,25 @@ export class AlarmStatsService {
            GROUP BY l.id, l.name
            ORDER BY raised DESC, l.name, l.id
            LIMIT ${ALARM_STATS_MAX_LOCATIONS + 1}`);
-        const top = await tx.execute<{ asset_id: string; asset_code: string; asset_name: string; raised: number }>(sql`
-          SELECT s.id AS asset_id, s.code AS asset_code, s.name AS asset_name, count(*)::int AS raised
+        // `F4.316` / ADR 0111: the two LEFT JOINs name the asset's RTU and location; they add no
+        // predicate, so an RTU-less asset still ranks, with `asset_rtu_name` NULL.
+        const top = await tx.execute<{
+          asset_id: string;
+          asset_code: string;
+          asset_rtu_name: string | null;
+          asset_location_name: string | null;
+          asset_name: string;
+          raised: number;
+        }>(sql`
+          SELECT s.id AS asset_id, s.code AS asset_code, s.name AS asset_name,
+                 r.display_name AS asset_rtu_name, l.name AS asset_location_name, count(*)::int AS raised
             FROM bms.alarms a
             JOIN bms.assets s ON s.id = a.asset_id
+            LEFT JOIN bms.rtus r ON r.id = s.rtu_id
+            LEFT JOIN bms.locations l ON l.id = s.location_id
            WHERE a.asset_id = ANY(${sql.param(ids)}::uuid[])
              AND a.raised_at >= ${lo}::timestamptz AND a.raised_at < ${hi}::timestamptz
-           GROUP BY s.id, s.code, s.name
+           GROUP BY s.id, s.code, s.name, r.display_name, l.name
            ORDER BY raised DESC, s.code
            LIMIT ${ALARM_STATS_TOP_ASSETS}`);
         const times = await tx.execute<{ mtta: number | null; mttr: number | null; acknowledged: number; cleared: number }>(sql`
@@ -126,6 +138,8 @@ export class AlarmStatsService {
           topAssets: top.rows.map((row) => ({
             assetId: row.asset_id,
             assetCode: row.asset_code,
+            assetRtuName: row.asset_rtu_name,
+            assetLocationName: row.asset_location_name,
             assetName: row.asset_name,
             raised: row.raised,
           })),

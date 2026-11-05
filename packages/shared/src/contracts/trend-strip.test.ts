@@ -36,3 +36,8 @@ describe("F4.306 U2 — the selection on the trend strip query (ADR 0108 Amendme
   it("parses 30 points of the longest stored length", () => spec.assertTheLongestStoredPointParses());
   it("parses points without segments (the 400 is the service's)", () => spec.assertPointsWithoutSegmentsParses());
 });
+
+describe("F4.316 — a trend strip series names its RTU and location (ADR 0111)", () => {
+  it("refuses a series without assetRtuName", () => spec.assertASeriesWithoutTheRtuNameIsRefused());
+  it("parses an RTU-less series", () => spec.assertAnRtuLessSeriesParses());
+});

@@ -135,6 +135,9 @@ function uuid(n: number): string {
   return `30000000-0000-4000-8000-${n.toString(16).padStart(12, "0")}`;
 }
 
+/** An asset with neither an RTU nor a location name (the claims below are not about the label). */
+const NO_WHERE = { assetRtuName: null, assetLocationName: null } as const;
+
 function row(assetId: string, idx: number, mean: number): SegmentWindowRow {
   return { assetId, idx, mean, max: mean, maxAt: null, sampleCount: FULL, bucketCount: FULL };
 }
@@ -143,7 +146,7 @@ function row(assetId: string, idx: number, mean: number): SegmentWindowRow {
 export function assertTheCompareRowIsNotABaselineWindow(): void {
   const id = uuid(1);
   const [entry] = segmentAbnormalEntries(
-    [{ assetId: id, assetCode: "A1", assetName: "A1", unit: "kW" }],
+    [{ assetId: id, assetCode: "A1", assetName: "A1", ...NO_WHERE, unit: "kW" }],
     [row(id, 0, 30), row(id, -1, 20), row(id, 1, 20), row(id, 2, 20)],
   );
   expect(entry?.verdict).toBe("not_enough_history");
@@ -155,18 +158,35 @@ export function assertOnlyAssetsWithACurrentRowAreJudged(): void {
   const [a, b] = [uuid(1), uuid(2)];
   const entries = segmentAbnormalEntries(
     [
-      { assetId: a, assetCode: "A1", assetName: "A1", unit: "kW" },
-      { assetId: b, assetCode: "B1", assetName: "B1", unit: "kW" },
+      { assetId: a, assetCode: "A1", assetName: "A1", ...NO_WHERE, unit: "kW" },
+      { assetId: b, assetCode: "B1", assetName: "B1", ...NO_WHERE, unit: "kW" },
     ],
     [row(a, 0, 30), row(a, 1, 20), row(a, 2, 20), row(a, 3, 20), row(b, 1, 20), row(b, 2, 20), row(b, 3, 20)],
   );
   expect(entries.map((e) => [e.assetId, e.verdict, e.currentMean])).toEqual([[a, "above", 30]]);
 }
 
+/** `F4.316` (ADR 0111) — a judged entry carries its asset's RTU and location names; the RTU-less twin a null RTU name. */
+export function assertAnEntryCarriesItsAssetsRtuAndLocationNames(): void {
+  const [a, b] = [uuid(1), uuid(2)];
+  const entries = segmentAbnormalEntries(
+    [
+      { assetId: a, assetCode: "A1", assetName: "A1", assetRtuName: "RTU 1", assetLocationName: "Site 1", unit: "kW" },
+      { assetId: b, assetCode: "B1", assetName: "B1", assetRtuName: null, assetLocationName: "Site 1", unit: "kW" },
+    ],
+    [row(a, 0, 30), row(b, 0, 30)],
+  );
+  expect(entries.map((e) => [e.assetCode, e.assetRtuName, e.assetLocationName])).toEqual([
+    ["A1", "RTU 1", "Site 1"],
+    ["B1", null, "Site 1"],
+  ]);
+}
+
 function candidate(over: Partial<SegmentAbnormalCandidate> & { assetCode: string }): SegmentAbnormalCandidate {
   return {
     assetId: uuid(Number.parseInt(over.assetCode.replace(/\D/g, "") || "0", 10)),
     assetName: over.assetCode,
+    ...NO_WHERE,
     unit: "kW",
     currentMean: 1,
     baselineMean: 1,

@@ -83,6 +83,8 @@ function alarm(i: number) {
     acknowledgedBy: null,
     clearedAt: "2026-10-23T11:54:38.820Z",
     assetCode: "KZN-CR-UTILITY",
+    assetRtuName: "KwaZulu-Natal Control Room Utility RTU",
+    assetLocationName: "RSMOC KwaZulu-Natal",
     assetName: "KwaZulu-Natal Control Room Utility Incomer",
     siteName: "RSMOC KwaZulu-Natal",
   };

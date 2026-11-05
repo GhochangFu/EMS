@@ -292,6 +292,8 @@ function entry(assetId: string, code: string, drawn: boolean): SiteSegmentViewsD
     assetId,
     assetCode: code,
     assetName: code,
+    assetRtuName: null,
+    assetLocationName: null,
     unit: "kW",
     current: stats,
     compare: null,

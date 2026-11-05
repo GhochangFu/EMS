@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
-import type { SegmentViewPeriodDto, SegmentViewRankingEntryDto } from "@bms/shared";
+import { assetLabelOf, type SegmentViewPeriodDto, type SegmentViewRankingEntryDto } from "@bms/shared";
 
 import { historyHrefFor, meanChangePct, sortRanking, type RankingSort } from "../../lib/site-trends";
 import { formatPeakTime } from "../energy/site-ranking-table";
@@ -84,7 +84,7 @@ export function SegmentRankingTable({ ranking, moreAssets, pointCode, period, co
                 >
                   {entry.assetName}
                 </Link>
-                <span className="ml-1 text-ink-muted">{entry.assetCode}</span>
+                <span className="ml-1 text-ink-muted">{assetLabelOf(entry)}</span>
               </td>
               <td className="px-3 py-1.5 text-right text-xs tabular-nums">{figure(entry.current.mean, entry.unit)}</td>
               <td className="px-3 py-1.5 text-right text-xs tabular-nums">{figure(entry.current.max, entry.unit)}</td>

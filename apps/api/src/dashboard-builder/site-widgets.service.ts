@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 
-import { alarms, alarmSeverities, assetGroups, assets, dashboards, dashboardTabs } from "@bms/db";
+import { alarms, alarmSeverities, assetGroups, assets, dashboards, dashboardTabs, locations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import {
   MAX_SITE_ALARM_ROWS,
@@ -305,6 +305,8 @@ async function activeAlarms(tx: BmsTx, organizationId: string, assetIds: readonl
     .select(alarmListItemColumns)
     .from(alarms)
     .innerJoin(assets, eq(alarms.assetId, assets.id))
+    .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+    .leftJoin(locations, eq(assets.locationId, locations.id))
     .where(
       and(
         inArray(alarms.assetId, [...assetIds]),

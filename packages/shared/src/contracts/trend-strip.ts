@@ -97,6 +97,10 @@ export const siteTrendStripQuerySchema = z
 export const trendStripAssetSeriesSchema = z.object({
   assetId: z.string().uuid(),
   assetCode: z.string(),
+  /** `F4.316` (ADR 0111) — the asset's RTU display name, `null` when it has none. */
+  assetRtuName: z.string().nullable(),
+  /** `F4.316` (ADR 0111) — the asset's location name; the label's `where` when there is no RTU. */
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   /** The registration's effective unit, `COALESCE(asset_points.unit, point_keys.unit)`. */
   unit: z.string().nullable(),
