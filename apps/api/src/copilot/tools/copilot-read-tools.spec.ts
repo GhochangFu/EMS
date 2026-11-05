@@ -412,6 +412,12 @@ export async function assertListAssetsSearchMatchesTheName(): Promise<void> {
   expect(JSON.stringify(none)).not.toContain(ASSET_X);
 }
 
+/** `F4.316` PR 7 (ADR 0111): `list_assets` tells the model the label rule — `code · rtuDisplayName`, else `code · locationName`. */
+export function assertListAssetsDescribesTheLabelRule(): void {
+  const description = COPILOT_READ_TOOL_DEFINITIONS.find((tool) => tool.name === "list_assets")?.description;
+  expect(description).toContain("`code · rtuDisplayName`, else `code · locationName`");
+}
+
 /** A result is parsed through its contract schema: a field the contract does not name is stripped. */
 export async function assertAResultIsParsedThroughItsContract(): Promise<void> {
   const { tools } = fakeServices({ assetExtra: { internalNote: "not in the contract" } });

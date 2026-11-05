@@ -11,6 +11,7 @@ import {
   assertAResultIsParsedThroughItsContract,
   assertListAssetsSearchFindsAMatchPastTheCap,
   assertListAssetsSearchMatchesTheName,
+  assertListAssetsDescribesTheLabelRule,
   assertARowFromAnotherOrganizationFailsClosed,
   assertHealthReadsPerOrganizationNeverNull,
   assertKpisOfAnOwnKeyOrganizationsAssetNeverRun,
@@ -35,6 +36,7 @@ describe("F3.85 PR 7 — the copilot's read tools", () => {
   it("a tool result is parsed through its contract schema", assertAResultIsParsedThroughItsContract);
   it("list_assets search finds a match past the 25-item cap", assertListAssetsSearchFindsAMatchPastTheCap);
   it("list_assets search matches the name, case-insensitively", assertListAssetsSearchMatchesTheName);
+  it("list_assets describes the asset label rule (F4.316)", assertListAssetsDescribesTheLabelRule);
   it("an injected propose call finds no tool and stores no action line", assertAnInjectedProposeCallFindsNoTool);
   it("the registry is the seven read tools with strict arguments", assertTheRegistryIsTheSevenReadTools);
   it("list_locations refuses an asset_group_admin before the service", assertListLocationsRefusesAnAssetGroupAdmin);
