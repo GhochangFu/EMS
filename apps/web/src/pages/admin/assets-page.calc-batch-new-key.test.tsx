@@ -5,6 +5,8 @@ import { cleanup } from "@testing-library/react";
 import {
   aBackfillRunning409AfterTheKeyIsNotReportedAsNotWritten,
   aCodeOutsideTheCatalogClassIsRefusedByTheSharedSchema,
+  aSharedDomainOpensFilled,
+  mixedDomainsOpenEmpty,
   aFormulaThatFailsOnOneAssetCreatesNoKey,
   aFormulaThatFailsOnOneAssetListsThatAsset,
   aRefusedBatchAfterTheKeyPutsTheKeyInThePicker,
@@ -65,5 +67,13 @@ describe("F4.313 — New key in the asset list's bulk calculated-point wizard", 
 
   it("a refused batch after the key re-reads the catalog, so the picker lists the key", async () => {
     await aRefusedBatchAfterTheKeyPutsTheKeyInThePicker();
+  });
+
+  it("a shared domain opens the Domain field filled", async () => {
+    await aSharedDomainOpensFilled();
+  });
+
+  it("mixed domains open the Domain field empty", async () => {
+    await mixedDomainsOpenEmpty();
   });
 });

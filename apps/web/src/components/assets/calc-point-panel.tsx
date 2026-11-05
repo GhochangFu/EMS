@@ -24,7 +24,7 @@
  * creates it and then writes the point (`createKeyThenWritePoint`).
  */
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { AssetPointCalcConfigDto, CalcPointSetBody, CreatePointKeyBody } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
@@ -54,6 +54,7 @@ import {
   newPointKeyBody,
   newPointKeyDraftChanged,
   newPointKeyProblems,
+  withLateDomain,
   type NewPointKeyDraft,
 } from "../../lib/new-point-key-draft";
 import { FormulaEditorLazy } from "../asset-templates/formula-editor-lazy";
@@ -119,6 +120,10 @@ export function CalcPointPanel({
   );
   // `F4.313`: the New key fields while **New key** is picked; the draft's key mirrors their code.
   const [newKey, setNewKey] = useState<NewPointKeyDraft | null>(null);
+  // `F4.315` C2: the asset summary may resolve after New key is picked; an untouched Domain follows it.
+  useEffect(() => {
+    setNewKey((current) => (current ? withLateDomain(current, assetDomain) : current));
+  }, [assetDomain]);
   const rowsQ = useQuery({
     queryKey: ["admin", "asset-points", "all", assetId],
     queryFn: () => fetchAdminAssetPoints("all", assetId),
@@ -149,7 +154,7 @@ export function CalcPointPanel({
     calcPointDraftChanged(draft, config ? calcPointDraftFromConfig(config) : emptyCalcPointDraft(draft.pointKey)) ||
     (newKey !== null && newPointKeyDraftChanged(newKey));
   const pickKey = (picked: string) => {
-    setNewKey(picked === NEW_KEY ? emptyNewPointKeyDraft() : null);
+    setNewKey(picked === NEW_KEY ? emptyNewPointKeyDraft(assetDomain) : null);
     change({ ...draft, pointKey: picked === NEW_KEY ? "" : picked });
   };
   const editNewKey = (next: NewPointKeyDraft) => {

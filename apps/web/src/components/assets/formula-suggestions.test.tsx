@@ -4,6 +4,8 @@ import { cleanup } from "@testing-library/react";
 
 import {
   a403OnTheListStillListsStock,
+  aDisabledListGivesItsReason,
+  anEnabledListGivesNoReason,
   disabledDisablesUse,
   everyReadFailingRendersNothing,
   listsTheStockFormula,
@@ -65,6 +67,14 @@ describe("F4.314 PR 2 — Suggested formulas", () => {
 
   it("disabled disables Use this formula", async () => {
     await disabledDisablesUse();
+  });
+
+  it("a disabled list gives its reason", async () => {
+    await aDisabledListGivesItsReason();
+  });
+
+  it("an enabled list gives no reason", async () => {
+    await anEnabledListGivesNoReason();
   });
 
   it("reads no version without a key, even from a warm published-list cache", async () => {
