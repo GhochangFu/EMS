@@ -2,11 +2,13 @@ import {
   currentUserResponseSchema,
   loginResponseSchema,
 } from "@bms/shared/contracts";
+import { colourProfileOrDefault } from "@bms/shared";
 import type { CurrentUserResponse, LoginResponse } from "@bms/shared";
 
 import { recordAuthFailureReason } from "./http";
 import { checkResponse } from "./validate";
 import { useAuthStore } from "../stores/auth-store";
+import { useThemeStore } from "../stores/theme-store";
 
 const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
@@ -67,7 +69,12 @@ export async function fetchCurrentUser(
   if (!res.ok) {
     throw new Error(`Current user failed (${res.status})`);
   }
-  return checkResponse(currentUserResponseSchema, await res.json(), "auth/me");
+  const current = checkResponse(currentUserResponseSchema, await res.json(), "auth/me");
+  // F4.310 (ADR 0110 decision 4): every /me answer names the home organization's colour profile,
+  // and every reader of /me comes through here, so the page follows it from one place. An answer
+  // without the field (an older API in production, where drift only logs) reads as the default.
+  useThemeStore.getState().setProfile(colourProfileOrDefault(current.colourProfile));
+  return current;
 }
 
 /**

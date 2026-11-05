@@ -4,7 +4,7 @@ import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { SURFACE_STORAGE_KEY } from "../apps/web/src/lib/surface";
-import { ROLE_NAMES, THEME_STORAGE_KEY } from "../apps/web/src/lib/theme";
+import { PROFILE_STORAGE_KEY, ROLE_NAMES, THEME_STORAGE_KEY } from "../apps/web/src/lib/theme";
 import { parseTokenBlocks } from "./support/colour-tokens";
 import { blankComments } from "./support/pending-button-scan";
 import { repoRoot, walk } from "./support/source-scan";
@@ -18,7 +18,9 @@ import { repoRoot, walk } from "./support/source-scan";
  *    name in the resolver with no token would throw at render.
  *  - **G2** `THEME_STORAGE_KEY` is a key the boot script in `apps/web/index.html` reads — the
  *    single-source check `F3.65a` D7 deferred to the row that adds a writer. `F3.71` (ADR 0085)
- *    added the surface key: G2b holds it, G2c holds that the script reads exactly the two.
+ *    added the surface key: G2b holds it. `F4.310` (ADR 0110 decision 4) added the colour profile
+ *    and the persisted session it checks (`bms-auth`): G2d holds them, G2c that the script reads
+ *    exactly those four.
  *  - **G3** one resolver: no file under `apps/web/src` other than `lib/theme.ts` calls
  *    `getComputedStyle(document.documentElement)`. Comments are blanked first, so prose that names
  *    the call is not a call.
@@ -30,7 +32,7 @@ const THEME_TS = "apps/web/src/lib/theme.ts";
 /**
  * The boot script's `localStorage.getItem("…")` keys, in order, extracted from the real
  * `index.html`. `F3.71` (ADR 0085 decision 1) added the surface style's read beside the theme's,
- * so the list holds two keys; G2c holds the count.
+ * and `F4.310` the profile and the session; G2c holds the count.
  */
 function bootScriptKeys(): string[] {
   const html = readFileSync(join(repoRoot, "apps/web/index.html"), "utf8");
@@ -60,8 +62,13 @@ describe("F3.65c theme gates", () => {
     expect(bootScriptKeys()).toContain(SURFACE_STORAGE_KEY);
   });
 
-  it("G2c the boot script reads exactly two keys", () => {
-    expect(bootScriptKeys()).toHaveLength(2);
+  it("G2d PROFILE_STORAGE_KEY and the auth store's persist key are keys the boot script reads", () => {
+    expect(bootScriptKeys()).toContain(PROFILE_STORAGE_KEY);
+    expect(bootScriptKeys()).toContain("bms-auth");
+  });
+
+  it("G2c the boot script reads exactly four keys", () => {
+    expect(bootScriptKeys()).toHaveLength(4);
   });
 
   it("G3 only lib/theme.ts reads getComputedStyle(document.documentElement)", () => {

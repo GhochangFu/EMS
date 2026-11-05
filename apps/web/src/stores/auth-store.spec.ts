@@ -1,4 +1,5 @@
 import { useAuthStore } from "./auth-store";
+import { useThemeStore } from "./theme-store";
 
 /**
  * `F4.203` — the auth store persists the session and nothing else. The
@@ -32,4 +33,12 @@ export function runThePersistedKeysAreTheSessionOnly(): void {
     JSON.stringify(keys) === JSON.stringify(expected),
     `persisted keys must be ${expected.join(",")}, got ${keys.join(",")}`,
   );
+}
+
+/** `F4.310` (ADR 0110 Q6) — sign-out puts the page back on the default colour profile. */
+export function runClearSessionClearsTheColourProfile(): void {
+  useThemeStore.getState().setProfile("ocean");
+  useAuthStore.getState().clearSession();
+  assert(!document.documentElement.hasAttribute("data-profile"), "expected no data-profile after sign-out");
+  assert(window.localStorage.getItem("bms.profile") === null, "expected no bms.profile after sign-out");
 }

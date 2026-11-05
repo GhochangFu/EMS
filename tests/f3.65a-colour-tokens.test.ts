@@ -342,7 +342,7 @@ describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
 
   // Independent of `parseTokenBlocks`, which throws on a second block: this case must still name
   // the stray declaration when the token file is malformed. Role names come from `ROLE_HEX`.
-  it("T14 every --<role>: declaration in apps/web/src/**/*.css sits inside index.css's :root or dark block", () => {
+  it("T14 every --<role>: declaration in apps/web/src/**/*.css sits inside index.css's :root, dark or profile blocks", () => {
     const roles = new Set(Object.keys(ROLE_HEX));
     const cssFiles = walk(join(repoRoot, "apps/web/src")).filter((f) => f.endsWith(".css"));
     const outside: string[] = [];
@@ -354,6 +354,11 @@ describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
         for (const re of [/:root\s*\{[^}]*\}/, /:root\[data-theme="dark"\]\s*\{[^}]*\}/]) {
           const m = re.exec(text);
           if (m) spans.push([m.index, m.index + m[0].length]);
+        }
+        // F4.310 (ADR 0110 decision 4): a colour profile's two blocks also declare roles; which
+        // roles they may set is `tests/f4.310-profile-blocks.test.ts`'s rule.
+        for (const m of text.matchAll(/:root\[data-profile="[^"]*"\](?::not\(\[data-theme="dark"\]\)|\[data-theme="dark"\])\s*\{[^}]*\}/g)) {
+          spans.push([m.index, m.index + m[0].length]);
         }
       }
       for (const m of text.matchAll(/(?<![\w-])--([a-z][a-z0-9-]*)\s*:/g)) {

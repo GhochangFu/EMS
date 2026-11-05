@@ -9,6 +9,7 @@ import {
   runASessionSetDuringTheBodyReadRecordsNothing,
   runAStreamedBodyWithNoNewSessionRecordsTheReason,
   runAStoreChangedToTheRequestTokenRecordsTheReason,
+  runAMeAnswerAppliesTheColourProfile,
   runRefreshScopeReplacesTheStoredScope,
   runTheRequestCarriesTheTokenItWasGiven,
 } from "./login.spec";
@@ -66,5 +67,11 @@ describe("F4.214 fetchCurrentUser records a /me 401 reason only when the store d
 describe("F2.10 refreshScope", () => {
   it("R1 reads /me with the given token and replaces the stored scope (B8)", async () => {
     await runRefreshScopeReplacesTheStoredScope();
+  });
+});
+
+describe("F4.310 the colour profile from /auth/me", () => {
+  it("CP-M1 a /me answer sets data-profile; the default removes it", async () => {
+    await runAMeAnswerAppliesTheColourProfile();
   });
 });

@@ -2,7 +2,7 @@
 import { afterEach, describe, it } from "vitest";
 
 import { useAuthStore } from "./auth-store";
-import { runThePersistedKeysAreTheSessionOnly } from "./auth-store.spec";
+import { runClearSessionClearsTheColourProfile, runThePersistedKeysAreTheSessionOnly } from "./auth-store.spec";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014); jsdom
@@ -17,5 +17,9 @@ describe("F4.203 auth store persistence", () => {
 
   it("S1 persists exactly the four session keys, never the failure reason", () => {
     runThePersistedKeysAreTheSessionOnly();
+  });
+
+  it("S2 clearSession puts the page back on the default colour profile (F4.310)", () => {
+    runClearSessionClearsTheColourProfile();
   });
 });

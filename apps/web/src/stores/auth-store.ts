@@ -3,6 +3,8 @@ import { persist } from "zustand/middleware";
 
 import type { AccessibleScope, AuthFailureCode, UserRole } from "@bms/shared";
 
+import { clearProfile } from "./theme-store";
+
 export type AuthUser = {
   id: string;
   email: string;
@@ -57,8 +59,11 @@ export const useAuthStore = create<AuthState>()(
       setSession: (accessToken, user, scope, oidcIdToken) =>
         set({ accessToken, oidcIdToken, user, scope, authFailureReason: null }),
       setScope: (scope) => set({ scope }),
-      clearSession: () =>
-        set({ accessToken: null, oidcIdToken: null, user: null, scope: null }),
+      clearSession: () => {
+        // F4.310 (ADR 0110 Q6): the sign-in page, and the next user of a shared PC, see the default.
+        clearProfile();
+        set({ accessToken: null, oidcIdToken: null, user: null, scope: null });
+      },
       rememberAuthFailure: (code) =>
         set((state) => (state.authFailureReason === null ? { authFailureReason: code } : {})),
       clearAuthFailure: () => set({ authFailureReason: null }),

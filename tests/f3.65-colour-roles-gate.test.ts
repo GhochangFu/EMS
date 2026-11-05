@@ -166,6 +166,11 @@ describe("F3.65 colour scan — fixtures", () => {
     expect(colourFindings(src, "f.tsx").filter((f) => f.includes(" theme variant "))).toHaveLength(3);
   });
 
+  it("R4f2 an arbitrary variant on data-profile is a theme-variant finding (F4.310, ADR 0110)", () => {
+    const src = '"[[data-profile=ocean]_&]:bg-x data-[profile=ocean]:bg-x"';
+    expect(colourFindings(src, "f.tsx").filter((f) => f.includes(" theme variant "))).toHaveLength(2);
+  });
+
   it("R4g an @media (prefers-color-scheme) block is a finding", () => {
     expect(colourFindings("@media (prefers-color-scheme: dark) {\n}\n", "f.css")).toEqual([
       "f.css:1 prefers-color-scheme",
