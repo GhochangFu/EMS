@@ -443,14 +443,21 @@ export async function aDisabledGroupsReadDoesNotMislabelABoundTab(): Promise<voi
 
   // The select shows only until this role's scope clamp moves the scope off the location, and on a
   // slow runner the clamp can land before a `waitFor` poll (CI on #681). So every "Tab 2 asset
-  // group" select the page ever adds is recorded from the mutation records — a removed node keeps
-  // its options — and checked once the page has settled.
+  // group" select the page ever adds is recorded from the mutation records and checked once the
+  // page has settled.
+  //
+  // A record is read when the observer's callback runs, not when the mutation happened. The select
+  // first arrives inside a larger added subtree (the widgets wizard), and if the clamp's re-render
+  // commits in the same task, that subtree no longer holds it by callback time: only the removal
+  // record does. So removed nodes are read too — a detached subtree keeps the options it had when
+  // it left — and the records still queued at the end are drained with `takeRecords` rather than
+  // dropped by `disconnect` (flaky in the full suite, ~1 run in 3, 2026-11-05).
   const labels: string[][] = [];
-  const observer = new MutationObserver((records) => {
-    for (const record of records) {
-      for (const node of record.addedNodes) {
+  const record = (records: readonly MutationRecord[]) => {
+    for (const mutation of records) {
+      for (const node of [...mutation.addedNodes, ...mutation.removedNodes]) {
         if (!(node instanceof Element)) continue;
-        // The select itself, a select inside the added subtree, or the select an added option joined.
+        // The select itself, a select inside the subtree, or the select an added option joined.
         const selects = [node, ...node.querySelectorAll("select"), node.closest("select")].filter(
           (element): element is Element => element?.getAttribute("aria-label") === "Tab 2 asset group",
         );
@@ -459,11 +466,13 @@ export async function aDisabledGroupsReadDoesNotMislabelABoundTab(): Promise<voi
         }
       }
     }
-  });
+  };
+  const observer = new MutationObserver(record);
   observer.observe(document.body, { childList: true, subtree: true });
   stubLoads({ dto: TABBED_DTO, groups: [GROUP] });
   renderPage(asUser("asset_group_admin"));
   expect(await screen.findByRole("button", { name: "Clear tab 2 group" })).toBeInTheDocument();
+  record(observer.takeRecords());
   observer.disconnect();
 
   expect(labels.length, "the tab's group select never rendered").toBeGreaterThan(0);
