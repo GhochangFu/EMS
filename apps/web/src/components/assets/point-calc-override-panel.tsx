@@ -40,9 +40,24 @@ import {
   type ColumnOrigin,
   type OverrideDraft,
 } from "../../lib/asset-point-calc-override";
+import { suggestionDraft } from "../../lib/formula-suggestions";
 import { V2_TRIGGER_LATENCY_HINT, V3_TRIGGER_LATENCY_HINT, dialectOptions } from "../../lib/template-calc-config";
 import { FormulaHelp } from "../asset-templates/formula-help";
 import { BackfillDaysSelect } from "./backfill-days-select";
+import { FormulaSuggestions } from "./formula-suggestions";
+
+/**
+ * `F4.314` PR 2 (ADR 0038 Amendment 6 A3, ruling 7) — what the Suggested
+ * formulas under the formula are read for: the asset's organization and
+ * domain, its keys for the missing-input mark (`null` in the bulk wizard),
+ * and on an override the template point whose version is the asset's own.
+ */
+export type PointCalcSuggestionScope = {
+  organizationCode: string | null;
+  domain: string | null;
+  assetKeys: readonly string[] | null;
+  excludeTemplatePointId?: string | null;
+};
 
 type Props = {
   config: AssetPointCalcConfigDto;
@@ -82,6 +97,8 @@ type FieldsProps = {
   standalone?: boolean;
   /** `F4.311` PR 6a: the formula control in place of the plain input (the standalone panel's lazy editor). */
   formulaEditor?: ReactNode;
+  /** `F4.314` PR 2: offer Suggested formulas for `config.pointKey`; absent, the DOM is unchanged. */
+  suggestions?: PointCalcSuggestionScope;
 };
 
 /** The point's name and key — the panel's heading. */
@@ -143,6 +160,7 @@ export function PointCalcFormulaFields({
   onDraftChange,
   standalone = false,
   formulaEditor,
+  suggestions,
 }: FieldsProps) {
   const set = (patch: Partial<OverrideDraft>) => onDraftChange({ ...draft, ...patch });
   // The grammar in force after the save — the draft's when chosen, the
@@ -199,6 +217,18 @@ export function PointCalcFormulaFields({
         disabled={busy}
         onInsert={(text) => set({ formula: draft.formula + text })}
       />
+      {/* `F4.314` PR 2 (A3, ruling 6): taking a suggestion writes its formula,
+          dialect and timing through the same `set` — the draft's own merge,
+          so the merged-dialect rules below (`v2` disables streaming,
+          `draftProblems`) judge the result as they judge a typed one. */}
+      {suggestions ? (
+        <FormulaSuggestions
+          pointKey={config.pointKey}
+          {...suggestions}
+          disabled={busy}
+          onTake={(suggestion) => set(suggestionDraft(suggestion, standalone))}
+        />
+      ) : null}
     </>
   );
 }

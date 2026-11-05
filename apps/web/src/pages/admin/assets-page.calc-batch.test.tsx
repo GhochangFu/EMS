@@ -10,6 +10,8 @@ import {
   aTemplatedAssetIsMarkedAndLeftOut,
   reviewListsEveryRefusedAsset,
   theBatchSendsExactlyTheCheckedIds,
+  theBulkWizardListsTheSharedOrganizationsVersion,
+  theBulkWizardMarksNoInputMissing,
   theFormulaStepCarriesTheQualifiedReferenceSentence,
   twentySixCheckedDisablesTheButtonWithTheCapSentence,
 } from "./assets-page.calc-batch.spec";
@@ -55,5 +57,13 @@ describe("F4.311 PR 6a — the asset list's Add calculated point bulk action", (
 
   it("a refused batch re-reads the asset list", async () => {
     await aRefusedBatchRereadsTheAssetList();
+  });
+
+  it("the Formula step's Suggested formulas read the selection's shared organization (F4.314)", async () => {
+    await theBulkWizardListsTheSharedOrganizationsVersion();
+  });
+
+  it("the Formula step's Suggested formulas mark no input missing (F4.314)", async () => {
+    await theBulkWizardMarksNoInputMissing();
   });
 });

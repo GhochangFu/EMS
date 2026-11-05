@@ -5,6 +5,7 @@ import {
   sharedDomainOfMixedDomainsIsNull,
   sharedDomainOfNothingIsNull,
   sharedDomainOfOneDomainIsThatDomain,
+  sharedValueWithANullIsNull,
   theExclusionBeatsTheSelectedKey,
   theSearchMatchesTheCodeTrimmedAndCaseInsensitively,
   theSearchMatchesTheName,
@@ -23,6 +24,10 @@ describe("F4.313 follow-up — the catalog key picker's list rule", () => {
 
   it("sharedDomain of one domain is that domain", () => {
     sharedDomainOfOneDomainIsThatDomain();
+  });
+
+  it("sharedValue with a null member is null (F4.314)", () => {
+    sharedValueWithANullIsNull();
   });
 
   it("the search matches the code, trimmed and case-insensitively", () => {

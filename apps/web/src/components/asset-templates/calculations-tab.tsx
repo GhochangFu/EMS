@@ -30,6 +30,7 @@ import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { useFollowStoredWhenClean } from "../../lib/use-follow-stored-when-clean";
 import { validateEditorFormula } from "../../lib/formula-editor-rules";
+import { suggestionRow } from "../../lib/formula-suggestions";
 import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
 import {
   CALC_INTERVAL_BOUNDS,
@@ -56,6 +57,7 @@ import {
   pointsHaveChanged,
   type TemplatePointRow,
 } from "../../lib/template-points-grid";
+import { FormulaSuggestions } from "../assets/formula-suggestions";
 import { FormulaEditorLazy } from "./formula-editor-lazy";
 import { FormulaHelp } from "./formula-help";
 import { FormulaPreview } from "./formula-preview";
@@ -253,6 +255,25 @@ export function CalculationsTab({
               dialect={dialect}
               disabled={!editable || formulaFieldsAreReadOnly(template.status)}
               onInsert={(text) => update(index, { formula: (row.formula ?? "") + text, formulaDialect: dialect })}
+            />
+            {/* `F4.314` PR 2 (A3, ruling 6): the key's existing formulas, this
+                version excluded. Taking one goes through `suggestionRow` —
+                `setCalcTrigger` then `setFormulaDialect`, the Grammar and
+                Runs selects' own setters — so a cross-asset formula still
+                lands scheduled and a `v1` one still clears the ratio. */}
+            <FormulaSuggestions
+              pointKey={row.pointKey}
+              organizationCode={template.organizationCode}
+              domain={template.domain}
+              assetKeys={rows.map((entry) => entry.pointKey)}
+              keysOf="this template"
+              excludeTemplateId={template.id}
+              disabled={!editable || formulaFieldsAreReadOnly(template.status)}
+              onTake={(suggestion) =>
+                setRows((current) =>
+                  current.map((entry, position) => (position === index ? suggestionRow(entry, suggestion) : entry)),
+                )
+              }
             />
 
             <label className="mt-3 block space-y-1">

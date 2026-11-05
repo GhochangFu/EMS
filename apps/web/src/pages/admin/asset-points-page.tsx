@@ -46,6 +46,7 @@ import {
   PointCalcHeading,
   PointCalcScheduleFields,
   PointCalcSettingsTable,
+  type PointCalcSuggestionScope,
 } from "../../components/assets/point-calc-override-panel";
 import { SectionCard } from "../../components/section-card";
 import { WizardShell } from "../../components/wizard/wizard-shell";
@@ -169,6 +170,8 @@ type CalcOverrideWizardProps = {
   onSubmit: (body: Record<string, unknown>) => void;
   onClear: () => void;
   onCancel: () => void;
+  /** `F4.314` PR 2 (ruling 7): the Formula step's Suggested formulas, the template's own version excluded. */
+  suggestions: PointCalcSuggestionScope;
 };
 
 /**
@@ -199,6 +202,7 @@ function CalcOverrideWizard({
   onSubmit,
   onClear,
   onCancel,
+  suggestions,
 }: CalcOverrideWizardProps) {
   const busy = saving || clearing;
   const problems = draftProblems(draft, config);
@@ -212,7 +216,7 @@ function CalcOverrideWizard({
   const formulaStep = (
     <>
       <div className="grid gap-2 sm:grid-cols-2">
-        <PointCalcFormulaFields {...fields} />
+        <PointCalcFormulaFields {...fields} suggestions={suggestions} />
       </div>
       <PointCalcDraftProblems problems={problems} />
     </>
@@ -729,6 +733,12 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                 }}
                 onSubmit={(body) => setOverrideM.mutate({ pointKey: config.pointKey, body })}
                 onClear={() => clearOverrideM.mutate(config.pointKey)}
+                suggestions={{
+                  organizationCode: assetSummaryQ.data?.organizationCode ?? null,
+                  domain: assetSummaryQ.data?.domain ?? null,
+                  assetKeys: [...(listQ.data?.items ?? []), ...calcPoints].map((point) => point.pointKey),
+                  excludeTemplatePointId: config.templatePointId,
+                }}
                 onCancel={() => {
                   setOpenPointKey(null);
                   setOverrideError(null);
@@ -824,6 +834,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               onSubmit={(pointKey, body, newKey) => setCalcPointM.mutate({ pointKey, body, newKey })}
               allowNewKey={canWritePointKeys(user.role)}
               assetDomain={assetSummaryQ.data?.domain ?? null}
+              assetOrganizationCode={assetSummaryQ.data?.organizationCode ?? null}
               onDelete={null}
               onCancel={() => openStandalone({})}
             />

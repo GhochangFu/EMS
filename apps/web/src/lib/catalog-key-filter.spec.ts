@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import { type CatalogKeyFilter, sharedDomain, visibleCatalogKeys } from "./catalog-key-filter";
+import { type CatalogKeyFilter, sharedDomain, sharedValue, visibleCatalogKeys } from "./catalog-key-filter";
 
 /**
  * `F4.313` follow-up (owner ruling 2026-11-05) — unit claims for the key
@@ -35,6 +35,11 @@ export function sharedDomainOfMixedDomainsIsNull(): void {
 // Catches: a uniform selection not returning its domain.
 export function sharedDomainOfOneDomainIsThatDomain(): void {
   expect(sharedDomain(["water", "water"])).toBe("water");
+}
+
+/** `F4.314` PR 2 — an asset with no organization code shares none. Catches: nulls skipped before comparing. */
+export function sharedValueWithANullIsNull(): void {
+  expect(sharedValue(["SPEC", null])).toBeNull();
 }
 
 // Catches: the search not trimmed or not lower-cased before matching the code.

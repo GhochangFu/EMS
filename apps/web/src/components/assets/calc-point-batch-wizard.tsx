@@ -60,7 +60,7 @@ import {
   type BatchRefusal,
   type CalcPointDraft,
 } from "../../lib/calc-point-draft";
-import { sharedDomain } from "../../lib/catalog-key-filter";
+import { sharedDomain, sharedValue } from "../../lib/catalog-key-filter";
 import { AdminWizardFrame } from "../admin/admin-wizard-frame";
 import { FormulaPreview } from "../asset-templates/formula-preview";
 import { WizardShell } from "../wizard/wizard-shell";
@@ -230,11 +230,19 @@ export function CalcPointBatchWizard({
       {newKey ? <NewPointKeyFields draft={newKey} disabled={busy} onChange={editNewKey} /> : null}
     </>
   );
+  // `F4.314` PR 2 (A3): no single asset, so nothing is marked missing, and
+  // the organization's versions are read only when the eligible assets share
+  // one organization and one domain (an asset with no organization reads none).
+  const suggestions = {
+    organizationCode: sharedValue(eligible.map((asset) => asset.organizationCode)),
+    domain: sharedDomain(eligible.map((asset) => asset.domain)),
+    assetKeys: null,
+  };
   const formulaStep = (
     <>
       <p className="text-xs text-ink-muted">{BATCH_QUALIFIED_REF_NOTE}</p>
       <div className="grid gap-2 sm:grid-cols-2">
-        <PointCalcFormulaFields {...fields} />
+        <PointCalcFormulaFields {...fields} suggestions={suggestions} />
       </div>
       <FormulaPreview expression={draft.formula} dialect={draftDialect(draft)} disabled={busy} />
     </>
