@@ -500,6 +500,41 @@ export function toWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
   };
 }
 
+/** Code-point order, the same on every engine: the canonical form only needs a total order. */
+function byText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * The write body as the server stores it, so two saves of one layout compare equal: nodes by
+ * (z, y, x, key) and pipes by (fromKey, toKey) as `MimicLayoutsService.toDto` answers them, the
+ * name and every label trimmed as the contract trims them, and the libraries as a set. A unit's
+ * `pointKeys` keep their order: the order is what the unit draws.
+ */
+function canonicalWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
+  const body = toWriteBody(layout);
+  return {
+    ...body,
+    name: body.name.trim(),
+    nodes: body.nodes
+      .map((node) => ({ ...node, label: node.label.trim(), z: node.z ?? 0 }))
+      .sort((a, b) => a.z - b.z || a.y - b.y || a.x - b.x || byText(a.key, b.key)),
+    pipes: [...body.pipes].sort((a, b) => byText(a.fromKey, b.fromKey) || byText(a.toKey, b.toKey)),
+    symbolLibraries: [...(body.symbolLibraries ?? [])].sort(byText),
+  };
+}
+
+/**
+ * `F4.308` (ADR 0081 Amendment 2 decision 4, plan C11) — whether the editor's layout differs from
+ * the last save, compared as the server stores them (`canonicalWriteBody`): what a Save would
+ * change is an edit; an undo back to the saved layout, or the server's own order and trimming,
+ * is none. The preview draws the saved layout, so while this is true it says "Save to refresh
+ * the preview".
+ */
+export function hasUnsavedEdits(layout: EditorLayout, saved: MimicLayoutDto): boolean {
+  return JSON.stringify(canonicalWriteBody(layout)) !== JSON.stringify(canonicalWriteBody(layoutFromDto(saved)));
+}
+
 /**
  * `F3.87` PR 5 — the inverse of {@link toWriteBody}: a write body (a copilot layout card's) in
  * the editor's shape, so the card draws it and warns on it as the editor does. The null-versus-
