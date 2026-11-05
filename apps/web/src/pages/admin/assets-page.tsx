@@ -27,6 +27,7 @@ import { CalcPointBatchWizard } from "../../components/assets/calc-point-batch-w
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
+import { canWritePointKeys } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { batchCapProblem } from "../../lib/calc-point-draft";
 import type { AuthUser } from "../../stores/auth-store";
@@ -316,6 +317,7 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
       {batchOpen && selectedRows.length > 0 ? (
         <CalcPointBatchWizard
           assets={selectedRows}
+          allowNewKey={canWritePointKeys(user.role)}
           onCancel={() => setBatchOpen(false)}
           onDone={() => {
             setBatchOpen(false);

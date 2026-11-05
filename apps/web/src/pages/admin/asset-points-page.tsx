@@ -6,6 +6,7 @@ import type {
   AssetPointCalcConfigDto,
   AssetPointCalcOverrideBody,
   CalcPointSetBody,
+  CreatePointKeyBody,
   MasterDataActiveFilter,
 } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
@@ -23,6 +24,7 @@ import {
   updateAdminAssetPoint,
 } from "../../api/admin/asset-points";
 import { fetchAdminAssetSummary } from "../../api/admin/assets";
+import { createAdminPointKey } from "../../api/admin/point-keys";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
 import { AssetPointStatusWizard } from "../../components/admin/asset-point-status-wizard";
 import { AssetPointWizard } from "../../components/admin/asset-point-wizard";
@@ -74,6 +76,8 @@ import {
   type OverrideDraft,
 } from "../../lib/asset-point-calc-override";
 import { backfillPollInterval, backfillProgressLabel } from "../../lib/calc-point-draft";
+import { canWritePointKeys } from "../../lib/admin-access";
+import { createKeyThenWritePoint } from "../../lib/new-point-key-draft";
 import { StatusPill } from "../../components/status-pill";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -413,14 +417,19 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
 
   // A standalone write adds or removes an `asset_points` row, so both lists
   // are stale after it (`afterOverride`'s two invalidations).
+  // `F4.313` (A13): with a new key, the key first and then the point; a
+  // refused point leaves the key in the catalog, so the picker re-reads it.
   const setCalcPointM = useMutation({
-    mutationFn: ({ pointKey, body }: { pointKey: string; body: CalcPointSetBody }) =>
-      setAdminAssetCalcPoint(assetId ?? "", pointKey, body),
+    mutationFn: ({ pointKey, body, newKey }: { pointKey: string; body: CalcPointSetBody; newKey: CreatePointKeyBody | null }) =>
+      createKeyThenWritePoint(newKey, createAdminPointKey, () => setAdminAssetCalcPoint(assetId ?? "", pointKey, body)),
     onSuccess: () => {
       openStandalone({});
       afterOverride();
     },
     onError: afterStandaloneRefusal,
+    onSettled: (_data, _cause, { newKey }) => {
+      if (newKey !== null) void queryClient.invalidateQueries({ queryKey: ["admin", "point-keys"] });
+    },
   });
 
   // A `409` (a dashboard widget shows the point) is the Review card's error, in the server's words.
@@ -797,7 +806,8 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               saving={setCalcPointM.isPending}
               saveError={overrideSaveError}
               onEdited={() => setOverrideSaveError(null)}
-              onSubmit={(pointKey, body) => setCalcPointM.mutate({ pointKey, body })}
+              onSubmit={(pointKey, body, newKey) => setCalcPointM.mutate({ pointKey, body, newKey })}
+              allowNewKey={canWritePointKeys(user.role)}
               onDelete={null}
               onCancel={() => openStandalone({})}
             />
@@ -811,7 +821,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                 saving={setCalcPointM.isPending}
                 saveError={overrideSaveError}
                 onEdited={() => setOverrideSaveError(null)}
-                onSubmit={(pointKey, body) => setCalcPointM.mutate({ pointKey, body })}
+                onSubmit={(pointKey, body) => setCalcPointM.mutate({ pointKey, body, newKey: null })}
                 onDelete={() => openStandalone({ remove: config.pointKey })}
                 onCancel={() => openStandalone({})}
               />

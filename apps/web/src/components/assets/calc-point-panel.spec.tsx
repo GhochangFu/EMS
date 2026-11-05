@@ -211,6 +211,7 @@ export async function submitSendsTheBackfillChosen(): Promise<void> {
         maxInputAgeSeconds: 600,
         backfillDays: 7,
       },
+      null,
     ],
   ]);
 }
