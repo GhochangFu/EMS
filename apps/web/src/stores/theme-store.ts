@@ -84,6 +84,19 @@ export const useThemeStore = create<ThemeState>()((set) => ({
 }));
 
 /**
+ * `F4.310` (ADR 0110 decision 8) — the chooser's live preview: paints the page in `profile` without
+ * storing it; `null` puts the viewer's own profile back. Only the attribute moves, so the store (and
+ * `bms.profile`) keep the viewer's own value; a chart that re-renders during a preview reads the
+ * previewed roles, because `currentRoles()` keys its cache on the attribute.
+ */
+export function previewProfile(profile: ColourProfile | null): void {
+  if (typeof document === "undefined") return;
+  const shown = profile ?? useThemeStore.getState().profile;
+  if (shown === "nexus") document.documentElement.removeAttribute("data-profile");
+  else document.documentElement.setAttribute("data-profile", shown);
+}
+
+/**
  * `F4.310` (ADR 0110 decision 4) — sign-out: back to the default, so the sign-in page (and the next
  * user of a shared control-room PC) never shows the last user's organization colours.
  */

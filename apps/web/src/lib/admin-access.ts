@@ -19,6 +19,15 @@ export function canWriteOrganizations(role: UserRole): boolean {
   return role === "admin";
 }
 
+/**
+ * `F4.310` (ADR 0110 decision 7) — whether the role may open the colour-profile chooser. The API
+ * decides per organization (`isOrganizationLevelAdmin`); an organization admin sees only the
+ * organizations it holds, so the button shows for both roles and a 403 is the server's sentence.
+ */
+export function canChooseColourProfile(role: UserRole): boolean {
+  return role === "admin" || role === "organization_admin";
+}
+
 /** Whether the role may create or edit the global/org point key catalog. */
 export function canWritePointKeys(role: UserRole): boolean {
   // `F3.39` / ADR 0051: `organization_admin` was dropped from this list. The

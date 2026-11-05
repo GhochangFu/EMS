@@ -27,6 +27,7 @@ import {
   aRefusedSaveShowsTheSentence,
   theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin,
   theGlobalAdminSwitchesARowsCopilotOn,
+  theColourProfileColumnAndActionFollowTheRole,
 } from "./organizations-page.spec";
 
 /**
@@ -129,5 +130,9 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("F3.86 PR 7 Onboard with AI shows for an organization_admin whose copilot is on", async () => {
     await onboardWithAiShowsForAnOrganizationAdminWhoseCopilotIsOn();
+  });
+
+  it("F4.310 the list shows the colour profile and the action follows the role", async () => {
+    await theColourProfileColumnAndActionFollowTheRole();
   });
 });

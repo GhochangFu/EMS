@@ -207,6 +207,53 @@ not engaged. The schema change is this ADR's (decision 6).
   profile, profile colours in reports and emails, a live push of a profile
   change, and a copilot action.
 
+## Amendment 1 — the plan rulings and the profile values (2026-11-05)
+
+**Status: Accepted with the merge of `F4.310` PR D.** The owner ruled six plan questions in chat on
+2026-11-05, one at a time, each as recommended (plan `docs/plans/f4.310-organization-colour-profiles.md`
+§7). **Merging PR D approves the value table below** (AGENTS §10).
+
+1. **OQ1 — the carry-over list (refines Q5).** "An empty allowlist" cannot pass: some of the
+   default's failures come from a fixed role. A new profile may keep failing only these **10**
+   entries of the default's allowlist, each measured again on the profile's own values: the four
+   `warning`/`info` dots and bars on `surface`/`canvas`, the donut's `warning-on-dark` slice,
+   `ok` on `canvas` (PR A: the same pixel as `accent` on `canvas`), the placeholder
+   (`ink-hint` on `surface`), the white toggle knob (`on-dark` on `line-strong`), and in dark the
+   two formula-editor selection entries. The seven brand-green entries never carry over, so every
+   new profile's brand colour passes 4.5:1 as text.
+2. **OQ2 — two more roles (refines decision 2).** `ok-strong` (fixed, = the default's
+   `accent-strong`) and `accent-on-chrome` (changeable, the brand colour on the dark chrome: the
+   wordmark). With `ok`, **52 roles**: 26 fixed, 26 changeable. One brand value cannot pass 4.5:1 on
+   both the white `surface` and the dark `chrome`.
+3. **OQ3 — the accent keeps away from the fixed state hues.** `accent` is ΔE2000 ≥ 12 from `info`
+   and from `simulated-ink`, both themes, every profile; with decision 5, `accent` and
+   `accent-strong` are ≥ 20 from `warning` and `critical`. `indigo` is therefore a deep
+   indigo-navy, not a violet.
+4. **OQ4 — the `organization_admin` gate (refines decision 7).** `isOrganizationLevelAdmin`: a
+   direct organization grant, the gate a location move uses — not "the home organization". Users
+   still **see** their home organization's profile (Q3).
+5. **OQ5 — the split.** Serial PRs: A (the `ok` split, #1010), B (column, route, `/auth/me`, #1015),
+   C (the mechanism, #1020), A2 (the mimic state sites), D (values and chooser).
+6. **OQ6 — which `accent` sites are states.** Every site that shows a named state (normal, ok,
+   healthy, running, energised, closed, good, sent, ON) uses `ok` / `ok-strong`, the schematics
+   included; brand, selection, category and quantity uses keep `accent`. The mimic files moved in
+   A2, after `F4.307`–`F4.309`, so no profile was visible with a half-moved mimic.
+
+**Two drafter calls of the ADR, as built.** The chooser (decision 8) is a list of the six profiles
+with a one-line description each; a choice previews the **whole page** in that profile's real
+role values (no copy of the values), Cancel restores, Save writes and re-reads `/auth/me`.
+`GET /admin/organizations/:id` keeps its summary DTO; the chooser reads the list.
+
+**The values** (changeable roles only; every fixed role keeps the default's value).
+`apps/web/src/index.css` is the authority; this table is read from it.
+
+
+
+**Measured** (WCAG 2.x ratios and CIEDE2000, from the token file; every declared pair and the
+distance rules are `tests/f3.65a-colour-contrast.test.ts` Q0–Q5):
+
+
+
 ## Owed after the build
 
 - The `chore(agents):` sweep: AGENTS.md §5 (role tokens: 50 roles, the fixed

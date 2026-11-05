@@ -532,3 +532,21 @@ export async function aRefusedAttachmentSwitchShowsTheSentence(): Promise<void> 
   expect(banner.textContent).not.toContain('{"');
   expect(toggle.checked).toBe(false);
 }
+
+/**
+ * `F4.310` (ADR 0110 decisions 7–8) — the list shows each row's colour profile, and the "Colour
+ * profile" action opens the chooser for the global admin and the organization admin, not below.
+ */
+export async function theColourProfileColumnAndActionFollowTheRole(): Promise<void> {
+  stubApi();
+  renderPageAs("organization_admin");
+  const row = (await screen.findByText("Rupee organization")).closest("tr")!;
+  expect(within(row).getByText("Nexus (default)")).toBeInTheDocument();
+  await userEvent.click(within(row).getByRole("button", { name: "Colour profile" }));
+  expect(screen.getByRole("dialog", { name: /Colour profile — Rupee organization/ })).toBeInTheDocument();
+  cleanup();
+  stubApi();
+  renderPageAs("location_admin");
+  const other = (await screen.findByText("Rupee organization")).closest("tr")!;
+  expect(within(other).queryByRole("button", { name: "Colour profile" })).toBeNull();
+}
