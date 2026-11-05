@@ -57,15 +57,15 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import type { AdminAssetTemplateDto, CalcDialect, TemplateKpi } from "@bms/shared";
-import { CALC_DIALECT, CALC_DIALECTS, isCrossAssetDialect, isParameterDialect } from "@bms/shared";
+import { CALC_DIALECT } from "@bms/shared";
 import { catalogEntry } from "@bms/shared/copilot";
 
 import { updateAdminAssetTemplate, type UpdateAssetTemplateInput } from "../../api/admin/asset-templates";
 import type { WizardStep } from "../../lib/wizard-steps";
 import { WizardShell } from "../wizard/wizard-shell";
 import { apiErrorMessage } from "../../lib/api-error-message";
-import { V2_REFERENCE_FORMS, validateEditorFormula } from "../../lib/formula-editor-rules";
-import { V3_PARAMETER_HELP, V3_WINDOW_HELP, dialectOptions } from "../../lib/template-calc-config";
+import { validateEditorFormula } from "../../lib/formula-editor-rules";
+import { dialectOptions } from "../../lib/template-calc-config";
 import { checkedDialect } from "../../lib/template-formula-validation";
 import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
 import { useFollowStoredWhenClean } from "../../lib/use-follow-stored-when-clean";
@@ -85,6 +85,7 @@ import {
   type TemplateKpiRow,
 } from "../../lib/template-kpi-form";
 import { FormulaEditorLazy } from "./formula-editor-lazy";
+import { FormulaHelp } from "./formula-help";
 import { FormulaPreview } from "./formula-preview";
 import { Field } from "./field";
 
@@ -457,28 +458,17 @@ export function KpisTab({ template, editable, onSaved, onDirtyChange }: KpisTabP
                 ))}
               </select>
             </label>
-            {CALC_DIALECTS.some((known) => known === kpi.dialect && isCrossAssetDialect(known)) ? (
-              // The teaching ADR 0055 decision 6 buys: which reference form
-              // answers which question. From `V2_REFERENCE_FORMS`, whose
-              // examples the parser is proven to accept — the same list the
-              // Calculations tab renders, so the two tabs read as one surface.
-              <ul className="mt-1 space-y-0.5 text-[11px] text-ink-muted">
-                {V2_REFERENCE_FORMS.map((form) => (
-                  <li key={form.form}>
-                    <span className="font-semibold">{form.form}</span> — {form.answers}:{" "}
-                    <code className="rounded bg-well-deep px-1">{form.example}</code>
-                  </li>
-                ))}
-                {CALC_DIALECTS.some((known) => known === kpi.dialect && isParameterDialect(known)) ? (
-                  // The `v3` forms (ADR 0070 decisions 4 and 5), beside the two
-                  // it keeps — the same lines the Calculations tab renders.
-                  <>
-                    <li>{V3_PARAMETER_HELP}</li>
-                    <li>{V3_WINDOW_HELP}</li>
-                  </>
-                ) : null}
-              </ul>
-            ) : null}
+            {/* `F4.314` (ADR 0038 Amendment 6 A1): the Formula help, in place
+                of the old `v2`/`v3` list — the same component the Calculations
+                tab renders, so the two tabs read as one surface. Under the
+                KPI's checked dialect, `v1` for an "unvalidated" row (as its
+                completion, A2). An entry appends through `update`, the
+                editor's own change path below. */}
+            <FormulaHelp
+              dialect={checked ?? CALC_DIALECT}
+              disabled={!editable || formulaFieldsAreReadOnly(template.status)}
+              onInsert={(text) => update(index, { expression: kpi.expression + text })}
+            />
 
             <label className="mt-3 block space-y-1">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">

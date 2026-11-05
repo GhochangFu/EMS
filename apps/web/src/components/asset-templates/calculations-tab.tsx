@@ -29,7 +29,7 @@ import { CALC_DIALECT, CALC_TRIGGERS, isCrossAssetDialect, isParameterDialect } 
 import { updateAdminAssetTemplate } from "../../api/admin/asset-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { useFollowStoredWhenClean } from "../../lib/use-follow-stored-when-clean";
-import { V2_REFERENCE_FORMS, validateEditorFormula } from "../../lib/formula-editor-rules";
+import { validateEditorFormula } from "../../lib/formula-editor-rules";
 import { formulaFieldsAreReadOnly } from "../../lib/template-lifecycle";
 import {
   CALC_INTERVAL_BOUNDS,
@@ -38,9 +38,7 @@ import {
   IMPLIED_MAX_INPUT_AGE_SECONDS,
   CALENDAR_WINDOW_WARNING,
   V2_TRIGGER_LATENCY_HINT,
-  V3_PARAMETER_HELP,
   V3_TRIGGER_LATENCY_HINT,
-  V3_WINDOW_HELP,
   calcConfigErrors,
   calcGridErrors,
   dialectOptions,
@@ -59,6 +57,7 @@ import {
   type TemplatePointRow,
 } from "../../lib/template-points-grid";
 import { FormulaEditorLazy } from "./formula-editor-lazy";
+import { FormulaHelp } from "./formula-help";
 import { FormulaPreview } from "./formula-preview";
 
 type CalculationsTabProps = {
@@ -174,7 +173,7 @@ export function CalculationsTab({
         // "Has cross-asset references" — v2 or v3 (ADR 0070); the name is
         // kept because every branch below reads it as "not v1".
         const isV2 = isCrossAssetDialect(dialect);
-        // `v3` only (ADR 0070): the `$key` help and its own latency hint.
+        // `v3` only (ADR 0070): its own latency hint.
         const isV3 = isParameterDialect(dialect);
         // `E4.1b`: a calendar window is evaluated in the owning asset's
         // location's zone, so the row says so beside its editor. `[]` under
@@ -245,27 +244,16 @@ export function CalculationsTab({
                 ))}
               </select>
             </label>
-            {isV2 ? (
-              // The teaching ADR 0055 decision 6 buys: which reference form
-              // answers which question. From `V2_REFERENCE_FORMS`, whose
-              // examples the parser is proven to accept.
-              <ul className="mt-1 space-y-0.5 text-[11px] text-ink-muted">
-                {V2_REFERENCE_FORMS.map((form) => (
-                  <li key={form.form}>
-                    <span className="font-semibold">{form.form}</span> — {form.answers}:{" "}
-                    <code className="rounded bg-well-deep px-1">{form.example}</code>
-                  </li>
-                ))}
-                {isV3 ? (
-                  // The `v3` forms (ADR 0070 decisions 4 and 5), taught beside
-                  // the two `v2` forms it keeps: the parameter, then the windows.
-                  <>
-                    <li>{V3_PARAMETER_HELP}</li>
-                    <li>{V3_WINDOW_HELP}</li>
-                  </>
-                ) : null}
-              </ul>
-            ) : null}
+            {/* `F4.314` (ADR 0038 Amendment 6 A1): the Formula help for the
+                row's grammar, in place of the old `v2`/`v3` list. An entry
+                appends through `update` with the row's own dialect — the
+                editor's own change path below. Disabled wherever the editor
+                is read-only (decision 3) or the tab is not editable. */}
+            <FormulaHelp
+              dialect={dialect}
+              disabled={!editable || formulaFieldsAreReadOnly(template.status)}
+              onInsert={(text) => update(index, { formula: (row.formula ?? "") + text, formulaDialect: dialect })}
+            />
 
             <label className="mt-3 block space-y-1">
               <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">

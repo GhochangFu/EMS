@@ -307,6 +307,35 @@ export async function aFrozenVersionDisablesEveryControl(): Promise<void> {
   expect(screen.queryByRole("button", { name: VALIDATE })).toBeNull();
 }
 
+/**
+ * `F4.314` (ADR 0038 Amendment 6 A6) — on a frozen version every Formula help
+ * entry renders disabled, not absent: the help is read-only there, as every
+ * other authoring control is (decision 3).
+ *
+ * Mutation: pass `disabled={false}` to the tab's `FormulaHelp`.
+ */
+export async function aFrozenVersionDisablesTheFormulaHelp(): Promise<void> {
+  renderTab(fixture("published"), false);
+  const entries = screen.getAllByRole("button", { name: /^Insert / });
+  expect([entries.length > 0, entries.filter((entry) => !(entry as HTMLButtonElement).disabled).length]).toEqual([
+    true,
+    0,
+  ]);
+}
+
+/**
+ * `F4.314` (ADR 0038 Amendment 6 A1, ruling 3) — a Formula help entry appends
+ * its text to its own row's expression, through the editor's change path.
+ *
+ * Mutation: replace the row's expression with the entry's text instead of
+ * appending it.
+ */
+export async function aHelpEntryAppendsToItsRowsExpression(): Promise<void> {
+  renderTab(fixture(), true);
+  await userEvent.click(within(rowOf("double")).getByRole("button", { name: "Insert abs" }));
+  expect(expressionFor("double").value).toBe("{kw} * 2abs(");
+}
+
 /** The one edit the wizard cases make: a name on the unvalidated row. */
 async function renameDouble(): Promise<void> {
   await userEvent.type(within(rowOf("double")).getByRole("textbox", { name: "Name" }), " x");

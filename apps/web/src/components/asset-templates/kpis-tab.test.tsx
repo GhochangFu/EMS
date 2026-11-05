@@ -5,6 +5,8 @@ import { cleanup } from "@testing-library/react";
 import {
   aCopilotContentFillKeepsEveryOtherStoredSection,
   aFrozenVersionDisablesEveryControl,
+  aFrozenVersionDisablesTheFormulaHelp,
+  aHelpEntryAppendsToItsRowsExpression,
   aRefetchDropsAStaleValidateTarget,
   aRefetchDropsAStaleValidationError,
   aSaveAnsweredAfterACancelKeepsTheNewEdit,
@@ -51,6 +53,14 @@ describe("F2.22 KPIs tab — a bms-calc-v2 KPI is checked, and Grammar (ADR 0055
 
   it("disables every control on a frozen version and offers no Save", async () => {
     await aFrozenVersionDisablesEveryControl();
+  });
+
+  it("disables every Formula help entry on a frozen version (F4.314)", async () => {
+    await aFrozenVersionDisablesTheFormulaHelp();
+  });
+
+  it("appends a Formula help entry to its own row (F4.314)", async () => {
+    await aHelpEntryAppendsToItsRowsExpression();
   });
 });
 

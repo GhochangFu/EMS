@@ -6,6 +6,8 @@ import {
   aCalendarWindowShowsTheTimezoneWarning,
   aCycleBlocksTheSaveUnderBothRows,
   aFrozenVersionDisablesEveryControl,
+  aFrozenVersionDisablesTheFormulaHelp,
+  aHelpEntryAppendsToItsRowsFormula,
   aMixedDialectPairSkipsTheCycleMirror,
   aRollingWindowShowsNoTimezoneWarning,
   choosingV2FlipsAStreamingRowToScheduled,
@@ -44,6 +46,14 @@ describe("F2.22 calculations tab — Grammar, Minimum coverage and the v2 trigge
 
   it("disables every control on a frozen version and offers no Save", async () => {
     await aFrozenVersionDisablesEveryControl();
+  });
+
+  it("disables every Formula help entry on a frozen version (F4.314)", async () => {
+    await aFrozenVersionDisablesTheFormulaHelp();
+  });
+
+  it("appends a Formula help entry to its own row (F4.314)", async () => {
+    await aHelpEntryAppendsToItsRowsFormula();
   });
 
   it("renders the cycle sentence under both rows of a within-template cycle and blocks the save", async () => {
