@@ -36,6 +36,7 @@
     "tests/e7.1c-audit-log-organization-population.test.ts",
     "tests/f1.7-ingest-enabled-set.test.ts",
     "tests/f1.7-seed-ownership.integration.test.ts",
+    "tests/phe-seed-keeps-asset-name.integration.test.ts",
     "tests/f3.8-notification-schema.integration.test.ts",
     "tests/f4.52-auth-failure-status.test.ts",
     "tests/f4.63-query-retry-wiring.test.ts",
