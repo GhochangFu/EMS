@@ -11,6 +11,10 @@ describe("F4.312 — the adoption planner (ADR 0109 Amendment 1)", () => {
     it("refuses an asset of another organization (A1)", () =>
       spec.anAssetOfAnotherOrganizationIsRefused());
     it("refuses an asset of another domain (A1)", () => spec.anAssetOfAnotherDomainIsRefused());
+    it("words the pinned refusal with the shared sentence (F4.315)", () => spec.thePinnedSentenceIsTheSharedOne());
+    it("words the organization refusal with the shared sentence (F4.315)", () =>
+      spec.theOrganizationSentenceIsTheSharedOne());
+    it("words the domain refusal with the shared sentence (F4.315)", () => spec.theDomainSentenceIsTheSharedOne());
   });
 
   describe("declared measured points", () => {

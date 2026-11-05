@@ -1,12 +1,19 @@
 import { and, eq, inArray } from "drizzle-orm";
+import { z } from "zod";
 
 import { assets, assetTemplates } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { canInstantiate, type JwtPayload, TEMPLATE_ADOPTION_MAX_ASSETS, type TemplateLifecycleStatus } from "@bms/shared";
 
+import {
+  alreadyPinnedMessage,
+  domainMismatchMessage,
+  organizationMismatchMessage,
+} from "../admin/asset-templates/asset-templates-adopt-messages";
 import type { AccessControlService } from "../auth/access-control.service";
 import { withTenant } from "../database/tenant-context";
 import { lifecycleStatusOf } from "./copilot-target-kinds";
+import { CopilotTargetRefusal } from "./copilot-telemetry-targets";
 
 /**
  * `F4.312` PR 2 (ADR 0099 Amendment 12) — the reads and the gate behind the
@@ -16,19 +23,28 @@ import { lifecycleStatusOf } from "./copilot-target-kinds";
  *
  * The target mirrors `AssetTemplateAdoptionService.buildPlan`'s access chain
  * (migrate's, ADR 0109 Amendment 1 A10) and the planner's batch-level
- * refusals, so a card the route could only refuse is never shown. Every
- * failure but the version's status is the one refusal (`null`, decision 10);
- * the status is the lifecycle mirror's (`F4.246`). The route names each
- * refused asset on Confirm, and its point-level refusals (A4, A8, …) stay a
- * Confirm-time 409.
+ * refusals, so a card the route could only refuse is never shown.
+ *
+ * `F4.315` PR A (ADR 0099 Amendment 14 decisions 2–3): a refusal names its
+ * cause when the caller may see the records — a published version in scope
+ * and listed assets all in the caller's scope, where one is already pinned,
+ * of another domain, or of another allowed organization than the version —
+ * as a {@link CopilotTargetRefusal} carrying the route's own sentence
+ * (`asset-templates-adopt-messages.ts`). A version or asset id that does not
+ * exist, or that is outside the caller's organizations or write scope, keeps
+ * the one refusal (`null`), so the copilot never shows that a record it may
+ * not see exists; a non-UUID id gets {@link adoptMalformedIdMessage} before
+ * any read. The status is the lifecycle mirror's (`F4.246`). The route's
+ * point-level refusals (A4, A8, …) stay a Confirm-time 409.
  */
 
 /** The access checks the adopt gate asks; specs pass a fake. */
 export type AdoptAccess = Pick<AccessControlService, "requireMasterDataUser" | "canManageOrganization" | "writableLocationIds">;
 
-/** A listed asset as the target reads it: only what the batch-level checks need. */
+/** A listed asset as the target reads it: only what the batch-level checks and their sentences need. */
 export type AdoptAssetRow = {
   readonly id: string;
+  readonly code: string;
   readonly organizationId: string;
   readonly domain: string;
   readonly templateId: string | null;
@@ -39,43 +55,83 @@ export type AdoptAssetRow = {
 export type AdoptTemplateRow = {
   readonly organizationId: string;
   readonly name: string;
+  readonly code: string;
+  readonly version: number;
   readonly domain: string;
   readonly status: string;
 };
 
+/** Amendment 14 decision 3: the sentence for an id that is not a record id (not a UUID). */
+export function adoptMalformedIdMessage(id: string): string {
+  return `"${id.slice(0, 80)}" is not a record id. Find the version with list_asset_templates, or the asset with list_assets.`;
+}
+
+const recordId = z.string().uuid();
+
+/** Throws {@link adoptMalformedIdMessage} for an id that is not a UUID. */
+function requireRecordId(id: string): void {
+  if (!recordId.safeParse(id).success) throw new CopilotTargetRefusal(adoptMalformedIdMessage(id));
+}
+
 /**
  * The body's `assetIds`, or `null` when it is not a non-empty array of at most
  * `TEMPLATE_ADOPTION_MAX_ASSETS` strings with none twice — refused before any
- * read, as the body schema refuses it at the route.
+ * read, as the body schema refuses it at the route. A string that is not a
+ * UUID throws {@link adoptMalformedIdMessage} (Amendment 14 decision 3).
  */
 export function adoptAssetIds(ids: unknown): string[] | null {
   if (!Array.isArray(ids) || ids.length === 0 || ids.length > TEMPLATE_ADOPTION_MAX_ASSETS) return null;
   if (ids.some((id) => typeof id !== "string")) return null;
   const assetIds = ids as string[];
-  return new Set(assetIds).size === assetIds.length ? assetIds : null;
+  if (new Set(assetIds).size !== assetIds.length) return null;
+  assetIds.forEach(requireRecordId);
+  return assetIds;
 }
 
 /**
- * Whether the read rows admit the batch: every listed id was found (a row of
- * another organization is never read, so it is missing here), and each row is
- * of the version's organization and domain (A1), pinned to no template, and at
- * a site in the caller's write scope (`writable`, `null` for a global
- * administrator) — the route's `F4.64` count refusal.
+ * Why a batch is refused: `general` is the one refusal (an id no read
+ * returned, or an asset outside the caller's write scope — decision 3); the
+ * other three name the asset (decision 2).
  */
-export function adoptBatchAdmits(
+export type AdoptBatchRefusal =
+  | { readonly kind: "general" }
+  | { readonly kind: "already_pinned" | "organization_mismatch" | "domain_mismatch"; readonly asset: AdoptAssetRow };
+
+/**
+ * Why the read rows refuse the batch, or `null` when they admit it. First, over
+ * every listed id, the one refusal: an id no read returned, or a row at a site
+ * outside the caller's write scope (`writable`, `null` for a global
+ * administrator — the route's `F4.64` count refusal). Only when every asset is
+ * in scope, the first asset's cause in the route's order: pinned to a template
+ * (A7), of another organization than the version, of another domain (A1).
+ */
+export function adoptBatchRefusal(
   template: Pick<AdoptTemplateRow, "organizationId" | "domain">,
   assetIds: readonly string[],
   rows: readonly AdoptAssetRow[],
   writable: readonly string[] | null,
-): boolean {
+): AdoptBatchRefusal | null {
   const byId = new Map(rows.map((row) => [row.id, row]));
-  return assetIds.every((id) => {
-    const row = byId.get(id);
-    if (row === undefined) return false;
-    if (row.organizationId !== template.organizationId || row.domain !== template.domain) return false;
-    if (row.templateId !== null) return false;
-    return writable === null || (row.locationId !== null && writable.includes(row.locationId));
-  });
+  const listed = assetIds.map((id) => byId.get(id));
+  const inScope = (row: AdoptAssetRow | undefined): row is AdoptAssetRow =>
+    row !== undefined && (writable === null || (row.locationId !== null && writable.includes(row.locationId)));
+  if (!listed.every(inScope)) return { kind: "general" };
+  for (const asset of listed as AdoptAssetRow[]) {
+    if (asset.templateId !== null) return { kind: "already_pinned", asset };
+    if (asset.organizationId !== template.organizationId) return { kind: "organization_mismatch", asset };
+    if (asset.domain !== template.domain) return { kind: "domain_mismatch", asset };
+  }
+  return null;
+}
+
+/** A named refusal's sentence: the route's own (`asset-templates-adopt-messages.ts`), naming the asset and the version. */
+export function adoptRefusalSentence(
+  refusal: Exclude<AdoptBatchRefusal, { kind: "general" }>,
+  template: Pick<AdoptTemplateRow, "code" | "version" | "domain">,
+): string {
+  if (refusal.kind === "already_pinned") return alreadyPinnedMessage(refusal.asset, template);
+  if (refusal.kind === "organization_mismatch") return organizationMismatchMessage(refusal.asset, template);
+  return domainMismatchMessage(refusal.asset, template);
 }
 
 /**
@@ -92,7 +148,13 @@ export async function findAdoptTemplate(
   for (const organizationId of allowed) {
     const [row] = await withTenant(tenantDb, organizationId, (tx) =>
       tx
-        .select({ name: assetTemplates.name, domain: assetTemplates.domain, status: assetTemplates.status })
+        .select({
+          name: assetTemplates.name,
+          code: assetTemplates.code,
+          version: assetTemplates.version,
+          domain: assetTemplates.domain,
+          status: assetTemplates.status,
+        })
         .from(assetTemplates)
         .where(and(eq(assetTemplates.id, templateId), eq(assetTemplates.organizationId, organizationId)))
         .limit(1),
@@ -102,32 +164,63 @@ export async function findAdoptTemplate(
   return null;
 }
 
+const adoptAssetColumns = {
+  id: assets.id,
+  code: assets.code,
+  organizationId: assets.organizationId,
+  domain: assets.domain,
+  templateId: assets.templateId,
+  locationId: assets.locationId,
+};
+
 /** The listed assets of the version's organization, under `withTenant` with an explicit organization filter. */
 async function readAdoptAssets(tenantDb: BmsDb, organizationId: string, assetIds: readonly string[]): Promise<AdoptAssetRow[]> {
   return withTenant(tenantDb, organizationId, (tx) =>
     tx
-      .select({
-        id: assets.id,
-        organizationId: assets.organizationId,
-        domain: assets.domain,
-        templateId: assets.templateId,
-        locationId: assets.locationId,
-      })
+      .select(adoptAssetColumns)
       .from(assets)
       .where(and(inArray(assets.id, [...assetIds]), eq(assets.organizationId, organizationId))),
   );
+}
+
+/**
+ * Amendment 14 decision 2: a listed asset the version's organization does not
+ * hold, looked for in each other allowed organization in turn (the
+ * {@link findAdoptTemplate} loop), or `null` when none holds it.
+ */
+export async function findAssetElsewhere(
+  tenantDb: BmsDb,
+  assetId: string,
+  allowed: readonly string[],
+  except: string,
+): Promise<AdoptAssetRow | null> {
+  for (const organizationId of allowed) {
+    if (organizationId === except) continue;
+    const [row] = await withTenant(tenantDb, organizationId, (tx) =>
+      tx
+        .select(adoptAssetColumns)
+        .from(assets)
+        .where(and(eq(assets.id, assetId), eq(assets.organizationId, organizationId)))
+        .limit(1),
+    );
+    if (row) return row;
+  }
+  return null;
 }
 
 /** What the target resolves to: the version, its organization and its lifecycle status (when in the vocabulary). */
 export type AdoptTarget = { organizationId: string; name: string; status?: TemplateLifecycleStatus };
 
 /**
- * The `assetTemplateAdopt` target, or `null`. The order is the route's: the
- * body's ids (before any read, as the body schema refuses them);
+ * The `assetTemplateAdopt` target, `null` (the one refusal), or a thrown
+ * {@link CopilotTargetRefusal} naming the cause. The order is the route's: the
+ * version id and the body's ids (before any read; a non-UUID one is the
+ * malformed sentence);
  * `requireMasterDataUser` (a throw is the refusal); the version in the allowed
  * set; `canManageOrganization` on the version's organization; then, on a
- * **published** version only, the listed assets ({@link adoptBatchAdmits},
- * with `writableLocationIds`).
+ * **published** version only, the listed assets ({@link adoptBatchRefusal},
+ * with `writableLocationIds`; an id the version's organization does not hold
+ * is looked for in the other allowed organizations, {@link findAssetElsewhere}).
  *
  * The status is returned, not judged (`F4.246`): an in-scope draft or archived
  * version resolves with its status, and the propose tool's lifecycle mirror
@@ -147,6 +240,7 @@ export async function resolveAdoptTarget(
   allowed: readonly string[],
   checkAssets = true,
 ): Promise<AdoptTarget | null> {
+  if (checkAssets) requireRecordId(templateId);
   const assetIds = checkAssets ? adoptAssetIds(ids) : [];
   if (assetIds === null) return null;
   if ((await falseOnThrow(() => access.requireMasterDataUser(user))) === false) return null;
@@ -158,8 +252,16 @@ export async function resolveAdoptTarget(
   if (!checkAssets || lifecycle.status === undefined || !canInstantiate(lifecycle.status)) return resolved;
   const rows = await readAdoptAssets(tenantDb, template.organizationId, assetIds);
   const writable = await falseOnThrow(() => access.writableLocationIds(user));
-  if (writable === false || !adoptBatchAdmits(template, assetIds, rows, writable)) return null;
-  return resolved;
+  if (writable === false) return null;
+  for (const id of assetIds.filter((listed) => !rows.some((row) => row.id === listed))) {
+    const found = await findAssetElsewhere(tenantDb, id, allowed, template.organizationId);
+    if (found === null) return null;
+    rows.push(found);
+  }
+  const refusal = adoptBatchRefusal(template, assetIds, rows, writable);
+  if (refusal === null) return resolved;
+  if (refusal.kind === "general") return null;
+  throw new CopilotTargetRefusal(adoptRefusalSentence(refusal, template));
 }
 
 /** An access check's answer, or `false` when it throws (a 403 is the one refusal). */
