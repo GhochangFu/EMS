@@ -158,3 +158,39 @@ export async function assertWriteGuardRefusesForeignPointOnly(
     ).resolves.toBeUndefined();
   });
 }
+
+/**
+ * `F4.316` PR 5 / ADR 0111 — on both pools, a binding names its asset's RTU and location, read
+ * by independent SQL. `expectRtu` pins which twin the asset is, so the case cannot pass vacuously.
+ */
+export async function assertBindingNamesTheAssetsRtuAndLocation(
+  tenantDb: BmsDb,
+  fleetDb: BmsDb,
+  organizationId: string,
+  widgetId: string,
+  pointId: string,
+  expectRtu: boolean,
+): Promise<void> {
+  const nameRows = await fleetDb.execute(sql`
+    SELECT r.display_name AS rtu, l.name AS location
+      FROM bms.asset_points p
+      JOIN bms.assets a ON a.id = p.asset_id
+      JOIN bms.locations l ON l.id = a.location_id
+      LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+     WHERE p.id = ${pointId}`);
+  const expected = nameRows.rows[0] as { rtu: string | null; location: string } | undefined;
+  expect(expected, "the bound point must exist").toBeDefined();
+  expect(expected?.rtu !== null, "the bound asset's RTU presence is not what this case assumes").toBe(expectRtu);
+
+  const onTenant = await withTenant(tenantDb, organizationId, (tx) =>
+    resolveBoundPoints(tx, organizationId, [widgetId]),
+  );
+  const tenantHit = onTenant.find((point) => point.pointId === pointId);
+  expect(tenantHit?.assetRtuName, "tenant pool").toBe(expected?.rtu);
+  expect(tenantHit?.assetLocationName, "tenant pool").toBe(expected?.location);
+
+  const onFleet = await resolveBoundPoints(fleetDb, organizationId, [widgetId]);
+  const fleetHit = onFleet.find((point) => point.pointId === pointId);
+  expect(fleetHit?.assetRtuName, "fleet pool").toBe(expected?.rtu);
+  expect(fleetHit?.assetLocationName, "fleet pool").toBe(expected?.location);
+}

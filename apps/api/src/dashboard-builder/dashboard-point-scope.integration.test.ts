@@ -9,6 +9,7 @@ import type { BmsDb } from "@bms/db";
 import { openIntegrationPool, requireIntegrationDb, resolveIntegrationRoleUrl } from "../testing/integration-db-gate";
 import { asRole } from "../testing/role-urls";
 import {
+  assertBindingNamesTheAssetsRtuAndLocation,
   assertCrossOrgBindingWasWritten,
   assertFleetPoolExcludesForeignBinding,
   assertLegitimateBindingResolvesOnBothPools,
@@ -62,6 +63,8 @@ describe.skipIf(!connectionString)(
     let legitEskomAssetCode: string;
     let phewbPointId: string;
     let phewbAssetId: string;
+    let rtuPointId: string;
+    let rtuLessPointId: string;
 
     beforeAll(async () => {
       const url = connectionString as string;
@@ -147,6 +150,30 @@ describe.skipIf(!connectionString)(
         [eskomOrgId, widgetId, legitEskomPointId],
       );
 
+      // `F4.316` PR 5 (ADR 0111) — two more same-organization bindings, one per label twin, each
+      // resolved by asset CODE (never by position): `CR-HVAC-1` sits on an RTU, `ESK-MANUAL-01`
+      // (the seeded hand-read meter) has none. The oldest point of each is a seeded one.
+      const pointOf = async (assetCode: string): Promise<string> => {
+        const found = await ownerPool.query<{ id: string }>(
+          `SELECT p.id FROM bms.asset_points p JOIN bms.assets a ON a.id = p.asset_id
+            WHERE a.code = $1 AND a.organization_id = $2 ORDER BY p.created_at, p.id LIMIT 1`,
+          [assetCode, eskomOrgId],
+        );
+        const id = found.rows[0]?.id;
+        if (!id) {
+          throw new Error(`F4.316: no point on seeded asset ${assetCode} — run pnpm db:seed`);
+        }
+        return id;
+      };
+      rtuPointId = await pointOf("CR-HVAC-1");
+      rtuLessPointId = await pointOf("ESK-MANUAL-01");
+      await superuserPool.query(
+        `INSERT INTO bms.dashboard_widget_points (organization_id, widget_id, point_id, role, sort_order)
+         VALUES ($1, $2, $3, 'series', 1), ($1, $2, $4, 'series', 2)
+         ON CONFLICT DO NOTHING`,
+        [eskomOrgId, widgetId, rtuPointId, rtuLessPointId],
+      );
+
       // THE MANUFACTURED CROSS-ORGANIZATION ROW — the whole point of this file. An
       // ESKOM-stamped dashboard_widget_points row genuinely holding a PHEWB point_id. Only a
       // real Postgres superuser bypasses the WITH CHECK that would otherwise refuse this.
@@ -207,6 +234,14 @@ describe.skipIf(!connectionString)(
 
     it("write direction: a foreign pointId is refused (naming no id); a same-org one is accepted", async () => {
       await assertWriteGuardRefusesForeignPointOnly(tenantDb, eskomOrgId, legitEskomPointId, phewbPointId);
+    });
+
+    it("F4.316 PR 5 — a binding on an asset with an RTU names the RTU and location, on both pools", async () => {
+      await assertBindingNamesTheAssetsRtuAndLocation(tenantDb, fleetDb, eskomOrgId, widgetId, rtuPointId, true);
+    });
+
+    it("F4.316 PR 5 — the twin: a binding on an RTU-less asset names its location, on both pools", async () => {
+      await assertBindingNamesTheAssetsRtuAndLocation(tenantDb, fleetDb, eskomOrgId, widgetId, rtuLessPointId, false);
     });
   },
 );

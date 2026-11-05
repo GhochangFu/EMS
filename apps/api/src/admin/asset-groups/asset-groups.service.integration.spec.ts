@@ -41,6 +41,8 @@ export type GroupFixtures = {
   foreignGroupId: string;
   /** Membership ids, in the order the rows were INSERTed — deliberately not code order. */
   membershipIds: string[];
+  /** `F4.316` PR 5 — the one member of `groupId` whose asset sits on an RTU (the others have none). */
+  rtuMembershipId: string;
   /** A membership in `foreignGroupId`, for the scope refusal. */
   foreignMembershipId: string;
   /** A live role code, read from `bms.asset_roles` rather than hardcoded. */
@@ -651,4 +653,54 @@ export async function assertRemoveMemberWritesAnAuditRow(ctx: GroupFixtures, jwt
   const rows = await auditRows(ctx, "master.asset_group_member.remove", member.membershipId);
   expect(rows.length).toBe(1);
   expect(rows[0]?.payload?.assetId).toBe(asset.id);
+}
+
+/** Each member's asset's RTU `display_name` (null when none) and location `name`, read from SQL. */
+async function memberNames(
+  ctx: GroupFixtures,
+): Promise<Map<string, { rtu: string | null; location: string }>> {
+  const { rows } = await ctx.ownerPool.query<{ id: string; rtu: string | null; location: string }>(
+    `SELECT m.id, r.display_name AS rtu, l.name AS location
+       FROM bms.asset_group_members m
+       JOIN bms.assets a ON a.id = m.asset_id
+       JOIN bms.locations l ON l.id = a.location_id
+       LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+      WHERE m.asset_group_id = $1`,
+    [ctx.groupId],
+  );
+  return new Map(rows.map((row) => [row.id, { rtu: row.rtu, location: row.location }]));
+}
+
+/** `F4.316` PR 5 / ADR 0111 — `members()` names the RTU of a member whose asset has one. */
+export async function assertMembersNameTheAssetsRtu(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const expected = (await memberNames(ctx)).get(ctx.rtuMembershipId);
+  expect(expected?.rtu, "the fixture member must sit on an RTU").toBeTruthy();
+  const { items } = await ctx.svc.members(jwt, ctx.groupId);
+  const member = items.find((m) => m.membershipId === ctx.rtuMembershipId);
+  expect(member?.assetRtuName).toBe(expected?.rtu);
+  expect(member?.assetLocationName).toBe(expected?.location);
+}
+
+/** The twin: a member whose asset has `rtu_id IS NULL` reads `assetRtuName: null` and its location. */
+export async function assertMembersNameTheLocationOfAnRtuLessAsset(
+  ctx: GroupFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const names = await memberNames(ctx);
+  const { items } = await ctx.svc.members(jwt, ctx.groupId);
+  const rtuLess = items.filter((m) => m.membershipId !== ctx.rtuMembershipId);
+  expect(rtuLess.length).toBeGreaterThan(0);
+  for (const member of rtuLess) {
+    expect(names.get(member.membershipId)?.rtu).toBeNull();
+    expect(member.assetRtuName).toBeNull();
+    expect(member.assetLocationName).toBe(names.get(member.membershipId)?.location);
+  }
+}
+
+/** The single-member re-read (`setMemberRole`'s response) carries the same two names. */
+export async function assertSetMemberRoleAnswersWithTheNames(ctx: GroupFixtures, jwt: JwtPayload): Promise<void> {
+  const expected = (await memberNames(ctx)).get(ctx.rtuMembershipId);
+  const updated = await ctx.svc.setMemberRole(jwt, ctx.rtuMembershipId, { role: null });
+  expect(updated.assetRtuName).toBe(expected?.rtu);
+  expect(updated.assetLocationName).toBe(expected?.location);
 }

@@ -16,6 +16,8 @@ import {
   dashboardWidgetPoints,
   dashboardWidgetSources,
   dashboardWidgets,
+  locations,
+  rtus,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import {
@@ -216,10 +218,14 @@ export class DashboardsService {
         // `bms.assets` with the same `app.current_organization` GUC already set — verified
         // against the dev database rather than assumed, because a missing grant here would
         // 500 `GET /dashboards` for every scoped caller, including the org-wide rows.
+        // `F4.316` (ADR 0111) re-measured it for `bms.rtus` and `bms.locations` (0039's grant,
+        // 0040/0047's policies) — the `rtus`/`locations` joins below are the asset's own rows.
         const rows = await tx
           .select({
             dashboard: dashboards,
             assetCode: assets.code,
+            assetRtuName: rtus.displayName,
+            assetLocationName: locations.name,
             widgetCount: sql<number>`(
               SELECT COUNT(*)::int FROM ${dashboardWidgets}
                WHERE ${dashboardWidgets.dashboardId} = ${dashboards.id}
@@ -235,6 +241,10 @@ export class DashboardsService {
             // read it out. On the tenant branch it is redundant with RLS and costs nothing.
             and(eq(assets.id, dashboards.assetId), eq(assets.organizationId, dashboards.organizationId)),
           )
+          // ADR 0111 — the badge's label parts, LEFT off the asset (null whenever it is). No
+          // predicate of their own: 0113's composite keys pin them to the asset's organization.
+          .leftJoin(rtus, eq(rtus.id, assets.rtuId))
+          .leftJoin(locations, eq(locations.id, assets.locationId))
           // `E4.2` — see the `section` condition above for why this is LEFT and
           // why the organization predicate is in the join.
           .leftJoin(
@@ -248,7 +258,7 @@ export class DashboardsService {
           .orderBy(asc(dashboards.slug));
         return {
           items: rows.map((row) =>
-            mapDashboardSummary(row.dashboard, row.widgetCount, row.assetCode),
+            mapDashboardSummary(row.dashboard, row.widgetCount, row),
           ),
         };
       },

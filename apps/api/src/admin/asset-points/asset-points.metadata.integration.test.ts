@@ -17,6 +17,8 @@ import {
   assertCreateRefusesATemplateDerivedKey,
   assertCreateWiresAnRtuOfTheAssetsOwnLocation,
   assertCreateWritesTheFiveMetadataColumns,
+  assertListNamesTheLocationOfAnRtuLessAsset,
+  assertListNamesTheAssetsRtu,
   assertReadsCarryTheTemplateDefaults,
   assertRtuIdWiresAndUnwiresOnUpdate,
   assertTheMergedPairRefusalNamesTheInheritedBound,
@@ -55,6 +57,7 @@ const POINT_KEY_PREFIX = `F27_AP_${randomUUID().replace(/-/g, "").slice(0, 12)}_
 const TEMPLATE_CODE = `${ASSET_PREFIX}TPL`;
 const HAND_ASSET_CODE = `${ASSET_PREFIX}HAND`;
 const TEMPLATED_ASSET_CODE = `${ASSET_PREFIX}TPLD`;
+const RTU_ASSET_CODE = `${ASSET_PREFIX}RTU`;
 
 /**
  * Eight catalog point keys, one per case, so no case can be made to pass by
@@ -161,6 +164,7 @@ describe.skipIf(!connectionString)("F2.7 — asset-point metadata and RTU wiring
 
     let handAssetId = "";
     let templatedAssetId = "";
+    let rtuAssetId = "";
     let computedPointId = "";
     let unmappedPointId = "";
     let manualPointId = "";
@@ -255,6 +259,31 @@ describe.skipIf(!connectionString)("F2.7 — asset-point metadata and RTU wiring
         .returning({ id: assets.id });
       templatedAssetId = templatedAsset.id;
 
+      // `F4.316` PR 5 (ADR 0111) — an asset that sits on an RTU of its own location, with one
+      // `manual` point, so the list has a row whose label names the RTU. The two above have none.
+      const [rtuAsset] = await tx
+        .insert(assets)
+        .values({
+          organizationId,
+          code: RTU_ASSET_CODE,
+          name: "F2.7 asset on an RTU",
+          siteName: "F2.7 Site",
+          locationId,
+          rtuId: rtuHere.rows[0].id,
+          domain,
+          active: true,
+        })
+        .returning({ id: assets.id });
+      rtuAssetId = rtuAsset.id;
+      await tx.insert(assetPoints).values({
+        assetId: rtuAssetId,
+        organizationId,
+        pointKey: KEYS.manual,
+        sourceDataKey: `${KEYS.manual}/ON-RTU`,
+        sourceKind: "manual",
+        active: true,
+      });
+
       // Three rows no API route can create: the calc-override surface's
       // `computed` row, an `unmapped` row to wire, and a `manual` one that
       // unwiring must leave alone. `asset_points_source_ref_check` requires a
@@ -303,6 +332,7 @@ describe.skipIf(!connectionString)("F2.7 — asset-point metadata and RTU wiring
       fleetPool,
       handAssetId,
       templatedAssetId,
+      rtuAssetId,
       rtuInLocation: rtuHere.rows[0].id,
       rtuElsewhere: rtuThere.rows[0].id,
       keys: KEYS,
@@ -383,5 +413,13 @@ describe.skipIf(!connectionString)("F2.7 — asset-point metadata and RTU wiring
 
   it("(g) list and fetchRow carry the template's five (ADR 0056 Amendment 3)", async () => {
     await assertReadsCarryTheTemplateDefaults(ctx, jwt);
+  });
+
+  it("F4.316 PR 5 — list names the asset's own RTU and location (ADR 0111)", async () => {
+    await assertListNamesTheAssetsRtu(ctx, jwt);
+  });
+
+  it("F4.316 PR 5 — list names the location of an asset with no RTU (the twin)", async () => {
+    await assertListNamesTheLocationOfAnRtuLessAsset(ctx, jwt);
   });
 });
