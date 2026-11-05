@@ -111,6 +111,8 @@ export * from "./telemetry-entry";
 export * from "./telemetry-import";
 export * from "./template-lifecycle";
 export * from "./template-migration";
+// `F4.312` (ADR 0109 Amendment 1): the template-adoption body and responses.
+export * from "./template-adoption";
 export * from "./user-grants";
 export * from "./users";
 export type { Assignable, Measured, Strict } from "./equality";
