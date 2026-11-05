@@ -37,6 +37,8 @@ const DRAWN: SegmentViewRankingEntryDto = {
   assetId: A,
   assetCode: "A1",
   assetName: "Asset A1",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Site 1",
   unit: "kW",
   current: { mean: 5, max: 9, maxAt: null, sampleCount: 10 },
   compare: { mean: 4, max: 8, maxAt: null, sampleCount: 10 },
@@ -44,10 +46,10 @@ const DRAWN: SegmentViewRankingEntryDto = {
   compareBuckets: [{ t: "2026-10-29T01:00:00.000Z", v: 4 }],
 };
 
-function renderChart(compare: typeof COMPARE | null): void {
+function renderChart(compare: typeof COMPARE | null, drawn: SegmentViewRankingEntryDto = DRAWN): void {
   render(
     <MemoryRouter>
-      <SegmentTrendChart ranking={[DRAWN]} current={CURRENT} compare={compare} unit="kW" pointCode="kw" />
+      <SegmentTrendChart ranking={[drawn]} current={CURRENT} compare={compare} unit="kW" pointCode="kw" />
     </MemoryRouter>,
   );
 }
@@ -78,9 +80,30 @@ export function namesTheOneUnitAxis(): void {
 /** The legend entry opens the asset's history over the exact window. */
 export function theLegendOpensTheHistory(): void {
   renderChart(COMPARE);
-  const link = screen.getByRole("link", { name: "A1 Asset A1" });
+  const link = screen.getByRole("link", { name: "A1 · RTU 1 Asset A1" });
   expect(link.getAttribute("href")?.startsWith(`/asset-history/${A}?from=`)).toBe(true);
   expect(link.getAttribute("href")?.endsWith("&points=kw&compare=1")).toBe(true);
+}
+
+/** `F4.316` (ADR 0111) — the legend entry reads `<code> · <RTU>`. */
+export function theLegendEntryReadsTheAssetLabel(): void {
+  renderChart(null);
+  const legend = screen.getByRole("list", { name: "Chart legend" });
+  expect(legend.textContent).toBe("A1 · RTU 1");
+}
+
+/** `F4.316` (ADR 0111) — an RTU-less asset's legend entry reads `<code> · <location>`. */
+export function anRtuLessLegendEntryReadsTheLocation(): void {
+  renderChart(null, { ...DRAWN, assetRtuName: null });
+  const legend = screen.getByRole("list", { name: "Chart legend" });
+  expect(legend.textContent).toBe("A1 · Site 1");
+}
+
+/** `F4.316` (ADR 0111) — each line is named by the label; the previous period appends to it. */
+export function theSeriesAreNamedByTheAssetLabel(): void {
+  renderChart(COMPARE);
+  const series = recorded.at(-1)?.option.series ?? [];
+  expect(series.map((s) => s.name)).toEqual(["A1 · RTU 1", "A1 · RTU 1 · previous period"]);
 }
 
 /** No drawn asset is a fixed sentence and no chart. */

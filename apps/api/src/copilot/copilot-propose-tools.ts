@@ -43,6 +43,7 @@ import { checkReport, type CopilotReportChecks, REPORT_ENTRY_IDS, reportEmailRef
 import { ReportProposalCheckService } from "../reports/report-proposal-check.service";
 import { checkFile, type CopilotFileChecks, FILE_ENTRY_IDS } from "./copilot-propose-files";
 import { CopilotTargetRefusal } from "./copilot-telemetry-targets";
+import { adoptGuardParams, adoptMalformedIdRefusal } from "./copilot-adopt-targets";
 import { TelemetryProposalCheckService } from "../admin/telemetry-entry/telemetry-proposal-check.service";
 import { AssetImagesWriteService } from "../assets/asset-images-write.service";
 import {
@@ -276,7 +277,8 @@ function takesBody(entry: CatalogEntry): boolean {
 }
 
 function proposeArguments(entry: CatalogEntry): ZodTypeAny {
-  const shape: Record<string, ZodTypeAny> = { ...entry.params };
+  // `F4.315` PR A review: an adopt entry's path id is guarded as a string, for decision 3's sentence.
+  const shape: Record<string, ZodTypeAny> = { ...entry.params, ...adoptGuardParams(entry) };
   if (takesBody(entry)) shape.body = z.record(z.string(), z.unknown());
   return z.object(shape).strict();
 }
@@ -499,6 +501,9 @@ export function createCopilotProposeTools(
     // `F4.282` (D3): a direction entry's body is its `fixedBody`, parsed below like any other.
     const raw =
       entry.fixedBody !== undefined ? { ...entry.fixedBody } : entry.bodyName === null ? {} : (args.body as Record<string, unknown>);
+    // `F4.315` PR A review (Amendment 14 decision 3): a non-UUID adopt id is the malformed sentence, before "Invalid body".
+    const malformedId = adoptMalformedIdRefusal(entry, params, raw);
+    if (malformedId !== null) return { ok: false, error: malformedId };
     const parsed = modelBodySchema(entry).safeParse(raw);
     if (!parsed.success) return { ok: false, error: `Invalid body: ${issuesOf(parsed.error)}` };
     // The JSON image is what is stored, hashed and sent: one object on all three sides. It is the
@@ -531,7 +536,11 @@ export function createCopilotProposeTools(
         if (err instanceof CopilotTargetRefusal) return err;
         throw err;
       });
-    if (resolved instanceof CopilotTargetRefusal) return { ok: false, error: resolved.message };
+    // `F4.315` PR A review (decision 10): the organizations whose records the sentence names travel with it.
+    if (resolved instanceof CopilotTargetRefusal) {
+      const named = resolved.organizationIds;
+      return { ok: false, error: resolved.message, ...(named.length > 0 ? { organizationIds: named } : {}) };
+    }
     const target = resolved;
     if (
       target === null ||

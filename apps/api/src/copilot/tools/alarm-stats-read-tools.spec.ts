@@ -71,6 +71,9 @@ function statsAnswer(from: Date, to: Date, locations = 2): AlarmStats & Record<s
     topAssets: Array.from({ length: 10 }, (_, i) => ({
       assetId: `30000000-0000-4000-8000-0000000003${n(i)}`,
       assetCode: `PHE-ETP-BLK${n(i)}-AHU-${n(i)}`,
+      // `F4.316`: realistic RTU and location names, so the fits-one-result claim measures them too.
+      assetRtuName: `Lotapata EdgeRTU ${n(i)} Clarifier Building East`,
+      assetLocationName: `Pune Effluent Treatment Plant Block ${n(i)} North Wing`,
       assetName: `Air Handling Unit ${n(i)} Clarifier Building East`,
       raised: 500 - i,
     })),
@@ -87,6 +90,8 @@ type FakeOptions = {
   readonly readable?: Record<string, string[]>;
   readonly location?: LocationAssetScope;
   readonly stats?: (from: Date, to: Date) => unknown;
+  /** What `alarms.list` answers per call; none by default. */
+  readonly alarmItems?: readonly unknown[];
 };
 
 function fake(options: FakeOptions = {}) {
@@ -110,7 +115,7 @@ function fake(options: FakeOptions = {}) {
     alarms: {
       list: async (opts: Record<string, unknown>) => {
         log.alarms.push(opts);
-        return { items: [], nextCursor: null };
+        return { items: [...(options.alarmItems ?? [])], nextCursor: null };
       },
     },
     alarmStats: {
@@ -265,4 +270,44 @@ export async function alarmStatsOneOrganizationFitsOneResult(): Promise<void> {
   const out = listed(await tools.dispatch("get_alarm_stats", { lastDays: 31 }, ctx([ORG_X])));
   expect((out.organizations[0]?.byLocation as unknown[]).length).toBe(25);
   expect(JSON.stringify(out).length).toBeLessThan(TOOL_RESULT_MAX_CHARS);
+}
+
+// --- F4.316 PR 2 (ADR 0111): the asset's RTU and location ride through both tools -------------
+
+const ALARM_ITEM = {
+  id: "50000000-0000-4000-8000-000000000001",
+  assetId: ASSET_X,
+  ruleKey: null,
+  ruleId: null,
+  severity: "critical",
+  message: "High temperature",
+  raisedAt: FROM,
+  acknowledgedAt: null,
+  acknowledgedBy: null,
+  clearedAt: null,
+  assetCode: "PHE-MFM-000000003",
+  assetRtuName: "Lotapata I",
+  assetLocationName: "Lotapata",
+  assetName: "Main meter",
+  siteName: "Lotapata",
+};
+
+/** `list_alarms` passes the item through its contract: `assetRtuName` and `assetLocationName` reach the model. */
+export async function listAlarmsCarriesTheAssetRtuName(): Promise<void> {
+  const { tools } = fake({ alarmItems: [ALARM_ITEM] });
+  const item = listed(await tools.dispatch("list_alarms", { state: "all" }, ctx([ORG_X]))).organizations[0]?.items[0] as
+    | Record<string, unknown>
+    | undefined;
+  expect([item?.assetRtuName, item?.assetLocationName]).toEqual(["Lotapata I", "Lotapata"]);
+}
+
+/** `get_alarm_stats`' top assets carry `assetRtuName` and `assetLocationName`. */
+export async function alarmStatsTopAssetCarriesTheAssetRtuName(): Promise<void> {
+  const { tools } = fake();
+  const entry = listed(await tools.dispatch("get_alarm_stats", { lastDays: 7 }, ctx([ORG_X]))).organizations[0]!;
+  const top = (entry.topAssets as Array<Record<string, unknown>>)[0];
+  expect([top?.assetRtuName, top?.assetLocationName]).toEqual([
+    "Lotapata EdgeRTU 00 Clarifier Building East",
+    "Pune Effluent Treatment Plant Block 00 North Wing",
+  ]);
 }

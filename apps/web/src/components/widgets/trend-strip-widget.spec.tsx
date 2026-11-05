@@ -63,6 +63,8 @@ function strip(range: SiteTrendStripDto["range"]): SiteTrendStripDto {
                 assetId: ASSET_ID,
                 assetCode: "A-01",
                 assetName: "Asset 1",
+                assetRtuName: null,
+                assetLocationName: null,
                 unit: "kW",
                 buckets: [
                   { t: FROM, v: 1 },

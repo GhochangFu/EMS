@@ -54,6 +54,8 @@ function alarm(id: string, assetCode: string, message: string): AlarmListItem {
     acknowledgedBy: null,
     clearedAt: null,
     assetCode,
+    assetRtuName: "RTU 1",
+    assetLocationName: "Site",
     assetName: assetCode,
     siteName: "Site",
   };

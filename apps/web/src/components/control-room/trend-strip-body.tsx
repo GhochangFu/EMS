@@ -1,9 +1,12 @@
-import type {
-  SiteTrendStripDto,
-  TrendStripPointDto,
-  TrendStripRange,
-  TrendStripSegmentDto,
-  TrendStripWidgetConfig,
+import {
+  ASSET_LABEL_SEPARATOR,
+  assetLabelOf,
+  assetLabelParts,
+  type SiteTrendStripDto,
+  type TrendStripPointDto,
+  type TrendStripRange,
+  type TrendStripSegmentDto,
+  type TrendStripWidgetConfig,
 } from "@bms/shared";
 import { useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
@@ -98,18 +101,28 @@ function PointRow({
       <ul className="flex flex-wrap items-end gap-4">
         {point.assets.map((asset) => {
           const value = lastValue(asset.buckets);
+          const label = assetLabelOf(asset);
+          // `F4.316` (ADR 0111): the `· where` part wraps under a narrow tile and is never truncated.
+          const { code, where } = assetLabelParts({
+            code: asset.assetCode,
+            rtuName: asset.assetRtuName,
+            locationName: asset.assetLocationName,
+          });
           return (
             <li key={asset.assetId} className="flex flex-col gap-1">
               <Link
                 to={historyHref(asset.assetId, range, point.code)}
-                aria-label={`${asset.assetCode} ${point.name}: open history`}
+                aria-label={`${label} ${point.name}: open history`}
                 title={asset.assetName}
                 className="rounded hover:bg-well focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               >
-                <Sparkline buckets={asset.buckets} label={`${asset.assetCode} ${point.name}`} stroke={stroke} />
+                <Sparkline buckets={asset.buckets} label={`${label} ${point.name}`} stroke={stroke} />
               </Link>
               <span className="flex justify-between gap-2 text-[11px]">
-                <span className="font-semibold text-ink-muted">{asset.assetCode}</span>
+                <span data-role="asset-label" className="min-w-0 break-words font-semibold text-ink-muted">
+                  {code}
+                  {where === null ? null : <span className="font-normal">{`${ASSET_LABEL_SEPARATOR}${where}`}</span>}
+                </span>
                 <span className="tabular-nums text-ink">
                   {value === null || asset.unit === null
                     ? formatPointValue(value)

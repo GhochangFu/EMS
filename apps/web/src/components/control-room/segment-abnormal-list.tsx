@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 
-import { ABNORMAL_LIST_MAX, type SegmentAbnormalDto } from "@bms/shared";
+import { ABNORMAL_LIST_MAX, assetLabelOf, type SegmentAbnormalDto } from "@bms/shared";
 
 import { historyHrefFor, segmentBaselineSentence, segmentVerdictSentence } from "../../lib/site-trends";
 
@@ -53,7 +53,7 @@ export function SegmentAbnormalList({ abnormal, pointCode, period, compare }: Pr
                   >
                     {entry.assetName}
                   </Link>
-                  <span className="ml-1 text-ink-muted">{entry.assetCode}</span>
+                  <span className="ml-1 text-ink-muted">{assetLabelOf(entry)}</span>
                 </td>
                 <td className="px-3 py-1.5 text-right text-xs tabular-nums">{figure(entry.currentMean, entry.unit)}</td>
                 <td className="px-3 py-1.5 text-right text-xs tabular-nums">{figure(entry.baselineMean, entry.unit)}</td>

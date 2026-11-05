@@ -41,6 +41,10 @@ export type SegmentViewsCtx = {
   readonly fixture: {
     readonly siteId: string;
     readonly emptySiteId: string;
+    /** `locations.name` of `siteId`. */
+    readonly siteName: string;
+    /** `rtus.display_name` of the one RTU, which only `A060` sits on. */
+    readonly rtuName: string;
     readonly domain: string;
     readonly pointKey: string;
     /** Sixty asset ids, `A001` first. */
@@ -217,6 +221,19 @@ export async function assertSixtyCandidatesAreCapped(ctx: SegmentViewsCtx): Prom
   expect(dto.ranking[0]?.assetId).toBe(ctx.fixture.assetIds[59]);
   expect(dto.ranking[0]?.current.mean).toBe(60);
   expect(dto.ranking.filter((r) => r.buckets !== null)).toHaveLength(8);
+}
+
+/**
+ * V10 (`F4.316`, ADR 0111) — the site read's LEFT JOINs: `A060` (on the fixture RTU) names the RTU
+ * and the site; `A059` (no RTU) has `assetRtuName: null` and still the site's name.
+ */
+export async function assertARankingEntryNamesItsRtuAndLocation(ctx: SegmentViewsCtx): Promise<void> {
+  const dto = await run(ctx, admin(), ctx.fixture.siteId, Q);
+  const named = dto.ranking.slice(0, 2).map((r) => [r.assetId, r.assetRtuName, r.assetLocationName]);
+  expect(named).toEqual([
+    [ctx.fixture.assetIds[59], ctx.fixture.rtuName, ctx.fixture.siteName],
+    [ctx.fixture.assetIds[58], null, ctx.fixture.siteName],
+  ]);
 }
 
 /** V9 — a 46-day custom range reads `_1h` in local-day buckets, and the abnormal block reports the consulted windows. */

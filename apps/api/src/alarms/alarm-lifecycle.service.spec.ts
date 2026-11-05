@@ -254,6 +254,8 @@ export function fakeDeps(opts: {
                 acknowledgedBy: null,
                 clearedAt: update.clearedAt?.toISOString() ?? null,
                 assetCode: "ASSET-1",
+                assetRtuName: "RTU 1",
+                assetLocationName: "Site A",
                 assetName: "Feeder 1",
                 siteName: "Site A",
               };

@@ -1,4 +1,4 @@
-import { alarms, assets, type BmsDb } from "@bms/db";
+import { alarms, assets, type BmsDb, locations, rtus } from "@bms/db";
 import type { AlarmListItem } from "@bms/shared";
 import { eq } from "drizzle-orm";
 
@@ -18,11 +18,16 @@ import { eq } from "drizzle-orm";
  * column that made that concrete: it is on the list, on the socket payload
  * and on the details response, and the sweep is the only writer.
  *
- * **The projection spans two tables.** `assetCode`, `assetName` and `siteName`
- * come from `bms.assets`, so every consumer of `alarmListItemColumns` must
- * keep its `.innerJoin(assets, eq(alarms.assetId, assets.id))` — the select
- * does not carry the join with it, and dropping the join is a run-time error,
- * not a type error.
+ * **The projection spans four tables.** `assetCode`, `assetName` and
+ * `siteName` come from `bms.assets`; `assetRtuName` from `bms.rtus` and
+ * `assetLocationName` from `bms.locations` (`F4.316`, ADR 0111). So every
+ * consumer of `alarmListItemColumns` must keep its three joins —
+ * `.innerJoin(assets, eq(alarms.assetId, assets.id))`,
+ * `.leftJoin(rtus, eq(assets.rtuId, rtus.id))` and
+ * `.leftJoin(locations, eq(assets.locationId, locations.id))` — the select
+ * does not carry the joins with it, and dropping one is a run-time error, not
+ * a type error. The two left joins add no predicate: an asset with no RTU
+ * keeps its alarm, with `assetRtuName: null`.
  *
  * `normal_since` is deliberately absent: it is the sweep's own bookkeeping
  * (ADR 0057 decision 5), not a fact the alarm centre shows.
@@ -39,6 +44,8 @@ export const alarmListItemColumns = {
   acknowledgedBy: alarms.acknowledgedBy,
   clearedAt: alarms.clearedAt,
   assetCode: assets.code,
+  assetRtuName: rtus.displayName,
+  assetLocationName: locations.name,
   assetName: assets.name,
   siteName: assets.siteName,
 };
@@ -62,6 +69,8 @@ export type AlarmListItemRow = {
   acknowledgedBy: string | null;
   clearedAt: Date | null;
   assetCode: string;
+  assetRtuName: string | null;
+  assetLocationName: string | null;
   assetName: string;
   siteName: string;
 };
@@ -80,6 +89,8 @@ export function toAlarmListItem(r: AlarmListItemRow): AlarmListItem {
     acknowledgedBy: r.acknowledgedBy,
     clearedAt: r.clearedAt?.toISOString() ?? null,
     assetCode: r.assetCode,
+    assetRtuName: r.assetRtuName,
+    assetLocationName: r.assetLocationName,
     assetName: r.assetName,
     siteName: r.siteName,
   };
@@ -96,13 +107,15 @@ export function toAlarmListItem(r: AlarmListItemRow): AlarmListItem {
  * rule-cache read (`alarm-engine.service.ts`, E7.1b). The per-socket scope is
  * not weakened by it: `AlarmsGateway.emitScoped` filters every socket by its
  * own readable asset set, so the row is read fleet-wide and delivered
- * per-viewer. The join is the projection's own requirement (see above).
+ * per-viewer. The joins are the projection's own requirement (see above).
  */
 export async function readAlarmListItem(db: BmsDb, alarmId: string): Promise<AlarmListItem | null> {
   const [row] = await db
     .select(alarmListItemColumns)
     .from(alarms)
     .innerJoin(assets, eq(alarms.assetId, assets.id))
+    .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+    .leftJoin(locations, eq(assets.locationId, locations.id))
     .where(eq(alarms.id, alarmId))
     .limit(1);
   return row === undefined ? null : toAlarmListItem(row);

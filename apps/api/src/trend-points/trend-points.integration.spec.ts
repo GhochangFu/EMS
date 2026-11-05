@@ -393,6 +393,39 @@ export async function assertStripSegmentIsNotAParallelSuitesPick(ctx: TrendPoint
   expect(last.rows[0]?.code, "facility must stay the last active domain by sort_order").toBe("facility");
 }
 
+/**
+ * T6 (`F4.316`, ADR 0111) — every series on `RSMOC-WC` names the RTU and location the database
+ * holds for its asset (the site read's two LEFT JOINs). The seeded site's assets sit on RTUs, so
+ * at least one name is non-null and the match is not vacuous.
+ */
+export async function assertStripSeriesNameTheirRtuAndLocation(ctx: TrendPointsCtx): Promise<void> {
+  const dto = await ctx.strip.svc.forSite(admin(), ctx.rsmocWcId, { range: "24h" });
+  const drawn = dto.segments.flatMap((s) =>
+    s.points.flatMap((p) => p.assets.map((a) => [a.assetId, a.assetRtuName, a.assetLocationName] as const)),
+  );
+  expect(drawn.some(([, rtu]) => rtu !== null), "precondition: a drawn RSMOC-WC asset sits on an RTU").toBe(true);
+  const { rows } = await ctx.fleetPool.query<{ id: string; rtu: string | null; location: string | null }>(
+    `SELECT a.id, r.display_name AS rtu, l.name AS location
+       FROM bms.assets a
+       LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+       LEFT JOIN bms.locations l ON l.id = a.location_id
+      WHERE a.id = ANY($1::uuid[])`,
+    [drawn.map(([id]) => id)],
+  );
+  const expected = new Map(rows.map((row) => [row.id, [row.rtu, row.location]]));
+  expect(drawn.map(([id, rtu, location]) => [id, rtu, location])).toEqual(
+    drawn.map(([id]) => [id, ...(expected.get(id) ?? ["missing", "missing"])]),
+  );
+}
+
+/** T6b (`F4.316`, ADR 0111) — T4's RTU-less asset has `assetRtuName: null` and the fixture site's name. */
+export async function assertAnRtuLessStripSeriesNamesItsLocation(ctx: TrendPointsCtx): Promise<void> {
+  const { domain } = ctx.strip.segment;
+  const dto = await ctx.strip.svc.forSite(admin(), ctx.fixtureSiteId, { range: "24h" });
+  const series = dto.segments.find((s) => s.domain === domain)?.points[0]?.assets[0];
+  expect([series?.assetRtuName, series?.assetLocationName]).toEqual([null, "F4.300 fixture site"]);
+}
+
 /** T5 — a seeded `ups` asset draws under the `ups` segment on the whole-site strip, and under no other. */
 export async function assertStripDrawsUpsAssetsUnderTheUpsSegmentOnly(ctx: TrendPointsCtx): Promise<void> {
   const { rows } = await ctx.fleetPool.query<{ id: string }>(

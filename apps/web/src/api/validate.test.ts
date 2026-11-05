@@ -30,6 +30,8 @@ const validAlarm = {
   acknowledgedBy: null,
   clearedAt: null,
   assetCode: "AHU-1",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Campus",
   assetName: "Air Handler 1",
   siteName: "Campus",
 };

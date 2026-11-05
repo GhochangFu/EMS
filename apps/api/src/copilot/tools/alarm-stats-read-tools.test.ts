@@ -20,4 +20,6 @@ describe("F4.291 PR 2 — list_alarms' severity and range, and get_alarm_stats",
   it("get_alarm_stats strips a key the contract does not name", spec.alarmStatsStripsAKeyTheContractDoesNotName);
   it("get_alarm_stats fails on an answer that breaks the contract", spec.alarmStatsThrowsOnABadAnswer);
   it("get_alarm_stats: one organization with 25 locations and 10 assets fits one result", spec.alarmStatsOneOrganizationFitsOneResult);
+  it("list_alarms carries the asset's RTU and location names (F4.316)", spec.listAlarmsCarriesTheAssetRtuName);
+  it("get_alarm_stats' top assets carry the RTU and location names (F4.316)", spec.alarmStatsTopAssetCarriesTheAssetRtuName);
 });

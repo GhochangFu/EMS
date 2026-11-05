@@ -33,6 +33,8 @@ function details(overrides: Partial<AlarmDetailsResponse> = {}): AlarmDetailsRes
     assetId: "asset-1",
     organizationId: "org-1",
     assetCode: "PMP-01",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Plant A",
     assetName: "Raw water pump 1",
     assetDomain: "water",
     locationName: "Plant A",
@@ -277,4 +279,60 @@ export async function linksTheAssetToItsHistory(): Promise<void> {
   await renderPanel(details());
   const link = screen.getByRole("link", { name: "History of PMP-01" });
   expect(link).toHaveAttribute("href", "/asset-history/asset-1");
+}
+
+/**
+ * `F4.316` PR 2 (ADR 0111): the innermost element whose whole text is `text` — the asset label is
+ * the code and a `· where` span, so no single text node holds it.
+ */
+function byWholeText(text: string): HTMLElement {
+  return screen.getByText(
+    (_content, element) =>
+      element !== null &&
+      element.textContent === text &&
+      Array.from(element.children).every((child) => child.textContent !== text),
+  );
+}
+
+/** `F4.316` PR 2: the header names the asset as `<code> · <RTU>`. */
+export async function theHeaderNamesTheRtu(): Promise<void> {
+  await renderPanel(details());
+  expect(byWholeText("PMP-01 · RTU 1")).toBeInTheDocument();
+}
+
+/** With no RTU the header falls back to the location: `<code> · <location>`. */
+export async function theHeaderFallsBackToTheLocation(): Promise<void> {
+  await renderPanel(details({ assetRtuName: null }));
+  expect(byWholeText("PMP-01 · Plant A")).toBeInTheDocument();
+}
+
+/** The header's `· where` part wraps rather than truncating. */
+export async function theHeadersWherePartWraps(): Promise<void> {
+  await renderPanel(details());
+  const where = screen.getByText("· RTU 1");
+  expect(where).not.toHaveClass("truncate");
+  expect(where).toHaveClass("whitespace-normal");
+}
+
+/** The history link keeps the bare code: it names the asset's page, not the label. */
+export async function theHistoryLinkKeepsTheCode(): Promise<void> {
+  await renderPanel(details());
+  expect(screen.getByRole("link", { name: "History of PMP-01" })).toBeInTheDocument();
+}
+
+/** The affected-assets list joins each asset's label — RTU when it has one, location when not. */
+export async function theAffectedAssetsListTheirLabels(): Promise<void> {
+  await renderPanel(
+    details({
+      enrichment: {
+        ...ENRICHMENT,
+        affectedAssets: [
+          { assetId: "asset-2", assetCode: "PMP-02", assetRtuName: "RTU 2", assetLocationName: "Plant A", assetName: "Pump 2" },
+          { assetId: "asset-3", assetCode: "PMP-03", assetRtuName: null, assetLocationName: "Plant B", assetName: "Pump 3" },
+        ],
+      },
+    }),
+    true,
+  );
+  expect(screen.getByText("PMP-02 · RTU 2, PMP-03 · Plant B")).toBeInTheDocument();
 }

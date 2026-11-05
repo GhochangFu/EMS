@@ -27,6 +27,8 @@ const VERDICTS = ["above", "below", "not_comparable", "not_enough_history"] as c
 const entry = (verdict: string) => ({
   assetId: ASSET,
   assetCode: "EM-1",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Site 1",
   assetName: "Meter 1",
   unit: "kW",
   currentMean: 12.5,
@@ -52,6 +54,8 @@ export const SEGMENT_VIEWS_FIXTURE = {
     {
       assetId: ASSET,
       assetCode: "EM-1",
+      assetRtuName: "RTU 1",
+      assetLocationName: "Site 1",
       assetName: "Meter 1",
       unit: "kW",
       current: { mean: 12.5, max: 20, maxAt: "2026-11-02T01:00:00.000Z", sampleCount: 288 },
@@ -138,4 +142,31 @@ export function assertTheConstantsArePinned(): void {
 
 export function assertTheRatiosStraddleOne(): void {
   assert(ABNORMAL_BELOW_RATIO < 1 && 1 < ABNORMAL_RATIO, "ABNORMAL_BELOW_RATIO < 1 < ABNORMAL_RATIO");
+}
+
+/** `F4.316` (ADR 0111) — a ranking entry without `assetLocationName` is refused: the field is required. */
+export function assertARankingEntryWithoutTheLocationNameIsRefused(): void {
+  const [ranked] = SEGMENT_VIEWS_FIXTURE.ranking;
+  const { assetLocationName: _dropped, ...withoutLocation } = ranked;
+  const bad = { ...SEGMENT_VIEWS_FIXTURE, ranking: [withoutLocation] };
+  assert(!siteSegmentViewsSchema.safeParse(bad).success, "a ranking entry without assetLocationName must be refused");
+}
+
+/** `F4.316` (ADR 0111) — an abnormal entry without `assetRtuName` is refused: the field is required. */
+export function assertAnAbnormalEntryWithoutTheRtuNameIsRefused(): void {
+  const { assetRtuName: _dropped, ...withoutRtu } = entry("above");
+  const bad = { ...SEGMENT_VIEWS_FIXTURE, abnormal: { ...SEGMENT_VIEWS_FIXTURE.abnormal, entries: [withoutRtu] } };
+  assert(!siteSegmentViewsSchema.safeParse(bad).success, "an abnormal entry without assetRtuName must be refused");
+}
+
+/** `F4.316` (ADR 0111) — an RTU-less asset parses in both lists with `assetRtuName: null`. */
+export function assertAnRtuLessAssetParsesInBothLists(): void {
+  const [ranked] = SEGMENT_VIEWS_FIXTURE.ranking;
+  const rtuLess = {
+    ...SEGMENT_VIEWS_FIXTURE,
+    ranking: [{ ...ranked, assetRtuName: null }],
+    abnormal: { ...SEGMENT_VIEWS_FIXTURE.abnormal, entries: [{ ...entry("above"), assetRtuName: null }] },
+  };
+  const parsed = siteSegmentViewsSchema.safeParse(rtuLess);
+  assert(parsed.success, `an RTU-less asset must parse: ${JSON.stringify(parsed.error?.issues)}`);
 }

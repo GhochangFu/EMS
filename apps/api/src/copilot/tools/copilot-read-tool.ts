@@ -1,5 +1,6 @@
 import type { z, ZodType, ZodTypeAny, ZodTypeDef } from "zod";
 
+import type { AssetTemplatesAdminService } from "../../admin/asset-templates/asset-templates.service";
 import type { AuditAdminService } from "../../admin/audit/audit.service";
 import type { LocationsAdminService } from "../../admin/locations/locations.service";
 import type { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
@@ -145,6 +146,12 @@ export interface CopilotReadServices {
    * write and no audit row is reachable.
    */
   readonly pointKeyStates: Pick<PointKeyStatesAdminService, "list">;
+  /**
+   * `F4.315` PR A (ADR 0099 Amendment 14 decision 1): the asset template list
+   * (`GET /admin/asset-templates`), behind its own `requireMasterDataUser` and
+   * `canManageOrganization`; `list` only, so no write and no audit row is reachable.
+   */
+  readonly assetTemplates: Pick<AssetTemplatesAdminService, "list">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */

@@ -14,6 +14,8 @@ import {
   alarms,
   assets,
   type BmsDb,
+  locations,
+  rtus,
 } from "@bms/db";
 import type { AlarmListItem } from "@bms/shared";
 
@@ -496,6 +498,8 @@ export class AlarmLifecycleService implements OnModuleInit, OnModuleDestroy {
         .select(alarmListItemColumns)
         .from(alarms)
         .innerJoin(assets, eq(alarms.assetId, assets.id))
+        .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+        .leftJoin(locations, eq(assets.locationId, locations.id))
         .where(inArray(alarms.id, clearedIds));
       return rows.map((row) => toAlarmListItem(row));
     });

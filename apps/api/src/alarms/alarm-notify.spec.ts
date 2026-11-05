@@ -59,6 +59,8 @@ function sampleRow(id: string): AlarmListItem {
     acknowledgedBy: null,
     clearedAt: null,
     assetCode: "TX-01",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Site A",
     assetName: "Transformer 1",
     siteName: "Site A",
   };

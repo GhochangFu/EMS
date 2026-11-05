@@ -22,7 +22,7 @@ export const ALARM_STATS_FIXTURE = {
   ],
   byLocation: [{ locationId: "40000000-0000-4000-8000-000000000001", locationName: "Plant A", raised: 5, open: 2 }],
   moreLocations: false,
-  topAssets: [{ assetId: "30000000-0000-4000-8000-000000000001", assetCode: "AHU-1", assetName: "AHU 1", raised: 5 }],
+  topAssets: [{ assetId: "30000000-0000-4000-8000-000000000001", assetCode: "AHU-1", assetRtuName: "RTU 1", assetLocationName: "Plant A", assetName: "AHU 1", raised: 5 }],
   mttaSeconds: 600,
   mttrSeconds: null,
   acknowledgedCount: 1,
@@ -52,4 +52,26 @@ export function assertAMissingMttaKeyIsRefused(): void {
   const { mttaSeconds: _dropped, ...withoutMtta } = ALARM_STATS_FIXTURE;
   const parsed = alarmStatsSchema.safeParse(withoutMtta);
   assert(!parsed.success, "an answer without the mttaSeconds key must be refused");
+}
+
+/** `F4.316` PR 2 (ADR 0111): a top asset names its RTU and location — required, nullable. */
+function topAssetWith(row: Record<string, unknown>): unknown {
+  return { ...ALARM_STATS_FIXTURE, topAssets: [row] };
+}
+
+export function assertATopAssetWithoutAssetRtuNameIsRefused(): void {
+  const { assetRtuName: _dropped, ...without } = ALARM_STATS_FIXTURE.topAssets[0]!;
+  assert(!alarmStatsSchema.safeParse(topAssetWith(without)).success, "a top asset with no assetRtuName must be refused");
+}
+
+export function assertATopAssetWithoutAssetLocationNameIsRefused(): void {
+  const { assetLocationName: _dropped, ...without } = ALARM_STATS_FIXTURE.topAssets[0]!;
+  assert(!alarmStatsSchema.safeParse(topAssetWith(without)).success, "a top asset with no assetLocationName must be refused");
+}
+
+export function assertATopAssetWithNullPartsParses(): void {
+  const parsed = alarmStatsSchema.safeParse(
+    topAssetWith({ ...ALARM_STATS_FIXTURE.topAssets[0]!, assetRtuName: null, assetLocationName: null }),
+  );
+  assert(parsed.success, `null assetRtuName/assetLocationName must parse: ${JSON.stringify(parsed.error?.issues)}`);
 }
