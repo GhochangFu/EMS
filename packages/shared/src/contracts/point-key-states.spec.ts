@@ -1,4 +1,11 @@
-import { pointKeyStateMapSchema, pointKeyStateSchema, pointKeyStateToneSchema } from "./point-key-states";
+import {
+  adminPointKeyStateDtoSchema,
+  adminPointKeyStatesListResponseSchema,
+  pointKeyStateMapSchema,
+  pointKeyStateSchema,
+  pointKeyStateToneSchema,
+  switchingStateDtoSchema,
+} from "./point-key-states";
 
 /**
  * `F3.74` / ADR 0088 plan D3 — the state-map contract (`bms.point_key_states`, migration `0097`).
@@ -64,4 +71,41 @@ export function aStateMapParses(): void {
     ],
   });
   assert(parsed.success === true, "a breaker_main map — expected success");
+}
+
+const ADMIN_ROW = {
+  id: "00000000-0000-4000-8000-000000000001",
+  pointKey: "breaker_main",
+  value: 1,
+  label: "CLOSED",
+  tone: "closed",
+  seeded: true,
+};
+
+/** `F4.309` (C1) — an admin row parses, inside the list response too; `seeded` is required. */
+export function anAdminRowParses(): void {
+  assert(adminPointKeyStateDtoSchema.safeParse(ADMIN_ROW).success, "an admin row — expected success");
+  assert(
+    adminPointKeyStatesListResponseSchema.safeParse({ items: [ADMIN_ROW] }).success,
+    "a list response of one admin row — expected success",
+  );
+  const { seeded: _seeded, ...withoutSeeded } = ADMIN_ROW;
+  assert(
+    adminPointKeyStateDtoSchema.safeParse(withoutSeeded).success === false,
+    "an admin row without seeded — expected a refusal",
+  );
+  assert(
+    adminPointKeyStateDtoSchema.safeParse({ ...ADMIN_ROW, tone: "earthed" }).success === false,
+    "an admin row with tone 'earthed' — expected a refusal",
+  );
+}
+
+/** `F4.309` (C1) — a switching state is key, value, label and tone; no id and no `seeded` needed. */
+export function aSwitchingStateParses(): void {
+  const parsed = switchingStateDtoSchema.safeParse({ pointKey: "valve_open", value: 0, label: "SHUT", tone: "shut" });
+  assert(parsed.success, "a switching state — expected success");
+  assert(
+    switchingStateDtoSchema.safeParse({ pointKey: "valve_open", value: 0, label: "SHUT" }).success === false,
+    "a switching state without a tone — expected a refusal",
+  );
 }

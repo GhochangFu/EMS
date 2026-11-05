@@ -35,6 +35,7 @@ const vocabularies: VocabulariesResponse = {
   assetRoles: [],
   dashboardSections: [],
   waterBalanceRoles: [],
+  switchingStates: [],
 };
 
 const thresholdRule: RuleListItem = {

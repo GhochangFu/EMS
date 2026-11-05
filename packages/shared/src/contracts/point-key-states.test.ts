@@ -2,6 +2,8 @@ import { describe, it } from "vitest";
 
 import {
   aStateMapParses,
+  aSwitchingStateParses,
+  anAdminRowParses,
   anUnknownToneIsRefused,
   earthedIsRefused,
   shutIsAccepted,
@@ -28,5 +30,13 @@ describe("F3.74 — the point-key state map contract (ADR 0088, plan D3)", () =>
 
   it("parses a map of one point key and its rows", () => {
     aStateMapParses();
+  });
+
+  it("F4.309 — parses an admin row and its list response, seeded required", () => {
+    anAdminRowParses();
+  });
+
+  it("F4.309 — parses a switching state of the /vocabularies payload", () => {
+    aSwitchingStateParses();
   });
 });

@@ -164,6 +164,9 @@ const CATALOG_DIRS = [
   "admin/assets",
   "admin/asset-groups",
   "admin/point-keys",
+  // `F4.309` PR 1: `admin/point-key-states` is NOT listed yet — its routes are pending
+  // (`POINT_KEY_PENDING`). PR 3 (ADR 0099 Amendment 13) adds the directory here and its service to
+  // `CATALOG_WRITERS` with the two entries (`tests/f4.309-point-key-state-write-path.test.ts`).
   "admin/users",
   "admin/onboarding",
   "mimic-layouts",

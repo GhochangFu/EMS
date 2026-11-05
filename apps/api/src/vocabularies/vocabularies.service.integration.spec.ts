@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { is, TransactionRollbackError } from "drizzle-orm";
 
-import { alarmSkills, assetRoles, locationTypes, waterBalanceRoles } from "@bms/db";
+import { alarmSkills, assetRoles, locationTypes, POINT_KEY_STATE_SEED, pointKeyStates, waterBalanceRoles } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { VocabulariesService } from "./vocabularies.service";
@@ -471,4 +471,80 @@ export async function assertLocationTypeRejectsInactiveCode(db: BmsDb): Promise<
 /** V4 positive control — a live code is accepted, so V4's refusal is about `active`. */
 export async function assertLocationTypeAcceptsALiveCode(db: BmsDb): Promise<void> {
   await new VocabulariesService(db).assertLocationType("pump_station");
+}
+
+/**
+ * `F4.309` / ADR 0088 Amendment 3 decision 5 (plan T5) — `list()` serves `bms.point_key_states`
+ * as `switchingStates`, ordered by point key then value.
+ *
+ * The seven seeded rows are asserted in order and **filtered to the seed's `(code, value)`
+ * pairs**: since `F4.309` an administrator may add rows — on other keys (a concurrent suite,
+ * `point-key-states.integration.spec.ts`, writes them on per-run keys) and on a seeded key with
+ * another value (`breaker_main = 2` is legal). A row added inside this test's own transaction, on a seeded key
+ * with a value the seed does not use, appears between the seeded rows of that key — the order is
+ * the query's, not the insertion's — and is rolled back.
+ */
+const SEEDED_SWITCHING_STATES = [
+  { pointKey: "breaker_main", value: 0, label: "OPEN", tone: "open" },
+  { pointKey: "breaker_main", value: 1, label: "CLOSED", tone: "closed" },
+  { pointKey: "breaker_trip", value: 1, label: "TRIPPED", tone: "tripped" },
+  { pointKey: "damper_open", value: 0, label: "SHUT", tone: "shut" },
+  { pointKey: "damper_open", value: 1, label: "OPEN", tone: "flowing" },
+  { pointKey: "valve_open", value: 0, label: "SHUT", tone: "shut" },
+  { pointKey: "valve_open", value: 1, label: "OPEN", tone: "flowing" },
+] as const;
+
+const pairOf = (row: { pointKey: string; value: number }): string => `${row.pointKey}\u0000${row.value}`;
+const SEEDED_PAIRS: ReadonlySet<string> = new Set(SEEDED_SWITCHING_STATES.map(pairOf));
+
+/** The seven seeded switching states, in order. */
+export async function assertListServesTheSeededSwitchingStatesInOrder(db: BmsDb): Promise<void> {
+  // Anti-vacuity: the expected pairs are exactly the seed's seven.
+  const seedPairs = POINT_KEY_STATE_SEED.map((e) => pairOf({ pointKey: e.pointKeyCode, value: e.value })).sort();
+  assert(
+    seedPairs.length === 7 && JSON.stringify(seedPairs) === JSON.stringify([...SEEDED_PAIRS].sort()),
+    `expected SEEDED_SWITCHING_STATES to name exactly the seed's seven pairs, got ${JSON.stringify(seedPairs)}`,
+  );
+  const { switchingStates } = await new VocabulariesService(db).list();
+  const seeded = switchingStates.filter((row) => SEEDED_PAIRS.has(pairOf(row)));
+  assert(
+    JSON.stringify(seeded) === JSON.stringify(SEEDED_SWITCHING_STATES),
+    `expected the seven seeded switching states in order, got: ${JSON.stringify(seeded)}`,
+  );
+  // By key then value, read without assuming the database's collation (it orders the codes):
+  // each key's rows are contiguous, and ascending by value within it.
+  const seen = new Set<string>();
+  switchingStates.forEach((row, i) => {
+    const previous = switchingStates[i - 1];
+    if (previous && previous.pointKey === row.pointKey) {
+      assert(previous.value <= row.value, `expected ${row.pointKey}'s values ascending, got ${previous.value} then ${row.value}`);
+      return;
+    }
+    assert(!seen.has(row.pointKey), `expected ${row.pointKey}'s rows contiguous in switchingStates`);
+    seen.add(row.pointKey);
+  });
+}
+
+/** A row added in the test's transaction appears, in its place by value. */
+export async function assertListServesAnAddedSwitchingState(db: BmsDb): Promise<void> {
+  await withRollback(db, async (tx) => {
+    await tx.insert(pointKeyStates).values({ pointKeyCode: "breaker_main", value: 0.5, label: "F4309 MID", tone: "tripped" });
+
+    const { switchingStates } = await new VocabulariesService(tx).list();
+    // The seeded pairs plus the added one: an administrator's committed `breaker_main = 2` is legal.
+    const breakerMain = switchingStates.filter(
+      (row) => row.pointKey === "breaker_main" && (SEEDED_PAIRS.has(pairOf(row)) || row.value === 0.5),
+    );
+    assert(
+      JSON.stringify(breakerMain) ===
+        JSON.stringify([
+          SEEDED_SWITCHING_STATES[0],
+          { pointKey: "breaker_main", value: 0.5, label: "F4309 MID", tone: "tripped" },
+          SEEDED_SWITCHING_STATES[1],
+        ]),
+      `expected the added row between breaker_main 0 and 1, got: ${JSON.stringify(breakerMain)}`,
+    );
+
+    tx.rollback();
+  });
 }

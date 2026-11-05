@@ -400,6 +400,10 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   copilotStartOnboardingSkillBodySchema: STRICT(CALLER_ERROR),
   commitOnboardingBodySchema: STRICT(CALLER_ERROR),
   createPointKeyBodySchema: STRICT(CALLER_ERROR),
+  // `F4.309` (ADR 0088 Amendment 3 decision 4): an `organizationId` or any other stray key is a
+  // caller error; on the PATCH, a `pointKey` or a `value` is a re-key the route refuses.
+  createPointKeyStateBodySchema: STRICT(CALLER_ERROR),
+  updatePointKeyStateBodySchema: STRICT(CALLER_ERROR),
   createRtuBodySchema: STRICT(CALLER_ERROR),
   createSessionBodySchema: STRICT(CALLER_ERROR),
   createWorkOrderBodySchema: STRICT(CALLER_ERROR),

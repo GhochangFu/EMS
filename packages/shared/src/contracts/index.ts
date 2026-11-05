@@ -79,6 +79,8 @@ export * from "./location-writes";
 export * from "./mimic-layout-writes";
 export * from "./mimic-symbol-library-writes";
 export * from "./point-key-writes";
+// `F4.309` (ADR 0088 Amendment 3): the state-label write bodies.
+export * from "./point-key-state-writes";
 export * from "./site-segment-views";
 export * from "./trend-points";
 export * from "./trend-strip";
