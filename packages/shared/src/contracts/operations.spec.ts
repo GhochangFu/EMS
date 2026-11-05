@@ -4,6 +4,7 @@ import {
   alarmListItemSchema,
   alarmSeverityCountSchema,
   alarmSocketEventSchema,
+  energyTopConsumerSchema,
   maintenanceScheduleItemSchema,
   ruleListItemSchema,
   vocabulariesResponseSchema,
@@ -340,3 +341,22 @@ export const assertRuleRequiresAssetLocationName = (): void =>
   assertRefusesWithout(ruleListItemSchema, RULE_LIST_ITEM, "assetLocationName", "ruleListItemSchema");
 export const assertRuleAcceptsNullParts = (): void =>
   assertAcceptsNullParts(ruleListItemSchema, RULE_LIST_ITEM, "ruleListItemSchema");
+
+/** `F4.316` PR 6 (ADR 0111, Q1) — a top consumer keeps its `code` field and gains the two label parts. */
+const ENERGY_TOP_CONSUMER = {
+  assetId: "30000000-0000-4000-8000-000000000001",
+  code: "PHE-MFM-000000003",
+  assetRtuName: "Lotapata I",
+  assetLocationName: "Lotapata",
+  name: "Main meter",
+  siteName: "Lotapata",
+  avgKw: 12.5,
+  estimatedKwh: 300,
+};
+
+export const assertTopConsumerRequiresAssetRtuName = (): void =>
+  assertRefusesWithout(energyTopConsumerSchema, ENERGY_TOP_CONSUMER, "assetRtuName", "energyTopConsumerSchema");
+export const assertTopConsumerRequiresAssetLocationName = (): void =>
+  assertRefusesWithout(energyTopConsumerSchema, ENERGY_TOP_CONSUMER, "assetLocationName", "energyTopConsumerSchema");
+export const assertTopConsumerAcceptsNullParts = (): void =>
+  assertAcceptsNullParts(energyTopConsumerSchema, ENERGY_TOP_CONSUMER, "energyTopConsumerSchema");

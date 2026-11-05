@@ -11,6 +11,9 @@ import {
   assertAnEmptyScopeSendsNoOrganizationStatement,
   assertAnEmptyWindowIsAbsent,
   assertASiteCountsDistinctBuckets,
+  assertASiteWindowRowHasNullParts,
+  assertAnAssetWindowRowCarriesItsRtuAndLocation,
+  assertAnAssetWindowRowWithNoRtuCarriesItsLocation,
   assertEachSiteCarriesItsOwnArea,
   assertAssetWindowRowsCarryKwhAndBuckets,
   assertEntityWindowReadsBindsTheList,
@@ -120,6 +123,9 @@ describe.skipIf(!connectionString)("F4.299 U3 — the organization views' reads 
   it("heatmapRead: the New York spring-forward day has no hour 2", runDst(assertTheSpringForwardDayHasNoHourTwo));
   it("entityWindowReads: asset rows carry kWh and distinct bucket count", run(assertAssetWindowRowsCarryKwhAndBuckets));
   it("entityWindowReads: a site counts distinct buckets, not a sum over assets", run(assertASiteCountsDistinctBuckets));
+  it("F4.316 — entityWindowReads: an asset row under an RTU carries the RTU and location names", run(assertAnAssetWindowRowCarriesItsRtuAndLocation));
+  it("F4.316 — entityWindowReads: an asset row with no RTU carries a null RTU name and its location", run(assertAnAssetWindowRowWithNoRtuCarriesItsLocation));
+  it("F4.316 — entityWindowReads: a site row has both parts null", run(assertASiteWindowRowHasNullParts));
   it("entityWindowReads: an empty window is absent", run(assertAnEmptyWindowIsAbsent));
   it("the foreign asset changes nothing in siteEnergyRead", run(assertTheForeignAssetIsOutsideTheSiteRanking));
   it("the foreign asset changes nothing in siteSeriesRead", run(assertTheForeignAssetIsOutsideTheSiteSeries));

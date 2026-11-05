@@ -384,6 +384,10 @@ export type EntityWindowReadsInput = {
  * data for an entity has no row. A site row carries the location id as `id`
  * and as `locationId`, with `code` and `siteName` `null`; an asset row carries
  * its location's name as `siteName`.
+ *
+ * `F4.316` (ADR 0111) — an asset row also carries `assetRtuName` (a LEFT JOIN on
+ * `bms.rtus`, no predicate) and `assetLocationName` (the location the statement
+ * already joins); a site row names no asset, so both are `null`.
  */
 export async function entityWindowReads(pool: Queryable, input: EntityWindowReadsInput): Promise<EntityWindowRow[]> {
   const relation = relationFor(input.level);
@@ -396,6 +400,7 @@ export async function entityWindowReads(pool: Queryable, input: EntityWindowRead
     asset_id: string | null;
     location_id: string;
     code: string | null;
+    rtu_name: string | null;
     asset_name: string | null;
     site_name: string;
     kwh: number | string;
@@ -419,6 +424,7 @@ export async function entityWindowReads(pool: Queryable, input: EntityWindowRead
       a.id AS asset_id,
       l.id AS location_id,
       a.code,
+      r.display_name AS rtu_name,
       a.name AS asset_name,
       l.name AS site_name,
       (SUM(per.kw) * $5::float8)::float8 AS kwh,
@@ -426,8 +432,9 @@ export async function entityWindowReads(pool: Queryable, input: EntityWindowRead
     FROM per
     INNER JOIN bms.assets a ON a.id = per.asset_id
     INNER JOIN bms.locations l ON l.id = a.location_id
+    LEFT JOIN bms.rtus r ON r.id = a.rtu_id
     WHERE a.id = ANY($4::uuid[])
-    GROUP BY GROUPING SETS ((per.idx, a.id, a.code, a.name, l.id, l.name), (per.idx, l.id, l.name))
+    GROUP BY GROUPING SETS ((per.idx, a.id, a.code, r.display_name, a.name, l.id, l.name), (per.idx, l.id, l.name))
     `,
     [
       input.windows.map((w) => w.idx),
@@ -445,12 +452,23 @@ export async function entityWindowReads(pool: Queryable, input: EntityWindowRead
       bucketCount: Number(row.bucket_count),
     };
     if (row.is_site || row.asset_id === null) {
-      return { kind: "site", id: row.location_id, code: null, name: row.site_name, siteName: null, ...common };
+      return {
+        kind: "site",
+        id: row.location_id,
+        code: null,
+        assetRtuName: null,
+        assetLocationName: null,
+        name: row.site_name,
+        siteName: null,
+        ...common,
+      };
     }
     return {
       kind: "asset",
       id: row.asset_id,
       code: row.code,
+      assetRtuName: row.rtu_name,
+      assetLocationName: row.site_name,
       name: row.asset_name ?? row.code ?? row.asset_id,
       siteName: row.site_name,
       ...common,

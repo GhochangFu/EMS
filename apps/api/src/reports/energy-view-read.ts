@@ -238,6 +238,10 @@ export type TopConsumersReadInput = {
  * `ReportsService.energyTopConsumers`, moved byte for byte (ADR 0108 decision
  * 2.10), so `rollup-conversion.integration.spec.ts`'s parity holds unchanged.
  *
+ * `F4.316` (ADR 0111) — two LEFT JOINs name the asset's RTU and location for
+ * the label (`assetRtuName`, `assetLocationName`). They add no predicate: the
+ * asset filter is still the one `$4` leg, on the same pool.
+ *
  * **No display bucket**: every row for an asset folds into one mean, so
  * `avgExpr` is the only correct form here (ADR 0025 facts 3 and 4).
  *
@@ -255,6 +259,8 @@ export async function topConsumersRead(
   const r = await pool.query<{
     id: string;
     code: string;
+    rtu_name: string | null;
+    location_name: string | null;
     name: string;
     site_name: string;
     avg_kw: string;
@@ -263,16 +269,20 @@ export async function topConsumersRead(
       SELECT
         a.id,
         a.code,
+        r.display_name AS rtu_name,
+        l.name AS location_name,
         a.name,
         a.site_name,
         ${avgExpr("v")}::float8 AS avg_kw
       FROM ${aggregateRelation(input.level)} v
       INNER JOIN bms.assets a ON a.id = v.asset_id
+      LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+      LEFT JOIN bms.locations l ON l.id = a.location_id
       WHERE v.point_key = 'kw'
         AND v.bucket >= $1
         AND v.bucket <= $2
         AND ($4::uuid[] IS NULL OR a.id = ANY($4::uuid[]))
-      GROUP BY a.id, a.code, a.name, a.site_name
+      GROUP BY a.id, a.code, r.display_name, l.name, a.name, a.site_name
       ORDER BY avg_kw DESC
       LIMIT $3
       `,
@@ -288,6 +298,8 @@ export async function topConsumersRead(
     return {
       assetId: row.id,
       code: row.code,
+      assetRtuName: row.rtu_name,
+      assetLocationName: row.location_name,
       name: row.name,
       siteName: row.site_name,
       avgKw: round2(avgKw),

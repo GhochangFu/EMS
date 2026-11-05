@@ -15,6 +15,8 @@ function entry(overrides: Partial<EnergyAbnormalEntry>): EnergyAbnormalEntry {
     kind: "asset",
     id: "6f1d2a3b-0000-4000-8000-0000000000e1",
     code: "CH-01",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Alpha",
     name: "Chiller 1",
     siteName: "Alpha",
     currentKwh: 150,
@@ -37,6 +39,8 @@ function abnormal(overrides: Partial<Abnormal> = {}): Abnormal {
         kind: "site",
         id: "6f1d2a3b-0000-4000-8000-0000000000e2",
         code: null,
+        assetRtuName: null,
+        assetLocationName: null,
         name: "Bravo",
         siteName: "Bravo",
         baselineKwh: null,
@@ -95,4 +99,22 @@ export function theListOffersNoActionAndNoAlarmLink(): void {
   expect(screen.getAllByTestId("abnormal-row")).toHaveLength(2);
   expect(screen.queryAllByRole("button")).toHaveLength(0);
   expect(screen.queryAllByRole("link")).toHaveLength(0);
+}
+
+/** `F4.316` PR 6 (ADR 0111) — an asset row under an RTU names the asset `<code> · <RTU>` beside its name. */
+export function anAssetRowShowsItsLabel(): void {
+  render(<AbnormalList abnormal={abnormal()} status="ready" />);
+  expect(rowOf("Chiller 1").textContent).toContain("CH-01 · RTU 1");
+}
+
+/** `F4.316` PR 6 — the RTU-less twin: an asset with no RTU is `<code> · <location>`. */
+export function anAssetRowWithNoRtuShowsItsLocation(): void {
+  render(<AbnormalList abnormal={abnormal({ entries: [entry({ assetRtuName: null })] })} status="ready" />);
+  expect(rowOf("Chiller 1").textContent).toContain("CH-01 · Alpha");
+}
+
+/** `F4.316` PR 6 — a site row has no asset code, so its Name cell is the site's name alone: no label. */
+export function aSiteRowCarriesNoLabel(): void {
+  render(<AbnormalList abnormal={abnormal()} status="ready" />);
+  expect(rowOf("Bravo").querySelectorAll("td")[1]?.textContent).toBe("Bravo");
 }

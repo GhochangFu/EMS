@@ -281,6 +281,8 @@ export async function energyTopConsumers(
   consumers: {
     assetId: string;
     code: string;
+    assetRtuName: string | null;
+    assetLocationName: string | null;
     name: string;
     siteName: string;
     avgKw: number;
@@ -318,23 +320,30 @@ export async function energyTopConsumers(
   const r = await pool.query<{
     id: string;
     code: string;
+    rtu_name: string | null;
+    location_name: string | null;
     name: string;
     site_name: string;
     avg_kw: string;
   }>(
+    // `F4.316` (ADR 0111): the two LEFT JOINs name the RTU and the location for the label; no predicate.
     `
     SELECT
       a.id,
       a.code,
+      r.display_name AS rtu_name,
+      l.name AS location_name,
       a.name,
       a.site_name,
       ${avgExpr("v")}::float8 AS avg_kw
     FROM ${aggregateRelation(level)} v
     INNER JOIN bms.assets a ON a.id = v.asset_id
+    LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+    LEFT JOIN bms.locations l ON l.id = a.location_id
     WHERE v.point_key = 'kw'
       AND v.bucket > now() - $1::interval
       AND ($3::uuid[] IS NULL OR a.id = ANY($3::uuid[]))
-    GROUP BY a.id, a.code, a.name, a.site_name
+    GROUP BY a.id, a.code, r.display_name, l.name, a.name, a.site_name
     ORDER BY avg_kw DESC
     LIMIT $2
     `,
@@ -348,6 +357,8 @@ export async function energyTopConsumers(
       return {
         assetId: row.id,
         code: row.code,
+        assetRtuName: row.rtu_name,
+        assetLocationName: row.location_name,
         name: row.name,
         siteName: row.site_name,
         avgKw: Math.round(avgKw * 100) / 100,

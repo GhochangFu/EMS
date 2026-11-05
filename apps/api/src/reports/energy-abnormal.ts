@@ -42,6 +42,10 @@ export type EntityWindowRow = {
   /** The asset's location; for a site, its own id. */
   readonly locationId: string;
   readonly code: string | null;
+  /** `F4.316` (ADR 0111): the asset's RTU display name; `null` for a site or an asset with no RTU. */
+  readonly assetRtuName: string | null;
+  /** `F4.316`: the asset's location name; `null` for a site. */
+  readonly assetLocationName: string | null;
   readonly name: string;
   readonly siteName: string | null;
   readonly idx: number;
@@ -178,6 +182,8 @@ export function abnormalEntries(rows: readonly EntityWindowRow[]): AbnormalCandi
       kind: current.kind,
       id: current.id,
       code: current.code,
+      assetRtuName: current.assetRtuName,
+      assetLocationName: current.assetLocationName,
       name: current.name,
       siteName: current.siteName,
       currentKwh: current.kwh,

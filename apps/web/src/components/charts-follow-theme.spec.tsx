@@ -64,7 +64,7 @@ const MIX: EnergySourceMixPoint[] = [
 ];
 
 const CONSUMERS: EnergyTopConsumer[] = [
-  { assetId: "a1", code: "CH-01", name: "Chiller 1", siteName: "Site", avgKw: 40, estimatedKwh: 960 },
+  { assetId: "a1", code: "CH-01", assetRtuName: "RTU 1", assetLocationName: "Site", name: "Chiller 1", siteName: "Site", avgKw: 40, estimatedKwh: 960 },
 ];
 
 const BANDS = ["excellent", "good", "fair", "poor", "critical", "sixth"];

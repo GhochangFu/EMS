@@ -4,6 +4,9 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aShortHistoryRowSaysNotEnoughHistory,
+  aSiteRowCarriesNoLabel,
+  anAssetRowShowsItsLabel,
+  anAssetRowWithNoRtuShowsItsLocation,
   aTruncatedListSaysSo,
   aWholeListHasNoTruncationLine,
   anAboveRowShowsTheRatio,
@@ -38,5 +41,17 @@ describe("F4.299 abnormal list", () => {
   });
   it("offers no button and no link", () => {
     theListOffersNoActionAndNoAlarmLink();
+  });
+});
+
+describe("F4.316 PR 6 — the abnormal list names an asset by its label (ADR 0111)", () => {
+  it("an asset row under an RTU shows <code> · <RTU>", () => {
+    anAssetRowShowsItsLabel();
+  });
+  it("an asset row with no RTU shows <code> · <location>", () => {
+    anAssetRowWithNoRtuShowsItsLocation();
+  });
+  it("a site row carries no label", () => {
+    aSiteRowCarriesNoLabel();
   });
 });

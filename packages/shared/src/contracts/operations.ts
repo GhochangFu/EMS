@@ -50,6 +50,10 @@ export const energySourceMixPointSchema = z.object({
 export const energyTopConsumerSchema = z.object({
   assetId: z.string(),
   code: z.string(),
+  /** `F4.316` (ADR 0111, Q1) — the asset's RTU display name, `null` when it has none. */
+  assetRtuName: z.string().nullable(),
+  /** `F4.316` (ADR 0111, Q1) — the asset's location name; the label's `where` when there is no RTU. */
+  assetLocationName: z.string().nullable(),
   name: z.string(),
   siteName: z.string(),
   avgKw: z.number(),

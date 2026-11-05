@@ -21,3 +21,9 @@ describe("F4.304 — kWh per m² on the site ranking (ADR 0108 Amendment 5, item
   it("parses a site with no area", () => spec.assertASiteWithNoAreaParses());
   it("refuses a string area", () => spec.assertAStringAreaIsRefused());
 });
+
+describe("F4.316 PR 6 — abnormal entries name the asset's RTU and location (ADR 0111)", () => {
+  it("refuses an entry with no assetRtuName", () => spec.assertAbnormalEntryRequiresAssetRtuName());
+  it("refuses an entry with no assetLocationName", () => spec.assertAbnormalEntryRequiresAssetLocationName());
+  it("parses a site entry with both parts null", () => spec.assertASiteEntryParsesWithNullParts());
+});

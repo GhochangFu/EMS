@@ -220,6 +220,8 @@ function row(over: Partial<EntityWindowRow>): EntityWindowRow {
     id: ASSET_ID,
     locationId: SITE_ID,
     code: "M-1",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Site 1",
     name: "Meter 1",
     siteName: "Site 1",
     idx: 0,
@@ -240,7 +242,7 @@ export function assertEntriesJudgeEveryEntityWithACurrentRow(): void {
     ...[1, 2, 3, 4].map((idx) => row({ idx, kwh: 10 })),
     // The site has baseline rows but no current row: it is not judged.
     ...[1, 2, 3].map((idx) =>
-      row({ kind: "site", id: SITE_ID, code: null, name: "Site 1", siteName: null, idx, kwh: 30 }),
+      row({ kind: "site", id: SITE_ID, code: null, assetRtuName: null, assetLocationName: null, name: "Site 1", siteName: null, idx, kwh: 30 }),
     ),
   ];
   const candidates = abnormalEntries(rows);
@@ -249,6 +251,8 @@ export function assertEntriesJudgeEveryEntityWithACurrentRow(): void {
     kind: "asset",
     id: ASSET_ID,
     code: "M-1",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Site 1",
     name: "Meter 1",
     siteName: "Site 1",
     currentKwh: 15,
@@ -274,6 +278,8 @@ function candidate(over: Partial<AbnormalCandidate>): AbnormalCandidate {
     kind: "asset",
     id: ASSET_ID,
     code: "M-1",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Site 1",
     name: "Meter",
     siteName: "Site 1",
     currentKwh: 15,
