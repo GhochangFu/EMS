@@ -48,6 +48,7 @@ import {
 import {
   BATCH_QUALIFIED_REF_NOTE,
   BATCH_TEMPLATE_EXCLUSION,
+  ageTouchedAfter,
   batchCapProblem,
   batchEligibility,
   batchRefusals,
@@ -55,6 +56,8 @@ import {
   calcPointDraftFromFields,
   draftDialect,
   draftToCalcPointBody,
+  scheduleStepBlocker,
+  withDefaultAge,
   emptyCalcPointDraft,
   standaloneConfigFor,
   type BatchRefusal,
@@ -99,6 +102,8 @@ export function CalcPointBatchWizard({
   // `F4.313`: the New key fields while **New key** is picked; the draft's key mirrors their code.
   const [newKey, setNewKey] = useState<NewPointKeyDraft | null>(null);
   const [checking, setChecking] = useState(false);
+  // `F4.315` B4: "Inputs valid for" follows the default until someone chooses one.
+  const [ageTouched, setAgeTouched] = useState(false);
   const { eligible } = batchEligibility(assets);
   const capProblem = batchCapProblem(assets.length);
   const blocker =
@@ -171,6 +176,11 @@ export function CalcPointBatchWizard({
     setRefused([]);
     setDraft(next);
   };
+  const changeTiming = (next: CalcPointDraft) => {
+    const touched = ageTouchedAfter(draft, next, ageTouched);
+    setAgeTouched(touched);
+    change(withDefaultAge(next, touched));
+  };
   const busy = batchM.isPending || checking;
   const pickKey = (picked: string) => {
     setNewKey(picked === NEW_KEY ? emptyNewPointKeyDraft() : null);
@@ -185,7 +195,7 @@ export function CalcPointBatchWizard({
     draft,
     busy,
     standalone: true,
-    onDraftChange: (next: Partial<CalcPointDraft>) => change({ ...draft, ...next }),
+    onDraftChange: (next: Partial<CalcPointDraft>) => changeTiming({ ...draft, ...next }),
   };
   const values: Record<string, unknown> = {
     assetIds: eligible.map((asset) => asset.id),
@@ -275,10 +285,11 @@ export function CalcPointBatchWizard({
         fixedFields={["assetIds"]}
         values={values}
         onChange={(next) =>
-          change(calcPointDraftFromFields(next, typeof next.pointKey === "string" ? next.pointKey : ""))
+          changeTiming(calcPointDraftFromFields(next, typeof next.pointKey === "string" ? next.pointKey : ""))
         }
         renderStep={(step) => steps[step.id] ?? null}
         nextDisabled={blocker !== null}
+        stepBlocker={(step) => (step.id === "schedule" ? scheduleStepBlocker(draft) : null)}
         onSubmit={(body) => {
           if (newKey) void submitWithNewKey(body as CalcPointBatchBody, newKey);
           else batchM.mutate({ body: body as CalcPointBatchBody, key: null });

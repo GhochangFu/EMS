@@ -3,6 +3,10 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aClearedAgeRefusesNextAndSaysWhy,
+  aScheduledAddTakesTwiceTheInterval,
+  aStreamingAddOpensTheAgeOnThreeHundred,
+  aTypedAgeLetsNextPass,
   aPinnedAssetHasNoAddCalculatedPoint,
   aRefusedWriteKeepsTheServersSentenceAfterTheReread,
   aWriteRefusedWith503RereadsBothLists,
@@ -65,5 +69,28 @@ describe("F4.311 PR 6a — the asset points page's Calculated points card on an 
 
   it("while a write is pending, Add, Edit and Delete are disabled", async () => {
     await whileAWriteIsPendingAddEditAndDeleteAreDisabled();
+  });
+});
+
+describe("F4.315 PR B — Add's default input age, and the Schedule step that refuses", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("streaming opens Inputs valid for on 300", async () => {
+    await aStreamingAddOpensTheAgeOnThreeHundred();
+  });
+
+  it("scheduled every 30 s opens Inputs valid for on 60", async () => {
+    await aScheduledAddTakesTwiceTheInterval();
+  });
+
+  it("a cleared age disables Next and says why", async () => {
+    await aClearedAgeRefusesNextAndSaysWhy();
+  });
+
+  it("a typed age lets Next pass", async () => {
+    await aTypedAgeLetsNextPass();
   });
 });
