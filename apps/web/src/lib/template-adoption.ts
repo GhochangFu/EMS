@@ -21,7 +21,12 @@ import { ApiError } from "./api-error";
  */
 
 type VersionRow = AssetTemplatesListResponse["items"][number];
-type AdoptingAsset = Pick<AdminAssetDto, "code" | "organizationCode" | "domain" | "templateId">;
+/**
+ * What the adoption rules and the wizard read of an asset — the list row
+ * (`AdminAssetDto`) carries it, and the points page builds it from the asset
+ * summary with `templateId: null` (its standalone mode is the server's word).
+ */
+export type AdoptingAsset = Pick<AdminAssetDto, "id" | "code" | "organizationCode" | "domain" | "templateId">;
 
 function distinct(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
@@ -90,6 +95,7 @@ export function adoptionBulkState(assets: readonly AdoptingAsset[]): { enabled: 
   return { enabled: true, reason: null };
 }
 
+/** One labelled line of an asset's plan on the Assets step: the point keys of one kind, in the preview's order. */
 export type AdoptionGroup = {
   kind: "kept" | "added" | "converted" | "skipped";
   label: string;
@@ -138,6 +144,12 @@ export function adoptActionState(
   return { enabled: true, message: null };
 }
 
+/**
+ * The adopt 409's body — migrate's shape. `refusals` is capped as the
+ * preview's is; `refusalCount` is the true total. The wizard renders the
+ * refusals and builds its banner from `refusalCount`; `message` is kept for
+ * completeness and not rendered.
+ */
 export type AdoptionRefusedBody = {
   message: string;
   refusals: TemplateAdoptionRefusalDto[];

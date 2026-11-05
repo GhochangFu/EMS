@@ -6,7 +6,8 @@ import type { TemplateAdoptionPreviewResponse, TemplateAdoptionRefusalDto } from
 
 import * as templatesApi from "../../api/admin/asset-templates";
 import { ApiError } from "../../lib/api-error";
-import { type AdoptingAsset, TemplateAdoptWizard } from "./template-adopt-wizard";
+import type { AdoptingAsset } from "../../lib/template-adoption";
+import { TemplateAdoptWizard } from "./template-adopt-wizard";
 
 /**
  * `F4.312` PR 3 (ADR 0109 Amendment 1, A1 and decisions 2, 3 and 5) — the
@@ -246,4 +247,82 @@ export async function a409ShowsItsRefusalsBesideTheCard(): Promise<void> {
   await toReviewAndSubmit();
   const list = await screen.findByRole("list", { name: "Refused assets" });
   expect(list.textContent).toBe(SENTENCE);
+}
+
+const REFUSED_PREVIEW = preview({ canApply: false, refusals: [REFUSAL], refusalCount: 1 });
+const REFUSED_409 = new ApiError(
+  JSON.stringify({ message: "This adoption is refused. Nothing was written.", refusals: [REFUSAL], refusalCount: 1 }),
+  409,
+);
+
+/** A clean first preview, a refused one on every re-read, and a 409 from adopt. */
+function stubCleanThenRefused(): void {
+  stubApi();
+  vi.mocked(templatesApi.previewAdminAssetTemplateAdoption)
+    .mockReset()
+    .mockResolvedValueOnce(preview())
+    .mockResolvedValue(REFUSED_PREVIEW);
+  vi.mocked(templatesApi.adoptAdminAssetTemplateAssets).mockRejectedValue(REFUSED_409);
+}
+
+// Catches: a 409 that leaves the stale clean preview behind Back (no re-read).
+export async function after409BackListsTheServersRefusals(): Promise<void> {
+  stubCleanThenRefused();
+  renderWizard();
+  await toReviewAndSubmit();
+  await screen.findByRole("list", { name: "Refused assets" });
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  expect((await screen.findByRole("list", { name: "Refusals" })).textContent).toBe(SENTENCE);
+}
+
+// Catches: a 409 after which Back lets Next through to Submit again.
+export async function after409BackDisablesNext(): Promise<void> {
+  stubCleanThenRefused();
+  renderWizard();
+  await toReviewAndSubmit();
+  await screen.findByRole("list", { name: "Refused assets" });
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  await screen.findByRole("list", { name: "Refusals" });
+  expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+}
+
+/** Reaches Review on a clean preview, then the preview re-reads as refused. */
+async function reviewThenPreviewRefuses(): Promise<void> {
+  stubApi();
+  const client = renderWizard();
+  await pickFeeder();
+  await screen.findByRole("region", { name: "Plan for FDR-01" });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await screen.findByRole("button", { name: "Submit" });
+  vi.mocked(templatesApi.previewAdminAssetTemplateAdoption).mockResolvedValue(REFUSED_PREVIEW);
+  await client.invalidateQueries({ queryKey: ["admin", "asset-template-adoption-preview"] });
+}
+
+// Catches: a preview refused while Review is open, with Review saying nothing of it.
+export async function aPreviewRefusedOnReviewSaysWhy(): Promise<void> {
+  await reviewThenPreviewRefuses();
+  expect(await screen.findByText("This adoption is refused. See the reason below.")).toBeTruthy();
+}
+
+// Catches: Submit sending an adopt the preview now refuses.
+export async function aPreviewRefusedOnReviewSendsNothing(): Promise<void> {
+  await reviewThenPreviewRefuses();
+  await screen.findByText(SENTENCE);
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  expect(templatesApi.adoptAdminAssetTemplateAssets).not.toHaveBeenCalled();
+}
+
+// Catches: the last refusal's banner left on screen while a new Submit is in flight.
+export async function aNewSubmitClearsTheEarlierError(): Promise<void> {
+  stubApi();
+  vi.mocked(templatesApi.adoptAdminAssetTemplateAssets)
+    .mockRejectedValueOnce(new ApiError(JSON.stringify({ statusCode: 503, message: "Try again." }), 503))
+    .mockReturnValue(new Promise(() => undefined));
+  renderWizard();
+  await toReviewAndSubmit();
+  await screen.findByText("Try again.");
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(templatesApi.adoptAdminAssetTemplateAssets).toHaveBeenCalledTimes(2));
+  expect(screen.queryByText("Try again.")).toBeNull();
 }

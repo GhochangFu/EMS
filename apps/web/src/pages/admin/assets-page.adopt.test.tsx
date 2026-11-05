@@ -6,6 +6,7 @@ import {
   aPinnedAssetInTheSelectionDisablesTheButton,
   aPinnedAssetInTheSelectionIsNamed,
   aTemplateLessSelectionOpensTheWizard,
+  aSelectionThatStopsQualifyingClosesTheWizardForGood,
   anEmptySelectionDisablesTheButton,
   theButtonCountsTheCheckedRows,
 } from "./assets-page.adopt.spec";
@@ -28,6 +29,9 @@ describe("F4.312 PR 3 — the asset list's Adopt a template bulk action", () => 
   });
   it("a pinned asset in the selection is named", async () => {
     await aPinnedAssetInTheSelectionIsNamed();
+  });
+  it("a selection that stops qualifying closes the wizard for good", async () => {
+    await aSelectionThatStopsQualifyingClosesTheWizardForGood();
   });
   it("an empty selection disables the button", async () => {
     await anEmptySelectionDisablesTheButton();

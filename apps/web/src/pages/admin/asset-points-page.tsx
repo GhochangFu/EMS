@@ -802,7 +802,14 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               Add calculated point
             </button>
             {isMasterDataAdmin(user.role) && assetSummaryQ.data ? (
-              <button type="button" className="surface-button px-3 py-1.5 text-xs" onClick={() => setAdoptOpen(true)}>
+              <button
+                type="button"
+                className="surface-button px-3 py-1.5 text-xs disabled:opacity-60"
+                disabled={standaloneBusy}
+                // Opens a wizard; it never pends itself, so it keeps its name while a write does.
+                data-pending-bystander="standaloneBusy"
+                onClick={() => setAdoptOpen(true)}
+              >
                 Adopt a template
               </button>
             ) : null}

@@ -74,7 +74,7 @@ export const RAW_READ_ALLOWLIST: readonly { file: string; read: string; why: str
   {
     file: "apps/web/src/lib/template-adoption.ts",
     read: "cause.message",
-    why: "`F4.312` PR 3: `adoptionRefusedBody` `JSON.parse`s the adopt 409's body for its `refusals[]`; each is rendered as `adoptionRefusalSentence`, the message through `apiErrorMessage`.",
+    why: "`F4.312` PR 3: `adoptionRefusedBody` `JSON.parse`s the adopt 409's body for its `refusals[]`, each rendered as `adoptionRefusalSentence`; the body's `message` is not rendered — the banner is built from `refusalCount` — and any other error goes through `apiErrorMessage`.",
   },
 ];
 

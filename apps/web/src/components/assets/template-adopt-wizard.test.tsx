@@ -4,6 +4,11 @@ import { cleanup } from "@testing-library/react";
 
 import {
   a409ShowsItsRefusalsBesideTheCard,
+  aNewSubmitClearsTheEarlierError,
+  aPreviewRefusedOnReviewSaysWhy,
+  aPreviewRefusedOnReviewSendsNothing,
+  after409BackDisablesNext,
+  after409BackListsTheServersRefusals,
   aCleanPreviewSubmitsTheAssetIdsToThePickedVersion,
   aMixedDomainBatchPickerHoldsNoVersion,
   aMixedOrganizationBatchOffersNoVersion,
@@ -59,5 +64,20 @@ describe("F4.312 PR 3 — the adopt wizard", () => {
   });
   it("a 409 shows its refusals beside the card", async () => {
     await a409ShowsItsRefusalsBesideTheCard();
+  });
+  it("after a 409, Back lists the server's refusals", async () => {
+    await after409BackListsTheServersRefusals();
+  });
+  it("after a 409, Back disables Next", async () => {
+    await after409BackDisablesNext();
+  });
+  it("a preview refused while Review is open says why on Review", async () => {
+    await aPreviewRefusedOnReviewSaysWhy();
+  });
+  it("a preview refused while Review is open sends nothing on Submit", async () => {
+    await aPreviewRefusedOnReviewSendsNothing();
+  });
+  it("a new Submit clears the earlier error", async () => {
+    await aNewSubmitClearsTheEarlierError();
   });
 });

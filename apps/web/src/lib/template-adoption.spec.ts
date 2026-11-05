@@ -1,6 +1,5 @@
 import { expect } from "vitest";
 import type {
-  AdminAssetDto,
   AssetTemplatesListResponse,
   TemplateAdoptionAssetPlanDto,
   TemplateAdoptionPreviewResponse,
@@ -16,6 +15,7 @@ import {
   adoptionRefusalSentence,
   adoptionRefusedBody,
   adoptionVersionChoices,
+  type AdoptingAsset,
 } from "./template-adoption";
 
 /**
@@ -26,7 +26,7 @@ import {
  */
 
 type Version = AssetTemplatesListResponse["items"][number];
-type Asset = Pick<AdminAssetDto, "id" | "code" | "organizationCode" | "domain" | "templateId">;
+type Asset = AdoptingAsset;
 
 function version(overrides: Partial<Version>): Version {
   return {

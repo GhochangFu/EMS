@@ -3,6 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
+import type { AssetPointCalcConfigDto } from "@bms/shared";
 
 import * as api from "../../api/admin/asset-points";
 import * as templatesApi from "../../api/admin/asset-templates";
@@ -14,6 +15,7 @@ import * as rtusApi from "../../api/admin/rtus";
 import * as assetsApi from "../../api/assets";
 import * as copilotApi from "../../api/copilot";
 import * as systemStatusApi from "../../api/system-status";
+import { standaloneConfigFor } from "../../lib/calc-point-draft";
 import type { AuthUser } from "../../stores/auth-store";
 import { AssetPointsAdminPage } from "./asset-points-page";
 
@@ -27,6 +29,9 @@ import { AssetPointsAdminPage } from "./asset-points-page";
 const admin = { id: "u1", email: "admin@bms.local", displayName: "Admin", role: "admin" } as unknown as AuthUser;
 const ASSET = "f4312000-0000-4000-8000-0000000000a1";
 const SITE = "f4312000-0000-4000-8000-0000000000b1";
+
+/** A derived point of the pinned asset's template, so the template-mode override card renders. */
+const TEMPLATE_POINT: AssetPointCalcConfigDto = { ...standaloneConfigFor("pf"), label: "Power factor" };
 
 function stubApi(mode: "template" | "standalone"): void {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockRejectedValue(new Error("not under test"));
@@ -48,7 +53,7 @@ function stubApi(mode: "template" | "standalone"): void {
     organizationCode: "ESKOM",
     domain: "electrical",
   });
-  vi.spyOn(api, "fetchAdminAssetCalcPoints").mockResolvedValue({ items: [], mode });
+  vi.spyOn(api, "fetchAdminAssetCalcPoints").mockResolvedValue({ items: mode === "template" ? [TEMPLATE_POINT] : [], mode });
   vi.spyOn(api, "fetchAdminAssetPoints").mockResolvedValue({ items: [] } as never);
   vi.spyOn(pointKeysApi, "fetchAdminPointKeys").mockResolvedValue({ items: [] } as never);
   vi.spyOn(templatesApi, "fetchAdminAssetTemplates").mockResolvedValue({ items: [] } as never);
@@ -71,9 +76,9 @@ function renderPage(user: AuthUser = admin): void {
 export async function adoptIsHiddenOnAPinnedAsset(): Promise<void> {
   stubApi("template");
   renderPage();
-  await waitFor(() => expect(api.fetchAdminAssetCalcPoints).toHaveBeenCalled());
   await waitFor(() => expect(assetsAdminApi.fetchAdminAssetSummary).toHaveBeenCalled());
-  await screen.findByText("Point mappings");
+  // Anchored on the template-mode card, so the calc list (and the summary) have arrived.
+  await screen.findByText(/These points are computed from this asset's template/);
   expect(screen.queryByRole("button", { name: "Adopt a template" })).toBeNull();
 }
 

@@ -13,13 +13,15 @@
  * calc → template override) and skipped, the inherited defaults as a plain
  * notice, and every refusal by asset code and point key. Next — the only way
  * to Review's Submit — is disabled until the server's `canApply`
- * (`adoptActionState`). A 409 from adopt lists its refusals beside the card;
- * a success invalidates what the copilot's `assetTemplate.adopt` does and
- * closes.
+ * (`adoptActionState`); should the preview turn refused while Review is open,
+ * Review says so and lists the refusals, and Submit sends nothing. A 409 from
+ * adopt lists its refusals beside the card and re-reads the preview, so Back
+ * shows the server's refusals with Next disabled; a success invalidates what
+ * the copilot's `assetTemplate.adopt` does and closes.
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import type { AdminAssetDto, TemplateAdoptionRefusalDto } from "@bms/shared";
+import type { TemplateAdoptionRefusalDto } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import {
@@ -32,14 +34,13 @@ import { invalidationKeysFor } from "../../lib/copilot-invalidations";
 import {
   adoptActionState,
   adoptionPlanSections,
-  adoptionRefusalSentence,
   adoptionRefusedBody,
   adoptionVersionChoices,
+  type AdoptingAsset,
 } from "../../lib/template-adoption";
 import { AdminWizardFrame, fieldClass, labelClass } from "../admin/admin-wizard-frame";
 import { WizardShell } from "../wizard/wizard-shell";
-
-export type AdoptingAsset = Pick<AdminAssetDto, "id" | "code" | "organizationCode" | "domain" | "templateId">;
+import { AdoptionRefusalList } from "./adoption-refusal-list";
 
 function wizardEntry(id: string): CatalogEntry {
   const entry = catalogEntry(id);
@@ -47,17 +48,11 @@ function wizardEntry(id: string): CatalogEntry {
   return entry;
 }
 
-function RefusalList({ refusals, label }: { refusals: readonly TemplateAdoptionRefusalDto[]; label: string }) {
-  if (refusals.length === 0) return null;
-  return (
-    <ul aria-label={label} className="list-disc space-y-1 pl-4 text-xs text-critical-ink">
-      {refusals.map((refusal, index) => (
-        <li key={`${refusal.assetId}-${refusal.pointKey ?? ""}-${index}`}>{adoptionRefusalSentence(refusal)}</li>
-      ))}
-    </ul>
-  );
-}
-
+/**
+ * The adopt wizard for `assets` (one from the points page, up to 25 from the
+ * asset list's bulk action). `onDone` runs after a successful adopt, once the
+ * adopt's queries are invalidated; `onCancel` when the user leaves.
+ */
 export function TemplateAdoptWizard({
   assets,
   onCancel,
@@ -78,8 +73,9 @@ export function TemplateAdoptWizard({
     queryFn: () => fetchAdminAssetTemplates("published"),
   });
   const choices = adoptionVersionChoices(assets, versionsQ.data?.items ?? []);
+  const previewKey = ["admin", "asset-template-adoption-preview", versionId, assetIds];
   const previewQ = useQuery({
-    queryKey: ["admin", "asset-template-adoption-preview", versionId, assetIds],
+    queryKey: previewKey,
     queryFn: () => previewAdminAssetTemplateAdoption(versionId, assetIds),
     enabled: versionId !== "",
   });
@@ -88,6 +84,10 @@ export function TemplateAdoptWizard({
 
   const adoptM = useMutation({
     mutationFn: (ids: string[]) => adoptAdminAssetTemplateAssets(versionId, ids),
+    onMutate: () => {
+      setError(null);
+      setRefused([]);
+    },
     onSuccess: () => {
       for (const queryKey of invalidationKeysFor("assetTemplate.adopt")) {
         void queryClient.invalidateQueries({ queryKey });
@@ -102,6 +102,9 @@ export function TemplateAdoptWizard({
           ? apiErrorMessage(cause)
           : `This adoption is refused for ${body.refusalCount} reason(s). Nothing was written.`,
       );
+      // The plan the apply re-built is not the one previewed: re-read it, so Back shows the
+      // server's refusals and Next follows its `canApply` again.
+      void queryClient.invalidateQueries({ queryKey: previewKey });
     },
   });
 
@@ -139,7 +142,7 @@ export function TemplateAdoptWizard({
           </section>
         );
       })}
-      {preview ? <RefusalList refusals={preview.refusals} label="Refusals" /> : null}
+      {preview ? <AdoptionRefusalList refusals={preview.refusals} label="Refusals" /> : null}
       {action.message !== null && preview !== null ? (
         <p role="alert" className="text-xs text-critical-ink">
           {action.message}
@@ -147,6 +150,18 @@ export function TemplateAdoptWizard({
       ) : null}
     </>
   );
+
+  // Review: the 409's refusals when the apply answered one; else, when the preview turned
+  // refused while Review was open, the preview's verdict and its refusals.
+  const reviewRefusals =
+    refused.length > 0 ? (
+      <AdoptionRefusalList refusals={refused} label="Refused assets" />
+    ) : !action.enabled ? (
+      <>
+        {action.message !== null ? <p className="text-critical-ink">{action.message}</p> : null}
+        <AdoptionRefusalList refusals={preview?.refusals ?? []} label="Refusals" />
+      </>
+    ) : null;
 
   return (
     <AdminWizardFrame title={`Adopt a template for ${assets.length} asset(s)`}>
@@ -166,6 +181,7 @@ export function TemplateAdoptWizard({
           ))}
         </select>
       </label>
+      {versionsQ.isPending ? <p className="text-xs text-ink-muted">Loading the published versions…</p> : null}
       {versionsQ.isSuccess && choices.reason !== null ? (
         <p role="alert" className="text-xs text-critical-ink">
           {choices.reason}
@@ -193,6 +209,7 @@ export function TemplateAdoptWizard({
           renderStep={(step) => (step.id === "assets" ? assetsStep : null)}
           nextDisabled={!action.enabled}
           onSubmit={(body) => {
+            // Refused since Next: Review already says why (`reviewRefusals`); nothing is sent.
             if (action.enabled) adoptM.mutate(body.assetIds as string[]);
           }}
           onCancel={() => {
@@ -205,7 +222,7 @@ export function TemplateAdoptWizard({
             detail: (
               <div className="space-y-1 text-xs">
                 <p>Assets: {assets.map((asset) => asset.code).join(", ")}</p>
-                <RefusalList refusals={refused} label="Refused assets" />
+                {reviewRefusals}
               </div>
             ),
           }}

@@ -122,6 +122,18 @@ export async function aPinnedAssetInTheSelectionIsNamed(): Promise<void> {
   expect(screen.getByText("PMP-4 already has a template; only template-less assets can adopt one.")).toBeTruthy();
 }
 
+// Catches: an open wizard that reopens by itself once the selection qualifies again.
+export async function aSelectionThatStopsQualifyingClosesTheWizardForGood(): Promise<void> {
+  stubApi([ONE, TWO]);
+  renderPage();
+  await check("PMP-1", "PMP-2");
+  await userEvent.click(adoptButton(2));
+  await screen.findByRole("dialog", { name: "Adopt a template for 2 asset(s)" });
+  await check("PMP-1", "PMP-2");
+  await check("PMP-1");
+  expect(screen.queryByRole("dialog", { name: "Adopt a template for 1 asset(s)" })).toBeNull();
+}
+
 // Catches: the button enabled with nothing checked.
 export async function anEmptySelectionDisablesTheButton(): Promise<void> {
   stubApi([ONE]);

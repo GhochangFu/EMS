@@ -137,6 +137,10 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
   const allFilteredSelected = filtered.length > 0 && selectedRows.length === filtered.length;
   const capProblem = batchCapProblem(selectedRows.length);
   const adoptState = adoptionBulkState(selectedRows);
+  // A selection that stops qualifying closes the wizard for good, not until it qualifies again.
+  useEffect(() => {
+    if (!adoptState.enabled) setAdoptOpen(false);
+  }, [adoptState.enabled]);
 
   function toggleRow(id: string, checked: boolean): void {
     setSelectedIds((current) => {
