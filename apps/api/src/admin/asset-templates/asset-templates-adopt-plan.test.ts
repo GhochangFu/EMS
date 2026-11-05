@@ -51,6 +51,17 @@ describe("F4.312 — the adoption planner (ADR 0109 Amendment 1)", () => {
     it("keeps an undeclared mapping (A2)", () => spec.anUndeclaredMappingIsKept());
   });
 
+  describe("review fixes", () => {
+    it("treats a whitespace row unit as blank (ruling 3)", () => spec.aWhitespaceRowUnitIsBlank());
+    it("treats an empty version unit as blank (ruling 3)", () => spec.anEmptyVersionUnitIsBlank());
+    it("lists the metadata a kept row inherits", () => spec.aKeptRowListsTheMetadataItInherits());
+    it("does not list a field the row sets", () => spec.aFieldTheRowSetsIsNotInherited());
+    it("lists the calc columns a converted row inherits", () =>
+      spec.aConvertedRowListsTheCalcColumnsItInherits());
+    it("gives the adopt remedy for an unresolvable source key", () =>
+      spec.anUnresolvableRefusalGivesTheAdoptRemedy());
+  });
+
   describe("refusal shape", () => {
     it("carries the asset id, code and point key as fields", () =>
       spec.aRefusalCarriesTheAssetFields());

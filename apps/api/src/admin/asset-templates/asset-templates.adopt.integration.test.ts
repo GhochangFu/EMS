@@ -23,6 +23,12 @@ import {
   TEST_ASSET_PREFIX,
   adoptTheScenario,
   assertADomainMismatchRefuses,
+  assertAKeptRangeTheVersionInvertsRefuses,
+  assertAPinTakenAfterThePlanRollsBack,
+  assertAPointAddedAfterThePlanRollsBack,
+  assertAStandaloneFormulaTheVersionRejectsRefuses,
+  assertATakenDashboardSlugRefusesAtThePreview,
+  assertAVersionOutsideTheCallersScopeIs403,
   assertAPinnedAssetBlocksTheWholeBatch,
   assertARuleCodeCollisionAtTheInsertRollsBackTheTransaction,
   assertARuleCodeTakenAfterThePreviewRefusesAndWritesNothing,
@@ -44,6 +50,7 @@ import {
   cleanup,
   loadAdoptFixtures,
   type AdoptFixtures,
+  type Racing,
   type Scenario,
   type Services,
 } from "./asset-templates.adopt.integration.spec";
@@ -69,7 +76,7 @@ describe.skipIf(!connectionString)("F4.312 — adopting a template-less asset", 
   let tenantPool: pg.Pool | undefined;
   let fleetPool: pg.Pool | undefined;
   let svc: Services;
-  let racing: AssetTemplateAdoptionService;
+  let racing: Racing;
   let fx: AdoptFixtures;
   let releasePointKeys: (() => Promise<void>) | undefined;
 
@@ -122,8 +129,11 @@ describe.skipIf(!connectionString)("F4.312 — adopting a template-less asset", 
     if (typeof Reflect.get(AssetTemplateAdoptionService.prototype, "refuseTakenRuleCodes") !== "function") {
       throw new Error("F4.312 fixture defect: AssetTemplateAdoptionService.refuseTakenRuleCodes is gone");
     }
-    racing = build();
-    Reflect.set(racing, "refuseTakenRuleCodes", async () => undefined);
+    racing = (hook) => {
+      const service = build();
+      Reflect.set(service, "refuseTakenRuleCodes", hook);
+      return service;
+    };
 
     releasePointKeys = await registerFixturePointKeys(created, SUITE_POINT_KEYS);
     fx = await loadAdoptFixtures(created, await loadFixtures(created));
@@ -184,5 +194,17 @@ describe.skipIf(!connectionString)("F4.312 — adopting a template-less asset", 
       assertARuleCodeTakenAfterThePreviewRefusesAndWritesNothing(pool as pg.Pool, svc, fx));
     it("rolls the whole transaction back on a rule code collision at the insert", async () =>
       assertARuleCodeCollisionAtTheInsertRollsBackTheTransaction(pool as pg.Pool, racing, fx));
+    it("refuses a standalone formula the version rejects, naming the asset (ruling 8)", async () =>
+      assertAStandaloneFormulaTheVersionRejectsRefuses(pool as pg.Pool, svc, fx));
+    it("refuses a kept range the version's default inverts", async () =>
+      assertAKeptRangeTheVersionInvertsRefuses(pool as pg.Pool, svc, fx));
+    it("rolls back when the asset is pinned after the plan", async () =>
+      assertAPinTakenAfterThePlanRollsBack(pool as pg.Pool, racing, fx));
+    it("rolls back when a point is added after the plan", async () =>
+      assertAPointAddedAfterThePlanRollsBack(pool as pg.Pool, racing, fx));
+    it("answers 403 for another organization's version (A10)", async () =>
+      assertAVersionOutsideTheCallersScopeIs403(pool as pg.Pool, svc, fx));
+    it("refuses a taken default dashboard slug at the preview", async () =>
+      assertATakenDashboardSlugRefusesAtThePreview(pool as pg.Pool, svc, fx));
   });
 });

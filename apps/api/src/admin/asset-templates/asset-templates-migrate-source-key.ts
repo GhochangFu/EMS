@@ -57,13 +57,25 @@ export function unresolvableAdditionMessage(input: {
   readonly pattern: string | null;
   readonly unresolved: readonly string[];
   readonly storedVars: Readonly<Record<string, string>> | null;
+  /**
+   * `F4.312` — whose sentence. Omitted, it is migrate's, byte for byte. For
+   * `"adopt"` the remedy is to add the point on the asset first (adoption then
+   * keeps it) or change the version's pattern — an adopted asset is never
+   * rebuilt.
+   */
+  readonly operation?: "migrate" | "adopt";
 }): string {
   const { assetCode, pointKey, pattern, unresolved, storedVars } = input;
+  const adopt = input.operation === "adopt";
   const head =
     `Asset "${assetCode}": required point "${pointKey}" has pattern ` +
     `${pattern === null ? "(none set)" : `"${pattern}"`}` +
-    `, and migration cannot resolve ${unresolved.length > 0 ? braced(unresolved) : "it"}. `;
-  const remedy = "Rebuild these assets from the new version instead.";
+    `, and ${adopt ? "adoption" : "migration"} cannot resolve ` +
+    `${unresolved.length > 0 ? braced(unresolved) : "it"}. `;
+  const remedy = adopt
+    ? `Add "${pointKey}" on the asset first, so adoption keeps it, or change the version's ` +
+      "source key pattern, then adopt."
+    : "Rebuild these assets from the new version instead.";
   if (unresolved.length === 0) {
     return head + remedy;
   }

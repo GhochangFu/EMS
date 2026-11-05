@@ -123,6 +123,13 @@ export type OverrideSurvivalInput = {
    * its refusal DTO counts assets rather than naming them.
    */
   readonly refuse: (refusal: TemplateMigrationRefusalDto, asset: RefusedAsset) => void;
+  /**
+   * `F4.312` — whose sentences. Omitted, migrate's, byte for byte. For
+   * `"adopt"` the row is a standalone calculated point about to become the
+   * version's override (ruling 8), and the remedy is to correct or delete the
+   * point, or change the template, then adopt.
+   */
+  readonly operation?: "migrate" | "adopt";
 };
 
 /** `F4.312` — the asset a refusal is about, handed to `refuse` beside the refusal. */
@@ -156,6 +163,9 @@ type PlannedOutcome =
 
 export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInput): Promise<void> {
   const { targetPoints, targetVersion, refuse } = input;
+  const adopt = input.operation === "adopt";
+  const adoptRemedy =
+    "Correct or delete the calculated point on the asset, or change the template, then adopt.";
   const targetDerived = new Map(
     targetPoints.filter((point) => point.kind === "derived").map((point) => [point.pointKey, point]),
   );
@@ -215,8 +225,11 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
             reason: "calc_override_invalid_on_target",
             pointKey,
             assetCount: 1,
-            message:
-              `Asset "${asset.assetCode}": its calc override on derived point "${pointKey}" does ` +
+            message: adopt
+              ? `Asset "${asset.assetCode}": its standalone calculated point "${pointKey}" does ` +
+                `not pass as version ${targetVersion}'s override of that derived point. ` +
+                `${problems.join(" ")} ${adoptRemedy}`
+              : `Asset "${asset.assetCode}": its calc override on derived point "${pointKey}" does ` +
               `not survive the move to version ${targetVersion}. ${problems.join(" ")} An override ` +
               "states only the columns it sets and inherits the rest, so a new version's formula " +
               "or dialect can turn a pair that was legal when it was written into one this engine " +
@@ -299,8 +312,12 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
       reason: "calc_override_invalid_on_target",
       pointKey: item.pointKey,
       assetCount: 1,
-      message:
-        `Asset "${item.assetCode}": its calc override on derived point "${item.pointKey}" would ` +
+      message: adopt
+        ? `Asset "${item.assetCode}": its standalone calculated point "${item.pointKey}" would ` +
+          `form a dependency cycle as version ${targetVersion}'s override of that derived point: ` +
+          `${cycle.map((member) => `${member.assetCode}/${member.pointKey}`).join(" → ")}. ` +
+          `Every point on a cycle waits on another, so none of them ever computes. ${adoptRemedy}`
+        : `Asset "${item.assetCode}": its calc override on derived point "${item.pointKey}" would ` +
         `form a dependency cycle once merged with version ${targetVersion}: ` +
         `${cycle.map((member) => `${member.assetCode}/${member.pointKey}`).join(" → ")}. ` +
         "Every point on a cycle waits on another, so none of them ever computes. The " +

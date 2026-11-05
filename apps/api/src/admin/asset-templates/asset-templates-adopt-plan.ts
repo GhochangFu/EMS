@@ -1,6 +1,8 @@
+import { POINT_METADATA_FIELDS } from "@bms/shared";
 import type {
   TemplateAdoptionAddedPointDto,
   TemplateAdoptionAssetPlanDto,
+  TemplateAdoptionInheritedDefaultsDto,
   TemplateAdoptionRefusalDto,
 } from "@bms/shared";
 
@@ -9,7 +11,7 @@ import {
   resolveAdditionSourceDataKey,
   unresolvableAdditionMessage,
 } from "./asset-templates-migrate-source-key";
-import type { StoredTemplatePoint } from "./template-version-delta";
+import { CALC_FIELDS, type StoredTemplatePoint } from "./template-version-delta";
 
 /**
  * `F4.312` (ADR 0109 Amendment 1; plan task 1.5) — the pure half of adoption:
@@ -50,8 +52,15 @@ import type { StoredTemplatePoint } from "./template-version-delta";
  *
  * **The unit check (A8, owner ruling 3).** Refused only when the row's unit
  * and the version's unit (the template override, else the catalog's) are
- * **both** set and differ. A blank row unit is not a mismatch, and the row's
- * unit is never rewritten.
+ * **both** set and differ. A blank unit — NULL, empty or whitespace, on either
+ * side — is not a mismatch, and the row's unit is never rewritten.
+ *
+ * **Inherited defaults (reported, not refused).** A kept measured row reads the
+ * version's instrument metadata, and a converted row the version's calc
+ * columns, through `coalesce(asset, template)` wherever the row is NULL — the
+ * ingest host's bindings and `CalcDefinitionsService` both merge that way. No
+ * ruling covers it, so each such row is listed in `inheritsDefaults` with the
+ * field names the version sets and the row leaves NULL.
  *
  * Then every addition's source key, against every existing row of the asset
  * and against the other additions: `asset_points_asset_source_key_idx` makes
@@ -76,12 +85,25 @@ export type AdoptionAsset = {
   readonly sourceDataKeyVars: Readonly<Record<string, string>> | null;
 };
 
-/** The `asset_points` columns the planner reads. */
+/**
+ * The `asset_points` columns the planner reads: identity, unit, and the ten
+ * coalesced columns `inheritsDefaults` compares against the version.
+ */
 export type AdoptionExistingRow = {
   readonly pointKey: string;
   readonly sourceKind: string;
   readonly sourceDataKey: string;
   readonly unit: string | null;
+  readonly formula: string | null;
+  readonly formulaDialect: string | null;
+  readonly calcTrigger: string | null;
+  readonly calcIntervalSeconds: number | null;
+  readonly maxInputAgeSeconds: number | null;
+  readonly scaleMultiplier: number | null;
+  readonly scaleOffset: number | null;
+  readonly engMin: number | null;
+  readonly engMax: number | null;
+  readonly qualityPolicy: string | null;
 };
 
 /** The version adopted onto. */
@@ -93,6 +115,11 @@ export type AdoptionTarget = {
   readonly domain: string;
 };
 
+/**
+ * Everything `planAdoption` reads — the version, its points and catalog units,
+ * each selected asset with its existing rows — and where refusals go. Built by
+ * `AssetTemplateAdoptionService.buildPlan` from fleet reads; pure here.
+ */
 export type AdoptionPlanInput = {
   readonly target: AdoptionTarget;
   /** The version's points, as `loadPoints` reads them. */
@@ -145,6 +172,7 @@ function planOne(
     added: [] as TemplateAdoptionAddedPointDto[],
     converted: [] as string[],
     skipped: [] as string[],
+    inheritsDefaults: [] as TemplateAdoptionInheritedDefaultsDto[],
   };
   const refuse = (
     reason: TemplateAdoptionRefusalDto["reason"],
@@ -187,8 +215,9 @@ function planOne(
   const declared = new Set(input.points.map((point) => point.pointKey));
 
   const checkUnit = (point: StoredTemplatePoint, row: AdoptionExistingRow): void => {
-    const versionUnit = point.unit ?? input.catalogUnits.get(point.pointKey) ?? null;
-    if (row.unit === null || versionUnit === null || row.unit === versionUnit) {
+    const versionUnit = blankToNull(point.unit) ?? blankToNull(input.catalogUnits.get(point.pointKey));
+    const rowUnit = blankToNull(row.unit);
+    if (rowUnit === null || versionUnit === null || rowUnit === versionUnit) {
       return;
     }
     refuse(
@@ -217,6 +246,7 @@ function planOne(
       if (row !== undefined) {
         dto.kept.push(point.pointKey);
         checkUnit(point, row);
+        reportInherited(dto.inheritsDefaults, point, row, POINT_METADATA_FIELDS);
         continue;
       }
       planAddition(input, asset, point, dto, refuse, label);
@@ -230,6 +260,7 @@ function planOne(
     if (row.sourceKind === "computed") {
       dto.converted.push(point.pointKey);
       checkUnit(point, row);
+      reportInherited(dto.inheritsDefaults, point, row, CALC_FIELDS);
       continue;
     }
     refuse(
@@ -263,6 +294,26 @@ function planOne(
   return { dto, eligible: true };
 }
 
+/** NULL, empty and whitespace-only all mean "no unit" (owner ruling 3). */
+function blankToNull(unit: string | null | undefined): string | null {
+  return unit === null || unit === undefined || unit.trim() === "" ? null : unit;
+}
+
+type CoalescedField = (typeof CALC_FIELDS)[number] | (typeof POINT_METADATA_FIELDS)[number];
+
+/** Lists the fields the version sets and the row leaves NULL, when there are any. */
+function reportInherited(
+  into: TemplateAdoptionInheritedDefaultsDto[],
+  point: StoredTemplatePoint,
+  row: AdoptionExistingRow,
+  fields: readonly CoalescedField[],
+): void {
+  const inherited = fields.filter((field) => row[field] === null && point[field] !== null);
+  if (inherited.length > 0) {
+    into.push({ pointKey: point.pointKey, fields: [...inherited] });
+  }
+}
+
 /** A measured point the asset lacks: an `unmapped` row, a skip, or a refusal. */
 function planAddition(
   input: AdoptionPlanInput,
@@ -288,6 +339,7 @@ function planAddition(
           pattern: point.sourceDataKeyPattern,
           unresolved: resolved.unresolved,
           storedVars: asset.sourceDataKeyVars,
+          operation: "adopt",
         }),
       );
       return;

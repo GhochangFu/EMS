@@ -8,6 +8,7 @@ import {
   assets,
   automationRules,
   createDb,
+  dashboards,
   pointValues,
   templatePoints,
 } from "@bms/db";
@@ -19,6 +20,7 @@ import {
 
 import type { CalcDefinitionsService } from "../../calc/calc-definitions.service";
 import type { AssetTemplateAdoptionService } from "./asset-templates-adopt.service";
+import { dashboardSlug } from "./asset-dashboards-plan";
 import type { Fixtures } from "./asset-templates.instantiate.integration.spec";
 import { seededRuleValues } from "./template-alarm-rules";
 
@@ -52,6 +54,13 @@ export const SUITE_POINT_KEYS = [KW, KVA, EFF, EXTRA, STRAY] as const;
 
 const ALARM_CODE = "ADOPT_HIGH";
 const VIEW = "overview";
+
+/**
+ * An adoption service whose plan-time rule-code check is replaced by `hook`:
+ * the hook runs at the end of the plan, after every read, so whatever it writes
+ * lands between the plan and the transaction — the race the write-time nets exist for.
+ */
+export type Racing = (hook: () => Promise<void>) => AssetTemplateAdoptionService;
 
 export type Services = {
   adoption: AssetTemplateAdoptionService;
@@ -122,13 +131,21 @@ export async function cleanup(pool: pg.Pool): Promise<void> {
 export async function seedVersion(
   db: BmsDb,
   fx: AdoptFixtures,
-  opts: { version?: number; status?: string; kwUnit?: string | null } = {},
+  opts: {
+    version?: number;
+    status?: string;
+    kwUnit?: string | null;
+    kwEngMax?: number | null;
+    /** Another organization's version, for the template-scope 403. */
+    organizationId?: string;
+  } = {},
 ): Promise<string> {
   const status = opts.status ?? "published";
+  const organizationId = opts.organizationId ?? fx.organizationId;
   const [template] = await db
     .insert(assetTemplates)
     .values({
-      organizationId: fx.organizationId,
+      organizationId,
       code: TEST_TEMPLATE_CODE,
       version: opts.version ?? 1,
       name: "Adoption Fixture",
@@ -156,17 +173,18 @@ export async function seedVersion(
 
   await db.insert(templatePoints).values([
     {
-      organizationId: fx.organizationId,
+      organizationId,
       templateId: template.id,
       pointKey: KW,
       kind: "measured",
       sourceDataKeyPattern: `SITE/{asset_code}/${KW}`,
       required: true,
       unit: opts.kwUnit ?? null,
+      engMax: opts.kwEngMax ?? null,
       sortOrder: 0,
     },
     {
-      organizationId: fx.organizationId,
+      organizationId,
       templateId: template.id,
       pointKey: KVA,
       kind: "measured",
@@ -175,7 +193,7 @@ export async function seedVersion(
       sortOrder: 1,
     },
     {
-      organizationId: fx.organizationId,
+      organizationId,
       templateId: template.id,
       pointKey: EFF,
       kind: "derived",
@@ -202,7 +220,15 @@ export async function seedAsset(
   db: BmsDb,
   fx: AdoptFixtures,
   suffix: string,
-  opts: { templateId?: string | null; domain?: string; locationId?: string; kwUnit?: string | null } = {},
+  opts: {
+    templateId?: string | null;
+    domain?: string;
+    locationId?: string;
+    kwUnit?: string | null;
+    kwEngMin?: number | null;
+    /** The standalone `EFF` formula; defaults to `{KVA} + 1`. */
+    effFormula?: string;
+  } = {},
 ): Promise<string> {
   const onRtu = (opts.locationId ?? fx.rtuLocationId) === fx.rtuLocationId;
   const code = `${TEST_ASSET_PREFIX}${suffix}`;
@@ -231,7 +257,7 @@ export async function seedAsset(
     active: true,
   });
   await db.insert(assetPoints).values([
-    wired(KW, opts.kwUnit ?? null),
+    { ...wired(KW, opts.kwUnit ?? null), engMin: opts.kwEngMin ?? null },
     wired(EXTRA, null),
     {
       assetId: asset.id,
@@ -242,7 +268,7 @@ export async function seedAsset(
       rtuId: null,
       unit: null,
       active: true,
-      formula: `{${KVA}} + 1`,
+      formula: opts.effFormula ?? `{${KVA}} + 1`,
       formulaDialect: "bms-calc-v1",
       calcTrigger: "scheduled",
       calcIntervalSeconds: 120,
@@ -332,7 +358,7 @@ export async function pinOf(pool: pg.Pool, assetId: string): Promise<string | nu
   return rows[0]?.template_id ?? null;
 }
 
-async function countOf(pool: pg.Pool, sql: string, params: unknown[]): Promise<number> {
+export async function countOf(pool: pg.Pool, sql: string, params: unknown[]): Promise<number> {
   const { rows } = await pool.query<{ n: string }>(sql, params);
   return Number(rows[0]?.n ?? 0);
 }
@@ -348,7 +374,7 @@ const seededRuleCount = (pool: pg.Pool, assetId: string, templateId: string): Pr
 const dashboardCount = (pool: pg.Pool, assetId: string): Promise<number> =>
   countOf(pool, `SELECT COUNT(*)::text AS n FROM bms.dashboards WHERE asset_id = $1`, [assetId]);
 
-const adoptAuditCount = (pool: pg.Pool, templateId: string): Promise<number> =>
+export const adoptAuditCount = (pool: pg.Pool, templateId: string): Promise<number> =>
   countOf(
     pool,
     `SELECT COUNT(*)::text AS n FROM bms.audit_log
@@ -596,9 +622,14 @@ export async function assertAPinnedAssetBlocksTheWholeBatch(
   const other = await seedVersion(db, fx, { version: 2 });
   const free = await seedAsset(db, fx, "FREE");
   const pinned = await seedAsset(db, fx, "PINNED", { templateId: other });
-  await expectRefusal(
+  const refusals = await expectRefusal(
     () => svc.adoption.adopt(fx.adminJwt, templateId, { assetIds: [free, pinned] }),
     "a pinned asset in the batch",
+  );
+  // Review item 8: the refusal is the pinned asset's, for being pinned.
+  assert(
+    refusals.some((r) => r.reason === "already_pinned" && r.assetId === pinned),
+    `expected already_pinned on the pinned asset, got ${JSON.stringify(refusals)}`,
   );
   await assertNothingWritten(pool, free, templateId, "the template-less asset of a refused batch");
 }
@@ -712,7 +743,7 @@ export async function assertARuleCodeTakenAfterThePreviewRefusesAndWritesNothing
  */
 export async function assertARuleCodeCollisionAtTheInsertRollsBackTheTransaction(
   pool: pg.Pool,
-  racing: AssetTemplateAdoptionService,
+  racing: Racing,
   fx: AdoptFixtures,
 ): Promise<void> {
   const db = createDb(pool);
@@ -720,7 +751,7 @@ export async function assertARuleCodeCollisionAtTheInsertRollsBackTheTransaction
   const assetId = await seedAsset(db, fx, "RACE");
   await takeTheSeededRuleCode(db, fx, templateId, assetId, "RACE");
   await expectStatus(
-    () => racing.adopt(fx.adminJwt, templateId, { assetIds: [assetId] }),
+    () => racing(async () => undefined).adopt(fx.adminJwt, templateId, { assetIds: [assetId] }),
     409,
     /rule code .* was taken/,
     "a rule code collision at the insert",
@@ -733,5 +764,192 @@ export async function assertARuleCodeCollisionAtTheInsertRollsBackTheTransaction
   assert(
     JSON.stringify(state) === JSON.stringify({ pin: null, added: false, audit: 0 }),
     `the whole transaction must roll back, found ${JSON.stringify(state)}`,
+  );
+}
+
+// --- review fixes (false greens) ---------------------------------------------
+
+/**
+ * Review item 6. Ruling 8's "through the override's own checks": a standalone
+ * formula naming a key the version does not declare measured fails the merged
+ * v1 check. Mutation: the calc gate not run, or its refusal not carrying the asset.
+ */
+export async function assertAStandaloneFormulaTheVersionRejectsRefuses(
+  pool: pg.Pool,
+  svc: Services,
+  fx: AdoptFixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const templateId = await seedVersion(db, fx);
+  const assetId = await seedAsset(db, fx, "CALC", { effFormula: `{${EXTRA}} + 1` });
+  const refusals = await expectRefusal(
+    () => svc.adoption.adopt(fx.adminJwt, templateId, { assetIds: [assetId] }),
+    "a standalone formula the version rejects",
+  );
+  assert(
+    refusals.some(
+      (r) =>
+        r.reason === "calc_override_invalid_on_target" &&
+        r.pointKey === EFF &&
+        r.assetId === assetId &&
+        r.assetCode === `${TEST_ASSET_PREFIX}CALC`,
+    ),
+    `expected calc_override_invalid_on_target on ${EFF} carrying the asset, got ${JSON.stringify(refusals)}`,
+  );
+  await assertNothingWritten(pool, assetId, templateId, "calc gate");
+}
+
+/** Review item 6. Mutation: the metadata gate not run (eng_min 150 kept against eng_max 100). */
+export async function assertAKeptRangeTheVersionInvertsRefuses(
+  pool: pg.Pool,
+  svc: Services,
+  fx: AdoptFixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const templateId = await seedVersion(db, fx, { kwEngMax: 100 });
+  const assetId = await seedAsset(db, fx, "META", { kwEngMin: 150 });
+  const refusals = await expectRefusal(
+    () => svc.adoption.adopt(fx.adminJwt, templateId, { assetIds: [assetId] }),
+    "a kept range the version inverts",
+  );
+  assert(
+    refusals.some(
+      (r) => r.reason === "metadata_override_invalid_on_target" && r.pointKey === KW && r.assetId === assetId,
+    ),
+    `expected metadata_override_invalid_on_target on ${KW}, got ${JSON.stringify(refusals)}`,
+  );
+  await assertNothingWritten(pool, assetId, templateId, "metadata gate");
+}
+
+/**
+ * Review item 7. The asset is pinned to another version after the plan was
+ * read: the pin UPDATE's `template_id IS NULL` matches nothing and the
+ * row-count check rolls back. Mutation: `isNull(assets.templateId)` dropped from
+ * the WHERE (the other pin is overwritten), or the count check removed.
+ */
+export async function assertAPinTakenAfterThePlanRollsBack(
+  pool: pg.Pool,
+  racing: Racing,
+  fx: AdoptFixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const templateId = await seedVersion(db, fx);
+  const other = await seedVersion(db, fx, { version: 2 });
+  const assetId = await seedAsset(db, fx, "PINRACE");
+  const service = racing(async () => {
+    await pool.query(`UPDATE bms.assets SET template_id = $2 WHERE id = $1`, [assetId, other]);
+  });
+  await expectStatus(
+    () => service.adopt(fx.adminJwt, templateId, { assetIds: [assetId] }),
+    409,
+    /Adoption matched 0 of 1 selected assets/,
+    "a pin taken after the plan",
+  );
+  const state = {
+    pin: await pinOf(pool, assetId),
+    added: (await pointRows(pool, assetId)).some((row) => row.point_key === KVA),
+    audit: await adoptAuditCount(pool, templateId),
+  };
+  assert(
+    JSON.stringify(state) === JSON.stringify({ pin: other, added: false, audit: 0 }),
+    `the other pin must stand and nothing be written, found ${JSON.stringify(state)}`,
+  );
+}
+
+/**
+ * Review item 7. A point added on the asset after the plan was read reaches
+ * `asset_points_asset_id_point_key_unique`: a 409 in adoption's words, and the
+ * pin rolls back with it. Mutation: the insert outside `translateConstraintErrors`
+ * (a raw 23505), or outside the transaction (the pin survives).
+ */
+export async function assertAPointAddedAfterThePlanRollsBack(
+  pool: pg.Pool,
+  racing: Racing,
+  fx: AdoptFixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const templateId = await seedVersion(db, fx);
+  const assetId = await seedAsset(db, fx, "ROWRACE");
+  const service = racing(async () => {
+    await db.insert(assetPoints).values({
+      assetId,
+      organizationId: fx.organizationId,
+      pointKey: KVA,
+      sourceDataKey: `${TEST_ASSET_PREFIX}ROWRACE/${KVA}/LATE`,
+      sourceKind: "unmapped",
+      rtuId: null,
+      active: true,
+    });
+  });
+  await expectStatus(
+    () => service.adopt(fx.adminJwt, templateId, { assetIds: [assetId] }),
+    409,
+    /^This adoption is refused\. Nothing was written\./,
+    "a point added after the plan",
+  );
+  const state = { pin: await pinOf(pool, assetId), audit: await adoptAuditCount(pool, templateId) };
+  assert(
+    JSON.stringify(state) === JSON.stringify({ pin: null, audit: 0 }),
+    `the pin must roll back with the insert, found ${JSON.stringify(state)}`,
+  );
+}
+
+/**
+ * Review item 8. A version of another organization is a 403 before anything
+ * else is read about it — not the 409 its status or the assets would earn.
+ * Mutation: the `canManageOrganization` check removed or moved after the status check.
+ */
+export async function assertAVersionOutsideTheCallersScopeIs403(
+  pool: pg.Pool,
+  svc: Services,
+  fx: AdoptFixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const { rows } = await pool.query<{ organization_id: string }>(
+    `SELECT organization_id FROM bms.locations WHERE id = $1`,
+    [fx.foreignLocationId],
+  );
+  const foreign = rows[0]?.organization_id;
+  assert(foreign !== undefined, "fixture defect: the foreign location has no organization");
+  const templateId = await seedVersion(db, fx, { organizationId: foreign, status: "draft" });
+  const assetId = await seedAsset(db, fx, "FOREIGN");
+  await expectStatus(
+    () => svc.adoption.adopt(fx.locationAdminJwt, templateId, { assetIds: [assetId] }),
+    403,
+    /Template is outside your access scope/,
+    "another organization's version",
+  );
+}
+
+/**
+ * Review items 2 and 9. A dashboard already holding the slug the version's
+ * default view derives for the asset refuses at the plan, by asset code —
+ * the preview says so, and nothing is pinned. Mutation: the slug check not run
+ * (the apply would 409 inside the transaction after a green preview).
+ */
+export async function assertATakenDashboardSlugRefusesAtThePreview(
+  pool: pg.Pool,
+  svc: Services,
+  fx: AdoptFixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const templateId = await seedVersion(db, fx);
+  const assetId = await seedAsset(db, fx, "SLUG");
+  await db.insert(dashboards).values({
+    organizationId: fx.organizationId,
+    slug: dashboardSlug(`${TEST_ASSET_PREFIX}SLUG`, VIEW),
+    name: "Hand-made",
+    assetId,
+  });
+  const preview = await svc.adoption.preview(fx.adminJwt, templateId, { assetIds: [assetId] });
+  const state = {
+    canApply: preview.canApply,
+    reasons: preview.refusals.map((r) => `${r.reason}:${r.assetCode}`),
+    pin: await pinOf(pool, assetId),
+  };
+  assert(
+    JSON.stringify(state) ===
+      JSON.stringify({ canApply: false, reasons: [`dashboard_slug_taken:${TEST_ASSET_PREFIX}SLUG`], pin: null }),
+    `expected a dashboard_slug_taken refusal at the preview, got ${JSON.stringify(state)}`,
   );
 }

@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 
-import { assetPoints, assetTemplates, assets, automationRules } from "@bms/db";
+import { assetPoints, assetTemplates, assets, automationRules, dashboards } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   AdoptAssetsBody,
@@ -25,18 +25,17 @@ import { AccessControlService } from "../../auth/access-control.service";
 import { CalcDependencyService } from "../../calc/calc-dependency.service";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
-import { translateConstraintErrors } from "../../database/translate-constraint-errors";
+import { constraintOf, translateConstraintErrors } from "../../database/translate-constraint-errors";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
-import { dashboardWidgetRowsFor } from "./asset-dashboards-plan";
+import { dashboardSlug, dashboardWidgetRowsFor, sortedViewNames } from "./asset-dashboards-plan";
 import { planAdoption, type PlannedAdoption } from "./asset-templates-adopt-plan";
 import {
   assertAlarmVocabulariesStillLive,
   assertBatchFits,
   assertRuleCodesFree,
   parseTemplateContentForInstantiate,
-  translateAssetCodeCollision,
 } from "./asset-templates-instantiate-guards";
 import { refuseOverridesThatDoNotSurvive, type RefusedAsset } from "./asset-templates-migrate-calc";
 import { translateAssetPointInsertUnique } from "./asset-templates-migrate-constraints";
@@ -172,16 +171,24 @@ export class AssetTemplateAdoptionService {
     // One clock for the batch, as instantiate: every seeded rule carries one time.
     const now = new Date();
 
-    // `translateAssetCodeCollision` rewrites only a `23505` on
-    // `automation_rules_org_code_idx` (or `assets_code_unique`, which this
-    // path cannot raise); every other error passes through. A rule code taken
-    // between the plan and the insert therefore rolls the WHOLE transaction
-    // back — pin, rows, rules, dashboards and audit.
+    // `translateRuleCodeCollision` rewrites only a `23505` on
+    // `automation_rules_org_code_idx`; every other error passes through. A rule
+    // code taken between the plan and the insert therefore rolls the WHOLE
+    // transaction back — pin, rows, rules, dashboards and audit.
     const written = await withTenant(this.tenantDb, template.organizationId, async (tx) => {
       const updated = await tx
         .update(assets)
         .set({ templateId: template.id })
-        .where(and(inArray(assets.id, assetIds), isNull(assets.templateId)))
+        // The planner's three whole-asset checks, restated on the write: still
+        // template-less, still the version's organization and domain.
+        .where(
+          and(
+            inArray(assets.id, assetIds),
+            isNull(assets.templateId),
+            eq(assets.organizationId, template.organizationId),
+            eq(assets.domain, template.domain),
+          ),
+        )
         .returning({ id: assets.id });
       // Under 0047's FORCE an UPDATE whose row fails the tenant policy affects
       // zero rows without erroring, and `template_id IS NULL` misses an asset
@@ -190,8 +197,8 @@ export class AssetTemplateAdoptionService {
       if (updated.length !== assetIds.length) {
         throw new ConflictException(
           `Adoption matched ${updated.length} of ${assetIds.length} selected assets: the rest ` +
-            "were pinned to a template since the plan was read, or are outside the template " +
-            "organization's tenant boundary. Nothing was written.",
+            "were pinned to a template, or moved to another organization or domain, since the " +
+            "plan was read. Nothing was written.",
         );
       }
 
@@ -214,7 +221,7 @@ export class AssetTemplateAdoptionService {
         // The write-time net, as migrate: a row inserted after the plan was
         // read still reaches a unique index, and becomes a 409 with a sentence.
         await translateConstraintErrors(() => tx.insert(assetPoints).values(rows), {
-          onUnique: translateAssetPointInsertUnique,
+          onUnique: (err) => translateAssetPointInsertUnique(err, "adoption"),
         });
       }
 
@@ -277,7 +284,7 @@ export class AssetTemplateAdoptionService {
 
       return { pointsCreated: rows.length, ruleCount: ruleValues.length, dashboardCount };
     }).catch((err: unknown) => {
-      throw translateAssetCodeCollision(err);
+      throw translateRuleCodeCollision(err);
     });
 
     return {
@@ -340,12 +347,18 @@ export class AssetTemplateAdoptionService {
     // Migrate's `F4.64` count refusal: resolve the writable set once, count,
     // never name — a code the caller may not touch is not disclosed.
     const writableLocationIds = await this.accessControl.writableLocationIds(jwt);
+    // A scoped caller's asset of another organization joins the same anonymous
+    // count rather than the planner's named `organization_mismatch`: naming it
+    // would disclose a code across the tenant boundary. A global administrator
+    // (`null`) sees every organization, so the planner names it.
     const refused =
       writableLocationIds === null
         ? 0
         : selected.filter(
             (asset) =>
-              asset.locationId === null || !writableLocationIds.includes(asset.locationId),
+              asset.organizationId !== template.organizationId ||
+              asset.locationId === null ||
+              !writableLocationIds.includes(asset.locationId),
           ).length;
     if (refused > 0) {
       const noun = refused === 1 ? "asset" : "assets";
@@ -359,10 +372,10 @@ export class AssetTemplateAdoptionService {
     // Instantiate's content guards: a stored content that no longer parses, or
     // an alarm on a retired vocabulary value, refuses before anything is read
     // for the plan — never a silent zero-rule seed.
-    const content = parseTemplateContentForInstantiate(template);
+    const content = parseTemplateContentForInstantiate(template, "adopt");
     const alarms = content.alarms ?? [];
     const views = content.dashboards ?? {};
-    await assertAlarmVocabulariesStillLive(this.vocabularies, this.fleetDb, alarms, template);
+    await assertAlarmVocabulariesStillLive(this.vocabularies, this.fleetDb, alarms, template, "adopt");
     const units = await catalogUnits(this.fleetDb, points);
     const measuredCount = points.filter((point) => point.kind === "measured").length;
     assertBatchFits(selected.length, measuredCount, alarms.length, dashboardWidgetRowsFor(views));
@@ -449,15 +462,18 @@ export class AssetTemplateAdoptionService {
       targetVersion: template.version,
       dependencies: this.dependencies,
       refuse: fromGate,
+      operation: "adopt",
     });
     refuseMetadataOverridesThatDoNotSurvive({
       assets: eligible,
       targetPoints: points,
       targetVersion: template.version,
       refuse: fromGate,
+      operation: "adopt",
     });
 
     await this.refuseTakenRuleCodes(template, eligible, alarms, refuse);
+    await this.refuseTakenDashboardSlugs(template, eligible, views, refuse);
 
     return {
       template,
@@ -514,6 +530,71 @@ export class AssetTemplateAdoptionService {
     }
   }
 
+  /**
+   * The default dashboards' slugs (`dashboardSlug(code, view)`), checked before
+   * the transaction so the preview never says `canApply` where the insert
+   * would 409 on `dashboards_organization_slug_key`: a slug derived twice by
+   * the batch (two codes differing only in punctuation), or one already in the
+   * organization. One read. Refused per asset, by code (`dashboard_slug_taken`).
+   */
+  private async refuseTakenDashboardSlugs(
+    template: TemplateRow,
+    eligible: readonly RefusedAsset[],
+    views: Readonly<Record<string, TemplateDashboardView>>,
+    refuse: (refusal: TemplateAdoptionRefusalDto) => void,
+  ): Promise<void> {
+    const viewNames = sortedViewNames(views);
+    if (viewNames.length === 0 || eligible.length === 0) {
+      return;
+    }
+    const wanted = eligible.map((asset) => ({
+      asset,
+      slugs: viewNames.map((view) => dashboardSlug(asset.assetCode, view)),
+    }));
+    const taken = new Set(
+      (
+        await this.fleetDb
+          .select({ slug: dashboards.slug })
+          .from(dashboards)
+          .where(
+            and(
+              eq(dashboards.organizationId, template.organizationId),
+              inArray(
+                dashboards.slug,
+                wanted.flatMap((entry) => entry.slugs),
+              ),
+            ),
+          )
+      ).map((row) => row.slug),
+    );
+    const firstHolder = new Map<string, string>();
+    for (const { asset, slugs } of wanted) {
+      const clashes: string[] = [];
+      for (const slug of slugs) {
+        const earlier = firstHolder.get(slug);
+        if (taken.has(slug)) {
+          clashes.push(`"${slug}" is already a dashboard in this organization`);
+        } else if (earlier !== undefined && earlier !== asset.assetCode) {
+          clashes.push(`"${slug}" is also derived for asset "${earlier}" in this batch`);
+        } else {
+          firstHolder.set(slug, asset.assetCode);
+        }
+      }
+      if (clashes.length > 0) {
+        refuse({
+          reason: "dashboard_slug_taken",
+          assetId: asset.assetId,
+          assetCode: asset.assetCode,
+          pointKey: null,
+          message:
+            `Asset "${asset.assetCode}": the version's default dashboard slug ${clashes.join("; ")}. ` +
+            "A dashboard slug is unique per organization. Rename or delete that dashboard, or " +
+            "adopt the assets in separate batches, then adopt.",
+        });
+      }
+    }
+  }
+
   private async fetchTemplate(id: string): Promise<TemplateRow> {
     const [row] = await this.fleetDb
       .select()
@@ -525,4 +606,19 @@ export class AssetTemplateAdoptionService {
     }
     return row;
   }
+}
+
+/**
+ * The adoption's rule-code backstop — `translateAssetCodeCollision`'s rule
+ * branch in this operation's words: adoption creates no asset, so "no asset, no
+ * point and no rule" would be a sentence about the wrong act.
+ */
+export function translateRuleCodeCollision(err: unknown): unknown {
+  if (constraintOf(err) === "automation_rules_org_code_idx") {
+    return new ConflictException(
+      "A rule code this template's alarms would seed was taken while the adoption was being " +
+        "written. Nothing was written, so retry.",
+    );
+  }
+  return err;
 }

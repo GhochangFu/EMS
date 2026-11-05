@@ -70,6 +70,11 @@ export type MetadataSurvivalInput = {
    * `F4.312`: the refused asset is the second argument; migrate ignores it.
    */
   readonly refuse: (refusal: TemplateMigrationRefusalDto, asset: RefusedAsset) => void;
+  /**
+   * `F4.312` — whose sentence. Omitted, migrate's, byte for byte. For
+   * `"adopt"` the remedy is to correct the point or change the template, then adopt.
+   */
+  readonly operation?: "migrate" | "adopt";
 };
 
 /**
@@ -111,8 +116,12 @@ export function refuseMetadataOverridesThatDoNotSurvive(input: MetadataSurvivalI
           `Asset "${asset.assetCode}": point "${pointKey}" would have an empty engineering range ` +
           `on version ${targetVersion} — eng_min ${empty.engMin}${source(empty.engMinInherited)}, ` +
           `eng_max ${empty.engMax}${source(empty.engMaxInherited)}. The ingest host would ` +
-          "discard every reading of the point. Clear or restate the override on the asset " +
-          `(Asset Points, bulk editor), then migrate to version ${targetVersion}.`,
+          "discard every reading of the point. " +
+          (input.operation === "adopt"
+            ? "Correct the point's range on the asset (Asset Points, bulk editor), or change " +
+              `the template, then adopt version ${targetVersion}.`
+            : "Clear or restate the override on the asset " +
+              `(Asset Points, bulk editor), then migrate to version ${targetVersion}.`),
       };
       refuse(refusal, { assetId: asset.assetId, assetCode: asset.assetCode });
     }

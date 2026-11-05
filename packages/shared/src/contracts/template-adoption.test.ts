@@ -9,7 +9,8 @@ import {
   anEchoedPlanIsRefused,
   anEmptyBatchIsRefused,
   theCapIsTheCalcBatchCap,
-  theVocabularyHoldsTheTwelveReasons,
+  aPlanWithoutInheritedDefaultsIsRefused,
+  theVocabularyHoldsTheThirteenReasons,
 } from "./template-adoption.spec";
 
 /** `F4.312` — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
@@ -21,7 +22,8 @@ describe("F4.312 — template adoption contracts (ADR 0109 Amendment 1)", () => 
   it("refuses a repeated asset id", () => aRepeatedIdIsRefused());
   it("refuses an id that is not a uuid", () => aNonUuidIdIsRefused());
   it("refuses a plan echoed back in the body", () => anEchoedPlanIsRefused());
-  it("holds the twelve refusal reasons", () => theVocabularyHoldsTheTwelveReasons());
+  it("holds the thirteen refusal reasons", () => theVocabularyHoldsTheThirteenReasons());
+  it("requires inheritsDefaults on a per-asset plan", () => aPlanWithoutInheritedDefaultsIsRefused());
   it("requires the true refusal count on a preview", () =>
     aPreviewWithoutTheRefusalCountIsRefused());
 });

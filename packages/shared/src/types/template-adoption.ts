@@ -12,6 +12,9 @@ export type AdoptAssetsBody = z.infer<typeof TA.adoptAssetsBodySchema>;
 export type TemplateAdoptionRefusalReason = z.infer<typeof TA.templateAdoptionRefusalReasonSchema>;
 export type TemplateAdoptionRefusalDto = z.infer<typeof TA.templateAdoptionRefusalDtoSchema>;
 export type TemplateAdoptionAddedPointDto = z.infer<typeof TA.templateAdoptionAddedPointDtoSchema>;
+export type TemplateAdoptionInheritedDefaultsDto = z.infer<
+  typeof TA.templateAdoptionInheritedDefaultsDtoSchema
+>;
 export type TemplateAdoptionAssetPlanDto = z.infer<typeof TA.templateAdoptionAssetPlanDtoSchema>;
 export type TemplateAdoptionPreviewResponse = z.infer<
   typeof TA.templateAdoptionPreviewResponseSchema

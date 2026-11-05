@@ -36,6 +36,15 @@ export async function pointIdsByKey(
   return new Map(rows.map((row) => [row.pointKey, row.id]));
 }
 
+/**
+ * One version's `template_points`, in `sort_order` then `point_key` order,
+ * projected to the {@link StoredTemplatePoint} subset the delta, the override
+ * gates and the adoption planner read.
+ *
+ * @param fleetDb the fleet executor — the callers have already applied the
+ *   writable-scope grant
+ * @param templateId the version
+ */
 export async function loadPoints(
   fleetDb: BmsDb,
   templateId: string,

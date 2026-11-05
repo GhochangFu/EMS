@@ -50,15 +50,41 @@ const derived = (pointKey: string, overrides: Partial<StoredTemplatePoint> = {})
     formulaDialect: "bms-calc-v1",
     calcTrigger: "scheduled",
     calcIntervalSeconds: 60,
+    maxInputAgeSeconds: 300,
     ...overrides,
   });
 
 function row(pointKey: string, overrides: Partial<AdoptionExistingRow> = {}): AdoptionExistingRow {
-  return { pointKey, sourceKind: "measured", sourceDataKey: `RTU/${pointKey}`, unit: null, ...overrides };
+  return {
+    pointKey,
+    sourceKind: "measured",
+    sourceDataKey: `RTU/${pointKey}`,
+    unit: null,
+    formula: null,
+    formulaDialect: null,
+    calcTrigger: null,
+    calcIntervalSeconds: null,
+    maxInputAgeSeconds: null,
+    scaleMultiplier: null,
+    scaleOffset: null,
+    engMin: null,
+    engMax: null,
+    qualityPolicy: null,
+    ...overrides,
+  };
 }
 
+/** A standalone point states every calc column but the staleness bound, which the version sets. */
 const computed = (pointKey: string, unit: string | null = null): AdoptionExistingRow =>
-  row(pointKey, { sourceKind: "computed", sourceDataKey: `computed:${pointKey}`, unit });
+  row(pointKey, {
+    sourceKind: "computed",
+    sourceDataKey: `computed:${pointKey}`,
+    unit,
+    formula: "{KVA} + 1",
+    formulaDialect: "bms-calc-v1",
+    calcTrigger: "scheduled",
+    calcIntervalSeconds: 120,
+  });
 
 function asset(overrides: Partial<AdoptionAsset> = {}): AdoptionAsset {
   return {
@@ -285,4 +311,42 @@ export function everyPointRefusalNamesTheAssetCodeAndThePointKey(): void {
   );
   // The count rides with the list, so a fixture that stops producing six refusals cannot pass vacuously.
   expect([r.refusals.length, unnamed]).toEqual([6, []]);
+}
+
+/** Review item 3 / ruling 3. Mutation: the trim dropped → a whitespace row unit refuses. */
+export function aWhitespaceRowUnitIsBlank(): void {
+  expect(reasons(run([point("KW", { unit: "kW" })], [row("KW", { unit: "  " })]))).toEqual([]);
+}
+
+/** Review item 3. Mutation: the version side not blanked → an empty template unit refuses. */
+export function anEmptyVersionUnitIsBlank(): void {
+  expect(reasons(run([point("KW", { unit: "" })], [row("KW", { unit: "W" })]))).toEqual([]);
+}
+
+/** Review item 1. Mutation: `reportInherited` not called for a kept row. */
+export function aKeptRowListsTheMetadataItInherits(): void {
+  const r = run([point("KW", { engMax: 100, qualityPolicy: "reject" })], [row("KW", { engMin: 0 })]);
+  expect(r.plans[0]?.dto.inheritsDefaults).toEqual([{ pointKey: "KW", fields: ["engMax", "qualityPolicy"] }]);
+}
+
+/** Review item 1. Mutation: the row's own value ignored → a field the row sets is listed. */
+export function aFieldTheRowSetsIsNotInherited(): void {
+  const r = run([point("KW", { engMax: 100 })], [row("KW", { engMax: 90 })]);
+  expect(r.plans[0]?.dto.inheritsDefaults).toEqual([]);
+}
+
+/** Review item 1. Mutation: the calc columns not compared for a converted row. */
+export function aConvertedRowListsTheCalcColumnsItInherits(): void {
+  const r = run([derived("KW_X2")], [computed("KW_X2")]);
+  expect(r.plans[0]?.dto.inheritsDefaults).toEqual([{ pointKey: "KW_X2", fields: ["maxInputAgeSeconds"] }]);
+}
+
+/** Review item 10. Mutation: `operation: "adopt"` dropped → the sentence tells the operator to rebuild. */
+export function anUnresolvableRefusalGivesTheAdoptRemedy(): void {
+  const [refusal] = run([point("KW", { sourceDataKeyPattern: "{panel}/KW" })], []).refusals;
+  expect([
+    refusal?.message.includes("adoption cannot resolve {panel}"),
+    refusal?.message.includes('Add "KW" on the asset first'),
+    /rebuild|migrat/i.test(refusal?.message ?? ""),
+  ]).toEqual([true, true, false]);
 }

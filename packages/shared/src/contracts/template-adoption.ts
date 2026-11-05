@@ -77,6 +77,11 @@ export const templateAdoptionRefusalReasonSchema = z.enum([
   "metadata_override_invalid_on_target",
   /** A rule code the version's alarms would seed on the asset is taken. */
   "rule_code_taken",
+  /**
+   * A default dashboard slug the version would write for the asset is taken in
+   * the organization, or derived twice by the batch (`dashboards_organization_slug_key`).
+   */
+  "dashboard_slug_taken",
 ]);
 
 /**
@@ -100,6 +105,18 @@ export const templateAdoptionAddedPointDtoSchema = z.object({
 });
 
 /**
+ * A kept or converted row that will read a value from the version through
+ * `coalesce(asset, template)`: `fields` names each column the version sets and
+ * the row leaves NULL (instrument metadata for a kept measured row, calc
+ * columns for a converted one). Reported, never refused — no ruling covers it
+ * yet, so the preview says it and the operator decides.
+ */
+export const templateAdoptionInheritedDefaultsDtoSchema = z.object({
+  pointKey: z.string(),
+  fields: z.array(z.string()),
+});
+
+/**
  * One asset's plan. `kept` are the existing rows whose key the version
  * declares measured, plus the rows it does not declare (A2); `converted` are
  * the standalone calculated points whose key the version declares derived,
@@ -114,6 +131,7 @@ export const templateAdoptionAssetPlanDtoSchema = z.object({
   added: z.array(templateAdoptionAddedPointDtoSchema),
   converted: z.array(z.string()),
   skipped: z.array(z.string()),
+  inheritsDefaults: z.array(templateAdoptionInheritedDefaultsDtoSchema),
 });
 
 /**

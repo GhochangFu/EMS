@@ -3,6 +3,7 @@ import { expect } from "vitest";
 import {
   TEMPLATE_ADOPTION_MAX_ASSETS,
   adoptAssetsBodySchema,
+  templateAdoptionAssetPlanDtoSchema,
   templateAdoptionPreviewResponseSchema,
   templateAdoptionRefusalReasonSchema,
 } from "./template-adoption";
@@ -54,8 +55,8 @@ export function anEchoedPlanIsRefused(): void {
   );
 }
 
-/** Catches a reason dropped from the vocabulary: all twelve plan 1.1 reasons are members. */
-export function theVocabularyHoldsTheTwelveReasons(): void {
+/** Catches a reason dropped from the vocabulary: plan 1.1's twelve plus `dashboard_slug_taken`. */
+export function theVocabularyHoldsTheThirteenReasons(): void {
   expect([...templateAdoptionRefusalReasonSchema.options].sort()).toEqual(
     [
       "already_pinned",
@@ -70,6 +71,7 @@ export function theVocabularyHoldsTheTwelveReasons(): void {
       "calc_override_invalid_on_target",
       "metadata_override_invalid_on_target",
       "rule_code_taken",
+      "dashboard_slug_taken",
     ].sort(),
   );
 }
@@ -85,4 +87,18 @@ export function aPreviewWithoutTheRefusalCountIsRefused(): void {
     canApply: true,
   };
   expect(templateAdoptionPreviewResponseSchema.safeParse(preview).success).toBe(false);
+}
+
+/** Catches `inheritsDefaults` dropped from the per-asset plan (review item 1). */
+export function aPlanWithoutInheritedDefaultsIsRefused(): void {
+  const plan = {
+    assetId: "a",
+    assetCode: "PUMP-01",
+    assetName: "Pump",
+    kept: [],
+    added: [],
+    converted: [],
+    skipped: [],
+  };
+  expect(templateAdoptionAssetPlanDtoSchema.safeParse(plan).success).toBe(false);
 }
