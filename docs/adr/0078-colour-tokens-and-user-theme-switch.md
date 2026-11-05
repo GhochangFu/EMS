@@ -613,3 +613,31 @@ ruled for a new palette rather than a subset of the old one *(owner, Q9)*.
    here; it is a separate row with its own record. The roles are stored by
    name in a widget config, never as a value, so a later profile can give them
    new values without a data change.
+
+## Amendment 5 — the `ok` role and the organization colour profiles (`F4.310`, 2026-11-05)
+
+**Status: Proposed 2026-11-05, with [ADR 0110](./0110-organization-colour-profiles.md).**
+The owner's rulings are recorded in ADR 0110 (Q1–Q9). This amendment records
+only what changes in the role vocabulary.
+
+1. **A 50th role, `ok`** (ADR 0110 Q1). `accent` today means both the brand
+   green and the "OK / healthy" state. The state uses move to `ok`; the brand
+   uses stay on `accent`. `ok` has today's `accent` values exactly (`#00A651`
+   light, `#3DCD58` dark), so no pixel moves. `ok` joins `ROLE_NAMES` and the
+   Tailwind role map, and the role-count comments and gates follow 49 → 50.
+2. **Fixed and changeable roles.** Each role is in exactly one list (ADR 0110
+   decision 2). A **fixed** role (`ok`, `ok-ink`, `ok-wash`, every `critical*`,
+   `warning*` and `info*` role, `simulated-ink`, `on-dark`, `scrim`) has one
+   light and one dark value for every profile. A **changeable** role (the
+   neutrals, `accent`, `accent-strong`, `chrome`, `chrome-nav`, `on-accent`,
+   `focus`, `series-1` … `series-8`) gets a value in each profile block.
+3. **Profile blocks.** The two blocks of decision 1 stay the default
+   (`nexus`) values. A profile adds
+   `:root[data-profile="<name>"]:not([data-theme="dark"])` and
+   `:root[data-profile="<name>"][data-theme="dark"]` blocks that set only the
+   changeable roles. Decision 6's contrast rule, and Amendment 4's S1/S2 rule,
+   apply to each profile in both themes; a new profile's allowlist is empty
+   (ADR 0110 decision 5).
+4. **Not changed.** Decision 4's per-browser Light/Dark choice, and ADR 0085's
+   Neumorphic/Flat choice, stay as they are. The profile is chosen per
+   organization, not per user.
