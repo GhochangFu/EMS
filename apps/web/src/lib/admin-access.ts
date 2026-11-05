@@ -356,6 +356,10 @@ export const masterDataTabs = [
   // page from a role that can legitimately use it.
   { label: "Asset Groups", path: "/admin/asset-groups", area: "reference" },
   { label: "Point Keys", path: "/admin/point-keys", catalogOnly: true, area: "reference" },
+  // `F4.309` (ADR 0088 Amendment 3 decisions 1–2, owner rulings Q1 and Q4): the state labels of
+  // switching point keys, gated like Location Types — every route, the read included, is the
+  // global `admin`'s, and the page fails closed for any other role.
+  { label: "State Labels", path: "/admin/point-key-states", globalAdminOnly: true, area: "reference" },
   // `F4.300` (ADR 0108 decision 3, plan C10). `trendPointsAdmin`: every route behind the page
   // refuses a role that is not an organization-level administrator, so the tab is hidden from
   // the others, who would meet only the page's refusal sentence.

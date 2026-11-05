@@ -1,4 +1,4 @@
-import { MIMIC_LAYOUT_BOUNDS } from "@bms/shared/contracts";
+import { MIMIC_HEADLINE_POINTS, MIMIC_LAYOUT_BOUNDS } from "@bms/shared/contracts";
 import {
   MIMIC_PRESETS,
   MIMIC_SYMBOL_LIBRARIES,
@@ -68,6 +68,12 @@ export type EditorNodePatch = {
   readonly isSource?: boolean;
   /** `F3.80` (ADR 0101 d4) — units only: the unit gates the flow whatever its symbol. */
   readonly isSwitching?: boolean;
+  /**
+   * `F4.307` (ADR 0081 Amendment 1 decision 5) — a roled unit's own value rows, in display
+   * order. Deduped and clamped to `MIMIC_HEADLINE_POINTS`; a panel, a label or a role-less unit
+   * keeps `[]`.
+   */
+  readonly pointKeys?: readonly string[];
   readonly x?: number;
   readonly y?: number;
   readonly w?: number;
@@ -297,9 +303,12 @@ function updateNode(state: EditorState, key: string, patch: EditorNodePatch): Ed
     isSwitching: node.kind === "unit" ? (patch.isSwitching ?? node.isSwitching) : false,
     ...box,
   };
-  // F4.307: only a roled unit lists points, so clearing the role clears the list.
-  if (next.roleCode === null) {
+  // F4.307: only a roled unit lists points, so clearing the role clears the list. A node's kind
+  // never changes in place (no action takes one), so a panel or label keeps the `[]` it was made with.
+  if (node.kind !== "unit" || next.roleCode === null) {
     next.pointKeys = [];
+  } else if (patch.pointKeys !== undefined) {
+    next.pointKeys = [...new Set(patch.pointKeys)].slice(0, MIMIC_HEADLINE_POINTS);
   }
   return commit(state, withNode(state.layout, key, () => next));
 }
@@ -489,6 +498,41 @@ export function toWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
     pipes: layout.pipes.map((pipe) => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),
     symbolLibraries: [...layout.symbolLibraries],
   };
+}
+
+/** Code-point order, the same on every engine: the canonical form only needs a total order. */
+function byText(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * The write body as the server stores it, so two saves of one layout compare equal: nodes by
+ * (z, y, x, key) and pipes by (fromKey, toKey) as `MimicLayoutsService.toDto` answers them, the
+ * name and every label trimmed as the contract trims them, and the libraries as a set. A unit's
+ * `pointKeys` keep their order: the order is what the unit draws.
+ */
+function canonicalWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
+  const body = toWriteBody(layout);
+  return {
+    ...body,
+    name: body.name.trim(),
+    nodes: body.nodes
+      .map((node) => ({ ...node, label: node.label.trim(), z: node.z ?? 0 }))
+      .sort((a, b) => a.z - b.z || a.y - b.y || a.x - b.x || byText(a.key, b.key)),
+    pipes: [...body.pipes].sort((a, b) => byText(a.fromKey, b.fromKey) || byText(a.toKey, b.toKey)),
+    symbolLibraries: [...(body.symbolLibraries ?? [])].sort(byText),
+  };
+}
+
+/**
+ * `F4.308` (ADR 0081 Amendment 2 decision 4, plan C11) — whether the editor's layout differs from
+ * the last save, compared as the server stores them (`canonicalWriteBody`): what a Save would
+ * change is an edit; an undo back to the saved layout, or the server's own order and trimming,
+ * is none. The preview draws the saved layout, so while this is true it says "Save to refresh
+ * the preview".
+ */
+export function hasUnsavedEdits(layout: EditorLayout, saved: MimicLayoutDto): boolean {
+  return JSON.stringify(canonicalWriteBody(layout)) !== JSON.stringify(canonicalWriteBody(layoutFromDto(saved)));
 }
 
 /**

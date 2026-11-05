@@ -55,6 +55,7 @@ export async function assertAssetWriteLifecycleSurvivesRealRls(
   const fetched = await svc.getById(jwt, created.id);
   expect(fetched.id).toBe(created.id);
   expect(fetched.organizationId).toBe(organizationId);
+  expect(fetched.domain).toBe(domain);
 
   const updated = await svc.update(jwt, created.id, { name: "E7.1b RLS renamed" });
   expect(updated.name).toBe("E7.1b RLS renamed");

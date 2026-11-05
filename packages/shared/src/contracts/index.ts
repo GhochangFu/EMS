@@ -79,6 +79,8 @@ export * from "./location-writes";
 export * from "./mimic-layout-writes";
 export * from "./mimic-symbol-library-writes";
 export * from "./point-key-writes";
+// `F4.309` (ADR 0088 Amendment 3): the state-label write bodies.
+export * from "./point-key-state-writes";
 export * from "./site-segment-views";
 export * from "./trend-points";
 export * from "./trend-strip";
@@ -112,6 +114,8 @@ export * from "./telemetry-entry";
 export * from "./telemetry-import";
 export * from "./template-lifecycle";
 export * from "./template-migration";
+// `F4.312` (ADR 0109 Amendment 1): the template-adoption body and responses.
+export * from "./template-adoption";
 export * from "./user-grants";
 export * from "./users";
 export type { Assignable, Measured, Strict } from "./equality";

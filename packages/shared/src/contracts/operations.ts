@@ -8,6 +8,8 @@
  */
 import { z } from "zod";
 
+import { switchingStateDtoSchema } from "./point-key-states";
+
 // ---------------------------------------------------------------------------
 // Energy
 // ---------------------------------------------------------------------------
@@ -507,7 +509,7 @@ export const waterBalanceRoleDtoSchema = z.object({
 });
 
 /**
- * `GET /api/v1/vocabularies` — all seven open vocabularies in one response.
+ * `GET /api/v1/vocabularies` — all seven open vocabularies, and the switching states, in one response.
  *
  * One endpoint rather than four because every consumer needs them together:
  * the rules page renders a concern badge beside a plant badge and a severity
@@ -552,6 +554,11 @@ export const vocabulariesResponseSchema = z.object({
    * from anywhere else is the one vocabulary a reader has to go looking for.
    */
   waterBalanceRoles: z.array(waterBalanceRoleDtoSchema),
+  /**
+   * `F4.309` / ADR 0088 Amendment 3 decision 5 — every `bms.point_key_states` row, ordered by
+   * point key then value, for the state legend. Required (owner ruling Q5 (a)).
+   */
+  switchingStates: z.array(switchingStateDtoSchema),
 });
 export const automationRuleOperatorSchema = z.enum(["gt", "gte", "lt", "lte", "eq"]);
 /**

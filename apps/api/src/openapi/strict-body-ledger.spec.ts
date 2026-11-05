@@ -47,7 +47,11 @@ import {
   updateMaintenanceScheduleBodySchema,
   // `F4.300` (ADR 0108 decision 3.7): the replace-all trend-point body.
   putOrgTrendPointsBodySchema,
+  adoptAssetsBodySchema,
   setOrganizationColourProfileBodySchema,
+  // `F4.309` (ADR 0088 Amendment 3): the state-label write bodies.
+  createPointKeyStateBodySchema,
+  updatePointKeyStateBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -240,6 +244,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   createNotificationChannelBodySchema,
   createOrganizationBodySchema,
   createPointKeyBodySchema,
+  createPointKeyStateBodySchema,
   // `F3.21` (ADR 0090 Amendment 1 A5). Both `.strict()`: the response's own
   // fields (`keyLast4`, `source`, `platform`) sent back must be a 400, never
   // silently dropped.
@@ -266,6 +271,8 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   loginBodySchema,
   manualReadingsBodySchema,
   migrateAssetsBodySchema,
+  // `F4.312` (ADR 0109 Amendment 1). Strict: a plan echoed back must be a 400 (owner ruling 1).
+  adoptAssetsBodySchema,
   patchDraftBodySchema,
   putDashboardWidgetsBodySchema,
   appendWidgetBodySchema,
@@ -334,6 +341,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F4.310` (ADR 0110 decision 7): `.strict()`, so a stray field is a 400.
   setOrganizationColourProfileBodySchema,
   updatePointKeyBodySchema,
+  updatePointKeyStateBodySchema,
   updateRtuBodySchema,
   updateWorkOrderStatusBodySchema,
 };
@@ -844,6 +852,10 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
   // Amendment 2 item 3): a range and an optional group uuid, `.strict()`, no body —
   // the same precedent.
   //
+  // 32 -> 33: `F4.308` registered `mimicLayoutPreviewQuerySchema`
+  // (`GET /mimic-layouts/:id/preview?assetGroupId=`, ADR 0081 Amendment 2 decision 2):
+  // one required group uuid, `.strict()`, no body — the same precedent.
+  //
   // Note that `healthSummaryQuerySchema` is `assetHealthQuerySchema.extend(...)`
   // — legal here, since the ADR 0030 combinator ban applies inside
   // `packages/shared/src/contracts/`, not to an `apps/api` query schema. The
@@ -853,7 +865,7 @@ export function testEveryRegisteredSchemaIsUnderAudit(): void {
     "QUERY_SCHEMAS is the deliberately-excluded list, not an escape hatch. If a genuinely " +
       "new query schema was registered, widen this number and say so; if a BODY schema was " +
       "put here to quiet the assertion below, put it in BODY_SCHEMAS and decide it.",
-  ).toBe(32);
+  ).toBe(33);
 
   const missing = Object.entries(REQUEST_SCHEMAS)
     .filter(([, schema]) => !known.has(schema))

@@ -58,7 +58,12 @@ import {
   putOrgTrendPointsBodySchema,
   siteTrendStripQuerySchema,
   siteSegmentViewsQuerySchema,
+  // `F4.312` (ADR 0109 Amendment 1): the adoption body, shared by preview and apply.
+  adoptAssetsBodySchema,
   setOrganizationColourProfileBodySchema,
+  // `F4.309` (ADR 0088 Amendment 3): the state-label write bodies.
+  createPointKeyStateBodySchema,
+  updatePointKeyStateBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -131,6 +136,7 @@ import { loginBodySchema } from "../auth/login.schema";
 import { mapSitesQuerySchema } from "../map/map.schema";
 import { loadTrendQuerySchema, locationDashboardQuerySchema } from "../dashboard/dashboard.schema";
 import { siteWidgetsQuerySchema } from "../dashboard-builder/site-widgets.schema";
+import { mimicLayoutPreviewQuerySchema } from "../mimic-layouts/mimic-layouts.schema";
 import { listMaintenanceQuerySchema } from "../maintenance/maintenance.schema";
 import { listReportFilesQuerySchema } from "../reports/report-files.schema";
 // `F4.280` (ADR 0030): the report write bodies and the energy query live in `@bms/shared`;
@@ -259,6 +265,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AssetTemplatesAdminController_list: templateStatusQuerySchema,
   AssetTemplatesAdminController_migrate: migrateAssetsBodySchema,
   AssetTemplatesAdminController_previewMigration: migrateAssetsBodySchema,
+  // `F4.312` (ADR 0109 Amendment 1 decision 4) — one body for both routes, as migrate's.
+  AssetTemplatesAdminController_adopt: adoptAssetsBodySchema,
+  AssetTemplatesAdminController_previewAdoption: adoptAssetsBodySchema,
   // `E2.4` (ADR 0058 decision 8) — the per-rule re-apply body.
   AssetTemplatesAdminController_reapplySeededRules: reapplySeededRulesBodySchema,
   AssetTemplatesAdminController_update: updateAssetTemplateBodySchema,
@@ -325,6 +334,8 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.32c` (ADR 0081 decision 3) — the mimic layout library's two write bodies.
   MimicLayoutsController_create: createMimicLayoutBodySchema,
   MimicLayoutsController_replace: putMimicLayoutBodySchema,
+  // `F4.308` (ADR 0081 Amendment 2 decision 2) — the preview's one `.strict()` query key, `assetGroupId`.
+  MimicLayoutsController_preview: mimicLayoutPreviewQuerySchema,
   // `F3.32f` slice 3 (ADR 0086 decisions 4, 6, 7) — the four JSON bodies. `_list` (a query) and
   // `_uploadSymbol` (multipart: the generator hard-codes application/json) are deliberately absent.
   MimicSymbolLibrariesController_create: createMimicOrgSymbolLibraryBodySchema,
@@ -375,6 +386,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   CopilotConversationsController_startOnboarding: copilotStartOnboardingSkillBodySchema,
   PointKeysAdminController_create: createPointKeyBodySchema,
   PointKeysAdminController_update: updatePointKeyBodySchema,
+  // `F4.309` (ADR 0088 Amendment 3). `_list` and `_remove` take no body and no query.
+  PointKeyStatesAdminController_create: createPointKeyStateBodySchema,
+  PointKeyStatesAdminController_update: updatePointKeyStateBodySchema,
   // `F3.5a` (ADR 0071 decision 11). `_download` and `_remove` are absent —
   // one path parameter each, no body, no query; the docblock above says why.
   ReportFilesController_list: listReportFilesQuerySchema,

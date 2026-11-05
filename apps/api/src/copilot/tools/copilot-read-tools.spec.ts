@@ -49,6 +49,7 @@ import { MimicSymbolLibrariesModule } from "../../mimic-symbol-libraries/mimic-s
 import { MimicSymbolLibrariesService } from "../../mimic-symbol-libraries/mimic-symbol-libraries.service";
 import { ReportsCoreModule } from "../../reports/reports-core.module";
 import { LocationSummaryService } from "../../reports/location-summary.service";
+import { PointKeyStatesAdminService } from "../../admin/point-key-states/point-key-states.service";
 import { ReportsService } from "../../reports/reports.service";
 import { TelemetryModule } from "../../telemetry/telemetry.module";
 import { TelemetryService } from "../../telemetry/telemetry.service";
@@ -449,7 +450,8 @@ export async function assertAnInjectedProposeCallFindsNoTool(): Promise<void> {
  * `F4.291` PR 2 inserts `get_alarm_stats` after `get_alarm_kb`; PR 3 inserts
  * `get_point_stats` after `get_point_aggregate` (36 tools). `F4.288` inserts
  * `get_site_point_inventory` after `list_rules` (37 tools). `F4.290` PR 2
- * inserts `get_location_summary` after `get_energy_report_preview` (38 tools).
+ * inserts `get_location_summary` after `get_energy_report_preview` (38 tools). `F4.309` PR 3
+ * inserts `list_point_key_states` after `list_alarm_skills` (39 tools).
  */
 export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
   const { tools } = fakeServices();
@@ -505,6 +507,8 @@ export async function assertTheRegistryIsTheSevenReadTools(): Promise<void> {
     "list_users",
     // `F4.284` owner ruling 2026-10-25 (Q4).
     "list_alarm_skills",
+    // `F4.309` PR 3 (ADR 0099 Amendment 13 ruling Q1): the state labels, for the global admin.
+    "list_point_key_states",
     "open_page",
   ]);
   const extra = await runToolCall(
@@ -641,6 +645,8 @@ export function assertTheModuleWiresTheReadTools(): void {
     SitePointInventoryService,
     // `F4.290` PR 2: the location summary read tool, from `ReportsCoreModule`.
     LocationSummaryService,
+    // `F4.309` PR 3: the state-label read tool, from `AdminModule`.
+    PointKeyStatesAdminService,
   ]);
   const imports = (Reflect.getMetadata("imports", CopilotModule) ?? []) as unknown[];
   for (const module of [
@@ -684,7 +690,7 @@ export function assertTheModuleWiresTheReadTools(): void {
   expect(exportsOf(TelemetryModule)).toContain(TelemetryService);
   expect(exportsOf(DashboardModule)).toContain(DashboardService);
   expect(exportsOf(ReportsCoreModule)).toEqual(expect.arrayContaining([ReportsService, LocationSummaryService]));
-  expect(exportsOf(AdminModule)).toContain(AuditAdminService);
+  expect(exportsOf(AdminModule)).toEqual(expect.arrayContaining([AuditAdminService, PointKeyStatesAdminService]));
   expect(exportsOf(SystemStatusModule)).toContain(SystemStatusService);
-  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(38); // `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills; `F4.291` PR 2: + get_alarm_stats; PR 3: + get_point_stats; `F4.288`: + get_site_point_inventory; `F4.290` PR 2: + get_location_summary.
+  expect(COPILOT_READ_TOOL_DEFINITIONS).toHaveLength(39); // `F4.309` PR 3: + list_point_key_states; `F4.278`: + list_rules; `F4.279`: + the two notification reads; `F4.280`: + list_report_schedules; `F4.281`: + list_maintenance_schedules; `F4.284`: + list_work_orders, list_users; ruling 2026-10-25: + list_alarm_skills; `F4.291` PR 2: + get_alarm_stats; PR 3: + get_point_stats; `F4.288`: + get_site_point_inventory; `F4.290` PR 2: + get_location_summary.
 }

@@ -115,9 +115,25 @@ export type OverrideSurvivalInput = {
    * refuses to share.
    */
   readonly dependencies: Pick<CalcDependencyService, "checkCandidates">;
-  /** `buildPlan`'s own capped collector — the count keeps rising after the list stops. */
-  readonly refuse: (refusal: TemplateMigrationRefusalDto) => void;
+  /**
+   * `buildPlan`'s own capped collector — the count keeps rising after the list stops.
+   *
+   * `F4.312` (plan task 1.4): the refused asset rides as the second argument, so
+   * adoption's refusals carry `assetId`/`assetCode` as fields. Migrate ignores it —
+   * its refusal DTO counts assets rather than naming them.
+   */
+  readonly refuse: (refusal: TemplateMigrationRefusalDto, asset: RefusedAsset) => void;
+  /**
+   * `F4.312` — whose sentences. Omitted, migrate's, byte for byte. For
+   * `"adopt"` the row is a standalone calculated point about to become the
+   * version's override (ruling 8), and the remedy is to correct or delete the
+   * point, or change the template, then adopt.
+   */
+  readonly operation?: "migrate" | "adopt";
 };
+
+/** `F4.312` — the asset a refusal is about, handed to `refuse` beside the refusal. */
+export type RefusedAsset = { readonly assetId: string; readonly assetCode: string };
 
 /**
  * One decision the row-order pass has already reached: a refusal ready to
@@ -131,9 +147,14 @@ export type OverrideSurvivalInput = {
  * which is the order the per-row `await` used to emit them in.
  */
 type PlannedOutcome =
-  | { readonly kind: "refuse"; readonly refusal: TemplateMigrationRefusalDto }
+  | {
+      readonly kind: "refuse";
+      readonly refusal: TemplateMigrationRefusalDto;
+      readonly asset: RefusedAsset;
+    }
   | {
       readonly kind: "cycle-check";
+      readonly assetId: string;
       readonly assetCode: string;
       readonly pointKey: string;
       /** Index into the batch handed to `checkCandidates`, whose answers come back in order. */
@@ -142,6 +163,9 @@ type PlannedOutcome =
 
 export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInput): Promise<void> {
   const { targetPoints, targetVersion, refuse } = input;
+  const adopt = input.operation === "adopt";
+  const adoptRemedy =
+    "Correct or delete the calculated point on the asset, or change the template, then adopt.";
   const targetDerived = new Map(
     targetPoints.filter((point) => point.kind === "derived").map((point) => [point.pointKey, point]),
   );
@@ -196,12 +220,16 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
       if (problems.length > 0) {
         planned.push({
           kind: "refuse",
+          asset: { assetId: asset.assetId, assetCode: asset.assetCode },
           refusal: {
             reason: "calc_override_invalid_on_target",
             pointKey,
             assetCount: 1,
-            message:
-              `Asset "${asset.assetCode}": its calc override on derived point "${pointKey}" does ` +
+            message: adopt
+              ? `Asset "${asset.assetCode}": its standalone calculated point "${pointKey}" does ` +
+                `not pass as version ${targetVersion}'s override of that derived point. ` +
+                `${problems.join(" ")} ${adoptRemedy}`
+              : `Asset "${asset.assetCode}": its calc override on derived point "${pointKey}" does ` +
               `not survive the move to version ${targetVersion}. ${problems.join(" ")} An override ` +
               "states only the columns it sets and inherits the rest, so a new version's formula " +
               "or dialect can turn a pair that was legal when it was written into one this engine " +
@@ -251,6 +279,7 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
       });
       planned.push({
         kind: "cycle-check",
+        assetId: asset.assetId,
         assetCode: asset.assetCode,
         pointKey,
         candidateIndex: candidates.length - 1,
@@ -272,19 +301,23 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
   // list holds the same rows it held when each row was checked in place.
   for (const item of planned) {
     if (item.kind === "refuse") {
-      refuse(item.refusal);
+      refuse(item.refusal, item.asset);
       continue;
     }
     const cycle = cycles[item.candidateIndex];
     if (cycle.length === 0) {
       continue;
     }
-    refuse({
+    const refusal: TemplateMigrationRefusalDto = {
       reason: "calc_override_invalid_on_target",
       pointKey: item.pointKey,
       assetCount: 1,
-      message:
-        `Asset "${item.assetCode}": its calc override on derived point "${item.pointKey}" would ` +
+      message: adopt
+        ? `Asset "${item.assetCode}": its standalone calculated point "${item.pointKey}" would ` +
+          `form a dependency cycle as version ${targetVersion}'s override of that derived point: ` +
+          `${cycle.map((member) => `${member.assetCode}/${member.pointKey}`).join(" → ")}. ` +
+          `Every point on a cycle waits on another, so none of them ever computes. ${adoptRemedy}`
+        : `Asset "${item.assetCode}": its calc override on derived point "${item.pointKey}" would ` +
         `form a dependency cycle once merged with version ${targetVersion}: ` +
         `${cycle.map((member) => `${member.assetCode}/${member.pointKey}`).join(" → ")}. ` +
         "Every point on a cycle waits on another, so none of them ever computes. The " +
@@ -292,6 +325,7 @@ export async function refuseOverridesThatDoNotSurvive(input: OverrideSurvivalInp
         "repointing the asset onto a formula that would stop (ADR 0055 decision 8). Break " +
         "the loop — change the override, or the aggregate scope that draws the other points " +
         "in — then migrate.",
-    });
+    };
+    refuse(refusal, { assetId: item.assetId, assetCode: item.assetCode });
   }
 }

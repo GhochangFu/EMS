@@ -1,8 +1,18 @@
-import { putMimicLayoutBodySchema } from "@bms/shared/contracts";
+import type { MimicLayoutDto } from "@bms/shared";
+import { MIMIC_HEADLINE_POINTS, putMimicLayoutBodySchema } from "@bms/shared/contracts";
 import { expect } from "vitest";
 
 import type { MimicLayoutWriteBody, MimicLayoutWriteNode } from "../api/mimic-layouts";
-import { editorLayoutFromWriteBody, editorReducer, initialEditorState, toWriteBody } from "./mimic-editor";
+import {
+  editorLayoutFromWriteBody,
+  editorReducer,
+  fromPreset,
+  initialEditorState,
+  layoutFromDto,
+  toWriteBody,
+  type EditorLayout,
+  type EditorNodePatch,
+} from "./mimic-editor";
 
 /**
  * `F3.87` PR 5 — the write body ↔ editor layout pair a copilot layout card reads through.
@@ -198,4 +208,73 @@ export function aRoleLessUnitSendsNoList(): void {
   const out = toWriteBody(stale);
   expect(out.nodes[0]).not.toHaveProperty("pointKeys");
   expect(putMimicLayoutBodySchema.safeParse({ version: 1, ...out }).success).toBe(true);
+}
+
+/** A roled unit `u1`, a panel `p1` and a label `l1`, the unit listing `["kw"]`. */
+function pointListLayout(): EditorLayout {
+  return editorLayoutFromWriteBody({
+    name: "L",
+    slug: "l",
+    canvasW: 60,
+    canvasH: 40,
+    symbolLibraries: ["core"],
+    nodes: [
+      { key: "u1", kind: "unit", symbol: "tank", label: "U1", roleCode: "ro", x: 0, y: 0, w: 10, h: 10, z: 10, pointKeys: ["kw"] },
+      { key: "p1", kind: "panel", label: "P1", tone: "info", x: 20, y: 0, w: 10, h: 10, z: 0 },
+      { key: "l1", kind: "label", label: "L1", x: 40, y: 0, w: 10, h: 3, z: 20 },
+    ],
+    pipes: [],
+  });
+}
+
+function listAfter(key: string, patch: EditorNodePatch, layout: EditorLayout = pointListLayout()): readonly string[] | undefined {
+  return editorReducer(initialEditorState(layout), { type: "update-node", key, patch }).layout.nodes.find((n) => n.key === key)
+    ?.pointKeys;
+}
+
+/** `F4.307` T8 — `update-node` stores a roled unit's list in the order given. */
+export function updateNodeStoresAUnitsList(): void {
+  expect(listAfter("u1", { pointKeys: ["flow", "kw"] })).toEqual(["flow", "kw"]);
+  expect(listAfter("u1", { pointKeys: [] })).toEqual([]);
+  // A patch without the field keeps the list.
+  expect(listAfter("u1", { label: "Renamed" })).toEqual(["kw"]);
+}
+
+/** `F4.307` T8 — the list is deduped (first place kept) and clamped to `MIMIC_HEADLINE_POINTS`. */
+export function updateNodeDedupesAndClampsTheList(): void {
+  expect(MIMIC_HEADLINE_POINTS).toBe(3);
+  expect(listAfter("u1", { pointKeys: ["a", "b", "a", "c"] })).toEqual(["a", "b", "c"]);
+  expect(listAfter("u1", { pointKeys: ["a", "b", "c", "d", "e"] })).toEqual(["a", "b", "c"]);
+}
+
+/** `F4.307` T8 — a panel and a label ignore `pointKeys`; a role-less unit takes none. */
+export function updateNodeIgnoresTheListOffARoledUnit(): void {
+  expect(listAfter("p1", { pointKeys: ["kw"] })).toEqual([]);
+  expect(listAfter("l1", { pointKeys: ["kw"] })).toEqual([]);
+  expect(listAfter("u1", { roleCode: null, pointKeys: ["kw"] })).toEqual([]);
+}
+
+/** `F4.307` T8 — a started preset lists no points (ruling Q2): its units draw the top rank. */
+export function fromPresetListsNoPoints(): void {
+  const layout = fromPreset("lv_single_line");
+  expect(layout.nodes.length).toBeGreaterThan(0);
+  expect(layout.nodes.filter((n) => n.pointKeys.length > 0).map((n) => n.key)).toEqual([]);
+}
+
+/** `F4.307` T8 — a stored layout keeps its unit's list as the editor holds it. */
+export function layoutFromDtoKeepsTheList(): void {
+  const editor = pointListLayout();
+  const dto: MimicLayoutDto = {
+    ...editor,
+    nodes: [...editor.nodes],
+    pipes: [...editor.pipes],
+    symbolLibraries: [...editor.symbolLibraries],
+    id: "00000000-0000-4000-8000-000000000001",
+    organizationId: "00000000-0000-4000-8000-000000000002",
+    version: 3,
+    orgSymbols: [],
+    createdAt: "2026-11-05T00:00:00.000Z",
+    updatedAt: "2026-11-05T00:00:00.000Z",
+  };
+  expect(layoutFromDto(dto).nodes.find((n) => n.key === "u1")?.pointKeys).toEqual(["kw"]);
 }

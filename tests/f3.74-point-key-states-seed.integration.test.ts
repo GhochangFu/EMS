@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 // Relative, not `@bms/db`: the workspace package is a dependency of `apps/*`,
 // not of the repo root, so the bare specifier does not resolve from `tests/`.
-import { seedPointKeyStates } from "../packages/db/src/point-key-states-seed.js";
+import { POINT_KEY_STATE_SEED, seedPointKeyStates } from "../packages/db/src/point-key-states-seed.js";
 import {
   openIntegrationPool,
   requireIntegrationDb,
@@ -19,6 +19,11 @@ import {
  *   `DO NOTHING` — the rows are seed-owned).
  *
  * I2 and I3 run on one client inside `BEGIN` … `ROLLBACK`, so nothing they write survives.
+ *
+ * **Only the seed's `(code, value)` pairs are read** (`F4.309`, ADR 0088 Amendment 3): an
+ * administrator may now add rows through `/admin/point-key-states` — on other keys, and on a
+ * seeded key with another value (`breaker_main = 2` is legal) — so "exactly seven" is a claim
+ * about the seed's own pairs, not the whole table and not the seed's whole keys.
  * Connection `"owner"`: the seed path runs as `bms_owner`, the table's owner, and the
  * `REVOKE` in `0097` is from `bms_tenant` only.
  */
@@ -54,9 +59,16 @@ const EXPECTED = [
   { point_key_code: "valve_open", value: 1, label: "OPEN", tone: "flowing" },
 ];
 
+/** The seed's own `(code, value)` pairs, as two parallel arrays for `unnest`. */
+const SEED_CODES = POINT_KEY_STATE_SEED.map((entry) => entry.pointKeyCode);
+const SEED_VALUES = POINT_KEY_STATE_SEED.map((entry) => entry.value);
+
 async function readRows(client: IntegrationClient): Promise<StateRow[]> {
   const { rows } = await client.query<StateRow>(
-    `SELECT id, point_key_code, value, label, tone FROM bms.point_key_states ORDER BY point_key_code, value`,
+    `SELECT id, point_key_code, value, label, tone FROM bms.point_key_states
+      WHERE (point_key_code, value) IN (SELECT * FROM unnest($1::text[], $2::double precision[]))
+      ORDER BY point_key_code, value`,
+    [SEED_CODES, SEED_VALUES],
   );
   return rows;
 }
@@ -87,6 +99,10 @@ describe.skipIf(!ownerUrl)("F3.74 D1 — seedPointKeyStates", () => {
   // I1
   it("holds exactly the seven seeded rows after pnpm db:seed", async () => {
     if (!pool) throw new Error("pool not initialised");
+    // Anti-vacuity: the narrowing reads exactly the seed's seven pairs — the ones EXPECTED names.
+    const seedPairs = POINT_KEY_STATE_SEED.map((e) => `${e.pointKeyCode}=${e.value}`).sort();
+    expect(seedPairs).toEqual(EXPECTED.map((e) => `${e.point_key_code}=${e.value}`).sort());
+    expect(seedPairs).toHaveLength(7);
     const rows = await readRows(pool);
     expect(rows.map(({ id: _id, ...rest }) => rest)).toEqual(EXPECTED);
   });

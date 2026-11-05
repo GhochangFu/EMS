@@ -13,7 +13,7 @@
  * What lives here is everything that answers a question. What stays in the
  * `.tsx` is everything that talks to CodeMirror.
  */
-import { CALC_DIALECT, CALC_DIALECTS, CALC_SCOPE_KINDS, isCrossAssetDialect } from "@bms/shared";
+import { CALC_DIALECT, CALC_DIALECTS, isCrossAssetDialect } from "@bms/shared";
 import type { CalcDialect, TemplateKpi } from "@bms/shared";
 
 import {
@@ -23,6 +23,13 @@ import {
   type FormulaPoint,
   type FormulaValidation,
 } from "./template-formula-validation";
+import { calcScopeForms, type ScopeCompletion } from "./calc-reference-forms";
+import { formulaHelpEntries } from "./formula-help";
+
+// `F4.314`: these moved to the leaf `calc-reference-forms.ts` so that
+// `formula-help.ts` can read them without importing this module back.
+// Re-exported, so every existing import from here still resolves.
+export { V2_REFERENCE_FORMS, type ScopeCompletion, type V2ReferenceForm } from "./calc-reference-forms";
 
 /**
  * Which surface is being edited, and what it needs.
@@ -199,39 +206,6 @@ export function decorationDialect(rules: FormulaEditorRules): CalcDialect {
 }
 
 /**
- * One `@` completion entry. Typed here by hand rather than as
- * `@codemirror/autocomplete`'s `Completion`: this module must not import
- * CodeMirror (`tests/adr-0038-formula-editor.test.ts`), and the component maps
- * these onto the library's shape itself.
- */
-export type ScopeCompletion = {
-  /** What the popup shows and matches the typed `@…` prefix against. */
-  label: string;
-  /** What lands in the document when the entry is taken. */
-  apply: string;
-  /** One line, shown beside the entry: what the scope ranges over. */
-  info: string;
-};
-
-type CalcScopeKind = (typeof CALC_SCOPE_KINDS)[number];
-
-/**
- * The per-kind half of {@link scopeCompletions}, keyed by the constant's own
- * member type so that a fourth scope kind fails to compile here rather than
- * silently going unoffered. The list itself is built by mapping
- * `CALC_SCOPE_KINDS`, so the order is the grammar's and nothing is restated.
- *
- * `takesCode` is the one shape difference the grammar has: `@site` is complete
- * as written, while `@domain(…)` and `@group(…)` take a quoted code
- * (`parser.ts`, `CalcScope`).
- */
-const SCOPE_SHAPES: Record<CalcScopeKind, { takesCode: boolean; info: string }> = {
-  site: { takesCode: false, info: "every asset at this asset's site" },
-  domain: { takesCode: true, info: "every asset at this site, narrowed to one plant-domain code" },
-  group: { takesCode: true, info: "every asset at this site, narrowed to one asset-group code" },
-};
-
-/**
  * The scopes `@` completion offers (`F2.22` T5, ADR 0055 decision 1).
  *
  * Empty unless the surface's dialect is `bms-calc-v2`. That is a comparison to
@@ -249,56 +223,80 @@ const SCOPE_SHAPES: Record<CalcScopeKind, { takesCode: boolean; info: string }> 
  * is the right one to decide what is offered; neither can change a validation
  * result.
  *
- * **Why `label` and `apply` differ.** The label is what the popup lists and
- * what CodeMirror scores the typed `@do…` prefix against, so it shows the
- * shape the author will recognise — `@site`, `@domain(`, `@group(` — and no
- * more. `apply` is what lands in the field, and for the two scopes that take a
- * code it carries the opening quote as well (`@domain('`), so the caret lands
- * inside the string literal and the author types the code and nothing else.
- * `@site` takes no code, so its two strings are the same.
+ * The entries themselves — and why their `label` and `apply` differ — are
+ * `calcScopeForms` in `calc-reference-forms.ts`.
  */
 export function scopeCompletions(rules: FormulaEditorRules): ScopeCompletion[] {
   // ADR 0070: v3 carries every v2 form, so the scope completions serve it too.
   if (!isCrossAssetDialect(decorationDialect(rules))) {
     return [];
   }
-  return CALC_SCOPE_KINDS.map((kind) => {
-    const shape = SCOPE_SHAPES[kind];
-    return {
-      label: shape.takesCode ? `@${kind}(` : `@${kind}`,
-      apply: shape.takesCode ? `@${kind}('` : `@${kind}`,
-      info: shape.info,
-    };
-  });
+  return calcScopeForms();
 }
 
 /**
- * The two reference forms `bms-calc-v2` carries, and what each answers (ADR
- * 0055 decision 6, from the Q1 ruling: "each form answers one of them").
- *
- * This is the teaching the tabs render under a `v2` row (T6, T7, and T12's
- * `point-calc-override-panel.tsx`): an author who knows which *question* they
- * are asking can pick the form without
- * reading the grammar. An **aggregate** ranges over a set the database resolves
- * at evaluation time, so a new asset joins the sum by joining the site — a
- * total or a ratio. A **qualified reference** names individual assets, so it
- * can say what entered minus what left — a balance, which an aggregate cannot
- * express without a one-member group per meter.
- *
- * Each `example` is grammar, not prose: `runReferenceFormsTests` parses it
- * under `v2`, so the tabs can never teach a formula the parser refuses.
+ * One function-name completion entry, typed by hand for the reason
+ * {@link ScopeCompletion} gives.
  */
-export const V2_REFERENCE_FORMS = [
-  { form: "aggregate", answers: "a total or ratio over a set", example: "sum({kw} @site)" },
-  {
-    form: "qualified",
-    answers: "a balance between named assets",
-    example: "{TX_01.kwh} - {TX_02.kwh}",
-  },
-] as const;
+export type FunctionCompletion = {
+  /** The function's name — what the popup shows and matches the typed prefix against. */
+  label: string;
+  /** The name and its opening parenthesis. */
+  apply: string;
+  /** One line: what the help says of it. */
+  info: string;
+};
 
-/** One entry of {@link V2_REFERENCE_FORMS}, for a tab that renders them. */
-export type V2ReferenceForm = (typeof V2_REFERENCE_FORMS)[number];
+/**
+ * The function names the editor completes (`F4.314`, ADR 0038 Amendment 6
+ * decision A2): the `function` and `window` entries of the help list for the
+ * surface's dialect, so the completion and the help cannot disagree.
+ *
+ * Read through {@link decorationDialect}, as {@link scopeCompletions} is: an
+ * `"unvalidated"` KPI completes under `v1`. A name that is both a function and
+ * a window under `v3` (`sum`, `avg`, `min`, `max`) is offered once, with the
+ * first entry's text.
+ */
+export function functionCompletions(rules: FormulaEditorRules): FunctionCompletion[] {
+  const offered = new Map<string, FunctionCompletion>();
+  for (const entry of formulaHelpEntries(decorationDialect(rules))) {
+    if ((entry.group === "function" || entry.group === "window") && entry.insert.endsWith("(")) {
+      const label = entry.insert.slice(0, -1);
+      if (!offered.has(label)) {
+        offered.set(label, { label, apply: entry.insert, info: entry.says });
+      }
+    }
+  }
+  return [...offered.values()];
+}
+
+/**
+ * Whether the function-name source may open at the caret (`F4.314` review),
+ * given the line's text up to it. The editor matches the lowercase run before
+ * the caret; this decides whether that run is a function name being typed.
+ *
+ * Refused when the run is glued to what precedes it — a digit, letter, `_`,
+ * `.` or `'` (the `m` of `15m`, the `h` of `24h` are window units, not the
+ * start of `min(` or `hours(`) — or when it sits inside an open `'…'` code
+ * (`@group('pump ro`), a `{…}` point key, a `$…` parameter or an `@…` scope,
+ * where another source or nothing is right. An open quote is an odd count of
+ * quotes, not "a quote somewhere before": `@group('a') + ro` is outside it.
+ */
+export function functionCompletionAllowed(textBefore: string): boolean {
+  const run = /[a-z_]+$/.exec(textBefore);
+  if (run === null) {
+    return false;
+  }
+  const before = textBefore.slice(0, run.index);
+  const openQuote = (before.match(/'/g) ?? []).length % 2 === 1;
+  return (
+    !/[\w.']$/.test(before) &&
+    !openQuote &&
+    !/\{[^{}]*$/.test(before) &&
+    !/\$[A-Za-z0-9_]*$/.test(before) &&
+    !/@[a-z]*$/.test(before)
+  );
+}
 
 /** A diagnostic range that CodeMirror will actually render. */
 export type EditorDiagnosticRange = { from: number; to: number; message: string };

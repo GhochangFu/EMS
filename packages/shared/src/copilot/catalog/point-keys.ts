@@ -92,5 +92,8 @@ export const POINT_KEY_ENTRIES: readonly CatalogEntry[] = [
   },
 ];
 
-/** The area's write routes that are not entries: none since PR 3c. */
+/**
+ * The area's write routes that are not entries: none since PR 3c. `F4.309` PR 3 (ADR 0099
+ * Amendment 13) moved the state-label rows to `point-key-states.ts` (`POINT_KEY_STATE_PENDING`).
+ */
 export const POINT_KEY_PENDING: readonly ExcludedRoute[] = [];

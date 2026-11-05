@@ -13,6 +13,7 @@ import {
 } from "@bms/shared";
 
 import * as orgApi from "../../api/admin/organizations";
+import * as pointKeyApi from "../../api/admin/point-keys";
 import * as api from "../../api/mimic-layouts";
 import * as librariesApi from "../../api/mimic-symbol-libraries";
 import * as canvasModule from "../../components/mimic-editor/canvas";
@@ -101,6 +102,23 @@ function stubAll(orgs: OrganizationsListResponse): Stubs {
   const catalog = vi.spyOn(librariesApi, "fetchMimicSymbolLibraries").mockResolvedValue(allEnabledCatalog());
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue({ assetRoles: [] } as unknown as VocabulariesResponse);
   vi.spyOn(orgApi, "fetchAdminOrganizations").mockResolvedValue(orgs);
+  // F4.307: a selected roled unit's Points block reads the active catalog.
+  vi.spyOn(pointKeyApi, "fetchAdminPointKeys").mockResolvedValue({
+    items: [
+      {
+        id: "pk-level",
+        code: "level",
+        name: "Tank level",
+        domain: null,
+        unit: null,
+        description: null,
+        active: true,
+        createdAt: new Date(0).toISOString(),
+        headlineRank: null,
+        trendDefault: false,
+      },
+    ],
+  });
   vi.spyOn(api, "fetchMimicLayouts").mockResolvedValue({ items: [] });
   const fetchOne = vi.spyOn(api, "fetchMimicLayout").mockResolvedValue(storedDto(4));
   const create = vi.spyOn(api, "createMimicLayout").mockResolvedValue(storedDto(1));
@@ -171,6 +189,26 @@ export async function aStoredSwitchingUnitPutsItsFlag(): Promise<void> {
   const other = body?.nodes.find((n: MimicLayoutWriteNode) => n.key === "discharge");
   expect(other).toBeDefined();
   expect(other?.isSwitching).toBeUndefined();
+}
+
+/** F4.307 T9 — a point added in the inspector reaches the PUT body as the unit's `pointKeys`. */
+export async function aPointAddedInTheInspectorIsPut(): Promise<void> {
+  const { replace } = renderAt(`/admin/mimic-layouts/${LAYOUT_ID}`);
+  const hit = await waitFor(() => {
+    const el = document.querySelector('[data-testid="mimic-editor-hit"][data-node-key="wtp"]');
+    if (el === null) throw new Error("the wtp unit has not drawn yet");
+    return el;
+  });
+  fireEvent.pointerDown(hit);
+  fireEvent.pointerUp(hit);
+  const add = await screen.findByLabelText<HTMLSelectElement>("Add point", { selector: "select" });
+  await waitFor(() => expect(add.options.length).toBeGreaterThan(1));
+  await userEvent.selectOptions(add, "level");
+  await save();
+  await waitFor(() => expect(replace).toHaveBeenCalledTimes(1));
+  const body = replace.mock.calls[0]?.[1] as MimicLayoutWriteBody | undefined;
+  expect(body?.nodes.find((n: MimicLayoutWriteNode) => n.key === "wtp")?.pointKeys).toEqual(["level"]);
+  expect(body?.nodes.find((n: MimicLayoutWriteNode) => n.key === "ro")).not.toHaveProperty("pointKeys");
 }
 
 /** E1b — `?preset=compressed_air` POSTs that preset's copy (ADR 0082 decision 5, plan D9). */

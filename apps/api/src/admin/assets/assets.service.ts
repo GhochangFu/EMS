@@ -168,6 +168,7 @@ export class AssetsAdminService {
       rtuDisplayName: row.rtuDisplayName,
       organizationId: row.organizationId,
       organizationCode: row.organizationCode,
+      domain: row.asset.domain,
     };
   }
 

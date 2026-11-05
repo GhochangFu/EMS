@@ -23,7 +23,11 @@ import { parseIfMatchHeader } from "../../common/if-match";
 import { idParamSchema, stockCodeParamSchema } from "../admin.schema";
 // Reused by identity, not moved: `tests/adr-0029-openapi-contract.test.ts`
 // forbids DECLARING a body schema in a controller, not importing one.
-import { importStockTemplateBodySchema, instantiateAssetsBodySchema } from "@bms/shared";
+import {
+  adoptAssetsBodySchema,
+  importStockTemplateBodySchema,
+  instantiateAssetsBodySchema,
+} from "@bms/shared";
 import {
   createAssetTemplateBodySchema,
   reapplySeededRulesBodySchema,
@@ -31,6 +35,7 @@ import {
   updateAssetTemplateBodySchema,
 } from "./asset-templates.schema";
 import { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
+import { AssetTemplateAdoptionService } from "./asset-templates-adopt.service";
 import { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import { migrateAssetsBodySchema } from "./asset-templates-migrate.schema";
 import { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
@@ -67,6 +72,8 @@ export class AssetTemplatesAdminController {
     private readonly seededRules: AssetTemplateSeededRulesService,
     // F3.2 / ADR 0067 decision 4 — the on-demand backfill.
     private readonly assetDashboards: AssetDashboardsInstantiateService,
+    // F4.312 / ADR 0109 Amendment 1 — adoption of a template-less asset.
+    private readonly adoption: AssetTemplateAdoptionService,
   ) {}
 
   @Get()
@@ -325,6 +332,59 @@ export class AssetTemplatesAdminController {
         user,
         idParamSchema.parse(id),
         migrateAssetsBodySchema.parse(body),
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F4.312` (ADR 0109 Amendment 1 decision 3) — the adoption plan and the
+   * server's verdict. `:id` is the version to adopt onto. Mirrors
+   * `migration-preview`: `POST` because the selection is a body, `200`
+   * because it writes nothing.
+   */
+  @Post(":id/adoption-preview")
+  @HttpCode(HttpStatus.OK)
+  async previewAdoption(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      return await this.adoption.preview(
+        user,
+        idParamSchema.parse(id),
+        adoptAssetsBodySchema.parse(body),
+      );
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F4.312` — the explicit, audited adoption. `:id` is the version to adopt
+   * onto. `200` rather than `201`, as `migrate`: it may create rows, but its
+   * subject is a state change on assets that already exist.
+   */
+  @Post(":id/adopt")
+  @HttpCode(HttpStatus.OK)
+  async adopt(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      return await this.adoption.adopt(
+        user,
+        idParamSchema.parse(id),
+        adoptAssetsBodySchema.parse(body),
       );
     } catch (err) {
       if (err instanceof ZodError) {

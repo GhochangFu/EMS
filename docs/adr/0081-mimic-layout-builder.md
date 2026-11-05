@@ -255,3 +255,78 @@ says it amends one. Promotes nothing out of `AGENTS.md` §6.
    2026-11-05, as recommended.
 4. **Q4 (a) — a bound of 3.** The list holds at most `MIMIC_HEADLINE_POINTS`
    (3) keys; the unit frame does not change. Ruled 2026-11-05, as recommended.
+
+## Amendment 2 (2026-11-05, `F4.308`) — "Preview with site" in the layout editor
+
+**Status: proposed.** Drafted on 2026-11-05 against `main` at `28e0b28`, before
+any implementation code. The gate questions below are put to the owner one at a
+time; all four were ruled on 2026-11-05 as recommended, and each ruling is
+recorded under *Rulings*. The merge of this amendment
+approves it. Promotes nothing out of `AGENTS.md` §6.
+
+### Context
+
+- The editor canvas draws the geometry with `nodes={[]}`
+  (`apps/web/src/components/mimic-editor/canvas.tsx:170`), so every roled unit
+  reads "Not assigned".
+- The resolver (`MimicNodesService.read`, `mimic-nodes.service.ts`) starts from
+  a dashboard: statement 1 reads the dashboard's mimic widgets and each widget's
+  asset group, then resolves each widget's nodes. It needs a saved widget.
+- Asset groups are listed per location (`GET /api/v1/admin/asset-groups`).
+- Since `F4.307` a unit shows its listed points; the preview is the first place
+  an admin can see them before a dashboard uses the layout.
+
+### Decision
+
+1. **A read-only preview route** (Q1):
+   `GET /api/v1/mimic-layouts/:id/preview?assetGroupId=<uuid>`. It answers the
+   `mimic-nodes` shape (`dashboardMimicNodesResponseSchema`: one widget, the
+   `source: "layout"` arm of `mimicWidgetNodesSchema`, and its `stateMaps`)
+   for the stored layout bound to that group. The resolver is split so the dashboard read and the preview share
+   statements 1b to 4; only statement 1 (the dashboard's widgets) is replaced
+   by one synthetic widget. Nothing is written; no audit row.
+2. **Checks.** The layout and the group must both be in the caller's readable
+   organization and in the same organization (404 otherwise, never 403, as
+   decision 3's reads). `assetGroupId` is required and a UUID (400).
+3. **Who** (Q3): `admin` and `organization_admin` only (403 for other roles,
+   after the 404 checks). The caller's `readableAssetIds` narrows the members,
+   as on a dashboard.
+4. **Geometry** (Q2): the saved layout. While the editor holds unsaved edits,
+   the preview is drawn from the last save and says "Save to refresh the
+   preview".
+5. **Live** (Q4): the editor draws the preview through the dashboard's live
+   overlay (`useSiteLiveReadings` over `mimicViewFor`), read-only: no drag, no
+   select-to-edit, no keyboard edits while the preview is on.
+6. **The editor control.** "Preview with site": a site picker, then an asset
+   group of that site (`GET /api/v1/admin/asset-groups?locationId=`). The
+   inspector of a selected unit then lists the bound asset (code and name), its
+   shown points, its state points and its open-alarm count, or "No asset at
+   this site".
+7. **Out of this amendment:** previewing a preset, previewing unsaved edits, a
+   preview on the dashboard builder, and any write.
+
+### Gate questions
+
+1. **Q1 — the read.** (a) A new read-only route,
+   `GET /api/v1/mimic-layouts/:id/preview?assetGroupId=…`, that feeds the
+   existing resolver one synthetic layout widget for that group (statement 1
+   replaced, statements 1b–4 unchanged); (b) no new route: the preview needs a
+   saved dashboard widget that uses the layout. *Recommended: (a).*
+2. **Q2 — what geometry the preview draws.** (a) The saved layout; while the
+   editor has unsaved edits the preview says "Save to refresh the preview";
+   (b) the editor's unsaved body, sent as a `POST`. *Recommended: (a).*
+3. **Q3 — who may preview.** (a) The layout writers of ADR 0081 decision 3
+   (`admin`, `organization_admin`), with the caller's readable-asset narrowing;
+   (b) every reader of the library. *Recommended: (a).*
+4. **Q4 — live values.** (a) Live: the socket overlay as on a dashboard;
+   (b) a snapshot, refreshed every 30 s. *Recommended: (a).*
+
+### Rulings
+
+1. **Q1 (a) — a new preview route.** Ruled 2026-11-05, as recommended.
+2. **Q2 (a) — the saved layout.** Unsaved edits show "Save to refresh the
+   preview". Ruled 2026-11-05, as recommended.
+3. **Q3 (a) — layout writers only** (`admin`, `organization_admin`), with the
+   caller's readable-asset narrowing. Ruled 2026-11-05, as recommended.
+4. **Q4 (a) — live values**, through the dashboard's socket overlay. Ruled
+   2026-11-05, as recommended.

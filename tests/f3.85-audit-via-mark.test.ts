@@ -50,6 +50,8 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/asset-templates/asset-templates-instantiate-core.ts",
   // `F4.254` PR 3: `assetTemplate.instantiate`'s handler reaches the core through this service.
   "apps/api/src/admin/asset-templates/asset-templates-instantiate.service.ts",
+  // `F4.312` PR 2 (ADR 0099 Amendment 12): `assetTemplate.adopt`'s handler reaches this service.
+  "apps/api/src/admin/asset-templates/asset-templates-adopt.service.ts",
   "apps/api/src/admin/calc-parameters/calc-parameters.service.ts",
   "apps/api/src/admin/asset-points/asset-point-calc-override.service.ts",
   // `F4.311` (ADR 0109 decision 3): `calcOverride.set`'s handler dispatches a template-less
@@ -62,6 +64,9 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/assets/assets.service.ts",
   "apps/api/src/admin/asset-groups/asset-groups.service.ts",
   "apps/api/src/admin/point-keys/point-keys.service.ts",
+  // `F4.309` PR 3 (ADR 0099 Amendment 13): `pointKeyState.create` and `.update` reach this service
+  // (its excluded DELETE audits through the same funnel).
+  "apps/api/src/admin/point-key-states/point-key-states.service.ts",
   "apps/api/src/admin/asset-points/asset-points.service.ts",
   "apps/api/src/admin/users/users.service.ts",
   "apps/api/src/admin/users/user-grants.service.ts",
@@ -162,6 +167,8 @@ const CATALOG_DIRS = [
   "admin/assets",
   "admin/asset-groups",
   "admin/point-keys",
+  // `F4.309` PR 3 (ADR 0099 Amendment 13): the state labels — two entries, the DELETE excluded.
+  "admin/point-key-states",
   "admin/users",
   "admin/onboarding",
   "mimic-layouts",

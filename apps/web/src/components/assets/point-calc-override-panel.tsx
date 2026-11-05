@@ -15,8 +15,8 @@
  * The `v2` controls mirror the Calculations tab's, from the same sources:
  * Grammar lists `dialectOptions()` after an `inherit (…)` option, the
  * streaming option is disabled — not hidden — under a merged `v2` (design
- * decision 5) with `V2_TRIGGER_LATENCY_HINT` beside it, and the two
- * `V2_REFERENCE_FORMS` are taught under the formula. The coverage ratio is
+ * decision 5) with `V2_TRIGGER_LATENCY_HINT` beside it, and the Formula help
+ * (`F4.314`, ADR 0038 Amendment 6) is under the formula. The coverage ratio is
  * the one thing the tab edits and this panel only shows: ADR 0055 decision 11
  * refuses a per-asset override, so it is a line in the table, not a field.
  *
@@ -27,7 +27,7 @@
  * parts, so its DOM is unchanged.
  */
 import type { ReactNode } from "react";
-import { CALC_TRIGGERS, isCrossAssetDialect, isParameterDialect } from "@bms/shared";
+import { CALC_DIALECT, CALC_TRIGGERS, isCrossAssetDialect, isParameterDialect } from "@bms/shared";
 import type { AssetPointCalcConfigDto } from "@bms/shared";
 
 import {
@@ -40,15 +40,24 @@ import {
   type ColumnOrigin,
   type OverrideDraft,
 } from "../../lib/asset-point-calc-override";
-import { V2_REFERENCE_FORMS } from "../../lib/formula-editor-rules";
-import {
-  V2_TRIGGER_LATENCY_HINT,
-  V3_PARAMETER_HELP,
-  V3_TRIGGER_LATENCY_HINT,
-  V3_WINDOW_HELP,
-  dialectOptions,
-} from "../../lib/template-calc-config";
+import { suggestionDraft } from "../../lib/formula-suggestions";
+import { V2_TRIGGER_LATENCY_HINT, V3_TRIGGER_LATENCY_HINT, dialectOptions } from "../../lib/template-calc-config";
+import { FormulaHelp } from "../asset-templates/formula-help";
 import { BackfillDaysSelect } from "./backfill-days-select";
+import { FormulaSuggestions } from "./formula-suggestions";
+
+/**
+ * `F4.314` PR 2 (ADR 0038 Amendment 6 A3, ruling 7) — what the Suggested
+ * formulas under the formula are read for: the asset's organization and
+ * domain, its keys for the missing-input mark (`null` in the bulk wizard),
+ * and on an override the template point whose version is the asset's own.
+ */
+export type PointCalcSuggestionScope = {
+  organizationCode: string | null;
+  domain: string | null;
+  assetKeys: readonly string[] | null;
+  excludeTemplatePointId?: string | null;
+};
 
 type Props = {
   config: AssetPointCalcConfigDto;
@@ -88,6 +97,8 @@ type FieldsProps = {
   standalone?: boolean;
   /** `F4.311` PR 6a: the formula control in place of the plain input (the standalone panel's lazy editor). */
   formulaEditor?: ReactNode;
+  /** `F4.314` PR 2: offer Suggested formulas for `config.pointKey`; absent, the DOM is unchanged. */
+  suggestions?: PointCalcSuggestionScope;
 };
 
 /** The point's name and key — the panel's heading. */
@@ -141,7 +152,7 @@ export function PointCalcSettingsTable({ config }: { config: AssetPointCalcConfi
   );
 }
 
-/** Grammar, Formula and the `v2`/`v3` teaching list — the wizard's Formula step. */
+/** Grammar, Formula and the Formula help — the wizard's Formula step. */
 export function PointCalcFormulaFields({
   config,
   draft,
@@ -149,17 +160,14 @@ export function PointCalcFormulaFields({
   onDraftChange,
   standalone = false,
   formulaEditor,
+  suggestions,
 }: FieldsProps) {
   const set = (patch: Partial<OverrideDraft>) => onDraftChange({ ...draft, ...patch });
   // The grammar in force after the save — the draft's when chosen, the
   // template's when inheriting — from the same function `draftProblems` reads,
-  // so the controls below and the sentences under them cannot disagree.
-  // "Has cross-asset references" — v2 or v3 (ADR 0070); the name is kept
-  // because every branch below reads it as "not v1".
+  // so the controls below and the help under them cannot disagree. Unset on
+  // both sides, the server's default `v1` is what the help teaches.
   const merged = mergedDialect(draft, config);
-  const isV2 = merged !== null && isCrossAssetDialect(merged);
-  // `v3` only (ADR 0070): the `$key` help line and its own latency hint.
-  const isV3 = merged !== null && isParameterDialect(merged);
   return (
     <>
       <label className="text-xs sm:col-span-2">
@@ -199,29 +207,27 @@ export function PointCalcFormulaFields({
           />
         )}
       </label>
-      {isV2 ? (
-        // The teaching ADR 0055 decision 6 buys, as the Calculations tab
-        // renders it: which reference form answers which question. A
-        // sibling of the label, as on the tab — a list inside a `<label>`
-        // is flow content in phrasing content, and a click on an example
-        // would focus the input.
-        <ul className="space-y-0.5 text-[11px] text-ink-muted sm:col-span-2">
-          {V2_REFERENCE_FORMS.map((form) => (
-            <li key={form.form}>
-              <span className="font-semibold">{form.form}</span> — {form.answers}:{" "}
-              <code className="rounded bg-well-deep px-1">{form.example}</code>
-            </li>
-          ))}
-          {isV3 ? (
-            // The `v3` forms: the parameter (ADR 0070 decision 4) and the
-            // windows (decision 5, `E4.1b`) — an override is evaluated by
-            // the same sweep, so it is taught the same forms.
-            <>
-              <li>{V3_PARAMETER_HELP}</li>
-              <li>{V3_WINDOW_HELP}</li>
-            </>
-          ) : null}
-        </ul>
+      {/* `F4.314` (ADR 0038 Amendment 6 A1): the Formula help for the grammar
+          in force, in place of the old `v2`/`v3` list. A sibling of the
+          label, as before — a button inside a `<label>` would focus the
+          input. An entry appends through the same `set` the input uses, so
+          the plain input and the Add panel's editor behave alike. */}
+      <FormulaHelp
+        dialect={merged ?? CALC_DIALECT}
+        disabled={busy}
+        onInsert={(text) => set({ formula: draft.formula + text })}
+      />
+      {/* `F4.314` PR 2 (A3, ruling 6): taking a suggestion writes its formula,
+          dialect and timing through the same `set` — the draft's own merge,
+          so the merged-dialect rules below (`v2` disables streaming,
+          `draftProblems`) judge the result as they judge a typed one. */}
+      {suggestions ? (
+        <FormulaSuggestions
+          pointKey={config.pointKey}
+          {...suggestions}
+          disabled={busy}
+          onTake={(suggestion) => set(suggestionDraft(suggestion, standalone))}
+        />
       ) : null}
     </>
   );

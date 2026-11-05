@@ -30,6 +30,7 @@ import {
   symbolLabel,
   symbolLabelIn,
 } from "../../lib/mimic-symbols";
+import { PointListField } from "./point-list-field";
 
 /**
  * `F3.32c` U6b (ADR 0081 decision 7), `F3.32d` U3 (ADR 0082 decision 2) — the editor's inspector:
@@ -43,7 +44,8 @@ import {
  *
  * The role list is `GET /api/v1/vocabularies`' `assetRoles` (the `asset-role-binding-picker.tsx`
  * rule: the set lives in `bms.asset_roles`, never a hand-kept list), plus "none — passive"
- * (plan D6: a unit with no role is drawn with no status and no values).
+ * (plan D6: a unit with no role is drawn with no status and no values). A roled unit then shows
+ * its "Points" block (`F4.307`, `point-list-field.tsx`): the value rows it lists, in order.
  */
 
 export type InspectorOrganization = {
@@ -422,6 +424,9 @@ function NodeFields({
               ))}
             </select>
           </label>
+          {node.roleCode !== null ? (
+            <PointListField pointKeys={node.pointKeys} onChange={(pointKeys) => change({ pointKeys })} />
+          ) : null}
           <label className="flex items-center gap-2 text-xs text-ink-muted">
             <input
               type="checkbox"

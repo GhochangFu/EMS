@@ -110,6 +110,7 @@ function stubApi(): void {
     rtuDisplayName: null,
     organizationId: null,
     organizationCode: null,
+    domain: "electrical",
   });
   vi.spyOn(api, "fetchAdminAssetCalcPoints").mockResolvedValue({ items: [], mode: "standalone" });
   vi.spyOn(api, "fetchAdminAssetPoints").mockResolvedValue({

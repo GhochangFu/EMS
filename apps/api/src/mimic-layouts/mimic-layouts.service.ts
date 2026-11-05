@@ -652,8 +652,11 @@ export class MimicLayoutsService {
     return orgSymbolsOf(rows, (message) => this.logger.warn(message));
   }
 
-  /** The layout, if the caller may read its organization; else 404. */
-  private async fetchReadable(jwt: JwtPayload, id: string): Promise<LayoutRow> {
+  /**
+   * The layout, if the caller may read its organization; else 404. Public for `F4.308`'s
+   * `MimicLayoutPreviewService` (plan C2 step 1), which runs this same check first.
+   */
+  async fetchReadable(jwt: JwtPayload, id: string): Promise<LayoutRow> {
     const orgIds = await this.accessControl.readableOrganizationIds(jwt);
     const [layout] = await this.fleetDb.select().from(mimicLayouts).where(eq(mimicLayouts.id, id)).limit(1);
     if (!layout || (orgIds !== null && !orgIds.includes(layout.organizationId))) {

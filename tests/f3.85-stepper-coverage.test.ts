@@ -102,6 +102,10 @@ const CATALOG_IDS = COPILOT_CATALOG.map((entry) => entry.id);
  * `components/assets/calc-point-batch-wizard.tsx`: `calcPoint.createBatch`),
  * so the list is empty. It stays, with its gate, for the next row that lands a catalog entry
  * ahead of its wizard.
+ *
+ * `F4.312` PR 2 (ADR 0099 Amendment 12) lands `assetTemplate.adopt` ahead of its wizard, which
+ * is PR 3 (`template-adopt-wizard.tsx`: the points page and the asset list's bulk action).
+ * PR 3 wired it, so the list is empty again.
  */
 const NOT_YET: readonly { id: string; reason: string }[] = [];
 

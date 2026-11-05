@@ -15,6 +15,8 @@ import {
   assertListLocationTypesIsActiveOnly,
   assertListLocationTypesIsOrdered,
   assertListReturnsWaterBalanceRolesOrdered,
+  assertListServesAnAddedSwitchingState,
+  assertListServesTheSeededSwitchingStatesInOrder,
   assertLocationTypeAcceptsALiveCode,
   assertLocationTypeRefusalListsLocationTypeCodes,
   assertLocationTypeRejectsInactiveCode,
@@ -214,6 +216,49 @@ describe.skipIf(!locationTypeConnectionString)(
 
     it("V4 control — accepts a live location type code", async () => {
       await assertLocationTypeAcceptsALiveCode(db);
+    });
+  },
+);
+
+/**
+ * `F4.309` (ADR 0088 Amendment 3 decision 5) — the switching states on `/vocabularies`. Its own
+ * guard and its own pool, for the reason the `F3.37` block above gives. The default connection
+ * (`connection: "fleet"`: `resolveIntegrationRoleUrl` re-points CI's `bms_owner` `DATABASE_URL`
+ * at `bms_fleet`) may insert the test's row; in production the read runs on the tenant pool, whose
+ * `SELECT` on the table `0097` grants and proves.
+ */
+const switchingStateConnectionString = requireIntegrationDb({
+  item: "F4.309",
+  label: "VocabulariesService switching state tests",
+  because:
+    "a green run here would assert that list() serves bms.point_key_states as switchingStates, " +
+    "the seven seeded rows in order and an added row in its place — while nothing checked any " +
+    "of it against a real database. Fix the pipeline, do not relax this guard.",
+});
+
+describe.skipIf(!switchingStateConnectionString)(
+  "F4.309 — VocabulariesService switching states against a real database",
+  () => {
+    let pool: pg.Pool;
+    let db: BmsDb;
+
+    beforeAll(async () => {
+      pool = await openIntegrationPool(switchingStateConnectionString as string, "F4.309");
+      db = createDb(pool);
+    });
+
+    afterAll(async () => {
+      if (pool) {
+        await pool.end();
+      }
+    });
+
+    it("serves the seven seeded switching states in order", async () => {
+      await assertListServesTheSeededSwitchingStatesInOrder(db);
+    });
+
+    it("serves a row added in the test's transaction, in its place", async () => {
+      await assertListServesAnAddedSwitchingState(db);
     });
   },
 );

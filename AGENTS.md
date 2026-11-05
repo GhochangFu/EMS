@@ -1060,8 +1060,95 @@
 > `calcPoint.createBatch` and `calcPoint.delete`, each a red Confirm card on
 > the same routes; `DELETE_ALLOWANCE` widens from two removals to three, the
 > third being `calcPoint.delete` on a template-less asset only. Adopting an
-> unpinned asset onto a template version (ADR 0109 ruling 1) is not built;
-> it is `F4.312`.
+> unpinned asset onto a template version (ADR 0109 ruling 1) was deferred to
+> `F4.312`, which is built (the `F4.312` paragraph below).
+> And **a per-unit point list on a mimic layout** (**ADR 0081 Amendment 1**,
+> #1006; row `F4.307`; PR 1 #1011, PR 2 #1013, PR 3 #1016; this sweep merges
+> last). A layout unit with a role may list up to `MIMIC_HEADLINE_POINTS` (3)
+> point keys, in order, in the new tenant table
+> `bms.mimic_layout_node_points` (migration `0124`: forced RLS whose
+> `tenant_isolation` checks the own column **and** the parent node in USING
+> and WITH CHECK; units only, held by a `(node_id, node_kind)` foreign key to
+> the nodes' new `UNIQUE (id, kind)` and a `CHECK`; `point_key` →
+> `bms.point_keys(code)`; no GRANT). `pointKeys` rides the layout read and
+> write contracts and the copilot's layout write (replace-all, so a body
+> without it clears the list); an unknown or retired key is a 400 "Unknown
+> point key" that never echoes the code, except a key the stored layout
+> already lists. The `mimic-nodes` resolver answers the listed keys per node,
+> fan-out members too, in a third arm of its statement 3 (still five
+> statements, every table filtered on `organization_id`); a key the asset
+> lacks or holds inactive answers its catalog name and `latest: null` ("—"),
+> and the unit's freshness still follows its asset's headline points. A
+> preset keeps the headline rank. The inspector's **Points** block picks,
+> orders and removes the list from the active catalog.
+> And **"Preview with site" in the mimic layout editor** (**ADR 0081
+> Amendment 2**, #1019; row `F4.308`; PR 1 #1022, PR 2 #1024; this sweep merges
+> last). `GET /api/v1/mimic-layouts/:id/preview?assetGroupId=` (strict query)
+> answers the `mimic-nodes` shape for the **saved** layout bound to one asset
+> group, read-only, with no audit row; `dashboardId` and `widgetId` carry the
+> layout id. The check order is: the layout readable, else 404; the group in
+> the layout's organization **and** the caller's readable locations, else 404;
+> only then `admin` or `organization_admin`, else 403; then the readable-asset
+> narrowing. `MimicNodesService` is split (`resolveWidgets`, its pure helpers in
+> `mimic-nodes.pure.ts`, every SQL string still in the service), and
+> `MimicLayoutsModule` provides its own stateless instance. In the editor, a
+> site then an asset group draws the preview with live values (`useSiteLiveReadings`
+> gains an optional `enabled`, so no socket opens before a group is chosen);
+> edits are locked while it is on, the inspector lists the bound asset, its
+> points, state points and open alarms, and "Save to refresh the preview"
+> shows while the editor holds unsaved edits.
+> And **state labels for switching points, managed in the portal** (**ADR 0088
+> Amendment 3**, #1026, and **ADR 0099 Amendment 13**, #1027; row `F4.309`;
+> PR 1 #1034, PR 2 #1036, PR 3 #1038; this sweep merges last).
+> `GET|POST /api/v1/admin/point-key-states` and `PATCH|DELETE /:id` write
+> `bms.point_key_states` for the global `admin` only (reads too), on `fleetDb`
+> in one transaction with an organization-less audit row (an edit's payload is
+> `{ from, to }`); `bms_tenant` keeps no write grant and no migration was
+> needed. The 7 rows of `POINT_KEY_STATE_SEED` (exported from `@bms/db`) are
+> seed-owned and read-only: a `PATCH` or `DELETE` of one, or a `POST` of a
+> seeded pair, is 409. `GET /vocabularies` carries a required `switchingStates`
+> list for every signed-in user, and the state legend draws each distinct label
+> and tone once with the mimic's switch glyph. The "State Labels" page sits
+> under Reference Data after Point Keys. The copilot gains `pointKeyState.create`
+> and `pointKeyState.update` (a new `pointKeyState` target that refuses a seeded
+> row at propose; no delete) and the read tool `list_point_key_states`, which
+> answers as many rows as fit its budget (`fitFleetListResult`) with
+> `truncated`; the propose-tool budget is 94,000.
+> And **adopting a template-less asset onto a template version, and a New key
+> in the calculated-point pickers** (**ADR 0109 Amendment 1**, accepted
+> 2026-11-05; rows `F4.312` and `F4.313`; `F4.312` PR 1 #1017, PR 2 #1023,
+> PR 3 #1028; `F4.313` #1014 and its follow-up #1021; this sweep merges last).
+> `POST /admin/asset-templates/:id/adoption-preview` and `/:id/adopt` (body
+> `{ assetIds }`, 1-25 template-less assets of the version's organization, all
+> or nothing; access is migrate's) pin the assets to one **published** version
+> of their own organization and the same domain, in one transaction for the
+> batch: an asset point whose key the version declares as measured keeps its
+> wiring and history (a `computed` row on such a key is refused), a measured
+> point the asset lacks is added `unmapped` (an optional one whose source key
+> cannot be resolved is skipped), a row the version does not declare stays as
+> it is, and a standalone calculated point the version declares as derived
+> becomes the asset's override (ruling 8). The version's seeded alarm rules
+> and default dashboards are written as `instantiate` writes them; its derived
+> points and KPIs reach the asset through the pin; no maintenance plan is
+> written (`instantiate` writes none). The plan is re-computed at apply and
+> any refusal is a 409 that writes nothing; the reasons are
+> `templateAdoptionRefusalReasonSchema` (`packages/shared/src/contracts/
+> template-adoption.ts`), among them a standalone point the version does not
+> declare, a unit mismatch, an asset already pinned and a derived key held as
+> another kind, each naming the asset code (and the key, for a point). No
+> migration. **Release back to no template stays out of scope (A7):** adoption
+> is one-way; later changes go through migrate. Copilot, **per ADR 0099
+> Amendment 12** (PR 2): `assetTemplate.adopt`, a red Confirm card on `adopt`
+> (no new `DELETE`). Web (PR 3): **Adopt a template** on a template-less asset
+> page and as an asset-list bulk action. **New key** (`F4.313`, web only): the
+> key picker of **Add calculated point** and of the bulk wizard offers it to a
+> global administrator only; the formula is checked first, then
+> `POST /admin/point-keys`, then the point (two writes; a refused point leaves
+> the key in the catalog). The picker lists only the asset's domain (plus keys
+> with no domain) until **Show all keys**, with a search, and
+> `GET /admin/assets/:id`
+> carries `domain`. The copilot keeps one card per change (`pointKey.create`,
+> then `calcPoint.set` or `.createBatch`).
 > And **the tool-calling onboarding agent loop** (**ADR 0090** with
 > **Amendment 1**; row `F3.21`, merged 2026-10-03 in #705, squash `9ff272e1`;
 > the ADR in #702 and the amendment in #703). It amends ADR 0011 decision 1:
@@ -1431,9 +1518,11 @@
 > `assetTemplate.create`, `.update` and `.publish` (both moved from `kpis.ts`
 > in #838), `.draft`, `.archive`, `.importStock` and `.instantiate` (target kind
 > `assetTemplateDeploy`, the route's deploy authority, which admits a
-> `location_admin` on a site it manages). `migrate`, `seeded-rules/reapply`,
-> `default-dashboards` and `migration-preview` stay manual for good, each with
-> a permanent reason (`F4.254` ruling 2), and so does the asset-point
+> `location_admin` on a site it manages), and, since ADR 0099 Amendment 12
+> (`F4.312`), `.adopt` (migrate's authority; red). `migrate`,
+> `seeded-rules/reapply`, `default-dashboards` and `migration-preview` stay
+> manual for good, each with a permanent reason (`F4.254` ruling 2), and so
+> does the asset-point
 > `bulk-update` (`MULTI_TARGET`; ruling 3).
 > **`F4.255`** (ADR 0099 Amendment 2; #840 `49785d5c`, #839 `3f01ca8c`, #842
 > `300578c9`): `GET /api/v1/admin/onboarding/sessions?organizationId=…` lists
@@ -3308,6 +3397,13 @@ migration `0057` and `bms.asset_roles` was global from `0051`, so the two
 arrived from opposite directions at the same rule. The test is the column, not
 the history.
 
+**The third arrived with `F4.309`: `bms.point_key_states`** (**ADR 0088
+Amendment 3**). `PointKeyStatesAdminService` gates every mutation on
+`isGlobalAdmin`, as above. It differs on reads: its admin list is global
+`admin` only too (owner ruling, `F4.309` plan Q1), because every signed-in user
+already reads the rows through `GET /api/v1/vocabularies` `switchingStates`, so
+no master-data read is needed to keep a value reachable.
+
 **READS ARE A DIFFERENT QUESTION FROM WRITES, and both tables split them the
 same way.** `requireMasterDataUser` guards the reads; only the writes reach
 `isGlobalAdmin`. `AssetRolesAdminService.list` is deliberately a
@@ -4360,6 +4456,9 @@ These are intentionally deferred. Do not implement them yet:
   stays on the page (ruling 3). The calculated-point entries for a
   template-less asset (ADR 0099 Amendment 11, `F4.311`) are catalogued; the
   third `DELETE` allowed beside ruling 19's two is `calcPoint.delete` alone.
+  `assetTemplate.adopt` (ADR 0099 Amendment 12, `F4.312`) is catalogued too;
+  releasing an adopted asset back to no template stays out (ADR 0109
+  Amendment 1, A7).
   Also still out: a copilot conversation list or
   history page (ADR 0099 Amendment 6), and an `ETag` header or `If-Match` for
   any other catalog entry (Amendment 5).

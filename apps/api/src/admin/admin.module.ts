@@ -20,6 +20,7 @@ import { AssetTemplateInstantiationService } from "./asset-templates/asset-templ
 import { CalcParametersAdminController } from "./calc-parameters/calc-parameters.controller";
 import { CalcParametersAdminService } from "./calc-parameters/calc-parameters.service";
 import { AssetTemplateMigrationService } from "./asset-templates/asset-templates-migrate.service";
+import { AssetTemplateAdoptionService } from "./asset-templates/asset-templates-adopt.service";
 import { AssetTemplateSeededRulesService } from "./asset-templates/asset-templates-seeded-rules.service";
 import { AssetTemplatesStockService } from "./asset-templates/asset-templates-stock.service";
 import { AssetTemplatesAdminController } from "./asset-templates/asset-templates.controller";
@@ -48,6 +49,8 @@ import { LocationsAdminController } from "./locations/locations.controller";
 import { LocationsAdminService } from "./locations/locations.service";
 import { PointKeysAdminController } from "./point-keys/point-keys.controller";
 import { PointKeysAdminService } from "./point-keys/point-keys.service";
+import { PointKeyStatesAdminController } from "./point-key-states/point-key-states.controller";
+import { PointKeyStatesAdminService } from "./point-key-states/point-key-states.service";
 import { AssetRolesAdminController } from "./vocabularies/asset-roles/asset-roles.controller";
 import { AssetRolesAdminService } from "./vocabularies/asset-roles/asset-roles.service";
 import { LocationTypesVocabularyAdminController } from "./vocabularies/location-types.controller";
@@ -115,6 +118,8 @@ import { UsersService } from "./users/users.service";
     // F4.311 / ADR 0109 decision 4 — POST admin/calc-points/batch.
     CalcPointBatchController,
     PointKeysAdminController,
+    // F4.309 / ADR 0088 Amendment 3 — the state labels of switching points, global admin only.
+    PointKeyStatesAdminController,
     // E4.1a / ADR 0070 decision 2 — the calc parameter store and its vocabulary read.
     CalcParametersAdminController,
     AssetRolesAdminController,
@@ -164,6 +169,7 @@ import { UsersService } from "./users/users.service";
     CalcBackfillRunStore,
     CalcBackfillRequestService,
     PointKeysAdminService,
+    PointKeyStatesAdminService,
     CalcParametersAdminService,
     AssetRolesAdminService,
     LocationTypesVocabularyAdminService,
@@ -173,6 +179,8 @@ import { UsersService } from "./users/users.service";
     // default dashboards: the instantiate hook and POST :id/default-dashboards.
     AssetDashboardsInstantiateService,
     AssetTemplateMigrationService,
+    // F4.312 / ADR 0109 Amendment 1 — adopting a template-less asset onto a version.
+    AssetTemplateAdoptionService,
     // E2.4 / ADR 0058 decision 8 — the seeded-rules drift list and re-apply.
     AssetTemplateSeededRulesService,
     // F2.13 / ADR 0052. The catalog is repository data behind a token so the
@@ -204,6 +212,7 @@ import { UsersService } from "./users/users.service";
   // (`COPILOT_ONBOARDING_SKILL` in `CopilotModule`), never a second copy of its provider tree.
   // F4.277 — the copilot's `list_audit_log` calls `AuditAdminService.list` (the route's own read gate).
   // F4.283 — the copilot's telemetry proposals run `TelemetryProposalCheckService` (the routes' own checks, read-only).
-  exports: [OnboardingService, AuditAdminService, TelemetryProposalCheckService],
+  // F4.309 PR 3 — the copilot's `list_point_key_states` calls `PointKeyStatesAdminService.list` (the route's own gate).
+  exports: [OnboardingService, AuditAdminService, TelemetryProposalCheckService, PointKeyStatesAdminService],
 })
 export class AdminModule {}

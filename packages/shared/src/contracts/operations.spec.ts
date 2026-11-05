@@ -21,6 +21,8 @@ const OTHER_SIX = {
   alarmSkills: [],
   assetRoles: [],
   dashboardSections: [],
+  // `F4.309` (owner ruling Q5): required, so every fixture carries it.
+  switchingStates: [],
 };
 
 /** A response missing `waterBalanceRoles` is refused — the seventh field is required. */
@@ -31,6 +33,33 @@ export function assertRefusesResponseWithoutWaterBalanceRoles(): void {
     "vocabulariesResponseSchema accepted a response with no waterBalanceRoles — the field " +
       "must be required, not optional, so a caller cannot silently render six vocabularies.",
   );
+}
+
+/**
+ * `F4.309` / ADR 0088 Amendment 3 decision 5 (owner ruling Q5 (a)) — a response missing
+ * `switchingStates` is refused; with it, empty or with a row, it parses.
+ */
+export function assertRequiresSwitchingStates(): void {
+  const { switchingStates: _dropped, ...withoutSwitchingStates } = OTHER_SIX;
+  const missing = vocabulariesResponseSchema.safeParse({ ...withoutSwitchingStates, waterBalanceRoles: [] });
+  assert(missing.success === false, "vocabulariesResponseSchema accepted a response with no switchingStates");
+  const withRow = vocabulariesResponseSchema.safeParse({
+    ...OTHER_SIX,
+    waterBalanceRoles: [],
+    switchingStates: [{ pointKey: "breaker_main", value: 1, label: "CLOSED", tone: "closed" }],
+  });
+  assert(
+    withRow.success === true,
+    `vocabulariesResponseSchema refused a well-formed switchingStates row: ${JSON.stringify(
+      !withRow.success ? withRow.error.issues : undefined,
+    )}`,
+  );
+  const badTone = vocabulariesResponseSchema.safeParse({
+    ...OTHER_SIX,
+    waterBalanceRoles: [],
+    switchingStates: [{ pointKey: "breaker_main", value: 1, label: "CLOSED", tone: "earthed" }],
+  });
+  assert(badTone.success === false, "vocabulariesResponseSchema accepted a switching state with tone 'earthed'");
 }
 
 /** A response with an empty `waterBalanceRoles` array parses. */

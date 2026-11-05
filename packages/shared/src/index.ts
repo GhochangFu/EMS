@@ -52,7 +52,6 @@ import type * as N from "./contracts/notifications";
 import type * as Ob from "./contracts/onboarding";
 import type * as Op from "./contracts/operations";
 import type * as PK from "./contracts/point-keys";
-import type * as PKS from "./contracts/point-key-states";
 import type * as PM from "./contracts/point-metadata";
 import type * as Rp from "./contracts/reports";
 import type * as SR from "./contracts/seeded-rules";
@@ -666,6 +665,7 @@ export type * from "./types/trend-points-report";
 export type * from "./types/dashboard-widget-append";
 export type * from "./types/trend-strip";
 export type * from "./types/calc-points";
+export type * from "./types/template-adoption";
 
 // ---------------------------------------------------------------------------
 // AI onboarding wizard (ADR 0011, ADR 0022)
@@ -935,10 +935,8 @@ export type MimicNodeMemberDto = z.infer<typeof Mi.mimicNodeMemberSchema>;
 export type MimicNodeAlarmDto = z.infer<typeof Mi.mimicNodeAlarmSchema>;
 export type MimicWidgetNodesDto = z.infer<typeof Mi.mimicWidgetNodesSchema>;
 export type DashboardMimicNodesResponseDto = z.infer<typeof Mi.dashboardMimicNodesResponseSchema>;
-// `F3.74` / ADR 0088 plan D3 — the fleet-wide point-key state map (`bms.point_key_states`).
-export type PointKeyStateTone = z.infer<typeof PKS.pointKeyStateToneSchema>;
-export type PointKeyStateDto = z.infer<typeof PKS.pointKeyStateSchema>;
-export type PointKeyStateMapDto = z.infer<typeof PKS.pointKeyStateMapSchema>;
+// `F3.74` / `F4.309` (ADR 0088) — the point-key state map, its admin rows and the switching states.
+export type * from "./types/point-key-states";
 
 // ---------------------------------------------------------------------------
 // Re-exported sibling modules

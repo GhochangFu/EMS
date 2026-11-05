@@ -19,6 +19,8 @@ import {
   assetTemplatesListResponseSchema,
   defaultDashboardsBackfillResultDtoSchema,
   stockAssetTemplatesListResponseSchema,
+  templateAdoptionPreviewResponseSchema,
+  templateAdoptionResultResponseSchema,
   templateDraftDeletedResponseSchema,
   templateMigrationPreviewResponseSchema,
   templateMigrationResultResponseSchema,
@@ -35,6 +37,8 @@ import type {
   DefaultDashboardsBackfillResultDto,
   QualityPolicy,
   StockAssetTemplatesListResponse,
+  TemplateAdoptionPreviewResponse,
+  TemplateAdoptionResultResponse,
   TemplateDraftDeletedResponse,
   TemplateMigrationPreviewResponse,
   TemplateMigrationResultResponse,
@@ -48,6 +52,8 @@ export type {
   AssetTemplatesListResponse,
   DefaultDashboardsBackfillResultDto,
   StockAssetTemplatesListResponse,
+  TemplateAdoptionPreviewResponse,
+  TemplateAdoptionResultResponse,
   TemplateDraftDeletedResponse,
   TemplateMigrationPreviewResponse,
   TemplateMigrationResultResponse,
@@ -374,6 +380,38 @@ export async function migrateAdminAssetTemplateAssets(
   return adminFetch(
     `/admin/asset-templates/${targetVersionId}/migrate`,
     templateMigrationResultResponseSchema,
+    { method: "POST", headers: jsonHeaders, body: JSON.stringify({ assetIds }) },
+  );
+}
+
+/**
+ * `F4.312` (ADR 0109 Amendment 1 decision 3) — what adopting `assetIds` onto
+ * the published version `templateId` would do, per asset, and every refusal.
+ * Writes nothing; `POST` because the selection is a body, as migrate's.
+ */
+export async function previewAdminAssetTemplateAdoption(
+  templateId: string,
+  assetIds: string[],
+): Promise<TemplateAdoptionPreviewResponse> {
+  return adminFetch(
+    `/admin/asset-templates/${templateId}/adoption-preview`,
+    templateAdoptionPreviewResponseSchema,
+    { method: "POST", headers: jsonHeaders, body: JSON.stringify({ assetIds }) },
+  );
+}
+
+/**
+ * `F4.312` — pins the template-less `assetIds` to `templateId`, all or none.
+ * Like migrate, the preview is not echoed back: the server re-plans and
+ * answers 409 `{ message, refusals, refusalCount }` on any refusal.
+ */
+export async function adoptAdminAssetTemplateAssets(
+  templateId: string,
+  assetIds: string[],
+): Promise<TemplateAdoptionResultResponse> {
+  return adminFetch(
+    `/admin/asset-templates/${templateId}/adopt`,
+    templateAdoptionResultResponseSchema,
     { method: "POST", headers: jsonHeaders, body: JSON.stringify({ assetIds }) },
   );
 }

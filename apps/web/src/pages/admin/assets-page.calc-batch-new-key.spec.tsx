@@ -71,7 +71,7 @@ function pointKey(code: string, name: string) {
     id: `pk-${code}`,
     code,
     name,
-    domain: null,
+    domain: "electrical",
     unit: null,
     description: null,
     active: true,

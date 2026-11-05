@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   addOffersNoKeyTheAssetAlreadyHas,
+  aHelpEntryAppendsToTheEditorsFormula,
   cancelAfterAFormulaOnlyEditOnAddAsks,
   cancelAfterAFormulaOnlyEditOnEditAsks,
   cancelOnAnUntouchedEditLeavesAtOnce,
@@ -69,5 +70,9 @@ describe("F4.311 PR 6a — the standalone calculated point's panel", () => {
 
   it("Cancel on an untouched Edit leaves at once", async () => {
     await cancelOnAnUntouchedEditLeavesAtOnce();
+  });
+
+  it("a Formula help entry appends to the editor's formula (F4.314)", async () => {
+    await aHelpEntryAppendsToTheEditorsFormula();
   });
 });

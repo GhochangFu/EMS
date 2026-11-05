@@ -1,6 +1,7 @@
 import { instantiateAssetsBodySchema } from "../../contracts/asset-template-instantiate-writes";
 import { createAssetTemplateBodySchema, updateAssetTemplateBodySchema } from "../../contracts/asset-template-writes";
 import { importStockTemplateBodySchema } from "../../contracts/dashboard-template-writes";
+import { adoptAssetsBodySchema } from "../../contracts/template-adoption";
 import { stockCodeParam } from "./dashboard-templates";
 import { emptyBody, fieldList, plural, quoted, text, uuidParam } from "./summary-text";
 import type { CatalogEntry, CatalogTarget, ExcludedRoute } from "./types";
@@ -58,6 +59,14 @@ const TEMPLATE_FORMULAS = [
  * `assetTemplateDeploy` — the route's deploy authority, which admits a
  * `location_admin` on a site it manages. The summary names the target by id:
  * `CatalogSummaryInput` carries names for the template and organization only.
+ *
+ * `F4.312` PR 2 (ADR 0099 Amendment 12, ADR 0109 Amendment 1 decision 5) —
+ * `assetTemplate.adopt`. Its body is the shared adopt body by identity; the
+ * route re-plans at apply and refuses (409, nothing written) on any refusal, so
+ * the card carries no preview. `risk` is `edit` (it re-pins existing assets),
+ * and the card is red: adoption is one-way (A7). Its target is
+ * `assetTemplateAdopt`, the route's own gate on the version and every listed
+ * asset, so a pinned asset is refused before the card.
  */
 export const ASSET_TEMPLATE_ENTRIES: readonly CatalogEntry[] = [
   {
@@ -197,6 +206,30 @@ export const ASSET_TEMPLATE_ENTRIES: readonly CatalogEntry[] = [
       return `Build ${plural(count, "asset")} from the asset template ${quoted(targetName)} ${where} in ${organizationName}.`;
     },
   },
+  {
+    id: "assetTemplate.adopt",
+    title: "Pin assets with no template to an asset template",
+    method: "POST",
+    path: "/admin/asset-templates/:id/adopt",
+    params: { id: uuidParam },
+    body: adoptAssetsBodySchema,
+    bodyName: "adoptAssetsBodySchema",
+    clientOnly: [],
+    risk: "edit",
+    red: true,
+    // `CatalogRef` names one id per field; the target checks every id of `assetIds` itself (Amendment 12).
+    target: { kind: "assetTemplateAdopt", param: "id", field: "assetIds" },
+    refs: [],
+    formulas: [],
+    steps: [{ id: "assets", title: "Assets", fields: ["assetIds"] }],
+    summary: ({ body, targetName, organizationName }) => {
+      const count = Array.isArray(body.assetIds) ? body.assetIds.length : 0;
+      return (
+        `Pin ${plural(count, "asset")} with no template to the asset template ${quoted(targetName)} in ` +
+        `${organizationName}, all or none. It cannot be undone; later changes go through migrate.`
+      );
+    },
+  },
 ];
 
 const MANY_LIVE_ROWS =
@@ -207,15 +240,23 @@ const PARTIAL_COMMIT =
   "commits one transaction per chunk, so a failed call leaves earlier chunks applied (ADR 0067 Q7); decision 3 does not name it — manual";
 const WRITES_NOTHING =
   "a read through POST: it writes nothing (ADR 0039 decision 2); precedent: onboarding /validate";
+const ADOPTION_PREVIEW_WRITES_NOTHING =
+  "a read through POST: it writes nothing (ADR 0109 Amendment 1 decision 3); precedent: migration-preview";
 
 /**
  * The area's write routes that are not entries: four stay manual for good
  * (`F4.254` rulings 2 and 3). The four authoring routes left this list in
- * `F4.254` PR 2, and the instantiate route in PR 3.
+ * `F4.254` PR 2, and the instantiate route in PR 3. The adopt route left it in
+ * `F4.312` PR 2; its preview stays, a read through POST as migrate's is.
  */
 export const ASSET_TEMPLATE_PENDING: readonly ExcludedRoute[] = [
   { method: "POST", path: "/admin/asset-templates/:id/migrate", reason: MANY_LIVE_ROWS },
   { method: "POST", path: "/admin/asset-templates/:id/seeded-rules/reapply", reason: OVERWRITES_TUNED },
   { method: "POST", path: "/admin/asset-templates/:id/default-dashboards", reason: PARTIAL_COMMIT },
   { method: "POST", path: "/admin/asset-templates/:id/migration-preview", reason: WRITES_NOTHING },
+  {
+    method: "POST",
+    path: "/admin/asset-templates/:id/adoption-preview",
+    reason: ADOPTION_PREVIEW_WRITES_NOTHING,
+  },
 ];

@@ -7,6 +7,21 @@ import {
   runEmptyDerivedFormulaTests,
   runEmptyKpiExpressionTests,
   runFlattenNewlinesTests,
+  runFunctionCompletionAfterARollingMinuteUnitTests,
+  runFunctionCompletionAfterARollingHourUnitTests,
+  runFunctionCompletionInsideAnOpenQuoteTests,
+  runFunctionCompletionAfterAClosedQuoteTests,
+  runFunctionCompletionInsideAPointKeyTests,
+  runFunctionCompletionInsideAParameterTests,
+  runFunctionCompletionInsideAScopeTests,
+  runFunctionCompletionAtAPlainStartTests,
+  runFunctionCompletionAfterAParenthesisTests,
+  runFunctionCompletionAfterAnOperatorTests,
+  runFunctionCompletionApplyTests,
+  runUnvalidatedKpiFunctionCompletionTests,
+  runV1FunctionCompletionTests,
+  runV2FunctionCompletionTests,
+  runV3FunctionCompletionTests,
   runKpiScopeCompletionTests,
   runReferenceFormsTests,
   runRoutesToTheRightValidatorTests,
@@ -51,6 +66,66 @@ describe("formula editor rules", () => {
 
   it("gates @ scopes on the KPI's dialect, not on the surface", () => {
     runKpiScopeCompletionTests();
+  });
+
+  it("completes exactly the five CALC_FUNCTION_ARITY names under v1", () => {
+    runV1FunctionCompletionTests();
+  });
+
+  it("applies each function completion as its name and (", () => {
+    runFunctionCompletionApplyTests();
+  });
+
+  it("offers no function name after 15m — the m is a window unit, not the start of min(", () => {
+    runFunctionCompletionAfterARollingMinuteUnitTests();
+  });
+
+  it("offers no function name after 24h — the h is a window unit, not the start of hours(", () => {
+    runFunctionCompletionAfterARollingHourUnitTests();
+  });
+
+  it("offers no function name inside an open @group('… code", () => {
+    runFunctionCompletionInsideAnOpenQuoteTests();
+  });
+
+  it("offers function names after a closed '…' code", () => {
+    runFunctionCompletionAfterAClosedQuoteTests();
+  });
+
+  it("offers no function name inside a {…} point key", () => {
+    runFunctionCompletionInsideAPointKeyTests();
+  });
+
+  it("offers no function name inside a $… parameter", () => {
+    runFunctionCompletionInsideAParameterTests();
+  });
+
+  it("offers no function name inside an @… scope", () => {
+    runFunctionCompletionInsideAScopeTests();
+  });
+
+  it("offers function names at a plain ro start", () => {
+    runFunctionCompletionAtAPlainStartTests();
+  });
+
+  it("offers function names after (", () => {
+    runFunctionCompletionAfterAParenthesisTests();
+  });
+
+  it("offers function names after an operator following a closed point key", () => {
+    runFunctionCompletionAfterAnOperatorTests();
+  });
+
+  it("adds sum and avg to the function completions under v2", () => {
+    runV2FunctionCompletionTests();
+  });
+
+  it("adds delta and hours under v3 and offers no name twice", () => {
+    runV3FunctionCompletionTests();
+  });
+
+  it("completes an unvalidated KPI's functions as v1", () => {
+    runUnvalidatedKpiFunctionCompletionTests();
   });
 
   it("teaches exactly two v2 reference forms, and each example parses under v2 only", () => {

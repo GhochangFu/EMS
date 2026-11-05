@@ -519,6 +519,8 @@ export function createCopilotProposeTools(
     const fleetRow =
       entry.target.kind === "fleet" ||
       entry.target.kind === "pointKey" ||
+      // `F4.309` PR 3 (Amendment 13): a state-label row has no organization either.
+      entry.target.kind === "pointKeyState" ||
       entry.target.kind === "vocabulary" ||
       entry.target.kind === "telemetry";
     if (fleetRow && ctx.conversationOrganizationId === null) return { ok: false, error: PROPOSE_FLEET_UNBOUND_ERROR };

@@ -74,11 +74,14 @@ function trackedRefs(view: GeneratedSiteViewDto | undefined): Set<string> {
  *   is `Date.now()` read at render. Keeping `nowMs` in state and advancing it
  *   only on the tick would put a reading that has just arrived *after* `nowMs`,
  *   and `isStale` reads a future sample as stale.
+ * - **`enabled`** (`F4.308`, default `true`): `false` opens no socket, so the layout editor can
+ *   call the hook in every mode and connect only while a preview group is chosen.
  */
 export function useSiteLiveReadings(
   locationId: string,
   view: GeneratedSiteViewDto | undefined,
   dataUpdatedAt: number,
+  enabled = true,
 ): SiteLiveReadings {
   const accessToken = useAuthStore((s) => s.accessToken);
   const [live, setLive] = useState<LiveState>(EMPTY);
@@ -104,6 +107,9 @@ export function useSiteLiveReadings(
 
   useEffect(() => {
     setLive(EMPTY);
+    if (!enabled) {
+      return undefined;
+    }
     const socket: Socket = io(`${socketBaseUrl()}/ws/telemetry`, {
       transports: ["websocket"],
       auth: { token: accessToken },
@@ -134,7 +140,7 @@ export function useSiteLiveReadings(
     return () => {
       socket.disconnect();
     };
-  }, [locationId, accessToken]);
+  }, [locationId, accessToken, enabled]);
 
   const nowMs = Date.now();
   return {

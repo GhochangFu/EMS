@@ -6,6 +6,7 @@ import {
   assetRoles,
   dashboardSections,
   locationTypes,
+  pointKeyStates,
   ruleCategories,
   waterBalanceRoles,
 } from "@bms/db";
@@ -20,6 +21,7 @@ import type {
   DashboardSectionDto,
   LocationTypeDto,
   RuleCategoryDto,
+  SwitchingStateDto,
   VocabulariesResponse,
   WaterBalanceRoleDto,
 } from "@bms/shared";
@@ -83,7 +85,7 @@ export class VocabulariesService {
   constructor(@Inject(TENANT_DRIZZLE) private readonly db: BmsDb) {}
 
   /**
-   * Both axes in one response.
+   * Both axes in one response — and, since `F4.309`, the switching states beside them.
    *
    * Inactive rows are excluded: `active = false` is how a value is retired,
    * because deleting one that plant still references must fail (the foreign
@@ -195,12 +197,25 @@ export class VocabulariesService {
         .from(waterBalanceRoles)
         .where(eq(waterBalanceRoles.active, true))
         .orderBy(asc(waterBalanceRoles.sortOrder), asc(waterBalanceRoles.code)),
+      // `F4.309` / ADR 0088 Amendment 3 decision 5 (plan C12): the switching states for the state
+      // legend — every row of the fleet-wide `bms.point_key_states` (no `active` column; a label
+      // is retired by deleting it), ordered by point key then value. On the tenant pool like the
+      // seven above: the table has no row-level security and `bms_tenant` holds `SELECT` (`0097`).
+      db
+        .select({
+          pointKey: pointKeyStates.pointKeyCode,
+          value: pointKeyStates.value,
+          label: pointKeyStates.label,
+          tone: pointKeyStates.tone,
+        })
+        .from(pointKeyStates)
+        .orderBy(asc(pointKeyStates.pointKeyCode), asc(pointKeyStates.value)),
     ] as const;
     // In parallel on the pool, where each query takes its own connection. On a
-    // caller's `tx` they run one at a time: seven queries at once on one client
+    // caller's `tx` they run one at a time: eight queries at once on one client
     // is what pg 8 deprecates ("Calling client.query() when the client is
     // already executing a query") and pg 9 removes.
-    const [categories, domains, severities, skills, roles, sections, balanceRoles] =
+    const [categories, domains, severities, skills, roles, sections, balanceRoles, states] =
       db === this.db ? await Promise.all(queries) : await inSequence(queries);
 
     return {
@@ -215,6 +230,8 @@ export class VocabulariesService {
       assetRoles: roles as AssetRoleDto[],
       dashboardSections: sections as DashboardSectionDto[],
       waterBalanceRoles: balanceRoles as WaterBalanceRoleDto[],
+      // `tone` narrowed the same way: `point_key_states_tone_check` (`0109`) bounds it to the five.
+      switchingStates: states as SwitchingStateDto[],
     };
   }
 

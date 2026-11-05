@@ -14,6 +14,7 @@ import type { LocationAssetScopeService } from "../../auth/location-asset-scope.
 import type { DashboardService } from "../../dashboard/dashboard.service";
 import type { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import type { MaintenanceService } from "../../maintenance/maintenance.service";
+import type { PointKeyStatesAdminService } from "../../admin/point-key-states/point-key-states.service";
 import type { UsersService } from "../../admin/users/users.service";
 import type { WorkOrdersService } from "../../work-orders/work-orders.service";
 import type { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
@@ -138,6 +139,12 @@ export interface CopilotReadServices {
    * sites' through the location helper), so never before placement.
    */
   readonly locationSummary: Pick<LocationSummaryService, "rows" | "summarise">;
+  /**
+   * `F4.309` PR 3 (ADR 0099 Amendment 13 decision 3): the State Labels page's list
+   * (`GET /admin/point-key-states`), behind its own `requireGlobalAdmin`; `list` only, so no
+   * write and no audit row is reachable.
+   */
+  readonly pointKeyStates: Pick<PointKeyStatesAdminService, "list">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */
@@ -263,6 +270,25 @@ export function fitListResult<K>(
     result = assemble();
   }
   return { ok: true, result, organizationIds: read };
+}
+
+/**
+ * `F4.309` PR 3 (owner ruling 2026-11-05) — {@link fitListResult}'s loop for a fleet list, whose
+ * rows belong to no organization (`list_point_key_states`): the result is `{ truncated, items }`,
+ * `truncated` first, measured after the same scrub against the same
+ * {@link COPILOT_TOOL_RESULT_BUDGET_CHARS}. While it is longer, the last item is dropped and the
+ * result is `truncated`. It names no organization.
+ */
+export function fitFleetListResult(items: unknown[], truncated = false): CopilotToolResult {
+  const kept = [...items];
+  const assemble = (): Record<string, unknown> => ({ truncated, items: kept });
+  let result = assemble();
+  while (kept.length > 0 && JSON.stringify(scrubToolResult(result)).length > COPILOT_TOOL_RESULT_BUDGET_CHARS) {
+    kept.pop();
+    truncated = true;
+    result = assemble();
+  }
+  return { ok: true, result, organizationIds: [] };
 }
 
 /** `F4.291` live check: an unpaged list's result, `truncated` first and fitted to the budget (`head`: see {@link fitListResult}). */

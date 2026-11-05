@@ -8,6 +8,14 @@ describe("F3.32c — MimicLayoutsModule wiring", () => {
     spec.assertModuleDeclaresItsMembers();
   });
 
+  it("F4.308 provides the preview service and its own resolver, and still exports only its service", () => {
+    spec.assertModuleProvidesThePreview();
+  });
+
+  it("F4.308 the preview service's and the resolver's dependencies resolve inside the module", () => {
+    spec.assertPreviewDepsResolve();
+  });
+
   it("AppModule imports MimicLayoutsModule", () => {
     spec.assertAppModuleImportsTheModule();
   });

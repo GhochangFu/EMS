@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 
 import {
+  adoptRefusedMessage,
   archiveRefusedMessage,
   branchRefusedMessage,
   draftRequiredMessage,
@@ -63,6 +64,21 @@ export function anInstantiateNeedsAPublishedVersion(): void {
   );
 }
 
+/** `F4.312` PR 2 (Amendment 12): an adoption onto a published version is admitted. */
+export function anAdoptionOntoAPublishedVersionIsAdmitted(): void {
+  expect(templateLifecycleRefusal("assetTemplate.adopt", "published")).toBeNull();
+}
+
+/** `F4.312` PR 2: an adoption onto a draft reads the adopt route's sentence. */
+export function anAdoptionOntoADraftReadsTheRoutesSentence(): void {
+  expect(templateLifecycleRefusal("assetTemplate.adopt", "draft")).toBe(adoptRefusedMessage("draft"));
+}
+
+/** `F4.312` PR 2: an adoption onto an archived version reads the adopt route's sentence. */
+export function anAdoptionOntoAnArchivedVersionReadsTheRoutesSentence(): void {
+  expect(templateLifecycleRefusal("assetTemplate.adopt", "archived")).toBe(adoptRefusedMessage("archived"));
+}
+
 /**
  * An entry whose route holds no status guard is never refused, with any status
  * or none: `assetTemplate.draft` and `dashboardTemplate.applyToSites` read no
@@ -83,9 +99,10 @@ export function aRuledEntryWithoutAStatusFailsClosed(): void {
   }
 }
 
-/** The nine ruled ids are the nine catalog entries named above: a renamed catalog id cannot leave a rule behind. */
+/** The ten ruled ids are the ten catalog entries named above: a renamed catalog id cannot leave a rule behind. */
 export function everyRuledIdIsACatalogEntry(): void {
   expect([...TEMPLATE_LIFECYCLE_RULED_IDS].sort()).toEqual([
+    "assetTemplate.adopt",
     "assetTemplate.archive",
     "assetTemplate.instantiate",
     "assetTemplate.publish",

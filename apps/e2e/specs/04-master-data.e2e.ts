@@ -181,5 +181,10 @@ test.describe("path 4 — master data", () => {
     await test.step("offer Add calculated point on the template-less asset", async () => {
       await expect(page.getByRole("button", { name: "Add calculated point", exact: true })).toBeVisible();
     });
+
+    // `F4.312` PR 3 (ADR 0109 Amendment 1 decision 5): the same template-less asset offers adoption.
+    await test.step("offer Adopt a template on the template-less asset", async () => {
+      await expect(page.getByRole("button", { name: "Adopt a template", exact: true })).toBeVisible();
+    });
   });
 });

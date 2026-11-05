@@ -41,6 +41,7 @@ const vocabularies: VocabulariesResponse = {
   assetRoles: [],
   dashboardSections: [],
   waterBalanceRoles: [],
+  switchingStates: [],
 };
 
 type Seen = { url: string; init: RequestInit };

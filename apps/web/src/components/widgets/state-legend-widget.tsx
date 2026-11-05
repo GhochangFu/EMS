@@ -9,16 +9,23 @@ import { StateLegend } from "../control-room/state-legend";
  * `mb-2`) takes about 48.5 px, which would make the legend's band that much taller than its pills
  * (a view canvas fits each band to its content since the `F3.77` follow-up). The title is drawn
  * inline, in the frame's label style, before the pills. A long title gives way: it may
- * shrink and truncates, while the pills' wrapper may not shrink, so the key stays whole. The legend ignores `status` by
- * design: it binds nothing and reads only the severity vocabulary, so a loading, error or empty
+ * shrink and truncates. The legend ignores `status` by
+ * design: it binds nothing and reads only `/vocabularies` (the severities and, since `F4.309`, the
+ * switching states), so a loading, error or empty
  * placeholder would hide a key that is true whatever the widget's data. `status` stays on the
  * props only so the two dispatchers keep one call shape for every widget.
+ *
+ * `F4.309` — `StateLegend` draws two sibling groups (the states, then the switching states when
+ * there are any). The pills' wrapper may shrink and wraps, and so does the row, so a narrow cell
+ * moves pills onto a second line instead of clipping them (a view canvas sizes its rows to
+ * content; review M1).
  */
 export function StateLegendWidget({ title }: { title: string; status: WidgetStatus }) {
   return (
-    <div className="surface-raised flex h-full items-center gap-3 overflow-hidden px-3">
+    <div className="surface-raised flex h-full flex-wrap items-center gap-x-3 gap-y-1 overflow-hidden px-3 py-1">
       <span className="min-w-0 truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">{title}</span>
-      <div className="shrink-0">
+      {/* `F4.309` — the "Switching states" group sits beside "State legend", and wraps under it when narrow. */}
+      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
         <StateLegend />
       </div>
     </div>

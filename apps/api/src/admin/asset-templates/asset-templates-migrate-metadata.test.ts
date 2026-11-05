@@ -7,6 +7,7 @@ import {
   assertAnOverrideStillLegalOnTheTargetPasses,
   assertAnOverrideTheTargetDefaultInvertsRefuses,
   assertEachAssetIsCheckedOnItsOwn,
+  assertRefuseReceivesTheRefusedAsset,
 } from "./asset-templates-migrate-metadata.spec";
 
 /** `F2.30` — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
@@ -33,5 +34,9 @@ describe("F2.30 — migrate re-validates a metadata override against the target 
 
   it("checks each asset on its own", () => {
     assertEachAssetIsCheckedOnItsOwn();
+  });
+
+  it("F4.312: hands the refused asset to refuse beside the refusal", () => {
+    assertRefuseReceivesTheRefusedAsset();
   });
 });

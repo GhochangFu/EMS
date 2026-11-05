@@ -146,6 +146,7 @@ const VOCABULARIES = {
   assetRoles: [],
   dashboardSections: [],
   waterBalanceRoles: [],
+  switchingStates: [],
 } as unknown as VocabulariesResponse;
 
 const admin: AuthUser = {

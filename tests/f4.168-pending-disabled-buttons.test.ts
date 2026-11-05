@@ -100,6 +100,8 @@ const BYSTANDER_ALLOWLIST: Bystander[] = [
   { file: "apps/web/src/components/report-schedules.tsx", marker: "deleting", name: "Edit" },
   // `F4.311` PR 6a: each opens a standalone form; disabled while a standalone write pends.
   { file: "apps/web/src/pages/admin/asset-points-page.tsx", marker: "standaloneBusy", name: "Add calculated point" },
+  // `F4.312` PR 3: opens the `assetTemplate.adopt` wizard; disabled while a standalone write pends.
+  { file: "apps/web/src/pages/admin/asset-points-page.tsx", marker: "standaloneBusy", name: "Adopt a template" },
   { file: "apps/web/src/pages/admin/asset-points-page.tsx", marker: "standaloneBusy", name: "Edit" },
   { file: "apps/web/src/pages/admin/asset-points-page.tsx", marker: "standaloneBusy", name: "Delete" },
 ];

@@ -1,5 +1,6 @@
 import { BadRequestException } from "@nestjs/common";
 
+import { pointKeyStates } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import { MAX_ECHOED_CELL_CHARS } from "../admin/spreadsheet-guard";
@@ -200,7 +201,7 @@ function countingExecutor(): { db: BmsDb; maxInFlight: () => number } {
   return { db: { select: () => chain } as unknown as BmsDb, maxInFlight: () => max };
 }
 
-/** A caller's executor (`tx`) runs the seven reads one at a time. */
+/** A caller's executor (`tx`) runs the eight reads one at a time. */
 export async function assertListOnAnExecutorRunsOneQueryAtATime(): Promise<void> {
   const pool = countingExecutor();
   const tx = countingExecutor();
@@ -216,7 +217,7 @@ export async function assertListOnAnExecutorRunsOneQueryAtATime(): Promise<void>
   );
 }
 
-/** The default executor (the pool) keeps the seven reads parallel. */
+/** The default executor (the pool) keeps the eight reads parallel. */
 export async function assertListOnThePoolStaysParallel(): Promise<void> {
   const pool = countingExecutor();
   const service = new VocabulariesService(pool.db);
@@ -225,4 +226,60 @@ export async function assertListOnThePoolStaysParallel(): Promise<void> {
     pool.maxInFlight() > 1,
     `list() on the pool must run its queries in parallel, saw max ${pool.maxInFlight()} in flight`,
   );
+}
+
+/**
+ * `F4.309` / ADR 0088 Amendment 3 decision 5 (plan C12) — `list()` reads `bms.point_key_states`
+ * as an eighth query and answers it as `switchingStates`: the key, value, label and tone of every
+ * row (no `active` column, so no filter), ordered by point key then value. A fake executor records
+ * each chain by the table it reads and answers that table's rows; what the rows are on a real
+ * database, and their order, is `vocabularies.service.integration.spec.ts`.
+ */
+export async function assertListServesTheSwitchingStates(): Promise<void> {
+  type Recorded = { fields: Record<string, unknown>; table?: unknown; where: number; orderBy: number };
+  const recorded: Recorded[] = [];
+  const STATES = [
+    { pointKey: "breaker_main", value: 0, label: "OPEN", tone: "open" },
+    { pointKey: "breaker_main", value: 1, label: "CLOSED", tone: "closed" },
+  ];
+  const db = {
+    select: (fields: Record<string, unknown>) => {
+      const entry: Recorded = { fields, where: 0, orderBy: 0 };
+      recorded.push(entry);
+      const chain = {
+        from: (table: unknown) => {
+          entry.table = table;
+          return chain;
+        },
+        where: () => {
+          entry.where += 1;
+          return chain;
+        },
+        orderBy: (...columns: unknown[]) => {
+          entry.orderBy = columns.length;
+          return chain;
+        },
+        then: (resolve: (rows: unknown[]) => unknown) =>
+          Promise.resolve(entry.table === pointKeyStates ? STATES : []).then(resolve),
+      };
+      return chain;
+    },
+  } as unknown as BmsDb;
+
+  const response = await new VocabulariesService(db).list();
+
+  assert(
+    JSON.stringify(response.switchingStates) === JSON.stringify(STATES),
+    `list() must answer the point_key_states rows as switchingStates, got ${JSON.stringify(response.switchingStates)}`,
+  );
+  const reads = recorded.filter((entry) => entry.table === pointKeyStates);
+  assert(reads.length === 1, `list() must read bms.point_key_states exactly once, read it ${reads.length} times`);
+  const read = reads[0] as Recorded;
+  assert(
+    JSON.stringify(Object.keys(read.fields)) === JSON.stringify(["pointKey", "value", "label", "tone"]),
+    `the switching-state read must select pointKey, value, label and tone, selected ${Object.keys(read.fields).join(", ")}`,
+  );
+  assert(read.fields.pointKey === pointKeyStates.pointKeyCode, "pointKey must be point_key_code");
+  assert(read.where === 0, "every row is a switching state: the read takes no where clause");
+  assert(read.orderBy === 2, `ordered by point key then value (two columns), got ${read.orderBy}`);
 }

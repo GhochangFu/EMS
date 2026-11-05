@@ -7,6 +7,7 @@ import { adminAssetDtoSchema } from "@bms/shared/contracts";
 import type { AdminAssetDto } from "@bms/shared";
 
 import * as assetPointsApi from "../../api/admin/asset-points";
+import * as templatesApi from "../../api/admin/asset-templates";
 import * as assetsApi from "../../api/admin/assets";
 import * as locationsApi from "../../api/admin/locations";
 import * as organizationsApi from "../../api/admin/organizations";
@@ -16,6 +17,7 @@ import * as copilotApi from "../../api/copilot";
 import * as systemStatusApi from "../../api/system-status";
 import * as vocabApi from "../../api/vocabularies";
 import { ApiError } from "../../lib/api-error";
+import { stockEntry, templateRow, templateVersion } from "../../lib/formula-suggestions.spec";
 import type { AuthUser } from "../../stores/auth-store";
 import { AssetsAdminPage } from "./assets-page";
 
@@ -74,7 +76,7 @@ function stubApi(rows: AdminAssetDto[]): void {
         id: "pk-pf",
         code: "pf",
         name: "Power factor",
-        domain: null,
+        domain: "electrical",
         unit: null,
         description: null,
         active: true,
@@ -234,4 +236,52 @@ export async function aRefusedBatchRereadsTheAssetList(): Promise<void> {
   const before = vi.mocked(assetsApi.fetchAdminAssets).mock.calls.length;
   await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
   await waitFor(() => expect(vi.mocked(assetsApi.fetchAdminAssets).mock.calls.length).toBeGreaterThan(before));
+}
+
+// ---- `F4.314` PR 2 (ADR 0038 Amendment 6 A3) — Suggested formulas ----------
+
+const PF_STOCK = "{voltage_l1_v} * 2";
+const PF_ORG = "{p_pf} * 1";
+
+/** Stock `pf` and one published `SPEC` version of the electrical domain. */
+function stubSuggestions(): void {
+  vi.spyOn(templatesApi, "fetchAdminStockAssetTemplates").mockResolvedValue({
+    items: [stockEntry("Electrical feeder", [{ pointKey: "pf", formula: PF_STOCK }])],
+  });
+  vi.spyOn(templatesApi, "fetchAdminAssetTemplates").mockResolvedValue({
+    items: [templateRow({ id: "spec-pump", organizationCode: "SPEC" })],
+  });
+  vi.spyOn(templatesApi, "fetchAdminAssetTemplate").mockResolvedValue(
+    templateVersion({ id: "spec-pump", organizationCode: "SPEC" }, [{ pointKey: "pf", formula: PF_ORG }]),
+  );
+}
+
+/** Opens the wizard on PMP-1 and PMP-2 and lands on the Formula step with `pf`. */
+async function openFormulaStep(): Promise<HTMLElement> {
+  stubApi([ONE, TWO]);
+  stubSuggestions();
+  renderPage();
+  await check("PMP-1", "PMP-2");
+  await userEvent.click(screen.getByRole("button", { name: "Add calculated point to 2 selected" }));
+  const dialog = await screen.findByRole("dialog");
+  await next(1);
+  await userEvent.selectOptions(await within(dialog).findByLabelText("Point key"), await within(dialog).findByText("pf · Power factor"));
+  await next(1);
+  return dialog;
+}
+
+/**
+ * The selection's shared organization and domain read its published
+ * versions. Mutation: the wizard passes `organizationCode: null`.
+ */
+export async function theBulkWizardListsTheSharedOrganizationsVersion(): Promise<void> {
+  const dialog = await openFormulaStep();
+  expect(await within(dialog).findByText(PF_ORG)).toBeTruthy();
+}
+
+/** No single asset, so nothing is marked missing. Mutation: the wizard passes `assetKeys: []`. */
+export async function theBulkWizardMarksNoInputMissing(): Promise<void> {
+  const dialog = await openFormulaStep();
+  await within(dialog).findByText(PF_STOCK);
+  expect(within(dialog).queryByText(/which this asset does not have/)).toBeNull();
 }

@@ -38,6 +38,7 @@ import { AssetPointBulkEditPanel } from "../../components/assets/asset-point-bul
 import { CalcPointDeleteWizard } from "../../components/assets/calc-point-delete-wizard";
 import { CalcPointPanel } from "../../components/assets/calc-point-panel";
 import { MappingSheetPanel } from "../../components/assets/mapping-sheet-panel";
+import { TemplateAdoptWizard } from "../../components/assets/template-adopt-wizard";
 import {
   PointCalcBackfillField,
   PointCalcDraftProblems,
@@ -45,6 +46,7 @@ import {
   PointCalcHeading,
   PointCalcScheduleFields,
   PointCalcSettingsTable,
+  type PointCalcSuggestionScope,
 } from "../../components/assets/point-calc-override-panel";
 import { SectionCard } from "../../components/section-card";
 import { WizardShell } from "../../components/wizard/wizard-shell";
@@ -76,7 +78,7 @@ import {
   type OverrideDraft,
 } from "../../lib/asset-point-calc-override";
 import { backfillPollInterval, backfillProgressLabel } from "../../lib/calc-point-draft";
-import { canWritePointKeys } from "../../lib/admin-access";
+import { canWritePointKeys, isMasterDataAdmin } from "../../lib/admin-access";
 import { createKeyThenWritePoint } from "../../lib/new-point-key-draft";
 import { StatusPill } from "../../components/status-pill";
 import type { AuthUser } from "../../stores/auth-store";
@@ -168,6 +170,8 @@ type CalcOverrideWizardProps = {
   onSubmit: (body: Record<string, unknown>) => void;
   onClear: () => void;
   onCancel: () => void;
+  /** `F4.314` PR 2 (ruling 7): the Formula step's Suggested formulas, the template's own version excluded. */
+  suggestions: PointCalcSuggestionScope;
 };
 
 /**
@@ -198,6 +202,7 @@ function CalcOverrideWizard({
   onSubmit,
   onClear,
   onCancel,
+  suggestions,
 }: CalcOverrideWizardProps) {
   const busy = saving || clearing;
   const problems = draftProblems(draft, config);
@@ -211,7 +216,7 @@ function CalcOverrideWizard({
   const formulaStep = (
     <>
       <div className="grid gap-2 sm:grid-cols-2">
-        <PointCalcFormulaFields {...fields} />
+        <PointCalcFormulaFields {...fields} suggestions={suggestions} />
       </div>
       <PointCalcDraftProblems problems={problems} />
     </>
@@ -354,6 +359,8 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
   const standalonePoints = standalone ? (calcPointsQ.data?.items ?? []) : [];
   const [addingCalcPoint, setAddingCalcPoint] = useState(false);
   const [deletingPointKey, setDeletingPointKey] = useState<string | null>(null);
+  // `F4.312` PR 3 (ADR 0109 Amendment 1 decision 5): the standalone card is the template-less asset's.
+  const [adoptOpen, setAdoptOpen] = useState(false);
 
   function afterOverride() {
     setOpenPointKey(null);
@@ -726,6 +733,12 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                 }}
                 onSubmit={(body) => setOverrideM.mutate({ pointKey: config.pointKey, body })}
                 onClear={() => clearOverrideM.mutate(config.pointKey)}
+                suggestions={{
+                  organizationCode: assetSummaryQ.data?.organizationCode ?? null,
+                  domain: assetSummaryQ.data?.domain ?? null,
+                  assetKeys: [...(listQ.data?.items ?? []), ...calcPoints].map((point) => point.pointKey),
+                  excludeTemplatePointId: config.templatePointId,
+                }}
                 onCancel={() => {
                   setOpenPointKey(null);
                   setOverrideError(null);
@@ -798,6 +811,18 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             >
               Add calculated point
             </button>
+            {isMasterDataAdmin(user.role) && assetSummaryQ.data ? (
+              <button
+                type="button"
+                className="surface-button px-3 py-1.5 text-xs disabled:opacity-60"
+                disabled={standaloneBusy}
+                // Opens a wizard; it never pends itself, so it keeps its name while a write does.
+                data-pending-bystander="standaloneBusy"
+                onClick={() => setAdoptOpen(true)}
+              >
+                Adopt a template
+              </button>
+            ) : null}
           </div>
           {addingCalcPoint ? (
             <CalcPointPanel
@@ -808,6 +833,8 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               onEdited={() => setOverrideSaveError(null)}
               onSubmit={(pointKey, body, newKey) => setCalcPointM.mutate({ pointKey, body, newKey })}
               allowNewKey={canWritePointKeys(user.role)}
+              assetDomain={assetSummaryQ.data?.domain ?? null}
+              assetOrganizationCode={assetSummaryQ.data?.organizationCode ?? null}
               onDelete={null}
               onCancel={() => openStandalone({})}
             />
@@ -878,6 +905,15 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             ),
           )}
         </SectionCard>
+      ) : null}
+
+      {adoptOpen && standalone && assetSummaryQ.data ? (
+        <TemplateAdoptWizard
+          // The standalone mode is the server's word that `template_id` is NULL (ADR 0109 decision 2).
+          assets={[{ ...assetSummaryQ.data, templateId: null }]}
+          onCancel={() => setAdoptOpen(false)}
+          onDone={() => setAdoptOpen(false)}
+        />
       ) : null}
 
       {editing !== null || opened !== null ? (

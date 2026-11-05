@@ -115,6 +115,8 @@ export const FIXTURES: Readonly<
     params: { id: ROW },
     names: TARGET_NAME,
   },
+  // `F4.312` PR 2 (ADR 0099 Amendment 12): the template version by path, its template-less assets by body.
+  "assetTemplate.adopt": { body: { assetIds: [ROW] }, params: { id: ROW }, names: TARGET_NAME },
   // `F3.86` PR 4: what the model proposes (`modelBodyOf`) — a create has no password.
   "user.create": {
     body: { email: "priya@example.test", displayName: "Priya Rao", role: "viewer", organizationId: ORG },
@@ -146,6 +148,13 @@ export const FIXTURES: Readonly<
   "pointKey.update": { body: { name: "Renamed", headlineRank: 3 }, params: { id: ROW }, names: TARGET_NAME },
   "pointKey.deactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
   "pointKey.reactivate": { body: {}, params: { id: ROW }, names: TARGET_NAME },
+  // `F4.309` PR 3 (ADR 0099 Amendment 13): the state labels — a fleet create, an edit of one row.
+  "pointKeyState.create": {
+    body: { pointKey: "isolator_pos", value: 2.5, label: "EARTHED", tone: "open" },
+    params: {},
+    names: "isolator_pos = 2.5",
+  },
+  "pointKeyState.update": { body: { label: "EARTH", tone: "shut" }, params: { id: ROW }, names: TARGET_NAME },
   // `F3.86` PR 3a: locations and RTUs.
   "location.create": {
     body: { organizationId: ORG, code: "PUNE-1", slug: "pune-1", name: "Pune Works", type: "rsmoc", latitude: 18.5, longitude: 73.8 },

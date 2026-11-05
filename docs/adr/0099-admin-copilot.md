@@ -1940,3 +1940,212 @@ conversation, and its Confirm card is red.
 | --- | --- | --- | --- |
 | R1 | `backfillDays` on the override `PUT` too | the standalone `PUT` and the batch only | **on both**, with a Backfill step on `calcOverride.set` (2026-11-04; widens ADR 0109 decision 7; the step lands with PR 5) |
 | R3 | Aggregate membership during a backfill | today's membership, an accepted limit | as proposed (2026-11-04) |
+
+## Amendment 12 — `assetTemplate.adopt` (ADR 0109 Amendment 1 decision 5, `F4.312` PR 2)
+
+**Status: Proposed — the owner's merge of this PR approves it.** ADR 0109
+Amendment 1 (accepted 2026-11-05) decided the entry: "The copilot gains one
+catalog entry, `assetTemplate.adopt`, a red Confirm card that calls `adopt`
+with the same body; this amends ADR 0099's catalog (its next amendment
+records the entry)" (decision 5, ruling A6). This amendment records it. It was
+drafted in the build session for the owner's approval at the merge; the owner
+has not ruled on its text, so the heading names no owner date. A line
+marked *(0109 An)* states that record's ruling n; lines marked *drafter
+choice* were not asked. Code citations are to `main` at `f1e001d` (`F4.312`
+PR 1, #1017). Backlog row `F4.312`; the code follows in the same PR, in the
+commit after this one.
+
+### Facts the amendment rests on
+
+- **The route exists and is pending.** `POST
+  /admin/asset-templates/:id/adopt` pins 1–25 template-less assets to one
+  published version, all or nothing; it re-builds the plan at apply and
+  refuses (409, nothing written) on any refusal, so its body
+  (`adoptAssetsBodySchema`, `packages/shared/src/contracts/template-adoption.ts`)
+  carries no preview echo. PR 1 put it on `ASSET_TEMPLATE_PENDING`
+  (`packages/shared/src/copilot/catalog/asset-templates.ts`) until this
+  amendment.
+- **Its access chain is migrate's** *(0109 A10)*:
+  `requireMasterDataUser`, the version's organization in the caller's scope
+  (`canManageOrganization`, 403), published (409), then every listed asset's
+  site in `writableLocationIds` (one counted 403 that names no code)
+  (`AssetTemplateAdoptionService.buildPlan`,
+  `asset-templates-adopt.service.ts:308-368`).
+- **The batch-level refusals are the planner's**: an asset already pinned
+  (`already_pinned`), of another organization or another domain *(0109 A1)*.
+  Its point-level refusals (A4, A8, a taken rule code, …) need the version's
+  points and the asset's rows, and the route names each on Confirm.
+- **No existing target fits.** `assetTemplateDeploy` checks a target site from
+  the body, and `calcPointBatch` resolves its organization from the assets and
+  admits any template-less asset; neither checks a version's status, domain
+  or organization against the listed assets.
+- **The writes.** An adoption sets `assets.template_id`, inserts `unmapped`
+  `asset_points` rows, turns a standalone calculated point the version
+  declares into the asset's override (ADR 0109 ruling 8, no row write), and
+  writes the version's seeded alarm rules and default dashboards
+  *(0109 A5)*, under one audit row per adoption
+  (`master.asset_template.adopt`) through `MasterDataAuditService`.
+
+### Decisions
+
+- **H1 — One entry** *(0109 decision 5)*, in `catalog/asset-templates.ts`
+  after `assetTemplate.instantiate`: `assetTemplate.adopt`, `POST
+  /admin/asset-templates/:id/adopt`, body `adoptAssetsBodySchema` by identity,
+  `risk: "edit"` (it re-pins existing assets; nothing is created or removed
+  from the caller's view of the asset), **red** (`red: true`): adoption has no
+  undo *(0109 A7)*. One step, Assets (`assetIds`). The summary names the count,
+  the version and its organization, and says the change cannot be undone and
+  that later changes go through migrate (drafter choice). The route leaves
+  `ASSET_TEMPLATE_PENDING`.
+- **H2 — The preview stays pending.** `POST
+  /admin/asset-templates/:id/adoption-preview` writes nothing; it stays on
+  `ASSET_TEMPLATE_PENDING` as a read through `POST`, as
+  `migration-preview` does. The card carries no preview: the route
+  recomputes on Confirm (owner ruling 1 on the plan, 2026-11-05).
+- **H3 — A new target kind `assetTemplateAdopt`** `{ param: "id", field:
+  "assetIds" }`. The resolver mirrors the route, in its order; every failure
+  but the version's status is the one refusal (`null`, decision 10):
+  - the body's `assetIds` is a non-empty array of at most 25 strings, none
+    twice — refused **before any read**, as the body schema refuses it;
+  - `requireMasterDataUser` (a throw is the refusal), before the version is
+    read;
+  - the version is found in an allowed organization (under `withTenant`, with
+    an explicit organization filter);
+  - `canManageOrganization` on the version's organization;
+  - on a **published** version, every listed asset is read in the version's
+    organization, and each is found, of the version's organization **and
+    domain**, with **`template_id IS NULL`**, and at a site in
+    `writableLocationIds` (a global administrator, `null`, writes every site).
+
+  So **a pinned asset is refused before the card**. The card names the
+  version and its organization. **The status is the lifecycle mirror's**
+  (`F4.246`, `copilot-template-lifecycle.ts`): the target resolves an in-scope
+  version with its status and reads no asset of an unpublished one (the route
+  answers its 409 before it reads them); the mirror's `assetTemplate.adopt`
+  rule (`canInstantiate`) then refuses a draft or archived version with the
+  route's own sentence (`adoptRefusedMessage`, `@bms/shared`), so the model
+  reads why. In `"record"` mode (Amendment 4: an open wizard's record) the
+  target checks the gate and resolves the version, its organization and its
+  status without reading any asset, as `assetTemplateDeploy` resolves its
+  template row: the assets are what a fill sets (drafter choice). The point-level refusals stay a Confirm-time 409, which names each
+  asset code and point key (drafter choice: a propose-time copy of the
+  planner would duplicate the route's reads).
+- **H4 — Invalidations** after Confirm: the asset lists and summary
+  (`["admin","assets"]`, `["admin","asset-summary"]`), the asset points
+  (`["admin","asset-points"]`), the calculated points
+  (`["admin","asset-calc-points"]`), the dashboards (`["dashboards"]`), the
+  alarm rules (`["rules"]`) and the template versions page
+  (`["admin","asset-template-versions"]`, which lists each asset's pinned
+  version).
+- **H5 — The audit mark.** The adopt service moves from the audit gate's
+  `NOT_CATALOG_WRITERS` to `CATALOG_WRITERS`
+  (`tests/f3.85-audit-via-mark.test.ts`): a confirmed adoption's audit row
+  carries `via: "copilot"` through `MasterDataAuditService`.
+- **H6 — Bounds.** The propose tool counts against the per-turn budget
+  (`copilot-propose-budget.spec.ts`, 91,000 since Amendment 11 G7). Measured
+  at this PR: 90,753 characters over 109 definitions
+  (`propose_assetTemplate_adopt` 788; the id in `fill_step` and
+  `describe_change` 44). Under the bound, so it is unchanged.
+- **H7 — The wizard follows.** `assetTemplate.adopt` is on the stepper gate's
+  `NOT_YET` list (`tests/f3.85-stepper-coverage.test.ts`) until `F4.312` PR 3
+  wires the adopt wizard (the points page and the asset list's bulk action),
+  the Amendment 11 G8 precedent.
+- **H8 — `F4.313` adds no entry** *(0109 A11)*. A new catalog key and a
+  calculated point on it are two cards: the existing `pointKey.create`, then
+  `calcPoint.set` or `calcPoint.createBatch`. There is no combined card.
+
+**Not in this amendment.** The web adoption wizard and the bulk action
+(`F4.312` PR 3); releasing an asset back to no template *(0109 A7)*; any
+change to `migrate` or its pending entry.
+
+**Verification owed (this PR).** A catalog spec: the entry is the route,
+`risk: "edit"`, red, its body the shared export by identity, its target the
+new kind, and only the preview stays pending. Resolver unit specs: a pinned
+asset, an asset of another organization or domain, one outside the write
+scope, 26 ids, a repeated id and a version outside the caller's scope are
+each refused, beside the allowed twin; a draft or archived version resolves
+with its status and the lifecycle mirror refuses it with the route's sentence;
+record mode through the resolver resolves the version. An integration twin on
+a real database: another organization's asset and a pinned asset are refused,
+a template-less asset of the version's organization resolves. The
+invalidation row. `tests/f3.85-catalog-coverage.test.ts`, the stepper and audit gates and
+the budget pass. Live (owner's local session): `propose_assetTemplate_adopt`
+is in an admin conversation's tool list, its card is red, and a batch with a
+pinned asset is refused before the card.
+
+## Amendment 13 — `pointKeyState.create`, `pointKeyState.update` (ADR 0088 Amendment 3, `F4.309`)
+
+**Status: proposed.** Drafted on 2026-11-05 against `main` at `07cfac1`. The
+owner ruled on 2026-11-05, in the `F4.309` plan (question 2 (b), against the
+recommendation), that the copilot gets create and edit for state labels, and
+no delete. Two gate questions were put to the owner one at a time on 2026-11-05; both
+were ruled as recommended. The merge of this amendment approves it.
+
+### Facts the amendment rests on
+
+- ADR 0088 Amendment 3: `POST /api/v1/admin/point-key-states` and
+  `PATCH /api/v1/admin/point-key-states/:id`, global `admin` only
+  (`requireGlobalAdmin`), on `fleetDb`, one audit row each with no
+  organization. The 7 seeded rows answer 409 on `PATCH`, and a `POST` of a
+  seeded pair is 409. The `PATCH` body is `{ label?, tone? }`, strict.
+- `bms.point_key_states` has no organization: like a point key, a change is
+  fleet-wide (`pointKey.create` is a `fleet` target).
+- The copilot reads fleet vocabularies through list tools
+  (`list-asset-roles.tool.ts`); it has none for state labels.
+- `DELETE_ALLOWANCE` does not change: the owner ruled no delete.
+
+### Decisions
+
+1. **Two catalog entries** in a new `packages/shared/src/copilot/catalog/point-key-states.ts`:
+   - `pointKeyState.create` — `POST /admin/point-key-states`, body
+     `createPointKeyStateBodySchema`, risk `create`, target `{ kind: "fleet" }`.
+   - `pointKeyState.update` — `PATCH /admin/point-key-states/:id`, body
+     `updatePointKeyStateBodySchema`, risk `edit`, a new target kind
+     `pointKeyState` (param `id`): the resolver reads the row, names it
+     "`<key>` = `<value>` (`<label>`)", requires the global admin, and refuses
+     an unknown id.
+2. The summaries say the label is fleet-wide and never that it belongs to the
+   bound organization.
+3. **A read tool** `list_point_key_states` (Q1) answers every row: id, key,
+   value, label, tone and `seeded`, ordered by key then value, for the global
+   admin's conversation; it reads on the same path as the admin list. It is
+   read-only and writes no audit row.
+4. **A seeded row is refused twice** (Q2): at propose, the resolver refuses a
+   `pointKeyState.update` of a seeded row (no card; the reply says the row is
+   seeded and read-only) and a `pointKeyState.create` of a seeded pair; at
+   apply, the route's 409 still guards.
+5. **No delete.** `DELETE /admin/point-key-states/:id` is an excluded route,
+   and `DELETE_ALLOWANCE` does not change.
+
+### Gate questions
+
+1. **Q1 — how the copilot finds a row to edit.** (a) A read tool
+   `list_point_key_states` (id, key, value, label, tone, `seeded`), as
+   `list_asset_roles`; (b) no read tool: the copilot edits only a row whose id
+   the user gives. *Recommended: (a).*
+2. **Q2 — a seeded row.** (a) Refused at propose (no card is shown, the reply
+   says the row is seeded) and again at apply (the route's 409); (b) refused at
+   apply only. *Recommended: (a).*
+
+### Rulings
+
+1. **Q1 (a) — a read tool**, `list_point_key_states`. Ruled 2026-11-05, as
+   recommended.
+2. **Q2 (a) — refused at propose and at apply.** Ruled 2026-11-05, as
+   recommended.
+
+### Owner rulings at the build (2026-11-05, F4.309 PR 3)
+
+1. **The propose budget.** The two propose tools count against the per-turn
+   budget (`copilot-propose-budget.spec.ts`, 91,000 since Amendment 11 G7).
+   Measured at PR 3: 92,068 characters over 111 definitions
+   (`propose_pointKeyState_create` 667, `propose_pointKeyState_update` 554,
+   and their ids in `fill_step` and `describe_change`). That is over the
+   bound, so the bound rises to 94,000 by release 4's rule (the measured size
+   rounded up to the next thousand, plus 1,000). The owner accepted it.
+2. **Decision 3, clarified.** `list_point_key_states` takes an optional
+   `pointKey` filter and answers as many rows as fit the tool-result budget
+   (`fitListResult`'s loop), with `truncated` when rows were left out. A tool
+   result is cut at 8,000 characters, and a cut list is broken JSON, so the
+   tool has no fixed row count; the model filters by `pointKey` when the list
+   is truncated.
