@@ -49,11 +49,20 @@ export function visibleCatalogKeys<T extends FilterableCatalogKey>(
 }
 
 /**
+ * The one value every item shares, or `null` when they differ, when any is
+ * `null`, or when there are none — the bulk wizard's shared domain and (`F4.314`
+ * PR 2) shared organization code.
+ */
+export function sharedValue<T>(values: readonly (T | null)[]): T | null {
+  const [first] = values;
+  if (first === undefined) return null;
+  return values.every((value) => value === first) ? first : null;
+}
+
+/**
  * The bulk wizard's domain: the one every selected asset shares, or `null`
  * (list all keys) when they differ or nothing is selected.
  */
 export function sharedDomain(domains: readonly string[]): string | null {
-  const [first] = domains;
-  if (first === undefined) return null;
-  return domains.every((domain) => domain === first) ? first : null;
+  return sharedValue(domains);
 }

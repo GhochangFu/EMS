@@ -5,6 +5,11 @@ import { cleanup } from "@testing-library/react";
 import {
   addListsTheOrganizationsVersion,
   addMarksTheMissingInput,
+  takingInTheOverrideWizardFillsTheFormula,
+  takingInTheOverrideWizardSetsEvery,
+  takingInTheOverrideWizardSetsInputsValidFor,
+  takingInTheOverrideWizardSetsRuns,
+  takingInTheOverrideWizardSetsTheGrammar,
   takingOnAddFillsTheEditor,
   theOverrideWizardExcludesTheTemplatesOwnVersion,
   theOverrideWizardListsTheOrganizationsVersion,
@@ -44,5 +49,25 @@ describe("F4.314 PR 2 — Suggested formulas on the asset points page", () => {
 
   it("taking a suggestion on Add fills the editor's formula", async () => {
     await takingOnAddFillsTheEditor();
+  });
+
+  it("taking a suggestion in the override wizard fills the formula", async () => {
+    await takingInTheOverrideWizardFillsTheFormula();
+  });
+
+  it("taking a suggestion in the override wizard sets the Grammar", async () => {
+    await takingInTheOverrideWizardSetsTheGrammar();
+  });
+
+  it("taking a suggestion in the override wizard sets Runs", async () => {
+    await takingInTheOverrideWizardSetsRuns();
+  });
+
+  it("taking a suggestion in the override wizard sets Every", async () => {
+    await takingInTheOverrideWizardSetsEvery();
+  });
+
+  it("taking a suggestion in the override wizard sets Inputs valid for", async () => {
+    await takingInTheOverrideWizardSetsInputsValidFor();
   });
 });

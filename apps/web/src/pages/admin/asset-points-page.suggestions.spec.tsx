@@ -28,6 +28,12 @@ import { AssetPointsAdminPage } from "./asset-points-page";
  * template's own version excluded; on **Add calculated point** (an asset with
  * no template) the same organization and rows. Each claim is one exported
  * function; `asset-points-page.suggestions.test.tsx` is the jsdom entry point.
+ *
+ * The take-and-fill claims run on the live `CalcOverrideWizard`, one per
+ * carried field (ruling 6): formula and Grammar on the Formula step, Runs,
+ * Every and Inputs valid for on the Schedule step. Their mutations are in
+ * `PointCalcFormulaFields`: `onTake` doing nothing (all five), and `onTake`
+ * writing `{ formula }` alone (the other four).
  */
 
 vi.mock("../../components/asset-templates/formula-editor-lazy", () => ({
@@ -85,7 +91,18 @@ function stubApi(mode: "template" | "standalone"): void {
   } as never);
   vi.spyOn(pointKeysApi, "fetchAdminPointKeys").mockResolvedValue({ items: [pointKey("kw"), pointKey("pf")] } as never);
   vi.spyOn(templatesApi, "fetchAdminStockAssetTemplates").mockResolvedValue({
-    items: [stockEntry("Electrical feeder", [{ pointKey: "kw", formula: KW_STOCK }])],
+    items: [
+      stockEntry("Electrical feeder", [
+        {
+          pointKey: "kw",
+          formula: KW_STOCK,
+          formulaDialect: "bms-calc-v2",
+          calcTrigger: "scheduled",
+          calcIntervalSeconds: 120,
+          maxInputAgeSeconds: 900,
+        },
+      ]),
+    ],
   });
   vi.spyOn(templatesApi, "fetchAdminAssetTemplates").mockResolvedValue({
     items: [templateRow({ id: "own", code: "FEEDER", version: 2 }), templateRow({ id: "other", code: "FEEDER-B", version: 1 })],
@@ -164,4 +181,48 @@ export async function takingOnAddFillsTheEditor(): Promise<void> {
   await openAdd();
   await userEvent.click(await screen.findByRole("button", { name: "Use this formula from Stock · Electrical feeder" }));
   expect((screen.getByRole("textbox", { name: "Formula for kw" }) as HTMLTextAreaElement).value).toBe(KW_STOCK);
+}
+
+const USE_STOCK = "Use this formula from Stock · Electrical feeder";
+
+/** Opens the override wizard and takes the stock suggestion. */
+async function takeInTheOverrideWizard(): Promise<void> {
+  await openOverride();
+  await userEvent.click(await screen.findByRole("button", { name: USE_STOCK }));
+}
+
+/** Opens the override wizard, takes the stock suggestion and moves to the Schedule step. */
+async function takeThenSchedule(): Promise<void> {
+  await takeInTheOverrideWizard();
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+}
+
+/** Taking a suggestion in the override wizard fills its formula. Mutation: `onTake` does nothing. */
+export async function takingInTheOverrideWizardFillsTheFormula(): Promise<void> {
+  await takeInTheOverrideWizard();
+  expect((screen.getByRole("textbox", { name: "Formula for kw" }) as HTMLInputElement).value).toBe(KW_STOCK);
+}
+
+/** …sets its Grammar. Mutation: `onTake` writes `{ formula }` alone. */
+export async function takingInTheOverrideWizardSetsTheGrammar(): Promise<void> {
+  await takeInTheOverrideWizard();
+  expect((screen.getByRole("combobox", { name: "Grammar for kw" }) as HTMLSelectElement).value).toBe("bms-calc-v2");
+}
+
+/** …sets Runs on the Schedule step. Mutation: `onTake` writes `{ formula }` alone. */
+export async function takingInTheOverrideWizardSetsRuns(): Promise<void> {
+  await takeThenSchedule();
+  expect((await screen.findByRole("combobox", { name: "Runs for kw" }) as HTMLSelectElement).value).toBe("scheduled");
+}
+
+/** …sets Every on the Schedule step. Mutation: `onTake` writes `{ formula }` alone. */
+export async function takingInTheOverrideWizardSetsEvery(): Promise<void> {
+  await takeThenSchedule();
+  expect((await screen.findByLabelText("Every (seconds)") as HTMLInputElement).value).toBe("120");
+}
+
+/** …sets Inputs valid for on the Schedule step. Mutation: `onTake` writes `{ formula }` alone. */
+export async function takingInTheOverrideWizardSetsInputsValidFor(): Promise<void> {
+  await takeThenSchedule();
+  expect((await screen.findByLabelText("Inputs valid for (seconds)") as HTMLInputElement).value).toBe("900");
 }

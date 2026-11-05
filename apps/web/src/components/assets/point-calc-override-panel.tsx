@@ -64,8 +64,6 @@ type Props = {
   draft: OverrideDraft;
   saving: boolean;
   clearing: boolean;
-  /** `F4.314` PR 2: offer Suggested formulas under the formula; absent, none. */
-  suggestions?: PointCalcSuggestionScope;
   onDraftChange: (next: OverrideDraft) => void;
   onSave: () => void;
   onClear: () => void;
@@ -228,7 +226,7 @@ export function PointCalcFormulaFields({
           pointKey={config.pointKey}
           {...suggestions}
           disabled={busy}
-          onTake={(suggestion) => set(suggestionDraft(suggestion))}
+          onTake={(suggestion) => set(suggestionDraft(suggestion, standalone))}
         />
       ) : null}
     </>
@@ -347,7 +345,6 @@ export function PointCalcOverridePanel({
   onSave,
   onClear,
   onCancel,
-  suggestions,
 }: Props) {
   // F4.168 OQ-3: the fields share one flag; Save and Clear each announce their
   // own so a screen reader knows which action is running.
@@ -360,13 +357,7 @@ export function PointCalcOverridePanel({
       <PointCalcSettingsTable config={config} />
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        <PointCalcFormulaFields
-          config={config}
-          draft={draft}
-          busy={busy}
-          onDraftChange={onDraftChange}
-          suggestions={suggestions}
-        />
+        <PointCalcFormulaFields config={config} draft={draft} busy={busy} onDraftChange={onDraftChange} />
         <PointCalcScheduleFields config={config} draft={draft} busy={busy} onDraftChange={onDraftChange} />
       </div>
 

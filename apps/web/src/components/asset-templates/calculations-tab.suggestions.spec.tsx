@@ -93,16 +93,19 @@ export async function takingSetsTheRowsGrammar(): Promise<void> {
   expect((screen.getByRole("combobox", { name: "Grammar for d1" }) as HTMLSelectElement).value).toBe("bms-calc-v2");
 }
 
+/** …sets the row's Runs. Mutation: `onTake` writes `{ ...entry, formula }`. */
 export async function takingSetsTheRowsRuns(): Promise<void> {
   await takeTheStockSuggestion();
   expect((screen.getByRole("combobox", { name: "Runs for d1" }) as HTMLSelectElement).value).toBe("scheduled");
 }
 
+/** …sets the row's Every. Mutation: `onTake` writes `{ ...entry, formula }`. */
 export async function takingSetsTheRowsEvery(): Promise<void> {
   await takeTheStockSuggestion();
   expect((screen.getByLabelText("Every (seconds)") as HTMLInputElement).value).toBe("120");
 }
 
+/** …sets the row's Ignore inputs older than. Mutation: `onTake` writes `{ ...entry, formula }`. */
 export async function takingSetsTheRowsInputAge(): Promise<void> {
   await takeTheStockSuggestion();
   expect((screen.getByLabelText("Ignore inputs older than") as HTMLInputElement).value).toBe("900");

@@ -9,6 +9,7 @@ import {
   listsTheStockFormula,
   listsThePublishedVersionsFormula,
   marksTheMissingInput,
+  noKeyReadsNoVersionFromAWarmList,
   noOrganizationReadsNoList,
   readsNoDraftVersion,
   theListIsReadWithoutAnOrganization,
@@ -64,5 +65,9 @@ describe("F4.314 PR 2 — Suggested formulas", () => {
 
   it("disabled disables Use this formula", async () => {
     await disabledDisablesUse();
+  });
+
+  it("reads no version without a key, even from a warm published-list cache", async () => {
+    await noKeyReadsNoVersionFromAWarmList();
   });
 });

@@ -60,7 +60,7 @@ import {
   type BatchRefusal,
   type CalcPointDraft,
 } from "../../lib/calc-point-draft";
-import { sharedDomain } from "../../lib/catalog-key-filter";
+import { sharedDomain, sharedValue } from "../../lib/catalog-key-filter";
 import { AdminWizardFrame } from "../admin/admin-wizard-frame";
 import { FormulaPreview } from "../asset-templates/formula-preview";
 import { WizardShell } from "../wizard/wizard-shell";
@@ -232,9 +232,9 @@ export function CalcPointBatchWizard({
   );
   // `F4.314` PR 2 (A3): no single asset, so nothing is marked missing, and
   // the organization's versions are read only when the eligible assets share
-  // one organization and one domain (`""` — an asset with none — reads none).
+  // one organization and one domain (an asset with no organization reads none).
   const suggestions = {
-    organizationCode: sharedDomain(eligible.map((asset) => asset.organizationCode ?? "")) || null,
+    organizationCode: sharedValue(eligible.map((asset) => asset.organizationCode)),
     domain: sharedDomain(eligible.map((asset) => asset.domain)),
     assetKeys: null,
   };

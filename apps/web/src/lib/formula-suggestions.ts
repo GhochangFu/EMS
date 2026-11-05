@@ -175,12 +175,17 @@ export function suggestionRow(row: TemplatePointRow, suggestion: FormulaSuggesti
  * The text draft's five calc fields after taking a suggestion, for
  * `PointCalcFormulaFields`' `onDraftChange` to merge over the draft (the
  * key and the backfill choice are the draft's own and stay).
+ *
+ * A source with no trigger reads as `""` on an override — inherit the
+ * template's — but as `"scheduled"` on a `standalone` draft (the Add panel,
+ * the bulk wizard), whose Runs select has no empty option and whose empty
+ * draft opens on `"scheduled"` (`emptyCalcPointDraft`).
  */
-export function suggestionDraft(suggestion: FormulaSuggestion): OverrideDraft {
+export function suggestionDraft(suggestion: FormulaSuggestion, standalone: boolean): OverrideDraft {
   return draftFromFields({
     formula: suggestion.formula,
     formulaDialect: suggestion.formulaDialect,
-    calcTrigger: takenTrigger(suggestion),
+    calcTrigger: takenTrigger(suggestion) ?? (standalone ? "scheduled" : null),
     calcIntervalSeconds: suggestion.calcIntervalSeconds,
     maxInputAgeSeconds: suggestion.maxInputAgeSeconds,
   });

@@ -81,6 +81,8 @@ export function FormulaSuggestions({
     queries: ids.map((id) => ({
       queryKey: ["admin", "asset-template", id],
       queryFn: () => fetchAdminAssetTemplate(id),
+      // A warm list cache (another page read it) must not read versions for no key.
+      enabled: wanted,
     })),
   });
   const suggestions = wanted

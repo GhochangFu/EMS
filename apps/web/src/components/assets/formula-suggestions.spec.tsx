@@ -47,15 +47,26 @@ function stubReads(reads: Reads = {}) {
   return { stock, list, one };
 }
 
-type Options = { organizationCode?: string | null; disabled?: boolean };
+type Options = {
+  organizationCode?: string | null;
+  disabled?: boolean;
+  pointKey?: string;
+  /** Seed the published list's cache, as another page that read it would leave it. */
+  warmList?: boolean;
+};
 
 function renderSuggestions(options: Options = {}) {
   const onTake = vi.fn();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  if (options.warmList) {
+    client.setQueryData(["admin", "asset-templates", "published"], {
+      items: [templateRow({ id: "t-pub", version: 2 })],
+    });
+  }
   const view = render(
     <QueryClientProvider client={client}>
       <FormulaSuggestions
-        pointKey="kw"
+        pointKey={options.pointKey ?? "kw"}
         organizationCode={options.organizationCode === undefined ? "ESKOM" : options.organizationCode}
         domain="electrical"
         assetKeys={["current_l1_a"]}
@@ -153,4 +164,15 @@ export async function disabledDisablesUse(): Promise<void> {
   stubReads();
   renderSuggestions({ disabled: true });
   expect(await screen.findByRole("button", { name: "Use this formula from Stock · Electrical feeder" })).toBeDisabled();
+}
+
+/**
+ * No key chosen reads no version, even with the published list already
+ * cached. Mutation: drop `enabled: wanted` from the per-version queries.
+ */
+export async function noKeyReadsNoVersionFromAWarmList(): Promise<void> {
+  const { one } = stubReads();
+  renderSuggestions({ pointKey: "", warmList: true });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(one).not.toHaveBeenCalled();
 }

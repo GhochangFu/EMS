@@ -23,6 +23,7 @@ import {
   runNullDialectIsV1Tests,
   runNullKeysMarkNothingTests,
   runRowCarriesDialectTests,
+  runOverrideDraftKeepsInheritTests,
   runRowCarriesFormulaTests,
   runRowCarriesInputAgeTests,
   runRowCarriesIntervalTests,
@@ -30,6 +31,7 @@ import {
   runRowCrossAssetIsScheduledTests,
   runRowToV1ClearsTheRatioTests,
   runRunnableFirstTests,
+  runStandaloneDraftDefaultsToScheduledTests,
   runUnpublishedVersionIsNotListedTests,
 } from "./formula-suggestions.spec";
 
@@ -125,6 +127,14 @@ describe("suggested formulas (F4.314 PR 2)", () => {
 
   it("a cross-asset suggestion lands scheduled on the draft", () => {
     runDraftCrossAssetIsScheduledTests();
+  });
+
+  it("a standalone draft takes a source with no trigger as scheduled", () => {
+    runStandaloneDraftDefaultsToScheduledTests();
+  });
+
+  it("an override draft takes a source with no trigger as inherit", () => {
+    runOverrideDraftKeepsInheritTests();
   });
 
   it("taking a suggestion fills the row's formula", () => {

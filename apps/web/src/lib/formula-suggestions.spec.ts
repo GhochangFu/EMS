@@ -324,32 +324,44 @@ const V2_STREAMING: FormulaSuggestion = { ...TAKEN, formula: "sum({kw} @site)", 
 
 /** Taking a suggestion fills the draft's formula. Mutation: drop `formula` from `suggestionDraft`. */
 export function runDraftCarriesFormulaTests(): void {
-  assert(suggestionDraft(TAKEN).formula === TAKEN.formula, "formula not carried");
+  assert(suggestionDraft(TAKEN, false).formula === TAKEN.formula, "formula not carried");
 }
 
 /** …its dialect. Mutation: drop `formulaDialect` from `suggestionDraft`. */
 export function runDraftCarriesDialectTests(): void {
-  assert(suggestionDraft(TAKEN).formulaDialect === CALC_DIALECT, "dialect not carried");
+  assert(suggestionDraft(TAKEN, false).formulaDialect === CALC_DIALECT, "dialect not carried");
 }
 
 /** …its trigger. Mutation: drop `calcTrigger` from `suggestionDraft`. */
 export function runDraftCarriesTriggerTests(): void {
-  assert(suggestionDraft(TAKEN).calcTrigger === "scheduled", "trigger not carried");
+  assert(suggestionDraft(TAKEN, false).calcTrigger === "scheduled", "trigger not carried");
 }
 
 /** …its interval. Mutation: drop `calcIntervalSeconds` from `suggestionDraft`. */
 export function runDraftCarriesIntervalTests(): void {
-  assert(suggestionDraft(TAKEN).calcIntervalSeconds === "120", "interval not carried");
+  assert(suggestionDraft(TAKEN, false).calcIntervalSeconds === "120", "interval not carried");
 }
 
 /** …its input age. Mutation: drop `maxInputAgeSeconds` from `suggestionDraft`. */
 export function runDraftCarriesInputAgeTests(): void {
-  assert(suggestionDraft(TAKEN).maxInputAgeSeconds === "900", "input age not carried");
+  assert(suggestionDraft(TAKEN, false).maxInputAgeSeconds === "900", "input age not carried");
 }
 
 /** A cross-asset suggestion lands scheduled on the draft. Mutation: `takenTrigger` returns the source trigger. */
 export function runDraftCrossAssetIsScheduledTests(): void {
-  assert(suggestionDraft(V2_STREAMING).calcTrigger === "scheduled", "a v2 formula landed streaming");
+  assert(suggestionDraft(V2_STREAMING, false).calcTrigger === "scheduled", "a v2 formula landed streaming");
+}
+
+/** A standalone draft takes a trigger-less source as `"scheduled"`. Mutation: drop the standalone fallback. */
+export function runStandaloneDraftDefaultsToScheduledTests(): void {
+  const draft = suggestionDraft({ ...TAKEN, calcTrigger: null }, true);
+  assert(draft.calcTrigger === "scheduled", `trigger: ${JSON.stringify(draft.calcTrigger)}`);
+}
+
+/** An override draft takes a trigger-less source as `""` (inherit). Mutation: apply the fallback unconditionally. */
+export function runOverrideDraftKeepsInheritTests(): void {
+  const draft = suggestionDraft({ ...TAKEN, calcTrigger: null }, false);
+  assert(draft.calcTrigger === "", `trigger: ${JSON.stringify(draft.calcTrigger)}`);
 }
 
 function derivedRow(dialect: CalcDialect, trigger: CalcTrigger, ratio: number | null) {
