@@ -10,9 +10,10 @@ const FLOW_PERIOD = 16;
  *
  * `className` is the dash's stroke colour only (`F3.74` plan D6): on a graph with sources the scene
  * passes the pipe's energy class, so a de-energised or unknown pipe never animates in accent. It
- * defaults to `stroke-accent`, the colour of a graph with no sources, as before.
+ * defaults to `stroke-ok`, the energised colour of a graph with no sources (`stroke-accent` before
+ * `F4.310`, ADR 0110: a flow is a state, so it keeps the fixed state green in every colour profile).
  */
-export function FlowDash({ d, from, className = "stroke-accent" }: { d: string; from: string; className?: string }) {
+export function FlowDash({ d, from, className = "stroke-ok" }: { d: string; from: string; className?: string }) {
   return (
     <path
       data-testid="mimic-flow"

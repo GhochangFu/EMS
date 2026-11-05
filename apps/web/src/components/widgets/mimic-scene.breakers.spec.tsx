@@ -544,7 +544,7 @@ export function aBreakerGlyphWithNoStatePointsDrawsAsBefore(): void {
   expect(within(unit).queryByTestId("mimic-breaker-pill")).toBeNull();
   expect(within(unit).queryByTestId("mimic-breaker-switch")).toBeNull();
   expect(within(unit).getByTestId("mimic-glyph").getAttribute("data-glyph")).toBe("breaker");
-  expect(frameClass(unit)).toContain("stroke-accent");
+  expect(frameClass(unit)).toContain("stroke-ok");
 }
 
 /** S12b — the same unit gone stale reads Stale as before, never OFFLINE. */
@@ -745,7 +745,7 @@ const AFTER_MAIN: readonly (readonly [string, string])[] = [
 const AFTER_MAIN_FROM_ROLED = AFTER_MAIN.filter(([from]) => from !== "main_bus" && from !== "load_bus");
 
 /**
- * E1a — every breaker closed, every asset fresh: every pipe is energised and drawn in accent, with
+ * E1a — every breaker closed, every asset fresh: every pipe is energised and drawn in `ok`, with
  * no dash array.
  */
 export function allClosedEveryPipeIsEnergisedAccent(): void {
@@ -754,64 +754,64 @@ export function allClosedEveryPipeIsEnergisedAccent(): void {
   expect(pipes).toHaveLength(12);
   for (const pipe of pipes) {
     expect(pipe.getAttribute("data-energy"), pipe.getAttribute("data-pipe-from") ?? "").toBe("energised");
-    expect(cls(pipe)).toContain("stroke-accent");
+    expect(cls(pipe)).toContain("stroke-ok");
     expect(pipe.hasAttribute("stroke-dasharray")).toBe(false);
   }
 }
 
 /**
  * E1b — the same drawing: a flow dash over every pipe out of a fresh roled unit (the passive buses
- * draw none, as today), each in accent.
+ * draw none, as today), each in `ok`.
  */
 export function allClosedEveryFreshPipeAnimatesInAccent(): void {
   renderSld(1);
   const flows = screen.getAllByTestId("mimic-flow");
   expect(flows).toHaveLength(9);
   for (const flow of flows) {
-    expect(cls(flow), flow.getAttribute("data-flow-from") ?? "").toContain("stroke-accent");
+    expect(cls(flow), flow.getAttribute("data-flow-from") ?? "").toContain("stroke-ok");
   }
   expect(flowOn("main_bus", "ups_input")).toBeNull();
 }
 
 /**
- * E2a — the main breaker OPEN, every asset fresh: the pipes upstream stay energised accent; every
- * pipe after it is de-energised in `stroke-line-strong`, never accent (mutation: colour the pipe
+ * E2a — the main breaker OPEN, every asset fresh: the pipes upstream stay energised `ok`; every
+ * pipe after it is de-energised in `stroke-line-strong`, never `ok` (mutation: colour the pipe
  * from `flows()` — freshness — → red).
  */
 export function anOpenMainBreakerDeEnergisesThePipesAfterIt(): void {
   renderSld(0);
   for (const [from, to] of [["incoming", "transformer"], ["transformer", "main_breaker"]] as const) {
     expect(pipeEl(from, to).getAttribute("data-energy")).toBe("energised");
-    expect(cls(pipeEl(from, to))).toContain("stroke-accent");
+    expect(cls(pipeEl(from, to))).toContain("stroke-ok");
   }
   for (const [from, to] of AFTER_MAIN) {
     const pipe = pipeEl(from, to);
     expect(pipe.getAttribute("data-energy"), `${from}->${to}`).toBe("de-energised");
     expect(cls(pipe), `${from}->${to}`).toContain("stroke-line-strong");
-    expect(cls(pipe), `${from}->${to}`).not.toContain("stroke-accent");
+    expect(cls(pipe), `${from}->${to}`).not.toContain("stroke-ok");
   }
 }
 
 /**
  * E2b — the same drawing: the freshness dash still animates over the de-energised pipes out of
- * fresh units, in `stroke-line-strong` and never accent; the incoming pipe's dash stays accent
- * (mutation: leave the dash's class at accent → red).
+ * fresh units, in `stroke-line-strong` and never `ok`; the incoming pipe's dash stays `ok`
+ * (mutation: leave the dash's class at `ok` → red).
  */
 export function anOpenMainBreakerDashesInGreyAfterIt(): void {
   renderSld(0);
-  expect(cls(flowOn("incoming", "transformer"))).toContain("stroke-accent");
+  expect(cls(flowOn("incoming", "transformer"))).toContain("stroke-ok");
   const dashes = AFTER_MAIN_FROM_ROLED.map(([from, to]) => flowOn(from, to));
   expect(dashes.filter((d) => d !== null)).toHaveLength(AFTER_MAIN_FROM_ROLED.length);
   for (const dash of dashes) {
     expect(cls(dash)).toContain("stroke-line-strong");
-    expect(cls(dash)).not.toContain("stroke-accent");
+    expect(cls(dash)).not.toContain("stroke-ok");
   }
 }
 
 /**
  * E3a — a stale main breaker: every pipe after it is `unknown`, drawn in `stroke-ink-hint` with a
- * dash array and never accent; the energised pipe before it has no dash array (mutation: map
- * unknown to accent → red).
+ * dash array and never `ok`; the energised pipe before it has no dash array (mutation: map
+ * unknown to `ok` → red).
  */
 export function aStaleMainBreakerMakesThePipesAfterItUnknown(): void {
   renderSld(1, ["main_breaker"]);
@@ -821,15 +821,15 @@ export function aStaleMainBreakerMakesThePipesAfterItUnknown(): void {
     const pipe = pipeEl(from, to);
     expect(pipe.getAttribute("data-energy"), `${from}->${to}`).toBe("unknown");
     expect(cls(pipe), `${from}->${to}`).toContain("stroke-ink-hint");
-    expect(cls(pipe), `${from}->${to}`).not.toContain("stroke-accent");
+    expect(cls(pipe), `${from}->${to}`).not.toContain("stroke-ok");
     expect(pipe.hasAttribute("stroke-dasharray"), `${from}->${to}`).toBe(true);
   }
 }
 
 /**
  * E3b — the same drawing: no dash out of the stale breaker (the dash before it still animates);
- * the fresh units after it animate in `stroke-ink-hint`, never accent (mutation: animate in
- * accent on a fresh node regardless of energy → red).
+ * the fresh units after it animate in `stroke-ink-hint`, never `ok` (mutation: animate in
+ * `ok` on a fresh node regardless of energy → red).
  */
 export function aStaleMainBreakerDrawsNoDashAndHintDashesAfterIt(): void {
   renderSld(1, ["main_breaker"]);
@@ -839,13 +839,13 @@ export function aStaleMainBreakerDrawsNoDashAndHintDashesAfterIt(): void {
   expect(after.filter((d) => d !== null)).toHaveLength(AFTER_MAIN_FROM_ROLED.length - 1);
   for (const dash of after) {
     expect(cls(dash)).toContain("stroke-ink-hint");
-    expect(cls(dash)).not.toContain("stroke-accent");
+    expect(cls(dash)).not.toContain("stroke-ok");
   }
 }
 
 /**
  * E3c — a main breaker whose member carries no state point draws its status (S12c), but the walk
- * still reads it `unknown`: every pipe after it is `unknown`, hint-grey and dashed, never accent —
+ * still reads it `unknown`: every pipe after it is `unknown`, hint-grey and dashed, never `ok` —
  * unknown never looks energised (ADR 0088 decision 6, ADR 0027) (mutation: walk a member with no
  * state point as closed → red).
  */
@@ -874,7 +874,7 @@ export function aBreakerWithNoStatePointsMakesThePipesAfterItUnknown(): void {
 
 /**
  * E4 — regression: `electrical_distribution` names no source, so no pipe carries `data-energy`,
- * every pipe keeps `stroke-line-strong`, and the freshness dash out of a fresh unit is accent.
+ * every pipe keeps `stroke-line-strong`, and the freshness dash out of a fresh unit is `ok`.
  */
 export function anUnsourcedPresetDrawsAsBefore(): void {
   renderBreakers(presetGeometry("electrical_distribution"), htPanelOnly(), readingsOf({}));
@@ -883,11 +883,11 @@ export function anUnsourcedPresetDrawsAsBefore(): void {
   for (const pipe of pipes) {
     expect(pipe.hasAttribute("data-energy")).toBe(false);
     expect(cls(pipe)).toContain("stroke-line-strong");
-    expect(cls(pipe)).not.toContain("stroke-accent");
+    expect(cls(pipe)).not.toContain("stroke-ok");
   }
   const flows = screen.getAllByTestId("mimic-flow");
   expect(flows.map((f) => f.getAttribute("data-flow-from"))).toEqual(["ht_panel"]);
-  expect(cls(flows[0] ?? null)).toContain("stroke-accent");
+  expect(cls(flows[0] ?? null)).toContain("stroke-ok");
 }
 
 /** The E5/E6 drawing: `single` OPEN and `board` assigned, both fresh. */
@@ -905,23 +905,23 @@ function boardNodes(): { nodes: MimicNodeDto[]; readings: SiteLiveReadings } {
 
 /**
  * E5 — a drawn layout whose `src` unit is `isSource`, with the `single` breaker OPEN: as E2, the
- * pipe into it stays energised accent and the pipes after it are de-energised, their dashes grey
+ * pipe into it stays energised `ok` and the pipes after it are de-energised, their dashes grey
  * (mutation: build the graph from presets only → red).
  */
 export function aSourcedLayoutWithAnOpenBreakerBehavesAsTheSld(): void {
   const { nodes, readings } = boardNodes();
   renderBreakers(BOARD(), nodes, readings);
   expect(pipeEl("src", "single").getAttribute("data-energy")).toBe("energised");
-  expect(cls(pipeEl("src", "single"))).toContain("stroke-accent");
+  expect(cls(pipeEl("src", "single"))).toContain("stroke-ok");
   for (const [from, to] of [["single", "board"], ["board", "tail"]] as const) {
     expect(pipeEl(from, to).getAttribute("data-energy"), `${from}->${to}`).toBe("de-energised");
-    expect(cls(pipeEl(from, to))).not.toContain("stroke-accent");
+    expect(cls(pipeEl(from, to))).not.toContain("stroke-ok");
     expect(cls(flowOn(from, to))).toContain("stroke-line-strong");
-    expect(cls(flowOn(from, to))).not.toContain("stroke-accent");
+    expect(cls(flowOn(from, to))).not.toContain("stroke-ok");
   }
 }
 
-/** E6 — the same layout with no `isSource` unit: no `data-energy`, the freshness dash in accent as today. */
+/** E6 — the same layout with no `isSource` unit: no `data-energy`, the freshness dash in `ok` (the state green, `F4.310`). */
 export function anUnsourcedLayoutDrawsAsBefore(): void {
   const { nodes, readings } = boardNodes();
   const unsourced: MimicLayoutGeometryDto = {
@@ -933,6 +933,6 @@ export function anUnsourcedLayoutDrawsAsBefore(): void {
     expect(pipe.hasAttribute("data-energy")).toBe(false);
     expect(cls(pipe)).toContain("stroke-line-strong");
   }
-  expect(cls(flowOn("single", "board"))).toContain("stroke-accent");
-  expect(cls(flowOn("board", "tail"))).toContain("stroke-accent");
+  expect(cls(flowOn("single", "board"))).toContain("stroke-ok");
+  expect(cls(flowOn("board", "tail"))).toContain("stroke-ok");
 }
