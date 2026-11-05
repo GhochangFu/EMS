@@ -25,6 +25,7 @@ import {
   runLocationTypesTabHiddenFromOrganizationAdminTest,
   runLocationTypesTabShownToAdminTest,
   runUnitRolesTabIsGlobalAdminOnlyTest,
+  runStateLabelsTabIsGlobalAdminOnlyTest,
   runNotificationTabTests,
 } from "./admin-access.spec";
 
@@ -72,6 +73,10 @@ describe("admin-access", () => {
 
   it("shows the Unit Roles tab to the global admin alone (F4.282)", () => {
     runUnitRolesTabIsGlobalAdminOnlyTest();
+  });
+
+  it("shows the State Labels tab, right after Point Keys, to the global admin alone (F4.309)", () => {
+    runStateLabelsTabIsGlobalAdminOnlyTest();
   });
 
   it("canManageMimicLayouts admits admin and organization_admin (F3.32c)", () => {

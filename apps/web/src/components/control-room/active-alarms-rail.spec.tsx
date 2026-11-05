@@ -119,6 +119,7 @@ function renderRail({
         assetDomains: [],
         alarmSeverities: SEVERITIES,
         alarmSkills: [],
+        switchingStates: [],
       } as unknown as VocabulariesResponse),
   );
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });

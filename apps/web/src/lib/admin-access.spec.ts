@@ -106,6 +106,9 @@ export function runAssetTemplateTabTests(): void {
         // `canWriteOrganizationScopedCalcParameter`, not by the tab.
         "/admin/asset-groups",
         "/admin/point-keys",
+        // `F4.309` (ADR 0088 Amendment 3, plan C15) — State Labels, right after Point Keys,
+        // `globalAdminOnly`.
+        "/admin/point-key-states",
         // `F4.300` (ADR 0108 decision 3, plan C10) — Trend Points, `trendPointsAdmin`.
         "/admin/trend-points",
         "/admin/location-types",
@@ -164,7 +167,8 @@ export function runAssetTemplateTabTests(): void {
     // `F4.282` added Unit Roles as `globalAdminOnly`: `admin` alone goes 19 -> 20.
     // `F4.300` added Trend Points as `trendPointsAdmin` (admin and organization_admin only):
     // 20 -> 21 and 18 -> 19; `location_admin` stays at 11.
-    const expected = role === "location_admin" ? 11 : role === "admin" ? 21 : 19;
+    // `F4.309` added State Labels as `globalAdminOnly`: `admin` alone goes 21 -> 22.
+    const expected = role === "location_admin" ? 11 : role === "admin" ? 22 : 19;
     assert(
       paths.length === expected,
       `${role} sees the wrong number of tabs — got ${paths.length}, expected ${expected}`,
@@ -379,6 +383,26 @@ export function runUnitRolesTabIsGlobalAdminOnlyTest(): void {
   for (const role of ["organization_admin", "location_admin", "asset_group_admin"] as const) {
     const paths = visibleMasterDataTabs(role).map((tab) => tab.path);
     assert(!paths.includes("/admin/unit-roles"), `${role} must not see the Unit Roles tab`);
+  }
+}
+
+/**
+ * `F4.309` (ADR 0088 Amendment 3, plan C15, owner ruling Q1) — the State Labels tab is the global
+ * `admin`'s alone, labelled per ruling Q4, right after Point Keys.
+ */
+export function runStateLabelsTabIsGlobalAdminOnlyTest(): void {
+  const tab = masterDataTabs.find((entry) => entry.path === "/admin/point-key-states");
+  assert(tab?.label === "State Labels", `the tab is labelled "State Labels" — got ${tab?.label}`);
+  assert(tab?.area === "reference", "the tab is in Reference Data");
+  const paths = masterDataTabs.map((entry) => entry.path);
+  assert(
+    paths.indexOf("/admin/point-key-states") === paths.indexOf("/admin/point-keys") + 1,
+    "the tab comes right after Point Keys",
+  );
+  assert(visibleMasterDataTabs("admin").some((entry) => entry === tab), "admin must see the State Labels tab");
+  for (const role of ["organization_admin", "location_admin", "asset_group_admin", "operator", "viewer"] as const) {
+    const visible = visibleMasterDataTabs(role).map((entry) => entry.path);
+    assert(!visible.includes("/admin/point-key-states"), `${role} must not see the State Labels tab`);
   }
 }
 

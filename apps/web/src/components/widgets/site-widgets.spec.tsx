@@ -25,7 +25,12 @@ import { StateLegendWidget } from "./state-legend-widget";
 
 vi.mock("../../api/vocabularies", () => ({
   vocabulariesQueryKey: ["vocabularies"],
-  fetchVocabularies: () => Promise.resolve({ alarmSeverities: [] }),
+  // `F4.309` review M1 — one switching state, so the legend widget draws its second group.
+  fetchVocabularies: () =>
+    Promise.resolve({
+      alarmSeverities: [],
+      switchingStates: [{ pointKey: "breaker_main", value: 0, label: "OPEN", tone: "open" }],
+    }),
 }));
 
 const SEVERITIES: AlarmSeverityDto[] = [
@@ -231,7 +236,9 @@ export async function theLegendTitleAndPillsShareOneRow(): Promise<void> {
  * `varchar(255)`; with `shrink-0` it kept its full width, `truncate` never applied, and the row's
  * `overflow-hidden` clipped the trailing pills (Offline first). jsdom has no layout, so this pins
  * the flex contract that decides it: the title may shrink (`min-w-0`, no `shrink-0`) and
- * truncates; the pills' wrapper may not shrink, so the pills stay on one line at full width.
+ * truncates. `F4.309` review M1: with the switching states beside them a `shrink-0` wrapper could
+ * outgrow the row and be clipped, so the wrapper may shrink and wraps instead, and the row wraps
+ * too (a view canvas sizes its rows to content).
  * Mutation: put `shrink-0` back on the title → red.
  */
 export async function aLongLegendTitleTruncatesAndKeepsThePills(): Promise<void> {
@@ -245,7 +252,18 @@ export async function aLongLegendTitleTruncatesAndKeepsThePills(): Promise<void>
   expect(title).not.toHaveClass("shrink-0");
   const pills = screen.getByLabelText("State legend").parentElement;
   expect(pills?.parentElement).toBe(row);
-  expect(pills).toHaveClass("shrink-0");
+  expect(pills).toHaveClass("min-w-0", "flex-wrap");
+  expect(pills).not.toHaveClass("shrink-0");
+  expect(row).toHaveClass("flex-wrap");
+}
+
+/** `F4.309` review M1 — the switching group renders inside the widget, beside the states. */
+export async function theLegendWidgetDrawsTheSwitchingStates(): Promise<void> {
+  render(wrap(<StateLegendWidget title="Legend" status="ready" />));
+  const group = await screen.findByRole("group", { name: "Switching states" });
+  const pills = screen.getByLabelText("State legend").parentElement;
+  expect(group.parentElement).toBe(pills);
+  expect(pills).toHaveClass("flex-wrap");
 }
 
 export function theStripDrawsOnePillPerRole(): void {
