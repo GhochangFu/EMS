@@ -51,6 +51,10 @@ export type SegmentAsset = {
   readonly assetId: string;
   readonly assetCode: string;
   readonly assetName: string;
+  /** `F4.316` (ADR 0111) — the asset's RTU display name, `null` when it has none. */
+  readonly assetRtuName: string | null;
+  /** `F4.316` (ADR 0111) — the asset's location name. */
+  readonly assetLocationName: string | null;
   /** The registration's effective unit. */
   readonly unit: string | null;
 };
@@ -129,6 +133,8 @@ export function segmentAbnormalEntries(
       assetId: asset.assetId,
       assetCode: asset.assetCode,
       assetName: asset.assetName,
+      assetRtuName: asset.assetRtuName,
+      assetLocationName: asset.assetLocationName,
       unit: asset.unit,
       currentMean: entry.current.mean,
       baselineMean: verdict.baselineMean,

@@ -3,7 +3,7 @@ import ReactECharts from "echarts-for-react";
 import { useMemo } from "react";
 import { Link } from "react-router-dom";
 
-import type { SegmentViewPeriodDto, SegmentViewRankingEntryDto } from "@bms/shared";
+import { assetLabelOf, type SegmentViewPeriodDto, type SegmentViewRankingEntryDto } from "@bms/shared";
 
 import { seriesPalette, useChartTheme } from "../../lib/chart-theme";
 import { compareSpanMs, historyHrefFor, segmentChartSeries } from "../../lib/site-trends";
@@ -33,7 +33,7 @@ export function SegmentTrendChart({ ranking, current, compare, unit, pointCode }
     // With compare off no previous period is drawn, whatever the entries carry.
     const lines = compare === null ? drawn.map((entry) => ({ ...entry, compareBuckets: null })) : drawn;
     const series = segmentChartSeries(lines, compareSpanMs(current, compare)).map((line) => ({
-      name: line.dashed ? `${line.assetCode} · previous period` : line.assetCode,
+      name: line.dashed ? `${line.label} · previous period` : line.label,
       type: CHART_SERIES.line.type,
       showSymbol: false,
       connectNulls: false,
@@ -69,11 +69,11 @@ export function SegmentTrendChart({ ranking, current, compare, unit, pointCode }
           <li key={entry.assetId}>
             <Link
               to={historyHrefFor(entry.assetId, current, pointCode, compare !== null)}
-              aria-label={`${entry.assetCode} ${entry.assetName}`}
+              aria-label={`${assetLabelOf(entry)} ${entry.assetName}`}
               title={entry.assetName}
-              className="font-semibold text-accent-strong hover:underline"
+              className="break-words font-semibold text-accent-strong hover:underline"
             >
-              {entry.assetCode}
+              {assetLabelOf(entry)}
             </Link>
           </li>
         ))}

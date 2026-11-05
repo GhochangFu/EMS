@@ -32,6 +32,8 @@ import {
   assertStripOnAForeignSiteIsA404WithNoStatement,
   assertStripSegmentIsNotAParallelSuitesPick,
   assertStripShowsANewSegment,
+  assertStripSeriesNameTheirRtuAndLocation,
+  assertAnRtuLessStripSeriesNamesItsLocation,
   assertTenantPolicyIsolatesTheRow,
   assertUnknownCodeIsBadRequest,
   assertUnknownSegmentIsNotFound,
@@ -416,6 +418,14 @@ describe.skipIf(!connectionString)("F4.300 — TrendPointsService under real RLS
 
   it("T5 F4.301: a seeded ups asset draws under the ups segment only", async () => {
     await assertStripDrawsUpsAssetsUnderTheUpsSegmentOnly(ctx);
+  });
+
+  it("T6 F4.316: every RSMOC-WC strip series names the RTU and location the database holds", async () => {
+    await assertStripSeriesNameTheirRtuAndLocation(ctx);
+  });
+
+  it("T6b F4.316: an RTU-less strip series has a null RTU name and its site's name", async () => {
+    await assertAnRtuLessStripSeriesNamesItsLocation(ctx);
   });
 
   it("S14 two overlapping writes to one segment serialize: one body wins, no 500", async () => {

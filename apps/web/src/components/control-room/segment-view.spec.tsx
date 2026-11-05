@@ -79,6 +79,8 @@ function rankingEntry(assetId: string, drawn: boolean): SiteSegmentViewsDto["ran
     assetId,
     assetCode: assetId.slice(-2),
     assetName: "Chiller",
+    assetRtuName: null,
+    assetLocationName: null,
     unit: "kW",
     current: stats,
     compare: null,

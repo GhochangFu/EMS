@@ -20,6 +20,10 @@ export type SiteAssetRow = {
   asset_id: string;
   asset_code: string;
   asset_name: string;
+  /** `F4.316` (ADR 0111) — `rtus.display_name`, `null` when the asset has no RTU. */
+  asset_rtu_name: string | null;
+  /** `F4.316` (ADR 0111) — `locations.name`, the label's `where` when there is no RTU. */
+  asset_location_name: string | null;
   domain: string;
   point_key: string;
   unit: string | null;
@@ -28,7 +32,9 @@ export type SiteAssetRow = {
 /**
  * The site's assets — narrowed to the group's members (`asset_group_members`,
  * the group pinned to this site) when one is named — joined to their active
- * registrations, with the effective unit. One statement, site and group bound.
+ * registrations, with the effective unit and (`F4.316`) the asset's RTU and
+ * location names — two LEFT JOINs that add no predicate. One statement, site
+ * and group bound.
  */
 export async function siteAssetRows(
   pool: Queryable,
@@ -45,11 +51,14 @@ export async function siteAssetRows(
             WHERE m.asset_group_id = $2::uuid
          )`;
   const { rows } = await pool.query<SiteAssetRow>(
-    `SELECT a.id AS asset_id, a.code AS asset_code, a.name AS asset_name, a.domain,
+    `SELECT a.id AS asset_id, a.code AS asset_code, a.name AS asset_name,
+            r.display_name AS asset_rtu_name, l.name AS asset_location_name, a.domain,
             ap.point_key, COALESCE(ap.unit, pk.unit) AS unit
        FROM bms.assets a
        JOIN bms.asset_points ap ON ap.asset_id = a.id AND ap.active = true
        LEFT JOIN bms.point_keys pk ON pk.code = ap.point_key
+       LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+       LEFT JOIN bms.locations l ON l.id = a.location_id
       WHERE a.location_id = $1::uuid
         ${groupFilter}
       ORDER BY a.code, ap.point_key`,

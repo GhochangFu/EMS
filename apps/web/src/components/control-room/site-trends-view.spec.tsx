@@ -319,6 +319,8 @@ const DRAWN_BODY = {
       assetId: "33333333-3333-4333-8333-333333333331",
       assetCode: "CH-1",
       assetName: "Chiller 1",
+      assetRtuName: "Plant RTU 1",
+      assetLocationName: "Site 1",
       unit: "kW",
       current: { mean: 10, max: 12, maxAt: null, sampleCount: 5 },
       compare: null,
@@ -334,6 +336,14 @@ function signInAsAdmin(): void {
 
 function signInAs(role: UserRole): void {
   useAuthStore.setState({ user: { id: "u1", email: `${role}@bms.local`, displayName: role, role } });
+}
+
+/** `F4.316` (ADR 0111): a segment sub-tab's chart legend names the asset `<code> · <RTU>`. */
+export async function aSegmentSubTabLegendReadsTheAssetLabel(): Promise<void> {
+  stubSegments(DRAWN_BODY);
+  renderAt("?view=chillers&point=kw&range=7d");
+  const legend = await screen.findByRole("list", { name: "Chart legend" });
+  expect(legend.textContent).toBe("CH-1 · Plant RTU 1");
 }
 
 /** `F4.303` U15 (ADR 0108 Amendment 6 item 4): a segment sub-tab offers Pin to an author. */
