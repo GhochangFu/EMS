@@ -1061,7 +1061,7 @@
 > the same routes; `DELETE_ALLOWANCE` widens from two removals to three, the
 > third being `calcPoint.delete` on a template-less asset only. Adopting an
 > unpinned asset onto a template version (ADR 0109 ruling 1) was deferred to
-> `F4.312`, which is built (the paragraph below).
+> `F4.312`, which is built (the `F4.312` paragraph below).
 > And **a per-unit point list on a mimic layout** (**ADR 0081 Amendment 1**,
 > #1006; row `F4.307`; PR 1 #1011, PR 2 #1013, PR 3 #1016; this sweep merges
 > last). A layout unit with a role may list up to `MIMIC_HEADLINE_POINTS` (3)
@@ -1103,26 +1103,33 @@
 > PR 3 #1028; `F4.313` #1014 and its follow-up #1021; this sweep merges last).
 > `POST /admin/asset-templates/:id/adoption-preview` and `/:id/adopt` (body
 > `{ assetIds }`, 1-25 template-less assets of the version's organization, all
-> or nothing; access is migrate's) pin each asset to one **published** version
-> of its own organization and the same domain in one transaction per asset: an
-> asset point whose key the version declares as measured keeps its wiring and
-> history, a measured point the asset lacks is added `unmapped`, a row the
-> version does not declare stays as it is, a standalone calculated point the
-> version declares as derived becomes the asset's override (ruling 8), and the
-> version's derived points, KPIs, alarm rules and maintenance plans are written
-> as `instantiate` writes them. The plan is re-computed at apply. It refuses,
-> naming the asset code and key, a standalone point the version does not
+> or nothing; access is migrate's) pin the assets to one **published** version
+> of their own organization and the same domain, in one transaction for the
+> batch: an asset point whose key the version declares as measured keeps its
+> wiring and history (a `computed` row on such a key is refused), a measured
+> point the asset lacks is added `unmapped` (an optional one whose source key
+> cannot be resolved is skipped), a row the version does not declare stays as
+> it is, and a standalone calculated point the version declares as derived
+> becomes the asset's override (ruling 8). The version's seeded alarm rules
+> and default dashboards are written as `instantiate` writes them; its derived
+> points and KPIs reach the asset through the pin; no maintenance plan is
+> written (`instantiate` writes none). The plan is re-computed at apply and
+> any refusal is a 409 that writes nothing; the reasons are
+> `templateAdoptionRefusalReasonSchema` (`packages/shared/src/contracts/
+> template-adoption.ts`), among them a standalone point the version does not
 > declare, a unit mismatch, an asset already pinned and a derived key held as
-> another kind. No migration. **Release back to no template stays out of scope
-> (A7):** adoption is one-way; later changes go through migrate. Copilot,
-> **per ADR 0099 Amendment 12** (PR 2): `assetTemplate.adopt`, a red Confirm
-> card on `adopt` (no new `DELETE`). Web (PR 3): **Adopt a template** on a
-> template-less asset page and as an asset-list bulk action. **New key**
-> (`F4.313`, web only): the key picker of **Add calculated point** and of the
-> bulk wizard offers it to a global administrator only; the formula is checked
-> first, then `POST /admin/point-keys`, then the point (two writes; a refused
-> point leaves the key in the catalog). The picker lists the asset's domain
-> first, with **Show all keys** and a search, and `GET /admin/assets/:id`
+> another kind, each naming the asset code (and the key, for a point). No
+> migration. **Release back to no template stays out of scope (A7):** adoption
+> is one-way; later changes go through migrate. Copilot, **per ADR 0099
+> Amendment 12** (PR 2): `assetTemplate.adopt`, a red Confirm card on `adopt`
+> (no new `DELETE`). Web (PR 3): **Adopt a template** on a template-less asset
+> page and as an asset-list bulk action. **New key** (`F4.313`, web only): the
+> key picker of **Add calculated point** and of the bulk wizard offers it to a
+> global administrator only; the formula is checked first, then
+> `POST /admin/point-keys`, then the point (two writes; a refused point leaves
+> the key in the catalog). The picker lists only the asset's domain (plus keys
+> with no domain) until **Show all keys**, with a search, and
+> `GET /admin/assets/:id`
 > carries `domain`. The copilot keeps one card per change (`pointKey.create`,
 > then `calcPoint.set` or `.createBatch`).
 > And **the tool-calling onboarding agent loop** (**ADR 0090** with
@@ -1495,9 +1502,10 @@
 > in #838), `.draft`, `.archive`, `.importStock` and `.instantiate` (target kind
 > `assetTemplateDeploy`, the route's deploy authority, which admits a
 > `location_admin` on a site it manages), and, since ADR 0099 Amendment 12
-> (`F4.312`), `.adopt` (migrate's authority; red). `migrate`, `seeded-rules/reapply`,
-> `default-dashboards` and `migration-preview` stay manual for good, each with
-> a permanent reason (`F4.254` ruling 2), and so does the asset-point
+> (`F4.312`), `.adopt` (migrate's authority; red). `migrate`,
+> `seeded-rules/reapply`, `default-dashboards` and `migration-preview` stay
+> manual for good, each with a permanent reason (`F4.254` ruling 2), and so
+> does the asset-point
 > `bulk-update` (`MULTI_TARGET`; ruling 3).
 > **`F4.255`** (ADR 0099 Amendment 2; #840 `49785d5c`, #839 `3f01ca8c`, #842
 > `300578c9`): `GET /api/v1/admin/onboarding/sessions?organizationId=…` lists
