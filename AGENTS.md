@@ -1097,6 +1097,23 @@
 > edits are locked while it is on, the inspector lists the bound asset, its
 > points, state points and open alarms, and "Save to refresh the preview"
 > shows while the editor holds unsaved edits.
+> And **state labels for switching points, managed in the portal** (**ADR 0088
+> Amendment 3**, #1026, and **ADR 0099 Amendment 13**, #1027; row `F4.309`;
+> PR 1 #1034, PR 2 #1036, PR 3 #1038; this sweep merges last).
+> `GET|POST /api/v1/admin/point-key-states` and `PATCH|DELETE /:id` write
+> `bms.point_key_states` for the global `admin` only (reads too), on `fleetDb`
+> in one transaction with an organization-less audit row (an edit's payload is
+> `{ from, to }`); `bms_tenant` keeps no write grant and no migration was
+> needed. The 7 rows of `POINT_KEY_STATE_SEED` (exported from `@bms/db`) are
+> seed-owned and read-only: a `PATCH` or `DELETE` of one, or a `POST` of a
+> seeded pair, is 409. `GET /vocabularies` carries a required `switchingStates`
+> list for every signed-in user, and the state legend draws each distinct label
+> and tone once with the mimic's switch glyph. The "State Labels" page sits
+> under Reference Data after Point Keys. The copilot gains `pointKeyState.create`
+> and `pointKeyState.update` (a new `pointKeyState` target that refuses a seeded
+> row at propose; no delete) and the read tool `list_point_key_states`, which
+> answers as many rows as fit its budget (`fitFleetListResult`) with
+> `truncated`; the propose-tool budget is 94,000.
 > And **adopting a template-less asset onto a template version, and a New key
 > in the calculated-point pickers** (**ADR 0109 Amendment 1**, accepted
 > 2026-11-05; rows `F4.312` and `F4.313`; `F4.312` PR 1 #1017, PR 2 #1023,
@@ -3379,6 +3396,13 @@ these two tables; it follows from a table having no `organization_id`, which is
 migration `0057` and `bms.asset_roles` was global from `0051`, so the two
 arrived from opposite directions at the same rule. The test is the column, not
 the history.
+
+**The third arrived with `F4.309`: `bms.point_key_states`** (**ADR 0088
+Amendment 3**). `PointKeyStatesAdminService` gates every mutation on
+`isGlobalAdmin`, as above. It differs on reads: its admin list is global
+`admin` only too (owner ruling, `F4.309` plan Q1), because every signed-in user
+already reads the rows through `GET /api/v1/vocabularies` `switchingStates`, so
+no master-data read is needed to keep a value reachable.
 
 **READS ARE A DIFFERENT QUESTION FROM WRITES, and both tables split them the
 same way.** `requireMasterDataUser` guards the reads; only the writes reach
