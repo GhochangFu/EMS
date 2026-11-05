@@ -6,9 +6,9 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
+import { and, count, desc, eq, inArray } from "drizzle-orm";
 
-import { assetPoints, assetTemplates, assets, pointKeys, templatePoints } from "@bms/db";
+import { assetPoints, assetTemplates, assets, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   JwtPayload,
@@ -45,7 +45,9 @@ import {
   unresolvableAdditionMessage,
 } from "./asset-templates-migrate-source-key";
 import type { MigrateAssetsBody } from "./asset-templates-migrate.schema";
-import { computeTemplateVersionDelta, type StoredTemplatePoint } from "./template-version-delta";
+// `F4.312` (plan task 1.2) — the three version reads, shared with adoption.
+import { catalogUnits, loadPoints, pointIdsByKey } from "./asset-templates-version-reads";
+import { computeTemplateVersionDelta } from "./template-version-delta";
 
 /**
  * `F2.6` — moving assets from one published template version to another
@@ -550,8 +552,8 @@ export class AssetTemplateMigrationService {
     // a migration is the ordinary way this happens.
     const toMigrate = selected.filter((a) => a.templateId !== target.id);
 
-    const targetPoints = await this.loadPoints(target.id);
-    const catalogUnits = await this.catalogUnits(targetPoints);
+    const targetPoints = await loadPoints(this.fleetDb, target.id);
+    const unitsByKey = await catalogUnits(this.fleetDb, targetPoints);
 
     // Bounded collector — see `MAX_REPORTED_REFUSALS`. The count keeps rising
     // after the list stops, so "is this migration refused" and "how badly" stay
@@ -598,7 +600,7 @@ export class AssetTemplateMigrationService {
         });
       }
 
-      const sourcePoints = await this.loadPoints(sourceId);
+      const sourcePoints = await loadPoints(this.fleetDb, sourceId);
       const delta = computeTemplateVersionDelta(sourcePoints, targetPoints, {
         fromVersion: source.version,
         toVersion: target.version,
@@ -639,7 +641,7 @@ export class AssetTemplateMigrationService {
               // the same path instantiation uses, and a migrated row carrying
               // the catalog unit where an instantiated one carries the override
               // is the same point rendering two different units.
-              unit: addition.unit ?? catalogUnits.get(addition.pointKey) ?? null,
+              unit: addition.unit ?? unitsByKey.get(addition.pointKey) ?? null,
             });
             continue;
           }
@@ -845,7 +847,7 @@ export class AssetTemplateMigrationService {
         // map is not a silent skip: the gate treats a missing id as "cannot
         // build a candidate node" and there is nothing to check anyway.
         targetPointIdsByKey: existingRows.some((row) => row.sourceKind === "computed")
-          ? await this.pointIdsByKey(target.id)
+          ? await pointIdsByKey(this.fleetDb, target.id)
           : new Map<string, string>(),
         targetVersion: target.version,
         dependencies: this.dependencies,
@@ -881,83 +883,5 @@ export class AssetTemplateMigrationService {
       throw new NotFoundException("Asset template not found");
     }
     return row;
-  }
-
-  /**
-   * `template_points.id` by point key, for one version.
-   *
-   * A second, narrow read rather than a column on {@link loadPoints}: that
-   * projection is "the subset of a stored row `computeTemplateVersionDelta`
-   * reads", and the id is not one of them — widening it would put a field on
-   * the delta's input type that the delta never looks at. Read once per plan,
-   * on the same `fleetDb` and for the same E7.1b reason as every other
-   * `template_points` read here.
-   */
-  private async pointIdsByKey(templateId: string): Promise<Map<string, string>> {
-    const rows = await this.fleetDb
-      .select({ id: templatePoints.id, pointKey: templatePoints.pointKey })
-      .from(templatePoints)
-      .where(eq(templatePoints.templateId, templateId));
-    return new Map(rows.map((row) => [row.pointKey, row.id]));
-  }
-
-  private async loadPoints(templateId: string): Promise<StoredTemplatePoint[]> {
-    // E7.1b: `template_points` read on `fleetDb` — a `FORCE`d tenant table in
-    // `0047`. The delta this feeds decides what to migrate; a silent zero-point
-    // read would compute an empty delta and migrate nothing.
-    const rows = await this.fleetDb
-      .select()
-      .from(templatePoints)
-      .where(eq(templatePoints.templateId, templateId))
-      .orderBy(asc(templatePoints.sortOrder), asc(templatePoints.pointKey));
-    return rows.map((row) => ({
-      pointKey: row.pointKey,
-      kind: row.kind,
-      sourceDataKeyPattern: row.sourceDataKeyPattern,
-      required: row.required,
-      unit: row.unit,
-      formula: row.formula,
-      formulaDialect: row.formulaDialect,
-      calcTrigger: row.calcTrigger,
-      calcIntervalSeconds: row.calcIntervalSeconds,
-      maxInputAgeSeconds: row.maxInputAgeSeconds,
-      // `F2.9` finding 31. Projected because the delta compares it: a version
-      // bump that moves only the ratio used to produce an empty
-      // `derivedChanged`, so `migration-preview` said "no changes" while the
-      // migrated asset picked the new value up on its next sweep.
-      minCoverageRatio: row.minCoverageRatio,
-      // `F2.24` — the five metadata defaults, projected because the delta compares
-      // them; one left out reads `undefined` on both sides and goes unreported.
-      scaleMultiplier: row.scaleMultiplier,
-      scaleOffset: row.scaleOffset,
-      engMin: row.engMin,
-      engMax: row.engMax,
-      qualityPolicy: row.qualityPolicy,
-    }));
-  }
-
-  /**
-   * Catalog units for the target version's point keys.
-   *
-   * Unlike instantiation this does **not** refuse a key that has left the
-   * active catalog. Instantiation is creating equipment and can insist the
-   * catalog is current; a migration is moving equipment that already exists,
-   * and refusing it because an unrelated key was deactivated would strand the
-   * estate on an old version for a reason the operator cannot fix from here.
-   * A missing unit falls back to null, which is what the column already means.
-   */
-  private async catalogUnits(
-    points: StoredTemplatePoint[],
-  ): Promise<Map<string, string | null>> {
-    const codes = [...new Set(points.map((p) => p.pointKey))];
-    if (codes.length === 0) {
-      return new Map();
-    }
-    const rows = await this.fleetDb
-      .select({ code: pointKeys.code, unit: pointKeys.unit })
-      .from(pointKeys)
-      // `F3.39`: fleet-wide catalog, so the lookup is by code alone.
-      .where(inArray(pointKeys.code, codes));
-    return new Map(rows.map((row) => [row.code, row.unit]));
   }
 }

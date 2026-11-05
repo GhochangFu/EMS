@@ -141,11 +141,13 @@ export async function assertCatalogActive(
  */
 export function parseTemplateContentForInstantiate(
   template: TemplateRow,
+  // `F4.312` — adoption reuses the guard; omitted, the sentence is instantiate's.
+  operation: "instantiate" | "adopt" = "instantiate",
 ): TemplateContentParsed {
   const parsed = parseStoredTemplateContent(template.content);
   if (!parsed.ok) {
     throw new ConflictException(
-      `Cannot instantiate ${template.code} v${template.version}: its stored content no longer ` +
+      `${cannot(operation)} ${template.code} v${template.version}: its stored content no longer ` +
         "matches the current content contract, so the alarms it carries cannot be read. " +
         "A published version is immutable — create a new draft from it, repair the content " +
         `and publish that version instead. ${parsed.detail}`,
@@ -203,6 +205,8 @@ export async function assertAlarmVocabulariesStillLive(
   db: VocabularyExecutor,
   alarms: TemplateAlarm[],
   template: TemplateRow,
+  // `F4.312` — adoption reuses the guard; omitted, the sentence is instantiate's.
+  operation: "instantiate" | "adopt" = "instantiate",
 ): Promise<void> {
   if (alarms.length === 0) {
     return;
@@ -218,11 +222,16 @@ export async function assertAlarmVocabulariesStillLive(
     return;
   }
   throw new ConflictException(
-    `Cannot instantiate ${template.code} v${template.version}: ` +
+    `${cannot(operation)} ${template.code} v${template.version}: ` +
       `${alarmVocabularyMessage(problem)} ` +
       `Reactivate that ${problem.axis}, or publish a new template version that does not ` +
       "use it.",
   );
+}
+
+/** `F4.312` — the head of the two content-guard sentences, per operation. */
+function cannot(operation: "instantiate" | "adopt"): string {
+  return operation === "adopt" ? "Cannot adopt assets onto" : "Cannot instantiate";
 }
 
 /** Keeps one statement under the Postgres bind-parameter ceiling. */
@@ -288,7 +297,9 @@ export function assertBatchFits(
 export async function assertRuleCodesFree(
   db: BmsDb,
   organizationId: string,
-  entries: InstantiateAssetBody[],
+  // `F4.312` (plan task 1.3): widened from `InstantiateAssetBody[]` to the one
+  // field it reads, so adoption checks existing assets by code with the same rule.
+  entries: readonly { readonly code: string }[],
   alarms: TemplateAlarm[],
 ): Promise<void> {
   if (alarms.length === 0) {

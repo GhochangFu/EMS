@@ -47,6 +47,7 @@ import {
   updateMaintenanceScheduleBodySchema,
   // `F4.300` (ADR 0108 decision 3.7): the replace-all trend-point body.
   putOrgTrendPointsBodySchema,
+  adoptAssetsBodySchema,
   setOrganizationColourProfileBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
@@ -266,6 +267,8 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   loginBodySchema,
   manualReadingsBodySchema,
   migrateAssetsBodySchema,
+  // `F4.312` (ADR 0109 Amendment 1). Strict: a plan echoed back must be a 400 (owner ruling 1).
+  adoptAssetsBodySchema,
   patchDraftBodySchema,
   putDashboardWidgetsBodySchema,
   appendWidgetBodySchema,

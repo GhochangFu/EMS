@@ -128,6 +128,13 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     auditMethods: ["migrate"],
   },
   {
+    // `F4.312` PR 1 (ADR 0109 Amendment 1): the adopt route is on `ASSET_TEMPLATE_PENDING` until
+    // PR 2 adds the `assetTemplate.adopt` entry, which moves this file to `CATALOG_WRITERS`.
+    file: "apps/api/src/admin/asset-templates/asset-templates-adopt.service.ts",
+    route: { method: "POST", path: "/admin/asset-templates/:id/adopt" },
+    auditMethods: ["adopt"],
+  },
+  {
     file: "apps/api/src/admin/asset-templates/asset-templates-seeded-rules.service.ts",
     route: { method: "POST", path: "/admin/asset-templates/:id/seeded-rules/reapply" },
     auditMethods: ["reapply"],
