@@ -65,6 +65,8 @@ const SCHEDULE: MaintenanceScheduleItem = {
   lastCompletedAt: null,
   dueState: "upcoming",
   assetCode: "AHU-01",
+  assetRtuName: "RTU 3",
+  assetLocationName: "Plant A",
   assetName: "Air Handler One",
   siteName: "Plant A",
   activeWorkOrderId: null,
@@ -83,14 +85,14 @@ function envelope(sentence: string): Error {
   return new Error(`{"statusCode":409,"message":"${sentence}","error":"Conflict"}`);
 }
 
-async function renderPanel(): Promise<void> {
+async function renderPanel(row: MaintenanceScheduleItem = SCHEDULE): Promise<void> {
   vi.stubGlobal(
     "fetch",
     vi.fn(() => Promise.reject(new Error("maintenance-schedules-panel.spec: no fetch expected"))),
   );
   // `F4.281`: the inactive row comes back only when the panel asks for it ("Show inactive").
   vi.spyOn(maintenanceApi, "fetchMaintenanceSchedules").mockImplementation(async (input) => ({
-    items: input.includeInactive === true ? [SCHEDULE, INACTIVE] : [SCHEDULE],
+    items: input.includeInactive === true ? [row, INACTIVE] : [row],
   }));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -155,4 +157,34 @@ export async function showInactiveListsAnInactiveRowWithActivate(): Promise<void
   const card = (await screen.findByText(INACTIVE.title)).closest("article");
   expect(card).not.toBeNull();
   expect(within(card as HTMLElement).getByRole("button", { name: "Activate" })).toBeInTheDocument();
+}
+
+/** `F4.316` PR 4a (ADR 0111): the innermost element whose whole text is `text`. */
+function byWholeText(text: string): HTMLElement {
+  return screen.getByText(
+    (_content, element) =>
+      element !== null &&
+      element.textContent === text &&
+      Array.from(element.children).every((child) => child.textContent !== text),
+  );
+}
+
+/** The row's asset line reads `<code> · <RTU> · <asset name> · <site>`. */
+export async function theRowNamesTheRtu(): Promise<void> {
+  await renderPanel();
+  expect(byWholeText("AHU-01 · RTU 3 · Air Handler One · Plant A")).toBeInTheDocument();
+}
+
+/** With no RTU the location names the asset. */
+export async function theRowFallsBackToTheLocation(): Promise<void> {
+  await renderPanel({ ...SCHEDULE, assetRtuName: null });
+  expect(byWholeText("AHU-01 · Plant A · Air Handler One · Plant A")).toBeInTheDocument();
+}
+
+/** The `· where` part wraps rather than truncating. */
+export async function theRowsWherePartWraps(): Promise<void> {
+  await renderPanel();
+  const where = screen.getByText("· RTU 3");
+  expect(where).not.toHaveClass("truncate");
+  expect(where).toHaveClass("whitespace-normal");
 }

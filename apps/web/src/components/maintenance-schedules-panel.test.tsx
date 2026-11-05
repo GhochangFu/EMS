@@ -7,6 +7,9 @@ import {
   deactivateMountsTheToggleStepper,
   highAndMediumPillsDiffer,
   newScheduleMountsTheCreateStepper,
+  theRowFallsBackToTheLocation,
+  theRowNamesTheRtu,
+  theRowsWherePartWraps,
   showInactiveListsAnInactiveRowWithActivate,
   highPillIsTheRuledStrongWarning,
   mediumPillIsTheRuledSoftWarning,
@@ -53,5 +56,17 @@ describe("F4.204 maintenance-schedule refusals read as a sentence, not the respo
 
   it("F4.281: Show inactive lists a deactivated schedule with Activate", async () => {
     await showInactiveListsAnInactiveRowWithActivate();
+  });
+
+  it("F4.316: the row's asset line names the RTU", async () => {
+    await theRowNamesTheRtu();
+  });
+
+  it("F4.316: an asset without an RTU is named by its location", async () => {
+    await theRowFallsBackToTheLocation();
+  });
+
+  it("F4.316: the row's where part wraps instead of truncating", async () => {
+    await theRowsWherePartWraps();
   });
 });
