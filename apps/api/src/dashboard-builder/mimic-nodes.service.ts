@@ -307,6 +307,8 @@ export class MimicNodesService {
           m.asset_id,
           m.asset_code,
           m.asset_name,
+          m.rtu_display_name,
+          m.location_name,
           m.domain,
           m.member_count,
           (
@@ -330,6 +332,8 @@ export class MimicNodesService {
             a.id AS asset_id,
             a.code AS asset_code,
             a.name AS asset_name,
+            r.display_name AS rtu_display_name,
+            l.name AS location_name,
             a.domain,
             (count(*) OVER (PARTITION BY agm.asset_group_id, agm.role))::int AS member_count
           FROM bms.asset_group_members agm
@@ -337,6 +341,8 @@ export class MimicNodesService {
             ON ag.id = agm.asset_group_id AND ag.organization_id = $2
           INNER JOIN bms.assets a
             ON a.id = agm.asset_id AND a.organization_id = $2
+          LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+          LEFT JOIN bms.locations l ON l.id = a.location_id
           WHERE agm.asset_group_id = ANY($1::uuid[])
             AND agm.role = ANY($3::text[])
             AND ($4::uuid[] IS NULL OR a.id = ANY($4::uuid[]))

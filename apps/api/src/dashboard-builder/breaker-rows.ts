@@ -27,6 +27,8 @@ interface MemberRow extends Record<string, unknown> {
   asset_id: string;
   asset_code: string;
   asset_name: string;
+  rtu_display_name: string | null;
+  location_name: string | null;
   domain: string;
   rating: string | null;
   trip_cause: string | null;
@@ -103,7 +105,7 @@ export async function readBreakerRows(
   const ids = sql.param([...assetIds]);
   const members = await tx.execute<MemberRow>(sql`
     SELECT
-      m.asset_id, m.asset_code, m.asset_name, m.domain, m.rating, m.trip_cause, m.role, m.role_label,
+      m.asset_id, m.asset_code, m.asset_name, m.rtu_display_name, m.location_name, m.domain, m.rating, m.trip_cause, m.role, m.role_label,
       (
         SELECT count(*)::int
         FROM bms.alarms al
@@ -118,7 +120,8 @@ export async function readBreakerRows(
       ta.raised_at AS top_alarm_raised_at
     FROM (
       SELECT
-        a.id AS asset_id, a.code AS asset_code, a.name AS asset_name, a.domain, a.rating, a.trip_cause,
+        a.id AS asset_id, a.code AS asset_code, a.name AS asset_name, r.display_name AS rtu_display_name, l.name AS location_name,
+        a.domain, a.rating, a.trip_cause,
         agm.role, ar.label AS role_label, ar.sort_order
       FROM bms.asset_group_members agm
       INNER JOIN bms.asset_groups ag
@@ -126,6 +129,8 @@ export async function readBreakerRows(
       INNER JOIN bms.assets a
         ON a.id = agm.asset_id AND a.organization_id = ${organizationId}
       INNER JOIN bms.asset_roles ar ON ar.code = agm.role
+      LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+      LEFT JOIN bms.locations l ON l.id = a.location_id
       WHERE agm.asset_group_id = ${groupId}
         AND agm.role = ANY(${sql.param([...BREAKER_ROLE_CODES])}::text[])
         AND a.id = ANY(${ids}::uuid[])
@@ -239,9 +244,8 @@ function breakerRowOf(member: MemberRow, points: GeneratedSitePointDto[], nowMs:
       id: member.asset_id,
       code: member.asset_code,
       name: member.asset_name,
-      // F4.316: these dashboard widgets do not join the RTU / location names yet.
-      assetRtuName: null,
-      assetLocationName: null,
+      assetRtuName: member.rtu_display_name,
+      assetLocationName: member.location_name,
       domain: member.domain,
       latestTelemetryAt,
       freshness: telemetryFreshnessAt(latestTelemetryAt, nowMs),

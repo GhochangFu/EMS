@@ -20,6 +20,8 @@ const MEMBER = {
   asset_id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
   asset_code: "WTP-01",
   asset_name: "WTP",
+  rtu_display_name: null,
+  location_name: null,
   domain: "water",
   member_count: 1,
   active_alarms: 0,

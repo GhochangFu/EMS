@@ -108,6 +108,8 @@ export interface MemberRow {
   asset_id: string;
   asset_code: string;
   asset_name: string;
+  rtu_display_name: string | null;
+  location_name: string | null;
   domain: string;
   member_count: number;
   active_alarms: number;
@@ -278,9 +280,8 @@ export function assetOf(
     id: member.asset_id,
     code: member.asset_code,
     name: member.asset_name,
-    // F4.316: these dashboard widgets do not join the RTU / location names yet.
-    assetRtuName: null,
-    assetLocationName: null,
+    assetRtuName: member.rtu_display_name,
+    assetLocationName: member.location_name,
     domain: member.domain,
     latestTelemetryAt,
     freshness: telemetryFreshnessAt(latestTelemetryAt, nowMs),
