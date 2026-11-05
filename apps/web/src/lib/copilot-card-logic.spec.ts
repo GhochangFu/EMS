@@ -76,7 +76,8 @@ export function everyEntryHasInvalidations(): void {
 /**
  * `F4.312` PR 2 (ADR 0099 Amendment 12) — a confirmed adoption pins the assets (the lists and the
  * summary name the template), adds `unmapped` rows (the points page), turns a standalone point into
- * the template's override (the calc points), and seeds alarm rules and default dashboards.
+ * the template's override (the calc points), seeds alarm rules and default dashboards, and changes
+ * the version each asset pins (the template versions page).
  * Mutation, applied once and seen red: drop `RULES` from the row.
  */
 export function anAdoptionInvalidatesWhatItWrites(): void {
@@ -87,6 +88,7 @@ export function anAdoptionInvalidatesWhatItWrites(): void {
     ["admin", "asset-calc-points"],
     ["dashboards"],
     ["rules"],
+    ["admin", "asset-template-versions"],
   ]);
 }
 

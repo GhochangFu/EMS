@@ -16,22 +16,36 @@ import type { CatalogEntry } from "./types";
 const ADOPT = "/admin/asset-templates/:id/adopt";
 const PREVIEW = "/admin/asset-templates/:id/adoption-preview";
 
+/** The `assetTemplate.adopt` catalog entry; throws when the catalog lacks it. */
 function adopt(): CatalogEntry {
   const entry = catalogEntry("assetTemplate.adopt");
   if (!entry) throw new Error("assetTemplate.adopt");
   return entry;
 }
 
-/** The entry is the adopt route: `POST`, the version by path, `risk: "edit"` (it re-pins existing assets). */
-export function theEntryIsTheAdoptRoute(): void {
-  const entry = adopt();
-  expect([entry.method, entry.path, Object.keys(entry.params), entry.risk]).toEqual(["POST", ADOPT, ["id"], "edit"]);
+/** The entry is a `POST`. */
+export function theEntryIsAPost(): void {
+  expect(adopt().method).toBe("POST");
+}
+
+/** The entry's path is the adopt route's. */
+export function theEntryIsTheAdoptPath(): void {
+  expect(adopt().path).toBe(ADOPT);
+}
+
+/** The version is named by the one path parameter `id`. */
+export function theVersionIsThePathsId(): void {
+  expect(Object.keys(adopt().params)).toEqual(["id"]);
+}
+
+/** `risk: "edit"`: it re-pins existing assets. */
+export function theRiskIsEdit(): void {
+  expect(adopt().risk).toBe("edit");
 }
 
 /** The body is the route's own export by identity, so the card stores exactly what the route parses. */
 export function theBodyIsTheRoutesOwnSchema(): void {
-  const entry = adopt();
-  expect([entry.body === contracts.adoptAssetsBodySchema, entry.bodyName]).toEqual([true, "adoptAssetsBodySchema"]);
+  expect(adopt().body).toBe(contracts.adoptAssetsBodySchema);
 }
 
 /** Adoption is one-way (A7), so the Confirm card is red although `edit` is not a red risk. */
@@ -44,10 +58,16 @@ export function theTargetIsTheAdoptKind(): void {
   expect(adopt().target).toEqual({ kind: "assetTemplateAdopt", param: "id", field: "assetIds" });
 }
 
-/** The adopt route left the pending list; its preview stays there, a read through POST as migrate's is. */
-export function onlyThePreviewStaysPending(): void {
-  const paths = EXCLUDED_ROUTES.filter((route) => route.method === "POST").map((route) => route.path);
-  expect([paths.includes(ADOPT), paths.includes(PREVIEW)]).toEqual([false, true]);
+const pendingPosts = (): string[] => EXCLUDED_ROUTES.filter((route) => route.method === "POST").map((route) => route.path);
+
+/** The adopt route left the pending list. */
+export function theAdoptRouteIsNotPending(): void {
+  expect(pendingPosts()).not.toContain(ADOPT);
+}
+
+/** The adoption preview stays pending, a read through POST as migrate's preview is. */
+export function thePreviewStaysPending(): void {
+  expect(pendingPosts()).toContain(PREVIEW);
 }
 
 /** The summary names the count, the version and the organization, and says the change cannot be undone. */

@@ -14,6 +14,7 @@ import {
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import {
+  adoptRefusedMessage,
   templateAdoptionPreviewResponseSchema,
   type TemplateAdoptionRefusalDto,
 } from "@bms/shared";
@@ -690,7 +691,11 @@ export async function assertAnAssetOutsideTheCallersScopeIs403(
   );
 }
 
-/** A1. Mutation: the `status !== "published"` check removed. */
+/**
+ * A1. Mutation: the `status !== "published"` check removed. `F4.312` PR 2: the
+ * refusal is exactly `adoptRefusedMessage`, the sentence the copilot's
+ * propose-time lifecycle mirror reads (`copilot-template-lifecycle.ts`).
+ */
 export async function assertAnUnpublishedVersionIs409(
   pool: pg.Pool,
   svc: Services,
@@ -702,7 +707,7 @@ export async function assertAnUnpublishedVersionIs409(
   await expectStatus(
     () => svc.adoption.preview(fx.adminJwt, draft, { assetIds: [assetId] }),
     409,
-    /published/,
+    new RegExp(`^${adoptRefusedMessage("draft").replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
     "adopting onto a draft",
   );
 }

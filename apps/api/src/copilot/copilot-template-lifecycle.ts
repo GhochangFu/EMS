@@ -1,4 +1,5 @@
 import {
+  adoptRefusedMessage,
   archiveRefusedMessage,
   branchRefusedMessage,
   canInstantiate,
@@ -46,11 +47,15 @@ const instantiateAs =
  *   `dashboard-templates.service.ts`.
  * - `*.instantiate` — `asset-templates-instantiate-core.ts` and
  *   `dashboard-templates-instantiate.service.ts`, each with its own sentence.
+ * - `assetTemplate.adopt` (`F4.312` PR 2, ADR 0099 Amendment 12) — the adopt
+ *   route's published check in `asset-templates-adopt.service.ts`
+ *   (`canInstantiate`, the same rule; `adoptRefusedMessage`, its sentence).
  *
  * **Absent on purpose:** `assetTemplate.draft` and
  * `dashboardTemplate.applyToSites` hold no status guard on the row (their 409
  * is "a draft already exists", which needs a second query), so they stay a
- * Confirm-time refusal. Every other entry has no lifecycle.
+ * Confirm-time refusal. Every other entry's route holds no status guard on a
+ * template version, so it has no row here.
  *
  * The rows use only the shared predicates, never a status literal. That is a
  * convention: `tests/f3.36-template-lifecycle-single-source.test.ts` scans
@@ -66,6 +71,7 @@ const RULES: Readonly<Record<string, Rule>> = Object.freeze({
   "dashboardTemplate.draft": (status: TemplateLifecycleStatus) => (canOpenDraftFrom(status) ? null : branchRefusedMessage(status)),
   "assetTemplate.instantiate": instantiateAs("asset"),
   "dashboardTemplate.instantiate": instantiateAs("dashboard"),
+  "assetTemplate.adopt": (status: TemplateLifecycleStatus) => (canInstantiate(status) ? null : adoptRefusedMessage(status)),
 });
 
 /** The catalog ids the mirror rules, for the spec that pins them to the catalog. */

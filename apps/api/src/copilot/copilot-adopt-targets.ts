@@ -2,10 +2,11 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { assets, assetTemplates } from "@bms/db";
 import type { BmsDb } from "@bms/db";
-import { TEMPLATE_ADOPTION_MAX_ASSETS, type JwtPayload } from "@bms/shared";
+import { canInstantiate, type JwtPayload, TEMPLATE_ADOPTION_MAX_ASSETS, type TemplateLifecycleStatus } from "@bms/shared";
 
 import type { AccessControlService } from "../auth/access-control.service";
 import { withTenant } from "../database/tenant-context";
+import { lifecycleStatusOf } from "./copilot-target-kinds";
 
 /**
  * `F4.312` PR 2 (ADR 0099 Amendment 12) — the reads and the gate behind the
@@ -16,7 +17,8 @@ import { withTenant } from "../database/tenant-context";
  * The target mirrors `AssetTemplateAdoptionService.buildPlan`'s access chain
  * (migrate's, ADR 0109 Amendment 1 A10) and the planner's batch-level
  * refusals, so a card the route could only refuse is never shown. Every
- * failure is the one refusal (`null`, decision 10); the route names each
+ * failure but the version's status is the one refusal (`null`, decision 10);
+ * the status is the lifecycle mirror's (`F4.246`). The route names each
  * refused asset on Confirm, and its point-level refusals (A4, A8, …) stay a
  * Confirm-time 409.
  */
@@ -79,8 +81,8 @@ export function adoptBatchAdmits(
 /**
  * The version `templateId` names, looked for in each allowed organization in
  * turn under `withTenant` with an explicit organization filter, or `null` when
- * none holds it. Its status is returned, not judged: {@link resolveAdoptTarget}
- * refuses an unpublished one.
+ * none holds it. Its status is returned, not judged: the propose tool's
+ * lifecycle mirror refuses an unpublished one.
  */
 export async function findAdoptTemplate(
   tenantDb: BmsDb,
@@ -116,14 +118,22 @@ async function readAdoptAssets(tenantDb: BmsDb, organizationId: string, assetIds
   );
 }
 
+/** What the target resolves to: the version, its organization and its lifecycle status (when in the vocabulary). */
+export type AdoptTarget = { organizationId: string; name: string; status?: TemplateLifecycleStatus };
+
 /**
- * The `assetTemplateAdopt` target: the version and its organization, or
- * `null`. The order is the route's: the body's ids (before any read, as the
- * body schema refuses them); the version in the allowed set; the gate —
- * `requireMasterDataUser`, then `canManageOrganization` on the version's
- * organization (an access check that throws is a refusal, the resolver's
- * `safely`); published (409 at the route); then the listed assets
- * ({@link adoptBatchAdmits}, with `writableLocationIds`).
+ * The `assetTemplateAdopt` target, or `null`. The order is the route's: the
+ * body's ids (before any read, as the body schema refuses them);
+ * `requireMasterDataUser` (a throw is the refusal); the version in the allowed
+ * set; `canManageOrganization` on the version's organization; then, on a
+ * **published** version only, the listed assets ({@link adoptBatchAdmits},
+ * with `writableLocationIds`).
+ *
+ * The status is returned, not judged (`F4.246`): an in-scope draft or archived
+ * version resolves with its status, and the propose tool's lifecycle mirror
+ * (`copilot-template-lifecycle.ts`, `assetTemplate.adopt`) refuses it with the
+ * route's own sentence. Its assets are not checked, as the route answers that
+ * 409 before it reads them.
  *
  * `checkAssets: false` is the resolver's `"record"` mode: an open wizard's
  * record is the version, and the assets are what a fill is about to set.
@@ -136,24 +146,20 @@ export async function resolveAdoptTarget(
   ids: unknown,
   allowed: readonly string[],
   checkAssets = true,
-): Promise<{ organizationId: string; name: string } | null> {
+): Promise<AdoptTarget | null> {
   const assetIds = checkAssets ? adoptAssetIds(ids) : [];
   if (assetIds === null) return null;
+  if ((await falseOnThrow(() => access.requireMasterDataUser(user))) === false) return null;
   const template = await findAdoptTemplate(tenantDb, templateId, allowed);
   if (template === null) return null;
-  if (!(await falseOnThrow(() => mayManageVersion(access, user, template.organizationId)))) return null;
-  if (template.status !== "published") return null;
-  if (!checkAssets) return { organizationId: template.organizationId, name: template.name };
+  if (!(await falseOnThrow(() => access.canManageOrganization(user, template.organizationId)))) return null;
+  const lifecycle = lifecycleStatusOf(template.status);
+  const resolved: AdoptTarget = { organizationId: template.organizationId, name: template.name, ...lifecycle };
+  if (!checkAssets || lifecycle.status === undefined || !canInstantiate(lifecycle.status)) return resolved;
   const rows = await readAdoptAssets(tenantDb, template.organizationId, assetIds);
   const writable = await falseOnThrow(() => access.writableLocationIds(user));
   if (writable === false || !adoptBatchAdmits(template, assetIds, rows, writable)) return null;
-  return { organizationId: template.organizationId, name: template.name };
-}
-
-/** The route's first two checks: `requireMasterDataUser` (a throw), then `canManageOrganization`. */
-async function mayManageVersion(access: AdoptAccess, user: JwtPayload, organizationId: string): Promise<boolean> {
-  await access.requireMasterDataUser(user);
-  return access.canManageOrganization(user, organizationId);
+  return resolved;
 }
 
 /** An access check's answer, or `false` when it throws (a 403 is the one refusal). */

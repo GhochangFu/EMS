@@ -8,17 +8,21 @@ import { CopilotTargetResolver } from "./copilot-target-resolver";
 
 /**
  * `F4.312` PR 2 (ADR 0099 Amendment 12) — the `assetTemplateAdopt` target with
- * fakes. The adopt route refuses, on Confirm, a version that is unpublished or
- * outside the caller's scope, and any listed asset that is pinned, of another
- * organization or domain, or outside the caller's write scope; the card must
- * not be offered for a batch the route would refuse (plan §4, PR 2: "a pinned
- * asset is refused before the card"). Each refusal is checked beside the
- * allowed twin, so "always refuse" and "never refuse" both redden.
+ * fakes. The adopt route refuses, on Confirm, a version outside the caller's
+ * scope, and any listed asset that is pinned, of another organization or
+ * domain, or outside the caller's write scope; the card must not be offered
+ * for a batch the route would refuse (plan §4, PR 2: "a pinned asset is
+ * refused before the card"). An unpublished version resolves with its status
+ * for the lifecycle mirror (`copilot-template-lifecycle.spec.ts`). Each
+ * refusal is checked beside the allowed twin, so "always refuse" and "never
+ * refuse" both redden. The real-database claims are the integration twin's
+ * (`copilot-adopt-targets.integration.spec.ts`).
+ *
  * Mutations, each applied once and seen red: drop `row.templateId !== null`
  * from `adoptBatchAdmits` ({@link aPinnedAssetIsRefused} and
  * {@link theResolverRefusesAPinnedAssetBeforeTheCard}); drop the domain
- * comparison ({@link anAssetOfAnotherDomainIsRefused}); drop the published
- * check ({@link anUnpublishedVersionIsRefused}).
+ * comparison ({@link anAssetOfAnotherDomainIsRefused}); pass `true` for
+ * `checkAssets` in the resolver ({@link theResolverRecordModeResolvesTheVersion}).
  * Vitest entry point: the sibling `.test.ts` (ADR 0014).
  */
 
@@ -62,6 +66,7 @@ function queuedDb(results: unknown[][], reads: { count: number } = { count: 0 })
 
 type AccessOptions = { masterData?: boolean; managesOrg?: boolean; writable?: string[] | null };
 
+/** A fake of the three access checks the target asks, recording each call in `asked`. */
 function access(asked: string[], { masterData = true, managesOrg = true, writable = null }: AccessOptions = {}): never {
   return {
     requireMasterDataUser: async () => {
@@ -79,14 +84,22 @@ function access(asked: string[], { masterData = true, managesOrg = true, writabl
   } as never;
 }
 
-type Fixture = { status?: string; assets?: AdoptAssetRow[]; ids?: unknown; options?: AccessOptions; checkAssets?: boolean };
+type Fixture = {
+  status?: string;
+  template?: boolean;
+  assets?: AdoptAssetRow[];
+  ids?: unknown;
+  options?: AccessOptions;
+  checkAssets?: boolean;
+};
 
-/** The target resolved against one stored version (`status`) and the asset rows the read returns. */
-async function resolveWith({ status = "published", assets, ids = [ASSET, OTHER], options, checkAssets }: Fixture = {}) {
+/** The target resolved against one stored version (`status`; none when `template` is false) and the asset rows read. */
+async function resolveWith({ status = "published", template = true, assets, ids = [ASSET, OTHER], options, checkAssets }: Fixture = {}) {
   const asked: string[] = [];
   const reads = { count: 0 };
   const stored = assets ?? [row(ASSET), row(OTHER)];
-  const db = queuedDb([[{ name: "Feeder v2", domain: "electrical", status }], stored], reads);
+  const version = template ? [{ name: "Feeder v2", domain: "electrical", status }] : [];
+  const db = queuedDb([version, stored], reads);
   const resolved = await resolveAdoptTarget(db, access(asked, options), JWT, TEMPLATE, ids, [ORG], checkAssets);
   return { resolved, asked, reads: reads.count };
 }
@@ -114,12 +127,7 @@ export function aRepeatedIdIsRefused(): void {
 /** A malformed list is refused before any read, so a body the route would 400 never reads a row. */
 export async function aMalformedListIsRefusedBeforeAnyRead(): Promise<void> {
   const results = await Promise.all([[], "x", [ASSET, ASSET], [1]].map((ids) => resolveWith({ ids })));
-  expect(results.map(({ resolved, reads }) => [resolved, reads])).toEqual([
-    [null, 0],
-    [null, 0],
-    [null, 0],
-    [null, 0],
-  ]);
+  expect(results.map(({ resolved, reads }) => ({ resolved, reads }))).toEqual(Array(4).fill({ resolved: null, reads: 0 }));
 }
 
 // ---------------------------------------------------------------------------
@@ -141,12 +149,14 @@ export function anAssetOfAnotherDomainIsRefused(): void {
   expect(adoptBatchAdmits(VERSION, [ASSET, OTHER], [row(ASSET), row(OTHER, { domain: "hvac" })], null)).toBe(false);
 }
 
-/** An asset of another organization refuses the batch (A1), whether it is read or filtered out. */
-export function anAssetOfAnotherOrganizationIsRefused(): void {
-  expect([
-    adoptBatchAdmits(VERSION, [ASSET, OTHER], [row(ASSET), row(OTHER, { organizationId: OTHER_ORG })], null),
-    adoptBatchAdmits(VERSION, [ASSET, OTHER], [row(ASSET)], null),
-  ]).toEqual([false, false]);
+/** A row of another organization, if one were read, refuses the batch (A1). */
+export function aReadRowOfAnotherOrganizationIsRefused(): void {
+  expect(adoptBatchAdmits(VERSION, [ASSET, OTHER], [row(ASSET), row(OTHER, { organizationId: OTHER_ORG })], null)).toBe(false);
+}
+
+/** A listed id the organization-filtered read did not return (another organization's asset) refuses the batch. */
+export function aListedIdTheReadDidNotReturnIsRefused(): void {
+  expect(adoptBatchAdmits(VERSION, [ASSET, OTHER], [row(ASSET)], null)).toBe(false);
 }
 
 /** An asset at a site outside the caller's write scope refuses the batch (the route's count refusal). */
@@ -163,60 +173,100 @@ export function aGlobalAdministratorWritesEverySite(): void {
 // The version and the gate
 // ---------------------------------------------------------------------------
 
-/** The allowed twin: a published version resolves to its organization and name, after the route's gate in order. */
+/** The allowed twin: a published version resolves to its organization, name and status. */
 export async function aPublishedVersionInScopeResolves(): Promise<void> {
-  const { resolved, asked } = await resolveWith({ options: { writable: [SITE] } });
-  expect(resolved).toEqual({ organizationId: ORG, name: "Feeder v2" });
+  const { resolved } = await resolveWith({ options: { writable: [SITE] } });
+  expect(resolved).toEqual({ organizationId: ORG, name: "Feeder v2", status: "published" });
+}
+
+/** The route's gate runs in its order: master-data user, the version's organization, then the write scope. */
+export async function theGateRunsInTheRoutesOrder(): Promise<void> {
+  const { asked } = await resolveWith({ options: { writable: [SITE] } });
   expect(asked).toEqual(["requireMasterDataUser", `canManageOrganization:${ORG}`, "writableLocationIds"]);
 }
 
-/** An unpublished version is refused: the route answers 409 for a draft or an archived one. */
-export async function anUnpublishedVersionIsRefused(): Promise<void> {
-  const results = await Promise.all(["draft", "archived"].map((status) => resolveWith({ status })));
-  expect(results.map(({ resolved }) => resolved)).toEqual([null, null]);
+/** A draft version in scope resolves with its status, so the lifecycle mirror reads the route's sentence. */
+export async function aDraftVersionResolvesWithItsStatus(): Promise<void> {
+  const { resolved } = await resolveWith({ status: "draft" });
+  expect(resolved?.status).toBe("draft");
 }
 
-/** A version in no allowed organization is refused before any access check. */
+/** An archived version in scope resolves with its status, for the same mirror. */
+export async function anArchivedVersionResolvesWithItsStatus(): Promise<void> {
+  const { resolved } = await resolveWith({ status: "archived" });
+  expect(resolved?.status).toBe("archived");
+}
+
+/** An unpublished version's assets are not read: the route answers its 409 before it reads them. */
+export async function anUnpublishedVersionsAssetsAreNotRead(): Promise<void> {
+  const { reads } = await resolveWith({ status: "draft" });
+  expect(reads).toBe(1);
+}
+
+/** A version in no allowed organization is refused. */
 export async function aVersionOutsideTheAllowedSetIsRefused(): Promise<void> {
-  const asked: string[] = [];
-  const db = queuedDb([[]]);
-  expect(await resolveAdoptTarget(db, access(asked), JWT, TEMPLATE, [ASSET], [ORG])).toBeNull();
-  expect(asked).toEqual([]);
+  const { resolved } = await resolveWith({ template: false });
+  expect(resolved).toBeNull();
 }
 
-/** A caller who does not manage the version's organization is refused before any asset is read. */
+/** A version in no allowed organization asks no organization check. */
+export async function aVersionOutsideTheAllowedSetAsksNoOrganizationCheck(): Promise<void> {
+  const { asked } = await resolveWith({ template: false });
+  expect(asked).toEqual(["requireMasterDataUser"]);
+}
+
+/** A caller who does not manage the version's organization is refused. */
 export async function aVersionOutsideTheCallersScopeIsRefused(): Promise<void> {
-  const { resolved, reads } = await resolveWith({ options: { managesOrg: false } });
-  expect([resolved, reads]).toEqual([null, 1]);
+  const { resolved } = await resolveWith({ options: { managesOrg: false } });
+  expect(resolved).toBeNull();
+}
+
+/** A caller who does not manage the version's organization reads no asset (the template read only). */
+export async function aVersionOutsideTheCallersScopeReadsNoAsset(): Promise<void> {
+  const { reads } = await resolveWith({ options: { managesOrg: false } });
+  expect(reads).toBe(1);
 }
 
 /** A caller who is not a master-data user is refused (the 403 is the one refusal, not a thrown error). */
 export async function aNonMasterDataUserIsRefused(): Promise<void> {
-  const { resolved, asked } = await resolveWith({ options: { masterData: false } });
-  expect([resolved, asked]).toEqual([null, ["requireMasterDataUser"]]);
+  const { resolved } = await resolveWith({ options: { masterData: false } });
+  expect(resolved).toBeNull();
 }
 
-/** A listed asset outside the write scope refuses the target through the resolver's read path too. */
+/** A caller who is not a master-data user is refused before the version is read (security review L1). */
+export async function aNonMasterDataUserReadsNothing(): Promise<void> {
+  const { reads } = await resolveWith({ options: { masterData: false } });
+  expect(reads).toBe(0);
+}
+
+/** A listed asset outside the write scope refuses the target through the read path too. */
 export async function aTargetWithAnAssetOutsideTheWriteScopeIsRefused(): Promise<void> {
   const { resolved } = await resolveWith({ assets: [row(ASSET), row(OTHER, { locationId: null })], options: { writable: [SITE] } });
   expect(resolved).toBeNull();
 }
 
-/** `"record"` mode (an open wizard's record) resolves the version alone: no asset is read. */
+/** `checkAssets: false` (an open wizard's record) resolves the version alone. */
 export async function theRecordModeResolvesTheVersionAlone(): Promise<void> {
-  const { resolved, reads } = await resolveWith({ ids: undefined, checkAssets: false });
-  expect([resolved, reads]).toEqual([{ organizationId: ORG, name: "Feeder v2" }, 1]);
+  const { resolved } = await resolveWith({ ids: undefined, checkAssets: false });
+  expect(resolved).toEqual({ organizationId: ORG, name: "Feeder v2", status: "published" });
+}
+
+/** `checkAssets: false` reads no asset. */
+export async function theRecordModeReadsNoAsset(): Promise<void> {
+  const { reads } = await resolveWith({ ids: undefined, checkAssets: false });
+  expect(reads).toBe(1);
 }
 
 // ---------------------------------------------------------------------------
 // Through the resolver
 // ---------------------------------------------------------------------------
 
-/** The `assetTemplate.adopt` entry through `CopilotTargetResolver`, the version read, the assets read, the organization's name. */
-async function resolveEntry(assets: AdoptAssetRow[]) {
-  const db = queuedDb([[{ name: "Feeder v2", domain: "electrical", status: "published" }], assets, [{ name: "Org Seven" }]]);
+/** The `assetTemplate.adopt` entry through `CopilotTargetResolver`: the version read, the assets read, the organization's name. */
+async function resolveEntry(assets: AdoptAssetRow[], body: Record<string, unknown> = { assetIds: [ASSET, OTHER] }, mode?: "record") {
+  const results = [[{ name: "Feeder v2", domain: "electrical", status: "published" }], ...(mode ? [] : [assets]), [{ name: "Org Seven" }]];
+  const db = queuedDb(results);
   const resolver = new CopilotTargetResolver(db, access([]), {} as never, {} as never);
-  return resolver.resolve(catalogEntry("assetTemplate.adopt")!, { id: TEMPLATE }, { assetIds: [ASSET, OTHER] }, [ORG], JWT, ORG);
+  return resolver.resolve(catalogEntry("assetTemplate.adopt")!, { id: TEMPLATE }, body, [ORG], JWT, ORG, mode);
 }
 
 /** The resolver wires the target: the card names the version and its organization. */
@@ -225,7 +275,18 @@ export async function theResolverNamesTheVersionAndItsOrganization(): Promise<vo
   expect([resolved?.organizationId, resolved?.organizationName, resolved?.targetName]).toEqual([ORG, "Org Seven", "Feeder v2"]);
 }
 
+/** The resolver hands the version's status to the propose tool's lifecycle mirror. */
+export async function theResolverCarriesTheVersionsStatus(): Promise<void> {
+  expect((await resolveEntry([row(ASSET), row(OTHER)]))?.status).toBe("published");
+}
+
 /** Plan §4 PR 2: a pinned asset in the list is refused before the card, through the resolver. */
 export async function theResolverRefusesAPinnedAssetBeforeTheCard(): Promise<void> {
   expect(await resolveEntry([row(ASSET), row(OTHER, { templateId: TEMPLATE })])).toBeNull();
+}
+
+/** `"record"` mode with an empty body resolves the version and its organization (an open wizard's record). */
+export async function theResolverRecordModeResolvesTheVersion(): Promise<void> {
+  const resolved = await resolveEntry([], {}, "record");
+  expect([resolved?.organizationId, resolved?.organizationName, resolved?.targetName]).toEqual([ORG, "Org Seven", "Feeder v2"]);
 }

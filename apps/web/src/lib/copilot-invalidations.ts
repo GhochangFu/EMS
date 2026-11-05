@@ -19,6 +19,8 @@ const ASSET_GROUPS: QueryKey = ["admin", "asset-groups"];
 // The pair `asset-template-detail-page.tsx`'s own `afterChange` invalidates.
 const ASSET_TEMPLATES: QueryKey = ["admin", "asset-templates"];
 const ASSET_TEMPLATE: QueryKey = ["admin", "asset-template"];
+// `F4.312` PR 2: the versions page (`asset-template-versions-page.tsx`), keyed by template under the prefix.
+const ASSET_TEMPLATE_VERSIONS: QueryKey = ["admin", "asset-template-versions"];
 // `F3.86` PR 4: the users list, and by prefix each user's grants (`api/admin/users.ts`).
 const USERS: QueryKey = ["admin", "users"];
 // `F3.86` PR 3d: the locations page (and the stored view setting, keyed under it) and the site
@@ -120,8 +122,9 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   // `F4.254` PR 3: instantiating builds assets and their default dashboards (ADR 0067).
   "assetTemplate.instantiate": [ASSETS, ASSET_SUMMARY, DASHBOARDS],
   // `F4.312` PR 2 (ADR 0099 Amendment 12): adoption pins the assets, adds `unmapped` rows, turns a
-  // standalone point into the template's override, and seeds alarm rules and default dashboards.
-  "assetTemplate.adopt": [ASSETS, ASSET_SUMMARY, ASSET_POINTS, ASSET_CALC_POINTS, DASHBOARDS, RULES],
+  // standalone point into the template's override, and seeds alarm rules and default dashboards; the
+  // versions page lists the assets of the template and the version each pins.
+  "assetTemplate.adopt": [ASSETS, ASSET_SUMMARY, ASSET_POINTS, ASSET_CALC_POINTS, DASHBOARDS, RULES, ASSET_TEMPLATE_VERSIONS],
   "user.create": [USERS],
   "user.update": [USERS],
   "user.deactivate": [USERS],
