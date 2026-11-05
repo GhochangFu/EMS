@@ -146,6 +146,21 @@ export function viewLeavesTheDtoPointsAlone(): void {
   expect(dto.nodes[0]?.members.map((m) => m.asset.points.map((p) => p.pointKey))).toEqual([["flow"], ["flow"]]);
 }
 
+/**
+ * M1g — `F4.307` (plan C6): two nodes on ONE asset, one listing `["temp", "flow"]` and one showing
+ * the headline `["flow", "level"]`, give the view one asset carrying every key once, in first-seen
+ * order — the live overlay tracks the listed `temp` as well as the headline `level`. First-wins
+ * drops whichever node comes second.
+ */
+export function viewUnionsThePointsOfASharedAsset(): void {
+  const listed = asset(WTP_ID, "WTR-WTP-01", [point("temp"), point("flow")]);
+  const headline = asset(WTP_ID, "WTR-WTP-01", [point("flow"), point("level")]);
+  const view = mimicViewFor(widget([node("wtp", listed), node("ro", headline)]), "2026-11-05T10:00:00.000Z");
+  expect(view?.domains.flatMap((d) => d.assets.map((a) => [a.id, a.points.map((p) => p.pointKey)]))).toEqual([
+    [WTP_ID, ["temp", "flow", "level"]],
+  ]);
+}
+
 /** M2a — an unassigned node is `unassigned`, even with alarms counted (precedence, plan D5). */
 export function unassignedWinsOverAlarm(): void {
   expect(mimicNodeStatus(node("softener", null, 2), NOW - 1_000, NOW)).toBe("unassigned");
