@@ -2,6 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   aMalformedAssetIdAnswersTheMalformedSentence,
+  anOpenWizardWithANonUuidAdoptIdIsRefused,
+  anOpenWizardWithAUuidAdoptIdIsAdmitted,
+  theDefinitionKeepsTheUuidFormat,
   aMalformedVersionIdAnswersTheMalformedSentence,
   anEmptyVersionIdIsStillAnArgumentError,
   anOrganizationRefusalNamesBothOrganizations,
@@ -21,4 +24,7 @@ describe("F4.315 PR A — assetTemplate.adopt's refusal through the propose tool
   it("answers a non-UUID version id with the malformed sentence", () => aMalformedVersionIdAnswersTheMalformedSentence());
   it("answers a non-UUID asset id with the malformed sentence", () => aMalformedAssetIdAnswersTheMalformedSentence());
   it("still refuses an empty version id at the argument guard", () => anEmptyVersionIdIsStillAnArgumentError());
+  it("keeps format uuid on id in the definition the model is shown", () => theDefinitionKeepsTheUuidFormat());
+  it("still refuses an open wizard's non-UUID adopt id", () => anOpenWizardWithANonUuidAdoptIdIsRefused());
+  it("admits an open wizard's UUID adopt id", () => anOpenWizardWithAUuidAdoptIdIsAdmitted());
 });

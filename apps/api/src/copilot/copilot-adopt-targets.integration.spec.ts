@@ -17,9 +17,9 @@ import { type AdoptAccess, adoptMalformedIdMessage, resolveAdoptTarget } from ".
  * `F4.315` PR A (ADR 0099 Amendment 14): in scope, the refusal names its
  * cause with the route's sentence; an id found in no allowed organization
  * keeps the one refusal (`null`); a non-UUID version id is the malformed
- * sentence before any query (the query itself answers a Postgres `22P02`;
- * the propose tool's argument guard already refuses one, so this is the
- * resolver's second line).
+ * sentence before any query (the query itself answers a Postgres `22P02`).
+ * Through the propose tool, `adoptMalformedIdRefusal` answers that sentence
+ * first, before the body parse; this is the resolver's second line.
  *
  * Mutation: drop `row.templateId !== null` from `adoptBatchRefusal` and
  * {@link aPinnedAssetIsRefused} reddens (its unit twin was seen red).

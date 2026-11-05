@@ -117,7 +117,7 @@ type Fixture = {
   ids?: unknown;
   options?: AccessOptions;
   checkAssets?: boolean;
-  /** The answers of `findAssetElsewhere`'s reads, one per other allowed organization asked. */
+  /** The answers of `findAssetsElsewhere`'s reads, one per other allowed organization asked. */
   elsewhere?: unknown[][];
   allowed?: string[];
   templateId?: string;

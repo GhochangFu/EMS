@@ -6,7 +6,10 @@ import { catalogEntry, proposeToolName } from "@bms/shared/copilot";
 import { alreadyPinnedMessage } from "../admin/asset-templates/asset-templates-adopt-messages";
 import type { ResolvedIdentity } from "../auth/identity-resolver";
 import { runToolCall } from "../llm/tool-registry";
+import type { CopilotOpenWizard } from "@bms/shared";
+
 import { adoptMalformedIdMessage } from "./copilot-adopt-targets";
+import { checkOpenWizards } from "./copilot-open-wizards";
 import { access, queuedDb } from "./copilot-adopt-targets.spec";
 import type { NewPendingChange } from "./copilot-pending-changes.service";
 import { createCopilotProposeTools, PROPOSE_TARGET_ERROR } from "./copilot-propose-tools";
@@ -26,7 +29,9 @@ import { COPILOT_TOOL_GUARDS } from "./copilot-turn.service";
  *
  * Mutations, each applied once and seen red: drop the refusal's
  * `organizationIds` in the propose tool ({@link aPinnedRefusalNamesTheVersionsOrganization});
- * restore `uuidParam` in the adopt guard schema ({@link aMalformedVersionIdAnswersTheMalformedSentence}).
+ * restore `uuidParam` in the adopt guard schema ({@link aMalformedVersionIdAnswersTheMalformedSentence});
+ * build the definition the model is shown from the loosened params
+ * ({@link theDefinitionKeepsTheUuidFormat}).
  * Vitest entry point: the sibling `.test.ts` (ADR 0014).
  */
 
@@ -85,7 +90,7 @@ function harness(results: unknown[][], reads: { count: number } = { count: 0 }, 
       },
       COPILOT_TOOL_GUARDS,
     );
-  return { call, stored, last: () => last };
+  return { call, stored, last: () => last, tools };
 }
 
 const VERSION = [{ name: "Pump", code: "PUMP-M", version: 1, domain: "electrical", status: "published" }];
@@ -143,4 +148,22 @@ export async function aMalformedAssetIdAnswersTheMalformedSentence(): Promise<vo
 export async function anEmptyVersionIdIsStillAnArgumentError(): Promise<void> {
   const { call } = harness([VERSION, [asset()]]);
   expect((await call("")).error?.startsWith("Invalid arguments")).toBe(true);
+}
+
+/** The loosening is the guard's only: the definition the model is shown keeps the catalog's `format: uuid` on `id`. */
+export function theDefinitionKeepsTheUuidFormat(): void {
+  const { tools } = harness([]);
+  const definition = tools.registry.definitions.find((d) => d.name === proposeToolName(ENTRY));
+  expect((definition?.parameters as { properties: Record<string, { format?: string }> }).properties.id?.format).toBe("uuid");
+}
+
+/** An open wizard's adopt record still takes the catalog's `uuidParam`: a non-UUID id is refused. */
+export function anOpenWizardWithANonUuidAdoptIdIsRefused(): void {
+  expect(() => checkOpenWizards([{ catalogId: ENTRY.id, params: { id: "PUMP-M" } } as unknown as CopilotOpenWizard])).toThrow();
+}
+
+/** The allowed twin: an open wizard's adopt record with a UUID id is admitted. */
+export function anOpenWizardWithAUuidAdoptIdIsAdmitted(): void {
+  const wizard = { catalogId: ENTRY.id, params: { id: TEMPLATE } } as unknown as CopilotOpenWizard;
+  expect(checkOpenWizards([wizard])).toEqual([wizard]);
 }
