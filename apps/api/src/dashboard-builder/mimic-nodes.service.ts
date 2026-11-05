@@ -141,8 +141,9 @@ interface MemberRow {
 }
 
 /**
- * Statement (3)'s row: one of a shown asset's top points, or (`F3.74` plan D4) one of its state
- * points, with its latest sample. A key that is both is two rows, one per side.
+ * Statement (3)'s row: one of a shown asset's top points, (`F3.74` plan D4) one of its state
+ * points, or (`F4.307` plan C3) one key a unit lists for it, with its latest sample. A key on two
+ * arms is one row per arm.
  */
 interface PointRow {
   asset_id: string;
@@ -150,8 +151,10 @@ interface PointRow {
   name: string | null;
   unit: string | null;
   headline_rank: number | null;
-  /** `true`: a state point (an active key with a `bms.point_key_states` row); `false`: a top point. */
+  /** `true`: a state point (an active key with a `bms.point_key_states` row). */
   is_state: boolean;
+  /** `true`: a listed key (`F4.307`); `latest` is `null` unless the asset holds it active. */
+  is_listed: boolean;
   value: number | null;
   time: Date | string | null;
 }
@@ -225,7 +228,9 @@ interface StateMapRow {
  *    never a bound `now() - $n`, which plans every hypertable chunk. `F3.74` (plan D4) adds,
  *    in the SAME statement and through the same one window lateral, each shown asset's STATE
  *    points: every active `asset_points` key that has a `bms.point_key_states` row — no key
- *    name is written here. Their samples count toward the asset's freshness.
+ *    name is written here. Their samples count toward the asset's freshness. `F4.307` (plan
+ *    C3, C4): a third arm reads the keys the roled units list, per (asset, key) pair of the
+ *    units' shown members; a key the asset does not hold active reads no sample (`held`).
  * 4. `F3.74` — only when (3) found a state point: the `bms.point_key_states` rows of the keys
  *    seen, answered as `stateMaps`. The web derives a switch state from them (plan D12).
  *
@@ -360,6 +365,8 @@ export class MimicNodesService {
     const members = new Map<string, Map<string, MemberRow[]>>();
     const pointsByAsset = new Map<string, GeneratedSitePointDto[]>();
     const statePointsByAsset = new Map<string, GeneratedSitePointDto[]>();
+    /** `F4.307` (plan C4): per shown asset, the keys a unit lists for it, by key. */
+    const listedByAsset = new Map<string, Map<string, GeneratedSitePointDto>>();
     let stateMaps: PointKeyStateMapDto[] = [];
 
     if (groupIds.length > 0 && (readableAssetIds === null || readableAssetIds.length > 0)) {
@@ -428,6 +435,7 @@ export class MimicNodesService {
       }
 
       const shownIds = [...new Set(memberRows.rows.map((member) => member.asset_id))];
+      const listed = listedPairs(widgets, nodesOf, members);
       if (shownIds.length > 0) {
         const pointRows = await this.pool.query<PointRow>(
           `
@@ -438,6 +446,7 @@ export class MimicNodesService {
             top.unit,
             top.headline_rank,
             top.is_state,
+            top.is_listed,
             top.value,
             top.time
           FROM unnest($1::uuid[]) AS sa(id)
@@ -448,11 +457,13 @@ export class MimicNodesService {
               ranked.unit,
               ranked.headline_rank,
               ranked.is_state,
+              ranked.is_listed,
               lt.value,
               lt.time
             FROM (
               (
-                SELECT ap.point_key, pk.name, COALESCE(ap.unit, pk.unit) AS unit, pk.headline_rank, false AS is_state
+                SELECT ap.point_key, pk.name, COALESCE(ap.unit, pk.unit) AS unit, pk.headline_rank,
+                       false AS is_state, false AS is_listed, true AS held
                 FROM bms.asset_points ap
                 LEFT JOIN bms.point_keys pk ON pk.code = ap.point_key
                 WHERE ap.asset_id = sa.id
@@ -462,18 +473,31 @@ export class MimicNodesService {
                 LIMIT ${MIMIC_HEADLINE_POINTS}
               )
               UNION ALL
-              SELECT sp.point_key, spk.name, COALESCE(sp.unit, spk.unit) AS unit, spk.headline_rank, true AS is_state
+              SELECT sp.point_key, spk.name, COALESCE(sp.unit, spk.unit) AS unit, spk.headline_rank,
+                     true AS is_state, false AS is_listed, true AS held
               FROM bms.asset_points sp
               LEFT JOIN bms.point_keys spk ON spk.code = sp.point_key
               WHERE sp.asset_id = sa.id
                 AND sp.organization_id = $2
                 AND sp.active = true
                 AND EXISTS (SELECT 1 FROM bms.point_key_states pks WHERE pks.point_key_code = sp.point_key)
+              UNION ALL
+              SELECT lk.point_key, lpk.name, COALESCE(lap.unit, lpk.unit) AS unit, lpk.headline_rank,
+                     false AS is_state, true AS is_listed, (lap.id IS NOT NULL) AS held
+              FROM unnest($3::uuid[], $4::text[], $5::smallint[]) AS lk(asset_id, point_key, ord)
+              LEFT JOIN bms.point_keys lpk ON lpk.code = lk.point_key
+              LEFT JOIN bms.asset_points lap
+                ON lap.asset_id = sa.id
+               AND lap.point_key = lk.point_key
+               AND lap.organization_id = $2
+               AND lap.active = true
+              WHERE lk.asset_id = sa.id
             ) ranked
             LEFT JOIN LATERAL (
               SELECT pv.value, pv.time
               FROM telemetry.point_values pv
-              WHERE pv.asset_id = sa.id
+              WHERE ranked.held
+                AND pv.asset_id = sa.id
                 AND pv.point_key = ranked.point_key
                 AND pv.time > now() - ${generatedSiteView.GENERATED_LATEST_WINDOW_SQL}
               ORDER BY pv.time DESC
@@ -482,20 +506,24 @@ export class MimicNodesService {
           ) top
           ORDER BY sa.id, top.is_state, top.headline_rank ASC NULLS LAST, top.point_key ASC
           `,
-          [shownIds, organizationId],
+          [shownIds, organizationId, listed.assetIds, listed.pointKeys, listed.ords],
         );
         for (const row of pointRows.rows) {
           const time = toIsoString(row.time);
-          const byAsset = row.is_state ? statePointsByAsset : pointsByAsset;
-          const list = byAsset.get(row.asset_id) ?? [];
-          list.push({
+          const point: GeneratedSitePointDto = {
             pointKey: row.point_key,
             name: row.name,
             unit: row.unit,
             headlineRank: row.headline_rank === null ? null : Number(row.headline_rank),
             latest: time !== null && row.value !== null ? { value: Number(row.value), time } : null,
-          });
-          byAsset.set(row.asset_id, list);
+          };
+          if (row.is_listed) {
+            const byKey = listedByAsset.get(row.asset_id) ?? new Map<string, GeneratedSitePointDto>();
+            listedByAsset.set(row.asset_id, byKey.set(row.point_key, point));
+            continue;
+          }
+          const byAsset = row.is_state ? statePointsByAsset : pointsByAsset;
+          byAsset.set(row.asset_id, [...(byAsset.get(row.asset_id) ?? []), point]);
         }
 
         // Statement (4): the maps of the state keys seen, and only those — `bms.point_key_states`
@@ -538,10 +566,20 @@ export class MimicNodesService {
           members: [],
         };
       }
+      // `F4.307` (plan C5): an empty list shows the headline points; a list shows its keys in
+      // its order, a fan-out member's too (plan Q4). Every requested pair has a row in (3); the
+      // fallback only keeps the answer whole.
+      const pointsOf = (assetId: string): GeneratedSitePointDto[] =>
+        node.pointKeys.length === 0
+          ? (pointsByAsset.get(assetId) ?? [])
+          : node.pointKeys.map(
+              (pointKey) =>
+                listedByAsset.get(assetId)?.get(pointKey) ?? { pointKey, name: null, unit: null, headlineRank: null, latest: null },
+            );
       const memberOf = (row: MemberRow): MimicNodeMemberDto => {
         const statePoints = statePointsByAsset.get(row.asset_id) ?? [];
         return {
-          asset: assetOf(row, pointsByAsset.get(row.asset_id) ?? [], statePoints, nowMs),
+          asset: assetOf(row, pointsOf(row.asset_id), statePoints, nowMs),
           activeAlarms: Number(row.active_alarms),
           topAlarm: topAlarmOf(row),
           statePoints,
@@ -723,12 +761,16 @@ export class MimicNodesService {
   }
 }
 
-/** One node a read resolves, either arm: its key, label, role and whether it fans out (`F3.74`). */
+/**
+ * One node a read resolves, either arm: its key, label, role, whether it fans out (`F3.74`) and
+ * (`F4.307`) its listed point keys — `[]` on a preset node and on a unit that lists none.
+ */
 interface ResolvableNode {
   key: string;
   label: string;
   roleCode: string;
   fanOut: boolean;
+  pointKeys: readonly string[];
 }
 
 /**
@@ -741,7 +783,7 @@ function presetRoledNodes(preset: MimicPreset): ResolvableNode[] {
   return nodes.flatMap((node) =>
     node.roleCode === null
       ? []
-      : [{ key: node.key, label: node.label, roleCode: node.roleCode, fanOut: node.fanOut === true }],
+      : [{ key: node.key, label: node.label, roleCode: node.roleCode, fanOut: node.fanOut === true, pointKeys: [] }],
   );
 }
 
@@ -753,9 +795,39 @@ function presetRoledNodes(preset: MimicPreset): ResolvableNode[] {
 function roledUnits(layout: MimicLayoutGeometryDto | undefined): ResolvableNode[] {
   return (layout?.nodes ?? []).flatMap((node) =>
     node.kind === "unit" && node.roleCode !== null
-      ? [{ key: node.key, label: node.label, roleCode: node.roleCode, fanOut: node.fanOut }]
+      ? [{ key: node.key, label: node.label, roleCode: node.roleCode, fanOut: node.fanOut, pointKeys: node.pointKeys }]
       : [],
   );
+}
+
+/**
+ * `F4.307` (plan C4): the `(asset, key, ord)` triples statement (3)'s listed arm reads, as three
+ * parallel arrays — per roled unit with a list, its shown member, or every fanned member — once
+ * per `(asset, key)`.
+ */
+function listedPairs(
+  widgets: readonly ParsedWidget[],
+  nodesOf: (widget: ParsedWidget) => ResolvableNode[],
+  members: ReadonlyMap<string, ReadonlyMap<string, readonly MemberRow[]>>,
+): { assetIds: string[]; pointKeys: string[]; ords: number[] } {
+  const pairs = { assetIds: [] as string[], pointKeys: [] as string[], ords: [] as number[] };
+  const seen = new Set<string>();
+  for (const widget of widgets) {
+    if (widget.groupId === null) continue;
+    for (const node of nodesOf(widget)) {
+      const rows = members.get(widget.groupId)?.get(node.roleCode) ?? [];
+      for (const row of node.fanOut ? rows : rows.slice(0, 1)) {
+        for (const [ord, pointKey] of node.pointKeys.entries()) {
+          if (seen.has(`${row.asset_id} ${pointKey}`)) continue;
+          seen.add(`${row.asset_id} ${pointKey}`);
+          pairs.assetIds.push(row.asset_id);
+          pairs.pointKeys.push(pointKey);
+          pairs.ords.push(ord);
+        }
+      }
+    }
+  }
+  return pairs;
 }
 
 /**
@@ -784,7 +856,7 @@ function layoutNodeOf(row: LayoutNodeRow): MimicLayoutNodeDto | null {
     fanOut: row.fan_out === true,
     isSource: row.is_source === true,
     isSwitching: row.is_switching === true,
-    // `F4.307` (plan C2): drawn here, not yet resolved — PR 2 reads the list per node.
+    // `F4.307` (plan C2): the stored list; `resolveNode` reads it per node (plan C5).
     pointKeys: row.point_keys ?? [],
   };
 }
