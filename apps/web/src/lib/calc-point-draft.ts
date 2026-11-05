@@ -23,6 +23,8 @@ import {
   CALC_DIALECTS,
   CALC_POINT_BATCH_MAX_ASSETS,
   CALC_TRIGGERS,
+  DEFAULT_MAX_INPUT_AGE_SECONDS,
+  MAX_INPUT_AGE_SECONDS_BOUND,
   validateMergedCalcOverride,
 } from "@bms/shared";
 import type {
@@ -59,6 +61,49 @@ export function emptyCalcPointDraft(pointKey = ""): CalcPointDraft {
     maxInputAgeSeconds: "",
     backfillDays: "",
   };
+}
+
+// ---- the default input age (`F4.315` B3/B4, ADR 0109 Amendment 2, owner ruling Q7) ----
+
+/**
+ * The "Inputs valid for" a standalone point opens on: `DEFAULT_MAX_INPUT_AGE_SECONDS` (300 s)
+ * when it streams; twice the interval when it runs on a schedule, capped at the bound the
+ * schema allows; `""` while the interval is not yet a positive whole number (ruling Q7 — the
+ * Schedule step then refuses Next until one is typed).
+ */
+export function defaultMaxInputAgeSeconds(trigger: string, intervalText: string): string {
+  if (trigger === "streaming") return String(DEFAULT_MAX_INPUT_AGE_SECONDS);
+  if (trigger !== "scheduled") return "";
+  const text = intervalText.trim();
+  const interval = /^\d+$/.test(text) ? Number(text) : 0;
+  return interval > 0 ? String(Math.min(2 * interval, MAX_INPUT_AGE_SECONDS_BOUND)) : "";
+}
+
+/**
+ * The draft with its age following the default while nobody chose one (`ageTouched` false):
+ * a trigger or interval edit moves it. A chosen age — typed, cleared, a suggestion's own,
+ * an Edit's stored value — is never replaced.
+ */
+export function withDefaultAge(draft: CalcPointDraft, ageTouched: boolean): CalcPointDraft {
+  if (ageTouched) return draft;
+  return { ...draft, maxInputAgeSeconds: defaultMaxInputAgeSeconds(draft.calcTrigger, draft.calcIntervalSeconds) };
+}
+
+/**
+ * Whether the age is someone's choice after the edit `previous` → `next`: it was already, or
+ * the edit moved it to a value that is not `next`'s default (a typed value, or a cleared one).
+ */
+export function ageTouchedAfter(previous: CalcPointDraft, next: CalcPointDraft, touched: boolean): boolean {
+  if (touched || next.maxInputAgeSeconds === previous.maxInputAgeSeconds) return touched;
+  return next.maxInputAgeSeconds !== defaultMaxInputAgeSeconds(next.calcTrigger, next.calcIntervalSeconds);
+}
+
+/** The Schedule step's refusal while the age is empty (the schema requires it). */
+export const SCHEDULE_AGE_BLOCKER = "Inputs valid for: enter how many seconds an input stays valid.";
+
+/** `WizardShell`'s `stepBlocker` for the Schedule step of the Add panel and the bulk wizard. */
+export function scheduleStepBlocker(draft: CalcPointDraft): string | null {
+  return draft.maxInputAgeSeconds.trim() === "" ? SCHEDULE_AGE_BLOCKER : null;
 }
 
 /** The dialect the draft is written in — the Grammar select's value, never `""` on a standalone point. */
