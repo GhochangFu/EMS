@@ -808,6 +808,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
               onEdited={() => setOverrideSaveError(null)}
               onSubmit={(pointKey, body, newKey) => setCalcPointM.mutate({ pointKey, body, newKey })}
               allowNewKey={canWritePointKeys(user.role)}
+              assetDomain={assetSummaryQ.data?.domain ?? null}
               onDelete={null}
               onCancel={() => openStandalone({})}
             />

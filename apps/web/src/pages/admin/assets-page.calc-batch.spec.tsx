@@ -74,7 +74,7 @@ function stubApi(rows: AdminAssetDto[]): void {
         id: "pk-pf",
         code: "pf",
         name: "Power factor",
-        domain: null,
+        domain: "electrical",
         unit: null,
         description: null,
         active: true,

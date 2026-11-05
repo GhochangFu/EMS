@@ -418,6 +418,7 @@ export async function addPicksAnRtuOfTheAssetsLocation(): Promise<void> {
     rtuDisplayName: null,
     organizationId: null,
     organizationCode: null,
+    domain: "electrical",
   });
   renderPage("/admin/assets/c1000000-0000-4000-8000-0000000000a1/points");
   await userEvent.click(await screen.findByRole("button", { name: "Add mapping" }));

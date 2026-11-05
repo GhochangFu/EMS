@@ -20,6 +20,9 @@
  * code under decision 3's rules, as the Add panel does for one asset; only a
  * clean check creates the key and then writes the batch. A refused batch
  * after the key says the key stays, and the picker re-reads the catalog.
+ *
+ * `F4.313` follow-up (owner ruling 2026-11-05): the picker lists the selected
+ * assets' domain first when they all share one, and every key when they do not.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -56,6 +59,7 @@ import {
   type BatchRefusal,
   type CalcPointDraft,
 } from "../../lib/calc-point-draft";
+import { sharedDomain } from "../../lib/catalog-key-filter";
 import { AdminWizardFrame } from "../admin/admin-wizard-frame";
 import { FormulaPreview } from "../asset-templates/formula-preview";
 import { WizardShell } from "../wizard/wizard-shell";
@@ -219,6 +223,7 @@ export function CalcPointBatchWizard({
         exclude={NOTHING_EXCLUDED}
         disabled={busy}
         allowNew={allowNewKey}
+        domain={sharedDomain(assets.map((asset) => asset.domain))}
         onChange={pickKey}
       />
       {newKey ? <NewPointKeyFields draft={newKey} disabled={busy} onChange={editNewKey} /> : null}

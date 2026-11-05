@@ -93,6 +93,7 @@ function stubApi(...lists: CalcList[]): void {
     rtuDisplayName: null,
     organizationId: null,
     organizationCode: null,
+    domain: "electrical",
   } as never);
   const read = vi.spyOn(api, "fetchAdminAssetCalcPoints");
   // Each read answers the next list; the last one repeats.

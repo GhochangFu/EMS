@@ -92,6 +92,7 @@ function stubApi(mode: "template" | "standalone", items: AssetPointCalcConfigDto
     rtuDisplayName: null,
     organizationId: null,
     organizationCode: null,
+    domain: "electrical",
   });
   vi.spyOn(api, "fetchAdminAssetCalcPoints").mockResolvedValue({ items, mode });
   vi.spyOn(api, "fetchAdminAssetPoints").mockResolvedValue({

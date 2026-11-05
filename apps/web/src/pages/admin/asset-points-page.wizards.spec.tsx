@@ -81,6 +81,7 @@ function stubApi(rows: AdminAssetPointDto[] = [ROW]): void {
     rtuDisplayName: null,
     organizationId: null,
     organizationCode: null,
+    domain: "electrical",
   });
   vi.spyOn(api, "fetchAdminAssetCalcPoints").mockResolvedValue({ items: [], mode: "template" } as never);
   vi.spyOn(api, "fetchAdminAssetPoints").mockResolvedValue({ items: rows } as never);
