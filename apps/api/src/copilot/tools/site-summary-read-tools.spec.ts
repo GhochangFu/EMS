@@ -57,7 +57,6 @@ const ASSETS: InventoryAsset[] = Array.from({ length: 52 }, (_, i) => ({
 const SITE_NAME = "Western Cape";
 const rtuOf = (i: number): string | null => (i % 2 === 0 ? `WC RTU ${i}` : null);
 const LABEL_OF = new Map(ASSETS.map((asset, i) => [asset.id, assetLabel({ code: asset.code, rtuName: rtuOf(i), locationName: SITE_NAME })]));
-const labelOf = (i: number): string => LABEL_OF.get(ASSETS[i]!.id)!;
 const KEYS = ["supply_temp_c", "return_temp_c", "compressor_current_a", "condenser_pressure_kpa", "evaporator_pressure_kpa"];
 const PAIRS: InventoryPair[] = ASSETS.flatMap((asset, i) => KEYS.slice(0, (i % 3) + 3).map((pointKey) => ({ assetId: asset.id, pointKey })));
 
