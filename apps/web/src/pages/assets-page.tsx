@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
+import { ASSET_LABEL_SEPARATOR } from "@bms/shared";
+
 import { fetchAssets } from "../api/assets";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { apiErrorMessage } from "../lib/api-error-message";
@@ -167,6 +169,9 @@ export function AssetsPage({ user }: AssetsPageProps) {
                         >
                           {row.code}
                         </button>
+                        <div className="break-words text-[11px] font-normal text-ink-muted">
+                          {`${ASSET_LABEL_SEPARATOR.trim()} ${row.rtuDisplayName ?? row.locationName}`}
+                        </div>
                       </td>
                       <td className="px-3 py-2 font-medium">{row.name}</td>
                       <td className="px-3 py-2 text-xs text-ink-muted">{row.siteName}</td>

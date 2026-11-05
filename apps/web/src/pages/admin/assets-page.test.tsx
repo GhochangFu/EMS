@@ -15,6 +15,7 @@ import {
   savingWithARoleSendsIt,
   savingWithNoRoleSendsNull,
   aRefusedSaveShowsTheSentence,
+  theCodeCellNamesWhereTheAssetIs,
 } from "./assets-page.spec";
 
 /**
@@ -90,5 +91,9 @@ describe("F3.74 assets page rating and trip cause", () => {
 
   it("F4.204 a refused save shows the sentence, not the envelope", async () => {
     await aRefusedSaveShowsTheSentence();
+  });
+
+  it("F4.316 the Code cell names the RTU, else the location", async () => {
+    await theCodeCellNamesWhereTheAssetIs();
   });
 });

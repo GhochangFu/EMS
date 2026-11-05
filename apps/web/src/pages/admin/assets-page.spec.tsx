@@ -384,3 +384,28 @@ export async function aRefusedSaveShowsTheSentence(): Promise<void> {
   const banner = await screen.findByText(/An asset with that code already exists at this location/);
   expect(banner.textContent).not.toContain('{"');
 }
+
+/**
+ * F4.316 — the Code cell names where the asset is: the RTU when wired, else its location. The
+ * RTU column stays and the checkbox's accessible name stays `Select <code>`.
+ */
+export async function theCodeCellNamesWhereTheAssetIs(): Promise<void> {
+  const wired = asset({
+    id: "77777777-7777-4777-8777-777777777777",
+    code: "WIRED-01",
+    name: "Wired",
+    rtuId: "88888888-8888-4888-8888-888888888888",
+    rtuDisplayName: "RTU-7",
+  });
+  const bare = asset({ id: "99999999-9999-4999-8999-999999999999", code: "BARE-01", name: "Bare", locationName: "Plant 9" });
+  stubApi([wired, bare]);
+  renderPage();
+
+  const wiredCell = (await screen.findByRole("checkbox", { name: "Select WIRED-01" })).closest("td")?.nextElementSibling;
+  const bareCell = screen.getByRole("checkbox", { name: "Select BARE-01" }).closest("td")?.nextElementSibling;
+  expect(within(wiredCell as HTMLElement).getByText("· RTU-7")).toBeInTheDocument();
+  expect(within(bareCell as HTMLElement).getByText("· Plant 9")).toBeInTheDocument();
+  // The RTU column keeps the bare name (Q2).
+  expect(screen.getByRole("cell", { name: "RTU-7" })).toBeInTheDocument();
+}
+

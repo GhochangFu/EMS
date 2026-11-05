@@ -405,3 +405,18 @@ export async function columnsMapToTheRow(): Promise<void> {
   expect(cells(wired)[3]).toBe("HVAC");
   expect(within(wired).getByText("Active")).toBeInTheDocument();
 }
+
+/**
+ * F4.316 — the Code cell names where the asset is: the RTU when wired, else its location; the
+ * button's name stays the bare code and the RTU column stays.
+ */
+export async function theCodeCellNamesWhereTheAssetIs(): Promise<void> {
+  stubApi();
+  renderPage();
+
+  const unwired = (await screen.findByRole("button", { name: "FEED-PUMP-2" })).closest("td") as HTMLElement;
+  const wired = screen.getByRole("button", { name: "CR-HVAC-1" }).closest("td") as HTMLElement;
+  expect(within(wired).getByText("· RTU WC-1")).toBeInTheDocument();
+  expect(within(unwired).getByText("· Gauteng control room")).toBeInTheDocument();
+  expect(wired.closest("tr")?.querySelectorAll("td")[4]?.textContent).toBe("RTU WC-1");
+}

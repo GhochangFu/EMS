@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import type { AdminAssetDto, MasterDataActiveFilter } from "@bms/shared";
+import { ASSET_LABEL_SEPARATOR, type AdminAssetDto, type MasterDataActiveFilter } from "@bms/shared";
 
 import {
   createAdminAsset,
@@ -284,7 +284,14 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                     onChange={(event) => toggleRow(item.id, event.target.checked)}
                   />
                 </td>
-                <td className="px-2 py-2 font-mono">{item.code}</td>
+                <td className="px-2 py-2 font-mono">
+                  {item.code}
+                  {item.rtuDisplayName ?? item.locationName ? (
+                    <div className="break-words font-sans text-[11px] text-ink-muted">
+                      {`${ASSET_LABEL_SEPARATOR.trim()} ${item.rtuDisplayName ?? item.locationName}`}
+                    </div>
+                  ) : null}
+                </td>
                 <td className="px-2 py-2 font-semibold text-accent-strong">{item.name}</td>
                 <td className="px-2 py-2">{item.locationName}</td>
                 <td className="px-2 py-2">{item.rtuDisplayName}</td>

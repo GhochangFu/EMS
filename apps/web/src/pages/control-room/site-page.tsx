@@ -212,7 +212,7 @@ export function ControlRoomSitePage({ user, locationId: locationIdProp }: Contro
                   Loading the site view…
                 </p>
               ) : onAssetsTab ? (
-                <SiteAssetsView locationId={site.id} />
+                <SiteAssetsView locationId={site.id} siteName={site.name} />
               ) : onTrendsTab ? (
                 <SiteTrendsView locationId={site.id} />
               ) : (
