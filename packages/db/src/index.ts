@@ -18,3 +18,10 @@ export { HEALTH_BANDS, HEALTH_BASELINE_CONTENT } from "./asset-template-health-s
  * asset domain names it the way the boot gate's domain count skips.
  */
 export { FIXTURE_ASSET_DOMAIN_PREFIX, fixtureAssetDomainCode } from "./asset-domains-seed";
+/**
+ * `F4.309` / ADR 0088 Amendment 3 decision 3 (owner ruling Q3 (a)) — exported so the admin
+ * state-label routes answer `seeded` by comparing with the very rows the seed writes, and refuse
+ * a `PATCH`, `DELETE` or `POST` of one with 409. Only the literal; `seedPointKeyStates` stays
+ * internal, as `HEALTH_BANDS` above.
+ */
+export { POINT_KEY_STATE_SEED } from "./point-key-states-seed";

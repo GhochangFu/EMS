@@ -31,3 +31,34 @@ export const pointKeyStateMapSchema = z.object({
   pointKey: z.string(),
   states: z.array(pointKeyStateSchema),
 });
+
+/**
+ * `F4.309` / ADR 0088 Amendment 3 decisions 1 and 3 — one row of `GET /api/v1/admin/point-key-states`.
+ * `seeded` is true for a pair of `POINT_KEY_STATE_SEED` (owner ruling Q3 (a): a comparison, not a
+ * column), and such a row is read-only: its `PATCH` and `DELETE` answer 409.
+ */
+export const adminPointKeyStateDtoSchema = z.object({
+  id: z.string(),
+  pointKey: z.string(),
+  value: z.number(),
+  label: z.string(),
+  tone: pointKeyStateToneSchema,
+  seeded: z.boolean(),
+});
+
+/** `GET /api/v1/admin/point-key-states` — every row, ordered by point key then value. */
+export const adminPointKeyStatesListResponseSchema = z.object({
+  items: z.array(adminPointKeyStateDtoSchema),
+});
+
+/**
+ * `F4.309` / ADR 0088 Amendment 3 decision 5 — one switching state on `GET /api/v1/vocabularies`
+ * (`switchingStates`), readable by any signed-in user; the state legend draws each distinct label
+ * and tone once.
+ */
+export const switchingStateDtoSchema = z.object({
+  pointKey: z.string(),
+  value: z.number(),
+  label: z.string(),
+  tone: pointKeyStateToneSchema,
+});
