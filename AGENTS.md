@@ -1097,6 +1097,39 @@
 > edits are locked while it is on, the inspector lists the bound asset, its
 > points, state points and open alarms, and "Save to refresh the preview"
 > shows while the editor holds unsaved edits.
+> And **the live-check fixes** (**ADR 0099 Amendment 14** and **ADR 0109
+> Amendment 2**, #1048; row `F4.315`; PR A #1051, PR B #1057, PR C #1059;
+> this sweep merges last). The copilot gains the read tool
+> `list_asset_templates` (40 read tools): the admin list of each allowed
+> organization, a 403 organization skipped, all-403 refused. An adoption
+> refusal names its cause when every record is in the caller's scope (already
+> pinned, another domain, another organization, one sentence builder shared
+> with the route); an unknown or out-of-scope record keeps the general sentence;
+> a non-UUID id gets "not a record id" before any read; the refusal's
+> organizations join the turn's provenance. Every catalog wizard's Review step
+> prints its heading once. "Inputs valid for" defaults to 300 s (streaming) or
+> 2 × the interval (scheduled, capped; empty until the interval exists) and
+> follows the default until the user picks a value; on **Add calculated point**
+> and the bulk wizard the Schedule step refuses an empty age (`WizardShell`
+> `stepBlocker`, Next `aria-disabled`); the override wizard is unchanged (an
+> empty age inherits). **New key** gains a Domain text field, pre-filled with
+> the asset's (bulk: the shared) domain. Suggested formulas on a published or
+> archived version stay disabled and say why.
+> And **every surface names an asset `<code> · <RTU>`** (**ADR 0111**, #1048;
+> row `F4.316`; PR 1 #1050, PR 2 #1053, PR 3a #1052, PR 3b #1054, PR 4a
+> #1058, PR 4b #1061, PR 5 #1055, PR 6 #1062, PR 7 #1056, PR 8 #1060; this
+> sweep merges last). One pure formatter in `@bms/shared` (`assetLabel`,
+> `assetLabelOf`, `assetLabelParts`; separator `" · "`): the RTU's display
+> name, else the location's name, else the bare code. **A shared response
+> schema that names an asset by code carries `assetRtuName` and
+> `assetLocationName`** (required, nullable), filled by LEFT JOINs to
+> `bms.rtus` and `bms.locations` with no predicate added;
+> `tests/adr-0111-asset-label-schemas.test.ts` fails a new asset-naming schema
+> without them unless it is on its permanent exemption list (refusal rows,
+> round-trip keys). The `· where` part wraps and is never truncated; search and
+> filters still match the code; CSV/XLSX keep the code column and add a label
+> column (CSV cells formula-guarded); the copilot's cards and read tools use
+> the label.
 > And **an organization chooses a site-wide colour profile** (**ADR 0110**,
 > #1008, with **ADR 0078 Amendment 5** and ADR 0110 **Amendment 1**; row
 > `F4.310`; PR A #1010, PR B #1015, PR C #1020, PR A2 #1043, PR D #1045; this
@@ -1163,7 +1196,8 @@
 > the key in the catalog). The picker lists only the asset's domain (plus keys
 > with no domain) until **Show all keys**, with a search, and
 > `GET /admin/assets/:id`
-> carries `domain`. The copilot keeps one card per change (`pointKey.create`,
+> carries `domain`; since `F4.315` New key writes the asset's domain (a
+> pre-filled text field). The copilot keeps one card per change (`pointKey.create`,
 > then `calcPoint.set` or `.createBatch`).
 > And **the tool-calling onboarding agent loop** (**ADR 0090** with
 > **Amendment 1**; row `F3.21`, merged 2026-10-03 in #705, squash `9ff272e1`;
