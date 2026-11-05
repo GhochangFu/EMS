@@ -58,6 +58,7 @@ const BASELINE = {
       fanOut: false,
       isSource: true,
       isSwitching: false,
+      pointKeys: [],
     },
   ],
   pipes: [],

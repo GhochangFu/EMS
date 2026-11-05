@@ -287,8 +287,8 @@ describe("F3.32 v1 — the mimic-nodes read (U2)", () => {
     expect(
       [...new Set(reads.map((entry) => entry.table))].sort(),
       "the resolver must read the widget's tab (F3.73 plan D3), the layout, its nodes and its pipes " +
-        "(F3.32c plan D9, statements 1b and 1c)",
-    ).toEqual(["dashboard_tabs", "mimic_layout_nodes", "mimic_layout_pipes", "mimic_layouts"]);
+        "(F3.32c plan D9, statements 1b and 1c), and each unit's point list (F4.307 plan C2, in 1b)",
+    ).toEqual(["dashboard_tabs", "mimic_layout_node_points", "mimic_layout_nodes", "mimic_layout_pipes", "mimic_layouts"]);
     expect(
       reads.filter((entry) => entry.table === "dashboard_tabs").map((entry) => entry.alias),
       "the widget statement joins the widget's own tab (dt, F3.73) and the tab it names (nt, F3.74 plan D7)",

@@ -18,6 +18,7 @@ import {
   assertTwoTabGroupsAreThreeStatements,
   assertFullReadIsThreeStatements,
   assertGrouplessDashboardIsEightNullsInOneStatement,
+  assertLayoutGeometryCarriesThePointListInOrder,
   assertLayoutReadIsFiveStatements,
   assertLayoutUnitsResolveLikePresetNodes,
   assertLayoutWidgetAnswersItsGeometry,
@@ -128,6 +129,11 @@ describe.skipIf(!connectionString)("F3.32 — MimicNodesService", () => {
   );
   it("L2 a passive unit is drawn but not resolved", rolledBack(assertPassiveUnitIsDrawnNotResolved), 60_000);
   it("L3 a read with a layout widget is five statements", rolledBack(assertLayoutReadIsFiveStatements), 60_000);
+  it(
+    "G1 the layout geometry carries each unit's point list in order, still five statements (F4.307)",
+    rolledBack(assertLayoutGeometryCarriesThePointListInOrder),
+    60_000,
+  );
   it("L4 mixed preset and layout widgets keep grid order", rolledBack(assertMixedWidgetsKeepGridOrder), 60_000);
   it(
     "L5 another organization's layout is skipped with one warning",

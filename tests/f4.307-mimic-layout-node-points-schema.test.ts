@@ -197,6 +197,12 @@ describe("F4.307 — bms.mimic_layout_node_points (migration 0124)", () => {
     expect(proof.match(/RAISE EXCEPTION/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
   });
 
+  it("the service translates the point-key FK name the proof asserts to its 400", () => {
+    expect(read("apps/api/src/mimic-layouts/mimic-layouts.service.ts")).toContain(
+      `constraint === "mimic_layout_node_points_point_key_fkey"`,
+    );
+  });
+
   it("declares the Drizzle table with the composite node FK", () => {
     const schema = read(DRIZZLE_REL);
     expect(schema).toContain(`export const mimicLayoutNodePoints = bmsSchema.table(\n  "${TABLE}"`);
