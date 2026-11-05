@@ -64,6 +64,9 @@ const CATALOG_WRITERS = [
   "apps/api/src/admin/assets/assets.service.ts",
   "apps/api/src/admin/asset-groups/asset-groups.service.ts",
   "apps/api/src/admin/point-keys/point-keys.service.ts",
+  // `F4.309` PR 3 (ADR 0099 Amendment 13): `pointKeyState.create` and `.update` reach this service
+  // (its excluded DELETE audits through the same funnel).
+  "apps/api/src/admin/point-key-states/point-key-states.service.ts",
   "apps/api/src/admin/asset-points/asset-points.service.ts",
   "apps/api/src/admin/users/users.service.ts",
   "apps/api/src/admin/users/user-grants.service.ts",
@@ -164,9 +167,8 @@ const CATALOG_DIRS = [
   "admin/assets",
   "admin/asset-groups",
   "admin/point-keys",
-  // `F4.309` PR 1: `admin/point-key-states` is NOT listed yet — its routes are pending
-  // (`POINT_KEY_PENDING`). PR 3 (ADR 0099 Amendment 13) adds the directory here and its service to
-  // `CATALOG_WRITERS` with the two entries (`tests/f4.309-point-key-state-write-path.test.ts`).
+  // `F4.309` PR 3 (ADR 0099 Amendment 13): the state labels — two entries, the DELETE excluded.
+  "admin/point-key-states",
   "admin/users",
   "admin/onboarding",
   "mimic-layouts",

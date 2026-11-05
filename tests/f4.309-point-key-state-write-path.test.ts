@@ -17,7 +17,7 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
  * before the database is `point-key-states.service.gates.spec.ts`. What remains for a scan is the
  * wiring and the class of mistake a green behaviour suite cannot see: a write that slipped onto
  * the tenant pool, a method that reads before it gates, an audit row stamped with an
- * organization, the new directory inside the copilot's catalog scan before PR 3 lists its writer,
+ * organization, the directory missing from the copilot's catalog scan (PR 3 lists it and its writer),
  * and a migration that reaches for the table when the ADR says none is needed.
  *
  * Each assertion has an anti-vacuity twin, because a rename would otherwise turn it green by
@@ -59,7 +59,8 @@ describe("F4.309 — the state-label write path (ADR 0088 Amendment 3)", () => {
     expect(module).toContain('from "./point-key-states/point-key-states.controller"');
     expect(module).toContain('from "./point-key-states/point-key-states.service"');
     expect(module.match(/\bPointKeyStatesAdminController\b/g)?.length).toBe(2);
-    expect(module.match(/\bPointKeyStatesAdminService\b/g)?.length).toBe(2);
+    // The import, the provider and (`F4.309` PR 3) the export for the copilot's `list_point_key_states`.
+    expect(module.match(/\bPointKeyStatesAdminService\b/g)?.length).toBe(3);
   });
 
   it("mounts the four routes under admin/point-key-states behind JwtAuthGuard", () => {
@@ -119,7 +120,7 @@ describe("F4.309 — the state-label write path (ADR 0088 Amendment 3)", () => {
     expect(serviceCode.match(/\n\s*tx,\n\s*\);/g)?.length).toBe(3);
   });
 
-  it("audits only through MasterDataAuditService, never by a direct insert (outside DIRECT_INSERT's scan until PR 3)", () => {
+  it("audits only through MasterDataAuditService, never by a direct insert (inside DIRECT_INSERT's scan since PR 3)", () => {
     // The `f3.85-audit-via-mark` forms: the drizzle `insert(auditLog)` and the raw SQL.
     const direct = /\binsert\(\s*auditLog\s*\)|\binsert\s+into\s+(bms\.)?audit_log\b/i;
     for (const name of readdirSync(join(repoRoot, DIR)).filter((n) => n.endsWith(".ts") && !/\.(spec|test)\.ts$/.test(n))) {
@@ -143,13 +144,16 @@ describe("F4.309 — the state-label write path (ADR 0088 Amendment 3)", () => {
     expect(serviceCode.match(/isSeededPointKeyState\(/g)?.length).toBeGreaterThanOrEqual(3);
   });
 
-  it("stays outside the copilot's catalog directories until PR 3 (ADR 0099 Amendment 13; plan C5)", () => {
+  it("is a copilot catalog directory since PR 3, its service a catalog writer (ADR 0099 Amendment 13; plan C5, T16)", () => {
     const gate = read(AUDIT_GATE_REL);
     const dirs = /const CATALOG_DIRS = \[([\s\S]*?)\] as const;/.exec(gate)?.[1];
     expect(dirs, "CATALOG_DIRS not found in the audit-via-mark gate").toBeDefined();
     const listed = [...codeOnly(dirs as string).matchAll(/"([^"]+)"/g)].map((m) => m[1]);
     expect(listed).toContain("admin/point-keys"); // anti-vacuity: the parse reads the list
-    expect(listed.some((dir) => `${DIR}/`.startsWith(`apps/api/src/${dir}/`))).toBe(false);
+    expect(listed).toContain("admin/point-key-states");
+    const writers = /const CATALOG_WRITERS = \[([\s\S]*?)\] as const;/.exec(gate)?.[1];
+    expect(writers, "CATALOG_WRITERS not found in the audit-via-mark gate").toBeDefined();
+    expect([...codeOnly(writers as string).matchAll(/"([^"]+)"/g)].map((m) => m[1])).toContain(SERVICE_REL);
   });
 
   it("adds no migration after 0109 that names point_key_states (decision 2: no grant change)", () => {

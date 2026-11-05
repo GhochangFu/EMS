@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useState } from "react";
+import { type KeyboardEvent, useState } from "react";
 import type { AdminPointKeyStateDto, PointKeyStateTone } from "@bms/shared";
 import { pointKeyStateToneSchema } from "@bms/shared/contracts";
+import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import { fetchAdminPointKeys } from "../../api/admin/point-keys";
 import {
@@ -17,9 +18,11 @@ import { ConfirmDialog } from "../../components/confirm-dialog";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
+import { WizardShell } from "../../components/wizard/wizard-shell";
 import { isGlobalAdmin } from "../../lib/admin-access";
 import { parseStateValue } from "../../lib/point-key-state-value";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { wizardBody } from "../../lib/wizard-steps";
 import type { AuthUser } from "../../stores/auth-store";
 
 /** The key picker's read: the active point keys, on the key the other active-key pickers share. */
@@ -27,16 +30,76 @@ const ACTIVE_POINT_KEYS_KEY = ["admin", "point-keys", "true"] as const;
 
 /** The body's `.max(32)` (`contracts/point-key-state-writes.ts`). */
 const LABEL_MAX = 32;
-const VALUE_ERROR = "Value must be a number";
-const KEY_ERROR = "Choose a point key";
-const LABEL_ERROR = `Label must be 1 to ${LABEL_MAX} characters`;
+const KEY_PROMPT = "Choose a point key";
+/** The State step's refusals, by field, in the page's own words (the shell's `formatProblem`). */
+const FIELD_PROBLEMS: Readonly<Record<string, string>> = {
+  pointKey: KEY_PROMPT,
+  value: "Value must be a number",
+  label: `Label must be 1 to ${LABEL_MAX} characters`,
+  tone: "Choose a tone",
+};
+
+/** A step refusal (`field: message`) as the field's sentence; any other refusal as it is. */
+function stateProblem(problem: string): string {
+  return FIELD_PROBLEMS[problem.slice(0, problem.indexOf(":"))] ?? problem;
+}
+
+/**
+ * The value text to the body's `value` (`parseStateValue`, decimal notation only). Text that is
+ * not a finite number stays text, blank included, so the State step's own check refuses it
+ * before any request is made.
+ */
+function stateValueOf(text: string): unknown {
+  return parseStateValue(text) ?? text;
+}
+
+/**
+ * `F4.309` PR 3 (ADR 0099 Amendment 13) — the catalog entry a wizard submits. Each `WizardShell`
+ * writes the literal id on its `entry` prop, the form the stepper gate
+ * (`tests/f3.85-stepper-coverage`) detects. A missing entry is a build defect, so it throws.
+ */
+function wizardEntry(id: string): CatalogEntry {
+  const entry = catalogEntry(id);
+  if (!entry) throw new Error(`F4.309: the catalog has no entry "${id}"`);
+  return entry;
+}
 
 type FormState = { pointKey: string; value: string; label: string; tone: PointKeyStateTone };
 
 const EMPTY_FORM: FormState = { pointKey: "", value: "", label: "", tone: "closed" };
 
+/** A copilot `fill_step` (merged by the shell into the State step) written back into the form's text. */
+function formWithValues(form: FormState, values: Readonly<Record<string, unknown>>): FormState {
+  const next = { ...form };
+  if (typeof values.pointKey === "string") next.pointKey = values.pointKey;
+  if (typeof values.value === "number") next.value = String(values.value);
+  else if (typeof values.value === "string") next.value = values.value;
+  if (typeof values.label === "string") next.label = values.label;
+  const tone = pointKeyStateToneSchema.safeParse(values.tone);
+  if (tone.success) next.tone = tone.data;
+  return next;
+}
+
 /** `null` for open, `"create"` for Add, the row for Edit. */
 type Editing = "create" | AdminPointKeyStateDto | null;
+
+/** "`<key>` = `<value>` (`<label>`)" — the name the copilot's resolver gives the row too. */
+function rowTitle(item: AdminPointKeyStateDto): string {
+  return `${item.pointKey} = ${item.value} (${item.label})`;
+}
+
+/**
+ * Escape presses the wizard's own Cancel, so it asks first exactly when Cancel does (a changed
+ * wizard), and on that question it presses "Stay in the wizard". On the dialog, not the document,
+ * so the delete confirm's own Escape is never shadowed.
+ */
+function escapeAsCancel(event: KeyboardEvent<HTMLDivElement>): void {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  const buttons = [...event.currentTarget.querySelectorAll("button")];
+  const asking = event.currentTarget.querySelector('[role="alertdialog"]') !== null;
+  buttons.find((button) => button.textContent === (asking ? "Stay in the wizard" : "Cancel"))?.click();
+}
 
 /**
  * `F4.309` (ADR 0088 Amendment 3, plan C14) — the State Labels screen: which value of a switching
@@ -48,9 +111,13 @@ type Editing = "create" | AdminPointKeyStateDto | null;
  * role the page renders one status line and mounts no query. Everyone else reads the rows through
  * `/vocabularies`.
  *
- * A seeded row (decision 3) shows "Seeded" and no control: its `PATCH` and `DELETE` are 409. On
- * Edit the key and the value are read-only and only `label` and `tone` are sent (decision 4).
- * Every write refreshes this list and `/vocabularies` (`invalidatePointKeyStateReads`).
+ * A seeded row (decision 3) shows "Seeded" and no control: its `PATCH` and `DELETE` are 409.
+ * `F4.309` PR 3 (ADR 0099 Amendment 13, plan T15b): Add and Edit are the `pointKeyState.create` /
+ * `pointKeyState.update` wizards (State → Review), so every write here is the catalog route the
+ * copilot proposes, and a `fill_step` lands in the form. On Edit the key and the value are
+ * read-only and only `label` and `tone` are sent (decision 4). Delete stays a `ConfirmDialog`
+ * (decision 5: no copilot delete). Every write refreshes this list and `/vocabularies`
+ * (`invalidatePointKeyStateReads`). A wizard used alone sends no `X-Copilot-Change` header.
  */
 export function PointKeyStatesAdminPage({ user }: { user: AuthUser }) {
   return (
@@ -88,15 +155,12 @@ function StateLabelsCatalog() {
     setFormState(next);
   }
 
+  // The wizard's body is the route's, parsed whole on Review before Submit.
   const saveMutation = useMutation({
-    mutationFn: async (target: "create" | AdminPointKeyStateDto) => {
-      const label = form.label.trim();
-      if (target === "create") {
-        const value = parseStateValue(form.value) as number;
-        return createAdminPointKeyState({ pointKey: form.pointKey, value, label, tone: form.tone });
-      }
-      return updateAdminPointKeyState(target.id, { label, tone: form.tone });
-    },
+    mutationFn: async (body: Record<string, unknown>) =>
+      editing !== null && editing !== "create"
+        ? updateAdminPointKeyState(editing.id, body as Parameters<typeof updateAdminPointKeyState>[1])
+        : createAdminPointKeyState(body as Parameters<typeof createAdminPointKeyState>[0]),
     onSuccess: async () => {
       setEditing(null);
       setError(null);
@@ -126,28 +190,86 @@ function StateLabelsCatalog() {
     setEditing(item);
   }
 
-  function submit(event: FormEvent<HTMLFormElement>): void {
-    event.preventDefault();
-    if (editing === null) return;
-    if (editing === "create" && form.pointKey === "") {
-      setError(KEY_ERROR);
-      return;
-    }
-    if (editing === "create" && parseStateValue(form.value) === null) {
-      setError(VALUE_ERROR);
-      return;
-    }
-    const label = form.label.trim();
-    if (label.length === 0 || label.length > LABEL_MAX) {
-      setError(LABEL_ERROR);
-      return;
-    }
-    saveMutation.mutate(editing);
-  }
-
   const items = listQ.data?.items ?? [];
   const activeKeys = keysQ.data?.items ?? [];
   const dialogName = editing === "create" ? "Add state label" : "Edit state label";
+  // The label is sent trimmed (the body trims too), so blank text is refused on the State step.
+  const createValues = { pointKey: form.pointKey, value: stateValueOf(form.value), label: form.label.trim(), tone: form.tone };
+  const updateValues = { label: form.label.trim(), tone: form.tone };
+
+  const stateFields = (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {editing === "create" ? (
+        <>
+          <label className="block text-xs font-semibold text-ink-muted">
+            Point key
+            <select
+              autoFocus
+              className="mt-1 w-full surface-field px-3 py-2 text-sm"
+              value={form.pointKey}
+              onChange={(event) => setForm({ ...form, pointKey: event.target.value })}
+            >
+              <option value="">{KEY_PROMPT}</option>
+              {activeKeys.map((key) => (
+                <option key={key.id} value={key.code}>
+                  {key.code}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-xs font-semibold text-ink-muted">
+            Value
+            <input
+              type="text"
+              inputMode="decimal"
+              className="mt-1 w-full surface-field px-3 py-2 font-mono text-sm"
+              value={form.value}
+              onChange={(event) => setForm({ ...form, value: event.target.value })}
+            />
+          </label>
+        </>
+      ) : editing !== null ? (
+        <p className="text-xs text-ink-muted sm:col-span-2">
+          Point key <span className="font-mono">{editing.pointKey}</span> and value{" "}
+          <span className="font-mono">{editing.value}</span> cannot be changed.
+        </p>
+      ) : null}
+      <label className="block text-xs font-semibold text-ink-muted">
+        Label
+        <input
+          autoFocus={editing !== "create"}
+          className="mt-1 w-full surface-field px-3 py-2 text-sm"
+          value={form.label}
+          maxLength={LABEL_MAX}
+          onChange={(event) => setForm({ ...form, label: event.target.value })}
+        />
+      </label>
+      <label className="block text-xs font-semibold text-ink-muted">
+        Tone
+        <select
+          className="mt-1 w-full surface-field px-3 py-2 text-sm"
+          value={form.tone}
+          onChange={(event) => setForm({ ...form, tone: event.target.value as PointKeyStateTone })}
+        >
+          {pointKeyStateToneSchema.options.map((tone) => (
+            <option key={tone} value={tone}>
+              {tone}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
+  );
+
+  const wizardProps = {
+    onChange: (values: Record<string, unknown>) => setForm(formWithValues(form, values)),
+    renderStep: () => stateFields,
+    onSubmit: (body: Record<string, unknown>) => saveMutation.mutate(body),
+    onCancel: () => setEditing(null),
+    submitting: saveMutation.isPending,
+    submitError: error,
+    formatProblem: stateProblem,
+  };
 
   return (
     <>
@@ -161,8 +283,16 @@ function StateLabelsCatalog() {
             Add state label
           </button>
         </div>
-        {listQ.isError ? <p className="text-xs text-critical-ink">{apiErrorMessage(listQ.error)}</p> : null}
-        {deleteError ? <p className="text-xs text-critical-ink">{deleteError}</p> : null}
+        {listQ.isError ? (
+          <p role="alert" className="text-xs text-critical-ink">
+            {apiErrorMessage(listQ.error)}
+          </p>
+        ) : null}
+        {deleteError ? (
+          <p role="alert" className="text-xs text-critical-ink">
+            {deleteError}
+          </p>
+        ) : null}
         <table className="min-w-full text-sm">
           <thead>
             <tr className="border-b text-left text-xs uppercase text-ink-muted">
@@ -222,87 +352,47 @@ function StateLabelsCatalog() {
 
       {editing !== null ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
-          <form
+          <div
             role="dialog"
+            aria-modal="true"
             aria-label={dialogName}
             className="max-h-[90vh] w-full max-w-lg overflow-y-auto surface-dialog p-4"
-            onSubmit={submit}
+            onKeyDown={escapeAsCancel}
           >
             <h2 className="font-condensed text-lg font-bold">{dialogName}</h2>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="mt-3">
               {editing === "create" ? (
-                <>
-                  <label className="block text-xs font-semibold text-ink-muted">
-                    Point key
-                    <select
-                      className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                      value={form.pointKey}
-                      onChange={(event) => setForm({ ...form, pointKey: event.target.value })}
-                    >
-                      <option value="">{KEY_ERROR}</option>
-                      {activeKeys.map((key) => (
-                        <option key={key.id} value={key.code}>
-                          {key.code}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-xs font-semibold text-ink-muted">
-                    Value
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      className="mt-1 w-full surface-field px-3 py-2 font-mono text-sm"
-                      value={form.value}
-                      onChange={(event) => setForm({ ...form, value: event.target.value })}
-                    />
-                  </label>
-                </>
-              ) : (
-                <p className="text-xs text-ink-muted sm:col-span-2">
-                  Point key <span className="font-mono">{editing.pointKey}</span> and value{" "}
-                  <span className="font-mono">{editing.value}</span> cannot be changed.
-                </p>
-              )}
-              <label className="block text-xs font-semibold text-ink-muted">
-                Label
-                <input
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.label}
-                  maxLength={LABEL_MAX}
-                  onChange={(event) => setForm({ ...form, label: event.target.value })}
+                <WizardShell
+                  key="create"
+                  {...wizardProps}
+                  entry={wizardEntry("pointKeyState.create")}
+                  params={{}}
+                  values={createValues}
+                  summary={wizardEntry("pointKeyState.create").summary({
+                    body: wizardBody(createValues),
+                    params: {},
+                    targetName: "",
+                    organizationName: "",
+                  })}
                 />
-              </label>
-              <label className="block text-xs font-semibold text-ink-muted">
-                Tone
-                <select
-                  className="mt-1 w-full surface-field px-3 py-2 text-sm"
-                  value={form.tone}
-                  onChange={(event) => setForm({ ...form, tone: event.target.value as PointKeyStateTone })}
-                >
-                  {pointKeyStateToneSchema.options.map((tone) => (
-                    <option key={tone} value={tone}>
-                      {tone}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              ) : (
+                <WizardShell
+                  key={`update-${editing.id}`}
+                  {...wizardProps}
+                  entry={wizardEntry("pointKeyState.update")}
+                  params={{ id: editing.id }}
+                  values={updateValues}
+                  current={{ label: editing.label, tone: editing.tone }}
+                  summary={wizardEntry("pointKeyState.update").summary({
+                    body: wizardBody(updateValues),
+                    params: { id: editing.id },
+                    targetName: rowTitle(editing),
+                    organizationName: "",
+                  })}
+                />
+              )}
             </div>
-            {error ? <p className="mt-3 text-xs text-critical-ink">{error}</p> : null}
-            <div className="mt-4 flex justify-end gap-2">
-              <button type="button" className="surface-button px-3 py-2" onClick={() => setEditing(null)}>
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
-                disabled={saveMutation.isPending}
-                aria-busy={saveMutation.isPending}
-              >
-                {saveMutation.isPending ? "Saving…" : "Save"}
-              </button>
-            </div>
-          </form>
+          </div>
         </div>
       ) : null}
 

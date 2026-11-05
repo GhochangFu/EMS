@@ -92,17 +92,8 @@ export const POINT_KEY_ENTRIES: readonly CatalogEntry[] = [
   },
 ];
 
-// `F4.309` PR 1 (ADR 0088 Amendment 3) lands the state-label routes before their catalog
-// entries; PR 3 (ADR 0099 Amendment 13) moves them to `point-key-states.ts`: `POST` and `PATCH`
-// become `pointKeyState.create` and `.update`, and the `DELETE` stays excluded for good.
-const STATE_LABEL_ENTRY_NEXT =
-  "F4.309 PR 1 lands the route; PR 3 adds the pointKeyState entry (ADR 0099 Amendment 13) and removes this row";
-const STATE_LABEL_NO_DELETE =
-  "a hard DELETE is never in the catalog (decision 3); ADR 0099 Amendment 13 decision 5 keeps it manual";
-
-/** The area's write routes that are not entries: the point keys none since PR 3c; the state labels until `F4.309` PR 3. */
-export const POINT_KEY_PENDING: readonly ExcludedRoute[] = [
-  { method: "POST", path: "/admin/point-key-states", reason: STATE_LABEL_ENTRY_NEXT },
-  { method: "PATCH", path: "/admin/point-key-states/:id", reason: STATE_LABEL_ENTRY_NEXT },
-  { method: "DELETE", path: "/admin/point-key-states/:id", reason: STATE_LABEL_NO_DELETE },
-];
+/**
+ * The area's write routes that are not entries: none since PR 3c. `F4.309` PR 3 (ADR 0099
+ * Amendment 13) moved the state-label rows to `point-key-states.ts` (`POINT_KEY_STATE_PENDING`).
+ */
+export const POINT_KEY_PENDING: readonly ExcludedRoute[] = [];

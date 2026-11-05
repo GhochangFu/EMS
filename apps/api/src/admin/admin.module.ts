@@ -212,6 +212,7 @@ import { UsersService } from "./users/users.service";
   // (`COPILOT_ONBOARDING_SKILL` in `CopilotModule`), never a second copy of its provider tree.
   // F4.277 — the copilot's `list_audit_log` calls `AuditAdminService.list` (the route's own read gate).
   // F4.283 — the copilot's telemetry proposals run `TelemetryProposalCheckService` (the routes' own checks, read-only).
-  exports: [OnboardingService, AuditAdminService, TelemetryProposalCheckService],
+  // F4.309 PR 3 — the copilot's `list_point_key_states` calls `PointKeyStatesAdminService.list` (the route's own gate).
+  exports: [OnboardingService, AuditAdminService, TelemetryProposalCheckService, PointKeyStatesAdminService],
 })
 export class AdminModule {}

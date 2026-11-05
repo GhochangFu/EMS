@@ -93,6 +93,18 @@ export function anAdoptionInvalidatesWhatItWrites(): void {
 }
 
 /**
+ * `F4.309` PR 3 (ADR 0099 Amendment 13) — a confirmed state-label change re-reads the State
+ * Labels page's list and `/vocabularies` (the switching-states legend reads `switchingStates`
+ * there), the two keys the page's own writes refresh (`invalidatePointKeyStateReads`).
+ * Mutation, applied once and seen red: drop `VOCABULARIES` from the create's row.
+ */
+export function theStateLabelEntriesInvalidateTheListAndTheVocabularies(): void {
+  for (const id of ["pointKeyState.create", "pointKeyState.update"]) {
+    expect(invalidationKeysFor(id), id).toEqual([["admin", "point-key-states"], ["vocabularies"]]);
+  }
+}
+
+/**
  * `F3.86` PR 3c — a confirmed asset-group or point-key change re-reads the
  * page's own lists: every key `asset-groups-page.tsx` reads (the groups, and
  * a group's members) starts with `["admin","asset-groups"]`, and every

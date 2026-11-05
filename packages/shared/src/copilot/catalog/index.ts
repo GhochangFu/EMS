@@ -17,6 +17,7 @@ import { OPERATIONS_ENTRIES } from "./operations";
 import { REPORT_ENTRIES, REPORT_PENDING } from "./reports";
 import { ONBOARDING_ENTRIES, ONBOARDING_PENDING } from "./onboarding";
 import { POINT_KEY_ENTRIES, POINT_KEY_PENDING } from "./point-keys";
+import { POINT_KEY_STATE_ENTRIES, POINT_KEY_STATE_PENDING } from "./point-key-states";
 import { RTU_ENTRIES, RTU_PENDING } from "./rtus";
 import { RULE_ENTRIES, RULE_PENDING } from "./rules";
 import { SITE_VIEW_ENTRIES, SITE_VIEW_PENDING } from "./site-views";
@@ -44,6 +45,8 @@ export const COPILOT_CATALOG: readonly CatalogEntry[] = [
   ...ASSET_POINT_ENTRIES,
   ...ASSET_GROUP_ENTRIES,
   ...POINT_KEY_ENTRIES,
+  // `F4.309` PR 3 (ADR 0099 Amendment 13): the state labels, beside the point keys they label.
+  ...POINT_KEY_STATE_ENTRIES,
   ...USER_ENTRIES,
   ...ONBOARDING_ENTRIES,
   ...MIMIC_LAYOUT_ENTRIES,
@@ -121,6 +124,8 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   ...ASSET_POINT_PENDING,
   ...ASSET_GROUP_PENDING,
   ...POINT_KEY_PENDING,
+  // `F4.309` PR 3 (Amendment 13 decision 5): the state-label DELETE stays manual.
+  ...POINT_KEY_STATE_PENDING,
   ...USER_PENDING,
   ...ONBOARDING_PENDING,
   // `F3.87`: the mimic areas, each route pending until its PR.

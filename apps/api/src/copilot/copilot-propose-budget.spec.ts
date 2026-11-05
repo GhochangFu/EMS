@@ -51,8 +51,12 @@ import { proposeHarness } from "./copilot-propose-tools.spec";
  * - ADR 0099 Amendment 12 (proposed; the merge approves): F4.312 PR 2 measured 90,753 over
  *   109 definitions (`propose_assetTemplate_adopt` 788; its id in `fill_step` and `describe_change` 44), under
  *   the bound, so it is unchanged.
+ * - ADR 0099 Amendment 13 (F4.309 PR 3): measured 92,068 over 111 definitions (`propose_pointKeyState_create`
+ *   667, `_update` 554; their ids in `fill_step` and `describe_change` the rest). Over 91,000, so the bound
+ *   follows the release-4 rule above — the measured size rounded up to the next thousand, plus 1,000 —
+ *   to 94,000; the owner confirms it with the PR (no amendment names a budget).
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();
-  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(91_000);
+  expect(JSON.stringify(h.tools.registry.definitions).length).toBeLessThan(94_000);
 }

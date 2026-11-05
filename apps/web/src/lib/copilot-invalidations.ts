@@ -29,6 +29,8 @@ const LOCATIONS: QueryKey = ["admin", "locations"];
 const SITE_VIEW: QueryKey = ["control-room", "site-view"];
 // `F3.86` PR 3c: the point-key page and the two pickers that list the catalog.
 const POINT_KEYS: QueryKey = ["admin", "point-keys"];
+/** `F4.309` PR 3: the State Labels list (`api/admin/point-key-states.ts`); the legend reads `VOCABULARIES`. */
+const POINT_KEY_STATES: QueryKey = ["admin", "point-key-states"];
 // `F3.86` PR 3a: the summaries the breadcrumb and the RTU and asset pages name (`admin-breadcrumb.tsx`),
 // and the RTU lists (`rtus-page.tsx`, `hierarchy-filter-bar.tsx`, `assets-page.tsx`).
 const LOCATION_SUMMARY: QueryKey = ["admin", "location-summary"];
@@ -163,6 +165,9 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "pointKey.update": [POINT_KEYS],
   "pointKey.deactivate": [POINT_KEYS],
   "pointKey.reactivate": [POINT_KEYS],
+  // `F4.309` PR 3 (ADR 0099 Amendment 13): the page's list and `/vocabularies`' `switchingStates` (the legend).
+  "pointKeyState.create": [POINT_KEY_STATES, VOCABULARIES],
+  "pointKeyState.update": [POINT_KEY_STATES, VOCABULARIES],
   // `F3.24b` (ADR 0103) — a discovery writes only the draft's `_discovery`, so only the session reads go stale.
   "onboarding.discovery": [["onboarding"]],
   // `F3.86` PR 6 — an onboarding commit creates the site, its RTUs, assets, mappings, groups and templates.

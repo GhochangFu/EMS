@@ -42,6 +42,7 @@ import { type BmsTx, withTenant } from "../database/tenant-context";
 import { resolveAdoptTarget } from "./copilot-adopt-targets";
 import { assetKindAdmits, findCalcPointBatch, mayWriteCalcPointBatch } from "./copilot-calc-point-targets";
 import { findRuleBatch } from "./copilot-rule-targets";
+import { pointKeyStateName, readPointKeyState, seededAtPropose, seededPointKeyStateRefusal } from "./copilot-point-key-state-targets";
 import { lifecycleStatusOf, refKindOf } from "./copilot-target-kinds";
 import { CopilotTargetRefusal, mayWriteTelemetry, telemetryRowRefusal } from "./copilot-telemetry-targets";
 // prettier-ignore
@@ -160,7 +161,7 @@ type Scope = { locationId: string | null; assetGroupId: string | null; assetId: 
 type RowKind = Exclude<
   CatalogEntry["target"]["kind"],
   "organization" | "parent" | "fleet" | "vocabulary" | "telemetry" | "onboardingSession" | "workOrderBatch" | "ruleBatch" | "calcPointBatch"
-  | "assetTemplateAdopt" | UserKind
+  | "assetTemplateAdopt" | "pointKeyState" | UserKind
 >;
 type UserKind = "user" | "userGrantAdd" | "userGrant";
 type UserTarget = Extract<CatalogEntry["target"], { kind: UserKind }>;
@@ -234,12 +235,16 @@ export class CopilotTargetResolver implements CopilotTargets {
       const asked: UserTarget = mode === "record" && target.kind === "userGrantAdd" ? { kind: "user", param: target.param } : target;
       found = await this.findUserTarget(asked, params, body, user, allowedOrganizationIds).catch(() => null);
       if (found !== null && !allowedOrganizationIds.includes(found.organizationId)) found = null;
-    } else if (target.kind === "fleet" || target.kind === "pointKey" || target.kind === "vocabulary" || target.kind === "telemetry") {
+    } else if (target.kind === "fleet" || target.kind === "pointKey" || target.kind === "pointKeyState" || target.kind === "vocabulary" || target.kind === "telemetry") {
       // Ruling Q1: a row with no organization lives in the conversation's bound organization.
       if (boundOrganizationId === null || !allowedOrganizationIds.includes(boundOrganizationId)) return null;
       const organizationName = await this.organizationName(boundOrganizationId);
       if (organizationName === null) return null;
-      if (target.kind === "fleet" || target.kind === "telemetry") {
+      // `F4.309` PR 3 (Amendment 13 decision 1): a state label is "<key> = <value> (<label>)"; an unknown id is refused.
+      const state = target.kind === "pointKeyState" ? await readPointKeyState(this.tenantDb, params[target.param]) : null;
+      if (target.kind === "pointKeyState") {
+        found = state === null ? null : { organizationId: boundOrganizationId, name: pointKeyStateName(state) };
+      } else if (target.kind === "fleet" || target.kind === "telemetry") {
         found = { organizationId: boundOrganizationId, name: organizationName };
       } else if (target.kind === "vocabulary") {
         // `F4.282` (Amendment 8 D2): an unknown code is refused before the gate is asked.
@@ -256,6 +261,9 @@ export class CopilotTargetResolver implements CopilotTargets {
       // 2026-10-25, Q2) every row's asset, as an asset target's, refused with its row numbers before the card.
       const gate = target.kind === "telemetry" ? () => mayWriteTelemetry(this.access, user) : () => this.mayManageFleet(user);
       if (found !== null && !(await this.safely(gate))) found = null;
+      // Ruling Q2 (Amendment 13): a seeded row or pair, after the gate, is refused at propose with its sentence.
+      const seeded = found === null ? null : seededPointKeyStateRefusal(entry, state, body);
+      if (seeded !== null) found = seededAtPropose(seeded, mode);
       const rowsIn = found !== null && target.kind === "telemetry" && mode === "propose" ? boundOrganizationId : null;
       const refusal = rowsIn === null ? null : await telemetryRowRefusal(this.tenantDb, this.access, user, body, allowedOrganizationIds, rowsIn);
       if (refusal !== null) throw new CopilotTargetRefusal(refusal);

@@ -13,11 +13,14 @@ import * as systemStatusApi from "../../api/system-status";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ApiError } from "../../lib/api-error";
 import type { AuthUser } from "../../stores/auth-store";
+import { useWizardStore } from "../../stores/wizard-store";
 import { PointKeyStatesAdminPage } from "./point-key-states-page";
 
 /**
  * `F4.309` T11 (ADR 0088 Amendment 3 decisions 1–4, plan C14) — the State Labels admin page,
- * rendered (ADR 0042). Assertions live here; `point-key-states-page.test.tsx` is the Vitest entry
+ * rendered (ADR 0042). `F4.309` PR 3 (ADR 0099 Amendment 13, plan T15b): Add and Edit are the
+ * `pointKeyState.create` / `.update` wizards — the State step, then Next to Review, then Submit —
+ * so the PR 2 form's claims ("Save", "Saving…", a refusal on Save) are rewritten for them. Assertions live here; `point-key-states-page.test.tsx` is the Vitest entry
  * point and carries the `@vitest-environment jsdom` docblock.
  *
  * Every function of `api/admin/point-key-states` is stubbed, and so are `fetchAdminPointKeys`
@@ -107,6 +110,17 @@ async function openAdd(user: ReturnType<typeof userEvent.setup>): Promise<HTMLEl
   return dialog;
 }
 
+/** The wizard's two moves: Next from the State step, then Submit on Review. */
+async function nextThenSubmit(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement): Promise<void> {
+  await user.click(within(dialog).getByRole("button", { name: "Next" }));
+  await user.click(await within(dialog).findByRole("button", { name: "Submit" }));
+}
+
+async function openEdit(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement> {
+  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: EDIT_NAME }));
+  return screen.findByRole("dialog", { name: "Edit state label" });
+}
+
 async function fillAdd(
   user: ReturnType<typeof userEvent.setup>,
   dialog: HTMLElement,
@@ -173,7 +187,7 @@ export async function addPostsTheParsedValueAndTheTrimmedLabel(): Promise<void> 
   renderPage(admin);
   const dialog = await openAdd(user);
   await fillAdd(user, dialog, { value: "-0.5", label: "  RACKED OUT  ", tone: "tripped" });
-  await user.click(within(dialog).getByRole("button", { name: "Save" }));
+  await nextThenSubmit(user, dialog);
   await waitFor(() => expect(api.createAdminPointKeyState).toHaveBeenCalledTimes(1));
   expect(api.createAdminPointKeyState).toHaveBeenCalledWith({
     pointKey: "isolator_pos",
@@ -183,7 +197,10 @@ export async function addPostsTheParsedValueAndTheTrimmedLabel(): Promise<void> 
   });
 }
 
-/** A value that is not a finite decimal number is refused before any request: text, blank, Infinity, hex. */
+/**
+ * A value that is not a finite decimal number stays text, so the State step refuses it on Next
+ * (an alert) and the wizard never reaches Review: text, blank, Infinity, hex.
+ */
 export async function aValueThatIsNotANumberIsRefused(): Promise<void> {
   const user = userEvent.setup();
   renderPage(admin);
@@ -192,10 +209,37 @@ export async function aValueThatIsNotANumberIsRefused(): Promise<void> {
   const value = within(dialog).getByLabelText("Value");
   for (const text of ["two", " ", "Infinity", "0x1"]) {
     await user.clear(value);
-    await user.type(value, text);
-    await user.click(within(dialog).getByRole("button", { name: "Save" }));
-    expect(within(dialog).getByText("Value must be a number")).toBeInTheDocument();
+    if (text.trim() !== "") await user.type(value, text);
+    await user.click(within(dialog).getByRole("button", { name: "Next" }));
+    expect(within(dialog).getByRole("alert").textContent).toContain("Value must be a number");
+    expect(within(dialog).queryByRole("button", { name: "Submit" })).toBeNull();
   }
+  expect(api.createAdminPointKeyState).toHaveBeenCalledTimes(0);
+}
+
+/** A blank label (spaces only) is refused on Next, in the page's words, before any request. */
+export async function aBlankLabelIsRefused(): Promise<void> {
+  const user = userEvent.setup();
+  renderPage(admin);
+  const dialog = await openAdd(user);
+  await fillAdd(user, dialog, { value: "3", label: "   " });
+  await user.click(within(dialog).getByRole("button", { name: "Next" }));
+  expect(within(dialog).getByRole("alert").textContent).toContain("Label must be 1 to 32 characters");
+  expect(within(dialog).queryByRole("button", { name: "Submit" })).toBeNull();
+  expect(api.createAdminPointKeyState).toHaveBeenCalledTimes(0);
+}
+
+/** No point key chosen is refused on Next, in the page's words, before any request. */
+export async function aMissingKeyIsRefused(): Promise<void> {
+  const user = userEvent.setup();
+  renderPage(admin);
+  const dialog = await openAdd(user);
+  await user.type(within(dialog).getByLabelText("Value"), "3");
+  await user.type(within(dialog).getByLabelText("Label"), "THREE");
+  await user.click(within(dialog).getByRole("button", { name: "Next" }));
+  const alert = within(dialog).getByRole("alert");
+  expect(alert.textContent).toContain("Choose a point key");
+  expect(alert.textContent).not.toContain("Value must be a number");
   expect(api.createAdminPointKeyState).toHaveBeenCalledTimes(0);
 }
 
@@ -213,8 +257,7 @@ export async function theLabelStopsAtThirtyTwoCharacters(): Promise<void> {
 export async function editSendsLabelAndToneOnly(): Promise<void> {
   const user = userEvent.setup();
   renderPage(admin);
-  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: EDIT_NAME }));
-  const dialog = await screen.findByRole("dialog", { name: "Edit state label" });
+  const dialog = await openEdit(user);
   expect(within(dialog).queryByLabelText("Point key")).toBeNull();
   expect(within(dialog).queryByLabelText("Value")).toBeNull();
   expect(dialog.textContent).toContain(`${CUSTOM.pointKey}`);
@@ -223,9 +266,92 @@ export async function editSendsLabelAndToneOnly(): Promise<void> {
   await user.clear(label);
   await user.type(label, " EARTH ");
   await user.selectOptions(within(dialog).getByLabelText("Tone"), "shut");
-  await user.click(within(dialog).getByRole("button", { name: "Save" }));
+  await nextThenSubmit(user, dialog);
   await waitFor(() => expect(api.updateAdminPointKeyState).toHaveBeenCalledTimes(1));
   expect(api.updateAdminPointKeyState).toHaveBeenCalledWith(CUSTOM.id, { label: "EARTH", tone: "shut" });
+}
+
+/** The edit's Review names the row as the copilot's card does, says fleet-wide, and shows the label now. */
+export async function theEditReviewNamesTheRow(): Promise<void> {
+  const user = userEvent.setup();
+  renderPage(admin);
+  const dialog = await openEdit(user);
+  const label = within(dialog).getByLabelText("Label");
+  await user.clear(label);
+  await user.type(label, "EARTH");
+  await user.click(within(dialog).getByRole("button", { name: "Next" }));
+  const review = await within(dialog).findByRole("region", { name: "Edit a state label" });
+  expect(review.textContent).toContain("Change the fleet-wide state label isolator_pos = 2.5 (EARTHED)");
+  expect(review.textContent).toContain('label to "EARTH"');
+  // `current`: the label now beside the new one.
+  expect(within(review).getByText("EARTHED")).toBeInTheDocument();
+  expect(api.updateAdminPointKeyState).toHaveBeenCalledTimes(0);
+}
+
+/** A copilot `fill_step` for the open edit lands in its inputs (`formWithValues`). */
+export async function aCopilotFillLandsInTheEditForm(): Promise<void> {
+  const user = userEvent.setup();
+  renderPage(admin);
+  const dialog = await openEdit(user);
+  act(() =>
+    useWizardStore.getState().receiveFill(
+      { catalogId: "pointKeyState.update", params: { id: CUSTOM.id }, stepId: "state", values: { label: "FILLED", tone: "shut" } },
+      null,
+    ),
+  );
+  await waitFor(() => expect((within(dialog).getByLabelText("Label") as HTMLInputElement).value).toBe("FILLED"));
+  expect((within(dialog).getByLabelText("Tone") as HTMLSelectElement).value).toBe("shut");
+}
+
+/** A fill of the create's number lands in the Value text, and its key in the picker. */
+export async function aCopilotFillOfTheCreateLandsAsText(): Promise<void> {
+  const user = userEvent.setup();
+  renderPage(admin);
+  const dialog = await openAdd(user);
+  act(() =>
+    useWizardStore.getState().receiveFill(
+      { catalogId: "pointKeyState.create", params: {}, stepId: "state", values: { pointKey: "isolator_pos", value: 7.5, label: "SEVEN" } },
+      null,
+    ),
+  );
+  await waitFor(() => expect((within(dialog).getByLabelText("Value") as HTMLInputElement).value).toBe("7.5"));
+  expect((within(dialog).getByLabelText("Point key") as HTMLSelectElement).value).toBe("isolator_pos");
+  expect((within(dialog).getByLabelText("Label") as HTMLInputElement).value).toBe("SEVEN");
+}
+
+/** The dialog opens with focus on its first field: the key picker on Add, the label on Edit. */
+export async function theDialogFocusesItsFirstField(): Promise<void> {
+  const user = userEvent.setup();
+  renderPage(admin);
+  const add = await openAdd(user);
+  expect(add).toHaveAttribute("aria-modal", "true");
+  expect(document.activeElement).toBe(within(add).getByLabelText("Point key"));
+  await user.click(within(add).getByRole("button", { name: "Cancel" }));
+  const edit = await openEdit(user);
+  expect(document.activeElement).toBe(within(edit).getByLabelText("Label"));
+}
+
+/** Escape is the wizard's Cancel: a clean wizard closes, and nothing is sent. */
+export async function escapeClosesACleanWizard(): Promise<void> {
+  const user = userEvent.setup();
+  renderPage(admin);
+  await openEdit(user);
+  await user.keyboard("{Escape}");
+  expect(screen.queryByRole("dialog", { name: "Edit state label" })).toBeNull();
+  expect(api.updateAdminPointKeyState).toHaveBeenCalledTimes(0);
+}
+
+/** Escape on a changed wizard asks first, as Cancel does; a second Escape stays in the wizard. */
+export async function escapeOnAChangedWizardAsksFirst(): Promise<void> {
+  const user = userEvent.setup();
+  renderPage(admin);
+  const dialog = await openEdit(user);
+  await user.type(within(dialog).getByLabelText("Label"), "X");
+  await user.keyboard("{Escape}");
+  expect(within(dialog).getByRole("alertdialog", { name: "Leave the wizard" })).toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  expect(within(dialog).queryByRole("alertdialog")).toBeNull();
+  expect(screen.getByRole("dialog", { name: "Edit state label" })).toBeInTheDocument();
 }
 
 /** Delete asks first: nothing is sent until the confirm, then the row's id is. */
@@ -262,9 +388,8 @@ export async function aSaveInvalidatesTheListAndTheVocabularies(): Promise<void>
   const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
   const user = userEvent.setup();
   renderPage(admin);
-  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: EDIT_NAME }));
-  const dialog = await screen.findByRole("dialog", { name: "Edit state label" });
-  await user.click(within(dialog).getByRole("button", { name: "Save" }));
+  const dialog = await openEdit(user);
+  await nextThenSubmit(user, dialog);
   await waitFor(() => expect(invalidatedKeys(invalidate)).toContainEqual(["admin", "point-key-states"]));
   expect(invalidatedKeys(invalidate)).toContainEqual(["vocabularies"]);
 }
@@ -280,7 +405,7 @@ export async function aDeleteInvalidatesTheListAndTheVocabularies(): Promise<voi
   expect(invalidatedKeys(invalidate)).toContainEqual(["vocabularies"]);
 }
 
-/** A 409 on save shows the server's sentence in the form, not the envelope; the form stays open. */
+/** A 409 on Submit shows the server's sentence on Review as an alert, not the envelope; the wizard stays open. */
 export async function aRefusedSaveShowsTheSentence(): Promise<void> {
   const user = userEvent.setup();
   renderPage(admin);
@@ -289,31 +414,32 @@ export async function aRefusedSaveShowsTheSentence(): Promise<void> {
   );
   const dialog = await openAdd(user);
   await fillAdd(user, dialog, { value: "3", label: "TEST" });
-  await user.click(within(dialog).getByRole("button", { name: "Save" }));
-  const banner = await within(dialog).findByText(/A state label for isolator_pos = 3 already exists/);
+  await nextThenSubmit(user, dialog);
+  const banner = await within(dialog).findByRole("alert");
+  expect(banner.textContent).toContain("A state label for isolator_pos = 3 already exists");
   expect(banner.textContent).not.toContain('{"');
 }
 
-/** A 400 on delete shows the server's sentence on the page, not the envelope. */
+/** A 400 on delete shows the server's sentence on the page as an alert, not the envelope. */
 export async function aRefusedDeleteShowsTheSentence(): Promise<void> {
   const user = userEvent.setup();
   renderPage(admin);
   vi.mocked(api.deleteAdminPointKeyState).mockImplementation(refusedWith(400, "That state label cannot be deleted"));
   await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: DELETE_NAME }));
   await user.click(await screen.findByRole("button", { name: "Delete state label" }));
-  const banner = await screen.findByText(/That state label cannot be deleted/);
+  const banner = await screen.findByRole("alert");
+  expect(banner.textContent).toContain("That state label cannot be deleted");
   expect(banner.textContent).not.toContain('{"');
 }
 
-/** While a save is in flight its button is named "Saving…", busy and disabled (`F4.164` / `F4.168`). */
-export async function aPendingSaveNamesItself(): Promise<void> {
+/** While a submit is in flight its button is named "Submitting…", busy and disabled (`F4.164` / `F4.168`). */
+export async function aPendingSubmitNamesItself(): Promise<void> {
   const user = userEvent.setup();
   renderPage(admin);
   vi.mocked(api.updateAdminPointKeyState).mockImplementation(() => new Promise(() => undefined));
-  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: EDIT_NAME }));
-  const dialog = await screen.findByRole("dialog", { name: "Edit state label" });
-  await user.click(within(dialog).getByRole("button", { name: "Save" }));
-  const saving = await within(dialog).findByRole("button", { name: "Saving…" });
+  const dialog = await openEdit(user);
+  await nextThenSubmit(user, dialog);
+  const saving = await within(dialog).findByRole("button", { name: "Submitting…" });
   expect(saving).toHaveAttribute("aria-busy", "true");
   expect(saving).toBeDisabled();
 }
