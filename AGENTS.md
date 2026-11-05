@@ -1062,6 +1062,25 @@
 > third being `calcPoint.delete` on a template-less asset only. Adopting an
 > unpinned asset onto a template version (ADR 0109 ruling 1) is not built;
 > it is `F4.312`.
+> And **a per-unit point list on a mimic layout** (**ADR 0081 Amendment 1**,
+> #1006; row `F4.307`; PR 1 #1011, PR 2 #1013, PR 3 #1016; this sweep merges
+> last). A layout unit with a role may list up to `MIMIC_HEADLINE_POINTS` (3)
+> point keys, in order, in the new tenant table
+> `bms.mimic_layout_node_points` (migration `0124`: forced RLS whose
+> `tenant_isolation` checks the own column **and** the parent node in USING
+> and WITH CHECK; units only, held by a `(node_id, node_kind)` foreign key to
+> the nodes' new `UNIQUE (id, kind)` and a `CHECK`; `point_key` →
+> `bms.point_keys(code)`; no GRANT). `pointKeys` rides the layout read and
+> write contracts and the copilot's layout write (replace-all, so a body
+> without it clears the list); an unknown or retired key is a 400 "Unknown
+> point key" that never echoes the code, except a key the stored layout
+> already lists. The `mimic-nodes` resolver answers the listed keys per node,
+> fan-out members too, in a third arm of its statement 3 (still five
+> statements, every table filtered on `organization_id`); a key the asset
+> lacks or holds inactive answers its catalog name and `latest: null` ("—"),
+> and the unit's freshness still follows its asset's headline points. A
+> preset keeps the headline rank. The inspector's **Points** block picks,
+> orders and removes the list from the active catalog.
 > And **the tool-calling onboarding agent loop** (**ADR 0090** with
 > **Amendment 1**; row `F3.21`, merged 2026-10-03 in #705, squash `9ff272e1`;
 > the ADR in #702 and the amendment in #703). It amends ADR 0011 decision 1:
