@@ -65,3 +65,9 @@ describe("work-order and maintenance-schedule items name the asset's RTU and loc
   it("maintenanceScheduleItemSchema refuses a row with no assetLocationName", () => spec.assertScheduleRequiresAssetLocationName());
   it("maintenanceScheduleItemSchema accepts null RTU and location names", () => spec.assertScheduleAcceptsNullParts());
 });
+
+describe("rule rows name the asset's RTU and location (F4.316 PR 4b, ADR 0111)", () => {
+  it("ruleListItemSchema refuses a row with no assetRtuName", () => spec.assertRuleRequiresAssetRtuName());
+  it("ruleListItemSchema refuses a row with no assetLocationName", () => spec.assertRuleRequiresAssetLocationName());
+  it("ruleListItemSchema accepts null RTU and location names", () => spec.assertRuleAcceptsNullParts());
+});

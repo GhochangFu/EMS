@@ -6,6 +6,7 @@ import {
   runAdminLocationDtoRequiresTypeLabelTest,
   runAssetInstantiationResultDashboardFieldsTests,
   runAssetInstantiationResultSeededRulesTests,
+  runSeededRuleAssetLabelTests,
   runSeededRuleDriftVerdictTests,
   runSeededRuleValuesPhilosophyRowTests,
 } from "./admin.spec";
@@ -46,5 +47,11 @@ describe("F4.162 — adminLocationDtoSchema.typeLabel (ADR 0077 Amendment 1, OQ2
 describe("F2.10 — adminLocationDtoSchema.parentId (ADR 0098)", () => {
   it("accepts null and a string parentId, and refuses a row without it", () => {
     runAdminLocationDtoParentIdTests();
+  });
+});
+
+describe("F4.316 PR 4b — the seeded-rule row names its asset's RTU and location (ADR 0111)", () => {
+  it("requires both fields (nullable) on seededRuleDtoSchema", () => {
+    runSeededRuleAssetLabelTests();
   });
 });

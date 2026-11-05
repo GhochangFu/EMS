@@ -48,8 +48,6 @@ const contractsDir = join(
  */
 const NOT_YET_WIDENED: readonly string[] = [
   "generated-site-view.ts#generatedSiteAssetSchema", // removed by PR 3b (code field is `code`, Q1)
-  "operations.ts#ruleListItemSchema", // removed by PR 4b
-  "seeded-rules.ts#seededRuleDtoSchema", // removed by PR 4b
   "admin.ts#adminAssetPointDtoSchema", // removed by PR 5
   "admin.ts#adminAssetGroupMemberDtoSchema", // removed by PR 5
   "admin.ts#calcParameterDtoSchema", // removed by PR 5

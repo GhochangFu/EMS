@@ -121,6 +121,8 @@ const validSeededRule = {
   enabled: true,
   assetId: "11111111-1111-4111-8111-111111111111",
   assetCode: "CR-BATT-1",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
   assetName: "Battery Charger 1",
   locationId: "22222222-2222-4222-8222-222222222222",
   sourceTemplateId: "33333333-3333-4333-8333-333333333333",
@@ -144,6 +146,19 @@ export function runSeededRuleDriftVerdictTests(): void {
     seededRuleDtoSchema,
     { ...validSeededRule, current: null },
     "current null — the alarm code no longer exists in the published version",
+  );
+}
+
+/** `F4.316` PR 4b (ADR 0111): the seeded-rule row names its asset's RTU and location; both required-nullable. */
+export function runSeededRuleAssetLabelTests(): void {
+  for (const key of ["assetRtuName", "assetLocationName"] as const) {
+    const { [key]: _dropped, ...without } = validSeededRule;
+    expectRejects(seededRuleDtoSchema, without, `a seeded rule row with no ${key}`);
+  }
+  expectAccepts(
+    seededRuleDtoSchema,
+    { ...validSeededRule, assetRtuName: null, assetLocationName: null },
+    "null RTU and location names",
   );
 }
 
