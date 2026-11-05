@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 
 import {
   allPointsExpandsTheCard,
+  cardAriaLabelKeepsCodeAndName,
   cardLinksToTheAssetHistory,
+  cardNamesItsRtu,
+  rtuLessCardNamesItsLocation,
   cardShowsFourRows,
   cleanupView,
   domainHeadingsInDtoOrder,
@@ -187,5 +190,17 @@ describe("F3.68 GeneratedSiteView", () => {
 
   it("F4.297 links each card to its asset history page", async () => {
     await cardLinksToTheAssetHistory();
+  });
+
+  it("F4.316 names the RTU after the code on the card", async () => {
+    await cardNamesItsRtu();
+  });
+
+  it("F4.316 names the location on an RTU-less card", async () => {
+    await rtuLessCardNamesItsLocation();
+  });
+
+  it("F4.316 keeps the card's aria-label as code and name", async () => {
+    await cardAriaLabelKeepsCodeAndName();
   });
 });

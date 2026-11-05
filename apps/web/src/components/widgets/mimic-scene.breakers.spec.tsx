@@ -49,6 +49,8 @@ function asset(n: number, code: string): GeneratedSiteAssetDto {
     id: assetId(n),
     code,
     name: code,
+    assetRtuName: null,
+    assetLocationName: null,
     domain: "electrical",
     latestTelemetryAt: null,
     freshness: "live",

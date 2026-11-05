@@ -7,6 +7,7 @@ import {
   clickingARowOpensThePanelForThatRow,
   anEmptyFilterResultSaysSo,
   columnsMapToTheRow,
+  theCodeCellNamesWhereTheAssetIs,
   emptyDashboardsSentenceDependsOnTemplateId,
   filtersNarrowTheTable,
   panelCarriesNoWriteAffordance,
@@ -74,5 +75,9 @@ describe("F3.31 assets browser page", () => {
 
   it("F4.297 - the panel links to the asset history page", async () => {
     await panelLinksToTheAssetHistory();
+  });
+
+  it("F4.316 — the Code cell names the RTU, else the location", async () => {
+    await theCodeCellNamesWhereTheAssetIs();
   });
 });

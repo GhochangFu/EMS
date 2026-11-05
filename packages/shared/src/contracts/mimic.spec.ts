@@ -30,6 +30,8 @@ const assignedNode = {
     id: ASSET_ID,
     code: "WTR-WTP-01",
     name: "Water treatment plant",
+    assetRtuName: null,
+    assetLocationName: null,
     domain: "water",
     latestTelemetryAt: "2026-09-28T10:00:00.000Z",
     freshness: "live",

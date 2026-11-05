@@ -81,6 +81,8 @@ function ahu(latestAgoMs: number): GeneratedSiteAssetDto {
     id: AHU_ID,
     code: "AHU-01",
     name: "Air handler one",
+    assetRtuName: "Chiller RTU",
+    assetLocationName: "Plant B",
     domain: "hvac",
     latestTelemetryAt: isoAgo(latestAgoMs),
     freshness: "live",
@@ -100,6 +102,8 @@ function pcc(): GeneratedSiteAssetDto {
     id: PCC_ID,
     code: "PCC-01",
     name: "Power control centre",
+    assetRtuName: null,
+    assetLocationName: "Plant B",
     domain: "electrical",
     latestTelemetryAt: null,
     freshness: "none",
@@ -305,6 +309,29 @@ export async function cardLinksToTheAssetHistory(): Promise<void> {
   expect(pcc).toHaveAttribute("href", `/asset-history/${PCC_ID}`);
 }
 
+/** F4.316 — an asset under an RTU prints `· <RTU name>` after its bold code, never truncated. */
+export async function cardNamesItsRtu(): Promise<void> {
+  renderView();
+  await screen.findByText("AHU-01");
+  const where = within(card("AHU-01")).getByText("· Chiller RTU");
+  expect(where.className).not.toContain("truncate");
+  expect(within(card("AHU-01")).getByText("AHU-01").className).toContain("font-bold");
+}
+
+/** F4.316 — an RTU-less asset prints `· <location name>`. */
+export async function rtuLessCardNamesItsLocation(): Promise<void> {
+  renderView();
+  await screen.findByText("PCC-01");
+  expect(within(card("PCC-01")).getByText("· Plant B")).toBeInTheDocument();
+}
+
+/** F4.316 — the card's accessible name stays `code name`. */
+export async function cardAriaLabelKeepsCodeAndName(): Promise<void> {
+  renderView();
+  await screen.findByText("AHU-01");
+  expect(screen.getByRole("article", { name: "AHU-01 Air handler one" })).toBeInTheDocument();
+}
+
 /** W2b — "All points" expands the card inline to every row (OQ2). */
 export async function allPointsExpandsTheCard(): Promise<void> {
   renderView();
@@ -475,6 +502,8 @@ function rowAsset(ageMs: number): GeneratedSiteAssetDto {
     id: ROW_ASSET_ID,
     code: "ROW-01",
     name: "Row asset",
+    assetRtuName: null,
+    assetLocationName: null,
     domain: "electrical",
     latestTelemetryAt: isoAgo(ageMs),
     freshness: ageMs > 25_000 ? "stale" : "live",
@@ -644,6 +673,8 @@ function mixedAgeView(): GeneratedSiteViewDto {
             id: ROW_ASSET_ID,
             code: "ROW-01",
             name: "Row asset",
+            assetRtuName: null,
+            assetLocationName: null,
             domain: "electrical",
             latestTelemetryAt: isoAgo(5_000),
             freshness: "live",

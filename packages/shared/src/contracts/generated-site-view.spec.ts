@@ -51,6 +51,8 @@ const validAsset = {
   id: "11111111-1111-4111-8111-111111111111",
   code: "UPS-1",
   name: "UPS 1",
+  assetRtuName: null,
+  assetLocationName: null,
   domain: "electrical",
   latestTelemetryAt: "2026-09-25T10:00:00.000Z",
   freshness: "live",

@@ -14,6 +14,7 @@ import { fetchAdminLocationSummary } from "../../api/admin/locations";
 import { fetchAdminRtuSummary } from "../../api/admin/rtus";
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import { defaultDomainCode } from "../../lib/vocabulary";
+import { AssetWhere } from "../../components/assets/asset-where";
 import { ActiveFilterBar } from "../../components/admin/active-filter-bar";
 import { AssetStatusWizard } from "../../components/admin/asset-status-wizard";
 import { AssetWizard, emptyAssetForm, type AssetForm } from "../../components/admin/asset-wizard";
@@ -284,7 +285,10 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
                     onChange={(event) => toggleRow(item.id, event.target.checked)}
                   />
                 </td>
-                <td className="px-2 py-2 font-mono">{item.code}</td>
+                <td className="px-2 py-2 font-mono">
+                  {item.code}
+                  <AssetWhere code={item.code} rtuName={item.rtuDisplayName} locationName={item.locationName} />
+                </td>
                 <td className="px-2 py-2 font-semibold text-accent-strong">{item.name}</td>
                 <td className="px-2 py-2">{item.locationName}</td>
                 <td className="px-2 py-2">{item.rtuDisplayName}</td>

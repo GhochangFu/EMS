@@ -34,6 +34,7 @@ import {
   assertSixUnassignedNodesAreNull,
   assertTopAlarmCarriesTheVocabularyToneAndLabel,
   assertTopAlarmIsTheMostSevere,
+  assertNodeAssetCarriesRtuAndLocationNames,
   assertUnassignedNodesHaveNoTopAlarm,
   assertUnreadableWtpIsUnassigned,
   assertWtpAndRoBothShowExactlyThreePoints,
@@ -70,6 +71,7 @@ describe.skipIf(!connectionString)("F3.32 — MimicNodesService", () => {
   const rolledBack = (fn: (client: pg.PoolClient) => Promise<void>) => () => inRolledBackTransaction(fleetPool, fn);
 
   it("M1 the wtp node counts its one open alarm, not the cleared one", rolledBack(assertWtpCountsOneOpenAlarm), 60_000);
+  it("F4.316 a node asset carries its RTU and location names", rolledBack(assertNodeAssetCarriesRtuAndLocationNames), 60_000);
   it(
     "M2 the wtp node shows three of four points, rank ASC NULLS LAST then key",
     rolledBack(assertWtpShowsTopThreeInRankOrder),

@@ -8,6 +8,7 @@ import {
   AssetImagesRow,
   AssetImagesToggleButton,
 } from "../assets/asset-images-row-toggle";
+import { AssetWhere } from "../assets/asset-where";
 import { AssetHistoryLink } from "../assets/asset-history-link";
 import { KpiTile } from "../kpi-tile";
 import { SectionCard } from "../section-card";
@@ -15,6 +16,8 @@ import { StatusPill } from "../status-pill";
 
 type SiteAssetsViewProps = {
   locationId: string;
+  /** The site's own name — the label's `where` for an asset with no RTU (F4.316, ADR 0111). */
+  siteName: string;
 };
 
 type LocationAssetRow = LocationDashboardDto["assets"]["items"][number];
@@ -119,7 +122,7 @@ function formatTime(value: string | null): string {
  * not move — the site page owns them. The one prose change is the Access
  * denied link (OQ8).
  */
-export function SiteAssetsView({ locationId }: SiteAssetsViewProps) {
+export function SiteAssetsView({ locationId, siteName }: SiteAssetsViewProps) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<(typeof pageSizeOptions)[number]>(10);
   const [rtuFilter, setRtuFilter] = useState<string>("all");
@@ -358,6 +361,7 @@ export function SiteAssetsView({ locationId }: SiteAssetsViewProps) {
                             {asset.code}{" "}
                             <AssetHistoryLink assetId={asset.id} code={asset.code} />
                           </div>
+                          <AssetWhere code={asset.code} rtuName={asset.rtuDisplayName} locationName={siteName} />
                           <div className="mt-1 text-[11px] uppercase tracking-wide text-ink-muted">
                             {asset.domain}
                           </div>

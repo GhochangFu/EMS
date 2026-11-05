@@ -35,6 +35,10 @@ export const generatedSiteAssetSchema = z.object({
   id: z.string().uuid(),
   code: z.string(),
   name: z.string(),
+  /** F4.316 / ADR 0111 — the asset's RTU display name (null when it has no RTU). */
+  assetRtuName: z.string().nullable(),
+  /** F4.316 / ADR 0111 — the asset's location name. */
+  assetLocationName: z.string().nullable(),
   domain: z.string(),
   latestTelemetryAt: z.string().nullable(),
   freshness: z.enum(["live", "stale", "none"]),

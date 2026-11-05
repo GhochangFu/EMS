@@ -881,3 +881,27 @@ export async function assertForeignStampedTabResolvesAsNoGroup(client: pg.PoolCl
     wtp: [null, site.wtpA],
   });
 }
+
+/** F4.316 — a node's asset carries its RTU's display name; the RTU-less twin (`ro`) carries null. Both carry the location name. */
+export async function assertNodeAssetCarriesRtuAndLocationNames(client: pg.PoolClient): Promise<void> {
+  const train = await seedTrain(client);
+  const loc = await one<{ organization_id: string; location_id: string }>(
+    client,
+    "SELECT organization_id, location_id FROM bms.assets WHERE id = $1",
+    [train.wtpId],
+    "the wtp asset's site",
+  );
+  const rtu = await one<{ id: string }>(
+    client,
+    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type, ingest_enabled, active)
+     VALUES ($1, $2, $3, 'F4.316 mimic RTU', 'simulated', false, true) RETURNING id`,
+    [loc.organization_id, loc.location_id, `F4316-${train.wtpId.slice(0, 8)}`],
+    "an RTU",
+  );
+  await client.query("UPDATE bms.assets SET rtu_id = $1 WHERE id = $2", [rtu.id, train.wtpId]);
+  const dto = await readTrain(client, train);
+  const wtp = nodeOf(dto, "wtp").asset;
+  const ro = nodeOf(dto, "ro").asset;
+  expect([wtp?.assetRtuName, wtp?.assetLocationName]).toEqual(["F4.316 mimic RTU", "F3.32 mimic fixture site"]);
+  expect([ro?.assetRtuName, ro?.assetLocationName]).toEqual([null, "F3.32 mimic fixture site"]);
+}

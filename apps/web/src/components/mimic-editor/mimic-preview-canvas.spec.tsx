@@ -32,6 +32,8 @@ function wtpAsset(): GeneratedSiteAssetDto {
     id: PREVIEW_WTP_ID,
     code: "WTR-WTP-01",
     name: "Water treatment plant",
+    assetRtuName: null,
+    assetLocationName: null,
     domain: "water",
     latestTelemetryAt: isoAgo(1_000),
     freshness: "live",
