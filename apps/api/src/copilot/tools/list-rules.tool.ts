@@ -64,6 +64,8 @@ export const listRulesTool = defineReadTool({
           enabled: rule.enabled,
           assetId: rule.assetId,
           assetCode: rule.assetCode,
+          assetRtuName: rule.assetRtuName,
+          assetLocationName: rule.assetLocationName,
           pointKey: rule.pointKey,
           operator: rule.operator,
           thresholdValue: rule.thresholdValue,

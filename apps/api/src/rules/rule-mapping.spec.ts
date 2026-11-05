@@ -42,6 +42,8 @@ export function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
     assetOrganizationId: "org-1",
     assetId: "asset-1",
     assetCode: "ASSET-1",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Plant A",
     assetName: "Feeder 1",
     siteName: "Site A",
     assetDomain: "electrical",
@@ -146,6 +148,7 @@ function testMapRuleRow(): void {
   const item = mapRuleRow(ruleRow());
   assert(item.id === "rule-1", "the id survives");
   assert(item.assetCode === "ASSET-1", "the joined asset code survives");
+  assert(item.assetRtuName === "RTU 1" && item.assetLocationName === "Plant A", "the joined RTU and location names survive (F4.316)");
 
   // `F3.10` — the hold reaches the response as the stored number, and a row
   // that has none reports `null` rather than the consumer's 120 s default.

@@ -304,6 +304,9 @@ export type RuleRow = {
   asset_code: string;
   asset_name: string;
   location_id: string;
+  /** `F4.316` PR 4b: by independent SQL, `rtus.display_name` (null with no RTU) and `locations.name`. */
+  rtu_name: string | null;
+  location_name: string;
 };
 
 /** Every rule on this suite's assets, joined to its asset, by independent SQL. */
@@ -314,9 +317,12 @@ export async function ruleRows(pool: pg.Pool): Promise<RuleRow[]> {
             r.threshold_value::float8 AS threshold_value, r.severity,
             r.source_template_id, r.source_template_version, r.source_alarm_code,
             r.seeded_baseline, r.updated_at::text AS updated_at,
-            a.id AS asset_id, a.code AS asset_code, a.name AS asset_name, a.location_id
+            a.id AS asset_id, a.code AS asset_code, a.name AS asset_name, a.location_id,
+            rt.display_name AS rtu_name, l.name AS location_name
        FROM bms.automation_rules r
        JOIN bms.assets a ON a.id = r.asset_id
+       LEFT JOIN bms.rtus rt ON rt.id = a.rtu_id
+       JOIN bms.locations l ON l.id = a.location_id
       WHERE a.code LIKE $1
       ORDER BY a.code, r.source_alarm_code`,
     [`${TEST_ASSET_PREFIX}%`],
@@ -390,6 +396,14 @@ function assertItemMatchesRow(item: SeededRuleDto, row: RuleRow): void {
   assert(item.assetId === row.asset_id, `${where}: assetId must be the asset's id`);
   assert(item.assetCode === row.asset_code, `${where}: assetCode must be ${row.asset_code}`);
   assert(item.assetName === row.asset_name, `${where}: assetName must be ${row.asset_name}`);
+  assert(
+    item.assetRtuName === row.rtu_name,
+    `${where}: assetRtuName must be ${row.rtu_name}, got ${item.assetRtuName}`,
+  );
+  assert(
+    item.assetLocationName === row.location_name,
+    `${where}: assetLocationName must be ${row.location_name}, got ${item.assetLocationName}`,
+  );
   assert(item.locationId === row.location_id, `${where}: locationId must be the asset's`);
   assert(
     item.sourceTemplateId === row.source_template_id,
@@ -610,6 +624,24 @@ export async function assertListIsScopedToWritableLocations(
   assert(
     global.items.filter((i) => i.locationId === fx.otherLocationId).length === 7,
     "the global admin's list must include the 7 rules in the other location",
+  );
+  // F4.316 PR 4b (ADR 0111): asset A sits on the RTU, its twin B was seeded onto a location with no
+  // RTU — the SQL fixes both expectations, so a dropped join or a swapped column cannot pass.
+  const rtuA = rowFor(rows, ASSET_A, ALARM_PROTO);
+  const rtuB = rowFor(rows, ASSET_B, ALARM_PROTO);
+  assert(
+    rtuA.rtu_name !== null && rtuB.rtu_name === null,
+    "fixture defect: asset A must have an RTU and asset B none",
+  );
+  const itemA = itemFor(global, ASSET_A, ALARM_PROTO);
+  const itemB = itemFor(global, ASSET_B, ALARM_PROTO);
+  assert(
+    itemA.assetRtuName === rtuA.rtu_name && itemA.assetLocationName === rtuA.location_name,
+    `the RTU-bearing asset must name its RTU and location, got ${itemA.assetRtuName} / ${itemA.assetLocationName}`,
+  );
+  assert(
+    itemB.assetRtuName === null && itemB.assetLocationName === rtuB.location_name,
+    `the RTU-less twin must name no RTU and its location, got ${itemB.assetRtuName} / ${itemB.assetLocationName}`,
   );
 }
 

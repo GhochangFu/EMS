@@ -96,6 +96,8 @@ export function ruleRow(overrides: Partial<RuleRow> = {}): RuleRow {
     assetOrganizationId: ORG_A,
     assetId: "asset-1",
     assetCode: "ASSET-1",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Plant A",
     assetName: "Feeder 1",
     siteName: "Site A",
     assetDomain: "electrical",
