@@ -3,6 +3,7 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aBackfillRunning409AfterTheKeyIsNotReportedAsNotWritten,
   aCodeOutsideTheCatalogClassIsRefusedByTheSharedSchema,
   aFormulaThatFailsOnOneAssetCreatesNoKey,
   aFormulaThatFailsOnOneAssetListsThatAsset,
@@ -52,6 +53,10 @@ describe("F4.313 — New key in the asset list's bulk calculated-point wizard", 
 
   it("a refused batch after the key shows the two-write sentence", async () => {
     await aRefusedBatchAfterTheKeyShowsTheTwoWriteSentence();
+  });
+
+  it("a batch 409 after the key (points written) is not reported as not written", async () => {
+    await aBackfillRunning409AfterTheKeyIsNotReportedAsNotWritten();
   });
 
   it("a refused batch after the key still lists the refused assets", async () => {

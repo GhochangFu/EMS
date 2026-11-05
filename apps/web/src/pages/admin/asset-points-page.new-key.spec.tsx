@@ -199,6 +199,32 @@ export async function aCodeOutsideTheCatalogClassIsRefusedByTheSharedSchema(): P
   expect(within(screen.getByRole("list", { name: "New key problems" })).getByText(`code: ${CATALOG_CODE_MESSAGE}`)).toBeTruthy();
 }
 
+// Catches: a new code equal to a point the asset already has reaching the writes.
+export async function aCodeTheAssetAlreadyHasWritesNothing(): Promise<void> {
+  stubApi();
+  renderPage(globalAdmin);
+  await pickNewKey("kw");
+  await userEvent.type(screen.getByRole("textbox", { name: "Formula for kw" }), "1");
+  await next(1);
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "300");
+  await userEvent.type(screen.getByLabelText("Inputs valid for (seconds)"), "600");
+  await next(2);
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await screen.findByText(/This asset already has a point "kw"; give the new key another code\./);
+  expect(writes).toEqual([]);
+}
+
+// Catches: a 503 after the key (the point is saved, no worker) shown as "the point was not written".
+export async function aNoWorker503AfterTheKeyIsNotReportedAsNotWritten(): Promise<void> {
+  stubApi();
+  vi.mocked(api.setAdminAssetCalcPoint).mockRejectedValue(refusal(503, "The point is saved, but no worker is running."));
+  renderPage(globalAdmin);
+  await submitNewKey("{{kw} * 2");
+  expect(
+    await screen.findByText('The key "kvar" is in the catalog now. The point is saved, but no worker is running.'),
+  ).toBeTruthy();
+}
+
 // Catches: the key created before the formula is checked (A13: check first).
 export async function aFormulaThatFailsTheCheckCreatesNoKey(): Promise<void> {
   stubApi();

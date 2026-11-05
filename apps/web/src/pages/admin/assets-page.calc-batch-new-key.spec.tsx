@@ -256,6 +256,18 @@ export async function aRefusedBatchAfterTheKeyShowsTheTwoWriteSentence(): Promis
   ).toBeTruthy();
 }
 
+// Catches: a batch 409 after the key (points written, a backfill running) shown as "not written".
+export async function aBackfillRunning409AfterTheKeyIsNotReportedAsNotWritten(): Promise<void> {
+  stubApi();
+  vi.mocked(assetPointsApi.createAdminCalcPointBatch).mockRejectedValue(
+    new ApiError(JSON.stringify({ statusCode: 409, message: "A backfill of kvar on PMP-2 is already running." }), 409),
+  );
+  const dialog = await submitNewKey();
+  expect(
+    await within(dialog).findByText('The key "kvar" is in the catalog now. A backfill of kvar on PMP-2 is already running.'),
+  ).toBeTruthy();
+}
+
 // Catches: the server's `refused[]` parsed from the two-write wrapper instead of the server's body.
 export async function aRefusedBatchAfterTheKeyStillListsTheRefusedAssets(): Promise<void> {
   const dialog = await submitWithTheBatchRefused();

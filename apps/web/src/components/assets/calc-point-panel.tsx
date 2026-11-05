@@ -45,6 +45,7 @@ import {
 import {
   NEW_KEY,
   emptyNewPointKeyDraft,
+  newKeyClashProblem,
   newPointKeyBody,
   newPointKeyDraftChanged,
   newPointKeyProblems,
@@ -120,6 +121,7 @@ export function CalcPointPanel({
   // New key — and the new key's own fields, before any write.
   const problems = [
     ...(newKey ? newPointKeyProblems(newKey) : []),
+    ...(newKey ? [newKeyClashProblem(newKey.code, rows.map((row) => row.pointKey))].filter((p) => p !== null) : []),
     ...calcPointDraftProblems(draft, knownRefsFor(rows, draft.pointKey)),
   ];
   const dialect = draftDialect(draft);

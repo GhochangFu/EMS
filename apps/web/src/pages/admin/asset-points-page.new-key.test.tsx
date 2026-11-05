@@ -3,6 +3,8 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aCodeTheAssetAlreadyHasWritesNothing,
+  aNoWorker503AfterTheKeyIsNotReportedAsNotWritten,
   aCodeOutsideTheCatalogClassIsRefusedByTheSharedSchema,
   aFormulaThatFailsTheCheckCreatesNoKey,
   aRefusedPointAfterTheKeyKeepsThePanelOpen,
@@ -32,6 +34,14 @@ describe("F4.313 — New key in the Add calculated point panel", () => {
 
   it("a code outside the catalog class is refused in the shared schema's sentence", async () => {
     await aCodeOutsideTheCatalogClassIsRefusedByTheSharedSchema();
+  });
+
+  it("a new code the asset already has writes nothing", async () => {
+    await aCodeTheAssetAlreadyHasWritesNothing();
+  });
+
+  it("a 503 after the key (point saved) is not reported as not written", async () => {
+    await aNoWorker503AfterTheKeyIsNotReportedAsNotWritten();
   });
 
   it("a formula that fails the check creates no key and writes no point", async () => {

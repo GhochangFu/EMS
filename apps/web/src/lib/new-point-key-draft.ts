@@ -35,8 +35,21 @@ export const NEW_KEY = "+new-key";
 /** The text the three fields hold. */
 export type NewPointKeyDraft = { readonly code: string; readonly name: string; readonly unit: string };
 
+/** What the three fields hold when **New key** is picked: all blank. */
 export function emptyNewPointKeyDraft(): NewPointKeyDraft {
   return { code: "", name: "", unit: "" };
+}
+
+/**
+ * The panel's refusal of a new code the asset already has a point under
+ * (the picker excludes those keys; the free-text code must too), or `null`.
+ * Checked before any write, so a clash writes neither the key nor the point.
+ */
+export function newKeyClashProblem(code: string, existingKeys: readonly string[]): string | null {
+  const trimmed = code.trim();
+  return trimmed !== "" && existingKeys.includes(trimmed)
+    ? `This asset already has a point "${trimmed}"; give the new key another code.`
+    : null;
 }
 
 /** The leave prompt's half for the three fields: any of them holds text. */
@@ -71,12 +84,34 @@ export function keyCreatedPointRefusedMessage(code: string, reason: string): str
   return `The key "${code}" is in the catalog now; the point was not written: ${reason}`;
 }
 
+/**
+ * A `503` (no worker for the backfill) or `409` (a backfill already running)
+ * from the point write arrives with the point **saved**: the standalone `PUT`
+ * and the batch commit the point before the backfill is asked for
+ * (`calc-point-standalone.service.ts`, `calc-backfill-request.service.ts`).
+ */
+export function pointSavedDespiteRefusal(cause: unknown): boolean {
+  return cause instanceof ApiError && (cause.status === 503 || cause.status === 409);
+}
+
+/**
+ * The sentence after the key exists: the plan's "not written" sentence for a
+ * refusal that wrote nothing, and a neutral prefix before the server's own
+ * sentence when the point may be saved ({@link pointSavedDespiteRefusal}).
+ */
+export function keyCreatedPointMessage(code: string, pointCause: unknown): string {
+  const reason = apiErrorMessage(pointCause);
+  return pointSavedDespiteRefusal(pointCause)
+    ? `The key "${code}" is in the catalog now. ${reason}`
+    : keyCreatedPointRefusedMessage(code, reason);
+}
+
 /** The point write's refusal after the key exists; `pointCause` is the server's own error. */
 export class KeyCreatedPointRefusedError extends Error {
   readonly pointCause: unknown;
 
   constructor(code: string, pointCause: unknown) {
-    super(keyCreatedPointRefusedMessage(code, apiErrorMessage(pointCause)));
+    super(keyCreatedPointMessage(code, pointCause));
     this.name = "KeyCreatedPointRefusedError";
     this.pointCause = pointCause;
   }

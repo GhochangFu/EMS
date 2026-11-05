@@ -13,6 +13,7 @@ import {
   emptyNewPointKeyDraft,
   isPointKeyAlreadyExists,
   keyCreatedPointRefusedMessage,
+  newKeyClashProblem,
   newPointKeyBody,
   newPointKeyProblems,
   pointWriteCause,
@@ -96,6 +97,39 @@ export function theTwoWriteErrorCarriesTheServersSentence(): void {
   expect(apiErrorMessage(new KeyCreatedPointRefusedError("kvar", REFUSED))).toBe(
     'The key "kvar" is in the catalog now; the point was not written: Point key must exist in the catalog and be active',
   );
+}
+
+/** A point write refused with `status` after the key exists, as the panel shows it. */
+function afterKey(status: number): string {
+  return apiErrorMessage(
+    new KeyCreatedPointRefusedError("kvar", new ApiError(JSON.stringify({ statusCode: status, message: "Reason." }), status)),
+  );
+}
+
+// Catches: a 503 (no worker; the point is saved) reported as "the point was not written".
+export function aNoWorker503IsNotReportedAsNotWritten(): void {
+  expect(afterKey(503)).toBe('The key "kvar" is in the catalog now. Reason.');
+}
+
+// Catches: a 409 (a backfill already running; the point is saved) reported as "not written".
+export function aBackfillRunning409IsNotReportedAsNotWritten(): void {
+  expect(afterKey(409)).toBe('The key "kvar" is in the catalog now. Reason.');
+}
+
+// Catches: the neutral prefix widened to every status, hiding a refusal that wrote nothing.
+export function a400Or422IsStillReportedAsNotWritten(): void {
+  expect([afterKey(400), afterKey(422)]).toEqual([
+    'The key "kvar" is in the catalog now; the point was not written: Reason.',
+    'The key "kvar" is in the catalog now; the point was not written: Reason.',
+  ]);
+}
+
+// Catches: a new code equal to one of the asset's point keys let through (untrimmed included).
+export function aCodeTheAssetAlreadyHasIsAClash(): void {
+  expect([newKeyClashProblem(" kw ", ["kw", "pf"]), newKeyClashProblem("kvar", ["kw", "pf"])]).toEqual([
+    'This asset already has a point "kw"; give the new key another code.',
+    null,
+  ]);
 }
 
 // Catches: the batch's `refused[]` parsed from the wrapper rather than the server's body.

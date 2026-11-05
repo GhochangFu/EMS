@@ -1,6 +1,10 @@
 import { describe, it } from "vitest";
 
 import {
+  a400Or422IsStillReportedAsNotWritten,
+  aBackfillRunning409IsNotReportedAsNotWritten,
+  aCodeTheAssetAlreadyHasIsAClash,
+  aNoWorker503IsNotReportedAsNotWritten,
   aCodeOutsideTheCatalogClassIsRefused,
   aCompleteDraftHasNoProblem,
   aRefusedCreateWritesNoPoint,
@@ -61,6 +65,22 @@ describe("F4.313 — New key: the draft, its checks and the two writes", () => {
 
   it("the two-write error carries the server's sentence", () => {
     theTwoWriteErrorCarriesTheServersSentence();
+  });
+
+  it("a 503 after the key (no worker, point saved) is not reported as not written", () => {
+    aNoWorker503IsNotReportedAsNotWritten();
+  });
+
+  it("a 409 after the key (backfill running, point saved) is not reported as not written", () => {
+    aBackfillRunning409IsNotReportedAsNotWritten();
+  });
+
+  it("a 400 or 422 after the key is still reported as not written", () => {
+    a400Or422IsStillReportedAsNotWritten();
+  });
+
+  it("a code the asset already has is a clash", () => {
+    aCodeTheAssetAlreadyHasIsAClash();
   });
 
   it("the point cause is the server's own error", () => {
