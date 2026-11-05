@@ -49,6 +49,8 @@ import { LocationsAdminController } from "./locations/locations.controller";
 import { LocationsAdminService } from "./locations/locations.service";
 import { PointKeysAdminController } from "./point-keys/point-keys.controller";
 import { PointKeysAdminService } from "./point-keys/point-keys.service";
+import { PointKeyStatesAdminController } from "./point-key-states/point-key-states.controller";
+import { PointKeyStatesAdminService } from "./point-key-states/point-key-states.service";
 import { AssetRolesAdminController } from "./vocabularies/asset-roles/asset-roles.controller";
 import { AssetRolesAdminService } from "./vocabularies/asset-roles/asset-roles.service";
 import { LocationTypesVocabularyAdminController } from "./vocabularies/location-types.controller";
@@ -116,6 +118,8 @@ import { UsersService } from "./users/users.service";
     // F4.311 / ADR 0109 decision 4 — POST admin/calc-points/batch.
     CalcPointBatchController,
     PointKeysAdminController,
+    // F4.309 / ADR 0088 Amendment 3 — the state labels of switching points, global admin only.
+    PointKeyStatesAdminController,
     // E4.1a / ADR 0070 decision 2 — the calc parameter store and its vocabulary read.
     CalcParametersAdminController,
     AssetRolesAdminController,
@@ -165,6 +169,7 @@ import { UsersService } from "./users/users.service";
     CalcBackfillRunStore,
     CalcBackfillRequestService,
     PointKeysAdminService,
+    PointKeyStatesAdminService,
     CalcParametersAdminService,
     AssetRolesAdminService,
     LocationTypesVocabularyAdminService,

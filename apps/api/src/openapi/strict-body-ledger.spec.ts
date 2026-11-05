@@ -49,6 +49,9 @@ import {
   putOrgTrendPointsBodySchema,
   adoptAssetsBodySchema,
   setOrganizationColourProfileBodySchema,
+  // `F4.309` (ADR 0088 Amendment 3): the state-label write bodies.
+  createPointKeyStateBodySchema,
+  updatePointKeyStateBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -241,6 +244,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   createNotificationChannelBodySchema,
   createOrganizationBodySchema,
   createPointKeyBodySchema,
+  createPointKeyStateBodySchema,
   // `F3.21` (ADR 0090 Amendment 1 A5). Both `.strict()`: the response's own
   // fields (`keyLast4`, `source`, `platform`) sent back must be a 400, never
   // silently dropped.
@@ -337,6 +341,7 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F4.310` (ADR 0110 decision 7): `.strict()`, so a stray field is a 400.
   setOrganizationColourProfileBodySchema,
   updatePointKeyBodySchema,
+  updatePointKeyStateBodySchema,
   updateRtuBodySchema,
   updateWorkOrderStatusBodySchema,
 };

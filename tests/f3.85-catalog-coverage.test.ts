@@ -61,6 +61,9 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/admin/assets/assets.controller.ts", full: true },
   { file: "apps/api/src/admin/asset-groups/asset-groups.controller.ts", full: true },
   { file: "apps/api/src/admin/point-keys/point-keys.controller.ts", full: true },
+  // `F4.309` PR 1 (ADR 0088 Amendment 3): every write route pending (`POINT_KEY_PENDING`) until
+  // PR 3 (ADR 0099 Amendment 13) adds `pointKeyState.create` and `.update`; the DELETE stays excluded.
+  { file: "apps/api/src/admin/point-key-states/point-key-states.controller.ts", full: true },
   { file: "apps/api/src/admin/asset-points/asset-points.controller.ts", full: true },
   { file: "apps/api/src/admin/users/users.controller.ts", full: true },
   { file: "apps/api/src/admin/users/user-grants.controller.ts", full: true },

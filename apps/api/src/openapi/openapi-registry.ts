@@ -61,6 +61,9 @@ import {
   // `F4.312` (ADR 0109 Amendment 1): the adoption body, shared by preview and apply.
   adoptAssetsBodySchema,
   setOrganizationColourProfileBodySchema,
+  // `F4.309` (ADR 0088 Amendment 3): the state-label write bodies.
+  createPointKeyStateBodySchema,
+  updatePointKeyStateBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -383,6 +386,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   CopilotConversationsController_startOnboarding: copilotStartOnboardingSkillBodySchema,
   PointKeysAdminController_create: createPointKeyBodySchema,
   PointKeysAdminController_update: updatePointKeyBodySchema,
+  // `F4.309` (ADR 0088 Amendment 3). `_list` and `_remove` take no body and no query.
+  PointKeyStatesAdminController_create: createPointKeyStateBodySchema,
+  PointKeyStatesAdminController_update: updatePointKeyStateBodySchema,
   // `F3.5a` (ADR 0071 decision 11). `_download` and `_remove` are absent —
   // one path parameter each, no body, no query; the docblock above says why.
   ReportFilesController_list: listReportFilesQuerySchema,
