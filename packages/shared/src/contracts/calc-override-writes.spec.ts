@@ -678,3 +678,33 @@ export function assertNoInheritanceDropsTheInheritedWording(): void {
     `a standalone sentence names no inheritance and no template, got: ${String(problem)}`,
   );
 }
+
+/**
+ * `F4.311` live check, 2026-11-05 — the empty-formula sentence too. The case
+ * above nulls the interval, so it never reaches the formula branch, and the
+ * page's empty Add form said "the template does not set one and this override
+ * does not either" on an asset with no template.
+ */
+export function assertNoInheritanceDropsTheTemplateFromTheMissingFormula(): void {
+  const [problem] = validateMergedCalcOverride({ ...SCHEDULED_TEMPLATE, formula: null }, NOTHING, KEYS, {
+    declaredBy: "this asset",
+    inheritance: false,
+  });
+  assert(problem !== undefined, "anti-vacuity: a body with no formula must be refused");
+  assert(/no formula/.test(problem as string), `the sentence must name the missing formula, got: ${String(problem)}`);
+  assert(
+    !/template|override|inherit/.test(problem as string),
+    `a standalone sentence names no template, override or inheritance, got: ${String(problem)}`,
+  );
+}
+
+/** The override path's empty-formula sentence does not move (default `inheritance: true`). */
+export function assertTheOverrideMissingFormulaSentenceIsUnchanged(): void {
+  const [problem] = validateMergedCalcOverride({ ...SCHEDULED_TEMPLATE, formula: null }, NOTHING, KEYS);
+  assert(
+    problem ===
+      "The merged configuration has no formula: the template does not set one and this " +
+        "override does not either. A derived point with no formula computes nothing.",
+    `the override sentence must not move, got: ${String(problem)}`,
+  );
+}

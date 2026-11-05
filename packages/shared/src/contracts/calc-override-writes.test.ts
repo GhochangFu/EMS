@@ -3,6 +3,8 @@ import { describe, it } from "vitest";
 import {
   assertADeclaredByLabelNamesTheDeclarer,
   assertNoInheritanceDropsTheInheritedWording,
+  assertNoInheritanceDropsTheTemplateFromTheMissingFormula,
+  assertTheOverrideMissingFormulaSentenceIsUnchanged,
   assertADialectDowngradeCannotRelabelAV2Formula,
   assertADialectOnlyUpgradeOfAValidFormulaIsAccepted,
   assertAV2TemplateIsOverridableWithoutRestatingTheDialect,
@@ -108,5 +110,13 @@ describe("F2.6 — asset point calc override contract", () => {
 
   it("F4.311 — inheritance: false drops the inherited-from-the-template wording", () => {
     assertNoInheritanceDropsTheInheritedWording();
+  });
+
+  it("F4.311 — inheritance: false drops the template from the missing-formula sentence", () => {
+    assertNoInheritanceDropsTheTemplateFromTheMissingFormula();
+  });
+
+  it("F4.311 — keeps the override's missing-formula sentence byte-identical", () => {
+    assertTheOverrideMissingFormulaSentenceIsUnchanged();
   });
 });

@@ -125,7 +125,8 @@ export type AssetPointCalcOverrideBody = z.infer<typeof assetPointCalcOverrideBo
  *   `true` (the default) appends "(inherited from the template)" to the field
  *   it names, byte-identical to before the option existed; a standalone point
  *   (`F4.311`) has nothing to inherit and passes `false`, so a null field is
- *   named as the author's own omission.
+ *   named as the author's own omission, and a missing formula gets a sentence
+ *   that names no template or override.
  * @returns the problems, most specific first; empty means the merge is usable
  */
 export function validateMergedCalcOverride(
@@ -152,8 +153,11 @@ export function validateMergedCalcOverride(
 
   if (merged.formula === null) {
     problems.push(
-      "The merged configuration has no formula: the template does not set one and this " +
-        "override does not either. A derived point with no formula computes nothing.",
+      inheritance
+        ? "The merged configuration has no formula: the template does not set one and this " +
+            "override does not either. A derived point with no formula computes nothing."
+        : // `F4.311`: a standalone point has no template to blame; the formula is the author's to write.
+          "This calculated point has no formula. Write one: a point with no formula computes nothing.",
     );
   } else if (dialect === null || !RUNNABLE_DIALECTS.has(dialect)) {
     // `AssetPointCalcOverrideFields.formulaDialect` is typed to `CalcDialect`,

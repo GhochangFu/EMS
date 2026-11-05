@@ -6,6 +6,9 @@ import { loadFixtures, type Fixtures } from "../admin/asset-templates/asset-temp
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate";
 import { registerFixturePointKeys } from "../testing/integration-fixtures";
 import {
+  assertATemplateLessAssetGetsNoRowAndNoValue,
+  assertATemplateLessAssetWithItsRowGetsTheValue,
+  assertATemplateLessMeasuredRowGetsNoCalcValue,
   assertFirstValueCreatesMappingWithComputedProvenance,
   assertNoAuditLogRowIsProduced,
   assertOverlongPointKeySkipsOnlyThatPairNotTheBatch,
@@ -51,6 +54,9 @@ describe.skipIf(!connectionString)("F2.4 — calc write service", () => {
       "CALCWRITE_D1",
       "CALCWRITE_D2",
       "CALCWRITE_E_OK",
+      "CALCWRITE_F",
+      "CALCWRITE_G",
+      "CALCWRITE_H",
     ]);
     fx = await loadFixtures(created);
     await cleanup(created);
@@ -88,5 +94,20 @@ describe.skipIf(!connectionString)("F2.4 — calc write service", () => {
   it("skips only the pair whose synthesised source_data_key overflows the column, not the whole batch", async () => {
     if (!pool) throw new Error("pool required");
     await assertOverlongPointKeySkipsOnlyThatPairNotTheBatch(pool, fx);
+  });
+
+  it("F4.311 — creates no row and writes no value for a template-less asset with no standalone row", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertATemplateLessAssetGetsNoRowAndNoValue(pool, fx);
+  });
+
+  it("F4.311 — writes the value for a template-less asset whose standalone row exists", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertATemplateLessAssetWithItsRowGetsTheValue(pool, fx);
+  });
+
+  it("F4.311 — writes no calc value into a template-less asset's measured row", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertATemplateLessMeasuredRowGetsNoCalcValue(pool, fx);
   });
 });

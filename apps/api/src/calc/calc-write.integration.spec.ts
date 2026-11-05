@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
+
 import { and, eq } from "drizzle-orm";
 import type pg from "pg";
 
-import { assetPoints, assets, createDb } from "@bms/db";
+import { assetPoints, assetTemplates, assets, createDb } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import type { Fixtures } from "../admin/asset-templates/asset-templates.instantiate.integration.spec";
@@ -10,8 +12,9 @@ import { CalcWriteService } from "./calc-write.service";
 
 /**
  * `F2.4` — `CalcWriteService` against a real database. Reuses `loadFixtures`
- * for org/location, and writes an `assets` row directly (no template
- * needed — this suite is about the value/mapping write path, not templates).
+ * for org/location, and writes an `assets` row directly. Since `F4.311` the
+ * lazy-create cases pin it to a bare draft template (no template points), and
+ * the template-less cases do not — see `seedAsset`.
  */
 
 const TEST_ASSET_PREFIX = "F24-CALCWRITE-TEST-";
@@ -47,12 +50,52 @@ export async function cleanup(pool: pg.Pool): Promise<void> {
     [`${TEST_ASSET_PREFIX}%`],
   );
   await pool.query(`DELETE FROM bms.assets WHERE code LIKE $1`, [`${TEST_ASSET_PREFIX}%`]);
+  await pool.query(`DELETE FROM bms.asset_templates WHERE code = $1`, [TEST_TEMPLATE_CODE]);
 }
 
-async function seedAsset(db: BmsDb, fx: Fixtures, suffix: string): Promise<string> {
+/**
+ * `F4.311` live check, 2026-11-05: the lazy mapping create is a templated
+ * asset's behaviour only — on an asset with no template the `computed` row is
+ * the definition (ADR 0109 decision 1), and the write path never creates one.
+ * So the lazy-create cases pin their asset to a draft template; the
+ * template-less cases pass `templated: false`.
+ */
+// Per run, so two instances of this suite on one database never share (or
+// delete) each other's template; the cleanup deletes only this run's code.
+const TEST_TEMPLATE_CODE = `F24-CALCWRITE-TPL-${randomUUID().slice(0, 8)}`;
+
+async function fixtureTemplateId(db: BmsDb, fx: Fixtures): Promise<string> {
+  const [existing] = await db
+    .select({ id: assetTemplates.id })
+    .from(assetTemplates)
+    .where(and(eq(assetTemplates.organizationId, fx.organizationId), eq(assetTemplates.code, TEST_TEMPLATE_CODE)));
+  if (existing) {
+    return existing.id;
+  }
+  const [created] = await db
+    .insert(assetTemplates)
+    .values({
+      organizationId: fx.organizationId,
+      code: TEST_TEMPLATE_CODE,
+      name: "Calc Write Fixture Template",
+      assetType: "meter",
+      domain: "electrical",
+    })
+    .returning({ id: assetTemplates.id });
+  return created.id;
+}
+
+async function seedAsset(
+  db: BmsDb,
+  fx: Fixtures,
+  suffix: string,
+  { templated = true }: { templated?: boolean } = {},
+): Promise<string> {
+  const templateId = templated ? await fixtureTemplateId(db, fx) : null;
   const [asset] = await db
     .insert(assets)
     .values({
+      templateId,
       code: `${TEST_ASSET_PREFIX}${suffix}`,
       name: "Calc Write Fixture Asset",
       siteName: "Fixture Site",
@@ -216,6 +259,76 @@ export async function assertOverlongPointKeySkipsOnlyThatPairNotTheBatch(
     .from(assetPoints)
     .where(and(eq(assetPoints.assetId, assetId), eq(assetPoints.pointKey, "CALCWRITE_E_OK")));
   assert(okRows.length === 1, "the valid pair's mapping must exist despite the other pair in the same batch failing");
+}
+
+/**
+ * `F4.311` live check, 2026-11-05 — a standalone point deleted while the
+ * engine's cache still held it. The next tick's value must not re-create the
+ * row: on AWS it came back as an ACTIVE orphan with no formula, which the Add
+ * picker then excluded, so the key could not be added again.
+ */
+export async function assertATemplateLessAssetGetsNoRowAndNoValue(pool: pg.Pool, fx: Fixtures): Promise<void> {
+  const db = createDb(pool);
+  const assetId = await seedAsset(db, fx, "06", { templated: false });
+  const svc = new CalcWriteService(db, db, pool, new MetricsService());
+
+  const result = await svc.writeValues([{ assetId, pointKey: "CALCWRITE_F", value: 7, time: new Date() }]);
+  assert(result.assetPointsCreated === 0, `no row may be created, got ${result.assetPointsCreated}`);
+  assert(result.written === 0, `a value for a deleted standalone point is dropped, got ${result.written} written`);
+
+  const rows = await db
+    .select()
+    .from(assetPoints)
+    .where(and(eq(assetPoints.assetId, assetId), eq(assetPoints.pointKey, "CALCWRITE_F")));
+  assert(rows.length === 0, `the template-less asset must have no CALCWRITE_F row, got ${rows.length}`);
+}
+
+/** The positive half: a template-less asset whose standalone row exists still gets its value. */
+export async function assertATemplateLessAssetWithItsRowGetsTheValue(pool: pg.Pool, fx: Fixtures): Promise<void> {
+  const db = createDb(pool);
+  const assetId = await seedAsset(db, fx, "07", { templated: false });
+  await db.insert(assetPoints).values({
+    assetId,
+    organizationId: fx.organizationId,
+    pointKey: "CALCWRITE_G",
+    sourceDataKey: "computed:CALCWRITE_G",
+    unit: null,
+    active: true,
+    rtuId: null,
+    sourceKind: "computed",
+    formula: "{CALCWRITE_A} * 2",
+  });
+  const svc = new CalcWriteService(db, db, pool, new MetricsService());
+
+  const result = await svc.writeValues([{ assetId, pointKey: "CALCWRITE_G", value: 8, time: new Date() }]);
+  assert(result.written === 1, `the standalone point's value must land, got ${result.written} written`);
+  assert(result.assetPointsCreated === 0, `its row already exists, got ${result.assetPointsCreated} created`);
+}
+
+/**
+ * The lookup counts only `computed` rows: a standalone point deleted and its
+ * key then mapped to telemetry (a `measured` row) inside the cache's TTL must
+ * not get a stale tick's calc value in its measured series.
+ */
+export async function assertATemplateLessMeasuredRowGetsNoCalcValue(pool: pg.Pool, fx: Fixtures): Promise<void> {
+  const db = createDb(pool);
+  const assetId = await seedAsset(db, fx, "08", { templated: false });
+  await db.insert(assetPoints).values({
+    assetId,
+    organizationId: fx.organizationId,
+    pointKey: "CALCWRITE_H",
+    sourceDataKey: "calcwrite-h-measured",
+    unit: null,
+    active: true,
+    // `asset_points_source_ref_check`: a measured row names its RTU.
+    rtuId: fx.rtuId,
+    sourceKind: "measured",
+  });
+  const svc = new CalcWriteService(db, db, pool, new MetricsService());
+
+  const result = await svc.writeValues([{ assetId, pointKey: "CALCWRITE_H", value: 9, time: new Date() }]);
+  assert(result.written === 0, `a measured row is not a calculated point, got ${result.written} written`);
+  assert(result.assetPointsCreated === 0, `no row may be created, got ${result.assetPointsCreated}`);
 }
 
 export async function assertNoAuditLogRowIsProduced(pool: pg.Pool, fx: Fixtures): Promise<void> {

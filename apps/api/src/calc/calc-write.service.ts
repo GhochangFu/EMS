@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type pg from "pg";
 
 import { assetPoints, assets, pointValues, refreshAggregatesFrom } from "@bms/db";
@@ -110,10 +110,31 @@ export class CalcWriteService {
 
     const distinctAssetIds = [...new Set(values.map((v) => v.assetId))];
     const orgRows = await this.fleetDb
-      .select({ id: assets.id, organizationId: assets.organizationId })
+      .select({ id: assets.id, organizationId: assets.organizationId, templateId: assets.templateId })
       .from(assets)
       .where(inArray(assets.id, distinctAssetIds));
     const orgByAsset = new Map(orgRows.map((r) => [r.id, r.organizationId]));
+
+    // `F4.311` (ADR 0109 decision 1): on an asset with no template, the
+    // `computed` row IS the definition — the engine reads a standalone point
+    // from that row, so the row exists before any value does. A missing row
+    // means the point was deleted after the engine's cache loaded it (the
+    // cache is TTL-bound, `CalcDefinitionsService`), and re-creating the row
+    // here would resurrect it as an orphan with no formula, which the mapping
+    // table shows as ACTIVE and the Add picker then excludes. So on such an
+    // asset this path never creates a row, and a value for a missing row is
+    // dropped. A templated asset keeps the lazy create: its template version
+    // declares the derived point, and the row is only its mapping.
+    const templateLessIds = orgRows.filter((r) => r.templateId === null).map((r) => r.id);
+    const standaloneRows =
+      templateLessIds.length === 0
+        ? []
+        : await this.fleetDb
+            .select({ assetId: assetPoints.assetId, pointKey: assetPoints.pointKey })
+            .from(assetPoints)
+            .where(and(inArray(assetPoints.assetId, templateLessIds), eq(assetPoints.sourceKind, "computed")));
+    const templateLess = new Set(templateLessIds);
+    const standaloneKeys = new Set(standaloneRows.map((r) => rowKey(r.assetId, r.pointKey)));
 
     const pairs = new Map<string, CalcWriteInput>();
     for (const v of values) {
@@ -123,6 +144,13 @@ export class CalcWriteService {
     let assetPointsCreated = 0;
     const failedPairs = new Set<string>();
     for (const [key, representative] of pairs) {
+      if (templateLess.has(representative.assetId)) {
+        if (!standaloneKeys.has(key)) {
+          failedPairs.add(key);
+          this.logger.log(`calc write: ${key} has no calculated-point row (deleted); dropping its values`);
+        }
+        continue;
+      }
       // The format is shared with the override endpoint (ADR 0039 decision 7's
       // second creator of this row) — only the format. The insert stays here
       // because this path wants "create if missing, count creations" while the
