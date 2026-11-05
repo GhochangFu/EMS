@@ -4,7 +4,6 @@ import { and, count, eq } from "drizzle-orm";
 import {
   alarmEscalationProfiles,
   alarms,
-  assetGroupMembers,
   assetGroups,
   assetPoints,
   assetRoles,
@@ -40,7 +39,7 @@ import { AccessControlService } from "../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
 import { resolveAdoptTarget } from "./copilot-adopt-targets";
-import { readAssetTarget } from "./copilot-asset-targets";
+import { findConfigurationAsset, readAssetGroupMemberTarget, readAssetTarget } from "./copilot-asset-targets";
 import { assetKindAdmits, findCalcPointBatch, mayWriteCalcPointBatch } from "./copilot-calc-point-targets";
 import { findRuleBatch } from "./copilot-rule-targets";
 import { pointKeyStateName, readPointKeyState, seededAtPropose, seededPointKeyStateRefusal } from "./copilot-point-key-state-targets";
@@ -273,13 +272,13 @@ export class CopilotTargetResolver implements CopilotTargets {
       // is its asset's, and the route's two gates run on the body's asset.
       const assetId = body[target.field];
       if (typeof assetId !== "string") return null;
-      found = await this.configurationAsset(assetId, allowedOrganizationIds);
+      found = await findConfigurationAsset(this.tenantDb, assetId, allowedOrganizationIds);
       if (found !== null && !(await this.safely(() => this.mayWriteConfiguration(user, assetId)))) found = null;
     } else if (target.kind === "workOrder" && "field" in target) {
       // `F4.284` (ADR 0106 decision 6): a work-order create — the asset's organization, the route's two gates.
       const assetId = body[target.field];
       if (typeof assetId !== "string") return null;
-      found = await this.configurationAsset(assetId, allowedOrganizationIds);
+      found = await findConfigurationAsset(this.tenantDb, assetId, allowedOrganizationIds);
       if (found !== null && !(await this.safely(() => this.mayWriteOperational(user, assetId)))) found = null;
     } else if (target.kind === "workOrderBatch" || target.kind === "ruleBatch") {
       // `F4.289` (Amendment 9 E3): a rule batch is one organization's assets, with the rule routes' gate on each.
@@ -456,24 +455,6 @@ export class CopilotTargetResolver implements CopilotTargets {
   }
 
   /**
-   * `F4.278` / `F4.281`: the asset a rule or maintenance schedule create names, in the first allowed
-   * organization that has it (its name and organization).
-   */
-  private async configurationAsset(assetId: string, allowed: readonly string[]): Promise<Found | null> {
-    for (const organizationId of allowed) {
-      const [row] = await withTenant(this.tenantDb, organizationId, (tx) =>
-        tx
-          .select({ name: assets.name })
-          .from(assets)
-          .where(and(eq(assets.id, assetId), eq(assets.organizationId, organizationId)))
-          .limit(1),
-      );
-      if (row) return { organizationId, name: row.name, assetId };
-    }
-    return null;
-  }
-
-  /**
    * `F4.278` / `F4.281` (Amendment 8 D2): the rule and maintenance routes' own two gates and
    * nothing more — `rules.controller.ts`'s and `maintenance.controller.ts`'s
    * `assertOperationsWriteRole(user, "configuration")` (a throw is a refusal, `safely`), then the
@@ -546,17 +527,8 @@ export class CopilotTargetResolver implements CopilotTargets {
           .limit(1);
         return row ? { organizationId, name: row.name, locationId: row.locationId } : null;
       }
-      case "assetGroupMember": {
-        // A membership has no organization column; its group's is the row's.
-        const [row] = await tx
-          .select({ group: assetGroups.name, asset: assets.name, locationId: assetGroups.locationId })
-          .from(assetGroupMembers)
-          .innerJoin(assetGroups, eq(assetGroups.id, assetGroupMembers.assetGroupId))
-          .innerJoin(assets, eq(assets.id, assetGroupMembers.assetId))
-          .where(and(eq(assetGroupMembers.id, id), eq(assetGroups.organizationId, organizationId)))
-          .limit(1);
-        return row ? { organizationId, name: `${row.asset} in ${row.group}`, locationId: row.locationId } : null;
-      }
+      case "assetGroupMember":
+        return readAssetGroupMemberTarget(tx, id, organizationId);
       case "assetPoint": {
         const [row] = await tx
           .select({ pointKey: assetPoints.pointKey, assetId: assetPoints.assetId, assetCode: assets.code })

@@ -82,6 +82,7 @@ function oneRowDb(row: Record<string, unknown>): never {
     from: () => chain,
     where: () => chain,
     innerJoin: () => chain,
+    leftJoin: () => chain,
     limit: async () => [Object.fromEntries(selected.map((key) => [key, row[key]]))],
     execute: async () => undefined,
     transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(chain),
@@ -165,7 +166,7 @@ async function resolveRule(
   options: { refuseRole?: boolean; asked?: string[]; body?: Record<string, unknown>; mode?: "propose" | "record" } = {},
 ) {
   const resolver = new CopilotTargetResolver(
-    oneRowDb({ name: "Chiller high", assetId: RULE_ASSET, lifecycleStatus: "published" }),
+    oneRowDb({ name: "Chiller high", assetId: RULE_ASSET, lifecycleStatus: "published", code: "CH-1", rtuName: "Roof RTU", locationName: "Plant A" }),
     ruleAccess(readable, options.refuseRole, options.asked),
     {} as never,
     {} as never,
@@ -201,7 +202,8 @@ export async function aRuleWhoseAssetIsOutsideTheReadScopeIsRefused(): Promise<v
 export async function aRuleCreateNeedsAnAssetIdAndResolvesTheAssetsOrganization(): Promise<void> {
   expect(await resolveRule("rule.create", null, { body: { name: "x" } })).toBeNull();
   const resolved = await resolveRule("rule.create", [RULE_ASSET], { body: { assetId: RULE_ASSET } });
-  expect([resolved?.organizationId, resolved?.targetName]).toEqual([ORG, "Chiller high"]);
+  // `F4.316` PR 7 (Q4): a create's card names its asset by the label.
+  expect([resolved?.organizationId, resolved?.targetName]).toEqual([ORG, "CH-1 · Roof RTU"]);
   expect(await resolveRule("rule.create", [RULE_ASSET], { body: { assetId: OTHER_ASSET } })).toBeNull();
 }
 

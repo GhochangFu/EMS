@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 
 import type { BmsTx } from "../database/tenant-context";
-import { readAssetTarget } from "./copilot-asset-targets";
+import { findConfigurationAsset, readAssetGroupMemberTarget, readAssetTarget } from "./copilot-asset-targets";
 
 /**
  * `F4.316` PR 7 (ADR 0111 decision 5, ruling Q4) — the resolver's `asset`
@@ -24,6 +24,7 @@ function queuedTx(results: unknown[][]): BmsTx {
     select: () => chain,
     from: () => chain,
     leftJoin: () => chain,
+    innerJoin: () => chain,
     where: () => ({ limit: next, then: (resolve: (value: unknown) => unknown) => next().then(resolve) }),
   };
   return chain as never;
@@ -54,4 +55,29 @@ export async function theTargetKeepsItsTemplateAndPointKeys(): Promise<void> {
 /** An asset not found in the organization is `null`. */
 export async function aMissingAssetIsNull(): Promise<void> {
   expect(await read(null)).toBeNull();
+}
+
+/** A database whose `withTenant` transaction runs on `queuedTx(results)`. */
+function queuedDb(results: unknown[][]): never {
+  const tx = queuedTx(results) as unknown as Record<string, unknown>;
+  tx.execute = async () => undefined;
+  tx.transaction = async (fn: (inner: unknown) => Promise<unknown>) => fn(tx);
+  return tx as never;
+}
+
+/** A create's asset is named by its label, in the first allowed organization that holds it. */
+export async function aCreatesAssetIsNamedByItsLabel(): Promise<void> {
+  const db = queuedDb([[], [{ code: "MCC-1", rtuName: "MCC RTU", locationName: "Plant" }]]);
+  expect(await findConfigurationAsset(db, ASSET, ["org-1", ORG])).toEqual({ organizationId: ORG, name: "MCC-1 · MCC RTU", assetId: ASSET });
+}
+
+/** A create's asset in no allowed organization is `null`. */
+export async function aCreatesAssetInNoAllowedOrganizationIsNull(): Promise<void> {
+  expect(await findConfigurationAsset(queuedDb([[]]), ASSET, [ORG])).toBeNull();
+}
+
+/** A group membership is named `<asset label> in <group>`, with the group's site. */
+export async function aGroupMemberIsNamedByItsAssetsLabel(): Promise<void> {
+  const tx = queuedTx([[{ code: "WTR-WTP-01", rtuName: null, locationName: "Lotapata", group: "Pumps", locationId: "loc-1" }]]);
+  expect(await readAssetGroupMemberTarget(tx, ASSET, ORG)).toEqual({ organizationId: ORG, name: "WTR-WTP-01 · Lotapata in Pumps", locationId: "loc-1" });
 }

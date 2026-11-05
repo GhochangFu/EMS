@@ -84,6 +84,8 @@ function worldDb(world: World, ask: { org: string | null; id?: string; ids?: str
     // `bms.users` carries FORCE RLS: outside a tenant transaction (`org: null`) it answers nothing.
     if (keys.includes("displayName")) return ask.org !== null && inOrg && world.refFound ? [{ id: USER, displayName: "Asha Rao" }] : [];
     if (keys.length === 1 && keys[0] === "id") return world.refFound ? [{ id: "found" }] : [];
+    // `F4.316` PR 7: a create's asset is read with its label columns.
+    if (keys.includes("rtuName")) return [{ code: "MCC-1", rtuName: "MCC RTU", locationName: "Plant" }];
     return [{ name: "MCC-1" }];
   };
   let selected: string[] = [];
@@ -95,6 +97,7 @@ function worldDb(world: World, ask: { org: string | null; id?: string; ids?: str
     from: () => chain,
     where: () => chain,
     innerJoin: () => chain,
+    leftJoin: () => chain,
     orderBy: () => chain,
     limit: () => chain,
     then: (resolve: (rows: unknown[]) => void) => resolve(answer(selected)),
@@ -263,7 +266,7 @@ export async function aViewerIsRefusedTheWorkOrder(): Promise<void> {
 /** A work-order create resolves the body's asset and refuses one outside the read scope. */
 export async function theCreateResolvesTheBodysAsset(): Promise<void> {
   const body = { assetId: ASSET, title: "Check the breaker" };
-  expect((await resolveAs("workOrder.create", "location_admin", [ASSET], { body }))?.targetName).toBe("MCC-1");
+  expect((await resolveAs("workOrder.create", "location_admin", [ASSET], { body }))?.targetName).toBe("MCC-1 · MCC RTU");
   expect(await resolveAs("workOrder.create", "location_admin", [OTHER_ASSET], { body })).toBeNull();
 }
 
@@ -308,7 +311,7 @@ export async function theConvertRunsTheOperationalGate(): Promise<void> {
 /** An assignee the change's organization holds is a ref that belongs, read under its tenant (RLS). */
 export async function anAssigneeOfTheOrganizationBelongs(): Promise<void> {
   const body = { assetId: ASSET, title: "Check the breaker", assignedTo: USER };
-  expect((await resolveAs("workOrder.create", "admin", null, { body }))?.targetName).toBe("MCC-1");
+  expect((await resolveAs("workOrder.create", "admin", null, { body }))?.targetName).toBe("MCC-1 · MCC RTU");
 }
 
 /** The resolved assignee's display name is the target's `refName`, so the card names the person. */

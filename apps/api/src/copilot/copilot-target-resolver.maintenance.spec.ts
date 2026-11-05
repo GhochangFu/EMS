@@ -31,6 +31,7 @@ function oneRowDb(row: Record<string, unknown>): never {
     from: () => chain,
     where: () => chain,
     innerJoin: () => chain,
+    leftJoin: () => chain,
     limit: async () => [Object.fromEntries(selected.map((key) => [key, row[key]]))],
     execute: async () => undefined,
     transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(chain),
@@ -59,7 +60,7 @@ async function resolveAs(
   options: { body?: Record<string, unknown>; asked?: string[]; allowed?: string[] } = {},
 ) {
   const resolver = new CopilotTargetResolver(
-    oneRowDb({ title: "Quarterly filter check", assetId: ASSET, name: "Chiller 2" }),
+    oneRowDb({ title: "Quarterly filter check", assetId: ASSET, name: "Chiller 2", code: "CH-2", rtuName: null, locationName: "Plant B" }),
     maintenanceAccess(readable, options.asked ?? []),
     {} as never,
     {} as never,
@@ -112,7 +113,7 @@ export async function aGlobalAdminResolvesAnySchedule(): Promise<void> {
 export async function theCreateResolvesTheBodysAsset(): Promise<void> {
   expect(await resolveAs("maintenanceSchedule.create", "location_admin", [ASSET], { body: { title: "x" } })).toBeNull();
   const resolved = await resolveAs("maintenanceSchedule.create", "location_admin", [ASSET], { body: { assetId: ASSET } });
-  expect({ organizationId: resolved?.organizationId, targetName: resolved?.targetName }).toEqual({ organizationId: ORG, targetName: "Chiller 2" });
+  expect({ organizationId: resolved?.organizationId, targetName: resolved?.targetName }).toEqual({ organizationId: ORG, targetName: "CH-2 · Plant B" });
   expect(await resolveAs("maintenanceSchedule.create", "location_admin", [OTHER_ASSET], { body: { assetId: ASSET } })).toBeNull();
 }
 

@@ -10,6 +10,7 @@ import { asRole } from "../testing/role-urls";
 import {
   anAssetOnAnRtuIsNamedByItsRtu,
   anAssetWithNoRtuIsNamedByItsLocation,
+  aCreatesAssetIsNamedByItsLabel,
   type AssetTargetsCtx,
 } from "./copilot-asset-targets.integration.spec";
 
@@ -88,4 +89,5 @@ describe.skipIf(!connectionString)("F4.316 PR 7 — the copilot's asset target u
 
   it("names an asset on an RTU <code> · <RTU display name>", () => anAssetOnAnRtuIsNamedByItsRtu(ctx));
   it("names an asset with no RTU <code> · <location name>", () => anAssetWithNoRtuIsNamedByItsLocation(ctx));
+  it("names a create's asset by the same label", () => aCreatesAssetIsNamedByItsLabel(ctx));
 });

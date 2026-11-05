@@ -3,7 +3,7 @@ import { expect } from "vitest";
 import type { BmsDb } from "@bms/db";
 
 import { withTenant } from "../database/tenant-context";
-import { readAssetTarget } from "./copilot-asset-targets";
+import { findConfigurationAsset, readAssetTarget } from "./copilot-asset-targets";
 
 /**
  * `F4.316` PR 7 (ADR 0111 decision 5, ruling Q4) — the copilot's `asset`
@@ -36,4 +36,13 @@ export async function anAssetOnAnRtuIsNamedByItsRtu(ctx: AssetTargetsCtx): Promi
 /** The RTU-less twin: the asset is still found, and named `<code> · <location name>`. */
 export async function anAssetWithNoRtuIsNamedByItsLocation(ctx: AssetTargetsCtx): Promise<void> {
   expect((await read(ctx, ctx.withoutRtu))?.name).toBe(`${ctx.withoutRtuCode} · ${ctx.locationName}`);
+}
+
+/** A rule, maintenance or work-order create names its asset by the same label, in the organization that holds it. */
+export async function aCreatesAssetIsNamedByItsLabel(ctx: AssetTargetsCtx): Promise<void> {
+  expect(await findConfigurationAsset(ctx.tenantDb, ctx.withRtu, [ctx.organizationId])).toEqual({
+    organizationId: ctx.organizationId,
+    name: `${ctx.withRtuCode} · ${ctx.rtuName}`,
+    assetId: ctx.withRtu,
+  });
 }

@@ -207,7 +207,8 @@ export async function aSiteRowIsCheckedOnItsOwnSite(ctx: ResolverCtx): Promise<v
   const cases: Array<[CatalogTarget["kind"], string, string]> = [
     ["rtu", ctx.rtuA, RESOLVER_NAMES.rtuA],
     ["assetGroup", ctx.groupA, RESOLVER_NAMES.groupA],
-    ["assetGroupMember", ctx.memberA, `${RESOLVER_NAMES.assetA} in ${RESOLVER_NAMES.groupA}`],
+    // `F4.316` PR 7 (Q4): the member's asset by its label — this asset has no RTU, so its site.
+    ["assetGroupMember", ctx.memberA, `${ctx.assetCodeA} · ${RESOLVER_NAMES.locationA} in ${RESOLVER_NAMES.groupA}`],
   ];
   for (const [kind, id, name] of cases) {
     const entry = fixture({ kind, param: "id" } as CatalogTarget);
