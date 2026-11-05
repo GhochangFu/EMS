@@ -58,6 +58,20 @@ function rowByCode(page: Page, code: string) {
   return page.locator("tbody tr").filter({ has: page.getByRole("cell", { name: code, exact: true }) });
 }
 
+/**
+ * The asset table row whose Code cell starts with `code`. Since ADR 0111 (F4.316) that cell is the
+ * asset label — the code, then `· <RTU>` (else `· <location>`) on a second line — so its accessible
+ * name is `<code> · <where>`, not the bare code.
+ */
+function assetCodeCell(page: Page, code: string) {
+  const escaped = code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return page.getByRole("cell", { name: new RegExp(`^${escaped}(\\s|·|$)`) });
+}
+
+function assetRowByCode(page: Page, code: string) {
+  return page.locator("tbody tr").filter({ has: assetCodeCell(page, code) });
+}
+
 async function only<T extends Listed>(token: string, path: string, code: string): Promise<T> {
   const { items } = await apiGet<{ items: T[] }>(path, token);
   const matches = items.filter((item) => item.code === code);
@@ -138,11 +152,11 @@ test.describe("path 4 — master data", () => {
       await nextThenSubmit(form, 2);
       await expect(form).toHaveCount(0);
 
-      await expect(rowByCode(page, ASSET_CODE)).toHaveCount(1);
-      await expect(rowByCode(page, ASSET_CODE)).toContainText(RTU_NAME);
+      await expect(assetRowByCode(page, ASSET_CODE)).toHaveCount(1);
+      await expect(assetRowByCode(page, ASSET_CODE)).toContainText(RTU_NAME);
       assetId = (await only(token, `/api/v1/admin/assets?rtuId=${rtuId}`, ASSET_CODE)).id;
 
-      await rowByCode(page, ASSET_CODE).getByRole("cell", { name: ASSET_CODE, exact: true }).click();
+      await assetCodeCell(page, ASSET_CODE).click();
       await expect(page).toHaveURL(`/admin/assets/${assetId}/points`);
     });
 

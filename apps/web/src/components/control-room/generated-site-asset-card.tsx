@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { HEADLINE_POINT_COUNT } from "@bms/shared/contracts";
-import { ASSET_LABEL_SEPARATOR, assetLabelParts, type GeneratedSiteAssetDto } from "@bms/shared";
+import type { GeneratedSiteAssetDto } from "@bms/shared";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import {
@@ -12,6 +12,7 @@ import {
 } from "../../lib/generated-site-view";
 import { isStale } from "../../lib/schematic-telemetry";
 import { AssetHistoryLink } from "../assets/asset-history-link";
+import { AssetWhere } from "../assets/asset-where";
 import { StatusPill } from "../status-pill";
 
 const STATUS_LABEL: Record<AssetStatus, string> = { live: "Live", stale: "Stale", none: "None" };
@@ -44,11 +45,6 @@ export function GeneratedSiteAssetCard({
   const [expanded, setExpanded] = useState(false);
   const status = assetStatus(readings.assetLastSeenMs(asset), readings.nowMs);
   const shown = headlinePoints(asset.points, expanded);
-  const { where } = assetLabelParts({
-    code: asset.code,
-    rtuName: asset.assetRtuName,
-    locationName: asset.assetLocationName,
-  });
 
   return (
     <article
@@ -58,9 +54,7 @@ export function GeneratedSiteAssetCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="font-condensed text-sm font-bold text-ink">{asset.code}</p>
-          {where === null ? null : (
-            <p className="break-words text-[11px] text-ink-muted">{`${ASSET_LABEL_SEPARATOR.trim()} ${where}`}</p>
-          )}
+          <AssetWhere code={asset.code} rtuName={asset.assetRtuName} locationName={asset.assetLocationName} />
           <p className="truncate text-[11px] text-ink-muted">{asset.name}</p>
           <AssetHistoryLink assetId={asset.id} code={asset.code} />
         </div>

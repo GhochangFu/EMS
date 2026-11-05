@@ -159,7 +159,7 @@ export function siteWidgetsResponseIsBounded(): void {
 export function siteWidgetsBreakersAreBounded(): void {
   const breaker = {
     asset: {
-      id: GROUP_ID, code: "CR-Q1", name: "Main 1", domain: "electrical",
+      id: GROUP_ID, code: "CR-Q1", name: "Main 1", assetRtuName: null, assetLocationName: null, domain: "electrical",
       latestTelemetryAt: null, freshness: "none", points: [],
     },
     roleCode: "main-breaker", roleLabel: "Main Breakers", rating: null, tripCause: null,

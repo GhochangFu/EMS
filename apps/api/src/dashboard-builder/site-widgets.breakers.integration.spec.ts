@@ -484,14 +484,14 @@ async function addMember(site: Site, code: string, role: string): Promise<string
 /** F4.316 — a breaker row's asset carries its RTU's display name; the RTU-less twin carries null. Both carry the location name. */
 export async function assertBreakerAssetCarriesRtuAndLocationNames(db: BmsDb): Promise<void> {
   await inSite(async (site) => {
-    const rtu = await one<{ id: string }>(
-      site.txDb as unknown as Tx,
+    const inserted = await site.txDb.execute<{ id: string }>(
       sql`INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type, ingest_enabled, active)
           VALUES (${site.organizationId}, ${site.locationId}, ${`${site.tag}-rtu`}, 'F4.316 breaker RTU', 'simulated', false, true)
           RETURNING id`,
-      "an RTU",
     );
-    await site.txDb.execute(sql`UPDATE bms.assets SET rtu_id = ${rtu.id} WHERE id = ${site.m1}`);
+    const rtuId = inserted.rows[0]?.id;
+    if (!rtuId) throw new Error("F4.316 breaker-rows fixture: failed to insert an RTU");
+    await site.txDb.execute(sql`UPDATE bms.assets SET rtu_id = ${rtuId} WHERE id = ${site.m1}`);
     const dto = await readAs(site, "sld", restricted(site));
     const wired = rowOf(dto, site.m1).asset;
     const bare = rowOf(dto, site.m2).asset;
