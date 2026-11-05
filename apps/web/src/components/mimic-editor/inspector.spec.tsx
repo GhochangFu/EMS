@@ -1,9 +1,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { VocabulariesResponse } from "@bms/shared";
+import type { AdminPointKeyDto, VocabulariesResponse } from "@bms/shared";
 import { expect, vi } from "vitest";
 
+import * as pointKeyApi from "../../api/admin/point-keys";
 import * as vocabApi from "../../api/vocabularies";
 import { editorReducer, fromPreset, initialEditorState, type EditorLayout, type EditorNode } from "../../lib/mimic-editor";
 import { MIMIC_SYMBOL_GROUPS, librarySymbolGroups, symbolLabel } from "../../lib/mimic-symbols";
@@ -11,9 +12,9 @@ import { orgCatalogFixture } from "../../lib/mimic-symbols.spec";
 import { MimicEditorInspector, type MimicEditorInspectorProps } from "./inspector";
 
 /**
- * `F3.32c` U6b, `F3.32d` U3 (ADR 0082 decision 2) — the editor inspector. `fetchVocabularies` is
- * stubbed (an unstubbed read reaches a local API on `:4000`). `inspector.test.tsx` is the Vitest
- * entry.
+ * `F3.32c` U6b, `F3.32d` U3 (ADR 0082 decision 2) — the editor inspector. `fetchVocabularies` and
+ * `fetchAdminPointKeys` are stubbed (an unstubbed read reaches a local API on `:4000`).
+ * `inspector.test.tsx` is the Vitest entry.
  */
 
 const VOCAB = {
@@ -31,8 +32,27 @@ function nodeOf(key: string): EditorNode {
   return found;
 }
 
+function pointKey(code: string, name: string): AdminPointKeyDto {
+  return {
+    id: `pk-${code}`,
+    code,
+    name,
+    domain: null,
+    unit: null,
+    description: null,
+    active: true,
+    createdAt: "2026-11-05T00:00:00.000Z",
+    headlineRank: null,
+    trendDefault: false,
+  };
+}
+
+/** The active catalog (`fetchAdminPointKeys("true")`): `old` is not in it — it was deactivated. */
+const ACTIVE_POINT_KEYS = [pointKey("kw", "Active power"), pointKey("flow", "Flow rate"), pointKey("level", "Tank level")];
+
 function renderInspector(selectedKey: string | null, overrides: Partial<MimicEditorInspectorProps> = {}) {
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCAB);
+  vi.spyOn(pointKeyApi, "fetchAdminPointKeys").mockResolvedValue({ items: ACTIVE_POINT_KEYS });
   const props: MimicEditorInspectorProps = {
     layout,
     selected: selectedKey === null ? null : nodeOf(selectedKey),
@@ -526,4 +546,111 @@ export function aPanelShowsNoSwitchesToggle(): void {
   renderInspector(null, { selected: panel });
   expect(screen.getByRole("combobox", { name: "Tone" })).toBeInTheDocument();
   expect(screen.queryByRole("checkbox", { name: /Switches/ })).toBeNull();
+}
+
+/** `F4.307` — the "ro" unit (role `ro`) listing `pointKeys`, selected. */
+function renderWithPoints(pointKeys: string[]) {
+  return renderInspector("ro", { selected: { ...nodeOf("ro"), pointKeys } });
+}
+
+/**
+ * `F4.307` — the Add point select once the active catalog has loaded. Its options are read off
+ * the element, not by role: a role query walks the Symbol select's hundreds of options too.
+ */
+async function addPointSelect(): Promise<HTMLSelectElement> {
+  const select = screen.getByLabelText<HTMLSelectElement>("Add point", { selector: "select" });
+  await waitFor(() => expect(select.options.length).toBeGreaterThan(1));
+  return select;
+}
+
+/** `F4.307` T9 — the Points block sits on a roled unit only: not a passive unit, not a panel. */
+export function pointsBlockOnARoledUnitOnly(): void {
+  renderInspector("ro");
+  expect(screen.getByRole("group", { name: "Points" })).toBeInTheDocument();
+  expect(screen.getByRole("combobox", { name: "Add point" })).toBeInTheDocument();
+  cleanup();
+  expect(nodeOf("discharge").roleCode).toBeNull();
+  renderInspector("discharge");
+  expect(screen.queryByRole("group", { name: "Points" })).toBeNull();
+  cleanup();
+  renderInspector("wastewater");
+  expect(screen.getByRole("combobox", { name: "Tone" })).toBeInTheDocument();
+  expect(screen.queryByRole("group", { name: "Points" })).toBeNull();
+}
+
+/** `F4.307` T9 — the block reads the active catalog: `fetchAdminPointKeys("true")`. */
+export async function pointsReadTheActiveCatalog(): Promise<void> {
+  renderWithPoints([]);
+  await addPointSelect();
+  expect(pointKeyApi.fetchAdminPointKeys).toHaveBeenCalledWith("true");
+}
+
+/** `F4.307` T9 — a listed row shows the catalog name and the code, in list order. */
+export async function aListedRowShowsNameAndCode(): Promise<void> {
+  renderWithPoints(["level", "kw"]);
+  await screen.findByText("Tank level");
+  const rows = within(screen.getByRole("list", { name: "Listed points" })).getAllByRole("listitem");
+  expect(rows.map((row) => row.textContent?.replace(/(Up|Down|Remove)/g, "").trim())).toEqual([
+    "Tank level · level",
+    "Active power · kw",
+  ]);
+}
+
+/** `F4.307` T9 — Add point offers the active catalog minus listed keys; choosing one appends it, once. */
+export async function addingAPointDispatchesOnce(): Promise<void> {
+  const props = renderWithPoints(["kw"]);
+  const select = await addPointSelect();
+  const offered = Array.from(select.options)
+    .map((o) => o.value)
+    .filter((v) => v !== "");
+  expect(offered).toEqual(["flow", "level"]);
+  await userEvent.selectOptions(select, "level");
+  expect(props.onNodeChange).toHaveBeenCalledTimes(1);
+  expect(props.onNodeChange).toHaveBeenCalledWith("ro", { pointKeys: ["kw", "level"] });
+}
+
+/** `F4.307` T9 — Remove drops that key only, once. */
+export async function removingAPointDispatchesOnce(): Promise<void> {
+  const props = renderWithPoints(["kw", "flow", "level"]);
+  await userEvent.click(screen.getByRole("button", { name: "Remove flow" }));
+  expect(props.onNodeChange).toHaveBeenCalledTimes(1);
+  expect(props.onNodeChange).toHaveBeenCalledWith("ro", { pointKeys: ["kw", "level"] });
+}
+
+/** `F4.307` T9 — Up swaps a key with the one before it, once; the first row's Up is disabled. */
+export async function movingAPointUpDispatchesOnce(): Promise<void> {
+  const props = renderWithPoints(["kw", "flow", "level"]);
+  expect(screen.getByRole("button", { name: "Move kw up" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Move level up" }));
+  expect(props.onNodeChange).toHaveBeenCalledTimes(1);
+  expect(props.onNodeChange).toHaveBeenCalledWith("ro", { pointKeys: ["kw", "level", "flow"] });
+}
+
+/** `F4.307` T9 — Down swaps a key with the one after it, once; the last row's Down is disabled. */
+export async function movingAPointDownDispatchesOnce(): Promise<void> {
+  const props = renderWithPoints(["kw", "flow", "level"]);
+  expect(screen.getByRole("button", { name: "Move level down" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Move kw down" }));
+  expect(props.onNodeChange).toHaveBeenCalledTimes(1);
+  expect(props.onNodeChange).toHaveBeenCalledWith("ro", { pointKeys: ["flow", "kw", "level"] });
+}
+
+/** `F4.307` T9 — at three listed keys Add point is disabled with "3 of 3"; below it, neither. */
+export async function addPointIsDisabledAtTheBound(): Promise<void> {
+  renderWithPoints(["kw", "flow", "level"]);
+  expect(screen.getByRole("combobox", { name: "Add point" })).toBeDisabled();
+  expect(screen.getByText("3 of 3")).toBeInTheDocument();
+  cleanup();
+  renderWithPoints(["kw", "flow"]);
+  expect(await addPointSelect()).toBeEnabled();
+  expect(screen.queryByText("3 of 3")).toBeNull();
+}
+
+/** `F4.307` T9 — a listed key the active catalog lacks reads `code (inactive)` and stays removable. */
+export async function anInactiveListedKeyIsShownAndRemovable(): Promise<void> {
+  const props = renderWithPoints(["kw", "old"]);
+  expect(await screen.findByText("old (inactive)")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Remove old" }));
+  expect(props.onNodeChange).toHaveBeenCalledTimes(1);
+  expect(props.onNodeChange).toHaveBeenCalledWith("ro", { pointKeys: ["kw"] });
 }
