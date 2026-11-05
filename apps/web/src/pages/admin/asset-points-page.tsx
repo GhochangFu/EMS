@@ -150,13 +150,6 @@ function EffectiveMetadataCells({ item }: { item: AdminAssetPointDto }) {
   );
 }
 
-/**
- * `F3.85` PR 11b (ADR 0099 decision 6) — the catalog entry a wizard submits.
- * The page writes the literal id on the `entry` prop
- * (`entry={wizardEntry("calcOverride.set")}`), the form PR 9's stepper gate
- * detects. A missing entry is a build defect, so it throws rather than
- * rendering a shell with no steps.
- */
 /** `F4.316` (ADR 0111): the label's `· where` part — the RTU's name, or the location's without one. */
 function whereOf(item: AdminAssetPointDto): string | null {
   return assetLabelParts({ code: item.assetCode, rtuName: item.assetRtuName, locationName: item.assetLocationName }).where;
@@ -167,6 +160,13 @@ function summaryLabel(summary: AdminAssetSummaryDto | undefined): string | null 
   return summary ? assetLabel({ code: summary.code, rtuName: summary.rtuDisplayName, locationName: summary.locationName }) : null;
 }
 
+/**
+ * `F3.85` PR 11b (ADR 0099 decision 6) — the catalog entry a wizard submits.
+ * The page writes the literal id on the `entry` prop
+ * (`entry={wizardEntry("calcOverride.set")}`), the form PR 9's stepper gate
+ * detects. A missing entry is a build defect, so it throws rather than
+ * rendering a shell with no steps.
+ */
 function wizardEntry(id: string): CatalogEntry {
   const entry = catalogEntry(id);
   if (!entry) throw new Error(`F3.85: the catalog has no entry "${id}"`);

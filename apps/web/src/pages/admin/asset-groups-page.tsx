@@ -59,12 +59,12 @@ function wizardEntry(id: string): CatalogEntry {
   return entry;
 }
 
-/** An emptied description is `null`, as the old form sent it. */
 /** `F4.316` (ADR 0111): the label's `· where` part — the RTU's name, or the location's without one. */
 function whereOf(member: AdminAssetGroupMemberDto): string | null {
   return assetLabelParts({ code: member.assetCode, rtuName: member.assetRtuName, locationName: member.assetLocationName }).where;
 }
 
+/** An emptied description is `null`, as the old form sent it. */
 function descriptionOf(form: GroupForm): string | null {
   return form.description.trim() === "" ? null : form.description.trim();
 }

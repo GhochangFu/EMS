@@ -226,6 +226,8 @@ function dashboard(i: number) {
     assetId: null,
     assetTemplateId: null,
     assetCode: null,
+    assetRtuName: null,
+    assetLocationName: null,
     createdAt: "2026-10-14T16:44:39.671Z",
     updatedAt: "2026-10-28T12:47:53.502Z",
     widgetCount: 12,
