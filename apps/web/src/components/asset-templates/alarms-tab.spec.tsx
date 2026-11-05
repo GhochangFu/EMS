@@ -22,6 +22,7 @@ const VOCABULARIES: VocabulariesResponse = {
   assetRoles: [],
   dashboardSections: [],
   waterBalanceRoles: [],
+  switchingStates: [],
 } as unknown as VocabulariesResponse;
 
 /** One point, so a pair-absent alarm bound to it resolves cleanly. */

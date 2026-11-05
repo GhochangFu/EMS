@@ -65,6 +65,7 @@ const VOCABULARIES: VocabulariesResponse = {
   assetRoles: [],
   dashboardSections: [],
   waterBalanceRoles: [],
+  switchingStates: [],
 } as unknown as VocabulariesResponse;
 
 function point(key: string, sortOrder: number, overrides: Record<string, unknown> = {}): unknown {
