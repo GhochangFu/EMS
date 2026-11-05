@@ -5,6 +5,7 @@ import { cleanup } from "@testing-library/react";
 import {
   aKeyTheAssetHasStaysOutByDefault,
   aKeyTheAssetHasStaysOutUnderShowAll,
+  aKeyWithNoDomainIsListedByDefault,
   newKeyIsStillOfferedByDefault,
   showAllListsACrossDomainKey,
   theDefaultListsOnlyTheAssetsDomain,
@@ -19,8 +20,12 @@ describe("F4.313 follow-up — the Add calculated point key picker lists the ass
     vi.restoreAllMocks();
   });
 
-  it("by default lists only the keys of the asset's domain", async () => {
+  it("by default lists only the keys of the asset's domain, plus keys with no domain", async () => {
     await theDefaultListsOnlyTheAssetsDomain();
+  });
+
+  it("by default also lists a key with no domain (as New key creates it)", async () => {
+    await aKeyWithNoDomainIsListedByDefault();
   });
 
   it("Show all keys lists a key of another domain", async () => {

@@ -79,6 +79,7 @@ function stubApi(): void {
       pointKey("pf", "Power factor", "electrical"),
       pointKey("kvah", "Apparent energy", "electrical"),
       pointKey("flow", "Flow rate", "water"),
+      pointKey("spare", "Spare input", null),
     ],
   });
 }
@@ -118,7 +119,13 @@ function keyOptions(select: HTMLElement): string[] {
 // Catches: the picker not filtered by the asset's domain (`domain` never passed, or the filter dropped).
 export async function theDefaultListsOnlyTheAssetsDomain(): Promise<void> {
   const select = await openAdd();
-  expect(keyOptions(select)).toEqual(["pf · Power factor", "kvah · Apparent energy"]);
+  expect(keyOptions(select)).toEqual(["pf · Power factor", "kvah · Apparent energy", "spare · Spare input"]);
+}
+
+// Catches: a key with no domain (as New key creates it) hidden by the domain filter.
+export async function aKeyWithNoDomainIsListedByDefault(): Promise<void> {
+  const select = await openAdd();
+  expect(within(select).getByText("spare · Spare input")).toBeTruthy();
 }
 
 // Catches: Show all keys not lifting the domain filter.

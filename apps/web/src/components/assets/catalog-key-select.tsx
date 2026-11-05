@@ -11,8 +11,8 @@
  * rule; the code, label and unit fields are `NewPointKeyFields`.
  *
  * `F4.313` follow-up (owner ruling 2026-11-05) — domain first: with a
- * `domain`, the list holds that domain's keys until **Show all keys** is
- * ticked, and a search box narrows it by code or name
+ * `domain`, the list holds that domain's keys (and the keys with no domain,
+ * as **New key** creates them) until **Show all keys** is ticked, and a search box narrows it by code or name
  * (`lib/catalog-key-filter.ts`). With `domain` `null` every key is listed and
  * the toggle is not shown. **New key** is offered in every mode.
  */
