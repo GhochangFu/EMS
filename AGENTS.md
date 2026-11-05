@@ -1019,8 +1019,24 @@
 > sites and the author's scope, and again on a `PATCH locationIds`; compare
 > adds Previous and Change to `energy_consumption`. The `trend_points` PDF
 > folds a `1m` read to `1h` rows (plan C25: the measured run was over 10 s);
-> its XLSX keeps every bucket, deflated. The tool registry stays 31. Next:
-> `F4.306`.
+> its XLSX keeps every bucket, deflated. The tool registry stays 31. **`F4.306`
+> adds the trend strip setup wizard** (ADR 0108 Amendment 7, ADR 0078
+> Amendment 4; PR 1 #991, #992, PR 2 #1001). A `trend_strip` config may hold
+> `segments` (1–30), `points` (`domain:code`, 1–30, each on its segment's
+> `F4.300` list, checked on `PUT /dashboards/:id/widgets` and the append trend
+> arm) and `colors` (point → `series-1` … `series-8`); without them it is an
+> `F4.305` config byte for byte. The strip route takes `segments` and
+> `points` (`points` alone is a 400); a stored code that has left the list is
+> skipped at read and marked "Not on the site's list" in the builder.
+> `POST /dashboards/:id/widgets/append` is a union: the chart arm unchanged,
+> a `trend_strip` arm of 1–8 strips that replaces a tab's topmost strip or
+> inserts one at the tab's foot (`placeTrendStrip`, shared), all or nothing
+> at the widget cap, one audit row. A dashboard **template** may not hold a
+> selection (400), the template-mimic rule of ADR 0081 decision 5. The wizard
+> (Site → Tabs → Segments → Points → Range → Preview) opens from the builder
+> (edits the draft; Save writes) and from the site dashboard view for every
+> authoring role, never on the wall; failures are fixed sentences by status.
+> No route, no migration; `QUERY_SCHEMAS` and the tool registry are unchanged.
 > And **calculated points on an asset with no template** (**ADR 0109**; row
 > `F4.311`; PR 1 #993, PR 4 #994, PR 2 #995, PR 5 #996, PR 3 #997, PR 6a
 > #998, PR 6b #999; this sweep merges last). An asset with
@@ -3949,7 +3965,7 @@ before building a further reference-parity screen. The domain-first
 navigation IA gap that same document names (§3.3, `F3.29`) is still open.
 
 **Colours are role tokens** (**ADR 0078**, `F3.65a`–`F3.65c`, 2026-09-28/29).
-The vocabulary is the 41 roles in `apps/web/src/index.css` — RGB-channel CSS
+The vocabulary is the 49 roles in `apps/web/src/index.css` — RGB-channel CSS
 variables under `:root` (light) and `:root[data-theme="dark"]`, mapped in
 `apps/web/tailwind.config.js` as `rgb(var(--role) / <alpha-value>)`. The
 Tailwind `colors` hold only the roles plus `transparent`, `current` and
@@ -3965,6 +3981,10 @@ CSS. A call site names a role (`bg-surface`, `text-ink-muted`,
   class. A new role needs a light value, a dark value and a contrast pair in
   `tests/f3.65a-colour-contrast.test.ts`; the dark allowlist there holds only
   the formula editor's selected-text pairs.
+- **The eight `series-1` … `series-8` roles colour trend strip points only**
+  (ADR 0078 Amendment 4, `F4.306`): stored by name in the widget config,
+  `accent` stays the default. The same file gates them at CIEDE2000 ≥ 20 from
+  `warning` and `critical` and ≥ 10 from each other, in each theme.
 - **Text on an opaque `bg-accent` fill is `text-on-accent`**, never
   `text-on-dark`: the dark accent is `#3DCD58`, and white on it is 2.09:1.
   White on chrome (header, footer, the green nav) is `on-dark`.
