@@ -11,7 +11,8 @@ type MimicLayoutNodeDto = z.infer<typeof mimicLayoutNodeSchema>;
  * field. A `null` becomes absent; `z` and the three flags are kept (an absent
  * flag on a replace clears a stored one, so a `false` must stay `false`, not
  * vanish into a default that happens to agree). The replace card's node diff
- * (PR 5) reads nodes through the same function.
+ * (PR 5) reads nodes through the same function. `F4.307` (plan C8): the point
+ * list is always emitted, `[]` included, on the same rule.
  */
 export function writeNodeOfDto(node: MimicLayoutNodeDto): MimicLayoutWriteNode {
   return {
@@ -29,5 +30,6 @@ export function writeNodeOfDto(node: MimicLayoutNodeDto): MimicLayoutWriteNode {
     fanOut: node.fanOut,
     isSource: node.isSource,
     isSwitching: node.isSwitching,
+    pointKeys: [...node.pointKeys],
   };
 }

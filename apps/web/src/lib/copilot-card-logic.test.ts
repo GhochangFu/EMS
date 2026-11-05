@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  aPointListChangeIsOneChangedRow,
+  anAbsentListAgainstAnEmptyOneIsNoChange,
   anOnboardingCommitInvalidatesTheDraftList,
   theReviewStepDoesNotAskForAClientOnlyField,
   aCreateHasNoBeforeValues,
@@ -73,4 +75,7 @@ describe("F4.246 — the card's full values and formula rows (ADR 0099 §3, owne
   it("reads an equal structured value as unchanged, whatever its key order and nulls", () =>
     anUnchangedStructuredValueIsNotChanged());
   it("reads a structured value with one nested difference as changed", () => aChangedStructuredValueIsChanged());
+  it("F4.307 shows a point-list-only change as one changed node row", () => aPointListChangeIsOneChangedRow());
+  it("F4.307 reads an absent point list against a stored [] as no change", () =>
+    anAbsentListAgainstAnEmptyOneIsNoChange());
 });

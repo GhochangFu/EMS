@@ -150,5 +150,6 @@ export function anAbsentFieldReadsAsTheStoreWritesIt(): void {
     fanOut: false,
     isSource: false,
     isSwitching: false,
+    pointKeys: [],
   });
 }

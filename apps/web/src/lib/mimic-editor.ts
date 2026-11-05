@@ -226,6 +226,8 @@ function newNode(
     fanOut: false,
     isSource: false,
     isSwitching: false,
+    // `F4.307`: a new node lists no points.
+    pointKeys: [],
     ...fields,
     ...NEW_NODE_AT,
     ...MIMIC_EDITOR_DEFAULT_BOX[kind],
@@ -509,6 +511,8 @@ export function editorLayoutFromWriteBody(body: MimicLayoutWriteBody): EditorLay
         fanOut: node.fanOut ?? false,
         isSource: node.isSource ?? false,
         isSwitching: node.isSwitching ?? false,
+        // `F4.307`: an absent point list is the store's `[]`.
+        pointKeys: [...(node.pointKeys ?? [])],
       }),
     ),
     pipes: body.pipes.map((pipe) => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),
@@ -595,6 +599,8 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       fanOut: node.fanOut === true,
       isSource: sources.has(node.key),
       isSwitching: false,
+      // `F4.307` ruling Q2: "Start from" a preset copies no point list.
+      pointKeys: [],
     };
   });
 
@@ -616,6 +622,7 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       fanOut: false,
       isSource: false,
       isSwitching: false,
+      pointKeys: [],
     });
   }
 
@@ -637,6 +644,7 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       fanOut: false,
       isSource: false,
       isSwitching: false,
+      pointKeys: [],
     };
   });
 

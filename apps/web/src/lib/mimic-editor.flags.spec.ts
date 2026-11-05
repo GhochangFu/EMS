@@ -24,6 +24,7 @@ function layoutWithOneUnit(flags: { fanOut: boolean; isSource: boolean; isSwitch
         h: 8,
         z: 0,
         isSwitching: false,
+        pointKeys: [],
         ...flags,
       },
     ],

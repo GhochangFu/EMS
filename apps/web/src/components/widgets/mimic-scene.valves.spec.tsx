@@ -49,7 +49,7 @@ const ISO_V1: GeneratedSiteAssetDto = {
 };
 
 function layoutNode(key: string, x: number, y: number, extra: Partial<MimicLayoutNodeDto>): MimicLayoutNodeDto {
-  return { key, kind: "unit", symbol: "unit", label: key, roleCode: null, tone: null, x, y, w: 20, h: 25, z: 0, fanOut: false, isSource: false, isSwitching: false, ...extra };
+  return { key, kind: "unit", symbol: "unit", label: key, roleCode: null, tone: null, x, y, w: 20, h: 25, z: 0, fanOut: false, isSource: false, isSwitching: false, pointKeys: [], ...extra };
 }
 
 /** `BREAKER_LAYOUT` plus the switching `valve` drawn with `symbol`, and the `tank` after it. */

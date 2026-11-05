@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 import { COPILOT_CATALOG, catalogEntry } from "@bms/shared/copilot";
 
-import { CHANGE_VALUE_MAX, type ChangeRow, changeRows, fieldLabel, formatChangeValue } from "./copilot-diff";
+import { CHANGE_VALUE_MAX, type ChangeRow, changeRows, fieldLabel, formatChangeValue, layoutGraphRows } from "./copilot-diff";
 import { INVALIDATED_ENTRIES, invalidationKeysFor, onboardingDraftsKey } from "./copilot-invalidations";
 import {
   applyFill,
@@ -381,4 +381,61 @@ export function theMaintenanceEntriesInvalidateTheScheduleCentre(): void {
   for (const id of ["maintenanceSchedule.create", "maintenanceSchedule.activate", "maintenanceSchedule.deactivate"]) {
     expect(invalidationKeysFor(id), id).toEqual([["maintenance", "schedules"]]);
   }
+}
+
+// `F4.307` T3 (ADR 0081 Amendment 1, plan C8) — a replace card's node diff sees a unit's point list.
+
+/** A stored roled unit with `pointKeys`, the baseline's shape. */
+const storedUnit = (pointKeys: string[]) => ({
+  key: "pump_1",
+  kind: "unit" as const,
+  symbol: "pump" as const,
+  label: "Pump 1",
+  roleCode: "raw-water-pump",
+  tone: null,
+  x: 0,
+  y: 0,
+  w: 20,
+  h: 25,
+  z: 0,
+  fanOut: false,
+  isSource: false,
+  isSwitching: false,
+  pointKeys,
+});
+
+const writeUnit = (extra: { pointKeys?: string[] } = {}) => ({
+  key: "pump_1",
+  kind: "unit" as const,
+  symbol: "pump" as const,
+  label: "Pump 1",
+  roleCode: "raw-water-pump",
+  x: 0,
+  y: 0,
+  w: 20,
+  h: 25,
+  ...extra,
+});
+
+/** A list-only change is one changed row for the node, naming `pointKeys` and only it. */
+export function aPointListChangeIsOneChangedRow(): void {
+  const rows = layoutGraphRows(
+    { nodes: [writeUnit({ pointKeys: ["flow", "kw"] })], pipes: [] },
+    { version: 1, nodes: [storedUnit(["kw", "flow"])], pipes: [] },
+  );
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.field).toBe("node:pump_1");
+  expect(rows[0]?.changed).toBe(true);
+  expect(rows[0]?.before).toMatch(/^pointKeys /);
+  expect(rows[0]?.after).toMatch(/^pointKeys /);
+}
+
+/** An absent list against a stored `[]` is no change: the store writes `[]` for absent. */
+export function anAbsentListAgainstAnEmptyOneIsNoChange(): void {
+  const rows = layoutGraphRows({ nodes: [writeUnit()], pipes: [] }, { version: 1, nodes: [storedUnit([])], pipes: [] });
+  expect(rows).toEqual([]);
+  // Positive control: the same pair with a stored list does differ.
+  expect(
+    layoutGraphRows({ nodes: [writeUnit()], pipes: [] }, { version: 1, nodes: [storedUnit(["kw"])], pipes: [] }),
+  ).toHaveLength(1);
 }

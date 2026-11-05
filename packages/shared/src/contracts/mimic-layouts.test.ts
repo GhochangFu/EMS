@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   aNodeWithoutIsSwitchingIsRefused,
+  aNodeWithoutPointKeysIsRefused,
   everyLibraryKeyNamesItsLibraryAndFitsSixtyFour,
   groupCodesAreTheEight,
   layoutDtoParsesOrgSymbols,
@@ -103,5 +104,9 @@ describe("F3.32c — the mimic layout contracts (ADR 0081)", () => {
 
   it("a node without isSwitching is refused by mimicLayoutNodeSchema (F3.80)", () => {
     aNodeWithoutIsSwitchingIsRefused();
+  });
+
+  it("a node without pointKeys is refused by mimicLayoutNodeSchema (F4.307)", () => {
+    aNodeWithoutPointKeysIsRefused();
   });
 });
