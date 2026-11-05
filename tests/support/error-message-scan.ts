@@ -71,6 +71,11 @@ export const RAW_READ_ALLOWLIST: readonly { file: string; read: string; why: str
     read: "cause.message",
     why: "`F4.311` PR 6a: `batchRefusals` `JSON.parse`s the batch 400's body for its `refused[]` rows; the sentence is rendered through `apiErrorMessage`.",
   },
+  {
+    file: "apps/web/src/lib/template-adoption.ts",
+    read: "cause.message",
+    why: "`F4.312` PR 3: `adoptionRefusedBody` `JSON.parse`s the adopt 409's body for its `refusals[]`, each rendered as `adoptionRefusalSentence`; the body's `message` is not rendered — the banner is built from `refusalCount` — and any other error goes through `apiErrorMessage`.",
+  },
 ];
 
 /** `Error`, `ApiError`, `TypeError` and every other class name that ends in `Error`. */
