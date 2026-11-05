@@ -42,6 +42,7 @@ import { FLEET_DRIZZLE, FLEET_POOL } from "../database/database.tokens";
 import { LocationSummaryService } from "../reports/location-summary.service";
 import { ReportsCoreModule } from "../reports/reports-core.module";
 import { SitePointInventoryService } from "../rules/site-point-inventory.service";
+import { PointKeyStatesAdminService } from "../admin/point-key-states/point-key-states.service";
 
 /**
  * `F3.86` PR 4 / ADR 0099 decision 3 — the module edges a green build does not
@@ -307,4 +308,16 @@ export function assertTheReadToolsInjectTheLocationSummary(): void {
 export function assertTheLocationSummaryInjectsTheFleetHandles(): void {
   const slots = injected(LocationSummaryService);
   expect([slots.size, slots.get(0), slots.get(1)]).toEqual([2, FLEET_DRIZZLE, FLEET_POOL]);
+}
+
+/** `F4.309` PR 3 (ADR 0099 Amendment 13): `AdminModule` (imported by `CopilotModule`) exports the state-label service. */
+export function assertTheAdminModuleExportsThePointKeyStates(): void {
+  expect(moduleList(CopilotModule, "imports")).toContain(AdminModule);
+  expect(moduleList(AdminModule, "providers")).toContain(PointKeyStatesAdminService);
+  expect(moduleList(AdminModule, "exports")).toContain(PointKeyStatesAdminService);
+}
+
+/** `F4.309` PR 3: the read tools' slot 28 is `PointKeyStatesAdminService`, by `@Inject`. */
+export function assertTheReadToolsInjectThePointKeyStates(): void {
+  expect(injected(CopilotReadToolSet).get(28)).toBe(PointKeyStatesAdminService);
 }

@@ -3,6 +3,7 @@ import type { ZodTypeAny } from "zod";
 
 import { AuditAdminService } from "../../admin/audit/audit.service";
 import { LocationsAdminService } from "../../admin/locations/locations.service";
+import { PointKeyStatesAdminService } from "../../admin/point-key-states/point-key-states.service";
 import { AlarmKbService } from "../../alarm-kb/alarm-kb.service";
 import { AlarmDetailsService } from "../../alarms/alarm-details.service";
 import { AlarmStatsService } from "../../alarms/alarm-stats.service";
@@ -66,6 +67,7 @@ import { listRulesTool } from "./list-rules.tool";
 import { listNotificationChannelsTool } from "./list-notification-channels.tool";
 import { listEscalationProfilesTool } from "./list-escalation-profiles.tool";
 import { listMaintenanceSchedulesTool } from "./list-maintenance-schedules.tool";
+import { listPointKeyStatesTool } from "./list-point-key-states.tool";
 import { listUsersTool } from "./list-users.tool";
 import { listWorkOrdersTool } from "./list-work-orders.tool";
 import { listReportSchedulesTool } from "./list-report-schedules.tool";
@@ -82,7 +84,8 @@ import { openPageTool } from "./open-page.tool";
  * adds `get_alarm_stats` after `get_alarm_kb`; PR 3 adds `get_point_stats`
  * after `get_point_aggregate`. `F4.288` adds `get_site_point_inventory` after
  * `list_rules`. `F4.290` PR 2 adds `get_location_summary` after
- * `get_energy_report_preview`.
+ * `get_energy_report_preview`. `F4.309` PR 3 adds `list_point_key_states` after
+ * `list_alarm_skills`.
  */
 export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[] = [
   listAlarmsTool,
@@ -130,6 +133,8 @@ export const COPILOT_READ_TOOL_DEFINITIONS: readonly CopilotReadToolDefinition[]
   listUsersTool,
   // `F4.284` owner ruling 2026-10-25 (Q4): the skill codes an alarm analysis may name.
   listAlarmSkillsTool,
+  // `F4.309` PR 3 (ADR 0099 Amendment 13 ruling Q1): the state labels a pointKeyState.update names.
+  listPointKeyStatesTool,
   openPageTool,
 ];
 
@@ -212,6 +217,8 @@ export class CopilotReadToolSet implements CopilotReadTools {
     @Inject(SitePointInventoryService) inventory: SitePointInventoryService,
     // `F4.290` PR 2: appended last (slot 27), the same reason. `ReportsCoreModule` exports it.
     @Inject(LocationSummaryService) locationSummary: LocationSummaryService,
+    // `F4.309` PR 3: appended last (slot 28), the same reason. `AdminModule` exports it.
+    @Inject(PointKeyStatesAdminService) pointKeyStates: PointKeyStatesAdminService,
   ) {
     this.tools = createCopilotReadTools({
       access,
@@ -242,6 +249,7 @@ export class CopilotReadToolSet implements CopilotReadTools {
       alarmStats,
       inventory,
       locationSummary,
+      pointKeyStates,
     });
   }
 

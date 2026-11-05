@@ -35,6 +35,8 @@ import {
   assertTheReportsCoreModuleExportsTheLocationSummary,
   assertTheReadToolsInjectTheLocationSummary,
   assertTheLocationSummaryInjectsTheFleetHandles,
+  assertTheAdminModuleExportsThePointKeyStates,
+  assertTheReadToolsInjectThePointKeyStates,
   assertTheProposeToolsInjectTheLayoutsService,
   assertTheResolverInjectsTheUsersServices,
 } from "./copilot-module-wiring.spec";
@@ -83,4 +85,6 @@ describe("F3.86 PR 4 — CopilotModule wiring for the user targets", () => {
   it("F4.290: ReportsCoreModule provides and exports LocationSummaryService", () => assertTheReportsCoreModuleExportsTheLocationSummary());
   it("F4.290: the read tools inject LocationSummaryService in slot 27", () => assertTheReadToolsInjectTheLocationSummary());
   it("F4.290: LocationSummaryService injects the fleet handles", () => assertTheLocationSummaryInjectsTheFleetHandles());
+  it("F4.309: AdminModule exports PointKeyStatesAdminService", () => assertTheAdminModuleExportsThePointKeyStates());
+  it("F4.309: the read tools inject PointKeyStatesAdminService in slot 28", () => assertTheReadToolsInjectThePointKeyStates());
 });

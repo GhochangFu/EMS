@@ -61,8 +61,8 @@ const CONTROLLERS: ReadonlyArray<{ file: string; full: boolean }> = [
   { file: "apps/api/src/admin/assets/assets.controller.ts", full: true },
   { file: "apps/api/src/admin/asset-groups/asset-groups.controller.ts", full: true },
   { file: "apps/api/src/admin/point-keys/point-keys.controller.ts", full: true },
-  // `F4.309` PR 1 (ADR 0088 Amendment 3): every write route pending (`POINT_KEY_PENDING`) until
-  // PR 3 (ADR 0099 Amendment 13) adds `pointKeyState.create` and `.update`; the DELETE stays excluded.
+  // `F4.309` (ADR 0088 Amendment 3): PR 3 (ADR 0099 Amendment 13) makes the POST and the PATCH
+  // `pointKeyState.create` and `.update`; the DELETE stays excluded (`POINT_KEY_STATE_PENDING`).
   { file: "apps/api/src/admin/point-key-states/point-key-states.controller.ts", full: true },
   { file: "apps/api/src/admin/asset-points/asset-points.controller.ts", full: true },
   { file: "apps/api/src/admin/users/users.controller.ts", full: true },
@@ -240,6 +240,24 @@ const SERVICE_PARSERS: ReadonlyArray<{
     serviceField: "service",
     method: "add",
   },
+  // `F4.309` PR 3 (ADR 0099 Amendment 13): the state-label service gates the global admin first
+  // (403 before any 400, plan C7), then `safeParse`s the shared body inside the method.
+  {
+    entryId: "pointKeyState.create",
+    bodyName: "createPointKeyStateBodySchema",
+    controller: "apps/api/src/admin/point-key-states/point-key-states.controller.ts",
+    service: "apps/api/src/admin/point-key-states/point-key-states.service.ts",
+    serviceField: "service",
+    method: "create",
+  },
+  {
+    entryId: "pointKeyState.update",
+    bodyName: "updatePointKeyStateBodySchema",
+    controller: "apps/api/src/admin/point-key-states/point-key-states.controller.ts",
+    service: "apps/api/src/admin/point-key-states/point-key-states.service.ts",
+    serviceField: "service",
+    method: "update",
+  },
 ];
 
 /** The source of one method of a class file: from its signature to the next method at the same indent. */
@@ -363,11 +381,11 @@ describe("F3.85 PR 8 — the copilot action catalog covers the write routes (ADR
     // The method reader is not vacuous: it finds a real method and not a missing one.
     expect(methodSource(row.service, "create")).not.toBeNull();
     expect(methodSource(row.service, "noSuchMethod")).toBeNull();
-    // The three real rows each match their own entry (F3.86 PR 4).
+    // The real rows each match their own entry (F3.86 PR 4; F4.309 PR 3 the two state-label rows).
     const matched = COPILOT_CATALOG.filter((e) => {
       const r = byKey.get(key(e));
       return r !== undefined && viaServiceParser(e, r);
     }).map((e) => e.id);
-    expect(matched.sort()).toEqual(["user.create", "user.update", "userGrant.add"]);
+    expect(matched.sort()).toEqual(["pointKeyState.create", "pointKeyState.update", "user.create", "user.update", "userGrant.add"]);
   });
 });

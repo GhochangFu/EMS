@@ -143,6 +143,8 @@ const COPILOT_TOOL_FILES = {
   copilotListAlarmSkills: `${COPILOT_TOOLS}/list-alarm-skills.tool.ts`,
   // `F4.288` (ADR 0099 Amendment 9 E2): the site point inventory read tool, one parse.
   copilotGetSitePointInventory: `${COPILOT_TOOLS}/get-site-point-inventory.tool.ts`,
+  // `F4.309` PR 3 (ADR 0099 Amendment 13 decision 3): the state-label read tool, one parse.
+  copilotListPointKeyStates: `${COPILOT_TOOLS}/list-point-key-states.tool.ts`,
 } as const;
 const HELPER = "apps/api/src/common/parse-stored-contract.ts";
 
@@ -666,8 +668,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       // and (owner ruling 2026-10-25) the alarm skill read tool; `F4.291` PR 2: + the alarm
       // statistics read tool; `F4.291` PR 3: + the point statistics read tool; `F4.288`: + the
       // site point inventory read tool; `F4.296`: + the site summary and the unruled rules read;
-      // `F4.303`: + the render's stored template and params.
-    ).toBe(53);
+      // `F4.303`: + the render's stored template and params; `F4.309` PR 3: + the state-label read tool.
+    ).toBe(54);
 
     const callSites = [
       STOCK_SERVICE,

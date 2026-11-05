@@ -14,6 +14,7 @@ import type { LocationAssetScopeService } from "../../auth/location-asset-scope.
 import type { DashboardService } from "../../dashboard/dashboard.service";
 import type { DashboardsService } from "../../dashboard-builder/dashboards.service";
 import type { MaintenanceService } from "../../maintenance/maintenance.service";
+import type { PointKeyStatesAdminService } from "../../admin/point-key-states/point-key-states.service";
 import type { UsersService } from "../../admin/users/users.service";
 import type { WorkOrdersService } from "../../work-orders/work-orders.service";
 import type { MimicLayoutsService } from "../../mimic-layouts/mimic-layouts.service";
@@ -138,6 +139,12 @@ export interface CopilotReadServices {
    * sites' through the location helper), so never before placement.
    */
   readonly locationSummary: Pick<LocationSummaryService, "rows" | "summarise">;
+  /**
+   * `F4.309` PR 3 (ADR 0099 Amendment 13 decision 3): the State Labels page's list
+   * (`GET /admin/point-key-states`), behind its own `requireGlobalAdmin`; `list` only, so no
+   * write and no audit row is reachable.
+   */
+  readonly pointKeyStates: Pick<PointKeyStatesAdminService, "list">;
 }
 
 /** One read tool: its argument schema (strict), the model's description, and the call. */
