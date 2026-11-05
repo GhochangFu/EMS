@@ -55,6 +55,7 @@ import { MimicLayoutEditorPage } from "./pages/admin/mimic-layout-editor-page";
 import { MimicLayoutsPage } from "./pages/admin/mimic-layouts-page";
 import { MimicSymbolLibrariesPage } from "./pages/admin/mimic-symbol-libraries-page";
 import { PointKeysAdminPage } from "./pages/admin/point-keys-page";
+import { PointKeyStatesAdminPage } from "./pages/admin/point-key-states-page";
 import { TrendPointsAdminPage } from "./pages/admin/trend-points-page";
 import { RtusAdminPage } from "./pages/admin/rtus-page";
 import { TelemetryImportPage } from "./pages/admin/telemetry-import-page";
@@ -782,6 +783,19 @@ export function App() {
           accessToken && user ? (
             <AdminRoute user={user}>
               <PointKeysAdminPage user={user} />
+            </AdminRoute>
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+      {/* `F4.309` (ADR 0088 Amendment 3) — State Labels; the page fails closed for a non-global admin. */}
+      <Route
+        path="/admin/point-key-states"
+        element={
+          accessToken && user ? (
+            <AdminRoute user={user}>
+              <PointKeyStatesAdminPage user={user} />
             </AdminRoute>
           ) : (
             <Navigate to="/login" replace />
