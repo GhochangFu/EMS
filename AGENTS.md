@@ -1097,6 +1097,22 @@
 > edits are locked while it is on, the inspector lists the bound asset, its
 > points, state points and open alarms, and "Save to refresh the preview"
 > shows while the editor holds unsaved edits.
+> And **an organization chooses a site-wide colour profile** (**ADR 0110**,
+> #1008, with **ADR 0078 Amendment 5** and ADR 0110 **Amendment 1**; row
+> `F4.310`; PR A #1010, PR B #1015, PR C #1020, PR A2 #1043, PR D #1045; this
+> sweep merges last). Six closed profiles (`nexus`, the default and today's
+> colours, `ocean`, `lagoon`, `indigo`, `graphite`, `high-contrast`) recolour
+> every page, dashboard, control room, wall, mimic and chart of an
+> organization, never its layout. Migration `0125` adds
+> `bms.organizations.colour_profile` (default `nexus`, a CHECK on the six
+> names); `PUT /api/v1/admin/organizations/:id/colour-profile` is the only
+> writer, for the global `admin` or an `organization_admin` with a direct grant
+> (`isOrganizationLevelAdmin`), audited with `{ from, to }`; `GET /auth/me`
+> answers `colourProfile` (the home organization's, `nexus` for none). The roles
+> become 52: `ok` and `ok-strong` (fixed) take the OK / normal / energised
+> state off `accent`, and `accent-on-chrome` (changeable) is the brand colour on
+> the chrome. The chooser is the "Colour profile" action on
+> `/admin/organizations`; PDF and Excel reports and the emails do not change.
 > And **state labels for switching points, managed in the portal** (**ADR 0088
 > Amendment 3**, #1026, and **ADR 0099 Amendment 13**, #1027; row `F4.309`;
 > PR 1 #1034, PR 2 #1036, PR 3 #1038; this sweep merges last).
@@ -4061,8 +4077,10 @@ before building a further reference-parity screen. The domain-first
 navigation IA gap that same document names (§3.3, `F3.29`) is still open.
 
 **Colours are role tokens** (**ADR 0078**, `F3.65a`–`F3.65c`, 2026-09-28/29).
-The vocabulary is the 49 roles in `apps/web/src/index.css` — RGB-channel CSS
-variables under `:root` (light) and `:root[data-theme="dark"]`, mapped in
+The vocabulary is the 52 roles in `apps/web/src/index.css` — RGB-channel CSS
+variables under `:root` (light) and `:root[data-theme="dark"]` (the default
+colour profile), plus one light and one dark block per other profile (see
+*Colour profiles* below), mapped in
 `apps/web/tailwind.config.js` as `rgb(var(--role) / <alpha-value>)`. The
 Tailwind `colors` hold only the roles plus `transparent`, `current` and
 `inherit` — the stock palette and `bms.*` are gone, so a stock class emits no
@@ -4081,6 +4099,13 @@ CSS. A call site names a role (`bg-surface`, `text-ink-muted`,
   (ADR 0078 Amendment 4, `F4.306`): stored by name in the widget config,
   `accent` stays the default. The same file gates them at CIEDE2000 ≥ 20 from
   `warning` and `critical` and ≥ 10 from each other, in each theme.
+- **A named state paints with `ok` / `ok-strong`, never `accent`** (ADR 0110
+  decision 3, `F4.310`): normal, ok, healthy, running, energised, closed, good,
+  sent, ON — the status pills, the widget `ok` tone, the map `healthy` pin, the
+  schematics and the mimic. `accent` is the brand only (buttons, links,
+  selection, categories, quantities such as a load bar); on the chrome the brand
+  is `accent-on-chrome` (the wordmark). `tests/f4.310-ok-state-gate.test.ts`
+  refuses a state `case`, key or comparison that paints with an `accent` class.
 - **Text on an opaque `bg-accent` fill is `text-on-accent`**, never
   `text-on-dark`: the dark accent is `#3DCD58`, and white on it is 2.09:1.
   White on chrome (header, footer, the green nav) is `on-dark`.
@@ -4105,6 +4130,34 @@ dark; light stays the default (ADR 0074). The switch is the sun / moon
 **Theme** group in the header's user area (`components/theme-switch.tsx`): it
 calls the store's `setTheme`, which sets `data-theme` without a reload and
 writes `"light"` or `"dark"`. There is no "System" choice and no `matchMedia`.
+
+**Colour profiles are per organization** (**ADR 0110**, `F4.310`,
+2026-11-05). Each role is **fixed** (`FIXED_ROLES` in `apps/web/src/lib/theme.ts`:
+the alarm and state roles, `ok`, `ok-strong`, `simulated-ink`, `on-dark`,
+`scrim`) or **changeable** (`PROFILE_ROLES`: the neutrals, the accent family,
+`accent-on-chrome`, the chrome, `on-accent`, `focus`, `series-*`). A profile
+`<name>` is two `index.css` blocks,
+`:root[data-profile="<name>"]:not([data-theme="dark"])` and
+`:root[data-profile="<name>"][data-theme="dark"]`, that set every changeable
+role and no fixed one; the default `nexus` is the base blocks and has none.
+
+- **A new role goes into exactly one list** (`tests/f4.310-role-lists.test.ts`),
+  and a changeable role needs a value in every profile block
+  (`parseProfileBlocks` in `tests/support/colour-tokens.ts` fails closed).
+- **Every profile holds the default's pairs** in both themes
+  (`tests/f3.65a-colour-contrast.test.ts` Q0–Q5) with only the `CARRY_OVER`
+  entries (the default's failures a fixed role or a WCAG exemption causes; the
+  brand-green entries never carry over), S1/S2, `accent` and `accent-strong`
+  ΔE2000 ≥ 20 from `warning` and `critical`, and `accent` ≥ 12 from `info` and
+  `simulated-ink`. A new profile is a contract change (`colourProfileSchema`),
+  an ADR 0110 amendment and a migration (the CHECK).
+- **No `data-profile` variant** (`[[data-profile=…]_&]:`, `data-[profile=…]:`)
+  — a profile recolours through role values only (R4f2).
+- **`data-profile` follows `/auth/me`.** Every `fetchCurrentUser` answer sets it
+  through the theme store (`setProfile`; `nexus` removes it) and caches it in
+  `localStorage["bms.profile"]`; the boot script applies the cache only with a
+  stored session, and `clearSession` resets to `nexus`, so the sign-in page is
+  always the default. `currentRoles()` caches by theme **and** profile.
 
 **Surfaces are named, not spelled** (**ADR 0085**, `F3.71`, 2026-09-29). The
 app has two surface styles, chosen per browser beside the theme: **Neumorphic**
