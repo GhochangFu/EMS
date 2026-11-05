@@ -33,18 +33,19 @@ import { SiteAssetsView } from "./site-assets-view";
  * mounted a gallery at all (the `admin/assets-page.spec.tsx` precedent).
  */
 
+const SITE_NAME = "Western Cape Campus";
 const LOCATION_ID = "99999999-9999-4999-8999-999999999999";
 const FIRST_ASSET_ID = "11111111-1111-4111-8111-111111111111";
 const SECOND_ASSET_ID = "33333333-3333-4333-8333-333333333333";
 
-function assetRow(id: string, code: string, name: string) {
+function assetRow(id: string, code: string, name: string, rtuDisplayName: string | null = null) {
   return {
     id,
     code,
     name,
     domain: "hvac",
     rtuId: null,
-    rtuDisplayName: null,
+    rtuDisplayName,
     latestKw: null,
     latestTelemetryAt: null,
     freshness: "none" as const,
@@ -85,7 +86,7 @@ const LOCATION: LocationDashboardDto = locationDashboardDtoSchema.parse({
   assets: {
     items: [
       assetRow(FIRST_ASSET_ID, "CRAC-01", "CRAC 1"),
-      assetRow(SECOND_ASSET_ID, "CRAC-02", "CRAC 2"),
+      assetRow(SECOND_ASSET_ID, "CRAC-02", "CRAC 2", "Chiller RTU"),
     ],
     page: 1,
     pageSize: 10,
@@ -110,7 +111,7 @@ function renderView(): void {
   render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter>
-        <SiteAssetsView locationId={LOCATION_ID} />
+        <SiteAssetsView locationId={LOCATION_ID} siteName={SITE_NAME} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -149,6 +150,25 @@ export async function eachRowLinksToThatAssetsHistory(): Promise<void> {
   const second = screen.getByRole("link", { name: "History of CRAC-02" });
   expect(first).toHaveAttribute("href", `/asset-history/${FIRST_ASSET_ID}`);
   expect(second).toHaveAttribute("href", `/asset-history/${SECOND_ASSET_ID}`);
+}
+
+/** F4.316 — an asset under an RTU prints `· <RTU name>` in its Code cell; the RTU column stays. */
+export async function theCodeCellNamesTheRtu(): Promise<void> {
+  stubApi();
+  renderView();
+
+  const cell = (await screen.findByText("· Chiller RTU")).closest("td");
+  expect(cell?.textContent).toContain("CRAC-02");
+  expect(screen.getAllByText("Chiller RTU")).toHaveLength(1);
+}
+
+/** F4.316 — an RTU-less asset prints `· <the site's name>`, passed in by the page. */
+export async function anRtuLessRowNamesTheSite(): Promise<void> {
+  stubApi();
+  renderView();
+
+  const cell = (await screen.findByText("· Western Cape Campus")).closest("td");
+  expect(cell?.textContent).toContain("CRAC-01");
 }
 
 /**

@@ -37,7 +37,7 @@ function point(pointKey: string, name: string, unit = "m3/h"): GeneratedSitePoin
 }
 
 function asset(id: string, code: string, points: GeneratedSitePointDto[]): GeneratedSiteAssetDto {
-  return { id, code, name: code, domain: "water", latestTelemetryAt: null, freshness: "none", points };
+  return { id, code, name: code, assetRtuName: null, assetLocationName: null, domain: "water", latestTelemetryAt: null, freshness: "none", points };
 }
 
 const WTP = asset(WTP_ID, "WTR-WTP-01", [

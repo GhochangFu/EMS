@@ -110,6 +110,8 @@ function viewAt(time: string): GeneratedSiteViewDto {
             id: ASSET_ID,
             code: "AHU-01",
             name: "Air handler",
+            assetRtuName: null,
+            assetLocationName: null,
             domain: "hvac",
             latestTelemetryAt: time,
             freshness: "live",

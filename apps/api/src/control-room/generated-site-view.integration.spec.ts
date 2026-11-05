@@ -620,3 +620,38 @@ export async function assertGlobalAdminReadsAPhewbSite(ctx: ForUserCtx): Promise
   expect(dto.locationId).toBe(ctx.pheSiteId);
   expectReadBetween(assetIdsOf(dto), before, after, "every asset at the PHEWB site");
 }
+
+// ------------------------------------------------ F4.316 — the asset label's parts
+
+/** Gives `assetId` an RTU of the site's organization and location; returns its display name. */
+async function attachRtu(client: pg.PoolClient, site: Site, assetId: string): Promise<string> {
+  const displayName = `F4.316 RTU ${site.tag}`;
+  const rtu = await client.query<{ id: string }>(
+    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type, ingest_enabled, active)
+     VALUES ($1, $2, $3, $4, 'simulated', false, true) RETURNING id`,
+    [site.organizationId, site.locationId, `${site.tag}-rtu`, displayName],
+  );
+  const rtuId = rtu.rows[0]?.id;
+  if (!rtuId) throw new Error("failed to insert the F4.316 fixture RTU");
+  await client.query("UPDATE bms.assets SET rtu_id = $1 WHERE id = $2", [rtuId, assetId]);
+  return displayName;
+}
+
+/** F4.316 — an asset under an RTU answers the RTU's display name and its location's name. */
+export async function assertAssetCarriesRtuAndLocationNames(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const asset = await seedAsset(client, site);
+  const rtuName = await attachRtu(client, site, asset);
+  const got = assetOf(await readAll(client, site), asset);
+  expect(got.assetRtuName).toBe(rtuName);
+  expect(got.assetLocationName).toBe("F3.68 generated-view fixture site");
+}
+
+/** F4.316 — the RTU-less twin: no RTU answers `assetRtuName: null`, the location name still present. */
+export async function assertRtuLessAssetCarriesLocationNameOnly(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const asset = await seedAsset(client, site);
+  const got = assetOf(await readAll(client, site), asset);
+  expect(got.assetRtuName).toBeNull();
+  expect(got.assetLocationName).toBe("F3.68 generated-view fixture site");
+}

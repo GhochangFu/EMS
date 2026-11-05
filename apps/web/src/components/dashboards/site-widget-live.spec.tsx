@@ -431,6 +431,8 @@ function breakerResponse(tabKey: string | null): SiteWidgetsResponse {
           id: BREAKER_ASSET_ID,
           code: "CR-Q1",
           name: "CR-Q1",
+          assetRtuName: null,
+          assetLocationName: null,
           domain: "electrical",
           latestTelemetryAt: now,
           freshness: "live",

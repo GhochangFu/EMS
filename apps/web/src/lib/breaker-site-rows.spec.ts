@@ -52,6 +52,8 @@ function valveRow(n: number, code: string, topAlarm: MimicNodeAlarmDto | null, t
       id: `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`,
       code,
       name: code,
+      assetRtuName: null,
+      assetLocationName: null,
       domain: "water",
       latestTelemetryAt: null,
       freshness: "live",

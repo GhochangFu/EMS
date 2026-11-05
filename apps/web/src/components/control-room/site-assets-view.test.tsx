@@ -3,6 +3,8 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, describe, it, vi } from "vitest";
 
 import {
+  anRtuLessRowNamesTheSite,
+  theCodeCellNamesTheRtu,
   eachRowLinksToThatAssetsHistory,
   pressingImagesOnARowMountsThatAssetsGallery,
   theAccessDeniedCardLinksToTheControlRoom,
@@ -34,5 +36,13 @@ describe("F3.72 SiteAssetsView (moved from the F3.4 location dashboard)", () => 
 
   it("F4.297 links each row to that asset's history page", async () => {
     await eachRowLinksToThatAssetsHistory();
+  });
+
+  it("F4.316 prints the RTU name after the code, keeping the RTU column", async () => {
+    await theCodeCellNamesTheRtu();
+  });
+
+  it("F4.316 prints the site name after the code of an RTU-less row", async () => {
+    await anRtuLessRowNamesTheSite();
   });
 });

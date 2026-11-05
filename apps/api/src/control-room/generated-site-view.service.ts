@@ -39,6 +39,8 @@ interface AssetRow {
   asset_id: string | null;
   asset_code: string | null;
   asset_name: string | null;
+  rtu_display_name: string | null;
+  location_name: string | null;
   domain_code: string | null;
   domain_label: string | null;
 }
@@ -129,12 +131,15 @@ export class GeneratedSiteViewService {
         a.id AS asset_id,
         a.code AS asset_code,
         a.name AS asset_name,
+        r.display_name AS rtu_display_name,
+        l.name AS location_name,
         a.domain AS domain_code,
         d.label AS domain_label
       FROM bms.locations l
       LEFT JOIN bms.assets a
         ON a.location_id = l.id
        AND ($2::uuid[] IS NULL OR a.id = ANY($2::uuid[]))
+      LEFT JOIN bms.rtus r ON r.id = a.rtu_id
       LEFT JOIN bms.asset_domains d ON d.code = a.domain
       WHERE l.id = $1
       ORDER BY d.sort_order, a.domain, a.code
@@ -217,6 +222,8 @@ export class GeneratedSiteViewService {
         id: row.asset_id,
         code: row.asset_code ?? "",
         name: row.asset_name ?? "",
+        assetRtuName: row.rtu_display_name,
+        assetLocationName: row.location_name,
         domain: code,
         latestTelemetryAt,
         freshness: telemetryFreshnessAt(latestTelemetryAt, nowMs),

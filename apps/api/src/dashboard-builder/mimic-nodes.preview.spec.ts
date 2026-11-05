@@ -54,6 +54,8 @@ const memberRow = {
   asset_id: WTP,
   asset_code: "WTP-01",
   asset_name: "WTP",
+  rtu_display_name: null,
+  location_name: null,
   domain: "water",
   member_count: 1,
   active_alarms: 2,

@@ -16,6 +16,7 @@ import {
   assertUngrantedGroupHasNoBreakers,
   assertOverviewHasNoStateMaps,
   assertOverviewTabHasNoBreakers,
+  assertBreakerAssetCarriesRtuAndLocationNames,
   assertPointLatestAndFreshness,
   assertPointsAreTheTableKeysAndStateKeys,
   assertRatingAndTripCausePassThrough,
@@ -60,6 +61,7 @@ describe.skipIf(!connectionString)("F3.74 — SiteWidgetsService breakers (real 
   it("B2a control: the unrestricted reader sees every breaker", () => assertUnrestrictedReaderSeesEveryBreaker(db), 60_000);
   it("B2b an unreadable breaker is absent", () => assertUnreadableBreakerIsAbsent(db), 60_000);
   it("B3a rating and tripCause pass through", () => assertRatingAndTripCausePassThrough(db), 60_000);
+  it("F4.316 a breaker asset carries its RTU and location names", () => assertBreakerAssetCarriesRtuAndLocationNames(db), 60_000);
   it("B3b unset rating and tripCause are null", () => assertUnsetRatingAndTripCauseAreNull(db), 60_000);
   it("B4a points are the table keys and the active state keys", () => assertPointsAreTheTableKeysAndStateKeys(db), 60_000);
   it("B4b a sample reaches latest and freshness", () => assertPointLatestAndFreshness(db), 60_000);

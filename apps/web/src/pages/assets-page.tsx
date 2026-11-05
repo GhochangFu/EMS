@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
+import { AssetWhere } from "../components/assets/asset-where";
 import { fetchAssets } from "../api/assets";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
 import { apiErrorMessage } from "../lib/api-error-message";
@@ -167,6 +168,12 @@ export function AssetsPage({ user }: AssetsPageProps) {
                         >
                           {row.code}
                         </button>
+                        <AssetWhere
+                          code={row.code}
+                          rtuName={row.rtuDisplayName}
+                          locationName={row.locationName}
+                          className="font-normal"
+                        />
                       </td>
                       <td className="px-3 py-2 font-medium">{row.name}</td>
                       <td className="px-3 py-2 text-xs text-ink-muted">{row.siteName}</td>
