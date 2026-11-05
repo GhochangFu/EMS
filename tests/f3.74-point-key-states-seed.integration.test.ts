@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 // Relative, not `@bms/db`: the workspace package is a dependency of `apps/*`,
 // not of the repo root, so the bare specifier does not resolve from `tests/`.
-import { seedPointKeyStates } from "../packages/db/src/point-key-states-seed.js";
+import { POINT_KEY_STATE_SEED, seedPointKeyStates } from "../packages/db/src/point-key-states-seed.js";
 import {
   openIntegrationPool,
   requireIntegrationDb,
@@ -19,6 +19,10 @@ import {
  *   `DO NOTHING` — the rows are seed-owned).
  *
  * I2 and I3 run on one client inside `BEGIN` … `ROLLBACK`, so nothing they write survives.
+ *
+ * **Only the seed's codes are read** (`F4.309`, ADR 0088 Amendment 3): an administrator may now
+ * add rows of other point keys through `/admin/point-key-states`, and a concurrent suite does so
+ * on per-run keys, so "exactly seven" is a claim about the seed's own keys, not the whole table.
  * Connection `"owner"`: the seed path runs as `bms_owner`, the table's owner, and the
  * `REVOKE` in `0097` is from `bms_tenant` only.
  */
@@ -54,9 +58,15 @@ const EXPECTED = [
   { point_key_code: "valve_open", value: 1, label: "OPEN", tone: "flowing" },
 ];
 
+/** The seed's own point keys — the four codes `POINT_KEY_STATE_SEED` names. */
+const SEED_CODES = [...new Set(POINT_KEY_STATE_SEED.map((entry) => entry.pointKeyCode))];
+
 async function readRows(client: IntegrationClient): Promise<StateRow[]> {
   const { rows } = await client.query<StateRow>(
-    `SELECT id, point_key_code, value, label, tone FROM bms.point_key_states ORDER BY point_key_code, value`,
+    `SELECT id, point_key_code, value, label, tone FROM bms.point_key_states
+      WHERE point_key_code = ANY($1::text[])
+      ORDER BY point_key_code, value`,
+    [SEED_CODES],
   );
   return rows;
 }
@@ -87,6 +97,8 @@ describe.skipIf(!ownerUrl)("F3.74 D1 — seedPointKeyStates", () => {
   // I1
   it("holds exactly the seven seeded rows after pnpm db:seed", async () => {
     if (!pool) throw new Error("pool not initialised");
+    // Anti-vacuity: the narrowing reads the four seed codes, not none.
+    expect([...SEED_CODES].sort()).toEqual(["breaker_main", "breaker_trip", "damper_open", "valve_open"]);
     const rows = await readRows(pool);
     expect(rows.map(({ id: _id, ...rest }) => rest)).toEqual(EXPECTED);
   });

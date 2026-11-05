@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   assertListOnAnExecutorRunsOneQueryAtATime,
   assertListOnThePoolStaysParallel,
+  assertListServesTheSwitchingStates,
   assertLocationTypeRefusesAnUnknownCode,
   assertUnknownCodeEchoIsBounded,
 } from "./vocabularies.service.spec";
@@ -23,5 +24,9 @@ describe("VocabulariesService.unknownCodeMessage", () => {
 
   it("F3.22 — list() on the default pool executor runs its queries in parallel", async () => {
     await assertListOnThePoolStaysParallel();
+  });
+
+  it("F4.309 — list() serves bms.point_key_states as switchingStates, by key then value", async () => {
+    await assertListServesTheSwitchingStates();
   });
 });

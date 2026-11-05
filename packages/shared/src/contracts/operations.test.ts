@@ -6,6 +6,7 @@ import {
   assertAlarmSeverityCountAllowsZero,
   assertAlarmSeverityCountRefusesNegative,
   assertRefusesResponseWithoutWaterBalanceRoles,
+  assertRequiresSwitchingStates,
 } from "./operations.spec";
 
 /**
@@ -23,6 +24,12 @@ describe("vocabulariesResponseSchema — waterBalanceRoles (ADR 0073 decision 1)
 
   it("accepts a well-formed waterBalanceRoles row", () => {
     assertAcceptsWaterBalanceRoleRow();
+  });
+});
+
+describe("vocabulariesResponseSchema — switchingStates (F4.309, ADR 0088 Amendment 3 decision 5)", () => {
+  it("requires switchingStates and parses a well-formed row", () => {
+    assertRequiresSwitchingStates();
   });
 });
 

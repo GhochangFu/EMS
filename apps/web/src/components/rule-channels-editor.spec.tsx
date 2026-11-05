@@ -357,6 +357,7 @@ const emptyVocabularies: VocabulariesResponse = {
   assetRoles: [],
   dashboardSections: [],
   waterBalanceRoles: [],
+  switchingStates: [],
 };
 
 /**
