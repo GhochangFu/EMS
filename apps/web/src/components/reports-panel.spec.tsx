@@ -49,7 +49,7 @@ const ESKOM = {
   name: "Eskom SMOC",
   active: true,
   currency: "ZAR",
-  timezone: "UTC",
+  timezone: "UTC", colourProfile: "nexus" as const,
   meta: null,
   createdAt: "2026-01-01T00:00:00.000Z",
 };

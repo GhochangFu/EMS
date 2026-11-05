@@ -6,13 +6,16 @@ import {
   assetGroups,
   assets,
   locations,
+  organizations,
   userAssetGroupAccess,
   userLocationAccess,
   users,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import { colourProfileOrDefault } from "@bms/shared";
 import type {
   AccessibleScope,
+  ColourProfile,
   CurrentUserResponse,
   JwtPayload,
   UserRole,
@@ -45,6 +48,8 @@ type DbUser = {
   email: string;
   displayName: string;
   role: UserRole;
+  /** `F4.310`: the home organization (`users.organization_id`); `null` for a global admin or an unprovisioned token. */
+  organizationId: string | null;
 };
 
 /**
@@ -100,7 +105,27 @@ export class AccessControlService {
         role: user.role,
       },
       scope,
+      colourProfile: await this.homeColourProfile(user.organizationId),
     };
+  }
+
+  /**
+   * `F4.310` (ADR 0110 Q3, decision 4) — the colour profile of the user's home organization;
+   * `nexus` (the default) when there is none, when the row is gone, or when the stored value is
+   * not one of the six (a CHECK forbids it; fail to the default, never to a 500 on `/auth/me`).
+   * `fleetDb`: `bms_auth` holds no grant on `organizations`, and the id comes from the user's own
+   * row, the pre-tenant scope-resolution shape (ADR 0043 Amendment 2/3).
+   */
+  private async homeColourProfile(organizationId: string | null): Promise<ColourProfile> {
+    if (organizationId === null) {
+      return "nexus";
+    }
+    const [row] = await this.fleetDb
+      .select({ colourProfile: organizations.colourProfile })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+    return colourProfileOrDefault(row?.colourProfile);
   }
 
   /** Returns asset ids readable by the user; `null` means unrestricted admin. */
@@ -891,6 +916,7 @@ export class AccessControlService {
         email: row.email,
         displayName: row.displayName,
         role: row.role,
+        organizationId: row.organizationId ?? null,
       };
     }
 
@@ -905,6 +931,7 @@ export class AccessControlService {
       email: jwt.email,
       displayName: jwt.name,
       role: jwt.role,
+      organizationId: null,
     };
   }
 
