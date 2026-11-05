@@ -501,6 +501,16 @@ export function toWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
 }
 
 /**
+ * `F4.308` (ADR 0081 Amendment 2 decision 4, plan C11) — whether the editor's layout differs from
+ * the last save, compared as the write body reads them: what a Save would change is an edit, and
+ * an undo back to the saved layout is none. The preview draws the saved layout, so while this is
+ * true it says "Save to refresh the preview".
+ */
+export function hasUnsavedEdits(layout: EditorLayout, saved: MimicLayoutDto): boolean {
+  return JSON.stringify(toWriteBody(layout)) !== JSON.stringify(toWriteBody(layoutFromDto(saved)));
+}
+
+/**
  * `F3.87` PR 5 — the inverse of {@link toWriteBody}: a write body (a copilot layout card's) in
  * the editor's shape, so the card draws it and warns on it as the editor does. The null-versus-
  * absent trap runs the other way here: the write body types `symbol`, `roleCode` and `tone`

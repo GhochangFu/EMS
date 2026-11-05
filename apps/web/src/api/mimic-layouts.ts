@@ -1,4 +1,5 @@
 import {
+  dashboardMimicNodesResponseSchema,
   mimicLayoutDeletedResponseSchema,
   mimicLayoutDtoSchema,
   mimicLayoutsListResponseSchema,
@@ -6,6 +7,7 @@ import {
 import type { Contract, ContractSchema } from "@bms/shared/contracts";
 import type {
   CreateMimicLayoutBody,
+  DashboardMimicNodesResponseDto,
   MimicLayoutDeletedResponse,
   MimicLayoutDto,
   MimicLayoutsListResponse,
@@ -88,4 +90,19 @@ export function deleteMimicLayout(id: string): Promise<MimicLayoutDeletedRespons
   return mimicLayoutsFetch(idPath(id), mimicLayoutDeletedResponseSchema, "mimic-layouts/:id", {
     method: "DELETE",
   });
+}
+
+/**
+ * `F4.308` (ADR 0081 Amendment 2, plan C8) — `GET /mimic-layouts/:id/preview?assetGroupId=`: the
+ * SAVED layout bound to one asset group, in the `mimic-nodes` shape (one `source: "layout"`
+ * widget whose `widgetId` and the answer's `dashboardId` are the layout id, owner ruling Q1).
+ * `admin` and `organization_admin` only; a layout or group outside the caller's reach is 404.
+ */
+export function fetchMimicLayoutPreview(layoutId: string, assetGroupId: string): Promise<DashboardMimicNodesResponseDto> {
+  const query = new URLSearchParams({ assetGroupId });
+  return mimicLayoutsFetch(
+    `${idPath(layoutId)}/preview?${query}`,
+    dashboardMimicNodesResponseSchema,
+    "mimic-layouts/:id/preview",
+  );
 }
