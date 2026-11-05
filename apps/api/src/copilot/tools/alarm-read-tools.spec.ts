@@ -96,6 +96,8 @@ function detailsRow(
     assetId,
     organizationId,
     assetCode: "CH-01",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Plant A",
     assetName: "Chiller 1",
     assetDomain: "hvac",
     locationName: "Plant A",
@@ -130,6 +132,8 @@ function detailsRow(
             affectedAssets: Array.from({ length: enrichment.affected ?? 0 }, (_, i) => ({
               assetId: `a-${i}`,
               assetCode: `C-${i}`,
+              assetRtuName: i % 2 === 0 ? `RTU ${i}` : null,
+              assetLocationName: "Plant A",
               assetName: `Asset ${i}`,
             })),
           },
@@ -595,4 +599,21 @@ export async function assertTheTurnRefusesAnOwnKeyAlarm(): Promise<void> {
   expect(log.details).toEqual([{ alarmId: ALARM_B, assetIds: [ASSET_X] }]);
   expect(log.kb).toEqual([]);
   expect(log.recent).toEqual([]);
+}
+
+/**
+ * `F4.316` PR 2 (ADR 0111): the tool passes the DTO through its contract, so the asset's RTU and
+ * location ride along — and an affected asset's too. Pinned so a future explicit map cannot drop them.
+ */
+export async function assertAlarmDetailsCarriesTheAssetRtuName(): Promise<void> {
+  const { tools } = fakeServices({ alarms: { [ALARM_X]: detailsRow(ALARM_X, ASSET_X, { affected: 1 }) } });
+  const alarm = okResult(await tools.dispatch("get_alarm_details", { alarmId: ALARM_X }, ctx([ORG_X]))).alarm as {
+    assetRtuName: unknown;
+    assetLocationName: unknown;
+    enrichment: { affectedAssets: Array<Record<string, unknown>> };
+  };
+  expect({
+    alarm: [alarm.assetRtuName, alarm.assetLocationName],
+    affected: [alarm.enrichment.affectedAssets[0]?.assetRtuName, alarm.enrichment.affectedAssets[0]?.assetLocationName],
+  }).toEqual({ alarm: ["RTU 1", "Plant A"], affected: ["RTU 0", "Plant A"] });
 }
