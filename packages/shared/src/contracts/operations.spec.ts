@@ -1,4 +1,11 @@
-import { alarmSeverityCountSchema, vocabulariesResponseSchema } from "./operations";
+import {
+  alarmAffectedAssetDtoSchema,
+  alarmDetailsResponseSchema,
+  alarmListItemSchema,
+  alarmSeverityCountSchema,
+  alarmSocketEventSchema,
+  vocabulariesResponseSchema,
+} from "./operations";
 
 /**
  * `E4.3` (ADR 0073 decision 1) — the seventh open vocabulary,
@@ -122,3 +129,106 @@ export function assertAlarmSeverityCountRefusesNegative(): void {
     "alarmSeverityCountSchema accepted a negative count",
   );
 }
+
+// ---------------------------------------------------------------------------
+// `F4.316` PR 2 (ADR 0111) — the alarm schemas name the asset's RTU and location.
+// Both fields are required-nullable: an absent key is refused, `null` parses.
+// ---------------------------------------------------------------------------
+
+const ALARM_LIST_ITEM = {
+  id: "a1",
+  assetId: "30000000-0000-4000-8000-000000000001",
+  ruleKey: null,
+  ruleId: null,
+  severity: "critical",
+  message: "High temperature",
+  raisedAt: "2026-11-05T00:00:00.000Z",
+  acknowledgedAt: null,
+  acknowledgedBy: null,
+  clearedAt: null,
+  assetCode: "CR-Q1",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
+  assetName: "Chiller Q1",
+  siteName: "Site A",
+};
+
+const AFFECTED_ASSET = {
+  assetId: "30000000-0000-4000-8000-000000000002",
+  assetCode: "CR-Q2",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
+  assetName: "Chiller Q2",
+};
+
+const ALARM_DETAILS = {
+  id: "a1",
+  assetId: "30000000-0000-4000-8000-000000000001",
+  organizationId: "10000000-0000-4000-8000-000000000001",
+  assetCode: "CR-Q1",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
+  assetName: "Chiller Q1",
+  assetDomain: "hvac",
+  locationName: "Plant A",
+  siteName: "Site A",
+  severity: "critical",
+  message: "High temperature",
+  raisedAt: "2026-11-05T00:00:00.000Z",
+  acknowledgedAt: null,
+  acknowledgedBy: null,
+  clearedAt: null,
+  ruleId: null,
+  rulePointKey: null,
+  thresholdOperator: null,
+  thresholdValue: null,
+  currentValue: null,
+  currentValueUnit: null,
+  currentValueAt: null,
+  enrichment: null,
+  classPhilosophy: null,
+};
+
+type LabelSchema = { safeParse(value: unknown): { success: boolean; error?: { issues: unknown } } };
+
+function assertRefusesWithout(schema: LabelSchema, fixture: Record<string, unknown>, key: string, name: string): void {
+  assert(schema.safeParse(fixture).success, `${name}: the positive neighbour must parse: ${JSON.stringify(schema.safeParse(fixture).error?.issues)}`);
+  const { [key]: _dropped, ...without } = fixture;
+  assert(schema.safeParse(without).success === false, `${name} accepted a row with no ${key} — it must be required-nullable`);
+}
+
+function assertAcceptsNullParts(schema: LabelSchema, fixture: Record<string, unknown>, name: string): void {
+  const parsed = schema.safeParse({ ...fixture, assetRtuName: null, assetLocationName: null });
+  assert(parsed.success, `${name} refused null assetRtuName/assetLocationName: ${JSON.stringify(parsed.error?.issues)}`);
+}
+
+export const assertAlarmListItemRequiresAssetRtuName = (): void =>
+  assertRefusesWithout(alarmListItemSchema, ALARM_LIST_ITEM, "assetRtuName", "alarmListItemSchema");
+export const assertAlarmListItemRequiresAssetLocationName = (): void =>
+  assertRefusesWithout(alarmListItemSchema, ALARM_LIST_ITEM, "assetLocationName", "alarmListItemSchema");
+export const assertAlarmListItemAcceptsNullParts = (): void =>
+  assertAcceptsNullParts(alarmListItemSchema, ALARM_LIST_ITEM, "alarmListItemSchema");
+
+/** The socket payload wraps the list item, so it inherits the requirement. */
+export function assertAlarmSocketEventRequiresAssetRtuName(): void {
+  const { assetRtuName: _dropped, ...without } = ALARM_LIST_ITEM;
+  assert(alarmSocketEventSchema.safeParse({ type: "cleared", alarm: ALARM_LIST_ITEM }).success, "the cleared event must parse");
+  assert(
+    alarmSocketEventSchema.safeParse({ type: "cleared", alarm: without }).success === false,
+    "alarmSocketEventSchema accepted an alarm with no assetRtuName",
+  );
+}
+
+export const assertAlarmDetailsRequiresAssetRtuName = (): void =>
+  assertRefusesWithout(alarmDetailsResponseSchema, ALARM_DETAILS, "assetRtuName", "alarmDetailsResponseSchema");
+export const assertAlarmDetailsRequiresAssetLocationName = (): void =>
+  assertRefusesWithout(alarmDetailsResponseSchema, ALARM_DETAILS, "assetLocationName", "alarmDetailsResponseSchema");
+export const assertAlarmDetailsAcceptsNullParts = (): void =>
+  assertAcceptsNullParts(alarmDetailsResponseSchema, ALARM_DETAILS, "alarmDetailsResponseSchema");
+
+export const assertAffectedAssetRequiresAssetRtuName = (): void =>
+  assertRefusesWithout(alarmAffectedAssetDtoSchema, AFFECTED_ASSET, "assetRtuName", "alarmAffectedAssetDtoSchema");
+export const assertAffectedAssetRequiresAssetLocationName = (): void =>
+  assertRefusesWithout(alarmAffectedAssetDtoSchema, AFFECTED_ASSET, "assetLocationName", "alarmAffectedAssetDtoSchema");
+export const assertAffectedAssetAcceptsNullParts = (): void =>
+  assertAcceptsNullParts(alarmAffectedAssetDtoSchema, AFFECTED_ASSET, "alarmAffectedAssetDtoSchema");
