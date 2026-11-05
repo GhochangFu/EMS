@@ -74,6 +74,8 @@ export const listMaintenanceSchedulesTool = defineReadTool({
           title: item.title,
           assetId: item.assetId,
           assetCode: item.assetCode,
+          assetRtuName: item.assetRtuName,
+          assetLocationName: item.assetLocationName,
           assetName: item.assetName,
           category: item.category,
           generationMode: item.generationMode,

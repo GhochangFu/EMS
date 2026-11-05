@@ -5,6 +5,7 @@ import { describe, it } from "vitest";
 import {
   assertAlarmDetailsBoundsTheAffectedAssets,
   assertAlarmDetailsBoundsTheText,
+  assertAlarmDetailsCarriesTheAssetRtuName,
   assertAlarmDetailsLetsAnyOtherFailureThrough,
   assertAlarmDetailsNeverOffersAWrite,
   assertAlarmDetailsReadsOnceOverTheUnion,
@@ -36,6 +37,7 @@ describe("F4.276 — the copilot's alarm details and alarm knowledge-base read t
   it("get_alarm_details strips extra keys and cuts the affected assets at 25", assertAlarmDetailsBoundsTheAffectedAssets);
   it("get_alarm_details cuts every text field so one result fits, the class philosophy kept", assertAlarmDetailsBoundsTheText);
   it("get_alarm_details never offers a write", assertAlarmDetailsNeverOffersAWrite);
+  it("get_alarm_details carries the asset's RTU and location names (F4.316)", assertAlarmDetailsCarriesTheAssetRtuName);
   it("get_alarm_kb reads once with the allowed organization set, never null or []", assertAlarmKbReadsOnceWithTheAllowedSet);
   it("get_alarm_kb narrows to the caller's readable organizations; none readable makes no read", assertAlarmKbNarrowsToTheReadableOrganizations);
   it("get_alarm_kb refuses a class from an organization outside the read set", assertAlarmKbRefusesAClassFromAnotherOrganization);

@@ -109,6 +109,10 @@ export const alarmListItemSchema = z.object({
   // `clearHoldSeconds`. Acknowledgement no longer closes an alarm — this does.
   clearedAt: z.string().nullable(),
   assetCode: z.string(),
+  // F4.316 / ADR 0111: the asset's RTU display name and location name, for the
+  // `<code> · <RTU or location>` label; null when the asset has no RTU.
+  assetRtuName: z.string().nullable(),
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   siteName: z.string(),
 });
@@ -179,6 +183,8 @@ export const workOrderListItemSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   assetCode: z.string(),
+  assetRtuName: z.string().nullable(),
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   siteName: z.string(),
 });
@@ -204,6 +210,8 @@ export const maintenanceScheduleItemSchema = z.object({
   lastCompletedAt: z.string().nullable(),
   dueState: maintenanceDueStateSchema,
   assetCode: z.string(),
+  assetRtuName: z.string().nullable(),
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   siteName: z.string(),
   activeWorkOrderId: z.string().nullable(),
@@ -572,6 +580,8 @@ export const automationRuleSeveritySchema = alarmSeverityCodeSchema;
 export const alarmAffectedAssetDtoSchema = z.object({
   assetId: z.string(),
   assetCode: z.string(),
+  assetRtuName: z.string().nullable(), // F4.316 / ADR 0111
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
 });
 
@@ -644,6 +654,8 @@ export const alarmDetailsResponseSchema = z.object({
    * list to this organization, or it mixes assets across tenants. */
   organizationId: z.string(),
   assetCode: z.string(),
+  assetRtuName: z.string().nullable(), // F4.316 / ADR 0111
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   assetDomain: z.string(),
   locationName: z.string(),

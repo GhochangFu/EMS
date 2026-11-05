@@ -83,6 +83,8 @@ function alarm(i: number) {
     acknowledgedBy: null,
     clearedAt: "2026-10-23T11:54:38.820Z",
     assetCode: "KZN-CR-UTILITY",
+    assetRtuName: "KwaZulu-Natal Control Room Utility RTU",
+    assetLocationName: "RSMOC KwaZulu-Natal",
     assetName: "KwaZulu-Natal Control Room Utility Incomer",
     siteName: "RSMOC KwaZulu-Natal",
   };
@@ -181,6 +183,8 @@ function workOrder(i: number): WorkOrderListItem {
     createdAt: "2026-10-20T06:00:00.000Z",
     updatedAt: "2026-10-20T06:00:00.000Z",
     assetCode: "KZN-CR-UTILITY",
+    assetRtuName: "KwaZulu-Natal Control Room Utility RTU",
+    assetLocationName: "RSMOC KwaZulu-Natal",
     assetName: "KwaZulu-Natal Control Room Utility Incomer",
     siteName: "RSMOC KwaZulu-Natal",
   };
@@ -207,6 +211,8 @@ function schedule(i: number): MaintenanceScheduleItem {
     lastCompletedAt: "2026-08-01T09:00:00.000Z",
     dueState: "upcoming",
     assetCode: "KZN-CR-UTILITY",
+    assetRtuName: "KwaZulu-Natal Control Room Utility RTU",
+    assetLocationName: "RSMOC KwaZulu-Natal",
     assetName: "KwaZulu-Natal Control Room Utility Incomer",
     siteName: "RSMOC KwaZulu-Natal",
     activeWorkOrderId: null,

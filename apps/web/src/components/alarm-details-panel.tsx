@@ -1,5 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { ASSET_LABEL_SEPARATOR, assetLabelOf, assetLabelParts } from "@bms/shared";
+
 import { fetchAlarmDetails } from "../api/alarms";
 import { fetchAssets } from "../api/assets";
 import { fetchVocabularies, vocabulariesQueryKey } from "../api/vocabularies";
@@ -70,6 +72,10 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
   const assets = assetsQ.data ?? [];
 
   const details = detailsQ.data;
+  // F4.316 (ADR 0111): the header label's `· where` part — the RTU's name, or the location's.
+  const headerWhere = details
+    ? assetLabelParts({ code: details.assetCode, rtuName: details.assetRtuName, locationName: details.assetLocationName }).where
+    : null;
   const pairing = details
     ? formatThresholdPairing({
         currentValue: details.currentValue,
@@ -111,7 +117,16 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
           <div className="mt-4 space-y-4 text-sm">
             <div className="flex items-center gap-2">
               <StatusPill label={details.severity} tone={alarmSeverityTone(details.severity, severities)} />
-              <span className="font-medium">{details.assetCode}</span>
+              {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates. */}
+              <span className="font-medium">
+                <span className="whitespace-nowrap">{details.assetCode}</span>
+                {headerWhere !== null ? (
+                  <span className="whitespace-normal">
+                    {ASSET_LABEL_SEPARATOR}
+                    {headerWhere}
+                  </span>
+                ) : null}
+              </span>
               <span className="text-ink-muted">{details.assetName}</span>
               <AssetHistoryLink assetId={details.assetId} code={details.assetCode} />
             </div>
@@ -250,7 +265,7 @@ export function AlarmDetailsPanel({ alarmId, readOnly, onClose }: AlarmDetailsPa
                     <dt className="font-semibold text-ink">Affected assets</dt>
                     <dd className="text-ink-muted">
                       {details.enrichment.affectedAssets.length > 0
-                        ? details.enrichment.affectedAssets.map((a) => a.assetCode).join(", ")
+                        ? details.enrichment.affectedAssets.map((a) => assetLabelOf(a)).join(", ")
                         : "—"}
                     </dd>
                   </div>

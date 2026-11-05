@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, isNull, lt, or, sql } from "drizzle-orm";
 
-import { alarms, alarmSeverities, assets } from "@bms/db";
+import { alarms, alarmSeverities, assets, locations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   AlarmListItem,
@@ -140,7 +140,9 @@ export class AlarmsService {
         const base = tx
           .select(alarmListItemColumns)
           .from(alarms)
-          .innerJoin(assets, eq(alarms.assetId, assets.id));
+          .innerJoin(assets, eq(alarms.assetId, assets.id))
+          .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+          .leftJoin(locations, eq(assets.locationId, locations.id));
 
         const c = cursor ? decodeCursor(cursor) : null;
         const cursorFilter = c
@@ -334,6 +336,8 @@ export class AlarmsService {
         .select(alarmListItemColumns)
         .from(alarms)
         .innerJoin(assets, eq(alarms.assetId, assets.id))
+        .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+        .leftJoin(locations, eq(assets.locationId, locations.id))
         .where(eq(alarms.id, alarmId))
         .limit(1);
 

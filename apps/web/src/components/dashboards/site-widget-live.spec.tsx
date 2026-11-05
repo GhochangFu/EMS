@@ -134,6 +134,8 @@ function response(tabKey: string | null, alarmMessage: string): SiteWidgetsRespo
           acknowledgedBy: null,
           clearedAt: null,
           assetCode: "UPS-01",
+          assetRtuName: "RTU 1",
+          assetLocationName: "Site",
           assetName: "UPS 01",
           siteName: "Site",
         },

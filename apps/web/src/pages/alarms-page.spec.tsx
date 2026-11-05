@@ -81,6 +81,8 @@ function alarm(overrides: Partial<AlarmListItem>): AlarmListItem {
     acknowledgedBy: null,
     clearedAt: null,
     assetCode: "GEN-01",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Plant A",
     assetName: "Generator One",
     siteName: "Plant A",
     ...overrides,
@@ -295,4 +297,37 @@ export async function theAckSendsTheTrimmedReason(): Promise<void> {
   await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
   await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));
   expect(ack.mock.calls[0]?.[1]).toBe("Verified at panel");
+}
+
+/**
+ * `F4.316` PR 2 (ADR 0111): the innermost element whose whole text is `text` — the asset label is
+ * the code and a `· where` span, so no single text node holds it.
+ */
+function byWholeText(container: HTMLElement, text: string): HTMLElement {
+  return within(container).getByText(
+    (_content, element) =>
+      element !== null &&
+      element.textContent === text &&
+      Array.from(element.children).every((child) => child.textContent !== text),
+  );
+}
+
+/** `F4.316` PR 2 (ADR 0111): the Asset cell reads `<code> · <RTU>`. */
+export async function theAssetCellNamesTheRtu(): Promise<void> {
+  await renderPage([alarm({ id: "a1", assetCode: "CR-Q1", message: "Voltage above limit" })]);
+  expect(byWholeText(rowFor("Voltage above limit"), "CR-Q1 · RTU 1")).toBeInTheDocument();
+}
+
+/** With no RTU the location names the asset: `<code> · <location>`. */
+export async function theAssetCellFallsBackToTheLocation(): Promise<void> {
+  await renderPage([alarm({ id: "a1", assetCode: "CR-Q1", assetRtuName: null, message: "Voltage above limit" })]);
+  expect(byWholeText(rowFor("Voltage above limit"), "CR-Q1 · Plant A")).toBeInTheDocument();
+}
+
+/** The `· where` part wraps rather than truncating (ADR 0111 decision on long RTU names). */
+export async function theAssetCellsWherePartWraps(): Promise<void> {
+  await renderPage([alarm({ id: "a1", assetCode: "CR-Q1", message: "Voltage above limit" })]);
+  const where = within(rowFor("Voltage above limit")).getByText("· RTU 1");
+  expect(where).not.toHaveClass("truncate");
+  expect(where).toHaveClass("whitespace-normal");
 }

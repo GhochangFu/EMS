@@ -43,6 +43,8 @@ export const CREATED: MaintenanceScheduleItem = {
   lastCompletedAt: null,
   dueState: "upcoming",
   assetCode: "AHU-01",
+  assetRtuName: "RTU 3",
+  assetLocationName: "Plant A",
   assetName: "Air Handler One",
   siteName: "Plant A",
   activeWorkOrderId: null,

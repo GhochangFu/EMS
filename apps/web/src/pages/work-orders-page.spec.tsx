@@ -91,6 +91,8 @@ const ROW: WorkOrderListItem = {
   createdAt: "2026-10-01T09:00:00.000Z",
   updatedAt: "2026-10-01T09:00:00.000Z",
   assetCode: "PMP-01",
+  assetRtuName: "RTU 2",
+  assetLocationName: "Plant A",
   assetName: "Pump One",
   siteName: "Plant A",
 };
@@ -123,12 +125,12 @@ class CommitBoundExceeded extends Error {}
  * first case instead of failing it. The guard disarms once the row is on screen,
  * because the cases' own typing and dragging commit many more times.
  */
-async function renderPage(): Promise<void> {
+async function renderPage(row: WorkOrderListItem = ROW): Promise<void> {
   vi.stubGlobal(
     "fetch",
     vi.fn(() => Promise.reject(new Error("work-orders-page.spec: no fetch expected"))),
   );
-  vi.spyOn(workOrdersApi, "fetchWorkOrders").mockResolvedValue({ items: [ROW] });
+  vi.spyOn(workOrdersApi, "fetchWorkOrders").mockResolvedValue({ items: [row] });
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([ASSET]);
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   let armed = true;
@@ -149,7 +151,7 @@ async function renderPage(): Promise<void> {
       </QueryClientProvider>
     </Profiler>,
   );
-  await screen.findByText(ROW.title);
+  await screen.findByText(row.title);
   armed = false;
 }
 
@@ -339,4 +341,37 @@ export async function aCloseReasonThatTrimsShortStaysOnTheReasonStep(): Promise<
   await userEvent.type(within(dialog).getByLabelText("Closure reason"), "ok ");
   await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
   expect(within(dialog).queryByRole("button", { name: "Submit" })).toBeNull();
+}
+
+/**
+ * `F4.316` PR 4a (ADR 0111): the innermost element whose whole text is `text` — the asset label is
+ * the code and a `· where` span, so no single text node holds it.
+ */
+function byWholeText(text: string): HTMLElement {
+  return screen.getByText(
+    (_content, element) =>
+      element !== null &&
+      element.textContent === text &&
+      Array.from(element.children).every((child) => child.textContent !== text),
+  );
+}
+
+/** The card's asset line reads `<code> · <RTU>`. */
+export async function theCardNamesTheRtu(): Promise<void> {
+  await renderPage();
+  expect(byWholeText("PMP-01 · RTU 2")).toBeInTheDocument();
+}
+
+/** With no RTU the location names the asset: `<code> · <location>`. */
+export async function theCardFallsBackToTheLocation(): Promise<void> {
+  await renderPage({ ...ROW, assetRtuName: null });
+  expect(byWholeText("PMP-01 · Plant A")).toBeInTheDocument();
+}
+
+/** The `· where` part wraps rather than truncating. */
+export async function theCardsWherePartWraps(): Promise<void> {
+  await renderPage();
+  const where = screen.getByText("· RTU 2");
+  expect(where).not.toHaveClass("truncate");
+  expect(where).toHaveClass("whitespace-normal");
 }

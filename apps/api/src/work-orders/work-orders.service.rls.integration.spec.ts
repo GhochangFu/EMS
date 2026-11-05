@@ -302,3 +302,52 @@ export async function assertReorderReadsBackInOneTenantTransaction(
     "reorder resolves org/actor via fleet.select, opening no fleet transaction",
   ).toBe(0);
 }
+
+/**
+ * `F4.316` PR 4a (ADR 0111): the list row names the asset's location, and its RTU when it has one.
+ * The fixture asset has `rtu_id IS NULL` (ADR 0018) — the RTU-less twin: `assetRtuName: null`,
+ * `assetLocationName` = the location's name. The row must survive the LEFT JOIN to `rtus`.
+ */
+export async function assertWorkOrderRowKeepsAnRtuLessAsset(
+  ctx: WorkOrdersRlsFixtures,
+  locationName: string,
+): Promise<void> {
+  const page = await ctx.svc.list({ limit: 100, assetIds: [ctx.assetId] });
+  const row = page.items.find((i) => i.id === ctx.inScopeWorkOrderId);
+  expect(row, "the RTU-less asset's work order is still listed").toBeDefined();
+  expect({ rtu: row?.assetRtuName, location: row?.assetLocationName }).toEqual({
+    rtu: null,
+    location: locationName,
+  });
+}
+
+/** With an RTU on the asset, the same row names it (`rtus.display_name`); the RTU is removed after. */
+export async function assertWorkOrderRowNamesTheAssetsRtu(
+  ctx: WorkOrdersRlsFixtures,
+  locationName: string,
+  rtuCode: string,
+  actor: Pick<JwtPayload, "sub" | "email">,
+): Promise<void> {
+  const rtuName = `F4.316 WO RTU ${rtuCode}`;
+  const { rows } = await ctx.ownerPool.query<{ id: string }>(
+    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name)
+       SELECT organization_id, location_id, $2, $3 FROM bms.assets WHERE id = $1
+     RETURNING id`,
+    [ctx.assetId, rtuCode, rtuName],
+  );
+  const rtuId = rows[0]!.id;
+  try {
+    await ctx.ownerPool.query("UPDATE bms.assets SET rtu_id = $2 WHERE id = $1", [ctx.assetId, rtuId]);
+    const page = await ctx.svc.list({ limit: 100, assetIds: [ctx.assetId] });
+    const row = page.items.find((i) => i.id === ctx.inScopeWorkOrderId);
+    expect({ rtu: row?.assetRtuName, location: row?.assetLocationName }).toEqual({
+      rtu: rtuName,
+      location: locationName,
+    });
+    const one = await ctx.svc.updateStatus(ctx.inScopeWorkOrderId, { status: "open", sortOrder: 0 }, actor, [ctx.assetId]);
+    expect({ rtu: one.assetRtuName, location: one.assetLocationName }).toEqual({ rtu: rtuName, location: locationName });
+  } finally {
+    await ctx.ownerPool.query("UPDATE bms.assets SET rtu_id = NULL WHERE id = $1", [ctx.assetId]);
+    await ctx.ownerPool.query("DELETE FROM bms.rtus WHERE id = $1", [rtuId]);
+  }
+}
