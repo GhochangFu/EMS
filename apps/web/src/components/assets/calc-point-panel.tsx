@@ -88,6 +88,8 @@ type CalcPointPanelProps = {
   allowNewKey?: boolean;
   /** `F4.313` follow-up: the asset's domain, so Add lists its keys first; `null` lists all. */
   assetDomain?: string | null;
+  /** `F4.314` PR 2: the asset's organization code, whose published versions Add's Suggested formulas read. */
+  assetOrganizationCode?: string | null;
   /** Edit only: opens the `calcPoint.delete` wizard. */
   onDelete: (() => void) | null;
   onCancel: () => void;
@@ -103,6 +105,7 @@ export function CalcPointPanel({
   onSubmit,
   allowNewKey = false,
   assetDomain = null,
+  assetOrganizationCode = null,
   onDelete,
   onCancel,
 }: CalcPointPanelProps) {
@@ -156,6 +159,13 @@ export function CalcPointPanel({
       <div className="grid gap-2 sm:grid-cols-2">
         <PointCalcFormulaFields
           {...fields}
+          // `F4.314` PR 2 (A3): Add offers the key's existing formulas,
+          // marking the inputs this asset's rows do not have.
+          suggestions={
+            config
+              ? undefined
+              : { organizationCode: assetOrganizationCode, domain: assetDomain, assetKeys: rows.map((row) => row.pointKey) }
+          }
           formulaEditor={
             <FormulaEditorLazy
               mode="derived"
