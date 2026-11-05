@@ -403,13 +403,12 @@ export function aFillWithAnAgeChoosesIt(): void {
 }
 
 /**
- * The twin: a formula-only fill leaves the age following — judged on the fill's own values,
- * not on the merged body (which holds the shown default, 60 here). Mutation: judge the merged body.
+ * The twin: a formula-only fill leaves the age following. That the pages pass the fill's own
+ * values, not the merged body, is gated by `aFormulaOnlyFillLeavesTheAgeFollowing`
+ * (`asset-points-page.calc-points.spec.tsx`) and the bulk wizard's twin.
  */
 export function aFillWithNoAgeLeavesItFollowing(): void {
-  const merged = { formula: "{kw} * 3", calcTrigger: "scheduled", calcIntervalSeconds: 30, maxInputAgeSeconds: 60 };
-  const fill = { formula: "{kw} * 3" };
-  expect([ageTouchedAfterFill(fill, false), merged.maxInputAgeSeconds]).toEqual([false, 60]);
+  expect(ageTouchedAfterFill({ formula: "{kw} * 3" }, false)).toBe(false);
 }
 
 /** Once touched, the age stays touched. */

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -20,6 +20,7 @@ import { ApiError } from "../../lib/api-error";
 import { SCHEDULE_AGE_BLOCKER } from "../../lib/calc-point-draft";
 import { stockEntry, templateRow, templateVersion } from "../../lib/formula-suggestions.spec";
 import type { AuthUser } from "../../stores/auth-store";
+import { resetWizardStore, useWizardStore } from "../../stores/wizard-store";
 import { AssetsAdminPage } from "./assets-page";
 
 /**
@@ -341,4 +342,26 @@ export async function theBulkWizardKeepsATypedAgeOnALaterIntervalEdit(): Promise
   await userEvent.clear(every);
   await userEvent.type(every, "90");
   expect(age.value).toBe("45");
+}
+
+/**
+ * `F4.315` re-review: a formula-only copilot fill leaves the bulk wizard's age following
+ * Every. Mutation: the wizard passes the merged values to `ageTouchedAfterFill` — it freezes at 60.
+ */
+export async function theBulkWizardsAgeFollowsEveryAfterAFormulaOnlyFill(): Promise<void> {
+  resetWizardStore();
+  stubApi([ONE]);
+  renderPage();
+  await check("PMP-1");
+  const dialog = await batchToSchedule();
+  const every = within(dialog).getByLabelText("Every (seconds)");
+  await userEvent.type(every, "30");
+  act(() => {
+    useWizardStore
+      .getState()
+      .receiveFill({ catalogId: "calcPoint.createBatch", params: {}, stepId: "formula", values: { formula: "{kw} * 3" } }, null);
+  });
+  await userEvent.clear(every);
+  await userEvent.type(every, "300");
+  expect((within(dialog).getByLabelText("Inputs valid for (seconds)") as HTMLInputElement).value).toBe("600");
 }

@@ -5,6 +5,7 @@ import type { CatalogEntry } from "@bms/shared/copilot";
 import { changeRows } from "../../lib/copilot-diff";
 import {
   applyFill,
+  appliedFillValues,
   bodyProblems,
   guardWizardLeave,
   type LeaveDecision,
@@ -37,7 +38,7 @@ type WizardShellProps = {
   fixedFields?: readonly string[];
   /** The form's values, keyed by body field; the page owns them. */
   values: Record<string, unknown>;
-  /** A copilot fill's merged values; `fillValues` is what the fill itself set (`F4.315`). */
+  /** A copilot fill's merged values; `fillValues` is what the fill itself set (`appliedFillValues`, `F4.315`). */
   onChange: (values: Record<string, unknown>, fillValues?: Readonly<Record<string, unknown>>) => void;
   /** The page's inputs for one field step. */
   renderStep: (step: WizardStep) => ReactNode;
@@ -134,7 +135,7 @@ export function WizardShell(props: WizardShellProps) {
     const next = applyFill(entry.id, steps, values, fill, props.fixedFields);
     if (next === null) return;
     setDirty(true);
-    onChange(next, fill.values);
+    onChange(next, appliedFillValues(steps, fill, props.fixedFields));
     // Each fill is read once, when it arrives (`seq`), or when this wizard's record changes (`key`).
   }, [seq, key]);
 

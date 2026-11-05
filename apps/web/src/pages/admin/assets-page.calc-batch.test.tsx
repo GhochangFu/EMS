@@ -11,6 +11,7 @@ import {
   reviewListsEveryRefusedAsset,
   theBatchSendsExactlyTheCheckedIds,
   theBulkWizardKeepsATypedAgeOnALaterIntervalEdit,
+  theBulkWizardsAgeFollowsEveryAfterAFormulaOnlyFill,
   theBulkWizardRefusesNextWhileTheAgeIsEmpty,
   theBulkWizardTakesTwiceTheInterval,
   theBulkWizardListsTheSharedOrganizationsVersion,
@@ -87,5 +88,9 @@ describe("F4.315 PR B — the bulk wizard's default input age, and the Schedule 
 
   it("review F1: a typed age survives a later Every edit", async () => {
     await theBulkWizardKeepsATypedAgeOnALaterIntervalEdit();
+  });
+
+  it("a formula-only copilot fill leaves the age following Every", async () => {
+    await theBulkWizardsAgeFollowsEveryAfterAFormulaOnlyFill();
   });
 });

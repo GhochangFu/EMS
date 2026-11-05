@@ -379,3 +379,42 @@ export async function aFormulaOnlyFillLeavesTheAgeFollowing(): Promise<void> {
   await userEvent.type(screen.getByLabelText("Every (seconds)"), "300");
   expect(ageField().value).toBe("600");
 }
+
+/** Sends a copilot fill for the Add wizard of `pf` on this asset. */
+function fillAdd(stepId: string, values: Record<string, unknown>): void {
+  act(() => {
+    useWizardStore.getState().receiveFill({ catalogId: "calcPoint.set", params: { assetId: ASSET, pointKey: "pf" }, stepId, values }, null);
+  });
+}
+
+/**
+ * A fill that sets the age chooses it: a later Every edit keeps it. Mutation: the shell's
+ * `onChange(next)` drops the fill's values — the age follows Every to 600.
+ */
+export async function aFillsOwnAgeIsKept(): Promise<void> {
+  resetWizardStore();
+  stubApi("standalone");
+  renderPage();
+  await addToSchedule();
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
+  fillAdd("schedule", { maxInputAgeSeconds: 120 });
+  await userEvent.clear(screen.getByLabelText("Every (seconds)"));
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "300");
+  expect(ageField().value).toBe("120");
+}
+
+/**
+ * An age carried by a fill of another step is not applied, so it chooses nothing. Mutation:
+ * the shell passes `fill.values` instead of `appliedFillValues` — the age freezes at 60.
+ */
+export async function aFillsAgeForAnotherStepChoosesNothing(): Promise<void> {
+  resetWizardStore();
+  stubApi("standalone");
+  renderPage();
+  await addToSchedule();
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
+  fillAdd("formula", { formula: "{kw} * 3", maxInputAgeSeconds: 120 });
+  await userEvent.clear(screen.getByLabelText("Every (seconds)"));
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "300");
+  expect(ageField().value).toBe("600");
+}

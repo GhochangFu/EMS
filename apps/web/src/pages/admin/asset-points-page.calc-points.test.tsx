@@ -6,6 +6,8 @@ import {
   aClearedAgeRefusesNextAndSaysWhy,
   aScheduledAddTakesTwiceTheInterval,
   aStreamingAddOpensTheAgeOnThreeHundred,
+  aFillsAgeForAnotherStepChoosesNothing,
+  aFillsOwnAgeIsKept,
   aFormulaOnlyFillLeavesTheAgeFollowing,
   aTypedAgeLetsNextPass,
   aTypedAgeSurvivesALaterIntervalEdit,
@@ -107,5 +109,13 @@ describe("F4.315 PR B — Add's default input age, and the Schedule step that re
 
   it("a formula-only copilot fill leaves the age following its default", async () => {
     await aFormulaOnlyFillLeavesTheAgeFollowing();
+  });
+
+  it("a copilot fill's own age is kept when Every changes", async () => {
+    await aFillsOwnAgeIsKept();
+  });
+
+  it("an age in a fill of another step is not applied and chooses nothing", async () => {
+    await aFillsAgeForAnotherStepChoosesNothing();
   });
 });

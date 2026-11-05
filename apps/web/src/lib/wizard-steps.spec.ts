@@ -2,7 +2,7 @@ import { expect } from "vitest";
 
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
-import { applyFill, openWizardKey, wizardStepsOf } from "./wizard-steps";
+import { applyFill, appliedFillValues, openWizardKey, wizardStepsOf } from "./wizard-steps";
 
 /**
  * `F4.245` / ADR 0099 Amendment 4 — the key that names one open wizard's
@@ -89,4 +89,15 @@ export function aFillSetsAFieldThePageDoesNotFix(): void {
   const field = steps[0]?.fields[0] as string;
   const filled = applyFill(create.id, steps, { [field]: A }, { catalogId: create.id, params: { code: "x" }, stepId: steps[0]?.id as string, values: { [field]: B } });
   expect(filled).toEqual({ [field]: B });
+}
+
+/**
+ * `F4.315` PR B — what a fill applied is the step's free fields only: a field of another step
+ * and a page-fixed field are left out. Mutation: return `fill.values` as is.
+ */
+export function theAppliedValuesAreTheStepsFreeFieldsOnly(): void {
+  const create = entry("dashboard.create");
+  const steps = wizardStepsOf(create);
+  const fill = { catalogId: create.id, params: {}, stepId: "basics", values: { name: "X", slug: "x", organizationId: "o" } };
+  expect(appliedFillValues(steps, fill, ["name"])).toEqual({ slug: "x" });
 }
