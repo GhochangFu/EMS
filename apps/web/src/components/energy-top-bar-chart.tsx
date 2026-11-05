@@ -2,7 +2,7 @@ import type { EChartsOption } from "echarts";
 import ReactECharts from "echarts-for-react";
 import { useMemo } from "react";
 
-import type { EnergyTopConsumer } from "@bms/shared";
+import { assetLabel, type EnergyTopConsumer } from "@bms/shared";
 
 import { useChartTheme } from "../lib/chart-theme";
 
@@ -18,7 +18,11 @@ type Props = {
 export function EnergyTopBarChart({ consumers, status }: Props) {
   const { roles, theme } = useChartTheme();
   const option = useMemo<EChartsOption>(() => {
-    const labels = consumers.map((c) => `${c.code} · ${c.name.slice(0, 18)}`);
+    // `F4.316` (ADR 0111): the bar names the asset by its label, `<code> · <RTU>` (else
+    // `<code> · <location>`), never shortened; only the free-text name is cut to 18 characters.
+    const labels = consumers.map(
+      (c) => `${assetLabel({ code: c.code, rtuName: c.assetRtuName, locationName: c.assetLocationName })} · ${c.name.slice(0, 18)}`,
+    );
     const values = consumers.map((c) => c.estimatedKwh);
     return {
       color: [roles.info],
