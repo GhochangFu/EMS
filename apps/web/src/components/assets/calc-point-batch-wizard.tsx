@@ -13,14 +13,34 @@
  * assets need not share their points, so there is no one key list for the
  * editor's linter, and the server checks each asset and names each refusal.
  * A `400` lists every refused asset on Review, beside the card.
+ *
+ * `F4.313` (ADR 0109 Amendment 1, A11–A13) — **New key** on the Point step,
+ * for a global administrator only (`allowNewKey`). On Submit the wizard first
+ * reads each eligible asset's rows and checks the formula against the new
+ * code under decision 3's rules, as the Add panel does for one asset; only a
+ * clean check creates the key and then writes the batch. A refused batch
+ * after the key says the key stays, and the picker re-reads the catalog.
  */
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import type { AdminAssetDto, CalcPointBatchBody } from "@bms/shared";
+import type { AdminAssetDto, CalcPointBatchBody, CreatePointKeyBody } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
-import { createAdminCalcPointBatch } from "../../api/admin/asset-points";
+import { createAdminCalcPointBatch, fetchAdminAssetPoints } from "../../api/admin/asset-points";
+import { createAdminPointKey } from "../../api/admin/point-keys";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import {
+  BATCH_FORMULA_NOT_CHECKED_CLEAN,
+  NEW_KEY,
+  batchFormulaRefusals,
+  createKeyThenWritePoint,
+  emptyNewPointKeyDraft,
+  newPointKeyBody,
+  newPointKeyDraftChanged,
+  newPointKeyProblems,
+  pointWriteCause,
+  type NewPointKeyDraft,
+} from "../../lib/new-point-key-draft";
 import {
   BATCH_QUALIFIED_REF_NOTE,
   BATCH_TEMPLATE_EXCLUSION,
@@ -41,6 +61,7 @@ import { FormulaPreview } from "../asset-templates/formula-preview";
 import { WizardShell } from "../wizard/wizard-shell";
 import { BackfillDaysSelect } from "./backfill-days-select";
 import { CatalogKeySelect } from "./catalog-key-select";
+import { NewPointKeyFields } from "./new-point-key-fields";
 import { PointCalcFormulaFields, PointCalcScheduleFields } from "./point-calc-override-panel";
 
 function wizardEntry(id: string): CatalogEntry {
@@ -56,10 +77,13 @@ const START = emptyCalcPointDraft();
 
 export function CalcPointBatchWizard({
   assets,
+  allowNewKey = false,
   onCancel,
   onDone,
 }: {
   assets: readonly AdminAssetDto[];
+  /** `F4.313` (A12): offer **New key** — the page passes it for a global administrator only. */
+  allowNewKey?: boolean;
   onCancel: () => void;
   onDone: () => void;
 }) {
@@ -67,6 +91,9 @@ export function CalcPointBatchWizard({
   const [draft, setDraft] = useState<CalcPointDraft>(() => emptyCalcPointDraft());
   const [error, setError] = useState<string | null>(null);
   const [refused, setRefused] = useState<BatchRefusal[]>([]);
+  // `F4.313`: the New key fields while **New key** is picked; the draft's key mirrors their code.
+  const [newKey, setNewKey] = useState<NewPointKeyDraft | null>(null);
+  const [checking, setChecking] = useState(false);
   const { eligible } = batchEligibility(assets);
   const capProblem = batchCapProblem(assets.length);
   const blocker =
@@ -77,26 +104,77 @@ export function CalcPointBatchWizard({
   // Re-read on every outcome: under ruling 4 a `409` / `503` arrives with
   // every point already written, so a refusal is no proof nothing changed.
   // The wizard stays open on a refusal, with the server's sentence.
+  // `F4.313` (A13): with a new key, the key first and then the batch; a
+  // refused batch leaves the key in the catalog, so the picker re-reads it.
   const batchM = useMutation({
-    mutationFn: (body: CalcPointBatchBody) => createAdminCalcPointBatch(body),
-    onSettled: () => {
+    mutationFn: ({ body, key }: { body: CalcPointBatchBody; key: CreatePointKeyBody | null }) =>
+      createKeyThenWritePoint(key, createAdminPointKey, () => createAdminCalcPointBatch(body)),
+    onSettled: (_data, _cause, { key }) => {
       void queryClient.invalidateQueries({ queryKey: ["admin", "asset-calc-points"] });
       void queryClient.invalidateQueries({ queryKey: ["admin", "asset-points"] });
       void queryClient.invalidateQueries({ queryKey: ["admin", "assets"] });
+      if (key !== null) void queryClient.invalidateQueries({ queryKey: ["admin", "point-keys"] });
     },
     onSuccess: () => onDone(),
     onError: (cause: unknown) => {
-      setRefused(batchRefusals(cause) ?? []);
+      setRefused(batchRefusals(pointWriteCause(cause)) ?? []);
       setError(apiErrorMessage(cause));
     },
   });
+
+  /**
+   * A13 for the batch: the new key's fields, then the formula against each
+   * eligible asset's rows under the new code; only a clean check writes.
+   */
+  async function submitWithNewKey(body: CalcPointBatchBody, keyDraft: NewPointKeyDraft): Promise<void> {
+    const keyProblems = newPointKeyProblems(keyDraft);
+    if (keyProblems.length > 0) {
+      setError(keyProblems.join(" "));
+      return;
+    }
+    setChecking(true);
+    try {
+      const rows = await Promise.all(
+        eligible.map((asset) =>
+          queryClient.fetchQuery({
+            queryKey: ["admin", "asset-points", "all", asset.id],
+            queryFn: () => fetchAdminAssetPoints("all", asset.id),
+          }),
+        ),
+      );
+      const found = batchFormulaRefusals(
+        eligible,
+        new Map(eligible.map((asset, index) => [asset.id, rows[index]?.items ?? []])),
+        draft,
+      );
+      if (found.length > 0) {
+        setRefused(found);
+        setError(BATCH_FORMULA_NOT_CHECKED_CLEAN);
+        return;
+      }
+    } catch (cause: unknown) {
+      setError(apiErrorMessage(cause));
+      return;
+    } finally {
+      setChecking(false);
+    }
+    batchM.mutate({ body, key: newPointKeyBody(keyDraft) });
+  }
 
   const change = (next: CalcPointDraft) => {
     setError(null);
     setRefused([]);
     setDraft(next);
   };
-  const busy = batchM.isPending;
+  const busy = batchM.isPending || checking;
+  const pickKey = (picked: string) => {
+    setNewKey(picked === NEW_KEY ? emptyNewPointKeyDraft() : null);
+    change({ ...draft, pointKey: picked === NEW_KEY ? "" : picked });
+  };
+  const editNewKey = (next: NewPointKeyDraft) => {
+    setNewKey(next);
+    change({ ...draft, pointKey: next.code.trim() });
+  };
   const fields = {
     config: standaloneConfigFor(draft.pointKey),
     draft,
@@ -135,12 +213,16 @@ export function CalcPointBatchWizard({
     </>
   );
   const pointStep = (
-    <CatalogKeySelect
-      value={draft.pointKey}
-      exclude={NOTHING_EXCLUDED}
-      disabled={busy}
-      onChange={(pointKey) => change({ ...draft, pointKey })}
-    />
+    <>
+      <CatalogKeySelect
+        value={newKey ? NEW_KEY : draft.pointKey}
+        exclude={NOTHING_EXCLUDED}
+        disabled={busy}
+        allowNew={allowNewKey}
+        onChange={pickKey}
+      />
+      {newKey ? <NewPointKeyFields draft={newKey} disabled={busy} onChange={editNewKey} /> : null}
+    </>
   );
   const formulaStep = (
     <>
@@ -183,13 +265,16 @@ export function CalcPointBatchWizard({
         }
         renderStep={(step) => steps[step.id] ?? null}
         nextDisabled={blocker !== null}
-        onSubmit={(body) => batchM.mutate(body as CalcPointBatchBody)}
+        onSubmit={(body) => {
+          if (newKey) void submitWithNewKey(body as CalcPointBatchBody, newKey);
+          else batchM.mutate({ body: body as CalcPointBatchBody, key: null });
+        }}
         onCancel={() => {
           if (!busy) onCancel();
         }}
         submitting={busy}
         submitError={error}
-        dirty={calcPointDraftChanged(draft, START)}
+        dirty={calcPointDraftChanged(draft, START) || (newKey !== null && newPointKeyDraftChanged(newKey))}
         review={{
           omit: ["assetIds"],
           detail: (
