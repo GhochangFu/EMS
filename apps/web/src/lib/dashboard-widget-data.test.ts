@@ -5,6 +5,9 @@ import {
   runPointRefsForTests,
   runSeriesNameForTests,
   runSeriesNameFormTests,
+  runSeriesNameNamesTheLocationWithoutAnRtuTests,
+  runSeriesNameNamesTheRtuTests,
+  runSeriesNamesSplitTheSameCodeUnderTwoRtusTests,
   runSeriesNamesAreDistinctTests,
   runSingleValueWidgetTests,
   runStalenessTests,
@@ -43,5 +46,17 @@ describe("dashboard widget data", () => {
 
   it("F3.43 — seriesNameFor composes the two fields with a middle dot", () => {
     runSeriesNameForTests();
+  });
+
+  it("F4.316 PR 5 — a series on an asset with an RTU is named <code> · <RTU> · <pointKey>", () => {
+    runSeriesNameNamesTheRtuTests();
+  });
+
+  it("F4.316 PR 5 — a series on an RTU-less asset is named <code> · <location> · <pointKey>", () => {
+    runSeriesNameNamesTheLocationWithoutAnRtuTests();
+  });
+
+  it("F4.316 PR 5 — one code under two RTUs carries two series names", () => {
+    runSeriesNamesSplitTheSameCodeUnderTwoRtusTests();
   });
 });

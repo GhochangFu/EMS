@@ -194,6 +194,8 @@ function dashboardRow(organizationId: string) {
     assetId: null,
     assetTemplateId: null,
     assetCode: null,
+    assetRtuName: null,
+    assetLocationName: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     widgetCount: 0,
@@ -412,6 +414,12 @@ export async function assertListAssetsSearchMatchesTheName(): Promise<void> {
   expect(JSON.stringify(out)).toContain(ASSET_Y);
   const none = await tools.dispatch("list_assets", { search: "breaker q12" }, ctx([ORG_X, ORG_Y]));
   expect(JSON.stringify(none)).not.toContain(ASSET_X);
+}
+
+/** `F4.316` PR 7 (ADR 0111): `list_assets` tells the model the label rule — `code · rtuDisplayName`, else `code · locationName`. */
+export function assertListAssetsDescribesTheLabelRule(): void {
+  const description = COPILOT_READ_TOOL_DEFINITIONS.find((tool) => tool.name === "list_assets")?.description;
+  expect(description).toContain("`code · rtuDisplayName`, else `code · locationName`");
 }
 
 /** A result is parsed through its contract schema: a field the contract does not name is stripped. */

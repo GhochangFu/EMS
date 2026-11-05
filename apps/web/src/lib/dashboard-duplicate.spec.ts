@@ -16,6 +16,8 @@ function point(overrides: Partial<DashboardWidgetPointDto> = {}): DashboardWidge
     sortOrder: 0,
     assetId: "asset-1",
     assetCode: "ASSET-1",
+    assetRtuName: null,
+    assetLocationName: null,
     pointKey: "power_kw",
     unit: "kW",
     ...overrides,

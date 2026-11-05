@@ -292,6 +292,23 @@ export async function assertListReportsTheAssetCode(
   expect(organizationWide?.assetCode, "a non-asset-scoped row reports a null assetCode").toBeNull();
 }
 
+/** `F4.316` PR 5 / ADR 0111 — the tenant-branch `list()` names the asset's RTU and location
+ * (FORCE RLS on `bms.rtus`/`bms.locations`); `expectRtu` pins the twin, so it cannot pass vacuously. */
+export async function assertListNamesTheAssetsRtuAndLocation(
+  service: DashboardsService, fleetDb: BmsDb, actor: JwtPayload, dashboardId: string, assetId: string, expectRtu: boolean,
+): Promise<void> {
+  const nameRows = await fleetDb.execute(sql`SELECT r.display_name AS rtu, l.name AS location FROM bms.assets a
+    JOIN bms.locations l ON l.id = a.location_id LEFT JOIN bms.rtus r ON r.id = a.rtu_id WHERE a.id = ${assetId}`);
+  const expected = nameRows.rows[0] as { rtu: string | null; location: string } | undefined;
+  expect(expected !== undefined && expected.rtu !== null, "the fixture's RTU presence").toBe(expectRtu);
+  const listed = await service.list(actor);
+  const item = listed.items.find((candidate) => candidate.id === dashboardId);
+  expect([item?.assetRtuName, item?.assetLocationName]).toEqual([expected?.rtu, expected?.location]);
+  const organizationWide = listed.items.find((candidate) => candidate.assetId === null);
+  expect(organizationWide, "an organization-wide row still lists").toBeDefined();
+  expect([organizationWide?.assetRtuName, organizationWide?.assetLocationName]).toEqual([null, null]);
+}
+
 async function slugFor(fleetDb: BmsDb, dashboardId: string): Promise<string> {
   const rows = await fleetDb.execute(sql`SELECT slug FROM bms.dashboards WHERE id = ${dashboardId}`);
   return (rows.rows[0] as { slug: string }).slug;

@@ -214,6 +214,8 @@ const POINT_ROW = {
   id: POINT,
   assetId: ASSET,
   assetCode: "PUMP-1",
+  assetRtuName: null,
+  assetLocationName: null,
   assetName: "Feed pump",
   locationId: LOCATION,
   locationName: "Lotapata",

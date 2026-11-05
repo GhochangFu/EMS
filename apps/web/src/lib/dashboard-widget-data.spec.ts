@@ -47,6 +47,8 @@ function point(overrides: Partial<DashboardWidgetPointDto> = {}): DashboardWidge
     sortOrder: 0,
     assetId: "66666666-6666-4666-8666-666666666666",
     assetCode: "BRK-01",
+    assetRtuName: null,
+    assetLocationName: null,
     pointKey: "power_kw",
     unit: "kW",
     ...overrides,
@@ -292,4 +294,24 @@ export function runSeriesNameForTests(): void {
     seriesNameFor(a) === "BRK-01 · kw",
     `seriesNameFor composes assetCode and pointKey with " · ", got ${seriesNameFor(a)}`,
   );
+}
+
+/** `F4.316` PR 5 / ADR 0111 — an asset on an RTU: `<code> · <RTU> · <pointKey>`. */
+export function runSeriesNameNamesTheRtuTests(): void {
+  const name = seriesNameFor(point({ assetCode: "BRK-01", assetRtuName: "RTU 1", assetLocationName: "Plant A", pointKey: "kw" }));
+  assert(name === "BRK-01 · RTU 1 · kw", `the name is "<code> · <RTU> · <pointKey>", got ${name}`);
+}
+
+/** `F4.316` PR 5 — the twin: no RTU, so `<code> · <location> · <pointKey>`. */
+export function runSeriesNameNamesTheLocationWithoutAnRtuTests(): void {
+  const name = seriesNameFor(point({ assetCode: "BRK-01", assetRtuName: null, assetLocationName: "Plant A", pointKey: "kw" }));
+  assert(name === "BRK-01 · Plant A · kw", `the name is "<code> · <location> · <pointKey>", got ${name}`);
+}
+
+/** `F4.316` PR 5 — the same code under two RTUs reads as two legend entries, not one. */
+export function runSeriesNamesSplitTheSameCodeUnderTwoRtusTests(): void {
+  const one = point({ id: "a", pointId: "pa", assetId: "asset-a", assetCode: "BRK-01", assetRtuName: "RTU 1", pointKey: "kw", role: "series" });
+  const two = point({ id: "b", pointId: "pb", assetId: "asset-b", assetCode: "BRK-01", assetRtuName: "RTU 2", pointKey: "kw", role: "series", sortOrder: 1 });
+  const names = seriesNamesOf([one, two]);
+  assert(new Set(names).size === 2, `one code under two RTUs must carry two names, got ${names.join(",")}`);
 }

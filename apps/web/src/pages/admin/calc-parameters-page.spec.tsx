@@ -90,6 +90,8 @@ const ROWS = {
       assetId: null,
       locationName: null,
       assetCode: null,
+      assetRtuName: null,
+      assetLocationName: null,
       value: 2.5,
       effectiveFrom: "2026-01-01T00:00:00.000Z",
       effectiveTo: null,
@@ -104,6 +106,8 @@ const ROWS = {
       assetId: null,
       locationName: "Spec Plant",
       assetCode: null,
+      assetRtuName: null,
+      assetLocationName: null,
       value: 3.25,
       effectiveFrom: "2026-02-01T00:00:00.000Z",
       effectiveTo: "2026-03-01T00:00:00.000Z",
@@ -118,6 +122,8 @@ const ROWS = {
       assetId: ASSET_ID,
       locationName: null,
       assetCode: "SPEC-TRF-01",
+      assetRtuName: null,
+      assetLocationName: null,
       value: 0.9,
       effectiveFrom: "2026-01-15T00:00:00.000Z",
       effectiveTo: null,
@@ -710,4 +716,27 @@ export async function theLocationPickerListsTheTree(): Promise<void> {
     "SPEC1 · Spec Plant",
     "— ANX · Annex",
   ]);
+}
+
+/** `F4.316` PR 5 / ADR 0111 — the asset row's scope cell, for a row whose asset carries `names`. */
+async function assetScopeCellWith(names: { assetRtuName: string | null; assetLocationName: string | null }): Promise<string> {
+  const rows = { items: ROWS.items.map((row) => (row.assetId === ASSET_ID ? { ...row, ...names } : row)) };
+  stubApi({ fetchAdminCalcParameters: () => Promise.resolve(rows) });
+  renderPage(admin);
+  const table = await screen.findByRole("table");
+  return (await within(table).findByRole("cell", { name: /^Asset · SPEC-TRF-01/ })).textContent ?? "";
+}
+
+/** `F4.316` PR 5 — the asset scope reads `Asset · <code> · <RTU>` when the asset has an RTU. */
+export async function anAssetScopeNamesTheAssetsRtu(): Promise<void> {
+  expect(await assetScopeCellWith({ assetRtuName: "RTU 1", assetLocationName: "Spec Plant" })).toBe(
+    "Asset · SPEC-TRF-01 · RTU 1",
+  );
+}
+
+/** `F4.316` PR 5 — the twin: no RTU, so the label names the asset's location. */
+export async function anAssetScopeWithoutAnRtuNamesTheLocation(): Promise<void> {
+  expect(await assetScopeCellWith({ assetRtuName: null, assetLocationName: "Spec Plant" })).toBe(
+    "Asset · SPEC-TRF-01 · Spec Plant",
+  );
 }

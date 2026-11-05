@@ -31,6 +31,7 @@ function oneRowDb(row: Record<string, unknown>): never {
     from: () => chain,
     where: () => chain,
     innerJoin: () => chain,
+    leftJoin: () => chain,
     limit: async () => [Object.fromEntries(selected.map((key) => [key, row[key]]))],
     // A list read with no `limit` (an asset's point keys) answers no rows.
     then: (resolve: (rows: unknown[]) => unknown) => resolve([]),

@@ -9,6 +9,8 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  anAssetScopeNamesTheAssetsRtu,
+  anAssetScopeWithoutAnRtuNamesTheLocation,
   adminHasTheOrganizationRadio,
   aChangedEndDateTravelsBesideTheValue,
   anEmptiedStartDateHoldsTheDatesStep,
@@ -147,5 +149,13 @@ describe("F3.85 PR 11b calc parameters — the create and edit wizards", () => {
 
   it("review code:F4 an emptied start date on edit holds the Effective dates step and sends nothing", async () => {
     await anEmptiedStartDateHoldsTheDatesStep();
+  });
+
+  it("F4.316 PR 5 — the asset scope names the asset's RTU (ADR 0111)", async () => {
+    await anAssetScopeNamesTheAssetsRtu();
+  });
+
+  it("F4.316 PR 5 — the asset scope of an RTU-less asset names its location", async () => {
+    await anAssetScopeWithoutAnRtuNamesTheLocation();
   });
 });

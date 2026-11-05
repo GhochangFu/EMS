@@ -56,6 +56,8 @@ const POINT: DashboardWidgetPointDto = {
   sortOrder: 0,
   assetId: ASSET,
   assetCode: "BRK-01",
+  assetRtuName: null,
+  assetLocationName: null,
   pointKey: "power_kw",
   unit: "kW",
 };

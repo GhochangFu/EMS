@@ -2,6 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   runDashboardAssetScopeFieldsTests,
+  runDashboardSummaryAcceptsRtuLessTwinTest,
+  runDashboardSummaryRefusesWithoutLocationNameTest,
+  runDashboardSummaryRefusesWithoutRtuNameTest,
   runDashboardGridTests,
   runDashboardTabsFieldsTests,
   runWidgetTabIdTests,
@@ -27,5 +30,17 @@ describe("F3.73 — the dashboard DTO carries tabs and a template stamp", () => 
 
   it("requires tabId on a widget as read, null for the legacy canvas", () => {
     runWidgetTabIdTests();
+  });
+});
+
+describe("F4.316 PR 5 — the summary names the asset's RTU and location (ADR 0111)", () => {
+  it("refuses a summary row without assetRtuName", () => {
+    runDashboardSummaryRefusesWithoutRtuNameTest();
+  });
+  it("refuses a summary row without assetLocationName", () => {
+    runDashboardSummaryRefusesWithoutLocationNameTest();
+  });
+  it("accepts the RTU-less twin", () => {
+    runDashboardSummaryAcceptsRtuLessTwinTest();
   });
 });

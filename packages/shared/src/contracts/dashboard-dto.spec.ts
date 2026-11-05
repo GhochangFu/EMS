@@ -95,6 +95,8 @@ const validSummary = {
   assetId: "33333333-3333-4333-8333-333333333333",
   assetTemplateId: "44444444-4444-4444-8444-444444444444",
   assetCode: "TX-01",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
   createdAt: new Date(0).toISOString(),
   updatedAt: new Date(0).toISOString(),
   widgetCount: 3,
@@ -148,7 +150,14 @@ export function runDashboardAssetScopeFieldsTests(): void {
   );
   expectAccepts(
     dashboardSummaryDtoSchema,
-    { ...validSummary, assetId: null, assetTemplateId: null, assetCode: null },
+    {
+      ...validSummary,
+      assetId: null,
+      assetTemplateId: null,
+      assetCode: null,
+      assetRtuName: null,
+      assetLocationName: null,
+    },
     "an organization-wide summary row — every asset field null",
   );
 
@@ -217,4 +226,25 @@ export function runWidgetTabIdTests(): void {
   expectRejects(dashboardWidgetDtoSchema, widget, "a widget without tabId");
   expectAccepts(dashboardWidgetDtoSchema, { ...widget, tabId: null }, "a legacy-canvas widget, tabId null");
   expectAccepts(dashboardWidgetDtoSchema, { ...widget, tabId: validTab.id }, "a widget on a tab");
+}
+
+/** `F4.316` PR 5 / ADR 0111 — a summary row missing `assetRtuName` is refused (required-nullable). */
+export function runDashboardSummaryRefusesWithoutRtuNameTest(): void {
+  const { assetRtuName: _rtu, ...withoutRtu } = validSummary;
+  expectRejects(dashboardSummaryDtoSchema, withoutRtu, "a summary row missing assetRtuName");
+}
+
+/** `F4.316` PR 5 / ADR 0111 — a summary row missing `assetLocationName` is refused. */
+export function runDashboardSummaryRefusesWithoutLocationNameTest(): void {
+  const { assetLocationName: _loc, ...withoutLocation } = validSummary;
+  expectRejects(dashboardSummaryDtoSchema, withoutLocation, "a summary row missing assetLocationName");
+}
+
+/** `F4.316` PR 5 / ADR 0111 — the RTU-less twin parses. */
+export function runDashboardSummaryAcceptsRtuLessTwinTest(): void {
+  expectAccepts(
+    dashboardSummaryDtoSchema,
+    { ...validSummary, assetRtuName: null },
+    "an asset-scoped summary whose asset has no RTU",
+  );
 }

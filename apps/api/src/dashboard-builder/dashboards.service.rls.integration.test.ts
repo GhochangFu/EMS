@@ -39,6 +39,7 @@ import {
   assertLocationReaderMayReadItsSitesDashboardBySlug,
   assertMixedGrantViewerReadsItsSitesDashboardBySlug,
   assertListFiltersByAssetIdWithinScope,
+  assertListNamesTheAssetsRtuAndLocation,
   assertListReportsTheAssetCode,
   assertPutWidgetsDtoReflectsTheWrite,
   assertTenantBranchIgnoresAnExplicitForeignOrganizationId,
@@ -77,6 +78,8 @@ const SITE_READ_SLUG = `f369-site-read-${RUN}`;
 const ASSET_SCOPE_SLUG = `f32-asset-scope-${RUN}`;
 const ASSET_CONFLICT_SLUG = `f32-asset-conflict-${RUN}`;
 const ASSET_CODE_SLUG = `f32-asset-code-${RUN}`;
+const RTU_NAME_SLUG = `f4316-rtu-name-${RUN}`;
+const RTU_LESS_SLUG = `f4316-rtu-less-${RUN}`;
 const STAMP_CLEAR_SLUG = `f32-stamp-clear-${RUN}`;
 const STAMP_MOVE_SLUG = `f32-stamp-move-${RUN}`;
 const XORG_ASSET_SLUG = `f32-xorg-asset-${RUN}`;
@@ -911,6 +914,52 @@ describe.skipIf(!connectionString)(
         eskomLocationAdmin,
         assetScoped.id,
         eskomAssetId,
+      );
+    }, 60_000);
+
+    it("F4.316 PR 5 — list() names the asset's RTU and location on the tenant branch (ADR 0111)", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      const created = await service.create(jwtFor(SEEDED.globalAdmin, "admin"), {
+        organizationId: eskomOrgId,
+        slug: RTU_NAME_SLUG,
+        name: "F4.316 asset label proof",
+        assetId: eskomAssetId,
+      } as Parameters<DashboardsService["create"]>[1]);
+      dashboardIds.push(created.id);
+      // CR-HVAC-1 sits on an RTU; wc-admin@bms.local routes list() onto the tenant branch.
+      await assertListNamesTheAssetsRtuAndLocation(
+        service,
+        fleetDb,
+        jwtFor(SEEDED.locationAdmin, "location_admin"),
+        created.id,
+        eskomAssetId,
+        true,
+      );
+    }, 60_000);
+
+    it("F4.316 PR 5 — the twin: an RTU-less asset's row names its location, assetRtuName null", async () => {
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const audit = new MasterDataAuditService(createDb(tenantPool), fleetDb);
+      const service = new DashboardsService(createDb(tenantPool), fleetDb, accessControl, audit);
+      // `ESK-MANUAL-01` (`access-fixtures-seed.ts` MANUAL_ASSET_CODE) is the seeded ESKOM asset
+      // with no RTU — the hand-read meter. Resolved by name, never by position.
+      const rtuLessAssetId = await resolveSeededAssetByCode(ownerPool, "ESK-MANUAL-01");
+      const created = await service.create(jwtFor(SEEDED.globalAdmin, "admin"), {
+        organizationId: eskomOrgId,
+        slug: RTU_LESS_SLUG,
+        name: "F4.316 RTU-less asset label proof",
+        assetId: rtuLessAssetId,
+      } as Parameters<DashboardsService["create"]>[1]);
+      dashboardIds.push(created.id);
+      await assertListNamesTheAssetsRtuAndLocation(
+        service,
+        fleetDb,
+        jwtFor(SEEDED.locationAdmin, "location_admin"),
+        created.id,
+        rtuLessAssetId,
+        false,
       );
     }, 60_000);
 

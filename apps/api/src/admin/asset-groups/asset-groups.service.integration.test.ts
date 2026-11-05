@@ -13,6 +13,9 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { AssetGroupsAdminService } from "./asset-groups.service";
 import {
+  assertMembersNameTheAssetsRtu,
+  assertMembersNameTheLocationOfAnRtuLessAsset,
+  assertSetMemberRoleAnswersWithTheNames,
   assertAddMemberToAnotherSitesGroupIsRefused,
   assertAddMemberWritesAnAuditRow,
   assertAddsThenRemovesAMember,
@@ -239,6 +242,22 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
       await makeMember(groupId, locationId, organizationId, `f337-a-${stamp}`),
       await makeMember(groupId, locationId, organizationId, `f337-b-${stamp}`),
     ];
+    // `F4.316` PR 5 (ADR 0111) — the `a` member's asset sits on an RTU of its own location, so
+    // `members()` has one row whose label names an RTU beside two that name the location.
+    const rtuHere = await ownerPool.query<{ id: string }>(
+      `SELECT id FROM bms.rtus WHERE location_id = $1 AND active = true ORDER BY created_at, code LIMIT 1`,
+      [locationId],
+    );
+    if (!rtuHere.rows[0]) {
+      throw new Error("F4.316: the scoped location needs an active RTU — run pnpm db:seed.");
+    }
+    const rtuMembershipId = membershipIds[1] as string;
+    await ownerPool.query(
+      `UPDATE bms.assets SET rtu_id = $1
+        WHERE id = (SELECT asset_id FROM bms.asset_group_members WHERE id = $2)`,
+      [rtuHere.rows[0].id, rtuMembershipId],
+    );
+
     const foreignMembershipId = await makeMember(
       foreignGroupId,
       foreignLoc.rows[0].id,
@@ -310,6 +329,7 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
       groupId,
       foreignGroupId,
       membershipIds,
+      rtuMembershipId,
       foreignMembershipId,
       roleCode: roles.rows[0]?.code as string,
       secondRoleCode: roles.rows[1]?.code as string,
@@ -510,5 +530,17 @@ describe.skipIf(!connectionString)("F3.37 — AssetGroupsAdminService under real
 
   it("removeMember writes one audit row naming the asset", async () => {
     await assertRemoveMemberWritesAnAuditRow(ctx, adminJwt);
+  });
+
+  it("F4.316 PR 5 — members name the RTU of an asset that has one (ADR 0111)", async () => {
+    await assertMembersNameTheAssetsRtu(ctx, adminJwt);
+  });
+
+  it("F4.316 PR 5 — members name the location of an asset with no RTU (the twin)", async () => {
+    await assertMembersNameTheLocationOfAnRtuLessAsset(ctx, adminJwt);
+  });
+
+  it("F4.316 PR 5 — setMemberRole answers with the same two names", async () => {
+    await assertSetMemberRoleAnswersWithTheNames(ctx, adminJwt);
   });
 });

@@ -126,6 +126,10 @@ export const dashboardSummaryDtoSchema = z
     assetId: z.string().uuid().nullable(),
     assetTemplateId: z.string().uuid().nullable(),
     assetCode: z.string().nullable(),
+    // ADR 0111 — the badge reads "Asset · <label>": the asset's RTU / location names, `null`
+    // where `assetCode` is (and the RTU alone `null` for an asset with no RTU).
+    assetRtuName: z.string().nullable(),
+    assetLocationName: z.string().nullable(),
     createdAt: z.string(),
     updatedAt: z.string(),
     widgetCount: z.number().int().min(0),

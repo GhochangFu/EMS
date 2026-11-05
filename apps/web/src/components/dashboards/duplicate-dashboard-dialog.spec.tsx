@@ -86,6 +86,8 @@ function point(): DashboardDto["widgets"][number]["points"][number] {
     sortOrder: 0,
     assetId: "asset-1",
     assetCode: "ASSET-1",
+    assetRtuName: null,
+    assetLocationName: null,
     pointKey: "power_kw",
     unit: "kW",
   };
@@ -169,6 +171,8 @@ function summaryFor(dto: DashboardDto, overrides: Partial<DashboardSummaryDto> =
     assetId: dto.assetId,
     assetTemplateId: dto.assetTemplateId,
     assetCode: null,
+    assetRtuName: null,
+    assetLocationName: null,
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
     widgetCount: dto.widgets.length,

@@ -1,12 +1,21 @@
 import { describe, it } from "vitest";
 
 import {
+  runAdminAssetGroupMemberAcceptsRtuLessTwinTest,
+  runAdminAssetGroupMemberRefusesWithoutLocationNameTest,
+  runAdminAssetGroupMemberRefusesWithoutRtuNameTest,
+  runAdminAssetPointAcceptsRtuLessTwinTest,
+  runAdminAssetPointRefusesWithoutLocationNameTest,
+  runAdminAssetPointRefusesWithoutRtuNameTest,
   runAdminLocationDtoAcceptsPumpStationTest,
   runAdminLocationDtoParentIdTests,
   runAdminLocationDtoRequiresTypeLabelTest,
   runAssetInstantiationResultDashboardFieldsTests,
   runAssetInstantiationResultSeededRulesTests,
   runSeededRuleAssetLabelTests,
+  runCalcParameterAcceptsNoAssetTest,
+  runCalcParameterRefusesWithoutLocationNameTest,
+  runCalcParameterRefusesWithoutRtuNameTest,
   runSeededRuleDriftVerdictTests,
   runSeededRuleValuesPhilosophyRowTests,
 } from "./admin.spec";
@@ -53,5 +62,35 @@ describe("F2.10 — adminLocationDtoSchema.parentId (ADR 0098)", () => {
 describe("F4.316 PR 4b — the seeded-rule row names its asset's RTU and location (ADR 0111)", () => {
   it("requires both fields (nullable) on seededRuleDtoSchema", () => {
     runSeededRuleAssetLabelTests();
+  });
+});
+
+describe("F4.316 PR 5 — the admin rows name the asset's RTU and location (ADR 0111)", () => {
+  it("adminAssetPointDto refuses a row without assetRtuName", () => {
+    runAdminAssetPointRefusesWithoutRtuNameTest();
+  });
+  it("adminAssetPointDto refuses a row without assetLocationName", () => {
+    runAdminAssetPointRefusesWithoutLocationNameTest();
+  });
+  it("adminAssetPointDto accepts the RTU-less twin", () => {
+    runAdminAssetPointAcceptsRtuLessTwinTest();
+  });
+  it("adminAssetGroupMemberDto refuses a row without assetRtuName", () => {
+    runAdminAssetGroupMemberRefusesWithoutRtuNameTest();
+  });
+  it("adminAssetGroupMemberDto refuses a row without assetLocationName", () => {
+    runAdminAssetGroupMemberRefusesWithoutLocationNameTest();
+  });
+  it("adminAssetGroupMemberDto accepts the RTU-less twin", () => {
+    runAdminAssetGroupMemberAcceptsRtuLessTwinTest();
+  });
+  it("calcParameterDto refuses a row without assetRtuName", () => {
+    runCalcParameterRefusesWithoutRtuNameTest();
+  });
+  it("calcParameterDto refuses a row without assetLocationName", () => {
+    runCalcParameterRefusesWithoutLocationNameTest();
+  });
+  it("calcParameterDto accepts an organization-scoped row with every asset field null", () => {
+    runCalcParameterAcceptsNoAssetTest();
   });
 });
