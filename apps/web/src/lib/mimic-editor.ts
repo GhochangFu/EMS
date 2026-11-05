@@ -1,4 +1,4 @@
-import { MIMIC_LAYOUT_BOUNDS } from "@bms/shared/contracts";
+import { MIMIC_HEADLINE_POINTS, MIMIC_LAYOUT_BOUNDS } from "@bms/shared/contracts";
 import {
   MIMIC_PRESETS,
   MIMIC_SYMBOL_LIBRARIES,
@@ -68,6 +68,12 @@ export type EditorNodePatch = {
   readonly isSource?: boolean;
   /** `F3.80` (ADR 0101 d4) — units only: the unit gates the flow whatever its symbol. */
   readonly isSwitching?: boolean;
+  /**
+   * `F4.307` (ADR 0081 Amendment 1 decision 5) — a roled unit's own value rows, in display
+   * order. Deduped and clamped to `MIMIC_HEADLINE_POINTS`; a panel, a label or a role-less unit
+   * keeps `[]`.
+   */
+  readonly pointKeys?: readonly string[];
   readonly x?: number;
   readonly y?: number;
   readonly w?: number;
@@ -297,9 +303,12 @@ function updateNode(state: EditorState, key: string, patch: EditorNodePatch): Ed
     isSwitching: node.kind === "unit" ? (patch.isSwitching ?? node.isSwitching) : false,
     ...box,
   };
-  // F4.307: only a roled unit lists points, so clearing the role clears the list.
-  if (next.roleCode === null) {
+  // F4.307: only a roled unit lists points, so clearing the role clears the list. A node's kind
+  // never changes in place (no action takes one), so a panel or label keeps the `[]` it was made with.
+  if (node.kind !== "unit" || next.roleCode === null) {
     next.pointKeys = [];
+  } else if (patch.pointKeys !== undefined) {
+    next.pointKeys = [...new Set(patch.pointKeys)].slice(0, MIMIC_HEADLINE_POINTS);
   }
   return commit(state, withNode(state.layout, key, () => next));
 }
