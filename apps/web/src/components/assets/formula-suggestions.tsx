@@ -48,6 +48,8 @@ type Props = {
   keysOf?: string;
   /** A frozen version or a pending save: every **Use this formula** is disabled (decision A6). */
   disabled: boolean;
+  /** `F4.315` C3: why it is disabled, shown under the list while `disabled`; none says nothing. */
+  disabledReason?: string;
   onTake: (suggestion: FormulaSuggestion) => void;
 };
 
@@ -61,6 +63,7 @@ export function FormulaSuggestions({
   excludeTemplatePointId = null,
   keysOf = "this asset",
   disabled,
+  disabledReason,
   onTake,
 }: Props) {
   const wanted = pointKey !== "";
@@ -127,6 +130,7 @@ export function FormulaSuggestions({
           </li>
         ))}
       </ul>
+      {disabled && disabledReason ? <p className="mt-1">{disabledReason}</p> : null}
     </details>
   );
 }

@@ -185,7 +185,7 @@ export function CalcPointBatchWizard({
   };
   const busy = batchM.isPending || checking;
   const pickKey = (picked: string) => {
-    setNewKey(picked === NEW_KEY ? emptyNewPointKeyDraft() : null);
+    setNewKey(picked === NEW_KEY ? emptyNewPointKeyDraft(sharedDomain(eligible.map((asset) => asset.domain))) : null);
     change({ ...draft, pointKey: picked === NEW_KEY ? "" : picked });
   };
   const editNewKey = (next: NewPointKeyDraft) => {

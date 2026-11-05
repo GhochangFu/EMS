@@ -21,6 +21,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { ASSET_LABEL_SEPARATOR, assetLabel, assetLabelParts } from "@bms/shared";
 import type { TemplateAdoptionRefusalDto } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
@@ -124,10 +125,22 @@ export function TemplateAdoptWizard({
       ) : null}
       {preview?.assets.map((plan) => {
         const { groups, notices } = adoptionPlanSections(plan);
+        // ADR 0111 — `<code> · <RTU>`; the where part wraps, it is never truncated.
+        const label = assetLabelParts({
+          code: plan.assetCode,
+          rtuName: plan.assetRtuName,
+          locationName: plan.assetLocationName,
+        });
         return (
           <section key={plan.assetId} aria-label={`Plan for ${plan.assetCode}`} className="space-y-1 text-xs">
             <p>
-              <span className="font-mono">{plan.assetCode}</span> {plan.assetName}
+              <span className="font-mono">{label.code}</span>
+              {label.where === null ? null : (
+                <span data-testid="asset-where" className="break-words">
+                  {`${ASSET_LABEL_SEPARATOR}${label.where}`}
+                </span>
+              )}{" "}
+              {plan.assetName}
             </p>
             {groups.map((group) => (
               <p key={group.kind}>
@@ -222,7 +235,14 @@ export function TemplateAdoptWizard({
             omit: ["assetIds"],
             detail: (
               <div className="space-y-1 text-xs">
-                <p>Assets: {assets.map((asset) => asset.code).join(", ")}</p>
+                <p>
+                  Assets:{" "}
+                  {assets
+                    .map((asset) =>
+                      assetLabel({ code: asset.code, rtuName: asset.rtuDisplayName, locationName: asset.locationName }),
+                    )
+                    .join(", ")}
+                </p>
                 {reviewRefusals}
               </div>
             ),

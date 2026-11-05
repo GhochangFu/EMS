@@ -55,6 +55,8 @@ function asset(overrides: Partial<Asset>): Asset {
     organizationCode: "ESKOM",
     domain: "electrical",
     templateId: null,
+    rtuDisplayName: null,
+    locationName: null,
     ...overrides,
   };
 }
@@ -63,6 +65,8 @@ function plan(overrides: Partial<TemplateAdoptionAssetPlanDto>): TemplateAdoptio
   return {
     assetId: "a-1",
     assetCode: "FDR-01",
+    assetRtuName: null,
+    assetLocationName: null,
     assetName: "Feeder 1",
     kept: [],
     added: [],
