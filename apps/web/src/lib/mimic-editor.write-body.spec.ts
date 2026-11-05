@@ -2,7 +2,7 @@ import { putMimicLayoutBodySchema } from "@bms/shared/contracts";
 import { expect } from "vitest";
 
 import type { MimicLayoutWriteBody, MimicLayoutWriteNode } from "../api/mimic-layouts";
-import { editorLayoutFromWriteBody, toWriteBody } from "./mimic-editor";
+import { editorLayoutFromWriteBody, editorReducer, initialEditorState, toWriteBody } from "./mimic-editor";
 
 /**
  * `F3.87` PR 5 — the write body ↔ editor layout pair a copilot layout card reads through.
@@ -174,4 +174,28 @@ export function aUnitPointListRoundTrips(): void {
   const out = toWriteBody(editorLayoutFromWriteBody(body));
   expect(out).toEqual(body);
   expect(out.nodes[1]).not.toHaveProperty("pointKeys");
+}
+
+/**
+ * `F4.307` — a unit whose role was cleared lists no points: the save body carries no
+ * `pointKeys` for it (a role-less unit with a list is a 400), and the reducer clears the list
+ * when the role is cleared.
+ */
+export function aRoleLessUnitSendsNoList(): void {
+  const body: MimicLayoutWriteBody = {
+    name: "L",
+    slug: "l",
+    canvasW: 40,
+    canvasH: 40,
+    symbolLibraries: ["core"],
+    nodes: [{ key: "u1", kind: "unit", symbol: "tank", label: "U1", roleCode: "ro", x: 0, y: 0, w: 10, h: 10, z: 0, pointKeys: ["kw"] }],
+    pipes: [],
+  };
+  const layout = editorLayoutFromWriteBody(body);
+  const cleared = editorReducer(initialEditorState(layout), { type: "update-node", key: "u1", patch: { roleCode: null } }).layout;
+  expect(cleared.nodes[0]?.pointKeys).toEqual([]);
+  const stale = { ...layout, nodes: layout.nodes.map((n) => ({ ...n, roleCode: null })) };
+  const out = toWriteBody(stale);
+  expect(out.nodes[0]).not.toHaveProperty("pointKeys");
+  expect(putMimicLayoutBodySchema.safeParse({ version: 1, ...out }).success).toBe(true);
 }

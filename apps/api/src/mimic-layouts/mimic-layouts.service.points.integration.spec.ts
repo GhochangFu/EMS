@@ -123,6 +123,21 @@ export async function assertTheListOrderRoundTrips(ctx: PointsCtx): Promise<void
   const saved = await ctx.service.replace(ctx.globalAdmin, dto.id, putOf(pointsBody(ctx, dto.slug, [b, c]), 1));
   expect(listOf(saved, "pump")).toEqual([b, c]);
   expect(listOf(await ctx.service.get(ctx.globalAdmin, dto.id), "pump")).toEqual([b, c]);
+  // The read must sort by `ord`, not trust insert order: plant the rows behind the service in
+  // reverse (ord 1 written first), so a read without `ORDER BY ord` answers [c, b].
+  await ctx.ownerPool.query(
+    `DELETE FROM bms.mimic_layout_node_points
+      WHERE node_id IN (SELECT id FROM bms.mimic_layout_nodes WHERE layout_id = $1 AND key = 'pump')`,
+    [dto.id],
+  );
+  for (const [code, ord] of [[c, 1], [b, 0]] as const) {
+    await ctx.ownerPool.query(
+      `INSERT INTO bms.mimic_layout_node_points (organization_id, node_id, point_key, ord)
+       SELECT n.organization_id, n.id, $2, $3 FROM bms.mimic_layout_nodes n WHERE n.layout_id = $1 AND n.key = 'pump'`,
+      [dto.id, code, ord],
+    );
+  }
+  expect(listOf(await ctx.service.get(ctx.globalAdmin, dto.id), "pump")).toEqual([b, c]);
 }
 
 /** PT2 — the replace-all rule: a PUT whose unit omits `pointKeys` clears the stored list. */

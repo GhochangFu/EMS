@@ -297,6 +297,10 @@ function updateNode(state: EditorState, key: string, patch: EditorNodePatch): Ed
     isSwitching: node.kind === "unit" ? (patch.isSwitching ?? node.isSwitching) : false,
     ...box,
   };
+  // F4.307: only a roled unit lists points, so clearing the role clears the list.
+  if (next.roleCode === null) {
+    next.pointKeys = [];
+  }
   return commit(state, withNode(state.layout, key, () => next));
 }
 
@@ -476,7 +480,8 @@ export function toWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
         out.isSwitching = true;
       }
       // F4.307 (ADR 0081 Amendment 1): the same rule for a unit's point list.
-      if (node.pointKeys.length > 0) {
+      // A role-less unit lists no points (the body refuses it), so its list is not sent.
+      if (node.kind === "unit" && node.roleCode !== null && node.pointKeys.length > 0) {
         out.pointKeys = [...node.pointKeys];
       }
       return out;

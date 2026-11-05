@@ -71,3 +71,14 @@ export function theBodyGuideNamesPointKeys(): void {
   // Positive control: the same guide names a field the write node already had.
   expect(MIMIC_LAYOUT_BODY_GUIDE).toContain("isSwitching");
 }
+
+/**
+ * A pending replace card stored before `F4.307` holds a baseline node with no `pointKeys`
+ * (the jsonb baseline is not re-parsed). Building its write node must not throw; the list
+ * reads as `[]`, the stored default.
+ */
+export function aBaselineNodeWithoutAListDoesNotThrow(): void {
+  const { pointKeys: _dropped, ...old } = unit(["kw"]);
+  const node = writeNodeOfDto(old as MimicLayoutNodeDto);
+  expect(node.pointKeys).toEqual([]);
+}

@@ -30,6 +30,7 @@ export function writeNodeOfDto(node: MimicLayoutNodeDto): MimicLayoutWriteNode {
     fanOut: node.fanOut,
     isSource: node.isSource,
     isSwitching: node.isSwitching,
-    pointKeys: [...node.pointKeys],
+    // A pending card's jsonb baseline stored before F4.307 has no list: read it as `[]`.
+    pointKeys: [...((node.pointKeys as readonly string[] | undefined) ?? [])],
   };
 }
