@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -17,8 +17,10 @@ import * as copilotApi from "../../api/copilot";
 import * as systemStatusApi from "../../api/system-status";
 import * as vocabApi from "../../api/vocabularies";
 import { ApiError } from "../../lib/api-error";
+import { SCHEDULE_AGE_BLOCKER } from "../../lib/calc-point-draft";
 import { stockEntry, templateRow, templateVersion } from "../../lib/formula-suggestions.spec";
 import type { AuthUser } from "../../stores/auth-store";
+import { resetWizardStore, useWizardStore } from "../../stores/wizard-store";
 import { AssetsAdminPage } from "./assets-page";
 
 /**
@@ -128,6 +130,8 @@ async function runToReview(selected: number): Promise<HTMLElement> {
   await userEvent.type(within(dialog).getByRole("textbox", { name: "Formula for pf" }), "{{kw} * 2");
   await next(1);
   await userEvent.type(within(dialog).getByLabelText("Every (seconds)"), "300");
+  // `F4.315` B4: the age follows 2 × Every (600 here) until it is typed; clear it to type it.
+  await userEvent.clear(within(dialog).getByLabelText("Inputs valid for (seconds)"));
   await userEvent.type(within(dialog).getByLabelText("Inputs valid for (seconds)"), "600");
   await next(2);
   return dialog;
@@ -284,4 +288,80 @@ export async function theBulkWizardMarksNoInputMissing(): Promise<void> {
   const dialog = await openFormulaStep();
   await within(dialog).findByText(PF_STOCK);
   expect(within(dialog).queryByText(/which this asset does not have/)).toBeNull();
+}
+
+// ---- `F4.315` B4 (ADR 0109 Amendment 2, ruling Q7): the default age, and the step that refuses ----
+
+/** Opens the bulk wizard on one asset and lands on Schedule. */
+async function batchToSchedule(): Promise<HTMLElement> {
+  await userEvent.click(screen.getByRole("button", { name: "Add calculated point to 1 selected" }));
+  const dialog = await screen.findByRole("dialog");
+  await next(1);
+  const select = within(dialog).getByLabelText("Point key");
+  await within(select).findByText("pf · Power factor");
+  await userEvent.selectOptions(select, "pf");
+  await next(1);
+  await userEvent.type(within(dialog).getByRole("textbox", { name: "Formula for pf" }), "{{kw} * 2");
+  await next(1);
+  return dialog;
+}
+
+export async function theBulkWizardTakesTwiceTheInterval(): Promise<void> {
+  stubApi([ONE]);
+  renderPage();
+  await check("PMP-1");
+  const dialog = await batchToSchedule();
+  await userEvent.type(within(dialog).getByLabelText("Every (seconds)"), "30");
+  expect((within(dialog).getByLabelText("Inputs valid for (seconds)") as HTMLInputElement).value).toBe("60");
+}
+
+export async function theBulkWizardRefusesNextWhileTheAgeIsEmpty(): Promise<void> {
+  stubApi([ONE]);
+  renderPage();
+  await check("PMP-1");
+  const dialog = await batchToSchedule();
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  expect([
+    within(dialog).getByRole("button", { name: "Next" }).getAttribute("aria-disabled"),
+    within(dialog).getByRole("alert").textContent,
+    within(dialog).queryByLabelText("Every (seconds)") !== null,
+  ]).toEqual(["true", SCHEDULE_AGE_BLOCKER, true]);
+}
+
+/** Review F1: a typed age survives a later Every edit. Mutation: drop `setAgeTouched`. */
+export async function theBulkWizardKeepsATypedAgeOnALaterIntervalEdit(): Promise<void> {
+  stubApi([ONE]);
+  renderPage();
+  await check("PMP-1");
+  const dialog = await batchToSchedule();
+  const every = within(dialog).getByLabelText("Every (seconds)");
+  const age = within(dialog).getByLabelText("Inputs valid for (seconds)") as HTMLInputElement;
+  await userEvent.type(every, "30");
+  await userEvent.clear(age);
+  await userEvent.type(age, "45");
+  await userEvent.clear(every);
+  await userEvent.type(every, "90");
+  expect(age.value).toBe("45");
+}
+
+/**
+ * `F4.315` re-review: a formula-only copilot fill leaves the bulk wizard's age following
+ * Every. Mutation: the wizard passes the merged values to `ageTouchedAfterFill` — it freezes at 60.
+ */
+export async function theBulkWizardsAgeFollowsEveryAfterAFormulaOnlyFill(): Promise<void> {
+  resetWizardStore();
+  stubApi([ONE]);
+  renderPage();
+  await check("PMP-1");
+  const dialog = await batchToSchedule();
+  const every = within(dialog).getByLabelText("Every (seconds)");
+  await userEvent.type(every, "30");
+  act(() => {
+    useWizardStore
+      .getState()
+      .receiveFill({ catalogId: "calcPoint.createBatch", params: {}, stepId: "formula", values: { formula: "{kw} * 3" } }, null);
+  });
+  await userEvent.clear(every);
+  await userEvent.type(every, "300");
+  expect((within(dialog).getByLabelText("Inputs valid for (seconds)") as HTMLInputElement).value).toBe("600");
 }

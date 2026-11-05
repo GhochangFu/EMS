@@ -27,6 +27,7 @@ import type {
 } from "@bms/shared";
 
 import { draftFromFields, type OverrideDraft } from "./asset-point-calc-override";
+import { defaultMaxInputAgeSeconds } from "./calc-point-draft";
 import { previewInputKeys } from "./calc-preview";
 import { setCalcTrigger, setFormulaDialect } from "./template-calc-config";
 import type { TemplatePointRow } from "./template-points-grid";
@@ -182,11 +183,16 @@ export function suggestionRow(row: TemplatePointRow, suggestion: FormulaSuggesti
  * draft opens on `"scheduled"` (`emptyCalcPointDraft`).
  */
 export function suggestionDraft(suggestion: FormulaSuggestion, standalone: boolean): OverrideDraft {
-  return draftFromFields({
+  const taken = draftFromFields({
     formula: suggestion.formula,
     formulaDialect: suggestion.formulaDialect,
     calcTrigger: takenTrigger(suggestion) ?? (standalone ? "scheduled" : null),
     calcIntervalSeconds: suggestion.calcIntervalSeconds,
     maxInputAgeSeconds: suggestion.maxInputAgeSeconds,
   });
+  // `F4.315` B3: a standalone draft has nothing to inherit, so an age-less source takes the
+  // default age of the taken trigger and interval; an override keeps `""` (inherit).
+  return standalone && suggestion.maxInputAgeSeconds === null
+    ? { ...taken, maxInputAgeSeconds: defaultMaxInputAgeSeconds(taken.calcTrigger, taken.calcIntervalSeconds) }
+    : taken;
 }

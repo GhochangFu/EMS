@@ -171,6 +171,7 @@ async function submitNewKey(formula: string): Promise<void> {
   await userEvent.type(screen.getByRole("textbox", { name: "Formula for kvar" }), formula);
   await next(1);
   await userEvent.type(screen.getByLabelText("Every (seconds)"), "300");
+  await userEvent.clear(screen.getByLabelText("Inputs valid for (seconds)")); // `F4.315` B4: it follows 2 × Every
   await userEvent.type(screen.getByLabelText("Inputs valid for (seconds)"), "600");
   await next(2);
   await userEvent.click(screen.getByRole("button", { name: "Submit" }));
@@ -208,6 +209,7 @@ export async function aCodeTheAssetAlreadyHasWritesNothing(): Promise<void> {
   await userEvent.type(screen.getByRole("textbox", { name: "Formula for kw" }), "1");
   await next(1);
   await userEvent.type(screen.getByLabelText("Every (seconds)"), "300");
+  await userEvent.clear(screen.getByLabelText("Inputs valid for (seconds)")); // `F4.315` B4: it follows 2 × Every
   await userEvent.type(screen.getByLabelText("Inputs valid for (seconds)"), "600");
   await next(2);
   await userEvent.click(screen.getByRole("button", { name: "Submit" }));

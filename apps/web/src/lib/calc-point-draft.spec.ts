@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { BACKFILL_NO_WORKER, CALC_POINT_BATCH_MAX_ASSETS } from "@bms/shared";
+import { BACKFILL_NO_WORKER, CALC_POINT_BATCH_MAX_ASSETS, MAX_INPUT_AGE_SECONDS_BOUND } from "@bms/shared";
 import type { AssetPointCalcConfigDto, CalcBackfillRunDto } from "@bms/shared";
 import { assetPointCalcConfigDtoSchema, calcPointSetBodySchema } from "@bms/shared/contracts";
 
@@ -17,6 +17,12 @@ import {
   calcPointDraftFromConfig,
   calcPointDraftFromFields,
   calcPointDraftProblems,
+  defaultMaxInputAgeSeconds,
+  ageTouchedAfter,
+  ageTouchedAfterFill,
+  scheduleStepBlocker,
+  SCHEDULE_AGE_BLOCKER,
+  withDefaultAge,
   draftDialect,
   draftToCalcPointBody,
   emptyCalcPointDraft,
@@ -318,4 +324,105 @@ export function aJustFailedRunWithNoStoredErrorIsStillPolled(): void {
 
 export function anOldFailedRetriableRunIsNotPolled(): void {
   expect(backfillPollInterval([item(retriableFailure(BACKFILL_RETRY_WINDOW_MS + 1000))], NOW_MS)).toBe(false);
+}
+
+// ---- `F4.315` B3/B4 — the default input age and the Schedule step's refusal ----
+
+/** Streaming opens on 300 s (`DEFAULT_MAX_INPUT_AGE_SECONDS`). */
+export function aStreamingPointDefaultsToThreeHundredSeconds(): void {
+  expect(defaultMaxInputAgeSeconds("streaming", "")).toBe("300");
+}
+
+/** Scheduled is 2 × the interval. Mutation: `2 ×` → `3 ×`. */
+export function aScheduledPointDefaultsToTwiceItsInterval(): void {
+  expect(defaultMaxInputAgeSeconds("scheduled", "60")).toBe("120");
+}
+
+/** …capped at the bound the schema allows. Mutation: drop the bound. */
+export function aLongIntervalsDefaultIsCappedAtTheBound(): void {
+  expect(defaultMaxInputAgeSeconds("scheduled", "50000")).toBe(String(MAX_INPUT_AGE_SECONDS_BOUND));
+}
+
+/** Owner ruling Q7: no interval yet, no default. */
+export function aScheduledPointWithNoIntervalHasNoDefault(): void {
+  expect(defaultMaxInputAgeSeconds("scheduled", "")).toBe("");
+}
+
+/** An interval that is not a positive whole number has no default either. */
+export function anIntervalThatIsNotAPositiveWholeNumberHasNoDefault(): void {
+  expect(["0", "-5", "1.5", "abc"].map((text) => defaultMaxInputAgeSeconds("scheduled", text))).toEqual(["", "", "", ""]);
+}
+
+/** An untouched age follows the trigger and the interval. */
+export function anUntouchedAgeTakesTheDefault(): void {
+  expect(withDefaultAge(draft({ calcTrigger: "scheduled", calcIntervalSeconds: "30", maxInputAgeSeconds: "300" }), false).maxInputAgeSeconds).toBe("60");
+}
+
+/** A typed age is never replaced. Mutation: fill regardless of `ageTouched`. */
+export function aTypedAgeIsNeverReplaced(): void {
+  expect(withDefaultAge(draft({ calcTrigger: "streaming", maxInputAgeSeconds: "45" }), true).maxInputAgeSeconds).toBe("45");
+}
+
+/** Typing a value of one's own marks the age touched. */
+export function typingAnAgeOfOnesOwnTouchesIt(): void {
+  const before = draft({ calcIntervalSeconds: "30", maxInputAgeSeconds: "60" });
+  expect(ageTouchedAfter(before, { ...before, maxInputAgeSeconds: "45" }, false)).toBe(true);
+}
+
+/** Clearing a defaulted age marks it touched, so it stays empty and the step refuses. */
+export function clearingADefaultedAgeTouchesIt(): void {
+  const before = draft({ calcIntervalSeconds: "30", maxInputAgeSeconds: "60" });
+  expect(ageTouchedAfter(before, { ...before, maxInputAgeSeconds: "" }, false)).toBe(true);
+}
+
+/** An interval or trigger edit (the age itself unchanged) does not touch it. */
+export function anIntervalEditDoesNotTouchTheAge(): void {
+  const before = draft({ calcIntervalSeconds: "30", maxInputAgeSeconds: "60" });
+  expect(ageTouchedAfter(before, { ...before, calcIntervalSeconds: "40" }, false)).toBe(false);
+}
+
+/**
+ * Review C1: a taken suggestion's own age is chosen, even when it equals the default in force
+ * (streaming 300 → a scheduled/60 suggestion with 300). Mutation: decide by value change.
+ */
+export function aTakenSuggestionsOwnAgeIsChosen(): void {
+  const before = draft({ calcTrigger: "streaming", calcIntervalSeconds: "", maxInputAgeSeconds: "300" });
+  const after = { ...before, calcTrigger: "scheduled", calcIntervalSeconds: "60" };
+  expect(ageTouchedAfter(before, after, false, { maxInputAgeSeconds: 300 })).toBe(true);
+}
+
+/** An age-less suggestion lands on the default, which follows again. Mutation: keep `touched`. */
+export function anAgelessSuggestionLeavesTheAgeFollowing(): void {
+  const before = draft({ maxInputAgeSeconds: "45" });
+  expect(ageTouchedAfter(before, { ...before, maxInputAgeSeconds: "600" }, true, { maxInputAgeSeconds: null })).toBe(false);
+}
+
+/** Review C1: a fill that sets the age chooses it. Mutation: ignore the fill. */
+export function aFillWithAnAgeChoosesIt(): void {
+  expect(ageTouchedAfterFill({ maxInputAgeSeconds: 120 }, false)).toBe(true);
+}
+
+/**
+ * The twin: a formula-only fill leaves the age following. That the pages pass the fill's own
+ * values, not the merged body, is gated by `aFormulaOnlyFillLeavesTheAgeFollowing`
+ * (`asset-points-page.calc-points.spec.tsx`) and the bulk wizard's twin.
+ */
+export function aFillWithNoAgeLeavesItFollowing(): void {
+  expect(ageTouchedAfterFill({ formula: "{kw} * 3" }, false)).toBe(false);
+}
+
+/** Once touched, the age stays touched. */
+export function aTouchedAgeStaysTouched(): void {
+  const before = draft({ maxInputAgeSeconds: "45" });
+  expect(ageTouchedAfter(before, before, true)).toBe(true);
+}
+
+/** The Schedule step refuses while the age is empty. */
+export function anEmptyAgeBlocksTheScheduleStep(): void {
+  expect(scheduleStepBlocker(draft({ maxInputAgeSeconds: "  " }))).toBe(SCHEDULE_AGE_BLOCKER);
+}
+
+/** The twin: an age lets the step pass. */
+export function anAgeLetsTheScheduleStepPass(): void {
+  expect(scheduleStepBlocker(draft({ maxInputAgeSeconds: "10" }))).toBeNull();
 }

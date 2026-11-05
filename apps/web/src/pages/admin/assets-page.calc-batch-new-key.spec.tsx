@@ -174,6 +174,7 @@ async function submitNewKey(fresh = false): Promise<HTMLElement> {
   await userEvent.type(within(dialog).getByRole("textbox", { name: "Formula for kvar" }), "{{kw} * 2");
   await next(1);
   await userEvent.type(within(dialog).getByLabelText("Every (seconds)"), "300");
+  await userEvent.clear(within(dialog).getByLabelText("Inputs valid for (seconds)")); // `F4.315` B4: it follows 2 × Every
   await userEvent.type(within(dialog).getByLabelText("Inputs valid for (seconds)"), "600");
   await next(2);
   await userEvent.click(within(dialog).getByRole("button", { name: "Submit" }));

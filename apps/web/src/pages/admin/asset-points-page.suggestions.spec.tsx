@@ -3,7 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
-import type { AssetPointCalcConfigDto } from "@bms/shared";
+import type { AssetPointCalcConfigDto, CalcDialect } from "@bms/shared";
 
 import * as api from "../../api/admin/asset-points";
 import * as templatesApi from "../../api/admin/asset-templates";
@@ -65,7 +65,12 @@ function pointKey(code: string) {
   return { id: `id-${code}`, code, name: `${code} name`, domain: "electrical", unit: null, description: null, active: true, createdAt: new Date(0).toISOString(), headlineRank: null, trendDefault: false };
 }
 
-function stubApi(mode: "template" | "standalone"): void {
+type StockTiming = { calcTrigger: "streaming" | "scheduled"; formulaDialect: CalcDialect; calcIntervalSeconds: number | null; maxInputAgeSeconds: number | null };
+
+/** The stock `kw` suggestion's timing: v2, scheduled every 120 s, valid for 900 s. */
+const STOCK_TIMING: StockTiming = { formulaDialect: "bms-calc-v2", calcTrigger: "scheduled", calcIntervalSeconds: 120, maxInputAgeSeconds: 900 };
+
+function stubApi(mode: "template" | "standalone", timing: StockTiming = STOCK_TIMING): void {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockRejectedValue(new Error("not under test"));
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([] as never);
@@ -96,10 +101,7 @@ function stubApi(mode: "template" | "standalone"): void {
         {
           pointKey: "kw",
           formula: KW_STOCK,
-          formulaDialect: "bms-calc-v2",
-          calcTrigger: "scheduled",
-          calcIntervalSeconds: 120,
-          maxInputAgeSeconds: 900,
+          ...timing,
         },
       ]),
     ],
@@ -131,8 +133,8 @@ async function openOverride(): Promise<void> {
 }
 
 /** Opens Add calculated point and picks `kw`. */
-async function openAdd(): Promise<void> {
-  stubApi("standalone");
+async function openAdd(timing: StockTiming = STOCK_TIMING): Promise<void> {
+  stubApi("standalone", timing);
   renderPage();
   await userEvent.click(await screen.findByRole("button", { name: "Add calculated point" }));
   const select = screen.getByLabelText("Point key");
@@ -225,4 +227,41 @@ export async function takingInTheOverrideWizardSetsEvery(): Promise<void> {
 export async function takingInTheOverrideWizardSetsInputsValidFor(): Promise<void> {
   await takeThenSchedule();
   expect((await screen.findByLabelText("Inputs valid for (seconds)") as HTMLInputElement).value).toBe("900");
+}
+
+// ---- `F4.315` re-review: the taken suggestion decides the age on Add (ADR 0109 Amendment 2) ----
+
+const ageField = () => screen.getByLabelText("Inputs valid for (seconds)") as HTMLInputElement;
+
+async function setEvery(seconds: string): Promise<void> {
+  await userEvent.clear(screen.getByLabelText("Every (seconds)"));
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), seconds);
+}
+
+/**
+ * An age-less suggestion lands on the default and keeps following it. Mutation: `onTake` drops
+ * the suggestion from `onDraftChange` — the landed 240 reads as chosen and Every 30 keeps it.
+ */
+export async function anAgelessSuggestionOnAddFollowsEvery(): Promise<void> {
+  await openAdd({ ...STOCK_TIMING, maxInputAgeSeconds: null });
+  await userEvent.click(await screen.findByRole("button", { name: USE_STOCK }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await setEvery("30");
+  expect(ageField().value).toBe("60");
+}
+
+/**
+ * The twin (review C1): a suggestion's own age equal to the default in force (streaming 300) is
+ * kept when Every changes. Mutation: the same — 300 → 300 reads as untouched and follows Every.
+ */
+export async function aSuggestionsOwnAgeEqualToTheDefaultIsKept(): Promise<void> {
+  await openAdd({ formulaDialect: "bms-calc-v1", calcTrigger: "scheduled", calcIntervalSeconds: 60, maxInputAgeSeconds: 300 });
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await userEvent.selectOptions(await screen.findByLabelText("Runs for kw"), "streaming");
+  expect(ageField().value).toBe("300");
+  await userEvent.click(screen.getByRole("button", { name: "Back" }));
+  await userEvent.click(await screen.findByRole("button", { name: USE_STOCK }));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  await setEvery("90");
+  expect(ageField().value).toBe("300");
 }
