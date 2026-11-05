@@ -18,6 +18,8 @@ const ORG = "11111111-1111-4111-8111-111111111111";
 const LAYOUT = "22222222-2222-4222-8222-222222222222";
 const GROUP = "33333333-3333-4333-8333-333333333333";
 const READABLE = ["44444444-4444-4444-8444-444444444444"];
+const GROUP_LOCATION = "55555555-5555-4555-8555-555555555555";
+const OTHER_LOCATION = "66666666-6666-4666-8666-666666666666";
 
 const answerWith = (widgets: DashboardMimicNodesResponseDto["widgets"]): DashboardMimicNodesResponseDto => ({
   dashboardId: LAYOUT,
@@ -39,6 +41,8 @@ interface Options {
   readonly layoutMissing?: boolean;
   readonly groupMissing?: boolean;
   readonly notAWriter?: boolean;
+  /** The caller's readable locations; `null` (the default) reads every location. */
+  readonly readableLocations?: readonly string[] | null;
   readonly answer?: DashboardMimicNodesResponseDto;
 }
 
@@ -59,7 +63,7 @@ function harness(options: Options = {}): { service: MimicLayoutPreviewService; s
         where: () => ({
           limit: async (...args: unknown[]) => {
             record("group", args);
-            return options.groupMissing ? [] : [{ id: GROUP }];
+            return options.groupMissing ? [] : [{ id: GROUP, locationId: GROUP_LOCATION }];
           },
         }),
       }),
@@ -79,6 +83,10 @@ function harness(options: Options = {}): { service: MimicLayoutPreviewService; s
     },
   };
   const accessControl = {
+    readableLocationIds: async (...args: unknown[]) => {
+      record("locations", args);
+      return options.readableLocations ?? null;
+    },
     readableAssetIds: async (...args: unknown[]) => {
       record("readable", args);
       return READABLE;
@@ -132,7 +140,7 @@ export async function nonWriterIs403AfterTheGroup(): Promise<void> {
   const err = await refusal(() => service.preview(OPERATOR, LAYOUT, GROUP));
   expect([err instanceof ForbiddenException, steps, calls.author]).toEqual([
     true,
-    ["layout", "tenant", "group", "author"],
+    ["layout", "tenant", "group", "locations", "author"],
     [OPERATOR, ORG],
   ]);
 }
@@ -144,7 +152,7 @@ export async function writerRunsTheFiveStepsInOrder(): Promise<void> {
   const [org, layoutId, groupId, readable, nowMs] = calls.resolve ?? [];
   expect({ answer, steps, resolve: [org, layoutId, groupId, readable, typeof nowMs], layout: calls.layout }).toEqual({
     answer: ONE_WIDGET,
-    steps: ["layout", "tenant", "group", "author", "readable", "resolve"],
+    steps: ["layout", "tenant", "group", "locations", "author", "readable", "resolve"],
     resolve: [ORG, LAYOUT, GROUP, READABLE, "number"],
     layout: [OPERATOR, LAYOUT],
   });
@@ -155,4 +163,22 @@ export async function resolverSkippedLayoutIsTheSame404(): Promise<void> {
   const { service } = harness({ answer: answerWith([]) });
   const err = await refusal(() => service.preview(OPERATOR, LAYOUT, GROUP));
   expect([err instanceof NotFoundException, (err as Error).message]).toEqual([true, "Mimic layout not found"]);
+}
+
+/**
+ * S6 — security review (F4.308 PR 1): a group in the layout's organization but outside the
+ * caller's readable locations is the same 404 "Asset group not found", before the writer check,
+ * so a scoped caller cannot tell an unseen group from an unknown id (decision 2).
+ */
+export async function groupOutsideTheCallersLocationsIs404(): Promise<void> {
+  const { service, steps } = harness({ notAWriter: true, readableLocations: [OTHER_LOCATION] });
+  const err = await refusal(() => service.preview(OPERATOR, LAYOUT, GROUP));
+  expect([err instanceof NotFoundException, (err as Error).message, steps]).toEqual([
+    true,
+    "Asset group not found",
+    ["layout", "tenant", "group", "locations"],
+  ]);
+  const inScope = harness({ readableLocations: [GROUP_LOCATION] });
+  await inScope.service.preview(OPERATOR, LAYOUT, GROUP);
+  expect(inScope.steps).toContain("resolve");
 }

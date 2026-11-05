@@ -64,11 +64,19 @@ describe.skipIf(!connectionString)("F4.308 — MimicLayoutPreviewService against
       if (!id) throw new Error(`F4.308: ${what} not found or not inserted — run pnpm db:seed`);
       return id;
     };
-    const fixtureFor = async (code: string): Promise<PreviewFixture> => {
+    const fleetDb = createDb(fleetPool);
+    const tenantDb = createDb(tenantPool);
+    const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+    // The preview refuses a group outside the caller's readable locations (404), so the ESKOM
+    // group sits at a location the seeded location admin reads: P6 then proves its 403.
+    const locationAdminLocations = await accessControl.readableLocationIds(jwtFor(SEEDED.locationAdmin, "location_admin"));
+    const fixtureFor = async (code: string, within: readonly string[] | null = null): Promise<PreviewFixture> => {
       const organizationId = await one("SELECT id FROM bms.organizations WHERE code = $1 LIMIT 1", [code], `organization ${code}`);
       const locationId = await one(
-        "SELECT id FROM bms.locations WHERE organization_id = $1 ORDER BY created_at, code LIMIT 1",
-        [organizationId],
+        `SELECT id FROM bms.locations
+          WHERE organization_id = $1 AND ($2::uuid[] IS NULL OR id = ANY($2::uuid[]))
+          ORDER BY created_at, code LIMIT 1`,
+        [organizationId, within],
         `a location of ${code}`,
       );
       const groupId = await one(
@@ -93,7 +101,7 @@ describe.skipIf(!connectionString)("F4.308 — MimicLayoutPreviewService against
       );
       return { organizationId, layoutId, groupId };
     };
-    const eskom = await fixtureFor("ESKOM");
+    const eskom = await fixtureFor("ESKOM", locationAdminLocations);
     const phewb = await fixtureFor("PHEWB");
 
     const plantUser = async (suffix: string, role: UserRole, organizationId: string) => {
@@ -114,9 +122,6 @@ describe.skipIf(!connectionString)("F4.308 — MimicLayoutPreviewService against
       return jwtFor(email, role);
     };
 
-    const fleetDb = createDb(fleetPool);
-    const tenantDb = createDb(tenantPool);
-    const accessControl = new AccessControlService(createDb(authPool), fleetDb);
     const layouts = new MimicLayoutsService(fleetDb, tenantDb, accessControl, new MasterDataAuditService(tenantDb, fleetDb));
     ctx = {
       service: new MimicLayoutPreviewService(

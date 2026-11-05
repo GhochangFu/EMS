@@ -9,4 +9,5 @@ describe("F4.308 — MimicLayoutPreviewService check order", () => {
   it("S3 a non-writer is the 403 after the group check", spec.nonWriterIs403AfterTheGroup);
   it("S4 a writer runs the five steps in order", spec.writerRunsTheFiveStepsInOrder);
   it("S5 a layout the resolver skips is the same 404", spec.resolverSkippedLayoutIsTheSame404);
+  it("S6 a group outside the caller's readable locations is the same 404", spec.groupOutsideTheCallersLocationsIs404);
 });

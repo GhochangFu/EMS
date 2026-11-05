@@ -19,9 +19,10 @@ import { MimicLayoutsService } from "./mimic-layouts.service";
  * 1. The layout, through `MimicLayoutsService.fetchReadable` — outside the caller's readable
  *    organizations it is "Mimic layout not found", so an id reveals nothing.
  * 2. The group, which must belong to the LAYOUT's organization — missing, or another
- *    organization's, it is "Asset group not found". Read on `TENANT_DRIZZLE` inside
- *    `withTenant(layout.organizationId)` (§4.3: a tenant read defaults to `withTenant`); the
- *    `organization_id` predicate restates the policy so the check does not rest on RLS alone.
+ *    organization's, or outside the caller's readable locations, it is "Asset group not found".
+ *    Read on `TENANT_DRIZZLE` inside `withTenant(layout.organizationId)` (§4.3: a tenant read
+ *    defaults to `withTenant`); the `organization_id` predicate restates the policy so the check
+ *    does not rest on RLS alone.
  * 3. `assertCanAuthor` — only `admin` and `organization_admin` managing that organization
  *    (Q3 a); any other role is the 403 here, after the 404s.
  * 4. `readableAssetIds` narrows the members, as on a dashboard.
@@ -42,12 +43,15 @@ export class MimicLayoutPreviewService {
     const layout = await this.layouts.fetchReadable(jwt, layoutId);
     const [group] = await withTenant(this.tenantDb, layout.organizationId, (tx) =>
       tx
-        .select({ id: assetGroups.id })
+        .select({ id: assetGroups.id, locationId: assetGroups.locationId })
         .from(assetGroups)
         .where(and(eq(assetGroups.id, assetGroupId), eq(assetGroups.organizationId, layout.organizationId)))
         .limit(1),
     );
-    if (!group) {
+    // A group outside the caller's readable locations is the same 404 as an unknown id, so a
+    // scoped caller cannot learn that an unseen group exists (decision 2; security review).
+    const readableLocations = group ? await this.accessControl.readableLocationIds(jwt) : null;
+    if (!group || (readableLocations !== null && !readableLocations.includes(group.locationId))) {
       throw new NotFoundException("Asset group not found");
     }
     await this.layouts.assertCanAuthor(jwt, layout.organizationId);
