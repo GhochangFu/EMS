@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import type { CalcParameterDto, CalcParameterKeyDto } from "@bms/shared";
+import { assetLabel, type CalcParameterDto, type CalcParameterKeyDto } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import { fetchAdminAssets } from "../../api/admin/assets";
@@ -59,11 +59,13 @@ function scopeOf(row: Pick<CalcParameterDto, "locationId" | "assetId">): ScopeKi
   return "organization";
 }
 
-/** "Organization", "Location · <name>" or "Asset · <code>" — the table's scope cell. */
+/** "Organization", "Location · <name>" or "Asset · <label>" (ADR 0111) — the table's scope cell. */
 function scopeLabel(row: CalcParameterDto): string {
   switch (scopeOf(row)) {
     case "asset":
-      return `Asset · ${row.assetCode ?? row.assetId}`;
+      return row.assetCode === null
+        ? `Asset · ${row.assetId}`
+        : `Asset · ${assetLabel({ code: row.assetCode, rtuName: row.assetRtuName, locationName: row.assetLocationName })}`;
     case "location":
       return `Location · ${row.locationName ?? row.locationId}`;
     default:

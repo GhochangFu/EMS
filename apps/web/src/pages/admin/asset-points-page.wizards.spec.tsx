@@ -34,10 +34,12 @@ const SITE = "f3860000-0000-4000-8000-0000000000b1";
 const RTU = "f3860000-0000-4000-8000-0000000000c1";
 const POINT = "f3860000-0000-4000-8000-0000000000d1";
 
-const ROW: AdminAssetPointDto = {
+export const ROW: AdminAssetPointDto = {
   id: POINT,
   assetId: ASSET,
   assetCode: "PMP-1",
+  assetRtuName: null,
+  assetLocationName: null,
   assetName: "Pump one",
   locationId: SITE,
   locationName: "Site A",
@@ -61,7 +63,7 @@ function pointKey(id: string, code: string, unit: string) {
   return { id, code, name: `${code} name`, domain: "electrical", unit, description: null, active: true, createdAt: new Date(0).toISOString(), headlineRank: null, trendDefault: false };
 }
 
-function stubApi(rows: AdminAssetPointDto[] = [ROW]): void {
+export function stubApi(rows: AdminAssetPointDto[] = [ROW]): void {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockRejectedValue(new Error("not under test"));
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   vi.spyOn(assetsApi, "fetchAssets").mockResolvedValue([] as never);
@@ -94,7 +96,7 @@ function stubApi(rows: AdminAssetPointDto[] = [ROW]): void {
   vi.spyOn(api, "reactivateAdminAssetPoint").mockResolvedValue(ROW);
 }
 
-function renderPage(): void {
+export function renderPage(): void {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
@@ -107,13 +109,13 @@ function renderPage(): void {
   );
 }
 
-async function openAdd(): Promise<HTMLElement> {
+export async function openAdd(): Promise<HTMLElement> {
   await screen.findByText("PMP1_KW");
   await userEvent.click(screen.getByRole("button", { name: "Add mapping" }));
   return screen.findByRole("dialog", { name: "Add mapping" });
 }
 
-async function openRowAction(action: "Edit" | "Deactivate" | "Reactivate"): Promise<void> {
+export async function openRowAction(action: "Edit" | "Deactivate" | "Reactivate"): Promise<void> {
   // The asset summary names the site, the list re-reads under it, and the first rows unmount:
   // wait for that read, so the row clicked is the one on screen.
   await waitFor(() => expect(api.fetchAdminAssetPoints).toHaveBeenCalledWith("all", ASSET, SITE));

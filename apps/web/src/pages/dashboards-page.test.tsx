@@ -4,6 +4,8 @@ import { cleanup } from "@testing-library/react";
 
 import {
   anAssetGroupRowIsLabelledAssetGroupNotOrganizationWide,
+  anAssetBadgeNamesTheAssetsRtu,
+  anAssetBadgeWithoutAnRtuNamesTheLocation,
   anAssetScopedRowIsLabelledAssetWithItsCode,
   anAssetScopedRowWithNoCodeStillReadsAsset,
   anAuthoringRoleSeesTheManageLink,
@@ -56,6 +58,14 @@ describe("F3.1d dashboards page", () => {
 
   it("labels an asset-scoped row with no code 'Asset'", async () => {
     await anAssetScopedRowWithNoCodeStillReadsAsset();
+  });
+
+  it("F4.316 PR 5 — the asset badge names the asset's RTU (ADR 0111)", async () => {
+    await anAssetBadgeNamesTheAssetsRtu();
+  });
+
+  it("F4.316 PR 5 — the asset badge of an RTU-less asset names its location", async () => {
+    await anAssetBadgeWithoutAnRtuNamesTheLocation();
   });
 });
 

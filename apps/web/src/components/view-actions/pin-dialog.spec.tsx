@@ -48,6 +48,8 @@ function summary(id: string, slug: string, name: string): DashboardsListResponse
     assetId: null,
     assetTemplateId: null,
     assetCode: null,
+    assetRtuName: null,
+    assetLocationName: null,
     createdAt: "2026-11-01T00:00:00.000Z",
     updatedAt: "2026-11-01T00:00:00.000Z",
     widgetCount: 3,

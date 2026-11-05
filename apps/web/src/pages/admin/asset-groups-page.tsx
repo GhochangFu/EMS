@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import type { AdminAssetGroupDto, AdminAssetGroupMemberDto } from "@bms/shared";
+import { ASSET_LABEL_SEPARATOR, assetLabelParts, type AdminAssetGroupDto, type AdminAssetGroupMemberDto } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import {
@@ -60,6 +60,11 @@ function wizardEntry(id: string): CatalogEntry {
 }
 
 /** An emptied description is `null`, as the old form sent it. */
+/** `F4.316` (ADR 0111): the label's `· where` part — the RTU's name, or the location's without one. */
+function whereOf(member: AdminAssetGroupMemberDto): string | null {
+  return assetLabelParts({ code: member.assetCode, rtuName: member.assetRtuName, locationName: member.assetLocationName }).where;
+}
+
 function descriptionOf(form: GroupForm): string | null {
   return form.description.trim() === "" ? null : form.description.trim();
 }
@@ -546,7 +551,16 @@ export function AssetGroupsAdminPage({ user }: AssetGroupsAdminPageProps) {
                     <tr key={member.membershipId}>
                       <td className="py-2">
                         <span className="block">{member.assetName}</span>
-                        <span className="block text-xs text-ink-muted">{member.assetCode}</span>
+                        {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates. */}
+                        <span className="block text-xs text-ink-muted">
+                          <span className="whitespace-nowrap">{member.assetCode}</span>
+                          {whereOf(member) !== null ? (
+                            <span className="whitespace-normal">
+                              {ASSET_LABEL_SEPARATOR}
+                              {whereOf(member)}
+                            </span>
+                          ) : null}
+                        </span>
                       </td>
                       <td className="py-2">
                         {/* Ruling Q9: a pick opens the role wizard; nothing is sent until its Submit. */}

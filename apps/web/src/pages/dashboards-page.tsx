@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
+import { assetLabel } from "@bms/shared";
 
 import { fetchDashboards } from "../api/dashboards";
 import { apiErrorMessage } from "../lib/api-error-message";
@@ -151,7 +152,8 @@ export function DashboardsPage({ user }: DashboardsPageProps) {
                           empty separator. */}
                       {dashboard.assetId
                         ? dashboard.assetCode
-                          ? `Asset · ${dashboard.assetCode}`
+                          ? // `F4.316` / ADR 0111 — the badge names the asset by its label.
+                            `Asset · ${assetLabel({ code: dashboard.assetCode, rtuName: dashboard.assetRtuName, locationName: dashboard.assetLocationName })}`
                           : "Asset"
                         : dashboard.locationId
                           ? "Location"

@@ -1,13 +1,17 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import type {
-  AdminAssetPointDto,
-  AssetPointCalcConfigDto,
-  AssetPointCalcOverrideBody,
-  CalcPointSetBody,
-  CreatePointKeyBody,
-  MasterDataActiveFilter,
+import {
+  ASSET_LABEL_SEPARATOR,
+  assetLabel,
+  assetLabelParts,
+  type AdminAssetPointDto,
+  type AdminAssetSummaryDto,
+  type AssetPointCalcConfigDto,
+  type AssetPointCalcOverrideBody,
+  type CalcPointSetBody,
+  type CreatePointKeyBody,
+  type MasterDataActiveFilter,
 } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
@@ -153,6 +157,16 @@ function EffectiveMetadataCells({ item }: { item: AdminAssetPointDto }) {
  * detects. A missing entry is a build defect, so it throws rather than
  * rendering a shell with no steps.
  */
+/** `F4.316` (ADR 0111): the label's `· where` part — the RTU's name, or the location's without one. */
+function whereOf(item: AdminAssetPointDto): string | null {
+  return assetLabelParts({ code: item.assetCode, rtuName: item.assetRtuName, locationName: item.assetLocationName }).where;
+}
+
+/** The routed asset's label for the Add wizard's "Asset:" line, from the summary it already reads. */
+function summaryLabel(summary: AdminAssetSummaryDto | undefined): string | null {
+  return summary ? assetLabel({ code: summary.code, rtuName: summary.rtuDisplayName, locationName: summary.locationName }) : null;
+}
+
 function wizardEntry(id: string): CatalogEntry {
   const entry = catalogEntry(id);
   if (!entry) throw new Error(`F3.85: the catalog has no entry "${id}"`);
@@ -649,7 +663,16 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
                     onChange={(event) => toggleRow(item.id, event.target.checked)}
                   />
                 </td>
-                <td className="px-2 py-2">{item.assetCode}</td>
+                {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates. */}
+                <td className="px-2 py-2">
+                  <span className="whitespace-nowrap">{item.assetCode}</span>
+                  {whereOf(item) !== null ? (
+                    <span className="whitespace-normal">
+                      {ASSET_LABEL_SEPARATOR}
+                      {whereOf(item)}
+                    </span>
+                  ) : null}
+                </td>
                 <td className="px-2 py-2 font-mono">{item.pointKey}</td>
                 <td className="px-2 py-2 font-mono">{item.sourceDataKey}</td>
                 <td className="px-2 py-2">{item.sensorCode ?? "—"}</td>
@@ -921,7 +944,7 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
           key={editing?.id ?? "create"}
           editing={editing}
           initial={opened ?? emptyAssetPointForm("")}
-          assetLabel={assetId ? (assetSummaryQ.data?.code ?? assetId) : null}
+          assetLabel={assetId ? (summaryLabel(assetSummaryQ.data) ?? assetId) : null}
           locationId={assetSummaryQ.data?.locationId ?? selection.locationId ?? null}
           pending={saveMutation.isPending}
           error={error}

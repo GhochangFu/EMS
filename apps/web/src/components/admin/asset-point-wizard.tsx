@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
-import { QUALITY_POLICIES } from "@bms/shared";
+import { QUALITY_POLICIES, assetLabelOf } from "@bms/shared";
 import type { AdminAssetPointDto, QualityPolicy } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
@@ -144,7 +144,7 @@ export function AssetPointWizard(props: AssetPointWizardProps) {
           </select>
         </label>
       ) : (
-        <p className="text-xs text-ink-muted">{`Asset: ${editing?.assetCode ?? props.assetLabel ?? ""}`}</p>
+        <p className="text-xs text-ink-muted">{`Asset: ${editing ? assetLabelOf(editing) : (props.assetLabel ?? "")}`}</p>
       )}
       <label className={labelClass}>
         Point key

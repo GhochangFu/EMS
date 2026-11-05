@@ -27,6 +27,8 @@ const LOADED: AdminAssetPointDto = {
   id: "c1000000-0000-4000-8000-000000000001",
   assetId: "c1000000-0000-4000-8000-0000000000a1",
   assetCode: "C1-PUMP",
+  assetRtuName: null,
+  assetLocationName: null,
   assetName: "C1 pump",
   locationId: null,
   locationName: null,
