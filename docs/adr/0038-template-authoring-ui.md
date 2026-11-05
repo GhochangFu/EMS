@@ -979,3 +979,112 @@ and it is not rewritten here.
 - **Nothing about `F2.20`.** The Alarms tab's collapsed philosophy is a
   presentation change on an existing tab, needs no amendment, and the owner
   ruled its shape separately on 2026-09-04.
+
+## Amendment 6 — the formula editor teaches its grammar and offers existing formulas (`F4.314`, owner, 2026-11-05)
+
+**Status: Proposed — the owner ruled the eight questions in chat on
+2026-11-05; the owner's merge of this text approves it.** Backlog row
+`F4.314`; plan `docs/plans/f4.314-formula-help.md` (§6 the questions, §7 the
+rulings). The text lands ahead of the work that motivated it, as Amendments 4
+and 5 did. Lines marked *drafter choice* were not asked.
+
+This amendment does not change the grammar, the parser, the validator or any
+dialect. ADR 0055 and ADR 0070 (the vocabulary the help teaches) and ADR 0109
+(the asset-level surfaces) are cross-referenced, not amended (ruling 8).
+
+### Facts the amendment rests on
+
+- The editor (`apps/web/src/components/asset-templates/formula-editor.tsx`,
+  decision 7's only CodeMirror importer) completes `{point keys}` and `@scopes`
+  only; no function name completes.
+- The template Calculations and KPIs tabs and `PointCalcFormulaFields` render
+  the two `bms-calc-v2` reference forms (`V2_REFERENCE_FORMS`) as three ad-hoc
+  lists; nothing lists the operators or the functions of the dialect in force.
+- The vocabulary is already exported from `@bms/shared` as constants
+  (`CALC_FUNCTION_ARITY`, `CALC_AGGREGATE_FNS`, `CALC_SCOPE_KINDS`,
+  `CALC_WINDOW_FNS`, `CALC_CALENDAR_WINDOWS`, `CALC_ROLLING_UNITS`); `hours` and
+  the four operators are the only parts that are not.
+- `GET /admin/asset-templates/stock` already returns every stock point with its
+  formula, dialect and timing, and `GET /admin/asset-templates` plus
+  `GET /admin/asset-templates/:id` already return an organization's published
+  versions and their points, both behind `requireMasterDataUser`.
+
+### Rulings (owner, 2026-11-05)
+
+| # | Question | Ruling |
+|---|---|---|
+| 1 | Surfaces | **Formula help on all five**: the Calculations tab, the KPIs tab, the Add calculated point panel, the bulk wizard, the override wizard/panel. **Suggested formulas** where a calculated point is authored (the Add panel, the bulk wizard, the Calculations tab) and on the override wizard (ruling 7) |
+| 2 | Source of the help | **Generated** from the shared calc-dsl constants, with a spec that parses every example under its dialect; only `hours` and the four operators are restated, held by a tokenize check |
+| 3 | Insert | **Append at the end** through the field's existing `onChange`; insert at the caret only if use shows it is missed |
+| 4 | Presentation | **Collapsed** (`<details>`) beside the field |
+| 5 | Organization source | **No new route**: the published list (read without `organizationId`, filtered in the client) plus one `GET /:id` per published version of the asset's domain; revisit past ~10 published versions per domain |
+| 6 | What a suggestion carries | **Formula, dialect and timing** (trigger, interval, max input age) from its source point |
+| 7 | Override wizard | **Help and suggestions** both |
+| 8 | Record | **This amendment** is the single record |
+
+### Decisions
+
+**A1. Formula help.** Beside every formula field of ruling 1, a collapsed
+**Formula help** section lists, for the dialect in force: the operators, the
+`{key}` reference, the functions with their arity, and — by dialect — the two
+reference forms and the `@` scopes (`v2`+), `$key` (`v3`) and the window forms
+(`v3`), one example each. Clicking an entry appends its text to the formula.
+The list is built from the shared constants (ruling 2), and a spec parses every
+example under its own dialect, so a function the parser gains or loses turns
+the spec red rather than drifting. It replaces the three ad-hoc
+`V2_REFERENCE_FORMS` lists; the `V3_PARAMETER_HELP` / `V3_WINDOW_HELP` sentences
+survive as the text of their entries.
+
+**A2. Function-name completion.** The editor gains a third completion source
+that offers the function and window names of the same list (one source, so the
+completion and the help cannot disagree), and offers nothing inside a `{…}` or
+`$…` run. An `"unvalidated"` KPI completes under `bms-calc-v1`, as its scopes
+already do.
+
+**A3. Suggested formulas.** For the chosen point key, a collapsed **Suggested
+formulas** section lists the derived points of that key in the stock catalog
+and in the caller's organization's published versions of the asset's domain
+(the tab's own version excluded on the Calculations tab), each with where it
+comes from and the inputs the asset does not have (none marked in the bulk
+wizard, which has no single asset). **Use this formula** fills the formula,
+dialect and timing (ruling 6) through the surface's existing draft setters, so
+the dialect-change rules still run — a cross-asset formula still forces a
+scheduled trigger — and the author can still edit the Schedule step. A failed
+read shows nothing; the section is an offer, never a blocker. A draft or
+archived version's formula is never offered (*drafter choice*: published only,
+as the stock catalog is).
+
+**A4. Decision 7 unchanged.** The help and suggestion components and their
+`src/lib` rules import nothing from `codemirror` or `@codemirror/*`;
+`tests/adr-0038-formula-editor.test.ts` holds that, and the entry chunk still
+carries no CodeMirror.
+
+**A5. Decision 8 unchanged.** No API change, no migration, no seed change, no
+new contract: both halves read routes that exist (ruling 5). A new route would
+need a further amendment.
+
+**A6. Decision 3 unchanged.** On a published or archived version the help is
+read-only and **Use this formula** is disabled, as every other authoring
+control there is.
+
+### Not in this amendment
+
+- A change to the grammar, the parser, the validator or a dialect.
+- A `default_formula` on `bms.point_keys` or any other column.
+- A copilot card or prompt change.
+- Caret-position insert (ruling 3) and an always-open help (ruling 4).
+- Replacing the override wizard's plain input with the editor.
+
+### Verification owed (plan §5)
+
+- Browser: on a template-less asset, Add calculated point → `kw` →
+  `bms-calc-v1` lists exactly `abs`, `round`, `min`, `max`, `clamp` and no `@`
+  entry; `bms-calc-v3` adds `delta`, `hours` and `$key`; an insert appends;
+  typing `ro` offers `round(`; suggestions for `kw` list a stock entry, mark a
+  missing input, and **Use this formula** fills formula, dialect and timing.
+  The same on the Calculations tab (own version excluded; a published version
+  disabled), the KPIs tab (help only), the bulk wizard (no missing-input mark)
+  and the override wizard.
+- Bundle: the entry chunk carries no CodeMirror, and the new components are not
+  in the `formula-editor` chunk.
+- N/A: API, database, migrations, worker, ingest/MQTT.
