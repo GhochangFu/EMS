@@ -267,7 +267,6 @@
     "tests/f4.310-organization-colour-profile-schema.test.ts",
     "tests/f4.310-profile-blocks.test.ts",
     "tests/f4.310-profile-boot.test.ts",
-    "tests/f4.310-profile-boot.test.ts",
     "tests/f4.309-point-key-state-write-path.test.ts"
   ]
 }
