@@ -168,3 +168,90 @@ None.
 - A new symbol is a release (a `z.enum` member, a CHECK, a glyph).
 - Templates keep the preset arm only. A later stage can add layouts to
   templates once a template's layout reference has a delete rule.
+
+## Amendment 1 (2026-11-05, `F4.307`) — a per-unit point list
+
+**Status: proposed.** Drafted on 2026-11-05 and checked against `main` at
+`4fcbb13`, before any implementation code. Four gate questions were put to the
+owner one at a time on 2026-11-05; all four were ruled as recommended, and each
+ruling is recorded under *Rulings*. The merge of
+this amendment approves it. Decisions 1 to 10 stand except where an entry below
+says it amends one. Promotes nothing out of `AGENTS.md` §6.
+
+### Context
+
+- A roled unit shows the first `MIMIC_HEADLINE_POINTS` (3) active points of its
+  asset, ordered `headline_rank ASC NULLS LAST, point_key ASC`
+  (`packages/shared/src/contracts/mimic.ts:22`; the per-asset `LIMIT` in
+  `apps/api/src/dashboard-builder/mimic-nodes.service.ts`, statement 3).
+  `headline_rank` is one fleet-wide value per key, set on `/admin/point-keys`.
+- A layout cannot choose the points of one unit. A preset cannot either.
+- The resolver reads points **per asset**, not per node. Two units (or two
+  widgets) that show the same asset show the same three points today.
+- The unit frame draws three value rows at fixed offsets
+  (`ROW_Y = [152, 170, 188]`, `apps/web/src/components/widgets/mimic-scene.tsx:86`;
+  `MIMIC_FRAME_H = 130`).
+- Point keys are never deleted; they are deactivated
+  (`apps/api/src/admin/point-keys/point-keys.controller.ts`).
+- State points (`bms.point_key_states`, ADR 0088) are read on their own path,
+  not through the headline points.
+
+### Decision
+
+1. A layout unit with a role may carry an ordered **point list**: up to
+   `MIMIC_HEADLINE_POINTS` (3) point keys (Q4). An empty list keeps the
+   headline rank (decision 6 unchanged). A unit with no role, a panel and a
+   label hold no list.
+2. **Storage (Q1).** A new tenant table `bms.mimic_layout_node_points`
+   (`organization_id NOT NULL`, `node_id` → `bms.mimic_layout_nodes`
+   `ON DELETE CASCADE`, `point_key` → `bms.point_keys(code)`, `ord`), unique
+   `(node_id, ord)` and `(node_id, point_key)`, with `tenant_isolation`,
+   `FORCE ROW LEVEL SECURITY` and the `EXISTS` pair in `USING` and
+   `WITH CHECK`, in one new migration. Save still replaces the whole layout
+   (decision 2): the rows cascade with their nodes and are inserted again.
+3. **Presets (Q2).** A preset node has no list and keeps the headline rank.
+   "Start from" a preset copies no list.
+4. **A missing key (Q3).** A listed key that the shown asset lacks, or holds
+   inactive, draws its row in its place: the key's catalog name and "—".
+5. **The editor.** The inspector of a roled unit offers the list: pick keys
+   from the active point-key catalog, order them, remove them. A deactivated
+   key already in the list stays and is marked.
+6. The resolver reads the listed keys for a unit that has a list, and the
+   headline points for a unit that has none. Points become per node, not per
+   asset, for a unit with a list.
+7. Out of this amendment: KPI overlays beyond the unit values (`F3.82`), a
+   point list on a dashboard template, and a per-site list.
+
+### Gate questions
+
+1. **Q1 — where the list lives.** (a) A child table
+   `bms.mimic_layout_node_points` (`organization_id`, `node_id` with
+   `ON DELETE CASCADE`, `point_key` → `bms.point_keys(code)`, `ord`), with
+   `tenant_isolation`, `FORCE ROW LEVEL SECURITY` and the `EXISTS` pair, as
+   decision 1; (b) a `text[]` column on `bms.mimic_layout_nodes` with a
+   cardinality `CHECK` (no foreign key on the elements); (c) a `jsonb`
+   column. *Recommended: (a)*, for the reason gate question 2 gave: integrity
+   in the database (each key is a foreign key).
+2. **Q2 — a preset unit.** (a) No list on a preset; "Start from" a preset
+   copies it into a layout, where the list is set; (b) a per-node override in
+   the preset widget's config. *Recommended: (a).*
+3. **Q3 — a listed key the asset lacks (or has inactive).** (a) The row draws
+   the key's catalog name and "—"; (b) the row is skipped and the next key
+   moves up; (c) the empty slot falls back to the headline points.
+   *Recommended: (a).*
+4. **Q4 — the bound.** (a) 3, the same as `MIMIC_HEADLINE_POINTS`; the frame
+   does not change; (b) a larger bound, and the frame grows with the list.
+   *Recommended: (a).*
+
+### Rulings
+
+1. **Q1 (a) — a child table**, `bms.mimic_layout_node_points`. Ruled by the
+   owner on 2026-11-05, as recommended.
+2. **Q2 (a) — layouts only.** A preset keeps the headline rank; "Start from" a
+   preset copies it into a layout, where the list is set. Ruled 2026-11-05, as
+   recommended.
+3. **Q3 (a) — name and "—".** A listed key the asset lacks, or has inactive,
+   draws its row in place with the key's catalog name and "—". Ruled
+   2026-11-05, as recommended.
+4. **Q4 (a) — a bound of 3.** The list holds at most `MIMIC_HEADLINE_POINTS`
+   (3) keys; the unit frame does not change. Ruled 2026-11-05, as recommended.
