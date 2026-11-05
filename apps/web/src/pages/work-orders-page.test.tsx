@@ -14,6 +14,9 @@ import {
   mediumPillIsTheRuledSoftWarning,
   mediumRailIsTheHalfOpacityWarning,
   aCloseReasonThatTrimsShortStaysOnTheReasonStep,
+  theCardFallsBackToTheLocation,
+  theCardNamesTheRtu,
+  theCardsWherePartWraps,
   theCloseReviewSaysItCannotBeUndone,
   theStatusWizardOffersNoClosed,
 } from "./work-orders-page.spec";
@@ -99,5 +102,17 @@ describe("F4.284 the work-order wizards (ADR 0106 decisions 2, 4)", () => {
 
   it("WO8 a closure reason that trims below 3 characters stays on the Reason step", async () => {
     await aCloseReasonThatTrimsShortStaysOnTheReasonStep();
+  });
+
+  it("WO9 the card's asset line names the RTU", async () => {
+    await theCardNamesTheRtu();
+  });
+
+  it("WO10 an asset without an RTU is named by its location", async () => {
+    await theCardFallsBackToTheLocation();
+  });
+
+  it("WO11 the card's where part wraps instead of truncating", async () => {
+    await theCardsWherePartWraps();
   });
 });

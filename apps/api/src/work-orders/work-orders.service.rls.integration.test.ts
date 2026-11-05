@@ -20,6 +20,8 @@ import {
   assertUpdateStatusReadsBackOnTenantTransaction,
   assertWorkOrderCreateReadsBackOnTenantTransaction,
   assertWorkOrderListReturnsBothOrgsForTwoOrgActor,
+  assertWorkOrderRowKeepsAnRtuLessAsset,
+  assertWorkOrderRowNamesTheAssetsRtu,
   assertWorkOrderWritesStampOrgUnderRealRls,
   type WorkOrdersRlsFixtures,
 } from "./work-orders.service.rls.integration.spec";
@@ -58,6 +60,7 @@ const LOCATION_CODE = `${PREFIX}LOC`;
 // slug is lowercase-hyphen and UNIQUE; derive it from PREFIX so it is per-run too.
 const LOCATION_SLUG = `${PREFIX.toLowerCase()}loc`;
 const ASSET_CODE = `${PREFIX}AS`;
+const LOCATION_NAME = "E7.1b WO Location";
 
 /**
  * Reaps rows a *killed* earlier run of this suite committed but never cleaned.
@@ -92,6 +95,10 @@ async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
     );
     await pool.query(
       `DELETE FROM bms.assets WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`,
+      [staleFamily],
+    );
+    await pool.query(
+      `DELETE FROM bms.rtus WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`,
       [staleFamily],
     );
     await pool.query(
@@ -186,7 +193,7 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
           organizationId,
           code: LOCATION_CODE,
           slug: LOCATION_SLUG,
-          name: "E7.1b WO Location",
+          name: LOCATION_NAME,
           type: "smoc_campus",
           latitude: 0,
           longitude: 0,
@@ -302,6 +309,7 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
         [`${PREFIX}%`],
       );
       await ownerPool.query(`DELETE FROM bms.assets WHERE code LIKE $1`, [`${PREFIX}%`]);
+      await ownerPool.query(`DELETE FROM bms.rtus WHERE code LIKE $1`, [`${PREFIX}%`]);
       await ownerPool.query(`DELETE FROM bms.locations WHERE code LIKE $1`, [`${PREFIX}%`]);
     }
     await Promise.all(
@@ -335,5 +343,13 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
 
   it("reads the updateStatus mutation back on the tenant pool (E7.1c)", async () => {
     await assertUpdateStatusReadsBackOnTenantTransaction(ctx, actor);
+  });
+
+  it("F4.316: an RTU-less asset's work order keeps its row, named by its location", async () => {
+    await assertWorkOrderRowKeepsAnRtuLessAsset(ctx, LOCATION_NAME);
+  });
+
+  it("F4.316: a work order names its asset's RTU and location", async () => {
+    await assertWorkOrderRowNamesTheAssetsRtu(ctx, LOCATION_NAME, `${PREFIX}RTU`, actor);
   });
 });

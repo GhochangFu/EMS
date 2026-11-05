@@ -69,6 +69,8 @@ function schedule(index: number, over: Partial<MaintenanceScheduleItem> = {}): M
     lastCompletedAt: null,
     dueState: "upcoming",
     assetCode: "CH-2",
+    assetRtuName: "RTU 4",
+    assetLocationName: "Pune Works",
     assetName: "Chiller 2",
     siteName: "Pune Works",
     activeWorkOrderId: null,
@@ -172,13 +174,13 @@ export async function assetIdNarrows(): Promise<void> {
 }
 
 /**
- * 40 rows are cut, and `truncated` says so. 18, not 25: 25 of these rows pass
+ * 40 rows are cut, and `truncated` says so. 16, not 25: 25 of these rows pass
  * the result budget, so the page is fitted (`F4.291` live check, `fitListResult`).
  */
-export async function fortyRowsAreCutToTwentyFive(): Promise<void> {
+export async function fortyRowsAreCutToABudgetFittedPage(): Promise<void> {
   const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => schedule(i + 1)) });
   const listed = await list(tools, {}, [ORG_X]);
-  expect(itemsOf(listed)).toHaveLength(18);
+  expect(itemsOf(listed)).toHaveLength(16);
   expect(listed.truncated).toBe(true);
 }
 
@@ -200,6 +202,8 @@ export async function theProjectionKeepsWhatAProposalNeeds(): Promise<void> {
       "title",
       "assetId",
       "assetCode",
+      "assetRtuName",
+      "assetLocationName",
       "assetName",
       "category",
       "generationMode",
@@ -261,4 +265,14 @@ export async function theLastPageUnderTheServiceCapIsComplete(): Promise<void> {
   const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => schedule(i + 1)) });
   const last = await lastPage(tools);
   expect([last.truncated, last.organizations[0]?.serviceCap]).toEqual([false, undefined]);
+}
+
+/** `F4.316` PR 4a (ADR 0111): the explicit item map carries the asset's RTU name and location name. */
+export async function theProjectionCarriesTheAssetLabelParts(): Promise<void> {
+  const { tools } = fake({ [ORG_X]: [schedule(1, { assetRtuName: null, assetLocationName: "Plant A" })] });
+  const [item] = itemsOf(await list(tools, {}, [ORG_X]));
+  expect({ assetRtuName: item?.assetRtuName, assetLocationName: item?.assetLocationName }).toEqual({
+    assetRtuName: null,
+    assetLocationName: "Plant A",
+  });
 }

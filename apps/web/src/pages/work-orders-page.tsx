@@ -2,10 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { DragEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import type {
-  WorkOrderListItem,
-  WorkOrderPriority,
-  WorkOrderStatus,
+import {
+  ASSET_LABEL_SEPARATOR,
+  assetLabelParts,
+  type WorkOrderListItem,
+  type WorkOrderPriority,
+  type WorkOrderStatus,
 } from "@bms/shared";
 
 import { fetchAssets } from "../api/assets";
@@ -68,6 +70,21 @@ const kanbanColumns: KanbanColumn[] = [
 
 // F4.209: a stable empty list, so the `[rows]` effect does not fire (and set state) on every render while the list has no data.
 const NO_ROWS: WorkOrderListItem[] = [];
+
+/** `F4.316` (ADR 0111): the label's `· where` part — the RTU's name, or the location's without one. */
+function whereOf(r: WorkOrderListItem): string | null {
+  return assetLabelParts({ code: r.assetCode, rtuName: r.assetRtuName, locationName: r.assetLocationName }).where;
+}
+
+/** The wrapping `· where` span, or nothing when the asset has neither an RTU nor a location. */
+function WhereSpan({ where }: { where: string | null }) {
+  return where === null ? null : (
+    <span className="whitespace-normal">
+      {ASSET_LABEL_SEPARATOR}
+      {where}
+    </span>
+  );
+}
 
 function statusStyle(status: WorkOrderStatus): string {
   switch (status) {
@@ -575,7 +592,11 @@ export function WorkOrdersPage({ user }: WorkOrdersPageProps) {
                           </span>
                         </div>
                         <div className="mt-3 flex items-center justify-between gap-2 font-mono text-[10px] text-ink-muted">
-                          <span>{row.assetCode}</span>
+                          {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates. */}
+                          <span>
+                            <span className="whitespace-nowrap">{row.assetCode}</span>
+                            <WhereSpan where={whereOf(row)} />
+                          </span>
                           <span>{new Date(row.updatedAt).toLocaleDateString()}</span>
                         </div>
                         <div className="mt-1 text-[10px] text-ink-muted">
