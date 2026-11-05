@@ -1,4 +1,4 @@
-import { POINT_STATS_MAX_ASSETS, pointStatsByAssetSchema, pointStatsSummarySchema, type PointStatsRow, type PointStatsSummaryRow } from "@bms/shared";
+import { assetLabel, POINT_STATS_MAX_ASSETS, pointStatsByAssetSchema, pointStatsSummarySchema, type PointStatsRow, type PointStatsSummaryRow } from "@bms/shared";
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
@@ -144,9 +144,10 @@ export const getPointStatsTool = defineReadTool({
  * `pointStatsSummary` over the subtree's readable ids, with no page bound.
  * The entry holds the site row, `assetCount`, `assetsWithNoData`, the
  * {@link POINT_STATS_SUMMARY_EXTREMES} assets with the highest mean and as
- * many with the lowest (never one asset in both), and the codes of at most
- * {@link POINT_STATS_SUMMARY_NO_DATA_CODES} assets with no sample. The codes
- * come from one `listAll` over the named ids only (at most 20). A service row
+ * many with the lowest (never one asset in both), each with its `code` and its
+ * `label` (`F4.316`, ADR 0111: `<code> · <RTU>`, else `<code> · <site>`), and
+ * the labels of at most {@link POINT_STATS_SUMMARY_NO_DATA_CODES} assets with
+ * no sample. Both come from one `listAll` over the named ids only (at most 20). A service row
  * for an id not asked is dropped. The shared fields go to the top, as the
  * location branch's do; the entry has no `items`. The result stays far under
  * the list budget (about 2,000 characters at worst), so it is never paged.
@@ -178,7 +179,9 @@ async function readSummary(
     const named = [...highest, ...lowest].map((row) => row.assetId).concat(noData.slice(0, POINT_STATS_SUMMARY_NO_DATA_CODES));
     const listed = named.length === 0 ? [] : await services.assets.listAll(named, organizationId);
     const codeOf = new Map(listed.map((asset) => [asset.id, asset.code]));
-    const asset = ({ assetId, min, avg, max, sampleCount }: PointStatsSummaryRow) => ({ code: codeOf.get(assetId) ?? null, assetId, min, avg, max, sampleCount });
+    const labelOf = new Map(listed.map((row) => [row.id, assetLabel({ code: row.code, rtuName: row.rtuDisplayName, locationName: row.locationName })]));
+    const asset = ({ assetId, min, avg, max, sampleCount }: PointStatsSummaryRow) =>
+      ({ code: codeOf.get(assetId) ?? null, label: labelOf.get(assetId) ?? null, assetId, min, avg, max, sampleCount });
     const { rows: _rows, site, ...head } = answer;
     return {
       items: [],
@@ -189,7 +192,7 @@ async function readSummary(
         assetsWithNoData: noData.length,
         highest: highest.map(asset),
         lowest: lowest.map(asset),
-        noData: noData.slice(0, POINT_STATS_SUMMARY_NO_DATA_CODES).map((assetId) => codeOf.get(assetId) ?? assetId),
+        noData: noData.slice(0, POINT_STATS_SUMMARY_NO_DATA_CODES).map((assetId) => labelOf.get(assetId) ?? assetId),
       },
     };
   });

@@ -1,4 +1,4 @@
-import { rulesResponseSchema } from "@bms/shared";
+import { assetLabel, rulesResponseSchema } from "@bms/shared";
 import { z } from "zod";
 
 import { parseStoredContract } from "../../common/parse-stored-contract";
@@ -41,12 +41,13 @@ export const INVENTORY_PAGE_ENVELOPE_CHARS = 250;
 export const INVENTORY_UNRULED_PAGE_MAX_POINTS = 400;
 
 /** `F4.296` — one asset of an `unruled` page: its unwatched points as key → unit (`null`: no unit). */
-export type UnruledAsset = { readonly assetId: string; readonly code: string; readonly points: Record<string, string | null> };
+export type UnruledAsset = { readonly assetId: string; readonly label: string; readonly points: Record<string, string | null> };
 
 /**
  * `F4.296` (owner ruling 2026-10-31, Amendment 10 F2 as amended) — one item
  * of an `unruled` page: a set of unwatched points (key → unit) once, with the
- * codes of the page's assets that have exactly that set. No asset ids: the
+ * labels (`F4.316`, ADR 0111: `<code> · <RTU>`, else `<code> · <site>`; the
+ * key stays `codes`) of the page's assets that have exactly that set. No asset ids: the
  * full inventory stays the read before a rule card.
  */
 export type UnruledGroup = { readonly codes: readonly string[]; readonly points: Record<string, string | null> };
@@ -91,7 +92,7 @@ export const getSitePointInventoryTool = defineReadTool({
   description:
     `Every rule-target point of every asset at ${LOCATION_ID_PHRASE}, optional domain: unit, 7-day min/avg/max/last, ` +
     `samples, and ruleIds (at most 10) and ruleCount of the rules already watching it; a row's asset is its index in assets. Read it before proposing rules for a site; ${CURSOR_PHRASE}. ` +
-    "unruled: true lists only the points no rule watches, with the counts: each distinct set of points (key and unit) once, with the codes of the assets that have it.",
+    "unruled: true lists only the points no rule watches, with the counts: each distinct set of points (key and unit) once, with the labels of the assets that have it.",
   schema: z
     .object({
       locationId: z.string().uuid(),
@@ -134,7 +135,7 @@ export const getSitePointInventoryTool = defineReadTool({
  * nothing). The entry's counts — `assetCount`, `pointCount`,
  * `watchedCount`, `unwatchedCount` — are the whole subtree's on every
  * page. The items are one per distinct set of unwatched points
- * ({@link unruledGroups}): the set as key → unit once, with the codes of the
+ * ({@link unruledGroups}): the set as key → unit once, with the labels of the
  * assets that have it; no statistics, no rule ids, no asset ids. The live
  * check (78 assets, 330 unwatched points) needed two pages of one entry per
  * asset, and the model read the first page again instead of sending the
@@ -153,7 +154,7 @@ async function readUnruled(
   args: { locationId: string; domain?: string; cursor?: string },
 ): Promise<CopilotToolResult> {
   const scope = { locationId: args.locationId, paging: { cursor: args.cursor, key: offsetKeySchema }, maxItems: INVENTORY_UNRULED_PAGE_MAX_POINTS };
-  return readPerOrganization<UnruledGroup, number>(services, ctx, scope, async (_organizationId, assetIds, room, resume) => {
+  return readPerOrganization<UnruledGroup, number>(services, ctx, scope, async (organizationId, assetIds, room, resume) => {
     const { assets, pairs } = await services.inventory.pairs(assetIds, args.domain);
     const rules =
       assets.length === 0
@@ -165,10 +166,13 @@ async function readUnruled(
     const offered = offsetPage(unwatched, resume, room);
     if (offered.items.length === 0) return { ...offered, items: [], extra: head };
     const units = await services.inventory.units(offered.items);
-    const codeOf = new Map(assets.map((asset) => [asset.id, asset.code]));
-    const groupsOf = (n: number) => unruledGroups(unruledAssets(offered.items.slice(0, n), units, codeOf));
+    // `F4.316` PR 7 (ADR 0111): each asset is named by its label, read for the page's assets in this organization.
+    const listed = await services.assets.listAll([...new Set(offered.items.map((pair) => pair.assetId))], organizationId);
+    const labelOf = new Map(listed.map((row) => [row.id, assetLabel({ code: row.code, rtuName: row.rtuDisplayName, locationName: row.locationName })]));
+    for (const asset of assets) if (!labelOf.has(asset.id)) labelOf.set(asset.id, asset.code);
+    const groupsOf = (n: number) => unruledGroups(unruledAssets(offered.items.slice(0, n), units, labelOf));
     const kept = unruledPagePoints(head, groupsOf, offered.items.length);
-    const pageAssets = unruledAssets(offered.items.slice(0, kept), units, codeOf);
+    const pageAssets = unruledAssets(offered.items.slice(0, kept), units, labelOf);
     const items = unruledGroups(pageAssets);
     return { ...offsetPage(unwatched, resume, kept), keyAt: unruledKeyAt(resume ?? 0, pageAssets, items), items, extra: head };
   });
@@ -185,19 +189,19 @@ export function unruledGroups(assets: readonly UnruledAsset[]): UnruledGroup[] {
   for (const asset of assets) {
     const set = JSON.stringify(Object.entries(asset.points));
     const group = bySet.get(set);
-    if (group === undefined) bySet.set(set, { codes: [asset.code], points: asset.points });
-    else group.codes.push(asset.code);
+    if (group === undefined) bySet.set(set, { codes: [asset.label], points: asset.points });
+    else group.codes.push(asset.label);
   }
   return [...bySet.values()];
 }
 
 /** The pairs grouped by asset, in their order, each point's unit from `units` (same index). */
-export function unruledAssets(pairs: readonly InventoryPair[], units: ReadonlyArray<string | null>, codeOf: ReadonlyMap<string, string>): UnruledAsset[] {
-  const out: Array<{ assetId: string; code: string; points: Record<string, string | null> }> = [];
+export function unruledAssets(pairs: readonly InventoryPair[], units: ReadonlyArray<string | null>, labelOf: ReadonlyMap<string, string>): UnruledAsset[] {
+  const out: Array<{ assetId: string; label: string; points: Record<string, string | null> }> = [];
   pairs.forEach((pair, i) => {
     let last = out[out.length - 1];
     if (last === undefined || last.assetId !== pair.assetId) {
-      last = { assetId: pair.assetId, code: codeOf.get(pair.assetId) ?? pair.assetId, points: {} };
+      last = { assetId: pair.assetId, label: labelOf.get(pair.assetId) ?? pair.assetId, points: {} };
       out.push(last);
     }
     last.points[pair.pointKey] = units[i] ?? null;
@@ -219,7 +223,7 @@ export function unruledKeyAt(start: number, assets: readonly UnruledAsset[], gro
     const shown = new Set(groups.slice(0, keptGroups).flatMap((group) => group.codes));
     let offset = start;
     for (const asset of assets) {
-      if (!shown.has(asset.code)) break;
+      if (!shown.has(asset.label)) break;
       offset += Object.keys(asset.points).length;
     }
     return offset;

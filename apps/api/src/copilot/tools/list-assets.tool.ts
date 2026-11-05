@@ -15,11 +15,14 @@ import { defineReadTool, readPerOrganization } from "./copilot-read-tool";
  * organization's filtered rows; the service orders by site name and code,
  * ties put in id order). `search` still filters before the cap and the page
  * (the `F4.274` live-check rule).
+ *
+ * `F4.316` PR 7 (ADR 0111): the description states the label rule over the
+ * rows' own `rtuDisplayName` / `locationName`; the rows are unchanged.
  */
 export const listAssetsTool = defineReadTool({
   name: "list_assets",
   description:
-    `List assets (id, code, name, site, location, domain). Optional organizationId or ${LOCATION_ID_PHRASE} narrows the list; ` +
+    `List assets (id, code, name, site, location, domain); name one \`code · rtuDisplayName\`, else \`code · locationName\`. Optional organizationId or ${LOCATION_ID_PHRASE} narrows the list; ` +
     `optional search matches part of the name or code. Grouped by organization; truncated means there are more, with ${CURSOR_PHRASE}.`,
   schema: z
     .object({
