@@ -65,14 +65,17 @@ export async function theCreateRoutePassesTheRawBody(): Promise<void> {
   expect(calls).toEqual([`create ${JSON.stringify(body)}`]);
 }
 
-/** A `ZodError` the service throws (a body refused after the gate) is a 400, on both writes. */
-export async function aZodErrorFromTheServiceIsA400(): Promise<void> {
-  const zodError = z.object({ label: z.string() }).safeParse({}).error;
-  expect(await outcome(controllerWith([], zodError).create({}, JWT))).toBe("400");
-  expect(await outcome(controllerWith([], zodError).update(ID, {}, JWT))).toBe("400");
-  // Anything else passes through untouched (a 403 stays a 403).
+/**
+ * The service's own refusals pass through untouched on `POST` (its 400 for a body, a 403 stays a
+ * 403); on `PATCH` a `ZodError` from below is still mapped to a 400.
+ */
+export async function aRefusalFromTheServicePassesThrough(): Promise<void> {
+  const badBody = new BadRequestException("refused body");
+  expect(await outcome(controllerWith([], badBody).create({}, JWT))).toBe("400");
   const other = new Error("not a zod error");
   expect(await outcome(controllerWith([], other).create({}, JWT))).toBe(other);
+  const zodError = z.object({ label: z.string() }).safeParse({}).error;
+  expect(await outcome(controllerWith([], zodError).update(ID, {}, JWT))).toBe("400");
 }
 
 /** A malformed `:id` is a 400 on `PATCH` and `DELETE`, and the service is never reached. */

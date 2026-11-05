@@ -12,12 +12,17 @@ import type { PointKeyStatesAdminService } from "./point-key-states.service";
  * them, as `point-keys.rls.integration.test.ts` does).
  *
  * Every row a case writes names a **per-run point key** the wrapper creates (and an inactive one
- * beside it), never a seeded key: `tests/f3.74-point-key-states-seed.integration.test.ts` reads
- * the seed's codes exactly, and a concurrent suite must not see a stray row there. The wrapper
+ * beside it), never a seeded key, so no case touches what the seed suites read (the seeded
+ * pairs) and a concurrent suite sees no stray row on a seeded key. The wrapper
  * deletes both keys in `afterAll`; `point_key_states` cascades from `point_keys`.
  *
- * `observer` is `requireIntegrationDb`'s default connection (`bms_fleet`), used to read the table
- * and the audit log back, so each claim is about the rows, not the service's own `mapRow`.
+ * `observer` is `requireIntegrationDb`'s default connection, used to read the table and the
+ * audit log back, so each claim is about the rows, not the service's own `mapRow`. That default is
+ * `connection: "fleet"`: `resolveIntegrationRoleUrl` re-points CI's `bms_owner` `DATABASE_URL`
+ * at `bms_fleet` (or takes `DATABASE_URL_FLEET`) — the F3.39 suite's "ownerPool" is the same role.
+ *
+ * Every id a case creates is pushed to `created` **before** its assertions, and the wrapper's
+ * cleanup also sweeps by the run's own keys, so a failed case leaves no row and no audit row.
  */
 export type PksFixtures = {
   svc: PointKeyStatesAdminService;
@@ -26,10 +31,17 @@ export type PksFixtures = {
   activeKey: string;
   /** An inactive per-run point key. */
   inactiveKey: string;
+  /** Every state id a case created, pushed before it asserts anything. */
+  created: string[];
 };
 
 type AuditRow = { action: string; entity_type: string; organization_id: string | null };
 
+/**
+ * One state's audit rows, in the order they were written. Each write is its own `fleetDb`
+ * transaction and `created_at` is `now()` (the transaction's start), so `created_at` is the real
+ * order; `action` only breaks a tie that cannot occur.
+ */
 async function auditRowsFor(observer: pg.Pool, entityId: string): Promise<AuditRow[]> {
   const { rows } = await observer.query<AuditRow>(
     `SELECT action, entity_type, organization_id FROM bms.audit_log
@@ -40,21 +52,36 @@ async function auditRowsFor(observer: pg.Pool, entityId: string): Promise<AuditR
   return rows;
 }
 
-/** Deletes the audit rows a case wrote for these state ids. */
-export async function deleteAuditRows(observer: pg.Pool, ids: readonly string[]): Promise<void> {
-  if (ids.length === 0) return;
-  await observer.query("DELETE FROM bms.audit_log WHERE entity_id = ANY($1::uuid[])", [ids]);
+/**
+ * Deletes every state-label audit row the run wrote: by the ids the cases recorded, by any state
+ * still on the run's keys, and by the `pointKey` the create and delete payloads carry — so a case
+ * that failed before recording an id still leaves nothing. Call it before the keys are deleted.
+ */
+export async function deleteRunAuditRows(
+  observer: pg.Pool,
+  ids: readonly string[],
+  keys: readonly string[],
+): Promise<void> {
+  await observer.query(
+    `DELETE FROM bms.audit_log
+      WHERE action LIKE 'master.point_key_state.%'
+        AND (entity_id = ANY($1::uuid[])
+             OR entity_id IN (SELECT id FROM bms.point_key_states WHERE point_key_code = ANY($2::text[]))
+             OR payload->>'pointKey' = ANY($2::text[]))`,
+    [ids, keys],
+  );
 }
 
 /**
  * The lifecycle, by the global admin: create, list (with `seeded` right on both kinds of row),
  * patch, delete — each with exactly one audit row of its own action, `entity_type`
- * `point_key_state` and no organization (ADR 0043 Amendment 5, admitted `TO bms_fleet`).
- * Returns the id, so the wrapper can delete the audit rows.
+ * `point_key_state` and no organization (ADR 0043 Amendment 5, admitted `TO bms_fleet`), and the
+ * update row carrying the old values beside the new (`{ from, to }`).
  */
-export async function assertGlobalAdminLifecycle(ctx: PksFixtures, admin: JwtPayload): Promise<string> {
+export async function assertGlobalAdminLifecycle(ctx: PksFixtures, admin: JwtPayload): Promise<void> {
   const { svc, observer, activeKey } = ctx;
   const created = await svc.create(admin, { pointKey: activeKey, value: 2, label: "  EARTHED ", tone: "open" });
+  ctx.created.push(created.id);
   expect(created).toMatchObject({ pointKey: activeKey, value: 2, label: "EARTHED", tone: "open", seeded: false });
 
   const listed = await svc.list(admin);
@@ -87,13 +114,19 @@ export async function assertGlobalAdminLifecycle(ctx: PksFixtures, admin: JwtPay
   expect(afterDelete).toEqual([]);
 
   expect(await auditRowsFor(observer, created.id)).toEqual(
-    ["master.point_key_state.create", "master.point_key_state.delete", "master.point_key_state.update"].map((action) => ({
+    ["master.point_key_state.create", "master.point_key_state.update", "master.point_key_state.delete"].map((action) => ({
       action,
       entity_type: "point_key_state",
       organization_id: null,
     })),
   );
-  return created.id;
+  const { rows: updateAudit } = await observer.query<{ payload: unknown }>(
+    `SELECT payload FROM bms.audit_log WHERE entity_id = $1 AND action = 'master.point_key_state.update'`,
+    [created.id],
+  );
+  expect(updateAudit, "the update audit row names the old label and tone and the new tone").toEqual([
+    { payload: { from: { label: "EARTHED", tone: "open" }, to: { tone: "tripped" } } },
+  ]);
 }
 
 /**
@@ -178,11 +211,12 @@ export async function assertAnUnknownOrInactiveKeyIs400(ctx: PksFixtures, admin:
 
 /**
  * Decision 4 — a second row of the same pair is a 409 naming it (the unique constraint,
- * translated), and the first row stands. Returns the first row's id.
+ * translated), and the first row stands.
  */
-export async function assertADuplicatePairIs409(ctx: PksFixtures, admin: JwtPayload): Promise<string> {
+export async function assertADuplicatePairIs409(ctx: PksFixtures, admin: JwtPayload): Promise<void> {
   const { svc, activeKey } = ctx;
   const first = await svc.create(admin, { pointKey: activeKey, value: 4, label: "FIRST", tone: "open" });
+  ctx.created.push(first.id);
   const err = await svc.create(admin, { pointKey: activeKey, value: 4, label: "SECOND", tone: "shut" }).then(
     () => null,
     (e: unknown) => e,
@@ -191,7 +225,6 @@ export async function assertADuplicatePairIs409(ctx: PksFixtures, admin: JwtPayl
   expect((err as Error).message).toContain(activeKey);
   const listed = await svc.list(admin);
   expect(listed.items.filter((row) => row.pointKey === activeKey && row.value === 4)).toEqual([first]);
-  return first.id;
 }
 
 /** Plan C9 — an empty `PATCH` is 400; an unknown id is 404 on `PATCH` and `DELETE`. */

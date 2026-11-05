@@ -88,3 +88,65 @@ export async function anEmptyPatchIs400BeforeTheDatabase(): Promise<void> {
   await expect(svc.update(JWT, ID, {})).rejects.toBeInstanceOf(BadRequestException);
   expect(touched).toEqual([]);
 }
+
+/**
+ * Review fix (security Low 2) — the update audit row carries the old label and tone beside the
+ * new ones, `{ from, to }` (the `asset-groups` role-change and `organizations` colour-profile
+ * idiom), and the old values are read inside the write's own transaction, locked, not from the
+ * 404/409 read before it. A fake executor answers the row and records what the audit was handed.
+ */
+export async function theUpdateAuditCarriesTheOldValues(): Promise<void> {
+  const STORED = { id: ID, pointKeyCode: "f4-309-key", value: 2, label: "EARTHED", tone: "open" };
+  const events: string[] = [];
+  const chainFor = (where: string, rows: () => unknown[]) => {
+    const chain = {
+      from: () => chain,
+      where: () => chain,
+      limit: () => chain,
+      for: (strength: string) => {
+        events.push(`${where} for ${strength}`);
+        return chain;
+      },
+      set: (values: unknown) => {
+        events.push(`${where} set ${JSON.stringify(values)}`);
+        return chain;
+      },
+      returning: () => chain,
+      then: (resolve: (rows: unknown[]) => unknown) => {
+        events.push(`${where} read`);
+        return Promise.resolve(rows()).then(resolve);
+      },
+    };
+    return chain;
+  };
+  // Outside the transaction the row reads as it was; inside, a concurrent edit has landed: the
+  // audit must name the label the transaction actually replaced.
+  const tx = {
+    select: () => chainFor("tx.select", () => [{ ...STORED, label: "CONCURRENT" }]),
+    update: () => chainFor("tx.update", () => [{ ...STORED, label: "CONCURRENT", tone: "tripped" }]),
+  };
+  const db = {
+    select: () => chainFor("db.select", () => [STORED]),
+    transaction: async (run: (t: typeof tx) => Promise<unknown>) => run(tx),
+  } as unknown as BmsDb;
+  const audited: unknown[] = [];
+  const audit = {
+    write: async (input: { payload?: unknown }, executor: unknown) => {
+      events.push(`audit ${executor === tx ? "in tx" : "outside tx"}`);
+      audited.push(input.payload);
+    },
+  } as unknown as MasterDataAuditService;
+  const accessControl = {
+    requireMasterDataUser: async () => ({}),
+    isGlobalAdmin: async () => true,
+  } as unknown as AccessControlService;
+
+  await new PointKeyStatesAdminService(db, accessControl, audit).update(JWT, ID, { tone: "tripped" });
+
+  expect(audited).toEqual([{ from: { label: "CONCURRENT", tone: "open" }, to: { tone: "tripped" } }]);
+  // The old values are read and locked in the transaction before the update writes.
+  const lock = events.indexOf("tx.select for update");
+  expect(lock, `events: ${events.join(" | ")}`).toBeGreaterThan(-1);
+  expect(lock).toBeLessThan(events.findIndex((e) => e.startsWith("tx.update set")));
+  expect(events).toContain("audit in tx");
+}

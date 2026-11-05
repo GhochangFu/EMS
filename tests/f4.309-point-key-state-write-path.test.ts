@@ -119,6 +119,24 @@ describe("F4.309 — the state-label write path (ADR 0088 Amendment 3)", () => {
     expect(serviceCode.match(/\n\s*tx,\n\s*\);/g)?.length).toBe(3);
   });
 
+  it("audits only through MasterDataAuditService, never by a direct insert (outside DIRECT_INSERT's scan until PR 3)", () => {
+    // The `f3.85-audit-via-mark` forms: the drizzle `insert(auditLog)` and the raw SQL.
+    const direct = /\binsert\(\s*auditLog\s*\)|\binsert\s+into\s+(bms\.)?audit_log\b/i;
+    for (const name of readdirSync(join(repoRoot, DIR)).filter((n) => n.endsWith(".ts") && !/\.(spec|test)\.ts$/.test(n))) {
+      expect(read(`${DIR}/${name}`), `${DIR}/${name}`).not.toMatch(direct);
+    }
+    expect(serviceCode).not.toMatch(/\bauditLog\b/);
+    // Anti-vacuity: the service does audit, through the funnel, three times.
+    expect(serviceCode).toContain("private readonly audit: MasterDataAuditService");
+    expect(serviceCode.match(/this\.audit\.write\(/g)?.length).toBe(3);
+  });
+
+  it("writes the update audit as { from, to }, the old values read and locked in the transaction", () => {
+    const update = methodBody(service, "update");
+    expect(update).toMatch(/\.for\("update"\)/);
+    expect(update).toMatch(/payload: \{ from: \{ label: before\.label, tone: before\.tone \}, to: body \}/);
+  });
+
   it("answers seeded from POINT_KEY_STATE_SEED through the pure check (owner ruling Q3 (a))", () => {
     const pure = codeOnly(read(`${DIR}/point-key-states.pure.ts`));
     expect(pure).toContain('import { POINT_KEY_STATE_SEED } from "@bms/db";');

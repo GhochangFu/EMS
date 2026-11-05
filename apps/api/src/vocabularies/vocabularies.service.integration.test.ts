@@ -223,7 +223,8 @@ describe.skipIf(!locationTypeConnectionString)(
 /**
  * `F4.309` (ADR 0088 Amendment 3 decision 5) — the switching states on `/vocabularies`. Its own
  * guard and its own pool, for the reason the `F3.37` block above gives. The default connection
- * (`bms_fleet`) may insert the test's row; in production the read runs on the tenant pool, whose
+ * (`connection: "fleet"`: `resolveIntegrationRoleUrl` re-points CI's `bms_owner` `DATABASE_URL`
+ * at `bms_fleet`) may insert the test's row; in production the read runs on the tenant pool, whose
  * `SELECT` on the table `0097` grants and proves.
  */
 const switchingStateConnectionString = requireIntegrationDb({

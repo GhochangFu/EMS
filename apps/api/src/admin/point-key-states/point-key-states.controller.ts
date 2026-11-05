@@ -24,8 +24,8 @@ import { PointKeyStatesAdminService } from "./point-key-states.service";
  * `F4.309` / ADR 0088 Amendment 3 decision 1 — the state labels of switching points.
  *
  * Thin by design: the service owns the gate order (403 → body → 404 → 409, plan C7), so the
- * write bodies go to it raw and it parses them after the global-admin gate (a 400 of its own). A
- * `ZodError` reaching here — from `:id`, or from any parse below — is a 400 with its issues.
+ * write bodies go to it raw and it parses them after the global-admin gate (a 400 of its own,
+ * via `safeParse`). The one `ZodError` left is a malformed `:id`, a 400 here.
  */
 @Controller("admin/point-key-states")
 @UseGuards(JwtAuthGuard)
@@ -39,7 +39,8 @@ export class PointKeyStatesAdminController {
 
   @Post()
   async create(@Body() body: unknown, @CurrentUser() user: JwtPayload) {
-    return badRequestOnZodError(() => this.service.create(user, body));
+    // No `:id`, and the service answers a refused body with its own 400: nothing to map here.
+    return this.service.create(user, body);
   }
 
   @Patch(":id")
@@ -54,7 +55,7 @@ export class PointKeyStatesAdminController {
   }
 }
 
-/** Runs `call`, turning a `ZodError` (a refused body or id) into a 400 with its flattened issues. */
+/** Runs `call`, turning a `ZodError` (a malformed `:id`) into a 400 with its flattened issues. */
 async function badRequestOnZodError<T>(call: () => Promise<T>): Promise<T> {
   try {
     return await call();

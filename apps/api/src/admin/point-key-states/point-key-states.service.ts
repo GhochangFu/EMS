@@ -121,6 +121,18 @@ export class PointKeyStatesAdminService {
     this.refuseSeeded(current);
 
     const updated = await this.fleetDb.transaction(async (tx) => {
+      // The values this write replaces, read and locked in its own transaction — not the 404/409
+      // read above, which a concurrent edit may already have overtaken — so the audit row names
+      // what was really there before.
+      const [before] = await tx
+        .select({ label: pointKeyStates.label, tone: pointKeyStates.tone })
+        .from(pointKeyStates)
+        .where(eq(pointKeyStates.id, id))
+        .limit(1)
+        .for("update");
+      if (!before) {
+        throw new NotFoundException("State label not found");
+      }
       // Only the named fields: a merge over the row read above would undo a concurrent edit of
       // the other field (the `PointKeysAdminService.update` lesson).
       const [row] = await tx.update(pointKeyStates).set(body).where(eq(pointKeyStates.id, id)).returning();
@@ -134,7 +146,9 @@ export class PointKeyStatesAdminService {
           entityType: "point_key_state",
           entityId: id,
           organizationId: null,
-          payload: body,
+          // `{ from, to }`, the `asset-groups` role-change and `organizations` colour-profile
+          // idiom: the old label and tone, and the fields this write named.
+          payload: { from: { label: before.label, tone: before.tone }, to: body },
         },
         tx,
       );

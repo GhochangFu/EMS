@@ -16,7 +16,7 @@ import {
   assertGlobalAdminLifecycle,
   assertTenantAdminsAreRefusedEverything,
   assertTheSeededRowIsReadOnly,
-  deleteAuditRows,
+  deleteRunAuditRows,
   type PksFixtures,
 } from "./point-key-states.integration.spec";
 import { PointKeyStatesAdminService } from "./point-key-states.service";
@@ -44,7 +44,7 @@ describe.skipIf(!connectionString)("F4.309 — the admin point-key-states servic
   let ctx: PksFixtures;
   let admin: JwtPayload;
   let tenantAdmins: JwtPayload[];
-  const stateIds: string[] = [];
+  const created: string[] = [];
   const stamp = Date.now();
   const activeKey = `f4-309-key-${stamp}`;
   const inactiveKey = `f4-309-off-${stamp}`;
@@ -86,12 +86,13 @@ describe.skipIf(!connectionString)("F4.309 — the admin point-key-states servic
       observer,
       activeKey,
       inactiveKey,
+      created,
     };
   });
 
   afterAll(async () => {
     if (observer) {
-      await deleteAuditRows(observer, stateIds);
+      await deleteRunAuditRows(observer, created, [activeKey, inactiveKey]);
       // `point_key_states` cascades from `point_keys` (migration `0097`).
       await observer.query("DELETE FROM bms.point_keys WHERE code = ANY($1::text[])", [[activeKey, inactiveKey]]);
     }
@@ -99,12 +100,12 @@ describe.skipIf(!connectionString)("F4.309 — the admin point-key-states servic
   });
 
   it("lets the global admin create, list, patch and delete a row, one org-less audit row each", async () => {
-    stateIds.push(await assertGlobalAdminLifecycle(ctx, admin));
+    await assertGlobalAdminLifecycle(ctx, admin);
   });
 
   it("refuses an organization_admin and a location_admin the list and every write", async () => {
     const fixture = await ctx.svc.create(admin, { pointKey: activeKey, value: 3, label: "FIXTURE", tone: "open" });
-    stateIds.push(fixture.id);
+    created.push(fixture.id);
     await assertTenantAdminsAreRefusedEverything(ctx, tenantAdmins, fixture.id);
   });
 
@@ -117,12 +118,12 @@ describe.skipIf(!connectionString)("F4.309 — the admin point-key-states servic
   });
 
   it("answers 409 to a duplicate pair, naming it", async () => {
-    stateIds.push(await assertADuplicatePairIs409(ctx, admin));
+    await assertADuplicatePairIs409(ctx, admin);
   });
 
   it("answers 400 to an empty PATCH and 404 to an unknown id", async () => {
     const row = await ctx.svc.create(admin, { pointKey: activeKey, value: 5, label: "SPARE", tone: "shut" });
-    stateIds.push(row.id);
+    created.push(row.id);
     await assertEmptyPatchIs400AndUnknownIdIs404(ctx, admin, row.id);
   });
 });
