@@ -55,11 +55,13 @@ function bigLayoutBody() {
         fanOut: i % 11 === 0,
         isSource: i === 0,
         isSwitching: i % 5 === 1,
+        // `F4.307`: a roled unit lists points; `[]` elsewhere — the write node always carries it.
+        pointKeys: i % 3 === 0 ? ["kw", "pf"] : [],
       });
     } else if (i < 110) {
-      nodes.push({ key: `p${i}`, kind: "panel", label: `Panel ${i}`, tone: i % 2 === 0 ? "info" : "accent", ...at, fanOut: false, isSource: false, isSwitching: false });
+      nodes.push({ key: `p${i}`, kind: "panel", label: `Panel ${i}`, tone: i % 2 === 0 ? "info" : "accent", ...at, fanOut: false, isSource: false, isSwitching: false, pointKeys: [] });
     } else {
-      nodes.push({ key: `l${i}`, kind: "label", label: `Label ${i}`, ...at, fanOut: false, isSource: false, isSwitching: false });
+      nodes.push({ key: `l${i}`, kind: "label", label: `Label ${i}`, ...at, fanOut: false, isSource: false, isSwitching: false, pointKeys: [] });
     }
   }
   const pipes = [
@@ -97,6 +99,7 @@ function layoutDtoOf(body: Body, organizationId: string) {
       fanOut: node.fanOut ?? false,
       isSource: node.isSource ?? false,
       isSwitching: node.isSwitching ?? false,
+      pointKeys: node.pointKeys ?? [],
     })),
     pipes: body.pipes,
     orgSymbols: [],

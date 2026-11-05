@@ -55,6 +55,7 @@ const unitNode = {
   fanOut: false,
   isSource: false,
   isSwitching: false,
+  pointKeys: [] as string[],
 };
 
 const panelNode = {
@@ -72,6 +73,7 @@ const panelNode = {
   fanOut: false,
   isSource: false,
   isSwitching: false,
+  pointKeys: [] as string[],
 };
 
 const geometry = {
@@ -333,5 +335,25 @@ export function aNodeWithoutIsSwitchingIsRefused(): void {
   assert(
     !refused.success && refused.error.issues.every((issue) => issue.path[0] === "isSwitching"),
     "the node must be refused at isSwitching only",
+  );
+}
+
+/**
+ * `F4.307` / ADR 0081 Amendment 1 (plan C1) — `pointKeys` is required on the read node, `[]` when
+ * the unit lists none: a node without it is refused at that key, and a listed order survives.
+ */
+export function aNodeWithoutPointKeysIsRefused(): void {
+  const listed = mimicLayoutNodeSchema.safeParse({ ...unitNode, pointKeys: ["kw", "flow"] });
+  assert(listed.success, `a unit with pointKeys refused: ${issuesOf(listed)}`);
+  assert(
+    listed.success && JSON.stringify(listed.data.pointKeys) === JSON.stringify(["kw", "flow"]),
+    "the listed order must survive the parse",
+  );
+  const { pointKeys: _omitted, ...without } = unitNode;
+  const refused = mimicLayoutNodeSchema.safeParse(without);
+  assert(!refused.success, "a node without pointKeys parsed");
+  assert(
+    !refused.success && refused.error.issues.every((issue) => issue.path[0] === "pointKeys"),
+    "the node must be refused at pointKeys only",
   );
 }

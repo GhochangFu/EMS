@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  aRoleLessUnitSendsNoList,
+  aUnitPointListRoundTrips,
   anAbsentFieldReadsAsTheStoreWritesIt,
   theFixturesAreRouteBodies,
   theFlowBodyRoundTrips,
@@ -13,4 +15,6 @@ describe("F3.87 PR 5 — editorLayoutFromWriteBody", () => {
   it("round-trips the F3.80 HT/LT body", () => theHtLtBodyRoundTrips());
   it("round-trips the F3.80 flow body", () => theFlowBodyRoundTrips());
   it("reads an absent field as the store writes it", () => anAbsentFieldReadsAsTheStoreWritesIt());
+  it("F4.307 — round-trips a unit's point list", () => aUnitPointListRoundTrips());
+  it("F4.307 — a role-less unit sends no list", () => aRoleLessUnitSendsNoList());
 });

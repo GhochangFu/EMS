@@ -210,15 +210,19 @@ export type LayoutBaseline = {
 };
 
 /** A write node's fields, in the order a changed row lists them. */
-const NODE_FIELDS = ["kind", "symbol", "label", "roleCode", "tone", "x", "y", "w", "h", "z", "fanOut", "isSource", "isSwitching"] as const;
+const NODE_FIELDS = ["kind", "symbol", "label", "roleCode", "tone", "x", "y", "w", "h", "z", "fanOut", "isSource", "isSwitching", "pointKeys"] as const;
 type NodeField = (typeof NODE_FIELDS)[number];
 
-/** A write node as the store writes it: an absent `z` is `0`, an absent flag `false`, an absent symbol, role or tone `null`. */
+/**
+ * A write node as the store writes it: an absent `z` is `0`, an absent flag `false`, an absent
+ * point list `[]` (`F4.307`), an absent symbol, role or tone `null`.
+ */
 function storedValue(node: MimicLayoutWriteNode, field: NodeField): unknown {
   const value = node[field];
   if (value !== undefined && value !== null) return value;
   if (field === "z") return 0;
   if (field === "fanOut" || field === "isSource" || field === "isSwitching") return false;
+  if (field === "pointKeys") return [];
   return null;
 }
 

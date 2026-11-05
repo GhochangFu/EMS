@@ -7,6 +7,7 @@ import {
   integer,
   jsonb,
   primaryKey,
+  smallint,
   text,
   timestamp,
   unique,
@@ -16,7 +17,7 @@ import {
 
 import type { MimicShape } from "@bms/shared";
 
-import { assetRoles, bmsSchema, organizations, users } from "./bms-schema";
+import { assetRoles, bmsSchema, organizations, pointKeys, users } from "./bms-schema";
 
 /**
  * `F3.32e` / ADR 0084 decision 1 — the preloaded symbol libraries, migration `0090`. Global
@@ -234,6 +235,8 @@ export const mimicLayoutNodes = bmsSchema.table(
       t.id,
       t.kind,
     ),
+    // `F4.307` (migration `0124`) — the target of the point list's `(node_id, node_kind)` key.
+    idKindUnique: unique("mimic_layout_nodes_id_kind_key").on(t.id, t.kind),
     layoutIdx: index("mimic_layout_nodes_layout_idx").on(t.layoutId, t.z, t.y, t.x),
     // The organization is in the key: a foreign key check does not apply row security.
     orgSymbolFk: foreignKey({
@@ -281,5 +284,37 @@ export const mimicLayoutPipes = bmsSchema.table(
       t.toNodeId,
     ),
     toIdx: index("mimic_layout_pipes_to_idx").on(t.layoutId, t.toNodeId),
+  }),
+);
+
+/**
+ * `F4.307` / ADR 0081 Amendment 1 (migration `0124`) — the ordered point list of one roled unit:
+ * up to `MIMIC_HEADLINE_POINTS` rows, `ord` 0..2. `nodeKind` exists only to carry the composite
+ * foreign key to `(id, kind)`; the migration's `_unit_check` pins it to `'unit'` (the pipes idiom).
+ * The `_unit_check` and `_ord_check` CHECKs are the migration's, not mirrored here. A save
+ * replaces the layout, so the rows cascade with their node and are inserted again.
+ */
+export const mimicLayoutNodePoints = bmsSchema.table(
+  "mimic_layout_node_points",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id),
+    nodeId: uuid("node_id").notNull(),
+    nodeKind: varchar("node_kind", { length: 16 }).notNull().default("unit"),
+    pointKey: varchar("point_key", { length: 128 })
+      .notNull()
+      .references(() => pointKeys.code),
+    ord: smallint("ord").notNull(),
+  },
+  (t) => ({
+    nodeFk: foreignKey({
+      name: "mimic_layout_node_points_node_fkey",
+      columns: [t.nodeId, t.nodeKind],
+      foreignColumns: [mimicLayoutNodes.id, mimicLayoutNodes.kind],
+    }).onDelete("cascade"),
+    nodeOrdUnique: unique("mimic_layout_node_points_node_ord_key").on(t.nodeId, t.ord),
+    nodeKeyUnique: unique("mimic_layout_node_points_node_key_key").on(t.nodeId, t.pointKey),
   }),
 );

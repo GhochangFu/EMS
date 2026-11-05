@@ -226,6 +226,8 @@ function newNode(
     fanOut: false,
     isSource: false,
     isSwitching: false,
+    // `F4.307`: a new node lists no points.
+    pointKeys: [],
     ...fields,
     ...NEW_NODE_AT,
     ...MIMIC_EDITOR_DEFAULT_BOX[kind],
@@ -295,6 +297,10 @@ function updateNode(state: EditorState, key: string, patch: EditorNodePatch): Ed
     isSwitching: node.kind === "unit" ? (patch.isSwitching ?? node.isSwitching) : false,
     ...box,
   };
+  // F4.307: only a roled unit lists points, so clearing the role clears the list.
+  if (next.roleCode === null) {
+    next.pointKeys = [];
+  }
   return commit(state, withNode(state.layout, key, () => next));
 }
 
@@ -473,6 +479,11 @@ export function toWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
       if (node.isSwitching) {
         out.isSwitching = true;
       }
+      // F4.307 (ADR 0081 Amendment 1): the same rule for a unit's point list.
+      // A role-less unit lists no points (the body refuses it), so its list is not sent.
+      if (node.kind === "unit" && node.roleCode !== null && node.pointKeys.length > 0) {
+        out.pointKeys = [...node.pointKeys];
+      }
       return out;
     }),
     pipes: layout.pipes.map((pipe) => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),
@@ -509,6 +520,8 @@ export function editorLayoutFromWriteBody(body: MimicLayoutWriteBody): EditorLay
         fanOut: node.fanOut ?? false,
         isSource: node.isSource ?? false,
         isSwitching: node.isSwitching ?? false,
+        // `F4.307`: an absent point list is the store's `[]`.
+        pointKeys: [...(node.pointKeys ?? [])],
       }),
     ),
     pipes: body.pipes.map((pipe) => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),
@@ -595,6 +608,8 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       fanOut: node.fanOut === true,
       isSource: sources.has(node.key),
       isSwitching: false,
+      // `F4.307` ruling Q2: "Start from" a preset copies no point list.
+      pointKeys: [],
     };
   });
 
@@ -616,6 +631,7 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       fanOut: false,
       isSource: false,
       isSwitching: false,
+      pointKeys: [],
     });
   }
 
@@ -637,6 +653,7 @@ export function fromPreset(preset: MimicPreset): EditorLayout {
       fanOut: false,
       isSource: false,
       isSwitching: false,
+      pointKeys: [],
     };
   });
 

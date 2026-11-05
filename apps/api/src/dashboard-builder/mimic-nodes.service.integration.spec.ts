@@ -543,11 +543,11 @@ export async function assertOwningOrganizationReads(client: pg.PoolClient): Prom
  * (no role, plan D6); `p` a panel; `t` a label. Every box is inside a 60 × 40 canvas.
  */
 const LAYOUT_NODES: readonly MimicLayoutNodeDto[] = [
-  { key: "p", kind: "panel", symbol: null, label: "Pretreatment", roleCode: null, tone: "info", x: 0, y: 0, w: 60, h: 40, z: 0, fanOut: false, isSource: false, isSwitching: false },
-  { key: "a", kind: "unit", symbol: "tank", label: "WTP", roleCode: "wtp", tone: null, x: 5, y: 10, w: 8, h: 8, z: 1, fanOut: false, isSource: false, isSwitching: false },
-  { key: "b", kind: "unit", symbol: "membrane", label: "RO", roleCode: "ro", tone: null, x: 30, y: 10, w: 8, h: 8, z: 1, fanOut: false, isSource: false, isSwitching: false },
-  { key: "d", kind: "unit", symbol: "discharge", label: "Discharge", roleCode: null, tone: null, x: 45, y: 25, w: 6, h: 6, z: 1, fanOut: false, isSource: false, isSwitching: false },
-  { key: "t", kind: "label", symbol: null, label: "Plant", roleCode: null, tone: null, x: 2, y: 2, w: 20, h: 3, z: 2, fanOut: false, isSource: false, isSwitching: false },
+  { key: "p", kind: "panel", symbol: null, label: "Pretreatment", roleCode: null, tone: "info", x: 0, y: 0, w: 60, h: 40, z: 0, fanOut: false, isSource: false, isSwitching: false, pointKeys: [] },
+  { key: "a", kind: "unit", symbol: "tank", label: "WTP", roleCode: "wtp", tone: null, x: 5, y: 10, w: 8, h: 8, z: 1, fanOut: false, isSource: false, isSwitching: false, pointKeys: [] },
+  { key: "b", kind: "unit", symbol: "membrane", label: "RO", roleCode: "ro", tone: null, x: 30, y: 10, w: 8, h: 8, z: 1, fanOut: false, isSource: false, isSwitching: false, pointKeys: [] },
+  { key: "d", kind: "unit", symbol: "discharge", label: "Discharge", roleCode: null, tone: null, x: 45, y: 25, w: 6, h: 6, z: 1, fanOut: false, isSource: false, isSwitching: false, pointKeys: [] },
+  { key: "t", kind: "label", symbol: null, label: "Plant", roleCode: null, tone: null, x: 2, y: 2, w: 20, h: 3, z: 2, fanOut: false, isSource: false, isSwitching: false, pointKeys: [] },
 ];
 
 /** The pipes by key, in `read()`'s order; inserted reversed. */
@@ -667,6 +667,36 @@ export async function assertLayoutReadIsFiveStatements(client: pg.PoolClient): P
   const nowMs = await txNowMs(client);
   const counting = countingClient(client);
   await readService(counting.pool).read(train.organizationId, train.dashboardId, null, nowMs);
+  expect(counting.count()).toBe(5);
+}
+
+/**
+ * G1 (`F4.307` T5, plan C2) — statement 1b carries each unit's point list in `ord` order: `a` lists
+ * rank 3 then the unranked key (not the headline order, and inserted in reverse so the insertion
+ * order is not the answer); every other node answers `[]`. The read is still five statements.
+ */
+export async function assertLayoutGeometryCarriesThePointListInOrder(client: pg.PoolClient): Promise<void> {
+  const { train, layoutId } = await seedTrainWithLayout(client);
+  const node = await one<{ id: string }>(
+    client,
+    `SELECT id FROM bms.mimic_layout_nodes WHERE layout_id = $1 AND key = 'a'`,
+    [layoutId],
+    "layout node a",
+  );
+  const listed = [train.keys.r3, train.keys.unranked];
+  for (const [ord, pointKey] of [...listed.entries()].reverse()) {
+    await client.query(
+      `INSERT INTO bms.mimic_layout_node_points (organization_id, node_id, point_key, ord) VALUES ($1, $2, $3, $4)`,
+      [train.organizationId, node.id, pointKey, ord],
+    );
+  }
+  const nowMs = await txNowMs(client);
+  const counting = countingClient(client);
+  const dto = await readService(counting.pool).read(train.organizationId, train.dashboardId, null, nowMs);
+  const widget = layoutWidgetOf(dto);
+  expect(widget.layout.nodes.map((n) => [n.key, n.pointKeys])).toEqual(
+    LAYOUT_NODES.map((n) => [n.key, n.key === "a" ? listed : []]),
+  );
   expect(counting.count()).toBe(5);
 }
 

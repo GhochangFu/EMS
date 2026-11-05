@@ -68,6 +68,11 @@ interface LayoutNodeRow {
   fan_out: boolean | null;
   is_source: boolean | null;
   is_switching: boolean | null;
+  /**
+   * `F4.307` (plan C2): the unit's listed point keys by `ord`, `{}` when it lists none — and on a
+   * node-less layout's row, which `layoutNodeOf` drops.
+   */
+  point_keys: string[] | null;
 }
 
 /** Statement (1d)'s row (`F3.32f` slice 3): one organization symbol a layout's units draw. */
@@ -197,6 +202,8 @@ interface StateMapRow {
  *    1b. Only when a widget takes the layout arm (ADR 0081 decision 6): those layouts of THIS
  *    organization, each left-joined to its nodes. A layout id with no row here — deleted, or
  *    another organization's — skips its widget with one warning (ids only), never thrown.
+ *    `F4.307` (plan C2): each node also carries its point list, a correlated `array_agg` by
+ *    `ord` in the same statement, so the count does not move.
  *    1c. Only when (1b) found a layout: their pipes, each end named by its node's key.
  * 2. Per distinct group the widgets resolve against, and per role the presets and the layouts'
  *    roled units name, the first readable member by asset code, how many readable
@@ -610,7 +617,10 @@ export class MimicNodesService {
       `
       SELECT l.id AS layout_id, l.name, l.canvas_w, l.canvas_h,
              n.key, n.kind, n.symbol, n.org_symbol_key, n.label, n.role_code, n.tone, n.x, n.y, n.w, n.h, n.z,
-             n.fan_out, n.is_source, n.is_switching
+             n.fan_out, n.is_source, n.is_switching,
+             (SELECT coalesce(array_agg(np.point_key ORDER BY np.ord), '{}')
+                FROM bms.mimic_layout_node_points np
+               WHERE np.node_id = n.id AND np.organization_id = $2) AS point_keys
       FROM bms.mimic_layouts l
       LEFT JOIN bms.mimic_layout_nodes n
         ON n.layout_id = l.id
@@ -774,6 +784,8 @@ function layoutNodeOf(row: LayoutNodeRow): MimicLayoutNodeDto | null {
     fanOut: row.fan_out === true,
     isSource: row.is_source === true,
     isSwitching: row.is_switching === true,
+    // `F4.307` (plan C2): drawn here, not yet resolved — PR 2 reads the list per node.
+    pointKeys: row.point_keys ?? [],
   };
 }
 

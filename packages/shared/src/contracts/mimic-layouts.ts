@@ -209,6 +209,12 @@ export const mimicLayoutNodeSchema = z.object({
    * `0109`'s `mimic_layout_nodes_switching_units_check`.
    */
   isSwitching: z.boolean(),
+  /**
+   * `F4.307` / ADR 0081 Amendment 1 — a roled unit's ordered point list (at most
+   * `MIMIC_HEADLINE_POINTS` codes, `bms.mimic_layout_node_points` by `ord`), shown in place of the
+   * asset's headline points. Always `[]` on a panel, a label or a unit that lists none.
+   */
+  pointKeys: z.array(z.string()),
 });
 
 /** A pipe between two units, by key (plan D5, D7). */

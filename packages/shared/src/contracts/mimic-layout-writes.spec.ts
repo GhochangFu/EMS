@@ -344,3 +344,52 @@ export function leavesAnAbsentSwitchingFlagAbsent(): void {
   // Positive control: the same read sees a key the body does carry.
   expect(Object.keys(node)).toContain("roleCode");
 }
+
+// `F4.307` T2 (ADR 0081 Amendment 1, plan C1) — a roled unit's ordered point list `pointKeys`.
+
+export function acceptsARoledUnitWithThreePointKeysInOrder(): void {
+  const node = parsedNode(withNode(0, { pointKeys: ["kw", "flow", "level"] }), 0);
+  expect(node.pointKeys).toEqual(["kw", "flow", "level"]);
+}
+
+/** An absent list stays absent: the service, not the parse, decides the stored `[]`. */
+export function leavesAnAbsentPointListAbsent(): void {
+  const node = parsedNode(validCreateBody(), 0);
+  expect(Object.keys(node)).not.toContain("pointKeys");
+  // Positive control: the same read sees a key the body does carry.
+  expect(Object.keys(node)).toContain("roleCode");
+}
+
+/** The bound is `MIMIC_HEADLINE_POINTS` (3): the unit frame draws three value rows. */
+export function refusesFourPointKeys(): void {
+  refusedAt(withNode(0, { pointKeys: ["a", "b", "c", "d"] }), ["nodes.0.pointKeys"]);
+}
+
+export function refusesAPointKeyListedTwice(): void {
+  refusedAt(withNode(0, { pointKeys: ["kw", "flow", "kw"] }), ["nodes.0.pointKeys.2"]);
+}
+
+export function refusesAPointListOnAPanel(): void {
+  refusedAt(withNode(3, { pointKeys: ["kw"] }), ["nodes.3.pointKeys"]);
+}
+
+export function refusesAPointListOnALabel(): void {
+  refusedAt(withNode(4, { pointKeys: ["kw"] }), ["nodes.4.pointKeys"]);
+}
+
+/** A unit with no role draws no values, so it holds no list (Amendment decision 1). */
+export function refusesAPointListOnARolelessUnit(): void {
+  refusedAt(withNode(2, { pointKeys: ["kw"] }), ["nodes.2.pointKeys"]);
+}
+
+/** An explicit `[]` says nothing, on a role-less unit or a panel alike. */
+export function acceptsAnEmptyPointListOnARolelessUnitAndAPanel(): void {
+  const body = validCreateBody();
+  body.nodes[2] = { ...body.nodes[2], pointKeys: [] };
+  body.nodes[3] = { ...body.nodes[3], pointKeys: [] };
+  expect(issuesOf(createMimicLayoutBodySchema, body)).toEqual([]);
+}
+
+export function refusesAPointKeyThatIsNotACatalogCode(): void {
+  refusedAt(withNode(0, { pointKeys: ["kw total"] }), ["nodes.0.pointKeys.0"]);
+}
