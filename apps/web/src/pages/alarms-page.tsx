@@ -98,6 +98,16 @@ function whereOf(a: AlarmListItem): string | null {
   return assetLabelParts({ code: a.assetCode, rtuName: a.assetRtuName, locationName: a.assetLocationName }).where;
 }
 
+/** The wrapping `· where` span, or nothing when the asset has neither an RTU nor a location. */
+function WhereSpan({ where }: { where: string | null }) {
+  return where === null ? null : (
+    <span className="whitespace-normal">
+      {ASSET_LABEL_SEPARATOR}
+      {where}
+    </span>
+  );
+}
+
 export function AlarmsPage({ user }: AlarmsPageProps) {
   const qc = useQueryClient();
   const navigate = useNavigate();
@@ -365,12 +375,7 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                         {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates. */}
                         <div className="font-medium">
                           <span className="whitespace-nowrap">{a.assetCode}</span>
-                          {whereOf(a) !== null ? (
-                            <span className="whitespace-normal">
-                              {ASSET_LABEL_SEPARATOR}
-                              {whereOf(a)}
-                            </span>
-                          ) : null}
+                          <WhereSpan where={whereOf(a)} />
                         </div>
                         <div className="text-xs text-ink-muted">{a.assetName}</div>
                       </td>
