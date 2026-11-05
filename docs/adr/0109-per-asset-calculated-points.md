@@ -169,3 +169,116 @@ route only:
    already running for this point"). An enqueue failure marks the run
    `failed` with `error = 'no worker'` and answers 503; the point stays
    written.
+
+## Amendment 1 — adopt a template-less asset onto a template version (`F4.312`); a new catalog key from the Add panel (`F4.313`) (owner, 2026-11-05)
+
+**Status: Accepted — 2026-11-05** (owner, in chat: "Accept, merge on
+green"). The owner ruled in chat, one question at a time. A line marked *(An)* states the owner's
+ruling n below; lines marked *drafter choice* were not asked. Backlog rows
+`F4.312` and `F4.313`. The owner chose one amendment for both rows (A0).
+
+### Facts the amendment rests on
+
+- `POST /admin/asset-templates/:id/migrate` refuses an asset that is pinned
+  to no template version (`asset-templates-migrate.service.ts`), and
+  `instantiate` builds new assets only. So an existing template-less asset has
+  no path onto a template today. This record's ruling 1 deferred that path;
+  ruling 8 already decides what a per-asset point becomes when its key is
+  declared by the adopted template.
+- The engine reads a standalone point only on an asset whose `template_id` is
+  NULL (decision 2, `CalcDefinitionsService`). After adoption it reads the
+  template's derived points and their overrides.
+- `asset_points_source_ref_check`: a `measured` row names an RTU; `manual`,
+  `computed` and `unmapped` rows name none.
+- A catalog point key (`bms.point_keys`) is shared by every organization, and
+  only a global administrator may create one (`point-keys` service).
+- The AWS demo's 48 PHE WB assets have no template, and organization PHEWB has
+  no template (`F4.311` live check, 2026-11-04).
+
+### Rulings (owner, 2026-11-05)
+
+| # | Question | Ruling |
+|---|---|---|
+| A0 | Scope | One amendment for `F4.312` and `F4.313` |
+| A1 | Target version | A **published** version of the asset's **own organization** and the **same domain** only |
+| A2 | Asset point whose key the template does not declare | **Kept unchanged** — wiring, telemetry and history stay; it is an extra point outside the template |
+| A3 | Template measured point the asset lacks | **Added as `unmapped`** (no RTU), as migrate does for a measured addition with no RTU |
+| A4 | Standalone calculated point whose key the template does **not** declare | **Adoption is refused**; the preview names each point. The admin deletes it, or adds the key to the template as a derived point, first |
+| A5 | Template content | **Everything a new asset from that version gets** — derived points, KPIs, alarm rules, maintenance plans — as `instantiate` writes it |
+| A6 | Surfaces | **The page, the copilot and a bulk action** |
+| A7 | Undo | **None** — adoption is one-way, like an instantiate pin; later changes go through migrate |
+| A8 | Same key, different unit | **Adoption is refused**; the preview names each mismatch |
+| A9 | PHE templates | **Made by an administrator** on the template pages after the build; nothing is added to the stock catalog |
+| A10 | Access | **Template migrate's own** — write scope over the asset, and the version inside the admin's scope |
+| A11 | `F4.313` surfaces | **The Add calculated point panel and the bulk action wizard.** The copilot keeps one card per change |
+| A12 | `F4.313` access | **A global administrator only**, the catalog's existing rule |
+| A13 | `F4.313` writes | **Check first, then two writes** — the formula is checked before anything is written; the key, then the point |
+
+### Decision — adoption (`F4.312`)
+
+1. **What adoption does.** It pins an asset whose `template_id` is NULL to
+   one template version (A1, A7), in one transaction per asset:
+   - each `asset_points` row whose key the version declares as a measured
+     point becomes that point's row: wiring, `source_data_key`, RTU and
+     history stay;
+   - each measured point the version declares and the asset lacks gets an
+     `unmapped` row (A3);
+   - each row whose key the version does not declare stays as it is (A2);
+   - each standalone calculated point whose key the version declares as a
+     derived point becomes that asset's calc override of it, through the
+     override's own checks, and its history continues under the same key
+     (ruling 8);
+   - the version's derived points, KPIs, alarm rules and maintenance plans
+     are written as `instantiate` writes them for a new asset (A5), after the
+     points, so a rule can evaluate at once.
+2. **Refusals, before any write.** The version is not published, is of
+   another organization or another domain (A1); a standalone calculated point
+   has a key the version does not declare (A4); an asset point and the
+   version's point of the same key differ in unit (A8); the asset already has
+   a template; a key the version declares as derived is held by the asset as
+   a measured, manual or unmapped point. Each refusal names the asset code
+   and the point key.
+3. **Preview first.** A preview returns, per asset, the rows kept, added
+   and converted, the content to be written, and every refusal, as
+   migrate's preview does; the apply re-computes the plan and refuses if it
+   differs from the preview (*drafter choice*, migrate's own guard).
+4. **Routes** (*drafter choice*: names follow migrate's).
+   `POST /admin/asset-templates/:id/adoption-preview` and
+   `POST /admin/asset-templates/:id/adopt`, body `{ assetIds }` with 1–25
+   template-less assets of the version's organization, all or nothing
+   (A6, the calc batch's bound). Zod contracts in `@bms/shared` (ADR 0030).
+   Each adopted asset is audited as a migrate is. Access is migrate's (A10).
+5. **Surfaces** (A6). The asset page gains **Adopt a template** on a
+   template-less asset: a version picker (filtered by A1), the preview, and
+   Confirm. The asset list's bulk actions gain the same for the selected
+   assets. The copilot gains one catalog entry, `assetTemplate.adopt`, a red
+   Confirm card that calls `adopt` with the same body; this amends ADR
+   0099's catalog (its next amendment records the entry).
+6. **Not in this amendment.** Releasing an asset back to no template (A7).
+   Stock templates for PHE (A9): after the build an administrator imports
+   `electrical-feeder` (and adds `voltage_l1_v`) and creates the PUMP-M,
+   PUMP-C and AIRSP templates, then adopts the 48 assets.
+
+### Decision — a new catalog key from the Add panel (`F4.313`)
+
+7. **Where.** The key picker of the Add calculated point panel and of the
+   bulk action wizard gains **New key** (A11): code, label and unit, with the
+   Point keys page's own validation. The copilot has no combined card: it
+   proposes the existing `pointKey.create` card, then the `calcPoint.set` or
+   `calcPoint.createBatch` card (A11).
+8. **Who.** **New key** shows only to a global administrator (A12). Every
+   other admin picks an existing key, as today; the API rule does not change.
+9. **Order of writes** (A13). The panel first checks the formula with the
+   existing preview and the write rules of decision 3 against the new code.
+   Only then does it create the key (`POST /admin/point-keys`) and write the
+   point. If the point write still fails, the key stays in the catalog, the
+   panel says so, and the next try finds the key in the picker. Ruling 3
+   stands: a calculated point uses a catalog key only.
+
+### Consequences
+
+- No migration is expected: adoption writes existing tables (`assets`,
+  `asset_points`, and the tables `instantiate` writes). The plan confirms
+  this against the schema.
+- ADR 0099 gains `assetTemplate.adopt` in its next amendment.
+- `AGENTS.md` is updated in a separate `chore(agents):` PR (§9.10).
