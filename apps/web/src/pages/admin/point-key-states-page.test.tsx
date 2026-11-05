@@ -17,8 +17,8 @@ describe("F4.309 State Labels admin page", () => {
   const cases = Object.entries(spec);
 
   it("has its claims", () => {
-    if (cases.length < 16) {
-      throw new Error(`expected at least 16 claims, found ${cases.length}`);
+    if (cases.length < 24) {
+      throw new Error(`expected at least 24 claims, found ${cases.length}`);
     }
   });
 

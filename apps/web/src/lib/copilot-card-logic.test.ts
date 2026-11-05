@@ -4,6 +4,7 @@ import {
   aPointListChangeIsOneChangedRow,
   anAbsentListAgainstAnEmptyOneIsNoChange,
   anAdoptionInvalidatesWhatItWrites,
+  theStateLabelEntriesInvalidateTheListAndTheVocabularies,
   anOnboardingCommitInvalidatesTheDraftList,
   theReviewStepDoesNotAskForAClientOnlyField,
   aCreateHasNoBeforeValues,
@@ -42,6 +43,8 @@ describe("F3.85 PR 8 — Confirm card and wizard logic (ADR 0099 decisions 4, 6)
   it("invalidates queries for every catalog entry", () => everyEntryHasInvalidations());
   it("F4.312 PR 2: an adoption invalidates the assets, points, calc points, dashboards, rules and template versions", () =>
     anAdoptionInvalidatesWhatItWrites());
+  it("F4.309 PR 3: the state-label entries re-read the list and /vocabularies", () =>
+    theStateLabelEntriesInvalidateTheListAndTheVocabularies());
   it("F4.281: the maintenance entries re-read the Schedule Centre", () => theMaintenanceEntriesInvalidateTheScheduleCentre());
   it("an onboarding commit invalidates the dock's draft list (F4.255)", () => anOnboardingCommitInvalidatesTheDraftList());
   it("shows no before values for a create", () => aCreateHasNoBeforeValues());
