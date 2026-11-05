@@ -172,8 +172,8 @@ route only:
 
 ## Amendment 1 — adopt a template-less asset onto a template version (`F4.312`); a new catalog key from the Add panel (`F4.313`) (owner, 2026-11-05)
 
-**Status: Proposed — owner ruled 2026-11-05 in chat, one question at a
-time; the merge approves the text.** A line marked *(An)* states the owner's
+**Status: Accepted — 2026-11-05** (owner, in chat: "Accept, merge on
+green"). The owner ruled in chat, one question at a time. A line marked *(An)* states the owner's
 ruling n below; lines marked *drafter choice* were not asked. Backlog rows
 `F4.312` and `F4.313`. The owner chose one amendment for both rows (A0).
 
