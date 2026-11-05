@@ -63,8 +63,6 @@ const NOT_YET_WIDENED: readonly string[] = [
   "dashboard-builder.ts#dashboardWidgetPointDtoSchema", // removed by PR 5
   "operations.ts#energyTopConsumerSchema", // removed by PR 6 (code field is `code`, Q1)
   "energy-organization-views.ts#energyAbnormalEntrySchema", // removed by PR 6 (code field is `code`, Q1)
-  "template-migration.ts#templateMigrationAssetDtoSchema", // removed by PR 8 (Q5)
-  "template-adoption.ts#templateAdoptionAssetPlanDtoSchema", // removed by PR 8 (Q5)
 ];
 
 /**

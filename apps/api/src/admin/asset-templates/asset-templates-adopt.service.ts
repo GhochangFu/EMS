@@ -7,7 +7,15 @@ import {
 } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 
-import { assetPoints, assetTemplates, assets, automationRules, dashboards } from "@bms/db";
+import {
+  assetPoints,
+  assetTemplates,
+  assets,
+  automationRules,
+  dashboards,
+  locations,
+  rtus,
+} from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   AdoptAssetsBody,
@@ -328,6 +336,9 @@ export class AssetTemplateAdoptionService {
         id: assets.id,
         code: assets.code,
         name: assets.name,
+        // ADR 0111 — the plan rows name the asset `<code> · <RTU>`.
+        rtuName: rtus.displayName,
+        locationName: locations.name,
         organizationId: assets.organizationId,
         domain: assets.domain,
         templateId: assets.templateId,
@@ -335,6 +346,8 @@ export class AssetTemplateAdoptionService {
         sourceDataKeyVars: assets.sourceDataKeyVars,
       })
       .from(assets)
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+      .leftJoin(locations, eq(assets.locationId, locations.id))
       .where(inArray(assets.id, body.assetIds));
     const byId = new Map(selected.map((asset) => [asset.id, asset]));
     const missing = body.assetIds.filter((id) => !byId.has(id));

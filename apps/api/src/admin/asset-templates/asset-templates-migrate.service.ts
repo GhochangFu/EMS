@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 
-import { assetPoints, assetTemplates, assets, templatePoints } from "@bms/db";
+import { assetPoints, assetTemplates, assets, locations, rtus, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   JwtPayload,
@@ -464,6 +464,9 @@ export class AssetTemplateMigrationService {
         code: assets.code,
         name: assets.name,
         rtuId: assets.rtuId,
+        // ADR 0111 — the preview rows name the asset `<code> · <RTU>`.
+        rtuName: rtus.displayName,
+        locationName: locations.name,
         templateId: assets.templateId,
         // `F4.64` — the access check filters on this in memory rather than
         // asking the database once per asset. Free: this row is already read.
@@ -473,6 +476,8 @@ export class AssetTemplateMigrationService {
         sourceDataKeyVars: assets.sourceDataKeyVars,
       })
       .from(assets)
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+      .leftJoin(locations, eq(assets.locationId, locations.id))
       .where(inArray(assets.id, body.assetIds));
 
     const found = new Set(selected.map((a) => a.id));
@@ -672,6 +677,8 @@ export class AssetTemplateMigrationService {
           dto: {
             assetId: asset.id,
             assetCode: asset.code,
+            assetRtuName: asset.rtuName,
+            assetLocationName: asset.locationName,
             assetName: asset.name,
             fromVersionId: source.id,
             fromVersion: source.version,

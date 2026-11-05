@@ -41,6 +41,7 @@ import {
   assertOneDashboard,
   assertOneSeededRule,
   assertTheEngineReadsTheRowAsTheOverride,
+  assertThePreviewNamesTheRtuAndTheLocation,
   assertTheHistoryIsKept,
   assertTheMeasuredRowIsUnchanged,
   assertTheMissingPointIsUnmappedWithNoRtu,
@@ -186,6 +187,8 @@ describe.skipIf(!connectionString)("F4.312 — adopting a template-less asset", 
       assertADomainMismatchRefuses(pool as pg.Pool, svc, fx));
     it("recomputes at apply after a clean preview (owner ruling 1)", async () =>
       assertApplyRecomputesAfterACleanPreview(pool as pg.Pool, svc, fx));
+    it("names each plan row's RTU and location, null for an RTU-less asset (F4.316)", async () =>
+      assertThePreviewNamesTheRtuAndTheLocation(pool as pg.Pool, svc, fx));
     it("answers 403 for an asset outside the caller's scope (A10)", async () =>
       assertAnAssetOutsideTheCallersScopeIs403(pool as pg.Pool, svc, fx));
     it("answers 409 for an unpublished version", async () =>

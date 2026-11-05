@@ -126,6 +126,8 @@ export const templateAdoptionInheritedDefaultsDtoSchema = z.object({
 export const templateAdoptionAssetPlanDtoSchema = z.object({
   assetId: z.string(),
   assetCode: z.string(),
+  assetRtuName: z.string().nullable(),
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   kept: z.array(z.string()),
   added: z.array(templateAdoptionAddedPointDtoSchema),

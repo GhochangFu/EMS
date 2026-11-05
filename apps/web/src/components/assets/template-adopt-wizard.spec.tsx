@@ -71,6 +71,8 @@ function preview(extra: Partial<TemplateAdoptionPreviewResponse> = {}): Template
       {
         assetId: ASSET.id,
         assetCode: "FDR-01",
+        assetRtuName: "Lotapata I",
+        assetLocationName: "Lotapata",
         assetName: "Feeder one",
         kept: ["kw"],
         added: [{ pointKey: "pf", sourceDataKey: "FDR-01.pf", unit: null }],
@@ -155,6 +157,45 @@ export async function thePreviewListsKeptAddedAndConverted(): Promise<void> {
   expect(
     [...plan.querySelectorAll("p")].map((line) => line.textContent).slice(1),
   ).toEqual(["Kept: kw", "Added (unmapped): pf", "Converted (standalone calc → template override): kva"]);
+}
+
+// Catches: the plan row naming the asset by its bare code (ADR 0111): `<code> · <RTU>`.
+export async function thePlanRowNamesTheAssetByItsRtu(): Promise<void> {
+  stubApi();
+  renderWizard();
+  await pickFeeder();
+  const plan = await screen.findByRole("region", { name: "Plan for FDR-01" });
+  expect(plan.querySelector("p")?.textContent).toBe("FDR-01 · Lotapata I Feeder one");
+}
+
+// Catches: an RTU-less asset losing its location, or a `null` printed as a name.
+export async function anRtuLessPlanRowNamesTheLocation(): Promise<void> {
+  const base = preview();
+  stubApi({ ...base, assets: [{ ...base.assets[0]!, assetRtuName: null }] });
+  renderWizard();
+  await pickFeeder();
+  const plan = await screen.findByRole("region", { name: "Plan for FDR-01" });
+  expect(plan.querySelector("p")?.textContent).toBe("FDR-01 · Lotapata Feeder one");
+}
+
+// Catches: a row with neither name growing a dangling separator.
+export async function aPlanRowWithNeitherNameIsTheBareCode(): Promise<void> {
+  const base = preview();
+  stubApi({ ...base, assets: [{ ...base.assets[0]!, assetRtuName: null, assetLocationName: null }] });
+  renderWizard();
+  await pickFeeder();
+  const plan = await screen.findByRole("region", { name: "Plan for FDR-01" });
+  expect(plan.querySelector("p")?.textContent).toBe("FDR-01 Feeder one");
+}
+
+// Catches: the where part truncated (ADR 0111: it wraps, never clips).
+export async function theWherePartWrapsAndIsNeverTruncated(): Promise<void> {
+  stubApi();
+  renderWizard();
+  await pickFeeder();
+  const where = await screen.findByTestId("asset-where");
+  expect(where.className).toContain("break-words");
+  expect(where.className).not.toMatch(/truncate|line-clamp|overflow-hidden/);
 }
 
 // Catches: the preview sent another selection or another version than the one picked.

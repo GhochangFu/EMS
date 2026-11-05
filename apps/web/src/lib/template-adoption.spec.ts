@@ -63,6 +63,8 @@ function plan(overrides: Partial<TemplateAdoptionAssetPlanDto>): TemplateAdoptio
   return {
     assetId: "a-1",
     assetCode: "FDR-01",
+    assetRtuName: null,
+    assetLocationName: null,
     assetName: "Feeder 1",
     kept: [],
     added: [],
