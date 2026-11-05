@@ -640,6 +640,8 @@ export async function addPointIsDisabledAtTheBound(): Promise<void> {
   renderWithPoints(["kw", "flow", "level"]);
   expect(screen.getByRole("combobox", { name: "Add point" })).toBeDisabled();
   expect(screen.getByText("3 of 3")).toBeInTheDocument();
+  // The hint is the disabled select's description, so a screen reader hears why.
+  expect(screen.getByRole("combobox", { name: "Add point" })).toHaveAccessibleDescription("3 of 3");
   cleanup();
   renderWithPoints(["kw", "flow"]);
   expect(await addPointSelect()).toBeEnabled();

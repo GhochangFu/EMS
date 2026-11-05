@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useId } from "react";
 import { MIMIC_HEADLINE_POINTS } from "@bms/shared/contracts";
 
 import { fetchAdminPointKeys } from "../../api/admin/point-keys";
@@ -30,6 +31,7 @@ export function PointListField({
   const catalog = catalogQ.data?.items;
   const nameOf = new Map((catalog ?? []).map((item) => [item.code, item.name]));
   const full = pointKeys.length >= MIMIC_HEADLINE_POINTS;
+  const hintId = useId();
 
   function move(index: number, by: -1 | 1): void {
     const next = [...pointKeys];
@@ -99,6 +101,7 @@ export function PointListField({
         Add point
         <select
           aria-label="Add point"
+          aria-describedby={full ? hintId : undefined}
           value=""
           disabled={full}
           onChange={(event) => {
@@ -116,7 +119,7 @@ export function PointListField({
             ))}
         </select>
       </label>
-      {full ? <p className="text-[10px] text-ink-muted">{`${MIMIC_HEADLINE_POINTS} of ${MIMIC_HEADLINE_POINTS}`}</p> : null}
+      {full ? <p id={hintId} className="text-[10px] text-ink-muted">{`${MIMIC_HEADLINE_POINTS} of ${MIMIC_HEADLINE_POINTS}`}</p> : null}
     </div>
   );
 }
