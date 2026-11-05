@@ -236,8 +236,9 @@ export async function anAssetRowIsCheckedOnItsAsset(ctx: ResolverCtx): Promise<v
 
   const asset = fixture({ kind: "asset", param: "id" });
   const byId = recorder();
+  // `F4.316` PR 7 (Q4): the card names the asset by its label — this asset has no RTU, so its site.
   expect(await resolverWith(ctx, byId.access).resolve(asset, { id: ctx.assetA }, {}, [ctx.orgA], JWT)).toMatchObject({
-    targetName: RESOLVER_NAMES.assetA,
+    targetName: `${ctx.assetCodeA} · ${RESOLVER_NAMES.locationA}`,
   });
   expect(byId.calls).toEqual([["canManageAsset", ctx.assetA]]);
 }
@@ -263,7 +264,7 @@ export async function anAssetMoveNeedsTheNewSiteToo(ctx: ResolverCtx): Promise<v
   const allowed = recorder();
   expect(await resolverWith(ctx, allowed.access).resolve(entry, { id: ctx.assetA }, move, [ctx.orgA], JWT)).toMatchObject({
     organizationId: ctx.orgA,
-    targetName: RESOLVER_NAMES.assetA,
+    targetName: `${ctx.assetCodeA} · ${RESOLVER_NAMES.locationA}`,
   });
   // The same caller, without `locationId`: the route asks nothing more, so neither does the resolver.
   const rename = recorder({ canManageLocation: false });

@@ -40,6 +40,7 @@ import { AccessControlService } from "../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
 import { resolveAdoptTarget } from "./copilot-adopt-targets";
+import { readAssetTarget } from "./copilot-asset-targets";
 import { assetKindAdmits, findCalcPointBatch, mayWriteCalcPointBatch } from "./copilot-calc-point-targets";
 import { findRuleBatch } from "./copilot-rule-targets";
 import { pointKeyStateName, readPointKeyState, seededAtPropose, seededPointKeyStateRefusal } from "./copilot-point-key-state-targets";
@@ -698,19 +699,8 @@ export class CopilotTargetResolver implements CopilotTargets {
         const row = await readConvertibleSchedule(tx, id, organizationId);
         return row ? { organizationId, name: row.title, assetId: row.assetId, workOrder: row.workOrder, convertible: row.convertible } : null;
       }
-      case "asset": {
-        const [row] = await tx
-          .select({ name: assets.name, templateId: assets.templateId })
-          .from(assets)
-          .where(and(eq(assets.id, id), eq(assets.organizationId, organizationId)))
-          .limit(1);
-        if (!row) return null;
-        const points = await tx
-          .select({ pointKey: assetPoints.pointKey })
-          .from(assetPoints)
-          .where(and(eq(assetPoints.assetId, id), eq(assetPoints.organizationId, organizationId)));
-        return { organizationId, name: row.name, templateId: row.templateId, pointKeys: points.map((point) => point.pointKey) };
-      }
+      case "asset":
+        return readAssetTarget(tx, id, organizationId);
       // `F4.254` PR 3: the deploy kind reads the same row; only its authority differs (`mayManage`).
       case "assetTemplate":
       case "assetTemplateDeploy": {
