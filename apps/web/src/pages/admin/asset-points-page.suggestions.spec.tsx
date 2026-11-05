@@ -3,7 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
-import type { AssetPointCalcConfigDto } from "@bms/shared";
+import type { AssetPointCalcConfigDto, CalcDialect } from "@bms/shared";
 
 import * as api from "../../api/admin/asset-points";
 import * as templatesApi from "../../api/admin/asset-templates";
@@ -65,7 +65,7 @@ function pointKey(code: string) {
   return { id: `id-${code}`, code, name: `${code} name`, domain: "electrical", unit: null, description: null, active: true, createdAt: new Date(0).toISOString(), headlineRank: null, trendDefault: false };
 }
 
-type StockTiming = { calcTrigger: "streaming" | "scheduled"; formulaDialect: string; calcIntervalSeconds: number | null; maxInputAgeSeconds: number | null };
+type StockTiming = { calcTrigger: "streaming" | "scheduled"; formulaDialect: CalcDialect; calcIntervalSeconds: number | null; maxInputAgeSeconds: number | null };
 
 /** The stock `kw` suggestion's timing: v2, scheduled every 120 s, valid for 900 s. */
 const STOCK_TIMING: StockTiming = { formulaDialect: "bms-calc-v2", calcTrigger: "scheduled", calcIntervalSeconds: 120, maxInputAgeSeconds: 900 };
