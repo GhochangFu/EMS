@@ -8,6 +8,7 @@ import type { AccessControlService } from "../../auth/access-control.service";
 import { AssetTemplatesAdminController } from "./asset-templates.controller";
 import type { AssetTemplatesAdminService } from "./asset-templates.service";
 import { AssetTemplatesStockService } from "./asset-templates-stock.service";
+import type { AssetTemplateAdoptionService } from "./asset-templates-adopt.service";
 import type { AssetDashboardsInstantiateService } from "./asset-dashboards-instantiate.service";
 import type { AssetTemplateInstantiationService } from "./asset-templates-instantiate.service";
 import type { AssetTemplateMigrationService } from "./asset-templates-migrate.service";
@@ -255,6 +256,8 @@ export async function assertTheControllerAnswers400WithTheSchemasOwnMessage(): P
     // `F3.2` / ADR 0067 decision 4 — the sixth, and this case never reaches it
     // either: the 400 is raised by the stock import's own schema parse.
     {} as unknown as AssetDashboardsInstantiateService,
+    // `F4.312` — the seventh, adoption; never reached here either.
+    {} as unknown as AssetTemplateAdoptionService,
   );
 
   let caught: unknown;

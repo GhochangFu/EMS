@@ -409,6 +409,8 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   manualReadingsBodySchema: STRICT(ALREADY),
   "manualReadingsBodySchema/rows[]": STRICT(ALREADY),
   migrateAssetsBodySchema: STRICT(CALLER_ERROR),
+  // `F4.312` (ADR 0109 Amendment 1): the adoption body, migrate's shape.
+  adoptAssetsBodySchema: STRICT(CALLER_ERROR),
   patchDraftBodySchema: STRICT(CALLER_ERROR),
   "patchDraftBodySchema/draft": { strict: false, because: THREE_PRODUCERS },
   "patchDraftBodySchema/draft/assetPoints[]": { strict: false, because: THREE_PRODUCERS },

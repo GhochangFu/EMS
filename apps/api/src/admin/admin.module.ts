@@ -20,6 +20,7 @@ import { AssetTemplateInstantiationService } from "./asset-templates/asset-templ
 import { CalcParametersAdminController } from "./calc-parameters/calc-parameters.controller";
 import { CalcParametersAdminService } from "./calc-parameters/calc-parameters.service";
 import { AssetTemplateMigrationService } from "./asset-templates/asset-templates-migrate.service";
+import { AssetTemplateAdoptionService } from "./asset-templates/asset-templates-adopt.service";
 import { AssetTemplateSeededRulesService } from "./asset-templates/asset-templates-seeded-rules.service";
 import { AssetTemplatesStockService } from "./asset-templates/asset-templates-stock.service";
 import { AssetTemplatesAdminController } from "./asset-templates/asset-templates.controller";
@@ -173,6 +174,8 @@ import { UsersService } from "./users/users.service";
     // default dashboards: the instantiate hook and POST :id/default-dashboards.
     AssetDashboardsInstantiateService,
     AssetTemplateMigrationService,
+    // F4.312 / ADR 0109 Amendment 1 — adopting a template-less asset onto a version.
+    AssetTemplateAdoptionService,
     // E2.4 / ADR 0058 decision 8 — the seeded-rules drift list and re-apply.
     AssetTemplateSeededRulesService,
     // F2.13 / ADR 0052. The catalog is repository data behind a token so the

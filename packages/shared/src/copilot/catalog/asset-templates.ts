@@ -207,6 +207,12 @@ const PARTIAL_COMMIT =
   "commits one transaction per chunk, so a failed call leaves earlier chunks applied (ADR 0067 Q7); decision 3 does not name it — manual";
 const WRITES_NOTHING =
   "a read through POST: it writes nothing (ADR 0039 decision 2); precedent: onboarding /validate";
+// `F4.312` PR 1: the adopt route lands before its catalog entry; PR 2 (ADR 0099
+// Amendment 12) adds `assetTemplate.adopt` and removes this row.
+const ADOPT_ENTRY_NEXT =
+  "F4.312 PR 1 lands the route; PR 2 adds the assetTemplate.adopt entry (ADR 0109 Amendment 1 decision 5) and removes this row";
+const ADOPTION_PREVIEW_WRITES_NOTHING =
+  "a read through POST: it writes nothing (ADR 0109 Amendment 1 decision 3); precedent: migration-preview";
 
 /**
  * The area's write routes that are not entries: four stay manual for good
@@ -218,4 +224,10 @@ export const ASSET_TEMPLATE_PENDING: readonly ExcludedRoute[] = [
   { method: "POST", path: "/admin/asset-templates/:id/seeded-rules/reapply", reason: OVERWRITES_TUNED },
   { method: "POST", path: "/admin/asset-templates/:id/default-dashboards", reason: PARTIAL_COMMIT },
   { method: "POST", path: "/admin/asset-templates/:id/migration-preview", reason: WRITES_NOTHING },
+  { method: "POST", path: "/admin/asset-templates/:id/adopt", reason: ADOPT_ENTRY_NEXT },
+  {
+    method: "POST",
+    path: "/admin/asset-templates/:id/adoption-preview",
+    reason: ADOPTION_PREVIEW_WRITES_NOTHING,
+  },
 ];

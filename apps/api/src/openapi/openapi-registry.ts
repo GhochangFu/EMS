@@ -58,6 +58,8 @@ import {
   putOrgTrendPointsBodySchema,
   siteTrendStripQuerySchema,
   siteSegmentViewsQuerySchema,
+  // `F4.312` (ADR 0109 Amendment 1): the adoption body, shared by preview and apply.
+  adoptAssetsBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -258,6 +260,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   AssetTemplatesAdminController_list: templateStatusQuerySchema,
   AssetTemplatesAdminController_migrate: migrateAssetsBodySchema,
   AssetTemplatesAdminController_previewMigration: migrateAssetsBodySchema,
+  // `F4.312` (ADR 0109 Amendment 1 decision 4) — one body for both routes, as migrate's.
+  AssetTemplatesAdminController_adopt: adoptAssetsBodySchema,
+  AssetTemplatesAdminController_previewAdoption: adoptAssetsBodySchema,
   // `E2.4` (ADR 0058 decision 8) — the per-rule re-apply body.
   AssetTemplatesAdminController_reapplySeededRules: reapplySeededRulesBodySchema,
   AssetTemplatesAdminController_update: updateAssetTemplateBodySchema,
