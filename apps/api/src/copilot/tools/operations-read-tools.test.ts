@@ -10,6 +10,7 @@ import {
   listUsersRefusesAnOrganizationOutsideTheScope,
   listWorkOrdersCapsAt25,
   listWorkOrdersFiltersByStatus,
+  listWorkOrdersItemsCarryTheAssetLabelParts,
   listWorkOrdersNamesTheOrganizationsItRead,
   listWorkOrdersReadsEachOrganizationWithItsAssets,
   listWorkOrdersRefusesAnOrganizationOutsideTheScope,
@@ -24,6 +25,7 @@ import {
 describe("F4.284 — list_work_orders and list_users (ADR 0106; DC1, DC7)", () => {
   it("One call per allowed organization, each with that organization's readable assets.", () => listWorkOrdersReadsEachOrganizationWithItsAssets());
   it("The result names the organizations it read, and their items.", () => listWorkOrdersNamesTheOrganizationsItRead());
+  it("Each item carries the asset code, RTU name and location name.", () => listWorkOrdersItemsCarryTheAssetLabelParts());
   it("DC7: search reaches the service as titleSearch, so a match past the 100-row cap is found.", () => listWorkOrdersSearchesInTheService());
   it("DC7: a status filter reaches the service and narrows.", () => listWorkOrdersFiltersByStatus());
   it("The items are cut at 25, and truncated says there are more.", () => listWorkOrdersCapsAt25());

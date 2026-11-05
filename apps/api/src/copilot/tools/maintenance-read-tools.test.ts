@@ -9,6 +9,7 @@ import {
   listIsCalledPerOrganizationWithItsAssetsAndNoWindow,
   searchIsPassedToTheServiceAsTitleSearch,
   searchNarrowsBeforeTheCap,
+  theProjectionCarriesTheAssetLabelParts,
   theProjectionKeepsWhatAProposalNeeds,
   withoutTheFlagAnInactiveRowIsNotListed,
   locationIdNarrowsToTheSubtree,
@@ -30,6 +31,7 @@ describe("F4.281 — list_maintenance_schedules (ADR 0099 Amendment 8 D7, owner 
   it("cuts 40 rows to 25 with truncated", () => fortyRowsAreCutToTwentyFive());
   it("refuses an organization outside the allowed set without a read", () => anOrganizationOutsideTheAllowedSetIsRefused());
   it("keeps what a proposal needs and drops the free text", () => theProjectionKeepsWhatAProposalNeeds());
+  it("carries the asset's RTU name and location name", () => theProjectionCarriesTheAssetLabelParts());
   it("F4.291: locationId narrows to the subtree's readable assets", () => locationIdNarrowsToTheSubtree());
   it("F4.291: a cursor resumes at the offset", () => aCursorResumesAtTheOffset());
   it("F4.291: the last page past the service's row cap is truncated, with no cursor", () => theLastPagePastTheServiceCapIsTruncated());
