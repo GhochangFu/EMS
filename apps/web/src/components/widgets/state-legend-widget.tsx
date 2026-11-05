@@ -13,12 +13,16 @@ import { StateLegend } from "../control-room/state-legend";
  * design: it binds nothing and reads only the severity vocabulary, so a loading, error or empty
  * placeholder would hide a key that is true whatever the widget's data. `status` stays on the
  * props only so the two dispatchers keep one call shape for every widget.
+ *
+ * `F4.309` — `StateLegend` draws two sibling groups (the states, then the switching states when
+ * there are any); the pills' wrapper lays them out in one row.
  */
 export function StateLegendWidget({ title }: { title: string; status: WidgetStatus }) {
   return (
     <div className="surface-raised flex h-full items-center gap-3 overflow-hidden px-3">
       <span className="min-w-0 truncate text-[11px] font-medium uppercase tracking-wide text-ink-muted">{title}</span>
-      <div className="shrink-0">
+      {/* `F4.309` — a row, so the "Switching states" group sits beside "State legend", not under it. */}
+      <div className="flex shrink-0 items-center gap-3">
         <StateLegend />
       </div>
     </div>

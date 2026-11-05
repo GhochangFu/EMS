@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
-import type { AlarmSeverityDto, VocabulariesResponse } from "@bms/shared";
+import type { AlarmSeverityDto, SwitchingStateDto, VocabulariesResponse } from "@bms/shared";
 
 import { StateLegend } from "./state-legend";
 
@@ -30,7 +30,10 @@ const SEVERITIES: AlarmSeverityDto[] = [
   { code: "high", label: "High", tone: "warning", rank: 25, active: true },
 ];
 
-function renderLegend(severities: AlarmSeverityDto[] = SEVERITIES): void {
+function renderLegend(
+  severities: AlarmSeverityDto[] = SEVERITIES,
+  switchingStates: SwitchingStateDto[] = [],
+): void {
   mocks.fetchVocabularies.mockImplementation(
     (): Promise<VocabulariesResponse> =>
       Promise.resolve({
@@ -38,6 +41,7 @@ function renderLegend(severities: AlarmSeverityDto[] = SEVERITIES): void {
         assetDomains: [],
         alarmSeverities: severities,
         alarmSkills: [],
+        switchingStates,
       } as unknown as VocabulariesResponse),
   );
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -91,4 +95,85 @@ export async function omitsAnInactiveSeverity(): Promise<void> {
   ]);
   const labels = await legendLabels();
   expect([labels.includes("Minor"), labels.includes("High")]).toEqual([false, true]);
+}
+
+// ---------------------------------------------------------------------------
+// `F4.309` T10 (ADR 0088 Amendment 3 decision 5, plan C16) — the switching states.
+// ---------------------------------------------------------------------------
+
+/**
+ * The seven seeded rows plus two admin rows, out of every order on purpose: the valve and the
+ * damper repeat `(OPEN, flowing)` and `(CLOSED, shut)`, `EARTHED` shares the `open` tone with
+ * `OPEN` and sorts before it, and one label is markup, which must render as its own text.
+ */
+const SWITCHING: SwitchingStateDto[] = [
+  { pointKey: "valve_open", value: 0, label: "CLOSED", tone: "shut" },
+  { pointKey: "breaker_trip", value: 1, label: "TRIPPED", tone: "tripped" },
+  { pointKey: "damper_open", value: 1, label: "OPEN", tone: "flowing" },
+  { pointKey: "breaker_main", value: 0, label: "OPEN", tone: "open" },
+  { pointKey: "valve_open", value: 1, label: "OPEN", tone: "flowing" },
+  { pointKey: "breaker_main", value: 1, label: "CLOSED", tone: "closed" },
+  { pointKey: "damper_open", value: 0, label: "CLOSED", tone: "shut" },
+  { pointKey: "isolator_pos", value: 2, label: "EARTHED", tone: "open" },
+  { pointKey: "isolator_pos", value: 3, label: "<b>TEST</b>", tone: "tripped" },
+];
+
+/** The switching group's entries, as `[label, data-breaker-state]`, in DOM order. */
+async function switchingEntries(): Promise<[string, string | null][]> {
+  const group = await screen.findByRole("group", { name: "Switching states" });
+  return Array.from(group.children).map((child) => [
+    child.textContent ?? "",
+    child.querySelector("[data-breaker-state]")?.getAttribute("data-breaker-state") ?? null,
+  ]);
+}
+
+/**
+ * Each distinct `(label, tone)` once, in tone order (`pointKeyStateToneSchema.options`: closed,
+ * open, tripped, flowing, shut), then by label, each drawing the switch in its tone.
+ */
+export async function listsEachSwitchingStateOnceInToneThenLabelOrder(): Promise<void> {
+  renderLegend(SEVERITIES, SWITCHING);
+  expect(await switchingEntries()).toEqual([
+    ["CLOSED", "closed"],
+    ["EARTHED", "open"],
+    ["OPEN", "open"],
+    ["<b>TEST</b>", "tripped"],
+    ["TRIPPED", "tripped"],
+    ["OPEN", "flowing"],
+    ["CLOSED", "shut"],
+  ]);
+}
+
+/** Each entry draws the mimic's switch (`BreakerSwitch`), hidden from a screen reader; the label names it. */
+export async function eachEntryDrawsTheMimicSwitchGlyph(): Promise<void> {
+  renderLegend(SEVERITIES, SWITCHING);
+  const group = await screen.findByRole("group", { name: "Switching states" });
+  const switches = group.querySelectorAll('[data-testid="mimic-breaker-switch"]');
+  expect(switches).toHaveLength(group.children.length);
+  for (const glyph of Array.from(switches)) {
+    expect(glyph.closest('[aria-hidden="true"]')).not.toBeNull();
+  }
+}
+
+/** A label is text, never markup: `<b>TEST</b>` shows as written and adds no `<b>`. */
+export async function rendersALabelAsPlainText(): Promise<void> {
+  renderLegend(SEVERITIES, SWITCHING);
+  const group = await screen.findByRole("group", { name: "Switching states" });
+  expect(within(group).getByText("<b>TEST</b>")).toBeInTheDocument();
+  expect(group.querySelector("b")).toBeNull();
+}
+
+/** The "State legend" group is unchanged beside the switching states: the same pills, the same order. */
+export async function keepsTheStateLegendGroupUnchangedBesideThem(): Promise<void> {
+  renderLegend(SEVERITIES, SWITCHING);
+  await switchingEntries();
+  expect(await legendLabels()).toEqual(["Normal", "Info", "Warning", "High", "Critical", "Offline"]);
+}
+
+/** No switching state → no group. The severities are the positive control that the read settled. */
+export async function drawsNoSwitchingGroupWhenThereAreNone(): Promise<void> {
+  renderLegend(SEVERITIES, []);
+  await legendLabels();
+  expect(screen.queryByRole("group", { name: "Switching states" })).toBeNull();
+  expect(screen.queryByLabelText("Switching states")).toBeNull();
 }
