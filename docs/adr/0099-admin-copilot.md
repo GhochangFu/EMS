@@ -2072,3 +2072,64 @@ invalidation row. `tests/f3.85-catalog-coverage.test.ts`, the stepper and audit 
 the budget pass. Live (owner's local session): `propose_assetTemplate_adopt`
 is in an admin conversation's tool list, its card is red, and a batch with a
 pinned asset is refused before the card.
+
+## Amendment 13 — `pointKeyState.create`, `pointKeyState.update` (ADR 0088 Amendment 3, `F4.309`)
+
+**Status: proposed.** Drafted on 2026-11-05 against `main` at `07cfac1`. The
+owner ruled on 2026-11-05, in the `F4.309` plan (question 2 (b), against the
+recommendation), that the copilot gets create and edit for state labels, and
+no delete. Two gate questions were put to the owner one at a time on 2026-11-05; both
+were ruled as recommended. The merge of this amendment approves it.
+
+### Facts the amendment rests on
+
+- ADR 0088 Amendment 3: `POST /api/v1/admin/point-key-states` and
+  `PATCH /api/v1/admin/point-key-states/:id`, global `admin` only
+  (`requireGlobalAdmin`), on `fleetDb`, one audit row each with no
+  organization. The 7 seeded rows answer 409 on `PATCH`, and a `POST` of a
+  seeded pair is 409. The `PATCH` body is `{ label?, tone? }`, strict.
+- `bms.point_key_states` has no organization: like a point key, a change is
+  fleet-wide (`pointKey.create` is a `fleet` target).
+- The copilot reads fleet vocabularies through list tools
+  (`list-asset-roles.tool.ts`); it has none for state labels.
+- `DELETE_ALLOWANCE` does not change: the owner ruled no delete.
+
+### Decisions
+
+1. **Two catalog entries** in a new `packages/shared/src/copilot/catalog/point-key-states.ts`:
+   - `pointKeyState.create` — `POST /admin/point-key-states`, body
+     `createPointKeyStateBodySchema`, risk `create`, target `{ kind: "fleet" }`.
+   - `pointKeyState.update` — `PATCH /admin/point-key-states/:id`, body
+     `updatePointKeyStateBodySchema`, risk `edit`, a new target kind
+     `pointKeyState` (param `id`): the resolver reads the row, names it
+     "`<key>` = `<value>` (`<label>`)", requires the global admin, and refuses
+     an unknown id.
+2. The summaries say the label is fleet-wide and never that it belongs to the
+   bound organization.
+3. **A read tool** `list_point_key_states` (Q1) answers every row: id, key,
+   value, label, tone and `seeded`, ordered by key then value, for the global
+   admin's conversation; it reads on the same path as the admin list. It is
+   read-only and writes no audit row.
+4. **A seeded row is refused twice** (Q2): at propose, the resolver refuses a
+   `pointKeyState.update` of a seeded row (no card; the reply says the row is
+   seeded and read-only) and a `pointKeyState.create` of a seeded pair; at
+   apply, the route's 409 still guards.
+5. **No delete.** `DELETE /admin/point-key-states/:id` is an excluded route,
+   and `DELETE_ALLOWANCE` does not change.
+
+### Gate questions
+
+1. **Q1 — how the copilot finds a row to edit.** (a) A read tool
+   `list_point_key_states` (id, key, value, label, tone, `seeded`), as
+   `list_asset_roles`; (b) no read tool: the copilot edits only a row whose id
+   the user gives. *Recommended: (a).*
+2. **Q2 — a seeded row.** (a) Refused at propose (no card is shown, the reply
+   says the row is seeded) and again at apply (the route's 409); (b) refused at
+   apply only. *Recommended: (a).*
+
+### Rulings
+
+1. **Q1 (a) — a read tool**, `list_point_key_states`. Ruled 2026-11-05, as
+   recommended.
+2. **Q2 (a) — refused at propose and at apply.** Ruled 2026-11-05, as
+   recommended.
