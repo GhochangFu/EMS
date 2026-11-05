@@ -188,6 +188,8 @@ export const adminAssetSummaryDtoSchema = z.object({
   rtuDisplayName: z.string().nullable(),
   organizationId: z.string().nullable(),
   organizationCode: z.string().nullable(),
+  /** `F4.313` follow-up: the asset's domain code, so the calculated-point key picker lists its keys first. */
+  domain: z.string(),
 });
 
 // ---------------------------------------------------------------------------

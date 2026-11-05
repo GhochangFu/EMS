@@ -86,6 +86,8 @@ type CalcPointPanelProps = {
   onSubmit: (pointKey: string, body: CalcPointSetBody, newKey: CreatePointKeyBody | null) => void;
   /** `F4.313` (A12): offer **New key** on Add — the page passes it for a global administrator only. */
   allowNewKey?: boolean;
+  /** `F4.313` follow-up: the asset's domain, so Add lists its keys first; `null` lists all. */
+  assetDomain?: string | null;
   /** Edit only: opens the `calcPoint.delete` wizard. */
   onDelete: (() => void) | null;
   onCancel: () => void;
@@ -100,6 +102,7 @@ export function CalcPointPanel({
   onEdited,
   onSubmit,
   allowNewKey = false,
+  assetDomain = null,
   onDelete,
   onCancel,
 }: CalcPointPanelProps) {
@@ -198,6 +201,7 @@ export function CalcPointPanel({
             exclude={new Set(rows.map((row) => row.pointKey))}
             disabled={saving}
             allowNew={allowNewKey}
+            domain={assetDomain}
             onChange={pickKey}
           />
           {newKey ? <NewPointKeyFields draft={newKey} disabled={saving} onChange={editNewKey} /> : null}
