@@ -14,8 +14,8 @@ describe("F4.308 mimic layout editor — Preview with site", () => {
   const cases = Object.entries(spec);
 
   it("has its claims", () => {
-    if (cases.length < 11) {
-      throw new Error(`expected at least 11 claims, found ${cases.length}`);
+    if (cases.length < 18) {
+      throw new Error(`expected at least 18 claims, found ${cases.length}`);
     }
   });
 

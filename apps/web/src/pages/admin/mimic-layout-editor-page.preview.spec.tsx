@@ -26,7 +26,7 @@ import * as systemStatusApi from "../../api/system-status";
 import * as vocabApi from "../../api/vocabularies";
 import { previewResponseFixture } from "../../components/mimic-editor/mimic-preview-canvas.spec";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
-import { editorLayoutFromWriteBody, fromPreset } from "../../lib/mimic-editor";
+import { editorLayoutFromWriteBody, fromPreset, type EditorNode, type EditorPipe } from "../../lib/mimic-editor";
 import type { AuthUser } from "../../stores/auth-store";
 
 import { MimicLayoutEditorPage } from "./mimic-layout-editor-page";
@@ -39,15 +39,16 @@ import { MimicLayoutEditorPage } from "./mimic-layout-editor-page";
  * recipe); every read is stubbed. `mimic-layout-editor-page.preview.test.tsx` is the Vitest entry.
  */
 
-vi.mock("socket.io-client", () => ({
-  io: () => ({ on: () => undefined, disconnect: () => undefined }),
-}));
+const sockets = vi.hoisted(() => ({ io: vi.fn() }));
+
+vi.mock("socket.io-client", () => ({ io: sockets.io }));
 
 const ORG_ID = "22222222-2222-4222-8222-222222222222";
 const LAYOUT_ID = "11111111-1111-4111-8111-111111111111";
 const LOCATION_ID = "55555555-5555-4555-8555-555555555555";
 const EMPTY_LOCATION_ID = "66666666-6666-4666-8666-666666666666";
 const GROUP_ID = "44444444-4444-4444-8444-444444444444";
+const GROUP_2_ID = "77777777-7777-4777-8777-777777777777";
 
 const ADMIN = { id: "u1", email: "a@bms.local", displayName: "A", role: "organization_admin" } as unknown as AuthUser;
 
@@ -61,7 +62,10 @@ const LOCATIONS = {
 } as unknown as LocationsListResponse;
 
 const GROUPS = {
-  items: [{ id: GROUP_ID, code: "WT-1", name: "Water train 1", locationId: LOCATION_ID, organizationId: ORG_ID }],
+  items: [
+    { id: GROUP_ID, code: "WT-1", name: "Water train 1", locationId: LOCATION_ID, organizationId: ORG_ID },
+    { id: GROUP_2_ID, code: "WT-2", name: "Water train 2", locationId: LOCATION_ID, organizationId: ORG_ID },
+  ],
 } as unknown as AdminAssetGroupListResponse;
 
 function storedDto(version: number): MimicLayoutDto {
@@ -98,7 +102,18 @@ function allEnabledCatalog(): MimicSymbolLibrariesResponse {
   };
 }
 
+/** The server's order (`MimicLayoutsService.toDto`): nodes by (z, y, x, key), pipes by (fromKey, toKey). */
+function serverOrder(nodes: readonly EditorNode[], pipes: readonly EditorPipe[]) {
+  const byText = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+  return {
+    nodes: [...nodes].sort((a, b) => a.z - b.z || a.y - b.y || a.x - b.x || byText(a.key, b.key)),
+    pipes: [...pipes].sort((a, b) => byText(a.fromKey, b.fromKey) || byText(a.toKey, b.toKey)),
+  };
+}
+
 function stubAll() {
+  sockets.io.mockReset();
+  sockets.io.mockImplementation(() => ({ on: () => undefined, disconnect: () => undefined }));
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
   vi.spyOn(librariesApi, "fetchMimicSymbolLibraries").mockResolvedValue(allEnabledCatalog());
@@ -108,15 +123,15 @@ function stubAll() {
   vi.spyOn(api, "fetchMimicLayouts").mockResolvedValue({ items: [] });
   vi.spyOn(api, "fetchMimicLayout").mockResolvedValue(storedDto(4));
   vi.spyOn(api, "createMimicLayout").mockResolvedValue(storedDto(1));
-  // The saved DTO is what was PUT, so the editor holds no unsaved edit after a Save.
+  // The saved DTO is what was PUT, answered in the server's order (review H1), so the editor holds
+  // no unsaved edit after a Save even though a new panel (z 0) was appended last.
   const replace = vi.spyOn(api, "replaceMimicLayout").mockImplementation(async (_id: string, body: ReplaceMimicLayoutBody) => {
     const layout = editorLayoutFromWriteBody(body);
     return {
       ...storedDto(body.version + 1),
       name: layout.name,
       slug: layout.slug,
-      nodes: [...layout.nodes],
-      pipes: [...layout.pipes],
+      ...serverOrder(layout.nodes, layout.pipes),
       symbolLibraries: [...layout.symbolLibraries],
     };
   });
@@ -157,9 +172,10 @@ async function pickSite(locationId = LOCATION_ID): Promise<void> {
   await userEvent.selectOptions(site, locationId);
 }
 
-async function pickGroup(): Promise<void> {
+async function pickGroup(groupId = GROUP_ID): Promise<void> {
   const group = await screen.findByRole("combobox", { name: "Asset group" });
-  await userEvent.selectOptions(group, GROUP_ID);
+  await waitFor(() => expect(within(group).getAllByRole("option").length).toBeGreaterThan(1));
+  await userEvent.selectOptions(group, groupId);
 }
 
 /** Opens the preview on the stored layout, bound to the one group. */
@@ -297,4 +313,85 @@ export async function turningItOffRestoresTheEditorWithItsEdits(): Promise<void>
   expect(screen.getAllByTestId("mimic-editor-hit")).toHaveLength(count);
   expect(screen.getByRole("button", { name: "Panel" })).toBeInTheDocument();
   expect(screen.queryByTestId("mimic-preview-canvas")).toBeNull();
+}
+
+/** V12 (review M1) — picking a group keeps the focus on the group select; so does a second pick. */
+export async function pickingAGroupKeepsTheFocus(): Promise<void> {
+  renderAt(STORED);
+  await toggle();
+  await pickSite();
+  const group = await screen.findByRole("combobox", { name: "Asset group" });
+  await waitFor(() => expect(within(group).getAllByRole("option").length).toBeGreaterThan(1));
+  group.focus();
+  await userEvent.selectOptions(group, GROUP_ID);
+  await screen.findByTestId("mimic-preview-canvas");
+  expect(document.activeElement).toBe(screen.getByRole("combobox", { name: "Asset group" }));
+  expect(screen.getByRole("combobox", { name: "Asset group" })).toBe(group);
+  await userEvent.selectOptions(group, GROUP_2_ID);
+  await waitFor(() => expect(screen.getByRole("combobox", { name: "Asset group" })).toHaveValue(GROUP_2_ID));
+  expect(document.activeElement).toBe(group);
+}
+
+/** V13 (review M1) — the Save button and the checkbox survive the preview turning on and off. */
+export async function theToolbarStaysMountedAcrossModes(): Promise<void> {
+  renderAt(STORED);
+  const save = await screen.findByRole("button", { name: "Save" });
+  const checkbox = await screen.findByRole("checkbox", { name: "Preview with site" });
+  await toggle();
+  await pickSite();
+  await pickGroup();
+  await screen.findByTestId("mimic-preview-canvas");
+  await toggle();
+  await screen.findByTestId("mimic-editor-canvas");
+  expect(screen.getByRole("button", { name: "Save" })).toBe(save);
+  expect(screen.getByRole("checkbox", { name: "Preview with site" })).toBe(checkbox);
+}
+
+/** V14 (review L1) — no socket before a group is chosen; a new group opens a new one. */
+export async function theSocketOpensOnlyOnceAGroupIsChosen(): Promise<void> {
+  renderAt(STORED);
+  await toggle();
+  await pickSite();
+  await screen.findByRole("combobox", { name: "Asset group" });
+  expect(sockets.io).not.toHaveBeenCalled();
+  await pickGroup();
+  await screen.findByTestId("mimic-preview-canvas");
+  expect(sockets.io).toHaveBeenCalledTimes(1);
+  await pickGroup(GROUP_2_ID);
+  await waitFor(() => expect(sockets.io).toHaveBeenCalledTimes(2));
+}
+
+/** V15 (review L4a) — an answer with no layout widget is an error line, not a lasting load. */
+export async function anAnswerWithNoLayoutWidgetSaysSo(): Promise<void> {
+  const { preview } = renderAt(STORED);
+  preview.mockResolvedValue({ ...previewResponseFixture(), widgets: [] });
+  await toggle();
+  await pickSite();
+  await pickGroup();
+  expect(await screen.findByText("The preview could not be drawn.")).toBeInTheDocument();
+  expect(screen.queryByText("Loading the preview…")).toBeNull();
+}
+
+/** V16 (review L4b) — a failed asset-groups read shows an error line. */
+export async function aFailedGroupsReadSaysSo(): Promise<void> {
+  const { groups } = renderAt(STORED);
+  groups.mockRejectedValue(new Error("groups down"));
+  await toggle();
+  await pickSite();
+  expect(await screen.findByText("The asset groups could not be read.")).toBeInTheDocument();
+}
+
+/** V17 (review L4b) — a failed sites read shows an error line. */
+export async function aFailedSitesReadSaysSo(): Promise<void> {
+  const { locations } = renderAt(STORED);
+  locations.mockRejectedValue(new Error("sites down"));
+  await toggle();
+  expect(await screen.findByText("The sites could not be read.")).toBeInTheDocument();
+}
+
+/** V18 (review L4c) — a new layout's disabled toggle is described by the sentence saying why. */
+export async function theDisabledToggleIsDescribedByItsReason(): Promise<void> {
+  renderAt("/admin/mimic-layouts/new?preset=water_train");
+  const checkbox = await screen.findByRole("checkbox", { name: "Preview with site" });
+  expect(checkbox).toHaveAccessibleDescription("Save the layout to preview it");
 }

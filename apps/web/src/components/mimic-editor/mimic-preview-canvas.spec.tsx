@@ -180,9 +180,17 @@ export function theSelectionIsOutlinedWithNoResizeHandle(): void {
   expect(screen.queryByTestId("mimic-preview-resize")).toBeNull();
 }
 
-/** P7 — a pointer drag over a unit changes nothing: down, move and up select nothing. */
-export function aPointerDragDispatchesNothing(): void {
+/**
+ * P7 (review L2) — nothing in the preview offers a drag: every hit rect is a pointer (never the
+ * editor's `cursor-move` or `cursor-se-resize`), no editor overlay or pipe mode is drawn, and a
+ * pointer down, move and up on a unit select nothing (only a click does).
+ */
+export function nothingOffersADrag(): void {
   const { onSelect } = renderCanvas("wtp");
+  const rects = screen.getAllByTestId("mimic-preview-hit");
+  expect(rects.map((r) => r.getAttribute("class"))).toEqual(rects.map(() => "cursor-pointer"));
+  expect(document.querySelector(".cursor-move, .cursor-se-resize, [data-pipe-mode]")).toBeNull();
+  expect(screen.queryByTestId("mimic-editor-overlay")).toBeNull();
   fireEvent.pointerDown(hit("wtp"), { clientX: 0, clientY: 0 });
   fireEvent.pointerMove(hit("wtp"), { clientX: 200, clientY: 200 });
   fireEvent.pointerUp(hit("wtp"), { clientX: 200, clientY: 200 });

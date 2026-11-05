@@ -74,3 +74,32 @@ export function aRenameIsAnUnsavedEdit(): void {
   const renamed = editorReducer(loaded(dto), { type: "update-layout", patch: { name: "Renamed plant" } });
   expect(hasUnsavedEdits(renamed.layout, dto)).toBe(true);
 }
+
+/**
+ * U6 (review H1) — the server answers nodes by (z, y, x, key) and pipes by (fromKey, toKey): the
+ * same layout in another order is no edit.
+ */
+export function aReorderedButEqualLayoutIsNoEdit(): void {
+  const dto = savedDto();
+  const reordered: MimicLayoutDto = { ...dto, nodes: [...dto.nodes].reverse(), pipes: [...dto.pipes].reverse() };
+  expect(hasUnsavedEdits(loaded(dto).layout, reordered)).toBe(false);
+  expect(hasUnsavedEdits(loaded(reordered).layout, dto)).toBe(false);
+}
+
+/** U7 (review H1) — the contract trims `name` and `label`: an untrimmed copy is no edit. */
+export function anUntrimmedNameOrLabelIsNoEdit(): void {
+  const dto = savedDto();
+  const padded = editorReducer(
+    editorReducer(loaded(dto), { type: "update-layout", patch: { name: "  Stored plant " } }),
+    { type: "update-node", key: "wtp", patch: { label: "WTP " } },
+  );
+  expect(hasUnsavedEdits(padded.layout, dto)).toBe(false);
+}
+
+/** U8 — a unit's point list is compared in order: the order is the drawing's. */
+export function aReorderedPointListIsAnEdit(): void {
+  const dto = savedDto();
+  const listed = { ...dto, nodes: dto.nodes.map((n) => (n.key === "wtp" ? { ...n, pointKeys: ["flow", "level"] } : n)) };
+  const swapped = editorReducer(loaded(listed), { type: "update-node", key: "wtp", patch: { pointKeys: ["level", "flow"] } });
+  expect(hasUnsavedEdits(swapped.layout, listed)).toBe(true);
+}

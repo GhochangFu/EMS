@@ -7,8 +7,8 @@ describe("F4.308 hasUnsavedEdits", () => {
   const cases = Object.entries(spec);
 
   it("has its claims", () => {
-    if (cases.length < 5) {
-      throw new Error(`expected at least 5 claims, found ${cases.length}`);
+    if (cases.length < 8) {
+      throw new Error(`expected at least 8 claims, found ${cases.length}`);
     }
   });
 

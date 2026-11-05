@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useId } from "react";
 
 import { adminAssetGroupsQueryKey, fetchAdminAssetGroups } from "../../api/admin/asset-groups";
 import { fetchAdminLocations } from "../../api/admin/locations";
@@ -26,6 +27,7 @@ const LABEL = "block text-xs font-semibold text-ink-muted";
  */
 export function MimicPreviewPicker({ organizationId, value, onChange }: MimicPreviewPickerProps) {
   const on = value !== null;
+  const reasonId = useId();
   const locationId = value?.locationId ?? "";
 
   const locationsQ = useQuery({
@@ -47,11 +49,16 @@ export function MimicPreviewPicker({ organizationId, value, onChange }: MimicPre
           type="checkbox"
           checked={on}
           disabled={organizationId === null}
+          aria-describedby={organizationId === null ? reasonId : undefined}
           onChange={() => onChange(on ? null : { locationId: "", groupId: "" })}
         />
         Preview with site
       </label>
-      {organizationId === null ? <p className="text-xs text-ink-muted">Save the layout to preview it</p> : null}
+      {organizationId === null ? (
+        <p id={reasonId} className="text-xs text-ink-muted">
+          Save the layout to preview it
+        </p>
+      ) : null}
       {on ? (
         <div className="grid grid-cols-2 gap-2">
           <label className={LABEL}>
@@ -70,7 +77,16 @@ export function MimicPreviewPicker({ organizationId, value, onChange }: MimicPre
               ))}
             </select>
           </label>
-          {locationId === "" ? null : groupsQ.isSuccess && groups.length === 0 ? (
+          {locationsQ.isError ? (
+            <p role="alert" className="text-xs text-critical-ink">
+              The sites could not be read.
+            </p>
+          ) : null}
+          {locationId === "" ? null : groupsQ.isError ? (
+            <p role="alert" className="text-xs text-critical-ink">
+              The asset groups could not be read.
+            </p>
+          ) : groupsQ.isSuccess && groups.length === 0 ? (
             <p className="text-xs text-ink-muted">No asset group at this site</p>
           ) : (
             <label className={LABEL}>
