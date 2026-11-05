@@ -127,21 +127,22 @@ export const BREAKER_LOOK_CLASSES: Readonly<
   offline: { frame: "stroke-ink-faint", ink: "stroke-ink-faint", pill: "fill-ink-faint", dashed: true },
   tripped: { frame: "stroke-critical", ink: "stroke-critical", pill: "fill-critical-ink", dashed: false },
   open: { frame: "stroke-ink-muted", ink: "stroke-ink-muted", pill: "fill-ink-muted", dashed: false },
-  critical: { frame: "stroke-critical", ink: "stroke-accent", pill: "fill-ok-ink", dashed: false },
-  warning: { frame: "stroke-warning", ink: "stroke-accent", pill: "fill-ok-ink", dashed: false },
-  info: { frame: "stroke-info", ink: "stroke-accent", pill: "fill-ok-ink", dashed: false },
-  neutral: { frame: "stroke-line-strong", ink: "stroke-accent", pill: "fill-ok-ink", dashed: false },
-  closed: { frame: "stroke-accent", ink: "stroke-accent", pill: "fill-ok-ink", dashed: false },
+  critical: { frame: "stroke-critical", ink: "stroke-ok", pill: "fill-ok-ink", dashed: false },
+  warning: { frame: "stroke-warning", ink: "stroke-ok", pill: "fill-ok-ink", dashed: false },
+  info: { frame: "stroke-info", ink: "stroke-ok", pill: "fill-ok-ink", dashed: false },
+  neutral: { frame: "stroke-line-strong", ink: "stroke-ok", pill: "fill-ok-ink", dashed: false },
+  closed: { frame: "stroke-ok", ink: "stroke-ok", pill: "fill-ok-ink", dashed: false },
   unknown: { frame: "stroke-line-strong", ink: "stroke-ink-muted", pill: "fill-ink-muted", dashed: false },
 };
 
 /**
- * A pipe's energy → its stroke (OQ5 rev 2, plan D6), ADR 0078 role tokens only: energised accent,
- * de-energised the plain pipe grey, unknown the hint ink and dashed — never accent. The same class
+ * A pipe's energy → its stroke (OQ5 rev 2, plan D6), ADR 0078 role tokens only: energised `ok`
+ * (the fixed state green, `F4.310` / ADR 0110; it was `accent`), de-energised the plain pipe grey,
+ * unknown the hint ink and dashed — never the state green. The same class
  * colours the pipe's `F3.32b` freshness dash on a graph with sources.
  */
 export const ENERGY_PIPE_CLASSES: Readonly<Record<Energy, { readonly stroke: string; readonly dashed: boolean }>> = {
-  energised: { stroke: "stroke-accent", dashed: false },
+  energised: { stroke: "stroke-ok", dashed: false },
   "de-energised": { stroke: "stroke-line-strong", dashed: false },
   unknown: { stroke: "stroke-ink-hint", dashed: true },
 };

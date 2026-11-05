@@ -327,6 +327,7 @@ export const MIMIC_GLYPH_FILL_CLASS: Readonly<Record<string, string>> = {
   "stroke-info": "fill-info",
   "stroke-ink-muted": "fill-ink-muted",
   "stroke-accent": "fill-accent",
+  "stroke-ok": "fill-ok",
   "stroke-ink-faint": "fill-ink-faint",
   "stroke-ink": "fill-ink",
   "stroke-line-strong": "fill-line-strong",
@@ -626,7 +627,8 @@ export function mimicBadge(memberCount: number): string | null {
 
 /** Status → the box outline, ADR 0078 role classes only. */
 export const MIMIC_STATUS_STROKE: Readonly<Record<MimicNodeStatus, string>> = {
-  live: "stroke-accent",
+  // F4.310 (ADR 0110 decision 3, plan OQ6): "live" is a state, so the fixed `ok`, never the brand accent.
+  live: "stroke-ok",
   alarm: "stroke-critical",
   stale: "stroke-warning",
   none: "stroke-line-strong",

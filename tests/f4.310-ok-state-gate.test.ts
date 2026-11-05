@@ -19,7 +19,7 @@ import { repoRoot, walk, withoutComments } from "./support/source-scan";
  * It does not prove every state site moved (a default `return` after the alarm cases names no
  * state); the PR body lists each moved site. **`PENDING`** holds the mimic files, which move in a
  * follow-up PR after `F4.307`–`F4.309` (owner ruling OQ6, 2026-11-05): an exact per-file count
- * that may only fall, and must be empty before the profile values land (PR D).
+ * that may only fall. PR A2 moved them and emptied it; it must stay empty.
  */
 const STATES = "normal|ok|healthy|running|energised|energized|closed|good|sent|on|live";
 const ACCENT_CLASS = String.raw`\b(?:bg|text|border|fill|stroke|ring)-accent(?:-strong)?\b`;
@@ -29,7 +29,7 @@ const SHAPES: RegExp[] = [
   new RegExp(String.raw`===\s*"(?:${STATES})"\s*\?\s*"[^"]*${ACCENT_CLASS}`, "g"),
 ];
 
-const PENDING: Record<string, number> = { "lib/mimic.ts": 1 };
+const PENDING: Record<string, number> = {};
 
 const WEB_SRC = join(repoRoot, "apps/web/src");
 

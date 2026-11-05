@@ -143,16 +143,16 @@ describe("F3.74 Task 3.2 — MimicScene energy colour beside the freshness dash"
     cleanup();
   });
 
-  it("E1a every breaker closed: every pipe is energised in accent", () => {
+  it("E1a every breaker closed: every pipe is energised in ok (the state green)", () => {
     allClosedEveryPipeIsEnergisedAccent();
   });
-  it("E1b every breaker closed: every fresh pipe animates in accent", () => {
+  it("E1b every breaker closed: every fresh pipe animates in ok (the state green)", () => {
     allClosedEveryFreshPipeAnimatesInAccent();
   });
   it("E2a an open main breaker de-energises the pipes after it", () => {
     anOpenMainBreakerDeEnergisesThePipesAfterIt();
   });
-  it("E2b an open main breaker: the dash after it is grey, never accent", () => {
+  it("E2b an open main breaker: the dash after it is grey, never ok", () => {
     anOpenMainBreakerDashesInGreyAfterIt();
   });
   it("E3a a stale main breaker makes the pipes after it unknown, dashed, in hint", () => {

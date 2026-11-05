@@ -98,3 +98,6 @@ csv-formula-probe-bom.csv
 # server, not an input to the build — it was swept into a fix commit once
 # because it sat untracked at the repo root.
 .serena/
+
+# Node's compile cache (tsx and node --experimental-compile-cache write it at the repo root).
+node-compile-cache/
