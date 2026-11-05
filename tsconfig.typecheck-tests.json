@@ -16,6 +16,7 @@
     "tests/repo-invariants.test.ts",
     "tests/repo-invariants-provenance.test.ts",
     "tests/adr-0018-source-axis.test.ts",
+    "tests/adr-0111-asset-label-schemas.test.ts",
     "tests/ingest-contracts.test.ts",
     "tests/adr-0024-retention-bounds.test.ts",
     "tests/adr-0025-level-selector.test.ts",
