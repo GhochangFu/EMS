@@ -8,7 +8,7 @@ import {
   listUsersListsOnlyTheOrganizationsActiveUsers,
   listUsersNeverShowsAnEmail,
   listUsersRefusesAnOrganizationOutsideTheScope,
-  listWorkOrdersCapsAt25,
+  listWorkOrdersCutsToABudgetFittedPage,
   listWorkOrdersFiltersByStatus,
   listWorkOrdersItemsCarryTheAssetLabelParts,
   listWorkOrdersNamesTheOrganizationsItRead,
@@ -28,7 +28,7 @@ describe("F4.284 — list_work_orders and list_users (ADR 0106; DC1, DC7)", () =
   it("Each item carries the asset code, RTU name and location name.", () => listWorkOrdersItemsCarryTheAssetLabelParts());
   it("DC7: search reaches the service as titleSearch, so a match past the 100-row cap is found.", () => listWorkOrdersSearchesInTheService());
   it("DC7: a status filter reaches the service and narrows.", () => listWorkOrdersFiltersByStatus());
-  it("The items are cut at 25, and truncated says there are more.", () => listWorkOrdersCapsAt25());
+  it("The items are cut to a budget-fitted page, and truncated says there are more.", () => listWorkOrdersCutsToABudgetFittedPage());
   it("An organization outside the turn's scope is refused, and nothing is read.", () => listWorkOrdersRefusesAnOrganizationOutsideTheScope());
   it("DC1: a user row holds id, displayName and role.", () => listUsersListsIdNameAndRole());
   it("DC1: an email address never reaches the model.", () => listUsersNeverShowsAnEmail());

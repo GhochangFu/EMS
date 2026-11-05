@@ -536,6 +536,15 @@ export async function assertScheduleRowNamesTheAssetsRtu(ctx: MaintenanceRlsFixt
     const own = await ctx.service.list(READ_QUERY, [ctx.assetId]);
     const row = own.items.find((i) => i.id === ctx.inScopeScheduleId);
     expect({ rtu: row?.assetRtuName, location: row?.assetLocationName }).toEqual({ rtu: rtuName, location: locationName });
+    // The converted work order is read back through `mapWorkOrderRow`: it names the RTU too.
+    const { workOrder } = await ctx.service.convertToWorkOrder(
+      ctx.inScopeScheduleId,
+      { notes: "F4.316 convert" },
+      ctx.scopedActor,
+      [ctx.assetId],
+    );
+    ctx.createdWorkOrderIds.push(workOrder.id);
+    expect({ rtu: workOrder.assetRtuName, location: workOrder.assetLocationName }).toEqual({ rtu: rtuName, location: locationName });
   } finally {
     await ctx.ownerPool.query("UPDATE bms.assets SET rtu_id = NULL WHERE id = $1", [ctx.assetId]);
     await ctx.ownerPool.query("DELETE FROM bms.rtus WHERE id = $1", [rtuId]);

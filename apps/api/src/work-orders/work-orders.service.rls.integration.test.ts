@@ -98,6 +98,10 @@ async function sweepStaleRuns(pool: pg.Pool): Promise<void> {
       [staleFamily],
     );
     await pool.query(
+      `DELETE FROM bms.rtus WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`,
+      [staleFamily],
+    );
+    await pool.query(
       `DELETE FROM bms.locations WHERE code LIKE $1 AND created_at < now() - interval '30 minutes'`,
       [staleFamily],
     );
@@ -305,6 +309,7 @@ describe.skipIf(!connectionString)("E7.1b — work-orders writes stamp org under
         [`${PREFIX}%`],
       );
       await ownerPool.query(`DELETE FROM bms.assets WHERE code LIKE $1`, [`${PREFIX}%`]);
+      await ownerPool.query(`DELETE FROM bms.rtus WHERE code LIKE $1`, [`${PREFIX}%`]);
       await ownerPool.query(`DELETE FROM bms.locations WHERE code LIKE $1`, [`${PREFIX}%`]);
     }
     await Promise.all(

@@ -177,7 +177,7 @@ export async function assetIdNarrows(): Promise<void> {
  * 40 rows are cut, and `truncated` says so. 16, not 25: 25 of these rows pass
  * the result budget, so the page is fitted (`F4.291` live check, `fitListResult`).
  */
-export async function fortyRowsAreCutToTwentyFive(): Promise<void> {
+export async function fortyRowsAreCutToABudgetFittedPage(): Promise<void> {
   const { tools } = fake({ [ORG_X]: Array.from({ length: 40 }, (_, i) => schedule(i + 1)) });
   const listed = await list(tools, {}, [ORG_X]);
   expect(itemsOf(listed)).toHaveLength(16);

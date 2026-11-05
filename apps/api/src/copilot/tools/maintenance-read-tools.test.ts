@@ -4,7 +4,7 @@ import {
   anOrganizationOutsideTheAllowedSetIsRefused,
   anOrganizationWithNoReadableAssetIsNotRead,
   assetIdNarrows,
-  fortyRowsAreCutToTwentyFive,
+  fortyRowsAreCutToABudgetFittedPage,
   includeInactiveReturnsAnInactiveRow,
   listIsCalledPerOrganizationWithItsAssetsAndNoWindow,
   searchIsPassedToTheServiceAsTitleSearch,
@@ -28,7 +28,7 @@ describe("F4.281 — list_maintenance_schedules (ADR 0099 Amendment 8 D7, owner 
   it("passes search to the service as titleSearch", () => searchIsPassedToTheServiceAsTitleSearch());
   it("search narrows before the service's row cap", () => searchNarrowsBeforeTheCap());
   it("assetId narrows", () => assetIdNarrows());
-  it("cuts 40 rows to 25 with truncated", () => fortyRowsAreCutToTwentyFive());
+  it("cuts 40 rows to a budget-fitted page with truncated", () => fortyRowsAreCutToABudgetFittedPage());
   it("refuses an organization outside the allowed set without a read", () => anOrganizationOutsideTheAllowedSetIsRefused());
   it("keeps what a proposal needs and drops the free text", () => theProjectionKeepsWhatAProposalNeeds());
   it("carries the asset's RTU name and location name", () => theProjectionCarriesTheAssetLabelParts());

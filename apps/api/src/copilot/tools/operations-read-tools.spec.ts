@@ -163,7 +163,7 @@ export async function listWorkOrdersFiltersByStatus(): Promise<void> {
  * The items are cut, and `truncated` says there are more. 23, not 25: 25 rows with the asset label
  * parts (`F4.316` PR 4a) pass the result budget, so the page is fitted (`fitListResult`).
  */
-export async function listWorkOrdersCapsAt25(): Promise<void> {
+export async function listWorkOrdersCutsToABudgetFittedPage(): Promise<void> {
   const { tools } = fake(Array.from({ length: 40 }, (_, i) => workOrder(i, ASSET_X)));
   const { listed } = await list(tools, "list_work_orders", {}, [ORG_X]);
   expect([itemsOf(listed).length, listed.truncated]).toEqual([23, true]);
