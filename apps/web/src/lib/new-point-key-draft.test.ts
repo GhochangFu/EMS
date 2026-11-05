@@ -7,6 +7,7 @@ import {
   aNoWorker503IsNotReportedAsNotWritten,
   aClearedDomainIsAbsentFromTheBody,
   aCodeOutsideTheCatalogClassIsRefused,
+  aLateDomainFillsAnUntouchedFieldOnly,
   aPrefilledDomainIsSent,
   anEditedDomainIsAChange,
   anUntouchedPrefilledDraftIsNotAChange,
@@ -50,6 +51,10 @@ describe("F4.313 — New key: the draft, its checks and the two writes", () => {
 
   it("an edited or cleared domain is a change", () => {
     anEditedDomainIsAChange();
+  });
+
+  it("a late-arriving domain fills an untouched field only", () => {
+    aLateDomainFillsAnUntouchedFieldOnly();
   });
 
   it("the New key sentinel can equal no catalog code", () => {

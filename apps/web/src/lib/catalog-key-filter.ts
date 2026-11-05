@@ -2,8 +2,8 @@
  * `F4.313` follow-up (owner ruling 2026-11-05) — which catalog keys the
  * calculated-point key picker (`CatalogKeySelect`) lists. Domain first: by
  * default only the active keys whose `domain` equals the asset's, plus the keys
- * with no domain (a key made by **New key** has none, and the next try must
- * find it); **Show all keys** lifts that filter; a search narrows what is left by code or name.
+ * with no domain (an older key, or one **New key** made with its Domain
+ * cleared, which the next try must find); **Show all keys** lifts that filter; a search narrows what is left by code or name.
  * The keys the caller excludes (the asset already has them) stay out in every
  * mode. A rule about the list only — a calculated point still names a catalog
  * key, and the server checks it as before.
@@ -41,7 +41,7 @@ export function visibleCatalogKeys<T extends FilterableCatalogKey>(
   return items.filter((item) => {
     if (exclude.has(item.code)) return false;
     if (item.code === selected) return true;
-    // A key with no domain (New key creates one so) is listed in every mode.
+    // A key with no domain (older, or New key with its Domain cleared) is listed in every mode.
     if (!showAll && domain !== null && item.domain !== null && item.domain !== domain) return false;
     if (needle === "") return true;
     return item.code.toLowerCase().includes(needle) || item.name.toLowerCase().includes(needle);

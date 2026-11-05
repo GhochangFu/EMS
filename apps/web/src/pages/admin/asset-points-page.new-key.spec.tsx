@@ -318,3 +318,21 @@ export async function aClearedDomainSendsNone(): Promise<void> {
   await waitFor(() => expect(pointKeysApi.createAdminPointKey).toHaveBeenCalled());
   expect(vi.mocked(pointKeysApi.createAdminPointKey).mock.calls[0]?.[0]).not.toHaveProperty("domain");
 }
+
+// Catches: the pre-fill taken once, at pick time (a late asset summary leaves the field blank for good).
+export async function aLateAssetSummaryStillFillsAnUntouchedDomain(): Promise<void> {
+  stubApi();
+  const summary = await vi.mocked(assetsAdminApi.fetchAdminAssetSummary)(ASSET);
+  let resolveSummary: (value: typeof summary) => void = () => undefined;
+  vi.mocked(assetsAdminApi.fetchAdminAssetSummary).mockReturnValue(
+    new Promise((resolve) => {
+      resolveSummary = resolve;
+    }),
+  );
+  renderPage(globalAdmin);
+  await userEvent.selectOptions(await openAdd(), NEW_KEY_OPTION);
+  const domain = screen.getByLabelText("New key domain") as HTMLInputElement;
+  expect(domain.value).toBe("");
+  resolveSummary(summary);
+  await waitFor(() => expect(domain.value).toBe("electrical"));
+}

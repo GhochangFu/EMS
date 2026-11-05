@@ -228,6 +228,13 @@ export async function theKeyIsCreatedThenTheBatchIsWritten(): Promise<void> {
   stubApi();
   await submitNewKey();
   await waitFor(() => expect(writes).toEqual(["key kvar", "batch kvar"]));
+  // `F4.315` C2: the shared domain rides on the key's create body.
+  expect(pointKeysApi.createAdminPointKey).toHaveBeenCalledWith({
+    code: "kvar",
+    name: "Reactive power",
+    unit: "kVAr",
+    domain: "electrical",
+  });
 }
 
 // Catches: a 409 "already exists" on the key treated as the end of the flow.

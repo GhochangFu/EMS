@@ -16,6 +16,7 @@ import {
   theCreateSendsTheCodeLabelUnitAndDomain,
   theDomainOpensFilledWithTheAssetsDomain,
   aClearedDomainSendsNone,
+  aLateAssetSummaryStillFillsAnUntouchedDomain,
   theKeyIsCreatedThenThePointIsWritten,
 } from "./asset-points-page.new-key.spec";
 
@@ -80,5 +81,9 @@ describe("F4.313 — New key in the Add calculated point panel", () => {
 
   it("a cleared Domain sends none", async () => {
     await aClearedDomainSendsNone();
+  });
+
+  it("a late asset summary still fills an untouched Domain", async () => {
+    await aLateAssetSummaryStillFillsAnUntouchedDomain();
   });
 });

@@ -17,6 +17,7 @@ import {
   newPointKeyBody,
   newPointKeyDraftChanged,
   newPointKeyProblems,
+  withLateDomain,
   pointWriteCause,
 } from "./new-point-key-draft";
 
@@ -78,6 +79,15 @@ export function anUntouchedPrefilledDraftIsNotAChange(): void {
 export function anEditedDomainIsAChange(): void {
   expect(newPointKeyDraftChanged({ ...emptyNewPointKeyDraft("electrical"), domain: "" })).toBe(true);
   expect(newPointKeyDraftChanged({ ...emptyNewPointKeyDraft("electrical"), domain: "water" })).toBe(true);
+}
+
+// Catches: a late-arriving domain ignored (blank stays blank), or overwriting what the admin typed.
+export function aLateDomainFillsAnUntouchedFieldOnly(): void {
+  const late = withLateDomain(emptyNewPointKeyDraft(null), "electrical");
+  expect(late).toMatchObject({ domain: "electrical", openedDomain: "electrical" });
+  expect(newPointKeyDraftChanged(late)).toBe(false);
+  const typed = { ...emptyNewPointKeyDraft(null), domain: "water" };
+  expect(withLateDomain(typed, "electrical")).toBe(typed);
 }
 
 // Catches: a restated rule that lets a code outside the catalog class through.

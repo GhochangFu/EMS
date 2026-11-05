@@ -65,6 +65,17 @@ export function newKeyClashProblem(code: string, existingKeys: readonly string[]
     : null;
 }
 
+/**
+ * The asset's domain arriving after New key was picked (the asset summary
+ * resolves late): an untouched Domain follows it; one the admin edited, and a
+ * domain that has not changed, are left as they are.
+ */
+export function withLateDomain(draft: NewPointKeyDraft, domain: string | null): NewPointKeyDraft {
+  const arrived = domain ?? "";
+  if (draft.domain !== draft.openedDomain || draft.openedDomain === arrived) return draft;
+  return { ...draft, domain: arrived, openedDomain: arrived };
+}
+
 /** The leave prompt's half for the fields: one holds text, or the Domain differs from its pre-fill. */
 export function newPointKeyDraftChanged(draft: NewPointKeyDraft): boolean {
   return draft.code !== "" || draft.name !== "" || draft.unit !== "" || draft.domain !== draft.openedDomain;
