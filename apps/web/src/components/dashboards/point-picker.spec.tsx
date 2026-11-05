@@ -49,6 +49,8 @@ const POINT: AdminAssetPointDto = {
   id: "p1",
   assetId: "a1",
   assetCode: "FP-01",
+  assetRtuName: null,
+  assetLocationName: null,
   assetName: "Feed pump",
   locationId: "loc-1",
   locationName: "Kolkata Works",

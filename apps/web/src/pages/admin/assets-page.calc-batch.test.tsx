@@ -10,6 +10,10 @@ import {
   aTemplatedAssetIsMarkedAndLeftOut,
   reviewListsEveryRefusedAsset,
   theBatchSendsExactlyTheCheckedIds,
+  theBulkWizardKeepsATypedAgeOnALaterIntervalEdit,
+  theBulkWizardsAgeFollowsEveryAfterAFormulaOnlyFill,
+  theBulkWizardRefusesNextWhileTheAgeIsEmpty,
+  theBulkWizardTakesTwiceTheInterval,
   theBulkWizardListsTheSharedOrganizationsVersion,
   theBulkWizardMarksNoInputMissing,
   theFormulaStepCarriesTheQualifiedReferenceSentence,
@@ -65,5 +69,28 @@ describe("F4.311 PR 6a — the asset list's Add calculated point bulk action", (
 
   it("the Formula step's Suggested formulas mark no input missing (F4.314)", async () => {
     await theBulkWizardMarksNoInputMissing();
+  });
+});
+
+describe("F4.315 PR B — the bulk wizard's default input age, and the Schedule step that refuses", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("scheduled every 30 s opens Inputs valid for on 60", async () => {
+    await theBulkWizardTakesTwiceTheInterval();
+  });
+
+  it("an empty age refuses Next, keeps it focusable and says why", async () => {
+    await theBulkWizardRefusesNextWhileTheAgeIsEmpty();
+  });
+
+  it("review F1: a typed age survives a later Every edit", async () => {
+    await theBulkWizardKeepsATypedAgeOnALaterIntervalEdit();
+  });
+
+  it("a formula-only copilot fill leaves the age following Every", async () => {
+    await theBulkWizardsAgeFollowsEveryAfterAFormulaOnlyFill();
   });
 });

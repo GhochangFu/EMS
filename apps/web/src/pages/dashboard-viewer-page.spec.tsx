@@ -87,6 +87,8 @@ const DTO_WITH_WIDGET: DashboardDto = {
           sortOrder: 0,
           assetId: ASSET_ID,
           assetCode: "AHU-01",
+          assetRtuName: null,
+          assetLocationName: null,
           pointKey: "kw",
           unit: "kWh",
         },

@@ -30,3 +30,13 @@ export function everyToolTheRuleNamesExists(): void {
   const registry = new Set(COPILOT_READ_TOOL_DEFINITIONS.map((tool) => tool.name));
   expect(named.filter((name) => !registry.has(name))).toEqual([]);
 }
+
+/** `F4.316` PR 7 (ADR 0111 decision 5): the prompt tells the model to name an asset by its label, from the two read fields. */
+export function thePromptNamesAnAssetByItsLabel(): void {
+  expect(COPILOT_SYSTEM_PROMPT).toContain("assetRtuName");
+}
+
+/** `F4.316` PR 7: the prompt names `list_assets`' own field, which a model builds the label from today. */
+export function thePromptNamesTheListAssetsField(): void {
+  expect(COPILOT_SYSTEM_PROMPT).toContain("rtuDisplayName");
+}

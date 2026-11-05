@@ -4,7 +4,9 @@ import {
   alarmListItemSchema,
   alarmSeverityCountSchema,
   alarmSocketEventSchema,
+  maintenanceScheduleItemSchema,
   vocabulariesResponseSchema,
+  workOrderListItemSchema,
 } from "./operations";
 
 /**
@@ -232,3 +234,68 @@ export const assertAffectedAssetRequiresAssetLocationName = (): void =>
   assertRefusesWithout(alarmAffectedAssetDtoSchema, AFFECTED_ASSET, "assetLocationName", "alarmAffectedAssetDtoSchema");
 export const assertAffectedAssetAcceptsNullParts = (): void =>
   assertAcceptsNullParts(alarmAffectedAssetDtoSchema, AFFECTED_ASSET, "alarmAffectedAssetDtoSchema");
+
+const WORK_ORDER_LIST_ITEM = {
+  id: "w1",
+  assetId: "30000000-0000-4000-8000-000000000001",
+  alarmId: null,
+  title: "Replace bearing",
+  description: null,
+  status: "open",
+  priority: "medium",
+  sortOrder: 0,
+  assignedTo: null,
+  createdBy: null,
+  dueAt: null,
+  resolvedAt: null,
+  closedAt: null,
+  createdAt: "2026-11-05T00:00:00.000Z",
+  updatedAt: "2026-11-05T00:00:00.000Z",
+  assetCode: "CR-Q1",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
+  assetName: "Chiller Q1",
+  siteName: "Site A",
+};
+
+const MAINTENANCE_SCHEDULE_ITEM = {
+  id: "m1",
+  templateId: "t1",
+  assetId: "30000000-0000-4000-8000-000000000001",
+  title: "Quarterly scan",
+  description: null,
+  category: "preventive",
+  generationMode: "calendar",
+  ownerTeam: null,
+  vendorName: null,
+  complianceRef: null,
+  triggerSummary: null,
+  safetyCritical: false,
+  priority: "medium",
+  estimatedMinutes: 60,
+  intervalDays: 90,
+  nextDueAt: "2026-12-01T00:00:00.000Z",
+  lastCompletedAt: null,
+  dueState: "upcoming",
+  assetCode: "CR-Q1",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
+  assetName: "Chiller Q1",
+  siteName: "Site A",
+  activeWorkOrderId: null,
+  active: true,
+};
+
+export const assertWorkOrderRequiresAssetRtuName = (): void =>
+  assertRefusesWithout(workOrderListItemSchema, WORK_ORDER_LIST_ITEM, "assetRtuName", "workOrderListItemSchema");
+export const assertWorkOrderRequiresAssetLocationName = (): void =>
+  assertRefusesWithout(workOrderListItemSchema, WORK_ORDER_LIST_ITEM, "assetLocationName", "workOrderListItemSchema");
+export const assertWorkOrderAcceptsNullParts = (): void =>
+  assertAcceptsNullParts(workOrderListItemSchema, WORK_ORDER_LIST_ITEM, "workOrderListItemSchema");
+
+export const assertScheduleRequiresAssetRtuName = (): void =>
+  assertRefusesWithout(maintenanceScheduleItemSchema, MAINTENANCE_SCHEDULE_ITEM, "assetRtuName", "maintenanceScheduleItemSchema");
+export const assertScheduleRequiresAssetLocationName = (): void =>
+  assertRefusesWithout(maintenanceScheduleItemSchema, MAINTENANCE_SCHEDULE_ITEM, "assetLocationName", "maintenanceScheduleItemSchema");
+export const assertScheduleAcceptsNullParts = (): void =>
+  assertAcceptsNullParts(maintenanceScheduleItemSchema, MAINTENANCE_SCHEDULE_ITEM, "maintenanceScheduleItemSchema");

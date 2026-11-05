@@ -145,6 +145,8 @@ const PIN_TARGET_SUMMARY = {
   assetId: null,
   assetTemplateId: null,
   assetCode: null,
+  assetRtuName: null,
+  assetLocationName: null,
   createdAt: PIN_TARGET.createdAt,
   updatedAt: PIN_TARGET.updatedAt,
   widgetCount: 0,

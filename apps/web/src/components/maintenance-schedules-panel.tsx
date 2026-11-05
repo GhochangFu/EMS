@@ -1,9 +1,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import type {
-  MaintenanceScheduleCategory,
-  MaintenanceScheduleItem,
-  WorkOrderPriority,
+import {
+  ASSET_LABEL_SEPARATOR,
+  assetLabelParts,
+  type MaintenanceScheduleCategory,
+  type MaintenanceScheduleItem,
+  type WorkOrderPriority,
 } from "@bms/shared";
 
 import type { AssetRow } from "../api/assets";
@@ -60,6 +62,21 @@ export function priorityStyle(priority: WorkOrderPriority): string {
     case "low":
       return "border-line bg-well-deep text-neutral-ink";
   }
+}
+
+/** `F4.316` (ADR 0111): the label's `· where` part — the RTU's name, or the location's without one. */
+function whereOf(r: MaintenanceScheduleItem): string | null {
+  return assetLabelParts({ code: r.assetCode, rtuName: r.assetRtuName, locationName: r.assetLocationName }).where;
+}
+
+/** The wrapping `· where` span, or nothing when the asset has neither an RTU nor a location. */
+function WhereSpan({ where }: { where: string | null }) {
+  return where === null ? null : (
+    <span className="whitespace-normal">
+      {ASSET_LABEL_SEPARATOR}
+      {where}
+    </span>
+  );
 }
 
 function dueStateStyle(item: MaintenanceScheduleItem): string {
@@ -319,7 +336,13 @@ export function MaintenanceSchedulesPanel({
                 </div>
                 <div className="mt-3 grid gap-1 text-[11px] text-ink-muted">
                   <span>
-                    {item.assetCode} · {item.assetName} · {item.siteName}
+                    {/* F4.316 / ADR 0111: `<code> · <RTU or location> · <name> · <site>`; the where part wraps. */}
+                    <span className="whitespace-nowrap">{item.assetCode}</span>
+                    <WhereSpan where={whereOf(item)} />
+                    {ASSET_LABEL_SEPARATOR}
+                    {item.assetName}
+                    {ASSET_LABEL_SEPARATOR}
+                    {item.siteName}
                   </span>
                   <span>
                     {item.intervalDays}d cycle · {item.estimatedMinutes} min

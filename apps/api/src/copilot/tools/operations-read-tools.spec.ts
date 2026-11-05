@@ -61,6 +61,8 @@ function workOrder(index: number, assetId: string, over: Partial<WorkOrderListIt
     createdAt: "2026-10-20T06:00:00.000Z",
     updatedAt: "2026-10-20T06:00:00.000Z",
     assetCode: "MCC-1",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Pune Works",
     assetName: "MCC-1",
     siteName: "Pune Works",
     ...over,
@@ -157,11 +159,14 @@ export async function listWorkOrdersFiltersByStatus(): Promise<void> {
   expect(itemsOf(listed).map((item) => item.status)).toEqual(["closed"]);
 }
 
-/** The items are cut at 25, and `truncated` says there are more. */
-export async function listWorkOrdersCapsAt25(): Promise<void> {
+/**
+ * The items are cut, and `truncated` says there are more. 23, not 25: 25 rows with the asset label
+ * parts (`F4.316` PR 4a) pass the result budget, so the page is fitted (`fitListResult`).
+ */
+export async function listWorkOrdersCutsToABudgetFittedPage(): Promise<void> {
   const { tools } = fake(Array.from({ length: 40 }, (_, i) => workOrder(i, ASSET_X)));
   const { listed } = await list(tools, "list_work_orders", {}, [ORG_X]);
-  expect([itemsOf(listed).length, listed.truncated]).toEqual([25, true]);
+  expect([itemsOf(listed).length, listed.truncated]).toEqual([23, true]);
 }
 
 /** An organization outside the turn's scope is refused, and nothing is read. */
@@ -255,13 +260,13 @@ export async function listWorkOrdersLocationIdNarrowsToTheSubtree(): Promise<voi
   expect(itemsOf(listed).map((item) => item.title)).toEqual(["Work order 1"]);
 }
 
-/** `F4.291`: 40 work orders; the cursor of page 1 gives 26–40 and ends the list. */
+/** `F4.291`: 40 work orders; the cursor of page 1 (23 rows, budget-fitted) gives 24–40 and ends the list. */
 export async function listWorkOrdersCursorResumesAtTheOffset(): Promise<void> {
   const { tools } = fake(Array.from({ length: 40 }, (_, i) => workOrder(i + 1, ASSET_X)));
   const one = await list(tools, "list_work_orders", {}, [ORG_X]);
   const two = await list(tools, "list_work_orders", { cursor: one.listed.nextCursor }, [ORG_X]);
   const titles = itemsOf(two.listed).map((item) => item.title);
-  expect([titles[0], titles.length, two.listed.nextCursor]).toEqual(["Work order 26", 15, null]);
+  expect([titles[0], titles.length, two.listed.nextCursor]).toEqual(["Work order 24", 17, null]);
 }
 
 /** Pages through the cursor until it is `null`; the last page. */
@@ -285,4 +290,16 @@ export async function listWorkOrdersLastPageUnderTheServiceCapIsComplete(): Prom
   const { tools } = fake(Array.from({ length: 40 }, (_, i) => workOrder(i + 1, ASSET_X)));
   const last = await lastPage(tools, [ORG_X]);
   expect([last.truncated, last.organizations[0]?.serviceCap]).toEqual([false, undefined]);
+}
+
+/** `F4.316` PR 4a (ADR 0111): the explicit item map carries the asset's code, RTU name and location name. */
+export async function listWorkOrdersItemsCarryTheAssetLabelParts(): Promise<void> {
+  const { tools } = fake([workOrder(1, ASSET_X, { assetCode: "CH-2", assetRtuName: null, assetLocationName: "Plant A" })]);
+  const { listed } = await list(tools, "list_work_orders", {}, [ORG_X]);
+  const [item] = itemsOf(listed);
+  expect({
+    assetCode: item?.assetCode,
+    assetRtuName: item?.assetRtuName,
+    assetLocationName: item?.assetLocationName,
+  }).toEqual({ assetCode: "CH-2", assetRtuName: null, assetLocationName: "Plant A" });
 }

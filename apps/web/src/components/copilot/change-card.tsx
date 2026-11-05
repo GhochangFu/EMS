@@ -69,7 +69,8 @@ export function ChangeCard(props: ChangeCardProps) {
       className={`px-3 py-2 text-xs ${red ? "rounded border border-critical-line bg-critical-wash" : "surface-raised-sm"}`}
     >
       <h3 className={`font-semibold ${red ? "text-critical-ink" : "text-ink"}`}>{props.title}</h3>
-      <p className="mt-1 text-ink">{props.summary}</p>
+      {/* `F4.315` B2: a wizard with no sentence of its own passes its title; print it once. */}
+      {props.summary !== props.title && <p className="mt-1 text-ink">{props.summary}</p>}
       {props.risk === "operational" && <p className="mt-1 font-semibold text-critical-ink">This cannot be undone.</p>}
       {props.rows.length > 0 && (
         <table className="mt-2 w-full table-fixed border-collapse">

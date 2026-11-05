@@ -499,3 +499,54 @@ export async function assertTitleSearchNarrowsInTheQuery(
   const listed = await ctx.service.list(READ_QUERY, [ctx.assetId], { anyDueDate: true, titleSearch: "annual chiller" });
   expect(listed.items.map((item) => item.id)).toEqual([id]);
 }
+
+async function assetLocationName(ctx: MaintenanceRlsFixtures): Promise<string> {
+  const { rows } = await ctx.ownerPool.query<{ name: string }>(
+    "SELECT l.name FROM bms.assets a JOIN bms.locations l ON l.id = a.location_id WHERE a.id = $1",
+    [ctx.assetId],
+  );
+  return rows[0]!.name;
+}
+
+/**
+ * `F4.316` PR 4a (ADR 0111): the fixture asset has `rtu_id IS NULL` (ADR 0018) — the RTU-less twin.
+ * Its schedule must survive the LEFT JOIN to `rtus`, with `assetRtuName: null` and the location's name.
+ */
+export async function assertScheduleRowKeepsAnRtuLessAsset(ctx: MaintenanceRlsFixtures): Promise<void> {
+  const locationName = await assetLocationName(ctx);
+  const own = await ctx.service.list(READ_QUERY, [ctx.assetId]);
+  const row = own.items.find((i) => i.id === ctx.inScopeScheduleId);
+  expect(row, "the RTU-less asset's schedule is still listed").toBeDefined();
+  expect({ rtu: row?.assetRtuName, location: row?.assetLocationName }).toEqual({ rtu: null, location: locationName });
+}
+
+/** With an RTU on the asset, the same row names it (`rtus.display_name`); the RTU is removed after. */
+export async function assertScheduleRowNamesTheAssetsRtu(ctx: MaintenanceRlsFixtures, rtuCode: string): Promise<void> {
+  const locationName = await assetLocationName(ctx);
+  const rtuName = `F4.316 MS RTU ${rtuCode}`;
+  const { rows } = await ctx.ownerPool.query<{ id: string }>(
+    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name)
+       SELECT organization_id, location_id, $2, $3 FROM bms.assets WHERE id = $1
+     RETURNING id`,
+    [ctx.assetId, rtuCode, rtuName],
+  );
+  const rtuId = rows[0]!.id;
+  try {
+    await ctx.ownerPool.query("UPDATE bms.assets SET rtu_id = $2 WHERE id = $1", [ctx.assetId, rtuId]);
+    const own = await ctx.service.list(READ_QUERY, [ctx.assetId]);
+    const row = own.items.find((i) => i.id === ctx.inScopeScheduleId);
+    expect({ rtu: row?.assetRtuName, location: row?.assetLocationName }).toEqual({ rtu: rtuName, location: locationName });
+    // The converted work order is read back through `mapWorkOrderRow`: it names the RTU too.
+    const { workOrder } = await ctx.service.convertToWorkOrder(
+      ctx.inScopeScheduleId,
+      { notes: "F4.316 convert" },
+      ctx.scopedActor,
+      [ctx.assetId],
+    );
+    ctx.createdWorkOrderIds.push(workOrder.id);
+    expect({ rtu: workOrder.assetRtuName, location: workOrder.assetLocationName }).toEqual({ rtu: rtuName, location: locationName });
+  } finally {
+    await ctx.ownerPool.query("UPDATE bms.assets SET rtu_id = NULL WHERE id = $1", [ctx.assetId]);
+    await ctx.ownerPool.query("DELETE FROM bms.rtus WHERE id = $1", [rtuId]);
+  }
+}

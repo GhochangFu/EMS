@@ -28,6 +28,8 @@ import {
   assertSingleOrgMaintenanceListRunsOnTenantTransaction,
   assertUpdateScheduleReadsBackInTenantTransaction,
   type MaintenanceRlsFixtures,
+  assertScheduleRowKeepsAnRtuLessAsset,
+  assertScheduleRowNamesTheAssetsRtu,
 } from "./maintenance.service.rls.integration.spec";
 
 /**
@@ -260,6 +262,11 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
       if (assetIdsToDelete.length > 0) {
         await ownerPool.query(`DELETE FROM bms.assets WHERE id = ANY($1)`, [assetIdsToDelete]);
       }
+      // F4.316: fixture RTUs (after the assets that point at them); this run's, and any a killed run left.
+      await ownerPool.query(
+        `DELETE FROM bms.rtus WHERE code LIKE $1 AND (code LIKE $2 OR created_at < now() - interval '30 minutes')`,
+        [`${PREFIX}RTU-%`, `${PREFIX}RTU-${RUN}%`],
+      );
     }
     await Promise.all([ownerPool, tenantPool].filter(Boolean).map((p) => p.end()));
   });
@@ -326,5 +333,13 @@ describe.skipIf(!connectionString)("E7.1b — MaintenanceService under real RLS"
 
   it("F4.281: titleSearch narrows in the query", async () => {
     await assertTitleSearchNarrowsInTheQuery(ctx);
+  });
+
+  it("F4.316: an RTU-less asset's schedule keeps its row, named by its location", async () => {
+    await assertScheduleRowKeepsAnRtuLessAsset(ctx);
+  });
+
+  it("F4.316: a schedule names its asset's RTU and location", async () => {
+    await assertScheduleRowNamesTheAssetsRtu(ctx, `${PREFIX}RTU-${RUN}`);
   });
 });

@@ -47,6 +47,8 @@ const RESPONSE: DashboardsListResponse = {
       assetId: null,
       assetTemplateId: null,
       assetCode: null,
+      assetRtuName: null,
+      assetLocationName: null,
       createdAt: new Date(0).toISOString(),
       updatedAt: new Date(0).toISOString(),
       widgetCount: 3,
@@ -184,6 +186,39 @@ export async function anAssetScopedRowIsLabelledAssetWithItsCode(): Promise<void
   expect(await screen.findByText("Feeder TX-01 overview")).toBeInTheDocument();
   expect(screen.getByText("Asset · TX-01")).toBeInTheDocument();
   expect(screen.queryByText("Organization-wide")).not.toBeInTheDocument();
+}
+
+/** `F4.316` PR 5 / ADR 0111 — the asset badge reads `Asset · <label>` for the given names. */
+async function assetBadgeFor(names: { assetRtuName: string | null; assetLocationName: string }): Promise<void> {
+  vi.spyOn(dashboardsApi, "fetchDashboards").mockResolvedValue({
+    items: [
+      {
+        ...RESPONSE.items[0]!,
+        id: "aaaaaaaa-0000-0000-0000-000000000005",
+        name: "Labelled asset board",
+        locationId: null,
+        assetGroupId: null,
+        assetId: "55555555-5555-4555-8555-555555555557",
+        assetTemplateId: null,
+        assetCode: "TX-01",
+        ...names,
+      },
+    ],
+  });
+  renderPage(asUser("operator"));
+  expect(await screen.findByText("Labelled asset board")).toBeInTheDocument();
+}
+
+/** `F4.316` PR 5 — an asset on an RTU: `Asset · TX-01 · RTU 1`. */
+export async function anAssetBadgeNamesTheAssetsRtu(): Promise<void> {
+  await assetBadgeFor({ assetRtuName: "RTU 1", assetLocationName: "Plant A" });
+  expect(screen.getByText("Asset · TX-01 · RTU 1")).toBeInTheDocument();
+}
+
+/** `F4.316` PR 5 — the twin: no RTU, so `Asset · TX-01 · Plant A`. */
+export async function anAssetBadgeWithoutAnRtuNamesTheLocation(): Promise<void> {
+  await assetBadgeFor({ assetRtuName: null, assetLocationName: "Plant A" });
+  expect(screen.getByText("Asset · TX-01 · Plant A")).toBeInTheDocument();
 }
 
 /**

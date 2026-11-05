@@ -545,6 +545,8 @@ export class DashboardTemplatesInstantiateService {
           sortOrder: point.sortOrder,
           assetId: point.assetId,
           assetCode: point.assetCode,
+          assetRtuName: point.assetRtuName,
+          assetLocationName: point.assetLocationName,
           pointKey: point.pointKey,
           unit: point.unit,
         })),

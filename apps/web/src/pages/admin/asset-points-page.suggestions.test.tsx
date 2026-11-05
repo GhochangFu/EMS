@@ -11,6 +11,8 @@ import {
   takingInTheOverrideWizardSetsRuns,
   takingInTheOverrideWizardSetsTheGrammar,
   takingOnAddFillsTheEditor,
+  anAgelessSuggestionOnAddFollowsEvery,
+  aSuggestionsOwnAgeEqualToTheDefaultIsKept,
   theOverrideWizardExcludesTheTemplatesOwnVersion,
   theOverrideWizardListsTheOrganizationsVersion,
   theOverrideWizardMarksTheMissingInput,
@@ -69,5 +71,13 @@ describe("F4.314 PR 2 — Suggested formulas on the asset points page", () => {
 
   it("taking a suggestion in the override wizard sets Inputs valid for", async () => {
     await takingInTheOverrideWizardSetsInputsValidFor();
+  });
+
+  it("F4.315: an age-less suggestion taken on Add follows Every", async () => {
+    await anAgelessSuggestionOnAddFollowsEvery();
+  });
+
+  it("F4.315: a suggestion's own age equal to the default in force is kept", async () => {
+    await aSuggestionsOwnAgeEqualToTheDefaultIsKept();
   });
 });

@@ -3,6 +3,15 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aClearedAgeRefusesNextAndSaysWhy,
+  aScheduledAddTakesTwiceTheInterval,
+  aStreamingAddOpensTheAgeOnThreeHundred,
+  aFillsAgeForAnotherStepChoosesNothing,
+  aFillsOwnAgeIsKept,
+  aFormulaOnlyFillLeavesTheAgeFollowing,
+  aTypedAgeLetsNextPass,
+  aTypedAgeSurvivesALaterIntervalEdit,
+  anEditKeepsTheStoredAgeOnAnIntervalEdit,
   aPinnedAssetHasNoAddCalculatedPoint,
   aRefusedWriteKeepsTheServersSentenceAfterTheReread,
   aWriteRefusedWith503RereadsBothLists,
@@ -65,5 +74,48 @@ describe("F4.311 PR 6a — the asset points page's Calculated points card on an 
 
   it("while a write is pending, Add, Edit and Delete are disabled", async () => {
     await whileAWriteIsPendingAddEditAndDeleteAreDisabled();
+  });
+});
+
+describe("F4.315 PR B — Add's default input age, and the Schedule step that refuses", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("streaming opens Inputs valid for on 300", async () => {
+    await aStreamingAddOpensTheAgeOnThreeHundred();
+  });
+
+  it("scheduled every 30 s opens Inputs valid for on 60", async () => {
+    await aScheduledAddTakesTwiceTheInterval();
+  });
+
+  it("a cleared age refuses Next, keeps it focusable and says why", async () => {
+    await aClearedAgeRefusesNextAndSaysWhy();
+  });
+
+  it("a typed age lets Next pass", async () => {
+    await aTypedAgeLetsNextPass();
+  });
+
+  it("review F1: a typed age survives a later Every edit", async () => {
+    await aTypedAgeSurvivesALaterIntervalEdit();
+  });
+
+  it("review F2: Edit keeps the stored age when Every changes", async () => {
+    await anEditKeepsTheStoredAgeOnAnIntervalEdit();
+  });
+
+  it("a formula-only copilot fill leaves the age following its default", async () => {
+    await aFormulaOnlyFillLeavesTheAgeFollowing();
+  });
+
+  it("a copilot fill's own age is kept when Every changes", async () => {
+    await aFillsOwnAgeIsKept();
+  });
+
+  it("an age in a fill of another step is not applied and chooses nothing", async () => {
+    await aFillsAgeForAnotherStepChoosesNothing();
   });
 });

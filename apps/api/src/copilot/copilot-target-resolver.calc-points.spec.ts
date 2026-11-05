@@ -32,6 +32,7 @@ function queuedDb(results: unknown[][]): never {
     select: () => chain,
     from: () => chain,
     innerJoin: () => chain,
+    leftJoin: () => chain,
     where: () => ({ limit: next, then: (resolve: (value: unknown) => unknown) => next().then(resolve) }),
     execute: async () => undefined,
     transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(chain),
@@ -54,7 +55,7 @@ function access(manages: readonly string[], asked: string[] = [], masterData = t
 
 /** One asset target resolved for `entryId`, the asset stored with `templateId`. */
 async function resolveAsset(entryId: string, templateId: string | null) {
-  const db = queuedDb([[{ name: "Pump 7", templateId }], [{ pointKey: "kw" }], [{ name: "Org Seven" }]]);
+  const db = queuedDb([[{ code: "P-7", rtuName: "Pump house RTU", locationName: "Pune Works", templateId }], [{ pointKey: "kw" }], [{ name: "Org Seven" }]]);
   const resolver = new CopilotTargetResolver(db, access([ASSET]), {} as never, {} as never);
   return resolver.resolve(catalogEntry(entryId)!, { assetId: ASSET, pointKey: "kw_x2" }, {}, [ORG], JWT, ORG);
 }
@@ -67,7 +68,7 @@ export async function anOverrideOnATemplateLessAssetIsRefused(): Promise<void> {
 /** G2's allowed twin: the override resolves on a pinned asset, with its point keys. */
 export async function anOverrideOnAPinnedAssetResolves(): Promise<void> {
   const resolved = await resolveAsset("calcOverride.set", TEMPLATE);
-  expect([resolved?.targetName, resolved?.pointKeys]).toEqual(["Pump 7", ["kw"]]);
+  expect([resolved?.targetName, resolved?.pointKeys]).toEqual(["P-7 · Pump house RTU", ["kw"]]);
 }
 
 /** G2: a standalone set on a pinned asset is refused — the route would write an override. */
@@ -78,7 +79,7 @@ export async function aStandaloneSetOnAPinnedAssetIsRefused(): Promise<void> {
 /** G2's allowed twin: the standalone set resolves on a template-less asset, with its point keys. */
 export async function aStandaloneSetOnATemplateLessAssetResolves(): Promise<void> {
   const resolved = await resolveAsset("calcPoint.set", null);
-  expect([resolved?.targetName, resolved?.pointKeys]).toEqual(["Pump 7", ["kw"]]);
+  expect([resolved?.targetName, resolved?.pointKeys]).toEqual(["P-7 · Pump house RTU", ["kw"]]);
 }
 
 /** G4: a standalone removal on a pinned asset is refused — the route would clear an override, which stays manual. */
@@ -88,7 +89,7 @@ export async function aStandaloneDeleteOnAPinnedAssetIsRefused(): Promise<void> 
 
 /** G4's allowed twin: the removal resolves on a template-less asset. */
 export async function aStandaloneDeleteOnATemplateLessAssetResolves(): Promise<void> {
-  expect((await resolveAsset("calcPoint.delete", null))?.targetName).toBe("Pump 7");
+  expect((await resolveAsset("calcPoint.delete", null))?.targetName).toBe("P-7 · Pump house RTU");
 }
 
 /** The batch with the two assets read, each with its points, and the organization's name. */

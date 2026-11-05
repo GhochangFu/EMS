@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -15,9 +15,10 @@ import * as assetsApi from "../../api/assets";
 import * as copilotApi from "../../api/copilot";
 import * as systemStatusApi from "../../api/system-status";
 import { ApiError } from "../../lib/api-error";
-import { standaloneConfigFor } from "../../lib/calc-point-draft";
+import { SCHEDULE_AGE_BLOCKER, standaloneConfigFor } from "../../lib/calc-point-draft";
 import type { FormulaEditorProps } from "../../components/asset-templates/formula-editor-lazy";
 import type { AuthUser } from "../../stores/auth-store";
+import { resetWizardStore, useWizardStore } from "../../stores/wizard-store";
 import { AssetPointsAdminPage } from "./asset-points-page";
 
 /**
@@ -158,6 +159,8 @@ async function submitAdd(): Promise<void> {
   await userEvent.type(screen.getByRole("textbox", { name: "Formula for pf" }), "{{kw} * 2");
   await next(1);
   await userEvent.type(screen.getByLabelText("Every (seconds)"), "300");
+  // `F4.315` B4: the age follows 2 × Every (600 here) until it is typed; clear it to type it.
+  await userEvent.clear(screen.getByLabelText("Inputs valid for (seconds)"));
   await userEvent.type(screen.getByLabelText("Inputs valid for (seconds)"), "600");
   await next(2);
   await userEvent.click(screen.getByRole("button", { name: "Submit" }));
@@ -267,4 +270,151 @@ export async function whileAWriteIsPendingAddEditAndDeleteAreDisabled(): Promise
     within(row).getByRole("button", { name: "Delete" }),
   ] as HTMLButtonElement[];
   expect(buttons.map((button) => button.disabled)).toEqual([true, true, true]);
+}
+
+// ---- `F4.315` B4 (ADR 0109 Amendment 2, ruling Q7): the default age, and the step that refuses ----
+
+/** Opens Add, picks `pf`, types a formula and lands on Schedule. */
+async function addToSchedule(): Promise<void> {
+  await userEvent.click(await screen.findByRole("button", { name: "Add calculated point" }));
+  const select = screen.getByLabelText("Point key");
+  await within(select).findByText("pf · pf name");
+  await userEvent.selectOptions(select, "pf");
+  await userEvent.type(screen.getByRole("textbox", { name: "Formula for pf" }), "{{kw} * 2");
+  await next(1);
+  await screen.findByLabelText("Runs for pf");
+}
+
+const ageField = () => screen.getByLabelText("Inputs valid for (seconds)") as HTMLInputElement;
+const nextButton = () => screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+
+export async function aStreamingAddOpensTheAgeOnThreeHundred(): Promise<void> {
+  stubApi("standalone");
+  renderPage();
+  await addToSchedule();
+  await userEvent.selectOptions(screen.getByLabelText("Runs for pf"), "streaming");
+  expect(ageField().value).toBe("300");
+}
+
+export async function aScheduledAddTakesTwiceTheInterval(): Promise<void> {
+  stubApi("standalone");
+  renderPage();
+  await addToSchedule();
+  await userEvent.selectOptions(screen.getByLabelText("Runs for pf"), "streaming");
+  await userEvent.selectOptions(screen.getByLabelText("Runs for pf"), "scheduled");
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
+  expect(ageField().value).toBe("60");
+}
+
+/** A cleared age refuses Next (focusable, `aria-disabled`) and says why; a click stays on Schedule. */
+export async function aClearedAgeRefusesNextAndSaysWhy(): Promise<void> {
+  stubApi("standalone");
+  renderPage();
+  await addToSchedule();
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
+  await userEvent.clear(ageField());
+  await userEvent.click(nextButton());
+  expect([
+    nextButton().getAttribute("aria-disabled"),
+    screen.getByRole("alert").textContent,
+    screen.queryByLabelText("Runs for pf") !== null,
+  ]).toEqual(["true", SCHEDULE_AGE_BLOCKER, true]);
+}
+
+/**
+ * Review F1: a typed age survives a later Every edit. Mutation: drop `setAgeTouched` — the
+ * state stays untouched, so the Every edit refills the age with 2 × 90.
+ */
+export async function aTypedAgeSurvivesALaterIntervalEdit(): Promise<void> {
+  stubApi("standalone");
+  renderPage();
+  await addToSchedule();
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
+  await userEvent.clear(ageField());
+  await userEvent.type(ageField(), "45");
+  await userEvent.clear(screen.getByLabelText("Every (seconds)"));
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "90");
+  expect(ageField().value).toBe("45");
+}
+
+/** Review F2: Edit opens on the stored age as chosen. Mutation: `useState(false)` — Every refills it. */
+export async function anEditKeepsTheStoredAgeOnAnIntervalEdit(): Promise<void> {
+  stubApi("standalone", [PF]);
+  renderPage();
+  await userEvent.click(within(await pfRow()).getByRole("button", { name: "Edit" }));
+  await next(1);
+  await userEvent.clear(screen.getByLabelText("Every (seconds)"));
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "90");
+  expect(ageField().value).toBe("600");
+}
+
+export async function aTypedAgeLetsNextPass(): Promise<void> {
+  stubApi("standalone");
+  renderPage();
+  await addToSchedule();
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
+  await userEvent.clear(ageField());
+  await userEvent.type(ageField(), "10");
+  expect([ageField().value, nextButton().getAttribute("aria-disabled")]).toEqual(["10", null]);
+}
+
+/**
+ * `F4.315` re-review: a formula-only copilot fill leaves the age following its default. The
+ * shell's merged values hold the shown default (60), so judging them would freeze it.
+ * Mutation: the panel passes the merged values to `ageTouchedAfterFill` — Every 300 keeps 60.
+ */
+export async function aFormulaOnlyFillLeavesTheAgeFollowing(): Promise<void> {
+  resetWizardStore();
+  stubApi("standalone");
+  renderPage();
+  await addToSchedule();
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
+  act(() => {
+    useWizardStore.getState().receiveFill(
+      { catalogId: "calcPoint.set", params: { assetId: ASSET, pointKey: "pf" }, stepId: "formula", values: { formula: "{kw} * 3" } },
+      null,
+    );
+  });
+  await userEvent.clear(screen.getByLabelText("Every (seconds)"));
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "300");
+  expect(ageField().value).toBe("600");
+}
+
+/** Sends a copilot fill for the Add wizard of `pf` on this asset. */
+function fillAdd(stepId: string, values: Record<string, unknown>): void {
+  act(() => {
+    useWizardStore.getState().receiveFill({ catalogId: "calcPoint.set", params: { assetId: ASSET, pointKey: "pf" }, stepId, values }, null);
+  });
+}
+
+/**
+ * A fill that sets the age chooses it: a later Every edit keeps it. Mutation: the shell's
+ * `onChange(next)` drops the fill's values — the age follows Every to 600.
+ */
+export async function aFillsOwnAgeIsKept(): Promise<void> {
+  resetWizardStore();
+  stubApi("standalone");
+  renderPage();
+  await addToSchedule();
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
+  fillAdd("schedule", { maxInputAgeSeconds: 120 });
+  await userEvent.clear(screen.getByLabelText("Every (seconds)"));
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "300");
+  expect(ageField().value).toBe("120");
+}
+
+/**
+ * An age carried by a fill of another step is not applied, so it chooses nothing. Mutation:
+ * the shell passes `fill.values` instead of `appliedFillValues` — the age freezes at 60.
+ */
+export async function aFillsAgeForAnotherStepChoosesNothing(): Promise<void> {
+  resetWizardStore();
+  stubApi("standalone");
+  renderPage();
+  await addToSchedule();
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
+  fillAdd("formula", { formula: "{kw} * 3", maxInputAgeSeconds: 120 });
+  await userEvent.clear(screen.getByLabelText("Every (seconds)"));
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "300");
+  expect(ageField().value).toBe("600");
 }

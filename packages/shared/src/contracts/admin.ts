@@ -128,6 +128,10 @@ export const adminAssetPointDtoSchema = z.object({
   id: z.string(),
   assetId: z.string(),
   assetCode: z.string(),
+  /** ADR 0111 — the asset's RTU `display_name`, `null` when the asset has no RTU. */
+  assetRtuName: z.string().nullable(),
+  /** ADR 0111 — the asset's location `name`; the label's `where` when there is no RTU. */
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   locationId: z.string().nullable(),
   locationName: z.string().nullable(),
@@ -266,6 +270,10 @@ export const adminAssetGroupMemberDtoSchema = z.object({
   membershipId: z.string(),
   assetId: z.string(),
   assetCode: z.string(),
+  /** ADR 0111 — the asset's RTU `display_name`, `null` when the asset has no RTU. */
+  assetRtuName: z.string().nullable(),
+  /** ADR 0111 — the asset's location `name`; the label's `where` when there is no RTU. */
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   assetDomain: z.string(),
   /** `null` means no role is set — the state every membership was in before 0051. */
@@ -355,6 +363,9 @@ export const calcParameterDtoSchema = z.object({
   assetId: z.string().nullable(),
   locationName: z.string().nullable(),
   assetCode: z.string().nullable(),
+  /** ADR 0111 — the scoped asset's RTU / location names; both `null` where `assetCode` is. */
+  assetRtuName: z.string().nullable(),
+  assetLocationName: z.string().nullable(),
   value: z.number(),
   effectiveFrom: z.string(),
   effectiveTo: z.string().nullable(),

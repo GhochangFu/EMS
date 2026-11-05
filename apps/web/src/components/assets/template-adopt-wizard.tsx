@@ -142,12 +142,13 @@ export function TemplateAdoptWizard({
           </section>
         );
       })}
-      {preview ? <AdoptionRefusalList refusals={preview.refusals} label="Refusals" /> : null}
+      {/* `F4.315` B1: the verdict first — its "See below." points at the list under it. */}
       {action.message !== null && preview !== null ? (
         <p role="alert" className="text-xs text-critical-ink">
           {action.message}
         </p>
       ) : null}
+      {preview ? <AdoptionRefusalList refusals={preview.refusals} label="Refusals" /> : null}
     </>
   );
 

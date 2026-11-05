@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 
-import { assetPoints, assets, locations, templatePoints } from "@bms/db";
+import { assetPoints, assets, locations, rtus, templatePoints } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type { AdminAssetPointDto, AssetPointPickerRow, QualityPolicy } from "@bms/shared";
 
@@ -11,6 +11,8 @@ import type { AdminAssetPointDto, AssetPointPickerRow, QualityPolicy } from "@bm
 export type AssetPointRow = {
   point: typeof assetPoints.$inferSelect;
   assetCode: string;
+  /** ADR 0111 — the asset's own RTU (`assets.rtu_id`, LEFT-joined), not the point's wiring. */
+  assetRtuName: string | null;
   assetName: string;
   locationId: string | null;
   locationName: string | null;
@@ -45,6 +47,7 @@ export function selectAssetPointRows(db: BmsDb) {
     .select({
       point: assetPoints,
       assetCode: assets.code,
+      assetRtuName: rtus.displayName,
       assetName: assets.name,
       locationId: assets.locationId,
       locationName: locations.name,
@@ -61,6 +64,8 @@ export function selectAssetPointRows(db: BmsDb) {
     .from(assetPoints)
     .innerJoin(assets, eq(assetPoints.assetId, assets.id))
     .leftJoin(locations, eq(assets.locationId, locations.id))
+    // ADR 0111 — the asset's RTU names it; `rtu_id` is nullable (ADR 0018), so LEFT.
+    .leftJoin(rtus, eq(assets.rtuId, rtus.id))
     .leftJoin(
       templatePoints,
       and(eq(templatePoints.templateId, assets.templateId), eq(templatePoints.pointKey, assetPoints.pointKey)),
@@ -83,6 +88,9 @@ export function mapAssetPointRow(row: AssetPointRow): AdminAssetPointDto {
     id: point.id,
     assetId: point.assetId,
     assetCode: row.assetCode,
+    assetRtuName: row.assetRtuName,
+    // The asset's location is the label's `where` when it has no RTU — the same join as `locationName`.
+    assetLocationName: row.locationName,
     assetName: row.assetName,
     locationId: row.locationId,
     locationName: row.locationName,

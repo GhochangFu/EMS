@@ -40,7 +40,7 @@ import {
   type ColumnOrigin,
   type OverrideDraft,
 } from "../../lib/asset-point-calc-override";
-import { suggestionDraft } from "../../lib/formula-suggestions";
+import { type FormulaSuggestion, suggestionDraft } from "../../lib/formula-suggestions";
 import { V2_TRIGGER_LATENCY_HINT, V3_TRIGGER_LATENCY_HINT, dialectOptions } from "../../lib/template-calc-config";
 import { FormulaHelp } from "../asset-templates/formula-help";
 import { BackfillDaysSelect } from "./backfill-days-select";
@@ -88,7 +88,11 @@ type FieldsProps = {
   config: AssetPointCalcConfigDto;
   draft: OverrideDraft;
   busy: boolean;
-  onDraftChange: (next: OverrideDraft) => void;
+  /**
+   * `taken` is the suggestion **Use this formula** applied (`F4.315` review C1): a standalone
+   * surface keeps that suggestion's own input age as chosen. Every other edit passes none.
+   */
+  onDraftChange: (next: OverrideDraft, taken?: FormulaSuggestion) => void;
   /**
    * `F4.311` PR 6a (ADR 0109 decision 1): a calculated point on an asset with
    * no template has nothing to inherit, so the `inherit (…)` options and the
@@ -226,7 +230,7 @@ export function PointCalcFormulaFields({
           pointKey={config.pointKey}
           {...suggestions}
           disabled={busy}
-          onTake={(suggestion) => set(suggestionDraft(suggestion, standalone))}
+          onTake={(suggestion) => onDraftChange({ ...draft, ...suggestionDraft(suggestion, standalone) }, suggestion)}
         />
       ) : null}
     </>

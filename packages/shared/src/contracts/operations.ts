@@ -183,6 +183,8 @@ export const workOrderListItemSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   assetCode: z.string(),
+  assetRtuName: z.string().nullable(),
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   siteName: z.string(),
 });
@@ -208,6 +210,8 @@ export const maintenanceScheduleItemSchema = z.object({
   lastCompletedAt: z.string().nullable(),
   dueState: maintenanceDueStateSchema,
   assetCode: z.string(),
+  assetRtuName: z.string().nullable(),
+  assetLocationName: z.string().nullable(),
   assetName: z.string(),
   siteName: z.string(),
   activeWorkOrderId: z.string().nullable(),

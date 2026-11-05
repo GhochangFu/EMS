@@ -64,6 +64,8 @@ export const STOCK_KEYS = [
 
 export type AdminFixture = {
   readonly ownAssetId: string;
+  /** `F4.316` PR 5 — an own-organization asset that sits on `fx.rtuId`. */
+  readonly rtuAssetId: string;
   readonly foreignAssetId: string;
   readonly foreignOrganizationId: string;
 };
@@ -129,6 +131,17 @@ export async function seedAdminFixture(fleetPool: pg.Pool, fx: Fixtures): Promis
         active: true,
       },
       {
+        code: `${TEST_CODE}-RTU`,
+        name: "Calc parameter admin fixture (on an RTU)",
+        siteName: "Calc parameter admin fixture site",
+        organizationId: fx.organizationId,
+        locationId: fx.rtuLocationId,
+        rtuId: fx.rtuId,
+        domain: "electrical",
+        templateId: null,
+        active: true,
+      },
+      {
         code: `${TEST_CODE}-FOREIGN`,
         name: "Calc parameter admin fixture (foreign)",
         siteName: "Calc parameter admin fixture site",
@@ -143,6 +156,7 @@ export async function seedAdminFixture(fleetPool: pg.Pool, fx: Fixtures): Promis
   const byCode = new Map(rows.map((row) => [row.code, row.id]));
   return {
     ownAssetId: byCode.get(`${TEST_CODE}-OWN`) as string,
+    rtuAssetId: byCode.get(`${TEST_CODE}-RTU`) as string,
     foreignAssetId: byCode.get(`${TEST_CODE}-FOREIGN`) as string,
     foreignOrganizationId,
   };
@@ -542,4 +556,89 @@ export async function assertAForeignOrganizationRowIs404NotForbidden(
   } finally {
     await fleetPool.query(`DELETE FROM bms.calc_parameters WHERE id = $1`, [foreignId]);
   }
+}
+
+// ---- F4.316 PR 5 / ADR 0111 — the asset label's parts ---------------------------
+
+/** The asset's RTU `display_name` (null when none) and location `name`, read from SQL. */
+async function assetNames(fleetPool: pg.Pool, assetId: string): Promise<{ rtu: string | null; location: string }> {
+  const { rows } = await fleetPool.query<{ rtu: string | null; location: string }>(
+    `SELECT r.display_name AS rtu, l.name AS location
+       FROM bms.assets a
+       JOIN bms.locations l ON l.id = a.location_id
+       LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+      WHERE a.id = $1`,
+    [assetId],
+  );
+  const [row] = rows;
+  assert(row !== undefined, `asset ${assetId} must exist`);
+  return row;
+}
+
+/** An asset-scoped row on an asset with an RTU names that RTU and the asset's location. */
+export async function assertAnAssetRowNamesItsRtuAndLocation(
+  svc: CalcParametersAdminService,
+  fleetPool: pg.Pool,
+  fx: Fixtures,
+  fixture: AdminFixture,
+): Promise<void> {
+  const expected = await assetNames(fleetPool, fixture.rtuAssetId);
+  assert(expected.rtu !== null, "the fixture asset must sit on an RTU");
+  const created = await svc.create(fx.adminJwt, {
+    organizationId: fx.organizationId,
+    key: KEY,
+    assetId: fixture.rtuAssetId,
+    value: 4,
+    effectiveFrom: hours(10),
+    effectiveTo: hours(11),
+  });
+  const row = await svc.getById(fx.adminJwt, created.id);
+  assert(row.assetRtuName === expected.rtu, `assetRtuName must be "${expected.rtu}", got ${String(row.assetRtuName)}`);
+  assert(
+    row.assetLocationName === expected.location,
+    `assetLocationName must be "${expected.location}", got ${String(row.assetLocationName)}`,
+  );
+}
+
+/** The twin: an asset with `rtu_id IS NULL` reads `assetRtuName: null` and its location's name. */
+export async function assertAnRtuLessAssetRowNamesItsLocation(
+  svc: CalcParametersAdminService,
+  fleetPool: pg.Pool,
+  fx: Fixtures,
+  fixture: AdminFixture,
+): Promise<void> {
+  const expected = await assetNames(fleetPool, fixture.ownAssetId);
+  assert(expected.rtu === null, "the twin must have no RTU");
+  const created = await svc.create(fx.adminJwt, {
+    organizationId: fx.organizationId,
+    key: KEY,
+    assetId: fixture.ownAssetId,
+    value: 4,
+    effectiveFrom: hours(12),
+    effectiveTo: hours(13),
+  });
+  const row = await svc.getById(fx.adminJwt, created.id);
+  assert(row.assetRtuName === null, `assetRtuName must be null, got ${String(row.assetRtuName)}`);
+  assert(
+    row.assetLocationName === expected.location,
+    `assetLocationName must be "${expected.location}", got ${String(row.assetLocationName)}`,
+  );
+}
+
+/** A location-scoped row names no asset: both names null, not the scope location's name. */
+export async function assertALocationRowNamesNoAsset(
+  svc: CalcParametersAdminService,
+  fx: Fixtures,
+): Promise<void> {
+  const created = await svc.create(fx.adminJwt, {
+    organizationId: fx.organizationId,
+    key: KEY,
+    locationId: fx.rtuLocationId,
+    value: 4,
+    effectiveFrom: hours(14),
+    effectiveTo: hours(15),
+  });
+  const row = await svc.getById(fx.adminJwt, created.id);
+  assert(row.locationName !== null, "the scope location is still labelled");
+  assert(row.assetRtuName === null && row.assetLocationName === null, "a location-scoped row names no asset");
 }

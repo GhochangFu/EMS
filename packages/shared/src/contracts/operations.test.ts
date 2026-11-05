@@ -56,3 +56,12 @@ describe("alarm schemas name the asset's RTU and location (F4.316 PR 2, ADR 0111
   it("alarmAffectedAssetDtoSchema refuses a row with no assetLocationName", () => spec.assertAffectedAssetRequiresAssetLocationName());
   it("alarmAffectedAssetDtoSchema accepts null RTU and location names", () => spec.assertAffectedAssetAcceptsNullParts());
 });
+
+describe("work-order and maintenance-schedule items name the asset's RTU and location (F4.316 PR 4a, ADR 0111)", () => {
+  it("workOrderListItemSchema refuses a row with no assetRtuName", () => spec.assertWorkOrderRequiresAssetRtuName());
+  it("workOrderListItemSchema refuses a row with no assetLocationName", () => spec.assertWorkOrderRequiresAssetLocationName());
+  it("workOrderListItemSchema accepts null RTU and location names", () => spec.assertWorkOrderAcceptsNullParts());
+  it("maintenanceScheduleItemSchema refuses a row with no assetRtuName", () => spec.assertScheduleRequiresAssetRtuName());
+  it("maintenanceScheduleItemSchema refuses a row with no assetLocationName", () => spec.assertScheduleRequiresAssetLocationName());
+  it("maintenanceScheduleItemSchema accepts null RTU and location names", () => spec.assertScheduleAcceptsNullParts());
+});

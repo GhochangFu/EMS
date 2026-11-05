@@ -17,6 +17,7 @@ import {
   inheritedDefaultsShowAsANotice,
   nextIsDisabledWhileARefusalExists,
   theRefusalSentenceNamesTheAssetCodeAndTheKey,
+  theRefusedSentenceSitsAboveItsList,
   thePickerListsOnlyPublishedSameOrganizationSameDomainVersions,
   thePreviewIsOfThePickedVersionAndTheSelection,
   thePreviewListsKeptAddedAndConverted,
@@ -49,6 +50,9 @@ describe("F4.312 PR 3 — the adopt wizard", () => {
   });
   it("the refusal sentence names the asset code and the key", async () => {
     await theRefusalSentenceNamesTheAssetCodeAndTheKey();
+  });
+  it("F4.315 B1: the refused sentence sits above the refusals it points to", async () => {
+    await theRefusedSentenceSitsAboveItsList();
   });
   it("inherited defaults show as a notice", async () => {
     await inheritedDefaultsShowAsANotice();

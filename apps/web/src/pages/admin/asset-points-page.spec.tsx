@@ -142,6 +142,8 @@ export function pointItem(overrides: Partial<AdminAssetPointDto>): AdminAssetPoi
     id: "c1000000-0000-4000-8000-000000000001",
     assetId: "c1000000-0000-4000-8000-0000000000a1",
     assetCode: "C1-PUMP",
+    assetRtuName: null,
+    assetLocationName: null,
     assetName: "C1 pump",
     locationId: "c1000000-0000-4000-8000-0000000000l1",
     locationName: "C1 site",
@@ -528,6 +530,21 @@ export async function theOverrideStepsAreFormulaScheduleReview(): Promise<void> 
     .getAllByRole("listitem")
     .map((item) => item.textContent);
   expect(steps).toEqual(["1. Formula", "2. Schedule", "3. Backfill", "4. Review"]);
+}
+
+/**
+ * `F4.315` B4 (ADR 0109 Amendment 2, decision-2 carve-out): the override's empty age inherits
+ * the template's, so its Schedule step still passes Next. Mutation: a `stepBlocker` on every
+ * wizard, or the blocker passed here too — this reddens.
+ */
+export async function theOverridesEmptyAgeStillPassesNext(): Promise<void> {
+  stubApi();
+  await openOverrideWizard();
+  await next();
+  const age = (await screen.findByLabelText("Inputs valid for (seconds)")) as HTMLInputElement;
+  expect(age.value).toBe("");
+  await next();
+  expect(await screen.findByLabelText(`Backfill for ${CALC_KEY}`)).toBeTruthy();
 }
 
 /** `F4.311` PR 5 (owner ruling 1): a Backfill choice rides on the PUT as `backfillDays`. */
