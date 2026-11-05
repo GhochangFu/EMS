@@ -14,7 +14,7 @@ export function StatusPill({ label, tone = "ok" }: StatusPillProps) {
           ? "border-line bg-well-deep text-neutral-ink"
           : tone === "info"
             ? "border-info-line bg-info-wash text-info-ink"
-            : "border-accent/20 bg-accent/10 text-ok-ink";
+            : "border-ok/20 bg-ok/10 text-ok-ink";
 
   return (
     <span className={`surface-pill inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10.5px] font-semibold uppercase ${cls}`}>

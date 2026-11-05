@@ -4,7 +4,7 @@
  *
  * JSX-owned markup paints with role classes (`fill-accent`, `stroke-ink-hint`). A surface a
  * library paints — ECharts, Leaflet, the CodeMirror theme — cannot take a class, so it reads the
- * 49 roles here, as `rgb(r, g, b)` strings resolved from the `--role` custom properties on
+ * 52 roles here, as `rgb(r, g, b)` strings resolved from the `--role` custom properties on
  * `<html>`. That read happens in this file only (`tests/f3.65c-theme-gates.test.ts` G3), and the
  * role list is `index.css`'s light block exactly (G1).
  *
@@ -15,7 +15,7 @@
 /** The `localStorage` key the boot script in `index.html` reads (G2). */
 export const THEME_STORAGE_KEY = "bms.theme";
 
-/** The 49 roles of `index.css`, in its order. */
+/** The 52 roles of `index.css`, in its order. */
 export const ROLE_NAMES = [
   "canvas",
   "surface",
@@ -66,9 +66,51 @@ export const ROLE_NAMES = [
   "series-6",
   "series-7",
   "series-8",
+  "ok",
+  "ok-strong",
+  "accent-on-chrome",
 ] as const;
 
 export type RoleName = (typeof ROLE_NAMES)[number];
+
+/**
+ * `F4.310` (ADR 0110 decision 2, ADR 0078 Amendment 5) — the roles that keep one light and one dark
+ * value in every colour profile: the alarm and state colours, `on-dark` and `scrim`.
+ * `tests/f4.310-role-lists.test.ts` holds the two lists to a partition of `ROLE_NAMES`.
+ */
+export const FIXED_ROLES = [
+  "on-dark",
+  "scrim",
+  "critical",
+  "critical-ink-soft",
+  "critical-ink",
+  "critical-ink-strong",
+  "critical-wash",
+  "critical-wash-strong",
+  "critical-line",
+  "critical-line-strong",
+  "critical-on-dark",
+  "warning",
+  "warning-ink",
+  "warning-wash",
+  "warning-wash-strong",
+  "warning-line",
+  "warning-on-dark",
+  "ok-ink",
+  "ok-wash",
+  "info",
+  "info-ink",
+  "info-wash",
+  "info-line",
+  "simulated-ink",
+  "ok",
+  "ok-strong",
+] as const satisfies readonly RoleName[];
+
+/** `F4.310` — the roles a colour profile sets: every role that is not in {@link FIXED_ROLES}. */
+export const PROFILE_ROLES: readonly RoleName[] = ROLE_NAMES.filter(
+  (role) => !(FIXED_ROLES as readonly RoleName[]).includes(role),
+);
 
 /** Every role as `rgb(r, g, b)`, keyed by its token name (`roles["ink-muted"]`). */
 export type Roles = Readonly<Record<RoleName, string>>;

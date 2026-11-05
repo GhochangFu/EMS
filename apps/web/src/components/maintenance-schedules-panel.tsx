@@ -66,7 +66,7 @@ function dueStateStyle(item: MaintenanceScheduleItem): string {
   if (item.dueState === "overdue") {
     return "border-critical-line bg-critical-wash text-critical-ink";
   }
-  return "border-accent/20 bg-accent/10 text-accent-strong";
+  return "border-ok/20 bg-ok/10 text-ok-strong";
 }
 
 function categoryStyle(category: MaintenanceScheduleCategory): string {

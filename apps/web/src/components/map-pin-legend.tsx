@@ -17,7 +17,7 @@ const ENTRIES: ReadonlyArray<{ status: PinStatus; label: string }> = [
 
 /** Literal classes, so Tailwind generates them; keyed by the roles `MAP_PIN_ROLES` uses. */
 const SWATCH: Partial<Record<RoleName, string>> = {
-  accent: "bg-accent",
+  ok: "bg-ok",
   warning: "bg-warning",
   critical: "bg-critical",
   "ink-faint": "bg-ink-faint",

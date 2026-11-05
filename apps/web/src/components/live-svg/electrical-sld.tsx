@@ -24,11 +24,11 @@ export type ElectricalSldDiagramProps = {
  * the blink dot carry the status, so the dash on top is deliberately not the same role, and its
  * contrast against `accent` is not a declared pair (§2.5).
  */
-const STROKE_ACCENT = "stroke-accent";
+const STROKE_OK = "stroke-ok";
 const STROKE_FAULT = "stroke-critical";
 const STROKE_MUTED = "stroke-ink-hint";
-const STROKE_FLOW = "stroke-accent-strong";
-const FILL_FLOW = "fill-accent-strong";
+const STROKE_FLOW = "stroke-ok-strong";
+const FILL_FLOW = "fill-ok-strong";
 const FILL_LABEL_MUTED = "fill-ink-muted";
 const FILL_PANEL = "fill-ok-wash";
 
@@ -39,7 +39,7 @@ function strokeFor(status: LiveSvgStatus): string {
   if (status === "offline") {
     return STROKE_MUTED;
   }
-  return STROKE_ACCENT;
+  return STROKE_OK;
 }
 
 function flowStrokeFor(status: LiveSvgStatus): string {
@@ -58,7 +58,7 @@ function textToneFor(status: LiveSvgStatus): string {
   if (status === "offline") {
     return "fill-ink-muted";
   }
-  return "fill-accent-strong";
+  return "fill-ok-strong";
 }
 
 function flowDurationSec(kw: number | null): string {
@@ -362,13 +362,13 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
         onSelectAsset={onSelectAsset}
       />
 
-      <line x1={50} y1={200} x2={850} y2={200} className="stroke-accent" strokeWidth={6} />
+      <line x1={50} y1={200} x2={850} y2={200} className="stroke-ok" strokeWidth={6} />
       <line
         x1={50}
         y1={200}
         x2={850}
         y2={200}
-        className="stroke-accent-strong sld-flow opacity-70"
+        className="stroke-ok-strong sld-flow opacity-70"
         strokeWidth={2}
         style={
           {
@@ -380,7 +380,7 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
         x={450}
         y={192}
         textAnchor="middle"
-        className="fill-accent-strong font-condensed text-[13px] font-bold"
+        className="fill-ok-strong font-condensed text-[13px] font-bold"
       >
         MAIN LV BUS · 415 V · {busMw} MW{staleNote}
       </text>
@@ -463,7 +463,7 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
           x={290}
           y={170}
           textAnchor="middle"
-          className="font-mono text-[10px] font-bold fill-accent-strong"
+          className="font-mono text-[10px] font-bold fill-ok-strong"
         >
           UPS-500 BANK
         </text>
@@ -471,7 +471,7 @@ export function ElectricalSldDiagram({ onSelectAsset }: ElectricalSldDiagramProp
           x={290}
           y={183}
           textAnchor="middle"
-          className="font-mono text-[9px] fill-accent-strong"
+          className="font-mono text-[9px] fill-ok-strong"
         >
           2,100 kVA · {upsLoadPct(ups.slice.kw)}%
         </text>

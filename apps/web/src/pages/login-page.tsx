@@ -74,7 +74,7 @@ export function LoginPage() {
               <Wordmark variant="hero" />
             </div>
             <h1 className="mt-8 max-w-xl font-condensed text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
-              Integrated <span className="text-accent">Building, Energy, Water &amp; Utility</span> Management · Smart insight, always on.
+              Integrated <span className="text-accent-on-chrome">Building, Energy, Water &amp; Utility</span> Management · Smart insight, always on.
             </h1>
             <p className="mt-4 max-w-lg text-sm leading-6 text-on-dark/70">
               Unified enterprise EMS for power, HVAC, water, utilities, alarms,

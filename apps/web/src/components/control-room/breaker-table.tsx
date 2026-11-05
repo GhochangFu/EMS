@@ -54,7 +54,7 @@ export function breakerStatusClass(status: BreakerVisualStatus): string {
     case "unknown":
       return "border-line bg-well text-ink-muted";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent-strong";
+      return "border-ok/20 bg-ok/10 text-ok-strong";
     default: {
       const unreachable: never = status;
       return unreachable;

@@ -26,7 +26,7 @@ type HealthSummaryDonutProps = {
  * `F3.65c` (owner ruling OQ4) — five roles, resolved for the current theme. The Fair slice's
  * `warning-on-dark` is under 3:1 on a light `surface`, a declared light allowlist entry in
  * `tests/f3.65a-colour-contrast.test.ts`: every slice is named in the legend list below. */
-const SLICE_ROLES: readonly RoleName[] = ["accent", "accent-strong", "warning-on-dark", "warning", "critical"];
+const SLICE_ROLES: readonly RoleName[] = ["ok", "ok-strong", "warning-on-dark", "warning", "critical"];
 
 /**
  * `E1.3` Unit 8 — the plant/enterprise donut (ADR 0050 Amendment 1 decision

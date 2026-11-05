@@ -168,7 +168,7 @@ function statusPillClass(status: BatteryStatus): string {
     case "offline":
       return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent-strong";
+      return "border-ok/20 bg-ok/10 text-ok-strong";
   }
 }
 
@@ -213,7 +213,7 @@ function cellClass(status: BatteryStatus): string {
   if (status === "offline") {
     return "border-line-strong bg-well-deep text-ink-muted";
   }
-  return "border-accent/20 bg-accent/10 text-accent-strong";
+  return "border-ok/20 bg-ok/10 text-ok-strong";
 }
 
 export function ControlRoomBatteryContent() {
@@ -332,7 +332,7 @@ export function ControlRoomBatteryContent() {
         <DetailCard title="Battery Alerts">
           {batteryAlerts(strings).map((alert) => (
             <div key={alert.label} className="flex items-start gap-2 text-sm">
-              <span className={`mt-1 h-2 w-2 rounded-full ${alert.status === "normal" ? "bg-accent" : alert.status === "critical" ? "bg-critical" : "bg-warning"}`} />
+              <span className={`mt-1 h-2 w-2 rounded-full ${alert.status === "normal" ? "bg-ok" : alert.status === "critical" ? "bg-critical" : "bg-warning"}`} />
               <span className="flex-1 text-ink">{alert.label}</span>
               <span className="text-xs text-ink-muted">{alert.when}</span>
             </div>

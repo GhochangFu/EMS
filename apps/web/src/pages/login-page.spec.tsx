@@ -55,10 +55,10 @@ export function readsTheHeroHeadline(): void {
   );
 }
 
-/** L2b — the accent span holds "Building, Energy, Water & Utility". */
+/** L2b — the accent span holds "Building, Energy, Water & Utility" (`accent-on-chrome` since `F4.310`: it sits on the hero chrome). */
 export function accentsTheDescriptorCore(): void {
   renderLogin();
-  const accent = screen.getByRole("heading", { level: 1 }).querySelector("span.text-accent");
+  const accent = screen.getByRole("heading", { level: 1 }).querySelector("span.text-accent-on-chrome");
   expect(accent?.textContent).toBe("Building, Energy, Water & Utility");
 }
 

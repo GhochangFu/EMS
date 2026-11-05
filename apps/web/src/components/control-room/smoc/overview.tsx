@@ -217,7 +217,7 @@ function statusPillClass(status: CrStatus): string {
     case "offline":
       return "border-line-strong bg-line text-ink-muted";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent-strong";
+      return "border-ok/20 bg-ok/10 text-ok-strong";
   }
 }
 
@@ -555,7 +555,7 @@ function svgStroke(status: CrStatus): string {
   if (status === "open") {
     return "stroke-ink-hint";
   }
-  return "stroke-accent";
+  return "stroke-ok";
 }
 
 function svgFill(status: CrStatus): string {
@@ -568,7 +568,7 @@ function svgFill(status: CrStatus): string {
   if (status === "warning") {
     return "fill-warning";
   }
-  return "fill-accent";
+  return "fill-ok";
 }
 
 function svgBoxClass(status: CrStatus): string {
@@ -584,7 +584,7 @@ function svgBoxClass(status: CrStatus): string {
   if (status === "open") {
     return "fill-well-deep stroke-ink-hint";
   }
-  return "fill-surface stroke-accent";
+  return "fill-surface stroke-ok";
 }
 
 function MiniSld({ rules }: { rules: RuleListItem[] }) {
@@ -616,7 +616,7 @@ function MiniSld({ rules }: { rules: RuleListItem[] }) {
       <text x="53" y="118" textAnchor="middle" className="fill-ink font-condensed text-[13px] font-bold">UTILITY</text>
       <text x="53" y="134" textAnchor="middle" className="fill-ink-muted font-mono text-[10px]"><StaticTspan kind="nameplate">11 kV</StaticTspan></text>
       <circle cx="170" cy="120" r="14" className={svgBoxClass(q1State.status)} strokeWidth={2} />
-      <text x="170" y="124" textAnchor="middle" className="fill-accent font-mono text-[9px] font-bold">Q1</text>
+      <text x="170" y="124" textAnchor="middle" className="fill-ok font-mono text-[9px] font-bold">Q1</text>
       <line x1="184" y1="120" x2="240" y2="120" className={svgStroke(q1State.status)} strokeWidth={3} />
       <rect x="240" y="50" width="6" height="146" rx="2" className={svgFill(mergeStatus([q4State, q5State, q6State, q8State, q9State]).status)} />
       <SldMiniBranch y={80} label="UPS-1" sub={`${n(ups1.loadPct, 0)}% · ${n(ups1.backupMin, 0)} min`} status={q4State.status} />

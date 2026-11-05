@@ -20,7 +20,7 @@ export type CracSchematicProps = {
  * one's fill depends on a different local condition (`trip`, `warn`, `pumpRun`) that `status`
  * alone does not carry.
  */
-const STROKE_OK = "stroke-accent";
+const STROKE_OK = "stroke-ok";
 const STROKE_MUTED = "stroke-ink-hint";
 const STROKE_FAULT = "stroke-critical";
 const STROKE_WARN = "stroke-warning";
@@ -31,7 +31,7 @@ const STROKE_WARN = "stroke-warning";
  * 3.03 light (D7); `critical-ink` / `ink-muted` on their washes are the
  * declared pairs (§2.5) that already exist for exactly this case.
  */
-const TEXT_OK = "fill-accent-strong";
+const TEXT_OK = "fill-ok-strong";
 const TEXT_MUTED = "fill-ink-muted";
 const TEXT_FAULT = "fill-critical-ink";
 
@@ -524,12 +524,12 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
       >
         800 kW · plant avg
       </text>
-      <rect x={700} y={168} width={120} height={28} rx={3} className="fill-ok-wash stroke-accent" />
+      <rect x={700} y={168} width={120} height={28} rx={3} className="fill-ok-wash stroke-ok" />
       <text
         x={760}
         y={186}
         textAnchor="middle"
-        className="font-mono text-[10px] font-semibold fill-accent-strong"
+        className="font-mono text-[10px] font-semibold fill-ok-strong"
       >
         Load {chillerLoadPct ?? "—"}% · {plant.avgCoolingKw != null ? `${plant.avgCoolingKw.toFixed(0)} kW` : "—"}{" "}
         · COP 5.8
@@ -547,7 +547,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         cx={905}
         cy={180}
         r={22}
-        className={pumpRun ? "fill-ok-wash stroke-accent" : "fill-well-deep stroke-ink-hint"}
+        className={pumpRun ? "fill-ok-wash stroke-ok" : "fill-well-deep stroke-ink-hint"}
         strokeWidth={2}
       />
       <g
@@ -559,7 +559,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
       >
         <path
           d="M -12 0 L 12 0 M 0 -12 L 0 12"
-          className={pumpRun ? "stroke-accent" : "stroke-ink-hint"}
+          className={pumpRun ? "stroke-ok" : "stroke-ink-hint"}
           strokeWidth={2.5}
           strokeLinecap="round"
         />
@@ -568,7 +568,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={905}
         y={215}
         textAnchor="middle"
-        className="font-mono text-[10px] font-bold fill-accent"
+        className="font-mono text-[10px] font-bold fill-ok"
       >
         PMP-A1
       </text>
@@ -576,7 +576,7 @@ export function CracSchematic({ onSelectAsset }: CracSchematicProps) {
         x={905}
         y={227}
         textAnchor="middle"
-        className="font-mono text-[9px] fill-accent"
+        className="font-mono text-[9px] fill-ok"
       >
         {pumpRun ? "ON" : "—"} · {plant.avgFlowLps != null ? `${Math.round((plant.avgFlowLps / 5.5) * 100)}%` : "—"}
       </text>

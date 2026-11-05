@@ -111,6 +111,8 @@ const TAILWIND_CONFIG_PATH = join(repoRoot, "apps/web/tailwind.config.js");
  * plan's gate — see `tests/support/colour-role-map.ts`'s docblock for the derivation). The 40 §2.2 rows are the
  * plan's table transcribed, not derived; `simulated-ink` is not in the plan and is derived here.
  * Roles 42–49, `series-1` … `series-8`, are ADR 0078 Amendment 4's table transcribed (F4.306).
+ * Roles 50–52, `ok`, `ok-strong` and `accent-on-chrome`, are ADR 0078 Amendment 5 and ADR 0110
+ * (F4.310 PR A, plan OQ2): each copies the role it splits from exactly, so no pixel moves.
  * T9/T10 are the check that `index.css` matches this table.
  */
 const ROLE_HEX: Record<string, { light: string; dark: string }> = {
@@ -171,6 +173,13 @@ const ROLE_HEX: Record<string, { light: string; dark: string }> = {
   "series-6": { light: "#4D7C0F", dark: "#A3E635" },
   "series-7": { light: "#475569", dark: "#CBD5E1" },
   "series-8": { light: "#312E81", dark: "#C7D2FE" },
+  // Roles 50–52 (ADR 0078 Amendment 5, ADR 0110, F4.310): `ok` and `ok-strong` take the "OK /
+  // healthy" meaning off `accent` and `accent-strong` and stay fixed in every colour profile;
+  // `accent-on-chrome` is the brand colour on the dark chrome (the wordmark), changeable. Each is
+  // its source role's value exactly (T9/T10).
+  ok: { light: "#00A651", dark: "#3DCD58" },
+  "ok-strong": { light: "#007C3C", dark: "#65D77A" },
+  "accent-on-chrome": { light: "#00A651", dark: "#3DCD58" },
 };
 
 /**
@@ -226,11 +235,11 @@ const stockColours = createRequire(join(repoRoot, "apps/web/package.json"))("tai
 describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
   const css = () => readFileSync(INDEX_CSS_PATH, "utf8");
 
-  it("T7 the light block defines exactly the 40 role names of §2.2, simulated-ink and series-1…8 (49 total)", () => {
+  it("T7 the light block defines exactly the 40 role names of §2.2, simulated-ink, series-1…8, ok, ok-strong and accent-on-chrome (52 total)", () => {
     expect([...parseTokenBlocks(css()).light.keys()].sort()).toEqual(Object.keys(ROLE_HEX).sort());
   });
 
-  it("T7 the dark block defines exactly the 40 role names of §2.2, simulated-ink and series-1…8 (49 total)", () => {
+  it("T7 the dark block defines exactly the 40 role names of §2.2, simulated-ink, series-1…8, ok, ok-strong and accent-on-chrome (52 total)", () => {
     expect([...parseTokenBlocks(css()).dark.keys()].sort()).toEqual(Object.keys(ROLE_HEX).sort());
   });
 
@@ -263,7 +272,7 @@ describe("F3.65a: the token file (index.css) and the Tailwind mapping", () => {
     expect(mismatches).toEqual([]);
   });
 
-  it("T11 the role stems of theme.colors (outside the three keywords) are exactly the 49 roles", () => {
+  it("T11 the role stems of theme.colors (outside the three keywords) are exactly the 52 roles", () => {
     expect([...configColourLeaves.keys()].sort()).toEqual(Object.keys(ROLE_HEX).sort());
   });
 

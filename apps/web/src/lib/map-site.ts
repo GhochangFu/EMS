@@ -129,7 +129,7 @@ export function mapLiveCounts(sites: readonly MapSiteDto[]): { live: number; not
  * A `Record` over the contract's enum: a new status fails the type check until it has a role.
  */
 export const MAP_PIN_ROLES: Readonly<Record<MapSiteDto["live"]["status"], RoleName>> = {
-  healthy: "accent",
+  healthy: "ok",
   warning: "warning",
   critical: "critical",
   offline: "ink-faint",

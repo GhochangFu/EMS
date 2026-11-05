@@ -18,7 +18,7 @@ import { WorldMap } from "./world-map";
  * children, `CircleMarker` records the `pathOptions` it receives, the rest render nothing. The
  * expected values come from the dark block of `index.css`, not from the resolver the map reads.
  *
- * A `healthy` site's fill is `accent` and every marker's stroke is `chrome` — both differ between
+ * A `healthy` site's fill is `ok` (`accent` before `F4.310`) and every marker's stroke is `chrome` — both differ between
  * the themes, so neither claim passes without a re-render.
  */
 

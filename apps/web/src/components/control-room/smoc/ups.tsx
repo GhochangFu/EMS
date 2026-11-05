@@ -169,7 +169,7 @@ function statusPillClass(status: UpsStatus): string {
     case "offline":
       return "border-line bg-well-deep text-neutral-ink";
     case "normal":
-      return "border-accent/20 bg-accent/10 text-accent-strong";
+      return "border-ok/20 bg-ok/10 text-ok-strong";
   }
 }
 
@@ -193,7 +193,7 @@ function strokeClassFor(status: UpsStatus): string {
   if (status === "offline") {
     return "stroke-ink-hint";
   }
-  return "stroke-accent";
+  return "stroke-ok";
 }
 
 function fillClassFor(status: UpsStatus): string {
@@ -206,7 +206,7 @@ function fillClassFor(status: UpsStatus): string {
   if (status === "offline") {
     return "fill-ink-hint";
   }
-  return "fill-accent";
+  return "fill-ok";
 }
 
 function boxClass(status: UpsStatus): string {
@@ -219,7 +219,7 @@ function boxClass(status: UpsStatus): string {
   if (status === "offline") {
     return "fill-well-deep stroke-ink-hint";
   }
-  return "fill-surface stroke-accent";
+  return "fill-surface stroke-ok";
 }
 
 function modeFor(slice: SchematicTelemetrySlice, status: UpsStatus): string {

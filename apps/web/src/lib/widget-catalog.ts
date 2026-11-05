@@ -84,7 +84,7 @@ export type WidgetSeries = {
  * and a tank fill follow the theme like everything else.
  */
 export const WIDGET_TONE_ROLE: Readonly<Record<WidgetTone, RoleName>> = {
-  ok: "accent",
+  ok: "ok",
   info: "info",
   warning: "warning",
   critical: "critical",
@@ -96,7 +96,7 @@ export const WIDGET_TONE_ROLE: Readonly<Record<WidgetTone, RoleName>> = {
  * to one source).
  */
 export const WIDGET_TONE_FILL_CLASS: Readonly<Record<WidgetTone, string>> = {
-  ok: "fill-accent",
+  ok: "fill-ok",
   info: "fill-info",
   warning: "fill-warning",
   critical: "fill-critical",
