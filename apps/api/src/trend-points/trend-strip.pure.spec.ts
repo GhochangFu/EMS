@@ -43,8 +43,12 @@ function segment(domain: string, codes: readonly string[]): TrendPointSegmentDto
   };
 }
 
-function asset(code: string, domain: string): StripAsset {
-  return { id: `id-${code}`, code, name: `${code} name`, domain };
+function asset(
+  code: string,
+  domain: string,
+  where: { rtuName: string | null; locationName: string | null } = { rtuName: null, locationName: null },
+): StripAsset {
+  return { id: `id-${code}`, code, name: `${code} name`, domain, ...where };
 }
 
 function reg(assetCode: string, pointKey: string, unit: string | null = `${pointKey}-u`): StripRegistration {
@@ -70,6 +74,8 @@ function plan(segments: number, points: number, assets: number): StripPlan {
           assetId: `a-${s}-${p}-${a}`,
           assetCode: `A${String(a).padStart(2, "0")}`,
           assetName: `Asset ${a}`,
+          assetRtuName: null,
+          assetLocationName: null,
           unit: null,
         })),
       })),
@@ -215,6 +221,30 @@ export function assertTheSeriesCarriesTheRegistrationUnit(): void {
   expect(point.assets[0]?.unit).toBe("MW");
 }
 
+/** `F4.316` (ADR 0111) — a planned asset carries the RTU and location names the row read. */
+export function assertAPlannedAssetCarriesItsRtuAndLocationNames(): void {
+  const result = pairsFor(
+    [asset("X1", "x", { rtuName: "RTU 1", locationName: "Site 1" })],
+    [segment("x", ["kw"])],
+    [reg("X1", "kw")],
+    { overview: false },
+  );
+  const planned = result.segments[0]?.points[0]?.assets[0] ?? fail("no asset");
+  expect({ rtu: planned.assetRtuName, location: planned.assetLocationName }).toEqual({ rtu: "RTU 1", location: "Site 1" });
+}
+
+/** `F4.316` (ADR 0111) — an RTU-less asset is planned with `assetRtuName: null` and its location name. */
+export function assertAnRtuLessPlannedAssetKeepsItsLocationName(): void {
+  const result = pairsFor(
+    [asset("X1", "x", { rtuName: null, locationName: "Site 1" })],
+    [segment("x", ["kw"])],
+    [reg("X1", "kw")],
+    { overview: false },
+  );
+  const planned = result.segments[0]?.points[0]?.assets[0] ?? fail("no asset");
+  expect({ rtu: planned.assetRtuName, location: planned.assetLocationName }).toEqual({ rtu: null, location: "Site 1" });
+}
+
 // ---------------------------------------------------------------------------
 // fitSeries
 // ---------------------------------------------------------------------------
@@ -277,6 +307,19 @@ export function assertGroupSeriesGapFillsEveryPair(): void {
   expect(assets[1]?.buckets.every((b) => b.v === null)).toBe(true);
 }
 
+/** `F4.316` (ADR 0111) — the response series carries the planned asset's RTU and location names. */
+export function assertGroupSeriesEmitsTheRtuAndLocationNames(): void {
+  const w = stripWindow("24h", NOW);
+  const p = pairsFor(
+    [asset("X1", "x", { rtuName: "RTU 1", locationName: "Site 1" })],
+    [segment("x", ["kw"])],
+    [reg("X1", "kw")],
+    { overview: false },
+  );
+  const series = groupSeries(p, [], w)[0]?.points[0]?.assets[0] ?? fail("no series");
+  expect({ rtu: series.assetRtuName, location: series.assetLocationName }).toEqual({ rtu: "RTU 1", location: "Site 1" });
+}
+
 // ---------------------------------------------------------------------------
 // pairsFor — the F4.306 selection (ADR 0108 Amendment 7, OQ4)
 // ---------------------------------------------------------------------------
@@ -299,6 +342,9 @@ function twoSegmentSite(): [StripAsset[], TrendPointSegmentDto[], StripRegistrat
   ];
 }
 
+/** The golden plan's assets have neither an RTU nor a location name. */
+const NO_WHERE = { assetRtuName: null, assetLocationName: null } as const;
+
 export function assertNoSelectionKeepsTheGoldenPlan(): void {
   const [assets, segments, registrations] = twoSegmentSite();
   const result = pairsFor(assets, segments, registrations, { overview: true });
@@ -307,8 +353,8 @@ export function assertNoSelectionKeepsTheGoldenPlan(): void {
     name: `${code} name`,
     unit: `${code}-u`,
     assets: [
-      { assetId: "id-X1", assetCode: "X1", assetName: "X1 name", unit: `${code}-u` },
-      ...more.map((c) => ({ assetId: `id-${c}`, assetCode: c, assetName: `${c} name`, unit: `${code}-u` })),
+      { assetId: "id-X1", assetCode: "X1", assetName: "X1 name", ...NO_WHERE, unit: `${code}-u` },
+      ...more.map((c) => ({ assetId: `id-${c}`, assetCode: c, assetName: `${c} name`, ...NO_WHERE, unit: `${code}-u` })),
     ],
     moreAssets: 0,
   });
@@ -324,14 +370,14 @@ export function assertNoSelectionKeepsTheGoldenPlan(): void {
             code: "t1",
             name: "t1 name",
             unit: "t1-u",
-            assets: [{ assetId: "id-Y1", assetCode: "Y1", assetName: "Y1 name", unit: "t1-u" }],
+            assets: [{ assetId: "id-Y1", assetCode: "Y1", assetName: "Y1 name", ...NO_WHERE, unit: "t1-u" }],
             moreAssets: 0,
           },
           {
             code: "t2",
             name: "t2 name",
             unit: "t2-u",
-            assets: [{ assetId: "id-Y1", assetCode: "Y1", assetName: "Y1 name", unit: null }],
+            assets: [{ assetId: "id-Y1", assetCode: "Y1", assetName: "Y1 name", ...NO_WHERE, unit: null }],
             moreAssets: 0,
           },
         ],

@@ -86,6 +86,8 @@ function entry(assetId: string, drawn: boolean): SiteSegmentViewsDto["ranking"][
     assetId,
     assetCode: assetId.slice(-1),
     assetName: assetId.slice(-1),
+    assetRtuName: null,
+    assetLocationName: null,
     unit: "kW",
     current: stats,
     compare: null,

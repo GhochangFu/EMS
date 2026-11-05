@@ -19,6 +19,8 @@ function entry(code: string, fields: Partial<SegmentAbnormalEntryDto>): SegmentA
     assetId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     assetCode: code,
     assetName: `Asset ${code}`,
+    assetRtuName: null,
+    assetLocationName: null,
     unit: "kW",
     currentMean: 30,
     baselineMean: 20,
@@ -91,4 +93,17 @@ export function anEmptyListSaysSo(): void {
   renderList({ ...ABNORMAL, entries: [], truncated: false });
   expect(screen.getByText("No asset is outside its normal for this point.")).toBeInTheDocument();
   expect(screen.getByText("7 assets within their normal range")).toBeInTheDocument();
+}
+
+/** `F4.316` (ADR 0111) — an entry names its asset `<code> · <RTU>`; the RTU-less twin `<code> · <location>`. */
+export function namesEachEntryByItsAssetLabel(): void {
+  renderList({
+    ...ABNORMAL,
+    entries: [
+      entry("U1", { assetRtuName: "RTU 1", assetLocationName: "Site 1" }),
+      entry("D1", { assetId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd", assetLocationName: "Site 1", verdict: "below" }),
+    ],
+  });
+  expect(screen.getByText("U1 · RTU 1")).toBeInTheDocument();
+  expect(screen.getByText("D1 · Site 1")).toBeInTheDocument();
 }
