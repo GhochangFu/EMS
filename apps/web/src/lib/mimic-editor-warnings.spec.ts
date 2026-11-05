@@ -24,6 +24,7 @@ function unit(key: string, over: Partial<EditorNode> = {}): EditorNode {
     fanOut: false,
     isSource: false,
     isSwitching: false,
+    pointKeys: [],
     ...over,
   };
 }

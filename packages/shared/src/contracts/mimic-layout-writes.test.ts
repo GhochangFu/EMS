@@ -59,4 +59,15 @@ describe("F3.32c — the mimic layout write bodies", () => {
   it("F3.80 refuses a panel that is switching", () => spec.refusesAPanelThatIsSwitching());
   it("F3.80 refuses a label that is switching", () => spec.refusesALabelThatIsSwitching());
   it("F3.80 leaves an absent switching flag absent", () => spec.leavesAnAbsentSwitchingFlagAbsent());
+  it("F4.307 accepts a roled unit with three point keys, in order", () =>
+    spec.acceptsARoledUnitWithThreePointKeysInOrder());
+  it("F4.307 leaves an absent point list absent", () => spec.leavesAnAbsentPointListAbsent());
+  it("F4.307 refuses four point keys at nodes.0.pointKeys", () => spec.refusesFourPointKeys());
+  it("F4.307 refuses a point key listed twice", () => spec.refusesAPointKeyListedTwice());
+  it("F4.307 refuses a point list on a panel", () => spec.refusesAPointListOnAPanel());
+  it("F4.307 refuses a point list on a label", () => spec.refusesAPointListOnALabel());
+  it("F4.307 refuses a point list on a role-less unit", () => spec.refusesAPointListOnARolelessUnit());
+  it("F4.307 accepts an empty point list on a role-less unit and a panel", () =>
+    spec.acceptsAnEmptyPointListOnARolelessUnitAndAPanel());
+  it("F4.307 refuses a point key that is not a catalog code", () => spec.refusesAPointKeyThatIsNotACatalogCode());
 });

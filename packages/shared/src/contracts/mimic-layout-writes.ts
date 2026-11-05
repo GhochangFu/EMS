@@ -1,6 +1,8 @@
 import { z } from "zod";
 
+import { CATALOG_CODE_MESSAGE, CATALOG_CODE_PATTERN } from "../constants";
 import { isOrgLibraryKey, libraryOfSymbol, mimicSymbolLibrary } from "../mimic-symbol-libraries";
+import { MIMIC_HEADLINE_POINTS } from "./mimic";
 import {
   MIMIC_LAYOUT_BOUNDS,
   MIMIC_LAYOUT_NODE_KEY,
@@ -70,12 +72,31 @@ export const mimicLayoutWriteNodeSchema = z
      * the units-only rule.
      */
     isSwitching: z.boolean().optional(),
+    /**
+     * `F4.307` / ADR 0081 Amendment 1 (plan C1) — a roled unit's ordered point list, at most
+     * `MIMIC_HEADLINE_POINTS` catalog codes, each once. Absent is `[]` on the replace-all rule:
+     * an absent list clears a stored one. Whether each code is an active catalog key is the
+     * service's check; migration `0124` holds units only and the `ord` bound.
+     */
+    pointKeys: z
+      .array(z.string().min(1).max(128).regex(CATALOG_CODE_PATTERN, CATALOG_CODE_MESSAGE))
+      .max(MIMIC_HEADLINE_POINTS)
+      .optional(),
   })
   .strict()
   .superRefine((node, ctx) => {
     const refuse = (path: string, message: string): void => {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
     };
+    const listed = node.pointKeys ?? [];
+    listed.forEach((code, index) => {
+      if (listed.indexOf(code) !== index) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["pointKeys", index], message: "A point is listed twice" });
+      }
+    });
+    if (listed.length > 0 && (node.kind !== "unit" || node.roleCode == null)) {
+      refuse("pointKeys", node.kind === "unit" ? "A unit with no role lists no points" : `A ${node.kind} lists no points`);
+    }
     if (node.kind !== "unit") {
       if (node.fanOut === true) refuse("fanOut", `A ${node.kind} carries no fan-out flag`);
       if (node.isSource === true) refuse("isSource", `A ${node.kind} carries no source flag`);
@@ -93,7 +114,8 @@ export const mimicLayoutWriteNodeSchema = z
   })
   .describe(
     "A unit needs a symbol and carries no tone; a panel needs a tone and carries no symbol " +
-      "or role; a label carries none of the three. Only a unit may set fanOut, isSource or isSwitching.",
+      "or role; a label carries none of the three. Only a unit may set fanOut, isSource or isSwitching. " +
+      `Only a unit with a role may list pointKeys: at most ${MIMIC_HEADLINE_POINTS} point-key codes, each once, in display order.`,
   );
 
 /** One pipe, between two unit keys of the same body. */

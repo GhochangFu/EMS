@@ -1,3 +1,4 @@
+import { MIMIC_HEADLINE_POINTS } from "../../contracts/mimic";
 import { createMimicLayoutBodySchema, putMimicLayoutBodySchema } from "../../contracts/mimic-layout-writes";
 import {
   MIMIC_LAYOUT_BOUNDS,
@@ -27,7 +28,8 @@ const { canvasW, canvasH } = MIMIC_LAYOUT_BOUNDS;
 export const MIMIC_LAYOUT_BODY_GUIDE =
   `A node is {"key", "kind", "label", "x", "y", "w", "h"}; key matches ${MIMIC_LAYOUT_NODE_KEY.source} and is unique in the body; ` +
   `kind is ${orList(mimicLayoutNodeKindSchema.options)}. A unit also takes symbol (required) and optionally roleCode, ` +
-  `fanOut, isSource and isSwitching (booleans); a panel takes tone (${orList(mimicPanelToneSchema.options)}) and no symbol; ` +
+  `fanOut, isSource and isSwitching (booleans), and a unit with a roleCode optionally pointKeys (up to ` +
+  `${MIMIC_HEADLINE_POINTS} point-key codes, each once, shown in that order; absent clears the list); a panel takes tone (${orList(mimicPanelToneSchema.options)}) and no symbol; ` +
   `a label takes neither. A pipe is {"fromKey", "toKey"}: two different unit keys of this body. x, y, w, h are whole grid ` +
   `cells and each node lies inside canvasW x canvasH (canvasW ${canvasW.min}-${canvasW.max}, canvasH ${canvasH.min}-${canvasH.max}). ` +
   `symbolLibraries defaults to ["core"]; core symbols: ${mimicCoreSymbolSchema.options.join(", ")}. Propose without describe_change.`;

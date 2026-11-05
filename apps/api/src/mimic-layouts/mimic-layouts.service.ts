@@ -13,6 +13,7 @@ import { alias } from "drizzle-orm/pg-core";
 import {
   assetRoles,
   dashboardWidgets,
+  mimicLayoutNodePoints,
   mimicLayoutNodes,
   mimicLayoutPipes,
   mimicLibrarySettings,
@@ -21,6 +22,7 @@ import {
   mimicOrgSymbols,
   mimicSymbolLibraries,
   mimicSymbols,
+  pointKeys,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
@@ -79,6 +81,12 @@ const UNKNOWN_LIBRARY_MESSAGE = "Unknown symbol library";
  * decision 5): the class of error only, never the key.
  */
 const UNKNOWN_SYMBOL_MESSAGE = "Unknown mimic symbol";
+
+/**
+ * `F4.307` (plan C7) — a listed code with no **active** `bms.point_keys` row. Unknown and retired
+ * answer the same sentence, and neither is echoed.
+ */
+export const UNKNOWN_POINT_KEY_MESSAGE = "Unknown point key";
 
 /** The roles that may draw, besides `admin` (ADR 0081 decision 3). */
 const AUTHOR_ROLES = new Set(["admin", "organization_admin"]);
@@ -181,6 +189,7 @@ export class MimicLayoutsService {
     await this.assertLibrariesLive(body.symbolLibraries, new Set(), body.organizationId);
     await this.assertRolesLive(body.nodes, new Set());
     await this.assertSymbolsLive(body.nodes, new Set(), body.organizationId);
+    await this.assertPointKeysLive(body.nodes, new Set());
     return withTenant(this.tenantDb, body.organizationId, async (tx) => {
       const [layout] = await tx
         .insert(mimicLayouts)
@@ -263,6 +272,18 @@ export class MimicLayoutsService {
     const keptSymbols = new Set(stored.flatMap((row) => [row.symbol, row.orgSymbolKey].filter((key): key is string => key !== null)));
     await this.assertRolesLive(body.nodes, keptRoles);
     await this.assertSymbolsLive(body.nodes, keptSymbols, existing.organizationId);
+    // `F4.307`: a code this layout already lists, on any of its units, stays valid once retired.
+    const listed = await this.fleetDb
+      .selectDistinct({ pointKey: mimicLayoutNodePoints.pointKey })
+      .from(mimicLayoutNodePoints)
+      .innerJoin(mimicLayoutNodes, eq(mimicLayoutNodes.id, mimicLayoutNodePoints.nodeId))
+      .where(
+        and(
+          eq(mimicLayoutNodes.layoutId, existing.id),
+          eq(mimicLayoutNodePoints.organizationId, existing.organizationId),
+        ),
+      );
+    await this.assertPointKeysLive(body.nodes, new Set(listed.map((row) => row.pointKey)));
   }
 
   /**
@@ -285,6 +306,7 @@ export class MimicLayoutsService {
       await this.assertLibrariesLive(input.body.symbolLibraries, new Set(), input.body.organizationId);
       await this.assertRolesLive(input.body.nodes, new Set());
       await this.assertSymbolsLive(input.body.nodes, new Set(), input.body.organizationId);
+      await this.assertPointKeysLive(input.body.nodes, new Set());
       return { baseline: null };
     }
     const existing = await this.fetchReadable(jwt, input.id);
@@ -403,6 +425,28 @@ export class MimicLayoutsService {
       .where(and(inArray(assetRoles.code, unique), eq(assetRoles.active, true)));
     const found = new Set(live.map((row) => row.code));
     return unique.filter((code) => !found.has(code)).sort();
+  }
+
+  /**
+   * `F4.307` (plan C7, the ADR 0086 decision 5 pattern) — every code a unit lists is an **active**
+   * `bms.point_keys` row, except the codes in `kept` (those the stored layout already lists).
+   * The foreign key admits a retired key, so it cannot be the check. Run before any write;
+   * `bms_fleet` may read the global vocabulary.
+   */
+  private async assertPointKeysLive(
+    nodes: Pick<CreateMimicLayoutBody, "nodes">["nodes"],
+    kept: ReadonlySet<string>,
+  ): Promise<void> {
+    const codes = [...new Set(nodes.flatMap((node) => node.pointKeys ?? []))].filter((code) => !kept.has(code));
+    if (codes.length === 0) return;
+    const live = await this.fleetDb
+      .select({ code: pointKeys.code })
+      .from(pointKeys)
+      .where(and(inArray(pointKeys.code, codes), eq(pointKeys.active, true)));
+    const found = new Set(live.map((row) => row.code));
+    if (codes.some((code) => !found.has(code))) {
+      throw new BadRequestException(UNKNOWN_POINT_KEY_MESSAGE);
+    }
   }
 
   /**
@@ -618,7 +662,10 @@ export class MimicLayoutsService {
     return layout;
   }
 
-  /** Inserts the body's nodes, then its pipes by the key -> new id map (plan D5). */
+  /**
+   * Inserts the body's nodes, then their point lists and the pipes by the key -> new id map
+   * (plan D5; `F4.307` plan C7 — a list's index is its `ord`, absent is `[]`).
+   */
   private async writeGraph(
     tx: BmsTx,
     layout: LayoutRow,
@@ -652,8 +699,19 @@ export class MimicLayoutsService {
         })),
       )
       .returning({ id: mimicLayoutNodes.id, key: mimicLayoutNodes.key });
-    if (body.pipes.length === 0) return;
     const idByKey = new Map(inserted.map((row) => [row.key, row.id]));
+    const points = body.nodes.flatMap((node) =>
+      (node.pointKeys ?? []).map((pointKey, ord) => ({
+        organizationId: layout.organizationId,
+        nodeId: idByKey.get(node.key) as string,
+        pointKey,
+        ord,
+      })),
+    );
+    if (points.length > 0) {
+      await tx.insert(mimicLayoutNodePoints).values(points);
+    }
+    if (body.pipes.length === 0) return;
     await tx.insert(mimicLayoutPipes).values(
       body.pipes.map((pipe) => ({
         organizationId: layout.organizationId,
@@ -685,6 +743,8 @@ export class MimicLayoutsService {
           nodes: body.nodes.length,
           units: body.nodes.filter((node) => node.kind === "unit").length,
           pipes: body.pipes.length,
+          // `F4.307`: how many units list points — a count, never the codes.
+          listedUnits: body.nodes.filter((node) => (node.pointKeys ?? []).length > 0).length,
         },
       },
       tx,
@@ -712,6 +772,22 @@ export class MimicLayoutsService {
       .innerJoin(to, eq(to.id, mimicLayoutPipes.toNodeId))
       .where(eq(mimicLayoutPipes.layoutId, layout.id))
       .orderBy(asc(from.key), asc(to.key));
+    // `F4.307` (plan C7): every unit's list in one read, by `ord`.
+    const listed = await db
+      .select({ nodeId: mimicLayoutNodePoints.nodeId, pointKey: mimicLayoutNodePoints.pointKey })
+      .from(mimicLayoutNodePoints)
+      .innerJoin(mimicLayoutNodes, eq(mimicLayoutNodes.id, mimicLayoutNodePoints.nodeId))
+      .where(
+        and(
+          eq(mimicLayoutNodes.layoutId, layout.id),
+          eq(mimicLayoutNodePoints.organizationId, layout.organizationId),
+        ),
+      )
+      .orderBy(asc(mimicLayoutNodePoints.nodeId), asc(mimicLayoutNodePoints.ord));
+    const listByNode = new Map<string, string[]>();
+    for (const row of listed) {
+      listByNode.set(row.nodeId, [...(listByNode.get(row.nodeId) ?? []), row.pointKey]);
+    }
     const orgLibraries = await this.orgLibraryKeysOf(db, [layout.organizationId]);
     const orgSymbols = await this.readOrgSymbols(db, layout);
     return {
@@ -740,6 +816,7 @@ export class MimicLayoutsService {
           fanOut: node.fanOut,
           isSource: node.isSource,
           isSwitching: node.isSwitching,
+          pointKeys: listByNode.get(node.id) ?? [],
         }),
       ),
       pipes: pipes.map((pipe): MimicLayoutPipeDto => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),
@@ -780,6 +857,10 @@ export class MimicLayoutsService {
       // `F3.80` migration `0109`: the switching flag's backstop, the same class of refusal as the
       // flags CHECK above. No echo of the node, the layout or the constraint.
       return new BadRequestException(MIMIC_LAYOUT_FLAGS_MESSAGE);
+    }
+    if (constraint === "mimic_layout_node_points_point_key_fkey") {
+      // `F4.307` migration `0124`: the backstop behind `assertPointKeysLive`. No echo of the code.
+      return new BadRequestException(UNKNOWN_POINT_KEY_MESSAGE);
     }
     return err;
   }
