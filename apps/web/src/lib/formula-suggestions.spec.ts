@@ -364,6 +364,24 @@ export function runOverrideDraftKeepsInheritTests(): void {
   assert(draft.calcTrigger === "", `trigger: ${JSON.stringify(draft.calcTrigger)}`);
 }
 
+/** `F4.315` B3: a standalone draft takes an age-less scheduled source as 2 × its interval. Mutation: no default. */
+export function runStandaloneDraftDefaultsTheAgeTests(): void {
+  const draft = suggestionDraft({ ...TAKEN, maxInputAgeSeconds: null }, true);
+  assert(draft.maxInputAgeSeconds === "240", `age: ${JSON.stringify(draft.maxInputAgeSeconds)}`);
+}
+
+/** `F4.315` B3: a source's own age is kept on a standalone draft. Mutation: always the default. */
+export function runStandaloneDraftKeepsTheSourcesAgeTests(): void {
+  const draft = suggestionDraft({ ...TAKEN, maxInputAgeSeconds: 90 }, true);
+  assert(draft.maxInputAgeSeconds === "90", `age: ${JSON.stringify(draft.maxInputAgeSeconds)}`);
+}
+
+/** `F4.315` B3: an override draft keeps an age-less source as `""` (inherit). Mutation: default unconditionally. */
+export function runOverrideDraftKeepsTheAgeEmptyTests(): void {
+  const draft = suggestionDraft({ ...TAKEN, maxInputAgeSeconds: null }, false);
+  assert(draft.maxInputAgeSeconds === "", `age: ${JSON.stringify(draft.maxInputAgeSeconds)}`);
+}
+
 function derivedRow(dialect: CalcDialect, trigger: CalcTrigger, ratio: number | null) {
   const [row] = pointRowsFrom(
     templateVersion({ id: "own", status: "draft" }, [

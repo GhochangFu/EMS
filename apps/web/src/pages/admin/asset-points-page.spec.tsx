@@ -530,6 +530,21 @@ export async function theOverrideStepsAreFormulaScheduleReview(): Promise<void> 
   expect(steps).toEqual(["1. Formula", "2. Schedule", "3. Backfill", "4. Review"]);
 }
 
+/**
+ * `F4.315` B4 (ADR 0109 Amendment 2, decision-2 carve-out): the override's empty age inherits
+ * the template's, so its Schedule step still passes Next. Mutation: a `stepBlocker` on every
+ * wizard, or the blocker passed here too — this reddens.
+ */
+export async function theOverridesEmptyAgeStillPassesNext(): Promise<void> {
+  stubApi();
+  await openOverrideWizard();
+  await next();
+  const age = (await screen.findByLabelText("Inputs valid for (seconds)")) as HTMLInputElement;
+  expect(age.value).toBe("");
+  await next();
+  expect(await screen.findByLabelText(`Backfill for ${CALC_KEY}`)).toBeTruthy();
+}
+
 /** `F4.311` PR 5 (owner ruling 1): a Backfill choice rides on the PUT as `backfillDays`. */
 export async function theOverrideSendsTheBackfillChoice(): Promise<void> {
   stubApi();

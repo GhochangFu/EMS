@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  theAppliedValuesAreTheStepsFreeFieldsOnly,
   aCreateHasAKeyWithNoParams,
   aFillNeverSetsAPageFixedField,
   aFillSetsAFieldThePageDoesNotFix,
@@ -27,4 +28,5 @@ describe("F4.245 — an open wizard's key and its page-fixed fields (ADR 0099 Am
   it("C2: gives null for a fill that sets no field", () => aFillThatSetsNoFieldIsNull());
   it("sets only the free fields beside a page-fixed one", () => aFillSetsOnlyTheFreeFieldsBesideAFixedOne());
   it("fills a field the page does not fix", () => aFillSetsAFieldThePageDoesNotFix());
+  it("F4.315: a fill's applied values are its step's free fields only", () => theAppliedValuesAreTheStepsFreeFieldsOnly());
 });

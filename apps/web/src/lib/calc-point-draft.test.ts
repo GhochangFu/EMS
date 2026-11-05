@@ -37,6 +37,23 @@ import {
   theCapSentenceAppearsOnlyAboveTheCap,
   theDialectIsTheDraftsKnownGrammarElseTheDefault,
   theStandInConfigParsesAsAStandaloneItem,
+  aStreamingPointDefaultsToThreeHundredSeconds,
+  aScheduledPointDefaultsToTwiceItsInterval,
+  aLongIntervalsDefaultIsCappedAtTheBound,
+  aScheduledPointWithNoIntervalHasNoDefault,
+  anIntervalThatIsNotAPositiveWholeNumberHasNoDefault,
+  anUntouchedAgeTakesTheDefault,
+  aTypedAgeIsNeverReplaced,
+  typingAnAgeOfOnesOwnTouchesIt,
+  clearingADefaultedAgeTouchesIt,
+  anIntervalEditDoesNotTouchTheAge,
+  aTakenSuggestionsOwnAgeIsChosen,
+  anAgelessSuggestionLeavesTheAgeFollowing,
+  aFillWithAnAgeChoosesIt,
+  aFillWithNoAgeLeavesItFollowing,
+  aTouchedAgeStaysTouched,
+  anEmptyAgeBlocksTheScheduleStep,
+  anAgeLetsTheScheduleStepPass,
 } from "./calc-point-draft.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -185,5 +202,75 @@ describe("F4.311 PR 6b — a backfill run's progress line and the list's poll", 
 
   it("a failed retriable run past the retry window is not polled", () => {
     anOldFailedRetriableRunIsNotPolled();
+  });
+});
+
+describe("F4.315 PR B — the default input age and the Schedule step's refusal", () => {
+  it("streaming opens on 300 s", () => {
+    aStreamingPointDefaultsToThreeHundredSeconds();
+  });
+
+  it("scheduled is twice the interval", () => {
+    aScheduledPointDefaultsToTwiceItsInterval();
+  });
+
+  it("a long interval's default is capped at the bound", () => {
+    aLongIntervalsDefaultIsCappedAtTheBound();
+  });
+
+  it("scheduled with no interval has no default (ruling Q7)", () => {
+    aScheduledPointWithNoIntervalHasNoDefault();
+  });
+
+  it("an interval that is not a positive whole number has no default", () => {
+    anIntervalThatIsNotAPositiveWholeNumberHasNoDefault();
+  });
+
+  it("an untouched age follows the trigger and the interval", () => {
+    anUntouchedAgeTakesTheDefault();
+  });
+
+  it("a typed age is never replaced", () => {
+    aTypedAgeIsNeverReplaced();
+  });
+
+  it("typing an age of one's own touches it", () => {
+    typingAnAgeOfOnesOwnTouchesIt();
+  });
+
+  it("clearing a defaulted age touches it", () => {
+    clearingADefaultedAgeTouchesIt();
+  });
+
+  it("an interval edit does not touch the age", () => {
+    anIntervalEditDoesNotTouchTheAge();
+  });
+
+  it("review C1: a taken suggestion's own age is chosen, even when it equals the default", () => {
+    aTakenSuggestionsOwnAgeIsChosen();
+  });
+
+  it("an age-less suggestion leaves the age following its default", () => {
+    anAgelessSuggestionLeavesTheAgeFollowing();
+  });
+
+  it("review C1: a fill with an age chooses it", () => {
+    aFillWithAnAgeChoosesIt();
+  });
+
+  it("a fill with no age leaves it following", () => {
+    aFillWithNoAgeLeavesItFollowing();
+  });
+
+  it("a touched age stays touched", () => {
+    aTouchedAgeStaysTouched();
+  });
+
+  it("an empty age blocks the Schedule step", () => {
+    anEmptyAgeBlocksTheScheduleStep();
+  });
+
+  it("an age lets the Schedule step pass", () => {
+    anAgeLetsTheScheduleStepPass();
   });
 });

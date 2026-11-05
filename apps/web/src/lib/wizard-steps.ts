@@ -110,6 +110,23 @@ export function openWizardKey(
 }
 
 /**
+ * `F4.315` PR B — the part of a fill {@link applyFill} takes: the named step's fields, minus
+ * the page-fixed ones. A field the fill carries but the step does not show is not in it, so a
+ * page that reads what a fill set (the calc point's "Inputs valid for") sees only what landed.
+ */
+export function appliedFillValues(
+  steps: readonly WizardStep[],
+  fill: CopilotFillStepDto,
+  fixed: readonly string[] = [],
+): Record<string, unknown> {
+  const step = steps.find((candidate) => candidate.id === fill.stepId);
+  if (step === undefined) return {};
+  return Object.fromEntries(
+    Object.entries(fill.values).filter(([field]) => step.fields.includes(field) && !fixed.includes(field)),
+  );
+}
+
+/**
  * Values the copilot's `fill_step` put in a step, merged into the form. Only
  * a fill for this entry and for fields of the named step is taken; anything
  * else is ignored, so a fill can never set a field the step does not show.

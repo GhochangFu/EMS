@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { CatalogEntry } from "@bms/shared/copilot";
 
 import { changeRows } from "../../lib/copilot-diff";
 import {
   applyFill,
+  appliedFillValues,
   bodyProblems,
   guardWizardLeave,
   type LeaveDecision,
@@ -37,7 +38,8 @@ type WizardShellProps = {
   fixedFields?: readonly string[];
   /** The form's values, keyed by body field; the page owns them. */
   values: Record<string, unknown>;
-  onChange: (values: Record<string, unknown>) => void;
+  /** A copilot fill's merged values; `fillValues` is what the fill itself set (`appliedFillValues`, `F4.315`). */
+  onChange: (values: Record<string, unknown>, fillValues?: Readonly<Record<string, unknown>>) => void;
   /** The page's inputs for one field step. */
   renderStep: (step: WizardStep) => ReactNode;
   /** Sends the plain request — no `X-Copilot-Change` header: a wizard used alone is not a copilot change. */
@@ -66,6 +68,14 @@ type WizardShellProps = {
    * refusal is the Zod path as it is.
    */
   formatProblem?: (problem: string) => string;
+  /**
+   * `F4.315` B4 (ADR 0109 Amendment 2): a sentence while a field step cannot be left — for
+   * example a value the schema requires but `stepProblems` does not check because it is empty.
+   * Next refuses and the sentence is listed in the step's alert; `null` lets the step pass. Next
+   * stays focusable (`aria-disabled`, described by the alert, review Q1/Q2): a step that opens
+   * blocked must not drop the keyboard's focus to the page body.
+   */
+  stepBlocker?: (step: WizardStep) => string | null;
   /**
    * `F4.289`: a body field the Review shows in the page's own form — for example a table of
    * rows — instead of a field row; `omit` lists the fields `detail` replaces.
@@ -104,6 +114,7 @@ export function WizardShell(props: WizardShellProps) {
   const [stepId, setStepId] = useState<string>(steps[0]?.id ?? REVIEW_STEP.id);
   const [dirty, setDirty] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
+  const alertId = useId();
   const [leave, setLeave] = useState<Extract<LeaveDecision, { allow: false }> | null>(null);
   const seq = useWizardStore((s) => s.seq);
   const take = useWizardStore((s) => s.take);
@@ -124,7 +135,7 @@ export function WizardShell(props: WizardShellProps) {
     const next = applyFill(entry.id, steps, values, fill, props.fixedFields);
     if (next === null) return;
     setDirty(true);
-    onChange(next);
+    onChange(next, appliedFillValues(steps, fill, props.fixedFields));
     // Each fill is read once, when it arrives (`seq`), or when this wizard's record changes (`key`).
   }, [seq, key]);
 
@@ -132,8 +143,11 @@ export function WizardShell(props: WizardShellProps) {
   const index = steps.indexOf(step);
   const body = wizardBody(values);
   const reviewProblems = step.id === REVIEW_STEP.id ? bodyProblems(entry, body) : [];
+  const blocker = step.id === REVIEW_STEP.id ? null : (props.stepBlocker?.(step) ?? null);
+  const shown = blocker === null ? problems : [blocker, ...problems.filter((problem) => problem !== blocker)];
 
   function goNext(): void {
+    if (blocker !== null) return;
     const found = stepProblems(entry, step, values).map((problem) => props.formatProblem?.(problem) ?? problem);
     setProblems(found);
     if (found.length === 0) setStepId(nextStepId(steps, step.id));
@@ -192,9 +206,9 @@ export function WizardShell(props: WizardShellProps) {
       ) : (
         <section aria-label={step.title} className="flex flex-col gap-2">
           {props.renderStep(step)}
-          {problems.length > 0 && (
-            <ul role="alert" className="rounded border border-critical-line bg-critical-wash px-3 py-2 text-xs text-critical-ink">
-              {problems.map((problem) => (
+          {shown.length > 0 && (
+            <ul id={alertId} role="alert" className="rounded border border-critical-line bg-critical-wash px-3 py-2 text-xs text-critical-ink">
+              {shown.map((problem) => (
                 <li key={problem}>{problem}</li>
               ))}
             </ul>
@@ -209,7 +223,9 @@ export function WizardShell(props: WizardShellProps) {
               type="button"
               onClick={goNext}
               disabled={props.nextDisabled === true}
-              className="surface-button-primary px-3 py-1 text-xs disabled:opacity-50"
+              aria-disabled={blocker !== null ? "true" : undefined}
+              aria-describedby={blocker !== null ? alertId : undefined}
+              className="surface-button-primary px-3 py-1 text-xs disabled:opacity-50 aria-disabled:opacity-50"
             >
               Next
             </button>

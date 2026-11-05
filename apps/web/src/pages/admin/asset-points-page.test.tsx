@@ -15,6 +15,7 @@ import {
   submitSendsNothingWhileAClearIsInFlight,
   theOverrideSendsTheBackfillChoice,
   theOverrideStepsAreFormulaScheduleReview,
+  theOverridesEmptyAgeStillPassesNext,
   theOverrideSubmitsTheDraftAsTheBody,
   theOverrideWizardSendsNoCopilotHeader,
   aFailedRtuFetchLabelsTheStoredRtuUnknown,
@@ -108,6 +109,10 @@ describe("F3.85 PR 11b asset points — the calc override is the calcOverride.se
 
   it("the steps are Formula, Schedule, Backfill, Review", async () => {
     await theOverrideStepsAreFormulaScheduleReview();
+  }, CASE_TIMEOUT_MS);
+
+  it("F4.315 B4: an empty Inputs valid for still passes the override's Schedule step", async () => {
+    await theOverridesEmptyAgeStillPassesNext();
   }, CASE_TIMEOUT_MS);
 
   it("a Backfill choice is sent as backfillDays (F4.311 PR 5, owner ruling 1)", async () => {

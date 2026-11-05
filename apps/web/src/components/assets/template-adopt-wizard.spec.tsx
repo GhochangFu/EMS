@@ -185,6 +185,16 @@ export async function theRefusalSentenceNamesTheAssetCodeAndTheKey(): Promise<vo
   expect(list.textContent).toBe(SENTENCE);
 }
 
+// Catches: F4.315 B1 — "This adoption is refused … See below." printed under the list it points to.
+export async function theRefusedSentenceSitsAboveItsList(): Promise<void> {
+  stubApi(preview({ canApply: false, refusals: [REFUSAL], refusalCount: 1 }));
+  renderWizard();
+  await pickFeeder();
+  const list = await screen.findByRole("list", { name: "Refusals" });
+  const alert = screen.getByRole("alert");
+  expect(alert.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+}
+
 // Catches: inherited defaults hidden from the Assets step.
 export async function inheritedDefaultsShowAsANotice(): Promise<void> {
   const base = preview();

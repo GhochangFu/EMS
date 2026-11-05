@@ -102,3 +102,25 @@ export function aDeactivateCardIsRed(): void {
 export function aDeactivateCardDoesNotSayItCannotBeUndone(): void {
   expect(renderRisk("deactivate").textContent).not.toContain("This cannot be undone.");
 }
+
+function renderHeading(title: string, summary: string): HTMLElement {
+  return render(
+    <ChangeCard title={title} summary={summary} risk="edit" rows={[]} busy={false} confirmLabel="Confirm" busyLabel="…" onConfirm={() => {}} />,
+  ).container;
+}
+
+/** `F4.315` B2: a summary that repeats the title is not printed twice. */
+export function aSummaryEqualToTheTitleIsPrintedOnce(): void {
+  const container = renderHeading("Set a calculated point", "Set a calculated point");
+  const lines = [...container.querySelectorAll("h3, p")].filter((node) => node.textContent === "Set a calculated point");
+  expect(lines).toHaveLength(1);
+}
+
+/** The positive twin: a summary of its own still prints under the title. */
+export function aSummaryOfItsOwnPrintsUnderTheTitle(): void {
+  const container = renderHeading("Set a calculated point", "Adds kvar to FDR-01.");
+  expect([container.querySelector("h3")?.textContent, container.querySelector("h3 + p")?.textContent]).toEqual([
+    "Set a calculated point",
+    "Adds kvar to FDR-01.",
+  ]);
+}

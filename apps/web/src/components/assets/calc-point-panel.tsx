@@ -30,18 +30,23 @@ import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import { fetchAdminAssetPoints } from "../../api/admin/asset-points";
 import {
+  ageTouchedAfter,
+  ageTouchedAfterFill,
   calcPointDraftChanged,
   calcPointDraftFromConfig,
   calcPointDraftFromFields,
   calcPointDraftProblems,
   draftDialect,
   draftToCalcPointBody,
+  scheduleStepBlocker,
+  withDefaultAge,
   emptyCalcPointDraft,
   formulaPointsFor,
   knownRefsFor,
   standaloneConfigFor,
   type CalcPointDraft,
 } from "../../lib/calc-point-draft";
+import type { FormulaSuggestion } from "../../lib/formula-suggestions";
 import {
   NEW_KEY,
   emptyNewPointKeyDraft,
@@ -123,6 +128,13 @@ export function CalcPointPanel({
     onEdited();
     setDraft(next);
   };
+  // `F4.315` B4: Add's "Inputs valid for" follows the default until someone chooses one; Edit's is stored.
+  const [ageTouched, setAgeTouched] = useState(config !== null);
+  // `touched` decides this edit; the state carries it to the next one (a later Every edit).
+  const changeTiming = (next: CalcPointDraft, touched: boolean) => {
+    setAgeTouched(touched);
+    change(withDefaultAge(next, touched));
+  };
   // A13: the formula is checked against the key it names — the new code on
   // New key — and the new key's own fields, before any write.
   const problems = [
@@ -150,7 +162,10 @@ export function CalcPointPanel({
     draft,
     busy: saving,
     standalone: true,
-    onDraftChange: (next: Partial<CalcPointDraft>) => change({ ...draft, ...next }),
+    onDraftChange: (next: Partial<CalcPointDraft>, taken?: FormulaSuggestion) => {
+      const merged = { ...draft, ...next };
+      changeTiming(merged, ageTouchedAfter(draft, merged, ageTouched, taken ?? null));
+    },
   };
   // Built here, not inside `renderStep`: stable elements keep a select's
   // first pick (the override wizard's note in `asset-points-page.tsx`).
@@ -228,7 +243,9 @@ export function CalcPointPanel({
           entry={wizardEntry("calcPoint.set")}
           params={{ assetId, pointKey: draft.pointKey }}
           values={{ ...draftToCalcPointBody(draft) }}
-          onChange={(values) => change(calcPointDraftFromFields(values, draft.pointKey))}
+          onChange={(values, fillValues) =>
+            changeTiming(calcPointDraftFromFields(values, draft.pointKey), ageTouchedAfterFill(fillValues, ageTouched))
+          }
           renderStep={(step) =>
             step.id === "formula" ? formulaStep : step.id === "schedule" ? scheduleStep : backfillStep
           }
@@ -244,6 +261,7 @@ export function CalcPointPanel({
           submitError={saveError ?? (problems.length > 0 ? problems.join(" ") : null)}
           current={config?.override ?? null}
           dirty={dirty}
+          stepBlocker={(step) => (step.id === "schedule" ? scheduleStepBlocker(draft) : null)}
         />
       )}
       {onDelete ? (

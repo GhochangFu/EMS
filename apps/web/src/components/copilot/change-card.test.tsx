@@ -10,6 +10,8 @@ import {
   aPlainRowHasNoExpandControl,
   aShortenedNowValueExpandsToItsOwnFullText,
   aShortenedRowExpandsToItsFullText,
+  aSummaryEqualToTheTitleIsPrintedOnce,
+  aSummaryOfItsOwnPrintsUnderTheTitle,
   rowsOnOneFieldAreKeyedApart,
 } from "./change-card.spec";
 
@@ -34,4 +36,13 @@ describe("F4.284 — the operational risk class is red and cannot be undone (ADR
   it("says an operational card cannot be undone", () => anOperationalCardSaysItCannotBeUndone());
   it("styles a deactivate card red", () => aDeactivateCardIsRed());
   it("does not say a deactivate card cannot be undone", () => aDeactivateCardDoesNotSayItCannotBeUndone());
+});
+
+describe("F4.315 B2 — the Review heading is printed once", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("prints a summary equal to the title once", () => aSummaryEqualToTheTitleIsPrintedOnce());
+  it("prints a summary of its own under the title", () => aSummaryOfItsOwnPrintsUnderTheTitle());
 });

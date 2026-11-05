@@ -24,6 +24,7 @@ import {
   runNullKeysMarkNothingTests,
   runRowCarriesDialectTests,
   runOverrideDraftKeepsInheritTests,
+  runOverrideDraftKeepsTheAgeEmptyTests,
   runRowCarriesFormulaTests,
   runRowCarriesInputAgeTests,
   runRowCarriesIntervalTests,
@@ -31,7 +32,9 @@ import {
   runRowCrossAssetIsScheduledTests,
   runRowToV1ClearsTheRatioTests,
   runRunnableFirstTests,
+  runStandaloneDraftDefaultsTheAgeTests,
   runStandaloneDraftDefaultsToScheduledTests,
+  runStandaloneDraftKeepsTheSourcesAgeTests,
   runUnpublishedVersionIsNotListedTests,
 } from "./formula-suggestions.spec";
 
@@ -135,6 +138,18 @@ describe("suggested formulas (F4.314 PR 2)", () => {
 
   it("an override draft takes a source with no trigger as inherit", () => {
     runOverrideDraftKeepsInheritTests();
+  });
+
+  it("F4.315 B3: a standalone draft takes a source with no input age as the default age", () => {
+    runStandaloneDraftDefaultsTheAgeTests();
+  });
+
+  it("F4.315 B3: a standalone draft keeps a source's own input age", () => {
+    runStandaloneDraftKeepsTheSourcesAgeTests();
+  });
+
+  it("F4.315 B3: an override draft keeps a source with no input age as inherit", () => {
+    runOverrideDraftKeepsTheAgeEmptyTests();
   });
 
   it("taking a suggestion fills the row's formula", () => {

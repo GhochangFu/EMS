@@ -7,6 +7,7 @@ import { catalogEntry } from "@bms/shared/copilot";
 
 import * as confirmApi from "../../api/copilot-confirm";
 import { useWizardStore } from "../../stores/wizard-store";
+import type { WizardStep } from "../../lib/wizard-steps";
 import { WizardShell } from "./wizard-shell";
 
 /**
@@ -39,6 +40,8 @@ type HarnessOptions = {
   /** `F4.245`: the record's path parameters (`{}`, a create's, by default) and the page-fixed fields. */
   params?: Record<string, string>;
   fixedFields?: string[];
+  /** `F4.315` B4: passed through as the shell's `stepBlocker`. */
+  stepBlocker?: (step: WizardStep) => string | null;
 };
 
 /** A page over the shell: one text input per field of the open step. */
@@ -61,6 +64,7 @@ function renderWizard(id: string, initial: Record<string, unknown> = {}, options
         onCancel={onCancel}
         submitting={false}
         dirty={options.dirty}
+        stepBlocker={options.stepBlocker}
         renderStep={(step) =>
           step.fields.map((field) =>
             field === options.select ? (
@@ -299,4 +303,48 @@ export function reviewShowsATemplatePointsFormulaRow(): void {
   expect(current()).toBe("4. Review");
   const card = screen.getByRole("region", { name: "Edit an asset template" });
   expect(within(card).getByRole("rowheader", { name: "Formula eff (points)" })).toBeTruthy();
+}
+
+/**
+ * `F4.315` B2 — a wizard with no `summary` prop prints the entry title once on Review (the card's
+ * heading), not again as its sentence. Mutation: drop `ChangeCard`'s `summary !== title` guard.
+ */
+export function aWizardWithNoSummaryPrintsItsTitleOnceOnReview(): void {
+  renderWizard("dashboardTemplate.publish");
+  const title = entry("dashboardTemplate.publish").title;
+  const card = screen.getByRole("region", { name: title });
+  expect(within(card).getAllByText(title)).toHaveLength(1);
+}
+
+const BLOCKED = "Basics: say which dashboard first.";
+
+/**
+ * `F4.315` B4 / review Q1 — a step blocker refuses Next while keeping it focusable: it is
+ * `aria-disabled`, not `disabled`, and a click stays on the step.
+ */
+export async function aStepBlockerRefusesNextAndKeepsItFocusable(): Promise<void> {
+  renderWizard("dashboard.create", {}, { stepBlocker: (step) => (step.id === "basics" ? BLOCKED : null) });
+  const next = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+  await userEvent.click(next);
+  expect([next.getAttribute("aria-disabled"), next.disabled, current()]).toEqual(["true", false, "1. Basics"]);
+}
+
+/** Review Q2 — Next is described by the blocker's alert. */
+export function aStepBlockerDescribesNext(): void {
+  renderWizard("dashboard.create", {}, { stepBlocker: (step) => (step.id === "basics" ? BLOCKED : null) });
+  const id = screen.getByRole("button", { name: "Next" }).getAttribute("aria-describedby");
+  expect(id === null ? null : document.getElementById(id)?.textContent).toBe(BLOCKED);
+}
+
+/** `F4.315` B4 — a step blocker's sentence is listed in the step's alert. */
+export function aStepBlockerSaysWhy(): void {
+  renderWizard("dashboard.create", {}, { stepBlocker: (step) => (step.id === "basics" ? BLOCKED : null) });
+  expect(screen.getByRole("alert").textContent).toBe(BLOCKED);
+}
+
+/** The twin: a blocker that answers `null` for the open step leaves Next enabled and says nothing. */
+export function aClearStepBlockerLeavesNextEnabled(): void {
+  renderWizard("dashboard.create", {}, { stepBlocker: (step) => (step.id === "scope" ? BLOCKED : null) });
+  const next = screen.getByRole("button", { name: "Next" });
+  expect([next.getAttribute("aria-disabled"), screen.queryByRole("alert")]).toEqual([null, null]);
 }
