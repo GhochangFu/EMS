@@ -63,6 +63,8 @@ function asset(id: string, code: string, points: GeneratedSitePointDto[] = [poin
     id,
     code,
     name: code,
+    assetRtuName: null,
+    assetLocationName: null,
     domain: "water",
     latestTelemetryAt: null,
     freshness: "none",

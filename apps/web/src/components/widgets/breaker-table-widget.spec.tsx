@@ -62,6 +62,8 @@ function asset(f: Fixture): GeneratedSiteAssetDto {
     id: assetId(f.n),
     code: f.code,
     name: f.code,
+    assetRtuName: null,
+    assetLocationName: null,
     domain: "electrical",
     latestTelemetryAt: null,
     freshness: "live",

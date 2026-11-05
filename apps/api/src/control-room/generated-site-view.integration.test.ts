@@ -13,6 +13,8 @@ import {
   assertAssetGroupAdminMissesANonMember,
   assertAssetIdsNarrowTheRead,
   assertCatalogUnitFillsNull,
+  assertAssetCarriesRtuAndLocationNames,
+  assertRtuLessAssetCarriesLocationNameOnly,
   assertDomainsInSortOrder,
   assertEightDayOldSampleIsNullLatest,
   assertEmptyScopeSendsNoQuery,
@@ -104,6 +106,8 @@ describe.skipIf(!connectionString)("F3.68 — GeneratedSiteViewService", () => {
 
   const rolledBack = (fn: (client: pg.PoolClient) => Promise<void>) => () => inRolledBackTransaction(fleetPool, fn);
 
+  it("F4.316 an asset carries its RTU and location names", rolledBack(assertAssetCarriesRtuAndLocationNames), 60_000);
+  it("F4.316 an RTU-less asset carries a null RTU name and its location name", rolledBack(assertRtuLessAssetCarriesLocationNameOnly), 60_000);
   it("R1 two assets in two domains answer two panels in sort_order", rolledBack(assertDomainsInSortOrder), 60_000);
   it("R2 ranks 2,1,NULL,NULL on keys d,c,b,a order c,d,a,b", rolledBack(assertRankThenNullsLast), 60_000);
   it("R3 an equal rank orders by point_key", rolledBack(assertTieOrdersByKey), 60_000);

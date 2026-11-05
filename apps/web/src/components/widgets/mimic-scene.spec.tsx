@@ -74,6 +74,8 @@ const TANK: GeneratedSiteAssetDto = {
   id: TANK_ID,
   code: "WTR-TNK-09",
   name: "Tank",
+  assetRtuName: null,
+  assetLocationName: null,
   domain: "water",
   latestTelemetryAt: null,
   freshness: "none",

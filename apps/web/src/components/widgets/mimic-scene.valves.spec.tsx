@@ -42,6 +42,8 @@ const ISO_V1: GeneratedSiteAssetDto = {
   id: "00000000-0000-4000-8000-000000000300",
   code: "ND-FL-ISO-V1",
   name: "ND-FL-ISO-V1",
+  assetRtuName: null,
+  assetLocationName: null,
   domain: "water",
   latestTelemetryAt: null,
   freshness: "live",

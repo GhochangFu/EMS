@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import { HEADLINE_POINT_COUNT } from "@bms/shared/contracts";
-import type { GeneratedSiteAssetDto } from "@bms/shared";
+import { ASSET_LABEL_SEPARATOR, assetLabelParts, type GeneratedSiteAssetDto } from "@bms/shared";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import {
@@ -44,6 +44,11 @@ export function GeneratedSiteAssetCard({
   const [expanded, setExpanded] = useState(false);
   const status = assetStatus(readings.assetLastSeenMs(asset), readings.nowMs);
   const shown = headlinePoints(asset.points, expanded);
+  const { where } = assetLabelParts({
+    code: asset.code,
+    rtuName: asset.assetRtuName,
+    locationName: asset.assetLocationName,
+  });
 
   return (
     <article
@@ -53,6 +58,9 @@ export function GeneratedSiteAssetCard({
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="font-condensed text-sm font-bold text-ink">{asset.code}</p>
+          {where === null ? null : (
+            <p className="break-words text-[11px] text-ink-muted">{`${ASSET_LABEL_SEPARATOR.trim()} ${where}`}</p>
+          )}
           <p className="truncate text-[11px] text-ink-muted">{asset.name}</p>
           <AssetHistoryLink assetId={asset.id} code={asset.code} />
         </div>

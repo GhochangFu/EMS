@@ -239,6 +239,9 @@ function breakerRowOf(member: MemberRow, points: GeneratedSitePointDto[], nowMs:
       id: member.asset_id,
       code: member.asset_code,
       name: member.asset_name,
+      // F4.316: these dashboard widgets do not join the RTU / location names yet.
+      assetRtuName: null,
+      assetLocationName: null,
       domain: member.domain,
       latestTelemetryAt,
       freshness: telemetryFreshnessAt(latestTelemetryAt, nowMs),
