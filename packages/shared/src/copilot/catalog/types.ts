@@ -132,6 +132,14 @@ export type CatalogTarget =
    */
   | { readonly kind: "vocabulary"; readonly of: "locationType" | "assetRole"; readonly param: "code" }
   /**
+   * `F4.309` PR 3 (ADR 0099 Amendment 13 decisions 1 and 4): a state-label row
+   * (`bms.point_key_states`, no organization) named by the path's `id`. Like `fleet`, the change
+   * lives in the conversation's bound organization and the global admin alone may make it
+   * (`requireGlobalAdmin`); the resolver names the row "`<key>` = `<value>` (`<label>`)", refuses
+   * an unknown id, and refuses a seeded row at propose with its own sentence (ruling Q2).
+   */
+  | { readonly kind: "pointKeyState"; readonly param: "id" }
+  /**
    * `F4.278` (ADR 0099 Amendment 8 D2): an alarm rule. With `param`, the rule row the path
    * parameter `id` names; with `field`, a create, whose organization is the asset's the body's
    * `assetId` names (`resolveWriteOrg`). Both mirror `rules.controller.ts`: the `configuration`
