@@ -63,7 +63,7 @@ export type WidgetSeriesPoint = { readonly t: string; readonly v: number | null 
 
 /**
  * One series a `chart` widget draws. `name` is `seriesNameFor(point)` in
- * `dashboard-widget-data.ts` — `<assetCode> · <pointKey>` (ADR 0069), so ECharts,
+ * `dashboard-widget-data.ts` — `<label> · <pointKey>` (ADR 0069; the label is ADR 0111's), so ECharts,
  * which keys the legend by name, shows one entry per distinct asset and point
  * key (one point bound twice, as `primary` and `series`, still collapses); `sortOrder` is the
  * bound point's `dashboard_widget_points.sort_order`, carried through so the

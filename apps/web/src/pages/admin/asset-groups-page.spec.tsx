@@ -93,12 +93,12 @@ const VOCABULARIES = {
  * fixture INSERTs `c, a, b` for the same reason; this half did not, until it
  * was caught in review.
  */
-const MEMBERS = {
+export const MEMBERS = {
   items: [
     {
       membershipId: "aaaa1111-0000-0000-0000-000000000003",
       assetId: ASSET_3,
-      assetCode: "TRF-03",
+      assetCode: "TRF-03", assetRtuName: null, assetLocationName: null,
       assetName: "Transformer 3",
       assetDomain: "electrical",
       role: null,
@@ -107,7 +107,7 @@ const MEMBERS = {
     {
       membershipId: "aaaa1111-0000-0000-0000-000000000001",
       assetId: ASSET_1,
-      assetCode: "TRF-01",
+      assetCode: "TRF-01", assetRtuName: null, assetLocationName: null,
       assetName: "Transformer 1",
       assetDomain: "electrical",
       role: "f337-spec-alpha",
@@ -116,7 +116,7 @@ const MEMBERS = {
     {
       membershipId: "aaaa1111-0000-0000-0000-000000000002",
       assetId: ASSET_2,
-      assetCode: "TRF-02",
+      assetCode: "TRF-02", assetRtuName: null, assetLocationName: null,
       assetName: "Transformer 2",
       assetDomain: "electrical",
       role: "f337-spec-alpha",
@@ -216,7 +216,7 @@ async function fillCreateBasics(locationId: string, code: string, name: string):
 /** A request starts a tick after the click; "nothing was sent" is read after timers have run. */
 const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
 
-function renderPage(as: AuthUser = user): void {
+export function renderPage(as: AuthUser = user): void {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -244,7 +244,7 @@ type ApiFn =
   | "addAdminAssetGroupMember"
   | "removeAdminAssetGroupMember";
 
-function stubApi(overrides: Partial<Record<ApiFn, unknown>> = {}): void {
+export function stubApi(overrides: Partial<Record<ApiFn, unknown>> = {}): void {
   vi.spyOn(api, "fetchAdminAssetGroups").mockResolvedValue(GROUPS);
   vi.spyOn(api, "fetchAdminAssetGroupMembers").mockResolvedValue(MEMBERS);
   vi.spyOn(api, "setAdminAssetGroupMemberRole").mockResolvedValue(

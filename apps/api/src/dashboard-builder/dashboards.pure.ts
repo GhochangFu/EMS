@@ -19,12 +19,21 @@ export type TabRow = typeof dashboardTabs.$inferSelect;
 // them without a Nest module or a connection (§4.6).
 // ---------------------------------------------------------------------------
 
+/** The joined asset columns a summary carries; all `null` on a dashboard with no asset scope. */
+export type DashboardSummaryAsset = {
+  readonly assetCode: string | null;
+  /** ADR 0111 — the asset's RTU `display_name`, `null` when it has none. */
+  readonly assetRtuName: string | null;
+  /** ADR 0111 — the asset's location `name`. */
+  readonly assetLocationName: string | null;
+};
+
 /** Row -> DTO. Parses against `dashboardSummaryDtoSchema` in the caller's own test — this
  * function only builds the shape. */
 export function mapDashboardSummary(
   row: DashboardRow,
   widgetCount: number,
-  assetCode: string | null,
+  asset: DashboardSummaryAsset,
 ): DashboardSummaryDto {
   return {
     id: row.id,
@@ -36,7 +45,9 @@ export function mapDashboardSummary(
     assetGroupId: row.assetGroupId,
     assetId: row.assetId,
     assetTemplateId: row.assetTemplateId,
-    assetCode,
+    assetCode: asset.assetCode,
+    assetRtuName: asset.assetRtuName,
+    assetLocationName: asset.assetLocationName,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     widgetCount,
@@ -80,6 +91,8 @@ export function mapDashboardWidget(
       sortOrder: point.sortOrder,
       assetId: point.assetId,
       assetCode: point.assetCode,
+      assetRtuName: point.assetRtuName,
+      assetLocationName: point.assetLocationName,
       pointKey: point.pointKey,
       unit: point.unit,
     })),

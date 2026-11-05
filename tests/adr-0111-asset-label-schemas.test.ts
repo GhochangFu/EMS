@@ -50,11 +50,6 @@ const NOT_YET_WIDENED: readonly string[] = [
   "generated-site-view.ts#generatedSiteAssetSchema", // removed by PR 3b (code field is `code`, Q1)
   "operations.ts#ruleListItemSchema", // removed by PR 4b
   "seeded-rules.ts#seededRuleDtoSchema", // removed by PR 4b
-  "admin.ts#adminAssetPointDtoSchema", // removed by PR 5
-  "admin.ts#adminAssetGroupMemberDtoSchema", // removed by PR 5
-  "admin.ts#calcParameterDtoSchema", // removed by PR 5
-  "dashboard-dto.ts#dashboardSummaryDtoSchema", // removed by PR 5
-  "dashboard-builder.ts#dashboardWidgetPointDtoSchema", // removed by PR 5
   "operations.ts#energyTopConsumerSchema", // removed by PR 6 (code field is `code`, Q1)
   "energy-organization-views.ts#energyAbnormalEntrySchema", // removed by PR 6 (code field is `code`, Q1)
   "template-migration.ts#templateMigrationAssetDtoSchema", // removed by PR 8 (Q5)

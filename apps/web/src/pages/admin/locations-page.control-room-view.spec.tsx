@@ -125,6 +125,8 @@ function dashboard(overrides: Partial<DashboardSummaryDto>): DashboardSummaryDto
     assetId: null,
     assetTemplateId: null,
     assetCode: null,
+    assetRtuName: null,
+    assetLocationName: null,
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
     widgetCount: 0,

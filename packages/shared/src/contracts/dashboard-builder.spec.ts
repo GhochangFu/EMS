@@ -235,6 +235,8 @@ export function runDashboardBuilderTests(): void {
         sortOrder: 0,
         assetId: "88888888-8888-4888-8888-888888888888",
         assetCode: "BRK-01",
+        assetRtuName: "RTU 1",
+        assetLocationName: "Plant A",
         pointKey: "kw",
         unit: "kW",
       },
@@ -245,6 +247,8 @@ export function runDashboardBuilderTests(): void {
         sortOrder: 1,
         assetId: "99999999-9999-4999-8999-999999999999",
         assetCode: "BRK-02",
+        assetRtuName: null,
+        assetLocationName: "Plant A",
         pointKey: "kwh",
         unit: null,
       },
@@ -597,6 +601,8 @@ export function runDashboardWidgetPointDtoTests(): void {
     sortOrder: 0,
     assetId: "88888888-8888-4888-8888-888888888888",
     assetCode: "BRK-01",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Plant A",
     pointKey: "kw",
     unit: "kW",
   };
@@ -624,6 +630,52 @@ export function runDashboardWidgetPointDtoTests(): void {
     dashboardWidgetPointDtoSchema,
     { ...point, assetCode: "x".repeat(65) },
     "ADR 0069 — assetCode is bound to bms.assets.code (varchar 64)",
+  );
+}
+
+// --- `F4.316` PR 5 / ADR 0111 — the binding names its asset's RTU and location -------
+
+const labelledPoint = {
+  id: "44444444-4444-4444-8444-444444444444",
+  pointId: "55555555-5555-4555-8555-555555555555",
+  role: "series",
+  sortOrder: 0,
+  assetId: "88888888-8888-4888-8888-888888888888",
+  assetCode: "BRK-01",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
+  pointKey: "kw",
+  unit: "kW",
+};
+
+/** A binding missing `assetRtuName` is refused (required-nullable). */
+export function runWidgetPointRefusesWithoutRtuNameTest(): void {
+  const { assetRtuName: _rtu, ...withoutRtu } = labelledPoint;
+  expectRejects(dashboardWidgetPointDtoSchema, withoutRtu, "a binding missing assetRtuName");
+}
+
+/** A binding missing `assetLocationName` is refused. */
+export function runWidgetPointRefusesWithoutLocationNameTest(): void {
+  const { assetLocationName: _loc, ...withoutLocation } = labelledPoint;
+  expectRejects(dashboardWidgetPointDtoSchema, withoutLocation, "a binding missing assetLocationName");
+}
+
+/** The RTU-less twin parses. */
+export function runWidgetPointAcceptsRtuLessTwinTest(): void {
+  expectAccepts(dashboardWidgetPointDtoSchema, { ...labelledPoint, assetRtuName: null }, "a binding on an RTU-less asset");
+}
+
+/** Both names are bound to their columns (`varchar(255)`). */
+export function runWidgetPointBoundsTheNamesTest(): void {
+  expectRejects(
+    dashboardWidgetPointDtoSchema,
+    { ...labelledPoint, assetRtuName: "x".repeat(256) },
+    "assetRtuName is bound to bms.rtus.display_name (varchar 255)",
+  );
+  expectRejects(
+    dashboardWidgetPointDtoSchema,
+    { ...labelledPoint, assetLocationName: "x".repeat(256) },
+    "assetLocationName is bound to bms.locations.name (varchar 255)",
   );
 }
 

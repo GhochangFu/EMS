@@ -137,6 +137,8 @@ export const APPEND_ANSWER = {
         sortOrder: 0,
         assetId: ASSET_ID,
         assetCode: "CHL-01",
+        assetRtuName: null,
+        assetLocationName: null,
         pointKey: "kw",
         unit: "kW",
       },

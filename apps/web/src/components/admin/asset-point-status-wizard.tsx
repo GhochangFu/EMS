@@ -1,4 +1,4 @@
-import type { AdminAssetPointDto } from "@bms/shared";
+import { assetLabelOf, type AdminAssetPointDto } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
 import { WizardShell } from "../wizard/wizard-shell";
@@ -28,7 +28,7 @@ export function AssetPointStatusWizard({
   onCancel: () => void;
   onSubmit: () => void;
 }) {
-  const name = `${target.assetCode} ${target.pointKey}`;
+  const name = `${assetLabelOf(target)} ${target.pointKey}`;
   const context = { body: NO_VALUES, params: { id: target.id }, targetName: name, organizationName: "" };
   const shared = {
     values: NO_VALUES,

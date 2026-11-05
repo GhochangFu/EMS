@@ -887,6 +887,10 @@ export const dashboardWidgetPointDtoSchema = z
     // nullable: the join is inner, so a binding whose asset does not resolve is not
     // returned at all rather than returned with a null label.
     assetCode: z.string().max(64),
+    // ADR 0111 — the legend reads `<label> · <pointKey>`. LEFT-joined off the asset, so
+    // nullable: `bms.rtus.display_name` / `bms.locations.name` are both `varchar(255)`.
+    assetRtuName: z.string().max(255).nullable(),
+    assetLocationName: z.string().max(255).nullable(),
     pointKey: z.string().max(128),
     unit: z.string().max(32).nullable(),
   });

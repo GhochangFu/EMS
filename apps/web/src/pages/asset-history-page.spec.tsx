@@ -418,6 +418,8 @@ export async function pinSendsTheChartedPoints(): Promise<void> {
         assetId: null,
         assetTemplateId: null,
         assetCode: null,
+        assetRtuName: null,
+        assetLocationName: null,
         createdAt: DASHBOARD.createdAt,
         updatedAt: DASHBOARD.updatedAt,
         widgetCount: 0,

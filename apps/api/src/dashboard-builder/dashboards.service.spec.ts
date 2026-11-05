@@ -86,6 +86,8 @@ const resolvedPoint = {
   sortOrder: 0,
   assetId: ASSET_A,
   assetCode: "BRK-01",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
   pointKey: "kw",
   unit: "kW",
 };
@@ -99,7 +101,11 @@ export function runDashboardsServiceUnitTests(): void {
   // The row -> DTO mappers' output parses against the shared contract — the
   // one thing catching API drift from the contract without a database.
   // -------------------------------------------------------------------------
-  const summary = mapDashboardSummary(dashboardRow, 3, null);
+  const summary = mapDashboardSummary(dashboardRow, 3, {
+    assetCode: null,
+    assetRtuName: null,
+    assetLocationName: null,
+  });
   const summaryParsed = dashboardSummaryDtoSchema.safeParse(summary);
   assert(
     summaryParsed.success === true,
@@ -118,7 +124,7 @@ export function runDashboardsServiceUnitTests(): void {
   const assetScopedSummary = mapDashboardSummary(
     { ...dashboardRow, assetId: ASSET_A, assetTemplateId: ASSET_TEMPLATE_A },
     0,
-    "WC-CHW-01",
+    { assetCode: "WC-CHW-01", assetRtuName: "RTU 1", assetLocationName: "Plant A" },
   );
   assert(
     assetScopedSummary.assetId === ASSET_A,
@@ -131,6 +137,15 @@ export function runDashboardsServiceUnitTests(): void {
   assert(
     assetScopedSummary.assetCode === "WC-CHW-01",
     `mapDashboardSummary must carry the joined assetCode, got ${String(assetScopedSummary.assetCode)}`,
+  );
+  // `F4.316` PR 5 / ADR 0111 — the badge's label parts are the joined columns, copied as given.
+  assert(
+    assetScopedSummary.assetRtuName === "RTU 1",
+    `mapDashboardSummary must carry the joined assetRtuName, got ${String(assetScopedSummary.assetRtuName)}`,
+  );
+  assert(
+    assetScopedSummary.assetLocationName === "Plant A",
+    `mapDashboardSummary must carry the joined assetLocationName, got ${String(assetScopedSummary.assetLocationName)}`,
   );
   const assetScopedParsed = dashboardSummaryDtoSchema.safeParse(assetScopedSummary);
   assert(
@@ -173,6 +188,11 @@ export function runDashboardsServiceUnitTests(): void {
   assert(
     widget.points[0]?.assetCode === "BRK-01",
     `mapDashboardWidget must copy the joined assetCode through, got ${String(widget.points[0]?.assetCode)}`,
+  );
+  // `F4.316` PR 5 / ADR 0111 — the legend's label parts ride through as resolved.
+  assert(
+    widget.points[0]?.assetRtuName === "RTU 1" && widget.points[0]?.assetLocationName === "Plant A",
+    `mapDashboardWidget must copy assetRtuName/assetLocationName through, got ${JSON.stringify(widget.points[0])}`,
   );
 
   // -------------------------------------------------------------------------

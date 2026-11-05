@@ -11,6 +11,9 @@ import { asRole } from "../../testing/role-urls";
 import { loadFixtures, type Fixtures } from "../asset-templates/asset-templates.instantiate.integration.spec";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
+  assertALocationRowNamesNoAsset,
+  assertAnAssetRowNamesItsRtuAndLocation,
+  assertAnRtuLessAssetRowNamesItsLocation,
   assertAForeignOrganizationRowIs404NotForbidden,
   assertAdminCreatesAnOrganizationScopedRow,
   assertAnUnknownKeyIs400,
@@ -147,5 +150,17 @@ describe.skipIf(!connectionString)("E4.1a — calc parameters admin", () => {
 
   it("a row in an organization the caller cannot read is a 404 on get, update and remove — never a 403", async () => {
     await assertAForeignOrganizationRowIs404NotForbidden(svc, pool(), fx, fixture, ctx);
+  });
+
+  it("F4.316 PR 5 — an asset-scoped row names the asset's RTU and location (ADR 0111)", async () => {
+    await assertAnAssetRowNamesItsRtuAndLocation(svc, pool(), fx, fixture);
+  });
+
+  it("F4.316 PR 5 — an asset-scoped row on an RTU-less asset names its location (the twin)", async () => {
+    await assertAnRtuLessAssetRowNamesItsLocation(svc, pool(), fx, fixture);
+  });
+
+  it("F4.316 PR 5 — a location-scoped row names no asset", async () => {
+    await assertALocationRowNamesNoAsset(svc, fx);
   });
 });

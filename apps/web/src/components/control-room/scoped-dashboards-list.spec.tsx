@@ -41,6 +41,8 @@ function dashboard(opts: { id: string; organizationId: string; slug: string; nam
     assetId: null,
     assetTemplateId: null,
     assetCode: null,
+    assetRtuName: null,
+    assetLocationName: null,
     createdAt: new Date(0).toISOString(),
     updatedAt: new Date(0).toISOString(),
     widgetCount: 1,

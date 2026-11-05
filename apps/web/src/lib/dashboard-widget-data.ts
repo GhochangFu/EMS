@@ -1,4 +1,4 @@
-import { METRIC_CATALOG, WIDGET_SOURCE_SHAPES, encodePointRef } from "@bms/shared";
+import { ASSET_LABEL_SEPARATOR, METRIC_CATALOG, WIDGET_SOURCE_SHAPES, assetLabelOf, encodePointRef } from "@bms/shared";
 import type {
   CatalogEntryMeta,
   DashboardDto,
@@ -431,8 +431,9 @@ function freshestSeriesMs(series: readonly WidgetSeries[], nowMs: number): numbe
 }
 
 /**
- * The name a `chart` series carries into the legend and the tooltip — `<assetCode> · <pointKey>`,
- * ADR 0069 decision 3.
+ * The name a `chart` series carries into the legend and the tooltip — `<label> · <pointKey>`,
+ * ADR 0069 decision 3; since `F4.316` the asset part is the ADR 0111 label (`<code> · <RTU>`, or
+ * `<code> · <location>` without an RTU), so two same-coded assets under two RTUs read apart.
  *
  * **Always asset-qualified, never conditional on the siblings (Q2).** A name that depended on
  * whether the widget's other bindings share this `pointKey`, or span more than one asset, would
@@ -441,8 +442,10 @@ function freshestSeriesMs(series: readonly WidgetSeries[], nowMs: number): numbe
  * row's own defect. The separator is the middle dot the summary badge already uses
  * (`Asset · <code>`, ADR 0067).
  */
-export function seriesNameFor(point: Pick<DashboardWidgetPointDto, "assetCode" | "pointKey">): string {
-  return `${point.assetCode} · ${point.pointKey}`;
+export function seriesNameFor(
+  point: Pick<DashboardWidgetPointDto, "assetCode" | "assetRtuName" | "assetLocationName" | "pointKey">,
+): string {
+  return `${assetLabelOf(point)}${ASSET_LABEL_SEPARATOR}${point.pointKey}`;
 }
 
 /**

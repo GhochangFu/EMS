@@ -1,4 +1,9 @@
-import { adminLocationDtoSchema } from "./admin";
+import {
+  adminAssetGroupMemberDtoSchema,
+  adminAssetPointDtoSchema,
+  adminLocationDtoSchema,
+  calcParameterDtoSchema,
+} from "./admin";
 import { assetInstantiationResultDtoSchema, instantiatedAssetDtoSchema } from "./asset-templates";
 import { seededRuleDtoSchema, seededRuleValuesSchema } from "./seeded-rules";
 
@@ -228,5 +233,120 @@ export function runSeededRuleValuesPhilosophyRowTests(): void {
     seededRuleValuesSchema,
     { operator: null, thresholdValue: null, severity: null, category: "safety" },
     "message is required",
+  );
+}
+
+// --- `F4.316` PR 5 / ADR 0111 — the admin rows name the asset's RTU and location ----------
+
+const validAssetPoint = {
+  id: "11111111-1111-4111-8111-111111111111",
+  assetId: "22222222-2222-4222-8222-222222222222",
+  assetCode: "PHE-MFM-000000003",
+  assetRtuName: "Lotapata I",
+  assetLocationName: "Lotapata",
+  assetName: "Main flow meter",
+  locationId: "33333333-3333-4333-8333-333333333333",
+  locationName: "Lotapata",
+  pointKey: "flow",
+  sourceDataKey: "PHE_MFM_3_FLOW",
+  sensorCode: null,
+  unit: "m3/h",
+  active: true,
+  sourceKind: "measured",
+  rtuId: "44444444-4444-4444-8444-444444444444",
+  createdAt: "2026-11-06T00:00:00.000Z",
+  scaleMultiplier: null,
+  scaleOffset: null,
+  engMin: null,
+  engMax: null,
+  qualityPolicy: null,
+  templateDefaults: null,
+};
+
+const validGroupMember = {
+  membershipId: "11111111-1111-4111-8111-111111111111",
+  assetId: "22222222-2222-4222-8222-222222222222",
+  assetCode: "WC-CHW-01",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
+  assetName: "Chiller 1",
+  assetDomain: "hvac",
+  role: null,
+  roleLabel: null,
+};
+
+const validCalcParameter = {
+  id: "11111111-1111-4111-8111-111111111111",
+  organizationId: "22222222-2222-4222-8222-222222222222",
+  key: "tariff_kwh",
+  locationId: null,
+  assetId: "33333333-3333-4333-8333-333333333333",
+  locationName: null,
+  assetCode: "WC-CHW-01",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
+  value: 7.5,
+  effectiveFrom: "2026-11-06T00:00:00.000Z",
+  effectiveTo: null,
+  createdAt: "2026-11-06T00:00:00.000Z",
+  updatedAt: "2026-11-06T00:00:00.000Z",
+};
+
+type LabelSchema = { safeParse: (v: unknown) => { success: boolean } };
+
+function withoutKey(row: Record<string, unknown>, key: string): Record<string, unknown> {
+  const copy = { ...row };
+  delete copy[key];
+  return copy;
+}
+
+/** A row missing `assetRtuName` is refused: the field is required, not optional. */
+function refusesWithoutRtuName(schema: LabelSchema, row: Record<string, unknown>, name: string): void {
+  expectAccepts(schema, row, `${name}: a well-formed row`);
+  expectRejects(schema, withoutKey(row, "assetRtuName"), `${name}: a row missing assetRtuName`);
+}
+
+/** A row missing `assetLocationName` is refused: the field is required, not optional. */
+function refusesWithoutLocationName(schema: LabelSchema, row: Record<string, unknown>, name: string): void {
+  expectRejects(schema, withoutKey(row, "assetLocationName"), `${name}: a row missing assetLocationName`);
+}
+
+/** The RTU-less twin: `assetRtuName: null` beside a location name parses. */
+function acceptsTheRtuLessTwin(schema: LabelSchema, row: Record<string, unknown>, name: string): void {
+  expectAccepts(schema, { ...row, assetRtuName: null }, `${name}: an asset with no RTU`);
+}
+
+export function runAdminAssetPointRefusesWithoutRtuNameTest(): void {
+  refusesWithoutRtuName(adminAssetPointDtoSchema, validAssetPoint, "adminAssetPointDto");
+}
+export function runAdminAssetPointRefusesWithoutLocationNameTest(): void {
+  refusesWithoutLocationName(adminAssetPointDtoSchema, validAssetPoint, "adminAssetPointDto");
+}
+export function runAdminAssetPointAcceptsRtuLessTwinTest(): void {
+  acceptsTheRtuLessTwin(adminAssetPointDtoSchema, validAssetPoint, "adminAssetPointDto");
+}
+
+export function runAdminAssetGroupMemberRefusesWithoutRtuNameTest(): void {
+  refusesWithoutRtuName(adminAssetGroupMemberDtoSchema, validGroupMember, "adminAssetGroupMemberDto");
+}
+export function runAdminAssetGroupMemberRefusesWithoutLocationNameTest(): void {
+  refusesWithoutLocationName(adminAssetGroupMemberDtoSchema, validGroupMember, "adminAssetGroupMemberDto");
+}
+export function runAdminAssetGroupMemberAcceptsRtuLessTwinTest(): void {
+  acceptsTheRtuLessTwin(adminAssetGroupMemberDtoSchema, validGroupMember, "adminAssetGroupMemberDto");
+}
+
+export function runCalcParameterRefusesWithoutRtuNameTest(): void {
+  refusesWithoutRtuName(calcParameterDtoSchema, validCalcParameter, "calcParameterDto");
+}
+export function runCalcParameterRefusesWithoutLocationNameTest(): void {
+  refusesWithoutLocationName(calcParameterDtoSchema, validCalcParameter, "calcParameterDto");
+}
+/** An organization- or location-scoped parameter names no asset: all three label fields null. */
+export function runCalcParameterAcceptsNoAssetTest(): void {
+  expectAccepts(
+    calcParameterDtoSchema,
+    { ...validCalcParameter, assetId: null, assetCode: null, assetRtuName: null, assetLocationName: null },
+    "calcParameterDto: an organization-scoped row",
   );
 }

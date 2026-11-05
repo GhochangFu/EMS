@@ -31,6 +31,8 @@ export type MetadataFixtures = {
   handAssetId: string;
   /** An asset on a template that declares `keys.measured` with `eng_max = 100`. */
   templatedAssetId: string;
+  /** `F4.316` PR 5 — an asset with `rtu_id` = `rtuInLocation`, carrying one `manual` point. */
+  rtuAssetId: string;
   /** An active RTU in the assets' own location. */
   rtuInLocation: string;
   /** An active RTU of another location in the same organization. */
@@ -472,4 +474,51 @@ export async function assertReadsCarryTheTemplateDefaults(
   expect(updated.engMin).toBe(1);
   expect(updated.templateDefaults?.engMax).toBe(100);
   await ctx.svc.update(jwt, measuredId, { engMin: null });
+}
+
+/** The asset's RTU `display_name` (null when it has none) and location `name`, read straight from SQL. */
+async function namesOf(pool: pg.Pool, assetId: string): Promise<{ rtu: string | null; location: string }> {
+  const { rows } = await pool.query<{ rtu: string | null; location: string }>(
+    `SELECT r.display_name AS rtu, l.name AS location
+       FROM bms.assets a
+       JOIN bms.locations l ON l.id = a.location_id
+       LEFT JOIN bms.rtus r ON r.id = a.rtu_id
+      WHERE a.id = $1`,
+    [assetId],
+  );
+  const [row] = rows;
+  if (!row) {
+    throw new Error(`asset ${assetId} is not in the database`);
+  }
+  return row;
+}
+
+/**
+ * (h) `F4.316` PR 5 / ADR 0111 — every item of an asset on an RTU names that RTU
+ * (`assets.rtu_id`, not the point's own wiring) and the asset's location.
+ */
+export async function assertListNamesTheAssetsRtu(ctx: MetadataFixtures, jwt: JwtPayload): Promise<void> {
+  const expected = await namesOf(ctx.fleetPool, ctx.rtuAssetId);
+  expect(expected.rtu, "the fixture asset must sit on an RTU").not.toBeNull();
+  const { items } = await ctx.svc.list(jwt, ctx.rtuAssetId);
+  expect(items.length).toBeGreaterThan(0);
+  for (const item of items) {
+    expect(item.assetRtuName).toBe(expected.rtu);
+    expect(item.assetLocationName).toBe(expected.location);
+  }
+}
+
+/** (i) The twin: an asset with `rtu_id IS NULL` reads `assetRtuName: null` and its location's name. */
+export async function assertListNamesTheLocationOfAnRtuLessAsset(
+  ctx: MetadataFixtures,
+  jwt: JwtPayload,
+): Promise<void> {
+  const expected = await namesOf(ctx.fleetPool, ctx.templatedAssetId);
+  expect(expected.rtu, "the twin must have no RTU").toBeNull();
+  const { items } = await ctx.svc.list(jwt, ctx.templatedAssetId);
+  expect(items.length).toBeGreaterThan(0);
+  for (const item of items) {
+    expect(item.assetRtuName).toBeNull();
+    expect(item.assetLocationName).toBe(expected.location);
+  }
 }

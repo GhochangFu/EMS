@@ -1,7 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { and, asc, eq, inArray } from "drizzle-orm";
 
-import { assetPoints, assets, dashboardWidgetPoints } from "@bms/db";
+import { assetPoints, assets, dashboardWidgetPoints, locations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 
 import type { BmsTx } from "../database/tenant-context";
@@ -38,6 +38,10 @@ export type ResolvedBoundPoint = {
   readonly assetId: string;
   /** ADR 0069 — `bms.assets.code`, from the join below; the legend's label. */
   readonly assetCode: string;
+  /** ADR 0111 — the asset's RTU `display_name`, `null` when it has none; the legend's label part. */
+  readonly assetRtuName: string | null;
+  /** ADR 0111 — the asset's location `name`. */
+  readonly assetLocationName: string | null;
   readonly pointKey: string;
   readonly unit: string | null;
 };
@@ -65,12 +69,19 @@ export async function resolveBoundPoints(
       sortOrder: dashboardWidgetPoints.sortOrder,
       assetId: assetPoints.assetId,
       assetCode: assets.code,
+      assetRtuName: rtus.displayName,
+      assetLocationName: locations.name,
       pointKey: assetPoints.pointKey,
       unit: assetPoints.unit,
     })
     .from(dashboardWidgetPoints)
     .innerJoin(assetPoints, eq(dashboardWidgetPoints.pointId, assetPoints.id))
     .innerJoin(assets, eq(assetPoints.assetId, assets.id))
+    // ADR 0111 — the asset's own RTU and location, for the label. LEFT (`rtu_id` is nullable) and
+    // with no predicate of their own: they hang off the asset the predicate below has already
+    // pinned to `organizationId`, and 0113's composite keys pin them to the asset's organization.
+    .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+    .leftJoin(locations, eq(assets.locationId, locations.id))
     .where(
       and(
         inArray(dashboardWidgetPoints.widgetId, [...widgetIds]),

@@ -7,8 +7,9 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, eq, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
-import { assets, calcParameters, locations } from "@bms/db";
+import { assets, calcParameters, locations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   CalcParameterDto,
@@ -36,6 +37,9 @@ type Scope = {
 type Window = { readonly from: Date; readonly to: Date | null };
 
 const NOT_FOUND = "Calc parameter not found";
+
+/** ADR 0111 — the scoped asset's own location, beside the parameter's scope location. */
+const assetLocation = alias(locations, "asset_location");
 
 /**
  * Maps a driver error from a `bms.calc_parameters` write to the HTTP
@@ -441,10 +445,17 @@ export class CalcParametersAdminService {
         row: calcParameters,
         locationName: locations.name,
         assetCode: assets.code,
+        assetRtuName: rtus.displayName,
+        assetLocationName: assetLocation.name,
       })
       .from(calcParameters)
       .leftJoin(locations, eq(calcParameters.locationId, locations.id))
-      .leftJoin(assets, eq(calcParameters.assetId, assets.id));
+      .leftJoin(assets, eq(calcParameters.assetId, assets.id))
+      // ADR 0111 — the scoped asset's own RTU and location. LEFT both: no asset (organization or
+      // location scope) or no RTU leaves them null. The location is aliased because `locations`
+      // above is the parameter's scope location, which is null on an asset-scoped row.
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+      .leftJoin(assetLocation, eq(assets.locationId, assetLocation.id));
   }
 
   /**
@@ -477,6 +488,8 @@ export class CalcParametersAdminService {
     row: typeof calcParameters.$inferSelect;
     locationName: string | null;
     assetCode: string | null;
+    assetRtuName: string | null;
+    assetLocationName: string | null;
   }): CalcParameterDto {
     const { row } = joined;
     return {
@@ -487,6 +500,8 @@ export class CalcParametersAdminService {
       assetId: row.assetId,
       locationName: joined.locationName,
       assetCode: joined.assetCode,
+      assetRtuName: joined.assetRtuName,
+      assetLocationName: joined.assetLocationName,
       value: row.value,
       effectiveFrom: row.effectiveFrom.toISOString(),
       effectiveTo: row.effectiveTo === null ? null : row.effectiveTo.toISOString(),

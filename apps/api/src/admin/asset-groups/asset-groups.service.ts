@@ -9,7 +9,7 @@ import {
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 
-import { assetGroupMembers, assetGroups, assetRoles, assets, locations } from "@bms/db";
+import { assetGroupMembers, assetGroups, assetRoles, assets, locations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import type {
   AddAssetGroupMemberBody,
@@ -365,6 +365,8 @@ export class AssetGroupsAdminService {
         membershipId: assetGroupMembers.id,
         assetId: assets.id,
         assetCode: assets.code,
+        assetRtuName: rtus.displayName,
+        assetLocationName: locations.name,
         assetName: assets.name,
         assetDomain: assets.domain,
         role: assetGroupMembers.role,
@@ -372,6 +374,9 @@ export class AssetGroupsAdminService {
       })
       .from(assetGroupMembers)
       .innerJoin(assets, eq(assetGroupMembers.assetId, assets.id))
+      // ADR 0111 — the asset's RTU and location name it; `rtu_id` is nullable, so LEFT.
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+      .leftJoin(locations, eq(assets.locationId, locations.id))
       // LEFT, not INNER: `role` is nullable, and an INNER join would drop every
       // member that has no role yet — which is every member before 0051.
       .leftJoin(assetRoles, eq(assetGroupMembers.role, assetRoles.code))
@@ -494,6 +499,8 @@ export class AssetGroupsAdminService {
         membershipId: assetGroupMembers.id,
         assetId: assets.id,
         assetCode: assets.code,
+        assetRtuName: rtus.displayName,
+        assetLocationName: locations.name,
         assetName: assets.name,
         assetDomain: assets.domain,
         role: assetGroupMembers.role,
@@ -501,6 +508,8 @@ export class AssetGroupsAdminService {
       })
       .from(assetGroupMembers)
       .innerJoin(assets, eq(assetGroupMembers.assetId, assets.id))
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+      .leftJoin(locations, eq(assets.locationId, locations.id))
       .leftJoin(assetRoles, eq(assetGroupMembers.role, assetRoles.code))
       .where(eq(assetGroupMembers.id, membershipId))
       .limit(1);
