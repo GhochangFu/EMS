@@ -246,12 +246,12 @@ export async function theKeyIsCreatedThenThePointIsWritten(): Promise<void> {
 }
 
 // Catches: the create body not the three fields the author typed.
-export async function theCreateSendsTheCodeLabelAndUnit(): Promise<void> {
+export async function theCreateSendsTheCodeLabelUnitAndDomain(): Promise<void> {
   stubApi();
   renderPage(globalAdmin);
   await submitNewKey("{{kw} * 2");
   await waitFor(() =>
-    expect(pointKeysApi.createAdminPointKey).toHaveBeenCalledWith({ code: "kvar", name: "Reactive power", unit: "kVAr" }),
+    expect(pointKeysApi.createAdminPointKey).toHaveBeenCalledWith({ code: "kvar", name: "Reactive power", unit: "kVAr", domain: "electrical" }),
   );
 }
 
@@ -292,4 +292,29 @@ export async function aRefusedPointAfterTheKeyPutsTheKeyInThePicker(): Promise<v
   await submitWithThePointRefused();
   await screen.findByText(/is in the catalog now/);
   expect(await within(screen.getByLabelText("Point key")).findByText("kvar · Reactive power")).toBeTruthy();
+}
+
+// Catches: the panel passing no domain to the draft (the field opens blank, the key is written with none).
+export async function theDomainOpensFilledWithTheAssetsDomain(): Promise<void> {
+  stubApi();
+  renderPage(globalAdmin);
+  await userEvent.selectOptions(await openAdd(), NEW_KEY_OPTION);
+  expect((screen.getByLabelText("New key domain") as HTMLInputElement).value).toBe("electrical");
+}
+
+// Catches: a cleared Domain still sent (the pre-fill resurrected, or `""` written).
+export async function aClearedDomainSendsNone(): Promise<void> {
+  stubApi();
+  renderPage(globalAdmin);
+  await pickNewKey("kvar");
+  await userEvent.clear(screen.getByLabelText("New key domain"));
+  await userEvent.type(screen.getByRole("textbox", { name: "Formula for kvar" }), "{{kw} * 2");
+  await next(1);
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "300");
+  await userEvent.clear(screen.getByLabelText("Inputs valid for (seconds)"));
+  await userEvent.type(screen.getByLabelText("Inputs valid for (seconds)"), "600");
+  await next(2);
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+  await waitFor(() => expect(pointKeysApi.createAdminPointKey).toHaveBeenCalled());
+  expect(vi.mocked(pointKeysApi.createAdminPointKey).mock.calls[0]?.[0]).not.toHaveProperty("domain");
 }

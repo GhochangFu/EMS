@@ -32,12 +32,25 @@ import { calcPointDraftProblems, knownRefsFor, type BatchRefusal, type CalcPoint
  */
 export const NEW_KEY = "+new-key";
 
-/** The text the three fields hold. */
-export type NewPointKeyDraft = { readonly code: string; readonly name: string; readonly unit: string };
+/**
+ * The text the four fields hold. `openedDomain` is what the Domain field was
+ * pre-filled with (`F4.315` C1): the leave prompt compares against it, so an
+ * untouched pre-filled draft is not a change.
+ */
+export type NewPointKeyDraft = {
+  readonly code: string;
+  readonly name: string;
+  readonly unit: string;
+  readonly domain: string;
+  readonly openedDomain: string;
+};
 
-/** What the three fields hold when **New key** is picked: all blank. */
-export function emptyNewPointKeyDraft(): NewPointKeyDraft {
-  return { code: "", name: "", unit: "" };
+/**
+ * What the fields hold when **New key** is picked: blank, but for the Domain,
+ * pre-filled with the asset's (bulk: the shared one) — `null` leaves it blank.
+ */
+export function emptyNewPointKeyDraft(domain: string | null = null): NewPointKeyDraft {
+  return { code: "", name: "", unit: "", domain: domain ?? "", openedDomain: domain ?? "" };
 }
 
 /**
@@ -52,16 +65,18 @@ export function newKeyClashProblem(code: string, existingKeys: readonly string[]
     : null;
 }
 
-/** The leave prompt's half for the three fields: any of them holds text. */
+/** The leave prompt's half for the fields: one holds text, or the Domain differs from its pre-fill. */
 export function newPointKeyDraftChanged(draft: NewPointKeyDraft): boolean {
-  return draft.code !== "" || draft.name !== "" || draft.unit !== "";
+  return draft.code !== "" || draft.name !== "" || draft.unit !== "" || draft.domain !== draft.openedDomain;
 }
 
-/** The create body: trimmed, and a blank unit is absent (the Point keys page sends none). */
+/** The create body: trimmed, and a blank unit or domain is absent (the Point keys page sends none). */
 export function newPointKeyBody(draft: NewPointKeyDraft): CreatePointKeyBody {
   const unit = draft.unit.trim();
   const body: CreatePointKeyBody = { code: draft.code.trim(), name: draft.name.trim() };
+  const domain = draft.domain.trim();
   if (unit !== "") body.unit = unit;
+  if (domain !== "") body.domain = domain;
   return body;
 }
 

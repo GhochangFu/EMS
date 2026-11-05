@@ -13,7 +13,9 @@ import {
   aTakenCodeStillWritesThePoint,
   newKeyIsHiddenFromAnOrganizationAdministrator,
   newKeyIsOfferedToAGlobalAdministrator,
-  theCreateSendsTheCodeLabelAndUnit,
+  theCreateSendsTheCodeLabelUnitAndDomain,
+  theDomainOpensFilledWithTheAssetsDomain,
+  aClearedDomainSendsNone,
   theKeyIsCreatedThenThePointIsWritten,
 } from "./asset-points-page.new-key.spec";
 
@@ -52,8 +54,8 @@ describe("F4.313 — New key in the Add calculated point panel", () => {
     await theKeyIsCreatedThenThePointIsWritten();
   });
 
-  it("the create sends the code, label and unit typed", async () => {
-    await theCreateSendsTheCodeLabelAndUnit();
+  it("the create sends the code, label, unit and domain typed", async () => {
+    await theCreateSendsTheCodeLabelUnitAndDomain();
   });
 
   it("a taken code (409) still writes the point", async () => {
@@ -70,5 +72,13 @@ describe("F4.313 — New key in the Add calculated point panel", () => {
 
   it("a refused point after the key re-reads the catalog, so the picker lists the key", async () => {
     await aRefusedPointAfterTheKeyPutsTheKeyInThePicker();
+  });
+
+  it("the Domain opens filled with the asset's domain", async () => {
+    await theDomainOpensFilledWithTheAssetsDomain();
+  });
+
+  it("a cleared Domain sends none", async () => {
+    await aClearedDomainSendsNone();
   });
 });

@@ -5,7 +5,12 @@ import {
   aBackfillRunning409IsNotReportedAsNotWritten,
   aCodeTheAssetAlreadyHasIsAClash,
   aNoWorker503IsNotReportedAsNotWritten,
+  aClearedDomainIsAbsentFromTheBody,
   aCodeOutsideTheCatalogClassIsRefused,
+  aPrefilledDomainIsSent,
+  anEditedDomainIsAChange,
+  anUntouchedPrefilledDraftIsNotAChange,
+  noDomainOpensBlank,
   aCompleteDraftHasNoProblem,
   aRefusedCreateWritesNoPoint,
   aRefusedPointAfterTheKeyThrowsTheTwoWriteError,
@@ -27,6 +32,26 @@ import {
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
 describe("F4.313 — New key: the draft, its checks and the two writes", () => {
+  it("a pre-filled domain is sent in the create body", () => {
+    aPrefilledDomainIsSent();
+  });
+
+  it("a cleared domain is absent from the create body", () => {
+    aClearedDomainIsAbsentFromTheBody();
+  });
+
+  it("no domain opens the field blank", () => {
+    noDomainOpensBlank();
+  });
+
+  it("an untouched pre-filled draft is not a change", () => {
+    anUntouchedPrefilledDraftIsNotAChange();
+  });
+
+  it("an edited or cleared domain is a change", () => {
+    anEditedDomainIsAChange();
+  });
+
   it("the New key sentinel can equal no catalog code", () => {
     theSentinelIsNoCatalogCode();
   });

@@ -149,7 +149,7 @@ export function CalcPointPanel({
     calcPointDraftChanged(draft, config ? calcPointDraftFromConfig(config) : emptyCalcPointDraft(draft.pointKey)) ||
     (newKey !== null && newPointKeyDraftChanged(newKey));
   const pickKey = (picked: string) => {
-    setNewKey(picked === NEW_KEY ? emptyNewPointKeyDraft() : null);
+    setNewKey(picked === NEW_KEY ? emptyNewPointKeyDraft(assetDomain) : null);
     change({ ...draft, pointKey: picked === NEW_KEY ? "" : picked });
   };
   const editNewKey = (next: NewPointKeyDraft) => {

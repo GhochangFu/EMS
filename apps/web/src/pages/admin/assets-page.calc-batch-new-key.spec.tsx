@@ -38,7 +38,7 @@ const orgAdmin = {
 const SITE = "11111111-1111-4111-8111-111111111111";
 const NEW_KEY_OPTION = "New key…";
 
-function asset(index: number): AdminAssetDto {
+function asset(index: number, domain = "electrical"): AdminAssetDto {
   const suffix = String(index).padStart(12, "0");
   return adminAssetDtoSchema.parse({
     id: `22222222-2222-4222-8222-${suffix}`,
@@ -50,7 +50,7 @@ function asset(index: number): AdminAssetDto {
     organizationCode: "SPEC",
     rtuId: null,
     rtuDisplayName: null,
-    domain: "electrical",
+    domain,
     waterBalanceRole: null,
     rating: null,
     tripCause: null,
@@ -91,7 +91,7 @@ const BATCH_REFUSAL = {
 };
 
 /** `withoutKw` names the assets whose rows lack `kw`, so `{kw} * 2` fails the check on them. */
-function stubApi(withoutKw: readonly string[] = []): void {
+function stubApi(withoutKw: readonly string[] = [], items: readonly AdminAssetDto[] = [ONE, TWO]): void {
   writes = [];
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockRejectedValue(new Error("not under test"));
   vi.spyOn(copilotApi, "fetchCopilotStatus").mockResolvedValue({ available: false, configured: false });
@@ -99,7 +99,7 @@ function stubApi(withoutKw: readonly string[] = []): void {
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue({ assetDomains: [] } as never);
   vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [] } as never);
   vi.spyOn(rtusApi, "fetchAdminRtus").mockResolvedValue({ items: [] } as never);
-  vi.spyOn(assetsApi, "fetchAdminAssets").mockResolvedValue({ items: [ONE, TWO] } as never);
+  vi.spyOn(assetsApi, "fetchAdminAssets").mockResolvedValue({ items } as never);
   // The catalog holds `kvar` once the create has run.
   vi.spyOn(pointKeysApi, "fetchAdminPointKeys").mockImplementation(async () => ({
     items: writes.includes("key kvar")
@@ -284,4 +284,22 @@ export async function aRefusedBatchAfterTheKeyPutsTheKeyInThePicker(): Promise<v
     await userEvent.click(within(dialog).getByRole("button", { name: "Back" }));
   }
   expect(await within(within(dialog).getByLabelText("Point key")).findByText("kvar · Reactive power")).toBeTruthy();
+}
+
+// Catches: the wizard passing no domain to the draft (the field opens blank for a shared domain).
+export async function aSharedDomainOpensFilled(): Promise<void> {
+  stubApi();
+  renderPage(globalAdmin);
+  const dialog = await openPointStep();
+  await userEvent.selectOptions(within(dialog).getByLabelText("Point key"), NEW_KEY_OPTION);
+  expect((within(dialog).getByLabelText("New key domain") as HTMLInputElement).value).toBe("electrical");
+}
+
+// Catches: one asset's domain taken for the selection's when the assets differ.
+export async function mixedDomainsOpenEmpty(): Promise<void> {
+  stubApi([], [ONE, asset(2, "water")]);
+  renderPage(globalAdmin);
+  const dialog = await openPointStep();
+  await userEvent.selectOptions(within(dialog).getByLabelText("Point key"), NEW_KEY_OPTION);
+  expect((within(dialog).getByLabelText("New key domain") as HTMLInputElement).value).toBe("");
 }
