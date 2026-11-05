@@ -6,7 +6,8 @@ import { resetWizardStore } from "../../stores/wizard-store";
 import {
   aBodylessRouteIsReviewAlone,
   aClearStepBlockerLeavesNextEnabled,
-  aStepBlockerDisablesNext,
+  aStepBlockerDescribesNext,
+  aStepBlockerRefusesNextAndKeepsItFocusable,
   aStepBlockerSaysWhy,
   aWizardWithNoSummaryPrintsItsTitleOnceOnReview,
   aCleanPageLeavesAtOnce,
@@ -60,7 +61,8 @@ describe("F3.85 PR 8 wizard shell — every catalog route is a stepper (ADR 0099
 
 describe("F4.315 PR B — one Review heading, and a step that refuses Next", () => {
   it("B2: a wizard with no summary prints its title once on Review", () => aWizardWithNoSummaryPrintsItsTitleOnceOnReview());
-  it("B4: a step blocker's sentence disables Next", () => aStepBlockerDisablesNext());
+  it("B4: a step blocker refuses Next and keeps it focusable", () => aStepBlockerRefusesNextAndKeepsItFocusable());
+  it("B4: Next is described by the step blocker's alert", () => aStepBlockerDescribesNext());
   it("B4: a step blocker's sentence is shown in the step's alert", () => aStepBlockerSaysWhy());
   it("B4: a blocker that answers null leaves Next enabled", () => aClearStepBlockerLeavesNextEnabled());
 });

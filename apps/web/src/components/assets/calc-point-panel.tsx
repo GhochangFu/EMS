@@ -31,6 +31,7 @@ import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 import { fetchAdminAssetPoints } from "../../api/admin/asset-points";
 import {
   ageTouchedAfter,
+  ageTouchedAfterFill,
   calcPointDraftChanged,
   calcPointDraftFromConfig,
   calcPointDraftFromFields,
@@ -45,6 +46,7 @@ import {
   standaloneConfigFor,
   type CalcPointDraft,
 } from "../../lib/calc-point-draft";
+import type { FormulaSuggestion } from "../../lib/formula-suggestions";
 import {
   NEW_KEY,
   emptyNewPointKeyDraft,
@@ -128,8 +130,8 @@ export function CalcPointPanel({
   };
   // `F4.315` B4: Add's "Inputs valid for" follows the default until someone chooses one; Edit's is stored.
   const [ageTouched, setAgeTouched] = useState(config !== null);
-  const changeTiming = (next: CalcPointDraft) => {
-    const touched = ageTouchedAfter(draft, next, ageTouched);
+  // `touched` decides this edit; the state carries it to the next one (a later Every edit).
+  const changeTiming = (next: CalcPointDraft, touched: boolean) => {
     setAgeTouched(touched);
     change(withDefaultAge(next, touched));
   };
@@ -160,7 +162,10 @@ export function CalcPointPanel({
     draft,
     busy: saving,
     standalone: true,
-    onDraftChange: (next: Partial<CalcPointDraft>) => changeTiming({ ...draft, ...next }),
+    onDraftChange: (next: Partial<CalcPointDraft>, taken?: FormulaSuggestion) => {
+      const merged = { ...draft, ...next };
+      changeTiming(merged, ageTouchedAfter(draft, merged, ageTouched, taken ?? null));
+    },
   };
   // Built here, not inside `renderStep`: stable elements keep a select's
   // first pick (the override wizard's note in `asset-points-page.tsx`).
@@ -238,7 +243,9 @@ export function CalcPointPanel({
           entry={wizardEntry("calcPoint.set")}
           params={{ assetId, pointKey: draft.pointKey }}
           values={{ ...draftToCalcPointBody(draft) }}
-          onChange={(values) => changeTiming(calcPointDraftFromFields(values, draft.pointKey))}
+          onChange={(values) =>
+            changeTiming(calcPointDraftFromFields(values, draft.pointKey), ageTouchedAfterFill(values, ageTouched))
+          }
           renderStep={(step) =>
             step.id === "formula" ? formulaStep : step.id === "schedule" ? scheduleStep : backfillStep
           }

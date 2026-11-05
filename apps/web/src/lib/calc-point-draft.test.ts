@@ -46,7 +46,11 @@ import {
   aTypedAgeIsNeverReplaced,
   typingAnAgeOfOnesOwnTouchesIt,
   clearingADefaultedAgeTouchesIt,
-  anAgeThatOnlyFollowsItsDefaultIsNotTouched,
+  anIntervalEditDoesNotTouchTheAge,
+  aTakenSuggestionsOwnAgeIsChosen,
+  anAgelessSuggestionLeavesTheAgeFollowing,
+  aFillWithAnAgeChoosesIt,
+  aFillWithNoAgeLeavesItFollowing,
   aTouchedAgeStaysTouched,
   anEmptyAgeBlocksTheScheduleStep,
   anAgeLetsTheScheduleStepPass,
@@ -238,8 +242,24 @@ describe("F4.315 PR B — the default input age and the Schedule step's refusal"
     clearingADefaultedAgeTouchesIt();
   });
 
-  it("an age that only follows its default is not touched", () => {
-    anAgeThatOnlyFollowsItsDefaultIsNotTouched();
+  it("an interval edit does not touch the age", () => {
+    anIntervalEditDoesNotTouchTheAge();
+  });
+
+  it("review C1: a taken suggestion's own age is chosen, even when it equals the default", () => {
+    aTakenSuggestionsOwnAgeIsChosen();
+  });
+
+  it("an age-less suggestion leaves the age following its default", () => {
+    anAgelessSuggestionLeavesTheAgeFollowing();
+  });
+
+  it("review C1: a fill with an age chooses it", () => {
+    aFillWithAnAgeChoosesIt();
+  });
+
+  it("a fill with no age leaves it following", () => {
+    aFillWithNoAgeLeavesItFollowing();
   });
 
   it("a touched age stays touched", () => {

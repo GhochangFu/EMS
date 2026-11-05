@@ -318,10 +318,22 @@ export function aWizardWithNoSummaryPrintsItsTitleOnceOnReview(): void {
 
 const BLOCKED = "Basics: say which dashboard first.";
 
-/** `F4.315` B4 — a step blocker's sentence disables Next on that step. */
-export function aStepBlockerDisablesNext(): void {
+/**
+ * `F4.315` B4 / review Q1 — a step blocker refuses Next while keeping it focusable: it is
+ * `aria-disabled`, not `disabled`, and a click stays on the step.
+ */
+export async function aStepBlockerRefusesNextAndKeepsItFocusable(): Promise<void> {
   renderWizard("dashboard.create", {}, { stepBlocker: (step) => (step.id === "basics" ? BLOCKED : null) });
-  expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+  const next = screen.getByRole("button", { name: "Next" }) as HTMLButtonElement;
+  await userEvent.click(next);
+  expect([next.getAttribute("aria-disabled"), next.disabled, current()]).toEqual(["true", false, "1. Basics"]);
+}
+
+/** Review Q2 — Next is described by the blocker's alert. */
+export function aStepBlockerDescribesNext(): void {
+  renderWizard("dashboard.create", {}, { stepBlocker: (step) => (step.id === "basics" ? BLOCKED : null) });
+  const id = screen.getByRole("button", { name: "Next" }).getAttribute("aria-describedby");
+  expect(id === null ? null : document.getElementById(id)?.textContent).toBe(BLOCKED);
 }
 
 /** `F4.315` B4 — a step blocker's sentence is listed in the step's alert. */
@@ -333,8 +345,6 @@ export function aStepBlockerSaysWhy(): void {
 /** The twin: a blocker that answers `null` for the open step leaves Next enabled and says nothing. */
 export function aClearStepBlockerLeavesNextEnabled(): void {
   renderWizard("dashboard.create", {}, { stepBlocker: (step) => (step.id === "scope" ? BLOCKED : null) });
-  expect([(screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled, screen.queryByRole("alert")]).toEqual([
-    false,
-    null,
-  ]);
+  const next = screen.getByRole("button", { name: "Next" });
+  expect([next.getAttribute("aria-disabled"), screen.queryByRole("alert")]).toEqual([null, null]);
 }

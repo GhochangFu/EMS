@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { CatalogEntry } from "@bms/shared/copilot";
 
 import { changeRows } from "../../lib/copilot-diff";
@@ -69,7 +69,9 @@ type WizardShellProps = {
   /**
    * `F4.315` B4 (ADR 0109 Amendment 2): a sentence while a field step cannot be left — for
    * example a value the schema requires but `stepProblems` does not check because it is empty.
-   * Next is disabled and the sentence is listed in the step's alert; `null` lets the step pass.
+   * Next refuses and the sentence is listed in the step's alert; `null` lets the step pass. Next
+   * stays focusable (`aria-disabled`, described by the alert, review Q1/Q2): a step that opens
+   * blocked must not drop the keyboard's focus to the page body.
    */
   stepBlocker?: (step: WizardStep) => string | null;
   /**
@@ -110,6 +112,7 @@ export function WizardShell(props: WizardShellProps) {
   const [stepId, setStepId] = useState<string>(steps[0]?.id ?? REVIEW_STEP.id);
   const [dirty, setDirty] = useState(false);
   const [problems, setProblems] = useState<string[]>([]);
+  const alertId = useId();
   const [leave, setLeave] = useState<Extract<LeaveDecision, { allow: false }> | null>(null);
   const seq = useWizardStore((s) => s.seq);
   const take = useWizardStore((s) => s.take);
@@ -142,6 +145,7 @@ export function WizardShell(props: WizardShellProps) {
   const shown = blocker === null ? problems : [blocker, ...problems.filter((problem) => problem !== blocker)];
 
   function goNext(): void {
+    if (blocker !== null) return;
     const found = stepProblems(entry, step, values).map((problem) => props.formatProblem?.(problem) ?? problem);
     setProblems(found);
     if (found.length === 0) setStepId(nextStepId(steps, step.id));
@@ -201,7 +205,7 @@ export function WizardShell(props: WizardShellProps) {
         <section aria-label={step.title} className="flex flex-col gap-2">
           {props.renderStep(step)}
           {shown.length > 0 && (
-            <ul role="alert" className="rounded border border-critical-line bg-critical-wash px-3 py-2 text-xs text-critical-ink">
+            <ul id={alertId} role="alert" className="rounded border border-critical-line bg-critical-wash px-3 py-2 text-xs text-critical-ink">
               {shown.map((problem) => (
                 <li key={problem}>{problem}</li>
               ))}
@@ -216,8 +220,10 @@ export function WizardShell(props: WizardShellProps) {
             <button
               type="button"
               onClick={goNext}
-              disabled={props.nextDisabled === true || blocker !== null}
-              className="surface-button-primary px-3 py-1 text-xs disabled:opacity-50"
+              disabled={props.nextDisabled === true}
+              aria-disabled={blocker !== null ? "true" : undefined}
+              aria-describedby={blocker !== null ? alertId : undefined}
+              className="surface-button-primary px-3 py-1 text-xs disabled:opacity-50 aria-disabled:opacity-50"
             >
               Next
             </button>

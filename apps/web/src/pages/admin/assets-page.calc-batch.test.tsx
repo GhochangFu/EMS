@@ -10,6 +10,7 @@ import {
   aTemplatedAssetIsMarkedAndLeftOut,
   reviewListsEveryRefusedAsset,
   theBatchSendsExactlyTheCheckedIds,
+  theBulkWizardKeepsATypedAgeOnALaterIntervalEdit,
   theBulkWizardRefusesNextWhileTheAgeIsEmpty,
   theBulkWizardTakesTwiceTheInterval,
   theBulkWizardListsTheSharedOrganizationsVersion,
@@ -80,7 +81,11 @@ describe("F4.315 PR B — the bulk wizard's default input age, and the Schedule 
     await theBulkWizardTakesTwiceTheInterval();
   });
 
-  it("an empty age disables Next and says why", async () => {
+  it("an empty age refuses Next, keeps it focusable and says why", async () => {
     await theBulkWizardRefusesNextWhileTheAgeIsEmpty();
+  });
+
+  it("review F1: a typed age survives a later Every edit", async () => {
+    await theBulkWizardKeepsATypedAgeOnALaterIntervalEdit();
   });
 });

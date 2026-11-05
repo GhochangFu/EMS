@@ -7,6 +7,8 @@ import {
   aScheduledAddTakesTwiceTheInterval,
   aStreamingAddOpensTheAgeOnThreeHundred,
   aTypedAgeLetsNextPass,
+  aTypedAgeSurvivesALaterIntervalEdit,
+  anEditKeepsTheStoredAgeOnAnIntervalEdit,
   aPinnedAssetHasNoAddCalculatedPoint,
   aRefusedWriteKeepsTheServersSentenceAfterTheReread,
   aWriteRefusedWith503RereadsBothLists,
@@ -86,11 +88,19 @@ describe("F4.315 PR B — Add's default input age, and the Schedule step that re
     await aScheduledAddTakesTwiceTheInterval();
   });
 
-  it("a cleared age disables Next and says why", async () => {
+  it("a cleared age refuses Next, keeps it focusable and says why", async () => {
     await aClearedAgeRefusesNextAndSaysWhy();
   });
 
   it("a typed age lets Next pass", async () => {
     await aTypedAgeLetsNextPass();
+  });
+
+  it("review F1: a typed age survives a later Every edit", async () => {
+    await aTypedAgeSurvivesALaterIntervalEdit();
+  });
+
+  it("review F2: Edit keeps the stored age when Every changes", async () => {
+    await anEditKeepsTheStoredAgeOnAnIntervalEdit();
   });
 });

@@ -319,6 +319,26 @@ export async function theBulkWizardRefusesNextWhileTheAgeIsEmpty(): Promise<void
   renderPage();
   await check("PMP-1");
   const dialog = await batchToSchedule();
-  const next = within(dialog).getByRole("button", { name: "Next" }) as HTMLButtonElement;
-  expect([next.disabled, within(dialog).getByRole("alert").textContent]).toEqual([true, SCHEDULE_AGE_BLOCKER]);
+  await userEvent.click(within(dialog).getByRole("button", { name: "Next" }));
+  expect([
+    within(dialog).getByRole("button", { name: "Next" }).getAttribute("aria-disabled"),
+    within(dialog).getByRole("alert").textContent,
+    within(dialog).queryByLabelText("Every (seconds)") !== null,
+  ]).toEqual(["true", SCHEDULE_AGE_BLOCKER, true]);
+}
+
+/** Review F1: a typed age survives a later Every edit. Mutation: drop `setAgeTouched`. */
+export async function theBulkWizardKeepsATypedAgeOnALaterIntervalEdit(): Promise<void> {
+  stubApi([ONE]);
+  renderPage();
+  await check("PMP-1");
+  const dialog = await batchToSchedule();
+  const every = within(dialog).getByLabelText("Every (seconds)");
+  const age = within(dialog).getByLabelText("Inputs valid for (seconds)") as HTMLInputElement;
+  await userEvent.type(every, "30");
+  await userEvent.clear(age);
+  await userEvent.type(age, "45");
+  await userEvent.clear(every);
+  await userEvent.type(every, "90");
+  expect(age.value).toBe("45");
 }

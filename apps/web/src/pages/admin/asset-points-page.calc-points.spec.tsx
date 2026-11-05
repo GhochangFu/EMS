@@ -305,14 +305,46 @@ export async function aScheduledAddTakesTwiceTheInterval(): Promise<void> {
   expect(ageField().value).toBe("60");
 }
 
-/** Mutation: drop `setAgeTouched` — the cleared age refills and Next stays enabled. */
+/** A cleared age refuses Next (focusable, `aria-disabled`) and says why; a click stays on Schedule. */
 export async function aClearedAgeRefusesNextAndSaysWhy(): Promise<void> {
   stubApi("standalone");
   renderPage();
   await addToSchedule();
   await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
   await userEvent.clear(ageField());
-  expect([nextButton().disabled, screen.getByRole("alert").textContent]).toEqual([true, SCHEDULE_AGE_BLOCKER]);
+  await userEvent.click(nextButton());
+  expect([
+    nextButton().getAttribute("aria-disabled"),
+    screen.getByRole("alert").textContent,
+    screen.queryByLabelText("Runs for pf") !== null,
+  ]).toEqual(["true", SCHEDULE_AGE_BLOCKER, true]);
+}
+
+/**
+ * Review F1: a typed age survives a later Every edit. Mutation: drop `setAgeTouched` — the
+ * state stays untouched, so the Every edit refills the age with 2 × 90.
+ */
+export async function aTypedAgeSurvivesALaterIntervalEdit(): Promise<void> {
+  stubApi("standalone");
+  renderPage();
+  await addToSchedule();
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
+  await userEvent.clear(ageField());
+  await userEvent.type(ageField(), "45");
+  await userEvent.clear(screen.getByLabelText("Every (seconds)"));
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "90");
+  expect(ageField().value).toBe("45");
+}
+
+/** Review F2: Edit opens on the stored age as chosen. Mutation: `useState(false)` — Every refills it. */
+export async function anEditKeepsTheStoredAgeOnAnIntervalEdit(): Promise<void> {
+  stubApi("standalone", [PF]);
+  renderPage();
+  await userEvent.click(within(await pfRow()).getByRole("button", { name: "Edit" }));
+  await next(1);
+  await userEvent.clear(screen.getByLabelText("Every (seconds)"));
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "90");
+  expect(ageField().value).toBe("600");
 }
 
 export async function aTypedAgeLetsNextPass(): Promise<void> {
@@ -322,5 +354,5 @@ export async function aTypedAgeLetsNextPass(): Promise<void> {
   await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
   await userEvent.clear(ageField());
   await userEvent.type(ageField(), "10");
-  expect([ageField().value, nextButton().disabled]).toEqual(["10", false]);
+  expect([ageField().value, nextButton().getAttribute("aria-disabled")]).toEqual(["10", null]);
 }

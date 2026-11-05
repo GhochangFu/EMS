@@ -19,6 +19,7 @@ import {
   calcPointDraftProblems,
   defaultMaxInputAgeSeconds,
   ageTouchedAfter,
+  ageTouchedAfterFill,
   scheduleStepBlocker,
   SCHEDULE_AGE_BLOCKER,
   withDefaultAge,
@@ -374,10 +375,36 @@ export function clearingADefaultedAgeTouchesIt(): void {
   expect(ageTouchedAfter(before, { ...before, maxInputAgeSeconds: "" }, false)).toBe(true);
 }
 
-/** An age that only moved to the new default (an interval or trigger edit, a suggestion's default) is not touched. */
-export function anAgeThatOnlyFollowsItsDefaultIsNotTouched(): void {
+/** An interval or trigger edit (the age itself unchanged) does not touch it. */
+export function anIntervalEditDoesNotTouchTheAge(): void {
   const before = draft({ calcIntervalSeconds: "30", maxInputAgeSeconds: "60" });
-  expect(ageTouchedAfter(before, { ...before, calcIntervalSeconds: "40", maxInputAgeSeconds: "80" }, false)).toBe(false);
+  expect(ageTouchedAfter(before, { ...before, calcIntervalSeconds: "40" }, false)).toBe(false);
+}
+
+/**
+ * Review C1: a taken suggestion's own age is chosen, even when it equals the default in force
+ * (streaming 300 → a scheduled/60 suggestion with 300). Mutation: decide by value change.
+ */
+export function aTakenSuggestionsOwnAgeIsChosen(): void {
+  const before = draft({ calcTrigger: "streaming", calcIntervalSeconds: "", maxInputAgeSeconds: "300" });
+  const after = { ...before, calcTrigger: "scheduled", calcIntervalSeconds: "60" };
+  expect(ageTouchedAfter(before, after, false, { maxInputAgeSeconds: 300 })).toBe(true);
+}
+
+/** An age-less suggestion lands on the default, which follows again. Mutation: keep `touched`. */
+export function anAgelessSuggestionLeavesTheAgeFollowing(): void {
+  const before = draft({ maxInputAgeSeconds: "45" });
+  expect(ageTouchedAfter(before, { ...before, maxInputAgeSeconds: "600" }, true, { maxInputAgeSeconds: null })).toBe(false);
+}
+
+/** Review C1: a fill whose body holds an age keeps it. Mutation: ignore the fill. */
+export function aFillWithAnAgeChoosesIt(): void {
+  expect(ageTouchedAfterFill({ calcTrigger: "scheduled", calcIntervalSeconds: 60, maxInputAgeSeconds: 120 }, false)).toBe(true);
+}
+
+/** The twin: a fill with no age leaves the age following. */
+export function aFillWithNoAgeLeavesItFollowing(): void {
+  expect(ageTouchedAfterFill({ calcTrigger: "scheduled", calcIntervalSeconds: 60 }, false)).toBe(false);
 }
 
 /** Once touched, the age stays touched. */

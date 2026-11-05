@@ -90,12 +90,29 @@ export function withDefaultAge(draft: CalcPointDraft, ageTouched: boolean): Calc
 }
 
 /**
- * Whether the age is someone's choice after the edit `previous` → `next`: it was already, or
- * the edit moved it to a value that is not `next`'s default (a typed value, or a cleared one).
+ * Whether the age is someone's choice after a field edit `previous` → `next` (`F4.315` review
+ * C1). A taken suggestion decides alone (ADR 0109 Amendment 2 decision 1): its own age is
+ * chosen and never replaced; an age-less one leaves the default in place, following again.
+ * Otherwise the edit chose the age when it changed it — a typed value, or a cleared one; a
+ * trigger or interval edit leaves `touched` as it was.
  */
-export function ageTouchedAfter(previous: CalcPointDraft, next: CalcPointDraft, touched: boolean): boolean {
-  if (touched || next.maxInputAgeSeconds === previous.maxInputAgeSeconds) return touched;
-  return next.maxInputAgeSeconds !== defaultMaxInputAgeSeconds(next.calcTrigger, next.calcIntervalSeconds);
+export function ageTouchedAfter(
+  previous: CalcPointDraft,
+  next: CalcPointDraft,
+  touched: boolean,
+  taken: { readonly maxInputAgeSeconds: number | null } | null = null,
+): boolean {
+  if (taken !== null) return taken.maxInputAgeSeconds !== null;
+  return touched || next.maxInputAgeSeconds !== previous.maxInputAgeSeconds;
+}
+
+/**
+ * The same after a copilot fill (`WizardShell`'s `onChange`, which only a fill calls): the
+ * values are the merged body, so a numeric age is the fill's or one already shown; either
+ * way it is kept from then on.
+ */
+export function ageTouchedAfterFill(values: Readonly<Record<string, unknown>>, touched: boolean): boolean {
+  return touched || typeof values.maxInputAgeSeconds === "number";
 }
 
 /** The Schedule step's refusal while the age is empty (the schema requires it). */

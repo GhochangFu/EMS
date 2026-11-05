@@ -49,6 +49,7 @@ import {
   BATCH_QUALIFIED_REF_NOTE,
   BATCH_TEMPLATE_EXCLUSION,
   ageTouchedAfter,
+  ageTouchedAfterFill,
   batchCapProblem,
   batchEligibility,
   batchRefusals,
@@ -63,6 +64,7 @@ import {
   type BatchRefusal,
   type CalcPointDraft,
 } from "../../lib/calc-point-draft";
+import type { FormulaSuggestion } from "../../lib/formula-suggestions";
 import { sharedDomain, sharedValue } from "../../lib/catalog-key-filter";
 import { AdminWizardFrame } from "../admin/admin-wizard-frame";
 import { FormulaPreview } from "../asset-templates/formula-preview";
@@ -176,8 +178,8 @@ export function CalcPointBatchWizard({
     setRefused([]);
     setDraft(next);
   };
-  const changeTiming = (next: CalcPointDraft) => {
-    const touched = ageTouchedAfter(draft, next, ageTouched);
+  // `touched` decides this edit; the state carries it to the next one (a later Every edit).
+  const changeTiming = (next: CalcPointDraft, touched: boolean) => {
     setAgeTouched(touched);
     change(withDefaultAge(next, touched));
   };
@@ -195,7 +197,10 @@ export function CalcPointBatchWizard({
     draft,
     busy,
     standalone: true,
-    onDraftChange: (next: Partial<CalcPointDraft>) => changeTiming({ ...draft, ...next }),
+    onDraftChange: (next: Partial<CalcPointDraft>, taken?: FormulaSuggestion) => {
+      const merged = { ...draft, ...next };
+      changeTiming(merged, ageTouchedAfter(draft, merged, ageTouched, taken ?? null));
+    },
   };
   const values: Record<string, unknown> = {
     assetIds: eligible.map((asset) => asset.id),
@@ -285,7 +290,10 @@ export function CalcPointBatchWizard({
         fixedFields={["assetIds"]}
         values={values}
         onChange={(next) =>
-          changeTiming(calcPointDraftFromFields(next, typeof next.pointKey === "string" ? next.pointKey : ""))
+          changeTiming(
+            calcPointDraftFromFields(next, typeof next.pointKey === "string" ? next.pointKey : ""),
+            ageTouchedAfterFill(next, ageTouched),
+          )
         }
         renderStep={(step) => steps[step.id] ?? null}
         nextDisabled={blocker !== null}
