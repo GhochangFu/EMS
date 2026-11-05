@@ -2,8 +2,8 @@ import { Injectable } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import * as XLSX from "xlsx";
 
-import { assetPoints, assets } from "@bms/db";
-import type { AggregateLevel, TrendPointsReportParams } from "@bms/shared";
+import { assetPoints, assets, locations, rtus } from "@bms/db";
+import { assetLabel, type AggregateLevel, type TrendPointsReportParams } from "@bms/shared";
 
 import type { BmsTx } from "../database/tenant-context";
 import { levelFor, resolveAggregateRange, windowBoundsFor } from "../telemetry/point-aggregate-window";
@@ -37,6 +37,10 @@ export interface TrendPointsKeptPair {
   readonly pointKey: string;
   readonly unit: string | null;
   readonly assetCode: string;
+  /** `F4.316` (ADR 0111): the asset's RTU display name, `null` when it has none. */
+  readonly assetRtuName: string | null;
+  /** `F4.316`: the asset's location name, the label's `where` when there is no RTU. */
+  readonly assetLocationName: string | null;
 }
 
 /** The plan: no telemetry read yet — the window, the level, the kept pairs and the dropped pairs' names. */
@@ -53,7 +57,7 @@ export interface TrendPointsPlan {
   readonly now: Date;
   readonly total: number;
   readonly kept: readonly TrendPointsKeptPair[];
-  /** `<asset code> · <point code>`, or `a deleted asset · <point code>`, in stored order. */
+  /** `<asset label> · <point code>`, or `a deleted asset · <point code>`, in stored order. */
   readonly dropped: readonly string[];
 }
 
@@ -81,8 +85,10 @@ function localDate(iso: string): LocalDate {
  *
  * **Kept and dropped.** A pair is kept when its asset is among the schedule's resolved assets and
  * the code is an active `bms.asset_points` registration of it; every other pair is dropped and
- * named by its asset's code, or "a deleted asset" when the row is gone or invisible under the
- * tenant policy. Never an id.
+ * named by its asset's label (`F4.316`, ADR 0111: `<code> · <RTU>`, else `<code> · <location>`),
+ * or "a deleted asset" when the row is gone or invisible under the tenant policy. Never an id.
+ * Both selects LEFT JOIN `bms.rtus` and `bms.locations` for the label on the same `tx`, adding no
+ * predicate.
  *
  * **Wiring.** `TelemetryService` is a provider of `ReportsCoreModule` (stateless: three pool
  * tokens from the `@Global()` `DatabaseModule`), never reached through `TelemetryModule`, a loop
@@ -106,9 +112,18 @@ export class TrendPointsReportService {
       candidates.length === 0
         ? []
         : await tx
-            .select({ assetId: assetPoints.assetId, pointKey: assetPoints.pointKey, unit: assetPoints.unit, assetCode: assets.code })
+            .select({
+              assetId: assetPoints.assetId,
+              pointKey: assetPoints.pointKey,
+              unit: assetPoints.unit,
+              assetCode: assets.code,
+              assetRtuName: rtus.displayName,
+              assetLocationName: locations.name,
+            })
             .from(assetPoints)
             .innerJoin(assets, eq(assets.id, assetPoints.assetId))
+            .leftJoin(rtus, eq(rtus.id, assets.rtuId))
+            .leftJoin(locations, eq(locations.id, assets.locationId))
             .where(and(inArray(assetPoints.assetId, candidates), eq(assetPoints.active, true)));
 
     const kept: TrendPointsKeptPair[] = [];
@@ -120,17 +135,29 @@ export class TrendPointsReportService {
       if (found === undefined) {
         droppedPairs.push(pair);
       } else {
-        kept.push({ assetId: found.assetId, pointKey: found.pointKey, unit: found.unit, assetCode: found.assetCode });
+        kept.push({
+          assetId: found.assetId,
+          pointKey: found.pointKey,
+          unit: found.unit,
+          assetCode: found.assetCode,
+          assetRtuName: found.assetRtuName,
+          assetLocationName: found.assetLocationName,
+        });
       }
     }
 
     const droppedIds = [...new Set(droppedPairs.map((pair) => pair.assetId))];
-    const codes =
+    const names =
       droppedIds.length === 0
         ? []
-        : await tx.select({ id: assets.id, code: assets.code }).from(assets).where(inArray(assets.id, droppedIds));
-    const codeOf = new Map(codes.map((row) => [row.id, row.code]));
-    const dropped = droppedPairs.map((pair) => `${codeOf.get(pair.assetId) ?? DELETED_ASSET} · ${pair.pointKey}`);
+        : await tx
+            .select({ id: assets.id, code: assets.code, rtuName: rtus.displayName, locationName: locations.name })
+            .from(assets)
+            .leftJoin(rtus, eq(rtus.id, assets.rtuId))
+            .leftJoin(locations, eq(locations.id, assets.locationId))
+            .where(inArray(assets.id, droppedIds));
+    const labelOf = new Map(names.map((row) => [row.id, assetLabel(row)]));
+    const dropped = droppedPairs.map((pair) => `${labelOf.get(pair.assetId) ?? DELETED_ASSET} · ${pair.pointKey}`);
 
     return {
       scheduleName: input.scheduleName,
@@ -167,6 +194,8 @@ export class TrendPointsReportService {
         );
         return {
           assetCode: pair.assetCode,
+          assetRtuName: pair.assetRtuName,
+          assetLocationName: pair.assetLocationName,
           pointKey: pair.pointKey,
           unit: pair.unit,
           current: { stats: aggregate.stats, buckets: aggregate.buckets ?? [] },

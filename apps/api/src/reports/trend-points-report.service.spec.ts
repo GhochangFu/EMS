@@ -23,13 +23,24 @@ const ASSET_B = "67676767-6767-4676-8676-676767676767";
 const ASSET_GONE = "68686868-6868-4686-8686-686868686868";
 const NOW = new Date("2026-11-03T06:00:00.000Z");
 
-type Registration = { assetId: string; pointKey: string; unit: string | null; assetCode: string };
+type Registration = {
+  assetId: string;
+  pointKey: string;
+  unit: string | null;
+  assetCode: string;
+  assetRtuName: string | null;
+  assetLocationName: string | null;
+};
+
+/** `F4.316` PR 6: the two selects' projections (sorted keys), each now naming the RTU and location for the label. */
+const KEPT_SHAPE = "assetCode,assetId,assetLocationName,assetRtuName,pointKey,unit";
+const DROPPED_SHAPE = "code,id,locationName,rtuName";
 
 type Scenario = {
   /** The active registrations the kept-pairs select answers (before its own filter). */
   registrations?: Registration[];
-  /** The asset rows the dropped-codes select can see. */
-  visibleAssets?: { id: string; code: string }[];
+  /** The asset rows the dropped-names select can see. */
+  visibleAssets?: { id: string; code: string; rtuName: string | null; locationName: string | null }[];
 };
 
 type AggregateCall = { point: { assetId: string; pointKey: string }; options: Record<string, unknown> };
@@ -78,13 +89,13 @@ function harness(scenario: Scenario = {}) {
       const shape = Object.keys(projection).sort().join(",");
       return chain(async () => {
         selects.push(shape);
-        if (shape === "assetCode,assetId,pointKey,unit") {
+        if (shape === KEPT_SHAPE) {
           return scenario.registrations ?? [
-            { assetId: ASSET_A, pointKey: "kw", unit: "kW", assetCode: "A1" },
-            { assetId: ASSET_B, pointKey: "pf", unit: null, assetCode: "B2" },
+            { assetId: ASSET_A, pointKey: "kw", unit: "kW", assetCode: "A1", assetRtuName: "RTU 1", assetLocationName: "Plant" },
+            { assetId: ASSET_B, pointKey: "pf", unit: null, assetCode: "B2", assetRtuName: null, assetLocationName: "Plant" },
           ];
         }
-        if (shape === "code,id") {
+        if (shape === DROPPED_SHAPE) {
           return scenario.visibleAssets ?? [];
         }
         throw new Error(`tx fake: unexpected select shape ${shape}`);
@@ -175,25 +186,31 @@ export async function assertNoCompareReachesEveryRead(): Promise<void> {
   assert(JSON.stringify(compares) === JSON.stringify([false, false]), `expected compare false on both reads, got ${JSON.stringify(compares)}`);
 }
 
-/** V3 — a pair whose asset is not among the schedule's assets is dropped, named by its code, and never read. */
+/**
+ * V3 — a pair whose asset is not among the schedule's assets is dropped, named by its label
+ * (`F4.316`: `<code> · <RTU>`), and never read.
+ */
 export async function assertAnAssetOutsideTheScheduleIsDroppedByCode(): Promise<void> {
-  const { h, rows } = await readAll({ visibleAssets: [{ id: ASSET_B, code: "B2" }] }, { assetIds: [ASSET_A] });
+  const { h, rows } = await readAll(
+    { visibleAssets: [{ id: ASSET_B, code: "B2", rtuName: "RTU 2", locationName: "Plant" }] },
+    { assetIds: [ASSET_A] },
+  );
   const read = h.aggregateCalls.map((call) => call.point.assetId);
   assert(
-    JSON.stringify(read) === JSON.stringify([ASSET_A]) && rows.dropped === "1 of 2 points were left out: B2 · pf",
+    JSON.stringify(read) === JSON.stringify([ASSET_A]) && rows.dropped === "1 of 2 points were left out: B2 · RTU 2 · pf",
     `expected only A read and B named, got reads ${JSON.stringify(read)} and ${JSON.stringify(rows.dropped)}`,
   );
 }
 
-/** V4 — a pair with no active registration is dropped. */
+/** V4 — a pair with no active registration is dropped; an asset with no RTU is named `<code> · <location>` (the RTU-less twin). */
 export async function assertARetiredRegistrationIsDropped(): Promise<void> {
   const { h, rows } = await readAll({
-    registrations: [{ assetId: ASSET_A, pointKey: "kw", unit: "kW", assetCode: "A1" }],
-    visibleAssets: [{ id: ASSET_B, code: "B2" }],
+    registrations: [{ assetId: ASSET_A, pointKey: "kw", unit: "kW", assetCode: "A1", assetRtuName: "RTU 1", assetLocationName: "Plant" }],
+    visibleAssets: [{ id: ASSET_B, code: "B2", rtuName: null, locationName: "Plant" }],
   });
   const read = h.aggregateCalls.map((call) => `${call.point.assetId}:${call.point.pointKey}`);
   assert(
-    JSON.stringify(read) === JSON.stringify([`${ASSET_A}:kw`]) && rows.dropped === "1 of 2 points were left out: B2 · pf",
+    JSON.stringify(read) === JSON.stringify([`${ASSET_A}:kw`]) && rows.dropped === "1 of 2 points were left out: B2 · Plant · pf",
     `expected the retired pair dropped, got reads ${JSON.stringify(read)} and ${JSON.stringify(rows.dropped)}`,
   );
 }
@@ -220,7 +237,7 @@ export async function assertEveryPointDroppedStillGivesBothFiles(): Promise<void
 export async function assertEachSelectRunsOncePerPlan(): Promise<void> {
   const { h } = await readAll({ registrations: [] });
   assert(
-    JSON.stringify(h.selects) === JSON.stringify(["assetCode,assetId,pointKey,unit", "code,id"]),
+    JSON.stringify(h.selects) === JSON.stringify([KEPT_SHAPE, DROPPED_SHAPE]),
     `expected one kept-pairs select and one code select, got ${JSON.stringify(h.selects)}`,
   );
 }
@@ -232,11 +249,14 @@ export async function assertEveryReadAsksForAverageBucketsWithStats(): Promise<v
   assert(JSON.stringify(asks) === JSON.stringify(["avg/true", "avg/true"]), `expected avg/true on both reads, got ${JSON.stringify(asks)}`);
 }
 
-/** The rows carry one table per kept point, headed by the registration's code and unit. */
+/** The rows carry one table per kept point, headed by the registration's label (`F4.316`) and unit. */
 export async function assertTheKeptPointsBecomeTables(): Promise<void> {
   const { rows } = await readAll({});
   const headings = rows.tables.map((table) => table.heading);
-  assert(JSON.stringify(headings) === JSON.stringify(["A1 · kw (kW)", "B2 · pf"]), `expected two tables, got ${JSON.stringify(headings)}`);
+  assert(
+    JSON.stringify(headings) === JSON.stringify(["A1 · RTU 1 · kw (kW)", "B2 · Plant · pf"]),
+    `expected two tables, got ${JSON.stringify(headings)}`,
+  );
 }
 
 /** The XLSX buffer is a workbook whose one sheet is `Points`. */

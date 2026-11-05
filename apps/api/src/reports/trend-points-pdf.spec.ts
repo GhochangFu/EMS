@@ -5,6 +5,7 @@ import type { Content, ContentTable, ContentText } from "pdfmake/interfaces";
 
 import { repoRoot } from "../testing/repo-root";
 import {
+  TREND_POINTS_SHEET_HEADER,
   TREND_POINTS_TABLE_HEADER,
   trendPointsPdfDefinition,
   trendPointsReportRows,
@@ -34,6 +35,8 @@ const PREVIOUS_STATS = { sum: 16, average: 8, min: 4, max: 12, peakAt: "2026-10-
 function point(overrides: Partial<TrendPointsReportPoint> = {}): TrendPointsReportPoint {
   return {
     assetCode: "A1",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Plant",
     pointKey: "kw",
     unit: "kW",
     current: {
@@ -88,12 +91,17 @@ function tables(content: Content[]): ContentTable[] {
   return content.filter((node): node is ContentTable => typeof node === "object" && node !== null && "table" in node);
 }
 
-/** P1 — one table per point, headed `<asset code> · <point name> (<unit>)`. */
+/**
+ * P1 — one table per point, headed `<asset label> · <point name> (<unit>)` (`F4.316` PR 6, ADR 0111):
+ * the label is `<code> · <RTU>`, else `<code> · <location>` — B2 has no RTU, the RTU-less twin.
+ */
 export function assertOneTablePerPointWithItsHeading(): void {
-  const rows = trendPointsReportRows(input({ total: 2, points: [point(), point({ assetCode: "B2", pointKey: "pf", unit: null })] }));
+  const rows = trendPointsReportRows(
+    input({ total: 2, points: [point(), point({ assetCode: "B2", assetRtuName: null, pointKey: "pf", unit: null })] }),
+  );
   const headings = rows.tables.map((table) => table.heading);
   assert(
-    JSON.stringify(headings) === JSON.stringify(["A1 · kw (kW)", "B2 · pf"]),
+    JSON.stringify(headings) === JSON.stringify(["A1 · RTU 1 · kw (kW)", "B2 · Plant · pf"]),
     `expected the two headings, got ${JSON.stringify(headings)}`,
   );
 }
@@ -132,9 +140,9 @@ export function assertAGapIsADashInThePdf(): void {
 /** P2 — the same gap is `null` in the long (XLSX) row. */
 export function assertAGapIsNullInTheLongRow(): void {
   const rows = trendPointsReportRows(input());
-  const gap = rows.sheet.find((row) => row[5] === "2026-11-01T00:01:00+05:30");
+  const gap = rows.sheet.find((row) => row[6] === "2026-11-01T00:01:00+05:30");
   assert(
-    JSON.stringify(gap) === JSON.stringify(["A1", "kw", "kW", "current", "bucket", "2026-11-01T00:01:00+05:30", null, null, null, 0]),
+    JSON.stringify(gap) === JSON.stringify(["A1", "A1 · RTU 1", "kw", "kW", "current", "bucket", "2026-11-01T00:01:00+05:30", null, null, null, 0]),
     `expected the gap's long row with nulls, got ${JSON.stringify(gap)}`,
   );
 }
@@ -181,11 +189,21 @@ export function assertAKeptPointDrawsOneTable(): void {
 export function assertTheSheetReadsTheTablesRows(): void {
   const rows = trendPointsReportRows(input({ points: [WITH_COMPARE] }));
   const fromTables = rows.tables.flatMap((table) =>
-    table.rows.map((row) => [table.assetCode, table.pointKey, table.unit, row[0], row[1] === "summary" ? "summary" : "bucket", row[1] === "summary" ? null : row[1], ...row.slice(2)]),
+    table.rows.map((row) => [table.assetCode, table.assetLabel, table.pointKey, table.unit, row[0], row[1] === "summary" ? "summary" : "bucket", row[1] === "summary" ? null : row[1], ...row.slice(2)]),
   );
   const headerAt = rows.sheet.findIndex((row) => row[0] === "asset");
   const data = rows.sheet.slice(headerAt + 1);
   assert(headerAt > 0 && JSON.stringify(data) === JSON.stringify(fromTables), `the sheet's rows differ from the tables': ${JSON.stringify(data)}`);
+}
+
+/** `F4.316` PR 6 (ADR 0111 decision 4) — the sheet keeps the code column `asset` and adds `asset_label` right after it. */
+export function assertTheSheetHeaderAddsTheLabelAfterTheCode(): void {
+  const header = trendPointsReportRows(input()).sheet.find((row) => row[0] === "asset");
+  assert(
+    JSON.stringify(header?.slice(0, 3)) === JSON.stringify(["asset", "asset_label", "point"]) &&
+      JSON.stringify(header) === JSON.stringify(TREND_POINTS_SHEET_HEADER),
+    `the sheet header must be asset, asset_label, point, …, got ${JSON.stringify(header)}`,
+  );
 }
 
 /** U17 (plan C25, owner Q-D): the sentence a folded PDF prints for its level. */
@@ -220,7 +238,7 @@ export function assertA1mReadFoldsToHoursInThePdf(): void {
 /** U17 F2 — the table rows and the XLSX sheet keep every minute bucket (Q-D: the XLSX keeps every bucket). */
 export function assertTheSheetKeepsEveryMinuteBucket(): void {
   const rows = trendPointsReportRows(input({ points: [twoHoursOfMinutes()] }));
-  const bucketRows = rows.sheet.filter((row) => row[4] === "bucket").length;
+  const bucketRows = rows.sheet.filter((row) => row[5] === "bucket").length;
   assert(rows.tables[0]?.rows.length === 121 && bucketRows === 120, `expected 121 table rows and 120 bucket rows, got ${rows.tables[0]?.rows.length} and ${bucketRows}`);
 }
 

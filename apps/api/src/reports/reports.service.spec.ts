@@ -28,8 +28,12 @@ const QUERY = { startDate: "2026-08-01", endDate: "2026-08-07" };
 const PREVIOUS = { startDate: "2026-07-25", endDate: "2026-07-31" };
 const ASSET_IDS = ["00000000-0000-4000-8000-0000000000a1"];
 
-/** The SHA-256 of `energyXlsx`'s bytes for the fixture on `main` before `F4.303` (captured at `550dfecc`). */
-const MAIN_XLSX_SHA256 = "2b60e667690d8aab2b022ddadf4a73a03efdaa46e2654d23361f14dcb818130a";
+/**
+ * The SHA-256 of `energyXlsx`'s bytes for the fixture on `main` before `F4.303` (captured at `550dfecc`).
+ * Re-pinned by `F4.316` PR 6 (ADR 0111 decision 4): the consumers block gained the "Asset" label column
+ * (`reports.serialise.spec.ts` L1–L2 hold the cells).
+ */
+const MAIN_XLSX_SHA256 = "849e86a5cb5840acd6fc5eebc28e321e60727065301cd8708d7f8c362303d0b4";
 
 function harness(): { service: ReportsService; previewSpy: ReturnType<typeof vi.fn> } {
   const service = new ReportsService({} as never, {} as never);

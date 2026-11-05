@@ -1,4 +1,4 @@
-import type { EnergyReportPreview } from "@bms/shared";
+import { assetLabel, type EnergyReportPreview } from "@bms/shared";
 
 import { csvDocument, csvNumberCell, csvTextCell } from "../serialise/csv";
 import type { CsvField } from "../serialise/csv";
@@ -12,8 +12,10 @@ import type { CsvField } from "../serialise/csv";
  * before `F4.29` this serialisation had **never been executed by a test**
  * (ADR 0026 fact 5). Pure and `Pool`-free here, mirroring `audit.serialise.ts`.
  *
- * **Three cells carry values a human typed** — `code`, `name` and `siteName` in
- * the top-consumers block. Everything else is a literal in this file, a
+ * **Four cells carry values a human typed** — `code`, `name` and `siteName` in
+ * the top-consumers block, and (`F4.316`) the `Asset` label built from the code
+ * and the RTU's or location's display name. The label is a `string`, so it takes
+ * `csvTextCell`'s guard like the other three. Everything else is a literal in this file, a
  * Zod-validated `YYYY-MM-DD`, an ISO timestamp this process produced, or a number.
  *
  * **The write paths that reach those three are wider than this comment used to
@@ -164,10 +166,14 @@ export function energyTable(preview: EnergyReportPreview, previous?: EnergyRepor
     withPrevious(["Solar", preview.sourceTotals.solarKwh, "kWh"], preview.sourceTotals.solarKwh, wasSource?.solarKwh),
     withPrevious(["Nominal DG", preview.sourceTotals.dgKwh, "kWh"], preview.sourceTotals.dgKwh, wasSource?.dgKwh),
     [],
-    ["Asset code", "Asset name", "Site", "Avg kW", "Estimated kWh"],
+    // `F4.316` (ADR 0111 decision 4, owner Q6): the code keeps its own column, so a sheet still
+    // filters by code, and "Asset" — the label `<code> · <RTU>`, else `<code> · <location>` —
+    // follows it. The PDF draws the same rows, so its table gains the column too.
+    ["Asset code", "Asset", "Asset name", "Site", "Avg kW", "Estimated kWh"],
     ...preview.topConsumers.map((consumer): ReportCell[] => [
-      // The three untrusted cells.
+      // The four untrusted cells: the label is the code plus an RTU or location display name.
       consumer.code,
+      assetLabel({ code: consumer.code, rtuName: consumer.assetRtuName, locationName: consumer.assetLocationName }),
       consumer.name,
       consumer.siteName,
       consumer.avgKw,

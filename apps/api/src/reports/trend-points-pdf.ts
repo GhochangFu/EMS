@@ -1,4 +1,4 @@
-import type { AggregateLevel, PointAggregateBucket, PointAggregateStats } from "@bms/shared";
+import { assetLabel, type AggregateLevel, type PointAggregateBucket, type PointAggregateStats } from "@bms/shared";
 import type { Content, TableCell, TDocumentDefinitions } from "pdfmake/interfaces";
 
 import { isoInZone } from "./view-export.serialise";
@@ -15,7 +15,8 @@ import { isoInZone } from "./view-export.serialise";
  *
  * **Layout.** A title (the schedule name), the period and the schedule's zone, the level read,
  * the dropped-points sentence when a pair was left out, then one table per kept point headed
- * `<asset code> · <point code> (<unit>)` — there is no point-name column on `bms.asset_points`, so
+ * `<asset label> · <point code> (<unit>)` — the label is `<code> · <RTU>`, else
+ * `<code> · <location>` (`F4.316`, ADR 0111); there is no point-name column on `bms.asset_points`, so
  * the code is the point's name — with a summary row (min, average, max, samples over the period)
  * and the bucket rows; with compare the previous period's summary row and buckets follow. A
  * bucket start is printed in the schedule's zone (`isoInZone`). A gap (a bucket with no samples)
@@ -23,8 +24,10 @@ import { isoInZone } from "./view-export.serialise";
  * measured zero. Every point dropped: the title, the period, the level and the sentence, and no
  * table — never a silent empty file.
  *
- * No id reaches the rows: a dropped pair is named by its asset code, or "a deleted asset" when the
- * asset row is gone or invisible to the render's tenant transaction.
+ * No id reaches the rows: a dropped pair is named by its asset label, or "a deleted asset" when the
+ * asset row is gone or invisible to the render's tenant transaction. The XLSX sheet keeps the code in
+ * its `asset` column, so it still filters by code, and adds `asset_label` after it (ADR 0111
+ * decision 4).
  */
 
 /** One period's read of one point: the scalar statistics and the gap-filled buckets with their statistics. */
@@ -36,6 +39,10 @@ export interface TrendPointsReportPeriodRead {
 /** One kept point, read. */
 export interface TrendPointsReportPoint {
   readonly assetCode: string;
+  /** `F4.316` (ADR 0111): the asset's RTU display name, `null` when it has none. */
+  readonly assetRtuName: string | null;
+  /** `F4.316`: the asset's location name, the label's `where` when there is no RTU. */
+  readonly assetLocationName: string | null;
   readonly pointKey: string;
   readonly unit: string | null;
   readonly current: TrendPointsReportPeriodRead;
@@ -50,7 +57,7 @@ export interface TrendPointsReportInput {
   readonly timeZone: string;
   readonly level: AggregateLevel;
   readonly total: number;
-  /** Each dropped pair as `<asset code> · <point code>`, in stored order. */
+  /** Each dropped pair as `<asset label> · <point code>`, in stored order. */
   readonly dropped: readonly string[];
   readonly points: readonly TrendPointsReportPoint[];
 }
@@ -62,6 +69,8 @@ export type TrendPointsCell = string | number | null;
 export interface TrendPointsTable {
   readonly heading: string;
   readonly assetCode: string;
+  /** `F4.316`: `<code> · <RTU>`, else `<code> · <location>`. */
+  readonly assetLabel: string;
   readonly pointKey: string;
   readonly unit: string | null;
   readonly rows: TrendPointsCell[][];
@@ -88,6 +97,7 @@ export const TREND_POINTS_TABLE_HEADER = ["Period", "Bucket start", "Min", "Aver
 /** The XLSX sheet's column header: the pair, then the table row. */
 export const TREND_POINTS_SHEET_HEADER = [
   "asset",
+  "asset_label",
   "point",
   "unit",
   "period",
@@ -102,8 +112,12 @@ export const TREND_POINTS_SHEET_HEADER = [
 const SUMMARY = "summary";
 const GAP = "—";
 
+function labelOf(point: TrendPointsReportPoint): string {
+  return assetLabel({ code: point.assetCode, rtuName: point.assetRtuName, locationName: point.assetLocationName });
+}
+
 function heading(point: TrendPointsReportPoint): string {
-  const pair = `${point.assetCode} · ${point.pointKey}`;
+  const pair = `${labelOf(point)} · ${point.pointKey}`;
   return point.unit === null ? pair : `${pair} (${point.unit})`;
 }
 
@@ -183,6 +197,7 @@ export function trendPointsReportRows(input: TrendPointsReportInput): TrendPoint
     return {
       heading: heading(point),
       assetCode: point.assetCode,
+      assetLabel: labelOf(point),
       pointKey: point.pointKey,
       unit: point.unit,
       rows,
@@ -202,6 +217,7 @@ export function trendPointsReportRows(input: TrendPointsReportInput): TrendPoint
         const isSummary = row[1] === SUMMARY;
         return [
           table.assetCode,
+          table.assetLabel,
           table.pointKey,
           table.unit,
           row[0] ?? null,

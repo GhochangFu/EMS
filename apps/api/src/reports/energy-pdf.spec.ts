@@ -15,6 +15,8 @@ function consumer(overrides: Partial<EnergyTopConsumer> = {}): EnergyTopConsumer
   return {
     assetId: "00000000-0000-4000-8000-000000000001",
     code: "CH-01",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Plant B",
     name: "Chiller 1",
     siteName: "Plant B",
     avgKw: 383.57,
@@ -243,16 +245,19 @@ export async function assertRenderRefusesALocalFilePath(): Promise<void> {
 /**
  * `energyPdfDefinition(preview())` on `main` before `F4.303` (captured at `550dfecc`,
  * `JSON.stringify` — the footer is a function and is pinned by its own output below).
+ * Re-pinned by `F4.316` PR 6 (owner ruling Q6) after `assertConsumersTableCarriesTheAssetLabel`
+ * was seen red: the consumers table gained the "Asset" column; nothing else moved.
  */
 const MAIN_DEFINITION_JSON =
-  '{"pageSize":"A4","pageOrientation":"portrait","pageMargins":40,"defaultStyle":{"font":"Helvetica","fontSize":9},"content":[{"text":"Energy Consumption","fontSize":16,"bold":true,"margin":[0,0,0,2]},{"text":"2026-08-01 to 2026-08-07","fontSize":9,"margin":[0,0,0,2]},{"text":"Generated at 2026-08-10T12:00:00.000Z","fontSize":8,"margin":[0,0,0,10]},{"table":{"headerRows":1,"widths":["*","*"],"body":[[{"text":"Report"},{"text":"Energy Consumption"}],[{"text":"Start date"},{"text":"2026-08-01"}],[{"text":"End date"},{"text":"2026-08-07"}],[{"text":"Generated at"},{"text":"2026-08-10T12:00:00.000Z"}]]},"margin":[0,0,0,10]},{"table":{"headerRows":1,"widths":["*","*","*"],"body":[[{"text":"Metric"},{"text":"Value"},{"text":"Unit"}],[{"text":"Total energy"},{"text":"2,345.17","alignment":"right"},{"text":"kWh"}],[{"text":"Peak demand"},{"text":"414.66","alignment":"right"},{"text":"kW"}],[{"text":"PUE estimate"},{"text":"1.25","alignment":"right"},{"text":""}],[{"text":"Indicative cost"},{"text":"5,042.12","alignment":"right"},{"text":"ZAR"}],[{"text":"Tariff"},{"text":"2.15","alignment":"right"},{"text":"ZAR/kWh"}]]},"margin":[0,0,0,10]},{"table":{"headerRows":1,"widths":["*","*","*"],"body":[[{"text":"Source"},{"text":"Energy"},{"text":"Unit"}],[{"text":"Grid"},{"text":"2,130.37","alignment":"right"},{"text":"kWh"}],[{"text":"Solar"},{"text":"126.04","alignment":"right"},{"text":"kWh"}],[{"text":"Nominal DG"},{"text":"88.76","alignment":"right"},{"text":"kWh"}]]},"margin":[0,0,0,10]},{"table":{"headerRows":1,"widths":["*","*","*","*","*"],"body":[[{"text":"Asset code"},{"text":"Asset name"},{"text":"Site"},{"text":"Avg kW"},{"text":"Estimated kWh"}],[{"text":"CH-01"},{"text":"Chiller 1"},{"text":"Plant B"},{"text":"383.57","alignment":"right"},{"text":"870.6","alignment":"right"}]]},"margin":[0,0,0,10]}]}';
+  '{"pageSize":"A4","pageOrientation":"portrait","pageMargins":40,"defaultStyle":{"font":"Helvetica","fontSize":9},"content":[{"text":"Energy Consumption","fontSize":16,"bold":true,"margin":[0,0,0,2]},{"text":"2026-08-01 to 2026-08-07","fontSize":9,"margin":[0,0,0,2]},{"text":"Generated at 2026-08-10T12:00:00.000Z","fontSize":8,"margin":[0,0,0,10]},{"table":{"headerRows":1,"widths":["*","*"],"body":[[{"text":"Report"},{"text":"Energy Consumption"}],[{"text":"Start date"},{"text":"2026-08-01"}],[{"text":"End date"},{"text":"2026-08-07"}],[{"text":"Generated at"},{"text":"2026-08-10T12:00:00.000Z"}]]},"margin":[0,0,0,10]},{"table":{"headerRows":1,"widths":["*","*","*"],"body":[[{"text":"Metric"},{"text":"Value"},{"text":"Unit"}],[{"text":"Total energy"},{"text":"2,345.17","alignment":"right"},{"text":"kWh"}],[{"text":"Peak demand"},{"text":"414.66","alignment":"right"},{"text":"kW"}],[{"text":"PUE estimate"},{"text":"1.25","alignment":"right"},{"text":""}],[{"text":"Indicative cost"},{"text":"5,042.12","alignment":"right"},{"text":"ZAR"}],[{"text":"Tariff"},{"text":"2.15","alignment":"right"},{"text":"ZAR/kWh"}]]},"margin":[0,0,0,10]},{"table":{"headerRows":1,"widths":["*","*","*"],"body":[[{"text":"Source"},{"text":"Energy"},{"text":"Unit"}],[{"text":"Grid"},{"text":"2,130.37","alignment":"right"},{"text":"kWh"}],[{"text":"Solar"},{"text":"126.04","alignment":"right"},{"text":"kWh"}],[{"text":"Nominal DG"},{"text":"88.76","alignment":"right"},{"text":"kWh"}]]},"margin":[0,0,0,10]},{"table":{"headerRows":1,"widths":["*","*","*","*","*","*"],"body":[[{"text":"Asset code"},{"text":"Asset"},{"text":"Asset name"},{"text":"Site"},{"text":"Avg kW"},{"text":"Estimated kWh"}],[{"text":"CH-01"},{"text":"CH-01 · RTU 1"},{"text":"Chiller 1"},{"text":"Plant B"},{"text":"383.57","alignment":"right"},{"text":"870.6","alignment":"right"}]]},"margin":[0,0,0,10]}]}';
 
 /**
  * The SHA-256 of `renderPdf` over that definition with `info.creationDate` pinned to the
  * epoch, on `main` before `F4.303` (owner ruling Q-B: pdfmake's creation date proved pinnable,
- * so the byte claim is made as well as the definition claim).
+ * so the byte claim is made as well as the definition claim). Re-pinned by `F4.316` PR 6 (Q6)
+ * with the definition above.
  */
-export const MAIN_PDF_SHA256 = "8ba5d430b815c87cc4208ab6ca8c638565cdf3e798832aabc367abea7d827c68";
+export const MAIN_PDF_SHA256 = "bb81b7578f0799a56349e9082827ce6a0eb5986ef303765e90cd0dc428336235";
 
 /** The previous period the compare claims read: 100 kWh against the fixture's 2345.17. */
 export function previousPreview(): EnergyReportPreview {
@@ -317,6 +322,19 @@ export function assertDefinitionWithPreviousCarriesTheHeadRow(): void {
   assert(
     JSON.stringify(texts[end + 1]) === JSON.stringify(["Previous period", "2026-07-25 to 2026-07-31"]),
     `the head table must carry the previous period after End date, got ${JSON.stringify(texts[end + 1])}`,
+  );
+}
+
+/**
+ * `F4.316` PR 6 (owner ruling Q6, ADR 0111) — the consumers table carries an "Asset" column, the
+ * label `<code> · <RTU>`, beside "Asset code", six columns wide.
+ */
+export function assertConsumersTableCarriesTheAssetLabel(): void {
+  const consumers = tablesOf(energyPdfDefinition(preview())).find((table) => table.body[0]?.[0]?.text === "Asset code");
+  const texts = consumers?.body.map((row) => row.map((cell) => cell.text).slice(0, 2));
+  assert(
+    consumers?.widths.length === 6 && JSON.stringify(texts) === JSON.stringify([["Asset code", "Asset"], ["CH-01", "CH-01 · RTU 1"]]),
+    `the consumers table must carry Asset after Asset code, got ${JSON.stringify(consumers?.body)}`,
   );
 }
 

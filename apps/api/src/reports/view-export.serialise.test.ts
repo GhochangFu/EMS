@@ -32,3 +32,10 @@ describe("F4.303 — the pure view export module (ADR 0108 Amendment 6 item 3)",
   it("a null history value is a null cell, never zero", () => spec.aNullValueIsANullCellNotZero());
   it("a null segment mean is a null cell", () => spec.aNullMeanInASegmentRowIsANullCell());
 });
+
+describe("F4.316 PR 6 — the segment and trend-strip rows carry the asset label (ADR 0111 decision 4)", () => {
+  it("L1 — a trend-strip asset under an RTU is labelled <code> · <RTU>", () => spec.stripRowsCarryTheRtuLabel());
+  it("L2 — a trend-strip asset with no RTU is labelled <code> · <location>", () => spec.stripRowsLabelAnRtulessAssetByItsLocation());
+  it("L3 — a segment asset with no RTU is labelled <code> · <location>", () => spec.segmentRowsLabelAnRtulessAssetByItsLocation());
+  it("L4 — a CSV label led by = is apostrophe-guarded", () => spec.aCsvLabelLedByAFormulaLeaderIsGuarded());
+});

@@ -159,6 +159,7 @@ export function segmentRowsOpenWithTheHeaderBlock(): void {
   expectHeaderBlock(segmentViewExportRows(segmentView()), [
     "asset_code",
     "asset_name",
+    "asset_label",
     "point",
     "unit",
     "period",
@@ -175,8 +176,8 @@ function segmentView(): SegmentArg {
     current: { from: T1, to: T2, durationHours: 1 },
     point: { code: "kw" },
     ranking: [
-      { assetCode: "A1", assetName: "One", unit: "kW", buckets: [{ t: T1, v: 5 }], compareBuckets: [{ t: T1, v: 4 }] },
-      { assetCode: "A2", assetName: "Two", unit: "kW", buckets: null, compareBuckets: null },
+      { assetCode: "A1", assetRtuName: "RTU 1", assetLocationName: "Plant", assetName: "One", unit: "kW", buckets: [{ t: T1, v: 5 }], compareBuckets: [{ t: T1, v: 4 }] },
+      { assetCode: "A2", assetRtuName: null, assetLocationName: "Plant", assetName: "Two", unit: "kW", buckets: null, compareBuckets: null },
     ],
   } as unknown as SegmentArg;
 }
@@ -184,8 +185,8 @@ function segmentView(): SegmentArg {
 export function segmentRowsHoldOnlyDrawnEntries(): void {
   const rows = segmentViewExportRows(segmentView()).slice(7);
   expect(rows).toEqual([
-    ["A1", "One", "kw", "kW", "current", "2026-11-03T00:00:00+00:00", 5],
-    ["A1", "One", "kw", "kW", "previous", "2026-11-03T00:00:00+00:00", 4],
+    ["A1", "One", "A1 · RTU 1", "kw", "kW", "current", "2026-11-03T00:00:00+00:00", 5],
+    ["A1", "One", "A1 · RTU 1", "kw", "kW", "previous", "2026-11-03T00:00:00+00:00", 4],
   ]);
 }
 
@@ -204,8 +205,8 @@ function strip(): StripArg {
           {
             code: "temp",
             assets: [
-              { assetCode: "A1", assetName: "One", unit: "C", buckets: [{ t: T1, v: 20 }, { t: T2, v: null }] },
-              { assetCode: "A2", assetName: "Two", unit: "C", buckets: [{ t: T1, v: 22 }] },
+              { assetCode: "A1", assetRtuName: "RTU 1", assetLocationName: "Plant", assetName: "One", unit: "C", buckets: [{ t: T1, v: 20 }, { t: T2, v: null }] },
+              { assetCode: "A2", assetRtuName: null, assetLocationName: "Plant", assetName: "Two", unit: "C", buckets: [{ t: T1, v: 22 }] },
             ],
           },
         ],
@@ -220,6 +221,7 @@ export function stripRowsOpenWithTheHeaderBlock(): void {
     "point",
     "asset_code",
     "asset_name",
+    "asset_label",
     "unit",
     "bucket_start",
     "mean",
@@ -228,7 +230,7 @@ export function stripRowsOpenWithTheHeaderBlock(): void {
 
 export function stripRowsHoldOnePerSegmentPointAssetBucket(): void {
   const rows = trendStripExportRows(strip()).slice(7);
-  expect(rows.map((row) => [row[0], row[1], row[2], row[5]])).toEqual([
+  expect(rows.map((row) => [row[0], row[1], row[2], row[6]])).toEqual([
     ["hvac", "temp", "A1", "2026-11-03T00:00:00+00:00"],
     ["hvac", "temp", "A1", "2026-11-03T01:00:00+00:00"],
     ["hvac", "temp", "A2", "2026-11-03T00:00:00+00:00"],
@@ -253,13 +255,13 @@ export function stripHeaderBucketIsTheFoldWidth(): void {
         points: [
           {
             code: "temp",
-            assets: [{ assetCode: "A1", assetName: "One", unit: "C", buckets: [{ t: t0, v: 1 }, { t: t1, v: 2 }] }],
+            assets: [{ assetCode: "A1", assetRtuName: "RTU 1", assetLocationName: "Plant", assetName: "One", unit: "C", buckets: [{ t: t0, v: 1 }, { t: t1, v: 2 }] }],
           },
         ],
       },
     ],
   } as unknown as StripArg);
-  const gapSeconds = (Date.parse(String(rows[8]?.[5])) - Date.parse(String(rows[7]?.[5]))) / 1000;
+  const gapSeconds = (Date.parse(String(rows[8]?.[6])) - Date.parse(String(rows[7]?.[6]))) / 1000;
   expect(gapSeconds).toBe(1800);
   expect(rows[2]).toEqual(["bucket", "30m"]);
 }
@@ -315,7 +317,7 @@ export function aNullValueIsANullCellNotZero(): void {
 export function aNullMeanInASegmentRowIsANullCell(): void {
   const view = segmentView();
   (view.ranking[0].buckets as { t: string; v: number | null }[])[0].v = null;
-  expect(segmentViewExportRows(view)[7][6]).toBeNull();
+  expect(segmentViewExportRows(view)[7][7]).toBeNull();
 }
 
 /**
@@ -326,4 +328,37 @@ export function aNullMeanInASegmentRowIsANullCell(): void {
 export function theRangeRulesHaveOneCopyInTheSource(): void {
   const source = readFileSync(join(repoRoot(), "packages/shared/src/contracts/telemetry-queries.ts"), "utf8");
   expect(source.split("from and to must be given together")).toHaveLength(2);
+}
+
+// `F4.316` PR 6 (ADR 0111 decision 4) — the segment and trend-strip rows keep `asset_code` and add
+// `asset_label` (`<code> · <RTU>`, else `<code> · <location>`) after `asset_name`. One claim each.
+
+/** L1 — a trend-strip asset under an RTU is labelled `<code> · <RTU>`. */
+export function stripRowsCarryTheRtuLabel(): void {
+  const rows = trendStripExportRows(strip()).slice(7);
+  expect(rows[0]?.slice(2, 5)).toEqual(["A1", "One", "A1 · RTU 1"]);
+}
+
+/** L2 — the RTU-less twin: a trend-strip asset with no RTU is labelled by its location. */
+export function stripRowsLabelAnRtulessAssetByItsLocation(): void {
+  const rows = trendStripExportRows(strip()).slice(7);
+  expect(rows[2]?.slice(2, 5)).toEqual(["A2", "Two", "A2 · Plant"]);
+}
+
+/** L3 — the RTU-less twin on the segment rows (A2 is not drawn, so give A1 no RTU). */
+export function segmentRowsLabelAnRtulessAssetByItsLocation(): void {
+  const view = segmentView();
+  (view.ranking[0] as { assetRtuName: string | null }).assetRtuName = null;
+  expect(segmentViewExportRows(view)[7]?.slice(0, 3)).toEqual(["A1", "One", "A1 · Plant"]);
+}
+
+/**
+ * L4 (security) — the label is tenant text (code plus an RTU or location display name), so its CSV
+ * cell is guarded like every string: a label led by `=` arrives with the apostrophe.
+ */
+export function aCsvLabelLedByAFormulaLeaderIsGuarded(): void {
+  const view = segmentView();
+  (view.ranking[0] as { assetCode: string }).assetCode = "=1+1";
+  const line = viewExportCsv(segmentViewExportRows(view)).split("\n")[7] ?? "";
+  expect(line.split(",")[2]).toBe("'=1+1 · RTU 1");
 }
