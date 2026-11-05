@@ -188,7 +188,11 @@ export function theSelectionIsOutlinedWithNoResizeHandle(): void {
 export function nothingOffersADrag(): void {
   const { onSelect } = renderCanvas("wtp");
   const rects = screen.getAllByTestId("mimic-preview-hit");
-  expect(rects.map((r) => r.getAttribute("class"))).toEqual(rects.map(() => "cursor-pointer"));
+  for (const r of rects) {
+    const cls = (r.getAttribute("class") ?? "").split(/\s+/);
+    expect(cls).toContain("cursor-pointer");
+    expect(cls.some((c) => c === "cursor-move" || c === "cursor-se-resize")).toBe(false);
+  }
   expect(document.querySelector(".cursor-move, .cursor-se-resize, [data-pipe-mode]")).toBeNull();
   expect(screen.queryByTestId("mimic-editor-overlay")).toBeNull();
   fireEvent.pointerDown(hit("wtp"), { clientX: 0, clientY: 0 });
@@ -209,4 +213,91 @@ export function theFrameIsMarkedAsThePreview(): void {
   renderCanvas();
   expect(screen.getByTestId("mimic-preview-canvas")).toBeInTheDocument();
   expect(screen.queryByTestId("mimic-editor-canvas")).toBeNull();
+}
+
+/** The saved layout's label for a unit key — what a hit target is named by. */
+function unitLabel(key: string): string {
+  const node = previewEntryFixture().layout.nodes.find((n) => n.key === key);
+  if (node === undefined || node.kind !== "unit") throw new Error(`no unit ${key}`);
+  return node.label;
+}
+
+/**
+ * P10 (WCAG 2.1.1) — every hit target is a focusable button named by its unit's label, so a
+ * keyboard user can Tab to a unit and a screen reader says which one.
+ */
+export function everyHitTargetIsAFocusableButtonNamedByItsUnit(): void {
+  renderCanvas();
+  for (const r of screen.getAllByTestId("mimic-preview-hit")) {
+    const key = r.getAttribute("data-node-key") ?? "";
+    expect(r).toHaveAttribute("role", "button");
+    expect(r).toHaveAttribute("tabindex", "0");
+    expect(r).toHaveAttribute("aria-label", unitLabel(key));
+  }
+  expect(screen.getByRole("button", { name: unitLabel("wtp") })).toHaveAttribute("data-node-key", "wtp");
+}
+
+/**
+ * P11 — the hit targets are not inside the drawing's `role="img"`: an image's children are
+ * presentational, so a button there would never reach the accessibility tree.
+ */
+export function hitTargetsAreOutsideTheDrawingImage(): void {
+  renderCanvas();
+  const rects = screen.getAllByTestId("mimic-preview-hit");
+  expect(rects.every((r) => r.closest('[role="img"]') === null)).toBe(true);
+}
+
+/** P12 — Enter on a focused unit selects it. */
+export function enterSelectsAFocusedUnit(): void {
+  const { onSelect } = renderCanvas();
+  const target = hit("wtp") as SVGElement;
+  target.focus();
+  expect(document.activeElement).toBe(target);
+  fireEvent.keyDown(target, { key: "Enter" });
+  expect(onSelect).toHaveBeenCalledWith("wtp");
+}
+
+/** P13 — Space on a focused unit selects it, and does not scroll the page. */
+export function spaceSelectsAFocusedUnitWithoutScrolling(): void {
+  const { onSelect } = renderCanvas();
+  const notPrevented = fireEvent.keyDown(hit("wtp"), { key: " " });
+  expect(onSelect).toHaveBeenCalledWith("wtp");
+  expect(notPrevented).toBe(false);
+}
+
+/** P14 — any other key on a unit selects nothing (Tab still moves on). */
+export function anotherKeySelectsNothing(): void {
+  const { onSelect } = renderCanvas();
+  for (const key of ["a", "Tab", "ArrowRight"]) {
+    expect(fireEvent.keyDown(hit("wtp"), { key })).toBe(true);
+  }
+  expect(onSelect).not.toHaveBeenCalled();
+}
+
+/** P15 — Escape on a unit clears the selection, as a background click does. */
+export function escapeClearsTheSelection(): void {
+  const { onSelect } = renderCanvas("wtp");
+  fireEvent.keyDown(hit("wtp"), { key: "Escape" });
+  expect(onSelect).toHaveBeenCalledWith(null);
+}
+
+/** P16 — the selected unit reads as pressed; every other one as not pressed. */
+export function theSelectedUnitIsPressed(): void {
+  renderCanvas("wtp");
+  for (const r of screen.getAllByTestId("mimic-preview-hit")) {
+    expect(r).toHaveAttribute("aria-pressed", r.getAttribute("data-node-key") === "wtp" ? "true" : "false");
+  }
+}
+
+/**
+ * P17 — the focus ring is the `--focus` role token drawn as a stroke (an SVG rect has no reliable
+ * outline), shown on keyboard focus only; the browser outline is turned off so it is not doubled.
+ */
+export function theFocusRingIsTheFocusRoleTokenAsAStroke(): void {
+  renderCanvas();
+  for (const r of screen.getAllByTestId("mimic-preview-hit")) {
+    const cls = (r.getAttribute("class") ?? "").split(/\s+/);
+    expect(cls).toEqual(expect.arrayContaining(["outline-none", "focus-visible:stroke-focus", "focus-visible:stroke-2"]));
+    expect(r.getAttribute("stroke")).toBeNull();
+  }
 }
