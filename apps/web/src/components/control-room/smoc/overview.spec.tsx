@@ -285,6 +285,8 @@ const RAIL_ALARM: AlarmListItem = {
   acknowledgedBy: null,
   clearedAt: null,
   assetCode: "CR-Q1",
+  assetRtuName: "RTU 1",
+  assetLocationName: "SMOC",
   assetName: "CR Main Incomer",
   siteName: "SMOC",
 };

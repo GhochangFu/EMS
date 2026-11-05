@@ -83,6 +83,8 @@ function alarm(index: number, overrides: Partial<AlarmListItem> = {}): AlarmList
     acknowledgedBy: null,
     clearedAt: null,
     assetCode: "CR-Q1",
+    assetRtuName: "RTU 1",
+    assetLocationName: "Plant A",
     assetName: "CR Main Incomer",
     siteName: "SMOC",
     ...overrides,
@@ -310,4 +312,45 @@ export async function socketEventRefetchesTheOrganizationsActiveList(): Promise<
   await waitFor(() => expect(mocks.fetchActiveAlarms).toHaveBeenCalledTimes(1));
   fireAlarmEvent();
   await waitFor(() => expect(mocks.fetchActiveAlarms).toHaveBeenCalledTimes(2));
+}
+
+/**
+ * `F4.316` PR 2 (ADR 0111): the innermost element whose whole text is `text` — the asset label is
+ * the code and a `· where` span, so no single text node holds it.
+ */
+function byWholeText(container: HTMLElement, text: string): HTMLElement {
+  return within(container).getByText(
+    (_content, element) =>
+      element !== null &&
+      element.textContent === text &&
+      Array.from(element.children).every((child) => child.textContent !== text),
+  );
+}
+
+/** The rail row holding `message`. */
+async function railRow(message: string): Promise<HTMLElement> {
+  const cell = await screen.findByText(message);
+  const row = cell.closest("tr");
+  if (row === null) throw new Error(`"${message}" is not in a table row`);
+  return row;
+}
+
+/** `F4.316` PR 2 (ADR 0111): the Asset cell reads `<code> · <RTU>`. */
+export async function theAssetCellNamesTheRtu(): Promise<void> {
+  renderRail({ items: [alarm(1)] });
+  expect(byWholeText(await railRow("Alarm message 1"), "CR-Q1 · RTU 1")).toBeInTheDocument();
+}
+
+/** With no RTU the location names the asset: `<code> · <location>`. */
+export async function theAssetCellFallsBackToTheLocation(): Promise<void> {
+  renderRail({ items: [alarm(1, { assetRtuName: null })] });
+  expect(byWholeText(await railRow("Alarm message 1"), "CR-Q1 · Plant A")).toBeInTheDocument();
+}
+
+/** The `· where` part wraps rather than truncating. */
+export async function theAssetCellsWherePartWraps(): Promise<void> {
+  renderRail({ items: [alarm(1)] });
+  const where = within(await railRow("Alarm message 1")).getByText("· RTU 1");
+  expect(where).not.toHaveClass("truncate");
+  expect(where).toHaveClass("whitespace-normal");
 }

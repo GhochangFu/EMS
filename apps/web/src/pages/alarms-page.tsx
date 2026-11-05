@@ -21,7 +21,7 @@ import { SectionCard } from "../components/section-card";
 import { StatusPill } from "../components/status-pill";
 import { useAlarmsSocket } from "../hooks/use-alarms-socket";
 import type { AuthUser } from "../stores/auth-store";
-import type { AlarmListItem } from "@bms/shared";
+import { ASSET_LABEL_SEPARATOR, assetLabelParts, type AlarmListItem } from "@bms/shared";
 
 type AlarmsPageProps = {
   user: AuthUser;
@@ -91,6 +91,11 @@ function matchesAlarmSearch(alarm: AlarmListItem, query: string): boolean {
     .join(" ")
     .toLowerCase();
   return searchable.includes(query);
+}
+
+/** `F4.316` (ADR 0111): the label's `· where` part — the RTU's name, or the location's without one. */
+function whereOf(a: AlarmListItem): string | null {
+  return assetLabelParts({ code: a.assetCode, rtuName: a.assetRtuName, locationName: a.assetLocationName }).where;
 }
 
 export function AlarmsPage({ user }: AlarmsPageProps) {
@@ -357,7 +362,16 @@ export function AlarmsPage({ user }: AlarmsPageProps) {
                         />
                       </td>
                       <td className="px-3 py-2">
-                        <div className="font-medium">{a.assetCode}</div>
+                        {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates. */}
+                        <div className="font-medium">
+                          <span className="whitespace-nowrap">{a.assetCode}</span>
+                          {whereOf(a) !== null ? (
+                            <span className="whitespace-normal">
+                              {ASSET_LABEL_SEPARATOR}
+                              {whereOf(a)}
+                            </span>
+                          ) : null}
+                        </div>
                         <div className="text-xs text-ink-muted">{a.assetName}</div>
                       </td>
                       <td className="px-3 py-2 text-xs">{a.siteName}</td>

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 
+import { ASSET_LABEL_SEPARATOR, assetLabelParts } from "@bms/shared";
 import type { AlarmListItem, AlarmSeverityCount, AlarmSeverityDto } from "@bms/shared";
 
 import { alarmSeverityTone } from "../../lib/alarm-severity";
@@ -53,6 +54,11 @@ export type ActiveAlarmsRailBodyProps = {
  * Both panels gate on the feed's `pending` — no answer yet — rather than a fetching flag: a
  * paused read (offline) has not answered and must not fall through to "No active alarms".
  */
+/** `F4.316` (ADR 0111): the label's `· where` part — the RTU's name, or the location's without one. */
+function whereOf(a: AlarmListItem): string | null {
+  return assetLabelParts({ code: a.assetCode, rtuName: a.assetRtuName, locationName: a.assetLocationName }).where;
+}
+
 export function ActiveAlarmsRailBody({
   active,
   summary,
@@ -111,7 +117,16 @@ export function ActiveAlarmsRailBody({
                     <td className="whitespace-nowrap py-1.5 pr-2 font-mono">
                       {new Date(alarm.raisedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </td>
-                    <td className="py-1.5 pr-2 font-medium text-ink">{alarm.assetCode}</td>
+                    {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates. */}
+                    <td className="py-1.5 pr-2 font-medium text-ink">
+                      <span className="whitespace-nowrap">{alarm.assetCode}</span>
+                      {whereOf(alarm) !== null ? (
+                        <span className="whitespace-normal">
+                          {ASSET_LABEL_SEPARATOR}
+                          {whereOf(alarm)}
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="py-1.5 pr-2 text-ink">{alarm.message}</td>
                     <td className="py-1.5">
                       <StatusPill label={alarm.severity} tone={alarmSeverityTone(alarm.severity, severities)} />
