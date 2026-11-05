@@ -499,7 +499,15 @@ export async function seedPheCatalog(db: BmsDb, pool: pg.Pool): Promise<void> {
       };
 
       if (assetId) {
-        await db.update(assets).set(assetValues).where(eq(assets.id, assetId));
+        // The vendor's `DeviceDisplayName` names an asset only when the seed
+        // creates it. After that the name belongs to the operator: the
+        // admin asset page renames it (the AWS demo names PHE assets by RTU),
+        // and every deploy re-runs this seed, so writing the name here would
+        // put the vendor's "DEVICE - PHEWB - …" back on each one.
+        // ADR 0007 decision 4a's rule for `ingest_enabled` ("the seed asserts
+        // once, then the operator owns it"), applied to the asset name.
+        const { name: _vendorName, ...updateValues } = assetValues;
+        await db.update(assets).set(updateValues).where(eq(assets.id, assetId));
       } else {
         const [created] = await db.insert(assets).values(assetValues).returning({ id: assets.id });
         assetId = created?.id;
