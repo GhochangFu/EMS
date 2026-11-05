@@ -1947,7 +1947,9 @@ conversation, and its Confirm card is red.
 Amendment 1 (accepted 2026-11-05) decided the entry: "The copilot gains one
 catalog entry, `assetTemplate.adopt`, a red Confirm card that calls `adopt`
 with the same body; this amends ADR 0099's catalog (its next amendment
-records the entry)" (decision 5, ruling A6). This amendment records it. A line
+records the entry)" (decision 5, ruling A6). This amendment records it. It was
+drafted in the build session for the owner's approval at the merge; the owner
+has not ruled on its text, so the heading names no owner date. A line
 marked *(0109 An)* states that record's ruling n; lines marked *drafter
 choice* were not asked. Code citations are to `main` at `f1e001d` (`F4.312`
 PR 1, #1017). Backlog row `F4.312`; the code follows in the same PR, in the
@@ -1981,7 +1983,8 @@ commit after this one.
   `asset_points` rows, turns a standalone calculated point the version
   declares into the asset's override (ADR 0109 ruling 8, no row write), and
   writes the version's seeded alarm rules and default dashboards
-  *(0109 A5)*, under one audit row per asset through `MasterDataAuditService`.
+  *(0109 A5)*, under one audit row per adoption
+  (`master.asset_template.adopt`) through `MasterDataAuditService`.
 
 ### Decisions
 
@@ -2000,32 +2003,40 @@ commit after this one.
   `migration-preview` does. The card carries no preview: the route
   recomputes on Confirm (owner ruling 1 on the plan, 2026-11-05).
 - **H3 — A new target kind `assetTemplateAdopt`** `{ param: "id", field:
-  "assetIds" }`. The resolver mirrors the route, in its order, and any failure
-  is the one refusal (`null`, decision 10):
+  "assetIds" }`. The resolver mirrors the route, in its order; every failure
+  but the version's status is the one refusal (`null`, decision 10):
   - the body's `assetIds` is a non-empty array of at most 25 strings, none
     twice — refused **before any read**, as the body schema refuses it;
+  - `requireMasterDataUser` (a throw is the refusal), before the version is
+    read;
   - the version is found in an allowed organization (under `withTenant`, with
     an explicit organization filter);
-  - `requireMasterDataUser` (a throw is the refusal), then
-    `canManageOrganization` on the version's organization;
-  - the version is **published**;
-  - every listed asset is read in the version's organization, and each is
-    found, of the version's organization **and domain**, with
-    **`template_id IS NULL`**, and at a site in `writableLocationIds` (a global
-    administrator, `null`, writes every site).
+  - `canManageOrganization` on the version's organization;
+  - on a **published** version, every listed asset is read in the version's
+    organization, and each is found, of the version's organization **and
+    domain**, with **`template_id IS NULL`**, and at a site in
+    `writableLocationIds` (a global administrator, `null`, writes every site).
 
   So **a pinned asset is refused before the card**. The card names the
-  version and its organization. In `"record"` mode (Amendment 4: an open
-  wizard's record) the target resolves the version alone, as
-  `assetTemplateDeploy` does: the assets are what a fill sets (drafter
-  choice). The point-level refusals stay a Confirm-time 409, which names each
+  version and its organization. **The status is the lifecycle mirror's**
+  (`F4.246`, `copilot-template-lifecycle.ts`): the target resolves an in-scope
+  version with its status and reads no asset of an unpublished one (the route
+  answers its 409 before it reads them); the mirror's `assetTemplate.adopt`
+  rule (`canInstantiate`) then refuses a draft or archived version with the
+  route's own sentence (`adoptRefusedMessage`, `@bms/shared`), so the model
+  reads why. In `"record"` mode (Amendment 4: an open wizard's record) the
+  target checks the gate and resolves the version, its organization and its
+  status without reading any asset, as `assetTemplateDeploy` resolves its
+  template row: the assets are what a fill sets (drafter choice). The point-level refusals stay a Confirm-time 409, which names each
   asset code and point key (drafter choice: a propose-time copy of the
   planner would duplicate the route's reads).
 - **H4 — Invalidations** after Confirm: the asset lists and summary
   (`["admin","assets"]`, `["admin","asset-summary"]`), the asset points
   (`["admin","asset-points"]`), the calculated points
-  (`["admin","asset-calc-points"]`), the dashboards (`["dashboards"]`) and the
-  alarm rules (`["rules"]`).
+  (`["admin","asset-calc-points"]`), the dashboards (`["dashboards"]`), the
+  alarm rules (`["rules"]`) and the template versions page
+  (`["admin","asset-template-versions"]`, which lists each asset's pinned
+  version).
 - **H5 — The audit mark.** The adopt service moves from the audit gate's
   `NOT_CATALOG_WRITERS` to `CATALOG_WRITERS`
   (`tests/f3.85-audit-via-mark.test.ts`): a confirmed adoption's audit row
@@ -2051,9 +2062,13 @@ change to `migrate` or its pending entry.
 `risk: "edit"`, red, its body the shared export by identity, its target the
 new kind, and only the preview stays pending. Resolver unit specs: a pinned
 asset, an asset of another organization or domain, one outside the write
-scope, 26 ids, a repeated id, an unpublished version and a version outside the
-caller's scope are each refused, beside the allowed twin. The invalidation
-row. `tests/f3.85-catalog-coverage.test.ts`, the stepper and audit gates and
+scope, 26 ids, a repeated id and a version outside the caller's scope are
+each refused, beside the allowed twin; a draft or archived version resolves
+with its status and the lifecycle mirror refuses it with the route's sentence;
+record mode through the resolver resolves the version. An integration twin on
+a real database: another organization's asset and a pinned asset are refused,
+a template-less asset of the version's organization resolves. The
+invalidation row. `tests/f3.85-catalog-coverage.test.ts`, the stepper and audit gates and
 the budget pass. Live (owner's local session): `propose_assetTemplate_adopt`
 is in an admin conversation's tool list, its card is red, and a batch with a
 pinned asset is refused before the card.
