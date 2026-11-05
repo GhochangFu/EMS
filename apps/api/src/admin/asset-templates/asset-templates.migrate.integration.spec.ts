@@ -206,7 +206,7 @@ export async function seedAsset(
   fx: Fixtures,
   suffix: string,
   templateId: string | null,
-  opts: { locationId?: string; domain?: string } = {},
+  opts: { locationId?: string; domain?: string; rtuId?: string } = {},
 ): Promise<string> {
   const [asset] = await db
     .insert(assets)
@@ -216,6 +216,7 @@ export async function seedAsset(
       name: `Migrate Fixture Asset ${suffix}`,
       siteName: "Fixture Site",
       locationId: opts.locationId ?? fx.otherLocationId,
+      rtuId: opts.rtuId ?? null,
       domain: opts.domain ?? "electrical",
       templateId,
     })
@@ -391,6 +392,42 @@ export async function assertPreviewWritesNothing(
     "preview must write no audit row — nothing happened to audit",
   );
   assert((await pointRows(pool, assetId)).length === 0, "preview must create no asset_points rows");
+}
+
+/**
+ * `F4.316` PR 8 (ADR 0111). Mutation: either `LEFT JOIN` dropped from the selection
+ * (the drizzle select reddens) or an `INNER JOIN` (the RTU-less twin vanishes).
+ */
+export async function assertPreviewAssetsNameTheRtuAndTheLocation(
+  pool: pg.Pool,
+  svc: AssetTemplateMigrationService,
+  fx: Fixtures,
+): Promise<void> {
+  const db = createDb(pool);
+  const v1 = await seedVersion(db, fx, { version: 1, points: [{ pointKey: "KW" }] });
+  const v2 = await seedVersion(db, fx, { version: 2, points: [{ pointKey: "KW" }, { pointKey: "VOLTS" }] });
+  const withRtu = await seedAsset(db, fx, "LBLRTU", v1, { locationId: fx.rtuLocationId, rtuId: fx.rtuId });
+  const rtuLess = await seedAsset(db, fx, "LBLNONE", v1, { locationId: fx.otherLocationId });
+  const preview = templateMigrationPreviewResponseSchema.parse(
+    await svc.previewMigration(fx.adminJwt, v2, { assetIds: [withRtu, rtuLess] }),
+  );
+  const one = async (sql: string, id: string): Promise<string> =>
+    (await pool.query<{ n: string }>(sql, [id])).rows[0]?.n ?? "";
+  const rtuName = await one(`SELECT display_name AS n FROM bms.rtus WHERE id = $1`, fx.rtuId);
+  const rtuLocation = await one(`SELECT name AS n FROM bms.locations WHERE id = $1`, fx.rtuLocationId);
+  const otherLocation = await one(`SELECT name AS n FROM bms.locations WHERE id = $1`, fx.otherLocationId);
+  const got = [withRtu, rtuLess].map((id) => {
+    const row = preview.assets.find((a) => a.assetId === id);
+    return [id, row?.assetRtuName, row?.assetLocationName];
+  });
+  const want = [
+    [withRtu, rtuName, rtuLocation],
+    [rtuLess, null, otherLocation],
+  ];
+  assert(
+    JSON.stringify(got) === JSON.stringify(want),
+    `the migration rows must name the RTU and location, got ${JSON.stringify(got)} want ${JSON.stringify(want)}`,
+  );
 }
 
 /**

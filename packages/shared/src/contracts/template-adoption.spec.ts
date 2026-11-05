@@ -94,6 +94,8 @@ export function aPlanWithoutInheritedDefaultsIsRefused(): void {
   const plan = {
     assetId: "a",
     assetCode: "PUMP-01",
+    assetRtuName: null,
+    assetLocationName: null,
     assetName: "Pump",
     kept: [],
     added: [],
@@ -101,4 +103,36 @@ export function aPlanWithoutInheritedDefaultsIsRefused(): void {
     skipped: [],
   };
   expect(templateAdoptionAssetPlanDtoSchema.safeParse(plan).success).toBe(false);
+}
+
+const planRow = {
+  assetId: "a",
+  assetCode: "PUMP-01",
+  assetRtuName: "Lotapata I",
+  assetLocationName: "Lotapata",
+  assetName: "Pump",
+  kept: [],
+  added: [],
+  converted: [],
+  skipped: [],
+  inheritsDefaults: [],
+};
+
+/** Catches the F4.316 names optional rather than required-nullable: a producer that forgets one still parses. */
+export function aPlanWithoutTheRtuNameIsRefused(): void {
+  const { assetRtuName: _omitted, ...without } = planRow;
+  expect(templateAdoptionAssetPlanDtoSchema.safeParse(without).success).toBe(false);
+}
+
+/** Same, for the location name. */
+export function aPlanWithoutTheLocationNameIsRefused(): void {
+  const { assetLocationName: _omitted, ...without } = planRow;
+  expect(templateAdoptionAssetPlanDtoSchema.safeParse(without).success).toBe(false);
+}
+
+/** Catches the names non-nullable: an RTU-less asset has `assetRtuName: null`. */
+export function aPlanWithNullNamesParses(): void {
+  expect(
+    templateAdoptionAssetPlanDtoSchema.safeParse({ ...planRow, assetRtuName: null, assetLocationName: null }).success,
+  ).toBe(true);
 }

@@ -96,6 +96,8 @@ function asset(overrides: Partial<AdoptionAsset> = {}): AdoptionAsset {
     id: "asset-1",
     code: "PHE-PUMP-01",
     name: "Pump 1",
+    rtuName: "Lotapata I",
+    locationName: "Lotapata",
     organizationId: ORG,
     domain: "water",
     templateId: null,
@@ -123,6 +125,18 @@ function run(
 }
 
 const reasons = (r: Run): string[] => r.refusals.map((refusal) => refusal.reason);
+
+/** Mutation: `assetRtuName`/`assetLocationName` dropped from the plan dto → the label cannot name the RTU. */
+export function thePlanCarriesTheRtuAndLocationNames(): void {
+  const r = run([point("KW")], []);
+  expect([r.plans[0]?.dto.assetRtuName, r.plans[0]?.dto.assetLocationName]).toEqual(["Lotapata I", "Lotapata"]);
+}
+
+/** An RTU-less asset keeps `assetRtuName: null` and still names its location. */
+export function anRtuLessAssetCarriesNullAndItsLocation(): void {
+  const r = run([point("KW")], [], { asset: { rtuName: null } });
+  expect([r.plans[0]?.dto.assetRtuName, r.plans[0]?.dto.assetLocationName]).toEqual([null, "Lotapata"]);
+}
 
 /** Mutation: the `templateId !== null` check removed → an already-pinned asset is planned. */
 export function aPinnedAssetIsRefused(): void {

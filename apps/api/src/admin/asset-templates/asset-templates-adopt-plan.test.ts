@@ -4,6 +4,12 @@ import * as spec from "./asset-templates-adopt-plan.spec";
 
 /** `F4.312` — Vitest entry point. Assertions live in the sibling `.spec` (ADR 0014). */
 describe("F4.312 — the adoption planner (ADR 0109 Amendment 1)", () => {
+  describe("the asset label (F4.316, ADR 0111)", () => {
+    it("carries the RTU and location names on the plan dto", () => spec.thePlanCarriesTheRtuAndLocationNames());
+    it("carries null for an RTU-less asset and keeps its location", () =>
+      spec.anRtuLessAssetCarriesNullAndItsLocation());
+  });
+
   describe("whole-asset refusals", () => {
     it("refuses an asset already pinned to a template", () => spec.aPinnedAssetIsRefused());
     it("plans no points for a pinned asset", () => spec.aPinnedAssetGetsNoPointPlan());

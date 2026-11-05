@@ -9,7 +9,10 @@ import {
   anEchoedPlanIsRefused,
   anEmptyBatchIsRefused,
   theCapIsTheCalcBatchCap,
+  aPlanWithNullNamesParses,
   aPlanWithoutInheritedDefaultsIsRefused,
+  aPlanWithoutTheLocationNameIsRefused,
+  aPlanWithoutTheRtuNameIsRefused,
   theVocabularyHoldsTheThirteenReasons,
 } from "./template-adoption.spec";
 
@@ -23,6 +26,9 @@ describe("F4.312 — template adoption contracts (ADR 0109 Amendment 1)", () => 
   it("refuses an id that is not a uuid", () => aNonUuidIdIsRefused());
   it("refuses a plan echoed back in the body", () => anEchoedPlanIsRefused());
   it("holds the thirteen refusal reasons", () => theVocabularyHoldsTheThirteenReasons());
+  it("requires assetRtuName on a per-asset plan (F4.316)", () => aPlanWithoutTheRtuNameIsRefused());
+  it("requires assetLocationName on a per-asset plan (F4.316)", () => aPlanWithoutTheLocationNameIsRefused());
+  it("accepts null names on a per-asset plan (F4.316)", () => aPlanWithNullNamesParses());
   it("requires inheritsDefaults on a per-asset plan", () => aPlanWithoutInheritedDefaultsIsRefused());
   it("requires the true refusal count on a preview", () =>
     aPreviewWithoutTheRefusalCountIsRefused());

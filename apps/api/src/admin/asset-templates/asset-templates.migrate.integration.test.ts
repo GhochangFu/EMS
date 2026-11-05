@@ -24,6 +24,7 @@ import {
   assertMeasuredReKeyRefuses,
   assertMeasuredRemovalRefusesAndWritesNothing,
   assertOutOfScopeAssetIsRefused,
+  assertPreviewAssetsNameTheRtuAndTheLocation,
   assertPreviewWritesNothing,
   assertReMigrationIsANoOp,
   assertTargetVersionIsValidated,
@@ -139,6 +140,11 @@ describe.skipIf(!connectionString)("F2.6 — template version migration", () => 
   it("previews a delta and writes nothing at all", async () => {
     if (!pool) throw new Error("pool required");
     await assertPreviewWritesNothing(pool, svc, fx);
+  });
+
+  it("names each previewed asset's RTU and location, null for an RTU-less asset (F4.316)", async () => {
+    if (!pool) throw new Error("pool required");
+    await assertPreviewAssetsNameTheRtuAndTheLocation(pool, svc, fx);
   });
 
   it("applies to exactly the selected assets, creating the added points and one audit row", async () => {

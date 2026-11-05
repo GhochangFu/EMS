@@ -5,6 +5,11 @@ import { cleanup } from "@testing-library/react";
 import {
   a409ShowsItsRefusalsBesideTheCard,
   aNewSubmitClearsTheEarlierError,
+  aPlanRowWithNeitherNameIsTheBareCode,
+  reviewNamesTheSelectedAssetsByLabel,
+  anRtuLessPlanRowNamesTheLocation,
+  thePlanRowNamesTheAssetByItsRtu,
+  theWherePartWrapsAndIsNeverTruncated,
   aPreviewRefusedOnReviewSaysWhy,
   aPreviewRefusedOnReviewSendsNothing,
   after409BackDisablesNext,
@@ -39,6 +44,11 @@ describe("F4.312 PR 3 — the adopt wizard", () => {
   it("a mixed-domain batch's picker holds no version", async () => {
     await aMixedDomainBatchPickerHoldsNoVersion();
   });
+  it("the plan row names the asset by its RTU (F4.316)", async () => thePlanRowNamesTheAssetByItsRtu());
+  it("an RTU-less plan row names the location (F4.316)", async () => anRtuLessPlanRowNamesTheLocation());
+  it("a plan row with neither name is the bare code (F4.316)", async () => aPlanRowWithNeitherNameIsTheBareCode());
+  it("the where part wraps and is never truncated (F4.316)", async () => theWherePartWrapsAndIsNeverTruncated());
+  it("Review names the selected assets by label (F4.316)", async () => reviewNamesTheSelectedAssetsByLabel());
   it("the preview lists kept, added and converted", async () => {
     await thePreviewListsKeptAddedAndConverted();
   });
