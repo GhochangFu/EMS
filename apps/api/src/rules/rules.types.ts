@@ -37,6 +37,8 @@ export type RuleRow = {
   assetOrganizationId: string | null;
   assetId: string | null;
   assetCode: string | null;
+  assetRtuName: string | null;
+  assetLocationName: string | null;
   assetName: string | null;
   siteName: string | null;
   /**

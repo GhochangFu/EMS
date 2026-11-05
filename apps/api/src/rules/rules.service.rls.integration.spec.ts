@@ -74,6 +74,11 @@ export type RulesRlsFixtures = {
    * executions to serve as one, so without a decoy the exclusion is vacuous.
    */
   decoyExecutionId: string;
+  /** `F4.316` PR 4b: an org-A asset WITH an RTU (`labelRtuId`), its rule, and an asset-less rule. */
+  rtuAssetId: string;
+  rtuRuleId: string;
+  assetlessRuleId: string;
+  labelRtuId: string;
 };
 
 function thresholdDraft(ctx: RulesRlsFixtures, code: string): RuleDraftBody {
@@ -665,4 +670,35 @@ export async function theRuleCheckWritesNoAuditRowWherePreviewWritesOne(
 
   await ctx.service.previewRule({ ...draft, id: undefined }, ctx.scopedActor, [ctx.assetId]);
   expect(await previews(), "the positive control: previewRule writes one rule_preview row").toBe(before + 1);
+}
+
+/**
+ * `F4.316` PR 4b (ADR 0111): the tenant-path list names the asset's RTU and location. The RTU-bearing
+ * asset reads `rtus.display_name`; its RTU-less twin (`assetId`) reads null with the location name; a
+ * rule with no asset keeps `assetCode`, `assetRtuName` and `assetLocationName` all null (the nullable twin).
+ */
+export async function assertRuleRowsCarryAssetLabelParts(ctx: RulesRlsFixtures): Promise<void> {
+  const locationNameOf = async (assetId: string): Promise<string> => {
+    const r = await ctx.ownerPool.query<{ name: string }>(
+      "SELECT l.name FROM bms.assets a JOIN bms.locations l ON l.id = a.location_id WHERE a.id = $1",
+      [assetId],
+    );
+    return r.rows[0]?.name as string;
+  };
+  const rtu = await ctx.ownerPool.query<{ display_name: string }>("SELECT display_name FROM bms.rtus WHERE id = $1", [
+    ctx.labelRtuId,
+  ]);
+
+  const tenantRead = await ctx.service.listRules([ctx.assetId, ctx.rtuAssetId]);
+  const withRtu = tenantRead.items.find((i) => i.id === ctx.rtuRuleId);
+  const rtuLess = tenantRead.items.find((i) => i.id === ctx.inScopeRuleId);
+  expect(withRtu?.assetRtuName, "an asset with an RTU names it").toBe(rtu.rows[0]?.display_name);
+  expect(withRtu?.assetLocationName).toBe(await locationNameOf(ctx.rtuAssetId));
+  expect(rtuLess?.assetRtuName, "the RTU-less twin names no RTU").toBeNull();
+  expect(rtuLess?.assetLocationName, "the RTU-less twin names its location").toBe(await locationNameOf(ctx.assetId));
+
+  const fleetRead = await ctx.service.listRules(null);
+  const assetless = fleetRead.items.find((i) => i.id === ctx.assetlessRuleId);
+  expect(assetless, "the asset-less rule is on the unrestricted read").toBeDefined();
+  expect([assetless?.assetCode, assetless?.assetRtuName, assetless?.assetLocationName]).toEqual([null, null, null]);
 }

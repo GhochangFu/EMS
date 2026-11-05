@@ -5,6 +5,7 @@ import {
   alarmSeverityCountSchema,
   alarmSocketEventSchema,
   maintenanceScheduleItemSchema,
+  ruleListItemSchema,
   vocabulariesResponseSchema,
   workOrderListItemSchema,
 } from "./operations";
@@ -299,3 +300,43 @@ export const assertScheduleRequiresAssetLocationName = (): void =>
   assertRefusesWithout(maintenanceScheduleItemSchema, MAINTENANCE_SCHEDULE_ITEM, "assetLocationName", "maintenanceScheduleItemSchema");
 export const assertScheduleAcceptsNullParts = (): void =>
   assertAcceptsNullParts(maintenanceScheduleItemSchema, MAINTENANCE_SCHEDULE_ITEM, "maintenanceScheduleItemSchema");
+
+// `F4.316` PR 4b (ADR 0111) — the rule row names its asset's RTU and location; nullable like `assetCode`.
+const RULE_LIST_ITEM = {
+  id: "r1",
+  code: "CHILLER_HIGH_TEMP",
+  name: "Chiller high temperature",
+  description: null,
+  category: "hvac",
+  ruleType: "threshold",
+  source: "operator_rule",
+  enabled: true,
+  assetId: "30000000-0000-4000-8000-000000000001",
+  assetCode: "CR-Q1",
+  assetRtuName: "RTU 1",
+  assetLocationName: "Plant A",
+  assetName: "Chiller Q1",
+  siteName: "Site A",
+  assetDomain: "hvac",
+  pointKey: "supply_temp_c",
+  operator: "gte",
+  thresholdValue: 12,
+  severity: "warning",
+  clearHoldSeconds: null,
+  lifecycleStatus: "published",
+  condition: { window: "latest" },
+  action: { type: "notify", target: "Operations" },
+  lastEvaluatedAt: null,
+  publishedAt: null,
+  archivedAt: null,
+  duplicatedFromRuleId: null,
+  createdAt: "2026-11-05T00:00:00.000Z",
+  updatedAt: "2026-11-05T00:00:00.000Z",
+};
+
+export const assertRuleRequiresAssetRtuName = (): void =>
+  assertRefusesWithout(ruleListItemSchema, RULE_LIST_ITEM, "assetRtuName", "ruleListItemSchema");
+export const assertRuleRequiresAssetLocationName = (): void =>
+  assertRefusesWithout(ruleListItemSchema, RULE_LIST_ITEM, "assetLocationName", "ruleListItemSchema");
+export const assertRuleAcceptsNullParts = (): void =>
+  assertAcceptsNullParts(ruleListItemSchema, RULE_LIST_ITEM, "ruleListItemSchema");

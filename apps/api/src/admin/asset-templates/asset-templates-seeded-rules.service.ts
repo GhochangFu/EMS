@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 
-import { assetTemplates, assets, automationRules } from "@bms/db";
+import { assetTemplates, assets, automationRules, locations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import { seededRuleValuesSchema } from "@bms/shared";
 import type {
@@ -37,7 +37,14 @@ type TemplateRow = typeof assetTemplates.$inferSelect;
 /** One seeded rule joined to its asset, as the tenant read returns it. */
 type SeededRuleRow = {
   rule: typeof automationRules.$inferSelect;
-  asset: { id: string; code: string; name: string; locationId: string };
+  asset: {
+    id: string;
+    code: string;
+    name: string;
+    locationId: string;
+    rtuName: string | null;
+    locationName: string | null;
+  };
 };
 
 /**
@@ -417,10 +424,19 @@ export class AssetTemplateSeededRulesService {
     return tx
       .select({
         rule: automationRules,
-        asset: { id: assets.id, code: assets.code, name: assets.name, locationId: assets.locationId },
+        asset: {
+          id: assets.id,
+          code: assets.code,
+          name: assets.name,
+          locationId: assets.locationId,
+          rtuName: rtus.displayName,
+          locationName: locations.name,
+        },
       })
       .from(automationRules)
       .innerJoin(assets, eq(automationRules.assetId, assets.id))
+      .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+      .leftJoin(locations, eq(assets.locationId, locations.id))
       .where(
         and(
           inArray(automationRules.sourceTemplateId, versionIds),
@@ -470,6 +486,8 @@ export class AssetTemplateSeededRulesService {
       enabled: rule.enabled,
       assetId: asset.id,
       assetCode: asset.code,
+      assetRtuName: asset.rtuName,
+      assetLocationName: asset.locationName,
       assetName: asset.name,
       locationId: asset.locationId,
       sourceTemplateId: rule.sourceTemplateId,

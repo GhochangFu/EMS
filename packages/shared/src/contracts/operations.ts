@@ -790,6 +790,10 @@ export const ruleListItemSchema = z.object({
   enabled: z.boolean(),
   assetId: z.string().nullable(),
   assetCode: z.string().nullable(),
+  /** F4.316 / ADR 0111 — the asset's RTU display name; `null` with no asset or no RTU. */
+  assetRtuName: z.string().nullable(),
+  /** F4.316 / ADR 0111 — the asset's location name; `null` when the rule targets no asset. */
+  assetLocationName: z.string().nullable(),
   assetName: z.string().nullable(),
   siteName: z.string().nullable(),
   /**

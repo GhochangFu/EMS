@@ -1,9 +1,10 @@
 import { BadRequestException, HttpException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 
-import { assets } from "@bms/db";
+import { assets, locations, rtus } from "@bms/db";
 import type { BmsDb } from "@bms/db";
 import {
+  assetLabel,
   type AutomationRuleOperator,
   ruleDraftBodySchema,
   ruleUpdateBodySchema,
@@ -226,10 +227,34 @@ export class RuleProposalCheckService {
       }
       return "Condition: a time window.";
     }
-    const asset = row.assetCode ?? (row.assetId ? await this.assetCode(row.assetId, organizationId) : null) ?? "(no asset)";
+    // ADR 0111 decision 5: the card names the asset by its label (`<code> · <RTU or location>`).
+    const parts =
+      row.assetCode !== null
+        ? { code: row.assetCode, rtuName: row.assetRtuName, locationName: row.assetLocationName }
+        : row.assetId
+          ? await this.assetLabelParts(row.assetId, organizationId)
+          : null;
+    const asset = parts ? assetLabel(parts) : "(no asset)";
     const operator = row.operator ? (OPERATOR_WORDS[row.operator as AutomationRuleOperator] ?? row.operator) : "(no operator)";
     const hold = row.clearHoldSeconds ?? DEFAULT_CLEAR_HOLD_SECONDS;
     return `Condition: ${asset} ${row.pointKey ?? "(no point)"} ${operator} ${row.thresholdValue ?? "(no threshold)"} (latest value; clear hold ${hold} s).`;
+  }
+
+  /** `F4.316`: a draft's asset code with its RTU and location names, same tenant read as `assetCode`. */
+  private async assetLabelParts(
+    assetId: string,
+    organizationId: string,
+  ): Promise<{ code: string; rtuName: string | null; locationName: string | null } | null> {
+    const [row] = await withTenant(this.db, organizationId, (tx) =>
+      tx
+        .select({ code: assets.code, rtuName: rtus.displayName, locationName: locations.name })
+        .from(assets)
+        .leftJoin(rtus, eq(assets.rtuId, rtus.id))
+        .leftJoin(locations, eq(assets.locationId, locations.id))
+        .where(and(eq(assets.id, assetId), eq(assets.organizationId, organizationId)))
+        .limit(1),
+    );
+    return row ?? null;
   }
 
   /** A draft's asset code (a draft row carries no joined asset columns), read under the change's own organization. */

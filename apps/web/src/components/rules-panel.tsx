@@ -1,12 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import type {
-  AssetDomainDto,
-  AutomationRuleCategory,
-  AutomationRuleType,
-  RuleCategoryDto,
-  RuleExecutionItem,
-  RuleListItem,
+import {
+  assetLabel,
+  type AssetDomainDto,
+  type AutomationRuleCategory,
+  type AutomationRuleType,
+  type RuleCategoryDto,
+  type RuleExecutionItem,
+  type RuleListItem,
 } from "@bms/shared";
 
 import { evaluateRules, fetchRuleExecutions, fetchRules } from "../api/rules";
@@ -88,7 +89,12 @@ function lifecycleStyle(rule: RuleListItem): string {
 
 function ruleSummary(rule: RuleListItem): string {
   if (rule.ruleType === "threshold") {
-    return `${rule.assetCode ?? "Asset"} · ${rule.pointKey ?? "point"} ${
+    // F4.316 / ADR 0111: `<code> · <RTU or location>`; a rule with no asset keeps the placeholder.
+    const asset =
+      rule.assetCode === null
+        ? "Asset"
+        : assetLabel({ code: rule.assetCode, rtuName: rule.assetRtuName, locationName: rule.assetLocationName });
+    return `${asset} · ${rule.pointKey ?? "point"} ${
       rule.operator ?? ""
     } ${rule.thresholdValue ?? ""}`.trim();
   }
