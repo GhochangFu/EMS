@@ -107,12 +107,13 @@ export function ageTouchedAfter(
 }
 
 /**
- * The same after a copilot fill (`WizardShell`'s `onChange`, which only a fill calls): the
- * values are the merged body, so a numeric age is the fill's or one already shown; either
- * way it is kept from then on.
+ * The same after a copilot fill. `fillValues` is the fill's **own** values (`WizardShell`'s
+ * second `onChange` argument), never the merged body: that already holds the default age
+ * whenever one shows, so judging it would freeze the age on any fill (`F4.315` re-review).
+ * A fill that sets the age chooses it; any other fill leaves `touched` as it was.
  */
-export function ageTouchedAfterFill(values: Readonly<Record<string, unknown>>, touched: boolean): boolean {
-  return touched || typeof values.maxInputAgeSeconds === "number";
+export function ageTouchedAfterFill(fillValues: Readonly<Record<string, unknown>> | undefined, touched: boolean): boolean {
+  return touched || typeof fillValues?.maxInputAgeSeconds === "number";
 }
 
 /** The Schedule step's refusal while the age is empty (the schema requires it). */

@@ -397,14 +397,19 @@ export function anAgelessSuggestionLeavesTheAgeFollowing(): void {
   expect(ageTouchedAfter(before, { ...before, maxInputAgeSeconds: "600" }, true, { maxInputAgeSeconds: null })).toBe(false);
 }
 
-/** Review C1: a fill whose body holds an age keeps it. Mutation: ignore the fill. */
+/** Review C1: a fill that sets the age chooses it. Mutation: ignore the fill. */
 export function aFillWithAnAgeChoosesIt(): void {
-  expect(ageTouchedAfterFill({ calcTrigger: "scheduled", calcIntervalSeconds: 60, maxInputAgeSeconds: 120 }, false)).toBe(true);
+  expect(ageTouchedAfterFill({ maxInputAgeSeconds: 120 }, false)).toBe(true);
 }
 
-/** The twin: a fill with no age leaves the age following. */
+/**
+ * The twin: a formula-only fill leaves the age following — judged on the fill's own values,
+ * not on the merged body (which holds the shown default, 60 here). Mutation: judge the merged body.
+ */
 export function aFillWithNoAgeLeavesItFollowing(): void {
-  expect(ageTouchedAfterFill({ calcTrigger: "scheduled", calcIntervalSeconds: 60 }, false)).toBe(false);
+  const merged = { formula: "{kw} * 3", calcTrigger: "scheduled", calcIntervalSeconds: 30, maxInputAgeSeconds: 60 };
+  const fill = { formula: "{kw} * 3" };
+  expect([ageTouchedAfterFill(fill, false), merged.maxInputAgeSeconds]).toEqual([false, 60]);
 }
 
 /** Once touched, the age stays touched. */

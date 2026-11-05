@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { expect, vi } from "vitest";
@@ -18,6 +18,7 @@ import { ApiError } from "../../lib/api-error";
 import { SCHEDULE_AGE_BLOCKER, standaloneConfigFor } from "../../lib/calc-point-draft";
 import type { FormulaEditorProps } from "../../components/asset-templates/formula-editor-lazy";
 import type { AuthUser } from "../../stores/auth-store";
+import { resetWizardStore, useWizardStore } from "../../stores/wizard-store";
 import { AssetPointsAdminPage } from "./asset-points-page";
 
 /**
@@ -355,4 +356,26 @@ export async function aTypedAgeLetsNextPass(): Promise<void> {
   await userEvent.clear(ageField());
   await userEvent.type(ageField(), "10");
   expect([ageField().value, nextButton().getAttribute("aria-disabled")]).toEqual(["10", null]);
+}
+
+/**
+ * `F4.315` re-review: a formula-only copilot fill leaves the age following its default. The
+ * shell's merged values hold the shown default (60), so judging them would freeze it.
+ * Mutation: the panel passes the merged values to `ageTouchedAfterFill` — Every 300 keeps 60.
+ */
+export async function aFormulaOnlyFillLeavesTheAgeFollowing(): Promise<void> {
+  resetWizardStore();
+  stubApi("standalone");
+  renderPage();
+  await addToSchedule();
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "30");
+  act(() => {
+    useWizardStore.getState().receiveFill(
+      { catalogId: "calcPoint.set", params: { assetId: ASSET, pointKey: "pf" }, stepId: "formula", values: { formula: "{kw} * 3" } },
+      null,
+    );
+  });
+  await userEvent.clear(screen.getByLabelText("Every (seconds)"));
+  await userEvent.type(screen.getByLabelText("Every (seconds)"), "300");
+  expect(ageField().value).toBe("600");
 }

@@ -37,7 +37,8 @@ type WizardShellProps = {
   fixedFields?: readonly string[];
   /** The form's values, keyed by body field; the page owns them. */
   values: Record<string, unknown>;
-  onChange: (values: Record<string, unknown>) => void;
+  /** A copilot fill's merged values; `fillValues` is what the fill itself set (`F4.315`). */
+  onChange: (values: Record<string, unknown>, fillValues?: Readonly<Record<string, unknown>>) => void;
   /** The page's inputs for one field step. */
   renderStep: (step: WizardStep) => ReactNode;
   /** Sends the plain request — no `X-Copilot-Change` header: a wizard used alone is not a copilot change. */
@@ -133,7 +134,7 @@ export function WizardShell(props: WizardShellProps) {
     const next = applyFill(entry.id, steps, values, fill, props.fixedFields);
     if (next === null) return;
     setDirty(true);
-    onChange(next);
+    onChange(next, fill.values);
     // Each fill is read once, when it arrives (`seq`), or when this wizard's record changes (`key`).
   }, [seq, key]);
 

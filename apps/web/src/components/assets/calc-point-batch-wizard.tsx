@@ -289,10 +289,10 @@ export function CalcPointBatchWizard({
         params={{}}
         fixedFields={["assetIds"]}
         values={values}
-        onChange={(next) =>
+        onChange={(next, fill) =>
           changeTiming(
             calcPointDraftFromFields(next, typeof next.pointKey === "string" ? next.pointKey : ""),
-            ageTouchedAfterFill(next, ageTouched),
+            ageTouchedAfterFill(fill, ageTouched),
           )
         }
         renderStep={(step) => steps[step.id] ?? null}

@@ -243,8 +243,8 @@ export function CalcPointPanel({
           entry={wizardEntry("calcPoint.set")}
           params={{ assetId, pointKey: draft.pointKey }}
           values={{ ...draftToCalcPointBody(draft) }}
-          onChange={(values) =>
-            changeTiming(calcPointDraftFromFields(values, draft.pointKey), ageTouchedAfterFill(values, ageTouched))
+          onChange={(values, fillValues) =>
+            changeTiming(calcPointDraftFromFields(values, draft.pointKey), ageTouchedAfterFill(fillValues, ageTouched))
           }
           renderStep={(step) =>
             step.id === "formula" ? formulaStep : step.id === "schedule" ? scheduleStep : backfillStep
