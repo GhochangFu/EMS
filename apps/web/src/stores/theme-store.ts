@@ -1,7 +1,11 @@
 import { create } from "zustand";
 
+import type { ColourProfile } from "@bms/shared";
+
 import {
+  PROFILE_STORAGE_KEY,
   THEME_STORAGE_KEY,
+  readDocumentProfile,
   readDocumentTheme,
   readRoleFromDocument,
   resolveRoles,
@@ -24,9 +28,12 @@ import {
 type ThemeState = {
   theme: Theme;
   setTheme: (theme: Theme) => void;
+  /** `F4.310` — the home organization's colour profile (ADR 0110 decision 4); `nexus` by default. */
+  profile: ColourProfile;
+  setProfile: (profile: ColourProfile) => void;
 };
 
-let cache: { theme: Theme; roles: Roles } | null = null;
+let cache: { theme: Theme; profile: ColourProfile; roles: Roles } | null = null;
 
 /**
  * The roles of the theme `<html>` carries now, resolved once per theme. Throws when there is no
@@ -36,7 +43,10 @@ let cache: { theme: Theme; roles: Roles } | null = null;
 export function currentRoles(): Roles {
   if (typeof document === "undefined") throw new Error("theme roles need a document; there is none");
   const theme = readDocumentTheme();
-  if (cache === null || cache.theme !== theme) cache = { theme, roles: resolveRoles(readRoleFromDocument) };
+  const profile = readDocumentProfile();
+  if (cache === null || cache.theme !== theme || cache.profile !== profile) {
+    cache = { theme, profile, roles: resolveRoles(readRoleFromDocument) };
+  }
   return cache.roles;
 }
 
@@ -52,15 +62,43 @@ export const useThemeStore = create<ThemeState>()((set) => ({
     }
     set({ theme });
   },
+  profile: typeof document === "undefined" ? "nexus" : readDocumentProfile(),
+  setProfile: (profile) => {
+    // The attribute first, as `setTheme`: a storage that throws must still recolour the page. The
+    // default carries no attribute (its values are the base blocks) and no key. No document (a
+    // node-environment caller of `clearSession`): the state alone moves.
+    if (typeof document === "undefined") {
+      set({ profile });
+      return;
+    }
+    if (profile === "nexus") document.documentElement.removeAttribute("data-profile");
+    else document.documentElement.setAttribute("data-profile", profile);
+    try {
+      if (profile === "nexus") localStorage.removeItem(PROFILE_STORAGE_KEY);
+      else localStorage.setItem(PROFILE_STORAGE_KEY, profile);
+    } catch {
+      // The profile holds for this page; the next `/auth/me` read sets it again.
+    }
+    set({ profile });
+  },
 }));
+
+/**
+ * `F4.310` (ADR 0110 decision 4) — sign-out: back to the default, so the sign-in page (and the next
+ * user of a shared control-room PC) never shows the last user's organization colours.
+ */
+export function clearProfile(): void {
+  useThemeStore.getState().setProfile("nexus");
+}
 
 /** The current theme; a component re-renders when it changes. */
 export function useTheme(): Theme {
   return useThemeStore((s) => s.theme);
 }
 
-/** The current roles; a component re-renders with the new theme's roles when it changes. */
+/** The current roles; a component re-renders with the new theme's or profile's roles when either changes. */
 export function useThemeRoles(): Roles {
   useThemeStore((s) => s.theme);
+  useThemeStore((s) => s.profile);
   return currentRoles();
 }

@@ -237,3 +237,66 @@ export function resolveTailwindShade(shadeName: string): string {
   if (typeof value !== "string") throw new Error(`cannot resolve Tailwind shade "${shadeName}"`);
   return value;
 }
+
+/**
+ * `F4.310` (ADR 0110 decisions 4–5, plan §5 U3) — the colour-profile blocks of `index.css`. A
+ * profile `<name>` other than the default has exactly two blocks:
+ * `:root[data-profile="<name>"]:not([data-theme="dark"]) { … }` (light) and
+ * `:root[data-profile="<name>"][data-theme="dark"] { … }` (dark). Each sets **every** role in
+ * `rules.profileRoles` and **no** role in `rules.fixedRoles`.
+ *
+ * Fails closed, naming the profile: a block for a name outside `rules.names` (or for the default,
+ * which is the base blocks), a profile with one theme block and not the other, a second block for
+ * the same profile and theme, a profile role left out, a fixed role set, or a role that is in
+ * neither list. Returns `name → { light, dark }`, each the profile's own lines only — overlay them
+ * on `parseTokenBlocks` with {@link profileTokens}.
+ */
+export type ProfileRules = {
+  names: readonly string[];
+  defaultName: string;
+  profileRoles: readonly string[];
+  fixedRoles: readonly string[];
+};
+
+const PROFILE_BLOCK =
+  /:root\[data-profile="([^"]*)"\](:not\(\[data-theme="dark"\]\)|\[data-theme="dark"\])\s*\{([^}]*)\}/g;
+
+export function parseProfileBlocks(css: string, rules: ProfileRules): Map<string, TokenBlocks> {
+  const out = new Map<string, { light?: Map<string, Channels>; dark?: Map<string, Channels> }>();
+  const fixed = new Set(rules.fixedRoles);
+  const changeable = new Set(rules.profileRoles);
+  for (const m of css.matchAll(PROFILE_BLOCK)) {
+    const [, name, themePart, body] = m;
+    const theme = themePart.startsWith(":not") ? "light" : "dark";
+    if (name === rules.defaultName) throw new Error(`profile "${name}" is the default; its values are the base blocks`);
+    if (!rules.names.includes(name)) throw new Error(`profile "${name}" is not one of the profile names`);
+    const entry = out.get(name) ?? {};
+    if (entry[theme]) throw new Error(`profile "${name}" has a second ${theme} block`);
+    const map = parseBlock(body);
+    for (const role of map.keys()) {
+      if (fixed.has(role)) throw new Error(`profile "${name}" (${theme}) sets the fixed role "${role}"`);
+      if (!changeable.has(role)) throw new Error(`profile "${name}" (${theme}) sets "${role}", which is not a role`);
+    }
+    for (const role of changeable) {
+      if (!map.has(role)) throw new Error(`profile "${name}" (${theme}) leaves out the profile role "${role}"`);
+    }
+    entry[theme] = map;
+    out.set(name, entry);
+  }
+  const result = new Map<string, TokenBlocks>();
+  for (const [name, { light, dark }] of out) {
+    if (!light) throw new Error(`profile "${name}" has a dark block but no light block`);
+    if (!dark) throw new Error(`profile "${name}" has a light block but no dark block`);
+    result.set(name, { light, dark });
+  }
+  return result;
+}
+
+/** The roles a page in `profile` resolves: the base blocks with the profile's own lines laid over them. */
+export function profileTokens(base: TokenBlocks, profile: TokenBlocks | undefined): TokenBlocks {
+  if (!profile) return base;
+  return {
+    light: new Map([...base.light, ...profile.light]),
+    dark: new Map([...base.dark, ...profile.dark]),
+  };
+}

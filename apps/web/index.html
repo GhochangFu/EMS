@@ -24,6 +24,10 @@
       decision 1): "flat" only for the exact value, "neumorphic" otherwise. Its read has its own
       `try`, so a storage that refuses one key still lets the other through. The Neumorphic / Flat
       group beside the theme switch (`src/components/surface-switch.tsx`) writes the key.
+      F4.310 — the same script reads the cached colour profile (ADR 0110 decision 4) and sets
+      `data-profile` only for one of the five non-default names and only when the persisted session
+      (`bms-auth`) holds a token, so the sign-in page is always the default. `/auth/me` is the source
+      (`src/api/login.ts`); this cache only paints the first frame. Its read has its own `try`.
       `nginx.conf` sets no Content-Security-Policy today; if one is added, this inline script needs
       its own CSP hash (or `'unsafe-inline'` for this script only), or it silently stops running
       and the page falls back to the light theme and the neumorphic style regardless of the stored
@@ -46,6 +50,16 @@
           surface = "neumorphic";
         }
         document.documentElement.setAttribute("data-surface", surface);
+        var profiles = ["ocean", "lagoon", "indigo", "graphite", "high-contrast"];
+        try {
+          var cachedProfile = window.localStorage.getItem("bms.profile");
+          var auth = JSON.parse(window.localStorage.getItem("bms-auth") || "null");
+          if (auth && auth.state && auth.state.accessToken && profiles.indexOf(cachedProfile) !== -1) {
+            document.documentElement.setAttribute("data-profile", cachedProfile);
+          }
+        } catch (e) {
+          // No profile: the page is the default until /auth/me answers.
+        }
       })();
     </script>
     <script type="module" src="/src/main.tsx"></script>

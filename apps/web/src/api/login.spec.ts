@@ -324,3 +324,27 @@ export async function runRefreshScopeReplacesTheStoredScope(): Promise<void> {
     "expected the stored scope to equal the served one",
   );
 }
+
+/**
+ * `F4.310` (ADR 0110 decision 4) — every `/auth/me` answer applies its `colourProfile` to `<html>`:
+ * the load read, the sign-in read, the callback read and `refreshScope` all pass through
+ * `fetchCurrentUser`, so one place keeps the page on the home organization's profile.
+ */
+export async function runAMeAnswerAppliesTheColourProfile(): Promise<void> {
+  signInAs("tok-cp", "cp@example.test");
+  const answer = (colourProfile: string) =>
+    new Response(
+      JSON.stringify({
+        user: { id: "id-tok-cp", email: "cp@example.test", displayName: "cp", role: "viewer" },
+        scope: { kind: "none", locations: [], assetGroups: [], assetIds: [] },
+        colourProfile,
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(answer("lagoon"))));
+  await fetchCurrentUser("tok-cp");
+  assert(document.documentElement.getAttribute("data-profile") === "lagoon", "expected data-profile=lagoon");
+  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(answer("nexus"))));
+  await fetchCurrentUser("tok-cp");
+  assert(!document.documentElement.hasAttribute("data-profile"), "expected no data-profile for nexus");
+}

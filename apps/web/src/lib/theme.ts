@@ -12,8 +12,16 @@
  * resolve either theme from the token file without a document.
  */
 
+import { colourProfileOrDefault, type ColourProfile } from "@bms/shared";
+
 /** The `localStorage` key the boot script in `index.html` reads (G2). */
 export const THEME_STORAGE_KEY = "bms.theme";
+
+/**
+ * `F4.310` (ADR 0110 decision 4) — the `localStorage` copy of the home organization's colour
+ * profile, so the boot script paints the first frame in it. `/auth/me` is the source; this is a cache.
+ */
+export const PROFILE_STORAGE_KEY = "bms.profile";
 
 /** The 52 roles of `index.css`, in its order. */
 export const ROLE_NAMES = [
@@ -160,4 +168,12 @@ export function readRoleFromDocument(role: RoleName): string {
  */
 export function readDocumentTheme(): Theme {
   return document.documentElement.dataset.theme === "dark" ? "dark" : "light";
+}
+
+/**
+ * `F4.310` — the colour profile `<html>` carries: one of the six names, or `nexus` (the default) for
+ * no attribute or any other value.
+ */
+export function readDocumentProfile(): ColourProfile {
+  return colourProfileOrDefault(document.documentElement.dataset.profile);
 }

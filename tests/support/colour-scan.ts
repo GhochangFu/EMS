@@ -81,9 +81,10 @@ const DARK_VARIANT = /(?<![\w-])dark:(?=[\w[!-])/g;
 /**
  * An arbitrary variant aimed at the theme attribute: a bracketed selector holding `data-theme`
  * (`[[data-theme=dark]_&]:`, `group-[[data-theme=dark]_&]:`, `[html[data-theme=dark]_&]:`) or the
- * `data-[theme…]` shorthand (`data-[theme=dark]:`, `group-data-[theme=dark]:`).
+ * `data-[theme…]` shorthand (`data-[theme=dark]:`, `group-data-[theme=dark]:`). `F4.310` (ADR 0110):
+ * the same for `data-profile` — a profile recolours through the role values only, never a variant.
  */
-const THEME_VARIANT = /\[[^\s"'`]*data-theme[^\s"'`]*?\]:|data-\[theme[^\]\s]*\]:/g;
+const THEME_VARIANT = /\[[^\s"'`]*data-(?:theme|profile)[^\s"'`]*?\]:|data-\[(?:theme|profile)[^\]\s]*\]:/g;
 
 /** `prefers-color-scheme` anywhere, and a `matchMedia(` call. */
 const PREFERS_COLOR_SCHEME = /prefers-color-scheme/g;

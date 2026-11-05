@@ -4,7 +4,18 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { repoRoot } from "./support/source-scan";
-import { blendOver, contrastRatio, deltaE2000, parseTokenBlocks, type Channels, channelsToHex } from "./support/colour-tokens";
+import { COLOUR_PROFILES } from "../packages/shared/src/contracts/colour-profile";
+import { FIXED_ROLES, PROFILE_ROLES } from "../apps/web/src/lib/theme";
+import {
+  blendOver,
+  channelsToHex,
+  contrastRatio,
+  deltaE2000,
+  parseProfileBlocks,
+  parseTokenBlocks,
+  profileTokens,
+  type Channels,
+} from "./support/colour-tokens";
 
 /**
  * `F3.65a` — every declared colour pair in `docs/plans/f3.65a-colour-tokens.md` §2.4 holds its
@@ -397,10 +408,16 @@ function allowlistEntryFor(pair: Pair, theme: Theme, threshold: number): Allowli
   return ALLOWLIST.find((e) => e.theme === theme && e.threshold === threshold && samePair(e, pair));
 }
 
-function checkPairs(pairs: Pair[], threshold: number, theme: Theme, tokens: ReturnType<typeof loadTokens>) {
+function checkPairs(
+  pairs: Pair[],
+  threshold: number,
+  theme: Theme,
+  tokens: ReturnType<typeof loadTokens>,
+  allowed: (pair: Pair, theme: Theme, threshold: number) => boolean = (p, t, th) => allowlistEntryFor(p, t, th) !== undefined,
+) {
   const offenders: string[] = [];
   for (const pair of pairs) {
-    if (allowlistEntryFor(pair, theme, threshold)) continue;
+    if (allowed(pair, theme, threshold)) continue;
     const ratio = ratioOf(pair, theme, tokens);
     if (ratio < threshold) {
       offenders.push(`${pair.fg} on ${pair.bg}${pair.alpha != null ? `/${pair.alpha}` : ""} (${theme}): ${ratio.toFixed(2)} < ${threshold}`);
@@ -537,5 +554,101 @@ describe("F4.306 series roles (ADR 0078 Amendment 4): far from the alarm colours
 
   it("S3 the dark block's series roles are exactly series-1 … series-8", () => {
     expect(seriesRolesOf("dark", tokens).sort()).toEqual(SERIES_EXPECTED);
+  });
+});
+
+/**
+ * `F4.310` PR C (ADR 0110 decision 5, plan OQ1 and OQ3) — every colour profile in `index.css`
+ * holds the same rules as the default, on its own values (`profileTokens`: the base blocks with the
+ * profile's lines laid over them). A profile has **no allowlist of its own**: it may keep failing
+ * only a `CARRY_OVER` pair, the default's entries whose cause is a fixed role or a WCAG exemption
+ * (OQ1, plus `ok` on `canvas` from PR A). The seven brand-green entries never carry over.
+ *
+ * The default (`nexus`) keeps its full allowlist under C1–C4, so Q1/Q2 skip it; Q3/Q4 hold for every
+ * profile, the default included. Until PR D adds profile blocks, Q1/Q2 check nothing — the parser
+ * tests in `tests/f4.310-profile-blocks.test.ts` and Q0 (the carry-over list stays inside the
+ * default's allowlist) are what this PR proves.
+ */
+type CarryEntry = Pair & { theme: Theme; threshold: 4.5 | 3 };
+const CARRY_OVER: CarryEntry[] = [
+  { fg: "warning", bg: "surface", theme: "light", threshold: 3 },
+  { fg: "warning", bg: "canvas", theme: "light", threshold: 3 },
+  { fg: "info", bg: "surface", theme: "light", threshold: 3 },
+  { fg: "info", bg: "canvas", theme: "light", threshold: 3 },
+  { fg: "warning-on-dark", bg: "surface", theme: "light", threshold: 3 },
+  { fg: "ok", bg: "canvas", theme: "light", threshold: 3 },
+  { fg: "ink-hint", bg: "surface", theme: "light", threshold: 3 },
+  { fg: "on-dark", bg: "line-strong", theme: "light", threshold: 3 },
+  { fg: "simulated-ink", bg: "surface", wash: { tint: "info", alpha: 0.15 }, theme: "dark", threshold: 4.5 },
+  { fg: "info-ink", bg: "surface", wash: { tint: "info", alpha: 0.15 }, theme: "dark", threshold: 4.5 },
+];
+const MIN_ACCENT_STATE_DELTA_E = 12;
+
+function carried(pair: Pair, theme: Theme, threshold: number): boolean {
+  return CARRY_OVER.some((e) => e.theme === theme && e.threshold === threshold && samePair(e, pair));
+}
+
+/** Every profile's resolved tokens, the default first. */
+function profilesOf(): Array<[string, ReturnType<typeof loadTokens>]> {
+  const css = readFileSync(TOKENS_PATH, "utf8");
+  const base = parseTokenBlocks(css);
+  const blocks = parseProfileBlocks(css, {
+    names: COLOUR_PROFILES,
+    defaultName: "nexus",
+    profileRoles: PROFILE_ROLES,
+    fixedRoles: FIXED_ROLES,
+  });
+  return [["nexus", base], ...[...blocks].map(([name, b]) => [name, profileTokens(base, b)] as [string, ReturnType<typeof loadTokens>])];
+}
+
+function everyProfile(check: (name: string, theme: Theme, tokens: ReturnType<typeof loadTokens>) => string[]): string[] {
+  const out: string[] = [];
+  for (const [name, tokens] of profilesOf()) {
+    for (const theme of ["light", "dark"] as const) out.push(...check(name, theme, tokens).map((o) => `${name}: ${o}`));
+  }
+  return out;
+}
+
+function accentOffenders(theme: Theme, tokens: ReturnType<typeof loadTokens>): string[] {
+  const out: string[] = [];
+  for (const role of ["accent", "accent-strong"]) {
+    for (const alarm of ALARM_ROLES) {
+      const d = deltaE2000(hexOf(role, theme, tokens), hexOf(alarm, theme, tokens));
+      if (!(d >= MIN_ALARM_DELTA_E)) out.push(`${role} vs ${alarm} (${theme}): ΔE2000 ${d.toFixed(2)} < ${MIN_ALARM_DELTA_E}`);
+    }
+  }
+  for (const state of ["info", "simulated-ink"]) {
+    const d = deltaE2000(hexOf("accent", theme, tokens), hexOf(state, theme, tokens));
+    if (!(d >= MIN_ACCENT_STATE_DELTA_E)) out.push(`accent vs ${state} (${theme}): ΔE2000 ${d.toFixed(2)} < ${MIN_ACCENT_STATE_DELTA_E}`);
+  }
+  return out;
+}
+
+describe("F4.310: every colour profile holds the default's rules on its own values (ADR 0110 decision 5)", () => {
+  it("Q0 every carry-over entry is an entry of the default's allowlist", () => {
+    const missing = CARRY_OVER.filter((c) => allowlistEntryFor(c, c.theme, c.threshold) === undefined).map((c) => `${c.fg} on ${c.bg} (${c.theme})`);
+    expect(missing).toEqual([]);
+  });
+
+  it("Q1 every text pair is at least 4.5:1 in every profile, both themes, carry-over excepted", () => {
+    const offenders = everyProfile((name, theme, tokens) =>
+      name === "nexus" ? [] : checkPairs(TEXT_PAIRS, 4.5, theme, tokens, carried),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("Q2 every UI-part pair is at least 3:1 in every profile, both themes, carry-over excepted", () => {
+    const offenders = everyProfile((name, theme, tokens) =>
+      name === "nexus" ? [] : checkPairs(UI_PAIRS, 3, theme, tokens, carried),
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("Q3 every profile's series roles keep S1 and S2", () => {
+    expect(everyProfile((_name, theme, tokens) => [...alarmOffenders(theme, tokens), ...pairOffenders(theme, tokens)])).toEqual([]);
+  });
+
+  it("Q4 every profile's accent is ΔE2000 ≥ 20 from the alarm colours and ≥ 12 from info and simulated-ink (OQ3)", () => {
+    expect(everyProfile((_name, theme, tokens) => accentOffenders(theme, tokens))).toEqual([]);
   });
 });
