@@ -70,6 +70,7 @@ const NOT_YET_WIDENED: readonly string[] = [
   "operations.ts#energyTopConsumerSchema", // removed by PR 6 (code field is `code`, Q1)
   "energy-organization-views.ts#energyAbnormalEntrySchema", // removed by PR 6 (code field is `code`, Q1)
   "template-migration.ts#templateMigrationAssetDtoSchema", // removed by PR 8 (Q5)
+  "template-adoption.ts#templateAdoptionAssetPlanDtoSchema", // removed by PR 8 (Q5)
 ];
 
 /**
@@ -78,6 +79,8 @@ const NOT_YET_WIDENED: readonly string[] = [
  */
 const PERMANENTLY_EXEMPT: readonly string[] = [
   "template-migration.ts#templateMigrationSkippedPointDtoSchema", // permanent: a refusal row about an asset the operator picked on the previous step; its message names the asset
+  "template-adoption.ts#templateAdoptionRefusalDtoSchema", // permanent: a refusal row about an asset the operator picked on the previous step; its message names the asset
+  "calc-point-writes.ts#calcPointRefusalSchema", // permanent: assetCode is nullable for a disclosure reason (its docblock); its message names the asset
   "mapping-sheet.ts#mappingSheetCreateDtoSchema", // permanent: the code is the sheet's round-trip key, not a display label
   "mapping-sheet.ts#mappingSheetUpdateDtoSchema", // permanent: the code is the sheet's round-trip key, not a display label
   "telemetry-import.ts#copilotTelemetryImportPreviewSchema", // permanent: the code is the import's round-trip key (mappingsToCreate)
