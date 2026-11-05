@@ -525,6 +525,10 @@ export function mimicCalloutText(message: string, max = MIMIC_CALLOUT_CHARS): st
  * no last-seen instant and read OFFLINE), and each asset's `points` carry its state points after
  * its headline points, once per key, so the socket tracks and seeds them. These are fresh objects:
  * the DTO's own `points` (the value rows, `mimicNodePoints`) are never touched.
+ *
+ * `F4.307` (plan C6) — nodes and members that share an asset union their `points` by key, in
+ * first-seen order: one unit may list keys another unit on the same asset does not show, and the
+ * socket must track every one of them.
  */
 export function mimicViewFor(
   widget: MimicWidgetNodesDto | undefined,
@@ -535,10 +539,16 @@ export function mimicViewFor(
   }
   const byId = new Map<string, GeneratedSiteAssetDto>();
   const add = (asset: GeneratedSiteAssetDto, statePoints: readonly GeneratedSitePointDto[]): void => {
-    const known = byId.get(asset.id) ?? { ...asset, points: [...asset.points] };
+    const known = byId.get(asset.id) ?? { ...asset, points: [] };
     const keys = new Set(known.points.map((p) => p.pointKey));
-    const extra = statePoints.filter((p) => !keys.has(p.pointKey));
-    byId.set(asset.id, extra.length === 0 ? known : { ...known, points: [...known.points, ...extra] });
+    const points = [...known.points];
+    for (const point of [...asset.points, ...statePoints]) {
+      if (!keys.has(point.pointKey)) {
+        keys.add(point.pointKey);
+        points.push(point);
+      }
+    }
+    byId.set(asset.id, { ...known, points });
   };
   for (const node of widget.nodes) {
     if (node.asset !== null) {

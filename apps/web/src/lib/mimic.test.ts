@@ -37,6 +37,7 @@ import {
   viewHoldsEveryFanOutMember,
   viewHoldsOnlyAssignedAssets,
   viewLeavesTheDtoPointsAlone,
+  viewUnionsThePointsOfASharedAsset,
 } from "./mimic.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -58,6 +59,9 @@ describe("F3.32 U4 — the plant mimic's pure half", () => {
   });
   it("M1f the view never writes into the DTO's points", () => {
     viewLeavesTheDtoPointsAlone();
+  });
+  it("M1g two nodes on one asset give the view every key of both, once each (F4.307)", () => {
+    viewUnionsThePointsOfASharedAsset();
   });
   it("M2a an unassigned node is unassigned even with alarms", () => {
     unassignedWinsOverAlarm();

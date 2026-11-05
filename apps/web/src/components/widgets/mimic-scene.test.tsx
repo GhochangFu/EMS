@@ -26,6 +26,7 @@ import {
   noTwoSymbolsDrawTheSameMarkup,
   passiveUnitDrawsNoStatus,
   resolvedUnitShowsItsAsset,
+  listedRowsDrawInOrderAndAMissingKeyReadsADash,
   roledUnitWithoutEntryIsNotAssigned,
   strokeLibraryGlyphHasNoFillAndNoShapeColour,
   strokeShapeIsNotSpread,
@@ -57,6 +58,9 @@ describe("F3.32c U4 — MimicScene, a stored layout", () => {
   });
   it("S4 a resolved roled unit shows its asset, value and flow", () => {
     resolvedUnitShowsItsAsset();
+  });
+  it("S4b a unit's listed rows draw in list order, and a key with no sample draws its name and a dash (F4.307)", () => {
+    listedRowsDrawInOrderAndAMissingKeyReadsADash();
   });
   it("S5 draws the panel frame, the free label and the pipes; no pump, no sink", () => {
     drawsPanelLabelAndPipes();
