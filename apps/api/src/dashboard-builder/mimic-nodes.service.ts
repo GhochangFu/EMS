@@ -113,7 +113,14 @@ import {
  *    seen, answered as `stateMaps`. The web derives a switch state from them (plan D12).
  *
  * **Rows are mapped by hand** — no `.parse` of stored data beyond the widget config.
+ *
+ * **The layout preview** (`F4.308`, ADR 0081 Amendment 2 decision 1): `readLayoutPreview` skips
+ * statement (1) and hands (1b) to (4) one synthetic layout widget bound to the asked group, so the
+ * dashboard read and the preview share every resolving statement (`resolveWidgets`).
  */
+/** Which read `resolveWidgets` serves, by id only — named in its skip warning (§4.3 / §9.6). */
+type ResolveContext = { readonly dashboardId: string } | { readonly previewLayoutId: string };
+
 @Injectable()
 export class MimicNodesService {
   private readonly logger = new Logger(MimicNodesService.name);
@@ -198,6 +205,48 @@ export class MimicNodesService {
       parsedWidgets.push({ widgetId: row.widget_id, groupId: row.asset_group_id, ...parsed.data });
     }
 
+    const { widgets, stateMaps } = await this.resolveWidgets(organizationId, parsedWidgets, readableAssetIds, nowMs, {
+      dashboardId,
+    });
+    return { dashboardId, resolvedAt, widgets, stateMaps };
+  }
+
+  /**
+   * `F4.308` / ADR 0081 Amendment 2 (plan C4, C5) — one STORED layout resolved against one asset
+   * group, with no dashboard: statement (1) is replaced by one synthetic layout widget, and
+   * statements (1b) to (4) run unchanged. The shared answer needs a UUID in `dashboardId` and
+   * `widgetId`; both carry the layout id (owner ruling Q1 a). A layout this organization does not
+   * hold answers `widgets: []` (the caller's 404). Nothing is written.
+   */
+  async readLayoutPreview(
+    organizationId: string,
+    layoutId: string,
+    assetGroupId: string,
+    readableAssetIds: readonly string[] | null,
+    nowMs: number,
+  ): Promise<DashboardMimicNodesResponseDto> {
+    const resolvedAt = new Date(nowMs).toISOString();
+    const { widgets, stateMaps } = await this.resolveWidgets(
+      organizationId,
+      [{ source: "layout", widgetId: layoutId, layoutId, groupId: assetGroupId }],
+      readableAssetIds,
+      nowMs,
+      { previewLayoutId: layoutId },
+    );
+    return { dashboardId: layoutId, resolvedAt, widgets, stateMaps };
+  }
+
+  /**
+   * Statements (1b) to (4) for the parsed widgets, in their order: the shared half of `read()`
+   * and `readLayoutPreview()`. `context` (ids only) names the read in the skip warning.
+   */
+  private async resolveWidgets(
+    organizationId: string,
+    parsedWidgets: readonly ParsedWidget[],
+    readableAssetIds: readonly string[] | null,
+    nowMs: number,
+    context: ResolveContext,
+  ): Promise<Pick<DashboardMimicNodesResponseDto, "widgets" | "stateMaps">> {
     const layoutIds = [
       ...new Set(parsedWidgets.flatMap((widget) => (widget.source === "layout" ? [widget.layoutId] : []))),
     ];
@@ -213,14 +262,15 @@ export class MimicNodesService {
         // and must not — `FLEET_POOL` bypasses RLS, so the `WHERE` in (1b) is what hid it.
         this.logger.warn(
           "mimic widget names a layout this organization does not hold; widget skipped: " +
-            `dashboard ${dashboardId}, widget ${widget.widgetId}, layout ${widget.layoutId}`,
+            ("dashboardId" in context ? `dashboard ${context.dashboardId}` : `layout preview ${context.previewLayoutId}`) +
+            `, widget ${widget.widgetId}, layout ${widget.layoutId}`,
         );
         continue;
       }
       widgets.push(widget);
     }
     if (widgets.length === 0) {
-      return { dashboardId, resolvedAt, widgets: [], stateMaps: [] };
+      return { widgets: [], stateMaps: [] };
     }
 
     // The nodes each widget resolves: a preset's roled nodes (a `roleCode: null` bus is drawn,
@@ -492,8 +542,6 @@ export class MimicNodesService {
     };
 
     return {
-      dashboardId,
-      resolvedAt,
       stateMaps,
       widgets: widgets.map((widget) => {
         if (widget.source === "preset") {
