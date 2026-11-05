@@ -1081,6 +1081,22 @@
 > and the unit's freshness still follows its asset's headline points. A
 > preset keeps the headline rank. The inspector's **Points** block picks,
 > orders and removes the list from the active catalog.
+> And **"Preview with site" in the mimic layout editor** (**ADR 0081
+> Amendment 2**, #1019; row `F4.308`; PR 1 #1022, PR 2 #1024; this sweep merges
+> last). `GET /api/v1/mimic-layouts/:id/preview?assetGroupId=` (strict query)
+> answers the `mimic-nodes` shape for the **saved** layout bound to one asset
+> group, read-only, with no audit row; `dashboardId` and `widgetId` carry the
+> layout id. The check order is: the layout readable, else 404; the group in
+> the layout's organization **and** the caller's readable locations, else 404;
+> only then `admin` or `organization_admin`, else 403; then the readable-asset
+> narrowing. `MimicNodesService` is split (`resolveWidgets`, its pure helpers in
+> `mimic-nodes.pure.ts`, every SQL string still in the service), and
+> `MimicLayoutsModule` provides its own stateless instance. In the editor, a
+> site then an asset group draws the preview with live values (`useSiteLiveReadings`
+> gains an optional `enabled`, so no socket opens before a group is chosen);
+> edits are locked while it is on, the inspector lists the bound asset, its
+> points, state points and open alarms, and "Save to refresh the preview"
+> shows while the editor holds unsaved edits.
 > And **the tool-calling onboarding agent loop** (**ADR 0090** with
 > **Amendment 1**; row `F3.21`, merged 2026-10-03 in #705, squash `9ff272e1`;
 > the ADR in #702 and the amendment in #703). It amends ADR 0011 decision 1:
