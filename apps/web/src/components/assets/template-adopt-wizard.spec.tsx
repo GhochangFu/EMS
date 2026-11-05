@@ -24,6 +24,8 @@ const ASSET: AdoptingAsset = {
   organizationCode: "ESKOM",
   domain: "electrical",
   templateId: null,
+  rtuDisplayName: "Lotapata I",
+  locationName: "Lotapata",
 };
 
 function version(id: string, code: string, extra: Record<string, unknown> = {}) {
@@ -186,6 +188,17 @@ export async function aPlanRowWithNeitherNameIsTheBareCode(): Promise<void> {
   await pickFeeder();
   const plan = await screen.findByRole("region", { name: "Plan for FDR-01" });
   expect(plan.querySelector("p")?.textContent).toBe("FDR-01 Feeder one");
+}
+
+// Catches: Review listing the selected assets by bare code (plan §5.2, ADR 0111).
+export async function reviewNamesTheSelectedAssetsByLabel(): Promise<void> {
+  stubApi();
+  renderWizard();
+  await pickFeeder();
+  await screen.findByRole("region", { name: "Plan for FDR-01" });
+  await waitFor(() => expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false));
+  await userEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(await screen.findByText("Assets: FDR-01 · Lotapata I")).toBeTruthy();
 }
 
 // Catches: the where part truncated (ADR 0111: it wraps, never clips).

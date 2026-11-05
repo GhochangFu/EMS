@@ -55,6 +55,8 @@ function asset(overrides: Partial<Asset>): Asset {
     organizationCode: "ESKOM",
     domain: "electrical",
     templateId: null,
+    rtuDisplayName: null,
+    locationName: null,
     ...overrides,
   };
 }

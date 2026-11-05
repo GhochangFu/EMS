@@ -21,7 +21,7 @@
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { ASSET_LABEL_SEPARATOR, assetLabelParts } from "@bms/shared";
+import { ASSET_LABEL_SEPARATOR, assetLabel, assetLabelParts } from "@bms/shared";
 import type { TemplateAdoptionRefusalDto } from "@bms/shared";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 
@@ -137,7 +137,7 @@ export function TemplateAdoptWizard({
               <span className="font-mono">{label.code}</span>
               {label.where === null ? null : (
                 <span data-testid="asset-where" className="break-words">
-                  {` ${ASSET_LABEL_SEPARATOR.trim()} ${label.where}`}
+                  {`${ASSET_LABEL_SEPARATOR}${label.where}`}
                 </span>
               )}{" "}
               {plan.assetName}
@@ -235,7 +235,14 @@ export function TemplateAdoptWizard({
             omit: ["assetIds"],
             detail: (
               <div className="space-y-1 text-xs">
-                <p>Assets: {assets.map((asset) => asset.code).join(", ")}</p>
+                <p>
+                  Assets:{" "}
+                  {assets
+                    .map((asset) =>
+                      assetLabel({ code: asset.code, rtuName: asset.rtuDisplayName, locationName: asset.locationName }),
+                    )
+                    .join(", ")}
+                </p>
                 {reviewRefusals}
               </div>
             ),
