@@ -5,7 +5,7 @@
  * each and the text a click appends. **Generated** from `@bms/shared`'s
  * calc-dsl constants wherever the grammar keeps one (ruling 2): the functions
  * from `CALC_FUNCTION_ARITY`, the aggregates from `CALC_AGGREGATE_FNS`, the
- * scopes through `scopeCompletions` (itself a map over `CALC_SCOPE_KINDS`), the
+ * scopes through `calcScopeForms` (a map over `CALC_SCOPE_KINDS`), the
  * window functions from `CALC_WINDOW_FNS`, the window lengths from
  * `CALC_CALENDAR_WINDOWS` / `CALC_ROLLING_UNITS` / `MAX_ROLLING_WINDOW_DAYS`,
  * and the two reference forms from `V2_REFERENCE_FORMS`. Only the operator
@@ -19,11 +19,9 @@
  * coverage gate reaches nothing above it. Imports no CodeMirror (decision 7,
  * `tests/adr-0038-formula-editor.test.ts`).
  *
- * The import of `formula-editor-rules.ts` is one half of a cycle —
- * `functionCompletions` there reads this list so the completion and the help
- * cannot disagree (decision A2). Both sides read the other only inside a
- * function body, never at module evaluation, so the order the two load in
- * cannot matter.
+ * Reads `calc-reference-forms.ts` (a leaf), never `formula-editor-rules.ts`,
+ * which imports this module for `functionCompletions` — so there is no
+ * import cycle.
  */
 import {
   CALC_AGGREGATE_FNS,
@@ -38,7 +36,7 @@ import {
 } from "@bms/shared";
 import type { CalcAggregateFn, CalcDialect, CalcFunctionName, CalcWindowFnName } from "@bms/shared";
 
-import { V2_REFERENCE_FORMS, scopeCompletions } from "./formula-editor-rules";
+import { V2_REFERENCE_FORMS, calcScopeForms } from "./calc-reference-forms";
 import { V3_PARAMETER_HELP } from "./template-calc-config";
 
 /** One line of the help: what it is, what it says, an example, and what a click appends. */
@@ -114,7 +112,7 @@ function functionEntries(): FormulaHelpEntry[] {
   }));
 }
 
-function crossAssetEntries(dialect: CalcDialect): FormulaHelpEntry[] {
+function crossAssetEntries(): FormulaHelpEntry[] {
   const forms = V2_REFERENCE_FORMS.map(
     (form): FormulaHelpEntry => ({
       group: "reference",
@@ -133,9 +131,9 @@ function crossAssetEntries(dialect: CalcDialect): FormulaHelpEntry[] {
       insert: `${name}(`,
     }),
   );
-  // `scopeCompletions` is gated on the surface's dialect; a bare derived
-  // surface at this dialect asks it for exactly the scopes the grammar admits.
-  const scopes = scopeCompletions({ mode: "derived", points: [], selfPointKey: "", dialect }).map(
+  // Every scope `CALC_SCOPE_KINDS` holds, in the completion's own shape; this
+  // branch is already gated on `isCrossAssetDialect`.
+  const scopes = calcScopeForms().map(
     (scope): FormulaHelpEntry => ({
       group: "scope",
       label: scope.label,
@@ -191,7 +189,7 @@ function windowEntries(): FormulaHelpEntry[] {
 export function formulaHelpEntries(dialect: CalcDialect): readonly FormulaHelpEntry[] {
   const entries: FormulaHelpEntry[] = [...OPERATORS, LOCAL_REFERENCE, ...functionEntries()];
   if (isCrossAssetDialect(dialect)) {
-    entries.push(...crossAssetEntries(dialect));
+    entries.push(...crossAssetEntries());
   }
   if (isParameterDialect(dialect)) {
     entries.push({

@@ -48,6 +48,7 @@ import {
   decorationDialect,
   editorDiagnosticRanges,
   flattenNewlines,
+  functionCompletionAllowed,
   functionCompletions,
   isCheckedDialect,
   scopeCompletions,
@@ -332,18 +333,15 @@ function buildExtensions(
 
   // `F4.314` (ADR 0038 Amendment 6 decision A2): the function-name source.
   // `functionCompletions` reads the help list, so the popup and the Formula
-  // help offer the same names. Nothing inside a `{…}` run (a point key may
-  // hold letters), a `$…` run (a parameter key is letters too) or an `@…` run
-  // (the scope source's), where another source or nothing is right. Whether
-  // the popup opens where an author types `ro` is a browser claim (T10's
-  // rule), like the two sources above.
+  // help offer the same names. Whether the run before the caret is a name
+  // being typed — not a window unit (`24h`), a code inside quotes, a point
+  // key, a parameter or a scope — is `functionCompletionAllowed`'s decision,
+  // held in `formula-editor-rules.spec.ts`. Whether the popup opens where an
+  // author types `ro` is a browser claim (T10's rule), like the two sources
+  // above.
   const functions = (context: CompletionContext): CompletionResult | null => {
     const opened = context.matchBefore(/[a-z_]+/);
-    const insideAnotherRun =
-      context.matchBefore(/\{[^{}]*/) !== null ||
-      context.matchBefore(/\$[A-Za-z0-9_]*/) !== null ||
-      context.matchBefore(/@[a-z]*/) !== null;
-    if (!opened || insideAnotherRun) {
+    if (!opened || !functionCompletionAllowed(context.state.sliceDoc(0, context.pos))) {
       return null;
     }
     return {

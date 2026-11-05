@@ -6,6 +6,7 @@ import {
   clickingAnEntryInsertsItsText,
   disabledDisablesEveryEntry,
   theSectionStartsCollapsed,
+  theSummaryNamesTheSection,
   v1ListsExactlyTheFiveFunctions,
   v1ListsNoScope,
   v3ListsTheWindowForms,
@@ -42,5 +43,9 @@ describe("F4.314 — the Formula help section", () => {
 
   it("starts collapsed", () => {
     theSectionStartsCollapsed();
+  });
+
+  it("names the section Formula help in its summary", () => {
+    theSummaryNamesTheSection();
   });
 });

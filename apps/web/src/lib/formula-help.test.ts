@@ -3,9 +3,15 @@ import { describe, it } from "vitest";
 import {
   runDialectsAreSupersetsTests,
   runEveryExampleParsesTests,
-  runFunctionsComeFromTheConstantTests,
+  runEachArityKeyHasOneFunctionEntryTests,
+  runEachNewerDialectAddsEntriesTests,
+  runFunctionInsertsOpenTheCallTests,
+  runInsertsAreNonEmptyTests,
+  runNoEntryCallsOutsideTheGrammarTests,
+  runParameterTextDropsTheLeadTests,
+  runParameterTextIsCutAtTheDashTests,
+  runParameterTextIsTheHelpsTests,
   runHoursIsTheParsersTests,
-  runInsertsAreUsableTests,
   runLabelsAreUniqueTests,
   runOperatorsTokenizeTests,
   runV1HasNoNewerGroupsTests,
@@ -18,8 +24,12 @@ describe("formula help entries (F4.314)", () => {
     runEveryExampleParsesTests();
   });
 
-  it("the functions are the grammar's, one entry per CALC_FUNCTION_ARITY key", () => {
-    runFunctionsComeFromTheConstantTests();
+  it("has exactly one function entry per CALC_FUNCTION_ARITY key", () => {
+    runEachArityKeyHasOneFunctionEntryTests();
+  });
+
+  it("calls no name outside the grammar's functions, aggregates, windows and hours", () => {
+    runNoEntryCallsOutsideTheGrammarTests();
   });
 
   it("every operator glyph tokenizes to one token under v1", () => {
@@ -42,11 +52,31 @@ describe("formula help entries (F4.314)", () => {
     runDialectsAreSupersetsTests();
   });
 
-  it("every insert is non-empty and a function inserts its name and (", () => {
-    runInsertsAreUsableTests();
+  it("each newer dialect's list is strictly larger", () => {
+    runEachNewerDialectAddsEntriesTests();
+  });
+
+  it("every insert is non-empty", () => {
+    runInsertsAreNonEmptyTests();
+  });
+
+  it("a function entry inserts its name and (", () => {
+    runFunctionInsertsOpenTheCallTests();
   });
 
   it("labels are unique within a dialect's list", () => {
     runLabelsAreUniqueTests();
+  });
+
+  it("the $key text ends V3_PARAMETER_HELP", () => {
+    runParameterTextIsTheHelpsTests();
+  });
+
+  it("the $key text drops the sentence's $key lead", () => {
+    runParameterTextDropsTheLeadTests();
+  });
+
+  it("the $key text is cut at the dash, not inside $key", () => {
+    runParameterTextIsCutAtTheDashTests();
   });
 });

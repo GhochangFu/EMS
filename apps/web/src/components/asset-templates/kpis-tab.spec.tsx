@@ -181,7 +181,8 @@ async function submitThroughTheWizard(): Promise<void> {
  * `Points this KPI reads` select, no Validate button, Grammar reading
  * `bms-calc-v2`, and the two reference forms taught underneath. The
  * `"unvalidated"` row is the positive control on each absence: it still has
- * the manual select and the Validate button, and teaches nothing.
+ * the manual select and the Validate button, and its Formula help is the
+ * `bms-calc-v1` list (`F4.314`), which carries no reference form.
  */
 export async function aStoredV2KpiRendersAsChecked(): Promise<void> {
   renderTab(fixture(), true);
@@ -308,14 +309,17 @@ export async function aFrozenVersionDisablesEveryControl(): Promise<void> {
 }
 
 /**
- * `F4.314` (ADR 0038 Amendment 6 A6) — on a frozen version every Formula help
- * entry renders disabled, not absent: the help is read-only there, as every
- * other authoring control is (decision 3).
+ * `F4.314` (ADR 0038 Amendment 6 A6) — on a published version every Formula
+ * help entry renders disabled, not absent: the help is read-only there, as
+ * every other authoring control is (decision 3). Rendered with
+ * `editable=true`, so the version's status — `formulaFieldsAreReadOnly` — is
+ * what disables it, not the tab's `editable` prop.
  *
- * Mutation: pass `disabled={false}` to the tab's `FormulaHelp`.
+ * Mutation: drop the `formulaFieldsAreReadOnly(template.status)` half of the
+ * tab's `FormulaHelp` `disabled`.
  */
 export async function aFrozenVersionDisablesTheFormulaHelp(): Promise<void> {
-  renderTab(fixture("published"), false);
+  renderTab(fixture("published"), true);
   const entries = screen.getAllByRole("button", { name: /^Insert / });
   expect([entries.length > 0, entries.filter((entry) => !(entry as HTMLButtonElement).disabled).length]).toEqual([
     true,

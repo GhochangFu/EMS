@@ -83,6 +83,16 @@ export function disabledDisablesEveryEntry(): void {
  */
 export function theSectionStartsCollapsed(): void {
   const { container } = render(<FormulaHelp dialect={CALC_DIALECT} disabled={false} onInsert={() => undefined} />);
-  const details = container.querySelector("details");
-  expect([details?.querySelector("summary")?.textContent, details?.open]).toEqual(["Formula help", false]);
+  expect(container.querySelector("details")?.open).toBe(false);
+}
+
+/**
+ * The section's summary reads "Formula help" — the name every surface and the
+ * browser check look for.
+ *
+ * Mutation: change the summary to "Help".
+ */
+export function theSummaryNamesTheSection(): void {
+  const { container } = render(<FormulaHelp dialect={CALC_DIALECT} disabled={false} onInsert={() => undefined} />);
+  expect(container.querySelector("details > summary")?.textContent).toBe("Formula help");
 }

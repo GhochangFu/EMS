@@ -14,16 +14,15 @@ import {
   V3_TRIGGER_LATENCY_HINT,
   V3_WINDOW_HELP,
 } from "../../lib/template-calc-config";
-import { formulaHelpEntries } from "../../lib/formula-help";
 import { CalculationsTab } from "./calculations-tab";
 import type { FormulaEditorProps } from "./formula-editor-lazy";
 
 /**
- * `F4.314`: the `$key` entry's text in the Formula help — `V3_PARAMETER_HELP`
- * less its `$key — ` lead, which the entry's label shows. Read off the list
- * rather than restated, so the claims below follow the help.
+ * `F4.314`: the `$key` entry's text in the Formula help, as a fixed phrase of
+ * `V3_PARAMETER_HELP` rather than read off the list under test — so a help
+ * that dropped or garbled the text reddens the claims below.
  */
-const PARAMETER_HELP = formulaHelpEntries("bms-calc-v3").find((entry) => entry.group === "parameter")?.says ?? "";
+const PARAMETER_HELP = /a named parameter \(tariff, factor, baseline, rating\) from \/admin\/calc-parameters/;
 
 /**
  * `F2.22` T6 — the Calculations tab's `bms-calc-v2` controls: Grammar, the
@@ -400,14 +399,17 @@ export async function aFrozenVersionDisablesEveryControl(): Promise<void> {
 }
 
 /**
- * `F4.314` (ADR 0038 Amendment 6 A6) — on a frozen version every Formula help
- * entry renders disabled, not absent: the help is read-only there, as every
- * other authoring control is (decision 3).
+ * `F4.314` (ADR 0038 Amendment 6 A6) — on a published version every Formula
+ * help entry renders disabled, not absent: the help is read-only there, as
+ * every other authoring control is (decision 3). Rendered with
+ * `editable=true`, so the version's status — `formulaFieldsAreReadOnly` — is
+ * what disables it, not the tab's `editable` prop.
  *
- * Mutation: pass `disabled={false}` to the tab's `FormulaHelp`.
+ * Mutation: drop the `formulaFieldsAreReadOnly(template.status)` half of the
+ * tab's `FormulaHelp` `disabled`.
  */
 export async function aFrozenVersionDisablesTheFormulaHelp(): Promise<void> {
-  renderTab(fixture("published"), false);
+  renderTab(fixture("published"), true);
   const entries = screen.getAllByRole("button", { name: /^Insert / });
   expect([entries.length > 0, entries.filter((entry) => !(entry as HTMLButtonElement).disabled).length]).toEqual([
     true,

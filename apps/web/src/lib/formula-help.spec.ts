@@ -20,6 +20,7 @@ import {
 } from "@bms/shared";
 
 import { formulaHelpEntries, type FormulaHelpEntry } from "./formula-help";
+import { V3_PARAMETER_HELP } from "./template-calc-config";
 
 function assert(condition: boolean, message: string): void {
   if (!condition) {
@@ -55,31 +56,37 @@ export function runEveryExampleParsesTests(): void {
 }
 
 /**
- * Each `CALC_FUNCTION_ARITY` key has exactly one `function` entry, and no
- * entry calls a name outside the grammar's functions, aggregates, window
- * functions and `hours`.
+ * Each `CALC_FUNCTION_ARITY` key has exactly one `function` entry.
  *
  * Mutation: replace the map over `CALC_FUNCTION_ARITY` with a hand list that
  * drops `clamp`.
  */
-export function runFunctionsComeFromTheConstantTests(): void {
+export function runEachArityKeyHasOneFunctionEntryTests(): void {
+  const v1Functions = formulaHelpEntries(CALC_DIALECT).filter((entry) => entry.group === "function");
+  const counts = Object.keys(CALC_FUNCTION_ARITY).map(
+    (name) => `${name}:${v1Functions.filter((entry) => entry.label === name).length}`,
+  );
+  const wrong = counts.filter((count) => !count.endsWith(":1"));
+  assert(wrong.length === 0, `each arity key needs exactly one function entry, got ${JSON.stringify(wrong)}`);
+}
+
+/**
+ * No entry calls a name outside the grammar's functions, aggregates, window
+ * functions and `hours`.
+ *
+ * Mutation: rename the `hours` entry's insert to `hour(`.
+ */
+export function runNoEntryCallsOutsideTheGrammarTests(): void {
   const grammar = new Set<string>([
     ...Object.keys(CALC_FUNCTION_ARITY),
     ...CALC_AGGREGATE_FNS,
     ...CALC_WINDOW_FNS,
     "hours",
   ]);
-  const v1Functions = formulaHelpEntries(CALC_DIALECT).filter((entry) => entry.group === "function");
-  for (const name of Object.keys(CALC_FUNCTION_ARITY)) {
-    const matching = v1Functions.filter((entry) => entry.label === name);
-    assert(matching.length === 1, `${name} must have exactly one function entry, got ${matching.length}`);
-  }
-  for (const dialect of CALC_DIALECTS) {
-    for (const entry of formulaHelpEntries(dialect)) {
-      const name = calledName(entry);
-      assert(name === null || grammar.has(name), `${entry.label} calls ${name}, which the grammar does not carry`);
-    }
-  }
+  const outside = CALC_DIALECTS.flatMap((dialect) => formulaHelpEntries(dialect))
+    .map(calledName)
+    .filter((name): name is string => name !== null && !grammar.has(name));
+  assert(outside.length === 0, `entries call names the grammar does not carry: ${JSON.stringify(outside)}`);
 }
 
 /**
@@ -113,7 +120,7 @@ export function runOperatorsTokenizeTests(): void {
  * this holds it to the parser: under `v3` the `hours` entry's example parses
  * to a window read.
  *
- * Mutation: rename the entry's call to `hour(`.
+ * Mutation: change the entry's example to `{baseline_kwh} / 24` (no window).
  */
 export function runHoursIsTheParsersTests(): void {
   const entry = formulaHelpEntries(CALC_DIALECT_V3).find((candidate) => calledName(candidate) === "hours");
@@ -157,6 +164,11 @@ export function runV2OnlyExamplesAreNotV1Tests(): void {
   }
 }
 
+/** The labels of one dialect's list. */
+function labelsOf(dialect: (typeof CALC_DIALECTS)[number]): Set<string> {
+  return new Set(formulaHelpEntries(dialect).map((entry) => entry.label));
+}
+
 /**
  * `v3 ⊇ v2 ⊇ v1` by label — ADR 0070's superset order: a newer dialect never
  * teaches less.
@@ -164,31 +176,46 @@ export function runV2OnlyExamplesAreNotV1Tests(): void {
  * Mutation: gate the function entries on `!isCrossAssetDialect`.
  */
 export function runDialectsAreSupersetsTests(): void {
-  const labels = (dialect: (typeof CALC_DIALECTS)[number]) =>
-    new Set(formulaHelpEntries(dialect).map((entry) => entry.label));
-  const v1 = labels(CALC_DIALECT);
-  const v2 = labels(CALC_DIALECT_V2);
-  const v3 = labels(CALC_DIALECT_V3);
+  const v1 = labelsOf(CALC_DIALECT);
+  const v2 = labelsOf(CALC_DIALECT_V2);
+  const v3 = labelsOf(CALC_DIALECT_V3);
   const missing = [...[...v1].filter((label) => !v2.has(label)), ...[...v2].filter((label) => !v3.has(label))];
   assert(missing.length === 0, `a newer dialect must carry every older entry, missing ${JSON.stringify(missing)}`);
-  assert(v3.size > v2.size && v2.size > v1.size, "each newer dialect must add entries");
 }
 
 /**
- * Every `insert` is non-empty, and a function entry inserts its own name and
- * an opening parenthesis.
+ * Each newer dialect's list is strictly larger — `v2` and `v3` each teach
+ * something the one before cannot.
+ *
+ * Mutation: build the `v2` list for `v3`.
+ */
+export function runEachNewerDialectAddsEntriesTests(): void {
+  const sizes = CALC_DIALECTS.map((dialect) => labelsOf(dialect).size);
+  assert(sizes[2] > sizes[1] && sizes[1] > sizes[0], `each newer dialect must add entries, got ${sizes.join(" < ")}`);
+}
+
+/**
+ * Every `insert` is non-empty — a click must append something.
+ *
+ * Mutation: give the `{key}` entry an empty insert.
+ */
+export function runInsertsAreNonEmptyTests(): void {
+  const empty = CALC_DIALECTS.flatMap((dialect) => formulaHelpEntries(dialect)).filter(
+    (entry) => entry.insert.length === 0,
+  );
+  assert(empty.length === 0, `entries insert nothing: ${JSON.stringify(empty.map((entry) => entry.label))}`);
+}
+
+/**
+ * A function entry inserts its own name and an opening parenthesis.
  *
  * Mutation: insert `abs` without the parenthesis.
  */
-export function runInsertsAreUsableTests(): void {
-  for (const dialect of CALC_DIALECTS) {
-    for (const entry of formulaHelpEntries(dialect)) {
-      assert(entry.insert.length > 0, `${entry.label} must insert something`);
-      if (entry.group === "function") {
-        assert(entry.insert === `${entry.label}(`, `${entry.label} must insert "${entry.label}(", got ${entry.insert}`);
-      }
-    }
-  }
+export function runFunctionInsertsOpenTheCallTests(): void {
+  const wrong = CALC_DIALECTS.flatMap((dialect) => formulaHelpEntries(dialect)).filter(
+    (entry) => entry.group === "function" && entry.insert !== `${entry.label}(`,
+  );
+  assert(wrong.length === 0, `function entries must insert "<label>(", got ${JSON.stringify(wrong)}`);
 }
 
 /**
@@ -203,4 +230,40 @@ export function runLabelsAreUniqueTests(): void {
     const repeated = labels.filter((label, index) => labels.indexOf(label) !== index);
     assert(repeated.length === 0, `${dialect} repeats ${JSON.stringify(repeated)}`);
   }
+}
+
+/** The `$key` entry's text under `v3`. */
+function parameterSays(): string {
+  return formulaHelpEntries(CALC_DIALECT_V3).find((entry) => entry.group === "parameter")?.says ?? "";
+}
+
+/**
+ * The `$key` entry's text is `V3_PARAMETER_HELP`'s own words — a suffix of it,
+ * not a restatement.
+ *
+ * Mutation: restate the text by hand ("a named parameter, nearest scope wins").
+ */
+export function runParameterTextIsTheHelpsTests(): void {
+  const says = parameterSays();
+  assert(says.length > 0 && V3_PARAMETER_HELP.endsWith(says), `the $key text must end V3_PARAMETER_HELP, got ${says}`);
+}
+
+/**
+ * The `$key` entry's text drops the sentence's lead, which the label shows.
+ *
+ * Mutation: use `V3_PARAMETER_HELP` whole.
+ */
+export function runParameterTextDropsTheLeadTests(): void {
+  assert(parameterSays() !== V3_PARAMETER_HELP, "the $key text must not repeat the label's $key lead");
+}
+
+/**
+ * The lead is cut at the dash, not inside `$key`: the text starts neither
+ * with `$` nor with the `ey` a cut two characters early would leave.
+ *
+ * Mutation: slice two characters before the dash.
+ */
+export function runParameterTextIsCutAtTheDashTests(): void {
+  const says = parameterSays();
+  assert(!says.startsWith("$") && !says.startsWith("ey"), `the $key text is cut in the wrong place: ${says}`);
 }
