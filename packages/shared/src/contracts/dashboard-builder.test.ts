@@ -16,7 +16,11 @@ import {
   runStageASpecUnionCarriesTheNewFieldsTests,
   runStageATileBoundsTests,
   runStageAVocabulariesAreClosedTests,
+  runWidgetPointAcceptsRtuLessTwinTest,
+  runWidgetPointBoundsTheNamesTest,
   runWidgetPointCardinalityTests,
+  runWidgetPointRefusesWithoutLocationNameTest,
+  runWidgetPointRefusesWithoutRtuNameTest,
   waterBalanceDeclaresSevenColumnsAndPeriodParam,
   waterBalancePeriodVocabularyIsThreeTokens,
 } from "./dashboard-builder.spec";
@@ -118,5 +122,20 @@ describe("E4.3 — the water.balance catalog entry", () => {
 
   it("closes the period vocabulary to today, this_month and this_year", () => {
     waterBalancePeriodVocabularyIsThreeTokens();
+  });
+});
+
+describe("F4.316 PR 5 — the point binding names its asset's RTU and location (ADR 0111)", () => {
+  it("refuses a binding without assetRtuName", () => {
+    runWidgetPointRefusesWithoutRtuNameTest();
+  });
+  it("refuses a binding without assetLocationName", () => {
+    runWidgetPointRefusesWithoutLocationNameTest();
+  });
+  it("accepts the RTU-less twin", () => {
+    runWidgetPointAcceptsRtuLessTwinTest();
+  });
+  it("bounds both names to their varchar(255) columns", () => {
+    runWidgetPointBoundsTheNamesTest();
   });
 });
