@@ -5,7 +5,7 @@ import {
   anOrganizationWithNoReadableAssetIsNotRead,
   archivedAndDisabledRulesComeBack,
   assetIdNarrows,
-  fortyRowsAreCutToTwentyFive,
+  fortyRowsAreCutToAFittedPage,
   listRulesIsCalledPerOrganizationWithItsAssets,
   searchFiltersBeforeTheCap,
   itemsCarryTheAssetLabelParts,
@@ -22,7 +22,7 @@ describe("F4.278 — the copilot's list_rules read tool (ADR 0099 Amendment 8 D7
   it("does not read an organization with no readable asset", () => anOrganizationWithNoReadableAssetIsNotRead());
   it("returns archived and disabled rules", () => archivedAndDisabledRulesComeBack());
   it("filters by search before the cap", () => searchFiltersBeforeTheCap());
-  it("cuts 40 rows to 25 with truncated", () => fortyRowsAreCutToTwentyFive());
+  it("cuts 40 rows to a fitted page with truncated", () => fortyRowsAreCutToAFittedPage());
   it("narrows by assetId", () => assetIdNarrows());
   it("projects the rule's condition fields and drops the rest", () => theProjectionKeepsTheConditionAndDropsTheRest());
   it("carries the asset's RTU and location names (F4.316)", () => itemsCarryTheAssetLabelParts());

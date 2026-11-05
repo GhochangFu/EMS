@@ -42,7 +42,10 @@ const BUCKETS = [5, 1, 1, 1, 5, 1].map((value, i) => ({
 
 type Reads = { rule: number; sample: number; buckets: number; asset: number };
 
-function fakeDb(row: RuleRow | undefined, hasSample = true): { db: BmsDb; reads: Reads } {
+type AssetAnswer = { code: string; rtuName: string | null; locationName: string | null };
+const RTU_ASSET: AssetAnswer = { code: "CH-01", rtuName: "RTU 1", locationName: "Plant A" };
+
+function fakeDb(row: RuleRow | undefined, hasSample = true, asset: AssetAnswer = RTU_ASSET): { db: BmsDb; reads: Reads } {
   const reads: Reads = { rule: 0, sample: 0, buckets: 0, asset: 0 };
   const answer = (table: unknown): unknown[] => {
     if (table === automationRules) {
@@ -59,7 +62,7 @@ function fakeDb(row: RuleRow | undefined, hasSample = true): { db: BmsDb; reads:
     }
     if (table === assets) {
       reads.asset += 1;
-      return [{ code: "CH-01" }];
+      return [asset];
     }
     throw new Error("the check read an unexpected table");
   };
@@ -147,8 +150,8 @@ const TIME_WINDOW_BODY = {
 
 const THRESHOLD_ROW = ruleRow({ id: RULE, organizationId: ORG, assetId: ASSET, assetCode: "CH-01", pointKey: "supply_temp_c", thresholdValue: 3 });
 
-function service(row: RuleRow | null = THRESHOLD_ROW) {
-  const { db, reads } = fakeDb(row ?? undefined);
+function service(row: RuleRow | null = THRESHOLD_ROW, asset: AssetAnswer = RTU_ASSET) {
+  const { db, reads } = fakeDb(row ?? undefined, true, asset);
   const { rules, calls } = validator();
   return { check: new RuleProposalCheckService(db, rules as RulesService), reads, calls };
 }
@@ -180,7 +183,7 @@ export async function aCreateNoteSaysItWouldMatchNow(): Promise<void> {
 export async function aCreateNoteNamesTheCondition(): Promise<void> {
   const s = service();
   const { note } = await s.check.check({ entryId: "rule.create", params: {}, body: THRESHOLD_BODY, organizationId: ORG, now: NOW });
-  expect(note).toContain("Condition: CH-01 supply_temp_c above 3 (latest value; clear hold 120 s).");
+  expect(note).toContain("Condition: CH-01 · RTU 1 supply_temp_c above 3 (latest value; clear hold 120 s).");
 }
 
 /** A threshold create's note carries the 7-day backtest, labelled an estimate. */
@@ -279,7 +282,7 @@ export async function theNonArmingEntriesReadNoSampleAndShowTheCondition(): Prom
     const s = service();
     const { note } = await s.check.check({ entryId, params: { id: RULE }, body: {}, organizationId: ORG, now: NOW });
     expect([s.reads.sample, s.reads.buckets], entryId).toEqual([0, 0]);
-    expect(note, entryId).toContain("Condition: CH-01 supply_temp_c above 3 (latest value; clear hold 300 s).");
+    expect(note, entryId).toContain("Condition: CH-01 · RTU 1 supply_temp_c above 3 (latest value; clear hold 300 s).");
   }
 }
 
@@ -391,4 +394,18 @@ export async function anAssetCodeIsReadOncePerAsset(): Promise<void> {
   const s = batchService();
   await s.check.checkBatch({ rows: THREE, organizationId: ORG, now: NOW });
   expect(s.reads.asset).toBe(1);
+}
+
+/** `F4.316` (ADR 0111 decision 5): a stored rule's card names the asset by label; no RTU falls back to the location. */
+export async function aStoredRulesConditionNamesTheAssetByLabel(): Promise<void> {
+  const rtuLess = service(ruleRow({ ...THRESHOLD_ROW, assetRtuName: null }));
+  const { note } = await rtuLess.check.check({ entryId: "rule.archive", params: { id: RULE }, body: {}, organizationId: ORG, now: NOW });
+  expect(note).toContain("Condition: CH-01 · Plant A supply_temp_c above 3");
+}
+
+/** A draft carries no joined asset columns, so its label is read: RTU-bearing and RTU-less twin. */
+export async function aDraftsConditionReadsTheAssetLabel(): Promise<void> {
+  const rtuLess = service(THRESHOLD_ROW, { code: "CH-01", rtuName: null, locationName: "Plant A" });
+  const { note } = await rtuLess.check.check({ entryId: "rule.create", params: {}, body: THRESHOLD_BODY, organizationId: ORG, now: NOW });
+  expect(note).toContain("Condition: CH-01 · Plant A supply_temp_c above 3");
 }

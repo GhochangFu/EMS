@@ -7,6 +7,8 @@ import {
   anEqBacktestNamesTheMinuteAverage,
   anLtBacktestNamesTheMinuteLow,
   aCreateNoteNamesTheCondition,
+  aDraftsConditionReadsTheAssetLabel,
+  aStoredRulesConditionNamesTheAssetByLabel,
   aCreateNoteSaysItWouldMatchNow,
   anEnableOfADraftIsRefused,
   anEnableOfAHalfBuiltRuleIsRefused,
@@ -32,6 +34,8 @@ describe("F4.278 — the copilot's write-free rule check (ADR 0099 Amendment 8, 
   it("a create calls the validator as the route does", () => aCreateCallsTheValidatorAsTheRouteDoes());
   it("a create's note says it would match now", () => aCreateNoteSaysItWouldMatchNow());
   it("a create's note names the condition", () => aCreateNoteNamesTheCondition());
+  it("a stored rule's condition names the asset by label (ADR 0111)", () => aStoredRulesConditionNamesTheAssetByLabel());
+  it("a draft's condition reads the asset label (ADR 0111)", () => aDraftsConditionReadsTheAssetLabel());
   it("a create's note carries the backtest estimate", () => aCreateNoteCarriesTheBacktestEstimate());
   it("a gt backtest names the minute's highest value (ruling Q1)", () => aGtBacktestNamesTheMinuteHigh());
   it("an lt backtest names the minute's lowest value (ruling Q1)", () => anLtBacktestNamesTheMinuteLow());
