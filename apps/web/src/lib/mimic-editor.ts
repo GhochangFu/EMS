@@ -475,6 +475,10 @@ export function toWriteBody(layout: EditorLayout): MimicLayoutWriteBody {
       if (node.isSwitching) {
         out.isSwitching = true;
       }
+      // F4.307 (ADR 0081 Amendment 1): the same rule for a unit's point list.
+      if (node.pointKeys.length > 0) {
+        out.pointKeys = [...node.pointKeys];
+      }
       return out;
     }),
     pipes: layout.pipes.map((pipe) => ({ fromKey: pipe.fromKey, toKey: pipe.toKey })),

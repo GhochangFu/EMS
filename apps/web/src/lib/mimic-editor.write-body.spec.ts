@@ -153,3 +153,25 @@ export function anAbsentFieldReadsAsTheStoreWritesIt(): void {
     pointKeys: [],
   });
 }
+
+/**
+ * `F4.307` — a save replaces the whole layout, so a list the editor drops is a list the save
+ * clears. A roled unit's `pointKeys` round-trips in its order; an empty list is not sent.
+ */
+export function aUnitPointListRoundTrips(): void {
+  const body: MimicLayoutWriteBody = {
+    name: "L",
+    slug: "l",
+    canvasW: 40,
+    canvasH: 40,
+    symbolLibraries: ["core"],
+    nodes: [
+      { key: "u1", kind: "unit", symbol: "tank", label: "U1", roleCode: "ro", x: 0, y: 0, w: 10, h: 10, z: 0, pointKeys: ["level", "flow"] },
+      { key: "u2", kind: "unit", symbol: "tank", label: "U2", roleCode: "ro", x: 20, y: 0, w: 10, h: 10, z: 0 },
+    ],
+    pipes: [],
+  };
+  const out = toWriteBody(editorLayoutFromWriteBody(body));
+  expect(out).toEqual(body);
+  expect(out.nodes[1]).not.toHaveProperty("pointKeys");
+}
