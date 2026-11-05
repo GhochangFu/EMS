@@ -24,12 +24,14 @@ import {
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { AssetImagesPanel } from "../../components/assets/asset-images-panel";
 import { CalcPointBatchWizard } from "../../components/assets/calc-point-batch-wizard";
+import { TemplateAdoptWizard } from "../../components/assets/template-adopt-wizard";
 import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import { canWritePointKeys } from "../../lib/admin-access";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { batchCapProblem } from "../../lib/calc-point-draft";
+import { adoptionBulkState } from "../../lib/template-adoption";
 import type { AuthUser } from "../../stores/auth-store";
 
 type AssetsAdminPageProps = { user: AuthUser };
@@ -63,6 +65,8 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
   // `F4.311` PR 6a (ADR 0109 decision 5) — the rows the batch action applies to.
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [batchOpen, setBatchOpen] = useState(false);
+  // `F4.312` PR 3 (ADR 0109 Amendment 1 decision 5) — the same selection, adopting a template.
+  const [adoptOpen, setAdoptOpen] = useState(false);
 
   // ADR 0031 Amendment 1 — the plant vocabulary is data; a create opens on its first domain.
   const vocabQ = useQuery({
@@ -125,12 +129,14 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
   useEffect(() => {
     setSelectedIds(new Set());
     setBatchOpen(false);
+    setAdoptOpen(false);
   }, [activeFilter, search, locationId, rtuId, selection.locationId, selection.rtuId]);
 
   // Derived from `filtered`, never from the raw id set (the asset-points page's rule).
   const selectedRows = useMemo(() => filtered.filter((item) => selectedIds.has(item.id)), [filtered, selectedIds]);
   const allFilteredSelected = filtered.length > 0 && selectedRows.length === filtered.length;
   const capProblem = batchCapProblem(selectedRows.length);
+  const adoptState = adoptionBulkState(selectedRows);
 
   function toggleRow(id: string, checked: boolean): void {
     setSelectedIds((current) => {
@@ -217,11 +223,23 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
           >
             Add calculated point to {selectedRows.length} selected
           </button>
+          <button
+            type="button"
+            className="surface-button px-3 py-1.5 disabled:opacity-50"
+            disabled={!adoptState.enabled}
+            onClick={() => setAdoptOpen(true)}
+          >
+            Adopt a template for {selectedRows.length} selected
+          </button>
         </div>
         {capProblem ? (
           <p role="alert" className="text-xs text-critical-ink">
             {capProblem}
           </p>
+        ) : null}
+        {/* The empty selection's sentence is the button's own disabled state; the cap's is the line above. */}
+        {selectedRows.length > 0 && capProblem === null && adoptState.reason !== null ? (
+          <p className="text-xs text-ink-muted">{adoptState.reason}</p>
         ) : null}
         <table className="min-w-full text-sm">
           <thead>
@@ -321,6 +339,17 @@ export function AssetsAdminPage({ user }: AssetsAdminPageProps) {
           onCancel={() => setBatchOpen(false)}
           onDone={() => {
             setBatchOpen(false);
+            setSelectedIds(new Set());
+          }}
+        />
+      ) : null}
+
+      {adoptOpen && adoptState.enabled ? (
+        <TemplateAdoptWizard
+          assets={selectedRows}
+          onCancel={() => setAdoptOpen(false)}
+          onDone={() => {
+            setAdoptOpen(false);
             setSelectedIds(new Set());
           }}
         />

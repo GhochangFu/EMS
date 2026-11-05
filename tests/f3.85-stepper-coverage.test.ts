@@ -105,10 +105,9 @@ const CATALOG_IDS = COPILOT_CATALOG.map((entry) => entry.id);
  *
  * `F4.312` PR 2 (ADR 0099 Amendment 12) lands `assetTemplate.adopt` ahead of its wizard, which
  * is PR 3 (`template-adopt-wizard.tsx`: the points page and the asset list's bulk action).
+ * PR 3 wired it, so the list is empty again.
  */
-const NOT_YET: readonly { id: string; reason: string }[] = [
-  { id: "assetTemplate.adopt", reason: "F4.312 PR 3 wires the adopt wizard (points page and bulk action)" },
-];
+const NOT_YET: readonly { id: string; reason: string }[] = [];
 
 /** `F3.87` PR 5 / ruling Q1(a): each canvas entry, the editor page that is its form, and the write that page calls. */
 const CANVAS_ENTRIES: readonly { id: string; page: string; write: string }[] = [

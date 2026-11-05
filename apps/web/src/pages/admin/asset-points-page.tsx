@@ -38,6 +38,7 @@ import { AssetPointBulkEditPanel } from "../../components/assets/asset-point-bul
 import { CalcPointDeleteWizard } from "../../components/assets/calc-point-delete-wizard";
 import { CalcPointPanel } from "../../components/assets/calc-point-panel";
 import { MappingSheetPanel } from "../../components/assets/mapping-sheet-panel";
+import { TemplateAdoptWizard } from "../../components/assets/template-adopt-wizard";
 import {
   PointCalcBackfillField,
   PointCalcDraftProblems,
@@ -76,7 +77,7 @@ import {
   type OverrideDraft,
 } from "../../lib/asset-point-calc-override";
 import { backfillPollInterval, backfillProgressLabel } from "../../lib/calc-point-draft";
-import { canWritePointKeys } from "../../lib/admin-access";
+import { canWritePointKeys, isMasterDataAdmin } from "../../lib/admin-access";
 import { createKeyThenWritePoint } from "../../lib/new-point-key-draft";
 import { StatusPill } from "../../components/status-pill";
 import type { AuthUser } from "../../stores/auth-store";
@@ -354,6 +355,8 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
   const standalonePoints = standalone ? (calcPointsQ.data?.items ?? []) : [];
   const [addingCalcPoint, setAddingCalcPoint] = useState(false);
   const [deletingPointKey, setDeletingPointKey] = useState<string | null>(null);
+  // `F4.312` PR 3 (ADR 0109 Amendment 1 decision 5): the standalone card is the template-less asset's.
+  const [adoptOpen, setAdoptOpen] = useState(false);
 
   function afterOverride() {
     setOpenPointKey(null);
@@ -798,6 +801,11 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             >
               Add calculated point
             </button>
+            {isMasterDataAdmin(user.role) && assetSummaryQ.data ? (
+              <button type="button" className="surface-button px-3 py-1.5 text-xs" onClick={() => setAdoptOpen(true)}>
+                Adopt a template
+              </button>
+            ) : null}
           </div>
           {addingCalcPoint ? (
             <CalcPointPanel
@@ -879,6 +887,15 @@ export function AssetPointsAdminPage({ user }: AssetPointsAdminPageProps) {
             ),
           )}
         </SectionCard>
+      ) : null}
+
+      {adoptOpen && standalone && assetSummaryQ.data ? (
+        <TemplateAdoptWizard
+          // The standalone mode is the server's word that `template_id` is NULL (ADR 0109 decision 2).
+          assets={[{ ...assetSummaryQ.data, templateId: null }]}
+          onCancel={() => setAdoptOpen(false)}
+          onDone={() => setAdoptOpen(false)}
+        />
       ) : null}
 
       {editing !== null || opened !== null ? (
