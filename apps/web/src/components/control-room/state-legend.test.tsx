@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aSharedLabelIsToldApartByItsTone,
   drawsNoSwitchingGroupWhenThereAreNone,
+  eachGlyphDrawsInItsTonesLook,
   eachEntryDrawsTheMimicSwitchGlyph,
   keepsTheStateLegendGroupUnchangedBesideThem,
   listsEachSwitchingStateOnceInToneThenLabelOrder,
@@ -53,6 +55,14 @@ describe("F3.28 state legend", () => {
 
   it("F4.309 keeps the State legend group unchanged beside the switching states", async () => {
     await keepsTheStateLegendGroupUnchangedBesideThem();
+  });
+
+  it("F4.309 tells a shared label apart by its tone (review M2)", async () => {
+    await aSharedLabelIsToldApartByItsTone();
+  });
+
+  it("F4.309 draws each glyph in its tone's look (review L5)", async () => {
+    await eachGlyphDrawsInItsTonesLook();
   });
 
   it("F4.309 draws no switching group when there are no switching states", async () => {

@@ -15,8 +15,8 @@ describe("F4.309 state-labels web client", () => {
   const cases = Object.entries(spec);
 
   it("has its claims", () => {
-    if (cases.length < 12) {
-      throw new Error(`expected at least 12 claims, found ${cases.length}`);
+    if (cases.length < 13) {
+      throw new Error(`expected at least 13 claims, found ${cases.length}`);
     }
   });
 

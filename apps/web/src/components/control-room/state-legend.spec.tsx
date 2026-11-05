@@ -2,7 +2,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import { expect, vi } from "vitest";
 
-import type { AlarmSeverityDto, SwitchingStateDto, VocabulariesResponse } from "@bms/shared";
+import type { AlarmSeverityDto, PointKeyStateTone, SwitchingStateDto, VocabulariesResponse } from "@bms/shared";
+
+import { BREAKER_LOOK_CLASSES, breakerLook } from "../../lib/mimic-breaker";
 
 import { StateLegend } from "./state-legend";
 
@@ -102,27 +104,31 @@ export async function omitsAnInactiveSeverity(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
- * The seven seeded rows plus two admin rows, out of every order on purpose: the valve and the
- * damper repeat `(OPEN, flowing)` and `(CLOSED, shut)`, `EARTHED` shares the `open` tone with
- * `OPEN` and sorts before it, and one label is markup, which must render as its own text.
+ * The seven rows of `POINT_KEY_STATE_SEED` plus two admin rows, out of every order on purpose: the
+ * valve and the damper repeat `(OPEN, flowing)` and `(SHUT, shut)`, `OPEN` is both a breaker's
+ * `open` and a valve's `flowing`, `EARTHED` shares the `open` tone with `OPEN` and sorts before it,
+ * and one label is markup, which must render as its own text.
  */
 const SWITCHING: SwitchingStateDto[] = [
-  { pointKey: "valve_open", value: 0, label: "CLOSED", tone: "shut" },
+  { pointKey: "valve_open", value: 0, label: "SHUT", tone: "shut" },
   { pointKey: "breaker_trip", value: 1, label: "TRIPPED", tone: "tripped" },
   { pointKey: "damper_open", value: 1, label: "OPEN", tone: "flowing" },
   { pointKey: "breaker_main", value: 0, label: "OPEN", tone: "open" },
   { pointKey: "valve_open", value: 1, label: "OPEN", tone: "flowing" },
   { pointKey: "breaker_main", value: 1, label: "CLOSED", tone: "closed" },
-  { pointKey: "damper_open", value: 0, label: "CLOSED", tone: "shut" },
+  { pointKey: "damper_open", value: 0, label: "SHUT", tone: "shut" },
   { pointKey: "isolator_pos", value: 2, label: "EARTHED", tone: "open" },
   { pointKey: "isolator_pos", value: 3, label: "<b>TEST</b>", tone: "tripped" },
 ];
 
-/** The switching group's entries, as `[label, data-breaker-state]`, in DOM order. */
+/** The switching group's entries, as `[visible label, data-breaker-state]`, in DOM order. */
 async function switchingEntries(): Promise<[string, string | null][]> {
   const group = await screen.findByRole("group", { name: "Switching states" });
   return Array.from(group.children).map((child) => [
-    child.textContent ?? "",
+    Array.from(child.childNodes)
+      .filter((node) => node.nodeType === Node.TEXT_NODE)
+      .map((node) => node.textContent)
+      .join(""),
     child.querySelector("[data-breaker-state]")?.getAttribute("data-breaker-state") ?? null,
   ]);
 }
@@ -140,8 +146,37 @@ export async function listsEachSwitchingStateOnceInToneThenLabelOrder(): Promise
     ["<b>TEST</b>", "tripped"],
     ["TRIPPED", "tripped"],
     ["OPEN", "flowing"],
-    ["CLOSED", "shut"],
+    ["SHUT", "shut"],
   ]);
+}
+
+/**
+ * Review M2 — a breaker's OPEN and a valve's OPEN draw opposite switches, so the two entries must
+ * not read alike: each carries its tone as a visually hidden suffix (its text, so its accessible
+ * name) and as its `title`.
+ */
+export async function aSharedLabelIsToldApartByItsTone(): Promise<void> {
+  renderLegend(SEVERITIES, SWITCHING);
+  const group = await screen.findByRole("group", { name: "Switching states" });
+  const opens = Array.from(group.children).filter((child) => child.getAttribute("title")?.startsWith("OPEN"));
+  expect(opens.map((child) => child.textContent)).toEqual(["OPEN (open)", "OPEN (flowing)"]);
+  expect(opens.map((child) => child.getAttribute("title"))).toEqual(["OPEN (open)", "OPEN (flowing)"]);
+  for (const child of opens) {
+    expect(child.querySelector(".sr-only")?.textContent).toMatch(/^ \((open|flowing)\)$/);
+  }
+}
+
+/** Review L5 — each glyph draws in `breakerLook(tone, null)`'s ink, so a constant look fails. */
+export async function eachGlyphDrawsInItsTonesLook(): Promise<void> {
+  renderLegend(SEVERITIES, SWITCHING);
+  const group = await screen.findByRole("group", { name: "Switching states" });
+  const glyphs = Array.from(group.querySelectorAll('[data-testid="mimic-breaker-switch"]'));
+  expect(glyphs.length).toBeGreaterThan(0);
+  for (const glyph of glyphs) {
+    const tone = glyph.getAttribute("data-breaker-state") as PointKeyStateTone;
+    expect(glyph.getAttribute("class")).toBe(BREAKER_LOOK_CLASSES[breakerLook(tone, null)].ink);
+  }
+  expect(new Set(glyphs.map((glyph) => glyph.getAttribute("class"))).size).toBeGreaterThan(1);
 }
 
 /** Each entry draws the mimic's switch (`BreakerSwitch`), hidden from a screen reader; the label names it. */

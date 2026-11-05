@@ -172,3 +172,16 @@ export async function aWriteInvalidatesTheListAndTheVocabularies(): Promise<void
     ["vocabularies"],
   ]);
 }
+
+/** A 403 on a delete keeps the session: a refusal is not an expired token. */
+export async function a403OnADeleteKeepsTheSession(): Promise<void> {
+  signIn();
+  try {
+    stubFetch(403, { message: "Forbidden" });
+    const error = await caught(deleteAdminPointKeyState(ID));
+    expect((error as ApiError).status).toBe(403);
+    expect(useAuthStore.getState().accessToken).toBe(TOKEN);
+  } finally {
+    useAuthStore.getState().clearSession();
+  }
+}

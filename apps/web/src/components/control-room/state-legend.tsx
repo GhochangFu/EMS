@@ -44,7 +44,8 @@ function switchingEntries(states: readonly SwitchingStateDto[]): SwitchingEntry[
  * points (`/vocabularies` `switchingStates`, the rows the mimic reads), each beside the mimic's own
  * switch drawing in its tone (`BreakerSwitch` with `breakerLook(tone, null)`, owner ruling Q6), so
  * the key looks like the diagram. The glyph is `aria-hidden`; the label names the entry and is
- * rendered as text. No switching state, no group. The "State legend" group above is unchanged.
+ * rendered as text. One label can carry two tones (a breaker's OPEN, a valve's flowing OPEN), so
+ * each entry also says its tone: a visually hidden suffix, and its `title`. No switching state, no group. The "State legend" group above is unchanged.
  */
 export function StateLegend() {
   const vocabQ = useQuery({
@@ -72,6 +73,7 @@ export function StateLegend() {
           {switching.map((entry) => (
             <span
               key={`${entry.tone}:${entry.label}`}
+              title={`${entry.label} (${entry.tone})`}
               className="inline-flex items-center gap-1 rounded-full border border-line px-2 py-0.5 text-[10.5px] font-semibold uppercase text-ink-muted"
             >
               <svg viewBox="0 0 24 24" className="h-3 w-3" aria-hidden="true">
@@ -86,6 +88,7 @@ export function StateLegend() {
                 />
               </svg>
               {entry.label}
+              <span className="sr-only">{` (${entry.tone})`}</span>
             </span>
           ))}
         </div>

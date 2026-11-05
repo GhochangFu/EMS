@@ -18,6 +18,7 @@ import { PageHeader } from "../../components/page-header";
 import { SectionCard } from "../../components/section-card";
 import { StatusPill } from "../../components/status-pill";
 import { isGlobalAdmin } from "../../lib/admin-access";
+import { parseStateValue } from "../../lib/point-key-state-value";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import type { AuthUser } from "../../stores/auth-store";
 
@@ -36,16 +37,6 @@ const EMPTY_FORM: FormState = { pointKey: "", value: "", label: "", tone: "close
 
 /** `null` for open, `"create"` for Add, the row for Edit. */
 type Editing = "create" | AdminPointKeyStateDto | null;
-
-/**
- * Owner ruling Q7 (a): any finite number. `Number` alone reads `""` and `" "` as `0`, so blank text
- * is refused first; `Infinity` and text are refused by `Number.isFinite`.
- */
-function parseValue(text: string): number | null {
-  if (text.trim() === "") return null;
-  const value = Number(text);
-  return Number.isFinite(value) ? value : null;
-}
 
 /**
  * `F4.309` (ADR 0088 Amendment 3, plan C14) — the State Labels screen: which value of a switching
@@ -101,7 +92,7 @@ function StateLabelsCatalog() {
     mutationFn: async (target: "create" | AdminPointKeyStateDto) => {
       const label = form.label.trim();
       if (target === "create") {
-        const value = parseValue(form.value) as number;
+        const value = parseStateValue(form.value) as number;
         return createAdminPointKeyState({ pointKey: form.pointKey, value, label, tone: form.tone });
       }
       return updateAdminPointKeyState(target.id, { label, tone: form.tone });
@@ -142,7 +133,7 @@ function StateLabelsCatalog() {
       setError(KEY_ERROR);
       return;
     }
-    if (editing === "create" && parseValue(form.value) === null) {
+    if (editing === "create" && parseStateValue(form.value) === null) {
       setError(VALUE_ERROR);
       return;
     }
@@ -185,6 +176,8 @@ function StateLabelsCatalog() {
           <tbody>
             {items.map((item) => {
               const deletingThis = deleteMutation.isPending && deleteMutation.variables?.id === item.id;
+              // Review L7: each row's buttons name the row ("Edit breaker_main = 2").
+              const rowName = `${item.pointKey} = ${item.value}`;
               return (
                 <tr key={item.id} className="border-b border-well-deep">
                   <td className="px-2 py-2 font-mono">{item.pointKey}</td>
@@ -198,6 +191,7 @@ function StateLabelsCatalog() {
                       <div className="flex gap-2">
                         <button
                           type="button"
+                          aria-label={`Edit ${rowName}`}
                           className="text-xs font-semibold text-accent-strong"
                           onClick={() => openEdit(item)}
                         >
@@ -208,6 +202,7 @@ function StateLabelsCatalog() {
                           className="text-xs font-semibold text-critical-ink"
                           disabled={deleteMutation.isPending}
                           aria-busy={deletingThis}
+                          aria-label={deletingThis ? `Deleting ${rowName}` : `Delete ${rowName}`}
                           onClick={() => {
                             setDeleteError(null);
                             setConfirming(item);

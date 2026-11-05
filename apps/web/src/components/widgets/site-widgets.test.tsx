@@ -4,6 +4,7 @@ import { afterEach, describe, it } from "vitest";
 import {
   aCardOnAHealthyTabReadsNormal,
   aLongLegendTitleTruncatesAndKeepsThePills,
+  theLegendWidgetDrawsTheSwitchingStates,
   anInfoAlarmBesideAnOfflineMemberReadsOffline,
   anInfoAlarmWithNoOfflineMemberReadsItsLabel,
   anUnlistedSeverityBesideAnOfflineMemberKeepsItsCode,
@@ -92,6 +93,9 @@ describe("F3.73 site widgets — presentation", () => {
   });
   it("SW33 a long legend title truncates and keeps the pills (F3.77 review)", async () => {
     await aLongLegendTitleTruncatesAndKeepsThePills();
+  });
+  it("SW34 the legend widget draws the switching states in its wrapping row (F4.309 review M1)", async () => {
+    await theLegendWidgetDrawsTheSwitchingStates();
   });
   it("SW7 the strip draws one pill per role", () => {
     theStripDrawsOnePillPerRole();

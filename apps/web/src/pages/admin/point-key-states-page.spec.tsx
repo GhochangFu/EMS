@@ -51,6 +51,9 @@ const CUSTOM: AdminPointKeyStateDto = {
   seeded: false,
 };
 const LIST: AdminPointKeyStatesListResponse = { items: [SEEDED, CUSTOM] };
+/** Review L7: a row button names its row, so a screen reader's button list tells the rows apart. */
+const EDIT_NAME = "Edit isolator_pos = 2.5";
+const DELETE_NAME = "Delete isolator_pos = 2.5";
 
 function pointKey(code: string): AdminPointKeyDto {
   return {
@@ -142,8 +145,8 @@ export async function aSeededRowShowsSeededAndNoControls(): Promise<void> {
   expect(within(seeded).queryAllByRole("button")).toHaveLength(0);
   const custom = await rowOf(CUSTOM.label);
   expect(within(custom).queryByText("Seeded")).toBeNull();
-  expect(within(custom).getByRole("button", { name: "Edit" })).toBeInTheDocument();
-  expect(within(custom).getByRole("button", { name: "Delete" })).toBeInTheDocument();
+  expect(within(custom).getByRole("button", { name: EDIT_NAME })).toBeInTheDocument();
+  expect(within(custom).getByRole("button", { name: DELETE_NAME })).toBeInTheDocument();
 }
 
 /** The key picker offers the active point keys, read through the shared `"true"` filter. */
@@ -180,14 +183,14 @@ export async function addPostsTheParsedValueAndTheTrimmedLabel(): Promise<void> 
   });
 }
 
-/** A value that is not a finite number is refused before any request: text, empty, Infinity. */
+/** A value that is not a finite decimal number is refused before any request: text, blank, Infinity, hex. */
 export async function aValueThatIsNotANumberIsRefused(): Promise<void> {
   const user = userEvent.setup();
   renderPage(admin);
   const dialog = await openAdd(user);
   await fillAdd(user, dialog, { value: "two", label: "TWO" });
   const value = within(dialog).getByLabelText("Value");
-  for (const text of ["two", " ", "Infinity"]) {
+  for (const text of ["two", " ", "Infinity", "0x1"]) {
     await user.clear(value);
     await user.type(value, text);
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
@@ -210,7 +213,7 @@ export async function theLabelStopsAtThirtyTwoCharacters(): Promise<void> {
 export async function editSendsLabelAndToneOnly(): Promise<void> {
   const user = userEvent.setup();
   renderPage(admin);
-  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: "Edit" }));
+  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: EDIT_NAME }));
   const dialog = await screen.findByRole("dialog", { name: "Edit state label" });
   expect(within(dialog).queryByLabelText("Point key")).toBeNull();
   expect(within(dialog).queryByLabelText("Value")).toBeNull();
@@ -229,7 +232,7 @@ export async function editSendsLabelAndToneOnly(): Promise<void> {
 export async function deleteAsksFirstThenSendsTheId(): Promise<void> {
   const user = userEvent.setup();
   renderPage(admin);
-  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: "Delete" }));
+  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: DELETE_NAME }));
   const confirm = await screen.findByRole("dialog", { name: "Delete state label" });
   expect(confirm.textContent).toContain(CUSTOM.label);
   expect(api.deleteAdminPointKeyState).toHaveBeenCalledTimes(0);
@@ -242,7 +245,7 @@ export async function deleteAsksFirstThenSendsTheId(): Promise<void> {
 export async function cancellingTheDeleteSendsNothing(): Promise<void> {
   const user = userEvent.setup();
   renderPage(admin);
-  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: "Delete" }));
+  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: DELETE_NAME }));
   const confirm = await screen.findByRole("dialog", { name: "Delete state label" });
   await user.click(within(confirm).getByRole("button", { name: "Cancel" }));
   expect(screen.queryByRole("dialog", { name: "Delete state label" })).toBeNull();
@@ -259,7 +262,7 @@ export async function aSaveInvalidatesTheListAndTheVocabularies(): Promise<void>
   const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
   const user = userEvent.setup();
   renderPage(admin);
-  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: "Edit" }));
+  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: EDIT_NAME }));
   const dialog = await screen.findByRole("dialog", { name: "Edit state label" });
   await user.click(within(dialog).getByRole("button", { name: "Save" }));
   await waitFor(() => expect(invalidatedKeys(invalidate)).toContainEqual(["admin", "point-key-states"]));
@@ -271,7 +274,7 @@ export async function aDeleteInvalidatesTheListAndTheVocabularies(): Promise<voi
   const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries");
   const user = userEvent.setup();
   renderPage(admin);
-  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: "Delete" }));
+  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: DELETE_NAME }));
   await user.click(await screen.findByRole("button", { name: "Delete state label" }));
   await waitFor(() => expect(invalidatedKeys(invalidate)).toContainEqual(["admin", "point-key-states"]));
   expect(invalidatedKeys(invalidate)).toContainEqual(["vocabularies"]);
@@ -296,7 +299,7 @@ export async function aRefusedDeleteShowsTheSentence(): Promise<void> {
   const user = userEvent.setup();
   renderPage(admin);
   vi.mocked(api.deleteAdminPointKeyState).mockImplementation(refusedWith(400, "That state label cannot be deleted"));
-  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: "Delete" }));
+  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: DELETE_NAME }));
   await user.click(await screen.findByRole("button", { name: "Delete state label" }));
   const banner = await screen.findByText(/That state label cannot be deleted/);
   expect(banner.textContent).not.toContain('{"');
@@ -307,7 +310,7 @@ export async function aPendingSaveNamesItself(): Promise<void> {
   const user = userEvent.setup();
   renderPage(admin);
   vi.mocked(api.updateAdminPointKeyState).mockImplementation(() => new Promise(() => undefined));
-  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: "Edit" }));
+  await user.click(within(await rowOf(CUSTOM.label)).getByRole("button", { name: EDIT_NAME }));
   const dialog = await screen.findByRole("dialog", { name: "Edit state label" });
   await user.click(within(dialog).getByRole("button", { name: "Save" }));
   const saving = await within(dialog).findByRole("button", { name: "Saving…" });
@@ -315,17 +318,18 @@ export async function aPendingSaveNamesItself(): Promise<void> {
   expect(saving).toBeDisabled();
 }
 
-/** While a delete is in flight the row's button is named "Deleting…" and busy. */
+/** While a delete is in flight the row's button is named "Deleting <row>" and busy, and reads "Deleting…". */
 export async function aPendingDeleteNamesItsRow(): Promise<void> {
   const user = userEvent.setup();
   renderPage(admin);
   vi.mocked(api.deleteAdminPointKeyState).mockImplementation(() => new Promise(() => undefined));
   const row = await rowOf(CUSTOM.label);
-  await user.click(within(row).getByRole("button", { name: "Delete" }));
+  await user.click(within(row).getByRole("button", { name: DELETE_NAME }));
   await user.click(await screen.findByRole("button", { name: "Delete state label" }));
-  const deleting = await within(row).findByRole("button", { name: "Deleting…" });
+  const deleting = await within(row).findByRole("button", { name: "Deleting isolator_pos = 2.5" });
   expect(deleting).toHaveAttribute("aria-busy", "true");
   expect(deleting).toBeDisabled();
+  expect(deleting.textContent).toBe("Deleting…");
 }
 
 /**
