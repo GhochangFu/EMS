@@ -14,6 +14,8 @@ const MIGRATION_0060 = "packages/db/drizzle/0060_asset_role_estate_shapes.sql";
 const MIGRATION_0087 = "packages/db/drizzle/0087_asset_roles_water_train.sql";
 // `F3.74` — the five breaker roles; a preset may name them.
 const MIGRATION_0097 = "packages/db/drizzle/0097_point_key_states_breaker_roles_asset_rating_and_layout_flags.sql";
+// `F4.319` (ADR 0113) — `dosing-pump` and `rtu-controller`, which the pump-station presets name.
+const MIGRATION_0127 = "packages/db/drizzle/0127_pump_station_roles.sql";
 const CONTRACT_REL = "packages/shared/src/contracts/mimic-layouts.ts";
 const PRESETS_REL = "packages/shared/src/mimic-presets.ts";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
@@ -236,13 +238,14 @@ describe("F3.32d — migration 0089: the symbol CHECK restated and eighteen role
     }
   });
 
-  it("every roleCode in mimic-presets.ts is inserted by 0051, 0060, 0087, 0089 or 0097", () => {
+  it("every roleCode in mimic-presets.ts is inserted by 0051, 0060, 0087, 0089, 0097 or 0127", () => {
     const codes = [...read(PRESETS_REL).matchAll(/roleCode:\s*"([a-z0-9_-]+)"/g)].map((m) => m[1] as string);
     // Positive control: the parse finds all seven presets' role codes (8+7+5+6+4+4+5, plus lv_single_line's 13 nodes less its
     // two passive buses = 11, since a `null` role carries no quoted code), not only water_train's.
-    expect(codes).toHaveLength(50);
+    // 60 since `F4.319`: + the pump-station presets' 4 + 3 + 3 roled nodes.
+    expect(codes).toHaveLength(60);
     const known = new Set(
-      [MIGRATION_0051, MIGRATION_0060, MIGRATION_0087, MIGRATION_0097, MIGRATION_REL].flatMap((rel) =>
+      [MIGRATION_0051, MIGRATION_0060, MIGRATION_0087, MIGRATION_0097, MIGRATION_0127, MIGRATION_REL].flatMap((rel) =>
         insertedRoles(rel).map((r) => r.code),
       ),
     );

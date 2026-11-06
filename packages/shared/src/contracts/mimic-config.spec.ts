@@ -84,9 +84,13 @@ export function mimicPresetVocabularyIsTheSevenDomainPresets(): void {
     "environment_monitoring",
     "facility_services",
     "lv_single_line",
+    // `F4.319` (ADR 0113 decision 1) — appended.
+    "pump_station_overview",
+    "pump_station_electrical",
+    "pump_station_environment",
   ];
   assert(
     JSON.stringify(mimicPresetSchema.options) === JSON.stringify(expected),
-    `the preset vocabulary is ADR 0082's seven plus F3.74's lv_single_line, water_train first, got ${JSON.stringify(mimicPresetSchema.options)}`,
+    `the preset vocabulary is ADR 0082's seven plus F3.74's lv_single_line and F4.319's three, water_train first, got ${JSON.stringify(mimicPresetSchema.options)}`,
   );
 }

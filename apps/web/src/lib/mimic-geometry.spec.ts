@@ -206,7 +206,8 @@ const DOMAIN_PRESETS = mimicPresetSchema.options.filter((p) => p !== "water_trai
 
 /** G12 — each domain preset draws one unit per preset node, in preset order. */
 export function domainPresetsDrawEveryNode(): void {
-  expect(DOMAIN_PRESETS).toHaveLength(7);
+  // Ten since `F4.319` (ADR 0113): the three pump-station presets.
+  expect(DOMAIN_PRESETS).toHaveLength(10);
   for (const p of DOMAIN_PRESETS) {
     expect(presetGeometry(p).units.map((u) => u.key), p).toEqual(MIMIC_PRESETS[p].nodes.map((n) => n.key));
   }

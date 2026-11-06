@@ -147,8 +147,11 @@ export function runDashboardBuilderTests(): void {
         "environment_monitoring",
         "facility_services",
         "lv_single_line",
+        "pump_station_overview",
+        "pump_station_electrical",
+        "pump_station_environment",
       ]),
-    `the preset vocabulary is ADR 0082's seven plus F3.74's lv_single_line, water_train first, got ${JSON.stringify(mimicPresetSchema.options)}`,
+    `the preset vocabulary is ADR 0082's seven plus F3.74's lv_single_line and F4.319's three, water_train first, got ${JSON.stringify(mimicPresetSchema.options)}`,
   );
   expectRejects(
     mimicConfigSchema,

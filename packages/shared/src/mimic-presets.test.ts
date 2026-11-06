@@ -14,6 +14,9 @@ import {
   presetKeysEqualTheEnumBothWays,
   presetNodeCountsAreThePlanTable,
   waterTrainHasEightUniqueNodes,
+  everyPumpStationEquipmentNodeFansOut,
+  presetPointKeysAreAtMostThreeAndOnlyOnTheNewPresets,
+  pumpStationPresetsAreTheAdrTables,
 } from "./mimic-presets.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -58,7 +61,7 @@ describe("F3.32 / F3.32d — the mimic preset definitions (ADR 0079 decision 2, 
     environmentMonitoringHasNoPipes();
   });
 
-  it("draws 8, 7, 5, 6, 4, 4, 5 and 13 nodes, in enum order", () => {
+  it("draws 8, 7, 5, 6, 4, 4, 5, 13, 6, 5 and 4 nodes, in enum order", () => {
     presetNodeCountsAreThePlanTable();
   });
 
@@ -68,5 +71,17 @@ describe("F3.32 / F3.32d — the mimic preset definitions (ADR 0079 decision 2, 
 
   it("leaves lv_single_line's two buses passive", () => {
     lvSingleLineBusesArePassive();
+  });
+
+  it("draws the three pump-station presets as ADR 0113 decision 1 tables them", () => {
+    pumpStationPresetsAreTheAdrTables();
+  });
+
+  it("fans out every pump-station equipment node", () => {
+    everyPumpStationEquipmentNodeFansOut();
+  });
+
+  it("lists 1 to 3 point keys on a roled node of the new presets only", () => {
+    presetPointKeysAreAtMostThreeAndOnlyOnTheNewPresets();
   });
 });

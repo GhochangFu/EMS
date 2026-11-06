@@ -22,12 +22,19 @@ type MimicPreset = z.infer<typeof mimicPresetSchema>;
  * `fanOut` (`F3.74` plan D4) makes the node stand for every member of its role, up to the
  * resolver's cap, rather than the first one; optional, so a node that does not fan out leaves
  * the key out.
+ *
+ * `pointKeys` (`F4.319`, ADR 0113 decision 2) names the points the node shows, at most three,
+ * each a `bms.point_keys` code — the preset half of the `F4.307` unit list. The rule is the
+ * layout unit's: an absent list means the node shows its top three by headline rank, and a
+ * listed key the asset lacks is left out. Optional, so the eight earlier presets list nothing
+ * and do not change.
  */
 export type MimicPresetNode = {
   readonly key: string;
   readonly label: string;
   readonly roleCode: string | null;
   readonly fanOut?: true;
+  readonly pointKeys?: readonly string[];
 };
 
 /** One pipe between two nodes of the same preset, drawn in flow direction. */
@@ -228,5 +235,77 @@ export const MIMIC_PRESETS = {
       { from: "mains_feeders", to: "lighting" },
     ],
     sources: ["incoming"],
+  },
+  /**
+   * `F4.319` (ADR 0113 decision 1, rulings Q1, Q2, Q4, Q5) — a PHE pump station on the
+   * `pump-station` group: the water path tube well → main pumps → overhead reservoir, chlorine
+   * dosing into the delivery line, and the meters and RTU-health units beside the path without
+   * pipes (a pipe joins two units of the water path). The source and the delivery are passive:
+   * no PHE asset stands for a well or a tank. Every equipment node fans out, so trains I and II
+   * draw as one tile each.
+   */
+  pump_station_overview: {
+    label: "Pump station overview",
+    nodes: [
+      { key: "source", label: "Tube well / raw water", roleCode: null },
+      { key: "main_pump", label: "Main pumps", roleCode: "pump", fanOut: true, pointKeys: ["breaker_main"] },
+      { key: "delivery", label: "Overhead reservoir / distribution", roleCode: null },
+      { key: "dosing", label: "Chlorine dosing", roleCode: "dosing-pump", fanOut: true, pointKeys: ["chlorine_pump_on"] },
+      { key: "meter", label: "Energy meters", roleCode: "meter", fanOut: true, pointKeys: ["kw", "kwh_total", "pf"] },
+      {
+        key: "rtu",
+        label: "RTU health",
+        roleCode: "rtu-controller",
+        fanOut: true,
+        pointKeys: ["battery_charge_pct", "network_strength", "controller_power_status"],
+      },
+    ],
+    pipes: [
+      { from: "source", to: "main_pump" },
+      { from: "main_pump", to: "delivery" },
+      { from: "dosing", to: "delivery" },
+    ],
+  },
+  /**
+   * `F4.319` (ADR 0113 decision 1) — a pump station's electrical side on the `electrical` group:
+   * grid supply → energy meters → LT bus, then the main pump starters and the chlorine pump
+   * feeders. The supply and the bus are passive. `incoming` is the one source `energiseGraph`
+   * starts from. No RTU node: the RTU-health units are not in the `electrical` group (Q4).
+   */
+  pump_station_electrical: {
+    label: "Pump station electrical",
+    nodes: [
+      { key: "incoming", label: "Grid supply 415 V", roleCode: null },
+      { key: "meter", label: "Energy meters", roleCode: "meter", fanOut: true, pointKeys: ["kw", "voltage_vry", "current_ir"] },
+      { key: "lt_bus", label: "LT bus", roleCode: null },
+      { key: "main_pump", label: "Main pump starters", roleCode: "pump", fanOut: true, pointKeys: ["breaker_main"] },
+      { key: "dosing", label: "Chlorine pump feeders", roleCode: "dosing-pump", fanOut: true, pointKeys: ["chlorine_pump_on"] },
+    ],
+    pipes: [
+      { from: "incoming", to: "meter" },
+      { from: "meter", to: "lt_bus" },
+      { from: "lt_bus", to: "main_pump" },
+      { from: "lt_bus", to: "dosing" },
+    ],
+    sources: ["incoming"],
+  },
+  /**
+   * `F4.319` (ADR 0113 decision 1, ruling Q7) — RTU health only, on the `environment` group:
+   * mains → RTU controllers → battery and GSM network. No node for a sensor that does not exist.
+   * Three nodes bind the same assets on purpose, so each point has its own node.
+   */
+  pump_station_environment: {
+    label: "Pump station environment",
+    nodes: [
+      { key: "mains", label: "Mains supply", roleCode: null },
+      { key: "rtu", label: "RTU controllers", roleCode: "rtu-controller", fanOut: true, pointKeys: ["controller_power_status"] },
+      { key: "battery", label: "Battery", roleCode: "rtu-controller", fanOut: true, pointKeys: ["battery_charge_pct"] },
+      { key: "network", label: "GSM network", roleCode: "rtu-controller", fanOut: true, pointKeys: ["network_strength"] },
+    ],
+    pipes: [
+      { from: "mains", to: "rtu" },
+      { from: "rtu", to: "battery" },
+      { from: "rtu", to: "network" },
+    ],
   },
 } as const satisfies Record<MimicPreset, MimicPresetDef>;

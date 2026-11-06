@@ -4,6 +4,7 @@ import {
   alarmWinsOverFreshness,
   calloutTextIsCutByCodePoint,
   everyBreakerRoleFanOutNodeDrawsTheBreakerGlyph,
+  pumpStationPresetsDrawCoreSymbolsAndNoBreaker,
   glyphMapCoversEveryPresetNode,
   levelFractionClamps,
   levelPointNeedsLevelAndPercent,
@@ -119,6 +120,10 @@ describe("F3.32 U4 — the plant mimic's pure half", () => {
   });
   it("M17 every breaker-role fan-out node draws the breaker glyph (F3.74)", () => {
     everyBreakerRoleFanOutNodeDrawsTheBreakerGlyph();
+  });
+
+  it("M18 the pump-station presets draw core symbols and no breaker (F4.319)", () => {
+    pumpStationPresetsDrawCoreSymbolsAndNoBreaker();
   });
   it("M9a a level point is a level key in %", () => {
     levelPointNeedsLevelAndPercent();

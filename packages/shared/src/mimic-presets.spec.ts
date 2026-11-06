@@ -131,8 +131,8 @@ export function environmentMonitoringHasNoPipes(): void {
 export function presetNodeCountsAreThePlanTable(): void {
   const counts = mimicPresetSchema.options.map((preset) => MIMIC_PRESETS[preset].nodes.length);
   assert(
-    JSON.stringify(counts) === JSON.stringify([8, 7, 5, 6, 4, 4, 5, 13]),
-    `node counts in enum order must be [8,7,5,6,4,4,5,13], got ${JSON.stringify(counts)}`,
+    JSON.stringify(counts) === JSON.stringify([8, 7, 5, 6, 4, 4, 5, 13, 6, 5, 4]),
+    `node counts in enum order must be [8,7,5,6,4,4,5,13,6,5,4], got ${JSON.stringify(counts)}`,
   );
 }
 
@@ -160,4 +160,98 @@ export function lvSingleLineBusesArePassive(): void {
     JSON.stringify(passive) === JSON.stringify(["main_bus", "load_bus"]),
     `only main_bus and load_bus are passive, got ${JSON.stringify(passive)}`,
   );
+}
+
+/** `F4.319` — a node's topology as ADR 0113 decision 1's tables state it: key, role, points. */
+type NodeRow = readonly [key: string, roleCode: string | null, pointKeys: readonly string[]];
+
+const nodeRows = (def: MimicPresetDef): NodeRow[] =>
+  def.nodes.map((node) => [node.key, node.roleCode, node.pointKeys ?? []] as const);
+
+/**
+ * ADR 0113 decision 1 — the three pump-station presets, literal from the ADR's tables, so the
+ * preset cannot drift from the record by editing one side.
+ */
+const ADR_0113_PRESETS: Readonly<Record<string, { nodes: NodeRow[]; pipes: [string, string][]; sources?: string[] }>> = {
+  pump_station_overview: {
+    nodes: [
+      ["source", null, []],
+      ["main_pump", "pump", ["breaker_main"]],
+      ["delivery", null, []],
+      ["dosing", "dosing-pump", ["chlorine_pump_on"]],
+      ["meter", "meter", ["kw", "kwh_total", "pf"]],
+      ["rtu", "rtu-controller", ["battery_charge_pct", "network_strength", "controller_power_status"]],
+    ],
+    pipes: [["source", "main_pump"], ["main_pump", "delivery"], ["dosing", "delivery"]],
+  },
+  pump_station_electrical: {
+    nodes: [
+      ["incoming", null, []],
+      ["meter", "meter", ["kw", "voltage_vry", "current_ir"]],
+      ["lt_bus", null, []],
+      ["main_pump", "pump", ["breaker_main"]],
+      ["dosing", "dosing-pump", ["chlorine_pump_on"]],
+    ],
+    pipes: [["incoming", "meter"], ["meter", "lt_bus"], ["lt_bus", "main_pump"], ["lt_bus", "dosing"]],
+    sources: ["incoming"],
+  },
+  pump_station_environment: {
+    nodes: [
+      ["mains", null, []],
+      ["rtu", "rtu-controller", ["controller_power_status"]],
+      ["battery", "rtu-controller", ["battery_charge_pct"]],
+      ["network", "rtu-controller", ["network_strength"]],
+    ],
+    pipes: [["mains", "rtu"], ["rtu", "battery"], ["rtu", "network"]],
+  },
+};
+
+/** `F4.319` — each pump-station preset's nodes, roles, points, pipes and sources are the ADR's. */
+export function pumpStationPresetsAreTheAdrTables(): void {
+  for (const [preset, want] of Object.entries(ADR_0113_PRESETS)) {
+    const def: MimicPresetDef = MIMIC_PRESETS[preset as keyof typeof MIMIC_PRESETS];
+    assert(def !== undefined, `${preset} is not a preset`);
+    assert(
+      JSON.stringify(nodeRows(def)) === JSON.stringify(want.nodes),
+      `${preset} nodes must be ${JSON.stringify(want.nodes)}, got ${JSON.stringify(nodeRows(def))}`,
+    );
+    const pipes = def.pipes.map((pipe) => [pipe.from, pipe.to]);
+    assert(JSON.stringify(pipes) === JSON.stringify(want.pipes), `${preset} pipes are ${JSON.stringify(pipes)}`);
+    assert(
+      JSON.stringify(def.sources ?? null) === JSON.stringify(want.sources ?? null),
+      `${preset} sources are ${JSON.stringify(def.sources ?? null)}`,
+    );
+  }
+}
+
+/** `F4.319` (Q2) — every equipment node of the three pump-station presets fans out. */
+export function everyPumpStationEquipmentNodeFansOut(): void {
+  for (const preset of Object.keys(ADR_0113_PRESETS)) {
+    const def: MimicPresetDef = MIMIC_PRESETS[preset as keyof typeof MIMIC_PRESETS];
+    for (const node of def.nodes) {
+      if (node.roleCode !== null) {
+        assert(node.fanOut === true, `${preset}.${node.key} must fan out`);
+      }
+    }
+  }
+}
+
+/**
+ * `F4.319` (ADR 0113 decision 2) — a preset node lists at most three points, never on a passive
+ * node, without repeats; and the eight earlier presets list none, so they do not change.
+ */
+export function presetPointKeysAreAtMostThreeAndOnlyOnTheNewPresets(): void {
+  for (const [preset, def] of presets()) {
+    for (const node of def.nodes) {
+      const keys = node.pointKeys;
+      if (keys === undefined) continue;
+      assert(preset in ADR_0113_PRESETS, `${preset}.${node.key}: only the pump-station presets list points`);
+      assert(node.roleCode !== null, `${preset}.${node.key}: a passive node lists no points`);
+      assert(keys.length >= 1 && keys.length <= 3, `${preset}.${node.key}: 1 to 3 point keys, got ${keys.length}`);
+      assert(new Set(keys).size === keys.length, `${preset}.${node.key}: point keys repeat`);
+      for (const key of keys) {
+        assert(/^[a-z0-9_]+$/.test(key), `${preset}.${node.key}: "${key}" is not a point key code`);
+      }
+    }
+  }
 }
