@@ -5,6 +5,7 @@ import { ORGANIZATION_LAYOUT_DB_GATE, useOrganizationLayoutHarness } from "../te
 import {
   assertAForeignOrScopedRowIsIgnored,
   assertAForeignTemplateIsNotFound,
+  assertAnIgnoredRowIsNotALiveLayout,
   assertARemovedCopyIsRemadeInPlace,
   assertMakeCopiesAndPoints,
   assertMakeOverALiveLayoutIsRefused,
@@ -72,6 +73,10 @@ describe.skipIf(!connectionString)("F4.317 — OrganizationLayoutService", () =>
 
   it("a row pointed at a foreign or a site-scoped dashboard is ignored (the fail-safe)", async () => {
     await assertAForeignOrScopedRowIsIgnored(fx());
+  });
+
+  it("a row the read ignores is not a live layout: Reset clears it and Make makes over it", async () => {
+    await assertAnIgnoredRowIsNotALiveLayout(fx());
   });
 
   it("the instantiate organization arm makes the same layout", async () => {

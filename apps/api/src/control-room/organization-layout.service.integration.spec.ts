@@ -243,6 +243,45 @@ export async function assertAForeignOrScopedRowIsIgnored(fx: OrganizationLayoutF
   }
 }
 
+/**
+ * A row the read ignores is not a live layout, so Make and Reset agree with the view. A row
+ * pointed past the policy at B's dashboard is invisible under A's GUC: Reset still removes it (and
+ * audits), and Make still makes. A row pointed at A's own copy that someone re-scoped to a site is
+ * re-pointed in place, and the re-scoped copy is left alone.
+ */
+export async function assertAnIgnoredRowIsNotALiveLayout(fx: OrganizationLayoutFixture): Promise<void> {
+  const svc = serviceOf(fx);
+  const foreign = await newOrganizationWideDashboard(fx, fx.orgB, "ignored-foreign");
+  const scoped = await newOrganizationWideDashboard(fx, fx.orgA, "ignored-scoped");
+  await fx.superuserPool.query(`UPDATE bms.dashboards SET location_id = $2 WHERE id = $1`, [scoped, fx.locA1]);
+  try {
+    await pointOrganizationAt(fx, fx.orgA, foreign);
+    await svc.reset(fx.jwt.admin, fx.orgA);
+    expect(await viewRow(fx, fx.orgA)).toBeUndefined();
+    const { rows: audits } = await fx.superuserPool.query(
+      `SELECT 1 FROM bms.audit_log WHERE organization_id = $1 AND action = 'master.organization.control_room_view.reset'
+         AND payload->>'dashboardId' = $2`,
+      [fx.orgA, foreign],
+    );
+    expect(audits).toHaveLength(1);
+
+    await pointOrganizationAt(fx, fx.orgA, foreign);
+    const overForeign = await svc.make(fx.jwt.admin, fx.orgA, {});
+    expect((await viewRow(fx, fx.orgA))?.dashboard_id).toBe(overForeign.dashboardId);
+    expect((await svc.view(fx.jwt.admin, fx.orgA)).kind).toBe("dashboard");
+
+    await pointOrganizationAt(fx, fx.orgA, scoped);
+    expect((await svc.view(fx.jwt.admin, fx.orgA)).kind).toBe("stock");
+    const overScoped = await svc.make(fx.jwt.locAdminA, fx.orgA, {});
+    expect((await viewRow(fx, fx.orgA))?.dashboard_id).toBe(overScoped.dashboardId);
+    expect((await svc.view(fx.jwt.admin, fx.orgA)).kind).toBe("dashboard");
+    const { rows } = await fx.superuserPool.query(`SELECT location_id FROM bms.dashboards WHERE id = $1`, [scoped]);
+    expect(rows[0]).toEqual({ location_id: fx.locA1 });
+  } finally {
+    await clearOrganizationView(fx, fx.orgA);
+  }
+}
+
 /** The `instantiate` organization arm `AdminModule` provides drives the same copy. */
 export async function assertTheArmMakesTheLayout(fx: OrganizationLayoutFixture): Promise<void> {
   const arm = organizationTemplateArmOf(serviceOf(fx));

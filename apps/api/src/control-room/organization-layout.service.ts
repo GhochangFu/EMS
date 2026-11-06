@@ -8,7 +8,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, not, notExists, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 
 import {
   dashboards,
@@ -68,12 +69,20 @@ import { writeLayoutWidgets } from "./layout-copy-writes";
  * **The copy is one `withTenant` transaction** (the `SiteLayoutService.makeOne` shape): an
  * advisory lock per organization first, so two concurrent "Make" clicks run one after the other
  * and the second reads the first's committed row; then the dashboard, its widgets and sources, the
- * pointer row and the audits. **It never replaces a live layout (ruling Q2)**: a row with a
- * dashboard is a 409 "Reset to default first"; a row whose dashboard was removed is re-pointed in
- * place by an `UPDATE` that restates the removed predicate; no row gets an insert that must write
- * one row. Either miss rolls the copy back as the same 409.
+ * pointer row and the audits. **It never replaces a live layout (ruling Q2)**, and a live layout
+ * is exactly what the read draws (`qualifyingCopy`, one predicate for both): a row whose copy
+ * qualifies is a 409 "Reset to default first"; a row the read ignores (its copy removed, or
+ * re-scoped to a site) is re-pointed in place by an `UPDATE` that restates the not-qualifying
+ * predicate; no row gets an insert that must write one row. Either miss rolls the copy back as
+ * the same 409.
  *
  * **Reset deletes the row only.** The copy stays, as an ordinary organization-wide dashboard.
+ *
+ * **A row pointed at another organization's dashboard** can only be written past the policy (a
+ * BYPASSRLS or superuser repair; `WITH CHECK` refuses it), and `0126`'s USING clause hides it from
+ * the organization's own GUC, so neither tenant write could touch it. Make and Reset first clear
+ * it on `fleetDb` with the organization and the foreign predicate explicit, audited
+ * (`clearForeignPointer`); without that the organization would be stuck on the stock strip.
  *
  * **Reads before the transaction run on `fleetDb` (BYPASSRLS) with the organization predicate
  * explicit**; the writes run under the organization's GUC, so `0126`'s two-leg policy is the
@@ -185,19 +194,22 @@ export class OrganizationLayoutService {
         : this.checkedTemplate(await this.readTemplate(body.templateId, organizationId));
     const updatedBy = await this.provisionedUserId(user.id);
 
+    await this.clearForeignPointer(jwt, organizationId);
+
     const dashboardId = randomUUID();
     const slug = organizationLayoutDashboardSlug(dashboardId);
     try {
       return await withTenant(this.tenantDb, organizationId, async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${organizationLayoutLockKey(organizationId)}, 0))`);
         const [row] = await tx
-          .select({ dashboardId: organizationControlRoomViews.dashboardId })
+          .select({ live: qualifyingCopy(organizationId) })
           .from(organizationControlRoomViews)
           .where(eq(organizationControlRoomViews.organizationId, organizationId))
           .limit(1);
-        if (row !== undefined && row.dashboardId !== null) {
+        if (row?.live === true) {
           throw new ConflictException(ORGANIZATION_HAS_LAYOUT_MESSAGE);
         }
+        // A row the read ignores: its copy was removed, or no longer qualifies.
         const removedCopy = row !== undefined;
 
         await tx.insert(dashboards).values({
@@ -228,7 +240,7 @@ export class OrganizationLayoutService {
               .where(
                 and(
                   eq(organizationControlRoomViews.organizationId, organizationId),
-                  isNull(organizationControlRoomViews.dashboardId),
+                  not(qualifyingCopy(organizationId)),
                 ),
               )
               .returning({ organizationId: organizationControlRoomViews.organizationId })
@@ -271,6 +283,9 @@ export class OrganizationLayoutService {
       throw new ForbiddenException(MAY_NOT_CHANGE);
     }
     await this.readOrganization(organizationId, NOT_FOUND);
+    if (await this.clearForeignPointer(jwt, organizationId)) {
+      return;
+    }
     await withTenant(this.tenantDb, organizationId, async (tx) => {
       const removed = await tx
         .delete(organizationControlRoomViews)
@@ -290,6 +305,52 @@ export class OrganizationLayoutService {
         },
         tx,
       );
+    });
+  }
+
+  /**
+   * Deletes `organizationId`'s row when it points at a dashboard that is not this organization's,
+   * on `fleetDb` with both predicates explicit, and audits it as a Reset. `true` when it did. The
+   * row is invisible under the organization's GUC (`0126`'s USING clause), so only this read sees it.
+   */
+  private async clearForeignPointer(jwt: JwtPayload, organizationId: string): Promise<boolean> {
+    return this.fleetDb.transaction(async (tx) => {
+      const removed = await tx
+        .delete(organizationControlRoomViews)
+        .where(
+          and(
+            eq(organizationControlRoomViews.organizationId, organizationId),
+            isNotNull(organizationControlRoomViews.dashboardId),
+            notExists(
+              tx
+                .select({ one: sql`1` })
+                .from(dashboards)
+                .where(
+                  and(
+                    eq(dashboards.id, organizationControlRoomViews.dashboardId),
+                    eq(dashboards.organizationId, organizationId),
+                  ),
+                ),
+            ),
+          ),
+        )
+        .returning({ dashboardId: organizationControlRoomViews.dashboardId });
+      if (removed.length === 0) {
+        return false;
+      }
+      await this.audit.write(
+        {
+          actor: jwt,
+          organizationId,
+          action: "master.organization.control_room_view.reset",
+          entityType: "organization_control_room_view",
+          entityId: organizationId,
+          reason: "the row pointed at another organization's dashboard",
+          payload: { dashboardId: removed[0]?.dashboardId ?? null, foreignPointer: true },
+        },
+        tx,
+      );
+      return true;
     });
   }
 
@@ -424,6 +485,21 @@ export class OrganizationLayoutService {
     const [row] = await this.fleetDb.select({ id: users.id }).from(users).where(eq(users.id, userId)).limit(1);
     return row?.id ?? null;
   }
+}
+
+/**
+ * Whether the view row's dashboard is this organization's organization-wide dashboard — the
+ * predicate `pointedCopy` reads with, as SQL over `organization_control_room_views`, so Make's
+ * "live layout" is the layout the read draws. A NULL `dashboard_id` matches no dashboard: `false`.
+ */
+function qualifyingCopy(organizationId: string): SQL<boolean> {
+  return sql<boolean>`exists (select 1 from ${dashboards} where ${and(
+    eq(dashboards.id, organizationControlRoomViews.dashboardId),
+    eq(dashboards.organizationId, organizationId),
+    isNull(dashboards.locationId),
+    isNull(dashboards.assetGroupId),
+    isNull(dashboards.assetId),
+  )})`;
 }
 
 /** One tile before its values: the DTO's fields, and its sources with their binding ids. */
