@@ -451,9 +451,9 @@ export const dashboardWidgetPoints = bmsSchema.table(
  * (`assetPoints.kind`, ADR 0036/0037) instead.
  *
  * **The unique key is `(widgetId, catalogKey)`, deliberately not `(widgetId)`.** Every entry in
- * `WIDGET_SOURCE_CARDINALITY` maxes at 1 today, and expressing that here as a unique index would
- * turn a one-line change to that shared record into a second forward migration the day a widget
- * binds two sources. Cardinality stays where `dashboardWidgetPoints` already puts it — enforced
+ * `WIDGET_SOURCE_CARDINALITY` maxed at 1 when this was written, and expressing that here as a
+ * unique index would have turned a one-line change to that shared record into a second forward
+ * migration the day a widget bound two sources — which `F4.317` did (the tile's cap is 2). Cardinality stays where `dashboardWidgetPoints` already puts it — enforced
  * on write against the shared catalog. What this key holds is the one duplicate that is
  * meaningless under any cardinality: the same key bound twice to one widget.
  *

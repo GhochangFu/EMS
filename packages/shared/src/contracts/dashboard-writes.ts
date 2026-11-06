@@ -336,7 +336,7 @@ const noDuplicateSources = (
  * A widget may bind only a catalog entry it can draw (`WIDGET_SOURCE_SHAPES`).
  *
  * **The cardinality check above does not imply this one, and reading it as if it did is how
- * the hole opened.** `WIDGET_SOURCE_CARDINALITY.value_tile` is `{min: 0, max: 1}` — a count.
+ * the hole opened.** `WIDGET_SOURCE_CARDINALITY.value_tile` is `{min: 0, max: 2}` — a count.
  * `alarms.active` is one binding, so it passed, stored, and resolved as rows onto a renderer
  * that draws a single number: a blank tile, no error, nothing in the console. A shape is not a
  * count and needs its own gate.

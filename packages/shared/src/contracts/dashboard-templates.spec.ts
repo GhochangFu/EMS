@@ -232,15 +232,40 @@ export function rejectsAnySourceOnAChart(): void {
   );
 }
 
-/** Case 8 — the neighbour (case 3, one source on a tile) is the control: a
- * `>=` mutation reddens it, not this case. */
-export function rejectsTwoSourcesOnAValueTile(): void {
+/** Case 8 — the neighbour (two metrics on a tile, below) is the control: a `>=` mutation
+ * reddens it, not this case. Three since `F4.317`: the tile's cap is 2 (ruling Q1b). */
+export function rejectsThreeSourcesOnAValueTile(): void {
   expectRejectsAt(
     sectionTemplateContentSchema,
-    tile({ sources: [METRIC, DATASET] }),
+    tile({ sources: [METRIC, { catalogKey: "workorders.open.count", params: {} }, { catalogKey: "assets.health.score", params: {} }] }),
     ["widgets", 0, "sources"],
-    /at most 1/,
-    "two sources on a value_tile",
+    /at most 2/,
+    "three sources on a value_tile",
+  );
+}
+
+/** `F4.317` ruling Q1b — a tile binds two metrics: the organization strip's open and critical
+ * alarm counts. */
+export function acceptsTwoMetricSourcesOnAValueTile(): void {
+  expectAccepts(
+    sectionTemplateContentSchema,
+    tile({ sources: [METRIC, { catalogKey: "alarms.critical.count", params: {}, sortOrder: 1 }] }),
+    "two metric sources on a value_tile",
+  );
+}
+
+/**
+ * `F4.317` — the same key twice on one template widget is refused at the template boundary, as
+ * the dashboard write path refuses it (`dashboard_widget_sources_widget_key_key`): with a cap of
+ * 2 the count no longer catches it, and an instantiation would otherwise answer a bare `23505`.
+ */
+export function rejectsTheSameKeyTwiceOnATemplateWidget(): void {
+  expectRejectsAt(
+    sectionTemplateContentSchema,
+    tile({ sources: [METRIC, { ...METRIC, sortOrder: 1 }] }),
+    ["widgets", 0, "sources", 1, "catalogKey"],
+    /bound twice/,
+    "the same key twice on one template widget",
   );
 }
 

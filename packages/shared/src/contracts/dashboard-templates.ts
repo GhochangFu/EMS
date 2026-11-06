@@ -235,9 +235,11 @@ export const sectionTemplateWidgetIdentitySchema = z
  * it on `PATCH` would turn "remove the metric, Save canvas" (`F3.61` Task 4's
  * remove control) into a 400 with nothing more to say than `content: …`.
  *
- * **Why no duplicate-source rule.** Every `WIDGET_SOURCE_CARDINALITY.max` is 0
- * or 1, so two sources on one widget is already over the cap (R5) — a second,
- * dedicated rule would never be the one that fires.
+ * **The duplicate-source rule (`F4.317`).** Until the tile's cap became 2 (ruling Q1b), every
+ * `WIDGET_SOURCE_CARDINALITY.max` was 0 or 1 and two sources on one widget were already over
+ * the cap (R5). Now one key twice on a tile is under it, so it is refused by name here, as the
+ * dashboard write path refuses it — otherwise an instantiation would meet
+ * `dashboard_widget_sources_widget_key_key` as a bare `23505`.
  */
 export const sectionTemplateWidgetSchema = z
   .intersection(sectionTemplateWidgetIdentitySchema, dashboardWidgetSpecSchema)
@@ -250,6 +252,18 @@ export const sectionTemplateWidgetSchema = z
         message: `Widget "${widget.key}": a ${widget.widgetType} widget accepts at most ${cap} catalog binding(s)`,
       });
     }
+
+    const boundKeys = new Set<string>();
+    widget.sources.forEach((source, index) => {
+      if (boundKeys.has(source.catalogKey)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["sources", index, "catalogKey"],
+          message: `Widget "${widget.key}": the catalog entry ${source.catalogKey} is bound twice on one widget`,
+        });
+      }
+      boundKeys.add(source.catalogKey);
+    });
 
     const drawable = WIDGET_SOURCE_SHAPES[widget.widgetType];
     widget.sources.forEach((source, index) => {
@@ -311,10 +325,10 @@ export const sectionTemplateWidgetSchema = z
   })
   // AFTER the refinement — ADR 0029 Amendment 1 fact F, same as the identity node above.
   .describe(
-    "A section template widget. Three rules the document cannot express, beside the identity " +
+    "A section template widget. Four rules the document cannot express, beside the identity " +
       "rules above: each catalog source must be a shape the widget type draws " +
       "(WIDGET_SOURCE_SHAPES), the source count must be at most the type's own cap " +
-      "(WIDGET_SOURCE_CARDINALITY), and a table's config.columns must name only columns its " +
+      "(WIDGET_SOURCE_CARDINALITY), one catalog entry may not be bound twice on a widget, and a table's config.columns must name only columns its " +
       "bound dataset declares (METRIC_CATALOG), each once. No minimum: an unbound template " +
       'widget instantiates as "No data bound." (ADR 0049 decision 6).',
   );

@@ -23,11 +23,13 @@ import {
   assertForeignTemplateIsInvisibleToAnotherTenant,
   assertLocationAdminAuthorsItsOwnOrganizationTemplate,
   assertLocationAdminIsRefusedAForeignOrganizationTemplate,
+  assertLocationAdminImportsOnlyItsOwnOrganizationStrip,
   assertLocationAdminIsStillRefusedASiteTemplate,
   assertScopedAdminIsForbiddenOnAnotherOrgTemplate,
   assertSecondDraftIsRefusedByThePartialIndex,
   assertUnknownSectionIsA400NamingTheLiveSet,
 } from "./dashboard-templates.service.rls.integration.spec";
+import { DashboardTemplatesStockService } from "./dashboard-templates-stock.service";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
 import { primeSeededSubjects } from "../../testing/seeded-subjects";
 
@@ -246,6 +248,25 @@ describe.skipIf(!connectionString)(
         jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin"),
         eskomOrgId,
         `${ORGANIZATION_TARGET_CODE}-group`,
+      );
+    }, 60_000);
+
+    it("a location admin imports the stock organization strip into its own organization only", async () => {
+      const tenantDb = createDb(tenantPool);
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const stock = new DashboardTemplatesStockService(
+        tenantDb,
+        accessControl,
+        makeService(),
+        new MasterDataAuditService(tenantDb, fleetDb),
+      );
+      templateIds.push(
+        await assertLocationAdminImportsOnlyItsOwnOrganizationStrip(
+          stock,
+          jwtFor(SEEDED.locationAdmin, "location_admin"),
+          eskomOrgId,
+          phewbOrgId,
+        ),
       );
     }, 60_000);
 

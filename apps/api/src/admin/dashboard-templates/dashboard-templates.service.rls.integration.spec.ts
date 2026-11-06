@@ -6,6 +6,7 @@ import type pg from "pg";
 
 import type { JwtPayload } from "@bms/shared";
 
+import type { DashboardTemplatesStockService } from "./dashboard-templates-stock.service";
 import type { DashboardTemplatesService } from "./dashboard-templates.service";
 
 /**
@@ -304,4 +305,28 @@ export async function assertAssetGroupAdminIsRefusedAnOrganizationTemplate(
     } as Parameters<DashboardTemplatesService["create"]>[1]),
     "an asset-group admin must be refused an organization template",
   ).rejects.toThrow(ForbiddenException);
+}
+
+/**
+ * `F4.317` task 3.3 — the stock import reads the ENTRY's target for authorship: a location admin
+ * imports `organization-standard` into its own organization (a draft of the organization target),
+ * is refused it for another organization, and is still refused the `site` stock entry.
+ */
+export async function assertLocationAdminImportsOnlyItsOwnOrganizationStrip(
+  stock: DashboardTemplatesStockService,
+  locationAdmin: JwtPayload,
+  organizationId: string,
+  foreignOrganizationId: string,
+): Promise<string> {
+  const imported = await stock.import(locationAdmin, "organization-standard", organizationId);
+  expect(`${imported.code}|${imported.target}|${imported.status}`).toBe("organization-standard|organization|draft");
+  await expect(
+    stock.import(locationAdmin, "organization-standard", foreignOrganizationId),
+    "a location admin must be refused the organization strip of another organization",
+  ).rejects.toThrow(/outside your access scope/i);
+  await expect(
+    stock.import(locationAdmin, "smoc-standard", organizationId),
+    "a location admin must still be refused the site stock entry",
+  ).rejects.toThrow(/Location admins cannot author/);
+  return imported.id;
 }

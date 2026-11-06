@@ -283,8 +283,8 @@ describe.skipIf(!has)("F3.35 Stage C — bms.dashboard_widget_sources against a 
       );
 
       // AND THE OTHER DIRECTION, which is the actual decision: a SECOND key on the same widget
-      // is accepted by the database. `WIDGET_SOURCE_CARDINALITY` maxes at 1 today and the API
-      // enforces that on write; a `UNIQUE (widget_id)` here would have frozen it, turning a
+      // is accepted by the database. `WIDGET_SOURCE_CARDINALITY` maxed at 1 then (the tile's is 2
+      // since `F4.317`) and the API enforces it on write; a `UNIQUE (widget_id)` here would have frozen it, turning a
       // one-line change to that shared record into a forward migration. If this assertion ever
       // goes red, someone tightened the key — read the migration header before "fixing" it.
       const second = await run(

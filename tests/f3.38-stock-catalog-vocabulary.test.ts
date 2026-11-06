@@ -67,6 +67,8 @@ const STOCK_RELS = [
   // spread into the catalog from `@bms/shared/site-templates`. Its widgets are all in tabs; a
   // text scan reads them like any other widget, so no tab walk is needed here.
   "packages/shared/src/site-templates/smoc-standard.ts",
+  // `F4.317` — the fourth: the stock organization strip (ADR 0112 decision 3), catalog sources only.
+  "packages/shared/src/site-templates/organization-standard.ts",
 ] as const;
 
 /**
@@ -76,6 +78,8 @@ const STOCK_RELS = [
  */
 const STOCK_INITIAL_SECTION: Readonly<Record<string, string>> = {
   "packages/shared/src/site-templates/smoc-standard.ts": "site",
+  // Its tiles are declared above the entry's `section: "organization"` line too.
+  "packages/shared/src/site-templates/organization-standard.ts": "organization",
 };
 
 /** The files as one list, for an assertion message. */
@@ -343,7 +347,9 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     // **54 and 38 since `F3.73`** — 38 and 23 + the SMOC site layout's 15 role tiles (one
     // `pointKey` and one `assetRoleCode` each) and its Overview load tile's `pointKey: "kw"`
     // source. Measured per file with the scan's own regexes: 27/12, 11/11, 16/15.
-    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(54);
+    // **62 since `F4.317`**: 54 + the organization strip's eight `sustainability.total` tiles
+    // (kw, kwh_today, kl_today, the four cost keys, availability_pct_24h). It binds no role.
+    expect(pointKeys.length, `no pointKey found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(62);
     expect(roleCodes.length, `no assetRoleCode found in ${STOCK_LABEL} — the scan is blind`).toBeGreaterThanOrEqual(38);
     // **Six since `E4.2` PR 2 (U8), and it was five until then.** The five were
     // electrical, water, stp, etp and hvac; `sustainability` held no point
@@ -354,12 +360,13 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     // now false and the floor that went with it was slack: at five, the whole
     // sustainability template could be parsed as nothing and this stayed green.
     // Measured: electrical 11, sustainability 15, water/stp/etp/hvac 3 each.
-    // **Seven since `F3.73`**: the SMOC site layout's 16 are tagged `site`.
+    // **Seven since `F3.73`**: the SMOC site layout's 16 are tagged `site`. **Eight since
+    // `F4.317`**: the organization strip's 8 are tagged `organization`.
     const sections = new Set(pointKeys.map((entry) => entry.section));
     expect(
       sections.size,
       "every pointKey was attributed to one section — the section tracker is broken",
-    ).toBeGreaterThanOrEqual(7);
+    ).toBeGreaterThanOrEqual(8);
     // Named, not just counted: a sixth section arriving while the whole
     // sustainability template went unparsed would clear the floor above on the
     // newcomer alone, and the fifteen codes U8 added would be checked against

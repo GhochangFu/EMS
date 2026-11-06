@@ -23,7 +23,9 @@ import {
   rejectsAnySourceOnAChart,
   rejectsBothKindsInsideSectionTemplateContentSchema,
   rejectsTheSameColumnChosenTwice,
-  rejectsTwoSourcesOnAValueTile,
+  rejectsThreeSourcesOnAValueTile,
+  acceptsTwoMetricSourcesOnAValueTile,
+  rejectsTheSameKeyTwiceOnATemplateWidget,
   tableWithColumnsSetButNoSourceDoesNotThrow,
   widgetSchemaDescribesShapeCapAndColumnsRules,
 } from "./dashboard-templates.spec";
@@ -61,8 +63,16 @@ describe("F3.61 Amendment 1 — a template widget's sources fit its shape, its c
     rejectsAnySourceOnAChart();
   });
 
-  it("case 8: rejects two sources on a value_tile", () => {
-    rejectsTwoSourcesOnAValueTile();
+  it("case 8: rejects three sources on a value_tile (its cap is 2 since F4.317)", () => {
+    rejectsThreeSourcesOnAValueTile();
+  });
+
+  it("accepts two metric sources on a value_tile (F4.317 ruling Q1b)", () => {
+    acceptsTwoMetricSourcesOnAValueTile();
+  });
+
+  it("refuses the same catalog key twice on one template widget (F4.317)", () => {
+    rejectsTheSameKeyTwiceOnATemplateWidget();
   });
 
   it("case 9: rejects a table column its bound dataset does not declare", () => {
