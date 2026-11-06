@@ -7,9 +7,10 @@ import type { BmsTx } from "../database/tenant-context";
 /**
  * What a resolver may reach for beyond the transaction.
  *
- * Passed explicitly rather than bound as `this`. Eight of the ten entries need nothing here
+ * Passed explicitly rather than bound as `this`. Most entries need nothing here
  * (`assets.health.score` reads `health`; `sustainability.by_location` reads
- * `readableLocationIds` since `F2.10`), and a `this`-bound map would have to be cast to reach
+ * `readableLocationIds` since `F2.10`; `pue.ratio` reads `pool` since `F4.317`), and a
+ * `this`-bound map would have to be cast to reach
  * the service's injected dependency — a cast on the one path that calls another module's service.
  */
 export type ResolverDeps = {
@@ -37,13 +38,16 @@ export type ResolverDeps = {
 };
 
 /**
- * How the catalog's entries resolve (`F4.317` adds `alarms.critical.count` beside the alarm
- * count, and `sites.live.count` and `pue.ratio` in `metric-catalog-estate.ts`): six are SQL here (the four Stage C reads and the two
- * `F3.73` asset reads), one delegates, two roll up a point key, and one (`water.balance`,
- * `E4.3`) folds three role-filtered roll-ups into a row per site.
+ * How a catalog entry resolves (`RESOLVERS` in `metric-catalog.service.ts` names every one):
+ * most are SQL in that file — the Stage C reads, the `F3.73` asset reads and `F4.317`'s
+ * `alarms.critical.count` — and `F4.317`'s `sites.live.count` and `pue.ratio` are SQL in
+ * `metric-catalog-estate.ts`; `assets.health.score` delegates, the two `sustainability.*`
+ * entries roll up a point key, and `water.balance` (`E4.3`) folds three role-filtered roll-ups
+ * into a row per site.
  *
  * `params` is the binding's stored `params` AFTER `METRIC_CATALOG_PARAMS_WRITE[key]` has
- * parsed it (`E4.2`): `{}` for the five Stage C entries and the two `F3.73` asset entries,
+ * parsed it (`E4.2`): `{}` for every entry that declares no params (the Stage C, `F3.73` and
+ * `F4.317` entries),
  * `{ pointKey, aggregate }` and an
  * optional `balanceRole` (`E4.3`) for the two sustainability entries — plus an optional
  * `groupDepth` on `by_location` since `F2.10` — and `{ period }` for

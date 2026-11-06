@@ -79,8 +79,9 @@ type WaterBalanceParams = { readonly period: WaterBalancePeriod };
 /**
  * `F3.35` Stage C — resolving a dashboard's named catalog bindings (ADR 0048 decisions 1 and 2).
  *
- * **Nine entries are SQL written here (four Stage C reads, the two `F3.73` asset reads, the two
- * `E4.2` roll-ups and the `E4.3` water balance, whose statements live in
+ * **Most entries are SQL written here or beside it (the Stage C reads, the two `F3.73` asset
+ * reads, `F4.317`'s critical count and, in `metric-catalog-estate.ts`, its sites and PUE reads,
+ * the two `E4.2` roll-ups and the `E4.3` water balance, whose statements live in
  * `sustainability-rollup.ts`); one is a service
  * call, and the asymmetry is
  * deliberate.**
