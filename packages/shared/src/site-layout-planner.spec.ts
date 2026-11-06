@@ -597,3 +597,73 @@ export function csmocKeepsTheOverviewMimic(): void {
   assert(keys === "overview-sld-mimic,overview-alarms-rail", `CSMOC Overview widgets: got ${keys}`);
   assert(planned(result).droppedCards.length === 0, `CSMOC dropped: ${JSON.stringify(planned(result).droppedCards)}`);
 }
+
+// ---- F4.319 (plan D4): an Overview that names a domain-less group by code -------------------
+
+/** A mimic with no `tabKey` on an Overview that names `pump-station` — the ADR 0113 shape. */
+function stationMimic(): SectionTemplateWidget {
+  return {
+    key: "overview-station-mimic",
+    title: null,
+    gridX: 0,
+    gridY: 0,
+    gridW: 12,
+    gridH: 7,
+    bindings: [],
+    sources: [],
+    widgetType: "mimic",
+    config: { source: "preset", preset: "pump_station_overview", compact: true },
+  };
+}
+
+const STATION_TABS: readonly SiteTemplateTab[] = [
+  { key: "overview", label: "Overview", sortOrder: 0, domain: null, groupCode: "pump-station", widgets: [stationMimic()] },
+  { key: "electrical", label: "Electrical", sortOrder: 1, domain: "electrical", groupCode: "electrical", widgets: [] },
+];
+
+/** `F4.319` D4 — a `domain: null` tab with a `groupCode` binds the domain-less group of that code. */
+export function anOverviewWithAGroupCodeBindsTheDomainlessGroup(): void {
+  const result = planned(planSiteLayout(STATION_TABS, [...PHE_GROUPS, group("pump-station", null)]));
+  const overview = result.tabs.find((row) => row.tab.key === "overview");
+  assert(overview?.group?.id === "grp-pump-station", `the Overview bound ${overview?.group?.id ?? "nothing"}`);
+  assert(overview?.via === "group_code", `the Overview resolved via ${overview?.via}`);
+  assert(overview?.tab.widgets.length === 1, "the Overview keeps its mimic");
+  assert(result.droppedCards.length === 0, `dropped ${JSON.stringify(result.droppedCards)}`);
+}
+
+/**
+ * `F4.319` D4 — only a domain-less group: a domain group of the same code is never the Overview's,
+ * so the domain tab that wants it keeps it.
+ */
+export function anOverviewNeverTakesADomainGroupByCode(): void {
+  const tabs: SiteTemplateTab[] = [{ ...STATION_TABS[0]!, groupCode: "electrical" }, STATION_TABS[1]!];
+  const result = planned(planSiteLayout(tabs, PHE_GROUPS));
+  const overview = result.tabs.find((row) => row.tab.key === "overview");
+  const electrical = result.tabs.find((row) => row.tab.key === "electrical");
+  assert(overview?.group === null, `the Overview bound ${overview?.group?.code ?? "?"}`);
+  assert(electrical?.group?.id === "grp-electrical", "the electrical tab keeps its group");
+}
+
+/**
+ * `F4.319` D4 — with no such group the tab stays the plain Overview, and its mimic, which names no
+ * `tabKey` and so has no group to draw, is dropped and reported against the Overview itself.
+ */
+export function anOverviewWithoutItsGroupDropsItsUntargetedMimic(): void {
+  const result = planned(planSiteLayout(STATION_TABS, PHE_GROUPS));
+  const overview = result.tabs.find((row) => row.tab.key === "overview");
+  assert(overview?.group === null && overview.via === "overview", "the Overview stays plain");
+  assert(overview?.tab.widgets.length === 0, "the untargeted mimic is dropped");
+  assert(
+    JSON.stringify(result.droppedCards) ===
+      JSON.stringify([{ tabKey: "overview", widgetKey: "overview-station-mimic", targetTabKey: "overview" }]),
+    `dropped ${JSON.stringify(result.droppedCards)}`,
+  );
+}
+
+/** `F4.319` D4 — `smoc-standard`'s Overview names no `groupCode`, so its plan does not move. */
+export function theSmocOverviewStillBindsNoGroupBesidePumpStation(): void {
+  const result = planned(planSiteLayout(SMOC_TABS, [...PHE_GROUPS, group("pump-station", null)]));
+  const overview = result.tabs.find((row) => row.tab.key === "overview");
+  assert(overview?.group === null && overview.via === "overview", "the SMOC Overview bound a group");
+  assert(tabKeys(result) === "overview,sld,env", `tabs ${tabKeys(result)}`);
+}
