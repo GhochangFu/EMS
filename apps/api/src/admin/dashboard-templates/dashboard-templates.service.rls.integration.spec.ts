@@ -1,4 +1,4 @@
-import { ForbiddenException } from "@nestjs/common";
+import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { expect } from "vitest";
 
 import type pg from "pg";
@@ -329,4 +329,81 @@ export async function assertLocationAdminImportsOnlyItsOwnOrganizationStrip(
     "a location admin must still be refused the site stock entry",
   ).rejects.toThrow(/Location admins cannot author/);
   return imported.id;
+}
+
+/**
+ * `F4.317` review (security) — **a code keeps one target.** The `location_admin` grant (ADR 0112
+ * decision 5) is for `organization`-target templates, and the version and draft index key on
+ * `(organization_id, code)` alone, whatever the target. Without this refusal a location admin
+ * could open version N+1 of an organization admin's asset-group code as an `organization` row,
+ * and its draft would lock the organization admin out of `createDraftFrom` and stock re-import
+ * of that code. The organization admin's own next draft of the code must still work.
+ *
+ * `onCreated` receives every id this helper creates the moment it exists, so a later failed
+ * `expect` cannot leak a row into the developer's database.
+ */
+export async function assertACodeKeepsItsTarget(
+  service: DashboardTemplatesService,
+  admin: JwtPayload,
+  locationAdmin: JwtPayload,
+  organizationId: string,
+  code: string,
+  onCreated: (id: string) => void,
+): Promise<void> {
+  const groupTemplate = await service.create(admin, {
+    organizationId,
+    code,
+    name: "F4.317 asset-group code the location admin may not take over",
+    section: "electrical",
+    target: "asset_group",
+    content: {
+      widgets: [
+        {
+          key: "alarms-tile",
+          title: "Open alarms",
+          gridX: 0,
+          gridY: 0,
+          gridW: 3,
+          gridH: 2,
+          bindings: [],
+          sources: [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: {},
+        },
+      ],
+      tabs: [],
+    },
+  } as Parameters<DashboardTemplatesService["create"]>[1]);
+  onCreated(groupTemplate.id);
+  const published = await service.publish(admin, groupTemplate.id);
+  expect(published.status, "the asset-group version must publish, so no draft blocks the probe").toBe("published");
+
+  let takeover: { id: string } | undefined;
+  let refusal: unknown;
+  try {
+    takeover = await service.create(locationAdmin, {
+      organizationId,
+      code,
+      name: "F4.317 organization strip under an asset-group code",
+      section: "organization",
+      target: "organization",
+      content: { widgets: [], tabs: [] },
+    } as Parameters<DashboardTemplatesService["create"]>[1]);
+  } catch (err) {
+    refusal = err;
+  }
+  if (takeover !== undefined) onCreated(takeover.id);
+  expect(
+    takeover,
+    "a location admin must not open an organization-target version of an asset-group code",
+  ).toBeUndefined();
+  expect(refusal).toBeInstanceOf(ConflictException);
+  expect((refusal as Error).message).toMatch(/already holds asset_group templates/);
+
+  const nextDraft = await service.createDraftFrom(admin, groupTemplate.id);
+  onCreated(nextDraft.id);
+  expect(
+    `${nextDraft.target}|${nextDraft.status}|${nextDraft.version}`,
+    "the organization admin's next draft of its own code must still open",
+  ).toBe("asset_group|draft|2");
 }

@@ -17,6 +17,7 @@ import { asRole } from "../../testing/role-urls";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
+  assertACodeKeepsItsTarget,
   assertAssetGroupAdminIsRefusedAnOrganizationTemplate,
   assertAuditRowCommitted,
   assertForeignTemplateIdOnDashboardIsRefused,
@@ -248,6 +249,17 @@ describe.skipIf(!connectionString)(
         jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin"),
         eskomOrgId,
         `${ORGANIZATION_TARGET_CODE}-group`,
+      );
+    }, 60_000);
+
+    it("a code keeps one target: a location admin cannot take over an asset-group code", async () => {
+      await assertACodeKeepsItsTarget(
+        makeService(),
+        jwtFor(SEEDED.globalAdmin, "admin"),
+        jwtFor(SEEDED.locationAdmin, "location_admin"),
+        eskomOrgId,
+        `${ORGANIZATION_TARGET_CODE}-takeover`,
+        (id) => templateIds.push(id),
       );
     }, 60_000);
 

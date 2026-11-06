@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 
 import { dashboardSections, dashboardTemplates, organizations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -56,6 +56,7 @@ import {
 } from "../../dashboard-builder/source-params-point-keys";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import type { BmsTx } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 
@@ -171,6 +172,7 @@ export class DashboardTemplatesService {
     const createdBy = await this.resolveCreatedBy(jwt);
 
     const created = await withTenant(this.tenantDb, body.organizationId, async (tx) => {
+      await DashboardTemplatesService.assertCodeKeepsItsTarget(tx, body.organizationId, body.code, body.target);
       // `MAX(version) + 1`, not a hardcoded 1. `createDraftFrom` and the stock
       // import both compute it, and `AssetTemplatesAdminService.create` does
       // too — ADR 0049 decision 2 rules FULL lifecycle parity, so two `create`
@@ -680,6 +682,42 @@ export class DashboardTemplatesService {
         `Unknown dashboard section "${code}". Valid sections: ${live
           .map((s) => s.code)
           .join(", ")}`,
+      );
+    }
+  }
+
+  /**
+   * `F4.317` review (security) — **a code keeps one target.** The version (`MAX(version) + 1`)
+   * and `dashboard_templates_org_code_draft_unique` key on `(organization_id, code)` alone,
+   * whatever the target, so a write that adds a version must not change the code's target. Else
+   * a `location_admin`, whose grant is `organization`-target templates only (ADR 0112 decision
+   * 5), could open the next version of an organization admin's asset-group or site code as an
+   * `organization` row, and its draft would lock that admin out of `createDraftFrom` and stock
+   * re-import of the code. A template's target decides which content shape its versions hold
+   * (`createDashboardTemplateBodySchema`), so this is the rule for every caller, not only that
+   * role. Run inside the inserting transaction, under the tenant GUC.
+   */
+  static async assertCodeKeepsItsTarget(
+    tx: BmsTx,
+    organizationId: string,
+    code: string,
+    target: DashboardTemplateTarget,
+  ): Promise<void> {
+    const [other] = await tx
+      .select({ target: dashboardTemplates.target })
+      .from(dashboardTemplates)
+      .where(
+        and(
+          eq(dashboardTemplates.organizationId, organizationId),
+          eq(dashboardTemplates.code, code),
+          ne(dashboardTemplates.target, target),
+        ),
+      )
+      .limit(1);
+    if (other !== undefined) {
+      throw new ConflictException(
+        `Template code "${code}" already holds ${other.target} templates; a code keeps one ` +
+          `target, so a ${target} template needs a code of its own`,
       );
     }
   }

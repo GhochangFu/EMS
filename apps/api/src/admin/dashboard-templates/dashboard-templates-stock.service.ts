@@ -105,6 +105,8 @@ export class DashboardTemplatesStockService {
     const createdBy = await this.templates.resolveCreatedBy(jwt);
 
     const created = await withTenant(this.tenantDb, organizationId, async (tx) => {
+      // `F4.317` review — a re-import adds a version, so the code must hold no other target.
+      await DashboardTemplatesService.assertCodeKeepsItsTarget(tx, organizationId, entry.code, entry.target);
       const [{ next } = { next: 1 }] = await tx
         .select({ next: sql<number>`COALESCE(MAX(${dashboardTemplates.version}), 0)::int + 1` })
         .from(dashboardTemplates)
