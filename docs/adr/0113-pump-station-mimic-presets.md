@@ -2,12 +2,12 @@
 
 ## Status
 
-**Proposed — 2026-11-06.** Raised by the owner on 2026-11-06: the default
+**Accepted — 2026-11-06** (owner, in chat: "Accept, merge on green"; proposed the same day). Raised by the owner on 2026-11-06: the default
 electrical and environment mimics do not suit the PHE (PHEWB) sites, and the
 owner wants an overview, an electrical and an environment view that follow the
 assets these sites have, made as templates. The owner gave eight rulings in chat
 on 2026-11-06, one at a time, before this record was written (listed under
-*Rulings*). The merge of this record is the acceptance. Lines marked
+*Rulings*). Lines marked
 *(drafter)* are drafter calls that the `F4.319` plan may refine; the others are
 rulings.
 
