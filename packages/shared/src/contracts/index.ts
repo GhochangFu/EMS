@@ -108,6 +108,8 @@ export * from "./dashboard-writes";
 export * from "./dashboard-widget-append";
 export * from "./trend-points-report";
 export * from "./site-layout";
+// `F4.317` task 4.2 (ADR 0112) — the organization Control Room strip.
+export * from "./organization-control-room-view";
 export * from "./site-widgets";
 export * from "./system-status";
 export * from "./telemetry-entry";

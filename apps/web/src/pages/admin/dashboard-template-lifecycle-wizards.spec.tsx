@@ -751,18 +751,29 @@ function publishedOrganizationTemplate() {
 }
 
 /**
- * `F4.317` task 3.4 — an organization template's wizard: Target and Details hold no input (the
- * copy lands on the template's own organization, named for it), and Submit is refused before
- * the wire while the API's organization arm is a seam only (PR 4 wires it). No request is sent.
+ * `F4.317` tasks 3.4 and 4.2 — an organization template's wizard: Target and Details hold no input
+ * (the copy lands on the template's own organization, named for it), and Submit sends the
+ * organization arm's one field, the template's `organizationId`, through
+ * `instantiateOrganizationTemplate` — never the group or the site arm. The answer names the copy.
  */
-export async function anOrganizationTemplateIsNotSentYet(): Promise<void> {
+export async function anOrganizationTemplateSendsItsOrganization(): Promise<void> {
   resetWizardStore();
   const group = vi.fn();
   const site = vi.fn();
+  const template = publishedOrganizationTemplate();
+  const organization = vi.fn(() =>
+    Promise.resolve({
+      organizationId: template.organizationId,
+      dashboardId: "5d6e7f80-1a2b-4c3d-8e4f-5a6b7c8d9e0f",
+      dashboardSlug: "organization-layout-5d6e7f80",
+      templateId: template.id,
+    }),
+  );
   stubApi({
-    fetchAdminDashboardTemplate: () => Promise.resolve(publishedOrganizationTemplate()),
+    fetchAdminDashboardTemplate: () => Promise.resolve(template),
     instantiateAdminDashboardTemplate: group,
     instantiateSiteTemplate: site,
+    instantiateOrganizationTemplate: organization,
   });
   renderPage();
 
@@ -777,10 +788,9 @@ export async function anOrganizationTemplateIsNotSentYet(): Promise<void> {
   await next();
   await submit();
 
-  const card = screen.getByRole("region", { name: "Make a dashboard from a template" });
-  expect(within(card).getByRole("alert").textContent).toContain(
-    "Making an organization layout from a template is not available yet",
-  );
+  expect(await screen.findByText("organization-layout-5d6e7f80")).toBeTruthy();
+  expect(organization).toHaveBeenCalledTimes(1);
+  expect(organization).toHaveBeenCalledWith(template.id, template.organizationId);
   expect(group).not.toHaveBeenCalled();
   expect(site).not.toHaveBeenCalled();
 }

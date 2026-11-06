@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -23,9 +22,9 @@ import type { BmsDb } from "@bms/db";
 import {
   MIMIC_TAB_MESSAGE,
   MIMIC_SCOPE_MESSAGE,
+  ORGANIZATION_STRIP_CONTENT_MESSAGE,
   SCOPE_REFUSAL_MESSAGE,
   TAB_GROUP_SCOPE_MESSAGE,
-  TAB_LOCATION_MOVE_MESSAGE,
 } from "@bms/shared";
 import type {
   DashboardDto,
@@ -40,6 +39,7 @@ import type {
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
+import { OrganizationViewAccessService } from "../auth/organization-view-access.service";
 import { noRowWritten, updatedAtMatches } from "../common/if-match";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
@@ -48,6 +48,7 @@ import { TrendPointsService } from "../trend-points/trend-points.service";
 import { assertBoundPointsInOrganization, resolveBoundPoints, type ResolvedBoundPoint } from "./dashboard-point-scope";
 import { resolveWidgetSources, type ResolvedWidgetSource } from "./dashboard-source-scope";
 import { assertMimicLayoutsInOrganization } from "./dashboards.mimic-guards";
+import { translateWriteError } from "./dashboards.write-errors";
 import { assertTrendStripSelections, hasTrendStripSelection } from "./trend-strip-selection.check";
 import {
   assertTabGroupsAtSite,
@@ -117,6 +118,11 @@ export class DashboardsService {
     private readonly audit: MasterDataAuditService,
     // `F4.306` U5: Nest injects the module's instance; a hand-built service builds the same (stateless) one.
     private readonly trendPoints: TrendPointsService = new TrendPointsService(fleetDb, tenantDb, accessControl, audit),
+    // `F4.317` task 4.3: the same shape — the global `AccessControlModule` provides the instance.
+    private readonly organizationViewAccess: OrganizationViewAccessService = new OrganizationViewAccessService(
+      fleetDb,
+      accessControl,
+    ),
   ) {}
 
   // ---- reads ----------------------------------------------------------------
@@ -371,7 +377,7 @@ export class DashboardsService {
       );
       return this.loadFullDto(tx, row.id);
     }).catch((err: unknown) => {
-      throw this.translateWriteError(err, body.slug, scope);
+      throw translateWriteError(err, body.slug, scope);
     });
   }
 
@@ -428,10 +434,15 @@ export class DashboardsService {
     // "invalid"}` rather than throwing, precisely so these call sites can run before the 400
     // check below (finding 5, review — this ordering now ships with the test that would have
     // caught reverting it).
-    if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, storedScope))) {
-      throw new NotFoundException("Dashboard not found");
-    }
-    if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, nextScope))) {
+    //
+    // `F4.317` task 4.3 (ADR 0112 decision 5) — where either check refuses, the narrow grant may
+    // still admit: the pointed organization-wide dashboard, its scope unchanged, for a caller who
+    // may change that organization's strip. A re-home changes the scope, so `F3.1d` holds.
+    if (
+      (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, storedScope)) ||
+        !(await this.accessControl.canManageDashboard(jwt, existing.organizationId, nextScope))) &&
+      !(await this.organizationViewAccess.mayEditPointedDashboard(jwt, existing, nextScope))
+    ) {
       throw new NotFoundException("Dashboard not found");
     }
 
@@ -484,7 +495,7 @@ export class DashboardsService {
 
       return this.loadFullDto(tx, id);
     }).catch((err: unknown) => {
-      throw this.translateWriteError(err, body.slug ?? existing.slug, nextScope);
+      throw translateWriteError(err, body.slug ?? existing.slug, nextScope);
     });
   }
 
@@ -536,8 +547,17 @@ export class DashboardsService {
       assetGroupId: existing.assetGroupId,
       assetId: existing.assetId,
     };
+    // `F4.317` task 4.3 — the narrow grant, `update`'s rule with the scope unchanged. Where it is
+    // the grant that admits, the body must be the organization target's content (ADR 0112
+    // decisions 2 and 5): value tiles, no tabs. Otherwise a location admin could author a free
+    // organization-wide dashboard through the pointed copy and keep it past Reset.
     if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, scope))) {
-      throw new NotFoundException("Dashboard not found");
+      if (!(await this.organizationViewAccess.mayEditPointedDashboard(jwt, existing, scope))) {
+        throw new NotFoundException("Dashboard not found");
+      }
+      if ((body.tabs ?? []).length > 0 || body.widgets.some((widget) => widget.widgetType !== "value_tile")) {
+        throw new BadRequestException(ORGANIZATION_STRIP_CONTENT_MESSAGE);
+      }
     }
 
     // `F3.32` / ADR 0079 decision 4 — refused BEFORE `withTenant` opens, exactly like every
@@ -733,114 +753,11 @@ export class DashboardsService {
 
       return this.loadFullDto(tx, id);
     }).catch((err: unknown) => {
-      throw this.translateWriteError(err, existing.slug, scope);
+      throw translateWriteError(err, existing.slug, scope);
     });
   }
 
   // ---- shared helpers -----------------------------------------------------
-
-  /**
-   * Turns the partial unique index violation into an answer.
-   *
-   * `dashboards_organization_slug_key` (migration `0050`) is what stops two dashboards sharing a
-   * slug within one organization, and it fires on an ordinary authoring mistake — reusing a
-   * slug, or two authors saving the same one at once. Surfacing the raw constraint name would
-   * read as a bug rather than as "pick a different slug".
-   *
-   * `asset-templates.service.ts:805-813`'s `translateDraftConflict` is the precedent this copies
-   * verbatim in shape: read the constraint off the error, translate the one name this method
-   * owns, and return every other error unchanged — including a `23505` on a different
-   * constraint, which must reach the caller exactly as the driver raised it.
-   */
-  /**
-   * The one error translation every write on this service goes through: the slug 409 first,
-   * then the scope refusals below, then the driver's error unchanged.
-   *
-   * **One function, not two chained `.catch`es.** A second handler only ever sees what the
-   * first re-threw, so the order of two catches decides which translation is reachable — and
-   * the losing one is silently dead.
-   *
-   * Two states reach a caller as a 500 without this (review, security Low):
-   *
-   * - `42501` — `tenant_isolation`'s `WITH CHECK` on `bms.dashboards`, which migration `0073`
-   *   re-created to check the `asset_id` and `asset_template_id` parents as well. A scope id
-   *   from another organization is refused there, never by the foreign key (`0050`'s header:
-   *   `WITH CHECK` runs before the FK's `AFTER` trigger).
-   * - `23514` on `dashboards_scope_check` / `dashboards_asset_stamp_check` — the two CHECKs the
-   *   service's own guards are supposed to reach first. A 400 here is the backstop for a state
-   *   a guard missed, not a replacement for the guard.
-   *
-   * The field named is the scope axis this write actually set, taken from the merged scope the
-   * caller already computed — the error itself carries no column. `putWidgets` passes the
-   * STORED scope because it writes no scope column of its own, and naming a field from a widget
-   * body would misattribute the refusal.
-   *
-   * **What protects `putWidgets` is not this translation.** A foreign `pointId` in a widget body
-   * is refused by `assertBoundPointsInOrganization`, which runs inside the same transaction
-   * **before any insert** and raises a 400 counting how many bindings were outside the
-   * organization without echoing an id back (§9.6). By the time a `42501` could fire here, that
-   * guard has already returned; this method is the backstop for a state the guard does not
-   * cover, not the control.
-   */
-  private translateWriteError(err: unknown, slug: string, scope: DashboardScope): unknown {
-    const translatedSlug = this.translateSlugConflict(err, slug);
-    if (translatedSlug !== err) {
-      return translatedSlug;
-    }
-    const code = (err as { code?: string } | null)?.code;
-    const constraint = (err as { constraint?: string } | null)?.constraint;
-    // FIRST, and independent of the scope axes: this CHECK is about `asset_template_id`, a
-    // column no request body carries and `scope` does not either. Naming a scope axis here
-    // would attribute the refusal to a field that is not the offending one — the item-1
-    // mutation run produced exactly that sentence before this branch was split out.
-    if (code === "23514" && constraint === "dashboards_asset_stamp_check") {
-      return new BadRequestException(
-        "This dashboard still carries an asset-template stamp, which describes nothing once it " +
-          "names no asset. The stamp is cleared together with the asset scope.",
-      );
-    }
-    // `F3.73` (ruling Q1) — a scope change of a dashboard whose tabs bind groups at its site
-    // fails this composite FK. Independent of the scope axes and placed before `field === null`
-    // for the same reason as the branch above: a move to organization-wide leaves every axis
-    // null, and returning the raw error there would answer a 500.
-    if (code === "23503" && constraint === "dashboard_tabs_dashboard_id_location_id_fkey") {
-      return new BadRequestException(TAB_LOCATION_MOVE_MESSAGE);
-    }
-    const field =
-      scope.assetId !== null
-        ? "assetId"
-        : scope.assetGroupId !== null
-          ? "assetGroupId"
-          : scope.locationId !== null
-            ? "locationId"
-            : null;
-    if (field === null) {
-      return err;
-    }
-    if (code === "42501") {
-      return new BadRequestException(
-        `The ${field} you supplied does not belong to this dashboard's organization — the ` +
-          "write was refused by this table's row-level security policy.",
-      );
-    }
-    if (code === "23514" && constraint === "dashboards_scope_check") {
-      return new BadRequestException(
-        `The ${field} you supplied leaves this dashboard in a scope the database refuses: ` +
-          SCOPE_REFUSAL_MESSAGE,
-      );
-    }
-    return err;
-  }
-
-  private translateSlugConflict(err: unknown, slug: string): unknown {
-    const constraint = (err as { constraint?: string } | null)?.constraint;
-    if (constraint === "dashboards_organization_slug_key") {
-      return new ConflictException(
-        `A dashboard with slug "${slug}" already exists in this organization. Choose a different slug.`,
-      );
-    }
-    return err;
-  }
 
   private async insertPoints(
     tx: BmsTx,

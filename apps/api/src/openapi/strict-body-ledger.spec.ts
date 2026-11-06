@@ -52,6 +52,8 @@ import {
   // `F4.309` (ADR 0088 Amendment 3): the state-label write bodies.
   createPointKeyStateBodySchema,
   updatePointKeyStateBodySchema,
+  // `F4.317` task 4.2 (ADR 0112 decision 4).
+  putOrganizationControlRoomViewBodySchema,
 } from "@bms/shared";
 import { expect } from "vitest";
 import { z } from "zod";
@@ -290,6 +292,9 @@ export const BODY_SCHEMAS: Record<string, ZodTypeAny> = {
   // `F3.73` plan D6. `.strict()`: both keys are optional, so a misspelt `tabGroup` dropped
   // silently would run the copy with no choice and answer 409 for a reason the caller cannot see.
   siteLayoutBodySchema,
+  // `F4.317` task 4.2. `.strict()`: one optional key, so a misspelt `templateID` dropped silently
+  // would copy the newest template instead of the one the caller named.
+  putOrganizationControlRoomViewBodySchema,
   // `F3.32f` slice 3 (ADR 0086 decisions 4, 6, 7). `.strict()`: a library, a symbol patch and the
   // switch are closed authoring shapes with no `z.record` escape, so an unknown key is a typo.
   createMimicOrgSymbolLibraryBodySchema,

@@ -123,8 +123,8 @@ import { loadActivePoints, loadMembersByRole } from "./template-resolution.reads
  * the site arm. A template whose `target` is `organization` takes `{ organizationId }` — its own
  * organization, else 404 — and is copied onto one organization-wide dashboard by the
  * organization-layout copy action, which owns the dashboard and the view row. One optional seam
- * again (`ORGANIZATION_TEMPLATE_ARM`), filled in F4.317 PR 4; until then the arm answers 501
- * `ORGANIZATION_ARM_NOT_WIRED_MESSAGE`.
+ * again (`ORGANIZATION_TEMPLATE_ARM`), which `AdminModule` fills from `OrganizationLayoutService`
+ * (F4.317 PR 4); a module that does not provide it answers 501 `ORGANIZATION_ARM_NOT_WIRED_MESSAGE`.
  */
 
 /** `F3.73` plan Task 2.2 — the answer while no site arm is provided (PR4 wires it). */
@@ -153,15 +153,15 @@ export type SiteTemplateArm = (
   body: InstantiateSiteTemplateBody,
 ) => Promise<SiteTemplateArmResult>;
 
-/** `F4.317` task 3.4 — the answer while no organization arm is provided (PR 4 wires it). */
+/** `F4.317` task 3.4 — the answer when no organization arm is provided (`AdminModule` provides one). */
 export const ORGANIZATION_ARM_NOT_WIRED_MESSAGE =
   "Instantiating an organization template is not available yet: the organization-layout copy " +
   "action is not wired";
 
-/** The seam the organization-layout copy action fills (F4.317 PR 4) — `SITE_TEMPLATE_ARM`'s shape. */
+/** The seam the organization-layout copy action fills (`organizationTemplateArmOf`) — `SITE_TEMPLATE_ARM`'s shape. */
 export const ORGANIZATION_TEMPLATE_ARM = Symbol("ORGANIZATION_TEMPLATE_ARM");
 
-/** What the organization arm answers; the copy action defines it (PR 4), this seam passes it on. */
+/** What the organization arm answers — `OrganizationLayoutResultDto`; this seam passes it on. */
 export type OrganizationTemplateArmResult = object;
 
 /**

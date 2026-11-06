@@ -10,7 +10,7 @@ import {
   aSecondSubmitClearsTheLastRefusal,
   aSiteBodyOnAGroupTemplateIsRefusedBeforeTheWire,
   aSiteBodyOnAnOrganizationTemplateIsRefusedBeforeTheWire,
-  anOrganizationTemplateIsNotSentYet,
+  anOrganizationTemplateSendsItsOrganization,
   aTypedNameAsTheSlugStaysOnDetails,
   anOrganizationWideFillOnARoleBoundTemplateIsRefused,
   applyOpensAReviewOnlyWizard,
@@ -177,8 +177,8 @@ describe("F3.85 PR 10b the template lifecycle actions are catalog wizards", () =
     await siteTargetShowsAFilledTabGroups();
   });
 
-  it("an organization template's wizard holds no input and sends nothing until the arm is wired (F4.317)", async () => {
-    await anOrganizationTemplateIsNotSentYet();
+  it("an organization template's wizard holds no input and sends the template's organization (F4.317)", async () => {
+    await anOrganizationTemplateSendsItsOrganization();
   });
 
   it("a site body on an organization template is refused before the wire (F4.317)", async () => {

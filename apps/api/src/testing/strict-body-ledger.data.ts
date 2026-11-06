@@ -487,6 +487,9 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   // dropped silently (a misspelt `tabGroup`) would run the copy with no choice at all. The
   // `tabGroups` record is the one open map, and its keys and values are each bounded.
   siteLayoutBodySchema: STRICT(CALLER_ERROR),
+  // `F4.317` task 4.2 (ADR 0112 decision 4) — "Make organization layout". One optional key, so an
+  // unknown key dropped silently (a misspelt `templateID`) would copy a template the caller did not name.
+  putOrganizationControlRoomViewBodySchema: STRICT(CALLER_ERROR),
   // `F3.32c` (ADR 0081 decision 3) — a layout is an authoring shape with no
   // `z.record` escape: an unknown key on the body, a node or a pipe is a typo.
   putMimicLayoutBodySchema: STRICT(CALLER_ERROR),

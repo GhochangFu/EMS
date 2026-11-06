@@ -58,6 +58,8 @@ const CATALOG_WRITERS = [
   // asset here; PR 3's three `calcPoint.*` entries reach it too.
   "apps/api/src/admin/asset-points/calc-point-standalone.service.ts",
   "apps/api/src/control-room/site-layout.service.ts",
+  // `F4.317` PR 4: the `instantiate` organization arm writes through the organization-layout copy.
+  "apps/api/src/control-room/organization-layout.service.ts",
   // `F3.86` PR 2 (plan §4.7): every service a release-2 entry's handler reaches.
   "apps/api/src/admin/locations/locations.service.ts",
   "apps/api/src/admin/rtus/rtus.service.ts",

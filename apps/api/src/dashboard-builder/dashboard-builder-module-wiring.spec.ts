@@ -199,7 +199,13 @@ export function assertTrendPointsServiceDepsResolveWithinTheModule(): void {
 
 export function assertDashboardsServiceTakesTrendPointsService(): void {
   const classes = classTypedParams("dashboards.service.ts", "DashboardsService");
-  expect(classes).toEqual(["AccessControlService", "MasterDataAuditService", "TrendPointsService"]);
+  // `F4.317` task 4.3: the organization-layout grant's predicate, provided by the global `AccessControlModule`.
+  expect(classes).toEqual([
+    "AccessControlService",
+    "MasterDataAuditService",
+    "TrendPointsService",
+    "OrganizationViewAccessService",
+  ]);
   const { byName } = resolvableTokens();
   expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
 }

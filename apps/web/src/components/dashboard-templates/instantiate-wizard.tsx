@@ -18,8 +18,9 @@
  *
  * **`F4.317` — the third arm, `{ organizationId }`** (ADR 0112 decision 4). An organization
  * template copies onto its own organization, so the values are seeded with the template's
- * `organizationId` and neither step has an input. The API's arm is a seam until F4.317 PR 4
- * wires the copy action (it answers 501), so the wizard refuses before the wire and says so.
+ * `organizationId` and neither step has an input. The answer is the one copy, now the strip of
+ * that organization's Control Room page; over a live layout the API answers 409 "Reset to default
+ * first" (ruling Q2), shown as the refusal.
  *
  * Moved out of `dashboard-template-detail-page.tsx` to keep that page under the
  * AGENTS.md §4.5 cap. It sends no `X-Copilot-Change` header (plan §10.5).
@@ -30,6 +31,7 @@ import {
   type DashboardTemplateDto,
   type InstantiateSectionTemplateBody,
   type InstantiateSectionTemplateResponse,
+  type OrganizationLayoutResultDto,
   type SiteLayoutResultDto,
   TEMPLATE_TARGET_BODY_MESSAGE,
   templateTargetBodyMessage,
@@ -40,6 +42,7 @@ import { fetchAdminAssetGroups } from "../../api/admin/asset-groups";
 import {
   type InstantiateDashboardTemplateInput,
   instantiateAdminDashboardTemplate,
+  instantiateOrganizationTemplate,
   instantiateSiteTemplate,
 } from "../../api/admin/dashboard-templates";
 import { apiErrorMessage } from "../../lib/api-error-message";
@@ -60,10 +63,6 @@ const ORGANIZATION_WIDE = "__organization_wide__";
 /** The API's `E4.2` refusal (`dashboard-templates-instantiate.service.ts`), said before the wire. */
 const ROLE_BINDINGS_NEED_A_GROUP = "A template with role bindings needs an asset group";
 
-/** `F4.317` — said in place of a send while the API's organization arm is a seam (PR 4 wires it). */
-const ORGANIZATION_ARM_NOT_YET =
-  "Making an organization layout from a template is not available yet: use the organization's Control Room page";
-
 const FIELD_LABELS: Record<string, string> = {
   assetGroupId: "Asset group",
   locationId: "Location",
@@ -76,7 +75,8 @@ const FIELD_LABELS: Record<string, string> = {
 
 type Answer =
   | { readonly kind: "group"; readonly result: InstantiateSectionTemplateResponse }
-  | { readonly kind: "site"; readonly result: SiteLayoutResultDto };
+  | { readonly kind: "site"; readonly result: SiteLayoutResultDto }
+  | { readonly kind: "organization"; readonly result: OrganizationLayoutResultDto };
 
 /** The body as sent: the group arm's slug and name trimmed, as the dialog trimmed them. */
 function trimmedBody(body: Record<string, unknown>): Record<string, unknown> {
@@ -135,6 +135,11 @@ export function InstantiateWizard({
 
   const instantiateM = useMutation({
     mutationFn: async (body: Record<string, unknown>): Promise<Answer> => {
+      if (isOrganization) {
+        // `refusal` already holds this; the narrow keeps an organization send from carrying no id.
+        if (typeof body.organizationId !== "string") throw new Error(TEMPLATE_TARGET_BODY_MESSAGE);
+        return { kind: "organization", result: await instantiateOrganizationTemplate(template.id, body.organizationId) };
+      }
       if (isSite) {
         // `refusal` already holds this; the narrow keeps a site send from ever carrying no location.
         if (typeof body.locationId !== "string") throw new Error(TEMPLATE_TARGET_BODY_MESSAGE);
@@ -172,7 +177,6 @@ export function InstantiateWizard({
   function refusal(body: Record<string, unknown>): string | null {
     const targetMessage = templateTargetBodyMessage(template.target, body as InstantiateSectionTemplateBody);
     if (targetMessage !== null) return targetMessage;
-    if (isOrganization) return ORGANIZATION_ARM_NOT_YET;
     if (!isSite && bindsARole && body.assetGroupId === null) return ROLE_BINDINGS_NEED_A_GROUP;
     return null;
   }
@@ -354,6 +358,11 @@ export function InstantiateWizard({
           <>
             {answer.kind === "group" ? (
               renderReport(answer.result)
+            ) : answer.kind === "organization" ? (
+              <p className="rounded border border-accent/20 bg-ok-wash p-2 text-xs text-ok-ink">
+                Created the organization layout <strong>{answer.result.dashboardSlug}</strong>: it is now the strip at the
+                top of the organization&apos;s Control Room page.
+              </p>
             ) : (
               <p className="rounded border border-accent/20 bg-ok-wash p-2 text-xs text-ok-ink">
                 Created the site layout <strong>{answer.result.dashboardSlug}</strong>. {madeSummary(answer.result)}.

@@ -107,6 +107,8 @@ export type StoredContractContext =
   | "report_schedules.render.template_id"
   | "report_schedules.render.params"
   | "site_layout.read_template.content"
+  // `F4.317` task 4.2: the organization template content the organization-layout copy reads back.
+  | "organization_layout.read_template.content"
   | "copilot_tools.get_asset_kpis.result"
   | "copilot_tools.get_health_summary.result"
   | "copilot_tools.list_alarms.page"

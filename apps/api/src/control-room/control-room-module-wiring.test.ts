@@ -2,18 +2,22 @@ import { describe, it } from "vitest";
 
 import {
   assertAdminModuleImportsControlRoomModule,
+  assertAdminModuleProvidesTheOrganizationArm,
   assertAdminModuleProvidesTheSiteArm,
   assertAppModuleImportsControlRoomModule,
   assertControlRoomModuleDeclaresItsMembers,
   assertControlRoomModuleProvidesAndExportsSiteLayout,
+  assertControlRoomModuleWiresTheOrganizationStrip,
   assertDashboardTemplatesControllerDepsResolveThroughAdmin,
   assertGeneratedSiteViewControllerDepsResolveWithinControlRoom,
   assertGeneratedSiteViewServiceDepsResolveWithinControlRoom,
   assertLocationsAdminControllerDepsResolveThroughAdmin,
   assertScanFindsTheServiceOnLocationsAdminController,
+  assertOrganizationLayoutDepsResolveWithinControlRoom,
   assertServiceDepsResolveWithinControlRoom,
   assertSiteLayoutServiceDepsResolveWithinControlRoom,
   assertSiteViewControllerDepsResolveWithinControlRoom,
+  assertTheOrganizationArmDelegatesToMake,
   assertTheSiteArmDelegatesToMakeForSite,
 } from "./control-room-module-wiring.spec";
 
@@ -77,5 +81,21 @@ describe("F3.67 — ControlRoomModule wiring", () => {
 
   it("F3.73 the site arm forwards the location, the template and the choice to makeForSite", async () => {
     await assertTheSiteArmDelegatesToMakeForSite();
+  });
+
+  it("F4.317 declares the organization view controller and provides, exports and resolves the strip's service", () => {
+    assertControlRoomModuleWiresTheOrganizationStrip();
+  });
+
+  it("F4.317 OrganizationViewController's and OrganizationLayoutService's dependencies resolve", () => {
+    assertOrganizationLayoutDepsResolveWithinControlRoom();
+  });
+
+  it("F4.317 AdminModule fills the ORGANIZATION_TEMPLATE_ARM seam from OrganizationLayoutService", () => {
+    assertAdminModuleProvidesTheOrganizationArm();
+  });
+
+  it("F4.317 the organization arm forwards the organization and the template to make", async () => {
+    await assertTheOrganizationArmDelegatesToMake();
   });
 });
