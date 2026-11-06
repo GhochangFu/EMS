@@ -896,10 +896,12 @@ export function bothEntriesDeclarePointKeyAndAggregate(): void {
     );
   }
   for (const key of metricCatalogKeySchema.options) {
-    if (key.startsWith("sustainability.") || key === "water.balance") continue;
+    // `F4.317` (ADR 0112 decision 9): `alarms.active.count` takes an optional `tone`, held by
+    // `metric-catalog-params.spec.ts`.
+    if (key.startsWith("sustainability.") || key === "water.balance" || key === "alarms.active.count") continue;
     assert(
       METRIC_CATALOG[key].params === undefined,
-      `${key} declares params; only the sustainability entries and water.balance take fields`,
+      `${key} declares params; only the sustainability entries, water.balance and alarms.active.count take fields`,
     );
   }
 }

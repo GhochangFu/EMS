@@ -897,4 +897,10 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
       capped.truncated,
     );
   },
+
+  // `F4.317` (ADR 0112 decision 9) — the keys exist from migration `0126`; their resolvers are
+  // the next unit's (`metric-catalog-estate.ts`). Until then a binding answers "no value",
+  // never a fabricated number.
+  "sites.live.count": async () => metricValue("sites.live.count", null, null),
+  "pue.ratio": async () => metricValue("pue.ratio", null, null),
 };

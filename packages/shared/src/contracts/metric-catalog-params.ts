@@ -58,7 +58,10 @@ const sustainabilityParamsFields = {
 };
 
 export const METRIC_CATALOG_PARAMS_WRITE: Record<MetricCatalogKey, z.AnyZodObject> = {
-  "alarms.active.count": z.object({}).strict(),
+  // `F4.317` / ADR 0112 decision 9 — `tone: "critical"` counts the critical alarms only; a
+  // closed enum, not an id. The two keys `F4.317` adds at the end take no params. (No comment
+  // between two param-less entries: the f3.35 containment walk reads it as the entry's text.)
+  "alarms.active.count": z.object({ tone: z.enum(["critical"]).optional() }).strict(),
   "alarms.active": z.object({}).strict(),
   "workorders.open.count": z.object({}).strict(),
   "workorders.open": z.object({}).strict(),
@@ -75,6 +78,8 @@ export const METRIC_CATALOG_PARAMS_WRITE: Record<MetricCatalogKey, z.AnyZodObjec
   // `F3.73` — both resolve over the dashboard's (or the tab's) scope and take no params.
   "assets.offline.count": z.object({}).strict(),
   "assets.list": z.object({}).strict(),
+  "sites.live.count": z.object({}).strict(),
+  "pue.ratio": z.object({}).strict(),
 };
 
 /**
@@ -106,8 +111,9 @@ export const sourceBindingWriteSchema = z
   })
   .describe(
     "One named catalog binding (ADR 0048 decision 4). `params` is validated against the " +
-      "entry's own schema, which differs per `catalogKey`: the five Stage C entries declare no " +
-      "fields (`{}` only), and `sustainability.total` / `sustainability.by_location` require " +
+      "entry's own schema, which differs per `catalogKey`: the Stage C entries declare no " +
+      "fields (`{}` only) except `alarms.active.count`, which takes an optional `tone` " +
+      "(`critical` only; ADR 0112 decision 9), and `sustainability.total` / `sustainability.by_location` require " +
       "`{ pointKey, aggregate }` (ADR 0072) plus an optional `balanceRole`, a " +
       "`bms.water_balance_roles` code that narrows the carrying assets to that role (ADR 0073 " +
       "decision 2; without it, every asset carrying the point counts, so a water total sums " +

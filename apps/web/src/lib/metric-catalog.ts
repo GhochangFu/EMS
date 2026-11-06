@@ -1,4 +1,4 @@
-import { METRIC_CATALOG, WIDGET_SOURCE_SHAPES } from "@bms/shared";
+import { METRIC_CATALOG, METRIC_CATALOG_PARAMS_WRITE, WIDGET_SOURCE_SHAPES } from "@bms/shared";
 import type { MetricCatalogKey, WidgetType } from "@bms/shared";
 
 /**
@@ -92,6 +92,15 @@ export const METRIC_CATALOG_PRESENTATION: Readonly<
     label: "Asset list",
     description: "The active assets in scope, one row each, with live or offline and active alarms.",
   },
+  // `F4.317` / ADR 0112 decisions 7 and 9 — a site is a location.
+  "sites.live.count": {
+    label: "Sites live",
+    description: "How many sites in scope have an asset that sent recent data, out of all sites in scope.",
+  },
+  "pue.ratio": {
+    label: "PUE",
+    description: "The latest power usage effectiveness ratio across the assets in scope.",
+  },
 };
 
 /** The label alone — the common read, and the one a picker option and an inline error share. */
@@ -118,12 +127,18 @@ export function metricCatalogLabel(key: MetricCatalogKey): string {
  * — so offering one would be the same
  * 400-from-a-form-that-suggested-it the shape filter exists to prevent. The stock template and
  * the API are the two ways to bind these until a params editor lands as its own row.
+ *
+ * **The test is "does `{}` parse", not "declares no params"** (`F4.317`, ADR 0112 decision 9).
+ * `alarms.active.count` declares an OPTIONAL `tone`, so the picker's `params: {}` is a legal
+ * binding and the entry stays offered; an entry with a required field still fails `{}` and
+ * stays hidden — the same write schema the 400 would come from.
  */
 export function catalogKeysFor(widgetType: WidgetType): MetricCatalogKey[] {
   const drawable = WIDGET_SOURCE_SHAPES[widgetType];
   return (Object.keys(METRIC_CATALOG) as MetricCatalogKey[]).filter(
     (key) =>
-      drawable.includes(METRIC_CATALOG[key].shape) && METRIC_CATALOG[key].params === undefined,
+      drawable.includes(METRIC_CATALOG[key].shape) &&
+      METRIC_CATALOG_PARAMS_WRITE[key].safeParse({}).success,
   );
 }
 

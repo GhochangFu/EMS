@@ -635,8 +635,11 @@ export const bindingExclusiveMessage = (label: string): string =>
  * `reuse` or `discharge` role, with intake, reuse, discharge, consumed-or-lost and coverage.
  * **`assets.offline.count` and `assets.list`** (`F3.73`) are the site-scope metric and dataset the
  * SMOC standard layout binds.
- * Must match `dashboard_widget_sources_catalog_key_check` as migration `0096` widened it
- * (`0054` froze the first five, `0079` the next two, `0081` the eighth).
+ * **`sites.live.count` and `pue.ratio`** (`F4.317`, ADR 0112 decision 9) are the organization
+ * strip's two estate metrics: locations in scope with a reporting asset (the location total in
+ * `coverage`), and the latest PUE ratio.
+ * Must match `dashboard_widget_sources_catalog_key_check` as migration `0126` widened it
+ * (`0054` froze the first five, `0079` the next two, `0081` the eighth, `0096` the next two).
  */
 export const metricCatalogKeySchema = z.enum([
   "alarms.active.count",
@@ -649,6 +652,8 @@ export const metricCatalogKeySchema = z.enum([
   "water.balance",
   "assets.offline.count",
   "assets.list",
+  "sites.live.count",
+  "pue.ratio",
 ]);
 
 /**
@@ -716,7 +721,8 @@ export type CatalogEntryMeta =
  * than resolving to `undefined` at a call site.
  */
 export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, CatalogEntryMeta> = {
-  "alarms.active.count": { shape: "metric" },
+  // `F4.317` / ADR 0112 decision 9 — an optional `tone` ("critical" only) narrows the count.
+  "alarms.active.count": { shape: "metric", params: ["tone"] },
   "alarms.active": {
     shape: "dataset",
     columns: ["assetCode", "assetName", "severity", "message", "raisedAt"],
@@ -749,6 +755,9 @@ export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, Cata
   // No `role` column: the resolver takes asset ids only, so it cannot know a member's group role.
   "assets.offline.count": { shape: "metric" },
   "assets.list": { shape: "dataset", columns: ["code", "name", "status", "activeAlarms"] },
+  // `F4.317` / ADR 0112 decision 9 — the organization strip's two estate metrics; no params.
+  "sites.live.count": { shape: "metric" },
+  "pue.ratio": { shape: "metric" },
 };
 
 /**

@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { expect } from "vitest";
 
-import { METRIC_CATALOG, metricCatalogKeySchema } from "@bms/shared";
+import { METRIC_CATALOG, METRIC_CATALOG_PARAMS_WRITE, metricCatalogKeySchema } from "@bms/shared";
 
 import { METRIC_CATALOG_PRESENTATION } from "../../lib/metric-catalog";
 import { MetricSourcePicker } from "./metric-source-picker";
@@ -34,12 +34,14 @@ export function offersOnlyTheShapesTheWidgetCanDraw(): void {
     .map((option) => option.value)
     .filter((value) => value !== "");
 
-  // `E4.2` / ADR 0072 (plan OQ3): an entry that declares `params` is hidden too. The picker
-  // sends `params: {}`, which the entry's strict write schema refuses — an option here would be
-  // a 400 from a form that just offered it.
+  // `E4.2` / ADR 0072 (plan OQ3): an entry whose write schema refuses `{}` is hidden too. The
+  // picker sends `params: {}` — an option here would be a 400 from a form that just offered it.
+  // `F4.317`: an entry whose params are all optional (`alarms.active.count`'s `tone`) stays.
   const metrics = metricCatalogKeySchema.options.filter(
-    (key) => METRIC_CATALOG[key].shape === "metric" && METRIC_CATALOG[key].params === undefined,
+    (key) =>
+      METRIC_CATALOG[key].shape === "metric" && METRIC_CATALOG_PARAMS_WRITE[key].safeParse({}).success,
   );
+  expect(metrics, "the open-alarm count stays offered with its optional tone").toContain("alarms.active.count");
   const datasets = metricCatalogKeySchema.options.filter(
     (key) => METRIC_CATALOG[key].shape === "dataset",
   );
