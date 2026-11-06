@@ -13,7 +13,10 @@ import type { SectionTemplateWidget, SiteLayoutOmittedTile, SiteTemplateTab, Tem
  * **The order, per tab (OQ1, ruled 2026-09-30)**: (1) the caller's `choice` for the tab; (2) the
  * untaken group of the tab's domain whose code is the tab's `groupCode`; (3) the single untaken
  * group of the tab's domain; (4) else the tab is **ambiguous** when two or more remain and
- * **omitted** when none does. A tab with `domain: null` is the Overview and binds no group.
+ * **omitted** when none does. A tab with `domain: null` is the Overview and binds no group —
+ * unless it names a `groupCode` (`F4.319`, ADR 0113 decision 7, plan D4): then step 2 binds it
+ * to the site's untaken group of that code whose own domain is NULL (the seeded `pump-station`
+ * group), and with no such group it stays the plain Overview. Never by choice, never by step 3.
  *
  * **Each step runs over every tab before the next step starts.** So a choice or a `groupCode`
  * match is never pre-empted by an earlier tab that took the same group as its single candidate:
@@ -154,6 +157,17 @@ export function pickTabGroups<T extends SiteLayoutTabSpec>(
     (tab): tab is T & { domain: string } => tab.domain !== null && !bound.has(tab.key),
   );
 
+  // Step 2, `F4.319` (plan D4) — an Overview's `groupCode` names a domain-less group. A domain
+  // group of the same code is never the Overview's.
+  for (const tab of ordered) {
+    if (tab.domain !== null || tab.groupCode === undefined || bound.has(tab.key)) continue;
+    const match = groups.find((group) => group.domain === null && group.code === tab.groupCode && !taken.has(group.id));
+    if (match !== undefined) {
+      taken.add(match.id);
+      bound.set(tab.key, { group: match, via: "group_code" });
+    }
+  }
+
   // Step 2 — the tab's own `groupCode`, within its domain.
   for (const tab of open) {
     const match = untaken(tab.domain).find((group) => group.code === tab.groupCode);
@@ -191,7 +205,7 @@ export function pickTabGroups<T extends SiteLayoutTabSpec>(
   for (const tab of ordered) {
     const hit = bound.get(tab.key);
     if (tab.domain === null) {
-      picked.push({ tab, group: null, via: "overview" });
+      picked.push(hit === undefined ? { tab, group: null, via: "overview" } : { tab, group: hit.group, via: hit.via });
     } else if (hit !== undefined) {
       picked.push({ tab, group: hit.group, via: hit.via });
     }
@@ -245,12 +259,19 @@ export function planSiteLayout(
     const tabKey = tab.key;
     // A mimic on a domain tab resolves through its own tab's group first, so only the Overview's
     // (no group of its own) depends on the tab it names.
+    // `F4.319` (plan D4): an Overview mimic with no `tabKey` draws its own tab's group, so on an
+    // Overview that bound none it has nothing to draw; it is reported against the Overview.
+    const ownGroup = pick.tabs.find((row) => row.tab.key === tabKey)?.group ?? null;
     const target =
       widget.widgetType === "module_summary_card"
         ? widget.config.targetTabKey
         : widget.widgetType === "mimic" && tab.domain === null
-          ? widget.config.tabKey
+          ? (widget.config.tabKey ?? (ownGroup === null ? null : undefined))
           : undefined;
+    if (target === null) {
+      droppedCards.push({ tabKey, widgetKey: widget.key, targetTabKey: tabKey });
+      return false;
+    }
     if (target === undefined || kept.has(target)) {
       return true;
     }

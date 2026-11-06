@@ -11,6 +11,10 @@ import {
   aChoiceOfAnotherDomainIsRefused,
   aChoiceOfATakenGroupIsRefused,
   aDomainlessGroupNeverBindsTheOverview,
+  anOverviewNeverTakesADomainGroupByCode,
+  anOverviewWithAGroupCodeBindsTheDomainlessGroup,
+  anOverviewWithoutItsGroupDropsItsUntargetedMimic,
+  theSmocOverviewStillBindsNoGroupBesidePumpStation,
   aBoundTileAndEveryUnboundWidgetAreKept,
   aLaterTabTakesOnlyAnUntakenGroup,
   anEmptiedRowLiftsTheRowsBelowIt,
@@ -169,5 +173,20 @@ describe("F3.74 — an Overview mimic naming an omitted tab is dropped", () => {
   });
   it("keeps the Overview mimic on CSMOC", () => {
     csmocKeepsTheOverviewMimic();
+  });
+});
+
+describe("F4.319 plan D4 — an Overview that names a domain-less group by code", () => {
+  it("binds the domain-less group of its groupCode", () => {
+    anOverviewWithAGroupCodeBindsTheDomainlessGroup();
+  });
+  it("never takes a domain group by code", () => {
+    anOverviewNeverTakesADomainGroupByCode();
+  });
+  it("stays plain and drops its untargeted mimic when the site has no such group", () => {
+    anOverviewWithoutItsGroupDropsItsUntargetedMimic();
+  });
+  it("leaves the smoc-standard Overview unbound", () => {
+    theSmocOverviewStillBindsNoGroupBesidePumpStation();
   });
 });

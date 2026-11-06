@@ -56,7 +56,8 @@ import {
 } from "./eskom-locations-seed";
 import { seedSiteControlRoomViews } from "./site-control-room-views-seed";
 import { seedOrganizationLayout } from "./organization-layout-seed";
-import { seedEskomSiteLayouts, seedPhewbSiteLayouts } from "./site-layout-seed";
+import { seedEskomSiteLayouts } from "./site-layout-seed";
+import { seedPhewbSiteLayouts } from "./site-layout-seed-move";
 
 /**
  * The single `pnpm db:seed` entrypoint. It owns the pool and the call order and

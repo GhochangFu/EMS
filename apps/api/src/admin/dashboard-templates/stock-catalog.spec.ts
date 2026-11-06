@@ -136,9 +136,10 @@ export function runStockCatalogTests(): void {
 
   // Eight since `F3.73`: `smoc-standard`, the one `target: "site"` entry. Nine since `F4.317`:
   // `organization-standard`, the one `target: "organization"` entry (ADR 0112 decision 3).
+  // Ten since `F4.319`: `pump-station-standard`, a second `target: "site"` entry (ADR 0113).
   assert(
-    STOCK_DASHBOARD_TEMPLATE_CATALOG.length === 9,
-    `expected exactly nine stock templates, found ${STOCK_DASHBOARD_TEMPLATE_CATALOG.length}`,
+    STOCK_DASHBOARD_TEMPLATE_CATALOG.length === 10,
+    `expected exactly ten stock templates, found ${STOCK_DASHBOARD_TEMPLATE_CATALOG.length}`,
   );
 
   const codes = STOCK_DASHBOARD_TEMPLATE_CATALOG.map((entry) => entry.code);
@@ -170,6 +171,7 @@ export function runStockCatalogTests(): void {
         "etp-overview",
         "hvac-overview",
         "organization-standard",
+        "pump-station-standard",
         "smoc-standard",
         "stp-overview",
         "sustainability-overview",

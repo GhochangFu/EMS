@@ -16,3 +16,5 @@
 export { SMOC_STANDARD_SITE_TEMPLATE } from "./site-templates/smoc-standard";
 // `F4.317` (ADR 0112 decision 3) — the stock organization strip, and the organization page's fail-safe.
 export { ORGANIZATION_STANDARD_TEMPLATE } from "./site-templates/organization-standard";
+// `F4.319` (ADR 0113 decision 7) — the stock pump-station site layout.
+export { PUMP_STATION_STANDARD_SITE_TEMPLATE } from "./site-templates/pump-station-standard";

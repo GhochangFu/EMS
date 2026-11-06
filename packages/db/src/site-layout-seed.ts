@@ -11,7 +11,7 @@ import {
   type SiteLayoutGroup,
   type SiteLayoutOmittedTile,
 } from "@bms/shared";
-import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
+import { PUMP_STATION_STANDARD_SITE_TEMPLATE, SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 import {
   eskomCanonicalLocationRows,
@@ -96,8 +96,15 @@ export const SITE_LAYOUT_ESKOM_CHOICE: Readonly<Record<string, string>> = {
   water: "water",
 };
 
-/** PHEWB's explicit choice, tab key → group code (plan D12). */
+/** PHEWB's explicit choice for a `smoc-standard` copy, tab key → group code (plan D12). */
 export const SITE_LAYOUT_PHEWB_CHOICE: Readonly<Record<string, string>> = { sld: "electrical" };
+
+/**
+ * `F4.319` (ADR 0113 decision 8, plan D7) — PHEWB's choice for a `pump-station-standard` copy. The
+ * Overview binds `pump-station` by the template's own `groupCode` (plan D4); a choice cannot name
+ * the Overview.
+ */
+export const SITE_LAYOUT_PHEWB_PUMP_STATION_CHOICE: Readonly<Record<string, string>> = { electrical: "electrical" };
 
 /** The copy's slug at a location with slug `locationSlug`. */
 export function siteLayoutSlug(locationSlug: string): string {
@@ -211,15 +218,19 @@ export type SeededSiteTemplate = {
   readonly stockVersion: number | null;
 };
 
+/** A stock site template the seed imports: `smoc-standard`, or (`F4.319`) `pump-station-standard`. */
+type StockSiteTemplate = typeof SMOC_STANDARD_SITE_TEMPLATE | typeof PUMP_STATION_STANDARD_SITE_TEMPLATE;
+
 /**
- * Inserts v1 when absent and returns the newest published version, or `null` when there is none
- * (an administrator imported v1 as a draft before the seed ran, and has not published it).
+ * Inserts v1 of `entry` when absent and returns its newest published version, or `null` when
+ * there is none (an administrator imported v1 as a draft before the seed ran, and has not
+ * published it). Only `smoc-standard` has a seed upgrade chain (`upgradeSeedSiteTemplate`).
  */
 export async function ensureSiteTemplate(
   pool: Pick<pg.Pool, "query">,
   organizationId: string,
+  entry: StockSiteTemplate = SMOC_STANDARD_SITE_TEMPLATE,
 ): Promise<SeededSiteTemplate | null> {
-  const entry = SMOC_STANDARD_SITE_TEMPLATE;
   await pool.query(SITE_TEMPLATE_INSERT_SQL, [
     organizationId,
     entry.code,
@@ -231,7 +242,9 @@ export async function ensureSiteTemplate(
     JSON.stringify(entry.content),
     entry.stockVersion,
   ]);
-  await upgradeSeedSiteTemplate(pool, organizationId);
+  if (entry.code === SMOC_STANDARD_SITE_TEMPLATE.code) {
+    await upgradeSeedSiteTemplate(pool, organizationId);
+  }
   const res = await pool.query<{ id: string; content: unknown; stock_version: number | null }>(SITE_TEMPLATE_READ_SQL, [
     organizationId,
     entry.code,
@@ -315,6 +328,113 @@ const READ_BACK_SQL = `
       WHERE location_id = $2 AND dashboard_id = $1) AS views
 `;
 
+/** One planned tab of a copy: the planner's row and its widget plans, role tiles left out. */
+export type PlannedCopyTab = {
+  readonly row: Extract<ReturnType<typeof planSiteLayout>, { status: "planned" }>["tabs"][number];
+  readonly widgets: readonly ReturnType<typeof planTemplateWidget>[];
+};
+
+export type PlannedCopy =
+  | { readonly status: "planned"; readonly tabs: readonly PlannedCopyTab[]; readonly omittedTiles: readonly SiteLayoutOmittedTile[] }
+  | { readonly status: "ambiguous" | "refused" };
+
+/**
+ * The copy `template` makes at `locationId`, planned and not written: the shared planner with the
+ * choices mapped from group codes to the site's ids, then the API copy's rule that a role tile
+ * with no point at the site is left out. `F4.319` reads it twice — to write a copy, and (plan D5)
+ * to compare a stored copy with the copy the seed would make.
+ */
+export async function planSiteCopy(
+  pool: Pick<pg.Pool, "query">,
+  organizationId: string,
+  locationId: string,
+  template: SeededSiteTemplate,
+  choiceByGroupCode: Readonly<Record<string, string>>,
+  points: Map<string, string>,
+): Promise<PlannedCopy> {
+  const groups = (await pool.query<SiteLayoutGroup>(GROUPS_SQL, [organizationId, locationId])).rows;
+  const choice: Record<string, string> = {};
+  for (const [tabKey, groupCode] of Object.entries(choiceByGroupCode)) {
+    const group = groups.find((row) => row.code === groupCode);
+    if (group) choice[tabKey] = group.id;
+  }
+  const plan = planSiteLayout(template.content.tabs, groups, choice as SiteLayoutChoice);
+  if (plan.status !== "planned") {
+    return { status: plan.status };
+  }
+  const tabs: PlannedCopyTab[] = [];
+  const omittedTiles: SiteLayoutOmittedTile[] = [];
+  for (const row of plan.tabs) {
+    const members =
+      row.group === null ? new Map<string, GroupMember[]>() : await membersByRole(pool, organizationId, row.group.id);
+    const kept = omitUnboundTiles(
+      row.tab.key,
+      row.tab.widgets.map((widget) => planTemplateWidget(widget, members, points)),
+    );
+    omittedTiles.push(...kept.omittedTiles);
+    tabs.push({ row, widgets: kept.plans });
+  }
+  return { status: "planned", tabs, omittedTiles };
+}
+
+/** Writes `tabs` onto the copy `dashboardId`; returns the widget count for the read-back. */
+export async function writeSiteLayoutTabs(
+  pool: Pick<pg.Pool, "query">,
+  organizationId: string,
+  dashboardId: string,
+  locationId: string,
+  tabs: readonly PlannedCopyTab[],
+): Promise<number> {
+  let widgetCount = 0;
+  for (const { row, widgets } of tabs) {
+    const tab = await pool.query<{ id: string }>(TAB_INSERT_SQL, [
+      organizationId,
+      dashboardId,
+      // The Overview binds no group and stores no location (plan D1), so its row is inert
+      // to the composite foreign keys; a group tab stores the dashboard's location. Since
+      // `F4.319` an Overview may bind a group too (plan D4), and then stores the location.
+      row.group === null ? null : locationId,
+      row.group?.id ?? null,
+      row.tab.key,
+      row.tab.label,
+      row.tab.sortOrder,
+    ]);
+    const tabId = tab.rows[0]?.id;
+    if (!tabId) throw new Error(`writeSiteLayoutTabs: tab ${row.tab.key} at ${locationId} returned no id`);
+    for (const widgetPlan of widgets) {
+      const { widget } = widgetPlan;
+      const inserted = await pool.query<{ id: string }>(WIDGET_INSERT_SQL, [
+        organizationId,
+        dashboardId,
+        tabId,
+        widget.widgetType,
+        widget.title,
+        widget.gridX,
+        widget.gridY,
+        widget.gridW,
+        widget.gridH,
+        JSON.stringify(widget.config),
+      ]);
+      const widgetId = inserted.rows[0]?.id;
+      if (!widgetId) throw new Error(`writeSiteLayoutTabs: widget ${widget.key} at ${locationId} returned no id`);
+      widgetCount += 1;
+      for (const [index, point] of widgetPlan.points.entries()) {
+        await pool.query(POINT_INSERT_SQL, [organizationId, widgetId, point.pointId, widgetPlan.pointRole, index]);
+      }
+      for (const [index, source] of widget.sources.entries()) {
+        await pool.query(SOURCE_INSERT_SQL, [
+          organizationId,
+          widgetId,
+          source.catalogKey,
+          JSON.stringify(source.params),
+          source.sortOrder ?? index,
+        ]);
+      }
+    }
+  }
+  return widgetCount;
+}
+
 /**
  * Makes one copy per location of `locationIds` that has no view row and whose slug is free.
  * The caller holds the organization's tenant bracket and resolved the seed-owned locations.
@@ -327,6 +447,8 @@ export async function seedSiteLayouts(
     readonly locationIds: readonly string[];
     readonly choiceByGroupCode: Readonly<Record<string, string>>;
     readonly log?: (line: string) => void;
+    /** The copy's description; `smoc-standard`'s by default (`F4.319` passes its own). */
+    readonly description?: string;
   },
 ): Promise<SiteLayoutSeedOutcome> {
   const log = options.log ?? ((line: string) => console.error(line));
@@ -360,43 +482,19 @@ export async function seedSiteLayouts(
       continue;
     }
 
-    const groups = (
-      await pool.query<SiteLayoutGroup>(GROUPS_SQL, [organizationId, locationId])
-    ).rows;
-    const choice: Record<string, string> = {};
-    for (const [tabKey, groupCode] of Object.entries(options.choiceByGroupCode)) {
-      const group = groups.find((row) => row.code === groupCode);
-      if (group) choice[tabKey] = group.id;
-    }
-    const plan = planSiteLayout(options.template.content.tabs, groups, choice as SiteLayoutChoice);
-    if (plan.status !== "planned") {
-      skip(locationId, plan.status);
+    pointsByAsset ??= await activePointsByAsset(pool, organizationId);
+    const planned = await planSiteCopy(pool, organizationId, locationId, options.template, options.choiceByGroupCode, pointsByAsset);
+    if (planned.status !== "planned") {
+      skip(locationId, planned.status);
       continue;
     }
-
-    pointsByAsset ??= await activePointsByAsset(pool, organizationId);
-    const points = pointsByAsset;
-    const tabs = [];
-    const omittedTiles: SiteLayoutOmittedTile[] = [];
-    for (const row of plan.tabs) {
-      const members =
-        row.group === null
-          ? new Map<string, GroupMember[]>()
-          : await membersByRole(pool, organizationId, row.group.id);
-      // The API copy's rule: a role tile with no point at this site is left out, the tab re-packed.
-      const kept = omitUnboundTiles(
-        row.tab.key,
-        row.tab.widgets.map((widget) => planTemplateWidget(widget, members, points)),
-      );
-      omittedTiles.push(...kept.omittedTiles);
-      tabs.push({ row, widgets: kept.plans });
-    }
+    const { tabs, omittedTiles } = planned;
 
     const dashboard = await pool.query<{ id: string }>(DASHBOARD_INSERT_SQL, [
       organizationId,
       slug,
       `${location.name} site layout`,
-      SITE_LAYOUT_COPY_DESCRIPTION,
+      options.description ?? SITE_LAYOUT_COPY_DESCRIPTION,
       locationId,
       options.template.id,
       options.template.stockVersion,
@@ -406,52 +504,7 @@ export async function seedSiteLayouts(
       skip(locationId, "slug_taken");
       continue;
     }
-    let widgetCount = 0;
-    for (const { row, widgets } of tabs) {
-      const tab = await pool.query<{ id: string }>(TAB_INSERT_SQL, [
-        organizationId,
-        dashboardId,
-        // The Overview binds no group and stores no location (plan D1), so its row is inert
-        // to the composite foreign keys; a group tab stores the dashboard's location.
-        row.group === null ? null : locationId,
-        row.group?.id ?? null,
-        row.tab.key,
-        row.tab.label,
-        row.tab.sortOrder,
-      ]);
-      const tabId = tab.rows[0]?.id;
-      if (!tabId) throw new Error(`seedSiteLayouts: tab ${row.tab.key} at ${locationId} returned no id`);
-      for (const widgetPlan of widgets) {
-        const { widget } = widgetPlan;
-        const inserted = await pool.query<{ id: string }>(WIDGET_INSERT_SQL, [
-          organizationId,
-          dashboardId,
-          tabId,
-          widget.widgetType,
-          widget.title,
-          widget.gridX,
-          widget.gridY,
-          widget.gridW,
-          widget.gridH,
-          JSON.stringify(widget.config),
-        ]);
-        const widgetId = inserted.rows[0]?.id;
-        if (!widgetId) throw new Error(`seedSiteLayouts: widget ${widget.key} at ${locationId} returned no id`);
-        widgetCount += 1;
-        for (const [index, point] of widgetPlan.points.entries()) {
-          await pool.query(POINT_INSERT_SQL, [organizationId, widgetId, point.pointId, widgetPlan.pointRole, index]);
-        }
-        for (const [index, source] of widget.sources.entries()) {
-          await pool.query(SOURCE_INSERT_SQL, [
-            organizationId,
-            widgetId,
-            source.catalogKey,
-            JSON.stringify(source.params),
-            source.sortOrder ?? index,
-          ]);
-        }
-      }
-    }
+    const widgetCount = await writeSiteLayoutTabs(pool, organizationId, dashboardId, locationId, tabs);
     await pool.query(VIEW_INSERT_SQL, [locationId, organizationId, dashboardId]);
 
     const check = (
@@ -491,28 +544,6 @@ export async function seedEskomSiteLayouts(
     template,
     locationIds,
     choiceByGroupCode: SITE_LAYOUT_ESKOM_CHOICE,
-    ...(log ? { log } : {}),
-  });
-}
-
-/** PHEWB: the template, then a copy at each catalog station. */
-export async function seedPhewbSiteLayouts(
-  pool: Pick<pg.Pool, "query">,
-  phewbOrgId: string,
-  pheCatalog: PheCatalogFile,
-  log?: (line: string) => void,
-): Promise<SiteLayoutSeedOutcome> {
-  const template = await ensureSiteTemplate(pool, phewbOrgId);
-  if (template === null) {
-    (log ?? console.error)("seedPhewbSiteLayouts: no published smoc-standard template; no copy made");
-    return { made: [], skipped: [] };
-  }
-  const locationIds = await resolvePhewbSiteLayoutLocations(pool, phewbOrgId, pheSiteLayoutStations(pheCatalog));
-  await upgradeSeededSiteLayoutCopies(pool, phewbOrgId, locationIds, SITE_LAYOUT_SLUG_PREFIX);
-  return seedSiteLayouts(pool, phewbOrgId, {
-    template,
-    locationIds,
-    choiceByGroupCode: SITE_LAYOUT_PHEWB_CHOICE,
     ...(log ? { log } : {}),
   });
 }

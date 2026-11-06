@@ -159,16 +159,19 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     return res.rows.map((row) => row.tab);
   }
 
-  /** The seed-owned copies: slug `site-layout-<location slug>` at CSMOC or a catalog station. */
+  /**
+   * The seed-owned copies: slug `site-layout-<location slug>` at CSMOC (`smoc-standard`) or a
+   * catalog station (`pump-station-standard` since `F4.319`, ADR 0113 decision 8).
+   */
   const SEEDED_COPIES_SQL = `
     FROM bms.dashboards d
     JOIN bms.locations l ON l.id = d.location_id
     JOIN bms.dashboard_templates t ON t.id = d.template_id
    WHERE d.slug = 'site-layout-' || l.slug
-     AND t.code = 'smoc-standard' AND t.target = 'site'
-     AND (l.id = $1 OR l.slug = ANY($2::varchar[]))`;
+     AND t.target = 'site'
+     AND ((l.id = $1 AND t.code = 'smoc-standard') OR (l.slug = ANY($2::varchar[]) AND t.code = 'pump-station-standard'))`;
 
-  it("made seven copies, each stamped with the smoc-standard site template", async () => {
+  it("made seven copies: CSMOC's from smoc-standard, the six stations' from pump-station-standard", async () => {
     const res = await probePool!.query<{ n: number }>(`SELECT count(*)::int AS n ${SEEDED_COPIES_SQL}`, [
       csmocId,
       pheSlugs,
@@ -197,11 +200,12 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
     expect(copies.rows[0]?.n).toBe(0);
   });
 
-  it("gives each PHE station the tabs overview, sld and env, exactly", async () => {
+  // `F4.319` (ADR 0113 decision 7, plan D4): the Overview binds the station's `pump-station` group.
+  it("gives each PHE station the tabs overview, electrical and env, exactly", async () => {
     for (const slug of pheSlugs) {
       expect(await tabsOf(probePool!, phewbOrgId, siteLayoutSlug(slug)), slug).toEqual([
-        "overview:-",
-        "sld:electrical",
+        "overview:pump-station",
+        "electrical:electrical",
         "env:environment",
       ]);
     }
@@ -243,14 +247,15 @@ describe.skipIf(!ownerUrl)("F3.73 D12 — the seeded SMOC standard site layouts"
                          ';' ORDER BY w.grid_y, w.grid_x) AS overview
          ${SEEDED_COPIES_SQL.replace("FROM bms.dashboards d", "FROM bms.dashboards d JOIN bms.dashboard_widgets w ON w.dashboard_id = d.id JOIN bms.dashboard_tabs tab ON tab.id = w.tab_id AND tab.tab_key = 'overview'")}
         GROUP BY d.slug`,
-      [csmocId, pheSlugs],
+      // `F4.319`: the smoc-standard Overview is CSMOC's alone; the stations' is pump-station-standard's.
+      [csmocId, []],
     );
     const v5 =
       "value_tile|Active alarms@0,0,3,2:alert;value_tile|Offline assets@3,0,3,2:offline;" +
       "value_tile|Total load@6,0,3,2:bolt;value_tile|Asset health@9,0,3,2:gauge;trend_strip|Trends@0,2,12,4;" +
       "active_alarms_rail|Active alarms@0,6,8,7;critical_systems_list|Critical systems@8,6,4,7;" +
       "mimic|@0,13,6,2;asset_class_strip|@6,13,6,2;state_legend|@0,15,12,1";
-    expect(res.rows.map((row) => row.overview)).toEqual(Array.from({ length: 7 }, () => v5));
+    expect(res.rows.map((row) => row.overview)).toEqual([v5]);
   });
 
   it("writes no row on a second run", async () => {

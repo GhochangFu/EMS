@@ -69,6 +69,8 @@ const STOCK_RELS = [
   "packages/shared/src/site-templates/smoc-standard.ts",
   // `F4.317` — the fourth: the stock organization strip (ADR 0112 decision 3), catalog sources only.
   "packages/shared/src/site-templates/organization-standard.ts",
+  // `F4.319` — the fifth: the stock pump-station site layout (ADR 0113 decision 7).
+  "packages/shared/src/site-templates/pump-station-standard.ts",
 ] as const;
 
 /**
@@ -80,6 +82,8 @@ const STOCK_INITIAL_SECTION: Readonly<Record<string, string>> = {
   "packages/shared/src/site-templates/smoc-standard.ts": "site",
   // Its tiles are declared above the entry's `section: "organization"` line too.
   "packages/shared/src/site-templates/organization-standard.ts": "organization",
+  // Its widgets are declared above the entry's `section: "site"` line, as the SMOC file's are.
+  "packages/shared/src/site-templates/pump-station-standard.ts": "site",
 };
 
 /** The files as one list, for an assertion message. */
@@ -430,13 +434,14 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
 
   // `F3.73` — the SMOC site layout's bindings sit in the third file, above its `section:` line.
   // Named, for the sustainability reason above: the section floor could clear on the other six.
+  // 16 since `F4.319`: + `pump-station-standard`'s one role tile (`meter` / `frequency_hz`).
   it("the SMOC site layout's bindings are attributed to the site section", () => {
     const siteRoles = roleCodes.filter((entry) => entry.section === "site").length;
     expect(
       siteRoles,
       "no assetRoleCode was attributed to the site section — the SMOC tabs are not being " +
         "scanned, so the membership claims below run over a set without them",
-    ).toBe(15);
+    ).toBe(16);
   });
 
   // ADR 0049 decision 4 — stock content names roles, never an asset. `CR-` is the
