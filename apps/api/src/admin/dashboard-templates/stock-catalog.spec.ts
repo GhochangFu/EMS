@@ -84,6 +84,11 @@ const seededSections = (): string[] => [
   ...seededCodes(read("packages/db/drizzle/0056_dashboard_templates.sql"), "dashboard_sections"),
   // `F3.73` — the `site` section ("Site layouts"), for the SMOC standard site layout.
   ...seededCodes(read("packages/db/drizzle/0095_site_template_target_and_group_domain.sql"), "dashboard_sections"),
+  // `F4.317` — the `organization` section ("Organization layouts"), for the organization strip.
+  ...seededCodes(
+    read("packages/db/drizzle/0126_organization_control_room_views_and_catalog.sql"),
+    "dashboard_sections",
+  ),
 ];
 
 /**

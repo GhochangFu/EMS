@@ -876,6 +876,13 @@
       "when": 1793860900000,
       "tag": "0125_organization_colour_profile",
       "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "7",
+      "when": 1793945460195,
+      "tag": "0126_organization_control_room_views_and_catalog",
+      "breakpoints": true
     }
   ]
 }
