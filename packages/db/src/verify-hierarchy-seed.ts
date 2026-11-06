@@ -114,16 +114,6 @@ export async function verifyHierarchySeed(
 }
 
 /**
- * One claim the verifier makes: `actual` read from the database, `wanted` the
- * number it must equal (`exact`) or reach (`atLeast`).
- *
- * The three `read*Checks` passes below return these and decide nothing;
- * {@link failingChecks} decides. The split exists so an integration test can
- * run a pass inside its own `BEGIN` … `ROLLBACK` — {@link verifyHierarchySeed}
- * wraps Passes 2 and 3 in `withOrganization`, whose `COMMIT` on the `max: 1`
- * seed pool would commit the test's fixture.
- */
-/**
  * `F4.317` ruling Q3 — 1 when the organization carries its seeded layout: a pointer row of any
  * kind, or the seed's copy (Reset deletes the row and leaves the copy). Params:
  * `[organizationId, copySlug]`.
@@ -135,6 +125,16 @@ export const ORGANIZATION_LAYOUT_PRESENT_SQL = `
   )::int::text AS n
 `;
 
+/**
+ * One claim the verifier makes: `actual` read from the database, `wanted` the
+ * number it must equal (`exact`) or reach (`atLeast`).
+ *
+ * The three `read*Checks` passes below return these and decide nothing;
+ * {@link failingChecks} decides. The split exists so an integration test can
+ * run a pass inside its own `BEGIN` … `ROLLBACK` — {@link verifyHierarchySeed}
+ * wraps Passes 2 and 3 in `withOrganization`, whose `COMMIT` on the `max: 1`
+ * seed pool would commit the test's fixture.
+ */
 export type HierarchyCheck = {
   readonly label: string;
   readonly actual: number;

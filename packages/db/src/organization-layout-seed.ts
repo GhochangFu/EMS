@@ -8,7 +8,7 @@ import { ORGANIZATION_STANDARD_TEMPLATE } from "@bms/shared/site-templates";
  * seed-owned demo organizations, ESKOM and PHEWB, on the `site-layout-seed.ts` shape.
  *
  * **What this seeds, per organization.** (a) The `organization-standard` template as a published
- * stock import at version 1, insert-if-absent. (b) When the organization has no
+ * stock import, insert-if-absent (when none is published, at the next free version). (b) When the organization has no
  * `bms.organization_control_room_views` row and no dashboard holding {@link ORGANIZATION_LAYOUT_SEED_SLUG},
  * one organization-wide copy of the organization's newest published `organization-standard`
  * version, planned by the SAME shared planner the API's "Make organization layout" runs
@@ -30,18 +30,23 @@ import { ORGANIZATION_STANDARD_TEMPLATE } from "@bms/shared/site-templates";
 /** The seeded copy's slug (the API's copies are `organization-layout-<id8>`, so never this). */
 export const ORGANIZATION_LAYOUT_SEED_SLUG = "organization-layout-seed";
 
-/** The version the seed imports: the first. */
-export const ORGANIZATION_LAYOUT_SEED_TEMPLATE_VERSION = 1;
-
 /**
- * Insert-if-absent on the `(organization_id, code, version)` unique index of `0056`.
- * Params: `[organizationId, code, version, name, section, target, description, content, stockVersion]`.
+ * Insert-if-absent: only when the organization holds no published version of the code, and then at
+ * `MAX(version) + 1` (the stock import's own next-version rule, so a lingering draft or archived
+ * v1 from an earlier stock import never blocks it; a fresh database gets 1). `ON CONFLICT` on the
+ * `(organization_id, code, version)` unique index of `0056` keeps a racing writer harmless.
+ * Params: `[organizationId, code, name, section, target, description, content, stockVersion]`.
  */
 export const ORGANIZATION_TEMPLATE_INSERT_SQL = `
   INSERT INTO bms.dashboard_templates
     (organization_id, code, version, name, section, target, description, status, content,
      published_at, stock_code, stock_version)
-  VALUES ($1, $2, $3, $4, $5, $6, $7, 'published', $8::jsonb, now(), $2, $9)
+  SELECT $1::uuid, $2::text,
+         COALESCE((SELECT MAX(version) FROM bms.dashboard_templates WHERE organization_id = $1::uuid AND code = $2::text), 0) + 1,
+         $3, $4, $5, $6, 'published', $7::jsonb, now(), $2::text, $8::int
+   WHERE NOT EXISTS (
+     SELECT 1 FROM bms.dashboard_templates
+      WHERE organization_id = $1::uuid AND code = $2::text AND status = 'published' AND target = 'organization')
   ON CONFLICT (organization_id, code, version) DO NOTHING
 `;
 
@@ -93,7 +98,7 @@ export type SeededOrganizationTemplate = {
   readonly stockVersion: number | null;
 };
 
-/** Inserts v1 when absent and returns the newest published version, or `null` when there is none. */
+/** Inserts a published stock version when none is published and returns the newest published version, or `null` when there is none. */
 export async function ensureOrganizationTemplate(
   pool: Pick<pg.Pool, "query">,
   organizationId: string,
@@ -102,7 +107,6 @@ export async function ensureOrganizationTemplate(
   await pool.query(ORGANIZATION_TEMPLATE_INSERT_SQL, [
     organizationId,
     entry.code,
-    ORGANIZATION_LAYOUT_SEED_TEMPLATE_VERSION,
     entry.name,
     entry.section,
     entry.target,

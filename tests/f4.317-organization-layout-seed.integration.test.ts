@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import type * as OrganizationLayoutSeed from "../packages/db/dist/organization-layout-seed.js";
 import type * as SeedTenant from "../packages/db/dist/seed-tenant.js";
+import type * as VerifyHierarchySeed from "../packages/db/dist/verify-hierarchy-seed.js";
 import {
   openIntegrationPool,
   requireIntegrationDb,
@@ -14,6 +15,9 @@ import {
 // source edit, run `pnpm --filter @bms/db build` before this suite, or it runs the last build.
 const require_ = createRequire(import.meta.url);
 const { createSeedPool } = require_("../packages/db/dist/seed-tenant.js") as typeof SeedTenant;
+const { readEskomChecks, readPhewbChecks } = require_(
+  "../packages/db/dist/verify-hierarchy-seed.js",
+) as typeof VerifyHierarchySeed;
 const { ORGANIZATION_LAYOUT_SEED_SLUG, seedOrganizationLayout } = require_(
   "../packages/db/dist/organization-layout-seed.js",
 ) as typeof OrganizationLayoutSeed;
@@ -21,9 +25,13 @@ const { ORGANIZATION_LAYOUT_SEED_SLUG, seedOrganizationLayout } = require_(
 /**
  * `F4.317` PR 6 (owner ruling Q3) — the seeded organization Control Room layouts.
  *
- * **After a full `pnpm db:seed`.** The first cases read what the seed left: for ESKOM and PHEWB
- * one pointer row, at a seed-slug copy that is organization-wide, stamped with the
- * `organization-standard` template, with its 14 tiles and 15 sources. The rest re-run the seed
+ * **After a full `pnpm db:seed`.** The first cases read what the database holds NOW, accepting
+ * every state the boot gate accepts: the seed-slug copy (organization-wide, stamped with a
+ * `organization-standard` template, 14 tiles and 15 sources) is present, and the pointer row is
+ * either there (at an organization-wide dashboard) or absent (an administrator's Reset). Counts
+ * are of published templates only, so a stock re-import's draft or a concurrent suite's draft
+ * does not move them. The strict "pointer at the seed copy" shape is asserted only in the
+ * rolled-back cases below, where the test builds the state itself. The rest re-run the seed
  * function against a changed database inside one `BEGIN` ... `ROLLBACK` on the seed pool's one
  * connection (as `bms_owner`, under the organization's GUC), because a single seed pass only
  * ever takes the insert branch. No case calls `withOrganization`, which commits.
@@ -84,24 +92,44 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
       (SELECT count(*)::int FROM bms.dashboard_widget_sources s JOIN bms.dashboard_widgets w ON w.id = s.widget_id
         JOIN bms.dashboards d ON d.id = w.dashboard_id WHERE d.organization_id = $1 AND d.slug = $2) AS sources,
       (SELECT count(*)::int FROM bms.dashboard_templates
-        WHERE organization_id = $1 AND code = 'organization-standard') AS templates`;
+        WHERE organization_id = $1 AND code = 'organization-standard'
+          AND target = 'organization' AND status = 'published') AS templates`;
+
+  /** Puts the pointer row at the seed copy, whatever an earlier admin action left. */
+  async function pointAtSeedCopy(pool: SeedPool, id: string): Promise<void> {
+    await pool.query("DELETE FROM bms.organization_control_room_views WHERE organization_id = $1", [id]);
+    await pool.query(
+      `INSERT INTO bms.organization_control_room_views (organization_id, dashboard_id)
+       SELECT $1, d.id FROM bms.dashboards d WHERE d.organization_id = $1 AND d.slug = $2`,
+      [id, ORGANIZATION_LAYOUT_SEED_SLUG],
+    );
+  }
 
   for (const code of ["ESKOM", "PHEWB"]) {
-    it(`${code}: one pointer row at the organization-wide seed copy, stamped with organization-standard`, async () => {
+    it(`${code}: the seed copy is organization-wide and stamped; any pointer row names an organization-wide dashboard`, async () => {
       const id = orgIds[code] as string;
-      const res = await probePool!.query<{ n: number }>(
+      const copy = await probePool!.query<{ n: number }>(
         `SELECT count(*)::int AS n
-           FROM bms.organization_control_room_views v
-           JOIN bms.dashboards d ON d.id = v.dashboard_id AND d.organization_id = v.organization_id
+           FROM bms.dashboards d
            JOIN bms.dashboard_templates t ON t.id = d.template_id
-          WHERE v.organization_id = $1 AND d.slug = $2
+          WHERE d.organization_id = $1 AND d.slug = $2
             AND d.location_id IS NULL AND d.asset_group_id IS NULL AND d.asset_id IS NULL
-            AND t.code = 'organization-standard' AND t.target = 'organization' AND t.status = 'published'`,
+            AND t.code = 'organization-standard' AND t.target = 'organization'`,
         [id, ORGANIZATION_LAYOUT_SEED_SLUG],
       );
-      expect(res.rows[0]?.n).toBe(1);
+      expect(copy.rows[0]?.n).toBe(1);
       const counts = (await probePool!.query(COUNTS_SQL, [id, ORGANIZATION_LAYOUT_SEED_SLUG])).rows[0];
-      expect(counts).toMatchObject({ views: 1, copies: 1, widgets: 14, sources: 15, templates: 1 });
+      expect(counts).toMatchObject({ copies: 1, widgets: 14, sources: 15 });
+      expect(counts.views).toBeLessThanOrEqual(1);
+      expect(counts.templates).toBeGreaterThanOrEqual(1);
+      const pointed = await probePool!.query<{ ok: boolean }>(
+        `SELECT (d.location_id IS NULL AND d.asset_group_id IS NULL AND d.asset_id IS NULL) AS ok
+           FROM bms.organization_control_room_views v
+           JOIN bms.dashboards d ON d.id = v.dashboard_id AND d.organization_id = v.organization_id
+          WHERE v.organization_id = $1`,
+        [id],
+      );
+      for (const row of pointed.rows) expect(row.ok).toBe(true);
     });
   }
 
@@ -109,6 +137,7 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
     for (const code of ["ESKOM", "PHEWB"]) {
       const id = orgIds[code] as string;
       await inTransaction(id, async (pool) => {
+        await pointAtSeedCopy(pool, id);
         const before = (await pool.query(COUNTS_SQL, [id, ORGANIZATION_LAYOUT_SEED_SLUG])).rows[0];
         const outcome = await seedOrganizationLayout(pool, id, () => undefined);
         expect(outcome).toEqual({ made: false, reason: "has_view" });
@@ -128,6 +157,57 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
     });
   });
 
+  it("keeps the boot gate green after a Reset (row gone, copy kept) and reads 0 when both are gone", async () => {
+    const present = (checks: Awaited<ReturnType<typeof readEskomChecks>>, org: string) =>
+      checks.find((check) => check.label === `${org} seeded organization layout present`);
+    for (const [code, read] of [
+      ["ESKOM", (pool: SeedPool, id: string) => readEskomChecks(pool, id, { log: () => undefined })],
+      ["PHEWB", (pool: SeedPool) => readPhewbChecks(pool)],
+    ] as const) {
+      const id = orgIds[code] as string;
+      await inTransaction(id, async (pool) => {
+        await pointAtSeedCopy(pool, id);
+        await pool.query("DELETE FROM bms.organization_control_room_views WHERE organization_id = $1", [id]);
+        expect(present(await read(pool, id), code)).toEqual({
+          label: `${code} seeded organization layout present`,
+          actual: 1,
+          wanted: 1,
+          kind: "exact",
+        });
+        await pool.query("DELETE FROM bms.dashboards WHERE organization_id = $1 AND slug = $2", [
+          id,
+          ORGANIZATION_LAYOUT_SEED_SLUG,
+        ]);
+        expect(present(await read(pool, id), code)?.actual).toBe(0);
+      });
+    }
+  });
+
+  it("seeds the layout over a draft version 1 of the template (next free version)", async () => {
+    const id = orgIds["PHEWB"] as string;
+    await inTransaction(id, async (pool) => {
+      await pool.query("DELETE FROM bms.organization_control_room_views WHERE organization_id = $1", [id]);
+      await pool.query("DELETE FROM bms.dashboards WHERE organization_id = $1 AND slug = $2", [
+        id,
+        ORGANIZATION_LAYOUT_SEED_SLUG,
+      ]);
+      // The state a stock import leaves: no published row; version 1 a draft.
+      await pool.query(
+        `UPDATE bms.dashboard_templates SET status = 'draft', published_at = NULL
+          WHERE organization_id = $1 AND code = 'organization-standard' AND status = 'published'`,
+        [id],
+      );
+      const outcome = await seedOrganizationLayout(pool, id, () => undefined);
+      expect(outcome).toMatchObject({ made: true, widgets: 14, sources: 15 });
+      const published = await pool.query<{ n: number }>(
+        `SELECT count(*)::int AS n FROM bms.dashboard_templates
+          WHERE organization_id = $1 AND code = 'organization-standard' AND status = 'published'`,
+        [id],
+      );
+      expect(published.rows[0]?.n).toBe(1);
+    });
+  });
+
   it("re-makes the layout when the row and the copy are both gone, once", async () => {
     const id = orgIds["PHEWB"] as string;
     await inTransaction(id, async (pool) => {
@@ -143,7 +223,6 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
         copies: 1,
         widgets: 14,
         sources: 15,
-        templates: 1,
       });
       expect(await seedOrganizationLayout(pool, id, () => undefined)).toEqual({ made: false, reason: "has_view" });
     });
