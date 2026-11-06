@@ -9,8 +9,8 @@ import { stripTileProps, STRIP_STALE_MS } from "./organization-strip";
  * fixture is a tile as the API answers it; `node` environment.
  */
 
-const RESOLVED_AT = "2026-11-06T10:00:00.000Z";
-const AT = Date.parse(RESOLVED_AT);
+const RECEIVED_AT = "2026-11-06T10:00:00.000Z";
+const AT = Date.parse(RECEIVED_AT);
 
 type Resolved = NonNullable<OrganizationStripSourceDto["resolved"]>;
 
@@ -36,15 +36,15 @@ export function thePrimaryIsTheLowestSortOrder(): void {
     source("alarms.critical.count", 1, metric("alarms.critical.count", 7)),
     source("alarms.active.count", 0, metric("alarms.active.count", 12)),
   ]);
-  expect(stripTileProps(t, RESOLVED_AT, AT).value).toBe("12");
+  expect(stripTileProps(t, RECEIVED_AT, AT).value).toBe("12");
 }
 
 /** S2 — the compare value is the primary's prior, shown as a delta when the tile asks. */
 export function thePriorBecomesTheDelta(): void {
-  const source0 = source("sustainability.total", 0, metric("sustainability.total", 110, { prior: { asOf: RESOLVED_AT, value: 100 } }));
-  const asking = stripTileProps(tile([source0], { compareToPrevious: true }), RESOLVED_AT, AT);
+  const source0 = source("sustainability.total", 0, metric("sustainability.total", 110, { prior: { asOf: RECEIVED_AT, value: 100 } }));
+  const asking = stripTileProps(tile([source0], { compareToPrevious: true }), RECEIVED_AT, AT);
   expect(asking.hint).toBe("↑ 10.0% vs yesterday");
-  const notAsking = stripTileProps(tile([source0], {}), RESOLVED_AT, AT);
+  const notAsking = stripTileProps(tile([source0], {}), RECEIVED_AT, AT);
   expect(notAsking.hint).toBeUndefined();
 }
 
@@ -55,7 +55,7 @@ export function aCriticalCountIsTheNoteAndTheTone(): void {
       source("alarms.active.count", 0, metric("alarms.active.count", 5)),
       source("alarms.critical.count", 1, metric("alarms.critical.count", 2)),
     ]),
-    RESOLVED_AT,
+    RECEIVED_AT,
     AT,
   );
   expect(props.note).toBe("2 critical");
@@ -69,15 +69,15 @@ export function openWithNoCriticalIsAWarning(): void {
       source("alarms.active.count", 0, metric("alarms.active.count", open)),
       source("alarms.critical.count", 1, metric("alarms.critical.count", 0)),
     ]);
-  const some = stripTileProps(two(3), RESOLVED_AT, AT);
+  const some = stripTileProps(two(3), RECEIVED_AT, AT);
   expect(some.tone).toBe("warning");
   expect(some.note).toBeUndefined();
-  expect(stripTileProps(two(0), RESOLVED_AT, AT).tone).toBe("default");
+  expect(stripTileProps(two(0), RECEIVED_AT, AT).tone).toBe("default");
 }
 
 /** S5 — a tile that is not the alarm tile never takes the alarm tone. */
 export function onlyTheAlarmTileTakesTheAlarmTone(): void {
-  const props = stripTileProps(tile([source("workorders.open.count", 0, metric("workorders.open.count", 9))]), RESOLVED_AT, AT);
+  const props = stripTileProps(tile([source("workorders.open.count", 0, metric("workorders.open.count", 9))]), RECEIVED_AT, AT);
   expect(props.tone).toBe("default");
 }
 
@@ -85,7 +85,7 @@ export function onlyTheAlarmTileTakesTheAlarmTone(): void {
 export function sitesLiveReadsLiveOverTotal(): void {
   const props = stripTileProps(
     tile([source("sites.live.count", 0, metric("sites.live.count", 4, { coverage: { fresh: 4, carrying: 16 } }))]),
-    RESOLVED_AT,
+    RECEIVED_AT,
     AT,
   );
   expect(props.value).toBe("4 / 16");
@@ -96,7 +96,7 @@ export function sitesLiveReadsLiveOverTotal(): void {
 export function sitesLiveZeroReadsZeroOverZero(): void {
   const props = stripTileProps(
     tile([source("sites.live.count", 0, metric("sites.live.count", 0, { coverage: { fresh: 0, carrying: 0 } }))]),
-    RESOLVED_AT,
+    RECEIVED_AT,
     AT,
   );
   expect(props.status).toBe("ready");
@@ -106,16 +106,16 @@ export function sitesLiveZeroReadsZeroOverZero(): void {
 /** S8 — stale when the read is older than the bound; fresh at the bound. */
 export function aReadPastTheBoundIsStale(): void {
   const t = tile([source("assets.offline.count", 0, metric("assets.offline.count", 1))]);
-  expect(stripTileProps(t, RESOLVED_AT, AT + STRIP_STALE_MS).stale).toBe(false);
-  expect(stripTileProps(t, RESOLVED_AT, AT + STRIP_STALE_MS + 1).stale).toBe(true);
+  expect(stripTileProps(t, RECEIVED_AT, AT + STRIP_STALE_MS).stale).toBe(false);
+  expect(stripTileProps(t, RECEIVED_AT, AT + STRIP_STALE_MS + 1).stale).toBe(true);
 }
 
 /** S9 — an unresolved binding is "—" with "Not available"; a null value is "—" with "No data". */
 export function aMissingValueIsADashWithAReason(): void {
-  const unresolved = stripTileProps(tile([source("pue.ratio", 0, null)]), RESOLVED_AT, AT);
+  const unresolved = stripTileProps(tile([source("pue.ratio", 0, null)]), RECEIVED_AT, AT);
   expect(unresolved.status).toBe("empty");
   expect(unresolved.hint).toBe("Not available");
-  const nullValue = stripTileProps(tile([source("pue.ratio", 0, metric("pue.ratio", null))]), RESOLVED_AT, AT);
+  const nullValue = stripTileProps(tile([source("pue.ratio", 0, metric("pue.ratio", null))]), RECEIVED_AT, AT);
   expect(nullValue.status).toBe("empty");
   expect(nullValue.hint).toBe("No data");
   expect(nullValue.stale).toBe(false);
@@ -123,7 +123,7 @@ export function aMissingValueIsADashWithAReason(): void {
 
 /** S10 — a tile with no source at all is "—" with "Not available". */
 export function aTileWithNoSourceIsADash(): void {
-  const props = stripTileProps(tile([]), RESOLVED_AT, AT);
+  const props = stripTileProps(tile([]), RECEIVED_AT, AT);
   expect(props.status).toBe("empty");
   expect(props.hint).toBe("Not available");
 }
@@ -132,7 +132,7 @@ export function aTileWithNoSourceIsADash(): void {
 export function aCostTileUsesTheResolvesCurrency(): void {
   const props = stripTileProps(
     tile([source("sustainability.total", 0, metric("sustainability.total", 1500, { currency: "INR" }))]),
-    RESOLVED_AT,
+    RECEIVED_AT,
     AT,
   );
   expect(props.value).toMatch(/₹|INR/);
@@ -142,16 +142,16 @@ export function aCostTileUsesTheResolvesCurrency(): void {
 export function aRollUpShowsItsCoverageOnlyWhenPartial(): void {
   const partial = stripTileProps(
     tile([source("sustainability.total", 0, metric("sustainability.total", 5, { coverage: { fresh: 4, carrying: 6 } }))]),
-    RESOLVED_AT,
+    RECEIVED_AT,
     AT,
   );
   expect(partial.note).toBe("4 of 6 assets");
   const full = stripTileProps(
     tile([source("sustainability.total", 0, metric("sustainability.total", 5, { coverage: { fresh: 6, carrying: 6 } }))]),
-    RESOLVED_AT,
+    RECEIVED_AT,
     AT,
   );
   expect(full.note).toBeUndefined();
-  const bare = stripTileProps(tile([source("sites.live.count", 0, metric("sites.live.count", 4))]), RESOLVED_AT, AT);
+  const bare = stripTileProps(tile([source("sites.live.count", 0, metric("sites.live.count", 4))]), RECEIVED_AT, AT);
   expect(bare.value).toBe("4");
 }

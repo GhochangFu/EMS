@@ -44,8 +44,8 @@ export function sourcesInOrder(tile: OrganizationStripTileDto): OrganizationStri
   return [...tile.sources].sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-/** The props one tile of the strip draws with, at `nowMs`, for a read received at `resolvedAt` (an ISO time on the same clock as `nowMs`). */
-export function stripTileProps(tile: OrganizationStripTileDto, resolvedAt: string, nowMs: number): StripTileProps {
+/** The props one tile of the strip draws with, at `nowMs`, for a read received at `receivedAt` (an ISO time on the same clock as `nowMs`). */
+export function stripTileProps(tile: OrganizationStripTileDto, receivedAt: string, nowMs: number): StripTileProps {
   const sources = sourcesInOrder(tile);
   const primarySource = sources[0];
   const primary = metricOf(primarySource);
@@ -79,7 +79,7 @@ export function stripTileProps(tile: OrganizationStripTileDto, resolvedAt: strin
     catalogKey: primary.key,
   });
 
-  const stale = nowMs - Date.parse(resolvedAt) > STRIP_STALE_MS;
+  const stale = nowMs - Date.parse(receivedAt) > STRIP_STALE_MS;
   const note =
     isAlarmTile && criticalCount > 0 ? `${criticalCount} critical` : base.note;
   if (primary.key === SITES_LIVE_KEY) {
