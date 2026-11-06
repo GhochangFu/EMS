@@ -100,6 +100,10 @@ export async function startFromListsTheEightPresets(): Promise<void> {
     "Environment monitoring",
     "Facility services",
     "LV single line",
+    // `F4.319` (ADR 0113 decision 1).
+    "Pump station overview",
+    "Pump station electrical",
+    "Pump station environment",
   ]);
 }
 

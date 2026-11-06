@@ -263,6 +263,10 @@ const PRESET_LIBRARIES: Readonly<Record<MimicPreset, readonly string[]>> = {
   environment_monitoring: ["core", "lucide", "mdi"],
   facility_services: ["core", "tabler", "lucide", "mdi"],
   lv_single_line: ["core", "tabler", "lucide", "mdi"],
+  // `F4.319` (ADR 0113 decision 9) — core symbols only.
+  pump_station_overview: ["core"],
+  pump_station_electrical: ["core"],
+  pump_station_environment: ["core"],
 };
 
 export function runEveryPresetChoosesCoreAndItsGlyphLibraries(): void {
@@ -676,7 +680,8 @@ export function runPresetUnitsDoNotOverlap(): void {
 const DOMAIN_PRESETS = mimicPresetSchema.options.filter((p) => p !== "water_train");
 
 export function runDomainPresetsAreSeven(): void {
-  assert(DOMAIN_PRESETS.length === 7, `seven domain presets, got ${DOMAIN_PRESETS.length}`);
+  // Ten since `F4.319` (ADR 0113): the three pump-station presets. The name is kept for the entry.
+  assert(DOMAIN_PRESETS.length === 10, `ten domain presets, got ${DOMAIN_PRESETS.length}`);
 }
 
 /**

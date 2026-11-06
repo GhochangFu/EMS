@@ -31,6 +31,10 @@ export const mimicPresetSchema = z.enum([
   "environment_monitoring",
   "facility_services",
   "lv_single_line",
+  // `F4.319` (ADR 0113 decision 1) — appended, so `water_train` stays the builder's default.
+  "pump_station_overview",
+  "pump_station_electrical",
+  "pump_station_environment",
 ]);
 
 /**

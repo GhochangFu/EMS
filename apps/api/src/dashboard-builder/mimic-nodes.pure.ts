@@ -159,7 +159,8 @@ export interface StateMapRow {
 
 /**
  * One node a read resolves, either arm: its key, label, role, whether it fans out (`F3.74`) and
- * (`F4.307`) its listed point keys — `[]` on a preset node and on a unit that lists none.
+ * (`F4.307`) its listed point keys — `[]` on a node or unit that lists none (`F4.319`: a preset
+ * node may list them too, ADR 0113 decision 2).
  */
 export interface ResolvableNode {
   key: string;
@@ -179,7 +180,16 @@ export function presetRoledNodes(preset: MimicPreset): ResolvableNode[] {
   return nodes.flatMap((node) =>
     node.roleCode === null
       ? []
-      : [{ key: node.key, label: node.label, roleCode: node.roleCode, fanOut: node.fanOut === true, pointKeys: [] }],
+      : [
+          {
+            key: node.key,
+            label: node.label,
+            roleCode: node.roleCode,
+            fanOut: node.fanOut === true,
+            // `F4.319` (ADR 0113 decision 2): a preset node may list its points; none listed is `[]`.
+            pointKeys: node.pointKeys ?? [],
+          },
+        ],
   );
 }
 

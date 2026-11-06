@@ -225,6 +225,53 @@ const LV_SINGLE_LINE_LAYOUT = {
   pumps: [],
 } as const satisfies MimicLayout<NodeKeyOf<"lv_single_line">>;
 
+/**
+ * `F4.319` (ADR 0113 decision 1, plan §3) — the three pump-station presets. Every pipe joins
+ * adjacent slots (M15), and each preset's panels hold separate columns, so their frames do not
+ * overlap (M7b).
+ *
+ * `pump_station_overview`, four columns by two rows: the water path across the top
+ * (`source` → `main_pump` → `delivery`), `dosing` under `delivery` piping up into it, and the
+ * meters and RTU-health units in a fourth column, without pipes.
+ */
+const PUMP_STATION_OVERVIEW_LAYOUT = {
+  viewBox: slotViewBox(4, 2),
+  nodes: {
+    source: slotAt(0, 0),
+    main_pump: slotAt(1, 0),
+    delivery: slotAt(2, 0),
+    dosing: slotAt(2, 1),
+    meter: slotAt(3, 0),
+    rtu: slotAt(3, 1),
+  },
+  pumps: [],
+} as const satisfies MimicLayout<NodeKeyOf<"pump_station_overview">>;
+
+/** `pump_station_electrical`, four by two: supply → meters → LT bus → main pumps; dosing below the bus. */
+const PUMP_STATION_ELECTRICAL_LAYOUT = {
+  viewBox: slotViewBox(4, 2),
+  nodes: {
+    incoming: slotAt(0, 0),
+    meter: slotAt(1, 0),
+    lt_bus: slotAt(2, 0),
+    main_pump: slotAt(3, 0),
+    dosing: slotAt(2, 1),
+  },
+  pumps: [],
+} as const satisfies MimicLayout<NodeKeyOf<"pump_station_electrical">>;
+
+/** `pump_station_environment`, three by two: mains → RTU → battery; the network under the RTU. */
+const PUMP_STATION_ENVIRONMENT_LAYOUT = {
+  viewBox: slotViewBox(3, 2),
+  nodes: {
+    mains: slotAt(0, 0),
+    rtu: slotAt(1, 0),
+    battery: slotAt(2, 0),
+    network: slotAt(1, 1),
+  },
+  pumps: [],
+} as const satisfies MimicLayout<NodeKeyOf<"pump_station_environment">>;
+
 /** One layout per preset — a missing preset or node key is a compile error here. */
 export const MIMIC_LAYOUTS: { readonly [P in MimicPreset]: MimicLayout<NodeKeyOf<P>> } = {
   water_train: WATER_TRAIN_LAYOUT,
@@ -235,6 +282,9 @@ export const MIMIC_LAYOUTS: { readonly [P in MimicPreset]: MimicLayout<NodeKeyOf
   environment_monitoring: ENVIRONMENT_MONITORING_LAYOUT,
   facility_services: FACILITY_SERVICES_LAYOUT,
   lv_single_line: LV_SINGLE_LINE_LAYOUT,
+  pump_station_overview: PUMP_STATION_OVERVIEW_LAYOUT,
+  pump_station_electrical: PUMP_STATION_ELECTRICAL_LAYOUT,
+  pump_station_environment: PUMP_STATION_ENVIRONMENT_LAYOUT,
 };
 
 /**
@@ -305,6 +355,19 @@ export const MIMIC_PANELS: { readonly [P in MimicPreset]: readonly MimicPanel<No
       nodes: ["main_bus", "ups_input", "ups", "ups_output", "load_bus", "load_feeders", "pdu"],
     },
     { key: "mains", label: "Mains", tone: "neutral", nodes: ["mains_feeders", "hvac", "lighting"] },
+  ],
+  // `F4.319` (plan §3): the station panel holds the meters and RTU-health units beside the path.
+  pump_station_overview: [
+    { key: "water_path", label: "Water path", tone: "info", nodes: ["source", "main_pump", "delivery", "dosing"] },
+    { key: "station", label: "Station", tone: "neutral", nodes: ["meter", "rtu"] },
+  ],
+  pump_station_electrical: [
+    { key: "supply", label: "Supply", tone: "info", nodes: ["incoming", "meter"] },
+    { key: "feeders", label: "Feeders", tone: "neutral", nodes: ["lt_bus", "main_pump", "dosing"] },
+  ],
+  pump_station_environment: [
+    { key: "supply", label: "Supply", tone: "neutral", nodes: ["mains"] },
+    { key: "rtu_health", label: "RTU health", tone: "info", nodes: ["rtu", "battery", "network"] },
   ],
 };
 
@@ -459,6 +522,31 @@ export const MIMIC_NODE_GLYPHS: {
     mains_feeders: "breaker",
     hvac: "tabler:air-conditioning",
     lighting: "lucide:cog",
+  },
+  // `F4.319` (ADR 0113 decisions 1 and 9) — core symbols only. No `breaker`: it makes a unit
+  // switch (`isSwitchingSymbol`), which would draw `breaker_main` as a breaker state, and what
+  // `breaker_main` = 1 means is an open item (ruling Q6). The supplies and the bus are
+  // `switchboard`, as `lv_single_line`'s buses are.
+  pump_station_overview: {
+    source: "tank",
+    main_pump: "pump",
+    delivery: "tank",
+    dosing: "dosing",
+    meter: "meter",
+    rtu: "sensor",
+  },
+  pump_station_electrical: {
+    incoming: "switchboard",
+    meter: "meter",
+    lt_bus: "switchboard",
+    main_pump: "pump",
+    dosing: "dosing",
+  },
+  pump_station_environment: {
+    mains: "switchboard",
+    rtu: "sensor",
+    battery: "battery",
+    network: "sensor",
   },
 };
 

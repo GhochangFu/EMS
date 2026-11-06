@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import { MIMIC_HEADLINE_POINTS, mimicPresetSchema } from "@bms/shared/contracts";
+import { MIMIC_HEADLINE_POINTS, mimicCoreSymbolSchema, mimicPresetSchema } from "@bms/shared/contracts";
 import {
   BREAKER_ROLE_CODES,
   MIMIC_PRESETS,
@@ -508,4 +508,22 @@ export function everyBreakerRoleFanOutNodeDrawsTheBreakerGlyph(): void {
     }
   }
   expect(seen).toBe(5);
+}
+
+/**
+ * M18 — `F4.319` (ADR 0113 decision 9, ruling Q6): the three pump-station presets draw core
+ * symbols only, and no node draws `breaker` — that glyph makes a unit switch, and what
+ * `breaker_main` = 1 means is an open owner item. The 15 nodes are the positive control.
+ */
+export function pumpStationPresetsDrawCoreSymbolsAndNoBreaker(): void {
+  const core: readonly string[] = mimicCoreSymbolSchema.options;
+  let seen = 0;
+  for (const preset of ["pump_station_overview", "pump_station_electrical", "pump_station_environment"] as const) {
+    for (const [key, glyph] of Object.entries(MIMIC_NODE_GLYPHS[preset] as Readonly<Record<string, string>>)) {
+      seen += 1;
+      expect(core, `${preset}.${key} draws ${glyph}`).toContain(glyph);
+      expect(glyph, `${preset}.${key}`).not.toBe("breaker");
+    }
+  }
+  expect(seen).toBe(15);
 }

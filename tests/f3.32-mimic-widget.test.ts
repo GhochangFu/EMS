@@ -20,6 +20,8 @@ const MIGRATION_0060 = "packages/db/drizzle/0060_asset_role_estate_shapes.sql";
 const MIGRATION_0089 = "packages/db/drizzle/0089_mimic_domain_symbols_and_roles.sql";
 // `F3.74`: the five breaker roles `lv_single_line` names.
 const MIGRATION_0097 = "packages/db/drizzle/0097_point_key_states_breaker_roles_asset_rating_and_layout_flags.sql";
+// `F4.319` (ADR 0113 decision 3) — `dosing-pump` and `rtu-controller`.
+const MIGRATION_0127 = "packages/db/drizzle/0127_pump_station_roles.sql";
 const CONTRACT_REL = "packages/shared/src/contracts/dashboard-builder.ts";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
 const CONSTRAINT = "dashboard_widgets_widget_type_check";
@@ -219,7 +221,8 @@ describe("F3.32 v1 — migration 0087 seeds the seven `water_train` role codes",
     // ADR 0082 decision 4: 0089 inserts the eighteen role codes the six new presets name.
     const seeded0089 = insertedRoleCodes(MIGRATION_0089);
     const seeded0097 = insertedRoleCodes(MIGRATION_0097);
-    const known = new Set([...seededHere, ...seeded0051, ...seeded0060, ...seeded0089, ...seeded0097]);
+    const seeded0127 = insertedRoleCodes(MIGRATION_0127);
+    const known = new Set([...seededHere, ...seeded0051, ...seeded0060, ...seeded0089, ...seeded0097, ...seeded0127]);
 
     for (const roleCode of roleCodeMatches) {
       expect(known.has(roleCode), `preset roleCode '${roleCode}' must be seeded somewhere`).toBe(
