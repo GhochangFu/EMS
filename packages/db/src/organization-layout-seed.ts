@@ -8,7 +8,8 @@ import { ORGANIZATION_STANDARD_TEMPLATE } from "@bms/shared/site-templates";
  * seed-owned demo organizations, ESKOM and PHEWB, on the `site-layout-seed.ts` shape.
  *
  * **What this seeds, per organization.** (a) The `organization-standard` template as a published
- * stock import, insert-if-absent (when none is published, at the next free version). (b) When the organization has no
+ * stock import, insert-if-absent (when none is published, at the next free version), and only when
+ * a copy is about to be made (an organization with a pointer row or the seed slug is left untouched). (b) When the organization has no
  * `bms.organization_control_room_views` row and no dashboard holding {@link ORGANIZATION_LAYOUT_SEED_SLUG},
  * one organization-wide copy of the organization's newest published `organization-standard`
  * version, planned by the SAME shared planner the API's "Make organization layout" runs
@@ -145,17 +146,19 @@ export async function seedOrganizationLayout(
   organizationId: string,
   log: (line: string) => void = (line) => console.error(line),
 ): Promise<OrganizationLayoutSeedOutcome> {
-  const template = await ensureOrganizationTemplate(pool, organizationId);
-  if (template === null) {
-    log(`seedOrganizationLayout: no published organization-standard template at ${organizationId}; no copy made`);
-    return { made: false, reason: "no_template" };
-  }
+  // Pre-reads first: the template is provisioned only when a copy will be made, so an
+  // administrator's archive of the stock template is never undone by a boot.
   if ((await pool.query(VIEW_ROW_SQL, [organizationId])).rows.length > 0) {
     return { made: false, reason: "has_view" };
   }
   if ((await pool.query(SLUG_TAKEN_SQL, [organizationId, ORGANIZATION_LAYOUT_SEED_SLUG])).rows.length > 0) {
     log(`seedOrganizationLayout: no copy at ${organizationId}: slug_taken`);
     return { made: false, reason: "slug_taken" };
+  }
+  const template = await ensureOrganizationTemplate(pool, organizationId);
+  if (template === null) {
+    log(`seedOrganizationLayout: no published organization-standard template at ${organizationId}; no copy made`);
+    return { made: false, reason: "no_template" };
   }
 
   const dashboard = await pool.query<{ id: string }>(DASHBOARD_INSERT_SQL, [

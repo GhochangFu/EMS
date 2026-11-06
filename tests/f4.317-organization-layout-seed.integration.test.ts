@@ -117,11 +117,14 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
             AND t.code = 'organization-standard' AND t.target = 'organization'`,
         [id, ORGANIZATION_LAYOUT_SEED_SLUG],
       );
-      expect(copy.rows[0]?.n).toBe(1);
+      // The gate accepts a pointer row OR the seed copy; an administrator may have edited tiles of
+      // the copy or deleted it after a Reset, so no tile counts are asserted on the live database
+      // (the rolled-back re-make case below checks 14 / 15 on a copy it made itself).
       const counts = (await probePool!.query(COUNTS_SQL, [id, ORGANIZATION_LAYOUT_SEED_SLUG])).rows[0];
-      expect(counts).toMatchObject({ copies: 1, widgets: 14, sources: 15 });
+      expect(counts.views + copy.rows[0]!.n).toBeGreaterThanOrEqual(1);
       expect(counts.views).toBeLessThanOrEqual(1);
-      expect(counts.templates).toBeGreaterThanOrEqual(1);
+      expect(copy.rows[0]!.n).toBeLessThanOrEqual(1);
+      expect(counts.templates).toBeGreaterThanOrEqual(0);
       const pointed = await probePool!.query<{ ok: boolean }>(
         `SELECT (d.location_id IS NULL AND d.asset_group_id IS NULL AND d.asset_id IS NULL) AS ok
            FROM bms.organization_control_room_views v
@@ -183,7 +186,7 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
     }
   });
 
-  it("seeds the layout over a draft version 1 of the template (next free version)", async () => {
+  it("seeds the layout when no version is published (archived rows; the next free version)", async () => {
     const id = orgIds["PHEWB"] as string;
     await inTransaction(id, async (pool) => {
       await pool.query("DELETE FROM bms.organization_control_room_views WHERE organization_id = $1", [id]);
@@ -191,12 +194,20 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
         id,
         ORGANIZATION_LAYOUT_SEED_SLUG,
       ]);
-      // The state a stock import leaves: no published row; version 1 a draft.
+      // No published row. 'archived' rather than 'draft': a developer database may already hold a
+      // draft, and a second one breaks dashboard_templates_org_code_draft_unique (0056).
       await pool.query(
-        `UPDATE bms.dashboard_templates SET status = 'draft', published_at = NULL
+        `UPDATE bms.dashboard_templates SET status = 'archived', archived_at = now()
           WHERE organization_id = $1 AND code = 'organization-standard' AND status = 'published'`,
         [id],
       );
+      const maxBefore = (
+        await pool.query<{ v: number }>(
+          `SELECT COALESCE(MAX(version), 0)::int AS v FROM bms.dashboard_templates
+            WHERE organization_id = $1 AND code = 'organization-standard'`,
+          [id],
+        )
+      ).rows[0]!.v;
       const outcome = await seedOrganizationLayout(pool, id, () => undefined);
       expect(outcome).toMatchObject({ made: true, widgets: 14, sources: 15 });
       const published = await pool.query<{ n: number }>(
@@ -205,6 +216,38 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
         [id],
       );
       expect(published.rows[0]?.n).toBe(1);
+      const newest = await pool.query<{ version: number }>(
+        `SELECT version FROM bms.dashboard_templates
+          WHERE organization_id = $1 AND code = 'organization-standard' AND status = 'published'`,
+        [id],
+      );
+      expect(newest.rows[0]?.version).toBe(maxBefore + 1);
+    });
+  });
+
+  it("provisions no template for an organization that gets no copy (archived stock stays archived)", async () => {
+    const id = orgIds["PHEWB"] as string;
+    await inTransaction(id, async (pool) => {
+      await pointAtSeedCopy(pool, id);
+      await pool.query(
+        `UPDATE bms.dashboard_templates SET status = 'archived', archived_at = now()
+          WHERE organization_id = $1 AND code = 'organization-standard' AND status = 'published'`,
+        [id],
+      );
+      const before = (
+        await pool.query<{ n: number }>(
+          "SELECT count(*)::int AS n FROM bms.dashboard_templates WHERE organization_id = $1",
+          [id],
+        )
+      ).rows[0]!.n;
+      expect(await seedOrganizationLayout(pool, id, () => undefined)).toEqual({ made: false, reason: "has_view" });
+      const after = (
+        await pool.query<{ n: number }>(
+          "SELECT count(*)::int AS n FROM bms.dashboard_templates WHERE organization_id = $1",
+          [id],
+        )
+      ).rows[0]!.n;
+      expect(after).toBe(before);
     });
   });
 
