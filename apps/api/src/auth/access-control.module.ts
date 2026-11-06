@@ -1,6 +1,7 @@
 import { Global, Module } from "@nestjs/common";
 
 import { AccessControlService } from "./access-control.service";
+import { OrganizationViewAccessService } from "./organization-view-access.service";
 
 /**
  * `F3.11` / ADR 0064 Amendment 1 A1 — `AccessControlService` on its own,
@@ -20,10 +21,14 @@ import { AccessControlService } from "./access-control.service";
  * dependencies are the two drizzle tokens from the `@Global()`
  * `DatabaseModule`, so this module's closure is four files and reaches none
  * of the fence's forbidden ones (`tests/f4.24-worker-imports-no-api-loop.test.ts`).
+ *
+ * `F4.317` task 4.1 — `OrganizationViewAccessService` (ADR 0112 decision 5) beside it, global for
+ * the same reason: `DashboardsService` (task 4.3) and `ControlRoomModule`'s layout service both
+ * inject it. Its dependencies are the fleet token and `AccessControlService`, nothing more.
  */
 @Global()
 @Module({
-  providers: [AccessControlService],
-  exports: [AccessControlService],
+  providers: [AccessControlService, OrganizationViewAccessService],
+  exports: [AccessControlService, OrganizationViewAccessService],
 })
 export class AccessControlModule {}
