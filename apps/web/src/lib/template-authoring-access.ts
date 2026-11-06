@@ -8,12 +8,19 @@
  * plant. Hiding the page from it would hide the only route to Instantiate;
  * showing it Edit and Publish would offer two buttons the API answers with 403.
  *
- * Mirrors the server exactly:
+ * Mirrors the server, with one exception:
  * - `asset-templates.service.ts:459` — `assertCanAuthor` rejects
  *   `location_admin` by name before any scope check.
  * - `asset-templates-instantiate.service.ts:115` — instantiate calls
  *   `requireMasterDataUser` and deliberately does **not** call
  *   `canManageTemplate`, because that helper means "may author".
+ * - **The exception (`F4.317`, ADR 0112 decision 5):** the dashboard-template API
+ *   (`DashboardTemplatesService.assertCanAuthor`) admits a `location_admin` of the
+ *   organization on an `organization`-target template. `canAuthorTemplates` takes no
+ *   target and still answers `false` for that role, so the web hides Edit and Publish
+ *   on such a template that the API would accept. That is the safe direction, and the
+ *   grant is API-only until the web authoring branch for the organization target lands
+ *   (owner to assign; the build plan's PR 5 covers the strip, not the template editor).
  *
  * ## Why there is no organization-scope helper here
  *

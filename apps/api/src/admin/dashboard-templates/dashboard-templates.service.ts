@@ -611,7 +611,7 @@ export class DashboardTemplatesService {
    * is an organization-wide act.
    *
    * The gap was invisible from the browser, which is what made it worth a
-   * comment: `apps/web/src/lib/template-authoring-access.ts` claims to "mirror
+   * comment: `apps/web/src/lib/template-authoring-access.ts` claimed (until `F4.317`'s organization-target exception) to "mirror
    * the server exactly" and hides the controls from `location_admin`, so the
    * request was never sent. Found by the `F3.36` security review.
    */
