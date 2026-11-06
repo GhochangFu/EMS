@@ -593,3 +593,24 @@ export async function clearingTheSelectionWritesThroughTheConfig(): Promise<void
   const written = (onChange.mock.calls.at(-1)?.[0] as { config: Record<string, unknown> }).config;
   expect([written.stripSegments, written.stripPoints, written.stripColors]).toEqual([undefined, undefined, undefined]);
 }
+
+/**
+ * `F4.317` review — a value tile takes two metrics since ruling Q1b, and `catalogWidgetData`
+ * draws only the first; the second exists for the organization strip's Open alarms critical
+ * note. The inspector says so once a tile has a metric, so a second one is never a silent drop.
+ */
+const SECOND_METRIC_NOTE = /Only the first metric is drawn on a tile/;
+
+export function aValueTileWithAMetricShowsTheSecondMetricNote(): void {
+  renderInspector({
+    ...blankDashboardWidgetRow("value_tile"),
+    sources: [{ catalogKey: "assets.offline.count", params: {} }],
+  });
+  expect(screen.queryByText(SECOND_METRIC_NOTE)).not.toBeNull();
+}
+
+export function aValueTileWithNoMetricHasNoSecondMetricNote(): void {
+  renderInspector(blankDashboardWidgetRow("value_tile"));
+  expect(screen.queryByText("Named metric"), "positive control: the metric block renders").not.toBeNull();
+  expect(screen.queryByText(SECOND_METRIC_NOTE)).toBeNull();
+}
