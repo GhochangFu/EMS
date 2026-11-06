@@ -11,6 +11,7 @@ import {
   theOpenAlarmsTileBindsTheOpenAndTheCriticalCount,
   theTilesAreDecisionSixInOrder,
   theTilesSitFourToARow,
+  theWaterTodayTileSumsTheIntakeStageOnly,
 } from "./organization-standard.spec";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -35,6 +36,9 @@ describe("F4.317 — the stock organization strip (ADR 0112 decisions 3 and 6)",
   });
   it("binds the open and the critical alarm count on the Open alarms tile (ruling Q1b)", () => {
     theOpenAlarmsTileBindsTheOpenAndTheCriticalCount();
+  });
+  it("sums the intake stage only on the Water today tile (Amendment 2)", () => {
+    theWaterTodayTileSumsTheIntakeStageOnly();
   });
   it("compares to yesterday on Total load and Open alarms only", () => {
     exactlyTheLoadAndAlarmTilesCompare();

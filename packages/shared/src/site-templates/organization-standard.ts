@@ -25,8 +25,9 @@ import type { SectionTemplateWidget, StockDashboardTemplateDto } from "../index"
  * - **"vs yesterday"** (`compareToPrevious`) is on Total load and Open alarms only (ruling 6).
  * - **The cost tiles type no unit**: the cost point keys carry unit `""` on purpose (ADR 0070
  *   decision 8), and `sustainability.total` answers the organization's `currency` for them.
- * - **Water today binds `{ kl_today, sum }` as decision 6 rules it**, with no `balanceRole`, so it
- *   sums every asset carrying the point.
+ * - **Water today binds `{ kl_today, sum, balanceRole: "intake" }`** (ADR 0112 Amendment 2), as
+ *   the sustainability-overview stock tile does: without the role the sum counts every water
+ *   stage's inlet and overcounts a multi-stage plant.
  *
  * **The `pointKey` of each source is an object literal at its call**, never a positional string:
  * `tests/f3.38-stock-catalog-vocabulary.test.ts` scans this file as text for each spelled code.
@@ -75,7 +76,7 @@ const WIDGETS: Widget[] = [
     [{ catalogKey: "sustainability.total", params: { pointKey: "kwh_today", aggregate: "sum" }, sortOrder: 0 }],
     { icon: "bolt", unit: "kWh" }),
   tile("water-today-tile", "Water today", 5,
-    [{ catalogKey: "sustainability.total", params: { pointKey: "kl_today", aggregate: "sum" }, sortOrder: 0 }],
+    [{ catalogKey: "sustainability.total", params: { pointKey: "kl_today", aggregate: "sum", balanceRole: "intake" }, sortOrder: 0 }],
     { icon: "drop", unit: "KL" }),
   tile("assets-offline-tile", "Assets offline", 6,
     [{ catalogKey: "assets.offline.count", params: {}, sortOrder: 0 }], { icon: "offline" }),

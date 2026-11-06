@@ -68,8 +68,9 @@ export function everySourceIsAValidCatalogWrite(): void {
 }
 
 /**
- * ADR 0112 decision 6, in order, as Amendment 1 row 3 reads it: `title → key {params}` per
- * tile, with tile 3 binding the open and the critical count (ruling Q1b).
+ * ADR 0112 decision 6, in order, as Amendment 1 row 3 and Amendment 2 row 6 read it:
+ * `title → key {params}` per tile, with tile 3 binding the open and the critical count
+ * (ruling Q1b) and tile 6 the intake stage only.
  */
 const DECISION_6 = [
   "Total load → sustainability.total {kw,sum}",
@@ -77,7 +78,7 @@ const DECISION_6 = [
   "Open alarms → alarms.active.count {} + alarms.critical.count {}",
   "PUE → pue.ratio {}",
   "Energy today → sustainability.total {kwh_today,sum}",
-  "Water today → sustainability.total {kl_today,sum}",
+  "Water today → sustainability.total {kl_today,sum,intake}",
   "Assets offline → assets.offline.count {}",
   "Asset health → assets.health.score {}",
   "Open work orders → workorders.open.count {}",
@@ -113,6 +114,25 @@ export function theOpenAlarmsTileBindsTheOpenAndTheCriticalCount(): void {
   const tile = entry.content.widgets.find((widget) => widget.title === "Open alarms");
   const sources = (tile?.sources ?? []).map((source) => `${source.sortOrder}:${source.catalogKey}`).join(",");
   assert(sources === "0:alarms.active.count,1:alarms.critical.count", `Open alarms sources: got ${sources}`);
+}
+
+/**
+ * ADR 0112 Amendment 2 — tile 6 sums the intake stage only, `{ kl_today, sum, balanceRole:
+ * "intake" }` as the sustainability-overview stock tile does: without the role the sum counts
+ * every water stage's inlet and overcounts a multi-stage plant. Pinned key by key, so a
+ * reordered or extra param reddens here and not only in the decision 6 row.
+ */
+export function theWaterTodayTileSumsTheIntakeStageOnly(): void {
+  const tile = entry.content.widgets.find((widget) => widget.title === "Water today");
+  const got = JSON.stringify(tile?.sources ?? []);
+  const want = JSON.stringify([
+    {
+      catalogKey: "sustainability.total",
+      params: { pointKey: "kl_today", aggregate: "sum", balanceRole: "intake" },
+      sortOrder: 0,
+    },
+  ]);
+  assert(got === want, `Water today sources: got ${got}`);
 }
 
 /** Owner ruling 6 — "vs yesterday" on Total load and Open alarms only. */
