@@ -41,7 +41,7 @@ import { canonicalJson } from "./site-layout-stock-history";
  * **How it moves: in place** (plan D6). The copy's tabs and widgets are deleted (points and
  * sources go by `ON DELETE CASCADE`), the `pump-station-standard` plan is written by the writer a
  * fresh copy uses, and the dashboard's `template_id`, `stock_version` and `description` are set
- * with the read values in the predicate. The view row, the dashboard id, its slug and its name
+ * with the read values in the predicate, under a row lock taken at the read. The view row, the dashboard id, its slug and its name
  * stay. Once moved, the copy's template code is `pump-station-standard`, so neither the smoc
  * upgrade chain nor this step reads it again: a second run writes nothing.
  *
@@ -124,7 +124,12 @@ export function plannedCopyFingerprint(tabs: readonly PlannedCopyTab[]): string 
   );
 }
 
-/** The candidate copy at a location: its view row points at it. Params: `[locationId, organizationId, slug]`. */
+/**
+ * The candidate copy at a location: its view row points at it. Params: `[locationId,
+ * organizationId, slug]`. `FOR UPDATE OF d` locks the dashboard row for the rest of the seed's
+ * transaction: a builder save updates that row first (`DashboardsService.putWidgets`), so an
+ * admin edit made while the seed compares and rewrites the copy waits, and is never deleted.
+ */
 const CANDIDATE_SQL = `
   SELECT d.id, d.name, d.description, d.stock_version, d.template_id, t.code AS template_code
     FROM bms.site_control_room_views v
@@ -132,6 +137,7 @@ const CANDIDATE_SQL = `
     JOIN bms.dashboard_templates t ON t.id = d.template_id
    WHERE v.location_id = $1 AND v.kind = 'dashboard'
      AND d.organization_id = $2 AND d.location_id = $1 AND d.slug = $3
+     FOR UPDATE OF d
 `;
 const LOCATION_SQL = `SELECT slug, name FROM bms.locations WHERE id = $1 AND organization_id = $2`;
 const STORED_TABS_SQL = `
@@ -159,7 +165,7 @@ const STORED_SOURCES_SQL = `
 `;
 const DELETE_WIDGETS_SQL = `DELETE FROM bms.dashboard_widgets WHERE dashboard_id = $1 AND organization_id = $2`;
 const DELETE_TABS_SQL = `DELETE FROM bms.dashboard_tabs WHERE dashboard_id = $1 AND organization_id = $2`;
-/** The read values are in the predicate, so a copy changed since the read is not restamped. */
+/** The read values are in the predicate as well as the row lock CANDIDATE_SQL takes (belt and braces). */
 const RESTAMP_SQL = `
   UPDATE bms.dashboards
      SET template_id = $3, stock_version = $4, description = $5, updated_at = now()
@@ -345,13 +351,17 @@ export async function seedPhewbSiteLayouts(
   const say = log ?? ((line: string) => console.error(line));
   const smoc = await ensureSiteTemplate(pool, phewbOrgId);
   const station = await ensureSiteTemplate(pool, phewbOrgId, PUMP_STATION_STANDARD_SITE_TEMPLATE);
+  const locationIds = await resolvePhewbSiteLayoutLocations(pool, phewbOrgId, pheSiteLayoutStations(pheCatalog));
+  // The smoc chain runs whenever smoc-standard is published, as before F4.319, so the copies that
+  // stay on it keep their upgrades even while pump-station-standard is an unpublished draft.
+  if (smoc !== null) {
+    await upgradeSeededSiteLayoutCopies(pool, phewbOrgId, locationIds, SITE_LAYOUT_SLUG_PREFIX);
+  }
   if (station === null) {
     say("seedPhewbSiteLayouts: no published pump-station-standard template; no copy made");
     return { made: [], skipped: [] };
   }
-  const locationIds = await resolvePhewbSiteLayoutLocations(pool, phewbOrgId, pheSiteLayoutStations(pheCatalog));
   if (smoc !== null) {
-    await upgradeSeededSiteLayoutCopies(pool, phewbOrgId, locationIds, SITE_LAYOUT_SLUG_PREFIX);
     await moveUntouchedPheCopies(pool, phewbOrgId, {
       from: smoc,
       to: station,
