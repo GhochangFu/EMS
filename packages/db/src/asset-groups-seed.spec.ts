@@ -43,8 +43,9 @@ import { assetCode, deviceDomain, loadPheCatalog } from "./phe-pilot-seed";
  * starts matching too much.
  *
  * 48 devices over six stations — per station 2 `MFM`, 2 `PUMP-M`, 2 `PUMP-C`
- * and 2 `AIRSP1051M`. So 12 meters, 24 pumps and 12 gateways, and the twelve
- * gateways take no role at all.
+ * and 2 `AIRSP1051M`. Since `F4.319` (ADR 0113 decision 4, rulings Q3 and Q4):
+ * 12 `meter`, 12 `pump`, 12 `dosing-pump` and 12 `rtu-controller`, and no PHE
+ * device stays unroled.
  */
 export function assertTheRulingMapsEveryPheDevice(): void {
   const catalog = loadPheCatalog();
@@ -65,39 +66,34 @@ export function assertTheRulingMapsEveryPheDevice(): void {
 
   expect(
     Object.fromEntries([...tally.entries()].sort()),
-    "the owner's 2026-09-02 ruling maps PHE WB's estate to 12 `meter`, 24 `pump` and 12 " +
-      "unroled gateways. A different tally means a branch stopped matching, started " +
+    "ADR 0113 maps PHE WB's estate to 12 `meter`, 12 `pump`, 12 `dosing-pump` and 12 " +
+      "`rtu-controller`. A different tally means a branch stopped matching, started " +
       "matching too much, or the catalog changed shape — read the ruling in " +
       "asset-groups-seed.ts before touching this number.",
-  ).toEqual({ "<null>": 12, meter: 12, pump: 24 });
+  ).toEqual({ "dosing-pump": 12, meter: 12, pump: 12, "rtu-controller": 12 });
 }
 
 /**
- * The two pump shapes take **one** role, and that is the ruling rather than an
- * accident of the prefix test.
- *
- * `0051` step 4 made the junction's role index deliberately NOT UNIQUE so one
- * role may match several members, which is what lets a single `pump` code carry
- * both. Asserted as its own case so that splitting the branch later — into
- * `pump` and `dosing-pump`, say — fails here and not only in a count.
+ * Each pump shape takes **its own** role (`F4.319`, ADR 0113 decision 4, ruling Q3). This
+ * reverses the 2026-09-02 one-`pump` ruling: a mimic node binds one role, so one shared role
+ * could not show the main pumps alone. Asserted per code, so merging the branches back into one
+ * `PHE-PUMP-` test fails here and not only in a count.
  */
-export function assertBothPumpShapesTakeOneRole(): void {
+export function assertEachPumpShapeTakesItsOwnRole(): void {
   expect(demoRoleForAsset("PHE-MFM-000000001", "electrical")).toBe("meter");
   expect(demoRoleForAsset("PHE-PUMP-M-000000000", "electrical")).toBe("pump");
-  expect(demoRoleForAsset("PHE-PUMP-C-000000000", "electrical")).toBe("pump");
+  expect(demoRoleForAsset("PHE-PUMP-C-000000000", "electrical")).toBe("dosing-pump");
+  // A third pump shape decides nothing: the branches are per shape, not one `PHE-PUMP-` test.
+  expect(demoRoleForAsset("PHE-PUMP-X-000000000", "electrical")).toBeNull();
 }
 
 /**
- * The gateway takes no role, and the **code** refuses it as well as the domain.
- *
- * `PHE-AIRSP1051M-*` is `environment` domain, so the function's first guard
- * already returns `null` for it. The second case passes `"electrical"`
- * deliberately: if `deviceDomain` ever re-files the gateway, the ruling must
- * still leave it unroled, and only a code-level refusal delivers that. Without
- * this case the whole claim would rest on a domain the seed decides elsewhere.
+ * The RTU-health unit takes `rtu-controller` in its own domain only (`F4.319`, ADR 0113
+ * decision 4, ruling Q4). The branch reads the domain and the code, so a unit `deviceDomain`
+ * re-filed as `electrical` decides nothing rather than falling into an electrical branch.
  */
-export function assertTheGatewayTakesNoRole(): void {
-  expect(demoRoleForAsset("PHE-AIRSP1051M-000000003", "environment")).toBeNull();
+export function assertTheRtuUnitTakesRtuController(): void {
+  expect(demoRoleForAsset("PHE-AIRSP1051M-000000003", "environment")).toBe("rtu-controller");
   expect(demoRoleForAsset("PHE-AIRSP1051M-000000003", "electrical")).toBeNull();
 }
 
@@ -220,7 +216,8 @@ export function assertNoPheDeviceJoinsItLoad(): void {
     seen.add(code);
     const codes = demoGroupCodesForAsset(code, deviceDomain(row.DeviceCode, row.ModelDeviceCode));
     expect(codes, `${code} joined IT_LOAD`).not.toContain("IT_LOAD");
-    expect(codes, `${code} joined no group`).toHaveLength(1);
+    // Its domain group and, since `F4.319`, the `pump-station` group.
+    expect(codes, `${code} joined the wrong groups`).toHaveLength(2);
   }
   expect(seen.size, "the PHE catalog no longer holds 48 devices").toBe(48);
 }
@@ -255,17 +252,16 @@ export function assertAWaterAssetTakesNoTrainRole(): void {
 }
 
 /**
- * `F4.169`/`F4.170` addendum, owner ruling 10 (2026-09-28): the boot gate no
- * longer counts PHE environment members carrying a role, because an
- * administrator may set one through the role picker and that must not stop
- * the next boot. What the count held — the seed gives none of the twelve
- * `PHE-AIRSP1051M-*` gateways a role — is held here instead, through the real
- * catalog and the real functions.
+ * `F4.169`/`F4.170` addendum, owner ruling 10 (2026-09-28): the boot gate does not count PHE
+ * environment members carrying a role, because an administrator may set one through the role
+ * picker and that must not stop the next boot. What the seed gives them is held here instead,
+ * through the real catalog and the real functions. Until `F4.319` that was "no role"; since ADR
+ * 0113 decision 4 (ruling Q4) every one of the twelve takes `rtu-controller`.
  *
  * The count of environment devices is asserted first, so a catalog or a
  * `deviceDomain` that stopped producing them cannot pass by vacuum.
  */
-export function assertTheSeedRolesNoPheEnvironmentDevice(): void {
+export function assertTheSeedRolesEveryPheEnvironmentDeviceRtuController(): void {
   const catalog = loadPheCatalog();
   const environment = new Set<string>();
   for (const row of catalog.rows) {
@@ -275,8 +271,8 @@ export function assertTheSeedRolesNoPheEnvironmentDevice(): void {
   }
   expect(environment.size, "the PHE catalog must hold its twelve environment gateways").toBe(12);
   expect(
-    [...environment].filter((code) => demoRoleForAsset(code, "environment") !== null),
-    "the seed must give no PHE environment device a role",
+    [...environment].filter((code) => demoRoleForAsset(code, "environment") !== "rtu-controller"),
+    "the seed must give every PHE environment device `rtu-controller`",
   ).toEqual([]);
 }
 
@@ -352,12 +348,12 @@ export function assertASmokeDetectorTakesSmokeDetector(): void {
 }
 
 /**
- * The environment branches read the CODE, not the domain: a PHE gateway is `environment`
- * domain and stays unroled (the `F3.41` ruling). A branch keyed on `domain === "environment"`
- * alone would role it `indoor-air`, and this claim reddens.
+ * The environment branches read the CODE, not the domain: a PHE RTU-health unit is
+ * `environment` domain and takes `rtu-controller` (`F4.319`), never `indoor-air`. A branch keyed
+ * on `domain === "environment"` alone would role it `indoor-air`, and this claim reddens.
  */
-export function assertThePheGatewayStaysUnroledInItsOwnDomain(): void {
-  expect(demoRoleForAsset("PHE-AIRSP1051M-000000003", "environment")).toBeNull();
+export function assertThePheRtuUnitIsNotAnIndoorAirSensor(): void {
+  expect(demoRoleForAsset("PHE-AIRSP1051M-000000003", "environment")).toBe("rtu-controller");
   expect(demoRoleForAsset("CR-SOMETHING", "hvac")).toBeNull();
   expect(demoRoleForAsset("CR-SOMETHING", "it")).toBeNull();
 }
@@ -375,6 +371,41 @@ export function assertEachDemoGroupCarriesItsDomain(): void {
   expect(demoGroupDomain("hvac")).toBe("hvac");
   expect(demoGroupDomain("environment")).toBe("environment");
   expect(demoGroupDomain("water")).toBe("water");
+  // `F4.319` (ADR 0113 decision 6): the pump-station group holds two domains and stands for none.
+  expect(demoGroupDomain("pump-station")).toBeNull();
+}
+
+/**
+ * `F4.319` (ADR 0113 decision 6, ruling Q4) — every PHE asset joins `pump-station` AFTER its
+ * domain group, so the `electrical` and `environment` groups keep every member they had. Run
+ * over the real catalog, with the 48 as the anti-vacuity control; no ESKOM code joins it.
+ */
+export function assertEveryPheAssetJoinsThePumpStationGroup(): void {
+  const catalog = loadPheCatalog();
+  const tally = new Map<string, number>();
+  // One catalog row per point, so a device repeats: count each code once.
+  const seen = new Set<string>();
+  for (const row of catalog.rows) {
+    const code = assetCode(row.DeviceCode);
+    if (seen.has(code)) continue;
+    seen.add(code);
+    const codes = demoGroupCodesForAsset(code, deviceDomain(row.DeviceCode, row.ModelDeviceCode));
+    expect(codes[1], `${code} did not join pump-station second`).toBe("pump-station");
+    const key = codes.join("+");
+    tally.set(key, (tally.get(key) ?? 0) + 1);
+  }
+  expect(Object.fromEntries([...tally.entries()].sort())).toEqual({
+    "electrical+pump-station": 36,
+    "environment+pump-station": 12,
+  });
+  for (const [code, domain] of [
+    ["CR-Q1", "electrical"],
+    ["CR-ENV-1", "environment"],
+    ["CR-PDU-1", "it"],
+  ] as const) {
+    expect(demoGroupCodesForAsset(code, domain), code).not.toContain("pump-station");
+  }
+  expect(demoGroupName("pump-station")).toBe("Pump station");
 }
 
 /**

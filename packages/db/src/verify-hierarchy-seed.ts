@@ -652,6 +652,7 @@ export async function readPhewbChecks(
     phe_elec_members: string;
     phe_elec_roled: string;
     phe_site_layout_views: string;
+    phe_pump_station_roled: string;
   }>(`
     SELECT
       (SELECT COUNT(*)::text FROM bms.locations l
@@ -724,7 +725,17 @@ export async function readPhewbChecks(
       -- (the F3.67 shape; the seed does not own the row once written).
       (SELECT COUNT(*)::text FROM bms.site_control_room_views v
         INNER JOIN bms.locations l ON l.id = v.location_id
-        WHERE l.slug = ANY($10::varchar[])) AS phe_site_layout_views
+        WHERE l.slug = ANY($10::varchar[])) AS phe_site_layout_views,
+      -- F4.319, ADR 0113 decision 6: every catalog asset is a member of its
+      -- station's pump-station group, carrying a role (meter, pump,
+      -- dosing-pump or rtu-controller). Read off the frozen catalog ($4).
+      (SELECT COUNT(*)::text FROM bms.asset_group_members agm
+        INNER JOIN bms.asset_groups ag ON ag.id = agm.asset_group_id
+        INNER JOIN bms.assets a ON a.id = agm.asset_id
+        WHERE ag.code = 'pump-station'
+          AND ag.location_id = a.location_id
+          AND a.code = ANY($4::varchar[])
+          AND agm.role IS NOT NULL) AS phe_pump_station_roled
   `, [
     phe.locationCodes,
     phe.legacyLocationSlugs,
@@ -755,16 +766,18 @@ export async function readPhewbChecks(
   // `phe-catalog.json`, which is a frozen repository file — NOT lifetime
   // counters that drift with use.
   expect("PHE catalog electrical group members", row?.phe_elec_members, phe.electricalAssetCodes.length);
-  // Every one of them carries a role after the owner's 2026-09-02 ruling:
-  // 12 `meter` and 24 `pump`. A NULL here means `demoRoleForAsset` stopped
+  // Every one of them carries a role: 12 `meter`, 12 `pump` and, since
+  // `F4.319` (ADR 0113 decision 4), 12 `dosing-pump`. A NULL here means `demoRoleForAsset` stopped
   // matching, or the group pass ran before the assets existed again. The
-  // other half of the ruling — the 12 `PHE-AIRSP1051M-*` gateways stay
-  // unroled — is held by `asset-groups-seed.spec.ts`, a unit gate, rather
-  // than here: an administrator may give a gateway a role through the
-  // picker, and that must not stop the next boot (owner ruling 10,
-  // 2026-09-28). No boot gate reads a gateway's role.
+  // `PHE-AIRSP1051M-*` units are environment domain and not counted here;
+  // since `F4.319` they take `rtu-controller`, and the pump-station count
+  // below reads them (an administrator's role still passes: any non-NULL).
   expect("PHE catalog electrical members carrying a role", row?.phe_elec_roled, phe.electricalAssetCodes.length);
   expect("PHEWB catalog station site-layout view rows", row?.phe_site_layout_views, expected.siteLayoutPheSlugs.length);
+  // `F4.319` — 48 today = 6 stations × 8 assets, each in its station's `pump-station` group with a
+  // role. An administrator may change or clear a role, but the seed refills a NULL on every boot
+  // (the `COALESCE` membership upsert), so after a seed a NULL here is the seed's own fault.
+  expect("PHE catalog pump-station members carrying a role", row?.phe_pump_station_roled, phe.assetCodes.length);
   // F4.317 ruling Q3: PHEWB's seeded organization layout, row-or-copy (the ESKOM comment says why).
   // The organization is the tenant GUC the caller holds, which is also what the policy matches.
   const organizationLayout = await pool.query<{ n: string }>(ORGANIZATION_LAYOUT_PRESENT_SQL, [
