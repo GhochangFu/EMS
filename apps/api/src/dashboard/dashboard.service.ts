@@ -457,6 +457,11 @@ export class DashboardService {
    * `PUE_LATEST_MAX_AGE_SECONDS` (900 s) also drops out of both sums — the
    * owner's ruling of 2026-09-06 — so `null` here means "no fresh pair in
    * scope", not only "nothing configured".
+   *
+   * `F4.317` (ADR 0112 decision 7) — a site is a location: `sitesOnline` and
+   * `sitesTotal` count distinct `location_id`, no longer distinct `site_name`,
+   * so the estate tile agrees with its location cards ("4 / 17" read 16
+   * cards). The organization strip's `sites.live.count` is the same rule.
    */
   async kpis(assetIds?: string[] | null): Promise<{
     totalKw: number;
@@ -500,17 +505,18 @@ export class DashboardService {
         ORDER BY asset_id, time DESC
       ),
       ${REPORTING_ASSETS_CTE_SQL},
+      -- F4.317 (ADR 0112 decision 7): a site is a location, not a site_name.
       asset_sites AS (
-        SELECT id, site_name FROM bms.assets
+        SELECT id, location_id FROM bms.assets
         WHERE ($1::uuid[] IS NULL OR id = ANY($1::uuid[]))
       )
       SELECT
         -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
         (SELECT COALESCE(SUM(k.kw), 0) FROM kw_latest k
           INNER JOIN bms.assets a ON a.id = k.asset_id)::float8 AS total_kw,
-        (SELECT COUNT(DISTINCT s.site_name)::int FROM reporting k
+        (SELECT COUNT(DISTINCT s.location_id)::int FROM reporting k
           JOIN asset_sites s ON s.id = k.asset_id) AS sites_online,
-        (SELECT COUNT(DISTINCT site_name)::int FROM asset_sites) AS sites_total,
+        (SELECT COUNT(DISTINCT location_id)::int FROM asset_sites) AS sites_total,
         -- ADR 0057 decision 1: open/active = cleared_at IS NULL (since migration 0066).
         (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE cleared_at IS NULL) AS alarms_open,
         (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE cleared_at IS NULL AND severity IN (SELECT code FROM bms.alarm_severities WHERE tone = 'critical')) AS alarms_critical
