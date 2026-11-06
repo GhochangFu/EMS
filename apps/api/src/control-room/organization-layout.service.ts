@@ -202,15 +202,18 @@ export class OrganizationLayoutService {
       return await withTenant(this.tenantDb, organizationId, async (tx) => {
         await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${organizationLayoutLockKey(organizationId)}, 0))`);
         const [row] = await tx
-          .select({ live: qualifyingCopy(organizationId) })
+          .select({ live: qualifyingCopy(organizationId), previousDashboardId: organizationControlRoomViews.dashboardId })
           .from(organizationControlRoomViews)
           .where(eq(organizationControlRoomViews.organizationId, organizationId))
           .limit(1);
         if (row?.live === true) {
           throw new ConflictException(ORGANIZATION_HAS_LAYOUT_MESSAGE);
         }
-        // A row the read ignores: its copy was removed, or no longer qualifies.
-        const removedCopy = row !== undefined;
+        // A row the read ignores: its copy was removed (`dashboard_id` NULL), or it still exists but
+        // no longer qualifies (re-scoped to a site). Either way it is re-pointed in place; the audit
+        // says which (a foreign pointer was already cleared above and is invisible here).
+        const ignoredRow = row !== undefined;
+        const previousDashboardId = row?.previousDashboardId ?? null;
 
         await tx.insert(dashboards).values({
           id: dashboardId,
@@ -233,7 +236,7 @@ export class OrganizationLayoutService {
         );
 
         const updatedAt = new Date();
-        const written = removedCopy
+        const written = ignoredRow
           ? await tx
               .update(organizationControlRoomViews)
               .set({ dashboardId, updatedAt, updatedBy })
@@ -261,7 +264,14 @@ export class OrganizationLayoutService {
             entityType: "organization_control_room_view",
             entityId: organizationId,
             reason: `from template ${template.code} v${template.version}`,
-            payload: { dashboardId, templateId: template.id, tiles: template.widgets.length, replacedRemovedCopy: removedCopy },
+            payload: {
+              dashboardId,
+              templateId: template.id,
+              tiles: template.widgets.length,
+              // As on the site layout: true only when the old copy was deleted.
+              replacedRemovedCopy: ignoredRow && previousDashboardId === null,
+              previousDashboardId,
+            },
           },
           tx,
         );
@@ -334,7 +344,7 @@ export class OrganizationLayoutService {
             ),
           ),
         )
-        .returning({ dashboardId: organizationControlRoomViews.dashboardId });
+        .returning({ organizationId: organizationControlRoomViews.organizationId });
       if (removed.length === 0) {
         return false;
       }
@@ -346,7 +356,8 @@ export class OrganizationLayoutService {
           entityType: "organization_control_room_view",
           entityId: organizationId,
           reason: "the row pointed at another organization's dashboard",
-          payload: { dashboardId: removed[0]?.dashboardId ?? null, foreignPointer: true },
+          // Not the pointed id: it is another organization's dashboard, and A's audit readers see this row.
+          payload: { foreignPointer: true },
         },
         tx,
       );

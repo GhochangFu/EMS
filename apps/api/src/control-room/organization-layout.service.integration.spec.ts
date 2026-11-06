@@ -174,6 +174,27 @@ export async function assertMakeOverALiveLayoutIsRefused(fx: OrganizationLayoutF
   }
 }
 
+/** What the Make audit row for `dashboardId` says about the row it replaced (absent keys stay absent). */
+async function makeAuditOf(
+  fx: OrganizationLayoutFixture,
+  dashboardId: string,
+): Promise<{ replacedRemovedCopy?: unknown; previousDashboardId?: unknown } | undefined> {
+  const { rows } = await fx.superuserPool.query<{ payload: Record<string, unknown> }>(
+    `SELECT payload FROM bms.audit_log WHERE organization_id = $1 AND action = 'master.organization.control_room_view.make'
+        AND payload->>'dashboardId' = $2`,
+    [fx.orgA, dashboardId],
+  );
+  const payload = rows[0]?.payload;
+  if (payload === undefined) {
+    return undefined;
+  }
+  const { replacedRemovedCopy, previousDashboardId } = payload;
+  return {
+    ...("replacedRemovedCopy" in payload ? { replacedRemovedCopy } : {}),
+    ...("previousDashboardId" in payload ? { previousDashboardId } : {}),
+  };
+}
+
 /** A row whose copy was deleted (`dashboard_id` NULL) is re-made in place. */
 export async function assertARemovedCopyIsRemadeInPlace(fx: OrganizationLayoutFixture): Promise<void> {
   const svc = serviceOf(fx);
@@ -181,6 +202,7 @@ export async function assertARemovedCopyIsRemadeInPlace(fx: OrganizationLayoutFi
     await pointOrganizationAt(fx, fx.orgA, null);
     const made = await svc.make(fx.jwt.admin, fx.orgA, { templateId: fx.templateA });
     expect((await viewRow(fx, fx.orgA))?.dashboard_id).toBe(made.dashboardId);
+    expect(await makeAuditOf(fx, made.dashboardId)).toEqual({ replacedRemovedCopy: true, previousDashboardId: null });
   } finally {
     await clearOrganizationView(fx, fx.orgA);
   }
@@ -258,23 +280,32 @@ export async function assertAnIgnoredRowIsNotALiveLayout(fx: OrganizationLayoutF
     await pointOrganizationAt(fx, fx.orgA, foreign);
     await svc.reset(fx.jwt.admin, fx.orgA);
     expect(await viewRow(fx, fx.orgA)).toBeUndefined();
+    // The reset is audited under A, without B's dashboard id.
     const { rows: audits } = await fx.superuserPool.query(
-      `SELECT 1 FROM bms.audit_log WHERE organization_id = $1 AND action = 'master.organization.control_room_view.reset'
-         AND payload->>'dashboardId' = $2`,
-      [fx.orgA, foreign],
+      `SELECT payload FROM bms.audit_log WHERE organization_id = $1 AND action = 'master.organization.control_room_view.reset'
+         AND payload->>'foreignPointer' = 'true'`,
+      [fx.orgA],
     );
-    expect(audits).toHaveLength(1);
+    expect(audits).toEqual([{ payload: { foreignPointer: true } }]);
 
     await pointOrganizationAt(fx, fx.orgA, foreign);
     const overForeign = await svc.make(fx.jwt.admin, fx.orgA, {});
     expect((await viewRow(fx, fx.orgA))?.dashboard_id).toBe(overForeign.dashboardId);
     expect((await svc.view(fx.jwt.admin, fx.orgA)).kind).toBe("dashboard");
+    expect(await makeAuditOf(fx, overForeign.dashboardId)).toEqual({ replacedRemovedCopy: false, previousDashboardId: null });
+    const { rows: leaks } = await fx.superuserPool.query(
+      `SELECT 1 FROM bms.audit_log WHERE organization_id = $1 AND payload::text LIKE '%' || $2 || '%'`,
+      [fx.orgA, foreign],
+    );
+    expect(leaks).toHaveLength(0);
 
     await pointOrganizationAt(fx, fx.orgA, scoped);
     expect((await svc.view(fx.jwt.admin, fx.orgA)).kind).toBe("stock");
     const overScoped = await svc.make(fx.jwt.locAdminA, fx.orgA, {});
     expect((await viewRow(fx, fx.orgA))?.dashboard_id).toBe(overScoped.dashboardId);
     expect((await svc.view(fx.jwt.admin, fx.orgA)).kind).toBe("dashboard");
+    // The re-scoped copy still exists: the audit names it, and does not call it removed.
+    expect(await makeAuditOf(fx, overScoped.dashboardId)).toEqual({ replacedRemovedCopy: false, previousDashboardId: scoped });
     const { rows } = await fx.superuserPool.query(`SELECT location_id FROM bms.dashboards WHERE id = $1`, [scoped]);
     expect(rows[0]).toEqual({ location_id: fx.locA1 });
   } finally {
