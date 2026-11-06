@@ -155,3 +155,37 @@ Two counts of "sites" disagree today. `kpis()` counts distinct
   closed catalog) and ADR 0076 decision 5 (the fail-safe, now at two levels).
 - After acceptance: a `docs/BACKLOG.md` row `F4.317`, and a `chore(agents):`
   sweep if AGENTS.md names the template targets.
+
+## Amendment 1 — 2026-11-06
+
+**Owner ruling Q1b (2026-11-06), on the build plan's question 1.** Tile 3 binds
+two catalog keys, `alarms.active.count` and a new `alarms.critical.count`. There
+is no `tone` param. This supersedes the sentence in decision 9 that gave
+`alarms.active.count` an optional `tone` param.
+
+Why: tile 3 binds two sources on one widget (ruling Q1), and the write path
+cannot hold the same `catalog_key` twice on one widget.
+
+- `dashboard_widget_sources_widget_key_key UNIQUE (widget_id, catalog_key)`
+  (`packages/db/drizzle/0054_dashboard_widget_sources.sql:153`) refuses a second
+  `alarms.active.count` row on the widget, whatever its `params`.
+- `noDuplicateSources` (`packages/shared/src/contracts/dashboard-writes.ts:318`)
+  refuses it in the write contract first.
+- The viewer keys a resolved value by `(widgetId, catalogKey)`
+  (`apps/web/src/lib/dashboard-widget-data.ts:223`), so two bindings of one key
+  on one widget would share one value.
+
+A second key needs none of these to change.
+
+What changes:
+
+- **Decision 6, row 3** now reads: Open alarms, with the critical count —
+  `alarms.active.count` + new `alarms.critical.count`.
+- **Decision 9** now reads: `metricCatalogKeySchema` and the database CHECK
+  gain `sites.live.count`, `pue.ratio` and `alarms.critical.count` (all three
+  `shape: "metric"`, no params, `.strict()` `{}` in
+  `METRIC_CATALOG_PARAMS_WRITE`). `alarms.active.count` is unchanged.
+  `alarms.critical.count` counts the open alarms whose severity has tone
+  `critical`. This is the `DashboardService.kpis()` critical predicate
+  (`apps/api/src/dashboard/dashboard.service.ts:516`). Migration `0126`'s
+  catalog CHECK lists thirteen keys.
