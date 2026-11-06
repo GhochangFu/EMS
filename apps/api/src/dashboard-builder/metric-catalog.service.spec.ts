@@ -42,7 +42,19 @@ const refusingDb = (): BmsDb =>
     },
   });
 
-const noDeps = { health: new AssetHealthService(refusingDb()), readableLocationIds: null, scopeLocationId: null } as Parameters<
+/** A pool that refuses every statement — `pue.ratio` (`F4.317`) reads through `deps.pool`. */
+const refusingPool = {
+  query: () => {
+    throw new Error("the resolver queried the pool for an empty scope");
+  },
+};
+
+const noDeps = {
+  health: new AssetHealthService(refusingDb()),
+  readableLocationIds: null,
+  scopeLocationId: null,
+  pool: refusingPool,
+} as Parameters<
   (typeof RESOLVERS)["sustainability.total"]
 >[3];
 
@@ -304,7 +316,13 @@ export async function catalogValuesPassesEachReadableSetInItsOwnPosition(): Prom
     limit: async () => [{ id: "dash-1", organizationId: "org-1" }],
   };
   const fleetDb = { select: () => chain } as unknown as BmsDb;
-  const service = new MetricCatalogService(refusingDb(), fleetDb, accessControl, new AssetHealthService(refusingDb()));
+  const service = new MetricCatalogService(
+    refusingDb(),
+    fleetDb,
+    accessControl,
+    new AssetHealthService(refusingDb()),
+    refusingPool,
+  );
 
   const calls: unknown[][] = [];
   (service as unknown as { resolveForDashboard: (...args: unknown[]) => Promise<unknown> }).resolveForDashboard =

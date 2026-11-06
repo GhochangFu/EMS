@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, isNull, notInArray, sql, type SQL } from "
 
 import {
   alarms,
+  alarmSeverities,
   assetGroups,
   assets,
   dashboards,
@@ -12,6 +13,7 @@ import {
   workOrders,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import type { Pool } from "pg";
 import {
   MAX_DATASET_ROWS,
   METRIC_CATALOG,
@@ -26,8 +28,8 @@ import type { JwtPayload } from "@bms/shared";
 
 import { AssetHealthService } from "../asset-health/asset-health.service";
 import { AccessControlService } from "../auth/access-control.service";
-import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
-import { withTenant } from "../database/tenant-context";
+import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "../database/database.tokens";
+import { withTenant, type BmsTx } from "../database/tenant-context";
 import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
 import {
   resolveAssetScope,
@@ -35,6 +37,7 @@ import {
   type DashboardAssetScope,
 } from "./dashboard-scope-assets";
 import { resolveWidgetSources } from "./dashboard-source-scope";
+import { pueRatio, sitesLiveCount } from "./metric-catalog-estate";
 import type { Resolver } from "./metric-catalog-types";
 import { groupLocationsAtDepth } from "./sustainability-grouping";
 import {
@@ -123,6 +126,8 @@ export class MetricCatalogService {
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly health: AssetHealthService,
+    // `F4.317` — `ResolverDeps.pool`, for `pue.ratio` (`metric-catalog-estate.ts`).
+    @Inject(FLEET_POOL) private readonly fleetPool: Pick<Pool, "query">,
   ) {}
 
   /**
@@ -285,6 +290,7 @@ export class MetricCatalogService {
               // scope — a group tab's widget resolves with `locationId` null yet sits on this
               // dashboard. `capLocationId`'s own comment says how it is read.
               scopeLocationId: capLocationId,
+              pool: this.fleetPool,
             },
             planned.params,
           ),
@@ -466,6 +472,21 @@ const activeAlarmWhere = (organizationId: string, scope: readonly string[]) =>
   );
 
 /**
+ * `F4.317` (ADR 0112 Amendment 1) — an active alarm whose severity has tone `critical`: the
+ * `DashboardService.kpis()` critical predicate (`alarms_critical`). Matched on TONE, never on a
+ * severity code, for the reason `locationKpis` records (ADR 0032: the code set is open, the tone
+ * set is closed by `alarm_severities_tone_check`).
+ */
+const criticalAlarmWhere = (tx: BmsTx, organizationId: string, scope: readonly string[]) =>
+  and(
+    activeAlarmWhere(organizationId, scope),
+    inArray(
+      alarms.severity,
+      tx.select({ code: alarmSeverities.code }).from(alarmSeverities).where(eq(alarmSeverities.tone, "critical")),
+    ),
+  );
+
+/**
  * An open work order is one that is neither resolved nor closed.
  *
  * `workOrderStatusSchema` is `open | assigned | in_progress | resolved | closed`, so this is
@@ -516,6 +537,16 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
       .from(alarms)
       .where(activeAlarmWhere(organizationId, scope));
     return metricValue("alarms.active.count", row?.n ?? 0, null);
+  },
+
+  // `F4.317` — tile 3's second source (ruling Q1b): the open alarms that are critical.
+  "alarms.critical.count": async function (tx, organizationId, scope) {
+    if (scopeIsEmpty(scope)) return metricValue("alarms.critical.count", 0, null);
+    const [row] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(alarms)
+      .where(criticalAlarmWhere(tx, organizationId, scope));
+    return metricValue("alarms.critical.count", row?.n ?? 0, null);
   },
 
   "alarms.active": async function (tx, organizationId, scope) {
@@ -853,10 +884,7 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
     );
   },
 
-  // `F4.317` (ADR 0112 decision 9 and Amendment 1) — the keys exist from migration `0126`; their
-  // resolvers are the next unit's (`metric-catalog-estate.ts`). Until then a binding answers
-  // "no value", never a fabricated number.
-  "sites.live.count": async () => metricValue("sites.live.count", null, null),
-  "pue.ratio": async () => metricValue("pue.ratio", null, null),
-  "alarms.critical.count": async () => metricValue("alarms.critical.count", null, null),
+  // `F4.317` (ADR 0112 decisions 7 and 9) — `metric-catalog-estate.ts`.
+  "sites.live.count": sitesLiveCount,
+  "pue.ratio": pueRatio,
 };

@@ -1,4 +1,5 @@
 import type { MetricCatalogValueDto } from "@bms/shared";
+import type { Pool } from "pg";
 
 import type { AssetHealthService } from "../asset-health/asset-health.service";
 import type { BmsTx } from "../database/tenant-context";
@@ -25,10 +26,19 @@ export type ResolverDeps = {
    * dashboard. `by_location`'s group never goes above it.
    */
   readonly scopeLocationId: string | null;
+  /**
+   * `F4.317` (ADR 0112) — the service's `FLEET_POOL`, for `pue.ratio`, which reads through
+   * `latestPueRatio` (`telemetry/pue-ratio.ts`) as the estate tile does. That read joins
+   * `bms.assets` with no organization predicate, so the `$1::uuid[]` scope — the resolved,
+   * organization-bounded asset ids — is the isolation control, exactly as on the estate path.
+   * `Pick<Pool, "query">`, the type `latestPueRatio` takes.
+   */
+  readonly pool: Pick<Pool, "query">;
 };
 
 /**
- * How the catalog's entries resolve: six are SQL here (the four Stage C reads and the two
+ * How the catalog's entries resolve (`F4.317` adds `alarms.critical.count` beside the alarm
+ * count, and `sites.live.count` and `pue.ratio` in `metric-catalog-estate.ts`): six are SQL here (the four Stage C reads and the two
  * `F3.73` asset reads), one delegates, two roll up a point key, and one (`water.balance`,
  * `E4.3`) folds three role-filtered roll-ups into a row per site.
  *

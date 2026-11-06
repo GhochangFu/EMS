@@ -86,6 +86,7 @@ describe.skipIf(!connectionString)("F2.10 U2 — sustainability over a location 
       fleetDb,
       undefined as unknown as ConstructorParameters<typeof MetricCatalogService>[2],
       new AssetHealthService(fleetDb),
+      fleetPool,
     );
 
     const org = await fleetPool.query<{ id: string }>(

@@ -189,6 +189,8 @@ const SITE_LIVENESS_SITES: ReadonlyArray<{ readonly file: string; readonly count
   { file: "apps/api/src/dashboard/dashboard.service.ts", count: 3 },
   // `sitesLive`'s comm-status count, which colours the pin.
   { file: "apps/api/src/map/map.service.ts", count: 1 },
+  // `F4.317` (ADR 0112 decision 7) — the catalog's `sites.live.count`, a site being a location.
+  { file: "apps/api/src/dashboard-builder/metric-catalog-estate.ts", count: 1 },
 ];
 
 describe.each(SITE_LIVENESS_SITES)("F4.260 — $file decides site liveness on the reporting window", ({ file, count }) => {

@@ -128,6 +128,7 @@ describe.skipIf(!connectionString)("E4.2 U4 — the sustainability roll-up", () 
       fleetDb,
       undefined as unknown as ConstructorParameters<typeof MetricCatalogService>[2],
       new AssetHealthService(fleetDb),
+      fleetPool,
     );
 
     const org = await fleetPool.query<{ id: string; currency: string }>(
@@ -467,6 +468,7 @@ describe.skipIf(!connectionString)("E4.2 U4 — the by_location cap is reached",
       fleetDb,
       undefined as unknown as ConstructorParameters<typeof MetricCatalogService>[2],
       new AssetHealthService(fleetDb),
+      fleetPool,
     );
 
     const org = await fleetPool.query<{ id: string }>(
@@ -598,6 +600,7 @@ describe.skipIf(!connectionString)("E4.3 U9 — the water.balance resolver", () 
       fleetDb,
       undefined as unknown as ConstructorParameters<typeof MetricCatalogService>[2],
       new AssetHealthService(fleetDb),
+      fleetPool,
     );
 
     const org = await fleetPool.query<{ id: string }>(
