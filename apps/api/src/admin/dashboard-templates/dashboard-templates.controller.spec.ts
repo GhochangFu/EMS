@@ -9,6 +9,7 @@ import type { JwtPayload } from "@bms/shared";
 import type { SiteLayoutService } from "../../control-room/site-layout.service";
 import { repoRoot } from "../../testing/repo-root";
 import { decoratorAt, methodBody } from "../../testing/source-scan";
+import type { DashboardTemplatesInstantiateService } from "./dashboard-templates-instantiate.service";
 import { DashboardTemplatesController } from "./dashboard-templates.controller";
 
 /**
@@ -147,4 +148,41 @@ export async function assertApplyToSitesRefusesABadId(): Promise<void> {
   }
   expect(thrown).toBeInstanceOf(ZodError);
   expect(calls).toEqual([]);
+}
+
+/**
+ * `F4.317` review — `POST /:id/instantiate` routes each body arm to its own service method. The
+ * integration suites call the service methods directly, so a swapped or dropped branch in the
+ * controller would stay green there; a direct call with a recording stub catches it.
+ */
+function instantiateController(): { controller: DashboardTemplatesController; calls: string[] } {
+  const calls: string[] = [];
+  const record = (method: string) => async (..._args: unknown[]) => {
+    calls.push(method);
+    return { method };
+  };
+  const instantiate = {
+    instantiate: record("instantiate"),
+    instantiateSite: record("instantiateSite"),
+    instantiateOrganization: record("instantiateOrganization"),
+  } as unknown as DashboardTemplatesInstantiateService;
+  const controller = new DashboardTemplatesController({} as never, {} as never, instantiate, {} as never);
+  return { controller, calls };
+}
+
+export async function assertEachInstantiateBodyReachesItsArm(): Promise<void> {
+  const id = "33333333-3333-4333-8333-333333333333";
+  const organizationId = "44444444-4444-4444-8444-444444444444";
+  const locationId = "55555555-5555-4555-8555-555555555555";
+  const assetGroupId = "66666666-6666-4666-8666-666666666666";
+  const cases: readonly [string, unknown][] = [
+    ["instantiateOrganization", { organizationId }],
+    ["instantiateSite", { locationId }],
+    ["instantiate", { assetGroupId, slug: "f4317-arm", name: "F4.317 arm" }],
+  ];
+  for (const [method, body] of cases) {
+    const { controller, calls } = instantiateController();
+    expect(await controller.instantiateTemplate(id, body, BULK_JWT), `${JSON.stringify(body)}`).toEqual({ method });
+    expect(calls, `the body ${JSON.stringify(body)} must reach ${method} and nothing else`).toEqual([method]);
+  }
 }

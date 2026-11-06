@@ -25,6 +25,7 @@ import { DashboardTemplatesStockService } from "./dashboard-templates-stock.serv
 import {
   createDashboardTemplateBodySchema,
   importStockTemplateBodySchema,
+  instantiateBodyArm,
   instantiateSectionTemplateBodySchema,
   listDashboardTemplatesQuerySchema,
   updateDashboardTemplateBodySchema,
@@ -190,13 +191,17 @@ export class DashboardTemplatesController {
       const parsed = instantiateSectionTemplateBodySchema.parse(body);
       // `F3.73` ruling Q3a — the body's arm picks the method; each refuses a template whose
       // stored `target` is another arm's (`TEMPLATE_TARGET_BODY_MESSAGE`).
-      // `F4.317` — the third arm, `{ organizationId }` (ADR 0112 decision 4).
-      if ("organizationId" in parsed) {
-        return await this.instantiate.instantiateOrganization(user, templateId, parsed);
+      // `F4.317` — the third arm, `{ organizationId }` (ADR 0112 decision 4). The arm is read by
+      // `instantiateBodyArm`, the same reading `templateTargetBodyMessage` makes.
+      const arm = instantiateBodyArm(parsed);
+      switch (arm.target) {
+        case "organization":
+          return await this.instantiate.instantiateOrganization(user, templateId, arm.body);
+        case "site":
+          return await this.instantiate.instantiateSite(user, templateId, arm.body);
+        case "asset_group":
+          return await this.instantiate.instantiate(user, templateId, arm.body);
       }
-      return "locationId" in parsed
-        ? await this.instantiate.instantiateSite(user, templateId, parsed)
-        : await this.instantiate.instantiate(user, templateId, parsed);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

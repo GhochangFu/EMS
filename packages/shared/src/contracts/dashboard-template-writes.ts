@@ -335,13 +335,25 @@ export const TEMPLATE_TARGET_BODY_MESSAGE =
   "{ locationId, tabGroups? }, an asset-group template takes { assetGroupId, slug, name }, " +
   "an organization template takes { organizationId }";
 
+/** A parsed instantiate body, tagged with the target whose arm it is. */
+export type InstantiateBodyArm =
+  | { readonly target: "organization"; readonly body: InstantiateOrganizationTemplateBody }
+  | { readonly target: "site"; readonly body: InstantiateSiteTemplateBody }
+  | { readonly target: "asset_group"; readonly body: InstantiateGroupTemplateBody };
+
 /**
- * Which target a parsed instantiate body is the arm of. Keyed on the one key each strict arm
- * alone carries, so the controller's arm picker and this rule read the body the same way.
+ * Which arm a parsed instantiate body is, with the body narrowed to it. Keyed on the one key each
+ * strict arm alone carries. The controller's arm picker switches on this, and
+ * `templateTargetBodyMessage` reads `instantiateBodyTarget`, so both read the body the same way.
  */
+export function instantiateBodyArm(body: InstantiateSectionTemplateBody): InstantiateBodyArm {
+  if ("organizationId" in body) return { target: "organization", body };
+  return "locationId" in body ? { target: "site", body } : { target: "asset_group", body };
+}
+
+/** Which target a parsed instantiate body is the arm of — `instantiateBodyArm`'s tag. */
 export function instantiateBodyTarget(body: InstantiateSectionTemplateBody): DashboardTemplateTarget {
-  if ("organizationId" in body) return "organization";
-  return "locationId" in body ? "site" : "asset_group";
+  return instantiateBodyArm(body).target;
 }
 
 /**
