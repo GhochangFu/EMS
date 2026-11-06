@@ -16,6 +16,7 @@ import {
   dashboardTemplateDtoSchema,
   dashboardTemplatesListResponseSchema,
   instantiateSectionTemplateResponseSchema,
+  organizationLayoutResultDtoSchema,
   siteLayoutBulkResultDtoSchema,
   siteLayoutResultDtoSchema,
   stockDashboardTemplatesListResponseSchema,
@@ -28,6 +29,7 @@ import type {
   DashboardWidgetSpec,
   InstantiateSectionTemplateResponse,
   MetricCatalogKey,
+  OrganizationLayoutResultDto,
   SiteLayoutBulkResultDto,
   SiteLayoutResultDto,
   StockDashboardTemplatesListResponse,
@@ -273,6 +275,21 @@ export async function instantiateSiteTemplate(
     method: "POST",
     headers: jsonHeaders,
     body: JSON.stringify(tabGroups ? { locationId, tabGroups } : { locationId }),
+  });
+}
+
+/**
+ * `F4.317` (ADR 0112 decision 4) — the organization arm of `POST .../instantiate`: `{ organizationId }`
+ * (the template's own organization). The answer is the one copy and the row now pointing at it.
+ */
+export async function instantiateOrganizationTemplate(
+  id: string,
+  organizationId: string,
+): Promise<OrganizationLayoutResultDto> {
+  return adminFetch(`/admin/dashboard-templates/${id}/instantiate`, organizationLayoutResultDtoSchema, {
+    method: "POST",
+    headers: jsonHeaders,
+    body: JSON.stringify({ organizationId }),
   });
 }
 
