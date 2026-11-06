@@ -15,9 +15,6 @@ import {
   assets,
   dashboards,
   dashboardTemplates,
-  dashboardWidgetPoints,
-  dashboardWidgets,
-  dashboardWidgetSources,
   locations,
   siteControlRoomViews,
   users,
@@ -53,6 +50,7 @@ import { parseStoredContract } from "../common/parse-stored-contract";
 import { writeDashboardTabs } from "../dashboard-builder/dashboard-tabs-write";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
+import { writeLayoutWidgets } from "./layout-copy-writes";
 import {
   NO_SITE_TEMPLATE_MESSAGE,
   SITE_HAS_NO_ASSETS_MESSAGE,
@@ -381,7 +379,7 @@ export class SiteLayoutService {
             row.tab.widgets.map((widget) => planTemplateWidget(widget, members, pointsByAsset)),
           );
           omittedTiles.push(...omittedHere);
-          await this.writeWidgets(tx, organizationId, dashboardId, tabIds.get(row.tab.key) ?? null, plans);
+          await writeLayoutWidgets(tx, organizationId, dashboardId, tabIds.get(row.tab.key) ?? null, plans);
           resolution.push({
             tabKey: row.tab.key,
             assetGroupId: groupId,
@@ -480,56 +478,6 @@ export class SiteLayoutService {
           .returning({ locationId: siteControlRoomViews.locationId });
     if (written.length !== 1) {
       throw new SiteLayoutConflict("has_view", SITE_HAS_VIEW_MESSAGE);
-    }
-  }
-
-  /** The widgets of one tab, with their points and sources — the `instantiate` loop, per tab. */
-  private async writeWidgets(
-    tx: BmsTx,
-    organizationId: string,
-    dashboardId: string,
-    tabId: string | null,
-    plans: readonly ReturnType<typeof planTemplateWidget>[],
-  ): Promise<void> {
-    for (const plan of plans) {
-      const [widgetRow] = await tx
-        .insert(dashboardWidgets)
-        .values({
-          organizationId,
-          dashboardId,
-          tabId,
-          widgetType: plan.widget.widgetType,
-          title: plan.widget.title,
-          gridX: plan.widget.gridX,
-          gridY: plan.widget.gridY,
-          gridW: plan.widget.gridW,
-          gridH: plan.widget.gridH,
-          config: plan.widget.config,
-        })
-        .returning({ id: dashboardWidgets.id });
-      const widgetId = widgetRow?.id as string;
-      if (plan.points.length > 0) {
-        await tx.insert(dashboardWidgetPoints).values(
-          plan.points.map((point, index) => ({
-            organizationId,
-            widgetId,
-            pointId: point.pointId,
-            role: plan.pointRole,
-            sortOrder: index,
-          })),
-        );
-      }
-      if (plan.widget.sources.length > 0) {
-        await tx.insert(dashboardWidgetSources).values(
-          plan.widget.sources.map((source, index) => ({
-            organizationId,
-            widgetId,
-            catalogKey: source.catalogKey,
-            params: source.params,
-            sortOrder: source.sortOrder ?? index,
-          })),
-        );
-      }
     }
   }
 
