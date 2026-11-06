@@ -142,7 +142,7 @@ describe.skipIf(!ownerUrl)("F4.319 — the seed moves the untouched PHE copies t
       const before = await copyOf(p, locationId);
       const moved = await p.query(
         `UPDATE bms.dashboard_widgets SET grid_x = grid_x + 1
-          WHERE id = (SELECT id FROM bms.dashboard_widgets WHERE dashboard_id = $1 AND grid_w < 12 ORDER BY id LIMIT 1)`,
+          WHERE id = (SELECT id FROM bms.dashboard_widgets WHERE dashboard_id = $1 AND grid_x + grid_w < 12 ORDER BY id LIMIT 1)`,
         [before?.id],
       );
       expect(moved.rowCount).toBe(1);
