@@ -31,6 +31,8 @@ const MOVED_WRITE_BODIES = [
   "packages/shared/src/contracts/mimic-symbol-library-writes.ts",
   "packages/shared/src/contracts/asset-role-writes.ts",
   "packages/shared/src/contracts/telemetry-queries.ts",
+  // `F4.317` PR 1 — `sourceBindingWriteSchema`'s refinement moved here out of `dashboard-writes.ts`.
+  "packages/shared/src/contracts/metric-catalog-params.ts",
 ];
 
 function schemaFiles(): string[] {
@@ -44,7 +46,7 @@ function schemaFiles(): string[] {
     }
   };
   walk(join(repoRoot, "apps", "api", "src"), (name) => name.endsWith(".schema.ts"));
-  walk(join(repoRoot, "packages", "shared", "src", "contracts"), (name) => /-writes\.ts$/.test(name) || name === "telemetry-queries.ts");
+  walk(join(repoRoot, "packages", "shared", "src", "contracts"), (name) => /-writes\.ts$/.test(name) || name === "telemetry-queries.ts" || name === "metric-catalog-params.ts");
   return found;
 }
 

@@ -7,7 +7,8 @@ import { describe, expect, it } from "vitest";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
-const SCHEMA_REL = "packages/shared/src/contracts/dashboard-writes.ts";
+// `F4.317` PR 1 — the map and its spread consts moved here out of `dashboard-writes.ts` (§4.5 cap).
+const SCHEMA_REL = "packages/shared/src/contracts/metric-catalog-params.ts";
 const CONTRACT_REL = "packages/shared/src/contracts/dashboard-builder.ts";
 const MIGRATION_REL = "packages/db/drizzle/0054_dashboard_widget_sources.sql";
 
