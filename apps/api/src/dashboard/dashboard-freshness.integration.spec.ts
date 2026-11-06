@@ -111,6 +111,26 @@ async function seedSite(client: pg.PoolClient): Promise<Site> {
   return { organizationId, locationId, rtuId, domainCode, tag };
 }
 
+/** `F4.317` — a second location (and RTU) in the site's organization; active unless told not. */
+async function seedLocation(client: pg.PoolClient, site: Site, active = true): Promise<Site> {
+  const tag = `${site.tag}-${randomUUID().slice(0, 8)}`;
+  const loc = await client.query<{ id: string }>(
+    `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude, active)
+     VALUES ($1, $2, $3, $4, 'rsmoc', 0, 0, $5) RETURNING id`,
+    [site.organizationId, `${tag}-LOC`, tag.toLowerCase(), "F4.317 second fixture site", active],
+  );
+  const locationId = loc.rows[0]?.id;
+  if (!locationId) throw new Error("failed to insert the F4.317 fixture location");
+  const rtu = await client.query<{ id: string }>(
+    `INSERT INTO bms.rtus (organization_id, location_id, code, display_name, source_type)
+     VALUES ($1, $2, $3, $4, 'simulator') RETURNING id`,
+    [site.organizationId, locationId, `${tag}-RTU`, "F4.317 second fixture RTU"],
+  );
+  const rtuId = rtu.rows[0]?.id;
+  if (!rtuId) throw new Error("failed to insert the F4.317 fixture RTU");
+  return { ...site, locationId, rtuId, tag };
+}
+
 /** A further RTU at the site's location. */
 async function seedRtu(client: pg.PoolClient, site: Site): Promise<string> {
   const rtu = await client.query<{ id: string }>(
@@ -261,14 +281,16 @@ export async function assertSitesOnlineUsesAnyPoint(client: pg.PoolClient): Prom
 
 /**
  * Case 5 — `F4.260` (ADR 0075 Amendment 2): the `sites_online` window is the 150 s
- * reporting window. A `kw` sample 140 s old counts, one 160 s old (another asset, its own site
- * name) does not. Both are `kw`, so the point-key change cannot turn this green; only the
- * window can.
+ * reporting window. A `kw` sample 140 s old counts, one 160 s old (another asset at another
+ * location) does not. Both are `kw`, so the point-key change cannot turn this green; only the
+ * window can. `F4.317` (ADR 0112 decision 7): a site is a location, so the two assets sit at two
+ * locations — two site names at one location are one site (case 5b).
  */
 export async function assertSitesOnlineWindowIsTheReportingWindow(client: pg.PoolClient): Promise<void> {
   const site = await seedSite(client);
+  const other = await seedLocation(client, site);
   const inside = await seedAsset(client, site, "S1");
-  const outside = await seedAsset(client, site, "S2");
+  const outside = await seedAsset(client, other, "S2");
   await insertSampleBeforeNow(client, outside, "kw", 7, PAST_SITE_WINDOW_S);
   await insertSampleBeforeNow(client, inside, "kw", 5, INSIDE_SITE_WINDOW_S);
   const kpis = await service(client).kpis([inside, outside]);
@@ -276,6 +298,50 @@ export async function assertSitesOnlineWindowIsTheReportingWindow(client: pg.Poo
   assert(
     got.sitesOnline === 1 && got.sitesTotal === 2,
     `expected { sitesOnline: 1, sitesTotal: 2 } (140 s counts, 160 s does not), got ${JSON.stringify(got)}`,
+  );
+}
+
+/**
+ * Case 5b — `F4.317` (ADR 0112 decision 7): `kpis()` counts LOCATIONS. Two assets at one
+ * location carrying two different `site_name`s are one site, online when either reports — the
+ * estate tile then agrees with the location cards (the "4 / 17" that read 16 cards).
+ */
+export async function assertSitesTotalCountsLocationsNotSiteNames(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const first = await seedAsset(client, site, "North");
+  const second = await seedAsset(client, site, "South");
+  await insertSampleBeforeNow(client, first, "kw", 5, INSIDE_SITE_WINDOW_S);
+  const kpis = await service(client).kpis([first, second]);
+  const got = { sitesOnline: kpis.sitesOnline, sitesTotal: kpis.sitesTotal };
+  assert(
+    got.sitesOnline === 1 && got.sitesTotal === 1,
+    `expected { sitesOnline: 1, sitesTotal: 1 } (two site names, one location), got ${JSON.stringify(got)}`,
+  );
+}
+
+/**
+ * `F4.317` (ADR 0112 decision 7) — an inactive location is not a site: the location cards read
+ * `l.active = true` and `sites.live.count` joins `l.active`, so a reporting asset left at a
+ * deactivated location moves neither `sitesOnline` nor `sitesTotal`. Its open alarm still counts
+ * in `alarmsOpen`, as it does in the catalog's `alarms.active.count`, which reads no location.
+ */
+export async function assertSitesSkipInactiveLocations(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const dead = await seedLocation(client, site, false);
+  const live = await seedAsset(client, site, "Live");
+  const orphan = await seedAsset(client, dead, "Dead");
+  await insertSampleBeforeNow(client, live, "kw", 5, INSIDE_SITE_WINDOW_S);
+  await insertSampleBeforeNow(client, orphan, "kw", 5, INSIDE_SITE_WINDOW_S);
+  await client.query(
+    `INSERT INTO bms.alarms (organization_id, asset_id, severity, message)
+     VALUES ($1, $2, (SELECT code FROM bms.alarm_severities ORDER BY code LIMIT 1), 'F4.317 inactive-location alarm')`,
+    [site.organizationId, orphan],
+  );
+  const kpis = await service(client).kpis([live, orphan]);
+  const got = { sitesOnline: kpis.sitesOnline, sitesTotal: kpis.sitesTotal, alarmsOpen: kpis.alarmsOpen };
+  assert(
+    got.sitesOnline === 1 && got.sitesTotal === 1 && got.alarmsOpen === 1,
+    `expected { sitesOnline: 1, sitesTotal: 1, alarmsOpen: 1 } (one inactive location), got ${JSON.stringify(got)}`,
   );
 }
 

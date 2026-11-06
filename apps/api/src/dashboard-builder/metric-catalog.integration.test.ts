@@ -132,6 +132,7 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
       fleetDb,
       undefined as unknown as ConstructorParameters<typeof MetricCatalogService>[2],
       new AssetHealthService(fleetDb),
+      fleetPool,
     );
 
     // The capturing twin. `summary` records the ids it was given and answers the null score
@@ -146,6 +147,7 @@ describe.skipIf(!connectionString)("F3.35 Stage C — the metric catalog resolve
           return { score: null, bands: [], assetCount: 0, scoredCount: 0 };
         },
       } as unknown as AssetHealthService,
+      fleetPool,
     );
 
     const org = await fleetPool.query<{ id: string }>(

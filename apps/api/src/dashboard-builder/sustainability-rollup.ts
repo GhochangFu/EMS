@@ -146,6 +146,11 @@ export type RollupRow = {
  * over it too (`carrying` is the row count) — a stale intake meter is `0/1`, never hidden by
  * the fresh treatment stages beside it. Omitted, every carrying asset counts, which on a water
  * plant sums every stage's inlet: the double count the parameter exists to remove.
+ *
+ * `at` (`F4.317`, ADR 0112 decision 8) reads the roll-up as it stood at that instant — the
+ * catalog's "vs yesterday" prior (`metric-catalog-prior.ts`): each asset's latest sample at or
+ * before `at`, inside the same bound measured back from `at`. Omitted, the bound runs back from
+ * `now()`, as it always has.
  */
 export async function readRollupRows(
   tx: BmsTx,
@@ -153,6 +158,7 @@ export async function readRollupRows(
   scope: readonly string[],
   pointKey: string,
   balanceRole?: string,
+  at?: Date,
 ): Promise<RollupRow[]> {
   if (scope.length === 0) return [];
   const roleFilter =
@@ -209,7 +215,12 @@ export async function readRollupRows(
           FROM telemetry.point_values v
          WHERE v.asset_id = p.asset_id
            AND v.point_key = ${pointKey}
-           AND v.time > now() - make_interval(secs => p.bound_seconds)
+           ${
+             at === undefined
+               ? sql`AND v.time > now() - make_interval(secs => p.bound_seconds)`
+               : sql`AND v.time > ${at.toISOString()}::timestamptz - make_interval(secs => p.bound_seconds)
+           AND v.time <= ${at.toISOString()}::timestamptz`
+           }
          ORDER BY v.time DESC
          LIMIT 1
       ) s

@@ -3,6 +3,7 @@ import { and, asc, desc, eq, inArray, isNull, notInArray, sql, type SQL } from "
 
 import {
   alarms,
+  alarmSeverities,
   assetGroups,
   assets,
   dashboards,
@@ -12,6 +13,7 @@ import {
   workOrders,
 } from "@bms/db";
 import type { BmsDb } from "@bms/db";
+import type { Pool } from "pg";
 import {
   MAX_DATASET_ROWS,
   METRIC_CATALOG,
@@ -26,7 +28,8 @@ import type { JwtPayload } from "@bms/shared";
 
 import { AssetHealthService } from "../asset-health/asset-health.service";
 import { AccessControlService } from "../auth/access-control.service";
-import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
+import { priorInstant } from "../dashboard/kpi-prior";
+import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
 import { LIVE_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
 import {
@@ -35,6 +38,15 @@ import {
   type DashboardAssetScope,
 } from "./dashboard-scope-assets";
 import { resolveWidgetSources } from "./dashboard-source-scope";
+import { pueRatio, sitesLiveCount } from "./metric-catalog-estate";
+import {
+  PRIOR_KEYS,
+  priorOf,
+  priorOpenAlarmsInScope,
+  priorRollup,
+  widgetWantsPrior,
+} from "./metric-catalog-prior";
+import type { Resolver } from "./metric-catalog-types";
 import { groupLocationsAtDepth } from "./sustainability-grouping";
 import {
   capRows,
@@ -48,52 +60,6 @@ import {
   type RollupRow,
 } from "./sustainability-rollup";
 import { waterBalanceRow } from "./water-balance";
-
-/**
- * What a resolver may reach for beyond the transaction.
- *
- * Passed explicitly rather than bound as `this`. Eight of the ten entries need nothing here
- * (`assets.health.score` reads `health`; `sustainability.by_location` reads
- * `readableLocationIds` since `F2.10`), and a `this`-bound map would have to be cast to reach
- * the service's injected dependency — a cast on the one path that calls another module's service.
- */
-type ResolverDeps = {
-  readonly health: AssetHealthService;
-  /**
-   * `F2.10` — the reader's location ids, `null` when unrestricted. Only `by_location`'s
-   * `groupDepth` reads it: a group label is never an ancestor the reader cannot read (A6).
-   */
-  readonly readableLocationIds: ReadonlySet<string> | null;
-  /**
-   * `F2.10` owner rulings P1 and P4 — the dashboard's own location node, for every widget on
-   * it (a group tab's widget included): its `locationId`, or for a group-scoped dashboard the
-   * GROUP's `location_id` read from the database; `null` for an asset- or organization-scoped
-   * dashboard. `by_location`'s group never goes above it.
-   */
-  readonly scopeLocationId: string | null;
-};
-
-/**
- * How the catalog's entries resolve: six are SQL here (the four Stage C reads and the two
- * `F3.73` asset reads), one delegates, two roll up a point key, and one (`water.balance`,
- * `E4.3`) folds three role-filtered roll-ups into a row per site.
- *
- * `params` is the binding's stored `params` AFTER `METRIC_CATALOG_PARAMS_WRITE[key]` has
- * parsed it (`E4.2`): `{}` for the five Stage C entries and the two `F3.73` asset entries,
- * `{ pointKey, aggregate }` and an
- * optional `balanceRole` (`E4.3`) for the two sustainability entries — plus an optional
- * `groupDepth` on `by_location` since `F2.10` — and `{ period }` for
- * `water.balance`. Positional and required
- * rather than optional, so a resolver that reads a field cannot compile against a call that
- * never passes one.
- */
-type Resolver = (
-  tx: BmsTx,
-  organizationId: string,
-  scope: readonly string[],
-  deps: ResolverDeps,
-  params: unknown,
-) => Promise<MetricCatalogValueDto>;
 
 /** The parsed shape of a sustainability binding's params — what `METRIC_CATALOG_PARAMS_WRITE`
  * guarantees before a resolver runs, spelled once for the two entries that read it. */
@@ -113,8 +79,9 @@ type WaterBalanceParams = { readonly period: WaterBalancePeriod };
 /**
  * `F3.35` Stage C — resolving a dashboard's named catalog bindings (ADR 0048 decisions 1 and 2).
  *
- * **Nine entries are SQL written here (four Stage C reads, the two `F3.73` asset reads, the two
- * `E4.2` roll-ups and the `E4.3` water balance, whose statements live in
+ * **Most entries are SQL written here or beside it (the Stage C reads, the two `F3.73` asset
+ * reads, `F4.317`'s critical count and, in `metric-catalog-estate.ts`, its sites and PUE reads,
+ * the two `E4.2` roll-ups and the `E4.3` water balance, whose statements live in
  * `sustainability-rollup.ts`); one is a service
  * call, and the asymmetry is
  * deliberate.**
@@ -168,6 +135,8 @@ export class MetricCatalogService {
     @Inject(FLEET_DRIZZLE) private readonly fleetDb: BmsDb,
     private readonly accessControl: AccessControlService,
     private readonly health: AssetHealthService,
+    // `F4.317` — `ResolverDeps.pool`, for `pue.ratio` (`metric-catalog-estate.ts`).
+    @Inject(FLEET_POOL) private readonly fleetPool: Pick<Pool, "query">,
   ) {}
 
   /**
@@ -227,6 +196,10 @@ export class MetricCatalogService {
     // set), not read as "every location".
     const readableLocations: ReadonlySet<string> | null =
       readableLocationIds === null ? null : new Set(readableLocationIds);
+    // `F4.317` — captured once, so a prior's `asOf` is exactly `resolvedAt − 24 h` (the
+    // `kpis()` reason: two clocks a query apart would let the pair drift).
+    const now = new Date();
+    const priorAt = priorInstant(now);
     return withTenant(this.tenantDb, organizationId, async (tx) => {
       const [dashboard] = await tx
         .select()
@@ -234,7 +207,7 @@ export class MetricCatalogService {
         .where(eq(dashboards.id, dashboardId))
         .limit(1);
       if (!dashboard) {
-        return { values: [], resolvedAt: new Date().toISOString() };
+        return { values: [], resolvedAt: now.toISOString() };
       }
       // Owner rulings P1 and P4: the cap on a grouped `by_location` row is the dashboard's own
       // node. A group-scoped dashboard's node is its GROUP's location — read here, never taken
@@ -261,8 +234,15 @@ export class MetricCatalogService {
       // arm states: the predicate is what makes the read correct on any pool (`bms_fleet`
       // holds BYPASSRLS). A tab stamped with another organization therefore reads as "no
       // group", and its widget falls back to the dashboard's scope — never wider.
+      // `F4.317` — the type and config too: a `value_tile` with `compareToPrevious` asks for the
+      // prior (decision 8, ruling Q5; `widgetWantsPrior`).
       const widgetRows = await tx
-        .select({ id: dashboardWidgets.id, tabGroupId: dashboardTabs.assetGroupId })
+        .select({
+          id: dashboardWidgets.id,
+          tabGroupId: dashboardTabs.assetGroupId,
+          widgetType: dashboardWidgets.widgetType,
+          config: dashboardWidgets.config,
+        })
         .from(dashboardWidgets)
         .leftJoin(
           dashboardTabs,
@@ -279,7 +259,7 @@ export class MetricCatalogService {
         widgetRows.map((widget) => widget.id),
       );
       if (sources.length === 0) {
-        return { values: [], resolvedAt: new Date().toISOString() };
+        return { values: [], resolvedAt: now.toISOString() };
       }
 
       // A group tab's widget resolves over the GROUP: `locationId` null, or the location arm
@@ -292,7 +272,11 @@ export class MetricCatalogService {
           : { assetId: null, locationId: null, assetGroupId: tabGroupId };
       };
 
-      const plan = planResolves(sources, scopeOfWidget, (source, key, paths) => {
+      const asksForPrior = new Set(
+        widgetRows.filter((widget) => widgetWantsPrior(widget.widgetType, widget.config)).map((widget) => widget.id),
+      );
+
+      const plan = planResolves(sources, scopeOfWidget, (widgetId) => asksForPrior.has(widgetId), (source, key, paths) => {
         // A stored row the write schema no longer accepts (a hand-edited row, or a schema
         // tightened after the write). Skipped, not thrown: the other bindings still resolve.
         // ONE string: `this.logger` is Nest's `Logger` routed through nestjs-pino, where a
@@ -330,8 +314,10 @@ export class MetricCatalogService {
               // scope — a group tab's widget resolves with `locationId` null yet sits on this
               // dashboard. `capLocationId`'s own comment says how it is read.
               scopeLocationId: capLocationId,
+              pool: this.fleetPool,
             },
             planned.params,
+            planned.wantsPrior ? priorAt : null,
           ),
         );
       }
@@ -355,7 +341,7 @@ export class MetricCatalogService {
                 },
               ];
         }),
-        resolvedAt: new Date().toISOString(),
+        resolvedAt: now.toISOString(),
       };
     });
   }
@@ -392,6 +378,8 @@ export type PlannedResolve = {
   readonly scopeKey: string;
   /** `F2.10` — a location scope resolves over the node's subtree (`SUBTREE_SCOPED_KEYS`). */
   readonly subtree: boolean;
+  /** `F4.317` — the tile asks for the prior and the entry has one (`PRIOR_KEYS`). */
+  readonly wantsPrior: boolean;
 };
 
 /**
@@ -417,10 +405,15 @@ const SUBTREE_SCOPED_KEYS: ReadonlySet<MetricCatalogKey> = new Set<MetricCatalog
  *
  * A binding whose params fail the entry's write schema is reported through `onInvalid` (field
  * paths only) and left out; a key with no write schema is left out silently, as before.
+ *
+ * `F4.317` (ADR 0112 decision 8, ruling Q5): the key also carries whether the widget asks for
+ * the prior (`wantsPriorOf`), for an entry that has one (`PRIOR_KEYS`). The tile that asks is a
+ * resolve of its own, so the same binding on a tile that does not ask reads no prior.
  */
 export function planResolves(
   sources: readonly PlannableSource[],
   scopeOfWidget: (widgetId: string) => DashboardAssetScope,
+  wantsPriorOf: (widgetId: string) => boolean,
   onInvalid: (source: PlannableSource, key: MetricCatalogKey, paths: string) => void,
 ): {
   readonly resolveKeyOf: ReadonlyMap<string, string>;
@@ -440,10 +433,11 @@ export function planResolves(
     const scope = scopeOfWidget(source.widgetId);
     const subtree = SUBTREE_SCOPED_KEYS.has(key);
     const scopeKey = scopeKeyFor(scope, { subtree });
-    const resolveKey = `${key}\u0000${canonicalJson(parsed.data)}\u0000${scopeKey}`;
+    const wantsPrior = PRIOR_KEYS.has(key) && wantsPriorOf(source.widgetId);
+    const resolveKey = `${key}\u0000${canonicalJson(parsed.data)}\u0000${scopeKey}${wantsPrior ? "\u0000prior" : ""}`;
     resolveKeyOf.set(source.id, resolveKey);
     if (!resolves.has(resolveKey)) {
-      resolves.set(resolveKey, { key, params: parsed.data, scope, scopeKey, subtree });
+      resolves.set(resolveKey, { key, params: parsed.data, scope, scopeKey, subtree, wantsPrior });
     }
   }
   return { resolveKeyOf, resolves };
@@ -479,6 +473,17 @@ const metricValue = (
   unit: string | null,
 ): MetricCatalogValueDto => ({ shape: "metric", key, value, unit });
 
+/**
+ * `F4.317` — a metric with its `prior` when the tile asked (`priorAt` set), else unchanged: no
+ * `prior` key at all, so a tile that did not ask reads exactly what it read before.
+ */
+const withPrior = (
+  value: MetricCatalogValueDto,
+  priorAt: Date | null,
+  prior: number | null,
+): MetricCatalogValueDto =>
+  priorAt === null || value.shape !== "metric" ? value : { ...value, prior: priorOf(priorAt, prior) };
+
 const datasetValue = (
   key: MetricCatalogKey,
   rows: Record<string, string | number | boolean | null>[],
@@ -508,6 +513,21 @@ const activeAlarmWhere = (organizationId: string, scope: readonly string[]) =>
     eq(alarms.organizationId, organizationId),
     isNull(alarms.clearedAt),
     scopedTo(alarms.assetId, scope),
+  );
+
+/**
+ * `F4.317` (ADR 0112 Amendment 1) — an active alarm whose severity has tone `critical`: the
+ * `DashboardService.kpis()` critical predicate (`alarms_critical`). Matched on TONE, never on a
+ * severity code, for the reason `locationKpis` records (ADR 0032: the code set is open, the tone
+ * set is closed by `alarm_severities_tone_check`).
+ */
+const criticalAlarmWhere = (tx: BmsTx, organizationId: string, scope: readonly string[]) =>
+  and(
+    activeAlarmWhere(organizationId, scope),
+    inArray(
+      alarms.severity,
+      tx.select({ code: alarmSeverities.code }).from(alarmSeverities).where(eq(alarmSeverities.tone, "critical")),
+    ),
   );
 
 /**
@@ -554,13 +574,31 @@ const inScopeAssetsWithLiveness = (
 
 /** Exported for `metric-catalog.service.spec.ts`'s no-database claims only; the service is the API. */
 export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
-  "alarms.active.count": async function (tx, organizationId, scope) {
-    if (scopeIsEmpty(scope)) return metricValue("alarms.active.count", 0, null);
+  "alarms.active.count": async function (tx, organizationId, scope, _deps, _params, priorAt) {
+    if (scopeIsEmpty(scope)) return withPrior(metricValue("alarms.active.count", 0, null), priorAt, 0);
     const [row] = await tx
       .select({ n: sql<number>`count(*)::int` })
       .from(alarms)
       .where(activeAlarmWhere(organizationId, scope));
-    return metricValue("alarms.active.count", row?.n ?? 0, null);
+    return withPrior(
+      metricValue("alarms.active.count", row?.n ?? 0, null),
+      priorAt,
+      priorAt && (await priorOpenAlarmsInScope(tx, organizationId, scope, priorAt, false)),
+    );
+  },
+
+  // `F4.317` — tile 3's second source (ruling Q1b): the open alarms that are critical.
+  "alarms.critical.count": async function (tx, organizationId, scope, _deps, _params, priorAt) {
+    if (scopeIsEmpty(scope)) return withPrior(metricValue("alarms.critical.count", 0, null), priorAt, 0);
+    const [row] = await tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(alarms)
+      .where(criticalAlarmWhere(tx, organizationId, scope));
+    return withPrior(
+      metricValue("alarms.critical.count", row?.n ?? 0, null),
+      priorAt,
+      priorAt && (await priorOpenAlarmsInScope(tx, organizationId, scope, priorAt, true)),
+    );
   },
 
   "alarms.active": async function (tx, organizationId, scope) {
@@ -687,16 +725,20 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
    * `null`, no unit and no currency before any SQL (sweep — PR 1 read the unit and the
    * currency first), like the other entries' "no source".
    */
-  "sustainability.total": async (tx, organizationId, scope, _deps, params) => {
+  "sustainability.total": async (tx, organizationId, scope, _deps, params, priorAt) => {
     if (scopeIsEmpty(scope)) {
-      return {
-        shape: "metric",
-        key: "sustainability.total",
-        value: null,
-        unit: null,
-        coverage: { fresh: 0, carrying: 0 },
-        currency: null,
-      };
+      return withPrior(
+        {
+          shape: "metric",
+          key: "sustainability.total",
+          value: null,
+          unit: null,
+          coverage: { fresh: 0, carrying: 0 },
+          currency: null,
+        },
+        priorAt,
+        null,
+      );
     }
     const { pointKey, aggregate, balanceRole } = params as SustainabilityParams;
     const rows = await readRollupRows(tx, organizationId, scope, pointKey, balanceRole);
@@ -705,14 +747,19 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
     const currency = isMoneyPointKey(pointKey)
       ? rollupCurrency(new Set([await readOrganizationCurrency(tx, organizationId)]))
       : null;
-    return {
-      shape: "metric",
-      key: "sustainability.total",
-      value,
-      unit: unit || null,
-      coverage,
-      currency,
-    };
+    return withPrior(
+      {
+        shape: "metric",
+        key: "sustainability.total",
+        value,
+        unit: unit || null,
+        coverage,
+        currency,
+      },
+      priorAt,
+      // `F4.317` decision 8 — the same roll-up at the prior instant, on its own freshness bound.
+      priorAt && (await priorRollup(tx, organizationId, scope, params as SustainabilityParams, priorAt)),
+    );
   },
 
   /**
@@ -898,10 +945,7 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
     );
   },
 
-  // `F4.317` (ADR 0112 decision 9 and Amendment 1) — the keys exist from migration `0126`; their
-  // resolvers are the next unit's (`metric-catalog-estate.ts`). Until then a binding answers
-  // "no value", never a fabricated number.
-  "sites.live.count": async () => metricValue("sites.live.count", null, null),
-  "pue.ratio": async () => metricValue("pue.ratio", null, null),
-  "alarms.critical.count": async () => metricValue("alarms.critical.count", null, null),
+  // `F4.317` (ADR 0112 decisions 7 and 9) — `metric-catalog-estate.ts`.
+  "sites.live.count": sitesLiveCount,
+  "pue.ratio": pueRatio,
 };
