@@ -9,6 +9,7 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 
 const MIGRATION_REL = "packages/db/drizzle/0095_site_template_target_and_group_domain.sql";
 const TAG = "0095_site_template_target_and_group_domain";
+const EFFECTIVE_MIGRATION_REL = "packages/db/drizzle/0126_organization_control_room_views_and_catalog.sql";
 const CONTRACT_REL = "packages/shared/src/contracts/dashboard-templates.ts";
 
 /** Strip `--` comment lines before a scan — the `f3.1a-dashboard-schema.test.ts`
@@ -62,9 +63,17 @@ describe("F3.73 — migration 0095: template target and group domain", () => {
     expect(sql).toMatch(/CHECK \(target IN \('asset_group', 'site'\)\)/);
   });
 
-  it("keeps the CHECK values equal to dashboardTemplateTargetSchema's options", () => {
+  it("keeps 0095's frozen CHECK at its two values", () => {
     const check = /CHECK \(target IN \(([^)]*)\)\)/.exec(sqlOnly(read(MIGRATION_REL)));
     expect(check, "0095 must carry the target CHECK").not.toBeNull();
+    expect([...(check?.[1] ?? "").matchAll(/'([a-z_]+)'/g)].map((m) => m[1])).toEqual(["asset_group", "site"]);
+  });
+
+  // `F4.317` (ADR 0112 decision 2): `0126` widened the CHECK with `organization`, so the
+  // effective list — the one the enum must equal — is that later file's.
+  it("keeps the effective CHECK (0126) values equal to dashboardTemplateTargetSchema's options", () => {
+    const check = /CHECK \(target IN \(([^)]*)\)\)/.exec(sqlOnly(read(EFFECTIVE_MIGRATION_REL)));
+    expect(check, "0126 must carry the target CHECK").not.toBeNull();
     const sqlValues = [...(check?.[1] ?? "").matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
 
     const source = read(CONTRACT_REL);
