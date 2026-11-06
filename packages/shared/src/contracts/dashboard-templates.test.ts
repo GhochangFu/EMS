@@ -11,6 +11,7 @@ import {
   targetDefaultsToAssetGroup,
   templateWidgetsYieldsTopLevelThenTabWidgets,
   theTargetEnumAcceptsOrganization,
+  theOrganizationTargetRuleRefusesTabsAndNonTiles,
   theTargetRuleNamesEachMismatch,
   acceptsAWidgetCarryingEitherKindAlone,
   acceptsAWidgetCarryingNeitherKind,
@@ -130,5 +131,9 @@ describe("F3.73 — the site target and content tabs (plan D4)", () => {
 describe("F4.317 — the organization template target (ADR 0112 decision 2)", () => {
   it("accepts organization as a third target and refuses an unknown one", () => {
     theTargetEnumAcceptsOrganization();
+  });
+
+  it("refuses tabs and every widget type but value_tile on the organization target", () => {
+    theOrganizationTargetRuleRefusesTabsAndNonTiles();
   });
 });

@@ -604,7 +604,8 @@ export function noRouteIsBothAnEntryAndExcluded(): void {
 /** `objectShapeOf` unwraps a refinement and splits a union; anything else is a load error. */
 export function objectShapeUnwrapsEffectsAndUnions(): void {
   expect(Object.keys(objectShapeOf(contracts.createDashboardBodySchema)[0] ?? {})).toContain("slug");
-  expect(objectShapeOf(contracts.instantiateSectionTemplateBodySchema)).toHaveLength(2);
+  // Three arms since `F4.317`: group, site, organization.
+  expect(objectShapeOf(contracts.instantiateSectionTemplateBodySchema)).toHaveLength(3);
   expect(() => objectShapeOf(z.string())).toThrow(/must be an object/);
 }
 

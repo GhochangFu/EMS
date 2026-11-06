@@ -442,13 +442,22 @@ export const SITE_TEMPLATE_TOP_LEVEL_MESSAGE =
 export const ASSET_GROUP_TEMPLATE_TABS_MESSAGE =
   "an asset-group template is one canvas and holds no tabs";
 
+/** `F4.317` / ADR 0112 decision 2 — an organization has no asset group to bind a tab to. */
+export const ORGANIZATION_TEMPLATE_TABS_MESSAGE =
+  "an organization template is one strip of tiles and holds no tabs";
+
+/** `F4.317` / ADR 0112 decision 2 — the organization strip draws value tiles only, in this phase. */
+export const ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE =
+  "an organization template holds value tiles only in this phase, ADR 0112 decision 2";
+
 /**
  * The target rule — plan D4. `null` when `content` fits `target`, else the sentence to answer.
  *
  * One function and not a refinement on the content object, because the object cannot see the
  * target: the create body checks it where it carries both, and the service checks a `PATCH`,
  * a publish and an instantiation against the stored row's target. A site template with no tab
- * passes here: a draft may be incomplete, and publish refuses a template with no widget.
+ * passes here: a draft may be incomplete, and publish refuses a template with no widget. An
+ * organization template (`F4.317`) holds no tab and, in this phase, value tiles only.
  */
 export function templateTargetContentMessage(
   target: z.infer<typeof dashboardTemplateTargetSchema>,
@@ -456,7 +465,23 @@ export function templateTargetContentMessage(
 ): string | null {
   if (target === "site" && content.widgets.length > 0) return SITE_TEMPLATE_TOP_LEVEL_MESSAGE;
   if (target === "asset_group" && content.tabs.length > 0) return ASSET_GROUP_TEMPLATE_TABS_MESSAGE;
+  if (target === "organization") {
+    if (content.tabs.length > 0) return ORGANIZATION_TEMPLATE_TABS_MESSAGE;
+    if (content.widgets.some((widget) => widget.widgetType !== "value_tile")) {
+      return ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE;
+    }
+  }
   return null;
+}
+
+/**
+ * Which half of `content` a `templateTargetContentMessage` refusal is about: `"tabs"` for a tab
+ * the target holds none of, `"widgets"` otherwise. The create body files its issue there.
+ */
+export function templateTargetContentField(message: string): "widgets" | "tabs" {
+  return message === ASSET_GROUP_TEMPLATE_TABS_MESSAGE || message === ORGANIZATION_TEMPLATE_TABS_MESSAGE
+    ? "tabs"
+    : "widgets";
 }
 
 // ---------------------------------------------------------------------------

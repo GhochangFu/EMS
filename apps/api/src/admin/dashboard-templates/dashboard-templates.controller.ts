@@ -6,6 +6,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  NotImplementedException,
   Param,
   Patch,
   Post,
@@ -190,6 +191,10 @@ export class DashboardTemplatesController {
       const parsed = instantiateSectionTemplateBodySchema.parse(body);
       // `F3.73` ruling Q3a — the body's arm picks the method; each refuses a template whose
       // stored `target` is the other arm's (`TEMPLATE_TARGET_BODY_MESSAGE`).
+      // `F4.317` — the organization arm parses here; its route lands with the arm itself.
+      if ("organizationId" in parsed) {
+        throw new NotImplementedException("Instantiating an organization template is not available yet");
+      }
       return "locationId" in parsed
         ? await this.instantiate.instantiateSite(user, templateId, parsed)
         : await this.instantiate.instantiate(user, templateId, parsed);

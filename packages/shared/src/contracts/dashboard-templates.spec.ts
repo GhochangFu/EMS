@@ -7,6 +7,8 @@ import {
   sectionTemplateWidgetSchema,
   stockDashboardTemplateDtoSchema,
   dashboardTemplateTargetSchema,
+  ORGANIZATION_TEMPLATE_TABS_MESSAGE,
+  ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE,
   templateTargetContentMessage,
   templateWidgets,
 } from "./dashboard-templates";
@@ -464,4 +466,34 @@ export function theTargetEnumAcceptsOrganization(): void {
     "the target enum must be asset_group, site, organization",
   );
   assert(!dashboardTemplateTargetSchema.safeParse("estate").success, "an unknown target must be refused");
+}
+
+/**
+ * `F4.317` / ADR 0112 decision 2 — an organization template is one flat list of value tiles: a
+ * tab is refused (an organization has no asset group to bind one to), and so is every widget
+ * type but `value_tile` in this phase. The flat list of tiles, and the empty draft, are legal.
+ */
+export function theOrganizationTargetRuleRefusesTabsAndNonTiles(): void {
+  const withTabs = sectionTemplateContentSchema.parse({ widgets: [widget()], tabs: [tab()] });
+  const withLegend = sectionTemplateContentSchema.parse({
+    widgets: [widget(), widget({ key: "legend", widgetType: "state_legend", config: {} })],
+  });
+  const tiles = sectionTemplateContentSchema.parse({
+    widgets: [widget({ key: "a", sources: [METRIC] }), widget({ key: "b" })],
+  });
+  const empty = sectionTemplateContentSchema.parse({ widgets: [] });
+  assert(
+    templateTargetContentMessage("organization", withTabs) === ORGANIZATION_TEMPLATE_TABS_MESSAGE,
+    "an organization template with a tab must be refused with the tabs sentence",
+  );
+  assert(
+    templateTargetContentMessage("organization", withLegend) === ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE,
+    "an organization template holding a state_legend must be refused with the value-tiles sentence",
+  );
+  assert(templateTargetContentMessage("organization", tiles) === null, "a flat list of value tiles is legal");
+  assert(templateTargetContentMessage("organization", empty) === null, "an empty organization draft is legal");
+  assert(
+    templateTargetContentMessage("asset_group", withLegend) === null,
+    "the value-tiles rule is the organization target's alone: an asset-group template keeps its legend",
+  );
 }

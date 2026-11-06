@@ -1,5 +1,7 @@
 import {
   ASSET_GROUP_TEMPLATE_TABS_MESSAGE,
+  ORGANIZATION_TEMPLATE_TABS_MESSAGE,
+  ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE,
   SITE_TEMPLATE_TOP_LEVEL_MESSAGE,
 } from "./dashboard-templates";
 
@@ -573,5 +575,98 @@ export function theStockSiteTemplateStillParsesAsACreateBody(): void {
     createDashboardTemplateBodySchema,
     createBody({ target: "site", content: SMOC_STANDARD_SITE_TEMPLATE.content }),
     "SMOC_STANDARD_SITE_TEMPLATE's content as a site create body",
+  );
+}
+
+// ---------------------------------------------------------------- F4.317
+
+/** `F4.317` / ADR 0112 decision 2 — an organization create body with a tab is refused at `content.tabs`. */
+export function rejectsAnOrganizationCreateBodyWithTabs(): void {
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    createBody({ target: "organization", section: "organization", content: { widgets: [widget()], tabs: [siteTab()] } }),
+    ["content", "tabs"],
+    new RegExp(ORGANIZATION_TEMPLATE_TABS_MESSAGE),
+    "an organization-target create body with a tab",
+  );
+}
+
+/** `F4.317` — an organization create body holding a widget type other than `value_tile` is refused at `content.widgets`. */
+export function rejectsAnOrganizationCreateBodyWithANonTileWidget(): void {
+  expectRejectsAt(
+    createDashboardTemplateBodySchema,
+    createBody({
+      target: "organization",
+      section: "organization",
+      content: { widgets: [widget(), widget({ key: "legend", widgetType: "state_legend", config: {} })] },
+    }),
+    ["content", "widgets"],
+    new RegExp(ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE),
+    "an organization-target create body holding a state_legend",
+  );
+}
+
+/** The positive control: a flat list of value tiles is an organization create body. */
+export function acceptsAnOrganizationCreateBodyOfValueTiles(): void {
+  expectAccepts(
+    createDashboardTemplateBodySchema,
+    createBody({
+      target: "organization",
+      section: "organization",
+      content: { widgets: [widget({ key: "a", sources: [METRIC] }), widget({ key: "b" })] },
+    }),
+    "an organization-target create body of value tiles",
+  );
+}
+
+/** `F4.317` — the organization arm of instantiate: `{ organizationId }`, and nothing else. */
+export function acceptsAnOrganizationInstantiateBody(): void {
+  expectAccepts(
+    instantiateSectionTemplateBodySchema,
+    { organizationId: ORGANIZATION_ID },
+    "an organization instantiate body",
+  );
+}
+
+/** Each wrong organization body is refused: a non-uuid, an extra key, and the other arms' keys. */
+export function rejectsEachWrongOrganizationInstantiateBody(): void {
+  const wrong: readonly [unknown, string][] = [
+    [{ organizationId: "not-a-uuid" }, "an organizationId that is not a uuid"],
+    [{ organizationId: ORGANIZATION_ID, slug: "x-slug" }, "an organization body with an extra key"],
+    [{ organizationId: ORGANIZATION_ID, locationId: LOCATION_ID }, "a body naming an organization and a location"],
+    [
+      { organizationId: ORGANIZATION_ID, assetGroupId: GROUP_ID, slug: "valid-slug", name: "x" },
+      "a body naming an organization and a group",
+    ],
+  ];
+  for (const [body, what] of wrong) {
+    const result = instantiateSectionTemplateBodySchema.safeParse(body);
+    assert(result.success === false, `${what} must be refused`);
+  }
+}
+
+/**
+ * The body/target rule's third arm: an organization body fits only an organization template, and
+ * an organization template takes no site or group body.
+ */
+export function theTargetBodyRuleRefusesEachOrganizationMismatch(): void {
+  const organization = instantiateSectionTemplateBodySchema.parse({ organizationId: ORGANIZATION_ID });
+  const site = instantiateSectionTemplateBodySchema.parse({ locationId: LOCATION_ID });
+  const group = instantiateSectionTemplateBodySchema.parse({ assetGroupId: GROUP_ID, slug: "ok-slug", name: "x" });
+  assert(
+    templateTargetBodyMessage("organization", organization) === null,
+    "an organization body on an organization template is legal",
+  );
+  for (const [target, body, what] of [
+    ["site", organization, "an organization body on a site template"],
+    ["asset_group", organization, "an organization body on an asset-group template"],
+    ["organization", site, "a site body on an organization template"],
+    ["organization", group, "a group body on an organization template"],
+  ] as const) {
+    assert(templateTargetBodyMessage(target, body) === TEMPLATE_TARGET_BODY_MESSAGE, `${what} must be refused`);
+  }
+  assert(
+    /organization template takes \{ organizationId \}/.test(TEMPLATE_TARGET_BODY_MESSAGE),
+    `the refusal must name the organization arm's body, got "${TEMPLATE_TARGET_BODY_MESSAGE}"`,
   );
 }

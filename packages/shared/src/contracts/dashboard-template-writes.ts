@@ -2,6 +2,7 @@ import { dashboardSectionCodeSchema } from "./operations";
 import {
   dashboardTemplateTargetSchema,
   sectionTemplateContentSchema,
+  templateTargetContentField,
   templateTargetContentMessage,
 } from "./dashboard-templates";
 import { templateLifecycleStatusSchema } from "./template-lifecycle";
@@ -197,7 +198,7 @@ export const createDashboardTemplateBodySchema = z
     if (message !== null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["content", body.target === "site" ? "widgets" : "tabs"],
+        path: ["content", templateTargetContentField(message)],
         message,
       });
     }
@@ -205,7 +206,8 @@ export const createDashboardTemplateBodySchema = z
   .describe(
     "Create a draft template. One rule the document cannot express: a site-target template " +
       "holds its widgets in content.tabs and its top-level content.widgets must be empty; an " +
-      "asset-group template holds no tabs.",
+      "asset-group template holds no tabs; an organization template holds no tabs and only " +
+      "value_tile widgets.",
   );
 
 /**
@@ -287,10 +289,22 @@ const instantiateSiteTemplateBodySchema = z
   .strict();
 
 /**
- * The instantiate body — one arm per template target (`F3.73` ruling Q3a).
+ * Instantiate a published ORGANIZATION template — `F4.317`, ADR 0112 decision 4. The copy lands
+ * on one organization-wide dashboard, the strip of that organization's Control Room page, so
+ * the body names the organization and nothing else: the copy action names its own dashboard.
+ * It must be the template's own organization; the service answers 404 for any other.
+ */
+const instantiateOrganizationTemplateBodySchema = z
+  .object({
+    organizationId: z.string().uuid(),
+  })
+  .strict();
+
+/**
+ * The instantiate body — one arm per template target (`F3.73` ruling Q3a; `F4.317` the third).
  *
- * **A plain `z.union`, and each arm stays `.strict()`.** Neither arm carries a literal a
- * `discriminatedUnion` could key on, and a body naming both a group and a location must be
+ * **A plain `z.union`, and each arm stays `.strict()`.** No arm carries a literal a
+ * `discriminatedUnion` could key on, and a body naming two arms' keys must be
  * refused rather than read as either: each strict arm refuses the other arm's key. Zod 3
  * answers with the first arm that failed on a check rather than on a missing key, so a
  * malformed group body still answers at `assetGroupId` or `slug`, not as an opaque
@@ -302,6 +316,7 @@ const instantiateSiteTemplateBodySchema = z
 export const instantiateSectionTemplateBodySchema = z.union([
   instantiateGroupTemplateBodySchema,
   instantiateSiteTemplateBodySchema,
+  instantiateOrganizationTemplateBodySchema,
 ]);
 
 /**
@@ -317,15 +332,32 @@ export const SITE_TEMPLATE_PATCH_TABS_MESSAGE =
 /** `F3.73` plan D6 — a body arm that does not fit the template's target. */
 export const TEMPLATE_TARGET_BODY_MESSAGE =
   "This template's target does not take this body: a site template takes " +
-  "{ locationId, tabGroups? }, an asset-group template takes { assetGroupId, slug, name }";
+  "{ locationId, tabGroups? }, an asset-group template takes { assetGroupId, slug, name }, " +
+  "an organization template takes { organizationId }";
 
-/** `null` when the body arm fits the template's target, else `TEMPLATE_TARGET_BODY_MESSAGE`. */
+/**
+ * Which target a parsed instantiate body is the arm of. Keyed on the one key each strict arm
+ * alone carries, so the controller's arm picker and this rule read the body the same way.
+ */
+export function instantiateBodyTarget(body: InstantiateSectionTemplateBody): DashboardTemplateTarget {
+  if ("organizationId" in body) return "organization";
+  return "locationId" in body ? "site" : "asset_group";
+}
+
+/**
+ * `null` when the body arm fits the template's target, else `TEMPLATE_TARGET_BODY_MESSAGE`.
+ *
+ * The site and organization arms each fit their own target alone; the group arm fits every
+ * other target, as it did before `F4.317` (a row read before `F3.73` had no `target` and is an
+ * asset-group template).
+ */
 export function templateTargetBodyMessage(
   target: DashboardTemplateTarget,
   body: InstantiateSectionTemplateBody,
 ): string | null {
-  const siteBody = "locationId" in body;
-  return siteBody === (target === "site") ? null : TEMPLATE_TARGET_BODY_MESSAGE;
+  const arm = instantiateBodyTarget(body);
+  const fits = arm === "asset_group" ? target !== "site" && target !== "organization" : arm === target;
+  return fits ? null : TEMPLATE_TARGET_BODY_MESSAGE;
 }
 
 /** Import one stock catalog entry into the caller's organization. */
@@ -345,4 +377,6 @@ export type InstantiateSectionTemplateBody = z.infer<
 export type InstantiateGroupTemplateBody = z.infer<typeof instantiateGroupTemplateBodySchema>;
 /** The site arm (`F3.73` plan D6). */
 export type InstantiateSiteTemplateBody = z.infer<typeof instantiateSiteTemplateBodySchema>;
+/** The organization arm (`F4.317`, ADR 0112 decision 4). */
+export type InstantiateOrganizationTemplateBody = z.infer<typeof instantiateOrganizationTemplateBodySchema>;
 export type ImportStockTemplateBody = z.infer<typeof importStockTemplateBodySchema>;
