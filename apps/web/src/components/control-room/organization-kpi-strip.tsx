@@ -82,10 +82,11 @@ export function OrganizationKpiStrip({ organizationId }: OrganizationKpiStripPro
               <button
                 type="button"
                 disabled={busy}
+                aria-busy={make.isPending}
                 onClick={() => make.mutate()}
                 className="rounded border border-line px-2 py-1 font-semibold text-accent-strong hover:underline disabled:opacity-60"
               >
-                Make organization layout
+                {make.isPending ? "Making organization layout…" : "Make organization layout"}
               </button>
             ) : (
               <>
@@ -100,10 +101,11 @@ export function OrganizationKpiStrip({ organizationId }: OrganizationKpiStripPro
                 <button
                   type="button"
                   disabled={busy}
+                  aria-busy={reset.isPending}
                   onClick={() => reset.mutate()}
                   className="rounded border border-line px-2 py-1 font-semibold text-accent-strong hover:underline disabled:opacity-60"
                 >
-                  Reset to default
+                  {reset.isPending ? "Resetting…" : "Reset to default"}
                 </button>
               </>
             )}
