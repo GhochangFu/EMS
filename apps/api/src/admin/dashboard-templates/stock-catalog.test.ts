@@ -4,6 +4,7 @@ import {
   runStockCatalogCodesMatchTheParamCharsetTests,
   runStockCatalogTests,
   runBenchmarkTableBindingTest,
+  runMeteredPumpingRoleSplitTest,
   runNoNonWaterBindingCarriesBalanceRoleTest,
   runSustainabilityCatalogKeysTest,
   runSustainabilityKeptTilesTest,
@@ -57,5 +58,9 @@ describe("stock dashboard template catalog (F3.36 Part D, ADR 0049 decision 3)",
 
   it("the three tiles kept from the v1 skeleton still bind their own catalog entries", () => {
     runSustainabilityKeptTilesTest();
+  });
+
+  it("electrical-metered-pumping v2 binds the chlorine pumps on dosing-pump (F4.319, ADR 0113 decision 5)", () => {
+    runMeteredPumpingRoleSplitTest();
   });
 });

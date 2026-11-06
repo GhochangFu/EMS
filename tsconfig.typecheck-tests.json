@@ -271,6 +271,8 @@
     "tests/f4.310-profile-boot.test.ts",
     "tests/f4.309-point-key-state-write-path.test.ts",
     "tests/f4.317-organization-control-room-views-schema.test.ts",
-    "tests/f4.317-organization-control-room-views-schema.integration.test.ts"
+    "tests/f4.317-organization-control-room-views-schema.integration.test.ts",
+    "tests/f4.319-pump-station-roles-schema.test.ts",
+    "tests/f4.319-pump-station-roles.integration.test.ts"
   ]
 }

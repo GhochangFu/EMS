@@ -230,29 +230,18 @@ export const ELECTRICAL_STOCK_TEMPLATES = [
    *
    * **WHY BOTH BINARY PUMP POINTS ARE ON CHARTS, AND ON TWO CHARTS.**
    *
-   * The owner's 2026-09-02 ruling gives both pump shapes the single `pump`
-   * role (`asset-groups-seed.ts` carries it and the reason). So one `pump`
-   * binding matches **four** members per site carrying two **disjoint** point
-   * sets: `PHE-PUMP-M-*` registers only `breaker_main`, `PHE-PUMP-C-*` only
-   * `chlorine_pump_on`. Every binding here therefore resolves on half of what
-   * it matches, by construction.
+   * **Stock version 2 (`F4.319`, ADR 0113 decision 5)** binds each chart to its own role. The
+   * 2026-09-02 ruling gave both pump shapes the single `pump` role, so each binding matched four
+   * members per site and resolved on the two that carry its point (`partial` at 4 matched / 2
+   * bound). ADR 0113 splits the role: `PHE-PUMP-M-*` keeps `pump` and carries `breaker_main`,
+   * `PHE-PUMP-C-*` takes `dosing-pump` and carries `chlorine_pump_on`. Each binding now
+   * resolves on all of what it matches. An organization that holds a version-1 copy keeps it;
+   * an administrator takes version 2 through `POST /dashboard-templates/stock/:code/import`.
    *
-   * That is a reported state, not a silent one — but **which** state gets
-   * reported depends on the widget, and `outcomeOf` in
-   * `dashboard-templates-instantiate.service.ts` is why. It tests `truncated`
-   * **before** `partial`:
-   *
-   *  - a cap-1 `value_tile` gives matched 4, candidates 2, bound 1, so `1 < 2`
-   *    fires first and the report says **`truncated`**, whose stated remedy is
-   *    *"the widget cannot hold them all — use another widget"*. That is false
-   *    here. The widget holds them fine; two members carry no such point;
-   *
-   *  - a `chart` (cap 8) gives matched 4, bound 2, so it reports **`partial`**,
-   *    and the two numbers show the size of the gap as well as its existence.
-   *
-   * **Two charts and not one** for the same reason one step further: a single
-   * chart binding both keys reports matched 4 / bound 4 / `partial`, where the
-   * counts read as complete and only the outcome word disagrees.
+   * They stay on charts and not on cap-1 `value_tile`s: two pumps of one shape per site do not
+   * fit a cap-1 tile, and `outcomeOf` in `dashboard-templates-instantiate.service.ts` would
+   * report `truncated`. Two charts and not one, so each run state has its own series and its
+   * own resolution report line.
    *
    * ---
    *
@@ -285,7 +274,7 @@ export const ELECTRICAL_STOCK_TEMPLATES = [
     description:
       "A metered pumping station: multifunction meters and mains/dosing pumps, the shape a " +
       "village water supply runs rather than a substation train.",
-    stockVersion: 1,
+    stockVersion: 2,
     content: {
       tabs: [],
       widgets: [
@@ -400,9 +389,9 @@ export const ELECTRICAL_STOCK_TEMPLATES = [
           widgetType: "chart",
           config: { series: "line", windowMinutes: 1440, footerStats: true, unit: "A" },
         },
-        // The two `pump` charts. One binding each, and charts rather than tiles
-        // — see this entry's docblock for the `outcomeOf` ordering that decides
-        // it. Expect `partial` at 4 matched / 2 bound on both, per site.
+        // The two pump charts, one binding each and each on its own role since
+        // stock version 2 (ADR 0113 decision 5) — see this entry's docblock.
+        // Expect 2 matched / 2 bound on both, per site.
         {
           key: "pump-run-chart",
           title: "Pump Run State",
@@ -431,7 +420,7 @@ export const ELECTRICAL_STOCK_TEMPLATES = [
           gridH: LOWER_ROW_H,
           bindings: [
             {
-              assetRoleCode: "pump",
+              assetRoleCode: "dosing-pump",
               pointKey: "chlorine_pump_on",
               pointRole: "series",
               sortOrder: 0,

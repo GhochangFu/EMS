@@ -6,40 +6,41 @@ import {
   assertALeakSensorTakesLeakSensor,
   assertASmokeDetectorTakesSmokeDetector,
   assertEachDemoGroupCarriesItsDomain,
+  assertEveryPheAssetJoinsThePumpStationGroup,
   assertTheGroupUpsertFillsOnlyANullDomain,
-  assertThePheGatewayStaysUnroledInItsOwnDomain,
+  assertThePheRtuUnitIsNotAnIndoorAirSensor,
   assertTheSmocRolesFollowTheDomainThenTheCode,
   assertAWaterAssetJoinsTheWaterGroup,
   assertAWaterAssetTakesNoTrainRole,
   assertTheWaterGroupIsNamedWater,
-  assertBothPumpShapesTakeOneRole,
+  assertEachPumpShapeTakesItsOwnRole,
   assertEskomReadingsAreUnchanged,
   assertEveryItAssetJoinsItRackAndItLoad,
   assertNoPheDeviceJoinsItLoad,
   assertAnElectricalReadingStaysInItsDomain,
-  assertTheGatewayTakesNoRole,
+  assertTheRtuUnitTakesRtuController,
   assertTheBackfillFillsOnlyANullLocation,
   assertTheRulingMapsEveryPheDevice,
-  assertTheSeedRolesNoPheEnvironmentDevice,
+  assertTheSeedRolesEveryPheEnvironmentDeviceRtuController,
 } from "./asset-groups-seed.spec";
 
-describe("F4.169/F4.170 addendum — ruling 10: the seed roles no PHE environment device", () => {
-  it("gives none of the twelve PHE environment gateways a role", () => {
-    assertTheSeedRolesNoPheEnvironmentDevice();
+describe("F4.169/F4.170 addendum — ruling 10, F4.319: the seed roles every PHE environment device", () => {
+  it("gives each of the twelve PHE RTU-health units rtu-controller", () => {
+    assertTheSeedRolesEveryPheEnvironmentDeviceRtuController();
   });
 });
 
-describe("F3.41 — demoRoleForAsset carries the owner's meter/pump ruling", () => {
-  it("maps PHE WB's 48 devices to 12 meters, 24 pumps and 12 unroled gateways", () => {
+describe("F3.41 / F4.319 — demoRoleForAsset carries the owner's PHE ruling (ADR 0113)", () => {
+  it("maps PHE WB's 48 devices to 12 meter, 12 pump, 12 dosing-pump and 12 rtu-controller", () => {
     assertTheRulingMapsEveryPheDevice();
   });
 
-  it("gives both pump shapes the one `pump` code", () => {
-    assertBothPumpShapesTakeOneRole();
+  it("gives each pump shape its own role", () => {
+    assertEachPumpShapeTakesItsOwnRole();
   });
 
-  it("leaves the AIRSP gateway unroled, by code as well as by domain", () => {
-    assertTheGatewayTakesNoRole();
+  it("gives the AIRSP unit rtu-controller in its own domain only", () => {
+    assertTheRtuUnitTakesRtuController();
   });
 
   it("changes no ESKOM reading", () => {
@@ -92,8 +93,14 @@ describe("F3.73 D12 — demoRoleForAsset gives the SMOC roles", () => {
     assertASmokeDetectorTakesSmokeDetector();
   });
 
-  it("leaves the PHE gateway unroled in its own environment domain", () => {
-    assertThePheGatewayStaysUnroledInItsOwnDomain();
+  it("gives the PHE RTU-health unit rtu-controller, never indoor-air", () => {
+    assertThePheRtuUnitIsNotAnIndoorAirSensor();
+  });
+});
+
+describe("F4.319 — every PHE asset joins the pump-station group (ADR 0113 decision 6)", () => {
+  it("files the 48 PHE devices under their domain group, then pump-station", () => {
+    assertEveryPheAssetJoinsThePumpStationGroup();
   });
 });
 
