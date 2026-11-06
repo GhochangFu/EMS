@@ -1,11 +1,17 @@
 import type { BmsDb } from "@bms/db";
 import { METRIC_CATALOG, type JwtPayload } from "@bms/shared";
+import type { Pool } from "pg";
 
 import { AssetHealthService } from "../asset-health/asset-health.service";
 import type { AccessControlService } from "../auth/access-control.service";
 import type { BmsTx } from "../database/tenant-context";
 import { scopeKeyFor } from "./dashboard-scope-assets";
-import { MetricCatalogService, planResolves, RESOLVERS } from "./metric-catalog.service";
+import {
+  MetricCatalogService,
+  planResolves,
+  RESOLVE_AFTER_COMMIT,
+  RESOLVERS,
+} from "./metric-catalog.service";
 
 /**
  * `E4.2` PR 1 sweep — the catalog's resolvers, pure claims (no database). Assertions live
@@ -386,6 +392,75 @@ export function aKeyWithNoPriorNeverPlansOne(): void {
   same(plannedPriors("workorders.open.count", new Set(["w1"])), [false], "workorders.open.count");
 }
 
+/**
+ * `F4.317` follow-up (d) — an entry that reads ANOTHER pool resolves after the tenant
+ * transaction commits, never inside it. `pue.ratio` reads `deps.pool` and `assets.health.score`
+ * reads `AssetHealthService` (the fleet Drizzle). Awaited inside the transaction, either one held
+ * the tenant connection's locks while it waited for a second connection: with a DDL statement
+ * queued between them (the seed's `ALTER TABLE bms.assets` on `docker compose up`) that is a
+ * lock cycle Postgres cannot see, and the API hung until the backend was terminated.
+ *
+ * The fake tenant database records whether its transaction is open; each foreign read records
+ * what it saw. Both must see it closed, and both answers must still reach their sources.
+ */
+export async function aForeignPoolReadRunsAfterTheTenantTransactionCommits(): Promise<void> {
+  let open = false;
+  const seen: string[] = [];
+  const rows = async () => [{ id: "asset-1" }];
+  const tx = {
+    execute: async () => ({ rows: [] }),
+    select: () => ({ from: () => ({ where: rows }) }),
+  } as unknown as BmsTx;
+  const tenantDb = {
+    transaction: async <T>(fn: (inner: BmsTx) => Promise<T>): Promise<T> => {
+      open = true;
+      try {
+        return await fn(tx);
+      } finally {
+        open = false;
+      }
+    },
+  } as unknown as BmsDb;
+  const pool = {
+    query: async () => {
+      seen.push(`pool ${open ? "inside" : "after"}`);
+      return { rows: [{ incomers: 1, site_kw: "150", it_kw: "100" }] };
+    },
+  } as unknown as Pick<Pool, "query">;
+  const health = {
+    summary: async () => {
+      seen.push(`health ${open ? "inside" : "after"}`);
+      return { score: 87 };
+    },
+  } as unknown as AssetHealthService;
+  const service = new MetricCatalogService(tenantDb, refusingDb(), {} as AccessControlService, health, pool);
+
+  const { byId } = await service.resolveBindings(
+    "org-1",
+    {
+      widgets: [
+        { id: "w1", tabGroupId: null, widgetType: "value_tile", config: {} },
+        { id: "w2", tabGroupId: null, widgetType: "value_tile", config: {} },
+      ],
+      sources: [
+        { id: "s1", widgetId: "w1", catalogKey: "pue.ratio", params: {} },
+        { id: "s2", widgetId: "w2", catalogKey: "assets.health.score", params: {} },
+      ],
+      scope: { assetId: "asset-1", locationId: null, assetGroupId: null },
+      capLocationId: null,
+    },
+    null,
+    null,
+    "spec",
+  );
+
+  same(seen, ["pool after", "health after"], "where each foreign read ran");
+  const pue = byId.get("s1");
+  const score = byId.get("s2");
+  same(pue?.shape === "metric" ? pue.value : pue, 1.5, "pue.ratio reaches its source");
+  same(score?.shape === "metric" ? score.value : score, 87, "assets.health.score reaches its source");
+}
+
 /** On an empty scope the prior is the live answer's own: `0` for a count, `null` otherwise. */
 export async function thePriorOnAnEmptyScopeBuildsNoSql(): Promise<void> {
   const alarms = await RESOLVERS["alarms.critical.count"](refusingTx(), "org", [], noDeps, {}, PRIOR_AT);
@@ -402,4 +477,56 @@ export async function thePriorOnAnEmptyScopeBuildsNoSql(): Promise<void> {
   );
   const plain = await RESOLVERS["alarms.active.count"](refusingTx(), "org", [], noDeps, {}, null);
   assert(!("prior" in plain), "no priorAt, no prior key");
+}
+
+/**
+ * F4.317 follow-up (d), the class rule — an entry that reads `deps.pool` or `deps.health`
+ * is in `RESOLVE_AFTER_COMMIT`. Every entry runs on a one-asset scope against a permissive
+ * transaction (any chain answers an empty result) and a pool and a health service that record
+ * a touch. An entry outside the set that touches either fails; the positive twin: each entry
+ * IN the set touches one, so the detector sees a real read. A resolver that throws on the
+ * empty transaction before it reaches the pool is a gap this claim cannot see.
+ */
+export async function onlyTheDeferredEntriesReadAForeignPool(): Promise<void> {
+  const empty = (): unknown => Object.assign([], { rows: [] });
+  const permissive: unknown = new Proxy(function permissive() {}, {
+    get: (_target, prop) =>
+      prop === "then"
+        ? (resolve: (value: unknown) => void) => resolve(empty())
+        : permissive,
+    apply: () => permissive,
+  });
+  const keys = Object.keys(METRIC_CATALOG) as (keyof typeof RESOLVERS)[];
+  const outside: string[] = [];
+  const silent: string[] = [];
+  for (const key of keys) {
+    let touched = false;
+    const deps = {
+      ...noDeps,
+      pool: {
+        query: async () => {
+          touched = true;
+          return { rows: [] };
+        },
+      },
+      health: {
+        summary: async () => {
+          touched = true;
+          return { score: null };
+        },
+      },
+    } as unknown as typeof noDeps;
+    try {
+      await RESOLVERS[key](permissive as BmsTx, "org", ["asset-1"], deps, paramsFor(key), PRIOR_AT);
+    } catch {
+      // The permissive transaction is not a database; only the touch is the claim.
+    }
+    if (RESOLVE_AFTER_COMMIT.has(key)) {
+      if (!touched) silent.push(key);
+    } else if (touched) {
+      outside.push(key);
+    }
+  }
+  same(outside, [], "entries outside RESOLVE_AFTER_COMMIT that read the fleet pool or health");
+  same(silent, [], "RESOLVE_AFTER_COMMIT entries the detector saw no foreign read from");
 }
