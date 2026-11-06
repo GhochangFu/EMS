@@ -326,11 +326,13 @@ export const sectionTemplateWidgetSchema = z
 /**
  * What a template instantiates into — `F3.73` ruling Q3a. `asset_group` is every template
  * before `F3.73`: one canvas against one group. `site` is a tabbed layout copied onto one
- * location, one tab per domain present there. **Closed**: each value is a different write
- * path, not a label. Migration `0095`'s `dashboard_templates_target_check` restates it, and
- * `tests/f3.73-site-template-schema.test.ts` holds the two equal.
+ * location, one tab per domain present there. `organization` (`F4.317`, ADR 0112 decision 2)
+ * is the organization Control Room strip: a flat `widgets` list copied onto one
+ * organization-wide dashboard. **Closed**: each value is a different write path, not a label.
+ * Migration `0126`'s `dashboard_templates_target_check` restates it (`0095` froze the first
+ * two), and `tests/f3.73-site-template-schema.test.ts` holds the two equal.
  */
-export const dashboardTemplateTargetSchema = z.enum(["asset_group", "site"]);
+export const dashboardTemplateTargetSchema = z.enum(["asset_group", "site", "organization"]);
 
 /**
  * One tab of a site template — plan D4.

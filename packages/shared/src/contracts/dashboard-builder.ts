@@ -635,8 +635,13 @@ export const bindingExclusiveMessage = (label: string): string =>
  * `reuse` or `discharge` role, with intake, reuse, discharge, consumed-or-lost and coverage.
  * **`assets.offline.count` and `assets.list`** (`F3.73`) are the site-scope metric and dataset the
  * SMOC standard layout binds.
- * Must match `dashboard_widget_sources_catalog_key_check` as migration `0096` widened it
- * (`0054` froze the first five, `0079` the next two, `0081` the eighth).
+ * **`sites.live.count` and `pue.ratio`** (`F4.317`, ADR 0112 decision 9) are the organization
+ * strip's two estate metrics: locations in scope with a reporting asset (the location total in
+ * `coverage`), and the latest PUE ratio. **`alarms.critical.count`** (ADR 0112 Amendment 1,
+ * owner ruling Q1b) is the open alarms whose severity has tone `critical`; tile 3 binds it beside
+ * `alarms.active.count`, as `UNIQUE (widget_id, catalog_key)` forbids one key twice on a widget.
+ * Must match `dashboard_widget_sources_catalog_key_check` as migration `0126` widened it
+ * (`0054` froze the first five, `0079` the next two, `0081` the eighth, `0096` the next two).
  */
 export const metricCatalogKeySchema = z.enum([
   "alarms.active.count",
@@ -649,6 +654,9 @@ export const metricCatalogKeySchema = z.enum([
   "water.balance",
   "assets.offline.count",
   "assets.list",
+  "sites.live.count",
+  "pue.ratio",
+  "alarms.critical.count",
 ]);
 
 /**
@@ -749,6 +757,10 @@ export const METRIC_CATALOG: Record<z.infer<typeof metricCatalogKeySchema>, Cata
   // No `role` column: the resolver takes asset ids only, so it cannot know a member's group role.
   "assets.offline.count": { shape: "metric" },
   "assets.list": { shape: "dataset", columns: ["code", "name", "status", "activeAlarms"] },
+  // `F4.317` / ADR 0112 decision 9 and Amendment 1 — the organization strip's three new metrics; no params.
+  "sites.live.count": { shape: "metric" },
+  "pue.ratio": { shape: "metric" },
+  "alarms.critical.count": { shape: "metric" },
 };
 
 /**
@@ -915,7 +927,7 @@ export const dashboardWidgetPointDtoSchema = z
  * **What holds it, and what does not.** The database's
  * `dashboard_widget_sources_params_object_check` (migration `0054`) is a *floor*: it refuses a
  * scalar or an array at the top level and accepts `{"locationId": "<any uuid>"}`. The control is
- * `METRIC_CATALOG_PARAMS_WRITE` in `packages/shared/src/contracts/dashboard-writes.ts` — one
+ * `METRIC_CATALOG_PARAMS_WRITE` in `packages/shared/src/contracts/metric-catalog-params.ts` — one
  * `.strict()` schema per catalog entry, none declaring an id — and
  * `tests/f3.35-metric-catalog-containment.test.ts`, which scans that map and fails the build on
  * `.uuid(`, on the id spellings that evade it, and on any entry losing `.strict()`.

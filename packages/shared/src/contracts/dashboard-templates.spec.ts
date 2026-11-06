@@ -6,6 +6,7 @@ import {
   sectionTemplateWidgetIdentitySchema,
   sectionTemplateWidgetSchema,
   stockDashboardTemplateDtoSchema,
+  dashboardTemplateTargetSchema,
   templateTargetContentMessage,
   templateWidgets,
 } from "./dashboard-templates";
@@ -453,4 +454,14 @@ export function theTargetRuleNamesEachMismatch(): void {
   );
   assert(templateTargetContentMessage("site", siteTabsOnly) === null, "a site template with tabs only is legal");
   assert(templateTargetContentMessage("asset_group", groupPlain) === null, "a plain asset-group template is legal");
+}
+
+/** `F4.317` / ADR 0112 decision 2 — `organization` is the third template target. */
+export function theTargetEnumAcceptsOrganization(): void {
+  assert(dashboardTemplateTargetSchema.safeParse("organization").success, "target organization must parse");
+  assert(
+    JSON.stringify(dashboardTemplateTargetSchema.options) === JSON.stringify(["asset_group", "site", "organization"]),
+    "the target enum must be asset_group, site, organization",
+  );
+  assert(!dashboardTemplateTargetSchema.safeParse("estate").success, "an unknown target must be refused");
 }

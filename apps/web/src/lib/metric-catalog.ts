@@ -92,6 +92,19 @@ export const METRIC_CATALOG_PRESENTATION: Readonly<
     label: "Asset list",
     description: "The active assets in scope, one row each, with live or offline and active alarms.",
   },
+  // `F4.317` / ADR 0112 decisions 7 and 9, and Amendment 1 — a site is a location.
+  "sites.live.count": {
+    label: "Sites live",
+    description: "How many sites in scope have an asset that sent recent data, out of all sites in scope.",
+  },
+  "pue.ratio": {
+    label: "PUE",
+    description: "The latest power usage effectiveness ratio across the assets in scope.",
+  },
+  "alarms.critical.count": {
+    label: "Critical alarms",
+    description: "How many open alarms in scope have a critical severity.",
+  },
 };
 
 /** The label alone — the common read, and the one a picker option and an inline error share. */

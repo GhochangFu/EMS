@@ -10,6 +10,8 @@ const read = (rel: string): string => readFileSync(join(repoRoot, rel), "utf8");
 const MIGRATION_REL = "packages/db/drizzle/0096_site_widget_types_and_assets_catalog.sql";
 // `F4.305`: the effective widget-type CHECK is 0118's (thirteen); 0099's is frozen at twelve; 0096's is frozen at eleven.
 const MIGRATION_0118_REL = "packages/db/drizzle/0118_trend_strip_widget_type.sql";
+// `F4.317`: the effective catalog-key CHECK is 0126's (thirteen); 0096's is frozen at ten.
+const MIGRATION_0126_REL = "packages/db/drizzle/0126_organization_control_room_views_and_catalog.sql";
 const TAG = "0096_site_widget_types_and_assets_catalog";
 const CONTRACT_REL = "packages/shared/src/contracts/dashboard-builder.ts";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
@@ -36,7 +38,7 @@ const checkList = (sql: string, constraint: string, column: string): string[] =>
     `ADD CONSTRAINT ${constraint}\\s+CHECK \\(${column} IN \\(([^)]*)\\)\\)`,
   ).exec(sql);
   if (match === null) {
-    throw new Error(`could not read ${constraint}'s IN list from 0096 — fix this parser.`);
+    throw new Error(`could not read ${constraint}'s IN list — fix this parser.`);
   }
   return (match[1] ?? "")
     .split(",")
@@ -93,7 +95,7 @@ describe("F3.73 — migration 0096: site widget types and assets catalog keys", 
     expect(listed).toEqual(enumValues("widgetTypeSchema"));
   });
 
-  it("widens the catalog-key CHECK to exactly the contract's enum, with the two new keys", () => {
+  it("widens the catalog-key CHECK to ten, with the two new keys", () => {
     const listed = checkList(
       sqlOnly(read(MIGRATION_REL)),
       "dashboard_widget_sources_catalog_key_check",
@@ -101,6 +103,15 @@ describe("F3.73 — migration 0096: site widget types and assets catalog keys", 
     );
     expect(listed.length).toBe(10);
     for (const key of NEW_CATALOG_KEYS) expect(listed, `${key} must be accepted`).toContain(key);
+  });
+
+  it("the effective catalog-key CHECK (0126) is exactly the contract's enum and keeps the two", () => {
+    const listed = checkList(
+      sqlOnly(read(MIGRATION_0126_REL)),
+      "dashboard_widget_sources_catalog_key_check",
+      "catalog_key",
+    );
+    for (const key of NEW_CATALOG_KEYS) expect(listed, `${key} must stay accepted`).toContain(key);
     expect(listed).toEqual(enumValues("metricCatalogKeySchema"));
   });
 

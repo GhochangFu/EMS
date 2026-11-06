@@ -152,14 +152,18 @@ function webFiles(): string[] {
 /**
  * Every api source file the gate scans, repo-relative; walked once per run. The `*-writes.ts`
  * contracts are included: the API's write bodies moved there (F3.85), and their refusal messages
- * reach the screen in a 400. The rest of `packages/shared` is not, since ADR 0083 keeps the internal name there.
+ * reach the screen in a 400. So is `metric-catalog-params.ts`: F4.317 moved `sourceBindingWriteSchema` there,
+ * with its 400 message and its OpenAPI `.describe()` text. The rest of `packages/shared` is not, since
+ * ADR 0083 keeps the internal name there.
  */
 function apiFiles(): string[] {
   apiList ??= [
     ...walk(join(repoRoot, "apps/api/src")).filter(
       (f) => /\.ts$/.test(f) && !/\.(spec|test)\.ts$/.test(f) && !/[\\/]src[\\/]testing[\\/]/.test(f),
     ),
-    ...walk(join(repoRoot, "packages/shared/src/contracts")).filter((f) => /[\\/][^\\/]+-writes\.ts$/.test(f)),
+    ...walk(join(repoRoot, "packages/shared/src/contracts")).filter(
+      (f) => /[\\/][^\\/]+-writes\.ts$/.test(f) || /[\\/]metric-catalog-params\.ts$/.test(f),
+    ),
   ].map(rel);
   return apiList;
 }
@@ -254,7 +258,12 @@ describe("F3.33 the on-screen name gate", () => {
 
   it("N9b the api walk reaches the contracts write bodies the API returns refusal text from", () => {
     expect(apiFiles()).toContain("packages/shared/src/contracts/dashboard-writes.ts");
-    expect(apiFiles().filter((f) => f.startsWith("packages/")).every((f) => /\/contracts\/[^/]+-writes\.ts$/.test(f))).toBe(true);
+    expect(apiFiles()).toContain("packages/shared/src/contracts/metric-catalog-params.ts");
+    expect(
+      apiFiles()
+        .filter((f) => f.startsWith("packages/"))
+        .every((f) => /\/contracts\/([^/]+-writes|metric-catalog-params)\.ts$/.test(f)),
+    ).toBe(true);
   });
 
   it("N10a the OpenAPI document title is IONSiTE NEXUS Enterprise EMS API", () => {

@@ -10,6 +10,7 @@ import {
   rejectsTwoTabsSharingAWidgetKey,
   targetDefaultsToAssetGroup,
   templateWidgetsYieldsTopLevelThenTabWidgets,
+  theTargetEnumAcceptsOrganization,
   theTargetRuleNamesEachMismatch,
   acceptsAWidgetCarryingEitherKindAlone,
   acceptsAWidgetCarryingNeitherKind,
@@ -123,5 +124,11 @@ describe("F3.73 — the site target and content tabs (plan D4)", () => {
 
   it("the target rule names each mismatch and accepts each legal shape", () => {
     theTargetRuleNamesEachMismatch();
+  });
+});
+
+describe("F4.317 — the organization template target (ADR 0112 decision 2)", () => {
+  it("accepts organization as a third target and refuses an unknown one", () => {
+    theTargetEnumAcceptsOrganization();
   });
 });
