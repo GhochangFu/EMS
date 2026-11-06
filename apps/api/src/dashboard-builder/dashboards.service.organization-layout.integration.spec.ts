@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import { putDashboardWidgetsBodySchema } from "@bms/shared";
+import { ORGANIZATION_STRIP_CONTENT_MESSAGE, putDashboardWidgetsBodySchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import {
@@ -54,6 +54,39 @@ const oneTile = putDashboardWidgetsBodySchema.parse({
   ],
 });
 
+/** The same tile on a tab: the organization target refuses tabs (ADR 0112 decision 2). */
+const oneTileOnATab = putDashboardWidgetsBodySchema.parse({
+  tabs: [{ key: "more", label: "More" }],
+  widgets: [{ ...oneTile.widgets[0], tabKey: "more" }],
+});
+
+/** A widget the strip never draws: the organization target holds value tiles only. */
+const oneAlarmList = putDashboardWidgetsBodySchema.parse({
+  widgets: [
+    {
+      widgetType: "active_alarms_rail",
+      title: "Alarms",
+      gridX: 0,
+      gridY: 0,
+      gridW: 6,
+      gridH: 4,
+      config: {},
+      points: [],
+      sources: [],
+    },
+  ],
+});
+
+async function refusalOf(promise: Promise<unknown>): Promise<{ status: number | null; message: string }> {
+  try {
+    await promise;
+    return { status: null, message: "" };
+  } catch (err) {
+    const e = err as { getStatus?: () => number; message?: string };
+    return { status: e.getStatus?.() ?? -1, message: e.message ?? String(err) };
+  }
+}
+
 async function statusOf(promise: Promise<unknown>): Promise<number | null> {
   try {
     await promise;
@@ -75,6 +108,30 @@ async function scopeOf(ctx: GrantCtx, id: string): Promise<unknown> {
 export async function assertWidgetsOnThePointedDashboard(ctx: GrantCtx): Promise<void> {
   const dto = await serviceOf(ctx.fx).putWidgets(ctx.fx.jwt.locAdminA, ctx.pointed, oneTile);
   expect(dto.widgets.map((w) => w.title)).toEqual(["Open alarms"]);
+}
+
+/**
+ * The grant admits organization-target content only (ADR 0112 decisions 2 and 5): a tab or a
+ * widget other than a value tile is a 400 that writes nothing, so a location admin cannot author
+ * a free organization-wide dashboard through the pointed copy and leave it behind with Reset.
+ */
+export async function assertTheGrantAdmitsOrganizationContentOnly(ctx: GrantCtx): Promise<void> {
+  const svc = serviceOf(ctx.fx);
+  const before = (await svc.putWidgets(ctx.fx.jwt.locAdminA, ctx.pointed, oneTile)).widgets.length;
+  for (const body of [oneTileOnATab, oneAlarmList]) {
+    expect(await refusalOf(svc.putWidgets(ctx.fx.jwt.locAdminA, ctx.pointed, body))).toEqual({
+      status: 400,
+      message: ORGANIZATION_STRIP_CONTENT_MESSAGE,
+    });
+  }
+  const { rows } = await ctx.fx.superuserPool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM bms.dashboard_widgets WHERE dashboard_id = $1`,
+    [ctx.pointed],
+  );
+  expect(rows[0]?.n).toBe(before);
+  // An organization admin passes canManageDashboard itself; the grant's rule is not theirs.
+  expect((await svc.putWidgets(ctx.fx.jwt.orgAdminA, ctx.pointed, oneAlarmList)).widgets).toHaveLength(1);
+  await svc.putWidgets(ctx.fx.jwt.orgAdminA, ctx.pointed, oneTile);
 }
 
 /** `F3.1d` kept: another organization-wide dashboard of A is still a 404 for the location admin. */

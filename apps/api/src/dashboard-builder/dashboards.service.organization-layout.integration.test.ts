@@ -8,6 +8,7 @@ import {
   assertOtherRolesAreRefused,
   assertReHomingThePointedDashboardIsRefused,
   assertRenamingThePointedDashboard,
+  assertTheGrantAdmitsOrganizationContentOnly,
   assertTheGrantEndsWithThePointer,
   assertWidgetsOnThePointedDashboard,
   type GrantCtx,
@@ -42,6 +43,10 @@ describe.skipIf(!connectionString)("F4.317 — the location admin's grant on the
 
   it("edits the widgets of the pointed dashboard", async () => {
     await assertWidgetsOnThePointedDashboard(c());
+  });
+
+  it("admits value tiles with no tabs only (the organization target's content)", async () => {
+    await assertTheGrantAdmitsOrganizationContentOnly(c());
   });
 
   it("still refuses every other organization-wide dashboard (F3.1d kept)", async () => {

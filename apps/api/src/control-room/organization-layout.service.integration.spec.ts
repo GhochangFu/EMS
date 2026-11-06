@@ -282,6 +282,32 @@ export async function assertAnIgnoredRowIsNotALiveLayout(fx: OrganizationLayoutF
   }
 }
 
+/**
+ * The strip reads the copy's flat list only: a value tile someone put on a tab of the copy (the
+ * organization target refuses tabs, ADR 0112 decision 2) is not merged into the strip.
+ */
+export async function assertATabbedTileIsNotDrawn(fx: OrganizationLayoutFixture): Promise<void> {
+  const svc = serviceOf(fx);
+  try {
+    const made = await svc.make(fx.jwt.admin, fx.orgA, {});
+    const { rows: tab } = await fx.superuserPool.query<{ id: string }>(
+      `INSERT INTO bms.dashboard_tabs (organization_id, dashboard_id, tab_key, label) VALUES ($1, $2, 'more', 'More') RETURNING id`,
+      [fx.orgA, made.dashboardId],
+    );
+    await fx.superuserPool.query(
+      `INSERT INTO bms.dashboard_widgets (organization_id, dashboard_id, tab_id, widget_type, title, grid_x, grid_y, grid_w, grid_h)
+       VALUES ($1, $2, $3, 'value_tile', 'On a tab', 0, 0, 3, 2)`,
+      [fx.orgA, made.dashboardId, tab[0]?.id],
+    );
+    const view = await svc.view(fx.jwt.admin, fx.orgA);
+    expect(view.kind).toBe("dashboard");
+    expect(view.tiles).toHaveLength(14);
+    expect(view.tiles.some((t) => t.title === "On a tab")).toBe(false);
+  } finally {
+    await clearOrganizationView(fx, fx.orgA);
+  }
+}
+
 /** The `instantiate` organization arm `AdminModule` provides drives the same copy. */
 export async function assertTheArmMakesTheLayout(fx: OrganizationLayoutFixture): Promise<void> {
   const arm = organizationTemplateArmOf(serviceOf(fx));

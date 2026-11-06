@@ -82,6 +82,13 @@ export const organizationLayoutResultDtoSchema = z.object({
 /** Ruling Q2 — "Make organization layout" over a live layout is refused (409). */
 export const ORGANIZATION_HAS_LAYOUT_MESSAGE = "This organization already has a layout. Reset to default first.";
 
+/**
+ * ADR 0112 decisions 2 and 5 — the narrow `location_admin` grant on the pointed dashboard admits
+ * the organization target's content only: value tiles, no tabs (400).
+ */
+export const ORGANIZATION_STRIP_CONTENT_MESSAGE =
+  "The organization strip holds value tiles only, with no tabs (ADR 0112 decision 2)";
+
 /** No published `organization` template to copy (409). */
 export const NO_ORGANIZATION_TEMPLATE_MESSAGE =
   "This organization has no published organization template to make a layout from";

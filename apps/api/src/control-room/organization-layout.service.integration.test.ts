@@ -7,6 +7,7 @@ import {
   assertAForeignTemplateIsNotFound,
   assertAnIgnoredRowIsNotALiveLayout,
   assertARemovedCopyIsRemadeInPlace,
+  assertATabbedTileIsNotDrawn,
   assertMakeCopiesAndPoints,
   assertMakeOverALiveLayoutIsRefused,
   assertNoRowReadsTheStockStrip,
@@ -77,6 +78,10 @@ describe.skipIf(!connectionString)("F4.317 — OrganizationLayoutService", () =>
 
   it("a row the read ignores is not a live layout: Reset clears it and Make makes over it", async () => {
     await assertAnIgnoredRowIsNotALiveLayout(fx());
+  });
+
+  it("a value tile on a tab of the copy is not drawn on the strip", async () => {
+    await assertATabbedTileIsNotDrawn(fx());
   });
 
   it("the instantiate organization arm makes the same layout", async () => {

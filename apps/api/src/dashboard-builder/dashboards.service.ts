@@ -22,6 +22,7 @@ import type { BmsDb } from "@bms/db";
 import {
   MIMIC_TAB_MESSAGE,
   MIMIC_SCOPE_MESSAGE,
+  ORGANIZATION_STRIP_CONTENT_MESSAGE,
   SCOPE_REFUSAL_MESSAGE,
   TAB_GROUP_SCOPE_MESSAGE,
 } from "@bms/shared";
@@ -546,12 +547,17 @@ export class DashboardsService {
       assetGroupId: existing.assetGroupId,
       assetId: existing.assetId,
     };
-    // `F4.317` task 4.3 — the narrow grant, `update`'s rule with the scope unchanged.
-    if (
-      !(await this.accessControl.canManageDashboard(jwt, existing.organizationId, scope)) &&
-      !(await this.organizationViewAccess.mayEditPointedDashboard(jwt, existing, scope))
-    ) {
-      throw new NotFoundException("Dashboard not found");
+    // `F4.317` task 4.3 — the narrow grant, `update`'s rule with the scope unchanged. Where it is
+    // the grant that admits, the body must be the organization target's content (ADR 0112
+    // decisions 2 and 5): value tiles, no tabs. Otherwise a location admin could author a free
+    // organization-wide dashboard through the pointed copy and keep it past Reset.
+    if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, scope))) {
+      if (!(await this.organizationViewAccess.mayEditPointedDashboard(jwt, existing, scope))) {
+        throw new NotFoundException("Dashboard not found");
+      }
+      if ((body.tabs ?? []).length > 0 || body.widgets.some((widget) => widget.widgetType !== "value_tile")) {
+        throw new BadRequestException(ORGANIZATION_STRIP_CONTENT_MESSAGE);
+      }
     }
 
     // `F3.32` / ADR 0079 decision 4 — refused BEFORE `withTenant` opens, exactly like every

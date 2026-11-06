@@ -373,7 +373,7 @@ export class OrganizationLayoutService {
     return row ?? null;
   }
 
-  /** The copy's value tiles and their stored sources, read with the organization explicit. */
+  /** The copy's untabbed value tiles and their stored sources, read with the organization explicit. */
   private async copyTiles(organizationId: string, dashboardId: string): Promise<StripPlan> {
     const rows = await this.fleetDb
       .select({
@@ -391,6 +391,9 @@ export class OrganizationLayoutService {
           eq(dashboardWidgets.dashboardId, dashboardId),
           eq(dashboardWidgets.organizationId, organizationId),
           eq(dashboardWidgets.widgetType, "value_tile"),
+          // The flat list the organization template produces: the target refuses tabs (ADR 0112
+          // decision 2), so a tile on a tab of the copy is not merged into the one strip.
+          isNull(dashboardWidgets.tabId),
         ),
       )
       .orderBy(asc(dashboardWidgets.gridY), asc(dashboardWidgets.gridX));
