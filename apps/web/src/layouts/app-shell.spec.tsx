@@ -556,12 +556,12 @@ export function readsNoTrinetraInTheShell(): void {
   expect(screen.queryByText(/trinetra/i)).toBeNull();
 }
 
-/** `F4.317` — set the jsdom viewport width (jsdom's default is 1024 px). Undo it with {@link resetViewport}. */
+/** `F4.318` — set the jsdom viewport width (jsdom's default is 1024 px). Undo it with {@link resetViewport}. */
 function setViewportWidth(width: number): void {
   Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
 }
 
-/** `F4.317` — the jsdom default width again, for the next case. */
+/** `F4.318` — the jsdom default width again, for the next case. */
 export function resetViewport(): void {
   setViewportWidth(1024);
 }

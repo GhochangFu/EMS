@@ -155,7 +155,7 @@ type AppShellProps = {
 };
 
 /**
- * `F4.317` — the widest viewport, in px, on which the sidebar is a rail. Under Tailwind's `md`
+ * `F4.318` — the widest viewport, in px, on which the sidebar is a rail. Under Tailwind's `md`
  * (768 px) the expanded 240 px sidebar left a 390 px phone about 83 px of page, so there the shell
  * shows the collapsed rail, and an expanded sidebar lies over the page instead of pushing it.
  */
@@ -237,7 +237,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
   const viewport = useViewportSize();
   const copilotPush = useCopilotPagePush(useCopilotSheet(), viewport);
 
-  // F4.317 — on a narrow viewport the rail is the default and the stored choice is not read or
+  // F4.318 — on a narrow viewport the rail is the default and the stored choice is not read or
   // written: a desktop "expanded" must not eat a phone's page. An expanded sidebar there is an
   // overlay, and a move to another page closes it.
   const narrow = viewport.width <= SHELL_RAIL_MAX_WIDTH;
@@ -331,7 +331,7 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
       </nav>
 
       <div className="flex min-h-0 flex-1">
-        {/* F4.317 — on a narrow viewport the rail keeps a 64 px slot in the row, and the expanded
+        {/* F4.318 — on a narrow viewport the rail keeps a 64 px slot in the row, and the expanded
             sidebar lies over the page from that slot rather than taking 240 px of it. */}
         <div className={narrow ? "relative w-16 shrink-0" : "contents"} data-testid="shell-sidebar-slot">
           <aside

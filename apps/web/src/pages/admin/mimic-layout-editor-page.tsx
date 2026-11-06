@@ -352,7 +352,7 @@ function LayoutEditor({
         <Link to="/admin/mimic-layouts" className="text-xs font-semibold text-accent-strong">
           Back to the library
         </Link>
-        {/* F4.317 — a save in flight, or a stale version the save itself found, is `aria-disabled`
+        {/* F4.318 — a save in flight, or a stale version the save itself found, is `aria-disabled`
             and not native `disabled`: a native-disabled button that holds the focus drops it to
             `<body>`, so the press of Save would lose the author's place. `!canSave` is reached
             before any press, so it keeps native `disabled`. */}

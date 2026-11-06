@@ -154,7 +154,7 @@ function renderAt(path: string, as: AuthUser = user("organization_admin"), orgs 
 async function save(): Promise<void> {
   const button = await screen.findByRole("button", { name: "Save" });
   await waitFor(() => expect(button).toBeEnabled());
-  // F4.317 — a save in flight is `aria-disabled`, not native `disabled`, and ignores a press.
+  // F4.318 — a save in flight is `aria-disabled`, not native `disabled`, and ignores a press.
   await waitFor(() => expect(button).not.toHaveAttribute("aria-disabled"));
   await userEvent.click(button);
 }
@@ -503,7 +503,7 @@ export async function aLayoutWithASwitchingUnitWarnsAndStillSaves(): Promise<voi
 }
 
 /**
- * F4.317 — a press of Save keeps the keyboard focus on Save. While the save runs the button is
+ * F4.318 — a press of Save keeps the keyboard focus on Save. While the save runs the button is
  * `aria-disabled` (never native `disabled`, which drops a focused button's focus to `<body>`) and
  * ignores a second press; when the save answers, the focus is still on Save.
  */

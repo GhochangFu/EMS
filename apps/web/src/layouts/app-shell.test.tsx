@@ -243,7 +243,7 @@ describe("F3.33 the IONSiTE NEXUS wordmark in the shell", () => {
   });
 });
 
-describe("F4.317 the sidebar on a phone width", () => {
+describe("F4.318 the sidebar on a phone width", () => {
   afterEach(() => {
     resetViewport();
   });
