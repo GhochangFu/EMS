@@ -736,3 +736,82 @@ export async function siteTargetShowsAFilledTabGroups(): Promise<void> {
     'Tab groups: {"sld":"33333333-3333-4333-8333-333333333333"} (filled by the copilot).',
   );
 }
+
+/* ---------------------------------------------------------------- F4.317 organization arm */
+
+/** A published `organization`-target template (ADR 0112 decision 2): value tiles, no tabs. Its
+ * `organizationId` is a uuid: the organization arm's one field is that id, and it is a uuid. */
+function publishedOrganizationTemplate() {
+  return {
+    ...roleFreeTemplate(),
+    organizationId: "0b7c6d5e-4f3a-4b2c-8d1e-9f0a1b2c3d4e",
+    target: "organization",
+    section: "organization",
+  };
+}
+
+/**
+ * `F4.317` task 3.4 — an organization template's wizard: Target and Details hold no input (the
+ * copy lands on the template's own organization, named for it), and Submit is refused before
+ * the wire while the API's organization arm is a seam only (PR 4 wires it). No request is sent.
+ */
+export async function anOrganizationTemplateIsNotSentYet(): Promise<void> {
+  resetWizardStore();
+  const group = vi.fn();
+  const site = vi.fn();
+  stubApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(publishedOrganizationTemplate()),
+    instantiateAdminDashboardTemplate: group,
+    instantiateSiteTemplate: site,
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
+  const target = screen.getByRole("region", { name: "Target" });
+  expect(target.textContent).toContain("organization-wide dashboard");
+  expect(within(target).queryByRole("combobox")).toBeNull();
+  await next();
+  const details = screen.getByRole("region", { name: "Details" });
+  expect(details.textContent).toContain("named for its organization");
+  expect(within(details).queryByRole("textbox")).toBeNull();
+  await next();
+  await submit();
+
+  const card = screen.getByRole("region", { name: "Make a dashboard from a template" });
+  expect(within(card).getByRole("alert").textContent).toContain(
+    "Making an organization layout from a template is not available yet",
+  );
+  expect(group).not.toHaveBeenCalled();
+  expect(site).not.toHaveBeenCalled();
+}
+
+/**
+ * A site key the copilot filled on an organization template is refused before the wire: the
+ * values already hold the organization arm's `organizationId`, so the body is no single strict
+ * arm and Review names the stray key.
+ */
+export async function aSiteBodyOnAnOrganizationTemplateIsRefusedBeforeTheWire(): Promise<void> {
+  resetWizardStore();
+  const site = vi.fn();
+  stubApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(publishedOrganizationTemplate()),
+    instantiateSiteTemplate: site,
+  });
+  renderPage();
+
+  await userEvent.click(await screen.findByRole("button", { name: "Instantiate" }));
+  act(() => {
+    useWizardStore.getState().receiveFill({
+      catalogId: "dashboardTemplate.instantiate", params: { id: TEMPLATE_ID },
+      stepId: "target",
+      values: { locationId: LOC_1 },
+    }, null);
+  });
+  await next();
+  await next();
+  await submit();
+
+  const card = screen.getByRole("region", { name: "Make a dashboard from a template" });
+  expect(within(card).getByRole("alert").textContent).toMatch(/Unrecognized key\(s\) in object/);
+  expect(site).not.toHaveBeenCalled();
+}

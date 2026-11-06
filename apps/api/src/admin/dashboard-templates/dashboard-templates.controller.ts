@@ -6,7 +6,6 @@ import {
   Get,
   HttpCode,
   HttpStatus,
-  NotImplementedException,
   Param,
   Patch,
   Post,
@@ -190,10 +189,10 @@ export class DashboardTemplatesController {
       const templateId = idParamSchema.parse(id);
       const parsed = instantiateSectionTemplateBodySchema.parse(body);
       // `F3.73` ruling Q3a — the body's arm picks the method; each refuses a template whose
-      // stored `target` is the other arm's (`TEMPLATE_TARGET_BODY_MESSAGE`).
-      // `F4.317` — the organization arm parses here; its route lands with the arm itself.
+      // stored `target` is another arm's (`TEMPLATE_TARGET_BODY_MESSAGE`).
+      // `F4.317` — the third arm, `{ organizationId }` (ADR 0112 decision 4).
       if ("organizationId" in parsed) {
-        throw new NotImplementedException("Instantiating an organization template is not available yet");
+        return await this.instantiate.instantiateOrganization(user, templateId, parsed);
       }
       return "locationId" in parsed
         ? await this.instantiate.instantiateSite(user, templateId, parsed)
