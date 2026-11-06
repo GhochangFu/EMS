@@ -217,7 +217,8 @@ export async function assertLocationAdminAuthorsItsOwnOrganizationTemplate(
   locationAdmin: JwtPayload,
   organizationId: string,
   code: string,
-): Promise<string> {
+  onCreated: (id: string) => void,
+): Promise<void> {
   const created = await service.create(locationAdmin, {
     organizationId,
     code,
@@ -242,12 +243,13 @@ export async function assertLocationAdminAuthorsItsOwnOrganizationTemplate(
       tabs: [],
     },
   } as Parameters<DashboardTemplatesService["create"]>[1]);
+  // Recorded before any `expect`, so a failure below cannot leak the row.
+  onCreated(created.id);
   expect(created.target, "the created row must be the organization target").toBe("organization");
   const renamed = await service.update(locationAdmin, created.id, { name: "F4.317 organization strip, renamed" });
   expect(renamed.name).toBe("F4.317 organization strip, renamed");
   const published = await service.publish(locationAdmin, created.id);
   expect(published.status, "the location admin must be able to publish its organization template").toBe("published");
-  return created.id;
 }
 
 /** The same role is still refused a `site` template of its own organization (ADR 0015 §7, kept). */
@@ -311,14 +313,39 @@ export async function assertAssetGroupAdminIsRefusedAnOrganizationTemplate(
  * `F4.317` task 3.3 — the stock import reads the ENTRY's target for authorship: a location admin
  * imports `organization-standard` into its own organization (a draft of the organization target),
  * is refused it for another organization, and is still refused the `site` stock entry.
+ *
+ * **The stock code is fixed, so this case reads the database before it writes** (`F4.317`
+ * review): a developer database where someone already imported `organization-standard` into the
+ * organization (plan §4.6's own API check leaves exactly that draft) would answer the import with
+ * the draft index's 409. That is real data, so it is named and never deleted. `onCreated` takes
+ * the imported id before the two refusals run, so a failed `expect` cannot leak the draft and
+ * turn every later run into that same 409.
  */
 export async function assertLocationAdminImportsOnlyItsOwnOrganizationStrip(
   stock: DashboardTemplatesStockService,
+  ownerPool: pg.Pool,
   locationAdmin: JwtPayload,
   organizationId: string,
   foreignOrganizationId: string,
-): Promise<string> {
+  onCreated: (id: string) => void,
+): Promise<void> {
+  const existing = await ownerPool.query<{ id: string; version: number }>(
+    `SELECT id, version FROM bms.dashboard_templates
+      WHERE organization_id = $1 AND code = 'organization-standard' AND status = 'draft'`,
+    [organizationId],
+  );
+  const draft = existing.rows[0];
+  expect(
+    draft,
+    draft === undefined
+      ? ""
+      : `this database already holds a draft of organization-standard for organization ` +
+          `${organizationId} (id ${draft.id}, version ${draft.version}), so the import would be the ` +
+          "draft index's 409. It is real data and this suite never deletes it: publish or delete " +
+          "that draft, then rerun.",
+  ).toBeUndefined();
   const imported = await stock.import(locationAdmin, "organization-standard", organizationId);
+  onCreated(imported.id);
   expect(`${imported.code}|${imported.target}|${imported.status}`).toBe("organization-standard|organization|draft");
   await expect(
     stock.import(locationAdmin, "organization-standard", foreignOrganizationId),
@@ -328,7 +355,6 @@ export async function assertLocationAdminImportsOnlyItsOwnOrganizationStrip(
     stock.import(locationAdmin, "smoc-standard", organizationId),
     "a location admin must still be refused the site stock entry",
   ).rejects.toThrow(/Location admins cannot author/);
-  return imported.id;
 }
 
 /**

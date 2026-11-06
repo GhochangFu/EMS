@@ -215,13 +215,12 @@ describe.skipIf(!connectionString)(
     it("a location admin of ESKOM authors, edits and publishes an ESKOM organization template", async () => {
       const service = makeService();
       const eskomLocationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
-      templateIds.push(
-        await assertLocationAdminAuthorsItsOwnOrganizationTemplate(
-          service,
-          eskomLocationAdmin,
-          eskomOrgId,
-          ORGANIZATION_TARGET_CODE,
-        ),
+      await assertLocationAdminAuthorsItsOwnOrganizationTemplate(
+        service,
+        eskomLocationAdmin,
+        eskomOrgId,
+        ORGANIZATION_TARGET_CODE,
+        (id) => templateIds.push(id),
       );
     }, 60_000);
 
@@ -272,13 +271,13 @@ describe.skipIf(!connectionString)(
         makeService(),
         new MasterDataAuditService(tenantDb, fleetDb),
       );
-      templateIds.push(
-        await assertLocationAdminImportsOnlyItsOwnOrganizationStrip(
-          stock,
-          jwtFor(SEEDED.locationAdmin, "location_admin"),
-          eskomOrgId,
-          phewbOrgId,
-        ),
+      await assertLocationAdminImportsOnlyItsOwnOrganizationStrip(
+        stock,
+        ownerPool,
+        jwtFor(SEEDED.locationAdmin, "location_admin"),
+        eskomOrgId,
+        phewbOrgId,
+        (id) => templateIds.push(id),
       );
     }, 60_000);
 
