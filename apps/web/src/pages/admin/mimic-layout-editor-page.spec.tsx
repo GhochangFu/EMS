@@ -154,6 +154,8 @@ function renderAt(path: string, as: AuthUser = user("organization_admin"), orgs 
 async function save(): Promise<void> {
   const button = await screen.findByRole("button", { name: "Save" });
   await waitFor(() => expect(button).toBeEnabled());
+  // F4.318 — a save in flight is `aria-disabled`, not native `disabled`, and ignores a press.
+  await waitFor(() => expect(button).not.toHaveAttribute("aria-disabled"));
   await userEvent.click(button);
 }
 
@@ -498,4 +500,27 @@ export async function aLayoutWithASwitchingUnitWarnsAndStillSaves(): Promise<voi
   const warnings = await screen.findByRole("status", { name: "Layout warnings" });
   expect(warnings.textContent).toContain("No unit is marked as an energy source");
   expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+}
+
+/**
+ * F4.318 — a press of Save keeps the keyboard focus on Save. While the save runs the button is
+ * `aria-disabled` (never native `disabled`, which drops a focused button's focus to `<body>`) and
+ * ignores a second press; when the save answers, the focus is still on Save.
+ */
+export async function savingKeepsTheFocusOnSave(): Promise<void> {
+  const { replace } = renderAt(`/admin/mimic-layouts/${LAYOUT_ID}`);
+  let answer: (dto: MimicLayoutDto) => void = () => undefined;
+  replace.mockImplementation(() => new Promise<MimicLayoutDto>((resolve) => (answer = resolve)));
+  await save();
+  const busy = await screen.findByRole("button", { name: "Saving…" });
+  expect(busy).not.toBeDisabled();
+  expect(busy).toHaveAttribute("aria-disabled", "true");
+  expect(document.activeElement).toBe(busy);
+  await userEvent.click(busy);
+  expect(replace).toHaveBeenCalledTimes(1);
+  answer(storedDto(5));
+  const idle = await screen.findByRole("button", { name: "Save" });
+  expect(idle).toBe(busy);
+  expect(idle).not.toHaveAttribute("aria-disabled");
+  expect(document.activeElement).toBe(idle);
 }

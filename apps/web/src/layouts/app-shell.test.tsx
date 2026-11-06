@@ -45,6 +45,10 @@ import {
   showsTheWordmarkInTheHeader,
   showsTheFullLabelWhenExpanded,
   showsUniqueCodesWhenCollapsed,
+  expandsTheSidebarAsAnOverlayOnAPhoneWidth,
+  keepsTheStoredChoiceOnADesktopWidth,
+  resetViewport,
+  showsTheRailOnAPhoneWidth,
 } from "./app-shell.spec";
 
 /**
@@ -236,5 +240,23 @@ describe("F3.33 the IONSiTE NEXUS wordmark in the shell", () => {
 
   it("B5 reads no TRINETRA in the shell", () => {
     readsNoTrinetraInTheShell();
+  });
+});
+
+describe("F4.318 the sidebar on a phone width", () => {
+  afterEach(() => {
+    resetViewport();
+  });
+
+  it("N1 shows the 64 px rail at 390 px, whatever the stored desktop choice", () => {
+    showsTheRailOnAPhoneWidth();
+  });
+
+  it("N2 expands the sidebar over the page at 390 px and stores nothing", () => {
+    expandsTheSidebarAsAnOverlayOnAPhoneWidth();
+  });
+
+  it("N3 keeps the stored expanded choice in the row at 1280 px", () => {
+    keepsTheStoredChoiceOnADesktopWidth();
   });
 });

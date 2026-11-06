@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 
@@ -154,6 +154,13 @@ type AppShellProps = {
   kpiRibbon: ReactNode;
 };
 
+/**
+ * `F4.318` — the widest viewport, in px, on which the sidebar is a rail. Under Tailwind's `md`
+ * (768 px) the expanded 240 px sidebar left a 390 px phone about 83 px of page, so there the shell
+ * shows the collapsed rail, and an expanded sidebar lies over the page instead of pushing it.
+ */
+export const SHELL_RAIL_MAX_WIDTH = 767;
+
 export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -226,16 +233,32 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
   }
   const visibleAreas = new Set<string>(visibleMasterDataAreas(user.role).map((area) => area.id));
 
+  // F4.292 (ADR 0099 Amendment 9 E6): a docked copilot panel pushes the page by its width, not covers it.
+  const viewport = useViewportSize();
+  const copilotPush = useCopilotPagePush(useCopilotSheet(), viewport);
+
+  // F4.318 — on a narrow viewport the rail is the default and the stored choice is not read or
+  // written: a desktop "expanded" must not eat a phone's page. An expanded sidebar there is an
+  // overlay, and a move to another page closes it.
+  const narrow = viewport.width <= SHELL_RAIL_MAX_WIDTH;
+  const [overlayOpen, setOverlayOpen] = useState(false);
+  useEffect(() => {
+    setOverlayOpen(false);
+  }, [location.pathname]);
+  const collapsed = narrow ? !overlayOpen : sidebarCollapsed;
+  const overlay = narrow && overlayOpen;
+
   function toggleSidebar(): void {
+    if (narrow) {
+      setOverlayOpen((open) => !open);
+      return;
+    }
     setSidebarCollapsed((current) => {
       const next = !current;
       window.localStorage.setItem("bms-sidebar-collapsed", String(next));
       return next;
     });
   }
-
-  // F4.292 (ADR 0099 Amendment 9 E6): a docked copilot panel pushes the page by its width, not covers it.
-  const copilotPush = useCopilotPagePush(useCopilotSheet(), useViewportSize());
 
   return (
     <div className="flex min-h-screen flex-col bg-canvas text-ink" style={{ paddingRight: `${copilotPush}px` }}>
@@ -308,90 +331,94 @@ export function AppShell({ user, children, kpiRibbon }: AppShellProps) {
       </nav>
 
       <div className="flex min-h-0 flex-1">
-        <aside
-          className={`surface-sidebar shrink-0 py-3 text-sm transition-[width] duration-200 ${
-            sidebarCollapsed ? "w-16" : "w-60"
-          }`}
-        >
-          <div className={`mb-3 flex items-center px-3 ${sidebarCollapsed ? "justify-center" : "justify-between"}`}>
-            {sidebarCollapsed ? null : (
-              <span className="font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
-                Modules
-              </span>
-            )}
-            <button
-              type="button"
-              className="surface-button px-2 py-1 font-mono transition hover:border-accent"
-              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-              onClick={toggleSidebar}
-            >
-              {sidebarCollapsed ? "»" : "«"}
-            </button>
-          </div>
-          {moduleGroups.map((group) => {
-            const visible = group.items.filter((m) => isVisible(m.path));
-            // `F4.156` — a group with no visible item hides its heading too.
-            if (visible.length === 0) {
-              return null;
-            }
-            return (
-              <div key={group.title} className="mb-3">
-                {sidebarCollapsed ? (
-                  <div className="mx-3 mb-1 border-t border-well-deep" title={group.title} />
+        {/* F4.318 — on a narrow viewport the rail keeps a 64 px slot in the row, and the expanded
+            sidebar lies over the page from that slot rather than taking 240 px of it. */}
+        <div className={narrow ? "relative w-16 shrink-0" : "contents"} data-testid="shell-sidebar-slot">
+          <aside
+            className={`surface-sidebar shrink-0 py-3 text-sm transition-[width] duration-200 ${
+              collapsed ? "w-16" : "w-60"
+            } ${narrow ? "absolute inset-y-0 left-0 overflow-y-auto" : ""} ${overlay ? "z-30 shadow-lg" : ""}`}
+          >
+            <div className={`mb-3 flex items-center px-3 ${collapsed ? "justify-center" : "justify-between"}`}>
+              {collapsed ? null : (
+                <span className="font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
+                  Modules
+                </span>
+              )}
+              <button
+                type="button"
+                className="surface-button px-2 py-1 font-mono transition hover:border-accent"
+                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+                onClick={toggleSidebar}
+              >
+                {collapsed ? "»" : "«"}
+              </button>
+            </div>
+            {moduleGroups.map((group) => {
+              const visible = group.items.filter((m) => isVisible(m.path));
+              // `F4.156` — a group with no visible item hides its heading too.
+              if (visible.length === 0) {
+                return null;
+              }
+              return (
+                <div key={group.title} className="mb-3">
+                  {collapsed ? (
+                    <div className="mx-3 mb-1 border-t border-well-deep" title={group.title} />
+                  ) : (
+                    <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
+                      {group.title}
+                    </div>
+                  )}
+                  <ul className="space-y-0.5">
+                    {visible.map((m) => (
+                      <li key={m.path}>
+                        <Link
+                          to={m.path}
+                          title={m.label}
+                          // F4.164 — WCAG 2.5.3: a collapsed name carries the visible code; expanded, the label is the name.
+                          aria-label={collapsed ? `${m.label} (${collapsedLabel(m)})` : undefined}
+                          aria-current={isModuleSelected(m) ? "page" : undefined}
+                          className={`surface-nav-item block ${isModuleSelected(m) ? "surface-nav-item-selected" : ""} ${collapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
+                        >
+                          {collapsed ? collapsedLabel(m) : m.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })}
+            {isMasterDataAdmin(user.role) ? (
+              <div className="mb-3">
+                {collapsed ? (
+                  <div className="mx-3 mb-1 border-t border-well-deep" title={adminModuleGroup.title} />
                 ) : (
                   <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
-                    {group.title}
+                    {adminModuleGroup.title}
                   </div>
                 )}
                 <ul className="space-y-0.5">
-                  {visible.map((m) => (
-                    <li key={m.path}>
-                      <Link
-                        to={m.path}
-                        title={m.label}
-                        // F4.164 — WCAG 2.5.3: a collapsed name carries the visible code; expanded, the label is the name.
-                        aria-label={sidebarCollapsed ? `${m.label} (${collapsedLabel(m)})` : undefined}
-                        aria-current={isModuleSelected(m) ? "page" : undefined}
-                        className={`surface-nav-item block ${isModuleSelected(m) ? "surface-nav-item-selected" : ""} ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
-                      >
-                        {sidebarCollapsed ? collapsedLabel(m) : m.label}
-                      </Link>
-                    </li>
-                  ))}
+                  {adminModuleGroup.items
+                    .filter((item) => !("area" in item) || visibleAreas.has(item.area))
+                    .map((item) => (
+                      <li key={item.path}>
+                        <Link
+                          to={item.path}
+                          title={item.label}
+                          aria-label={collapsed ? `${item.label} (${collapsedLabel(item)})` : undefined}
+                          aria-current={isAdminSelected(item) ? "page" : undefined}
+                          className={`surface-nav-item block ${isAdminSelected(item) ? "surface-nav-item-selected" : ""} ${collapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
+                        >
+                          {collapsed ? collapsedLabel(item) : item.label}
+                        </Link>
+                      </li>
+                    ))}
                 </ul>
               </div>
-            );
-          })}
-          {isMasterDataAdmin(user.role) ? (
-            <div className="mb-3">
-              {sidebarCollapsed ? (
-                <div className="mx-3 mb-1 border-t border-well-deep" title={adminModuleGroup.title} />
-              ) : (
-                <div className="px-3 pb-1 font-condensed text-[11px] font-bold uppercase tracking-[0.16em] text-ink-muted">
-                  {adminModuleGroup.title}
-                </div>
-              )}
-              <ul className="space-y-0.5">
-                {adminModuleGroup.items
-                  .filter((item) => !("area" in item) || visibleAreas.has(item.area))
-                  .map((item) => (
-                    <li key={item.path}>
-                      <Link
-                        to={item.path}
-                        title={item.label}
-                        aria-label={sidebarCollapsed ? `${item.label} (${collapsedLabel(item)})` : undefined}
-                        aria-current={isAdminSelected(item) ? "page" : undefined}
-                        className={`surface-nav-item block ${isAdminSelected(item) ? "surface-nav-item-selected" : ""} ${sidebarCollapsed ? "px-2 py-2 text-center font-condensed text-xs font-bold" : "px-3 py-1.5"}`}
-                      >
-                        {sidebarCollapsed ? collapsedLabel(item) : item.label}
-                      </Link>
-                    </li>
-                  ))}
-              </ul>
-            </div>
-          ) : null}
-        </aside>
+            ) : null}
+          </aside>
+        </div>
 
         <main className="flex min-w-0 flex-1 flex-col">
           <section className="surface-ribbon flex min-h-14 shrink-0 items-center px-4 py-2 text-xs text-ink-muted">
