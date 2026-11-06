@@ -223,11 +223,19 @@ describe.skipIf(!has)("F4.317 — bms.organization_control_room_views against a 
       const widgetId = widget.rows[0]?.id as string;
       const INSERT_SOURCE = `INSERT INTO bms.dashboard_widget_sources (organization_id, widget_id, catalog_key)
          VALUES ($1, $2, $3)`;
-      // ADR 0112 Amendment 1: tile 3's two keys share one widget — UNIQUE (widget_id, catalog_key) holds.
-      for (const key of ["pue.ratio", "sites.live.count", "alarms.active.count", "alarms.critical.count"]) {
+      for (const key of ["pue.ratio", "sites.live.count"]) {
         const { code } = await probe(run, INSERT_SOURCE, [orgA, widgetId, key]);
         expect(code, `${key} must be accepted`).toBeUndefined();
       }
+      // ADR 0112 Amendment 1: tile 3's two keys sit on one widget at the same time — both rows are
+      // kept (no savepoint rollback), so UNIQUE (widget_id, catalog_key) and any per-widget rule must admit the pair.
+      await run(INSERT_SOURCE, [orgA, widgetId, "alarms.active.count"]);
+      await run(INSERT_SOURCE, [orgA, widgetId, "alarms.critical.count"]);
+      const held = await run(
+        `SELECT count(*)::int AS n FROM bms.dashboard_widget_sources WHERE widget_id = $1`,
+        [widgetId],
+      );
+      expect(held.rows[0]?.n).toBe(2);
       const { code, message } = await probe(run, INSERT_SOURCE, [orgA, widgetId, "sites.total"]);
       expect(code).toBe("23514");
       expect(message).toContain("dashboard_widget_sources_catalog_key_check");
