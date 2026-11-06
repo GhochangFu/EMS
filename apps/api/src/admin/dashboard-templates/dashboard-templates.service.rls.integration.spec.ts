@@ -363,7 +363,10 @@ export async function assertLocationAdminImportsOnlyItsOwnOrganizationStrip(
  * `(organization_id, code)` alone, whatever the target. Without this refusal a location admin
  * could open version N+1 of an organization admin's asset-group code as an `organization` row,
  * and its draft would lock the organization admin out of `createDraftFrom` and stock re-import
- * of that code. The organization admin's own next draft of the code must still work.
+ * of that code. The code's owner's own next draft must still work: `admin` opens it here, and
+ * the refusal is by target, not role, so one admin token gates it (the seeded organization admin
+ * belongs to PHEWB, outside the seeded location admin's organization, so `canManageTemplate`'s
+ * organization-admin path is not exercised by this case).
  *
  * `onCreated` receives every id this helper creates the moment it exists, so a later failed
  * `expect` cannot leak a row into the developer's database.
@@ -430,6 +433,6 @@ export async function assertACodeKeepsItsTarget(
   onCreated(nextDraft.id);
   expect(
     `${nextDraft.target}|${nextDraft.status}|${nextDraft.version}`,
-    "the organization admin's next draft of its own code must still open",
+    "an admin's next draft of its own asset-group code must still open",
   ).toBe("asset_group|draft|2");
 }
