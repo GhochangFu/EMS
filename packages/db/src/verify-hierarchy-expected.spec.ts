@@ -203,6 +203,12 @@ export function assertSixPheSiteLayoutSlugs(): void {
   );
 }
 
+/** `F4.317` ruling Q3 — both seed organizations carry a seeded organization layout pointer row. */
+export function assertTwoOrganizationLayoutOrganizations(): void {
+  const { organizationLayoutOrganizationCodes } = hierarchyExpectations();
+  expect([...organizationLayoutOrganizationCodes].sort()).toEqual(["ESKOM", "PHEWB"]);
+}
+
 /**
  * `F3.73` plan D12 — 72 catalog assets take a SMOC role: at Western Cape 5 UPS/battery, 2 HVAC,
  * 6 room sensors, 4 leak, 4 smoke and 6 IT; at each of the eight regional RSMOCs 5 (UPS-1,

@@ -16,6 +16,7 @@ import {
   assertTwelvePheRtus,
   assertTwoHundredFiftyTwoPhePoints,
   assertTwelveLegacyPheSlugs,
+  assertTwoOrganizationLayoutOrganizations,
   assertTwoSeedOrganizations,
 } from "./verify-hierarchy-expected.spec";
 
@@ -78,6 +79,10 @@ describe("F4.169/F4.170 addendum — the boot gate's expectations derive from th
 
   it("F3.73 derives six PHE site-layout station slugs", () => {
     assertSixPheSiteLayoutSlugs();
+  });
+
+  it("F4.317 derives the two organizations that carry a seeded organization layout", () => {
+    assertTwoOrganizationLayoutOrganizations();
   });
 
   it("F3.73 derives seventy-two SMOC-roled ESKOM assets", () => {

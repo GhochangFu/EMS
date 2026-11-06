@@ -10,6 +10,7 @@ import {
 import { findSeedLocation } from "./eskom-locations-seed";
 import { getOrganizationId } from "./hierarchy-seed";
 import { type HierarchyExpectations, hierarchyExpectations } from "./verify-hierarchy-expected";
+import { ORGANIZATION_LAYOUT_SEED_SLUG } from "./organization-layout-seed";
 import { withOrganization } from "./seed-tenant";
 import { DEMO_WATER_ASSET_CODES, DEMO_WATER_TEMPLATE_CODES } from "./water-plant-demo-seed";
 
@@ -111,6 +112,18 @@ export async function verifyHierarchySeed(
     throw new Error(`Hierarchy seed verification failed:\n- ${errors.join("\n- ")}`);
   }
 }
+
+/**
+ * `F4.317` ruling Q3 — 1 when the organization carries its seeded layout: a pointer row of any
+ * kind, or the seed's copy (Reset deletes the row and leaves the copy). Params:
+ * `[organizationId, copySlug]`.
+ */
+export const ORGANIZATION_LAYOUT_PRESENT_SQL = `
+  SELECT (
+    EXISTS (SELECT 1 FROM bms.organization_control_room_views WHERE organization_id = $1)
+    OR EXISTS (SELECT 1 FROM bms.dashboards WHERE organization_id = $1 AND slug = $2)
+  )::int::text AS n
+`;
 
 /**
  * One claim the verifier makes: `actual` read from the database, `wanted` the
@@ -587,6 +600,19 @@ export async function readEskomChecks(
     String(siteLayoutViews),
     expected.siteLayoutEskomLocations.length,
   );
+  // F4.317 ruling Q3: the seeded organization layout, counted as the seed leaves it: the pointer
+  // row of any kind OR the seed's copy. "Reset to default" deletes the pointer row and leaves the
+  // copy, and the seed (rightly) does not re-point a reset organization, so the row alone would
+  // stop the stack on an ordinary admin action. Either is present after every seed run.
+  const organizationLayout = await pool.query<{ n: string }>(ORGANIZATION_LAYOUT_PRESENT_SQL, [
+    eskomOrgId,
+    ORGANIZATION_LAYOUT_SEED_SLUG,
+  ]);
+  expect(
+    "ESKOM seeded organization layout present",
+    organizationLayout.rows[0]?.n,
+    expected.organizationLayoutOrganizationCodes.includes("ESKOM") ? 1 : 0,
+  );
   // `E4.1c` — a floor of one (see the SQL comment); `expect` is exact, so
   // the floor is written as its own check.
   checks.push({
@@ -752,5 +778,16 @@ export async function readPhewbChecks(
   // role. An administrator may change or clear a role, but the seed refills a NULL on every boot
   // (the `COALESCE` membership upsert), so after a seed a NULL here is the seed's own fault.
   expect("PHE catalog pump-station members carrying a role", row?.phe_pump_station_roled, phe.assetCodes.length);
+  // F4.317 ruling Q3: PHEWB's seeded organization layout, row-or-copy (the ESKOM comment says why).
+  // The organization is the tenant GUC the caller holds, which is also what the policy matches.
+  const organizationLayout = await pool.query<{ n: string }>(ORGANIZATION_LAYOUT_PRESENT_SQL, [
+    await getOrganizationId(pool, "PHEWB"),
+    ORGANIZATION_LAYOUT_SEED_SLUG,
+  ]);
+  expect(
+    "PHEWB seeded organization layout present",
+    organizationLayout.rows[0]?.n,
+    expected.organizationLayoutOrganizationCodes.includes("PHEWB") ? 1 : 0,
+  );
   return checks;
 }

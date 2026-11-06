@@ -55,6 +55,7 @@ import {
   seedMapLocations,
 } from "./eskom-locations-seed";
 import { seedSiteControlRoomViews } from "./site-control-room-views-seed";
+import { seedOrganizationLayout } from "./organization-layout-seed";
 import { seedEskomSiteLayouts, seedPhewbSiteLayouts } from "./site-layout-seed";
 
 /**
@@ -375,6 +376,9 @@ async function main(): Promise<void> {
       // bind the groups, domains and roles both `seedAssetGroups` passes wrote, the second water
       // group `seedWaterMimicDemo` wrote, and the points every writer above wrote.
       await seedEskomSiteLayouts(pool, eskomOrgId, mapLocationRows);
+      // `F4.317` ruling Q3 — ESKOM's organization Control Room layout: the organization-standard
+      // template and one organization-wide copy it points at, insert-if-absent.
+      await seedOrganizationLayout(pool, eskomOrgId);
     });
 
     // `F3.73` plan D12 — PHEWB's copies, in their own bracket after ESKOM's, for the same reason
@@ -382,6 +386,8 @@ async function main(): Promise<void> {
     // point-key catalog.
     await withOrganization(pool, phewbOrgId, async () => {
       await seedPhewbSiteLayouts(pool, phewbOrgId, pheCatalog);
+      // `F4.317` ruling Q3 — PHEWB's, the same shape.
+      await seedOrganizationLayout(pool, phewbOrgId);
     });
 
     // ── Post-tenant ───────────────────────────────────────────────────────
