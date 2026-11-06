@@ -89,10 +89,13 @@ async function removeFixtures(superuserPool: pg.Pool, sel: { orgs: string; users
   await q(`DELETE FROM bms.user_organization_access WHERE user_id IN (${sel.users})`);
   await q(`DELETE FROM bms.user_asset_group_access WHERE user_id IN (${sel.users})`);
   await q(`DELETE FROM bms.users WHERE id IN (${sel.users})`);
-  await q(
-    `DELETE FROM telemetry.point_values WHERE asset_id IN
-       (SELECT id FROM bms.assets WHERE organization_id IN (${sel.orgs}))`,
-  );
+  // ADR 0024: a constant filter on the segmentby column, never a subquery (it would decompress
+  // every batch); the ids are resolved first and bound.
+  const { rows: assetRows } = await q(`SELECT id FROM bms.assets WHERE organization_id IN (${sel.orgs})`);
+  const assetIds = assetRows.map((row: { id: string }) => row.id);
+  if (assetIds.length > 0) {
+    await superuserPool.query(`DELETE FROM telemetry.point_values WHERE asset_id = ANY($1::uuid[])`, [assetIds]);
+  }
   await q(
     `DELETE FROM bms.asset_group_members WHERE asset_group_id IN
        (SELECT id FROM bms.asset_groups WHERE organization_id IN (${sel.orgs}))`,
