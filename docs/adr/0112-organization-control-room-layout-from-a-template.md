@@ -9,7 +9,7 @@ starts before the owner says "yes" to the step-3 plan.
 
 **Implemented — 2026-11-06** as `F4.317` in six PRs: #1067 (migration `0126`),
 #1069 (resolvers, prior seam, `kpis()`), #1072 (target, stock template, authoring
-grant), #1073 (view service, routes, narrow dashboard grant), PR5_NUMBER (web) and
+grant), #1073 (view service, routes, narrow dashboard grant), #1078 (web) and
 PR6_NUMBER (docs and the Q3 seed). Amendments 1 and 2 below landed with PR 1 and PR 3.
 The estate "Sites online" release note (consequences) is in the `F4.317` BACKLOG row.
 
