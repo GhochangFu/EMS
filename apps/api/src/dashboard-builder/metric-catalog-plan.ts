@@ -103,3 +103,21 @@ function canonicalJson(value: unknown): string {
     Object.fromEntries(Object.keys(record).sort().map((key) => [key, record[key]])),
   );
 }
+
+/**
+ * `F4.317` task 4.2 — what `MetricCatalogService.resolveBindings` resolves: the widgets (the
+ * group their tab binds, `null` for none; the type and config `widgetWantsPrior` reads), their
+ * sources, the scope a widget with no tab group resolves over, and the `by_location` cap node
+ * (`ResolverDeps.scopeLocationId`).
+ */
+export type CatalogBindings = {
+  readonly widgets: readonly {
+    readonly id: string;
+    readonly tabGroupId: string | null;
+    readonly widgetType: string;
+    readonly config: unknown;
+  }[];
+  readonly sources: readonly PlannableSource[];
+  readonly scope: DashboardAssetScope;
+  readonly capLocationId: string | null;
+};
