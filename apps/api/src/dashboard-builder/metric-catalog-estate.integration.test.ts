@@ -39,7 +39,11 @@ import { MetricCatalogService } from "./metric-catalog.service";
  * cleared at `T + 1 h`, for the edge cases. K at L1 sits on a template carrying `kw` (measured,
  * so its bound is 15 min): `kw` 7 at 24 h 5 min ago — inside the bound at the prior instant —
  * and 11 now. P adds a `site_kw` 120 / `it_kw` 100 pair a minute before the prior instant.
- * None of these moves a 2.1 number: C1, C2 and K are outside those cases' scopes.
+ * C3 at L2 holds one non-critical alarm raised 26 h ago and cleared 1 h ago, so over C1 and C3
+ * the prior of `alarms.active.count` is 2 and that of `alarms.critical.count` is 1 — the two
+ * resolvers' prior predicates cannot pass by being swapped. L3 is an INACTIVE location whose
+ * asset D1 reports: no site, as the location cards read it.
+ * None of these moves a 2.1 number: C1, C2, C3, D1 and K are outside those cases' scopes.
  */
 const connectionString = requireIntegrationDb({
   item: "F4.317",
@@ -70,6 +74,8 @@ describe.skipIf(!connectionString)("F4.317 — the organization strip's catalog 
   let assetP = "";
   let assetC1 = "";
   let assetC2 = "";
+  let assetC3 = "";
+  let assetD1 = "";
   let assetK = "";
   /** C2's alarm: raised at `edgeAt`, cleared an hour later. Millisecond-exact, from JS. */
   const edgeAt = new Date(Date.now() - 30 * 3_600_000);
@@ -80,8 +86,9 @@ describe.skipIf(!connectionString)("F4.317 — the organization strip's catalog 
     alarms: { dashboardId: "", widgetId: "" },
   };
   /** Task 2.2 — dashboards with two tiles on one binding: one asks for the prior, one does not. */
-  const pairs: Record<"alarms" | "kw" | "pue", { dashboardId: string; asking: string; plain: string }> = {
+  const pairs: Record<"alarms" | "critical" | "kw" | "pue", { dashboardId: string; asking: string; plain: string }> = {
     alarms: { dashboardId: "", asking: "", plain: "" },
+    critical: { dashboardId: "", asking: "", plain: "" },
     kw: { dashboardId: "", asking: "", plain: "" },
     pue: { dashboardId: "", asking: "", plain: "" },
   };
@@ -121,11 +128,11 @@ describe.skipIf(!connectionString)("F4.317 — the organization strip's catalog 
     );
     const domainCode = domain.rows[0]?.code ?? "";
 
-    const mkLocation = async (tag: string): Promise<string> => {
+    const mkLocation = async (tag: string, active = true): Promise<string> => {
       const row = await superuserPool.query<{ id: string }>(
-        `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude)
-         VALUES ($1, $2, $3, $4, 'csmoc', 0, 0) RETURNING id`,
-        [orgId, `F4317${tag}-${RUN}`, `f4317${tag.toLowerCase()}-${RUN}`, `F4.317 site ${tag} ${RUN}`],
+        `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude, active)
+         VALUES ($1, $2, $3, $4, 'csmoc', 0, 0, $5) RETURNING id`,
+        [orgId, `F4317${tag}-${RUN}`, `f4317${tag.toLowerCase()}-${RUN}`, `F4.317 site ${tag} ${RUN}`, active],
       );
       const id = row.rows[0]?.id ?? "";
       locationIds.push(id);
@@ -133,6 +140,7 @@ describe.skipIf(!connectionString)("F4.317 — the organization strip's catalog 
     };
     const l1 = await mkLocation("L1");
     const l2 = await mkLocation("L2");
+    const l3 = await mkLocation("L3", false);
 
     const template = await superuserPool.query<{ id: string }>(
       `INSERT INTO bms.asset_templates (organization_id, code, name, asset_type, domain, status, published_at)
@@ -171,6 +179,8 @@ describe.skipIf(!connectionString)("F4.317 — the organization strip's catalog 
     assetP = await mkAsset(l1, "P");
     assetC1 = await mkAsset(l2, "C1");
     assetC2 = await mkAsset(l2, "C2");
+    assetC3 = await mkAsset(l2, "C3");
+    assetD1 = await mkAsset(l3, "D1");
     assetK = await mkAsset(l1, "K", true);
 
     // A minute before the prior instant: inside `latestPueRatio`'s 900 s window there.
@@ -212,6 +222,12 @@ describe.skipIf(!connectionString)("F4.317 — the organization strip's catalog 
       `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at, cleared_at)
        VALUES ($1, $2, $3, $4, now() - interval '25 hours', now() - interval '1 hour')`,
       [orgId, assetC1, criticalCode, `F4.317 prior ${RUN}`],
+    );
+    // C3: open at the prior instant, cleared since, and NOT critical.
+    await superuserPool.query(
+      `INSERT INTO bms.alarms (organization_id, asset_id, severity, message, raised_at, cleared_at)
+       VALUES ($1, $2, $3, $4, now() - interval '26 hours', now() - interval '1 hour')`,
+      [orgId, assetC3, otherCode, `F4.317 prior other ${RUN}`],
     );
     // C2: the edge alarm, non-critical, raised at exactly `edgeAt`.
     await superuserPool.query(
@@ -276,6 +292,7 @@ describe.skipIf(!connectionString)("F4.317 — the organization strip's catalog 
       return { dashboardId, asking, plain };
     };
     pairs.alarms = await mkPair("alarms", "alarms.active.count", {});
+    pairs.critical = await mkPair("critical", "alarms.critical.count", {});
     pairs.kw = await mkPair("kw", "sustainability.total", { pointKey: "kw", aggregate: "sum" });
     pairs.pue = await mkPair("pue", "pue.ratio", {});
   }, 60_000);
@@ -323,6 +340,23 @@ describe.skipIf(!connectionString)("F4.317 — the organization strip's catalog 
     );
   });
 
+  it("sites.live.count counts no site at an inactive location: L1 and L3 reporting → 1 of 1", async () => {
+    await superuserPool.query(
+      `INSERT INTO telemetry.point_values (time, asset_id, point_key, value)
+       VALUES (now() - make_interval(secs => 1), $1, 'temp_c', 21),
+              (now() - make_interval(secs => 1), $2, 'temp_c', 21)`,
+      [assetA1, assetD1],
+    );
+    await assertSitesLiveCountsLocations(
+      service,
+      orgId,
+      tiles.sites.dashboardId,
+      tiles.sites.widgetId,
+      [assetA1, assetD1],
+      { value: 1, fresh: 1, carrying: 1 },
+    );
+  });
+
   it("sites.live.count for a location admin holding only L2 is 0 of 1", async () => {
     await assertSitesLiveCountsLocations(
       service,
@@ -358,15 +392,28 @@ describe.skipIf(!connectionString)("F4.317 — the organization strip's catalog 
     );
   });
 
-  it("an alarm raised 25 h ago and cleared 1 h ago is 0 live and 1 at the prior instant", async () => {
+  it("two alarms open 24 h ago and cleared since are 0 live and 2 at the prior instant", async () => {
     await assertPriorOnlyWhenAsked(
       service,
       orgId,
       pairs.alarms.dashboardId,
-      [assetC1],
+      [assetC1, assetC3],
       pairs.alarms.asking,
       pairs.alarms.plain,
       "alarms.active.count",
+      { live: 0, prior: 2 },
+    );
+  });
+
+  it("alarms.critical.count's prior counts only the critical one of those two: 0 live, 1 prior", async () => {
+    await assertPriorOnlyWhenAsked(
+      service,
+      orgId,
+      pairs.critical.dashboardId,
+      [assetC1, assetC3],
+      pairs.critical.asking,
+      pairs.critical.plain,
+      "alarms.critical.count",
       { live: 0, prior: 1 },
     );
   });
