@@ -95,14 +95,21 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
         WHERE organization_id = $1 AND code = 'organization-standard'
           AND target = 'organization' AND status = 'published') AS templates`;
 
-  /** Puts the pointer row at the seed copy, whatever an earlier admin action left. */
+  /**
+   * Puts the pointer row at the seed copy, whatever an earlier admin action left. When an
+   * administrator deleted the copy after a Reset, the seed makes a fresh one first (inside the
+   * caller's rolled-back transaction), so the case starts from a seeded state.
+   */
   async function pointAtSeedCopy(pool: SeedPool, id: string): Promise<void> {
     await pool.query("DELETE FROM bms.organization_control_room_views WHERE organization_id = $1", [id]);
-    await pool.query(
+    const placed = await pool.query(
       `INSERT INTO bms.organization_control_room_views (organization_id, dashboard_id)
        SELECT $1, d.id FROM bms.dashboards d WHERE d.organization_id = $1 AND d.slug = $2`,
       [id, ORGANIZATION_LAYOUT_SEED_SLUG],
     );
+    if (placed.rowCount === 1) return;
+    const outcome = await seedOrganizationLayout(pool, id, () => undefined);
+    if ("reason" in outcome) throw new Error(`pointAtSeedCopy: could not make a seed copy (${outcome.reason})`);
   }
 
   for (const code of ["ESKOM", "PHEWB"]) {
@@ -121,10 +128,12 @@ describe.skipIf(!ownerUrl)("F4.317 Q3 - the seeded organization layouts", { time
       // the copy or deleted it after a Reset, so no tile counts are asserted on the live database
       // (the rolled-back re-make case below checks 14 / 15 on a copy it made itself).
       const counts = (await probePool!.query(COUNTS_SQL, [id, ORGANIZATION_LAYOUT_SEED_SLUG])).rows[0];
-      expect(counts.views + copy.rows[0]!.n).toBeGreaterThanOrEqual(1);
+      // Presence is the gate's own rule (ORGANIZATION_LAYOUT_PRESENT_SQL): a pointer row or any
+      // dashboard with the seed slug. The stricter `copy` query checks the copy's shape only.
+      expect(counts.views + counts.copies).toBeGreaterThanOrEqual(1);
       expect(counts.views).toBeLessThanOrEqual(1);
-      expect(copy.rows[0]!.n).toBeLessThanOrEqual(1);
-      expect(counts.templates).toBeGreaterThanOrEqual(0);
+      expect(counts.copies).toBeLessThanOrEqual(1);
+      expect(copy.rows[0]!.n).toBeLessThanOrEqual(counts.copies);
       const pointed = await probePool!.query<{ ok: boolean }>(
         `SELECT (d.location_id IS NULL AND d.asset_group_id IS NULL AND d.asset_id IS NULL) AS ok
            FROM bms.organization_control_room_views v

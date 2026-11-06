@@ -138,8 +138,9 @@ export type OrganizationLayoutSeedOutcome =
   | { readonly made: false; readonly reason: OrganizationLayoutSeedSkipReason };
 
 /**
- * The template, then one organization-wide copy and its pointer row when the organization has
- * neither. The caller holds the organization's tenant bracket.
+ * One organization-wide copy and its pointer row when the organization has neither. The checks
+ * run first; the template is provisioned only when a copy will be made. The caller holds the
+ * organization's tenant bracket.
  */
 export async function seedOrganizationLayout(
   pool: Pick<pg.Pool, "query">,
