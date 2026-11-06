@@ -436,3 +436,64 @@ export async function assertACodeKeepsItsTarget(
     "an admin's next draft of its own asset-group code must still open",
   ).toBe("asset_group|draft|2");
 }
+
+/**
+ * `F4.317` review (security) — **a stock code is reserved for its own target.** A code keeps one
+ * target (`assertACodeKeepsItsTarget`), and that refusal holds a row of any status, so without a
+ * reservation a `location_admin` could create, publish and leave archived an `organization` row
+ * under an asset-group stock code its organization has not imported yet, and every later stock
+ * import of that code would answer 409 for the organization admin as well, with no way to clear
+ * it short of database work. `create` refuses the code instead, whoever asks, before it writes.
+ *
+ * **The stock code is fixed, so this case reads the database before it writes**, as
+ * `assertLocationAdminImportsOnlyItsOwnOrganizationStrip` does: an existing draft of the code
+ * would make the import the draft index's 409. That is real data, so it is named, never deleted.
+ */
+export async function assertAStockCodeIsReservedForItsTarget(
+  service: DashboardTemplatesService,
+  stock: DashboardTemplatesStockService,
+  ownerPool: pg.Pool,
+  admin: JwtPayload,
+  locationAdmin: JwtPayload,
+  organizationId: string,
+  stockCode: string,
+  onCreated: (id: string) => void,
+): Promise<void> {
+  const existing = await ownerPool.query<{ id: string; target: string; status: string }>(
+    `SELECT id, target, status FROM bms.dashboard_templates
+      WHERE organization_id = $1 AND code = $2 AND (status = 'draft' OR target <> 'asset_group')`,
+    [organizationId, stockCode],
+  );
+  expect(
+    existing.rows,
+    `this database already holds rows of ${stockCode} for organization ${organizationId} that would ` +
+      "block its stock import (a draft, or another target). They are real data and this suite never " +
+      "deletes them: remove them, then rerun.",
+  ).toEqual([]);
+
+  let squat: { id: string } | undefined;
+  let refusal: unknown;
+  try {
+    squat = await service.create(locationAdmin, {
+      organizationId,
+      code: stockCode,
+      name: "F4.317 organization strip under an asset-group stock code",
+      section: "organization",
+      target: "organization",
+      content: { widgets: [], tabs: [] },
+    } as Parameters<DashboardTemplatesService["create"]>[1]);
+  } catch (err) {
+    refusal = err;
+  }
+  if (squat !== undefined) onCreated(squat.id);
+  expect(squat, "a location admin must not take an asset-group stock code for an organization row").toBeUndefined();
+  expect(refusal).toBeInstanceOf(ConflictException);
+  expect((refusal as Error).message).toMatch(new RegExp(`"${stockCode}" is reserved for the stock asset_group template`));
+
+  const imported = await stock.import(admin, stockCode, organizationId);
+  onCreated(imported.id);
+  expect(
+    `${imported.code}|${imported.target}|${imported.status}`,
+    "an admin's stock import of the code must still open",
+  ).toBe(`${stockCode}|asset_group|draft`);
+}

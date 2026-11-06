@@ -18,6 +18,7 @@ import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
   assertACodeKeepsItsTarget,
+  assertAStockCodeIsReservedForItsTarget,
   assertAssetGroupAdminIsRefusedAnOrganizationTemplate,
   assertAuditRowCommitted,
   assertForeignTemplateIdOnDashboardIsRefused,
@@ -258,6 +259,28 @@ describe.skipIf(!connectionString)(
         jwtFor(SEEDED.locationAdmin, "location_admin"),
         eskomOrgId,
         `${ORGANIZATION_TARGET_CODE}-takeover`,
+        (id) => templateIds.push(id),
+      );
+    }, 60_000);
+
+    it("a stock code is reserved for its target: a location admin cannot squat an asset-group stock code", async () => {
+      const tenantDb = createDb(tenantPool);
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const service = makeService();
+      const stock = new DashboardTemplatesStockService(
+        tenantDb,
+        accessControl,
+        service,
+        new MasterDataAuditService(tenantDb, fleetDb),
+      );
+      await assertAStockCodeIsReservedForItsTarget(
+        service,
+        stock,
+        ownerPool,
+        jwtFor(SEEDED.globalAdmin, "admin"),
+        jwtFor(SEEDED.locationAdmin, "location_admin"),
+        eskomOrgId,
+        "hvac-overview",
         (id) => templateIds.push(id),
       );
     }, 60_000);

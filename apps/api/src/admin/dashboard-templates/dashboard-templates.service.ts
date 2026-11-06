@@ -59,6 +59,7 @@ import { withTenant } from "../../database/tenant-context";
 import type { BmsTx } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { STOCK_DASHBOARD_TEMPLATE_CATALOG } from "./stock-catalog";
 
 /**
  * The **section dashboard template** version lifecycle — `F3.36`, migration
@@ -150,6 +151,7 @@ export class DashboardTemplatesService {
 
   async create(jwt: JwtPayload, body: CreateDashboardTemplateBody): Promise<DashboardTemplateDto> {
     await this.assertCanAuthor(jwt, body.organizationId, body.target);
+    DashboardTemplatesService.assertStockCodeKeepsItsTarget(body.code, body.target);
     await this.assertSection(body.section);
 
     // The only one of the eight that reads no row: it parses a constant literal
@@ -682,6 +684,26 @@ export class DashboardTemplatesService {
         `Unknown dashboard section "${code}". Valid sections: ${live
           .map((s) => s.code)
           .join(", ")}`,
+      );
+    }
+  }
+
+  /**
+   * `F4.317` review (security) — **a stock code is reserved for its own target.** A code keeps
+   * one target (`assertCodeKeepsItsTarget`), whatever the status of the row that holds it, and
+   * `deleteDraft` deletes drafts only. So without this a `location_admin`, whose grant is
+   * `organization`-target templates (ADR 0112 decision 5), could create, publish and archive an
+   * `organization` row under an asset-group stock code its organization has not imported yet, and
+   * the stock import of that code would answer 409 for the organization admin for good. A hand
+   * create of a stock code under the entry's own target stays allowed: the import then adds the
+   * next version of the same target. Pure, so it runs before anything is read or written.
+   */
+  static assertStockCodeKeepsItsTarget(code: string, target: DashboardTemplateTarget): void {
+    const entry = STOCK_DASHBOARD_TEMPLATE_CATALOG.find((candidate) => candidate.code === code);
+    if (entry !== undefined && entry.target !== target) {
+      throw new ConflictException(
+        `Template code "${code}" is reserved for the stock ${entry.target} template; a ` +
+          `${target} template needs a code of its own`,
       );
     }
   }
