@@ -11,6 +11,7 @@ import {
   targetDefaultsToAssetGroup,
   templateWidgetsYieldsTopLevelThenTabWidgets,
   theTargetEnumAcceptsOrganization,
+  theOrganizationTargetRuleRefusesRoleBindings,
   theOrganizationTargetRuleRefusesTabsAndNonTiles,
   theTargetRuleNamesEachMismatch,
   acceptsAWidgetCarryingEitherKindAlone,
@@ -145,5 +146,9 @@ describe("F4.317 — the organization template target (ADR 0112 decision 2)", ()
 
   it("refuses tabs and every widget type but value_tile on the organization target", () => {
     theOrganizationTargetRuleRefusesTabsAndNonTiles();
+  });
+
+  it("refuses a role-bound tile on the organization target: it binds catalog sources only", () => {
+    theOrganizationTargetRuleRefusesRoleBindings();
   });
 });

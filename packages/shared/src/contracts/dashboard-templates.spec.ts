@@ -7,8 +7,10 @@ import {
   sectionTemplateWidgetSchema,
   stockDashboardTemplateDtoSchema,
   dashboardTemplateTargetSchema,
+  ORGANIZATION_TEMPLATE_ROLE_BINDINGS_MESSAGE,
   ORGANIZATION_TEMPLATE_TABS_MESSAGE,
   ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE,
+  templateTargetContentField,
   templateTargetContentMessage,
   templateWidgets,
 } from "./dashboard-templates";
@@ -520,5 +522,28 @@ export function theOrganizationTargetRuleRefusesTabsAndNonTiles(): void {
   assert(
     templateTargetContentMessage("asset_group", withLegend) === null,
     "the value-tiles rule is the organization target's alone: an asset-group template keeps its legend",
+  );
+}
+
+/**
+ * `F4.317` review — an organization has no asset group to resolve a role against (ADR 0112
+ * decision 2; the stock strip binds no role for that reason), so a role-bound tile is refused on
+ * this target, at create, PATCH, publish and instantiate alike: all four read this rule.
+ */
+export function theOrganizationTargetRuleRefusesRoleBindings(): void {
+  const roleBound = sectionTemplateContentSchema.parse({
+    widgets: [widget({ key: "a", sources: [METRIC] }), widget({ key: "b", bindings: [ROLE] })],
+  });
+  assert(
+    templateTargetContentMessage("organization", roleBound) === ORGANIZATION_TEMPLATE_ROLE_BINDINGS_MESSAGE,
+    "an organization template with a role-bound tile must be refused with the catalog-sources sentence",
+  );
+  assert(
+    templateTargetContentField(ORGANIZATION_TEMPLATE_ROLE_BINDINGS_MESSAGE) === "widgets",
+    "the role-bindings refusal is filed on content.widgets",
+  );
+  assert(
+    templateTargetContentMessage("asset_group", roleBound) === null,
+    "the role-bindings rule is the organization target's alone: an asset-group tile keeps its role",
   );
 }

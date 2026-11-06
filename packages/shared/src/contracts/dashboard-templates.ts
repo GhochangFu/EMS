@@ -465,13 +465,23 @@ export const ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE =
   "an organization template holds value tiles only in this phase, ADR 0112 decision 2";
 
 /**
+ * `F4.317` / ADR 0112 decision 2 — an organization has no asset group to resolve a role against,
+ * so its tiles bind catalog sources only. Refused here and not only at instantiate, so a draft
+ * with a role-bound tile is refused at create and PATCH before it can be published.
+ */
+export const ORGANIZATION_TEMPLATE_ROLE_BINDINGS_MESSAGE =
+  "an organization template binds catalog sources only; an organization has no asset group " +
+  "to resolve an asset role against";
+
+/**
  * The target rule — plan D4. `null` when `content` fits `target`, else the sentence to answer.
  *
  * One function and not a refinement on the content object, because the object cannot see the
  * target: the create body checks it where it carries both, and the service checks a `PATCH`,
  * a publish and an instantiation against the stored row's target. A site template with no tab
  * passes here: a draft may be incomplete, and publish refuses a template with no widget. An
- * organization template (`F4.317`) holds no tab and, in this phase, value tiles only.
+ * organization template (`F4.317`) holds no tab, in this phase value tiles only, and no role
+ * binding.
  */
 export function templateTargetContentMessage(
   target: z.infer<typeof dashboardTemplateTargetSchema>,
@@ -483,6 +493,9 @@ export function templateTargetContentMessage(
     if (content.tabs.length > 0) return ORGANIZATION_TEMPLATE_TABS_MESSAGE;
     if (content.widgets.some((widget) => widget.widgetType !== "value_tile")) {
       return ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE;
+    }
+    if (content.widgets.some((widget) => widget.bindings.length > 0)) {
+      return ORGANIZATION_TEMPLATE_ROLE_BINDINGS_MESSAGE;
     }
   }
   return null;
