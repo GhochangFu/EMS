@@ -81,43 +81,24 @@ export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
  * board. Where a name does not decide the role, this returns `null` and the
  * membership keeps its NULL — an admin sets it through `F3.37`'s picker.
  *
- * 1. **PHEWB's electrical assets carry a ruling rather than a reading, and
- *    `F3.41` is where it landed.** They are two meters (`PHE-MFM-*`) and four
- *    pumps (two mains `PHE-PUMP-M-*`, two chlorine dosing `PHE-PUMP-C-*`) per
- *    site. A meter is not a train position, so which code they fill was never a
- *    reading of a name the way `CR-XFMR-100KVA` is. `F3.40` added the `meter`
- *    and `pump` codes in migration `0060`; this is the other half.
+ * 1. **PHEWB's assets carry a ruling rather than a reading** (`F3.41`, amended by `F4.319` /
+ *    ADR 0113). Per site: two meters (`PHE-MFM-*`), two main pumps (`PHE-PUMP-M-*`), two
+ *    chlorine dosing pumps (`PHE-PUMP-C-*`) and two RTU-health units (`PHE-AIRSP1051M-*`).
  *
- *    **THE RULING, given by the repository owner on 2026-09-02 at the
- *    `build-operating-model.md` step 2 gate:** `PHE-MFM-*` fills `meter`, and
- *    **both** pump shapes fill `pump`. No `dosing-pump`, and therefore no
- *    migration — `0051` step 4 made the junction's role index deliberately NOT
- *    UNIQUE so one role may match several members, and `F3.40`'s own closure
- *    had already recorded the same reading of the same catalog. The two
- *    `PHE-AIRSP1051M-*` gateways per site stay NULL: they are `environment`
- *    domain and fit no electrical role, which is `F3.40`'s asymmetry argument —
- *    an unused role is easy to add and a wrong one is hard to retire.
+ *    **THE RULING, as ADR 0113 decision 4 leaves it (owner rulings Q3 and Q4, 2026-11-06):**
+ *    `PHE-MFM-*` fills `meter`, `PHE-PUMP-M-*` fills `pump`, `PHE-PUMP-C-*` fills
+ *    `dosing-pump`, and `PHE-AIRSP1051M-*` fills `rtu-controller` (migration `0127` adds both
+ *    codes). This reverses the 2026-09-02 ruling that gave both pump shapes one `pump` code: a
+ *    mimic node binds one role, so with one shared role the pump-station mimics could not show
+ *    the main pumps alone. The two pump shapes carry disjoint points (`breaker_main` and
+ *    `chlorine_pump_on`), so each binding of the stock electrical section template now resolves
+ *    on all of what it matches.
  *
- *    **THE CONSEQUENCE THE OWNER ACCEPTED, RECORDED BESIDE THE BRANCH THAT
- *    CAUSES IT.** One `pump` role matches four members per site carrying two
- *    **disjoint** point sets: `PHE-PUMP-M-*` registers only `breaker_main` and
- *    `PHE-PUMP-C-*` only `chlorine_pump_on`. So a `breaker_main` binding
- *    resolves on two of the four matched members and not on the other two, and
- *    a `chlorine_pump_on` binding does the reverse.
+ *    **The seed writes a role only while it is NULL** (the `COALESCE` below). A database seeded
+ *    before ADR 0113 holds `pump` on its chlorine pumps, so `0127` moves those rows, and only
+ *    in the seeded `electrical` group, and only while they still hold `pump`: a role an
+ *    administrator set stays.
  *
- *    That is a **reported** state and not a silent one — but which state it
- *    reports depends on the widget, and `outcomeOf` in
- *    `dashboard-templates-instantiate.service.ts` is why. It tests `truncated`
- *    **before** `partial`, so a cap-1 `value_tile` reports `truncated`, whose
- *    stated remedy is "the widget cannot hold them all — use another widget".
- *    That would be false here: the widget holds them fine, and two members
- *    simply carry no such point. A `chart` reports `partial` at 4 matched / 2
- *    bound, which is the honest word and the honest number. This is why
- *    `electrical-metered-pumping` puts both binaries on charts, and on two
- *    charts rather than one — see its docblock in `stock-catalog-electrical.ts`.
- *
- *    This is the same call case 2 below already makes for ESKOM's `ht-panel`,
- *    so the two readings now agree instead of one of them being a deferral.
  * 2. **`ht-panel`** matches nothing: the seeded estate steps 11 kV incomer →
  *    100 kVA transformer → 415 V bus, so it holds no HT panel. The stock
  *    electrical template's "HT Panel Load" chart therefore resolves nothing for
@@ -134,7 +115,8 @@ export async function backfillAssetLocations(pool: pg.Pool): Promise<void> {
  *    rack is `it-rack`, a room sensor `CR-ENV-*` is `indoor-air`, and the
  *    `CR-LEAK-*` / `CR-SMOKE-*` sensors take `0095`'s `leak-sensor` and
  *    `smoke-detector` (OQ6). Each reads the CODE as well as the domain, so the
- *    PHE gateways (`environment` domain, case 1) stay unroled. The UPS and
+ *    PHE RTU-health units (`environment` domain, case 1) take only their own
+ *    `rtu-controller` branch. The UPS and
  *    battery branches read the code and run AFTER the guard, because an
  *    electrical asset may still name a UPS and a room sensor named
  *    `CR-ENV-UPS-ROOM` is not a UPS. Since `F4.300` U4c (owner ruling
@@ -166,6 +148,12 @@ export function demoRoleForAsset(code: string, domain: string): string | null {
   if (domain === "environment" && code.startsWith("CR-SMOKE-")) {
     return "smoke-detector";
   }
+  // `F4.319` (ADR 0113 decision 4, ruling Q4) — the PHE RTU-health unit, environment domain only,
+  // so it runs before the guard below. Keyed on the code as well: a re-filed unit in another
+  // domain decides nothing, and no `CR-` sensor begins `PHE-`.
+  if (domain === "environment" && code.startsWith("PHE-AIRSP1051M-")) {
+    return "rtu-controller";
+  }
   if (domain !== "electrical") {
     return null;
   }
@@ -195,18 +183,20 @@ export function demoRoleForAsset(code: string, domain: string): string | null {
   // PHE code: `"PHE-PUMP-M-000000000"` holds no `UTILITY`, no `XFMR`, no
   // `MAIN-BUS` and no `MDB` — the `P-U-M-P-M` run does not produce one — no
   // `LIGHT-AUX`, and starts with neither `TX-` nor `PV-INV`; the `CR_BREAKER_ROLES`
-  // lookup is exact. And no ESKOM code begins `PHE-`, so these two cannot claim one
+  // lookup is exact. And no ESKOM code begins `PHE-`, so these branches cannot claim one
   // either. `asset-groups-seed.spec.ts` checks both directions per code rather
   // than leaving this comment as the only statement of it.
   if (code.startsWith("PHE-MFM-")) {
     return "meter";
   }
-  // ONE branch for both pump shapes, because the ruling gives them one code.
-  // Splitting it into `pump` and `dosing-pump` is a migration and reopens a
-  // decision `F3.40` closed — its closure states "One `pump` code and not also
-  // `dosing-pump`" and gives the reason.
-  if (code.startsWith("PHE-PUMP-")) {
+  // `F4.319` (ADR 0113 decision 4, ruling Q3) — one branch per pump shape. The 2026-09-02 ruling
+  // gave both shapes one `pump` code; ADR 0113 reverses it, so the main pumps keep `pump` and
+  // the chlorine dosing pumps take `dosing-pump`.
+  if (code.startsWith("PHE-PUMP-M-")) {
     return "pump";
+  }
+  if (code.startsWith("PHE-PUMP-C-")) {
+    return "dosing-pump";
   }
   // `F3.73` — case 3's code-keyed half, electrical only. No branch above claims
   // a UPS or battery code: none holds `UTILITY`, `XFMR`, `MAIN-BUS` or `MDB`.
@@ -250,8 +240,15 @@ const CR_BREAKER_ROLES: Readonly<Record<string, string>> = {
 export const IT_LOAD_GROUP_CODE = "IT_LOAD";
 
 /**
+ * `F4.319` (ADR 0113 decision 6, ruling Q4) — the group every PHE asset joins beside its domain
+ * group, so one overview mimic binds the meters, both pump shapes and the RTU-health units of a
+ * station. Domain NULL ({@link demoGroupDomain}): it stands for no one asset domain.
+ */
+export const PUMP_STATION_GROUP_CODE = "pump-station";
+
+/**
  * The demo groups an asset joins, derived from its domain and code — one per
- * asset, except an IT asset, which joins two.
+ * asset, except an IT asset and a PHE asset, which join two.
  *
  * **`IT_LOAD` is a second group and `it-rack` stays** (`F2.8`, plan §11
  * decision 2). Two readers name `it-rack` — `apps/web/src/lib/
@@ -265,6 +262,13 @@ export const IT_LOAD_GROUP_CODE = "IT_LOAD";
  * rather than restated in a test — the same reason `demoRoleForAsset` is.
  */
 export function demoGroupCodesForAsset(code: string, domain: string): readonly string[] {
+  const own = demoDomainGroupCodes(code, domain);
+  // The domain group first, so the `electrical` and `environment` groups do not change.
+  return code.startsWith("PHE-") ? [...own, PUMP_STATION_GROUP_CODE] : own;
+}
+
+/** The domain half of {@link demoGroupCodesForAsset}. */
+function demoDomainGroupCodes(code: string, domain: string): readonly string[] {
   if (domain === "hvac") {
     return ["hvac"];
   }
@@ -296,6 +300,8 @@ export function demoGroupName(groupCode: string): string {
       return "UPS & Battery";
     case IT_LOAD_GROUP_CODE:
       return "IT load (PUE)";
+    case PUMP_STATION_GROUP_CODE:
+      return "Pump station";
     default:
       return groupCode[0]!.toUpperCase() + groupCode.slice(1);
   }
@@ -311,6 +317,10 @@ export function demoGroupName(groupCode: string): string {
 export function demoGroupDomain(groupCode: string): string | null {
   switch (groupCode) {
     case IT_LOAD_GROUP_CODE:
+      return null;
+    // `F4.319` (ADR 0113 decision 6): it holds two asset domains, so it stands for none. Explicit,
+    // although `pump-station` is no `bms.asset_domains` code and would write NULL anyway.
+    case PUMP_STATION_GROUP_CODE:
       return null;
     // Still `electrical` after `F4.300` U4c moved its members to the `ups` asset
     // domain: the stock `smoc-standard` site template binds its `ups` tab to an
@@ -349,6 +359,12 @@ function demoGroupDescription(groupCode: string): string {
     return (
       "Seeded IT load group (F2.8 ruling 2). The reserved code the site incomer's " +
       "it_kw formula resolves through @group('IT_LOAD'); one per site."
+    );
+  }
+  if (groupCode === PUMP_STATION_GROUP_CODE) {
+    return (
+      "Seeded pump-station group (F4.319, ADR 0113 decision 6). Every asset of the station — " +
+      "meters, main pumps, chlorine dosing pumps and RTU-health units — for the overview mimic."
     );
   }
   return "Seeded operational asset group for scoped access demos.";

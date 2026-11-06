@@ -346,8 +346,10 @@ describe("E4.3 U11 — the water domain reaches the RTU and group derivations", 
     const source = read("packages/db/src/asset-groups-seed.ts")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/\/\/[^\n]*/g, "");
-    const start = source.indexOf("export function demoGroupCodesForAsset(");
-    if (start < 0) throw new Error("demoGroupCodesForAsset is missing from asset-groups-seed.ts");
+    // `F4.319` moved the domain branches into `demoDomainGroupCodes`, which `demoGroupCodesForAsset`
+    // calls before it adds the PHE `pump-station` group (ADR 0113 decision 6).
+    const start = source.indexOf("function demoDomainGroupCodes(");
+    if (start < 0) throw new Error("demoDomainGroupCodes is missing from asset-groups-seed.ts");
     const body = source.slice(start, source.indexOf("\n}\n", start)).replace(/\s+/g, " ");
     expect(body).toContain('if (domain === "water") { return ["water"]; }');
   });

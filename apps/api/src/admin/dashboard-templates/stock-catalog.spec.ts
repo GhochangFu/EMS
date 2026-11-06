@@ -112,7 +112,8 @@ const seededRoles = (): string[] => [
   ...seededCodes(
     read("packages/db/drizzle/0097_point_key_states_breaker_roles_asset_rating_and_layout_flags.sql"),
     "asset_roles",
-  ),
+  ),  // `F4.319` (ADR 0113 decision 3) — `dosing-pump` and `rtu-controller`.
+  ...seededCodes(read("packages/db/drizzle/0127_pump_station_roles.sql"), "asset_roles"),
 ];
 
 export function runStockCatalogTests(): void {
@@ -580,4 +581,25 @@ export function runStockCatalogCodesMatchTheParamCharsetTests(): void {
         "the card links to /admin/dashboard-templates/stock/<code> unencoded",
     );
   }
+}
+
+/**
+ * `F4.319` (ADR 0113 decision 5) — `electrical-metered-pumping` is stock version 2, and its two
+ * pump charts bind one role each: the main pumps' `breaker_main` on `pump`, the chlorine pumps'
+ * `chlorine_pump_on` on `dosing-pump`. Version 1 bound both on `pump`.
+ */
+export function runMeteredPumpingRoleSplitTest(): void {
+  const entry = STOCK_DASHBOARD_TEMPLATE_CATALOG.find((row) => row.code === "electrical-metered-pumping");
+  if (entry === undefined) throw new Error("electrical-metered-pumping is not in the stock catalog");
+  assert(entry.stockVersion === 2, `electrical-metered-pumping must be stockVersion 2 — got ${String(entry.stockVersion)}`);
+  const byKey = new Map(
+    templateWidgets(entry.content).flatMap((widget) =>
+      widget.bindings.map((binding) => [binding.pointKey, binding.assetRoleCode] as const),
+    ),
+  );
+  assert(byKey.get("breaker_main") === "pump", `breaker_main binds ${String(byKey.get("breaker_main"))}, not pump`);
+  assert(
+    byKey.get("chlorine_pump_on") === "dosing-pump",
+    `chlorine_pump_on binds ${String(byKey.get("chlorine_pump_on"))}, not dosing-pump`,
+  );
 }

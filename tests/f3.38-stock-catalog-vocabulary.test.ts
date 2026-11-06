@@ -167,6 +167,8 @@ const ROLE_MIGRATION_RELS = [
   "packages/db/drizzle/0095_site_template_target_and_group_domain.sql",
   // `F3.74` — the five breaker roles the control-room breakers take (D10).
   "packages/db/drizzle/0097_point_key_states_breaker_roles_asset_rating_and_layout_flags.sql",
+  // `F4.319` (ADR 0113) — `dosing-pump` and `rtu-controller`, the pump-station roles.
+  "packages/db/drizzle/0127_pump_station_roles.sql",
 ] as const;
 
 /** The seeded role codes, spelled as one list for an assertion message. */
@@ -421,8 +423,9 @@ describe("F3.38 the stock template catalog binds names that exist", () => {
     // 30 since `F3.73` (0095's `leak-sensor` and `smoke-detector`) — 28 before it. **55 since
     // `F3.73` Task 4.1**: 30 + `0087`'s 7 water-train roles (two spelled with `_`, which the row
     // regex now admits) + `0089`'s 18 domain roles. Measured, not derived. **60 since `F3.74`**:
-    // 55 + `0097`'s five breaker roles.
-    expect(roles.size, `no role codes parsed out of ${ROLE_MIGRATIONS_LABEL}`).toBe(60);
+    // 55 + `0097`'s five breaker roles. **62 since `F4.319`**: 60 + `0127`'s `dosing-pump` and
+    // `rtu-controller` (ADR 0113 decision 3).
+    expect(roles.size, `no role codes parsed out of ${ROLE_MIGRATIONS_LABEL}`).toBe(62);
   });
 
   // `F3.73` — the SMOC site layout's bindings sit in the third file, above its `section:` line.
