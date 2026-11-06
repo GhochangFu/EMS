@@ -75,6 +75,9 @@ export const METRIC_CATALOG_PARAMS_WRITE: Record<MetricCatalogKey, z.AnyZodObjec
   // `F3.73` — both resolve over the dashboard's (or the tab's) scope and take no params.
   "assets.offline.count": z.object({}).strict(),
   "assets.list": z.object({}).strict(),
+  "sites.live.count": z.object({}).strict(),
+  "pue.ratio": z.object({}).strict(),
+  "alarms.critical.count": z.object({}).strict(),
 };
 
 /**

@@ -45,6 +45,11 @@ export const metricCatalogValueDtoSchema = z.discriminatedUnion("shape", [
     unit: z.string().nullable(),
     coverage: rollupCoverageSchema.optional(),
     currency: z.string().nullable().optional(),
+    // `F4.317` / ADR 0112 decision 8 — the value at the same instant 24 h before the resolve
+    // (ADR 0074 decision 5), on the metric's own definition. Optional: a resolve computes it
+    // only for a tile that asks (`compareToPrevious`, owner ruling Q5), and `value` is null
+    // when there was nothing to read then.
+    prior: z.object({ asOf: z.string(), value: z.number().nullable() }).readonly().optional(),
   }),
   z.object({
     shape: z.literal("dataset"),
