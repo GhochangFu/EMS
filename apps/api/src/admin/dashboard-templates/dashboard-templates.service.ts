@@ -148,7 +148,7 @@ export class DashboardTemplatesService {
   }
 
   async create(jwt: JwtPayload, body: CreateDashboardTemplateBody): Promise<DashboardTemplateDto> {
-    await this.assertCanAuthor(jwt, body.organizationId);
+    await this.assertCanAuthor(jwt, body.organizationId, body.target);
     await this.assertSection(body.section);
 
     // The only one of the eight that reads no row: it parses a constant literal
@@ -232,7 +232,7 @@ export class DashboardTemplatesService {
     body: UpdateDashboardTemplateBody,
   ): Promise<DashboardTemplateDto> {
     const template = await this.fetchRow(id);
-    await this.assertCanAuthor(jwt, template.organizationId);
+    await this.assertCanAuthor(jwt, template.organizationId, template.target as DashboardTemplateTarget);
     this.assertDraft(template, "edited");
 
     if (body.section !== undefined) {
@@ -308,7 +308,7 @@ export class DashboardTemplatesService {
    */
   async publish(jwt: JwtPayload, id: string): Promise<DashboardTemplateDto> {
     const template = await this.fetchRow(id);
-    await this.assertCanAuthor(jwt, template.organizationId);
+    await this.assertCanAuthor(jwt, template.organizationId, template.target as DashboardTemplateTarget);
     this.assertTransition(template, "published");
 
     const content = parseStoredContract(
@@ -420,7 +420,7 @@ export class DashboardTemplatesService {
 
   async archive(jwt: JwtPayload, id: string): Promise<DashboardTemplateDto> {
     const template = await this.fetchRow(id);
-    await this.assertCanAuthor(jwt, template.organizationId);
+    await this.assertCanAuthor(jwt, template.organizationId, template.target as DashboardTemplateTarget);
     this.assertTransition(template, "archived");
 
     const now = new Date();
@@ -464,7 +464,7 @@ export class DashboardTemplatesService {
    */
   async createDraftFrom(jwt: JwtPayload, id: string): Promise<DashboardTemplateDto> {
     const template = await this.fetchRow(id);
-    await this.assertCanAuthor(jwt, template.organizationId);
+    await this.assertCanAuthor(jwt, template.organizationId, template.target as DashboardTemplateTarget);
     const createdBy = await this.resolveCreatedBy(jwt);
     // Only a published version may be branched: a draft is already editable,
     // and an archived one is frozen for the dashboards pinned to it.
@@ -532,7 +532,7 @@ export class DashboardTemplatesService {
    * carries no `ON DELETE` precisely so that a mistake fails loudly. */
   async deleteDraft(jwt: JwtPayload, id: string): Promise<void> {
     const template = await this.fetchRow(id);
-    await this.assertCanAuthor(jwt, template.organizationId);
+    await this.assertCanAuthor(jwt, template.organizationId, template.target as DashboardTemplateTarget);
     this.assertDraft(template, "deleted");
 
     await withTenant(this.tenantDb, template.organizationId, async (tx) => {
@@ -595,7 +595,9 @@ export class DashboardTemplatesService {
 
   /**
    * Author permission: org-scoped, `location_admin` excluded — ADR 0015 §7, the
-   * same rule `AssetTemplatesService.assertCanAuthor` applies.
+   * same rule `AssetTemplatesService.assertCanAuthor` applies — except on the `organization`
+   * target (`F4.317`, ADR 0112 decision 5), where `canManageOrganization` decides. `target` is
+   * the body's on a create and the stored row's on every other write.
    *
    * **This used `canManageOrganization` and that was an authorization gap.**
    * That predicate resolves through `writableOrganizationIds`, which for a
@@ -611,8 +613,23 @@ export class DashboardTemplatesService {
    * the server exactly" and hides the controls from `location_admin`, so the
    * request was never sent. Found by the `F3.36` security review.
    */
-  async assertCanAuthor(jwt: JwtPayload, organizationId: string): Promise<void> {
+  async assertCanAuthor(
+    jwt: JwtPayload,
+    organizationId: string,
+    target: DashboardTemplateTarget,
+  ): Promise<void> {
     const user = await this.accessControl.requireMasterDataUser(jwt);
+    // `F4.317` / ADR 0112 decision 5 — the one narrow grant: a `location_admin` of the
+    // organization may change its organization strip, so for that target the role is not refused
+    // and `canManageOrganization` (its location-derived organizations) decides. Every other
+    // target keeps the refusal above. `requireMasterDataUser` already refused every role outside
+    // admin, organization_admin and location_admin, so an asset-group admin never reaches here.
+    if (target === "organization") {
+      if (!(await this.accessControl.canManageOrganization(jwt, organizationId))) {
+        throw new ForbiddenException("Organization is outside your access scope");
+      }
+      return;
+    }
     if (user.role === "location_admin") {
       throw new ForbiddenException("Location admins cannot author dashboard templates");
     }

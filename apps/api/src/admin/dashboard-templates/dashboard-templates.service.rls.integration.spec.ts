@@ -1,3 +1,4 @@
+import { ForbiddenException } from "@nestjs/common";
 import { expect } from "vitest";
 
 import type pg from "pg";
@@ -200,4 +201,107 @@ export async function assertUnknownSectionIsA400NamingTheLiveSet(
       section: "not-a-section",
     } as Parameters<DashboardTemplatesService["create"]>[1]),
   ).rejects.toThrow(/Unknown dashboard section[\s\S]*electrical/i);
+}
+
+/**
+ * `F4.317` / ADR 0112 decision 5 — who may author an `organization`-target template.
+ *
+ * The narrow grant: a `location_admin` of the organization authors its organization templates
+ * (create, edit, publish), because the organization strip is theirs to change too. Every other
+ * target keeps ADR 0015 §7's refusal of the role, a foreign organization stays out of scope, and
+ * an asset-group-scoped user is no master-data role at all.
+ */
+export async function assertLocationAdminAuthorsItsOwnOrganizationTemplate(
+  service: DashboardTemplatesService,
+  locationAdmin: JwtPayload,
+  organizationId: string,
+  code: string,
+): Promise<string> {
+  const created = await service.create(locationAdmin, {
+    organizationId,
+    code,
+    name: "F4.317 organization strip",
+    section: "organization",
+    target: "organization",
+    content: {
+      widgets: [
+        {
+          key: "alarms-tile",
+          title: "Open alarms",
+          gridX: 0,
+          gridY: 0,
+          gridW: 3,
+          gridH: 2,
+          bindings: [],
+          sources: [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: {},
+        },
+      ],
+      tabs: [],
+    },
+  } as Parameters<DashboardTemplatesService["create"]>[1]);
+  expect(created.target, "the created row must be the organization target").toBe("organization");
+  const renamed = await service.update(locationAdmin, created.id, { name: "F4.317 organization strip, renamed" });
+  expect(renamed.name).toBe("F4.317 organization strip, renamed");
+  const published = await service.publish(locationAdmin, created.id);
+  expect(published.status, "the location admin must be able to publish its organization template").toBe("published");
+  return created.id;
+}
+
+/** The same role is still refused a `site` template of its own organization (ADR 0015 §7, kept). */
+export async function assertLocationAdminIsStillRefusedASiteTemplate(
+  service: DashboardTemplatesService,
+  locationAdmin: JwtPayload,
+  organizationId: string,
+  code: string,
+): Promise<void> {
+  await expect(
+    service.create(locationAdmin, {
+      organizationId,
+      code,
+      name: "F4.317 site template the location admin may not author",
+      section: "site",
+      target: "site",
+    } as Parameters<DashboardTemplatesService["create"]>[1]),
+    "a location admin must still be refused a site template",
+  ).rejects.toThrow(/Location admins cannot author/);
+}
+
+/** An organization template of ANOTHER organization is outside the location admin's scope. */
+export async function assertLocationAdminIsRefusedAForeignOrganizationTemplate(
+  service: DashboardTemplatesService,
+  locationAdmin: JwtPayload,
+  foreignOrganizationId: string,
+  code: string,
+): Promise<void> {
+  await expect(
+    service.create(locationAdmin, {
+      organizationId: foreignOrganizationId,
+      code,
+      name: "F4.317 foreign organization strip",
+      section: "organization",
+      target: "organization",
+    } as Parameters<DashboardTemplatesService["create"]>[1]),
+    "a location admin must be refused another organization's organization template",
+  ).rejects.toThrow(/outside your access scope/i);
+}
+
+/** An asset-group admin may not author an organization template: it is no master-data role. */
+export async function assertAssetGroupAdminIsRefusedAnOrganizationTemplate(
+  service: DashboardTemplatesService,
+  assetGroupAdmin: JwtPayload,
+  organizationId: string,
+  code: string,
+): Promise<void> {
+  await expect(
+    service.create(assetGroupAdmin, {
+      organizationId,
+      code,
+      name: "F4.317 asset-group admin strip",
+      section: "organization",
+      target: "organization",
+    } as Parameters<DashboardTemplatesService["create"]>[1]),
+    "an asset-group admin must be refused an organization template",
+  ).rejects.toThrow(ForbiddenException);
 }

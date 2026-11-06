@@ -84,9 +84,11 @@ export class DashboardTemplatesStockService {
     code: string,
     organizationId: string,
   ): Promise<DashboardTemplateDto> {
-    await this.templates.assertCanAuthor(jwt, organizationId);
-
+    // `F4.317` — authorship depends on the entry's target (ADR 0112 decision 5), so the entry is
+    // found first; an unknown code is still authorized before it is refused, as an asset-group
+    // entry, so a caller who may not author learns nothing from the 400.
     const entry = STOCK_DASHBOARD_TEMPLATE_CATALOG.find((candidate) => candidate.code === code);
+    await this.templates.assertCanAuthor(jwt, organizationId, entry?.target ?? "asset_group");
     if (!entry) {
       throw new BadRequestException(
         `Unknown stock template "${code}". Available: ${STOCK_DASHBOARD_TEMPLATE_CATALOG.map(

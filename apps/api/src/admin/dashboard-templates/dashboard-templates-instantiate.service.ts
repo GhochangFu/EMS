@@ -421,7 +421,7 @@ export class DashboardTemplatesInstantiateService {
     body: InstantiateSiteTemplateBody,
   ): Promise<SiteTemplateArmResult> {
     const { template, target } = await this.loadPublished(jwt, templateId, body);
-    await this.templates.assertCanAuthor(jwt, template.organizationId);
+    await this.templates.assertCanAuthor(jwt, template.organizationId, target);
     const content = this.parseContent(template.content);
     this.templates.assertContentFitsTarget(target, content);
     if (templateWidgets(content).length === 0) {
