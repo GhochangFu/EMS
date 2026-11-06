@@ -1,10 +1,14 @@
 import type {
+  OrganizationControlRoomViewDto,
+  OrganizationLayoutResultDto,
   ResolvedSiteControlRoomViewDto,
   SiteLayoutAmbiguousDto,
   SiteLayoutBody,
   SiteLayoutResultDto,
 } from "@bms/shared";
 import {
+  organizationControlRoomViewDtoSchema,
+  organizationLayoutResultDtoSchema,
   resolvedSiteControlRoomViewDtoSchema,
   siteLayoutAmbiguousDtoSchema,
   siteLayoutResultDtoSchema,
@@ -118,4 +122,67 @@ export function ambiguousTabsOf(text: string): SiteLayoutAmbiguousDto["ambiguous
   }
   const result = siteLayoutAmbiguousDtoSchema.safeParse(parsed);
   return result.success && result.data.ambiguous.length > 0 ? result.data.ambiguous : null;
+}
+
+/**
+ * `F4.317` task 5.1 (ADR 0112 decisions 3 to 5) — `GET /api/v1/control-room/organizations/
+ * :organizationId/view`, the organization strip's read: the stock template's content, or the
+ * organization's own layout, every tile resolved over the caller's readable assets. A 404 (an
+ * organization the caller cannot read) throws `ApiError` with the status.
+ */
+export async function fetchOrganizationControlRoomView(
+  organizationId: string,
+): Promise<OrganizationControlRoomViewDto> {
+  const sent = withAuth();
+  const res = await fetch(
+    `${base}/api/v1/control-room/organizations/${encodeURIComponent(organizationId)}/view`,
+    sent,
+  );
+  if (!res.ok) {
+    throw new ApiError((await res.text()) || `control-room/organizations/:id/view ${res.status}`, res.status);
+  }
+  return checkResponse(
+    organizationControlRoomViewDtoSchema,
+    await res.json(),
+    "control-room/organizations/:id/view",
+  );
+}
+
+/**
+ * "Make organization layout" — `PUT …/view` with an empty body (the newest published
+ * `organization` template). Every refusal, the 409 "Reset to default first" included, throws
+ * `ApiError` carrying the whole body for `apiErrorMessage`. A 401 clears the session.
+ */
+export async function makeOrganizationLayout(organizationId: string): Promise<OrganizationLayoutResultDto> {
+  const sent = withAuth({
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const res = await fetch(
+    `${base}/api/v1/control-room/organizations/${encodeURIComponent(organizationId)}/view`,
+    sent,
+  );
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new ApiError((await res.text()) || `control-room/organizations/:id/view ${res.status}`, res.status);
+  }
+  return checkResponse(
+    organizationLayoutResultDtoSchema,
+    await res.json(),
+    "control-room/organizations/:id/view",
+  );
+}
+
+/** "Reset to default" — `DELETE …/view` (204); the copy stays, only the pointer row goes. */
+export async function resetOrganizationLayout(organizationId: string): Promise<void> {
+  const sent = withAuth({ method: "DELETE" });
+  const res = await fetch(
+    `${base}/api/v1/control-room/organizations/${encodeURIComponent(organizationId)}/view`,
+    sent,
+  );
+  if (!res.ok) {
+    clearSessionOnAuthFailure(res, sent);
+    throw new ApiError((await res.text()) || `control-room/organizations/:id/view ${res.status}`, res.status);
+  }
 }
