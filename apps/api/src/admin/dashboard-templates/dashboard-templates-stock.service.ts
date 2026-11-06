@@ -84,9 +84,11 @@ export class DashboardTemplatesStockService {
     code: string,
     organizationId: string,
   ): Promise<DashboardTemplateDto> {
-    await this.templates.assertCanAuthor(jwt, organizationId);
-
+    // `F4.317` — authorship depends on the entry's target (ADR 0112 decision 5), so the entry is
+    // found first; an unknown code is still authorized before it is refused, as an asset-group
+    // entry, so a caller who may not author learns nothing from the 400.
     const entry = STOCK_DASHBOARD_TEMPLATE_CATALOG.find((candidate) => candidate.code === code);
+    await this.templates.assertCanAuthor(jwt, organizationId, entry?.target ?? "asset_group");
     if (!entry) {
       throw new BadRequestException(
         `Unknown stock template "${code}". Available: ${STOCK_DASHBOARD_TEMPLATE_CATALOG.map(
@@ -103,6 +105,8 @@ export class DashboardTemplatesStockService {
     const createdBy = await this.templates.resolveCreatedBy(jwt);
 
     const created = await withTenant(this.tenantDb, organizationId, async (tx) => {
+      // `F4.317` review — a re-import adds a version, so the code must hold no other target.
+      await DashboardTemplatesService.assertCodeKeepsItsTarget(tx, organizationId, entry.code, entry.target);
       const [{ next } = { next: 1 }] = await tx
         .select({ next: sql<number>`COALESCE(MAX(${dashboardTemplates.version}), 0)::int + 1` })
         .from(dashboardTemplates)

@@ -16,6 +16,11 @@
  * (`description`, `tabGroups`, the other arm's key) is shown as text when the
  * copilot fills it.
  *
+ * **`F4.317` — the third arm, `{ organizationId }`** (ADR 0112 decision 4). An organization
+ * template copies onto its own organization, so the values are seeded with the template's
+ * `organizationId` and neither step has an input. The API's arm is a seam until F4.317 PR 4
+ * wires the copy action (it answers 501), so the wizard refuses before the wire and says so.
+ *
  * Moved out of `dashboard-template-detail-page.tsx` to keep that page under the
  * AGENTS.md §4.5 cap. It sends no `X-Copilot-Change` header (plan §10.5).
  */
@@ -55,9 +60,14 @@ const ORGANIZATION_WIDE = "__organization_wide__";
 /** The API's `E4.2` refusal (`dashboard-templates-instantiate.service.ts`), said before the wire. */
 const ROLE_BINDINGS_NEED_A_GROUP = "A template with role bindings needs an asset group";
 
+/** `F4.317` — said in place of a send while the API's organization arm is a seam (PR 4 wires it). */
+const ORGANIZATION_ARM_NOT_YET =
+  "Making an organization layout from a template is not available yet: use the organization's Control Room page";
+
 const FIELD_LABELS: Record<string, string> = {
   assetGroupId: "Asset group",
   locationId: "Location",
+  organizationId: "Organization",
   tabGroups: "Tab groups",
   name: "Name",
   slug: "Slug",
@@ -102,9 +112,15 @@ export function InstantiateWizard({
   renderReport: (result: InstantiateSectionTemplateResponse) => ReactNode;
 }) {
   const isSite = template.target === "site";
-  // The site arm takes no name or slug, so nothing is seeded for it.
+  const isOrganization = template.target === "organization";
+  // The site arm takes no name or slug, so nothing is seeded for it; the organization arm's one
+  // field is the template's own organization.
   const [values, setValues] = useState<Record<string, unknown>>(() =>
-    isSite ? {} : { name: `${template.name} dashboard` },
+    isOrganization
+      ? { organizationId: template.organizationId }
+      : isSite
+        ? {}
+        : { name: `${template.name} dashboard` },
   );
   const [error, setError] = useState<string | null>(null);
   const [answer, setAnswer] = useState<Answer | null>(null);
@@ -112,7 +128,7 @@ export function InstantiateWizard({
   const groupsQ = useQuery({
     queryKey: ["admin", "asset-groups", "all"],
     queryFn: () => fetchAdminAssetGroups(),
-    enabled: !isSite,
+    enabled: !isSite && !isOrganization,
   });
   const groups = groupsQ.data?.items ?? [];
   const locationsQ = useSiteLocations(template, isSite);
@@ -156,6 +172,7 @@ export function InstantiateWizard({
   function refusal(body: Record<string, unknown>): string | null {
     const targetMessage = templateTargetBodyMessage(template.target, body as InstantiateSectionTemplateBody);
     if (targetMessage !== null) return targetMessage;
+    if (isOrganization) return ORGANIZATION_ARM_NOT_YET;
     if (!isSite && bindsARole && body.assetGroupId === null) return ROLE_BINDINGS_NEED_A_GROUP;
     return null;
   }
@@ -170,13 +187,18 @@ export function InstantiateWizard({
   const set = (field: string, value: unknown) => update({ ...values, [field]: value === "" ? undefined : value });
 
   function renderStep(step: WizardStep): ReactNode {
-    if (step.id === "target") return isSite ? renderSiteTarget() : renderGroupTarget();
+    if (step.id === "target") {
+      if (isOrganization) return renderOrganizationTarget();
+      return isSite ? renderSiteTarget() : renderGroupTarget();
+    }
     if (step.id !== "details") return null;
-    if (isSite) {
+    if (isSite || isOrganization) {
       return (
         <>
           <p className="text-[11px] text-ink-muted">
-            A site layout takes no name or slug: the copy is named for its site.
+            {isSite
+              ? "A site layout takes no name or slug: the copy is named for its site."
+              : "An organization layout takes no name or slug: the copy is named for its organization."}
           </p>
           {filledNotes(values, ["name", "slug", "description"])}
         </>
@@ -254,6 +276,19 @@ export function InstantiateWizard({
           </select>
         </label>
         {filledNotes(values, ["locationId", "tabGroups"])}
+      </>
+    );
+  }
+
+  /** `F4.317` — no choice to make: the copy lands on the template's own organization. */
+  function renderOrganizationTarget(): ReactNode {
+    return (
+      <>
+        <p className="text-[11px] text-ink-muted">
+          An organization template is copied onto one organization-wide dashboard of its own
+          organization: the strip at the top of that organization&apos;s Control Room page.
+        </p>
+        {filledNotes(values, ["assetGroupId", "locationId", "tabGroups"])}
       </>
     );
   }

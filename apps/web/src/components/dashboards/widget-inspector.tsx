@@ -14,7 +14,11 @@ import type { DashboardBuilderProblem, DashboardWidgetRow } from "../../lib/dash
 import { mimicTabSelectShown } from "../../lib/dashboard-builder-mimic-tab";
 import { useMimicLayouts } from "../../hooks/use-mimic-layouts";
 import { metricCatalogLabel } from "../../lib/metric-catalog";
-import { WIDGET_CATALOG } from "../../lib/widget-catalog";
+import {
+  showsValueTileSecondMetricNote,
+  VALUE_TILE_SECOND_METRIC_NOTE,
+  WIDGET_CATALOG,
+} from "../../lib/widget-catalog";
 import {
   AGGREGATE_FUNCTION_LABELS,
   AGGREGATE_FUNCTIONS,
@@ -825,6 +829,9 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
               bound={row.sources.map((source) => source.catalogKey)}
               onAdd={addSource}
             />
+          ) : null}
+          {showsValueTileSecondMetricNote(row.widgetType, row.sources.length) ? (
+            <p className="mt-1 text-[11px] text-ink-muted">{VALUE_TILE_SECOND_METRIC_NOTE}</p>
           ) : null}
           {/*
             The column picker (ADR 0048 decision 2), shown only once a dataset is actually

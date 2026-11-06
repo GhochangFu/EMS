@@ -288,3 +288,19 @@ export const CHART_SERIES: Readonly<Record<ChartSeriesKind, { readonly label: st
   bar: { label: "Comparison bars", type: "bar", area: false },
   scatter: { label: "Scatter", type: "scatter", area: false },
 };
+
+/**
+ * `F4.317` review — a value tile takes two named metrics since ruling Q1b (ADR 0112 Amendment 1),
+ * but every tile renderer draws only its sortOrder-0 metric (`catalogWidgetData`). The second is
+ * for the organization strip's Open alarms tile, which draws `alarms.critical.count` as its
+ * critical note. The dashboard inspector and the template widget editor show this sentence once
+ * a tile holds a metric, so a second binding is never dropped without a word.
+ */
+export const VALUE_TILE_SECOND_METRIC_NOTE =
+  "Only the first metric is drawn on a tile. A second metric is for the organization strip's " +
+  "Open alarms tile, which draws it as the critical note.";
+
+/** Whether the metric block shows `VALUE_TILE_SECOND_METRIC_NOTE`. */
+export function showsValueTileSecondMetricNote(widgetType: WidgetType, sourceCount: number): boolean {
+  return widgetType === "value_tile" && sourceCount > 0;
+}

@@ -124,13 +124,16 @@ export const DASHBOARD_TEMPLATE_ENTRIES: readonly CatalogEntry[] = [
     ],
     formulas: [],
     steps: [
-      { id: "target", title: "Target", fields: ["assetGroupId", "locationId", "tabGroups"] },
+      // `F4.317` — `organizationId` is the organization arm's one field (ADR 0112 decision 4).
+      { id: "target", title: "Target", fields: ["assetGroupId", "locationId", "tabGroups", "organizationId"] },
       { id: "details", title: "Details", fields: ["name", "slug", "description"] },
     ],
     summary: ({ body, targetName }) =>
-      "locationId" in body
-        ? `Make the site layout of the template ${quoted(targetName)} for one site.`
-        : `Make the dashboard ${quoted(text(body, "name"))} from the template ${quoted(targetName)}.`,
+      "organizationId" in body
+        ? `Make the organization layout of the template ${quoted(targetName)} for its organization.`
+        : "locationId" in body
+          ? `Make the site layout of the template ${quoted(targetName)} for one site.`
+          : `Make the dashboard ${quoted(text(body, "name"))} from the template ${quoted(targetName)}.`,
   },
   {
     id: "dashboardTemplate.importStock",

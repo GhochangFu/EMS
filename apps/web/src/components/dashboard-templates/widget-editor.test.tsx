@@ -10,6 +10,8 @@ import {
   theGroupBySelectRendersOnlyForByLocation,
   theOptionsRunToTheMaxDepth,
   hidesTheBlockForATypeThatBindsNoMetric,
+  hidesTheSecondMetricNoteOnATileWithNoMetric,
+  showsTheSecondMetricNoteOnceATileHasAMetric,
   hidesTheMetricPickerAtTheCardinalityMax,
   hidesTheMetricPickerOnceARoleIsBound,
   hidesTheRolePickerOnceAMetricIsBound,
@@ -110,5 +112,20 @@ describe("F2.10 WidgetEditor — groupDepth for sustainability.by_location", () 
 
   it("G5 the options run from 1 to LOCATION_TREE_MAX_DEPTH", () => {
     theOptionsRunToTheMaxDepth();
+  });
+});
+
+describe("F4.317 WidgetEditor — a value tile's second metric", () => {
+  afterEach(() => {
+    cleanup();
+    vi.restoreAllMocks();
+  });
+
+  it("notes that only the first metric is drawn once a tile has one", () => {
+    showsTheSecondMetricNoteOnceATileHasAMetric();
+  });
+
+  it("shows no note on a tile with no metric", () => {
+    hidesTheSecondMetricNoteOnATileWithNoMetric();
   });
 });

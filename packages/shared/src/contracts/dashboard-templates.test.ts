@@ -11,6 +11,8 @@ import {
   targetDefaultsToAssetGroup,
   templateWidgetsYieldsTopLevelThenTabWidgets,
   theTargetEnumAcceptsOrganization,
+  theOrganizationTargetRuleRefusesRoleBindings,
+  theOrganizationTargetRuleRefusesTabsAndNonTiles,
   theTargetRuleNamesEachMismatch,
   acceptsAWidgetCarryingEitherKindAlone,
   acceptsAWidgetCarryingNeitherKind,
@@ -22,7 +24,9 @@ import {
   rejectsAnySourceOnAChart,
   rejectsBothKindsInsideSectionTemplateContentSchema,
   rejectsTheSameColumnChosenTwice,
-  rejectsTwoSourcesOnAValueTile,
+  rejectsThreeSourcesOnAValueTile,
+  acceptsTwoMetricSourcesOnAValueTile,
+  rejectsTheSameKeyTwiceOnATemplateWidget,
   tableWithColumnsSetButNoSourceDoesNotThrow,
   widgetSchemaDescribesShapeCapAndColumnsRules,
 } from "./dashboard-templates.spec";
@@ -60,8 +64,16 @@ describe("F3.61 Amendment 1 — a template widget's sources fit its shape, its c
     rejectsAnySourceOnAChart();
   });
 
-  it("case 8: rejects two sources on a value_tile", () => {
-    rejectsTwoSourcesOnAValueTile();
+  it("case 8: rejects three sources on a value_tile (its cap is 2 since F4.317)", () => {
+    rejectsThreeSourcesOnAValueTile();
+  });
+
+  it("accepts two metric sources on a value_tile (F4.317 ruling Q1b)", () => {
+    acceptsTwoMetricSourcesOnAValueTile();
+  });
+
+  it("refuses the same catalog key twice on one template widget (F4.317)", () => {
+    rejectsTheSameKeyTwiceOnATemplateWidget();
   });
 
   it("case 9: rejects a table column its bound dataset does not declare", () => {
@@ -130,5 +142,13 @@ describe("F3.73 — the site target and content tabs (plan D4)", () => {
 describe("F4.317 — the organization template target (ADR 0112 decision 2)", () => {
   it("accepts organization as a third target and refuses an unknown one", () => {
     theTargetEnumAcceptsOrganization();
+  });
+
+  it("refuses tabs and every widget type but value_tile on the organization target", () => {
+    theOrganizationTargetRuleRefusesTabsAndNonTiles();
+  });
+
+  it("refuses a role-bound tile on the organization target: it binds catalog sources only", () => {
+    theOrganizationTargetRuleRefusesRoleBindings();
   });
 });

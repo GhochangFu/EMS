@@ -139,9 +139,9 @@ export async function addingAMetricPatchesSourcesWithEmptyParams(): Promise<void
 }
 
 /*
- * Case 5 — deliberately not written. An "appends after existing sources" case collapses into
- * case 4: measured, no widget type allows two sources (`WIDGET_SOURCE_CARDINALITY.max` is 0
- * or 1 for every type). Recorded so the next reader does not add it.
+ * Case 5 — deliberately not written when it was measured: no widget type then allowed two
+ * sources (`WIDGET_SOURCE_CARDINALITY.max` was 0 or 1 for every type). `F4.317` raised the
+ * tile's to 2 (ruling Q1b); case 9 now binds two.
  */
 
 /** Case 6 — remove patches `sources` only; no `config` clear (plan §5.3). */
@@ -179,9 +179,13 @@ export function hidesTheMetricPickerOnceARoleIsBound(): void {
   expect(screen.getByRole("combobox", { name: "Asset role" })).toBeInTheDocument();
 }
 
-/** Case 9 — at the cardinality maximum the metric picker hides; `bindings` is empty. */
+/** Case 9 — at the cardinality maximum the metric picker hides; `bindings` is empty. Two
+ * sources since `F4.317` (ruling Q1b), the tile's cap: one source still shows the picker. */
 export function hidesTheMetricPickerAtTheCardinalityMax(): void {
-  renderEditor(tile({ sources: [METRIC] }), true);
+  renderEditor(
+    tile({ sources: [METRIC, { catalogKey: "alarms.critical.count", params: {}, sortOrder: 1 }] }),
+    true,
+  );
 
   expect(
     screen.queryByRole("combobox", { name: "Add named metric" }),
@@ -328,4 +332,23 @@ export function theOptionsRunToTheMaxDepth(): void {
     "",
     ...Array.from({ length: LOCATION_TREE_MAX_DEPTH }, (_, i) => String(i + 1)),
   ]);
+}
+
+/**
+ * `F4.317` review — the value tile's source cap is two (ruling Q1b), but a tile draws only its
+ * sortOrder-0 metric; the second exists for the organization strip's Open alarms critical note.
+ * The note says so wherever a second metric can be added or is bound, so an author is not left
+ * to find the dropped binding on the canvas.
+ */
+const SECOND_METRIC_NOTE = /Only the first metric is drawn on a tile/;
+
+export function showsTheSecondMetricNoteOnceATileHasAMetric(): void {
+  renderEditor(tile({ sources: [METRIC] }), true);
+  expect(screen.queryByText(SECOND_METRIC_NOTE), "the second-metric note must render beside the picker").not.toBeNull();
+}
+
+export function hidesTheSecondMetricNoteOnATileWithNoMetric(): void {
+  renderEditor(tile(), true);
+  expect(screen.queryByRole("combobox", { name: "Add named metric" }), "positive control: the picker renders").not.toBeNull();
+  expect(screen.queryByText(SECOND_METRIC_NOTE), "no note before the first metric is bound").toBeNull();
 }

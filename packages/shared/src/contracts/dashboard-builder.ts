@@ -517,7 +517,7 @@ export const WIDGET_POINT_CARDINALITY: Record<
  * **Why every value but the tile's is zero.** A gauge, a tank and a chart all draw a *series
  * over time*, and a catalog entry resolves to a number or to rows — neither is a series. Only
  * the tile shows a single current number, which is why decision 2 names it. Stage B's `table`
- * is the second non-zero entry, at `{min: 1, max: 1}`.
+ * is the second non-zero entry, at `{min: 1, max: 1}`. The tile's cap is 2 since `F4.317`.
  *
  * The `Record` over the enum is what makes Stage B's fifth widget type a compile error here
  * rather than a widget that silently binds no source and renders nothing.
@@ -528,7 +528,11 @@ export const WIDGET_SOURCE_CARDINALITY: Record<
 > = {
   radial_gauge: { min: 0, max: 0 },
   tank_level: { min: 0, max: 0 },
-  value_tile: { min: 0, max: 1 },
+  // `F4.317` ruling Q1b (ADR 0112 Amendment 1) — two: the organization strip's Open alarms tile
+  // binds `alarms.active.count` (its number, sortOrder 0) and `alarms.critical.count` (its
+  // critical note). Two KEYS, because `dashboard_widget_sources_widget_key_key` forbids one key
+  // twice on a widget; the renderer reads the sortOrder-0 source as the tile's number.
+  value_tile: { min: 0, max: 2 },
   chart: { min: 0, max: 0 },
   // `F3.35` Stage B, and the `min: 1` is the difference from every entry above it. A tile may
   // bind a point INSTEAD of a metric, so its minimum is zero; a table has no second way to get
@@ -777,7 +781,7 @@ export const MAX_DATASET_ROWS = 200;
  * Which catalog **shapes** each widget type can draw (`F3.35` Stage C).
  *
  * **`WIDGET_SOURCE_CARDINALITY` counts; this one types, and a count alone was not enough.**
- * `WIDGET_SOURCE_CARDINALITY.value_tile` is `{min: 0, max: 1}`, which a `dataset` entry
+ * `WIDGET_SOURCE_CARDINALITY.value_tile` is `{min: 0, max: 2}`, which a `dataset` entry
  * satisfies exactly as well as a `metric` one does. So `alarms.active` — rows and six declared
  * columns — passed every write bound onto a `value_tile`, stored, resolved as a dataset, and
  * arrived at a renderer that draws one number. Nothing threw: the tile rendered blank. This

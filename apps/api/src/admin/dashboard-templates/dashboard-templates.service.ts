@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, sql } from "drizzle-orm";
 
 import { dashboardSections, dashboardTemplates, organizations } from "@bms/db";
 import type { BmsDb } from "@bms/db";
@@ -56,8 +56,10 @@ import {
 } from "../../dashboard-builder/source-params-point-keys";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../../database/database.tokens";
 import { withTenant } from "../../database/tenant-context";
+import type { BmsTx } from "../../database/tenant-context";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
+import { STOCK_DASHBOARD_TEMPLATE_CATALOG } from "./stock-catalog";
 
 /**
  * The **section dashboard template** version lifecycle — `F3.36`, migration
@@ -148,7 +150,8 @@ export class DashboardTemplatesService {
   }
 
   async create(jwt: JwtPayload, body: CreateDashboardTemplateBody): Promise<DashboardTemplateDto> {
-    await this.assertCanAuthor(jwt, body.organizationId);
+    await this.assertCanAuthor(jwt, body.organizationId, body.target);
+    DashboardTemplatesService.assertStockCodeKeepsItsTarget(body.code, body.target);
     await this.assertSection(body.section);
 
     // The only one of the eight that reads no row: it parses a constant literal
@@ -171,6 +174,7 @@ export class DashboardTemplatesService {
     const createdBy = await this.resolveCreatedBy(jwt);
 
     const created = await withTenant(this.tenantDb, body.organizationId, async (tx) => {
+      await DashboardTemplatesService.assertCodeKeepsItsTarget(tx, body.organizationId, body.code, body.target);
       // `MAX(version) + 1`, not a hardcoded 1. `createDraftFrom` and the stock
       // import both compute it, and `AssetTemplatesAdminService.create` does
       // too — ADR 0049 decision 2 rules FULL lifecycle parity, so two `create`
@@ -232,7 +236,7 @@ export class DashboardTemplatesService {
     body: UpdateDashboardTemplateBody,
   ): Promise<DashboardTemplateDto> {
     const template = await this.fetchRow(id);
-    await this.assertCanAuthor(jwt, template.organizationId);
+    await this.assertCanAuthor(jwt, template.organizationId, template.target as DashboardTemplateTarget);
     this.assertDraft(template, "edited");
 
     if (body.section !== undefined) {
@@ -308,7 +312,7 @@ export class DashboardTemplatesService {
    */
   async publish(jwt: JwtPayload, id: string): Promise<DashboardTemplateDto> {
     const template = await this.fetchRow(id);
-    await this.assertCanAuthor(jwt, template.organizationId);
+    await this.assertCanAuthor(jwt, template.organizationId, template.target as DashboardTemplateTarget);
     this.assertTransition(template, "published");
 
     const content = parseStoredContract(
@@ -420,7 +424,7 @@ export class DashboardTemplatesService {
 
   async archive(jwt: JwtPayload, id: string): Promise<DashboardTemplateDto> {
     const template = await this.fetchRow(id);
-    await this.assertCanAuthor(jwt, template.organizationId);
+    await this.assertCanAuthor(jwt, template.organizationId, template.target as DashboardTemplateTarget);
     this.assertTransition(template, "archived");
 
     const now = new Date();
@@ -464,7 +468,7 @@ export class DashboardTemplatesService {
    */
   async createDraftFrom(jwt: JwtPayload, id: string): Promise<DashboardTemplateDto> {
     const template = await this.fetchRow(id);
-    await this.assertCanAuthor(jwt, template.organizationId);
+    await this.assertCanAuthor(jwt, template.organizationId, template.target as DashboardTemplateTarget);
     const createdBy = await this.resolveCreatedBy(jwt);
     // Only a published version may be branched: a draft is already editable,
     // and an archived one is frozen for the dashboards pinned to it.
@@ -532,7 +536,7 @@ export class DashboardTemplatesService {
    * carries no `ON DELETE` precisely so that a mistake fails loudly. */
   async deleteDraft(jwt: JwtPayload, id: string): Promise<void> {
     const template = await this.fetchRow(id);
-    await this.assertCanAuthor(jwt, template.organizationId);
+    await this.assertCanAuthor(jwt, template.organizationId, template.target as DashboardTemplateTarget);
     this.assertDraft(template, "deleted");
 
     await withTenant(this.tenantDb, template.organizationId, async (tx) => {
@@ -595,7 +599,9 @@ export class DashboardTemplatesService {
 
   /**
    * Author permission: org-scoped, `location_admin` excluded — ADR 0015 §7, the
-   * same rule `AssetTemplatesService.assertCanAuthor` applies.
+   * same rule `AssetTemplatesService.assertCanAuthor` applies — except on the `organization`
+   * target (`F4.317`, ADR 0112 decision 5), where `canManageOrganization` decides. `target` is
+   * the body's on a create and the stored row's on every other write.
    *
    * **This used `canManageOrganization` and that was an authorization gap.**
    * That predicate resolves through `writableOrganizationIds`, which for a
@@ -607,12 +613,27 @@ export class DashboardTemplatesService {
    * is an organization-wide act.
    *
    * The gap was invisible from the browser, which is what made it worth a
-   * comment: `apps/web/src/lib/template-authoring-access.ts` claims to "mirror
+   * comment: `apps/web/src/lib/template-authoring-access.ts` claimed (until `F4.317`'s organization-target exception) to "mirror
    * the server exactly" and hides the controls from `location_admin`, so the
    * request was never sent. Found by the `F3.36` security review.
    */
-  async assertCanAuthor(jwt: JwtPayload, organizationId: string): Promise<void> {
+  async assertCanAuthor(
+    jwt: JwtPayload,
+    organizationId: string,
+    target: DashboardTemplateTarget,
+  ): Promise<void> {
     const user = await this.accessControl.requireMasterDataUser(jwt);
+    // `F4.317` / ADR 0112 decision 5 — the one narrow grant: a `location_admin` of the
+    // organization may change its organization strip, so for that target the role is not refused
+    // and `canManageOrganization` (its location-derived organizations) decides. Every other
+    // target keeps the refusal above. `requireMasterDataUser` already refused every role outside
+    // admin, organization_admin and location_admin, so an asset-group admin never reaches here.
+    if (target === "organization") {
+      if (!(await this.accessControl.canManageOrganization(jwt, organizationId))) {
+        throw new ForbiddenException("Organization is outside your access scope");
+      }
+      return;
+    }
     if (user.role === "location_admin") {
       throw new ForbiddenException("Location admins cannot author dashboard templates");
     }
@@ -663,6 +684,62 @@ export class DashboardTemplatesService {
         `Unknown dashboard section "${code}". Valid sections: ${live
           .map((s) => s.code)
           .join(", ")}`,
+      );
+    }
+  }
+
+  /**
+   * `F4.317` review (security) — **a stock code is reserved for its own target.** A code keeps
+   * one target (`assertCodeKeepsItsTarget`), whatever the status of the row that holds it, and
+   * `deleteDraft` deletes drafts only. So without this a `location_admin`, whose grant is
+   * `organization`-target templates (ADR 0112 decision 5), could create, publish and archive an
+   * `organization` row under an asset-group stock code its organization has not imported yet, and
+   * the stock import of that code would answer 409 for the organization admin for good. A hand
+   * create of a stock code under the entry's own target stays allowed: the import then adds the
+   * next version of the same target. Pure, so it runs before anything is read or written.
+   */
+  static assertStockCodeKeepsItsTarget(code: string, target: DashboardTemplateTarget): void {
+    const entry = STOCK_DASHBOARD_TEMPLATE_CATALOG.find((candidate) => candidate.code === code);
+    if (entry !== undefined && entry.target !== target) {
+      throw new ConflictException(
+        `Template code "${code}" is reserved for the stock ${entry.target} template; a ` +
+          `${target} template needs a code of its own`,
+      );
+    }
+  }
+
+  /**
+   * `F4.317` review (security) — **a code keeps one target.** The version (`MAX(version) + 1`)
+   * and `dashboard_templates_org_code_draft_unique` key on `(organization_id, code)` alone,
+   * whatever the target, so a write that adds a version must not change the code's target. Else
+   * a `location_admin`, whose grant is `organization`-target templates only (ADR 0112 decision
+   * 5), could open the next version of an organization admin's asset-group or site code as an
+   * `organization` row, and its draft would lock that admin out of `createDraftFrom` and stock
+   * re-import of the code. A template's target decides which content shape its versions hold
+   * (`createDashboardTemplateBodySchema`), so this is the rule for every caller, not only that
+   * role. Run inside the inserting transaction, under the tenant GUC.
+   */
+  static async assertCodeKeepsItsTarget(
+    tx: BmsTx,
+    organizationId: string,
+    code: string,
+    target: DashboardTemplateTarget,
+  ): Promise<void> {
+    const [other] = await tx
+      .select({ target: dashboardTemplates.target })
+      .from(dashboardTemplates)
+      .where(
+        and(
+          eq(dashboardTemplates.organizationId, organizationId),
+          eq(dashboardTemplates.code, code),
+          ne(dashboardTemplates.target, target),
+        ),
+      )
+      .limit(1);
+    if (other !== undefined) {
+      throw new ConflictException(
+        `Template code "${code}" already holds ${other.target} templates; a code keeps one ` +
+          `target, so a ${target} template needs a code of its own`,
       );
     }
   }

@@ -1,5 +1,5 @@
 import { DASHBOARD_GRID, type StockDashboardTemplateDto } from "@bms/shared";
-import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
+import { ORGANIZATION_STANDARD_TEMPLATE, SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
 import {
   BELOW_TILES_Y,
@@ -148,6 +148,8 @@ export const STOCK_DASHBOARD_TEMPLATE_CATALOG = [
   ...ELECTRICAL_STOCK_TEMPLATES,
   // `F3.73` plan D8 — the one `target: "site"` entry; its content and docblock are in `packages/shared`.
   SMOC_STANDARD_SITE_TEMPLATE,
+  // `F4.317` (ADR 0112 decision 3) — the one `target: "organization"` entry, also in `packages/shared`.
+  ORGANIZATION_STANDARD_TEMPLATE,
 
   // -------------------------------------------------------------------------
   // Water — raw intake, pump house, treatment, tanks, distribution.

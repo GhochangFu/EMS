@@ -1,5 +1,6 @@
 /**
- * `F3.73` plan D8 — the stock site-layout contents, behind the `./site-templates` subpath.
+ * `F3.73` plan D8 — the stock site-layout contents, behind the `./site-templates` subpath (and,
+ * since `F4.317`, the stock organization strip).
  *
  * **Not re-exported from `index.ts`, and that is the point of the file.** The web bundle reaches
  * `@bms/shared` through the index (`apps/web/vite.config.ts` aliases it to `src/index.ts`), so a
@@ -13,3 +14,5 @@
  * re-exports `./ingest` — so without it the subpath import is a `TS2307`.
  */
 export { SMOC_STANDARD_SITE_TEMPLATE } from "./site-templates/smoc-standard";
+// `F4.317` (ADR 0112 decision 3) — the stock organization strip, and the organization page's fail-safe.
+export { ORGANIZATION_STANDARD_TEMPLATE } from "./site-templates/organization-standard";

@@ -1,3 +1,4 @@
+import { ConflictException, ForbiddenException } from "@nestjs/common";
 import { expect } from "vitest";
 
 import type pg from "pg";
@@ -5,6 +6,7 @@ import type pg from "pg";
 
 import type { JwtPayload } from "@bms/shared";
 
+import type { DashboardTemplatesStockService } from "./dashboard-templates-stock.service";
 import type { DashboardTemplatesService } from "./dashboard-templates.service";
 
 /**
@@ -200,4 +202,298 @@ export async function assertUnknownSectionIsA400NamingTheLiveSet(
       section: "not-a-section",
     } as Parameters<DashboardTemplatesService["create"]>[1]),
   ).rejects.toThrow(/Unknown dashboard section[\s\S]*electrical/i);
+}
+
+/**
+ * `F4.317` / ADR 0112 decision 5 — who may author an `organization`-target template.
+ *
+ * The narrow grant: a `location_admin` of the organization authors its organization templates
+ * (create, edit, publish), because the organization strip is theirs to change too. Every other
+ * target keeps ADR 0015 §7's refusal of the role, a foreign organization stays out of scope, and
+ * an asset-group-scoped user is no master-data role at all.
+ */
+export async function assertLocationAdminAuthorsItsOwnOrganizationTemplate(
+  service: DashboardTemplatesService,
+  locationAdmin: JwtPayload,
+  organizationId: string,
+  code: string,
+  onCreated: (id: string) => void,
+): Promise<void> {
+  const created = await service.create(locationAdmin, {
+    organizationId,
+    code,
+    name: "F4.317 organization strip",
+    section: "organization",
+    target: "organization",
+    content: {
+      widgets: [
+        {
+          key: "alarms-tile",
+          title: "Open alarms",
+          gridX: 0,
+          gridY: 0,
+          gridW: 3,
+          gridH: 2,
+          bindings: [],
+          sources: [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: {},
+        },
+      ],
+      tabs: [],
+    },
+  } as Parameters<DashboardTemplatesService["create"]>[1]);
+  // Recorded before any `expect`, so a failure below cannot leak the row.
+  onCreated(created.id);
+  expect(created.target, "the created row must be the organization target").toBe("organization");
+  const renamed = await service.update(locationAdmin, created.id, { name: "F4.317 organization strip, renamed" });
+  expect(renamed.name).toBe("F4.317 organization strip, renamed");
+  const published = await service.publish(locationAdmin, created.id);
+  expect(published.status, "the location admin must be able to publish its organization template").toBe("published");
+}
+
+/** The same role is still refused a `site` template of its own organization (ADR 0015 §7, kept). */
+export async function assertLocationAdminIsStillRefusedASiteTemplate(
+  service: DashboardTemplatesService,
+  locationAdmin: JwtPayload,
+  organizationId: string,
+  code: string,
+): Promise<void> {
+  await expect(
+    service.create(locationAdmin, {
+      organizationId,
+      code,
+      name: "F4.317 site template the location admin may not author",
+      section: "site",
+      target: "site",
+    } as Parameters<DashboardTemplatesService["create"]>[1]),
+    "a location admin must still be refused a site template",
+  ).rejects.toThrow(/Location admins cannot author/);
+}
+
+/** An organization template of ANOTHER organization is outside the location admin's scope. */
+export async function assertLocationAdminIsRefusedAForeignOrganizationTemplate(
+  service: DashboardTemplatesService,
+  locationAdmin: JwtPayload,
+  foreignOrganizationId: string,
+  code: string,
+): Promise<void> {
+  await expect(
+    service.create(locationAdmin, {
+      organizationId: foreignOrganizationId,
+      code,
+      name: "F4.317 foreign organization strip",
+      section: "organization",
+      target: "organization",
+    } as Parameters<DashboardTemplatesService["create"]>[1]),
+    "a location admin must be refused another organization's organization template",
+  ).rejects.toThrow(/outside your access scope/i);
+}
+
+/** An asset-group admin may not author an organization template: it is no master-data role. */
+export async function assertAssetGroupAdminIsRefusedAnOrganizationTemplate(
+  service: DashboardTemplatesService,
+  assetGroupAdmin: JwtPayload,
+  organizationId: string,
+  code: string,
+): Promise<void> {
+  await expect(
+    service.create(assetGroupAdmin, {
+      organizationId,
+      code,
+      name: "F4.317 asset-group admin strip",
+      section: "organization",
+      target: "organization",
+    } as Parameters<DashboardTemplatesService["create"]>[1]),
+    "an asset-group admin must be refused an organization template",
+  ).rejects.toThrow(ForbiddenException);
+}
+
+/**
+ * `F4.317` task 3.3 — the stock import reads the ENTRY's target for authorship: a location admin
+ * imports `organization-standard` into its own organization (a draft of the organization target),
+ * is refused it for another organization, and is still refused the `site` stock entry.
+ *
+ * **The stock code is fixed, so this case reads the database before it writes** (`F4.317`
+ * review): a developer database where someone already imported `organization-standard` into the
+ * organization (plan §4.6's own API check leaves exactly that draft) would answer the import with
+ * the draft index's 409. That is real data, so it is named and never deleted. `onCreated` takes
+ * the imported id before the two refusals run, so a failed `expect` cannot leak the draft and
+ * turn every later run into that same 409.
+ */
+export async function assertLocationAdminImportsOnlyItsOwnOrganizationStrip(
+  stock: DashboardTemplatesStockService,
+  ownerPool: pg.Pool,
+  locationAdmin: JwtPayload,
+  organizationId: string,
+  foreignOrganizationId: string,
+  onCreated: (id: string) => void,
+): Promise<void> {
+  const existing = await ownerPool.query<{ id: string; version: number }>(
+    `SELECT id, version FROM bms.dashboard_templates
+      WHERE organization_id = $1 AND code = 'organization-standard' AND status = 'draft'`,
+    [organizationId],
+  );
+  const draft = existing.rows[0];
+  expect(
+    draft,
+    draft === undefined
+      ? ""
+      : `this database already holds a draft of organization-standard for organization ` +
+          `${organizationId} (id ${draft.id}, version ${draft.version}), so the import would be the ` +
+          "draft index's 409. It is real data and this suite never deletes it: publish or delete " +
+          "that draft, then rerun.",
+  ).toBeUndefined();
+  const imported = await stock.import(locationAdmin, "organization-standard", organizationId);
+  onCreated(imported.id);
+  expect(`${imported.code}|${imported.target}|${imported.status}`).toBe("organization-standard|organization|draft");
+  await expect(
+    stock.import(locationAdmin, "organization-standard", foreignOrganizationId),
+    "a location admin must be refused the organization strip of another organization",
+  ).rejects.toThrow(/outside your access scope/i);
+  await expect(
+    stock.import(locationAdmin, "smoc-standard", organizationId),
+    "a location admin must still be refused the site stock entry",
+  ).rejects.toThrow(/Location admins cannot author/);
+}
+
+/**
+ * `F4.317` review (security) — **a code keeps one target.** The `location_admin` grant (ADR 0112
+ * decision 5) is for `organization`-target templates, and the version and draft index key on
+ * `(organization_id, code)` alone, whatever the target. Without this refusal a location admin
+ * could open version N+1 of an organization admin's asset-group code as an `organization` row,
+ * and its draft would lock the organization admin out of `createDraftFrom` and stock re-import
+ * of that code. The code's owner's own next draft must still work: `admin` opens it here, and
+ * the refusal is by target, not role, so one admin token gates it (the seeded organization admin
+ * belongs to PHEWB, outside the seeded location admin's organization, so `canManageTemplate`'s
+ * organization-admin path is not exercised by this case).
+ *
+ * `onCreated` receives every id this helper creates the moment it exists, so a later failed
+ * `expect` cannot leak a row into the developer's database.
+ */
+export async function assertACodeKeepsItsTarget(
+  service: DashboardTemplatesService,
+  admin: JwtPayload,
+  locationAdmin: JwtPayload,
+  organizationId: string,
+  code: string,
+  onCreated: (id: string) => void,
+): Promise<void> {
+  const groupTemplate = await service.create(admin, {
+    organizationId,
+    code,
+    name: "F4.317 asset-group code the location admin may not take over",
+    section: "electrical",
+    target: "asset_group",
+    content: {
+      widgets: [
+        {
+          key: "alarms-tile",
+          title: "Open alarms",
+          gridX: 0,
+          gridY: 0,
+          gridW: 3,
+          gridH: 2,
+          bindings: [],
+          sources: [{ catalogKey: "alarms.active.count", params: {}, sortOrder: 0 }],
+          widgetType: "value_tile",
+          config: {},
+        },
+      ],
+      tabs: [],
+    },
+  } as Parameters<DashboardTemplatesService["create"]>[1]);
+  onCreated(groupTemplate.id);
+  const published = await service.publish(admin, groupTemplate.id);
+  expect(published.status, "the asset-group version must publish, so no draft blocks the probe").toBe("published");
+
+  let takeover: { id: string } | undefined;
+  let refusal: unknown;
+  try {
+    takeover = await service.create(locationAdmin, {
+      organizationId,
+      code,
+      name: "F4.317 organization strip under an asset-group code",
+      section: "organization",
+      target: "organization",
+      content: { widgets: [], tabs: [] },
+    } as Parameters<DashboardTemplatesService["create"]>[1]);
+  } catch (err) {
+    refusal = err;
+  }
+  if (takeover !== undefined) onCreated(takeover.id);
+  expect(
+    takeover,
+    "a location admin must not open an organization-target version of an asset-group code",
+  ).toBeUndefined();
+  expect(refusal).toBeInstanceOf(ConflictException);
+  expect((refusal as Error).message).toMatch(/already holds asset_group templates/);
+
+  const nextDraft = await service.createDraftFrom(admin, groupTemplate.id);
+  onCreated(nextDraft.id);
+  expect(
+    `${nextDraft.target}|${nextDraft.status}|${nextDraft.version}`,
+    "an admin's next draft of its own asset-group code must still open",
+  ).toBe("asset_group|draft|2");
+}
+
+/**
+ * `F4.317` review (security) — **a stock code is reserved for its own target.** A code keeps one
+ * target (`assertACodeKeepsItsTarget`), and that refusal holds a row of any status, so without a
+ * reservation a `location_admin` could create, publish and leave archived an `organization` row
+ * under an asset-group stock code its organization has not imported yet, and every later stock
+ * import of that code would answer 409 for the organization admin as well, with no way to clear
+ * it short of database work. `create` refuses the code instead, whoever asks, before it writes.
+ *
+ * **The stock code is fixed, so this case reads the database before it writes**, as
+ * `assertLocationAdminImportsOnlyItsOwnOrganizationStrip` does: an existing draft of the code
+ * would make the import the draft index's 409. That is real data, so it is named, never deleted.
+ */
+export async function assertAStockCodeIsReservedForItsTarget(
+  service: DashboardTemplatesService,
+  stock: DashboardTemplatesStockService,
+  ownerPool: pg.Pool,
+  admin: JwtPayload,
+  locationAdmin: JwtPayload,
+  organizationId: string,
+  stockCode: string,
+  onCreated: (id: string) => void,
+): Promise<void> {
+  const existing = await ownerPool.query<{ id: string; target: string; status: string }>(
+    `SELECT id, target, status FROM bms.dashboard_templates
+      WHERE organization_id = $1 AND code = $2 AND (status = 'draft' OR target <> 'asset_group')`,
+    [organizationId, stockCode],
+  );
+  expect(
+    existing.rows,
+    `this database already holds rows of ${stockCode} for organization ${organizationId} that would ` +
+      "block its stock import (a draft, or another target). They are real data and this suite never " +
+      "deletes them: remove them, then rerun.",
+  ).toEqual([]);
+
+  let squat: { id: string } | undefined;
+  let refusal: unknown;
+  try {
+    squat = await service.create(locationAdmin, {
+      organizationId,
+      code: stockCode,
+      name: "F4.317 organization strip under an asset-group stock code",
+      section: "organization",
+      target: "organization",
+      content: { widgets: [], tabs: [] },
+    } as Parameters<DashboardTemplatesService["create"]>[1]);
+  } catch (err) {
+    refusal = err;
+  }
+  if (squat !== undefined) onCreated(squat.id);
+  expect(squat, "a location admin must not take an asset-group stock code for an organization row").toBeUndefined();
+  expect(refusal).toBeInstanceOf(ConflictException);
+  expect((refusal as Error).message).toMatch(new RegExp(`"${stockCode}" is reserved for the stock asset_group template`));
+
+  const imported = await stock.import(admin, stockCode, organizationId);
+  onCreated(imported.id);
+  expect(
+    `${imported.code}|${imported.target}|${imported.status}`,
+    "an admin's stock import of the code must still open",
+  ).toBe(`${stockCode}|asset_group|draft`);
 }

@@ -6,7 +6,11 @@ import {
 
 import type { SectionTemplateWidgetInput } from "../../api/admin/dashboard-templates";
 import { METRIC_CATALOG_PRESENTATION, metricCatalogLabel } from "../../lib/metric-catalog";
-import { WIDGET_CATALOG } from "../../lib/widget-catalog";
+import {
+  showsValueTileSecondMetricNote,
+  VALUE_TILE_SECOND_METRIC_NOTE,
+  WIDGET_CATALOG,
+} from "../../lib/widget-catalog";
 import { AssetRoleBindingPicker } from "../dashboards/asset-role-binding-picker";
 import { builderCellHeightPx } from "../dashboards/dashboard-canvas";
 import { MetricSourcePicker } from "../dashboards/metric-source-picker";
@@ -292,6 +296,9 @@ export function WidgetEditor({
                 }
               />
             </div>
+          ) : null}
+          {showsValueTileSecondMetricNote(row.widgetType, sources.length) ? (
+            <p className="mt-1 text-[11px] text-ink-muted">{VALUE_TILE_SECOND_METRIC_NOTE}</p>
           ) : null}
         </div>
       ) : null}

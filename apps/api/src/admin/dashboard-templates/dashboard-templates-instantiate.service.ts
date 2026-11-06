@@ -33,6 +33,7 @@ import type {
   JwtPayload,
   SectionTemplateContent,
   InstantiateGroupTemplateBody,
+  InstantiateOrganizationTemplateBody,
   InstantiateSectionTemplateBody,
   InstantiateSiteTemplateBody,
 } from "@bms/shared";
@@ -115,6 +116,15 @@ import { loadActivePoints, loadMembersByRole } from "./template-resolution.reads
  * `SITE_ARM_NOT_WIRED_MESSAGE`. The
  * per-widget plan (`planTemplateWidget`) moved to `@bms/shared` for the same
  * reason — the copy action and the seed plan widgets with it too.
+ *
+ * ---
+ *
+ * **`F4.317` (ADR 0112 decision 4) GAVE IT A FOURTH: THE ORGANIZATION ARM**, the same shape as
+ * the site arm. A template whose `target` is `organization` takes `{ organizationId }` — its own
+ * organization, else 404 — and is copied onto one organization-wide dashboard by the
+ * organization-layout copy action, which owns the dashboard and the view row. One optional seam
+ * again (`ORGANIZATION_TEMPLATE_ARM`), filled in F4.317 PR 4; until then the arm answers 501
+ * `ORGANIZATION_ARM_NOT_WIRED_MESSAGE`.
  */
 
 /** `F3.73` plan Task 2.2 — the answer while no site arm is provided (PR4 wires it). */
@@ -143,6 +153,29 @@ export type SiteTemplateArm = (
   body: InstantiateSiteTemplateBody,
 ) => Promise<SiteTemplateArmResult>;
 
+/** `F4.317` task 3.4 — the answer while no organization arm is provided (PR 4 wires it). */
+export const ORGANIZATION_ARM_NOT_WIRED_MESSAGE =
+  "Instantiating an organization template is not available yet: the organization-layout copy " +
+  "action is not wired";
+
+/** The seam the organization-layout copy action fills (F4.317 PR 4) — `SITE_TEMPLATE_ARM`'s shape. */
+export const ORGANIZATION_TEMPLATE_ARM = Symbol("ORGANIZATION_TEMPLATE_ARM");
+
+/** What the organization arm answers; the copy action defines it (PR 4), this seam passes it on. */
+export type OrganizationTemplateArmResult = object;
+
+/**
+ * The organization arm: copy one published organization template onto its organization. Called
+ * after this service has proved readability, the published status, the body/target fit, the
+ * body's organization, authorship on the organization target and the stored content's target
+ * fit; the view row and the dashboard are the copy action's own.
+ */
+export type OrganizationTemplateArm = (
+  jwt: JwtPayload,
+  template: { readonly id: string; readonly organizationId: string },
+  body: InstantiateOrganizationTemplateBody,
+) => Promise<OrganizationTemplateArmResult>;
+
 @Injectable()
 export class DashboardTemplatesInstantiateService {
   constructor(
@@ -152,6 +185,9 @@ export class DashboardTemplatesInstantiateService {
     private readonly audit: MasterDataAuditService,
     private readonly templates: DashboardTemplatesService,
     @Optional() @Inject(SITE_TEMPLATE_ARM) private readonly siteArm?: SiteTemplateArm,
+    @Optional()
+    @Inject(ORGANIZATION_TEMPLATE_ARM)
+    private readonly organizationArm?: OrganizationTemplateArm,
   ) {}
 
   /**
@@ -421,7 +457,7 @@ export class DashboardTemplatesInstantiateService {
     body: InstantiateSiteTemplateBody,
   ): Promise<SiteTemplateArmResult> {
     const { template, target } = await this.loadPublished(jwt, templateId, body);
-    await this.templates.assertCanAuthor(jwt, template.organizationId);
+    await this.templates.assertCanAuthor(jwt, template.organizationId, target);
     const content = this.parseContent(template.content);
     this.templates.assertContentFitsTarget(target, content);
     if (templateWidgets(content).length === 0) {
@@ -431,6 +467,34 @@ export class DashboardTemplatesInstantiateService {
       throw new NotImplementedException(SITE_ARM_NOT_WIRED_MESSAGE);
     }
     return this.siteArm(jwt, { id: template.id, organizationId: template.organizationId }, body);
+  }
+
+  /**
+   * The organization arm — `F4.317`, ADR 0112 decision 4. The site arm's checks, in its order,
+   * with one more: the body's `organizationId` must be the template's own, else 404 (after
+   * readability, so a caller who may not read the template learns nothing of its organization).
+   * Authorship is asked on the organization target, which is what admits a `location_admin` of
+   * that organization (decision 5).
+   */
+  async instantiateOrganization(
+    jwt: JwtPayload,
+    templateId: string,
+    body: InstantiateOrganizationTemplateBody,
+  ): Promise<OrganizationTemplateArmResult> {
+    const { template, target } = await this.loadPublished(jwt, templateId, body);
+    if (body.organizationId !== template.organizationId) {
+      throw new NotFoundException("Organization not found for this template");
+    }
+    await this.templates.assertCanAuthor(jwt, template.organizationId, target);
+    const content = this.parseContent(template.content);
+    this.templates.assertContentFitsTarget(target, content);
+    if (templateWidgets(content).length === 0) {
+      throw new BadRequestException("This template has no widgets to instantiate");
+    }
+    if (this.organizationArm === undefined) {
+      throw new NotImplementedException(ORGANIZATION_ARM_NOT_WIRED_MESSAGE);
+    }
+    return this.organizationArm(jwt, { id: template.id, organizationId: template.organizationId }, body);
   }
 
   /**

@@ -573,7 +573,7 @@ export function runDashboardsSchemaGridBoundsTests(): void {
  * `F3.35` Stage C Unit 5 — a widget binds only a catalog entry it can DRAW.
  *
  * **This suite exists because the cardinality check reads as if it already covered this, and
- * does not.** `WIDGET_SOURCE_CARDINALITY.value_tile` is `{min: 0, max: 1}`, and `alarms.active`
+ * does not.** `WIDGET_SOURCE_CARDINALITY.value_tile` is `{min: 0, max: 2}`, and `alarms.active`
  * — six declared columns of rows — is exactly one binding. It passed every bound on this path,
  * stored, resolved as a dataset, and reached a renderer that draws a single number. Nothing
  * threw and nothing logged: the tile drew blank in front of an operator.
@@ -603,7 +603,7 @@ export function runDashboardsSchemaSourceShapeTests(): void {
     "the fixture needs one dataset key and one metric key that differ",
   );
   assert(
-    WIDGET_SOURCE_CARDINALITY.value_tile.max === 1,
+    WIDGET_SOURCE_CARDINALITY.value_tile.max >= 1,
     "a tile must accept ONE binding, or the refusal below could be the count rather than the shape",
   );
 

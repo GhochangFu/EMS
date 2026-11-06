@@ -1,6 +1,8 @@
 import { describe, it } from "vitest";
 
 import {
+  theOrganizationArmIsInjectedByItsToken,
+  theOrganizationArmIsOptional,
   theSiteArmIsInjectedByItsToken,
   theSiteArmIsOptional,
 } from "./dashboard-templates-instantiate.wiring.spec";
@@ -14,5 +16,16 @@ describe("F3.73 — the instantiate service's site-arm seam", () => {
 
   it("marks the site arm optional, so the module boots before PR4 provides it", () => {
     theSiteArmIsOptional();
+  });
+});
+
+/** `F4.317` task 3.4 — the organization arm's seam, the same shape. */
+describe("F4.317 — the instantiate service's organization-arm seam", () => {
+  it("injects the organization arm by the ORGANIZATION_TEMPLATE_ARM token", () => {
+    theOrganizationArmIsInjectedByItsToken();
+  });
+
+  it("marks the organization arm optional, so the module boots before PR 4 provides it", () => {
+    theOrganizationArmIsOptional();
   });
 });

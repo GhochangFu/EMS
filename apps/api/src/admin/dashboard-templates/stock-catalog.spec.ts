@@ -133,10 +133,11 @@ export function runStockCatalogTests(): void {
 
   // ---- exactly eight entries, unique codes, the literal list itself --------
 
-  // Eight since `F3.73`: `smoc-standard`, the one `target: "site"` entry.
+  // Eight since `F3.73`: `smoc-standard`, the one `target: "site"` entry. Nine since `F4.317`:
+  // `organization-standard`, the one `target: "organization"` entry (ADR 0112 decision 3).
   assert(
-    STOCK_DASHBOARD_TEMPLATE_CATALOG.length === 8,
-    `expected exactly eight stock templates, found ${STOCK_DASHBOARD_TEMPLATE_CATALOG.length}`,
+    STOCK_DASHBOARD_TEMPLATE_CATALOG.length === 9,
+    `expected exactly nine stock templates, found ${STOCK_DASHBOARD_TEMPLATE_CATALOG.length}`,
   );
 
   const codes = STOCK_DASHBOARD_TEMPLATE_CATALOG.map((entry) => entry.code);
@@ -167,6 +168,7 @@ export function runStockCatalogTests(): void {
         "electrical-overview",
         "etp-overview",
         "hvac-overview",
+        "organization-standard",
         "smoc-standard",
         "stp-overview",
         "sustainability-overview",
@@ -184,7 +186,7 @@ export function runStockCatalogTests(): void {
   for (const entry of STOCK_DASHBOARD_TEMPLATE_CATALOG) {
     assert(
       sections.includes(entry.section),
-      `${entry.code} uses section "${entry.section}", which neither migration 0056 nor 0095 seeds ` +
+      `${entry.code} uses section "${entry.section}", which none of migrations 0056, 0095, 0126 seeds ` +
         `(seeded: ${sections.join(", ")})`,
     );
 
@@ -241,11 +243,14 @@ export function runStockCatalogTests(): void {
 
       if (widget.widgetType === "value_tile") {
         // Exactly one binding KIND, never both and never neither
-        // (`bindingRequiredMessage` / `bindingExclusiveMessage`).
-        const total = widget.bindings.length + widget.sources.length;
+        // (`bindingRequiredMessage` / `bindingExclusiveMessage`): one point, or one to the
+        // tile's source cap of metrics. Two since `F4.317` (ruling Q1b): the organization strip's
+        // Open alarms tile binds the open and the critical count.
+        const onePoint = widget.bindings.length === 1 && widget.sources.length === 0;
+        const metrics = widget.bindings.length === 0 && widget.sources.length >= 1;
         assert(
-          total === 1,
-          `${entry.code}/${widget.key} value_tile must bind exactly one point or one metric, ` +
+          onePoint || metrics,
+          `${entry.code}/${widget.key} value_tile must bind exactly one point or only metrics, ` +
             `found ${widget.bindings.length} bindings and ${widget.sources.length} sources`,
         );
       }

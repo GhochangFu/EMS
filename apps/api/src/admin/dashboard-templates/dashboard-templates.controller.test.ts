@@ -4,6 +4,7 @@ import {
   assertApplyToSitesCallsTheBulk,
   assertApplyToSitesRefusesABadId,
   assertApplyToSitesRouteIsDeclared,
+  assertEachInstantiateBodyReachesItsArm,
   runDashboardTemplatesControllerTests,
 } from "./dashboard-templates.controller.spec";
 
@@ -27,5 +28,12 @@ describe("F3.73 — POST /admin/dashboard-templates/:id/apply-to-sites", () => {
 
   it("refuses a non-uuid id before the bulk runs", async () => {
     await assertApplyToSitesRefusesABadId();
+  });
+});
+
+/** `F4.317` review — the instantiate route's arm picker. */
+describe("F4.317 — POST /admin/dashboard-templates/:id/instantiate", () => {
+  it("routes the organization, site and group bodies each to its own service method", async () => {
+    await assertEachInstantiateBodyReachesItsArm();
   });
 });

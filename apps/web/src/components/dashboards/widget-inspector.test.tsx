@@ -11,6 +11,8 @@ import {
   choosingARangeWritesItToTheConfig,
   aStripTabProblemRendersUnderTheScope,
   aValueTileHasNoStripFields,
+  aValueTileWithAMetricShowsTheSecondMetricNote,
+  aValueTileWithNoMetricHasNoSecondMetricNote,
   aTrendStripWithoutSelectionMountsNoSummaryAndReadsNothing,
   aTrendStripWithASelectionMountsTheSummaryAndReadsTheSite,
   clearingTheSelectionWritesThroughTheConfig,
@@ -304,5 +306,13 @@ describe("F3.73 widget inspector — the site widgets", () => {
 
   it("F4.306: Clear selection writes the three fields undefined through the config", async () => {
     await clearingTheSelectionWritesThroughTheConfig();
+  });
+
+  it("F4.317: a value tile with a metric notes that only the first metric is drawn", () => {
+    aValueTileWithAMetricShowsTheSecondMetricNote();
+  });
+
+  it("F4.317: a value tile with no metric shows no second-metric note", () => {
+    aValueTileWithNoMetricHasNoSecondMetricNote();
   });
 });

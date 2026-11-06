@@ -11,6 +11,12 @@ import {
   rejectsAPatchBodyWithADuplicateKeyAcrossTabs,
   acceptsASiteCreateBodyWithTabsAndDefaultsTheTarget,
   acceptsASiteInstantiateBody,
+  rejectsAnOrganizationCreateBodyWithTabs,
+  rejectsAnOrganizationCreateBodyWithANonTileWidget,
+  acceptsAnOrganizationCreateBodyOfValueTiles,
+  acceptsAnOrganizationInstantiateBody,
+  rejectsEachWrongOrganizationInstantiateBody,
+  theTargetBodyRuleRefusesEachOrganizationMismatch,
   rejectsALayoutMimicInsideATab,
   rejectsAnAssetGroupCreateBodyWithTabs,
   rejectsAnInstantiateBodyNamingBothArms,
@@ -159,5 +165,32 @@ describe("F4.306 — a template body refuses a trend strip selection", () => {
 
   it("the stock site template still parses as a create body", () => {
     theStockSiteTemplateStillParsesAsACreateBody();
+  });
+});
+
+/** `F4.317` / ADR 0112 decision 2 — the organization target at the request boundary. */
+describe("F4.317 — the organization template target and its instantiate arm", () => {
+  it("refuses an organization create body with tabs", () => {
+    rejectsAnOrganizationCreateBodyWithTabs();
+  });
+
+  it("refuses an organization create body holding a widget type other than value_tile", () => {
+    rejectsAnOrganizationCreateBodyWithANonTileWidget();
+  });
+
+  it("accepts an organization create body of value tiles", () => {
+    acceptsAnOrganizationCreateBodyOfValueTiles();
+  });
+
+  it("accepts an organization instantiate body", () => {
+    acceptsAnOrganizationInstantiateBody();
+  });
+
+  it("refuses each wrong organization instantiate body", () => {
+    rejectsEachWrongOrganizationInstantiateBody();
+  });
+
+  it("the body/target rule refuses each organization mismatch", () => {
+    theTargetBodyRuleRefusesEachOrganizationMismatch();
   });
 });

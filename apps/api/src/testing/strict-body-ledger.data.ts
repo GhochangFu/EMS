@@ -323,9 +323,11 @@ export const STRICTNESS_LEDGER: Record<string, LedgerEntry> = {
   importStockTemplateBodySchema: STRICT(CALLER_ERROR),
   // `F3.73` ruling Q3a — the body became a union of two strict arms: `|0` the asset-group arm
   // (unchanged), `|1` the site arm `{ locationId, tabGroups? }`. Strict on both, so a body naming
-  // both a group and a location is refused rather than read as either.
+  // both a group and a location is refused rather than read as either. `F4.317` (ADR 0112) added
+  // `|2`, the organization arm `{ organizationId }`, strict for the same reason.
   "instantiateSectionTemplateBodySchema|0": STRICT(CALLER_ERROR),
   "instantiateSectionTemplateBodySchema|1": STRICT(CALLER_ERROR),
+  "instantiateSectionTemplateBodySchema|2": STRICT(CALLER_ERROR),
   updateDashboardTemplateBodySchema: STRICT(CALLER_ERROR),
   "updateDashboardTemplateBodySchema/content": { strict: false, because: SECTION_TEMPLATE_CONTENT },
   "updateDashboardTemplateBodySchema/content/tabs[]": { strict: false, because: SECTION_TEMPLATE_CONTENT },

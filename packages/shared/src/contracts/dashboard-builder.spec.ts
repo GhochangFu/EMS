@@ -436,10 +436,12 @@ export function runWidgetPointCardinalityTests(): void {
       WIDGET_POINT_CARDINALITY.value_tile.max === 1,
     `value_tile takes 0..1 points, got ${JSON.stringify(WIDGET_POINT_CARDINALITY.value_tile)}`,
   );
+  // `F4.317` ruling Q1b — 0..2: the organization strip's Open alarms tile binds the open and the
+  // critical count, two keys (the unique key forbids one key twice on a widget).
   assert(
     WIDGET_SOURCE_CARDINALITY.value_tile.min === 0 &&
-      WIDGET_SOURCE_CARDINALITY.value_tile.max === 1,
-    `value_tile takes 0..1 sources, got ${JSON.stringify(WIDGET_SOURCE_CARDINALITY.value_tile)}`,
+      WIDGET_SOURCE_CARDINALITY.value_tile.max === 2,
+    `value_tile takes 0..2 sources, got ${JSON.stringify(WIDGET_SOURCE_CARDINALITY.value_tile)}`,
   );
 
   assert(

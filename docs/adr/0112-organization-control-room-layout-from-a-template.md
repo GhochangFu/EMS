@@ -189,3 +189,26 @@ What changes:
   `critical`. This is the `DashboardService.kpis()` critical predicate
   (`apps/api/src/dashboard/dashboard.service.ts:516`). Migration `0126`'s
   catalog CHECK lists thirteen keys.
+
+## Amendment 2 — 2026-11-06
+
+**Owner ruling (2026-11-06), on the stock strip's tile 6.** Water today binds
+`sustainability.total { pointKey: "kl_today", aggregate: "sum", balanceRole:
+"intake" }`, as the `sustainability-overview` stock tile does
+(`apps/api/src/admin/dashboard-templates/stock-catalog.ts:779`). Only tile 6
+changes.
+
+Why: `kl_today` is carried by every water stage's inlet, not only the plant's
+intake. Without `balanceRole` the sum counts each stage's inlet, so at a
+multi-stage plant one kilolitre of intake is counted once per stage it passes.
+The role narrows the carrying set to the assets whose balance role is `intake`
+(ADR 0073 decision 2), which is the plant's water drawn today.
+
+What changes:
+
+- **Decision 6, row 6** now reads: Water today (kL) —
+  `sustainability.total {kl_today, sum, balanceRole: intake}`.
+- Publish checks the role like any other template source: the write schema
+  accepts it (`METRIC_CATALOG_PARAMS_WRITE`) and
+  `assertSourceParamsBalanceRolesActive` requires `intake` to be a live
+  `bms.water_balance_roles` code (seeded by migration `0080`).

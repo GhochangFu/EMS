@@ -7,6 +7,10 @@ import {
   sectionTemplateWidgetSchema,
   stockDashboardTemplateDtoSchema,
   dashboardTemplateTargetSchema,
+  ORGANIZATION_TEMPLATE_ROLE_BINDINGS_MESSAGE,
+  ORGANIZATION_TEMPLATE_TABS_MESSAGE,
+  ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE,
+  templateTargetContentField,
   templateTargetContentMessage,
   templateWidgets,
 } from "./dashboard-templates";
@@ -230,15 +234,40 @@ export function rejectsAnySourceOnAChart(): void {
   );
 }
 
-/** Case 8 — the neighbour (case 3, one source on a tile) is the control: a
- * `>=` mutation reddens it, not this case. */
-export function rejectsTwoSourcesOnAValueTile(): void {
+/** Case 8 — the neighbour (two metrics on a tile, below) is the control: a `>=` mutation
+ * reddens it, not this case. Three since `F4.317`: the tile's cap is 2 (ruling Q1b). */
+export function rejectsThreeSourcesOnAValueTile(): void {
   expectRejectsAt(
     sectionTemplateContentSchema,
-    tile({ sources: [METRIC, DATASET] }),
+    tile({ sources: [METRIC, { catalogKey: "workorders.open.count", params: {} }, { catalogKey: "assets.health.score", params: {} }] }),
     ["widgets", 0, "sources"],
-    /at most 1/,
-    "two sources on a value_tile",
+    /at most 2/,
+    "three sources on a value_tile",
+  );
+}
+
+/** `F4.317` ruling Q1b — a tile binds two metrics: the organization strip's open and critical
+ * alarm counts. */
+export function acceptsTwoMetricSourcesOnAValueTile(): void {
+  expectAccepts(
+    sectionTemplateContentSchema,
+    tile({ sources: [METRIC, { catalogKey: "alarms.critical.count", params: {}, sortOrder: 1 }] }),
+    "two metric sources on a value_tile",
+  );
+}
+
+/**
+ * `F4.317` — the same key twice on one template widget is refused at the template boundary, as
+ * the dashboard write path refuses it (`dashboard_widget_sources_widget_key_key`): with a cap of
+ * 2 the count no longer catches it, and an instantiation would otherwise answer a bare `23505`.
+ */
+export function rejectsTheSameKeyTwiceOnATemplateWidget(): void {
+  expectRejectsAt(
+    sectionTemplateContentSchema,
+    tile({ sources: [METRIC, { ...METRIC, sortOrder: 1 }] }),
+    ["widgets", 0, "sources", 1, "catalogKey"],
+    /bound twice/,
+    "the same key twice on one template widget",
   );
 }
 
@@ -464,4 +493,57 @@ export function theTargetEnumAcceptsOrganization(): void {
     "the target enum must be asset_group, site, organization",
   );
   assert(!dashboardTemplateTargetSchema.safeParse("estate").success, "an unknown target must be refused");
+}
+
+/**
+ * `F4.317` / ADR 0112 decision 2 — an organization template is one flat list of value tiles: a
+ * tab is refused (an organization has no asset group to bind one to), and so is every widget
+ * type but `value_tile` in this phase. The flat list of tiles, and the empty draft, are legal.
+ */
+export function theOrganizationTargetRuleRefusesTabsAndNonTiles(): void {
+  const withTabs = sectionTemplateContentSchema.parse({ widgets: [widget()], tabs: [tab()] });
+  const withLegend = sectionTemplateContentSchema.parse({
+    widgets: [widget(), widget({ key: "legend", widgetType: "state_legend", config: {} })],
+  });
+  const tiles = sectionTemplateContentSchema.parse({
+    widgets: [widget({ key: "a", sources: [METRIC] }), widget({ key: "b" })],
+  });
+  const empty = sectionTemplateContentSchema.parse({ widgets: [] });
+  assert(
+    templateTargetContentMessage("organization", withTabs) === ORGANIZATION_TEMPLATE_TABS_MESSAGE,
+    "an organization template with a tab must be refused with the tabs sentence",
+  );
+  assert(
+    templateTargetContentMessage("organization", withLegend) === ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE,
+    "an organization template holding a state_legend must be refused with the value-tiles sentence",
+  );
+  assert(templateTargetContentMessage("organization", tiles) === null, "a flat list of value tiles is legal");
+  assert(templateTargetContentMessage("organization", empty) === null, "an empty organization draft is legal");
+  assert(
+    templateTargetContentMessage("asset_group", withLegend) === null,
+    "the value-tiles rule is the organization target's alone: an asset-group template keeps its legend",
+  );
+}
+
+/**
+ * `F4.317` review — an organization has no asset group to resolve a role against (ADR 0112
+ * decision 2; the stock strip binds no role for that reason), so a role-bound tile is refused on
+ * this target, at create, PATCH, publish and instantiate alike: all four read this rule.
+ */
+export function theOrganizationTargetRuleRefusesRoleBindings(): void {
+  const roleBound = sectionTemplateContentSchema.parse({
+    widgets: [widget({ key: "a", sources: [METRIC] }), widget({ key: "b", bindings: [ROLE] })],
+  });
+  assert(
+    templateTargetContentMessage("organization", roleBound) === ORGANIZATION_TEMPLATE_ROLE_BINDINGS_MESSAGE,
+    "an organization template with a role-bound tile must be refused with the catalog-sources sentence",
+  );
+  assert(
+    templateTargetContentField(ORGANIZATION_TEMPLATE_ROLE_BINDINGS_MESSAGE) === "widgets",
+    "the role-bindings refusal is filed on content.widgets",
+  );
+  assert(
+    templateTargetContentMessage("asset_group", roleBound) === null,
+    "the role-bindings rule is the organization target's alone: an asset-group tile keeps its role",
+  );
 }

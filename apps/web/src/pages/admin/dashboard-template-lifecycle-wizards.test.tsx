@@ -9,6 +9,8 @@ import {
   aRefusedPublishShowsItsErrorOnce,
   aSecondSubmitClearsTheLastRefusal,
   aSiteBodyOnAGroupTemplateIsRefusedBeforeTheWire,
+  aSiteBodyOnAnOrganizationTemplateIsRefusedBeforeTheWire,
+  anOrganizationTemplateIsNotSentYet,
   aTypedNameAsTheSlugStaysOnDetails,
   anOrganizationWideFillOnARoleBoundTemplateIsRefused,
   applyOpensAReviewOnlyWizard,
@@ -173,5 +175,13 @@ describe("F3.85 PR 10b the template lifecycle actions are catalog wizards", () =
 
   it("a tabGroups the copilot filled on Target is shown as text", async () => {
     await siteTargetShowsAFilledTabGroups();
+  });
+
+  it("an organization template's wizard holds no input and sends nothing until the arm is wired (F4.317)", async () => {
+    await anOrganizationTemplateIsNotSentYet();
+  });
+
+  it("a site body on an organization template is refused before the wire (F4.317)", async () => {
+    await aSiteBodyOnAnOrganizationTemplateIsRefusedBeforeTheWire();
   });
 });

@@ -17,13 +17,21 @@ import { asRole } from "../../testing/role-urls";
 import { VocabulariesService } from "../../vocabularies/vocabularies.service";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import {
+  assertACodeKeepsItsTarget,
+  assertAStockCodeIsReservedForItsTarget,
+  assertAssetGroupAdminIsRefusedAnOrganizationTemplate,
   assertAuditRowCommitted,
   assertForeignTemplateIdOnDashboardIsRefused,
   assertForeignTemplateIsInvisibleToAnotherTenant,
+  assertLocationAdminAuthorsItsOwnOrganizationTemplate,
+  assertLocationAdminIsRefusedAForeignOrganizationTemplate,
+  assertLocationAdminImportsOnlyItsOwnOrganizationStrip,
+  assertLocationAdminIsStillRefusedASiteTemplate,
   assertScopedAdminIsForbiddenOnAnotherOrgTemplate,
   assertSecondDraftIsRefusedByThePartialIndex,
   assertUnknownSectionIsA400NamingTheLiveSet,
 } from "./dashboard-templates.service.rls.integration.spec";
+import { DashboardTemplatesStockService } from "./dashboard-templates-stock.service";
 import { DashboardTemplatesService } from "./dashboard-templates.service";
 import { primeSeededSubjects } from "../../testing/seeded-subjects";
 
@@ -52,6 +60,7 @@ const OWNED_CODE = `f336-owned-${RUN}`;
 const DRAFT_RIVAL_CODE = `f336-rival-${RUN}`;
 const UNKNOWN_SECTION_CODE = `f336-badsection-${RUN}`;
 const CROSS_ORG_SLUG = `f336-crossorg-${RUN}`;
+const ORGANIZATION_TARGET_CODE = `f4317-org-${RUN}`;
 
 describe.skipIf(!connectionString)(
   "F3.36 — dashboard template tenant isolation and the dashboards template_id leg",
@@ -200,6 +209,98 @@ describe.skipIf(!connectionString)(
         service,
         eskomLocationAdmin,
         phewbTemplate.id,
+      );
+    }, 60_000);
+
+    // `F4.317` / ADR 0112 decision 5 — the location admin's narrow authoring grant.
+    it("a location admin of ESKOM authors, edits and publishes an ESKOM organization template", async () => {
+      const service = makeService();
+      const eskomLocationAdmin = jwtFor(SEEDED.locationAdmin, "location_admin");
+      await assertLocationAdminAuthorsItsOwnOrganizationTemplate(
+        service,
+        eskomLocationAdmin,
+        eskomOrgId,
+        ORGANIZATION_TARGET_CODE,
+        (id) => templateIds.push(id),
+      );
+    }, 60_000);
+
+    it("the same location admin is still refused a site template of its own organization", async () => {
+      await assertLocationAdminIsStillRefusedASiteTemplate(
+        makeService(),
+        jwtFor(SEEDED.locationAdmin, "location_admin"),
+        eskomOrgId,
+        `${ORGANIZATION_TARGET_CODE}-site`,
+      );
+    }, 60_000);
+
+    it("the same location admin is refused a PHEWB organization template", async () => {
+      await assertLocationAdminIsRefusedAForeignOrganizationTemplate(
+        makeService(),
+        jwtFor(SEEDED.locationAdmin, "location_admin"),
+        phewbOrgId,
+        `${ORGANIZATION_TARGET_CODE}-foreign`,
+      );
+    }, 60_000);
+
+    it("an asset-group admin is refused an organization template", async () => {
+      await assertAssetGroupAdminIsRefusedAnOrganizationTemplate(
+        makeService(),
+        jwtFor(SEEDED.assetGroupAdmin, "asset_group_admin"),
+        eskomOrgId,
+        `${ORGANIZATION_TARGET_CODE}-group`,
+      );
+    }, 60_000);
+
+    it("a code keeps one target: a location admin cannot take over an asset-group code", async () => {
+      await assertACodeKeepsItsTarget(
+        makeService(),
+        jwtFor(SEEDED.globalAdmin, "admin"),
+        jwtFor(SEEDED.locationAdmin, "location_admin"),
+        eskomOrgId,
+        `${ORGANIZATION_TARGET_CODE}-takeover`,
+        (id) => templateIds.push(id),
+      );
+    }, 60_000);
+
+    it("a stock code is reserved for its target: a location admin cannot squat an asset-group stock code", async () => {
+      const tenantDb = createDb(tenantPool);
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const service = makeService();
+      const stock = new DashboardTemplatesStockService(
+        tenantDb,
+        accessControl,
+        service,
+        new MasterDataAuditService(tenantDb, fleetDb),
+      );
+      await assertAStockCodeIsReservedForItsTarget(
+        service,
+        stock,
+        ownerPool,
+        jwtFor(SEEDED.globalAdmin, "admin"),
+        jwtFor(SEEDED.locationAdmin, "location_admin"),
+        eskomOrgId,
+        "hvac-overview",
+        (id) => templateIds.push(id),
+      );
+    }, 60_000);
+
+    it("a location admin imports the stock organization strip into its own organization only", async () => {
+      const tenantDb = createDb(tenantPool);
+      const accessControl = new AccessControlService(createDb(authPool), fleetDb);
+      const stock = new DashboardTemplatesStockService(
+        tenantDb,
+        accessControl,
+        makeService(),
+        new MasterDataAuditService(tenantDb, fleetDb),
+      );
+      await assertLocationAdminImportsOnlyItsOwnOrganizationStrip(
+        stock,
+        ownerPool,
+        jwtFor(SEEDED.locationAdmin, "location_admin"),
+        eskomOrgId,
+        phewbOrgId,
+        (id) => templateIds.push(id),
       );
     }, 60_000);
 

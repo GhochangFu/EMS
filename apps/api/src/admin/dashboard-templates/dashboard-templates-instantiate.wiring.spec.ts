@@ -5,6 +5,7 @@ import { expect } from "vitest";
 
 import {
   DashboardTemplatesInstantiateService,
+  ORGANIZATION_TEMPLATE_ARM,
   SITE_TEMPLATE_ARM,
 } from "./dashboard-templates-instantiate.service";
 
@@ -44,4 +45,27 @@ export function theSiteArmIsOptional(): void {
     optional,
     "the site-arm parameter must carry @Optional(): nothing provides SITE_TEMPLATE_ARM until PR4",
   ).toContain(SITE_ARM_INDEX);
+}
+
+/** `F4.317` task 3.4 — constructor parameter index of the organization seam (after `siteArm`). */
+const ORGANIZATION_ARM_INDEX = 6;
+
+/** The organization seam's parameter is injected by the `ORGANIZATION_TEMPLATE_ARM` token. */
+export function theOrganizationArmIsInjectedByItsToken(): void {
+  const declared = (Reflect.getMetadata(SELF_DECLARED_DEPS_METADATA, DashboardTemplatesInstantiateService) ??
+    []) as { index: number; param: unknown }[];
+  expect(
+    declared.find((entry) => entry.index === ORGANIZATION_ARM_INDEX)?.param,
+    "the organization-arm parameter must carry @Inject(ORGANIZATION_TEMPLATE_ARM)",
+  ).toBe(ORGANIZATION_TEMPLATE_ARM);
+}
+
+/** The organization seam is optional, so `AdminModule` boots before F4.317 PR 4 provides it. */
+export function theOrganizationArmIsOptional(): void {
+  const optional = (Reflect.getMetadata(OPTIONAL_DEPS_METADATA, DashboardTemplatesInstantiateService) ??
+    []) as number[];
+  expect(
+    optional,
+    "the organization-arm parameter must carry @Optional(): nothing provides ORGANIZATION_TEMPLATE_ARM until PR 4",
+  ).toContain(ORGANIZATION_ARM_INDEX);
 }

@@ -235,9 +235,11 @@ export const sectionTemplateWidgetIdentitySchema = z
  * it on `PATCH` would turn "remove the metric, Save canvas" (`F3.61` Task 4's
  * remove control) into a 400 with nothing more to say than `content: …`.
  *
- * **Why no duplicate-source rule.** Every `WIDGET_SOURCE_CARDINALITY.max` is 0
- * or 1, so two sources on one widget is already over the cap (R5) — a second,
- * dedicated rule would never be the one that fires.
+ * **The duplicate-source rule (`F4.317`).** Until the tile's cap became 2 (ruling Q1b), every
+ * `WIDGET_SOURCE_CARDINALITY.max` was 0 or 1 and two sources on one widget were already over
+ * the cap (R5). Now one key twice on a tile is under it, so it is refused by name here, as the
+ * dashboard write path refuses it — otherwise an instantiation would meet
+ * `dashboard_widget_sources_widget_key_key` as a bare `23505`.
  */
 export const sectionTemplateWidgetSchema = z
   .intersection(sectionTemplateWidgetIdentitySchema, dashboardWidgetSpecSchema)
@@ -250,6 +252,18 @@ export const sectionTemplateWidgetSchema = z
         message: `Widget "${widget.key}": a ${widget.widgetType} widget accepts at most ${cap} catalog binding(s)`,
       });
     }
+
+    const boundKeys = new Set<string>();
+    widget.sources.forEach((source, index) => {
+      if (boundKeys.has(source.catalogKey)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["sources", index, "catalogKey"],
+          message: `Widget "${widget.key}": the catalog entry ${source.catalogKey} is bound twice on one widget`,
+        });
+      }
+      boundKeys.add(source.catalogKey);
+    });
 
     const drawable = WIDGET_SOURCE_SHAPES[widget.widgetType];
     widget.sources.forEach((source, index) => {
@@ -311,10 +325,10 @@ export const sectionTemplateWidgetSchema = z
   })
   // AFTER the refinement — ADR 0029 Amendment 1 fact F, same as the identity node above.
   .describe(
-    "A section template widget. Three rules the document cannot express, beside the identity " +
+    "A section template widget. Four rules the document cannot express, beside the identity " +
       "rules above: each catalog source must be a shape the widget type draws " +
       "(WIDGET_SOURCE_SHAPES), the source count must be at most the type's own cap " +
-      "(WIDGET_SOURCE_CARDINALITY), and a table's config.columns must name only columns its " +
+      "(WIDGET_SOURCE_CARDINALITY), one catalog entry may not be bound twice on a widget, and a table's config.columns must name only columns its " +
       "bound dataset declares (METRIC_CATALOG), each once. No minimum: an unbound template " +
       'widget instantiates as "No data bound." (ADR 0049 decision 6).',
   );
@@ -442,13 +456,32 @@ export const SITE_TEMPLATE_TOP_LEVEL_MESSAGE =
 export const ASSET_GROUP_TEMPLATE_TABS_MESSAGE =
   "an asset-group template is one canvas and holds no tabs";
 
+/** `F4.317` / ADR 0112 decision 2 — an organization has no asset group to bind a tab to. */
+export const ORGANIZATION_TEMPLATE_TABS_MESSAGE =
+  "an organization template is one strip of tiles and holds no tabs";
+
+/** `F4.317` / ADR 0112 decision 2 — the organization strip draws value tiles only, in this phase. */
+export const ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE =
+  "an organization template holds value tiles only in this phase, ADR 0112 decision 2";
+
+/**
+ * `F4.317` / ADR 0112 decision 2 — an organization has no asset group to resolve a role against,
+ * so its tiles bind catalog sources only. Refused here and not only at instantiate, so a draft
+ * with a role-bound tile is refused at create and PATCH before it can be published.
+ */
+export const ORGANIZATION_TEMPLATE_ROLE_BINDINGS_MESSAGE =
+  "an organization template binds catalog sources only; an organization has no asset group " +
+  "to resolve an asset role against";
+
 /**
  * The target rule — plan D4. `null` when `content` fits `target`, else the sentence to answer.
  *
  * One function and not a refinement on the content object, because the object cannot see the
  * target: the create body checks it where it carries both, and the service checks a `PATCH`,
  * a publish and an instantiation against the stored row's target. A site template with no tab
- * passes here: a draft may be incomplete, and publish refuses a template with no widget.
+ * passes here: a draft may be incomplete, and publish refuses a template with no widget. An
+ * organization template (`F4.317`) holds no tab, in this phase value tiles only, and no role
+ * binding.
  */
 export function templateTargetContentMessage(
   target: z.infer<typeof dashboardTemplateTargetSchema>,
@@ -456,7 +489,26 @@ export function templateTargetContentMessage(
 ): string | null {
   if (target === "site" && content.widgets.length > 0) return SITE_TEMPLATE_TOP_LEVEL_MESSAGE;
   if (target === "asset_group" && content.tabs.length > 0) return ASSET_GROUP_TEMPLATE_TABS_MESSAGE;
+  if (target === "organization") {
+    if (content.tabs.length > 0) return ORGANIZATION_TEMPLATE_TABS_MESSAGE;
+    if (content.widgets.some((widget) => widget.widgetType !== "value_tile")) {
+      return ORGANIZATION_TEMPLATE_VALUE_TILES_MESSAGE;
+    }
+    if (content.widgets.some((widget) => widget.bindings.length > 0)) {
+      return ORGANIZATION_TEMPLATE_ROLE_BINDINGS_MESSAGE;
+    }
+  }
   return null;
+}
+
+/**
+ * Which half of `content` a `templateTargetContentMessage` refusal is about: `"tabs"` for a tab
+ * the target holds none of, `"widgets"` otherwise. The create body files its issue there.
+ */
+export function templateTargetContentField(message: string): "widgets" | "tabs" {
+  return message === ASSET_GROUP_TEMPLATE_TABS_MESSAGE || message === ORGANIZATION_TEMPLATE_TABS_MESSAGE
+    ? "tabs"
+    : "widgets";
 }
 
 // ---------------------------------------------------------------------------
