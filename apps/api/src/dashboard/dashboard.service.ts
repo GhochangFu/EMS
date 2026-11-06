@@ -461,7 +461,8 @@ export class DashboardService {
    * `F4.317` (ADR 0112 decision 7) — a site is a location: `sitesOnline` and
    * `sitesTotal` count distinct `location_id`, no longer distinct `site_name`,
    * so the estate tile agrees with its location cards ("4 / 17" read 16
-   * cards). The organization strip's `sites.live.count` is the same rule.
+   * cards). Like the cards, an inactive location is not a site. The
+   * organization strip's `sites.live.count` is the same rule.
    */
   async kpis(assetIds?: string[] | null): Promise<{
     totalKw: number;
@@ -505,18 +506,25 @@ export class DashboardService {
         ORDER BY asset_id, time DESC
       ),
       ${REPORTING_ASSETS_CTE_SQL},
-      -- F4.317 (ADR 0112 decision 7): a site is a location, not a site_name.
       asset_sites AS (
-        SELECT id, location_id FROM bms.assets
+        SELECT id FROM bms.assets
         WHERE ($1::uuid[] IS NULL OR id = ANY($1::uuid[]))
+      ),
+      -- F4.317 (ADR 0112 decision 7): a site is an ACTIVE location, not a site_name --
+      -- the cards' l.active = true and sites.live.count's l.active. Alarms keep
+      -- asset_sites: alarms.active.count reads no location either.
+      site_locations AS (
+        SELECT a.id, a.location_id FROM bms.assets a
+        JOIN bms.locations l ON l.id = a.location_id AND l.active
+        WHERE ($1::uuid[] IS NULL OR a.id = ANY($1::uuid[]))
       )
       SELECT
         -- F4.159: no foreign key holds telemetry to bms.assets; only existing assets count.
         (SELECT COALESCE(SUM(k.kw), 0) FROM kw_latest k
           INNER JOIN bms.assets a ON a.id = k.asset_id)::float8 AS total_kw,
         (SELECT COUNT(DISTINCT s.location_id)::int FROM reporting k
-          JOIN asset_sites s ON s.id = k.asset_id) AS sites_online,
-        (SELECT COUNT(DISTINCT location_id)::int FROM asset_sites) AS sites_total,
+          JOIN site_locations s ON s.id = k.asset_id) AS sites_online,
+        (SELECT COUNT(DISTINCT location_id)::int FROM site_locations) AS sites_total,
         -- ADR 0057 decision 1: open/active = cleared_at IS NULL (since migration 0066).
         (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE cleared_at IS NULL) AS alarms_open,
         (SELECT COUNT(*)::int FROM bms.alarms al INNER JOIN asset_sites s ON s.id = al.asset_id WHERE cleared_at IS NULL AND severity IN (SELECT code FROM bms.alarm_severities WHERE tone = 'critical')) AS alarms_critical

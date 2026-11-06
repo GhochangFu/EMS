@@ -111,13 +111,13 @@ async function seedSite(client: pg.PoolClient): Promise<Site> {
   return { organizationId, locationId, rtuId, domainCode, tag };
 }
 
-/** `F4.317` — a second active location (and RTU) in the site's organization. */
-async function seedLocation(client: pg.PoolClient, site: Site): Promise<Site> {
+/** `F4.317` — a second location (and RTU) in the site's organization; active unless told not. */
+async function seedLocation(client: pg.PoolClient, site: Site, active = true): Promise<Site> {
   const tag = `${site.tag}-${randomUUID().slice(0, 8)}`;
   const loc = await client.query<{ id: string }>(
     `INSERT INTO bms.locations (organization_id, code, slug, name, type, latitude, longitude, active)
-     VALUES ($1, $2, $3, $4, 'rsmoc', 0, 0, true) RETURNING id`,
-    [site.organizationId, `${tag}-LOC`, tag.toLowerCase(), "F4.317 second fixture site"],
+     VALUES ($1, $2, $3, $4, 'rsmoc', 0, 0, $5) RETURNING id`,
+    [site.organizationId, `${tag}-LOC`, tag.toLowerCase(), "F4.317 second fixture site", active],
   );
   const locationId = loc.rows[0]?.id;
   if (!locationId) throw new Error("failed to insert the F4.317 fixture location");
@@ -316,6 +316,32 @@ export async function assertSitesTotalCountsLocationsNotSiteNames(client: pg.Poo
   assert(
     got.sitesOnline === 1 && got.sitesTotal === 1,
     `expected { sitesOnline: 1, sitesTotal: 1 } (two site names, one location), got ${JSON.stringify(got)}`,
+  );
+}
+
+/**
+ * `F4.317` (ADR 0112 decision 7) — an inactive location is not a site: the location cards read
+ * `l.active = true` and `sites.live.count` joins `l.active`, so a reporting asset left at a
+ * deactivated location moves neither `sitesOnline` nor `sitesTotal`. Its open alarm still counts
+ * in `alarmsOpen`, as it does in the catalog's `alarms.active.count`, which reads no location.
+ */
+export async function assertSitesSkipInactiveLocations(client: pg.PoolClient): Promise<void> {
+  const site = await seedSite(client);
+  const dead = await seedLocation(client, site, false);
+  const live = await seedAsset(client, site, "Live");
+  const orphan = await seedAsset(client, dead, "Dead");
+  await insertSampleBeforeNow(client, live, "kw", 5, INSIDE_SITE_WINDOW_S);
+  await insertSampleBeforeNow(client, orphan, "kw", 5, INSIDE_SITE_WINDOW_S);
+  await client.query(
+    `INSERT INTO bms.alarms (organization_id, asset_id, severity, message)
+     VALUES ($1, $2, (SELECT code FROM bms.alarm_severities ORDER BY code LIMIT 1), 'F4.317 inactive-location alarm')`,
+    [site.organizationId, orphan],
+  );
+  const kpis = await service(client).kpis([live, orphan]);
+  const got = { sitesOnline: kpis.sitesOnline, sitesTotal: kpis.sitesTotal, alarmsOpen: kpis.alarmsOpen };
+  assert(
+    got.sitesOnline === 1 && got.sitesTotal === 1 && got.alarmsOpen === 1,
+    `expected { sitesOnline: 1, sitesTotal: 1, alarmsOpen: 1 } (one inactive location), got ${JSON.stringify(got)}`,
   );
 }
 
