@@ -6,7 +6,7 @@ import { fetchLocationKpis } from "../../api/locations";
 import { HealthSummarySection } from "../../components/asset-health/health-summary-section";
 import { ActiveAlarmsRail } from "../../components/control-room/active-alarms-rail";
 import { ControlRoomBreadcrumb } from "../../components/control-room/control-room-breadcrumb";
-import { LiveStatusStrip } from "../../components/control-room/live-status-strip";
+import { OrganizationKpiStrip } from "../../components/control-room/organization-kpi-strip";
 import { OrganizationLoadTrend } from "../../components/control-room/organization-load-trend";
 import { OrganizationSiteMap } from "../../components/control-room/organization-site-map";
 import { ScopedDashboardsList } from "../../components/control-room/scoped-dashboards-list";
@@ -52,8 +52,11 @@ type ControlRoomOrganizationPageProps = {
  * `F3.79` — above the site grid: the site map, this organization's pins only. It is keyed by
  * `organizationId`, so a move to another organization mounts a new map that fits its sites.
  *
- * `F4.259` — under the header: a strip with the live and not-live site counts. The site cards
- * sit in two groups, live first; a group with no site is not rendered.
+ * `F4.259` — the site cards sit in two groups, live first; a group with no site is not rendered.
+ *
+ * `F4.317` (ADR 0112) — under the header: the 14-tile KPI strip from the organization template
+ * (`OrganizationKpiStrip`), which replaced `F4.259`'s two-tile live/not-live strip here. The strip
+ * is its own read, so a failed one leaves the cards and the rail standing.
  */
 export function ControlRoomOrganizationPage({
   user,
@@ -135,7 +138,7 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
         title={card.organization.name}
         subtitle={`${card.organization.code} · ${card.siteCount} sites · ${card.openAlarms} alarms`}
       />
-      <LiveStatusStrip liveCount={live.length} notLiveCount={notLive.length} />
+      <OrganizationKpiStrip key={organizationId} organizationId={organizationId} />
       <OrganizationSiteMap
         key={organizationId}
         organizationId={organizationId}

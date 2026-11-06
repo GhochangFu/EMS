@@ -4,11 +4,13 @@ import { useEffect } from "react";
 import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import type { LocationKpiSummary } from "@bms/shared";
+import type { LocationKpiSummary, OrganizationControlRoomViewDto } from "@bms/shared";
 
 import * as assetsApi from "../../api/assets";
+import * as controlRoomApi from "../../api/control-room";
 import * as locationsApi from "../../api/locations";
 import * as systemStatusApi from "../../api/system-status";
+import { LiveStatusStrip } from "../../components/control-room/live-status-strip";
 import { OPERATIONAL } from "../../components/system-status-indicator.spec";
 import { ControlRoomOrganizationPage } from "./organization-page";
 import { ORG_A, ORG_B, site, USER } from "./organizations-page.spec";
@@ -129,6 +131,41 @@ function stubReads(items: LocationKpiSummary[]): void {
   );
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(locationsApi, "fetchLocationKpis").mockResolvedValue({ items });
+  // `F4.317` — the strip's own read, one tile, answering for whichever organization is asked.
+  vi.spyOn(controlRoomApi, "fetchOrganizationControlRoomView").mockImplementation(async (organizationId) =>
+    stripView(organizationId),
+  );
+}
+
+/** `F4.317` — a one-tile strip answer for `organizationId`. */
+function stripView(organizationId: string): OrganizationControlRoomViewDto {
+  return {
+    organizationId,
+    kind: "stock",
+    dashboardId: null,
+    dashboardSlug: null,
+    layoutName: "Organization standard",
+    canManage: false,
+    tiles: [
+      {
+        key: "sites-live-tile",
+        title: "Sites live",
+        gridX: 0,
+        gridY: 0,
+        gridW: 3,
+        gridH: 2,
+        config: {},
+        sources: [
+          {
+            catalogKey: "sites.live.count",
+            sortOrder: 0,
+            resolved: { shape: "metric", key: "sites.live.count", value: 1, unit: null, coverage: { fresh: 1, carrying: 3 } },
+          },
+        ],
+      },
+    ],
+    resolvedAt: new Date().toISOString(),
+  };
 }
 
 function LandedOnSite() {
@@ -487,17 +524,20 @@ const MIXED_LIVE: LocationKpiSummary[] = [
 ];
 
 /**
- * L1 — `F4.259`: the status strip counts this organization's live and not-live sites. Org B's
- * live site is the control that the strip counts one organization only.
+ * L1 — `F4.317`: the page draws the KPI strip from the organization's own view read (sent the
+ * route's organization id), and no longer the two-tile live/not-live strip. The tile's text is the
+ * API's resolve (1 of 3 locations), not a count taken from the site cards.
  */
-export async function theStatusStripCountsLiveAndNotLiveSites(): Promise<void> {
+export async function theKpiStripReplacesTheLiveStatusStrip(): Promise<void> {
   stubReads(MIXED_LIVE);
   renderAt(ORG_A.id);
 
   await siteGrid();
-  const strip = screen.getByTestId("live-status-strip");
-  expect(within(strip).getByTestId("live-site-count").textContent).toBe("1");
-  expect(within(strip).getByTestId("not-live-site-count").textContent).toBe("2");
+  const strip = await screen.findByTestId("organization-kpi-strip");
+  expect(within(strip).getByText("1 / 3")).toBeInTheDocument();
+  expect(screen.getByTestId("organization-strip-layout").textContent).toBe("Layout: Organization standard");
+  expect(controlRoomApi.fetchOrganizationControlRoomView).toHaveBeenCalledWith(ORG_A.id);
+  expect(screen.queryByTestId("live-status-strip")).toBeNull();
 }
 
 function cardHrefs(group: HTMLElement): (string | null)[] {
@@ -525,7 +565,7 @@ export async function liveSitesComeFirstInTheirOwnGroup(): Promise<void> {
   expect(within(notLive).getByRole("heading").textContent).toBe("Not live (2)");
 }
 
-/** L3 — `F4.259`: with no live site there is no empty live group; the strip shows 0 live. */
+/** L3 — `F4.259`: with no live site there is no empty live group. */
 export async function noLiveSiteRendersNoLiveGroup(): Promise<void> {
   stubReads(ONE_ORG);
   renderAt(ORG_A.id);
@@ -533,7 +573,6 @@ export async function noLiveSiteRendersNoLiveGroup(): Promise<void> {
   await siteGrid();
   expect(screen.queryByTestId("control-room-sites-live")).toBeNull();
   expect(cardHrefs(screen.getByTestId("control-room-sites-not-live"))).toHaveLength(2);
-  expect(screen.getByTestId("live-site-count").textContent).toBe("0");
 }
 
 /**
@@ -550,18 +589,15 @@ export async function everySiteLiveRendersNoNotLiveGroup(): Promise<void> {
   await siteGrid();
   expect(screen.queryByTestId("control-room-sites-not-live")).toBeNull();
   expect(cardHrefs(screen.getByTestId("control-room-sites-live"))).toHaveLength(2);
-  expect(screen.getByTestId("not-live-site-count").textContent).toBe("0");
 }
 
-/** L5 — `F4.259`: the two percents add up to 100 (1 of 8 is 13 and 87, not 13 and 88). */
+/**
+ * L5 — `F4.259`: the two percents of `LiveStatusStrip` (still drawn on the map page) add up to 100
+ * (1 of 8 is 13 and 87, not 13 and 88).
+ */
 export async function theStripPercentsAddUpTo100(): Promise<void> {
-  stubReads([
-    site({ id: "a1", name: "Alpha One", organization: ORG_A, freshAssetCount: 1 }),
-    ...[2, 3, 4, 5, 6, 7, 8].map((n) => site({ id: `a${n}`, name: `Alpha ${n}`, organization: ORG_A })),
-  ]);
-  renderAt(ORG_A.id);
+  render(<LiveStatusStrip liveCount={1} notLiveCount={7} />);
 
-  await siteGrid();
   const strip = screen.getByTestId("live-status-strip");
   expect(within(strip).getByText("of 8 · 13% reporting fresh telemetry")).toBeInTheDocument();
   expect(within(strip).getByText("of 8 · 87% with no fresh telemetry")).toBeInTheDocument();

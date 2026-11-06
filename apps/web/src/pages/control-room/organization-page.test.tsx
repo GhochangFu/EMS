@@ -18,7 +18,7 @@ import {
   liveSitesComeFirstInTheirOwnGroup,
   theStripPercentsAddUpTo100,
   noLiveSiteRendersNoLiveGroup,
-  theStatusStripCountsLiveAndNotLiveSites,
+  theKpiStripReplacesTheLiveStatusStrip,
   oneOrganizationRendersNoBreadcrumb,
   oneSiteSkipsToTheSite,
   siteCardsLinkToTheSiteLevel,
@@ -121,8 +121,8 @@ describe("F3.66 U3 ControlRoomOrganizationPage", () => {
     await anotherOrganizationMountsANewSiteMap();
   });
 
-  it("L1 counts this organization's live and not-live sites in the status strip (F4.259)", async () => {
-    await theStatusStripCountsLiveAndNotLiveSites();
+  it("L1 draws the KPI strip from the organization view in place of the live status strip (F4.317)", async () => {
+    await theKpiStripReplacesTheLiveStatusStrip();
   });
 
   it("L2 shows the live sites first, in their own group (F4.259)", async () => {
