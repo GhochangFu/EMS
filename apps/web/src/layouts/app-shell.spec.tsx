@@ -555,3 +555,61 @@ export function readsNoTrinetraInTheShell(): void {
   expect(within(header()).getByRole("img", { name: "IONSiTE NEXUS" })).toBeTruthy();
   expect(screen.queryByText(/trinetra/i)).toBeNull();
 }
+
+/** `F4.317` — set the jsdom viewport width (jsdom's default is 1024 px). Undo it with {@link resetViewport}. */
+function setViewportWidth(width: number): void {
+  Object.defineProperty(window, "innerWidth", { configurable: true, writable: true, value: width });
+}
+
+/** `F4.317` — the jsdom default width again, for the next case. */
+export function resetViewport(): void {
+  setViewportWidth(1024);
+}
+
+function sidebarToggle(name: "Expand sidebar" | "Collapse sidebar"): HTMLElement {
+  return within(sidebar()).getByRole("button", { name });
+}
+
+/**
+ * N1 — at a 390 px phone width the sidebar is the 64 px rail, although the stored desktop choice
+ * is "expanded": the page keeps all but 64 px of the row.
+ */
+export function showsTheRailOnAPhoneWidth(): void {
+  setViewportWidth(390);
+  window.localStorage.setItem("bms-sidebar-collapsed", "false");
+  renderShell(GLOBAL);
+  expect(sidebar()).toHaveClass("w-16");
+  expect(sidebar()).not.toHaveClass("w-60");
+  expect(sidebarToggle("Expand sidebar")).toBeInTheDocument();
+  expect(screen.getByTestId("shell-sidebar-slot")).toHaveClass("w-16");
+}
+
+/**
+ * N2 — on a phone width, Expand opens the sidebar OVER the page: the aside is 240 px and
+ * absolutely placed, its slot in the row stays 64 px, and the stored desktop choice is not written.
+ */
+export function expandsTheSidebarAsAnOverlayOnAPhoneWidth(): void {
+  setViewportWidth(390);
+  window.localStorage.setItem("bms-sidebar-collapsed", "true");
+  renderShell(GLOBAL);
+  act(() => {
+    sidebarToggle("Expand sidebar").click();
+  });
+  expect(sidebar()).toHaveClass("w-60", "absolute");
+  expect(screen.getByTestId("shell-sidebar-slot")).toHaveClass("w-16");
+  expect(window.localStorage.getItem("bms-sidebar-collapsed")).toBe("true");
+  act(() => {
+    sidebarToggle("Collapse sidebar").click();
+  });
+  expect(sidebar()).toHaveClass("w-16");
+}
+
+/** N3 — the positive twin: at a desktop width the stored "expanded" choice draws the 240 px sidebar in the row. */
+export function keepsTheStoredChoiceOnADesktopWidth(): void {
+  setViewportWidth(1280);
+  window.localStorage.setItem("bms-sidebar-collapsed", "false");
+  renderShell(GLOBAL);
+  expect(sidebar()).toHaveClass("w-60");
+  expect(sidebar()).not.toHaveClass("absolute");
+  expect(screen.getByTestId("shell-sidebar-slot")).not.toHaveClass("w-16");
+}
