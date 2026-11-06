@@ -84,6 +84,7 @@ const REPORT_SCHEDULES_SERVICE = "apps/api/src/reports/report-schedules.service.
 /** `F4.303` (ADR 0108 Amendment 6 items 6, 8): the render's parses of the stored template and params. */
 const REPORT_RENDER_SERVICE = "apps/api/src/reports/report-render.service.ts";
 const SITE_LAYOUT_SERVICE = "apps/api/src/control-room/site-layout.service.ts";
+const ORGANIZATION_LAYOUT_SERVICE = "apps/api/src/control-room/organization-layout.service.ts";
 /** `F4.255`: the onboarding draft list's whole-DTO parse (`.strict()`, so a leaked `draft` is a 500). */
 const ONBOARDING_SERVICE = "apps/api/src/admin/onboarding/onboarding.service.ts";
 /**
@@ -604,6 +605,7 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         reportSchedules: occurrences(REPORT_SCHEDULES_SERVICE),
         reportRender: occurrences(REPORT_RENDER_SERVICE),
         siteLayout: occurrences(SITE_LAYOUT_SERVICE),
+        organizationLayout: occurrences(ORGANIZATION_LAYOUT_SERVICE),
         onboarding: occurrences(ONBOARDING_SERVICE),
         ...Object.fromEntries(
           Object.entries(COPILOT_TOOL_FILES).map(([key, rel]) => [key, occurrences(rel)]),
@@ -624,7 +626,8 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
         "inventory read tool; F4.296 one more in each of the point statistics and site point " +
         "inventory read tools, the site summary and the unruled read; F4.303 two in " +
         "report-render.service.ts, the stored template and params; F4.315 PR A one more, the " +
-        "asset template read tool. " +
+        "asset template read tool; F4.317 PR 4 one more, the organization template content in " +
+        "organization-layout.service.ts. " +
         "A site reverted to " +
         "a bare .parse() answers 400 under the filter, which is ruling 2's failure mode " +
         "exactly.",
@@ -637,6 +640,7 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       reportSchedules: 1,
       reportRender: 2,
       siteLayout: 1,
+      organizationLayout: 1,
       onboarding: 1,
       ...Object.fromEntries(Object.keys(COPILOT_TOOL_FILES).map((key) => [key, 1])),
       copilotGetPointStats: 2,
@@ -672,8 +676,9 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       // statistics read tool; `F4.291` PR 3: + the point statistics read tool; `F4.288`: + the
       // site point inventory read tool; `F4.296`: + the site summary and the unruled rules read;
       // `F4.303`: + the render's stored template and params; `F4.309` PR 3: + the state-label read tool;
-      // `F4.315` PR A: + the asset template read tool.
-    ).toBe(55);
+      // `F4.315` PR A: + the asset template read tool; `F4.317` PR 4: + the organization template
+      // content the organization-layout copy reads back.
+    ).toBe(56);
 
     const callSites = [
       STOCK_SERVICE,
@@ -684,6 +689,7 @@ describe("F4.108 / ADR 0060 — a stored-data parse never reaches the ZodError f
       REPORT_SCHEDULES_SERVICE,
       REPORT_RENDER_SERVICE,
       SITE_LAYOUT_SERVICE,
+      ORGANIZATION_LAYOUT_SERVICE,
       ONBOARDING_SERVICE,
       ...Object.values(COPILOT_TOOL_FILES),
     ]

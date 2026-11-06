@@ -8,14 +8,24 @@ import { AccessControlModule } from "../auth/access-control.module";
 import { DatabaseModule } from "../database/database.module";
 import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "../database/database.tokens";
 import { AdminModule } from "../admin/admin.module";
-import { SITE_TEMPLATE_ARM, type SiteTemplateArm } from "../admin/dashboard-templates/dashboard-templates-instantiate.service";
+import {
+  ORGANIZATION_TEMPLATE_ARM,
+  SITE_TEMPLATE_ARM,
+  type OrganizationTemplateArm,
+  type SiteTemplateArm,
+} from "../admin/dashboard-templates/dashboard-templates-instantiate.service";
 import { LocationsAdminController } from "../admin/locations/locations.controller";
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AppModule } from "../app.module";
+import { OrganizationViewAccessService } from "../auth/organization-view-access.service";
+import { DashboardBuilderModule } from "../dashboard-builder/dashboard-builder.module";
+import { MetricCatalogService } from "../dashboard-builder/metric-catalog.service";
 import { repoRoot } from "../testing/repo-root";
 import { ControlRoomModule } from "./control-room.module";
 import { GeneratedSiteViewController } from "./generated-site-view.controller";
 import { GeneratedSiteViewService } from "./generated-site-view.service";
+import { OrganizationLayoutService } from "./organization-layout.service";
+import { OrganizationViewController } from "./organization-view.controller";
 import { SiteControlRoomViewService } from "./site-control-room-view.service";
 import { SiteLayoutService } from "./site-layout.service";
 import { SiteViewController } from "./site-view.controller";
@@ -282,4 +292,77 @@ export async function assertTheSiteArmDelegatesToMakeForSite(): Promise<void> {
   const GROUP = "22222222-2222-4222-8222-222222222222";
   await arm(jwt, { id: "t-1", organizationId: "o-1" }, { locationId: LOCATION, tabGroups: { sld: GROUP } });
   expect(calls).toEqual([[jwt, { locationId: LOCATION, templateId: "t-1", tabGroups: { sld: GROUP } }]]);
+}
+
+// ---------------------------------------------------------------- F4.317 the organization strip
+
+/** Every token resolvable inside `ControlRoomModule`: its own providers, its imports' exports, the globals. */
+function controlRoomWithImportsTokens(): { byIdentity: Set<Token>; byName: Set<string> } {
+  const { byIdentity } = controlRoomResolvableTokens();
+  for (const imported of moduleList(ControlRoomModule, "imports")) {
+    for (const entry of moduleList(imported as object, "exports")) byIdentity.add(tokenOf(entry));
+  }
+  return { byIdentity, byName: new Set([...byIdentity].map(nameOf)) };
+}
+
+/**
+ * `F4.317` task 4.2 — `ControlRoomModule` declares the organization view controller, provides and
+ * exports `OrganizationLayoutService` (for `AdminModule`'s organization arm), and imports
+ * `DashboardBuilderModule`, which exports the `MetricCatalogService` the strip resolves through;
+ * `AccessControlModule` (global) provides `OrganizationViewAccessService`.
+ */
+export function assertControlRoomModuleWiresTheOrganizationStrip(): void {
+  expect(moduleList(ControlRoomModule, "controllers")).toContain(OrganizationViewController);
+  expect(moduleList(ControlRoomModule, "providers").map(tokenOf)).toContain(OrganizationLayoutService);
+  expect(moduleList(ControlRoomModule, "exports").map(tokenOf)).toContain(OrganizationLayoutService);
+  expect(moduleList(ControlRoomModule, "imports")).toContain(DashboardBuilderModule);
+  expect(moduleList(DashboardBuilderModule, "exports").map(tokenOf)).toContain(MetricCatalogService);
+  expect(moduleList(AccessControlModule, "exports").map(tokenOf)).toContain(OrganizationViewAccessService);
+}
+
+/** `F4.317` — the controller and the service's own dependencies resolve inside `ControlRoomModule`. */
+export function assertOrganizationLayoutDepsResolveWithinControlRoom(): void {
+  const { byIdentity, byName } = controlRoomWithImportsTokens();
+  expect(classTypedParams("apps/api/src/control-room", "organization-view.controller.ts", "OrganizationViewController")).toEqual([
+    "OrganizationLayoutService",
+  ]);
+  const tokens = injectedTokens(OrganizationLayoutService).map((d) => d.param);
+  expect(tokens).toEqual(expect.arrayContaining([FLEET_DRIZZLE, TENANT_DRIZZLE]));
+  expect(tokens.filter((t) => !byIdentity.has(t)).map(nameOf), "@Inject tokens Nest would fail to resolve").toEqual([]);
+  const classes = classTypedParams("apps/api/src/control-room", "organization-layout.service.ts", "OrganizationLayoutService");
+  expect(classes).toEqual([
+    "AccessControlService",
+    "OrganizationViewAccessService",
+    "MasterDataAuditService",
+    "MetricCatalogService",
+  ]);
+  expect(classes.filter((cls) => !byName.has(cls)), "classes Nest would fail to resolve at boot").toEqual([]);
+}
+
+function organizationArmProvider(): FactoryProvider | undefined {
+  return moduleList(AdminModule, "providers").find(
+    (entry): entry is FactoryProvider =>
+      typeof entry === "object" && entry !== null && (entry as { provide?: unknown }).provide === ORGANIZATION_TEMPLATE_ARM,
+  );
+}
+
+/** `F4.317` — `AdminModule` fills the `ORGANIZATION_TEMPLATE_ARM` seam from `OrganizationLayoutService`. */
+export function assertAdminModuleProvidesTheOrganizationArm(): void {
+  const provider = organizationArmProvider();
+  expect(provider, "AdminModule must provide ORGANIZATION_TEMPLATE_ARM").toBeDefined();
+  expect(provider?.inject).toEqual([OrganizationLayoutService]);
+  expect(adminResolvableTokens().byIdentity.has(OrganizationLayoutService), "OrganizationLayoutService resolvable in AdminModule").toBe(
+    true,
+  );
+}
+
+/** `F4.317` — the arm IS the copy action: it forwards the body's organization and the template id to `make`. */
+export async function assertTheOrganizationArmDelegatesToMake(): Promise<void> {
+  const calls: unknown[][] = [];
+  const fake = { make: async (...args: unknown[]) => (calls.push(args), { made: true }) };
+  const arm = organizationArmProvider()?.useFactory(fake) as OrganizationTemplateArm;
+  const jwt = { sub: "s", email: "e@x", name: "n", role: "admin" } as const;
+  const ORG = "11111111-1111-4111-8111-111111111111";
+  await arm(jwt, { id: "t-1", organizationId: ORG }, { organizationId: ORG });
+  expect(calls).toEqual([[jwt, ORG, { templateId: "t-1" }]]);
 }

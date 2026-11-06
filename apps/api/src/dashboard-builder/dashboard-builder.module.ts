@@ -56,7 +56,8 @@ import { SiteWidgetsService } from "./site-widgets.service";
     // stateless the way `MasterDataAuditService` is (its handles come from `DatabaseModule`'s tokens).
     TrendPointsService,
   ],
-  // `F3.85` PR 7: the copilot's `list_dashboards` read tool.
-  exports: [DashboardsService],
+  // `F3.85` PR 7: the copilot's `list_dashboards` read tool. `F4.317` task 4.2: the catalog service,
+  // for `ControlRoomModule`'s organization strip.
+  exports: [DashboardsService, MetricCatalogService],
 })
 export class DashboardBuilderModule {}

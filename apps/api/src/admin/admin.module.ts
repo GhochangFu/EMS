@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { CalcBackfillRunStore } from "../calc-backfill/calc-backfill-run-store";
 import { CalcModule } from "../calc/calc.module";
 import { ControlRoomModule } from "../control-room/control-room.module";
+import { OrganizationLayoutService, organizationTemplateArmOf } from "../control-room/organization-layout.service";
 import { SiteLayoutService, siteTemplateArmOf } from "../control-room/site-layout.service";
 import { IdentityAdminModule } from "../identity/identity-admin.module";
 import { CredentialCryptoService } from "../security/credential-crypto.service";
@@ -29,7 +30,9 @@ import { STOCK_ASSET_TEMPLATE_CATALOG_TOKEN } from "./asset-templates/asset-temp
 import { STOCK_ASSET_TEMPLATE_CATALOG } from "./asset-templates/stock-catalog/stock-catalog";
 import {
   DashboardTemplatesInstantiateService,
+  ORGANIZATION_TEMPLATE_ARM,
   SITE_TEMPLATE_ARM,
+  type OrganizationTemplateArm,
   type SiteTemplateArm,
 } from "./dashboard-templates/dashboard-templates-instantiate.service";
 import { DashboardTemplatesStockService } from "./dashboard-templates/dashboard-templates-stock.service";
@@ -199,6 +202,14 @@ import { UsersService } from "./users/users.service";
       provide: SITE_TEMPLATE_ARM,
       useFactory: (siteLayout: SiteLayoutService): SiteTemplateArm => siteTemplateArmOf(siteLayout),
       inject: [SiteLayoutService],
+    },
+    // `F4.317` task 4.2 (ADR 0112 decision 4) — the `instantiate` organization arm, filled by the
+    // organization-layout copy action `ControlRoomModule` exports; `organizationTemplateArmOf` is
+    // the factory, so the integration spec drives this same arm.
+    {
+      provide: ORGANIZATION_TEMPLATE_ARM,
+      useFactory: (layout: OrganizationLayoutService): OrganizationTemplateArm => organizationTemplateArmOf(layout),
+      inject: [OrganizationLayoutService],
     },
     AuditAdminService,
     TelemetryWriteService,

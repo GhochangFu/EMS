@@ -25,7 +25,7 @@ describe("F4.317 — the instantiate service's organization-arm seam", () => {
     theOrganizationArmIsInjectedByItsToken();
   });
 
-  it("marks the organization arm optional, so the module boots before PR 4 provides it", () => {
+  it("marks the organization arm optional, so a module without it still boots", () => {
     theOrganizationArmIsOptional();
   });
 });

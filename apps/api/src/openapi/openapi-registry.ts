@@ -64,6 +64,8 @@ import {
   // `F4.309` (ADR 0088 Amendment 3): the state-label write bodies.
   createPointKeyStateBodySchema,
   updatePointKeyStateBodySchema,
+  // `F4.317` task 4.2 (ADR 0112 decision 4): "Make organization layout".
+  putOrganizationControlRoomViewBodySchema,
 } from "@bms/shared";
 import type { ZodTypeAny } from "zod";
 
@@ -328,6 +330,9 @@ export const REQUEST_SCHEMAS: Record<string, ZodTypeAny> = {
   // is absent: one path parameter, no body, no query.
   LocationsAdminController_makeSiteLayout: siteLayoutBodySchema,
   MaintenanceController_convert: convertMaintenanceBodySchema,
+  // `F4.317` task 4.2 (ADR 0112 decision 4) — "Make organization layout". `_view` and `_reset` are
+  // absent: one path parameter, no body, no query.
+  OrganizationViewController_make: putOrganizationControlRoomViewBodySchema,
   MaintenanceController_createSchedule: createMaintenanceScheduleBodySchema,
   MaintenanceController_listSchedules: listMaintenanceQuerySchema,
   MaintenanceController_updateSchedule: updateMaintenanceScheduleBodySchema,

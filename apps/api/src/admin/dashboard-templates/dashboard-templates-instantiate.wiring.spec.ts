@@ -60,12 +60,12 @@ export function theOrganizationArmIsInjectedByItsToken(): void {
   ).toBe(ORGANIZATION_TEMPLATE_ARM);
 }
 
-/** The organization seam is optional, so `AdminModule` boots before F4.317 PR 4 provides it. */
+/** The organization seam is optional: a module that does not provide it boots, and the arm answers 501. */
 export function theOrganizationArmIsOptional(): void {
   const optional = (Reflect.getMetadata(OPTIONAL_DEPS_METADATA, DashboardTemplatesInstantiateService) ??
     []) as number[];
   expect(
     optional,
-    "the organization-arm parameter must carry @Optional(): nothing provides ORGANIZATION_TEMPLATE_ARM until PR 4",
+    "the organization-arm parameter must carry @Optional(): a module without ORGANIZATION_TEMPLATE_ARM must still boot",
   ).toContain(ORGANIZATION_ARM_INDEX);
 }
