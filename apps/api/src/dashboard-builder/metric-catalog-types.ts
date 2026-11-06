@@ -50,6 +50,11 @@ export type ResolverDeps = {
  * `water.balance`. Positional and required
  * rather than optional, so a resolver that reads a field cannot compile against a call that
  * never passes one.
+ *
+ * `priorAt` (`F4.317`, ADR 0112 decision 8) is the instant 24 h before the resolve when the
+ * binding's tile asks for "vs yesterday" (`compareToPrevious`, owner ruling Q5), else `null`. An
+ * entry with a prior read (`PRIOR_KEYS`, `metric-catalog-prior.ts`) emits `prior` exactly when
+ * it is set; every other entry ignores it. Positional and required for the same reason.
  */
 export type Resolver = (
   tx: BmsTx,
@@ -57,4 +62,5 @@ export type Resolver = (
   scope: readonly string[],
   deps: ResolverDeps,
   params: unknown,
+  priorAt: Date | null,
 ) => Promise<MetricCatalogValueDto>;

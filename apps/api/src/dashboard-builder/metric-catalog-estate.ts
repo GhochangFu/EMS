@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 
 import { latestPueRatio } from "../telemetry/pue-ratio";
 import { REPORTING_ASSETS_CTE_SQL } from "../telemetry/telemetry-freshness";
+import { priorOf } from "./metric-catalog-prior";
 import type { Resolver } from "./metric-catalog-types";
 
 /**
@@ -59,9 +60,13 @@ export const sitesLiveCount: Resolver = async (tx, organizationId, scope) => {
  * `pue.ratio` — Σ `site_kw` / Σ `it_kw` over the paired incomers in scope, through
  * `latestPueRatio`: the estate tile's own read, its 900 s freshness bound and its `null` for
  * "no fresh pair" (`F2.8` rulings 3 and 4; never a sentinel). On `deps.pool`, the fleet pool,
- * for the reason `ResolverDeps.pool` states.
+ * for the reason `ResolverDeps.pool` states. With `priorAt`, also the value then.
  */
-export const pueRatio: Resolver = async (_tx, _organizationId, scope, deps) => {
+export const pueRatio: Resolver = async (_tx, _organizationId, scope, deps, _params, priorAt) => {
   const value = scope.length === 0 ? null : await latestPueRatio(deps.pool, [...scope]);
-  return { shape: "metric", key: "pue.ratio", value, unit: null };
+  if (priorAt === null) return { shape: "metric", key: "pue.ratio", value, unit: null };
+  // The prior (decision 8): the estate `pueEstimate` prior's own read — the 900 s window moved
+  // back to `(priorAt − 900 s, priorAt]` (`kpi-prior.ts`, the owner's ruling OQ2).
+  const prior = scope.length === 0 ? null : await latestPueRatio(deps.pool, [...scope], priorAt);
+  return { shape: "metric", key: "pue.ratio", value, unit: null, prior: priorOf(priorAt, prior) };
 };

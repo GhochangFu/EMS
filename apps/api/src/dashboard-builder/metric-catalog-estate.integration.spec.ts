@@ -97,3 +97,59 @@ export async function assertActiveAndCriticalPairOnOneTile(
   ).toBe(expectedCritical);
   expect(expectedCritical < expectedActive, "the fixture must tell the two counts apart").toBe(true);
 }
+
+/**
+ * Decision 8 / ruling Q5 — the prior. A tile that asks (`compareToPrevious`) gets `prior`, the
+ * value at `resolvedAt − 24 h` on the metric's own definition (ADR 0074 decision 5); a tile with
+ * the same binding that does not ask gets no `prior` key at all, so it costs no read.
+ */
+export async function assertPriorOnlyWhenAsked(
+  service: MetricCatalogService,
+  organizationId: string,
+  dashboardId: string,
+  callerScope: readonly string[],
+  askingWidgetId: string,
+  plainWidgetId: string,
+  catalogKey: string,
+  expected: { readonly live: number | null; readonly prior: number | null },
+): Promise<void> {
+  const resolved = await service.resolveForDashboard(organizationId, dashboardId, [...callerScope], null);
+  const of = (widgetId: string) => {
+    const entry = resolved.values.find(
+      (value) => value.widgetId === widgetId && value.catalogKey === catalogKey,
+    )?.resolved;
+    return entry?.shape === "metric" ? entry : undefined;
+  };
+  const asking = of(askingWidgetId);
+  const plain = of(plainWidgetId);
+  expect(asking?.value, `${catalogKey}: the live value`).toBe(expected.live);
+  expect(asking?.prior?.value, `${catalogKey}: the prior is the value 24 h before resolvedAt`).toBe(
+    expected.prior,
+  );
+  expect(
+    asking?.prior?.asOf,
+    "prior.asOf is exactly 24 h before the response's resolvedAt",
+  ).toBe(new Date(Date.parse(resolved.resolvedAt) - 24 * 3_600_000).toISOString());
+  expect(plain?.value, `${catalogKey}: the tile that does not ask still resolves`).toBe(expected.live);
+  expect(plain !== undefined && "prior" in plain, "a tile without compareToPrevious carries no prior key").toBe(
+    false,
+  );
+}
+
+/**
+ * `priorOpenAlarmsInScope` at its edges — open at `at` means `raised_at <= at` and not cleared by
+ * then (`cleared_at > at`), the estate `priorOpenAlarms` rule (`kpi-prior.ts`). The fixture alarm
+ * is raised at exactly `raisedAt`, cleared an hour later, and is not critical.
+ */
+export async function assertPriorOpenAlarmsEdges(
+  count: (at: Date, criticalOnly: boolean) => Promise<number>,
+  raisedAt: Date,
+): Promise<void> {
+  expect(await count(raisedAt, false), "raised_at = at: the alarm is open at `at`").toBe(1);
+  expect(await count(new Date(raisedAt.getTime() - 1), false), "raised a millisecond after `at`").toBe(0);
+  expect(
+    await count(new Date(raisedAt.getTime() + 3_600_000), false),
+    "cleared_at = at: the alarm is closed at `at`",
+  ).toBe(0);
+  expect(await count(raisedAt, true), "criticalOnly leaves out a non-critical alarm").toBe(0);
+}

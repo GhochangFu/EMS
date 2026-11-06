@@ -58,6 +58,9 @@ const noDeps = {
   (typeof RESOLVERS)["sustainability.total"]
 >[3];
 
+/** `F4.317` — a prior instant, for the claims that ask for one. */
+const PRIOR_AT = new Date("2031-01-01T00:00:00.000Z");
+
 /** What each entry's parsed params look like — `{}` for the Stage C five, the pair for the two
  * roll-ups, `{ period }` for `water.balance` (`E4.3`). */
 const paramsFor = (key: string): unknown =>
@@ -79,8 +82,11 @@ export async function everyEntryOnAnEmptyScopeBuildsNoSql(): Promise<void> {
   const failures: string[] = [];
   for (const key of keys) {
     try {
-      const resolved = await RESOLVERS[key](refusingTx(), "org", [], noDeps, paramsFor(key));
+      const resolved = await RESOLVERS[key](refusingTx(), "org", [], noDeps, paramsFor(key), null);
       if (resolved.key !== key) failures.push(`${key}: answered as ${resolved.key}`);
+      // `F4.317` — asking for the prior builds no SQL either.
+      const asked = await RESOLVERS[key](refusingTx(), "org", [], noDeps, paramsFor(key), PRIOR_AT);
+      if (asked.key !== key) failures.push(`${key} (prior): answered as ${asked.key}`);
     } catch (error) {
       failures.push(`${key}: ${(error as Error).message}`);
     }
@@ -98,7 +104,7 @@ export async function totalOnAnEmptyScopeBuildsNoSql(): Promise<void> {
   const resolved = await RESOLVERS["sustainability.total"](refusingTx(), "org", [], noDeps, {
     pointKey: "kl_today",
     aggregate: "sum",
-  });
+  }, null);
   same(
     resolved,
     {
@@ -118,7 +124,7 @@ export async function byLocationOnAnEmptyScopeBuildsNoSql(): Promise<void> {
   const resolved = await RESOLVERS["sustainability.by_location"](refusingTx(), "org", [], noDeps, {
     pointKey: "kl_today",
     aggregate: "sum",
-  });
+  }, null);
   same(
     { shape: resolved.shape, rows: resolved.shape === "dataset" ? resolved.rows : undefined },
     { shape: "dataset", rows: [] },
@@ -153,6 +159,7 @@ const plannedScopeKeys = (
   const plan = planResolves(
     sources,
     (widgetId) => scopes[widgetId] ?? siteScope,
+    () => false,
     () => {
       throw new Error("no binding in this fixture fails its write schema");
     },
@@ -226,6 +233,7 @@ export function aSustainabilityBindingOnALocationDashboardPlansASubtreeScope(): 
       sustainabilitySource("s2", "w2", "sustainability.by_location"),
     ],
     () => siteScope,
+    () => false,
     () => {
       throw new Error("no binding in this fixture fails its write schema");
     },
@@ -248,6 +256,7 @@ export function anAssetListBindingOnTheSameDashboardKeepsTheNodeScope(): void {
       { id: "s2", widgetId: "w2", catalogKey: "assets.list", params: {} },
     ],
     () => siteScope,
+    () => false,
     () => {
       throw new Error("no binding in this fixture fails its write schema");
     },
@@ -265,13 +274,13 @@ export function anAssetListBindingOnTheSameDashboardKeepsTheNodeScope(): void {
  * dataset of its four declared columns, both before any SQL (the `scopeIsEmpty` claim). The
  * enumerating claim above holds that no SQL runs; this one holds the ANSWER. */
 export async function assetsEntriesOnAnEmptyScopeAnswerZeroAndEmpty(): Promise<void> {
-  const count = await RESOLVERS["assets.offline.count"](refusingTx(), "org", [], noDeps, {});
+  const count = await RESOLVERS["assets.offline.count"](refusingTx(), "org", [], noDeps, {}, null);
   same(
     count.shape === "metric" ? count.value : count,
     0,
     "assets.offline.count over []",
   );
-  const list = await RESOLVERS["assets.list"](refusingTx(), "org", [], noDeps, {});
+  const list = await RESOLVERS["assets.list"](refusingTx(), "org", [], noDeps, {}, null);
   same(
     list.shape === "dataset"
       ? { columns: list.columns, rows: list.rows, truncated: list.truncated }
@@ -286,7 +295,7 @@ export async function assetsEntriesOnAnEmptyScopeAnswerZeroAndEmpty(): Promise<v
 export async function waterBalanceOnAnEmptyScopeBuildsNoSql(): Promise<void> {
   const resolved = await RESOLVERS["water.balance"](refusingTx(), "org", [], noDeps, {
     period: "today",
-  });
+  }, null);
   same(
     resolved.shape === "dataset" ? { columns: resolved.columns.length, rows: resolved.rows } : resolved,
     { columns: 7, rows: [] },
@@ -337,4 +346,60 @@ export async function catalogValuesPassesEachReadableSetInItsOwnPosition(): Prom
   same([organizationId, dashboardId], ["org-1", "dash-1"], "the dashboard row's organization and id");
   same(readableAssetIds, assetSentinel, "position 3 is readableAssetIds");
   same(readableLocationIds, locationSentinel, "position 4 is readableLocationIds, never null and never the asset set");
+}
+
+/**
+ * `F4.317` task 2.2 (ADR 0112 decision 8, ruling Q5) — the resolve key carries whether the tile
+ * asks for a prior. Two tiles on one binding, one with `compareToPrevious`, are two resolves (the
+ * one that asks pays for the prior read; the other does not); two that do not ask stay one.
+ */
+const sourcesOnTwoTiles = (catalogKey: string) => [
+  { id: "s1", widgetId: "w1", catalogKey, params: {} },
+  { id: "s2", widgetId: "w2", catalogKey, params: {} },
+];
+
+const plannedPriors = (catalogKey: string, asks: ReadonlySet<string>): boolean[] => {
+  const sources = sourcesOnTwoTiles(catalogKey);
+  const plan = planResolves(
+    sources,
+    () => siteScope,
+    (widgetId) => asks.has(widgetId),
+    () => {
+      throw new Error("no binding in this fixture fails its write schema");
+    },
+  );
+  assert(
+    sources.every((source) => plan.resolves.has(plan.resolveKeyOf.get(source.id) ?? "")),
+    "every source must map to a planned resolve",
+  );
+  return [...plan.resolves.values()].map((resolve) => resolve.wantsPrior);
+};
+
+export function aTileThatAsksForThePriorIsItsOwnResolve(): void {
+  same(plannedPriors("alarms.active.count", new Set(["w1"])), [true, false], "one asks, one does not");
+  same(plannedPriors("alarms.active.count", new Set()), [false], "neither asks");
+  same(plannedPriors("alarms.critical.count", new Set(["w1", "w2"])), [true], "both ask");
+}
+
+/** A key with no prior read (`workorders.open.count`) never plans one, whatever the tile asks. */
+export function aKeyWithNoPriorNeverPlansOne(): void {
+  same(plannedPriors("workorders.open.count", new Set(["w1"])), [false], "workorders.open.count");
+}
+
+/** On an empty scope the prior is the live answer's own: `0` for a count, `null` otherwise. */
+export async function thePriorOnAnEmptyScopeBuildsNoSql(): Promise<void> {
+  const alarms = await RESOLVERS["alarms.critical.count"](refusingTx(), "org", [], noDeps, {}, PRIOR_AT);
+  same(
+    alarms.shape === "metric" ? alarms.prior : alarms,
+    { asOf: PRIOR_AT.toISOString(), value: 0 },
+    "alarms.critical.count prior over []",
+  );
+  const total = await RESOLVERS["sustainability.total"](refusingTx(), "org", [], noDeps, paramsFor("sustainability.total"), PRIOR_AT);
+  same(
+    total.shape === "metric" ? total.prior : total,
+    { asOf: PRIOR_AT.toISOString(), value: null },
+    "sustainability.total prior over []",
+  );
+  const plain = await RESOLVERS["alarms.active.count"](refusingTx(), "org", [], noDeps, {}, null);
+  assert(!("prior" in plain), "no priorAt, no prior key");
 }

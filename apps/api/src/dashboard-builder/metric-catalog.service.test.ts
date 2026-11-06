@@ -1,7 +1,9 @@
 import { describe, it } from "vitest";
 
 import {
+  aKeyWithNoPriorNeverPlansOne,
   aSustainabilityBindingOnALocationDashboardPlansASubtreeScope,
+  aTileThatAsksForThePriorIsItsOwnResolve,
   anAssetListBindingOnTheSameDashboardKeepsTheNodeScope,
   assetsEntriesOnAnEmptyScopeAnswerZeroAndEmpty,
   byLocationOnAnEmptyScopeBuildsNoSql,
@@ -11,6 +13,7 @@ import {
   sameKeyOnOneTabIsOneResolve,
   sameKeyOnTwoGroupTabsIsTwoResolves,
   scopeKeyFollowsTheResolverArmOrder,
+  thePriorOnAnEmptyScopeBuildsNoSql,
   totalOnAnEmptyScopeBuildsNoSql,
   waterBalanceOnAnEmptyScopeBuildsNoSql,
 } from "./metric-catalog.service.spec";
@@ -69,5 +72,19 @@ describe("F2.10 — the two sustainability entries resolve a location dashboard 
 describe("F2.10 — catalogValues passes the reader's two readable sets in their own positions (A6, no database)", () => {
   it("resolveForDashboard gets readableAssetIds third and readableLocationIds fourth", async () => {
     await catalogValuesPassesEachReadableSetInItsOwnPosition();
+  });
+});
+
+describe("F4.317 — a prior is planned only for a tile that asks (decision 8, Q5, no database)", () => {
+  it("a tile with compareToPrevious beside one without is two resolves; neither asking is one", () => {
+    aTileThatAsksForThePriorIsItsOwnResolve();
+  });
+
+  it("a key with no prior read never plans one", () => {
+    aKeyWithNoPriorNeverPlansOne();
+  });
+
+  it("the prior on an empty scope builds no SQL and carries the live answer's empty value", async () => {
+    await thePriorOnAnEmptyScopeBuildsNoSql();
   });
 });
