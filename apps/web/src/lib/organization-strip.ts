@@ -15,8 +15,9 @@ import { toKpiTileProps, type KpiTileWidgetProps } from "./widget-value";
  *   alarm is open; else none.
  * - **`sites.live.count`** reads `live / total`: the value is the live count and the resolve's
  *   `coverage.carrying` is the location total. Without a coverage it is the bare count.
- * - **Stale** is the whole resolve's age (`resolvedAt`), not a per-tile reading: a refetch that
- *   fails keeps the last answer on screen, and the ring says it is old.
+ * - **Stale** is the whole read's age, not a per-tile reading: a refetch that fails keeps the last
+ *   answer on screen, and the ring says it is old. The caller passes the time the browser received
+ *   the answer (not the server's `resolvedAt`), so a skewed browser clock cannot stale every tile.
  * - **A value that is not there is "—" with a reason** (`Not available`: the binding did not
  *   resolve; `No data`: it resolved to null), never a fabricated zero.
  */
@@ -43,7 +44,7 @@ export function sourcesInOrder(tile: OrganizationStripTileDto): OrganizationStri
   return [...tile.sources].sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-/** The props one tile of the strip draws with, at `nowMs`, for a read resolved at `resolvedAt`. */
+/** The props one tile of the strip draws with, at `nowMs`, for a read received at `resolvedAt` (an ISO time on the same clock as `nowMs`). */
 export function stripTileProps(tile: OrganizationStripTileDto, resolvedAt: string, nowMs: number): StripTileProps {
   const sources = sourcesInOrder(tile);
   const primarySource = sources[0];

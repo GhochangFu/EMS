@@ -138,7 +138,7 @@ function OrganizationOverview({ items, organizationId, syncedAt }: OrganizationO
         title={card.organization.name}
         subtitle={`${card.organization.code} · ${card.siteCount} sites · ${card.openAlarms} alarms`}
       />
-      <OrganizationKpiStrip key={organizationId} organizationId={organizationId} />
+      <OrganizationKpiStrip key={`kpi-strip-${organizationId}`} organizationId={organizationId} />
       <OrganizationSiteMap
         key={organizationId}
         organizationId={organizationId}

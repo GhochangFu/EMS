@@ -137,3 +137,21 @@ export function aCostTileUsesTheResolvesCurrency(): void {
   );
   expect(props.value).toMatch(/₹|INR/);
 }
+
+/** S12 — a roll-up tile notes "N of M assets" only when fresh < carrying; a bare sites count is just the count. */
+export function aRollUpShowsItsCoverageOnlyWhenPartial(): void {
+  const partial = stripTileProps(
+    tile([source("sustainability.total", 0, metric("sustainability.total", 5, { coverage: { fresh: 4, carrying: 6 } }))]),
+    RESOLVED_AT,
+    AT,
+  );
+  expect(partial.note).toBe("4 of 6 assets");
+  const full = stripTileProps(
+    tile([source("sustainability.total", 0, metric("sustainability.total", 5, { coverage: { fresh: 6, carrying: 6 } }))]),
+    RESOLVED_AT,
+    AT,
+  );
+  expect(full.note).toBeUndefined();
+  const bare = stripTileProps(tile([source("sites.live.count", 0, metric("sites.live.count", 4))]), RESOLVED_AT, AT);
+  expect(bare.value).toBe("4");
+}

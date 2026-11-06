@@ -5,6 +5,7 @@ import {
   aCriticalCountIsTheNoteAndTheTone,
   aMissingValueIsADashWithAReason,
   aReadPastTheBoundIsStale,
+  aRollUpShowsItsCoverageOnlyWhenPartial,
   aTileWithNoSourceIsADash,
   onlyTheAlarmTileTakesTheAlarmTone,
   openWithNoCriticalIsAWarning,
@@ -26,5 +27,6 @@ describe("F4.317 organization strip tile rules", () => {
   it("S8 marks a read past the bound stale", aReadPastTheBoundIsStale);
   it("S9 draws a missing value as a dash with a reason", aMissingValueIsADashWithAReason);
   it("S10 draws a tile with no source as a dash", aTileWithNoSourceIsADash);
+  it("S12 notes partial coverage on a roll-up", aRollUpShowsItsCoverageOnlyWhenPartial);
   it("S11 draws a cost in the resolve's currency", aCostTileUsesTheResolvesCurrency);
 });

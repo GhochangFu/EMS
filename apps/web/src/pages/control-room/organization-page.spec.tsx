@@ -513,6 +513,10 @@ export async function anotherOrganizationMountsANewSiteMap(): Promise<void> {
     expect(screen.getByTestId("site-map-panel").dataset.organizationId).toBe(ORG_B.id),
   );
   expect(siteMapMounts.count, "org B must get a new map, not org A's").toBe(2);
+  // Org B's strip has loaded (no loading line left); org A's must not linger beside it.
+  await waitFor(() => expect(screen.queryByTestId("organization-kpi-strip-loading")).toBeNull());
+  expect(screen.getAllByTestId("organization-kpi-strip")).toHaveLength(1);
+  expect(controlRoomApi.fetchOrganizationControlRoomView).toHaveBeenLastCalledWith(ORG_B.id);
 }
 
 /** One organization: one live site between two that are not live (by name). */

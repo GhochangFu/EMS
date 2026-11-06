@@ -5,6 +5,8 @@ import {
   aCopyShowsResetAndTheBuilderLink,
   aFailedReadDrawsOneLine,
   aRefusedMakeShowsTheApisSentence,
+  aFailingRefetchAgesTheLastAnswer,
+  aSkewedServerClockDoesNotStaleTheStrip,
   aViewerSeesNoActions,
   cleanupStrip,
   makeSendsThePutAndRereads,
@@ -47,5 +49,13 @@ describe("F4.317 OrganizationKpiStrip", () => {
 
   it("C7 draws one alert line for a failed read", async () => {
     await aFailedReadDrawsOneLine();
+  });
+
+  it("C8 ages the last answer while reads keep failing", async () => {
+    await aFailingRefetchAgesTheLastAnswer();
+  });
+
+  it("C9 ignores a skewed server clock", async () => {
+    await aSkewedServerClockDoesNotStaleTheStrip();
   });
 });

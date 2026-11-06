@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
@@ -7,6 +7,7 @@ import type { OrganizationControlRoomViewDto, OrganizationStripTileDto } from "@
 
 import * as controlRoomApi from "../../api/control-room";
 import { ApiError } from "../../lib/api-error";
+import { STRIP_STALE_MS } from "../../lib/organization-strip";
 import { OrganizationKpiStrip } from "./organization-kpi-strip";
 
 /**
@@ -166,6 +167,16 @@ export async function aViewerSeesNoActions(): Promise<void> {
   expect(screen.queryByRole("button")).toBeNull();
   expect(screen.queryByRole("link")).toBeNull();
   expect(screen.getByTestId("org-strip-tile-pue-tile")).toBeInTheDocument();
+  cleanup();
+
+  // A viewer on a copy: the builder link belongs to a manager too, not only the buttons.
+  vi.spyOn(controlRoomApi, "fetchOrganizationControlRoomView").mockResolvedValue(
+    view({ canManage: false, kind: "dashboard", dashboardId: DASHBOARD_ID, dashboardSlug: "org-layout" }),
+  );
+  renderStrip();
+  await screen.findByTestId("organization-kpi-strip");
+  expect(screen.queryByRole("button")).toBeNull();
+  expect(screen.queryByRole("link")).toBeNull();
 }
 
 /** C6 — a copy shows Reset and the builder link (not Make); Reset sends the DELETE. */
@@ -200,4 +211,34 @@ export async function aFailedReadDrawsOneLine(): Promise<void> {
 export function cleanupStrip(): void {
   cleanup();
   vi.restoreAllMocks();
+}
+
+/** C8 — reads that keep failing still age the last answer: the tile gets its stale ring. */
+export async function aFailingRefetchAgesTheLastAnswer(): Promise<void> {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    vi.spyOn(controlRoomApi, "fetchOrganizationControlRoomView")
+      .mockResolvedValueOnce(view())
+      .mockReturnValue(new Promise<never>(() => undefined)); // the API is down: reads hang or fail, nothing new arrives
+    renderStrip();
+    const tile = await screen.findByTestId("org-strip-tile-pue-tile");
+    expect(tile.innerHTML).not.toContain("ring-warning");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(STRIP_STALE_MS + 2000);
+    });
+    expect(screen.getByTestId("org-strip-tile-pue-tile").innerHTML).toContain("ring-warning");
+  } finally {
+    vi.useRealTimers();
+  }
+}
+
+/** C9 — age is measured on the browser's clock from when the answer arrived, so skew cannot stale it. */
+export async function aSkewedServerClockDoesNotStaleTheStrip(): Promise<void> {
+  vi.spyOn(controlRoomApi, "fetchOrganizationControlRoomView").mockResolvedValue(
+    view({ resolvedAt: new Date(Date.now() - 10 * 60_000).toISOString() }),
+  );
+  renderStrip();
+  const tile = await screen.findByTestId("org-strip-tile-pue-tile");
+  expect(tile.innerHTML).not.toContain("ring-warning");
 }

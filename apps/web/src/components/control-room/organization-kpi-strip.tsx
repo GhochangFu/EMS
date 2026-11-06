@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
@@ -36,6 +36,13 @@ export function OrganizationKpiStrip({ organizationId }: OrganizationKpiStripPro
   const queryClient = useQueryClient();
   const key = organizationStripKey(organizationId);
   const [actionError, setActionError] = useState<string | null>(null);
+  // A ticking clock, so a last answer that stops being refreshed still ages on screen (as the
+  // estate ribbon's does): nothing else re-renders the strip while reads fail or hang.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
   const viewQ = useQuery({
     queryKey: key,
     queryFn: () => fetchOrganizationControlRoomView(organizationId),
@@ -70,7 +77,9 @@ export function OrganizationKpiStrip({ organizationId }: OrganizationKpiStripPro
 
   const tiles = [...view.tiles].sort((a, b) => a.gridY - b.gridY || a.gridX - b.gridX);
   const busy = make.isPending || reset.isPending;
-  const nowMs = Date.now();
+  // Age is the browser's own clock from when the answer arrived, never the server's `resolvedAt`
+  // against this clock: a skewed browser clock would show every tile stale.
+  const receivedAt = new Date(viewQ.dataUpdatedAt).toISOString();
 
   return (
     <section data-testid="organization-kpi-strip" className="space-y-2">
@@ -119,7 +128,7 @@ export function OrganizationKpiStrip({ organizationId }: OrganizationKpiStripPro
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {tiles.map((tile) => {
-          const { icon, stale, ...props } = stripTileProps(tile, view.resolvedAt, nowMs);
+          const { icon, stale, ...props } = stripTileProps(tile, receivedAt, Math.max(now, viewQ.dataUpdatedAt));
           return (
             <div key={tile.key} data-testid={`org-strip-tile-${tile.key}`} className="min-w-0">
               <KpiTile {...props} icon={WidgetIconGlyph(icon)} stale={stale && props.status === "ready"} />
