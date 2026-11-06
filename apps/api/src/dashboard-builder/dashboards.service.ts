@@ -38,6 +38,7 @@ import type {
 
 import { MasterDataAuditService } from "../admin/master-data-audit.service";
 import { AccessControlService } from "../auth/access-control.service";
+import { OrganizationViewAccessService } from "../auth/organization-view-access.service";
 import { noRowWritten, updatedAtMatches } from "../common/if-match";
 import { FLEET_DRIZZLE, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
@@ -116,6 +117,11 @@ export class DashboardsService {
     private readonly audit: MasterDataAuditService,
     // `F4.306` U5: Nest injects the module's instance; a hand-built service builds the same (stateless) one.
     private readonly trendPoints: TrendPointsService = new TrendPointsService(fleetDb, tenantDb, accessControl, audit),
+    // `F4.317` task 4.3: the same shape — the global `AccessControlModule` provides the instance.
+    private readonly organizationViewAccess: OrganizationViewAccessService = new OrganizationViewAccessService(
+      fleetDb,
+      accessControl,
+    ),
   ) {}
 
   // ---- reads ----------------------------------------------------------------
@@ -427,10 +433,15 @@ export class DashboardsService {
     // "invalid"}` rather than throwing, precisely so these call sites can run before the 400
     // check below (finding 5, review — this ordering now ships with the test that would have
     // caught reverting it).
-    if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, storedScope))) {
-      throw new NotFoundException("Dashboard not found");
-    }
-    if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, nextScope))) {
+    //
+    // `F4.317` task 4.3 (ADR 0112 decision 5) — where either check refuses, the narrow grant may
+    // still admit: the pointed organization-wide dashboard, its scope unchanged, for a caller who
+    // may change that organization's strip. A re-home changes the scope, so `F3.1d` holds.
+    if (
+      (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, storedScope)) ||
+        !(await this.accessControl.canManageDashboard(jwt, existing.organizationId, nextScope))) &&
+      !(await this.organizationViewAccess.mayEditPointedDashboard(jwt, existing, nextScope))
+    ) {
       throw new NotFoundException("Dashboard not found");
     }
 
@@ -535,7 +546,11 @@ export class DashboardsService {
       assetGroupId: existing.assetGroupId,
       assetId: existing.assetId,
     };
-    if (!(await this.accessControl.canManageDashboard(jwt, existing.organizationId, scope))) {
+    // `F4.317` task 4.3 — the narrow grant, `update`'s rule with the scope unchanged.
+    if (
+      !(await this.accessControl.canManageDashboard(jwt, existing.organizationId, scope)) &&
+      !(await this.organizationViewAccess.mayEditPointedDashboard(jwt, existing, scope))
+    ) {
       throw new NotFoundException("Dashboard not found");
     }
 

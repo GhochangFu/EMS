@@ -72,4 +72,40 @@ export class OrganizationViewAccessService {
       .limit(1);
     return row !== undefined;
   }
+
+  /**
+   * `F4.317` task 4.3 — the narrow grant `DashboardsService.putWidgets` and `update` apply where
+   * `canManageDashboard` refused. True only when ALL hold: the stored dashboard is
+   * organization-wide, the write leaves it organization-wide (`nextScope`: `update`'s merged scope;
+   * `putWidgets` passes the stored one), it is the dashboard its organization's view row points
+   * at, and the caller may change that organization's strip. A re-home (the `F3.1d` case) changes
+   * the scope and is refused; `remove` and `create` never ask.
+   */
+  async mayEditPointedDashboard(
+    jwt: JwtPayload,
+    dashboard: DashboardScopeRow,
+    nextScope: ScopeColumns,
+  ): Promise<boolean> {
+    if (!isOrganizationWide(dashboard) || !isOrganizationWide(nextScope)) {
+      return false;
+    }
+    if (!(await this.isPointedOrganizationDashboard(dashboard.organizationId, dashboard.id))) {
+      return false;
+    }
+    return this.canManageOrganizationView(jwt, dashboard.organizationId);
+  }
+}
+
+/** The three nullable scope columns of a dashboard write. */
+type ScopeColumns = {
+  readonly locationId: string | null;
+  readonly assetGroupId: string | null;
+  readonly assetId: string | null;
+};
+
+/** The stored row the grant asks about: its id, its organization and its scope. */
+type DashboardScopeRow = ScopeColumns & { readonly id: string; readonly organizationId: string };
+
+function isOrganizationWide(scope: ScopeColumns): boolean {
+  return scope.locationId === null && scope.assetGroupId === null && scope.assetId === null;
 }
