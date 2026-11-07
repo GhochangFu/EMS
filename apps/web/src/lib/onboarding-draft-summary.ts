@@ -25,6 +25,13 @@ function topicOf(config: Record<string, unknown>): string {
   return topic === "" ? "-" : topic;
 }
 
+/**
+ * `F4.326` / ADR 0114 decision 6 — appended to a plain MQTT RTU's summary line
+ * (the literal `config.tls === false`). The drawer and the commit wizard both
+ * render the summary, so one line serves both.
+ */
+export const PLAIN_MQTT_DISCLOSURE = " · TLS off — credentials and data cross the network unencrypted";
+
 /** Human-readable draft layout showing RTU → asset → mapping relationships. */
 export function formatOnboardingDraftSummary(draft: OnboardingDraft): string {
   const lines: string[] = [];
@@ -39,7 +46,8 @@ export function formatOnboardingDraftSummary(draft: OnboardingDraft): string {
     lines.push("RTUs:");
     draft.rtus.forEach((rtu, index) => {
       lines.push(
-        `  ${index + 1}. ${rtu.displayName} · ${rtu.protocol} · topic ${topicOf(rtu.config)}`,
+        `  ${index + 1}. ${rtu.displayName} · ${rtu.protocol} · topic ${topicOf(rtu.config)}` +
+          (rtu.protocol === "mqtt" && rtu.config?.tls === false ? PLAIN_MQTT_DISCLOSURE : ""),
       );
     });
   }

@@ -164,10 +164,14 @@ export function RtusAdminPage({ user }: RtusAdminPageProps) {
                 <td className="px-2 py-2">{item.sourceType}</td>
                 <td className="px-2 py-2 font-mono">{item.rtuCode || "—"}</td>
                 <td className="px-2 py-2">
-                  <StatusPill
-                    label={item.active ? "Active" : "Inactive"}
-                    tone={item.active ? "ok" : "offline"}
-                  />
+                  <div className="flex flex-wrap gap-1">
+                    <StatusPill
+                      label={item.active ? "Active" : "Inactive"}
+                      tone={item.active ? "ok" : "offline"}
+                    />
+                    {/* F4.326 (ADR 0114 decision 6): `null` (no connection row) is not plain. */}
+                    {item.tls === false ? <StatusPill label="Plain MQTT" tone="warning" /> : null}
+                  </div>
                 </td>
                 <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
                   <div className="flex gap-2">
