@@ -1,4 +1,5 @@
 import {
+  CHART_KIND_LABELS,
   CHART_KINDS_NEEDING_AGGREGATE,
   chartKindAggregateMessage,
   chartKindIssues,
@@ -9,6 +10,7 @@ import {
 } from "./chart-kinds";
 import { templateDashboardWidgetSchema } from "./asset-template-content-writes";
 import { sectionTemplateWidgetSchema } from "./dashboard-templates";
+import { chartSeriesKindSchema } from "./dashboard-builder";
 import { putDashboardWidgetsBodySchema } from "./dashboard-writes";
 
 /**
@@ -205,4 +207,13 @@ export function theTemplatePathsRefuseTheHeatmapRules(): void {
     sectionTemplateWidgetSchema.safeParse({ ...section, bindings: two.slice(0, 1), config: ok }).success,
     "one binding, 7 days, parses",
   );
+}
+
+/** `F4.324` — one plain label per kind, in the contract's order (ADR 0099 Amendment 16 decision 3). */
+export function everyKindHasItsPlainLabel(): void {
+  assert(
+    JSON.stringify(Object.keys(CHART_KIND_LABELS)) === JSON.stringify(chartSeriesKindSchema.options),
+    `one label per kind, in order; got ${JSON.stringify(Object.keys(CHART_KIND_LABELS))}`,
+  );
+  assert(CHART_KIND_LABELS.donut === "Share (donut)" && CHART_KIND_LABELS.line === "Trend", "the owner's labels");
 }

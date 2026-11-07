@@ -5,7 +5,8 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { expect, vi } from "vitest";
 
-import { appendTrendStripWidgets } from "../../api/dashboards";
+import { fetchAssetPoints } from "../../api/assets";
+import { appendChartWidget, appendTrendStripWidgets } from "../../api/dashboards";
 import { fetchSiteTrendPoints } from "../../api/site-trend-points";
 import { fetchSiteTrendStrip } from "../../api/trend-strip";
 import { ApiError } from "../../lib/api-error";
@@ -30,13 +31,16 @@ import {
  */
 
 vi.mock("../../api/site-trend-points", () => ({ fetchSiteTrendPoints: vi.fn() }));
-vi.mock("../../api/dashboards", () => ({ appendTrendStripWidgets: vi.fn() }));
+vi.mock("../../api/dashboards", () => ({ appendTrendStripWidgets: vi.fn(), appendChartWidget: vi.fn() }));
+vi.mock("../../api/assets", () => ({ fetchAssetPoints: vi.fn() }));
 vi.mock("../../api/trend-strip", () => ({ fetchSiteTrendStrip: vi.fn() }));
 vi.mock("../../api/view-exports", () => ({ downloadTrendStripExport: vi.fn() }));
 
 const fetchLists = vi.mocked(fetchSiteTrendPoints);
 const appendStrips = vi.mocked(appendTrendStripWidgets);
 const fetchStrip = vi.mocked(fetchSiteTrendStrip);
+const appendChart = vi.mocked(appendChartWidget);
+const fetchPoints = vi.mocked(fetchAssetPoints);
 let fetchSpy: ReturnType<typeof vi.fn> = vi.fn();
 
 const DASHBOARD_ID = "11111111-1111-4111-8111-111111111111";
@@ -135,6 +139,8 @@ export function cleanupTrendStripWizard(): void {
   fetchLists.mockReset();
   appendStrips.mockReset();
   fetchStrip.mockReset();
+  appendChart.mockReset();
+  fetchPoints.mockReset();
   expect(calls, "an unmocked read reached fetch").toBe(0);
 }
 
@@ -153,8 +159,9 @@ async function toPoints(tabs: readonly string[], segments: readonly string[]): P
   await next();
 }
 
-/** From the Points step: through Range to Preview. */
+/** From the Points step: through Range and Draw as (`F4.324`, Trend strip kept) to Preview. */
 async function toPreview(): Promise<void> {
+  await next();
   await next();
   await next();
 }
@@ -401,4 +408,153 @@ export async function theStyleSelectWritesTheStyle(): Promise<void> {
   await finish();
   await waitFor(() => expect(appendStrips).toHaveBeenCalledTimes(1));
   expect(appendStrips.mock.calls[0]?.[1].strips[0]?.config.styles).toEqual({ "seg_01:pt_2": "bar" });
+}
+
+// ---- `F4.324` PR 2 (ADR 0108 Amendment 9 item 3, owner ruling Q1) — Draw as Chart ----------------
+
+/** A strip whose `seg_01` points each carry `perPoint` assets. */
+function chartStrip(perPoint: number, moreAssets = 0): SiteTrendStripDto {
+  return {
+    ...STRIP,
+    segments: [
+      {
+        domain: "seg_01",
+        label: "Segment 01",
+        source: "catalog",
+        points: [1, 2, 3].map((n) => ({
+          code: `pt_${n}`,
+          name: `Segment 01 point ${n}`,
+          unit: "kW",
+          moreAssets,
+          assets: Array.from({ length: perPoint }, (_, i) => ({
+            assetId: `55555555-5555-4555-8555-${String(n * 10 + i).padStart(12, "0")}`,
+            assetCode: `A-${n}${i}`,
+            assetName: `Asset ${n}${i}`,
+            assetRtuName: null,
+            assetLocationName: null,
+            unit: "kW",
+            buckets: [],
+          })),
+        })),
+      },
+    ],
+  } as SiteTrendStripDto;
+}
+
+/** From the Points step: Range, then Draw as with Chart, `kind` and `fn` chosen. */
+async function toChart(kind: string, fn: string): Promise<void> {
+  await next();
+  await next();
+  await user().click(screen.getByRole("radio", { name: "Chart" }));
+  await user().selectOptions(screen.getByRole("combobox", { name: "Chart kind" }), kind);
+  await user().selectOptions(screen.getByRole("combobox", { name: "Value" }), fn);
+  await next();
+}
+
+/** Chart needs a function before Next. */
+export async function chartNeedsAFunctionBeforeNext(): Promise<void> {
+  renderWizard("append");
+  await toPoints(["Tab B"], ["Segment 01"]);
+  await next();
+  await next();
+  await user().click(screen.getByRole("radio", { name: "Chart" }));
+  expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(true);
+  await user().selectOptions(screen.getByRole("combobox", { name: "Value" }), "sum");
+  expect((screen.getByRole("button", { name: "Next" }) as HTMLButtonElement).disabled).toBe(false);
+}
+
+/** Append: one chart per chosen tab, with the kind, the function and the range's window; no strip is written. */
+export async function chartAppendsOneChartPerTab(): Promise<void> {
+  const { onDone } = renderWizard("append");
+  fetchStrip.mockResolvedValue(chartStrip(1));
+  appendChart.mockResolvedValue({ widget: {}, updatedAt: "2026-11-07T10:00:00.000+00:00" } as never);
+  await toPoints(["Tab B"], ["Segment 01"]);
+  await toChart("donut", "sum");
+  await finish();
+  await waitFor(() => expect(appendChart).toHaveBeenCalledTimes(1));
+  const [dashboardId, body] = appendChart.mock.calls[0] ?? [];
+  expect(dashboardId).toBe(DASHBOARD_ID);
+  expect(body?.tabKey).toBe("tab_b");
+  expect(body?.config).toEqual({ windowMinutes: 1440, aggregate: "sum", series: "donut" });
+  expect(body?.points.map((p) => p.pointKey)).toEqual(["pt_1", "pt_2", "pt_3"]);
+  expect(appendStrips).not.toHaveBeenCalled();
+  await waitFor(() => expect(onDone).toHaveBeenCalledTimes(1));
+}
+
+/** More than 8 asset points on a tab: refused with the count, nothing written. */
+export async function aNinthAssetPointIsRefused(): Promise<void> {
+  renderWizard("append");
+  fetchStrip.mockResolvedValue(chartStrip(3));
+  await toPoints(["Tab B"], ["Segment 01"]);
+  await toChart("compare", "avg");
+  await finish();
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Tab B: This tab has 9 asset points; a chart holds at most 8. Choose fewer points.",
+  );
+  expect(appendChart).not.toHaveBeenCalled();
+}
+
+/** Draft: the chart row is inserted with each point's id, and nothing is requested but the reads. */
+export async function aDraftChartRowCarriesThePointIds(): Promise<void> {
+  const { onApply } = renderWizard("draft");
+  fetchStrip.mockResolvedValue(chartStrip(1));
+  fetchPoints.mockImplementation(async (assetId: string) => ({
+    items: [1, 2, 3].map((n) => ({ id: `pt-id-${n}-${assetId.slice(-2)}`, assetId, assetName: "x", pointKey: `pt_${n}`, unit: "kW" })),
+  }));
+  await toPoints(["Tab B"], ["Segment 01"]);
+  await toChart("step", "max");
+  await finish();
+  await waitFor(() => expect(onApply).toHaveBeenCalledTimes(1));
+  // A chart applies an updater over the builder's current rows (an edit made during the reads stays).
+  const update = onApply.mock.calls[0]?.[0] as (current: DashboardWidgetRow[]) => DashboardWidgetRow[];
+  const rows = update(ROWS);
+  const chart = rows.find((row) => row.widgetType === "chart" && row.tabKey === "tab_b");
+  expect(chart?.config.series).toBe("step");
+  expect(chart?.config.chartAggregate).toBe("max");
+  expect(chart?.points.map((p) => p.pointId)).toEqual(["pt-id-1-10", "pt-id-2-20", "pt-id-3-30"]);
+  expect(appendChart).not.toHaveBeenCalled();
+}
+
+/** Two tabs: two calls, each with its own tab key. */
+export async function twoTabsGetTwoCharts(): Promise<void> {
+  renderWizard("append");
+  fetchStrip.mockResolvedValue(chartStrip(1));
+  appendChart.mockResolvedValue({ widget: {}, updatedAt: "2026-11-07T10:00:00.000+00:00" } as never);
+  await toPoints(["Overview", "Tab B"], ["Segment 01"]);
+  await toChart("compare", "avg");
+  await finish();
+  await waitFor(() => expect(appendChart).toHaveBeenCalledTimes(2));
+  expect(appendChart.mock.calls.map((call) => call[1].tabKey)).toEqual(["overview", "tab_b"]);
+}
+
+/** The second tab fails: the sentence names the tab written, and a second Finish writes only the failed one. */
+export async function aPartFailedFinishNamesTheWrittenTabAndNeverDuplicates(): Promise<void> {
+  renderWizard("append");
+  fetchStrip.mockResolvedValue(chartStrip(1));
+  appendChart
+    .mockResolvedValueOnce({ widget: {}, updatedAt: "2026-11-07T10:00:00.000+00:00" } as never)
+    .mockRejectedValueOnce(new ApiError("full", 409))
+    .mockResolvedValueOnce({ widget: {}, updatedAt: "2026-11-07T10:01:00.000+00:00" } as never);
+  await toPoints(["Overview", "Tab B"], ["Segment 01"]);
+  await toChart("compare", "avg");
+  await finish();
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    `Added to Overview. Tab B: ${TREND_STRIP_WIZARD_FULL_SENTENCE}`,
+  );
+  await finish();
+  await waitFor(() => expect(appendChart).toHaveBeenCalledTimes(3));
+  expect(appendChart.mock.calls.map((call) => call[1].tabKey)).toEqual(["overview", "tab_b", "tab_b"]);
+}
+
+/** Assets the strip read hid (`moreAssets`) count: 3 shown + 6 hidden is 9, refused, nothing written. */
+export async function hiddenAssetsAreCountedAndRefused(): Promise<void> {
+  renderWizard("append");
+  fetchStrip.mockResolvedValue(chartStrip(1, 2));
+  await toPoints(["Tab B"], ["Segment 01"]);
+  await toChart("compare", "avg");
+  await finish();
+  expect((await screen.findByRole("alert")).textContent).toBe(
+    "Tab B: This tab has 9 asset points; a chart holds at most 8. Choose fewer points.",
+  );
+  expect(appendChart).not.toHaveBeenCalled();
 }

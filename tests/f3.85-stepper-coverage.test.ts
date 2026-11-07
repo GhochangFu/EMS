@@ -115,6 +115,8 @@ const CANVAS_ENTRIES: readonly { id: string; page: string; write: string }[] = [
   { id: "mimicLayout.replace", page: "apps/web/src/pages/admin/mimic-layout-editor-page.tsx", write: "replaceMimicLayout(" },
   // `F4.284` (owner ruling DC2, 2026-10-24): the work-order reorder's form is the Kanban board's drag.
   { id: "workOrder.reorder", page: "apps/web/src/pages/work-orders-page.tsx", write: "reorderWorkOrders(" },
+  // `F4.324` (ADR 0099 Amendment 16): the chart append's form is the Pin dialog.
+  { id: "dashboard.widgets.appendChart", page: "apps/web/src/components/view-actions/pin-dialog.tsx", write: "appendChartWidget(" },
 ];
 
 /** The row's page holds the row's write call on a non-comment line; `false` when the page does not exist. */
@@ -190,6 +192,7 @@ describe("F3.85 stepper coverage — every catalog entry has a WizardShell (plan
       ["mimicLayout.create", true],
       ["mimicLayout.replace", true],
       ["workOrder.reorder", true],
+      ["dashboard.widgets.appendChart", true],
     ]);
   });
 

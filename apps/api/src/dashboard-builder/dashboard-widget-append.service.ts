@@ -158,7 +158,13 @@ export class DashboardWidgetAppendService {
           gridY: canvas?.bottom ?? 0,
           gridW: body.gridW ?? DEFAULT_CHART_SIZE.w,
           gridH: body.gridH ?? DEFAULT_CHART_SIZE.h,
-          config: { series: "line", windowMinutes: body.config.windowMinutes, aggregate: body.config.aggregate },
+          // `F4.324` (ADR 0108 Amendment 9 item 1): the body's kind, `line` when absent — what
+          // every pin stored before the field. The kind rule ran on the body's parse.
+          config: {
+            series: body.config.series ?? "line",
+            windowMinutes: body.config.windowMinutes,
+            aggregate: body.config.aggregate,
+          },
         })
         .returning();
       await tx.insert(dashboardWidgetPoints).values(

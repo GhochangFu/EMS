@@ -3,6 +3,13 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aBadRequestShowsTheListsSentence,
+  aDraftChartRowCarriesThePointIds,
+  aNinthAssetPointIsRefused,
+  aPartFailedFinishNamesTheWrittenTabAndNeverDuplicates,
+  hiddenAssetsAreCountedAndRefused,
+  twoTabsGetTwoCharts,
+  chartAppendsOneChartPerTab,
+  chartNeedsAFunctionBeforeNext,
   aConflictShowsTheFullSentence,
   aForbiddenShowsTheRefusedSentence,
   aNotFoundShowsTheRefusedSentence,
@@ -112,5 +119,27 @@ describe("F4.306 U12 TrendStripWizard", () => {
 
   it("marks Finish aria-busy and disabled while the append is pending", async () => {
     await theFinishButtonIsBusyWhilePending();
+  });
+
+  it("F4.324: Chart needs a function before Next", async () => {
+    await chartNeedsAFunctionBeforeNext();
+  });
+  it("F4.324: append writes one chart per tab with the kind and the range's window", async () => {
+    await chartAppendsOneChartPerTab();
+  });
+  it("F4.324: a ninth asset point is refused with the count and nothing is written", async () => {
+    await aNinthAssetPointIsRefused();
+  });
+  it("F4.324: the draft chart row carries each point's id", async () => {
+    await aDraftChartRowCarriesThePointIds();
+  });
+  it("F4.324: two tabs get two charts, each with its own tab key", async () => {
+    await twoTabsGetTwoCharts();
+  });
+  it("F4.324: a part-failed Finish names the written tab and never duplicates it", async () => {
+    await aPartFailedFinishNamesTheWrittenTabAndNeverDuplicates();
+  });
+  it("F4.324: assets the strip read hid are counted and refused", async () => {
+    await hiddenAssetsAreCountedAndRefused();
   });
 });

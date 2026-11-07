@@ -200,6 +200,7 @@ async function runTheWizard(): Promise<void> {
   await userEvent.click(await screen.findByRole("checkbox", { name: "Segment A" }));
   await next();
   await next();
+  await next(); // `F4.324`: Draw as (Trend strip kept)
   await next();
   await userEvent.click(screen.getByRole("button", { name: "Finish" }));
 }

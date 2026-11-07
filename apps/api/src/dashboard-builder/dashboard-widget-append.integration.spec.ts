@@ -273,6 +273,22 @@ export async function theWidgetLandsAtTheFootOfItsTab(ctx: AppendCtx): Promise<v
   });
 }
 
+/** `F4.324` (ADR 0108 Amendment 9 item 1) — the body's kind is stored; the positive beside W9's `line`. */
+export async function aPinnedKindIsStored(ctx: AppendCtx): Promise<void> {
+  const id = await ctx.newDashboard();
+  const answer = await ctx.append.append(
+    ctx.admin,
+    id,
+    body(ctx, { config: { windowMinutes: 1440, aggregate: "sum", series: "donut" } }),
+  );
+  const { rows } = await ctx.superuserPool.query<{ config: Record<string, unknown> }>(
+    "SELECT config FROM bms.dashboard_widgets WHERE id = $1",
+    [answer.widget.id],
+  );
+  expect(rows[0]?.config).toEqual({ series: "donut", windowMinutes: 1440, aggregate: "sum" });
+  expect(answer.widget.widgetType === "chart" && answer.widget.config.series).toBe("donut");
+}
+
 /** An empty dashboard without tabs takes the widget at `gridY 0` with the chart's default size, 6 by 4. */
 export async function anEmptyCanvasTakesTheWidgetAtTheTopWithTheDefaultSize(ctx: AppendCtx): Promise<void> {
   const id = await ctx.newDashboard();

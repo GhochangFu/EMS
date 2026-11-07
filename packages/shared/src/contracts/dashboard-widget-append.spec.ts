@@ -1,6 +1,13 @@
 import { expect } from "vitest";
 
-import { DASHBOARD_GRID, MAX_DASHBOARD_WIDGETS, MAX_WIDGET_POINTS, MAX_WIDGET_WINDOW_MINUTES } from "./dashboard-builder";
+import { HEATMAP_MIN_WINDOW_MINUTES, HEATMAP_ONE_POINT_MESSAGE, HEATMAP_WINDOW_MESSAGE } from "./chart-kinds";
+import {
+  chartSeriesKindSchema,
+  DASHBOARD_GRID,
+  MAX_DASHBOARD_WIDGETS,
+  MAX_WIDGET_POINTS,
+  MAX_WIDGET_WINDOW_MINUTES,
+} from "./dashboard-builder";
 import { MAX_DASHBOARD_TABS } from "./dashboard-tabs";
 import {
   appendChartWidgetBodySchema,
@@ -41,7 +48,9 @@ export function theBodyAdmitsTheFullShape(): void {
 /** A2 */
 export const refusals: Record<string, () => void> = {
   "an unknown key at the root": () => refuses({ ...MINIMAL, extra: 1 }),
-  "an unknown key in config": () => refuses({ ...MINIMAL, config: { ...MINIMAL.config, series: "line" } }),
+  "an unknown key in config": () => refuses({ ...MINIMAL, config: { ...MINIMAL.config, stacked: true } }),
+  // `F4.324` (ADR 0108 Amendment 9 item 1): `series` is a key now; a kind outside the enum is not.
+  "an unknown chart kind": () => refuses({ ...MINIMAL, config: { ...MINIMAL.config, series: "pie" } }),
   "an unknown key in a point": () => refuses({ ...MINIMAL, points: [{ assetId: ASSET, pointKey: "kw", label: "x" }] }),
   "no points": () => refuses({ ...MINIMAL, points: [] }),
   "nine points": () =>
@@ -184,4 +193,53 @@ export function theTrendResponseRefusesAMissingStampOrNoWidget(): void {
   expect(appendTrendStripWidgetsResponseSchema.safeParse({ widgets: [widget(W_A)] }).success).toBe(false);
   expect(appendTrendStripWidgetsResponseSchema.safeParse({ widgets: [], updatedAt: ISO }).success).toBe(false);
   expect(appendWidgetResponseSchema.safeParse({ updatedAt: ISO }).success).toBe(false);
+}
+
+/**
+ * `F4.324` (ADR 0108 Amendment 9 item 1) — the chart arm takes an optional kind, checked by the
+ * shared `chartKindIssues` rule, so a pin refuses exactly what `PUT :id/widgets` refuses.
+ */
+export function eachChartKindIsAccepted(): void {
+  for (const series of chartSeriesKindSchema.options) {
+    const body =
+      series === "heatmap"
+        ? { ...MINIMAL, config: { windowMinutes: HEATMAP_MIN_WINDOW_MINUTES, aggregate: "avg", series } }
+        : { ...MINIMAL, config: { ...MINIMAL.config, series } };
+    const result = appendChartWidgetBodySchema.safeParse(body);
+    expect(result.success, `${series}: ${JSON.stringify(result.error?.issues)}`).toBe(true);
+  }
+}
+
+export function anAbsentKindStaysAbsent(): void {
+  const result = appendChartWidgetBodySchema.safeParse(MINIMAL);
+  expect(result.success && result.data.config.series).toBeUndefined();
+}
+
+export function aHeatmapPinIsCheckedByTheSharedRule(): void {
+  const twoPoints = appendChartWidgetBodySchema.safeParse({
+    ...MINIMAL,
+    config: { windowMinutes: HEATMAP_MIN_WINDOW_MINUTES, aggregate: "avg", series: "heatmap" },
+    points: [
+      { assetId: ASSET, pointKey: "kw" },
+      { assetId: ASSET, pointKey: "kva" },
+    ],
+  });
+  expect(twoPoints.success).toBe(false);
+  expect(twoPoints.error?.issues.map((i) => [i.path.join("."), i.message])).toContainEqual([
+    "points",
+    HEATMAP_ONE_POINT_MESSAGE,
+  ]);
+
+  const oneDay = appendChartWidgetBodySchema.safeParse({ ...MINIMAL, config: { ...MINIMAL.config, series: "heatmap" } });
+  expect(oneDay.success).toBe(false);
+  expect(oneDay.error?.issues.map((i) => [i.path.join("."), i.message])).toContainEqual([
+    "config.windowMinutes",
+    HEATMAP_WINDOW_MESSAGE,
+  ]);
+}
+
+/** The route's union still splits by `widgetType`: a kinded chart body is arm 0. */
+export function aKindedChartBodyIsStillArmZero(): void {
+  const result = appendWidgetBodySchema.safeParse({ ...MINIMAL, config: { ...MINIMAL.config, series: "donut" } });
+  expect(result.success && "points" in result.data).toBe(true);
 }

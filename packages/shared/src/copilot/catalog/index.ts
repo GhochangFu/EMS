@@ -101,12 +101,8 @@ export const EXCLUDED_ROUTES: readonly ExcludedRoute[] = [
   { method: "POST", path: "/copilot/changes/:id/reject", reason: COPILOT_OWN },
   // A temporary password is typed by a person, never proposed.
   { method: "POST", path: "/admin/users/:id/temporary-password", reason: "a credential route" },
-  // `F4.303` (ADR 0108 Amendment 6 item 5): the Pin of a trend view.
-  {
-    method: "POST",
-    path: "/dashboards/:id/widgets/append",
-    reason: "a view action; the copilot edits a dashboard through PUT :id/widgets",
-  },
+  // `F4.303` excluded the append route here; `F4.324` (ADR 0099 Amendment 16) makes its chart arm
+  // the entry `dashboard.widgets.appendChart`, and the trend arm stays out through that body.
   // Every DELETE in the in-release controllers.
   { method: "DELETE", path: "/dashboards/:id", reason: NO_DELETE },
   { method: "DELETE", path: "/admin/dashboard-templates/:id", reason: NO_DELETE },
@@ -186,9 +182,15 @@ export function hashExcludedKeysOf(entry: Pick<CatalogEntry, "clientOnly" | "car
  * the layout editor's canvas, not a stepper: they have no steps, and
  * `tests/f3.85-stepper-coverage` takes each from the editor page instead of a
  * `WizardShell`. `F4.284` (owner ruling DC2, 2026-10-24): the work-order reorder,
- * whose form is the Kanban board's drag.
+ * whose form is the Kanban board's drag. `F4.324`: the chart append, whose form is the Pin dialog.
  */
-export const CANVAS_ENTRY_IDS = ["mimicLayout.create", "mimicLayout.replace", "workOrder.reorder"] as const;
+export const CANVAS_ENTRY_IDS = [
+  "mimicLayout.create",
+  "mimicLayout.replace",
+  "workOrder.reorder",
+  // `F4.324` (ADR 0099 Amendment 16): the chart append's human form is the Pin dialog.
+  "dashboard.widgets.appendChart",
+] as const;
 
 /** The two canvas entries whose canvas is the mimic layout editor (`CANVAS_ENTRY_IDS` less the work-order board). */
 export const LAYOUT_ENTRY_IDS = ["mimicLayout.create", "mimicLayout.replace"] as const;
