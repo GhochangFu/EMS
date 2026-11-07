@@ -1270,7 +1270,7 @@ daily pattern.
 
 2. **The labels an administrator picks** — plain words, never ECharts names
    (decision 4, Amendment 2 §4). The four existing labels do not change. The
-   new four, proposed here and accepted with this amendment:
+   new four *(owner, 2026-11-07: Q5 — kept as proposed)*:
 
    | Kind | Label | ECharts | Axis |
    |---|---|---|---|
@@ -1316,7 +1316,7 @@ daily pattern.
      (`apps/api/src/telemetry/point-aggregate-window.ts`: above 2,880 minutes
      and up to 43,200), so every window the schema accepts is read in hourly
      buckets and no other window is;
-   - `aggregate` **required** *(drafter choice)*: it is the bucket function
+   - `aggregate` **required** *(owner, 2026-11-07: Q6 — refuse; the author picks)*: it is the bucket function
      the hourly cells are read with (`avg` for kW, `sum` for kWh). Without it
      the chart would plot raw readings, which have no hourly cells.
    - Hours and days are in the response's `timeZone` (the asset's site, else
@@ -1325,7 +1325,7 @@ daily pattern.
      plot. Colour is one hue (`accent`) from 8 % alpha to full, the
      `energy-heatmap.tsx` precedent (ADR 0078: no new colour token).
 
-6. **What the new non-time kinds ignore** *(drafter choice)*. `stacked` means
+6. **What the new non-time kinds ignore** *(owner, 2026-11-07: Q7 — hide and ignore)*. `stacked` means
    nothing for `compare`, `donut` or `heatmap`, and `yAxisLabel` nothing for
    `donut` or `heatmap`. They are **ignored, not refused**: a stored chart
    switched from `line` keeps harmless values. The builder hides those fields
