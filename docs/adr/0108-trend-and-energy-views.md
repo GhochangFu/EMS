@@ -900,6 +900,33 @@ Plan: `docs/plans/f4.299-organization-views.md`. Code citations are to `main` at
 
 **Consequences.** No migration, table, grant, policy, route or dependency. `trendStripWidgetConfigSchema` gains `styles` and the shared `trendStripPointStyleSchema`; `assertTrendStripSelections` gains one rule; the template refusal list gains one key.
 
+### Amendment 9 — `F4.324` the new chart kinds in the Pin dialog and the trend strip wizard
+
+**Status: Proposed — accepted when the PR that adds it merges.** Raised by the owner on 2026-11-07 after `F4.323` ([ADR 0047](0047-configurable-dashboards.md) Amendment 7): the four new `chart` kinds (`step`, `compare`, `donut`, `heatmap`) show only in the builder's **Chart kind** dropdown. The owner ruled three questions the same day, one at a time (row `F4.324`, `docs/BACKLOG.md`): **Q1** — offer them in the Pin dialog **and** the trend strip wizard; **Q2** — a kind the view does not fit is shown **disabled with its reason**; **Q3** — add a copilot pin action ([ADR 0099](0099-admin-copilot.md) Amendment 16). Code citations are to `main` at `0af1da25`. A line marked *(drafter)* is a choice the owner may change at review.
+
+1. **The append chart arm takes a kind.** `appendChartWidgetBodySchema.config` (`packages/shared/src/contracts/dashboard-widget-append.ts`) gains an optional `series: chartSeriesKindSchema`. **Absent means `line`**, so every caller today (the Pin dialog of Amendment 6, the copilot's nothing) writes exactly what it writes now. `aggregate` stays required on this arm, so `compare` and `donut` always have their number.
+   - **The kind rules are the shared ones.** The chart arm runs `chartKindIssues(config, points.length)` (`packages/shared/src/contracts/chart-kinds.ts`) in a `.superRefine`, with its `.describe()` after it (ADR 0029 decision 10), so a two-point heatmap or a 3-day heatmap is the same 400 here as on `PUT :id/widgets`. The arm is parsed on its own in the controller (`dashboard-builder.controller.ts`, `appendWidget`), so a refined arm keeps its field errors; the route's `z.union` still accepts it.
+   - The service (`dashboard-widget-append.service.ts`) writes `config.series` instead of the fixed `"line"`. No other field of the stored config changes; `stacked` and `yAxisLabel` are not on this arm (ADR 0047 Amendment 7 item 6).
+
+2. **The Pin dialog** (`apps/web/src/components/view-actions/pin-dialog.tsx`) gains a **Chart kind** select from `CHART_SERIES`, default *Trend*. Each kind the pinned view cannot take is listed **disabled, with the reason beside it** *(owner, Q2)*:
+   - *Daily pattern (hour × day)* — needs one point and a window of 7 to 30 days (`pinWindow` 10,080–43,200 minutes); otherwise "Needs a 7–30 day view of one point".
+   - *Compare points*, *Share (donut)*, *Steps (on/off)* and the time kinds — always fit a pin (it always sends an aggregate).
+   The disabled test is a pure function beside `pinWindow`, fed by the same `chartKindIssues` rule, so the dialog and the 400 cannot disagree.
+
+3. **The trend strip wizard places a chart** *(owner, Q1)*. `apps/web/src/components/dashboards/trend-strip-wizard.tsx` (steps Site, Tabs, Segments, Points, Range, Preview) gains a **Draw as** step after Points: *Trend strip* (default, today's flow, unchanged) or *Chart*.
+   - **Chart** asks the kind (the same select and disabled reasons as item 2) and the function (*Average*, *Total*, *Lowest*, *Highest* — required, as on the pin arm); the Range step gives the window (`24h` 1,440, `7d` 10,080, `30d` 43,200 minutes).
+   - **What is bound** *(drafter)*: for each chosen tab, **one chart** of the chosen points' assets **as the tab's strip read returns them** (`assetId` and point code from the strip DTO the Preview already reads), in point order, up to `MAX_WIDGET_POINTS` (8). More than 8 is refused at the Points step with the count, never cut silently. A heatmap needs exactly one asset point in each tab.
+   - **How it is written**: the append chart arm, **one call per tab**, at the foot of the tab (the arm's existing placement and 409 cap), with the kind of item 1. In the builder's draft (no request), the chart row is placed with the same rule as `placeInDraft` (`apps/web/src/lib/trend-strip-wizard.ts`), insert only — a chart never replaces a strip.
+   - The trend arm, the strip config, `styles` and `colors` are untouched.
+
+4. **Amendment 6 item 5 changes in one respect.** That item kept `POST /dashboards/:id/widgets/append` out of the copilot catalog. ADR 0099 Amendment 16 makes its **chart arm** a catalog entry *(owner, Q3)*; the trend arm stays out of the catalog.
+
+5. **Not changed.** No migration, table, grant, policy, new route or dependency. `chartSeriesKindSchema`, the stored chart config, `PUT :id/widgets`, the strip route and DTO, the stock layout, the seed chain and every seeded template.
+
+**Verification owed by this amendment.** Contract: the chart arm accepts each kind, refuses a two-point or 3-day heatmap with the shared messages, and an absent `series` stores `line` (beside a positive case each). API: one integration case per arm outcome — a pinned `donut` is stored with `series: "donut"`, a body without `series` is stored as `line`, a 3-day heatmap is a 400 that writes nothing. Web: the dialog lists a heatmap disabled with its reason on a 24 h view and enabled on a 7-day one-point view; the wizard's Draw as step sends one chart call per tab with the chosen kind, refuses a ninth point, and leaves the strip flow byte-equal. Browser (owed locally): pin a donut and a heatmap from asset history; place a compare chart from the wizard on two tabs; reload; each draws.
+
+**Consequences.** `appendChartWidgetBodySchema.config` gains one optional field and a refinement; the append service writes it; the Pin dialog and the wizard gain a kind choice. Effort `3–4` (row `F4.324`). Build in three PRs after this one: PR 1 the arm and the Pin dialog; PR 2 the wizard's Draw as step; PR 3 the copilot entry (ADR 0099 Amendment 16).
+
 ## Dependencies
 
 No new package. One migration (`0117`), journal `idx` 118.
