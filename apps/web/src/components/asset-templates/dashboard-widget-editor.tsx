@@ -96,30 +96,31 @@ function WidgetEditor({
               </option>
             ))}
           </select>
-          {/* `F4.325` (ADR 0047 Amendment 8 item 1) — a colour per chart point, by its position in
-              the key list; the copy's points follow that order, a key the asset lacks skipped. */}
-          {widget.widgetType === "chart" && widget.pointKeys.length > 0 ? (
-            <ul className="mt-1 space-y-1">
-              {widget.pointKeys.map((key, index) => (
-                <li key={key} className="flex items-center justify-between gap-2 text-xs">
-                  <span>{key}</span>
-                  <ChartPointColorSelect
-                    pointLabel={key}
-                    value={widget.config.chartColors[index] ?? ""}
-                    disabled={!editable}
-                    onChange={(color) => {
-                      const chartColors = [...widget.config.chartColors];
-                      while (chartColors.length < index) chartColors.push("");
-                      chartColors[index] = color;
-                      updateConfig({ chartColors });
-                    }}
-                  />
-                </li>
-              ))}
-            </ul>
-          ) : null}
         </Field>
       </div>
+      {/* `F4.325` (ADR 0047 Amendment 8 item 1) — a colour per chart point, by its position in
+          the key list; the copy's points follow that order, a key the asset lacks skipped. Outside the
+          Points bound `<label>`, which may hold one control only. */}
+      {widget.widgetType === "chart" && widget.pointKeys.length > 0 ? (
+        <ul className="mt-2 space-y-1">
+          {widget.pointKeys.map((key, index) => (
+            <li key={`${key}-${index}`} className="flex items-center justify-between gap-2 text-xs">
+              <span>{key}</span>
+              <ChartPointColorSelect
+                pointLabel={key}
+                value={widget.config.chartColors[index] ?? ""}
+                disabled={!editable}
+                onChange={(color) => {
+                  const chartColors = [...widget.config.chartColors];
+                  while (chartColors.length < index) chartColors.push("");
+                  chartColors[index] = color;
+                  updateConfig({ chartColors });
+                }}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
 
       <div className="mt-2 grid grid-cols-4 gap-2">
         <Field label="gridX" error={problemFor("gridX")}>

@@ -15,7 +15,7 @@ import {
   widgetToneSchema,
   widgetTypeSchema,
 } from "@bms/shared";
-import { MAX_WIDGET_POINTS, SERIES_ROLE_NAMES } from "@bms/shared/contracts";
+import { SERIES_ROLE_NAMES } from "@bms/shared/contracts";
 import { CHART_SERIES, WIDGET_CATALOG, chartDrawsWindowValues, chartHasValueAxis, chartStacks } from "./widget-catalog";
 import type {
   ChartSeriesKind,
@@ -638,7 +638,7 @@ export function chartColorsForKeys(
  * lost a point to a cascaded sensor still saves (`chartColorIssues` refuses more colours than
  * points) — and trailing *Default*s are dropped, so a chart left at every default stores none.
  */
-export function buildChartConfig(config: WidgetConfigRow, pointCount: number = MAX_WIDGET_POINTS): ChartConfig {
+export function buildChartConfig(config: WidgetConfigRow, pointCount: number): ChartConfig {
   const out: ChartConfig = {
     ...buildCommonConfig(config),
     series: config.series,

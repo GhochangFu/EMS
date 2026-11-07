@@ -256,6 +256,34 @@ export async function runDashboardBuilderControllerTests(): Promise<void> {
     assert(service.putWidgets.calls === 4, "a 7-day heatmap reaches the service; the 3-day one did not");
   }
 
+  // `F4.325` / ADR 0047 Amendment 8 item 1 — a chart may carry one colour per bound point: two on
+  // one point is a 400 and never reaches the service; one saves.
+  {
+    const { controller, service } = controllerWith({});
+    const chart = (colors: string[]) => ({
+      widgets: [
+        {
+          widgetType: "chart",
+          title: null,
+          gridX: 0,
+          gridY: 0,
+          gridW: 6,
+          gridH: 4,
+          config: { series: "compare", aggregate: "avg", colors },
+          points: [{ pointId: "44444444-4444-4444-8444-444444444444", role: "series", sortOrder: 0 }],
+        },
+      ],
+    });
+    await rejects(
+      () => controller.putWidgets(ADMIN, DASHBOARD_ID, chart(["series-3", "series-6"])),
+      (e) => e instanceof BadRequestException,
+      "two colours on a one-point chart",
+    );
+    assert(service.putWidgets.calls === 0, "a refused colour list must never reach the service");
+    await controller.putWidgets(ADMIN, DASHBOARD_ID, chart(["series-3"]));
+    assert(service.putWidgets.calls === 1, "one colour on one point reaches the service");
+  }
+
   // A well-formed body reaches the (stubbed) service with the parsed values.
   {
     const { controller, service } = controllerWith({});

@@ -255,13 +255,13 @@ export function runConfigBuilderTests(): void {
   const tankWithTone = buildTankConfig({ ...blank, fullScale: "5", fillTone: "critical" });
   assert(tankWithTone.fillTone === "critical", "a set fillTone is sent");
 
-  const chart = buildChartConfig({ ...blank, series: "bar" });
+  const chart = buildChartConfig({ ...blank, series: "bar" }, 1);
   assert(chart.series === "bar", "series is always sent — it is required");
   assert(!("windowMinutes" in chart), "an unset windowMinutes is omitted");
   assert(!("stacked" in chart), "stacked is omitted when false");
   assert(!("yAxisLabel" in chart), "an empty yAxisLabel is omitted");
 
-  const chartFull = buildChartConfig({ ...blank, series: "area", windowMinutes: "60", stacked: true, yAxisLabel: "kW" });
+  const chartFull = buildChartConfig({ ...blank, series: "area", windowMinutes: "60", stacked: true, yAxisLabel: "kW" }, 1);
   assert(chartFull.windowMinutes === 60, "a set windowMinutes is sent as a number");
   assert(chartFull.stacked === true, "stacked is sent when true");
   assert(chartFull.yAxisLabel === "kW", "a set yAxisLabel is sent");
@@ -480,17 +480,17 @@ export function runWindowValueChartFormTests(): void {
   assert(step.length === 0, "step needs no aggregate");
 
   const full = { ...blank, stacked: true, yAxisLabel: "kWh", chartAggregate: "sum" as const };
-  const compare = buildChartConfig({ ...full, series: "compare" });
+  const compare = buildChartConfig({ ...full, series: "compare" }, 1);
   assert(compare.stacked === undefined, "compare drops stacked");
   assert(compare.yAxisLabel === "kWh", "compare keeps the value-axis label");
-  const donut = buildChartConfig({ ...full, series: "donut" });
+  const donut = buildChartConfig({ ...full, series: "donut" }, 1);
   assert(donut.stacked === undefined && donut.yAxisLabel === undefined, "donut drops stacked and the axis label");
   const longLabel = widgetConfigErrors(0, 0, {
     widgetType: "chart",
     config: { ...blank, series: "donut", chartAggregate: "sum", yAxisLabel: "y".repeat(65) },
   });
   assert(longLabel.length === 0, "a donut's hidden axis label never blocks Save");
-  const stepConfig = buildChartConfig({ ...full, series: "step" });
+  const stepConfig = buildChartConfig({ ...full, series: "step" }, 1);
   assert(stepConfig.stacked === true && stepConfig.yAxisLabel === "kWh", "step keeps both");
 
   const plot = chartPlotOptions("compare");
@@ -524,7 +524,7 @@ export function runHeatmapFormTests(): void {
   assert(JSON.stringify(chartPointIssues("heatmap", 2)) === JSON.stringify([HEATMAP_ONE_POINT_MESSAGE]), "two points is one issue");
   assert(chartPointIssues("heatmap", 1).length === 0 && chartPointIssues("line", 5).length === 0, "one point, or another kind, passes");
 
-  const built = buildChartConfig({ ...ok, stacked: true, yAxisLabel: "kW" });
+  const built = buildChartConfig({ ...ok, stacked: true, yAxisLabel: "kW" }, 1);
   assert(built.stacked === undefined && built.yAxisLabel === undefined, "a heatmap drops stacked and the axis label");
   assert(built.windowMinutes === 10_080 && built.aggregate === "avg", "a heatmap keeps its window and function");
   assert(chartPlotOptions("heatmap").label === "Value of each hour", "the plot field names an hour's value");

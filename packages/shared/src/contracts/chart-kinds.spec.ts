@@ -242,9 +242,18 @@ export function theLiveWritePathChecksColours(): void {
     "an unknown role is refused at its index",
   );
   const nine = putDashboardWidgetsBodySchema.safeParse({
-    widgets: [chart({ series: "line", colors: Array.from({ length: 9 }, () => "series-1") })],
+    widgets: [
+      chart(
+        { series: "line", colors: Array.from({ length: 9 }, () => "series-1") },
+        Array.from({ length: 8 }, (_, i) => `4444444${i}-4444-4444-8444-444444444444`),
+      ),
+    ],
   });
-  assert(nine.success === false, "more than eight colours is refused by the schema");
+  const nineIssues = nine.success ? [] : nine.error.issues;
+  assert(
+    nineIssues.some((i) => i.path.join(".") === "widgets.0.config.colors" && i.code === "too_big"),
+    `nine colours on eight points are refused by the schema's cap, got ${JSON.stringify(nineIssues)}`,
+  );
   const ok = putDashboardWidgetsBodySchema.safeParse({
     widgets: [
       chart({ series: "donut", aggregate: "sum", colors: ["series-3", "series-6"] }, [POINT_A, POINT_B]),

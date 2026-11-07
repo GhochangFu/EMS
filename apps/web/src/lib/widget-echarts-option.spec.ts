@@ -580,6 +580,19 @@ export function compareAndDonutColourEachPointsBarAndSlice(): void {
     { name: "Pump A · kw", value: 10, itemStyle: { color: roles["series-2"] } },
     { name: "Pump B · kw", value: 30, itemStyle: { color: roles["series-5"] } },
   ]);
+  // A leading point with no share keeps the chosen colours on their own points.
+  const leading = loose(
+    buildChartOption(
+      { series: "donut", aggregate: "sum", colors: ["series-1", "series-2", "series-5"] },
+      [{ name: "Pump 0 · kw", sortOrder: -1, points: [], value: null }, ...valuedSeries()],
+      CHART_NOW,
+      roles,
+    ),
+  );
+  expect(leading.series[0]?.data).toEqual([
+    { name: "Pump A · kw", value: 10, itemStyle: { color: roles["series-2"] } },
+    { name: "Pump B · kw", value: 30, itemStyle: { color: roles["series-5"] } },
+  ]);
 }
 
 export function heatmapScaleTakesTheFirstColour(): void {

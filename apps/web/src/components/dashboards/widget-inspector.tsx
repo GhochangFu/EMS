@@ -115,7 +115,9 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
         {
           pointId: point.id,
           role,
-          sortOrder: row.points.length,
+          // `F4.325` — after the highest stored order, never a duplicate of it: a cascaded point
+          // leaves gaps, and two equal orders read back in either order, swapping their colours.
+          sortOrder: row.points.reduce((most, p) => Math.max(most, p.sortOrder + 1), 0),
           label: point.unit ? `${point.pointKey} (${point.unit})` : point.pointKey,
         },
       ],
@@ -795,14 +797,6 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
                 className="surface-raised-sm flex items-center justify-between px-2 py-1 text-xs"
               >
                 <span>{point.label}</span>
-                {/* `F4.325` — a colour per chart point, by its position. */}
-                {row.widgetType === "chart" ? (
-                  <ChartPointColorSelect
-                    pointLabel={point.label}
-                    value={row.config.chartColors[index] ?? ""}
-                    onChange={(color) => setPointColor(index, color)}
-                  />
-                ) : null}
                 <button type="button" onClick={() => removePoint(index)} aria-label={`Remove ${point.label}`} className="text-critical-ink">
                   ×
                 </button>
@@ -824,6 +818,26 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
             <PointPicker role={role} organizationId={organizationId} onAdd={addPoint} />
           ) : null}
         </Field>
+      ) : null}
+
+      {/* `F4.325` (ADR 0047 Amendment 8 item 1) — a colour per chart point, by its position. Outside
+          the Bound points `<label>`, which may hold one control only. */}
+      {row.widgetType === "chart" && row.points.length > 0 ? (
+        <div className="space-y-1">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Point colours</span>
+          <ul className="space-y-1">
+            {row.points.map((point, index) => (
+              <li key={`${point.pointId}-${index}`} className="flex items-center justify-between gap-2 text-xs">
+                <span>{point.label}</span>
+                <ChartPointColorSelect
+                  pointLabel={point.label}
+                  value={row.config.chartColors[index] ?? ""}
+                  onChange={(color) => setPointColor(index, color)}
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
       ) : null}
 
       {/*

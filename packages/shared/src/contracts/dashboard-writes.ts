@@ -776,8 +776,8 @@ const widgetsWriteFieldSchema = z
       "column and the renderer projects, so an undeclared name would draw a column of empty " +
       "cells rather than fail. A chart's kind may need more (ADR 0047 Amendment 7): a compare " +
       "or donut chart needs config.aggregate, since it draws one number per point; a heatmap " +
-      "needs config.aggregate, exactly one point and config.windowMinutes from 10080 to 43200. A chart's config.colors holds at most one " +
-      "colour per bound point (ADR 0047 Amendment 8).",
+      "needs config.aggregate, exactly one point and config.windowMinutes from 10080 to 43200. " +
+      "A chart's config.colors holds at most one colour per bound point (ADR 0047 Amendment 8).",
   );
 
 /**
