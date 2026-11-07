@@ -79,6 +79,19 @@ describe("ADR 0016 ingest contracts", () => {
     }
   });
 
+  it("publishes the plain-MQTT allowlist parser and predicate through ./ingest", () => {
+    // `F4.326` (ADR 0114 decision 1): the ingest host loads `dist/ingest.js`, so
+    // a parser the source exports but the built subpath does not would boot the
+    // host with no allowlist check at all.
+    const ingest = require_("@bms/shared/ingest") as Record<string, unknown>;
+    for (const name of ["parseMqttPlaintextHosts", "mqttPlaintextDecision"]) {
+      expect(typeof ingest[name], `${name} is not exported by @bms/shared/ingest`).toBe("function");
+    }
+    expect(ingest.MQTT_PLAINTEXT_NOT_ALLOWED_MESSAGE).toBe(
+      "Plain MQTT is not allowed for this broker host; ask the operator to add it to MQTT_PLAINTEXT_HOSTS",
+    );
+  });
+
   it("publishes ./ingest under both import and require conditions", () => {
     // ADR 0016 §8 calls this out specifically: `apps/sim` consumes @bms/shared
     // through `createRequire(import.meta.url)`, so an import-only condition

@@ -1,5 +1,6 @@
 import {
   INGEST_PROTOCOLS,
+  mqttPlaintextDecision,
   QUALITY_POLICIES,
   type IngestProtocol,
   type QualityPolicy,
@@ -258,6 +259,11 @@ export type PlanOptions = {
    * environment. MQTT only; new adapters get no environment fallback at all.
    */
   readonly mqttConnectionDefaults?: Readonly<Record<string, unknown>>;
+  /**
+   * `MQTT_PLAINTEXT_HOSTS`, parsed (ADR 0114 decision 1). Absent is the empty
+   * set — fail closed: no `tls: false` RTU is served.
+   */
+  readonly mqttPlaintextHosts?: ReadonlySet<string>;
 };
 
 /**
@@ -332,6 +338,13 @@ function asRecord(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+/** Whether two parsed connection configs dial the same broker the same way (F4.326 review M1). */
+function sameConnection(a: unknown, b: unknown): boolean {
+  const x = asRecord(a);
+  const y = asRecord(b);
+  return x.host === y.host && x.port === y.port && x.tls === y.tls;
 }
 
 /**
@@ -507,26 +520,87 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         continue;
       }
 
-      // Decision 9: a row exists and the process still used the environment's
-      // credential. Nothing is dropped — the endpoint runs — so this is a
-      // warning rather than a skip, and it is the one signal that distinguishes
-      // "the operator entered a credential" from "the operator entered one and
-      // the host is not using it".
-      if (configRow !== null && resolved.credentialSource === "env") {
-        warnings.push({ rtuId, rtuCode: deviceKey, reason: "credential-env-fallback" });
-      }
-
       connectionSlice = {
         ...options.mqttConnectionDefaults,
         ...connection,
         host: resolved.host,
         port: resolved.port,
       };
-      if (resolved.username !== undefined) {
-        credentials.username = resolved.username;
+
+      // F4.326 security review M1: a host carrying `/` (e.g. a stored
+      // `mqtt://other.example`) can never be dialled, and since ADR 0114 keys a
+      // plain endpoint `mqtt://host:port` it would collide with one — joining a
+      // plain connection while its own row says TLS, or breaking another
+      // organization's. Refused by name before it can be grouped.
+      if (resolved.host.includes("/")) {
+        skipped.push({ rtuId, rtuCode: deviceKey, reason: "invalid-connection-config", detail: "host" });
+        continue;
       }
-      if (resolved.password !== undefined) {
-        credentials.password = resolved.password;
+
+      // ADR 0114 decision 3: plain MQTT only for a literal `tls: false` whose
+      // host is on `MQTT_PLAINTEXT_HOSTS`. Read from the merged slice — what the
+      // adapter will act on (security review L1) — and against `resolved.host`,
+      // the host the connection will dial, which `MQTT_HOST` may have supplied,
+      // never the stored `connection.host`. A refusal skips the RTU by name and
+      // never falls back to TLS (ruling Q3): a silent TLS connect to a
+      // plain-only broker is the failure ADR 0114 exists to remove.
+      const transport = mqttPlaintextDecision(
+        connectionSlice.tls,
+        resolved.host,
+        options.mqttPlaintextHosts ?? new Set<string>(),
+      );
+      if (transport === "refused") {
+        skipped.push({ rtuId, rtuCode: deviceKey, reason: "plaintext-host-not-allowed" });
+        continue;
+      }
+
+      // F4.326 security review M2: `resolveMqttConnection` seeds the username
+      // and password from `MQTT_USERNAME`/`MQTT_PASSWORD` — the pilot broker's —
+      // and replaces each only if the blob holds it. On a plain connection to a
+      // host the row names itself, that would send the pilot credentials in
+      // clear text to another broker. Only the row's own blob is used there; the
+      // env credentials stay with the `MQTT_HOST` fallback broker they belong to.
+      if (transport === "plain" && typeof connection.host === "string") {
+        if (
+          head.credentials_ciphertext !== null &&
+          head.credentials_iv !== null &&
+          options.credentialKeyConfigured
+        ) {
+          try {
+            const own = asRecord(
+              options.decryptCredentials(head.credentials_ciphertext, head.credentials_iv, head.key_version),
+            );
+            if (typeof own.username === "string") {
+              credentials.username = own.username;
+            }
+            if (typeof own.password === "string") {
+              credentials.password = own.password;
+            }
+          } catch (error) {
+            skipped.push({
+              rtuId,
+              rtuCode: deviceKey,
+              reason: "credential-decrypt-failed",
+              ...keyVersionDetail(error),
+            });
+            continue;
+          }
+        }
+      } else {
+        // Decision 9: a row exists and the process still used the environment's
+        // credential. Nothing is dropped — the endpoint runs — so this is a
+        // warning rather than a skip, and it is the one signal that distinguishes
+        // "the operator entered a credential" from "the operator entered one and
+        // the host is not using it".
+        if (configRow !== null && resolved.credentialSource === "env") {
+          warnings.push({ rtuId, rtuCode: deviceKey, reason: "credential-env-fallback" });
+        }
+        if (resolved.username !== undefined) {
+          credentials.username = resolved.username;
+        }
+        if (resolved.password !== undefined) {
+          credentials.password = resolved.password;
+        }
       }
     } else if (
       head.credentials_ciphertext !== null &&
@@ -612,6 +686,12 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
         index: new Map(),
       };
       endpoints.set(groupKey, group);
+    } else if (!sameConnection(group.config, configParsed.data)) {
+      // F4.326 security review M1, defence in depth: one endpoint key must mean
+      // one connection. A row whose host, port or TLS choice differs from the
+      // group's would ride a connection its own row never asked for.
+      skipped.push({ rtuId, rtuCode: deviceKey, reason: "endpoint-config-conflict", detail: endpointKey });
+      continue;
     } else if (Object.keys(credentials).length > 0 && Object.keys(group.credentials).length === 0) {
       // First non-empty set wins, rather than the first row outright. This is
       // the `activeMqttConnection` singleton bug from `index.js` narrowed but
