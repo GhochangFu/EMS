@@ -20,7 +20,6 @@ import {
   siteLayoutBulkResultDtoSchema,
   siteLayoutResultDtoSchema,
   stockDashboardTemplatesListResponseSchema,
-  templateDraftDeletedResponseSchema,
 } from "@bms/shared/contracts";
 import type {
   DashboardSectionCode,
@@ -38,7 +37,11 @@ import type {
   WidgetPointRole,
 } from "@bms/shared";
 
+import { ApiError } from "../../lib/api-error";
+import { clearSessionOnAuthFailure, withAuth } from "../http";
 import { adminFetch } from "./client";
+
+const base = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
 export type {
   DashboardTemplatesListResponse,
@@ -215,13 +218,26 @@ export async function createDraftFromAdminDashboardTemplate(
   });
 }
 
-/** Deletes a draft. The route refuses a published version outright. */
-export async function deleteAdminDashboardTemplateDraft(
-  id: string,
-): Promise<TemplateDraftDeletedResponse> {
-  return adminFetch(`/admin/dashboard-templates/${id}`, templateDraftDeletedResponseSchema, {
-    method: "DELETE",
-  });
+/**
+ * Deletes a draft. The route refuses a published version outright.
+ *
+ * The route answers 204 with no body (`@HttpCode(HttpStatus.NO_CONTENT)`), so
+ * `adminFetch` cannot serve it: it reads `res.json()`, which throws on the
+ * empty body after the server has already deleted the row. This is
+ * `deleteAdminCalcParameter`'s shape: success is `status === 204`, and a
+ * refusal runs the same `clearSessionOnAuthFailure` then `ApiError` sequence
+ * `adminFetch` runs. (The asset-template twin answers 200 with a body, so it
+ * keeps `adminFetch`.)
+ */
+export async function deleteAdminDashboardTemplateDraft(id: string): Promise<void> {
+  const sent = withAuth({ method: "DELETE" });
+  const res = await fetch(`${base}/api/v1/admin/dashboard-templates/${encodeURIComponent(id)}`, sent);
+  if (res.status === 204) {
+    return;
+  }
+  clearSessionOnAuthFailure(res, sent);
+  const text = await res.text();
+  throw new ApiError(text || `admin /admin/dashboard-templates/:id ${res.status}`, res.status);
 }
 
 /** `GET /admin/dashboard-templates/stock` — the six repository defaults
