@@ -255,6 +255,47 @@ export async function deactivateIsARedReviewThatPosts(): Promise<void> {
   expect(rtusApi.reactivateAdminRtu).not.toHaveBeenCalled();
 }
 
+const ORG_INGEST_OFF_LINE =
+  "Ingest is switched off for this organization. This box is kept but has no effect until a global administrator switches the organization back on.";
+
+/** `F4.330` T3.3 — an RTU of an organization whose ingest is off shows the line under the box, and the box still toggles. */
+export async function anOrganizationIngestOffShowsTheNoteAndTheBoxStillToggles(): Promise<void> {
+  stubApi([{ ...RTU, organizationIngestEnabled: false }]);
+  renderPage();
+  await openRowAction("Edit");
+  await screen.findByRole("dialog", { name: "Edit RTU" });
+  await next();
+
+  const box = screen.getByLabelText("Ingest enabled") as HTMLInputElement;
+  expect(screen.getByText(ORG_INGEST_OFF_LINE)).toBeInTheDocument();
+  expect(box.checked).toBe(true);
+  await userEvent.click(box);
+  expect(box.checked).toBe(false);
+  expect(box.disabled).toBe(false);
+}
+
+/** `F4.330` T3.3 — no line when the organization's ingest is on (positive control: the box is there). */
+export async function noNoteWhenTheOrganizationIngestIsOn(): Promise<void> {
+  stubApi();
+  renderPage();
+  await openRowAction("Edit");
+  await screen.findByRole("dialog", { name: "Edit RTU" });
+  await next();
+  expect(screen.getByLabelText("Ingest enabled")).toBeInTheDocument();
+  expect(screen.queryByText(ORG_INGEST_OFF_LINE)).toBeNull();
+}
+
+/** `F4.330` T3.3 — no line on create, even when another listed RTU's organization is off. */
+export async function noNoteOnCreate(): Promise<void> {
+  stubApi([{ ...RTU, organizationIngestEnabled: false }]);
+  renderPage();
+  await openAdd();
+  await fillBasics();
+  await next();
+  expect(screen.getByLabelText("Ingest enabled")).toBeInTheDocument();
+  expect(screen.queryByText(ORG_INGEST_OFF_LINE)).toBeNull();
+}
+
 /** Reactivate is Review alone and not red (positive control beside the red deactivate). */
 export async function reactivateIsAPlainReviewThatPosts(): Promise<void> {
   stubApi([{ ...RTU, active: false }]);

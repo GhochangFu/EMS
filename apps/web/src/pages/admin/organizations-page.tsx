@@ -9,6 +9,7 @@ import {
   deactivateAdminOrganization,
   fetchAdminOrganizations,
   reactivateAdminOrganization,
+  setOrganizationIngest,
   updateAdminOrganization,
 } from "../../api/admin/organizations";
 import { fetchCopilotStatus } from "../../api/copilot";
@@ -148,6 +149,26 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
     },
   });
 
+  // `F4.330` (ADR 0115): the organization whose ingest switch awaits confirmation. The API is
+  // called only from the dialog's confirm.
+  const [ingestFor, setIngestFor] = useState<AdminOrganizationDto | null>(null);
+  const [ingestError, setIngestError] = useState<string | null>(null);
+  const ingestMutation = useMutation({
+    mutationFn: async (item: AdminOrganizationDto) =>
+      setOrganizationIngest(item.id, !item.ingestEnabled),
+    onSuccess: async () => {
+      setIngestFor(null);
+      setIngestError(null);
+      await queryClient.invalidateQueries({ queryKey: ["admin", "organizations"] });
+    },
+    onError: (err: unknown) => setIngestError(apiErrorMessage(err)),
+  });
+
+  function openIngest(item: AdminOrganizationDto): void {
+    setIngestError(null);
+    setIngestFor(item);
+  }
+
   function openCreate(): void {
     setEditing(null);
     setCode("");
@@ -232,10 +253,13 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                       <td className="px-2 py-2 font-mono text-xs">{item.timezone}</td>
                       <td className="px-2 py-2 text-xs">{COLOUR_PROFILE_LABELS[item.colourProfile].label}</td>
                       <td className="px-2 py-2">
-                        <StatusPill
-                          label={item.active ? "Active" : "Inactive"}
-                          tone={item.active ? "ok" : "offline"}
-                        />
+                        <div className="flex flex-wrap gap-1">
+                          <StatusPill
+                            label={item.active ? "Active" : "Inactive"}
+                            tone={item.active ? "ok" : "offline"}
+                          />
+                          {item.ingestEnabled ? null : <StatusPill label="Ingest off" tone="warning" />}
+                        </div>
                       </td>
                       <td className="px-2 py-2" onClick={(event) => event.stopPropagation()}>
                         <div className="flex gap-2">
@@ -260,6 +284,15 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
                             </button>
                           ) : null}
                           {canSwitchCopilot ? <CopilotOrgSwitch orgId={item.id} orgName={item.name} /> : null}
+                          {canSwitchCopilot ? (
+                            <button
+                              type="button"
+                              className="text-xs font-semibold text-accent-strong"
+                              onClick={() => openIngest(item)}
+                            >
+                              {item.ingestEnabled ? "Stop ingest" : "Resume ingest"}
+                            </button>
+                          ) : null}
                           {canChooseProfile ? (
                             <button
                               type="button"
@@ -300,6 +333,48 @@ export function OrganizationsAdminPage({ user }: OrganizationsAdminPageProps) {
         </SectionCard>
 
       {profileFor ? <ColourProfileDialog organization={profileFor} onClose={() => setProfileFor(null)} /> : null}
+
+      {ingestFor ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ingest-switch-title"
+            className="w-full max-w-md surface-dialog p-4"
+          >
+            <h2 id="ingest-switch-title" className="font-condensed text-lg font-bold text-ink">
+              {ingestFor.ingestEnabled ? "Stop ingest" : "Resume ingest"} — {ingestFor.name}
+            </h2>
+            <p className="mt-3 text-sm text-ink-muted">
+              Its RTUs keep their own settings and stored data stays visible; the change takes effect
+              within about a minute.
+            </p>
+            {ingestError ? (
+              <p role="alert" className="mt-3 text-xs text-critical-ink">
+                {ingestError}
+              </p>
+            ) : null}
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                className="surface-button px-3 py-2"
+                onClick={() => setIngestFor(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="surface-button-primary bg-accent px-3 py-2 text-xs font-semibold text-on-accent"
+                disabled={ingestMutation.isPending}
+                aria-busy={ingestMutation.isPending}
+                onClick={() => ingestMutation.mutate(ingestFor)}
+              >
+                {ingestFor.ingestEnabled ? "Stop ingest" : "Resume ingest"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {modalOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim/40 p-4">

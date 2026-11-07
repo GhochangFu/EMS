@@ -6,6 +6,9 @@ import { resetWizardStore } from "../../stores/wizard-store";
 import {
   aFillFillsItsStepOnly,
   aSelectPickedFirstStays,
+  anOrganizationIngestOffShowsTheNoteAndTheBoxStillToggles,
+  noNoteOnCreate,
+  noNoteWhenTheOrganizationIngestIsOn,
   deactivateIsARedReviewThatPosts,
   reactivateIsAPlainReviewThatPosts,
   theCreateBodyIsTheWizardsValues,
@@ -36,4 +39,7 @@ describe("F3.86 PR 3a — the RTUs page's wizards (ADR 0099 decision 6)", () => 
   it("sends the edit's PATCH without the header", () => theEditSendsThePatchWithoutAHeader(), SLOW);
   it("makes deactivate a red Review that posts", () => deactivateIsARedReviewThatPosts(), SLOW);
   it("makes reactivate a plain Review that posts", () => reactivateIsAPlainReviewThatPosts(), SLOW);
+  it("F4.330 notes an organization-off ingest under the box, which still toggles", () => anOrganizationIngestOffShowsTheNoteAndTheBoxStillToggles(), SLOW);
+  it("F4.330 shows no note when the organization ingest is on", () => noNoteWhenTheOrganizationIngestIsOn(), SLOW);
+  it("F4.330 shows no note on create", () => noNoteOnCreate(), SLOW);
 });
