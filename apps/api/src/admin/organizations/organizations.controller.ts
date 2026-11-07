@@ -14,7 +14,7 @@ import {
 } from "@nestjs/common";
 import { ZodError } from "zod";
 
-import { setOrganizationColourProfileBodySchema } from "@bms/shared";
+import { setOrganizationColourProfileBodySchema, setOrganizationIngestBodySchema } from "@bms/shared";
 import type { JwtPayload } from "@bms/shared";
 
 import { CurrentUser } from "../../auth/current-user.decorator";
@@ -87,6 +87,29 @@ export class OrganizationsAdminController {
     try {
       const parsed = setOrganizationColourProfileBodySchema.parse(body);
       return await this.service.setColourProfile(user, idParamSchema.parse(id), parsed.colourProfile);
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F4.330` (ADR 0115 decision 3) — `PUT /api/v1/admin/organizations/:id/ingest`, the
+   * organization's ingest switch. Global admin only (the service's `assertAdminRole`); its own
+   * route, not a `PATCH` field (`PATCH`'s strict body refuses `ingestEnabled`). The ingest host
+   * applies the value at its next reload. A body other than `{ ingestEnabled: boolean }` is a 400.
+   */
+  @Put(":id/ingest")
+  async setIngestEnabled(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      const parsed = setOrganizationIngestBodySchema.parse(body);
+      return await this.service.setIngestEnabled(user, idParamSchema.parse(id), parsed.ingestEnabled);
     } catch (err) {
       if (err instanceof ZodError) {
         throw new BadRequestException(err.flatten());

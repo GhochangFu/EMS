@@ -4,7 +4,9 @@ import { afterAll, beforeAll, describe, it } from "vitest";
 import {
   assertCoalescePicksEachSidePerColumn,
   assertEveryRowCarriesResolvedMetadata,
+  assertEveryRowCarriesTheOrganizationSwitch,
   assertKeyVersionArrivesAsAnInteger,
+  assertTheOrganizationSwitchIsSelectedNotFiltered,
 } from "./bindings.integration.spec.js";
 import { openIntegrationPool, requireIntegrationDb } from "../testing/integration-db-gate.js";
 
@@ -51,5 +53,14 @@ describe.skipIf(!connectionString)("F2.7 — resolved point metadata on the bind
   // case is about the credential key version, not the point metadata.
   it("returns key_version as a JS integer, null for an RTU with no config row", async () => {
     await assertKeyVersionArrivesAsAnInteger(pool as pg.Pool);
+  });
+
+  // `F4.330` / ADR 0115 decision 5.
+  it("returns the organization code and switch on every row, typed as the host reads them", async () => {
+    await assertEveryRowCarriesTheOrganizationSwitch(pool as pg.Pool);
+  });
+
+  it("selects a switched-off organization's rows rather than filtering them", async () => {
+    await assertTheOrganizationSwitchIsSelectedNotFiltered(pool as pg.Pool);
   });
 });

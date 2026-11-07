@@ -300,13 +300,12 @@ Source: owner ruling 2 of 2026-11-07. The cost read itself is
 The catalog is closed in the database too: `dashboard_widget_sources_catalog_key_check`
 (last widened by `0126`). One forward-only migration drops and re-adds it with
 the two new keys, the `0126` shape. No table, column, data or RLS change. It is
-numbered `0129`, after `0128_organization_ingest_enabled`, which the open
-`F4.330` PR (GhochangFu/EMS#1123) adds. Whichever of the two merges second
-takes the next free number at rebase, appends its journal entry **last**, and
-re-stamps that entry's `when` with `Date.now()`: the migrator applies only
-entries newer than the newest one already applied, so an entry placed before an
-applied one would be skipped silently on every existing database. (Measured by
-the migration review at the build.)
+numbered `0129`, after `0128_organization_ingest_enabled` (`F4.330`, merged as
+GhochangFu/EMS#1123 while this row was in review). Its journal entry is appended
+after `0128`'s, and its `when` is newer than `0128`'s, so every existing
+database applies it. (The migrator applies only entries newer than the newest
+one already applied, so an entry placed before an applied one would be skipped
+silently; measured by the migration review at the build.)
 
 ### Still deferred
 

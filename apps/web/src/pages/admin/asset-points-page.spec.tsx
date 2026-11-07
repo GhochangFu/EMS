@@ -301,6 +301,7 @@ function rtu(id: string, code: string, active: boolean): AdminRtuDto {
     stationCode: null,
     stationName: null,
     ingestEnabled: true,
+    organizationIngestEnabled: true,
     active,
     meta: null,
     createdAt: new Date(0).toISOString(),

@@ -27,7 +27,7 @@ import { ReportScheduleWizard, SCHEDULE_CHANNEL_SENTENCE } from "./report-schedu
  */
 
 const ESKOM_ID = "5c2c1b0e-2222-4a5b-8c4d-000000000010";
-const ESKOM = { id: ESKOM_ID, code: "ESKOM", name: "Eskom SMOC", active: true, currency: "ZAR", timezone: "UTC", colourProfile: "nexus" as const, meta: null, createdAt: "2026-01-01T00:00:00.000Z" };
+const ESKOM = { id: ESKOM_ID, code: "ESKOM", name: "Eskom SMOC", active: true, currency: "ZAR", timezone: "UTC", colourProfile: "nexus" as const, ingestEnabled: true, meta: null, createdAt: "2026-01-01T00:00:00.000Z" };
 
 const WESTERN_CAPE: AdminLocationDto = {
   id: "7d3e2f1a-3333-4a5b-8c4d-000000000021",

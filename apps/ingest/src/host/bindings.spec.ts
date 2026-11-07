@@ -102,6 +102,10 @@ export function row(overrides: Partial<BindingRow> = {}): BindingRow {
     // exists always carries a version and the LEFT JOIN is the only source of a
     // null (ADR 0062 decision 3).
     key_version: null,
+    // ADR 0115 decision 5: the organization's switch, read through the join.
+    // On by default, so every existing claim reads an organization that ingests.
+    organization_code: "PHEWB",
+    organization_ingest_enabled: true,
     ...overrides,
   };
 }
@@ -137,6 +141,22 @@ export function runBindingsTests(): void {
     );
     assert(sql.includes("ap.active = true"), "inactive points must not be bound");
     assert(sql.includes("r.ingest_enabled = true"), "ingest_enabled remains the on/off switch");
+    // ADR 0115 decision 5: the organization is joined and *selected*, never
+    // filtered — a switched-off organization's RTUs must reach planEndpoints so
+    // each one is reported as skipped rather than silently absent.
+    assert(
+      sql.includes("INNER JOIN bms.organizations o ON o.id = r.organization_id"),
+      "the binding query must join the RTU's organization",
+    );
+    assert(sql.includes("o.code AS organization_code"), "the organization code must be selected");
+    assert(
+      sql.includes("o.ingest_enabled AS organization_ingest_enabled"),
+      "the organization's ingest switch must be selected",
+    );
+    assert(
+      !/o\.ingest_enabled\s*=/.test(sql),
+      "the SQL must not filter on the organization switch, or the skip is never reported",
+    );
     assert(
       sql.includes("LEFT JOIN bms.rtu_connection_configs"),
       "the config join must stay a LEFT JOIN — the pilot RTU has no config row",
@@ -779,6 +799,77 @@ export function runBindingsTests(): void {
         target?.engMax === null &&
         target?.qualityPolicy === null,
       `an unresolved point carries five nulls, got ${JSON.stringify(target)}`,
+    );
+  }
+}
+
+/**
+ * ADR 0115 decision 5 / plan R4: an RTU whose organization is switched off is
+ * left out with one named reason, decided before anything else about the RTU.
+ */
+export function runOrganizationSwitchTests(): void {
+  {
+    const { endpoints, skipped } = planEndpoints(
+      [row(), row({ point_key: "PRESSURE", source_data_key: "pressure" })].map((r) => ({
+        ...r,
+        organization_code: "BCPL",
+        organization_ingest_enabled: false,
+      })),
+      makeOptions(),
+    );
+    assert(endpoints.length === 0, `a switched-off organization serves no endpoint, got ${endpoints.length}`);
+    assert(skipped.length === 1, `one skip per RTU, not per point: ${JSON.stringify(skipped)}`);
+    assert(
+      skipped[0].reason === "organization-ingest-disabled" &&
+        skipped[0].detail === "BCPL" &&
+        skipped[0].rtuId === "rtu-uuid-1" &&
+        skipped[0].rtuCode === "RTU-1",
+      `wrong skip: ${JSON.stringify(skipped[0])}`,
+    );
+  }
+
+  {
+    // R4: the organization reason wins over every other one — here a protocol
+    // the host could never serve. One reason per RTU, the one an operator can act on.
+    const { skipped } = planEndpoints(
+      [row({ source_type: "catalog", organization_code: "BCPL", organization_ingest_enabled: false })],
+      makeOptions(),
+    );
+    assert(
+      skipped.length === 1 && skipped[0].reason === "organization-ingest-disabled",
+      `the organization check must come first, got ${JSON.stringify(skipped)}`,
+    );
+  }
+
+  {
+    // Two RTUs on one broker, only one organization off: the broker still runs,
+    // with the other organization's RTU alone.
+    const { endpoints, skipped } = planEndpoints(
+      [
+        row(),
+        row({
+          rtu_id: "rtu-uuid-2",
+          rtu_code: "RTU-2",
+          mqtt_topic: "Airsprint-1051/Data/RTU-2",
+          asset_id: "asset-2",
+          organization_code: "BCPL",
+          organization_ingest_enabled: false,
+        }),
+      ],
+      makeOptions(),
+    );
+    assert(endpoints.length === 1, `the shared broker still runs, got ${endpoints.length} endpoints`);
+    assert(
+      endpoints[0].bindings.length === 1 && endpoints[0].bindings[0].deviceKey === "RTU-1",
+      `only the enabled organization's RTU binds: ${JSON.stringify(endpoints[0].bindings.map((b) => b.deviceKey))}`,
+    );
+    assert(
+      !endpoints[0].pointIndex.has("RTU-2"),
+      "the switched-off RTU must not be in the point index, or its samples are still written",
+    );
+    assert(
+      skipped.length === 1 && skipped[0].rtuCode === "RTU-2" && skipped[0].detail === "BCPL",
+      `wrong skip: ${JSON.stringify(skipped)}`,
     );
   }
 }
