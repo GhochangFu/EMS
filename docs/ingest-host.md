@@ -203,7 +203,11 @@ dark rtu=861736076128245 endpoint=phe.thinkiot.co.in:8883 key=s12_r01 lastSample
   are kept on purpose and replay when the endpoint next starts, so the line
   **does not change the `ok`/`degraded` verdict**; it is there so nothing on
   disk is hidden, and it goes once the backlog is replayed or swept. A stopped
-  endpoint with nothing buffered is not listed.
+  endpoint with nothing buffered is not listed. **It survives a restart**
+  (ADR 0115 Amendment 1): at boot the host lists every endpoint the
+  disk-buffer scan found segments for that the boot plan does not start — an
+  organization still switched off — so a backlog never drops off the page just
+  because the process restarted.
 - `skipped` lines name every RTU left out and why (`no-adapter`,
   `unsupported-protocol`, `missing-rtu-code`, `invalid-connection-config`,
   `tls-downgrade-refused`, `plaintext-host-not-allowed`,
@@ -280,14 +284,19 @@ re-plans, and reconciles the running endpoints with the plan
 | Running, same device set | swap the point index only | none |
 
 - **Stops and replaces run before starts**, and a replace waits for the old
-  `stop()` (at most 10 s) before it dials: a broker may refuse a duplicate
-  client id, and closing first is what makes "only that broker reconnects"
-  true. For MQTT that is every RTU on that broker, including other
-  organizations' RTUs that share it — a reconnect gap of a few seconds.
-- **Reloads never overlap.** A tick that arrives while the previous one is still
-  applying is skipped with `warn` `reload skipped; previous reload still
-  applying`; nothing is queued, because the next tick re-plans from the
-  database anyway.
+  `stop()` before it dials — up to about 15 s (the adapter's 5 s disconnect
+  timeout plus the supervisor's 10 s settle). The old connection is closed
+  before the new one is dialled, which is what makes "only that broker
+  reconnects" true. For MQTT that is every RTU on that broker, including other
+  organizations' RTUs that share it — a reconnect gap of a few seconds,
+  longer if the old disconnect hangs.
+- **Reloads never overlap.** A tick that arrives while the previous one is
+  still running — its binding query, its apply or its sweep — is skipped, and
+  the first skip of a run logs `warn` `reload tick skipped; previous tick still
+  running`. Nothing is queued, because the next tick re-plans from the
+  database anyway, and so a slow query can never apply an older plan over a
+  newer one. The registry also refuses an overlapping apply on its own
+  (`reload skipped; previous reload still applying`) as a second guard.
 - **A failure stays with its endpoint.** A build that throws is logged as
   `endpoint start failed` with its key and retried at the next reload; a stop
   that fails is logged as `endpoint stop failed` and the endpoint is still
@@ -651,7 +660,20 @@ decides whether a fix belongs to `F1.7`/`F1.10` or to this host.
   to them as to any other, so an organization switched off for longer than
   `INGEST_BUFFER_MAX_AGE_MS` (1 h) loses what was buffered *before* the
   switch-off. Readings a device publishes *while* its organization is off are
-  never received and cannot be recovered here. The in-memory queue is
+  never received and cannot be recovered here.
+- **On a shared broker, switching one organization off discards that
+  organization's buffered samples** (ADR 0115 Amendment 1, owner ruling,
+  2026-11-07 — documented, not changed). When the broker also serves another
+  organization's RTUs, the switch-off is a `replace`, not a `stop`: the
+  endpoint key stays in the plan. The new supervisor uses the same
+  disk-buffer handle and replays the old segments against the **new** point
+  index, which no longer holds the switched-off organization's RTUs. Their
+  samples resolve as `unknownDevice` (counted on the `samples discarded`
+  line), the segment is committed as replayed and deleted, and those samples
+  are gone — even if the organization is switched back on within the hour.
+  Only a broker whose RTUs all belong to the switched-off organization is a
+  `stop`, which keeps its segments (above). The backlog exists only when the
+  database was failing writes at the moment of the switch-off. The in-memory queue is
   still bounded at 10 000 samples and still drops oldest, but only until the
   first failed write spills it to disk — see *The disk buffer* above.
 - **`bms.rtus.mqtt_topic` is still a column.** The host shims it into the device
