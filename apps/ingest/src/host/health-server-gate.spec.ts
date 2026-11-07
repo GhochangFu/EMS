@@ -50,6 +50,7 @@ function fixture(): HealthSnapshot {
         lastSampleAt: new Date(),
       },
     ],
+    stopped: [],
     skipped: [],
     startedAt: new Date(),
     staleAfterMs: 300_000,

@@ -129,6 +129,14 @@ export type DiskBufferStore = {
   handle(protocol: IngestProtocol, endpointKey: string): DiskBufferHandle;
   /** Applies both bounds now, across every endpoint. Same call the handles share. */
   sweep(): Promise<void>;
+  /**
+   * Every endpoint holding samples right now — including those the start-up
+   * scan found, which no handle has been asked for yet — sorted by protocol
+   * then key, `buffered` in samples. Read-only; touches no file. The ingest
+   * host seeds the reload registry's stopped list from it at boot (ADR 0115
+   * Amendment 1).
+   */
+  backlog(): readonly { protocol: IngestProtocol; endpointKey: string; buffered: number }[];
 };
 
 /**
@@ -949,5 +957,25 @@ export async function openDiskBufferStore(options: DiskBufferOptions): Promise<D
       return endpoint.handle;
     },
     sweep: () => enqueue(() => enforceBounds(now().getTime())),
+    backlog() {
+      const listed: { protocol: IngestProtocol; endpointKey: string; buffered: number }[] = [];
+      for (const endpoint of endpoints.values()) {
+        const samples = buffered(endpoint);
+        if (samples > 0) {
+          listed.push({ ...endpointFields(endpoint), buffered: samples });
+        }
+      }
+      return listed.sort((a, b) =>
+        a.protocol !== b.protocol
+          ? a.protocol < b.protocol
+            ? -1
+            : 1
+          : a.endpointKey < b.endpointKey
+            ? -1
+            : a.endpointKey > b.endpointKey
+              ? 1
+              : 0,
+      );
+    },
   };
 }

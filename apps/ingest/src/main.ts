@@ -5,8 +5,8 @@ import pg from "pg";
 
 import { lookupAdapter } from "./adapter/registry.js";
 import {
-  endpointGroupKey,
   loadBindingRows,
+  type EndpointPlan,
   planEndpoints,
   type PlanOptions,
   type PlanWarning,
@@ -18,6 +18,7 @@ import { startHealthServer } from "./host/health-server.js";
 import { createHostLogger } from "./host/logger.js";
 import type { PointIndex } from "./host/normaliser.js";
 import { droppedCount, resolveSamples, writeResolved } from "./host/normaliser.js";
+import { createEndpointRegistry } from "./host/reconcile.js";
 import { createSupervisor, realScheduler, type Supervisor } from "./host/supervisor.js";
 // The ADR 0012 seam (ADR 0016 §4, §6). It stopped being the *unmodified* pilot
 // file at ADR 0062 decision 2, which moved its key selection into
@@ -32,9 +33,10 @@ import { decryptCredentials, resolveMqttConnection } from "./rtu-config.js";
  * **Wiring only.** Every decision this file could have made lives in a tested
  * module instead — `readHostConfig` parses the environment, `planEndpoints`
  * resolves protocols and groups endpoints, `createSupervisor` owns the
- * lifecycle, `resolveSamples`/`writeResolved` own the write path. `main.ts` is
- * the one piece with no test around it, so a branch here is a branch nothing
- * checks.
+ * lifecycle, `createEndpointRegistry` reconciles the endpoint set at each reload
+ * (ADR 0115 decision 6), `resolveSamples`/`writeResolved` own the write path.
+ * `main.ts` is the one piece with no test around it, so a branch here is a
+ * branch nothing checks.
  *
  * The strangler migration is finished: commit 2 built this alongside the ADR 0007
  * pilot's `src/index.js`, commit 3 verified the two agreed and cut the
@@ -105,34 +107,6 @@ async function main(): Promise<void> {
     mqttPlaintextHosts: hostConfig.mqttPlaintextHosts,
   };
 
-  /**
-   * Point-lookup tables, keyed by endpoint and replaced wholesale on reload.
-   *
-   * **Reload refreshes these and nothing else.** Mapping a new point onto a
-   * live RTU takes effect within `INGEST_RELOAD_MS`, which is the common case
-   * and what `index.js` does today. Reconciling the *endpoint set* — starting,
-   * stopping and restarting supervisors as RTUs are enabled or reconfigured —
-   * is deliberately not built here: it is a second state machine on top of the
-   * supervisor's, and half of one is worse than none. Appearing and
-   * disappearing endpoints are logged so the operator knows a restart is owed.
-   */
-  const pointIndexes = new Map<string, PointIndex>();
-  const supervisors = new Map<string, Supervisor>();
-  /**
-   * The devices each running supervisor was built with, so the reload can tell
-   * when the database no longer agrees.
-   *
-   * A supervisor's `plan.bindings` is captured at construction and never
-   * replaced — the reload swaps `pointIndexes` and nothing else. So enabling or
-   * disabling an RTU on an endpoint that is *already running* changes nothing
-   * about the connection: the adapter stays subscribed, the health page keeps
-   * listing the old roster, and only the point index moves. That was invisible
-   * while each PHE RTU had its own endpoint. It stopped being invisible at
-   * `F1.7`, where MQTT groups the whole broker into one endpoint, so the
-   * "new endpoint requires a restart" warning below can never fire for a device
-   * change. Tracked here purely to say so.
-   */
-  const servedDevices = new Map<string, ReadonlySet<string>>();
   let skipped: readonly SkippedBinding[] = [];
   const startedAt = new Date();
 
@@ -165,9 +139,10 @@ async function main(): Promise<void> {
   // skip, and it is the one line that tells an operator that the credential
   // they entered is not the one the broker sees.
   //
-  // **No unit test holds this.** `main.ts` is wiring and has none, which is the
-  // same condition that let the boot-only defect through in the first place —
-  // so it is said here rather than implied. The layer that stands in for it is
+  // **No unit test holds this dedupe.** `main.ts` is wiring and has none — the
+  // endpoint reconciliation moved to the tested `host/reconcile.ts` (ADR 0115),
+  // but this set did not, which is the same condition that let the boot-only
+  // defect through in the first place. The layer that stands in for it is
   // the ingest step of `docs/plans/e8.4-credential-key-rotation.md` §14: plant
   // an `rtu_connection_configs` row with no readable credential against a
   // *running* host and read the line out of `docker compose logs ingest`. If
@@ -188,31 +163,41 @@ async function main(): Promise<void> {
   };
   reportCredentialFallbacks(initial.warnings);
 
-  for (const plan of initial.endpoints) {
+  /**
+   * Builds — does not start — one endpoint's supervisor. The registry calls it
+   * at boot and for every `start` or `replace` a reload decides on.
+   *
+   * `index` is the registry's: it returns the point index of the latest plan
+   * for this endpoint, so a `swap-index` (a mapping change on an unchanged
+   * device set) reaches this supervisor's writes within one `INGEST_RELOAD_MS`
+   * without a rebuild. The disk-buffer handle is per `(protocol, endpointKey)`
+   * and `bufferStore.handle` returns the same one every time, so a replaced or
+   * restarted endpoint replays whatever its predecessor spilled (ADR 0115
+   * decision 7).
+   */
+  const buildSupervisor = (plan: EndpointPlan, index: () => PointIndex): Supervisor => {
     const factory = lookupAdapter(plan.protocol);
     if (factory === undefined) {
-      continue;
+      // `planEndpoints` already skips a protocol with no adapter, so this is
+      // unreachable; the registry logs it with the key if it ever is not.
+      throw new Error(`no adapter for protocol ${plan.protocol}`);
     }
-    const key = endpointGroupKey(plan.protocol, plan.endpointKey);
-    pointIndexes.set(key, plan.pointIndex);
-    servedDevices.set(key, new Set(plan.bindings.map((binding) => binding.deviceKey)));
     // Exactly one binding is the case in which `SourceSample.deviceKey` may be
     // omitted; with several, an omitted key is ambiguous and the normaliser
     // counts it rather than guessing.
     const soleDeviceKey = plan.bindings.length === 1 ? plan.bindings[0].deviceKey : undefined;
 
-    const supervisor = createSupervisor({
+    return createSupervisor({
       factory,
       plan,
       logger: logger.child({ endpointKey: plan.endpointKey, protocol: plan.protocol }),
       buffer: bufferStore.handle(plan.protocol, plan.endpointKey),
       writeSamples: async (samples) => {
-        const index = pointIndexes.get(key) ?? plan.pointIndex;
         // No clock here. Each sample carries its own receive time: the drain
         // loop stamped a live batch, and a replayed one keeps the `rx` the disk
         // buffer wrote at spill (ADR 0016 Amendment 5) — which is what keeps a
         // re-replayed segment on the same primary key.
-        const { rows, counters } = resolveSamples(samples, index, soleDeviceKey);
+        const { rows, counters } = resolveSamples(samples, index(), soleDeviceKey);
         // `droppedCount`, not a list summed here: this file summed five buckets
         // by hand and `F2.7`'s `outOfRange` would have been the sixth and the
         // one nobody added, leaving a batch that dropped readings logging
@@ -233,26 +218,66 @@ async function main(): Promise<void> {
         }
       },
     });
+  };
 
-    supervisors.set(key, supervisor);
-    supervisor.start();
-  }
+  /**
+   * The running endpoint set (ADR 0115 decision 6, amending ADR 0016).
+   *
+   * Each reload diffs the new plan against what is running: a new endpoint is
+   * started, an endpoint whose device set changed is replaced (the old
+   * supervisor stopped, then a new one built and started — that broker alone
+   * reconnects), an endpoint no longer in the plan is stopped, and an unchanged
+   * one only has its point index swapped. So enabling or disabling an RTU, or
+   * switching an organization's ingest off or on, takes effect within one
+   * `INGEST_RELOAD_MS` plus the reconnect, with no restart. A change of
+   * connection config or credential on an endpoint whose device set is
+   * unchanged is still restart-only (plan R5). The decisions and their tests
+   * are in `host/reconcile.ts`; this file only wires them.
+   */
+  const registry = createEndpointRegistry({
+    build: buildSupervisor,
+    logger,
+    buffered: (protocol, endpointKey) => bufferStore.handle(protocol, endpointKey).buffered,
+    // ADR 0115 Amendment 1: after a restart, a backlog the scan found for an
+    // endpoint the boot plan does not start is still named as `stopped`.
+    scanned: bufferStore.backlog(),
+  });
+  await registry.reload(initial.endpoints);
 
   const health = await startHealthServer(hostConfig.healthPort, () => ({
-    endpoints: [...supervisors.values()].map((supervisor) => supervisor.health()),
+    ...registry.health(),
     skipped,
     startedAt,
     staleAfterMs: hostConfig.staleAfterMs,
   }));
 
   logger.info("ingest host started", {
-    endpoints: supervisors.size,
+    endpoints: registry.health().endpoints.length,
     skipped: skipped.length,
     healthPort: health.port,
     bufferDir: hostConfig.bufferDir,
   });
 
+  /**
+   * One tick at a time, from the query to the sweep. The registry already
+   * refuses an overlapping *apply*, but not an overlapping *query*: a slow
+   * binding query in tick N could finish after tick N+1's and apply an older
+   * plan over a newer one. A tick that finds the previous one still running is
+   * skipped; the first skip of a run is logged, and the next tick that runs
+   * re-arms the log.
+   */
+  let tickInFlight = false;
+  let tickSkipLogged = false;
   const reloadTimer = setInterval(() => {
+    if (tickInFlight) {
+      if (!tickSkipLogged) {
+        tickSkipLogged = true;
+        logger.warn("reload tick skipped; previous tick still running");
+      }
+      return;
+    }
+    tickInFlight = true;
+    tickSkipLogged = false;
     void (async () => {
       try {
         const next = planEndpoints(await loadBindingRows(pool), planOptions);
@@ -260,56 +285,22 @@ async function main(): Promise<void> {
         // An RTU onboarded into a running host reaches the fallback here, not
         // at boot. Deduplicated per process by the set above.
         reportCredentialFallbacks(next.warnings);
-        const seen = new Set<string>();
-        for (const plan of next.endpoints) {
-          const key = endpointGroupKey(plan.protocol, plan.endpointKey);
-          seen.add(key);
-          if (pointIndexes.has(key)) {
-            pointIndexes.set(key, plan.pointIndex);
-            // A device added to or removed from an endpoint that is already
-            // running does NOT take effect, and until now nothing said so.
-            // Writes for a removed RTU do stop within one cycle, because the
-            // refreshed index no longer holds its `deviceKey` — but the adapter
-            // stays subscribed, `accept()` keeps refreshing that device's
-            // `lastSampleAt`, and `health()` keeps building its roster from the
-            // supervisor's original bindings. So the operator sees the RTU still
-            // listed, still not stale, and no telemetry: three signals that
-            // disagree. Enabling one is worse — it is absent from `rtus=`,
-            // absent from the stale accounting, and its messages are discarded.
-            // Reconciling a live endpoint is a second state machine on top of
-            // the supervisor's, which ADR 0016 declined; naming the gap costs
-            // nothing and is what the operator actually needs.
-            const running = servedDevices.get(key);
-            const wanted = new Set(plan.bindings.map((binding) => binding.deviceKey));
-            const added = [...wanted].filter((d) => running?.has(d) !== true);
-            const removed = [...(running ?? [])].filter((d) => !wanted.has(d));
-            if (added.length > 0 || removed.length > 0) {
-              logger.warn("endpoint device set changed; restart required to apply", {
-                endpointKey: plan.endpointKey,
-                protocol: plan.protocol,
-                added,
-                removed,
-                servingCount: running?.size ?? 0,
-              });
-            }
-          } else {
-            logger.warn("new endpoint requires a restart to serve", {
-              endpointKey: plan.endpointKey,
-              protocol: plan.protocol,
-            });
-          }
-        }
-        for (const key of pointIndexes.keys()) {
-          if (!seen.has(key)) {
-            logger.warn("endpoint no longer in the binding plan; still running", { endpointKey: key });
-          }
-        }
+        // Stops and replaces before starts, never two reloads at once (plan
+        // R6). The tick flag above already serialises ticks; the registry's own
+        // "busy" refusal is the second guard, for any other caller.
+        await registry.reload(next.endpoints);
+        // Plan R8: the disk buffer's 1 h / 256 MiB bounds are swept by each
+        // supervisor's replay loop, so with every endpoint stopped nothing else
+        // would call it. Idempotent and enqueued behind any sweep in flight.
+        await bufferStore.sweep();
       } catch (error) {
         // `index.js:227` is `loadMapping().catch(() => {})` — reloads fail
         // invisibly there. §5 rule 9 forbids exactly that.
         logger.error("binding reload failed", {
           reason: error instanceof Error ? error.message : "unknown",
         });
+      } finally {
+        tickInFlight = false;
       }
     })();
   }, hostConfig.reloadMs);
@@ -336,7 +327,7 @@ async function main(): Promise<void> {
     logger.info("shutting down", { signal });
     void (async () => {
       clearInterval(reloadTimer);
-      await Promise.allSettled([...supervisors.values()].map((s) => s.stop()));
+      await registry.stopAll();
       await health.close();
       await pool.end();
       process.exit(0);
