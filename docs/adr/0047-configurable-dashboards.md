@@ -1236,3 +1236,149 @@ Amendment 5 recorded and this amendment does not change.
   `canAuthorDashboards`'s (`admin-access.ts:75-87`) and
   `canChooseAssetGroupDashboardScope`'s, because each states that `F3.63` is
   pending. `asset-groups.service.ts:38-42` stays as written — it remains true.
+
+## Amendment 7 — four more `chart` kinds: step line, compare bars, donut and heatmap (`F4.322`, 2026-11-07)
+
+**Status: Proposed — accepted when the PR that adds it merges.** Raised by the
+owner on 2026-11-07: the PHE site dashboard on `bms.demosites.co.in` shows only
+line charts (its Trends panel is a `trend_strip`), and the owner wants more
+chart types to make dashboards more attractive. The owner approved the plan and
+ruled four questions the same day, in chat (*(owner)* below). Code citations
+are to `main` at `34229d0a`. Item 5 of the row (a style per trend-strip point)
+is [ADR 0108](0108-trend-and-energy-views.md) Amendment 8.
+
+### The question
+
+Decision 4 made `chart` the one generic type: its `config.series` picks the
+shape, so a new shape is configuration on the same widget, not a new widget
+type. Today `chartSeriesKindSchema` holds four kinds — `line`, `area`, `bar`,
+`scatter` (`packages/shared/src/contracts/dashboard-builder.ts:130`) — and all
+four plot a **time** x-axis (`buildChartOption`,
+`apps/web/src/lib/widget-echarts-option.ts`). So the builder already offers
+lines, filled lines, bars over time and scatter. What it cannot draw is a run
+state, a comparison of several points at one moment, a share of a total, or a
+daily pattern.
+
+### The ruling
+
+1. **Four new kinds** *(owner, Q1: all of them)*. `chartSeriesKindSchema`
+   widens from four to eight values: `line`, `area`, `bar`, `scatter`, **`step`,
+   `compare`, `donut`, `heatmap`**. The kind stays in the widget's `config`
+   (`bms.dashboard_widgets.config jsonb`); `widgetType` stays `chart`.
+   Migration `0050` checks only `widget_type` and the point `role`, so there is
+   **no migration**, and no stored row changes meaning.
+
+2. **The labels an administrator picks** — plain words, never ECharts names
+   (decision 4, Amendment 2 §4). The four existing labels do not change. The
+   new four, proposed here and accepted with this amendment:
+
+   | Kind | Label | ECharts | Axis |
+   |---|---|---|---|
+   | `step` | Steps (on/off) | `line` + `step: "end"` | time |
+   | `compare` | Compare points | `bar`, horizontal | category (one bar per point) |
+   | `donut` | Share (donut) | `pie` with an inner radius | none |
+   | `heatmap` | Daily pattern (hour × day) | `heatmap` + `visualMap` | hour of day × day |
+
+   The mapping is still stated once, in `CHART_SERIES`
+   (`apps/web/src/lib/widget-catalog.ts`), which `tests/f3.1c-widget-series-mapping.test.ts`
+   holds; `buildChartOption` reads the ECharts type from it and writes none.
+
+3. **`step`** — a line whose value holds until the next sample (`step: "end"`),
+   for on/off and run states. Same data path, window, `stacked` flag and
+   footer as `line`; raw or bucketed exactly as `line` is.
+
+4. **`compare` and `donut` need a window aggregate** *(owner, Q2)*. Each bound
+   point is **one number**: its `config.aggregate` (`sum`, `avg`, `min`,
+   `max`) over `windowMinutes` (default one day, as today). The author picks the
+   function — `sum` for kWh, `avg` for kW. A `compare` or `donut` config
+   **without `aggregate` is refused** on every write path (item 7).
+   - `compare` draws one horizontal bar per point, in `sortOrder`, the value
+     axis named by `yAxisLabel` when set.
+   - `donut` draws one slice per point and shows each slice's share of the
+     total. A point whose number is `null`, zero or negative has no share: it
+     is left out of the ring, and a line under the chart says how many were
+     left out (never a silent gap).
+   - **The read already answers every point.** ADR 0048 decision 3's
+     aggregate read is one request per bound point
+     (`aggregateRequestsForWidget`, `apps/web/src/lib/dashboard-widget-data.ts`),
+     and each response carries its own `stats`; only `widgetDataFor` keeps the
+     first point's `stats` for the footer. So no route, query schema or API
+     code changes: the web mapping gives each series its window number. These
+     two kinds ask for `stats` only (no `bucketFunction`), as a `value_tile`
+     does, so no bucket rows are read.
+
+5. **`heatmap`** — hour of day (0–23) against day, for **exactly one** bound
+   point, from the hourly rollup buckets. Its write rules (item 7):
+   - exactly one point (a second one is refused; zero is each path's own rule
+     today);
+   - `windowMinutes` **required, 10,080 to 43,200** (7 to 30 days). This is
+     exactly the `1h` rung of the read's ladder
+     (`apps/api/src/telemetry/point-aggregate-window.ts`: above 2,880 minutes
+     and up to 43,200), so every window the schema accepts is read in hourly
+     buckets and no other window is;
+   - `aggregate` **required** *(drafter choice)*: it is the bucket function
+     the hourly cells are read with (`avg` for kW, `sum` for kWh). Without it
+     the chart would plot raw readings, which have no hourly cells.
+   - Hours and days are in the response's `timeZone` (the asset's site, else
+     its organization — ADR 0108 decision 1.9), never the browser's; when the
+     response carries none, the chart uses `Etc/UTC` and says so under the
+     plot. Colour is one hue (`accent`) from 8 % alpha to full, the
+     `energy-heatmap.tsx` precedent (ADR 0078: no new colour token).
+
+6. **What the new non-time kinds ignore** *(drafter choice)*. `stacked` means
+   nothing for `compare`, `donut` or `heatmap`, and `yAxisLabel` nothing for
+   `donut` or `heatmap`. They are **ignored, not refused**: a stored chart
+   switched from `line` keeps harmless values. The builder hides those fields
+   for those kinds and leaves them out when it saves. `footerStats` keeps its
+   meaning (the first point's Peak / Average / Granularity).
+
+7. **One rule, every write path.** The per-kind rules of items 4 and 5 are one
+   pure function in `packages/shared` (`chartKindIssues(config, pointCount)`),
+   called from each surface that writes a chart config, so the three cannot
+   drift:
+   - the live dashboard `PUT /dashboards/:id/widgets` body
+     (`widgetsWriteFieldSchema`, `dashboard-writes.ts`, beside
+     `eachTableColumnIsDeclared`);
+   - the asset-template default dashboard (`templateDashboardWidgetSchema`,
+     `asset-template-content-writes.ts`), counting `pointKeys`;
+   - the section and site template widget (`sectionTemplateWidgetSchema`,
+     `dashboard-templates.ts`), counting `bindings`, with its `Widget "<key>":`
+     prefix.
+
+   Each refusal is a 400 naming `config.aggregate`, `config.windowMinutes` or
+   `points` and the kind. The append route
+   (`dashboard-widget-append.service.ts`) writes `series: "line"` only and is
+   unchanged. The cardinality records (`WIDGET_POINT_CARDINALITY.chart`, 1 to
+   `MAX_WIDGET_POINTS`) are unchanged: the heatmap's "exactly one" is a kind
+   rule, not a type cardinality.
+
+8. **Not changed** *(owner, Q4)*. No seeded or stock template — the PHE
+   `pump-station-standard`, `smoc-standard`, the asset-template stock catalog
+   and the dashboard-template stock catalog — changes kind; the owner changes
+   them later by hand. No migration, table, grant, policy, route, query schema
+   or dependency. The copilot does not import `chartSeriesKindSchema` (checked
+   by grep at `34229d0a`), so ADR 0099 is unchanged. `widget-frame.tsx` is not
+   touched.
+
+### Build
+
+Three PRs after this one, in order, each test-first: **PR 1** `step`,
+`compare`, `donut` (contract, the shared rule, the option builder, the data
+mapping, the pickers and forms); **PR 2** `heatmap`; **PR 3** the trend-strip
+style (ADR 0108 Amendment 8).
+
+### Consequences
+
+- `chartSeriesKindSchema` 4 → 8 values; `CHART_SERIES` gains four rows and its
+  ECharts type union widens to `line | bar | scatter | pie | heatmap`.
+- `dashboard-builder.spec.ts`'s pinned list of kinds moves to eight.
+- Each kind's picker label appears in the dashboard inspector, the template
+  widget editor and the template form's label map
+  (`template-dashboard-form.ts`).
+- **§4.6 for this row:** the contract layer is each refusal beside its
+  positive case on all three write paths; the API layer is one `PUT` refusal
+  (400) and one accepted save per new kind; the browser layer is owed locally —
+  add each kind from the inspector on a dashboard with live points, see it
+  draw, save, hard-reload and see it again; the donut's left-out line with a
+  negative point; the heatmap's day × hour grid on a 7-day window and its
+  refusal of a 3-day window in the form.
