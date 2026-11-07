@@ -117,9 +117,7 @@ export function ActiveAlarmsRailBody({
               <thead className="text-ink-muted">
                 <tr>
                   <th className="py-1 pr-2 font-semibold">Time</th>
-                  <th className="py-1 pr-2 font-semibold">Asset</th>
-                  <th className="py-1 pr-2 font-semibold">Alarm</th>
-                  <th className="py-1 font-semibold">Severity</th>
+                  <th className="py-1 font-semibold">Alarm</th>
                 </tr>
               </thead>
               <tbody>
@@ -128,14 +126,21 @@ export function ActiveAlarmsRailBody({
                     <td className="whitespace-nowrap py-1.5 pr-2 font-mono">
                       {new Date(alarm.raisedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </td>
-                    {/* F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates. */}
-                    <td className="py-1.5 pr-2 font-medium text-ink">
-                      <span className="whitespace-nowrap">{alarm.assetCode}</span>
-                      <WhereSpan where={whereOf(alarm)} />
-                    </td>
-                    <td className="py-1.5 pr-2 text-ink">{alarm.message}</td>
-                    <td className="py-1.5">
-                      <StatusPill label={alarm.severity} tone={alarmSeverityTone(alarm.severity, severities)} />
+                    {/*
+                      F4.316 / ADR 0111: `<code> · <RTU or location>`; the where part wraps, never truncates.
+                      The label, the message and the severity share one cell, the message and the pill on a
+                      wrapping line under the label: four columns did not fit the 320px rail, and the pill drew
+                      past the card's edge.
+                    */}
+                    <td className="min-w-0 py-1.5">
+                      <div className="font-medium text-ink">
+                        <span className="whitespace-nowrap">{alarm.assetCode}</span>
+                        <WhereSpan where={whereOf(alarm)} />
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="min-w-0 break-words text-ink">{alarm.message}</span>
+                        <StatusPill label={alarm.severity} tone={alarmSeverityTone(alarm.severity, severities)} />
+                      </div>
                     </td>
                   </tr>
                 ))}

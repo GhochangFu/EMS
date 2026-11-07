@@ -26,6 +26,9 @@ import {
   theAssetCellFallsBackToTheLocation,
   theAssetCellNamesTheRtu,
   theAssetCellsWherePartWraps,
+  theRowHasTwoColumns,
+  theAlarmCellHoldsLabelMessageAndPill,
+  theCodeStaysOnOneLine,
   viewAllLinksToTheAlarmsPage,
 } from "./active-alarms-rail.spec";
 
@@ -136,5 +139,17 @@ describe("F3.28 active alarms rail", () => {
 
   it("F4.316 the Asset cell's where part wraps, never truncates", async () => {
     await theAssetCellsWherePartWraps();
+  });
+
+  it("draws two columns, Time and Alarm, so the pill stays inside the rail", async () => {
+    await theRowHasTwoColumns();
+  });
+
+  it("puts the label, message and pill in the Alarm cell", async () => {
+    await theAlarmCellHoldsLabelMessageAndPill();
+  });
+
+  it("keeps the asset code on one line", async () => {
+    await theCodeStaysOnOneLine();
   });
 });

@@ -354,3 +354,34 @@ export async function theAssetCellsWherePartWraps(): Promise<void> {
   expect(where).not.toHaveClass("truncate");
   expect(where).toHaveClass("whitespace-normal");
 }
+
+/**
+ * The rail's row is two columns, Time and Alarm. In a ~320 px rail the time, a 20-character
+ * code (which never wraps, ADR 0111 decision 4) and a severity pill side by side are wider than
+ * the card, so the pill drew outside it. The Alarm cell stacks the label over the message and
+ * the pill, which fits.
+ */
+export async function theRowHasTwoColumns(): Promise<void> {
+  renderRail({ items: [alarm(1)] });
+  const row = await railRow("Alarm message 1");
+  const table = row.closest("table");
+  if (table === null) throw new Error("no table");
+  expect(within(table).getAllByRole("columnheader").map((th) => th.textContent)).toEqual(["Time", "Alarm"]);
+  expect(within(row).getAllByRole("cell")).toHaveLength(2);
+}
+
+/** The Alarm cell holds the asset label, the message and the severity pill. */
+export async function theAlarmCellHoldsLabelMessageAndPill(): Promise<void> {
+  renderRail({ items: [alarm(1)] });
+  const alarmCell = within(await railRow("Alarm message 1")).getAllByRole("cell")[1];
+  expect(byWholeText(alarmCell, "CR-Q1 · RTU 1")).toBeInTheDocument();
+  expect(within(alarmCell).getByText("Alarm message 1")).toBeInTheDocument();
+  expect(within(alarmCell).getByText("critical")).toBeInTheDocument();
+}
+
+/** The code stays on one line (ADR 0111 decision 4); only the `· where` part wraps. */
+export async function theCodeStaysOnOneLine(): Promise<void> {
+  renderRail({ items: [alarm(1)] });
+  const code = within(await railRow("Alarm message 1")).getByText("CR-Q1");
+  expect(code).toHaveClass("whitespace-nowrap");
+}
