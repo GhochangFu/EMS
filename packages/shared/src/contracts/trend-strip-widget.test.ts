@@ -29,6 +29,6 @@ describe("F4.306 — the trend_strip selection (ADR 0108 Amendment 7)", () => {
     spec.assertThirtyPointsOfSixAssetsFillTheSeriesCap());
 });
 
-describe("F4.322 PR 3 — a draw style per trend-strip point (ADR 0108 Amendment 8)", () => {
+describe("F4.323 PR 3 — a draw style per trend-strip point (ADR 0108 Amendment 8)", () => {
   it("admits line, area and bar keyed like colors, and refuses anything else", () => spec.assertTheStylesField());
 });

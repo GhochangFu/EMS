@@ -246,7 +246,7 @@ export function assertThirtyPointsOfSixAssetsFillTheSeriesCap(): void {
 
 
 // ---------------------------------------------------------------------------------------------
-// `F4.322` PR 3 (ADR 0108 Amendment 8) — a draw style per selected point.
+// `F4.323` PR 3 (ADR 0108 Amendment 8) — a draw style per selected point.
 // ---------------------------------------------------------------------------------------------
 
 export function assertTheStylesField(): void {

@@ -69,7 +69,7 @@ export type WizardSelection = {
   readonly segments: readonly string[];
   readonly points: readonly string[];
   readonly colors: Readonly<Record<string, SeriesRole>>;
-  /** `F4.322` PR 3 (ADR 0108 Amendment 8) — a draw style per chosen point; absent is `line`. */
+  /** `F4.323` PR 3 (ADR 0108 Amendment 8) — a draw style per chosen point; absent is `line`. */
   readonly styles?: Readonly<Record<string, TrendStripPointStyle>>;
 };
 
@@ -206,14 +206,14 @@ export function setPointColor(selection: WizardSelection, key: string, role: Ser
   return { ...selection, colors: role === null ? colors : { ...colors, [key]: role } };
 }
 
-/** `F4.322` PR 3 — the style choice as the wizard names it: plain words, line first (the default). */
+/** `F4.323` PR 3 — the style choice as the wizard names it: plain words, line first (the default). */
 export const POINT_STYLE_LABELS: Readonly<Record<TrendStripPointStyle, string>> = {
   line: "Line",
   area: "Area",
   bar: "Bars",
 };
 
-/** `F4.322` PR 3 — set a point's draw style; `line` (the default) deletes the key. */
+/** `F4.323` PR 3 — set a point's draw style; `line` (the default) deletes the key. */
 export function setPointStyle(selection: WizardSelection, key: string, style: TrendStripPointStyle): WizardSelection {
   const styles = withoutStyles(selection.styles, (styled) => styled === key);
   return { ...selection, styles: style === "line" ? styles : { ...styles, [key]: style } };
@@ -244,7 +244,7 @@ export function stripConfigFor(
 /**
  * The builder's draft with one tab's strip set (`tabKey` undefined: a dashboard without tabs).
  * `placeTrendStrip` (shared with the append route, owner OQ1) decides over that tab's rows only.
- * Replace keeps the row and rewrites its six strip fields (`styles` since `F4.322`), each `undefined` when the config lacks
+ * Replace keeps the row and rewrites its six strip fields (`styles` since `F4.323`), each `undefined` when the config lacks
  * it so a stale stored field goes; insert adds a strip at `gridX 0`, the tab's foot, the catalog's
  * size. Every other row is returned as it was.
  */

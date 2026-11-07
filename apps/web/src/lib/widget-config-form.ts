@@ -330,7 +330,7 @@ export type WidgetConfigRow = {
   stripSegments?: TrendStripConfig["segments"];
   stripPoints?: TrendStripConfig["points"];
   stripColors?: TrendStripConfig["colors"];
-  // trend_strip — `F4.322` PR 3 (ADR 0108 Amendment 8). `config.styles`, carried like `stripColors`.
+  // trend_strip — `F4.323` PR 3 (ADR 0108 Amendment 8). `config.styles`, carried like `stripColors`.
   stripStyles?: TrendStripConfig["styles"];
 };
 

@@ -20,5 +20,5 @@ export type TrendStripWidgetConfig = z.infer<typeof TSW.trendStripWidgetConfigSc
 
 /** `F4.306` — one of the eight series colour roles a selected point draws in. */
 export type SeriesRole = z.infer<typeof TSW.seriesRoleSchema>;
-/** `F4.322` PR 3 — how a selected point is drawn on the strip (ADR 0108 Amendment 8). */
+/** `F4.323` PR 3 — how a selected point is drawn on the strip (ADR 0108 Amendment 8). */
 export type TrendStripPointStyle = z.infer<typeof TSW.trendStripPointStyleSchema>;

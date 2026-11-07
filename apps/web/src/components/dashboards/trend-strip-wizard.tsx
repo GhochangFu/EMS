@@ -263,7 +263,7 @@ export function TrendStripWizard({ dashboard, mode, onClose }: TrendStripWizardP
                                 </option>
                               ))}
                             </select>
-                            {/* `F4.322` PR 3 (ADR 0108 Amendment 8) — the point's draw style. */}
+                            {/* `F4.323` PR 3 (ADR 0108 Amendment 8) — the point's draw style. */}
                             <select
                               aria-label={`Style of ${point.name}`}
                               className="surface-field px-2 py-1 text-xs"

@@ -44,7 +44,7 @@ describe("F4.306 U10 TrendStripSelectionSummary", () => {
     await removingTheLastPointWritesUndefined();
   });
 
-  it("drops a point's style with the point (F4.322)", async () => {
+  it("drops a point's style with the point (F4.323)", async () => {
     await aStyleIsDroppedWithItsPoint();
   });
 

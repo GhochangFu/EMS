@@ -4,7 +4,7 @@ import type { TrendPointSegmentDto, WidgetWriteBody } from "@bms/shared";
 
 /**
  * `F4.306` / ADR 0108 Amendment 7 — the write-path check of a `trend_strip` widget's selection
- * (`segments`, `points`, `colors`, and since `F4.322` `styles`) against the organization's effective trend-point lists
+ * (`segments`, `points`, `colors`, and since `F4.323` `styles`) against the organization's effective trend-point lists
  * (`TrendPointsService.effective(organizationId, {})`, the `F4.300` lists the strip route reads).
  *
  * The config schema admits the three fields without a refinement (the arm must stay a plain
@@ -42,7 +42,7 @@ export const trendStripPointOffListMessage = (widget: number, index: number): st
 export const trendStripColorKeyMessage = (widget: number, index: number): string =>
   `widgets[${widget}].config.colors key ${index} is not in points`;
 
-/** `F4.322` PR 3 / ADR 0108 Amendment 8 — the `colors` rule, for `styles`. */
+/** `F4.323` PR 3 / ADR 0108 Amendment 8 — the `colors` rule, for `styles`. */
 export const trendStripStyleKeyMessage = (widget: number, index: number): string =>
   `widgets[${widget}].config.styles key ${index} is not in points`;
 
@@ -56,7 +56,7 @@ function selectionOf(widget: WidgetWriteBody): TrendStripConfig | null {
     : widget.config;
 }
 
-/** True when the widget is a `trend_strip` that carries any selection field (`styles` since `F4.322`). */
+/** True when the widget is a `trend_strip` that carries any selection field (`styles` since `F4.323`). */
 export function hasTrendStripSelection(widget: WidgetWriteBody): boolean {
   return selectionOf(widget) !== null;
 }

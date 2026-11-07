@@ -31,7 +31,7 @@ export const seriesRoleSchema = z.enum([
 export const SERIES_ROLE_NAMES = seriesRoleSchema.options;
 
 /**
- * `F4.322` PR 3 / ADR 0108 Amendment 8 — how a selected point's sparkline is drawn. Absent means
+ * `F4.323` PR 3 / ADR 0108 Amendment 8 — how a selected point's sparkline is drawn. Absent means
  * `line`, today's look.
  */
 export const trendStripPointStyleSchema = z.enum(["line", "area", "bar"]);
@@ -107,7 +107,7 @@ export const trendStripWidgetConfigSchema = z.object({
     .record(pointSelectionSchema, seriesRoleSchema)
     .describe("A series colour role per selected point, keyed `<segment>:<point code>`.")
     .optional(),
-  // `F4.322` PR 3 / ADR 0108 Amendment 8 — stored like `colors`; a key outside `points` is the
+  // `F4.323` PR 3 / ADR 0108 Amendment 8 — stored like `colors`; a key outside `points` is the
   // write path's check, as for `colors`.
   styles: z
     .record(pointSelectionSchema, trendStripPointStyleSchema)

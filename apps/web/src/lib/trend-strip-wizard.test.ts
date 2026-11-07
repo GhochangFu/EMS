@@ -153,7 +153,7 @@ describe("F4.306 U11 trend strip wizard — append body", () => {
   });
 });
 
-describe("F4.322 PR 3 — a draw style per point in the wizard (ADR 0108 Amendment 8)", () => {
+describe("F4.323 PR 3 — a draw style per point in the wizard (ADR 0108 Amendment 8)", () => {
   it("sets a style, and Line deletes it", () => aStyleIsSetAndLineDeletesIt());
   it("drops a style with its point or segment", () => droppingAPointOrSegmentDropsItsStyle());
   it("stores styles for chosen points only", () => theConfigCarriesStylesForChosenPoints());

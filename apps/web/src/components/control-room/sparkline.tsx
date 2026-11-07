@@ -18,7 +18,7 @@ import {
  * `F4.306` U9 (ADR 0108 Amendment 7): `stroke` is the line's colour role, `accent` unless the
  * strip's `colors` names one (`strokeRoleFor`).
  *
- * `F4.322` PR 3 (ADR 0108 Amendment 8): `drawStyle` is the point's style, `line` unless the strip's
+ * `F4.323` PR 3 (ADR 0108 Amendment 8): `drawStyle` is the point's style, `line` unless the strip's
  * `styles` names one (`pointStyleFor`). `area` fills under each run at low alpha of the same role;
  * `bar` draws one bar per bucket in the role. Still one inline SVG, no ECharts instance.
  */

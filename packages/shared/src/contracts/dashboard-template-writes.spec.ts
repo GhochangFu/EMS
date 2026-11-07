@@ -522,7 +522,7 @@ const TREND_STRIP_SELECTION_FIELDS: Record<"segments" | "points" | "colors" | "s
   segments: ["hvac"],
   points: ["hvac:kw"],
   colors: { "hvac:kw": "series-2" },
-  styles: { "hvac:kw": "area" }, // `F4.322` PR 3 (ADR 0108 Amendment 8)
+  styles: { "hvac:kw": "area" }, // `F4.323` PR 3 (ADR 0108 Amendment 8)
 };
 
 /**

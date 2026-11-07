@@ -564,7 +564,7 @@ export function cleanupStrip(): void {
 }
 
 /**
- * `F4.322` PR 3 (ADR 0108 Amendment 8) — a `styles` entry draws that point as an area or as
+ * `F4.323` PR 3 (ADR 0108 Amendment 8) — a `styles` entry draws that point as an area or as
  * bars; a point with no entry keeps today's line, and its row has no fill and no bar.
  */
 export async function aStyledPointDrawsInItsStyle(): Promise<void> {

@@ -357,7 +357,7 @@ export function aChartLookingBodyIsNotTheTrendArm(): void {
   expect(appendWidgetBodySchema.safeParse(body).success).toBe(false);
 }
 
-// --- `F4.322` PR 3 (ADR 0108 Amendment 8) — a draw style per point -------------------------------
+// --- `F4.323` PR 3 (ADR 0108 Amendment 8) — a draw style per point -------------------------------
 
 /** A style writes `styles[key]`; `line` (the default) deletes it. Labels are plain words. */
 export function aStyleIsSetAndLineDeletesIt(): void {

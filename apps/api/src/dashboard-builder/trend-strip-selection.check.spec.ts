@@ -203,7 +203,7 @@ export function aColorKeyInPointsIsAccepted(): void {
   ]);
 }
 
-// ---- `F4.322` PR 3: a styles key not in points (ADR 0108 Amendment 8) ------------------------
+// ---- `F4.323` PR 3: a styles key not in points (ADR 0108 Amendment 8) ------------------------
 
 export function aStyleKeyOutsidePointsIsRefused(): void {
   expectRefused(

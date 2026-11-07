@@ -40,7 +40,7 @@ type TrendStripWidgetLiveProps = {
 export function TrendStripWidgetLive({ widget, locationId, tabs }: TrendStripWidgetLiveProps) {
   // `F4.303` U7: a wall screen (`?wall=1`) has no actions, so the widget offers no Export there.
   const wall = parseWallParams(useLocation().search).on;
-  // `F4.306` U9: the selection fields (`styles` since `F4.322`), named one by one so `tabKey` and `defaultRange`
+  // `F4.306` U9: the selection fields (`styles` since `F4.323`), named one by one so `tabKey` and `defaultRange`
   // never reach the body.
   const { segments, points, colors, styles } = widget.config;
   return (

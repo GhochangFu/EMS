@@ -58,7 +58,7 @@ export function sparklinePolylines(
 }
 
 /**
- * `F4.322` PR 3 (ADR 0108 Amendment 8) — the `area` style: each run of
+ * `F4.323` PR 3 (ADR 0108 Amendment 8) — the `area` style: each run of
  * {@link sparklinePolylines} closed down to the bottom edge, as a polygon's `points`. A `null`
  * still breaks the run, so a gap shows in the fill as in the line.
  */
@@ -79,7 +79,7 @@ export interface SparklineBar {
 }
 
 /**
- * `F4.322` PR 3 — the `bar` style: one bar per non-`null` bucket, in that bucket's slot (80 % of
+ * `F4.323` PR 3 — the `bar` style: one bar per non-`null` bucket, in that bucket's slot (80 % of
  * it, centred), drawn from the zero line toward its value — up for a positive value, down for a
  * negative one. The box spans `min(0, lowest)` to `max(0, highest)`. Every non-`null` bucket is
  * at least 1 px tall, so a zero or a constant series still reads as data, never as a gap.
@@ -106,7 +106,7 @@ export function sparklineBars(buckets: readonly SparklineBucket[], width: number
 }
 
 /**
- * `F4.322` PR 3 — which layers each style draws. A keyed table, not string compares, so the
+ * `F4.323` PR 3 — which layers each style draws. A keyed table, not string compares, so the
  * style names are stated here once (the `tests/f3.1c-widget-series-mapping.test.ts` scan reads
  * quoted `line`/`bar`/`area` as an ECharts mapping, which this is not).
  */
@@ -156,11 +156,11 @@ export function strokeRoleFor(
   return colors?.[`${domain}:${code}`] ?? "accent";
 }
 
-/** `F4.322` PR 3 — the style a point draws in when the strip names none: today's line. */
+/** `F4.323` PR 3 — the style a point draws in when the strip names none: today's line. */
 export const DEFAULT_POINT_STYLE: TrendStripPointStyle = "line";
 
 /**
- * `F4.322` PR 3 (ADR 0108 Amendment 8) — the draw style of one point: the strip's `styles` entry
+ * `F4.323` PR 3 (ADR 0108 Amendment 8) — the draw style of one point: the strip's `styles` entry
  * for `<domain>:<code>`, else `line` (today's look). Keyed here once, as {@link strokeRoleFor} is.
  */
 export function pointStyleFor(

@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchSiteTrendPoints } from "../../api/site-trend-points";
 import type { WidgetConfigRow } from "../../lib/widget-config-form";
 
-/** The stored selection fields (`stripStyles` since `F4.322`); an emptied one is `undefined`, never `[]` or `{}`. */
+/** The stored selection fields (`stripStyles` since `F4.323`); an emptied one is `undefined`, never `[]` or `{}`. */
 type Selection = Pick<WidgetConfigRow, "stripSegments" | "stripPoints" | "stripColors" | "stripStyles">;
 
 type TrendStripSelectionSummaryProps = {
@@ -13,7 +13,7 @@ type TrendStripSelectionSummaryProps = {
   segments: Selection["stripSegments"];
   points: Selection["stripPoints"];
   colors: Selection["stripColors"];
-  /** `F4.322` PR 3 — each point's draw style, dropped with its point. */
+  /** `F4.323` PR 3 — each point's draw style, dropped with its point. */
   styles?: Selection["stripStyles"];
   /** Receives every field, each `undefined` when emptied (the write schema's `.min(1)`). */
   onChange: (next: Selection) => void;
@@ -37,7 +37,7 @@ function coloursWithout(colors: Selection["stripColors"], drop: (key: string) =>
   return kept.length > 0 ? Object.fromEntries(kept) : undefined;
 }
 
-/** `F4.322` PR 3 — the styles without the keys `drop` names; no entry left is absent. */
+/** `F4.323` PR 3 — the styles without the keys `drop` names; no entry left is absent. */
 function stylesWithout(styles: Selection["stripStyles"], drop: (key: string) => boolean): Selection["stripStyles"] {
   if (styles === undefined) return undefined;
   const kept = Object.entries(styles).filter(([key]) => !drop(key));

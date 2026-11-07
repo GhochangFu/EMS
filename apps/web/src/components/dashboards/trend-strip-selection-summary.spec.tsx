@@ -164,10 +164,10 @@ export async function removingAStaleSegmentDropsItsPointsAndColours(): Promise<v
   expect(Object.prototype.hasOwnProperty.call(patch, "stripPoints")).toBe(true);
   expect(patch.stripPoints).toBeUndefined();
   expect(patch.stripColors).toBeUndefined();
-  expect(patch.stripStyles, "F4.322 — the segment's styles go with it").toBeUndefined();
+  expect(patch.stripStyles, "F4.323 — the segment's styles go with it").toBeUndefined();
 }
 
-/** Clear selection writes every selection field `undefined` (four since `F4.322`). */
+/** Clear selection writes every selection field `undefined` (four since `F4.323`). */
 export async function clearSelectionWritesEveryFieldUndefined(): Promise<void> {
   const onChange = renderSummary({
     stripSegments: ["seg_a"],
@@ -176,7 +176,7 @@ export async function clearSelectionWritesEveryFieldUndefined(): Promise<void> {
   });
   await userEvent.click(screen.getByRole("button", { name: "Clear selection" }));
   const patch = onChange.mock.calls[0]?.[0] as Selection;
-  // `F4.322` PR 3 — `stripStyles` is cleared with the other three.
+  // `F4.323` PR 3 — `stripStyles` is cleared with the other three.
   expect(Object.keys(patch).sort()).toEqual(["stripColors", "stripPoints", "stripSegments", "stripStyles"]);
   expect(Object.values(patch).every((value) => value === undefined)).toBe(true);
 }
@@ -189,7 +189,7 @@ export async function noLocationReadsNothing(): Promise<void> {
   expect(fetchLists).not.toHaveBeenCalled();
 }
 
-/** `F4.322` PR 3 (ADR 0108 Amendment 8) — a `styles` entry goes with its point, as a colour does. */
+/** `F4.323` PR 3 (ADR 0108 Amendment 8) — a `styles` entry goes with its point, as a colour does. */
 export async function aStyleIsDroppedWithItsPoint(): Promise<void> {
   const onChange = renderSummary({
     stripPoints: ["seg_a:pt_x", "seg_a:gone"],

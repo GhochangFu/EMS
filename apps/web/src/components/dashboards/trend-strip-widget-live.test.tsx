@@ -65,7 +65,7 @@ describe("F4.305 U4 TrendStripWidgetLive", () => {
     await aConfigWithoutSelectionSendsNone();
   });
 
-  it("F4.322 PR 3: draws a stored style", async () => {
+  it("F4.323 PR 3: draws a stored style", async () => {
     await aStoredStyleIsDrawn();
   });
 });

@@ -198,7 +198,7 @@ describe("F4.306 U9 TrendStripBody selection", () => {
   });
 });
 
-describe("F4.322 PR 3 — a point drawn in its style (ADR 0108 Amendment 8)", () => {
+describe("F4.323 PR 3 — a point drawn in its style (ADR 0108 Amendment 8)", () => {
   afterEach(() => {
     cleanupStrip();
   });

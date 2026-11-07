@@ -70,7 +70,7 @@ describe("F4.306 U12 TrendStripWizard", () => {
     await theColourSelectWritesTheRole();
   });
 
-  it("F4.322 PR 3: the style select writes styles[key], and Line stores none", async () => {
+  it("F4.323 PR 3: the style select writes styles[key], and Line stores none", async () => {
     await theStyleSelectWritesTheStyle();
   });
 

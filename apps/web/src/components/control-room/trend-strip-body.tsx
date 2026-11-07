@@ -85,7 +85,7 @@ function PointRow({
   /** The segment the point is in: with the point's code, the `colors` and `styles` key. */
   domain: string;
   colors: TrendStripSelection["colors"];
-  /** `F4.322` PR 3 — each point's draw style; absent is `line`. */
+  /** `F4.323` PR 3 — each point's draw style; absent is `line`. */
   styles: TrendStripSelection["styles"];
   range: TrendStripRange;
   locationId: string;

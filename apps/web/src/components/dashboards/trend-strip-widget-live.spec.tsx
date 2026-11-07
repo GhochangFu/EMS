@@ -187,7 +187,7 @@ export async function aConfigWithoutSelectionSendsNone(): Promise<void> {
   expect(Object.keys(fetchStrip.mock.calls[0][1]).sort()).toEqual(["assetGroupId", "range"]);
 }
 
-/** `F4.322` PR 3 (ADR 0108 Amendment 8): a stored `styles` entry reaches the drawn sparkline. */
+/** `F4.323` PR 3 (ADR 0108 Amendment 8): a stored `styles` entry reaches the drawn sparkline. */
 export async function aStoredStyleIsDrawn(): Promise<void> {
   const segments: SiteTrendStripDto["segments"] = [
     {

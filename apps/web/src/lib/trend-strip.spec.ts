@@ -138,7 +138,7 @@ export function anEmptyListSendsNoKey(): void {
   expect(params.toString()).toBe("range=7d");
 }
 
-// ---- `F4.322` PR 3 (ADR 0108 Amendment 8) — the area and bar styles -------------------------
+// ---- `F4.323` PR 3 (ADR 0108 Amendment 8) — the area and bar styles -------------------------
 
 /** An area is each polyline run closed down to the bottom; a `null` still breaks it. */
 export function anAreaClosesEachRunToTheBottom(): void {

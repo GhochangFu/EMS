@@ -389,7 +389,7 @@ export async function theFinishButtonIsBusyWhilePending(): Promise<void> {
   expect((busy as HTMLButtonElement).disabled).toBe(true);
 }
 
-/** `F4.322` PR 3 (ADR 0108 Amendment 8) — the style select writes `styles[key]`; Line stores none. */
+/** `F4.323` PR 3 (ADR 0108 Amendment 8) — the style select writes `styles[key]`; Line stores none. */
 export async function theStyleSelectWritesTheStyle(): Promise<void> {
   renderWizard("append");
   appendStrips.mockResolvedValue({ widgets: [], updatedAt: "2026-11-07T10:00:00.000+00:00" } as never);

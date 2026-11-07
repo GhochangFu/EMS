@@ -67,7 +67,7 @@ export const TEMPLATE_MIMIC_TAB_MESSAGE =
 export const TEMPLATE_TREND_STRIP_SELECTION_MESSAGE =
   "a dashboard template's trend strip holds no segments, points, colors or styles; a selection is site-specific";
 
-/** The `F4.306` selection fields (and `F4.322`'s `styles`) a template's trend strip may not carry. */
+/** The `F4.306` selection fields (and `F4.323`'s `styles`) a template's trend strip may not carry. */
 const TREND_STRIP_SELECTION_KEYS = ["segments", "points", "colors", "styles"] as const;
 
 /**
