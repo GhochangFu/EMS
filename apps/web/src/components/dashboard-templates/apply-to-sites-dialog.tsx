@@ -3,9 +3,9 @@
  * confirm, the one POST, and the per-site result table.
  *
  * Moved out of `dashboard-template-detail-page.tsx` to keep that page under the AGENTS.md §4
- * file cap, with no change in behaviour. `madeSummary` and `useSiteLocations` live here because
- * this dialog is their main caller; the instantiate wizard (`instantiate-wizard.tsx`) imports both,
- * so one site's copy reads the same in both places and the two share one locations query.
+ * file cap, with no change in behaviour. `useSiteLocations` lives here because this dialog is its
+ * main caller; the instantiate wizard (`instantiate-wizard.tsx`) imports it, so the two share one
+ * locations query. `madeSummary` is `lib/site-layout-made-summary.ts` since `F4.320` PR 2.
  *
  * `F3.85` PR 10b / ADR 0099 decision 6 — the confirm is the `dashboardTemplate.applyToSites`
  * stepper on the shared `WizardShell`: a bodyless entry, so Review alone. Its Submit makes the
@@ -18,15 +18,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { catalogEntry } from "@bms/shared/copilot";
-import type {
-  DashboardTemplateDto,
-  SiteLayoutResultDto,
-  SiteLayoutSkipReason,
-} from "@bms/shared";
+import type { DashboardTemplateDto, SiteLayoutSkipReason } from "@bms/shared";
 
 import { applySiteTemplate } from "../../api/admin/dashboard-templates";
 import { fetchAdminLocations } from "../../api/admin/locations";
 import { apiErrorMessage } from "../../lib/api-error-message";
+import { madeSummary } from "../../lib/site-layout-made-summary";
 import { WizardShell } from "../wizard/wizard-shell";
 import { ReplaceSiteLayoutsWizard } from "./replace-site-layouts-wizard";
 
@@ -50,18 +47,6 @@ const SKIP_REASON_LABELS: Record<SiteLayoutSkipReason, string> = {
   no_assets: "The site has no assets to bind",
   slug_taken: "Another site already holds this dashboard slug",
 };
-
-/**
- * What one site's copy did, in one cell: the kept tabs, any tab the site could not hold, and any
- * role tile left out because it binds no point at the site (ADR 0087 Amendment 2).
- */
-export function madeSummary(made: SiteLayoutResultDto): string {
-  const kept = `${made.resolution.length} tab${made.resolution.length === 1 ? "" : "s"}`;
-  const tabs = made.omittedTabs.length > 0 ? `, ${made.omittedTabs.length} omitted (no matching group)` : "";
-  const tiles = made.omittedTiles.length;
-  const left = tiles > 0 ? `, ${tiles} tile${tiles === 1 ? "" : "s"} left out (no point at the site)` : "";
-  return `Made — ${kept}${tabs}${left}`;
-}
 
 /**
  * `F3.73` ruling Q4 — "Apply to all sites": the Review, then one POST. The answer lists every site

@@ -64,6 +64,7 @@ import { type BmsTx, withTenant } from "../database/tenant-context";
 import { writeLayoutWidgets } from "./layout-copy-writes";
 import { carriedTabGroups, replaceOutcome } from "./site-layout-replace.pure";
 import {
+  COPY_TEMPLATE_NOT_PUBLISHED_MESSAGE,
   NO_SITE_TEMPLATE_MESSAGE,
   SITE_COPY_OTHER_TEMPLATE_MESSAGE,
   SITE_HAS_NO_ASSETS_MESSAGE,
@@ -894,7 +895,9 @@ export class SiteLayoutService {
       )
       .limit(1);
     if (!row) {
-      throw new ConflictException(NO_SITE_TEMPLATE_MESSAGE);
+      // A per-site Replace (or its preview) with no `templateId` looks for the copy's own code;
+      // the organization may hold other published site templates, so the Make sentence would lie.
+      throw new ConflictException(code === undefined ? NO_SITE_TEMPLATE_MESSAGE : COPY_TEMPLATE_NOT_PUBLISHED_MESSAGE);
     }
     return this.checkedTemplate(row);
   }

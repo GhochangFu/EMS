@@ -54,7 +54,8 @@ import {
 } from "../../lib/dashboard-slug";
 import type { WizardStep } from "../../lib/wizard-steps";
 import { WizardShell } from "../wizard/wizard-shell";
-import { madeSummary, useSiteLocations } from "./apply-to-sites-dialog";
+import { madeSummary } from "../../lib/site-layout-made-summary";
+import { useSiteLocations } from "./apply-to-sites-dialog";
 
 /** The sentinel the group select uses for "no group". `""` is taken by the
  * "select one…" placeholder; the values hold `assetGroupId: null` instead. */

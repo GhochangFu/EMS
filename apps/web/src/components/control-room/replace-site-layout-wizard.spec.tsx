@@ -113,6 +113,26 @@ export async function theConfirmStepShowsTheFlagWithTheActor(): Promise<void> {
   );
 }
 
+/**
+ * B3b — opening the wizard reads the preview again, so the confirm step shows an edit made after
+ * the page loaded (the button's first read said 3 edits; the second says 5).
+ * Mutation, applied once and seen red: drop `previewQ.refetch()` from `start()` → one read, "3 times".
+ */
+export async function openingTheWizardRefreshesTheEditFlag(): Promise<void> {
+  renderWizard(preview("replace", WITH_ACTOR));
+  expect(await screen.findByRole("button", BUTTON)).toBeInTheDocument();
+  vi.mocked(replaceApi.fetchSiteLayoutReplacePreview).mockResolvedValue(
+    preview("replace", { count: 5, lastEditedAt: "2026-11-07T09:00:00.000Z", lastEditedBy: "phe-admin@bms.local" }),
+  );
+  const dialog = await openReview();
+  expect(replaceApi.fetchSiteLayoutReplacePreview).toHaveBeenCalledTimes(2);
+  await waitFor(() =>
+    expect(within(dialog).getByTestId("replace-edit-flag").textContent).toBe(
+      "Edited 5 times since the copy, last on 2026-11-07 by phe-admin@bms.local",
+    ),
+  );
+}
+
 /** B3 — a `location_admin`'s preview carries no actor: the flag has no "by". */
 export async function theConfirmStepShowsTheFlagWithoutTheActor(): Promise<void> {
   renderWizard(preview("replace", { count: 2, lastEditedAt: "2026-11-06T10:00:00.000Z" }));

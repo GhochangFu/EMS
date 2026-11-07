@@ -4,7 +4,12 @@ import { expect } from "vitest";
 import type { SectionTemplateContent } from "@bms/shared";
 import { SMOC_STANDARD_SITE_TEMPLATE } from "@bms/shared/site-templates";
 
-import { SITE_COPY_OTHER_TEMPLATE_MESSAGE, SITE_HAS_NO_COPY_MESSAGE, SITE_LAYOUT_AMBIGUOUS_MESSAGE } from "./site-layout.schema";
+import {
+  COPY_TEMPLATE_NOT_PUBLISHED_MESSAGE,
+  SITE_COPY_OTHER_TEMPLATE_MESSAGE,
+  SITE_HAS_NO_COPY_MESSAGE,
+  SITE_LAYOUT_AMBIGUOUS_MESSAGE,
+} from "./site-layout.schema";
 import {
   type SiteLayoutCtx,
   admin,
@@ -25,7 +30,7 @@ import { rememberSubject } from "../testing/seeded-subjects";
 
 /**
  * `F4.320` PR 2 (ADR 0087 Amendment 4 decisions 2–7, 9, 10) — Replace and its preview against
- * real, non-owner roles: R1–R9. The pools, the run-unique `F373SL-<run>-…` fixtures and the
+ * real, non-owner roles: R1–R12. The pools, the run-unique `F373SL-<run>-…` fixtures and the
  * cleanup are `../testing/site-layout-harness.ts`; `site-layout-replace.integration.test.ts` runs
  * these cases; the assertions live here (ADR 0014, AGENTS.md §4.6).
  *
@@ -512,6 +517,29 @@ export async function assertAnotherOrganizationsAuditRowIsNotCounted(ctx: SiteLa
     lastEditedAt: own[0]?.created_at.toISOString(),
     lastEditedBy: "admin@bms.local",
   });
+}
+
+/**
+ * R12b (decision 5) — a per-site Replace and its preview with no `templateId`, whose copy's own
+ * code has no published version left, answer 409 `COPY_TEMPLATE_NOT_PUBLISHED_MESSAGE` — not the
+ * Make sentence, which would be false here: the organization still publishes another site
+ * template. Nothing is written.
+ * Mutation: throw `NO_SITE_TEMPLATE_MESSAGE` for the code arm too → red.
+ */
+export async function assertACopyWithNoPublishedVersionHasItsOwnSentence(ctx: SiteLayoutCtx): Promise<void> {
+  const { org, v1, v2 } = await twoVersions(ctx, "r12b");
+  await newSiteTemplate(ctx.fleetPool, org, `${ctx.run}-r12b-other`, ctx.created);
+  const site = await zeroGroupSite(ctx, "r12b", org);
+  const copy = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: v1 });
+  await ctx.fleetPool.query(`UPDATE bms.dashboard_templates SET status = 'archived' WHERE id = ANY($1::uuid[])`, [[v1, v2]]);
+
+  const calls = [() => ctx.svc.replaceForSite(admin(), { locationId: site }), () => ctx.svc.previewReplaceForSite(admin(), site)];
+  for (const call of calls) {
+    const err = await caught(call());
+    expect(err).toBeInstanceOf(ConflictException);
+    expect((err as Error).message).toBe(COPY_TEMPLATE_NOT_PUBLISHED_MESSAGE);
+  }
+  expect(await viewRows(ctx, site)).toEqual([{ kind: "dashboard", dashboard_id: copy.dashboardId }]);
 }
 
 /** R9b (decisions 8, 9) — the bulk preview lists every active site with its outcome. */

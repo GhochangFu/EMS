@@ -7,7 +7,7 @@ import { makeSiteLayout, type MakeSiteLayoutAnswer } from "../../api/control-roo
 import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { domainLabel } from "../../lib/asset-browser";
-import { madeSummary } from "../dashboard-templates/apply-to-sites-dialog";
+import { madeSummary } from "../../lib/site-layout-made-summary";
 import { WizardShell } from "../wizard/wizard-shell";
 
 /**

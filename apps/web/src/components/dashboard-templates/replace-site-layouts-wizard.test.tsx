@@ -5,6 +5,7 @@ import {
   aPendingBulkSubmitIsDisabledAndBusy,
   cleanupBulkReplace,
   submitCallsTheBulkRouteAndListsTheSkips,
+  submitIsAbsentUntilThePreviewIsRead,
   thePreviewListsEachSite,
 } from "./replace-site-layouts-wizard.spec";
 
@@ -27,5 +28,9 @@ describe("F4.320 PR 2 Replace existing copies (the apply-to-sites dialog)", () =
 
   it("D3 a pending bulk Submit is disabled and aria-busy", async () => {
     await aPendingBulkSubmitIsDisabledAndBusy();
+  });
+
+  it("D4 offers no Submit while the preview loads or after it fails, Cancel only", async () => {
+    await submitIsAbsentUntilThePreviewIsRead();
   });
 });

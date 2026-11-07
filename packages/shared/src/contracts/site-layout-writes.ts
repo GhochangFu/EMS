@@ -56,6 +56,14 @@ export const SITE_COPY_OTHER_TEMPLATE_MESSAGE =
   "This site's copy was made from another site template; Replace only rebuilds a copy of the same template";
 
 /**
+ * 409 (decision 5) — a per-site Replace with no `templateId` uses the newest published version of
+ * the copy's own template code, and that code has none (every version is a draft or archived).
+ * Not `NO_SITE_TEMPLATE_MESSAGE`: the organization may well hold other published site templates.
+ */
+export const COPY_TEMPLATE_NOT_PUBLISHED_MESSAGE =
+  "The template this site's copy was made from has no published version; publish one, or name a template";
+
+/**
  * 400 — one sentence per planner refusal (`SITE_LAYOUT_CHOICE_REFUSALS`). None echoes the tab key
  * or the group id the caller sent: an id of another organization's group reads exactly as an id
  * that exists nowhere (`unknown_group`).

@@ -51,10 +51,13 @@ const RESULT: SiteLayoutBulkReplaceResultDto = {
   ],
 };
 
-function renderDialog(replaceImpl?: () => Promise<SiteLayoutBulkReplaceResultDto>): { bulk: Mock; onClose: Mock } {
+function renderDialog(
+  replaceImpl?: () => Promise<SiteLayoutBulkReplaceResultDto>,
+  previewImpl: () => Promise<SiteLayoutReplacePreviewDto> = () => Promise.resolve(PREVIEW),
+): { bulk: Mock; onClose: Mock } {
   vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("a spec reached the network"))));
   vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({ items: [] } as never);
-  vi.spyOn(replaceApi, "fetchSiteLayoutsReplacePreview").mockResolvedValue(PREVIEW);
+  vi.spyOn(replaceApi, "fetchSiteLayoutsReplacePreview").mockImplementation(previewImpl);
   const bulk = vi.spyOn(replaceApi, "replaceSiteLayouts");
   bulk.mockImplementation(replaceImpl ?? (() => Promise.resolve(RESULT)));
   const onClose = vi.fn();
@@ -77,9 +80,9 @@ export function cleanupBulkReplace(): void {
 /** Opens Replace existing copies and returns the confirm's region once the preview rows are in. */
 async function openReplace(): Promise<HTMLElement> {
   fireEvent.click(screen.getByRole("button", { name: "Replace existing copies" }));
-  const region = await screen.findByRole("region", { name: "What Replace changes" });
-  await within(region).findByText("Bilsi");
-  return region;
+  // The loading state is its own tree (no Submit), so the region is read once the rows are in.
+  await screen.findByText("Bilsi");
+  return screen.getByRole("region", { name: "What Replace changes" });
 }
 
 /** D1 — the preview lists each site: the copy held, its edit flag and what will happen; nothing is sent yet. */
@@ -121,6 +124,29 @@ export async function submitCallsTheBulkRouteAndListsTheSkips(): Promise<void> {
     ["Lotapata", "Skipped — The site's copy already holds this version"],
     ["Moranodir", "Skipped — The site holds no site-template copy to replace"],
   ]);
+}
+
+/**
+ * D4 — no confirm without the preview: while it loads, and after it fails, there is no Submit,
+ * only Cancel, and the bulk route is never called. The positive twin is D2 (Submit once loaded).
+ * Mutation, applied once and seen red: drop the `!previewQ.isSuccess` early return → Submit renders.
+ */
+export async function submitIsAbsentUntilThePreviewIsRead(): Promise<void> {
+  const { bulk, onClose } = renderDialog(undefined, () => new Promise(() => undefined));
+  fireEvent.click(screen.getByRole("button", { name: "Replace existing copies" }));
+  expect(await screen.findByText("Reading the sites…")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Submit" }), "no Submit while the preview loads").toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(onClose).toHaveBeenCalledTimes(1);
+  expect(bulk).not.toHaveBeenCalled();
+  cleanupBulkReplace();
+
+  const failed = renderDialog(undefined, () => Promise.reject(new Error("preview failed")));
+  fireEvent.click(screen.getByRole("button", { name: "Replace existing copies" }));
+  expect((await screen.findByRole("alert")).textContent).toContain("The sites could not be read");
+  expect(screen.queryByRole("button", { name: "Submit" }), "no Submit after the preview failed").toBeNull();
+  expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
+  expect(failed.bulk).not.toHaveBeenCalled();
 }
 
 /** D3 — while the bulk Replace pends, Submit is disabled, renamed and `aria-busy`. */

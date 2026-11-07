@@ -28,7 +28,7 @@ import {
   REPLACE_SKIP_REASON_LABELS,
 } from "../../lib/site-layout-replace";
 import { WizardShell } from "../wizard/wizard-shell";
-import { madeSummary } from "./apply-to-sites-dialog";
+import { madeSummary } from "../../lib/site-layout-made-summary";
 
 /** A bodyless wizard's values: it has no field to fill. */
 const NO_VALUES: Record<string, unknown> = {};
@@ -103,39 +103,55 @@ export function ReplaceSiteLayoutsWizard({
     );
   }
 
+  // No confirm without the preview: Submit stays out of the page until the sites, their outcomes
+  // and their edit flags are read, so a Replace is never confirmed blind. Cancel only meanwhile.
+  if (!previewQ.isSuccess) {
+    return (
+      <>
+        <section aria-label="What Replace changes" className="space-y-2 text-xs text-ink">
+          <p className="text-critical-ink">{REPLACE_LOSES}</p>
+          {previewQ.isError ? (
+            <p role="alert" className="text-critical-ink">
+              The sites could not be read: {apiErrorMessage(previewQ.error)}
+            </p>
+          ) : (
+            <p role="status" className="text-ink-muted">
+              Reading the sites…
+            </p>
+          )}
+        </section>
+        <div className="flex justify-end">
+          <button type="button" onClick={onClose} className="surface-button px-3 py-1.5">
+            Cancel
+          </button>
+        </div>
+      </>
+    );
+  }
+
   const detail = (
     <section aria-label="What Replace changes" className="space-y-2 text-xs text-ink">
       <p className="text-critical-ink">{REPLACE_LOSES}</p>
-      {previewQ.data !== undefined ? (
-        <table className="w-full text-xs">
-          <thead>
-            <tr className="text-left text-[11px] uppercase text-ink-muted">
-              <th className="py-1">Site</th>
-              <th className="py-1">Holds</th>
-              <th className="py-1">Edits</th>
-              <th className="py-1">Will happen</th>
+      <table className="w-full text-xs">
+        <thead>
+          <tr className="text-left text-[11px] uppercase text-ink-muted">
+            <th className="py-1">Site</th>
+            <th className="py-1">Holds</th>
+            <th className="py-1">Edits</th>
+            <th className="py-1">Will happen</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-well-deep">
+          {previewQ.data.sites.map((row) => (
+            <tr key={row.locationId}>
+              <td className="py-1 font-semibold">{row.locationName}</td>
+              <td className="py-1">{heldCopyText(row.held)}</td>
+              <td className="py-1">{row.held === null ? "—" : editFlagText(row.edits)}</td>
+              <td className="py-1">{REPLACE_OUTCOME_LABELS[row.outcome]}</td>
             </tr>
-          </thead>
-          <tbody className="divide-y divide-well-deep">
-            {previewQ.data.sites.map((row) => (
-              <tr key={row.locationId}>
-                <td className="py-1 font-semibold">{row.locationName}</td>
-                <td className="py-1">{heldCopyText(row.held)}</td>
-                <td className="py-1">{row.held === null ? "—" : editFlagText(row.edits)}</td>
-                <td className="py-1">{REPLACE_OUTCOME_LABELS[row.outcome]}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : previewQ.isError ? (
-        <p role="alert" className="text-critical-ink">
-          The sites could not be read: {apiErrorMessage(previewQ.error)}
-        </p>
-      ) : (
-        <p role="status" className="text-ink-muted">
-          Reading the sites…
-        </p>
-      )}
+          ))}
+        </tbody>
+      </table>
     </section>
   );
 

@@ -121,14 +121,15 @@ export const siteLayoutReplaceResultDtoSchema = z.intersection(
  * copy: no view row, a builtin or generated view, a removed copy, or a dashboard without a site
  * template stamp), `other_template` (a copy of another template code), `same_version` (the copy
  * already holds this version), plus the make skips `ambiguous`, `no_assets` and `slug_taken`.
+ *
+ * Built from the make vocabulary (AGENTS.md §4.8: declared once, derived elsewhere): the make
+ * skips minus `has_view`, which Replace reports as `no_copy`, plus the Replace-only reasons.
  */
 export const siteLayoutReplaceSkipReasonSchema = z.enum([
   "no_copy",
   "other_template",
   "same_version",
-  "ambiguous",
-  "no_assets",
-  "slug_taken",
+  ...siteLayoutSkipReasonSchema.exclude(["has_view"]).options,
 ]);
 
 /** The bulk Replace's answer: one transaction per site, so `replaced` stays replaced past a skip. */
@@ -167,9 +168,13 @@ export const siteLayoutHeldCopySchema = z.object({
 /**
  * What Replace would do at the site: `replace`, or the copy-level reason it would not (the first
  * three of `siteLayoutReplaceSkipReasonSchema`). A group or slug refusal is known only when the
- * Replace runs, so the preview never answers `ambiguous`, `no_assets` or `slug_taken`.
+ * Replace runs, so the preview never answers `ambiguous`, `no_assets` or `slug_taken`. Derived
+ * with `.extract()` from the skip vocabulary, so the copy-level reasons are not restated.
  */
-export const siteLayoutReplaceOutcomeSchema = z.enum(["replace", "no_copy", "other_template", "same_version"]);
+export const siteLayoutReplaceOutcomeSchema = z.enum([
+  "replace",
+  ...siteLayoutReplaceSkipReasonSchema.extract(["no_copy", "other_template", "same_version"]).options,
+]);
 
 /** One site of the preview. `held` and `edits` are `null` when the site holds no template copy. */
 export const siteLayoutReplacePreviewSiteSchema = z.object({

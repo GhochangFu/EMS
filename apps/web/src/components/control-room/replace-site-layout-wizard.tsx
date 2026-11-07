@@ -13,7 +13,7 @@ import { fetchVocabularies, vocabulariesQueryKey } from "../../api/vocabularies"
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { domainLabel } from "../../lib/asset-browser";
 import { editFlagText, heldCopyText, REPLACE_LOSES } from "../../lib/site-layout-replace";
-import { madeSummary } from "../dashboard-templates/apply-to-sites-dialog";
+import { madeSummary } from "../../lib/site-layout-made-summary";
 import { WizardShell } from "../wizard/wizard-shell";
 import { CHOOSE_EVERY_TAB, stockTabLabel, tabGroupsOf } from "./site-layout-wizard";
 
@@ -106,6 +106,8 @@ export function ReplaceSiteLayoutWizard({ locationId, siteName }: ReplaceSiteLay
     `${stockTabLabel(tab.tabKey)} tab (${domainLabel(tab.domain, vocabQ.data?.assetDomains ?? [])})`;
 
   function start(): void {
+    // The page may have sat open for a while: read the edit flag again for the confirm step.
+    void previewQ.refetch();
     setValues({});
     setAmbiguous(null);
     setError(null);

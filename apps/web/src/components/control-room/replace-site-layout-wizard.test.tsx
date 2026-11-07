@@ -6,6 +6,7 @@ import {
   anAmbiguousAnswerRetriesWithTheChoice,
   cleanupReplaceWizard,
   submitCallsTheReplaceClient,
+  openingTheWizardRefreshesTheEditFlag,
   theButtonShowsOnlyForATemplateCopy,
   theConfirmStepShowsNoRecordedEdit,
   theConfirmStepShowsTheFlagWithoutTheActor,
@@ -27,6 +28,10 @@ describe("F4.320 PR 2 Replace with this version (the site page's wizard)", () =>
 
   it("B2 shows what is lost and the edit flag with the actor on the confirm step", async () => {
     await theConfirmStepShowsTheFlagWithTheActor();
+  });
+
+  it("B3b reads the preview again when the wizard opens, so the edit flag is fresh", async () => {
+    await openingTheWizardRefreshesTheEditFlag();
   });
 
   it("B3 shows the edit flag without 'by' when the actor is absent", async () => {
