@@ -509,7 +509,7 @@ export async function assertADiscoveryProposalSurfacesFromTheTurn(): Promise<voi
   const result = await runAgentTurn(turn(llm, { draft: credentialedDraft() }));
   assert(
     JSON.stringify(result.discoveryProposal) ===
-      JSON.stringify({ rtuCode: "RTU-1", topicPrefix: "a", windowSeconds: 60, host: "broker", port: 8883 }),
+      JSON.stringify({ rtuCode: "RTU-1", topicPrefix: "a", windowSeconds: 60, host: "broker", port: 8883, tls: true }),
     `the proposal, got ${JSON.stringify(result.discoveryProposal)}`,
   );
 }

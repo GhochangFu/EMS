@@ -135,10 +135,19 @@ export async function assertD1AProposalRecordsTheBrokerAndWritesNothing(): Promi
   assert(outcome.ok, `the proposal succeeds: ${outcome.error ?? ""}`);
   assert(
     JSON.stringify(state.pendingDiscovery) ===
-      JSON.stringify({ rtuCode: "RTU-1", topicPrefix: "site/data", windowSeconds: 60, host: HOST, port: PORT }),
+      JSON.stringify({ rtuCode: "RTU-1", topicPrefix: "site/data", windowSeconds: 60, host: HOST, port: PORT, tls: true }),
     `the proposal is recorded, got ${JSON.stringify(state.pendingDiscovery)}`,
   );
   assert(JSON.stringify(state.working) === before, "the working draft is unchanged");
+  // F4.326 / ADR 0114 R5: only the literal `false` records TLS off; the string "false" and an absent key are on.
+  for (const [tls, expected] of [[false, false], ["false", true], [undefined, true]] as const) {
+    const plain = draft();
+    const rtu = plain.rtus![0]!;
+    rtu.config = { ...rtu.config, tls } as never;
+    if (tls === undefined) delete (rtu.config as Record<string, unknown>).tls;
+    const { state: s2 } = await proposeOn(plain);
+    assert(s2.pendingDiscovery?.tls === expected, `tls=${String(tls)} records ${String(expected)}, got ${String(s2.pendingDiscovery?.tls)}`);
+  }
 }
 
 /** D2 — the action line is code-written and names the RTU, the filter and the window. */
@@ -476,7 +485,7 @@ export async function assertC5ApplyChecksTheHostAgain(): Promise<void> {
 
 /** C6 — `applyDiscoveryTurn` stores the proposal with the time, readable by the copilot. */
 export async function assertC6ApplyStoresTheProposal(): Promise<void> {
-  const proposal = { rtuCode: "RTU-1", topicPrefix: "site/data", windowSeconds: 60, host: HOST, port: PORT };
+  const proposal = { rtuCode: "RTU-1", topicPrefix: "site/data", windowSeconds: 60, host: HOST, port: PORT, tls: true };
   const next = applyDiscoveryTurn(draft(), { discoveryProposal: proposal }, "2026-10-19T00:02:00.000Z");
   assert(
     JSON.stringify(readDiscoveryProposal(next)) === JSON.stringify({ ...proposal, proposedAt: "2026-10-19T00:02:00.000Z" }),

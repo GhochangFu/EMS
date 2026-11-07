@@ -95,6 +95,12 @@ export const adminRtuDtoSchema = z.object({
   active: z.boolean(),
   meta: z.record(z.unknown()).nullable(),
   createdAt: z.string(),
+  /**
+   * `F4.326` / ADR 0114 R4: the broker connection's TLS choice, from a LEFT JOIN
+   * on `rtu_connection_configs`. `false` = plain MQTT (the "Plain MQTT" pill);
+   * `true` = TLS; `null` = no connection row, or not MQTT.
+   */
+  tls: z.boolean().nullable(),
 });
 
 export const adminAssetDtoSchema = z.object({

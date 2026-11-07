@@ -11,9 +11,12 @@ import { resolveBrokerHost, type HostResolution } from "./discovery-host-guard";
  * the one broker connection a discovery opens, and the seam a test reaches a
  * plain broker through.
  *
- * **Always `mqtts`, always `rejectUnauthorized: true`** (decisions Q5): the
- * same scheme ingest connects with (`apps/ingest/src/adapters/mqtt.ts`), and
- * the draft's `tls` flag selects nothing. **`host` is the checked address**
+ * **`mqtts` unless the job chose plain, always `rejectUnauthorized: true`**
+ * (decisions Q5, amended by ADR 0114 decision 4): the job passes
+ * `plaintext: true` only for a draft RTU with the literal `tls: false` whose
+ * host is on `MQTT_PLAINTEXT_HOSTS` — the rule ingest applies
+ * (`mqttPlaintextDecision`). `rejectUnauthorized` stays on either way (plan
+ * ruling 8; mqtt.js ignores it on `mqtt://`). **`host` is the checked address**
  * and there is no `hostname` — mqtt.js reads `hostname` before `host`, so a
  * typed name there would be looked up again (DNS rebinding). `servername`
  * carries the typed name for SNI and certificate checks, and only when the
@@ -160,11 +163,13 @@ export function buildConnectOptions(
     readonly port: number;
     readonly discoveryId: string;
     readonly credentials: DiscoveryCredentials;
+    /** ADR 0114: the job's plain choice. Absent or `false` keeps the transport's protocol. */
+    readonly plaintext?: boolean;
   },
   transport: Pick<DiscoveryTransportOptions, "protocol">,
 ): DiscoveryConnectOptions {
   return {
-    protocol: transport.protocol,
+    protocol: input.plaintext === true ? "mqtt" : transport.protocol,
     host: input.address,
     port: input.port,
     // A bracketed IPv6 literal is an IP too: no SNI, and the certificate is checked against its IP SAN.

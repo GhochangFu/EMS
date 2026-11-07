@@ -13,7 +13,7 @@ import {
 } from "@nestjs/common";
 import type { SafeParseReturnType } from "zod";
 
-import { MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS } from "@bms/shared";
+import { MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS, MQTT_PLAINTEXT_NOT_ALLOWED_MESSAGE, mqttPlaintextDecision } from "@bms/shared";
 import type {
   JwtPayload,
   OnboardingDiscoveryStored,
@@ -27,6 +27,7 @@ import { discoveryJobId, onboardingDiscoveryQueue } from "../../queue/onboarding
 import { enqueue, type PayloadOf, type QueueClient } from "../../queue/queue-registry";
 import { QUEUE_CLIENT } from "../../queue/queue.tokens";
 import { looksLikeCredential } from "../../security/credential-detect";
+import { MQTT_PLAINTEXT_ALLOWLIST } from "../../security/mqtt-plaintext-hosts";
 import { MasterDataAuditService } from "../master-data-audit.service";
 import { discoveryIsBusy, readStoredDiscovery } from "./onboarding-discovery-state";
 import { OnboardingDiscoveryStore } from "./onboarding-discovery-store";
@@ -41,14 +42,20 @@ export const DISCOVERY_NO_TARGET = "The RTU has no broker host and port in the d
 export const DISCOVERY_NO_CREDENTIALS = "Set the credentials of the RTU, then start the discovery again.";
 export const DISCOVERY_BLOCKED_HOST = "Discovery cannot connect to that host.";
 export const DISCOVERY_BAD_PORT = "The port of the RTU must be a whole number from 1 to 65535.";
-/** Security review H3. */
+/** Security review H3; `F4.326` (ADR 0114 R6) adds the TLS choice. */
 export const DISCOVERY_TARGET_CHANGED =
-  "The broker host or port of the RTU changed after this discovery was shown. Review it and start it again.";
+  "The broker host, port or TLS setting of the RTU changed after this discovery was shown. Review it and start it again.";
 export const DISCOVERY_BUSY = "A discovery is already queued or running in this organization. Wait for it to finish.";
 export const DISCOVERY_NO_WORKER = "Discovery needs the background worker, and it is not available now.";
 
 /** The refusal classes of ADR 0103 decision 9 this route writes (the worker writes its own). */
-export type DiscoveryRefusal = "blocked host" | "bad port" | "bad prefix" | "busy" | "no worker";
+export type DiscoveryRefusal =
+  | "blocked host"
+  | "bad port"
+  | "bad prefix"
+  | "busy"
+  | "no worker"
+  | "plaintext not allowed";
 
 /** An optional clock token: unprovided in the app, so `Date.now` applies; the spec passes a fixed one. */
 export const DISCOVERY_CLOCK = Symbol("DISCOVERY_CLOCK");
@@ -92,6 +99,11 @@ export class OnboardingDiscoveryService {
     private readonly audit: MasterDataAuditService,
     @Inject(QUEUE_CLIENT) private readonly queue: QueueClient,
     @Optional() @Inject(DISCOVERY_CLOCK) private readonly now: () => number = Date.now,
+    // F4.326 / ADR 0114 decision 4: `MQTT_PLAINTEXT_HOSTS`, parsed. Optional so a
+    // bare construction fails closed; `AdminModule` registers the provider.
+    @Optional()
+    @Inject(MQTT_PLAINTEXT_ALLOWLIST)
+    private readonly plaintextHosts: ReadonlySet<string> = new Set<string>(),
   ) {}
 
   async start(
@@ -188,7 +200,15 @@ export class OnboardingDiscoveryService {
       return refuse("bad port", new BadRequestException(DISCOVERY_BAD_PORT));
     }
     const port = config.port;
-    if (body.expected.host.trim() !== host || body.expected.port !== port) {
+    // ADR 0114 decision 4: the worker applies the same rule; refusing here
+    // answers the user at once and writes the refusal row (no job is queued).
+    if (mqttPlaintextDecision(config.tls, host, this.plaintextHosts) === "refused") {
+      return refuse("plaintext not allowed", new BadRequestException(MQTT_PLAINTEXT_NOT_ALLOWED_MESSAGE));
+    }
+    // R6: the card's TLS choice is bound too — absent reads as on — so a plain
+    // connection needs an explicit `tls: false` in the body the user confirmed.
+    const tlsOn = config.tls !== false;
+    if (body.expected.host.trim() !== host || body.expected.port !== port || (body.expected.tls ?? true) !== tlsOn) {
       return this.plain(new ConflictException(DISCOVERY_TARGET_CHANGED));
     }
     if (this.queue.kind === "unconfigured") {
@@ -235,7 +255,16 @@ export class OnboardingDiscoveryService {
       kind: "start",
       start: {
         discoveryId,
-        payload: { organizationId: orgId, sessionId, rtuCode: body.rtuCode, discoveryId, topicPrefix: body.topicPrefix, windowSeconds },
+        payload: {
+          organizationId: orgId,
+          sessionId,
+          rtuCode: body.rtuCode,
+          discoveryId,
+          topicPrefix: body.topicPrefix,
+          windowSeconds,
+          // Security review L1: the job connects with this choice, not a later draft's.
+          tls: tlsOn,
+        },
       },
     };
   }

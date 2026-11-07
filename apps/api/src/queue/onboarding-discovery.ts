@@ -44,6 +44,12 @@ export const onboardingDiscoveryQueue = defineQueue({
         .int()
         .min(MQTT_DISCOVERY_MIN_WINDOW_SECONDS)
         .max(MQTT_DISCOVERY_MAX_WINDOW_SECONDS),
+      /**
+       * `F4.326` (ADR 0114 R6, security review L1): the TLS choice the user
+       * confirmed at the route. The job refuses a draft whose choice changed
+       * since; absent (a job queued before this field) reads as on.
+       */
+      tls: z.boolean().optional(),
     })
     .strict(),
   retry: { attempts: 1 },

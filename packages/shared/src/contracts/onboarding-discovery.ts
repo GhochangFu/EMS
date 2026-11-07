@@ -48,6 +48,12 @@ export const MQTT_DISCOVERY_HOST_MAX = 255;
 export const MQTT_DISCOVERY_SHARED_USER_WARNING =
   "If this broker allows one connection per user, use a separate username for discovery.";
 
+/**
+ * `F4.326` / ADR 0114 decision 6 — the disclosure a plain-MQTT RTU's discovery
+ * card and commit wizard show instead of "TLS: on.".
+ */
+export const MQTT_PLAIN_TLS_OFF_SENTENCE = "TLS: off — credentials and data cross the network unencrypted.";
+
 /** Fixed messages: a refused prefix is never echoed back (AGENTS.md §9.6). */
 export const startOnboardingDiscoveryBodySchema = z
   .object({
@@ -74,6 +80,13 @@ export const startOnboardingDiscoveryBodySchema = z
       .object({
         host: z.string().min(1).max(MQTT_DISCOVERY_HOST_MAX),
         port: z.number().int().min(1).max(65_535),
+        /**
+         * `F4.326` / ADR 0114 R6: whether the card showed TLS on. Absent reads
+         * as `true`; the route answers 409 when it differs from the draft RTU's
+         * (`tls !== false`), so a plain connection needs an explicit
+         * `tls: false` in the hashed body the user confirmed.
+         */
+        tls: z.boolean().optional(),
       })
       .strict(),
   })
@@ -87,6 +100,8 @@ export const onboardingDiscoveryErrorClassSchema = z.enum([
   "TLS failed",
   "timeout",
   "blocked host",
+  /** `F4.326` / ADR 0114 decision 4: `tls: false` on a host not on `MQTT_PLAINTEXT_HOSTS`. */
+  "plaintext not allowed",
 ]);
 
 export const onboardingDiscoveryKeySchema = z

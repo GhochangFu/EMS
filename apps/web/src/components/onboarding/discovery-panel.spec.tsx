@@ -129,6 +129,12 @@ export function aFailedDiscoveryShowsItsErrorClass(): void {
   expect(screen.getByText("Failed: auth refused.")).toBeTruthy();
 }
 
+/** `F4.326` / ADR 0114 decision 4: the plain-MQTT refusal class has its own sentence. */
+export function aPlaintextRefusalSaysPlainMqttIsNotAllowed(): void {
+  mount(session({ discovery: discovery({ status: "failed", error: "plaintext not allowed" }) }));
+  expect(screen.getByText("Failed: plain MQTT is not allowed for this broker host.")).toBeTruthy();
+}
+
 export function aDiscoveredRowShowsTheBadgeAndTheSampleValue(): void {
   const devices = [{ topic: "a/b", devId: "D1", messageCount: 3, keys: [{ sourceKey: "kw_total", sampleValue: 12.5 }] }];
   mount(

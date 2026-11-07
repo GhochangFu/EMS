@@ -19,7 +19,9 @@ import { describe, expect, it } from "vitest";
  *    BCPL broker's name appears in none of them: the AWS value is the owner's,
  *    set in `$BMS_HOME/.env` through `bms-ctl` (plan §1, ruling 11).
  * 3. In `apps/ingest`, only `host/config.ts` — the host's one environment
- *    reader — names the variable, and no adapter does (ADR 0016 §4).
+ *    reader — names the variable, and no adapter does (ADR 0016 §4). In
+ *    `apps/api/src`, only `security/mqtt-plaintext-hosts.ts` does: one throwing
+ *    provider serves the API and the worker (plan T2.1).
  *
  * Comment-stripped reads, so a commented-out line cannot satisfy a claim; each
  * absence claim has a positive control that the scan read something.
@@ -28,6 +30,8 @@ import { describe, expect, it } from "vitest";
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const VAR = "MQTT_PLAINTEXT_HOSTS";
 const PASS_THROUGH = "${MQTT_PLAINTEXT_HOSTS:-}";
+/** The variable as a whole identifier (not `MQTT_PLAINTEXT_HOSTS_ENV`). */
+const NAMES_VAR = new RegExp(`\\b${VAR}\\b`);
 const COMPOSE_FILES = ["docker-compose.yml", "deploy/aws/docker-compose.yml"];
 
 function read(rel: string): string {
@@ -134,11 +138,18 @@ describe("ADR 0114 — MQTT_PLAINTEXT_HOSTS invariants (F4.326)", () => {
       sources.filter((rel) => rel.includes("/adapters/")).length,
       "positive control: the scan read the adapters",
     ).toBeGreaterThan(0);
-    const readers = sources.filter((rel) => withoutTsComments(read(rel)).includes(VAR));
+    const readers = sources.filter((rel) => NAMES_VAR.test(withoutTsComments(read(rel))));
     expect(readers).toEqual(["apps/ingest/src/host/config.ts"]);
     const adapterEnv = sources.filter(
       (rel) => rel.includes("/adapters/") && withoutTsComments(read(rel)).includes("process.env"),
     );
     expect(adapterEnv).toEqual([]);
+  });
+
+  it("in apps/api/src exactly one file names the variable: the provider", () => {
+    const sources = filesUnder("apps/api/src", (n) => n.endsWith(".ts") && !/\.(spec|test)\.ts$/.test(n));
+    expect(sources.length, "positive control: the scan read apps/api/src").toBeGreaterThan(100);
+    const readers = sources.filter((rel) => NAMES_VAR.test(withoutTsComments(read(rel))));
+    expect(readers).toEqual(["apps/api/src/security/mqtt-plaintext-hosts.ts"]);
   });
 });

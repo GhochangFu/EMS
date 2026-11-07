@@ -73,6 +73,7 @@ import { LlmModule } from "../llm/llm.module";
 import { OnboardingProtocolService } from "./onboarding/onboarding-protocol.service";
 import { OnboardingService } from "./onboarding/onboarding.service";
 import { OnboardingTemplateCatalogService } from "./onboarding/onboarding-template-catalog.service";
+import { mqttPlaintextAllowlistProvider } from "../security/mqtt-plaintext-hosts";
 import { OnboardingValidateService } from "./onboarding/onboarding-validate.service";
 import { OrganizationsAdminController } from "./organizations/organizations.controller";
 import { OrganizationsAdminService } from "./organizations/organizations.service";
@@ -157,6 +158,9 @@ import { UsersService } from "./users/users.service";
     // F3.24b (ADR 0103): the discovery route; QUEUE_CLIENT comes from the global QueueModule.
     OnboardingDiscoveryService,
     OnboardingDiscoveryStore,
+    // F4.326 / ADR 0114: MQTT_PLAINTEXT_HOSTS for the validator and the discovery
+    // route. A bad entry throws in the factory and refuses the API's boot.
+    mqttPlaintextAllowlistProvider,
     OrganizationsAdminService,
     LocationsAdminService,
     RtusAdminService,

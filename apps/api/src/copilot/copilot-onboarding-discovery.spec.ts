@@ -37,10 +37,16 @@ const PROPOSAL: StoredDiscoveryProposal = {
   windowSeconds: 60,
   host: "broker.example.com",
   port: 8883,
+  tls: true,
   proposedAt: "2026-10-19T00:00:01.000Z",
 };
 
-const BODY = { rtuCode: "RTU-1", topicPrefix: "site/data", windowSeconds: 60, expected: { host: "broker.example.com", port: 8883 } };
+const BODY = {
+  rtuCode: "RTU-1",
+  topicPrefix: "site/data",
+  windowSeconds: 60,
+  expected: { host: "broker.example.com", port: 8883, tls: true },
+};
 
 function session(messages: OnboardingChatMessage[]): OnboardingSessionDto {
   return {
@@ -152,12 +158,28 @@ export async function theTurnAnswersTheDiscoveryCard(): Promise<void> {
   expect(response.pendingChanges.map((c) => [c.id, c.catalogId])).toEqual([[CHANGE_ID, "onboarding.discovery"]]);
 }
 
-/** X3 — the summary shows the host, the port, TLS always on, the filter, the window and the warning. */
+/** X3 — the summary shows the host, the port, TLS on, the filter, the window and the warning (ADR 0114 R5). */
 export async function theCardSummaryShowsTheConnection(): Promise<void> {
   const h = setup();
   await h.turn();
   expect(h.proposed[0]?.summary).toBe(
-    'Listen on the broker of RTU "RTU-1" of the draft for site "Plant 4". Host: "broker.example.com". Port: 8883. TLS: always on. ' +
+    'Listen on the broker of RTU "RTU-1" of the draft for site "Plant 4". Host: "broker.example.com". Port: 8883. TLS: on. ' +
+      `Topic filter: "site/data/#". Window: 60 s. ${MQTT_DISCOVERY_SHARED_USER_WARNING}`,
+  );
+}
+
+/**
+ * X3b — `F4.326` / ADR 0114 decision 6: a plain RTU's card says TLS is off and
+ * what that costs, and its hashed body carries `expected.tls: false`, which the
+ * route requires before it connects plain.
+ */
+export async function aPlainRtuCardSaysTlsOff(): Promise<void> {
+  const h = setup({ stored: { ...PROPOSAL, port: 1883, tls: false } });
+  await h.turn();
+  expect(h.proposed[0]?.body).toEqual({ ...BODY, expected: { host: "broker.example.com", port: 1883, tls: false } });
+  expect(h.proposed[0]?.summary).toBe(
+    'Listen on the broker of RTU "RTU-1" of the draft for site "Plant 4". Host: "broker.example.com". Port: 1883. ' +
+      "TLS: off — credentials and data cross the network unencrypted. " +
       `Topic filter: "site/data/#". Window: 60 s. ${MQTT_DISCOVERY_SHARED_USER_WARNING}`,
   );
 }

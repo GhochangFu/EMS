@@ -291,7 +291,15 @@ function proposeDiscovery(args: z.infer<(typeof DISCOVERY_TOOL_SCHEMAS)["propose
     return fail(DISCOVERY_TOOL_BUSY);
   }
   const windowSeconds = args.windowSeconds ?? MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS;
-  const proposal: DiscoveryProposal = { rtuCode: code, topicPrefix: args.topicPrefix, windowSeconds, host, port };
+  const proposal: DiscoveryProposal = {
+    rtuCode: code,
+    topicPrefix: args.topicPrefix,
+    windowSeconds,
+    host,
+    port,
+    // ADR 0114 R5: the card shows TLS off, and binds `expected.tls: false`, only for the literal `false`.
+    tls: configOf(rtu).tls !== false,
+  };
   state.pendingDiscovery = proposal;
   return succeed(
     {

@@ -35,7 +35,7 @@ import {
   assertRunningIsWrittenBeforeTheWindow,
   assertSubackRefusalIsAuthRefused,
   assertSupersededDiscoveryDoesNothing,
-  assertTlsFlagSelectsNothing,
+  assertUnlistedPlainIsNeverConnected,
   assertUnreachableHostIsNotARefusal,
   assertUsernameAppearsNowhere,
   assertRefusedResultWriteFallsBackToFailed,
@@ -58,7 +58,7 @@ describe("F3.24b — the discovery job", () => {
     it("send no SNI for an IP literal", () => assertNoServernameForAnIpLiteral());
     it("the production protocol is mqtts", () => assertProductionProtocolIsMqtts());
     it("the job connects to the checked address", () => assertJobConnectsToTheCheckedAddress());
-    it("the draft's tls flag selects nothing", () => assertTlsFlagSelectsNothing());
+    it("an unlisted tls:false RTU is never connected (ADR 0114)", () => assertUnlistedPlainIsNeverConnected());
     it("the default transport's handle has no publish", () => assertDefaultTransportHandleHasNoPublish());
   });
 
