@@ -8,6 +8,7 @@ import {
   aRefusalAtATabWidgetSelectsThatTab,
   anAddedTabIsCountedAndSent,
   saveSendsTheRenamedTab,
+  theTabEditorIsReadOnlyWhileASavePends,
 } from "./dashboard-template-detail-page.tabs.spec";
 
 /**
@@ -35,6 +36,10 @@ describe("F4.320 the detail page edits a site template's tabs", () => {
 
   it("the API's flattened 400 selects no tab", async () => {
     await aFlattenedServer400SelectsNoTab();
+  });
+
+  it("the tab editor is read-only while a save pends", async () => {
+    await theTabEditorIsReadOnlyWhileASavePends();
   });
 
   it("a published site template shows the strip and no tab input", async () => {

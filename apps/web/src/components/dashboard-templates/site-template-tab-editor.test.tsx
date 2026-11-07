@@ -3,8 +3,11 @@ import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aKeyRefusalDoesNotPassToTheNextTab,
   aProblemShowsOnItsTab,
   aTabSwitchShowsOnlyThatTabsWidgets,
+  anUnchangedKeyIsNoEdit,
+  removingTheMiddleTabSelectsThePreviousTab,
   addTabAppendsAndSelects,
   addWidgetGrowsTheSelectedTab,
   moveReordersTheStrip,
@@ -35,6 +38,18 @@ describe("F4.320 site template tab editor", () => {
 
   it("Remove tab asks first, names its widgets, then removes the tab and its widgets", async () => {
     await removeAsksThenRemoves();
+  });
+
+  it("removing the selected middle tab selects the tab before it", async () => {
+    await removingTheMiddleTabSelectsThePreviousTab();
+  });
+
+  it("a key refusal does not pass to the tab that lands at its index", async () => {
+    await aKeyRefusalDoesNotPassToTheNextTab();
+  });
+
+  it("an unchanged key sends no edit; a refused key on blur shows the saved key", async () => {
+    await anUnchangedKeyIsNoEdit();
   });
 
   it("Move up and Move down reorder the strip", async () => {

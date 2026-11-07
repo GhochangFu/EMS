@@ -621,7 +621,8 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
             onChange={editTabs}
             selectedIndex={selectedTab}
             onSelect={setSelectedTab}
-            editable={editable}
+            // Read-only while a save pends: an edit made then would be lost under the saved row.
+            editable={editable && !saveM.isPending}
             problem={tabProblem}
           />
         ) : null}

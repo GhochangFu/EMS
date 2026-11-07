@@ -140,19 +140,34 @@ function TabSettings({
   const [keyDraft, setKeyDraft] = useState(tab.key);
   const [keyProblem, setKeyProblem] = useState<string | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
-  useEffect(() => setKeyDraft(tab.key), [tab.key]);
+  // A new key (a re-key, or another tab landing at this index after a remove) drops the old
+  // draft and its refusal: the alert must never describe a tab it was not raised on.
+  useEffect(() => {
+    setKeyDraft(tab.key);
+    setKeyProblem(null);
+  }, [tab.key]);
 
   const vocabQ = useQuery({ queryKey: vocabulariesQueryKey, queryFn: fetchVocabularies });
   const domains = vocabQ.data?.assetDomains ?? [];
   const knownDomain = tab.domain === null || domains.some((domain) => domain.code === tab.domain);
 
-  function applyKey(): void {
+  /**
+   * Applies the typed key. An unchanged key is no edit, so it sends no `onChange` (which would
+   * clear the page's Save problem, and fire twice on Enter then blur). A refused key keeps its
+   * alert; on leaving the field the input goes back to the key Save will send.
+   */
+  function applyKey(via: "enter" | "blur"): void {
+    if (keyDraft === tab.key) {
+      setKeyProblem(null);
+      return;
+    }
     const result = rekeyTemplateTab(tabs, index, keyDraft);
     if (result.ok) {
       setKeyProblem(null);
       onChange(result.tabs);
     } else {
       setKeyProblem(result.problem);
+      if (via === "blur") setKeyDraft(tab.key);
     }
   }
 
@@ -177,9 +192,9 @@ function TabSettings({
           <input
             value={keyDraft}
             onChange={(event) => setKeyDraft(event.target.value)}
-            onBlur={applyKey}
+            onBlur={() => applyKey("blur")}
             onKeyDown={(event) => {
-              if (event.key === "Enter") applyKey();
+              if (event.key === "Enter") applyKey("enter");
             }}
             aria-invalid={keyProblem !== null}
             className="mt-1 w-full surface-field px-2 py-1 text-xs font-normal"

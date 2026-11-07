@@ -210,3 +210,27 @@ export function aSchemaRefusalNamesItsTab(): void {
   assert(issue.path.join(".").startsWith("content.tabs.1.widgets.0.config"), `path: ${issue.path.join(".")}`);
   assert(tabIndexOfProblem(issue.path) === 1, "the schema path did not name tab 1");
 }
+
+/**
+ * Removing the tab a module summary card links leaves the card's dangling `targetTabKey`, and the
+ * schema's refusal names the tab that holds the card — so Save selects that tab, not the removed
+ * one. The positive control is the same body before the remove, which parses.
+ */
+export function removingALinkedTabNamesTheCardsTab(): void {
+  const tabs: TemplateTabInput[] = threeTabs().map((tab) => ({
+    ...tab,
+    widgets: tab.widgets.filter((w) => w.widgetType !== "mimic"),
+  }));
+  const body = (content: TemplateTabInput[]) =>
+    updateDashboardTemplateBodySchema.safeParse({ content: { widgets: [], tabs: content } });
+  const before = body(tabs);
+  assert(before.success, `the linked body was refused: ${before.success ? "" : before.error.message}`);
+
+  const after = body(removeTemplateTab(tabs, 1));
+  assert(!after.success, "a card that links a removed tab was accepted");
+  if (after.success) return;
+  const lines = after.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`);
+  const found = firstTabProblem(lines);
+  assert(found !== null && found.index === 0, `the refusal did not name the card's tab: ${lines.join(" | ")}`);
+  assert(found!.message.startsWith("content.tabs.0.widgets.0.config.targetTabKey"), `message: ${found!.message}`);
+}

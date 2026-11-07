@@ -12,6 +12,7 @@ import {
   rekeyMovesTheReferences,
   rekeyRefusesAnUnusableKey,
   removeTakesTheTabAndItsWidgets,
+  removingALinkedTabNamesTheCardsTab,
   renameSetsOneLabel,
   tabIndexOfProblemReadsThePath,
   withTabWidgetsReplacesOneTab,
@@ -33,4 +34,5 @@ describe("F4.320 site template tab edits", () => {
   it("tabIndexOfProblem reads content.tabs.<i> only", () => tabIndexOfProblemReadsThePath());
   it("firstTabProblem picks the first line that names a tab", () => firstTabProblemPicksTheFirstTabLine());
   it("a real schema refusal of a tab widget names its tab", () => aSchemaRefusalNamesItsTab());
+  it("removing a linked tab names the tab that holds the card", () => removingALinkedTabNamesTheCardsTab());
 });

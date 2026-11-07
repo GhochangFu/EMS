@@ -44,7 +44,7 @@ function threeTabs(): TemplateTabInput[] {
 /** The page's role: it owns the list and the selection. `latest` reads the list after each edit. */
 function renderEditor(initial: TemplateTabInput[], editable: boolean) {
   vi.spyOn(vocabApi, "fetchVocabularies").mockResolvedValue(VOCABULARIES as never);
-  const latest: { tabs: TemplateTabInput[] } = { tabs: initial };
+  const latest: { tabs: TemplateTabInput[]; changes: number } = { tabs: initial, changes: 0 };
   function Harness() {
     const [tabs, setTabs] = useState(initial);
     const [selected, setSelected] = useState(0);
@@ -53,6 +53,7 @@ function renderEditor(initial: TemplateTabInput[], editable: boolean) {
         tabs={tabs}
         onChange={(next) => {
           latest.tabs = next;
+          latest.changes += 1;
           setTabs(next);
         }}
         selectedIndex={selected}
@@ -120,6 +121,49 @@ export async function removeAsksThenRemoves(): Promise<void> {
   await userEvent.click(screen.getByRole("button", { name: "Remove tab and widgets" }));
   expect(tabNames()).toEqual(["SLD", "Water"]);
   expect(latest.tabs.flatMap((tab) => tab.widgets.map((widget) => widget.key))).toEqual(["s1"]);
+}
+
+/** Removing the selected middle tab selects the tab before it. */
+export async function removingTheMiddleTabSelectsThePreviousTab(): Promise<void> {
+  renderEditor(threeTabs(), true);
+  await userEvent.click(screen.getByRole("tab", { name: "SLD" }));
+  await userEvent.click(screen.getByRole("button", { name: "Remove tab" }));
+  await userEvent.click(screen.getByRole("button", { name: "Remove tab and widgets" }));
+  expect(tabNames()).toEqual(["Overview", "Water"]);
+  expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
+  expect(screen.getByRole("tab", { name: "Water" })).toHaveAttribute("aria-selected", "false");
+}
+
+/** A key refusal does not outlive its tab: the tab that lands at its index after a remove has none. */
+export async function aKeyRefusalDoesNotPassToTheNextTab(): Promise<void> {
+  renderEditor(threeTabs(), true);
+  const key = screen.getByLabelText("Tab key");
+  await userEvent.clear(key);
+  await userEvent.type(key, "assets{Enter}");
+  expect(screen.getByRole("alert").textContent).toContain("reserved");
+
+  await userEvent.click(screen.getByRole("button", { name: "Remove tab" }));
+  await userEvent.click(screen.getByRole("button", { name: "Remove tab and widgets" }));
+  expect(tabNames()).toEqual(["SLD", "Water"]);
+  expect((screen.getByLabelText("Tab key") as HTMLInputElement).value).toBe("sld");
+  expect(screen.queryByRole("alert"), "the removed tab's key refusal stayed").not.toBeInTheDocument();
+}
+
+/** An unchanged key sends no edit; a refused key keeps its alert and the input shows the saved key. */
+export async function anUnchangedKeyIsNoEdit(): Promise<void> {
+  const latest = renderEditor(threeTabs(), true);
+  const key = screen.getByLabelText("Tab key");
+  await userEvent.click(key);
+  await userEvent.type(key, "{Enter}");
+  await userEvent.tab();
+  expect(latest.changes, "an unchanged key sent an edit").toBe(0);
+
+  await userEvent.clear(key);
+  await userEvent.type(key, "sld");
+  await userEvent.tab();
+  expect(screen.getByRole("alert").textContent).toBe('Another tab already uses the key "sld".');
+  expect((screen.getByLabelText("Tab key") as HTMLInputElement).value).toBe("overview");
+  expect(latest.changes).toBe(0);
 }
 
 /** Move down and up reorder the strip, and the moved tab stays selected. */

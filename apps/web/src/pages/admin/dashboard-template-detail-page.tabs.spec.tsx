@@ -167,3 +167,20 @@ export async function aPublishedSiteTemplateHasNoTabInputs(): Promise<void> {
   expect(screen.queryByLabelText("Tab label")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Add tab" })).not.toBeInTheDocument();
 }
+
+/** While a save pends the tab editor is read-only; the draft before Submit is the positive control. */
+export async function theTabEditorIsReadOnlyWhileASavePends(): Promise<void> {
+  stubSiteApi({
+    fetchAdminDashboardTemplate: () => Promise.resolve(siteDraft()),
+    updateAdminDashboardTemplate: () => new Promise(() => undefined),
+  });
+  renderPage();
+
+  expect(await screen.findByLabelText("Tab label")).toBeInTheDocument();
+  await openSaveReview();
+  await userEvent.click(screen.getByRole("button", { name: "Submit" }));
+
+  await waitFor(() => expect(screen.queryByLabelText("Tab label")).not.toBeInTheDocument());
+  expect(screen.queryByRole("button", { name: "Add tab" })).not.toBeInTheDocument();
+  expect(screen.getByRole("tab", { name: "SLD" })).toBeInTheDocument();
+}
