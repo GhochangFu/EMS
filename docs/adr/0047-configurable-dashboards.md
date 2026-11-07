@@ -1399,8 +1399,9 @@ citations are to `main` at `82ee7d85`.
 ### The question
 
 A `chart` widget takes its colours from `seriesPalette(roles)`
-(`apps/web/src/lib/chart-theme.ts`) by position: the first point by
-`sortOrder` draws in `series-1`, the second in `series-2`, and so on
+(`apps/web/src/lib/chart-theme.ts`) by position: six roles — `accent`,
+`info`, `warning`, `critical`, `ink-faint`, `simulated-ink` — the first point
+by `sortOrder` in `accent`, the second in `info`, wrapping after six
 (`buildChartOption`, `compareOption`, `donutOption` in
 `apps/web/src/lib/widget-echarts-option.ts`). Nothing lets the author choose.
 The trend strip already lets them: `trendStripWidgetConfigSchema.colors` maps
@@ -1424,9 +1425,11 @@ pump in one picture: which ran, in which hour, today.
      an id would not. The trend strip keys by `<segment>:<point code>`
      because its points are catalog codes, not rows.
    - **Absent, or an index the array does not reach, = today's palette
-     colour for that position** (`series-<i+1>`, wrapping after eight). So no
+     colour for that position** (`seriesPalette(roles)[i % 6]`, above). So no
      stored chart changes, and an author may colour only the first two points
-     of five.
+     of five. The chosen roles are the trend strip's eight `series-*` roles
+     (ADR 0078 Amendment 4), not the six of the default palette: the same
+     names the wizard offers, each a distinct hue in both themes.
    - **Every kind.** `line`, `area`, `bar`, `scatter`, `step`: the series'
      line, fill or bars. `compare`: each point's bar. `donut`: each point's
      slice — still set before the no-share filter, as `F4.323` did, so a
