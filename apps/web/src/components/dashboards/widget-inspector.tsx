@@ -15,8 +15,9 @@ import { mimicTabSelectShown } from "../../lib/dashboard-builder-mimic-tab";
 import { useMimicLayouts } from "../../hooks/use-mimic-layouts";
 import { metricCatalogLabel } from "../../lib/metric-catalog";
 import {
-  chartDrawsWindowValues,
+  CHART_SERIES,
   chartHasValueAxis,
+  chartStacks,
   showsValueTileSecondMetricNote,
   VALUE_TILE_SECOND_METRIC_NOTE,
   WIDGET_CATALOG,
@@ -715,7 +716,7 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
                 className="surface-field w-full px-2 py-1.5 text-xs"
               />
             </Field>
-            {/* `F4.322` — a donut has no value axis to name. */}
+            {/* `F4.322` — a donut or a heatmap has no value axis to name. */}
             {chartHasValueAxis(row.config.series) ? (
               <Field label="Y-axis label" error={problemFor("yAxisLabel")}>
                 <input
@@ -744,8 +745,8 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
               ))}
             </select>
           </Field>
-          {/* `F4.322` — a kind that draws one number per point has no stack. */}
-          {chartDrawsWindowValues(row.config.series) ? null : (
+          {/* `F4.322` — only a series over time stacks. */}
+          {!chartStacks(row.config.series) ? null : (
             <label className="flex items-center gap-2 text-xs">
               <input
                 type="checkbox"
@@ -794,7 +795,10 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
             to make. `dashboardBuilderErrors` still enforces it, because a widget can arrive from
             the server in that state; this only stops the form from producing one.
           */}
-          {row.points.length < cardinality.max && row.sources.length === 0 ? (
+          {/* `F4.322` PR 2 — a heatmap binds one point, so its picker closes at one. */}
+          {row.points.length < cardinality.max &&
+          row.sources.length === 0 &&
+          !(row.widgetType === "chart" && CHART_SERIES[row.config.series].axis === "grid" && row.points.length >= 1) ? (
             <PointPicker role={role} organizationId={organizationId} onAdd={addPoint} />
           ) : null}
         </Field>

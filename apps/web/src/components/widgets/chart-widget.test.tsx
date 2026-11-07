@@ -7,6 +7,9 @@ import {
   aDonutSaysHowManyPointsItLeftOut,
   aDonutStillLoadingSaysNothing,
   aDonutWithEveryShareSaysNothing,
+  aHeatmapStillLoadingSaysNothing,
+  aHeatmapWithAZoneSaysNothing,
+  aHeatmapWithNoZoneSaysUtc,
 } from "./chart-widget.spec";
 
 vi.mock("echarts-for-react", () => ({ default: () => null }));
@@ -19,4 +22,7 @@ describe("F4.322 chart widget — the donut's left-out line", () => {
   it("says nothing when every point has a share", () => aDonutWithEveryShareSaysNothing());
   it("says nothing while the reads have not answered", () => aDonutStillLoadingSaysNothing());
   it("says nothing on a compare chart", () => aCompareChartSaysNothing());
+  it("a heatmap with no zone says its hours are UTC", () => aHeatmapWithNoZoneSaysUtc());
+  it("a heatmap with a zone says nothing", () => aHeatmapWithAZoneSaysNothing());
+  it("a heatmap whose read has not answered says nothing", () => aHeatmapStillLoadingSaysNothing());
 });

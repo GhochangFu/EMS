@@ -568,7 +568,8 @@ export const templateDashboardWidgetSchema = templateDashboardWidgetVariants
       `${DASHBOARD_GRID.columns}: that is the width of the canvas, and ` +
       "`dashboard_widgets_grid_bounds_check` enforces the same bound in SQL, so an author who " +
       "overflows it gets a 400 naming the field rather than a 500 carrying a constraint name. " +
-      "A compare or donut chart needs config.aggregate (ADR 0047 Amendment 7).",
+      "A compare, donut or heatmap chart needs config.aggregate; a heatmap binds one point over " +
+      "config.windowMinutes 10080 to 43200 (ADR 0047 Amendment 7).",
   );
 
 /**

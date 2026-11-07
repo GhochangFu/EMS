@@ -469,3 +469,29 @@ export function runWindowValueChartTests(): void {
   const line = widgetDataFor(aggregatedChart(), new Map() as LatestByRef, new Map(), NOW, new Map([[chartKey(), answer()]]));
   assert(isScalarData(line) && line.series[0]?.value === undefined, "a time kind carries no value");
 }
+
+/** `F4.322` PR 2 — a heatmap reads hourly buckets with its function, and carries the zone. */
+export function runHeatmapDataTests(): void {
+  const widget = {
+    ...IDENTITY,
+    widgetType: "chart",
+    config: { series: "heatmap", aggregate: "avg", windowMinutes: 10_080 },
+    points: [POINT],
+  } as DashboardWidgetDto;
+  const requests = aggregateRequestsFor({ widgets: [widget] } as unknown as DashboardDto);
+  assert(requests.length === 1 && requests[0]?.bucketFunction === "avg", "a heatmap asks for buckets");
+  const key = aggregateKeyFor({ ref: REF, windowMinutes: 10_080, compare: false, bucketFunction: "avg" });
+  const data = widgetDataFor(
+    widget,
+    new Map() as LatestByRef,
+    new Map(),
+    NOW,
+    new Map([[key, answer({ bucketSeconds: 3_600, buckets: buckets(3, 0), timeZone: "Asia/Kolkata" })]]),
+  );
+  assert(isScalarData(data) && data.series[0]?.points.length === 3, "the buckets are the series");
+  assert(isScalarData(data) && data.timeZone === "Asia/Kolkata", "the response's zone rides along");
+  const noZone = widgetDataFor(widget, new Map() as LatestByRef, new Map(), NOW, new Map([[key, answer()]]));
+  assert(isScalarData(noZone) && noZone.timeZone === null, "no zone in the response is null");
+  const pending = widgetDataFor(widget, new Map() as LatestByRef, new Map(), NOW, new Map());
+  assert(isScalarData(pending) && pending.timeZone === undefined, "no answer yet is undefined, not 'no zone'");
+}

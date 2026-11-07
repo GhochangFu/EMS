@@ -50,3 +50,22 @@ export function aDonutStillLoadingSaysNothing(): void {
   render(<ChartWidget title="Share" status="ready" series={pending} config={{ series: "donut", aggregate: "sum" }} now={NOW} />);
   expect(screen.queryByText(/not shown/)).toBeNull();
 }
+
+const HEATMAP = { series: "heatmap", aggregate: "avg", windowMinutes: 10_080 } as const;
+
+export function aHeatmapWithNoZoneSaysUtc(): void {
+  render(<ChartWidget title="Pattern" status="ready" series={SERIES.slice(0, 1)} config={HEATMAP} now={NOW} timeZone={null} />);
+  expect(screen.getByText("Hours shown in UTC: the site's time zone is not known.")).toBeInTheDocument();
+}
+
+export function aHeatmapWithAZoneSaysNothing(): void {
+  render(
+    <ChartWidget title="Pattern" status="ready" series={SERIES.slice(0, 1)} config={HEATMAP} now={NOW} timeZone="Asia/Kolkata" />,
+  );
+  expect(screen.queryByText(/Hours shown in UTC/)).toBeNull();
+}
+
+export function aHeatmapStillLoadingSaysNothing(): void {
+  render(<ChartWidget title="Pattern" status="ready" series={SERIES.slice(0, 1)} config={HEATMAP} now={NOW} />);
+  expect(screen.queryByText(/Hours shown in UTC/)).toBeNull();
+}

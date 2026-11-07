@@ -7,6 +7,8 @@ import { resolveRoles } from "./theme";
 import {
   CHART_SERIES,
   chartDrawsWindowValues,
+  chartHasValueAxis,
+  chartStacks,
   WIDGET_CATALOG,
   WIDGET_TONE_FILL_CLASS,
   WIDGET_TONE_ROLE,
@@ -72,6 +74,7 @@ export function chartSeriesLabelsArePinned(): void {
   expect(CHART_SERIES.step.label).toBe("Steps (on/off)");
   expect(CHART_SERIES.compare.label).toBe("Compare points");
   expect(CHART_SERIES.donut.label).toBe("Share (donut)");
+  expect(CHART_SERIES.heatmap.label).toBe("Daily pattern (hour × day)");
 }
 
 /**
@@ -87,6 +90,13 @@ export function areaSeriesIsLineWithAreaStyle(): void {
   expect(CHART_SERIES.step.type).toBe("line");
   expect(CHART_SERIES.compare.type).toBe("bar");
   expect(CHART_SERIES.donut.type).toBe("pie");
+  expect(CHART_SERIES.heatmap.type).toBe("heatmap");
+  // A heatmap plots buckets, not one number per point; it has no stack and no value axis.
+  expect(chartDrawsWindowValues("heatmap")).toBe(false);
+  expect(chartStacks("heatmap")).toBe(false);
+  expect(chartHasValueAxis("heatmap")).toBe(false);
+  expect(chartStacks("compare") || chartStacks("donut")).toBe(false);
+  expect(chartStacks("step") && chartStacks("line")).toBe(true);
   // Which kinds draw a window number per point rather than a time series.
   expect(chartDrawsWindowValues("compare")).toBe(true);
   expect(chartDrawsWindowValues("donut")).toBe(true);

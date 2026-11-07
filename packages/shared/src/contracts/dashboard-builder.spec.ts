@@ -89,8 +89,8 @@ export function runDashboardBuilderTests(): void {
   // chart-shaped ask from being a release — "we want bars" is configuration, not a component.
   assert(
     JSON.stringify(chartSeriesKindSchema.options) ===
-      JSON.stringify(["line", "area", "bar", "scatter", "step", "compare", "donut"]),
-    `chart series kinds must be the four time series plus F4.322's step, compare and donut, got ${JSON.stringify(chartSeriesKindSchema.options)}`,
+      JSON.stringify(["line", "area", "bar", "scatter", "step", "compare", "donut", "heatmap"]),
+    `chart series kinds must be the four time series plus F4.322's step, compare, donut and heatmap, got ${JSON.stringify(chartSeriesKindSchema.options)}`,
   );
 
   assert(

@@ -4,6 +4,10 @@ import {
   chartAreaSeriesIsLineWithAreaStyle,
   chartCompareDrawsOneHorizontalBarPerPointInOrder,
   chartDonutDrawsOnePositiveSlicePerPoint,
+  chartHeatmapDrawsDaysAcrossAndHoursDown,
+  heatmapCellsAreLocalDayAndHour,
+  heatmapKeepsAnEmptyDay,
+  heatmapMergesARepeatedLocalHour,
   chartStepHoldsTheValueUntilTheNextSample,
   donutLeftOutCountsThePointsWithNoShare,
   chartBarAndScatterMapDirectly,
@@ -107,4 +111,8 @@ describe("widget-echarts-option: F4.322 chart kinds (ADR 0047 Amendment 7)", () 
   it("compare draws one horizontal bar per point, in sortOrder", () => chartCompareDrawsOneHorizontalBarPerPointInOrder());
   it("donut draws one slice per point with a positive number", () => chartDonutDrawsOnePositiveSlicePerPoint());
   it("donutLeftOut counts the points with no share", () => donutLeftOutCountsThePointsWithNoShare());
+  it("heatmap cells are the bucket's local day and hour", () => heatmapCellsAreLocalDayAndHour());
+  it("heatmap merges a fall-back hour by the widget's function", () => heatmapMergesARepeatedLocalHour());
+  it("heatmap keeps a day with no samples on the axis", () => heatmapKeepsAnEmptyDay());
+  it("heatmap draws days across and hours down in one hue", () => chartHeatmapDrawsDaysAcrossAndHoursDown());
 });

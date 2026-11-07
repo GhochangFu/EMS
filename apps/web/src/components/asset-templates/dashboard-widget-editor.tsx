@@ -6,7 +6,7 @@ import {
   type TemplateDashboardWidgetRow,
   type WidgetConfigRow,
 } from "../../lib/template-dashboard-form";
-import { chartDrawsWindowValues, chartHasValueAxis } from "../../lib/widget-catalog";
+import { chartHasValueAxis, chartStacks } from "../../lib/widget-catalog";
 import {
   AGGREGATE_FUNCTION_LABELS,
   AGGREGATE_FUNCTIONS,
@@ -421,7 +421,7 @@ function WidgetEditor({
                 className="w-full surface-field px-2 py-1.5 text-xs"
               />
             </Field>
-            {/* `F4.322` — a donut has no value axis to name. */}
+            {/* `F4.322` — a donut or a heatmap has no value axis to name. */}
             {chartHasValueAxis(widget.config.series) ? (
               <Field label="Y-axis label" error={problemFor("yAxisLabel")}>
                 <input
@@ -452,8 +452,8 @@ function WidgetEditor({
               ))}
             </select>
           </Field>
-          {/* `F4.322` — a kind that draws one number per point has no stack. */}
-          {chartDrawsWindowValues(widget.config.series) ? null : (
+          {/* `F4.322` — only a series over time stacks. */}
+          {!chartStacks(widget.config.series) ? null : (
             <label className="flex items-center gap-2 text-xs">
               <input
                 type="checkbox"

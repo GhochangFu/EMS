@@ -4,7 +4,7 @@ import type { ChartConfig, RadialGaugeConfig, WidgetSeries } from "./widget-cata
 import { ROLE_TOKENS, fromTokenMap } from "../test-role-tokens";
 import { seriesPalette } from "./chart-theme";
 import { resolveRoles } from "./theme";
-import { buildChartOption, buildRadialGaugeOption, donutLeftOut } from "./widget-echarts-option";
+import { buildChartOption, buildRadialGaugeOption, donutLeftOut, heatmapCells, heatmapDays } from "./widget-echarts-option";
 
 /** `F3.65c` — the light roles from the real `index.css`; a band stop is a resolved role (OQ1). */
 const roles = resolveRoles(fromTokenMap(ROLE_TOKENS.light));
@@ -455,4 +455,85 @@ export function donutLeftOutCountsThePointsWithNoShare(): void {
   expect(donutLeftOut(valuedSeries())).toBe(2);
   expect(donutLeftOut([{ name: "pending", sortOrder: 0, points: [] }]), "an unanswered read is not 'no value'").toBe(0);
   expect(donutLeftOut([{ name: "a", sortOrder: 0, points: [], value: 1 }])).toBe(0);
+}
+
+/**
+ * `F4.322` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap: local days across, local hours
+ * down, in the response's zone, never the browser's.
+ */
+export function heatmapCellsAreLocalDayAndHour(): void {
+  // Hourly buckets start on the UTC hour. Kolkata is +05:30, so 18:00Z is 23:30 local: hour 23.
+  const points = [
+    { t: "2026-11-01T18:00:00.000Z", v: 3 },
+    { t: "2026-11-01T19:00:00.000Z", v: 5 }, // 2026-11-02 00:30 local
+    { t: "2026-11-01T20:00:00.000Z", v: null }, // no sample: no cell
+  ];
+  expect(heatmapCells(points, "Asia/Kolkata")).toEqual([
+    { day: "2026-11-01", hour: 23, value: 3 },
+    { day: "2026-11-02", hour: 0, value: 5 },
+  ]);
+  expect(heatmapCells(points.slice(0, 1), "Etc/UTC")).toEqual([{ day: "2026-11-01", hour: 18, value: 3 }]);
+}
+
+/** A fall-back hour holds two buckets: one cell, by the widget's function. */
+export function heatmapMergesARepeatedLocalHour(): void {
+  // Europe/London, 2026-10-25: 00:00Z and 01:00Z are both 01:00 local.
+  const fallBack = [
+    { t: "2026-10-25T00:00:00.000Z", v: 2 },
+    { t: "2026-10-25T01:00:00.000Z", v: 6 },
+  ];
+  const one = (fn: "sum" | "avg" | "min" | "max") => heatmapCells(fallBack, "Europe/London", fn);
+  expect(one("sum")).toEqual([{ day: "2026-10-25", hour: 1, value: 8 }]);
+  expect(one("avg")).toEqual([{ day: "2026-10-25", hour: 1, value: 4 }]);
+  expect(one("min")[0]?.value).toBe(2);
+  expect(one("max")[0]?.value).toBe(6);
+}
+
+/** A day with only null buckets is still a column on the axis. */
+export function heatmapKeepsAnEmptyDay(): void {
+  const points = [
+    { t: "2026-11-01T05:00:00.000Z", v: 1 },
+    { t: "2026-11-02T05:00:00.000Z", v: null },
+    { t: "2026-11-03T05:00:00.000Z", v: 2 },
+  ];
+  expect(heatmapDays(points, "Etc/UTC")).toEqual(["2026-11-01", "2026-11-02", "2026-11-03"]);
+}
+
+type HeatmapShape = {
+  readonly xAxis: { readonly type: string; readonly data: readonly string[] };
+  readonly yAxis: { readonly type: string; readonly data: readonly string[] };
+  readonly visualMap: { readonly min: number; readonly max: number; readonly inRange: { readonly color: readonly string[] } };
+  readonly series: readonly { readonly type: string; readonly data: readonly (readonly [number, number, number])[] }[];
+};
+
+export function chartHeatmapDrawsDaysAcrossAndHoursDown(): void {
+  const series: readonly WidgetSeries[] = [
+    {
+      name: "P-01 · kw",
+      sortOrder: 0,
+      points: [
+        { t: "2026-11-02T01:00:00.000Z", v: 8 },
+        { t: "2026-11-01T05:00:00.000Z", v: 2 },
+      ],
+    },
+  ];
+  const option = buildChartOption(
+    { series: "heatmap", aggregate: "avg", windowMinutes: 10_080, stacked: true },
+    series,
+    CHART_NOW,
+    roles,
+    "Etc/UTC",
+  ) as unknown as HeatmapShape;
+  expect(option.xAxis.type).toBe("category");
+  expect(option.xAxis.data, "days in order").toEqual(["2026-11-01", "2026-11-02"]);
+  expect(option.yAxis.data).toHaveLength(24);
+  expect(option.yAxis.data[0]).toBe("00:00");
+  expect(option.series[0]?.type).toBe("heatmap");
+  expect(option.series[0]?.data).toEqual([
+    [1, 1, 8],
+    [0, 5, 2],
+  ]);
+  expect(option.visualMap.min).toBe(2);
+  expect(option.visualMap.max).toBe(8);
+  expect(option.visualMap.inRange.color.at(-1), "one hue, the accent").toBe(roles.accent);
 }

@@ -245,6 +245,15 @@ export async function runDashboardBuilderControllerTests(): Promise<void> {
     await controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series: "compare", aggregate: "avg" }));
     await controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series: "step" }));
     assert(service.putWidgets.calls === 3, "a donut and a compare chart with aggregate, and a step chart, reach the service");
+
+    // `F4.322` PR 2 — a heatmap over 3 days is a 400; over 7 days with one point it saves.
+    await rejects(
+      () => controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series: "heatmap", aggregate: "avg", windowMinutes: 4_320 })),
+      (e) => e instanceof BadRequestException,
+      "a heatmap with a 3-day window",
+    );
+    await controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series: "heatmap", aggregate: "avg", windowMinutes: 10_080 }));
+    assert(service.putWidgets.calls === 4, "a 7-day heatmap reaches the service; the 3-day one did not");
   }
 
   // A well-formed body reaches the (stubbed) service with the parsed values.

@@ -1,7 +1,9 @@
 import type { EChartsOption } from "echarts";
 
+import type { PointAggregateFunction } from "@bms/shared";
+
 import { seriesPalette } from "./chart-theme";
-import type { Roles } from "./theme";
+import { withAlpha, type Roles } from "./theme";
 import {
   CHART_SERIES,
   widgetToneColor,
@@ -130,6 +132,8 @@ export function buildChartOption(
   series: readonly WidgetSeries[],
   now: number,
   roles: Roles,
+  /** `F4.322` — the zone a heatmap's hours and days are in: the response's, else `Etc/UTC`. */
+  timeZone: string = "Etc/UTC",
 ): EChartsOption {
   const seriesShape = CHART_SERIES[config.series];
   // The contract permits a negative sortOrder; ignoring order makes legend
@@ -143,6 +147,9 @@ export function buildChartOption(
   }
   if (seriesShape.axis === "none") {
     return donutOption(config, seriesShape, ordered, roles);
+  }
+  if (seriesShape.axis === "grid") {
+    return heatmapOption(config, seriesShape, ordered[0]?.points ?? [], roles, timeZone);
   }
 
   const windowMinutes = config.windowMinutes ?? DEFAULT_WINDOW_MINUTES;
@@ -282,6 +289,128 @@ function donutOption(
             ? [{ name: s.name, value: s.value, itemStyle: { color: palette[i % palette.length] } }]
             : [],
         ),
+      },
+    ],
+  };
+}
+
+/** One heatmap cell: a bucket's local day (`YYYY-MM-DD`) and hour (0–23) in the view's zone. */
+export type HeatmapCell = { readonly day: string; readonly hour: number; readonly value: number };
+
+/** A bucket's local day (`YYYY-MM-DD`) and hour (0–23) in `timeZone`. */
+function localDayHour(format: Intl.DateTimeFormat, t: string): { day: string; hour: number } {
+  const parts = Object.fromEntries(format.formatToParts(new Date(t)).map((p) => [p.type, p.value]));
+  return { day: `${parts.year}-${parts.month}-${parts.day}`, hour: Number(parts.hour) };
+}
+
+/** `en-CA` formats a date as `YYYY-MM-DD`; `h23` keeps midnight at 0, not 24. */
+function zoneFormat(timeZone: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    hourCycle: "h23",
+  });
+}
+
+/** How two buckets that fall in one local hour (a daylight-saving fall-back) become one cell. */
+function mergeOf(fn: PointAggregateFunction | undefined): (a: number, b: number) => number {
+  if (fn === "sum") return (a, b) => a + b;
+  if (fn === "min") return Math.min;
+  if (fn === "max") return Math.max;
+  // `avg`: the mean of the two hourly averages. The buckets carry no sample counts here, so this
+  // is an equal weighting of the two hours, which is exact whenever both hours were sampled at
+  // the same rate — the case for a polled meter.
+  return (a, b) => (a + b) / 2;
+}
+
+/**
+ * `F4.322` PR 2 — the hourly buckets as cells in `timeZone` (ADR 0047 Amendment 7 item 5): the
+ * asset's site zone from the response, never the browser's. A `null` bucket has no samples and
+ * no cell. On a daylight-saving fall-back two buckets share one local hour; they become one cell
+ * by the widget's own function (`sum` adds them, the energy heatmap's rule; see `mergeOf`).
+ */
+export function heatmapCells(
+  points: readonly { t: string; v: number | null }[],
+  timeZone: string,
+  fn?: PointAggregateFunction,
+): HeatmapCell[] {
+  const format = zoneFormat(timeZone);
+  const merge = mergeOf(fn);
+  const byCell = new Map<string, HeatmapCell>();
+  for (const point of points) {
+    if (point.v === null) continue;
+    const { day, hour } = localDayHour(format, point.t);
+    const key = `${day}|${hour}`;
+    const was = byCell.get(key);
+    byCell.set(key, { day, hour, value: was ? merge(was.value, point.v) : point.v });
+  }
+  return [...byCell.values()];
+}
+
+/**
+ * `F4.322` PR 2 — every local day the window covers, from EVERY bucket, `null` ones included (the
+ * read fills each hour of the window), so a day with no samples is an empty column rather than
+ * missing from the axis.
+ */
+export function heatmapDays(points: readonly { t: string }[], timeZone: string): string[] {
+  const format = zoneFormat(timeZone);
+  return [...new Set(points.map((point) => localDayHour(format, point.t).day))].sort();
+}
+
+const hourLabel = (hour: number): string => `${String(hour).padStart(2, "0")}:00`;
+
+/**
+ * `F4.322` PR 2 — `heatmap`: local days across, local hours down, for the one bound point. One
+ * hue (`accent`) from 8 % alpha at the lowest cell to full at the highest, the
+ * `energy-heatmap.tsx` precedent (no new colour token). `stacked` and `yAxisLabel` are not read.
+ */
+function heatmapOption(
+  config: ChartConfig,
+  shape: (typeof CHART_SERIES)["heatmap"],
+  points: readonly { t: string; v: number | null }[],
+  roles: Roles,
+  timeZone: string,
+): EChartsOption {
+  const cells = heatmapCells(points, timeZone, config.aggregate);
+  const days = heatmapDays(points, timeZone);
+  const dayIndex = new Map(days.map((day, i) => [day, i]));
+  const values = cells.map((c) => c.value);
+  const min = values.length > 0 ? Math.min(...values) : 0;
+  const max = values.length > 0 ? Math.max(...values) : 0;
+  const format = valueFormatter(config);
+  return {
+    grid: { left: 44, right: 12, top: 8, bottom: 56 },
+    tooltip: {
+      position: "top",
+      formatter: (params) => {
+        const value = (params as { value?: [number, number, number] }).value;
+        return value ? `${days[value[0]]} ${hourLabel(value[1])} · ${format(value[2])}` : "";
+      },
+    },
+    xAxis: { type: "category", data: days, axisLabel: { fontSize: 10 } },
+    yAxis: { type: "category", data: Array.from({ length: 24 }, (_, hour) => hourLabel(hour)), axisLabel: { fontSize: 9 } },
+    visualMap: {
+      type: "continuous",
+      min,
+      max: max > min ? max : min + 1,
+      calculable: true,
+      orient: "horizontal",
+      left: "center",
+      bottom: 0,
+      itemHeight: 80,
+      textStyle: { fontSize: 10 },
+      inRange: { color: [withAlpha(roles.accent, 0.08), roles.accent] },
+    },
+    series: [
+      {
+        type: shape.type,
+        data: cells.flatMap((c) => {
+          const x = dayIndex.get(c.day);
+          return x === undefined ? [] : [[x, c.hour, c.value] as [number, number, number]];
+        }),
       },
     ],
   };

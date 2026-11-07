@@ -58,7 +58,7 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^[ \t]*\/\/.*$/gm, "");
 }
 
-// A quoted ECharts series-name literal: "line", "bar", "scatter", "area", or (`F4.322`) "pie"
+// A quoted ECharts series-name literal: "line", "bar", "scatter", "area", or (`F4.322`) "pie" and "heatmap"
 // (the one that does not exist as a series type — decision 4's whole point).
 // The backreference requires matching quote characters, so `lineStyle` or a
 // prose mention like "a bar chart" inside an unrelated word never matches;
@@ -80,7 +80,7 @@ function stripComments(src: string): string {
  * names instead. One name is a default. **A mapping needs at least two** — even
  * the narrowest interesting one, `area` → `line`, names both.
  */
-const SERIES_LITERAL = /(["'])(line|bar|scatter|area|pie)\1/g;
+const SERIES_LITERAL = /(["'])(line|bar|scatter|area|pie|heatmap)\1/g;
 const MIN_DISTINCT_FOR_A_MAPPING = 2;
 
 function walk(dir: string, out: string[] = []): string[] {
