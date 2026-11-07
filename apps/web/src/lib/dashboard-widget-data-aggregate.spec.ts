@@ -495,3 +495,29 @@ export function runHeatmapDataTests(): void {
   const pending = widgetDataFor(widget, new Map() as LatestByRef, new Map(), NOW, new Map());
   assert(isScalarData(pending) && pending.timeZone === undefined, "no answer yet is undefined, not 'no zone'");
 }
+
+/**
+ * `F4.325` (ADR 0047 Amendment 8 item 2) — a matrix reads every point's buckets over the last day
+ * with its function (1-minute buckets at that window; the option folds them into hours), one
+ * series per point in sortOrder.
+ */
+export function runMatrixDataTests(): void {
+  const ASSET_B = "99999999-9999-4999-8999-999999999999";
+  const POINT_B: DashboardWidgetPointDto = { ...POINT, id: "88888888-8888-4888-8888-888888888888", assetId: ASSET_B, assetCode: "P-02", sortOrder: 1 };
+  const widget = {
+    ...IDENTITY,
+    widgetType: "chart",
+    config: { series: "matrix", aggregate: "avg", windowMinutes: 1_440 },
+    points: [POINT_B, POINT],
+  } as DashboardWidgetDto;
+  const requests = aggregateRequestsFor({ widgets: [widget] } as unknown as DashboardDto);
+  assert(
+    requests.length === 2 && requests.every((r) => r.bucketFunction === "avg" && r.windowMinutes === 1_440),
+    `a matrix asks each point's buckets over a day, got ${JSON.stringify(requests)}`,
+  );
+  const key = aggregateKeyFor({ ref: REF, windowMinutes: 1_440, compare: false, bucketFunction: "avg" });
+  const data = widgetDataFor(widget, new Map() as LatestByRef, new Map(), NOW, new Map([[key, answer({ buckets: buckets(3, 0) })]]));
+  assert(isScalarData(data) && data.series.length === 2, "one series per point");
+  assert(isScalarData(data) && data.series[0]?.points.length === 3, "the first point's buckets are its series");
+  assert(isScalarData(data) && data.series[1]?.points.length === 0, "an unanswered point has no cells yet");
+}

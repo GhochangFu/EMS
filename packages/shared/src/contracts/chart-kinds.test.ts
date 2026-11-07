@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   compareAndDonutNeedAnAggregate,
+  theMatrixRules,
   theColorRule,
   theLiveWritePathChecksColours,
   theTemplatePathsCheckColours,
@@ -28,4 +29,8 @@ describe("F4.325 — a colour per chart point (ADR 0047 Amendment 8 item 1)", ()
   it("at most one colour per point, absent always fine", () => theColorRule());
   it("PUT :id/widgets refuses too many colours and an unknown role", () => theLiveWritePathChecksColours());
   it("the asset template counts point keys; a section template only the cap", () => theTemplatePathsCheckColours());
+});
+
+describe("F4.325 — the hour-by-point matrix (ADR 0047 Amendment 8 item 2)", () => {
+  it("needs an aggregate and a window of exactly a day, on every write path", () => theMatrixRules());
 });

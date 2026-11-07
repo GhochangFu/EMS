@@ -722,16 +722,23 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
             <ChartSeriesPicker value={row.config.series} onChange={(series) => updateConfig({ series })} />
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Window (minutes)" error={problemFor("windowMinutes")}>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={row.config.windowMinutes}
-                placeholder="1440 (default)"
-                onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
-                className="surface-field w-full px-2 py-1.5 text-xs"
-              />
-            </Field>
+            {/* `F4.325` — a matrix always reads the last day, so it shows that instead of the field. */}
+            {row.config.series === "matrix" ? (
+              <Field label="Window">
+                <p className="px-2 py-1.5 text-xs text-ink-muted">Last 24 hours, one column per hour</p>
+              </Field>
+            ) : (
+              <Field label="Window (minutes)" error={problemFor("windowMinutes")}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={row.config.windowMinutes}
+                  placeholder="1440 (default)"
+                  onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
+                  className="surface-field w-full px-2 py-1.5 text-xs"
+                />
+              </Field>
+            )}
             {/* `F4.323` — a donut or a heatmap has no value axis to name. */}
             {chartHasValueAxis(row.config.series) ? (
               <Field label="Y-axis label" error={problemFor("yAxisLabel")}>

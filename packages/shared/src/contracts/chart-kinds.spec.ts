@@ -8,6 +8,8 @@ import {
   HEATMAP_MIN_WINDOW_MINUTES,
   HEATMAP_ONE_POINT_MESSAGE,
   HEATMAP_WINDOW_MESSAGE,
+  MATRIX_WINDOW_MESSAGE,
+  MATRIX_WINDOW_MINUTES,
 } from "./chart-kinds";
 import { templateDashboardWidgetSchema } from "./asset-template-content-writes";
 import { sectionTemplateWidgetSchema } from "./dashboard-templates";
@@ -40,8 +42,8 @@ const chart = (config: Record<string, unknown>, points = [POINT_A]) => ({
 
 export function compareAndDonutNeedAnAggregate(): void {
   assert(
-    JSON.stringify(CHART_KINDS_NEEDING_AGGREGATE) === JSON.stringify(["compare", "donut", "heatmap"]),
-    `compare, donut and heatmap are the kinds that need an aggregate, got ${JSON.stringify(CHART_KINDS_NEEDING_AGGREGATE)}`,
+    JSON.stringify(CHART_KINDS_NEEDING_AGGREGATE) === JSON.stringify(["compare", "donut", "heatmap", "matrix"]),
+    `compare, donut, heatmap and matrix are the kinds that need an aggregate, got ${JSON.stringify(CHART_KINDS_NEEDING_AGGREGATE)}`,
   );
   for (const series of ["compare", "donut"] as const) {
     const issues = chartKindIssues({ series }, 2);
@@ -302,4 +304,62 @@ export function theTemplatePathsCheckColours(): void {
     config: { series: "line", colors: Array.from({ length: 9 }, () => "series-1") },
   });
   assert(nine.success === false, "more than eight colours is refused on a section template too");
+}
+
+/**
+ * `F4.325` / ADR 0047 Amendment 8 item 2 — the hour-by-point matrix: an aggregate, 1 to 8 points,
+ * and a window of exactly one day (absent is the chart default, a day).
+ */
+export function theMatrixRules(): void {
+  assert(MATRIX_WINDOW_MINUTES === 1_440, "the matrix reads the last 24 hours");
+  const ok = { series: "matrix" as const, aggregate: "avg" as const };
+  assert(chartKindIssues(ok, 8).length === 0, "eight points, no window, passes");
+  assert(chartKindIssues({ ...ok, windowMinutes: 1_440 }, 1).length === 0, "an explicit 1440 passes");
+  const at = (issues: ReturnType<typeof chartKindIssues>) => issues.map((i) => i.path.join("."));
+  assert(
+    JSON.stringify(at(chartKindIssues({ series: "matrix" }, 3))) === JSON.stringify(["config.aggregate"]) &&
+      chartKindIssues({ series: "matrix" }, 3)[0]?.message === chartKindAggregateMessage("matrix"),
+    "a matrix needs an aggregate",
+  );
+  for (const windowMinutes of [60, 1_439, 1_441, 10_080]) {
+    const issues = chartKindIssues({ ...ok, windowMinutes }, 2);
+    assert(
+      JSON.stringify(at(issues)) === JSON.stringify(["config.windowMinutes"]) && issues[0]?.message === MATRIX_WINDOW_MESSAGE,
+      `window ${windowMinutes} is refused at config.windowMinutes, got ${JSON.stringify(issues)}`,
+    );
+  }
+
+  const refused = putDashboardWidgetsBodySchema.safeParse({
+    widgets: [chart({ series: "matrix", aggregate: "avg", windowMinutes: 10_080 }, [POINT_A, POINT_B])],
+  });
+  const paths = refused.success ? [] : refused.error.issues.map((i) => i.path.join("."));
+  assert(paths.includes("widgets.0.config.windowMinutes"), `PUT :id/widgets refuses a 7-day matrix, got ${JSON.stringify(paths)}`);
+  const accepted = putDashboardWidgetsBodySchema.safeParse({
+    widgets: [chart({ series: "matrix", aggregate: "avg", windowMinutes: 1_440, colors: ["series-2"] }, [POINT_A, POINT_B])],
+  });
+  assert(accepted.success === true, `a two-point matrix saves: ${JSON.stringify(accepted.error?.issues)}`);
+
+  const asset = { gridX: 0, gridY: 0, gridW: 6, gridH: 4, widgetType: "chart", pointKeys: ["run", "kw"] };
+  assert(
+    templateDashboardWidgetSchema.safeParse({ ...asset, config: { series: "matrix" } }).success === false,
+    "the asset template refuses a matrix without aggregate",
+  );
+  assert(templateDashboardWidgetSchema.safeParse({ ...asset, config: ok }).success, "the asset template takes a valid matrix");
+  const section = {
+    key: "runs",
+    title: null,
+    gridX: 0,
+    gridY: 0,
+    gridW: 6,
+    gridH: 4,
+    sources: [],
+    widgetType: "chart",
+    bindings: [{ assetRoleCode: "pump", pointKey: "run" }],
+  };
+  const bad = sectionTemplateWidgetSchema.safeParse({ ...section, config: { ...ok, windowMinutes: 60 } });
+  assert(
+    bad.success === false && bad.error.issues.some((i) => i.message === `Widget "runs": ${MATRIX_WINDOW_MESSAGE}`),
+    "the section template refuses a one-hour matrix under its key",
+  );
+  assert(sectionTemplateWidgetSchema.safeParse({ ...section, config: ok }).success, "the section template takes a valid matrix");
 }

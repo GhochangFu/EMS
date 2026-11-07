@@ -19,9 +19,10 @@ type ChartConfig = z.infer<typeof chartConfigSchema>;
 /**
  * The kinds that read through the aggregate and draw nothing without it: `compare` and `donut`
  * draw one number per point (owner ruling Q2, 2026-11-07); `heatmap` reads its hourly cells with
- * it as the bucket function (Amendment 7 item 5, drafter choice).
+ * it as the bucket function (Amendment 7 item 5, drafter choice); `matrix` (`F4.325`, Amendment 8
+ * item 2) folds each point's buckets into hourly cells with it.
  */
-export const CHART_KINDS_NEEDING_AGGREGATE = ["compare", "donut", "heatmap"] as const satisfies readonly ChartSeriesKind[];
+export const CHART_KINDS_NEEDING_AGGREGATE = ["compare", "donut", "heatmap", "matrix"] as const satisfies readonly ChartSeriesKind[];
 
 /**
  * `F4.323` PR 2 (Amendment 7 item 5) — the heatmap's window, 7 to 30 days. This is exactly the
@@ -37,6 +38,15 @@ export const HEATMAP_ONE_POINT_MESSAGE = "a heatmap chart binds exactly one poin
 export const HEATMAP_WINDOW_MESSAGE =
   `a heatmap chart needs config.windowMinutes from ${HEATMAP_MIN_WINDOW_MINUTES} to ` +
   `${HEATMAP_MAX_WINDOW_MINUTES} (7 to 30 days), the window read in hourly buckets`;
+
+/**
+ * `F4.325` / ADR 0047 Amendment 8 item 2 — the matrix reads the last day: 24 hour columns. Absent
+ * is the chart default (a day); any other window is refused, a week being the heatmap's job.
+ */
+export const MATRIX_WINDOW_MINUTES = 1_440;
+
+export const MATRIX_WINDOW_MESSAGE =
+  `a matrix chart reads the last 24 hours: config.windowMinutes must be ${MATRIX_WINDOW_MINUTES} or absent`;
 
 /** The refusal of a kind in {@link CHART_KINDS_NEEDING_AGGREGATE} saved without `config.aggregate`. */
 export const chartKindAggregateMessage = (kind: ChartSeriesKind): string =>
@@ -69,6 +79,9 @@ export function chartKindIssues(
     if (w === undefined || w < HEATMAP_MIN_WINDOW_MINUTES || w > HEATMAP_MAX_WINDOW_MINUTES) {
       issues.push({ path: ["config", "windowMinutes"], message: HEATMAP_WINDOW_MESSAGE });
     }
+  }
+  if (config.series === "matrix" && config.windowMinutes !== undefined && config.windowMinutes !== MATRIX_WINDOW_MINUTES) {
+    issues.push({ path: ["config", "windowMinutes"], message: MATRIX_WINDOW_MESSAGE });
   }
   return issues;
 }

@@ -254,6 +254,15 @@ export async function runDashboardBuilderControllerTests(): Promise<void> {
     );
     await controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series: "heatmap", aggregate: "avg", windowMinutes: 10_080 }));
     assert(service.putWidgets.calls === 4, "a 7-day heatmap reaches the service; the 3-day one did not");
+
+    // `F4.325` PR 2 — a matrix over 7 days is a 400; over the last day it saves.
+    await rejects(
+      () => controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series: "matrix", aggregate: "avg", windowMinutes: 10_080 })),
+      (e) => e instanceof BadRequestException,
+      "a matrix with a 7-day window",
+    );
+    await controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series: "matrix", aggregate: "avg", windowMinutes: 1_440 }));
+    assert(service.putWidgets.calls === 5, "a one-day matrix reaches the service; the 7-day one did not");
   }
 
   // `F4.325` / ADR 0047 Amendment 8 item 1 — a chart may carry one colour per bound point: two on

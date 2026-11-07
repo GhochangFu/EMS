@@ -345,7 +345,8 @@ export const sectionTemplateWidgetSchema = z
       "bound dataset declares (METRIC_CATALOG), each once. No minimum: an unbound template " +
       'widget instantiates as "No data bound." (ADR 0049 decision 6). A compare, donut or heatmap ' +
       "chart needs config.aggregate; a heatmap binds one point over config.windowMinutes 10080 " +
-      "to 43200 (ADR 0047 Amendment 7).",
+      "to 43200 (ADR 0047 Amendment 7). A matrix chart needs config.aggregate and a " +
+      "config.windowMinutes of 1440 or none (ADR 0047 Amendment 8).",
   );
 
 // ---------------------------------------------------------------------------

@@ -580,3 +580,29 @@ export function runChartColorFormTests(): void {
     "Default and the eight roles",
   );
 }
+
+/**
+ * `F4.325` (ADR 0047 Amendment 8 item 2) — the matrix form: a function per hour is required, the
+ * window is fixed at a day (hidden in the form, written as 1440 whatever the hidden field holds),
+ * and it binds up to eight points.
+ */
+export function runMatrixFormTests(): void {
+  const blank = blankConfigRow();
+  const missing = widgetConfigErrors(0, 0, { widgetType: "chart", config: { ...blank, series: "matrix" } });
+  assert(
+    missing.length === 1 && missing[0]?.field === "chartAggregate" && missing[0]?.message === HEATMAP_VALUE_NEEDED_MESSAGE,
+    `a matrix without a function is refused at chartAggregate — got ${JSON.stringify(missing)}`,
+  );
+  const stale = widgetConfigErrors(0, 0, {
+    widgetType: "chart",
+    config: { ...blank, series: "matrix", chartAggregate: "avg", windowMinutes: "10080" },
+  });
+  assert(stale.length === 0, `a window left over in the hidden field never blocks Save — got ${JSON.stringify(stale)}`);
+  const built = buildChartConfig({ ...blank, series: "matrix", chartAggregate: "avg", windowMinutes: "10080", stacked: true, yAxisLabel: "kW" }, 3);
+  assert(built.windowMinutes === 1440, "a matrix is saved over the last day");
+  assert(built.stacked === undefined && built.yAxisLabel === undefined, "a matrix drops stacked and the axis label");
+  assert(chartPointIssues("matrix", 8).length === 0, "a matrix binds up to eight points");
+  const plot = chartPlotOptions("matrix");
+  assert(plot.label === "Value of each hour", `the matrix plots a value per hour — got ${plot.label}`);
+  assert(!plot.options.some((o) => o.label === "Every reading"), "a matrix offers no 'Every reading'");
+}

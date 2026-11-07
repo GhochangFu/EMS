@@ -6,6 +6,7 @@ import {
   chartKindIssues,
   HEATMAP_MAX_WINDOW_MINUTES,
   HEATMAP_MIN_WINDOW_MINUTES,
+  MATRIX_WINDOW_MINUTES,
   chartSeriesKindSchema,
   gaugeRangeIsOrdered,
   isTemplateAuthorableWidgetType,
@@ -16,7 +17,14 @@ import {
   widgetTypeSchema,
 } from "@bms/shared";
 import { SERIES_ROLE_NAMES } from "@bms/shared/contracts";
-import { CHART_SERIES, WIDGET_CATALOG, chartDrawsWindowValues, chartHasValueAxis, chartStacks } from "./widget-catalog";
+import {
+  CHART_SERIES,
+  WIDGET_CATALOG,
+  chartDrawsWindowValues,
+  chartHasValueAxis,
+  chartReadsHours,
+  chartStacks,
+} from "./widget-catalog";
 import type {
   ChartSeriesKind,
   DashboardWidgetSpec,
@@ -137,7 +145,7 @@ export function chartPlotOptions(kind: ChartSeriesKind): {
   label: string;
   options: readonly { value: PointAggregateFunction | ""; label: string }[];
 } {
-  if (CHART_SERIES[kind].axis === "grid") {
+  if (chartReadsHours(kind)) {
     return {
       label: "Value of each hour",
       options: [
@@ -439,7 +447,9 @@ export function widgetConfigErrors(
     if (!CHART_SERIES_VALUES.includes(config.series)) {
       push("series", "Choose what kind of chart this is.");
     }
-    pushWindowProblem(config.windowMinutes, push);
+    // `F4.325` — a matrix hides the window field and saves a day, so a value left in it is not read.
+    const fixedWindow = config.series === "matrix";
+    if (!fixedWindow) pushWindowProblem(config.windowMinutes, push);
     // `F4.323` (ADR 0047 Amendment 7) — the shared kind rule, read at the form so the author sees
     // it before Save; `chartAggregate` is the field the rule's `config.aggregate` is edited in.
     // The point count is the builder's own rule (`chartPointIssues`), which sees the points.
@@ -447,13 +457,13 @@ export function widgetConfigErrors(
       {
         series: config.series,
         aggregate: config.chartAggregate === "" ? undefined : config.chartAggregate,
-        windowMinutes: parseWindowMinutes(config.windowMinutes),
+        windowMinutes: fixedWindow ? MATRIX_WINDOW_MINUTES : parseWindowMinutes(config.windowMinutes),
       },
       0,
     )) {
       // Plain words for the author; `issue.message` is the API's wording for the same rule.
       if (issue.path.at(-1) === "windowMinutes") push("windowMinutes", HEATMAP_WINDOW_FORM_MESSAGE);
-      else push("chartAggregate", CHART_SERIES[config.series].axis === "grid" ? HEATMAP_VALUE_NEEDED_MESSAGE : CHART_VALUE_NEEDED_MESSAGE);
+      else push("chartAggregate", chartReadsHours(config.series) ? HEATMAP_VALUE_NEEDED_MESSAGE : CHART_VALUE_NEEDED_MESSAGE);
     }
     // Only where the field shows: a hidden label must not block Save with a problem shown nowhere.
     if (chartHasValueAxis(config.series) && config.yAxisLabel.trim().length > MAX_Y_AXIS_LABEL_LENGTH) {
@@ -643,7 +653,8 @@ export function buildChartConfig(config: WidgetConfigRow, pointCount: number): C
     ...buildCommonConfig(config),
     series: config.series,
   };
-  const windowMinutes = parseWindowMinutes(config.windowMinutes);
+  // `F4.325` (ADR 0047 Amendment 8 item 2) — a matrix always reads the last day.
+  const windowMinutes = config.series === "matrix" ? MATRIX_WINDOW_MINUTES : parseWindowMinutes(config.windowMinutes);
   if (windowMinutes !== undefined) {
     out.windowMinutes = windowMinutes;
   }
