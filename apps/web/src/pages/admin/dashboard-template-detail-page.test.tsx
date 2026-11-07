@@ -4,6 +4,7 @@ import { cleanup } from "@testing-library/react";
 
 import {
   addWidgetAddsAWidgetEditor,
+  aNewDraftMovesToTheDraftsId,
   bindingTemplateHidesTheOrganizationWideOption,
   addingAMetricListsItAndHidesTheRolePicker,
   deleteDraftLandsOnTheList,
@@ -62,6 +63,10 @@ describe("F3.36 dashboard template detail page", () => {
 
   it("a successful Delete draft lands on the template list (F3.62)", async () => {
     await deleteDraftLandsOnTheList();
+  });
+
+  it("Edit this version moves to the new draft's id, so later calls act on the draft", async () => {
+    await aNewDraftMovesToTheDraftsId();
   });
 
   it("a refused Delete draft stays on the page with the error (F3.62)", async () => {

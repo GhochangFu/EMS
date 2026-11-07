@@ -190,7 +190,16 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   });
   const draftM = useMutation({
     mutationFn: () => createDraftFromAdminDashboardTemplate(templateId ?? ""),
-    onSuccess: afterLifecycle,
+    // The draft is a new row with its own id; the published row is unchanged.
+    // Move to the draft's URL so Save, Publish and Delete act on the draft,
+    // not on the published id (which answers 409).
+    onSuccess: (next: DashboardTemplateDto) => {
+      setLifecycle(null);
+      setActionError(null);
+      void queryClient.invalidateQueries({ queryKey: ["admin", "dashboard-templates"] });
+      void queryClient.setQueryData(["admin", "dashboard-template", next.id], next);
+      navigate(`/admin/dashboard-templates/${next.id}`);
+    },
     onError: onActionError,
   });
   const deleteM = useMutation({
