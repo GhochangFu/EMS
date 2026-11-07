@@ -1,8 +1,11 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+
 import type { MimicNodeDto, PointKeyStateMapDto } from "@bms/shared";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
 import type { MimicGeometry } from "../../lib/mimic-geometry";
 import type { WidgetStatus } from "../../lib/widget-catalog";
+import { MimicExpandDialog } from "./mimic-expand-dialog";
 import { MimicScene } from "./mimic-scene";
 import { WidgetFrame } from "./widget-frame";
 
@@ -18,6 +21,11 @@ type MimicWidgetProps = {
   stateMaps?: readonly PointKeyStateMapDto[];
   /** `F3.74` OQ9 — a preset config's `compact`. */
   compact?: boolean;
+  /**
+   * `F4.321` — draw an Expand button that opens the drawing in a full-view dialog. Only the live
+   * widget (`MimicWidgetLive`) passes it; the static `DashboardWidget` branch does not.
+   */
+  expandable?: boolean;
 };
 
 /**
@@ -46,10 +54,56 @@ export const NO_LIVE_READINGS: SiteLiveReadings = {
  * Since the `F3.77` follow-up (owner ruling Q4) the drawing sits in an `absolute inset-0` box, so
  * it adds no height of its own: the tile is as tall as the canvas's minimum height (the aspect
  * height, or the wall's cap) or its builder cell, and the `meet` drawing letterboxes inside it.
+ *
+ * **`F4.321` — Expand.** With `expandable`, a ready tile draws an Expand button in its title row
+ * that opens `MimicExpandDialog`: a second `MimicScene` with the same props, so the live overlay
+ * moves both drawings at once and nothing is read twice. The dialog drops `compact` (owner Q1). On
+ * the wall the click is a `pointerdown`, which pauses the tab rotation, so a turn does not unmount
+ * the open dialog. Closing returns focus to Expand.
  */
-export function MimicWidget({ title, status, geometry, nodes, readings, stateMaps, compact }: MimicWidgetProps) {
+export function MimicWidget({
+  title,
+  status,
+  geometry,
+  nodes,
+  readings,
+  stateMaps,
+  compact,
+  expandable = false,
+}: MimicWidgetProps) {
+  const [open, setOpen] = useState(false);
+  const expandRef = useRef<HTMLButtonElement>(null);
+  const close = useCallback(() => {
+    setOpen(false);
+    expandRef.current?.focus();
+  }, []);
+  // `F4.321` — only a ready tile with something to draw offers the full view.
+  const canExpand = expandable && status === "ready" && geometry.width > 0 && geometry.height > 0;
+  // Review finding: a refetch that takes the drawing away unmounts the dialog; `open` must go with
+  // it, or the dialog would come back on its own when the drawing returns.
+  useEffect(() => {
+    if (!canExpand) setOpen(false);
+  }, [canExpand]);
+
   return (
-    <WidgetFrame title={title} status={status}>
+    <WidgetFrame
+      title={title}
+      status={status}
+      actions={
+        canExpand ? (
+          <button
+            ref={expandRef}
+            type="button"
+            aria-label={`Expand ${title}`}
+            aria-haspopup="dialog"
+            onClick={() => setOpen(true)}
+            className="shrink-0 surface-button px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+          >
+            Expand
+          </button>
+        ) : null
+      }
+    >
       <div className="relative min-h-0 flex-1">
         <div className="absolute inset-0">
           <MimicScene
@@ -62,6 +116,12 @@ export function MimicWidget({ title, status, geometry, nodes, readings, stateMap
           />
         </div>
       </div>
+      {canExpand && open ? (
+        // Owner Q1 (2026-11-07): the full view draws the value rows even for a `compact` tile.
+        <MimicExpandDialog title={title} onClose={close}>
+          <MimicScene title={title} geometry={geometry} nodes={nodes} readings={readings} stateMaps={stateMaps} />
+        </MimicExpandDialog>
+      ) : null}
     </WidgetFrame>
   );
 }

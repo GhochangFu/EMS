@@ -23,6 +23,14 @@ import {
   aNodeWithNoMemberSaysNoAssetAtThisSite,
   aNoAssetNodeDrawsANeutralSolidFrame,
   theDrawingAddsNoHeightOfItsOwn,
+  expandShowsOnlyOnAReadyExpandableTile,
+  expandOpensANamedDialogWithASecondDrawing,
+  escapeClosesAndFocusReturnsToExpand,
+  closeAndTheScrimCloseTheDialog,
+  tabStaysInsideTheDialog,
+  aCompactTilesDialogDrawsTheValueRows,
+  theTwoDrawingsShareNoMarkerId,
+  aLostDrawingDoesNotReopenTheDialog,
 } from "./mimic-widget.spec";
 
 /**
@@ -100,5 +108,36 @@ describe("F3.32b — MimicWidget, the reference look (ADR 0079 Amendment 2)", ()
   });
   it("L1 the drawing sits in an absolute box, so it adds no height of its own", () => {
     theDrawingAddsNoHeightOfItsOwn();
+  });
+});
+
+describe("F4.321 — MimicWidget, Expand to a full view", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("E1 Expand shows on a ready, expandable tile only", () => {
+    expandShowsOnlyOnAReadyExpandableTile();
+  });
+  it("E2 Expand opens a named modal dialog with a second drawing, outside the tile", () => {
+    expandOpensANamedDialogWithASecondDrawing();
+  });
+  it("E3 Escape closes the dialog and focus returns to Expand", () => {
+    escapeClosesAndFocusReturnsToExpand();
+  });
+  it("E4 Close and the scrim close the dialog; a click inside does not", () => {
+    closeAndTheScrimCloseTheDialog();
+  });
+  it("E5 Tab keeps focus inside the dialog", () => {
+    tabStaysInsideTheDialog();
+  });
+  it("E6 a compact tile's dialog draws the value rows (owner Q1)", () => {
+    aCompactTilesDialogDrawsTheValueRows();
+  });
+  it("E7 the tile and the dialog share no marker id", () => {
+    theTwoDrawingsShareNoMarkerId();
+  });
+  it("E8 a drawing lost to a refetch does not reopen the dialog by itself", () => {
+    aLostDrawingDoesNotReopenTheDialog();
   });
 });
