@@ -441,7 +441,7 @@ function heatmapOption(
 }
 
 /** `F4.325` — one matrix column: a local hour, keyed `YYYY-MM-DD|H` like a heatmap cell. */
-export type MatrixHour = { readonly key: string; readonly label: string };
+export type MatrixHour = { readonly key: string; readonly day: string; readonly label: string };
 
 /**
  * `F4.325` (ADR 0047 Amendment 8 item 2) — the 24 local clock hours that end with the one `now`
@@ -454,7 +454,7 @@ export function matrixHours(now: number, timeZone: string): MatrixHour[] {
   for (let back = 23; back >= 0; back -= 1) {
     const { day, hour } = localDayHour(format, new Date(now - back * 3_600_000).toISOString());
     const key = `${day}|${hour}`;
-    if (hours.at(-1)?.key !== key) hours.push({ key, label: hourLabel(hour) });
+    if (hours.at(-1)?.key !== key) hours.push({ key, day, label: hourLabel(hour) });
   }
   return hours;
 }
@@ -527,7 +527,9 @@ function matrixOption(
       position: "top",
       formatter: (params) => {
         const value = (params as { value?: [number, number, number] }).value;
-        return value ? `${names[value[1]]} · ${hours[value[0]]?.label} · ${format(value[2])}` : "";
+        // The day too: a spring-forward window shows one `HH:00` twice.
+        const hour = value ? hours[value[0]] : undefined;
+        return value && hour ? `${names[value[1]]} · ${hour.day} ${hour.label} · ${format(value[2])}` : "";
       },
     },
     xAxis: { type: "category", data: hours.map((hour) => hour.label), axisLabel: { fontSize: 9 } },

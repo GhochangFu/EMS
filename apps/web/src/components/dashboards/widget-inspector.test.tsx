@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aMatrixOffersOneScaleColour,
   theChartKindListsTheMatrix,
   aMatrixShowsItsFixedWindowInsteadOfTheField,
   aLineChartKeepsTheWindowField,
@@ -364,4 +365,5 @@ describe("F4.325 widget inspector — the hour-by-point matrix", () => {
   it("lists Hour by point (24 h) as a chart kind", () => theChartKindListsTheMatrix());
   it("shows the matrix's fixed window instead of the field", () => aMatrixShowsItsFixedWindowInsteadOfTheField());
   it("a line chart keeps the window field", () => aLineChartKeepsTheWindowField());
+  it("a matrix offers one scale colour, not one per point", () => aMatrixOffersOneScaleColour());
 });

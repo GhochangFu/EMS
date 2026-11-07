@@ -642,6 +642,21 @@ export function matrixHoursAreTheLast24LocalHours(): void {
   const ist = matrixHours(MATRIX_NOW, "Asia/Kolkata");
   expect(ist.at(-1)?.label).toBe("15:00");
   expect(ist[0]?.label).toBe("16:00");
+  // A daylight-saving fall-back repeats 01:00 local: one column, so the day shows 23.
+  expect(matrixHours(Date.parse("2026-11-01T12:20:00Z"), "America/New_York")).toHaveLength(23);
+  expect(matrixHours(Date.parse("2026-03-08T17:20:00Z"), "America/New_York")).toHaveLength(24);
+}
+
+/** Cells and columns agree off UTC: 09:35Z is 15:05 in Kolkata, the hour in progress at 10:20Z. */
+export function chartMatrixPutsALocalCellInItsLocalColumn(): void {
+  const option = buildChartOption(
+    { series: "matrix", aggregate: "sum" },
+    [{ name: "P-01 · run", sortOrder: 0, points: [{ t: "2026-11-07T09:35:00.000Z", v: 3 }] }],
+    MATRIX_NOW,
+    roles,
+    "Asia/Kolkata",
+  ) as unknown as MatrixShape;
+  expect(option.series[0]?.data).toEqual([[23, 0, 3]]);
 }
 
 export function matrixCellsFoldMinutesIntoHoursByTheFunction(): void {

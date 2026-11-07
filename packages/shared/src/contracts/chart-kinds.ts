@@ -50,7 +50,9 @@ export const MATRIX_WINDOW_MESSAGE =
 
 /** The refusal of a kind in {@link CHART_KINDS_NEEDING_AGGREGATE} saved without `config.aggregate`. */
 export const chartKindAggregateMessage = (kind: ChartSeriesKind): string =>
-  `a ${kind} chart needs config.aggregate (sum, avg, min or max): it draws one number per point`;
+  `a ${kind} chart needs config.aggregate (sum, avg, min or max): it draws one number per point` +
+  // `F4.325` — a matrix's number is per point per hour.
+  (kind === "matrix" ? " per hour" : "");
 
 /** One refusal, its path relative to the widget (`["config", "aggregate"]`, `["points"]`). */
 export interface ChartKindIssue {

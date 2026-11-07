@@ -6,7 +6,7 @@ import {
   type TemplateDashboardWidgetRow,
   type WidgetConfigRow,
 } from "../../lib/template-dashboard-form";
-import { chartHasValueAxis, chartStacks } from "../../lib/widget-catalog";
+import { chartHasValueAxis, chartReadsHours, chartStacks } from "../../lib/widget-catalog";
 import {
   AGGREGATE_FUNCTION_LABELS,
   AGGREGATE_FUNCTIONS,
@@ -103,11 +103,12 @@ function WidgetEditor({
           Points bound `<label>`, which may hold one control only. */}
       {widget.widgetType === "chart" && widget.pointKeys.length > 0 ? (
         <ul className="mt-2 space-y-1">
-          {widget.pointKeys.map((key, index) => (
+          {/* `F4.325` — an hourly kind (heatmap, matrix) draws one scale, coloured by `colors[0]`. */}
+          {(chartReadsHours(widget.config.series) ? widget.pointKeys.slice(0, 1) : widget.pointKeys).map((key, index) => (
             <li key={`${key}-${index}`} className="flex items-center justify-between gap-2 text-xs">
-              <span>{key}</span>
+              <span>{chartReadsHours(widget.config.series) ? "Scale colour" : key}</span>
               <ChartPointColorSelect
-                pointLabel={key}
+                pointLabel={chartReadsHours(widget.config.series) ? "the scale" : key}
                 value={widget.config.chartColors[index] ?? ""}
                 disabled={!editable}
                 onChange={(color) => {

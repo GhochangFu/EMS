@@ -10,6 +10,7 @@ import {
   matrixHoursAreTheLast24LocalHours,
   matrixCellsFoldMinutesIntoHoursByTheFunction,
   chartMatrixDrawsPointsDownAndHoursAcross,
+  chartMatrixPutsALocalCellInItsLocalColumn,
   chartDonutDrawsOnePositiveSlicePerPoint,
   chartHeatmapDrawsDaysAcrossAndHoursDown,
   heatmapCellsAreLocalDayAndHour,
@@ -135,4 +136,5 @@ describe("widget-echarts-option: F4.325 hour by point (ADR 0047 Amendment 8)", (
   it("the columns are the 24 local hours ending with the current one", () => matrixHoursAreTheLast24LocalHours());
   it("minute buckets fold into hours by the widget's function", () => matrixCellsFoldMinutesIntoHoursByTheFunction());
   it("draws points down and hours across in one hue", () => chartMatrixDrawsPointsDownAndHoursAcross());
+  it("puts a cell in its local column off UTC", () => chartMatrixPutsALocalCellInItsLocalColumn());
 });

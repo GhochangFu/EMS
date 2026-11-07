@@ -678,3 +678,10 @@ export function aLineChartKeepsTheWindowField(): void {
   expect(screen.getByText("Window (minutes)")).not.toBeNull();
   expect(screen.queryByText("Last 24 hours, one column per hour")).toBeNull();
 }
+
+export function aMatrixOffersOneScaleColour(): void {
+  const row = twoPointChart();
+  renderInspector({ ...row, config: { ...row.config, series: "matrix", chartAggregate: "avg" } });
+  expect(screen.getAllByRole("combobox", { name: /^Colour of/ })).toHaveLength(1);
+  expect(screen.getByRole("combobox", { name: "Colour of the scale" })).not.toBeNull();
+}
