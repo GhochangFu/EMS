@@ -39,6 +39,7 @@ const FAILED_SENTENCE: Record<OnboardingDiscoveryErrorClass, string> = {
   "TLS failed": "Failed: TLS failed.",
   timeout: "Failed: timeout.",
   "blocked host": "Failed: blocked host.",
+  "plaintext not allowed": "Failed: plain MQTT is not allowed for this broker host.",
 };
 
 /** A `running` discovery past its stale bound: the worker stopped or its final write failed. */

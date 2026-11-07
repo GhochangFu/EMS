@@ -66,7 +66,7 @@ function queuedDiscovery(overrides: Partial<StoredDiscovery> = {}): StoredDiscov
   };
 }
 
-function draftWith(opts: { config?: Record<string, unknown>; discovery?: StoredDiscovery; secrets?: boolean } = {}) {
+export function draftWith(opts: { config?: Record<string, unknown>; discovery?: StoredDiscovery; secrets?: boolean } = {}) {
   return {
     rtus: [
       {
@@ -141,7 +141,8 @@ const HAPPY: Script = (emit) => {
   });
 };
 
-function build(opts: {
+/** Exported for `discovery-job-plaintext.spec.ts` (§4.5 file cap). */
+export function build(opts: {
   draft?: unknown;
   status?: string;
   noSession?: boolean;
@@ -154,6 +155,8 @@ function build(opts: {
   /** The first write on the second transaction throws (the whole transaction rolls back); later ones succeed. */
   finishWriteThrowsOnce?: boolean;
   phaseAWriteThrows?: boolean;
+  /** `MQTT_PLAINTEXT_HOSTS`, parsed (ADR 0114). Omitted: the job is built without it — fail closed. */
+  plaintextHosts?: ReadonlySet<string>;
 }) {
   const probe: Probe = { writes: [], audits: [], connects: [], subscribes: [], logs: [], handles: [] };
   const resolved: string[] = [];
@@ -196,6 +199,7 @@ function build(opts: {
     store,
     opts.transport ?? fakeTransport(probe, opts.script ?? HAPPY, opts.subackQos),
     transportOptions,
+    opts.plaintextHosts,
   );
   const logger = {
     log: (m: unknown) => (probe.logs as string[]).push(String(m)),
@@ -206,7 +210,7 @@ function build(opts: {
   return { service, probe, resolved };
 }
 
-async function runFully(service: DiscoveryJobService): Promise<void | ProcessorContinuation> {
+export async function runFully(service: DiscoveryJobService): Promise<void | ProcessorContinuation> {
   const result = await service.run(PAYLOAD, TX);
   if (typeof result === "object" && result !== null) {
     await result.afterCommit();
@@ -214,7 +218,7 @@ async function runFully(service: DiscoveryJobService): Promise<void | ProcessorC
   return result;
 }
 
-const lastStored = (p: Probe): StoredDiscovery | undefined => p.writes[p.writes.length - 1]?.stored;
+export const lastStored = (p: Probe): StoredDiscovery | undefined => p.writes[p.writes.length - 1]?.stored;
 const everything = (p: Probe): string => JSON.stringify({ writes: p.writes, audits: p.audits, logs: p.logs });
 
 // --- connect options (M1, Q5) ---------------------------------------------
@@ -279,13 +283,18 @@ export async function assertJobConnectsToTheCheckedAddress(): Promise<void> {
   );
 }
 
-export async function assertTlsFlagSelectsNothing(): Promise<void> {
+/**
+ * ADR 0114 decision 4 replaced "the tls flag selects nothing" (ADR 0103 Q5):
+ * `tls: false` on a host that is NOT on `MQTT_PLAINTEXT_HOSTS` is refused, and
+ * is never connected with TLS instead. The listed case is
+ * `discovery-job-plaintext.spec.ts`.
+ */
+export async function assertUnlistedPlainIsNeverConnected(): Promise<void> {
   const { service, probe } = build({
     draft: draftWith({ config: { host: "broker.example.com", port: 1883, tls: false, topic: "t" } }),
   });
   await runFully(service);
-  const c = probe.connects[0];
-  assert(c?.protocol === "mqtts" && c.rejectUnauthorized === true, `tls: false in the draft must still connect mqtts with verification; got ${String(c?.protocol)}`);
+  assert(probe.connects.length === 0, `an unlisted tls:false RTU must never connect; got ${probe.connects.length}`);
 }
 
 export async function assertDefaultTransportHandleHasNoPublish(): Promise<void> {

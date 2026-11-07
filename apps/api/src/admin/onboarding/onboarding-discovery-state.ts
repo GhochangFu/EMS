@@ -34,6 +34,8 @@ export const discoveryProposalSchema = z
     windowSeconds: z.number().int().min(MQTT_DISCOVERY_MIN_WINDOW_SECONDS).max(MQTT_DISCOVERY_MAX_WINDOW_SECONDS),
     host: z.string().min(1).max(MQTT_DISCOVERY_HOST_MAX),
     port: z.number().int().min(1).max(65_535),
+    /** `F4.326` / ADR 0114 R5: the RTU's TLS choice the card shows (`config.tls !== false`). */
+    tls: z.boolean(),
     proposedAt: z.string(),
   })
   .strict();

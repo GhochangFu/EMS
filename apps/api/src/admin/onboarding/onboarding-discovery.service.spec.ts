@@ -40,13 +40,13 @@ const OTHER_DISCOVERY_ID = "44444444-4444-4444-8444-444444444444";
 const CIPHERTEXT = "SECRET-CIPHERTEXT-c";
 const NOW = Date.parse("2026-10-18T12:00:00.000Z");
 
-const BODY = {
+export const BODY = {
   rtuCode: "R1",
   topicPrefix: "Airsprint-1051/Data",
   expected: { host: "broker.example.com", port: 8883 },
 };
 
-function draft(overrides: { rtu?: Record<string, unknown>; secrets?: boolean; discovery?: unknown } = {}) {
+export function draft(overrides: { rtu?: Record<string, unknown>; secrets?: boolean; discovery?: unknown } = {}) {
   return {
     location: { name: "Berhampur", code: "BRH" },
     rtus: [
@@ -91,16 +91,18 @@ type Harness = {
   loaded: number;
 };
 
-type Options = {
+export type Options = {
   draft?: Record<string, unknown>;
   status?: string;
   lockedStatus?: string;
   elsewhere?: unknown[];
   queue?: "configured" | "unconfigured" | "throws";
   notFound?: boolean;
+  /** `MQTT_PLAINTEXT_HOSTS`, parsed (ADR 0114). Omitted: the service is built without it — fail closed. */
+  plaintextHosts?: ReadonlySet<string>;
 };
 
-function harness(options: Options = {}): Harness {
+export function harness(options: Options = {}): Harness {
   const events: string[] = [];
   const writes: Record<string, unknown>[] = [];
   const audits: Harness["audits"] = [];
@@ -163,7 +165,14 @@ function harness(options: Options = {}): Harness {
           ]),
         } as never);
 
-  const service = new OnboardingDiscoveryService(sessions as never, store as never, audit as never, queue, () => NOW);
+  const service = new OnboardingDiscoveryService(
+    sessions as never,
+    store as never,
+    audit as never,
+    queue,
+    () => NOW,
+    options.plaintextHosts,
+  );
   return {
     service,
     events,
@@ -176,11 +185,11 @@ function harness(options: Options = {}): Harness {
   };
 }
 
-function start(h: Harness, body: unknown = BODY) {
+export function start(h: Harness, body: unknown = BODY) {
   return h.service.start(JWT, SESSION_ID, startOnboardingDiscoveryBodySchema.safeParse(body));
 }
 
-async function rejection(promise: Promise<unknown>): Promise<unknown> {
+export async function rejection(promise: Promise<unknown>): Promise<unknown> {
   try {
     await promise;
   } catch (err) {
@@ -245,6 +254,7 @@ export async function aStartEnqueuesTheExactPayload(): Promise<void> {
         discoveryId: id,
         topicPrefix: "Airsprint-1051/Data",
         windowSeconds: 30,
+        tls: true,
       },
       opts: expect.objectContaining({ jobId: `discovery-${String(id)}`, attempts: 1 }),
     },

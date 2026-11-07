@@ -36,11 +36,12 @@ export function turnProposedDiscovery(actionLines: readonly string[]): boolean {
  * parses. Every draft write clears that key, so a stored one is this turn's.
  *
  * **The body binds the broker (security review H3).** It is
- * `{ rtuCode, topicPrefix, windowSeconds, expected: { host, port } }`, parsed
- * by the entry's own schema and hashed whole, so Confirm sends exactly the
- * broker the card showed, and the route answers 409 when the RTU's host or port
- * changed since. The summary shows the host, the port, "TLS: always on", the
- * filter, the window and the shared-user warning.
+ * `{ rtuCode, topicPrefix, windowSeconds, expected: { host, port, tls } }`,
+ * parsed by the entry's own schema and hashed whole, so Confirm sends exactly
+ * the broker the card showed, and the route answers 409 when the RTU's host,
+ * port or TLS choice changed since (ADR 0114 R6). The summary shows the host,
+ * the port, "TLS: on" or the TLS-off sentence, the filter, the window and the
+ * shared-user warning.
  *
  * A conversation holds one open change: an open discovery card with the same
  * body hash is returned; one for another body is stale and discarded first.
@@ -68,7 +69,7 @@ export async function onboardingDiscoveryCards(
     rtuCode: proposal.rtuCode,
     topicPrefix: proposal.topicPrefix,
     windowSeconds: proposal.windowSeconds,
-    expected: { host: proposal.host, port: proposal.port },
+    expected: { host: proposal.host, port: proposal.port, tls: proposal.tls },
   });
   if (!parsed.success) return [];
   const body = parsed.data as Record<string, unknown>;

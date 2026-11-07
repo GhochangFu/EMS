@@ -13,6 +13,7 @@ import {
   assertLifecycleWroteFourAuditRows,
   assertNoFixtureRowsRemain,
   assertRtuWriteLifecycleSurvivesRealRls,
+  assertTheListCarriesEachRtusTls,
 } from "./rtus.service.rls.integration.spec";
 import { jwtFor, primeSeededSubjects } from "../../testing/seeded-subjects";
 
@@ -137,6 +138,13 @@ describe.skipIf(!connectionString)("E7.1b — RtusAdminService under real RLS", 
 
   it("the lifecycle wrote exactly the four master.rtu.* audit rows", async () => {
     await assertLifecycleWroteFourAuditRows(ownerPool, createdIds[0]);
+  });
+
+  it("lists each RTU's TLS choice from its connection row (F4.326, ADR 0114 R4)", async () => {
+    await assertTheListCarriesEachRtusTls(
+      { svc, ownerPool, organizationId, locationId, createdIds },
+      jwt,
+    );
   });
 
   it("removing the fixture takes its audit rows with it", async () => {

@@ -2,6 +2,7 @@ import { commitOnboardingBodySchema } from "../../contracts/onboarding";
 import {
   MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS,
   MQTT_DISCOVERY_SHARED_USER_WARNING,
+  MQTT_PLAIN_TLS_OFF_SENTENCE,
   startOnboardingDiscoveryBodySchema,
 } from "../../contracts/onboarding-discovery";
 import { plural, quoted, uuidParam } from "./summary-text";
@@ -78,8 +79,9 @@ export const ONBOARDING_ENTRIES: readonly CatalogEntry[] = [
    * `onboarding.commit` is; the drawer's Discover button is its wizard and
    * sends the same body without the header. `expected` is the broker the
    * card showed, inside the hash (security review H3): the route answers 409
-   * when the draft's RTU host or port changed since. TLS is always on
-   * (decisions Q5), so the body has no TLS field; the summary states it.
+   * when the draft's RTU host or port changed since. `F4.326` (ADR 0114 R5, R6):
+   * `expected.tls` binds the TLS choice the same way, and the summary prints
+   * `TLS: on.` or the TLS-off sentence from it.
    */
   {
     id: "onboarding.discovery",
@@ -96,14 +98,19 @@ export const ONBOARDING_ENTRIES: readonly CatalogEntry[] = [
     refs: [],
     formulas: [],
     steps: [{ id: "discovery", title: "Discovery", fields: ["rtuCode", "expected", "topicPrefix", "windowSeconds"] }],
-    // F3.24b U4: the server-made card shows the broker (host, port), "TLS: always on", the filter, the
-    // window and the shared-user warning, all from the hashed body — what Confirm sends is what it shows.
+    // F3.24b U4: the server-made card shows the broker (host, port), the TLS choice (F4.326), the filter,
+    // the window and the shared-user warning, all from the hashed body — what Confirm sends is what it shows.
     summary: ({ body, targetName }) => {
-      const b = body as { rtuCode?: unknown; topicPrefix?: unknown; windowSeconds?: unknown; expected?: { host?: unknown; port?: unknown } };
+      const b = body as {
+        rtuCode?: unknown;
+        topicPrefix?: unknown;
+        windowSeconds?: unknown;
+        expected?: { host?: unknown; port?: unknown; tls?: unknown };
+      };
       const seconds = typeof b.windowSeconds === "number" ? b.windowSeconds : MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS;
       return (
         `Listen on the broker of RTU ${quoted(String(b.rtuCode ?? ""))} of the draft for site ${quoted(targetName)}. ` +
-        `Host: ${quoted(String(b.expected?.host ?? ""))}. Port: ${String(b.expected?.port ?? "")}. TLS: always on. ` +
+        `Host: ${quoted(String(b.expected?.host ?? ""))}. Port: ${String(b.expected?.port ?? "")}. ${b.expected?.tls === false ? `${MQTT_PLAIN_TLS_OFF_SENTENCE} ` : "TLS: on. "}` +
         `Topic filter: ${quoted(`${String(b.topicPrefix ?? "")}/#`)}. Window: ${seconds} s. ${MQTT_DISCOVERY_SHARED_USER_WARNING}`
       );
     },
