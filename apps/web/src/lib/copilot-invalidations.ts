@@ -108,6 +108,8 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "dashboardTemplate.instantiate": [TEMPLATES, TEMPLATE, DASHBOARDS, ASSET_GROUPS],
   "dashboardTemplate.importStock": [TEMPLATES],
   "dashboardTemplate.applyToSites": [TEMPLATES, TEMPLATE, DASHBOARDS, ASSET_GROUPS],
+  // `F4.320` PR 2: each older copy is deleted and made again (a new dashboard id per site).
+  "dashboardTemplate.replaceSiteLayouts": [TEMPLATES, TEMPLATE, DASHBOARDS, ASSET_GROUPS],
   "calcParameter.create": [CALC_PARAMETERS],
   "calcParameter.update": [CALC_PARAMETERS],
   "calcOverride.set": [ASSET_CALC_POINTS],
@@ -156,6 +158,8 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "location.controlRoomView.set": [LOCATIONS, SITE_VIEW],
   // The copy makes a dashboard, possibly asset groups, and sets the site's view to the copy.
   "location.siteLayout.make": [SITE_VIEW, LOCATIONS, DASHBOARDS, ASSET_GROUPS],
+  // `F4.320` PR 2: Replace deletes the copy and makes it again; the view row points at the new id.
+  "location.siteLayout.replace": [SITE_VIEW, LOCATIONS, DASHBOARDS, ASSET_GROUPS],
   // `F3.86` PR 3c — `["admin","asset-groups"]` is the prefix of both the
   // group list and a group's members (`api/admin/asset-groups.ts`).
   "assetGroup.create": [ASSET_GROUPS],
