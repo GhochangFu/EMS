@@ -6,6 +6,7 @@ import {
   runCredentialKeyUnsetTests,
   runCredentialKeyVersionZeroRefusedTests,
   runHostConfigTests,
+  runMqttPlaintextHostsConfigTests,
 } from "./config.spec.js";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -28,5 +29,9 @@ describe("host config", () => {
 
   it("refuses to boot on a previous key that is not 32 bytes (Amendment 1)", () => {
     runCredentialKeyShortPreviousRefusedTests();
+  });
+
+  it("parses MQTT_PLAINTEXT_HOSTS and refuses to boot on a bad entry (ADR 0114)", () => {
+    runMqttPlaintextHostsConfigTests();
   });
 });

@@ -366,6 +366,10 @@ services:
       # unset, and the empty default keeps it closed; `${…:-true}` here
       # defaulted the flag OPEN for exactly that deployer.
       OBJECT_STORAGE_ALLOW_INSECURE: "${OBJECT_STORAGE_ALLOW_INSECURE:-}"
+      # ADR 0114 (`F4.326`): broker hosts an MQTT RTU with `tls: false` may reach
+      # without TLS. Empty = none (the default). Set the SAME value on api, worker
+      # and ingest — `tests/adr-0114-plaintext-hosts-invariants.test.ts` holds this.
+      MQTT_PLAINTEXT_HOSTS: ${MQTT_PLAINTEXT_HOSTS:-}
     ports:
       - "4000:4000"
     depends_on:
@@ -548,6 +552,10 @@ services:
       OBJECT_STORAGE_REGION: us-east-1
       OBJECT_STORAGE_FORCE_PATH_STYLE: "true"
       OBJECT_STORAGE_ALLOW_INSECURE: "${OBJECT_STORAGE_ALLOW_INSECURE:-}"
+      # ADR 0114 (`F4.326`): broker hosts an MQTT RTU with `tls: false` may reach
+      # without TLS. Empty = none (the default). Set the SAME value on api, worker
+      # and ingest — `tests/adr-0114-plaintext-hosts-invariants.test.ts` holds this.
+      MQTT_PLAINTEXT_HOSTS: ${MQTT_PLAINTEXT_HOSTS:-}
     ports:
       - "4100:4100"
     depends_on:
@@ -660,6 +668,10 @@ services:
       # writable layer would not survive a container replace — the named
       # volume below is what makes the disk buffer outlive `up`/`down`.
       INGEST_BUFFER_DIR: /var/lib/bms-ingest
+      # ADR 0114 (`F4.326`): broker hosts an MQTT RTU with `tls: false` may reach
+      # without TLS. Empty = none (the default). Set the SAME value on api, worker
+      # and ingest — `tests/adr-0114-plaintext-hosts-invariants.test.ts` holds this.
+      MQTT_PLAINTEXT_HOSTS: ${MQTT_PLAINTEXT_HOSTS:-}
     # No `command:` — ADR 0016 §6 commit 4 pointed `pnpm start` at
     # `dist/main.js`, so the image's own `CMD` is the host. The override that
     # carried the 2026-08-06 cutover is gone with the entry point it replaced,

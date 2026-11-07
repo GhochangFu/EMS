@@ -62,7 +62,7 @@ export function assertTheDraftSchemaChecksEveryPresentField(): void {
   expect(issuePaths(mqttDraftConfigSchema, { mqttTopic: "a/+" })).toEqual(["mqttTopic"]);
 }
 
-/** S7 — the guided MQTT add's empty topic and its draft-only `tls` key pass, and `tls` is kept. */
+/** S7 — the guided MQTT add's empty topic and its `tls` key (a real config field since ADR 0114) pass, and `tls` is kept. */
 export function assertTheDraftSchemaKeepsAnEmptyTopicAndDraftOnlyKeys(): void {
   const result = mqttDraftConfigSchema.safeParse({ topic: "", tls: true, host: "h", port: 8883 });
   expect(result.success).toBe(true);

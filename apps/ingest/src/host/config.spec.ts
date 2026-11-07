@@ -515,3 +515,34 @@ export function runCredentialKeyShortPreviousRefusedTests(): void {
       `with the length rule deleted: ${messageOf(err)}`,
   );
 }
+
+/**
+ * `F4.326` / ADR 0114 decision 1 — `MQTT_PLAINTEXT_HOSTS` is parsed here, the
+ * host's one `process.env` reader, with the shared parser.
+ *
+ * Unset is the empty set (today's behaviour); a listed value is trimmed and
+ * lower-cased; a bad entry escapes `readHostConfig` so the host refuses to
+ * start, with a message that names the entry's position and not its text.
+ * Reddens if the parse is wrapped in a swallowing `try/catch`.
+ */
+export function runMqttPlaintextHostsConfigTests(): void {
+  assert(
+    readHostConfig({ ...BASE }).mqttPlaintextHosts.size === 0,
+    "an unset MQTT_PLAINTEXT_HOSTS allows no host to connect plain",
+  );
+  const listed = readHostConfig({ ...BASE, MQTT_PLAINTEXT_HOSTS: " Broker.Example , b.example" });
+  assert(
+    [...listed.mqttPlaintextHosts].sort().join(",") === "b.example,broker.example",
+    `the list is trimmed and lower-cased, got ${[...listed.mqttPlaintextHosts].join(",")}`,
+  );
+  const err = thrownBy(
+    () => readHostConfig({ ...BASE, MQTT_PLAINTEXT_HOSTS: "ok.example,secret.example:1883" }),
+    "a bad MQTT_PLAINTEXT_HOSTS entry",
+  );
+  assert(nameOf(err) === "MqttPlaintextHostsConfigError", `wrong error: ${nameOf(err)}`);
+  assert(
+    messageOf(err) === "MQTT_PLAINTEXT_HOSTS entry 2 is not a host name",
+    `the refusal names the position: ${messageOf(err)}`,
+  );
+  assert(!messageOf(err).includes("secret.example"), "the refusal never echoes the entry");
+}

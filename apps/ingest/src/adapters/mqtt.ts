@@ -57,7 +57,8 @@ export type MqttClientHandle = {
 export type MqttConnectOptions = {
   username?: string;
   password?: string;
-  rejectUnauthorized: boolean;
+  /** Absent on a plain `mqtt://` connection (ADR 0114 decision 3). */
+  rejectUnauthorized?: boolean;
   reconnectPeriod: number;
 };
 
@@ -151,6 +152,8 @@ export function createMqttAdapter(
   let lastSampleAt: Date | undefined;
   /** Set by `disconnect()`. Guards rule 8: never emit after disconnect. */
   let closed = false;
+  /** ADR 0114 decision 3: the plaintext warning is logged once per adapter instance (plan ruling 12). */
+  let plaintextWarned = false;
 
   /**
    * `devId → { rtuCode, sourceKeys }`, so a message is routed without rescanning
@@ -269,7 +272,20 @@ export function createMqttAdapter(
         }
       }
 
-      const url = `mqtts://${ctx.config.host}:${ctx.config.port}`;
+      // ADR 0114 decision 3: `mqtt://` only for the literal `tls: false`. The
+      // host has already refused a plain RTU whose broker is not on
+      // `MQTT_PLAINTEXT_HOSTS`, so reaching here with `false` means allowed.
+      const plain = ctx.config.tls === false;
+      const url = `${plain ? "mqtt" : "mqtts"}://${ctx.config.host}:${ctx.config.port}`;
+      if (plain && !plaintextWarned) {
+        plaintextWarned = true;
+        // Host and port only — never the username, the password or a payload
+        // (AGENTS.md §9.6). The credentials below cross this connection in clear.
+        ctx.logger.warn("mqtt endpoint is plaintext", {
+          host: ctx.config.host,
+          port: ctx.config.port,
+        });
+      }
       const handle = transport.connect(url, {
         ...(ctx.credentials.username === undefined
           ? {}
@@ -277,7 +293,7 @@ export function createMqttAdapter(
         ...(ctx.credentials.password === undefined
           ? {}
           : { password: ctx.credentials.password }),
-        rejectUnauthorized: ctx.config.rejectUnauthorized,
+        ...(plain ? {} : { rejectUnauthorized: ctx.config.rejectUnauthorized }),
         // **The library's own reconnect is switched off.** ADR 0016 §5 gives
         // reconnect backoff to the host — exponential, base 1 s, cap 60 s, ±20%
         // jitter — and an adapter owns no timer (rule 4). The ADR 0007 pilot set
@@ -383,9 +399,16 @@ export const mqttAdapterFactory: IngestAdapterFactory<MqttConfig, MqttDevice> = 
    * One broker connection serves every RTU on it — which is what `index.js`
    * does today with a single `mqtt.connect()` and a single `on("message")`,
    * routing by `dev_id` inside the handler.
+   *
+   * ADR 0114 / plan R1: a TLS endpoint keeps `host:port`, so the disk-buffer
+   * directories and health keys of the existing fleet do not move; only a
+   * plain endpoint is keyed `mqtt://host:port`, so a TLS RTU and a plain RTU
+   * on one host never share a connection.
    */
   endpointKey(config) {
-    return `${config.host}:${config.port}`;
+    return config.tls === false
+      ? `mqtt://${config.host}:${config.port}`
+      : `${config.host}:${config.port}`;
   },
   /** MQTT cannot browse: there is no way to enumerate topics a device has not published on. */
   create() {
