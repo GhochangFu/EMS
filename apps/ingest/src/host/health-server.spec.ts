@@ -53,6 +53,7 @@ function endpoint(overrides: Partial<SupervisorHealth> = {}): SupervisorHealth {
 function snapshot(overrides: Partial<HealthSnapshot> = {}): HealthSnapshot {
   return {
     endpoints: [endpoint()],
+    stopped: [],
     skipped: [],
     startedAt: STARTED_AT,
     staleAfterMs: STALE_AFTER_MS,
@@ -889,5 +890,55 @@ export function runSkippedDetailEscapeTests(): void {
   assert(
     records(body).filter((l) => l.startsWith("ingest-host ")).length === 1,
     `the detail forges no header:\n${body}`,
+  );
+}
+
+/**
+ * `F4.330` / ADR 0115 decision 7, plan R7: a stopped endpoint that still holds
+ * a backlog is named, in samples, after the `endpoint` lines and before
+ * `stale`. It is information, not a fault: the verdict does not move.
+ */
+export function runStoppedLinePositionTests(): void {
+  const withStale = snapshot({
+    endpoints: [endpoint({ devices: [device("RTU-1"), device("RTU-9", { lastSampleAt: STARTED_AT })] })],
+    stopped: [{ protocol: "mqtt", endpointKey: "shapoorji.thinkiot.co.in:8883", buffered: 7 }],
+  });
+  const lines = renderHealth(withStale, NOW).trimEnd().split("\n");
+  const stoppedAt = lines.indexOf("stopped protocol=mqtt key=shapoorji.thinkiot.co.in:8883 buffered=7");
+  assert(stoppedAt !== -1, `the stopped line is missing or misformatted:\n${lines.join("\n")}`);
+  const lastEndpoint = Math.max(...lines.map((l, i) => (l.startsWith("endpoint ") ? i : -1)));
+  const firstStale = lines.findIndex((l) => l.startsWith("stale "));
+  assert(firstStale !== -1, "the fixture must render a stale line to order against");
+  assert(
+    lastEndpoint < stoppedAt && stoppedAt < firstStale,
+    `the stopped line belongs between the endpoint lines and the stale lines:\n${lines.join("\n")}`,
+  );
+}
+
+export function runStoppedKeyEscapeTests(): void {
+  const encoded = renderHealth(
+    snapshot({ stopped: [{ protocol: "mqtt", endpointKey: "a b\ningest-host ok", buffered: 1 }] }),
+    NOW,
+  );
+  assert(
+    encoded.includes("stopped protocol=mqtt key=a%20b%0Aingest-host%20ok buffered=1"),
+    `the stopped key must be percent-encoded:\n${encoded}`,
+  );
+  assert(!/^ingest-host ok/m.test(encoded.split("\n").slice(1).join("\n")), "a stopped key forged a header");
+}
+
+export function runNoStoppedLineTests(): void {
+  const none = renderHealth(snapshot(), NOW);
+  assert(!/^stopped /m.test(none), `an empty stopped list renders no line:\n${none}`);
+}
+
+export function runStoppedVerdictTests(): void {
+  const backlogOnly = renderHealth(
+    snapshot({ stopped: [{ protocol: "mqtt", endpointKey: "b:1", buffered: 7 }] }),
+    NOW,
+  );
+  assert(
+    backlogOnly.startsWith("ingest-host ok "),
+    `a stopped backlog does not degrade the verdict:\n${backlogOnly}`,
   );
 }

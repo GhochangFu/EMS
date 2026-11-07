@@ -283,3 +283,95 @@ export async function assertKeyVersionArrivesAsAnInteger(pool: pg.Pool): Promise
     client.release();
   }
 }
+
+/** An ingest-bound RTU and its own organization — the RTU's, not the asset's. */
+const ORGANIZATION_RTU_QUERY = `
+  SELECT r.id AS rtu_id, r.organization_id
+    FROM bms.rtus r
+    INNER JOIN bms.asset_points ap
+            ON ap.rtu_id = r.id
+           AND ap.active = true
+           AND ap.source_kind = 'measured'
+   WHERE r.ingest_enabled = true
+   ORDER BY r.created_at, r.id
+   LIMIT 1
+`;
+
+/**
+ * `F4.330` / ADR 0115 decision 5 — every row carries its organization's code
+ * and switch, typed as `planEndpoints` reads them. `pg` returns `bool` as a JS
+ * `boolean`; a string `"false"` would be truthy and the switch would never bite.
+ */
+export async function assertEveryRowCarriesTheOrganizationSwitch(pool: pg.Pool): Promise<void> {
+  const rows = await bindingRows(pool);
+  expect(rows.length, "no bindings came back — the organization join dropped every row").toBeGreaterThan(0);
+  for (const row of rows) {
+    expect(
+      typeof row.organization_code,
+      `organization_code came back as ${typeof row.organization_code}`,
+    ).toBe("string");
+    expect(
+      typeof row.organization_ingest_enabled,
+      `organization_ingest_enabled came back as ${typeof row.organization_ingest_enabled} ` +
+        `(${String(row.organization_ingest_enabled)}); planEndpoints tests it for truthiness`,
+    ).toBe("boolean");
+  }
+}
+
+/**
+ * Switching the organization off is **selected, not filtered**: the RTU's rows
+ * stay in the result reading `false`, so the host can report the skip. Inside
+ * `BEGIN … ROLLBACK` on one client, like the functions above.
+ */
+export async function assertTheOrganizationSwitchIsSelectedNotFiltered(pool: pg.Pool): Promise<void> {
+  const client = await pool.connect();
+  try {
+    const { rows: candidates } = await client.query<{ rtu_id: string; organization_id: string }>(
+      ORGANIZATION_RTU_QUERY,
+    );
+    expect(candidates.length, "no ingest-bound RTU to switch the organization of").toBe(1);
+    const { rtu_id: rtuId, organization_id: organizationId } = candidates[0];
+
+    const original = (await bindingRows(client))
+      .filter((r) => r.rtu_id === rtuId)
+      .map((r) => r.organization_ingest_enabled);
+
+    await client.query("BEGIN");
+    try {
+      // Switched on first, inside the transaction, so the claim does not depend
+      // on what an operator or a sibling suite left in the database.
+      await client.query("UPDATE bms.organizations SET ingest_enabled = true WHERE id = $1", [
+        organizationId,
+      ]);
+      const baseline = await bindingRows(client);
+      const before = baseline.filter((r) => r.rtu_id === rtuId);
+      expect(before.length, "the chosen RTU is missing from the binding query").toBeGreaterThan(0);
+      expect(before.every((r) => r.organization_ingest_enabled === true)).toBe(true);
+
+      await client.query("UPDATE bms.organizations SET ingest_enabled = false WHERE id = $1", [
+        organizationId,
+      ]);
+      const switchedOff = await bindingRows(client);
+      expect(
+        switchedOff.length,
+        "switching the organization off changed the row count — the SQL is filtering on it, " +
+          "so the skip would never be reported",
+      ).toBe(baseline.length);
+      const after = switchedOff.filter((r) => r.rtu_id === rtuId);
+      expect(after.length).toBe(before.length);
+      expect(
+        after.every((r) => r.organization_ingest_enabled === false),
+        "the switched-off organization's rows must read false",
+      ).toBe(true);
+    } finally {
+      await client.query("ROLLBACK");
+    }
+
+    const restored = (await bindingRows(client))
+      .filter((r) => r.rtu_id === rtuId)
+      .map((r) => r.organization_ingest_enabled);
+    expect(restored, "the fixture must leave nothing behind").toEqual(original);
+  } finally {
+    client.release();
+  }
+}

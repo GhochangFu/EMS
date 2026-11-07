@@ -542,9 +542,9 @@ const DISCOVERY_CARD: CopilotPendingChangeDto = {
   catalogId: "onboarding.discovery",
   method: "POST",
   path: `/api/v1/admin/onboarding/sessions/${SESSION}/discovery`,
-  body: { rtuCode: "RTU-1", topicPrefix: "Airsprint-1051/Data", windowSeconds: 60, expected: { host: "phe.thinkiot.co.in", port: 8883 } },
+  body: { rtuCode: "RTU-1", topicPrefix: "Airsprint-1051/Data", windowSeconds: 60, expected: { host: "phe.thinkiot.co.in", port: 8883, tls: true } },
   summary:
-    'Listen on the broker of RTU "RTU-1" of the draft for site "Plant 4". Host: "phe.thinkiot.co.in". Port: 8883. TLS: always on. ' +
+    'Listen on the broker of RTU "RTU-1" of the draft for site "Plant 4". Host: "phe.thinkiot.co.in". Port: 8883. TLS: on. ' +
     `Topic filter: "Airsprint-1051/Data/#". Window: 60 s. ${MQTT_DISCOVERY_SHARED_USER_WARNING}`,
   risk: "create",
   proposedAt: "2026-10-12T00:00:00.000Z",

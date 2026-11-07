@@ -86,6 +86,8 @@ export class RtusAdminService {
         rtu: rtus,
         locationName: locations.name,
         organizationCode: organizations.code,
+        // F4.330 (ADR 0115 decision 4): the owning organization's ingest switch.
+        organizationIngestEnabled: organizations.ingestEnabled,
         connectionProtocol: rtuConnectionConfigs.protocol,
         connectionConfig: rtuConnectionConfigs.config,
       })
@@ -561,6 +563,8 @@ export class RtusAdminService {
         rtu: rtus,
         locationName: locations.name,
         organizationCode: organizations.code,
+        // F4.330 (ADR 0115 decision 4): the owning organization's ingest switch.
+        organizationIngestEnabled: organizations.ingestEnabled,
         connectionProtocol: rtuConnectionConfigs.protocol,
         connectionConfig: rtuConnectionConfigs.config,
       })
@@ -580,6 +584,7 @@ export class RtusAdminService {
     rtu: typeof rtus.$inferSelect;
     locationName: string;
     organizationCode: string;
+    organizationIngestEnabled: boolean;
     connectionProtocol: string | null;
     connectionConfig: unknown;
   }): AdminRtuDto {
@@ -599,6 +604,7 @@ export class RtusAdminService {
       stationCode: rtu.stationCode,
       stationName: rtu.stationName,
       ingestEnabled: rtu.ingestEnabled,
+      organizationIngestEnabled: row.organizationIngestEnabled,
       active: rtu.active,
       meta: (rtu.meta as Record<string, unknown> | null) ?? null,
       createdAt: rtu.createdAt.toISOString(),

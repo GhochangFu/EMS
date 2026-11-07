@@ -4,6 +4,7 @@ import type { OnboardingSessionDto, StartOnboardingDiscoveryBody, StartOnboardin
 import {
   MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS,
   MQTT_DISCOVERY_SHARED_USER_WARNING,
+  MQTT_PLAIN_TLS_OFF_SENTENCE,
 } from "@bms/shared/contracts";
 import {
   type CatalogEntry,
@@ -29,7 +30,14 @@ export const ONBOARDING_DISCOVERY_CONFLICT =
   "A discovery is already running on this draft, or the RTU's broker changed. Review the draft, then try again.";
 
 /** The draft RTU whose broker the wizard listens on. */
-export type OnboardingDiscoveryRtu = { code: string; host: string; port: number; topic?: string | null };
+export type OnboardingDiscoveryRtu = {
+  code: string;
+  host: string;
+  port: number;
+  /** `F4.326` (ADR 0114): `false` only for the draft's literal `tls: false`. */
+  tls: boolean;
+  topic?: string | null;
+};
 
 /** The saved topic up to its last "/" (`Airsprint-1051/Data/1051` → `Airsprint-1051/Data`); the topic itself when it has none. */
 export function defaultDiscoveryTopicPrefix(topic: string | null | undefined): string {
@@ -51,8 +59,9 @@ type OnboardingDiscoveryWizardProps = {
  * `F3.24b` (ADR 0103 decision 2) — the `onboarding.discovery` stepper: the
  * manual twin of the server-made Confirm card. It sends the same body
  * (`rtuCode`, `expected` = the broker shown here, `topicPrefix`,
- * `windowSeconds`) without the `X-Copilot-Change` header. TLS is always on
- * (build decision Q5), so there is no TLS field.
+ * `windowSeconds`) without the `X-Copilot-Change` header. `F4.326` (ADR 0114
+ * R6): `expected.tls` binds the RTU's TLS choice, shown as "TLS: on." or the
+ * TLS-off sentence; it is not editable here.
  */
 export function OnboardingDiscoveryWizard({ session, rtu, onStarted, onRefused, onClose }: OnboardingDiscoveryWizardProps) {
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +70,7 @@ export function OnboardingDiscoveryWizard({ session, rtu, onStarted, onRefused, 
   const entry = wizardEntry("onboarding.discovery");
   const [values, setValues] = useState<Record<string, unknown>>({
     rtuCode: rtu.code,
-    expected: { host: rtu.host, port: rtu.port },
+    expected: { host: rtu.host, port: rtu.port, tls: rtu.tls },
     topicPrefix: defaultDiscoveryTopicPrefix(rtu.topic),
     windowSeconds: MQTT_DISCOVERY_DEFAULT_WINDOW_SECONDS,
   });
@@ -90,7 +99,7 @@ export function OnboardingDiscoveryWizard({ session, rtu, onStarted, onRefused, 
           renderStep={() => (
             <div className="space-y-2 text-xs">
               <p>
-                Broker: {rtu.host}:{rtu.port}. TLS: always on.
+                Broker: {rtu.host}:{rtu.port}. {rtu.tls ? "TLS: on." : MQTT_PLAIN_TLS_OFF_SENTENCE}
               </p>
               <label className="block">
                 Topic prefix

@@ -69,6 +69,13 @@ export type BindingRow = {
    * `keyForVersion` refuses anything that is not one.
    */
   readonly key_version: number | null;
+  /** `organizations.code` of the RTU's organization — the skip detail (ADR 0115 decision 5). */
+  readonly organization_code: string;
+  /**
+   * `organizations.ingest_enabled` (ADR 0115 decision 1). Selected, not
+   * filtered: `planEndpoints` turns `false` into a named skip.
+   */
+  readonly organization_ingest_enabled: boolean;
 };
 
 /**
@@ -109,6 +116,15 @@ export type BindingRow = {
  * `template_id`, and an inner join would silently unbind every one of them —
  * including all 105 seeded PHE bindings, which is what
  * `bindings.integration.spec.ts`'s row count asserts.
+ *
+ * ## The organization switch (ADR 0115 decision 5)
+ *
+ * `bms.organizations` is joined so each row carries its organization's code and
+ * `ingest_enabled`. It is an `INNER JOIN` because `rtus.organization_id` is
+ * `NOT NULL` (migration `0047`), so it drops nothing. The organization switch is
+ * **selected, never filtered**: `planEndpoints` skips a switched-off
+ * organization's RTUs as `organization-ingest-disabled`, so the health body says
+ * why each one is missing. Only the RTU's own box stays in the `WHERE`.
  */
 export const BINDING_QUERY = `
   SELECT
@@ -130,8 +146,11 @@ export const BINDING_QUERY = `
     c.config AS connection_config,
     c.credentials_ciphertext,
     c.credentials_iv,
-    c.key_version
+    c.key_version,
+    o.code AS organization_code,
+    o.ingest_enabled AS organization_ingest_enabled
   FROM bms.rtus r
+  INNER JOIN bms.organizations o ON o.id = r.organization_id
   INNER JOIN bms.asset_points ap
           ON ap.rtu_id = r.id
          AND ap.active = true
@@ -395,6 +414,21 @@ export function planEndpoints(rows: readonly BindingRow[], options: PlanOptions)
 
   for (const [rtuId, rtuRows] of byRtu) {
     const head = rtuRows[0];
+
+    // ADR 0115 decisions 2 and 5: an RTU is ingested only when its own box *and*
+    // its organization's switch are on. Decided **first** (plan R4), so a
+    // switched-off organization's RTU with a broken config reports the one
+    // reason the operator can act on. The detail is the organization code,
+    // `^[A-Z0-9_-]+$` by the API's schema, so it carries nothing secret.
+    if (!head.organization_ingest_enabled) {
+      skipped.push({
+        rtuId,
+        rtuCode: head.rtu_code,
+        reason: "organization-ingest-disabled",
+        detail: head.organization_code,
+      });
+      continue;
+    }
 
     // `protocol := rtu_connection_configs.protocol ?? rtus.source_type` (§3).
     // `source_type` defaults to 'catalog', which is not an ingest protocol —

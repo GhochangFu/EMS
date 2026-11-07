@@ -188,3 +188,38 @@ None.
   recoverable from this platform.
 - **AGENTS.md:** no §6 item moves. A later `chore(agents):` sweep may index
   this ADR (§10.1); nothing in AGENTS.md is wrong until then.
+
+## Amendment 1 — 2026-11-07
+
+Recorded during the `F4.330` PR 2 review. The decisions above are not edited;
+this section corrects and extends them.
+
+1. **Owner ruling on the stopped endpoint's backlog (decision 7).** Given in
+   chat on 2026-11-07, after the review found two gaps:
+   - **Fixed — visibility after a restart.** The health body's `stopped` list
+     was built from the reloads of the running process only, so after a host
+     restart the backlog of an endpoint the boot plan does not start (an
+     organization still switched off) was invisible until the bounds swept it.
+     The host now seeds that list at boot from every endpoint the disk-buffer
+     start-up scan found holding samples (`DiskBufferStore.backlog()`); one the
+     boot plan starts leaves the list as it starts.
+   - **Documented, not changed — loss on a shared broker.** When a switched-off
+     organization's RTUs share a broker with another organization's, the
+     reload is a `replace`, not a `stop`. The new supervisor replays the old
+     segments through the same disk-buffer handle against the new point index,
+     the switched-off organization's samples resolve as `unknownDevice`, and
+     the segment is committed and deleted. Decision 7's "keep on disk; replay
+     when that endpoint next starts" therefore holds only for an endpoint that
+     is stopped outright. `docs/ingest-host.md` *Known limits* says so.
+2. **Correction — the database role.** The *Context* and decision 1 say the
+   ingest host connects as `bms_owner`. It connects as **`bms_fleet`**
+   (`docker-compose.yml`, the `ingest` service's `DATABASE_URL`). `0039`
+   grants `bms_fleet` `SELECT, INSERT, UPDATE, DELETE` on every `bms` table and `bms.organizations`
+   has no row-level security, so the conclusion — no grant or policy change —
+   stands (plan §2).
+3. **The health `stopped` line counts samples, not bytes.** Decision 7 left the
+   line format to the drafter and spoke of "buffered bytes". The owner answered
+   plan §9 Q1 for samples: `stopped protocol=<p> key=<endpointKey>
+   buffered=<n>`, with `n` in samples, the same unit as every other
+   `buffered=` on the body, because `DiskBufferHandle` exposes only the sample
+   gauge.

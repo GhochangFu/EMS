@@ -276,6 +276,7 @@
     "tests/f4.317-organization-control-room-views-schema.integration.test.ts",
     "tests/f4.319-pump-station-roles-schema.test.ts",
     "tests/f4.319-pump-station-roles.integration.test.ts",
-    "tests/f4.319-pump-station-site-move.integration.test.ts"
+    "tests/f4.319-pump-station-site-move.integration.test.ts",
+    "tests/f4.330-organization-ingest-enabled-schema.test.ts"
   ]
 }
