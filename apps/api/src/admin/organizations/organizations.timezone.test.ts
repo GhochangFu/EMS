@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   aRegionZonePasses,
   anInvalidZoneIsRefused,
+  patchRefusesTheIngestSwitch,
   theDtoContractRequiresTimezone,
   theKeyIsOptional,
   utcPasses,
@@ -28,5 +29,9 @@ describe("F3.85 organizations.timezone — request schemas and DTO contract", ()
 
   it("Z5 the shared DTO contract requires timezone", () => {
     theDtoContractRequiresTimezone();
+  });
+
+  it("Z6 PATCH refuses ingestEnabled — the switch has its own route (F4.330)", () => {
+    patchRefusesTheIngestSwitch();
   });
 });

@@ -39,6 +39,7 @@ export function runTheOrganizationDtoRequiresAProfile(): void {
     active: true,
     currency: "INR",
     timezone: "UTC",
+    ingestEnabled: true,
     meta: null,
     createdAt: "2026-11-05T00:00:00.000Z",
   };
