@@ -1,4 +1,4 @@
-import type { TrendStripRange, TrendStripWidgetConfig } from "@bms/shared";
+import type { TrendStripPointStyle, TrendStripRange, TrendStripWidgetConfig } from "@bms/shared";
 
 import { formatInZone, siteZoneOf } from "../components/asset-history/history-format";
 import { assetHistoryPath } from "./asset-history-range";
@@ -57,6 +57,67 @@ export function sparklinePolylines(
   return lines;
 }
 
+/**
+ * `F4.323` PR 3 (ADR 0108 Amendment 8) — the `area` style: each run of
+ * {@link sparklinePolylines} closed down to the bottom edge, as a polygon's `points`. A `null`
+ * still breaks the run, so a gap shows in the fill as in the line.
+ */
+export function sparklineAreas(buckets: readonly SparklineBucket[], width: number, height: number): string[] {
+  return sparklinePolylines(buckets, width, height).map((line) => {
+    const pairs = line.split(" ");
+    const xOf = (pair: string) => pair.slice(0, pair.indexOf(","));
+    return [`${xOf(pairs[0] ?? "0,0")},${height}`, ...pairs, `${xOf(pairs[pairs.length - 1] ?? "0,0")},${height}`].join(" ");
+  });
+}
+
+/** One bar of the `bar` style, in the sparkline's own box. */
+export interface SparklineBar {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/**
+ * `F4.323` PR 3 — the `bar` style: one bar per non-`null` bucket, in that bucket's slot (80 % of
+ * it, centred), drawn from the zero line toward its value — up for a positive value, down for a
+ * negative one. The box spans `min(0, lowest)` to `max(0, highest)`. Every non-`null` bucket is
+ * at least 1 px tall, so a zero or a constant series still reads as data, never as a gap.
+ */
+export function sparklineBars(buckets: readonly SparklineBucket[], width: number, height: number): SparklineBar[] {
+  const values = buckets.map((b) => b.v).filter((v): v is number => v !== null && Number.isFinite(v));
+  if (values.length === 0) return [];
+  const base = Math.min(0, ...values);
+  const span = Math.max(0, ...values) - base;
+  const yOf = (v: number) => (span === 0 ? height : height - ((v - base) / span) * height);
+  const zeroY = yOf(0);
+  const slot = width / buckets.length;
+  const round = (n: number) => Math.round(n * 100) / 100;
+  const bars: SparklineBar[] = [];
+  buckets.forEach((bucket, i) => {
+    const v = bucket.v;
+    if (v === null || !Number.isFinite(v)) return;
+    const top = Math.min(zeroY, yOf(v));
+    const barHeight = Math.max(1, Math.abs(zeroY - yOf(v)));
+    const y = Math.min(top, height - barHeight);
+    bars.push({ x: round(i * slot + slot * 0.1), y: round(y), width: round(slot * 0.8), height: round(barHeight) });
+  });
+  return bars;
+}
+
+/**
+ * `F4.323` PR 3 — which layers each style draws. A keyed table, not string compares, so the
+ * style names are stated here once (the `tests/f3.1c-widget-series-mapping.test.ts` scan reads
+ * quoted `line`/`bar`/`area` as an ECharts mapping, which this is not).
+ */
+export const SPARKLINE_LAYERS: Readonly<
+  Record<TrendStripPointStyle, { readonly line: boolean; readonly fill: boolean; readonly bars: boolean }>
+> = {
+  line: { line: true, fill: false, bars: false },
+  area: { line: true, fill: true, bars: false },
+  bar: { line: false, fill: false, bars: true },
+};
+
 /** One sparkline's click target: the asset's history page at the strip's range and point. */
 export function historyHref(assetId: string, range: TrendStripRange, code: string): string {
   return `${assetHistoryPath(assetId)}?${new URLSearchParams({ range, points: code })}`;
@@ -93,4 +154,19 @@ export function strokeRoleFor(
   code: string,
 ): RoleName {
   return colors?.[`${domain}:${code}`] ?? "accent";
+}
+
+/** `F4.323` PR 3 — the style a point draws in when the strip names none: today's line. */
+export const DEFAULT_POINT_STYLE: TrendStripPointStyle = "line";
+
+/**
+ * `F4.323` PR 3 (ADR 0108 Amendment 8) — the draw style of one point: the strip's `styles` entry
+ * for `<domain>:<code>`, else `line` (today's look). Keyed here once, as {@link strokeRoleFor} is.
+ */
+export function pointStyleFor(
+  styles: TrendStripWidgetConfig["styles"] | undefined,
+  domain: string,
+  code: string,
+): TrendStripPointStyle {
+  return styles?.[`${domain}:${code}`] ?? DEFAULT_POINT_STYLE;
 }

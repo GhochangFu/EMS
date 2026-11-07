@@ -13,6 +13,7 @@ import {
   cleanupTrendStripWizard,
   draftFinishAppliesRowsAndRequestsNothing,
   theColourSelectWritesTheRole,
+  theStyleSelectWritesTheStyle,
   theDefaultOptionDeletesTheKey,
   theFinishButtonIsBusyWhilePending,
   thePointsStepPreselectsThreePerSegment,
@@ -67,6 +68,10 @@ describe("F4.306 U12 TrendStripWizard", () => {
 
   it("writes the chosen colour role to colors[key]", async () => {
     await theColourSelectWritesTheRole();
+  });
+
+  it("F4.323 PR 3: the style select writes styles[key], and Line stores none", async () => {
+    await theStyleSelectWritesTheStyle();
   });
 
   it("deletes the colour key on Default", async () => {
