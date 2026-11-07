@@ -1,6 +1,7 @@
 import http from "node:http";
 
 import type { SkippedBinding } from "./bindings.js";
+import type { StoppedEndpoint } from "./reconcile.js";
 import type { SupervisorHealth } from "./supervisor.js";
 
 /**
@@ -22,6 +23,12 @@ import type { SupervisorHealth } from "./supervisor.js";
 
 export type HealthSnapshot = {
   readonly endpoints: readonly SupervisorHealth[];
+  /**
+   * Endpoints a reload stopped that still hold samples on disk (ADR 0115
+   * decision 7, plan R7). Rendered, never part of the verdict: the backlog is
+   * kept on purpose and replays when the endpoint next starts.
+   */
+  readonly stopped: readonly StoppedEndpoint[];
   readonly skipped: readonly SkippedBinding[];
   readonly startedAt: Date;
   /** Silence longer than this marks one RTU stale (`F1.7`, `INGEST_STALE_AFTER_MS`). */
@@ -238,6 +245,17 @@ export function renderHealth(snapshot: HealthSnapshot, now: Date): string {
         `written=${endpoint.samplesWritten} writeFailures=${endpoint.writeFailures} ` +
         `buffered=${endpoint.buffered} bufferDropped=${endpoint.bufferDropped} replayed=${endpoint.replayed} ` +
         `lastSample=${endpoint.lastSampleAt?.toISOString() ?? "never"}`,
+    );
+  }
+
+  // One line per endpoint a reload stopped that still holds a backlog (ADR
+  // 0115 decision 7). `buffered=` is samples, like every other one on this
+  // body. Not a fault — the segments are kept on purpose, replay when the key
+  // next starts, and are swept by the 1 h / 256 MiB bounds as ever — so the
+  // header verdict ignores it; it is here so nothing on disk is hidden.
+  for (const stopped of snapshot.stopped) {
+    lines.push(
+      `stopped protocol=${stopped.protocol} key=${token(stopped.endpointKey)} buffered=${stopped.buffered}`,
     );
   }
 

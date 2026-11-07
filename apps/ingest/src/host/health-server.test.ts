@@ -12,6 +12,7 @@ import {
   runSkippedDetailEscapeTests,
   runSkippedRtuEscapeTests,
   runStaleRtuEscapeTests,
+  runStoppedEndpointTests,
 } from "./health-server.spec.js";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -26,6 +27,10 @@ describe("health endpoint", () => {
 
   it("names a dark point on an RTU that is otherwise still talking", () => {
     runDarkPointTests();
+  });
+
+  it("names a stopped endpoint's backlog without degrading the verdict (ADR 0115 decision 7)", () => {
+    runStoppedEndpointTests();
   });
 });
 

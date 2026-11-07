@@ -242,7 +242,7 @@ async function main(): Promise<void> {
   await registry.reload(initial.endpoints);
 
   const health = await startHealthServer(hostConfig.healthPort, () => ({
-    endpoints: registry.health().endpoints,
+    ...registry.health(),
     skipped,
     startedAt,
     staleAfterMs: hostConfig.staleAfterMs,
