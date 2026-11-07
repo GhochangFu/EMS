@@ -290,17 +290,18 @@ export const WIDGET_ICON_PATH: Readonly<Record<WidgetIcon, string>> = {
  * place rather than being restated at each call site.
  *
  * `axis` says what the chart plots against: `time` for the five series
- * kinds, `category` for `compare` (one bar per point) and `none` for `donut`.
+ * kinds, `category` for `compare` (one bar per point), `none` for `donut` and `grid` for
+ * `heatmap` (hour of day × day, from hourly buckets).
  * The last two draw each point's window aggregate, not a series
  * (`chartDrawsWindowValues`). `step` is ECharts' `step` option, set only for
  * the kind that holds a value until the next sample.
  */
 export type ChartSeriesShape = {
   readonly label: string;
-  readonly type: "line" | "bar" | "scatter" | "pie";
+  readonly type: "line" | "bar" | "scatter" | "pie" | "heatmap";
   readonly area: boolean;
   readonly step: "end" | null;
-  readonly axis: "time" | "category" | "none";
+  readonly axis: "time" | "category" | "none" | "grid";
 };
 
 export const CHART_SERIES = {
@@ -311,6 +312,7 @@ export const CHART_SERIES = {
   step: { label: "Steps (on/off)", type: "line", area: false, step: "end", axis: "time" },
   compare: { label: "Compare points", type: "bar", area: false, step: null, axis: "category" },
   donut: { label: "Share (donut)", type: "pie", area: false, step: null, axis: "none" },
+  heatmap: { label: "Daily pattern (hour × day)", type: "heatmap", area: false, step: null, axis: "grid" },
   // `as const satisfies`, not an annotation: each entry keeps its literal `type`, so the
   // hand-written charts that read `CHART_SERIES.line.type` still get `"line"`, and
   // `buildChartOption` narrows by `axis` to the time kinds' cartesian types.
@@ -322,12 +324,19 @@ export const CHART_SERIES = {
  * only, ignores `stacked`, and has no use for "every reading".
  */
 export function chartDrawsWindowValues(kind: ChartSeriesKind): boolean {
-  return CHART_SERIES[kind].axis !== "time";
+  const { axis } = CHART_SERIES[kind];
+  return axis === "category" || axis === "none";
 }
 
-/** `F4.323` — whether the kind has a value axis that `yAxisLabel` can name (a donut has none). */
+/** `F4.323` — whether the kind has a value axis that `yAxisLabel` can name (a donut and a heatmap have none). */
 export function chartHasValueAxis(kind: ChartSeriesKind): boolean {
-  return CHART_SERIES[kind].axis !== "none";
+  const { axis } = CHART_SERIES[kind];
+  return axis === "time" || axis === "category";
+}
+
+/** `F4.323` — whether `stacked` means anything: only for the series over time. */
+export function chartStacks(kind: ChartSeriesKind): boolean {
+  return CHART_SERIES[kind].axis === "time";
 }
 
 /**

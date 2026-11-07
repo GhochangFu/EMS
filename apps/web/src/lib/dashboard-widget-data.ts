@@ -578,6 +578,10 @@ export function widgetDataFor(
         : isStale(freshestSeriesMs(series, nowMs), nowMs),
       stats: lead?.stats ?? null,
       bucketSeconds: lead?.bucketSeconds ?? null,
+      // `F4.323` PR 2 — the zone a heatmap draws its hours in (the asset's site, else its
+      // organization). `undefined` while the read has not answered (nothing is claimed about a
+      // response that has not arrived); `null` only for an answer that carries no zone.
+      timeZone: lead ? (lead.timeZone ?? null) : undefined,
     };
   }
 

@@ -23,6 +23,7 @@ import {
   runTrendStripConfigValuesTests,
   runTrendStripNotTemplateAuthorableTests,
   runTrendStripRangeRequiredTests,
+  runHeatmapFormTests,
   runWindowValueChartFormTests,
 } from "./widget-config-form.spec";
 
@@ -120,4 +121,8 @@ describe("widget config form", () => {
 describe("widget config form — F4.323 window-value charts", () => {
   it("refuses compare/donut without an aggregate and drops the fields they do not read", () =>
     runWindowValueChartFormTests());
+});
+
+describe("widget config form — F4.323 heatmap", () => {
+  it("refuses a heatmap outside 7-30 days or without a function, and caps it at one point", () => runHeatmapFormTests());
 });

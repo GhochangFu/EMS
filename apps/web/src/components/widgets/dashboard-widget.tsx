@@ -60,6 +60,9 @@ export type WidgetData =
       stats?: PointAggregateStats | null;
       /** `F3.35` — the chosen level's bucket width, which the granularity cell reads. */
       bucketSeconds?: number | null;
+      /** `F4.323` PR 2 — the response's IANA zone, which a heatmap draws its hours in; `undefined`
+       * until the read answers, `null` for an answer without one. */
+      timeZone?: string | null;
       /**
        * `E4.2` / ADR 0072 decision 2 — how many of the assets carrying the
        * roll-up's point key had a FRESH sample. Optional, and `null` when the
@@ -175,6 +178,7 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
   const compareValue = scalar?.compareValue ?? null;
   const stats = scalar?.stats ?? null;
   const bucketSeconds = scalar?.bucketSeconds ?? null;
+  const timeZone = scalar?.timeZone;
   const coverage = scalar?.coverage ?? null;
   const currency = scalar?.currency ?? null;
 
@@ -212,6 +216,7 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           now={resolvedNow}
           stats={stats}
           bucketSeconds={bucketSeconds}
+          timeZone={timeZone}
         />
       );
     case "table":

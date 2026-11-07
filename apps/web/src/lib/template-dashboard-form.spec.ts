@@ -417,10 +417,11 @@ export function runChartSeriesMappingTests(): void {
     "Steps (on/off)": "step",
     "Compare points": "compare",
     "Share (donut)": "donut",
+    "Daily pattern (hour × day)": "heatmap",
   };
   assert(
-    CHART_SERIES_OPTIONS.length === 7,
-    `the mapping names exactly seven series — got ${CHART_SERIES_OPTIONS.length}`,
+    CHART_SERIES_OPTIONS.length === 8,
+    `the mapping names exactly eight series — got ${CHART_SERIES_OPTIONS.length}`,
   );
   for (const option of CHART_SERIES_OPTIONS) {
     assert(

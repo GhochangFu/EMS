@@ -4,6 +4,7 @@
  * Amendment 3).
  */
 import {
+  HEATMAP_ONE_POINT_MESSAGE,
   chartSeriesKindSchema,
   widgetToneSchema,
   widgetTypeSchema,
@@ -29,7 +30,10 @@ import {
   blankConfigRow,
   buildChartConfig,
   CHART_VALUE_NEEDED_MESSAGE,
+  HEATMAP_VALUE_NEEDED_MESSAGE,
+  HEATMAP_WINDOW_FORM_MESSAGE,
   chartPlotOptions,
+  chartPointIssues,
   buildGaugeConfig,
   buildActiveAlarmsRailConfig,
   buildMimicConfig,
@@ -491,4 +495,33 @@ export function runWindowValueChartFormTests(): void {
   assert(plot.options.some((o) => o.value === "sum" && o.label === "Total over the window"), "sum reads as a window total");
   const linePlot = chartPlotOptions("line");
   assert(linePlot.label === "Plot" && linePlot.options[0]?.value === "", "a time chart keeps 'Every reading' first");
+}
+
+/** `F4.323` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap's form rules, by the API's messages. */
+export function runHeatmapFormTests(): void {
+  const blank = blankConfigRow();
+  const ok = { ...blank, series: "heatmap" as const, chartAggregate: "avg" as const, windowMinutes: "10080" };
+  const none = widgetConfigErrors(0, 0, { widgetType: "chart", config: ok });
+  assert(none.length === 0, `a 7-day averaged heatmap has no problems — got ${JSON.stringify(none)}`);
+
+  const short = widgetConfigErrors(0, 0, { widgetType: "chart", config: { ...ok, windowMinutes: "1440" } });
+  assert(
+    short.some((p) => p.field === "windowMinutes" && p.message === HEATMAP_WINDOW_FORM_MESSAGE),
+    `a one-day heatmap is refused at windowMinutes — got ${JSON.stringify(short)}`,
+  );
+  const blankWindow = widgetConfigErrors(0, 0, { widgetType: "chart", config: { ...ok, windowMinutes: "" } });
+  assert(blankWindow.some((p) => p.field === "windowMinutes"), "a heatmap has no default window");
+  const noFn = widgetConfigErrors(0, 0, { widgetType: "chart", config: { ...ok, chartAggregate: "" } });
+  assert(
+    noFn.some((p) => p.field === "chartAggregate" && p.message === HEATMAP_VALUE_NEEDED_MESSAGE),
+    "a heatmap needs a function, in its field's words",
+  );
+
+  assert(JSON.stringify(chartPointIssues("heatmap", 2)) === JSON.stringify([HEATMAP_ONE_POINT_MESSAGE]), "two points is one issue");
+  assert(chartPointIssues("heatmap", 1).length === 0 && chartPointIssues("line", 5).length === 0, "one point, or another kind, passes");
+
+  const built = buildChartConfig({ ...ok, stacked: true, yAxisLabel: "kW" });
+  assert(built.stacked === undefined && built.yAxisLabel === undefined, "a heatmap drops stacked and the axis label");
+  assert(built.windowMinutes === 10_080 && built.aggregate === "avg", "a heatmap keeps its window and function");
+  assert(chartPlotOptions("heatmap").label === "Value of each hour", "the plot field names an hour's value");
 }

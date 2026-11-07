@@ -343,8 +343,9 @@ export const sectionTemplateWidgetSchema = z
       "(WIDGET_SOURCE_SHAPES), the source count must be at most the type's own cap " +
       "(WIDGET_SOURCE_CARDINALITY), one catalog entry may not be bound twice on a widget, and a table's config.columns must name only columns its " +
       "bound dataset declares (METRIC_CATALOG), each once. No minimum: an unbound template " +
-      'widget instantiates as "No data bound." (ADR 0049 decision 6). A compare or donut ' +
-      "chart needs config.aggregate (ADR 0047 Amendment 7).",
+      'widget instantiates as "No data bound." (ADR 0049 decision 6). A compare, donut or heatmap ' +
+      "chart needs config.aggregate; a heatmap binds one point over config.windowMinutes 10080 " +
+      "to 43200 (ADR 0047 Amendment 7).",
   );
 
 // ---------------------------------------------------------------------------

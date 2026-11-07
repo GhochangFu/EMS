@@ -2,6 +2,10 @@ import {
   CHART_KINDS_NEEDING_AGGREGATE,
   chartKindAggregateMessage,
   chartKindIssues,
+  HEATMAP_MAX_WINDOW_MINUTES,
+  HEATMAP_MIN_WINDOW_MINUTES,
+  HEATMAP_ONE_POINT_MESSAGE,
+  HEATMAP_WINDOW_MESSAGE,
 } from "./chart-kinds";
 import { templateDashboardWidgetSchema } from "./asset-template-content-writes";
 import { sectionTemplateWidgetSchema } from "./dashboard-templates";
@@ -34,8 +38,8 @@ const chart = (config: Record<string, unknown>, points = [POINT_A]) => ({
 
 export function compareAndDonutNeedAnAggregate(): void {
   assert(
-    JSON.stringify(CHART_KINDS_NEEDING_AGGREGATE) === JSON.stringify(["compare", "donut"]),
-    `compare and donut are the kinds that need an aggregate, got ${JSON.stringify(CHART_KINDS_NEEDING_AGGREGATE)}`,
+    JSON.stringify(CHART_KINDS_NEEDING_AGGREGATE) === JSON.stringify(["compare", "donut", "heatmap"]),
+    `compare, donut and heatmap are the kinds that need an aggregate, got ${JSON.stringify(CHART_KINDS_NEEDING_AGGREGATE)}`,
   );
   for (const series of ["compare", "donut"] as const) {
     const issues = chartKindIssues({ series }, 2);
@@ -130,4 +134,75 @@ export function theSectionTemplatePathRefusesWithTheWidgetKey(): void {
   );
   const ok = sectionTemplateWidgetSchema.safeParse({ ...base, config: { series: "donut", aggregate: "sum" } });
   assert(ok.success === true, `a section template donut with aggregate must parse: ${JSON.stringify(ok.error?.issues)}`);
+}
+
+/**
+ * `F4.323` PR 2 (ADR 0047 Amendment 7 item 5) — the heatmap: exactly one point, an aggregate,
+ * and a window of 7 to 30 days, which is the read ladder's hourly rung exactly.
+ */
+export function theHeatmapRules(): void {
+  assert(HEATMAP_MIN_WINDOW_MINUTES === 10_080 && HEATMAP_MAX_WINDOW_MINUTES === 43_200, "7 to 30 days in minutes");
+  const ok = { series: "heatmap" as const, aggregate: "avg" as const, windowMinutes: 10_080 };
+  assert(chartKindIssues(ok, 1).length === 0, "a 7-day, one-point, averaged heatmap passes");
+  assert(chartKindIssues({ ...ok, windowMinutes: 43_200 }, 1).length === 0, "30 days passes");
+
+  const at = (issues: ReturnType<typeof chartKindIssues>) => issues.map((i) => i.path.join("."));
+  assert(
+    JSON.stringify(at(chartKindIssues({ ...ok, aggregate: undefined }, 1))) === JSON.stringify(["config.aggregate"]),
+    "a heatmap needs an aggregate",
+  );
+  assert(
+    JSON.stringify(at(chartKindIssues(ok, 2))) === JSON.stringify(["points"]) &&
+      chartKindIssues(ok, 2)[0]?.message === HEATMAP_ONE_POINT_MESSAGE,
+    "a second point is refused at points",
+  );
+  for (const windowMinutes of [undefined, 10_079, 43_201, 1_440]) {
+    const issues = chartKindIssues({ ...ok, windowMinutes }, 1);
+    assert(
+      JSON.stringify(at(issues)) === JSON.stringify(["config.windowMinutes"]) && issues[0]?.message === HEATMAP_WINDOW_MESSAGE,
+      `window ${windowMinutes} is refused at config.windowMinutes, got ${JSON.stringify(issues)}`,
+    );
+  }
+  assert(chartKindIssues(ok, 0).length === 0, "zero points is each path's own rule, not the kind's");
+
+  const refused = putDashboardWidgetsBodySchema.safeParse({
+    widgets: [chart({ series: "heatmap", aggregate: "avg", windowMinutes: 4_320 }, [POINT_A, POINT_B])],
+  });
+  const paths = refused.success ? [] : refused.error.issues.map((i) => i.path.join("."));
+  assert(
+    paths.includes("widgets.0.points") && paths.includes("widgets.0.config.windowMinutes"),
+    `PUT :id/widgets refuses both, got ${JSON.stringify(paths)}`,
+  );
+  const accepted = putDashboardWidgetsBodySchema.safeParse({ widgets: [chart(ok)] });
+  assert(accepted.success === true, `a valid heatmap saves: ${JSON.stringify(accepted.error?.issues)}`);
+}
+
+/** The heatmap's point and window rules on the two template paths, beside a positive case each. */
+export function theTemplatePathsRefuseTheHeatmapRules(): void {
+  const ok = { series: "heatmap", aggregate: "avg", windowMinutes: 10_080 };
+  const asset = { gridX: 0, gridY: 0, gridW: 6, gridH: 4, widgetType: "chart" };
+  const assetBad = templateDashboardWidgetSchema.safeParse({ ...asset, pointKeys: ["kw", "kva"], config: { ...ok, windowMinutes: 4_320 } });
+  const assetPaths = assetBad.success ? [] : assetBad.error.issues.map((i) => i.path.join("."));
+  assert(
+    assetPaths.includes("points") && assetPaths.includes("config.windowMinutes"),
+    `the asset template refuses two point keys and a 3-day window, got ${JSON.stringify(assetPaths)}`,
+  );
+  assert(templateDashboardWidgetSchema.safeParse({ ...asset, pointKeys: ["kw"], config: ok }).success, "one key, 7 days, parses");
+
+  const section = { key: "pattern", title: null, gridX: 0, gridY: 0, gridW: 6, gridH: 4, sources: [], widgetType: "chart" };
+  const two = [
+    { assetRoleCode: "meter", pointKey: "kw" },
+    { assetRoleCode: "meter", pointKey: "kva" },
+  ];
+  const sectionBad = sectionTemplateWidgetSchema.safeParse({ ...section, bindings: two, config: { ...ok, windowMinutes: undefined } });
+  const issues = sectionBad.success ? [] : sectionBad.error.issues;
+  assert(
+    issues.some((i) => i.path.join(".") === "points" && i.message === `Widget "pattern": ${HEATMAP_ONE_POINT_MESSAGE}`) &&
+      issues.some((i) => i.path.join(".") === "config.windowMinutes" && i.message === `Widget "pattern": ${HEATMAP_WINDOW_MESSAGE}`),
+    `the section template refuses both, under its key, got ${JSON.stringify(issues)}`,
+  );
+  assert(
+    sectionTemplateWidgetSchema.safeParse({ ...section, bindings: two.slice(0, 1), config: ok }).success,
+    "one binding, 7 days, parses",
+  );
 }

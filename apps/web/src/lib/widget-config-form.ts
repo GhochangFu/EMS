@@ -4,6 +4,8 @@ import {
   MAX_SITE_ALARM_ROWS,
   MAX_WIDGET_WINDOW_MINUTES,
   chartKindIssues,
+  HEATMAP_MAX_WINDOW_MINUTES,
+  HEATMAP_MIN_WINDOW_MINUTES,
   chartSeriesKindSchema,
   gaugeRangeIsOrdered,
   isTemplateAuthorableWidgetType,
@@ -13,7 +15,7 @@ import {
   widgetToneSchema,
   widgetTypeSchema,
 } from "@bms/shared";
-import { CHART_SERIES, WIDGET_CATALOG, chartDrawsWindowValues, chartHasValueAxis } from "./widget-catalog";
+import { CHART_SERIES, WIDGET_CATALOG, chartDrawsWindowValues, chartHasValueAxis, chartStacks } from "./widget-catalog";
 import type {
   ChartSeriesKind,
   DashboardWidgetSpec,
@@ -106,6 +108,23 @@ export const AGGREGATE_FUNCTION_LABELS: Readonly<Record<PointAggregateFunction, 
 /** `F4.323` — the form's plain-word twin of `chartKindAggregateMessage`. */
 export const CHART_VALUE_NEEDED_MESSAGE = "Choose how each point's value is worked out over the window.";
 
+/** `F4.323` PR 2 — the heatmap's twin of `CHART_VALUE_NEEDED_MESSAGE`, matching its field label. */
+export const HEATMAP_VALUE_NEEDED_MESSAGE = "Choose how each hour's value is worked out.";
+
+/** `F4.323` PR 2 — the form's plain-word twin of `HEATMAP_WINDOW_MESSAGE`. */
+export const HEATMAP_WINDOW_FORM_MESSAGE =
+  `A daily pattern needs a window of ${HEATMAP_MIN_WINDOW_MINUTES} to ${HEATMAP_MAX_WINDOW_MINUTES} minutes (7 to 30 days).`;
+
+/**
+ * `F4.323` PR 2 — the per-kind point rule (a heatmap binds one point), for the two forms that
+ * see a widget's points. The message is the API's.
+ */
+export function chartPointIssues(kind: ChartSeriesKind, pointCount: number): string[] {
+  return chartKindIssues({ series: kind, aggregate: "avg", windowMinutes: HEATMAP_MIN_WINDOW_MINUTES }, pointCount)
+    .filter((issue) => issue.path[0] === "points")
+    .map((issue) => issue.message);
+}
+
 /**
  * `F4.323` — the chart's aggregate select, by kind: a time kind plots every reading or a function
  * per bucket; a kind that draws one number per point (`compare`, `donut`) needs a function over
@@ -116,6 +135,15 @@ export function chartPlotOptions(kind: ChartSeriesKind): {
   label: string;
   options: readonly { value: PointAggregateFunction | ""; label: string }[];
 } {
+  if (CHART_SERIES[kind].axis === "grid") {
+    return {
+      label: "Value of each hour",
+      options: [
+        { value: "", label: "Choose a function" },
+        ...AGGREGATE_FUNCTIONS.map((fn) => ({ value: fn, label: `${AGGREGATE_FUNCTION_LABELS[fn]} per hour` })),
+      ],
+    };
+  }
   if (chartDrawsWindowValues(kind)) {
     return {
       label: "Value of each point",
@@ -406,12 +434,18 @@ export function widgetConfigErrors(
     pushWindowProblem(config.windowMinutes, push);
     // `F4.323` (ADR 0047 Amendment 7) — the shared kind rule, read at the form so the author sees
     // it before Save; `chartAggregate` is the field the rule's `config.aggregate` is edited in.
+    // The point count is the builder's own rule (`chartPointIssues`), which sees the points.
     for (const issue of chartKindIssues(
-      { series: config.series, aggregate: config.chartAggregate === "" ? undefined : config.chartAggregate },
+      {
+        series: config.series,
+        aggregate: config.chartAggregate === "" ? undefined : config.chartAggregate,
+        windowMinutes: parseWindowMinutes(config.windowMinutes),
+      },
       0,
     )) {
       // Plain words for the author; `issue.message` is the API's wording for the same rule.
-      if (issue.path.at(-1) === "aggregate") push("chartAggregate", CHART_VALUE_NEEDED_MESSAGE);
+      if (issue.path.at(-1) === "windowMinutes") push("windowMinutes", HEATMAP_WINDOW_FORM_MESSAGE);
+      else push("chartAggregate", CHART_SERIES[config.series].axis === "grid" ? HEATMAP_VALUE_NEEDED_MESSAGE : CHART_VALUE_NEEDED_MESSAGE);
     }
     // Only where the field shows: a hidden label must not block Save with a problem shown nowhere.
     if (chartHasValueAxis(config.series) && config.yAxisLabel.trim().length > MAX_Y_AXIS_LABEL_LENGTH) {
@@ -563,9 +597,9 @@ export function buildChartConfig(config: WidgetConfigRow): ChartConfig {
   if (windowMinutes !== undefined) {
     out.windowMinutes = windowMinutes;
   }
-  // `F4.323` (ADR 0047 Amendment 7 item 6) — a kind that draws one number per point has no
-  // stack, and a donut has no value axis to name, so neither is written for it.
-  if (config.stacked && !chartDrawsWindowValues(config.series)) {
+  // `F4.323` (ADR 0047 Amendment 7 item 6) — only a series over time stacks, and a donut or a
+  // heatmap has no value axis to name, so neither is written for those kinds.
+  if (config.stacked && chartStacks(config.series)) {
     out.stacked = true;
   }
   const yAxisLabel = config.yAxisLabel.trim();
