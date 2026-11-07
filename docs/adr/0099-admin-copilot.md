@@ -2266,3 +2266,75 @@ catalog entries, not excluded routes. The merge of this amendment approves it.
   the build; if it is over its bound, the bound rises by release 4's rule and
   the owner is asked, as in Amendment 13.
 - No migration.
+
+## Amendment 16 — `dashboard.widgets.appendChart` (ADR 0108 Amendment 9, `F4.324`)
+
+**Status: proposed.** Drafted on 2026-11-07 against `main` at `0af1da25`, in the
+same PR as ADR 0108 Amendment 9. The owner ruled on 2026-11-07 (row `F4.324`,
+Q3) that the copilot gets a pin-a-chart action that can use the `F4.323` chart
+kinds. The merge of this amendment approves it. A line marked *(drafter)* is a
+choice the owner may change at review.
+
+### Facts the amendment rests on
+
+- `POST /dashboards/:id/widgets/append` is an **excluded route** today
+  (`EXCLUDED_ROUTES`, `packages/shared/src/copilot/catalog/index.ts`), by ADR
+  0108 Amendment 6 item 5: "a view action; the copilot edits a dashboard through
+  PUT :id/widgets".
+- So the copilot can **already** add a chart of any kind, the new four
+  included, through `dashboard.widgets.replace` (`PUT /dashboards/:id/widgets`,
+  `dashboards.ts`). That entry sends the **whole** widget list: to add one chart
+  the model must restate every other widget, and the card counts what it
+  removes (decision 4.9). One missed widget is one deleted widget.
+- The route has two arms (`appendWidgetBodySchema = z.union([chart, trend])`,
+  `dashboard-widget-append.ts`). ADR 0108 Amendment 9 item 1 gives the chart
+  arm an optional `series` and the shared `chartKindIssues` rule.
+- `tests/f3.85-catalog-coverage.test.ts` refuses a write route on
+  `dashboard-builder.controller.ts` that is neither a catalog entry nor an
+  excluded route; a route moved from one list to the other keeps it covered.
+
+### Decisions
+
+1. **One catalog entry for the chart arm**, beside `dashboard.widgets.replace`
+   in `dashboards.ts`:
+   - `dashboard.widgets.appendChart` — `POST /dashboards/:id/widgets/append`,
+     body **`appendChartWidgetBodySchema`** (the chart arm only), risk
+     **`create`**, not red (it adds one widget and removes nothing), target
+     `{ kind: "dashboard", param: "id" }`, refs `points[].assetId` → `asset`.
+   - Steps: "Chart" (`config.series`, `config.aggregate`,
+     `config.windowMinutes`), "Points" (`points`), "Placement" (`tabKey`,
+     `title`, `gridW`, `gridH`).
+   - No `precondition`: the route appends at the foot of a tab and never
+     overwrites, so it needs no `updatedAt` match.
+2. **The trend arm stays excluded** *(drafter)*. The owner's ruling names a
+   chart; a strip's selection is checked against a site's trend-point lists
+   (ADR 0108 Amendment 7), which the propose step does not read. The coverage
+   test lists a route once, as an entry or as excluded, so the route leaves
+   `EXCLUDED_ROUTES` and becomes this entry; the trend arm's exclusion lives in
+   the entry's body schema (the chart arm only, `.strict()`, so a body naming
+   `widgetType` is refused at propose) and its docblock.
+3. **The card says the kind in the builder's words.** The summary reads "Add a
+   *Share (donut)* chart of 3 points at the foot of the tab Pumps on the
+   dashboard Bilsi." The four `F4.323` labels and the original four move to
+   `packages/shared` as one record (`CHART_KIND_LABELS`) *(drafter)*;
+   `CHART_SERIES` (`apps/web/src/lib/widget-catalog.ts`) reads its `label` from
+   it, so the dropdown and the card cannot drift, and the ECharts mapping stays
+   where `tests/f3.1c-widget-series-mapping.test.ts` holds it. An absent
+   `series` reads as *Trend*.
+4. **The route stays the guard.** At Confirm the route runs its own checks: the
+   write role, the dashboard's scope, each point's organization (403), the tab
+   (400), the widget cap (409) and the kind rule (400), as for every entry.
+5. **`dashboard.widgets.replace` is unchanged.** It still adds or edits any
+   widget; the new entry is the safer path the model should prefer to add one
+   chart. The system prompt's dashboard note says so in one sentence.
+
+### Consequences
+
+- `F4.324` PR 3 moves the route from `EXCLUDED_ROUTES` to the new entry, adds its
+  fixture in `catalog.fixtures.ts`, spec cases in a dashboard catalog spec (each
+  kind proposed, a `widgetType` body refused, a two-point heatmap refused at
+  propose with the shared message), and the label record with its gate.
+- The propose budget (`copilot-propose-budget.spec.ts`) is measured at the build;
+  if it is over its bound, the bound rises by release 4's rule and the owner is
+  asked, as in Amendment 13.
+- No migration, no new route, no new permission.
