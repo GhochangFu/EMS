@@ -898,7 +898,7 @@ export function runSkippedDetailEscapeTests(): void {
  * a backlog is named, in samples, after the `endpoint` lines and before
  * `stale`. It is information, not a fault: the verdict does not move.
  */
-export function runStoppedEndpointTests(): void {
+export function runStoppedLinePositionTests(): void {
   const withStale = snapshot({
     endpoints: [endpoint({ devices: [device("RTU-1"), device("RTU-9", { lastSampleAt: STARTED_AT })] })],
     stopped: [{ protocol: "mqtt", endpointKey: "shapoorji.thinkiot.co.in:8883", buffered: 7 }],
@@ -913,7 +913,9 @@ export function runStoppedEndpointTests(): void {
     lastEndpoint < stoppedAt && stoppedAt < firstStale,
     `the stopped line belongs between the endpoint lines and the stale lines:\n${lines.join("\n")}`,
   );
+}
 
+export function runStoppedKeyEscapeTests(): void {
   const encoded = renderHealth(
     snapshot({ stopped: [{ protocol: "mqtt", endpointKey: "a b\ningest-host ok", buffered: 1 }] }),
     NOW,
@@ -923,10 +925,14 @@ export function runStoppedEndpointTests(): void {
     `the stopped key must be percent-encoded:\n${encoded}`,
   );
   assert(!/^ingest-host ok/m.test(encoded.split("\n").slice(1).join("\n")), "a stopped key forged a header");
+}
 
+export function runNoStoppedLineTests(): void {
   const none = renderHealth(snapshot(), NOW);
   assert(!/^stopped /m.test(none), `an empty stopped list renders no line:\n${none}`);
+}
 
+export function runStoppedVerdictTests(): void {
   const backlogOnly = renderHealth(
     snapshot({ stopped: [{ protocol: "mqtt", endpointKey: "b:1", buffered: 7 }] }),
     NOW,

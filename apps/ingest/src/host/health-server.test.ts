@@ -12,7 +12,10 @@ import {
   runSkippedDetailEscapeTests,
   runSkippedRtuEscapeTests,
   runStaleRtuEscapeTests,
-  runStoppedEndpointTests,
+  runNoStoppedLineTests,
+  runStoppedKeyEscapeTests,
+  runStoppedLinePositionTests,
+  runStoppedVerdictTests,
 } from "./health-server.spec.js";
 
 /** Vitest entry point — assertions live in the sibling `.spec` (ADR 0014). */
@@ -29,8 +32,24 @@ describe("health endpoint", () => {
     runDarkPointTests();
   });
 
-  it("names a stopped endpoint's backlog without degrading the verdict (ADR 0115 decision 7)", () => {
-    runStoppedEndpointTests();
+});
+
+/** One `it()` per claim — `assert` throws, so a shared block hides later sites. */
+describe("health endpoint: stopped endpoints (ADR 0115 decision 7)", () => {
+  it("renders the stopped line between the endpoint lines and the stale lines", () => {
+    runStoppedLinePositionTests();
+  });
+
+  it("percent-encodes a stopped endpoint's key", () => {
+    runStoppedKeyEscapeTests();
+  });
+
+  it("renders no stopped line for an empty list", () => {
+    runNoStoppedLineTests();
+  });
+
+  it("does not degrade the verdict for a stopped backlog", () => {
+    runStoppedVerdictTests();
   });
 });
 

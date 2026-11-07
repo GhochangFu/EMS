@@ -332,13 +332,22 @@ export async function assertTheOrganizationSwitchIsSelectedNotFiltered(pool: pg.
     expect(candidates.length, "no ingest-bound RTU to switch the organization of").toBe(1);
     const { rtu_id: rtuId, organization_id: organizationId } = candidates[0];
 
-    const baseline = await bindingRows(client);
-    const before = baseline.filter((r) => r.rtu_id === rtuId);
-    expect(before.length, "the chosen RTU is missing from the binding query").toBeGreaterThan(0);
-    expect(before.every((r) => r.organization_ingest_enabled)).toBe(true);
+    const original = (await bindingRows(client))
+      .filter((r) => r.rtu_id === rtuId)
+      .map((r) => r.organization_ingest_enabled);
 
     await client.query("BEGIN");
     try {
+      // Switched on first, inside the transaction, so the claim does not depend
+      // on what an operator or a sibling suite left in the database.
+      await client.query("UPDATE bms.organizations SET ingest_enabled = true WHERE id = $1", [
+        organizationId,
+      ]);
+      const baseline = await bindingRows(client);
+      const before = baseline.filter((r) => r.rtu_id === rtuId);
+      expect(before.length, "the chosen RTU is missing from the binding query").toBeGreaterThan(0);
+      expect(before.every((r) => r.organization_ingest_enabled === true)).toBe(true);
+
       await client.query("UPDATE bms.organizations SET ingest_enabled = false WHERE id = $1", [
         organizationId,
       ]);
@@ -358,11 +367,10 @@ export async function assertTheOrganizationSwitchIsSelectedNotFiltered(pool: pg.
       await client.query("ROLLBACK");
     }
 
-    const restored = (await bindingRows(client)).filter((r) => r.rtu_id === rtuId);
-    expect(
-      restored.every((r) => r.organization_ingest_enabled),
-      "the fixture must leave nothing behind",
-    ).toBe(true);
+    const restored = (await bindingRows(client))
+      .filter((r) => r.rtu_id === rtuId)
+      .map((r) => r.organization_ingest_enabled);
+    expect(restored, "the fixture must leave nothing behind").toEqual(original);
   } finally {
     client.release();
   }
