@@ -208,6 +208,10 @@ services:
       LLM_VISION_MODEL: ${LLM_VISION_MODEL:-}
       COPILOT_USER_DAILY_TURNS: ${COPILOT_USER_DAILY_TURNS:-}
       COPILOT_ORG_DAILY_TURNS: ${COPILOT_ORG_DAILY_TURNS:-}
+      # ADR 0114 (`F4.326`): broker hosts an MQTT RTU with `tls: false` may reach
+      # without TLS. Empty = none (the default). Set the SAME value on api, worker
+      # and ingest — `tests/adr-0114-plaintext-hosts-invariants.test.ts` holds this.
+      MQTT_PLAINTEXT_HOSTS: ${MQTT_PLAINTEXT_HOSTS:-}
     mem_limit: 768m
     depends_on:
       postgres:
@@ -236,6 +240,10 @@ services:
       LOG_LEVEL: info
       OTEL_SERVICE_NAME: bms-worker
       OTEL_SDK_DISABLED: "true"
+      # ADR 0114 (`F4.326`): broker hosts an MQTT RTU with `tls: false` may reach
+      # without TLS. Empty = none (the default). Set the SAME value on api, worker
+      # and ingest — `tests/adr-0114-plaintext-hosts-invariants.test.ts` holds this.
+      MQTT_PLAINTEXT_HOSTS: ${MQTT_PLAINTEXT_HOSTS:-}
     mem_limit: 512m
     depends_on:
       postgres:
@@ -303,6 +311,10 @@ services:
       MQTT_PASSWORD: ${MQTT_PASSWORD:-}
       INGEST_HOST_HEALTH_PORT: 9102
       INGEST_BUFFER_DIR: /var/lib/bms-ingest
+      # ADR 0114 (`F4.326`): broker hosts an MQTT RTU with `tls: false` may reach
+      # without TLS. Empty = none (the default). Set the SAME value on api, worker
+      # and ingest — `tests/adr-0114-plaintext-hosts-invariants.test.ts` holds this.
+      MQTT_PLAINTEXT_HOSTS: ${MQTT_PLAINTEXT_HOSTS:-}
     volumes:
       - ingest-buffer:/var/lib/bms-ingest
     networks:

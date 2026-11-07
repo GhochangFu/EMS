@@ -54,7 +54,8 @@ still the only working credential path (ADR 0016 Amendment 3).
 | `INGEST_RELOAD_MS` | `60000` | How often point mappings are refreshed. Matches what the ADR 0007 pilot did. |
 | `INGEST_STALE_AFTER_MS` | `300000` | Silence longer than this marks one RTU `stale` on the health endpoint (`F1.7`). Five minutes because the fleet was measured, not guessed: the nine live PHE RTUs publish every ~60 s (probe, 2026-08-22, 600 s window), so this is five missed cycles — a single dropped message can never raise it. Widen it for a protocol that polls far more slowly than MQTT pushes. |
 | `MQTT_HOST` / `MQTT_PORT` / `MQTT_USERNAME` / `MQTT_PASSWORD` | pilot-era | MQTT **only**, resolved by the host through `src/rtu-config.js`. No new adapter gets an environment fallback. |
-| `MQTT_TLS_REJECT_UNAUTHORIZED` | on | Only the exact string `false` disables TLS verification, as in the ADR 0007 pilot. |
+| `MQTT_TLS_REJECT_UNAUTHORIZED` | on | Only the exact string `false` disables TLS verification, as in the ADR 0007 pilot. Not applied to a plain-MQTT endpoint, which has no TLS to verify. |
+| `MQTT_PLAINTEXT_HOSTS` | empty | ADR 0114 (`F4.326`). Comma-separated broker host names an MQTT RTU may reach **without TLS**. Plain needs both the literal `tls: false` in the RTU's stored config and its resolved host (stored, or the `MQTT_HOST` fallback) on this list — see *Plain MQTT* below. Trimmed, lower-cased, exact match; no wildcard, port, IPv6 or range. A bad entry refuses start-up with `MQTT_PLAINTEXT_HOSTS entry <n> is not a host name` — the position, never the text. Set the same value on `api` and `worker`. |
 | `CREDENTIAL_ENCRYPTION_KEY` | — | ADR 0012. Without it, encrypted per-RTU credentials are simply not read. |
 | `INGEST_BUFFER_DIR` | `/var/lib/bms-ingest` | Where a batch the database refused lands (`F1.10`, ADR 0016 Amendment 4 ruling 4). Blank or unset takes the default; compose mounts a named volume at that path. **Must be absolute** — a relative value would resolve against the container working directory, putting the buffer on the writable layer with the volume unused, which nothing downstream can detect. A directory that cannot be created, that fails a write-and-unlink probe, or whose listing fails refuses host start-up with the path in the error — there is no "no buffer" mode. |
 | `INGEST_BUFFER_MAX_AGE_MS` | `3600000` | How long a spilled segment survives, by receipt minute, before the age bound erases it. Strictly older than the bound is erased; exactly the bound is kept. Ceiling `2^31-1`, the same timer limit `INGEST_RELOAD_MS` and `INGEST_STALE_AFTER_MS` share. |
@@ -197,7 +198,8 @@ dark rtu=861736076128245 endpoint=phe.thinkiot.co.in:8883 key=s12_r01 lastSample
   but `F1.7` promotes that list from an enumeration into the input of the
   `ok`/`degraded` verdict, so the restart matters more than it did.
 - `skipped` lines name every RTU left out and why (`no-adapter`,
-  `unsupported-protocol`, `missing-rtu-code`, `invalid-connection-config`, …),
+  `unsupported-protocol`, `missing-rtu-code`, `invalid-connection-config`,
+  `tls-downgrade-refused`, `plaintext-host-not-allowed`, …),
   so a gateway that never appears is visible without reading the log.
 - `dropped` is the memory tier's loss — the in-memory queue dropping oldest
   because it filled before anything could be written or spilled.
@@ -620,6 +622,39 @@ decides whether a fix belongs to `F1.7`/`F1.10` or to this host.
 `rtu_connection_configs.config` — an RTU whose stored config carries the key is
 refused with `tls-downgrade-refused` rather than served. The environment
 variable is the only way to lower TLS verification, matching `index.js`.
+
+### Plain MQTT (ADR 0114, `F4.326`)
+
+Every broker connection is TLS (`mqtts://`) unless **both** hold:
+
+1. the RTU's stored `rtu_connection_configs.config` has the literal
+   `tls: false` (absent, `true` or the string `"false"` all mean TLS — the
+   string fails the schema as `invalid-connection-config`), and
+2. the host the connection will dial — the stored `host`, or the `MQTT_HOST`
+   fallback — is on `MQTT_PLAINTEXT_HOSTS`.
+
+`tls: false` on an unlisted host is skipped as `plaintext-host-not-allowed`. It
+is **never** connected with TLS instead: a silent TLS connect to a plain-only
+broker is the failure ADR 0114 removes. The check is the host's
+(`src/host/bindings.ts`); the adapter only builds what the validated config
+says.
+
+A plain endpoint:
+
+- connects `mqtt://host:port` and passes no `rejectUnauthorized`;
+- logs one `warn` per adapter instance (so once per host start or endpoint
+  restart): `mqtt endpoint is plaintext host=<host> port=<port>` — never the
+  username, the password or a payload (AGENTS.md §9.6);
+- is keyed `mqtt://host:port` on the health page and in the disk buffer
+  (`key=mqtt://shapoorji.thinkiot.co.in:1883`, percent-encoded as the buffer
+  directory name). A TLS endpoint keeps `host:port`, so the existing fleet's
+  keys and spilled segments do not move, and a TLS and a plain RTU on one
+  host never share a connection.
+
+**What it costs.** On a plain endpoint the decrypted broker username and
+password, and every reading, cross the network in clear text. The list limits
+that to hosts an operator named; the operator owns the list, never an
+organization admin (who can write `config.tls` through the onboarding commit).
 
 - **The health endpoint cannot tell an empty reading from a missing one**
   (`F4.58`). `dark rtu=… key=…` says a bound point stopped producing a
