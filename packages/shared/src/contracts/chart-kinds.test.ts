@@ -2,6 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   compareAndDonutNeedAnAggregate,
+  theColorRule,
+  theLiveWritePathChecksColours,
+  theTemplatePathsCheckColours,
   theAssetTemplatePathRefusesTheSameRule,
   theHeatmapRules,
   theTemplatePathsRefuseTheHeatmapRules,
@@ -19,4 +22,10 @@ describe("F4.323 — the chart kind rules (ADR 0047 Amendment 7)", () => {
   it("a heatmap binds one point over 7 to 30 days, with an aggregate", () => theHeatmapRules());
   it("both template paths refuse the heatmap rules", () => theTemplatePathsRefuseTheHeatmapRules());
   it("PUT :id/widgets refuses at the widget's config.aggregate", () => theLiveWritePathRefusesAtTheWidget());
+});
+
+describe("F4.325 — a colour per chart point (ADR 0047 Amendment 8 item 1)", () => {
+  it("at most one colour per point, absent always fine", () => theColorRule());
+  it("PUT :id/widgets refuses too many colours and an unknown role", () => theLiveWritePathChecksColours());
+  it("the asset template counts point keys; a section template only the cap", () => theTemplatePathsCheckColours());
 });

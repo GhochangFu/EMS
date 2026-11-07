@@ -24,6 +24,7 @@ import {
   runTrendStripNotTemplateAuthorableTests,
   runTrendStripRangeRequiredTests,
   runHeatmapFormTests,
+  runChartColorFormTests,
   runWindowValueChartFormTests,
 } from "./widget-config-form.spec";
 
@@ -121,6 +122,10 @@ describe("widget config form", () => {
 describe("widget config form — F4.323 window-value charts", () => {
   it("refuses compare/donut without an aggregate and drops the fields they do not read", () =>
     runWindowValueChartFormTests());
+});
+
+describe("widget config form — F4.325 a colour per chart point", () => {
+  it("stores Default as null inside and drops it at the end, cut at the point count", () => runChartColorFormTests());
 });
 
 describe("widget config form — F4.323 heatmap", () => {

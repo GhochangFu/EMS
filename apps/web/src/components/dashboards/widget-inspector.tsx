@@ -25,6 +25,7 @@ import {
 import {
   AGGREGATE_FUNCTION_LABELS,
   AGGREGATE_FUNCTIONS,
+  chartColorsWithoutPoint,
   chartPlotOptions,
   MAX_WIDGET_TITLE_LENGTH,
   WIDGET_ICON_LABELS,
@@ -33,6 +34,7 @@ import {
   type WidgetConfigRow,
 } from "../../lib/widget-config-form";
 import { Field } from "../asset-templates/field";
+import { ChartPointColorSelect } from "./chart-point-color-select";
 import { ChartSeriesPicker } from "./chart-series-picker";
 import { MetricSourcePicker } from "./metric-source-picker";
 import { PointPicker } from "./point-picker";
@@ -125,7 +127,18 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
       points: row.points
         .filter((_, position) => position !== index)
         .map((point, position) => ({ ...point, sortOrder: position })),
+      // `F4.325` — a chart point's colour goes with it, and the later points' move up.
+      ...(row.widgetType === "chart"
+        ? { config: { ...row.config, chartColors: chartColorsWithoutPoint(row.config.chartColors, index) } }
+        : {}),
     });
+  }
+
+  function setPointColor(index: number, color: WidgetConfigRow["chartColors"][number]): void {
+    const chartColors = [...row.config.chartColors];
+    while (chartColors.length < index) chartColors.push("");
+    chartColors[index] = color;
+    updateConfig({ chartColors });
   }
 
   /**
@@ -782,6 +795,14 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
                 className="surface-raised-sm flex items-center justify-between px-2 py-1 text-xs"
               >
                 <span>{point.label}</span>
+                {/* `F4.325` — a colour per chart point, by its position. */}
+                {row.widgetType === "chart" ? (
+                  <ChartPointColorSelect
+                    pointLabel={point.label}
+                    value={row.config.chartColors[index] ?? ""}
+                    onChange={(color) => setPointColor(index, color)}
+                  />
+                ) : null}
                 <button type="button" onClick={() => removePoint(index)} aria-label={`Remove ${point.label}`} className="text-critical-ink">
                   ×
                 </button>

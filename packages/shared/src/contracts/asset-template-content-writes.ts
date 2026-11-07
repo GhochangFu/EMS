@@ -11,7 +11,7 @@ import { CALC_DIALECTS, formatCalcError, MAX_FORMULA_POINT_REFS, validateFormula
 // derived from how deep an authored template `content` actually nests, and the
 // draft's bound is derived from a different shape and is a different number.
 import { exceedsDepth } from "../stack-safe-json";
-import { chartKindIssues } from "./chart-kinds";
+import { chartColorIssues, chartKindIssues } from "./chart-kinds";
 // F3.1a: the four widget config schemas, reused rather than restated (§4.8 — "a vocabulary
 // is declared once and everything else is derived from it").
 import {
@@ -558,7 +558,11 @@ export const templateDashboardWidgetSchema = templateDashboardWidgetVariants
       });
     }
     if (widget.widgetType === "chart") {
-      for (const issue of chartKindIssues(widget.config, widget.pointKeys.length)) {
+      // `F4.325` — colours count the author's `pointKeys`, the positions the copy can have at most.
+      for (const issue of [
+        ...chartKindIssues(widget.config, widget.pointKeys.length),
+        ...chartColorIssues(widget.config, widget.pointKeys.length),
+      ]) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, path: [...issue.path], message: issue.message });
       }
     }
@@ -569,7 +573,8 @@ export const templateDashboardWidgetSchema = templateDashboardWidgetVariants
       "`dashboard_widgets_grid_bounds_check` enforces the same bound in SQL, so an author who " +
       "overflows it gets a 400 naming the field rather than a 500 carrying a constraint name. " +
       "A compare, donut or heatmap chart needs config.aggregate; a heatmap binds one point over " +
-      "config.windowMinutes 10080 to 43200 (ADR 0047 Amendment 7).",
+      "config.windowMinutes 10080 to 43200 (ADR 0047 Amendment 7). config.colors holds at most " +
+      "one colour per point key (ADR 0047 Amendment 8).",
   );
 
 /**

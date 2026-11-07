@@ -21,6 +21,7 @@ import {
   WIDGET_TYPES,
   blankConfigRow,
   buildChartConfig,
+  chartColorsFromConfig,
   buildGaugeConfig,
   buildTankConfig,
   buildTileConfig,
@@ -247,6 +248,8 @@ function widgetRowFrom(raw: unknown): TemplateDashboardWidgetRow {
         ? (config.aggregate as PointAggregateFunction)
         : "",
       footerStats: typeof config.footerStats === "boolean" ? config.footerStats : false,
+      // `F4.325` — one entry per point key, by position; unknown or null reads as Default.
+      chartColors: chartColorsFromConfig(config),
       // `F3.35` Stage B. A template cannot author a `table`, so this is always empty here —
       // read from stored content anyway rather than hardcoded, because `widgetRowFrom` parses
       // unvalidated JSON and a `table` written by hand must round-trip to a safe default like
@@ -538,7 +541,7 @@ function buildWidgetPayload(row: TemplateDashboardWidgetRow): TemplateDashboardW
     case "value_tile":
       return { ...identity, widgetType: "value_tile", config: buildTileConfig(row.config) };
     case "chart":
-      return { ...identity, widgetType: "chart", config: buildChartConfig(row.config) };
+      return { ...identity, widgetType: "chart", config: buildChartConfig(row.config, row.pointKeys.length) };
   }
 }
 

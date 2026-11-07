@@ -1,5 +1,7 @@
 import {
+  CHART_COLORS_LENGTH_MESSAGE,
   CHART_KINDS_NEEDING_AGGREGATE,
+  chartColorIssues,
   chartKindAggregateMessage,
   chartKindIssues,
   HEATMAP_MAX_WINDOW_MINUTES,
@@ -205,4 +207,90 @@ export function theTemplatePathsRefuseTheHeatmapRules(): void {
     sectionTemplateWidgetSchema.safeParse({ ...section, bindings: two.slice(0, 1), config: ok }).success,
     "one binding, 7 days, parses",
   );
+}
+
+/**
+ * `F4.325` / ADR 0047 Amendment 8 item 1 — a colour per point: at most one per point the path can
+ * count, the roles closed, and absent always fine.
+ */
+export function theColorRule(): void {
+  assert(chartColorIssues({}, 0).length === 0, "absent colours pass at any count");
+  assert(chartColorIssues({ colors: ["series-3", "series-6"] }, 2).length === 0, "one per point passes");
+  assert(chartColorIssues({ colors: ["series-3"] }, 4).length === 0, "fewer colours than points pass");
+  const over = chartColorIssues({ colors: ["series-1", "series-2", "series-3"] }, 2);
+  assert(
+    over.length === 1 && over[0]?.path.join(".") === "config.colors" && over[0]?.message === CHART_COLORS_LENGTH_MESSAGE,
+    `three colours on two points is one issue at config.colors, got ${JSON.stringify(over)}`,
+  );
+}
+
+/** The live `PUT :id/widgets` body: the length rule at the widget, an unknown role at its index. */
+export function theLiveWritePathChecksColours(): void {
+  const over = putDashboardWidgetsBodySchema.safeParse({
+    widgets: [chart({ series: "compare", aggregate: "avg", colors: ["series-1", "series-2", "series-3"] }, [POINT_A, POINT_B])],
+  });
+  const overIssues = over.success ? [] : over.error.issues;
+  assert(
+    overIssues.some((i) => i.path.join(".") === "widgets.0.config.colors" && i.message === CHART_COLORS_LENGTH_MESSAGE),
+    `three colours on two points are refused at widgets[0].config.colors, got ${JSON.stringify(overIssues)}`,
+  );
+  const unknown = putDashboardWidgetsBodySchema.safeParse({
+    widgets: [chart({ series: "line", colors: ["series-9"] })],
+  });
+  assert(
+    unknown.success === false && unknown.error.issues.some((i) => i.path.join(".") === "widgets.0.config.colors.0"),
+    "an unknown role is refused at its index",
+  );
+  const nine = putDashboardWidgetsBodySchema.safeParse({
+    widgets: [chart({ series: "line", colors: Array.from({ length: 9 }, () => "series-1") })],
+  });
+  assert(nine.success === false, "more than eight colours is refused by the schema");
+  const ok = putDashboardWidgetsBodySchema.safeParse({
+    widgets: [
+      chart({ series: "donut", aggregate: "sum", colors: ["series-3", "series-6"] }, [POINT_A, POINT_B]),
+      chart({ series: "heatmap", aggregate: "avg", windowMinutes: 10_080, colors: ["series-4"] }),
+      chart({ series: "line", colors: [null, "series-2"] }, [POINT_A, POINT_B]),
+    ],
+  });
+  assert(ok.success === true, `colours within the points save: ${JSON.stringify(ok.error?.issues)}`);
+}
+
+/**
+ * The template paths: the asset template counts `pointKeys`; a section template counts nothing
+ * but the schema's eight, because one role binding resolves to every matching member.
+ */
+export function theTemplatePathsCheckColours(): void {
+  const asset = { gridX: 0, gridY: 0, gridW: 6, gridH: 4, widgetType: "chart", pointKeys: ["kw"] };
+  const assetBad = templateDashboardWidgetSchema.safeParse({ ...asset, config: { series: "line", colors: ["series-1", "series-2"] } });
+  assert(
+    assetBad.success === false &&
+      assetBad.error.issues.some((i) => i.path.join(".") === "config.colors" && i.message === CHART_COLORS_LENGTH_MESSAGE),
+    "two colours on one point key are refused at config.colors",
+  );
+  assert(
+    templateDashboardWidgetSchema.safeParse({ ...asset, config: { series: "line", colors: ["series-2"] } }).success,
+    "one colour on one key parses",
+  );
+
+  const section = {
+    key: "pumps",
+    title: null,
+    gridX: 0,
+    gridY: 0,
+    gridW: 6,
+    gridH: 4,
+    sources: [],
+    widgetType: "chart",
+    bindings: [{ assetRoleCode: "pump", pointKey: "run" }],
+  };
+  const three = sectionTemplateWidgetSchema.safeParse({
+    ...section,
+    config: { series: "compare", aggregate: "avg", colors: ["series-1", "series-2", "series-3"] },
+  });
+  assert(three.success === true, `one binding may colour three resolved members: ${JSON.stringify(three.error?.issues)}`);
+  const nine = sectionTemplateWidgetSchema.safeParse({
+    ...section,
+    config: { series: "line", colors: Array.from({ length: 9 }, () => "series-1") },
+  });
+  assert(nine.success === false, "more than eight colours is refused on a section template too");
 }

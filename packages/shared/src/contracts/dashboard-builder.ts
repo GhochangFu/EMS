@@ -10,7 +10,7 @@ import {
   moduleSummaryCardConfigSchema,
   stateLegendConfigSchema,
 } from "./site-widgets";
-import { trendStripWidgetConfigSchema } from "./trend-strip-widget";
+import { seriesRoleSchema, trendStripWidgetConfigSchema } from "./trend-strip-widget";
 
 /**
  * `F3.1a` — the configurable-dashboard contract (ADR 0047).
@@ -329,6 +329,17 @@ export const valueTileConfigSchema = z
   });
 
 /**
+ * How many points one widget may bind. **Enforced by `F3.1b`'s write path, not by the
+ * database** — cardinality is a per-widget row count and no row-level `CHECK` can see it.
+ *
+ * Exported so `F3.1b` uses this number rather than inventing a third: the template authoring
+ * surface already caps a widget at `MAX_WIDGET_POINT_KEYS` in
+ * `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts`, and the two must
+ * agree or a template widget will not survive instantiation.
+ */
+export const MAX_WIDGET_POINTS = 8;
+
+/**
  * The generic chart. `windowMinutes` defaults to a day, which is §7's "24-hour area chart"
  * expressed as configuration rather than as its own widget type.
  */
@@ -356,6 +367,17 @@ export const chartConfigSchema = z
      * still ask for. The renderer decides what it needs.
      */
     footerStats: z.boolean().optional(),
+    /**
+     * `F4.325` / ADR 0047 Amendment 8 item 1 — a colour role per point, by the point's position in
+     * `sortOrder` (`colors[0]` is the first point's). Absent, or an index the array does not
+     * reach, is today's palette colour for that position, so no stored chart changes. A
+     * `heatmap` reads `colors[0]` for its scale. Bounded by the schema's cap only, never by the
+     * point count: `dashboard_widget_points.point_id` cascades, so a stored chart can hold more
+     * colours than points (§4.8). The write paths' length rule is `chartColorIssues`. A `null`
+     * entry is that position's palette colour, so the second point can be coloured and the first
+     * left at its default; the builder drops trailing `null`s.
+     */
+    colors: z.array(seriesRoleSchema.nullable()).max(MAX_WIDGET_POINTS).optional(),
   });
 
 /**
@@ -431,17 +453,6 @@ export const dashboardWidgetSpecSchema = z.discriminatedUnion("widgetType", [
   z.object({ widgetType: z.literal("breaker_table"), config: breakerTableConfigSchema }),
   z.object({ widgetType: z.literal("trend_strip"), config: trendStripWidgetConfigSchema }),
 ]);
-
-/**
- * How many points one widget may bind. **Enforced by `F3.1b`'s write path, not by the
- * database** — cardinality is a per-widget row count and no row-level `CHECK` can see it.
- *
- * Exported so `F3.1b` uses this number rather than inventing a third: the template authoring
- * surface already caps a widget at `MAX_WIDGET_POINT_KEYS` in
- * `apps/api/src/admin/asset-templates/asset-templates-content.schema.ts`, and the two must
- * agree or a template widget will not survive instantiation.
- */
-export const MAX_WIDGET_POINTS = 8;
 
 /**
  * How many widgets one tab may hold — and, on a dashboard without tabs, the dashboard's single

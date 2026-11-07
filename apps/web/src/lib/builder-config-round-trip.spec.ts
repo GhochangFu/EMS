@@ -80,6 +80,8 @@ const CHART_CONFIG = {
   yAxisLabel: "Load",
   aggregate: "avg",
   footerStats: true,
+  // `F4.325` — one colour for the one bound point below; `buildChartConfig` cuts at the points.
+  colors: ["series-3"],
 } as const;
 
 function dto(): DashboardDto {
@@ -105,6 +107,20 @@ function dto(): DashboardDto {
         title: "Plant load",
         widgetType: "chart",
         config: CHART_CONFIG,
+        points: [
+          {
+            id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            pointId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            role: "series",
+            sortOrder: 0,
+            assetId: "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            assetCode: "M-01",
+            assetRtuName: null,
+            assetLocationName: null,
+            pointKey: "kw",
+            unit: "kW",
+          },
+        ],
       },
     ],
   } as DashboardDto;

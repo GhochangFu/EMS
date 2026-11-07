@@ -3,6 +3,10 @@ import { describe, it } from "vitest";
 import {
   chartAreaSeriesIsLineWithAreaStyle,
   chartCompareDrawsOneHorizontalBarPerPointInOrder,
+  chartColoursFollowThePointPosition,
+  compareAndDonutColourEachPointsBarAndSlice,
+  heatmapScaleTakesTheFirstColour,
+  coloursPastTheLastPointAreIgnored,
   chartDonutDrawsOnePositiveSlicePerPoint,
   chartHeatmapDrawsDaysAcrossAndHoursDown,
   heatmapCellsAreLocalDayAndHour,
@@ -115,4 +119,11 @@ describe("widget-echarts-option: F4.323 chart kinds (ADR 0047 Amendment 7)", () 
   it("heatmap merges a fall-back hour by the widget's function", () => heatmapMergesARepeatedLocalHour());
   it("heatmap keeps a day with no samples on the axis", () => heatmapKeepsAnEmptyDay());
   it("heatmap draws days across and hours down in one hue", () => chartHeatmapDrawsDaysAcrossAndHoursDown());
+});
+
+describe("widget-echarts-option: F4.325 a colour per point (ADR 0047 Amendment 8)", () => {
+  it("the time kinds colour each series by its point's position", () => chartColoursFollowThePointPosition());
+  it("compare and donut colour each point's bar and slice", () => compareAndDonutColourEachPointsBarAndSlice());
+  it("a heatmap's scale takes the first colour", () => heatmapScaleTakesTheFirstColour());
+  it("a colour past the last point is ignored", () => coloursPastTheLastPointAreIgnored());
 });

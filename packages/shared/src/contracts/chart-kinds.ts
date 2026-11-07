@@ -72,3 +72,22 @@ export function chartKindIssues(
   }
   return issues;
 }
+
+/** `F4.325` — the refusal of a chart that carries more colours than the points its path counts. */
+export const CHART_COLORS_LENGTH_MESSAGE =
+  "config.colors has more entries than the chart binds points: one colour per point, by position";
+
+/**
+ * `F4.325` / ADR 0047 Amendment 8 item 1 — at most one colour per point the path can count. The
+ * live `PUT :id/widgets` path passes its `points`, the asset-template default dashboard its
+ * `pointKeys`. The section and site template widget does **not** call this: one role binding
+ * resolves to every matching member of the group, so its `bindings` are not the number of points
+ * the copy will have, and the schema's `MAX_WIDGET_POINTS` is its only bound. The roles
+ * themselves are the schema's enum.
+ */
+export function chartColorIssues(config: Pick<ChartConfig, "colors">, pointCount: number): ChartKindIssue[] {
+  if (config.colors !== undefined && config.colors.length > pointCount) {
+    return [{ path: ["config", "colors"], message: CHART_COLORS_LENGTH_MESSAGE }];
+  }
+  return [];
+}

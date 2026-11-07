@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { chartKindIssues } from "./chart-kinds";
+import { chartColorIssues, chartKindIssues } from "./chart-kinds";
 import {
   activeAlarmsRailConfigSchema,
   assetClassStripConfigSchema,
@@ -733,7 +733,10 @@ const eachChartKindHolds = (widgets: z.infer<typeof widgetWriteSchema>[], ctx: z
     if (widget.widgetType !== "chart") {
       return;
     }
-    for (const issue of chartKindIssues(widget.config, widget.points.length)) {
+    for (const issue of [
+      ...chartKindIssues(widget.config, widget.points.length),
+      ...chartColorIssues(widget.config, widget.points.length),
+    ]) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, ...issue.path], message: issue.message });
     }
   });
@@ -773,7 +776,8 @@ const widgetsWriteFieldSchema = z
       "column and the renderer projects, so an undeclared name would draw a column of empty " +
       "cells rather than fail. A chart's kind may need more (ADR 0047 Amendment 7): a compare " +
       "or donut chart needs config.aggregate, since it draws one number per point; a heatmap " +
-      "needs config.aggregate, exactly one point and config.windowMinutes from 10080 to 43200.",
+      "needs config.aggregate, exactly one point and config.windowMinutes from 10080 to 43200. A chart's config.colors holds at most one " +
+      "colour per bound point (ADR 0047 Amendment 8).",
   );
 
 /**
