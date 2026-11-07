@@ -16,7 +16,7 @@ import { fetchSiteTrendStrip, type TrendStripRequest } from "../../api/trend-str
 import { downloadTrendStripExport } from "../../api/view-exports";
 import { formatPointValue } from "../../lib/generated-site-view";
 import { siteAssetsPath } from "../../lib/smoc-pages";
-import { historyHref, lastValue, strokeRoleFor, stripWindowLabel } from "../../lib/trend-strip";
+import { historyHref, lastValue, pointStyleFor, strokeRoleFor, stripWindowLabel } from "../../lib/trend-strip";
 import { SectionCard } from "../section-card";
 import { ExportMenu } from "../view-actions/export-menu";
 import { Sparkline } from "./sparkline";
@@ -57,7 +57,7 @@ function trimLine(strip: SiteTrendStripDto): string {
 }
 
 /** `F4.306` (ADR 0108 Amendment 7): a stored strip's selection; absent is the `F4.305` strip. */
-export type TrendStripSelection = Pick<TrendStripWidgetConfig, "segments" | "points" | "colors">;
+export type TrendStripSelection = Pick<TrendStripWidgetConfig, "segments" | "points" | "colors" | "styles">;
 
 /** The read's request: the selection's two lists only when present, so no selection is the `F4.305` request. */
 function stripRequest(
@@ -77,17 +77,21 @@ function PointRow({
   point,
   domain,
   colors,
+  styles,
   range,
   locationId,
 }: {
   point: TrendStripPointDto;
-  /** The segment the point is in: with the point's code, the `colors` key. */
+  /** The segment the point is in: with the point's code, the `colors` and `styles` key. */
   domain: string;
   colors: TrendStripSelection["colors"];
+  /** `F4.322` PR 3 — each point's draw style; absent is `line`. */
+  styles: TrendStripSelection["styles"];
   range: TrendStripRange;
   locationId: string;
 }) {
   const stroke = strokeRoleFor(colors, domain, point.code);
+  const drawStyle = pointStyleFor(styles, domain, point.code);
   return (
     <li aria-label={point.name} className="flex flex-col gap-2 border-t border-well-deep pt-3 first:border-t-0 first:pt-0">
       <div className="flex items-baseline gap-2">
@@ -116,7 +120,7 @@ function PointRow({
                 title={asset.assetName}
                 className="rounded hover:bg-well focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
               >
-                <Sparkline buckets={asset.buckets} label={`${label} ${point.name}`} stroke={stroke} />
+                <Sparkline buckets={asset.buckets} label={`${label} ${point.name}`} stroke={stroke} drawStyle={drawStyle} />
               </Link>
               <span className="flex justify-between gap-2 text-[11px]">
                 <span data-role="asset-label" className="min-w-0 break-words font-semibold text-ink-muted">
@@ -150,11 +154,13 @@ function PointRow({
 function SegmentCard({
   segment,
   colors,
+  styles,
   range,
   locationId,
 }: {
   segment: TrendStripSegmentDto;
   colors: TrendStripSelection["colors"];
+  styles: TrendStripSelection["styles"];
   range: TrendStripRange;
   locationId: string;
 }) {
@@ -170,6 +176,7 @@ function SegmentCard({
             point={point}
             domain={segment.domain}
             colors={colors}
+            styles={styles}
             range={range}
             locationId={locationId}
           />
@@ -277,6 +284,7 @@ export function TrendStripBody({
                 key={segment.domain}
                 segment={segment}
                 colors={selection?.colors}
+                styles={selection?.styles}
                 range={strip.range}
                 locationId={locationId}
               />

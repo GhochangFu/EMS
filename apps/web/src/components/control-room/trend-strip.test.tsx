@@ -3,6 +3,8 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aColoredPointStrokesWithItsRole,
+  aStyledPointDrawsInItsStyle,
+  anUnstyledPointKeepsTheLine,
   aFailedReadRendersAFixedSentence,
   aFailedRefetchKeepsTheSparklines,
   aGroupStripSendsItsGroupId,
@@ -193,5 +195,18 @@ describe("F4.306 U9 TrendStripBody selection", () => {
 
   it("reads twice for two selections in one query client", async () => {
     await twoSelectionsAreTwoReads();
+  });
+});
+
+describe("F4.322 PR 3 — a point drawn in its style (ADR 0108 Amendment 8)", () => {
+  afterEach(() => {
+    cleanupStrip();
+  });
+
+  it("draws an area or bars for a styled point", async () => {
+    await aStyledPointDrawsInItsStyle();
+  });
+  it("keeps the line for a point with no style", async () => {
+    await anUnstyledPointKeepsTheLine();
   });
 });

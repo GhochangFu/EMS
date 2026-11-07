@@ -7,6 +7,7 @@ import {
 import type {
   AppendTrendStripWidgetsBody,
   SeriesRole,
+  TrendStripPointStyle,
   SiteTrendPointsDto,
   TrendStripRange,
   TrendStripWidgetConfig,
@@ -68,6 +69,8 @@ export type WizardSelection = {
   readonly segments: readonly string[];
   readonly points: readonly string[];
   readonly colors: Readonly<Record<string, SeriesRole>>;
+  /** `F4.322` PR 3 (ADR 0108 Amendment 8) — a draw style per chosen point; absent is `line`. */
+  readonly styles?: Readonly<Record<string, TrendStripPointStyle>>;
 };
 
 /** The label of a dashboard's single canvas when it has no tabs. */
@@ -163,6 +166,13 @@ function withoutColors(
   return Object.fromEntries(Object.entries(colors).filter(([key]) => !drop(key)));
 }
 
+function withoutStyles(
+  styles: WizardSelection["styles"],
+  drop: (key: string) => boolean,
+): Record<string, TrendStripPointStyle> {
+  return Object.fromEntries(Object.entries(styles ?? {}).filter(([key]) => !drop(key)));
+}
+
 /** Choose a point, or unchoose it with its colour. A point past the cap is refused: no change. */
 export function togglePoint(selection: WizardSelection, key: string): WizardSelection {
   if (selection.points.includes(key)) {
@@ -170,6 +180,7 @@ export function togglePoint(selection: WizardSelection, key: string): WizardSele
       segments: selection.segments,
       points: selection.points.filter((point) => point !== key),
       colors: withoutColors(selection.colors, (colored) => colored === key),
+      ...(selection.styles ? { styles: withoutStyles(selection.styles, (styled) => styled === key) } : {}),
     };
   }
   if (!canAddPoint(selection)) return selection;
@@ -185,6 +196,7 @@ export function toggleSegment(selection: WizardSelection, code: string): WizardS
     segments: selection.segments.filter((segment) => segment !== code),
     points: selection.points.filter((key) => segmentOf(key) !== code),
     colors: withoutColors(selection.colors, (key) => segmentOf(key) === code),
+    ...(selection.styles ? { styles: withoutStyles(selection.styles, (key) => segmentOf(key) === code) } : {}),
   };
 }
 
@@ -192,6 +204,19 @@ export function toggleSegment(selection: WizardSelection, code: string): WizardS
 export function setPointColor(selection: WizardSelection, key: string, role: SeriesRole | null): WizardSelection {
   const colors = withoutColors(selection.colors, (colored) => colored === key);
   return { ...selection, colors: role === null ? colors : { ...colors, [key]: role } };
+}
+
+/** `F4.322` PR 3 — the style choice as the wizard names it: plain words, line first (the default). */
+export const POINT_STYLE_LABELS: Readonly<Record<TrendStripPointStyle, string>> = {
+  line: "Line",
+  area: "Area",
+  bar: "Bars",
+};
+
+/** `F4.322` PR 3 — set a point's draw style; `line` (the default) deletes the key. */
+export function setPointStyle(selection: WizardSelection, key: string, style: TrendStripPointStyle): WizardSelection {
+  const styles = withoutStyles(selection.styles, (styled) => styled === key);
+  return { ...selection, styles: style === "line" ? styles : { ...styles, [key]: style } };
 }
 
 /**
@@ -205,19 +230,21 @@ export function stripConfigFor(
   tab: Pick<WizardTab, "key" | "assetGroupId">,
 ): TrendStripWidgetConfig {
   const colors = withoutColors(selection.colors, (key) => !selection.points.includes(key));
+  const styles = withoutStyles(selection.styles, (key) => !selection.points.includes(key));
   return {
     ...(tab.key !== null && tab.assetGroupId !== null ? { tabKey: tab.key } : {}),
     defaultRange: range,
     ...(selection.segments.length > 0 ? { segments: [...selection.segments] } : {}),
     ...(selection.points.length > 0 ? { points: [...selection.points] } : {}),
     ...(Object.keys(colors).length > 0 ? { colors } : {}),
+    ...(Object.keys(styles).length > 0 ? { styles } : {}),
   };
 }
 
 /**
  * The builder's draft with one tab's strip set (`tabKey` undefined: a dashboard without tabs).
  * `placeTrendStrip` (shared with the append route, owner OQ1) decides over that tab's rows only.
- * Replace keeps the row and rewrites its five strip fields, each `undefined` when the config lacks
+ * Replace keeps the row and rewrites its six strip fields (`styles` since `F4.322`), each `undefined` when the config lacks
  * it so a stale stored field goes; insert adds a strip at `gridX 0`, the tab's foot, the catalog's
  * size. Every other row is returned as it was.
  */
@@ -244,6 +271,7 @@ export function placeInDraft(
               stripSegments: config.segments,
               stripPoints: config.points,
               stripColors: config.colors,
+              stripStyles: config.styles,
             },
           },
     );

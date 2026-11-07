@@ -4,6 +4,11 @@ import {
   aColorsHitReturnsItsRole,
   aColorsMissReturnsAccent,
   aNullBreaksThePolyline,
+  anAreaClosesEachRunToTheBottom,
+  aNegativeBarHangsBelowZero,
+  aZeroBarIsStillDrawn,
+  barsStandOnTheZeroLine,
+  pointStyleDefaultsToLine,
   aSelectionSearchCarriesSegmentsAndPoints,
   anEmptyListSendsNoKey,
   anotherSegmentsKeyReturnsAccent,
@@ -91,4 +96,12 @@ describe("F4.306 U9 trend strip selection helpers", () => {
   it("sends no key for an empty list", () => {
     anEmptyListSendsNoKey();
   });
+});
+
+describe("F4.322 PR 3 — the area and bar sparkline styles (ADR 0108 Amendment 8)", () => {
+  it("closes each area run to the bottom", () => anAreaClosesEachRunToTheBottom());
+  it("stands each bar on the zero line", () => barsStandOnTheZeroLine());
+  it("hangs a negative bar below zero and never hides the lowest", () => aNegativeBarHangsBelowZero());
+  it("draws a zero reading as a 1 px bar", () => aZeroBarIsStillDrawn());
+  it("defaults a point's style to line", () => pointStyleDefaultsToLine());
 });

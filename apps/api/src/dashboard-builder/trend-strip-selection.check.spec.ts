@@ -7,6 +7,7 @@ import {
   assertTrendStripSelections,
   hasTrendStripSelection,
   trendStripColorKeyMessage,
+  trendStripStyleKeyMessage,
   trendStripNoSiteMessage,
   trendStripPointOffListMessage,
   trendStripPointRepeatMessage,
@@ -49,7 +50,12 @@ function segment(domain: string, codes: readonly string[]): TrendPointSegmentDto
 
 const LISTS: readonly TrendPointSegmentDto[] = [segment(SEG_A, [KW, PF]), segment(SEG_B, [VOLT])];
 
-type Selection = { segments?: string[]; points?: string[]; colors?: Record<string, string> };
+type Selection = {
+  segments?: string[];
+  points?: string[];
+  colors?: Record<string, string>;
+  styles?: Record<string, string>;
+};
 
 function strip(selection: Selection): WidgetWriteBody {
   return {
@@ -195,6 +201,37 @@ export function aColorKeyInPointsIsAccepted(): void {
       colors: { [`${SEG_A}:${KW}`]: "series-1", [`${SEG_A}:${PF}`]: "series-2" },
     }),
   ]);
+}
+
+// ---- `F4.322` PR 3: a styles key not in points (ADR 0108 Amendment 8) ------------------------
+
+export function aStyleKeyOutsidePointsIsRefused(): void {
+  expectRefused(
+    [
+      strip({
+        segments: [SEG_A],
+        points: [`${SEG_A}:${KW}`],
+        styles: { [`${SEG_A}:${KW}`]: "area", [`${SEG_A}:${PF}`]: "bar" },
+      }),
+    ],
+    trendStripStyleKeyMessage(0, 1),
+  );
+}
+
+export function aStyleKeyInPointsIsAccepted(): void {
+  expectAccepted([
+    strip({
+      segments: [SEG_A],
+      points: [`${SEG_A}:${KW}`, `${SEG_A}:${PF}`],
+      styles: { [`${SEG_A}:${KW}`]: "area", [`${SEG_A}:${PF}`]: "bar" },
+    }),
+  ]);
+}
+
+/** A strip that carries only `styles` is a selection, so its keys are checked too. */
+export function aStylesOnlyStripIsChecked(): void {
+  expect(hasTrendStripSelection(strip({ styles: { [`${SEG_A}:${KW}`]: "bar" } }))).toBe(true);
+  expectRefused([strip({ styles: { [`${SEG_A}:${KW}`]: "bar" } })], trendStripStyleKeyMessage(0, 0));
 }
 
 // ---- a selection on a dashboard with no location --------------------------------------------

@@ -2,7 +2,16 @@ import { expect } from "vitest";
 
 import { formatInZone } from "../components/asset-history/history-format";
 import { trendStripSearch } from "../api/trend-strip";
-import { historyHref, lastValue, sparklinePolylines, strokeRoleFor, stripWindowLabel } from "./trend-strip";
+import {
+  historyHref,
+  lastValue,
+  pointStyleFor,
+  sparklineAreas,
+  sparklineBars,
+  sparklinePolylines,
+  strokeRoleFor,
+  stripWindowLabel,
+} from "./trend-strip";
 
 /**
  * `F4.301` U4 (ADR 0108 Amendment 2, items 5, 7 and 9) — the trend strip's pure helpers.
@@ -127,4 +136,47 @@ export function anEmptyListSendsNoKey(): void {
   expect(params.has("segments")).toBe(false);
   expect(params.has("points")).toBe(false);
   expect(params.toString()).toBe("range=7d");
+}
+
+// ---- `F4.322` PR 3 (ADR 0108 Amendment 8) — the area and bar styles -------------------------
+
+/** An area is each polyline run closed down to the bottom; a `null` still breaks it. */
+export function anAreaClosesEachRunToTheBottom(): void {
+  const areas = sparklineAreas([{ v: 1 }, { v: 2 }, { v: null }, { v: 3 }], 120, 36);
+  expect(areas).toEqual(["0,36 0,36 40,18 40,36", "120,36 120,0 120,36"]);
+  expect(sparklineAreas([{ v: null }], 120, 36)).toEqual([]);
+}
+
+/** One bar per non-null bucket, from the zero line, inside its slot. */
+export function barsStandOnTheZeroLine(): void {
+  expect(sparklineBars([{ v: 2 }, { v: null }, { v: 4 }], 120, 36)).toEqual([
+    { x: 4, y: 18, width: 32, height: 18 },
+    { x: 84, y: 0, width: 32, height: 36 },
+  ]);
+  expect(sparklineBars([{ v: null }], 120, 36)).toEqual([]);
+}
+
+/** A negative value hangs below the zero line; the lowest value is never an invisible bar. */
+export function aNegativeBarHangsBelowZero(): void {
+  expect(sparklineBars([{ v: -2 }, { v: 2 }], 120, 36)).toEqual([
+    { x: 6, y: 18, width: 48, height: 18 },
+    { x: 66, y: 0, width: 48, height: 18 },
+  ]);
+  // A constant export of -12 kW still draws: full height down from the zero line at the top.
+  expect(sparklineBars([{ v: -12 }, { v: -12 }], 120, 36).map((b) => b.height)).toEqual([36, 36]);
+}
+
+/** A zero reading is data: a 1 px bar on the baseline, not a gap. */
+export function aZeroBarIsStillDrawn(): void {
+  expect(sparklineBars([{ v: 0 }, { v: 0 }], 120, 36).map((b) => [b.y, b.height])).toEqual([
+    [35, 1],
+    [35, 1],
+  ]);
+}
+
+/** The style of one point, keyed like `colors`; absent is `line`. */
+export function pointStyleDefaultsToLine(): void {
+  expect(pointStyleFor({ "hvac:kw": "bar" }, "hvac", "kw")).toBe("bar");
+  expect(pointStyleFor({ "hvac:kw": "bar" }, "electrical", "kw")).toBe("line");
+  expect(pointStyleFor(undefined, "hvac", "kw")).toBe("line");
 }

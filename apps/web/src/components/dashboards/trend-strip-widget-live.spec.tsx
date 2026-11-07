@@ -57,7 +57,7 @@ function widget(config: TrendStripWidgetConfig): Extract<DashboardWidgetDto, { w
   } as Extract<DashboardWidgetDto, { widgetType: "trend_strip" }>;
 }
 
-function strip(range: SiteTrendStripDto["range"]): SiteTrendStripDto {
+function strip(range: SiteTrendStripDto["range"], segments: SiteTrendStripDto["segments"] = []): SiteTrendStripDto {
   return {
     locationId: LOCATION_ID,
     assetGroupId: null,
@@ -70,14 +70,19 @@ function strip(range: SiteTrendStripDto["range"]): SiteTrendStripDto {
     assetsPerPoint: 6,
     pointsPerSegment: 3,
     trimmed: false,
-    segments: [],
+    segments,
   };
 }
 
-function renderLive(config: TrendStripWidgetConfig, locationId: string | null = LOCATION_ID, entry = "/"): void {
+function renderLive(
+  config: TrendStripWidgetConfig,
+  locationId: string | null = LOCATION_ID,
+  entry = "/",
+  segments: SiteTrendStripDto["segments"] = [],
+): void {
   fetchSpy = vi.fn(() => Promise.reject(new Error("trend-strip-widget-live spec: an unmocked read reached fetch")));
   vi.stubGlobal("fetch", fetchSpy);
-  fetchStrip.mockImplementation((_id, { range }) => Promise.resolve(strip(range)));
+  fetchStrip.mockImplementation((_id, { range }) => Promise.resolve(strip(range, segments)));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={queryClient}>
@@ -180,4 +185,38 @@ export async function aConfigWithoutSelectionSendsNone(): Promise<void> {
   renderLive({ tabKey: "hvac", defaultRange: "24h" });
   await waitFor(() => expect(fetchStrip).toHaveBeenCalled());
   expect(Object.keys(fetchStrip.mock.calls[0][1]).sort()).toEqual(["assetGroupId", "range"]);
+}
+
+/** `F4.322` PR 3 (ADR 0108 Amendment 8): a stored `styles` entry reaches the drawn sparkline. */
+export async function aStoredStyleIsDrawn(): Promise<void> {
+  const segments: SiteTrendStripDto["segments"] = [
+    {
+      domain: "seg-one",
+      label: "Segment One",
+      source: "catalog",
+      points: [
+        {
+          code: "kw",
+          name: "Active power",
+          unit: "kW",
+          assets: [
+            {
+              assetId: "3f2e1d0c-9b8a-4c7d-8e6f-5a4b3c2d1e0f",
+              assetCode: "A-01",
+              assetName: "Asset 1",
+              assetRtuName: null,
+              assetLocationName: null,
+              unit: "kW",
+              buckets: [{ t: "2026-11-01T05:30:00.000Z", v: 1 }, { t: "2026-11-01T06:00:00.000Z", v: 2 }],
+            },
+          ],
+          moreAssets: 0,
+        },
+      ],
+    },
+  ] as SiteTrendStripDto["segments"];
+  renderLive({ defaultRange: "24h", styles: { "seg-one:kw": "bar" } }, LOCATION_ID, "/", segments);
+  const row = await screen.findByRole("listitem", { name: "Active power" });
+  expect(row.querySelectorAll('[data-role="sparkline-bar"]').length).toBeGreaterThan(0);
+  expect(row.querySelectorAll("polyline").length).toBe(0);
 }

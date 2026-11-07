@@ -4,7 +4,7 @@ import type { TrendPointSegmentDto, WidgetWriteBody } from "@bms/shared";
 
 /**
  * `F4.306` / ADR 0108 Amendment 7 — the write-path check of a `trend_strip` widget's selection
- * (`segments`, `points`, `colors`) against the organization's effective trend-point lists
+ * (`segments`, `points`, `colors`, and since `F4.322` `styles`) against the organization's effective trend-point lists
  * (`TrendPointsService.effective(organizationId, {})`, the `F4.300` lists the strip route reads).
  *
  * The config schema admits the three fields without a refinement (the arm must stay a plain
@@ -42,15 +42,21 @@ export const trendStripPointOffListMessage = (widget: number, index: number): st
 export const trendStripColorKeyMessage = (widget: number, index: number): string =>
   `widgets[${widget}].config.colors key ${index} is not in points`;
 
+/** `F4.322` PR 3 / ADR 0108 Amendment 8 — the `colors` rule, for `styles`. */
+export const trendStripStyleKeyMessage = (widget: number, index: number): string =>
+  `widgets[${widget}].config.styles key ${index} is not in points`;
+
 type TrendStripConfig = Extract<WidgetWriteBody, { widgetType: "trend_strip" }>["config"];
 
 function selectionOf(widget: WidgetWriteBody): TrendStripConfig | null {
   if (widget.widgetType !== "trend_strip") return null;
-  const { segments, points, colors } = widget.config;
-  return segments === undefined && points === undefined && colors === undefined ? null : widget.config;
+  const { segments, points, colors, styles } = widget.config;
+  return segments === undefined && points === undefined && colors === undefined && styles === undefined
+    ? null
+    : widget.config;
 }
 
-/** True when the widget is a `trend_strip` that carries any of the three selection fields. */
+/** True when the widget is a `trend_strip` that carries any selection field (`styles` since `F4.322`). */
 export function hasTrendStripSelection(widget: WidgetWriteBody): boolean {
   return selectionOf(widget) !== null;
 }
@@ -110,6 +116,9 @@ export function assertTrendStripSelections(
     const selected = new Set(points);
     for (const [index, key] of Object.keys(config.colors ?? {}).entries()) {
       if (!selected.has(key)) throw new BadRequestException(trendStripColorKeyMessage(w, index));
+    }
+    for (const [index, key] of Object.keys(config.styles ?? {}).entries()) {
+      if (!selected.has(key)) throw new BadRequestException(trendStripStyleKeyMessage(w, index));
     }
   }
 }

@@ -562,3 +562,29 @@ export function cleanupStrip(): void {
   vi.unstubAllGlobals();
   expect(reached, "a read reached the real fetch").toBe(0);
 }
+
+/**
+ * `F4.322` PR 3 (ADR 0108 Amendment 8) — a `styles` entry draws that point as an area or as
+ * bars; a point with no entry keeps today's line, and its row has no fill and no bar.
+ */
+export async function aStyledPointDrawsInItsStyle(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderBodies([{ styles: { "seg-one:kw": "area", "seg-two:temp_c": "bar" } }]);
+
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  const rowOf = (name: string) => document.body.querySelector(`li[aria-label="${name}"]`) as HTMLElement;
+  expect(rowOf("Active power").querySelectorAll('[data-role="sparkline-area"]').length).toBeGreaterThan(0);
+  expect(rowOf("Active power").querySelectorAll("polyline").length, "an area keeps its line").toBeGreaterThan(0);
+  expect(rowOf("Temperature").querySelectorAll('[data-role="sparkline-bar"]').length).toBeGreaterThan(0);
+  expect(rowOf("Temperature").querySelectorAll("polyline").length, "bars draw no line").toBe(0);
+}
+
+export async function anUnstyledPointKeepsTheLine(): Promise<void> {
+  fetchStrip.mockResolvedValue(strip());
+  renderBodies([undefined]);
+
+  await screen.findByRole("heading", { name: "Segment One Label" });
+  const row = document.body.querySelector('li[aria-label="Active power"]') as HTMLElement;
+  expect(row.querySelectorAll('[data-role="sparkline-area"], [data-role="sparkline-bar"]').length).toBe(0);
+  expect(row.querySelectorAll("polyline").length).toBeGreaterThan(0);
+}

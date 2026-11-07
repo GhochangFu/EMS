@@ -947,6 +947,9 @@ export function runTrendStripSelectionRoundTripTests(): void {
     { defaultRange: "24h", points },
     { defaultRange: "30d", colors },
     { defaultRange: "24h" },
+    // `F4.322` PR 3 (ADR 0108 Amendment 8) — `styles`, alone and with the other three.
+    { defaultRange: "30d", styles: { "hvac:supply_temp_c": "bar" } },
+    { tabKey: "hvac", defaultRange: "7d", segments, points, colors, styles: { "electrical:kw_total": "area" } },
   ];
   const dto = dashboardDto(stored.map((config, index) => siteDto("trend_strip", config, `strip-${index}`)));
   const payload = buildPutWidgetsPayload(dashboardRowsFromDto(dto), []);

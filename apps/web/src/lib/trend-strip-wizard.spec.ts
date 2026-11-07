@@ -15,7 +15,9 @@ import {
   canAddPoint,
   defaultSelection,
   placeInDraft,
+  POINT_STYLE_LABELS,
   setPointColor,
+  setPointStyle,
   stripConfigFor,
   togglePoint,
   toggleSegment,
@@ -353,4 +355,56 @@ export function aChartLookingBodyIsNotTheTrendArm(): void {
   const body = { ...appendBodyFor(EMPTY, "24h", [{ key: null, assetGroupId: null }]), points: [] };
   expect(appendTrendStripWidgetsBodySchema.safeParse(body).success).toBe(false);
   expect(appendWidgetBodySchema.safeParse(body).success).toBe(false);
+}
+
+// --- `F4.322` PR 3 (ADR 0108 Amendment 8) — a draw style per point -------------------------------
+
+/** A style writes `styles[key]`; `line` (the default) deletes it. Labels are plain words. */
+export function aStyleIsSetAndLineDeletesIt(): void {
+  const chosen = setPointStyle(selectionOf(1), "seg-a:p0", "area");
+  expect(chosen.styles).toEqual({ "seg-a:p0": "area" });
+  expect(setPointStyle(chosen, "seg-a:p0", "line").styles).toEqual({});
+  expect(POINT_STYLE_LABELS).toEqual({ line: "Line", area: "Area", bar: "Bars" });
+}
+
+/** Unchoosing a point or its segment drops its style, as it drops its colour. */
+export function droppingAPointOrSegmentDropsItsStyle(): void {
+  const before: WizardSelection = {
+    segments: ["seg-a", "seg-b"],
+    points: ["seg-a:p0", "seg-b:p0"],
+    colors: {},
+    styles: { "seg-a:p0": "bar", "seg-b:p0": "area" },
+  };
+  expect(togglePoint(before, "seg-a:p0").styles).toEqual({ "seg-b:p0": "area" });
+  expect(toggleSegment(before, "seg-b").styles).toEqual({ "seg-a:p0": "bar" });
+}
+
+/** The stored config carries `styles` for chosen points only, after `colors`; none is absent. */
+export function theConfigCarriesStylesForChosenPoints(): void {
+  const selection: WizardSelection = {
+    segments: ["seg-a"],
+    points: ["seg-a:p0"],
+    colors: { "seg-a:p0": "series-2" },
+    styles: { "seg-a:p0": "bar", "seg-a:gone": "area" },
+  };
+  const config = stripConfigFor(selection, "7d", { key: null, assetGroupId: null });
+  expect(JSON.stringify(config)).toBe(
+    JSON.stringify({
+      defaultRange: "7d",
+      segments: ["seg-a"],
+      points: ["seg-a:p0"],
+      colors: { "seg-a:p0": "series-2" },
+      styles: { "seg-a:p0": "bar" },
+    }),
+  );
+  expect(stripConfigFor({ ...selection, styles: {} }, "7d", { key: null, assetGroupId: null }).styles).toBeUndefined();
+}
+
+/** Replace writes `stripStyles`, and removes a stale one the new config does not hold. */
+export function replaceWritesAndClearsStripStyles(): void {
+  const styled = stripConfigFor(setPointStyle(selectionOf(1), "seg-a:p0", "area"), "24h", { key: "plant", assetGroupId: null });
+  const [withStyle] = placeInDraft([stripRow("plant", 0)], "plant", styled);
+  expect(withStyle.config.stripStyles).toEqual({ "seg-a:p0": "area" });
+  const [cleared] = placeInDraft([withStyle], "plant", stripConfigFor(selectionOf(1), "24h", { key: "plant", assetGroupId: null }));
+  expect(cleared.config.stripStyles).toBeUndefined();
 }

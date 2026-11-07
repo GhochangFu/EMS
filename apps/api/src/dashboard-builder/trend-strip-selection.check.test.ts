@@ -2,6 +2,9 @@ import { describe, it } from "vitest";
 
 import {
   aColorKeyInPointsIsAccepted,
+  aStyleKeyInPointsIsAccepted,
+  aStyleKeyOutsidePointsIsRefused,
+  aStylesOnlyStripIsChecked,
   aColorKeyOutsidePointsIsRefused,
   aPointInAChosenSegmentIsAccepted,
   aPointOffItsListIsRefused,
@@ -35,6 +38,9 @@ describe("F4.306 U5 — assertTrendStripSelections checks a trend strip selectio
   it("the same entry in two widgets is not a repeat", () => theSameEntryInTwoWidgetsIsAccepted());
   it("a colors key outside points is a 400 naming its index", () => aColorKeyOutsidePointsIsRefused());
   it("colors keys inside points are accepted", () => aColorKeyInPointsIsAccepted());
+  it("a styles key outside points is a 400 naming its index", () => aStyleKeyOutsidePointsIsRefused());
+  it("styles keys inside points are accepted", () => aStyleKeyInPointsIsAccepted());
+  it("a strip with only styles is checked", () => aStylesOnlyStripIsChecked());
   it("a selection on a dashboard with no site is a 400 naming the widget", () => aSelectionWithNoSiteIsRefused());
   it("a strip without a selection on a dashboard with no site is accepted", () =>
     aStripWithoutSelectionWithNoSiteIsAccepted());

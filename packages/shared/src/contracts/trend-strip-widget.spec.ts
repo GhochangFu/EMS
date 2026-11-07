@@ -14,6 +14,7 @@ import {
   TREND_STRIP_WIDGET_ROWS,
   pointSelectionPattern,
   seriesRoleSchema,
+  TREND_STRIP_POINT_STYLES,
   trendStripWidgetConfigSchema,
 } from "./trend-strip-widget";
 
@@ -240,5 +241,38 @@ export function assertThirtyPointsOfSixAssetsFillTheSeriesCap(): void {
   assert(
     TREND_STRIP_WIDGET_MAX_POINTS * TREND_STRIP_MAX_ASSETS_PER_POINT === TREND_STRIP_MAX_SERIES,
     `${TREND_STRIP_WIDGET_MAX_POINTS} x ${TREND_STRIP_MAX_ASSETS_PER_POINT} must equal ${TREND_STRIP_MAX_SERIES}`,
+  );
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// `F4.322` PR 3 (ADR 0108 Amendment 8) — a draw style per selected point.
+// ---------------------------------------------------------------------------------------------
+
+export function assertTheStylesField(): void {
+  assert(
+    JSON.stringify(TREND_STRIP_POINT_STYLES) === JSON.stringify(["line", "area", "bar"]),
+    `the styles are line, area and bar, got ${JSON.stringify(TREND_STRIP_POINT_STYLES)}`,
+  );
+  for (const config of [
+    { defaultRange: "24h", styles: { "hvac:supply_temp_c": "area" } },
+    {
+      defaultRange: "7d",
+      segments: ["hvac"],
+      points: ["hvac:supply_temp_c", "hvac:kw"],
+      colors: { "hvac:kw": "series-2" },
+      styles: { "hvac:supply_temp_c": "bar", "hvac:kw": "line" },
+    },
+  ]) {
+    assert(trendStripWidgetConfigSchema.safeParse(config).success, `${JSON.stringify(config)} must parse`);
+    assert(writeIssues(config) === "", `${JSON.stringify(config)} must parse as a write: ${writeIssues(config)}`);
+  }
+  assert(
+    writeIssues({ defaultRange: "24h", styles: { "hvac:kw": "dots" } }).includes('"styles"'),
+    "an unknown style is refused",
+  );
+  assert(
+    writeIssues({ defaultRange: "24h", styles: { "not a key": "line" } }).includes('"styles"'),
+    "a key that is not domain:code is refused",
   );
 }

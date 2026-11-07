@@ -3,11 +3,12 @@ import { afterEach, describe, it } from "vitest";
 
 import {
   aColourIsDroppedWithItsPoint,
+  aStyleIsDroppedWithItsPoint,
   aListedPointShowsNeither,
   aStalePointShowsTheMarkerAndARemove,
   aStaleSegmentShowsTheMarker,
   cleanupSelectionSummary,
-  clearSelectionWritesAllThreeUndefined,
+  clearSelectionWritesEveryFieldUndefined,
   eachPointShowsItsColourRole,
   noLocationReadsNothing,
   removingAStaleSegmentDropsItsPointsAndColours,
@@ -43,6 +44,10 @@ describe("F4.306 U10 TrendStripSelectionSummary", () => {
     await removingTheLastPointWritesUndefined();
   });
 
+  it("drops a point's style with the point (F4.322)", async () => {
+    await aStyleIsDroppedWithItsPoint();
+  });
+
   it("drops a point's colour with the point", async () => {
     await aColourIsDroppedWithItsPoint();
   });
@@ -52,7 +57,7 @@ describe("F4.306 U10 TrendStripSelectionSummary", () => {
   });
 
   it("clears all three fields to undefined", async () => {
-    await clearSelectionWritesAllThreeUndefined();
+    await clearSelectionWritesEveryFieldUndefined();
   });
 
   it("shows one sentence and reads nothing without a site", async () => {

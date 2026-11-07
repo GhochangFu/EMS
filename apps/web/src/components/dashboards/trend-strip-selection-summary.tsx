@@ -4,8 +4,8 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchSiteTrendPoints } from "../../api/site-trend-points";
 import type { WidgetConfigRow } from "../../lib/widget-config-form";
 
-/** The three stored selection fields; an emptied one is `undefined`, never `[]` or `{}`. */
-type Selection = Pick<WidgetConfigRow, "stripSegments" | "stripPoints" | "stripColors">;
+/** The stored selection fields (`stripStyles` since `F4.322`); an emptied one is `undefined`, never `[]` or `{}`. */
+type Selection = Pick<WidgetConfigRow, "stripSegments" | "stripPoints" | "stripColors" | "stripStyles">;
 
 type TrendStripSelectionSummaryProps = {
   /** The dashboard's site; `null` (no site) shows one sentence and reads nothing. */
@@ -13,7 +13,9 @@ type TrendStripSelectionSummaryProps = {
   segments: Selection["stripSegments"];
   points: Selection["stripPoints"];
   colors: Selection["stripColors"];
-  /** Receives all three fields, each `undefined` when emptied (the write schema's `.min(1)`). */
+  /** `F4.322` PR 3 — each point's draw style, dropped with its point. */
+  styles?: Selection["stripStyles"];
+  /** Receives every field, each `undefined` when emptied (the write schema's `.min(1)`). */
   onChange: (next: Selection) => void;
 };
 
@@ -35,6 +37,13 @@ function coloursWithout(colors: Selection["stripColors"], drop: (key: string) =>
   return kept.length > 0 ? Object.fromEntries(kept) : undefined;
 }
 
+/** `F4.322` PR 3 — the styles without the keys `drop` names; no entry left is absent. */
+function stylesWithout(styles: Selection["stripStyles"], drop: (key: string) => boolean): Selection["stripStyles"] {
+  if (styles === undefined) return undefined;
+  const kept = Object.entries(styles).filter(([key]) => !drop(key));
+  return kept.length > 0 ? Object.fromEntries(kept) : undefined;
+}
+
 /** `<segment>:<point code>` split at the first colon (each half is a catalog code, no colon). */
 function splitKey(key: string): { domain: string; code: string } {
   const at = key.indexOf(":");
@@ -49,7 +58,14 @@ function splitKey(key: string): { domain: string; code: string } {
  * through the wizard, not here. A sibling of `widget-inspector.tsx` for its line cap; it names no
  * segment (ADR 0108 decision 5.4).
  */
-export function TrendStripSelectionSummary({ locationId, segments, points, colors, onChange }: TrendStripSelectionSummaryProps) {
+export function TrendStripSelectionSummary({
+  locationId,
+  segments,
+  points,
+  colors,
+  styles,
+  onChange,
+}: TrendStripSelectionSummaryProps) {
   const listsQ = useQuery({
     queryKey: ["control-room", "trend-points", locationId],
     queryFn: () => fetchSiteTrendPoints(locationId as string),
@@ -70,6 +86,7 @@ export function TrendStripSelectionSummary({ locationId, segments, points, color
       stripSegments: segments,
       stripPoints: listOrUndefined((points ?? []).filter((entry) => entry !== key)),
       stripColors: coloursWithout(colors, (entry) => entry === key),
+      stripStyles: stylesWithout(styles, (entry) => entry === key),
     });
   }
 
@@ -79,6 +96,7 @@ export function TrendStripSelectionSummary({ locationId, segments, points, color
       stripSegments: listOrUndefined((segments ?? []).filter((entry) => entry !== domain)),
       stripPoints: listOrUndefined((points ?? []).filter((entry) => !inSegment(entry))),
       stripColors: coloursWithout(colors, inSegment),
+      stripStyles: stylesWithout(styles, inSegment),
     });
   }
 
@@ -102,7 +120,9 @@ export function TrendStripSelectionSummary({ locationId, segments, points, color
         <span className="text-xs text-ink-muted">Selection</span>
         <button
           type="button"
-          onClick={() => onChange({ stripSegments: undefined, stripPoints: undefined, stripColors: undefined })}
+          onClick={() =>
+            onChange({ stripSegments: undefined, stripPoints: undefined, stripColors: undefined, stripStyles: undefined })
+          }
           className="surface-button px-2 py-1 text-[11px]"
         >
           Clear selection
