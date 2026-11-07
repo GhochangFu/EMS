@@ -144,6 +144,8 @@ export const chartSeriesKindSchema = z.enum([
   "donut",
   "heatmap",
   "matrix",
+  // `F4.332` / ADR 0047 Amendment 9 — one bar per local day from `energy.cost_by_day`.
+  "cost_by_day",
 ]);
 
 /** Which slot of the renderer a bound point feeds. Mirrors `dashboard_widget_points_role_check`. */
@@ -514,7 +516,10 @@ export const WIDGET_POINT_CARDINALITY: Record<
   // *exactly one kind*, and it lives on write in `dashboard-writes.ts`, not here: it is a
   // cross-field rule between `points` and `sources`, which a per-type number cannot express.
   value_tile: { min: 0, max: 1 },
-  chart: { min: 1, max: MAX_WIDGET_POINTS },
+  // `F4.332` (ADR 0047 Amendment 9 item 2): 0, because a `cost_by_day` chart binds a source
+  // instead. Every other kind still needs a point: the live path's exactly-one-kind rule (with
+  // `chartKindIssues` refusing a source on it), and the asset-template chart's own floor of 1.
+  chart: { min: 0, max: MAX_WIDGET_POINTS },
   // `F3.35` Stage B. A table draws a catalog **dataset** and nothing else: a bound point is a
   // series over time, which has no rows and no columns to project. `{min: 0, max: 0}` here and
   // `{min: 1, max: 1}` in `WIDGET_SOURCE_CARDINALITY` are the two halves of that one statement,
@@ -561,7 +566,8 @@ export const WIDGET_SOURCE_CARDINALITY: Record<
   // critical note). Two KEYS, because `dashboard_widget_sources_widget_key_key` forbids one key
   // twice on a widget; the renderer reads the sortOrder-0 source as the tile's number.
   value_tile: { min: 0, max: 2 },
-  chart: { min: 0, max: 0 },
+  // `F4.332` — the `cost_by_day` kind's one `energy.cost_by_day` source (`chartKindIssues`).
+  chart: { min: 0, max: 1 },
   // `F3.35` Stage B, and the `min: 1` is the difference from every entry above it. A tile may
   // bind a point INSTEAD of a metric, so its minimum is zero; a table has no second way to get
   // rows, so a table with no source is not a partially-authored widget but an empty card.
@@ -836,7 +842,8 @@ export const WIDGET_SOURCE_SHAPES: Record<
   radial_gauge: [],
   tank_level: [],
   value_tile: ["metric"],
-  chart: [],
+  // `F4.332` — the `cost_by_day` kind draws the `energy.cost_by_day` rows.
+  chart: ["dataset"],
   // `F3.35` Stage B — the first entry to accept `"dataset"`, and it accepts ONLY that. The
   // mirror of the tile's hole: `alarms.active.count` satisfies `{min: 1, max: 1}` above exactly
   // as well as `alarms.active` does, and would arrive at a renderer that draws rows with one

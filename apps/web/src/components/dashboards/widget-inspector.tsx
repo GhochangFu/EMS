@@ -36,7 +36,9 @@ import {
 } from "../../lib/widget-config-form";
 import { Field } from "../asset-templates/field";
 import { ChartPointColorSelect } from "./chart-point-color-select";
+import { rowForChartKind } from "../../lib/cost-by-day-form";
 import { ChartSeriesPicker } from "./chart-series-picker";
+import { CostByDayFields } from "./cost-by-day-fields";
 import { MetricSourcePicker } from "./metric-source-picker";
 import { PointPicker } from "./point-picker";
 import { TableColumnPicker } from "./table-column-picker";
@@ -720,74 +722,79 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
       {row.widgetType === "chart" ? (
         <div className="space-y-2">
           <Field label="Chart kind" error={problemFor("series")}>
-            <ChartSeriesPicker value={row.config.series} onChange={(series) => updateConfig({ series })} />
+            <ChartSeriesPicker value={row.config.series} onChange={(series) => onChange(rowForChartKind(row, series))} />
           </Field>
-          <div className="grid gap-3 md:grid-cols-2">
-            {/* `F4.325` — a matrix always reads the last day, so it shows that instead of the field. */}
-            {row.config.series === "matrix" ? (
-              <Field label="Window">
-                <p className="px-2 py-1.5 text-xs text-ink-muted">Last 24 hours, one column per hour</p>
-              </Field>
-            ) : (
-              <Field label="Window (minutes)" error={problemFor("windowMinutes")}>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={row.config.windowMinutes}
-                  placeholder="1440 (default)"
-                  onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
+          {/* `F4.332` — a daily cost chart reads a named dataset: its own fields, none of the rest. */}
+          {row.config.series === "cost_by_day" ? <CostByDayFields row={row} onChange={onChange} /> : (
+            <>
+              <div className="grid gap-3 md:grid-cols-2">
+                {/* `F4.325` — a matrix always reads the last day, so it shows that instead of the field. */}
+                {row.config.series === "matrix" ? (
+                  <Field label="Window">
+                    <p className="px-2 py-1.5 text-xs text-ink-muted">Last 24 hours, one column per hour</p>
+                  </Field>
+                ) : (
+                  <Field label="Window (minutes)" error={problemFor("windowMinutes")}>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={row.config.windowMinutes}
+                      placeholder="1440 (default)"
+                      onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
+                      className="surface-field w-full px-2 py-1.5 text-xs"
+                    />
+                  </Field>
+                )}
+                {/* `F4.323` — a donut or a heatmap has no value axis to name. */}
+                {chartHasValueAxis(row.config.series) ? (
+                  <Field label="Y-axis label" error={problemFor("yAxisLabel")}>
+                    <input
+                      type="text"
+                      value={row.config.yAxisLabel}
+                      onChange={(event) => updateConfig({ yAxisLabel: event.target.value })}
+                      className="surface-field w-full px-2 py-1.5 text-xs"
+                    />
+                  </Field>
+                ) : null}
+              </div>
+              <Field label={chartPlotOptions(row.config.series).label} error={problemFor("chartAggregate")}>
+                <select
+                  value={row.config.chartAggregate}
+                  onChange={(event) =>
+                    updateConfig({
+                      chartAggregate: event.target.value as WidgetConfigRow["chartAggregate"],
+                    })
+                  }
                   className="surface-field w-full px-2 py-1.5 text-xs"
-                />
+                >
+                  {chartPlotOptions(row.config.series).options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </Field>
-            )}
-            {/* `F4.323` — a donut or a heatmap has no value axis to name. */}
-            {chartHasValueAxis(row.config.series) ? (
-              <Field label="Y-axis label" error={problemFor("yAxisLabel")}>
+              {/* `F4.323` — only a series over time stacks. */}
+              {!chartStacks(row.config.series) ? null : (
+                <label className="flex items-center gap-2 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={row.config.stacked}
+                    onChange={(event) => updateConfig({ stacked: event.target.checked })}
+                  />
+                  Stack series
+                </label>
+              )}
+              <label className="flex items-center gap-2 text-xs">
                 <input
-                  type="text"
-                  value={row.config.yAxisLabel}
-                  onChange={(event) => updateConfig({ yAxisLabel: event.target.value })}
-                  className="surface-field w-full px-2 py-1.5 text-xs"
+                  type="checkbox"
+                  checked={row.config.footerStats}
+                  onChange={(event) => updateConfig({ footerStats: event.target.checked })}
                 />
-              </Field>
-            ) : null}
-          </div>
-          <Field label={chartPlotOptions(row.config.series).label} error={problemFor("chartAggregate")}>
-            <select
-              value={row.config.chartAggregate}
-              onChange={(event) =>
-                updateConfig({
-                  chartAggregate: event.target.value as WidgetConfigRow["chartAggregate"],
-                })
-              }
-              className="surface-field w-full px-2 py-1.5 text-xs"
-            >
-              {chartPlotOptions(row.config.series).options.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </Field>
-          {/* `F4.323` — only a series over time stacks. */}
-          {!chartStacks(row.config.series) ? null : (
-            <label className="flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={row.config.stacked}
-                onChange={(event) => updateConfig({ stacked: event.target.checked })}
-              />
-              Stack series
-            </label>
+                Show peak, average and granularity below the chart
+              </label>
+            </>
           )}
-          <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={row.config.footerStats}
-              onChange={(event) => updateConfig({ footerStats: event.target.checked })}
-            />
-            Show peak, average and granularity below the chart
-          </label>
         </div>
       ) : null}
 
@@ -796,7 +803,7 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
         nodes from the dashboard's asset group), the way "Named metric" below is absent at
         `sourceCardinality.max === 0`.
       */}
-      {cardinality.max > 0 ? (
+      {cardinality.max > 0 && !(row.widgetType === "chart" && row.config.series === "cost_by_day") ? (
         <Field label="Bound points" error={problemFor("points")}>
           <ul className="space-y-1">
             {row.points.map((point, index) => (
@@ -862,7 +869,8 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
         has no field of its own — and passing it to both `Field`s rendered the same sentence
         twice, which reads as two problems.
       */}
-      {sourceCardinality.max > 0 ? (
+      {/* `F4.332` — a chart's one source is the cost kind's, bound by `CostByDayFields`, never picked. */}
+      {sourceCardinality.max > 0 && row.widgetType !== "chart" ? (
         <Field label="Named metric">
           <ul className="space-y-1">
             {row.sources.map((source, index) => (

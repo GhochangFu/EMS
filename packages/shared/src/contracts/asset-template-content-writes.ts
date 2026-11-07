@@ -450,7 +450,9 @@ const templateWidgetIdentityFields = {
 const widgetPointKeys = (widgetType: WidgetType) =>
   z
     .array(pointKeyRef)
-    .min(WIDGET_POINT_CARDINALITY[widgetType].min)
+    // `F4.332` — the chart minimum fell to 0 for the `cost_by_day` kind, which binds a source; an
+    // asset template binds point keys only and has no exactly-one-kind rule, so its chart keeps 1.
+    .min(widgetType === "chart" ? 1 : WIDGET_POINT_CARDINALITY[widgetType].min)
     .max(WIDGET_POINT_CARDINALITY[widgetType].max);
 
 /**

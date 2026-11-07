@@ -32,7 +32,9 @@ export const energyCostDayRowSchema = z.object({
   day: z.string().regex(LOCAL_DAY_PATTERN),
   kwh: z.number().nullable(),
   cost: z.number().nullable(),
-  currency: z.string().nullable(),
+  // ISO 4217, as `bms.organizations.currency`'s CHECK (migration `0076`): the web's tooltip
+  // interpolates it, so the contract it parses with holds the shape too, not only the database.
+  currency: z.string().regex(/^[A-Z]{3}$/).nullable(),
   reason: energyCostReasonSchema.nullable(),
 });
 

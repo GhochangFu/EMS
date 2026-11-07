@@ -229,7 +229,8 @@ export function rejectsAnySourceOnAChart(): void {
     sectionTemplateContentSchema,
     chart({ sources: [METRIC] }),
     ["widgets", 0, "sources"],
-    /at most 0/,
+    // `F4.332`: a chart may bind one source now, for `cost_by_day` only; any other kind is refused.
+    /binds points, not a named metric/,
     "any source on a chart",
   );
 }

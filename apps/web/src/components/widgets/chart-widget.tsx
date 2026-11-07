@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import type { PointAggregateStats } from "@bms/shared";
 
 import { useChartTheme } from "../../lib/chart-theme";
+import { RATE_EFFECTIVE_NOW_NOTE } from "../../lib/energy-cost-labels";
 import { CHART_SERIES, chartReadsHours, type ChartConfig, type WidgetSeries, type WidgetStatus } from "../../lib/widget-catalog";
 import { buildChartOption, donutLeftOut } from "../../lib/widget-echarts-option";
 import { formatBucketWidth, formatWidgetValue } from "../../lib/widget-value";
@@ -24,6 +25,8 @@ type ChartWidgetProps = {
   /** `F4.323` PR 2 — the zone a heatmap's hours are in. `null` (an answer with no zone) draws in UTC
    * and says so; absent (no answer yet) draws in UTC and says nothing. */
   timeZone?: string | null;
+  /** `F4.332` — the chart plots a stored `energy_cost_*` point, priced at the latest tick's rate. */
+  storedCost?: boolean;
 };
 
 /**
@@ -56,6 +59,7 @@ export function ChartWidget({
   stats,
   bucketSeconds,
   timeZone,
+  storedCost,
 }: ChartWidgetProps) {
   const { roles, theme } = useChartTheme();
   const option = useMemo<EChartsOption>(
@@ -90,6 +94,11 @@ export function ChartWidget({
           names no zone they are UTC, and the chart says so rather than passing UTC off as local. */}
       {chartReadsHours(config.series) && status === "ready" && timeZone === null ? (
         <p className="mt-1 text-[11px] text-ink-muted">Hours shown in UTC: the site's time zone is not known.</p>
+      ) : null}
+      {/* `F4.332` (ADR 0070 Amendment 7 decision 8) — the stored cost points are priced at the
+          latest tick's rate, so a rate change re-prices the whole period. */}
+      {storedCost && status === "ready" ? (
+        <p className="mt-1 text-[11px] text-ink-muted">Energy cost {RATE_EFFECTIVE_NOW_NOTE}.</p>
       ) : null}
       {config.footerStats && status === "ready" ? (
         <ChartFooter config={config} stats={stats ?? null} bucketSeconds={bucketSeconds ?? null} />

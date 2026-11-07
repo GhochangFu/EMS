@@ -734,7 +734,7 @@ const eachChartKindHolds = (widgets: z.infer<typeof widgetWriteSchema>[], ctx: z
       return;
     }
     for (const issue of [
-      ...chartKindIssues(widget.config, widget.points.length),
+      ...chartKindIssues(widget.config, widget.points.length, widget.sources.map((source) => source.catalogKey)),
       ...chartColorIssues(widget.config, widget.points.length),
     ]) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: [index, ...issue.path], message: issue.message });
@@ -778,7 +778,9 @@ const widgetsWriteFieldSchema = z
       "or donut chart needs config.aggregate, since it draws one number per point; a heatmap " +
       "needs config.aggregate, exactly one point and config.windowMinutes from 10080 to 43200. " +
       "A matrix needs config.aggregate and a config.windowMinutes of 1440 or none, and a " +
-      "chart's config.colors holds at most one colour per bound point (ADR 0047 Amendment 8).",
+      "chart's config.colors holds at most one colour per bound point (ADR 0047 Amendment 8). " +
+      "A cost_by_day chart binds no point and exactly one energy.cost_by_day source (params " +
+      "{ days: 1-90 }); every other chart kind binds points and no source (ADR 0047 Amendment 9).",
   );
 
 /**

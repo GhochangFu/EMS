@@ -18,6 +18,9 @@ export const HEATMAP_FIT_REASON = "Needs a 7–30 day view of one point";
 /** `F4.325` (ADR 0047 Amendment 8 item 2) — the reason a matrix does not fit: it reads the last day. */
 export const MATRIX_FIT_REASON = "Needs a 24-hour view";
 
+/** `F4.332` (ADR 0047 Amendment 9) — a daily cost chart is built in the dashboard builder, not from points. */
+export const COST_BY_DAY_FIT_REASON = "Add it from the dashboard builder";
+
 /** What a caller knows of the view it is about to chart. */
 export interface ChartViewShape {
   readonly pointCount: number;
@@ -31,6 +34,7 @@ export function chartKindFitReason(kind: ChartSeriesKind, view: ChartViewShape):
   // The heatmap's plain sentence; any later kind's rule shows its own message, never this one.
   if (kind === "heatmap") return HEATMAP_FIT_REASON;
   if (kind === "matrix") return MATRIX_FIT_REASON;
+  if (kind === "cost_by_day") return COST_BY_DAY_FIT_REASON;
   return issues[0]?.message ?? null;
 }
 

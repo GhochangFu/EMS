@@ -630,7 +630,7 @@ export function dashboardBuilderErrors(
     }
     // `F4.323` PR 2 — a heatmap binds exactly one point (ADR 0047 Amendment 7 item 5).
     if (row.widgetType === "chart") {
-      for (const message of chartPointIssues(row.config.series, row.points.length)) {
+      for (const message of chartPointIssues(row.config.series, row.points.length, row.sources.map((source) => source.catalogKey))) {
         push(index, "points", message);
       }
     }

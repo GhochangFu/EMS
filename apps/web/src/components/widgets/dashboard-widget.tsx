@@ -3,7 +3,9 @@ import type { AlarmSeverityDto, DashboardWidgetDto, PointAggregateStats, RollupC
 import { EMPTY_GEOMETRY, presetGeometry } from "../../lib/mimic-geometry";
 import type { DatasetRow, WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
 import { widgetTitle } from "../../lib/widget-value";
+import { widgetShowsStoredEnergyCost } from "../../lib/energy-cost-labels";
 import { ChartWidget } from "./chart-widget";
+import { CostByDayChartWidget } from "./cost-by-day-chart-widget";
 import { MimicWidget, NO_LIVE_READINGS, NO_MIMIC_NODES } from "./mimic-widget";
 import { RadialGaugeWidget } from "./radial-gauge-widget";
 import { ActiveAlarmsRailWidget } from "./active-alarms-rail-widget";
@@ -76,6 +78,8 @@ export type WidgetData =
        * the same contract reason: the three older metrics emit neither.
        */
       currency?: string | null;
+      /** `F4.332` — why a catalog metric is null (`energy.cost.total`). */
+      reason?: string | null;
     }
   | WidgetRowsData;
 
@@ -181,6 +185,9 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
   const timeZone = scalar?.timeZone;
   const coverage = scalar?.coverage ?? null;
   const currency = scalar?.currency ?? null;
+  const reason = scalar?.reason ?? null;
+  // `F4.332` — a stored, tick-priced energy cost point carries "at the rate effective now".
+  const storedCost = widgetShowsStoredEnergyCost(widget);
 
   switch (widget.widgetType) {
     case "radial_gauge":
@@ -203,9 +210,15 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           coverage={coverage}
           currency={currency}
           catalogKey={widget.sources[0]?.catalogKey ?? null}
+          reason={reason}
+          storedCost={storedCost}
         />
       );
     case "chart":
+      // `F4.332` (ADR 0047 Amendment 9) — the daily cost kind draws the `energy.cost_by_day` rows.
+      if (widget.config.series === "cost_by_day") {
+        return <CostByDayChartWidget title={title} status={status} stale={stale} rows={rowsData?.rows ?? NO_ROWS} />;
+      }
       return (
         <ChartWidget
           title={title}
@@ -217,6 +230,7 @@ export function DashboardWidget({ widget, data, now }: DashboardWidgetProps) {
           stats={stats}
           bucketSeconds={bucketSeconds}
           timeZone={timeZone}
+          storedCost={storedCost}
         />
       );
     case "table":

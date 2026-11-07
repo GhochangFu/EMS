@@ -201,6 +201,12 @@ export function theTrendResponseRefusesAMissingStampOrNoWidget(): void {
  */
 export function eachChartKindIsAccepted(): void {
   for (const series of chartSeriesKindSchema.options) {
+    // `F4.332` — a daily cost chart binds a source, never the appended points: refused here.
+    if (series === "cost_by_day") {
+      const refused = appendChartWidgetBodySchema.safeParse({ ...MINIMAL, config: { ...MINIMAL.config, series } });
+      expect(refused.success, "cost_by_day must be refused on the append arm").toBe(false);
+      continue;
+    }
     const body =
       series === "heatmap"
         ? { ...MINIMAL, config: { windowMinutes: HEATMAP_MIN_WINDOW_MINUTES, aggregate: "avg", series } }

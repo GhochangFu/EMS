@@ -89,8 +89,8 @@ export function runDashboardBuilderTests(): void {
   // chart-shaped ask from being a release — "we want bars" is configuration, not a component.
   assert(
     JSON.stringify(chartSeriesKindSchema.options) ===
-      JSON.stringify(["line", "area", "bar", "scatter", "step", "compare", "donut", "heatmap", "matrix"]),
-    `chart series kinds must be the four time series plus F4.323's step, compare, donut and heatmap, got ${JSON.stringify(chartSeriesKindSchema.options)}`,
+      JSON.stringify(["line", "area", "bar", "scatter", "step", "compare", "donut", "heatmap", "matrix", "cost_by_day"]),
+    `chart series kinds must be the four time series plus F4.323's step, compare, donut and heatmap, F4.325's matrix and F4.332's cost_by_day, got ${JSON.stringify(chartSeriesKindSchema.options)}`,
   );
 
   assert(
@@ -256,8 +256,8 @@ export function runDashboardBuilderTests(): void {
         unit: null,
       },
     ],
-    // `F3.35` Stage C. A chart binds no catalog source — `WIDGET_SOURCE_CARDINALITY.chart` is
-    // `{0,0}`, because a catalog entry resolves to a number or to rows and neither is a series.
+    // `F3.35` Stage C. A line chart binds no catalog source. Since `F4.332` a chart may bind one,
+    // for the `cost_by_day` kind only (ADR 0047 Amendment 9).
     sources: [],
     widgetType: "chart",
     config: { series: "line", windowMinutes: 1440 },
@@ -448,13 +448,16 @@ export function runWidgetPointCardinalityTests(): void {
   );
 
   assert(
-    WIDGET_POINT_CARDINALITY.chart.min === 1 &&
+    // `F4.332` (ADR 0047 Amendment 9 item 2): 0, since `cost_by_day` binds a source; every other
+    // kind's point is required by the exactly-one-kind rule and the asset-template chart's floor.
+    WIDGET_POINT_CARDINALITY.chart.min === 0 &&
       WIDGET_POINT_CARDINALITY.chart.max === MAX_WIDGET_POINTS,
-    `chart takes 1..MAX_WIDGET_POINTS series, got ${JSON.stringify(WIDGET_POINT_CARDINALITY.chart)}`,
+    `chart takes 0..MAX_WIDGET_POINTS series, got ${JSON.stringify(WIDGET_POINT_CARDINALITY.chart)}`,
   );
   assert(
-    WIDGET_SOURCE_CARDINALITY.chart.max === 0,
-    `chart binds no catalog source, got ${JSON.stringify(WIDGET_SOURCE_CARDINALITY.chart)}`,
+    // `F4.332` — one source, for the `cost_by_day` kind only (`chartKindIssues` holds the kind).
+    WIDGET_SOURCE_CARDINALITY.chart.min === 0 && WIDGET_SOURCE_CARDINALITY.chart.max === 1,
+    `chart binds at most one catalog source, got ${JSON.stringify(WIDGET_SOURCE_CARDINALITY.chart)}`,
   );
 }
 
