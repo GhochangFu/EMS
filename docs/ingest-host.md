@@ -152,6 +152,7 @@ added later must call `http://127.0.0.1:9102/` from inside the container too —
 ```
 ingest-host degraded endpoints=1 rtus=3 stale=1 dark=1 skipped=0 notify=on uptime=39s
 endpoint protocol=mqtt key=phe.thinkiot.co.in:8883 state=connected writePath=ok rtus=861736076104923|861736076128245|861736076133666 restarts=1 pollFailures=0 queue=0 dropped=0 written=812 writeFailures=0 buffered=0 bufferDropped=0 replayed=0 lastSample=2026-08-22T09:41:07.000Z
+stopped protocol=mqtt key=shapoorji.thinkiot.co.in:8883 buffered=1240
 stale rtu=861736076133666 endpoint=phe.thinkiot.co.in:8883 lastSample=never
 dark rtu=861736076128245 endpoint=phe.thinkiot.co.in:8883 key=s12_r01 lastSample=never
 ```
@@ -188,20 +189,34 @@ dark rtu=861736076128245 endpoint=phe.thinkiot.co.in:8883 key=s12_r01 lastSample
   `stale`, and folding a partial gap into the same verdict would degrade the
   host on the ordinary case of one dead sensor on an otherwise healthy RTU,
   which is `F3.16`'s alarm surface to own, not this endpoint's boolean.
-- **The device list is fixed at start-up. Enabling or disabling an RTU needs a
-  host restart.** The reload loop refreshes point mappings only; a supervisor's
-  bindings are never replaced (see *Reloads* below). A newly enabled RTU is
-  therefore absent from `rtus=`, absent from the `stale` accounting, and its
-  messages are discarded — with no warning, because the endpoint key already
-  existed. A newly *disabled* one keeps its place and eventually reports
-  `stale`, degrading a host that is behaving correctly. This predates `F1.7`,
-  but `F1.7` promotes that list from an enumeration into the input of the
-  `ok`/`degraded` verdict, so the restart matters more than it did.
+- **The device list follows the database at each reload** (ADR 0115 decision
+  6, `F4.330`). Enabling or disabling an RTU, or switching its organization's
+  ingest off or on, needs **no restart**: within one `INGEST_RELOAD_MS` (60 s by
+  default) plus the broker reconnect, the endpoint is started, replaced or
+  stopped and `rtus=` shows the new roster — see *Reloads* below. Until ADR
+  0115 the list was fixed at start-up, so a newly enabled RTU was absent from
+  `rtus=` and a newly disabled one eventually read `stale`.
+- **One `stopped` line per endpoint a reload stopped that still holds samples
+  on disk** (ADR 0115 decision 7): `stopped protocol=<p> key=<endpointKey>
+  buffered=<n>`, after the `endpoint` lines and before `stale`. `n` is
+  **samples**, the same unit as every other `buffered=` here. Those segments
+  are kept on purpose and replay when the endpoint next starts, so the line
+  **does not change the `ok`/`degraded` verdict**; it is there so nothing on
+  disk is hidden, and it goes once the backlog is replayed or swept. A stopped
+  endpoint with nothing buffered is not listed.
 - `skipped` lines name every RTU left out and why (`no-adapter`,
   `unsupported-protocol`, `missing-rtu-code`, `invalid-connection-config`,
   `tls-downgrade-refused`, `plaintext-host-not-allowed`,
-  `endpoint-config-conflict`, …),
+  `endpoint-config-conflict`, `organization-ingest-disabled`, …),
   so a gateway that never appears is visible without reading the log.
+  `organization-ingest-disabled` (ADR 0115 decision 5) carries the
+  organization code as its `detail=` — `skipped rtu=<code>
+  reason=organization-ingest-disabled detail=BCPL` — and is decided before any
+  other reason, so a switched-off organization's RTU with a broken config still
+  reads as switched off. An RTU whose own *Ingest enabled* box is off is not in
+  the binding query at all and is not listed, as before. The `skipped` lines
+  are rebuilt at every reload; the `rtu skipped` log line is written at boot
+  only.
 - `dropped` is the memory tier's loss — the in-memory queue dropping oldest
   because it filled before anything could be written or spilled.
   `bufferDropped` is the disk tier's loss — a segment erased by an age or byte
@@ -249,6 +264,44 @@ one bound key yields no sample.
 - Ids and counts only — never a value (AGENTS.md §9.6). One line per message
   per affected station, stateless and timer-free: a message with every bound
   key present logs nothing.
+
+## Reloads
+
+Every `INGEST_RELOAD_MS` (60 s by default) the host re-reads the binding query,
+re-plans, and reconciles the running endpoints with the plan
+(`src/host/reconcile.ts`, ADR 0115 decision 6, amending ADR 0016). Per
+`(protocol, endpointKey)`:
+
+| Plan vs. running | Action | Log line (`info`) |
+|---|---|---|
+| In the plan, not running | build and start a supervisor | `endpoint started` |
+| Running, device set changed | `stop()` the old supervisor, **then** build and start a new one | `endpoint replaced` with `added`/`removed` device keys |
+| Running, not in the plan (no enabled RTU left) | `stop()` it — the broker connection closes and the endpoint leaves the roster | `endpoint stopped` |
+| Running, same device set | swap the point index only | none |
+
+- **Stops and replaces run before starts**, and a replace waits for the old
+  `stop()` (at most 10 s) before it dials: a broker may refuse a duplicate
+  client id, and closing first is what makes "only that broker reconnects"
+  true. For MQTT that is every RTU on that broker, including other
+  organizations' RTUs that share it — a reconnect gap of a few seconds.
+- **Reloads never overlap.** A tick that arrives while the previous one is still
+  applying is skipped with `warn` `reload skipped; previous reload still
+  applying`; nothing is queued, because the next tick re-plans from the
+  database anyway.
+- **A failure stays with its endpoint.** A build that throws is logged as
+  `endpoint start failed` with its key and retried at the next reload; a stop
+  that fails is logged as `endpoint stop failed` and the endpoint is still
+  dropped. The other actions in the same reload still apply. A reload that
+  cannot read the database logs `binding reload failed` and changes nothing.
+- **After applying, the tick sweeps the disk buffer** (`bufferStore.sweep()`),
+  so the 1 h / 256 MiB bounds keep running when no supervisor is left to sweep.
+- **Still restart-only:** a change of connection config or credential on an
+  endpoint whose device set is unchanged is a point-index swap, not a replace
+  (ADR 0115 decision 6, plan R5) — detecting it would mean fingerprinting the
+  decrypted credentials. See *Known limits*.
+
+**Time to effect** of the organization switch and of an RTU's *Ingest enabled*
+box: within one `INGEST_RELOAD_MS` plus the reconnect.
 
 ## The disk buffer
 
@@ -552,24 +605,16 @@ deleted at §6 commit 4; the comparison is kept because it says which limits the
 host **inherited** from the ADR 0007 pilot rather than introduced, which is what
 decides whether a fix belongs to `F1.7`/`F1.10` or to this host.
 
-- **Reload refreshes point mappings only.** Mapping a new point onto an
-  already-served RTU takes effect within `INGEST_RELOAD_MS`. Enabling a *new*
-  RTU, or changing one's protocol or endpoint, needs a restart — the host logs
-  `new endpoint requires a restart to serve` when it sees one. Reconciling the
-  endpoint set is a second state machine on top of the supervisor's, and half
-  of one is worse than none.
-- **Enabling or disabling an RTU on an endpoint that is already running also
-  needs a restart, and now says so.** A supervisor's `plan.bindings` is captured
-  at construction and never replaced, so the reload swaps the point index and
-  nothing else. Writes for a disabled RTU *do* stop within one cycle, because the
-  refreshed index no longer holds its `deviceKey` — but the adapter stays
-  subscribed, the health roster keeps listing it, and it keeps reading as not
-  stale: three signals that disagree. Enabling one is worse, since it is absent
-  from `rtus=`, absent from the stale accounting, and its messages are discarded.
-  MQTT groups a whole broker into **one** endpoint, so the `new endpoint` warning
-  above can never fire for this case. The reload therefore logs
-  `endpoint device set changed; restart required to apply` with the added and
-  removed device keys. That names the gap rather than closing it.
+- **A connection-config or credential change on a running endpoint whose
+  device set is unchanged still needs a restart** (ADR 0115 decision 6, plan
+  R5). Enabling, disabling, adding or removing an RTU — and the organization
+  switch — no longer do: the reload starts, replaces or stops the endpoint (see
+  *Reloads*). But an edit that leaves the endpoint key and its device set as
+  they were — a new password, a timeout — is a point-index swap: the running
+  supervisor keeps the config and credentials it was built with until the host
+  restarts. Detecting it would mean fingerprinting the decrypted credentials
+  (AGENTS.md §9.6). A change that moves the endpoint key (a new host or port)
+  is a stop of the old key and a start of the new one, so it applies.
 - **~~A device's clock is trusted without check.~~ Closed by `F4.57`
   (ADR 0061).** A device timestamp no longer reaches the row's `time`. The host
   stamps its own **receive** time on every row and stores what the device
@@ -598,11 +643,15 @@ decides whether a fix belongs to `F1.7`/`F1.10` or to this host.
   sample beyond either bound (`INGEST_BUFFER_MAX_AGE_MS`,
   `INGEST_BUFFER_MAX_BYTES`); the broker-outage window, where nothing reaches
   the host to buffer in the first place — that is `E7.2`, not this; and the
-  segments of an endpoint no longer in the plan (an RTU or gateway removed
-  between an outage and the reload) — nobody replays them, because a handle is
-  keyed to a live endpoint, and they sit until the age bound erases them, the
-  byte bound erases them to make room for another endpoint, or the next
-  start-up scan finds them stale and does the same. The in-memory queue is
+  segments of an endpoint that stays out of the plan longer than the bounds.
+  A stopped endpoint's segments are **kept**, named on the health body as
+  `stopped … buffered=<n>`, and replay when a supervisor for the same
+  `(protocol, endpointKey)` next starts — at a re-enable or a host restart
+  (ADR 0115 decision 7). Until then the reload tick's sweep applies both bounds
+  to them as to any other, so an organization switched off for longer than
+  `INGEST_BUFFER_MAX_AGE_MS` (1 h) loses what was buffered *before* the
+  switch-off. Readings a device publishes *while* its organization is off are
+  never received and cannot be recovered here. The in-memory queue is
   still bounded at 10 000 samples and still drops oldest, but only until the
   first failed write spills it to disk — see *The disk buffer* above.
 - **`bms.rtus.mqtt_topic` is still a column.** The host shims it into the device
@@ -672,21 +721,23 @@ organization admin (who can write `config.tls` through the onboarding commit).
   fault) — the host that renders health never sees the payload, only the
   samples the adapter emitted. That distinction lives only in the adapter's
   `readings absent` log line (`empty=` / `missing=`, above).
-- **A point mapped after boot is not tracked until the host restarts**
+- **A point mapped after boot is not tracked until its endpoint is rebuilt**
   (`F4.58`). `pointsByDevice` is built once, from `plan.bindings` at
-  `createSupervisor` construction — the same restart boundary the *reload
-  refreshes point mappings only* limit above already names for the point
-  index. A `source_data_key` added to an already-running RTU has no liveness
-  entry, so it neither appears in `dark` nor moves the `dark=` count, however
-  long it stays silent, until the next restart rebuilds the bindings.
+  `createSupervisor` construction, and a mapping change on an unchanged device
+  set is a point-index swap that does not rebuild it (see *Reloads*). A
+  `source_data_key` added to an already-running RTU has no liveness entry, so
+  it neither appears in `dark` nor moves the `dark=` count, however long it
+  stays silent, until a host restart — or a reload that replaces that endpoint
+  because its device set changed — rebuilds the bindings.
 - **A `source_data_key` unmapped after boot has the reverse gap, and is not
   silent.** The MQTT adapter's own `bindingByDevice.sourceKeys` is built once,
-  in `connect()`, from the plan's bindings at that time; a reload never calls
-  `connect()` again, so the key stays in the adapter's bound set. The RTU is
+  in `connect()`, from the plan's bindings at that time; a point-index swap
+  never calls `connect()` again, so the key stays in the adapter's bound set
+  until the endpoint is replaced or the host restarts. The RTU is
   still emitting it, so the adapter still routes the sample through and it
   still reaches `accept()`, which stamps `pointsByDevice` from the same
   original bindings — so the point never reads `dark`. What actually changes on
-  reload is `pointIndexes`, the write-side lookup `main.ts` refreshes each
+  a swap is the point index the registry hands the supervisor's write path each
   cycle: `resolveSamples` no longer finds the key there, counts it in
   `unmappedSourceKey`, and the row is discarded rather than written — logged on
   the `samples discarded` line, not silent.
