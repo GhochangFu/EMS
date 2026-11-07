@@ -55,6 +55,8 @@ import { proposeHarness } from "./copilot-propose-tools.spec";
  *   667, `_update` 554; their ids in `fill_step` and `describe_change` the rest). Over 91,000, so the bound
  *   follows the release-4 rule above — the measured size rounded up to the next thousand, plus 1,000 —
  *   to 94,000; the owner confirms it with the PR (no amendment names a budget).
+ * - `F4.324` (ADR 0099 Amendment 16): `propose_dashboard_widgets_appendChart` (1,566) brings the
+ *   definitions to 93,842, under the bound, so it is unchanged — 158 characters of headroom are left.
  */
 export function theToolDefinitionsStayInTheTurnBudget(): void {
   const h = proposeHarness();

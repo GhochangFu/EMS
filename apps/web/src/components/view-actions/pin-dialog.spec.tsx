@@ -17,6 +17,7 @@ import { APPEND_ANSWER } from "../../api/dashboards.spec";
 import { SEGMENT_VIEWS_BODY } from "../../api/segment-views.spec";
 import { ApiError } from "../../lib/api-error";
 import type { HistoryRange } from "../../lib/asset-history-range";
+import { HEATMAP_FIT_REASON } from "../../lib/chart-kind-fit";
 import { historyPinSource, PinButton, type PinSource, pinWindow, segmentPinSource } from "./pin-dialog";
 
 /**
@@ -436,4 +437,67 @@ export function aSpanOfOneYearPins(): void {
 export function aSpanPastOneYearCannotBePinned(): void {
   const to = new Date(Date.parse(CUSTOM_36H30.from ?? "") + YEAR_MS + 60_000).toISOString();
   expect(pinWindow(historySource({ ...CUSTOM_36H30, to }))).toBeNull();
+}
+
+/** `F4.324` (ADR 0108 Amendment 9 item 2) — the default kind, *Trend*, sends no `series`: today's body, byte-equal. */
+export async function theDefaultKindSendsNoSeries(): Promise<void> {
+  const body = await pinBody(historySource(PRESET_7D));
+  expect("series" in body.config).toBe(false);
+}
+
+/** A chosen kind is sent as `config.series`. */
+export async function aChosenKindIsSent(): Promise<void> {
+  const { append } = stubDashboards();
+  renderPin(historySource(PRESET_7D));
+  const dialog = await chooseDashboard(PLAIN_ID);
+  fireEvent.change(within(dialog).getByRole("combobox", { name: "Chart kind" }), { target: { value: "donut" } });
+  fireEvent.click(within(dialog).getByRole("button", { name: "Pin to dashboard" }));
+  await waitFor(() => expect(append).toHaveBeenCalledTimes(1));
+  expect(append.mock.calls[0]?.[1].config.series).toBe("donut");
+}
+
+/** On a 24 h view the heatmap is listed, disabled, with its reason (owner ruling Q2); on 7 days of one point it is enabled. */
+export async function aHeatmapIsDisabledWithItsReasonOnAShortView(): Promise<void> {
+  stubDashboards();
+  renderPin(historySource({ ...PRESET_7D, range: "24h" }));
+  const dialog = await openDialog();
+  const heatmap = within(within(dialog).getByRole("combobox", { name: "Chart kind" })).getByRole("option", {
+    name: `Daily pattern (hour × day) — ${HEATMAP_FIT_REASON}`,
+  });
+  expect(heatmap).toBeDisabled();
+}
+
+export async function aHeatmapIsEnabledOnSevenDaysOfOnePoint(): Promise<void> {
+  stubDashboards();
+  renderPin(historySource(PRESET_7D));
+  const dialog = await openDialog();
+  const heatmap = within(within(dialog).getByRole("combobox", { name: "Chart kind" })).getByRole("option", {
+    name: "Daily pattern (hour × day)",
+  });
+  expect(heatmap).toBeEnabled();
+}
+
+/**
+ * A chosen kind that stops fitting (the view changed while the dialog is open) is never swapped
+ * for another: it stays chosen, its reason shows, and Pin is disabled until the author picks again.
+ */
+export async function aKindThatStopsFittingDisablesPinWithItsReason(): Promise<void> {
+  stubDashboards();
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const tree = (source: PinSource) => (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter>
+        <PinButton role="admin" source={source} />
+      </MemoryRouter>
+    </QueryClientProvider>
+  );
+  const { rerender } = render(tree(historySource(PRESET_7D)));
+  const dialog = await chooseDashboard(PLAIN_ID);
+  fireEvent.change(within(dialog).getByRole("combobox", { name: "Chart kind" }), { target: { value: "heatmap" } });
+  expect(within(dialog).getByRole("button", { name: "Pin to dashboard" })).toBeEnabled();
+
+  rerender(tree(historySource({ ...PRESET_7D, range: "24h" })));
+  expect(within(dialog).getByRole("combobox", { name: "Chart kind" })).toHaveValue("heatmap");
+  expect(within(dialog).getByText(HEATMAP_FIT_REASON)).toBeInTheDocument();
+  expect(within(dialog).getByRole("button", { name: "Pin to dashboard" })).toBeDisabled();
 }

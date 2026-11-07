@@ -638,6 +638,34 @@ export async function appendWidgetRefusesAMalformedBodyWith400(): Promise<void> 
   assert(append.seen.length === 0, "a malformed body must never reach the service");
 }
 
+/**
+ * `F4.324` (ADR 0108 Amendment 9 item 1) — a pinned heatmap over 3 days is a 400 naming
+ * `config`, before the service; the same pin over 7 days reaches it with its kind.
+ */
+export async function appendWidgetChecksTheChartKind(): Promise<void> {
+  const { controller, append } = controllerWith({});
+  let caughtErr: unknown = null;
+  try {
+    await controller.appendWidget(ADMIN, DASHBOARD_ID, {
+      ...validAppendBody,
+      config: { windowMinutes: 4_320, aggregate: "avg", series: "heatmap" },
+    });
+  } catch (err) {
+    caughtErr = err;
+  }
+  assert(caughtErr instanceof BadRequestException, `a 3-day heatmap pin must be a 400; got ${String(caughtErr)}`);
+  const response = (caughtErr as BadRequestException).getResponse() as { fieldErrors?: Record<string, unknown> };
+  assert(response.fieldErrors !== undefined && "config" in response.fieldErrors, `the 400 names config; got ${JSON.stringify(response)}`);
+  assert(append.seen.length === 0, "a refused kind must never reach the service");
+
+  const weekly = { ...validAppendBody, config: { windowMinutes: 10_080, aggregate: "avg", series: "heatmap" } };
+  await controller.appendWidget(ADMIN, DASHBOARD_ID, weekly);
+  assert(
+    append.seen.length === 1 && JSON.stringify(append.seen[0]?.[2]) === JSON.stringify(weekly),
+    `a 7-day heatmap pin reaches the service with its kind; got ${JSON.stringify(append.seen)}`,
+  );
+}
+
 /** A non-uuid id is a 400 before the service. */
 export async function appendWidgetRefusesANonUuidIdWith400(): Promise<void> {
   const { controller, append } = controllerWith({});

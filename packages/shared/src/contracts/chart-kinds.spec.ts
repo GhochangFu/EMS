@@ -1,5 +1,6 @@
 import {
   CHART_COLORS_LENGTH_MESSAGE,
+  CHART_KIND_LABELS,
   CHART_KINDS_NEEDING_AGGREGATE,
   chartColorIssues,
   chartKindAggregateMessage,
@@ -11,6 +12,7 @@ import {
 } from "./chart-kinds";
 import { templateDashboardWidgetSchema } from "./asset-template-content-writes";
 import { sectionTemplateWidgetSchema } from "./dashboard-templates";
+import { chartSeriesKindSchema } from "./dashboard-builder";
 import { putDashboardWidgetsBodySchema } from "./dashboard-writes";
 
 /**
@@ -302,4 +304,13 @@ export function theTemplatePathsCheckColours(): void {
     config: { series: "line", colors: Array.from({ length: 9 }, () => "series-1") },
   });
   assert(nine.success === false, "more than eight colours is refused on a section template too");
+}
+
+/** `F4.324` — one plain label per kind, in the contract's order (ADR 0099 Amendment 16 decision 3). */
+export function everyKindHasItsPlainLabel(): void {
+  assert(
+    JSON.stringify(Object.keys(CHART_KIND_LABELS)) === JSON.stringify(chartSeriesKindSchema.options),
+    `one label per kind, in order; got ${JSON.stringify(Object.keys(CHART_KIND_LABELS))}`,
+  );
+  assert(CHART_KIND_LABELS.donut === "Share (donut)" && CHART_KIND_LABELS.line === "Trend", "the owner's labels");
 }

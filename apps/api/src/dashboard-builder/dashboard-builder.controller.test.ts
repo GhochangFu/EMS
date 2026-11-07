@@ -3,6 +3,7 @@ import { describe, it } from "vitest";
 import {
   appendWidgetAnswers201OnItsPath,
   appendWidgetIsDeclaredAfterPutWidgets,
+  appendWidgetChecksTheChartKind,
   appendWidgetRefusesAMalformedBodyWith400,
   appendWidgetRefusesANonUuidIdWith400,
   appendWidgetRefusesAnOperatorWith403BeforeTheService,
@@ -70,6 +71,10 @@ describe("F3.1b — DashboardBuilderController (stubbed service)", () => {
   });
   it("refuses a malformed append body with a flatten() 400 before the service (F4.303)", async () => {
     await appendWidgetRefusesAMalformedBodyWith400();
+  });
+
+  it("F4.324: a 3-day heatmap pin is a 400 before the service; a 7-day one reaches it", async () => {
+    await appendWidgetChecksTheChartKind();
   });
   it("refuses a non-uuid append id with 400 before the service (F4.303)", async () => {
     await appendWidgetRefusesANonUuidIdWith400();

@@ -13,6 +13,7 @@ import {
   type BmsDb,
   calcParameters,
   dashboards,
+  dashboardTabs,
   dashboardTemplates,
   dashboardWidgets,
   locations,
@@ -39,6 +40,7 @@ import { AccessControlService } from "../auth/access-control.service";
 import { TENANT_DRIZZLE } from "../database/database.tokens";
 import { type BmsTx, withTenant } from "../database/tenant-context";
 import { resolveAdoptTarget } from "./copilot-adopt-targets";
+import { APPEND_CHART_ENTRY_ID, appendChartTabRefusal } from "./copilot-append-chart.check";
 import { findConfigurationAsset, readAssetGroupMemberTarget, readAssetTarget } from "./copilot-asset-targets";
 import { assetKindAdmits, findCalcPointBatch, mayWriteCalcPointBatch } from "./copilot-calc-point-targets";
 import { findRuleBatch } from "./copilot-rule-targets";
@@ -144,6 +146,8 @@ type Found = {
   storedKind?: string | null;
   refName?: string;
   currentWidgetIds?: string[];
+  /** `dashboard`: its tab keys, in order (`F4.324`: `dashboard.widgets.appendChart`'s tab, at propose). */
+  tabKeys?: string[];
   pointKeys?: string[];
   currentContent?: Record<string, unknown>;
   status?: TemplateLifecycleStatus;
@@ -309,6 +313,12 @@ export class CopilotTargetResolver implements CopilotTargets {
       // `F4.311` PR 3 (Amendment 11 G2): an asset of the other kind gets the other write from the route.
       if (found !== null && !assetKindAdmits(target, found.templateId)) found = null;
       if (found !== null && !(await this.safely(() => this.mayManage(kind, id, found as Found, user, body, mode)))) found = null;
+      // `F4.324` (Amendment 16): the route refuses a wrong tab at Confirm and no read gives the model the keys.
+      const tabRefusal =
+        found !== null && mode === "propose" && entry.id === APPEND_CHART_ENTRY_ID
+          ? appendChartTabRefusal(found.tabKeys ?? [], body.tabKey)
+          : null;
+      if (tabRefusal !== null) throw new CopilotTargetRefusal(tabRefusal);
     }
     if (found === null) return null;
     for (const ref of entry.refs) {
@@ -575,11 +585,17 @@ export class CopilotTargetResolver implements CopilotTargets {
           .select({ id: dashboardWidgets.id })
           .from(dashboardWidgets)
           .where(and(eq(dashboardWidgets.dashboardId, id), eq(dashboardWidgets.organizationId, organizationId)));
+        const tabs = await tx
+          .select({ tabKey: dashboardTabs.tabKey })
+          .from(dashboardTabs)
+          .where(and(eq(dashboardTabs.dashboardId, id), eq(dashboardTabs.organizationId, organizationId)))
+          .orderBy(dashboardTabs.sortOrder);
         return {
           organizationId,
           name: row.name,
           scope: { locationId: row.locationId, assetGroupId: row.assetGroupId, assetId: row.assetId },
           currentWidgetIds: widgets.map((widget) => widget.id),
+          tabKeys: tabs.map((tab) => tab.tabKey),
           updatedAt: row.updatedAt.toISOString(),
         };
       }

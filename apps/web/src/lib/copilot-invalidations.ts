@@ -97,6 +97,8 @@ const BY_ENTRY: Readonly<Record<string, readonly QueryKey[]>> = {
   "dashboard.create": [DASHBOARDS],
   "dashboard.update": [DASHBOARDS],
   "dashboard.widgets.replace": [DASHBOARDS],
+  // `F4.324` (ADR 0099 Amendment 16): the append stamps the dashboard; an open builder reseeds from it.
+  "dashboard.widgets.appendChart": [DASHBOARDS],
   "dashboardTemplate.create": [TEMPLATES],
   "dashboardTemplate.update": [TEMPLATES, TEMPLATE],
   "dashboardTemplate.publish": [TEMPLATES, TEMPLATE],
