@@ -1567,3 +1567,35 @@ minute-to-hour fold, the option, the builder's form).
   in its chosen colour; a line chart's colour; a matrix over the Bilsi pumps'
   run points with Average, 24 columns and one row per pump after a hard
   reload; its window refusal through `PUT`; the temporary dashboard deleted.
+
+## Amendment 9 — a `cost_by_day` chart kind: one bar per local day, with a 7 / 30 / 90 day switch (`F4.332`, 2026-11-07)
+
+**Status: Proposed — accepted when the PR that adds it merges** (owner gate).
+Source: owner rulings 2 and 3 of 2026-11-07. The data is the
+`energy.cost_by_day` catalog dataset ([ADR 0112](0112-organization-control-room-layout-from-a-template.md)
+Amendment 3, [ADR 0070](0070-sustainability-metrics-engine.md) Amendment 7).
+
+1. **A new kind on the one generic `chart` type** (decision 4):
+   `chartSeriesKindSchema` gains `cost_by_day`, labelled "Daily energy cost" in
+   `CHART_KIND_LABELS`. No new widget type, so no widget-type CHECK changes.
+2. **It binds a catalog source, not points.** A `cost_by_day` chart binds
+   exactly one `energy.cost_by_day` source and no point. Every other chart kind
+   still binds points and no source. So `WIDGET_POINT_CARDINALITY.chart.min`
+   goes 1 → 0, `WIDGET_SOURCE_CARDINALITY.chart` goes `{0, 0}` → `{0, 1}`, and
+   `WIDGET_SOURCE_SHAPES.chart` gains `"dataset"`; the per-kind rule
+   (`chartKindIssues`) is what ties the source to this kind and the points to the
+   others. The exactly-one-binding-kind rule still refuses a chart with neither.
+3. **What it draws.** One bar per local day from the dataset's rows, the day as
+   the category axis, the cost on the value axis, the organization's currency
+   from the rows as the unit. A `null` day draws no bar and its tooltip gives the
+   reason. Under the plot: the window total (the sum of the shown days) and
+   "N of M days priced" when a day is `null`.
+4. **The viewer switch.** The chart shows a 7 d / 30 d / 90 d switch, offering
+   each window not longer than the bound `days`; the default is 30 days, or the
+   bound `days` when it is shorter. The switch only filters the rows already
+   read (the last 7, 30 or 90 of them), so changing it makes no request and the
+   total always equals the sum of the bars shown. It is a viewer choice, not
+   saved. A chart bound to `days: 90` therefore offers all three.
+5. **The builder.** The inspector offers "Daily energy cost" in the chart kind
+   list; choosing it hides the point picker and binds the source with
+   `days: 90`, editable 1–90.
