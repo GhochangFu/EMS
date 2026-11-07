@@ -72,6 +72,7 @@ export function MimicWidgetLive({ widget, dashboardId }: MimicWidgetLiveProps) {
       readings={readings}
       stateMaps={query.data?.stateMaps ?? NO_STATE_MAPS}
       compact={widget.config.source === "preset" && widget.config.compact === true}
+      expandable
     />
   );
 }
