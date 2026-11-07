@@ -238,6 +238,9 @@ async function main(): Promise<void> {
     build: buildSupervisor,
     logger,
     buffered: (protocol, endpointKey) => bufferStore.handle(protocol, endpointKey).buffered,
+    // ADR 0115 Amendment 1: after a restart, a backlog the scan found for an
+    // endpoint the boot plan does not start is still named as `stopped`.
+    scanned: bufferStore.backlog(),
   });
   await registry.reload(initial.endpoints);
 
