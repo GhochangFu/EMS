@@ -150,4 +150,38 @@ export class LocationsAdminController {
       throw err;
     }
   }
+
+  /**
+   * `F4.320` PR 2 (ADR 0087 Amendment 4 decisions 2–5) — "Replace with this version": delete the
+   * site's template copy and make it again from a published version (new dashboard id, same slug,
+   * same view row). The Make body and the Make permission rule; 409 when the site holds no
+   * template copy, a copy of another template, or an ambiguous tab (with the candidates).
+   */
+  @Post(":id/site-layout/replace")
+  async replaceSiteLayout(
+    @Param("id") id: string,
+    @Body() body: unknown,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    try {
+      const locationId = idParamSchema.parse(id);
+      const parsed = siteLayoutBodySchema.parse(body ?? {});
+      return await this.siteLayout.replaceForSite(user, { locationId, ...parsed });
+    } catch (err) {
+      if (err instanceof ZodError) {
+        throw new BadRequestException(err.flatten());
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * `F4.320` PR 2 (decisions 8, 9) — the per-site confirm step's read: the version a Replace with
+   * no `templateId` would copy, the copy held, the outcome and the "edited since the copy" flag.
+   * The Make permission rule. Not a catalog entry: it writes nothing (ADR 0099 Amendment 15).
+   */
+  @Get(":id/site-layout/replace-preview")
+  async previewSiteLayoutReplace(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    return this.siteLayout.previewReplaceForSite(user, idParamSchema.parse(id));
+  }
 }

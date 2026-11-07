@@ -219,4 +219,24 @@ export class DashboardTemplatesController {
   async applyToSites(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
     return this.siteLayout.makeForOrganization(user, idParamSchema.parse(id));
   }
+
+  /**
+   * `F4.320` PR 2 (ADR 0087 Amendment 4 decisions 3, 5, 10) — "Replace existing copies": rebuild
+   * every active site's copy of this template's code that holds another version, one transaction
+   * per site; every other site is skipped with a reason. An organization admin or `admin`. No body.
+   */
+  @Post(":id/replace-site-layouts")
+  async replaceSiteLayouts(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    return this.siteLayout.replaceForOrganization(user, idParamSchema.parse(id));
+  }
+
+  /**
+   * `F4.320` PR 2 (decisions 8, 9) — the apply-to-sites dialog's read before "Replace existing
+   * copies": each active site by name, its held version, its edit flag and what will happen. The
+   * bulk permission rule. Not a catalog entry: it writes nothing (ADR 0099 Amendment 15).
+   */
+  @Get(":id/replace-site-layouts/preview")
+  async previewReplaceSiteLayouts(@Param("id") id: string, @CurrentUser() user: JwtPayload) {
+    return this.siteLayout.previewReplaceForOrganization(user, idParamSchema.parse(id));
+  }
 }
