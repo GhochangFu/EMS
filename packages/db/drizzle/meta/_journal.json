@@ -890,6 +890,13 @@
       "when": 1793969366525,
       "tag": "0127_pump_station_roles",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1794073157283,
+      "tag": "0129_dashboard_widget_sources_energy_cost_keys",
+      "breakpoints": true
     }
   ]
 }

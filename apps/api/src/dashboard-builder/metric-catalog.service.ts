@@ -27,6 +27,7 @@ import type { JwtPayload } from "@bms/shared";
 
 import { AssetHealthService } from "../asset-health/asset-health.service";
 import { AccessControlService } from "../auth/access-control.service";
+import { CalcParametersService } from "../calc/calc-parameters.service";
 import { priorInstant } from "../dashboard/kpi-prior";
 import { FLEET_DRIZZLE, FLEET_POOL, TENANT_DRIZZLE } from "../database/database.tokens";
 import { withTenant, type BmsTx } from "../database/tenant-context";
@@ -36,6 +37,7 @@ import {
   type DashboardAssetScope,
 } from "./dashboard-scope-assets";
 import { resolveWidgetSources } from "./dashboard-source-scope";
+import { energyCostByDay, energyCostTotal } from "./metric-catalog-energy-cost";
 import { pueRatio, sitesLiveCount } from "./metric-catalog-estate";
 import {
   priorOf,
@@ -135,7 +137,18 @@ export class MetricCatalogService {
     private readonly health: AssetHealthService,
     // `F4.317` — `ResolverDeps.pool`, for `pue.ratio` (`metric-catalog-estate.ts`).
     @Inject(FLEET_POOL) private readonly fleetPool: Pick<Pool, "query">,
-  ) {}
+  ) {
+    // In the constructor body, not a field initializer: a parameter property is assigned in the
+    // body, after field initializers run, so `this.fleetDb` would be undefined there.
+    this.tariffs = new CalcParametersService(this.fleetDb);
+  }
+
+  /**
+   * `F4.332` — `ResolverDeps.tariffs`. Constructed, not injected: `CalcParametersService` is
+   * stateless over the fleet Drizzle this service already holds, so no module import changes
+   * (the `TrendPointsService` precedent in `dashboard-builder.module.ts`).
+   */
+  private readonly tariffs: CalcParametersService;
 
   /**
    * The authorized entry point. `resolveForDashboard` below is the unauthorized core, which is
@@ -375,6 +388,7 @@ export class MetricCatalogService {
       // dashboard. `capLocationId`'s own comment says how it is read.
       scopeLocationId: capLocationId,
       pool: this.fleetPool,
+      tariffs: this.tariffs,
     };
     for (const [resolveKey, planned] of plan.resolves) {
       const resolver = RESOLVERS[planned.key];
@@ -415,6 +429,9 @@ export class MetricCatalogService {
 export const RESOLVE_AFTER_COMMIT: ReadonlySet<MetricCatalogKey> = new Set<MetricCatalogKey>([
   "assets.health.score",
   "pue.ratio",
+  // `F4.332` — both read `deps.pool` and `deps.tariffs` (`metric-catalog-energy-cost.ts`).
+  "energy.cost_by_day",
+  "energy.cost.total",
 ]);
 
 /** The `tx` an after-commit entry receives: a statement on it is a defect, so it throws. */
@@ -958,4 +975,6 @@ export const RESOLVERS: Record<MetricCatalogKey, Resolver> = {
   // `F4.317` (ADR 0112 decisions 7 and 9) — `metric-catalog-estate.ts`.
   "sites.live.count": sitesLiveCount,
   "pue.ratio": pueRatio,
+  "energy.cost_by_day": energyCostByDay,
+  "energy.cost.total": energyCostTotal,
 };

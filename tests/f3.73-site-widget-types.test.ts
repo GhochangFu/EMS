@@ -11,7 +11,8 @@ const MIGRATION_REL = "packages/db/drizzle/0096_site_widget_types_and_assets_cat
 // `F4.305`: the effective widget-type CHECK is 0118's (thirteen); 0099's is frozen at twelve; 0096's is frozen at eleven.
 const MIGRATION_0118_REL = "packages/db/drizzle/0118_trend_strip_widget_type.sql";
 // `F4.317`: the effective catalog-key CHECK is 0126's (thirteen); 0096's is frozen at ten.
-const MIGRATION_0126_REL = "packages/db/drizzle/0126_organization_control_room_views_and_catalog.sql";
+/** `F4.332` — the effective catalog-key CHECK since `0129` (ADR 0112 Amendment 3); `0126` is frozen. */
+const MIGRATION_0129_REL = "packages/db/drizzle/0129_dashboard_widget_sources_energy_cost_keys.sql";
 const TAG = "0096_site_widget_types_and_assets_catalog";
 const CONTRACT_REL = "packages/shared/src/contracts/dashboard-builder.ts";
 const JOURNAL_REL = "packages/db/drizzle/meta/_journal.json";
@@ -105,9 +106,9 @@ describe("F3.73 — migration 0096: site widget types and assets catalog keys", 
     for (const key of NEW_CATALOG_KEYS) expect(listed, `${key} must be accepted`).toContain(key);
   });
 
-  it("the effective catalog-key CHECK (0126) is exactly the contract's enum and keeps the two", () => {
+  it("the effective catalog-key CHECK (0129) is exactly the contract's enum and keeps the two", () => {
     const listed = checkList(
-      sqlOnly(read(MIGRATION_0126_REL)),
+      sqlOnly(read(MIGRATION_0129_REL)),
       "dashboard_widget_sources_catalog_key_check",
       "catalog_key",
     );

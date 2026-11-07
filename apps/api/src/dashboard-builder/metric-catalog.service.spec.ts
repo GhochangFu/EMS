@@ -60,6 +60,12 @@ const noDeps = {
   readableLocationIds: null,
   scopeLocationId: null,
   pool: refusingPool,
+  // `F4.332` — the energy-cost entries' tariff read; refuses like the pool.
+  tariffs: {
+    resolveSeriesForAssets: () => {
+      throw new Error("an empty scope must not read tariffs");
+    },
+  },
 } as Parameters<
   (typeof RESOLVERS)["sustainability.total"]
 >[3];
@@ -74,7 +80,11 @@ const paramsFor = (key: string): unknown =>
     ? { pointKey: "kl_today", aggregate: "sum" }
     : key === "water.balance"
       ? { period: "today" }
-      : {};
+      : key === "energy.cost_by_day"
+        ? { days: 30 }
+        : key === "energy.cost.total"
+          ? { period: "this_month" }
+          : {};
 
 /**
  * The sentence over `RESOLVERS` generalises over EVERY entry, so the gate enumerates them:

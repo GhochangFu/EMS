@@ -26,6 +26,7 @@ export * from "./colour-profile";
 // energy view contract, and the one site time-zone chain.
 export * from "./aggregate-level";
 export * from "./energy-organization-views";
+export * from "./energy-cost-by-day";
 export * from "./energy-view";
 export * from "./time-zone-chain";
 // F4.297 (ADR 0108 decision 1.2): the telemetry read query schemas.

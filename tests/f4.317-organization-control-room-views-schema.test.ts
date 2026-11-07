@@ -168,7 +168,7 @@ describe("F4.317 — migration 0126: organization control room views and catalog
     expect(listed).toEqual(enumValues(TEMPLATES_REL, "dashboardTemplateTargetSchema"));
   });
 
-  it("widens the catalog-key CHECK to exactly metricCatalogKeySchema, with the three new keys", () => {
+  it("widens the catalog-key CHECK with the three new keys (frozen at thirteen since 0129)", () => {
     const sql = sqlOnly(read(MIGRATION_REL));
     const listed = checkList(sql, "dashboard_widget_sources_catalog_key_check", "catalog_key");
     // ADR 0112 Amendment 1 (owner ruling Q1b): `alarms.critical.count` is the thirteenth key.
@@ -176,7 +176,11 @@ describe("F4.317 — migration 0126: organization control room views and catalog
     expect(listed).toContain("sites.live.count");
     expect(listed).toContain("pue.ratio");
     expect(listed).toContain("alarms.critical.count");
-    expect(listed).toEqual(enumValues(BUILDER_REL, "metricCatalogKeySchema"));
+    // `F4.332` (ADR 0112 Amendment 3): `0129` widens the CHECK again, so `0126` is frozen at
+    // these thirteen and the enum is a superset; `tests/f3.35-metric-catalog-schema.test.ts`
+    // holds `0129` equal to the enum.
+    const current = enumValues(BUILDER_REL, "metricCatalogKeySchema");
+    for (const key of listed) expect(current).toContain(key);
 
     // The ten 0096 admitted are all still admitted — read from 0096, not retyped.
     const previous = checkList(

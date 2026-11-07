@@ -5,6 +5,7 @@ import {
   sustainabilityAggregateSchema,
   waterBalancePeriodSchema,
 } from "./dashboard-builder";
+import { ENERGY_COST_MAX_DAYS, energyCostPeriodSchema } from "./energy-cost-by-day";
 import { CATALOG_CODE_MESSAGE, CATALOG_CODE_PATTERN } from "../constants";
 import { waterBalanceRoleCodeSchema } from "./operations";
 import { LOCATION_TREE_MAX_DEPTH } from "../location-tree";
@@ -78,6 +79,8 @@ export const METRIC_CATALOG_PARAMS_WRITE: Record<MetricCatalogKey, z.AnyZodObjec
   "sites.live.count": z.object({}).strict(),
   "pue.ratio": z.object({}).strict(),
   "alarms.critical.count": z.object({}).strict(),
+  "energy.cost_by_day": z.object({ days: z.number().int().min(1).max(ENERGY_COST_MAX_DAYS) }).strict(),
+  "energy.cost.total": z.object({ period: energyCostPeriodSchema }).strict(),
 };
 
 /**

@@ -302,7 +302,11 @@ The catalog is closed in the database too: `dashboard_widget_sources_catalog_key
 the two new keys, the `0126` shape. No table, column, data or RLS change. It is
 numbered `0129`, after `0128_organization_ingest_enabled`, which the open
 `F4.330` PR (GhochangFu/EMS#1123) adds. Whichever of the two merges second
-takes the next free number at rebase, with its journal entry.
+takes the next free number at rebase, appends its journal entry **last**, and
+re-stamps that entry's `when` with `Date.now()`: the migrator applies only
+entries newer than the newest one already applied, so an entry placed before an
+applied one would be skipped silently on every existing database. (Measured by
+the migration review at the build.)
 
 ### Still deferred
 

@@ -105,6 +105,18 @@ export const METRIC_CATALOG_PRESENTATION: Readonly<
     label: "Critical alarms",
     description: "How many open alarms in scope have a critical severity.",
   },
+  // `F4.332` / ADR 0112 Amendment 3 and ADR 0070 Amendment 7 — priced hour by hour at the rate
+  // in force, so a past day keeps its own price when the rate changes.
+  "energy.cost_by_day": {
+    label: "Energy cost by day",
+    description:
+      "The energy cost of each local day: each hour's energy priced at the rate in force in that hour.",
+  },
+  "energy.cost.total": {
+    label: "Energy cost",
+    description:
+      "The energy cost for today, the last 7 days or this month: the sum of the same daily costs.",
+  },
 };
 
 /** The label alone — the common read, and the one a picker option and an inline error share. */
@@ -183,6 +195,12 @@ export const METRIC_CATALOG_COLUMN_LABELS: Readonly<Record<string, string>> = {
   code: "Asset ID",
   name: "Asset",
   activeAlarms: "Active alarms",
+  // `F4.332` — `energy.cost_by_day`, one row per local day.
+  day: "Day",
+  kwh: "Energy (kWh)",
+  cost: "Cost",
+  currency: "Currency",
+  reason: "Why no cost",
 };
 
 /**
