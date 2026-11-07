@@ -10,6 +10,9 @@ import {
   assertADrawnMimicLayoutRowIsKept,
   assertAmbiguousReplaceRollsBack,
   assertANonTemplateViewIsRefused,
+  assertAnOrganizationAdminGetsTheActor,
+  assertAnotherOrganizationsAdminIsRefusedEverywhere,
+  assertAnotherOrganizationsAuditRowIsNotCounted,
   assertBulkPreviewListsEverySite,
   assertBulkReplaceRefusesALocationAdmin,
   assertBulkReplacesOlderCopiesAndReportsSkips,
@@ -84,5 +87,17 @@ describe.skipIf(!connectionString)("F4.320 — SiteLayoutService Replace under r
 
   it("R9b the bulk preview lists every active site with its outcome", async () => {
     await assertBulkPreviewListsEverySite(harness.ctx());
+  });
+
+  it("R10 an organization admin of another organization gets 403 on all four and changes nothing", async () => {
+    await assertAnotherOrganizationsAdminIsRefusedEverywhere(harness.ctx());
+  });
+
+  it("R11 an organization admin of the site's organization gets the newest actor's email", async () => {
+    await assertAnOrganizationAdminGetsTheActor(harness.ctx());
+  });
+
+  it("R12 another organization's audit row on the copy's id is not counted", async () => {
+    await assertAnotherOrganizationsAuditRowIsNotCounted(harness.ctx());
   });
 });

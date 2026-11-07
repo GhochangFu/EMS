@@ -83,6 +83,8 @@ async function removeFixtures(
   await pool.query(`DELETE FROM bms.dashboard_templates WHERE id IN (${sel.templates})`, params);
   // `bms_fleet` holds no privilege on `bms.users`; the fixture user is the superuser's to remove.
   await superuserPool.query(`DELETE FROM bms.user_location_access WHERE user_id IN (${sel.users})`);
+  // `F4.320` PR 2: the organization-admin fixtures of the Replace spec hold organization grants.
+  await superuserPool.query(`DELETE FROM bms.user_organization_access WHERE user_id IN (${sel.users})`);
   await superuserPool.query(`DELETE FROM bms.users WHERE id IN (${sel.users})`);
   await pool.query(`DELETE FROM bms.locations WHERE id IN (${sel.locations})`, params);
   await pool.query(`DELETE FROM bms.organizations WHERE id IN (${sel.orgs})`, params);

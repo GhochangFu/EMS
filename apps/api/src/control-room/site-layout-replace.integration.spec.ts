@@ -21,6 +21,7 @@ import {
   viewRows,
   zeroGroupSite,
 } from "./site-layout.service.integration.spec";
+import { rememberSubject } from "../testing/seeded-subjects";
 
 /**
  * `F4.320` PR 2 (ADR 0087 Amendment 4 decisions 2–7, 9, 10) — Replace and its preview against
@@ -393,6 +394,124 @@ export async function assertPreviewCountsEditsAndRedactsTheActor(ctx: SiteLayout
   const after = await ctx.svc.previewReplaceForSite(admin(), site);
   expect(after.sites[0]?.held?.dashboardId).toBe(rebuilt.dashboardId);
   expect(after.sites[0]?.edits, "the rebuilt copy has no recorded edit").toEqual({ count: 0, lastEditedAt: null, lastEditedBy: null });
+}
+
+/**
+ * An `organization_admin` fixture user of `org`, granted that organization only
+ * (`user_organization_access`), registered; the harness removes the grant and the user.
+ */
+async function newOrganizationAdmin(ctx: SiteLayoutCtx, org: string, suffix: string): Promise<string> {
+  const email = `f373sl-${ctx.run}-${suffix}@bms.local`.toLowerCase();
+  const { rows } = await ctx.superuserPool.query<{ id: string }>(
+    `INSERT INTO bms.users (email, password_hash, display_name, role, organization_id)
+     VALUES ($1, 'x', 'F4.320 organization admin', 'organization_admin', $2) RETURNING id`,
+    [email, org],
+  );
+  const id = rows[0]?.id as string;
+  ctx.created.users.push(id);
+  rememberSubject(email, id);
+  await ctx.superuserPool.query(`INSERT INTO bms.user_organization_access (user_id, organization_id) VALUES ($1, $2)`, [id, org]);
+  return email;
+}
+
+/** What org A holds that a refused call must leave as it was: its audit rows, the site's dashboards and view row. */
+async function orgState(ctx: SiteLayoutCtx, org: string, site: string): Promise<unknown> {
+  const { rows: audit } = await ctx.fleetPool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM bms.audit_log WHERE organization_id = $1`,
+    [org],
+  );
+  const { rows: dashboards } = await ctx.fleetPool.query<{ id: string }>(
+    `SELECT id FROM bms.dashboards WHERE location_id = $1 ORDER BY id`,
+    [site],
+  );
+  return { audit: audit[0]?.n, dashboards: dashboards.map((row) => row.id), view: await viewRows(ctx, site) };
+}
+
+/**
+ * R10 (security review, decision 10) — an `organization_admin` of organization B calls the four
+ * routes' service methods on an organization-A site and template. Each answers 403 (the per-site
+ * `canManageLocation` gate, the bulk `canManageTemplate` gate), and organization A's audit rows,
+ * the site's dashboards and its view row are unchanged.
+ * Mutation: drop `canManageLocation` from `authorizeSite` → the org B admin reaches the site → red.
+ */
+export async function assertAnotherOrganizationsAdminIsRefusedEverywhere(ctx: SiteLayoutCtx): Promise<void> {
+  const { org, v1, v2 } = await twoVersions(ctx, "r10");
+  const site = await zeroGroupSite(ctx, "r10", org);
+  await ctx.svc.makeForSite(admin(), { locationId: site, templateId: v1 });
+  const orgB = await newOrganization(ctx.fleetPool, `${ctx.run}-r10b`, ctx.created);
+  const jwt = jwtFor(await newOrganizationAdmin(ctx, orgB, "r10b"), "organization_admin");
+
+  const before = await orgState(ctx, org, site);
+  const calls: ReadonlyArray<[string, () => Promise<unknown>]> = [
+    ["replaceForSite", () => ctx.svc.replaceForSite(jwt, { locationId: site, templateId: v2 })],
+    ["previewReplaceForSite", () => ctx.svc.previewReplaceForSite(jwt, site)],
+    ["replaceForOrganization", () => ctx.svc.replaceForOrganization(jwt, v2)],
+    ["previewReplaceForOrganization", () => ctx.svc.previewReplaceForOrganization(jwt, v2)],
+  ];
+  for (const [name, call] of calls) {
+    const err = await caught(call());
+    expect(err, name).toBeInstanceOf(ForbiddenException);
+    expect((err as ForbiddenException).getStatus(), name).toBe(403);
+  }
+  expect(await orgState(ctx, org, site), "organization A is unchanged").toEqual(before);
+}
+
+/**
+ * R11 (decision 9) — an `organization_admin` of the site's organization may read the audit log,
+ * so the per-site preview of an edited copy gives it the newest actor's email (R9 holds the
+ * `location_admin` twin, who gets no actor).
+ * Mutation: key `readsAuditActors` on `admin` alone → `lastEditedBy` is absent → red.
+ */
+export async function assertAnOrganizationAdminGetsTheActor(ctx: SiteLayoutCtx): Promise<void> {
+  const { org, v1 } = await twoVersions(ctx, "r11");
+  const site = await zeroGroupSite(ctx, "r11", org);
+  const copy = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: v1 });
+  await ctx.dashboards.update(admin(), copy.dashboardId, { name: "F4.320 r11 edit" });
+  const jwt = jwtFor(await newOrganizationAdmin(ctx, org, "r11"), "organization_admin");
+
+  const preview = await ctx.svc.previewReplaceForSite(jwt, site);
+  expect(preview.sites[0]?.held?.dashboardId).toBe(copy.dashboardId);
+  expect(preview.sites[0]?.edits?.count).toBe(1);
+  expect(preview.sites[0]?.edits?.lastEditedBy).toBe("admin@bms.local");
+}
+
+/**
+ * R12 (decision 9, row-level security) — an audit row of ANOTHER organization with
+ * `entity_type = 'dashboard'` and the held copy's id, newer than the copy's own edit, is not
+ * counted: the read runs under the site organization's GUC. The count, the newest time and the
+ * newest actor are the organization's own row's.
+ * Mutation: read `bms.audit_log` on `fleetDb` (BYPASSRLS) → count 2 and the foreign time → red.
+ */
+export async function assertAnotherOrganizationsAuditRowIsNotCounted(ctx: SiteLayoutCtx): Promise<void> {
+  const { org, v1 } = await twoVersions(ctx, "r12");
+  const site = await zeroGroupSite(ctx, "r12", org);
+  const copy = await ctx.svc.makeForSite(admin(), { locationId: site, templateId: v1 });
+  await ctx.dashboards.update(admin(), copy.dashboardId, { name: "F4.320 r12 edit" });
+  const { rows: own } = await ctx.fleetPool.query<{ created_at: Date }>(
+    `SELECT created_at FROM bms.audit_log WHERE entity_type = 'dashboard' AND entity_id = $1`,
+    [copy.dashboardId],
+  );
+  expect(own, "precondition: one edit of organization A").toHaveLength(1);
+
+  const orgB = await newOrganization(ctx.fleetPool, `${ctx.run}-r12b`, ctx.created);
+  await ctx.fleetPool.query(
+    `INSERT INTO bms.audit_log (organization_id, action, entity_type, entity_id, created_at)
+     VALUES ($1, 'master.dashboard.update', 'dashboard', $2, now() + interval '1 minute')`,
+    [orgB, copy.dashboardId],
+  );
+  expect(
+    await count(ctx, `SELECT count(*)::int AS n FROM bms.audit_log WHERE entity_type = 'dashboard' AND entity_id = $1`, [
+      copy.dashboardId,
+    ]),
+    "precondition: two rows carry the copy's id, one per organization",
+  ).toBe(2);
+
+  const preview = await ctx.svc.previewReplaceForSite(admin(), site);
+  expect(preview.sites[0]?.edits).toEqual({
+    count: 1,
+    lastEditedAt: own[0]?.created_at.toISOString(),
+    lastEditedBy: "admin@bms.local",
+  });
 }
 
 /** R9b (decisions 8, 9) — the bulk preview lists every active site with its outcome. */
