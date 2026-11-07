@@ -498,7 +498,7 @@ export async function assertAnotherOrganizationsAuditRowIsNotCounted(ctx: SiteLa
   );
   expect(own, "precondition: one edit of organization A").toHaveLength(1);
 
-  const orgB = await newOrganization(ctx.fleetPool, `${ctx.run}-r12b`, ctx.created);
+  const orgB = await newOrganization(ctx.fleetPool, `${ctx.run}-r12-org-b`, ctx.created);
   await ctx.fleetPool.query(
     `INSERT INTO bms.audit_log (organization_id, action, entity_type, entity_id, created_at)
      VALUES ($1, 'master.dashboard.update', 'dashboard', $2, now() + interval '1 minute')`,
