@@ -8,12 +8,19 @@ import {
   runDiffSameDeviceSetSwapsIndexTests,
   runDiffStartsNewEndpointsTests,
   runRegistryBootTests,
+  runRegistryFailedLaunchListedTests,
   runRegistryFailureIsolationTests,
   runRegistryLogsNoCredentialsTests,
   runRegistryNoOverlapTests,
+  runRegistryRejectedApplyClearsBusyTests,
   runRegistryReplaceAwaitsStopTests,
+  runRegistryScannedBacklogTests,
+  runRegistryStartThrowsStopsTests,
+  runRegistryStopAllDuringReplaceTests,
   runRegistryStopAllTests,
   runRegistryStopAndStoppedBacklogTests,
+  runRegistryStopClearsIndexTests,
+  runRegistryStoppedSortedTests,
   runRegistrySwapIndexTests,
 } from "./reconcile.spec.js";
 
@@ -75,5 +82,33 @@ describe("reload reconciliation — the endpoint registry", () => {
 
   it("never writes a credential to a log line", async () => {
     await runRegistryLogsNoCredentialsTests();
+  });
+
+  it("launches nothing once stopAll has begun, and stops the old supervisor once", async () => {
+    await runRegistryStopAllDuringReplaceTests();
+  });
+
+  it("stops a supervisor that was built but whose start() threw", async () => {
+    await runRegistryStartThrowsStopsTests();
+  });
+
+  it("empties a stopped endpoint's point index so a queued tail is not written", async () => {
+    await runRegistryStopClearsIndexTests();
+  });
+
+  it("lists a key that failed to start while it holds a backlog", async () => {
+    await runRegistryFailedLaunchListedTests();
+  });
+
+  it("returns stopped entries sorted by key", async () => {
+    await runRegistryStoppedSortedTests();
+  });
+
+  it("clears the busy state when an apply rejects", async () => {
+    await runRegistryRejectedApplyClearsBusyTests();
+  });
+
+  it("names a scanned backlog the boot plan does not start (ADR 0115 Amendment 1)", async () => {
+    await runRegistryScannedBacklogTests();
   });
 });

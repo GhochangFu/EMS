@@ -110,6 +110,14 @@ export type EndpointRegistryDeps = {
   logger: AdapterLogger;
   /** The disk-buffer gauge for one endpoint, in samples (`DiskBufferHandle.buffered`). */
   buffered(protocol: IngestProtocol, endpointKey: string): number;
+  /**
+   * Endpoints the disk-buffer scan found segments for at start-up
+   * (`DiskBufferStore.backlog()`). Seeded as stopped, so after a host restart
+   * the backlog of an endpoint the boot plan does not start — an organization
+   * still switched off — is still named on the health body (ADR 0115
+   * Amendment 1). One the boot plan starts leaves the list as it launches.
+   */
+  scanned?: readonly { readonly protocol: IngestProtocol; readonly endpointKey: string }[];
 };
 
 export type EndpointRegistry = {
@@ -145,17 +153,28 @@ export function createEndpointRegistry(deps: EndpointRegistryDeps): EndpointRegi
   const running = new Map<string, Running>();
   /** Keys stopped by a reload, so their backlog can be named until it is gone. */
   const stopped = new Map<string, { protocol: IngestProtocol; endpointKey: string }>();
+  for (const endpoint of deps.scanned ?? []) {
+    stopped.set(endpointGroupKey(endpoint.protocol, endpoint.endpointKey), {
+      protocol: endpoint.protocol,
+      endpointKey: endpoint.endpointKey,
+    });
+  }
   let applying: Promise<void> | undefined;
   let closed = false;
 
   /** Builds and starts one plan. Returns false (logged) when the build or start threw. */
   function launch(key: string, plan: EndpointPlan): boolean {
     const slot = { current: plan.pointIndex };
-    let supervisor: Supervisor;
+    let supervisor: Supervisor | undefined;
     try {
       supervisor = deps.build(plan, () => slot.current);
       supervisor.start();
     } catch (error) {
+      // Built but refused to start: stop it, so nothing half-started keeps a
+      // connection or a timer. `stop()` is idempotent and never rejects.
+      if (supervisor !== undefined) {
+        void supervisor.stop();
+      }
       // Not running, so the next reload sees the key absent and retries it.
       deps.logger.error("endpoint start failed", { ...where(plan), reason: reasonOf(error) });
       stopped.set(key, { protocol: plan.protocol, endpointKey: plan.endpointKey });
@@ -191,9 +210,18 @@ export function createEndpointRegistry(deps: EndpointRegistryDeps): EndpointRegi
     }
     for (const action of diffEndpoints(served, next)) {
       const current = running.get(action.key);
+      // Once `stopAll` has begun nothing new may dial: stops still run, a
+      // replace still closes its old supervisor, but no launch follows.
+      if (closed && action.kind === "start") {
+        continue;
+      }
       switch (action.kind) {
         case "stop": {
           if (current !== undefined) {
+            // A queued tail written after this point resolves against no
+            // mapping and is discarded (counted), rather than written for an
+            // RTU that is no longer in the plan.
+            current.slot.current = new Map();
             await halt(action.key, current);
             deps.logger.info("endpoint stopped", {
               ...where(current.plan),
@@ -206,6 +234,9 @@ export function createEndpointRegistry(deps: EndpointRegistryDeps): EndpointRegi
           // Plan R10: the old connection is closed before the new one dials.
           if (current !== undefined) {
             await halt(action.key, current);
+          }
+          if (closed) {
+            break;
           }
           if (launch(action.key, action.plan)) {
             deps.logger.info("endpoint replaced", {

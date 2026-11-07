@@ -142,12 +142,14 @@ function deferred(): Deferred {
 }
 
 /** A world of fake supervisors: an ordered event log, and per-endpoint knobs. */
-function world() {
+function world(options: { scanned?: readonly { protocol: IngestProtocol; endpointKey: string }[] } = {}) {
   const events: string[] = [];
   const logs: LogLine[] = [];
   const stopGates = new Map<string, Deferred>();
   const stopRejects = new Set<string>();
   const buildThrows = new Set<string>();
+  const startThrows = new Set<string>();
+  const knobs = { infoThrowsOnce: false };
   const buffered = new Map<string, number>();
   const indexes = new Map<string, () => PointIndex>();
   let builds = 0;
@@ -184,6 +186,9 @@ function world() {
         protocol: p.protocol,
         endpointKey: p.endpointKey,
         start: () => {
+          if (startThrows.has(name)) {
+            throw new Error(`start refused ${name}`);
+          }
           events.push(`start:${name}`);
         },
         stop: async () => {
@@ -198,11 +203,18 @@ function world() {
       };
     },
     logger: {
-      info: (message, fields) => logs.push({ level: "info", message, ...(fields ? { fields } : {}) }),
+      info: (message, fields) => {
+        if (knobs.infoThrowsOnce) {
+          knobs.infoThrowsOnce = false;
+          throw new Error("logger refused");
+        }
+        logs.push({ level: "info", message, ...(fields ? { fields } : {}) });
+      },
       warn: (message, fields) => logs.push({ level: "warn", message, ...(fields ? { fields } : {}) }),
       error: (message, fields) => logs.push({ level: "error", message, ...(fields ? { fields } : {}) }),
     },
     buffered: (_protocol, endpointKey) => buffered.get(endpointKey) ?? 0,
+    ...(options.scanned === undefined ? {} : { scanned: options.scanned }),
   });
 
   return {
@@ -212,6 +224,8 @@ function world() {
     stopGates,
     stopRejects,
     buildThrows,
+    startThrows,
+    knobs,
     buffered,
     indexes,
     builds: () => builds,
@@ -383,4 +397,110 @@ export async function runRegistryLogsNoCredentialsTests(): Promise<void> {
   const all = JSON.stringify(w.logs);
   assert(w.logs.length >= 3, "the started, replaced and stopped lines were written");
   assert(!all.includes(secret) && !all.includes("password"), `a credential reached a log line: ${all}`);
+}
+
+/** Review fix 2: once `stopAll` has begun, an in-flight replace launches nothing. */
+export async function runRegistryStopAllDuringReplaceTests(): Promise<void> {
+  const w = world();
+  await w.registry.reload([plan("a:1", ["R1"])]);
+  const gate = deferred();
+  w.stopGates.set("a:1", gate);
+  const builds = w.builds();
+
+  // A replace of `a:1` (held on its stop) and a start of `b:1` queued behind it.
+  const pending = w.registry.reload([plan("a:1", ["R1", "R2"]), plan("b:1", ["R3"])]);
+  await Promise.resolve();
+  const stopping = w.registry.stopAll();
+  gate.release();
+  await stopping;
+  await pending;
+
+  assert(w.builds() === builds, `no replacement may be built once stopAll has begun: ${w.events.join(",")}`);
+  assert(w.registry.health().endpoints.length === 0, "the replacement is never left running");
+  // stopAll waits for the in-flight reload, which already stopped `a:1`; a
+  // stopAll that did not wait would stop the same supervisor a second time.
+  assert(
+    w.events.filter((e) => e === "stop-begin:a:1").length === 1,
+    `the old supervisor is stopped exactly once: ${w.events.join(",")}`,
+  );
+}
+
+/** Review L1: a supervisor that was built but refused to start is stopped. */
+export async function runRegistryStartThrowsStopsTests(): Promise<void> {
+  const w = world();
+  w.startThrows.add("a:1");
+  await w.registry.reload([plan("a:1", ["R1"])]);
+  assert(w.events.includes("stop-begin:a:1"), `a built supervisor whose start threw is stopped: ${w.events.join(",")}`);
+  assert(w.logged("endpoint start failed").length === 1, "the failed start is logged");
+  assert(w.registry.health().endpoints.length === 0, "it is not running");
+}
+
+/** Review L2: a stopped endpoint's queued tail resolves against an empty index. */
+export async function runRegistryStopClearsIndexTests(): Promise<void> {
+  const w = world();
+  await w.registry.reload([plan("a:1", ["R1"])]);
+  const index = w.indexes.get("a:1");
+  await w.registry.reload([]);
+  assert(index !== undefined && index().size === 0, "a stopped supervisor's index() must be empty");
+}
+
+/** Mutation M2: a failed launch with a backlog is named as stopped. */
+export async function runRegistryFailedLaunchListedTests(): Promise<void> {
+  const w = world();
+  w.buildThrows.add("a:1");
+  w.buffered.set("a:1", 4);
+  await w.registry.reload([plan("a:1", ["R1"])]);
+  const stopped = w.registry.health().stopped;
+  assert(
+    stopped.length === 1 && stopped[0].endpointKey === "a:1" && stopped[0].buffered === 4,
+    `a key that failed to start with a backlog is listed: ${JSON.stringify(stopped)}`,
+  );
+}
+
+/** Mutation M3: the stopped list comes back sorted by key, not insertion order. */
+export async function runRegistryStoppedSortedTests(): Promise<void> {
+  const w = world();
+  await w.registry.reload([plan("b:1", ["R2"]), plan("a:1", ["R1"])]);
+  w.buffered.set("a:1", 1);
+  w.buffered.set("b:1", 2);
+  // `b:1` is stopped first, so insertion order would put it first.
+  await w.registry.reload([plan("a:1", ["R1"])]);
+  await w.registry.reload([]);
+  const keys = w.registry.health().stopped.map((e) => e.endpointKey).join(",");
+  assert(keys === "a:1,b:1", `stopped entries are sorted by key, got ${keys}`);
+}
+
+/** Mutation M4: a reload whose apply rejects still clears the busy state. */
+export async function runRegistryRejectedApplyClearsBusyTests(): Promise<void> {
+  const w = world();
+  w.knobs.infoThrowsOnce = true;
+  let rejected = false;
+  try {
+    await w.registry.reload([plan("a:1", ["R1"])]);
+  } catch {
+    rejected = true;
+  }
+  assert(rejected, "the fake logger's throw must reject this reload, or the claim tests nothing");
+  const next = await w.registry.reload([plan("a:1", ["R1"])]);
+  assert(next === "applied", `a rejected apply must not leave the registry busy, got ${next}`);
+}
+
+/** Owner ruling A (ADR 0115 Amendment 1): a scanned backlog is named after a restart. */
+export async function runRegistryScannedBacklogTests(): Promise<void> {
+  const w = world({
+    scanned: [
+      { protocol: "mqtt", endpointKey: "off:1" },
+      { protocol: "mqtt", endpointKey: "a:1" },
+    ],
+  });
+  w.buffered.set("off:1", 9);
+  w.buffered.set("a:1", 3);
+  await w.registry.reload([plan("a:1", ["R1"])]);
+  const stopped = w.registry.health().stopped;
+  assert(
+    stopped.length === 1 && stopped[0].endpointKey === "off:1" && stopped[0].buffered === 9,
+    `a scanned endpoint the boot plan does not start is listed; one it starts is not: ${JSON.stringify(stopped)}`,
+  );
+  await w.registry.reload([plan("a:1", ["R1"]), plan("off:1", ["R9"])]);
+  assert(w.registry.health().stopped.length === 0, "once the key starts it is no longer stopped");
 }
