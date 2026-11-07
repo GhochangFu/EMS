@@ -10,6 +10,10 @@
  * `F3.85` PR 10b / ADR 0099 decision 6 — the confirm is the `dashboardTemplate.applyToSites`
  * stepper on the shared `WizardShell`: a bodyless entry, so Review alone. Its Submit makes the
  * same body-less POST the client always made, with no `X-Copilot-Change` header (plan §10.5).
+ *
+ * `F4.320` PR 2 (ADR 0087 Amendment 4 decision 8) — the dialog also offers **Replace existing
+ * copies** before its confirm: it swaps the body for `ReplaceSiteLayoutsWizard` (the bulk preview
+ * with each site's edit flag, then the `dashboardTemplate.replaceSiteLayouts` POST and its result).
  */
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -24,6 +28,7 @@ import { applySiteTemplate } from "../../api/admin/dashboard-templates";
 import { fetchAdminLocations } from "../../api/admin/locations";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import { WizardShell } from "../wizard/wizard-shell";
+import { ReplaceSiteLayoutsWizard } from "./replace-site-layouts-wizard";
 
 /** A bodyless wizard's values: it has no field to fill. */
 const NO_VALUES: Record<string, unknown> = {};
@@ -73,6 +78,7 @@ export function ApplyToSitesDialog({
 }) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
+  const [replacing, setReplacing] = useState(false);
   const locationsQ = useSiteLocations(template);
   const siteName = (locationId: string): string =>
     locationsQ.data?.items.find((location) => location.id === locationId)?.name ?? locationId;
@@ -92,9 +98,13 @@ export function ApplyToSitesDialog({
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-scrim/30 p-4">
       <div className="w-full max-w-2xl space-y-3 surface-dialog p-4">
         <h2 className="font-condensed text-base font-bold text-ink">
-          Apply {template.code} v{template.version} to all sites
+          {replacing
+            ? `Replace existing copies with ${template.code} v${template.version}`
+            : `Apply ${template.code} v${template.version} to all sites`}
         </h2>
-        {result ? (
+        {replacing ? (
+          <ReplaceSiteLayoutsWizard template={template} onClose={onClose} />
+        ) : result ? (
           <>
             <p className="rounded border border-accent/20 bg-ok-wash p-2 text-xs text-ok-ink">
               {result.made.length} site{result.made.length === 1 ? "" : "s"} made,{" "}
@@ -130,6 +140,18 @@ export function ApplyToSitesDialog({
               time. A site that already has a site view, has no assets, or has a tab that matches
               two or more asset groups is skipped and listed.
             </p>
+            <p className="max-w-prose text-xs text-ink-muted">
+              A site that already holds an older copy of this template is not changed here. To rebuild those
+              copies from this version, use{" "}
+              <button
+                type="button"
+                onClick={() => setReplacing(true)}
+                className="font-semibold text-accent-strong underline"
+              >
+                Replace existing copies
+              </button>
+              .
+            </p>
             <WizardShell
               entry={catalogEntry("dashboardTemplate.applyToSites")!}
               params={{ id: template.id }}
@@ -153,7 +175,7 @@ export function ApplyToSitesDialog({
             />
           </>
         )}
-        {result ? (
+        {result && !replacing ? (
           <div className="flex justify-end">
             <button type="button" onClick={onClose} className="surface-button px-3 py-1.5">
               Close

@@ -110,11 +110,11 @@ const CATALOG_IDS = COPILOT_CATALOG.map((entry) => entry.id);
  * `F4.320` PR 2 (ADR 0099 Amendment 15) lands the two Replace entries with the API half; their
  * wizards (the site page's "Replace with this version", the apply-to-sites dialog's "Replace
  * existing copies") are the web half of the same PR, which wires both and empties the list.
+ * The web half wired both (`components/control-room/replace-site-layout-wizard.tsx`:
+ * `location.siteLayout.replace`; `components/dashboard-templates/replace-site-layouts-wizard.tsx`:
+ * `dashboardTemplate.replaceSiteLayouts`), so the list is empty again.
  */
-const NOT_YET: readonly { id: string; reason: string }[] = [
-  { id: "location.siteLayout.replace", reason: "F4.320 PR 2 web half: the site page's Replace wizard" },
-  { id: "dashboardTemplate.replaceSiteLayouts", reason: "F4.320 PR 2 web half: the apply-to-sites dialog's Replace" },
-];
+const NOT_YET: readonly { id: string; reason: string }[] = [];
 
 /** `F3.87` PR 5 / ruling Q1(a): each canvas entry, the editor page that is its form, and the write that page calls. */
 const CANVAS_ENTRIES: readonly { id: string; page: string; write: string }[] = [

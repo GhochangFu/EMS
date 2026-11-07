@@ -37,8 +37,13 @@ function wizardEntry(id: string): CatalogEntry {
   return entry;
 }
 
-/** The values' `tabGroups`, as a map of strings. */
-function tabGroupsOf(values: Readonly<Record<string, unknown>>): Record<string, string> {
+/** A tab's name for the picker: the stock label, else its key. `F4.320`: the Replace wizard reads it too. */
+export function stockTabLabel(tabKey: string): string {
+  return STOCK_TAB_LABELS[tabKey] ?? tabKey;
+}
+
+/** The values' `tabGroups`, as a map of strings. Exported for the Replace wizard (`F4.320`). */
+export function tabGroupsOf(values: Readonly<Record<string, unknown>>): Record<string, string> {
   const raw = values.tabGroups;
   if (raw === null || typeof raw !== "object") return {};
   return Object.fromEntries(Object.entries(raw).filter((pair): pair is [string, string] => typeof pair[1] === "string"));
@@ -90,7 +95,7 @@ export function SiteLayoutWizard({ locationId, siteName }: SiteLayoutWizardProps
     enabled: ambiguous !== null,
   });
   const tabName = (tab: AmbiguousTabs[number]): string =>
-    `${STOCK_TAB_LABELS[tab.tabKey] ?? tab.tabKey} tab (${domainLabel(tab.domain, vocabQ.data?.assetDomains ?? [])})`;
+    `${stockTabLabel(tab.tabKey)} tab (${domainLabel(tab.domain, vocabQ.data?.assetDomains ?? [])})`;
 
   const make = useMutation({
     mutationFn: (body: Record<string, unknown>) => makeSiteLayout(locationId, body as SiteLayoutBody),
