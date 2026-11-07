@@ -1,4 +1,6 @@
-import type { QueryKey } from "@tanstack/react-query";
+import type { InvalidateQueryFilters, QueryKey } from "@tanstack/react-query";
+
+import { dashboardsAfterReplaceFilters } from "./site-layout-replace";
 
 /**
  * `F3.85` PR 8 (plan §10.3) — the query keys a confirmed copilot change makes
@@ -257,3 +259,18 @@ export function invalidationKeysFor(catalogId: string): readonly QueryKey[] {
 
 /** The catalog entries this file names (for its spec). */
 export const INVALIDATED_ENTRIES: readonly string[] = Object.keys(BY_ENTRY);
+
+/** The entries that rebuild a site's copy under a new dashboard id (`F4.320`). */
+const REPLACE_ENTRIES: ReadonlySet<string> = new Set(["location.siteLayout.replace", "dashboardTemplate.replaceSiteLayouts"]);
+
+/**
+ * The filters to invalidate after the change `catalogId` is applied: one plain prefix per key of
+ * {@link invalidationKeysFor}, except that the two Replace entries narrow `DASHBOARDS` so the
+ * deleted dashboard's id-keyed reads are not re-read (`dashboardsAfterReplaceFilters`).
+ */
+export function invalidationFiltersFor(catalogId: string): readonly InvalidateQueryFilters[] {
+  const replace = REPLACE_ENTRIES.has(catalogId);
+  return invalidationKeysFor(catalogId).map((queryKey) =>
+    replace && queryKey === DASHBOARDS ? dashboardsAfterReplaceFilters() : { queryKey },
+  );
+}

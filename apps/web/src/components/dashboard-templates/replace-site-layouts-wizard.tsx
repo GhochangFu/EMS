@@ -21,6 +21,7 @@ import {
 } from "../../api/admin/site-layout-replace";
 import { apiErrorMessage } from "../../lib/api-error-message";
 import {
+  dashboardsAfterReplaceFilters,
   editFlagText,
   heldCopyText,
   REPLACE_LOSES,
@@ -54,9 +55,10 @@ export function ReplaceSiteLayoutsWizard({
     mutationFn: () => replaceSiteLayouts(template.id),
     onSuccess: () => {
       setError(null);
-      // Each rebuilt copy has a new dashboard id: the site views and the dashboards read by slug go stale.
+      // Each rebuilt copy has a new dashboard id: the site views and the dashboards read by slug go
+      // stale, and the deleted ids' reads are not re-read (`dashboardsAfterReplaceFilters`).
       void queryClient.invalidateQueries({ queryKey: ["control-room", "site-view"] });
-      void queryClient.invalidateQueries({ queryKey: ["dashboards"] });
+      void queryClient.invalidateQueries(dashboardsAfterReplaceFilters());
       void queryClient.invalidateQueries({ queryKey: siteLayoutsReplacePreviewKey(template.id) });
     },
     onError: (cause: Error) => setError(apiErrorMessage(cause)),
