@@ -1,6 +1,7 @@
 import { describe, it } from "vitest";
 
 import {
+  aForeignPoolReadRunsAfterTheTenantTransactionCommits,
   aKeyWithNoPriorNeverPlansOne,
   aSustainabilityBindingOnALocationDashboardPlansASubtreeScope,
   aTileThatAsksForThePriorIsItsOwnResolve,
@@ -9,6 +10,7 @@ import {
   byLocationOnAnEmptyScopeBuildsNoSql,
   catalogValuesPassesEachReadableSetInItsOwnPosition,
   everyEntryOnAnEmptyScopeBuildsNoSql,
+  onlyTheDeferredEntriesReadAForeignPool,
   overviewAndGroupTabAreTwoResolves,
   sameKeyOnOneTabIsOneResolve,
   sameKeyOnTwoGroupTabsIsTwoResolves,
@@ -86,5 +88,15 @@ describe("F4.317 — a prior is planned only for a tile that asks (decision 8, Q
 
   it("the prior on an empty scope builds no SQL and carries the live answer's empty value", async () => {
     await thePriorOnAnEmptyScopeBuildsNoSql();
+  });
+});
+
+describe("F4.317 follow-up (d) — a foreign-pool read never waits inside the tenant transaction (no database)", () => {
+  it("pue.ratio and assets.health.score resolve after the commit and still reach their sources", async () => {
+    await aForeignPoolReadRunsAfterTheTenantTransactionCommits();
+  });
+
+  it("only the RESOLVE_AFTER_COMMIT entries read the fleet pool or the health service", async () => {
+    await onlyTheDeferredEntriesReadAForeignPool();
   });
 });

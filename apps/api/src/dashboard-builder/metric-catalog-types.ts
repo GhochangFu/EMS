@@ -32,7 +32,9 @@ export type ResolverDeps = {
    * `latestPueRatio` (`telemetry/pue-ratio.ts`) as the estate tile does. That read joins
    * `bms.assets` with no organization predicate, so the `$1::uuid[]` scope — the resolved,
    * organization-bounded asset ids — is the isolation control, exactly as on the estate path.
-   * `Pick<Pool, "query">`, the type `latestPueRatio` takes.
+   * `Pick<Pool, "query">`, the type `latestPueRatio` takes. An entry that reads this (or
+   * `health`) must be in `RESOLVE_AFTER_COMMIT` (`metric-catalog.service.ts`), so the read runs
+   * after the tenant transaction has committed, never while it holds its connection.
    */
   readonly pool: Pick<Pool, "query">;
 };
