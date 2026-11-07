@@ -198,7 +198,10 @@ export function firstTabProblemPicksTheFirstTabLine(): void {
 
 /** A real schema refusal of a tab widget's config reads back as that tab. */
 export function aSchemaRefusalNamesItsTab(): void {
-  const tabs = threeTabs().map((tab) => ({ ...tab, widgets: tab.widgets.filter((w) => w.widgetType === "value_tile") }));
+  const tabs: TemplateTabInput[] = threeTabs().map((tab) => ({
+    ...tab,
+    widgets: tab.widgets.filter((w) => w.widgetType === "value_tile"),
+  }));
   tabs[1]!.widgets = [widget("bad", { config: { windowMinutes: -5 } } as never)];
   const parsed = updateDashboardTemplateBodySchema.safeParse({ content: { widgets: [], tabs } });
   assert(!parsed.success, "a negative window was accepted");

@@ -31,12 +31,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import {
-  DASHBOARD_GRID,
-  canMutate,
-  canOpenDraftFrom,
-  canTransition,
-} from "@bms/shared";
+import { canMutate, canOpenDraftFrom, canTransition } from "@bms/shared";
 import type {
   DashboardTemplateDto,
   InstantiateSectionTemplateResponse,
@@ -57,7 +52,9 @@ import type {
 } from "../../api/admin/dashboard-templates";
 import { type CatalogEntry, catalogEntry } from "@bms/shared/copilot";
 import { WizardShell } from "../../components/wizard/wizard-shell";
-import type { WizardStep } from "../../lib/wizard-steps";
+import { bodyProblems, type WizardStep } from "../../lib/wizard-steps";
+import { blankTemplateWidget, firstTabProblem, type TemplateTabInput } from "../../lib/site-template-tabs";
+import { SiteTemplateTabEditor } from "../../components/dashboard-templates/site-template-tab-editor";
 import { DashboardCanvas } from "../../components/dashboards/dashboard-canvas";
 import { MasterDataLayout } from "../../components/admin/master-data-layout";
 import { ApplyToSitesDialog } from "../../components/dashboard-templates/apply-to-sites-dialog";
@@ -75,15 +72,6 @@ import { canAuthorTemplates, canInstantiateTemplates } from "../../lib/template-
 import type { AuthUser } from "../../stores/auth-store";
 
 type DashboardTemplateDetailPageProps = { user: AuthUser };
-
-let nextWidgetOrdinal = 1;
-/** A stable, template-local widget key an author never has to type — see
- * `sectionTemplateWidgetIdentitySchema`'s docblock on why `key` exists at
- * all. Timestamp-prefixed so a fresh session's counter cannot collide with a
- * key a previous session already saved. */
-function freshWidgetKey(): string {
-  return `widget-${Date.now()}-${nextWidgetOrdinal++}`;
-}
 
 /** The catalog entry a wizard submits, by its literal id (the stepper coverage gate reads the id). */
 function wizardEntry(id: string): CatalogEntry {
@@ -147,6 +135,11 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [rows, setRows] = useState<SectionTemplateWidgetInput[]>([]);
+  // `F4.320` — a site template's tabs as edited, each with its own widgets; Save sends them.
+  const [tabs, setTabs] = useState<TemplateTabInput[]>([]);
+  const [selectedTab, setSelectedTab] = useState(0);
+  // A Review refusal under `content.tabs.<i>`, shown on tab i (`firstTabProblem`).
+  const [tabProblem, setTabProblem] = useState<{ index: number; message: string } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [instantiateOpen, setInstantiateOpen] = useState(false);
   const [applyOpen, setApplyOpen] = useState(false);
@@ -167,6 +160,8 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   useEffect(() => {
     if (templateQ.data) {
       setRows(templateQ.data.content.widgets as SectionTemplateWidgetInput[]);
+      setTabs(templateQ.data.content.tabs as TemplateTabInput[]);
+      setTabProblem(null);
     }
   }, [templateQ.data]);
 
@@ -270,7 +265,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
     if (step.id === "content") {
       const count = widgetCountOf(values.content);
       const isCanvas =
-        JSON.stringify(values.content) === JSON.stringify({ widgets: rows, tabs: template.content.tabs });
+        JSON.stringify(values.content) === JSON.stringify(canvasContent());
       return (
         <p className="text-[11px] text-ink-muted">
           {count === null
@@ -336,7 +331,7 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   const canApplyToSites = mayAuthor && template.status === "published" && isSiteTemplate;
 
   // `F3.73` — a site template holds every widget in a tab, so the top-level rows alone read "0".
-  const tabs = template.content.tabs;
+  // `F4.320` — the tabs as edited on this screen, not the stored ones.
   const widgetCount = rows.length + tabs.reduce((sum, tab) => sum + tab.widgets.length, 0);
 
   const busy = publishM.isPending || archiveM.isPending || draftM.isPending || deleteM.isPending;
@@ -364,21 +359,36 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
   };
 
   function addWidget(): void {
-    setRows((current) => [
-      ...current,
-      {
-        key: freshWidgetKey(),
-        title: null,
-        gridX: 0,
-        gridY: 0,
-        gridW: DASHBOARD_GRID.minWidgetW,
-        gridH: DASHBOARD_GRID.minWidgetH,
-        bindings: [],
-        sources: [],
-        widgetType: "value_tile",
-        config: {},
-      },
-    ]);
+    setRows((current) => [...current, blankTemplateWidget()]);
+  }
+
+  /** The content as edited on this screen: the top-level canvas and every tab with its widgets. */
+  function canvasContent(): { widgets: SectionTemplateWidgetInput[]; tabs: TemplateTabInput[] } {
+    return { widgets: rows, tabs };
+  }
+
+  /**
+   * `F4.320` (ADR 0087 Amendment 4 decision 1) — Save opens the update wizard with the canvas, and
+   * a refusal under `content.tabs.<i>` selects tab i and shows the message there.
+   *
+   * **The path comes from the Review's parse, not from the API's `400`.** The PATCH route throws
+   * `new BadRequestException(err.flatten())`, which collapses every Zod path to its top-level key
+   * (`{ fieldErrors: { content: [...] } }`), so the wire body never names a tab. The wizard's
+   * Review parses the same `updateDashboardTemplateBodySchema` before Submit can send, and this
+   * reads the same problems (`bodyProblems`), with their full paths, when Save is pressed.
+   */
+  function openSave(): void {
+    setActionError(null);
+    const body = { content: canvasContent() };
+    const found = firstTabProblem(bodyProblems(wizardEntry("dashboardTemplate.update"), body));
+    setTabProblem(found);
+    if (found !== null) setSelectedTab(found.index);
+    setSaveValues(body);
+  }
+
+  function editTabs(next: TemplateTabInput[]): void {
+    setTabProblem(null);
+    setTabs(next);
   }
 
   function updateWidget(key: string, patch: Partial<SectionTemplateWidgetInput>): void {
@@ -423,13 +433,10 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
                 type="button"
                 disabled={saveM.isPending}
                 aria-busy={saveM.isPending}
-                // `F3.73` — the stored tabs go back unchanged. This canvas edits the top-level
-                // widgets only, and a site template's content without `tabs` is refused rather
-                // than cleared. `F3.85` PR 10a — Save opens the update wizard with the canvas.
-                onClick={() => {
-                  setActionError(null);
-                  setSaveValues({ content: { widgets: rows, tabs: template.content.tabs } });
-                }}
+                // `F3.73` — a site template's content without `tabs` is refused rather than
+                // cleared; `F4.320` sends the tabs as edited. `F3.85` PR 10a — Save opens the
+                // update wizard with the canvas.
+                onClick={openSave}
                 className="rounded bg-accent px-3 py-1.5 text-xs font-semibold text-on-accent disabled:opacity-60"
               >
                 {saveM.isPending ? "Saving…" : "Save canvas"}
@@ -596,7 +603,8 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
       <SectionCard
         title="Canvas"
         actions={
-          editable ? (
+          // A site template's widgets go in a tab: its editor has its own Add widget per tab.
+          editable && !isSiteTemplate ? (
             <button
               type="button"
               onClick={addWidget}
@@ -607,21 +615,18 @@ export function DashboardTemplateDetailPage({ user }: DashboardTemplateDetailPag
           ) : null
         }
       >
-        {isSiteTemplate && tabs.length > 0 ? (
-          <ul aria-label="Site tabs" className="mb-3 divide-y divide-well-deep text-xs">
-            {tabs.map((tab) => (
-              <li key={tab.key} className="flex flex-wrap items-center gap-x-3 py-1.5">
-                <span className="font-semibold text-ink">{tab.label}</span>
-                <span className="text-ink-muted">{tab.domain ?? "overview"}</span>
-                <span className="text-ink-muted">
-                  {tab.widgets.length} widget{tab.widgets.length === 1 ? "" : "s"}
-                </span>
-              </li>
-            ))}
-          </ul>
+        {isSiteTemplate ? (
+          <SiteTemplateTabEditor
+            tabs={tabs}
+            onChange={editTabs}
+            selectedIndex={selectedTab}
+            onSelect={setSelectedTab}
+            editable={editable}
+            problem={tabProblem}
+          />
         ) : null}
         {rows.length === 0 ? (
-          isSiteTemplate && tabs.length > 0 ? null : (
+          isSiteTemplate ? null : (
             <p className="text-sm text-ink-muted">This template has no widgets yet.</p>
           )
         ) : (
