@@ -11,7 +11,7 @@ Creates rows `F3.72`–`F3.75`. Amends [ADR 0076](./0076-control-room-for-each-o
 gate question 8 and decisions 1, 8 and 9, [ADR 0079](./0079-fixed-plant-mimic-widget.md)
 decision 4 and [ADR 0081](./0081-mimic-layout-builder.md) decision 10 (see
 *Amended records*); Amendment 2 narrows [ADR 0049](./0049-section-dashboard-templates.md)
-decision 6 for a site-layout copy. Amendment 3 (accepted 2026-10-01) creates row `F3.77`. Promotes nothing out of `AGENTS.md` §6. `F3.72` ships in
+decision 6 for a site-layout copy. Amendment 3 (accepted 2026-10-01) creates row `F3.77`. Amendment 4 (2026-11-07, `F4.320`) adds a tab editor for site templates and narrows ruling Q4 with a Replace door for template copies. Promotes nothing out of `AGENTS.md` §6. `F3.72` ships in
 the first stable version (gate question 9); `F3.73`–`F3.75` start after it.
 
 ## Context
@@ -497,3 +497,179 @@ tabs; the mimic (`F3.74`, ADR 0088); `RSMOC-WC` (`F3.75`); the generated view.
 - Wall mode is a view of the existing site view. It adds no route, no API and
   no role gate. The only sign-in change is the same-origin return path (ruling
   8).
+
+## Amendment 4 (2026-11-07, `F4.320`) — a tab editor for site templates, and Replace with a published version
+
+**Status: proposed.** Drafted on 2026-11-07 against `main` at `b92a7368`. Raised
+by the owner on 2026-11-06 while making v2 of `pump-station-standard` on the AWS
+demo (BACKLOG `F4.320`). The owner ruled two scope gates and ten sub-questions
+one at a time on 2026-11-07 (listed under *Rulings*). The merge of this
+amendment approves it. Decisions 4 to 7 and Amendments 1 to 3 are otherwise
+unchanged.
+
+### Facts the amendment rests on
+
+- The template detail page
+  (`apps/web/src/pages/admin/dashboard-template-detail-page.tsx`) edits only
+  `content.widgets`. Save sends `content.tabs` back unchanged, and a site
+  template's tabs show only as a list with a widget count. A site template
+  holds every widget in a tab, so no version of a site template can be changed
+  in the UI.
+- The shared contract already checks a tab edit on `PATCH
+  /api/v1/dashboard-templates/:id`: unique tab keys, widget keys unique across
+  tabs, at most `MAX_DASHBOARD_TABS` tabs, the per-tab widget cap, a
+  `module_summary_card`'s `targetTabKey` names a content tab, a mimic's
+  `tabKey` names a tab with a domain, and a site `PATCH` must carry
+  `content.tabs` (`packages/shared/src/contracts/dashboard-templates.ts`,
+  `dashboard-template-writes.ts`).
+- Every copy door (`makeOne` in `apps/api/src/control-room/site-layout.service.ts`)
+  refuses a site whose view row is live (ruling Q4). The bulk door
+  (`apply-to-sites`) reports such a site as a skip. So a published v2 never
+  reaches a site that already holds a copy. Today the only way is to delete the
+  copy and press "Make site layout", which re-points the removed-copy row.
+- Every builder write on a dashboard writes an audit row with
+  `entityType = 'dashboard'` and `entityId` = the dashboard id
+  (`master.dashboard.update`, `master.dashboard.widgets.replace`, the
+  widget-append routes). The copy's own make row is
+  `master.location.site_layout.make` on the location. The seed writes no audit
+  row.
+
+### Rulings
+
+**Scope gates (owner, 2026-11-07):**
+
+1. **G1 — widgets and tabs.** The editor changes the widgets of every tab, and
+   also adds, renames, re-keys, reorders and removes tabs, and sets a tab's
+   `domain` and `groupCode`. Ruled as recommended.
+2. **G2 — a Replace action.** A site that holds a copy can be rebuilt from a
+   published version, per site and in bulk, behind a confirm step. Ruled as
+   recommended. This narrows ruling Q4 (decision 2 below).
+
+**Sub-questions (owner, 2026-11-07, one at a time):**
+
+| # | Question | Ruling |
+| - | -------- | ------ |
+| S1 | How does Replace rebuild a copy? | **Delete and make again**: new dashboard id, same slug, same view row (decision 3). As recommended. |
+| S2 | Which group does each tab bind? | **Keep the old picks by tab key**; a `tabGroups` choice overrides (decision 4). As recommended. |
+| S3 | Which copies may Replace rebuild? | **Bulk: the same template at another version only**; per site also the same version (decision 5). As recommended. |
+| S4 | A drawn mimic layout on the copy? | **Detached; the layout row stays** (decision 6). As recommended. |
+| S5 | Copilot catalog or exclusion list? | **Catalog entries**, ADR 0099 Amendment 15. As recommended. |
+| S6 | Where in the UI? | **The site page (per site) and the apply-to-sites dialog (bulk)** (decision 8). As recommended. |
+| S7 | The audit row? | **A new action with the old ids** (decision 7). As recommended. |
+| S8 | Show whether the copy was edited? | **Yes, in `F4.320`** (decision 9). **Against the recommendation**, which was a later row. |
+| S9 | Who may run Replace? | **Per site as Make; bulk an organization admin** (decision 10). As recommended. |
+| S10 | PR order? | **Serial**: this amendment, then the tab editor, then Replace. As recommended. |
+
+### Decisions
+
+1. **The tab editor (G1) is a web change only.** The detail page shows a tab
+   strip and, for the selected tab, the same canvas and widget editor as the
+   top-level canvas. A draft can add a tab (up to `MAX_DASHBOARD_TABS`), rename
+   it, change its key, move it, remove it (with its widgets) and set its
+   `domain` (or none, for an Overview) and `groupCode`. Save sends the edited
+   `content.tabs`. When a refusal names a path under `content.tabs.<i>`, the
+   page selects that tab and shows the message there; PR 1 checks how the
+   `400` body carries the Zod path and maps it. The server rules in *Facts* are unchanged and stay
+   the only gate; there is no new route, contract or migration. A copy already
+   made keeps its own `dashboard_tabs`; a tab key change in a new version
+   reaches a site only through Make or Replace.
+2. **Ruling Q4 is narrowed, not reversed.** The make doors (per site, bulk, the
+   `instantiate` site arm, the seed) still never replace a live view row. A new
+   **Replace** door rebuilds a **template copy** only: a view row with
+   `kind = 'dashboard'` whose dashboard carries a `template_id` of a
+   `target = 'site'` template. A builtin row, a generated view and a dashboard
+   with no template stamp are refused with 409.
+3. **How Replace rebuilds (S1).** One `withTenant` transaction per site, after
+   the same per-site advisory lock as Make (`siteLayoutLockKey`). It deletes the copy's
+   `bms.dashboards` row (the cascade removes its tabs, widgets, widget points
+   and widget sources). The view row's `dashboard_id` becomes `NULL` by its
+   `ON DELETE SET NULL`, which is the removed-copy state, and the existing make
+   path then re-points **the same view row** in place. The new dashboard keeps
+   the slug `site-layout-<site slug>`; its id is new. A Control Room URL keeps
+   working; a direct `/dashboards/<old id>` link does not. Any failure rolls
+   the whole site back, so a site is never left without its copy.
+4. **Groups (S2).** Before the delete, Replace reads the copy's
+   `dashboard_tabs (tab_key, asset_group_id)`. For every tab key that the new
+   version still has, that group is the admin's choice in the D5 tie-break; a
+   `tabGroups` entry in the request overrides it. A new tab key uses the D5
+   rules. An ambiguous tab answers 409 per site and is a skip in bulk. Groups
+   that a zero-group site needs are made as ruling Q4b says.
+5. **Which copies (S3).** Replace needs the same template `code` as the
+   copy's stamp. **Per site**, the same version is allowed: it is an explicit
+   rebuild that discards edits. **Bulk** replaces only a copy at another
+   version, and reports each other site with a reason: `no_copy`,
+   `other_template`, `same_version`, plus the existing `ambiguous`,
+   `no_assets` and `slug_taken`. A site replaced stays replaced when a later
+   site is skipped. Another template's copy (for example a `smoc-standard`
+   copy at a pump station) is never changed by Replace; it stays a manual
+   delete and Make.
+6. **A drawn mimic (S4).** The copy's widgets go with the dashboard, so a mimic
+   that an admin switched to a drawn layout comes back as the version's preset
+   (ruling Q2). The `bms.mimic_layouts` row is not deleted (no widget owns it),
+   so the admin can switch the rebuilt widget back in the builder. The confirm
+   step says this.
+7. **Audit (S7).** A new action `master.location.site_layout.replace` on the
+   location: the make payload plus `previousDashboardId`,
+   `previousTemplateId` and `previousVersion`. The view-row write keeps its
+   existing `master.location.control_room_view.set` row.
+8. **Where (S6).** Per site: a "Replace with this version" action on the
+   site's Control Room page, beside Make, shown to a master-data admin when
+   the view is a template copy. Bulk: a "Replace existing copies" action in the
+   apply-to-sites dialog, which lists each site by name with its held version,
+   its edit flag (decision 9) and what will happen, before the confirm.
+9. **The edit flag (S8).** The confirm step shows, for each copy, whether it
+   was changed after it was made: the count of audit rows with
+   `entityType = 'dashboard'` and `entityId` = the copy's dashboard id, and the
+   time and actor of the newest one ("edited 3 times, last on 2026-11-06 by
+   phe-admin@bms.local"), or "no recorded edit". It is computed on the server
+   in a read (a preview) that runs before the confirm, under the same
+   permission as the Replace it previews. The preview does **not** call
+   `AuditService` (its `resolveReadScope` refuses a `location_admin`, who may
+   run a per-site Replace): it selects `bms.audit_log` directly inside
+   `withTenant(site organization)`, filtered by `entity_type = 'dashboard'`
+   and `entity_id`, and answers only the count, the newest time and the
+   newest actor. **The actor is shown only to a caller who may read the audit
+   log** (`admin`, `organization_admin`), and in the form `AuditService` gives
+   that caller (`redactActorSubject` for a non-`admin`); a `location_admin`
+   sees the count and the time only. It reads the existing audit table; there
+   is no new column and no migration. A copy the seed made and nobody touched
+   shows "no recorded edit" (the make row is on the location, not the
+   dashboard). **"Edited" means a dashboard-entity audit row**: a builder save,
+   a widget replace or a widget append. An edit of a drawn mimic layout is
+   audited on the layout, and site-widget and mimic-node writes write no audit
+   row, so those are not seen. The flag is advice: Replace does not refuse an
+   edited copy; the admin decides.
+10. **Permissions (S9).** Per site: the Make rule in this order —
+    `requireMasterDataUser`, `canManageLocation` (403), `canManageDashboard` on
+    the location scope (404); a location admin of the site may. Bulk: an
+    organization admin or `admin`, never a `location_admin` (the
+    `makeForOrganization` rule). The preview of decision 9 uses the same rule
+    as the action it previews.
+11. **Copilot.** Both Replace routes are catalog entries (ADR 0099
+    Amendment 15). The preview read is not a write and is not in the catalog.
+
+### Out of scope
+
+The `organization` target (one strip with no tabs; Reset and Make already carry
+a new version, ADR 0112); a Replace across template codes; the seed (ADR 0113
+decision 8 and Amendment 3 ruling 9 are unchanged); an edit detector that
+compares content (decision 9 reads the audit log only); a new migration or
+dependency.
+
+### Consequences
+
+- `F4.320` is three serial PRs: this amendment (docs); PR 1, the tab editor
+  (`apps/web` only); PR 2, Replace — the contract (new skip reasons, the
+  replace result and the preview), the service, two write routes and one read,
+  OpenAPI, the catalog, the web wizard and dialog, and an integration spec.
+- PR 2 adds a destructive write route under row-level security, so it gets the
+  `security-reviewer` beside the standard reviews. It has no `packages/db`
+  change: `bms.audit_log.action` is an open `varchar(64)`.
+- Decision 3 needs a refactor in PR 2: `makeOne` opens its own `withTenant`
+  transaction and takes the lock itself, so it is split to accept the
+  caller's transaction (or the delete moves inside it). The builder's delete
+  (`DashboardsService.remove`, `assertOperationsWriteRole`) is not reused;
+  Replace deletes the copy inside its own transaction.
+- On the AWS demo the four admin-edited PHE copies stay as they are (ADR 0113
+  note, owner 2026-11-06). A live check of Replace touches Bilsi only; a bulk
+  Replace there needs the owner.
