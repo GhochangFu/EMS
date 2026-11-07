@@ -2254,7 +2254,14 @@ catalog entries, not excluded routes. The merge of this amendment approves it.
    decision 9; the web confirm step does.
 3. **The preview read is not in the catalog.** It writes nothing. No read tool
    is added for it in `F4.320`.
-4. **The route stays the guard.** At Confirm the route runs its own permission,
+4. **The tab is checked at propose** *(added at the build)*. No copilot read
+   returns a dashboard's tabs, so the model could not know a `tabKey`, and the
+   route refuses a missing or unknown one at Confirm. The target resolver reads
+   the dashboard's tab keys with its row and refuses the proposal, naming the
+   keys, so the model proposes again with one
+   (`copilot-append-chart.check.ts`). After Confirm the dashboard queries are
+   invalidated (`copilot-invalidations.ts`), so an open builder reseeds.
+5. **The route stays the guard.** At Confirm the route runs its own permission,
    copy and version checks (ADR 0087 Amendment 4 decisions 2, 5 and 10), as for
    every entry.
 
@@ -2300,10 +2307,19 @@ choice the owner may change at review.
    - `dashboard.widgets.appendChart` — `POST /dashboards/:id/widgets/append`,
      body **`appendChartWidgetBodySchema`** (the chart arm only), risk
      **`create`**, not red (it adds one widget and removes nothing), target
-     `{ kind: "dashboard", param: "id" }`, refs `points[].assetId` → `asset`.
-   - Steps: "Chart" (`config.series`, `config.aggregate`,
-     `config.windowMinutes`), "Points" (`points`), "Placement" (`tabKey`,
-     `title`, `gridW`, `gridH`).
+     `{ kind: "dashboard", param: "id" }`, **no refs**: a catalog ref names a
+     top-level body field (`copilot-target-resolver.ts`), and `points[].assetId`
+     is not one; each point's organization is the route's 403 at Confirm
+     (decision 4), as for `dashboard.widgets.replace`, which also names none.
+     *(Corrected at the build, `F4.324` PR 3: the draft named `points[].assetId`
+     → `asset`.)*
+   - **A canvas entry, no steps** *(corrected at the build, `F4.324` PR 3;
+     the draft named three steps)*. Every catalog entry needs a human form
+     (`tests/f3.85-stepper-coverage.test.ts`), and this route's form already
+     exists: the **Pin dialog** (`pin-dialog.tsx`), which calls the same write.
+     So the entry joins `CANVAS_ENTRY_IDS` beside `workOrder.reorder` (whose form
+     is the Kanban drag, owner ruling DC2), has no steps, and the model proposes
+     the whole body. The owner may instead ask for a stepper later.
    - No `precondition`: the route appends at the foot of a tab and never
      overwrites, so it needs no `updatedAt` match.
 2. **The trend arm stays excluded** *(drafter)*. The owner's ruling names a
@@ -2321,10 +2337,17 @@ choice the owner may change at review.
    it, so the dropdown and the card cannot drift, and the ECharts mapping stays
    where `tests/f3.1c-widget-series-mapping.test.ts` holds it. An absent
    `series` reads as *Trend*.
-4. **The route stays the guard.** At Confirm the route runs its own checks: the
+4. **The tab is checked at propose** *(added at the build)*. No copilot read
+   returns a dashboard's tabs, so the model could not know a `tabKey`, and the
+   route refuses a missing or unknown one at Confirm. The target resolver reads
+   the dashboard's tab keys with its row and refuses the proposal, naming the
+   keys, so the model proposes again with one
+   (`copilot-append-chart.check.ts`). After Confirm the dashboard queries are
+   invalidated (`copilot-invalidations.ts`), so an open builder reseeds.
+5. **The route stays the guard.** At Confirm the route runs its own checks: the
    write role, the dashboard's scope, each point's organization (403), the tab
    (400), the widget cap (409) and the kind rule (400), as for every entry.
-5. **`dashboard.widgets.replace` is unchanged.** It still adds or edits any
+6. **`dashboard.widgets.replace` is unchanged.** It still adds or edits any
    widget; the new entry is the safer path the model should prefer to add one
    chart. The system prompt's dashboard note says so in one sentence.
 

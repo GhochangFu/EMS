@@ -38,6 +38,10 @@ const { COPILOT_CATALOG, EXCLUDED_ROUTES } = require_("@bms/shared/copilot") as 
  */
 const CATALOG_WRITERS = [
   "apps/api/src/dashboard-builder/dashboards.service.ts",
+  // `F4.324` (ADR 0099 Amendment 16): the append route's chart arm is `dashboard.widgets.appendChart`.
+  // Its audit calls (`append`, and `appendStrips` handed to `dashboard-widget-append-strips.ts`) go
+  // through `MasterDataAuditService.write`, so the copilot's `via` mark applies to both arms.
+  "apps/api/src/dashboard-builder/dashboard-widget-append.service.ts",
   "apps/api/src/admin/dashboard-templates/dashboard-templates.service.ts",
   "apps/api/src/admin/dashboard-templates/dashboard-templates-instantiate.service.ts",
   "apps/api/src/admin/dashboard-templates/dashboard-templates-stock.service.ts",
@@ -143,15 +147,6 @@ const NOT_CATALOG_WRITERS: readonly { readonly file: string; readonly route: Rou
     file: "apps/api/src/admin/asset-templates/asset-dashboards-instantiate.service.ts",
     route: { method: "POST", path: "/admin/asset-templates/:id/default-dashboards" },
     auditMethods: ["backfill"],
-  },
-  {
-    // `F4.303` (ADR 0108 Amendment 6 item 5): the Pin of a trend view; the copilot edits a
-    // dashboard through `PUT :id/widgets`, so this route is catalog-excluded. `F4.306`
-    // (Amendment 7 item 6): `appendStrips` is the route's trend_strip arm; it holds the audit call
-    // and hands it to `dashboard-widget-append-strips.ts`.
-    file: "apps/api/src/dashboard-builder/dashboard-widget-append.service.ts",
-    route: { method: "POST", path: "/dashboards/:id/widgets/append" },
-    auditMethods: ["append", "appendStrips"],
   },
 ];
 

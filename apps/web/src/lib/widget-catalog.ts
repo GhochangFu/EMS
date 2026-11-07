@@ -5,7 +5,7 @@ import type {
   WidgetIcon,
   WidgetType,
 } from "@bms/shared";
-import { TREND_STRIP_WIDGET_ROWS, WIDGET_POINT_CARDINALITY, WIDGET_SOURCE_CARDINALITY } from "@bms/shared";
+import { CHART_KIND_LABELS, TREND_STRIP_WIDGET_ROWS, WIDGET_POINT_CARDINALITY, WIDGET_SOURCE_CARDINALITY } from "@bms/shared";
 
 import type { KpiTileStatus } from "../components/kpi-tile";
 import type { RoleName, Roles } from "./theme";
@@ -279,7 +279,8 @@ export const WIDGET_ICON_PATH: Readonly<Record<WidgetIcon, string>> = {
 };
 
 /**
- * `chart`'s series kinds, mapped to plain labels and to the ECharts shape
+ * `chart`'s series kinds, mapped to plain labels (`CHART_KIND_LABELS` in `@bms/shared` since
+ * `F4.324`, so the copilot's card says the same words) and to the ECharts shape
  * that draws them (ADR 0047 decision 4, Amendment 2 §4). **These labels
  * are ruled by the owner — do not invent others** (the first four at
  * Amendment 2, the `F4.323` three at Amendment 7 item 2).
@@ -306,15 +307,15 @@ export type ChartSeriesShape = {
 };
 
 export const CHART_SERIES = {
-  line: { label: "Trend", type: "line", area: false, step: null, axis: "time" },
-  area: { label: "Trend (filled)", type: "line", area: true, step: null, axis: "time" },
-  bar: { label: "Comparison bars", type: "bar", area: false, step: null, axis: "time" },
-  scatter: { label: "Scatter", type: "scatter", area: false, step: null, axis: "time" },
-  step: { label: "Steps (on/off)", type: "line", area: false, step: "end", axis: "time" },
-  compare: { label: "Compare points", type: "bar", area: false, step: null, axis: "category" },
-  donut: { label: "Share (donut)", type: "pie", area: false, step: null, axis: "none" },
-  heatmap: { label: "Daily pattern (hour × day)", type: "heatmap", area: false, step: null, axis: "grid" },
-  matrix: { label: "Hour by point (24 h)", type: "heatmap", area: false, step: null, axis: "matrix" },
+  line: { label: CHART_KIND_LABELS.line, type: "line", area: false, step: null, axis: "time" },
+  area: { label: CHART_KIND_LABELS.area, type: "line", area: true, step: null, axis: "time" },
+  bar: { label: CHART_KIND_LABELS.bar, type: "bar", area: false, step: null, axis: "time" },
+  scatter: { label: CHART_KIND_LABELS.scatter, type: "scatter", area: false, step: null, axis: "time" },
+  step: { label: CHART_KIND_LABELS.step, type: "line", area: false, step: "end", axis: "time" },
+  compare: { label: CHART_KIND_LABELS.compare, type: "bar", area: false, step: null, axis: "category" },
+  donut: { label: CHART_KIND_LABELS.donut, type: "pie", area: false, step: null, axis: "none" },
+  heatmap: { label: CHART_KIND_LABELS.heatmap, type: "heatmap", area: false, step: null, axis: "grid" },
+  matrix: { label: CHART_KIND_LABELS.matrix, type: "heatmap", area: false, step: null, axis: "matrix" },
   // `as const satisfies`, not an annotation: each entry keeps its literal `type`, so the
   // hand-written charts that read `CHART_SERIES.line.type` still get `"line"`, and
   // `buildChartOption` narrows by `axis` to the time kinds' cartesian types.

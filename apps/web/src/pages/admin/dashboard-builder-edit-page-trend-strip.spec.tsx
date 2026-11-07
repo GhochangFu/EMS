@@ -108,6 +108,7 @@ async function runTheWizard(): Promise<void> {
   await next();
   await userEvent.selectOptions(screen.getByRole("combobox", { name: "Colour of Segment A point 2" }), "series-2");
   await next();
+  await next(); // `F4.324`: Draw as (Trend strip kept)
   await next();
   await userEvent.click(within(dialog()).getByRole("button", { name: "Finish" }));
 }

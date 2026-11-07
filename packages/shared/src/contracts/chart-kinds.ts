@@ -48,6 +48,25 @@ export const MATRIX_WINDOW_MINUTES = 1_440;
 export const MATRIX_WINDOW_MESSAGE =
   `a matrix chart reads the last 24 hours: config.windowMinutes must be ${MATRIX_WINDOW_MINUTES} or absent`;
 
+/**
+ * `F4.324` (ADR 0099 Amendment 16 decision 3) — the plain label of each chart kind, stated once:
+ * the builder's dropdown (`CHART_SERIES` in `apps/web/src/lib/widget-catalog.ts`) reads it, and so
+ * does the copilot's Confirm card, so the two cannot say different words. The ECharts mapping is
+ * not here; it stays in the web catalog (`tests/f3.1c-widget-series-mapping.test.ts`).
+ */
+export const CHART_KIND_LABELS = {
+  line: "Trend",
+  area: "Trend (filled)",
+  bar: "Comparison bars",
+  scatter: "Scatter",
+  step: "Steps (on/off)",
+  compare: "Compare points",
+  donut: "Share (donut)",
+  heatmap: "Daily pattern (hour × day)",
+  // `F4.325` — ADR 0047 Amendment 8 item 2.
+  matrix: "Hour by point (24 h)",
+} as const satisfies Readonly<Record<ChartSeriesKind, string>>;
+
 /** The refusal of a kind in {@link CHART_KINDS_NEEDING_AGGREGATE} saved without `config.aggregate`. */
 export const chartKindAggregateMessage = (kind: ChartSeriesKind): string =>
   `a ${kind} chart needs config.aggregate (sum, avg, min or max): it draws one number per point` +

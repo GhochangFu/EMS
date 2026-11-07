@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { MAX_DASHBOARD_WIDGETS, MAX_WIDGET_POINTS, MAX_WIDGET_WINDOW_MINUTES } from "@bms/shared";
 import type {
   AppendChartWidgetBody,
+  ChartSeriesKind,
   EnergyViewRange,
   PointAggregateFunction,
   SiteSegmentViewsDto,
@@ -15,6 +16,7 @@ import { appendChartWidget, fetchDashboard, fetchDashboards } from "../../api/da
 import { canAuthorDashboards } from "../../lib/admin-access";
 import { ApiError } from "../../lib/api-error";
 import { HISTORY_PRESETS, type HistoryRange } from "../../lib/asset-history-range";
+import { chartKindChoices } from "../../lib/chart-kind-fit";
 import { WIDGET_CATALOG } from "../../lib/widget-catalog";
 
 /** A 409 from the append route: the chosen tab (or the single canvas) holds the widget cap. */
@@ -126,6 +128,8 @@ function PinDialog({ source, onClose }: { source: PinSource; onClose: () => void
   const [dashboardId, setDashboardId] = useState("");
   const [tabKey, setTabKey] = useState("");
   const [title, setTitle] = useState(source.title);
+  // `F4.324` (ADR 0108 Amendment 9 item 2) — the chart kind; *Trend* (`line`) sends no `series`.
+  const [kind, setKind] = useState<ChartSeriesKind>("line");
   const [pending, setPending] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [pinned, setPinned] = useState<Pinned | null>(null);
@@ -140,8 +144,18 @@ function PinDialog({ source, onClose }: { source: PinSource; onClose: () => void
   const tabs = [...(detailQ.data?.tabs ?? [])].sort((a, b) => a.sortOrder - b.sortOrder);
   const effectiveTab = tabs.some((t) => t.key === tabKey) ? tabKey : (tabs[0]?.key ?? "");
   const span = pinWindow(source);
+  const kinds = span === null ? [] : chartKindChoices({ pointCount: source.pairs.length, windowMinutes: span.minutes });
+  // A chosen kind that stopped fitting (the view changed while the dialog is open) is never swapped
+  // for another: it stays chosen, its reason shows under the select, and Pin waits for a new pick.
+  const kindReason = kinds.find((k) => k.value === kind)?.disabledReason ?? null;
   // Done once pinned: a second click would append a duplicate. Another dashboard or tab clears it.
-  const ready = chosen !== undefined && detailQ.isSuccess && span !== null && source.pairs.length > 0 && pinned === null;
+  const ready =
+    chosen !== undefined &&
+    detailQ.isSuccess &&
+    span !== null &&
+    source.pairs.length > 0 &&
+    pinned === null &&
+    kindReason === null;
 
   const submit = async (): Promise<void> => {
     if (pending || !ready || chosen === undefined || span === null) {
@@ -154,7 +168,11 @@ function PinDialog({ source, onClose }: { source: PinSource; onClose: () => void
       ...(trimmed === "" ? {} : { title: trimmed }),
       gridW: size.w,
       gridH: size.h,
-      config: { windowMinutes: span.minutes, aggregate: source.aggregate },
+      config: {
+        windowMinutes: span.minutes,
+        aggregate: source.aggregate,
+        ...(kind === "line" ? {} : { series: kind }),
+      },
       points: source.pairs.map((pair) => ({ assetId: pair.assetId, pointKey: pair.pointKey })),
     };
     setPending(true);
@@ -220,6 +238,28 @@ function PinDialog({ source, onClose }: { source: PinSource; onClose: () => void
           </select>
         </label>
       )}
+      {/* `F4.324` — every kind in the catalog's words; one the view cannot take stays listed,
+          disabled, with its reason (owner ruling Q2), so an author learns what it needs. */}
+      {kinds.length === 0 ? null : (
+        <label className="grid gap-1 text-xs text-ink-muted">
+          Chart kind
+          <select
+            className="surface-field px-2 py-1.5 text-sm"
+            value={kind}
+            onChange={(event) => {
+              setKind(event.target.value as ChartSeriesKind);
+              setPinned(null);
+            }}
+          >
+            {kinds.map((choice) => (
+              <option key={choice.value} value={choice.value} disabled={choice.disabledReason !== null}>
+                {choice.disabledReason === null ? choice.label : `${choice.label} — ${choice.disabledReason}`}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {kindReason === null ? null : <p className="text-xs text-critical-ink">{kindReason}</p>}
       <label className="grid gap-1 text-xs text-ink-muted">
         Title
         <input

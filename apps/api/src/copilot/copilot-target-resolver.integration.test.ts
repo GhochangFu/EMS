@@ -16,6 +16,7 @@ import {
   readingsOfAnUnknownAssetAreRefusedByRow,
   readingsOfAnUnmanageableAssetAreRefusedByRow,
   aDashboardTargetCarriesItsUpdatedAt,
+  anAppendChartTabIsCheckedAtPropose,
   anAssetTemplateTargetCarriesItsUpdatedAt,
   RESOLVER_STAMPS,
   aDashboardSlugIsFoundInTheAllowedSetOnly,
@@ -349,6 +350,7 @@ describe.skipIf(!connectionString)("F3.86 PR 2 — the copilot target resolver's
 
   it("resolves a location with its site check", () => aLocationResolvesWithItsSiteCheck(ctx));
   it("F4.247: a dashboard target carries its updated_at as a ms ISO instant", () => aDashboardTargetCarriesItsUpdatedAt(ctx));
+  it("F4.324: an appendChart tab is checked against the dashboard's tabs at propose", () => anAppendChartTabIsCheckedAtPropose(ctx));
   it("F4.247: an asset-template target carries its updated_at as a ms ISO instant", () =>
     anAssetTemplateTargetCarriesItsUpdatedAt(ctx));
   it("asks for an organization-level admin when a location update names parentId (PR 3a)", () =>

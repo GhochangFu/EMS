@@ -29,3 +29,10 @@ describe("F4.306 U6 — the trend_strip append arm and the unions (ADR 0108 Amen
   it("T3: the trend response refuses a missing stamp or no widget", () =>
     spec.theTrendResponseRefusesAMissingStampOrNoWidget());
 });
+
+describe("F4.324 — a chart kind on the append chart arm (ADR 0108 Amendment 9 item 1)", () => {
+  it("K1: accepts each chart kind", () => spec.eachChartKindIsAccepted());
+  it("K1: an absent kind stays absent (stored as line)", () => spec.anAbsentKindStaysAbsent());
+  it("K2: a heatmap pin is checked by the shared rule", () => spec.aHeatmapPinIsCheckedByTheSharedRule());
+  it("K3: a kinded chart body is still arm 0", () => spec.aKindedChartBodyIsStillArmZero());
+});

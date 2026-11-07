@@ -6,6 +6,7 @@ import {
   theColorRule,
   theLiveWritePathChecksColours,
   theTemplatePathsCheckColours,
+  everyKindHasItsPlainLabel,
   theAssetTemplatePathRefusesTheSameRule,
   theHeatmapRules,
   theTemplatePathsRefuseTheHeatmapRules,
@@ -23,6 +24,7 @@ describe("F4.323 — the chart kind rules (ADR 0047 Amendment 7)", () => {
   it("a heatmap binds one point over 7 to 30 days, with an aggregate", () => theHeatmapRules());
   it("both template paths refuse the heatmap rules", () => theTemplatePathsRefuseTheHeatmapRules());
   it("PUT :id/widgets refuses at the widget's config.aggregate", () => theLiveWritePathRefusesAtTheWidget());
+  it("every kind has its plain label (F4.324)", () => everyKindHasItsPlainLabel());
 });
 
 describe("F4.325 — a colour per chart point (ADR 0047 Amendment 8 item 1)", () => {
