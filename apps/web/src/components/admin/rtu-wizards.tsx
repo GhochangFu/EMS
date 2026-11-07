@@ -48,6 +48,9 @@ export type RtuForm = {
 };
 
 /** The form a create opens with: blank fields, a catalog source, under the given location. */
+/** `F4.326` (ADR 0114 decision 6): the edit form's read-only line for a plain MQTT RTU. No field changes it. */
+export const PLAIN_MQTT_EDIT_LINE = "Connection: plain MQTT (TLS off) — set at onboarding; not editable here.";
+
 export function emptyRtuForm(locationId: string): RtuForm {
   return {
     locationId,
@@ -224,6 +227,8 @@ export function RtuWizard(props: RtuWizardProps) {
   );
   const source = (
     <>
+      {/* F4.326 (ADR 0114 decision 6, plan ruling 5): read-only — the TLS choice is set at onboarding. */}
+      {editing?.tls === false ? <p className="text-xs text-ink-muted">{PLAIN_MQTT_EDIT_LINE}</p> : null}
       {text("MQTT topic", "mqttTopic")}
       <label className={labelClass}>
         Device ID (dev_id)

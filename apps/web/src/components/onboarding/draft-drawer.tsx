@@ -179,7 +179,13 @@ export function DraftDrawer({
                 {(session?.draft?.rtus ?? []).map((rtu, index) => (
                   <li key={rtu.code ?? index} className="surface-raised-sm p-2">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-[11px]">{rtu.code ?? `RTU ${index + 1}`}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="font-mono text-[11px]">{rtu.code ?? `RTU ${index + 1}`}</span>
+                        {/* F4.326 (ADR 0114 decision 6): only the literal `tls: false`, only MQTT. */}
+                        {rtu.protocol === "mqtt" && rtu.config?.tls === false ? (
+                          <StatusPill label="Plain MQTT" tone="warning" />
+                        ) : null}
+                      </span>
                       {rtu.credentialsSet ? (
                         <StatusPill label="Set" />
                       ) : (
