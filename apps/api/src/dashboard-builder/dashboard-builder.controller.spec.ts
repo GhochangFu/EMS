@@ -215,6 +215,38 @@ export async function runDashboardBuilderControllerTests(): Promise<void> {
     );
   }
 
+  // `F4.322` (ADR 0047 Amendment 7) — a compare or donut chart without a window aggregate is a
+  // 400 at the controller's parse, and the same chart with one reaches the service.
+  {
+    const { controller, service } = controllerWith({});
+    const chart = (config: Record<string, unknown>) => ({
+      widgets: [
+        {
+          widgetType: "chart",
+          title: null,
+          gridX: 0,
+          gridY: 0,
+          gridW: 6,
+          gridH: 4,
+          config,
+          points: [{ pointId: "44444444-4444-4444-8444-444444444444", role: "series", sortOrder: 0 }],
+        },
+      ],
+    });
+    for (const series of ["compare", "donut"]) {
+      await rejects(
+        () => controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series })),
+        (e) => e instanceof BadRequestException,
+        `a ${series} chart without aggregate`,
+      );
+    }
+    assert(service.putWidgets.calls === 0, "a refused chart kind must never reach the service");
+    await controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series: "donut", aggregate: "sum" }));
+    await controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series: "compare", aggregate: "avg" }));
+    await controller.putWidgets(ADMIN, DASHBOARD_ID, chart({ series: "step" }));
+    assert(service.putWidgets.calls === 3, "a donut and a compare chart with aggregate, and a step chart, reach the service");
+  }
+
   // A well-formed body reaches the (stubbed) service with the parsed values.
   {
     const { controller, service } = controllerWith({});

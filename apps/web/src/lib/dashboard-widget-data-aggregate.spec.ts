@@ -409,3 +409,63 @@ export function runAggregateRequestListTests(): void {
     "a chart showing only the footer still needs the scalar half, and asks for no buckets",
   );
 }
+
+/**
+ * `F4.322` (ADR 0047 Amendment 7 item 4) — a `compare` or `donut` chart draws each point's window
+ * number, so it reads `stats` only (no buckets, as a tile does) and every series carries its own
+ * `value`, not only the first.
+ */
+export function runWindowValueChartTests(): void {
+  const ASSET_B = "77777777-7777-4777-8777-777777777777";
+  const REF_B = encodePointRef(ASSET_B, "power_kw");
+  const POINT_B: DashboardWidgetPointDto = { ...POINT, id: "88888888-8888-4888-8888-888888888888", assetId: ASSET_B, assetCode: "BRK-02", sortOrder: 1 };
+  const widget = {
+    ...IDENTITY,
+    widgetType: "chart",
+    config: { series: "compare", aggregate: "sum", windowMinutes: 1_440 },
+    points: [POINT_B, POINT],
+  } as DashboardWidgetDto;
+
+  const requests = aggregateRequestsFor({ widgets: [widget] } as unknown as DashboardDto);
+  assert(requests.length === 2, `one stats read per point, got ${requests.length}`);
+  assert(
+    requests.every((r) => r.bucketFunction === undefined && r.windowMinutes === 1_440),
+    `a window-value chart asks for stats only, got ${JSON.stringify(requests)}`,
+  );
+
+  const keyFor = (ref: string) => aggregateKeyFor({ ref, windowMinutes: 1_440, compare: false, bucketFunction: undefined });
+  const byKey = new Map([
+    [keyFor(REF), answer({ stats: { ...STATS, sum: 100 } })],
+    [keyFor(REF_B), answer({ pointRef: REF_B, stats: { ...STATS, sum: 250 } })],
+  ]);
+  const data = widgetDataFor(widget, new Map() as LatestByRef, new Map(), NOW, byKey);
+  assert(isScalarData(data), "a window-value chart is scalar data");
+  if (!isScalarData(data)) return;
+  const values = data.series.map((s) => [s.sortOrder, s.value]);
+  assert(
+    JSON.stringify(values) === JSON.stringify([[0, 100], [1, 250]]),
+    `each series carries its own sum, in sortOrder, got ${JSON.stringify(values)}`,
+  );
+  assert(data.series.every((s) => s.points.length === 0), "no buckets are plotted");
+  assert(data.stats?.sum === 100, "the footer still describes the first point");
+
+  const avg = widgetDataFor({ ...widget, config: { ...widget.config, aggregate: "avg" } } as DashboardWidgetDto, new Map() as LatestByRef, new Map(), NOW, byKey);
+  assert(isScalarData(avg) && avg.series[0]?.value === STATS.average, "avg reads stats.average");
+
+  const pending = widgetDataFor(widget, new Map() as LatestByRef, new Map(), NOW, new Map());
+  assert(
+    isScalarData(pending) && pending.series.every((s) => s.value === undefined),
+    "an unanswered read is no value yet, not 'no samples'",
+  );
+  const empty = widgetDataFor(
+    widget,
+    new Map() as LatestByRef,
+    new Map(),
+    NOW,
+    new Map([[keyFor(REF), answer({ stats: { ...STATS, sum: null } })]]),
+  );
+  assert(isScalarData(empty) && empty.series[0]?.value === null, "an answer with no samples is null");
+
+  const line = widgetDataFor(aggregatedChart(), new Map() as LatestByRef, new Map(), NOW, new Map([[chartKey(), answer()]]));
+  assert(isScalarData(line) && line.series[0]?.value === undefined, "a time kind carries no value");
+}

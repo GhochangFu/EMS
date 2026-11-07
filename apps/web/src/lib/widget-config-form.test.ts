@@ -23,6 +23,7 @@ import {
   runTrendStripConfigValuesTests,
   runTrendStripNotTemplateAuthorableTests,
   runTrendStripRangeRequiredTests,
+  runWindowValueChartFormTests,
 } from "./widget-config-form.spec";
 
 /** Vitest entry point — see `apps/web/src/lib/admin-access.test.ts` (ADR 0014). */
@@ -114,4 +115,9 @@ describe("widget config form", () => {
   it("F4.305: the trend strip config writes defaultRange and an optional tabKey", () => {
     runTrendStripConfigValuesTests();
   });
+});
+
+describe("widget config form — F4.322 window-value charts", () => {
+  it("refuses compare/donut without an aggregate and drops the fields they do not read", () =>
+    runWindowValueChartFormTests());
 });

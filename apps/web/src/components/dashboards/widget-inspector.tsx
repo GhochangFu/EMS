@@ -15,6 +15,8 @@ import { mimicTabSelectShown } from "../../lib/dashboard-builder-mimic-tab";
 import { useMimicLayouts } from "../../hooks/use-mimic-layouts";
 import { metricCatalogLabel } from "../../lib/metric-catalog";
 import {
+  chartDrawsWindowValues,
+  chartHasValueAxis,
   showsValueTileSecondMetricNote,
   VALUE_TILE_SECOND_METRIC_NOTE,
   WIDGET_CATALOG,
@@ -22,6 +24,7 @@ import {
 import {
   AGGREGATE_FUNCTION_LABELS,
   AGGREGATE_FUNCTIONS,
+  chartPlotOptions,
   MAX_WIDGET_TITLE_LENGTH,
   WIDGET_ICON_LABELS,
   WIDGET_ICONS,
@@ -712,16 +715,19 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
                 className="surface-field w-full px-2 py-1.5 text-xs"
               />
             </Field>
-            <Field label="Y-axis label" error={problemFor("yAxisLabel")}>
-              <input
-                type="text"
-                value={row.config.yAxisLabel}
-                onChange={(event) => updateConfig({ yAxisLabel: event.target.value })}
-                className="surface-field w-full px-2 py-1.5 text-xs"
-              />
-            </Field>
+            {/* `F4.322` — a donut has no value axis to name. */}
+            {chartHasValueAxis(row.config.series) ? (
+              <Field label="Y-axis label" error={problemFor("yAxisLabel")}>
+                <input
+                  type="text"
+                  value={row.config.yAxisLabel}
+                  onChange={(event) => updateConfig({ yAxisLabel: event.target.value })}
+                  className="surface-field w-full px-2 py-1.5 text-xs"
+                />
+              </Field>
+            ) : null}
           </div>
-          <Field label="Plot">
+          <Field label={chartPlotOptions(row.config.series).label} error={problemFor("chartAggregate")}>
             <select
               value={row.config.chartAggregate}
               onChange={(event) =>
@@ -731,22 +737,24 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
               }
               className="surface-field w-full px-2 py-1.5 text-xs"
             >
-              <option value="">Every reading</option>
-              {AGGREGATE_FUNCTIONS.map((fn) => (
-                <option key={fn} value={fn}>
-                  {AGGREGATE_FUNCTION_LABELS[fn]} per bucket
+              {chartPlotOptions(row.config.series).options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
           </Field>
-          <label className="flex items-center gap-2 text-xs">
-            <input
-              type="checkbox"
-              checked={row.config.stacked}
-              onChange={(event) => updateConfig({ stacked: event.target.checked })}
-            />
-            Stack series
-          </label>
+          {/* `F4.322` — a kind that draws one number per point has no stack. */}
+          {chartDrawsWindowValues(row.config.series) ? null : (
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={row.config.stacked}
+                onChange={(event) => updateConfig({ stacked: event.target.checked })}
+              />
+              Stack series
+            </label>
+          )}
           <label className="flex items-center gap-2 text-xs">
             <input
               type="checkbox"

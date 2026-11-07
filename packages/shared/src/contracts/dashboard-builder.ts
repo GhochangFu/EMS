@@ -118,16 +118,21 @@ export const widgetTypeSchema = z.enum([
 ]);
 
 /**
- * The generic `chart` type's series (ADR 0047 decision 4).
+ * The generic `chart` type's series (ADR 0047 decision 4; `F4.322`, Amendment 7).
  *
- * One component, four shapes. This is the only lever that lowers the release rate for a closed
- * vocabulary: a new *kind* is always a release, but "we want bars" is configuration. ECharts
- * renders all four from the same component, which is what makes it cheap.
+ * One component, several shapes. The first four plot a time axis. `F4.322` adds `step` (a time
+ * line that holds its value until the next sample), `compare` (one horizontal bar per point) and
+ * `donut` (one slice per point); the last two draw each point's window aggregate, so they need
+ * `config.aggregate` — `chart-kinds.ts` holds that rule for every write path.
+ *
+ * This is the only lever that lowers the release rate for a closed vocabulary: a new *kind* is
+ * always a release, but "we want bars" is configuration. ECharts renders every shape from the
+ * same component, which is what makes it cheap.
  *
  * The builder shows these as plain labels — *Trend*, *Comparison bars*, *Scatter* — never as
  * ECharts series names. That mapping is `F3.1c`'s catalog.
  */
-export const chartSeriesKindSchema = z.enum(["line", "area", "bar", "scatter"]);
+export const chartSeriesKindSchema = z.enum(["line", "area", "bar", "scatter", "step", "compare", "donut"]);
 
 /** Which slot of the renderer a bound point feeds. Mirrors `dashboard_widget_points_role_check`. */
 export const widgetPointRoleSchema = z.enum(["primary", "series"]);

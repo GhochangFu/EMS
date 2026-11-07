@@ -2,7 +2,7 @@
 import { afterEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
-import { rendersAllFourOptionsFromTheCatalog, reflectsTheCurrentValue } from "./chart-series-picker.spec";
+import { rendersEveryOptionFromTheCatalog, reflectsTheCurrentValue } from "./chart-series-picker.spec";
 
 /**
  * Vitest entry point — assertions live in the sibling `.spec` (ADR 0014), and
@@ -15,8 +15,8 @@ describe("F3.1d chart series picker", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders all four series options, read from the catalog", () => {
-    rendersAllFourOptionsFromTheCatalog();
+  it("renders every series option, read from the catalog", () => {
+    rendersEveryOptionFromTheCatalog();
   });
 
   it("reflects the current value", () => {

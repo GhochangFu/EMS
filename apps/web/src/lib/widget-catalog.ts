@@ -76,6 +76,12 @@ export type WidgetSeries = {
   readonly name: string;
   readonly sortOrder: number;
   readonly points: readonly WidgetSeriesPoint[];
+  /**
+   * `F4.322` — the point's window aggregate, for a kind that draws one number per point
+   * (`chartDrawsWindowValues`). `null` is "answered, no samples"; absent while the read has not
+   * answered, and on every time kind.
+   */
+  readonly value?: number | null;
 };
 
 /**
@@ -274,20 +280,55 @@ export const WIDGET_ICON_PATH: Readonly<Record<WidgetIcon, string>> = {
 
 /**
  * `chart`'s series kinds, mapped to plain labels and to the ECharts shape
- * that draws them (ADR 0047 decision 4, Amendment 2 §4). **These four labels
- * are ruled by the owner — do not invent others.**
+ * that draws them (ADR 0047 decision 4, Amendment 2 §4). **These labels
+ * are ruled by the owner — do not invent others** (the first four at
+ * Amendment 2, the `F4.322` three at Amendment 7 item 2).
  *
  * `area` is **not** an ECharts series type: it is `type: "line"` plus
  * `areaStyle`. This is the one mapping a reader will "simplify" to
  * `type: "area"`, which does not exist — which is exactly why it lives in one
  * place rather than being restated at each call site.
+ *
+ * `axis` says what the chart plots against: `time` for the five series
+ * kinds, `category` for `compare` (one bar per point) and `none` for `donut`.
+ * The last two draw each point's window aggregate, not a series
+ * (`chartDrawsWindowValues`). `step` is ECharts' `step` option, set only for
+ * the kind that holds a value until the next sample.
  */
-export const CHART_SERIES: Readonly<Record<ChartSeriesKind, { readonly label: string; readonly type: "line" | "bar" | "scatter"; readonly area: boolean }>> = {
-  line: { label: "Trend", type: "line", area: false },
-  area: { label: "Trend (filled)", type: "line", area: true },
-  bar: { label: "Comparison bars", type: "bar", area: false },
-  scatter: { label: "Scatter", type: "scatter", area: false },
+export type ChartSeriesShape = {
+  readonly label: string;
+  readonly type: "line" | "bar" | "scatter" | "pie";
+  readonly area: boolean;
+  readonly step: "end" | null;
+  readonly axis: "time" | "category" | "none";
 };
+
+export const CHART_SERIES = {
+  line: { label: "Trend", type: "line", area: false, step: null, axis: "time" },
+  area: { label: "Trend (filled)", type: "line", area: true, step: null, axis: "time" },
+  bar: { label: "Comparison bars", type: "bar", area: false, step: null, axis: "time" },
+  scatter: { label: "Scatter", type: "scatter", area: false, step: null, axis: "time" },
+  step: { label: "Steps (on/off)", type: "line", area: false, step: "end", axis: "time" },
+  compare: { label: "Compare points", type: "bar", area: false, step: null, axis: "category" },
+  donut: { label: "Share (donut)", type: "pie", area: false, step: null, axis: "none" },
+  // `as const satisfies`, not an annotation: each entry keeps its literal `type`, so the
+  // hand-written charts that read `CHART_SERIES.line.type` still get `"line"`, and
+  // `buildChartOption` narrows by `axis` to the time kinds' cartesian types.
+} as const satisfies Readonly<Record<ChartSeriesKind, ChartSeriesShape>>;
+
+/**
+ * `F4.322` — whether a kind draws one number per point (its `aggregate` over the window) rather
+ * than a series over time. Such a kind needs `aggregate` (`chartKindIssues`), reads `stats`
+ * only, ignores `stacked`, and has no use for "every reading".
+ */
+export function chartDrawsWindowValues(kind: ChartSeriesKind): boolean {
+  return CHART_SERIES[kind].axis !== "time";
+}
+
+/** `F4.322` — whether the kind has a value axis that `yAxisLabel` can name (a donut has none). */
+export function chartHasValueAxis(kind: ChartSeriesKind): boolean {
+  return CHART_SERIES[kind].axis !== "none";
+}
 
 /**
  * `F4.317` review — a value tile takes two named metrics since ruling Q1b (ADR 0112 Amendment 1),

@@ -21,13 +21,14 @@ import { ChartSeriesPicker } from "./chart-series-picker";
  * the four labels a second time here too.
  */
 
-export function rendersAllFourOptionsFromTheCatalog(): void {
+export function rendersEveryOptionFromTheCatalog(): void {
   render(<ChartSeriesPicker value="line" onChange={() => {}} />);
 
   const select = screen.getByRole("combobox", { name: "Chart kind" });
   const optionTexts = [...select.querySelectorAll("option")].map((option) => option.textContent);
 
-  expect(optionTexts).toHaveLength(4);
+  // `F4.322` — every kind the contract holds, the original four and Amendment 7's three.
+  expect(optionTexts).toHaveLength(chartSeriesKindSchema.options.length);
   for (const kind of chartSeriesKindSchema.options) {
     expect(optionTexts, `no option read "${kind}"'s catalog label`).toContain(CHART_SERIES[kind].label);
   }

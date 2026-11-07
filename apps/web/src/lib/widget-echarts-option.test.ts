@@ -2,6 +2,10 @@ import { describe, it } from "vitest";
 
 import {
   chartAreaSeriesIsLineWithAreaStyle,
+  chartCompareDrawsOneHorizontalBarPerPointInOrder,
+  chartDonutDrawsOnePositiveSlicePerPoint,
+  chartStepHoldsTheValueUntilTheNextSample,
+  donutLeftOutCountsThePointsWithNoShare,
   chartBarAndScatterMapDirectly,
   chartSeriesColoursAreTheRolePalette,
   chartLegendNamesEverySeriesInOrderWhenThereIsMoreThanOne,
@@ -96,4 +100,11 @@ describe("widget-echarts-option: buildChartOption", () => {
   it("carries the series colours from the role palette (F3.65c)", () => {
     chartSeriesColoursAreTheRolePalette();
   });
+});
+
+describe("widget-echarts-option: F4.322 chart kinds (ADR 0047 Amendment 7)", () => {
+  it("step is a line that holds its value until the next sample", () => chartStepHoldsTheValueUntilTheNextSample());
+  it("compare draws one horizontal bar per point, in sortOrder", () => chartCompareDrawsOneHorizontalBarPerPointInOrder());
+  it("donut draws one slice per point with a positive number", () => chartDonutDrawsOnePositiveSlicePerPoint());
+  it("donutLeftOut counts the points with no share", () => donutLeftOutCountsThePointsWithNoShare());
 });

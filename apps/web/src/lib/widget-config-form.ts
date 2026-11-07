@@ -3,6 +3,7 @@ import {
   MAX_GAUGE_THRESHOLDS,
   MAX_SITE_ALARM_ROWS,
   MAX_WIDGET_WINDOW_MINUTES,
+  chartKindIssues,
   chartSeriesKindSchema,
   gaugeRangeIsOrdered,
   isTemplateAuthorableWidgetType,
@@ -12,7 +13,7 @@ import {
   widgetToneSchema,
   widgetTypeSchema,
 } from "@bms/shared";
-import { CHART_SERIES, WIDGET_CATALOG } from "./widget-catalog";
+import { CHART_SERIES, WIDGET_CATALOG, chartDrawsWindowValues, chartHasValueAxis } from "./widget-catalog";
 import type {
   ChartSeriesKind,
   DashboardWidgetSpec,
@@ -101,6 +102,35 @@ export const AGGREGATE_FUNCTION_LABELS: Readonly<Record<PointAggregateFunction, 
   min: "Lowest",
   max: "Highest",
 };
+
+/** `F4.322` — the form's plain-word twin of `chartKindAggregateMessage`. */
+export const CHART_VALUE_NEEDED_MESSAGE = "Choose how each point's value is worked out over the window.";
+
+/**
+ * `F4.322` — the chart's aggregate select, by kind: a time kind plots every reading or a function
+ * per bucket; a kind that draws one number per point (`compare`, `donut`) needs a function over
+ * the window (`chartKindIssues`), so it offers no "Every reading". One helper for the dashboard
+ * inspector and the template widget editor, so the two cannot word it differently.
+ */
+export function chartPlotOptions(kind: ChartSeriesKind): {
+  label: string;
+  options: readonly { value: PointAggregateFunction | ""; label: string }[];
+} {
+  if (chartDrawsWindowValues(kind)) {
+    return {
+      label: "Value of each point",
+      // A placeholder, not a choice: the field starts empty and the form refuses it empty.
+      options: [{ value: "", label: "Choose a function" }, ...AGGREGATE_FUNCTIONS.map((fn) => ({ value: fn, label: `${AGGREGATE_FUNCTION_LABELS[fn]} over the window` }))],
+    };
+  }
+  return {
+    label: "Plot",
+    options: [
+      { value: "", label: "Every reading" },
+      ...AGGREGATE_FUNCTIONS.map((fn) => ({ value: fn, label: `${AGGREGATE_FUNCTION_LABELS[fn]} per bucket` })),
+    ],
+  };
+}
 
 /** The six tile icons as an author reads them. Same `Record`-over-the-enum gate. */
 export const WIDGET_ICON_LABELS: Readonly<Record<WidgetIcon, string>> = {
@@ -374,7 +404,17 @@ export function widgetConfigErrors(
       push("series", "Choose what kind of chart this is.");
     }
     pushWindowProblem(config.windowMinutes, push);
-    if (config.yAxisLabel.trim().length > MAX_Y_AXIS_LABEL_LENGTH) {
+    // `F4.322` (ADR 0047 Amendment 7) — the shared kind rule, read at the form so the author sees
+    // it before Save; `chartAggregate` is the field the rule's `config.aggregate` is edited in.
+    for (const issue of chartKindIssues(
+      { series: config.series, aggregate: config.chartAggregate === "" ? undefined : config.chartAggregate },
+      0,
+    )) {
+      // Plain words for the author; `issue.message` is the API's wording for the same rule.
+      if (issue.path.at(-1) === "aggregate") push("chartAggregate", CHART_VALUE_NEEDED_MESSAGE);
+    }
+    // Only where the field shows: a hidden label must not block Save with a problem shown nowhere.
+    if (chartHasValueAxis(config.series) && config.yAxisLabel.trim().length > MAX_Y_AXIS_LABEL_LENGTH) {
       push("yAxisLabel", `A y-axis label is at most ${MAX_Y_AXIS_LABEL_LENGTH} characters.`);
     }
   } else if (widget.widgetType === "active_alarms_rail") {
@@ -523,11 +563,13 @@ export function buildChartConfig(config: WidgetConfigRow): ChartConfig {
   if (windowMinutes !== undefined) {
     out.windowMinutes = windowMinutes;
   }
-  if (config.stacked) {
+  // `F4.322` (ADR 0047 Amendment 7 item 6) — a kind that draws one number per point has no
+  // stack, and a donut has no value axis to name, so neither is written for it.
+  if (config.stacked && !chartDrawsWindowValues(config.series)) {
     out.stacked = true;
   }
   const yAxisLabel = config.yAxisLabel.trim();
-  if (yAxisLabel !== "") {
+  if (yAxisLabel !== "" && chartHasValueAxis(config.series)) {
     out.yAxisLabel = yAxisLabel;
   }
   // `F3.35` — set means "plot rolled-up buckets"; absent means the chart reads

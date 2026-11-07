@@ -5,8 +5,8 @@ import { useMemo } from "react";
 import type { PointAggregateStats } from "@bms/shared";
 
 import { useChartTheme } from "../../lib/chart-theme";
-import type { ChartConfig, WidgetSeries, WidgetStatus } from "../../lib/widget-catalog";
-import { buildChartOption } from "../../lib/widget-echarts-option";
+import { CHART_SERIES, type ChartConfig, type WidgetSeries, type WidgetStatus } from "../../lib/widget-catalog";
+import { buildChartOption, donutLeftOut } from "../../lib/widget-echarts-option";
 import { formatBucketWidth, formatWidgetValue } from "../../lib/widget-value";
 import { WidgetFrame } from "./widget-frame";
 
@@ -24,8 +24,8 @@ type ChartWidgetProps = {
 };
 
 /**
- * `chart` — the generic type (ADR 0047 decision 4): one component, four
- * ECharts series shapes chosen by `config.series`. `load-trend-chart.tsx`'s
+ * `chart` — the generic type (ADR 0047 decision 4): one component, several
+ * ECharts shapes chosen by `config.series` (seven since `F4.322`). `load-trend-chart.tsx`'s
  * shape. No option construction happens here: every key comes from
  * `buildChartOption`, which reads the series type from `CHART_SERIES` rather
  * than from a literal in this file.
@@ -58,6 +58,7 @@ export function ChartWidget({
     () => buildChartOption(config, series, now, roles),
     [config, series, now, roles],
   );
+  const leftOut = CHART_SERIES[config.series].axis === "none" ? donutLeftOut(series) : 0;
 
   return (
     <WidgetFrame title={title} status={status} stale={stale}>
@@ -74,6 +75,13 @@ export function ChartWidget({
           lazyUpdate
         />
       </div>
+      {/* `F4.322` (ADR 0047 Amendment 7 item 4) — a point with no positive number has no share,
+          so the ring leaves it out; this line keeps that from reading as a silent gap. */}
+      {status === "ready" && leftOut > 0 ? (
+        <p className="mt-1 text-[11px] text-ink-muted">
+          {leftOut === 1 ? "1 point" : `${leftOut} points`} not shown: no positive value in this window.
+        </p>
+      ) : null}
       {config.footerStats && status === "ready" ? (
         <ChartFooter config={config} stats={stats ?? null} bucketSeconds={bucketSeconds ?? null} />
       ) : null}

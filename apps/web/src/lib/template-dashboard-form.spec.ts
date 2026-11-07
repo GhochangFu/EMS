@@ -413,10 +413,14 @@ export function runChartSeriesMappingTests(): void {
     "Trend (filled)": "area",
     "Comparison bars": "bar",
     Scatter: "scatter",
+    // `F4.322` — ADR 0047 Amendment 7 item 2.
+    "Steps (on/off)": "step",
+    "Compare points": "compare",
+    "Share (donut)": "donut",
   };
   assert(
-    CHART_SERIES_OPTIONS.length === 4,
-    `the mapping names exactly four series — got ${CHART_SERIES_OPTIONS.length}`,
+    CHART_SERIES_OPTIONS.length === 7,
+    `the mapping names exactly seven series — got ${CHART_SERIES_OPTIONS.length}`,
   );
   for (const option of CHART_SERIES_OPTIONS) {
     assert(
