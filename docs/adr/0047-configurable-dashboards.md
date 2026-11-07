@@ -1416,8 +1416,10 @@ pump in one picture: which ran, in which hour, today.
 ### The ruling
 
 1. **A colour per point** *(owner, item 1)*. `chartConfigSchema` gains
-   `colors`: an array of `seriesRoleSchema` values (`series-1` … `series-8`),
-   at most `MAX_WIDGET_POINTS` (8) long, optional.
+   `colors`: an array of `seriesRoleSchema` values (`series-1` … `series-8`)
+   or `null`, at most `MAX_WIDGET_POINTS` (8) long, optional. A `null` entry is
+   that position's default colour, so the second point can be coloured while
+   the first keeps its default.
    - **Index = the point's position by `sortOrder`.** `colors[0]` is the first
      point's, `colors[2]` the third's. An array rather than a map keyed by
      point id, because a chart's point ids are `dashboard_widget_points` rows
@@ -1439,9 +1441,9 @@ pump in one picture: which ran, in which hour, today.
    - The builder shows a **Colour** select beside each bound point in the
      dashboard inspector (`widget-inspector.tsx`) and in the asset-template
      widget editor (`dashboard-widget-editor.tsx`), offering *Default* and the
-     eight roles by the same names the trend strip wizard uses. *Default* stores
-     nothing at that index; trailing defaults are dropped, so a chart where every
-     point is *Default* saves no `colors` at all. A point removed in the form takes
+     eight roles by the same names the trend strip wizard uses. *Default* is
+     stored as `null` when a later point has a colour, and trailing defaults are
+     dropped, so a chart where every point is *Default* saves no `colors` at all. A point removed in the form takes
      its colour with it (the colours move with their points).
    - **Write rules.** The roles are the schema's enum (an unknown role is a
      400 at `config.colors.<i>`). The length rule is one shared function
