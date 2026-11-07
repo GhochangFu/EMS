@@ -9,6 +9,7 @@ import {
   runTileReadsItsOwnStatisticTests,
   runUnresolvedAggregateStaysReadableTests,
   runHeatmapDataTests,
+  runMatrixDataTests,
   runWindowValueChartTests,
 } from "./dashboard-widget-data-aggregate.spec";
 
@@ -53,4 +54,8 @@ describe("F4.323 — a compare or donut chart reads one number per point", () =>
 
 describe("F4.323 PR 2 — a heatmap's data", () => {
   it("reads buckets with its function and carries the response's zone", () => runHeatmapDataTests());
+});
+
+describe("F4.325 — an hour-by-point matrix's data", () => {
+  it("reads every point's buckets over a day with its function", () => runMatrixDataTests());
 });

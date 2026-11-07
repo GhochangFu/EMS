@@ -292,7 +292,8 @@ export const WIDGET_ICON_PATH: Readonly<Record<WidgetIcon, string>> = {
  *
  * `axis` says what the chart plots against: `time` for the five series
  * kinds, `category` for `compare` (one bar per point), `none` for `donut` and `grid` for
- * `heatmap` (hour of day × day, from hourly buckets).
+ * `heatmap` (hour of day × day, from hourly buckets), and `matrix` for the `F4.325` hour-by-point
+ * grid (one row per point, the last 24 hours across).
  * The last two draw each point's window aggregate, not a series
  * (`chartDrawsWindowValues`). `step` is ECharts' `step` option, set only for
  * the kind that holds a value until the next sample.
@@ -302,7 +303,7 @@ export type ChartSeriesShape = {
   readonly type: "line" | "bar" | "scatter" | "pie" | "heatmap";
   readonly area: boolean;
   readonly step: "end" | null;
-  readonly axis: "time" | "category" | "none" | "grid";
+  readonly axis: "time" | "category" | "none" | "grid" | "matrix";
 };
 
 export const CHART_SERIES = {
@@ -314,6 +315,7 @@ export const CHART_SERIES = {
   compare: { label: CHART_KIND_LABELS.compare, type: "bar", area: false, step: null, axis: "category" },
   donut: { label: CHART_KIND_LABELS.donut, type: "pie", area: false, step: null, axis: "none" },
   heatmap: { label: CHART_KIND_LABELS.heatmap, type: "heatmap", area: false, step: null, axis: "grid" },
+  matrix: { label: CHART_KIND_LABELS.matrix, type: "heatmap", area: false, step: null, axis: "matrix" },
   // `as const satisfies`, not an annotation: each entry keeps its literal `type`, so the
   // hand-written charts that read `CHART_SERIES.line.type` still get `"line"`, and
   // `buildChartOption` narrows by `axis` to the time kinds' cartesian types.
@@ -327,6 +329,15 @@ export const CHART_SERIES = {
 export function chartDrawsWindowValues(kind: ChartSeriesKind): boolean {
   const { axis } = CHART_SERIES[kind];
   return axis === "category" || axis === "none";
+}
+
+/**
+ * `F4.325` — whether the kind draws hourly cells in the site's zone: the heatmap (hour × day) and
+ * the matrix (point × hour). Both take a function per hour and say so when the zone is unknown.
+ */
+export function chartReadsHours(kind: ChartSeriesKind): boolean {
+  const { axis } = CHART_SERIES[kind];
+  return axis === "grid" || axis === "matrix";
 }
 
 /** `F4.323` — whether the kind has a value axis that `yAxisLabel` can name (a donut and a heatmap have none). */

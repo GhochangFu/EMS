@@ -17,6 +17,7 @@ import { metricCatalogLabel } from "../../lib/metric-catalog";
 import {
   CHART_SERIES,
   chartHasValueAxis,
+  chartReadsHours,
   chartStacks,
   showsValueTileSecondMetricNote,
   VALUE_TILE_SECOND_METRIC_NOTE,
@@ -722,16 +723,23 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
             <ChartSeriesPicker value={row.config.series} onChange={(series) => updateConfig({ series })} />
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Window (minutes)" error={problemFor("windowMinutes")}>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={row.config.windowMinutes}
-                placeholder="1440 (default)"
-                onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
-                className="surface-field w-full px-2 py-1.5 text-xs"
-              />
-            </Field>
+            {/* `F4.325` — a matrix always reads the last day, so it shows that instead of the field. */}
+            {row.config.series === "matrix" ? (
+              <Field label="Window">
+                <p className="px-2 py-1.5 text-xs text-ink-muted">Last 24 hours, one column per hour</p>
+              </Field>
+            ) : (
+              <Field label="Window (minutes)" error={problemFor("windowMinutes")}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={row.config.windowMinutes}
+                  placeholder="1440 (default)"
+                  onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
+                  className="surface-field w-full px-2 py-1.5 text-xs"
+                />
+              </Field>
+            )}
             {/* `F4.323` — a donut or a heatmap has no value axis to name. */}
             {chartHasValueAxis(row.config.series) ? (
               <Field label="Y-axis label" error={problemFor("yAxisLabel")}>
@@ -824,13 +832,16 @@ export function WidgetInspector({ row, problems, role, organizationId, tabs, loc
           the Bound points `<label>`, which may hold one control only. */}
       {row.widgetType === "chart" && row.points.length > 0 ? (
         <div className="space-y-1">
-          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">Point colours</span>
+          {/* `F4.325` — an hourly kind (heatmap, matrix) draws one scale, coloured by `colors[0]`. */}
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-ink-muted">
+            {chartReadsHours(row.config.series) ? "Scale colour" : "Point colours"}
+          </span>
           <ul className="space-y-1">
-            {row.points.map((point, index) => (
+            {(chartReadsHours(row.config.series) ? row.points.slice(0, 1) : row.points).map((point, index) => (
               <li key={`${point.pointId}-${index}`} className="flex items-center justify-between gap-2 text-xs">
-                <span>{point.label}</span>
+                <span>{chartReadsHours(row.config.series) ? "Every cell" : point.label}</span>
                 <ChartPointColorSelect
-                  pointLabel={point.label}
+                  pointLabel={chartReadsHours(row.config.series) ? "the scale" : point.label}
                   value={row.config.chartColors[index] ?? ""}
                   onChange={(color) => setPointColor(index, color)}
                 />

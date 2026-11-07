@@ -7,6 +7,10 @@ import {
   compareAndDonutColourEachPointsBarAndSlice,
   heatmapScaleTakesTheFirstColour,
   coloursPastTheLastPointAreIgnored,
+  matrixHoursAreTheLast24LocalHours,
+  matrixCellsFoldMinutesIntoHoursByTheFunction,
+  chartMatrixDrawsPointsDownAndHoursAcross,
+  chartMatrixPutsALocalCellInItsLocalColumn,
   chartDonutDrawsOnePositiveSlicePerPoint,
   chartHeatmapDrawsDaysAcrossAndHoursDown,
   heatmapCellsAreLocalDayAndHour,
@@ -126,4 +130,11 @@ describe("widget-echarts-option: F4.325 a colour per point (ADR 0047 Amendment 8
   it("compare and donut colour each point's bar and slice", () => compareAndDonutColourEachPointsBarAndSlice());
   it("a heatmap's scale takes the first colour", () => heatmapScaleTakesTheFirstColour());
   it("a colour past the last point is ignored", () => coloursPastTheLastPointAreIgnored());
+});
+
+describe("widget-echarts-option: F4.325 hour by point (ADR 0047 Amendment 8)", () => {
+  it("the columns are the 24 local hours ending with the current one", () => matrixHoursAreTheLast24LocalHours());
+  it("minute buckets fold into hours by the widget's function", () => matrixCellsFoldMinutesIntoHoursByTheFunction());
+  it("draws points down and hours across in one hue", () => chartMatrixDrawsPointsDownAndHoursAcross());
+  it("puts a cell in its local column off UTC", () => chartMatrixPutsALocalCellInItsLocalColumn());
 });

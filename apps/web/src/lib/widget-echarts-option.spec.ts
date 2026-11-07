@@ -4,7 +4,15 @@ import type { ChartConfig, RadialGaugeConfig, WidgetSeries } from "./widget-cata
 import { ROLE_TOKENS, fromTokenMap } from "../test-role-tokens";
 import { seriesPalette } from "./chart-theme";
 import { resolveRoles } from "./theme";
-import { buildChartOption, buildRadialGaugeOption, donutLeftOut, heatmapCells, heatmapDays } from "./widget-echarts-option";
+import {
+  buildChartOption,
+  buildRadialGaugeOption,
+  donutLeftOut,
+  heatmapCells,
+  heatmapDays,
+  matrixCells,
+  matrixHours,
+} from "./widget-echarts-option";
 
 /** `F3.65c` — the light roles from the real `index.css`; a band stop is a resolved role (OQ1). */
 const roles = resolveRoles(fromTokenMap(ROLE_TOKENS.light));
@@ -617,4 +625,109 @@ export function coloursPastTheLastPointAreIgnored(): void {
   ) as { color?: unknown[]; series: unknown[] };
   expect(option.series).toHaveLength(1);
   expect(option.color?.[0]).toBe(roles["series-1"]);
+}
+
+/**
+ * `F4.325` (ADR 0047 Amendment 8 item 2) — the hour-by-point matrix: 24 local hours ending with the
+ * current one, one row per point, each cell its minute buckets folded into the hour.
+ */
+const MATRIX_NOW = Date.parse("2026-11-07T10:20:00.000Z");
+
+export function matrixHoursAreTheLast24LocalHours(): void {
+  const utc = matrixHours(MATRIX_NOW, "Etc/UTC");
+  expect(utc).toHaveLength(24);
+  expect(utc[0]?.label).toBe("11:00");
+  expect(utc.at(-1)?.label, "the last column is the hour in progress").toBe("10:00");
+  // India is +05:30, so 10:20Z is 15:50 local and the columns are local clock hours.
+  const ist = matrixHours(MATRIX_NOW, "Asia/Kolkata");
+  expect(ist.at(-1)?.label).toBe("15:00");
+  expect(ist[0]?.label).toBe("16:00");
+  // A daylight-saving fall-back repeats 01:00 local: one column, so the day shows 23.
+  expect(matrixHours(Date.parse("2026-11-01T12:20:00Z"), "America/New_York")).toHaveLength(23);
+  expect(matrixHours(Date.parse("2026-03-08T17:20:00Z"), "America/New_York")).toHaveLength(24);
+}
+
+/** Cells and columns agree off UTC: 09:35Z is 15:05 in Kolkata, the hour in progress at 10:20Z. */
+export function chartMatrixPutsALocalCellInItsLocalColumn(): void {
+  const option = buildChartOption(
+    { series: "matrix", aggregate: "sum" },
+    [{ name: "P-01 · run", sortOrder: 0, points: [{ t: "2026-11-07T09:35:00.000Z", v: 3 }] }],
+    MATRIX_NOW,
+    roles,
+    "Asia/Kolkata",
+  ) as unknown as MatrixShape;
+  expect(option.series[0]?.data).toEqual([[23, 0, 3]]);
+}
+
+export function matrixCellsFoldMinutesIntoHoursByTheFunction(): void {
+  const minutes = [
+    { t: "2026-11-07T09:00:00.000Z", v: 1 },
+    { t: "2026-11-07T09:01:00.000Z", v: 0 },
+    { t: "2026-11-07T09:02:00.000Z", v: null },
+    { t: "2026-11-07T09:03:00.000Z", v: 1 },
+    { t: "2026-11-07T10:00:00.000Z", v: 4 },
+  ];
+  const avg = matrixCells(minutes, "Etc/UTC", "avg");
+  expect(avg.get("2026-11-07|9"), "avg is the mean of the minutes that have a value").toBeCloseTo(2 / 3);
+  expect(avg.get("2026-11-07|10")).toBe(4);
+  expect(matrixCells(minutes, "Etc/UTC", "sum").get("2026-11-07|9")).toBe(2);
+  expect(matrixCells(minutes, "Etc/UTC", "min").get("2026-11-07|9")).toBe(0);
+  expect(matrixCells(minutes, "Etc/UTC", "max").get("2026-11-07|9")).toBe(1);
+  expect(matrixCells([{ t: "2026-11-07T08:00:00.000Z", v: null }], "Etc/UTC", "avg").size, "a null minute has no cell").toBe(0);
+}
+
+type MatrixShape = {
+  readonly xAxis: { readonly type: string; readonly data: readonly string[] };
+  readonly yAxis: { readonly type: string; readonly data: readonly string[]; readonly inverse?: boolean };
+  readonly visualMap: { readonly min: number; readonly max: number; readonly inRange: { readonly color: readonly string[] } };
+  readonly series: readonly { readonly type: string; readonly data: readonly (readonly [number, number, number])[] }[];
+};
+
+export function chartMatrixDrawsPointsDownAndHoursAcross(): void {
+  const series: readonly WidgetSeries[] = [
+    {
+      name: "P-02 · run",
+      sortOrder: 1,
+      points: [
+        { t: "2026-11-07T10:05:00.000Z", v: 1 },
+        // Older than the first column (11:00 yesterday): read, but not drawn.
+        { t: "2026-11-06T10:30:00.000Z", v: 1 },
+      ],
+    },
+    {
+      name: "P-01 · run",
+      sortOrder: 0,
+      points: [
+        { t: "2026-11-06T11:00:00.000Z", v: 0.5 },
+        { t: "2026-11-06T11:01:00.000Z", v: 0 },
+      ],
+    },
+  ];
+  const option = buildChartOption(
+    { series: "matrix", aggregate: "avg", windowMinutes: 1_440, stacked: true },
+    series,
+    MATRIX_NOW,
+    roles,
+    "Etc/UTC",
+  ) as unknown as MatrixShape;
+  expect(option.xAxis.type).toBe("category");
+  expect(option.xAxis.data).toHaveLength(24);
+  expect(option.yAxis.data, "one row per point, in sortOrder").toEqual(["P-01 · run", "P-02 · run"]);
+  expect(option.yAxis.inverse, "the first point reads at the top").toBe(true);
+  expect(option.series[0]?.type).toBe("heatmap");
+  expect(option.series[0]?.data).toEqual([
+    [0, 0, 0.25],
+    [23, 1, 1],
+  ]);
+  expect(option.visualMap.min).toBe(0.25);
+  expect(option.visualMap.max).toBe(1);
+  expect(option.visualMap.inRange.color.at(-1), "one hue, the accent by default").toBe(roles.accent);
+  const coloured = buildChartOption(
+    { series: "matrix", aggregate: "avg", colors: ["series-5"] },
+    series,
+    MATRIX_NOW,
+    roles,
+    "Etc/UTC",
+  ) as unknown as MatrixShape;
+  expect(coloured.visualMap.inRange.color.at(-1), "colors[0] is the scale's hue").toBe(roles["series-5"]);
 }

@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 
-import { chartKindChoices, chartKindFitReason, HEATMAP_FIT_REASON } from "./chart-kind-fit";
+import { chartKindChoices, chartKindFitReason, HEATMAP_FIT_REASON, MATRIX_FIT_REASON } from "./chart-kind-fit";
 import { CHART_SERIES } from "./widget-catalog";
 
 /**
@@ -32,4 +32,11 @@ export function theChoicesListEveryKindInCatalogOrderWithItsReason(): void {
     label: "Daily pattern (hour × day)",
     disabledReason: HEATMAP_FIT_REASON,
   });
+}
+
+/** `F4.325` — a matrix fits a one-day view of up to eight points, and says so in plain words otherwise. */
+export function aMatrixNeedsADayView(): void {
+  expect(chartKindFitReason("matrix", { pointCount: 8, windowMinutes: 1_440 })).toBeNull();
+  expect(chartKindFitReason("matrix", { pointCount: 2, windowMinutes: 10_080 })).toBe(MATRIX_FIT_REASON);
+  expect(MATRIX_FIT_REASON).toBe("Needs a 24-hour view");
 }

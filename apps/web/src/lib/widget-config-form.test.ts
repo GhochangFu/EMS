@@ -25,6 +25,7 @@ import {
   runTrendStripRangeRequiredTests,
   runHeatmapFormTests,
   runChartColorFormTests,
+  runMatrixFormTests,
   runWindowValueChartFormTests,
 } from "./widget-config-form.spec";
 
@@ -126,6 +127,10 @@ describe("widget config form — F4.323 window-value charts", () => {
 
 describe("widget config form — F4.325 a colour per chart point", () => {
   it("stores Default as null inside and drops it at the end, cut at the point count", () => runChartColorFormTests());
+});
+
+describe("widget config form — F4.325 hour-by-point matrix", () => {
+  it("needs a function per hour and saves over the last day", () => runMatrixFormTests());
 });
 
 describe("widget config form — F4.323 heatmap", () => {

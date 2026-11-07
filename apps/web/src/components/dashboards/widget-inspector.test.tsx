@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 
 import {
+  aMatrixOffersOneScaleColour,
+  theChartKindListsTheMatrix,
+  aMatrixShowsItsFixedWindowInsteadOfTheField,
+  aLineChartKeepsTheWindowField,
   aChartShowsAColourSelectBesideEachPoint,
   aValueTileShowsNoColourSelect,
   choosingAColourWritesItAtThePointsPosition,
@@ -346,4 +350,20 @@ describe("F4.325 widget inspector — a colour per chart point", () => {
   it("removing a point takes its colour with it", async () => {
     await removingAPointTakesItsColour();
   });
+});
+
+describe("F4.325 widget inspector — the hour-by-point matrix", () => {
+  beforeEach(() => {
+    stubFetch();
+    stubMimicLayouts();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("lists Hour by point (24 h) as a chart kind", () => theChartKindListsTheMatrix());
+  it("shows the matrix's fixed window instead of the field", () => aMatrixShowsItsFixedWindowInsteadOfTheField());
+  it("a line chart keeps the window field", () => aLineChartKeepsTheWindowField());
+  it("a matrix offers one scale colour, not one per point", () => aMatrixOffersOneScaleColour());
 });

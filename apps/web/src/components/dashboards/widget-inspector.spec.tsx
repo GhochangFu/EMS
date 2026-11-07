@@ -659,3 +659,29 @@ export async function removingAPointTakesItsColour(): Promise<void> {
     config: { ...row.config, chartColors: ["series-6"] },
   });
 }
+
+/** `F4.325` (ADR 0047 Amendment 8 item 2) — the matrix kind in the inspector. */
+export function theChartKindListsTheMatrix(): void {
+  renderInspector(blankDashboardWidgetRow("chart"));
+  expect(screen.getByRole("option", { name: "Hour by point (24 h)" })).not.toBeNull();
+}
+
+export function aMatrixShowsItsFixedWindowInsteadOfTheField(): void {
+  const row = blankDashboardWidgetRow("chart");
+  renderInspector({ ...row, config: { ...row.config, series: "matrix" } });
+  expect(screen.queryByText("Window (minutes)")).toBeNull();
+  expect(screen.getByText("Last 24 hours, one column per hour")).not.toBeNull();
+}
+
+export function aLineChartKeepsTheWindowField(): void {
+  renderInspector(blankDashboardWidgetRow("chart"));
+  expect(screen.getByText("Window (minutes)")).not.toBeNull();
+  expect(screen.queryByText("Last 24 hours, one column per hour")).toBeNull();
+}
+
+export function aMatrixOffersOneScaleColour(): void {
+  const row = twoPointChart();
+  renderInspector({ ...row, config: { ...row.config, series: "matrix", chartAggregate: "avg" } });
+  expect(screen.getAllByRole("combobox", { name: /^Colour of/ })).toHaveLength(1);
+  expect(screen.getByRole("combobox", { name: "Colour of the scale" })).not.toBeNull();
+}

@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import type { PointAggregateStats } from "@bms/shared";
 
 import { useChartTheme } from "../../lib/chart-theme";
-import { CHART_SERIES, type ChartConfig, type WidgetSeries, type WidgetStatus } from "../../lib/widget-catalog";
+import { CHART_SERIES, chartReadsHours, type ChartConfig, type WidgetSeries, type WidgetStatus } from "../../lib/widget-catalog";
 import { buildChartOption, donutLeftOut } from "../../lib/widget-echarts-option";
 import { formatBucketWidth, formatWidgetValue } from "../../lib/widget-value";
 import { WidgetFrame } from "./widget-frame";
@@ -88,7 +88,7 @@ export function ChartWidget({
       ) : null}
       {/* `F4.323` PR 2 (ADR 0047 Amendment 7 item 5) — the hours are the site's; when the response
           names no zone they are UTC, and the chart says so rather than passing UTC off as local. */}
-      {CHART_SERIES[config.series].axis === "grid" && status === "ready" && timeZone === null ? (
+      {chartReadsHours(config.series) && status === "ready" && timeZone === null ? (
         <p className="mt-1 text-[11px] text-ink-muted">Hours shown in UTC: the site's time zone is not known.</p>
       ) : null}
       {config.footerStats && status === "ready" ? (

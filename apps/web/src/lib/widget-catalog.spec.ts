@@ -7,6 +7,7 @@ import { resolveRoles } from "./theme";
 import {
   CHART_SERIES,
   chartDrawsWindowValues,
+  chartReadsHours,
   chartHasValueAxis,
   chartStacks,
   WIDGET_CATALOG,
@@ -75,6 +76,8 @@ export function chartSeriesLabelsArePinned(): void {
   expect(CHART_SERIES.compare.label).toBe("Compare points");
   expect(CHART_SERIES.donut.label).toBe("Share (donut)");
   expect(CHART_SERIES.heatmap.label).toBe("Daily pattern (hour × day)");
+  // `F4.325` — ADR 0047 Amendment 8 item 2.
+  expect(CHART_SERIES.matrix.label).toBe("Hour by point (24 h)");
 }
 
 /**
@@ -95,6 +98,13 @@ export function areaSeriesIsLineWithAreaStyle(): void {
   expect(chartDrawsWindowValues("heatmap")).toBe(false);
   expect(chartStacks("heatmap")).toBe(false);
   expect(chartHasValueAxis("heatmap")).toBe(false);
+  // `F4.325` — the matrix plots each point's buckets as hourly cells: no stack, no value axis.
+  expect(CHART_SERIES.matrix.type).toBe("heatmap");
+  expect(chartDrawsWindowValues("matrix")).toBe(false);
+  expect(chartStacks("matrix")).toBe(false);
+  expect(chartHasValueAxis("matrix")).toBe(false);
+  expect(chartReadsHours("matrix") && chartReadsHours("heatmap")).toBe(true);
+  expect(chartReadsHours("line") || chartReadsHours("compare")).toBe(false);
   expect(chartStacks("compare") || chartStacks("donut")).toBe(false);
   expect(chartStacks("step") && chartStacks("line")).toBe(true);
   // Which kinds draw a window number per point rather than a time series.

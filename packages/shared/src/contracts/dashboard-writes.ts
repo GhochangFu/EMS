@@ -777,7 +777,8 @@ const widgetsWriteFieldSchema = z
       "cells rather than fail. A chart's kind may need more (ADR 0047 Amendment 7): a compare " +
       "or donut chart needs config.aggregate, since it draws one number per point; a heatmap " +
       "needs config.aggregate, exactly one point and config.windowMinutes from 10080 to 43200. " +
-      "A chart's config.colors holds at most one colour per bound point (ADR 0047 Amendment 8).",
+      "A matrix needs config.aggregate and a config.windowMinutes of 1440 or none, and a " +
+      "chart's config.colors holds at most one colour per bound point (ADR 0047 Amendment 8).",
   );
 
 /**

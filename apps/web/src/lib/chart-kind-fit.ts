@@ -15,6 +15,9 @@ import { CHART_SERIES } from "./widget-catalog";
 /** The reason a heatmap does not fit: its window is 7–30 days and it binds one point. */
 export const HEATMAP_FIT_REASON = "Needs a 7–30 day view of one point";
 
+/** `F4.325` (ADR 0047 Amendment 8 item 2) — the reason a matrix does not fit: it reads the last day. */
+export const MATRIX_FIT_REASON = "Needs a 24-hour view";
+
 /** What a caller knows of the view it is about to chart. */
 export interface ChartViewShape {
   readonly pointCount: number;
@@ -26,7 +29,9 @@ export function chartKindFitReason(kind: ChartSeriesKind, view: ChartViewShape):
   const issues = chartKindIssues({ series: kind, aggregate: "avg", windowMinutes: view.windowMinutes }, view.pointCount);
   if (issues.length === 0) return null;
   // The heatmap's plain sentence; any later kind's rule shows its own message, never this one.
-  return kind === "heatmap" ? HEATMAP_FIT_REASON : (issues[0]?.message ?? null);
+  if (kind === "heatmap") return HEATMAP_FIT_REASON;
+  if (kind === "matrix") return MATRIX_FIT_REASON;
+  return issues[0]?.message ?? null;
 }
 
 /** One option of a Chart kind select: the catalog's label, and why it is disabled (`null` if not). */

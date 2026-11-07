@@ -6,7 +6,7 @@ import {
   type TemplateDashboardWidgetRow,
   type WidgetConfigRow,
 } from "../../lib/template-dashboard-form";
-import { chartHasValueAxis, chartStacks } from "../../lib/widget-catalog";
+import { chartHasValueAxis, chartReadsHours, chartStacks } from "../../lib/widget-catalog";
 import {
   AGGREGATE_FUNCTION_LABELS,
   AGGREGATE_FUNCTIONS,
@@ -103,11 +103,12 @@ function WidgetEditor({
           Points bound `<label>`, which may hold one control only. */}
       {widget.widgetType === "chart" && widget.pointKeys.length > 0 ? (
         <ul className="mt-2 space-y-1">
-          {widget.pointKeys.map((key, index) => (
+          {/* `F4.325` — an hourly kind (heatmap, matrix) draws one scale, coloured by `colors[0]`. */}
+          {(chartReadsHours(widget.config.series) ? widget.pointKeys.slice(0, 1) : widget.pointKeys).map((key, index) => (
             <li key={`${key}-${index}`} className="flex items-center justify-between gap-2 text-xs">
-              <span>{key}</span>
+              <span>{chartReadsHours(widget.config.series) ? "Scale colour" : key}</span>
               <ChartPointColorSelect
-                pointLabel={key}
+                pointLabel={chartReadsHours(widget.config.series) ? "the scale" : key}
                 value={widget.config.chartColors[index] ?? ""}
                 disabled={!editable}
                 onChange={(color) => {
@@ -447,17 +448,24 @@ function WidgetEditor({
             </select>
           </Field>
           <div className="grid gap-3 md:grid-cols-2">
-            <Field label="Window (minutes)" error={problemFor("windowMinutes")}>
-              <input
-                type="text"
-                inputMode="numeric"
-                value={widget.config.windowMinutes}
-                disabled={!editable}
-                placeholder="1440 (default)"
-                onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
-                className="w-full surface-field px-2 py-1.5 text-xs"
-              />
-            </Field>
+            {/* `F4.325` — a matrix always reads the last day, so it shows that instead of the field. */}
+            {widget.config.series === "matrix" ? (
+              <Field label="Window">
+                <p className="px-2 py-1.5 text-xs text-ink-muted">Last 24 hours, one column per hour</p>
+              </Field>
+            ) : (
+              <Field label="Window (minutes)" error={problemFor("windowMinutes")}>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={widget.config.windowMinutes}
+                  disabled={!editable}
+                  placeholder="1440 (default)"
+                  onChange={(event) => updateConfig({ windowMinutes: event.target.value })}
+                  className="w-full surface-field px-2 py-1.5 text-xs"
+                />
+              </Field>
+            )}
             {/* `F4.323` — a donut or a heatmap has no value axis to name. */}
             {chartHasValueAxis(widget.config.series) ? (
               <Field label="Y-axis label" error={problemFor("yAxisLabel")}>

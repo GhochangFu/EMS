@@ -574,7 +574,8 @@ export const templateDashboardWidgetSchema = templateDashboardWidgetVariants
       "overflows it gets a 400 naming the field rather than a 500 carrying a constraint name. " +
       "A compare, donut or heatmap chart needs config.aggregate; a heatmap binds one point over " +
       "config.windowMinutes 10080 to 43200 (ADR 0047 Amendment 7). config.colors holds at most " +
-      "one colour per point key (ADR 0047 Amendment 8).",
+      "one colour per point key; a matrix chart needs config.aggregate and a config.windowMinutes " +
+      "of 1440 or none (ADR 0047 Amendment 8).",
   );
 
 /**

@@ -418,10 +418,12 @@ export function runChartSeriesMappingTests(): void {
     "Compare points": "compare",
     "Share (donut)": "donut",
     "Daily pattern (hour × day)": "heatmap",
+    // `F4.325` — ADR 0047 Amendment 8 item 2.
+    "Hour by point (24 h)": "matrix",
   };
   assert(
-    CHART_SERIES_OPTIONS.length === 8,
-    `the mapping names exactly eight series — got ${CHART_SERIES_OPTIONS.length}`,
+    CHART_SERIES_OPTIONS.length === 9,
+    `the mapping names exactly nine series — got ${CHART_SERIES_OPTIONS.length}`,
   );
   for (const option of CHART_SERIES_OPTIONS) {
     assert(

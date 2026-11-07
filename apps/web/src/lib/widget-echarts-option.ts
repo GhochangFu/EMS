@@ -170,6 +170,9 @@ export function buildChartOption(
   if (seriesShape.axis === "grid") {
     return heatmapOption(config, seriesShape, ordered[0]?.points ?? [], roles, timeZone);
   }
+  if (seriesShape.axis === "matrix") {
+    return matrixOption(config, seriesShape, ordered, now, roles, timeZone);
+  }
 
   const windowMinutes = config.windowMinutes ?? DEFAULT_WINDOW_MINUTES;
   const xAxisMin = new Date(now - windowMinutes * 60_000).toISOString();
@@ -436,3 +439,114 @@ function heatmapOption(
     ],
   };
 }
+
+/** `F4.325` — one matrix column: a local hour, keyed `YYYY-MM-DD|H` like a heatmap cell. */
+export type MatrixHour = { readonly key: string; readonly day: string; readonly label: string };
+
+/**
+ * `F4.325` (ADR 0047 Amendment 8 item 2) — the 24 local clock hours that end with the one `now`
+ * is in, oldest first, in `timeZone`. The last is the hour in progress. An hour repeated by a
+ * daylight-saving fall-back is one column, so that day shows 23.
+ */
+export function matrixHours(now: number, timeZone: string): MatrixHour[] {
+  const format = zoneFormat(timeZone);
+  const hours: MatrixHour[] = [];
+  for (let back = 23; back >= 0; back -= 1) {
+    const { day, hour } = localDayHour(format, new Date(now - back * 3_600_000).toISOString());
+    const key = `${day}|${hour}`;
+    if (hours.at(-1)?.key !== key) hours.push({ key, day, label: hourLabel(hour) });
+  }
+  return hours;
+}
+
+/**
+ * `F4.325` — a point's minute buckets folded into local hours by the widget's function: `sum`
+ * adds, `min`/`max` take the least/greatest, `avg` is the mean of the minutes that have a value
+ * (each sampled minute weighs the same — exact for a polled point, ADR 0047 Amendment 8 item 2).
+ * A minute with no value is skipped; an hour with none has no cell.
+ */
+export function matrixCells(
+  points: readonly { t: string; v: number | null }[],
+  timeZone: string,
+  fn?: PointAggregateFunction,
+): Map<string, number> {
+  const format = zoneFormat(timeZone);
+  const folded = new Map<string, { total: number; count: number; least: number; most: number }>();
+  for (const point of points) {
+    if (point.v === null) continue;
+    const { day, hour } = localDayHour(format, point.t);
+    const key = `${day}|${hour}`;
+    const was = folded.get(key);
+    folded.set(
+      key,
+      was
+        ? { total: was.total + point.v, count: was.count + 1, least: Math.min(was.least, point.v), most: Math.max(was.most, point.v) }
+        : { total: point.v, count: 1, least: point.v, most: point.v },
+    );
+  }
+  const cells = new Map<string, number>();
+  for (const [key, cell] of folded) {
+    cells.set(key, fn === "sum" ? cell.total : fn === "min" ? cell.least : fn === "max" ? cell.most : cell.total / cell.count);
+  }
+  return cells;
+}
+
+/**
+ * `F4.325` — `matrix`: the bound points down (in `sortOrder`, the first at the top), the last 24
+ * local hours across, each cell the point's hour by `config.aggregate`. One hue for every row —
+ * `colors[0]` or the accent — from 8 % alpha to full, as the heatmap. `stacked` and `yAxisLabel`
+ * are not read.
+ */
+function matrixOption(
+  config: ChartConfig,
+  shape: (typeof CHART_SERIES)["matrix"],
+  ordered: readonly WidgetSeries[],
+  now: number,
+  roles: Roles,
+  timeZone: string,
+): EChartsOption {
+  const hours = matrixHours(now, timeZone);
+  const column = new Map(hours.map((hour, i) => [hour.key, i]));
+  const data: [number, number, number][] = [];
+  ordered.forEach((series, row) => {
+    for (const [key, value] of matrixCells(series.points, timeZone, config.aggregate)) {
+      const x = column.get(key);
+      if (x !== undefined) data.push([x, row, value]);
+    }
+  });
+  data.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  const values = data.map((cell) => cell[2]);
+  const min = values.length > 0 ? Math.min(...values) : 0;
+  const max = values.length > 0 ? Math.max(...values) : 0;
+  const format = valueFormatter(config);
+  const hue = config.colors?.[0] ? roles[config.colors[0]] : roles.accent;
+  const names = ordered.map((series) => series.name);
+  return {
+    grid: { left: 8, right: 12, top: 8, bottom: 56, containLabel: true },
+    tooltip: {
+      position: "top",
+      formatter: (params) => {
+        const value = (params as { value?: [number, number, number] }).value;
+        // The day too: a spring-forward window shows one `HH:00` twice.
+        const hour = value ? hours[value[0]] : undefined;
+        return value && hour ? `${names[value[1]]} · ${hour.day} ${hour.label} · ${format(value[2])}` : "";
+      },
+    },
+    xAxis: { type: "category", data: hours.map((hour) => hour.label), axisLabel: { fontSize: 9 } },
+    yAxis: { type: "category", inverse: true, data: names, axisLabel: { fontSize: 9 } },
+    visualMap: {
+      type: "continuous",
+      min,
+      max: max > min ? max : min + 1,
+      calculable: true,
+      orient: "horizontal",
+      left: "center",
+      bottom: 0,
+      itemHeight: 80,
+      textStyle: { fontSize: 10 },
+      inRange: { color: [withAlpha(hue, 0.08), hue] },
+    },
+    series: [{ type: shape.type, data }],
+  };
+}
+

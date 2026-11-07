@@ -25,7 +25,8 @@ const body = (config: Record<string, unknown>, points = 1) => ({
 
 export function eachKindIsProposable(): void {
   for (const series of chartSeriesKindSchema.options) {
-    const result = entry().body.safeParse(body({ series }));
+    // `F4.325` — each kind at a window it fits: the 7-day fixture suits the heatmap, a matrix reads a day.
+    const result = entry().body.safeParse(body({ series, ...(series === "matrix" ? { windowMinutes: 1_440 } : {}) }));
     expect(result.success, `${series}: ${JSON.stringify(result.error?.issues)}`).toBe(true);
   }
 }
