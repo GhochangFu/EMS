@@ -26,6 +26,8 @@ import {
   anOpenFanOutMemberWithACriticalAlarmFramesOpen,
   aFanOutUnitDrawsOneRowPerMember,
   aFullyDrawnFanOutShowsNoMore,
+  twoMembersDrawRoomyRowsWithTheTrainNumber,
+  fiveMembersKeepTheDenseRows,
   aLayoutFanOutBreakerDrawsMemberRows,
   aNonSwitchingUnitWithStatePointsDrawsNoSwitch,
   aPassiveBusFramesAsItsWorstDownstreamSwitch,
@@ -78,6 +80,12 @@ describe("F3.74 Task 3.1 — MimicScene breakers", () => {
   });
   it("S5b a fully drawn fan-out shows no +N more", () => {
     aFullyDrawnFanOutShowsNoMore();
+  });
+  it("R1 F4.322 — two members draw roomy rows; the code keeps its train number", () => {
+    twoMembersDrawRoomyRowsWithTheTrainNumber();
+  });
+  it("R2 F4.322 — five members keep the dense rows", () => {
+    fiveMembersKeepTheDenseRows();
   });
   it("S6a a CLOSED breaker with a critical alarm frames critical and keeps the alarm", () => {
     aClosedBreakerWithACriticalAlarmFramesCritical();

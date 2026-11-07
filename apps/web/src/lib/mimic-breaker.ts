@@ -164,13 +164,59 @@ export const BREAKER_PILL: Readonly<Record<BreakerState, string>> = {
 /** The member band of a fan-out unit, in unit-slot units: below the frame, to the slot's foot. */
 export const FANOUT_BAND = { top: 136, rowH: 12, perColumn: 8 } as const;
 
-/** One drawn member row's place: its column's left edge and width, and its top. */
-export type FanOutRow = { readonly x: number; readonly y: number; readonly w: number };
+/**
+ * `F4.322` — the sizes of one member row, in unit-slot units: its height, the code's font size on
+ * a wide (`w >= 150`) and a narrow row, the code's character cap on each, the state/pill font size,
+ * the switch size and the text baseline.
+ */
+export type FanOutRowSize = {
+  readonly rowH: number;
+  readonly baseline: number;
+  readonly codeWide: number;
+  readonly codeNarrow: number;
+  readonly charsWide: number;
+  readonly charsNarrow: number;
+  readonly text: number;
+  readonly switchSize: number;
+};
+
+/**
+ * `F4.322` (owner rulings 2026-11-07) — the two row sizes. `dense` is the `F3.74` row, eight to a
+ * column. A unit that draws at most `FANOUT_ROOMY_MAX` members draws `roomy` rows instead: twice
+ * as tall, so four of them fill the same band and no unit or slot moves, with code 12 and state 10
+ * (were 9 and 7.5). The roomy code cap keeps the code clear of the switch and the pill on a 200-wide
+ * PHE slot (17 characters at 12 is about 126 units).
+ */
+export const FANOUT_ROW_SIZES = {
+  dense: { rowH: FANOUT_BAND.rowH, baseline: 8.5, codeWide: 9, codeNarrow: 8, charsWide: 18, charsNarrow: 9, text: 7.5, switchSize: 10 },
+  roomy: { rowH: 24, baseline: 16, codeWide: 12, codeNarrow: 10, charsWide: 17, charsNarrow: 8, text: 10, switchSize: 14 },
+} as const satisfies Record<string, FanOutRowSize>;
+
+/** `F4.322` — a unit drawing at most this many members draws `roomy` rows (4 × 24 = the band). */
+export const FANOUT_ROOMY_MAX = 4;
+
+/** `F4.322` — the widest state/pill word the row keeps room for ("TRIPPED", "OFFLINE", "No data"). */
+const PILL_CHARS = 7;
+/** An average glyph width of the bold row text, as a share of its font size. */
+const GLYPH_W = 0.62;
+
+/**
+ * `F4.322` (owner ruling 2026-11-07) — where a member row's switch sits: from the row's right
+ * edge, left of the room kept for the pill, so a longer code never runs under it. It was
+ * `0.58 w`, which a roomy code would reach.
+ */
+export function fanOutSwitchX(w: number, size: FanOutRowSize): number {
+  return w - 4 - size.text * GLYPH_W * PILL_CHARS - 3 - size.switchSize;
+}
+
+/** One drawn member row's place: its column's left edge and width, its top, and its sizes. */
+export type FanOutRow = { readonly x: number; readonly y: number; readonly w: number; readonly size: FanOutRowSize };
 
 /**
  * Where each drawn member sits (OQ6): one column up to `perColumn`, two columns up to
  * `MIMIC_FANOUT_MAX`; `more` is how many members the unit stands for beyond those drawn —
- * counted from `memberCount`, the true count, since the resolver answers at most the cap.
+ * counted from `memberCount`, the true count, since the resolver answers at most the cap. Up to
+ * `FANOUT_ROOMY_MAX` drawn members the rows are `roomy` (`F4.322`), else `dense`.
  */
 export function fanOutRows(
   drawn: number,
@@ -180,10 +226,12 @@ export function fanOutRows(
   const shown = Math.min(drawn, MIMIC_FANOUT_MAX);
   const columns = shown > FANOUT_BAND.perColumn ? 2 : 1;
   const w = slotW / columns;
+  const size: FanOutRowSize = shown <= FANOUT_ROOMY_MAX ? FANOUT_ROW_SIZES.roomy : FANOUT_ROW_SIZES.dense;
   const rows = Array.from({ length: shown }, (_, i) => ({
     x: Math.floor(i / FANOUT_BAND.perColumn) * w,
-    y: FANOUT_BAND.top + (i % FANOUT_BAND.perColumn) * FANOUT_BAND.rowH,
+    y: FANOUT_BAND.top + (i % FANOUT_BAND.perColumn) * size.rowH,
     w,
+    size,
   }));
   return { rows, more: Math.max(0, memberCount - shown) };
 }

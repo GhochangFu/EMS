@@ -12,6 +12,7 @@ import type {
 } from "@bms/shared";
 
 import type { SiteLiveReadings } from "../../hooks/use-site-live-readings";
+import { FANOUT_ROW_SIZES, fanOutSwitchX } from "../../lib/mimic-breaker";
 import { layoutGeometry, presetGeometry, type MimicGeometry } from "../../lib/mimic-geometry";
 import { MimicScene } from "./mimic-scene";
 
@@ -937,4 +938,55 @@ export function anUnsourcedLayoutDrawsAsBefore(): void {
   }
   expect(cls(flowOn("single", "board"))).toContain("stroke-ok");
   expect(cls(flowOn("board", "tail"))).toContain("stroke-ok");
+}
+
+/** `F4.322` — PHE-shaped members: long codes that differ only in the tail. */
+const PHE_PUMPS = [asset(40, "PHE-PUMP-M-000000004"), asset(41, "PHE-PUMP-M-000000005")];
+
+function codeText(row: HTMLElement): Element {
+  const el = row.querySelector('[data-testid="mimic-member-code"]');
+  expect(el, "no member code text").not.toBeNull();
+  return el as Element;
+}
+
+/**
+ * `F4.322` R1 — two members draw roomy rows: code 12 cut in the middle (the train number shows),
+ * state text 10, a 24-tall row; the row's title keeps the full code. Mutation: draw the dense
+ * sizes whatever `place.size` says => red.
+ */
+export function twoMembersDrawRoomyRowsWithTheTrainNumber(): void {
+  const values = Object.fromEntries(PHE_PUMPS.map((a) => [`${a.id}|breaker_main`, 1]));
+  renderBreakers(
+    SLD(),
+    [fanOutNode("load_feeders", "load-feeder-breaker", PHE_PUMPS.map((a) => ({ asset: a, statePoints: [statePoint("breaker_main", 1)] })))],
+    readingsOf(values),
+  );
+  const rows = rowsOf("load_feeders");
+  expect(rows.map((r) => codeText(r).textContent)).toEqual(["PHE-PUMP…00000004", "PHE-PUMP…00000005"]);
+  expect(rows.map((r) => r.querySelector("title")?.textContent)).toEqual([
+    "PHE-PUMP-M-000000004: CLOSED",
+    "PHE-PUMP-M-000000005: CLOSED",
+  ]);
+  const first = rows[0] as HTMLElement;
+  expect(codeText(first).getAttribute("font-size")).toBe("12");
+  expect(within(first).getByTestId("mimic-breaker-pill").getAttribute("font-size")).toBe("10");
+  expect(first.querySelector("rect")?.getAttribute("height")).toBe("23");
+  expect(rows.map((r) => r.getAttribute("transform"))).toEqual(["translate(0 136)", "translate(0 160)"]);
+  // The switch sits from the right (`fanOutSwitchX`), at the roomy size 14.
+  const w = Number(first.querySelector("rect")?.getAttribute("width")) + 2;
+  const sw = within(first).getByTestId("mimic-breaker-switch").getAttribute("transform") ?? "";
+  expect(sw).toBe(`translate(${fanOutSwitchX(w, FANOUT_ROW_SIZES.roomy)} ${(24 - 1 - 14) / 2}) scale(${14 / 24})`);
+}
+
+/** `F4.322` R2 — five members keep the dense `F3.74` rows: code 9, state 7.5, 12 tall. */
+export function fiveMembersKeepTheDenseRows(): void {
+  const members = Array.from({ length: 5 }, (_, i) => ({ asset: asset(50 + i, `CR-F${i + 1}`) }));
+  renderBreakers(SLD(), [fanOutNode("load_feeders", "load-feeder-breaker", members)], readingsOf({}));
+  const rows = rowsOf("load_feeders");
+  expect(rows).toHaveLength(5);
+  const first = rows[0] as HTMLElement;
+  expect(codeText(first).getAttribute("font-size")).toBe("9");
+  expect(within(first).getByTestId("mimic-member-status").getAttribute("font-size")).toBe("7.5");
+  expect(first.querySelector("rect")?.getAttribute("height")).toBe("11");
+  expect(rows.map((r) => r.getAttribute("transform"))[4]).toBe("translate(0 184)");
 }
