@@ -48,6 +48,11 @@ export type RtuForm = {
 };
 
 /** The form a create opens with: blank fields, a catalog source, under the given location. */
+/** `F4.326` (ADR 0114 decision 6): the edit form's read-only line for a plain MQTT RTU. No field changes it. */
+export const ORG_INGEST_OFF_LINE =
+  "Ingest is switched off for this organization. This box is kept but has no effect until a global administrator switches the organization back on.";
+export const PLAIN_MQTT_EDIT_LINE = "Connection: plain MQTT (TLS off) — set at onboarding; not editable here.";
+
 export function emptyRtuForm(locationId: string): RtuForm {
   return {
     locationId,
@@ -224,6 +229,8 @@ export function RtuWizard(props: RtuWizardProps) {
   );
   const source = (
     <>
+      {/* F4.326 (ADR 0114 decision 6, plan ruling 5): read-only — the TLS choice is set at onboarding. */}
+      {editing?.tls === false ? <p className="text-xs text-ink-muted">{PLAIN_MQTT_EDIT_LINE}</p> : null}
       {text("MQTT topic", "mqttTopic")}
       <label className={labelClass}>
         Device ID (dev_id)
@@ -255,6 +262,10 @@ export function RtuWizard(props: RtuWizardProps) {
         />
         Ingest enabled
       </label>
+      {/* F4.330 (ADR 0115 decision 5): the stored flag is kept; the organization switch overrides it at the ingest host. */}
+      {editing && editing.organizationIngestEnabled === false ? (
+        <p className="text-xs text-ink-muted">{ORG_INGEST_OFF_LINE}</p>
+      ) : null}
     </>
   );
   const metadata = <MetadataStep meta={form.meta} what="RTU" />;

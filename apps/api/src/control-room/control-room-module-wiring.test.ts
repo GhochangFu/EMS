@@ -72,7 +72,7 @@ describe("F3.67 — ControlRoomModule wiring", () => {
     assertSiteLayoutServiceDepsResolveWithinControlRoom();
   });
 
-  it("F4.331 provides and exports SiteLayoutReplaceService, whose dependencies resolve", () => {
+  it("F4.336 provides and exports SiteLayoutReplaceService, whose dependencies resolve", () => {
     assertControlRoomModuleWiresSiteLayoutReplace();
   });
 

@@ -28,6 +28,14 @@ import {
   theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin,
   theGlobalAdminSwitchesARowsCopilotOn,
   theColourProfileColumnAndActionFollowTheRole,
+  anOffRowShowsTheIngestOffPill,
+  theRowButtonFollowsTheState,
+  stopIngestConfirmsBeforeCallingAndRefetches,
+  cancellingTheIngestDialogCallsNothing,
+  resumeIngestCallsWithTrue,
+  theIngestSwitchIsAbsentForEveryoneButTheGlobalAdmin,
+  aRefusedIngestSwitchShowsTheSentenceInTheDialog,
+  theIngestSwitchShowsForAnInactiveOrganization,
 } from "./organizations-page.spec";
 
 /**
@@ -134,5 +142,37 @@ describe("E4.1c organizations page — the Currency field", () => {
 
   it("F4.310 the list shows the colour profile and the action follows the role", async () => {
     await theColourProfileColumnAndActionFollowTheRole();
+  });
+
+  it("F4.330 an off row shows the Ingest off pill and an on row none", async () => {
+    await anOffRowShowsTheIngestOffPill();
+  });
+
+  it("F4.330 the row button is Stop ingest on an on row and Resume ingest on an off row", async () => {
+    await theRowButtonFollowsTheState();
+  });
+
+  it("F4.330 Stop ingest calls the API only on the dialog's confirm, then refetches", async () => {
+    await stopIngestConfirmsBeforeCallingAndRefetches();
+  });
+
+  it("F4.330 cancelling the ingest dialog calls nothing", async () => {
+    await cancellingTheIngestDialogCallsNothing();
+  });
+
+  it("F4.330 Resume ingest confirms into ingestEnabled true", async () => {
+    await resumeIngestCallsWithTrue();
+  });
+
+  it("F4.330 the ingest switch is absent for everyone but the global admin", async () => {
+    await theIngestSwitchIsAbsentForEveryoneButTheGlobalAdmin();
+  });
+
+  it("F4.330 a refused ingest switch shows the sentence in the dialog", async () => {
+    await aRefusedIngestSwitchShowsTheSentenceInTheDialog();
+  });
+
+  it("F4.330 the ingest switch shows for an inactive organization", async () => {
+    await theIngestSwitchShowsForAnInactiveOrganization();
   });
 });

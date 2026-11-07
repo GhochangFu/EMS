@@ -55,6 +55,7 @@ function rtu(overrides: Partial<AdminRtuDto>): AdminRtuDto {
     stationCode: null,
     stationName: null,
     ingestEnabled: true,
+    organizationIngestEnabled: true,
     active: true,
     meta: null,
     createdAt: new Date(0).toISOString(),
@@ -72,20 +73,20 @@ const UNROUTED = rtu({
   rtuCode: null,
 });
 
-function stubAll(): void {
+function stubAll(items: AdminRtuDto[] = [ROUTED, UNROUTED]): void {
   vi.spyOn(systemStatusApi, "fetchSystemStatus").mockResolvedValue(OPERATIONAL);
   vi.spyOn(organizationsApi, "fetchAdminOrganizations").mockResolvedValue({ items: [] } as never);
   vi.spyOn(locationsApi, "fetchAdminLocations").mockResolvedValue({
     items: [{ id: LOCATION_ID, name: "Spec site" }],
   } as never);
   vi.spyOn(locationsApi, "fetchAdminLocationSummary").mockResolvedValue({} as never);
-  vi.spyOn(rtusApi, "fetchAdminRtus").mockResolvedValue({ items: [ROUTED, UNROUTED] } as never);
+  vi.spyOn(rtusApi, "fetchAdminRtus").mockResolvedValue({ items } as never);
   vi.spyOn(rtusApi, "createAdminRtu").mockResolvedValue(ROUTED);
   vi.spyOn(rtusApi, "updateAdminRtu").mockResolvedValue(ROUTED);
 }
 
-function renderPage(): void {
-  stubAll();
+function renderPage(items?: AdminRtuDto[]): void {
+  stubAll(items);
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -250,4 +251,42 @@ export async function aTakenDeviceIdShowsTheApiSentence(): Promise<void> {
   expect(screen.queryByText(/"statusCode"/)).toBeNull();
   // The dialog stays open, so the admin can correct the value.
   expect(screen.getByRole("heading", { name: "Edit RTU" })).toBeInTheDocument();
+}
+
+/** `F4.326` (ADR 0114 R4, decision 6): one RTU per `tls` value the list can carry. */
+const PLAIN = rtu({ id: "44444444-4444-4444-8444-444444444444", code: "F4326-PLAIN", displayName: "Plain gateway", tls: false });
+const TLS_ON = rtu({ id: "55555555-5555-4555-8555-555555555555", code: "F4326-TLS", displayName: "TLS gateway", tls: true });
+const NO_ROW = rtu({ id: "66666666-6666-4666-8666-666666666666", code: "F4326-NONE", displayName: "No config gateway", tls: null });
+
+function renderTlsPage(): void {
+  renderPage([PLAIN, TLS_ON, NO_ROW]);
+}
+
+/** R8 — the Status cell shows "Plain MQTT" for `tls: false` only; `true` and `null` show none. */
+export async function onlyAPlainRtuShowsThePlainMqttPill(): Promise<void> {
+  renderTlsPage();
+  expect(within(await rowOf(PLAIN.code)).getByText("Plain MQTT")).toBeInTheDocument();
+  expect(within(await rowOf(TLS_ON.code)).queryByText("Plain MQTT")).toBeNull();
+  expect(within(await rowOf(NO_ROW.code)).queryByText("Plain MQTT")).toBeNull();
+}
+
+export const PLAIN_EDIT_LINE = "Connection: plain MQTT (TLS off) — set at onboarding; not editable here.";
+
+/** R9 — editing a plain RTU shows a read-only TLS line on the Source step, and no TLS input exists. */
+export async function editingAPlainRtuShowsAReadOnlyTlsLine(): Promise<void> {
+  renderTlsPage();
+  await openEdit(PLAIN.code);
+  await screen.findByLabelText("Display name");
+  await toSourceStep();
+  expect(screen.getByText(PLAIN_EDIT_LINE)).toBeInTheDocument();
+  expect(screen.queryByLabelText(/TLS/i)).toBeNull();
+}
+
+/** R9 twin — a TLS RTU's edit form shows no such line. */
+export async function editingATlsRtuShowsNoTlsLine(): Promise<void> {
+  renderTlsPage();
+  await openEdit(TLS_ON.code);
+  await screen.findByLabelText("Display name");
+  await toSourceStep();
+  expect(screen.queryByText(PLAIN_EDIT_LINE)).toBeNull();
 }

@@ -55,6 +55,11 @@ export const organizations = bmsSchema.table("organizations", {
   // `colourProfileSchema` names, held by a CHECK; `nexus` (today's colours) by
   // default. The API's colour-profile route is the only writer.
   colourProfile: varchar("colour_profile", { length: 32 }).notNull().default("nexus"),
+  // F4.330 / ADR 0115 decision 1 (migration 0128): the organization's ingest
+  // switch. `true` by default; `PUT .../organizations/:id/ingest` (global admin
+  // only) is the only writer, and the ingest host skips every RTU of an
+  // organization that reads `false` at its next reload.
+  ingestEnabled: boolean("ingest_enabled").notNull().default(true),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

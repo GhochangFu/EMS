@@ -101,7 +101,7 @@ import {
  * (`POST /admin/dashboard-templates/:id/replace-site-layouts`), the copy's dashboard is deleted and
  * the make path re-points the same view row, all in the one locked transaction. The two preview
  * reads (`GET …/site-layout/replace-preview`, `GET …/replace-site-layouts/preview`) answer the
- * edit flag of decision 9 under the same rule as the Replace they preview. Since `F4.331` those
+ * edit flag of decision 9 under the same rule as the Replace they preview. Since `F4.336` those
  * four doors live in `SiteLayoutReplaceService` (`site-layout-replace.service.ts`), which reuses
  * this service's lock, make path and permission rules.
  */
@@ -253,7 +253,7 @@ export class SiteLayoutService {
   }
 
   /**
-   * `F4.331` — the view-row read for `SiteLayoutReplaceService.readHeldCopy`. It goes through
+   * `F4.336` — the view-row read for `SiteLayoutReplaceService.readHeldCopy`. It goes through
    * `readViewRow`, so a spec that stages `readViewRow` stages the Replace read too.
    */
   viewRowFor(tx: BmsTx, locationId: string): Promise<SiteViewRowForCopy | null> {
@@ -264,7 +264,7 @@ export class SiteLayoutService {
    * One site, one `withTenant` transaction, whose first statement is the per-site lock: a
    * concurrent copy or Replace on this site waits here, then reads the committed view row.
    * `F4.320` PR 2 (ADR 0087 Amendment 4 Consequences) split this out of `makeOne`, so Replace runs
-   * its delete and the make path in the one transaction. Public since `F4.331` for
+   * its delete and the make path in the one transaction. Public since `F4.336` for
    * `SiteLayoutReplaceService`, as are `makeInTransaction` and the permission and template reads
    * below; no route reaches them except through the two services.
    */

@@ -48,7 +48,7 @@ import { SiteViewController } from "./site-view.controller";
   // three `AdminModule` doors: the location route, the `instantiate` site arm and the bulk route.
   // `F4.317` — `OrganizationLayoutService` is exported for `AdminModule`'s `instantiate`
   // organization arm (`ORGANIZATION_TEMPLATE_ARM`).
-  // `F4.331` — `SiteLayoutReplaceService` (the Replace half, moved out for the 1000-line cap) is
+  // `F4.336` — `SiteLayoutReplaceService` (the Replace half, moved out for the 1000-line cap) is
   // exported for the four Replace doors on the same two `AdminModule` controllers.
   providers: [
     SiteControlRoomViewService,

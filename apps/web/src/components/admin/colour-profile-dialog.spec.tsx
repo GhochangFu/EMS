@@ -27,6 +27,7 @@ const ORG: AdminOrganizationDto = {
   currency: "INR",
   timezone: "Asia/Kolkata",
   colourProfile: "nexus",
+  ingestEnabled: true,
   meta: null,
   createdAt: new Date(0).toISOString(),
 };

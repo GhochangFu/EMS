@@ -37,7 +37,7 @@ function organization(overrides: Partial<AdminOrganizationDto>): AdminOrganizati
     name: "Spec organization",
     active: true,
     currency: "ZAR",
-    timezone: "UTC", colourProfile: "nexus" as const,
+    timezone: "UTC", colourProfile: "nexus" as const, ingestEnabled: true,
     meta: null,
     createdAt: new Date(0).toISOString(),
     ...overrides,
@@ -549,4 +549,134 @@ export async function theColourProfileColumnAndActionFollowTheRole(): Promise<vo
   renderPageAs("location_admin");
   const other = (await screen.findByText("Rupee organization")).closest("tr")!;
   expect(within(other).queryByRole("button", { name: "Colour profile" })).toBeNull();
+}
+
+const INGEST_SENTENCE =
+  "Its RTUs keep their own settings and stored data stays visible; the change takes effect within about a minute.";
+
+/** `F4.330` — stub with the Rupee row's ingest switched off (and the Rand row on). */
+function stubIngestApi(): void {
+  stubApi();
+  vi.mocked(api.fetchAdminOrganizations).mockResolvedValue({
+    items: [ORGANIZATIONS.items[0]!, { ...ORGANIZATIONS.items[1]!, ingestEnabled: false }],
+  });
+  vi.spyOn(api, "setOrganizationIngest").mockResolvedValue(ORGANIZATIONS.items[0]!);
+}
+
+/** `F4.330` T3.2 — an off row shows an "Ingest off" warning pill beside Active; an on row shows none. */
+export async function anOffRowShowsTheIngestOffPill(): Promise<void> {
+  stubIngestApi();
+  renderPageAs("admin");
+  const off = (await screen.findByText("Rupee organization")).closest("tr")!;
+  const on = screen.getByText("Rand organization").closest("tr")!;
+
+  const pill = within(off).getByText("Ingest off");
+  expect(pill.className).toContain("warning");
+  expect(within(off).getByText("Active")).toBeInTheDocument();
+  expect(within(on).queryByText("Ingest off")).toBeNull();
+}
+
+/** `F4.330` T3.2 — the global admin's Actions cell: "Stop ingest" on an on row, "Resume ingest" on an off row. */
+export async function theRowButtonFollowsTheState(): Promise<void> {
+  stubIngestApi();
+  renderPageAs("admin");
+  const off = (await screen.findByText("Rupee organization")).closest("tr")!;
+  const on = screen.getByText("Rand organization").closest("tr")!;
+
+  expect(within(on).getByRole("button", { name: "Stop ingest" })).toBeInTheDocument();
+  expect(within(on).queryByRole("button", { name: "Resume ingest" })).toBeNull();
+  expect(within(off).getByRole("button", { name: "Resume ingest" })).toBeInTheDocument();
+  expect(within(off).queryByRole("button", { name: "Stop ingest" })).toBeNull();
+}
+
+/** `F4.330` T3.2 — the dialog names the organization and the sentence, and the API waits for its confirm. */
+export async function stopIngestConfirmsBeforeCallingAndRefetches(): Promise<void> {
+  stubIngestApi();
+  renderPageAs("admin");
+  const on = (await screen.findByText("Rand organization")).closest("tr")!;
+  await waitFor(() => expect(api.fetchAdminOrganizations).toHaveBeenCalledTimes(1));
+
+  await userEvent.click(within(on).getByRole("button", { name: "Stop ingest" }));
+
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(/Rand organization/)).toBeInTheDocument();
+  expect(within(dialog).getByText(INGEST_SENTENCE)).toBeInTheDocument();
+  expect(api.setOrganizationIngest, "nothing is called until the dialog's confirm").not.toHaveBeenCalled();
+
+  await userEvent.click(within(dialog).getByRole("button", { name: "Stop ingest" }));
+
+  await waitFor(() =>
+    expect(api.setOrganizationIngest).toHaveBeenCalledWith("11111111-1111-1111-1111-111111111111", false),
+  );
+  await waitFor(() => expect(api.fetchAdminOrganizations).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+}
+
+/** `F4.330` T3.2 — cancelling the dialog never calls the API. */
+export async function cancellingTheIngestDialogCallsNothing(): Promise<void> {
+  stubIngestApi();
+  renderPageAs("admin");
+  const on = (await screen.findByText("Rand organization")).closest("tr")!;
+  await userEvent.click(within(on).getByRole("button", { name: "Stop ingest" }));
+  const dialog = await screen.findByRole("dialog");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(api.setOrganizationIngest).not.toHaveBeenCalled();
+}
+
+/** `F4.330` T3.2 — "Resume ingest" confirms into `setOrganizationIngest(id, true)`. */
+export async function resumeIngestCallsWithTrue(): Promise<void> {
+  stubIngestApi();
+  renderPageAs("admin");
+  const off = (await screen.findByText("Rupee organization")).closest("tr")!;
+  await userEvent.click(within(off).getByRole("button", { name: "Resume ingest" }));
+  const dialog = await screen.findByRole("dialog");
+  expect(within(dialog).getByText(INGEST_SENTENCE)).toBeInTheDocument();
+  await userEvent.click(within(dialog).getByRole("button", { name: "Resume ingest" }));
+
+  await waitFor(() =>
+    expect(api.setOrganizationIngest).toHaveBeenCalledWith("22222222-2222-2222-2222-222222222222", true),
+  );
+}
+
+/** `F4.330` T3.2 — the switch is global-admin only (`theCopilotSwitchIsAbsentForEveryoneButTheGlobalAdmin` shape). */
+export async function theIngestSwitchIsAbsentForEveryoneButTheGlobalAdmin(): Promise<void> {
+  for (const role of ["organization_admin", "location_admin"] as const) {
+    stubIngestApi();
+    renderPageAs(role);
+    const row = (await screen.findByText("Rupee organization")).closest("tr")!;
+    expect(within(row).queryByRole("button", { name: "Stop ingest" }), role).toBeNull();
+    expect(within(row).queryByRole("button", { name: "Resume ingest" }), role).toBeNull();
+    cleanup();
+    vi.restoreAllMocks();
+  }
+}
+
+/** `F4.330` T3.2 — a 403 on confirm shows its sentence in the dialog, not the envelope. */
+export async function aRefusedIngestSwitchShowsTheSentenceInTheDialog(): Promise<void> {
+  stubIngestApi();
+  vi.mocked(api.setOrganizationIngest).mockRejectedValue(
+    new ApiError('{"statusCode":403,"message":"Only a global administrator can do that","error":"Forbidden"}', 403),
+  );
+  renderPageAs("admin");
+  const on = (await screen.findByText("Rand organization")).closest("tr")!;
+  await userEvent.click(within(on).getByRole("button", { name: "Stop ingest" }));
+  const dialog = await screen.findByRole("dialog");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Stop ingest" }));
+
+  const banner = await within(dialog).findByText("Only a global administrator can do that");
+  expect(banner.textContent).not.toContain('{"');
+}
+
+/** `F4.330` decision 10 — an inactive organization still shows the switch. */
+export async function theIngestSwitchShowsForAnInactiveOrganization(): Promise<void> {
+  stubIngestApi();
+  vi.mocked(api.fetchAdminOrganizations).mockResolvedValue({
+    items: [{ ...ORGANIZATIONS.items[0]!, active: false }],
+  });
+  renderPageAs("admin");
+  const row = (await screen.findByText("Rand organization")).closest("tr")!;
+  expect(within(row).getByText("Inactive")).toBeInTheDocument();
+  expect(within(row).getByRole("button", { name: "Stop ingest" })).toBeInTheDocument();
 }

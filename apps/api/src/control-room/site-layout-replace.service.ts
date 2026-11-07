@@ -36,7 +36,7 @@ import {
  * (`POST /admin/dashboard-templates/:id/replace-site-layouts`), and the two preview reads
  * (`GET …/site-layout/replace-preview`, `GET …/replace-site-layouts/preview`).
  *
- * `F4.331` moved this half out of `SiteLayoutService` for AGENTS.md §4.5's 1000-line cap, with no
+ * `F4.336` moved this half out of `SiteLayoutService` for AGENTS.md §4.5's 1000-line cap, with no
  * change of behaviour. It owns no copy logic of its own: the permission rules, the template reads,
  * the per-site locked transaction (`inSiteTransaction`) and the make path (`makeInTransaction`)
  * stay on `SiteLayoutService`, which this provider injects. A Replace is still the copy's delete

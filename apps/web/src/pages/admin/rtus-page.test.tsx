@@ -10,6 +10,9 @@ import {
   editSendsAChangedDeviceId,
   editWithTheDeviceIdUntouchedOmitsTheKey,
   listShowsTheDeviceIdAndADashWhenUnset,
+  editingAPlainRtuShowsAReadOnlyTlsLine,
+  editingATlsRtuShowsNoTlsLine,
+  onlyAPlainRtuShowsThePlainMqttPill,
 } from "./rtus-page.spec";
 
 /** `F3.86` PR 3a: the form is a wizard, and a walk through its steps takes seconds under jsdom. */
@@ -52,5 +55,17 @@ describe("F4.182 RTUs admin page — device ID (rtu_code)", () => {
 
   it("R7 a taken device ID shows the API sentence, not the JSON envelope", async () => {
     await aTakenDeviceIdShowsTheApiSentence();
+  });
+
+  it("R8 shows the Plain MQTT pill for tls:false only (F4.326)", async () => {
+    await onlyAPlainRtuShowsThePlainMqttPill();
+  });
+
+  it("R9 shows a read-only TLS line when editing a plain RTU, and no TLS input (F4.326)", async () => {
+    await editingAPlainRtuShowsAReadOnlyTlsLine();
+  });
+
+  it("R9b shows no TLS line when editing a TLS RTU (F4.326)", async () => {
+    await editingATlsRtuShowsNoTlsLine();
   });
 }, WIZARD_WALK_MS);

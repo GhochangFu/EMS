@@ -267,7 +267,7 @@ export function assertDashboardTemplatesControllerDepsResolveThroughAdmin(): voi
 }
 
 /**
- * `F4.331` — `ControlRoomModule` provides AND exports `SiteLayoutReplaceService` (the Replace half,
+ * `F4.336` — `ControlRoomModule` provides AND exports `SiteLayoutReplaceService` (the Replace half,
  * moved out of `SiteLayoutService`), and its own dependencies resolve inside the module's scope.
  */
 export function assertControlRoomModuleWiresSiteLayoutReplace(): void {

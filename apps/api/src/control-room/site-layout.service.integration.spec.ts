@@ -38,7 +38,7 @@ import { jwtFor, jwtForUnprovisioned, rememberSubject } from "../testing/seeded-
  */
 export type SiteLayoutCtx = {
   svc: SiteLayoutService;
-  /** `F4.331` — the Replace doors, over `svc`. */
+  /** `F4.336` — the Replace doors, over `svc`. */
   replace: SiteLayoutReplaceService;
   /** The same constructor arguments, for S2c's subclass. */
   make: (readViewRow?: (locationId: string) => SiteViewRowForCopy | null) => SiteLayoutService;

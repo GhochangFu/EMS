@@ -2,6 +2,7 @@ import { describe, it } from "vitest";
 
 import {
   aLegacyTopicIsPrinted,
+  aPlainMqttRtuLineDisclosesTlsOff,
   aLocationLineNamesItsParent,
   aTopLevelLocationLineIsUnchanged,
   anEmptyTopicBesideALegacyKeyPrintsADash,
@@ -85,5 +86,8 @@ describe("formatOnboardingDraftSummary: the parent location (F4.243)", () => {
 
   it("W2 prints a top-level location as before", () => {
     aTopLevelLocationLineIsUnchanged();
+  });
+  it("discloses TLS off on a plain MQTT RTU line (F4.326)", () => {
+    aPlainMqttRtuLineDisclosesTlsOff();
   });
 });
