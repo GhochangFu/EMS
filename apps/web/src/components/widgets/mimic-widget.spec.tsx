@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { expect } from "vitest";
 
 import {
@@ -337,4 +337,153 @@ export function theDrawingAddsNoHeightOfItsOwn(): void {
   const sceneBox = drawingBox?.parentElement;
   expect(drawingBox?.className.split(" ")).toEqual(expect.arrayContaining(["absolute", "inset-0"]));
   expect(sceneBox?.className.split(" ")).toEqual(expect.arrayContaining(["relative", "min-h-0", "flex-1"]));
+}
+
+/**
+ * `F4.321` — the Expand control and its full-view dialog. One helper: the tile as the live
+ * widget draws it (`expandable`), optionally `compact` (owner Q1, 2026-11-07: the dialog still
+ * draws the full values).
+ */
+function renderExpandable({
+  status = "ready",
+  expandable = true,
+  compact = false,
+}: { status?: WidgetStatus; expandable?: boolean; compact?: boolean } = {}): void {
+  render(
+    <MimicWidget
+      title="Demo water plant"
+      status={status}
+      geometry={presetGeometry("water_train")}
+      nodes={nodes()}
+      readings={READINGS}
+      compact={compact}
+      expandable={expandable}
+    />,
+  );
+}
+
+const EXPAND_NAME = "Expand Demo water plant";
+const DIALOG_NAME = "Demo water plant — full view";
+
+function openDialog(): HTMLElement {
+  fireEvent.click(screen.getByRole("button", { name: EXPAND_NAME }));
+  return screen.getByRole("dialog", { name: DIALOG_NAME });
+}
+
+/** E1 — Expand shows on a ready, expandable tile only: not while loading, not without the prop. */
+export function expandShowsOnlyOnAReadyExpandableTile(): void {
+  renderExpandable();
+  expect(screen.getByRole("button", { name: EXPAND_NAME }).getAttribute("aria-haspopup")).toBe("dialog");
+  cleanup();
+  renderExpandable({ status: "loading" });
+  expect(screen.queryByRole("button", { name: EXPAND_NAME })).toBeNull();
+  cleanup();
+  renderExpandable({ expandable: false });
+  expect(screen.queryByRole("button", { name: EXPAND_NAME })).toBeNull();
+}
+
+/**
+ * E2 — Expand opens a modal dialog named for the widget, portalled out of the tile, holding a
+ * second drawing of the same plant. No dialog before the click.
+ */
+export function expandOpensANamedDialogWithASecondDrawing(): void {
+  renderExpandable();
+  expect(screen.queryByRole("dialog")).toBeNull();
+  const dialog = openDialog();
+  expect(dialog.getAttribute("aria-modal")).toBe("true");
+  expect(dialog.closest(".surface-raised")).toBeNull();
+  expect(within(dialog).getByRole("img", { name: /^Demo water plant: / })).toBeInTheDocument();
+  expect(screen.getAllByRole("img", { name: /^Demo water plant: / })).toHaveLength(2);
+  expect(within(dialog).getAllByTestId("mimic-node")).toHaveLength(8);
+}
+
+/** E3 — Escape closes the dialog and focus returns to Expand. Close opens focused. */
+export function escapeClosesAndFocusReturnsToExpand(): void {
+  renderExpandable();
+  const dialog = openDialog();
+  expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Close" }));
+  fireEvent.keyDown(document, { key: "Escape" });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: EXPAND_NAME }));
+}
+
+/** E4 — Close and a click on the scrim close it; a click inside the dialog does not. */
+export function closeAndTheScrimCloseTheDialog(): void {
+  renderExpandable();
+  let dialog = openDialog();
+  fireEvent.click(dialog);
+  expect(screen.getByRole("dialog", { name: DIALOG_NAME })).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(screen.getByRole("button", { name: EXPAND_NAME }));
+  dialog = openDialog();
+  fireEvent.click(screen.getByTestId("mimic-expand-scrim"));
+  expect(screen.queryByRole("dialog")).toBeNull();
+}
+
+/**
+ * E5 — Tab inside the dialog keeps focus on Close, its one control. jsdom does not move focus on
+ * Tab, so the case asserts the cancelled default (`fireEvent` returns false) as well as the focus.
+ * The last step is the review finding: after a click on the drawing focus sits on `body`, and a
+ * Tab from there must still land on Close, not on the page behind the scrim.
+ */
+export function tabStaysInsideTheDialog(): void {
+  renderExpandable();
+  const dialog = openDialog();
+  const close = within(dialog).getByRole("button", { name: "Close" });
+  expect(fireEvent.keyDown(dialog, { key: "Tab" })).toBe(false);
+  expect(document.activeElement).toBe(close);
+  expect(fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true })).toBe(false);
+  expect(document.activeElement).toBe(close);
+  close.blur();
+  expect(document.activeElement).toBe(document.body);
+  expect(fireEvent.keyDown(document.body, { key: "Tab" })).toBe(false);
+  expect(document.activeElement).toBe(close);
+}
+
+/**
+ * E8 (review finding) — a refetch that takes the drawing away closes the dialog for good: when the
+ * tile is ready again, no dialog opens until Expand is clicked. Mutation: drop the reset => red.
+ */
+export function aLostDrawingDoesNotReopenTheDialog(): void {
+  const props = {
+    title: "Demo water plant",
+    geometry: presetGeometry("water_train"),
+    nodes: nodes(),
+    readings: READINGS,
+    expandable: true,
+  };
+  const { rerender } = render(<MimicWidget {...props} status="ready" />);
+  openDialog();
+  rerender(<MimicWidget {...props} status="loading" />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+  rerender(<MimicWidget {...props} status="ready" />);
+  expect(screen.queryByRole("dialog")).toBeNull();
+}
+
+/**
+ * E6 (owner Q1) — a compact tile draws no value row, but its dialog draws them: the full view
+ * ignores `compact`. Mutation: pass `compact` through to the dialog's scene => red.
+ */
+export function aCompactTilesDialogDrawsTheValueRows(): void {
+  renderExpandable({ compact: true });
+  expect(screen.queryAllByTestId("mimic-point")).toHaveLength(0);
+  const dialog = openDialog();
+  const wtp = within(dialog)
+    .getAllByTestId("mimic-node")
+    .find((n) => n.getAttribute("data-node-key") === "wtp") as HTMLElement;
+  expect(within(wtp).getAllByTestId("mimic-point").map((r) => r.getAttribute("data-point-key"))).toEqual([
+    "p1",
+    "p2",
+    "p3",
+  ]);
+}
+
+/** E7 — the tile and the dialog draw their own arrow marker: no two `<marker>` ids are equal. */
+export function theTwoDrawingsShareNoMarkerId(): void {
+  renderExpandable();
+  openDialog();
+  const ids = Array.from(document.querySelectorAll("marker")).map((m) => m.id);
+  expect(ids).toHaveLength(2);
+  expect(new Set(ids).size).toBe(2);
 }
