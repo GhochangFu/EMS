@@ -1,7 +1,9 @@
+import { useId } from "react";
+
 import type { MimicSymbol } from "@bms/shared";
 
 import { mimicMiddleCut } from "../../lib/mimic";
-import { FANOUT_BAND, fanOutSwitchX, type FanOutMemberRow, type FanOutRow } from "../../lib/mimic-breaker";
+import { FANOUT_BAND, fanOutCodeClipW, fanOutSwitchX, type FanOutMemberRow, type FanOutRow } from "../../lib/mimic-breaker";
 import { BreakerSwitch } from "./mimic-breaker-switch";
 
 type FanOutMembersProps = {
@@ -20,9 +22,11 @@ type FanOutMembersProps = {
  *
  * `F4.322` — each row carries its sizes (`place.size`: `roomy` up to four members, else `dense`),
  * the code is cut in the middle so its tail shows, and the switch sits from the right
- * (`fanOutSwitchX`).
+ * (`fanOutSwitchX`). The code is clipped short of the switch or the pill (`fanOutCodeClipW`), so a
+ * wider fallback font never draws it under them; clip ids come from `useId`.
  */
 export function FanOutMembers({ members, places, more, symbol, plainClass }: FanOutMembersProps) {
+  const uid = useId().replace(/:/g, "");
   return (
     <g data-testid="mimic-fanout">
       {places.map((place, i) => {
@@ -32,6 +36,8 @@ export function FanOutMembers({ members, places, more, symbol, plainClass }: Fan
         }
         const wide = place.w >= 150;
         const { size } = place;
+        const hasSwitch = member.state !== null && member.look !== null;
+        const clipId = `mimic-member-code-${uid}-${i}`;
         return (
           <g
             key={member.id}
@@ -52,16 +58,21 @@ export function FanOutMembers({ members, places, more, symbol, plainClass }: Fan
               strokeDasharray={member.dashed ? "3 2" : undefined}
               className={`fill-surface ${member.frameClass}`}
             />
-            <text
-              data-testid="mimic-member-code"
-              x={4}
-              y={size.baseline}
-              fontSize={wide ? size.codeWide : size.codeNarrow}
-              fontWeight={700}
-              className="fill-ink"
-            >
-              {mimicMiddleCut(member.code, wide ? size.charsWide : size.charsNarrow)}
-            </text>
+            <clipPath id={clipId}>
+              <rect x={0} y={0} width={fanOutCodeClipW(place.w, size, hasSwitch)} height={size.rowH} />
+            </clipPath>
+            <g clipPath={`url(#${clipId})`}>
+              <text
+                data-testid="mimic-member-code"
+                x={4}
+                y={size.baseline}
+                fontSize={wide ? size.codeWide : size.codeNarrow}
+                fontWeight={700}
+                className="fill-ink"
+              >
+                {mimicMiddleCut(member.code, wide ? size.charsWide : size.charsNarrow)}
+              </text>
+            </g>
             {member.state === null || member.look === null ? null : (
               <BreakerSwitch
                 state={member.state}

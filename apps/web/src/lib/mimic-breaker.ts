@@ -209,6 +209,16 @@ export function fanOutSwitchX(w: number, size: FanOutRowSize): number {
   return w - 4 - size.text * GLYPH_W * PILL_CHARS - 3 - size.switchSize;
 }
 
+/**
+ * `F4.322` review finding — the width the member code is clipped to, from the row's left edge: 2
+ * short of the switch, or of the pill's room on a row with no switch. `GLYPH_W` is an estimate,
+ * and the app loads no web font, so a wider fallback font (DejaVu Sans Bold is about 0.73 em)
+ * would run the code under the switch; the clip keeps it out whatever the font.
+ */
+export function fanOutCodeClipW(w: number, size: FanOutRowSize, hasSwitch: boolean): number {
+  return hasSwitch ? fanOutSwitchX(w, size) - 2 : w - 4 - size.text * GLYPH_W * PILL_CHARS - 2;
+}
+
 /** One drawn member row's place: its column's left edge and width, its top, and its sizes. */
 export type FanOutRow = { readonly x: number; readonly y: number; readonly w: number; readonly size: FanOutRowSize };
 

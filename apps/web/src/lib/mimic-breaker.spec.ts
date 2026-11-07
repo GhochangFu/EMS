@@ -97,13 +97,14 @@ export function upToFourMembersDrawRoomyRowsInTheSameBand(): void {
 /**
  * `F4.322` M3 — the switch sits right of the widest code the row draws and left of the room kept
  * for a 7-character pill, on a roomy 200-wide PHE row and on dense 200- and 100-wide rows. It was
- * `0.58 w - 5`, which a 17-character roomy code (about 130 units) would run under.
+ * `0.58 w - 5`, which a 17-character roomy code (about 130 units) would run under. The bounds reuse
+ * the 0.62 estimate, so this holds the formula, not real glyph widths: the clip (R3) holds those.
  */
 export function theSwitchClearsTheCodeAndThePill(): void {
   const { roomy, dense } = FANOUT_ROW_SIZES;
   const cases = [
-    { w: 198, size: roomy, font: roomy.codeWide, chars: roomy.charsWide },
-    { w: 198, size: dense, font: dense.codeWide, chars: dense.charsWide },
+    { w: 200, size: roomy, font: roomy.codeWide, chars: roomy.charsWide },
+    { w: 200, size: dense, font: dense.codeWide, chars: dense.charsWide },
     { w: 100, size: dense, font: dense.codeNarrow, chars: dense.charsNarrow },
   ];
   for (const { w, size, font, chars } of cases) {
